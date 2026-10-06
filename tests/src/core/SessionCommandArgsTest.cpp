@@ -157,6 +157,78 @@ private slots:
 					{QStringLiteral("jump_to"), 2}}}}}).ok, "a well-typed jump was refused");
 	}
 
+	//! A PRESENT `actions` that is not an array is the client's error, and is
+	//! refused as one. The handler treats any non-array as if the key were absent
+	//! and answers from the slot's own stored chain, so a caller that sent
+	//! `actions: null` would arm a chain it never named and could not see in the
+	//! reply. It never gets that far: the registry validates the arguments
+	//! against the command's schema before dispatch (ControlRegistry::invoke ->
+	//! validateArgs) and `session.follow_set` declares `actions` as an array
+	//! property, so a non-array is a typed refusal with no arming at all. This
+	//! case pins that, so the guarantee is not lost if the schema is edited.
+	void aNonArrayActionsValueIsRefused()
+	{
+		using revtest::run;
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1},
+			{QStringLiteral("scenes"), kScenes}}).ok);
+		const QJsonArray stop{QJsonObject{{QStringLiteral("type"), QStringLiteral("stop")}}};
+		QVERIFY(run(QStringLiteral("session.set_slot"),
+			{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+				{QStringLiteral("type"), QStringLiteral("audio")},
+				{QStringLiteral("source"), QStringLiteral("kick.wav")},
+				{QStringLiteral("loop_length"), 192}, {QStringLiteral("follow_actions"), stop}}).ok);
+
+		// A slot WITH a stored chain, so the fallback would have succeeded.
+		QCOMPARE(run(QStringLiteral("session.follow_set"),
+			{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+				{QStringLiteral("actions"), QStringLiteral("bad")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("session.follow_set"),
+			{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+				{QStringLiteral("actions"), QJsonValue()}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+
+		// An ABSENT key is still the documented fallback to the stored chain.
+		const ControlResult absent = run(QStringLiteral("session.follow_set"),
+			{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0}});
+		QVERIFY2(absent.ok, qPrintable(absent.errorMessage));
+		QCOMPARE(absent.result.value(QStringLiteral("source")).toString(), QStringLiteral("slot"));
+	}
+
+	//! A cell address is a PAIR. `track` and `scene` were independently
+	//! optional, and the omitted one converted to 0, so `{"track":2}` answered
+	//! about cell (2,0) - a real cell, with its own chain and its own armed flag
+	//! - as though it had been asked for. Both coordinates, or neither.
+	void aCellAddressNeedsBothCoordinates()
+	{
+		using revtest::run;
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 2},
+			{QStringLiteral("scenes"), kScenes}}).ok);
+		const QJsonArray stop{QJsonObject{{QStringLiteral("type"), QStringLiteral("stop")}}};
+		QVERIFY(run(QStringLiteral("session.set_slot"),
+			{{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 0},
+				{QStringLiteral("type"), QStringLiteral("audio")},
+				{QStringLiteral("source"), QStringLiteral("kick.wav")},
+				{QStringLiteral("loop_length"), 192}, {QStringLiteral("follow_actions"), stop}}).ok);
+		QVERIFY(run(QStringLiteral("session.follow_set"),
+			{{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 0}}).ok);
+
+		// One coordinate on its own is an incomplete address, not cell (x,0).
+		QCOMPARE(run(QStringLiteral("session.follow_get_state"),
+			{{QStringLiteral("track"), 1}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("session.follow_get_state"),
+			{{QStringLiteral("scene"), 0}}).errorKind, ControlErrorKind::InvalidArgs);
+
+		// Neither: the whole-grid reading, which is what the caller asked for.
+		QVERIFY(run(QStringLiteral("session.follow_get_state")).ok);
+		// Both: the cell, addressed as named.
+		const ControlResult cell = run(QStringLiteral("session.follow_get_state"),
+			{{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 0}});
+		QVERIFY2(cell.ok, qPrintable(cell.errorMessage));
+		QCOMPARE(cell.result.value(QStringLiteral("track")).toInt(), 1);
+		QCOMPARE(cell.result.value(QStringLiteral("scene")).toInt(), 0);
+	}
+
 };
 
 QTEST_GUILESS_MAIN(SessionCommandArgsTest)

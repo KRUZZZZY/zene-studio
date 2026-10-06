@@ -504,6 +504,40 @@ void registerSetFollowActions(ControlRegistry& registry)
 }
 
 
+//! The one-cell reading: which cell was named, whether the armed mask covers it
+//! and whether it is armed, the cell's own state, and the action time its
+//! PERSISTED chain implies. That last one is computed with the same pure
+//! function the audio thread uses (SessionFollow.h), so the reply is the
+//! engine's arithmetic rather than a second implementation.
+void addCellReading(QJsonObject& result, const SessionModel& model,
+	const SessionScheduler& scheduler, int track, int scene, tick_t ticksPerBar)
+{
+	const ClipSlot& slot = model.slot(track, scene);
+	result.insert(QStringLiteral("track"), track);
+	result.insert(QStringLiteral("scene"), scene);
+
+	const bool covered = track >= 0 && track < 8 && scene >= 0 && scene < 8;
+	const std::uint64_t mask = scheduler.armedFollowCellsMask();
+	result.insert(QStringLiteral("armed_mask_covers_cell"), covered);
+	result.insert(QStringLiteral("armed"),
+		covered && (mask & (std::uint64_t{ 1 } << (track * 8 + scene))) != 0);
+	result.insert(QStringLiteral("cell"), clipSlotState(track, scene, slot));
+
+	FollowPlan plan;
+	plan.enabled = !slot.followActions().empty();
+	plan.count = slot.followActions().size() > static_cast<std::size_t>(MaxFollowChainEntries)
+		? MaxFollowChainEntries : static_cast<int>(slot.followActions().size());
+	for (int i = 0; i < plan.count; ++i)
+	{
+		plan.entries[i] = slot.followActions()[static_cast<std::size_t>(i)];
+	}
+	plan.clipLengthTicks = static_cast<tick_t>(slot.loopLength());
+	plan.sceneCount = model.sceneCount();
+	result.insert(QStringLiteral("chain"), followPlanJson(plan));
+	result.insert(QStringLiteral("chain_step_ticks"),
+		static_cast<int>(followActionTicks(plan, ticksPerBar)));
+}
+
 void registerFollowGetState(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -557,42 +591,26 @@ void registerFollowGetState(ControlRegistry& registry)
 		// Addressing one cell is optional: the engine reading above answers for
 		// the whole grid, and the cell reading adds what only the model knows -
 		// the persisted chain and the action time it implies.
-		const bool wantsCell = args.contains(QStringLiteral("track"))
-			|| args.contains(QStringLiteral("scene"));
-		if (!wantsCell)
+		const bool hasTrack = args.contains(QStringLiteral("track"));
+		const bool hasScene = args.contains(QStringLiteral("scene"));
+		if (!hasTrack && !hasScene)
 		{
 			return ControlResult::success(result);
+		}
+		// Both or NEITHER: with one of them absent its reading below would be the
+		// default 0, and the reply would address a cell the caller never named -
+		// a real cell, with its chain and its armed flag, reported as if it had
+		// been asked for. A cell address is a pair.
+		if (hasTrack != hasScene)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("name both 'track' and 'scene' to address one cell, or neither "
+					"for the whole grid"));
 		}
 		const int track = args.value(QStringLiteral("track")).toInt();
 		const int scene = args.value(QStringLiteral("scene")).toInt();
 		if (!gridContains(*model, track, scene, &error)) { return error; }
-		const ClipSlot& slot = model->slot(track, scene);
-		result.insert(QStringLiteral("track"), track);
-		result.insert(QStringLiteral("scene"), scene);
-
-		const bool covered = track >= 0 && track < 8 && scene >= 0 && scene < 8;
-		const std::uint64_t mask = scheduler.armedFollowCellsMask();
-		result.insert(QStringLiteral("armed_mask_covers_cell"), covered);
-		result.insert(QStringLiteral("armed"),
-			covered && (mask & (std::uint64_t{ 1 } << (track * 8 + scene))) != 0);
-		result.insert(QStringLiteral("cell"), clipSlotState(track, scene, slot));
-
-		// The action time the cell's OWN persisted chain implies, computed with
-		// the same pure function the audio thread uses (SessionFollow.h), so the
-		// reply is the engine's arithmetic rather than a second implementation.
-		FollowPlan plan;
-		plan.enabled = !slot.followActions().empty();
-		plan.count = slot.followActions().size() > static_cast<std::size_t>(MaxFollowChainEntries)
-			? MaxFollowChainEntries : static_cast<int>(slot.followActions().size());
-		for (int i = 0; i < plan.count; ++i)
-		{
-			plan.entries[i] = slot.followActions()[static_cast<std::size_t>(i)];
-		}
-		plan.clipLengthTicks = static_cast<tick_t>(slot.loopLength());
-		plan.sceneCount = model->sceneCount();
-		result.insert(QStringLiteral("chain"), followPlanJson(plan));
-		result.insert(QStringLiteral("chain_step_ticks"),
-			static_cast<int>(followActionTicks(plan, ctx.ticksPerBar)));
+		addCellReading(result, *model, scheduler, track, scene, ctx.ticksPerBar);
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
