@@ -336,7 +336,7 @@ ControlResult meterReference(const QJsonObject& args)
 {
 	const double before = meterReferenceDbfs();
 	const double dbfs = args.value(QStringLiteral("dbfs")).toDouble(before);
-	if (dbfs < -30.0 || dbfs > 0.0) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'dbfs' is -30..0")); }
+	if (!std::isfinite(dbfs) || dbfs < -30.0 || dbfs > 0.0) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'dbfs' is -30..0")); }
 	if (dbfs != before)
 	{
 		setMeterReferenceDbfs(dbfs);

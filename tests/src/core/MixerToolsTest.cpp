@@ -35,6 +35,7 @@
 #include <QDomDocument>
 #include <QJsonArray>
 
+#include "ControlMeterSupport.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -234,6 +235,15 @@ private slots:
 		QVERIFY(usage.result.value(QStringLiteral("sends_to")).toArray().contains(ch(0)));  // every channel feeds the master
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(run(QStringLiteral("routing.usage"), {{QStringLiteral("channel"), QStringLiteral("nope")}}).ok, false);
+	}
+
+	//! BUG 14: a non-finite 'dbfs' must not become the meter reference -
+	//! NaN passes the -30..0 range check and was stored as the reference.
+	void aNonfiniteMeterReferenceIsRefused()
+	{
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		QCOMPARE(run(QStringLiteral("meter.set_reference"), {{QStringLiteral("dbfs"), nan}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(control::meterReferenceDbfs(), -18.0);
 	}
 
 	//! A track delay is set, reported, saved on the track and undone.
