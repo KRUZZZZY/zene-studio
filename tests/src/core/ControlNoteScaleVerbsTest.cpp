@@ -50,6 +50,8 @@
 
 #include <QtTest>
 
+#include <cmath>
+
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
@@ -342,6 +344,31 @@ private slots:
 				{QStringLiteral("velocity_jitter"), 0.5},
 				{QStringLiteral("scope"), QStringLiteral("selection")}});
 		QCOMPARE(emptyScope.errorKind, ControlErrorKind::Refused);
+	}
+
+	//! Luna cluster new-p8-41: NaN jitter is not a number this engine can mean. It
+	//! passes the schema's "number" type check (isDouble is true for NaN) and BOTH
+	//! range comparisons (every comparison with NaN is false), so it reached the
+	//! roll, whose `> 0` guards then skipped the edits while the handler still
+	//! checkpointed and answered success - a no-op reported as an edit.
+	//! Non-finite jitter is refused with a typed InvalidArgs instead.
+	void nonfiniteJitterIsRefused()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		QVERIFY2(addRollFixtureNotes(fixture.clip), "could not add the roll fixture's notes");
+		const double nan = std::nan("0");
+		const ControlResult velocityNan = run(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("velocity_jitter"), nan}});
+		QVERIFY2(!velocityNan.ok, "NaN velocity_jitter was accepted as a successful no-op roll");
+		QCOMPARE(velocityNan.errorKind, ControlErrorKind::InvalidArgs);
+		const ControlResult positionNan = run(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("velocity_jitter"), 0.5},
+				{QStringLiteral("position_jitter"), nan}});
+		QVERIFY2(!positionNan.ok, "NaN position_jitter was accepted as a successful no-op roll");
+		QCOMPARE(positionNan.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
 	//! W5: the slide verbs, from the trap state (a note at the DEFAULT, which writes
