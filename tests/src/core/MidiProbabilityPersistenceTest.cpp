@@ -31,6 +31,9 @@
 
 #include <QtTest>
 
+#include <cmath>
+#include <limits>
+
 #include <QDomDocument>
 #include <QDomElement>
 #include <QDomNamedNodeMap>
@@ -131,6 +134,26 @@ QString legacyProject( const QString& version )
 		"    </trackcontainer>\n"
 		"  </song>\n"
 		"</lmms-project>\n" ).arg( version );
+}
+
+//! A <note> element carrying the given raw prob/veljit ATTRIBUTE TEXT, exactly
+//! as a hand-edited or corrupt project file would spell it. Built through
+//! QDomElement::setAttribute so the string reaches Note::loadSettings
+//! untouched - QString::toFloat has to see the same bytes the file has.
+QDomElement noteElementWith( QDomDocument& doc, QDomElement& parent, const char* prob,
+	const char* velJitter )
+{
+	QDomElement note = doc.createElement( QStringLiteral( "note" ) );
+	note.setAttribute( QStringLiteral( "key" ), QStringLiteral( "60" ) );
+	note.setAttribute( QStringLiteral( "vol" ), QStringLiteral( "100" ) );
+	note.setAttribute( QStringLiteral( "pan" ), QStringLiteral( "0" ) );
+	note.setAttribute( QStringLiteral( "len" ), QStringLiteral( "384" ) );
+	note.setAttribute( QStringLiteral( "pos" ), QStringLiteral( "0" ) );
+	note.setAttribute( QStringLiteral( "type" ), QStringLiteral( "0" ) );
+	note.setAttribute( QStringLiteral( "prob" ), QLatin1String( prob ) );
+	note.setAttribute( QStringLiteral( "veljit" ), QLatin1String( velJitter ) );
+	parent.appendChild( note );
+	return note;
 }
 
 } // namespace
@@ -327,6 +350,63 @@ private slots:
 		// canonical form rather than the writer's per-process attribute order
 		DataFile roundTrip( first.toUtf8() );
 		QCOMPARE( savedDocumentDigest( fileToString( roundTrip ) ), savedDocumentDigest( first ) );
+	}
+//! (e) Luna cluster 2344 / 3326: a value the file cannot express must not
+	//! become the note's probability or jitter. `toFloat()` without checking
+	//! success turns "bad" into 0 (the note is then silent for the rest of the
+	//! document's life), and std::clamp leaves a NaN NaN because every
+	//! comparison against it is false - so a non-finite value would travel
+	//! straight into the playback roll (NoteRandom).
+	void nonFiniteAndMalformedValuesFallBackToTheDocumentedDefaults()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement( QStringLiteral( "notes" ) );
+
+		// NaN in the file: every clamp comparison is false, so the clamp hands
+		// the NaN straight through unless the value is rejected first.
+		const QDomElement nanElement = noteElementWith( doc, root, "nan", "nan" );
+		Note fromNan;
+		fromNan.restoreState( nanElement );
+		QVERIFY2( std::isfinite( fromNan.probability() ),
+			"prob=\"nan\" was loaded as a non-finite probability" );
+		QCOMPARE( fromNan.probability(), 1.f );
+		QVERIFY( std::isfinite( fromNan.velocityJitter() ) );
+		QCOMPARE( fromNan.velocityJitter(), 0.f );
+
+		// Unparsable text: toFloat() reports failure and yields 0, which used
+		// to be stored as the note's real probability - a silent note.
+		const QDomElement badElement = noteElementWith( doc, root, "bad", "worse" );
+		Note fromBad;
+		fromBad.restoreState( badElement );
+		QCOMPARE( fromBad.probability(), 1.f );
+		QCOMPARE( fromBad.velocityJitter(), 0.f );
+
+		// Out-of-range but FINITE text still clamps - the existing rule is
+		// untouched by this one.
+		const QDomElement hugeElement = noteElementWith( doc, root, "7", "9" );
+		Note fromHuge;
+		fromHuge.restoreState( hugeElement );
+		QCOMPARE( fromHuge.probability(), 1.f );
+		QCOMPARE( fromHuge.velocityJitter(), 1.f );
+
+		// The setters take the same route (control surface / a direct caller),
+		// so they reject a non-finite argument the same way.
+		Note direct;
+		direct.setProbability( std::numeric_limits<float>::quiet_NaN() );
+		QCOMPARE( direct.probability(), 1.f );
+		direct.setVelocityJitter( std::numeric_limits<float>::quiet_NaN() );
+		QCOMPARE( direct.velocityJitter(), 0.f );
+		direct.setProbability( std::numeric_limits<float>::infinity() );
+		QCOMPARE( direct.probability(), 1.f );
+		direct.setVelocityJitter( -std::numeric_limits<float>::infinity() );
+		QCOMPARE( direct.velocityJitter(), 0.f );
+
+		// ...and a finite value on the same object still lands, so the guard
+		// is not swallowing everything.
+		direct.setProbability( 0.25f );
+		QCOMPARE( direct.probability(), 0.25f );
+		direct.setVelocityJitter( 0.75f );
+		QCOMPARE( direct.velocityJitter(), 0.75f );
 	}
 };
 
