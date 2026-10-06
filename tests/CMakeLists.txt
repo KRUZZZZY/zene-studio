@@ -616,6 +616,8 @@ set(LMMS_TESTS
 	src/core/SessionPerformTest.cpp
 	# 0.5.0 L03 (W3): comp edges and groups, metronome options, punch here, remaining record time.
 	src/core/RecordToolsTest.cpp
+	# The record tool commands on an instance with NO audio engine: typed refusals, no null deref.
+	src/core/RecordToolsNoEngineTest.cpp
 	# 0.5.0 L04 (W3): the clip list, sections, remove silence, tab to transient, note rotation.
 	src/core/ArrangeToolsTest.cpp
 	# 0.5.0 L05/L06 (W3): crop, unique copies, fade curves, asymmetric crossfades, automation switches, trim, moving a point.

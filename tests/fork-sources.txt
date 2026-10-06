@@ -2005,6 +2005,7 @@ tests/src/core/RackZoneRoutingTest.cpp
 tests/src/core/RackZonesTest.cpp
 tests/src/core/RangeEditsTest.cpp
 tests/src/core/RealtimeSnapshotTest.cpp
+tests/src/core/RecordToolsNoEngineTest.cpp
 tests/src/core/RecordToolsTest.cpp
 tests/src/core/RecordingPassTest.cpp
 
