@@ -150,8 +150,10 @@ QString validateRunArgs(const QJsonObject& args, QString* outDir)
 			"mastering writes into a directory the caller names");
 	}
 	// The platform's own rule, not a leading '/': on Windows a drive-letter or
-	// UNC path is absolute and must be accepted (cluster 5653, BUG 11).
-	if (!QFileInfo(*outDir).isAbsolute())
+	// UNC path is absolute and must be accepted (cluster 5653, BUG 11). Qt's
+	// resource paths (':/...', ':x') are absolute to QFileInfo on EVERY platform
+	// but are not filesystem output paths, so they stay refused.
+	if (outDir->startsWith(QLatin1Char(':')) || !QFileInfo(*outDir).isAbsolute())
 	{
 		return QStringLiteral("'out_dir' must be an absolute path");
 	}
