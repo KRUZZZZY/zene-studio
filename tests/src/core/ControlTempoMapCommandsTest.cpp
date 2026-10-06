@@ -421,6 +421,41 @@ private slots:
 		QCOMPARE(mapActive(), false);
 	}
 
+	/*! An add's advertised inverse must restore the map the add changed. When the
+	 *  add REPLACED the half an existing event carried, the inverse
+	 *  `tempo_map_remove` DELETES that event instead of putting its old contents
+	 *  back - so the record must name the checkpoint as the way back rather than
+	 *  advertise a command that cannot restore the prior state (Luna cluster
+	 *  4905).
+	 */
+	void addInverseIsAdvertisedOnlyWhereItRestoresThePriorState()
+	{
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 120}}).ok);
+		// A plain ADD to a tick carrying nothing: remove at that tick really does
+		// restore the prior map, so the inverse stays advertised and works.
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 768}, {QStringLiteral("bpm"), 90}}).ok);
+		QCOMPARE(eventCount(), 2);
+		QVERIFY2(reissueAdvertisedInverse().ok,
+			"the inverse of a plain add must be advertised and re-issuable");
+		QCOMPARE(eventCount(), 1);
+
+		// A REPLACEMENT at an occupied tick: the contents it overwrote are not
+		// recoverable by remove, so the record must not advertise that command.
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 150}}).ok);
+		const ControlRegistry::Transaction* tx = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(tx != nullptr);
+		QVERIFY2(tx->inverse.value(QStringLiteral("op")).toString().isEmpty(),
+			"a replacing add advertised an inverse that DELETES the event it replaced");
+		QVERIFY2(tx->mechanism.contains(QStringLiteral("checkpoint")),
+			qPrintable(tx->mechanism));
+		// The honest way back still works: control.undo restores the replaced half.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(Engine::getSong()->tempoAtTick(0), 120);
+	}
+
 	/*! THE A16 PROOF. Each case applies an edit, asks control.undo to take it
 	 *  back, and reads the map through transport.tempo_map_get afterwards - the
 	 *  same behaviour an agent gets over the socket.
