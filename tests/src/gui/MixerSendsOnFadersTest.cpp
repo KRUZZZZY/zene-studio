@@ -48,6 +48,9 @@
 #include "MixerOverlays.h"
 #include "MixerSendsBanner.h"
 #include "MixerView.h"
+#include "Song.h"
+#include "Track.h"
+#include "TrackFolder.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -188,6 +191,41 @@ private slots:
 		QVERIFY(view->toolTip().contains(QStringLiteral("Plate Verb")));
 		QVERIFY(view->toolTip().contains(QStringLiteral("Return")));
 		QVERIFY(view->nameEdit()->text().contains(QStringLiteral("Plate Verb")));
+	}
+
+	// A folder inside a folder: collapsedChannels() has to reach the nested folder's own children,
+	// or collapsing it while its parent stays expanded leaves its strips on screen.
+	void collapsingANestedFolderHidesItsChannels()
+	{
+		Song* song = Engine::getSong();
+		auto* outer = dynamic_cast<TrackFolder*>(Track::create(Track::Type::Folder, song));
+		QVERIFY(outer != nullptr);
+		auto* inner = dynamic_cast<TrackFolder*>(Track::create(Track::Type::Folder, song));
+		QVERIFY(inner != nullptr);
+		inner->setParentFolder(outer);
+		Track* leaf = Track::create(Track::Type::Sample, song);
+		leaf->setParentFolder(inner);
+		QCoreApplication::processEvents();
+
+		IntModel* leafChannel = leaf->mixerChannelModel();
+		QVERIFY(leafChannel != nullptr);
+		// A new track starts on the master (0); give it its own strip so the collapse has one to hide.
+		leafChannel->setValue(Engine::mixer()->createChannel());
+		const int index = leafChannel->value();
+		QVERIFY(index > 0);
+		QVERIFY(!mixeroverlays::foldedChannels().contains(index));
+
+		outer->setCollapsed(false);
+		inner->setCollapsed(true);
+		QVERIFY2(mixeroverlays::foldedChannels().contains(index),
+			"a collapsed nested folder does not hide its children's strips");
+		QVERIFY(!outer->isCollapsed());
+
+		outer->setCollapsed(true);
+		QVERIFY(mixeroverlays::foldedChannels().contains(index));
+
+		sync();
+		QVERIFY(!getGUI()->mixerView()->channelView(index)->isVisibleTo(getGUI()->mixerView()));
 	}
 
 	void theBannersButtonPutsTheFadersBack()
