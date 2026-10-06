@@ -427,6 +427,30 @@ private slots:
 		QVERIFY(snare.endsWith(QStringLiteral("snare_48k.wav")));
 	}
 
+//! A probe budget spent on a file libsndfile cannot read is a probe wasted:
+	//! presets, projects and MIDI carry no audio metadata, so they must not
+	//! consume the limit the audio files need.
+	void probesAreSpentOnAudioCandidatesOnly()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString wave = writeFixture(dir.path(), QStringLiteral("kick_48k.wav"), WaveSpec());
+		writeText(QDir(dir.path()).filePath(QStringLiteral("notes.txt")), QStringLiteral("not audio"));
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.text = QStringLiteral("drum");
+		query.probe = true;
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.matched, 1);
+		QCOMPARE(result.items.first().path, QFileInfo(wave).absoluteFilePath());
+		QVERIFY(result.items.first().hasMetadata);
+		// The directory holds an audio file AND notes.txt; only the audio file is
+		// opened for metadata, so a preset- and project-heavy library cannot
+		// spend the probe limit before the audio candidates are reached.
+		QCOMPARE(result.probed, 1);
+	}
+
 private:
 	QTemporaryDir m_dir;
 	QString m_wave;

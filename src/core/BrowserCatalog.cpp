@@ -194,6 +194,10 @@ void considerPath(const QString& path, BrowserKind kind, QueryContext* context)
 		return;
 	}
 	if (!context->query->probe || context->probed >= BrowserMaxProbes) { return; }
+	// Only audio carries the metadata a probe reads, and the probe budget is a
+	// small fraction of the scan budget: a library of presets and projects must
+	// not spend the probes the audio candidates need.
+	if (kind != BrowserKind::Audio) { return; }
 
 	item.metadata = probeAudioMetadata(item.path);
 	item.hasMetadata = true;
