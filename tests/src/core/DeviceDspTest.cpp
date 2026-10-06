@@ -415,6 +415,47 @@ private slots:
 		QVERIFY(run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("remove"), true}}).ok);
 		QCOMPARE(consolesOn(0), 0);
 	}
+
+	//! Luna 4760: removing consoles from a project that has none changed nothing, so the reply says
+	//! zero and the project must not become dirty.
+	void removingNoConsoleLeavesTheProjectClean()
+	{
+		const QString console = loadByName(ch(1), QStringLiteral("console"));
+		if (console.isEmpty()) { QSKIP("this build has no console module"); }
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
+		for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { chainOf(i).clear(); }
+		QVERIFY(!Engine::getSong()->isModified());
+
+		const ControlResult removed = run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("remove"), true}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("removed")).toInt(), 0);
+		QVERIFY2(!Engine::getSong()->isModified(),
+			"removing no console dirtied a project whose content did not change");
+	}
+
+	//! Luna 3873: one mixer.console_apply is ONE undo step however many channels it touched -
+	//! the removal of every channel's console has to be a single step, not one per channel.
+	void oneConsoleApplyIsOneUndoStep()
+	{
+		const QString console = loadByName(ch(1), QStringLiteral("console"));
+		if (console.isEmpty()) { QSKIP("this build has no console module"); }
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
+		const int channels = Engine::mixer()->numChannels();
+		for (int i = 0; i < channels; ++i) { chainOf(i).clear(); }
+		QVERIFY(run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("drive"), 30.0}}).ok);
+		QCOMPARE(consolesOn(2), 1);
+
+		QVERIFY(run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("remove"), true}}).ok);
+		QCOMPARE(consolesOn(0), 0);
+		QVERIFY2(run(QStringLiteral("control.undo")).ok, "one control.undo after the removal failed");
+		for (int i = 0; i < channels; ++i)
+		{
+			QVERIFY2(consolesOn(i) == 1,
+				qPrintable(QStringLiteral("one undo put the console back on only some of the %1 channels").arg(channels)));
+		}
+	}
 };
 
 QTEST_MAIN(DeviceDspTest)

@@ -247,7 +247,7 @@ ControlResult removeConsoles()
 		removeDevicesRecorded(channelChain(channelIdOf(channel)), consoles);
 		removed += static_cast<int>(consoles.size());
 	}
-	Engine::getSong()->setModified();
+	if (removed > 0) { Engine::getSong()->setModified(); }
 	return ControlResult::success({{QStringLiteral("removed"), removed}});
 }
 
