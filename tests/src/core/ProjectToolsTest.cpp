@@ -42,7 +42,9 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "MidiClip.h"
 #include "Song.h"
+#include "TrackFolder.h"
 #include "TakeLaneTestSupport.h"
 
 using namespace lmms;
@@ -178,6 +180,42 @@ private slots:
 		QCOMPARE(Engine::getSong()->tracks().size(), before);
 		QCOMPARE(run(QStringLiteral("project.copy_tracks"), {{QStringLiteral("tracks"), QJsonArray{QStringLiteral("trk-999999")}}}).errorKind,
 			ControlErrorKind::NotFound);
+	}
+
+	//! Luna cluster 4770: detach() dropped the stable ids of tracks, clips and effects but not of
+	//! notes, so a pasted or imported track's notes kept the ids they had in the source project
+	//! and could address the wrong note here through any id-based operation.
+	void pastedNotesAreGivenFreshIds()
+	{
+		Track* lead = Track::create(Track::Type::Instrument, Engine::getSong());
+		lead->setName(QStringLiteral("Lead"));
+		const QString track = control::trackIdOf(lead);
+		const QString clipId = run(QStringLiteral("clip.add"), {{QStringLiteral("track"), track},
+			{QStringLiteral("position"), 0}, {QStringLiteral("length"), 192}}).result.value(QStringLiteral("clip")).toString();
+		QVERIFY(!clipId.isEmpty());
+		QVERIFY(run(QStringLiteral("note.add"), {{QStringLiteral("clip"), clipId},
+			{QStringLiteral("key"), 60}, {QStringLiteral("position"), 0}, {QStringLiteral("length"), 48},
+			{QStringLiteral("velocity"), 100}}).ok);
+		auto* clip = dynamic_cast<MidiClip*>(lead->getClip(0));
+		QVERIFY(clip != nullptr);
+		QCOMPARE(clip->notes().size(), std::size_t(1));
+		const int sourceNoteId = clip->notes().front()->id();
+		QVERIFY(run(QStringLiteral("project.copy_tracks"), {{QStringLiteral("tracks"), QJsonArray{track}}}).ok);
+		const ControlResult pasted = run(QStringLiteral("project.paste_tracks"));
+		QVERIFY2(pasted.ok, qPrintable(pasted.errorMessage));
+
+		Track* copy = nullptr;
+		for (Track* candidate : Engine::getSong()->tracks())
+		{
+			if (candidate->name() == QLatin1String("Lead") && candidate->id() != lead->id()) { copy = candidate; }
+		}
+		QVERIFY(copy != nullptr);
+		auto* copied = dynamic_cast<MidiClip*>(copy->getClip(0));
+		QVERIFY(copied != nullptr);
+		QCOMPARE(copied->notes().size(), std::size_t(1));
+		// The pasted note is a NEW note in THIS project: an id carried over from the source
+		// would let an id-based note operation address a note of another project's track.
+		QVERIFY2(copied->notes().front()->id() != sourceNoteId, "the pasted note kept the source project's note id");
 	}
 
 	void subprojectsRefuseThemselves()

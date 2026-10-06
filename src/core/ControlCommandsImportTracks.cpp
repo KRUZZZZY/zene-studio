@@ -82,7 +82,10 @@ QList<QDomElement> songTracks(const QDomElement& content)
 void detach(QDomElement element, bool keepFolders)
 {
 	static const QStringList withIds{QStringLiteral("track"), QStringLiteral("effect"), QStringLiteral("midiclip"),
-		QStringLiteral("sampleclip"), QStringLiteral("automationclip"), QStringLiteral("patternclip")};
+		QStringLiteral("sampleclip"), QStringLiteral("automationclip"), QStringLiteral("patternclip"),
+		// A note id is as project-scoped as a track's: keeping one would let an id-based note
+		// operation here address a note of the source project's track.
+		QStringLiteral("note")};
 	if (withIds.contains(element.tagName())) { element.removeAttribute(QStringLiteral("id")); }
 	if (!keepFolders && element.tagName() == QLatin1String("track")) { element.removeAttribute(QStringLiteral("folder")); }
 	if (element.hasAttribute(QStringLiteral("mixch"))) { element.setAttribute(QStringLiteral("mixch"), 0); }
