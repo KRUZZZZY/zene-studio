@@ -80,6 +80,20 @@ private slots:
 			.result.value(QStringLiteral("enabled")).toBool());
 		QCOMPARE(sync->text(), QStringLiteral("Sync"));
 	}
+
+	//! A refused toggle lends its message to the tooltip; the next toggle that succeeds has to
+	//! give the action's own tooltip back, or the failure follows the user around for good.
+	void aRefusedToggleIsForgottenAfterASuccess()
+	{
+		QObject owner;
+		QAction* sync = makeSessionSyncAction(&owner);
+		const QString normal = sync->toolTip();
+		QVERIFY(!normal.isEmpty());
+		sync->setToolTip(QStringLiteral("link.set_enabled refused: no multicast on this host"));
+		sync->trigger();  // either way: this may refuse again and re-set the message
+		sync->trigger();  // ...and this one hands the tooltip back
+		QCOMPARE(sync->toolTip(), normal);
+	}
 };
 
 QTEST_MAIN(SessionSyncActionTest)

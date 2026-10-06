@@ -63,12 +63,14 @@ QAction* makeSessionSyncAction(QObject* parent)
 	auto* action = new QAction(QAction::tr("Sync"), parent);
 	action->setCheckable(true);
 	action->setProperty("controlCommand", QStringLiteral("link.set_enabled"));
-	action->setToolTip(QAction::tr("Session sync: share a tempo and a beat phase with other Zene Studio "
-		"instances on this machine or network (this project's own sync, not Ableton Link)"));
-	QObject::connect(action, &QAction::toggled, action, [action](bool on) {
+	const QString toolTip = QAction::tr("Session sync: share a tempo and a beat phase with other Zene Studio "
+		"instances on this machine or network (this project's own sync, not Ableton Link)");
+	action->setToolTip(toolTip);
+	QObject::connect(action, &QAction::toggled, action, [action, toolTip](bool on) {
 		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("link.set_enabled"),
 			{{QStringLiteral("enabled"), on}});
-		if (!result.ok) { action->setToolTip(result.errorMessage); }
+		// A refusal borrows the tooltip to say why; a later success gives the action's own back.
+		action->setToolTip(result.ok ? toolTip : result.errorMessage);
 		show(action, linkState());
 	});
 	auto* poll = new QTimer(action);
