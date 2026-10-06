@@ -58,6 +58,7 @@ namespace lmms::gui
 
 class CompSwipeStrip;
 class NoteEditor;
+class ShellButton;
 class XyPadDialog;
 
 //! One column of a list.
@@ -177,6 +178,12 @@ LMMS_EXPORT ItemListSource* controllerPoints(NoteEditor* editor, QObject* parent
 LMMS_EXPORT ItemListSource* xyAxes(XyPadDialog* pad, QObject* parent);
 LMMS_EXPORT ItemListSource* compSegments(CompSwipeStrip* strip, QObject* parent);
 LMMS_EXPORT ItemListSource* clips(QObject* parent);
+
+/*! The List button every canvas with a list carries on its toolbar (ItemListPanel.cpp): the shell's button with the
+ *  list icon, declaring window.item_list (controlCommand) and @a surface (itemListSurface). A press puts the keyboard
+ *  focus on @a canvas - window.item_list lists the canvas holding it, as Ctrl+Shift+L there does - and runs
+ *  window.item_list on @a surface, which opens the list and, pressed again, closes it. A refusal is announced. */
+LMMS_EXPORT ShellButton* listButton(const QString& surface, QWidget* canvas, QWidget* parent);
 } // namespace itemlists
 
 } // namespace lmms::gui

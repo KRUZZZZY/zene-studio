@@ -36,8 +36,10 @@
 #include "CompSwipeStrip.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ItemList.h"
 #include "Engine.h"
 #include "MusicalTime.h"
+#include "ShellChrome.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -98,7 +100,9 @@ TakeLanesPanel::TakeLanesPanel(const QString& trackId, QWidget* parent) :
 	outer->addLayout(m_lanes);
 	m_addLane = makeButton(QStringLiteral("comp.lane_add"), tr("Add lane"));
 	connect(m_addLane, &QToolButton::clicked, this, [this] { run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), m_trackId}}); });
-	outer->addWidget(m_addLane);
+	auto* head = new QHBoxLayout;
+	head->addWidget(m_addLane);
+	outer->addLayout(head);
 
 	// 0.5.0 L03 (ED-165 / ED-168): drag along a lane to comp that range, double-click to cycle the take.
 	m_strip = new CompSwipeStrip(m_trackId, this);
@@ -108,6 +112,11 @@ TakeLanesPanel::TakeLanesPanel(const QString& trackId, QWidget* parent) :
 		refresh();
 	});
 	outer->addWidget(m_strip);
+	// Theme 10: beside Add lane, the comp's segments as an editable list (window.item_list, as Ctrl+Shift+L on the strip).
+	ShellButton* list = itemlists::listButton(QStringLiteral("comp"), m_strip, this);
+	list->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+	head->addWidget(list);
+	head->addStretch();
 
 	m_composite = new QLabel(this);
 	m_composite->setAccessibleName(tr("Composite"));

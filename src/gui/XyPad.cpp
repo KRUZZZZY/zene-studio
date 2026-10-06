@@ -28,6 +28,7 @@
 
 #include <QComboBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QKeyEvent>
@@ -42,7 +43,9 @@
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
+#include "ItemList.h"
 #include "Mixer.h"
+#include "ShellChrome.h"
 
 namespace lmms::gui
 {
@@ -218,8 +221,14 @@ XyPadDialog::XyPadDialog(const QString& channel, QWidget* parent) :
 	auto* form = new QFormLayout;
 	form->addRow(QObject::tr("X:"), m_x);
 	form->addRow(QObject::tr("Y:"), m_y);
+	// Theme 10: beside the axes, the pad's two axes as an editable list (window.item_list, as Ctrl+Shift+L on the pad).
+	ShellButton* list = itemlists::listButton(QStringLiteral("xy"), m_area, this);
+	list->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+	auto* top = new QHBoxLayout;
+	top->addLayout(form, 1);
+	top->addWidget(list, 0, Qt::AlignTop);
 	auto* layout = new QVBoxLayout(this);
-	layout->addLayout(form);
+	layout->addLayout(top);
 	layout->addWidget(m_area, 1);
 	layout->addWidget(m_status);
 	fillMacros();

@@ -42,11 +42,13 @@
 #include "ControllerLaneView.h"
 #include "DesignTokens.h"
 #include "InstrumentTrack.h"
+#include "ItemList.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "NoteCanvas.h"
 #include "NoteEditorParts.h"
 #include "Piano.h"
+#include "ShellChrome.h"
 #include "ShellSelection.h"
 #include "Engine.h"
 #include "Song.h"
@@ -146,6 +148,11 @@ void NoteEditor::buildBody()
 	grid->addWidget(m_canvas, 1, 1);
 	grid->addWidget(m_vScroll, 1, 2);
 	grid->addWidget(m_laneBox, 2, 0, 1, 1, Qt::AlignTop);
+	// Theme 10: under the lane chooser while it shows a controller curve, that lane's points as an editable list.
+	ShellButton* laneList = itemlists::listButton(QStringLiteral("controller"), this, body);
+	laneList->hide();
+	connect(this, &NoteEditor::stateChanged, laneList, [this, laneList]() { laneList->setVisible(!m_state.controllerLane.isEmpty()); });
+	grid->addWidget(laneList, 2, 0, 1, 1, Qt::AlignBottom | Qt::AlignLeft);
 	grid->addWidget(m_lanes, 2, 1);
 	grid->addWidget(m_ccLane, 2, 1);
 	grid->addWidget(m_hScroll, 3, 1);

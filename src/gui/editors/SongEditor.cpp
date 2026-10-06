@@ -30,6 +30,8 @@
 #include "ControlRegistry.h"
 #include "SessionSyncAction.h"
 #include "VisibilitySetMenu.h"
+#include "ItemList.h"
+#include "ShellChrome.h"
 
 #include <cmath>
 
@@ -909,6 +911,8 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	connect(viewsMenu, &QMenu::aboutToShow, viewsMenu, [viewsMenu] { populateVisibilitySetMenu(viewsMenu); });
 	viewsButton->setMenu(viewsMenu);
 	m_toolBar->addWidget(viewsButton);
+	// 0.5.0 theme 10: the arrangement's clips as an editable list (window.item_list, as Ctrl+Shift+L on the arranger).
+	m_toolBar->addWidget(itemlists::listButton(QStringLiteral("clips"), m_editor, m_toolBar));
 
 
 	// Track actions
