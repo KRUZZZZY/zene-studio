@@ -203,6 +203,22 @@ private slots:
 		QCOMPARE(macro().value(QStringLiteral("target_count")).toInt(), 0);
 	}
 
+	//! Two targets on different chains, same effect and parameter: the Unbind items must tell them apart.
+	void unbindItemsNameTheirChain()
+	{
+		const auto target = [](int chain) {
+			return QJsonObject{{QStringLiteral("chain"), chain}, {QStringLiteral("effect"), 0},
+				{QStringLiteral("parameter"), QStringLiteral("Volume")}};
+		};
+		const QString onFirst = unbindTargetText(target(0));
+		const QString onSecond = unbindTargetText(target(1));
+		QVERIFY2(onFirst != onSecond,
+			"two chains' targets share one label, so the user cannot tell which one is removed");
+		QVERIFY(onFirst.contains(QStringLiteral("chain 0")));
+		QVERIFY(onSecond.contains(QStringLiteral("chain 1")));
+		QVERIFY(onFirst.contains(QStringLiteral("Volume")));
+	}
+
 	void noChannelNoMenu()
 	{
 		QMenu menu;
