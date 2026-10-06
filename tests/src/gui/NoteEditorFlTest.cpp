@@ -254,6 +254,27 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{3});
 	}
 
+	void aFastPaintStrokePaintsTheCellsItSkipsOver()
+	{
+		QTest::keyClick(m_editor, Qt::Key_B);  // the Paint tool
+		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
+		const QPoint from = point(400, 66);
+		const QPoint to = point(400 + 4 * 12, 66);  // four grid cells along, in ONE delivered event
+		QWidget* canvas = m_editor->canvas();
+		QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(canvas, to);
+		QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, to);
+		// Qt coalesces a fast drag into sparse events, so the stroke must walk its path like the erase
+		// and mute strokes do: the cells between the press and the release are painted too.
+		QVERIFY2(noteAt(m_clip, 396, 66) != nullptr, "the cell the drag started on");
+		QVERIFY2(noteAt(m_clip, 408, 66) != nullptr, "the first cell it crossed");
+		QVERIFY2(noteAt(m_clip, 420, 66) != nullptr, "the second cell it crossed");
+		QVERIFY2(noteAt(m_clip, 432, 66) != nullptr, "the third cell it crossed");
+		QVERIFY2(noteAt(m_clip, 444, 66) != nullptr, "and the one it was released on");
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+	}
+
 	void aNewNoteTakesTheLastTouchedNotesLength()
 	{
 		QTest::mouseClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(200, 62));  // touch C (96 long)
