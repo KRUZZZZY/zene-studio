@@ -136,6 +136,33 @@ private slots:
 		QVERIFY2(timeMoved, "Humanize timing moved no note");
 	}
 
+// The prompt showed the command's own argument name - 'velocity_jitter', 'position_jitter' - as
+//	the label the user reads. The label is what the item is called instead.
+	void thePromptNamesTheToolNotItsArgument()
+	{
+		QObject owner;
+		const QList<QAction*> actions = makeNoteTransformActions([this] { return m_clip; }, &owner);
+		const auto labelFor = [&actions](const QString& text) {
+			QString label;
+			setNoteTransformPrompt([&label](const QString&, const QString& shown, double, double, double, int) {
+				label = shown;
+				return 0.5;
+			});
+			QAction* action = item(actions, text);
+			if (action != nullptr) { action->trigger(); }
+			return label;
+		};
+		for (const QString& text : {QString(QObject::tr("Randomize velocities...")),
+			 QString(QObject::tr("Humanize timing...")), QString(QObject::tr("Scale velocities..."))})
+		{
+			const QString label = labelFor(text);
+			QVERIFY2(!label.isEmpty(), qPrintable(text));
+			QVERIFY2(!label.contains(QLatin1Char('_')), qPrintable(QStringLiteral("%1 prompted '%2'")
+				.arg(text, label)));
+		}
+		setNoteTransformPrompt({});
+	}
+
 private:
 	MidiClip* m_clip = nullptr;
 };

@@ -74,7 +74,9 @@ QAction* transform(const QString& text, const QString& command, const QString& a
 	QObject::connect(action, &QAction::triggered, action, [=] {
 		const MidiClip* target = clip();
 		if (target == nullptr || target->notes().empty()) { return; }
-		const std::optional<double> value = ask(text, argument, initial, min, max, decimals);
+		// The prompt is labelled with the item's own text: the argument is the command's parameter
+		// name ('velocity_jitter'), which is nothing the user reading the dialog can act on.
+		const std::optional<double> value = ask(text, text, initial, min, max, decimals);
 		if (!value) { return; }
 		QJsonObject args = extra;
 		args.insert(QStringLiteral("clip"), control::clipIdOf(target));
