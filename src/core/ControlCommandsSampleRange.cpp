@@ -98,6 +98,21 @@ bool deletesWindow(const SampleWindow& window, const QString& op, std::size_t fr
 	return op == QLatin1String("delete") && window.sourceIn >= from && window.sourceOut <= to;
 }
 
+/*! Whether @a op over [@a from, @a to) would move or drop a marker of @a markers: a crop makes the new frame 0
+ *  the old @a from, and a delete closes the range up so every later frame moves earlier - either leaves a marker
+ *  pinning a different frame of the audio, or one the source no longer holds. The ops that write frames in place
+ *  (gain, silence, reverse, the fades) keep every source frame where it was, so they never strand one. */
+bool movesWarpMarkers(const WarpMarkers& markers, const QString& op, std::size_t from, std::size_t to)
+{
+	if (markers.empty()) { return false; }
+	if (op == QLatin1String("crop")) { return true; }  // frame 0 is a different frame of the audio
+	if (op != QLatin1String("delete")) { return false; }
+	// The set is sorted by source frame, so only the last marker decides whether any frame moves.
+	return static_cast<std::size_t>(markers[markers.size() - 1].sourceFrame) >= from;
+}
+
+
+
 ControlResult editRange(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -116,6 +131,13 @@ ControlResult editRange(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("gain_db %1 is outside -60..24 dB").arg(db));
 	}
 	const SampleWindow window = clip->sampleWindow();
+	// A crop re-bases frame 0 onto 'from' and a delete closes the range up, so a marker would then pin a
+	// different frame of the audio, or one the source no longer holds (the same refusal sample.crop makes).
+	if (movesWarpMarkers(clip->warpMarkers(), op, from, to))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip's warp markers pin frames that %1 would "
+			"move or drop (warp.remove them first)").arg(op));
+	}
 	if (deletesWindow(window, op, from, to))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("that deletes everything the clip plays (clip.delete removes the clip)"));

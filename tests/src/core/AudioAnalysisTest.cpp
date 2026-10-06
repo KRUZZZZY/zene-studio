@@ -29,7 +29,9 @@
 
 #include <QJsonArray>
 
+#include <array>
 #include <cmath>
+#include <span>
 #include <vector>
 
 #include "AudioEngine.h"
@@ -147,6 +149,41 @@ private slots:
 		QCOMPARE(static_cast<int>(dynamic_cast<SampleClip*>(track->getClips().front())->sample().sampleSize()), size);
 		QCOMPARE(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("from"), 10},
 			{QStringLiteral("to"), 5}, {QStringLiteral("op"), QStringLiteral("gain")}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! Two warp markers inside a one-second tone: source frames at its quarter and half.
+	void setMarkers(SampleClip* clip)
+	{
+		const auto size = static_cast<int>(clip->sample().sampleSize());
+		const std::array<WarpMarker, 2> markers{WarpMarker{static_cast<f_cnt_t>(size / 4), 24},
+			WarpMarker{static_cast<f_cnt_t>(size / 2), 96}};
+		QVERIFY2(clip->setWarpMarkers(std::span<const WarpMarker>(markers.data(), markers.size())),
+			"the two-marker set was rejected");
+	}
+
+	void aRangeEditRespectsWarpMarkers()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		SampleClip* clip = toneClip(track, 440.0, 3840);
+		const auto size = static_cast<int>(clip->sample().sampleSize());
+		setMarkers(clip);
+		// A crop from inside the source makes the new frame 0 the OLD frame `from`, so every marker
+		// would be on the wrong audio - the same refusal sample.crop makes for its own window.
+		const ControlResult cropped = run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), size / 8}, {QStringLiteral("to"), size / 2}, {QStringLiteral("op"), QStringLiteral("crop")}});
+		QCOMPARE(cropped.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(static_cast<int>(clip->sample().sampleSize()), size);
+		QCOMPARE(clip->warpMarkers().size(), 2);
+		// A delete over the first marker drops it, and one after it shifts the frame it pins.
+		const ControlResult deleted = run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), 0}, {QStringLiteral("to"), size / 2}, {QStringLiteral("op"), QStringLiteral("delete")}});
+		QCOMPARE(deleted.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(static_cast<int>(clip->sample().sampleSize()), size);
+		QCOMPARE(clip->warpMarkers().size(), 2);
+		// A frame-for-frame op moves no source frame, so the same clip still takes them.
+		QVERIFY(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), size / 8}, {QStringLiteral("to"), size / 4}, {QStringLiteral("op"), QStringLiteral("silence")}}).ok);
+		QCOMPARE(clip->warpMarkers().size(), 2);
 	}
 
 	void aFolderMovesAsOne()
