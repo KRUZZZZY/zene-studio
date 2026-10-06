@@ -47,6 +47,7 @@
 
 
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -384,6 +385,52 @@ private slots:
 	//! 440 Hz tone rendered by a 2x leader is a 880 Hz tone. Zero crossings are
 	//! counted over the handle's own length, which the mapping already makes the
 	//! right (halved) length, so this measures the RATE and not the duration.
+	//! A tempo that is not a tempo must not become the clip's rate.
+	//!
+	//! `setSourceTempo` used to reject only `bpm < 0`, so `+Inf` and `NaN` were
+	//! accepted. `clipFramesPerTick()` scales by `projectTempo / sourceTempo`,
+	//! so an infinite tempo makes it exactly ZERO - and `windowTicksFor()` then
+	//! evaluates `window.length() / 0.0` and converts the resulting infinity to
+	//! `int`, which is undefined behaviour. NaN poisons the same expression the
+	//! other way: every comparison against it is false, so the leader silently
+	//! falls back to the project rate with no marker and no warning.
+	//!
+	//! Measured on the two places the value is observable: the stored tempo
+	//! itself and the clip's frames-per-tick, which must stay finite and
+	//! positive for any input.
+	void nonFiniteSourceTempoIsRefused()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeClip(track, m_rate);
+		const auto projectTempo = static_cast<float>(Engine::getSong()->getTempo());
+		const auto base = Engine::framesPerTick(m_rate);
+		clip->setWarpTempoMode(WarpTempoMode::SourceTempo);
+		clip->setSourceTempo(projectTempo);
+		QCOMPARE(clip->sourceTempo(), projectTempo);
+
+		// +Inf: accepted before, and it drove clipFramesPerTick() to zero
+		clip->setSourceTempo(std::numeric_limits<float>::infinity());
+		QCOMPARE(clip->sourceTempo(), projectTempo);
+		QVERIFY(std::isfinite(clip->clipFramesPerTick()));
+		QVERIFY(clip->clipFramesPerTick() > 0.0f);
+		QCOMPARE(clip->clipFramesPerTick(), base);
+
+		// NaN: accepted before, and it made the clip follow the project
+		clip->setSourceTempo(std::numeric_limits<float>::quiet_NaN());
+		QCOMPARE(clip->sourceTempo(), projectTempo);
+		QVERIFY(std::isfinite(clip->clipFramesPerTick()));
+		QVERIFY(clip->clipFramesPerTick() > 0.0f);
+		QCOMPARE(clip->clipFramesPerTick(), base);
+
+		// the length arithmetic stays well defined throughout
+		QVERIFY(clip->sampleLength().getTicks() > 0);
+
+		// ... and a real tempo still takes effect
+		clip->setSourceTempo(projectTempo / 2.0f);
+		QCOMPARE(clip->sourceTempo(), projectTempo / 2.0f);
+		QCOMPARE(clip->clipFramesPerTick(), base * 2.0f);
+	}
+
 	void unmarkedLeaderRendersAtItsLeaderRate()
 	{
 		SampleTrack track(Engine::getSong());

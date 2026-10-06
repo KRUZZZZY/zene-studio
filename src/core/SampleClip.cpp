@@ -384,7 +384,11 @@ void SampleClip::setWarpTempoMode(WarpTempoMode mode)
 
 void SampleClip::setSourceTempo(float bpm)
 {
-	if (bpm < 0.0f || m_sourceTempo == bpm) { return; }
+	// Not a tempo at all: +Inf and NaN are refused with the negatives, because
+	// clipFramesPerTick() divides by this value - an infinite tempo scales the
+	// clip's rate to exactly zero and windowTicksFor() then converts an
+	// infinity to int, which is undefined behaviour.
+	if (!std::isfinite(bpm) || bpm < 0.0f || m_sourceTempo == bpm) { return; }
 	m_sourceTempo = bpm;
 	Engine::getSong()->setModified();
 	emit sampleChanged();
