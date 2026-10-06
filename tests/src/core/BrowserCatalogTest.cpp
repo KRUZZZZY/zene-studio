@@ -274,6 +274,27 @@ private slots:
 		QVERIFY(!why.isEmpty());
 	}
 
+	//! The error out-parameter is optional: a caller that does not want a reason
+	//! passes null, and every refusal path must return false rather than write
+	//! through it.
+	void peaksSurviveANullErrorOutput()
+	{
+		BrowserPeakCache& cache = BrowserPeakCache::instance();
+		cache.clear();
+		BrowserPeakCache::Answer answer;
+		// A file libsndfile cannot read, a file that does not exist, and a path
+		// that is a directory: three different refusals, none of them carrying a
+		// reason to write.
+		QCOMPARE(cache.peaksFor(m_dir.path() + "/notes.txt", 30, &answer, nullptr), false);
+		QCOMPARE(cache.peaksFor(m_dir.path() + "/absent.wav", 30, &answer, nullptr), false);
+		QCOMPARE(cache.peaksFor(m_dir.path(), 30, &answer, nullptr), false);
+		// A caller that wants no answer gets false, and it says nothing.
+		QCOMPARE(cache.peaksFor(m_dir.path() + "/absent.wav", 30, nullptr, nullptr), false);
+		// The happy path still works with a null error out-parameter.
+		QVERIFY(cache.peaksFor(m_wave, 32, &answer, nullptr));
+		QCOMPARE(answer.peaks.size(), 32);
+	}
+
 	//! A query matches on the name, on a tag and - with 'probe' - on the embedded
 	//! metadata. The probe counter is asserted, so "it matched on metadata" is
 	//! not a claim the test can make without opening the file.
