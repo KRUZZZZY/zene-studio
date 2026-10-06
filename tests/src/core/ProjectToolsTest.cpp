@@ -218,6 +218,32 @@ private slots:
 		QVERIFY2(copied->notes().front()->id() != sourceNoteId, "the pasted note kept the source project's note id");
 	}
 
+	//! Luna cluster 5647: both unsaved projects have an empty project filename, so the
+	//! "same project" test said yes and the pasted track kept a folder id from the clipboard -
+	//! joining whatever unrelated folder in this project happens to carry that id.
+	void aPastedTrackFromAnUnsavedProjectDoesNotJoinAForeignFolder()
+	{
+		TrackFolder* folder = dynamic_cast<TrackFolder*>(Track::create(Track::Type::Folder, Engine::getSong()));
+		QVERIFY(folder != nullptr);
+		folder->setName(QStringLiteral("Unrelated"));
+		Track* lead = Track::create(Track::Type::Instrument, Engine::getSong());
+		lead->setName(QStringLiteral("Lead"));
+		lead->setParentFolder(folder);
+		QVERIFY(run(QStringLiteral("project.copy_tracks"), {{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(lead)}}}).ok);
+		QVERIFY(run(QStringLiteral("project.paste_tracks")).ok);
+
+		Track* copy = nullptr;
+		for (Track* candidate : Engine::getSong()->tracks())
+		{
+			if (candidate->name() == QLatin1String("Lead") && candidate->id() != lead->id()) { copy = candidate; }
+		}
+		QVERIFY(copy != nullptr);
+		// Two unsaved projects share no identity, so the folder reference must not survive:
+		// the pasted track belongs at the top level, not in an unrelated folder that happens
+		// to hold the same id.
+		QVERIFY2(copy->parentFolder() != folder, "a track copied from another unsaved project joined a folder by id");
+	}
+
 	void subprojectsRefuseThemselves()
 	{
 		const QString main = QDir(m_dir.path()).filePath(QStringLiteral("song.mmp"));
