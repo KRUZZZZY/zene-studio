@@ -494,6 +494,42 @@ private slots:
 		QCOMPARE(oversized.errorKind, ControlErrorKind::Refused);
 		QVERIFY(oversized.errorMessage.contains(QStringLiteral("512 MiB")));
 	}
+
+	//! The generation cap counts a SampleFrame ONCE, not twice: SampleFrame is
+	//! already a stereo frame (include/SampleFrame.h: std::array<sample_t,
+	//! DEFAULT_CHANNELS>), so an ask whose real byte size sits under the 512 MiB
+	//! cap must be accepted even though the old half-cap estimate refused it.
+	//! The ask is the smallest whole-tick length whose frames cross the half-cap
+	//! but stay within the real cap, so the assertion pins the boundary rather
+	//! than a lucky constant.
+	void theCapCountsStereoFramesOnce()
+	{
+		const qint64 cap = 512ll * 1024 * 1024;
+		const qint64 bytesPerFrame = static_cast<qint64>(sizeof(SampleFrame));
+		const double fpt = Engine::framesPerTick();
+		QVERIFY(fpt > 0.0);
+		// Smallest whole-tick ask whose frames cross the half-cap but stay
+		// within the real cap: refused by the double-count, accepted once.
+		const tick_t length = static_cast<tick_t>(
+			std::ceil(static_cast<double>(cap) / (2.0 * static_cast<double>(bytesPerFrame) * fpt))) + 1;
+		const auto frames = static_cast<f_cnt_t>(std::llround(
+			static_cast<double>(length) * fpt));
+		QVERIFY(static_cast<qint64>(frames) * bytesPerFrame <= cap);
+		QVERIFY(static_cast<qint64>(frames) * 2 * bytesPerFrame > cap);
+		const QString track = addTrack(QStringLiteral("sample"));
+		QVERIFY(!track.isEmpty());
+		const ControlResult generated = run(QStringLiteral("sample.generate"),
+			QJsonObject{{QStringLiteral("track"), track},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), length},
+				{QStringLiteral("kind"), QStringLiteral("white")}});
+		QVERIFY2(generated.ok, qPrintable(
+		(QStringLiteral("within the 512 MiB cap but refused: ") + generated.errorMessage)));
+		QCOMPARE(generated.result.value(QStringLiteral("frames")).toDouble(),
+			static_cast<double>(frames));
+		// The success journaled a real clip: one undo removes it (and frees the
+		// buffer) before the remaining slots run.
+		REV_UNDO_OR_FAIL();
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlSampleOperatorTest)

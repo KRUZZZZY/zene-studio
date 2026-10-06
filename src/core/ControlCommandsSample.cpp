@@ -152,7 +152,10 @@ bool sizeFrames(const QJsonObject& args, GenerateSpec* spec, ControlResult* erro
 	}
 	spec->frames = static_cast<f_cnt_t>(std::llround(
 		static_cast<double>(spec->length) * static_cast<double>(Engine::framesPerTick())));
-	const qint64 bytes = static_cast<qint64>(spec->frames) * 2 * static_cast<qint64>(sizeof(SampleFrame));
+	// SampleFrame is already a stereo frame (std::array<sample_t, DEFAULT_CHANNELS>),
+	// so its sizeof covers both channels - multiplying by the channel count again
+	// would halve the usable generation limit.
+	const qint64 bytes = static_cast<qint64>(spec->frames) * static_cast<qint64>(sizeof(SampleFrame));
 	const bool withinCap = bytes <= MaxGeneratedBytes;
 	if (!withinCap)
 	{
