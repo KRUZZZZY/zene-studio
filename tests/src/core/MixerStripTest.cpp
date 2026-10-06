@@ -256,6 +256,20 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(channel(2)->m_name, before);
 	}
+
+	//! MX-027: 'all' names every channel but the master, so a mixer left with only its master
+	//! names none - Unmute All / Clear Solo is then a successful no-op, not an error, and it
+	//! records no undo step.
+	void unmuteAllWithOnlyTheMaster()
+	{
+		Engine::mixer()->clear();  // only the master channel is left
+		QVERIFY(Engine::mixer()->numChannels() == 1);
+		const int depthBefore = run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
+		const ControlResult unmuted = run(QStringLiteral("mixer.set_many"), {{QStringLiteral("all"), true}, {QStringLiteral("muted"), false}});
+		QVERIFY2(unmuted.ok, qPrintable(unmuted.errorMessage));
+		QCOMPARE(unmuted.result.value(QStringLiteral("count")).toInt(), 0);
+		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depthBefore);
+	}
 };
 
 QTEST_MAIN(MixerStripTest)
