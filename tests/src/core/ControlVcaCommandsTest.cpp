@@ -279,6 +279,29 @@ private slots:
 			"ghost_unassign_refused=1 undo_membership=1"));
 	}
 
+	//! Redoing `vca.create` restores the requested group name, not an empty one.
+	void redoingCreateRestoresTheRequestedName()
+	{
+		clearGroups();
+		const QString name = QStringLiteral("Redo preserves this name");
+		const QString group = createGroup(name);
+		QVERIFY2(!group.isEmpty(), "vca.create failed");
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).errorKind, ControlErrorKind::NotFound);
+
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
+		QVERIFY(redone.result.value(QStringLiteral("redone")).toBool());
+		const ControlResult restored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(restored.result.value(QStringLiteral("name")).toString(), name);
+		clearGroups();
+		evidence(QStringLiteral("create_undo=1 redo=1 name_restored=1"));
+	}
+
 	//! `vca.remove` is EXACTLY reversible: the id, name, fader, mute, solo,
 	//! phase lock, member channels and edit tracks all come back, and the
 	//! members publish the group's gain again.
