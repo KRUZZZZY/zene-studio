@@ -24,6 +24,7 @@
  */
 
 #include <algorithm>
+#include <cmath>
 
 #include "ControlScaleShared.h"
 
@@ -78,8 +79,9 @@ static int customScaleDegree(const QJsonValue& degree)
 {
 	if (!degree.isDouble()) { return -1; }
 	const double semitones = degree.toDouble();
+	if (!std::isfinite(semitones) || semitones < 0.0 || semitones > 11.0) { return -1; }
 	const int offset = static_cast<int>(semitones);
-	return (semitones == static_cast<double>(offset) && offset >= 0 && offset <= 11) ? offset : -1;
+	return semitones == static_cast<double>(offset) ? offset : -1;
 }
 
 std::vector<int> scaleDegreesOf(const QString& scale)

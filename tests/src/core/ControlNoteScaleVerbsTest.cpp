@@ -50,6 +50,8 @@
 
 #include <QtTest>
 
+#include <cfenv>
+
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
@@ -506,6 +508,7 @@ private slots:
 		// an unconvertible value used toInt() into 0; a fractional one was truncated
 		edited.insert(QStringLiteral("Odd"), QJsonArray{true, QStringLiteral("nope")});
 		edited.insert(QStringLiteral("Ragged"), QJsonArray{0, 12, 99, 4});
+		edited.insert(QStringLiteral("Huge"), QJsonArray{1.0e300, 2});
 		lmms::control::setCustomScales(edited);
 
 		QVERIFY(lmms::control::scaleDegreesOf(QStringLiteral("Odd")).empty());  // nothing valid: not a "C" scale
@@ -513,6 +516,37 @@ private slots:
 		QCOMPARE(ragged.size(), size_t(2));  // only 0 and 4 survive the 0..11 window
 		QCOMPARE(ragged[0], 0);
 		QCOMPARE(ragged[1], 4);
+
+		const std::vector<int> huge = lmms::control::scaleDegreesOf(QStringLiteral("Huge"));
+		QCOMPARE(huge.size(), size_t(1));
+		QCOMPARE(huge[0], 2);
+
+		// Keep the FP-exception check separate from 1e300: Qt's JSON parser may
+		// itself raise FE_INVALID while decoding an exponent that large. This
+		// one-past-INT_MAX value isolates the product's out-of-range cast.
+		QJsonObject overflowEdited = before;
+		overflowEdited.insert(QStringLiteral("Overflow"), QJsonArray{2147483648.0, 2});
+		lmms::control::setCustomScales(overflowEdited);
+
+		// On Linux x86-64 the overflowing SSE conversion sets FE_INVALID. Check
+		// that flag around the lookup so this regression detects the undefined
+		// conversion even though its result is discarded by the scale validator.
+#if defined(__linux__) && defined(__x86_64__)
+		std::fenv_t originalEnvironment;
+		QVERIFY(std::fegetenv(&originalEnvironment) == 0);
+		QVERIFY(std::feclearexcept(FE_ALL_EXCEPT) == 0);
+#endif
+		const std::vector<int> overflow = lmms::control::scaleDegreesOf(QStringLiteral("Overflow"));
+#if defined(__linux__) && defined(__x86_64__)
+		const int invalidExceptions = std::fetestexcept(FE_INVALID);
+		QVERIFY(std::fesetenv(&originalEnvironment) == 0);
+#endif
+		lmms::control::setCustomScales(before);
+#if defined(__linux__) && defined(__x86_64__)
+		QCOMPARE(invalidExceptions, 0);
+#endif
+		QCOMPARE(overflow.size(), size_t(1));
+		QCOMPARE(overflow[0], 2);
 
 		// a well-formed custom scale still wins over the engine's table
 		QJsonObject good = edited;
