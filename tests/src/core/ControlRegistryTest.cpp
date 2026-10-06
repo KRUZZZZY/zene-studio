@@ -470,6 +470,24 @@ private slots:
 		QCOMPARE(control::idToIndex(QStringLiteral("trk-"), QStringLiteral("trk-")), -1);
 	}
 
+	//! A stable id's suffix is DECIMAL DIGITS and nothing else (Luna cluster
+	//! 5033). QString::toInt() also accepts a sign and surrounding whitespace, so
+	//! "clip--0" used to parse its "-0" suffix as clip 0 and a mutating command
+	//! addressed through the malformed id acted on the real clip. Every suffix
+	//! that is not [0-9]+ must be -1, which is what "does not exist" means.
+	void malformedIdSuffixesDoNotAliasRealObjects()
+	{
+		QCOMPARE(control::idToIndex(QStringLiteral("clip--0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-+0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip- 0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-0 "), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-\t0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("trk--1"), QStringLiteral("trk-")), -1);
+		// A leading zero is still digits and still names one object, so the
+		// grammar keeps accepting it rather than growing a second rule.
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-007"), QStringLiteral("clip-")), 7);
+	}
+
 	//! mixer.set_pan sets the channel's pan model (it was a typed refusal until
 	//! MixerChannel gained m_panModel) - on a channel that EXISTS: a ch-<n> id is a
 	//! constructed id, not an index (SPEC-stable-ids.md slice 2). Out of range is
