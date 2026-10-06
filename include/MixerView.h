@@ -155,6 +155,9 @@ private:
 	QHBoxLayout* m_vcaLayout = nullptr;
 	//! What the VCA strips were last built from (id, name, member count per group).
 	QString m_vcaSignature;
+	//! The channels' ids in order, last time the strips were built: a reorder keeps the count but
+	//! moves the channels, and every strip binds its controls to the channel at its own number.
+	QString m_channelOrderSignature;
 	int m_viewOptionsGeneration = -1;  // 0.5.0 L08: MixerViewOptions::generation() last applied
 	MixerSendsBanner* m_sendsBanner = nullptr;
 	MixerModeBar* m_modeBar = nullptr;

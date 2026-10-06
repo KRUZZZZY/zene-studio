@@ -312,6 +312,35 @@ private slots:
 			QStringLiteral("Selected"));
 	}
 
+// mixer.order_by_tracks and friends reorder the channels behind the mixer's back: the count never
+	// changes, so nothing rebuilt the strips and each one kept driving the channel that used to sit
+	// at its number.
+	void aReorderWithTheSameCountRebindsEveryStrip()
+	{
+		const int first = Engine::mixer()->createChannel();
+		const int second = Engine::mixer()->createChannel();
+		for (int i = first; i <= second; ++i)
+		{
+			Engine::mixer()->mixerChannel(i)->m_name = QStringLiteral("Reordered %1").arg(i);
+			Engine::mixer()->mixerChannel(i)->m_volumeModel.setValue(0.25f + 0.25f * (i - first));
+		}
+		syncMixer();
+		QCOMPARE(strip(first)->fader()->model(), &Engine::mixer()->mixerChannel(first)->m_volumeModel);
+
+		// The same channel count, a different order: the mixer moves the channels itself.
+		Engine::mixer()->moveChannelLeft(second);
+		QCOMPARE(Engine::mixer()->numChannels(), second + 1);  // the count never changed
+		syncMixer();
+
+		// Every strip's controls drive the channel now at its own number, not the one it was built for.
+		for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+		{
+			MixerChannel* channel = Engine::mixer()->mixerChannel(i);
+			QCOMPARE(strip(i)->channelIndex(), i);
+			QCOMPARE(strip(i)->soloButton()->model(), &channel->m_soloModel);
+		}
+	}
+
 private:
 	QTemporaryDir m_home;
 	int m_sender = -1;

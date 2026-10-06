@@ -244,6 +244,13 @@ MixerView::MixerView(Mixer* mixer) :
 }
 
 
+namespace
+{
+//! Defined with the other helpers below; the call sites that keep the strips in step use it.
+QString channelOrderSignatureOf(Mixer* mixer);
+} // namespace
+
+
 int MixerView::addNewChannel()
 {
 	// add new mixer channel and redraw the form.
@@ -257,6 +264,8 @@ int MixerView::addNewChannel()
 
 	updateMixerChannel(newChannelIndex);
 
+	// the new strip is already in place: the next sync pass has nothing to rebuild
+	m_channelOrderSignature = channelOrderSignatureOf(mix);
 	updateMaxChannelSelector();
 
 	return newChannelIndex;
@@ -308,6 +317,7 @@ void MixerView::refreshDisplay()
 		updateMixerChannel(i);
 	}
 
+	m_channelOrderSignature = channelOrderSignatureOf(getMixer());
 	updateMaxChannelSelector();
 	refreshVcaStrips();
 }
@@ -329,6 +339,19 @@ QString vcaSignatureOf(const Mixer* mixer)
 	return signature;
 }
 
+//! The channels' ids, in order: what the strips are bound to. A reorder (mixer.order_by_tracks,
+//! moveChannelLeft from the model) keeps the count, so the count alone never notices it.
+QString channelOrderSignatureOf(Mixer* mixer)
+{
+	QString signature;
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+	{
+		MixerChannel* channel = mixer->mixerChannel(i);
+		if (channel != nullptr) { signature += QString::number(channel->id()) + QLatin1Char(','); }
+	}
+	return signature;
+}
+
 //! The fader the arrow keys move: the strip's, unless it is a dimmed "No send" fader (theme 6), which moves nothing.
 Fader* keyboardFader(MixerChannelView* view)
 {
@@ -345,8 +368,11 @@ void MixerView::engineDeletedChannel()
 
 void MixerView::syncWithMixer()
 {
-	if (m_mixerChannelViews.size() != static_cast<int>(getMixer()->numChannels()))
+	if (m_mixerChannelViews.size() != static_cast<int>(getMixer()->numChannels())
+		|| m_channelOrderSignature != channelOrderSignatureOf(getMixer()))
 	{
+		// A reorder keeps the count but moves the channels, and each strip binds its solo, mute,
+		// pan and volume models to the channel at its own number: rebuild them.
 		refreshDisplay();
 		return;
 	}
@@ -577,6 +603,8 @@ void MixerView::deleteChannel(int index)
 	}
 	setCurrentMixerChannel(selLine);
 
+	// the views were renumbered with the channels: the next sync pass has nothing to rebuild
+	m_channelOrderSignature = channelOrderSignatureOf(getMixer());
 	updateMaxChannelSelector();
 }
 
@@ -610,6 +638,8 @@ void MixerView::moveChannelLeft(int index)
 	m_mixerChannelViews[index]->setChannelIndex(index - 1);
 	m_mixerChannelViews[index - 1]->setChannelIndex(index);
 	std::swap(m_mixerChannelViews[index - 1], m_mixerChannelViews[index]);
+	// the strips moved with the channels, so the next sync pass has nothing to rebuild
+	m_channelOrderSignature = channelOrderSignatureOf(getMixer());
 }
 
 
