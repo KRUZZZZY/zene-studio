@@ -396,6 +396,37 @@ private slots:
 #endif
 	}
 
+//! `scanned` is documented as the files examined after the KIND filter and
+	//! before text filtering, so a file a TAG filter refuses was still examined.
+	void scanCountCoversWhatTheTagFilterRejected()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString kick = writeFixture(dir.path(), QStringLiteral("kick_48k.wav"), WaveSpec());
+		const QString snare = writeFixture(dir.path(), QStringLiteral("snare_48k.wav"), WaveSpec());
+		QVERIFY(BrowserTagStore::instance().add(kick, QStringLiteral("favourite")));
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.kind = QStringLiteral("audio");
+		query.tags = QStringList{QStringLiteral("favourite")};
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.matched, 1);
+		QCOMPARE(result.items.first().path, QFileInfo(kick).absoluteFilePath());
+		// Both audio files were examined; only one carries the tag.
+		QCOMPARE(result.scanned, 2);
+		QVERIFY(result.scanned > result.matched);
+
+		// A kind filter is the only filter `scanned` is documented to precede, so
+		// a file of another kind is not examined at all.
+		BrowserQuery audioOnly = query;
+		audioOnly.tags.clear();
+		writeText(QDir(dir.path()).filePath(QStringLiteral("notes.txt")), QStringLiteral("x"));
+		const BrowserQueryResult byKind = runBrowserQuery(audioOnly);
+		QCOMPARE(byKind.scanned, 2);
+		QVERIFY(snare.endsWith(QStringLiteral("snare_48k.wav")));
+	}
+
 private:
 	QTemporaryDir m_dir;
 	QString m_wave;
