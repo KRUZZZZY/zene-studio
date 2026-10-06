@@ -127,6 +127,18 @@ bool BrowserSearch::termHolds(const Term& term, const BrowserItem& item, const Q
 	return found != term.negate;
 }
 
+bool BrowserSearch::hasUnfieldedExclusion() const
+{
+	for (const Group& group : m_groups)
+	{
+		for (const Term& term : group)
+		{
+			if (term.negate && term.field.isEmpty()) { return true; }
+		}
+	}
+	return false;
+}
+
 bool BrowserSearch::matches(const BrowserItem& item, const QStringList& metadataText) const
 {
 	if (m_groups.empty()) { return true; }

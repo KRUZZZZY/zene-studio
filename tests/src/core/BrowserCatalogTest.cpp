@@ -451,6 +451,40 @@ private slots:
 		QCOMPARE(result.probed, 1);
 	}
 
+//! An exclusion must see the metadata too. `kick -drum` cannot be settled by
+	//! the name alone: kick_48k.wav says nothing about "drum", so a cheap match
+	//! accepts it, while its embedded title "Kick Drum" is exactly what the
+	//! exclusion names. Accepting the item before the file is read returns a row
+	//! the query's own text excludes.
+	void metadataCanStillExcludeACheapMatch()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString wave = writeFixture(dir.path(), QStringLiteral("kick_48k.wav"), WaveSpec());
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.text = QStringLiteral("kick -drum");
+		// Without the probe the exclusion is all the name and path can answer,
+		// and the item is found.
+		QCOMPARE(runBrowserQuery(query).matched, 1);
+
+		query.probe = true;
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.probed, 1);
+		QCOMPARE(result.matched, 0);
+		QVERIFY(result.items.isEmpty());
+		QVERIFY(wave.endsWith(QStringLiteral("kick_48k.wav")));
+
+		// The same expression WITHOUT the exclusion still finds it: the probe
+		// did not stop matching, it stopped excluding.
+		BrowserQuery keep = query;
+		keep.text = QStringLiteral("kick");
+		const BrowserQueryResult kept = runBrowserQuery(keep);
+		QCOMPARE(kept.matched, 1);
+		QCOMPARE(kept.probed, 0);
+	}
+
 private:
 	QTemporaryDir m_dir;
 	QString m_wave;

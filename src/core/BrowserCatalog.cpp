@@ -175,6 +175,39 @@ BrowserItem makeItem(const QString& path, BrowserKind kind)
 	return item;
 }
 
+/*! Opens \a item for its own embedded metadata and appends it when the WHOLE
+ *  expression then holds.
+ *
+ *  \a cheapMatch is what the name, path and tags already answered. Probing a
+ *  candidate that matched is not free, but for an exclusion it is the only thing
+ *  that decides the row: `-drum` holds precisely because "drum" is ABSENT, and a
+ *  name that does not contain it cannot tell the file's embedded title from its
+ *  own. A probe that learns nothing (an unreadable file, or an exhausted
+ *  budget) leaves the cheap answer standing; a probe that reads the file and
+ *  still excludes it drops the row.
+ */
+void probeAndAppend(BrowserItem* item, bool cheapMatch, QueryContext* context)
+{
+	if (!context->query->probe || context->probed >= BrowserMaxProbes)
+	{
+		if (cheapMatch) { context->matched.append(*item); }
+		return;
+	}
+	item->metadata = probeAudioMetadata(item->path);
+	item->hasMetadata = true;
+	++context->probed;
+	const bool textHolds = item->metadata.valid
+		&& context->search->matches(*item, item->metadata.searchableText());
+	if (textHolds || (cheapMatch && !item->metadata.valid)) { context->matched.append(*item); }
+}
+
+//! True when the file's own metadata can still overturn the cheap answer, i.e.
+//! when the expression excludes a word with no field to exclude it FROM.
+bool metadataCanOverturn(const QueryContext* context)
+{
+	return context->query->probe && context->search->hasUnfieldedExclusion();
+}
+
 /*! Considers one file: the cheap filters first, and a metadata probe only for a
  *  candidate whose name, path and tags did not already answer the query.
  */
@@ -188,7 +221,8 @@ void considerPath(const QString& path, BrowserKind kind, QueryContext* context)
 	++context->scanned;
 	if (!tagsMatch(item.tags, context->query->tags)) { return; }
 
-	if (context->search->matches(item))
+	const bool cheapMatch = context->search->matches(item);
+	if (cheapMatch && !metadataCanOverturn(context))
 	{
 		context->matched.append(item);
 		return;
@@ -198,14 +232,7 @@ void considerPath(const QString& path, BrowserKind kind, QueryContext* context)
 	// small fraction of the scan budget: a library of presets and projects must
 	// not spend the probes the audio candidates need.
 	if (kind != BrowserKind::Audio) { return; }
-
-	item.metadata = probeAudioMetadata(item.path);
-	item.hasMetadata = true;
-	++context->probed;
-	if (item.metadata.valid && context->search->matches(item, item.metadata.searchableText()))
-	{
-		context->matched.append(item);
-	}
+	probeAndAppend(&item, cheapMatch, context);
 }
 
 //! Every file under \a root, breadth-first, skipping hidden directories and
