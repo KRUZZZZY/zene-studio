@@ -111,6 +111,43 @@ ListSpec layerZones(const QString& track)
 	return out;
 }
 
+ListSpec voiceModulators(const QString& track)
+{
+	ListSpec out = spec("Per-Voice Modulators", "modulator.get_state", "modulators", {QStringLiteral("parent_id"),
+		QStringLiteral("parent_name"), QStringLiteral("shape"), QStringLiteral("rate"), QStringLiteral("per_voice"),
+		QStringLiteral("trigger"), QStringLiteral("parent_target_count")});
+	out.title = titled("Per-Voice Modulators", track);
+	out.nestedKeys = {QStringLiteral("source")};  // one row per modulator: its source, with the modulator's id and name
+	out.parentFields = {QStringLiteral("id"), QStringLiteral("name"), QStringLiteral("target_count")};
+	out.summaryKeys = {QStringLiteral("modulator_count"), QStringLiteral("max_modulators"), QStringLiteral("driving")};
+	const QHash<QString, QString> modulator{{QStringLiteral("modulator"), QStringLiteral("parent_id")}};
+	const QJsonObject onTrack{{QStringLiteral("target"), track}};
+	RowAction remove = act("Remove", "modulator.remove", modulator);
+	remove.confirm = true;
+	out.actions = {act("Per-Voice on This Track", "modulator.voice_set", modulator,
+			{{QStringLiteral("per_voice"), true}, {QStringLiteral("trigger"), track}}),
+		act("Not Per-Voice", "modulator.voice_set", modulator, {{QStringLiteral("per_voice"), false}}),
+		act("Assign an Instrument Parameter...", "modulator.instrument_target_set", modulator, onTrack, true), remove};
+	out.extras = {extra("New Modulator...", "modulator.create")};
+	return out;
+}
+
+ListSpec modulationAssignments(const QString& track)
+{
+	ListSpec out = spec("Modulation Assignments", "modulator.get_state", "modulators", {QStringLiteral("parent_name"),
+		QStringLiteral("parameter"), QStringLiteral("track"), QStringLiteral("channel"), QStringLiteral("depth"),
+		QStringLiteral("voice_mode"), QStringLiteral("resolved")});
+	out.title = titled("Modulation Assignments", track);
+	out.nestedKeys = {QStringLiteral("targets")};  // one row per route, under its modulator
+	out.parentFields = {QStringLiteral("id"), QStringLiteral("name")};
+	out.summaryKeys = {QStringLiteral("driving"), QStringLiteral("max_targets_per_modulator")};
+	const QHash<QString, QString> route{{QStringLiteral("modulator"), QStringLiteral("parent_id")},
+		{QStringLiteral("target"), QStringLiteral("index")}};
+	out.actions = {act("Depth...", "modulator.depth_set", route, {}, true), act("Remove", "modulator.target_remove", route)};
+	out.extras = {extra("Assign an Instrument Parameter...", "modulator.instrument_target_set", {{QStringLiteral("target"), track}})};
+	return out;
+}
+
 } // namespace CommandLists
 
 namespace InstrumentCommandMenus
@@ -146,6 +183,12 @@ void populate(QMenu* menu, const QString& track)
 		}
 	});
 	list(layers, "Layer Zones...", [track] { return CommandLists::layerZones(track); });
+	QMenu* voices = setup->addMenu(tr("Per-Voice Modulation"));  // MX-120
+	list(voices, "Modulators...", [track] { return CommandLists::voiceModulators(track); });
+	list(voices, "Modulation Assignments...", [track] { return CommandLists::modulationAssignments(track); });
+	add(voices, "Make a Modulator Per-Voice...", "modulator.voice_set", {}, true,
+		{{QStringLiteral("per_voice"), true}, {QStringLiteral("trigger"), track}});
+	add(voices, "Assign an Instrument Parameter...", "modulator.instrument_target_set", self, true);
 }
 
 } // namespace InstrumentCommandMenus

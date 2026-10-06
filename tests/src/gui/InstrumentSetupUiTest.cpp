@@ -67,6 +67,7 @@
 #include "InstrumentTrack.h"
 #include "MenuTestSupport.h"
 #include "MidiClip.h"
+#include "ModulationLayer.h"
 #include "Note.h"
 #include "NotePlayHandle.h"
 #include "SampleFrame.h"
@@ -213,6 +214,22 @@ float renderedPeak(InstrumentTrack* track, AudioBusHandle* bus)
 	track->removeClip(clip);
 	delete clip;
 	return peak;
+}
+
+//! The row of @a dialog whose @a field is @a value, or -1.
+int rowWhere(const CommandListDialog& dialog, const QString& field, const QString& value)
+{
+	for (int row = 0; row < dialog.rowCount(); ++row)
+	{
+		if (dialog.row(row).value(field).toString() == value) { return row; }
+	}
+	return -1;
+}
+
+//! The song's modulator @a id ("modulator-<n>").
+const Modulator* modulatorOf(const QString& id)
+{
+	return Engine::getSong()->modulationLayer().layer().modulator(id.section(QLatin1Char('-'), 1).toInt());
 }
 
 //! The top-level window whose title ends with @a suffix, or nullptr.
@@ -411,6 +428,68 @@ private slots:
 			QVERIFY2(ControlRegistry::instance()->hasCommand(button->property("controlCommand").toString()),
 				qPrintable(QStringLiteral("an undeclared button: ") + button->text()));
 		}
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	//! MX-120: from the track's menu and its device card, a modulator made per-voice on the track's notes, bound to a
+	//! parameter of the track's instrument through the list's form, its depth changed and the assignment removed in the
+	//! assignments list (each undone), then made not per-voice again.
+	void perVoiceModulationIsAssignedEditedAndRemoved()
+	{
+		const QString device = builtinDevice(QStringLiteral("tripleoscillator"));
+		if (device.isEmpty()) { QSKIP("this build has no tripleoscillator module"); }
+		const QString track = revtest::addTrack();
+		QVERIFY(run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), track}, {QStringLiteral("device"), device}}).ok);
+		QMenu header;
+		QVERIFY(trackMenuEntry(&header, track, setupPath(QStringLiteral("Per-Voice Modulation"), QStringLiteral("Modulators...")),
+			QStringLiteral("modulator.get_state")) != nullptr);
+		DevicePanel devices;
+		QMenu* card = cardMenu(&devices, track);
+		QVERIFY(card != nullptr && menuAction(card, setupPath(QStringLiteral("Per-Voice Modulation"),
+			QStringLiteral("Modulation Assignments..."))) != nullptr);
+		const QString modulator = run(QStringLiteral("modulator.create"), {{QStringLiteral("name"), QStringLiteral("per note")},
+			{QStringLiteral("shape"), QStringLiteral("sine")}, {QStringLiteral("rate"), 2.0}}).result.value(QStringLiteral("modulator")).toString();
+		QVERIFY(!modulator.isEmpty());
+		const QString parameter = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), track},
+			{QStringLiteral("plugin"), QStringLiteral("inst")}, {QStringLiteral("index"), 0}})
+			.result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("name")).toString();
+		QVERIFY(!parameter.isEmpty());
+
+		const ListSpec voices = CommandLists::voiceModulators(track);
+		CommandListDialog modulators(voices);
+		const int row = rowWhere(modulators, QStringLiteral("parent_id"), modulator);
+		QVERIFY(row >= 0);
+		QVERIFY(modulators.runAction(row, actionIndex(voices, QStringLiteral("Per-Voice on This Track"))).ok);
+		QVERIFY(modulatorOf(modulator)->source.perVoice);
+		QCOMPARE(control::trackId(modulatorOf(modulator)->source.triggerTrack), track);
+		QVERIFY(modulators.row(row).value(QStringLiteral("per_voice")).toBool());  // the list was read again
+		QCOMPARE(modulators.runAction(row, actionIndex(voices, QStringLiteral("Assign an Instrument Parameter..."))).errorKind,
+			ControlErrorKind::Busy);
+		const ControlResult bound = fillAndRun(&modulators, {{QStringLiteral("parameter"), parameter}, {QStringLiteral("depth"), 0.25}});
+		QVERIFY2(bound.ok, qPrintable(bound.errorMessage));
+		QCOMPARE(modulatorOf(modulator)->routeCount(), 1);
+
+		const ListSpec spec = CommandLists::modulationAssignments(track);
+		CommandListDialog assignments(spec);
+		const int assigned = rowWhere(assignments, QStringLiteral("parent_id"), modulator);
+		QVERIFY(assigned >= 0);
+		QCOMPARE(assignments.row(assigned).value(QStringLiteral("parameter")).toString(), parameter);
+		QVERIFY(!assignments.row(assigned).value(QStringLiteral("voice_mode")).toString().isEmpty());
+		QCOMPARE(assignments.runAction(assigned, actionIndex(spec, QStringLiteral("Depth..."))).errorKind, ControlErrorKind::Busy);
+		const ControlResult deeper = fillAndRun(&assignments, {{QStringLiteral("depth"), 0.5}});
+		QVERIFY2(deeper.ok, qPrintable(deeper.errorMessage));
+		QCOMPARE(modulatorOf(modulator)->routes.at(0).depth, 0.5f);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(modulatorOf(modulator)->routes.at(0).depth, 0.25f);
+		QVERIFY(assignments.runAction(assigned, actionIndex(spec, QStringLiteral("Remove"))).ok);
+		QCOMPARE(modulatorOf(modulator)->routeCount(), 0);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(modulatorOf(modulator)->routeCount(), 1);
+
+		modulators.refresh();
+		QVERIFY(modulators.runAction(rowWhere(modulators, QStringLiteral("parent_id"), modulator),
+			actionIndex(voices, QStringLiteral("Not Per-Voice"))).ok);
+		QVERIFY(!modulatorOf(modulator)->source.perVoice);
 		ShellSelection::instance()->setTrack(nullptr);
 	}
 };
