@@ -535,8 +535,13 @@ void MidiClip::loadSettings( const QDomElement & _this )
 		node = node.nextSibling();
         }
 
+	// Luna cluster 3261: a malformed `steps` used to load verbatim whenever it was
+	// not exactly 0, and MidiClipView's beat step-menu multiplies it by the cursor
+	// offset in `int`. Reject anything outside the range a step can actually occupy
+	// - a step is at least one tick, so more steps than ticks in a bar is not a
+	// state any project can hold - and fall back to the default, as for 0.
 	m_steps = _this.attribute( "steps" ).toInt();
-	if( m_steps == 0 )
+	if( m_steps <= 0 || m_steps > TimePos::ticksPerBar() )
 	{
 		m_steps = TimePos::stepsPerBar();
 	}

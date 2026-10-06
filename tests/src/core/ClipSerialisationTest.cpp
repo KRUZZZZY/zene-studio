@@ -53,11 +53,14 @@
 #include <cmath>
 
 #include "Engine.h"
+#include "InstrumentTrack.h"
 #include "LmmsTypes.h"
+#include "MidiClip.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "Song.h"
 #include "TimePos.h"
+#include "Track.h"
 
 using namespace lmms;
 
@@ -393,6 +396,47 @@ private slots:
 		clip->restoreState(reversed);
 		QCOMPARE(clip->sample().reversed(), true);
 		QCOMPARE(reversedSpy.count(), 1);
+	}
+
+	//! Luna cluster 3261: `MidiClip::loadSettings()` reset `m_steps` only when it
+	//! was exactly 0, so a project carrying a negative or astronomically large
+	//! `steps` loaded it verbatim. `MidiClipView`'s beat step-menu then evaluates
+	//! `(at.x() - BORDER_WIDTH) * m_steps` and `m_steps - 1` in `int`, which
+	//! overflows for exactly those values.
+	//!
+	//! `m_steps` is private (only `gui::MidiClipView` is a friend), so the value
+	//! is observed the way the project file states it: `saveState()` writes the
+	//! `steps` attribute, and a load of a malformed one must not survive it.
+	void aMalformedStepCountDoesNotSurviveALoad()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+
+		QDomDocument doc;
+		QDomElement parent = doc.createElement("track");
+		const QDomElement authored = clip->saveState(doc, parent);
+		const int sane = authored.attribute("steps").toInt();
+		QVERIFY(sane > 0);
+
+		// the loader's own reset rule still holds for 0 (unchanged behaviour)
+		for (const QString& malformed : {QStringLiteral("-2147483648"), QStringLiteral("2147483647"),
+										  QStringLiteral("-1"), QStringLiteral("0")})
+		{
+			QDomElement broken = authored.cloneNode(true).toElement();
+			broken.setAttribute("steps", malformed);
+			clip->restoreState(broken);
+
+			QDomDocument doc2;
+			QDomElement parent2 = doc2.createElement("track");
+			const int loaded = clip->saveState(doc2, parent2).attribute("steps").toInt();
+			QVERIFY2(loaded > 0, qPrintable(QStringLiteral("steps=\"%1\" loaded as %2")
+										   .arg(malformed).arg(loaded)));
+			QVERIFY2(loaded <= sane * 64,
+					 qPrintable(QStringLiteral("steps=\"%1\" loaded as %2, wildly out of range")
+								.arg(malformed).arg(loaded)));
+		}
 	}
 
 private:
