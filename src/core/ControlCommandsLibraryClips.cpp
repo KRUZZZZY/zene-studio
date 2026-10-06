@@ -29,6 +29,7 @@
  *  is outside the project, so one undo step deletes the file again (and takes off the tags it added). */
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include <QDir>
@@ -101,8 +102,13 @@ QByteArray smfOf(const MidiClip* clip, int bpm)
 		const auto key = static_cast<quint8>(std::clamp(note->key(), 0, 127));
 		const auto velocity = static_cast<quint8>(std::clamp(note->midiVelocity(MidiDefaultVelocity), 1, 127));
 		const tick_t start = std::max<tick_t>(0, note->pos().getTicks());
+		// The note-off is computed wide and clamped: `start + length` in tick_t
+		// wraps negative near the top of the range, and the event then sorts
+		// before its own note-on, writing a corrupt MIDI file.
+		const qint64 end = std::clamp<qint64>(static_cast<qint64>(start) + std::max<tick_t>(1, note->length().getTicks()),
+			qint64{0}, static_cast<qint64>(std::numeric_limits<tick_t>::max()));
 		events.push_back(SmfEvent{start, 1, 0x90, key, velocity});
-		events.push_back(SmfEvent{start + std::max<tick_t>(1, note->length().getTicks()), 0, 0x80, key, 0});
+		events.push_back(SmfEvent{static_cast<tick_t>(end), 0, 0x80, key, 0});
 	}
 	std::stable_sort(events.begin(), events.end(), [](const SmfEvent& a, const SmfEvent& b) {
 		return a.tick != b.tick ? a.tick < b.tick : a.order < b.order;

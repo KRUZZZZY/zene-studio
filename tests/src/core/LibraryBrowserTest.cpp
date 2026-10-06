@@ -32,6 +32,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include <QDir>
 #include <QImage>
 #include <QJsonArray>
@@ -142,6 +144,45 @@ private slots:
 		QCOMPARE(back.readAll(), QByteArray("earlier bytes"));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // and the save under it still deletes the file
 		QVERIFY(!QFileInfo::exists(path));
+	}
+
+	//! A note whose end tick overflows signed 32-bit: the written file must still
+	//! hold a note-on at its start and its note-off exactly 'length' ticks later.
+	void aNoteNearTheTopOfTheRangeIsWrittenSane()
+	{
+		const tick_t start = std::numeric_limits<tick_t>::max() - 10;
+		const tick_t length = 48;
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(length), TimePos(start), 60), false);  // Note(length, pos, key)
+		QVERIFY(run(QStringLiteral("browser.save_clip"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("dir"), m_dir.path()}, {QStringLiteral("name"), QStringLiteral("high")}}).ok);
+		QFile file(QDir(m_dir.path()).filePath(QStringLiteral("high.mid")));
+		QVERIFY(file.open(QIODevice::ReadOnly));
+		const QByteArray bytes = file.readAll();
+		QVERIFY(bytes.startsWith("MThd") && bytes.contains("MTrk"));
+		// The delta-timed track: after the header and the tempo meta event.
+		int at = bytes.indexOf("MTrk") + 4 + 4;
+		const auto readDelta = [&bytes, &at]() {
+			quint32 value = 0;
+			for (int guard = 0; guard < 5; ++guard)
+			{
+				const quint8 byte = static_cast<quint8>(bytes.at(at++));
+				value = (value << 7) | (byte & 0x7F);
+				if ((byte & 0x80) == 0) { return value; }
+			}
+			return quint32{0};
+		};
+		QCOMPARE(readDelta(), quint32{0});  // the tempo meta's own delta
+		at += 6;  // FF 51 03 and the three tempo bytes
+		QCOMPARE(readDelta(), quint32{start});  // the note-on, at its own start
+		QCOMPARE(static_cast<quint8>(bytes.at(at++)), quint8{0x90});
+		at += 2;
+		// 'length' ticks past the top of the range is clamped to the top of it:
+		// the note-off is 10 ticks after its note-on, never before it.
+		QCOMPARE(readDelta(), quint32{10});
+		QCOMPARE(static_cast<quint8>(bytes.at(at++)), quint8{0x80});
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
 	}
 
 	void aMissingPresetIsRefused()
