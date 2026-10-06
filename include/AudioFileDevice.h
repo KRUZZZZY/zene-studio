@@ -52,6 +52,16 @@ public:
 	//! Write `size` sample frames from `buf` into the output file.
 	virtual void writeBuffer(const SampleFrame* buf, const f_cnt_t frames) = 0;
 
+	/*! 0.5.0 F7 (MX-060): write @a frames frames of @a samples, interleaved, channels() wide - the
+	 *  surround export, whose master is wider than a SampleFrame. The samples may be altered in place
+	 *  (the dither). False when this encoder cannot carry more than two channels (only WAV can). */
+	virtual bool writeInterleaved(float* samples, const f_cnt_t frames)
+	{
+		(void)samples;
+		(void)frames;
+		return false;
+	}
+
 protected:
 	int writeData( const void* data, int len );
 

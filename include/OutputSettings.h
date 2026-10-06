@@ -53,6 +53,15 @@ public:
 		Count
 	};
 
+	/*! 0.5.0 F7 (MX-060): what an export of a surround master writes (include/SurroundExport.h).
+	 *  Stereo, the default, is the export every caller had before: the master folded to L/R with the
+	 *  BS.775 downmix. Surround writes one WAV channel per speaker of the master (6 for 5.1, 8 for 7.1). */
+	enum class ChannelMode
+	{
+		Stereo,
+		Surround
+	};
+
 public:
 	OutputSettings(sample_rate_t sampleRate, bitrate_t bitRate, BitDepth bitDepth, StereoMode stereoMode)
 		: m_sampleRate(sampleRate)
@@ -145,6 +154,9 @@ public:
 	SrcQuality srcQuality() const { return m_srcQuality; }
 	void setSrcQuality(SrcQuality quality) { m_srcQuality = quality; }
 
+	ChannelMode channelMode() const { return m_channelMode; }
+	void setChannelMode(ChannelMode mode) { m_channelMode = mode; }
+
 private:
 	sample_rate_t m_sampleRate;
 	bitrate_t m_bitRate;
@@ -157,6 +169,7 @@ private:
 	//! declaration order (the tree builds with -Werror; a reordered list is a
 	//! -Wreorder failure, not a warning).
 	bool m_loudnessReport = false;
+	ChannelMode m_channelMode = ChannelMode::Stereo;
 };
 
 

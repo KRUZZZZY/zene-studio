@@ -25,6 +25,7 @@
 
 #include <QFile>
 
+#include <algorithm>
 #include <atomic>
 
 #include "ProjectRenderer.h"
@@ -37,6 +38,7 @@
 #include "AudioFileOgg.h"
 #include "AudioFileMP3.h"
 #include "AudioFileFlac.h"
+#include "SurroundExport.h"
 
 
 namespace lmms
@@ -156,6 +158,16 @@ ProjectRenderer::ProjectRenderer(
 	ExportRenderSettings::setDitherMode(outputSettings.ditherMode());
 	ExportRenderSettings::setSrcQuality(outputSettings.srcQuality());
 
+	// 0.5.0 F7 (MX-060): a surround export the master or the format cannot carry is refused before a
+	// file is opened. A stereo export is never refused, and is written with the two channels it was.
+	m_refusal = surroundexport::refusal(outputSettings, exportFileFormat == ExportFileFormat::Wave);
+	if (!m_refusal.isEmpty())
+	{
+		qWarning("Render refused: %s", qUtf8Printable(m_refusal));
+		return;
+	}
+	m_channels = surroundexport::channelsFor(outputSettings);
+
 	AudioFileDeviceInstantiaton audioEncoderFactory = fileEncodeDevices[static_cast<std::size_t>(exportFileFormat)].m_getDevInst;
 
 	if (audioEncoderFactory)
@@ -163,13 +175,21 @@ ProjectRenderer::ProjectRenderer(
 		bool successful = false;
 
 		m_fileDev = audioEncoderFactory(
-					outputFilename, outputSettings, DEFAULT_CHANNELS,
+					outputFilename, outputSettings, static_cast<ch_cnt_t>(m_channels),
 					Engine::audioEngine(), successful );
 		if( !successful )
 		{
 			delete m_fileDev;
 			m_fileDev = nullptr;
 		}
+	}
+
+	if( m_channels > DEFAULT_CHANNELS && m_fileDev != nullptr )
+	{
+		// Allocated here, on this (control) thread, before the render: the period path only copies.
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		m_interleaved.assign(static_cast<std::size_t>(frames) * m_channels, 0.f);
+		surroundexport::arm(frames);
 	}
 
 	// The loudness report is opt-in (OutputSettings::loudnessReport(), set by the
@@ -194,6 +214,8 @@ ProjectRenderer::~ProjectRenderer()
 	// opened).
 	ExportRenderSettings::setDitherMode(m_previousDither);
 	ExportRenderSettings::setSrcQuality(m_previousSrcQuality);
+	// The render thread has finished (or never started) by now: the tap can go.
+	if( !m_interleaved.empty() ) { surroundexport::disarm(); }
 }
 
 
@@ -279,7 +301,14 @@ void ProjectRenderer::run()
 			m_loudnessReport->addBlock(buffer.data(), static_cast<f_cnt_t>(buffer.size()));
 		}
 
-		m_fileDev->writeBuffer(buffer.data(), buffer.size());
+		if( m_channels > DEFAULT_CHANNELS )
+		{
+			writeSurround(buffer.data(), static_cast<f_cnt_t>(buffer.size()));
+		}
+		else
+		{
+			m_fileDev->writeBuffer(buffer.data(), buffer.size());
+		}
 
 		const int nprog = Engine::getSong()->getExportProgress();
 		if (m_progress != nprog)
@@ -306,6 +335,26 @@ void ProjectRenderer::run()
 	{
 		reportLoudness( f );
 	}
+}
+
+
+
+
+void ProjectRenderer::writeSurround( const SampleFrame* pair, f_cnt_t frames )
+{
+	const auto width = static_cast<std::size_t>(m_channels);
+	frames = std::min(frames, static_cast<f_cnt_t>(m_interleaved.size() / width));
+	for( f_cnt_t f = 0; f < frames; ++f )
+	{
+		m_interleaved[f * width] = pair[f][0];
+		m_interleaved[f * width + 1] = pair[f][1];
+	}
+	for( int c = 2; c < m_channels; ++c )
+	{
+		const float* side = surroundexport::readPlane(c);
+		for( f_cnt_t f = 0; f < frames; ++f ) { m_interleaved[f * width + c] = side[f]; }
+	}
+	m_fileDev->writeInterleaved(m_interleaved.data(), frames);
 }
 
 

@@ -34,6 +34,7 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
@@ -41,6 +42,7 @@
 #include "ExportQualityControls.h"
 #include "ProjectRenderer.h"
 #include "Song.h"
+#include "SurroundExport.h"
 
 namespace lmms::gui {
 
@@ -67,6 +69,8 @@ ExportProjectDialog::ExportProjectDialog(const QString& path, Mode mode, QWidget
 	, m_stereoModeComboBox(new QComboBox())
 	, m_compressionLevelLabel(new QLabel(tr("Compression level:")))
 	, m_compressionLevelComboBox(new QComboBox())
+	, m_channelModeLabel(new QLabel(tr("Channels:")))
+	, m_channelModeComboBox(new QComboBox())
 	, m_fileFormatSettingsGroupBox(new QGroupBox(tr("File format settings")))
 	, m_fileFormatSettingsLayout(new QFormLayout(m_fileFormatSettingsGroupBox))
 	, m_exportAsLoopBox(new QCheckBox(tr("Export as loop (remove extra bar)")))
@@ -154,6 +158,10 @@ ExportProjectDialog::ExportProjectDialog(const QString& path, Mode mode, QWidget
 		}
 	}
 
+
+	fillChannelModes();
+	connect(m_channelModeComboBox, qOverload<int>(&QComboBox::currentIndexChanged), this,
+		&ExportProjectDialog::onChannelModeChanged);
 
 	auto loopRepeatLayout = new QHBoxLayout{};
 	loopRepeatLayout->addWidget(m_loopRepeatLabel);
@@ -247,6 +255,7 @@ void ExportProjectDialog::onFileFormatChanged(int index)
 	case ProjectRenderer::ExportFileFormat::Wave:
 		m_fileFormatSettingsLayout->addRow(m_sampleRateLabel, m_sampleRateComboBox);
 		m_fileFormatSettingsLayout->addRow(m_bitDepthLabel, m_bitDepthComboBox);
+		m_fileFormatSettingsLayout->addRow(m_channelModeLabel, m_channelModeComboBox);
 		break;
 	case ProjectRenderer::ExportFileFormat::Flac:
 		m_fileFormatSettingsLayout->addRow(m_sampleRateLabel, m_sampleRateComboBox);
@@ -265,6 +274,32 @@ void ExportProjectDialog::onFileFormatChanged(int index)
 	}
 }
 
+void ExportProjectDialog::fillChannelModes()
+{
+	m_channelModeComboBox->addItem(tr("Stereo (surround folded with the ITU-R BS.775 downmix)"),
+		static_cast<int>(OutputSettings::ChannelMode::Stereo));
+	const surround::Format master = surroundexport::masterFormat();
+	if (master != surround::Format::Stereo && m_mode == Mode::ExportProject)
+	{
+		m_channelModeComboBox->addItem(tr("Surround %1 (%2 channels)").arg(surround::formatName(master))
+			.arg(surround::channelCount(master)), static_cast<int>(OutputSettings::ChannelMode::Surround));
+	}
+	m_channelModeComboBox->setEnabled(m_channelModeComboBox->count() > 1);
+	m_channelModeComboBox->setToolTip(m_channelModeComboBox->isEnabled()
+		? tr("Surround writes one WAV channel per speaker of the master, in the standard "
+			 "WAVE_FORMAT_EXTENSIBLE order with its channel mask.")
+		: tr("The master is stereo (or several tracks are exported), so the export is stereo."));
+	m_channelModeComboBox->setAccessibleName(tr("Channels"));
+}
+
+void ExportProjectDialog::onChannelModeChanged(int index)
+{
+	const bool surround = static_cast<OutputSettings::ChannelMode>(m_channelModeComboBox->itemData(index).toInt())
+		== OutputSettings::ChannelMode::Surround;
+	if (surround) { m_loudnessReportBox->setChecked(false); }
+	m_loudnessReportBox->setEnabled(!surround);
+}
+
 void ExportProjectDialog::onStartButtonClicked()
 {
 	const auto sampleRate = static_cast<sample_rate_t>(m_sampleRateComboBox->currentData().toInt());
@@ -278,6 +313,17 @@ void ExportProjectDialog::onStartButtonClicked()
 	outputSettings.setLoudnessReport(m_loudnessReportBox->isChecked());
 
 	const auto format = static_cast<ProjectRenderer::ExportFileFormat>(m_fileFormatComboBox->currentData().toInt());
+	// The channels row is only on the WAV page; every other format exports stereo, as before.
+	if (format == ProjectRenderer::ExportFileFormat::Wave)
+	{
+		outputSettings.setChannelMode(static_cast<OutputSettings::ChannelMode>(m_channelModeComboBox->currentData().toInt()));
+	}
+	const QString refused = surroundexport::refusal(outputSettings, format == ProjectRenderer::ExportFileFormat::Wave);
+	if (!refused.isEmpty())
+	{
+		QMessageBox::warning(this, tr("Cannot export"), refused);
+		return;
+	}
 	m_renderManager = std::make_unique<RenderManager>(outputSettings, format, m_path);
 	m_startButton->setEnabled(false);
 

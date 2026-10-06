@@ -835,6 +835,7 @@ set(LMMS_SRCS
 	# 0.5.0 F7: surround channels, the surround panner, the downmix (MX-060).
 	core/MixerSurround.cpp
 	core/MixerSurroundMix.cpp
+	core/SurroundExport.cpp
 	core/ControlCommandsMixerSurround.cpp
 	# 0.5.0 F5: the video track through FFmpeg (ED-054); library calls only under ZENE_HAVE_FFMPEG.
 	core/VideoReference.cpp

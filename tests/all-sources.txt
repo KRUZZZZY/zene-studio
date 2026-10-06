@@ -702,6 +702,7 @@ include/StepRecorder.h
 include/StepRecorderWidget.h
 include/StringPairDrag.h
 include/SubWindow.h
+include/SurroundExport.h
 include/SurroundPanner.h
 include/SystemSemaphore.h
 include/TabBar.h
@@ -1910,6 +1911,7 @@ src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
 src/core/StepRecorder.cpp
+src/core/SurroundExport.cpp
 src/core/TakeLane.cpp
 src/core/TakeRecorder.cpp
 src/core/TaskCenter.cpp
@@ -2555,6 +2557,8 @@ tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
 tests/src/core/StemModelStoreTest.cpp
 tests/src/core/StemSplitPipelineTest.cpp
+tests/src/core/SurroundExportTest.cpp
+tests/src/core/SurroundExportTestSupport.h
 tests/src/core/SurroundTest.cpp
 tests/src/core/TakeLaneCompTest.cpp
 tests/src/core/TakeLaneTest.cpp
@@ -2597,6 +2601,7 @@ tests/src/gui/CrashReportMenuTest.cpp
 tests/src/gui/DesignTokensTest.cpp
 tests/src/gui/DevicePanelTest.cpp
 tests/src/gui/EffectHostingMenuTest.cpp
+tests/src/gui/ExportChannelsTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
 tests/src/gui/FeedbackModeActionTest.cpp
 tests/src/gui/GrooveMenuTest.cpp

@@ -56,6 +56,10 @@ private:
 	void accept() override;
 	void reject() override;
 	void onFileFormatChanged(int index);
+	//! 0.5.0 F7: a surround export carries no loudness report, so choosing it turns the report off.
+	void onChannelModeChanged(int index);
+	//! The channels row, for a WAV export: Stereo always, Surround when the master is surround.
+	void fillChannelModes();
 	void onStartButtonClicked();
 	void updateTitleBar(int prog);
 	//! Shows the loudness report when one was produced, otherwise closes.
@@ -78,6 +82,10 @@ private:
 
 	QLabel* m_compressionLevelLabel = nullptr;
 	QComboBox* m_compressionLevelComboBox = nullptr;
+
+	//! 0.5.0 F7 (MX-060): stereo (the BS.775 downmix of a surround master) or surround (one channel per speaker).
+	QLabel* m_channelModeLabel = nullptr;
+	QComboBox* m_channelModeComboBox = nullptr;
 
 	QGroupBox* m_fileFormatSettingsGroupBox = nullptr;
 	QFormLayout* m_fileFormatSettingsLayout = nullptr;

@@ -26,6 +26,7 @@
 #include "AudioFileWave.h"
 #include "endian_handling.h"
 #include "AudioEngine.h"
+#include "SurroundExport.h"
 
 #include <algorithm>
 #include <memory>
@@ -88,7 +89,10 @@ bool AudioFileWave::startEncoding()
 	m_si.sections = 1;
 	m_si.seekable = 0;
 
-	m_si.format = SF_FORMAT_WAV;
+	// 0.5.0 F7: more than two channels (a surround export) is WAVE_FORMAT_EXTENSIBLE, which carries the
+	// speakers' mask; libsndfile's SF_FORMAT_WAV would write a plain PCM header with no mask. A stereo
+	// file is the SF_FORMAT_WAV it always was.
+	m_si.format = channels() > DEFAULT_CHANNELS ? SF_FORMAT_WAVEX : SF_FORMAT_WAV;
 
 	switch( getOutputSettings().getBitDepth() )
 	{
@@ -110,6 +114,11 @@ bool AudioFileWave::startEncoding()
 	if (!m_sf)
 	{
 		qWarning("Error: AudioFileWave::startEncoding: %s", sf_strerror(nullptr));
+		return false;
+	}
+	if (!setChannelMap())
+	{
+		qWarning("Error: AudioFileWave::startEncoding: no channel map for %d channels", static_cast<int>(channels()));
 		return false;
 	}
 
@@ -174,6 +183,44 @@ void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 		sf_writef_short( m_sf, buf, _frames );
 		delete[] buf;
 	}
+}
+
+
+
+
+bool AudioFileWave::setChannelMap()
+{
+	if (channels() <= DEFAULT_CHANNELS) { return true; }
+	const surround::Format format = surroundexport::formatForChannels(channels());
+	if (format == surround::Format::Stereo) { return false; }
+	// Before any audio: libsndfile writes the mask into the header it has not written yet.
+	auto map = surroundexport::sndfileChannelMap(format);
+	return sf_command(m_sf, SFC_SET_CHANNEL_MAP_INFO, map.data(),
+		static_cast<int>(channels() * sizeof(int))) == SF_TRUE;
+}
+
+/*! 0.5.0 F7 (MX-060): a surround export's interleaved frames. The same depths, the same dither and the
+ *  same 16-bit quantisation as writeBuffer() - per sample instead of per SampleFrame - except that the
+ *  16-bit samples go to sf_writef_short in the host's own byte order, which is what it takes. */
+bool AudioFileWave::writeInterleaved(float* samples, const f_cnt_t frames)
+{
+	const auto count = static_cast<std::size_t>(frames) * channels();
+	const OutputSettings::BitDepth bitDepth = getOutputSettings().getBitDepth();
+	const int ditherBits = ditherBitsFor(bitDepth, getOutputSettings().dither());
+	const bool shaped = bitDepth == OutputSettings::BitDepth::Depth16Bit
+		&& getOutputSettings().ditherMode() == DitherMode::NoiseShaped;
+	if (ditherBits > 0 && !shaped) { m_dither.ditherInterleaved(samples, count, ditherBits); }
+	if (bitDepth == OutputSettings::BitDepth::Depth32Bit || bitDepth == OutputSettings::BitDepth::Depth24Bit)
+	{
+		return sf_writef_float(m_sf, samples, static_cast<sf_count_t>(frames)) == static_cast<sf_count_t>(frames);
+	}
+	m_interleaved16.resize(count);
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		m_interleaved16[i] = shaped ? m_noiseShaper.quantise16(samples[i], static_cast<int>(i % channels()))
+			: static_cast<int_sample_t>(AudioEngine::clip(samples[i]) * OUTPUT_SAMPLE_MULTIPLIER);
+	}
+	return sf_writef_short(m_sf, m_interleaved16.data(), static_cast<sf_count_t>(frames)) == static_cast<sf_count_t>(frames);
 }
 
 

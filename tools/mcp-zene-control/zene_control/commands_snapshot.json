@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T17:22:52Z",
+  "captured_at": "2026-10-06T15:11:39Z",
   "commands": [
     {
       "args_schema": {
@@ -23146,6 +23146,13 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "channels": {
+            "enum": [
+              "stereo",
+              "surround"
+            ],
+            "type": "string"
+          },
           "end_ticks": {
             "maximum": 2147483647,
             "minimum": 0,
@@ -23173,7 +23180,7 @@
         ],
         "type": "object"
       },
-      "description": "Render the current session to a file and return its hash (headless). Whole project by default; pass start_ticks and end_ticks TOGETHER to render only that span of the song (a selection), in which case the span is rendered exactly - no tail bar and no loop repetition - and the reply reports the range and the frame count. The render is started with the export settings in force: the preset applied through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's own defaults when none is applied. Runs in a CHILD process, so the declared bound applies: this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Render the current session to a file and return its hash (headless). Whole project by default; pass start_ticks and end_ticks TOGETHER to render only that span of the song (a selection), in which case the span is rendered exactly - no tail bar and no loop repetition - and the reply reports the range and the frame count. The render is started with the export settings in force: the preset applied through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's own defaults when none is applied. `channels`: 'stereo' (the default; a surround master is folded with the ITU-R BS.775 downmix) or 'surround' - one WAV channel per speaker of the surround master (6 for 5.1, 8 for 7.1, WAVE_FORMAT_EXTENSIBLE with its channel mask), refused on a stereo master, for a format other than wav, and with the loudness report on; the reply's `channels` and `channel_layout` say what the file holds. Runs in a CHILD process, so the declared bound applies: this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
       "group": "render",
       "id": "render.render",
       "mutating": false,
@@ -23189,6 +23196,12 @@
           },
           "bytes": {
             "type": "number"
+          },
+          "channel_layout": {
+            "type": "string"
+          },
+          "channels": {
+            "type": "integer"
           },
           "format": {
             "type": "string"
@@ -34001,11 +34014,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-mc-wav/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-4g8c9srg/zene.sock",
-    "version": "0.4.0-alpha.114+9a9f339"
+    "source_socket": "/tmp/zctl-run-cbrvuhhg/zene.sock",
+    "version": "0.4.0-alpha.333+6d1a114"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
