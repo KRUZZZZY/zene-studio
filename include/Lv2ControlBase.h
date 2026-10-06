@@ -44,6 +44,10 @@ class Lv2Proc;
 class PluginIssue;
 class SampleFrame;
 
+//! The processor instance a <lv2state> element names, or -1 when the element is malformed
+//! (missing or non-numeric instance attribute) or names an instance beyond @param procCount.
+int lv2StateInstanceIndex(const QDomElement& element, std::size_t procCount);
+
 /**
 	Common base class for Lv2 plugins
 
