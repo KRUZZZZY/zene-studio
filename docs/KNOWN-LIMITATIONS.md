@@ -2229,8 +2229,11 @@ Fleshed out, because both halves of that sentence hide something real:
 - `pdc.report` does not list the insert's latency per channel, although PDC includes it.
 
 **F2, instruments (MX-114/112/120).**
-- Output buses, MIDI parts, layers and per-voice modulation have no interface yet; they are
-  command-only.
+- MIDI parts, layers and per-voice modulation have no interface yet; they are command-only.
+- Output buses have an interface: Instrument Setup > Output Buses on the track's header menu, its
+  Inspector "More" menu and its instrument's device card lists the buses, routes one to a channel
+  (or un-routes it) and makes a channel for each unrouted bus, all through the plugin.output_* commands.
+  A bus count is the plug-in's own: there is no adding or removing a bus, only routing one.
 - Layers receive the track's played notes, not the notes its chord or arpeggio functions add.
 - Each layer is a hidden track with its own bus handle and MIDI port, so under JACK each one has its
   own ports.

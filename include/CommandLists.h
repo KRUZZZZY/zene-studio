@@ -109,6 +109,10 @@ LMMS_EXPORT ListSpec savedSelections();
 LMMS_EXPORT ListSpec settingsCatalogue();
 LMMS_EXPORT ListSpec settingsPresets();
 
+//! 0.5.0 F2 (InstrumentCommandMenus.cpp), each over one instrument track @a track (trk-<n>):
+//! MX-114: its instrument's output buses - route one to a mixer channel, un-route it, a channel for each.
+LMMS_EXPORT ListSpec outputBuses(const QString& track);
+
 } // namespace CommandLists
 
 } // namespace lmms::gui

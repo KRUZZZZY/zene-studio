@@ -42,6 +42,7 @@
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
+#include "InstrumentCommandMenus.h"
 #include "InstrumentTrack.h"
 #include "LayoutMenu.h"
 #include "LibraryCommandMenus.h"
@@ -260,6 +261,7 @@ void populateTrack(QMenu* menu, Track* track)
 		// L07 (ED-121): the expression map, its current entries filled in.
 		add(menu, "Articulations...", "track.articulations_set", self, true,
 			{{QStringLiteral("articulations"), dynamic_cast<InstrumentTrack*>(track)->articulations().toJson()}});
+		InstrumentCommandMenus::populate(menu, id);  // 0.5.0 F2: output buses, MIDI parts, layers, per-voice modulation
 	}
 	automationMenu(menu, id);
 	trackMidiOutEntries(menu, track, self);  // MX-062

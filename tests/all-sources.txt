@@ -332,6 +332,7 @@ include/InputMonitor.h
 include/InspectorChannelRouting.h
 include/InspectorPanel.h
 include/Instrument.h
+include/InstrumentCommandMenus.h
 include/InstrumentFunctionViews.h
 include/InstrumentFunctions.h
 include/InstrumentLayers.h
@@ -2063,6 +2064,7 @@ src/gui/GrooveMenu.cpp
 src/gui/GuiApplication.cpp
 src/gui/HelpCenter.cpp
 src/gui/HelpTasks.cpp
+src/gui/InstrumentCommandMenus.cpp
 src/gui/ItemListPanel.cpp
 src/gui/ItemListSurfaceSources.cpp
 src/gui/LadspaControlView.cpp
@@ -2602,6 +2604,7 @@ tests/src/gui/FeedbackModeActionTest.cpp
 tests/src/gui/GrooveMenuTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/HelpAccessTest.cpp
+tests/src/gui/InstrumentSetupUiTest.cpp
 tests/src/gui/ItemListPanelTest.cpp
 tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/LaneReadoutTest.cpp

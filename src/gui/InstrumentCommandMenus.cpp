@@ -1,0 +1,95 @@
+/*
+ * InstrumentCommandMenus.cpp - 0.5.0 F2 interface: an instrument track's output buses, MIDI
+ *                              parts, layer rack and per-voice modulation (MX-114/112/120)
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+#include "InstrumentCommandMenus.h"
+
+#include <QMenu>
+
+#include "CommandListBuild.h"
+#include "CommandLists.h"
+#include "ControlEdit.h"
+#include "ShellMenuParts.h"
+#include "Track.h"
+
+namespace lmms::gui
+{
+
+namespace
+{
+
+//! "<what> - <the track's name>" (its id when it has none to read).
+QString titled(const char* what, const QString& track)
+{
+	ControlResult unknown;
+	const Track* resolved = control::resolveTrack(track, &unknown);
+	return QObject::tr("%1 - %2").arg(QObject::tr(what), resolved != nullptr ? resolved->name() : track);
+}
+
+} // namespace
+
+namespace CommandLists
+{
+
+ListSpec outputBuses(const QString& track)
+{
+	const QJsonObject where{{QStringLiteral("target"), track}};
+	ListSpec out = spec("Output Buses", "plugin.output_buses", "buses", {QStringLiteral("index"), QStringLiteral("name"),
+		QStringLiteral("channels"), QStringLiteral("main"), QStringLiteral("active"), QStringLiteral("channel")}, where);
+	out.title = titled("Output Buses", track);
+	out.summaryKeys = {QStringLiteral("bus_count"), QStringLiteral("routed_count")};
+	const QHash<QString, QString> bus{{QStringLiteral("bus"), QStringLiteral("index")}};
+	// Bus 0 is the instrument's main output (it reaches the track as always): the command refuses to route
+	// it and says so, which the list's Results log shows.
+	out.actions = {act("Route to Channel...", "plugin.output_bus_route", bus, where, true),
+		act("Un-route", "plugin.output_bus_route", bus, menuparts::with(where, "channel", QString()))};
+	out.extras = {extra("Create a Channel for Each Bus", "plugin.output_buses_create_channels", where, false)};
+	return out;
+}
+
+} // namespace CommandLists
+
+namespace InstrumentCommandMenus
+{
+
+using namespace menuparts;
+
+QString submenuTitle()
+{
+	return QObject::tr("Instrument Setup");
+}
+
+void populate(QMenu* menu, const QString& track)
+{
+	QMenu* setup = menu->addMenu(submenuTitle());
+	const QJsonObject self{{QStringLiteral("target"), track}};
+	QMenu* buses = setup->addMenu(tr("Output Buses"));  // MX-114
+	list(buses, "Output Buses...", [track] { return CommandLists::outputBuses(track); });
+	add(buses, "Route an Output Bus...", "plugin.output_bus_route", self, true);
+	add(buses, "Create a Channel for Each Bus", "plugin.output_buses_create_channels", self, false);
+}
+
+} // namespace InstrumentCommandMenus
+
+} // namespace lmms::gui
