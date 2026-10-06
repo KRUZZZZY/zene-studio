@@ -132,12 +132,25 @@ void McuSurface::setBank(int first)
 	m_sentLeds.clear();
 }
 
+int McuSurface::bank() const
+{
+	return bankedFirst();
+}
+
+int McuSurface::bankedFirst() const
+{
+	// The track list can shrink under a bank that is already set (tracks deleted, a folder
+	// unlinked): the bank follows it rather than leaving every strip blank until the user
+	// pages. m_bank itself is left as the user set it, so paging back reveals the same tracks.
+	return std::clamp(m_bank, 0, std::max(0, static_cast<int>(bankable().size()) - 1));
+}
+
 Track* McuSurface::stripTrack(int strip) const
 {
 	if (strip < 0 || strip >= mcu::Strips) { return nullptr; }  // 8 is the master fader, never a track
 	const QList<Track*> tracks = bankable();
-	const int index = m_bank + strip;
-	return strip >= 0 && strip < mcu::Strips && index < tracks.size() ? tracks.at(index) : nullptr;
+	const int index = bankedFirst() + strip;
+	return index < tracks.size() ? tracks.at(index) : nullptr;
 }
 
 void McuSurface::processInEvent(const MidiEvent& event, const TimePos&, f_cnt_t)
@@ -293,7 +306,7 @@ QJsonObject McuSurface::state() const
 		strips.append(control::trackIdOf(stripTrack(strip)));
 	}
 	return {{QStringLiteral("connected"), true}, {QStringLiteral("input"), m_input}, {QStringLiteral("output"), m_output},
-		{QStringLiteral("bank"), m_bank}, {QStringLiteral("strips"), strips},
+		{QStringLiteral("bank"), bankedFirst()}, {QStringLiteral("strips"), strips},
 		{QStringLiteral("events_in"), m_eventsIn.load(std::memory_order_relaxed)},
 		{QStringLiteral("events_dropped"), m_eventsDropped.load(std::memory_order_relaxed)},
 		{QStringLiteral("events_out"), m_eventsOut}};
