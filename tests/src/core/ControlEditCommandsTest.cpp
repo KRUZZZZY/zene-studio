@@ -32,6 +32,7 @@
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ReversibilityTestSupport.h"
+#include "Song.h"
 
 using namespace lmms;
 
@@ -106,6 +107,46 @@ private slots:
 			registry->invoke(QStringLiteral("note.velocity_set"), velocityArgs);
 		QVERIFY(!velocityResult.ok);
 		QCOMPARE(velocityResult.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! note.move's schema bounds the new START (0..MaxSongLength), but the note's
+	//! END must fit inside the song too: a positive-length note moved to MaxSongLength
+	//! would end past the limit. The move is refused, typed, with nothing changed.
+	void noteMovePastSongLimitIsRefused()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult addedTrack = registry->invoke(QStringLiteral("track.add"),
+			QJsonObject{{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY2(addedTrack.ok, qPrintable(addedTrack.errorMessage));
+		const QString track = addedTrack.result.value(QStringLiteral("track")).toString();
+
+		const ControlResult addedClip = registry->invoke(QStringLiteral("clip.add"),
+			QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("position"), 0},
+				{QStringLiteral("length"), 192}});
+		QVERIFY2(addedClip.ok, qPrintable(addedClip.errorMessage));
+		const QString clip = addedClip.result.value(QStringLiteral("clip")).toString();
+
+		const ControlResult addedNote = registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), clip}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}});
+		QVERIFY2(addedNote.ok, qPrintable(addedNote.errorMessage));
+		const QString noteId = addedNote.result.value(QStringLiteral("note")).toString();
+
+		// The schema accepts the start (it is exactly MaxSongLength), but the note's
+		// end would sit 24 ticks past the limit: the handler must refuse the move.
+		const ControlResult moved = registry->invoke(QStringLiteral("note.move"),
+			QJsonObject{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), noteId},
+				{QStringLiteral("position"), MaxSongLength}});
+		QVERIFY2(!moved.ok, "a move ending past the song limit was applied");
+		QCOMPARE(moved.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Nothing moved: the note still starts at 0.
+		const ControlResult rolled = registry->invoke(QStringLiteral("roll.get_state"),
+			QJsonObject{{QStringLiteral("clip"), clip}});
+		QVERIFY2(rolled.ok, qPrintable(rolled.errorMessage));
+		const QJsonArray notes = rolled.result.value(QStringLiteral("notes")).toArray();
+		QCOMPARE(notes.size(), 1);
+		QCOMPARE(notes.first().toObject().value(QStringLiteral("position")).toInt(), 0);
 	}
 
 	//! A malformed id and an absent id are different, typed failures.

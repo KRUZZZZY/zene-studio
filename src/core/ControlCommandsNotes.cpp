@@ -243,8 +243,20 @@ void registerNoteMove(ControlRegistry& registry)
 		const QString previousId = control::noteIdOf(note);
 		const tick_t previousPos = note->pos().getTicks();
 
+		// The schema bounds the new START (0..MaxSongLength), but the note's END
+		// must fit inside the song too: a positive-length note moved to MaxSongLength
+		// would end past the limit. Refuse before anything changes - both operands
+		// are schema-bounded by MaxSongLength, so the sum cannot overflow.
+		const tick_t position = static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble());
+		if (position + note->length().getTicks() > MaxSongLength)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			 QStringLiteral("the move would put the note's end past the song limit: position %1 + length %2 exceeds %3 ticks")
+				 .arg(position).arg(note->length().getTicks()).arg(MaxSongLength));
+		}
+
 		clip->addJournalCheckPoint();
-		note->setPos(TimePos(static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble())));
+		note->setPos(TimePos(position));
 		// Same follow-up calls as a piano-roll drag: re-sort, then let the clip
 		// follow its notes when it is still auto-resizing.
 		clip->rearrangeAllNotes();
