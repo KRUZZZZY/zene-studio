@@ -50,6 +50,27 @@ float loadMidiDepthValue( const QDomElement& element, const char* attribute, flo
 	return ( ok && std::isfinite( value ) ) ? value : fallback;
 }
 
+//! The saved pre-quantise position and length, when the element carries a pair
+//! that can actually be read. Both are optional: an element with no qpos has no
+//! timing, which is what -1 says. Both are required together, and both must
+//! parse - QString::toInt() reports a failed conversion by yielding 0, which
+//! would otherwise read as "the author had this note at tick 0, one tick long"
+//! and let note.restore_timing move the note there.
+void loadUnquantisedTiming( const QDomElement& element, tick_t& pos, tick_t& length )
+{
+	pos = -1;
+	length = -1;
+
+	bool posOk = false;
+	bool lengthOk = false;
+	const int storedPos = element.attribute( "qpos" ).toInt( &posOk );
+	const int storedLength = element.attribute( "qlen", "1" ).toInt( &lengthOk );
+	if( !posOk || !lengthOk || storedPos < 0 || storedLength < 1 ) { return; }
+
+	pos = storedPos;
+	length = storedLength;
+}
+
 } // namespace
 
 
@@ -485,8 +506,12 @@ void Note::loadSettings( const QDomElement & _this )
 	setVelocityJitter( loadMidiDepthValue( _this, "veljit", 0.f ) );
 	m_muted = _this.attribute( "mute" ).toInt() != 0;
 	setReleaseVelocity( _this.attribute( "relvel", "-1" ).toInt() );
-	m_unquantisedPos = _this.hasAttribute( "qpos" ) ? std::max( 0, _this.attribute( "qpos" ).toInt() ) : -1;
-	m_unquantisedLength = m_unquantisedPos >= 0 ? std::max( 1, _this.attribute( "qlen", "1" ).toInt() ) : -1;
+	// The pre-quantise timing note.restore_timing puts back is OPTIONAL, and both
+	// halves of it are required. A qpos the file cannot spell - or a qlen it
+	// cannot spell - is not a timing to restore: QString::toInt() reports
+	// failure by yielding 0, so <note qpos="bad"> used to load as "this note was
+	// moved to tick 0" and note.restore_timing faithfully moved it there.
+	loadUnquantisedTiming( _this, m_unquantisedPos, m_unquantisedLength );
 	m_conditions.load( _this );
 
 	// MPE per-note expression (task #601): an old project has none of these, and

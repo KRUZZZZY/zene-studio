@@ -408,6 +408,50 @@ private slots:
 		direct.setVelocityJitter( 0.75f );
 		QCOMPARE( direct.velocityJitter(), 0.75f );
 	}
+
+	//! (f) Luna cluster 3325: the pre-quantise position and length are optional
+	//! attributes that note.restore_timing puts back, and Note::loadSettings read
+	//! them with toInt() without asking whether the conversion succeeded. QString
+	//! reports that failure by returning 0, so <note qpos="bad" qlen="bad"> loaded
+	//! as "this note was moved to tick 0 and is one tick long" - and restore_timing
+	//! faithfully moved it there. Both halves are required together, so a valid
+	//! qpos with an unreadable qlen is not usable timing either.
+	void unparseableUnquantisedTimingIsNotTreatedAsTickZero()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement( QStringLiteral( "notes" ) );
+
+		for ( const auto& pair : { std::make_pair( "bad", "bad" ), std::make_pair( "96", "" ),
+				 std::make_pair( "", "96" ), std::make_pair( "-1", "8" ),
+				 std::make_pair( "8", "0" ) } )
+		{
+			QDomElement element = noteElementWith( doc, root, "1", "0" );
+			element.setAttribute( QStringLiteral( "pos" ), QStringLiteral( "24" ) );
+			element.setAttribute( QStringLiteral( "len" ), QStringLiteral( "48" ) );
+			element.setAttribute( QStringLiteral( "qpos" ), QString::fromLatin1( pair.first ) );
+			element.setAttribute( QStringLiteral( "qlen" ), QString::fromLatin1( pair.second ) );
+
+			Note loaded;
+			loaded.restoreState( element );
+			// Nothing to restore, so nothing claims the note carries a timing.
+			QVERIFY2( !loaded.hasUnquantisedTiming(), pair.first );
+			QVERIFY( !loaded.restoreTiming() );
+			QCOMPARE( static_cast<int>( loaded.pos().getTicks() ), 24 );
+			QCOMPARE( static_cast<int>( loaded.length().getTicks() ), 48 );
+		}
+
+		// ...and the valid pair is still restored exactly, so the guard rejects
+		// only what the file could not express.
+		Note timed( TimePos( 48 ), TimePos( 24 ), 60 );
+		timed.rememberTiming();
+		timed.setPos( TimePos( 0 ) );
+		Note timedLoaded;
+		timedLoaded.restoreState( timed.saveState( doc, root ) );
+		QVERIFY( timedLoaded.hasUnquantisedTiming() );
+		QVERIFY( timedLoaded.restoreTiming() );
+		QCOMPARE( static_cast<int>( timedLoaded.pos().getTicks() ), 24 );
+		QCOMPARE( static_cast<int>( timedLoaded.length().getTicks() ), 48 );
+	}
 };
 
 QTEST_GUILESS_MAIN(MidiProbabilityPersistenceTest)
