@@ -106,6 +106,57 @@ private slots:
 		REV_UNDO_OR_FAIL();
 		QVERIFY2(song->isModified(), "undoing a session edit cleared the modified flag");
 	}
+	//! A Follow Action entry whose FIELDS are of the wrong JSON type must be
+	//! refused, not converted. QJsonValue::toDouble()/toInt()/toBool() substitute
+	//! the field's default for anything they cannot convert, so `jump_to:"oops"`
+	//! armed a jump to scene 0 - a well-formed action built out of a value the
+	//! client never sent - and `"chance":"loud"` became chance 1, which always
+	//! fires. Only the TYPE field was ever checked, so the rest of the entry was
+	//! read with a conversion that cannot fail.
+	void aWrongTypedActionFieldIsRefused()
+	{
+		using revtest::run;
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1},
+			{QStringLiteral("scenes"), kScenes}}).ok);
+		QVERIFY(run(QStringLiteral("session.set_slot"), audioSlot(0, 0)).ok);
+
+		// The string a plain toInt() would have read as scene 0.
+		QCOMPARE(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("follow_actions"),
+				QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("jump")},
+					{QStringLiteral("jump_to"), QStringLiteral("oops")}}}}})
+			.errorKind, ControlErrorKind::InvalidArgs);
+		// The string a plain toDouble() would have read as chance 1 - always fire.
+		QCOMPARE(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("follow_actions"),
+				QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("stop")},
+					{QStringLiteral("chance"), QStringLiteral("loud")}}}}})
+			.errorKind, ControlErrorKind::InvalidArgs);
+		// The string a plain toDouble() would have read as time_bars 1.
+		QCOMPARE(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("follow_actions"),
+				QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("stop")},
+					{QStringLiteral("linked"), false},
+					{QStringLiteral("time_bars"), QStringLiteral("soon")}}}}})
+			.errorKind, ControlErrorKind::InvalidArgs);
+		// The number a plain toBool() would have read as linked=false.
+		QCOMPARE(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("follow_actions"),
+				QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("stop")},
+					{QStringLiteral("linked"), 7}}}}})
+			.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Nothing was written by any of them: the cell still has no chain.
+		QCOMPARE(run(QStringLiteral("session.follow_set"),
+			{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		// And a correctly typed entry of the same shape is still accepted.
+		QVERIFY2(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("follow_actions"),
+				QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("jump")},
+					{QStringLiteral("jump_to"), 2}}}}}).ok, "a well-typed jump was refused");
+	}
+
 };
 
 QTEST_GUILESS_MAIN(SessionCommandArgsTest)
