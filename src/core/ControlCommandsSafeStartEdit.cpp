@@ -53,6 +53,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QStringList>
 
 #include "ControlCommandsSafeStartShared.h"
 #include "ControlRegistry.h"
@@ -141,6 +142,23 @@ ControlResult safeStartHandleClear()
 	}
 
 	clear();
+
+	// The engine operation returns void and ignores both QFile::remove results
+	// (src/core/SafeStart.cpp:369-370), so the effect is READ BACK rather than
+	// assumed - exactly what safeStartHandleAcknowledge does above: a marker
+	// that could not be unlinked (a read-only working directory) is still on
+	// disk, and a caller told `cleared: true` would go on believing the next
+	// launch is normal when it is not.
+	if (markerExists() || acknowledged())
+	{
+		QStringList left;
+		if (markerExists()) { left << safeStartWire(markerPath()); }
+		if (acknowledged()) { left << safeStartWire(acknowledgedPath()); }
+		return ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("%1: %2 could not be removed, so the next launch is still affected by "
+				"them. The files were left exactly as they were")
+				.arg(SafeStartClearId, left.join(QStringLiteral(" and "))));
+	}
 
 	QJsonArray removed;
 	if (hadMarker) { removed.append(safeStartWire(markerPath())); }

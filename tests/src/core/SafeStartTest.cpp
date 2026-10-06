@@ -50,6 +50,8 @@
 
 #include "SafeStart.h"
 
+#include "src/core/ControlCommandsSafeStartShared.h"
+
 #include <QtTest>
 #include <QByteArray>
 #include <QDir>
@@ -481,6 +483,60 @@ private slots:
 			"the project hint exceeded kMaxProjectPathBytes");
 		endSession();
 	}
+
+	// -----------------------------------------------------------------------
+	// 8. THE COMMAND'S REPORT IS CHECKED AGAINST THE DISK, NOT AGAINST THE CALL
+	//    IT MADE. safestart.clear calls an engine operation that returns void
+	//    and ignores both QFile::remove results
+	//    (src/core/SafeStart.cpp:369-370), so a marker that could not be
+	//    unlinked stayed on disk while the reply said `cleared: true`.
+	// -----------------------------------------------------------------------
+#ifndef Q_OS_WIN
+	void clearRefusesWhenTheMarkerCannotActuallyBeRemoved()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+
+		beginSession();
+		QVERIFY(markerExists());
+		acknowledge();
+		QVERIFY(acknowledged());
+
+		// A read-only working directory: unlink of a file inside it cannot
+		// succeed for a non-privileged uid, so the handler's engine operation
+		// runs for real and removes nothing.
+		QFile probe(dir.filePath(QStringLiteral("probe")));
+		QVERIFY(probe.open(QIODevice::WriteOnly));
+		probe.close();
+
+		const QFile::Permissions writable = QFile::permissions(dir.path());
+		QVERIFY(QFile::setPermissions(dir.path(),
+			QFile::ReadOwner | QFile::ReadGroup | QFile::ReadOther |
+				QFile::ExeOwner | QFile::ExeGroup | QFile::ExeOther));
+		if (QFile::remove(probe.fileName()))
+		{
+			// This uid can unlink from a directory it cannot write (root): the
+			// condition cannot be produced here, so the case says so instead of
+			// asserting a failure the machine is incapable of showing.
+			QFile::setPermissions(dir.path(), writable);
+			QSKIP("this uid ignores directory write permissions; the failure cannot be produced");
+		}
+
+		const lmms::ControlResult reply = lmms::control::safeStartHandleClear();
+		// Whatever the reply says, the files are still there - so a `cleared:
+		// true` in it would be a lie a caller acts on.
+		QVERIFY2(markerExists(), "the precondition broke: the marker was removed after all");
+		QVERIFY2(acknowledged(), "the precondition broke: the acknowledgement was removed after all");
+		QVERIFY2(!reply.ok, "safestart.clear reported success although neither file was removed");
+		QVERIFY2(!reply.errorMessage.isEmpty(), "a refusal must name what is still on disk");
+
+		QVERIFY(QFile::setPermissions(dir.path(), writable));
+		endSession();
+		QVERIFY(!markerExists());
+		QVERIFY(!acknowledged());
+	}
+#endif
 
 };
 
