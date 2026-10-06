@@ -113,6 +113,14 @@ bool movesWarpMarkers(const WarpMarkers& markers, const QString& op, std::size_t
 
 
 
+//! Whether @a op applies @a db as a gain and it is out of the range the bakers declare.
+bool gainRefused(const QString& op, double db)
+{
+	// gain_db is 'gain's parameter: an op that applies no gain is not refused over it.
+	if (op != QLatin1String("gain")) { return false; }
+	return db < -60.0 || db > 24.0;  // the range sample.amplify and clip.set_gain declare; far beyond it the gain overflows
+}
+
 ControlResult editRange(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -126,7 +134,7 @@ ControlResult editRange(const QJsonObject& args)
 	const QString op = args.value(QStringLiteral("op")).toString();
 	if (to <= from || !operations().contains(op)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a range 'from' < 'to' inside the source, and an 'op'")); }
 	const double db = args.value(QStringLiteral("gain_db")).toDouble(0.0);
-	if (db < -60.0 || db > 24.0)  // the range sample.amplify and clip.set_gain declare; far beyond it the gain overflows
+	if (gainRefused(op, db))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("gain_db %1 is outside -60..24 dB").arg(db));
 	}

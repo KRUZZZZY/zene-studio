@@ -200,6 +200,22 @@ private slots:
 		QCOMPARE(clip->sample().data()[frame][1], 0.f);
 	}
 
+	void aRangeIgnoresAnUnrelatedGain()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		SampleClip* clip = toneClip(track, 440.0, 3840);
+		const auto size = static_cast<int>(clip->sample().sampleSize());
+		// gain_db is 'gain's parameter; a crop that ignores it must not be refused over it.
+		QVERIFY2(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), size / 4}, {QStringLiteral("to"), size / 2}, {QStringLiteral("op"), QStringLiteral("crop")},
+			{QStringLiteral("gain_db"), 30.0}}).ok, "a crop was refused over an unused gain_db");
+		QCOMPARE(static_cast<int>(clip->sample().sampleSize()), size / 4);
+		// 'gain' itself still validates the parameter it applies.
+		QCOMPARE(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), 0}, {QStringLiteral("to"), size / 4}, {QStringLiteral("op"), QStringLiteral("gain")},
+			{QStringLiteral("gain_db"), 30.0}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
 	void aFolderMovesAsOne()
 	{
 		Song* song = Engine::getSong();
