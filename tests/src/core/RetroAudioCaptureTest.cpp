@@ -188,6 +188,41 @@ private slots:
 		QCOMPARE(again.frames.size(), std::size_t{1000});
 	}
 
+	//! Luna cluster 4901: a window carries the overwrite count it was COPIED with.
+	//! A capture keeps running while the take is written, so a count read from the
+	//! live ring afterwards also counts frames the window never contained - the
+	//! take would report overwrites that did not affect its captured window.
+	void theWindowCarriesTheOverwriteCountItWasCopiedWith()
+	{
+		RetroAudioCapture capture;
+		capture.arm(true);
+
+		// Overfill the ring by exactly its own capacity, so the overwrite count is
+		// non-zero and every later push moves it (the default capacity is 1Mi
+		// frames, so the count is driven from capacity(), not hardcoded).
+		const std::size_t capacity = capture.ring().capacity();
+		QVERIFY(capacity > 0);
+		const auto chunk = makeFrames(1024, 100);
+		while (capture.ring().bufferedCount() < capacity)
+		{
+			capture.push(chunk.data(), static_cast<lmms::f_cnt_t>(chunk.size()));
+		}
+		capture.push(chunk.data(), static_cast<lmms::f_cnt_t>(chunk.size()));
+		const std::uint64_t atSnapshot = capture.ring().overwrittenCount();
+		QVERIFY(atSnapshot > 0);
+
+		const RetroAudioCapture::Window window = capture.takeWindow();
+		// The count belongs to THIS window...
+		QCOMPARE(static_cast<std::uint64_t>(window.overwritten), atSnapshot);
+
+		// ...and the producer keeps overwriting after the copy, as it does while
+		// the take file is being written.
+		capture.push(chunk.data(), static_cast<lmms::f_cnt_t>(chunk.size()));
+		QVERIFY(capture.ring().overwrittenCount() > atSnapshot);
+		// A window already taken still reports the count it was copied with.
+		QCOMPARE(static_cast<std::uint64_t>(window.overwritten), atSnapshot);
+	}
+
 	//! The take writer: a 24-bit STEREO WAV holding exactly the retained frames.
 	void theTakeWriterWritesTheRetainedWindow()
 	{
