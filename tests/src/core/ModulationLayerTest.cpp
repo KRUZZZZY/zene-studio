@@ -394,6 +394,52 @@ private slots:
 		QVERIFY(layer.loadSettings(root));
 		QCOMPARE(layer.modulator(0)->routeCount(), 1);
 	}
+
+	//! Cluster 1530: every step value survives save and reload EXACTLY. Six
+	//! significant digits is not enough to round-trip a float, so a step like
+	//! 0.12345678 came back as a different value and changed the modulator's
+	//! output.
+	void stepValuesSurviveSaveAndReload()
+	{
+		ModulationLayer layer;
+		const ModulatorSource authored = [] {
+			ModulatorSource source;
+			source.shape = ModulationShape::Steps;
+			source.rateHz = 2.0f;
+			source.phase = 0.25f;
+			source.stepCount = 4;
+			source.steps[0] = 0.12345678f;
+			source.steps[1] = -0.87654321f;
+			source.steps[2] = 0.03141592f;
+			source.steps[3] = 1.0f;
+			return source;
+		}();
+		QCOMPARE(layer.addModulator(QStringLiteral("Staircase"), authored), 0);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("song"));
+		doc.appendChild(root);
+		QVERIFY(layer.saveSettings(doc, root));
+		const QDomElement element = root.firstChildElement(QStringLiteral("modulation-layer"));
+
+		ModulationLayer reloaded;
+		QVERIFY(reloaded.loadSettings(element));
+		QCOMPARE(reloaded.modulatorCount(), 1);
+		const ModulatorSource& back = reloaded.modulator(0)->source;
+		QCOMPARE(back.stepCount, 4);
+		// QCOMPARE's float compare is FUZZY, which would hide exactly the loss
+		// this case is about; these are exact float-to-float comparisons.
+		for (int i = 0; i < back.stepCount; ++i)
+		{
+			QVERIFY2(back.steps[static_cast<std::size_t>(i)] == authored.steps[static_cast<std::size_t>(i)],
+				qPrintable(QStringLiteral("step %1 came back as %2, not %3")
+					.arg(i).arg(back.steps[static_cast<std::size_t>(i)])
+					.arg(authored.steps[static_cast<std::size_t>(i)])));
+		}
+		// The modulator's own output is bit-identical, not merely close.
+		QCOMPARE(ModulationLayer::outputAt(back, 0.0f), ModulationLayer::outputAt(authored, 0.0f));
+	}
+
 };
 
 QTEST_GUILESS_MAIN(ModulationLayerTest)

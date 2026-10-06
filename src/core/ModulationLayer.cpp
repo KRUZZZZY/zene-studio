@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include <QDomDocument>
 
@@ -65,8 +66,14 @@ void saveSource(QDomDocument& doc, QDomElement& modulatorElement, const Modulato
 	// MX-117: the step values and the envelope's attack, only for the shapes that read them.
 	if (source.shape == ModulationShape::Steps)
 	{
+		// float::max_digits10 significant digits, so a step value round-trips
+		// exactly; six of them quietly rounded every step on the way through.
 		QStringList values;
-		for (int i = 0; i < source.stepCount; ++i) { values << QString::number(source.steps[static_cast<std::size_t>(i)], 'g', 6); }
+		for (int i = 0; i < source.stepCount; ++i)
+		{
+			values << QString::number(source.steps[static_cast<std::size_t>(i)], 'g',
+				std::numeric_limits<float>::max_digits10);
+		}
 		modulatorElement.setAttribute(QStringLiteral("steps"), values.join(QLatin1Char(',')));
 	}
 	if (source.shape == ModulationShape::Envelope) { modulatorElement.setAttribute(QStringLiteral("attack"), static_cast<double>(source.attack)); }
