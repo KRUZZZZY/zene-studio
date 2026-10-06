@@ -434,6 +434,26 @@ private slots:
 			"removing no console dirtied a project whose content did not change");
 	}
 
+	//! Luna 3872: 'changed' counts the settings that actually changed - applying the value a
+	//! console already carries changes nothing and must not be reported as a change.
+	void applyingTheValueAlreadyThereReportsNoChange()
+	{
+		const QString console = loadByName(ch(1), QStringLiteral("console"));
+		if (console.isEmpty()) { QSKIP("this build has no console module"); }
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
+		for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { chainOf(i).clear(); }
+		QVERIFY(run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("drive"), 40.0}}).ok);
+		const QString onTwo = control::effectIdOf(chainOf(2).effects().back());
+
+		const ControlResult again = run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("drive"), 40.0}});
+		QVERIFY2(again.ok, qPrintable(again.errorMessage));
+		QCOMPARE(again.result.value(QStringLiteral("added")).toInt(), 0);
+		QCOMPARE(parameterValue(ch(2), onTwo, QStringLiteral("Drive")), 40.0);
+		QVERIFY2(again.result.value(QStringLiteral("changed")).toInt() == 0,
+			"a console already carrying the requested drive was reported as changed");
+	}
+
 	//! Luna 3873: one mixer.console_apply is ONE undo step however many channels it touched -
 	//! the removal of every channel's console has to be a single step, not one per channel.
 	void oneConsoleApplyIsOneUndoStep()
