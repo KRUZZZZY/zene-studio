@@ -2313,7 +2313,8 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 
 **Lanes and the sample editor (themes 11, 15).**
 - The lanes have no playhead.
-- No arbitrary controller number can be chosen from the lane.
+- *(Resolved 2026-10-06, ED-130.)* The lane chooser now lists every controller number, CC 0 to CC 127, beside
+  pitch bend, aftertouch and program change (`NoteEditorTest::anyControllerNumberCanBeChosenFromTheLane`).
 
 **Devices and the Inspector (themes 12, 13).**
 - VST3 and CLAP vendors read "Not reported", because the catalogue carries none.

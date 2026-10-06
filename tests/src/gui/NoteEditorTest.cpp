@@ -433,6 +433,41 @@ private slots:
 		QVERIFY(m_editor->laneView()->isVisible());
 	}
 
+	//! ED-130: the lane chooser offers every controller number, not a fixed five, and follows a lane set by command.
+	void anyControllerNumberCanBeChosenFromTheLane()
+	{
+		QComboBox* chooser = nullptr;
+		for (auto* box : m_editor->findChildren<QComboBox*>())
+		{
+			if (box->accessibleName() == NoteEditor::tr("Expression lane")) { chooser = box; }
+		}
+		QVERIFY(chooser != nullptr);
+		for (int cc = 0; cc <= 127; ++cc)
+		{
+			QVERIFY2(chooser->findData(QStringLiteral("cc:%1").arg(cc)) >= 0, qPrintable(QStringLiteral("no CC %1 in the lane chooser").arg(cc)));
+		}
+		for (const char* id : {"pitchbend", "aftertouch"}) { QVERIFY(chooser->findData(QLatin1String(id)) >= 0); }
+		// Choosing CC 74 shows its curve, and a stroke writes that controller.
+		chooser->setCurrentIndex(chooser->findData(QStringLiteral("cc:74")));
+		QCOMPARE(m_editor->state().controllerLane, QStringLiteral("cc:74"));
+		QCoreApplication::processEvents();
+		auto* lane = m_editor->findChild<ControllerLaneView*>(QStringLiteral("noteControllerLane"));
+		QVERIFY(lane != nullptr && lane->isVisible());
+		const NoteGrid& g = m_editor->state().grid;
+		const QPoint from(static_cast<int>(g.xOfTick(0)) + 1, 3);
+		const QPoint to(static_cast<int>(g.xOfTick(24)) + 1, 3);
+		QTest::mousePress(lane, Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(lane, to);
+		QTest::mouseRelease(lane, Qt::LeftButton, Qt::NoModifier, to);
+		QVERIFY(m_clip->controllers().lane(ControllerKind::ControlChange, 74) != nullptr);
+		QVERIFY(m_clip->controllers().lane(ControllerKind::ControlChange, 1) == nullptr);
+		QVERIFY(undo());
+		// A lane set by command (window.note_editor_set controller_lane) shows in the chooser too.
+		m_editor->setControllerLane(QStringLiteral("cc:100"));
+		QCOMPARE(chooser->currentData().toString(), QStringLiteral("cc:100"));
+		m_editor->setControllerLane(QString());
+	}
+
 	void theNewViewFieldsAreDrivableOverTheSocket()
 	{
 		// window.note_editor_set needs the main window; the same fields go through the editor's setters.

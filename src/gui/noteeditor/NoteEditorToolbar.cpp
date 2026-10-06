@@ -74,6 +74,22 @@ constexpr ToolChoice kTools[] = {
 	{NoteTool::Audition, "audition", "Play", Qt::Key_Y},
 };
 
+//! ED-130: the controllers the lane chooser lists after its five common ones - every other number 0..127, named
+//! where MIDI names it.
+QString controllerTitle(int cc)
+{
+	static const struct { int cc; const char* name; } named[] = {{0, "Bank select"}, {4, "Foot"}, {5, "Portamento time"},
+		{6, "Data entry"}, {8, "Balance"}, {10, "Pan"}, {32, "Bank select LSB"}, {65, "Portamento"}, {66, "Sostenuto"},
+		{67, "Soft pedal"}, {68, "Legato"}, {71, "Resonance"}, {72, "Release"}, {73, "Attack"}, {74, "Cutoff"},
+		{84, "Portamento control"}, {91, "Reverb"}, {93, "Chorus"}, {120, "All sound off"}, {121, "Reset controllers"},
+		{123, "All notes off"}};
+	for (const auto& n : named)
+	{
+		if (n.cc == cc) { return NoteEditor::tr("%1 (CC %2)").arg(NoteEditor::tr(n.name)).arg(cc); }
+	}
+	return NoteEditor::tr("CC %1").arg(cc);
+}
+
 //! The tool a plain key picks: its FL letter, or 1..7 in NoteTool's order (kept as aliases); false for any other key.
 bool toolForKey(const QKeyEvent* event, NoteTool* tool)
 {
@@ -273,6 +289,14 @@ void NoteEditor::buildLaneChooser()
 		{"Breath (CC 2)", "cc:2"}, {"Volume (CC 7)", "cc:7"}, {"Expression (CC 11)", "cc:11"}, {"Sustain (CC 64)", "cc:64"},
 		{"Pitch bend", "pitchbend"}, {"Aftertouch", "aftertouch"}, {"Program change", "program"}};
 	for (const auto& c : controllers) { m_laneBox->addItem(tr(c.title), QString::fromLatin1(c.id)); }
+	// Then any other controller number (ED-130): the five above are the common ones, not the only ones.
+	m_laneBox->insertSeparator(m_laneBox->count());
+	for (int cc = 0; cc <= 127; ++cc)
+	{
+		const QString id = QStringLiteral("cc:%1").arg(cc);
+		if (m_laneBox->findData(id) < 0) { m_laneBox->addItem(controllerTitle(cc), id); }
+	}
+	m_laneBox->setMaxVisibleItems(24);
 	a11y::announce(m_laneBox, tr("Expression lane"), tr("Which per-note value, or which controller curve of the clip, the lane below the notes edits."));
 	m_laneBox->setFixedWidth(84);
 	m_laneBox->setStyleSheet(QStringLiteral("QComboBox { padding: 2px 16px 2px 6px; }"));
