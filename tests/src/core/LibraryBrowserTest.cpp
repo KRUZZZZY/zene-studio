@@ -114,6 +114,36 @@ private slots:
 		QCOMPARE(run(QStringLiteral("browser.save_clip"), relative).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	// After aMidiClipIsSavedIntoTheLibrary, which ends with its file undone away.
+	void anOverwrittenClipComesBackOnUndo()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		clip->addNote(Note(TimePos(96), TimePos(48), 67), false);
+		const QJsonObject args{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("dir"), m_dir.path()},
+			{QStringLiteral("name"), QStringLiteral("replaced")}};
+		QVERIFY(run(QStringLiteral("browser.save_clip"), args).ok);
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("replaced.mid"));
+		QVERIFY(QFileInfo::exists(path));
+		// Something else of our own stands there: an overwrite replaced it.
+		QFile other(path);
+		QVERIFY(other.open(QIODevice::WriteOnly));
+		other.write("earlier bytes");
+		other.close();
+		QJsonObject over = args;
+		over.insert(QStringLiteral("overwrite"), true);
+		QVERIFY(run(QStringLiteral("browser.save_clip"), over).ok);
+		QVERIFY(QFileInfo(path).size() > 14);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the file the overwrite replaced is back, not deleted
+		QVERIFY(QFileInfo::exists(path));
+		QFile back(path);
+		QVERIFY(back.open(QIODevice::ReadOnly));
+		QCOMPARE(back.readAll(), QByteArray("earlier bytes"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // and the save under it still deletes the file
+		QVERIFY(!QFileInfo::exists(path));
+	}
+
 	void aMissingPresetIsRefused()
 	{
 		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());

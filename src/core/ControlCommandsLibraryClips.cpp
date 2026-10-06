@@ -191,6 +191,38 @@ QStringList addTags(const QString& path, const QJsonArray& tags)
 	return added;
 }
 
+//! What @a path holds right now, and whether it held anything at all: an overwrite
+//! destroys the file it replaces, so undo has to put that file back.
+struct PreviousFile
+{
+	QByteArray bytes;
+	bool existed = false;
+};
+
+PreviousFile readBackIfAny(const QString& path)
+{
+	PreviousFile previous;
+	previous.existed = QFileInfo::exists(path);
+	if (previous.existed)
+	{
+		QFile file(path);
+		if (file.open(QIODevice::ReadOnly)) { previous.bytes = file.readAll(); }
+	}
+	return previous;
+}
+
+//! Undo of a save: @a previous back where it was, or the file gone when there was none.
+void restoreOrRemove(const PreviousFile& previous, const QString& path)
+{
+	if (!previous.existed)
+	{
+		QFile::remove(path);
+		return;
+	}
+	QSaveFile file(path);
+	if (file.open(QIODevice::WriteOnly) && file.write(previous.bytes) == previous.bytes.size()) { file.commit(); }
+}
+
 ControlResult saveClip(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -202,13 +234,15 @@ ControlResult saveClip(const QJsonObject& args)
 	}
 	QString path;
 	if (!targetPath(args, ref, &path, &error)) { return error; }
+	// What the write is about to replace, read before it: undo puts that file back.
+	const PreviousFile previous = readBackIfAny(path);
 	QString why;
 	if (!writeClip(ref.clip, path, &why)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip was not saved: %1").arg(why)); }
 	const QStringList tags = addTags(path, args.value(QStringLiteral("tags")).toArray());
 	const int id = ref.clip->id();
-	addUndoStep([path, tags]() {
+	addUndoStep([path, tags, previous]() {
 		for (const QString& tag : tags) { BrowserTagStore::instance().remove(browserCanonicalKey(path), tag); }
-		QFile::remove(path);
+		restoreOrRemove(previous, path);
 	}, [id, path, tags]() {
 		ClipRef again;
 		ControlResult ignored;
