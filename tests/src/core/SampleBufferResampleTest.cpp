@@ -70,6 +70,18 @@ private slots:
 		const auto input = std::make_shared<const SampleBuffer>(std::vector<SampleFrame>(100), 44100);
 		QCOMPARE(resampleBuffer(input, 44100).get(), input.get());
 	}
+
+	//! Luna cluster 5285: the zero TARGET rate was rejected but a zero SOURCE rate was not,
+	//! so the output/input ratio was an infinity and the output length an enormous (and
+	//! meaningless) allocation request. A buffer that cannot state its rate is passed through
+	//! untouched, exactly as the target-rate guard already does.
+	void aBufferWithNoSourceRateIsPassedThroughUnchanged()
+	{
+		const auto input = std::make_shared<const SampleBuffer>(std::vector<SampleFrame>(4096), 0);
+		QCOMPARE(input->sampleRate(), 0U);
+		// Without the guard this divides by zero below and asks for a huge allocation.
+		QCOMPARE(resampleBuffer(input, 44100).get(), input.get());
+	}
 };
 
 QTEST_GUILESS_MAIN(SampleBufferResampleTest)
