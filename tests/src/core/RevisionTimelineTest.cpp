@@ -525,6 +525,33 @@ private slots:
 		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
 		QCOMPARE(readBytes(project), documentWith(1));
 	}
+
+	void aRefusedRestoreRecordsNoUndoStep()
+	{
+		// Its OWN file. The live file is over MaxRevisionBytes, which is the
+		// refusal the rotation raises; the revision being restored stays UNDER the
+		// cap, so the refusal is the live file's and not the source's.
+		const QString project = path(QStringLiteral("oversize.mmp"));
+		QVERIFY(writeBytes(project, QByteArray(
+			static_cast<int>(ProjectRevisionPolicy::MaxRevisionBytes) + 1024, 'x')));
+		QVERIFY(writeBytes(project + QStringLiteral(".bak"), documentWith(1)));
+		const QByteArray before = readBytes(project);
+
+		const ControlResult depth = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(depth.ok);
+		const int beforeDepth = depth.result.value(QStringLiteral("depth")).toInt();
+
+		const ControlResult refused = run(QStringLiteral("revisions.restore"),
+			QJsonObject{{QStringLiteral("project"), project},
+				{QStringLiteral("id"), QStringLiteral("backup")}});
+		QVERIFY2(!refused.ok, "a restore over the live file's cap reported success");
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+
+		const ControlResult after = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(after.ok);
+		QCOMPARE(after.result.value(QStringLiteral("depth")).toInt(), beforeDepth);
+		QCOMPARE(readBytes(project), before);
+	}
 };
 
 QTEST_GUILESS_MAIN(RevisionTimelineTest)

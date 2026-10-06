@@ -289,9 +289,23 @@ void registerRevisionsRestore(ControlRegistry& registry)
 
 		const bool liveExisted = QFileInfo::exists(target);
 		const qint64 replacedBytes = liveExisted ? QFileInfo(target).size() : 0;
-		// ONE action step, recorded before the write: restore revision 0 (the file
-		// this call rotated in) - or, when the restore CREATED the file, remove it,
-		// because a file that never existed cannot be restored.
+		// The restore BEFORE the checkpoint is recorded (Luna cluster 4877):
+		// restoreTimelineRevision() is the call that can refuse, and it can refuse
+		// AFTER the revision's own bytes were read - a live file over the policy's
+		// per-revision cap cannot be rotated, and that rotation is what would have
+		// made the restore recoverable. A step registered first left a typed
+		// REFUSED failure still pushing one, so the caller's next control.undo spent
+		// itself on a checkpoint for a file this command never touched, and moved
+		// the real step behind it one further from the keyboard.
+		if (!control::restoreTimelineRevision(target, recoveryFile, id, &error))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("revisions.restore: %1").arg(error));
+		}
+
+		// ONE action step, recorded after the write succeeded: restore revision 0
+		// (the file this call rotated in) - or, when the restore CREATED the file,
+		// remove it, because a file that never existed cannot be restored.
 		control::addUndoStep(
 			[target, liveExisted]() {
 				if (liveExisted)
@@ -306,12 +320,6 @@ void registerRevisionsRestore(ControlRegistry& registry)
 				QString ignored;
 				control::restoreTimelineRevision(target, recoveryFile, id, &ignored);
 			});
-
-		if (!control::restoreTimelineRevision(target, recoveryFile, id, &error))
-		{
-			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("revisions.restore: %1").arg(error));
-		}
 
 		QJsonObject result;
 		result.insert(QStringLiteral("file"), target);
