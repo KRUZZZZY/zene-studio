@@ -275,6 +275,35 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	// A second hand off into a folder that already carries someone else's
+	// session copy and manifest must be refused, leaving both files alone.
+	void aHandOffNeverOverwritesTheDestinationFolder()
+	{
+		const QString dir = m_dir.filePath(QStringLiteral("busy"));
+		const ControlResult first = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QVERIFY2(first.ok, qPrintable(first.errorMessage));
+		const QString copy = first.result.value(QStringLiteral("file")).toString();
+		const QString manifest = QDir(dir).filePath(QStringLiteral("HANDOFF.json"));
+		QFile theirs(copy);
+		QVERIFY(theirs.open(QIODevice::WriteOnly));
+		theirs.write("not our project");
+		theirs.close();
+		QFile theirManifest(manifest);
+		QVERIFY(theirManifest.open(QIODevice::WriteOnly));
+		theirManifest.write("{\"project\":\"theirs\"}");
+		theirManifest.close();
+
+		const ControlResult refused = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QFile check(copy);
+		QVERIFY(check.open(QIODevice::ReadOnly));
+		QCOMPARE(check.readAll(), QByteArray("not our project"));
+		check.close();
+		QFile checkManifest(manifest);
+		QVERIFY(checkManifest.open(QIODevice::ReadOnly));
+		QCOMPARE(checkManifest.readAll(), QByteArray("{\"project\":\"theirs\"}"));
+	}
+
 private:
 	QTemporaryDir m_dir;
 };

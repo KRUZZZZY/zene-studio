@@ -117,6 +117,31 @@ bool isSessionFile(const QString& file)
 	return !own.isEmpty() && QFileInfo(file).canonicalFilePath() == own;
 }
 
+//! Whether anything already occupies the hand-off folder's slot for @a file: a hand off never
+//! replaces a file it did not write itself.
+bool isTaken(const QString& file)
+{
+	return QFileInfo::exists(file);
+}
+
+//! The first of the hand-off folder's own files that already exists, or an empty string when the
+//! folder is free for this hand off.
+QString takenFile(const QString& file, const QString& manifestFile)
+{
+	for (const QString& candidate : {file, manifestFile})
+	{
+		if (isTaken(candidate)) { return candidate; }
+	}
+	return {};
+}
+
+//! Whether the hand-off manifest lands at @a file.
+bool writeManifest(const QString& file, const QJsonObject& info)
+{
+	QSaveFile out(file);
+	return out.open(QIODevice::WriteOnly) && out.write(QJsonDocument(info).toJson()) >= 0 && out.commit();
+}
+
 ControlResult handoff(const QJsonObject& args)
 {
 	const QString dir = args.value(QStringLiteral("dir")).toString();
@@ -128,6 +153,12 @@ ControlResult handoff(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' is the session's own file; hand off into another folder").arg(file));
 	}
+	const QString manifestFile = QDir(dir).filePath(QStringLiteral("HANDOFF.json"));
+	const QString taken = takenFile(file, manifestFile);
+	if (!taken.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' already exists; hand off into an empty folder").arg(taken));
+	}
 	if (!song->saveProjectFile(file))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the project could not be written to '%1': %2").arg(file, song->saveRefusal()));
@@ -138,8 +169,7 @@ ControlResult handoff(const QJsonObject& args)
 	ControlResult error;
 	if (!collectProjectMediaInto(file, QStringLiteral("media"), &copied, &failed, &missing, &error)) { return error; }
 	const QJsonObject info = manifest(file, copied, failed, missing);
-	QSaveFile out(QDir(dir).filePath(QStringLiteral("HANDOFF.json")));
-	if (!out.open(QIODevice::WriteOnly) || out.write(QJsonDocument(info).toJson()) < 0 || !out.commit())
+	if (!writeManifest(manifestFile, info))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("HANDOFF.json could not be written"));
 	}
