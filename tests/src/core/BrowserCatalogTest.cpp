@@ -375,6 +375,45 @@ private slots:
 		cache.forget(path);
 	}
 
+	//! A file nested below the depth limit is one the walk never reaches. The
+	//! answer has to SAY that: an omitted deep file reported as a complete result
+	//! is a caller told its search of the library found everything there was.
+	void reachingTheDepthLimitIsReportedAsTruncation()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		// kMaxDepth is 8, so a file 9 directories below the root is out of reach
+		// while one 8 down is still found. Both are asserted, so this proves the
+		// limit is where it is rather than merely that something was skipped.
+		QString shallow = dir.path();
+		QString deep = dir.path();
+		for (int i = 0; i < 8; ++i)
+		{
+			shallow = QDir(shallow).filePath(QStringLiteral("d%1").arg(i));
+			QVERIFY(QDir().mkpath(shallow));
+			const QString deeper = QDir(deep).filePath(QStringLiteral("d%1").arg(i));
+			QVERIFY(QDir().mkpath(deeper));
+			deep = deeper;
+		}
+		QVERIFY(QDir().mkpath(QDir(deep).filePath(QStringLiteral("beyond"))));
+		deep = QDir(deep).filePath(QStringLiteral("beyond"));
+		WaveSpec spec;
+		spec.title = QStringLiteral("Deep Kit");
+		QVERIFY(writeWave(QDir(shallow).filePath(QStringLiteral("kit_at_limit.wav")), spec));
+		QVERIFY(writeWave(QDir(deep).filePath(QStringLiteral("kit_too_deep.wav")), spec));
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.text = QStringLiteral("kit");
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.matched, 1);
+		QCOMPARE(result.items.size(), 1);
+		QVERIFY(result.items.first().path.endsWith(QStringLiteral("kit_at_limit.wav")));
+		QVERIFY2(result.truncated, "a file below the depth limit was skipped "
+			"without the answer saying the walk was incomplete");
+	}
+
 	//! A query matches on the name, on a tag and - with 'probe' - on the embedded
 	//! metadata. The probe counter is asserted, so "it matched on metadata" is
 	//! not a claim the test can make without opening the file.

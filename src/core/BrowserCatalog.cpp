@@ -244,6 +244,16 @@ bool walkMayDescend(const QFileInfo& entry, int depth)
 		&& !entry.fileName().startsWith(QLatin1Char('.'));
 }
 
+//! True when \a entry is skipped only because the walk is out of depth. A hidden
+//! or symlinked directory is skipped BY DESIGN - nothing under a dot-directory
+//! or behind a link was ever going to be part of the answer - so only the depth
+//! limit means the answer is a prefix of what the directory holds.
+bool skippedForDepth(const QFileInfo& entry, int depth)
+{
+	return !entry.isSymLink() && !entry.fileName().startsWith(QLatin1Char('.'))
+		&& depth + 1 > kMaxDepth;
+}
+
 /*! Streams every entry of \a dirPath one at a time into \a out (files) and \a
  *  queue (directories to visit), spending one unit of \a remaining per entry.
  *
@@ -253,10 +263,12 @@ bool walkMayDescend(const QFileInfo& entry, int depth)
  *  tree of empty directories is bounded by it too.
  *
  *  Returns false when the budget ran out mid-directory and the walk must report
- *  truncation.
+ *  truncation. \a truncated is set when a readable directory is skipped for the
+ *  depth limit alone, so the caller can report an incomplete answer even though
+ *  the scan budget was nowhere near spent.
  */
 bool readDirectory(const QString& dirPath, int depth, int* remaining,
-		QStringList* out, QList<QPair<QString, int>>* queue)
+		QStringList* out, QList<QPair<QString, int>>* queue, bool* truncated)
 {
 	QDirIterator entries(dirPath,
 		QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable);
@@ -271,6 +283,13 @@ bool readDirectory(const QString& dirPath, int depth, int* remaining,
 			{
 				queue->append({entry.absoluteFilePath(), depth + 1});
 			}
+			else if (skippedForDepth(entry, depth))
+			{
+				// There may be matching files below this directory that the walk
+				// will never look at. Reporting a complete answer would be a lie
+				// about what was searched.
+				*truncated = true;
+			}
 			continue;
 		}
 		out->append(entry.absoluteFilePath());
@@ -279,7 +298,9 @@ bool readDirectory(const QString& dirPath, int depth, int* remaining,
 }
 
 //! Every file under \a root, breadth-first, skipping hidden directories and
-//! symlinked ones (a symlink loop is a walk that never ends).
+//! symlinked ones (a symlink loop is a walk that never ends). \a truncated is set
+//! when the walk stopped early OR when it left a readable directory unread
+//! because it ran out of depth.
 QStringList filesUnder(const QString& root, int* remaining, bool* truncated)
 {
 	QStringList out;
@@ -288,7 +309,7 @@ QStringList filesUnder(const QString& root, int* remaining, bool* truncated)
 	while (!queue.isEmpty() && *remaining > 0)
 	{
 		const QPair<QString, int> head = queue.takeFirst();
-		if (!readDirectory(head.first, head.second, remaining, &out, &queue))
+		if (!readDirectory(head.first, head.second, remaining, &out, &queue, truncated))
 		{
 			stoppedEarly = true;
 			break;
