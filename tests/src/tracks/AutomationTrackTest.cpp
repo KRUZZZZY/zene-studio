@@ -212,6 +212,35 @@ private slots:
 		QCOMPARE(song->automatedValuesAt(TimePos::ticksPerBar() + 5)[&model], 0.5f);
 	}
 
+	// A `follows` attribute that is not a number is not a track id: track ids start at
+	// 0, so a failed conversion must not become track 0 (QString::toInt() returns 0
+	// and only sets `ok`).
+	void testMalformedFollowsIdIsNoTrack()
+	{
+		using namespace lmms;
+
+		auto song = Engine::getSong();
+		AutomationTrack track(song);
+
+		QDomDocument doc;
+		QDomElement elem = doc.createElement("automationtrack");
+		doc.appendChild(elem);
+
+		elem.setAttribute("follows", "bad");
+		track.loadTrackSpecificSettings(elem);
+		QCOMPARE(track.followsTrack(), -1);
+
+		// A well-formed id still loads, and a lane that follows nothing stays -1.
+		elem.setAttribute("follows", "3");
+		track.loadTrackSpecificSettings(elem);
+		QCOMPARE(track.followsTrack(), 3);
+
+		QDomElement bare = doc.createElement("automationtrack");
+		doc.appendChild(bare);
+		track.loadTrackSpecificSettings(bare);
+		QCOMPARE(track.followsTrack(), -1);
+	}
+
 	void testGlobalAutomation()
 	{
 		using namespace lmms;
