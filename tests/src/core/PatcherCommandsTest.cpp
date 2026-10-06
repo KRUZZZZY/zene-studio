@@ -422,6 +422,45 @@ private slots:
 		QCOMPARE(readState(), before);
 	}
 
+	//! A port field that IS present but is not a JSON integer is not the same
+	//! thing as a port field that is absent. `from_port: "1"` used to leave the
+	//! default 0 in place, so the edit succeeded and connected a DIFFERENT port
+	//! than the caller asked for - and port 0 is usually valid, so nothing
+	//! downstream complained. `to_port: 0.5` was worse still: `toInt()`
+	//! truncated it to 0 silently. Both are now refused as malformed input,
+	//! while an absent port field still defaults to 0.
+	void aPresentButInvalidPortIsRefusedRatherThanBecomingPortZero()
+	{
+		const QJsonObject before = readState();
+
+		QJsonObject stringPort = wire(QStringLiteral("effect:0"), QStringLiteral("effect:1"));
+		stringPort.insert(QStringLiteral("from_port"), QStringLiteral("1"));
+		const ControlResult stringResult = invoke(QStringLiteral("patcher.set_wiring"),
+			{{QStringLiteral("target"), channel()},
+			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")), stringPort}}});
+		QVERIFY(!stringResult.ok);
+		QCOMPARE(stringResult.errorKind, ControlErrorKind::InvalidArgs);
+
+		QJsonObject fractionalPort = wire(QStringLiteral("effect:0"), QStringLiteral("effect:1"));
+		fractionalPort.insert(QStringLiteral("to_port"), 0.5);
+		const ControlResult fractionalResult = invoke(QStringLiteral("patcher.set_wiring"),
+			{{QStringLiteral("target"), channel()},
+			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")), fractionalPort}}});
+		QVERIFY(!fractionalResult.ok);
+		QCOMPARE(fractionalResult.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Neither refusal wrote anything.
+		QCOMPARE(readState(), before);
+
+		// An absent port field still means port 0, and still works.
+		QJsonObject absentPort = wire(QStringLiteral("effect:0"), QStringLiteral("effect:1"));
+		absentPort.remove(QStringLiteral("from_port"));
+		const ControlResult absentResult = invoke(QStringLiteral("patcher.set_wiring"),
+			{{QStringLiteral("target"), channel()},
+			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")), absentPort}}});
+		QVERIFY(absentResult.ok);
+	}
+
 	//! The measured normal case for a chain of real devices, stated rather than
 	//! hidden: a chain with nothing to route has no graph and reports it
 	//! (`editable.editable` false with the reason), and an edit against it is
