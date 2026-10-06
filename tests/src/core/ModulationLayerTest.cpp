@@ -395,6 +395,35 @@ private slots:
 		QCOMPARE(layer.modulator(0)->routeCount(), 1);
 	}
 
+	//! Cluster 5182: a phase attribute that is not a number is a corrupt block.
+	//! toDouble() returning 0 quietly produced a modulator at phase zero, which
+	//! is a legal phase nobody authored.
+	void aMalformedPhaseIsRefused()
+	{
+		ModulationLayer layer;
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("modulation-layer"));
+		doc.appendChild(root);
+		QDomElement bad = doc.createElement(QStringLiteral("modulator"));
+		bad.setAttribute(QStringLiteral("name"), QStringLiteral("Broken"));
+		bad.setAttribute(QStringLiteral("shape"), QStringLiteral("sine"));
+		bad.setAttribute(QStringLiteral("rate"), QStringLiteral("1"));
+		bad.setAttribute(QStringLiteral("phase"), QStringLiteral("bad"));
+		root.appendChild(bad);
+		QCOMPARE(layer.loadSettings(root), false);
+		QCOMPARE(layer.modulatorCount(), 0);
+
+		// An absent phase keeps its documented default of 0.
+		QDomElement absent = doc.createElement(QStringLiteral("modulator"));
+		absent.setAttribute(QStringLiteral("name"), QStringLiteral("Fine"));
+		absent.setAttribute(QStringLiteral("shape"), QStringLiteral("sine"));
+		absent.setAttribute(QStringLiteral("rate"), QStringLiteral("1"));
+		root.appendChild(absent);
+		QVERIFY(layer.loadSettings(root));
+		QCOMPARE(layer.modulator(0)->source.phase, 0.0f);
+	}
+
+
 	//! Cluster 1530: every step value survives save and reload EXACTLY. Six
 	//! significant digits is not enough to round-trip a float, so a step like
 	//! 0.12345678 came back as a different value and changed the modulator's

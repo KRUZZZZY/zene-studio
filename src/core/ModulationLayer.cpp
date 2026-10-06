@@ -104,13 +104,38 @@ float boundedValue(const QString& text, float low, float fallback)
 	return std::isfinite(value) ? std::clamp(value, low, 1.f) : fallback;
 }
 
+//! Whether @a element carries @a name at all. An absent attribute has a
+//! documented default; a PRESENT one that is not a number is a corrupt block,
+//! which is a different thing and must not read as that default.
+bool hasAttribute(const QDomElement& element, const QString& name)
+{
+	return element.hasAttribute(name);
+}
+
+//! @a name as a float, or false when it is present and is not a number.
+bool floatAttribute(const QDomElement& element, const QString& name, float fallback, float* out)
+{
+	if (!hasAttribute(element, name)) { *out = fallback; return true; }
+	bool ok = false;
+	const double value = element.attribute(name).toDouble(&ok);
+	if (!ok) { return false; }
+	*out = static_cast<float>(value);
+	return true;
+}
+
+//! The source's phase, checked. False when it is present and is not a number: a
+//! phase that read as 0 is a legal phase nobody authored.
+bool readSourcePhase(const QDomElement& element, ModulatorSource* source)
+{
+	return floatAttribute(element, QStringLiteral("phase"), 0.f, &source->phase);
+}
+
 ModulatorSource readSource(const QDomElement& element)
 {
 	ModulatorSource source;
 	modulationShapeFromName(element.attribute(QStringLiteral("shape"), QStringLiteral("sine")),
 		&source.shape);
 	source.rateHz = static_cast<float>(element.attribute(QStringLiteral("rate")).toDouble());
-	source.phase = static_cast<float>(element.attribute(QStringLiteral("phase")).toDouble());
 	source.unipolar = element.attribute(QStringLiteral("unipolar"), QStringLiteral("0")).toInt() != 0;
 	source.active = element.attribute(QStringLiteral("active"), QStringLiteral("1")).toInt() != 0;
 	const QStringList values = element.attribute(QStringLiteral("steps")).split(QLatin1Char(','), Qt::SkipEmptyParts);
@@ -146,6 +171,9 @@ ModulationRoute readRoute(const QDomElement& element)
 bool loadModulator(const QDomElement& node, ModulationLayer* layer)
 {
 	ModulatorSource source = readSource(node);
+	// A phase that is present and is not a number is a corrupt block, refused
+	// here rather than repaired to a legal value nobody authored.
+	if (!readSourcePhase(node, &source)) { return false; }
 	QString why;
 	if (!layer->validSource(source, &why)) { return false; }
 	// MX-118: a formula that no longer compiles loads as an empty one (the modulator reads 0).
