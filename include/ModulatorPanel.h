@@ -56,6 +56,8 @@ public:
 	QString addModulator(const QString& shape, double rateHz);
 	QString removeSelected();
 	QString setShapeAndRate(const QString& shape, double rateHz);
+	//! The shape alone: rate_set keeps an argument a call omits, so the rate stays exactly as it was.
+	QString setShape(const QString& shape);
 	QString bind(const QString& channel, int effect, const QString& parameter, double depth);
 	QString unbindRow(int row);
 	void selectModulator(int row);

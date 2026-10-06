@@ -163,7 +163,7 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	});
 	connect(unbind, &QPushButton::clicked, this, [this] { unbindRow(m_targets->currentRow()); });
 	connect(m_modulators, &QListWidget::currentRowChanged, this, [this] { showSelected(); });
-	connect(m_shape, &QComboBox::currentTextChanged, this, [this] { setShapeAndRate(m_shape->currentText(), m_rate->value()); });
+	connect(m_shape, &QComboBox::currentTextChanged, this, [this] { setShape(m_shape->currentText()); });
 	connect(m_rate, &QDoubleSpinBox::editingFinished, this, [this] { setShapeAndRate(m_shape->currentText(), m_rate->value()); });
 	connect(m_channel, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { fillEffects(); });
 	connect(m_effect, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { fillParameters(); });
@@ -354,6 +354,17 @@ QString ModulatorPanel::setShapeAndRate(const QString& shape, double rateHz)
 	if (selectedId().isEmpty()) { return tr("no modulator is selected"); }
 	const QString result = refusal(run("modulator.rate_set", {{QStringLiteral("modulator"), selectedId()},
 		{QStringLiteral("shape"), shape}, {QStringLiteral("rate"), rateHz}}));
+	refresh();
+	return result;
+}
+
+QString ModulatorPanel::setShape(const QString& shape)
+{
+	if (selectedId().isEmpty()) { return tr("no modulator is selected"); }
+	// The rate box shows two decimals, so its value is not the modulator's exact rate: sending it
+	// back would round a rate like 1.234 Hz on a shape change. rate_set keeps what a call omits.
+	const QString result = refusal(run("modulator.rate_set", {{QStringLiteral("modulator"), selectedId()},
+		{QStringLiteral("shape"), shape}}));
 	refresh();
 	return result;
 }

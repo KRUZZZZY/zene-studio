@@ -33,6 +33,8 @@
 #include <QComboBox>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QLabel>
+#include <QPushButton>
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -136,6 +138,36 @@ private slots:
 	{
 		QVERIFY(ControlRegistry::instance()->hasCommand(QStringLiteral("window.modulators")));
 	}
+
+// The rate box shows two decimals, but a modulator's rate is exact. Choosing another shape must
+	// change only the shape: the handler used the box's rounded value and wrote it back, so a rate
+	// like 1.234 Hz silently became 1.23 Hz.
+	void changingOnlyTheShapeKeepsTheExactRate()
+	{
+		ModulatorPanel panel;
+		QCOMPARE(panel.addModulator(QStringLiteral("triangle"), 1.234), QString());
+		panel.selectModulator(panel.modulatorCount() - 1);
+
+		QComboBox* shape = nullptr;
+		for (QComboBox* combo : panel.findChildren<QComboBox*>())
+		{
+			if (combo->property("controlCommand").toString() == QLatin1String("modulator.rate_set")) { shape = combo; }
+		}
+		QVERIFY(shape != nullptr);
+		QString other;
+		for (int i = 0; i < shape->count(); ++i)
+		{
+			if (shape->itemText(i) != shape->currentText()) { other = shape->itemText(i); }
+		}
+		QVERIFY(!other.isEmpty());
+		shape->setCurrentText(other);
+
+		const QJsonObject source = modulators().last().toObject().value(QStringLiteral("source")).toObject();
+		QCOMPARE(source.value(QStringLiteral("shape")).toString(), other);
+		QVERIFY2(std::abs(source.value(QStringLiteral("rate")).toDouble() - 1.234) < 1e-6,
+			qPrintable(QStringLiteral("rate became %1").arg(source.value(QStringLiteral("rate")).toDouble())));
+	}
+
 };
 
 QTEST_MAIN(ModulatorPanelTest)
