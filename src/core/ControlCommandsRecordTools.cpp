@@ -30,6 +30,7 @@
 
 #include <QFileInfo>
 #include <QJsonObject>
+#include <QMap>
 #include <QStorageInfo>
 
 #include "AudioEngine.h"
@@ -111,17 +112,53 @@ ControlResult punchHere(const QJsonObject& args)
 		{QStringLiteral("end"), static_cast<double>(end)}, {QStringLiteral("enabled"), true}});
 }
 
+//! Where the armed routes write their takes, counted per directory: an armed route
+//! writes to the file name it was armed with (record.arm_track 'file', which may sit
+//! on another volume), and a route with no path yet writes beside the recovery file.
+//! Routes sharing a directory share its free space.
+QMap<QString, int> armedTakePlaces(const MultiTrackRecorder& recorder, const QString& recoveryDir)
+{
+	QMap<QString, int> places;
+	for (int i = 0; i < recorder.trackCount(); ++i)
+	{
+		const TrackRecorder& route = recorder.track(i);
+		if (!route.isArmed()) { continue; }
+		const QString path = QString::fromStdString(route.filePath());
+		places[path.isEmpty() ? recoveryDir : QFileInfo(path).absolutePath()] += 1;
+	}
+	return places;
+}
+
 ControlResult remaining(const QJsonObject&)
 {
-	const QString dir = QFileInfo(ConfigManager::inst()->recoveryFile()).absolutePath();
-	QStorageInfo storage(dir);
+	const QString recoveryDir = QFileInfo(ConfigManager::inst()->recoveryFile()).absolutePath();
 	const MultiTrackRecorder& recorder = Engine::audioEngine()->recorder();
 	int armed = 0;
 	for (int i = 0; i < recorder.trackCount(); ++i) { armed += recorder.track(i).isArmed() ? 1 : 0; }
-	const double bytesPerSecond = static_cast<double>(Engine::audioEngine()->outputSampleRate()) * 3.0 * std::max(1, armed);  // 24-bit mono a route
-	const double seconds = storage.isValid() ? static_cast<double>(storage.bytesAvailable()) / bytesPerSecond : 0.0;
+	const double bytesPerRoute = static_cast<double>(Engine::audioEngine()->outputSampleRate()) * 3.0;  // 24-bit mono a route
+	QMap<QString, int> places = armedTakePlaces(recorder, recoveryDir);
+	if (places.isEmpty()) { places[recoveryDir] = 1; }
+	// The pass runs on until the place with the least room left for what its routes
+	// write runs out, so report that place - not the recovery file's volume.
+	QString dir = recoveryDir;
+	qint64 free = 0;
+	double seconds = 0.0;
+	bool seen = false;
+	for (auto it = places.cbegin(); it != places.cend(); ++it)
+	{
+		const QStorageInfo storage(it.key());
+		if (!storage.isValid()) { continue; }
+		const double here = static_cast<double>(storage.bytesAvailable()) / (bytesPerRoute * std::max(1, it.value()));
+		if (!seen || here < seconds)
+		{
+			seen = true;
+			seconds = here;
+			free = storage.bytesAvailable();
+			dir = it.key();
+		}
+	}
 	return ControlResult::success({{QStringLiteral("seconds"), seconds}, {QStringLiteral("armed_routes"), armed},
-		{QStringLiteral("free_bytes"), static_cast<double>(storage.bytesAvailable())}, {QStringLiteral("directory"), dir}});
+		{QStringLiteral("free_bytes"), static_cast<double>(free)}, {QStringLiteral("directory"), dir}});
 }
 
 const QStringList& sourceNames() { static const QStringList names{QStringLiteral("input"), QStringLiteral("master"), QStringLiteral("channel")}; return names; }

@@ -29,6 +29,7 @@
 #include <QtTest>
 
 #include <QJsonArray>
+#include <QTemporaryDir>
 
 #include "AutomationTrack.h"
 #include "Clip.h"
@@ -361,6 +362,26 @@ private slots:
 		QVERIFY2(left.ok, qPrintable(left.errorMessage));
 		QVERIFY(left.result.value(QStringLiteral("seconds")).toDouble() >= 0.0);
 		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 0);
+	}
+
+	//! Luna 4900: the remaining time is the free space WHERE TAKES ARE WRITTEN, but
+	//! record.remaining measured the recovery file's directory. An armed route writes to the
+	//! take path the caller chose (record.arm_track's 'file'), which can sit on another
+	//! filesystem - so the answer must be the directory the armed routes actually write.
+	void theRemainingTimeMeasuresWhereTheArmedRoutesWrite()
+	{
+		QTemporaryDir takes;
+		QVERIFY2(takes.isValid(), "could not make a take directory");
+		const QString take = takes.filePath(QStringLiteral("route0.wav"));
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 0},
+			{QStringLiteral("file"), take}}).ok, "record.arm_track refused");
+
+		const ControlResult left = run(QStringLiteral("record.remaining"));
+		QVERIFY2(left.ok, qPrintable(left.errorMessage));
+		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 1);
+		QCOMPARE(left.result.value(QStringLiteral("directory")).toString(), takes.path());
+		QVERIFY2(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok,
+			"record.disarm_track refused");
 	}
 };
 
