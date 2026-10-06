@@ -302,7 +302,13 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 	qDebug() << exec << args;
 #endif
 
+	// With the shm-fifo transport there is no socket to accept, so the client is
+	// as connected as it will ever be; the socket transport sets this from the
+	// accept() below.
+	bool connected = true;
+
 #ifndef SYNC_WITH_SHM_FIFO
+	connected = false;
 	struct pollfd pollin;
 	pollin.fd = m_server;
 	pollin.events = POLLIN;
@@ -323,6 +329,10 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 			{
 				qWarning( "Unexpected socket error." );
 			}
+			else
+			{
+				connected = true;
+			}
 	}
 #endif
 
@@ -331,7 +341,10 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 		// start under the client executable's name. The record is what `oop.*`
 		// reports and what the crash-loop REFUSAL is measured against; a start that
 	// never got this far leaves no record, which is correct (there is nothing to
-	// say about a client that never ran).
+	// say about a client that never ran - a client that launched and never
+	// connected is exactly that, and its exit may even have been recorded
+	// before this start).
+	if (connected)
 	{
 		oop::HostTracker& tracker = oop::HostTracker::instance();
 		tracker.noteStarted(QFileInfo{m_exec}.fileName(), m_process.processId(),

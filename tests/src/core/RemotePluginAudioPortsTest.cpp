@@ -33,6 +33,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QList>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -40,6 +41,7 @@
 #include "AudioEngine.h"
 #include "AudioPortsModel.h"
 #include "Engine.h"
+#include "OutOfProcessHosting.h"
 #include "RemotePlugin.h"
 
 using namespace lmms;
@@ -117,6 +119,7 @@ constexpr auto planeOffset(ch_cnt_t channel, f_cnt_t frames) -> std::ptrdiff_t
  *   "silent"       - read and log everything, never answer
  *   "die-on-start" - exit without answering on the first period request, i.e.
  *                    the client dies mid-period
+ *   "no-connect"   - exit at once without ever connecting to the socket
  */
 auto writeTestPeer(const QString& dir, const QString& python) -> QString
 {
@@ -137,6 +140,11 @@ ID_START_PROCESSING = 9
 ID_PROCESSING_DONE = 10
 
 sock_path, log_path, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+
+if mode == "no-connect":
+    # Launched and gone without ever reaching the host socket: the host's
+    # poll() for a connection can only time out.
+    sys.exit(0)
 
 client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 client.connect(sock_path)
@@ -557,6 +565,44 @@ private slots:
 	}
 
 #ifndef SYNC_WITH_SHM_FIFO
+	//! A client executable that launches but never connects to the host socket
+	//! is not a start: `oop.*` reports starts, and the crash-loop refusal is
+	//! measured against them, so recording one for a client that never reached
+	//! the host invents history the session did not have. The record must stay
+	//! untouched when the poll for a connection times out.
+	//! Costs the poll() timeout in init(), hence the single case here.
+	void clientThatNeverConnectsIsNotRecordedAsAStart()
+	{
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+		const auto client = QFileInfo{peer}.fileName();
+
+		auto& tracker = oop::HostTracker::instance();
+		tracker.resetAll();
+
+		{
+			TestRemotePluginAudioPorts ports{false, nullptr};
+			RemotePlugin plugin{ports.controller()};
+
+			// The peer exits at once without connecting: poll() times out and
+			// no client is on the other end of the socket.
+			plugin.init(peer, false, {logPath, QStringLiteral("no-connect")});
+			QVERIFY(!plugin.isRunning());
+		}
+
+		QCOMPARE(tracker.record(client).starts, 0);
+		tracker.resetAll();
+	}
+
 	//! The client dies mid-period: the wait for IdProcessingDone comes back
 	//! without a reply, and discarding that result made process() report success
 	//! on planes the client may have written only partially - which the router
