@@ -94,6 +94,17 @@ BrowserSearch::BrowserSearch(const QString& text)
 		if (!text.trimmed().isEmpty()) { m_groups.push_back({Term{QString(), text.trimmed().toLower(), false}}); }
 		return;
 	}
+	parseExpression(words);
+	// An expression that produced no usable term (`tag:`, a lone `OR`) is not a match-all:
+	// keep it as the literal text it looks like, as the non-expression path above does.
+	if (m_groups.empty() && !text.trimmed().isEmpty())
+	{
+		m_groups.push_back({Term{QString(), text.trimmed().toLower(), false}});
+	}
+}
+
+void BrowserSearch::parseExpression(const QStringList& words)
+{
 	m_groups.emplace_back();
 	for (const QString& w : words)
 	{

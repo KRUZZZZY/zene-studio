@@ -74,6 +74,8 @@ private:
 	static bool termHolds(const Term& term, const BrowserItem& item, const QStringList& metadataText);
 	//! One word of an expression: its '-', its field and its value.
 	static Term termOf(QString word);
+	//! Fills @a groups from @a words; drops a leading group and a trailing empty one.
+	void parseExpression(const QStringList& words);
 
 	std::vector<Group> m_groups;  //!< any group may hold
 	bool m_expression = false;
