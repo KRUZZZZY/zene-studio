@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-06T16:27:11Z",
+  "captured_at": "2026-10-06T16:46:24Z",
   "commands": [
     {
       "args_schema": {
@@ -1674,6 +1674,41 @@
       "description": "Set a control's trim - an offset (in the control's own unit) added to its written automation as it plays, never written into the clip, so the curve's shape stays and the whole of it moves. Runtime state like the automation mode (not saved). One undo step.",
       "group": "automation",
       "id": "automation.trim_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "parameter": {
+            "type": "string"
+          },
+          "ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "track",
+          "parameter",
+          "ticks"
+        ],
+        "type": "object"
+      },
+      "description": "Write to end: from 'ticks' (song ticks) to the song's end the control holds 'value' (its own unit, range-checked; its current value when left out). Every later point is removed, the point at 'ticks' steps from the curve's value there to the new one, and a point at the song's end (the end of its last clip) holds it - what a write pass leaves to the end. Creates the automation clip when the control has none. Answers {track, parameter, ticks, end, value, removed, automation}. One undo step.",
+      "group": "automation",
+      "id": "automation.write_to_end",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -33997,7 +34032,7 @@
       }
     }
   ],
-  "count": 809,
+  "count": 810,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -34005,15 +34040,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-editor-lanes/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-janauqjw/zene.sock",
-    "version": "0.4.0-alpha.334+a5aa9bb"
+    "source_socket": "/tmp/zctl-run-nh4izt8v/zene.sock",
+    "version": "0.4.0-alpha.335+68a1d94"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 809,
-    "ids_sha256": "30a5e1ef45f2a6f4cd493d28b6b923826da185f96165d735ba363909b12ca8e2"
+    "id_count": 810,
+    "ids_sha256": "1fb0989630097d6fb7e8875eb6ddd862219b0e6b81d248b5139d62296ae38083"
   }
 }

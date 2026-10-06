@@ -2337,7 +2337,7 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
 
 
-## 0.5.0 editor lanes — controller lanes, keyboard automation editing, fades in the automation view (2026-10-06)
+## 0.5.0 editor lanes — controller lanes, keyboard automation editing, fades in the automation view, write to end (2026-10-06)
 
 **ED-130, any controller lane.** The note editor's lane chooser lists every controller number (CC 0 to 127), pitch
 bend, aftertouch and program change (`docs/NOTE-EDITOR.md` §5). What it leaves out:
@@ -2371,3 +2371,15 @@ the same curve `clip.fade_curve` reports (one definition, `clipGainCurveAt`) - w
 - The curve runs from tick 0 over the clip's length; the ghost waveform is placed by its own (inherited) rule, so on
   a clip with a start offset or a trimmed window the two may not line up exactly. Not measured.
 - The curve is redrawn when the editor repaints; a fade changed elsewhere shows on the next repaint.
+
+**ED-201, write to end.** `automation.write_to_end` holds a control's value (its current one when left out) from a
+tick to the song's end: every later point goes, the point at the tick steps from the curve's value there to the new
+one, and a point at the song's end (the end of its last clip) holds it - one undo step. A control's context menu has
+**Write value to end**, which writes the current value from the song position
+(`AutomationLanesTest::writeToEndHoldsAValueToTheSongsEnd`, `AutomationModeMenuTest::theContextMenuWritesTheValueToTheEnd`).
+What it leaves out:
+- It is a helper run after (or instead of) a pass, not a mode of the pass itself: a Touch or Latch pass does not
+  write to the end when it stops, and there is no "write to punch" or "write to start".
+- It acts on the control's first automation clip; a clip that starts after the tick is refused rather than extended
+  backwards.
+- The menu item is offered only for a control the command surface can name (as the mode submenu is).

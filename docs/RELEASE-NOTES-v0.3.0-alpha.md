@@ -951,8 +951,13 @@ window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows becam
 view.announcements (`true_inverse`); window.sample_editor, window.item_list, workflow.resume and task.list, task.cancel,
 task.clear_finished and task.show (`not_mutating`, interface state).
 
+**0.5.0 editor lanes (2026-10-06)** added automation.write_to_end (ED-201, `true_inverse`: an AutomationClip journal
+checkpoint, or an action step removing a created track) (+1). Measured with the probe on `050/feat-editor-lanes`, configured
+without wasmtime: `MEASURED rows=810 true_inverse=404 snapshot=37 irreversible=21 not_mutating=348`
+(`DECLARED rows=810 entries=810 duplicates=0`) - this block minus wasm's option row, exactly.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=818 true_inverse=404 snapshot=40 irreversible=21 not_mutating=353
+     measured: rows=819 true_inverse=405 snapshot=40 irreversible=21 not_mutating=353
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
