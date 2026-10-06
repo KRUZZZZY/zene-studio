@@ -856,6 +856,8 @@ set(LMMS_TESTS
 	src/gui/StartHubTest.cpp
 	# 0.5.0 L14 / L11: the manual and reference, hover help, tours, appearance, the library search view.
 	src/gui/HelpAccessTest.cpp
+	# Luna 4016: control.surface_report keeps the whole menu path of a nested action.
+	src/gui/AgentSurfaceReportTest.cpp
 	# R7.3: the piano roll's frame time at 1k/5k/10k/50k notes (an opt-in +20% gate).
 	src/gui/PianoRollBenchmarkTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
@@ -1369,6 +1371,7 @@ set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(HelpAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AgentSurfaceReportTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(ZENE_HAVE_COLLAB)
 	set_tests_properties(CollabPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
