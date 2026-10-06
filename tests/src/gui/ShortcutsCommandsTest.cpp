@@ -37,6 +37,8 @@
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
+#include "ShortcutMap.h"
+#include "UiConfigStore.h"
 
 using namespace lmms;
 
@@ -177,6 +179,32 @@ private slots:
 	}
 
 	
+
+	//! BUG 6 (cluster 5373): an override in the CONFIG FILE that is not a string unbinds the action.
+	//! shortcuts.import checks what it is handed and refuses a value that is not key text, but a
+	//! hand-edited config is read straight back by ShortcutMap::applyTo, where the non-string became
+	//! an empty string through toString() - and an empty string is the documented UNBIND, so
+	//! `42` quietly took the action's key away. Only a string may be read as an override; anything
+	//! else keeps the action on its default.
+	void aNonStringOverrideInTheConfigKeepsTheDefault()
+	{
+		const QPair<Row, Row> two = twoBoundActions();
+		QVERIFY(!two.first.id.isEmpty());
+		const QString before = binding(two.first.id).keys;
+		QVERIFY(!before.isEmpty());
+		QVERIFY(run(QStringLiteral("shortcuts.reset")).ok);
+
+		// The config as a hand edit leaves it: the override's value is a number, not key text.
+		QJsonObject store = gui::uistore::read(QLatin1String("shortcuts"));
+		store.insert(QStringLiteral("overrides"), QJsonObject{{two.first.id, 42}});
+		QVERIFY(gui::uistore::write(QLatin1String("shortcuts"), store, {}, gui::uistore::Inverse{},
+			[] { gui::ShortcutMap::apply(gui::getGUI()->mainWindow()->menuBar()); }).ok);
+
+		const Row after = binding(two.first.id);
+		QVERIFY2(after.keys == after.defaults, qPrintable(QStringLiteral(
+			"a non-string override left the action on '%1', not its default '%2'").arg(after.keys, after.defaults)));
+		QVERIFY2(!after.overridden, "a value that is not key text was counted as an override");
+	}
 
 	//! BUG 7 (cluster 4014): an id no menu has is refused, not reported as a reset of nothing.
 	void resettingAnActionNoMenuHasIsRefused()
