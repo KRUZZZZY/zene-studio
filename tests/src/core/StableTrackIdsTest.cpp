@@ -37,6 +37,8 @@
 #include "ControlRegistry.h"
 #include "DataFile.h"
 #include "Engine.h"
+#include "MidiClip.h"
+#include "Note.h"
 #include "ProjectIds.h"
 #include "Song.h"
 #include "Track.h"
@@ -129,6 +131,31 @@ QString legacyProject(const QString& version, const QStringList& ids = {},
 		.arg(version,
 			nextId.isEmpty() ? QString() : QStringLiteral(" next-id=\"%1\"").arg(nextId),
 			tracks);
+}
+
+/*! A project whose one midi clip holds two notes that CLAIM THE SAME id - the
+ * note-family equivalent of the duplicated track ids the track pass repairs.
+ * Reachable only from an external merge of two branches, exactly like those. */
+QString projectWithDuplicateNoteIds(const QString& noteId)
+{
+	const QString note = QStringLiteral(" key=\"60\" vol=\"100\" pan=\"0\" len=\"384\" pos=\"%1\" type=\"0\" id=\"%2\"");
+	return QStringLiteral(
+		"<?xml version=\"1.0\"?>\n"
+		"<lmms-project version=\"1.2\" type=\"song\" creator=\"LMMS\" creatorversion=\"1.2.0\">\n"
+		"  <head/>\n"
+		"  <song>\n"
+		"    <trackcontainer type=\"song\">\n"
+		"      <track type=\"0\" name=\"A\" muted=\"0\">\n"
+		"        <instrumenttrack/>\n"
+		"          <midiclip steps=\"16\" name=\"c\" muted=\"0\" pos=\"0\" len=\"192\" type=\"0\">\n"
+		"            <note%1/>\n"
+		"            <note%2/>\n"
+		"          </midiclip>\n"
+		"      </track>\n"
+		"    </trackcontainer>\n"
+		"  </song>\n"
+		"</lmms-project>\n")
+		.arg(note.arg(QStringLiteral("0"), noteId), note.arg(QStringLiteral("48"), noteId));
 }
 
 } // namespace
@@ -449,6 +476,57 @@ private slots:
 		// a new track never takes a number the counter has passed
 		const int fresh = Track::create(Track::Type::Instrument, song)->id();
 		QVERIFY(!repaired.contains(fresh));
+	}
+
+	//! Luna cluster 3324: the SAME rule the track and clip passes already
+	//! apply, for the note family. Note::setId accepts any nonnegative id, so a
+	//! project carrying two notes with id="5" used to load with BOTH keeping 5 -
+	//! and `note-5` then named two live notes at once, so a command addressing
+	//! one could edit or remove the other.
+	void duplicateNoteIdsAreRepairedOnLoad()
+	{
+		const QString path = writeTemp(QStringLiteral("dup-notes.mmp"),
+			projectWithDuplicateNoteIds(QStringLiteral("5")));
+		loadProject(path);
+
+		QVector<int> ids;
+		for (const Track* track : Engine::getSong()->tracks())
+		{
+			for (const Clip* clip : track->getClips())
+			{
+				const auto* midi = dynamic_cast<const MidiClip*>(clip);
+				if (!midi) { continue; }
+				for (const Note* note : midi->notes()) { ids << note->id(); }
+			}
+		}
+		QCOMPARE(ids.size(), 2);
+		QVERIFY2(ids[0] == 5, "the first occurrence in document order keeps the id");
+		QVERIFY2(ids[1] != 5, "the duplicate note kept the id it shares");
+		QSet<int> distinct;
+		for (int id : ids) { distinct.insert(id); }
+		QCOMPARE(distinct.size(), 2);
+
+		// the repair is counted, not hidden, and the fresh id clears the counter
+		QVERIFY(ProjectIds::loadAssignments() >= 1);
+		QVERIFY(ProjectIds::next() > ids[1]);
+
+		// and it is stable across a save/open round trip
+		const QString savedPath = m_dir.filePath(QStringLiteral("dup-saved.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(savedPath, false));
+		loadProject(savedPath);
+		QVector<int> reloaded;
+		for (const Track* track : Engine::getSong()->tracks())
+		{
+			for (const Clip* clip : track->getClips())
+			{
+				const auto* midi = dynamic_cast<const MidiClip*>(clip);
+				if (!midi) { continue; }
+				for (const Note* note : midi->notes()) { reloaded << note->id(); }
+			}
+		}
+		QCOMPARE(reloaded.size(), 2);
+		QVERIFY(reloaded[0] != reloaded[1]);
+		QCOMPARE(ProjectIds::loadAssignments(), 0);
 	}
 
 	//! project.open reports the upgrade (Q1) - extending the object that already

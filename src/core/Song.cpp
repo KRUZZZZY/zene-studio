@@ -1503,6 +1503,44 @@ void Song::createNewProjectFromTemplate( const QString & templ )
 
 
 
+namespace
+{
+
+//! ARCH-4 S3 (SPEC-ARCH-4 1.5 R4), note family: a note whose file id is already
+//! taken by an earlier note in document order is handed a fresh one from the
+//! high-water mark and the replacement is COUNTED, exactly as the track and
+//! clip passes above do. Without this, `note-<n>` could name two live notes at
+//! once after a branch merge. Track and clip ids are untouched, and the
+//! addresses are per family (`trk-7`, `clip-7` and `note-7` are distinct), so
+//! this keeps its own seen-set.
+void repairDuplicateNoteIds( const TrackContainer::TrackList& loaded )
+{
+	QSet<int> seenNotes;
+	for( const Track* track : loaded )
+	{
+		for( const Clip* clip : track->getClips() )
+		{
+			auto* midi = dynamic_cast<const MidiClip*>( clip );
+			if( !midi ) { continue; }
+			for( Note* note : midi->notes() )
+			{
+				if( seenNotes.contains( note->id() ) )
+				{
+					note->setId( ProjectIds::allocate() );
+					ProjectIds::noteLoadAssignment( note->id() );
+				}
+				else
+				{
+					seenNotes.insert( note->id() );
+				}
+			}
+		}
+	}
+}
+
+} // namespace
+
+
 // load given song. \a skipSections names sections the caller does not want
 // loaded (SPEC-ARCH-4 1.4, ARCH-4 S2b): their bytes are removed before anything
 // parses them, and what was removed becomes this session's notLoadedSections() -
@@ -1772,6 +1810,13 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 				}
 			}
 		}
+
+		// ...and the SAME rule for the note family, over every note of every midi
+		// clip of every loaded track. Two notes claiming one id arrive exactly
+		// like duplicated tracks or clips - a merge of two branches that each
+		// edited a copy - and `note-<n>` would then name two live notes, so a
+		// command addressing one could edit or remove the other.
+		repairDuplicateNoteIds( loaded );
 	}
 
 	// The walk is over: from here on allocate() hands out ids to objects that
