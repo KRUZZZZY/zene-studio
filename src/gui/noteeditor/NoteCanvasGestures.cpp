@@ -73,7 +73,7 @@ void NoteCanvas::extendPaint(const QPoint& pos)
 	const int start = std::max(0, NoteGrid::snapDown(static_cast<int>(m_state.grid.tickAtX(pos.x())), m_state.gridTicks));
 	if (key < 0) { return; }
 	const bool taken = std::any_of(m_painted.begin(), m_painted.end(),
-		[start](const std::pair<int, int>& cell) { return cell.second == start; });
+		[key, start](const std::pair<int, int>& cell) { return cell.first == key && cell.second == start; });
 	if (!taken) { m_painted.emplace_back(key, start); }
 }
 

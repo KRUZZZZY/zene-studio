@@ -236,6 +236,24 @@ private slots:
 		QCOMPARE(static_cast<int>(noteAt(m_clip, 0, 60)->getVolume()), 100);  // an unselected note elsewhere is left alone
 	}
 
+	void aPaintDragDownAColumnPaintsEveryRowItCrosses()
+	{
+		QTest::keyClick(m_editor, Qt::Key_B);  // the Paint tool
+		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
+		const QPoint from = point(400, 66);
+		const QPoint to = point(400, 70);  // straight down the same grid column
+		QWidget* canvas = m_editor->canvas();
+		QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(canvas, to);
+		QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, to);
+		// A painted cell is a (key, start) pair: two rows in one column are two different cells,
+		// and the drag must not lose the second one to the first (a start-only duplicate check).
+		QVERIFY2(noteAt(m_clip, 396, 66) != nullptr, "the row the drag started on");
+		QVERIFY2(noteAt(m_clip, 396, 70) != nullptr, "and the row it crossed into");
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+	}
+
 	void aNewNoteTakesTheLastTouchedNotesLength()
 	{
 		QTest::mouseClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(200, 62));  // touch C (96 long)
