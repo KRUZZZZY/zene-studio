@@ -445,7 +445,9 @@ void PinConnector::MatrixView::mouseMoveEvent(QMouseEvent* me)
 {
 	me->ignore();
 
-	if (me->button() != Qt::MouseButton::NoButton)
+	// buttons(), not button(): a mouse-move event carries no button of its own, and the held
+	// button is what tells a drag (which already has its press handled) from a hover.
+	if (me->buttons() != Qt::MouseButton::NoButton)
 	{
 		unsetCursor();
 		return;
