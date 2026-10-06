@@ -196,6 +196,41 @@ private slots:
 		}
 		QCOMPARE(clipsOf(pair.first).size(), 1);
 	}
+
+	//! Every per-clip entry of a locked edit's reply names the CLIP it describes,
+	//! not just the track. One member track can hold several clips in the anchor's
+	//! span, and then `moves` holds several entries for that one track: without a
+	//! clip id the caller cannot tell which clip an entry moved.
+	void everyLockedMoveAndEditEntryNamesItsClip()
+	{
+		const Pair pair = lockedPair(QStringLiteral("instrument"));
+		// A SECOND clip on the peer track, overlapping the anchor's span: the
+		// reply then carries two moves for that track, one per clip.
+		const QString peerClip = addClip(pair.second, 1200, 500);
+		QVERIFY2(!peerClip.isEmpty(), "the second clip on the peer track was not added");
+
+		const ControlResult moved = run(QStringLiteral("vca.edit_move"),
+			edit(pair, {{QStringLiteral("position"), 1100}}));
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		const QJsonArray moves = moved.result.value(QStringLiteral("moves")).toArray();
+		QCOMPARE(moves.size(), 3);
+		QStringList named;
+		for (const QJsonValue& value : moves)
+		{
+			const QJsonObject entry = value.toObject();
+			const QString clipId = entry.value(QStringLiteral("clip")).toString();
+			QVERIFY2(!clipId.isEmpty(), "a moves entry names no clip");
+			// The id has to resolve, or it identifies nothing.
+			QVERIFY2(clipOf(clipId) != nullptr, qPrintable("moves names no live clip: " + clipId));
+			named.append(clipId);
+		}
+		// The anchor, the peer clip the fixture made, and the one added above.
+		QVERIFY(named.contains(pair.anchor));
+		QVERIFY(named.contains(pair.other));
+		QVERIFY(named.contains(peerClip));
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(clipOf(pair.anchor)->startPosition().getTicks(), TimePos(1000));
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlVcaLockedEditsTest)

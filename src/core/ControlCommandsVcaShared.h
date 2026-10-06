@@ -241,6 +241,11 @@ inline int moveLockedClip(LockedEditResult* out, Track* track, Clip* clip, tick_
 
 	QJsonObject move;
 	move.insert(QStringLiteral("track"), control::trackIdOf(track));
+	// The clip, not just its track: one member track can hold SEVERAL clips in
+	// the anchor's span, so `moves` then holds several entries for that track and
+	// only the clip id says which clip an entry moved. (This is the shape
+	// LockedEditResult::moves documents above.)
+	move.insert(QStringLiteral("clip"), control::clipIdOf(clip));
 	move.insert(QStringLiteral("from"), from);
 	move.insert(QStringLiteral("to"), clip->startPosition().getTicks());
 	out->moves.append(move);

@@ -139,7 +139,11 @@ QJsonObject transactionFor(const QString& op, VcaGroup* group, const ClipRef& an
 
 QJsonObject clipEdge(Track* track, Clip* clip)
 {
-	return QJsonObject{{QStringLiteral("track"), trackIdOf(track)},
+	// `clip` first: a member track can hold several clips in the anchor's span, so
+	// the per-clip edit entries of one reply are only distinguishable by the clip
+	// they name (the same reason moveLockedClip's `moves` entries carry it).
+	return QJsonObject{{QStringLiteral("clip"), control::clipIdOf(clip)},
+		{QStringLiteral("track"), trackIdOf(track)},
 		{QStringLiteral("position"), clip->startPosition().getTicks()},
 		{QStringLiteral("length"), clip->length().getTicks()},
 		{QStringLiteral("offset"), clip->startTimeOffset().getTicks()}};
