@@ -525,7 +525,16 @@ TimePos SampleClip::timelinePosAt(f_cnt_t sourceFrame) const
 {
 	const auto framesPerTick = clipFramesPerTick();
 	const auto originTicks = startPosition().getTicks() + startTimeOffset().getTicks();
-	const auto frame = std::clamp(sourceFrame, m_window.sourceIn, m_window.sourceOut);
+	// Luna cluster 2484: this mapping never consulted the play DIRECTION, so a
+	// reversed clip placed every source frame where the forward clip placed it -
+	// the transient overlay, clipTransientTicks, the slice and warp-quantise
+	// commands all followed. A reversed clip plays the window backwards, so frame
+	// f sounds where in + out - 1 - f did. Mirrored before the clamp, so a frame
+	// from outside the window still lands on the edge it is nearest to.
+	const auto mirrored = m_sample.reversed()
+		? m_window.sourceIn + m_window.sourceOut - 1 - sourceFrame
+		: sourceFrame;
+	const auto frame = std::clamp(mirrored, m_window.sourceIn, m_window.sourceOut);
 
 	if (m_warp.empty())
 	{

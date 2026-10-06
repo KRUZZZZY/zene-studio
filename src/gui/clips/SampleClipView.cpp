@@ -216,8 +216,8 @@ const std::vector<int>& SampleClipView::transientTicks()
 	}
 	std::size_t warp = 0;
 	for (const WarpMarker& marker : m_clip->warpMarkers().all()) { warp = qHashMulti(warp, marker.sourceFrame, marker.offsetTicks); }
-	const QString key = QStringLiteral("%1:%2:%3:%4").arg(m_clip->length().getTicks()).arg(Engine::getSong()->getTempo())
-		.arg(m_clip->clipFramesPerTick()).arg(warp);
+	const QString key = QStringLiteral("%1:%2:%3:%4:%5").arg(m_clip->length().getTicks()).arg(Engine::getSong()->getTempo())
+		.arg(m_clip->clipFramesPerTick()).arg(warp).arg(m_clip->sample().reversed() ? 1 : 0);
 	if (key != m_transientKey)
 	{
 		// As clipTransientTicks: ticks from the clip's start, where the clip plays each frame now.
