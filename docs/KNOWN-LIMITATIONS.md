@@ -2337,7 +2337,7 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
 
 
-## 0.5.0 editor lanes — controller lanes, keyboard automation editing (2026-10-06)
+## 0.5.0 editor lanes — controller lanes, keyboard automation editing, fades in the automation view (2026-10-06)
 
 **ED-130, any controller lane.** The note editor's lane chooser lists every controller number (CC 0 to 127), pitch
 bend, aftertouch and program change (`docs/NOTE-EDITOR.md` §5). What it leaves out:
@@ -2361,3 +2361,13 @@ the chosen point both ways (`AutomationEditorEditingTest`). What it leaves out:
 - A moved point keeps its curve and bend but not a separate out-value (a step): the move writes one value, as
   `automation.move_point` does.
 - The list types a value in whole percent of the range; the "Stored value" column shows the exact value.
+
+**ED-180, fades drawn in the automation view.** An audio clip set as the automation editor's ghost ("Set as ghost in
+automation editor") now has its gain curve drawn over its waveform: the fades, the clip gain and the gain envelope -
+the same curve `clip.fade_curve` reports (one definition, `clipGainCurveAt`) - with what the fades take away shaded
+(`AutomationEditorEditingTest::aSampleClipsFadesAreDrawnBehindTheCurve`). What it leaves out:
+- It is drawn, not edited: the fade handles stay on the clip in the arranger (and `clip.set_fade`).
+- Pre-fades (the part of a fade outside the clip) and speed fades are not drawn.
+- The curve runs from tick 0 over the clip's length; the ghost waveform is placed by its own (inherited) rule, so on
+  a clip with a start offset or a trimmed window the two may not line up exactly. Not measured.
+- The curve is redrawn when the editor repaints; a fade changed elsewhere shows on the next repaint.

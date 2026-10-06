@@ -2171,6 +2171,7 @@ src/gui/clips/PatternClipView.cpp
 src/gui/clips/SampleClipOverlays.cpp
 src/gui/clips/SampleClipView.cpp
 src/gui/editors/AutomationEditor.cpp
+src/gui/editors/AutomationEditorFades.cpp
 src/gui/editors/AutomationEditorKeys.cpp
 src/gui/editors/AutomationPointEdit.cpp
 src/gui/editors/Editor.cpp

@@ -1228,6 +1228,7 @@ void AutomationEditor::paintEvent(QPaintEvent * pe )
 			};
 
 			m_sampleThumbnail.visualize(param, p);
+			drawGhostFades(p, yOffset, sampleHeight);  // ED-180: the clip's fades over its waveform
 		}
 
 		// draw ghost notes

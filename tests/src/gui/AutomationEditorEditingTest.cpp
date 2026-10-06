@@ -27,7 +27,7 @@
  *  grid step and Up/Down change its value - each key one automation.move_point, so one undo step; a move onto another
  *  point is refused and leaves it; Escape gives the arrows back to scrolling. A control the command surface cannot
  *  name (the track's volume) moves the same way, one journal step. window.item_list's "automation" surface lists the
- *  open clip's points and its cell edits move them. */
+ *  open clip's points and its cell edits move them. ED-180: a sample clip's fades are drawn behind the automation. */
 
 #include <QtTest>
 
@@ -36,9 +36,11 @@
 #include <cmath>
 
 #include "../core/ReversibilityTestSupport.h"
+#include "AudioEngine.h"
 #include "AutomationClip.h"
 #include "AutomationEditor.h"
 #include "AutomationTrack.h"
+#include "ClipEdits.h"
 #include "ControlAutomationSupport.h"
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
@@ -48,6 +50,9 @@
 #include "InstrumentTrack.h"
 #include "ItemList.h"
 #include "MainWindow.h"
+#include "SampleBuffer.h"
+#include "SampleClip.h"
+#include "SampleTrack.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -190,6 +195,35 @@ private slots:
 		QCOMPARE(ticksOf(clip), (QList<int>{0, 72}));
 		QVERIFY(invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("automation")},
 			{QStringLiteral("visible"), false}}).ok);
+	}
+
+	//! ED-180: a sample clip's fades (clip.fade_curve's gain curve) are drawn in the automation editor, over the clip
+	//! drawn behind the automation; nothing drew them before.
+	void aSampleClipsFadesAreDrawnBehindTheCurve()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		// Two bars of a steady tone, the clip two bars long.
+		const int ticks = 2 * DefaultTicksPerBar;
+		std::vector<SampleFrame> tone(static_cast<std::size_t>(Engine::framesPerTick() * ticks), SampleFrame(0.5f));
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(std::move(tone), static_cast<int>(Engine::audioEngine()->outputSampleRate())));
+		clip->changeLength(TimePos(ticks));
+		AutomationEditorWindow* window = getGUI()->automationEditor();
+		QVERIFY(window->m_editor->validClip());
+		window->setGhostSample(clip);
+		AutomationEditor* editor = window->m_editor;
+		editor->resize(std::max(editor->width(), 800), std::max(editor->height(), 400));
+		const QImage plain = editor->grab().toImage();
+		ClipEdits faded = clip->clipEdits();
+		faded.fadeInTicks = DefaultTicksPerBar;
+		faded.fadeOutTicks = DefaultTicksPerBar / 2;
+		clip->setClipEdits(faded);
+		const QImage withFades = editor->grab().toImage();
+		QVERIFY2(withFades != plain, "the clip's fades changed nothing the automation editor draws");
+		clip->setClipEdits(ClipEdits{});
+		QCOMPARE(editor->grab().toImage(), plain);  // the fades, and nothing else, made the difference
 	}
 
 private:

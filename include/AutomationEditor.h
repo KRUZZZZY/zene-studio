@@ -136,6 +136,9 @@ protected:
 	void stepKeyPoint(int direction);
 	void moveKeyPoint(int ticks, float value);
 	void drawKeyPoint(QPainter& p);
+	//! ED-180 (AutomationEditorFades.cpp): the ghost sample clip's gain curve - its fades, gain and envelope - over
+	//! the waveform drawn behind the automation, in the band @a top..@a top + @a height.
+	void drawGhostFades(QPainter& p, int top, int height);
 
 	timeMap::iterator getNodeAt(int x, int y, bool outValue = false, int r = 5);
 	/**

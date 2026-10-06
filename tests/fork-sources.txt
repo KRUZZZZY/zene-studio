@@ -1740,6 +1740,7 @@ src/gui/XyPad.cpp
 src/gui/clips/ClipLockFeedback.cpp
 src/gui/clips/ClipViewTheme.cpp
 src/gui/clips/SampleClipOverlays.cpp
+src/gui/editors/AutomationEditorFades.cpp
 src/gui/editors/AutomationEditorKeys.cpp
 src/gui/editors/AutomationPointEdit.cpp
 src/gui/editors/ItemListAutomationSource.cpp

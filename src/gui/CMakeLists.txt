@@ -276,6 +276,7 @@ SET(LMMS_SRCS
 	gui/clips/SampleClipView.cpp
 
 	gui/editors/AutomationEditor.cpp
+	gui/editors/AutomationEditorFades.cpp
 	gui/editors/AutomationEditorKeys.cpp
 	gui/editors/AutomationPointEdit.cpp
 	gui/editors/Editor.cpp
