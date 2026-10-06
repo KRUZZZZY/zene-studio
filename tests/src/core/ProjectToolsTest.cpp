@@ -109,6 +109,31 @@ private slots:
 			{QStringLiteral("out_dir"), outDir}}).errorKind, ControlErrorKind::NotFound);
 	}
 
+	void aConversionLeavesAnUnrelatedDotPartFileAlone()
+	{
+		const QString tone = taketest::writeToneWav(QDir(m_dir.path()).filePath(QStringLiteral("stag.wav")), 440.0);
+		QVERIFY(!tone.isEmpty());
+		const QString outDir = QDir(m_dir.path()).filePath(QStringLiteral("staged"));
+		QVERIFY(QDir().mkpath(outDir));
+		const QString bystander = QDir(outDir).filePath(QStringLiteral("stag.wav.part"));
+		const QByteArray marker("not a staging file", 19);
+		{
+			QFile file(bystander);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QCOMPARE(file.write(marker), marker.size());
+		}
+
+		const ControlResult queued = run(QStringLiteral("render.convert"), {{QStringLiteral("files"), QJsonArray{tone}},
+			{QStringLiteral("out_dir"), outDir}});
+		QVERIFY2(queued.ok, qPrintable(queued.errorMessage));
+		const int job = queued.result.value(QStringLiteral("jobs")).toArray().first().toObject().value(QStringLiteral("job")).toInt();
+		QTRY_COMPARE_WITH_TIMEOUT(stateOf(job), QStringLiteral("done"), 20000);
+
+		QFile file(bystander);
+		QVERIFY2(file.open(QIODevice::ReadOnly), "the conversion overwrote a file that was already there");
+		QCOMPARE(file.readAll(), marker);
+	}
+
 	void aQueuedRenderIsCancelledAndListed()
 	{
 		const QString project = QDir(m_dir.path()).filePath(QStringLiteral("other.mmp"));
