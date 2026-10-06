@@ -133,6 +133,42 @@ private slots:
 		QVERIFY(program.empty());
 	}
 
+	//! Cluster 5171: an exponent with no sign is read whole. "1e3" is 1000 and
+	//! "1e30" is 1e30, both clamped to 1 - not a parse failure and not 1e0.
+	void positiveExponentsAreReadWhole()
+	{
+		QVERIFY(compiles(QStringLiteral("1e3")));
+		QVERIFY(compiles(QStringLiteral("1e30")));
+		QVERIFY(compiles(QStringLiteral("1.5e2")));
+		QVERIFY(compiles(QStringLiteral("2E4")));
+		QCOMPARE(value(QStringLiteral("1e3"), 0.0), 1.0);
+		QCOMPARE(value(QStringLiteral("1e30"), 0.0), 1.0);
+		QCOMPARE(value(QStringLiteral("1.5e2"), 0.0), 1.0);
+		// The sign still works, and every digit of the exponent is consumed:
+		// 1e-1 reads as 0.1 (a float constant, hence the fuzzy compare), and
+		// 1e-2 * 100 is exactly 1 - which it cannot be if "2" were dropped.
+		QVERIFY(std::abs(value(QStringLiteral("1e-1"), 0.0) - 0.1) < 1e-6);
+		QVERIFY(std::abs(value(QStringLiteral("1e-2 * 100"), 0.0) - 1.0) < 1e-6);
+		// A formula mixing an exponent into arithmetic must not leave the
+		// digits behind for the next term.
+		QVERIFY(std::abs(value(QStringLiteral("1e-1 + 0.1"), 0.0) - 0.2) < 1e-6);
+	}
+
+	//! Cluster 3265: a finite literal larger than the float range is refused at
+	//! compile time, because the evaluator turns the resulting infinity into
+	//! silence rather than the clamped 1 the contract promises.
+	void aLiteralTheEvaluatorCannotHoldIsRefused()
+	{
+		QVERIFY(!compiles(QStringLiteral("1e100")));
+		QVERIFY(!compiles(QStringLiteral("-1e100")));
+		// The largest float is still representable, and reads as the clamped 1.
+		QVERIFY(compiles(QStringLiteral("3.4e38")));
+		QCOMPARE(value(QStringLiteral("3.4e38"), 0.0), 1.0);
+		// A value inside the float range compiles and clamps as it always did.
+		QVERIFY(compiles(QStringLiteral("1e30")));
+		QCOMPARE(value(QStringLiteral("1e30"), 0.0), 1.0);
+	}
+
 	//! MX-118: formula_set gives the modulator the shape and the program; the layer's LFO runs it;
 	//! it is saved with the shape and read back; a bad formula is refused; undo restores the shape.
 	void formulaSetDrivesTheModulator()
