@@ -54,6 +54,7 @@
 #include "ProjectJournal.h"
 #include "Rack.h"
 #include "Song.h"
+#include "TrackKeyNames.h"
 
 using namespace lmms;
 
@@ -465,6 +466,37 @@ private slots:
 		QCOMPARE(devicesOn(track), boosted);
 		QVERIFY(redone());  // ...and its redo takes that one out again
 		QVERIFY(devicesOn(track).isEmpty());
+	}
+
+	//! Luna cluster 1096: the undo closure carried the old names, but the transaction's
+	//! 'before' payload was empty - so the record that claims to restore them described no
+	//! state at all, and a client reading control.transactions saw a reversible step with
+	//! nothing to reverse to.
+	void theKeyNameTransactionCarriesTheNamesItRestores()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		QVERIFY(track != nullptr);
+		const QString id = control::trackIdOf(track);
+		// The first label on a track has no before-state - the track had no names to replace.
+		QVERIFY(run(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QStringLiteral("Kick")}}).ok);
+		const ControlRegistry::Transaction* first = ControlRegistry::instance()->lastTransaction();
+		QVERIFY2(first != nullptr, "setting a key name recorded no transaction");
+		QVERIFY2(first->reversible, "the key-name change recorded no inverse");
+
+		// Replacing it is the case that matters: the step restores "Kick", so the record
+		// has to say so - an empty before-state describes nothing to return to.
+		QVERIFY(run(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QStringLiteral("BD")}}).ok);
+		const ControlRegistry::Transaction* second = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(second != nullptr);
+		const QJsonArray carried = second->before.value(QStringLiteral("names")).toArray();
+		QCOMPARE(carried.size(), 1);
+		QCOMPARE(carried.first().toObject().value(QStringLiteral("name")).toString(), QStringLiteral("Kick"));
+		// And the undo step really does put that name back, as the record claims.
+		QCOMPARE(TrackKeyNames::instance().name(track->id(), 24), QStringLiteral("BD"));
+		QVERIFY(undone());
+		QCOMPARE(TrackKeyNames::instance().name(track->id(), 24), QStringLiteral("Kick"));
 	}
 
 	//! E19: no record names an "UNIMPLEMENTED" inverse any more - a real one, or an honest one-way record.

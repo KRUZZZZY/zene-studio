@@ -47,15 +47,19 @@ using namespace control;
 namespace
 {
 
-QJsonArray namesJson(int trackId)
+QJsonArray namesJson(const QHash<int, QString>& names)
 {
 	QJsonArray out;
-	const QHash<int, QString> names = TrackKeyNames::instance().names(trackId);
 	for (auto it = names.begin(); it != names.end(); ++it)
 	{
 		out.append(QJsonObject{{QStringLiteral("key"), it.key()}, {QStringLiteral("name"), it.value()}});
 	}
 	return out;
+}
+
+QJsonArray namesJson(int trackId)
+{
+	return namesJson(TrackKeyNames::instance().names(trackId));
 }
 
 //! Replace track @a track's names with @a next as ONE undo step.
@@ -68,7 +72,10 @@ ControlResult storeNames(Track* track, const QHash<int, QString>& next)
 	TrackKeyNames::instance().setNames(id, next);
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("names"), namesJson(id)}};
-	result.insert(QStringLiteral("__transaction"), transactionPayload({}, QStringLiteral("control.undo"), {}, true,
+	// The recorded step restores `before`, so the transaction has to carry it: a reversible
+	// record with an empty before-state describes no state to return to.
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("names"), namesJson(before)}},
+		QStringLiteral("control.undo"), {}, true,
 		QStringLiteral("action checkpoint: the recorded undo step puts the track's previous key names back")));
 	return ControlResult::success(result);
 }
