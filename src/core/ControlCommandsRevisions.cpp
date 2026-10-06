@@ -395,8 +395,17 @@ void registerRevisionsRestore(ControlRegistry& registry)
 			QJsonObject{{QStringLiteral("file"), target}, {QStringLiteral("id"), id},
 				{QStringLiteral("live_file_existed"), liveExisted},
 				{QStringLiteral("replaced_bytes"), replacedBytes}},
-			QStringLiteral("revisions.restore"),
-			QJsonObject{{QStringLiteral("path"), target}, {QStringLiteral("id"), id}},
+			// The inverse IS the action checkpoint recorded above, so it is
+			// advertised as the one command that replays it (Luna cluster 1223).
+			// Naming revisions.restore here advertised THIS command with the same
+			// id: replaying it re-applied the revision the restore just chose
+			// instead of putting the replaced file back, so the advertised inverse
+			// was self-referential and never a true inverse. It also passed the
+			// target as `path`, while this command's args schema takes `project`
+			// (see the schema above) and is closed, so a client replaying the pair
+			// it was handed was refused as InvalidArgs.
+			QStringLiteral("control.undo"),
+			QJsonObject(),
 			true,
 			liveExisted
 				? QStringLiteral("action checkpoint: the live file was rotated into the 'keep-3' "

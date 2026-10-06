@@ -56,6 +56,7 @@
 #include "ProjectContainer.h"
 #include "ProjectRevisions.h"
 #include "RevisionTimeline.h"
+#include "ReversibilityTestSupport.h"
 
 using namespace lmms;
 using namespace lmms::control;
@@ -579,6 +580,40 @@ private slots:
 		const ControlResult redone = run(QStringLiteral("control.redo"));
 		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
 		QCOMPARE(readBytes(project), documentWith(1));
+	}
+
+	//! Luna cluster 1223: the transaction revisions.restore records advertises an
+	//! inverse that can neither run nor mean anything. It named
+	//! `revisions.restore` again with the SAME id, which reapplies the chosen
+	//! revision instead of putting the replaced file back, and it passed the target
+	//! as `path` where the command's args schema takes `project` - so a client
+	//! replaying it either failed argument validation or targeted the session's own
+	//! project instead of the requested file. The advertised inverse must be
+	//! replayable AND be the undo.
+	void theTimelineRestoreAdvertisesAReplayableInverse()
+	{
+		const QString project = path(QStringLiteral("inverse.mmp"));
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev0"), documentWith(2)));
+
+		const ControlResult restored = run(QStringLiteral("revisions.restore"),
+			QJsonObject{{QStringLiteral("project"), project},
+				{QStringLiteral("id"), QStringLiteral("rev0")}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(2));
+
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("revisions.restore"))
+			.value(QStringLiteral("inverse")).toObject();
+		QVERIFY2(!inverse.isEmpty(), "revisions.restore advertised no inverse at all");
+		// The advertised args have to satisfy the advertised op's own schema.
+		const QJsonObject args = inverse.value(QStringLiteral("args")).toObject();
+		QVERIFY2(args.value(QStringLiteral("path")).isUndefined(),
+			"the advertised inverse still passes 'path', which revisions.restore does "
+			"not accept");
+		// And replaying what it advertises must actually put the replaced file back.
+		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(), args).ok,
+			"the advertised inverse of revisions.restore was refused when replayed");
+		QCOMPARE(readBytes(project), documentWith(3));
 	}
 };
 
