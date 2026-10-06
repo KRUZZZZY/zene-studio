@@ -363,6 +363,58 @@ BounceInPlace::Result BounceInPlace::renderTracks(const std::vector<Track*>& tra
 	return collectResult(outPath, range, framesPerTick, sampleRate, written, trimmed);
 }
 
+//! True when \a target names the file \a source is read from. The target is
+//! opened for WRITING, which truncates it, so a target that resolves to the
+//! source destroys the audio before a frame is copied - a symlink, a "./" prefix
+//! or a relative spelling all name the same file. A path that does not resolve
+//! yet falls back to its absolute form, which is enough: a target that does not
+//! exist cannot be the file being read.
+bool namesTheSameFile(const QString& source, const QString& target)
+{
+	const QFileInfo sourceInfo(source);
+	const QFileInfo targetInfo(target);
+	const QString sourceKey =
+		sourceInfo.canonicalFilePath().isEmpty() ? sourceInfo.absoluteFilePath() : sourceInfo.canonicalFilePath();
+	const QString targetKey =
+		targetInfo.canonicalFilePath().isEmpty() ? targetInfo.absoluteFilePath() : targetInfo.canonicalFilePath();
+	return sourceKey == targetKey;
+}
+
+/*! Opens \a source for reading, seeks it to \a startFrame and reports in
+ *  \a toWrite how many frames of the requested window the render actually has.
+ *
+ *  The window is clamped to the source: a range whose end is past the track's own
+ *  end renders the part that exists, and the caller is told how much that was
+ *  through framesWritten. Returns false with \a error set, having closed whatever
+ *  it opened, when the range is empty or the source cannot be read or seeked.
+ */
+bool openTrimWindow(const QString& source, qint64 startFrame, qint64 frameCount,
+		SNDFILE** in, SF_INFO* sourceInfo, qint64* toWrite, QString* error)
+{
+	*in = sf_open(source.toLocal8Bit().constData(), SFM_READ, sourceInfo);
+	if (*in == nullptr)
+	{
+		*error = QStringLiteral("could not open the render for trimming");
+		return false;
+	}
+	const qint64 available =
+		sourceInfo->frames > startFrame ? sourceInfo->frames - startFrame : 0;
+	*toWrite = std::min(frameCount, available);
+	if (*toWrite == 0)
+	{
+		sf_close(*in);
+		*error = QStringLiteral("the range starts past the end of the render");
+		return false;
+	}
+	if (sf_seek(*in, startFrame, SEEK_SET) < 0)
+	{
+		sf_close(*in);
+		*error = QStringLiteral("could not seek to the start of the range");
+		return false;
+	}
+	return true;
+}
+
 bool BounceInPlace::trimWav(const QString& source, const QString& target,
 		qint64 startFrame, qint64 frameCount, qint64* framesWritten, QString* error)
 {
@@ -372,29 +424,17 @@ bool BounceInPlace::trimWav(const QString& source, const QString& target,
 		*error = QStringLiteral("the range must not be negative");
 		return false;
 	}
+	if (namesTheSameFile(source, target))
+	{
+		*error = QStringLiteral("the trimmed render must not be written onto the render it is trimmed from");
+		return false;
+	}
 
 	SF_INFO sourceInfo{};
-	SNDFILE* in = sf_open(source.toLocal8Bit().constData(), SFM_READ, &sourceInfo);
-	if (in == nullptr)
+	SNDFILE* in = nullptr;
+	qint64 toWrite = 0;
+	if (!openTrimWindow(source, startFrame, frameCount, &in, &sourceInfo, &toWrite, error))
 	{
-		*error = QStringLiteral("could not open the render for trimming");
-		return false;
-	}
-	// Clamp the window to the source: a range whose end is past the track's own
-	// end renders the part that exists, and the caller is told how much that was
-	// through framesWritten.
-	const qint64 available = sourceInfo.frames > startFrame ? sourceInfo.frames - startFrame : 0;
-	const qint64 toWrite = std::min(frameCount, available);
-	if (toWrite == 0)
-	{
-		sf_close(in);
-		*error = QStringLiteral("the range starts past the end of the render");
-		return false;
-	}
-	if (sf_seek(in, startFrame, SEEK_SET) < 0)
-	{
-		sf_close(in);
-		*error = QStringLiteral("could not seek to the start of the range");
 		return false;
 	}
 

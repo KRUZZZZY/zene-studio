@@ -66,6 +66,10 @@ set(LMMS_TESTS
 	# store's round-trip through its file, and the peak cache's hit/miss
 	# behaviour. Headless: no Engine, no window, no audio device.
 	src/core/BrowserCatalogTest.cpp
+	# The trim half of a bounce (the render half is a child process, so it is not
+	# reachable from a test): a range copied to another file, and the refusal
+	# that keeps a self-trim from truncating the file it is reading.
+	src/core/BounceInPlaceTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
 	# Linked / smart clips (feature-list row 6, task #645): the relation, an edit
