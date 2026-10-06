@@ -247,8 +247,11 @@ ControlResult handleDisable(Mixer* mixer)
 	QJsonObject before;
 	before.insert(QStringLiteral("enabled"), true);
 	before.insert(QStringLiteral("removed"), edges.size());
+	// The inverse NAMED here is control.undo, the one command that restores the WHOLE edit: the
+	// checkpointed undo step turns the submode back on AND re-creates every send this command
+	// removed. feedback.enable is not it - it only sets the flag, leaving the routes missing.
 	result.insert(QStringLiteral("__transaction"), transactionPayload(
-		before, QStringLiteral("feedback.enable"), {}, true,
+		before, QStringLiteral("control.undo"), {}, true,
 		QStringLiteral("action checkpoint: the recorded undo step turns the submode back on and "
 			"re-creates every send this command removed through the same "
 			"Mixer::createChannelSend call with the captured amount and pre-fader flag (a send's "
