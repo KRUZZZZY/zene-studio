@@ -168,6 +168,33 @@ private slots:
 			qPrintable(QStringLiteral("rate became %1").arg(source.value(QStringLiteral("rate")).toDouble())));
 	}
 
+// Every command the buttons run reports a refusal when it fails. The handlers threw the message
+	// away, so a refused button did nothing at all and said nothing: Add at the modulator limit, or
+	// Remove with nothing selected, left the user with no reason.
+	void aRefusedButtonSaysWhy()
+	{
+		ModulatorPanel panel;
+		while (panel.modulatorCount() < 16)
+		{
+			if (!panel.addModulator(QStringLiteral("triangle"), 1.0).isEmpty()) { QVERIFY2(false, "add refused early"); }
+		}
+		// The layer is full now: Add is refused, and the panel says so.
+		QPushButton* add = nullptr;
+		for (QPushButton* button : panel.findChildren<QPushButton*>())
+		{
+			if (button->property("controlCommand").toString() == QLatin1String("modulator.create")) { add = button; }
+		}
+		QVERIFY(add != nullptr);
+		add->click();
+		QCOMPARE(panel.modulatorCount(), 16);
+		// Some label in the panel carries the refusal, so the user can read why nothing happened.
+		QString said;
+		for (QLabel* label : panel.findChildren<QLabel*>())
+		{
+			if (!label->text().isEmpty()) { said += label->text() + QLatin1Char('\n'); }
+		}
+		QVERIFY2(said.contains(QStringLiteral("full")), qPrintable(said));
+	}
 };
 
 QTEST_MAIN(ModulatorPanelTest)

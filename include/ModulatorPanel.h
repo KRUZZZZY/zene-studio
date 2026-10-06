@@ -32,6 +32,7 @@
 class QComboBox;
 class QDoubleSpinBox;
 class QJsonObject;
+class QLabel;
 class QListWidget;
 class QTableWidget;
 
@@ -64,12 +65,15 @@ public:
 
 private:
 	QString selectedId() const;
+	//! Show a command's refusal in the status label (and speak it). An empty message clears the label.
+	void say(const QString& message);
 	void showSelected();
 	void fillChannels();
 	void fillEffects();
 	void fillParameters();
 
 	QListWidget* m_modulators = nullptr;
+	QLabel* m_status = nullptr;
 	QComboBox* m_shape = nullptr;
 	QDoubleSpinBox* m_rate = nullptr;
 	QTableWidget* m_targets = nullptr;
