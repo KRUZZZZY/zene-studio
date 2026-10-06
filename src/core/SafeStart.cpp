@@ -77,6 +77,9 @@ struct State
 	bool installed = false;
 	//! Snapshot of "a marker was on disk" taken at beginSession().
 	bool markerWasPresent = false;
+	//! Has beginSession() run yet? Before it, the marker on disk still belongs
+	//! to the PREVIOUS run, so the disk itself answers the previous-run question.
+	bool sessionBegun = false;
 	//! True when this session must skip third-party plugin instances.
 	bool safeStart = false;
 	//! Consecutive safe starts, 1 for the first one after the crash.
@@ -257,6 +260,9 @@ bool install(const std::string& workingDirectory)
 	if (!info.exists() || !info.isDir()) { return false; }
 	s.directory = QDir::cleanPath(info.absoluteFilePath()).toStdString();
 	s.installed = true;
+	// A fresh working directory is a fresh session context: nothing has begun
+	// yet, so the disk still answers the previous-run question.
+	s.sessionBegun = false;
 	return true;
 }
 
@@ -276,6 +282,7 @@ void beginSession()
 	s.safeStart = false;
 	s.markerWasPresent = false;
 	s.skipEnabled = true;
+	s.sessionBegun = true;
 	if (!s.installed) { return; }
 
 	const std::string marker = markerPath();
@@ -331,7 +338,16 @@ bool markerExists() { return pathExists(markerPath()); }
 
 bool acknowledged() { return pathExists(acknowledgedPath()); }
 
-bool previousRunExitedCleanly() { return !markerExists(); }
+bool previousRunExitedCleanly()
+{
+	// Before beginSession() the marker on disk still belongs to the PREVIOUS
+	// run, so the disk itself is the answer. After it, this session's own
+	// marker has replaced that one and only the snapshot taken at beginSession()
+	// still describes the run that just ended.
+	const State& s = state();
+	if (!s.sessionBegun) { return !markerExists(); }
+	return !s.markerWasPresent;
+}
 
 bool safeStartActive() { return state().safeStart; }
 

@@ -482,6 +482,52 @@ private slots:
 		endSession();
 	}
 
+	// -----------------------------------------------------------------------
+	// 8. THE STATUS QUESTION. previousRunExitedCleanly() is about the session
+	//    BEFORE this one, so beginSession() must not turn THIS session's own
+	//    marker into "the previous run crashed": a clean predecessor stays
+	//    clean for the whole session. Before beginSession() the disk marker
+	//    still IS the predecessor's, and that half must not move either.
+	// -----------------------------------------------------------------------
+	void previousRunStatusSurvivesThisSessionsMarker()
+	{
+		// A predecessor that died: before beginSession() the marker on disk is
+		// the previous run's, and the answer is "not clean" from the disk.
+		QTemporaryDir crashedDir;
+		QVERIFY2(crashedDir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(crashedDir.path().toStdString()));
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			// A marker left by a crashed run, planted the way test 4 plants one.
+			// The marker's PRESENCE is the signal; its content is the diagnostic.
+			marker.write("Zene Studio safe-start marker v1\npid=4245\ntime_unix=1700000000\n");
+		}
+		// Before beginSession() the disk marker IS the previous run's: the disk
+		// answers, and that half of the documented contract must not move.
+		QVERIFY2(!previousRunExitedCleanly(),
+			"before beginSession() a marker on disk means the previous run did not exit cleanly");
+		beginSession();
+		QVERIFY2(!previousRunExitedCleanly(),
+			"the launch after a crash must report the previous run as unclean");
+		QVERIFY(safeStartActive());
+		endSession();
+
+		// A clean predecessor: beginSession() rewrites the marker with THIS
+		// session's, and the status must still say the previous run exited
+		// cleanly - for the whole session, not just before the marker is written.
+		QTemporaryDir cleanDir;
+		QVERIFY2(cleanDir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(cleanDir.path().toStdString()));
+		beginSession();
+		QVERIFY2(markerExists(), "beginSession() writes this session's marker");
+		QVERIFY2(!safeStartActive(), "no marker was behind it: not a safe start");
+		QVERIFY2(previousRunExitedCleanly(),
+			"the previous run exited cleanly; this session's own marker must not change that");
+		endSession();
+		QVERIFY2(previousRunExitedCleanly(), "a clean exit leaves the status clean");
+	}
+
 };
 
 int main(int argc, char** argv)
