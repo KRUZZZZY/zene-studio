@@ -51,8 +51,14 @@ AudioDevice::~AudioDevice()
 void AudioDevice::prepareCapture(f_cnt_t maxFrames, int left, int right)
 {
 	m_captureBus.assign(static_cast<std::size_t>(std::max<f_cnt_t>(maxFrames, 1)), SampleFrame{});
-	m_captureLeft = std::max(left, 0);
-	m_captureRight = std::max(right, 0);
+	// A negative pair member means the caller (JACK, SDL, PortAudio) passed none: the
+	// configuration's pair is the honoured one, not the old hard-coded 0/1. ALSA passes the
+	// pair it could clamp to its own granted width. Off the audio thread, so reading the
+	// configuration here costs the capture path nothing; publishCaptured() clamps the pair
+	// to the width of each block.
+	const AudioInputPath::Plan plan = AudioInputPath::configuredPlan();
+	m_captureLeft = std::max(left < 0 ? plan.left : left, 0);
+	m_captureRight = std::max(right < 0 ? plan.right : right, 0);
 }
 
 

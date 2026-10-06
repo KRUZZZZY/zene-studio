@@ -39,6 +39,7 @@
 #include "AudioEngine.h"
 #include "AudioInputPath.h"
 #include "AudioWideInputStage.h"
+#include "ConfigManager.h"
 #include "Engine.h"
 
 using namespace lmms;
@@ -51,6 +52,8 @@ class FakeCaptureDevice : public AudioDevice
 public:
 	explicit FakeCaptureDevice(AudioEngine* engine) : AudioDevice(DEFAULT_CHANNELS, engine) {}
 	void prepare(f_cnt_t frames, int left, int right) { prepareCapture(frames, left, right); }
+	//! What JACK, SDL and PortAudio call: the block size only, no pair.
+	void prepare(f_cnt_t frames) { prepareCapture(frames); }
 	void publish(const std::vector<float>& block, int channels)
 	{
 		publishCaptured(block.data(), channels, static_cast<f_cnt_t>(block.size() / static_cast<std::size_t>(channels)));
@@ -114,6 +117,41 @@ private slots:
 		}
 		QCOMPARE(engine->inputWideChannels(), 4);
 		QCOMPARE(engine->inputWideBuffer()[1], 1000.0f);  // frame 0, channel 1: the wide path holds all four
+	}
+
+	//! Luna cluster 4595: JACK, SDL and PortAudio call prepareCapture() with the block size
+	//! only, so the stereo bus kept the hard-coded pair 0/1 and the configured capture
+	//! channels never reached it. The default pair must come from the configuration.
+	void aConfiguredPairReachesTheStereoBusWhenTheBackendPassesNone()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		ConfigManager* config = ConfigManager::inst();
+		config->setValue(QStringLiteral("audioinput"), QStringLiteral("channels"), QStringLiteral("4"));
+		config->setValue(QStringLiteral("audioinput"), QStringLiteral("left"), QStringLiteral("2"));
+		config->setValue(QStringLiteral("audioinput"), QStringLiteral("right"), QStringLiteral("3"));
+
+		engine->renderNextPeriod();
+		FakeCaptureDevice device(engine);
+		device.prepare(64);  // no pair: exactly what JACK/SDL/PortAudio do
+		device.publish(fourChannelBlock(64), 4);
+		engine->renderNextPeriod();
+
+		const SampleFrame* bus = engine->inputBuffer();
+		const f_cnt_t read = engine->inputBufferFrames();
+		QVERIFY(read > 0);
+		for (f_cnt_t i = 0; i < read && i < 64; ++i)
+		{
+			QCOMPARE(bus[i][0], static_cast<float>(2000 + i));
+			QCOMPARE(bus[i][1], static_cast<float>(3000 + i));
+		}
+
+		// The N-channel path still carries every channel, pair or no pair.
+		QCOMPARE(engine->inputWideChannels(), 4);
+		QCOMPARE(engine->inputWideBuffer()[1], 1000.0f);
+
+		config->setValue(QStringLiteral("audioinput"), QStringLiteral("channels"), QString::number(AudioInputPath::DefaultChannels));
+		config->setValue(QStringLiteral("audioinput"), QStringLiteral("left"), QStringLiteral("0"));
+		config->setValue(QStringLiteral("audioinput"), QStringLiteral("right"), QStringLiteral("1"));
 	}
 
 	void aMonoDeviceFeedsItsChannelToBothSidesAndPublishingDoesNotAllocate()
