@@ -229,6 +229,18 @@ QList<TakeJournal> scan(const QString& directory)
 	return found;
 }
 
+/*! The frames a `data` chunk of \a declaredSize bytes can back, bounded by the bytes
+ *  physically present after its header. The declared size is what the writer INTENDED
+ *  to write; a crash or a truncated write leaves fewer bytes on disk, and a count taken
+ *  from the header alone offers audio that is not there. */
+std::uint64_t framesInDataChunk(QDataStream& in, const QFile& file, quint32 declaredSize, int blockAlign)
+{
+	const qint64 remaining = file.size() - in.device()->pos();
+	if (remaining <= 0) { return 0; }
+	const auto present = static_cast<quint64>(remaining);
+	return framesFromDataSize(static_cast<quint32>(std::min<quint64>(declaredSize, present)), blockAlign);
+}
+
 std::uint64_t framesInFile(const QString& takePath)
 {
 	QFile file(takePath);
@@ -246,7 +258,7 @@ std::uint64_t framesInFile(const QString& takePath)
 		if (id.size() != 4) { return 0; }
 		quint32 size = 0;
 		in >> size;
-		if (id == QByteArrayLiteral("data")) { return framesFromDataSize(size, blockAlign); }
+		if (id == QByteArrayLiteral("data")) { return framesInDataChunk(in, file, size, blockAlign); }
 		// A `fmt ` chunk is partly read (the block align) and the rest skipped;
 		// every other chunk is skipped whole. Skipping `size` AFTER reading the
 		// 16 bytes is the defect this costs: it walks 16 bytes past the chunk
