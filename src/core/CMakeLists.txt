@@ -1054,6 +1054,7 @@ set(LMMS_SRCS
 	core/ViewMemory.cpp
 	core/ControlCommandsSettingsPresets.cpp
 	core/TunerTap.cpp
+	core/PhaseScopeTap.cpp
 	core/ControlCommandsTuner.cpp
 	# 0.5.0 L11 / L12 (W3): mixer snapshots, project settings / metadata / document type, edit locks.
 	core/ControlCommandsMixerSnapshots.cpp

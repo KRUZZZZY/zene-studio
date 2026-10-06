@@ -530,6 +530,8 @@ include/PatternTrackView.h
 include/PeakController.h
 include/PeakIndicator.h
 include/PerfLog.h
+include/PhaseScopeTap.h
+include/PhaseScopeView.h
 include/Piano.h
 include/PianoRoll.h
 include/PianoView.h
@@ -1805,6 +1807,7 @@ src/core/PatternClip.cpp
 src/core/PatternStore.cpp
 src/core/PeakController.cpp
 src/core/PerfLog.cpp
+src/core/PhaseScopeTap.cpp
 src/core/Piano.cpp
 src/core/PitchTrack.cpp
 src/core/PlayHandle.cpp
@@ -2107,6 +2110,7 @@ src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/ParameterGridDialog.cpp
 src/gui/PeakControllerDialog.cpp
+src/gui/PhaseScopeView.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginBrowser.cpp
 src/gui/PluginNativeEditor.cpp
@@ -2481,6 +2485,7 @@ tests/src/core/PhaseDMixerTestSupport.h
 tests/src/core/PhaseDPerfBench.cpp
 tests/src/core/PhaseDSidechainTest.cpp
 tests/src/core/PhaseFChannelScaleTest.cpp
+tests/src/core/PhaseScopeTapTest.cpp
 tests/src/core/PluginAudioPortsTest.cpp
 tests/src/core/PluginEditorHostTest.cpp
 tests/src/core/PluginLogoResourceTest.cpp

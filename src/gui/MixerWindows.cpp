@@ -265,6 +265,9 @@ void addMixerWindows(QMenu* menu)
 	QAction* meters = menu->addAction(QObject::tr("Large Meters..."));
 	meters->setProperty("controlCommand", QStringLiteral("meter.get_state"));
 	QObject::connect(meters, &QAction::triggered, menu, [] { showOne<LargeMeters>(&s_meters); });
+	QAction* scope = menu->addAction(QObject::tr("Phase Scope..."));  // MX-137
+	scope->setProperty("controlCommand", QStringLiteral("window.phase_scope"));
+	QObject::connect(scope, &QAction::triggered, menu, [] { ControlRegistry::instance()->invoke(QStringLiteral("window.phase_scope")); });
 	QAction* matrix = menu->addAction(QObject::tr("Routing Matrix..."));
 	matrix->setProperty("controlCommand", QStringLiteral("routing.matrix"));
 	QObject::connect(matrix, &QAction::triggered, menu, [] { showRoutingMatrix(); });  // theme 16: sparse (MixerRoutingMatrix.h)

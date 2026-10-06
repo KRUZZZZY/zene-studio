@@ -2365,3 +2365,15 @@ The record of what was built is `docs/MIXER-METERING.md`; this is what each piec
 - One live reader at a time: `inputmeter::live()` empties its own maxima, so a second Large Meters-style
   reader would split the peaks with the first. Only one Large Meters window is ever open.
 
+**MX-137, the stereo phase view.**
+- One channel at a time, in its own Phase Scope window (Mixer View menu, a channel's More menu, or
+  `window.phase_scope`); it is not drawn on the strips or inside Large Meters.
+- It shows the block the correlation is measured from: after the channel's inserts and pan, before its
+  fader. A muted channel feeds nothing, and the view says "No signal" a quarter of a second after the
+  frames stop.
+- It draws the newest 1024 frames, auto-scaled to the loudest of them, every 40 ms; it keeps no
+  persistence trail, and the scale is not shown in dB.
+- In the one period in which the chosen channel changes, a push from the old channel still in flight
+  makes the new channel's first block wait for the next period (the tap has one writer at a time).
+- The agent reads the correlation and `frames_seen` (proof the tap is fed), not the drawn points.
+

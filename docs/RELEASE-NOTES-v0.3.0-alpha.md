@@ -951,8 +951,12 @@ window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows becam
 view.announcements (`true_inverse`); window.sample_editor, window.item_list, workflow.resume and task.list, task.cancel,
 task.clear_finished and task.show (`not_mutating`, interface state).
 
+**0.5.0 L08 metering** (`050/feat-meters`, MX-137): window.phase_scope, the stereo phase view (`not_mutating`, a
+display) (+1). Measured by `ReversibilityContractTest` on that lane's build (no wasmtime): `rows=810 true_inverse=403
+snapshot=37 irreversible=21 not_mutating=349`, which is this block minus wasm's option row, exactly.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=818 true_inverse=404 snapshot=40 irreversible=21 not_mutating=353
+     measured: rows=819 true_inverse=404 snapshot=40 irreversible=21 not_mutating=354
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

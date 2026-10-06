@@ -26,10 +26,13 @@
 /*! MX-128: the meters' fall-off and peak hold are view options (window.mixer_view, kept in ui/mixerview with
  *  the others) and the strips' meters move by them. MX-005: a "Selected" filter shows only the channels picked
  *  for it - by window.mixer_view, a Ctrl+click on a strip or the mode bar's picker. MX-134: Large Meters shows
- *  the engine's input live, with the mixer's ballistics. Needs the real application (a Fader cannot be built
- *  without it). */
+ *  the engine's input live, with the mixer's ballistics. MX-137: a goniometer (window.phase_scope) shows one
+ *  channel's stereo picture beside its correlation, fed by a realtime-safe tap (PhaseScopeTapTest holds the
+ *  tap). Needs the real application (a Fader cannot be built without it). */
 
 #include <QtTest>
+
+#include <vector>
 
 #include <QApplication>
 #include <QComboBox>
@@ -55,6 +58,8 @@
 #include "MixerView.h"
 #include "MixerViewOptions.h"
 #include "MixerWindows.h"
+#include "PhaseScopeTap.h"
+#include "PhaseScopeView.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -324,6 +329,75 @@ private slots:
 		QVERIFY(meters != nullptr);
 		QVERIFY(meters->findChild<InputLevelMeter*>() != nullptr);
 		meters->close();
+	}
+
+	//! MX-137: the goniometer turns the stereo picture 45 degrees - mono stands up the middle, out of phase lies flat.
+	void theGoniometerShowsMonoUprightAndOutOfPhaseFlat()
+	{
+		PhaseScopeView view(nullptr);
+		const std::vector<float> left{0.5f, -0.25f, 0.1f};
+		view.setFrames(left.data(), left.data(), left.size());
+		QCOMPARE(view.pointCount(), left.size());
+		for (std::size_t i = 0; i < left.size(); ++i)
+		{
+			QVERIFY(qAbs(view.point(i).x()) < 1e-6);
+			QVERIFY(qAbs(view.point(i).y()) > 0.01);
+		}
+		const std::vector<float> inverted{-0.5f, 0.25f, -0.1f};
+		view.setFrames(left.data(), inverted.data(), left.size());
+		for (std::size_t i = 0; i < left.size(); ++i)
+		{
+			QVERIFY(qAbs(view.point(i).y()) < 1e-6);
+			QVERIFY(qAbs(view.point(i).x()) > 0.01);
+		}
+		// Left only leans one way, right only the other.
+		const std::vector<float> silent(left.size(), 0.f);
+		view.setFrames(left.data(), silent.data(), 1);
+		const double leftLean = view.point(0).x();
+		view.setFrames(silent.data(), left.data(), 1);
+		QVERIFY(leftLean * view.point(0).x() < 0.0);
+	}
+
+	//! MX-137: window.phase_scope opens the view on a channel and points the tap at it; closing it lets go.
+	void thePhaseScopeListensToTheChosenChannel()
+	{
+		const ControlResult opened = run(QStringLiteral("window.phase_scope"), {{QStringLiteral("channel"), ch(m_channel)}});
+		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+		QVERIFY(opened.result.value(QStringLiteral("shown")).toBool());
+		QCOMPARE(opened.result.value(QStringLiteral("channel")).toString(), ch(m_channel));
+		QVERIFY(opened.result.value(QStringLiteral("correlation")).isDouble());
+		QVERIFY(opened.result.value(QStringLiteral("frames_seen")).isDouble());
+		QCOMPARE(PhaseScopeTap::instance().channel(), m_channel);
+		auto* window = getGUI()->mainWindow()->findChild<PhaseScopeWindow*>();
+		QVERIFY(window != nullptr);
+		QCOMPARE(window->channel(), m_channel);
+		QCOMPARE(run(QStringLiteral("window.phase_scope"), {{QStringLiteral("channel"), QStringLiteral("ch-9999")}}).errorKind,
+			ControlErrorKind::NotFound);
+		QCOMPARE(window->channel(), m_channel);  // a refused call moves nothing
+		// The master, by default; the real mixer feeds the tap from its workers.
+		const ControlResult master = run(QStringLiteral("window.phase_scope"), {{QStringLiteral("channel"), ch(0)}});
+		QVERIFY(master.ok);
+		QCOMPARE(PhaseScopeTap::instance().channel(), 0);
+		QTRY_VERIFY_WITH_TIMEOUT(PhaseScopeTap::instance().written() > 0, 5000);
+		// Asked again (no channel: the open one's), it keeps its picture and its count.
+		QVERIFY(run(QStringLiteral("window.phase_scope")).result.value(QStringLiteral("frames_seen")).toDouble() > 0);
+		QVERIFY(!window->refresh().isEmpty());
+		delete window;
+		QCOMPARE(PhaseScopeTap::instance().channel(), PhaseScopeTap::Off);  // nothing left to look at
+	}
+
+	//! MX-137: the Mixer View menu opens it, beside Large Meters, declaring its command.
+	void theMixerMenuOffersThePhaseScope()
+	{
+		QMenu menu;
+		addMixerWindows(&menu);
+		QAction* scope = nullptr;
+		for (QAction* action : menu.actions())
+		{
+			if (action->text() == QStringLiteral("Phase Scope...")) { scope = action; }
+		}
+		QVERIFY(scope != nullptr);
+		QCOMPARE(scope->property("controlCommand").toString(), QStringLiteral("window.phase_scope"));
 	}
 
 	//! MX-005: a project cleared from under the mixer forgets the selection (the ids start again).

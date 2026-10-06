@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-06T16:26:54Z",
+  "captured_at": "2026-10-06T16:50:45Z",
   "commands": [
     {
       "args_schema": {
@@ -33227,6 +33227,45 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "MX-137: open the Phase Scope (an open one is raised and moved) on mixer channel 'channel' (a ch-<n> id; left out, the open one's channel, else the master): a goniometer of the channel's newest frames - mono stands up the middle, out of phase lies flat, the left channel alone leans left - beside its phase correlation (+1 mono, 0 wide, -1 out of phase). The answer names the channel ('channel', 'channel_name'), its 'correlation' now and 'frames_seen', the frames the view's tap has been fed since it was pointed at the channel (it grows while the engine runs and the channel is not muted). Closing the window stops the tap. A display.",
+      "group": "window",
+      "id": "window.phase_scope",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "channel_name": {
+            "type": "string"
+          },
+          "correlation": {
+            "type": "number"
+          },
+          "frames_seen": {
+            "type": "number"
+          },
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "panel": {
             "type": "string"
           },
@@ -34038,7 +34077,7 @@
       }
     }
   ],
-  "count": 809,
+  "count": 810,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -34046,15 +34085,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-meters/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-8julqy_t/zene.sock",
-    "version": "0.4.0-alpha.333+6d1a114"
+    "source_socket": "/tmp/zctl-run-2l8skwbu/zene.sock",
+    "version": "0.4.0-alpha.336+31f7b46"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 809,
-    "ids_sha256": "30a5e1ef45f2a6f4cd493d28b6b923826da185f96165d735ba363909b12ca8e2"
+    "id_count": 810,
+    "ids_sha256": "dc854a4dafd3ecaef981da8d854b37fc749b70c2f356a39cfc9de081bcb2a7e2"
   }
 }

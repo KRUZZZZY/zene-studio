@@ -73,3 +73,49 @@ Test-first record: `InputMeterTest` red - did not compile (no `inputmeter::live`
 20/20 (ctest EXIT=0). `ControlMeterCommands` (the `meter.*` socket driver, with the
 `audiofileprocessor` module built) and `RtSafetySweep` still pass.
 
+## 4. MX-137 — the stereo phase view (goniometer)
+
+The phase *correlation* was already measured per period in `mixerstrip::updateMeters`
+(`src/core/MixerStrip.cpp`) and shown as a number (the strip tooltip, Large Meters, `mixer.strip_get`).
+There was no picture of the stereo field short of inserting the Vectorscope plug-in.
+
+**The tap - `PhaseScopeTap` (`include/PhaseScopeTap.h`, `src/core/PhaseScopeTap.cpp`).** A copy of the
+tuner's tap (`TunerTap.h`), kept stereo:
+
+- the ring is two fixed `std::array<std::atomic<float>, 4096>` in a static instance - nothing is ever
+  allocated for it, on any thread (`static_assert`s that the atomics are lock-free);
+- `push(index, frames, count)` is called by `mixerstrip::updateMeters` for every unmuted channel, on the
+  mixer's worker threads; for a channel that is not the chosen one it is one relaxed load and a compare;
+- the chosen channel's push takes the tuner's seqlock shape (announce `m_reserved`, release fence, write
+  the slots, publish `m_head`) and its reset protocol (a reset is a request the producer takes at its
+  next push). One addition the tuner does not need: its producer is the one render thread, but mixer
+  channels run on several workers at once, so a push that finds another in flight (`m_writing`, one
+  `exchange`) drops its block at once rather than wait - possible only in the period the choice changes;
+- `latest(left, right, count)` copies the newest frames and refuses a copy the producer lapped.
+
+`PhaseScopeTapTest` holds it: off by default, only the chosen channel is kept, left and right kept
+apart, the ring keeps the newest when it wraps, a new channel forgets the old, **zero allocations over
+512 pushes (chosen and not) with a negative control proving the allocation probe is live**, and a
+reader racing a paced producer for 300 ms never sees a frame whose left and right came from two pushes.
+
+**The view - `PhaseScopeView` / `PhaseScopeWindow` (`include/PhaseScopeView.h`).** A goniometer: each
+frame is a point turned 45 degrees (up the mid, across the side), so mono stands up the middle, out of
+phase lies flat and one channel alone leans to its diagonal; auto-scaled to the loudest frame. The
+window has a channel chooser (followed by stable id), the correlation in figures and as a bar
+(-1..+1) under the picture, polls every 40 ms, and points the tap at nothing when it closes.
+
+**Reached from** the Mixer View menu (**Phase Scope...**, beside Large Meters), a channel's **More**
+menu (**Phase Scope**), and a new command, **`window.phase_scope`** (`channel`; answers `channel`,
+`channel_name`, `correlation` and `frames_seen` - the frames the tap has been fed, the agent's proof the
+picture is live). Asking again for the channel it already shows keeps the picture and the count.
+`window.phase_scope` is `not_mutating` (a display) in the A16 table; the command surface moves from
+809 ids / 76 groups to **810 ids / 76 groups** (snapshot regenerated from a live instance; README's
+figure and the A16 histogram block in `docs/RELEASE-NOTES-v0.3.0-alpha.md` re-taken).
+
+Test-first record: `PhaseScopeTapTest` red - did not compile (no `PhaseScopeTap.h`; build EXIT=2),
+green 8/8 (ctest EXIT=0); `MixerMeteringTest` red - did not compile (EXIT=2), green 23/23 (ctest EXIT=0),
+including the real mixer feeding the tap from its workers (`written() > 0` within 5 s on the Dummy
+device). `ControlMixingRouting` drives it over the socket; its first run caught a real defect - every
+`window.phase_scope` call re-pointed the tap and so reset its count to 0 (EXIT=8) - fixed by keeping the
+tap when the same channel is asked for again (green, EXIT=0).
+

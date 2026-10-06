@@ -29,7 +29,8 @@
  *  0.5.0 theme 6: the answer names the return the faders show and what every fader drives, so an agent
  *  sees what the banner and the strips show. 0.5.0 theme 16: the view (mix / routing) and the density
  *  (compact / expanded), and per channel what its strip says - its type, format, routes by name, hardware
- *  output and modes (MixerStripInfo.h). Interface state: nothing is journalled. */
+ *  output and modes (MixerStripInfo.h). Interface state: nothing is journalled.
+ *  0.5.0 L08 (MX-137): window.phase_scope opens the stereo phase view (PhaseScopeView.h) on a channel. */
 
 #include <QJsonArray>
 #include <QTimer>
@@ -45,6 +46,8 @@
 #include "MixerStripInfo.h"
 #include "MixerView.h"
 #include "MixerViewOptions.h"
+#include "PhaseScopeTap.h"
+#include "PhaseScopeView.h"
 
 namespace lmms
 {
@@ -175,10 +178,57 @@ ControlResult mixerView(const QJsonObject& args)
 	return ControlResult::success(mixerViewState());
 }
 
+//! MX-137: open the phase view on 'channel' (the open one's channel, else the master, when left out).
+ControlResult phaseScope(const QJsonObject& args)
+{
+	if (Engine::mixer() == nullptr || Engine::getSong() == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::Busy, QStringLiteral("the engine is not up yet; poll control.ping"));
+	}
+	const gui::PhaseScopeWindow* open = gui::openPhaseScope();
+	int index = open != nullptr ? open->channel() : 0;
+	if (args.contains(QStringLiteral("channel")))
+	{
+		ControlResult error;
+		MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
+		if (channel == nullptr) { return error; }
+		index = channel->index();
+	}
+	if (controlMainWindow() == nullptr) { return noInterface(QStringLiteral("window.phase_scope")); }
+	gui::PhaseScopeWindow* window = gui::showPhaseScope(index);
+	const MixerChannel* shown = Engine::mixer()->mixerChannel(window->channel());
+	return ControlResult::success({{QStringLiteral("shown"), true}, {QStringLiteral("channel"), channelIdOf(shown)},
+		{QStringLiteral("channel_name"), shown->m_name}, {QStringLiteral("correlation"), static_cast<double>(shown->m_correlation.get())},
+		{QStringLiteral("frames_seen"), static_cast<double>(PhaseScopeTap::instance().written())}});
+}
+
+void registerPhaseScope(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("window.phase_scope");
+	cmd.group = QStringLiteral("window");
+	cmd.verb = QStringLiteral("phase_scope");
+	cmd.mutating = false;
+	cmd.requiresEngine = false;
+	cmd.description = QStringLiteral("MX-137: open the Phase Scope (an open one is raised and moved) on mixer channel 'channel' "
+		"(a ch-<n> id; left out, the open one's channel, else the master): a goniometer of the channel's newest frames - "
+		"mono stands up the middle, out of phase lies flat, the left channel alone leans left - beside its phase "
+		"correlation (+1 mono, 0 wide, -1 out of phase). The answer names the channel ('channel', 'channel_name'), its "
+		"'correlation' now and 'frames_seen', the frames the view's tap has been fed since it was pointed at the "
+		"channel (it grows while the engine runs and the channel is not muted). Closing the window stops the tap. A display.");
+	cmd.argsSchema = objectSchema({{QStringLiteral("channel"), stringProperty()}});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()}, {QStringLiteral("channel"), stringProperty()},
+		{QStringLiteral("channel_name"), stringProperty()}, {QStringLiteral("correlation"), numberProperty()},
+		{QStringLiteral("frames_seen"), numberProperty()}});
+	cmd.handler = phaseScope;
+	registry.registerCommand(cmd);
+}
+
 } // namespace
 
 void registerMixerViewCommands(ControlRegistry& registry)
 {
+	registerPhaseScope(registry);  // MX-137
 	ControlCommand cmd;
 	cmd.id = QStringLiteral("window.mixer_view");
 	cmd.group = QStringLiteral("window");

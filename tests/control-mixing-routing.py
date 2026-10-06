@@ -9,13 +9,15 @@ Starts the REAL `zene` binary headless (its own throwaway config) and proves:
   4. vca.set_parent nests a group and refuses a loop; vca.set_links chooses the links;
   5. window.mixer_view sets and answers the sends-on-faders mode and the view options (L08);
   6. mixer.set_strip writes a channel's strip settings as one undo step, mixer.strip_get reads
-     them and the meters, mixer.set_many clears every solo, mixer.solo_mode switches (L08).
+     them and the meters, mixer.set_many clears every solo, mixer.solo_mode switches (L08);
+  7. window.phase_scope opens the stereo phase view on a channel and the real mixer feeds its tap (MX-137).
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-mixing-routing.py <zene>
 Exit 0 only when every check held.
 """
 
 import sys
+import time
 
 import control_socket_harness as H
 from freeze_bounce_evidence import Recorder, Session, report_results
@@ -95,6 +97,21 @@ def check_view(session, recorder, chans):
                                          "meter_falloff": "fast", "peak_hold": "1.5s"})
 
 
+def check_phase_scope(session, recorder, chans):
+    scope = session.result("window.phase_scope", {"channel": chans[1]})
+    recorder.check("window.phase_scope opens on the channel asked for",
+                   scope.get("shown") is True and scope.get("channel") == chans[1], "reply=%r" % scope)
+    deadline = time.time() + 5.0
+    again = scope
+    while time.time() < deadline and not again.get("frames_seen", 0) > 0:
+        time.sleep(0.1)
+        again = session.result("window.phase_scope")  # no channel: the open one's
+    recorder.check("the mixer feeds the phase view's tap from that channel",
+                   again.get("channel") == chans[1] and again.get("frames_seen", 0) > 0, "reply=%r" % again)
+    missing = session.call("window.phase_scope", {"channel": "ch-9999"})
+    recorder.check("an unknown channel is refused, typed", kind(missing) == "not_found", "reply=%r" % missing)
+
+
 def check_strip(session, recorder, chans):
     strip = session.result("mixer.set_strip", {"channel": chans[1], "trim_db": -3.0, "polarity_left": True,
                                                "pan_mode": "width", "width": 0.5, "note": "bus check"})
@@ -131,6 +148,7 @@ def main(argv):
         check_groups(session, recorder, chans)
         check_view(session, recorder, chans)
         check_strip(session, recorder, chans)
+        check_phase_scope(session, recorder, chans)
     report_results(recorder)
     if recorder.problems:
         transcript.dump()
