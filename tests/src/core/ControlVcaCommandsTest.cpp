@@ -328,6 +328,46 @@ private slots:
 		evidence(QStringLiteral("removed=1 undo_restored_fields=%1 published_gain=0")
 			.arg(after.size()));
 	}
+
+	//! Undoing `vca.unassign` restores a SHARED membership: a channel assigned
+	//! with `also:true` lives in two groups, and the undo has to put it back
+	//! with that same multiple-membership mode. Re-adding it single-valued asks
+	//! VcaGroup::addMember to take a channel another group already holds, which
+	//! it refuses - so the undo silently drops a membership that was there
+	//! before the undo, and the channel plays at a group's gain in one bus only.
+	void undoingUnassignRestoresASharedMembership()
+	{
+		clearGroups();
+		const QString first = createGroup(QStringLiteral("Shared one"));
+		const QString second = createGroup(QStringLiteral("Shared two"));
+		QVERIFY(!first.isEmpty());
+		QVERIFY(!second.isEmpty());
+
+		// `also:true` is the multiple-membership mode (0.5.0 L09): the channel
+		// belongs to BOTH groups, and both hold it deliberately.
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), first},
+			{QStringLiteral("channel"), channelId(1)}, {QStringLiteral("also"), true}}).ok);
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), second},
+			{QStringLiteral("channel"), channelId(1)}, {QStringLiteral("also"), true}}).ok);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+
+		QVERIFY(run(QStringLiteral("vca.unassign"), {{QStringLiteral("group"), second},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 0);
+
+		REV_UNDO_OR_FAIL();
+		// The membership the undo must restore is the one that was there: the
+		// channel is in `second` again AND still in `first`.
+		const ControlResult restored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(restored.result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), first}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+		evidence(QStringLiteral("shared_unassign=1 undo_shared_restored=1"));
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlVcaCommandsTest)
