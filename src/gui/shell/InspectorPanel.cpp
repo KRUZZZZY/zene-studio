@@ -123,7 +123,22 @@ QWidget* titleBar(const QString& text, QWidget* parent, const std::function<void
 class Swatch : public QWidget
 {
 public:
-	Swatch(const QColor& color, QWidget* parent) : QWidget(parent), m_color(color) { setFixedSize(14, 14); }
+	Swatch(const QColor& color, QWidget* parent) : QWidget(parent), m_color(color)
+	{
+		setObjectName(QStringLiteral("inspectorSwatch"));
+		setProperty("color", color);  // what is shown, readable without this private type
+		setFixedSize(14, 14);
+	}
+
+	//! The colour shown now: a recolour elsewhere (the header, a script, an undo) reaches the swatch.
+	const QColor& color() const { return m_color; }
+	void setColor(const QColor& color)
+	{
+		if (m_color == color) { return; }
+		m_color = color;
+		setProperty("color", color);  // what is shown, readable without this private type
+		update();
+	}
 
 protected:
 	void paintEvent(QPaintEvent*) override
@@ -301,7 +316,12 @@ QWidget* InspectorPanel::trackSection(Track* track)
 	}));
 	auto* nameRow = new QHBoxLayout;
 	nameRow->setSpacing(tokens::space::sm);
-	nameRow->addWidget(new Swatch(track->color().value_or(tokens::palette().clipMidi), section));
+	auto* swatch = new Swatch(track->color().value_or(tokens::palette().clipMidi), section);
+	// A colour set elsewhere (the track header, a script, an undo) shows here at once, without a selection change.
+	connect(track, &Track::colorChanged, swatch, [swatch, track] {
+		swatch->setColor(track->color().value_or(tokens::palette().clipMidi));
+	});
+	nameRow->addWidget(swatch);
 	m_name = new QLineEdit(track->name(), section);
 	m_name->setObjectName(QStringLiteral("inspectorName"));
 	m_name->setAccessibleName(tr("Track name"));

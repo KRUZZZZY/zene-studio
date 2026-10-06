@@ -220,6 +220,36 @@ private slots:
 		delete track;
 	}
 
+	/*! The Inspector's colour swatch follows the track's colour: it was built from the colour the track had
+	 *  when the section was made and never learned another, so a track.set_color from the header, a script
+	 *  or an undo left the Inspector showing the old colour with no selection change to redraw it. */
+	void theTrackColourSwatchFollowsARecolour()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		track->setName(QStringLiteral("Swatch"));
+		InspectorPanel inspector;
+		inspector.show();
+		ShellSelection::instance()->setTrack(track);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+
+		auto* swatch = inspector.findChild<QWidget*>(QStringLiteral("inspectorSwatch"));
+		QVERIFY(swatch != nullptr);
+		QVERIFY2(swatch->property("color").value<QColor>().isValid(), "the swatch shows a colour to begin with");
+
+		// The colour changed with the selection untouched: nothing here rebuilds the Inspector.
+		QVERIFY(run(QStringLiteral("track.set_color"), {{QStringLiteral("track"), control::trackIdOf(track)},
+			{QStringLiteral("color"), QStringLiteral("#ff0000")}}).ok);
+		QCOMPARE(track->color().value_or(Qt::white), QColor(QStringLiteral("#ff0000")));
+		QCOMPARE(swatch->property("color").value<QColor>(), QColor(QStringLiteral("#ff0000")));
+
+		QVERIFY(run(QStringLiteral("track.set_color"), {{QStringLiteral("track"), control::trackIdOf(track)},
+			{QStringLiteral("color"), QStringLiteral("#00ff00")}}).ok);
+		QCOMPARE(swatch->property("color").value<QColor>(), QColor(QStringLiteral("#00ff00")));
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
+	}
+
 	/*! 0.5.0 W1: the track, clip, channel and project menus (the Inspector's More buttons, the
 	 *  track header's and the mixer strip's More submenus) offer the socket-only capabilities
 	 *  where they belong, every entry a registered command. */
