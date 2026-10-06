@@ -45,7 +45,7 @@ struct RackZone;
 LMMS_EXPORT void registerPluginBusCommands(ControlRegistry& registry);
 //! plugin.midi_parts / midi_part_add / midi_part_remove / midi_part_set (MX-114, ControlCommandsPluginParts.cpp)
 LMMS_EXPORT void registerPluginPartCommands(ControlRegistry& registry);
-//! rack.layers / layer_add / layer_remove / layer_zone_add / layer_zone_remove (MX-112, ControlCommandsRackLayers.cpp)
+//! rack.layers / layer_add / layer_remove / layer_zone_add / layer_zone_remove / layer_set (MX-112, ControlCommandsRackLayers.cpp)
 LMMS_EXPORT void registerRackLayerCommands(ControlRegistry& registry);
 //! modulator.voice_set / instrument_target_set (MX-120, ControlCommandsModulatorVoices.cpp)
 LMMS_EXPORT void registerModulatorVoiceCommands(ControlRegistry& registry);

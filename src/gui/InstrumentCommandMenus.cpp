@@ -29,7 +29,11 @@
 
 #include "CommandListBuild.h"
 #include "CommandLists.h"
+#include "CommandForm.h"
 #include "ControlEdit.h"
+#include "DevicePicker.h"
+#include "EffectDeviceMenu.h"
+#include "LayerRackPanel.h"
 #include "ShellMenuParts.h"
 #include "Track.h"
 
@@ -45,6 +49,14 @@ QString titled(const char* what, const QString& track)
 	ControlResult unknown;
 	const Track* resolved = control::resolveTrack(track, &unknown);
 	return QObject::tr("%1 - %2").arg(QObject::tr(what), resolved != nullptr ? resolved->name() : track);
+}
+
+//! The window a menu entry's dialog belongs to: the first non-menu ancestor of @a menu.
+QWidget* menuHost(QMenu* menu)
+{
+	QWidget* host = menu;
+	while (qobject_cast<QMenu*>(host) != nullptr) { host = host->parentWidget(); }
+	return host;
 }
 
 } // namespace
@@ -84,6 +96,21 @@ ListSpec midiParts(const QString& track)
 	return out;
 }
 
+ListSpec layerZones(const QString& track)
+{
+	const QJsonObject where{{QStringLiteral("target"), track}};
+	ListSpec out = spec("Layer Zones", "rack.layers", "zones", {QStringLiteral("zone"), QStringLiteral("layer"),
+		QStringLiteral("low_key"), QStringLiteral("high_key"), QStringLiteral("low_velocity"), QStringLiteral("high_velocity")}, where);
+	out.title = titled("Layer Zones", track);
+	out.summaryKeys = {QStringLiteral("layer_count"), QStringLiteral("max_layers")};
+	RowAction remove = act("Remove", "rack.layer_zone_remove", {{QStringLiteral("zone"), QStringLiteral("zone")}}, where);
+	remove.confirm = true;
+	remove.caution = QObject::tr("A layer left with no zone plays no note.");
+	out.actions = {remove};
+	out.extras = {extra("Add Zone...", "rack.layer_zone_add", where)};
+	return out;
+}
+
 } // namespace CommandLists
 
 namespace InstrumentCommandMenus
@@ -107,6 +134,18 @@ void populate(QMenu* menu, const QString& track)
 	QMenu* parts = setup->addMenu(tr("MIDI Parts"));  // MX-114
 	list(parts, "MIDI Parts...", [track] { return CommandLists::midiParts(track); });
 	add(parts, "Add a MIDI Part...", "plugin.midi_part_add", self, true);
+	QMenu* layers = setup->addMenu(tr("Layers"));  // MX-112
+	addCommandEntry(layers, tr("Layer Rack..."), "rack.layers", [layers, track] { showLayerRack(menuHost(layers), track); });
+	addCommandEntry(layers, tr("Add a Layer..."), "rack.layer_add", [layers, track] {
+		QWidget* host = menuHost(layers);
+		const QString chosen = DevicePicker::pick(host, DevicePicker::Kind::Instrument, QObject::tr("Layer an instrument"));
+		if (!chosen.isEmpty())
+		{
+			runCommand(host, CommandCall{QStringLiteral("rack.layer_add"),
+				{{QStringLiteral("target"), track}, {QStringLiteral("device"), chosen}}, {}, QString(), false});
+		}
+	});
+	list(layers, "Layer Zones...", [track] { return CommandLists::layerZones(track); });
 }
 
 } // namespace InstrumentCommandMenus

@@ -25,6 +25,8 @@
 
 #include "InstrumentLayers.h"
 
+#include <algorithm>
+
 #include <QDomDocument>
 #include <QDomElement>
 #include <QTextStream>
@@ -75,6 +77,31 @@ std::uint32_t dropBit(std::uint32_t mask, int removed)
 {
 	const std::uint32_t below = mask & ((1u << removed) - 1u);
 	return below | ((mask >> (removed + 1)) << removed);
+}
+
+//! 0.5.0 F2 interface: a layer's mix as attributes of its element (only what differs from the default). The
+//! names carry a prefix because a layer's own <track> element already has a "muted" of its own.
+void writeMix(QDomElement& element, const InstrumentLayers::Mix& mix)
+{
+	if (mix.muted) { element.setAttribute(QStringLiteral("layermuted"), 1); }
+	if (mix.solo) { element.setAttribute(QStringLiteral("layersolo"), 1); }
+	if (mix.level != 1.0f) { element.setAttribute(QStringLiteral("layerlevel"), static_cast<double>(mix.level)); }
+}
+
+auto readMix(const QDomElement& element) -> InstrumentLayers::Mix
+{
+	InstrumentLayers::Mix mix;
+	mix.muted = element.attribute(QStringLiteral("layermuted")).toInt() != 0;
+	mix.solo = element.attribute(QStringLiteral("layersolo")).toInt() != 0;
+	bool ok = false;
+	const float level = element.attribute(QStringLiteral("layerlevel")).toFloat(&ok);
+	mix.level = ok ? std::clamp(level, 0.0f, InstrumentLayers::MaxLevel) : 1.0f;
+	return mix;
+}
+
+bool isDefaultMix(const InstrumentLayers::Mix& mix)
+{
+	return !mix.muted && !mix.solo && mix.level == 1.0f;
 }
 
 } // namespace
@@ -156,6 +183,8 @@ auto InstrumentLayers::addLayer(const QString& plugin, const Plugin::Descriptor:
 	}
 	track->setName(QStringLiteral("%1 layer %2").arg(m_owner->name()).arg(index));
 	adopt(track, index);
+	m_mix[static_cast<std::size_t>(index)] = Mix{};
+	publishMix();
 	RackZone wholeKeyboard;
 	wholeKeyboard.chain = index;
 	m_zones.addZone(wholeKeyboard);
@@ -171,7 +200,9 @@ auto InstrumentLayers::insertLayer(int index, const QString& xml) -> int
 	InstrumentTrack* track = newLayerTrack(&element);
 	if (track == nullptr) { return -1; }
 	m_zones.assign(zonesWithRoomAt(index));
+	makeRoomForMix(index, readMix(element));
 	adopt(track, index);
+	publishMix();
 	return index;
 }
 
@@ -188,7 +219,9 @@ auto InstrumentLayers::removeLayer(int index) -> bool
 			std::memory_order_release);
 	}
 	for (auto& live : m_liveLayers) { live.store(dropBit(live.load(std::memory_order_relaxed), index), std::memory_order_relaxed); }
+	dropMix(index);
 	delete track;
+	publishMix();
 	return true;
 }
 
@@ -200,9 +233,11 @@ auto InstrumentLayers::layerXml(int index) const -> QString
 	QDomElement wrapper = doc.createElement(QStringLiteral("layer"));
 	doc.appendChild(wrapper);
 	track->saveState(doc, wrapper);
+	QDomElement saved = wrapper.firstChildElement();
+	writeMix(saved, m_mix[static_cast<std::size_t>(index)]);  // the undo of a removal brings the mix back too
 	QString xml;
 	QTextStream stream(&xml);
-	wrapper.firstChildElement().save(stream, -1);
+	saved.save(stream, -1);
 	return xml;
 }
 
@@ -210,6 +245,7 @@ void InstrumentLayers::clear()
 {
 	while (layerCount() > 0) { removeLayer(layerCount()); }
 	m_zones.clear();
+	m_mix.fill(Mix{});  // not published: the owner may be going away (loadSettings publishes)
 	for (auto& live : m_liveLayers) { live.store(0, std::memory_order_relaxed); }
 	for (auto& skipped : m_baseSkipped) { skipped.store(false, std::memory_order_relaxed); }
 }
@@ -252,12 +288,14 @@ void InstrumentLayers::followMixerChannel(int channel)
 
 void InstrumentLayers::saveSettings(QDomDocument& doc, QDomElement& parent) const
 {
-	if (!active() && m_zones.zoneCount() == 0) { return; }
+	if (!active() && m_zones.zoneCount() == 0 && isDefaultMix(m_mix[0])) { return; }
 	QDomElement element = doc.createElement(QStringLiteral("layers"));
+	writeMix(element, m_mix[0]);
 	m_zones.saveSettings(doc, element);
 	for (int index = 1; index <= layerCount(); ++index)
 	{
 		QDomElement entry = doc.createElement(QStringLiteral("layer"));
+		writeMix(entry, m_mix[static_cast<std::size_t>(index)]);
 		layer(index)->saveState(doc, entry);
 		element.appendChild(entry);
 	}
@@ -268,15 +306,61 @@ void InstrumentLayers::loadSettings(const QDomElement& parent)
 {
 	clear();
 	const QDomElement element = parent.firstChildElement(QStringLiteral("layers"));
-	if (element.isNull()) { return; }
+	if (element.isNull()) { publishMix(); return; }
+	m_mix[0] = readMix(element);
 	int index = 0;
 	for (QDomElement entry = element.firstChildElement(QStringLiteral("layer"));
 		!entry.isNull() && index < MaxLayers; entry = entry.nextSiblingElement(QStringLiteral("layer")))
 	{
 		const QDomElement element = entry.firstChildElement(QStringLiteral("track"));
-		if (InstrumentTrack* track = newLayerTrack(&element)) { adopt(track, ++index); }
+		if (InstrumentTrack* track = newLayerTrack(&element))
+		{
+			adopt(track, ++index);
+			m_mix[static_cast<std::size_t>(index)] = readMix(entry);
+		}
 	}
 	m_zones.loadSettings(element);
+	publishMix();
+}
+
+auto InstrumentLayers::mix(int index) const -> Mix
+{
+	return index >= 0 && index <= layerCount() ? m_mix[static_cast<std::size_t>(index)] : Mix{};
+}
+
+auto InstrumentLayers::setMix(int index, const Mix& mix) -> bool
+{
+	if (index < 0 || index > layerCount()) { return false; }
+	Mix wanted = mix;
+	wanted.level = index == 0 ? 1.0f : std::clamp(mix.level, 0.0f, MaxLevel);  // layer 0's level is the track's volume
+	m_mix[static_cast<std::size_t>(index)] = wanted;
+	publishMix();
+	return true;
+}
+
+void InstrumentLayers::publishMix()
+{
+	const int count = layerCount();
+	const bool anySolo = std::any_of(m_mix.begin(), m_mix.begin() + count + 1, [](const Mix& mix) { return mix.solo; });
+	for (int index = 0; index <= count; ++index)
+	{
+		const Mix& mix = m_mix[static_cast<std::size_t>(index)];
+		const bool silent = mix.muted || (anySolo && !mix.solo);
+		InstrumentTrack* track = index == 0 ? m_owner : layer(index);
+		track->audioBusHandle()->setGain(silent ? 0.0f : mix.level);
+	}
+}
+
+void InstrumentLayers::dropMix(int index)
+{
+	for (int i = index; i < MaxLayers; ++i) { m_mix[static_cast<std::size_t>(i)] = m_mix[static_cast<std::size_t>(i + 1)]; }
+	m_mix[MaxLayers] = Mix{};
+}
+
+void InstrumentLayers::makeRoomForMix(int index, const Mix& mix)
+{
+	for (int i = MaxLayers; i > index; --i) { m_mix[static_cast<std::size_t>(i)] = m_mix[static_cast<std::size_t>(i - 1)]; }
+	m_mix[static_cast<std::size_t>(index)] = mix;
 }
 
 auto InstrumentLayers::layerMask(int key, int volume) const -> std::uint32_t

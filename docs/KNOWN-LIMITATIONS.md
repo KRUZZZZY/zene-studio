@@ -2229,7 +2229,16 @@ Fleshed out, because both halves of that sentence hide something real:
 - `pdc.report` does not list the insert's latency per channel, although PDC includes it.
 
 **F2, instruments (MX-114/112/120).**
-- Layers and per-voice modulation have no interface yet; they are command-only.
+- Per-voice modulation has no interface yet; it is command-only.
+- Layers have an interface: Instrument Setup > Layers > Layer Rack... is a panel with a row per layer
+  (layer-0 is the track's own instrument) - Mute, Solo, Level (a gain on top of the track's volume,
+  0..200 %), Open (the layer instrument's own view, in a window that closes with the layer) and Remove -
+  with Add Layer... and Zones... under it; Add a Layer... and Layer Zones... are in the menu too. Mute,
+  solo and level are rack.layer_set, saved with the track. Layer-0 has no level of its own (it is the
+  track's volume) and no Remove or Open there (its own window and device card do that). A layer's mute
+  and solo are a gain of 0 on its bus: a muted layer still runs its notes (CPU), it is just not heard.
+  A plug-in layer opens its host's generic view, not the plug-in's own editor (plugin.editor_open does
+  not address a layer).
 - MIDI parts have an interface: Instrument Setup > MIDI Parts lists a track's parts, adds one, edits one
   in place (plugin.midi_part_set, which keeps the part's place in the first-match order) and removes one.
   The Edit form starts blank - a field left blank keeps its value - rather than showing the current one.

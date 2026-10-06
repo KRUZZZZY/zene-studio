@@ -114,6 +114,9 @@ LMMS_EXPORT ListSpec settingsPresets();
 LMMS_EXPORT ListSpec outputBuses(const QString& track);
 //! MX-114: its MIDI parts (a key/velocity zone sent on one MIDI channel) - edit one in place, remove one, add one.
 LMMS_EXPORT ListSpec midiParts(const QString& track);
+//! MX-112: its layer rack's key/velocity zones (which layers a note plays on) - remove one, add one. The layers
+//! themselves are LayerRackPanel's.
+LMMS_EXPORT ListSpec layerZones(const QString& track);
 
 } // namespace CommandLists
 

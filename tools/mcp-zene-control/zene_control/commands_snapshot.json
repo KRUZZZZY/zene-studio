@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-06T14:23:49Z",
+  "captured_at": "2026-10-06T14:39:18Z",
   "commands": [
     {
       "args_schema": {
@@ -20717,6 +20717,71 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "level": {
+            "maximum": 2,
+            "minimum": 0,
+            "type": "number"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "solo": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "layer"
+        ],
+        "type": "object"
+      },
+      "description": "Set a layer's mix in an instrument track's layer rack ('layer' layer-<n>; layer-0 is the track's own instrument): 'muted' silences it; while any layer is 'solo', only the soloed layers sound; 'level' (0..2, 1 is unity) is a gain on top of the track's volume - layer-0 has none (its level is the track's volume). A field left out keeps its value. Applied at once, to the notes already sounding too. Saved with the track. Reversible through the ProjectJournal.",
+      "group": "rack",
+      "id": "rack.layer_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "layer_count": {
+            "type": "integer"
+          },
+          "layers": {
+            "type": "array"
+          },
+          "max_layers": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          },
+          "zones": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "high_key": {
             "maximum": 127,
             "minimum": 0,
@@ -20854,7 +20919,7 @@
         ],
         "type": "object"
       },
-      "description": "Read an instrument track's layer rack: layer-0 is the track's own instrument, layer-1.. the instruments layered on it, and the key/velocity zones that pick which layers a note plays on (every layer a matching zone names sounds - a layer rack stacks). Read-only.",
+      "description": "Read an instrument track's layer rack: layer-0 is the track's own instrument, layer-1.. the instruments layered on it, and the key/velocity zones that pick which layers a note plays on (every layer a matching zone names sounds - a layer rack stacks). Each layer reports its mix (muted, solo, level - rack.layer_set). Read-only.",
       "group": "rack",
       "id": "rack.layers",
       "mutating": false,
@@ -34066,7 +34131,7 @@
       }
     }
   ],
-  "count": 810,
+  "count": 811,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -34074,15 +34139,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-f2-ui/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-x0zeenn8/zene.sock",
-    "version": "0.4.0-alpha.333+6d1a114"
+    "source_socket": "/tmp/zctl-run-607ct6fd/zene.sock",
+    "version": "0.4.0-alpha.335+ae4a91d"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 810,
-    "ids_sha256": "4719b50268a26b6602b33e223977b678d787340836485d9377c8340af60c5ee0"
+    "id_count": 811,
+    "ids_sha256": "4639fb0a5b8386a6e6c315c279b78cd3b4a2ae0d1d63916f8ef1154823bb5dd6"
   }
 }

@@ -120,6 +120,11 @@ const ReversibilityRow kClapInstrumentRows[] = {
 	R("rack.layer_zone_remove", RC::TrueInverse, true,
 		"a removed zone is pure data",
 		"action checkpoint: the recorded undo step re-inserts the captured zone at its own index", ""),
+	R("rack.layer_set", RC::TrueInverse, true,
+		"a layer's mix (mute, solo, level) is three values of the layer rack's own data, published as each layer bus's gain",
+		"action checkpoint: the recorded undo step writes the layer's previous mix back (InstrumentLayers::setMix), which "
+		"re-publishes every layer's gain",
+		""),
 	R("modulator.voice_set", RC::TrueInverse, true,
 		"the per-voice flag and trigger track are fields of the modulator's source in the modulation layer",
 		"action checkpoint: the recorded undo step writes the previous source back (ModulationLayer::setSource) "

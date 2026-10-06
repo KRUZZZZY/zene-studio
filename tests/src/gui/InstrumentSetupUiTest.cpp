@@ -32,11 +32,22 @@
 
 #include <QtTest>
 
+#include <algorithm>
+#include <cmath>
+
+#include <QApplication>
+#include <QDomDocument>
+#include <QDomElement>
+#include <QDoubleSpinBox>
 #include <QFileInfo>
+#include <QPointer>
 #include <QJsonArray>
 #include <QMenu>
 #include <QToolButton>
 
+#include "AudioBusHandle.h"
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "CommandForm.h"
 #include "CommandListDialog.h"
 #include "CommandLists.h"
@@ -49,10 +60,17 @@
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentCommandMenus.h"
+#include "InstrumentLayers.h"
 #include "InstrumentMidiParts.h"
+#include "LayerRackPanel.h"
 #include "InstrumentOutputBuses.h"
 #include "InstrumentTrack.h"
 #include "MenuTestSupport.h"
+#include "MidiClip.h"
+#include "Note.h"
+#include "NotePlayHandle.h"
+#include "SampleFrame.h"
+#include "Song.h"
 #include "Mixer.h"
 #include "PluginFactory.h"
 #include "RackZones.h"
@@ -122,6 +140,18 @@ int actionIndex(const ListSpec& spec, const QString& label)
 	return -1;
 }
 
+//! The dev-<n> id plugin.list gives the built-in instrument module @a name, or empty.
+QString builtinDevice(const QString& name)
+{
+	const ControlResult listed = run(QStringLiteral("plugin.list"), {{QStringLiteral("kind"), QStringLiteral("instrument")}});
+	for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
+	{
+		const QJsonObject device = value.toObject();
+		if (device.value(QStringLiteral("name")).toString() == name) { return device.value(QStringLiteral("id")).toString(); }
+	}
+	return QString();
+}
+
 //! The dev-<n> id plugin.list gives the CLAP class @a clapId, or empty.
 QString clapDevice(const QString& clapId)
 {
@@ -153,6 +183,48 @@ const RackZone* partOf(const QString& track, int index)
 	return trackOf(track)->midiParts().zones().zone(index);
 }
 
+//! The track's state saved and read back into the same track - the project round trip of one track.
+void saveAndReload(InstrumentTrack* track)
+{
+	QDomDocument doc;
+	QDomElement root = doc.createElement(QStringLiteral("trackcontainer"));
+	doc.appendChild(root);
+	const QDomElement saved = track->saveState(doc, root);
+	track->restoreState(saved);
+}
+
+//! The loudest sample @a bus carries while one note plays on @a track's clip for a few periods (its layers get the
+//! note too); the note is stopped and its clip removed again afterwards.
+float renderedPeak(InstrumentTrack* track, AudioBusHandle* bus)
+{
+	auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+	clip->addNote(Note(TimePos(192), TimePos(0), 60), false);
+	Song* song = Engine::getSong();
+	song->setPlayPos(0, Song::PlayMode::Song);
+	song->playSong();
+	float peak = 0.0f;
+	for (int period = 0; period < 8; ++period)
+	{
+		Engine::audioEngine()->renderNextPeriod();
+		for (const SampleFrame& frame : bus->buffer()) { peak = std::max({peak, std::abs(frame.left()), std::abs(frame.right())}); }
+	}
+	song->stop();
+	for (int period = 0; period < 64 && !Engine::audioEngine()->playHandles().empty(); ++period) { Engine::audioEngine()->renderNextPeriod(); }
+	track->removeClip(clip);
+	delete clip;
+	return peak;
+}
+
+//! The top-level window whose title ends with @a suffix, or nullptr.
+QWidget* windowEndingWith(const QString& suffix)
+{
+	for (QWidget* widget : QApplication::topLevelWidgets())
+	{
+		if (widget->isVisible() && widget->windowTitle().endsWith(suffix)) { return widget; }
+	}
+	return nullptr;
+}
+
 } // namespace
 
 class InstrumentSetupUiTest : public QObject
@@ -166,6 +238,8 @@ private slots:
 		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);  // the build's instruments, for the layers and the CLAP host
 #endif
 		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();  // the layer case renders periods itself
+		NotePlayHandleManager::init();  // a test binary has no main() to do it (CLAUDE-READ-FIRST section 4)
 		ControlRegistry::setReady(true);
 	}
 
@@ -263,6 +337,80 @@ private slots:
 		QCOMPARE(trackOf(track)->midiParts().zones().zoneCount(), 0);
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(trackOf(track)->midiParts().zones().zoneCount(), 1);
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	//! MX-112: the layer rack panel, from the track's menu and the device card - a layer added, muted, soloed (the
+	//! track's own instrument falls silent), its level set, its instrument opened, then removed (its window closes
+	//! with it); each a journalled step, the mix saved with the track and its zones listed.
+	void layerRackMixesOpensAndRemovesALayer()
+	{
+		// A built-in synth on the track and in the layer, so a played note is heard (the first loadable instrument
+		// can be a silent CLAP test fixture).
+		const QString device = builtinDevice(QStringLiteral("tripleoscillator"));
+		if (device.isEmpty()) { QSKIP("this build has no tripleoscillator module"); }
+		const QString track = revtest::addTrack();
+		QVERIFY(run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), track}, {QStringLiteral("device"), device}}).ok);
+		QMenu header;
+		QVERIFY(trackMenuEntry(&header, track, setupPath(QStringLiteral("Layers"), QStringLiteral("Layer Rack...")),
+			QStringLiteral("rack.layers")) != nullptr);
+		DevicePanel devices;
+		QMenu* card = cardMenu(&devices, track);
+		QVERIFY(card != nullptr && menuAction(card, setupPath(QStringLiteral("Layers"), QStringLiteral("Add a Layer..."))) != nullptr);
+
+		LayerRackPanel panel(track);
+		QCOMPARE(panel.rowCount(), 1);  // layer-0, the track's own instrument
+		QVERIFY2(panel.addLayer(device).ok, qPrintable(panel.statusText()));  // what Add Layer... runs after its picker
+		QCOMPARE(panel.rowCount(), 2);
+		InstrumentLayers& layers = trackOf(track)->layers();
+		AudioBusHandle* own = trackOf(track)->audioBusHandle();
+		AudioBusHandle* bus = layers.layer(1)->audioBusHandle();
+
+		QTest::mouseClick(panel.muteButton(1), Qt::LeftButton);
+		QVERIFY(layers.mix(1).muted);
+		QCOMPARE(bus->gain(), 0.0f);
+		QVERIFY(panel.muteButton(1)->isChecked());
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(bus->gain(), 1.0f);
+		QTest::mouseClick(panel.soloButton(1), Qt::LeftButton);
+		QCOMPARE(own->gain(), 0.0f);  // a layer soloed: the track's own instrument is not
+		QCOMPARE(bus->gain(), 1.0f);
+		QTest::mouseClick(panel.soloButton(1), Qt::LeftButton);
+		QCOMPARE(own->gain(), 1.0f);
+		panel.levelBox(1)->setValue(50.0);
+		emit panel.levelBox(1)->editingFinished();
+		QCOMPARE(layers.mix(1).level, 0.5f);
+		QCOMPARE(bus->gain(), 0.5f);
+		// Heard, not only stored: the layer's own bus sounds, and is silent while the layer is muted.
+		QVERIFY2(renderedPeak(trackOf(track), bus) > 0.0f, "the layer played nothing");
+		QTest::mouseClick(panel.muteButton(1), Qt::LeftButton);
+		QCOMPARE(renderedPeak(trackOf(track), bus), 0.0f);
+		QTest::mouseClick(panel.muteButton(1), Qt::LeftButton);
+		saveAndReload(trackOf(track));
+		QCOMPARE(trackOf(track)->layers().mix(1).level, 0.5f);  // saved with the track
+		panel.refresh();
+
+		QTest::mouseClick(panel.openButton(1), Qt::LeftButton);
+		const QPointer<QWidget> opened = windowEndingWith(QStringLiteral("layer-1"));
+		QVERIFY2(!opened.isNull(), "Open showed no window for layer-1's instrument");
+		QTest::mouseClick(panel.removeButton(1), Qt::LeftButton);
+		QCOMPARE(trackOf(track)->layers().layerCount(), 0);
+		QCOMPARE(panel.rowCount(), 1);
+		QVERIFY2(opened.isNull(), "the layer's instrument window outlived the layer");
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(trackOf(track)->layers().layerCount(), 1);
+		QCOMPARE(trackOf(track)->layers().mix(1).level, 0.5f);  // the undo brings the mix back with the layer
+
+		const ListSpec zones = CommandLists::layerZones(track);
+		CommandListDialog dialog(zones);
+		QCOMPARE(dialog.rowCount(), 1);  // the whole-keyboard zone the layer was given
+		QVERIFY(dialog.runAction(0, actionIndex(zones, QStringLiteral("Remove"))).ok);
+		QCOMPARE(trackOf(track)->layers().zones().zoneCount(), 0);
+		for (QToolButton* button : panel.findChildren<QToolButton*>())
+		{
+			QVERIFY2(ControlRegistry::instance()->hasCommand(button->property("controlCommand").toString()),
+				qPrintable(QStringLiteral("an undeclared button: ") + button->text()));
+		}
 		ShellSelection::instance()->setTrack(nullptr);
 	}
 };

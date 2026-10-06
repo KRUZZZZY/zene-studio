@@ -115,6 +115,24 @@ public:
 	auto zones() -> RackZones& { return m_zones; }
 	auto zones() const -> const RackZones& { return m_zones; }
 
+	/*! 0.5.0 F2 interface: one layer's mix. A muted layer - or, while any layer is soloed, a layer that is not -
+	 *  sounds at gain 0; @a level is a linear gain (0..MaxLevel, 1 = unity) on top of the track's volume. Layer 0
+	 *  (the track's own instrument) has a mute and a solo; its level is the track's volume. Applied as the gain of
+	 *  each layer's own audio bus (AudioBusHandle::setGain): one atomic per bus, read once a period. */
+	struct Mix
+	{
+		bool muted = false;
+		bool solo = false;
+		float level = 1.0f;
+	};
+	static constexpr float MaxLevel = 2.0f;
+
+	//! Layer @a index's mix (0..layerCount()); the default for any other index.
+	auto mix(int index) const -> Mix;
+	//! Sets layer @a index's mix (0..layerCount(), level clamped to 0..MaxLevel) and publishes every layer's gain;
+	//! false for no such layer.
+	auto setMix(int index, const Mix& mix) -> bool;
+
 	//! The track's mixer channel changed: the layers follow it (InstrumentTrack::updateMixerChannel).
 	void followMixerChannel(int channel);
 
@@ -148,6 +166,11 @@ private:
 	//! The zones after layer @a index is removed (dropped) or inserted (made room for).
 	auto zonesWithout(int index) const -> std::vector<RackZone>;
 	auto zonesWithRoomAt(int index) const -> std::vector<RackZone>;
+	//! Every layer's bus gain from m_mix: 0 when muted or (while any layer is soloed) not soloed, else its level.
+	void publishMix();
+	//! m_mix with layer @a index's entry dropped (the later ones move down) or made room for (moved up).
+	void dropMix(int index);
+	void makeRoomForMix(int index, const Mix& mix);
 	//! The layers a live @a event goes to: a note-on's zones (remembered per key), the layers its note-on
 	//! reached for a note-off or key pressure, every layer for a channel-wide message.
 	auto liveLayersFor(const MidiEvent& event) -> std::uint32_t;
@@ -157,6 +180,8 @@ private:
 	std::unique_ptr<TrackContainer> m_container;
 	std::array<std::atomic<InstrumentTrack*>, MaxLayers> m_slots{};
 	RackZones m_zones;
+	//! Control thread only: each layer's mix, by layer index (0 = the track's own instrument).
+	std::array<Mix, MaxLayers + 1> m_mix{};
 	//! Per key: the layers a live note-on was passed to (bit k = layer k), for its note-off.
 	std::array<std::atomic<std::uint32_t>, NumKeys> m_liveLayers{};
 	//! Per key: whether the track's own instrument declined the note-on (processOutEvent), so its note-off is

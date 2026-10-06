@@ -27,6 +27,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <functional>
 #include <vector>
 
 #include <QJsonArray>
@@ -68,6 +69,20 @@ QJsonObject layerJson(const InstrumentTrack* track, int index)
 	return out;
 }
 
+//! 0.5.0 F2 interface: a layer's mix as rack.layers reports it (and rack.layer_set takes it).
+QJsonObject mixJson(const InstrumentLayers::Mix& mix)
+{
+	return {{QStringLiteral("muted"), mix.muted}, {QStringLiteral("solo"), mix.solo}, {QStringLiteral("level"), static_cast<double>(mix.level)}};
+}
+
+//! @a out with layer @a index's mix fields added.
+QJsonObject withMix(QJsonObject out, const InstrumentLayers& layers, int index)
+{
+	const QJsonObject mix = mixJson(layers.mix(index));
+	for (auto it = mix.begin(); it != mix.end(); ++it) { out.insert(it.key(), it.value()); }
+	return out;
+}
+
 QJsonObject layerZoneJson(const RackZone& zone, int index)
 {
 	QJsonObject out = zoneJson(zone, index);
@@ -79,8 +94,8 @@ QJsonObject layerZoneJson(const RackZone& zone, int index)
 QJsonObject layersState(InstrumentTrack* track)
 {
 	const InstrumentLayers& layers = track->layers();
-	QJsonArray list{layerJson(track, 0)};
-	for (int i = 1; i <= layers.layerCount(); ++i) { list.append(layerJson(layers.layer(i), i)); }
+	QJsonArray list{withMix(layerJson(track, 0), layers, 0)};
+	for (int i = 1; i <= layers.layerCount(); ++i) { list.append(withMix(layerJson(layers.layer(i), i), layers, i)); }
 	QJsonArray zones;
 	for (int i = 0; i < layers.zones().zoneCount(); ++i) { zones.append(layerZoneJson(*layers.zones().zone(i), i)); }
 	QJsonObject out;
@@ -129,7 +144,8 @@ void registerLayers(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("layers");
 	cmd.description = QStringLiteral("Read an instrument track's layer rack: layer-0 is the track's own instrument, "
 		"layer-1.. the instruments layered on it, and the key/velocity zones that pick which layers a note "
-		"plays on (every layer a matching zone names sounds - a layer rack stacks). Read-only.");
+		"plays on (every layer a matching zone names sounds - a layer rack stacks). Each layer reports its mix "
+		"(muted, solo, level - rack.layer_set). Read-only.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("target"), stringProperty()}}, {QStringLiteral("target")});
 	cmd.resultSchema = stateSchema();
 	cmd.mutating = false;
@@ -370,6 +386,97 @@ void registerLayerZoneRemove(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+//! The mix rack.layer_set asks for: @a current with the fields @a args gives changed.
+InstrumentLayers::Mix mixArgs(const InstrumentLayers::Mix& current, const QJsonObject& args)
+{
+	InstrumentLayers::Mix out = current;
+	out.muted = args.value(QStringLiteral("muted")).toBool(current.muted);
+	out.solo = args.value(QStringLiteral("solo")).toBool(current.solo);
+	out.level = static_cast<float>(args.value(QStringLiteral("level")).toDouble(current.level));
+	return out;
+}
+
+//! The typed refusal for a layer_set naming no layer, or a level it cannot take; an ok result otherwise.
+ControlResult layerSetRefusal(const InstrumentLayers& layers, int index, const QJsonObject& args)
+{
+	if (index < 0 || index > layers.layerCount())
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no layer '%1' (the track has layer-0..layer-%2)")
+			.arg(args.value(QStringLiteral("layer")).toString()).arg(layers.layerCount()));
+	}
+	const double level = args.value(QStringLiteral("level")).toDouble(1.0);
+	if (index == 0 && args.contains(QStringLiteral("level")))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("layer-0 is the track's own instrument: its level is the track's volume (mixer.set_volume)"));
+	}
+	if (level < 0.0 || level > InstrumentLayers::MaxLevel)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("level %1 is not inside 0..%2 (1 is unity)").arg(level).arg(InstrumentLayers::MaxLevel));
+	}
+	return ControlResult::success(QJsonObject{});
+}
+
+//! An undo/redo half that writes @a mix back as layer @a index's mix on the track @a trackIdText names.
+std::function<void()> mixWriter(const QString& trackIdText, int index, const InstrumentLayers::Mix& mix)
+{
+	return [trackIdText, index, mix]() {
+		if (InstrumentLayers* layers = layersById(trackIdText)) { layers->setMix(index, mix); }
+	};
+}
+
+ControlResult setLayerMix(InstrumentTrack* track, const QJsonObject& args)
+{
+	InstrumentLayers& layers = track->layers();
+	const int index = idToIndex(args.value(QStringLiteral("layer")).toString(), QStringLiteral("layer-"));
+	const ControlResult refused = layerSetRefusal(layers, index, args);
+	if (!refused.ok) { return refused; }
+	const InstrumentLayers::Mix before = layers.mix(index);
+	layers.setMix(index, mixArgs(before, args));
+	const QString trackIdText = trackIdOf(track);
+	addUndoStep(mixWriter(trackIdText, index, before), mixWriter(trackIdText, index, layers.mix(index)));
+	QJsonObject inverse = mixJson(before);
+	if (index == 0) { inverse.remove(QStringLiteral("level")); }
+	inverse.insert(QStringLiteral("target"), trackIdText);
+	inverse.insert(QStringLiteral("layer"), layerId(index));
+	QJsonObject result = layersState(track);
+	result.insert(QStringLiteral("layer"), layerId(index));
+	result.insert(QStringLiteral("__transaction"), transactionPayload(mixJson(before), QStringLiteral("rack.layer_set"), inverse,
+		true, QStringLiteral("action checkpoint: the recorded undo step writes the layer's previous mute, solo and level "
+			"back (InstrumentLayers::setMix), which re-publishes every layer's gain")));
+	return ControlResult::success(result);
+}
+
+void registerLayerSet(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("rack.layer_set");
+	cmd.group = kGroup;
+	cmd.verb = QStringLiteral("layer_set");
+	cmd.description = QStringLiteral("Set a layer's mix in an instrument track's layer rack ('layer' layer-<n>; layer-0 is the "
+		"track's own instrument): 'muted' silences it; while any layer is 'solo', only the soloed layers sound; 'level' "
+		"(0..2, 1 is unity) is a gain on top of the track's volume - layer-0 has none (its level is the track's volume). "
+		"A field left out keeps its value. Applied at once, to the notes already sounding too. Saved with the track. "
+		"Reversible through the ProjectJournal.");
+	QJsonObject level = numberProperty();
+	level.insert(QStringLiteral("minimum"), 0);
+	level.insert(QStringLiteral("maximum"), static_cast<double>(InstrumentLayers::MaxLevel));
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("target"), stringProperty()},
+		{QStringLiteral("layer"), stringProperty()},
+		{QStringLiteral("muted"), booleanProperty()},
+		{QStringLiteral("solo"), booleanProperty()},
+		{QStringLiteral("level"), level},
+	}, {QStringLiteral("target"), QStringLiteral("layer")});
+	cmd.resultSchema = stateSchema();
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) {
+		return withInstrumentTarget(args, [&args](InstrumentTrack* track) { return setLayerMix(track, args); });
+	};
+	registry.registerCommand(cmd);
+}
+
 } // namespace
 
 void registerRackLayerCommands(ControlRegistry& registry)
@@ -379,6 +486,7 @@ void registerRackLayerCommands(ControlRegistry& registry)
 	registerLayerRemove(registry);
 	registerLayerZoneAdd(registry);
 	registerLayerZoneRemove(registry);
+	registerLayerSet(registry);
 }
 
 } // namespace lmms
