@@ -32,6 +32,8 @@
 #include <QTemporaryDir>
 #include <QTextStream>
 
+#include <limits>
+
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -277,6 +279,47 @@ private slots:
 		QCOMPARE(tracks.at(0).attribute(QStringLiteral("rev")), QStringLiteral("2"));
 		QCOMPARE(tracks.at(0).attribute(QStringLiteral("writer")),
 			ProjectIds::writerInstance());
+	}
+
+	//! A document can carry `rev="2147483647"` - readRevision() accepts any
+	//! positive int, so the file loads. The next edit used to do `++rev` on that
+	//! value, signed overflow, and a NEGATIVE revision was written back. The
+	//! id counter already saturates for exactly this reason; the revision pair
+	//! must too: at INT_MAX the space is exhausted and the last number repeats.
+	void aMaximumStoredRevisionSaturatesInsteadOfWrappingNegative()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("max-rev.mmp"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		file.write(
+			"<?xml version=\"1.0\"?>\n"
+			"<lmms-project version=\"1.1\" type=\"song\" creator=\"LMMS\" "
+			"creatorversion=\"1.2.0\" next-id=\"3\">\n"
+			"  <head/>\n"
+			"  <song>\n"
+			"    <trackcontainer type=\"song\">\n"
+			"      <track type=\"0\" name=\"A\" muted=\"0\" id=\"1\" "
+			"rev=\"2147483647\" writer=\"someone-else\">\n"
+			"        <instrumenttrack/>\n"
+			"      </track>\n"
+			"    </trackcontainer>\n"
+			"  </song>\n"
+			"</lmms-project>\n");
+		file.close();
+
+		loadProject(path);
+		Engine::getSong()->tracks().at(0)->setName(QStringLiteral("A-revised"));
+		const QString out = m_dir.filePath(QStringLiteral("max-rev-out.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(out, false));
+
+		const QDomElement track = trackElements(parseFile(out)).at(0);
+		QCOMPARE(track.attribute(QStringLiteral("name")), QStringLiteral("A-revised"));
+		const int written = track.attribute(QStringLiteral("rev")).toInt();
+		QVERIFY2(written > 0, qPrintable(
+			QStringLiteral("a saturated revision must stay positive, wrote ") +
+			QString::number(written)));
+		QCOMPARE(written, std::numeric_limits<int>::max());
+		QCOMPARE(track.attribute(QStringLiteral("writer")), ProjectIds::writerInstance());
 	}
 
 	//! The clip family wears the pair too - through Clip::saveState, the one
