@@ -959,6 +959,47 @@ private slots:
 			"a malformed note key was read as the default 60");
 	}
 
+	//! Luna cluster new-p8-111: an EMPTY numeric attribute is PRESENT, not absent -
+	//! the absent-attribute fallback belongs to an attribute the document did not
+	//! carry, so `<RealPoint time="">` must be refused as malformed, not read as
+	//! time zero (and `<Tempo value="">` not as the 120 default).
+	void emptyNumericAttributesAreNotAbsent()
+	{
+		const QByteArray emptyTempo =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"\"/></Transport></Project>";
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(!dawProjectModelFromXml(emptyTempo, &model, &report, &error),
+			"an empty tempo value was read as the 120 default");
+
+		const QByteArray emptyPointTime =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Arrangement><TempoAutomation timeUnit=\"beats\">"
+			"<RealPoint time=\"\" value=\"120\"/>"
+			"</TempoAutomation></Arrangement></Project>";
+		DawProjectModel pointModel;
+		DawProjectReadReport pointReport;
+		QString pointError;
+		QVERIFY2(!dawProjectModelFromXml(emptyPointTime, &pointModel, &pointReport, &pointError),
+			"an empty automation point time was read as time zero");
+
+		const QByteArray emptyNumerator =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/>"
+			"<TimeSignature numerator=\"\" denominator=\"4\"/></Transport></Project>";
+		DawProjectModel metreModel;
+		DawProjectReadReport metreReport;
+		QString metreError;
+		QVERIFY2(!dawProjectModelFromXml(emptyNumerator, &metreModel, &metreReport, &metreError),
+			"an empty metre numerator was read as the 4/4 default");
+	}
+
 	//! Luna cluster 5064: an automation point's time is a beat like any other, so
 	//! it goes through the same bounded tick conversion - and is counted in
 	//! `rounded_times` when it is not on the 48-tick grid - instead of being kept
