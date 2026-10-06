@@ -385,6 +385,34 @@ private slots:
 		QVERIFY(QFile::setPermissions(rev0, QFile::ReadOwner | QFile::WriteOwner));
 	}
 
+	//! Luna cluster 4352: a replace that cannot complete leaves the LIVE project
+	//! exactly as it was. replaceProjectWithStaged() removed the live file before
+	//! renaming the staged one into place, and its recovery copies revision 0
+	//! back - so a failure at the moment the disk is full, the one moment the
+	//! recovery copy also cannot succeed, left no project file at all.
+	void aFailedReplaceKeepsTheLiveProject()
+	{
+		buildFixture();
+		const QByteArray live = readBytes(m_project);
+		QCOMPARE(live, documentWith(3));
+		const QString staging = projectRevisionPath(m_project, 0) + QStringLiteral(".restore");
+
+		// No revision 0 to fall back on, and a staging file that is not there to
+		// move: the replacement cannot complete. This is the shape of the
+		// reported failure - the copy into the final name is what fails, which is
+		// what a full destination does - and here the recovery copy has nothing
+		// to recover from either.
+		QVERIFY(QFile::remove(projectRevisionPath(m_project, 0)));
+		QVERIFY(!QFileInfo::exists(staging));
+		QVERIFY(QFileInfo::exists(m_project));
+
+		QVERIFY2(!replaceProjectWithStaged(m_project, staging),
+			"the replace reported success");
+
+		QVERIFY2(QFileInfo::exists(m_project), "the failed replace left no project file at all");
+		QCOMPARE(readBytes(m_project), live);
+	}
+
 	//! An id in the keep-3 set restores through the policy's OWN function, which
 	//! is the whole point of listing those artefacts rather than re-reading them:
 	//! one implementation of the rotation order, and the replaced file is

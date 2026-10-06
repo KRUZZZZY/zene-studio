@@ -249,10 +249,25 @@ bool restoreProjectRevision(const QString& projectPath, int revision, QString* e
 
 bool replaceProjectWithStaged(const QString& projectPath, const QString& staging)
 {
+	// Luna cluster 4352: the live file stays put until the replacement is known
+	// to be there. The staged bytes are copied to a sibling first, so a copy
+	// that fails - the out-of-disk case the previous order hit AFTER the live
+	// file was removed - leaves the project exactly as it was, instead of
+	// deleting it and hoping the recovery copy, which fails for the same reason,
+	// can bring it back.
+	const QString pending = projectPath + QStringLiteral(".replace");
+	QFile::remove(pending);
+	if (!QFile::copy(staging, pending))
+	{
+		QFile::remove(pending);
+		return false;
+	}
+	QFile::remove(staging);
+
 	const bool hadLive = QFileInfo::exists(projectPath);
 	QFile::remove(projectPath);
-	if (QFile::rename(staging, projectPath)) { return true; }
-	QFile::remove(staging);
+	if (QFile::rename(pending, projectPath)) { return true; }
+	QFile::remove(pending);
 	// The rotation just kept the live file as revision 0: put it back rather than leave no project.
 	if (hadLive) { QFile::copy(projectRevisionPath(projectPath, 0), projectPath); }
 	return false;
