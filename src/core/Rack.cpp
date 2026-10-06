@@ -224,6 +224,10 @@ void Rack::clear()
 	m_parallelChains.clear();
 	m_selectedChain = Parallel;
 	m_split = RackSplit{};
+	// A macro is persisted, so a cleared rack cannot keep one: loadSettings()
+	// returns early for a project with no <rack> element, which left the
+	// previous channel's macros to be written into the new project on save.
+	m_macros.clear();
 	// E20: a zone puts the rack on the path, so a cleared channel - a plain chain - has none.
 	m_zones.clear();
 	rebuildRoutingGraph();
