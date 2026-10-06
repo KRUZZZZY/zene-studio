@@ -245,14 +245,17 @@ void registerNoteMove(ControlRegistry& registry)
 
 		// The schema bounds the new START (0..MaxSongLength), but the note's END
 		// must fit inside the song too: a positive-length note moved to MaxSongLength
-		// would end past the limit. Refuse before anything changes - both operands
-		// are schema-bounded by MaxSongLength, so the sum cannot overflow.
+		// would end past the limit. Refuse before anything changes. Note lengths are
+		// NOT schema-bounded everywhere - Note::loadSettings reads them straight from
+		// XML without a MaxSongLength clamp - so the end is computed in a wide type:
+		// an int32 sum with a near-INT_MAX loaded length would overflow and bypass this.
 		const tick_t position = static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble());
-		if (position + note->length().getTicks() > MaxSongLength)
+		const qint64 end = static_cast<qint64>(position) + static_cast<qint64>(note->length().getTicks());
+		if (end > MaxSongLength)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			 QStringLiteral("the move would put the note's end past the song limit: position %1 + length %2 exceeds %3 ticks")
-				 .arg(position).arg(note->length().getTicks()).arg(MaxSongLength));
+			 QStringLiteral("the move would put the note's end past the song limit: position %1 + length %2 ends at %3 ticks, past the limit of %4")
+				 .arg(position).arg(note->length().getTicks()).arg(end).arg(MaxSongLength));
 		}
 
 		clip->addJournalCheckPoint();
