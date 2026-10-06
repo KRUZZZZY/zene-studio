@@ -304,6 +304,22 @@ private slots:
 		QCOMPARE(checkManifest.readAll(), QByteArray("{\"project\":\"theirs\"}"));
 	}
 
+// A hand off that fails after the session copy was written must not leave that copy
+	// behind: the folder either holds a complete bundle or nothing at all.
+	void aFailedHandOffLeavesNoBundleBehind()
+	{
+		const QString dir = m_dir.filePath(QStringLiteral("halfway"));
+		QVERIFY(QDir().mkpath(dir));
+		touch(QDir(dir).filePath(QStringLiteral("media")));  // a file where the media folder goes
+
+		const ControlResult failed = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(!QFileInfo(QDir(dir).filePath(QStringLiteral("HANDOFF.json"))).exists(), "no manifest was written");
+		const QStringList left = QDir(dir).entryList({QStringLiteral("*.mmpz"), QStringLiteral("*.mmp")}, QDir::Files);
+		QVERIFY2(left.isEmpty(), qPrintable(QStringLiteral("the session copy survived a failed hand off: ") + left.join(QStringLiteral(", "))));
+		QVERIFY(QFileInfo(QDir(dir).filePath(QStringLiteral("media"))).isFile());  // what was there before is untouched
+	}
+
 private:
 	QTemporaryDir m_dir;
 };

@@ -142,6 +142,15 @@ bool writeManifest(const QString& file, const QJsonObject& info)
 	return out.open(QIODevice::WriteOnly) && out.write(QJsonDocument(info).toJson()) >= 0 && out.commit();
 }
 
+//! Take back what this hand off wrote before it failed: the session copy and the media folder
+//! beside it. A hand off folder is all of a bundle or none of it, never half of one.
+void discardPartialBundle(const QString& file)
+{
+	const QDir dir = QFileInfo(file).absoluteDir();
+	QFile::remove(file);
+	QDir(dir.filePath(QStringLiteral("media"))).removeRecursively();
+}
+
 ControlResult handoff(const QJsonObject& args)
 {
 	const QString dir = args.value(QStringLiteral("dir")).toString();
@@ -167,10 +176,15 @@ ControlResult handoff(const QJsonObject& args)
 	QJsonArray failed;
 	int missing = 0;
 	ControlResult error;
-	if (!collectProjectMediaInto(file, QStringLiteral("media"), &copied, &failed, &missing, &error)) { return error; }
+	if (!collectProjectMediaInto(file, QStringLiteral("media"), &copied, &failed, &missing, &error))
+	{
+		discardPartialBundle(file);
+		return error;
+	}
 	const QJsonObject info = manifest(file, copied, failed, missing);
 	if (!writeManifest(manifestFile, info))
 	{
+		discardPartialBundle(file);
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("HANDOFF.json could not be written"));
 	}
 	QJsonObject result = info;
