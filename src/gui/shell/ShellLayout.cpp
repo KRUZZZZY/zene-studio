@@ -272,6 +272,9 @@ bool ShellLayout::close(const QString& id, QString* reason)
 	}
 	const int key = regionKey(spec(id).home);
 	if (current().openPanel.value(key) == id) { current().openPanel.remove(key); }
+	// Closing takes the pin with it: a pin kept for a panel the user just closed would reopen it
+	// on the next view switch, so "closed" would not mean closed.
+	m_pinned.removeAll(id);
 	return true;
 }
 

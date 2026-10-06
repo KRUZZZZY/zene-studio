@@ -105,6 +105,19 @@ private slots:
 		QCOMPARE(layout.openIn(ShellRegion::Bottom), QStringLiteral("detail"));
 	}
 
+	void closingAPinnedPanelTakesItsPinWithIt()
+	{
+		ShellLayout layout;
+		QVERIFY(layout.setPinned(QStringLiteral("devices"), true));
+		QVERIFY(layout.close(QStringLiteral("devices")));
+		// Closing is the user saying "not this one": a pin left behind reopens the panel on the
+		// next view switch, which is not what closing it asked for.
+		QVERIFY(!layout.isPinned(QStringLiteral("devices")));
+		layout.setView(ShellView::Mix);
+		layout.setView(ShellView::Arrange);
+		QVERIFY(!layout.isVisible(QStringLiteral("devices")));
+	}
+
 	void aViewRefusesWhatItDoesNotOffer()
 	{
 		ShellLayout layout;
