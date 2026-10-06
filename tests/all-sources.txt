@@ -327,6 +327,7 @@ include/ImportDetectionDsp.h
 include/ImportFilter.h
 include/InlineAutomation.h
 include/InputChannelRing.h
+include/InputLevelMeter.h
 include/InputMeter.h
 include/InputMonitor.h
 include/InspectorChannelRouting.h
@@ -2063,6 +2064,7 @@ src/gui/GrooveMenu.cpp
 src/gui/GuiApplication.cpp
 src/gui/HelpCenter.cpp
 src/gui/HelpTasks.cpp
+src/gui/InputLevelMeter.cpp
 src/gui/ItemListPanel.cpp
 src/gui/ItemListSurfaceSources.cpp
 src/gui/LadspaControlView.cpp
@@ -2414,6 +2416,7 @@ tests/src/core/GrooveTemplateTest.cpp
 tests/src/core/GrooveTestSupport.h
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/ImportDetectionTest.cpp
+tests/src/core/InputMeterTest.cpp
 tests/src/core/InputMonitorTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
 tests/src/core/InstrumentRoutingTest.cpp

@@ -40,6 +40,8 @@ static_assert(std::atomic<float>::is_always_lock_free, "the input meter's peaks 
 
 std::atomic<float> s_left{0.f};
 std::atomic<float> s_right{0.f};
+std::atomic<float> s_liveLeft{0.f};   //!< the same maxima for the live meter's own read (MX-134)
+std::atomic<float> s_liveRight{0.f};
 
 void raise(std::atomic<float>& held, float value)
 {
@@ -61,12 +63,20 @@ void measure(const SampleFrame* buffer, f_cnt_t frames)
 	}
 	raise(s_left, left);
 	raise(s_right, right);
+	raise(s_liveLeft, left);
+	raise(s_liveRight, right);
 }
 
 void take(float* left, float* right)
 {
 	*left = s_left.exchange(0.f, std::memory_order_relaxed);
 	*right = s_right.exchange(0.f, std::memory_order_relaxed);
+}
+
+void live(float* left, float* right)
+{
+	*left = s_liveLeft.exchange(0.f, std::memory_order_relaxed);
+	*right = s_liveRight.exchange(0.f, std::memory_order_relaxed);
 }
 
 } // namespace lmms::inputmeter

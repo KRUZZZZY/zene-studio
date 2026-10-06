@@ -2354,3 +2354,14 @@ The record of what was built is `docs/MIXER-METERING.md`; this is what each piec
   selection is kept until it sets another.
 - The mode bar's Pick... dialog starts with nothing ticked (it replaces the selection); Ctrl+click on a
   strip adds or removes one channel.
+
+**MX-134, live input meters.**
+- They meter the engine's stereo input bus - the frames the retrospective capture and the stereo record
+  routes read. A wide capture (more than two channels, `AudioInputPath`) is not metered channel by
+  channel, and no record-armed track or input-monitoring strip carries its own input meter.
+- They are shown in Large Meters (the mixer's Mixer View menu) only; the record menu's Input Level is
+  still the one-shot `meter.input` reading, and no command reads the live meter (an agent reads
+  `meter.input`).
+- One live reader at a time: `inputmeter::live()` empties its own maxima, so a second Large Meters-style
+  reader would split the peaks with the first. Only one Large Meters window is ever open.
+

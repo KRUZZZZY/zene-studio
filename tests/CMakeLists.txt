@@ -330,6 +330,9 @@ set(LMMS_TESTS
 	# the group itself is the registered ctest ControlMeterCommands
 	# (tests/control-meter-commands.py).
 	src/core/MeterTapTest.cpp
+	# 0.5.0 L08 (MX-134): the input meter's live reading - the peaks since its own last read, beside meter.input's
+	# take, which it leaves alone - and zero allocations in measure() (the audio thread's half).
+	src/core/InputMeterTest.cpp
 	src/core/MidiLearnTest.cpp
 	# MIDI clock (0.3.0, the `clock.*` group's engine half): the master's
 	# emitted message set for a known transport script, and the follower's

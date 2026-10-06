@@ -25,14 +25,18 @@
 
 /*! MX-128: the meters' fall-off and peak hold are view options (window.mixer_view, kept in ui/mixerview with
  *  the others) and the strips' meters move by them. MX-005: a "Selected" filter shows only the channels picked
- *  for it - by window.mixer_view, a Ctrl+click on a strip or the mode bar's picker. Needs the real application
- *  (a Fader cannot be built without it). */
+ *  for it - by window.mixer_view, a Ctrl+click on a strip or the mode bar's picker. MX-134: Large Meters shows
+ *  the engine's input live, with the mixer's ballistics. Needs the real application (a Fader cannot be built
+ *  without it). */
 
 #include <QtTest>
 
+#include <QApplication>
 #include <QComboBox>
+#include <QDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QMenu>
 #include <QPushButton>
 #include <QSignalSpy>
 
@@ -43,12 +47,14 @@
 #include "Fader.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
+#include "InputLevelMeter.h"
 #include "MainWindow.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
 #include "MixerModeBar.h"
 #include "MixerView.h"
 #include "MixerViewOptions.h"
+#include "MixerWindows.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -268,6 +274,56 @@ private slots:
 		Engine::mixer()->deleteChannel(before);
 		syncMixer();
 		QCOMPARE(selection(), (QJsonArray{id}));
+	}
+
+	//! MX-134: the input meter takes each reading, falls by the mixer's fall-off and holds its peak line.
+	void theInputMeterFollowsTheInput()
+	{
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("meter_falloff"), QStringLiteral("medium")},
+			{QStringLiteral("peak_hold"), QStringLiteral("6s")}}).ok);
+		InputLevelMeter meter(nullptr);
+		QCOMPARE(meter.accessibleName(), QStringLiteral("Input level"));
+		meter.tick(0.5f, 0.25f);
+		QCOMPARE(meter.level(0), 0.5f);
+		QCOMPARE(meter.level(1), 0.25f);
+		meter.tick(0.f, 0.f);
+		QVERIFY2(qAbs(meter.level(0) - 0.5f / mixerviewoptions::meterFallOff()) < 1e-5f, qPrintable(QString::number(meter.level(0))));
+		QCOMPARE(meter.held(0), 0.5f);  // a 6 s hold
+		QVERIFY2(meter.accessibleDescription().contains(QStringLiteral("dB")), qPrintable(meter.accessibleDescription()));
+		QVERIFY(!meter.clipped());
+		meter.tick(1.f, 0.f);
+		QVERIFY(meter.clipped());
+		QVERIFY(meter.accessibleDescription().contains(QStringLiteral("clipped")));
+		QTest::mouseClick(&meter, Qt::LeftButton);  // a click clears the clip light
+		QVERIFY(!meter.clipped());
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("peak_hold"), QStringLiteral("off")}}).ok);
+		meter.tick(0.f, 0.f);
+		QCOMPARE(meter.held(0), meter.level(0));  // no hold: the line is the level
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("meter_falloff"), QStringLiteral("fast")},
+			{QStringLiteral("peak_hold"), QStringLiteral("1.5s")}}).ok);
+	}
+
+	//! MX-134: Large Meters shows the input beside the master.
+	void largeMetersShowTheInput()
+	{
+		QMenu menu;
+		addMixerWindows(&menu);
+		QAction* open = nullptr;
+		for (QAction* action : menu.actions())
+		{
+			if (action->text() == QStringLiteral("Large Meters...")) { open = action; }
+		}
+		QVERIFY(open != nullptr);
+		open->trigger();
+		QDialog* meters = nullptr;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			auto* dialog = qobject_cast<QDialog*>(widget);
+			if (dialog != nullptr && dialog->windowTitle() == QStringLiteral("Large Meters") && dialog->isVisible()) { meters = dialog; }
+		}
+		QVERIFY(meters != nullptr);
+		QVERIFY(meters->findChild<InputLevelMeter*>() != nullptr);
+		meters->close();
 	}
 
 	//! MX-005: a project cleared from under the mixer forgets the selection (the ids start again).

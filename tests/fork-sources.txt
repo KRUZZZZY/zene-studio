@@ -658,6 +658,7 @@ include/HelpTasks.h
 include/ImportDetection.h
 include/ImportDetectionDsp.h
 include/InputChannelRing.h
+include/InputLevelMeter.h
 include/InputMeter.h
 include/InputMonitor.h
 include/InspectorChannelRouting.h
@@ -1664,6 +1665,7 @@ src/gui/FollowActionEditor.cpp
 src/gui/GrooveMenu.cpp
 src/gui/HelpCenter.cpp
 src/gui/HelpTasks.cpp
+src/gui/InputLevelMeter.cpp
 src/gui/ItemListPanel.cpp
 src/gui/ItemListSurfaceSources.cpp
 src/gui/LayoutMenu.cpp
@@ -1948,6 +1950,7 @@ tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/ImportDetectionTest.cpp
+tests/src/core/InputMeterTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
 tests/src/core/InstrumentRoutingTest.cpp
 tests/src/core/LibraryBrowserTest.cpp

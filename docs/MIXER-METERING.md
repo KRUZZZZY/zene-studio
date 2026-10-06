@@ -51,3 +51,25 @@ Test-first record (`MixerMeteringTest`): red - the test did not compile (no
 `mixerviewoptions::isSelected`; build EXIT=2); green - 18/18 (ctest EXIT=0). `ControlMixingRouting`
 checks the set-and-answer and the master's refusal over the socket.
 
+## 3. MX-134 — live input level meters
+
+`inputmeter::measure` (`src/core/InputMeter.cpp`) already measured the engine's stereo input bus once a
+period on the audio thread, but the only reader was `meter.input`, which *takes* the peaks (a one-shot
+reading behind the record menu's Input Level), and no GUI read it at all.
+
+- `inputmeter::live()` is a second reader with **its own pair of atomic maxima**, raised by the same
+  `measure()` call: it answers the peaks since its own last read and empties only those, so neither
+  reader disturbs the other, and a transient between two polls is still read. The audio thread's
+  added work is two more relaxed compare-exchange maxima - no allocation, no lock
+  (`InputMeterTest::measuringAllocatesNothing`, with a negative control proving the allocation probe is
+  live in that binary).
+- `InputLevelMeter` (`include/InputLevelMeter.h`) polls it every 40 ms and draws the left and right
+  input, -60..0 dB, **with the mixer's ballistics** from section 1 (fall-off and peak hold); a reading at
+  full scale latches a clip light that a click clears; its accessible description reads the levels.
+- **Large Meters** shows it in a column beside the master's bars.
+
+Test-first record: `InputMeterTest` red - did not compile (no `inputmeter::live`; build EXIT=2), green
+6/6 (ctest EXIT=0); `MixerMeteringTest` red - did not compile (no `InputLevelMeter.h`; EXIT=2), green
+20/20 (ctest EXIT=0). `ControlMeterCommands` (the `meter.*` socket driver, with the
+`audiofileprocessor` module built) and `RtSafetySweep` still pass.
+

@@ -33,8 +33,9 @@ namespace lmms
 class SampleFrame;
 
 /*! 0.5.0 L08 (MX-134): how loud the audio input is - the engine's stereo input bus, measured once a
- *  period on the audio thread (two relaxed atomic maxima, no allocation, no lock) and read - and reset -
- *  by meter.input, the record panel's level. */
+ *  period on the audio thread (two pairs of relaxed atomic maxima, no allocation, no lock)
+ *  and read - and reset - by meter.input, the record panel's level; and read live, without the reset, by
+ *  the input meters Large Meters draws (InputLevelMeter.h). */
 namespace inputmeter
 {
 
@@ -42,6 +43,10 @@ namespace inputmeter
 LMMS_EXPORT void measure(const SampleFrame* buffer, f_cnt_t frames);
 //! The peaks held since the last take, linear; they start again from zero.
 LMMS_EXPORT void take(float* left, float* right);
+//! The live meter's own read (InputLevelMeter.h, polled at 25 Hz): the peaks since ITS last read, linear -
+//! every period's, so a transient between two polls is not missed - from a second pair of maxima, so it
+//! never empties what meter.input takes, nor the other way round. One live reader at a time.
+LMMS_EXPORT void live(float* left, float* right);
 
 } // namespace inputmeter
 
