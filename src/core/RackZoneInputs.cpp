@@ -47,12 +47,16 @@ bool RackZoneVoice::render(const SampleBuffer& sample, SampleFrame* dst, f_cnt_t
 	for (f_cnt_t f = 0; f < frames && !ended; ++f)
 	{
 		const auto index = static_cast<std::size_t>(position);
-		if (index + 1 >= size) { ended = true; break; }
+		if (index >= size) { ended = true; break; }
+		// The last source frame is played against itself, so a one-frame sample is not silence.
+		const bool last = index + 1 >= size;
+		const std::size_t next = last ? index : index + 1;
 		const auto fraction = static_cast<float>(position - static_cast<double>(index));
 		if (released) { fade -= 1.0f / static_cast<float>(FadeFrames); }
 		if (fade <= 0.0f) { ended = true; break; }
-		dst[f] += (data[index] * (1.0f - fraction) + data[index + 1] * fraction) * (gain * fade);
+		dst[f] += (data[index] * (1.0f - fraction) + data[next] * fraction) * (gain * fade);
 		position += step;
+		if (last) { ended = true; }
 	}
 	return !ended;
 }

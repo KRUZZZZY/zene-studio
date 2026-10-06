@@ -257,6 +257,29 @@ private slots:
 		QCOMPARE(out[RackZoneVoice::FadeFrames + 8][0], 0.0f);
 	}
 
+	//! E38: a voice renders the sample's LAST source frame (a one-frame sample sounds, it is not silence).
+	void aVoiceRendersTheLastSourceFrame()
+	{
+		const SampleBuffer one(std::vector<SampleFrame>{{0.5f, -0.5f}}, kWavRate);
+		RackZoneVoice voice;
+		voice.restart();
+		std::vector<SampleFrame> out(4, SampleFrame{});
+		QVERIFY(!voice.render(one, out.data(), static_cast<f_cnt_t>(out.size()), 1.0, 1.0f, false));
+		QCOMPARE(out[0][0], 0.5f);
+		QCOMPARE(out[0][1], -0.5f);
+		QCOMPARE(out[1][0], 0.0f);
+
+		const SampleBuffer three(std::vector<SampleFrame>{{1.0f, 1.0f}, {2.0f, 2.0f}, {3.0f, 3.0f}}, kWavRate);
+		RackZoneVoice tail;
+		tail.restart();
+		std::vector<SampleFrame> tailOut(8, SampleFrame{});
+		QVERIFY(!tail.render(three, tailOut.data(), static_cast<f_cnt_t>(tailOut.size()), 1.0, 1.0f, false));
+		QCOMPARE(tailOut[0][0], 1.0f);
+		QCOMPARE(tailOut[1][0], 2.0f);
+		QCOMPARE(tailOut[2][0], 3.0f);  // the last source frame, not dropped
+		QCOMPARE(tailOut[3][0], 0.0f);
+	}
+
 	//! E20/E38 on the audio path: delivering zoned notes, playing a zone's sample and rendering the rack
 	//! allocate nothing.
 	void zonedNotesAllocateNothing()
