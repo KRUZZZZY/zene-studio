@@ -238,7 +238,16 @@ behaviour and is not what this fix addresses.
 1. **There is no undo-history UI.** The depth, the caps and the window are drivable through
    `--control-socket` and the MCP bridge, not from the interface; `docs/KNOWN-LIMITATIONS.md` and the
    0.3.0 release notes carry the one-line statement.
-2. **The history is not persisted.** Close the app and the undo history is gone, as it was before.
+2. **The history is not persisted - unless the project opts in (WF-033, 2026-10-06).** By default,
+   close the app and the undo history is gone, as it was before. A project that opts in
+   (`project.set_undo_history`, or the global default `undohistory/persist`) saves its newest 20 steps
+   as compressed whole-project snapshots under a 64 MB cap - `docs/UNDO-HISTORY-PERSISTENCE.md`. That
+   feature is SEPARATE from everything in this file: its two caps (`undohistory/steps`,
+   `undohistory/capmb`) bound the saved history, the snapshots are never counted against the byte
+   budget here, and the session bounds, eviction and coalescing are unchanged. Two things it adds to
+   this file's mechanism, both additive: a step a project load put back is never merged or coalesced
+   (`CheckPoint::loaded`), and `control.undo` unwinds the steps a `project.open` loaded although the
+   open's own record is irreversible (it still refuses once they are exhausted).
 3. **The caps are session state, not project state.** A reopened project starts at the default caps.
 4. **The rule applies to the command path.** The GUI's own gestures already group themselves (a
    checkpoint at press, journalling off during the drag — §0), and nothing about that changed; a GUI

@@ -52,6 +52,7 @@
 #include "ControlWindowCommands.h"
 #include "RetroMidiCaptureSettings.h"
 #include "UnattendedRun.h"
+#include "UndoHistory.h"
 #include "ControllerRackView.h"
 #include "DeprecationHelper.h"
 #include "DpiHelper.h"
@@ -1890,10 +1891,22 @@ void MainWindow::exportProject(bool multiExport)
 
 void MainWindow::handleSaveResult(QString const & filename, bool songSavedSuccessfully)
 {
-	if (songSavedSuccessfully)
+	// WF-033 (docs/UNDO-HISTORY-PERSISTENCE.md): an undo history the save could not keep is SAID, never
+	// dropped in silence - the same text project.save's undo_history.warning carries.
+	const QString historyWarning = songSavedSuccessfully ? UndoHistory::instance().lastSave().warning : QString();
+	if (songSavedSuccessfully && !historyWarning.isEmpty())
+	{
+		TextFloat::displayMessage( tr( "Project saved - undo history not fully saved" ), historyWarning,
+				embed::getIconPixmap( "project_save", 24, 24 ), 8000 );
+		statusBar()->showMessage( historyWarning, 8000 );
+	}
+	else if (songSavedSuccessfully)
 	{
 		TextFloat::displayMessage( tr( "Project saved" ), tr( "The project %1 is now saved.").arg( filename ),
 				embed::getIconPixmap( "project_save", 24, 24 ), 2000 );
+	}
+	if (songSavedSuccessfully)
+	{
 		ConfigManager::inst()->addRecentlyOpenedProject(filename);
 		resetWindowTitle();
 	}

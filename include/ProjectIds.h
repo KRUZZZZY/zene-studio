@@ -210,6 +210,24 @@ public:
 	 */
 	static void writeRevision(QDomElement& element, int& rev,
 		QString& writer, QString& contentHash);
+
+	/*! WF-033: while set, writeRevision() stamps the element exactly as a save
+	 *  would but leaves the object's own rev / writer / fingerprint untouched.
+	 *  An undo snapshot is a picture of the project, not a save: counting a
+	 *  revision for every snapshot would make the NEXT real save report
+	 *  revisions nobody saved. Song::captureUndoSnapshot holds it (RAII below). */
+	static void setPureSave(bool pure);
+	static bool pureSave();
+	class PureSaveScope
+	{
+	public:
+		PureSaveScope() : m_previous(pureSave()) { setPureSave(true); }
+		~PureSaveScope() { setPureSave(m_previous); }
+		PureSaveScope(const PureSaveScope&) = delete;
+		PureSaveScope& operator=(const PureSaveScope&) = delete;
+	private:
+		bool m_previous;
+	};
 };
 
 } // namespace lmms

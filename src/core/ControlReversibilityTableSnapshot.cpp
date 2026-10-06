@@ -147,6 +147,11 @@ const ReversibilityRow kSnapshotRows[] = {
 		"the depth cap is not project state, but LOWERING it evicts undo steps, and an evicted step is gone. The previous cap is a bounded scalar, so the change itself is reversible - what it dropped is not",
 		"snapshot: the transaction's before-state holds the previous cap, and the recorded inverse is the command itself (control.undo dispatches control.set_undo_depth with steps/bytes set back). The journal's byte budget is not stored twice: it is COMPUTED from the steps the stack retains (ProjectJournal::retainedBytes) and reported by control.undo_depth",
 		"the steps evicted by a cap change are NOT recoverable: control.undo restores the CAP, not the history it dropped. Raise the cap before a long session, or re-drive the edits"),
+	// WF-033: the project's own choice to save its undo history with it.
+	R("project.set_undo_history", RC::Snapshot, true,
+		"the setting is project state (saved in <z:undohistory>), but it is a choice about what a SAVE writes, not an edit of the music: it is recorded, not journalled, so toggling it never becomes one of the undo steps it decides about",
+		"snapshot: the transaction's before-state holds the previous setting (on / off / default) and the recorded inverse is the command itself, so one control.undo puts it back",
+		"turning it OFF drops the snapshots the session's steps carried; the inverse turns it back on but cannot recapture them - those steps stay unsaveable (docs/UNDO-HISTORY-PERSISTENCE.md)"),
 
 	// CODE-6: the Lua memory budget. The instruction budget's sibling, and the
 	// same shape: a bounded scalar the process holds, settable through the

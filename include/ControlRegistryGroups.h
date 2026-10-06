@@ -679,6 +679,9 @@ LMMS_EXPORT void registerTrackStructureCommands(ControlRegistry& registry);
 //! control.id_contract - the stable-id contract as a readable table (feature row 51).
 //! Split out of ControlCommandsControl.cpp for the file-length ratchet: src/core/ControlCommandsIdContract.cpp.
 LMMS_EXPORT void registerIdContractCommand(ControlRegistry& registry);
+//! project.undo_history / project.set_undo_history - WF-033, the undo history saved with the project
+//! (src/core/ControlCommandsUndoHistory.cpp, docs/UNDO-HISTORY-PERSISTENCE.md).
+LMMS_EXPORT void registerUndoHistoryCommands(ControlRegistry& registry);
 /*! controller.surface_state / soft_takeover / feedback / template_save /
  *  template_list / template_apply / template_delete - the ENGINE HALF of MIDI
  *  controller surfaces (feature row 19). The engine is

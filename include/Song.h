@@ -391,6 +391,23 @@ public:
 	bool guiSaveProjectAs(const QString & filename);
 	bool saveProjectFile(const QString & filename, bool withResources = false);
 
+	/*! WF-033 (docs/UNDO-HISTORY-PERSISTENCE.md): the project as ONE document,
+	 *  built exactly as saveProjectFile() builds it - the same writers, plug-in
+	 *  state and sample references included - without writing a file. Assumes
+	 *  the caller has checked isPartialLoad(). */
+	void buildProjectDocument( DataFile & dataFile );
+	/*! WF-033: the state an undo step returns to, compressed - the document
+	 *  above with the journal ids kept (so a restore gives every object back
+	 *  the id later steps name) and without the append-only <z:provenance> log,
+	 *  which an undo never rewinds. Null for a session that cannot be saved. */
+	std::shared_ptr<const QByteArray> captureUndoSnapshot();
+	/*! WF-033: replaces the project with \a compressed IN PLACE - the undo of a
+	 *  step loaded from a file. Keeps what a restore must not touch: the file
+	 *  name, the undo journal around the step, the provenance log, the project's
+	 *  undo-history setting and the id counter (never handed out twice). */
+	bool restoreUndoSnapshot( const QByteArray & compressed );
+	bool isRestoringUndoSnapshot() const { return m_restoringSnapshot; }
+
 	/*! The session state a SUCCESSFUL save records: the file that was written,
 	 *  and the clean modified flag.
 	 *
@@ -760,6 +777,8 @@ private:
 
 	bool m_savingProject;
 	bool m_loadingProject;
+	//! WF-033: a snapshot restore's load is in progress (not a file the user opened).
+	bool m_restoringSnapshot = false;
 	bool m_isCancelled;
 
 	SaveOptions m_saveOptions;

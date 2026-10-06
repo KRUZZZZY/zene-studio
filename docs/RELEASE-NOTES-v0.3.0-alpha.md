@@ -951,8 +951,12 @@ window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows becam
 view.announcements (`true_inverse`); window.sample_editor, window.item_list, workflow.resume and task.list, task.cancel,
 task.clear_finished and task.show (`not_mutating`, interface state).
 
+**WF-033, the undo history saved with the project** (+2, no new group; `docs/UNDO-HISTORY-PERSISTENCE.md`):
+project.set_undo_history (`snapshot`, the inverse is the command with the previous setting) and
+project.undo_history (`not_mutating`).
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=818 true_inverse=404 snapshot=40 irreversible=21 not_mutating=353
+     measured: rows=820 true_inverse=404 snapshot=41 irreversible=21 not_mutating=354
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

@@ -66,6 +66,7 @@
 #include "ProjectIds.h"
 #include "ProjectNotes.h"
 #include "ProvenanceSection.h"
+#include "UndoHistory.h"
 #include "RecordOptions.h"
 #include "RetroMidiCapture.h"
 #include "ProjectSection.h"
@@ -1600,6 +1601,10 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	// of the per-document state and this belongs with it.
 	m_notLoadedSections = skippedSections;
 
+	// WF-033: the undo history's fingerprint is taken over the document as the
+	// FILE has it - before any reader below runs (docs/UNDO-HISTORY-PERSISTENCE.md).
+	UndoHistory::instance().beginLoad( dataFile );
+
 	clearErrors();
 
 	// The id pass, load half (SPEC-stable-ids.md R2/R3). Reset the counter so
@@ -1806,7 +1811,9 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 
 	Engine::audioEngine()->doneChangeInModel();
 
-	ConfigManager::inst()->addRecentlyOpenedProject( fileName );
+	// WF-033: an undo-snapshot restore loads a temporary file; it is not a
+	// project the user opened.
+	if( !m_restoringSnapshot ) { ConfigManager::inst()->addRecentlyOpenedProject( fileName ); }
 
 	Engine::projectJournal()->setJournalling( true );
 
@@ -1896,8 +1903,6 @@ static void writeLanesSection( DataFile & dataFile, const TrackContainer::TrackL
 
 bool Song::saveProjectFile(const QString & filename, bool withResources)
 {
-	using gui::getGUI;
-
 	// ARCH-4 S2b, and the whole of the read-only policy for a partial load. A
 	// session that holds LESS than the file it came from must not write that
 	// loss back: its <song> is missing the sections a partial project.open
@@ -1925,6 +1930,20 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	}
 
 	DataFile dataFile( DataFile::Type::SongProject );
+	buildProjectDocument( dataFile );
+	// WF-033: the undo history, written only by a real save that holds a
+	// UndoHistory::SaveScope and only when the project opted in; sealed last so
+	// its fingerprint covers the document exactly as it is about to be written.
+	UndoHistory::instance().seal( dataFile, withResources );
+	return dataFile.writeFile(filename, withResources);
+}
+
+
+
+void Song::buildProjectDocument( DataFile & dataFile )
+{
+	using gui::getGUI;
+
 	m_savingProject = true;
 	// ARCH-4 S3: nothing has stamped a revision in THIS save yet; writeRevision
 	// raises the flag per object and the <head> writer attribute is gated on it
@@ -2060,8 +2079,6 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	// optimisation, an unearned one breaks a release invariant.
 	dataFile.setDocumentIndexEnabled(
 		!unclaimedElements().isEmpty() || !unclaimedChildren().isEmpty() );
-
-	return dataFile.writeFile(filename, withResources);
 }
 
 
@@ -2083,6 +2100,10 @@ bool Song::guiSaveProjectAs(const QString & filename)
 
 	bool withResources = m_saveOptions.saveAsProjectBundle.value();
 
+	// WF-033: Save / Save As is a real save - it carries the undo history when
+	// the project opted in (UndoHistory::SaveScope; templates, autosave and
+	// render temporaries hold none and never do).
+	const UndoHistory::SaveScope historyScope;
 	bool const saveResult = saveProjectFile(fileNameWithExtension, withResources);
 
 	// After saving, restore default save options.

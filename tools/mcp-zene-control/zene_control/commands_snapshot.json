@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T17:22:52Z",
+  "captured_at": "2026-10-06T16:26:36Z",
   "commands": [
     {
       "args_schema": {
@@ -20227,6 +20227,9 @@
           },
           "saved": {
             "type": "boolean"
+          },
+          "undo_history": {
+            "type": "object"
           }
         },
         "required": [],
@@ -20282,6 +20285,65 @@
             "type": "string"
           },
           "previous_file": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "setting": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "setting"
+        ],
+        "type": "object"
+      },
+      "description": "Choose whether THIS project saves its undo history with it (WF-033): 'on' or 'off' overrides the global default (setting undohistory/persist, off unless changed), 'default' follows it. Saved with the project. The newest undo steps (undohistory/steps, 20) are written by project.save and the interface's Save as compressed whole-project snapshots under a cap (undohistory/capmb, 64 MB); steps made before it was turned on cannot be saved.",
+      "group": "project",
+      "id": "project.set_undo_history",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cap_bytes": {
+            "type": "number"
+          },
+          "default_enabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "last_load": {
+            "type": "object"
+          },
+          "last_save": {
+            "type": "object"
+          },
+          "max_steps": {
+            "type": "integer"
+          },
+          "oversize": {
+            "type": "boolean"
+          },
+          "previous_setting": {
+            "type": "string"
+          },
+          "saveable_bytes": {
+            "type": "number"
+          },
+          "saveable_steps": {
+            "type": "integer"
+          },
+          "setting": {
             "type": "string"
           }
         },
@@ -20441,6 +20503,59 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Whether this project saves its undo history with it (WF-033): the project's own setting (on / off / default), the global default and caps (settings undohistory/persist, undohistory/steps, undohistory/capmb), what a save would keep NOW (saveable_steps, saveable_bytes, oversize), and what the last save and load did.",
+      "group": "project",
+      "id": "project.undo_history",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cap_bytes": {
+            "type": "number"
+          },
+          "default_enabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "last_load": {
+            "type": "object"
+          },
+          "last_save": {
+            "type": "object"
+          },
+          "max_steps": {
+            "type": "integer"
+          },
+          "oversize": {
+            "type": "boolean"
+          },
+          "previous_setting": {
+            "type": "string"
+          },
+          "saveable_bytes": {
+            "type": "number"
+          },
+          "saveable_steps": {
+            "type": "integer"
+          },
+          "setting": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -33996,23 +34111,23 @@
       }
     }
   ],
-  "count": 809,
+  "count": 811,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-wf033/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-4g8c9srg/zene.sock",
-    "version": "0.4.0-alpha.114+9a9f339"
+    "source_socket": "/tmp/zctl-run-hu_fhnfv/zene.sock",
+    "version": "0.4.0-alpha.333+6d1a114"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 809,
-    "ids_sha256": "30a5e1ef45f2a6f4cd493d28b6b923826da185f96165d735ba363909b12ca8e2"
+    "id_count": 811,
+    "ids_sha256": "f1b9a8de1dffaf2bcfed7fda7c25ee5e4e4a6a748866e16f070ef2b2022fa76c"
   }
 }

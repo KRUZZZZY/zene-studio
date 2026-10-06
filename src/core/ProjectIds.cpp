@@ -303,9 +303,35 @@ void ProjectIds::readRevision(const QDomElement& element, int& rev,
 	contentHash = contentSignature(element);
 }
 
+namespace
+{
+bool s_pureSave = false;
+}
+
+void ProjectIds::setPureSave(bool pure)
+{
+	s_pureSave = pure;
+}
+
+bool ProjectIds::pureSave()
+{
+	return s_pureSave;
+}
+
 void ProjectIds::writeRevision(QDomElement& element, int& rev,
 	QString& writer, QString& contentHash)
 {
+	if (s_pureSave)
+	{
+		// WF-033: the same stamp on copies - the object's state is not a save's to move.
+		int pureRev = rev;
+		QString pureWriter = writer;
+		QString pureHash = contentHash;
+		s_pureSave = false;
+		writeRevision(element, pureRev, pureWriter, pureHash);
+		s_pureSave = true;
+		return;
+	}
 	const QString now = contentSignature(element);
 	if (contentHash.isEmpty())
 	{

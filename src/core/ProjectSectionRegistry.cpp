@@ -27,6 +27,7 @@
 #include "AutomationLatency.h"
 #include "AutomationSwitches.h"
 #include "EditLocks.h"
+#include "Engine.h"
 #include "MetronomeOptions.h"
 #include "MidiPlayback.h"
 #include "MixerOptions.h"
@@ -37,6 +38,7 @@
 #include "ProjectWorkspace.h"
 #include "TrackLooks.h"
 #include "TrackVersions.h"
+#include "UndoHistory.h"
 #include "VideoReference.h"
 #include "ViewMemory.h"
 
@@ -60,6 +62,7 @@ void registerAll()
 	ViewMemory::instance();
 	VideoReference::instance();  // 0.5.0 F5 (ED-054): the project's video
 	AutomationLatency::instance();  // W3 engine: read by the audio thread's automation ramps
+	UndoHistory::instance().attach(Engine::projectJournal());  // WF-033: the undo history saved with the project
 	registerAlternatives();
 	registerSubprojects();
 	metronomeoptions::options();  // reads the config file here, not on the audio thread at the first click

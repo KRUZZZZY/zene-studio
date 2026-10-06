@@ -465,6 +465,10 @@ set(LMMS_TESTS
 	# The bounded, coalescing undo (task #623): the declared depth caps, the
 	# drag rule, the byte budget and the refusal of an evicted step.
 	src/core/UndoBoundsTest.cpp
+	# WF-033: the undo history saved with the project - a real save -> open -> undo
+	# round trip through the control surface, checking every undo against the
+	# document before the edit (ids, automation links, plug-in data, sample refs).
+	src/core/UndoHistoryPersistenceTest.cpp
 	src/core/TakeLaneCompTest.cpp
 	# The take lanes' own half of the comping tests (the composite half stays
 	# in TakeLaneCompTest.cpp); the fixtures both halves use are in
@@ -1093,7 +1097,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "W3EngineTest"
 		# 0.5.0 wave 2: layers and parts load a real instrument; the reference project copies a real effect.
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLayersCommandsTest"
-		OR LMMS_TEST_NAME STREQUAL "ArrangingCatchUpTest")
+		OR LMMS_TEST_NAME STREQUAL "ArrangingCatchUpTest"
+		# WF-033: the restored history must bring back a real instrument's own state.
+		OR LMMS_TEST_NAME STREQUAL "UndoHistoryPersistenceTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -1234,6 +1240,11 @@ set_tests_properties(SampleAccurateAutomationTest PROPERTIES
 # UndoBoundsTest constructs a full Engine, drives the control surface and starts
 # a QThread-paced window test, so it needs the same headless Qt platform.
 set_tests_properties(UndoBoundsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+	TIMEOUT 300)
+# UndoHistoryPersistenceTest (WF-033) builds a full Engine with a real
+# instrument and drives project.save / project.open / control.undo.
+set_tests_properties(UndoHistoryPersistenceTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 	TIMEOUT 300)
 # TakeLaneCompTest (comping: the composite and the comp.* command surface, task

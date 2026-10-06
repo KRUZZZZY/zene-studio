@@ -121,6 +121,8 @@ quint64 ProjectJournal::oldestStepSerial() const
 bool ProjectJournal::coalesceTopStepIntoPrevious()
 {
 	if( m_undoCheckPoints.size() < 2 ) { return false; }
+	// WF-033: a step a load put back is never the start of a gesture.
+	if( m_undoCheckPoints.top().loaded || m_undoCheckPoints.at( m_undoCheckPoints.size() - 2 ).loaded ) { return false; }
 
 	CheckPoint top = m_undoCheckPoints.pop();
 	CheckPoint & previous = m_undoCheckPoints.top();
@@ -173,6 +175,8 @@ void ProjectJournal::trimUndoStack()
 		m_undoCheckPoints.remove( 0 );
 		++m_evicted;
 	}
+	// WF-033: the snapshots are bounded by their own caps, not these two.
+	pruneSnapshots();
 }
 
 } // namespace lmms

@@ -904,7 +904,7 @@ void AutomationClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		if (object)
 		{
 			QDomElement element = _doc.createElement( "object" );
-			element.setAttribute("id", ProjectJournal::idToSave(object->id()));
+			element.setAttribute("id", ProjectJournal::idToWrite(object->id()));  // WF-033: exact in an undo snapshot
 			_this.appendChild(element);
 		}
 	}

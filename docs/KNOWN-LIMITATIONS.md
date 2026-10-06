@@ -461,6 +461,19 @@ that is this page's fault — report it and it gets added.
   `tests/advertised-features.tsv` and `tests/release-honesty-gate.sh` would have to be reconciled in the
   same commit that did it. Until then the row states the truth and the gate enforces it.
 
+- *(Added 2026-10-06, WF-033.)* **The undo history can be saved with the project, and is OFF by default.**
+  A project opts in with `project.set_undo_history {setting: on}` or Edit ▸ Undo History's *Save with
+  project* box; every project can by default (`undohistory/persist`, the panel's *All projects* box). The
+  newest **20** steps (`undohistory/steps`) are saved as compressed whole-project snapshots under a **64 MB**
+  cap (`undohistory/capmb`); over it the oldest go first, and a snapshot that alone exceeds the cap means
+  nothing from that step back is saved - `project.save`'s `undo_history.warning` and a status message say
+  so. Plug-in state is saved exactly as a normal save saves it. Limits: with persistence on, every edit
+  serialises and compresses the whole project (the cost of the design, and why it is opt-in); steps made
+  before it was turned on cannot be saved; the redo stack is not saved; undoing a loaded step reloads the
+  project in place (playback stops); autosave/recovery files, templates, bundles, render temporaries and
+  `project.save_version` copies do not carry it; a history whose project was edited by a build that does
+  not read it is discarded on open, with the reason in `project.undo_history`'s `last_load`.
+  `docs/UNDO-HISTORY-PERSISTENCE.md` is the record.
 - *(Updated 2026-09-30.)* **Edit ▸ Undo History... now shows the stack** (`window.undo_history`,
   `UndoHistoryPanel`): depth, redo depth, the two caps, the bytes kept and the evicted count from
   `control.undo_depth`, Undo/Redo buttons through `control.undo`/`control.redo`, and the command record
