@@ -154,6 +154,12 @@ def check_refusals(session, recorder, outdir):
             ("mastering.run", {"out_dir": "", "extra": 0}),
             ("mastering.run", {"out_dir": 0}),
             ("mastering.run", {"out_dir": [], "x": {}})]
+    if os.name != "nt":
+        # Cluster 5653 (BUG 11): the absolute-path rule is the platform's own
+        # (QFileInfo::isAbsolute), not a leading '/'. On a POSIX host a drive-letter
+        # path is a relative filename, so the platform rule must still refuse it -
+        # the fix keeps host semantics instead of accepting foreign names.
+        junk.append(("mastering.run", {"out_dir": "C:\\Masters"}))
     failures = []
     for command, args in junk:
         error = session.typed_error(command, args)
@@ -163,6 +169,29 @@ def check_refusals(session, recorder, outdir):
                    not failures, "; ".join(failures))
     recorder.check("no refusal wrote a file",
                    wav_names(outdir) == before, "after=%r" % (wav_names(outdir),))
+
+
+def check_windows_absolute_outdir(session, recorder, tmp):
+    """Cluster 5653 (BUG 11), Windows side: a drive-letter out_dir is absolute
+    on a Windows host and must NOT be refused by the absolute-path rule. Before
+    the fix the rule was a leading '/', so the Windows build refused EVERY out_dir
+    the harness hands it (tempfile.mkdtemp on Windows is a drive-letter path) -
+    that refusal is the RED. The run is polled to completion so it cannot leave
+    a second render in flight for the checks that follow."""
+    winpath = os.path.join(tmp, "win-abs-masters")
+    reply = session.typed_error("mastering.run", {"out_dir": winpath})
+    if reply.get("kind") == "invalid_args" and "absolute path" in reply.get("message", ""):
+        recorder.check("Windows host: a drive-letter out_dir is not refused as relative",
+                       False, "reply=%r" % (reply,))
+        return
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline:
+        state = session.result("mastering.get_state")
+        if state.get("state") != "running":
+            break
+        time.sleep(0.5)
+    recorder.check("Windows host: a drive-letter out_dir is not refused as relative",
+                   True, "reply=%r" % (reply,))
 
 
 def run_mastering(session, outdir):
@@ -470,6 +499,8 @@ def main(argv):
         check_transaction(session, recorder)
         check_undo_removes_the_run(session, recorder, outdir)
         check_a_replaced_revision_comes_back(session, recorder, outdir)
+        if os.name == "nt":
+            check_windows_absolute_outdir(session, recorder, instance.tmp)
         check_the_capture_bound(session, recorder, outdir)
         check_quit(session, instance, recorder)
 
