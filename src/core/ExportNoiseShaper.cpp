@@ -45,6 +45,10 @@ void ExportNoiseShaper::reset(std::uint64_t seed) noexcept
 
 std::int16_t ExportNoiseShaper::quantise16(float sample, int channel) noexcept
 {
+	// The error history is sized by the constructor's channel count, so a channel
+	// outside it has no history to shape against - and indexing it read (and, via
+	// the write-back below, corrupted the heap). Such a channel is silence.
+	if (channel < 0 || static_cast<std::size_t>(channel) >= m_error.size()) { return 0; }
 	auto& e = m_error[static_cast<std::size_t>(channel)];
 	// The same scale and clip the plain 16-bit path uses (AudioDevice::convertToS16), so
 	// a shaped render and an unshaped one differ only in the requantisation.

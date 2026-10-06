@@ -182,6 +182,38 @@ private slots:
 		}
 	}
 
+	//! Cluster 5048: the error history is sized by the constructor's channel
+	//! count, but quantise16 indexed m_error[channel] and quantiseFrames looped a
+	//! caller-supplied width with no check. Constructing a mono shaper and asking
+	//! for two channels read past the vector - undefined behaviour that turned
+	//! into whatever heap bytes followed it. An unavailable channel must be
+	//! silence instead, and the extra slots must be written as silence too.
+	void aChannelOutsideTheErrorHistoryIsSilence()
+	{
+		ExportNoiseShaper mono(1);
+		for (int channel : {-1, 1, 2, 99})
+		{
+			const std::int16_t value = mono.quantise16(0.5f, channel);
+			QVERIFY2(value == 0, qPrintable(QStringLiteral(
+				"channel %1 outside a 1-channel history quantised to %2, not silence")
+				.arg(channel).arg(value)));
+		}
+
+		std::vector<SampleFrame> frames(32, SampleFrame(0.5f, -0.5f));
+		std::vector<int_sample_t> out(64, 12345);
+		mono.quantiseFrames(frames.data(), 32, 2, out.data(), false);
+		// Channel 0 is in range and must still be shaped ...
+		QVERIFY2(out[0] != 12345, "the in-range channel was not written at all");
+		// ... every channel past the allocated history must be exact silence.
+		for (int n = 0; n < 32; ++n)
+		{
+			const auto second = static_cast<std::uint16_t>(out[n * 2 + 1]);
+			QVERIFY2(second == 0, qPrintable(QStringLiteral(
+				"frame %1 channel 1 (outside a 1-channel history) wrote %2 instead of silence")
+				.arg(n).arg(second)));
+		}
+	}
+
 	void theBoolApiMapsOntoTheModes()
 	{
 		ExportRenderSettings::reset();
