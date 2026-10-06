@@ -152,6 +152,13 @@ public:
 	//! Drops every zone.
 	void clear();
 
+	/*! Luna cluster 5256: keeps the zone list consistent with a rack that lost
+	 *  chain @a removedIndex - a zone that named a LATER chain slides down with
+	 *  it, and a zone that named the removed chain is dropped, because an index
+	 *  that names nothing is a note that silently takes the common path.
+	 *  Called by Rack::removeChain(); the guard nests. */
+	void reindexChains(int removedIndex);
+
 	//! Called after every change, inside the model-change guard (the owning Rack re-wires).
 	void setChangedHook(std::function<void()> hook) { m_changed = std::move(hook); }
 

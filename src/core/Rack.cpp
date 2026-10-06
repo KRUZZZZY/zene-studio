@@ -199,6 +199,10 @@ auto Rack::removeChain(int index) -> bool
 	// removed drops the rack back to parallel, a later one slides down.
 	if (m_selectedChain == index) { m_selectedChain = Parallel; }
 	else if (m_selectedChain > index) { --m_selectedChain; }
+	// The zones and the macro targets store chain indices, so they have to move
+	// with the chains they name - or they name the wrong chain (Luna clusters
+	// 5256 and 5257). Both take the model-change guard, which nests here.
+	m_zones.reindexChains(index);
 	rebuildRoutingGraph();
 
 	if (engine != nullptr) { engine->doneChangeInModel(); }

@@ -170,6 +170,25 @@ void RackZones::clear()
 	edit([this] { m_zones.clear(); });
 }
 
+void RackZones::reindexChains(int removedIndex)
+{
+	if (m_zones.empty() || removedIndex < 1) { return; }
+	edit([this, removedIndex] {
+		std::vector<RackZone> kept;
+		kept.reserve(m_zones.size());
+		for (const RackZone& zone : m_zones)
+		{
+			// A zone on the chain that is gone can only fail to route now, so it
+			// is dropped rather than left naming an index that means something else.
+			if (zone.chain == removedIndex) { continue; }
+			RackZone moved = zone;
+			if (moved.chain > removedIndex) { --moved.chain; }
+			kept.push_back(std::move(moved));
+		}
+		m_zones.swap(kept);
+	});
+}
+
 void RackZones::saveSettings(QDomDocument& doc, QDomElement& rackElement) const
 {
 	for (const RackZone& zone : m_zones)
