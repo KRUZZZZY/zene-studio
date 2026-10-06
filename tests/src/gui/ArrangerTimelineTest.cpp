@@ -255,6 +255,31 @@ private slots:
 		QVERIFY2(!cliplocks::badgeShown(view), "the padlock stayed after the lock was undone");
 	}
 
+	//! Luna cluster 4674: the badge stays locked either way, so the tooltip must be refreshed when the
+	//! lock holder moves from the track to the clip - not only when the locked state itself flips.
+	void theLockTooltipFollowsTheLockHolder()
+	{
+		Clip* clip = clipAt(m_track, 0, 2 * Bar);
+		QCoreApplication::processEvents();
+		ClipView* view = viewOf(clip);
+		QVERIFY(view != nullptr);
+
+		QVERIFY(run(QStringLiteral("track.set_locked"), {{QStringLiteral("track"), control::trackIdOf(m_track)}}).ok);
+		QVERIFY(cliplocks::badgeShown(view));
+		auto* badge = view->findChild<QWidget*>(QStringLiteral("clipLockBadge"));
+		QVERIFY(badge != nullptr);
+		QVERIFY2(badge->toolTip().contains(QLatin1String("track")), qPrintable(badge->toolTip()));
+
+		// The clip is locked too: still locked, but now it is this clip that holds the lock.
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(clip)}}).ok);
+		QVERIFY2(cliplocks::badgeShown(view), "the padlock went when the clip took over the lock");
+		QVERIFY2(badge->toolTip().contains(QLatin1String("This clip is locked")), qPrintable(badge->toolTip()));
+
+		// And back again: the track takes the lock back when the clip is unlocked.
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("locked"), false}}).ok);
+		QVERIFY2(badge->toolTip().contains(QLatin1String("track")), qPrintable(badge->toolTip()));
+	}
+
 	//! 0.5.0 theme 9 (wave 3): a wheel turn zooms by its size - a touchpad's tenth-of-a-notch deltas add up to a
 	//! notch's steps - around the tick under the pointer, and one gesture joins the zoom history once.
 	void aWheelZoomIsContinuousAroundThePointer()

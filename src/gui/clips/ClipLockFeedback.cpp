@@ -136,8 +136,10 @@ void syncBadge(ClipView* view)
 	if (badge->property("locked").toBool() != locked)
 	{
 		badge->setProperty("locked", locked);
-		badge->setToolTip(locked ? lockHolder(view->getClip()) : QString());
 	}
+	// The holder moves from the track to the clip (and back) while the badge stays locked, so the
+	// tooltip follows the holder on every sync, not only when the locked state itself flips.
+	badge->setToolTip(locked ? lockHolder(view->getClip()) : QString());
 	badge->place();
 }
 
