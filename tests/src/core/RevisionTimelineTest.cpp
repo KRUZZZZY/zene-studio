@@ -353,6 +353,38 @@ private slots:
 		QCOMPARE(readBytes(m_project), before);
 	}
 
+	//! Luna cluster 5236: a shift copy that fails does NOT take the destination
+	//! backup with it, and the rotation says it was refused. copyRevision()
+	//! removed the destination BEFORE copying, so a failed shift destroyed an
+	//! older backup while rotation continued as if it had succeeded.
+	void aFailedShiftKeepsTheBackupAndReportsARefusal()
+	{
+		buildFixture();
+		// rev0 is the source the rev1 -> rev2 shift reads; make it unreadable, so
+		// the copy fails on a file the destination cannot afford to lose.
+		const QString rev0 = projectRevisionPath(m_project, 0);
+		const QString rev1 = projectRevisionPath(m_project, 1);
+		QVERIFY(QFile::remove(rev1));
+		QVERIFY(writeBytes(rev1, documentWith(7)));
+		QVERIFY(QFile::setPermissions(rev0, QFile::Permissions()));
+
+		const QByteArray keptBackup = readBytes(rev1);
+		bool refused = false;
+		QString reason;
+		const int kept = rotateProjectRevision(m_project, &refused, &reason);
+
+		// The destination backup survived the failed copy...
+		QVERIFY2(QFileInfo::exists(rev1), "the failed shift deleted the destination backup");
+		QCOMPARE(readBytes(rev1), keptBackup);
+		// ... and rotation reported the refusal rather than claiming success.
+		QVERIFY2(refused, "a failed shift copy was reported as a successful rotation");
+		QVERIFY(!reason.isEmpty());
+		QCOMPARE(kept, 0);
+
+		// Restore the permission so the temp dir can clean up.
+		QVERIFY(QFile::setPermissions(rev0, QFile::ReadOwner | QFile::WriteOwner));
+	}
+
 	//! An id in the keep-3 set restores through the policy's OWN function, which
 	//! is the whole point of listing those artefacts rather than re-reading them:
 	//! one implementation of the rotation order, and the replaced file is

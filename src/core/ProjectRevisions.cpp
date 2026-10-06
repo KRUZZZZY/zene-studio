@@ -48,6 +48,11 @@ QString sha256OfFile(const QString& path)
 
 //! Copies \a from onto \a to, replacing it. The copy is bounded: a source
 //! larger than the policy's per-revision cap is refused, never truncated.
+//!
+//! Luna cluster 5236: the destination is NOT removed first. The copy lands in a
+//! sibling temporary file and is renamed over \a to only once it is complete, so
+//! a failed copy leaves whatever revision was in \a to exactly as it was - a
+//! backup is never destroyed by a rotation that then fails.
 bool copyRevision(const QString& from, const QString& to, bool* refused)
 {
 	QFileInfo source(from);
@@ -56,8 +61,20 @@ bool copyRevision(const QString& from, const QString& to, bool* refused)
 		*refused = true;
 		return false;
 	}
+	const QString staged = to + QStringLiteral(".rotate");
+	QFile::remove(staged);
+	if (!QFile::copy(from, staged))
+	{
+		QFile::remove(staged);
+		return false;
+	}
 	QFile::remove(to);
-	return QFile::copy(from, to);
+	if (!QFile::rename(staged, to))
+	{
+		QFile::remove(staged);
+		return false;
+	}
+	return true;
 }
 
 //! Drops the revisions past the policy's \c Keep slots.
@@ -107,8 +124,22 @@ int rotateProjectRevision(const QString& projectPath, bool* refused, QString* re
 	{
 		const QString older = projectRevisionPath(projectPath, revision - 1);
 		if (!QFileInfo::exists(older)) { continue; }
-		bool ignored = false;
-		copyRevision(older, projectRevisionPath(projectPath, revision), &ignored);
+		// Luna cluster 5236: a shift that fails is a refusal, not something to
+		// step over. The copy left the destination backup intact, so reporting
+		// it costs the caller its claim of an inverse and nothing else.
+		bool shiftRefused = false;
+		if (!copyRevision(older, projectRevisionPath(projectPath, revision), &shiftRefused))
+		{
+			*refused = true;
+			*refusedReason = shiftRefused
+				? QStringLiteral("could not shift %1 to revision %2: that file is over the "
+					"%3-byte per-revision cap, so the retained set was left as it was")
+					.arg(older).arg(revision).arg(ProjectRevisionPolicy::MaxRevisionBytes)
+				: QStringLiteral("could not shift %1 to revision %2: the copy failed, so the "
+					"retained set is incomplete - the revision it would have replaced is still "
+					"there, but the older one was not kept").arg(older).arg(revision);
+			return 0;
+		}
 	}
 	bool ignored = false;
 	if (!copyRevision(projectPath, projectRevisionPath(projectPath, 0), &ignored))
