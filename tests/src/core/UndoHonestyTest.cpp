@@ -499,6 +499,27 @@ private slots:
 		QCOMPARE(TrackKeyNames::instance().name(track->id(), 24), QStringLiteral("Kick"));
 	}
 
+	//! Luna cluster 4836: 'name' is not a required parameter, so a call that left it out
+	//! turned into an empty string - which the handler reads as "remove this key". A caller
+	//! that misspelled or forgot the field silently deleted the label.
+	void aKeyNameSetWithoutANameChangesNothing()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		QVERIFY(track != nullptr);
+		const QString id = control::trackIdOf(track);
+		QVERIFY(run(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QStringLiteral("Kick")}}).ok);
+		// No 'name' at all: refused, and the label it would have deleted is still there.
+		const ControlResult missing = run(QStringLiteral("key_names.set"),
+			{{QStringLiteral("track"), id}, {QStringLiteral("key"), 24}});
+		QCOMPARE(missing.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(TrackKeyNames::instance().name(track->id(), 24), QStringLiteral("Kick"));
+		// An explicit empty name is still how a label is removed - that stays a removal.
+		QVERIFY(run(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QString()}}).ok);
+		QVERIFY(TrackKeyNames::instance().name(track->id(), 24).isEmpty());
+	}
+
 	//! E19: no record names an "UNIMPLEMENTED" inverse any more - a real one, or an honest one-way record.
 	void noRecordNamesAnUnimplementedInverse()
 	{

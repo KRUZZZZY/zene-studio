@@ -85,6 +85,13 @@ ControlResult setName(const QJsonObject& args)
 	ControlResult error;
 	Track* track = resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
 	if (track == nullptr) { return error; }
+	// An absent 'name' is a mistake, not a removal: an empty string says "remove this key"
+	// and must be asked for. Reading a missing value as "" deleted the label with no word.
+	if (!args.contains(QStringLiteral("name")))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("key_names.set needs 'name' (pass \"\" to remove the key's name)"));
+	}
 	QHash<int, QString> next = TrackKeyNames::instance().names(track->id());
 	const int key = args.value(QStringLiteral("key")).toInt();
 	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
