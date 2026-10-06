@@ -103,6 +103,17 @@ double parameterValue(const QString& target, const QString& plugin, const QStrin
 	return read.ok ? read.result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble() : -1e9;
 }
 
+//! The device ids the chain entry of dsp.get_state carries.
+QList<QString> idsOf(const QJsonObject& entry)
+{
+	QList<QString> ids;
+	for (const QJsonValue& device : entry.value(QStringLiteral("devices")).toArray())
+	{
+		ids << device.toObject().value(QStringLiteral("id")).toString();
+	}
+	return ids;
+}
+
 bool setParameter(const QString& target, const QString& plugin, const QString& name, double value)
 {
 	return run(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
@@ -424,6 +435,38 @@ private slots:
 		{
 			QCOMPARE(hit.toObject().value(QStringLiteral("target")).toString(), post);
 		}
+	}
+
+	//! Luna 5670: a channel's post-fader inserts are chains that channel carries, so the
+	//! project-wide dsp.get_state must report the device sitting in them and count it.
+	void aPostFaderInsertIsReportedByTheProjectWideState()
+	{
+		const QString post = ch(2) + QStringLiteral("/post");
+		const QString amp = loadByName(post, QStringLiteral("amplifier"));
+		if (amp.isEmpty()) { QSKIP("this build has no amplifier module"); }
+
+		const ControlResult all = run(QStringLiteral("dsp.get_state"));
+		QVERIFY2(all.ok, qPrintable(all.errorMessage));
+		int found = 0;
+		int devices = 0;
+		for (const QJsonValue& chain : all.result.value(QStringLiteral("chains")).toArray())
+		{
+			const QJsonObject entry = chain.toObject();
+			devices += entry.value(QStringLiteral("count")).toInt();
+			if (entry.value(QStringLiteral("id")).toString() != post) { continue; }
+			++found;
+			// earlier cases leave inserts of their own on this channel, so the chain is only
+			// pinned to carrying the device just loaded - that it is carried at all is the claim.
+			QVERIFY2(entry.value(QStringLiteral("count")).toInt() >= 1,
+				"the post-fader insert chain was reported as empty");
+			QVERIFY2(idsOf(entry).contains(amp),
+				qPrintable(QStringLiteral("the post-fader chain was reported without the %1 just loaded").arg(amp)));
+			QCOMPARE(entry.value(QStringLiteral("count")).toInt(),
+				entry.value(QStringLiteral("devices")).toArray().size());
+		}
+		QVERIFY2(found == 1,
+			"the post-fader insert's device was omitted from the project-wide dsp.get_state");
+		QCOMPARE(all.result.value(QStringLiteral("device_count")).toInt(), devices);
 	}
 
 	//! MX-080: the delta of a device that changes nothing is silence; of one that doubles the level,
