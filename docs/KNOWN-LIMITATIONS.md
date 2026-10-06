@@ -2333,3 +2333,16 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - Theme changes apply at the next start, and every reply and the window say so.
 - The plug-in scan, `render.render`, `render.stems` and `browser.peaks` stay synchronous and are not in the task area.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
+
+## 0.5.0 L08 metering — ballistics, the Selected filter, live input meters, the phase view (050/feat-meters, 2026-10-06)
+
+The record of what was built is `docs/MIXER-METERING.md`; this is what each piece does not do.
+
+**MX-128, meter ballistics.**
+- The fall-off is a factor per tick of the main window's 60 Hz timer, as the inherited one was: a busy
+  interface that misses ticks lets the bars fall more slowly. "fast" is the inherited 1.25 per tick
+  (about 116 dB/s); medium and slow are about 26 and 12 dB/s.
+- After its hold, the peak line still falls by the inherited 0.05 (linear) per tick; there is no
+  "hold until clicked" setting.
+- The RMS meter mode takes the same fall-off; its reading is still one period's RMS, not a 300 ms
+  VU integration.

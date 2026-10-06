@@ -76,7 +76,14 @@ def check_view(session, recorder, chans):
                    "reply=%r" % narrow)
     bad = session.call("window.mixer_view", {"filter": "everything"})
     recorder.check("an unknown filter is refused, typed", kind(bad) == "invalid_args", "reply=%r" % bad)
-    session.result("window.mixer_view", {"strip_width": "normal", "filter": "all", "meter_mode": "peak"})
+    # MX-128: the meters' ballistics are view options too.
+    ballistics = session.result("window.mixer_view", {"meter_falloff": "slow", "peak_hold": "off"})
+    recorder.check("the meter fall-off and peak hold are set and answered",
+                   ballistics.get("meter_falloff") == "slow" and ballistics.get("peak_hold") == "off", "reply=%r" % ballistics)
+    bad_hold = session.call("window.mixer_view", {"peak_hold": "forever"})
+    recorder.check("an unknown peak hold is refused, typed", kind(bad_hold) == "invalid_args", "reply=%r" % bad_hold)
+    session.result("window.mixer_view", {"strip_width": "normal", "filter": "all", "meter_mode": "peak",
+                                         "meter_falloff": "fast", "peak_hold": "1.5s"})
 
 
 def check_strip(session, recorder, chans):

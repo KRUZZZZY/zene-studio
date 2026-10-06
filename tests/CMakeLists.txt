@@ -769,6 +769,8 @@ set(LMMS_TESTS
 	src/gui/MixerSendsOnFadersTest.cpp
 	# 0.5.0 theme 16: mixer views, densities, type badges, routing by name, mode bar, sparse routing matrix.
 	src/gui/MixerModesTest.cpp
+	# 0.5.0 L08 metering: ballistics (MX-128), the Selected filter (MX-005), live input meters (MX-134), the phase view (MX-137).
+	src/gui/MixerMeteringTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
 	src/gui/ArrangerTimelineTest.cpp
 	# catch-up W1: an XY pad drag is one undo step.
@@ -1348,7 +1350,7 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(LaneReadoutTest SampleEditorDialogTest MixerModesTest WorkflowFeedbackTest ShellHomesTest
+set_tests_properties(LaneReadoutTest SampleEditorDialogTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest ShellHomesTest
 	TaskCenterTest TaskIndicatorTest CanvasKeyboardTest ItemListPanelTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

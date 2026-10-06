@@ -161,7 +161,9 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		"'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is "
 		"the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - "
 		"the channels a track plays into or a send reaches), 'meter_mode' (peak - after the fader -, rms, pre_fader) and "
-		"'meter_scale' (db42 - the default range -, db60, db24, linear). Theme 16: 'view' (mix - levels, pan and processing, "
+		"'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - "
+		"the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and "
+		"'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, "
 		"the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always "
 		"shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options "
 		"show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across "
@@ -176,6 +178,8 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		{QStringLiteral("filter"), enumProperty(gui::mixerviewoptions::filterNames())},
 		{QStringLiteral("meter_mode"), enumProperty(gui::mixerviewoptions::meterModeNames())},
 		{QStringLiteral("meter_scale"), enumProperty(gui::mixerviewoptions::meterScaleNames())},
+		{QStringLiteral("meter_falloff"), enumProperty(gui::mixerviewoptions::meterFallOffNames())},
+		{QStringLiteral("peak_hold"), enumProperty(gui::mixerviewoptions::peakHoldNames())},
 		{QStringLiteral("view"), enumProperty(gui::mixerviewoptions::viewNames())},
 		{QStringLiteral("density"), enumProperty(gui::mixerviewoptions::densityNames())}};
 	QJsonObject args = fields;

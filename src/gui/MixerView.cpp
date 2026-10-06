@@ -706,7 +706,7 @@ void MixerView::updateFaders()
 		if (mixerviewoptions::feedMeter(m_mixerChannelViews[i]->m_fader, m->mixerChannel(i))) { continue; }
 		const float opl = m_mixerChannelViews[i]->m_fader->getPeak_L();
 		const float opr = m_mixerChannelViews[i]->m_fader->getPeak_R();
-		const float fallOff = 1.25;
+		const float fallOff = mixerviewoptions::meterFallOff();  // 0.5.0 L08 (MX-128): the chosen ballistics
 		if (m->mixerChannel(i)->m_peakLeft >= opl/fallOff)
 		{
 			m_mixerChannelViews[i]->m_fader->setPeak_L(m->mixerChannel(i)->m_peakLeft);

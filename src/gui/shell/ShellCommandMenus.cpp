@@ -381,6 +381,8 @@ void viewOptionsMenu(QMenu* menu)
 	choices(view, "Show Channels", "window.mixer_view", "filter", {});
 	choices(view, "Meter", "window.mixer_view", "meter_mode", {});
 	choices(view, "Meter Scale", "window.mixer_view", "meter_scale", {});
+	choices(view, "Meter Fall-Off", "window.mixer_view", "meter_falloff", {});  // MX-128
+	choices(view, "Peak Hold", "window.mixer_view", "peak_hold", {});
 	choices(view, "View", "window.mixer_view", "view", {});  // 0.5.0 theme 16: Mix or Routing
 	choices(view, "Density", "window.mixer_view", "density", {});  // Compact or Expanded
 }
