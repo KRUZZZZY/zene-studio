@@ -1,5 +1,5 @@
 /*
- * ItemListButtonsTest.cpp - the List buttons on the canvases' toolbars
+ * ItemListButtonsTest.cpp - the List buttons on the canvases' toolbars, and View > Screen Reader Announcements
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -24,16 +24,19 @@
 
 /*! In the real application (themes 10 and 17, the two gaps KNOWN-LIMITATIONS listed): every canvas that has an
  *  editable item list - the note area, the controller lane, the arranger's clips, the XY pad and the take lanes' comp
- *  strip - carries a List button that runs window.item_list on that canvas, opening its list and closing it again. */
+ *  strip - carries a List button that runs window.item_list on that canvas, opening its list and closing it again;
+ *  and the View menu sets view.announcements, its three levels checkable, the current one checked. */
 
 #include <QtTest>
 
 #include <memory>
 #include <vector>
 
+#include <QMenuBar>
 #include <QTemporaryDir>
 #include <QToolButton>
 
+#include "AccessibleWidgets.h"
 #include "CompSwipeStrip.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -41,6 +44,7 @@
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "ItemList.h"
+#include "MainWindow.h"
 #include "Mixer.h"
 #include "NoteCanvas.h"
 #include "NoteEditor.h"
@@ -92,6 +96,35 @@ void clickOpensAndCloses(QWidget* root, QWidget* host, const QString& surface)
 	button->click();  // as Ctrl+Shift+L: a second press closes it
 	QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 	QVERIFY2(!listShown(host, surface), qPrintable(surface + QStringLiteral(": the list did not close")));
+}
+
+QMenu* viewMenu()
+{
+	for (QAction* top : getGUI()->mainWindow()->menuBar()->actions())
+	{
+		if (top->menu() != nullptr && top->text().remove(QLatin1Char('&')) == QLatin1String("View")) { return top->menu(); }
+	}
+	return nullptr;
+}
+
+QMenu* announcementsMenu(QMenu* view)
+{
+	for (QAction* action : view->actions())
+	{
+		if (action->menu() != nullptr && action->menu()->objectName() == QLatin1String("announcementsMenu")) { return action->menu(); }
+	}
+	return nullptr;
+}
+
+//! The level whose entry is checked, or "" when none or several are.
+QString checkedLevel(QMenu* menu)
+{
+	QStringList checked;
+	for (QAction* action : menu->actions())
+	{
+		if (action->isChecked()) { checked << action->data().toString(); }
+	}
+	return checked.size() == 1 ? checked.first() : QString();
 }
 
 } // namespace
@@ -197,6 +230,47 @@ private slots:
 			listButton(panel, QStringLiteral("comp"))->click();
 			QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 		}
+	}
+
+	void theViewMenuSetsTheAnnouncementLevel()
+	{
+		QMenu* view = viewMenu();
+		QVERIFY(view != nullptr);
+		emit view->aboutToShow();  // MainWindow rebuilds the View menu as it opens
+		QMenu* menu = announcementsMenu(view);
+		QVERIFY2(menu != nullptr, "no Screen Reader Announcements entry in the View menu");
+		QCOMPARE(menu->actions().size(), a11y::announceLevelNames().size());
+		for (QAction* action : menu->actions())
+		{
+			QVERIFY(action->isCheckable());
+			QVERIFY(action->isEnabled());
+			QCOMPARE(action->property("controlCommand").toString(), QStringLiteral("view.announcements"));
+		}
+		QCOMPARE(checkedLevel(menu), QStringLiteral("all"));  // the default
+
+		QAction* errors = nullptr;
+		for (QAction* action : menu->actions())
+		{
+			if (action->data().toString() == QLatin1String("errors")) { errors = action; }
+		}
+		QVERIFY(errors != nullptr);
+		errors->trigger();
+		QCOMPARE(a11y::announceLevel(), a11y::AnnounceLevel::Errors);
+		QCOMPARE(checkedLevel(menu), QStringLiteral("errors"));
+
+		// Set elsewhere (the socket, undo), the entry follows when the menu opens again - rebuilt or not.
+		QVERIFY(invoke(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("off")}}).ok);
+		emit view->aboutToShow();
+		menu = announcementsMenu(view);
+		QVERIFY(menu != nullptr);
+		emit menu->aboutToShow();
+		QCOMPARE(checkedLevel(menu), QStringLiteral("off"));
+		QCOMPARE(view->findChildren<QMenu*>(QStringLiteral("announcementsMenu")).size(), 1);  // one menu, not one per opening
+		QVERIFY(invoke(QStringLiteral("control.undo")).ok);
+		QVERIFY(invoke(QStringLiteral("control.undo")).ok);
+		QCOMPARE(a11y::announceLevel(), a11y::AnnounceLevel::All);
+		emit menu->aboutToShow();
+		QCOMPARE(checkedLevel(menu), QStringLiteral("all"));
 	}
 
 private:

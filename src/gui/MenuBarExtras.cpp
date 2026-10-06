@@ -24,15 +24,29 @@
 
 #include "MenuBarExtras.h"
 
+#include <QActionGroup>
 #include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
 
+#include "AccessibleWidgets.h"
 #include "CommandForm.h"
 #include "CommandLists.h"
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! Check the entry of @a menu whose level is the one in force.
+void checkAnnounceLevel(QMenu* menu)
+{
+	const QString current = a11y::announceLevelNames().value(static_cast<int>(a11y::announceLevel()));
+	for (QAction* action : menu->actions()) { action->setChecked(action->data().toString() == current); }
+}
+
+} // namespace
 
 QMenu* insertBeforeHelp(QMenuBar* bar, QMenu* menu)
 {
@@ -123,6 +137,36 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	// range.clear only drops the selection (interface state); "Clear Range" read as erasing its contents.
 	onRange(QObject::tr("Deselect Range"), QStringLiteral("range.clear"), {});
 	run(QObject::tr("Tool Menu at Pointer"), QStringLiteral("window.tool_menu"), {});
+	return menu;
+}
+
+QMenu* addAnnouncementsMenu(QMenu* view)
+{
+	auto* menu = view->findChild<QMenu*>(QStringLiteral("announcementsMenu"), Qt::FindDirectChildrenOnly);
+	if (menu == nullptr)
+	{
+		menu = new QMenu(QObject::tr("Screen Reader Announcements"), view);
+		menu->setObjectName(QStringLiteral("announcementsMenu"));
+		auto* levels = new QActionGroup(menu);
+		const QStringList labels{QObject::tr("All"), QObject::tr("Errors Only"), QObject::tr("Off")};  // AnnounceLevel's order
+		for (const QString& level : a11y::announceLevelNames())
+		{
+			QAction* action = addCommandAction(menu, labels.value(static_cast<int>(levels->actions().size()), level),
+				QStringLiteral("view.announcements"), [level] {
+					return CommandCall{QStringLiteral("view.announcements"), {{QStringLiteral("level"), level}}, {}, QString(), false};
+				});
+			action->setData(level);
+			action->setCheckable(true);
+			levels->addAction(action);
+			// After the command ran (connected after addCommandAction's handler): a refused choice puts the check
+			// back on the level in force.
+			QObject::connect(action, &QAction::triggered, menu, [menu] { checkAnnounceLevel(menu); });
+		}
+		// Opening shows the level set elsewhere (the socket, undo).
+		QObject::connect(menu, &QMenu::aboutToShow, menu, [menu] { checkAnnounceLevel(menu); });
+	}
+	checkAnnounceLevel(menu);
+	view->addMenu(menu);
 	return menu;
 }
 
