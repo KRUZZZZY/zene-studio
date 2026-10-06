@@ -376,6 +376,55 @@ private slots:
 		QCOMPARE( slot.patternId(), -1 );
 	}
 
+	/*! Every launch quantisation survives a save/load cycle. The conversion from
+	 *  the persisted int recognised only None, Bar, TwoBars and FourBars, so the
+	 *  sub-bar values (Sixteenth, Eighth, Quarter, Half) and EightBars fell to the
+	 *  fallback: a cell set to a 1/16 grid came back as Global, and a GLOBAL
+	 *  EightBars came back as Bar.
+	 */
+	void everyLaunchQuantisationSurvivesAReload()
+	{
+		const struct { LaunchQuantisation value; int persisted; } values[] = {
+			{ LaunchQuantisation::None, 0 },
+			{ LaunchQuantisation::Bar, 1 },
+			{ LaunchQuantisation::TwoBars, 2 },
+			{ LaunchQuantisation::FourBars, 4 },
+			{ LaunchQuantisation::Sixteenth, -2 },
+			{ LaunchQuantisation::Eighth, -3 },
+			{ LaunchQuantisation::Quarter, -4 },
+			{ LaunchQuantisation::Half, -5 },
+			{ LaunchQuantisation::EightBars, 8 },
+		};
+		for( const auto& v : values )
+		{
+			QDomDocument doc;
+			doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"5\" quantisation=\"%1\"/>" )
+				.arg( v.persisted ) );
+			ClipSlot slot;
+			slot.restoreState( doc.documentElement() );
+			QCOMPARE( static_cast<int>( slot.launchQuantisation() ),
+				static_cast<int>( v.value ) );
+		}
+
+		// Global is a per-clip pointer to the session default, and it is the
+		// fallback the missing cases took - so it must still restore as itself.
+		QDomDocument global;
+		global.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"5\" quantisation=\"-1\"/>" ) );
+		ClipSlot inherited;
+		inherited.restoreState( global.documentElement() );
+		QCOMPARE( static_cast<int>( inherited.launchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::Global ) );
+
+		// A value that is not a grid at all still falls back rather than
+		// producing an enum no switch has a case for.
+		QDomDocument junk;
+		junk.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"5\" quantisation=\"99\"/>" ) );
+		ClipSlot unknown;
+		unknown.restoreState( junk.documentElement() );
+		QCOMPARE( static_cast<int>( unknown.launchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::Global ) );
+	}
+
 	//! Growing and shrinking the grid keeps the slots that remain.
 	void gridResizePreservesSlots()
 	{
