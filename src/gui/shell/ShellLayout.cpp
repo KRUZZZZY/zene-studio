@@ -176,6 +176,14 @@ void ShellLayout::reopenPinned()
 bool ShellLayout::setPinnedQuietly(const QString& id)
 {
 	if (!pinnable(id)) { return false; }
+	// A region holds one panel, so it can hold one pin: a pin taken here answers the pin already
+	// in this region. Two would leave reopenPinned() inserting one over the other, with both still
+	// marked pinned and only one ever open.
+	const QStringList rivals = m_pinned;
+	for (const QString& other : rivals)
+	{
+		if (other != id && spec(other).home == spec(id).home) { m_pinned.removeAll(other); }
+	}
 	if (!m_pinned.contains(id)) { m_pinned.append(id); }
 	return true;
 }
