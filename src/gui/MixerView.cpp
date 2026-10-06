@@ -558,6 +558,9 @@ void MixerView::deleteChannel(int index)
 	}
 	m_mixerChannelViews.remove(index);
 
+	// the selection follows its channel: a channel deleted in front of it moved it down one
+	if (selLine > index) { --selLine; }
+
 	// select the next channel
 	if (selLine >= m_mixerChannelViews.size())
 	{

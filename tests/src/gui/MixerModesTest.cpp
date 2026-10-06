@@ -268,6 +268,30 @@ private slots:
 		QCOMPARE(model.channelId(4), QStringLiteral("ch-4"));
 	}
 
+// Deleting a channel renumbers the ones behind it. The selection follows the channel itself, not
+	// the number it used to sit at: removing one in front of it left it pointing at whatever channel
+	// then took that number.
+	void deletingAChannelInFrontKeepsTheSelectedChannelSelected()
+	{
+		MixerView* mixer = getGUI()->mixerView();
+		const int front = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(front)->m_name = QStringLiteral("Wedge");
+		const int middle = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(middle)->m_name = QStringLiteral("Room");
+		const int last = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(last)->m_name = QStringLiteral("Plate");
+		mixer->syncWithMixer();
+		// A channel with channels behind it, so the stale number names a real neighbour.
+		mixer->setCurrentMixerChannel(middle);
+		QCOMPARE(mixer->currentMixerChannel()->channelIndex(), middle);
+
+		mixer->deleteChannel(front);
+		QCOMPARE(Engine::mixer()->numChannels(), last);  // one fewer
+		// The same channel, renumbered: its strip, and the selection with it.
+		QCOMPARE(mixer->currentMixerChannel()->channelIndex(), middle - 1);
+		QCOMPARE(Engine::mixer()->mixerChannel(middle - 1)->m_name, QStringLiteral("Room"));
+	}
+
 private:
 	QTemporaryDir m_home;
 	int m_sender = -1;
