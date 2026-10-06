@@ -24,11 +24,13 @@
 
 #include "Instrument.h"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 
 #include "AutomatableModel.h"
 #include "DummyInstrument.h"
+#include "InstrumentOutputBuses.h"
 #include "InstrumentTrack.h"
 #include "LmmsTypes.h"
 
@@ -69,6 +71,25 @@ Instrument::Instrument(InstrumentTrack * _instrument_track,
 	m_instrumentTrack( _instrument_track ),
 	m_flags(flags)
 {
+}
+
+Instrument::~Instrument()
+{
+	// MX-157: the latency was this instrument's; the next one on the track reports its own. The output
+	// buses (a member of the hosting class) have already taken themselves off the mixer's list.
+	if (m_instrumentTrack != nullptr) { m_instrumentTrack->audioBusHandle()->setSourceLatencyFrames(0); }
+}
+
+void Instrument::reportLatency(int frames)
+{
+	frames = std::max(0, frames);
+	if (m_instrumentTrack != nullptr) { m_instrumentTrack->audioBusHandle()->setSourceLatencyFrames(frames); }
+	if (InstrumentOutputBuses* buses = outputBuses()) { buses->setSourceLatencyFrames(frames); }
+}
+
+int Instrument::reportedLatencyFrames() const
+{
+	return m_instrumentTrack != nullptr ? m_instrumentTrack->audioBusHandle()->sourceLatencyFrames() : 0;
 }
 
 void Instrument::play( SampleFrame* )

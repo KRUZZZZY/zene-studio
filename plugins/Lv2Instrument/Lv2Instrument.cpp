@@ -92,6 +92,11 @@ Lv2Instrument::Lv2Instrument(InstrumentTrack *instrumentTrackArg,
 
 	publishOutputBuses();  // 0.5.0 MX-114
 
+	// MX-157: the latency port is read off the audio thread, twice a second (Lv2Effect's interval).
+	m_latencyPoll.setInterval(500);
+	connect(&m_latencyPoll, &QTimer::timeout, this, &Lv2Instrument::checkLatency);
+	m_latencyPoll.start();
+
 	// now we need a play-handle which cares for calling play()
 	auto iph = new InstrumentPlayHandle(this, instrumentTrackArg);
 	Engine::audioEngine()->addPlayHandle(iph);
@@ -114,6 +119,17 @@ void Lv2Instrument::reload()
 	Lv2ControlBase::reload();
 	clearRunningNotes();
 	emit modelChanged();
+}
+
+
+
+
+void Lv2Instrument::checkLatency()
+{
+	const int frames = Lv2ControlBase::latencyFrames();
+	if (frames == m_reportedLatency) { return; }
+	m_reportedLatency = frames;
+	reportLatency(frames);
 }
 
 

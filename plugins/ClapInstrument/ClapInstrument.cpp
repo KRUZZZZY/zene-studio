@@ -25,6 +25,7 @@
 #include "ClapInstrument.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <exception>
 
 #include <QDebug>
@@ -142,6 +143,7 @@ ClapInstrument::ClapInstrument(InstrumentTrack* parent,
 			m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(),
 				&error);
 		}
+		cacheLatency();  // MX-157
 	}
 
 	// Every CLAP parameter becomes an LMMS model, exactly as for the effect
@@ -222,6 +224,15 @@ void ClapInstrument::reprepare()
 		engine->doneChangeInModel();
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
+	cacheLatency();  // MX-157
+}
+
+void ClapInstrument::cacheLatency()
+{
+	// clap_plugin_latency reports a uint32_t: past INT32_MAX it would turn negative as an int (the effect
+	// host's bound, ClapEffect::cacheLatency). The PDC delay lines clamp what they cannot apply.
+	const auto latency = std::min<std::uint32_t>(m_plugin.latency(), static_cast<std::uint32_t>(INT32_MAX));
+	reportLatency(m_plugin.isPrepared() ? static_cast<int>(latency) : 0);
 }
 
 bool ClapInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&,

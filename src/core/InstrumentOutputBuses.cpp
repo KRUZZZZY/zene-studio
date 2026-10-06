@@ -77,7 +77,34 @@ void interleave(SampleFrame* dst, const float* left, const float* right, f_cnt_t
 } // namespace
 
 InstrumentOutputBuses::InstrumentOutputBuses() = default;
-InstrumentOutputBuses::~InstrumentOutputBuses() = default;
+
+InstrumentOutputBuses::~InstrumentOutputBuses()
+{
+	setSourceLatencyFrames(0);  // MX-157: off the mixer's list before the buses go
+}
+
+auto InstrumentOutputBuses::latentList() -> std::vector<InstrumentOutputBuses*>&
+{
+	static std::vector<InstrumentOutputBuses*> list;
+	return list;
+}
+
+void InstrumentOutputBuses::setSourceLatencyFrames(int frames)
+{
+	frames = std::max(0, frames);
+	if ((frames > 0) == m_listed)
+	{
+		m_sourceLatency.store(frames, std::memory_order_relaxed);
+		return;
+	}
+	// The mixer walks the list inside the render period, which holds the guard: it never sees it change.
+	ChangeGuard guard;
+	auto& list = latentList();
+	if (frames > 0) { list.push_back(this); }
+	else { list.erase(std::remove(list.begin(), list.end(), this), list.end()); }
+	m_listed = frames > 0;
+	m_sourceLatency.store(frames, std::memory_order_relaxed);
+}
 
 void InstrumentOutputBuses::setLayout(const std::vector<InstrumentOutputBus>& buses)
 {
@@ -191,6 +218,15 @@ auto InstrumentOutputBuses::mixerIndexOf(Slot& slot, int channelId) const -> int
 	return -1;
 }
 
+auto InstrumentOutputBuses::routedIndex(int bus) -> int
+{
+	if (bus < 1 || bus >= busCount() || m_slots[static_cast<std::size_t>(bus)] == nullptr) { return -1; }
+	if (m_layout[static_cast<std::size_t>(bus)].firstChannel < 0) { return -1; }  // inactive: it plays nothing
+	Slot& slot = *m_slots[static_cast<std::size_t>(bus)];
+	const int channelId = slot.channelId.load(std::memory_order_acquire);
+	return channelId < 0 ? -1 : mixerIndexOf(slot, channelId);
+}
+
 auto InstrumentOutputBuses::routedBuffer(int bus, f_cnt_t frames) -> SampleFrame*
 {
 	if (bus < 1 || bus >= MaxBuses || m_slots[static_cast<std::size_t>(bus)] == nullptr) { return nullptr; }
@@ -212,7 +248,8 @@ void InstrumentOutputBuses::send(int bus, f_cnt_t frames, bool muted)
 	const int index = mixerIndexOf(slot, slot.channelId.load(std::memory_order_acquire));
 	if (index < 0) { return; }
 	Mixer* mixer = Engine::mixer();
-	slot.delay.setDelayFrames(mixer->channelInputLatency(static_cast<mix_ch_t>(index)));
+	// MX-157: the bus is already as late as the instrument; only the rest of the alignment is added.
+	slot.delay.setDelayFrames(mixer->channelInputLatency(static_cast<mix_ch_t>(index)) - sourceLatencyFrames());
 	slot.delay.processInPlace(block, frames);
 	SampleFrame* pair = block;
 	AudioBus audio{&pair, 1, frames};

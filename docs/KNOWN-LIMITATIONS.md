@@ -197,7 +197,8 @@ that is this page's fault — report it and it gets added.
   of the product's VST3 search directory as a `format: "vst3"` entry and `plugin.load` loads one onto an
   instrument track (the class, the bundle and the `(file, class)` key are the same ones the instrument browser
   uses; `ControlDeviceCatalogueTest` holds the fixture-backed proof). There is no multi-out, no
-  preset management, no instrument latency compensation, and no out-of-process hosting. **CLAP instrument
+  preset management, no instrument latency compensation (added 2026-10-06, MX-157; see "Hosted instrument
+  latency"), and no out-of-process hosting. **CLAP instrument
   hosting is socket-only in the same sense** (feature row 79): a CLAP generator loads onto an instrument
   track through `plugin.load` — `plugin.list` carries the CLAP classes of the product's plug-in directory as
   `format: "clap"` entries — its notes reach it through the track's MIDI path, and
@@ -915,6 +916,32 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   bound stated for it could be measured by a registered test. Item 14's own recorded dependency is *none*;
   item 15's is the capture path itself.
 
+- *(Updated 2026-10-06, MX-157, BUGS 11.34.)* **Hosted instrument latency.** A CLAP, VST3 or LV2 instrument
+  now reports its plug-in's latency to delay compensation: the track's bus handle adds it to its own chain's
+  (`AudioBusHandle::latencyFrames`, so `pdc.report`'s `track_inputs[].latency_frames` includes it), and the
+  other tracks are delayed by it. The host reads it off the audio thread and publishes a lock-free value:
+  CLAP after every (re)prepare (a CLAP plug-in may change its latency only inside `activate()`, and asks
+  for that with `request_restart`, which the host's 100 ms poll answers), VST3 after every prepare and,
+  on `restartComponent(kLatencyChanged)`, at the host's next 100 ms poll, LV2 from the plug-in's latency
+  port on a 500 ms poll (the port is written as the plug-in runs, so a latent LV2 instrument reports 0
+  until it has run a block and the poll has fired). Measured on rendered audio for all three formats by
+  `InstrumentLatencyPdcTest` against the in-tree fixtures. What it does not do:
+  - Between a plug-in's change and the next poll the alignment is the old one (up to 100 ms for CLAP and
+    VST3, 500 ms for LV2); a change is a step, not a cross-fade, as every PDC change is here.
+  - An instrument latency above the delay lines' capacity (`LatencyCompensation::MaxFrames`, 16384
+    frames) is clamped like a chain's, and the published total says so, but no warning is logged for an
+    instrument (the once-only warning lives in `EffectChain::refreshLatency`, which an instrument is not
+    part of).
+  - Only the native CLAP, VST3 and LV2 instrument hosts report. Built-in instruments report 0 (none is
+    latent); the out-of-process, VST2 (Vestige) and Carla paths report nothing.
+  - Automation compensation (`AutomationLatency`) does not count an instrument's latency: an automated
+    parameter of a latent instrument, or of an effect on its track's own chain, changes `latency` frames
+    early against that instrument's audio.
+  - A channel fed by a latent instrument has a non-zero alignment point, so its rack's key zones do not
+    route notes (`RackZoneFeed` routes only through a channel aligned at 0) - the existing zone rule, now
+    met by latent instruments too.
+  - Live playing through a latent instrument is late by its latency plus the alignment; nothing bypasses
+    an instrument the way the low-latency mode bypasses latent effects.
 - *(Updated 2026-09-30.)* **A mixer strip's tooltip now shows its delay compensation** - the latency its effects
   add and the point its input is aligned to, in frames and ms, and on the master the compensated total
   (`mixerLatencyText`, refreshed with the mixer's 500 ms sync; `MixerLatencyTextTest`). It is still not
@@ -2234,8 +2261,13 @@ Fleshed out, because both halves of that sentence hide something real:
 - Layers receive the track's played notes, not the notes its chord or arpeggio functions add.
 - Each layer is a hidden track with its own bus handle and MIDI port, so under JACK each one has its
   own ports.
-- Hosted instruments still report no latency to PDC (BUGS 11.34). Routed buses are aligned to the
-  target channel's latency only.
+- *(Updated 2026-10-06, MX-157.)* Hosted CLAP, VST3 and LV2 instruments now report their latency to PDC,
+  and a routed output bus carries it: the mixer counts the instrument's latency in the bus's target
+  channel's alignment point, and delays the bus only by what that alignment adds on top
+  (`InstrumentLatencyPdcTest::routedOutputBusIsAlignedWithTheMainOutput`). A layer is a hidden instrument
+  track with its own bus handle, so a hosted instrument on a layer reports through that handle like any
+  track; that case is not separately tested. What remains is listed under "Hosted instrument latency"
+  below.
 - Removing a layer while live MIDI is forwarded from the MIDI thread has the same unguarded window
   as deleting any track.
 - CLAP note events now carry `note_id = channel × 128 + key` instead of -1.

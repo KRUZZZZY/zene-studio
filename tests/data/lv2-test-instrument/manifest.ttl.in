@@ -1,0 +1,9 @@
+# The bundle manifest of the LV2 test instrument (MX-157); see lv2-test-instrument.c.
+# SPDX-License-Identifier: MIT
+@prefix lv2: <http://lv2plug.in/ns/lv2core#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+<urn:zene:test:lv2-instrument>
+	a lv2:Plugin ;
+	lv2:binary <@LV2_TEST_INSTRUMENT_BINARY@> ;
+	rdfs:seeAlso <lv2-test-instrument.ttl> .

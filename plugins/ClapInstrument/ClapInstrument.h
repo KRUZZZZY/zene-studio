@@ -143,6 +143,12 @@ private slots:
 	void poll();
 
 private:
+	/*! MX-157 (BUGS 11.34), GUI thread: the plug-in's latency after its last prepare, reported to the
+	 *  track's delay compensation (Instrument::reportLatency). CLAP lets a plug-in change its latency only
+	 *  inside activate() - it asks for that with request_restart, which poll() answers with reprepare() -
+	 *  so every prepare is when a new value is read. */
+	void cacheLatency();
+
 	clap::HostedPlugin m_plugin;
 	gui::PluginNativeEditor m_editor;
 	//! Every CLAP parameter as a model, in the plug-in's plain values, following its rescans (W6).

@@ -434,6 +434,8 @@ set(LMMS_TESTS
 	# 0.5.0 F2: output buses, MIDI parts, layers, the voice pool; the layer/part/voice commands
 	src/core/InstrumentRoutingTest.cpp
 	src/core/InstrumentLayersCommandsTest.cpp
+	# MX-157 (BUGS 11.34): a hosted instrument's latency reaches PDC, measured on rendered audio
+	src/core/InstrumentLatencyPdcTest.cpp
 	src/core/RecordClipTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RetroMidiRingTest.cpp
@@ -1093,6 +1095,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "W3EngineTest"
 		# 0.5.0 wave 2: layers and parts load a real instrument; the reference project copies a real effect.
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLayersCommandsTest"
+		# MX-157: the hosted instrument modules (clapinstrument, vst3instrument) carry the fixtures.
+		OR LMMS_TEST_NAME STREQUAL "InstrumentLatencyPdcTest"
 		OR LMMS_TEST_NAME STREQUAL "ArrangingCatchUpTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
@@ -1212,7 +1216,8 @@ set_tests_properties(ScriptDawBindingTest PROPERTIES
 # The rack command-group tests (rack.* macros and key/velocity zones) construct a
 # full Engine and drive the mixer's own save/load, so they need the same
 # headless Qt platform as the test above - and the developer box has no display.
-set_tests_properties(RackMacrosTest RackZonesTest RackZoneRoutingTest InstrumentRoutingTest InstrumentLayersCommandsTest PROPERTIES
+set_tests_properties(RackMacrosTest RackZonesTest RackZoneRoutingTest InstrumentRoutingTest InstrumentLayersCommandsTest
+	InstrumentLatencyPdcTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The #602 modulation layer's two tests build a full Engine, a real Mixer and a
@@ -1556,6 +1561,15 @@ if(LMMS_HAVE_LV2)
 	list(APPEND PART_C_REFERENCE_MODULES
 		"lv2effect|Lv2Effect|Lv2Effect.cpp|Lv2Effect.h|Lv2FxControls.cpp|Lv2FxControls.h|Lv2FxControlDialog.cpp|Lv2FxControlDialog.h"
 		"lv2instrument|Lv2Instrument|Lv2Instrument.cpp|Lv2Instrument.h")
+endif()
+# MX-157 (BUGS 11.34): the LV2 instrument fixture - a bundle whose instance reports a latency on its
+# latency port when LV2_TEST_INSTRUMENT_LATENCY is set - is InstrumentLatencyPdcTest's LV2 subject.
+if(LMMS_HAVE_LV2 AND TARGET InstrumentLatencyPdcTest AND TARGET lv2instrument)
+	add_subdirectory(data/lv2-test-instrument)
+	get_filename_component(LMMS_LV2_LATENCY_FIXTURE_DIR "${LMMS_LV2_TEST_INSTRUMENT_BUNDLE}" DIRECTORY)
+	target_compile_definitions(InstrumentLatencyPdcTest PRIVATE
+		LV2_TEST_INSTRUMENT_DIR="${LMMS_LV2_LATENCY_FIXTURE_DIR}")
+	add_dependencies(InstrumentLatencyPdcTest lv2instrument lv2-test-instrument)
 endif()
 find_file(PART_C_SF2_FILE NAMES FluidR3_GM.sf2 default-GM.sf2
 	HINTS /usr/share/sounds/sf2 /usr/local/share/sounds/sf2)
@@ -2156,6 +2170,12 @@ if(TARGET lmms_clap)
 			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>")
 		add_dependencies(InstrumentLayersCommandsTest clap-test-instrument)
 	endif()
+	# MX-157: the CLAP fixture's latent mode (CLAP_TEST_INSTRUMENT_LATENCY) is the CLAP subject.
+	if(TARGET clap-test-instrument AND TARGET InstrumentLatencyPdcTest)
+		target_compile_definitions(InstrumentLatencyPdcTest PRIVATE
+			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>")
+		add_dependencies(InstrumentLatencyPdcTest clap-test-instrument)
+	endif()
 endif()
 
 # Native VST3 hosting tests — the twins of the CLAP block above, and the reason
@@ -2564,6 +2584,13 @@ if(TARGET lmms_vst3_sdk)
 		# acceptance contract (CHARTER 3.1) is what the case exists for: a feature
 		# that cannot be driven through the socket is not in the release. Without
 		# this option the define is absent and the case skips.
+		# MX-157: the VST3 fixture's latent mode (VST3_TEST_INSTRUMENT_LATENCY) is the VST3 subject.
+		if(TARGET vst3instrument AND TARGET InstrumentLatencyPdcTest)
+			get_filename_component(LMMS_VST3_LATENCY_FIXTURE_DIR "${LMMS_VST3_TEST_BUNDLE_DIR}" DIRECTORY)
+			target_compile_definitions(InstrumentLatencyPdcTest PRIVATE
+				VST3_TEST_INSTRUMENT_DIR="${LMMS_VST3_LATENCY_FIXTURE_DIR}")
+			add_dependencies(InstrumentLatencyPdcTest vst3instrument vst3-test-instrument)
+		endif()
 		if(TARGET vst3instrument AND TARGET ControlDeviceCatalogueTest)
 			# The bundle's own directory: the directory the product's VST3 scan
 			# walks (ConfigManager::setVSTDir() takes exactly this).

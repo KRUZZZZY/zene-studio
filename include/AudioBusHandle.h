@@ -26,6 +26,7 @@
 #ifndef LMMS_AUDIO_BUS_HANDLE_H
 #define LMMS_AUDIO_BUS_HANDLE_H
 
+#include <atomic>
 #include <memory>
 #include <span>
 #include <vector>
@@ -87,9 +88,17 @@ public:
 	//! @returns a span over the mixed buffer of this audio bus handle
 	std::span<SampleFrame> buffer() { return m_buffer; }
 
-	//! Frames of latency this track's effect chain adds to the signal path
-	//! (#605). Read by the mixer's PDC graph on the audio thread.
+	//! Frames of latency this track adds to the signal path (#605): its effect
+	//! chain's, plus the latency of the source that plays into it (MX-157, a
+	//! hosted instrument's own). Read by the mixer's PDC graph on the audio thread.
 	int latencyFrames() const;
+
+	//! MX-157 (BUGS 11.34): the latency of the SOURCE that plays into this handle -
+	//! a hosted instrument's own, reported through Instrument::reportLatency() - in
+	//! frames, ahead of the effect chain. Control thread; a lock-free value the
+	//! audio thread reads. 0 (the default) leaves the handle exactly as it was.
+	void setSourceLatencyFrames(int frames);
+	int sourceLatencyFrames() const { return m_sourceLatencyFrames.load(std::memory_order_relaxed); }
 
 	//! @returns true if the processing outputted corrupted audio (infs/nans).
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
@@ -128,6 +137,9 @@ private:
 	LatencyCompensation m_compensation;
 
 	std::atomic<bool> m_corrupted = false;
+
+	//! MX-157: see setSourceLatencyFrames().
+	std::atomic<int> m_sourceLatencyFrames{0};
 
 	friend class AudioEngine;
 	friend class AudioEngineWorkerThread;

@@ -37,7 +37,18 @@
  * - The process path is real-time safe: no allocation, no locking, no
  *   unbounded growth. All state is fixed-size members and the only input is
  *   the host's event list and its audio buffers.
+ * - LATENCY (MX-157, BUGS 11.34): an instance created while the environment
+ *   variable VST3_TEST_INSTRUMENT_LATENCY names a frame count is LATENT. It
+ *   reports that count from getLatencySamples() and really delays its output
+ *   by it (a fixed ring per channel), so a host's delay compensation can be
+ *   measured on rendered audio. When process() sees the variable name a new
+ *   count, it switches to it and tells the host with
+ *   restartComponent(kLatencyChanged). An instance created without the variable
+ *   is exactly the fixture it always was. (Reading the environment in process()
+ *   is a test-fixture shortcut, not something a real plug-in would do there.)
  */
+
+#include <cstdlib>
 
 #include <cstring>
 
@@ -72,6 +83,22 @@ enum
 static const float kDefaultLevel = 0.5f;
 static const float kTestStateMagic = 0x5A4E5431; // 'ZNT1'
 static const int32 kNumKeys = 128;
+// The largest latency a latent instance takes, and the size of its delay rings.
+static const int32 kMaxLatency = 16384;
+static const char* const kLatencyEnv = "VST3_TEST_INSTRUMENT_LATENCY";
+
+// The count the environment names now, one short of the ring (a whole-ring delay would read the frame just
+// written).
+static int32 envLatency ()
+{
+	const char* frames = std::getenv (kLatencyEnv);
+	const long value = frames != nullptr ? std::atol (frames) : 0;
+	if (value <= 0)
+	{
+		return 0;
+	}
+	return value >= kMaxLatency ? kMaxLatency - 1 : static_cast<int32> (value);
+}
 
 //------------------------------------------------------------------------
 /** Minimal polyphonic-ish note gate: tracks which keys are down. */
@@ -102,6 +129,7 @@ public:
 	tresult PLUGIN_API canProcessSampleSize (int32 symbolicSampleSize) SMTG_OVERRIDE;
 	tresult PLUGIN_API setProcessing (TBool state) SMTG_OVERRIDE;
 	tresult PLUGIN_API process (ProcessData& data) SMTG_OVERRIDE;
+	uint32 PLUGIN_API getLatencySamples () SMTG_OVERRIDE { return static_cast<uint32> (mLatency); }
 
 	//--- IEditController (renamed to *EditorState by SingleComponentEffect)
 	tresult PLUGIN_API setEditorState (IBStream* state) SMTG_OVERRIDE;
@@ -122,10 +150,21 @@ private:
 	/** Write one constant value over [from, to) on every output channel. */
 	void renderSegment (ProcessData& data, int32 from, int32 to);
 
+	/** A latent instance: follow a new count, then delay the block by it. No allocation. */
+	void applyLatency (ProcessData& data);
+	/** A latent instance: take the count the environment names now; tell the host when it moved. */
+	void followLatency ();
+	/** Delay the first two channels of @a outBus by mLatency, through the rings. */
+	void delayChannels (AudioBusBuffers& outBus, int32 numSamples);
+
 	float mLevel;
 	bool mGate[kNumKeys];
 	int32 mActiveNotes;
 	bool mProcessing;
+	bool mLatent;
+	int32 mLatency;
+	int32 mRingPos;
+	float mRing[2][kMaxLatency];
 };
 
 //------------------------------------------------------------------------
@@ -133,11 +172,67 @@ TestInstrument::TestInstrument ()
 : mLevel (kDefaultLevel)
 , mActiveNotes (0)
 , mProcessing (false)
+, mLatent (std::getenv (kLatencyEnv) != nullptr)
+, mLatency (mLatent ? envLatency () : 0)
+, mRingPos (0)
 {
 	for (int32 i = 0; i < kNumKeys; ++i)
 	{
 		mGate[i] = false;
 	}
+	std::memset (mRing, 0, sizeof (mRing));
+}
+
+//------------------------------------------------------------------------
+void TestInstrument::applyLatency (ProcessData& data)
+{
+	if (!mLatent)
+	{
+		return;
+	}
+	followLatency ();
+	if (mLatency == 0 || data.outputs == nullptr || data.numOutputs < 1)
+	{
+		return;
+	}
+	delayChannels (data.outputs[0], data.numSamples);
+}
+
+//------------------------------------------------------------------------
+void TestInstrument::followLatency ()
+{
+	const int32 wanted = envLatency ();
+	if (wanted == mLatency)
+	{
+		return;
+	}
+	mLatency = wanted;
+	if (componentHandler != nullptr)
+	{
+		componentHandler->restartComponent (kLatencyChanged);
+	}
+}
+
+//------------------------------------------------------------------------
+void TestInstrument::delayChannels (AudioBusBuffers& outBus, int32 numSamples)
+{
+	const int32 channels = outBus.numChannels < 2 ? outBus.numChannels : 2;
+	for (int32 s = 0; s < numSamples; ++s)
+	{
+		const int32 read = (mRingPos + kMaxLatency - mLatency) % kMaxLatency;
+		for (int32 channel = 0; channel < channels; ++channel)
+		{
+			Sample32* dst = outBus.channelBuffers32 ? outBus.channelBuffers32[channel] : nullptr;
+			if (dst == nullptr)
+			{
+				continue;
+			}
+			mRing[channel][mRingPos] = dst[s];
+			dst[s] = mRing[channel][read];
+		}
+		mRingPos = (mRingPos + 1) % kMaxLatency;
+	}
+	outBus.silenceFlags = 0;
 }
 
 //------------------------------------------------------------------------
@@ -347,6 +442,7 @@ tresult PLUGIN_API TestInstrument::process (ProcessData& data)
 			data.outputs[0].silenceFlags = allSilent;
 		}
 	}
+	applyLatency (data);
 
 	return kResultOk;
 }

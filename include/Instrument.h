@@ -70,7 +70,8 @@ public:
 			const Descriptor * _descriptor,
 			const Descriptor::SubPluginFeatures::Key * key = nullptr,
 			Flags flags = Flag::NoFlags);
-	~Instrument() override = default;
+	//! MX-157: takes the latency this instrument reported off its track (reportLatency).
+	~Instrument() override;
 
 	// --------------------------------------------------------------------
 	// functions that can/should be re-implemented:
@@ -174,6 +175,16 @@ public:
 		float /*normalized*/)
 	{
 	}
+
+	/*! MX-157 (BUGS 11.34), control thread: the latency in frames the hosted plug-in reports. The CLAP,
+	 *  VST3 and LV2 hosts call it after every (re)prepare and when the plug-in signals a change. It becomes
+	 *  the track's source latency (AudioBusHandle::setSourceLatencyFrames), which the mixer's PDC graph
+	 *  adds to the track's own chain, and the latency of the instrument's routed output buses
+	 *  (InstrumentOutputBuses::setSourceLatencyFrames). Both are lock-free values the audio thread only
+	 *  reads. An instrument that never calls it reports 0; the value goes with the instrument. */
+	void reportLatency(int frames);
+	//! MX-157: what the last reportLatency() published on this instrument's track; 0 by default.
+	int reportedLatencyFrames() const;
 
 	bool isBendable() const
 	{

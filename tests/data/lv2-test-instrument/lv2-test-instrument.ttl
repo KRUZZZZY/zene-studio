@@ -1,0 +1,41 @@
+# The LV2 test instrument (MX-157): a MIDI input, a stereo output and a latency report.
+# See lv2-test-instrument.c. SPDX-License-Identifier: MIT
+@prefix atom: <http://lv2plug.in/ns/ext/atom#> .
+@prefix doap: <http://usefulinc.com/ns/doap#> .
+@prefix lv2: <http://lv2plug.in/ns/lv2core#> .
+@prefix midi: <http://lv2plug.in/ns/ext/midi#> .
+@prefix urid: <http://lv2plug.in/ns/ext/urid#> .
+
+<urn:zene:test:lv2-instrument>
+	a lv2:Plugin , lv2:InstrumentPlugin ;
+	doap:name "Zene LV2 Test Instrument" ;
+	doap:license <http://opensource.org/licenses/MIT> ;
+	lv2:requiredFeature urid:map ;
+	lv2:port [
+		a lv2:InputPort , atom:AtomPort ;
+		atom:bufferType atom:Sequence ;
+		atom:supports midi:MidiEvent ;
+		lv2:index 0 ;
+		lv2:symbol "midi_in" ;
+		lv2:name "MIDI In"
+	] , [
+		a lv2:OutputPort , lv2:AudioPort ;
+		lv2:index 1 ;
+		lv2:symbol "out_left" ;
+		lv2:name "Out Left"
+	] , [
+		a lv2:OutputPort , lv2:AudioPort ;
+		lv2:index 2 ;
+		lv2:symbol "out_right" ;
+		lv2:name "Out Right"
+	] , [
+		a lv2:OutputPort , lv2:ControlPort ;
+		lv2:index 3 ;
+		lv2:symbol "latency" ;
+		lv2:name "Latency" ;
+		lv2:designation lv2:latency ;
+		lv2:portProperty lv2:reportsLatency , lv2:integer ;
+		lv2:minimum 0 ;
+		lv2:maximum 16383 ;
+		lv2:default 0
+	] .

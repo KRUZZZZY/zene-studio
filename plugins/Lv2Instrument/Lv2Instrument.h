@@ -26,6 +26,7 @@
 #define LV2_INSTRUMENT_H
 
 #include <QString>
+#include <QTimer>
 #include <array>
 
 #include "Instrument.h"
@@ -94,6 +95,10 @@ public:
 
 private slots:
 	void updatePitchRange();
+	/*! MX-157 (BUGS 11.34), GUI thread: the plug-in writes its latency port as it runs (Lv2Proc keeps a
+	 *  lock-free snapshot), so a change is picked up by this poll, as Lv2Effect::checkLatency does, and
+	 *  reported to the track's delay compensation (Instrument::reportLatency). */
+	void checkLatency();
 
 private:
 	QString nodeName() const override;
@@ -108,6 +113,8 @@ private:
 	void deliverOutputBuses(f_cnt_t frames);
 
 	InstrumentOutputBuses m_outputBuses;
+	QTimer m_latencyPoll;         //!< MX-157: runs checkLatency()
+	int m_reportedLatency = 0;    //!< MX-157: what checkLatency() last reported
 
 	friend class gui::Lv2InsView;
 };

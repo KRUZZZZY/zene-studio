@@ -2320,6 +2320,7 @@ tests/data/clap-test-plugin/clap-test-broken.c
 tests/data/clap-test-plugin/clap-test-gain.c
 tests/data/clap-test-plugin/clap-test-instrument.c
 tests/data/gigproof/make_gig.cpp
+tests/data/lv2-test-instrument/lv2-test-instrument.c
 tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
 tests/data/vst3-test-instrument/vst3-test-instrument.cpp
 tests/src/core/AafImportTest.cpp
@@ -2415,6 +2416,7 @@ tests/src/core/GrooveTestSupport.h
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/ImportDetectionTest.cpp
 tests/src/core/InputMonitorTest.cpp
+tests/src/core/InstrumentLatencyPdcTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
 tests/src/core/InstrumentRoutingTest.cpp
 tests/src/core/LanesUpconvertTest.cpp

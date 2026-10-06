@@ -28,12 +28,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <exception>
 
 #include <QDebug>
 #include <QTimer>
 
 #include "AudioEngine.h"
+#include "DeviceOptions.h"
 #include "Engine.h"
 #include "InstrumentPlayHandle.h"
 #include "LmmsCommonMacros.h"
@@ -123,6 +125,8 @@ Vst3Instrument::Vst3Instrument(InstrumentTrack* parent,
 			m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(),
 				&error);
 		}
+		cacheLatency();  // MX-157
+		m_plugin.setLatencyChangedCallback([this] { m_latencyChanged.store(true, std::memory_order_relaxed); });
 	}
 
 	// Every VST3 parameter becomes an LMMS model, exactly as for the effect
@@ -177,6 +181,7 @@ bool Vst3Instrument::nativeEditorOpen() const
 
 Vst3Instrument::~Vst3Instrument()
 {
+	m_plugin.setLatencyChangedCallback(nullptr);  // MX-157: the flag it raises goes before the plug-in
 	if (auto* engine = Engine::audioEngine())
 	{
 		engine->removePlayHandlesOfTypes(instrumentTrack(),
@@ -224,7 +229,16 @@ bool Vst3Instrument::enableOutputBus(int bus)
 	applyChannelCounts();
 	m_outputBuses.setLayout(vst3::outputBusesOf(m_plugin.outputBusDescriptors()));
 	engine->doneChangeInModel();
+	cacheLatency();  // MX-157
 	return activated;
+}
+
+void Vst3Instrument::cacheLatency()
+{
+	// The plug-in's unsigned report, bounded as the effect host bounds it (Vst3Effect::cacheLatency), so a
+	// garbage value can never wrap into a negative delay; the PDC delay lines clamp what they cannot apply.
+	const auto latency = std::min<std::uint32_t>(m_plugin.latency(), DeviceOptions::MaxLatencyOverride);
+	reportLatency(m_plugin.isPrepared() ? static_cast<int>(latency) : 0);
 }
 
 auto Vst3Instrument::perNoteTarget(const AutomatableModel* parameter) const -> std::int64_t
@@ -263,6 +277,7 @@ void Vst3Instrument::reprepare()
 		}
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
+	cacheLatency();  // MX-157
 }
 
 bool Vst3Instrument::handleMidiEvent(const MidiEvent& event, const TimePos&,
@@ -427,6 +442,7 @@ void Vst3Instrument::poll()
 	{
 		reprepare();
 	}
+	if (m_latencyChanged.exchange(false, std::memory_order_relaxed)) { cacheLatency(); }  // MX-157
 
 	if (m_syncing) { return; }
 	m_syncing = true;
