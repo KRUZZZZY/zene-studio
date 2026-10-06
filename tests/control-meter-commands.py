@@ -32,6 +32,9 @@ WHAT IT ASSERTS, in numbers read off the wire:
   * arming it is reversible (a recorded action checkpoint) and STARTS a measurement: the
     readings are null immediately after, and blocks_fed then grows on its own, i.e. the
     engine's audio thread is feeding the tap (the tap is live, not a fixture);
+  * repeating a disarm while already disarmed adds no undo step: one control.undo still
+    reverses the preceding real disarm and restores the armed state;
+  * repeating an arm while armed preserves its in-progress measurement;
   * THE THREE NEGATIVE CONTROLS THE TASK NAMES:
       1. silence reads null: tests/data/loudness/silent.wav measures `measured` false,
          every reading null and verdict NOT MEASURED - while the two tones measure their
@@ -237,6 +240,7 @@ def play_and_measure(session, project_path, arm_seconds=4.0):
     """Open a project, arm a fresh measurement, play, and read the live tap back."""
     session.result("transport.stop")
     session.result("project.open", {"path": project_path})
+    session.result("meter.arm", {"enabled": False})
     session.result("meter.arm", {"enabled": True})
     session.result("transport.seek", {"ticks": 0})
     session.result("transport.play")
@@ -371,6 +375,13 @@ def check_arm_is_live_and_reversible(session, recorder):
     recorder.check("a master carrying no signal still reads null, never a number",
                    readings(second) == (None, None, None, None, None),
                    "live=%r" % second)
+
+    session.result("meter.arm", {"enabled": True})
+    after_repeat = live(session.result("meter.get_state"))
+    recorder.check("re-sending an arm preserves the in-progress measurement",
+                   after_repeat.get("blocks_fed", 0) >= second.get("blocks_fed", 0),
+                   "before=%r after=%r" % (second.get("blocks_fed"),
+                                            after_repeat.get("blocks_fed")))
 
     disarmed = session.result("meter.arm", {"enabled": False})
     recorder.check("disarming keeps the measurement readable and stops the counting",
@@ -546,17 +557,25 @@ def check_refusals(session, recorder, workdir):
 
 
 def check_master_arm_undo(session, recorder):
-    """The inverse: control.undo takes the armed flag back."""
+    """A no-op disarm must leave the preceding real arm transition undoable."""
     session.result("meter.arm", {"enabled": False})
     session.result("meter.arm", {"enabled": True})
+    session.result("meter.arm", {"enabled": False})
+    transactions_before_noop = meter_records(session)
+    session.result("meter.arm", {"enabled": False})
+    transactions_after_noop = meter_records(session)
     recorder.check("armed for the undo check",
-                   session.result("meter.get_state").get("armed") is True,
-                   "armed")
+                   session.result("meter.get_state").get("armed") is False,
+                   "disarmed after the repeated disarm")
     session.result("control.undo")
     state = session.result("meter.get_state")
-    recorder.check("control.undo returns the tap to its previous armed state",
-                   state.get("armed") is False,
-                   "armed=%r after undo" % state.get("armed"))
+    recorder.check("a no-op disarm adds no undo step",
+                   state.get("armed") is True,
+                   "armed=%r after one undo" % state.get("armed"))
+    recorder.check("a no-op disarm adds no transaction record",
+                   transactions_after_noop == transactions_before_noop,
+                   "before=%r after=%r" % (transactions_before_noop[-1:],
+                                            transactions_after_noop[-1:]))
 
 
 # ---------------------------------------------------------------------------
