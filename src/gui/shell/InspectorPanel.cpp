@@ -382,12 +382,14 @@ QWidget* InspectorPanel::clipSection(Clip* clip)
 	grid->addWidget(titleBar(tr("Clip"), section, [clip = QPointer<Clip>(clip)](QMenu* menu) {
 		ShellCommandMenus::populateClip(menu, clip.data());
 	}), 0, 0, 1, 2);
-	addRow(grid, tr("Name"), new QLabel(clip->name().isEmpty() ? tr("(untitled)") : clip->name(), section));
+	m_clipName = new QLabel(clip->name().isEmpty() ? tr("(untitled)") : clip->name(), section);
+	addRow(grid, tr("Name"), m_clipName);
 	const QString id = control::clipIdOf(clip);
 	addClipFields(grid, clip, id, section);
 	if (auto* midi = dynamic_cast<MidiClip*>(clip))
 	{
-		addRow(grid, tr("Notes"), new QLabel(QString::number(midi->notes().size()), section));
+		m_noteCount = new QLabel(QString::number(midi->notes().size()), section);
+		addRow(grid, tr("Notes"), m_noteCount);
 		auto* edit = new QPushButton(tr("Edit notes"), section);
 		edit->setAccessibleName(tr("Open the clip in the note editor"));
 		connect(edit, &QPushButton::clicked, this, [edit, id] {
@@ -454,6 +456,7 @@ void InspectorPanel::syncToggles()
 	{
 		if (!field.isNull() && !typingInto(field)) { field->refresh(); }
 	}
+	syncClipLabels();
 	syncChannelName();
 	if (m_track.isNull() || m_mute == nullptr) { return; }
 	m_mute->setChecked(m_track->isMuted());

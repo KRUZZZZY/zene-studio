@@ -205,6 +205,23 @@ void InspectorPanel::placeTrackAndClip()
 	placeSection(m_clipSection, clipKey(m_clip), [this] { return clipSection(m_clip); }, 1);
 }
 
+void InspectorPanel::syncClipLabels()
+{
+	// A clip has no name or notes signal, so these are re-read like the track's and the channel's name.
+	if (m_clip.isNull()) { return; }
+	if (!m_clipName.isNull())
+	{
+		const QString name = m_clip->name().isEmpty() ? tr("(untitled)") : m_clip->name();
+		if (m_clipName->text() != name) { m_clipName->setText(name); }
+	}
+	const auto* midi = dynamic_cast<MidiClip*>(m_clip.data());
+	if (midi != nullptr && !m_noteCount.isNull())
+	{
+		const QString count = QString::number(midi->notes().size());
+		if (m_noteCount->text() != count) { m_noteCount->setText(count); }
+	}
+}
+
 void InspectorPanel::syncChannelName()
 {
 	if (m_channelName.isNull() || m_channelName->hasFocus()) { return; }

@@ -720,6 +720,51 @@ private slots:
 		delete track;
 	}
 
+	/*! ED-015: the clip section's Name and Notes labels were built from the clip as it was when the
+	 *  section was made and nothing ever re-read them, so a rename or a note edited elsewhere left the
+	 *  Inspector showing the old text - the clip key is the pointer, so no selection change redrew it. */
+	void theClipsNameAndNoteCountFollowTheClip()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->setName(QStringLiteral("Hook"));
+		clip->addNote(Note(TimePos(0), TimePos(0), 60, 100), false);
+		InspectorPanel inspector;
+		inspector.show();
+		ShellSelection::instance()->setClip(clip);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		// The clip section's plain value labels, in the order the rows are added: Name, then Notes.
+		const auto valueLabels = [&inspector] {
+			auto* more = childNamed<QToolButton>(&inspector, QStringLiteral("More clip actions"));
+			if (more == nullptr) { return QList<QLabel*>{}; }
+			auto* section = more->parentWidget() != nullptr ? more->parentWidget()->parentWidget() : nullptr;
+			QList<QLabel*> values;
+			for (QLabel* label : section != nullptr ? section->findChildren<QLabel*>() : QList<QLabel*>{})
+			{
+				// The captions and the section's own title are named; what is left are the value labels.
+				if (label->objectName() != QStringLiteral("deviceCaption") && label->objectName() != QStringLiteral("deviceSection")
+					&& label->isVisibleTo(&inspector))
+				{
+					values.append(label);
+				}
+			}
+			return values;
+		};
+		QCOMPARE(valueLabels().size(), 2);
+		QCOMPARE(valueLabels().at(0)->text(), QStringLiteral("Hook"));
+		QCOMPARE(valueLabels().at(1)->text(), QStringLiteral("1"));
+		// Renamed and given a second note from outside the Inspector, as the arranger or the note editor does.
+		clip->setName(QStringLiteral("Riff"));
+		clip->addNote(Note(TimePos(48), TimePos(0), 64, 100), false);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		QCOMPARE(valueLabels().at(0)->text(), QStringLiteral("Riff"));
+		QCOMPARE(valueLabels().at(1)->text(), QStringLiteral("2"));
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
+	}
+
 	//! Theme 13: a channel's name is a field in the Inspector, and Enter renames it through mixer.rename_channel.
 	void theChannelsNameIsEditedInPlace()
 	{
