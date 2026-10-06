@@ -55,6 +55,8 @@ private:
 	QToolButton* m_land = nullptr;
 	QToolButton* m_back = nullptr;
 	QLabel* m_recorded = nullptr;
+	//! A command's refusal, while it stands: a refused button did nothing at all and said nothing.
+	QLabel* m_status = nullptr;
 	QTimer m_timer;
 };
 

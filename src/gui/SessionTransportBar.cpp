@@ -30,6 +30,7 @@
 #include <QSignalBlocker>
 #include <QToolButton>
 
+#include "AccessibleWidgets.h"
 #include "ControlRegistry.h"
 
 namespace lmms::gui
@@ -38,9 +39,17 @@ namespace lmms::gui
 namespace
 {
 
-QJsonObject run(const char* command, const QJsonObject& args = {})
+ControlResult run(const char* command, const QJsonObject& args = {})
 {
-	return ControlRegistry::instance()->invoke(QString::fromLatin1(command), args).result;
+	return ControlRegistry::instance()->invoke(QString::fromLatin1(command), args);
+}
+
+//! A command that reports why it refuses has to be believed: an empty message clears the label.
+void say(QLabel* status, const ControlResult& result)
+{
+	status->setText(result.ok ? QString() : result.errorMessage);
+	// A refusal is spoken as well as shown, so it reaches a screen reader as it happens.
+	if (!result.ok) { a11y::announceStatus(status, result.errorMessage, a11y::Politeness::Assertive); }
 }
 
 QToolButton* button(const QString& text, const char* command, bool checkable, QWidget* parent)
@@ -65,21 +74,33 @@ SessionTransportBar::SessionTransportBar(QWidget* parent) :
 	m_back = button(tr("Back to arrangement"), "session.back_to_arrangement", false, this);
 	m_recorded = new QLabel(this);
 	m_recorded->setAccessibleName(tr("Arrangement recording status"));
+	m_status = new QLabel(this);
+	m_status->setAccessibleName(tr("Last refused command"));
+	m_status->setWordWrap(true);
+	// The four controls each run a command that reports why it refuses; the row used to throw that
+	// away, so a refused Follow, Record, Land or Back did nothing and said nothing.
 	connect(m_follow, &QToolButton::toggled, this, [this](bool on) {
-		run("session.set_follow_actions", {{QStringLiteral("enabled"), on}});
+		say(m_status, run("session.set_follow_actions", {{QStringLiteral("enabled"), on}}));
 		refresh();
 	});
 	connect(m_record, &QToolButton::toggled, this, [this](bool on) {
-		run("session.arrangement_record_arm", {{QStringLiteral("armed"), on}});
+		say(m_status, run("session.arrangement_record_arm", {{QStringLiteral("armed"), on}}));
 		refresh();
 	});
-	connect(m_land, &QToolButton::clicked, this, [this] { run("session.arrangement_record_land"); refresh(); });
-	connect(m_back, &QToolButton::clicked, this, [this] { run("session.back_to_arrangement"); refresh(); });
+	connect(m_land, &QToolButton::clicked, this, [this] {
+		say(m_status, run("session.arrangement_record_land"));
+		refresh();
+	});
+	connect(m_back, &QToolButton::clicked, this, [this] {
+		say(m_status, run("session.back_to_arrangement"));
+		refresh();
+	});
 	auto* row = new QHBoxLayout(this);
 	row->setContentsMargins(0, 0, 0, 0);
 	for (QWidget* w : {static_cast<QWidget*>(m_follow), static_cast<QWidget*>(m_record),
 			static_cast<QWidget*>(m_land), static_cast<QWidget*>(m_back)}) { row->addWidget(w); }
-	row->addWidget(m_recorded, 1);
+	row->addWidget(m_recorded);
+	row->addWidget(m_status, 1);
 	connect(&m_timer, &QTimer::timeout, this, &SessionTransportBar::refresh);
 	m_timer.start(1000);
 	refresh();
@@ -87,8 +108,8 @@ SessionTransportBar::SessionTransportBar(QWidget* parent) :
 
 void SessionTransportBar::refresh()
 {
-	const QJsonObject follow = run("session.follow_get_state");
-	const QJsonObject record = run("session.arrangement_record_status");
+	const QJsonObject follow = run("session.follow_get_state").result;
+	const QJsonObject record = run("session.arrangement_record_status").result;
 	const QSignalBlocker a(m_follow), b(m_record);
 	m_follow->setChecked(follow.value(QStringLiteral("follow_actions_enabled")).toBool());
 	m_record->setChecked(record.value(QStringLiteral("armed")).toBool());
