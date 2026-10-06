@@ -238,6 +238,48 @@ private slots:
 		QCOMPARE(notes[2].length, 15);
 	}
 
+	//! element() with the ALSA source port set, for the tests that need two ports.
+	RetroMidiEvent fromPort(std::uint16_t source, std::uint8_t type, std::uint32_t tick,
+		std::uint8_t param1, std::uint8_t param2, std::uint8_t channel = 0)
+	{
+		RetroMidiEvent event = element(type, tick, param1, param2, channel);
+		event.source = source;
+		return event;
+	}
+
+	//! TWO PORTS playing the SAME channel and key do not cross-match: the
+	//! matching key is (source, channel, key), so each port's release closes its
+	//! OWN open note. Matching on (channel, key) alone let a release from one
+	//! port close the other port's note, producing two notes of the wrong length
+	//! (measured: two 20-tick notes where the notes are 10 and 30).
+	void twoPortsSameKeyDoNotCrossMatch()
+	{
+		QString trackId;
+		QString clipId;
+		makeInstrumentClip(&trackId, &clipId);
+		MidiClip* clip = resolvedClip(clipId);
+		QVERIFY(clip != nullptr);
+
+		const RetroMidiEvent window[] = {
+			fromPort(0, MidiNoteOn, 0, 60, 100),    // port 0: 0..30
+			fromPort(1, MidiNoteOn, 10, 60, 100),   // port 1: 10..20, same channel+key
+			fromPort(1, MidiNoteOff, 20, 60, 0),    // closes port 1's OWN note
+			fromPort(0, MidiNoteOff, 30, 60, 0),    // closes port 0's note
+		};
+		const RetroMidiClipWrite written = writeWindowToClip(clip, window, 4, 0);
+
+		QCOMPARE(written.notes, 2);
+		QCOMPARE(written.unmatchedOns, 0);
+		QCOMPARE(written.unmatchedOffs, 0);
+		QCOMPARE(written.windowEnd, 30);
+		const std::vector<WrittenNote> notes = notesOf(clip);
+		QCOMPARE(static_cast<int>(notes.size()), 2);
+		QCOMPARE(notes[0].position, 0);
+		QCOMPARE(notes[0].length, 30);
+		QCOMPARE(notes[1].position, 10);
+		QCOMPARE(notes[1].length, 10);
+	}
+
 	//! An unmatched note-on is closed at the window's end (one tick minimum)
 	//! AND counted, so the caller can see the capture was cut off.
 	void unmatchedNoteOnIsClosedAtTheWindowEnd()
