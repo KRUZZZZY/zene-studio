@@ -29,11 +29,13 @@
 #include <QtTest>
 
 #include <QJsonObject>
+#include <QListWidget>
 #include <QPushButton>
 #include <QSpinBox>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 #include "UndoHistoryPanel.h"
 
@@ -91,6 +93,36 @@ private slots:
 
 		QTest::mouseClick(redo, Qt::LeftButton);
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore + 1);
+	}
+
+	//! The list holds command steps only, but a direct editor edit is a journal step with no row.
+	//! Jumping to a row must count JOURNAL steps, or it stops one short of the row it names.
+	void aJumpToARowCoversTheUnlistedEditorStepsAfterIt()
+	{
+		const int tracksBefore = static_cast<int>(Engine::getSong()->tracks().size());
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("sample")}}).ok);
+		// A step with no transaction record: what an editor edit leaves behind.
+		journal->addJournalAction([] {}, [] {});
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("sample")}}).ok);
+
+		QCOMPARE(journal->undoDepth(), depthBefore + 3);  // two command steps and one editor step
+
+		UndoHistoryPanel panel;
+		QListWidget* list = panel.findChild<QListWidget*>();
+		QVERIFY(list != nullptr);
+		QPushButton* back = buttonFor(panel, "control.history_jump");
+		QVERIFY(back != nullptr);
+
+		// The older command row: undoing it takes all three steps with it.
+		list->setCurrentRow(1);
+		QVERIFY(back->isEnabled());
+		QTest::mouseClick(back, Qt::LeftButton);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore);
 	}
 
 	void theLimitsRowSetsTheCapsAndTheMergeWindow()

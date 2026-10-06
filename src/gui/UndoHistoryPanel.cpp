@@ -99,6 +99,18 @@ QString problemOf(const ControlResult& result)
 	return result.result.value(QStringLiteral("stopped")).toString();
 }
 
+//! How many journal steps "undo to here" must walk back for the row at @a row: every step from the
+//! selected one to the newest, counted by SERIAL, because the list shows command steps only - a
+//! direct editor edit is a step in the journal with no row here, and counting rows would step over
+//! it and land one step short. Falls back to the row count when the row names no step (an inverse
+//! that is a command rather than a step), or when the serial is not on the stack any more.
+int stepsBackTo(int row, quint64 rowStep)
+{
+	const ProjectJournal* journal = Engine::projectJournal();
+	if (journal == nullptr || rowStep == 0 || journal->topStepSerial() < rowStep) { return row + 1; }
+	return static_cast<int>(journal->topStepSerial() - rowStep + 1);
+}
+
 //! What the journal holds, in brief: it changes whenever any client - an agent, a script, an editor - adds or takes a step.
 QString journalMark()
 {
@@ -154,7 +166,11 @@ UndoHistoryPanel::UndoHistoryPanel(QWidget* parent) :
 	m_list->setProperty("controlCommand", QStringLiteral("control.history_jump"));
 	const auto jump = [this, report] {
 		const int row = m_list->currentRow();
-		if (row >= 0) { report(ControlRegistry::instance()->invoke(QStringLiteral("control.history_jump"), {{QStringLiteral("steps"), -(row + 1)}})); }
+		if (row < 0) { return; }
+		// The row's journal step serial, kept on the row when the list was filled.
+		const quint64 rowStep = static_cast<quint64>(m_list->item(row)->data(Qt::UserRole).toLongLong());
+		report(ControlRegistry::instance()->invoke(QStringLiteral("control.history_jump"),
+			{{QStringLiteral("steps"), -stepsBackTo(row, rowStep)}}));
 	};
 	connect(m_list, &QListWidget::itemDoubleClicked, this, jump);
 	connect(back, &QPushButton::clicked, this, jump);
@@ -219,6 +235,8 @@ void UndoHistoryPanel::refresh()
 		const QJsonObject tx = transactions.at(i).toObject();
 		auto* item = new QListWidgetItem(transactionText(tx), m_list);
 		item->setToolTip(tx.value(QStringLiteral("mechanism")).toString());
+		// WHICH journal step this row names, so a jump to it counts journal steps, not rows.
+		item->setData(Qt::UserRole, static_cast<qlonglong>(tx.value(QStringLiteral("step")).toDouble()));
 	}
 }
 
