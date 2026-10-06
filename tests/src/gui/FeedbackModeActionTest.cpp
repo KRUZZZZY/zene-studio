@@ -105,6 +105,22 @@ private slots:
 		QVERIFY(mixer->channelSendModel(b, a) == nullptr);
 		QCOMPARE(refreshed, 2);
 	}
+
+	// The state text must describe the state that is actually in force: with the submode
+	// off, pdc_suspended is false, so the reply must not claim compensation is SUSPENDED.
+	void theSuspensionTextFollowsTheSubmode()
+	{
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("feedback.enable"), QJsonObject{}).ok);
+		const QJsonObject on = state();
+		QVERIFY(on.value(QStringLiteral("pdc_suspended")).toBool());
+		QVERIFY(on.value(QStringLiteral("suspension")).toString().contains(QStringLiteral("SUSPENDED")));
+
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("feedback.disable"), QJsonObject{}).ok);
+		const QJsonObject off = state();
+		QVERIFY(!off.value(QStringLiteral("enabled")).toBool());
+		QVERIFY(!off.value(QStringLiteral("pdc_suspended")).toBool());
+		QVERIFY(!off.value(QStringLiteral("suspension")).toString().contains(QStringLiteral("SUSPENDED")));
+	}
 };
 
 QTEST_MAIN(FeedbackModeActionTest)
