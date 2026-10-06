@@ -280,6 +280,68 @@ private slots:
 		QVERIFY2(badge->toolTip().contains(QLatin1String("track")), qPrintable(badge->toolTip()));
 	}
 
+	//! Luna cluster 5578: the lock check hides Delete/Cut and disables Paste, but every other mutating
+	//! context-menu action went through anyway - so a right-clicked locked clip could be muted, recolored or
+	//! toggled to auto-resize, and the mouse's own Ctrl+middle-click mute was refused where the menu's was not.
+	void aLockedClipKeepsEveryMutatingMenuAction()
+	{
+		Clip* clip = clipAt(m_track, 0, 2 * Bar);
+		QCoreApplication::processEvents();
+		ClipView* view = viewOf(clip);
+		QVERIFY(view != nullptr);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(clip)}}).ok);
+		QVERIFY(cliplocks::badgeShown(view));
+
+		// Auto-resize: the menu item that changes the clicked clips without asking their locks.
+		QCOMPARE(clip->getAutoResize(), false);
+		view->toggleSelectedAutoResize();
+		QCOMPARE(clip->getAutoResize(), false);
+
+		// Mute: the same edit the Ctrl+middle-click gesture already refuses at the mouse press.
+		QCOMPARE(clip->isMuted(), false);
+		view->toggleMute(QVector<ClipView*>{view});
+		QCOMPARE(clip->isMuted(), false);
+
+		// And the color menu, which rewrites every clicked clip too (randomizeColor -> setColor).
+		view->randomizeColor();
+		QVERIFY2(!clip->color().has_value(), "a locked clip was recolored");
+
+		// An unlocked clip still takes all three, so the lock is what refuses them and not the fixture.
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("locked"), false}}).ok);
+		view->toggleSelectedAutoResize();
+		QCOMPARE(clip->getAutoResize(), true);
+		view->toggleMute(QVector<ClipView*>{view});
+		QCOMPARE(clip->isMuted(), true);
+		view->randomizeColor();
+		QVERIFY(clip->color().has_value());
+	}
+
+	//! Luna cluster 5578: a lock in a SELECTION keeps the locked clip as it is and still changes the
+	//! unlocked ones, exactly like Delete (WF-044) - the whole selection is not refused just because one
+	//! member is locked.
+	void aLockedClipInASelectionStaysWhileTheOthersChange()
+	{
+		Clip* locked = clipAt(m_track, 0, Bar);
+		Clip* free_ = clipAt(m_track, 2 * Bar, Bar);
+		QCoreApplication::processEvents();
+		ClipView* lockedView = viewOf(locked);
+		ClipView* freeView = viewOf(free_);
+		QVERIFY(lockedView != nullptr && freeView != nullptr);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(locked)}}).ok);
+
+		m_editor->selectAllClips(false);
+		lockedView->setSelected(true);
+		freeView->setSelected(true);
+
+		freeView->toggleSelectedAutoResize();
+		QCOMPARE(locked->getAutoResize(), false);
+		QCOMPARE(free_->getAutoResize(), true);
+
+		lockedView->toggleMute(QVector<ClipView*>{lockedView, freeView});
+		QCOMPARE(locked->isMuted(), false);
+		QCOMPARE(free_->isMuted(), true);
+	}
+
 	//! 0.5.0 theme 9 (wave 3): a wheel turn zooms by its size - a touchpad's tenth-of-a-notch deltas add up to a
 	//! notch's steps - around the tick under the pointer, and one gesture joins the zoom history once.
 	void aWheelZoomIsContinuousAroundThePointer()
