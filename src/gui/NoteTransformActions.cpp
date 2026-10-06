@@ -94,6 +94,7 @@ QAction* transform(const QString& text, const QString& command, const QString& a
 
 bool handOverNoteSelection(const MidiClip* clip)
 {
+	if (clip == nullptr) { return false; }
 	QJsonArray selected;
 	for (const Note* note : clip->notes())
 	{

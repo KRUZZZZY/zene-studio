@@ -163,6 +163,13 @@ private slots:
 		setNoteTransformPrompt({});
 	}
 
+// The exported helper walked clip->notes() with no null check, so a caller with no clip read
+//	through a null pointer before it could return false.
+	void noClipHandsOverNothing()
+	{
+		QVERIFY(!handOverNoteSelection(nullptr));
+	}
+
 private:
 	MidiClip* m_clip = nullptr;
 };
