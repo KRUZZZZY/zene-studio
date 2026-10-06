@@ -28,6 +28,7 @@
 #include "AudioEngine.h"
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 
@@ -53,6 +54,40 @@ int ditherBitsFor(OutputSettings::BitDepth bitDepth, bool ditherEnabled)
 	case OutputSettings::BitDepth::Depth24Bit: return 24;
 	case OutputSettings::BitDepth::Depth32Bit:
 	default: return 0;
+	}
+}
+
+/*! Round-to-nearest variant of AudioDevice::convertToS16, used for the dithered
+ *  16-bit path only.
+ *
+ *  convertToS16 truncates toward zero. Truncation discards every dither offset
+ *  smaller than one LSB, so at digital silence - or at any input below half an
+ *  LSB - the TPDF noise is quantised straight back out again and the exported
+ *  bytes carry no dither at all. Rounding to nearest instead keeps the offsets
+ *  that push a sample across the decision threshold. Clip and scale are
+ *  identical to convertToS16, and the byte order matches, so the only change is
+ *  where a half-way value lands.
+ */
+int sampleRoundedToS16(float value)
+{
+	return static_cast<int>(std::lround(AudioEngine::clip(value) * OUTPUT_SAMPLE_MULTIPLIER));
+}
+
+void convertDitheredToS16(const SampleFrame* _ab,
+						  const f_cnt_t _frames,
+						  const ch_cnt_t _channels,
+						  int_sample_t * _output_buffer,
+						  const bool _convert_endian)
+{
+	for( f_cnt_t frame = 0; frame < _frames; ++frame )
+	{
+		for( ch_cnt_t chnl = 0; chnl < _channels; ++chnl )
+		{
+			auto temp = static_cast<int_sample_t>(sampleRoundedToS16(_ab[frame][chnl]));
+
+			( _output_buffer + frame * _channels )[chnl] = _convert_endian ?
+					( ( temp & 0x00ff ) << 8 | ( temp & 0xff00 ) >> 8 ) : temp;
+		}
 	}
 }
 
@@ -164,7 +199,7 @@ void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 			auto staged = std::make_unique<SampleFrame[]>(_frames);
 			std::copy_n(_ab, _frames, staged.get());
 			m_dither.ditherFrames(staged.get(), _frames, ditherBits);
-			convertToS16(staged.get(), _frames, buf, !isLittleEndian());
+			convertDitheredToS16(staged.get(), _frames, channels(), buf, !isLittleEndian());
 		}
 		else
 		{
