@@ -186,6 +186,20 @@ private slots:
 		QCOMPARE(clip->warpMarkers().size(), 2);
 	}
 
+	void aRangeFadeReachesItsEndpoint()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		SampleClip* clip = toneClip(track, 440.0, 3840);
+		const auto size = static_cast<int>(clip->sample().sampleSize());
+		const int frame = size / 8;
+		QVERIFY2(std::abs(clip->sample().data()[frame][0]) > 0.001f, "the frame under test is silent");
+		// A one-frame range is all endpoint: the fade_out's last (and only) frame is 0, not unity.
+		QVERIFY(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), frame}, {QStringLiteral("to"), frame + 1}, {QStringLiteral("op"), QStringLiteral("fade_out")}}).ok);
+		QCOMPARE(clip->sample().data()[frame][0], 0.f);
+		QCOMPARE(clip->sample().data()[frame][1], 0.f);
+	}
+
 	void aFolderMovesAsOne()
 	{
 		Song* song = Engine::getSong();

@@ -65,10 +65,10 @@ std::vector<SampleFrame> applied(std::vector<SampleFrame> frames, const QString&
 	if (op == QLatin1String("crop")) { return std::vector<SampleFrame>(begin, end); }
 	if (op == QLatin1String("reverse")) { std::reverse(begin, end); return frames; }
 	// The last frame of the range reaches the fade's end (0 for a fade-out), as sampleops::fade does.
-	const double span = static_cast<double>(std::max<std::size_t>(1, to - from - 1));
+	const std::size_t span = to - from - 1;  // a one-frame range has no ramp: its only frame IS the endpoint
 	for (std::size_t i = from; i < to; ++i)
 	{
-		const double t = static_cast<double>(i - from) / span;
+		const double t = span == 0 ? 1.0 : static_cast<double>(i - from) / static_cast<double>(span);
 		const float factor = op == QLatin1String("silence") ? 0.f : op == QLatin1String("fade_in") ? static_cast<float>(t)
 			: op == QLatin1String("fade_out") ? static_cast<float>(1.0 - t) : gain;
 		frames[i] = SampleFrame(frames[i][0] * factor, frames[i][1] * factor);
