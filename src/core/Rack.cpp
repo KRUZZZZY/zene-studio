@@ -203,6 +203,7 @@ auto Rack::removeChain(int index) -> bool
 	// with the chains they name - or they name the wrong chain (Luna clusters
 	// 5256 and 5257). Both take the model-change guard, which nests here.
 	m_zones.reindexChains(index);
+	m_macros.reindexChains(index);
 	rebuildRoutingGraph();
 
 	if (engine != nullptr) { engine->doneChangeInModel(); }

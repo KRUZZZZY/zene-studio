@@ -397,6 +397,39 @@ private slots:
 			QStringLiteral("no channel -> not_found; empty name / bad selection / dead target / bad "
 				"window -> invalid_args; chain 0 removal -> refused"));
 	}
+
+	//! Luna cluster 5257: removing a chain renumbers the macro targets that
+	//! named a LATER chain, and drops the ones that named the chain that is
+	//! gone. Without that, a target on the chain after the removed one drives
+	//! the wrong device - and a target on the removed chain drives whichever
+	//! chain slid into its index.
+	void removingAChainReindexesTheMacroTargets()
+	{
+		Rack& rack = rackUnderTest();
+		while (rack.chainCount() < 5) { rack.addChain(); }
+		QCOMPARE(rack.chainCount(), 5);
+
+		const int macro = rack.macros().addMacro(QStringLiteral("Luna5257"), 0.5f);
+		RackMacroTarget onRemoved = targetOf(kGainName, 0.0f, 1.0f);
+		onRemoved.chain = 2;
+		QCOMPARE(rack.macros().addTarget(macro, onRemoved), 0);
+		RackMacroTarget later = targetOf(kPanName, 0.0f, 1.0f);
+		later.chain = 4;
+		QCOMPARE(rack.macros().addTarget(macro, later), 1);
+
+		QVERIFY(rack.removeChain(2));
+		QCOMPARE(rack.chainCount(), 4);
+
+		const RackMacro* const kept = rack.macros().macro(macro);
+		QVERIFY(kept != nullptr);
+		// The target on the removed chain is gone; the one on chain 4 slid to 3.
+		QCOMPARE(static_cast<int>(kept->targets.size()), 1);
+		QCOMPARE(kept->targets[0].chain, 3);
+		QCOMPARE(kept->targets[0].parameter, QString::fromLatin1(kPanName));
+		printEvidence("chain-removal-reindexes-macro-targets",
+			QStringLiteral("chains 5 -> 4; target on chain 4 -> chain 3; target on the removed "
+				"chain 2 dropped"));
+	}
 };
 
 QTEST_GUILESS_MAIN(RackMacrosTest)

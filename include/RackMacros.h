@@ -165,6 +165,13 @@ public:
 	//! Drops every macro.
 	void clear();
 
+	/*! Luna cluster 5257: keeps the macro targets consistent with a rack that
+	 *  lost chain @a removedIndex - a target on a LATER chain slides down with
+	 *  it, and a target on the removed chain is dropped, because after the shift
+	 *  it would name whichever chain took that index and drive the wrong
+	 *  parameter. Called by Rack::removeChain(). */
+	void reindexChains(int removedIndex);
+
 	// --- persistence (children of the channel's <rack> element) ---
 
 	//! Writes one <macro> element per macro, or nothing when there are none.
