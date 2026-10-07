@@ -102,10 +102,16 @@ void InstrumentOutputBuses::prepareSlot(Slot& slot)
 void InstrumentOutputBuses::storeRoute(int bus, int channelId)
 {
 	auto& slot = m_slots[static_cast<std::size_t>(bus)];
-	if (slot == nullptr) { slot = std::make_unique<Slot>(); }
-	// Allocated before the guard is taken: the render never waits on an allocation.
-	if (channelId >= 0) { prepareSlot(*slot); }
+	const f_cnt_t frames = Engine::audioEngine() != nullptr ? Engine::audioEngine()->framesPerPeriod() : 0;
+	std::unique_ptr<Slot> prepared;
+	if (slot == nullptr || (channelId >= 0 && frames != 0 && slot->block.size() != static_cast<std::size_t>(frames)))
+	{
+		prepared = std::make_unique<Slot>();
+		// Prepare detached storage before the guard; render readers only see it after publication.
+		if (channelId >= 0) { prepareSlot(*prepared); }
+	}
 	ChangeGuard guard;
+	if (prepared != nullptr) { slot = std::move(prepared); }
 	slot->channelId.store(channelId, std::memory_order_release);
 	slot->cachedIndex.store(-1, std::memory_order_relaxed);
 }
