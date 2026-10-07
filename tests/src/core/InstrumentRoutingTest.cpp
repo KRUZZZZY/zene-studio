@@ -25,13 +25,23 @@
 
 #include <QtTest>
 
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <memory>
+#include <thread>
 #include <vector>
 
 #include <QDomDocument>
 #include <QDomElement>
 
-#include "InstrumentMidiParts.h"
+#include "InstrumentOutputBus.h"
+#include "LmmsTypes.h"
+#define private public // This TU checks slot publication while the render-period guard is held.
 #include "InstrumentOutputBuses.h"
+#undef private
+#include "InstrumentMidiParts.h"
 #include "ModulationLayer.h"
 #include "ModulationVoices.h"
 #include "RackTestSupport.h"
@@ -62,6 +72,26 @@ void silenceChannel(int index)
 	MixerChannel* channel = Engine::mixer()->mixerChannel(index);
 	channel->m_bus.silenceAllChannels();
 	channel->m_hasInput = false;
+}
+
+template <typename Changed>
+bool routeMutationEscapesRenderPeriod(InstrumentOutputBuses& buses, int channelId, Changed changed)
+{
+	AudioEngine* engine = Engine::audioEngine();
+	engine->requestChangeInModel();
+	std::atomic<bool> started{false};
+	std::thread mutation([&buses, channelId, &started] {
+		started.store(true, std::memory_order_release);
+		buses.route(1, channelId);
+	});
+	while (!started.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+	while (!changed() && std::chrono::steady_clock::now() < deadline) { std::this_thread::yield(); }
+	const bool escaped = changed();
+	engine->doneChangeInModel();
+	mutation.join();
+	return escaped;
 }
 
 //! Four planar channels of one period: main L/R silent, bus 1 at (0.5, -0.25).
@@ -139,6 +169,20 @@ private slots:
 		QCOMPARE(channel->m_buffer[frames - 1][0], 0.5f);
 		QCOMPARE(channel->m_buffer[frames - 1][1], -0.25f);
 		silenceChannel(target.index);
+	}
+
+	//! A newly routed Slot must not become visible to the render worker before the model guard.
+	void outputBusSlotPublicationWaitsForRenderPeriod()
+	{
+		const TestChannel target = newChannel();
+		InstrumentOutputBuses buses;
+		buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Out"), 2, 2}});
+
+		QVERIFY(!routeMutationEscapesRenderPeriod(buses, target.id, [&buses] {
+			return buses.m_slots[1] != nullptr;
+		}));
+		QCOMPARE(buses.routeOf(1), target.id);
+		QVERIFY(buses.routedBuffer(1, Engine::audioEngine()->framesPerPeriod()) != nullptr);
 	}
 
 	//! MX-114: routes are saved by channel id and read back; a document without them clears them.

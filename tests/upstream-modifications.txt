@@ -1724,3 +1724,4 @@ tests/src/core/ControlNoteScaleVerbsTest.cpp	new-p8-24: per-command regressions 
 src/core/HardwareIo.cpp	new-p8-124: only a routed following cue with positive master level spares the main output during listen; level-zero cues are skipped by mixOutputs, so listening falls back to main. Covered by HardwareIoTest::aCueFollowsSoloAndListen.
 src/gui/MainWindow.cpp	new-p8-148 (2026-10-07): MainWindow::finalize() checks audio startup failure independently of first-run setup, so fresh unattended launches report the fallback diagnostic.
 tests/src/gui/TakeLanesPanelTest.cpp	cluster new-p8-139: regression for multi-row comp Delete, confirming the original selected ranges are processed when an earlier reassignment merges rows.
+src/core/InstrumentOutputBuses.cpp	BUG new-p8-132: prepare route slots and resized buffers off to the side, then publish the slot under the audio model-change guard; regression InstrumentRoutingTest::outputBusSlotPublicationWaitsForRenderPeriod.
