@@ -16,13 +16,15 @@ They all failed on the original code, passed with the fix, and failed again
 after reversing the production patch. The test source is registered at
 `tests/fork-sources.txt:2048`.
 
-| Evidence | Result |
+| Evidence | Exact command / result |
 | --- | --- |
-| Original RED, `TakeLaneTest` | 1/1 CTest test failed; all three regression cases failed |
-| Reverse-patch RED | Same test failed again after removing only the production fix |
-| GREEN affected family | 3/3 CTest tests passed: `TakeLaneTest`, `TakeLaneCompTest`, `TakeLaneCompPlaybackTest` |
-| Complexity gate | Exit 0 |
-| File-length gate | Exit 0 |
+| RED on original code | `QT_QPA_PLATFORM=offscreen ctest -R '^TakeLaneTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-234.r1/logs/test-1.log 2>&1; echo EXIT=$?` — EXIT=8; 1/1 CTest test failed, all three regression cases failed |
+| GREEN after fix | `QT_QPA_PLATFORM=offscreen ctest -R '^TakeLaneTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-234.r1/logs/test-2.log 2>&1; echo EXIT=$?` — EXIT=0 |
+| Reverse-patch proof | The same `TakeLaneTest` command with `test-3.log` — EXIT=8 after removing only the production patch; the restored fix with `test-4.log` — EXIT=0 |
+| Affected-family count | `QT_QPA_PLATFORM=offscreen ctest -R '^TakeLane(CompTest|Test|CompPlaybackTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-234.r1/logs/test-5.log 2>&1; echo EXIT=$?` — EXIT=0; 3/3 tests passed |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-234.r1/logs/gate-1.log 2>&1; echo EXIT=$?` — EXIT=0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-234.r1/logs/gate-2.log 2>&1; echo EXIT=$?` — EXIT=0 |
+| Files committed | `src/core/TakeLane.cpp`; `tests/src/core/TakeLaneTest.cpp`; `tests/fork-sources.txt`; `docs/qwen-fixes-2026-10/cluster-new-p8-234.md` |
 
 ## Commands and exit codes
 
