@@ -220,6 +220,27 @@ private slots:
 		QCOMPARE(transform.toJson().value(QStringLiteral("fixed_velocity")).toInt(), 90);
 	}
 
+	//! The attribute must be an OBJECT to be a transform. "[]" is valid JSON,
+	//! so it passed the parse guard, but document.object() answers an empty
+	//! object for an array - the candidate accepted it and the track's
+	//! transform was replaced with the identity: what the user had was gone.
+	void aValidJsonArrayIsNotATransform()
+	{
+		QDomDocument doc;
+		MidiInputTransform transform;
+		QVERIFY(set(transform, {{QStringLiteral("transpose"), 12}}));
+		QDomElement track = doc.createElement(QStringLiteral("instrumenttrack"));
+
+		track.setAttribute(QStringLiteral("inputtransform"), QStringLiteral("[]"));
+		transform.load(track);  // valid JSON, but an array
+		QCOMPARE(transform.toJson().value(QStringLiteral("transpose")).toInt(), 12);
+
+		track.setAttribute(QStringLiteral("inputtransform"), QStringLiteral("\"transpose\""));
+		transform.load(track);  // valid JSON, but a string
+		QCOMPARE(transform.toJson().value(QStringLiteral("transpose")).toInt(), 12);
+		QVERIFY(transform.active());
+	}
+
 	//! Every setting is an integer. QJsonValue::toInt() answers the DEFAULT (0)
 	//! for a number that is not whole, so a fractional value used to pass the
 	//! range check and be stored as that default: 'transpose': 2.5 was accepted
