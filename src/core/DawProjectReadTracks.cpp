@@ -253,6 +253,83 @@ void parseLanes(QXmlStreamReader& reader, ReadState& state)
 	}
 }
 
+	//! The format declares a channel value as a RealParameter carrying its own
+	//! unit and bounds on the element (`<Volume unit="linear" min="0" max="2"
+	//! value="1">`, docs/DAWPROJECT-INTERCHANGE.md:193/198) - the bounds belong to
+	//! the DOCUMENT, so a foreign writer may declare any range. A value outside the
+	//! element's declared bounds is not a value the document can mean: a format-range
+	//! error naming the declared bound. An absent min/max declares no format bound;
+	//! the models' own reach (the mixer fader 0..2, the track volume 0..200/100, the
+	//! panning model -100..100/200) is checked separately, as an import-compatibility
+	//! error - the two refusals are kept distinct. A min/max that is PRESENT but
+	//! empty declares a malformed bound, not an absent one: refused through the
+	//! same malformed-attribute rule that refuses `min="abc"`.
+	inline void refusePresentEmptyBound(ReadState& state, const QXmlStreamAttributes& attributes,
+		const QString& name)
+	{
+		if (attributes.hasAttribute(name) && attribute(attributes, name).isEmpty())
+		{
+			malformedNumericAttribute(state, name, QString());
+		}
+	}
+
+	inline void declaredChannelBounds(ReadState& state, const QXmlStreamAttributes& attributes,
+		const QString& name, double value, double modelMin, double modelMax)
+	{
+		if (!state.error.isEmpty()) { return; }
+		refusePresentEmptyBound(state, attributes, QStringLiteral("min"));
+		refusePresentEmptyBound(state, attributes, QStringLiteral("max"));
+		const QString minText = attribute(attributes, QStringLiteral("min"));
+		const QString maxText = attribute(attributes, QStringLiteral("max"));
+		const double lowest = doubleAttribute(attributes, state, QStringLiteral("min"), modelMin);
+		const double highest = doubleAttribute(attributes, state, QStringLiteral("max"), modelMax);
+		if (!state.error.isEmpty()) { return; }
+		if (!minText.isEmpty() && value < lowest)
+		{
+			state.error = QStringLiteral("the channel %1 carries %2, below the document's declared "
+				"minimum %3").arg(name).arg(value).arg(lowest);
+			return;
+		}
+		if (!maxText.isEmpty() && value > highest)
+		{
+			state.error = QStringLiteral("the channel %1 carries %2, above the document's declared "
+				"maximum %3").arg(name).arg(value).arg(highest);
+			return;
+		}
+		if (value < modelMin || value > modelMax)
+		{
+			state.error = QStringLiteral("the channel %1 carries %2, which Zene's models cannot hold - "
+				"their reach is %3..%4 - an import-compatibility refusal")
+				.arg(name).arg(value).arg(modelMin).arg(modelMax);
+		}
+	}
+
+	//! The unit a RealParameter declares must be one Zene's models speak: the writer
+	//! emits `linear` for Volume and `normalized` for Pan; the schema REQUIRES the
+	//! attribute, so a missing or empty unit is refused outright - the value has no
+	//! declared meaning - and a foreign one (say `decibel`, a valid schema unit the
+	//! models do not speak) means the value is not one the models can convert - an
+	//! import-compatibility refusal, kept distinct from a format-range one.
+	inline void declaredChannelUnit(ReadState& state, const QXmlStreamAttributes& attributes,
+		const QString& name, const QString& modelUnit)
+	{
+		if (!state.error.isEmpty()) { return; }
+		const QString unit = attribute(attributes, QStringLiteral("unit"));
+		if (unit.isEmpty())
+		{
+			state.error = QStringLiteral("the channel %1 carries no unit; the format requires every "
+				"RealParameter to declare one, so its value has no declared meaning").arg(name);
+			return;
+		}
+		if (unit != modelUnit)
+		{
+			state.error = QStringLiteral("the channel %1 declares unit \"%2\"; Zene's models read "
+				"%3 as \"%4\" and cannot convert the difference - an import-compatibility refusal")
+				.arg(name).arg(unit).arg(name).arg(modelUnit);
+		}
+	}
+
+
 /*! The values of one <Channel>, whether it sits inside a <Track> (the track's
  *  own strip) or directly in <Structure> (a mixer strip). The format gives both
  *  the same children - Volume, Mute, Pan, Sends, Devices - so one reader serves
@@ -295,6 +372,8 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 		{
 			values.hasVolume = true;
 			values.volume = doubleAttribute(childAttributes, state, QStringLiteral("value"), 1.0);
+			declaredChannelUnit(state, childAttributes, QStringLiteral("Volume"), QStringLiteral("linear"));
+			declaredChannelBounds(state, childAttributes, QStringLiteral("Volume"), values.volume, 0.0, 2.0);
 		}
 		else if (child == QLatin1String("Mute"))
 		{
@@ -304,6 +383,8 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 		{
 			values.hasPan = true;
 			values.pan = doubleAttribute(childAttributes, state, QStringLiteral("value"), 0.5);
+			declaredChannelUnit(state, childAttributes, QStringLiteral("Pan"), QStringLiteral("normalized"));
+			declaredChannelBounds(state, childAttributes, QStringLiteral("Pan"), values.pan, 0.0, 1.0);
 		}
 		else if (child == QLatin1String("Sends"))
 		{

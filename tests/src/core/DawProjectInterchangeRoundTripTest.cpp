@@ -1046,6 +1046,227 @@ private slots:
 			"an empty metre numerator was read as the 4/4 default");
 	}
 
+	//! Luna cluster new-p8-113: the format declares each channel value as a RealParameter
+	//! carrying its OWN unit and bounds on the element (`<Volume unit="linear" min="0"
+	//! max="2" value="1">`, docs/DAWPROJECT-INTERCHANGE.md:193/198) - those bounds belong
+	//! to the document, so a finite number outside them is not a value the document can
+	//! mean: it is refused rather than read and clamped silently when the model is applied.
+	void outOfRangeChannelValuesAreRefused()
+	{
+		const QString strip =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Channel id=\"m0\" role=\"master\">%1</Channel></Structure></Project>";
+		for (const char* child : {"<Volume unit=\"linear\" min=\"0\" max=\"2\" value=\"4\"/>",
+			"<Volume unit=\"linear\" min=\"0\" max=\"2\" value=\"-0.5\"/>",
+			"<Pan unit=\"normalized\" min=\"0\" max=\"1\" value=\"-1\"/>",
+			"<Pan unit=\"normalized\" min=\"0\" max=\"1\" value=\"1.5\"/>"})
+		{
+			const QByteArray xml = strip.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the mixer strip carried %1").arg(QLatin1String(child))));
+		}
+
+		const QString track =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\">%1</Channel></Track></Structure></Project>";
+		for (const char* child : {"<Volume unit=\"linear\" min=\"0\" max=\"2\" value=\"2.5\"/>",
+			"<Pan unit=\"normalized\" min=\"0\" max=\"1\" value=\"-0.25\"/>"})
+		{
+			const QByteArray xml = track.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				"an out-of-range track channel value was accepted");
+		}
+
+		// The positive half: the endpoints of the declared range still read.
+		const QByteArray inRange =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Channel id=\"m0\" role=\"master\">"
+			"<Volume unit=\"linear\" min=\"0\" max=\"2\" value=\"2\"/><Pan unit=\"normalized\" min=\"0\" max=\"1\" value=\"0\"/></Channel>"
+			"<Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"><Volume unit=\"linear\" min=\"0\" max=\"2\" value=\"0\"/><Pan unit=\"normalized\" min=\"0\" max=\"1\" value=\"1\"/></Channel></Track>"
+			"</Structure></Project>";
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(inRange, &model, &report, &error), qPrintable(error));
+		QCOMPARE(model.mixerChannels.size(), 1);
+		QCOMPARE(model.mixerChannels[0].volume, 2.0);
+		QCOMPARE(model.tracks.size(), 1);
+		QCOMPARE(model.tracks[0].hasVolume, true);
+		QCOMPARE(model.tracks[0].volume, 0.0);
+		QCOMPARE(model.tracks[0].hasPan, true);
+		QCOMPARE(model.tracks[0].pan, 1.0);
+	}
+
+	//! Luna round 2: the bounds a RealParameter declares are the DOCUMENT's, not the
+	//! format's - 0..2/0..1 are only what this build's writer emits (its models' own
+	//! reach: the mixer fader 0..2, the track volume 0..200/100, the panning model
+	//! -100..100/200). A narrower declared range must refuse values the models could
+	//! hold (a format-range error); a wider one must not stretch the models (an
+	//! import-compatibility error, kept distinct); a unit the models do not speak is
+	//! refused too; absent min/max declare no format bound.
+	void declaredBoundsUnitsAndModelReach()
+	{
+		const QString strip =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Channel id=\"m0\" role=\"master\">%1</Channel></Structure></Project>";
+
+		// Narrower declared bounds: inside the models' reach but outside the
+		// document's own range - refused as format-range errors.
+		for (const char* child : {"<Volume unit=\"linear\" min=\"0.5\" max=\"1.5\" value=\"1.75\"/>",
+			"<Volume unit=\"linear\" min=\"0.5\" max=\"1.5\" value=\"0.25\"/>",
+			"<Pan unit=\"normalized\" min=\"0.25\" max=\"0.75\" value=\"0.9\"/>"})
+		{
+			const QByteArray xml = strip.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the mixer strip carried %1").arg(QLatin1String(child))));
+			QVERIFY2(error.contains("declared"), qPrintable(error));
+		}
+
+		// Wider declared bounds: inside the file's bounds but past the models' reach -
+		// an import-compatibility refusal, distinct from a format-range one.
+		{
+			const QByteArray xml = strip.arg(QLatin1String(
+				"<Volume unit=\"linear\" min=\"-5\" max=\"5\" value=\"3\"/>")).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				"a value past the models' reach was accepted");
+			QVERIFY2(error.contains("cannot hold"), qPrintable(error));
+		}
+
+		// A unit the models do not speak is refused even when the value fits -
+		// `decibel` is a valid schema unit, unlike the made-up `db`.
+		{
+			const QByteArray xml = strip.arg(QLatin1String(
+				"<Volume unit=\"decibel\" min=\"-24\" max=\"0\" value=\"-12\"/>")).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				"a foreign unit was accepted");
+			QVERIFY2(error.contains("unit"), qPrintable(error));
+		}
+
+		// Absent min/max declare no format bound: the models' reach still applies.
+		{
+			const QByteArray ok = strip.arg(QLatin1String(
+				"<Volume unit=\"linear\" value=\"1\"/>")).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(dawProjectModelFromXml(ok, &model, &report, &error), qPrintable(error));
+			QCOMPARE(model.mixerChannels.size(), 1);
+			QCOMPARE(model.mixerChannels[0].volume, 1.0);
+
+			const QByteArray past = strip.arg(QLatin1String(
+				"<Volume unit=\"linear\" value=\"3\"/>")).toLatin1();
+			DawProjectModel pastModel;
+			DawProjectReadReport pastReport;
+			QString pastError;
+			QVERIFY2(!dawProjectModelFromXml(past, &pastModel, &pastReport, &pastError),
+				"a value past the models' reach was accepted");
+			QVERIFY2(pastError.contains("cannot hold"), qPrintable(pastError));
+		}
+
+		// Custom bounds endpoints are inclusive: 0.5 and 1.5 read.
+		{
+			const QByteArray lo = strip.arg(QLatin1String(
+				"<Volume unit=\"linear\" min=\"0.5\" max=\"1.5\" value=\"0.5\"/>")).toLatin1();
+			const QByteArray hi = strip.arg(QLatin1String(
+				"<Volume unit=\"linear\" min=\"0.5\" max=\"1.5\" value=\"1.5\"/>")).toLatin1();
+			DawProjectModel loModel;
+			DawProjectReadReport loReport;
+			QString loError;
+			QVERIFY2(dawProjectModelFromXml(lo, &loModel, &loReport, &loError), qPrintable(loError));
+			QCOMPARE(loModel.mixerChannels[0].volume, 0.5);
+			DawProjectModel hiModel;
+			DawProjectReadReport hiReport;
+			QString hiError;
+			QVERIFY2(dawProjectModelFromXml(hi, &hiModel, &hiReport, &hiError), qPrintable(hiError));
+			QCOMPARE(hiModel.mixerChannels[0].volume, 1.5);
+		}
+	}
+
+	//! Luna round 3: `unit` is REQUIRED on every RealParameter in the schema, so a
+	//! missing or empty one is refused outright - the value has no declared meaning;
+	//! a valid schema unit the models do not speak (`decibel`) is an import-
+	//! compatibility refusal; and a min/max that is PRESENT but empty declares a
+	//! malformed bound, not an absent one - refused, while absent min/max still
+	//! declare no format bound.
+	void requiredUnitsAndPresentEmptyBoundsAreRefused()
+	{
+		const QString strip =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Channel id=\"m0\" role=\"master\">%1</Channel></Structure></Project>";
+
+		// A missing or empty unit: the schema requires RealParameter.unit, so the
+		// value has no declared meaning - refused.
+		for (const char* child : {"<Volume value=\"1\"/>",
+			"<Volume unit=\"\" value=\"1\"/>",
+			"<Pan value=\"0.5\"/>",
+			"<Pan unit=\"\" value=\"0.5\"/>"})
+		{
+			const QByteArray xml = strip.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the mixer strip carried %1").arg(QLatin1String(child))));
+			QVERIFY2(error.contains("no unit"), qPrintable(error));
+		}
+
+		// A valid schema unit the models do not speak, refused even when the value
+		// fits the models' reach - an import-compatibility error.
+		{
+			const QByteArray xml = strip.arg(QLatin1String(
+				"<Volume unit=\"decibel\" min=\"-24\" max=\"0\" value=\"-12\"/>")).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				"a valid but unsupported unit was accepted");
+			QVERIFY2(error.contains("cannot convert"), qPrintable(error));
+		}
+
+		// Present-empty min/max: an attribute the document carries with no number -
+		// malformed, refused; absent min/max still declare no bound (covered above).
+		for (const char* child : {"<Volume unit=\"linear\" min=\"\" max=\"2\" value=\"1\"/>",
+			"<Volume unit=\"linear\" min=\"0\" max=\"\" value=\"1\"/>",
+			"<Pan unit=\"normalized\" min=\"\" max=\"1\" value=\"0.5\"/>"})
+		{
+			const QByteArray xml = strip.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+		 QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the mixer strip carried %1").arg(QLatin1String(child))));
+			QVERIFY2(error.contains("not a number"), qPrintable(error));
+		}
+	}
+
+
 	//! Luna cluster 5064: an automation point's time is a beat like any other, so
 	//! it goes through the same bounded tick conversion - and is counted in
 	//! `rounded_times` when it is not on the 48-tick grid - instead of being kept
