@@ -198,6 +198,20 @@ private slots:
 		QCOMPARE(rows.first().row(), 2);
 	}
 
+	void ctrlClickClearsTheOnlySelectedRow()
+	{
+		QTableView* table = m_panel->table();
+		const QModelIndex index = table->model()->index(1, 0);
+		table->selectionModel()->setCurrentIndex(index, QItemSelectionModel::NoUpdate);
+		table->selectRow(1);
+		QVERIFY(noteAt(m_clip, 0, 64)->selected());
+
+		QTest::mouseClick(table->viewport(), Qt::LeftButton, Qt::ControlModifier, table->visualRect(index).center());
+
+		QTRY_VERIFY(!noteAt(m_clip, 0, 64)->selected());
+		QVERIFY(table->selectionModel()->selectedRows().isEmpty());
+	}
+
 	void theControllerListEditsTheLane()
 	{
 		m_editor->setControllerLane(QStringLiteral("cc:7"));
