@@ -2013,7 +2013,8 @@ void Mixer::updateLatencyCompensation()
 
 	const int masterChain =
 		std::max(0, m_mixerChannels[0]->m_fxChain.latencyFrames())
-		+ std::max(0, m_mixerChannels[0]->m_postInserts.chain().latencyFrames());  // 0.5.0 MX-082
+		+ std::max(0, m_mixerChannels[0]->m_postInserts.chain().latencyFrames())  // 0.5.0 MX-082
+		+ hardwareio::insertLatency( *m_mixerChannels[0] );
 	const int alignment = m_latencyInputScratch[0];
 	// The alignment point is realised by delaying the earlier paths; no path
 	// can be delayed by more than the ring capacity, so a clamped alignment

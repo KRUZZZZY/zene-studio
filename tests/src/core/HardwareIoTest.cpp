@@ -291,6 +291,20 @@ private slots:
 		QCOMPARE(Engine::mixer()->totalLatencyFrames(), 0);
 	}
 
+	void masterHardwareInsertLatencyIsIncludedInTotal()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(ok(QStringLiteral("mixer.hardware_insert"), {{QStringLiteral("channel"), ch(0)}, {QStringLiteral("enabled"), true},
+			{QStringLiteral("send"), QStringLiteral("3/4")}, {QStringLiteral("return"), QStringLiteral("1/2")},
+			{QStringLiteral("latency_frames"), 123}}));
+		period(mixer);  // updateLatencyCompensation publishes the graph at the period boundary
+		QCOMPARE(mixer->mixerChannel(0)->m_hardwareIo.insert.latencyFrames(), 123);
+		QCOMPARE(mixer->totalLatencyFrames(), 123);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		period(mixer);
+		QCOMPARE(mixer->totalLatencyFrames(), 0);
+	}
+
 	void destinationsParse()
 	{
 		audioio::Side outputs;
