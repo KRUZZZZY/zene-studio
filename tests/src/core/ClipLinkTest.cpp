@@ -513,6 +513,7 @@ private slots:
 		const ControlResult linked = registry->invoke(QStringLiteral("clip.link_create"),
 			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}});
 		QVERIFY2(linked.ok, qPrintable(linked.errorMessage));
+		const int group = linked.result.value(QStringLiteral("group")).toInt();
 
 		const ControlResult note = registry->invoke(QStringLiteral("note.add"),
 			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 62},
@@ -527,6 +528,9 @@ private slots:
 		QVERIFY2(unlinked.ok, qPrintable(unlinked.errorMessage));
 		QCOMPARE(unlinked.result.value(QStringLiteral("removed")).toString(), b);
 		QVERIFY(unlinked.result.value(QStringLiteral("dissolved")).toBool());
+		const ControlRegistry::Transaction* unlinkTransaction = registry->lastTransaction();
+		QVERIFY(unlinkTransaction != nullptr);
+		QCOMPARE(unlinkTransaction->before.value(QStringLiteral("group")).toInt(), group);
 		QCOMPARE(noteCount(b), 1);
 		QCOMPARE(noteCount(a), 1);
 
