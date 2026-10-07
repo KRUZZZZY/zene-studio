@@ -86,7 +86,9 @@ ControlResult saveVersion(const QJsonObject& args)
 	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
 	if (name.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a version needs a name")); }
 	Set after = before;
-	after.clips.insert(name, TrackVersions::clipsOf(track));
+	const QString clips = TrackVersions::clipsOf(track);
+	if (!before.active.isEmpty()) { after.clips.insert(before.active, clips); }
+	after.clips.insert(name, clips);
 	after.active = name;
 	commit(track->id(), before, after);
 	return ControlResult::success(report(track, after));

@@ -119,8 +119,8 @@ private slots:
 		track->createClip(TimePos(384));
 		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("B")}}).ok);
 		QVERIFY(run(QStringLiteral("track.version_switch"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
-		QCOMPARE(track->getClips().size(), std::size_t{1});
-		QCOMPARE(track->getClips().front()->name(), QStringLiteral("old bass"));
+		QCOMPARE(track->getClips().size(), std::size_t{2});
+		QCOMPARE(track->getClips().front()->name(), QStringLiteral("new bass"));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // back on B, both clips
 		QCOMPARE(track->getClips().size(), std::size_t{2});
 		QCOMPARE(TrackVersions::instance().of(track->id()).active, QStringLiteral("B"));
@@ -132,6 +132,24 @@ private slots:
 			ControlErrorKind::NotFound);
 		QCOMPARE(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral(" ")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+	}
+
+	void savingAnotherVersionPreservesEditsToTheActiveVersion()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		const QString id = control::trackIdOf(track);
+		track->createClip(TimePos(0))->setName(QStringLiteral("original A"));
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+
+		track->deleteClips();
+		track->createClip(TimePos(192))->setName(QStringLiteral("edited A"));
+		track->createClip(TimePos(384))->setName(QStringLiteral("second edit"));
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("B")}}).ok);
+		QVERIFY(run(QStringLiteral("track.version_switch"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+
+		QCOMPARE(track->getClips().size(), std::size_t{2});
+		QCOMPARE(track->getClips().front()->name(), QStringLiteral("edited A"));
+		QCOMPARE(track->getClips().back()->name(), QStringLiteral("second edit"));
 	}
 
 	void aVersionIsListedAndForgotten()
