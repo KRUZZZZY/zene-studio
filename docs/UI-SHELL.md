@@ -128,6 +128,13 @@ and it declares that command in its `controlCommand` property for the agent-surf
   screen's available area, or the nearest connected screen's. One never placed opens centred.
   The project's MDI-era placement for them is still not used (it was relative to the hidden
   workspace).
+- **The main window remembers its place (theme 22, 2026-10-07).** A clean exit keeps its screen, its normal
+  (un-maximised) position and size and whether it was maximised (or full screen) in the personal config,
+  `ui/main.geometry` (`MainWindowGeometry.h`); the next start opens it there, fitted inside that screen's
+  available area - or the nearest connected screen's, when that one is gone - with room for the title bar,
+  and maximised over that normal place when it was maximised. With nothing remembered, or with `-geometry`
+  given, the start is what it was (maximised, or Qt's `-geometry`). An unattended run (an agent instance, or
+  no display) neither reads nor writes the place. Not stored in a project. `MainWindowGeometryTest`.
 - Editor geometry saved by MDI-era projects (`x`, `y`, `width`, `height`, `visible`,
   `maximized`) is **ignored safely**. For a panel's editor, `restoreWidgetState` finds no
   sub-window and does nothing (`ShellTest::mdiEraGeometryInAProjectIsIgnoredSafely`). The tool

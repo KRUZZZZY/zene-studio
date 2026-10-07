@@ -269,6 +269,7 @@ SET(LMMS_SRCS
 	gui/SideBarWidget.cpp
 	gui/StringPairDrag.cpp
 	gui/SubWindow.cpp
+	gui/MainWindowGeometry.cpp
 	gui/ToolWindowMemory.cpp
 	gui/ToolPluginView.cpp
 
@@ -323,6 +324,7 @@ SET(LMMS_SRCS
 
 	gui/tracks/AutomationTrackView.cpp
 	gui/tracks/FadeButton.cpp
+	gui/tracks/FolderSummaryLane.cpp
 	gui/tracks/InstrumentTrackView.cpp
 	gui/tracks/PatternTrackView.cpp
 	gui/tracks/SampleTrackView.cpp

@@ -311,6 +311,8 @@ include/FileRevealer.h
 include/FileSearchJob.h
 include/Flags.h
 include/FloatModelEditorBase.h
+include/FolderSummary.h
+include/FolderSummaryLane.h
 include/FollowActionEditor.h
 include/FontHelper.h
 include/Graph.h
@@ -412,6 +414,7 @@ include/MacroKnobs.h
 include/MacroMenu.h
 include/MainApplication.h
 include/MainWindow.h
+include/MainWindowGeometry.h
 include/MarkerActions.h
 include/MasterLoudnessTap.h
 include/MasteringChain.h
@@ -1728,6 +1731,7 @@ src/core/ExportDither.cpp
 src/core/ExportNoiseShaper.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
+src/core/FolderSummary.cpp
 src/core/GroovePool.cpp
 src/core/GrooveTemplate.cpp
 src/core/HardwareInsert.cpp
@@ -2107,6 +2111,7 @@ src/gui/MacroKnobs.cpp
 src/gui/MacroMenu.cpp
 src/gui/MainApplication.cpp
 src/gui/MainWindow.cpp
+src/gui/MainWindowGeometry.cpp
 src/gui/MenuBarExtras.cpp
 src/gui/MicrotunerConfig.cpp
 src/gui/MidiCCRackView.cpp
@@ -2287,6 +2292,7 @@ src/gui/shell/TransportReadouts.cpp
 src/gui/shell/WaveformPreview.cpp
 src/gui/tracks/AutomationTrackView.cpp
 src/gui/tracks/FadeButton.cpp
+src/gui/tracks/FolderSummaryLane.cpp
 src/gui/tracks/InstrumentTrackView.cpp
 src/gui/tracks/PatternTrackView.cpp
 src/gui/tracks/SampleTrackView.cpp
@@ -2648,6 +2654,7 @@ tests/src/gui/EffectRackAddTest.cpp
 tests/src/gui/ExportChannelsTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
 tests/src/gui/FeedbackModeActionTest.cpp
+tests/src/gui/FolderSummaryLaneTest.cpp
 tests/src/gui/GrooveMenuTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/HelpAccessTest.cpp
@@ -2657,6 +2664,7 @@ tests/src/gui/ItemListPanelTest.cpp
 tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/LaneReadoutTest.cpp
 tests/src/gui/LibraryMenusTest.cpp
+tests/src/gui/MainWindowGeometryTest.cpp
 tests/src/gui/MenuTestSupport.h
 tests/src/gui/MidiClockMenuTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp

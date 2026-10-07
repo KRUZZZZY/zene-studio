@@ -23,7 +23,8 @@
  */
 /*! 0.5.0 L05 (W3): a held 220 Hz tone reads as one A3 and silence as nothing (ED-160); audio to MIDI
  *  writes the line onto a new track and one undo removes it; the spectrogram's loudest band holds a
- *  1 kHz tone (ED-158); every clip of a folder moves together, one undo step (ED-035). */
+ *  1 kHz tone (ED-158); every clip of a folder moves together, one undo step (ED-035), and so does one of its
+ *  summary clips alone. */
 
 #include <QtTest>
 
@@ -36,6 +37,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "FolderSummary.h"
 #include "PitchTrack.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -163,6 +165,52 @@ private slots:
 		QCOMPARE(dynamic_cast<SampleClip*>(child->getClips().front())->startPosition().getTicks(), tick_t{384});
 		QCOMPARE(run(QStringLiteral("track.folder_move"), {{QStringLiteral("folder"), control::trackIdOf(child)}, {QStringLiteral("delta"), 1}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+	}
+
+	//! 0.5.0 ED-035: the folder's summary clips - the merged spans of its children's clips - and a span moved
+	//! alone through track.folder_move's 'start'/'end', one undo step; the other span stays where it was.
+	void aFolderSummarySpanMovesAlone()
+	{
+		Song* song = Engine::getSong();
+		auto* folder = dynamic_cast<TrackFolder*>(Track::create(Track::Type::Folder, song));
+		auto* a = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* b = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		for (Track* child : {static_cast<Track*>(a), static_cast<Track*>(b)})
+		{
+			QVERIFY(run(QStringLiteral("track.set_folder"), {{QStringLiteral("track"), control::trackIdOf(child)},
+				{QStringLiteral("folder"), control::trackIdOf(folder)}}).ok);
+		}
+		SampleClip* first = toneClip(a, 440.0, 0);
+		const tick_t length = first->length().getTicks();
+		SampleClip* overlapping = toneClip(b, 440.0, length / 2);       // overlaps the first: one span
+		SampleClip* later = toneClip(a, 440.0, 4 * length);            // a gap before it: a second span
+		const std::vector<FolderSpan> spans = folderSummary(*folder);
+		QCOMPARE(spans.size(), std::size_t{2});
+		QCOMPARE(spans[0].start, tick_t{0});
+		QCOMPARE(spans[0].end, length / 2 + length);
+		QCOMPARE(spans[0].clips, 2);
+		QCOMPARE(spans[1].start, 4 * length);
+		QCOMPARE(spans[1].clips, 1);
+
+		const QJsonObject span{{QStringLiteral("folder"), control::trackIdOf(folder)}, {QStringLiteral("delta"), 192},
+			{QStringLiteral("start"), static_cast<int>(spans[0].start)}, {QStringLiteral("end"), static_cast<int>(spans[0].end)}};
+		const ControlResult moved = run(QStringLiteral("track.folder_move"), span);
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QCOMPARE(moved.result.value(QStringLiteral("moved")).toInt(), 2);
+		QCOMPARE(first->startPosition().getTicks(), tick_t{192});
+		QCOMPARE(overlapping->startPosition().getTicks(), length / 2 + 192);
+		QCOMPARE(later->startPosition().getTicks(), 4 * length);  // outside the span: untouched
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(folderSummary(*folder).front().start, tick_t{0});
+		QCOMPARE(a->getClips().front()->startPosition().getTicks(), tick_t{0});
+
+		QJsonObject halfSpan = span;
+		halfSpan.remove(QStringLiteral("end"));
+		QCOMPARE(run(QStringLiteral("track.folder_move"), halfSpan).errorKind, ControlErrorKind::InvalidArgs);
+		QJsonObject empty = span;
+		empty.insert(QStringLiteral("start"), static_cast<int>(2 * length + length / 2));
+		empty.insert(QStringLiteral("end"), static_cast<int>(3 * length));
+		QCOMPARE(run(QStringLiteral("track.folder_move"), empty).errorKind, ControlErrorKind::NotFound);
 	}
 };
 

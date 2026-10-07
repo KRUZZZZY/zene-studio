@@ -133,6 +133,11 @@ controller number from CC 0 to CC 127**, named where MIDI names it ("Cutoff (CC 
 one shows its curve; a stroke writes it with one `clip.controllers_set`. A lane chosen by command
 (`window.note_editor_set` with `controller_lane: "cc:<n>"`) shows in the chooser as well.
 
+The playhead (the song position inside the clip, refreshed at 30 Hz while the song plays) is drawn
+across the expression lane and the controller lane as well as the note area, as one line in the
+same place (2026-10-07; `NoteEditor::showPlayhead`, `lanescale::paintPlayhead`;
+`LaneReadoutTest::theLanesShowThePlayhead`). When the song stops it leaves all three together.
+
 The brief also names a **gain** lane, but this engine has no per-note gain separate from
 velocity, which is the note's volume. Adding one would mean a new note attribute, a new
 project-format field and a change to the render path. That was not done; it is listed in §8.

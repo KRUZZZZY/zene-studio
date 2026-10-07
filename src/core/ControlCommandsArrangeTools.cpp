@@ -29,7 +29,8 @@
  *  - clip.remove_silence (ED-040): the stretches of a sample clip quieter than a threshold for longer
  *    than a length are cut out, as one undo step;
  *  - track.folder_move (ED-035): every clip inside a folder (its sub-folders too) moved together - the
- *    folder handled as one block of the song, one undo step. */
+ *    folder handled as one block of the song, one undo step; or, with a span, one of the folder's summary
+ *    clips (FolderSummary.h) - the clips starting inside it. */
 
 #include <algorithm>
 #include <cmath>
@@ -182,17 +183,56 @@ ControlResult removeSilence(const QJsonObject& args)
 	return ControlResult::success({{QStringLiteral("removed"), static_cast<int>(cuts.size())}});
 }
 
-//! The tracks inside @a folder that hold clips, and the earliest clip start among them in @a earliest.
-QVector<JournallingObject*> folderTracks(const TrackFolder* folder, tick_t* earliest)
+//! Whether a clip starting at @a start is one the move takes: inside [@a from, @a to), or any with no span.
+bool inSpan(tick_t start, tick_t from, tick_t to)
+{
+	return from < 0 || (start >= from && start < to);
+}
+
+//! The tracks inside @a folder holding clips the move takes, and the earliest start among those clips in @a earliest.
+QVector<JournallingObject*> folderTracks(const TrackFolder* folder, tick_t from, tick_t to, tick_t* earliest)
 {
 	QVector<JournallingObject*> tracks;
 	for (Track* track : Engine::getSong()->tracks())
 	{
-		if (!insideFolder(track, folder) || track->getClips().empty()) { continue; }
-		tracks.append(track);
-		for (const Clip* clip : track->getClips()) { *earliest = std::min<tick_t>(*earliest, clip->startPosition().getTicks()); }
+		if (!insideFolder(track, folder)) { continue; }
+		bool holds = false;
+		for (const Clip* clip : track->getClips())
+		{
+			if (!inSpan(clip->startPosition().getTicks(), from, to)) { continue; }
+			holds = true;
+			*earliest = std::min<tick_t>(*earliest, clip->startPosition().getTicks());
+		}
+		if (holds) { tracks.append(track); }
 	}
 	return tracks;
+}
+
+//! ED-035's summary clip: 'start' and 'end' together limit the move to the clips starting in [start, end); -1 for none.
+bool spanOf(const QJsonObject& args, tick_t* from, tick_t* to)
+{
+	const bool hasStart = args.contains(QStringLiteral("start"));
+	if (hasStart != args.contains(QStringLiteral("end"))) { return false; }
+	*from = hasStart ? args.value(QStringLiteral("start")).toInt() : -1;
+	*to = hasStart ? args.value(QStringLiteral("end")).toInt() : -1;
+	return !hasStart || *to > *from;
+}
+
+//! Move the clips of @a tracks starting in [@a from, @a to) (every one with no span) by @a delta; how many moved.
+int moveClips(const QVector<JournallingObject*>& tracks, tick_t from, tick_t to, tick_t delta)
+{
+	int moved = 0;
+	for (JournallingObject* object : tracks)
+	{
+		// The clips the move takes are found first: a moved clip must not be found again past its new start.
+		std::vector<Clip*> taken;
+		for (Clip* clip : static_cast<Track*>(object)->getClips())
+		{
+			if (inSpan(clip->startPosition().getTicks(), from, to)) { taken.push_back(clip); }
+		}
+		for (Clip* clip : taken) { clip->movePosition(TimePos(clip->startPosition().getTicks() + delta)); ++moved; }
+	}
+	return moved;
 }
 
 ControlResult folderMove(const QJsonObject& args)
@@ -200,17 +240,16 @@ ControlResult folderMove(const QJsonObject& args)
 	ControlResult error;
 	const auto* folder = dynamic_cast<const TrackFolder*>(resolveTrack(args.value(QStringLiteral("folder")).toString(), &error));
 	if (folder == nullptr) { return error.errorMessage.isEmpty() ? ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'folder' is a folder track")) : error; }
+	tick_t from = -1;
+	tick_t to = -1;
+	if (!spanOf(args, &from, &to)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'start' and 'end' come together, 'end' after 'start'")); }
 	const tick_t delta = args.value(QStringLiteral("delta")).toInt();
 	tick_t earliest = MaxSongLength;
-	const QVector<JournallingObject*> tracks = folderTracks(folder, &earliest);
-	if (tracks.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the folder holds no clips")); }
+	const QVector<JournallingObject*> tracks = folderTracks(folder, from, to, &earliest);
+	if (tracks.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the folder holds no clips there")); }
 	if (delta == 0 || earliest + delta < 0) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'delta' moves the clips, and not before the song's start")); }
 	addUndoStep(tracks);
-	int moved = 0;
-	for (JournallingObject* object : tracks)
-	{
-		for (Clip* clip : static_cast<Track*>(object)->getClips()) { clip->movePosition(TimePos(clip->startPosition().getTicks() + delta)); ++moved; }
-	}
+	const int moved = moveClips(tracks, from, to, delta);
 	Engine::getSong()->setModified();
 	return ControlResult::success({{QStringLiteral("moved"), moved}, {QStringLiteral("tracks"), static_cast<int>(tracks.size())}});
 }
@@ -238,8 +277,10 @@ void registerArrangeToolCommands(ControlRegistry& registry)
 		{{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("threshold_db"), numberProperty()},
 			{QStringLiteral("min_length"), integerProperty(1, 192 * 64)}}, {QStringLiteral("clip")}, true, removeSilence);
 	add(registry, "track.folder_move", QStringLiteral("Move every clip inside folder track 'folder' (its sub-folders too) by 'delta' "
-		"ticks - the folder's part of the song as one block. One undo step."),
-		{{QStringLiteral("folder"), stringProperty()}, {QStringLiteral("delta"), integerProperty(-192 * 9999, 192 * 9999)}},
+		"ticks - the folder's part of the song as one block. With 'start' and 'end' only the clips starting in [start, end) "
+		"move: one of the folder's summary clips, the spans its row draws. One undo step."),
+		{{QStringLiteral("folder"), stringProperty()}, {QStringLiteral("delta"), integerProperty(-192 * 9999, 192 * 9999)},
+			{QStringLiteral("start"), integerProperty(0, 192 * 9999)}, {QStringLiteral("end"), integerProperty(1, 192 * 9999)}},
 		{QStringLiteral("folder"), QStringLiteral("delta")}, true, folderMove);
 }
 

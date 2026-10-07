@@ -101,6 +101,7 @@ void ControllerLaneView::paintEvent(QPaintEvent*)
 	if (maximum() > 127) { p.fillRect(QRect(0, yOfValue(8192), width(), 1), pal.gridBeat); }  // pitch bend's centre
 	if (const ControllerLane* shown = lane()) { paintCurve(p, *shown); }
 	if (m_drawing && m_firstTick >= 0) { paintStroke(p); }
+	lanescale::paintPlayhead(p, rect(), m_editor->playheadX());
 	lanescale::paintLabels(p, rect(), scale, yOf);
 	if (m_hover.x() >= 0) { lanescale::paintReadout(p, rect(), m_hover, pointerReadout(scale)); }
 }

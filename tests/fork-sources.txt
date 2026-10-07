@@ -649,6 +649,8 @@ include/ExportNoiseShaper.h
 include/ExportQualityControls.h
 include/ExportRenderSettings.h
 include/FeedbackModeAction.h
+include/FolderSummary.h
+include/FolderSummaryLane.h
 include/FollowActionEditor.h
 include/GrooveMenu.h
 include/GroovePool.h
@@ -688,6 +690,7 @@ include/LoudnessReport.h
 include/LufsMeter.h
 include/MacroKnobs.h
 include/MacroMenu.h
+include/MainWindowGeometry.h
 include/MarkerActions.h
 include/MasterLoudnessTap.h
 include/MasteringChain.h
@@ -1450,6 +1453,7 @@ src/core/ExportDither.cpp
 src/core/ExportNoiseShaper.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
+src/core/FolderSummary.cpp
 src/core/GroovePool.cpp
 src/core/GrooveTemplate.cpp
 src/core/HardwareInsert.cpp
@@ -1700,6 +1704,7 @@ src/gui/LibraryCommandMenus.cpp
 src/gui/ListTable.cpp
 src/gui/MacroKnobs.cpp
 src/gui/MacroMenu.cpp
+src/gui/MainWindowGeometry.cpp
 src/gui/MenuBarExtras.cpp
 src/gui/MidiClockMenu.cpp
 src/gui/MidiControllerMenu.cpp
@@ -1822,6 +1827,7 @@ src/gui/shell/ShellTearOff.cpp
 src/gui/shell/ShellToolsMenu.cpp
 src/gui/shell/TransportReadouts.cpp
 src/gui/shell/WaveformPreview.cpp
+src/gui/tracks/FolderSummaryLane.cpp
 src/gui/widgets/ControlCues.cpp
 src/tracks/InstrumentTrackNotes.cpp
 src/tracks/TrackFolder.cpp

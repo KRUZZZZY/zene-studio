@@ -850,6 +850,31 @@ command id); if it grows, an action shipped without one.
 
 ---
 
+## 9a. Summary clips on the folder's row (0.5.0 ED-035, added 2026-10-07)
+
+The folder's row is no longer empty: `TrackFolder::createView` lays a `gui::FolderSummaryLane` over the
+row's content widget. It draws `folderSummary()` (`include/FolderSummary.h`): every clip of every track
+inside the folder at any depth, sorted, with overlapping or touching clips merged into one **span** - so
+each child clip lies inside exactly one summary clip. A summary clip carries a miniature of the clips it
+stands for, one row per child track (at most eight).
+
+The edits reuse existing commands, each of which checkpoints the tracks it touches, so each edit is one
+undo step:
+
+| Gesture | Command |
+| --- | --- |
+| drag | `track.folder_move` with `start`/`end` = the span: only the clips starting inside it move |
+| Ctrl+drag | `range.set` over the span's tracks, `range.copy`, `range.paste` at the drop (the paste is the step) |
+| menu: Duplicate summary clip | the same copy, pasted at the span's end |
+| menu: Delete summary clip | `range.set` over the span's tracks, `range.delete` (the arranger's ripple mode applies) |
+
+The range is interface state: the lane reads it first (`range.get`) and puts it back (or clears it)
+after the edit. The span arguments of `track.folder_move` are additive - without them the command moves
+the whole folder, as before; with one but not the other it is refused. A press or a context menu
+anywhere but on a summary clip goes on to the row's own content widget, as before. The lane re-reads the
+spans four times a second, so an edit made elsewhere (the socket, an undo) is redrawn. Nothing is saved:
+the summary is derived from the children every time.
+
 ## 10. What this document does not know
 
 Everything in this section is **UNVERIFIED** and each item names what would settle it. None of it was
