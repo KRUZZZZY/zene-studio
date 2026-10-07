@@ -6,6 +6,18 @@
 
 The affected ctest family contains one test, `PortMappingCodecTest`; the final run passed 1/1. The added assertion failed on the original decoder and failed again with the final production patch temporarily removed.
 
+## Evidence table
+
+| Evidence | Exact command or files | Result |
+| --- | --- | --- |
+| RED on original code | `ctest -R '^PortMappingCodecTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-181.r1/logs/test-1.log 2>&1; echo EXIT=$?` (from `build/tests`) | EXIT=8; the 8-byte mapping reply was incorrectly valid |
+| GREEN with fix | `ctest -R '^PortMappingCodecTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-181.r1/logs/test-8.log 2>&1; echo EXIT=$?` (from `build/tests`) | EXIT=0; 1/1 ctest test passed |
+| Reverse-patch proof | `ctest -R '^PortMappingCodecTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-181.r1/logs/test-7.log 2>&1; echo EXIT=$?` (from `build/tests`) | EXIT=8; the new assertion failed with the final production patch removed |
+| Affected-family count | `ctest -R '^PortMappingCodecTest$' --output-on-failure` (from `build/tests`) | 1 ctest test selected; final result 1/1 passed |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-181.r1/logs/gate-4.log 2>&1; echo EXIT=$?` | EXIT=0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-181.r1/logs/gate-5.log 2>&1; echo EXIT=$?` | EXIT=0 |
+| Files committed in `0c49ce7fd` | `src/core/PortMappingCodec.cpp`; `tests/src/core/PortMappingCodecTest.cpp`; `docs/qwen-fixes-2026-10/cluster-new-p8-181.md` | All three paths are in the fix commit |
+
 ## Evidence and command results
 
 Commands were run in the worktree unless the working directory is noted. Build and test output is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-181.r1/logs`.
