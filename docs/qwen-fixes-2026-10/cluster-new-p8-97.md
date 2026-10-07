@@ -1,56 +1,27 @@
-# Cluster new-p8-97: DAWproject tick-range export
+# Cluster new-p8-97
 
 Verdict: **FIXED**
 
+## Finding and change
+
+`src/core/DawProjectWrite.cpp:140` now checks clip and note endpoints using the tick values obtained by formatting each field to six decimals and converting it through `dawProjectTicksFromBeats()`. Since each operand is independently validated as nonnegative and in range, `startTicks <= max(tick_t) - durationTicks` rejects an overflowing endpoint without performing the overflowing addition. The checks are applied to clips at line 171 and notes at line 186.
+
+The existing 50,000,000-beat and serialization-rounding checks remain in `tests/src/core/DawProjectInterchangeRoundTripTest.cpp:1342`. New independent clip and note endpoint regressions are at lines 1370 and 1385; each uses a start that rounds to `tick_t` max and a one-tick duration.
+
 ## Evidence
 
-| File:line | Evidence |
-|---|---|
-| `src/core/DawProjectWrite.cpp:125` | `isSupportedTime()` now checks the source beat and the six-decimal value emitted to XML with `dawProjectBeatRepresentable()`. This matches the reader's rounded tick conversion and signed `tick_t` limit. |
-| `src/core/DawProjectModel.cpp:84` | `dawProjectBeatRepresentable()` rounds beat values to the 48-tick grid and checks the result against `tick_t` bounds. |
-| `src/core/DawProjectRead.cpp:116` | The reader refuses a point before converting an unrepresentable beat. |
-| `tests/src/core/DawProjectInterchangeRoundTripTest.cpp:1335` | Regression calls `writeDawProject()` and rejects clip and note times at 50,000,000 beats, plus a value whose six-decimal serialization rounds over the tick limit. |
-| `tests/src/core/DawProjectInterchangeRoundTripTest.cpp:638` | The importer refusal test packages its deliberately invalid `1e300` tempo point as raw XML in a ZIP and asserts the parser rejects it specifically for the 48-tick grid. |
-
-The test family contains one CTest case. The final QtTest run reported 35 passed, 0 failed.
-
-## Verification command ledger
-
-Build and gate commands ran from the worktree root. The CTest and direct QtTest commands ran from `build/tests`. Each build/test output was saved under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r1/logs`.
-
-| Purpose | Exact command | Exit | Evidence |
-|---|---|---:|---|
-| Initial regression build | `cmake --build build --target DawProjectInterchangeRoundTripTest` | 0 | `build-1.log` |
-| Initial RED | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 8 | `test-1.log`: new clip-time assertion failed; 34 passed, 1 failed. |
-| Fixed build before adapting the import fixture | `cmake --build build --target zene DawProjectInterchangeRoundTripTest` | 0 | `build-2.log` |
-| Intermediate run | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 8 | `test-2.log`: the existing import test still tried to create its invalid input through the writer. The fixture was changed to raw XML in a ZIP. |
-| Build with the adjusted fixture | `cmake --build build --target zene DawProjectInterchangeRoundTripTest` | 0 | `build-3.log` |
-| GREEN | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 0 | `test-3.log`: 1/1 CTest case passed. |
-| Rechecked raw import fixture | `cmake --build build --target zene DawProjectInterchangeRoundTripTest` | 0 | `build-6.log` |
-| Rechecked import fixture | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 0 | `test-7.log`: 1/1 CTest case passed. |
-| Save and remove product fix for proof | `git diff -- src/core/DawProjectWrite.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r1/logs/fix.patch` | 0 | Regression proof setup. |
-| Build with product fix removed | `cmake --build build --target zene DawProjectInterchangeRoundTripTest` | 0 | `build-4.log` |
-| RED with product fix removed | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 8 | `test-4.log`: the new clip-time assertion failed again; 34 passed, 1 failed. |
-| Restore product fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r1/logs/fix.patch` | 0 | Regression proof restoration. |
-| Rebuild restored fix | `cmake --build build --target zene DawProjectInterchangeRoundTripTest` | 0 | `build-5.log` |
-| GREEN after restoration | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 0 | `test-5.log`: 1/1 CTest case passed. |
-| Final save and remove product fix | `git diff -- src/core/DawProjectWrite.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r1/logs/fix.patch` | 0 | Regression proof against the final test source. |
-| Build with product fix removed | `cmake --build build --target zene DawProjectInterchangeRoundTripTest` | 0 | `build-7.log` |
-| Final RED with product fix removed | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 8 | `test-8.log`: the new clip-time assertion failed again; 34 passed, 1 failed. |
-| Final restore product fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r1/logs/fix.patch` | 0 | Regression proof restoration. |
-| Final rebuild | `cmake --build build --target zene DawProjectInterchangeRoundTripTest` | 0 | `build-8.log` |
-| Final GREEN | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 0 | `test-9.log`: 1/1 CTest case passed. |
-| Build using the actual export API in the regression | `cmake --build build --target zene DawProjectInterchangeRoundTripTest` | 0 | `build-9.log` |
-| GREEN using the actual export API | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 0 | `test-11.log`: 1/1 CTest case passed. |
-| Save and remove fix for actual-export proof | `git diff -- src/core/DawProjectWrite.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r1/logs/fix.patch` | 0 | Regression proof setup. |
-| Final fix-removal build | `cmake --build build --target zene DawProjectInterchangeRoundTripTest` | 0 | `build-10.log` |
-| Final RED using the actual export API | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 8 | `test-12.log`: `writeDawProject()` accepted the 50,000,000-beat clip when the fix was removed; 34 passed, 1 failed. |
-| Restore fix for actual-export proof | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r1/logs/fix.patch` | 0 | Regression proof restoration. |
-| Final restored build | `cmake --build build --target zene DawProjectInterchangeRoundTripTest` | 0 | `build-11.log` |
-| Final GREEN using the actual export API | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 0 | `test-13.log`: 1/1 CTest case passed. |
-| Final QtTest count | `./DawProjectInterchangeRoundTripTest` | 0 | `test-14.log`: 35 passed, 0 failed. |
-| Complexity ratchet | `bash tests/complexity-gate.sh --check` | 0 | `gate-7.log` |
-| File-length ratchet | `bash tests/file-length-gate.sh --check` | 0 | `gate-8.log` |
+| Check | Exact command | Exit and result |
+|---|---|---|
+| Initial RED build | `cmake --build build --target DawProjectInterchangeRoundTripTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r2/logs/build-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| Initial RED CTest, from `build/tests` | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r2/logs/test-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 8; the new clip endpoint assertion failed before the product change |
+| Remove only product patch | `git diff -- src/core/DawProjectWrite.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r2/logs/fix.patch; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| Proof RED build | `cmake --build build --target DawProjectInterchangeRoundTripTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r2/logs/build-10.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| Proof RED CTest, from `build/tests` | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r2/logs/test-9.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 8; both independent endpoint slots failed, proving each regression catches the bug |
+| Restore product patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r2/logs/fix.patch; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| Final GREEN build | `cmake --build build --target DawProjectInterchangeRoundTripTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r2/logs/build-11.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| Final GREEN CTest, from `build/tests` | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r2/logs/test-10.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0; **1/1 CTest target executed and passed** |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r2/logs/complexity-3.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-97.r2/logs/file-length-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
 
 ## Files committed
 

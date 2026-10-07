@@ -1363,6 +1363,37 @@ void writerRefusesBeatTimesOutsideTheTickRange()
 	roundedClip.tracks[0].clips[0].time = roundsPastRange;
 	QVERIFY2(!writeDawProject(file, roundedClip, &report, &error),
 		"six-decimal serialization rounded a representable beat into an unrepresentable tick");
+
+}
+
+//! Individually representable fields must not create an overflowing clip end.
+void writerRefusesAClipEndpointPastTheTickRange()
+{
+	DawProjectModel model = authoredModel();
+	DawProjectWriteReport report;
+	QString error;
+	const QString file = path(m_directory, QStringLiteral("clip-endpoint-overflow.dawproject"));
+	const double maxTickBeat = static_cast<double>(std::numeric_limits<tick_t>::max())
+		/ DawProjectTicksPerQuarterNote;
+	model.tracks[0].clips[0].time = maxTickBeat;
+	model.tracks[0].clips[0].duration = 1.0 / DawProjectTicksPerQuarterNote;
+	QVERIFY2(!writeDawProject(file, model, &report, &error),
+		"a clip endpoint beyond the engine's tick range was written");
+}
+
+//! Individually representable fields must not create an overflowing note end.
+void writerRefusesANoteEndpointPastTheTickRange()
+{
+	DawProjectModel model = authoredModel();
+	DawProjectWriteReport report;
+	QString error;
+	const QString file = path(m_directory, QStringLiteral("note-endpoint-overflow.dawproject"));
+	const double maxTickBeat = static_cast<double>(std::numeric_limits<tick_t>::max())
+		/ DawProjectTicksPerQuarterNote;
+	model.tracks[0].clips[0].notes[0].time = maxTickBeat;
+	model.tracks[0].clips[0].notes[0].duration = 1.0 / DawProjectTicksPerQuarterNote;
+	QVERIFY2(!writeDawProject(file, model, &report, &error),
+		"a note endpoint beyond the engine's tick range was written");
 }
 
 //! Luna cluster 5067: dawProjectXmlFromModel(DawProjectModel{}) SUCCEEDED and
