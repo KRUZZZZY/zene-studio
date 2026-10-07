@@ -2091,3 +2091,4 @@ tools/local-ci.sh
 # BUG-A4-1/A4-2: shared iterative XML depth guard used by DataFile and container parsing.
 tools/ncpu-shim.c
 tests/src/core/MidiClipControllersLoadTest.cpp
+tests/src/core/TrackKeyNamesLoadTest.cpp

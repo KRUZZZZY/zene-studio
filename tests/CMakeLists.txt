@@ -598,6 +598,8 @@ set(LMMS_TESTS
 	src/core/AutomationLanesTest.cpp
 	# 0.5.0 L07: the note editor's commands - scale, ratchet, add_many, list, find and change, swing, key names.
 	src/core/NoteEditingCommandsTest.cpp
+	# Luna cluster 5429: a <key-names> <key> element without a numeric key attribute is skipped, not key 0.
+	src/core/TrackKeyNamesLoadTest.cpp
 	# 0.5.0 L07: note.edit's range validation - a note may not end past MaxSongLength.
 	src/core/NoteEditRangeTest.cpp
 	# 0.5.0 L07: what the note-shape verbs refuse - a past-the-limit note, a malformed filter field, an unholdable amount.
