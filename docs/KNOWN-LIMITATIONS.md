@@ -2351,3 +2351,13 @@ after its in-point, for `length` ticks, repeats across the clip once playback pa
   menu's "Loop the Content..." form.
 - An older build loads a looped clip as an unlooped one (it ignores the new attributes), so the clip falls silent
   after its audio ends there.
+
+**Rotated audio content (ED-028, `note.rotate` on an audio clip).** The clip's content turns `amount` ticks later
+(negative: earlier) with wrap-around - inside its loop, or inside the clip, which then becomes a loop over exactly
+the audio it plays - one undo step each (`AudioClipLoopTest`). What it does not do:
+- It is a loop offset, not an edit of the audio: the waveform drawn on the clip does not move, and the rotation
+  plays only where the loop plays (the plain-clip rule above).
+- It refuses, typed, a clip longer than its audio with no loop (loop it first), a clip whose audio starts after
+  the clip, and a looped clip whose start plays before its loop (an intro does not repeat, so it cannot turn).
+- The command keeps its MIDI name (`note.rotate`) rather than adding a `clip.rotate`, so the canary did not move;
+  `scope` is not read on an audio clip. The clip menu's entry is Process > Rotate Content...

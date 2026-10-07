@@ -122,6 +122,59 @@ bool withLoop(const SampleClip& clip, int startTicks, int lengthTicks, ClipEdits
 	return true;
 }
 
+namespace
+{
+
+//! The loop a rotation turns inside: the clip's own, or (none yet) one over exactly the audio the clip plays.
+bool rotationLoop(const SampleClip& clip, std::int64_t first, ClipEdits* edits, QString* error)
+{
+	if (first < 0)
+	{
+		*error = QStringLiteral("the clip's audio starts after the clip, so its content cannot turn round");
+		return false;
+	}
+	if (edits->hasAudioLoop()) { return true; }
+	const SampleWindow own = clip.sampleWindow();
+	const auto in = static_cast<std::int64_t>(own.sourceIn);
+	const std::int64_t last = elapsedFrames(clip, clip.endPosition());
+	if (last <= first || in + last > static_cast<std::int64_t>(own.sourceOut))
+	{
+		*error = QStringLiteral("the clip is longer than its audio: loop it first (clip.set_loop), then rotate the loop");
+		return false;
+	}
+	edits->audioLoopStart = in + first;
+	edits->audioLoopFrames = last - first;
+	edits->audioLoopOffset = 0;
+	return true;
+}
+
+std::int64_t wrapped(std::int64_t value, std::int64_t span) { return (value % span + span) % span; }
+
+} // namespace
+
+bool rotated(const SampleClip& clip, int amountTicks, ClipEdits* edits, bool* turned, QString* error)
+{
+	ClipEdits after = clip.clipEdits();
+	const auto in = static_cast<std::int64_t>(clip.sampleWindow().sourceIn);
+	const std::int64_t first = elapsedFrames(clip, clip.startPosition());
+	if (!rotationLoop(clip, first, &after, error)) { return false; }
+	// The source frame the clip's first tick plays now; a rotation by A plays, at every tick, what A earlier did.
+	const std::int64_t now = fold(after, in + after.audioLoopOffset + first);
+	if (now < after.audioLoopStart)
+	{
+		*error = QStringLiteral("the clip starts before its loop, and that part does not repeat: only content that loops "
+			"from the clip's start can turn round (set the loop's start to 0)");
+		return false;
+	}
+	const std::int64_t shift = wrapped(framesFor(clip, amountTicks), after.audioLoopFrames);
+	*turned = shift != 0;
+	if (!*turned) { return true; }
+	const std::int64_t next = after.audioLoopStart + wrapped(now - after.audioLoopStart - shift, after.audioLoopFrames);
+	after.audioLoopOffset = next - in - first;
+	*edits = after;
+	return true;
+}
+
 } // namespace audioloop
 
 /*! 0.5.0 ED-029 (audio): a looped clip plays a copy of its Sample (the same shared buffer: no allocation) whose loop

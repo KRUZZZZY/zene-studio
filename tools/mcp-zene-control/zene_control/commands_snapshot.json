@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-07T09:43:30Z",
+  "captured_at": "2026-10-07T09:47:16Z",
   "commands": [
     {
       "args_schema": {
@@ -15972,7 +15972,7 @@
         ],
         "type": "object"
       },
-      "description": "Move the notes in 'scope' 'amount' ticks later (negative: earlier), wrapping round inside the clip's length, so the pattern turns without growing. One undo step.",
+      "description": "Move the notes in 'scope' 'amount' ticks later (negative: earlier), wrapping round inside the clip's length, so the pattern turns without growing. On an audio clip its content turns the same way ('scope' is not read): inside its loop, or inside the clip, which then loops exactly the audio it plays (refused, typed, for a clip longer than its audio with no loop, or one whose loop starts after its first tick). One undo step.",
       "group": "note",
       "id": "note.rotate",
       "mutating": true,
@@ -34009,7 +34009,7 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-audio-clips/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-0ihnj6x7/zene.sock",
+    "source_socket": "/tmp/zctl-run-t4cix1vg/zene.sock",
     "version": "0.4.0-alpha.333+6d1a114"
   },
   "kind": "zene-control-command-list",

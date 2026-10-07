@@ -28,7 +28,8 @@
  *  uses), so SampleTrack's scheduling is exercised along with the play handle. Claims: a looped clip repeats its
  *  loop across the whole clip; a pass that begins past the loop's end starts on the folded frame; the loop is an
  *  additive attribute an unlooped clip never writes, and undo takes it off; refusals are typed; the looped render
- *  allocates nothing per period. */
+ *  allocates nothing per period. ED-028: note.rotate on an audio clip turns its content with wrap-around - inside
+ *  the clip, or inside its loop - one undo step each. */
 
 #include <QtTest>
 
@@ -231,6 +232,54 @@ private slots:
 		QCOMPARE(static_cast<qulonglong>(test::tlAllocationCount), static_cast<qulonglong>(0));
 		// The 64th period lies past the audio's end: it sounds only because the loop wrapped (step 1, level 0.1).
 		QVERIFY2(std::abs(buffer[512][0] - stepLevel(1)) < 0.01f, qPrintable(QString::number(buffer[512][0])));
+	}
+
+	//! ED-028: note.rotate on an audio clip turns its content with wrap-around, inside the clip: the audio 16 ticks
+	//! later, what falls off the end coming round at the start - one undo step per rotation.
+	void rotatingAudioTurnsItsContentWithWrap()
+	{
+		SampleClip* subject = buildSong(64);  // exactly as long as its audio
+		const QString id = control::clipIdOf(subject);
+		const ControlResult turned = run(QStringLiteral("note.rotate"), {{QStringLiteral("clip"), id}, {QStringLiteral("amount"), 16}});
+		QVERIFY2(turned.ok, qPrintable(turned.errorMessage));
+		QCOMPARE(turned.result.value(QStringLiteral("rotated")).toInt(), 1);
+		expectContent(render(), 0, 64, 48, 0, 64);  // tick t plays source tick (t - 16) mod 64
+		QVERIFY(run(QStringLiteral("note.rotate"), {{QStringLiteral("clip"), id}, {QStringLiteral("amount"), -8}}).ok);
+		expectContent(render(), 0, 64, 56, 0, 64);  // (t - 8) mod 64
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		expectContent(render(), 0, 64, 48, 0, 64);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		expectContent(render(), 0, 64, 0, 0, 64);  // as it was
+		// A whole number of turns is no edit at all.
+		const ControlResult whole = run(QStringLiteral("note.rotate"), {{QStringLiteral("clip"), id}, {QStringLiteral("amount"), 128}});
+		QVERIFY(whole.ok);
+		QCOMPARE(whole.result.value(QStringLiteral("rotated")).toInt(), 0);
+		QVERIFY(!subject->clipEdits().hasAudioLoop());
+	}
+
+	//! A looped clip turns inside its loop: a 32-tick loop from the in-point, turned 8 ticks later, plays source tick
+	//! (t - 8) mod 32 across the whole 160-tick clip.
+	void aLoopedClipTurnsInsideItsLoop()
+	{
+		SampleClip* subject = buildSong(160);
+		const QString id = control::clipIdOf(subject);
+		QVERIFY(run(QStringLiteral("clip.set_loop"), {{QStringLiteral("clip"), id}, {QStringLiteral("length"), 32}}).ok);
+		QVERIFY(run(QStringLiteral("note.rotate"), {{QStringLiteral("clip"), id}, {QStringLiteral("amount"), 8}}).ok);
+		expectContent(render(), 0, 160, 24, 0, 32);
+	}
+
+	void rotationRefusalsAreTyped()
+	{
+		SampleClip* subject = buildSong(160);
+		const QString id = control::clipIdOf(subject);
+		// Longer than its audio, with no loop: there is no content to wrap the silence into.
+		QCOMPARE(run(QStringLiteral("note.rotate"), {{QStringLiteral("clip"), id}, {QStringLiteral("amount"), 8}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		// A loop that starts after the clip's first tick: the intro does not repeat, so it cannot turn.
+		QVERIFY(run(QStringLiteral("clip.set_loop"), {{QStringLiteral("clip"), id}, {QStringLiteral("start"), 16}, {QStringLiteral("length"), 32}}).ok);
+		QCOMPARE(run(QStringLiteral("note.rotate"), {{QStringLiteral("clip"), id}, {QStringLiteral("amount"), 8}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(subject->clipEdits().audioLoopOffset, std::int64_t{0});
 	}
 
 private:

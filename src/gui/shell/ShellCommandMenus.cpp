@@ -223,6 +223,7 @@ void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 	add(process, "Print a Chain's Effects onto the Clip...", "clip.process", self, true,
 		{{QStringLiteral("from"), control::trackIdOf(clip->getTrack())}, {QStringLiteral("tail"), 0.0}});
 	add(process, "Pre-Fades...", "clip.pre_fade", self, true);  // W3 (ED-179)
+	add(process, "Rotate Content...", "note.rotate", self, true, {{QStringLiteral("amount"), 48}});  // ED-028: turned with wrap-around
 	Clip* next = nextClip(clip);
 	QAction* fade = add(menu, "Crossfade Into Next Clip...", "clip.crossfade",
 		{{QStringLiteral("out"), id}, {QStringLiteral("in"), next != nullptr ? control::clipIdOf(next) : QString()}}, true);

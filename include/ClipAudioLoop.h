@@ -71,6 +71,12 @@ LMMS_EXPORT SampleWindow window(const SampleClip& clip, TimePos at);
  *  measured at the clip's rate now and kept in source frames (0 clears the loop, and the offset with it). False,
  *  with @a error, for a loop that runs past the end of the clip's audio. */
 LMMS_EXPORT bool withLoop(const SampleClip& clip, int startTicks, int lengthTicks, ClipEdits* edits, QString* error);
+/*! ED-028, note.rotate on a sample clip: @a edits with the clip's content turned @a amountTicks later (negative:
+ *  earlier), wrapping round inside its loop - or, for a clip with none, inside the clip, which becomes a loop over
+ *  exactly the audio it plays. @a turned is false (and @a edits untouched) for a whole number of turns. False, with
+ *  @a error, for a clip whose audio does not fill it (an unlooped clip longer than its audio, or audio that starts
+ *  after the clip) and for one whose start plays before its loop (an intro does not repeat, so it cannot turn). */
+LMMS_EXPORT bool rotated(const SampleClip& clip, int amountTicks, ClipEdits* edits, bool* turned, QString* error);
 
 } // namespace audioloop
 
