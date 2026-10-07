@@ -107,6 +107,22 @@ private slots:
 		QVERIFY(hasTrackNamed(QStringLiteral("From Lua")));
 	}
 
+	void stringsWithEmbeddedNullBytesKeepTheirLengthAcrossCommands()
+	{
+		const QString seededName = QString::fromUtf8("A\0B", 3);
+		const ControlResult seeded = ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("instrument")}, {QStringLiteral("name"), seededName}});
+		QVERIFY2(seeded.ok, qPrintable(seeded.errorMessage));
+
+		const QStringList out = run(QStringLiteral(
+			"local added, err = zene.command('track.add', {type = 'instrument', name = 'C\\0D'})\n"
+			"local fromLua = zene.command('track.get_state', {track = added.track})\n"
+			"local fromJson = zene.command('track.get_state', {track = '%1'})\n"
+			"print(tostring(err == nil) .. ' ' .. #fromLua.name .. ' ' .. (string.byte(fromLua.name, 2) or -1))\n"
+			"print(#fromJson.name .. ' ' .. (string.byte(fromJson.name, 2) or -1))\n").arg(seeded.result.value(QStringLiteral("track")).toString()));
+		QCOMPARE(out, (QStringList{QStringLiteral("true 3 0"), QStringLiteral("3 0")}));
+	}
+
 	void aRegistryRefusalComesBackTyped()
 	{
 		const QStringList out = run(QStringLiteral(
