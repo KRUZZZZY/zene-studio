@@ -374,6 +374,30 @@ private slots:
 		QVERIFY(dynamic_cast<MidiController*>(track->volumeModel()->controllerConnection()->getController()) != nullptr);
 	}
 
+	//! note.add without velocity records the same default the newly created note uses.
+	void noteAddWithoutVelocityRecordsTheDefaultVelocity()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		const QString clipId = control::clipIdOf(clip);
+
+		const ControlResult added = run(QStringLiteral("note.add"),
+			{{QStringLiteral("clip"), clipId}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QCOMPARE(added.result.value(QStringLiteral("velocity")).toInt(), static_cast<int>(DefaultVolume));
+
+		const QJsonObject transaction = lastRecord();
+		QCOMPARE(transaction.value(QStringLiteral("command")).toString(), QStringLiteral("note.add"));
+		const QJsonObject note = transaction.value(QStringLiteral("before")).toObject()
+			.value(QStringLiteral("notes")).toObject();
+		QVERIFY(!note.isEmpty());
+		QCOMPARE(note.value(QStringLiteral("velocity")).toInt(),
+			static_cast<int>(DefaultVolume));
+	}
+
 	//! note.pitch_curve_set over several notes: the before-state names each note's curve, not only the first one's.
 	void aCurveWriteRecordsEveryNotesBefore()
 	{
