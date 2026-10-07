@@ -24,11 +24,15 @@
 #ifndef LMMS_GUI_MIXER_VIEW_OPTIONS_H
 #define LMMS_GUI_MIXER_VIEW_OPTIONS_H
 
+#include <QJsonArray>
 #include <QJsonObject>
+#include <QList>
 #include <QString>
 #include <QStringList>
 
 #include "lmms_export.h"
+
+class QWidget;
 
 namespace lmms
 {
@@ -46,9 +50,12 @@ class MixerChannelView;
  *  - MX-003: which sections a strip shows (sends, pan, channel number, the meter line - and, from L10,
  *    its inserts by name (MX-073) and its rack's first macros as knobs (MX-090));
  *  - MX-004: the strip width (narrow, normal, wide);
- *  - MX-005: which channels are shown (all, instruments, audio, returns, used);
+ *  - MX-005: which channels are shown (all, instruments, audio, returns, used, selected - the channels picked
+ *    for it, by window.mixer_view's selected_channels, a Ctrl+click on a strip or the mode bar's picker);
  *  - MX-127 / MX-129: what the meter shows (the post-fader peak, RMS, the pre-fader peak);
- *  - MX-128: the meter's scale (-42 dB - the inherited one -, -60 dB, -24 dB, or linear);
+ *  - MX-128: the meter's scale (-42 dB - the inherited one -, -60 dB, -24 dB, or linear), and its ballistics:
+ *    how fast a bar falls (fast - the inherited 1.25 per 60 Hz tick, about 116 dB/s -, medium, slow) and how
+ *    long the peak line holds (off, 1.5 s - the inherited one -, 3 s, 6 s);
  *  - MX-126 / MX-130: the meter line under a strip - the latched clip light and the gain reduction;
  *  - 0.5.0 theme 16: the VIEW - what a strip is for (mix: levels, pan and processing; routing: where the
  *    signal comes from and goes, the sends row always shown, the inserts and macros left to the mix view) -
@@ -71,6 +78,8 @@ struct Options
 	QString filter = QStringLiteral("all");
 	QString meterMode = QStringLiteral("peak");
 	QString meterScale = QStringLiteral("db42");
+	QString meterFallOff = QStringLiteral("fast");  //!< MX-128: fast (the inherited 1.25 per tick), medium, slow
+	QString peakHold = QStringLiteral("1.5s");      //!< MX-128: off, 1.5s (the inherited hold), 3s, 6s
 	QString view = QStringLiteral("mix");          //!< theme 16: mix / routing
 	QString density = QStringLiteral("expanded");  //!< theme 16: compact / expanded
 };
@@ -79,6 +88,8 @@ LMMS_EXPORT const QStringList& widthNames();
 LMMS_EXPORT const QStringList& filterNames();
 LMMS_EXPORT const QStringList& meterModeNames();
 LMMS_EXPORT const QStringList& meterScaleNames();
+LMMS_EXPORT const QStringList& meterFallOffNames();
+LMMS_EXPORT const QStringList& peakHoldNames();
 LMMS_EXPORT const QStringList& viewNames();
 LMMS_EXPORT const QStringList& densityNames();
 
@@ -90,10 +101,26 @@ LMMS_EXPORT int generation();
 LMMS_EXPORT Options effective(const Options& options);
 LMMS_EXPORT bool routingView();
 LMMS_EXPORT bool compactDensity();
+//! MX-128: what a meter bar is divided by on each tick it has no higher reading (the main window's 60 Hz tick).
+LMMS_EXPORT float meterFallOff();
+//! MX-128: how long a peak line holds before it falls, in ms (0: no hold - the line is the level).
+LMMS_EXPORT int peakHoldMs(const QString& name);
 
 LMMS_EXPORT QJsonObject toJson(const Options& options);
 //! @a args over @a base (the window.mixer_view field names); false with @a error on a bad name.
 LMMS_EXPORT bool merge(const QJsonObject& args, Options* base, QString* error);
+
+/*! MX-005: the channels the Selected filter shows. Kept by each channel's stable id (MixerChannel::id()), so
+ *  it follows a channel as others are added, deleted or moved; interface state - never saved, and forgotten
+ *  when the mixer view is cleared for another project (the ids start again there). */
+LMMS_EXPORT QList<int> selectedChannels();  //!< the indices, in mixer order
+LMMS_EXPORT bool isSelected(int index);
+LMMS_EXPORT void setSelectedChannels(const QList<int>& indices);
+LMMS_EXPORT void clearSelection();
+//! The selection as ch-<n> ids, in mixer order (window.mixer_view's selected_channels).
+LMMS_EXPORT QJsonArray selectionJson();
+//! A strip's Ctrl+click: channel @a index in or out of the selection, through window.mixer_view.
+LMMS_EXPORT void toggleSelected(QWidget* origin, int index);
 
 //! Whether the filter shows channel @a index (the master always shows).
 LMMS_EXPORT bool shows(int index);

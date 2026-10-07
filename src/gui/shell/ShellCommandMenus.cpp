@@ -383,6 +383,8 @@ void viewOptionsMenu(QMenu* menu)
 	choices(view, "Show Channels", "window.mixer_view", "filter", {});
 	choices(view, "Meter", "window.mixer_view", "meter_mode", {});
 	choices(view, "Meter Scale", "window.mixer_view", "meter_scale", {});
+	choices(view, "Meter Fall-Off", "window.mixer_view", "meter_falloff", {});  // MX-128
+	choices(view, "Peak Hold", "window.mixer_view", "peak_hold", {});
 	choices(view, "View", "window.mixer_view", "view", {});  // 0.5.0 theme 16: Mix or Routing
 	choices(view, "Density", "window.mixer_view", "density", {});  // Compact or Expanded
 }
@@ -409,6 +411,7 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(menu, "Receive a Channel Here...", "chain.receive", {{QStringLiteral("target"), channel}}, true);  // W3 (MX-063)
 	add(menu, "Post-Fader Inserts", "mixer.post_inserts", self, false, {}, true);  // W3 (MX-082)
 	add(menu, "Play Previews Here", "browser.preview_output", self, false);  // MX-042
+	add(menu, "Phase Scope", "window.phase_scope", self, false);  // MX-137: this channel's stereo picture
 	crossfaderEntries(menu, self);  // MX-172
 	QAction* gang = menu->addAction(tr("Adjust Channels Together..."));  // MX-028
 	gang->setProperty("controlCommand", QStringLiteral("mixer.adjust"));

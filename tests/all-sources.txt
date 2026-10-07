@@ -327,6 +327,7 @@ include/ImportDetectionDsp.h
 include/ImportFilter.h
 include/InlineAutomation.h
 include/InputChannelRing.h
+include/InputLevelMeter.h
 include/InputMeter.h
 include/InputMonitor.h
 include/InspectorChannelRouting.h
@@ -531,6 +532,8 @@ include/PatternTrackView.h
 include/PeakController.h
 include/PeakIndicator.h
 include/PerfLog.h
+include/PhaseScopeTap.h
+include/PhaseScopeView.h
 include/Piano.h
 include/PianoRoll.h
 include/PianoView.h
@@ -1807,6 +1810,7 @@ src/core/PatternClip.cpp
 src/core/PatternStore.cpp
 src/core/PeakController.cpp
 src/core/PerfLog.cpp
+src/core/PhaseScopeTap.cpp
 src/core/Piano.cpp
 src/core/PitchTrack.cpp
 src/core/PlayHandle.cpp
@@ -2067,6 +2071,7 @@ src/gui/GrooveMenu.cpp
 src/gui/GuiApplication.cpp
 src/gui/HelpCenter.cpp
 src/gui/HelpTasks.cpp
+src/gui/InputLevelMeter.cpp
 src/gui/InstrumentCommandMenus.cpp
 src/gui/ItemListPanel.cpp
 src/gui/ItemListSurfaceSources.cpp
@@ -2111,6 +2116,7 @@ src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/ParameterGridDialog.cpp
 src/gui/PeakControllerDialog.cpp
+src/gui/PhaseScopeView.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginBrowser.cpp
 src/gui/PluginNativeEditor.cpp
@@ -2421,6 +2427,7 @@ tests/src/core/GrooveTemplateTest.cpp
 tests/src/core/GrooveTestSupport.h
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/ImportDetectionTest.cpp
+tests/src/core/InputMeterTest.cpp
 tests/src/core/InputMonitorTest.cpp
 tests/src/core/InstrumentLatencyPdcTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
@@ -2486,6 +2493,7 @@ tests/src/core/PhaseDMixerTestSupport.h
 tests/src/core/PhaseDPerfBench.cpp
 tests/src/core/PhaseDSidechainTest.cpp
 tests/src/core/PhaseFChannelScaleTest.cpp
+tests/src/core/PhaseScopeTapTest.cpp
 tests/src/core/PluginAudioPortsTest.cpp
 tests/src/core/PluginEditorHostTest.cpp
 tests/src/core/PluginLogoResourceTest.cpp
@@ -2625,6 +2633,7 @@ tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/MidiReconnectActionTest.cpp
 tests/src/gui/MixerLatencyTextTest.cpp
+tests/src/gui/MixerMeteringTest.cpp
 tests/src/gui/MixerModesTest.cpp
 tests/src/gui/MixerSendsOnFadersTest.cpp
 tests/src/gui/ModulatorPanelTest.cpp

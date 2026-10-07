@@ -35,6 +35,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QMessageBox>
 #include <QPainter>
 #include <QStackedWidget>
@@ -64,6 +65,7 @@
 #include "SendButtonIndicator.h"
 #include "MixerHardwareMenu.h"
 #include "MixerStripTags.h"
+#include "MixerViewOptions.h"
 #include "ShellCommandMenus.h"
 #include "Song.h"
 
@@ -365,11 +367,15 @@ void MixerChannelView::paintEvent(QPaintEvent*)
 		painter.setPen(QPen(pal.accent, 1));
 		painter.drawRect(QRectF(rect()).adjusted(0.5, 0.5, -1.5, -0.5));
 	}
+	// 0.5.0 L08 (MX-005): a channel in the Selected filter's set wears an accent bar along its foot.
+	if (mixerviewoptions::isSelected(m_channelIndex)) { painter.fillRect(QRect(0, height() - 3, width() - 1, 3), pal.accent); }
 }
 
-void MixerChannelView::mousePressEvent(QMouseEvent*)
+void MixerChannelView::mousePressEvent(QMouseEvent* event)
 {
 	if (m_mixerView->currentMixerChannel() != this) { m_mixerView->setCurrentMixerChannel(this); }
+	// 0.5.0 L08 (MX-005): Ctrl+click puts the channel in the Selected filter's set, or takes it out.
+	if (event->modifiers() & Qt::ControlModifier) { mixerviewoptions::toggleSelected(this, m_channelIndex); }
 }
 
 void MixerChannelView::mouseDoubleClickEvent(QMouseEvent*)

@@ -28,12 +28,14 @@
 #include <QButtonGroup>
 #include <QComboBox>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QLabel>
 #include <QMenu>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QToolButton>
 
+#include "ChannelPickDialog.h"
 #include "CommandForm.h"
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
@@ -106,13 +108,21 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 	auto* show = new QLabel(tr("Show:"), this);
 	show->setBuddy(m_filter);
 	layout->addWidget(show);
-	const QStringList captions{tr("All Channels"), tr("Instruments"), tr("Audio"), tr("Returns"), tr("Used")};
+	const QStringList captions{tr("All Channels"), tr("Instruments"), tr("Audio"), tr("Returns"), tr("Used"), tr("Selected")};
 	for (int i = 0; i < captions.size(); ++i) { m_filter->addItem(captions.at(i), mixerviewoptions::filterNames().at(i)); }
 	m_filter->setObjectName(QStringLiteral("mixerModeFilter"));
 	m_filter->setAccessibleName(tr("Show channels"));
 	m_filter->setProperty("controlCommand", kViewCommand);
 	connect(m_filter, &QComboBox::activated, this, [this](int row) { setOption(QStringLiteral("filter"), m_filter->itemData(row).toString()); });
 	layout->addWidget(m_filter);
+	auto* pick = new QPushButton(tr("Pick..."), this);  // MX-005: the channels the Selected filter shows
+	pick->setObjectName(QStringLiteral("mixerModePickSelected"));
+	pick->setMinimumHeight(tokens::targetSize());
+	pick->setAccessibleName(tr("Pick the channels to show"));
+	pick->setToolTip(tr("Pick the channels the Selected filter shows (Ctrl+click a strip to add or remove one)"));
+	pick->setProperty("controlCommand", kViewCommand);
+	connect(pick, &QPushButton::clicked, this, &MixerModeBar::pickSelected);
+	layout->addWidget(pick);
 	layout->addStretch(1);
 	m_faders = addChip(layout, QStringLiteral("mixerModeFaders"), tr("What every fader drives: its channel's volume, or its send to one return"), &MixerModeBar::fillFaders);
 	m_solo = addChip(layout, QStringLiteral("mixerModeSolo"), tr("The solo mode: whether a solo unsolos the others"), &MixerModeBar::fillSolo);
@@ -181,6 +191,15 @@ void MixerModeBar::setOption(const QString& key, const QJsonValue& value)
 {
 	// A refusal is shown by runCommand; the bar follows the state either way at the view's next pass.
 	runCommand(this, CommandCall{kViewCommand, {{key, value}}, {}, QString(), false});
+	emit changed();
+}
+
+void MixerModeBar::pickSelected()
+{
+	const QStringList picked = pickChannels(this, tr("Channels to Show"), QString());
+	if (picked.isEmpty()) { return; }  // cancelled: the selection and the filter stay as they were
+	runCommand(this, CommandCall{kViewCommand, {{QStringLiteral("selected_channels"), QJsonArray::fromStringList(picked)},
+		{QStringLiteral("filter"), QStringLiteral("selected")}}, {}, QString(), false});
 	emit changed();
 }
 

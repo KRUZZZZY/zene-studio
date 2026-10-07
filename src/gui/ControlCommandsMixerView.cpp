@@ -29,7 +29,8 @@
  *  0.5.0 theme 6: the answer names the return the faders show and what every fader drives, so an agent
  *  sees what the banner and the strips show. 0.5.0 theme 16: the view (mix / routing) and the density
  *  (compact / expanded), and per channel what its strip says - its type, format, routes by name, hardware
- *  output and modes (MixerStripInfo.h). Interface state: nothing is journalled. */
+ *  output and modes (MixerStripInfo.h). Interface state: nothing is journalled.
+ *  0.5.0 L08 (MX-137): window.phase_scope opens the stereo phase view (PhaseScopeView.h) on a channel. */
 
 #include <QJsonArray>
 #include <QTimer>
@@ -45,6 +46,8 @@
 #include "MixerStripInfo.h"
 #include "MixerView.h"
 #include "MixerViewOptions.h"
+#include "PhaseScopeTap.h"
+#include "PhaseScopeView.h"
 
 namespace lmms
 {
@@ -82,6 +85,43 @@ QJsonArray stripInfos()
 	return strips;
 }
 
+//! The return 'sends_on_faders' names, as an index into @a index (left alone for the channel faders); false,
+//! with @a error, when it names no channel.
+bool sendsTargetOf(const QJsonObject& args, int* index, ControlResult* error)
+{
+	const QString id = args.value(QStringLiteral("sends_on_faders")).toString();
+	if (id.isEmpty()) { return true; }
+	MixerChannel* channel = resolveMixerChannel(id, error);
+	if (channel == nullptr) { return false; }
+	*index = channel->index();
+	return true;
+}
+
+//! MX-005: the channels 'selected_channels' names (ch-<n> ids) as indices into @a indices (true when it is not
+//! given); false, with @a error, on any that is not a channel, the master (it always shows) or not a string.
+bool selectionOf(const QJsonObject& args, QList<int>* indices, ControlResult* error)
+{
+	if (!args.contains(QStringLiteral("selected_channels"))) { return true; }
+	const QJsonValue value = args.value(QStringLiteral("selected_channels"));
+	if (!value.isArray())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'selected_channels' is an array of ch-<n> ids"));
+		return false;
+	}
+	for (const QJsonValue& id : value.toArray())
+	{
+		MixerChannel* channel = resolveMixerChannel(id.toString(), error);
+		if (channel == nullptr) { return false; }
+		if (channel->index() == 0)
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the master always shows; it is not selected"));
+			return false;
+		}
+		indices->append(channel->index());
+	}
+	return true;
+}
+
 //! The mixer on screen follows a mode change now, not at its next half-second sync (queued: the call may
 //! come from a menu on one of its strips, which a sync can rebuild).
 void syncMixerViewSoon()
@@ -104,6 +144,7 @@ QJsonObject mixerViewState()
 	state.insert(QStringLiteral("faders"), faderRoles());
 	state.insert(QStringLiteral("strips"), stripInfos());
 	state.insert(QStringLiteral("folded"), folded);
+	state.insert(QStringLiteral("selected_channels"), gui::mixerviewoptions::selectionJson());  // MX-005
 	return state;
 }
 
@@ -115,19 +156,15 @@ ControlResult mixerView(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::Busy, QStringLiteral("the engine is not up yet; poll control.ping"));
 	}
 	const bool sendsGiven = args.contains(QStringLiteral("sends_on_faders"));
-	const QString id = args.value(QStringLiteral("sends_on_faders")).toString();
 	int index = -1;
-	if (!id.isEmpty())
-	{
-		ControlResult error;
-		MixerChannel* channel = resolveMixerChannel(id, &error);
-		if (channel == nullptr) { return error; }
-		index = channel->index();
-	}
+	QList<int> selection;
+	ControlResult refused;
+	if (!sendsTargetOf(args, &index, &refused) || !selectionOf(args, &selection, &refused)) { return refused; }
 	gui::mixerviewoptions::Options next = gui::mixerviewoptions::options();
 	QString error;
 	if (!gui::mixerviewoptions::merge(args, &next, &error)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
 	// Everything is checked before anything is set: a refused call changes no mode.
+	if (args.contains(QStringLiteral("selected_channels"))) { gui::mixerviewoptions::setSelectedChannels(selection); }
 	if (sendsGiven)
 	{
 		gui::mixeroverlays::setSendsOnFaders(index);
@@ -141,10 +178,57 @@ ControlResult mixerView(const QJsonObject& args)
 	return ControlResult::success(mixerViewState());
 }
 
+//! MX-137: open the phase view on 'channel' (the open one's channel, else the master, when left out).
+ControlResult phaseScope(const QJsonObject& args)
+{
+	if (Engine::mixer() == nullptr || Engine::getSong() == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::Busy, QStringLiteral("the engine is not up yet; poll control.ping"));
+	}
+	const gui::PhaseScopeWindow* open = gui::openPhaseScope();
+	int index = open != nullptr ? open->channel() : 0;
+	if (args.contains(QStringLiteral("channel")))
+	{
+		ControlResult error;
+		MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
+		if (channel == nullptr) { return error; }
+		index = channel->index();
+	}
+	if (controlMainWindow() == nullptr) { return noInterface(QStringLiteral("window.phase_scope")); }
+	gui::PhaseScopeWindow* window = gui::showPhaseScope(index);
+	const MixerChannel* shown = Engine::mixer()->mixerChannel(window->channel());
+	return ControlResult::success({{QStringLiteral("shown"), true}, {QStringLiteral("channel"), channelIdOf(shown)},
+		{QStringLiteral("channel_name"), shown->m_name}, {QStringLiteral("correlation"), static_cast<double>(shown->m_correlation.get())},
+		{QStringLiteral("frames_seen"), static_cast<double>(PhaseScopeTap::instance().written())}});
+}
+
+void registerPhaseScope(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("window.phase_scope");
+	cmd.group = QStringLiteral("window");
+	cmd.verb = QStringLiteral("phase_scope");
+	cmd.mutating = false;
+	cmd.requiresEngine = false;
+	cmd.description = QStringLiteral("MX-137: open the Phase Scope (an open one is raised and moved) on mixer channel 'channel' "
+		"(a ch-<n> id; left out, the open one's channel, else the master): a goniometer of the channel's newest frames - "
+		"mono stands up the middle, out of phase lies flat, the left channel alone leans left - beside its phase "
+		"correlation (+1 mono, 0 wide, -1 out of phase). The answer names the channel ('channel', 'channel_name'), its "
+		"'correlation' now and 'frames_seen', the frames the view's tap has been fed since it was pointed at the "
+		"channel (it grows while the engine runs and the channel is not muted). Closing the window stops the tap. A display.");
+	cmd.argsSchema = objectSchema({{QStringLiteral("channel"), stringProperty()}});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()}, {QStringLiteral("channel"), stringProperty()},
+		{QStringLiteral("channel_name"), stringProperty()}, {QStringLiteral("correlation"), numberProperty()},
+		{QStringLiteral("frames_seen"), numberProperty()}});
+	cmd.handler = phaseScope;
+	registry.registerCommand(cmd);
+}
+
 } // namespace
 
 void registerMixerViewCommands(ControlRegistry& registry)
 {
+	registerPhaseScope(registry);  // MX-137
 	ControlCommand cmd;
 	cmd.id = QStringLiteral("window.mixer_view");
 	cmd.group = QStringLiteral("window");
@@ -157,11 +241,16 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		"still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per "
 		"channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); "
 		"'folded' answers the channel strips a collapsed folder hides "
-		"(track.folder_set_collapsed folds). The view options, kept in the config file (ui/mixerview): 'show_sends', "
+		"(track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the "
+		"'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a "
+		"Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in "
+		"mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', "
 		"'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is "
 		"the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - "
-		"the channels a track plays into or a send reaches), 'meter_mode' (peak - after the fader -, rms, pre_fader) and "
-		"'meter_scale' (db42 - the default range -, db60, db24, linear). Theme 16: 'view' (mix - levels, pan and processing, "
+		"the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and "
+		"'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - "
+		"the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and "
+		"'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, "
 		"the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always "
 		"shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options "
 		"show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across "
@@ -176,10 +265,13 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		{QStringLiteral("filter"), enumProperty(gui::mixerviewoptions::filterNames())},
 		{QStringLiteral("meter_mode"), enumProperty(gui::mixerviewoptions::meterModeNames())},
 		{QStringLiteral("meter_scale"), enumProperty(gui::mixerviewoptions::meterScaleNames())},
+		{QStringLiteral("meter_falloff"), enumProperty(gui::mixerviewoptions::meterFallOffNames())},
+		{QStringLiteral("peak_hold"), enumProperty(gui::mixerviewoptions::peakHoldNames())},
 		{QStringLiteral("view"), enumProperty(gui::mixerviewoptions::viewNames())},
 		{QStringLiteral("density"), enumProperty(gui::mixerviewoptions::densityNames())}};
 	QJsonObject args = fields;
 	args.insert(QStringLiteral("sends_on_faders"), stringProperty());
+	args.insert(QStringLiteral("selected_channels"), arrayProperty());  // MX-005
 	QJsonObject result = args;
 	result.insert(QStringLiteral("folded"), arrayProperty());
 	result.insert(QStringLiteral("sends_on_faders_name"), stringProperty());

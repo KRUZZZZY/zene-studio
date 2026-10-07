@@ -330,6 +330,12 @@ set(LMMS_TESTS
 	# the group itself is the registered ctest ControlMeterCommands
 	# (tests/control-meter-commands.py).
 	src/core/MeterTapTest.cpp
+	# 0.5.0 L08 (MX-137): the phase view's tap - the chosen channel's newest stereo frames in a fixed ring of
+	# atomics (the tuner tap's pattern), no allocation on the audio side, no torn frame for a racing reader.
+	src/core/PhaseScopeTapTest.cpp
+	# 0.5.0 L08 (MX-134): the input meter's live reading - the peaks since its own last read, beside meter.input's
+	# take, which it leaves alone - and zero allocations in measure() (the audio thread's half).
+	src/core/InputMeterTest.cpp
 	src/core/MidiLearnTest.cpp
 	# MIDI clock (0.3.0, the `clock.*` group's engine half): the master's
 	# emitted message set for a known transport script, and the follower's
@@ -776,6 +782,8 @@ set(LMMS_TESTS
 	src/gui/MixerSendsOnFadersTest.cpp
 	# 0.5.0 theme 16: mixer views, densities, type badges, routing by name, mode bar, sparse routing matrix.
 	src/gui/MixerModesTest.cpp
+	# 0.5.0 L08 metering: ballistics (MX-128), the Selected filter (MX-005), live input meters (MX-134), the phase view (MX-137).
+	src/gui/MixerMeteringTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
 	src/gui/ArrangerTimelineTest.cpp
 	# catch-up W1: an XY pad drag is one undo step.
@@ -1363,7 +1371,7 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(LaneReadoutTest SampleEditorDialogTest MixerModesTest WorkflowFeedbackTest ShellHomesTest
+set_tests_properties(LaneReadoutTest SampleEditorDialogTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest ShellHomesTest
 	TaskCenterTest TaskIndicatorTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -954,6 +954,10 @@ task.clear_finished and task.show (`not_mutating`, interface state).
 **0.5.0 F2 interface** (+2): plugin.midi_part_set (`true_inverse`), the in-place edit the MIDI parts list's Edit...
 runs; rack.layer_set (`true_inverse`), a layer's mute, solo and level from the layer rack panel.
 
+**0.5.0 L08 metering** (`050/feat-meters`, MX-137): window.phase_scope, the stereo phase view (`not_mutating`, a
+display) (+1). Measured by `ReversibilityContractTest` on that lane's build (no wasmtime): `rows=810 true_inverse=403
+snapshot=37 irreversible=21 not_mutating=349`, which is this block minus wasm's option row, exactly.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=820 true_inverse=406 snapshot=40 irreversible=21 not_mutating=353
      configuration: telemetry.status wasm.load session.get_state stem.get_state

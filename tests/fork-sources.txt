@@ -658,6 +658,7 @@ include/HelpTasks.h
 include/ImportDetection.h
 include/ImportDetectionDsp.h
 include/InputChannelRing.h
+include/InputLevelMeter.h
 include/InputMeter.h
 include/InputMonitor.h
 include/InspectorChannelRouting.h
@@ -754,6 +755,8 @@ include/ParameterAliases.h
 include/ParameterControls.h
 include/ParameterGridDialog.h
 include/PatchWiring.h
+include/PhaseScopeTap.h
+include/PhaseScopeView.h
 include/PinConnector.h
 include/PitchTrack.h
 include/PluginAudioPorts.h
@@ -1498,6 +1501,7 @@ src/core/OutOfProcessHosting.cpp
 src/core/ParameterAliases.cpp
 src/core/ParameterControls.cpp
 src/core/PatchWiring.cpp
+src/core/PhaseScopeTap.cpp
 src/core/PitchTrack.cpp
 src/core/PluginEditorHost.cpp
 src/core/PluginHostChunking.cpp
@@ -1668,6 +1672,7 @@ src/gui/FollowActionEditor.cpp
 src/gui/GrooveMenu.cpp
 src/gui/HelpCenter.cpp
 src/gui/HelpTasks.cpp
+src/gui/InputLevelMeter.cpp
 src/gui/InstrumentCommandMenus.cpp
 src/gui/ItemListPanel.cpp
 src/gui/ItemListSurfaceSources.cpp
@@ -1697,6 +1702,7 @@ src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/ParameterGridDialog.cpp
+src/gui/PhaseScopeView.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/PluginQuarantineMenu.cpp
@@ -1955,6 +1961,7 @@ tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/ImportDetectionTest.cpp
+tests/src/core/InputMeterTest.cpp
 tests/src/core/InstrumentLatencyPdcTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
 tests/src/core/InstrumentRoutingTest.cpp
@@ -1988,6 +1995,7 @@ tests/src/core/OutOfProcessHostClientLoopTest.cpp
 tests/src/core/OutOfProcessHostSupport.h
 tests/src/core/OutOfProcessHostTest.cpp
 tests/src/core/PartialLoadTest.cpp
+tests/src/core/PhaseScopeTapTest.cpp
 tests/src/core/PortMappingCodecTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
 tests/src/core/ProjectContainerTest.cpp

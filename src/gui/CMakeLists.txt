@@ -155,6 +155,8 @@ SET(LMMS_SRCS
 	gui/SampleSelectionView.cpp
 	gui/ControlCommandsSampleEditor.cpp
 	gui/MixerWindows.cpp
+	gui/InputLevelMeter.cpp
+	gui/PhaseScopeView.cpp
 	gui/ArrangerNavigator.cpp
 	gui/LevelBar.cpp
 	gui/ModifierTools.cpp

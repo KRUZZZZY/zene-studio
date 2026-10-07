@@ -49,6 +49,7 @@ const ReversibilityRow kMixingRows[] = {
 		"action checkpoint: the recorded undo step puts the send's previous pan back", ""),
 	R("window.mixer_view", RC::NotMutating, false, "the mixer view's modes and options are interface state (the options "
 		"are kept in the ui/mixerview setting), not the project", "no project write (set the previous options to restore)", ""),
+	R("window.phase_scope", RC::NotMutating, false, "it opens the stereo phase view on a channel: a display", "no write", ""),
 	R("mixer.set_many", RC::TrueInverse, true, "it mutes or solos several channels",
 		"action checkpoint: the recorded undo step puts every channel's mute and solo back", ""),
 	R("mixer.set_strip", RC::TrueInverse, true, "it changes a channel's own settings (saved with the project)",

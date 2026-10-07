@@ -32,7 +32,9 @@
 #include <QSet>
 #include <QStackedWidget>
 
+#include "CommandForm.h"
 #include "ConfigManager.h"
+#include "ControlVocabulary.h"
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "Effect.h"
@@ -55,6 +57,7 @@ namespace
 Options s_options;
 bool s_loaded = false;
 int s_generation = 0;
+QSet<int> s_selectedIds;  //!< MX-005: MixerChannel::id()s
 
 const QString kSection = QStringLiteral("ui");
 const QString kKey = QStringLiteral("mixerview");
@@ -148,7 +151,7 @@ const QStringList& widthNames()
 const QStringList& filterNames()
 {
 	static const QStringList names{QStringLiteral("all"), QStringLiteral("instruments"), QStringLiteral("audio"),
-		QStringLiteral("returns"), QStringLiteral("used")};
+		QStringLiteral("returns"), QStringLiteral("used"), QStringLiteral("selected")};
 	return names;
 }
 
@@ -161,6 +164,18 @@ const QStringList& meterModeNames()
 const QStringList& meterScaleNames()
 {
 	static const QStringList names{QStringLiteral("db42"), QStringLiteral("db60"), QStringLiteral("db24"), QStringLiteral("linear")};
+	return names;
+}
+
+const QStringList& meterFallOffNames()
+{
+	static const QStringList names{QStringLiteral("fast"), QStringLiteral("medium"), QStringLiteral("slow")};
+	return names;
+}
+
+const QStringList& peakHoldNames()
+{
+	static const QStringList names{QStringLiteral("off"), QStringLiteral("1.5s"), QStringLiteral("3s"), QStringLiteral("6s")};
 	return names;
 }
 
@@ -217,12 +232,26 @@ bool routingView() { return options().view == QLatin1String("routing"); }
 
 bool compactDensity() { return options().density == QLatin1String("compact"); }
 
+float meterFallOff()
+{
+	// Per 60 Hz tick: fast is the inherited 1.25 (about 116 dB/s), medium about 26 dB/s, slow about 12 dB/s -
+	// the fall of a peak programme meter (20 dB in 1.7 s).
+	const QString& name = options().meterFallOff;
+	return name == QLatin1String("slow") ? 1.0233f : name == QLatin1String("medium") ? 1.0512f : 1.25f;
+}
+
+int peakHoldMs(const QString& name)
+{
+	return name == QLatin1String("off") ? 0 : name == QLatin1String("3s") ? 3000 : name == QLatin1String("6s") ? 6000 : 1500;
+}
+
 QJsonObject toJson(const Options& o)
 {
 	return {{QStringLiteral("show_sends"), o.sends}, {QStringLiteral("show_pan"), o.pan}, {QStringLiteral("show_number"), o.number},
 		{QStringLiteral("show_meter_info"), o.meterInfo}, {QStringLiteral("show_inserts"), o.inserts},
 		{QStringLiteral("show_macros"), o.macros}, {QStringLiteral("strip_width"), o.width}, {QStringLiteral("filter"), o.filter},
 		{QStringLiteral("meter_mode"), o.meterMode}, {QStringLiteral("meter_scale"), o.meterScale},
+		{QStringLiteral("meter_falloff"), o.meterFallOff}, {QStringLiteral("peak_hold"), o.peakHold},
 		{QStringLiteral("view"), o.view}, {QStringLiteral("density"), o.density}};
 }
 
@@ -239,6 +268,8 @@ bool merge(const QJsonObject& args, Options* base, QString* error)
 	next.filter = pick(args, "filter", filterNames(), next.filter, error);
 	next.meterMode = pick(args, "meter_mode", meterModeNames(), next.meterMode, error);
 	next.meterScale = pick(args, "meter_scale", meterScaleNames(), next.meterScale, error);
+	next.meterFallOff = pick(args, "meter_falloff", meterFallOffNames(), next.meterFallOff, error);
+	next.peakHold = pick(args, "peak_hold", peakHoldNames(), next.peakHold, error);
 	next.view = pick(args, "view", viewNames(), next.view, error);
 	next.density = pick(args, "density", densityNames(), next.density, error);
 	if (!error->isEmpty()) { return false; }
@@ -246,10 +277,62 @@ bool merge(const QJsonObject& args, Options* base, QString* error)
 	return true;
 }
 
+QList<int> selectedChannels()
+{
+	QList<int> indices;
+	for (int i = 1; i < Engine::mixer()->numChannels(); ++i)
+	{
+		if (s_selectedIds.contains(Engine::mixer()->mixerChannel(i)->id())) { indices.append(i); }
+	}
+	return indices;
+}
+
+bool isSelected(int index)
+{
+	MixerChannel* channel = index > 0 ? Engine::mixer()->mixerChannel(index) : nullptr;
+	return channel != nullptr && s_selectedIds.contains(channel->id());
+}
+
+void setSelectedChannels(const QList<int>& indices)
+{
+	s_selectedIds.clear();
+	for (const int index : indices)
+	{
+		MixerChannel* channel = index > 0 ? Engine::mixer()->mixerChannel(index) : nullptr;
+		if (channel != nullptr) { s_selectedIds.insert(channel->id()); }
+	}
+	++s_generation;
+}
+
+void clearSelection()
+{
+	s_selectedIds.clear();
+	++s_generation;
+}
+
+QJsonArray selectionJson()
+{
+	QJsonArray ids;
+	for (const int index : selectedChannels()) { ids.append(control::channelIdOf(Engine::mixer()->mixerChannel(index))); }
+	return ids;
+}
+
+void toggleSelected(QWidget* origin, int index)
+{
+	if (index <= 0) { return; }  // the master always shows: it is never in the selection
+	QStringList ids;
+	for (const QJsonValue& id : selectionJson()) { ids.append(id.toString()); }
+	const QString id = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+	if (!ids.removeOne(id)) { ids.append(id); }
+	runCommand(origin, CommandCall{QStringLiteral("window.mixer_view"),
+		{{QStringLiteral("selected_channels"), QJsonArray::fromStringList(ids)}}, {}, QString(), false});
+}
+
 bool shows(int index)
 {
 	const QString& filter = options().filter;
 	if (index == 0 || filter == QLatin1String("all")) { return true; }
+	if (filter == QLatin1String("selected")) { return isSelected(index); }
 	MixerChannel* channel = Engine::mixer()->mixerChannel(index);
 	if (filter == QLatin1String("returns")) { return channel->isBus(); }
 	QSet<int> instruments;
@@ -273,6 +356,7 @@ void applyToStrip(MixerChannelView* view, MixerChannel* channel)
 	Fader* fader = view->fader();
 	fader->setMinPeak(minPeakOf(o.meterScale));
 	fader->setProperty("levelsDisplayedInDBFS", o.meterScale != QLatin1String("linear"));
+	fader->setPeakHoldMs(peakHoldMs(o.peakHold));  // MX-128
 }
 
 //! MX-133: the strip's readings as a line of text - the pre-fader peak (whichever point the bars show), RMS,
@@ -293,7 +377,7 @@ bool feedMeter(Fader* fader, MixerChannel* channel)
 	float left = 0.f;
 	float right = 0.f;
 	meterSource(channel, mode == QLatin1String("rms"), &left, &right);
-	constexpr float fallOff = 1.25f;
+	const float fallOff = meterFallOff();  // MX-128
 	fader->setPeak_L(std::max(left, fader->getPeak_L() / fallOff));
 	fader->setPeak_R(std::max(right, fader->getPeak_R() / fallOff));
 	return true;

@@ -2381,7 +2381,7 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - The rack's own "Add effect" still uses the older dialog.
 
 **Mixer (theme 16).**
-- There is no "Selected" channel filter; the type filters stand in for it.
+- *(Superseded 2026-10-06, `050/feat-meters`: the filter has a "Selected" choice - MX-005, `docs/MIXER-METERING.md` §2.)*
 
 **Lists, help and workflows (themes 18, 19, 21).**
 - Results of commands run from menus or the palette still float briefly.
@@ -2392,3 +2392,47 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - Theme changes apply at the next start, and every reply and the window say so.
 - The plug-in scan, `render.render`, `render.stems` and `browser.peaks` stay synchronous and are not in the task area.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
+
+## 0.5.0 L08 metering — ballistics, the Selected filter, live input meters, the phase view (050/feat-meters, 2026-10-06)
+
+The record of what was built is `docs/MIXER-METERING.md`; this is what each piece does not do.
+
+**MX-128, meter ballistics.**
+- The fall-off is a factor per tick of the main window's 60 Hz timer, as the inherited one was: a busy
+  interface that misses ticks lets the bars fall more slowly. "fast" is the inherited 1.25 per tick
+  (about 116 dB/s); medium and slow are about 26 and 12 dB/s.
+- After its hold, the peak line still falls by the inherited 0.05 (linear) per tick; there is no
+  "hold until clicked" setting.
+- The RMS meter mode takes the same fall-off; its reading is still one period's RMS, not a 300 ms
+  VU integration.
+
+**MX-005, the Selected channel filter.**
+- The selection is the mixer's own: the arranger's track selection does not feed it.
+- It is interface state, never saved with the project or in the config file; it is forgotten when the
+  mixer view is cleared for another project. With no interface (no mixer view to clear) an agent's
+  selection is kept until it sets another.
+- The mode bar's Pick... dialog starts with nothing ticked (it replaces the selection); Ctrl+click on a
+  strip adds or removes one channel.
+
+**MX-134, live input meters.**
+- They meter the engine's stereo input bus - the frames the retrospective capture and the stereo record
+  routes read. A wide capture (more than two channels, `AudioInputPath`) is not metered channel by
+  channel, and no record-armed track or input-monitoring strip carries its own input meter.
+- They are shown in Large Meters (the mixer's Mixer View menu) only; the record menu's Input Level is
+  still the one-shot `meter.input` reading, and no command reads the live meter (an agent reads
+  `meter.input`).
+- One live reader at a time: `inputmeter::live()` empties its own maxima, so a second Large Meters-style
+  reader would split the peaks with the first. Only one Large Meters window is ever open.
+
+**MX-137, the stereo phase view.**
+- One channel at a time, in its own Phase Scope window (Mixer View menu, a channel's More menu, or
+  `window.phase_scope`); it is not drawn on the strips or inside Large Meters.
+- It shows the block the correlation is measured from: after the channel's inserts and pan, before its
+  fader. A muted channel feeds nothing, and the view says "No signal" a quarter of a second after the
+  frames stop.
+- It draws the newest 1024 frames, auto-scaled to the loudest of them, every 40 ms; it keeps no
+  persistence trail, and the scale is not shown in dB.
+- In the one period in which the chosen channel changes, a push from the old channel still in flight
+  makes the new channel's first block wait for the next period (the tap has one writer at a time).
+- The agent reads the correlation and `frames_seen` (proof the tap is fed), not the drawn points.
+

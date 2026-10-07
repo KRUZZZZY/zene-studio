@@ -43,6 +43,7 @@
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "GuiApplication.h"
+#include "InputLevelMeter.h"
 #include "MainWindow.h"
 #include "Mixer.h"
 #include "MixerRoutingMatrix.h"
@@ -53,18 +54,22 @@ namespace lmms::gui
 namespace
 {
 
-//! MX-131: the master's RMS as two tall bars (-60..0 dB), the correlation and the loudness under them.
+//! MX-131: the master's RMS as two tall bars (-60..0 dB), the correlation and the loudness under them;
+//! MX-134: the engine's input, live, in a narrower pair at the right (InputLevelMeter.h).
 class LargeMeters : public QDialog
 {
 public:
+	static constexpr int InputWidth = 64;  //!< the input meter's column
+
 	explicit LargeMeters(QWidget* parent) :
-		QDialog(parent)
+		QDialog(parent),
+		m_input(new InputLevelMeter(this))
 	{
 		setWindowTitle(QObject::tr("Large Meters"));
 		setAttribute(Qt::WA_DeleteOnClose);
 		setAccessibleName(QObject::tr("Large Meters"));
-		setMinimumSize(160, 240);  // below it the bars' rectangles would turn negative
-		resize(260, 520);
+		setMinimumSize(160 + InputWidth, 240);  // below it the bars' rectangles would turn negative
+		resize(260 + InputWidth, 520);
 		auto* timer = new QTimer(this);
 		connect(timer, &QTimer::timeout, this, qOverload<>(&QWidget::update));
 		timer->start(40);
@@ -75,6 +80,8 @@ public:
 	}
 
 protected:
+	void resizeEvent(QResizeEvent*) override { m_input->setGeometry(width() - InputWidth, 0, InputWidth - 4, height() - 60); }
+
 	void paintEvent(QPaintEvent*) override
 	{
 		const tokens::Palette& pal = tokens::palette();
@@ -83,11 +90,12 @@ protected:
 		const MixerChannel* master = Engine::mixer()->mixerChannel(0);
 		const float levels[2] = {master->m_rmsLeft.get(), master->m_rmsRight.get()};
 		const int bottom = height() - 60;
+		const int masterWidth = width() - InputWidth;  // the input meter has the right-hand column
 		for (int side = 0; side < 2; ++side)
 		{
 			const double db = levels[side] > 0.f ? 20.0 * std::log10(levels[side]) : -60.0;
 			const double share = std::clamp((db + 60.0) / 60.0, 0.0, 1.0);
-			const QRect bar(20 + side * (width() / 2 - 10), 20, width() / 2 - 40, bottom - 20);
+			const QRect bar(20 + side * (masterWidth / 2 - 10), 20, masterWidth / 2 - 40, bottom - 20);
 			p.fillRect(bar, pal.control);
 			// Which side, and its level in figures, above the bar.
 			p.setPen(pal.text);
@@ -115,6 +123,7 @@ private:
 		setToolTip(m_loudness);  // the whole line, when the window is too narrow for it
 	}
 
+	InputLevelMeter* m_input;
 	QString m_loudness;
 };
 
@@ -256,6 +265,9 @@ void addMixerWindows(QMenu* menu)
 	QAction* meters = menu->addAction(QObject::tr("Large Meters..."));
 	meters->setProperty("controlCommand", QStringLiteral("meter.get_state"));
 	QObject::connect(meters, &QAction::triggered, menu, [] { showOne<LargeMeters>(&s_meters); });
+	QAction* scope = menu->addAction(QObject::tr("Phase Scope..."));  // MX-137
+	scope->setProperty("controlCommand", QStringLiteral("window.phase_scope"));
+	QObject::connect(scope, &QAction::triggered, menu, [] { ControlRegistry::instance()->invoke(QStringLiteral("window.phase_scope")); });
 	QAction* matrix = menu->addAction(QObject::tr("Routing Matrix..."));
 	matrix->setProperty("controlCommand", QStringLiteral("routing.matrix"));
 	QObject::connect(matrix, &QAction::triggered, menu, [] { showRoutingMatrix(); });  // theme 16: sparse (MixerRoutingMatrix.h)

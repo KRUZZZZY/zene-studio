@@ -479,7 +479,7 @@ void Fader::setPeak(float fPeak, float& targetPeak, float& persistentPeak, QElap
 	if (targetPeak != fPeak)
 	{
 		targetPeak = fPeak;
-		if (targetPeak >= persistentPeak)
+		if (targetPeak >= persistentPeak || m_peakHoldMs <= 0)  // MX-128: with no hold the line is the level
 		{
 			persistentPeak = targetPeak;
 			lastPeakTimer.restart();
@@ -488,7 +488,7 @@ void Fader::setPeak(float fPeak, float& targetPeak, float& persistentPeak, QElap
 		update();
 	}
 
-	if (persistentPeak > 0 && lastPeakTimer.elapsed() > 1500)
+	if (m_peakHoldMs > 0 && persistentPeak > 0 && lastPeakTimer.elapsed() > m_peakHoldMs)
 	{
 		persistentPeak = qMax<float>(0, persistentPeak-0.05);
 		emit peakChanged(persistentPeak);

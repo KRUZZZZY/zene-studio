@@ -9,13 +9,15 @@ Starts the REAL `zene` binary headless (its own throwaway config) and proves:
   4. vca.set_parent nests a group and refuses a loop; vca.set_links chooses the links;
   5. window.mixer_view sets and answers the sends-on-faders mode and the view options (L08);
   6. mixer.set_strip writes a channel's strip settings as one undo step, mixer.strip_get reads
-     them and the meters, mixer.set_many clears every solo, mixer.solo_mode switches (L08).
+     them and the meters, mixer.set_many clears every solo, mixer.solo_mode switches (L08);
+  7. window.phase_scope opens the stereo phase view on a channel and the real mixer feeds its tap (MX-137).
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-mixing-routing.py <zene>
 Exit 0 only when every check held.
 """
 
 import sys
+import time
 
 import control_socket_harness as H
 from freeze_bounce_evidence import Recorder, Session, report_results
@@ -76,7 +78,38 @@ def check_view(session, recorder, chans):
                    "reply=%r" % narrow)
     bad = session.call("window.mixer_view", {"filter": "everything"})
     recorder.check("an unknown filter is refused, typed", kind(bad) == "invalid_args", "reply=%r" % bad)
-    session.result("window.mixer_view", {"strip_width": "normal", "filter": "all", "meter_mode": "peak"})
+    # MX-128: the meters' ballistics are view options too.
+    ballistics = session.result("window.mixer_view", {"meter_falloff": "slow", "peak_hold": "off"})
+    recorder.check("the meter fall-off and peak hold are set and answered",
+                   ballistics.get("meter_falloff") == "slow" and ballistics.get("peak_hold") == "off", "reply=%r" % ballistics)
+    bad_hold = session.call("window.mixer_view", {"peak_hold": "forever"})
+    recorder.check("an unknown peak hold is refused, typed", kind(bad_hold) == "invalid_args", "reply=%r" % bad_hold)
+    # MX-005: the Selected filter shows the channels picked for it, answered in mixer order; the master is refused.
+    picked = session.result("window.mixer_view", {"selected_channels": [chans[1]], "filter": "selected"})
+    recorder.check("the Selected filter and its channels are set and answered",
+                   picked.get("filter") == "selected" and picked.get("selected_channels") == [chans[1]], "reply=%r" % picked)
+    master_id = next((s.get("channel") for s in picked.get("strips") or [] if s.get("type") == "master"), None)
+    master = session.call("window.mixer_view", {"selected_channels": [master_id]})
+    recorder.check("the master is never selected, typed", bool(master_id) and kind(master) == "invalid_args",
+                   "master=%r reply=%r" % (master_id, master))
+    session.result("window.mixer_view", {"selected_channels": []})
+    session.result("window.mixer_view", {"strip_width": "normal", "filter": "all", "meter_mode": "peak",
+                                         "meter_falloff": "fast", "peak_hold": "1.5s"})
+
+
+def check_phase_scope(session, recorder, chans):
+    scope = session.result("window.phase_scope", {"channel": chans[1]})
+    recorder.check("window.phase_scope opens on the channel asked for",
+                   scope.get("shown") is True and scope.get("channel") == chans[1], "reply=%r" % scope)
+    deadline = time.time() + 5.0
+    again = scope
+    while time.time() < deadline and not again.get("frames_seen", 0) > 0:
+        time.sleep(0.1)
+        again = session.result("window.phase_scope")  # no channel: the open one's
+    recorder.check("the mixer feeds the phase view's tap from that channel",
+                   again.get("channel") == chans[1] and again.get("frames_seen", 0) > 0, "reply=%r" % again)
+    missing = session.call("window.phase_scope", {"channel": "ch-9999"})
+    recorder.check("an unknown channel is refused, typed", kind(missing) == "not_found", "reply=%r" % missing)
 
 
 def check_strip(session, recorder, chans):
@@ -115,6 +148,7 @@ def main(argv):
         check_groups(session, recorder, chans)
         check_view(session, recorder, chans)
         check_strip(session, recorder, chans)
+        check_phase_scope(session, recorder, chans)
     report_results(recorder)
     if recorder.problems:
         transcript.dump()

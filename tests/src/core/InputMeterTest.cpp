@@ -1,0 +1,144 @@
+/*
+ * InputMeterTest.cpp - 0.5.0 L08 (MX-134): the input meter's live reading beside meter.input's take
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+
+/*! MX-134: a live input meter needs a reading it can poll without emptying the peaks meter.input takes, so
+ *  inputmeter::live() answers the peaks since its own last read and leaves take() alone. measure() runs on the audio
+ *  thread: it must not allocate (the allocation probe counts every operator new on this thread). Headless:
+ *  no Engine, no audio device. */
+
+#include <QtTest>
+
+#include <array>
+
+#include "AllocationProbe.h"
+#include "InputMeter.h"
+#include "SampleFrame.h"
+
+using namespace lmms;
+
+namespace
+{
+
+constexpr f_cnt_t Frames = 256;
+
+//! A period at @a left / @a right on every frame, with one negative sample (the meter reads magnitudes).
+std::array<SampleFrame, Frames> period(float left, float right)
+{
+	std::array<SampleFrame, Frames> frames{};
+	for (auto& frame : frames) { frame = SampleFrame(left * 0.5f, right * 0.5f); }
+	frames[Frames / 2] = SampleFrame(-left, -right);
+	return frames;
+}
+
+} // namespace
+
+class InputMeterTest : public QObject
+{
+	Q_OBJECT
+
+private slots:
+	void init()
+	{
+		float left = 0.f;
+		float right = 0.f;
+		inputmeter::take(&left, &right);  // a clean start for both readers
+		inputmeter::live(&left, &right);
+	}
+
+	//! Every period counts: a transient between two polls is still read, once.
+	void theLiveReadingIsTheMostSinceTheLastRead()
+	{
+		const auto loud = period(0.5f, 0.25f);
+		const auto quiet = period(0.125f, 0.f);
+		inputmeter::measure(loud.data(), Frames);
+		inputmeter::measure(quiet.data(), Frames);
+		float left = -1.f;
+		float right = -1.f;
+		inputmeter::live(&left, &right);
+		QCOMPARE(left, 0.5f);  // the louder period, though the quiet one came last
+		QCOMPARE(right, 0.25f);
+		inputmeter::live(&left, &right);
+		QCOMPARE(left, 0.f);  // nothing since
+		inputmeter::measure(quiet.data(), Frames);
+		inputmeter::live(&left, &right);
+		QCOMPARE(left, 0.125f);
+		QCOMPARE(right, 0.f);
+	}
+
+	//! The live read and meter.input's take are two readers of their own: neither empties the other.
+	void theLiveReadAndTheTakeAreIndependent()
+	{
+		const auto loud = period(0.5f, 0.25f);
+		inputmeter::measure(loud.data(), Frames);
+		float left = 0.f;
+		float right = 0.f;
+		inputmeter::live(&left, &right);
+		QCOMPARE(left, 0.5f);
+		inputmeter::take(&left, &right);  // meter.input's read, after the live one
+		QCOMPARE(left, 0.5f);
+		QCOMPARE(right, 0.25f);
+		const auto quiet = period(0.125f, 0.f);
+		inputmeter::measure(quiet.data(), Frames);
+		inputmeter::take(&left, &right);
+		QCOMPARE(left, 0.125f);
+		inputmeter::live(&left, &right);  // and the take did not empty the live reading
+		QCOMPARE(left, 0.125f);
+	}
+
+	void aPeriodWithNoInputReadsSilence()
+	{
+		inputmeter::measure(nullptr, 0);  // no capture device: the engine's input bus has no frames
+		float left = -1.f;
+		float right = -1.f;
+		inputmeter::live(&left, &right);
+		QCOMPARE(left, 0.f);
+		QCOMPARE(right, 0.f);
+	}
+
+	//! The audio thread's half allocates nothing (realtime rule).
+	void measuringAllocatesNothing()
+	{
+		// The negative control: the probe is live in this binary - a deliberate allocation is counted.
+		static int* volatile sink = nullptr;
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		sink = new int(1);
+		test::tlCountAllocations = false;
+		delete sink;
+		QCOMPARE(test::tlAllocationCount, std::uint64_t{1});
+		const auto loud = period(0.5f, 0.25f);
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		for (int i = 0; i < 64; ++i)
+		{
+			inputmeter::measure(loud.data(), Frames);
+			inputmeter::measure(nullptr, 0);
+		}
+		test::tlCountAllocations = false;
+		QCOMPARE(test::tlAllocationCount, std::uint64_t{0});
+	}
+};
+
+QTEST_GUILESS_MAIN(InputMeterTest)
+#include "InputMeterTest.moc"

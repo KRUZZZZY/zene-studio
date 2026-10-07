@@ -37,6 +37,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerOptions.h"
+#include "PhaseScopeTap.h"
 #include "SampleFrame.h"
 #include "ValueBuffer.h"
 
@@ -287,6 +288,9 @@ void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume
 	}
 	// MX-137: the phase correlation, +1 in phase (mono), 0 unrelated, -1 out of phase; 1 for silence.
 	channel.m_correlation.set(sumL > 1e-12 && sumR > 1e-12 ? static_cast<float>(sumLR / std::sqrt(sumL * sumR)) : 1.f);
+	// MX-137: and the same block for the phase view - one relaxed load unless it looks at this channel
+	// (PhaseScopeTap.h: a fixed ring of atomics, no allocation, no lock).
+	PhaseScopeTap::instance().push(channel.index(), buffer, frames);
 	// MX-082: baked post-fader inserts put the fader (and their devices) into the buffer; the pre-fader
 	// readings, and the send meters that apply the fader themselves, take the copy kept before them.
 	const SampleFrame pre = channel.m_postInserts.baked() ? getAbsPeakValues(channel.m_postInserts.preFader(), frames)
