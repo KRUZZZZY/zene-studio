@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include <QByteArray>
 #include <QHash>
 #include <QJsonArray>
 #include <QRegularExpression>
@@ -51,6 +52,19 @@ namespace
 
 //! Nesting beyond this is refused rather than recursed into (a self-referencing table).
 constexpr int MaxDepth = 16;
+
+QString fromLuaString(lua_State* L, int index)
+{
+	size_t length = 0;
+	const char* bytes = lua_tolstring(L, index, &length);
+	return QString::fromUtf8(bytes, static_cast<qsizetype>(length));
+}
+
+void pushString(lua_State* L, const QString& value)
+{
+	const QByteArray utf8 = value.toUtf8();
+	lua_pushlstring(L, utf8.constData(), static_cast<size_t>(utf8.size()));
+}
 
 const QStringList& refusedPrefixes()
 {
@@ -131,7 +145,7 @@ QJsonValue tableToJson(lua_State* L, int index, int depth)
 	lua_pushnil(L);
 	while (lua_next(L, index) != 0)
 	{
-		if (lua_type(L, -2) == LUA_TSTRING) { object.insert(QString::fromUtf8(lua_tostring(L, -2)), luaToJson(L, -1, depth + 1)); }
+		if (lua_type(L, -2) == LUA_TSTRING) { object.insert(fromLuaString(L, -2), luaToJson(L, -1, depth + 1)); }
 		lua_pop(L, 1);
 	}
 	return object;
@@ -145,7 +159,7 @@ QJsonValue luaToJson(lua_State* L, int index, int depth)
 	case LUA_TNUMBER:
 		return lua_isinteger(L, index) ? QJsonValue(static_cast<qint64>(lua_tointeger(L, index)))
 			: QJsonValue(lua_tonumber(L, index));
-	case LUA_TSTRING: return QString::fromUtf8(lua_tostring(L, index));
+	case LUA_TSTRING: return fromLuaString(L, index);
 	case LUA_TTABLE: return tableToJson(L, index, depth);
 	default: return QJsonValue();
 	}
@@ -168,8 +182,9 @@ void pushObject(lua_State* L, const QJsonObject& object)
 	lua_createtable(L, 0, static_cast<int>(object.size()));
 	for (auto it = object.begin(); it != object.end(); ++it)
 	{
+		pushString(L, it.key());
 		pushJson(L, it.value());
-		lua_setfield(L, -2, it.key().toUtf8().constData());
+		lua_settable(L, -3);
 	}
 }
 
@@ -188,7 +203,7 @@ void pushJson(lua_State* L, const QJsonValue& value)
 	{
 	case QJsonValue::Bool: lua_pushboolean(L, value.toBool()); return;
 	case QJsonValue::Double: pushNumber(L, value.toDouble()); return;
-	case QJsonValue::String: lua_pushstring(L, value.toString().toUtf8().constData()); return;
+	case QJsonValue::String: pushString(L, value.toString()); return;
 	case QJsonValue::Array: pushArray(L, value.toArray()); return;
 	case QJsonValue::Object: pushObject(L, value.toObject()); return;
 	default: lua_pushnil(L); return;
@@ -198,8 +213,8 @@ void pushJson(lua_State* L, const QJsonValue& value)
 int pushFailure(lua_State* L, const QString& message, const QString& kind)
 {
 	lua_pushnil(L);
-	lua_pushstring(L, message.toUtf8().constData());
-	lua_pushstring(L, kind.toUtf8().constData());
+	pushString(L, message);
+	pushString(L, kind);
 	return 3;
 }
 
@@ -257,7 +272,9 @@ void emptyTablesAsArrays(const QString& id, QJsonObject& args)
 //! zene.command(id, args) -> reply | nil, message, kind
 int luaCommand(lua_State* L)
 {
-	const QString id = QString::fromUtf8(luaL_checkstring(L, 1));
+	size_t idLength = 0;
+	const char* idBytes = luaL_checklstring(L, 1, &idLength);
+	const QString id = QString::fromUtf8(idBytes, static_cast<qsizetype>(idLength));
 	QJsonObject args = lua_istable(L, 2) ? luaToJson(L, 2, 0).toObject() : QJsonObject();
 	if (const QString why = refusalFor(id); !why.isEmpty()) { return pushFailure(L, why, QStringLiteral("refused")); }
 	emptyTablesAsArrays(id, args);
@@ -288,7 +305,7 @@ int luaCommands(lua_State* L)
 	lua_createtable(L, static_cast<int>(ids.size()), 0);
 	for (int i = 0; i < ids.size(); ++i)
 	{
-		lua_pushstring(L, ids.at(i).toUtf8().constData());
+		pushString(L, ids.at(i));
 		lua_rawseti(L, -2, i + 1);
 	}
 	return 1;
