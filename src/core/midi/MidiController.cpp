@@ -256,6 +256,22 @@ void MidiController::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	// control-change - the one thing soft takeover exists to prevent.
 	_this.setAttribute("softtakeovertarget", QString::number(m_softTakeoverTarget, 'f', 6));
 	_this.setAttribute("feedback", m_feedbackEnabled ? "1" : "0");
+	if (m_tookOverPortMode)
+	{
+		_this.setAttribute("feedbackmodebefore", QString::number(static_cast<int>(m_modeBeforeFeedback)));
+	}
+	else
+	{
+		_this.removeAttribute("feedbackmodebefore");
+	}
+	if (m_tookOverPortChannel)
+	{
+		_this.setAttribute("feedbackoutputchannelbefore", QString::number(m_outputChannelBeforeFeedback));
+	}
+	else
+	{
+		_this.removeAttribute("feedbackoutputchannelbefore");
+	}
 }
 
 
@@ -273,6 +289,29 @@ void MidiController::loadSettings( const QDomElement & _this )
 	// A freshly loaded control has not been captured by anything yet.
 	rearmSoftTakeover();
 	m_feedbackEnabled = (_this.attribute("feedback", "0") == "1");
+	m_tookOverPortMode = false;
+	if (_this.hasAttribute("feedbackmodebefore"))
+	{
+		bool validMode = false;
+		const int mode = _this.attribute("feedbackmodebefore").toInt(&validMode);
+		if (validMode && mode >= static_cast<int>(MidiPort::Mode::Disabled)
+			&& mode <= static_cast<int>(MidiPort::Mode::Duplex))
+		{
+			m_modeBeforeFeedback = static_cast<MidiPort::Mode>(mode);
+			m_tookOverPortMode = true;
+		}
+	}
+	m_tookOverPortChannel = false;
+	if (_this.hasAttribute("feedbackoutputchannelbefore"))
+	{
+		bool validChannel = false;
+		const int channel = _this.attribute("feedbackoutputchannelbefore").toInt(&validChannel);
+		if (validChannel && channel >= 0 && channel <= MidiChannelCount)
+		{
+			m_outputChannelBeforeFeedback = channel;
+			m_tookOverPortChannel = true;
+		}
+	}
 	updateName();
 }
 
