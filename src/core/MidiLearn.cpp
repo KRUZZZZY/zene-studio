@@ -92,6 +92,7 @@ void MidiLearn::setFocusTarget(AutomatableModel* model)
 	// deferred bind runs, and the QPointer turns that into "no target" instead
 	// of a dangling read.
 	m_focusTarget = model;
+	m_focusGeneration.fetch_add(1, std::memory_order_release);
 	m_focusTargetSet.store(model != nullptr, std::memory_order_release);
 }
 
@@ -128,12 +129,17 @@ Qt::HANDLE MidiLearn::lastBindingThreadId() const
 
 
 
-void MidiLearn::requestBinding(int channel, int controllerNum)
+void MidiLearn::requestBinding(int channel, int controllerNum, unsigned int generation)
 {
-	// MIDI input thread. Nothing here allocates: the payload is two int stores
-	// and a release store on a bool. A request already in the slot is left
-	// alone - the first control-change of an armed learn wins, so a burst of CC
-	// traffic cannot swap the binding under the GUI thread mid-drain.
+	// MIDI input thread. Nothing here allocates: the payload is atomic stores
+	// followed by a release store on a bool. A request already in the slot is
+	// left alone - the first control-change of an armed learn wins, so a burst of
+	// CC traffic cannot swap the binding under the GUI thread mid-drain.
+	if (generation != m_focusGeneration.load(std::memory_order_acquire) || !isEnabled())
+	{
+		return;
+	}
+
 	if (m_pendingBinding.load(std::memory_order_relaxed))
 	{
 		return;
@@ -143,6 +149,7 @@ void MidiLearn::requestBinding(int channel, int controllerNum)
 	// publishes the channel and controller number.
 	m_pendingChannel.store(channel, std::memory_order_relaxed);
 	m_pendingController.store(controllerNum, std::memory_order_relaxed);
+	m_pendingGeneration.store(generation, std::memory_order_relaxed);
 	m_pendingBinding.store(true, std::memory_order_release);
 
 	// The learn is spent the moment a control-change claims it. Disarming here
@@ -170,6 +177,7 @@ bool MidiLearn::handleMidiEvent(const MidiEvent& event)
 
 	// Armed but nothing focused: a CC must not invent a target. The flag is read
 	// instead of the target itself because the target is a GUI-thread object.
+	const unsigned int generation = m_focusGeneration.load(std::memory_order_acquire);
 	if (!m_focusTargetSet.load(std::memory_order_acquire))
 	{
 		return false;
@@ -192,7 +200,7 @@ bool MidiLearn::handleMidiEvent(const MidiEvent& event)
 	// MidiController and the ControllerConnection - and the
 	// AutomatableModel::setControllerConnection() write the GUI renders from -
 	// are built later, by applyPendingBinding(), on the thread that owns them.
-	requestBinding(channel, controllerNum);
+	requestBinding(channel, controllerNum, generation);
 	return false;
 }
 
@@ -211,6 +219,11 @@ bool MidiLearn::applyPendingBinding()
 	// these two reads see the channel and controller number it wrote.
 	const int channel = m_pendingChannel.load(std::memory_order_relaxed);
 	const int controllerNum = m_pendingController.load(std::memory_order_relaxed);
+	const unsigned int generation = m_pendingGeneration.load(std::memory_order_relaxed);
+	if (generation != m_focusGeneration.load(std::memory_order_acquire))
+	{
+		return false;
+	}
 
 	return bindFocusedControl(channel, controllerNum);
 }
