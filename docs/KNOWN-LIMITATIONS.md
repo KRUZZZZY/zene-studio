@@ -2333,3 +2333,21 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - Theme changes apply at the next start, and every reply and the window say so.
 - The plug-in scan, `render.render`, `render.stems` and `browser.peaks` stay synchronous and are not in the task area.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
+
+## 0.5.0 audio clips — looped content, rotation and the crossfade editor (lane `audio-clips`, 2026-10-07)
+
+**Looped audio content (ED-029, `clip.set_loop` on an audio clip).** An audio clip's audio from `start` ticks
+after its in-point, for `length` ticks, repeats across the clip once playback passes the loop's end
+(`include/ClipAudioLoop.h`; proved on rendered PCM by `tests/src/core/AudioClipLoopTest.cpp`). What it does not do:
+- The loop is measured in ticks when it is set and then kept in **source frames** (`loopfrom` / `loopframes`), so a
+  later tempo change keeps it on the same audio rather than on the same bars. There is no "loop follows the grid".
+- It plays only on a plain clip: one with no warp markers and no source tempo, no transpose, no speed change, not
+  armed to record, and on a track with no comp. `clip.set_loop` refuses such a clip, typed; a loop on a clip that
+  becomes one of these later is kept in the file but not played until it is plain again. Pre-fades are not played
+  on a looped clip.
+- A loop is not split-aware: splitting or trimming a looped clip keeps the loop on the source frames it had, and a
+  split past the loop's first pass does not carry the folded position into the right half.
+- The loop is drawn nowhere: the clip still shows its source waveform once, and the only interface is the clip
+  menu's "Loop the Content..." form.
+- An older build loads a looped clip as an unlooped one (it ignores the new attributes), so the clip falls silent
+  after its audio ends there.

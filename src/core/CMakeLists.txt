@@ -1101,6 +1101,8 @@ set(LMMS_SRCS
 	core/AutomationLatency.cpp
 	core/MixerPostInserts.cpp
 	core/ClipPreFades.cpp
+	# 0.5.0 ED-029 / ED-028: a sample clip's content looped and rotated inside the clip.
+	core/ClipAudioLoop.cpp
 	core/ControlCommandsW3Engine.cpp
 	core/InputMeter.cpp
 	core/RecorderTaps.cpp

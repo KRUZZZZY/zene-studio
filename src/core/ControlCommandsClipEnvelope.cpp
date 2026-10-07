@@ -33,6 +33,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ClipAudioLoop.h"
 #include "ClipEdits.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
@@ -198,13 +199,36 @@ ControlResult setTranspose(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
-//! 0.5.0 ED-029: a MIDI clip's content repeating every 'length' ticks across the clip (0 stops it).
+//! 0.5.0 ED-029 (audio): a sample clip's audio looped - 'start' and 'length' ticks from its in-point, kept in source frames.
+ControlResult setAudioLoop(const ClipRef& ref, SampleClip* sample, const QJsonObject& args)
+{
+	const int length = args.value(QStringLiteral("length")).toInt();
+	const int start = args.value(QStringLiteral("start")).toInt();
+	const QString refusal = audioloop::refusal(*sample);
+	if (length > 0 && !refusal.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, refusal); }
+	ClipEdits after = ref.clip->clipEdits();
+	QString message;
+	if (!audioloop::withLoop(*sample, start, length, &after, &message)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, message); }
+	ref.clip->addJournalCheckPoint();
+	ref.clip->setClipEdits(after);
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("length"), length > 0 ? length : 0},
+		{QStringLiteral("start"), length > 0 ? start : 0}, {QStringLiteral("loop_from_frame"), static_cast<double>(after.audioLoopStart)},
+		{QStringLiteral("loop_frames"), static_cast<double>(after.audioLoopFrames)}});
+}
+
+//! 0.5.0 ED-029: a MIDI clip's content repeating every 'length' ticks across the clip (0 stops it); a sample clip's audio
+//! looped (setAudioLoop).
 ControlResult setLoop(const QJsonObject& args)
 {
 	ClipRef ref;
 	ControlResult error;
 	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-	if (dynamic_cast<MidiClip*>(ref.clip) == nullptr) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("looped content belongs to MIDI clips")); }
+	if (auto* sample = dynamic_cast<SampleClip*>(ref.clip)) { return setAudioLoop(ref, sample, args); }
+	if (dynamic_cast<MidiClip*>(ref.clip) == nullptr) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("looped content belongs to MIDI and audio clips")); }
+	if (args.value(QStringLiteral("start")).toInt() != 0)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a MIDI clip's loop starts at the clip's start; 'start' is for audio clips"));
+	}
 	ClipEdits after = ref.clip->clipEdits();
 	after.loopTicks = args.value(QStringLiteral("length")).toInt();
 	ref.clip->addJournalCheckPoint();
@@ -263,10 +287,13 @@ void registerClipEnvelopeCommands(ControlRegistry& registry)
 	loop.id = QStringLiteral("clip.set_loop");
 	loop.group = QStringLiteral("clip");
 	loop.verb = QStringLiteral("set_loop");
-	loop.description = QStringLiteral("Loop a MIDI clip's content: its notes from the start to 'length' ticks repeat across the whole "
-		"clip, however long it is drawn (0 stops the loop). Saved with the clip. Reversible through the ProjectJournal (Clip checkpoint).");
-	loop.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("length"), integerProperty(0, 192 * 256)}},
-		{QStringLiteral("clip"), QStringLiteral("length")});
+	loop.description = QStringLiteral("Loop a clip's content: a MIDI clip's notes from the start to 'length' ticks repeat across the whole "
+		"clip, however long it is drawn (0 stops the loop). An audio clip's audio from 'start' ticks after its in-point (0 when left out) "
+		"for 'length' ticks repeats the same way once the clip plays past it - kept in source frames, so a tempo change keeps it on the "
+		"same audio; refused, typed, for a warped, transposed, sped or recording audio clip. Saved with the clip. Reversible through "
+		"the ProjectJournal (Clip checkpoint).");
+	loop.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("length"), integerProperty(0, 192 * 256)},
+		{QStringLiteral("start"), integerProperty(0, 192 * 256)}}, {QStringLiteral("clip"), QStringLiteral("length")});
 	loop.resultSchema = objectProperty();
 	loop.mutating = true;
 	loop.handler = setLoop;

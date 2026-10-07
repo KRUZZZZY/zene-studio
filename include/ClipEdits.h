@@ -117,6 +117,13 @@ struct ClipEdits
 	int formant = 0;
 	//! 0.5.0 ED-029: a MIDI clip's content repeats every `loopTicks` across the clip's length (0: no loop).
 	int loopTicks = 0;
+	//! 0.5.0 ED-029 / ED-028 (audio): a sample clip's content loops over the SOURCE frames [audioLoopStart,
+	//! audioLoopStart + audioLoopFrames) (absolute, so a tempo change or a trim keeps the loop on the same audio),
+	//! and plays from source frame `in-point + audioLoopOffset + elapsed` - folded into the loop once past its end
+	//! (a rotation moves the offset). All 0: no loop. See include/ClipAudioLoop.h.
+	std::int64_t audioLoopStart = 0;
+	std::int64_t audioLoopFrames = 0;
+	std::int64_t audioLoopOffset = 0;
 	//! 0.5.0 ED-022: a point inside the clip, `snapTicks` from its start, that lands on the grid when the clip is
 	//! dragged (0: the clip's start, as always).
 	int snapTicks = 0;
@@ -144,12 +151,13 @@ struct ClipEdits
 	bool hasSpeed() const { return speedFrom != 100 || speedTo != 100 || speedInTicks > 0 || speedOutTicks > 0; }
 	bool hasEnvelope() const { return envelopeCount > 0; }
 	bool hasPreFade() const { return preFadeInTicks > 0 || preFadeOutTicks > 0; }
+	bool hasAudioLoop() const { return audioLoopFrames > 0; }
 
 	//! Every field but the envelope's points, for comparing (one tuple, so a new field is one more name here).
 	auto scalars() const
 	{
 		return std::tie(gain, fadeInTicks, fadeOutTicks, fadeInShape, fadeOutShape, transpose, keepFormants, formant, loopTicks, snapTicks, speedFrom, speedTo, speedInTicks,
-			speedOutTicks, preFadeInTicks, preFadeOutTicks, envelopeCount);
+			speedOutTicks, preFadeInTicks, preFadeOutTicks, envelopeCount, audioLoopStart, audioLoopFrames, audioLoopOffset);
 	}
 	bool operator==(const ClipEdits& other) const
 	{

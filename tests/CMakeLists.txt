@@ -647,6 +647,8 @@ set(LMMS_TESTS
 	src/core/ModulatorToolsTest.cpp
 	# 0.5.0 W3 engine: latency-compensated automation, post-fader inserts, receives, pre-fades.
 	src/core/W3EngineTest.cpp
+	# 0.5.0 ED-029 / ED-028: an audio clip's content looped and rotated inside the clip, on rendered PCM.
+	src/core/AudioClipLoopTest.cpp
 	# 0.5.0 L05: fade shapes and handles, automatic and range fades, splits, slices, beat mapping.
 	src/core/AudioEditingTest.cpp
 	# 0.5.0 W2 gaps (audit-rows-1): clip.join, ripple on move and insert, controller.map / unmap.

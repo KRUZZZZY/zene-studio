@@ -285,6 +285,23 @@ void populateTrack(QMenu* menu, Track* track)
 	}
 }
 
+namespace
+{
+
+//! ED-029: a MIDI clip's notes or (0.5.0 audio-clips) an audio clip's audio looped across the clip - a whole bar of
+//! notes, or the whole audio from its in-point, by default.
+void loopEntry(QMenu* menu, Clip* clip, const QJsonObject& self)
+{
+	if (dynamic_cast<MidiClip*>(clip) != nullptr) { add(menu, "Loop the Content...", "clip.set_loop", self, true, {{QStringLiteral("length"), 192}}); }
+	if (auto* audio = dynamic_cast<SampleClip*>(clip))
+	{
+		add(menu, "Loop the Content...", "clip.set_loop", self, true, {{QStringLiteral("start"), 0},
+			{QStringLiteral("length"), static_cast<int>(audio->sampleLength().getTicks())}});
+	}
+}
+
+} // namespace
+
 void populateClip(QMenu* menu, Clip* clip)
 {
 	if (clip == nullptr) { return; }
@@ -325,7 +342,7 @@ void populateClip(QMenu* menu, Clip* clip)
 	}
 	add(pitch, "Reset", "clip.set_transpose", with(self, "semitones", 0), false);
 	add(pitch, "Transpose...", "clip.set_transpose", self, true, {{QStringLiteral("semitones"), transpose}});
-	if (dynamic_cast<MidiClip*>(clip) != nullptr) { add(menu, "Loop the Content...", "clip.set_loop", self, true, {{QStringLiteral("length"), 192}}); }  // ED-029
+	loopEntry(menu, clip, self);  // ED-029
 	if (dynamic_cast<SampleClip*>(clip) != nullptr)  // ED-153
 	{
 		choices(pitch, "Keep the Formants", "clip.set_formant", "keep", self);

@@ -486,6 +486,12 @@ void Clip::saveClipEdits(QDomElement& element) const
 	if (m_edits.keepFormants) { element.setAttribute("formantkeep", 1); }
 	if (m_edits.formant != 0) { element.setAttribute("formant", m_edits.formant); }
 	if (m_edits.loopTicks > 0) { element.setAttribute("loop", m_edits.loopTicks); }  // ED-029
+	if (m_edits.hasAudioLoop())  // ED-029 / ED-028 (audio): the loop in source frames, the offset only when set
+	{
+		element.setAttribute("loopfrom", QString::number(m_edits.audioLoopStart));
+		element.setAttribute("loopframes", QString::number(m_edits.audioLoopFrames));
+		if (m_edits.audioLoopOffset != 0) { element.setAttribute("loopoffset", QString::number(m_edits.audioLoopOffset)); }
+	}
 	if (m_edits.snapTicks > 0) { element.setAttribute("snappoint", m_edits.snapTicks); }  // ED-022
 	saveSpeed(m_edits, element);  // ED-152 / ED-179
 	// ED-042: the gain envelope, written only when there is one (I9, additive).
@@ -633,6 +639,12 @@ void Clip::loadClipEdits(const QDomElement& element)
 	edits.keepFormants = element.attribute("formantkeep", "0").toInt() != 0;
 	edits.formant = std::clamp(element.attribute("formant", "0").toInt(), -24, 24);
 	edits.loopTicks = std::max(0, element.attribute("loop", "0").toInt());
+	edits.audioLoopFrames = std::max<qlonglong>(0, element.attribute("loopframes", "0").toLongLong());
+	if (edits.audioLoopFrames > 0)  // an offset or a start without a loop is not a loop
+	{
+		edits.audioLoopStart = std::max<qlonglong>(0, element.attribute("loopfrom", "0").toLongLong());
+		edits.audioLoopOffset = element.attribute("loopoffset", "0").toLongLong();
+	}
 	edits.snapTicks = std::max(0, element.attribute("snappoint", "0").toInt());
 	loadSpeed(element, &edits);
 

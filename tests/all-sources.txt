@@ -161,6 +161,7 @@ include/ChordProgression.h
 include/ChordTrack.h
 include/ChordVocabulary.h
 include/Clip.h
+include/ClipAudioLoop.h
 include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipEditsMenu.h
@@ -1332,6 +1333,7 @@ src/core/ChordProgression.cpp
 src/core/ChordTrack.cpp
 src/core/ChordVocabulary.cpp
 src/core/Clip.cpp
+src/core/ClipAudioLoop.cpp
 src/core/ClipConsolidate.cpp
 src/core/ClipEdits.cpp
 src/core/ClipLinks.cpp
@@ -2334,6 +2336,7 @@ tests/src/core/AudioBufferTest.cpp
 tests/src/core/AudioBurstSupport.h
 tests/src/core/AudioBusHandleTest.cpp
 tests/src/core/AudioBusTest.cpp
+tests/src/core/AudioClipLoopTest.cpp
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioEngineTeardownTest.cpp
 tests/src/core/AudioPortsModelTest.cpp

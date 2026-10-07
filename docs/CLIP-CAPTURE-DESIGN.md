@@ -481,6 +481,16 @@ Notes the implementer needs:
   (`src/core/Track.cpp:284-303`, node names `include/SampleClip.h:64-67`), so it must be registered
   there and in the clipboard path (`src/gui/clips/ClipView.cpp:526-573`, `createClipDataFiles`).
 
+**0.5.0 addendum (lane `audio-clips`, ED-029): a looped audio clip.** Three more additive attributes on
+the clip's element, written only on a looped clip and read back as "no loop" when absent (`Clip::saveClipEdits` /
+`loadClipEdits`): `loopfrom` and `loopframes` - the loop as a range of SOURCE frames, absolute in the buffer, so a
+tempo change or a trim leaves it on the same audio - and `loopoffset`, the source frames the content is turned by
+(written only when not 0). `clip.set_loop` sets the first two from ticks measured at the clip's rate (and clears the
+offset). Playback (`include/ClipAudioLoop.h`):
+SampleTrack schedules the clip with an unfolded window, so the pass runs to the clip's end, and SamplePlayHandle
+plays a copy of the clip's Sample with the loop's points in `Sample::Loop::On` from the folded first frame - one
+member read per period, no allocation. Limits: `docs/KNOWN-LIMITATIONS.md`, "0.5.0 audio clips".
+
 ---
 
 ## 3. Per-feature decision table

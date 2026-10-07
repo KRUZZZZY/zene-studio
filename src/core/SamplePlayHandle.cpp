@@ -165,6 +165,7 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 	snapshotClipEdits(clip, window);
 	snapshotComp(clip);
 	snapshotPreFades(clip, window);  // 0.5.0 ED-179: a no-op for a clip without pre-fades
+	snapshotAudioLoop(clip, window);  // 0.5.0 ED-029: a no-op for a clip without a loop
 }
 
 
@@ -416,7 +417,8 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		else
 		{
 			const double ratio = warpRatio() / speedHere();
-			if (!m_sample->play(workingBuffer, &m_state, frames, Sample::Loop::Off, ratio))
+			// 0.5.0 ED-029: Loop::On only for a looped clip (snapshotAudioLoop); Off, as always, for every other.
+			if (!m_sample->play(workingBuffer, &m_state, frames, m_loopMode, ratio))
 			{
 				zeroSampleFrames(workingBuffer, frames);
 			}

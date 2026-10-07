@@ -547,6 +547,7 @@ include/ChordFollow.h
 include/ChordProgression.h
 include/ChordTrack.h
 include/ChordVocabulary.h
+include/ClipAudioLoop.h
 include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipEditsMenu.h
@@ -1065,6 +1066,7 @@ src/core/ChordDetect.cpp
 src/core/ChordProgression.cpp
 src/core/ChordTrack.cpp
 src/core/ChordVocabulary.cpp
+src/core/ClipAudioLoop.cpp
 src/core/ClipConsolidate.cpp
 src/core/ClipEdits.cpp
 src/core/ClipLinks.cpp
@@ -1906,6 +1908,7 @@ tests/src/core/ArrangingCatchUpTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
 tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBurstSupport.h
+tests/src/core/AudioClipLoopTest.cpp
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AutomationLanesTest.cpp
