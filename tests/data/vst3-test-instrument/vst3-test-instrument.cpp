@@ -160,9 +160,10 @@ tresult PLUGIN_API TestInstrument::initialize (FUnknown* context)
 	parameters.addParameter (STR16 ("Level"), nullptr, /*flags*/ 0, kDefaultLevel,
 	                         ParameterInfo::kCanAutomate, kLevelParam);
 	// A visible read-only parameter: the plug-in owns its value, so a host must
-	// not offer it as an editable knob.
-	parameters.addParameter (STR16 ("Meter"), nullptr, ParameterInfo::kIsReadOnly,
-	                         0.0, /*hints*/ 0, kMeterParam);
+	// not offer it as an editable knob. SDK argument order is
+	// (title, units, stepCount, default, flags, tag).
+	parameters.addParameter (STR16 ("Meter"), nullptr, /*stepCount*/ 0, 0.0,
+	                         ParameterInfo::kIsReadOnly, kMeterParam);
 	return kResultOk;
 }
 
