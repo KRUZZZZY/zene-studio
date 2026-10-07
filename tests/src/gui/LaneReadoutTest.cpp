@@ -226,6 +226,38 @@ private slots:
 		Engine::getSong()->setPlayPos(0, Song::PlayMode::Song);
 	}
 
+	void aShortProbabilisticNoteHasAVisibleCue()
+	{
+		m_clip->addNote(Note(TimePos(1), TimePos(384), 60, 100), false);
+		m_clip->rearrangeAllNotes();
+		emit m_editor->stateChanged();
+		NoteCanvas* canvas = m_editor->canvas();
+		Note* shortNote = m_clip->notes().back();
+		const QRect drawn = canvas->noteRect(*shortNote);
+		QVERIFY(drawn.width() <= 4);
+
+		shortNote->setProbability(1.f);
+		emit m_editor->stateChanged();
+		QCoreApplication::processEvents();
+		const QColor alwaysPlayed = canvas->grab().toImage().pixelColor(drawn.center());
+		shortNote->setProbability(0.5f);
+		emit m_editor->stateChanged();
+		QCoreApplication::processEvents();
+		const QColor mayNotPlay = canvas->grab().toImage().pixelColor(drawn.center());
+		QVERIFY2(alwaysPlayed != mayNotPlay, "a narrow note's probability must change its rendered fill");
+
+		shortNote->setSelected(true);
+		shortNote->setProbability(1.f);
+		emit m_editor->stateChanged();
+		QCoreApplication::processEvents();
+		const QColor selectedAlwaysPlayed = canvas->grab().toImage().pixelColor(drawn.center());
+		shortNote->setProbability(0.5f);
+		emit m_editor->stateChanged();
+		QCoreApplication::processEvents();
+		const QColor selectedMayNotPlay = canvas->grab().toImage().pixelColor(drawn.center());
+		QVERIFY2(selectedAlwaysPlayed != selectedMayNotPlay, "selection must not hide a narrow note's probability");
+	}
+
 private:
 	//! How many rows of @a lane's column @a x are drawn in the playhead's colour.
 	static int playheadRows(QWidget* lane, int x)

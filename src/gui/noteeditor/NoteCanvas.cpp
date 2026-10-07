@@ -372,11 +372,13 @@ void NoteCanvas::paintNote(QPainter& p, const Note& note, const QRect& r) const
 	fill.setAlphaF(note.muted() ? 0.35f : 0.45f + 0.55f * note.probability());
 	// Zoomed far out a note is a sliver a few pixels wide: the edge band, the label and the slide
 	// mark cannot be seen there, so they are not drawn (the widest-zoom frame's cost, measured in
-	// PianoRollBenchmarkTest, is dominated by these thousands of slivers). A sliver is opaque, so a short
-	// note shows whatever its chance (0.5.0 theme 11).
+	// PianoRollBenchmarkTest, is dominated by these thousands of slivers). Keep the probability alpha
+	// in the fill so the chance remains visible at this zoom too.
 	if (r.width() <= 4)
 	{
-		p.fillRect(r, note.selected() ? pal.text : solid);
+		QColor sliver = note.selected() ? pal.text : solid;
+		sliver.setAlphaF(fill.alphaF());
+		p.fillRect(r, sliver);
 		return;
 	}
 	p.fillRect(r, fill);
