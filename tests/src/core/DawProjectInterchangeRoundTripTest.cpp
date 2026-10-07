@@ -1270,6 +1270,58 @@ private slots:
 			"a clamped position was not counted in rounded_times");
 	}
 
+//! Luna cluster new-p8-114: note fields beyond the format's MIDI and velocity
+//! ranges must be refused before they reach engine notes.
+void outOfRangeNoteFieldsAreRefused()
+{
+	const QByteArray validXml =
+		"<Project version=\"1.0\">"
+		"<Application name=\"Probe\" version=\"1\"/>"
+		"<Transport><Tempo value=\"120\"/></Transport>"
+		"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+		"<Channel id=\"c1\"/></Track></Structure>"
+		"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+		"<Clip time=\"0\" duration=\"1\"><Notes>"
+		"<Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.5\" rel=\"0.5\"/>"
+		"</Notes></Clip></Clips></Lanes></Lanes></Arrangement>"
+		"</Project>";
+
+	QByteArray boundaryXml = validXml;
+	boundaryXml.replace("channel=\"0\"", "channel=\"15\"");
+	boundaryXml.replace("key=\"60\"", "key=\"127\"");
+	boundaryXml.replace("vel=\"0.5\"", "vel=\"0\"");
+	boundaryXml.replace("rel=\"0.5\"", "rel=\"1\"");
+	DawProjectModel boundaryModel;
+	DawProjectReadReport boundaryReport;
+	QString error;
+	QVERIFY2(dawProjectModelFromXml(boundaryXml, &boundaryModel, &boundaryReport, &error),
+		qPrintable(error));
+	const DawProjectNote& boundaryNote = boundaryModel.tracks[0].clips[0].notes[0];
+	QCOMPARE(boundaryNote.channel, 15);
+	QCOMPARE(boundaryNote.key, 127);
+	QCOMPARE(boundaryNote.vel, 0.0);
+	QCOMPARE(boundaryNote.rel, 1.0);
+
+	const QList<QPair<QByteArray, QByteArray>> invalidAttributes = {
+		{"channel=\"0\"", "channel=\"-1\""}, {"channel=\"0\"", "channel=\"16\""},
+		{"key=\"60\"", "key=\"-1\""}, {"key=\"60\"", "key=\"128\""},
+		{"vel=\"0.5\"", "vel=\"-0.01\""}, {"vel=\"0.5\"", "vel=\"1.01\""},
+		{"rel=\"0.5\"", "rel=\"-0.01\""}, {"rel=\"0.5\"", "rel=\"1.01\""}
+	};
+	for (const auto& [validAttribute, invalidAttribute] : invalidAttributes)
+	{
+		QByteArray xml = validXml;
+		xml.replace(validAttribute, invalidAttribute);
+		DawProjectModel model;
+		DawProjectReadReport report;
+		error.clear();
+		QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+			qPrintable(QStringLiteral("accepted %1").arg(QString::fromLatin1(invalidAttribute))));
+		const QByteArray field = validAttribute.left(validAttribute.indexOf('='));
+		QVERIFY2(error.contains(QString::fromLatin1(field)), qPrintable(error));
+	}
+}
+
 //! Luna cluster 5066: the writer's own header promises a NEGATIVE time is
 //! refused, and a NaN or an infinity is not a position at all - but the only
 //! range tests were the tempo's and the denominator's. A clip at beat -1, a
