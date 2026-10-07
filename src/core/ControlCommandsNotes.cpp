@@ -319,10 +319,18 @@ void registerNoteResize(ControlRegistry& registry)
 		int index = -1;
 		Note* note = control::resolveNote(clip, args.value(QStringLiteral("note")).toString(), &index, &error);
 		if (note == nullptr) { return error; }
+		const tick_t requestedLength = static_cast<tick_t>(args.value(QStringLiteral("length")).toDouble());
+		const qint64 requestedEnd = static_cast<qint64>(note->pos().getTicks()) + requestedLength;
+		if (requestedEnd > static_cast<qint64>(MaxSongLength))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("resizing the note would end at %1, past the song limit of %2")
+					.arg(requestedEnd).arg(static_cast<qint64>(MaxSongLength)));
+		}
 		const tick_t previous = note->length().getTicks();
 
 		clip->addJournalCheckPoint();
-		note->setLength(TimePos(static_cast<tick_t>(args.value(QStringLiteral("length")).toDouble())));
+		note->setLength(TimePos(requestedLength));
 		clip->updateLength();
 		clip->dataChanged();
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }

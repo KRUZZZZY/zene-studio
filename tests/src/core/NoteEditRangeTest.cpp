@@ -23,9 +23,10 @@
 
 /*! note.edit checks 'position' and 'length' against MaxSongLength one at a time, so the note's
  *  END - the sum of the two - needs its own check: a note written at the very end of the
- *  supported range with a length would otherwise end past it. Both the position+length edit and
- *  the resize alone are covered, and the limit itself stays reachable. The commands themselves
- *  (scale, ratchet, add_many, the clipboard, slide and Mod X / Y) are NoteEditingCommandsTest. */
+ *  supported range with a length would otherwise end past it. The position+length edit and a
+ *  length-only edit are covered here, as is note.resize's independent range check. The limit
+ *  itself stays reachable. Other note commands (scale, ratchet, add_many, clipboard, slide and
+ *  Mod X / Y) are covered by NoteEditingCommandsTest. */
 
 #include <QtTest>
 
@@ -119,6 +120,30 @@ private slots:
 
 		// (c) the limit itself is still reachable: ending exactly at MaxSongLength passes.
 		QCOMPARE(edit(note, {{QStringLiteral("length"), 48}}), ControlErrorKind::None);
+		QCOMPARE(m_clip->notes()[0]->pos().getTicks() + m_clip->notes()[0]->length().getTicks(),
+			static_cast<int>(MaxSongLength));
+	}
+
+	void noteResizeMayNotEndPastTheSongLimit()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		m_track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		m_clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		m_clip->addNote(Note(TimePos(48), TimePos(48), 60), false);
+		m_clip->rearrangeAllNotes();
+		const QString note = control::noteIdOf(m_clip->notes()[0]);
+
+		const ControlResult pastLimit = run(QStringLiteral("note.resize"),
+			{{QStringLiteral("clip"), clip()}, {QStringLiteral("note"), note},
+				{QStringLiteral("length"), MaxSongLength}});
+		QCOMPARE(pastLimit.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(m_clip->notes()[0]->length().getTicks(), 48);
+
+		const ControlResult atLimit = run(QStringLiteral("note.resize"),
+			{{QStringLiteral("clip"), clip()}, {QStringLiteral("note"), note},
+				{QStringLiteral("length"), MaxSongLength - 48}});
+		QVERIFY(atLimit.ok);
 		QCOMPARE(m_clip->notes()[0]->pos().getTicks() + m_clip->notes()[0]->length().getTicks(),
 			static_cast<int>(MaxSongLength));
 	}
