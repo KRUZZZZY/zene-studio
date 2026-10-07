@@ -80,12 +80,21 @@ void enqueueDaw(ScriptCommand command)
 }
 
 //! A rename travels in the fixed 256-byte payload, like SetTrackName's.
-ScriptCommand namedDawCommand(ScriptDawBindings::Op op, void* target, const QString& name)
+bool namedDawCommand(ScriptDawBindings::Op op, void* target, const QString& value, ScriptCommand* command)
 {
-	ScriptCommand command = dawCommand(op, target);
-	const QByteArray utf8 = name.toUtf8();
-	std::strncpy(command.text, utf8.constData(), sizeof(command.text) - 1);
-	return command;
+	const QByteArray utf8 = value.toUtf8();
+	if (utf8.size() >= static_cast<qsizetype>(sizeof(command->text)))
+	{
+		const QString operation = op == ScriptDawBindings::Op::SetChannelName
+			? QStringLiteral("setting channel name") : QStringLiteral("loading effect");
+		ScriptEngine::instance()->logMessage(QStringLiteral(
+			"[error] %1 refused: UTF-8 value exceeds the %2-byte command payload limit")
+			.arg(operation).arg(static_cast<int>(sizeof(command->text) - 1)));
+		return false;
+	}
+	*command = dawCommand(op, target);
+	std::strncpy(command->text, utf8.constData(), sizeof(command->text) - 1);
+	return true;
 }
 
 //! Write one model through the existing vocabulary, with the checkpoint that
@@ -328,7 +337,9 @@ void LuaMixerChannel::setSoloed(bool soloed)
 void LuaMixerChannel::setName(const QString& name)
 {
 	if (m_channel == nullptr) { return; }
-	enqueueDaw(namedDawCommand(ScriptDawBindings::Op::SetChannelName, m_channel, name));
+	ScriptCommand command;
+	if (!namedDawCommand(ScriptDawBindings::Op::SetChannelName, m_channel, name, &command)) { return; }
+	enqueueDaw(command);
 }
 
 // ---------------------------------------------------------------------------
@@ -342,7 +353,9 @@ LuaEffect& LuaEffectChain::loadEffect(const QString& device) const
 		return ScriptDawBindings::newEffect(nullptr, nullptr);
 	}
 	const int before = effectCount();
-	enqueueDaw(namedDawCommand(ScriptDawBindings::Op::LoadEffect, m_chain, device));
+	ScriptCommand command;
+	if (!namedDawCommand(ScriptDawBindings::Op::LoadEffect, m_chain, device, &command)) { return effect(-1); }
+	enqueueDaw(command);
 	ScriptEngine::instance()->flushCommandsForRead();
 	// The count is the only honest witness that the load happened: the queue
 	// carries no reply. A refusal was logged for the script (logRefusal).

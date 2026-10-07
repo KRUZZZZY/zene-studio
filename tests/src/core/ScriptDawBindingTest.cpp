@@ -153,6 +153,56 @@ private slots:
 		QCOMPARE(engine->takeLogMessages(), expected);
 	}
 
+	//! An overlong UTF-8 name must be refused intact, not split by the queue payload.
+	void anOverlongChannelNameIsRejectedWithoutChangingTheEngine()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		const int index = static_cast<int>(mixer->numChannels());
+		mixer->createChannel();
+		MixerChannel* channel = mixer->mixerChannel(index);
+		QVERIFY(channel != nullptr);
+		const QString originalName = channel->m_name;
+
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		const QString script = qstr("local c = zene.mixer():channel(%1)\n"
+			"c:setName(string.rep(string.char(195, 169), 128))\n").arg(index);
+		QString error;
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		QCOMPARE(channel->m_name, originalName);
+		const QStringList logs = engine->takeLogMessages();
+		QCOMPARE(logs.size(), 1);
+		QVERIFY(logs.front().contains(qstr("255-byte")));
+	}
+
+	//! The same payload limit applies to the device reference used by loadEffect.
+	void anOverlongDeviceReferenceIsRejectedWithoutChangingTheChain()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		const int index = static_cast<int>(mixer->numChannels());
+		mixer->createChannel();
+		EffectChain& chain = mixer->mixerChannel(index)->m_fxChain;
+		const int effectsBefore = static_cast<int>(chain.effects().size());
+
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		const QString script = qstr("local chain = zene.mixer():channel(%1):chain()\n"
+			"local effect = chain:loadEffect(string.rep('x', 256))\n"
+			"print('long reference valid=' .. tostring(effect:isValid()))\n").arg(index);
+		QString error;
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		QCOMPARE(static_cast<int>(chain.effects().size()), effectsBefore);
+		const QStringList logs = engine->takeLogMessages();
+		QVERIFY(logs.contains(qstr("long reference valid=false")));
+		QCOMPARE(logs.filter(qstr("255-byte")).size(), 1);
+	}
+
 	/*! Writes are journalled through the channel's own models, so the GUI's
 	 *  Ctrl+Z and control.undo meet the same history the manual path leaves:
 	 *  one undo restores the fader the script moved, and the channel survives. */
