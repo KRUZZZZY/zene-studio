@@ -124,6 +124,43 @@ private slots:
 			"after_one_undo anchor=1000 member=1000"));
 	}
 
+	//! The inverse reported for a locked move is itself a registered command call;
+	//! a client replaying it must be able to dispatch its arguments through the schema.
+	void aPhaseLockedMoveReportsAReplayableUndoInverse()
+	{
+		clearGroups();
+		const QString first = addTrack(QStringLiteral("instrument"));
+		const QString second = addTrack(QStringLiteral("instrument"));
+		const QString anchor = addClip(first, 1000, 500);
+		const QString member = addClip(second, 1000, 500);
+		const QString group = createGroup(QStringLiteral("Replay"));
+		QVERIFY(!first.isEmpty() && !second.isEmpty());
+		QVERIFY(!anchor.isEmpty() && !member.isEmpty());
+		QVERIFY(!group.isEmpty());
+		for (const QString& track : {first, second})
+		{
+			QVERIFY(run(QStringLiteral("vca.track_add"), {{QStringLiteral("group"), group},
+				{QStringLiteral("track"), track}}).ok);
+		}
+
+		const ControlResult moved = run(QStringLiteral("vca.edit_move"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("clip"), anchor},
+				{QStringLiteral("position"), 1500}});
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QCOMPARE(moved.result.value(QStringLiteral("moved_count")).toInt(), 2);
+		QCOMPARE(clipPosition(anchor), 1500);
+		QCOMPARE(clipPosition(member), 1500);
+		const QJsonObject inverse = stateOf(QStringLiteral("vca.edit_move"))
+			.value(QStringLiteral("inverse")).toObject();
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		const ControlResult undone = run(inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(clipPosition(anchor), 1000);
+		QCOMPARE(clipPosition(member), 1000);
+		QVERIFY(inverse.value(QStringLiteral("args")).toObject().isEmpty());
+	}
+
 	//! A member with nothing in the anchor's span is reported, not silently
 	//! counted: the third track's clip is far away, so it must NOT move, and the
 	//! refusal/answer must say so.
