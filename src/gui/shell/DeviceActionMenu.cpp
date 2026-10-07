@@ -37,6 +37,7 @@
 #include "EffectChain.h"
 #include "EffectDeviceMenu.h"
 #include "EffectHostingMenu.h"
+#include "InstrumentCommandMenus.h"
 
 namespace lmms::gui
 {
@@ -132,6 +133,8 @@ void addInstrumentActions(QMenu* menu, DeviceCard* card)
 			dispatch(parent, QStringLiteral("plugin.load"), {{QStringLiteral("target"), target}, {QStringLiteral("device"), chosen}});
 		}
 	});
+	menu->addSeparator();
+	InstrumentCommandMenus::populate(menu, card->spec().target);  // 0.5.0 F2: the instrument's buses, parts, layers, modulation
 }
 
 } // namespace

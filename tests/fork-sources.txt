@@ -662,6 +662,7 @@ include/InputMeter.h
 include/InputMonitor.h
 include/InspectorChannelRouting.h
 include/InspectorPanel.h
+include/InstrumentCommandMenus.h
 include/InstrumentLayers.h
 include/InstrumentMidiParts.h
 include/InstrumentOutputBus.h
@@ -671,6 +672,7 @@ include/JsonFile.h
 include/LaneScale.h
 include/LatencyCompensation.h
 include/LaunchBindings.h
+include/LayerRackPanel.h
 include/LayoutMenu.h
 include/LevelBar.h
 include/LibraryCommandMenus.h
@@ -1666,8 +1668,10 @@ src/gui/FollowActionEditor.cpp
 src/gui/GrooveMenu.cpp
 src/gui/HelpCenter.cpp
 src/gui/HelpTasks.cpp
+src/gui/InstrumentCommandMenus.cpp
 src/gui/ItemListPanel.cpp
 src/gui/ItemListSurfaceSources.cpp
+src/gui/LayerRackPanel.cpp
 src/gui/LayoutMenu.cpp
 src/gui/LevelBar.cpp
 src/gui/LibraryCommandMenus.cpp

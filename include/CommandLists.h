@@ -109,6 +109,22 @@ LMMS_EXPORT ListSpec savedSelections();
 LMMS_EXPORT ListSpec settingsCatalogue();
 LMMS_EXPORT ListSpec settingsPresets();
 
+//! 0.5.0 F2 (InstrumentCommandMenus.cpp), each over one instrument track @a track (trk-<n>):
+//! MX-114: its instrument's output buses - route one to a mixer channel, un-route it, a channel for each.
+LMMS_EXPORT ListSpec outputBuses(const QString& track);
+//! MX-114: its MIDI parts (a key/velocity zone sent on one MIDI channel) - edit one in place, remove one, add one.
+LMMS_EXPORT ListSpec midiParts(const QString& track);
+//! MX-112: its layer rack's key/velocity zones (which layers a note plays on) - remove one, add one. The layers
+//! themselves are LayerRackPanel's.
+LMMS_EXPORT ListSpec layerZones(const QString& track);
+//! MX-120: the modulators, each with its source and whether it is per-voice - make one per-voice on the track's notes
+//! (or not), bind one to a parameter of the track's instrument, remove one; create a new one.
+LMMS_EXPORT ListSpec voiceModulators(const QString& track);
+//! MX-120: every modulation assignment (a modulator driving a parameter) with its depth and, for a per-voice
+//! modulator, how each note is driven ('voice_mode') - change a depth, remove one; bind a parameter of the track's
+//! instrument. The modulation layer is the song's, so it lists every track's assignments ('track' says whose).
+LMMS_EXPORT ListSpec modulationAssignments(const QString& track);
+
 } // namespace CommandLists
 
 } // namespace lmms::gui

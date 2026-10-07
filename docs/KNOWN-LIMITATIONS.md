@@ -2256,8 +2256,29 @@ Fleshed out, because both halves of that sentence hide something real:
 - `pdc.report` does not list the insert's latency per channel, although PDC includes it.
 
 **F2, instruments (MX-114/112/120).**
-- Output buses, MIDI parts, layers and per-voice modulation have no interface yet; they are
-  command-only.
+- Output buses have an interface: Instrument Setup > Output Buses on the track's header menu, its
+  Inspector "More" menu and its instrument's device card lists the buses, routes one to a channel
+  (or un-routes it) and makes a channel for each unrouted bus, all through the plugin.output_* commands.
+  A bus count is the plug-in's own: there is no adding or removing a bus, only routing one.
+- MIDI parts have an interface: Instrument Setup > MIDI Parts lists a track's parts, adds one, edits one
+  in place (plugin.midi_part_set, which keeps the part's place in the first-match order) and removes one.
+  The Edit form starts blank - a field left blank keeps its value - rather than showing the current one.
+- Layers have an interface: Instrument Setup > Layers > Layer Rack... is a panel with a row per layer
+  (layer-0 is the track's own instrument) - Mute, Solo, Level (a gain on top of the track's volume,
+  0..200 %), Open (the layer instrument's own view, in a window that closes with the layer) and Remove -
+  with Add Layer... and Zones... under it; Add a Layer... and Layer Zones... are in the menu too. Mute,
+  solo and level are rack.layer_set, saved with the track. Layer-0 has no level of its own (it is the
+  track's volume) and no Remove or Open there (its own window and device card do that). A layer's mute
+  and solo are a gain of 0 on its bus: a muted layer still runs its notes (CPU), it is just not heard.
+  A plug-in layer opens the host's view of it, not the plug-in's own editor (plugin.editor_open does
+  not address a layer).
+- Per-voice modulation has an interface: Instrument Setup > Per-Voice Modulation lists the modulators
+  (make one per-voice on the track's notes or not, bind it to a parameter of the track's instrument,
+  remove it, create one) and the modulation assignments (change a depth, remove one). The modulation
+  layer is the song's, so Modulation Assignments lists every track's assignments with a 'track' column
+  rather than only this track's; the parameter to bind is typed by its display name (plugin.param_get
+  lists them), there is no parameter picker; and a modulator's shape and rate are edited in the
+  Modulators panel, not here.
 - Layers receive the track's played notes, not the notes its chord or arpeggio functions add.
 - Each layer is a hidden track with its own bus handle and MIDI port, so under JACK each one has its
   own ports.

@@ -951,8 +951,11 @@ window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows becam
 view.announcements (`true_inverse`); window.sample_editor, window.item_list, workflow.resume and task.list, task.cancel,
 task.clear_finished and task.show (`not_mutating`, interface state).
 
+**0.5.0 F2 interface** (+2): plugin.midi_part_set (`true_inverse`), the in-place edit the MIDI parts list's Edit...
+runs; rack.layer_set (`true_inverse`), a layer's mute, solo and level from the layer rack panel.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=818 true_inverse=404 snapshot=40 irreversible=21 not_mutating=353
+     measured: rows=820 true_inverse=406 snapshot=40 irreversible=21 not_mutating=353
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

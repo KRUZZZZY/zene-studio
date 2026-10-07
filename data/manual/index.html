@@ -143,6 +143,13 @@ several tracks (a kit) at once. Scripts and agents can ask how much recording ti
 instead of the input (record.route_source), before or after the channel's devices or fader - if you also monitor what
 you record, lower the level first: a signal recorded from what it feeds can howl. Track &gt; MIDI Out sends an
 instrument track's notes to a hardware synth; record its audio back on an audio track that monitors the input.</p>
+<p>An instrument track's Instrument Setup menu - on its header menu, the Inspector's More menu and its instrument's device
+card - holds what a multi-output, multitimbral or layered instrument needs. Output Buses lists a plug-in's extra outputs:
+route one to a mixer channel, or make a channel for each. MIDI Parts sends the notes in a key and velocity range on a MIDI
+channel of their own, so one track plays several parts of a multitimbral plug-in; edit a part in place or remove it.
+Layers &gt; Layer Rack stacks more instruments on the track, each with Mute, Solo, a Level and its own window, and Layer Zones
+picks which layers a note plays on. Per-Voice Modulation makes a modulator run once per note of the track and binds it to a
+parameter of the instrument; Modulation Assignments changes a depth or removes a binding.</p>
 
 <h2 id="launch">The launcher</h2>
 <p>Show the launcher from the footer's Clip Launcher button, View &gt; Clip Launcher or Alt+L. Each cell plays a pattern or an audio file; drop a sample on a cell to fill it. Each column is headed by its track's name. A cell's play mark shows its state - ▷ stopped, ▷… queued, ▶ playing - and a scene's mark shows its row's, so you can see what will launch. Dragging a sample over a filled cell shows "Replace" before you let go; after the drop, Undo Replace (or Edit &gt; Undo) puts the old clip back.

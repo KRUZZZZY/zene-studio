@@ -853,6 +853,8 @@ set(LMMS_TESTS
 	src/gui/SessionTransportBarTest.cpp
 	# M3 item 6: the take lanes panel - comp, audition and consolidate from its own buttons.
 	src/gui/TakeLanesPanelTest.cpp
+	# 0.5.0 F2 interface: an instrument track's output buses, MIDI parts, layer rack and per-voice modulation.
+	src/gui/InstrumentSetupUiTest.cpp
 	# M3 item 4: the keyboard shortcuts page lists what the menus bind, filterable.
 	src/gui/ShortcutsPageTest.cpp
 	# 0.5.0 wave 3 theme 19: the workflow recording indicator and the run report
@@ -1104,6 +1106,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLayersCommandsTest"
 		# MX-157: the hosted instrument modules (clapinstrument, vst3instrument) carry the fixtures.
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLatencyPdcTest"
+		OR LMMS_TEST_NAME STREQUAL "InstrumentSetupUiTest"
 		OR LMMS_TEST_NAME STREQUAL "ArrangingCatchUpTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
@@ -1371,6 +1374,7 @@ set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=of
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(InstrumentSetupUiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(HelpAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -2183,6 +2187,12 @@ if(TARGET lmms_clap)
 		target_compile_definitions(InstrumentLatencyPdcTest PRIVATE
 			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>")
 		add_dependencies(InstrumentLatencyPdcTest clap-test-instrument)
+	endif()
+	# The F2 interface's output-bus surface drives the same multi-output class.
+	if(TARGET clap-test-instrument AND TARGET InstrumentSetupUiTest)
+		target_compile_definitions(InstrumentSetupUiTest PRIVATE
+			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>")
+		add_dependencies(InstrumentSetupUiTest clap-test-instrument)
 	endif()
 endif()
 

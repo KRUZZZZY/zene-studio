@@ -141,11 +141,13 @@ void AudioBusHandle::applyVolumeAndPanning(const f_cnt_t fpp)
 	if (m_volumeModel == nullptr) { return; }  // a panning model alone was never applied
 	const ValueBuffer* volBuf = m_volumeModel->valueBuffer();
 	const ValueBuffer* panBuf = m_panningModel != nullptr ? m_panningModel->valueBuffer() : nullptr;
-	const float volume = m_volumeModel->value() * 0.01f;
+	// 0.5.0 F2: an instrument layer's own gain (setGain); x * 1.0f is exactly x, so a unity gain changes no bit.
+	const float gain = m_gain.load(std::memory_order_relaxed);
+	const float volume = m_volumeModel->value() * 0.01f * gain;
 	const float panning = m_panningModel != nullptr ? m_panningModel->value() * 0.01f : 0.0f;
 	for (f_cnt_t f = 0; f < fpp; ++f)
 	{
-		const float v = volBuf != nullptr ? volBuf->values()[f] * 0.01f : volume;
+		const float v = volBuf != nullptr ? volBuf->values()[f] * 0.01f * gain : volume;
 		const float p = panBuf != nullptr ? panBuf->values()[f] * 0.01f : panning;
 		m_buffer[f][0] *= (p <= 0 ? 1.0f : 1.0f - p) * v;
 		m_buffer[f][1] *= (p >= 0 ? 1.0f : 1.0f + p) * v;

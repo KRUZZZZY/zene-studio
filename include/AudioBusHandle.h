@@ -103,6 +103,11 @@ public:
 	//! @returns true if the processing outputted corrupted audio (infs/nans).
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
 
+	//! 0.5.0 F2 (an instrument layer's mute, solo and level, InstrumentLayers::setMix): a gain applied with the
+	//! volume and panning, 1 = unchanged (bit-identical). Any thread; the audio thread reads it once a period.
+	void setGain(float gain) { m_gain.store(gain, std::memory_order_relaxed); }
+	float gain() const { return m_gain.load(std::memory_order_relaxed); }
+
 private:
 	//! The track's volume and panning, applied to m_buffer in place
 	void applyVolumeAndPanning(f_cnt_t fpp);
@@ -137,6 +142,7 @@ private:
 	LatencyCompensation m_compensation;
 
 	std::atomic<bool> m_corrupted = false;
+	std::atomic<float> m_gain = 1.0f;
 
 	//! MX-157: see setSourceLatencyFrames().
 	std::atomic<int> m_sourceLatencyFrames{0};

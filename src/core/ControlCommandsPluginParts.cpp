@@ -27,6 +27,9 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <utility>
+#include <vector>
+
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -258,6 +261,93 @@ void registerPartRemove(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+//! 0.5.0 F2 interface: @a before with the fields @a args names changed; a field left out keeps its value.
+RackZone editedPart(const RackZone& before, const QJsonObject& args)
+{
+	RackZone out = before;
+	out.lowKey = args.value(QStringLiteral("low_key")).toInt(before.lowKey);
+	out.highKey = args.value(QStringLiteral("high_key")).toInt(before.highKey);
+	out.lowVelocity = args.value(QStringLiteral("low_velocity")).toInt(before.lowVelocity);
+	out.highVelocity = args.value(QStringLiteral("high_velocity")).toInt(before.highVelocity);
+	out.chain = args.value(QStringLiteral("midi_channel")).toInt(before.chain + 1) - 1;
+	return out;
+}
+
+//! The part list with part @a index replaced by @a zone, published in one step (RackZones::assign).
+void replacePart(RackZones& zones, int index, const RackZone& zone)
+{
+	std::vector<RackZone> list;
+	for (int i = 0; i < zones.zoneCount(); ++i) { list.push_back(i == index ? zone : *zones.zone(i)); }
+	zones.assign(std::move(list));
+}
+
+//! plugin.midi_part_set's arguments that write @a zone back as part @a index.
+QJsonObject partSetArgs(const QString& trackIdText, const RackZone& zone, int index)
+{
+	return {{QStringLiteral("target"), trackIdText}, {QStringLiteral("part"), partId(index)},
+		{QStringLiteral("midi_channel"), zone.chain + 1}, {QStringLiteral("low_key"), zone.lowKey},
+		{QStringLiteral("high_key"), zone.highKey}, {QStringLiteral("low_velocity"), zone.lowVelocity},
+		{QStringLiteral("high_velocity"), zone.highVelocity}};
+}
+
+ControlResult setPart(InstrumentTrack* track, const QJsonObject& args)
+{
+	RackZones& zones = track->midiParts().zones();
+	const QString id = args.value(QStringLiteral("part")).toString();
+	const int index = idToIndex(id, QStringLiteral("part-"));
+	if (zones.zone(index) == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no part '%1' (the track has %2)").arg(id).arg(zones.zoneCount()));
+	}
+	const RackZone before = *zones.zone(index);
+	const RackZone wanted = editedPart(before, args);
+	if (!isValidRackZone(wanted, InstrumentMidiParts::Channels))
+	{
+		return zoneArgsRefusal(wanted, InstrumentMidiParts::Channels, QStringLiteral("MIDI channel index"));
+	}
+	replacePart(zones, index, wanted);
+	const QString trackIdText = trackIdOf(track);
+	addUndoStep([trackIdText, index, before]() {
+		if (RackZones* current = partsById(trackIdText); current != nullptr && current->zone(index) != nullptr) { replacePart(*current, index, before); }
+	}, [trackIdText, index, wanted]() {
+		if (RackZones* current = partsById(trackIdText); current != nullptr && current->zone(index) != nullptr) { replacePart(*current, index, wanted); }
+	});
+	QJsonObject result = partsState(track);
+	result.insert(QStringLiteral("part"), partId(index));
+	result.insert(QStringLiteral("__transaction"), transactionPayload(partJson(before, index),
+		QStringLiteral("plugin.midi_part_set"), partSetArgs(trackIdText, before, index), true,
+		QStringLiteral("action checkpoint: the recorded undo step writes the part's previous channel and ranges back "
+			"at its own index, so the first-match order is unchanged")));
+	return ControlResult::success(result);
+}
+
+void registerPartSet(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("plugin.midi_part_set");
+	cmd.group = kGroup;
+	cmd.verb = QStringLiteral("midi_part_set");
+	cmd.description = QStringLiteral("Change a MIDI part (part-<n>) of an instrument track in place: its 'midi_channel' "
+		"(1..16), its key range (0..127) and its velocity range (0..200). A field left out keeps its value, and the "
+		"part keeps its place in the first-match order. Saved with the track. Reversible through the ProjectJournal.");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("target"), stringProperty()},
+		{QStringLiteral("part"), stringProperty()},
+		{QStringLiteral("midi_channel"), integerProperty(1, InstrumentMidiParts::Channels)},
+		{QStringLiteral("low_key"), integerProperty(RackZoneMinKey, RackZoneMaxKey)},
+		{QStringLiteral("high_key"), integerProperty(RackZoneMinKey, RackZoneMaxKey)},
+		{QStringLiteral("low_velocity"), integerProperty(RackZoneMinVelocity, RackZoneMaxVelocity)},
+		{QStringLiteral("high_velocity"), integerProperty(RackZoneMinVelocity, RackZoneMaxVelocity)},
+	}, {QStringLiteral("target"), QStringLiteral("part")});
+	cmd.resultSchema = stateSchema();
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) {
+		return withInstrumentTarget(args, [&args](InstrumentTrack* track) { return setPart(track, args); });
+	};
+	registry.registerCommand(cmd);
+}
+
 } // namespace
 
 void registerPluginPartCommands(ControlRegistry& registry)
@@ -265,6 +355,7 @@ void registerPluginPartCommands(ControlRegistry& registry)
 	registerParts(registry);
 	registerPartAdd(registry);
 	registerPartRemove(registry);
+	registerPartSet(registry);
 }
 
 } // namespace lmms
