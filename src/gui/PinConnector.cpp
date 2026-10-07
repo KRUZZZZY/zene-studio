@@ -509,10 +509,10 @@ auto PinConnector::MatrixView::getPin(const QPoint& mousePos) -> std::optional<s
 
 	// Check if within margin
 	int relPos = mousePosAdj.x() - xIdx * cellSize();
-	if (relPos > (cellSize() - s_lineThickness) || relPos < 0) { return std::nullopt; }
+	if (relPos >= (cellSize() - s_lineThickness) || relPos < 0) { return std::nullopt; }
 
 	relPos = mousePosAdj.y() - yIdx * cellSize();
-	if (relPos > (cellSize() - s_lineThickness) || relPos < 0) { return std::nullopt; } // NOLINT
+	if (relPos >= (cellSize() - s_lineThickness) || relPos < 0) { return std::nullopt; } // NOLINT
 
 	assert(xIdx >= 0);
 	assert(yIdx >= 0);

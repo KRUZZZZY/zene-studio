@@ -48,8 +48,10 @@
 
 #include <QtTest>
 
+#include <QApplication>
 #include <QAccessible>
 #include <QMap>
+#include <QMouseEvent>
 #include <QMenuBar>
 #include <QSet>
 #include <QTemporaryDir>
@@ -58,6 +60,7 @@
 #include <memory>
 
 #include "AutomationEditor.h"
+#include "AudioPortsModel.h"
 #include "ControllerRackView.h"
 #include "Engine.h"
 #include "ExportProjectDialog.h"
@@ -71,6 +74,7 @@
 #include "MixerView.h"
 #include "PatternEditor.h"
 #include "PianoRoll.h"
+#include "PinConnector.h"
 #include "ProjectNotes.h"
 #include "SampleTrack.h"
 #include "SampleTrackView.h"
@@ -87,6 +91,15 @@ using namespace lmms::gui;
 
 namespace
 {
+
+class PinConnectorTestModel final : public AudioPortsModel
+{
+public:
+	using AudioPortsModel::AudioPortsModel;
+
+protected:
+	void bufferPropertiesChanging(ch_cnt_t, ch_cnt_t, f_cnt_t) override {}
+};
 
 //! "surface/Class" -> the number of unnamed focusable widgets of that class still allowed.
 const QMap<QString, int>& knownUnnamed()
@@ -244,6 +257,38 @@ private slots:
 		}
 		QVERIFY2(worse.isEmpty(), qPrintable(QStringLiteral("unnamed focusable widgets: ") + worse.join(QStringLiteral("; "))));
 		QVERIFY2(better.isEmpty(), qPrintable(QStringLiteral("fixed - lower knownUnnamed(): ") + better.join(QStringLiteral("; "))));
+	}
+
+	void pinConnectorGridSeparatorsDoNotTogglePins()
+	{
+		PinConnectorTestModel model{2, 2, true};
+		PinConnector connector{&model};
+		QList<QWidget*> matrixViews;
+		for (QWidget* child : connector.findChildren<QWidget*>())
+		{
+			if (QByteArray{child->metaObject()->className()} == QByteArrayLiteral("lmms::gui::PinConnector::MatrixView"))
+			{
+				matrixViews.append(child);
+			}
+		}
+		QCOMPARE(matrixViews.size(), 2);
+
+		// For a 16-pixel cell, the cell starts at 2 and the separator is pixel 17.
+		constexpr int cellInterior = 4;
+		constexpr int separator = 17;
+		for (const QPoint& position : {QPoint{separator, cellInterior}, QPoint{cellInterior, separator}})
+		{
+			for (QWidget* view : matrixViews)
+			{
+				const auto globalPosition = view->mapToGlobal(position);
+				QMouseEvent press{QEvent::MouseButtonPress, QPointF{position}, QPointF{globalPosition},
+					Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+				QApplication::sendEvent(view, &press);
+
+				QVERIFY(!model.in().enabled(0, 0));
+				QVERIFY(model.out().enabled(0, 0));
+			}
+		}
 	}
 
 private:
