@@ -126,10 +126,10 @@ const ReversibilityRow kStructureRows[] = {
 		"THE INDEX IT WAS REMOVED FROM. The document's measured size is charged "
 		"to the undo stack's byte budget",
 		"a device whose state document is over the 64 KiB cap records no inverse "
-		"and reports reversible:false; before.state_xml is then the bounded "
-		"record that allows a rebuild by hand (write it to a file, plugin.load "
-		"the same dev-<n>, plugin.state_load the file - the chain ORDER is not "
-		"restored by that manual path)"),
+		"and reports reversible:false; before.state_xml is empty and "
+		"state_truncated is true because no usable state snapshot was captured. "
+		"After reloading the same dev-<n>, its settings must be restored by hand; "
+		"the chain ORDER is not restored by that manual path"),
 
 };
 

@@ -68,7 +68,7 @@ QJsonObject stateSnapshot(Effect* effect)
 	QJsonObject snapshot;
 	QString xml = controlEffectStateXml(effect);
 	const bool truncated = xml.size() > MaxSnapshotChars;
-	if (truncated) { xml.truncate(MaxSnapshotChars); }
+	if (truncated) { xml.clear(); }
 	snapshot.insert(QStringLiteral("state_xml"), xml);
 	snapshot.insert(QStringLiteral("state_truncated"), truncated);
 	return snapshot;
@@ -306,11 +306,11 @@ void registerPluginUnload(ControlRegistry& registry)
 	cmd.group = QStringLiteral("plugin");
 	cmd.verb = QStringLiteral("unload");
 	cmd.description = QStringLiteral("Remove a device instance (fx-<n>) from a track's chain or a "
-		"mixer channel. REVERSIBLE: the device's own state document is captured before the "
-		"removal and one control.undo re-instantiates the same plugin at the same index in the "
-		"chain with its settings restored. The transaction's 'before' snapshot still carries the "
-		"state XML, so a client that prefers to rebuild by hand can; a device whose state exceeds "
-		"the capture cap reports itself as snapshot-only instead.");
+		"mixer channel. When its state fits the capture cap and the undo stack is addressable, "
+		"one control.undo re-instantiates the same plugin at the same index with its settings "
+		"restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; "
+		"its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is "
+		"recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.");
 	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("plugin"), stringProperty()}},
@@ -341,6 +341,7 @@ void registerPluginUnload(ControlRegistry& registry)
 		const auto it = std::find(effects.begin(), effects.end(), effect);
 		const int index = static_cast<int>(std::distance(effects.begin(), it));
 		QJsonObject snapshot = stateSnapshot(effect);
+		const bool stateTruncated = snapshot.value(QStringLiteral("state_truncated")).toBool();
 		snapshot.insert(QStringLiteral("target"), target.id);
 		snapshot.insert(QStringLiteral("index"), index);
 		snapshot.insert(QStringLiteral("plugin"), pluginName);
@@ -369,34 +370,44 @@ void registerPluginUnload(ControlRegistry& registry)
 
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"), snapshot);
+		const QString inverseNote = reversible
+			? QStringLiteral("the recorded undo step re-instantiates the same dev-<n> at index %1 "
+				"with its captured settings, so no reload is needed by hand").arg(index)
+			: stateTruncated
+				? QStringLiteral("reload the same dev-<n>; no usable state snapshot was captured, "
+					"so before.state_xml cannot restore its settings")
+				: QStringLiteral("reload the same dev-<n>, then plugin.state_load from "
+					"'before.state_xml' written to a file");
 		transaction.insert(QStringLiteral("inverse"),
-			reversible
-				? QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.load")},
-					{QStringLiteral("args"),
-						QJsonObject{{QStringLiteral("target"), target.id},
-							{QStringLiteral("note"), QStringLiteral("the recorded undo step "
-								"re-instantiates the same dev-<n> at index %1 with its "
-								"captured settings, so no reload is needed by hand")
-								.arg(index)}}}}
-				: QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.load")},
-					{QStringLiteral("args"),
-						QJsonObject{{QStringLiteral("target"), target.id},
-							{QStringLiteral("note"), QStringLiteral("reload the same dev-<n>, then "
-								"plugin.state_load from 'before.state_xml' written to a file")}}}});
+			QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.load")},
+				{QStringLiteral("args"),
+					QJsonObject{{QStringLiteral("target"), target.id},
+						{QStringLiteral("note"), inverseNote}}}});
 		transaction.insert(QStringLiteral("reversible"), reversible);
-		transaction.insert(QStringLiteral("mechanism"),
-			reversible
-				? QStringLiteral("action checkpoint (structural step): the device's own state "
-					"document (controlEffectStateXml - including the sub-plugin key that "
-					"identifies a hosted plugin) is captured before the removal, and the "
-					"recorded undo step re-instantiates the device through the chain's own "
-					"instantiate path and puts the settings back, at the index it was removed "
-					"from. The document's measured size is charged to the undo stack's byte "
-					"budget, so a long run of removals is evicted like any other step")
-				: QStringLiteral("snapshot only: this device's state document is over the "
-					"%1-character cap (or the engine's undo stack is not addressable), so no "
-					"inverse was recorded; 'before.state_xml' is the bounded record that allows "
-					"a rebuild by hand").arg(control::StructuralSnapshotLimit));
+		QString mechanism;
+		if (reversible)
+		{
+			mechanism = QStringLiteral("action checkpoint (structural step): the device's own state "
+				"document (controlEffectStateXml - including the sub-plugin key that identifies "
+				"a hosted plugin) is captured before the removal, and the recorded undo step "
+				"re-instantiates the device through the chain's own instantiate path and puts "
+				"the settings back, at the index it was removed from. The document's measured "
+				"size is charged to the undo stack's byte budget, so a long run of removals is "
+				"evicted like any other step");
+		}
+		else if (stateTruncated)
+		{
+			mechanism = QStringLiteral("state unavailable: this device's state document exceeds "
+				"the %1-character cap, so no inverse was recorded and no usable state snapshot "
+				"was captured").arg(control::StructuralSnapshotLimit);
+		}
+		else
+		{
+			mechanism = QStringLiteral("snapshot only: no inverse was recorded because the engine's "
+				"undo stack is not addressable; 'before.state_xml' is a usable record for a "
+				"manual rebuild");
+		}
+		transaction.insert(QStringLiteral("mechanism"), mechanism);
 		result.insert(QStringLiteral("__transaction"), transaction);
 		return ControlResult::success(result);
 	};
