@@ -452,7 +452,10 @@ void Note::loadSettings( const QDomElement & _this )
 	// Absent attributes mean the neutral MIDI-depth values: the note always
 	// plays and its velocity is untouched, which is what every project saved
 	// before this existed expects.
-	m_probability = std::clamp( _this.attribute( "prob", "1" ).toFloat(), 0.f, 1.f );
+	bool probabilityOk = false;
+	float probability = _this.attribute( "prob", "1" ).toFloat( &probabilityOk );
+	if( !probabilityOk || !std::isfinite( probability ) ) { probability = 1.f; }
+	m_probability = std::clamp( probability, 0.f, 1.f );
 	m_velocityJitter = std::clamp( _this.attribute( "veljit", "0" ).toFloat(), 0.f, 1.f );
 	m_muted = _this.attribute( "mute" ).toInt() != 0;
 	setReleaseVelocity( _this.attribute( "relvel", "-1" ).toInt() );
