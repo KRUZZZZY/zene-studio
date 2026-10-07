@@ -191,17 +191,18 @@ ControlResult slideClear(const QJsonObject& args)
 	result.insert(QStringLiteral("slides_remaining"), slidesBefore - cleared);
 	result.insert(QStringLiteral("note_count"), static_cast<int>(clip->notes().size()));
 
-	QJsonObject before;
-	before.insert(QStringLiteral("clip"), clipId(ref.id));
-	before.insert(QStringLiteral("track"), trackIdOf(ref.track));
-	before.insert(QStringLiteral("slides_before"), slidesBefore);
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
-	result.insert(QStringLiteral("__transaction"),
-		transactionPayload(before, QStringLiteral("control.undo"), inverseArgs, true,
-			kSlideCheckpoint + QStringLiteral("; every cleared flag is part of the note list the "
-				"checkpoint carries, so ONE control.undo restores the whole scope without a "
-				"per-note call and without re-toggling anything")));
+	if (cleared > 0)
+	{
+		QJsonObject before;
+		before.insert(QStringLiteral("clip"), clipId(ref.id));
+		before.insert(QStringLiteral("track"), trackIdOf(ref.track));
+		before.insert(QStringLiteral("slides_before"), slidesBefore);
+		result.insert(QStringLiteral("__transaction"),
+			transactionPayload(before, QStringLiteral("control.undo"), {}, true,
+				kSlideCheckpoint + QStringLiteral("; every cleared flag is part of the note list the "
+					"checkpoint carries, so ONE control.undo restores the whole scope without a "
+					"per-note call and without re-toggling anything")));
+	}
 	return ControlResult::success(result);
 }
 

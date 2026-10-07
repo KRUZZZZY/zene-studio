@@ -134,6 +134,55 @@ private slots:
 		evidence("note-expression",
 			QStringLiteral("set/get/clear round trip with a MidiClip checkpoint"));
 	}
+
+	void slideClearNoOpDoesNotRecordUndo()
+	{
+		QString clip;
+		QString note;
+		QVERIFY(buildClipWithNote(&clip, &note));
+
+		const ControlResult noOp = run(QStringLiteral("note.slide_clear"),
+			{{QStringLiteral("clip"), clip}});
+		QVERIFY2(noOp.ok, qPrintable(noOp.errorMessage));
+		QCOMPARE(noOp.result.value(QStringLiteral("slides_cleared")).toInt(), 0);
+		const lmms::ControlRegistry::Transaction* tx = lmms::ControlRegistry::instance()->lastTransaction();
+		QVERIFY(tx != nullptr);
+		QCOMPARE(tx->command, QStringLiteral("note.add"));
+	}
+
+	void slideClearAdvertisesReplayableUndo()
+	{
+		QString clip;
+		QString note;
+		QVERIFY(buildClipWithNote(&clip, &note));
+		const ControlResult set = run(QStringLiteral("note.slide_set"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note},
+				{QStringLiteral("slide"), true}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		const ControlResult cleared = run(QStringLiteral("note.slide_clear"),
+			{{QStringLiteral("clip"), clip}});
+		QVERIFY2(cleared.ok, qPrintable(cleared.errorMessage));
+		QCOMPARE(cleared.result.value(QStringLiteral("slides_cleared")).toInt(), 1);
+
+		const lmms::ControlRegistry::Transaction* tx = lmms::ControlRegistry::instance()->lastTransaction();
+		QVERIFY(tx != nullptr);
+		QCOMPARE(tx->command, QStringLiteral("note.slide_clear"));
+		const QString inverseOp = tx->inverse.value(QStringLiteral("op")).toString();
+		const QJsonObject inverseArgs = tx->inverse.value(QStringLiteral("args")).toObject();
+		QCOMPARE(inverseOp, QStringLiteral("control.undo"));
+
+		const ControlResult undone = run(inverseOp, inverseArgs);
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(inverseArgs, QJsonObject());
+		QCOMPARE(undone.result.value(QStringLiteral("undone_command")).toString(),
+			QStringLiteral("note.slide_clear"));
+		const ControlResult clearedAgain = run(QStringLiteral("note.slide_clear"),
+			{{QStringLiteral("clip"), clip}});
+		QVERIFY2(clearedAgain.ok, qPrintable(clearedAgain.errorMessage));
+		QCOMPARE(clearedAgain.result.value(QStringLiteral("slides_cleared")).toInt(), 1);
+		evidence("note-slide-clear",
+			QStringLiteral("no-op leaves transaction history unchanged; clear inverse replays"));
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlNoteExpressionCommandsTest)
