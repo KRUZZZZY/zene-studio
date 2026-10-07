@@ -80,6 +80,7 @@
 #include "Plugin.h"
 #include "PluginFactory.h"
 #include "PluginView.h"
+#include "Knob.h"
 #include "Song.h"
 #include "TimePos.h"
 
@@ -178,6 +179,7 @@ private slots:
 	void testAGuiLessInstrumentExposesItsParameters();
 	void testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow();
 	void testTheInstrumentsOwnEditorOpensInItsOwnWindow();
+	void testReadOnlyParametersAreNotKnobs();
 
 private:
 	//! The real module, loaded exactly as the plugin factory loads it.
@@ -323,8 +325,9 @@ void Vst3InstrumentIntegrationTest::testTheInstalledInstrumentLoadsAndIsMidiBase
 	QCOMPARE(instrument->isMidiBased(), true);
 	QCOMPARE(instrument->isSingleStreamed(), true);
 
-	// The VST3 parameters are surfaced as LMMS models - the fixture has one.
-	QCOMPARE(instrument->parameterCount(), 1);
+	// The VST3 parameters are surfaced as LMMS models - the fixture has two:
+	// the automatable "Level" and the read-only "Meter".
+	QCOMPARE(instrument->parameterCount(), 2);
 	QCOMPARE(instrument->parameterName(0), QStringLiteral("Level"));
 	qInfo("instrument: %s, %d parameter(s), first is \"%s\"",
 		qPrintable(instrument->displayName()), instrument->parameterCount(),
@@ -571,7 +574,7 @@ void Vst3InstrumentIntegrationTest::testAGuiLessInstrumentExposesItsParameters()
 	// What a user gets for a GUI-less instrument is LMMS' own generated
 	// parameter view, built from exactly this surface. That surface is asserted
 	// here, and it is what testTheLevelParameterReachesTheInstrument then drives.
-	QCOMPARE(instrument->parameterCount(), 1);
+	QCOMPARE(instrument->parameterCount(), 2);
 	QCOMPARE(instrument->parameterName(0), QStringLiteral("Level"));
 	auto* level = instrument->parameterModel(0);
 	QVERIFY(level != nullptr);
@@ -691,6 +694,37 @@ void Vst3InstrumentIntegrationTest::testTheInstrumentsOwnEditorOpensInItsOwnWind
 	instrument->closeNativeEditor();
 	ControlRegistry::instance()->setHeadless(headless);
 	ControlRegistry::setReady(false);
+}
+
+/*! cluster 4555 BUG 4: a visible READ-ONLY parameter (the fixture's "Meter",
+ *  declared with ParameterInfo::kIsReadOnly) must not be presented as an
+ *  editable knob. The generated grid builds one Knob per parameter it shows;
+ *  a knob is an editor - dragging it writes into the model and the host polls
+ *  that back into the plug-in, which the plug-in is free to ignore or reset.
+ *  The grid must therefore carry exactly the automatable "Level" knob. */
+void Vst3InstrumentIntegrationTest::testReadOnlyParametersAreNotKnobs()
+{
+	auto track = makeTrack();
+	auto instrument = makeInstrument(track.get());
+	QVERIFY(instrument != nullptr);
+
+	// The read-only parameter reaches the surface with its flag intact.
+	QCOMPARE(instrument->parameterCount(), 2);
+	QCOMPARE(instrument->parameterName(1), QStringLiteral("Meter"));
+
+	// The generated grid: one knob per editable visible parameter.
+	QWidget parent;
+	gui::PluginView* view = instrument->createView(&parent);
+	QVERIFY2(view != nullptr, "the instrument has no generated view");
+
+	// A knob is an editor: dragging it writes into the model and the host
+	// polls that back into the plug-in, which may ignore or reset it. The
+	// read-only "Meter" must therefore not own a knob.
+	const auto knobs = view->findChildren<gui::Knob*>();
+	QCOMPARE(knobs.size(), 1);
+	QVERIFY2(knobs.first()->model() == instrument->parameterModel(0),
+		"the surviving knob is not the automatable Level parameter");
+
 }
 
 } // namespace lmms
