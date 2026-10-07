@@ -24,8 +24,8 @@
 
 #include "VideoAudioExtract.h"
 
-#include <QFile>
 #include <QObject>
+#include <QSaveFile>
 
 #include "VideoDecoder.h"
 #include "VideoFfmpeg.h"
@@ -56,8 +56,10 @@ struct WavSink
 {
 	SwrContext* resampler = nullptr;
 	SNDFILE* file = nullptr;
+	QSaveFile output;
 	std::vector<float> buffer;
 	long long frames = 0;
+	QString error;
 
 	WavSink() = default;
 	WavSink(const WavSink&) = delete;
@@ -82,20 +84,38 @@ struct WavSink
 
 	bool openFile(const QString& wav, int sampleRate)
 	{
+		output.setFileName(wav);
+		output.setDirectWriteFallback(false);
+		if (!output.open(QIODevice::WriteOnly))
+		{
+			error = output.errorString();
+			return false;
+		}
 		SF_INFO info{};
 		info.samplerate = sampleRate;
 		info.channels = 2;
 		info.format = SF_FORMAT_WAV | SF_FORMAT_FLOAT;
-		file = sf_open(wav.toLocal8Bit().constData(), SFM_WRITE, &info);
+		file = sf_open_fd(output.handle(), SFM_WRITE, &info, false);
+		if (file == nullptr) { error = QString::fromUtf8(sf_strerror(nullptr)); }
 		return file != nullptr;
 	}
 
-	//! Close the WAV this sink wrote and delete it (called only after openFile succeeded).
-	void discard(const QString& wav)
+	//! Close the WAV and publish it only after the full extraction succeeds.
+	bool commit()
 	{
-		sf_close(file);
+		if (sf_close(file) != 0)
+		{
+			file = nullptr;
+			error = QString::fromUtf8(sf_strerror(nullptr));
+			return false;
+		}
 		file = nullptr;
-		QFile::remove(wav);
+		if (!output.commit())
+		{
+			error = output.errorString();
+			return false;
+		}
+		return true;
 	}
 
 	//! Convert @a count input frames (none flushes what the resampler holds) and write them.
@@ -154,17 +174,16 @@ QString extract(const QString& video, const QString& wav, VideoAudio* out, Video
 	if (media.codec->sample_rate <= 0) { return QObject::tr("the video's audio has no sample rate"); }
 	WavSink sink;
 	if (!sink.openResampler(media.codec)) { return QObject::tr("the video's audio cannot be converted to stereo"); }
-	if (!sink.openFile(wav, media.codec->sample_rate)) { return QObject::tr("cannot write '%1': %2").arg(wav, QString::fromUtf8(sf_strerror(nullptr))); }
+	if (!sink.openFile(wav, media.codec->sample_rate)) { return QObject::tr("cannot write '%1': %2").arg(wav, sink.error); }
 	if (!decodeAll(media, sink, control))
 	{
-		sink.discard(wav);
 		return QObject::tr("the extraction was cancelled");
 	}
 	if (sink.frames <= 0)
 	{
-		sink.discard(wav);
 		return QObject::tr("no audio decoded from the video");
 	}
+	if (!sink.commit()) { return QObject::tr("cannot write '%1': %2").arg(wav, sink.error); }
 	*out = VideoAudio{wav, media.codec->sample_rate, sink.frames};
 	return QString();
 }
