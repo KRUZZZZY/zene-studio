@@ -213,6 +213,15 @@ void mergeHalves(SmfInterchangeEvent* target, const SmfInterchangeEvent& source)
  *  is refused rather than written as something no reader of the format accepts. */
 bool appendDelta(QByteArray& out, qint64 cursor, qint64 tick, QString* error)
 {
+	if (tick > static_cast<qint64>(SmfMaxFileTicks))
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("event at file tick %1 is beyond the %2 the reader can hold; "
+				"nothing was exported").arg(tick).arg(SmfMaxFileTicks);
+		}
+		return false;
+	}
 	const qint64 delta = tick - cursor;
 	if (delta < 0 || delta > SmfMaxDeltaTicks)
 	{
