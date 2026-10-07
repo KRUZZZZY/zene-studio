@@ -672,18 +672,29 @@ private slots:
 	//! bounds, so only the TIME can refuse it.
 	void importRefusesAnUnrepresentableBeat()
 	{
-		DawProjectModel model = authoredModel();
-		model.tempoPoints.clear();
-		DawProjectPoint point;
-		point.time = 1e300;
-		point.isMeter = false;
-		point.value = 120.0;
-		model.tempoPoints.append(point);
-
 		const QString file = path(m_directory, QStringLiteral("huge-beat.dawproject"));
-		DawProjectWriteReport writeReport;
+		const QByteArray projectXml =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"/></Track></Structure>"
+			"<Arrangement><Lanes/>"
+			"<TempoAutomation timeUnit=\"beats\" unit=\"bpm\" id=\"id1\">"
+			"<Target parameter=\"id2\"/>"
+			"<RealPoint time=\"1e300\" value=\"120\" interpolation=\"hold\"/>"
+			"</TempoAutomation></Arrangement></Project>";
+		DawProjectModel rejectedModel;
+		DawProjectReadReport readReport;
+		QString readError;
+		QVERIFY2(!dawProjectModelFromXml(projectXml, &rejectedModel, &readReport, &readError),
+			"the reader accepted an out-of-range tempo point");
+		QVERIFY(readError.contains(QStringLiteral("48-tick-per-beat")));
+
+		const std::vector<DawProjectEntry> entries = {
+			{QStringLiteral("project.xml"), projectXml}};
 		QString writeError;
-		QVERIFY2(writeDawProject(file, model, &writeReport, &writeError), qPrintable(writeError));
+		QVERIFY2(dawProjectZipWrite(file, entries, &writeError), qPrintable(writeError));
 
 		const ControlResult result = run(QStringLiteral("dawproject.import"),
 			{{QStringLiteral("path"), file}});
@@ -1452,6 +1463,65 @@ void timesOutsideTheEngineGridAreRefusedByTheWriter()
 
 	// The positive half: an ordinary model still writes.
 	QVERIFY2(dawProjectXmlFromModel(base, &xml, &error), qPrintable(error));
+}
+
+//! Luna cluster new-p8-97: the writer must refuse beats whose serialized
+//! value rounds beyond the signed tick_t range when this reader imports it.
+void writerRefusesBeatTimesOutsideTheTickRange()
+{
+	DawProjectModel base = authoredModel();
+	DawProjectWriteReport report;
+	QString error;
+	const QString file = path(m_directory, QStringLiteral("outside-tick-range.dawproject"));
+
+	DawProjectModel hugeClip = base;
+	hugeClip.tracks[0].clips[0].time = 50000000.0;
+	QVERIFY2(!writeDawProject(file, hugeClip, &report, &error),
+		"a clip time beyond the engine's tick range was written");
+
+	DawProjectModel hugeNote = base;
+	hugeNote.tracks[0].clips[0].notes[0].time = 50000000.0;
+	QVERIFY2(!writeDawProject(file, hugeNote, &report, &error),
+		"a note time beyond the engine's tick range was written");
+
+	const double maxTick = static_cast<double>(std::numeric_limits<tick_t>::max());
+	const double roundsPastRange = (maxTick + 0.49999) / DawProjectTicksPerQuarterNote;
+	QVERIFY(dawProjectBeatRepresentable(roundsPastRange));
+	DawProjectModel roundedClip = base;
+	roundedClip.tracks[0].clips[0].time = roundsPastRange;
+	QVERIFY2(!writeDawProject(file, roundedClip, &report, &error),
+		"six-decimal serialization rounded a representable beat into an unrepresentable tick");
+
+}
+
+//! Individually representable fields must not create an overflowing clip end.
+void writerRefusesAClipEndpointPastTheTickRange()
+{
+	DawProjectModel model = authoredModel();
+	DawProjectWriteReport report;
+	QString error;
+	const QString file = path(m_directory, QStringLiteral("clip-endpoint-overflow.dawproject"));
+	const double maxTickBeat = static_cast<double>(std::numeric_limits<tick_t>::max())
+		/ DawProjectTicksPerQuarterNote;
+	model.tracks[0].clips[0].time = maxTickBeat;
+	model.tracks[0].clips[0].duration = 1.0 / DawProjectTicksPerQuarterNote;
+	QVERIFY2(!writeDawProject(file, model, &report, &error),
+		"a clip endpoint beyond the engine's tick range was written");
+}
+
+//! Individually representable fields must not create an overflowing note end.
+void writerRefusesANoteEndpointPastTheTickRange()
+{
+	DawProjectModel model = authoredModel();
+	DawProjectWriteReport report;
+	QString error;
+	const QString file = path(m_directory, QStringLiteral("note-endpoint-overflow.dawproject"));
+	const double maxTickBeat = static_cast<double>(std::numeric_limits<tick_t>::max())
+		/ DawProjectTicksPerQuarterNote;
+	model.tracks[0].clips[0].notes[0].time = maxTickBeat;
+	model.tracks[0].clips[0].notes[0].duration = 1.0 / DawProjectTicksPerQuarterNote;
+	QVERIFY2(!writeDawProject(file, model, &report, &error),
+		"a note endpoint beyond the engine's tick range was written");
 }
 
 //! Luna cluster 5067: dawProjectXmlFromModel(DawProjectModel{}) SUCCEEDED and

@@ -49,9 +49,11 @@
 #include <QXmlStreamWriter>
 
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include "DawProjectInterchange.h"
+#include "LmmsTypes.h"
 
 namespace lmms
 {
@@ -118,12 +120,30 @@ bool isPowerOfTwo(int value)
 	return value > 0 && (value & (value - 1)) == 0;
 }
 
-//! A beat position the format can carry: finite and not before the start of the
-//! timeline. The header's promise is that a NEGATIVE time is refused, and a NaN
-//! or an infinity is not a position at all - QString::number() writes both as
-//! "nan"/"inf", which is not an xs:double and which the reader then has to
-//! refuse, so the writer refuses them first.
-bool isSupportedTime(double beats) { return std::isfinite(beats) && beats >= 0.0; }
+//! A beat position the format can carry: finite, not before the timeline, and
+//! still within tick_t after the six-decimal value is rounded to the reader's
+//! tick grid. Check the unformatted value first so a huge finite input is
+//! refused before it is converted to text.
+bool isSupportedTime(double beats)
+{
+	if (!std::isfinite(beats) || beats < 0.0 || !dawProjectBeatRepresentable(beats))
+	{
+		return false;
+	}
+	bool ok = false;
+	const double serializedBeats = beatsText(beats).toDouble(&ok);
+	return ok && dawProjectBeatRepresentable(serializedBeats);
+}
+
+//! Clip and note end positions add their independently serialized tick values.
+//! Check the sum in a wider type before the engine performs that tick_t add.
+bool endFitsTickRange(double start, double duration)
+{
+	if (!isSupportedTime(start) || !isSupportedTime(duration)) { return false; }
+	const qint64 startTicks = dawProjectTicksFromBeats(beatsText(start).toDouble()),
+		durationTicks = dawProjectTicksFromBeats(beatsText(duration).toDouble());
+	return durationTicks >= 0 && startTicks <= std::numeric_limits<tick_t>::max() - durationTicks;
+}
 
 QString unsupportedTime(const QString& what, double beats)
 {
@@ -148,6 +168,7 @@ QString clipRefusal(const DawProjectClip& clip, const DawProjectTrack& track)
 	{
 		return unsupportedTime(QStringLiteral("duration of the clip on track %1").arg(track.id), clip.duration);
 	}
+	if (!endFitsTickRange(clip.time, clip.duration)) { return unsupportedTime(QStringLiteral("clip end"), clip.time + clip.duration); }
 	if (!isSupportedTime(clip.playStart))
 	{
 		return unsupportedTime(QStringLiteral("playStart of the clip on track %1").arg(track.id), clip.playStart);
@@ -162,6 +183,7 @@ QString clipRefusal(const DawProjectClip& clip, const DawProjectTrack& track)
 		{
 			return unsupportedTime(QStringLiteral("note duration in the clip on track %1").arg(track.id), note.duration);
 		}
+		if (!endFitsTickRange(note.time, note.duration)) { return unsupportedTime(QStringLiteral("note end"), note.time + note.duration); }
 	}
 	return QString();
 }
