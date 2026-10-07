@@ -140,20 +140,19 @@ QStringList unionOfTags(const QHash<QString, int>& left, const QHash<QString, in
 QJsonArray differingTags(const QHash<QString, int>& left, const QHash<QString, int>& right,
 	int* total)
 {
-	QJsonArray differing;
+	QJsonArray reported;
+	*total = 0;
 	for (const QString& tag : unionOfTags(left, right))
 	{
 		const int a = left.value(tag);
 		const int b = right.value(tag);
 		if (a == b) { continue; }
-		differing.append(QJsonObject{{QStringLiteral("tag"), tag}, {QStringLiteral("a"), a},
-			{QStringLiteral("b"), b}, {QStringLiteral("delta"), b - a}});
-	}
-	*total = differing.size();
-	QJsonArray reported;
-	for (int i = 0; i < differing.size() && i < Bounds::MaxComparedTags; ++i)
-	{
-		reported.append(differing.at(i));
+		++*total;
+		if (reported.size() < Bounds::MaxComparedTags)
+		{
+			reported.append(QJsonObject{{QStringLiteral("tag"), tag}, {QStringLiteral("a"), a},
+				{QStringLiteral("b"), b}, {QStringLiteral("delta"), b - a}});
+		}
 	}
 	return reported;
 }
