@@ -36,6 +36,7 @@
 #include <QProcess>
 #include <QThreadPool>
 #include <QTimer>
+#include <QUuid>
 
 #include <sndfile.h>
 
@@ -99,12 +100,23 @@ QString writeFile(const RenderJob& job, const SampleBuffer& buffer)
 QString commitStaged(const RenderJob& job)
 {
 	const QString path = stagedPath(job);
-	const QString aside = job.out + QStringLiteral(".old");
-	QFile::remove(aside);
 	const bool hadOld = QFile::exists(job.out);
-	if ((!hadOld || QFile::rename(job.out, aside)) && QFile::rename(path, job.out))
+	QString aside;
+	if (hadOld)
 	{
-		QFile::remove(aside);
+		do
+		{
+			aside = job.out + QStringLiteral(".backup-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
+		} while (QFile::exists(aside) || aside == job.source);
+		if (!QFile::rename(job.out, aside))
+		{
+			QFile::remove(path);
+			return QStringLiteral("writing %1 failed").arg(job.out);
+		}
+	}
+	if (QFile::rename(path, job.out))
+	{
+		if (hadOld) { QFile::remove(aside); }
 		return QString();
 	}
 	if (hadOld && !QFile::exists(job.out)) { QFile::rename(aside, job.out); }
