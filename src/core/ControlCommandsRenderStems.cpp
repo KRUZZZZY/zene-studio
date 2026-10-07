@@ -116,7 +116,7 @@ struct StemRequest
 QString parseStemArgs(const QJsonObject& args, StemRequest* request)
 {
 	request->directory = args.value(QStringLiteral("out")).toString();
-	if (!request->directory.startsWith(QLatin1Char('/')))
+	if (!QFileInfo(request->directory).isAbsolute())
 	{
 		return QStringLiteral("'out' must be an absolute directory path (the stem export writes "
 			"many files, so it never guesses a destination)");
