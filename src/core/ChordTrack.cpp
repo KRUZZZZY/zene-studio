@@ -447,7 +447,12 @@ bool ChordTrack::loadSettings(const QDomElement& element)
 	{
 		ChordFollowMode mode = ChordFollowMode::Chord;  // an unknown mode follows the chord, the default
 		followModeFromName(child.attribute(kFollowMode), &mode);
-		setFollow(child.attribute(kFollowTrack, QStringLiteral("-1")).toInt(), mode);
+		// A number that does not parse is not a zero: 0 is a valid track ID, so
+		// a malformed follower ID is SKIPPED, the same rule the malformed event
+		// numbers follow - defaulting would silently make track 0 follow.
+		bool trackIdParsed = false;
+		const int trackId = child.attribute(kFollowTrack, QStringLiteral("-1")).toInt(&trackIdParsed);
+		if (trackIdParsed) { setFollow(trackId, mode); }
 	}
 	return true;
 }
