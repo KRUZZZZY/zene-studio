@@ -46,6 +46,7 @@
 #include "ControlVocabulary.h"
 #include "DeviceAbState.h"
 #include "Effect.h"
+#include "EffectControls.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
@@ -142,6 +143,38 @@ double parameterValue(const QString& target, const QString& plugin, const QStrin
 		{QStringLiteral("plugin"), plugin}, {QStringLiteral("name"), name}});
 	return read.ok ? read.result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble() : -1e9;
 }
+
+//! The minimal controls needed for Effect::saveSettings() on the unregistered test device.
+class UnregisteredCopyTestControls final : public EffectControls
+{
+public:
+	explicit UnregisteredCopyTestControls(Effect* effect) : EffectControls{effect} {}
+	int controlCount() override { return 0; }
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+	QString nodeName() const override { return QStringLiteral("UnregisteredCopyTestControls"); }
+	gui::EffectControlDialog* createView() override { return nullptr; }
+};
+
+//! A serializable source device whose private test descriptor is not in PluginFactory, so a copy stops at it.
+class UnregisteredCopyTestEffect final : public Effect
+{
+public:
+	explicit UnregisteredCopyTestEffect(Model* parent) : Effect{&s_descriptor, parent, nullptr}, m_controls{this} {}
+
+	EffectControls* controls() override { return &m_controls; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, const f_cnt_t) override { return ProcessStatus::Continue; }
+
+private:
+	UnregisteredCopyTestControls m_controls;
+	static const Plugin::Descriptor s_descriptor;
+};
+
+const Plugin::Descriptor UnregisteredCopyTestEffect::s_descriptor{
+	"zene-unregistered-copy-test-effect", "Unregistered copy test effect", "", "Zene", 0x0100,
+	Plugin::Type::Effect, nullptr, nullptr, nullptr};
 
 } // namespace
 
@@ -510,6 +543,30 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(changed.count(), 4);
 		QVERIFY(pluginorganiser::preferredFormat().isEmpty());
+	}
+
+	//! A stopped chain copy keeps the call's full destination list in `to`, while `copies` records its progress.
+	void aPartialChainCopyKeepsTheRequestedDestinationList()
+	{
+		const int source = Engine::mixer()->createChannel();
+		const int first = Engine::mixer()->createChannel();
+		const int second = Engine::mixer()->createChannel();
+		const int third = Engine::mixer()->createChannel();
+		auto* unavailable = new UnregisteredCopyTestEffect{&chainOf(source)};
+		chainOf(source).appendEffect(unavailable);
+		const QJsonArray requested{ch(first), ch(second), ch(third)};
+
+		const ControlResult copied = run(QStringLiteral("chain.copy"), {{QStringLiteral("target"), ch(source)},
+			{QStringLiteral("to"), requested}});
+		QVERIFY2(copied.ok, qPrintable(copied.errorMessage));
+		QVERIFY(!copied.result.value(QStringLiteral("stopped")).toString().isEmpty());
+		QCOMPARE(copied.result.value(QStringLiteral("count")).toInt(), 0);
+		QCOMPARE(copied.result.value(QStringLiteral("copies")).toArray().size(), 1);
+		QCOMPARE(copied.result.value(QStringLiteral("to")).toArray(), requested);
+
+		QVERIFY(chainOf(first).effects().empty());
+		chainOf(source).removeEffect(unavailable);
+		delete unavailable;
 	}
 };
 

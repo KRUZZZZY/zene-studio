@@ -132,18 +132,17 @@ QJsonObject copyToEach(const QJsonObject& args, const std::vector<ControlTarget>
 {
 	QJsonArray all;
 	QJsonArray copies;
-	QJsonArray ids;
 	QString stopped;
 	for (const ControlTarget& to : targets)
 	{
 		const Copied one = copyOne(withDestination(args, to.id), to);
 		for (const QJsonValue& id : one.ids) { all.append(id); }
 		copies.append(QJsonObject{{QStringLiteral("to"), to.id}, {QStringLiteral("plugins"), one.ids}});
-		ids.append(to.id);
 		stopped = one.stopped;
 		if (!stopped.isEmpty()) { break; }
 	}
-	const QJsonValue named = args.value(QStringLiteral("to")).isArray() ? QJsonValue(ids) : QJsonValue(targets.front().id);
+	const QJsonValue named = args.value(QStringLiteral("to")).isArray() ? args.value(QStringLiteral("to"))
+		: QJsonValue(targets.front().id);
 	QJsonObject result{{QStringLiteral("to"), named}, {QStringLiteral("plugins"), all}, {QStringLiteral("count"), all.size()},
 		{QStringLiteral("copies"), copies}};
 	if (!stopped.isEmpty()) { result.insert(QStringLiteral("stopped"), stopped); }
