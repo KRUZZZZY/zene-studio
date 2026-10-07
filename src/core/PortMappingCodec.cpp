@@ -82,6 +82,23 @@ QHostAddress mappedFrom(const QByteArray& in, int at)
 	return isV4 ? QHostAddress(v4) : address;
 }
 
+bool decodePmpPayload(PmpReply& reply, const QByteArray& bytes)
+{
+	if (reply.opcode == (0x80 | PmpOpAddress))
+	{
+		if (bytes.size() < 12) { return false; }
+		reply.externalAddress = QHostAddress(get32(bytes, 8));
+	}
+	if (reply.opcode == (0x80 | PmpOpMapTcp))
+	{
+		if (bytes.size() < 16) { return false; }
+		reply.internalPort = get16(bytes, 8);
+		reply.externalPort = get16(bytes, 10);
+		reply.lifetime = get32(bytes, 12);
+	}
+	return true;
+}
+
 //! One /proc/net/route row's gateway when it is a default route, with its metric.
 bool defaultRouteOf(const QList<QByteArray>& fields, quint32* gateway, int* metric)
 {
@@ -158,13 +175,7 @@ PmpReply decodePmpReply(const QByteArray& bytes)
 	reply.opcode = static_cast<quint8>(bytes.at(1));
 	reply.result = get16(bytes, 2);
 	reply.epoch = get32(bytes, 4);
-	if (reply.opcode == (0x80 | PmpOpAddress) && bytes.size() >= 12) { reply.externalAddress = QHostAddress(get32(bytes, 8)); }
-	if (reply.opcode == (0x80 | PmpOpMapTcp) && bytes.size() >= 16)
-	{
-		reply.internalPort = get16(bytes, 8);
-		reply.externalPort = get16(bytes, 10);
-		reply.lifetime = get32(bytes, 12);
-	}
+	if (!decodePmpPayload(reply, bytes)) { return reply; }
 	reply.valid = true;
 	return reply;
 }

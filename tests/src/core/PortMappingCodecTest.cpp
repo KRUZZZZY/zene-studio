@@ -146,6 +146,8 @@ private slots:
 		const PmpReply address = decodePmpReply(hex("0080000000000064cb007107"));
 		QCOMPARE(address.externalAddress, QHostAddress(QStringLiteral("203.0.113.7")));
 		QVERIFY(!decodePmpReply(hex("008200")).valid);       // truncated
+		QVERIFY(!decodePmpReply(hex("0082000000000064")).valid); // truncated mapping success
+		QVERIFY(!decodePmpReply(hex("0080000000000064")).valid); // truncated address success
 		QVERIFY(!decodePmpReply(hex("0002000000000000")).valid);  // a request, not a response
 		QCOMPARE(decodePmpReply(hex("0082000200000064")).result, quint16(2));
 	}
