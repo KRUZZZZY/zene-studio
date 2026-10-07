@@ -83,6 +83,19 @@ private slots:
 	void initTestCase() { Engine::init(true); }  // a model needs the engine
 	void cleanupTestCase() { Engine::destroy(); }
 
+	//! Controls shown before the first event-loop turn still receive their interaction cues.
+	void cuesPrepareControlsShownBeforeTheEventLoop()
+	{
+		FloatModel model(0.5f, 0.f, 1.f, 0.01f, nullptr, QStringLiteral("Level"));
+		QWidget window;
+		auto* knob = new Knob(KnobType::Bright26, &window);
+		knob->setModel(&model);
+		window.show();
+
+		QVERIFY(knob->testAttribute(Qt::WA_Hover));
+		QVERIFY(knob->whatsThis().contains(cues::interactionHelp(cues::Kind::Knob)));
+	}
+
 	void tabReachesAKnob()
 	{
 		Knob knob(KnobType::Bright26);

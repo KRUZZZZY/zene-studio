@@ -102,7 +102,7 @@ private:
 
 void startCues()
 {
-	QMetaObject::invokeMethod(QCoreApplication::instance(), [] { install(); }, Qt::QueuedConnection);
+	install();
 }
 
 // Every binary that links the interface - the application and each test - gets the cues from its first event loop turn.
