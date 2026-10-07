@@ -231,8 +231,20 @@ bool readMetaEvent(Cursor& track, quint32 smfTick, std::vector<Candidate>* candi
 		*error = QStringLiteral("a meta event's payload runs past the track");
 		return false;
 	}
-	if (type == SmfMetaTempo && length == 3)
+	if (type == SmfMetaTempo)
 	{
+		// SMF 1.0: a tempo meta event names microseconds-per-quarter in exactly
+		// three bytes. Any other payload length does not name a tempo, and
+		// letting it fall through as an unknown meta event dropped the file's
+		// tempo change silently while the file still read as valid, so it is
+		// refused like the malformed end-of-track event below.
+		if (length != 3)
+		{
+			*error = QStringLiteral("a tempo meta event carries %1 payload bytes; the "
+				"format names exactly three microseconds-per-quarter bytes, so the "
+				"file was refused").arg(length);
+			return false;
+		}
 		Candidate candidate;
 		candidate.smfTick = smfTick;
 		candidate.hasTempo = true;
