@@ -56,6 +56,14 @@ enum class Gateway
 	Silent,   //!< never answers
 };
 
+//! Replies held back by the fake gateway, with the mapper port they were aimed at.
+struct HeldReply
+{
+	QByteArray reply;
+	QHostAddress target;
+	quint16 port = 0;
+};
+
 const char* const RecordedDescription = R"(<?xml version="1.0"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0"><specVersion><major>1</major><minor>0</minor></specVersion>
 <device><deviceType>urn:schemas-upnp-org:device:InternetGatewayDevice:1</deviceType>
@@ -78,6 +86,8 @@ class PortMappingCodecTest : public QObject
 private:
 	QUdpSocket m_gateway;
 	Gateway m_mode = Gateway::PmpOnly;
+	bool m_hold = false;  //!< when set, the gateway stores replies instead of sending them
+	QList<HeldReply> m_held;
 	QList<QByteArray> m_requests;
 
 	void answer()
@@ -87,8 +97,18 @@ private:
 			const QNetworkDatagram datagram = m_gateway.receiveDatagram();
 			m_requests.append(datagram.data());
 			const QByteArray reply = replyTo(datagram.data());
-			if (!reply.isEmpty()) { m_gateway.writeDatagram(reply, datagram.senderAddress(), datagram.senderPort()); }
+			if (reply.isEmpty()) { continue; }
+			if (m_hold) { m_held.append({reply, datagram.senderAddress(), static_cast<quint16>(datagram.senderPort())}); }
+			else { m_gateway.writeDatagram(reply, datagram.senderAddress(), datagram.senderPort()); }
 		}
+	}
+
+	//! Sends one held reply (by index) toward the mapper port it was aimed at.
+	void releaseReply(int index)
+	{
+		if (index < 0 || index >= m_held.size()) { return; }
+		const HeldReply held = m_held.takeAt(index);
+		m_gateway.writeDatagram(held.reply, held.target, held.port);
 	}
 
 	QByteArray replyTo(const QByteArray& request) const
@@ -96,8 +116,13 @@ private:
 		if (m_mode == Gateway::Silent) { return QByteArray(); }
 		if (request.at(0) == 2) { return m_mode == Gateway::Pcp ? pcpSuccess(request) : hex("00810001000003e8"); }
 		if (request.size() == 2) { return hex("00800000000003e8cb007107"); }  // external 203.0.113.7
-		// A TCP map: echo the internal port, grant external 40000 for 7200 s.
-		return hex("00820000000003e8") + request.mid(4, 2) + hex("9c4000001c20");
+		// A TCP map: external is 40000 for the recorded 41740, and one higher for every port above it.
+		const quint16 internal = (static_cast<quint8>(request.at(4)) << 8) | static_cast<quint8>(request.at(5));
+		const quint16 external = static_cast<quint16>(40000 + internal - 41740);
+		QByteArray externalBytes;
+		externalBytes.append(static_cast<char>(external >> 8));
+		externalBytes.append(static_cast<char>(external & 0xff));
+		return hex("00820000000003e8") + request.mid(4, 2) + externalBytes + hex("00001c20");
 	}
 
 	static QByteArray pcpSuccess(const QByteArray& request)
@@ -201,6 +226,43 @@ private slots:
 		QVERIFY(!result.ok);
 		QVERIFY2(result.message.contains(QStringLiteral("did not answer")), qPrintable(result.message));
 		QCOMPARE(m_requests.size(), 4);  // two PCP tries, two NAT-PMP address tries
+	}
+
+	//! Restarting a map while the first is pending must not consume the first attempt's delayed replies:
+	//! NAT-PMP replies carry no transaction id, so the restarted attempt must only see its own.
+	void restartMapIgnoresStaleReply()
+	{
+		m_mode = Gateway::PmpOnly;
+		m_hold = true;
+		PmpMapper mapper;
+		mapper.setServer(QHostAddress(QHostAddress::LocalHost), m_gateway.localPort());
+		mapper.setClientAddress(QHostAddress(QStringLiteral("192.168.1.20")));
+		mapper.setRetrySchedule({100, 100});
+		QSignalSpy finished(&mapper, &PmpMapper::finished);
+		mapper.map(41740, 41740, 7200);  // attempt 1: PCP request, its reply held back
+		finished.wait(10);  // let the queued request reach the gateway
+		QCOMPARE(m_held.size(), 1);
+		releaseReply(0);  // "unsupported version" -> PmpAddress; the address request is held
+		finished.wait(10);
+		releaseReply(0);  // the address reply -> PmpMap; the map reply for 41740 is held
+		finished.wait(10);
+		mapper.map(41741, 41741, 7200);  // restart while attempt 1 still waits for its map reply
+		finished.wait(10);
+		QCOMPARE(m_held.size(), 2);  // the stale map reply for 41740 plus attempt 2's pmpOnly
+		releaseReply(1);  // attempt 2's "unsupported version" -> PmpAddress
+		finished.wait(10);
+		releaseReply(1);  // attempt 2's address reply -> PmpMap
+		finished.wait(10);
+		releaseReply(0);  // the stale map reply for 41740 arrives first
+		finished.wait(10);
+		releaseReply(0);  // attempt 2's own map reply for 41741
+		finished.wait(10);
+		m_hold = false;
+		QCOMPARE(finished.count(), 1);
+		const MappingResult result = finished.first().first().value<MappingResult>();
+		QVERIFY(result.ok);
+		QCOMPARE(result.method, QStringLiteral("nat-pmp"));
+		QCOMPARE(result.externalPort, quint16(40001));  // the fresh reply's port, never the stale 40000
 	}
 
 	void gatewayFromRecordedRouteTable()

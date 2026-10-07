@@ -63,6 +63,10 @@ void PmpMapper::setServer(const QHostAddress& gateway, quint16 port)
 
 void PmpMapper::map(quint16 internalPort, quint16 externalPort, quint32 lifetime)
 {
+	// A restart invalidates a pending attempt: stop its timer and rebind the socket, because NAT-PMP
+	// replies carry no transaction id - a reply still on the wire for the previous attempt's request
+	// must not be read as the new attempt's, and a fresh local port makes such replies unroutable.
+	if (m_step != Step::Idle) { m_timer->stop(); m_socket->close(); }
 	if (m_socket->state() != QAbstractSocket::BoundState) { m_socket->bind(QHostAddress(QHostAddress::AnyIPv4), 0); }
 	m_internal = internalPort;
 	m_external = externalPort;
