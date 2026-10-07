@@ -283,6 +283,7 @@ void registerClipLinkRemove(ControlRegistry& registry)
 		}
 		// A relation needs two ends: the last pair leaving leaves no group of one.
 		const bool dissolved = remaining.size() == 1;
+		const QJsonObject before = cliplink::membershipState(ref.clip);
 
 		QVector<JournallingObject*> toCheckpoint;
 		toCheckpoint.append(ref.clip);
@@ -315,7 +316,7 @@ void registerClipLinkRemove(ControlRegistry& registry)
 		inverseClips.append(cliplink::clipIdOf(ref.clip));
 		inverseArgs.insert(QStringLiteral("clips"), inverseClips);
 		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(cliplink::membershipState(ref.clip), QStringLiteral("clip.link_create"),
+			transactionPayload(before, QStringLiteral("clip.link_create"),
 				inverseArgs, true, cliplink::ClauseClipLinkJournalled));
 		return ControlResult::success(result);
 	};
