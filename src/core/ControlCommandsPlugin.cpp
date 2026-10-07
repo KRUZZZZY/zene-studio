@@ -232,11 +232,7 @@ ControlResult loadInstrument(const ControlTarget& target, const ControlDeviceEnt
 		QJsonObject{{QStringLiteral("target"), target.id},
 			{QStringLiteral("plugin"), previous}});
 	transaction.insert(QStringLiteral("inverse"),
-		QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.load")},
-			{QStringLiteral("args"),
-				QJsonObject{{QStringLiteral("target"), target.id},
-					{QStringLiteral("note"), QStringLiteral("reload the previous instrument by "
-						"device id; its parameter values are not restored")}}}});
+		QJsonObject{});
 	transaction.insert(QStringLiteral("reversible"), false);
 	transaction.insert(QStringLiteral("mechanism"),
 		QStringLiteral("snapshot only: replacing an instrument has no ProjectJournal checkpoint "

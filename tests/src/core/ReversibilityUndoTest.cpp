@@ -294,6 +294,29 @@ private slots:
 	}
 
 
+	//! An instrument replacement is snapshot-only. Any inverse it advertises
+	//! must replay through the command registry's schema validation.
+	void instrumentLoadTransactionOnlyAdvertisesAReplayableInverse()
+	{
+		const QString track = addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		const QString device = firstLoadable(QStringLiteral("instrument"));
+		if (device.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+
+		const ControlResult replaced = run(QStringLiteral("plugin.load"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("device"), device}});
+		QVERIFY2(replaced.ok, qPrintable(replaced.errorMessage));
+		const QJsonObject transaction = stateOf(QStringLiteral("plugin.load"));
+		QVERIFY(!transaction.isEmpty());
+		QCOMPARE(transaction.value(QStringLiteral("reversible")).toBool(), false);
+		const QJsonObject inverse = transaction.value(QStringLiteral("inverse")).toObject();
+		if (inverse.isEmpty()) { return; }
+
+		const ControlResult replayed = run(inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replayed.ok, qPrintable(replayed.errorMessage));
+	}
+
 	//! The device commands: bypass and param_set are model checkpoints, and a
 	//! state load is an action step that restores the captured XML.
 	void deviceCommandsUndoToTheirPreCommandState()
