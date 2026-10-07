@@ -49,9 +49,10 @@ What it drives, in order:
      window: off, then armed, its capacity in frames and seconds, and then either
      the take (when this host actually captured frames) or the typed refusal that
      says the window is empty - never a zero-length file;
- 12. `control.transactions`                the A16 records: the arm verbs are
-     `snapshot` with a command inverse, `record.input_set` is `true_inverse`, the
-     inspectors and the writers that only touch a file are `not_mutating`.
+ 12. `control.transactions`                the A16 records: `record.arm_track` is
+     irreversible with no command inverse, `track.set_arm` is a `snapshot` with
+     its own command inverse, `record.input_set` is `true_inverse`, and the
+     inspectors and non-mutating verbs stay `not_mutating`.
 
 Started through the shared harness (tests/control_socket_harness.py), so this file
 adds no second launch path and no second launch recipe.
@@ -435,12 +436,12 @@ def check_transactions(session, recorder, expect_input_set, expect_arms):
         return None
 
     if expect_arms:
-        armed = find("record.arm_track", True)
-        recorder.check("record.arm_track's arm is recorded as snapshot, reversible, "
-                       "with a command inverse",
-                       armed is not None and armed.get("class") == "snapshot"
-                       and (armed.get("inverse") or {}).get("applies") == "command"
-                       and (armed.get("inverse") or {}).get("op") == "record.disarm_track",
+        armed = find("record.arm_track")
+        recorder.check("record.arm_track's arm is recorded as irreversible and "
+                       "non-reversible, without a command inverse",
+                       armed is not None and armed.get("class") == "irreversible"
+                       and armed.get("reversible") is False
+                       and (armed.get("inverse") or {}).get("op") == "",
                        "record=%r" % armed)
 
     if expect_input_set:

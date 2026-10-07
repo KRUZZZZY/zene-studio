@@ -2,64 +2,71 @@
 
 Verdict: **FIXED**
 
-`record.arm_track` created an external take, but its transaction called
-`record.disarm_track` a reversible inverse even though disarming keeps the WAV.
-The command now records no inverse and is classified `irreversible`; `control.undo`
-returns the typed refusal, while the reply and contract name explicit disarm and
-the retained file as the fallback.
+`record.arm_track` creates a take file outside the project journal. Disarming
+stops writing and retires the recovery journal, but retains the WAV, so it cannot
+be a reversible inverse. The production fix already on this branch marks the
+transaction `irreversible`, records no command inverse, and points to explicit
+disarm plus manual keep/delete as the fallback.
 
 ## Evidence
 
-- [ControlCommandsRecordingRoutes.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-51/src/core/ControlCommandsRecordingRoutes.cpp:201) records no inverse for the arm; lines 343 and 368 describe the arm and explicit stop accurately.
-- [ControlReversibilityTableRecording.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-51/src/core/ControlReversibilityTableRecording.cpp:165) classifies the arm as irreversible and names the retained-file fallback.
-- [ControlRecordingRoutesTest.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-51/tests/src/core/ControlRecordingRoutesTest.cpp:73) arms a route, feeds four frames, requires typed undo refusal, verifies the take remains after explicit disarm, and checks the transaction and command descriptions.
-- [RELEASE-NOTES-v0.3.0-alpha.md](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-51/docs/RELEASE-NOTES-v0.3.0-alpha.md:955) updates the A16 histogram to 818 rows: 404 `true_inverse`, 39 `snapshot`, 22 `irreversible`, 353 `not_mutating`.
+- `src/core/ControlCommandsRecordingRoutes.cpp:201` records the arm as
+  non-reversible with an empty inverse operation; line 203 names the retained-file
+  fallback.
+- `src/core/ControlReversibilityTableRecording.cpp:165` classifies
+  `record.arm_track` as irreversible and explains why disarming cannot restore
+  the filesystem.
+- `tests/src/core/ControlRecordingRoutesTest.cpp:98` verifies typed undo refusal;
+  line 104 verifies the take remains on disk.
+- `tests/control-record-inputs.py:439` now requires the transaction to be
+  `irreversible`, `reversible: false`, and have an empty inverse operation.
+  Its separate `track.set_arm` snapshot and inverse assertion remains at line
+  455.
+- The contract row in `docs/RECORD-INPUTS.md:72` and command descriptions in
+  `docs/CAPABILITIES-0.3.0.md:1121` and `:1123` describe the retained take.
+  `tools/mcp-zene-control/zene_control/commands_snapshot.json` was regenerated
+  from the live registry and carries the updated arm and disarm descriptions.
 
-## Regression evidence
+## Verification
 
-All `ctest` commands below ran from `build/tests`. The affected family contains
-three ctests: `ControlRecordingRoutesTest`, `ReversibilityContractTest`, and
-`ReversibilityUndoTest`.
+All ctests ran from `build/tests`. The affected recording/reversibility family
+contains four tests: `ControlRecordingRoutesTest`, `ReversibilityContractTest`,
+`ReversibilityUndoTest`, and `ControlRecordInputs`.
 
 | Phase | Exact command | Exit | Result |
 |---|---|---:|---|
-| RED, original product code | `ctest -R 'ControlRecordingRoutesTest|ReversibilityContractTest|ReversibilityUndoTest' --output-on-failure` | 8 | 3 tests ran; the route test failed because `control.undo` succeeded and kept the take. Log: `test-1.log`. |
-| GREEN, fixed code | `ctest -R 'ControlRecordingRoutesTest|ReversibilityContractTest|ReversibilityUndoTest' --output-on-failure` | 0 | 3/3 ctests passed after the histogram update and final source edits. Log: `test-6.log`. |
-| Sensitivity RED, final product patch reverted | `ctest -R 'ControlRecordingRoutesTest' --output-on-failure` | 8 | 1 ctest ran; the same `!undo.ok` assertion failed. Log: `test-7.log`. |
-| Sensitivity GREEN, final product patch reapplied | `ctest -R 'ControlRecordingRoutesTest' --output-on-failure` | 0 | 1/1 ctest passed. Log: `test-8.log`. |
+| Build | `cmake --build build --target zene ControlRecordingRoutesTest ReversibilityContractTest ReversibilityUndoTest` | 0 | All affected targets built. |
+| Sensitivity RED build, production patch reversed | `cmake --build build --target zene ControlRecordingRoutesTest` | 0 | Rebuilt the original reversible behavior. |
+| Sensitivity RED | `ctest -R '^ControlRecordingRoutesTest$' --output-on-failure` | 8 | 1 test failed at `!undo.ok`: undo claimed to reverse the retained take. |
+| Sensitivity GREEN build, production patch restored | `cmake --build build --target zene ControlRecordingRoutesTest` | 0 | Rebuilt the fixed behavior. |
+| Sensitivity GREEN | `ctest -R '^ControlRecordingRoutesTest$' --output-on-failure` | 0 | 1/1 test passed. |
+| Recording/reversibility family | `ctest -R 'ControlRecordInputs|ControlRecordingRoutesTest|ReversibilityContractTest|ReversibilityUndoTest' --output-on-failure` | 0 | 4/4 tests passed, including `ControlRecordInputs`. |
+| Complexity gate | `bash tests/complexity-gate.sh --check` | 0 | Passed. |
+| File-length gate | `bash tests/file-length-gate.sh --check` | 0 | Passed. |
 
-The final sensitivity sequence rebuilt `zene` and `ControlRecordingRoutesTest`
-before each ctest. Reverting the patch with
-`git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-51.r1/logs/fix.patch`
-returned EXIT 0 (`patch-3.log`); reapplying it with
-`git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-51.r1/logs/fix.patch`
-returned EXIT 0 (`patch-4.log`). Both builds returned EXIT 0 (`build-8.log`,
-`build-9.log`).
+An interim complexity-gate run returned EXIT 1 after I temporarily added the
+pre-existing socket test to `tests/fork-sources.txt`; that made the gate classify
+its existing over-limit helpers as newly added. I removed that inventory-only
+edit, changed no gate or baseline, and reran both gates successfully on the final
+files.
 
-The A16 family was also run once while the release-note histogram still had its
-old class counts: the route test and undo test passed, while the contract test
-correctly failed on the stale published histogram (`test-2.log`, EXIT 8). The
-histogram was updated and the family then passed (`test-3.log`, EXIT 0).
+For sensitivity, the source-only patch was captured with
+`git show --format= HEAD -- src/core/ControlCommandsRecordingRoutes.cpp src/core/ControlReversibilityTableRecording.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-51.r2/logs/fix.patch`
+(EXIT 0), reversed with
+`git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-51.r2/logs/fix.patch`
+(EXIT 0), and restored with
+`git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-51.r2/logs/fix.patch`
+(EXIT 0). Only the two production source files were in that patch.
 
-## Build and gates
+The snapshot capture ran the built `zene` in the socket harness, then invoked
+`python3 tools/mcp-zene-control/snapshot_commands.py --socket /tmp/zctl-run-7268fihu/zene.sock --lane /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-51`
+(EXIT 0); it wrote 809 commands across 76 groups. Build and test logs are under
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-51.r2/logs`.
 
-- `cmake --build build --target zene ControlRecordingRoutesTest ReversibilityContractTest ReversibilityUndoTest`: EXIT 0 in `build-7.log` (final source build). The initial invocation returned EXIT 2 because the generated target was not yet present (`build-1.log`); `cmake --build build --target help` returned EXIT 0 (`targets-1.log`), and the repeated target build succeeded (`build-2.log`).
-- `cmake --build build --target zene ControlRecordingRoutesTest`: EXIT 0 for both final sensitivity builds (`build-8.log` and `build-9.log`).
-- `bash tests/complexity-gate.sh --check`: EXIT 0 (`complexity-gate-2.log`).
-- `bash tests/file-length-gate.sh --check`: EXIT 0 (`file-length-gate-2.log`).
+## Files committed in the follow-up
 
-Build, test, and gate output is in the requested log folder. The `fff` grep tool
-was not exposed in this environment (`command -v fff` returned no path), so the
-logs were searched with one-term `rg` queries for `error`, `FAILED`, and
-`Assertion`.
-
-## Files in this commit
-
-- `src/core/ControlCommandsRecordingRoutes.cpp`
-- `src/core/ControlReversibilityTableRecording.cpp`
-- `tests/src/core/ControlRecordingRoutesTest.cpp`
-- `tests/CMakeLists.txt`
-- `tests/fork-sources.txt`
-- `tests/upstream-modifications.txt`
-- `docs/RELEASE-NOTES-v0.3.0-alpha.md`
+- `docs/CAPABILITIES-0.3.0.md`
+- `docs/RECORD-INPUTS.md`
 - `docs/qwen-fixes-2026-10/cluster-new-p8-51.md`
+- `tests/control-record-inputs.py`
+- `tools/mcp-zene-control/zene_control/commands_snapshot.json`
