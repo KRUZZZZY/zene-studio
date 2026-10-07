@@ -330,6 +330,24 @@ private slots:
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore);
 	}
 
+	//! One loss report reused across reads: the second read does not inherit the first's counts.
+	void reusingALossReportStartsFresh()
+	{
+		if (!aafImportAvailable()) { QSKIP("this build has no LibAAF (ZENE_HAVE_LIBAAF not defined)"); }
+		AafModel first;
+		AafModel second;
+		AafLossReport loss;
+		QString error;
+		QVERIFY(readAaf(Fixture, AafReadOptions{}, &first, &loss, &error));
+		const int videoTracks = loss.videoTracks;
+		const int warnings = loss.warnings.size();
+		QVERIFY(videoTracks > 0);  // the fixture carries a video track, so the checks below are meaningful
+		QVERIFY(readAaf(Fixture, AafReadOptions{}, &second, &loss, &error));
+		QCOMPARE(loss.videoTracks, videoTracks);
+		QCOMPARE(loss.warnings.size(), warnings);
+		QVERIFY(second == first);
+	}
+
 	//! The import extracts the embedded WAV, builds the track and its clip, and is ONE undo step.
 	void theImportIsOneUndoStep()
 	{
