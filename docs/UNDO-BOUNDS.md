@@ -247,9 +247,9 @@ behaviour and is not what this fix addresses.
    working, not a defect: a client that needs a boundary sets the window down (or to 0), or issues any
    other command between the two. The reply does not hide it — `control.undo`'s `undone_commands`
    reports how many commands that one step covered (BUG-CTL-4).
-6. **`control.set_undo_depth` cannot restore what it evicted.** The inverse restores the CAP; the steps
-   a lower cap dropped are gone, and the transaction's mechanism says so rather than implying
-   otherwise.
+6. **`control.set_undo_depth` cannot restore what it evicted.** When a cap change drops steps, its
+   transaction is recorded as irreversible and `control.undo` refuses it; restoring the CAP cannot
+   bring those steps back.
 7. **The byte budget measures the checkpoint XML, not the transaction closures.** An action step
    (a deleted track's inverse) serialises no state of its own and counts as 0 bytes against the budget;
    its closure is one recorded operation, not a growing buffer.

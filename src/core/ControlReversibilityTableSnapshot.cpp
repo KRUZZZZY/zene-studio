@@ -143,10 +143,10 @@ const ReversibilityRow kSnapshotRows[] = {
 		"A rack with more than one parallel chain does NOT get the removed "
 		"chain's position back, so a selection that named a later chain has to "
 		"be set again with rack.set_selected"),
-	R("control.set_undo_depth", RC::Snapshot, true,
-		"the depth cap is not project state, but LOWERING it evicts undo steps, and an evicted step is gone. The previous cap is a bounded scalar, so the change itself is reversible - what it dropped is not",
-		"snapshot: the transaction's before-state holds the previous cap, and the recorded inverse is the command itself (control.undo dispatches control.set_undo_depth with steps/bytes set back). The journal's byte budget is not stored twice: it is COMPUTED from the steps the stack retains (ProjectJournal::retainedBytes) and reported by control.undo_depth",
-		"the steps evicted by a cap change are NOT recoverable: control.undo restores the CAP, not the history it dropped. Raise the cap before a long session, or re-drive the edits"),
+	R("control.set_undo_depth", RC::Snapshot, false,
+		"the depth cap is not project state, but LOWERING it evicts undo steps, and an evicted step is gone. A change that drops no steps is reversible; one that drops history is not, because restoring the previous cap cannot restore those steps",
+		"snapshot: the transaction's before-state holds the previous caps. When no steps were dropped, its inverse command can restore them completely. When a cap change dropped steps, the record is irreversible and control.undo refuses it. The journal's byte budget is not stored twice: it is COMPUTED from the steps the stack retains (ProjectJournal::retainedBytes) and reported by control.undo_depth",
+		"after a cap change drops history, control.undo refuses because the evicted steps cannot be recovered by restoring the cap. Raise the cap manually and re-drive any edits whose steps were evicted"),
 
 	// CODE-6: the Lua memory budget. The instruction budget's sibling, and the
 	// same shape: a bounded scalar the process holds, settable through the

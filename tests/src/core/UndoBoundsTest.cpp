@@ -3,7 +3,7 @@
  *                     (Zene Studio; SPEC A16's "undo depth and drag coalescing"
  *                     obligation, task #623; docs/UNDO-BOUNDS.md).
  *
- * What each test is for, in the order the file declares them:
+ * Test coverage in this file:
  *
  *   1. undoDepthIsDeclaredAndBounded
  *        the depth is READABLE and the count cap is SETTABLE through the socket,
@@ -29,6 +29,11 @@
  *        the honesty half: once a bound has evicted the step a record describes,
  *        control.undo REFUSES (typed) instead of unwinding an older edit, and the
  *        stack is left exactly as it was.
+ *   7. loweringCapAfterEvictionsCannotBeUndone
+ *        when setting a cap drops existing history, the cap-change record is
+ *        irreversible and control.undo refuses it instead of restoring only the cap.
+ *   8. undoDepthContractDoesNotPromiseUnconditionalReversibility
+ *        the static table leaves room for a cap change that evicts history.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -200,6 +205,43 @@ private slots:
 		QVERIFY2(depthReport().value(QStringLiteral("evicted")).toInt() > 0,
 			"the count cap evicted nothing although twelve steps ran against a cap of five");
 		QVERIFY(bounded());
+	}
+
+
+	//! The change cannot be undone when it has already evicted older steps: its
+	//! inverse contains only the previous caps, not the removed history.
+	void loweringCapAfterEvictionsCannotBeUndone()
+	{
+		shipCaps();
+		setWindow(0);
+		distinctSteps(2, 140);
+		QVERIFY(depth() >= 2);
+
+		const ControlResult lowered = run(QStringLiteral("control.set_undo_depth"),
+			QJsonObject{{QStringLiteral("steps"), 1}});
+		QVERIFY2(lowered.ok, qPrintable(lowered.errorMessage));
+		QVERIFY(lowered.result.value(QStringLiteral("dropped")).toInt() > 0);
+
+		const QJsonObject record = stateOf(QStringLiteral("control.set_undo_depth"));
+		const ControlResult undo = run(QStringLiteral("control.undo"));
+
+		QCOMPARE(record.value(QStringLiteral("command")).toString(),
+			QStringLiteral("control.set_undo_depth"));
+		QCOMPARE(record.value(QStringLiteral("reversible")).toBool(), false);
+		QVERIFY2(!undo.ok, "control.undo restored the cap after its change discarded history");
+		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
+		QCOMPARE(capSteps(), 1);
+	}
+
+
+	//! The table's default is conservative because a call may evict history;
+	//! the handler supplies true only for a call that drops no steps.
+	void undoDepthContractDoesNotPromiseUnconditionalReversibility()
+	{
+		const control::ReversibilityEntry* entry =
+			control::ReversibilityTable::instance().lookup(QStringLiteral("control.set_undo_depth"));
+		QVERIFY(entry != nullptr);
+		QCOMPARE(entry->reversible, false);
 	}
 
 
