@@ -2195,10 +2195,11 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   bounded window of the most recent 2^20 frames (~21.8 s at 48 kHz) of the engine's input bus, drop-oldest
   with the overwritten count reported, a consistent copy that never blocks the audio thread, and a one-pass
   stereo 24-bit WAV of exactly the retained frames. The model is `RetroMidiCapture`'s, deliberately.
-- **A16.** Ten rows, in the new group file `src/core/ControlReversibilityTableRecording.cpp`: `snapshot` for
-  `record.arm_track` and the re-classified `track.set_arm` (each with a paired-command inverse), `true_inverse`
-  for `record.input_set` (the config write's previous plan), and seven `not_mutating` rows for the two
-  inspectors, the three writers whose only output is a file, and the retro mode.
+- **A16.** Twelve rows, in `src/core/ControlReversibilityTableRecording.cpp`: `snapshot` for
+  `record.arm_track`, `track.set_arm` and `track.set_arm_many` (each with a paired-command inverse),
+  `true_inverse` for `record.input_set` (the config write's previous plan), `irreversible` for
+  `record.disarm_track` and `record.disarm_all` (both stop capture and retire journals while leaving takes
+  on disk), and six `not_mutating` rows for the inspectors and operations outside session undo.
 - **Proof.** `RecordingInputPathTest` and `RetroAudioCaptureTest` (registered ctests, no hardware: N routes ×
   N channels with each take read back sample-exactly, and the retro window's bounds, non-allocating producer
   path and empty-window refusal) plus `ControlRecordInputs` (`tests/control-record-inputs.py`), which drives

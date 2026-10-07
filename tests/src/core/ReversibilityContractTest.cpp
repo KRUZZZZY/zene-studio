@@ -310,6 +310,29 @@ private slots:
 		}
 	}
 
+	void recordingDisarmCommandsAreMutatingAndIrreversible()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const control::ReversibilityTable& table = control::ReversibilityTable::instance();
+		const QStringList commands = {
+			QStringLiteral("record.disarm_track"),
+			QStringLiteral("record.disarm_all"),
+		};
+		for (const QString& id : commands)
+		{
+			const ControlCommand* command = registry->command(id);
+			QVERIFY2(command != nullptr, qPrintable(id + " is not registered"));
+			QVERIFY2(command->mutating, qPrintable(id + " changes recorder and take-file state"));
+
+			const control::ReversibilityEntry* entry = table.lookup(id);
+			QVERIFY2(entry != nullptr, qPrintable(id + " has no reversibility row"));
+			QVERIFY2(entry->cls == control::ReversibilityClass::Irreversible,
+				qPrintable(id + " must be explicitly classified irreversible"));
+			QVERIFY2(!entry->reversible, qPrintable(id + " cannot restore the stopped take"));
+			QVERIFY2(!entry->fallback.isEmpty(), qPrintable(id + " must document a manual fallback"));
+		}
+	}
+
 
 	//! THE HISTOGRAM, DERIVED ON EVERY RUN (0.2.1 coverage gap 3a; board card #677).
 	/*!

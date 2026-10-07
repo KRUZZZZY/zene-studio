@@ -377,7 +377,7 @@ void registerDisarmTrack(ControlRegistry& registry)
 	properties.insert(QStringLiteral("journal_retired"), booleanProperty());
 	schema.insert(QStringLiteral("properties"), properties);
 	cmd.resultSchema = schema;
-	cmd.mutating = false;
+	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return disarmTrack(args); };
 	registry.registerCommand(cmd);
 }
@@ -394,7 +394,7 @@ void registerDisarmAll(ControlRegistry& registry)
 		"is a file that stays on disk, and re-arming starts a new one.");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = recorderStateSchema();
-	cmd.mutating = false;
+	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return disarmAll(args); };
 	registry.registerCommand(cmd);
 }
