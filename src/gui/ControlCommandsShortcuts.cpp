@@ -157,6 +157,11 @@ ControlResult exportShortcuts(const QJsonObject& args)
 //! The overrides an import brings: the `overrides` argument, or the file's.
 bool importedOverrides(const QJsonObject& args, QJsonObject* out, ControlResult* error)
 {
+	if (args.contains(QStringLiteral("file")) && args.contains(QStringLiteral("overrides")))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("give 'file' or 'overrides', not both"));
+		return false;
+	}
 	if (args.contains(QStringLiteral("overrides"))) { *out = args.value(QStringLiteral("overrides")).toObject(); return true; }
 	const QString path = args.value(QStringLiteral("file")).toString();
 	QFile file(path);

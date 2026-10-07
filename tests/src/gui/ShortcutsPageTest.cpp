@@ -25,12 +25,20 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QFile>
+#include <QJsonDocument>
 #include <QMenu>
 #include <QMenuBar>
+#include <QTemporaryDir>
 
+#include "ControlRegistry.h"
+#include "Engine.h"
+#include "GuiApplication.h"
+#include "GuiTestApplication.h"
 #include "HelpTasks.h"
 #include "ShortcutsPage.h"
 
+using namespace lmms;
 using namespace lmms::gui;
 
 class ShortcutsPageTest : public QObject
@@ -38,6 +46,20 @@ class ShortcutsPageTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void initTestCase()
+	{
+		QVERIFY(m_home.isValid());
+		guitest::startGui(m_home);
+		QVERIFY(getGUI() != nullptr && getGUI()->mainWindow() != nullptr);
+		ControlRegistry::setReady(true);
+	}
+
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::destroy();
+	}
+
 	void itListsEveryBoundActionAndOnlyThose()
 	{
 		QMenuBar bar;
@@ -86,6 +108,29 @@ private slots:
 		QCOMPARE(page.visibleRowCount(), 1);
 		QVERIFY(lmms::gui::help::menuTopic(QString(), QStringLiteral("Help ▸ Manual")) == QStringLiteral("access"));
 	}
+
+	void importRejectsTwoShortcutSources()
+	{
+		const QString path = m_home.filePath(QStringLiteral("shortcuts.json"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray bytes = QJsonDocument(QJsonObject{
+			{QStringLiteral("format"), QStringLiteral("zene-shortcuts")},
+			{QStringLiteral("version"), 1},
+			{QStringLiteral("overrides"), QJsonObject{{QStringLiteral("menu.save"), QStringLiteral("Ctrl+S")}}}}).toJson();
+		QCOMPARE(file.write(bytes), qint64(bytes.size()));
+
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("shortcuts.import"),
+			{{QStringLiteral("file"), path},
+				{QStringLiteral("overrides"), QJsonObject{{QStringLiteral("menu.save"), QStringLiteral("Ctrl+Shift+K")}}},
+				{QStringLiteral("replace"), true}});
+		QVERIFY2(!result.ok, qPrintable(QStringLiteral("shortcuts.import accepted both sources: ") + result.errorMessage));
+		QVERIFY(result.errorKind == ControlErrorKind::InvalidArgs);
+		QCOMPARE(result.errorMessage, QStringLiteral("give 'file' or 'overrides', not both"));
+	}
+
+private:
+	QTemporaryDir m_home;
 };
 
 QTEST_MAIN(ShortcutsPageTest)
