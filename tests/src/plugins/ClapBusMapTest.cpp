@@ -57,6 +57,7 @@ private slots:
 	void testPortOrderIsPreserved();
 	void testMultiOutputPorts();
 	void testOutputBusesOfAMultiOutputInstrument();
+	void testTruncatedOutputBusReportsMappedChannels();
 };
 
 void ClapBusMapTest::testStereoPair()
@@ -193,6 +194,32 @@ void ClapBusMapTest::testOutputBusesOfAMultiOutputInstrument()
 	QCOMPARE(buses[3].firstChannel, 5);  // clamped by mapPorts, but its first channel still fits
 	const auto layout = mapPorts({makePort(PortDirection::Output, 2, true), makePort(PortDirection::Output, 200)});
 	QCOMPARE(layout.outputs, static_cast<int>(MaxChannelsPerAudioBuffer));
+}
+
+//! A bus truncated by the channel budget must describe the channels the transport actually provides,
+//! not the port's declared count: a 70-channel extra output after a 64-channel main maps 64 and reports 64.
+void ClapBusMapTest::testTruncatedOutputBusReportsMappedChannels()
+{
+	auto main = makePort(PortDirection::Output, 64, true);
+	main.name = QStringLiteral("Main");
+	const auto extra = makePort(PortDirection::Output, 70);
+	const auto dropped = makePort(PortDirection::Output, 2);
+
+	// sanity: mapPorts clamps the same way
+	const auto layout = mapPorts({main, extra, dropped});
+	QCOMPARE(layout.outputs, static_cast<int>(MaxChannelsPerAudioBuffer));
+	QCOMPARE(layout.outputPortChannels, (std::vector<int>{64, 64}));
+
+	const auto buses = outputBusesOf({main, extra, dropped});
+	QCOMPARE(buses.size(), std::size_t{3});
+	QCOMPARE(buses[0].channels, 64);
+	QCOMPARE(buses[0].firstChannel, 0);
+	QCOMPARE(buses[1].firstChannel, 64);
+	// the truncated bus reports the mapped count, not the port's declared 70
+	QCOMPARE(buses[1].channels, 64);
+	// a bus past the budget is unmapped and provides no channels
+	QCOMPARE(buses[2].firstChannel, -1);
+	QCOMPARE(buses[2].channels, 0);
 }
 
 } // namespace lmms::clap

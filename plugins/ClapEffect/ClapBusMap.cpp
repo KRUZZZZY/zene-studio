@@ -72,8 +72,9 @@ auto outputBusesOf(const std::vector<PortDescriptor>& ports) -> std::vector<Inst
 	{
 		if (port.direction != PortDirection::Output || port.channelCount <= 0) { continue; }
 		const int channels = std::min(port.channelCount, maxChannels - next);
-		buses.push_back({port.name, port.channelCount, channels > 0 ? next : -1});
-		next += std::max(channels, 0);
+		const int mapped = std::max(channels, 0);
+		buses.push_back({port.name, mapped, channels > 0 ? next : -1});
+		next += mapped;
 	}
 	return buses;
 }
