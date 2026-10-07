@@ -39,10 +39,13 @@
 #include <sndfile.h>
 
 #include "ControlRegistry.h"
+#include "ControlEdit.h"
 #include "ControlVocabulary.h"
+#include "EditLocks.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "Song.h"
+#include "Track.h"
 #include "TakeLaneTestSupport.h"
 
 using namespace lmms;
@@ -230,6 +233,52 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the removal: back on the list
 		QCOMPARE(alternativeCount(), before + 1);
 		QCOMPARE(run(QStringLiteral("project.alternative_remove"), {{QStringLiteral("name"), QStringLiteral("nope")}}).errorKind,
+			ControlErrorKind::NotFound);
+	}
+
+	void aLockedClipRefusesTrackFlatten()
+	{
+		Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		Clip* clip = track->createClip(TimePos(0));
+		const QString trackId = control::trackIdOf(track);
+		const QString clipId = control::clipIdOf(clip);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), clipId}}).ok);
+
+		const ControlResult refused = run(QStringLiteral("track.flatten"), {{QStringLiteral("track"), trackId}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("locked")));
+		QCOMPARE(track->numOfClips(), 1);
+	}
+
+	void anUnlockedClipAllowsTrackFlatten()
+	{
+		Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		track->createClip(TimePos(0));
+		QString why;
+		QVERIFY(!EditLocks::refuses(QStringLiteral("track.flatten"), {{QStringLiteral("track"), control::trackIdOf(track)}}, &why));
+	}
+
+	void aLockedClipRefusesSubprojectRefresh()
+	{
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		Clip* clip = track->createClip(TimePos(0));
+		const QString trackId = control::trackIdOf(track);
+		const QString clipId = control::clipIdOf(clip);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), clipId}}).ok);
+
+		const ControlResult refused = run(QStringLiteral("project.subproject_refresh"), {{QStringLiteral("track"), trackId}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("locked")));
+	}
+
+	void anUnlockedClipAllowsSubprojectRefresh()
+	{
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		track->createClip(TimePos(0));
+		const QString trackId = control::trackIdOf(track);
+		QString why;
+		QVERIFY(!EditLocks::refuses(QStringLiteral("project.subproject_refresh"), {{QStringLiteral("track"), trackId}}, &why));
+		QCOMPARE(run(QStringLiteral("project.subproject_refresh"), {{QStringLiteral("track"), trackId}}).errorKind,
 			ControlErrorKind::NotFound);
 	}
 

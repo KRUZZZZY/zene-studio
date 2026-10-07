@@ -233,6 +233,23 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!EditLocks::instance().clipLocked(clip->id()));
 	}
+
+	void aLockedClipRefusesTrackRemoval()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		Clip* clip = track->createClip(TimePos(0));
+		const QString clipId = control::clipIdOf(clip);
+		const QString trackId = control::trackIdOf(track);
+		const auto trackCount = Engine::getSong()->tracks().size();
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), clipId}}).ok);
+
+		QCOMPARE(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), trackId}}).errorKind, ControlErrorKind::Refused);
+		QCOMPARE(Engine::getSong()->tracks().size(), trackCount);
+		QCOMPARE(track->numOfClips(), 1);
+
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), clipId}, {QStringLiteral("locked"), false}}).ok);
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), trackId}}).ok);
+	}
 };
 
 QTEST_MAIN(ProjectStateTest)
