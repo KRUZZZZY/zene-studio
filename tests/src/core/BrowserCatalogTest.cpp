@@ -596,6 +596,36 @@ private slots:
 	//! accepts it, while its embedded title "Kick Drum" is exactly what the
 	//! exclusion names. Accepting the item before the file is read returns a row
 	//! the query's own text excludes.
+	//! A preset or a project has no metadata a probe reads, so an unfielded exclusion
+	//! cannot overturn its cheap match: with the probe on, the matching ones are still
+	//! listed, the excluded one is not, and none of them is probed.
+	void probeKeepsCheapMatchesOfPresetsAndProjects()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		for (const QString& name : {QStringLiteral("kick_bass.xpf"), QStringLiteral("kick_song.mmp"),
+			QStringLiteral("kick_drum.xpf")})
+		{
+			QFile file(QDir(dir.path()).filePath(name));
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QCOMPARE(file.write("placeholder"), qint64(11));
+			file.close();
+		}
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.text = QStringLiteral("kick -drum");
+		query.probe = true;
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.probed, 0);
+		QCOMPARE(result.matched, 2);
+		QVERIFY(!result.items.isEmpty());
+		for (const BrowserItem& item : result.items)
+		{
+			QVERIFY(!item.path.endsWith(QStringLiteral("kick_drum.xpf")));
+		}
+	}
+
 	void metadataCanStillExcludeACheapMatch()
 	{
 		QTemporaryDir dir;

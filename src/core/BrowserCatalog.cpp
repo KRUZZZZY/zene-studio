@@ -223,15 +223,16 @@ void considerPath(const QString& path, BrowserKind kind, QueryContext* context)
 	if (!tagsMatch(item.tags, context->query->tags)) { return; }
 
 	const bool cheapMatch = context->search->matches(item);
-	if (cheapMatch && !metadataCanOverturn(context))
-	{
-		context->matched.append(item);
-		return;
-	}
 	// Only audio carries the metadata a probe reads, and the probe budget is a
 	// small fraction of the scan budget: a library of presets and projects must
-	// not spend the probes the audio candidates need.
-	if (kind != BrowserKind::Audio) { return; }
+	// not spend the probes the audio candidates need. So a preset or project keeps
+	// its cheap answer, match or no match, even when the expression has an
+	// unfielded exclusion that a probe would overturn for audio.
+	if (kind != BrowserKind::Audio || (cheapMatch && !metadataCanOverturn(context)))
+	{
+		if (cheapMatch) { context->matched.append(item); }
+		return;
+	}
 	probeAndAppend(&item, cheapMatch, context);
 }
 
