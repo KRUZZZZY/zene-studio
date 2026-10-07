@@ -210,16 +210,27 @@ void processChannel(MixerChannel& channel, f_cnt_t frames)
 	if (!s.isSurround() || !s.written()) { return; }
 	const float trim = channel.m_trimModel.value();
 	const float gain = (trim == 0.f ? 1.f : std::pow(10.f, trim / 20.f)) * channel.vcaGain();
+	const ValueBuffer* panBuffer = channel.m_panModel.valueBuffer();
+	const float pan = channel.m_panModel.value();
 	float left = 1.f;
 	float right = 1.f;
-	balanceGains(channel.m_panModel.value(), &left, &right);
+	if (panBuffer == nullptr) { balanceGains(pan, &left, &right); }
 	const f_cnt_t n = std::min(frames, s.frames());
 	for (int c = 2; c < channelCount(s.format()); ++c)
 	{
-		const float k = gain * balanceFor(roleOf(s.format(), c), left, right);
-		if (k == 1.f) { continue; }
+		const Role role = roleOf(s.format(), c);
 		float* plane = s.plane(c);
-		for (f_cnt_t f = 0; f < n; ++f) { plane[f] *= k; }
+		if (panBuffer != nullptr)
+		{
+			for (f_cnt_t f = 0; f < n; ++f)
+			{
+				balanceGains(panBuffer->values()[f], &left, &right);
+				plane[f] *= gain * balanceFor(role, left, right);
+			}
+			continue;
+		}
+		const float k = gain * balanceFor(role, left, right);
+		if (k != 1.f) { for (f_cnt_t f = 0; f < n; ++f) { plane[f] *= k; } }
 	}
 }
 
