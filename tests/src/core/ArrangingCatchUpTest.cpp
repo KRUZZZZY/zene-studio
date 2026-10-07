@@ -38,6 +38,7 @@
 
 #include <QDir>
 #include <QDomDocument>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QTemporaryDir>
@@ -271,6 +272,46 @@ private slots:
 		QCOMPARE(TrackSpacers::instance().spacer(trackId).label, QStringLiteral("Drums"));
 		QCOMPARE(run(QStringLiteral("track.set_spacer"), {{QStringLiteral("track"), QStringLiteral("trk-999999")}}).errorKind,
 			ControlErrorKind::NotFound);
+	}
+
+	void aLoadedSpacerLabelIsLimited()
+	{
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		const int trackId = track->id();
+		TrackSpacers::instance().setSpacer(trackId, {32, QStringLiteral("Drums")});
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("long-spacer-label.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(path));
+
+		QFile project(path);
+		QVERIFY(project.open(QIODevice::ReadOnly));
+		QDomDocument document;
+		QVERIFY(document.setContent(project.readAll()));
+		project.close();
+		QDomElement savedSpacer = document.documentElement().firstChildElement(QStringLiteral("song"))
+			.firstChildElement(QStringLiteral("track-spacers"))
+			.firstChildElement(QStringLiteral("spacer"));
+		QVERIFY(!savedSpacer.isNull());
+		QCOMPARE(savedSpacer.attribute(QStringLiteral("track")).toInt(), trackId);
+		const QString overlong = QString(TrackSpacers::MaxLabelLength + 1, QLatin1Char('x'));
+		savedSpacer.setAttribute(QStringLiteral("label"), overlong);
+		const QByteArray projectBytes = document.toByteArray(1);
+		QVERIFY(project.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QCOMPARE(project.write(projectBytes), static_cast<qint64>(projectBytes.size()));
+		project.close();
+
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), path}}).ok);
+		const QString loaded = TrackSpacers::instance().spacer(trackId).label;
+		QCOMPARE(loaded.size(), TrackSpacers::MaxLabelLength);
+		QCOMPARE(loaded, overlong.left(TrackSpacers::MaxLabelLength));
+		QVERIFY(Engine::getSong()->saveProjectFile(path));
+		QVERIFY(project.open(QIODevice::ReadOnly));
+		QVERIFY(document.setContent(project.readAll()));
+		project.close();
+		savedSpacer = document.documentElement().firstChildElement(QStringLiteral("song"))
+			.firstChildElement(QStringLiteral("track-spacers"))
+			.firstChildElement(QStringLiteral("spacer"));
+		QCOMPARE(savedSpacer.attribute(QStringLiteral("label")).size(), TrackSpacers::MaxLabelLength);
 	}
 
 	void aProjectWithoutSpacersWritesNone()
