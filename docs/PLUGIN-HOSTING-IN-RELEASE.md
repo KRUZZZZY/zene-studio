@@ -4,6 +4,11 @@
 release notes advertised both, what now fetches them in CI, and the guard that
 fails a build in which a documented feature has been compiled out.**
 
+> **Correction (2026-10-07).** Compiling the hosts in did not make the release notes' "Modern effects load,
+> run and save their state" true. No release through v0.4.0-alpha could load a VST3 or CLAP effect: the effect
+> modules never exported `lmms_plugin_main`. See "Addendum 2026-10-07" at the end of this file; fixed on the
+> 0.5.0 line by `21250a1a4` (BUGS_FOUND 13.1 in the program's defect register).
+
 Worktree: `post-alpha/vst3-instrument-fixture` → branch `post-alpha/plugin-hosting-in-release`.
 Produced 2026-09-12. Nothing here was validated by a GitHub Actions run: see
 [§6 What this does not prove](#6-what-this-does-not-prove) before reading any of it
@@ -463,6 +468,9 @@ milestone to be re-documented, and the programme is now aiming at beta. For the 
 that that build does not contain, and this file is the correction of record. The beta's
 notes must take their advertised feature list from `tests/advertised-features.tsv`, which
 is what the guard reads, and the beta's build is the first one where that claim is true.
+*Correction (2026-10-07): it was not. Every release from v0.2.1-alpha through v0.4.0-alpha contained both
+effect modules, but neither could be loaded (no `lmms_plugin_main`; "Addendum 2026-10-07" below). The guard
+checks that a host is compiled in, not that the product can load what it hosts.*
 
 ---
 

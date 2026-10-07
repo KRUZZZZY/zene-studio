@@ -2836,6 +2836,16 @@ precision inside the block.
 
 ## CLAP hosting on Windows, and a load failure that says which failure it was (task #667, row `clap-hosting`) — added 2026-09-15
 
+*Correction (2026-10-07): the CLAP effect module was built, but the product could not load it. In this release
+and every other through v0.4.0-alpha the VST3 and CLAP effect modules (`vst3effect`, `clapeffect`) never
+exported `lmms_plugin_main`, the entry point the plug-in factory requires of every module
+(`src/core/PluginFactory.cpp`), so the factory recorded both as "not a plug-in": no VST3 or CLAP effect was
+listed or could be loaded in the product, and a saved one reopened as a placeholder. Only the integration
+tests, which construct the effect classes directly, ever ran one. Fixed on the 0.5.0 line by `21250a1a4`
+(`ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface`); see
+`docs/PLUGIN-HOSTING-IN-RELEASE.md`, "Addendum 2026-10-07", and the program's defect register (BUGS_FOUND
+13.1). The text above is left as published.*
+
 - **CLAP effect hosting is built on Windows.** The row in `tests/advertised-features.tsv` is `*` again and all
   three Windows jobs (`mingw`, `msvc`, `msys2`) pass `-DWANT_CLAP=ON`. The loader's Windows half is
   `LoadLibraryW` / `GetProcAddress` / `FreeLibrary`, opened through the wide path so an install directory with

@@ -650,6 +650,16 @@ release-honesty guard asserts **on Windows** that `WANT_CLAP` is not ON and that
 and instrument hosting ship on all seven platforms. Porting the CLAP loader to
 `LoadLibraryW`/`GetProcAddress` is the named next task for plugin hosting.
 
+*Correction (2026-10-07): "effect and instrument hosting ship" was true of the modules, not of effects in use.
+Instrument hosting worked as described above, but in this release and every later one through v0.4.0-alpha the
+VST3 and CLAP effect modules (`vst3effect`, `clapeffect`) never exported `lmms_plugin_main`, the entry point
+the plug-in factory requires of every module (`src/core/PluginFactory.cpp`), so the factory recorded both as
+"not a plug-in": no VST3 or CLAP effect was listed or could be loaded in the product, and a saved one reopened
+as a placeholder. Only the integration tests, which construct the effect classes directly, ever ran one. Fixed
+on the 0.5.0 line by `21250a1a4` (`ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface`);
+see `docs/PLUGIN-HOSTING-IN-RELEASE.md`, "Addendum 2026-10-07", and the program's defect register (BUGS_FOUND
+13.1). The text above is left as published.*
+
 ## Your projects
 
 Keep backups. Files saved by this build may not open in a later build, an older build, or in LMMS. An older

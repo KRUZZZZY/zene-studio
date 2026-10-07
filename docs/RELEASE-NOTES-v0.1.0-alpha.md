@@ -120,6 +120,16 @@ the next one.
   mixer, with plugin delay compensation across chains and summing points (null-tested).
 - **VST3 and CLAP hosting, effects only.** Modern effects load, run and save their state.
   Instruments in either format do not load; see the limitations page.
+  *Correction (2026-10-07): this was not true of the shipped product. This build contained no VST3 or CLAP
+  host at all (`docs/PLUGIN-HOSTING-IN-RELEASE.md` §1), and in every later release through v0.4.0-alpha the
+  VST3 and CLAP effect modules (`vst3effect`, `clapeffect`) never exported `lmms_plugin_main`, the entry point
+  the plug-in factory requires of every module (`src/core/PluginFactory.cpp`), so the factory recorded both as
+  "not a plug-in": no VST3 or CLAP effect was listed or could be loaded in the product, and a saved one
+  reopened as a placeholder. Only the integration tests, which construct the effect classes directly, ever ran
+  one. Fixed on the 0.5.0 line by `21250a1a4`
+  (`ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface`); see
+  `docs/PLUGIN-HOSTING-IN-RELEASE.md`, "Addendum 2026-10-07", and the program's defect register (BUGS_FOUND
+  13.1). The text above is left as published.*
 - **Two-track recording (prototype).** Two input channels record to two tracks. In this build the
   audio input only reaches the recorder through the JACK and SDL backends; see the limitations
   page.
