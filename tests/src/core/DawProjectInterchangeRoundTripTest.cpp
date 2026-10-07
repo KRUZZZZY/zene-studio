@@ -1067,10 +1067,11 @@ private slots:
 			QVERIFY2(error.contains("cannot hold"), qPrintable(error));
 		}
 
-		// A unit the models do not speak is refused even when the value fits.
+		// A unit the models do not speak is refused even when the value fits -
+		// `decibel` is a valid schema unit, unlike the made-up `db`.
 		{
 			const QByteArray xml = strip.arg(QLatin1String(
-				"<Volume unit=\"db\" min=\"-24\" max=\"0\" value=\"-12\"/>")).toLatin1();
+				"<Volume unit=\"decibel\" min=\"-24\" max=\"0\" value=\"-12\"/>")).toLatin1();
 			DawProjectModel model;
 			DawProjectReadReport report;
 			QString error;
@@ -1116,6 +1117,65 @@ private slots:
 			QString hiError;
 			QVERIFY2(dawProjectModelFromXml(hi, &hiModel, &hiReport, &hiError), qPrintable(hiError));
 			QCOMPARE(hiModel.mixerChannels[0].volume, 1.5);
+		}
+	}
+
+	//! Luna round 3: `unit` is REQUIRED on every RealParameter in the schema, so a
+	//! missing or empty one is refused outright - the value has no declared meaning;
+	//! a valid schema unit the models do not speak (`decibel`) is an import-
+	//! compatibility refusal; and a min/max that is PRESENT but empty declares a
+	//! malformed bound, not an absent one - refused, while absent min/max still
+	//! declare no format bound.
+	void requiredUnitsAndPresentEmptyBoundsAreRefused()
+	{
+		const QString strip =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Channel id=\"m0\" role=\"master\">%1</Channel></Structure></Project>";
+
+		// A missing or empty unit: the schema requires RealParameter.unit, so the
+		// value has no declared meaning - refused.
+		for (const char* child : {"<Volume value=\"1\"/>",
+			"<Volume unit=\"\" value=\"1\"/>",
+			"<Pan value=\"0.5\"/>",
+			"<Pan unit=\"\" value=\"0.5\"/>"})
+		{
+			const QByteArray xml = strip.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the mixer strip carried %1").arg(QLatin1String(child))));
+			QVERIFY2(error.contains("no unit"), qPrintable(error));
+		}
+
+		// A valid schema unit the models do not speak, refused even when the value
+		// fits the models' reach - an import-compatibility error.
+		{
+			const QByteArray xml = strip.arg(QLatin1String(
+				"<Volume unit=\"decibel\" min=\"-24\" max=\"0\" value=\"-12\"/>")).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				"a valid but unsupported unit was accepted");
+			QVERIFY2(error.contains("cannot convert"), qPrintable(error));
+		}
+
+		// Present-empty min/max: an attribute the document carries with no number -
+		// malformed, refused; absent min/max still declare no bound (covered above).
+		for (const char* child : {"<Volume unit=\"linear\" min=\"\" max=\"2\" value=\"1\"/>",
+			"<Volume unit=\"linear\" min=\"0\" max=\"\" value=\"1\"/>",
+			"<Pan unit=\"normalized\" min=\"\" max=\"1\" value=\"0.5\"/>"})
+		{
+			const QByteArray xml = strip.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+		 QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the mixer strip carried %1").arg(QLatin1String(child))));
+			QVERIFY2(error.contains("not a number"), qPrintable(error));
 		}
 	}
 
