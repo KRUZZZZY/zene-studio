@@ -39,6 +39,11 @@ if(MSVC)
 endif()
 
 set(LMMS_TESTS
+	# The allocation probe's own proof, for tests/src/core/AllocationProbe.h: an operator new
+	# made inside lmmsobjs, the library every realtime test exists to check, is counted.
+	# Until 2026-10-07 the probe's replacement functions were `inline` and counted only
+	# the test's own file; this test failed on that probe and passes on the fixed one.
+	src/core/AllocationProbeTest.cpp
 	src/core/ArrayVectorTest.cpp
 	src/core/AudioBufferTest.cpp
 	src/core/AudioBusHandleTest.cpp
@@ -947,12 +952,33 @@ function(lmms_add_coverage TARGET)
 	endif()
 endfunction()
 
+# The allocation probe (tests/src/core/AllocationProbe.h). Its replacement global
+# operator new/new[]/delete/delete[] must be defined exactly ONCE per executable and
+# must not be `inline` ([replacement.functions]); an inline definition left the test
+# binaries with no operator new of their own, so allocations inside lmmsobjs were
+# never counted. The definitions live in AllocationProbe.cpp, compiled once here and
+# linked into every test whose source includes the header (lmms_link_allocation_probe).
+# The header's counters are defined in that file too, so a test that includes the
+# header without the probe linked fails to link instead of counting nothing.
+add_library(zene_allocation_probe OBJECT src/core/AllocationProbe.cpp)
+set_target_properties(zene_allocation_probe PROPERTIES AUTOMOC OFF)
+target_compile_features(zene_allocation_probe PRIVATE cxx_std_20)
+lmms_add_coverage(zene_allocation_probe)
+function(lmms_link_allocation_probe TARGET SOURCE)
+	# Any spelling of the include: "AllocationProbe.h" or "../core/AllocationProbe.h".
+	file(STRINGS "${SOURCE}" USES_PROBE REGEX "^[ \t]*#[ \t]*include[ \t]+\"([^\"]*/)?AllocationProbe\\.h\"")
+	if(USES_PROBE)
+		target_link_libraries(${TARGET} PRIVATE zene_allocation_probe)
+	endif()
+endfunction()
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
 
 	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
+	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
 	# BUGS_FOUND 11.23: on the hosted msvc-x64 runner the 300+ test executables' linker PDBs filled the
 	# build drive (run 36802800273: LNK1201 writing SessionSceneFollowTest.pdb). Tests link without a
 	# PDB under MSVC; zene.exe and the plugins keep theirs, so packages and crash symbols are unchanged.
@@ -2484,6 +2510,8 @@ if(TARGET lmms_vst3_sdk)
 			${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
 		)
 		add_test(NAME Vst3InstrumentTest COMMAND Vst3InstrumentTest)
+		lmms_link_allocation_probe(Vst3InstrumentTest
+			"${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/Vst3InstrumentTest.cpp")
 		# Compiles core sources directly: the define must apply to THIS target's
 		# own compilation - STATIC_COMPILE_DEFINITIONS only reaches linking targets.
 		target_compile_definitions(Vst3InstrumentTest PRIVATE LMMS_STATIC_DEFINE)
