@@ -2,34 +2,33 @@
 
 **Verdict: FIXED**
 
-`src/core/ControlCommandsVcaEditSet.cpp:174-220` now parses the stable `trk-<n>` address and checks the group’s stored edit-set ID before requiring a live `Track`. A stored missing ID can be removed, and the response and undo record use the same canonical track ID. Live nonmembers still return `refused`; dead IDs that were never in the group still return `not_found`.
+The stale-ID removal from round 1 remains correct. `removeEditTrack` now reports `control.undo` when the removed membership has no live `Track`; that inverse applies the action checkpoint recorded by this command and restores the missing stable ID. Live-track removal keeps the `vca.track_add` inverse. See [ControlCommandsVcaEditSet.cpp:181](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-63/src/core/ControlCommandsVcaEditSet.cpp:181) and [ControlCommandsVcaEditSet.cpp:192](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-63/src/core/ControlCommandsVcaEditSet.cpp:192).
 
-The regression at `tests/src/core/ControlVcaCommandsTest.cpp:285-317` adds a track to an edit set, deletes it with `track.remove`, verifies the group reports the missing ID, removes it with `vca.track_remove`, and verifies undo restores the missing membership.
+The regression at [ControlVcaCommandsTest.cpp:285](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-63/tests/src/core/ControlVcaCommandsTest.cpp:285) retains direct `control.undo` coverage, then removes the stale membership again, reads the latest `control.transactions` inverse, replays it through `ControlRegistry`, and verifies the missing membership returns.
 
 ## Evidence
 
-| Check | Command | Result |
+| Check | Exact command | Result |
 |---|---|---|
-| RED on original production code | `ctest -R '^ControlVcaCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/test-1.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/test-1.log; exit $rc` (from `build/tests`) | EXIT=8; 1 ctest failed. `staleTrackMembershipCanBeRemoved` failed because `vca.track_remove` returned `no track trk-6 (the song has 0)`; 8 Qt cases passed and 1 failed. |
-| GREEN after fix | `ctest -R '^ControlVcaCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/test-2.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/test-2.log; exit $rc` (from `build/tests`) | EXIT=0; 1/1 ctest passed. |
-| Reverse-patch proof | `git diff -- src/core/ControlCommandsVcaEditSet.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/fix.patch` | EXIT=0; rebuilding then rerunning the same regression failed again (test-3.log, EXIT=8). |
-| RED after reverse patch | `ctest -R '^ControlVcaCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/test-3.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/test-3.log; exit $rc` (from `build/tests`) | EXIT=8; 1 ctest failed with the same stale-track `NotFound`. |
-| Reapply | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/fix.patch` | EXIT=0. |
-| GREEN VCA family | `ctest -R '^(VcaGroupTest|VcaRefreshAtomicityTest|ControlVcaCommandsTest|ControlVcaEditGroupsTest|ControlVcaLockedEditsTest|ControlVcaCommands)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/test-5.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/test-5.log; exit $rc` (from `build/tests`) | EXIT=0; 6/6 ctest tests passed. |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/complexity-gate-2.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/complexity-gate-2.log; exit $rc` | EXIT=0. |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/file-length-gate-2.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/file-length-gate-2.log; exit $rc` | EXIT=0. |
+| RED with round 1 production code | `ctest -R '^ControlVcaCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/test-red-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` (from `build/tests`) | EXIT=8; 1/1 ctest failed. The replayed inverse was `vca.track_add`, which returned `no track trk-6 (the song has 0)`. |
+| GREEN after inverse fix | `ctest -R '^ControlVcaCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/test-green-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` (from `build/tests`) | EXIT=0; 1/1 ctest passed. |
+| Reverse production patch | `git diff -- src/core/ControlCommandsVcaEditSet.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/fix.patch; rc=$?; printf 'EXIT=%s\n' "$rc"` | EXIT=0. |
+| RED with production patch reversed | `ctest -R '^ControlVcaCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/test-reverse-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` (from `build/tests`) | EXIT=8; 1/1 ctest failed on the same `vca.track_add` / missing-track replay. |
+| Reapply production patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/fix.patch; rc=$?; printf 'EXIT=%s\n' "$rc"` | EXIT=0. |
+| Final GREEN | `ctest -R '^ControlVcaCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/test-green-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` (from `build/tests`) | EXIT=0; 1/1 ctest passed. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/gate-complexity-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | EXIT=0. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/gate-file-length-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | EXIT=0. |
 
-## Build commands
+Affected-family count: `ControlVcaCommandsTest` ran as 1/1 registered ctest in each targeted invocation; none reported zero tests.
 
 All builds exited 0:
 
-- `cmake --build build --target ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/build-1.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/build-1.log; exit $rc` — EXIT=0.
-- `cmake --build build --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/build-2.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/build-2.log; exit $rc` — EXIT=0.
-- `cmake --build build --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/build-3.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/build-3.log; exit $rc` — EXIT=0 (production fix reversed).
-- `cmake --build build --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/build-4.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/build-4.log; exit $rc` — EXIT=0 (fix reapplied).
-- `cmake --build build --target zene VcaGroupTest VcaRefreshAtomicityTest ControlVcaCommandsTest ControlVcaEditGroupsTest ControlVcaLockedEditsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/build-5.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs/build-5.log; exit $rc` — EXIT=0.
+- `cmake --build build --parallel 12 --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/build-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` — EXIT=0 (regression added, round 1 production code).
+- `cmake --build build --parallel 12 --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/build-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` — EXIT=0 (inverse fix).
+- `cmake --build build --parallel 12 --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/build-reverse-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` — EXIT=0 (production patch reversed for the negative control).
+- `cmake --build build --parallel 12 --target zene ControlVcaCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs/build-3.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` — EXIT=0 (patch restored).
 
-The `fff grep` tool was not available in this session; build, test, and gate logs were searched with targeted `rg` queries instead. All logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r1/logs`.
+The `fff grep` tool was not available in this session; build, test, and gate logs were searched with targeted `rg` queries. Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-63.r2/logs`.
 
 ## Files committed
 

@@ -314,7 +314,28 @@ private slots:
 		QCOMPARE(restored.value(QStringLiteral("tracks")).toArray().size(), 1);
 		QCOMPARE(restored.value(QStringLiteral("tracks")).toArray().at(0).toString(), track);
 		QCOMPARE(restored.value(QStringLiteral("missing_tracks")).toArray().size(), 1);
-		evidence(QStringLiteral("deleted_track_membership_removed=1 undo_restored=1"));
+
+		// The inverse published in the transaction stream is also a replay
+		// promise. A live-track command cannot restore this dead id; replay the
+		// reported operation through the same registry clients use.
+		const ControlResult removedAgain = run(QStringLiteral("vca.track_remove"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("track"), track}});
+		QVERIFY2(removedAgain.ok, qPrintable(removedAgain.errorMessage));
+		const QJsonArray transactions = run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray();
+		QVERIFY(!transactions.isEmpty());
+		const QJsonObject inverse = transactions.last().toObject()
+			.value(QStringLiteral("inverse")).toObject();
+		const ControlResult replayed = run(inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replayed.ok, qPrintable(QStringLiteral("reported inverse failed: %1 -> %2")
+			.arg(inverse.value(QStringLiteral("op")).toString(), replayed.errorMessage)));
+		const QJsonObject replayRestored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).result;
+		QCOMPARE(replayRestored.value(QStringLiteral("tracks")).toArray().size(), 1);
+		QCOMPARE(replayRestored.value(QStringLiteral("tracks")).toArray().at(0).toString(), track);
+		QCOMPARE(replayRestored.value(QStringLiteral("missing_tracks")).toArray().size(), 1);
+		evidence(QStringLiteral("deleted_track_membership_removed=1 undo_restored=1 inverse_replay_restored=1"));
 	}
 
 	//! `vca.remove` is EXACTLY reversible: the id, name, fader, mute, solo,

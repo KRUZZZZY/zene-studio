@@ -191,6 +191,8 @@ ControlResult removeEditTrack(const QJsonObject& args)
 
 	const int id = group->id();
 	auto mixerRef = Engine::mixer();
+	ControlResult trackResolution;
+	const bool trackIsLive = control::resolveTrack(trackAddress, &trackResolution) != nullptr;
 	control::addUndoStep(
 		[mixerRef, id, trackId]()
 		{
@@ -205,19 +207,30 @@ ControlResult removeEditTrack(const QJsonObject& args)
 	QJsonObject result = groupState(group);
 	const QString trackIdString = control::trackId(trackId);
 	result.insert(QStringLiteral("removed"), trackIdString);
+	QString inverseOp = QStringLiteral("control.undo");
+	QJsonObject inverseArgs;
+	QString inverseMechanism = QStringLiteral("action checkpoint: membership is a list of stable track ids "
+		"on the group, so the deleted Track object cannot be restored. control.undo applies this command's "
+		"recorded ProjectJournal step, which calls VcaGroup::addEditTrack(trackId) and restores the same "
+		"missing membership");
+	if (trackIsLive)
+	{
+		inverseOp = QStringLiteral("vca.track_add");
+		inverseArgs = QJsonObject{{QStringLiteral("group"), vcaGroupId(id)},
+			{QStringLiteral("track"), trackIdString}};
+		inverseMechanism = QStringLiteral("action checkpoint: the record holds the id this command drops and "
+			"the recorded undo step puts it back through the same VcaGroup::addEditTrack call the write uses. "
+			"Nothing else is touched: removing a track from the edit set moves no clip");
+	}
 	result.insert(QStringLiteral("__transaction"),
 		control::transactionPayload(
 			QJsonObject{{QStringLiteral("group"), vcaGroupId(id)},
 				{QStringLiteral("track"), trackIdString},
 				{QStringLiteral("in_edit_set"), true}},
-			QStringLiteral("vca.track_add"),
-			QJsonObject{{QStringLiteral("group"), vcaGroupId(id)},
-				{QStringLiteral("track"), trackIdString}},
+			inverseOp,
+			inverseArgs,
 			true,
-			QStringLiteral("action checkpoint: the record holds the id this command drops and "
-				"the recorded undo step puts it back through the same VcaGroup::addEditTrack "
-				"call the write uses. Nothing else is touched: removing a track from the edit "
-				"set moves no clip")));
+			inverseMechanism));
 	return ControlResult::success(result);
 }
 
