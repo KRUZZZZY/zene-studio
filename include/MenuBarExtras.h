@@ -42,6 +42,11 @@ LMMS_EXPORT QMenu* insertBeforeHelp(QMenuBar* bar, QMenu* menu);
  *  the palette and takes a shortcut (ShortcutMap); none comes bound, the user binds them. */
 LMMS_EXPORT QMenu* installNavigateMenu(QMenuBar* bar);
 
+/*! View > Screen Reader Announcements (0.5.0 theme 17): view.announcements' three levels - all, errors only, off - as
+ *  checkable entries, the current level checked whenever the menu opens (set from here, the socket or undo). Made once
+ *  as a child of @a view and added to it on each call, so a View menu rebuilt as it opens keeps one submenu. */
+LMMS_EXPORT QMenu* addAnnouncementsMenu(QMenu* view);
+
 } // namespace lmms::gui
 
 #endif // LMMS_GUI_MENU_BAR_EXTRAS_H

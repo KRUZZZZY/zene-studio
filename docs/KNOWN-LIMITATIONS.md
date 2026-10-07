@@ -2306,7 +2306,7 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - `session.jump_slot` keeps its default of 0.
 
 **Canvases without a mouse, and announcements (themes 10, 17).**
-- The editable item list is a floating tool window opened with Ctrl+Shift+L or `window.item_list`. There are no List buttons in the toolbars yet.
+- The editable item list is a floating tool window, not a docked panel. It opens from the List button on its canvas (the note editor's and the arranger's toolbars; under the lane chooser while it shows a controller lane; beside the XY pad's axes; beside Add lane in the take lanes), with Ctrl+Shift+L, or with `window.item_list`.
 - The sample editor's keyboard route is its range fields. The waveform itself takes no keys.
 - An MPE lane key edits only the cursor note.
 - Screen readers (NVDA, VoiceOver, Orca) are reached through Qt's bridge, which the tests assert. No screen reader was run.

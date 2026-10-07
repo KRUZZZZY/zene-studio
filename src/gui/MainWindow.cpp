@@ -42,6 +42,7 @@
 #include <QStatusBar>
 
 #include "Accessibility.h"
+#include "MenuBarExtras.h"
 #include "AboutDialog.h"
 #include "AudioEngine.h"
 #include "AutomationEditor.h"
@@ -1311,6 +1312,8 @@ void MainWindow::updateViewMenu()
 	qa->setCheckable( true );
 	qa->setChecked( ConfigManager::inst()->value( "ui", "printnotelabels" ).toInt() );
 	m_viewMenu->addAction(qa);
+	// 0.5.0 theme 17: what a screen reader is told unasked (view.announcements), the level in force checked.
+	addAnnouncementsMenu(m_viewMenu);
 
 }
 

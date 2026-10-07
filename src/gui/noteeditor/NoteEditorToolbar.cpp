@@ -37,6 +37,7 @@
 #include "Accessibility.h"
 #include "ControlScaleShared.h"
 #include "DesignTokens.h"
+#include "ItemList.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "NoteCanvas.h"
@@ -259,6 +260,8 @@ void NoteEditor::addViewButtons(QWidget* bar, QHBoxLayout* row)
 	fit->setProperty("controlCommand", QStringLiteral("window.note_editor_set"));
 	connect(fit, &QAction::triggered, this, &NoteEditor::zoomToSelection);
 	row->addWidget(toolButton(bar, fit));
+	// Theme 10: the clip's notes as an editable list (window.item_list, as Ctrl+Shift+L on the notes).
+	row->addWidget(itemlists::listButton(QStringLiteral("notes"), this, bar));
 	row->addStretch(1);
 }
 

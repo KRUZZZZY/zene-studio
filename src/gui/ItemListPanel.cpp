@@ -32,17 +32,22 @@
 #include <QItemSelectionModel>
 #include <QJsonArray>
 #include <QKeyEvent>
+#include <QAction>
 #include <QLabel>
+#include <QPointer>
 #include <QPushButton>
 #include <QTableView>
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include "Accessibility.h"
 #include "AccessibleWidgets.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "MusicalTime.h"
 #include "NoteGrid.h"
+#include "ShellChrome.h"
+#include "ShellIcons.h"
 
 namespace lmms::gui
 {
@@ -423,6 +428,27 @@ bool ItemListPanel::eventFilter(QObject* watched, QEvent* event)
 		default: return false;
 	}
 	return true;
+}
+
+ShellButton* itemlists::listButton(const QString& surface, QWidget* canvas, QWidget* parent)
+{
+	auto* button = new ShellButton(parent);
+	const QString tip = QObject::tr("Show or hide these items as an editable list beside the canvas (Ctrl+Shift+L)");
+	auto* action = new QAction(shellicons::icon(QStringLiteral("list")), QObject::tr("List"), button);
+	action->setToolTip(tip);
+	action->setProperty("controlCommand", QStringLiteral("window.item_list"));
+	button->setDefaultAction(action);
+	button->setObjectName(QStringLiteral("itemListButton-") + surface);
+	button->setProperty("controlCommand", QStringLiteral("window.item_list"));
+	button->setProperty("itemListSurface", surface);
+	a11y::announce(button, action->text(), tip);
+	QObject::connect(action, &QAction::triggered, button, [surface, target = QPointer<QWidget>(canvas), button] {
+		if (target != nullptr) { target->setFocus(Qt::OtherFocusReason); }
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("window.item_list"),
+			{{QStringLiteral("surface"), surface}});
+		if (!result.ok) { a11y::announceTransition(button, a11y::Transition::Refused, result.errorMessage); }
+	});
+	return button;
 }
 
 } // namespace lmms::gui
