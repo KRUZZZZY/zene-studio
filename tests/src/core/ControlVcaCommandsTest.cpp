@@ -42,6 +42,9 @@
 #include <QString>
 #include <QStringList>
 
+#include <cmath>
+#include <limits>
+
 #include "Clip.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -390,6 +393,36 @@ private slots:
 		QCOMPARE(run(QStringLiteral("vca.get_state"),
 			{{QStringLiteral("group"), first}}).result.value(QStringLiteral("member_count")).toInt(), 1);
 		evidence(QStringLiteral("shared_unassign=1 undo_shared_restored=1"));
+	}
+
+	//! NaN is a numeric QJsonValue, so the range checks must refuse it explicitly.
+	void nonFiniteGainIsRefusedWithoutChangingTheGroupFader()
+	{
+		clearGroups();
+		const QString group = createGroup();
+		QVERIFY2(!group.isEmpty(), "vca.create failed");
+
+		const QJsonObject args{{QStringLiteral("group"), group},
+			{QStringLiteral("gain"), std::numeric_limits<double>::quiet_NaN()}};
+		QVERIFY(args.value(QStringLiteral("gain")).isDouble());
+		QVERIFY(std::isnan(args.value(QStringLiteral("gain")).toDouble()));
+
+		const ControlResult attempted = run(QStringLiteral("vca.set_gain"), args);
+		const double gainAfter = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).result.value(QStringLiteral("volume")).toDouble();
+		const bool refused = !attempted.ok && attempted.errorKind == ControlErrorKind::InvalidArgs;
+		const bool unchanged = std::isfinite(gainAfter) && gainAfter == 1.0;
+		if (!refused)
+		{
+			// Keep the following cases isolated on the original implementation,
+			// where NaN is accepted and stored.
+			run(QStringLiteral("vca.set_gain"),
+				{{QStringLiteral("group"), group}, {QStringLiteral("gain"), 1.0}});
+		}
+		clearGroups();
+
+		QVERIFY2(refused, qPrintable(attempted.errorMessage));
+		QVERIFY(unchanged);
 	}
 };
 
