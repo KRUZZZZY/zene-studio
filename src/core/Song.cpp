@@ -58,6 +58,7 @@
 #include "MidiClip.h"
 #include "MidiPlayback.h"
 #include "MidiClock.h"
+#include "LinkAudioFollower.h"
 #include "PatternEditor.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
@@ -336,12 +337,23 @@ void Song::processNextBuffer()
 			Engine::audioEngine()->framesPerPeriod());
 	}
 
-	// If nothing is playing, there is nothing to do
-	if (!m_playing) { return; }
+	// Ableton Link (docs/LINK-SYNC.md section 7): an engaged session follower sets this block's
+	// frame/tick rate and keeps the play head on the session's beat grid, after the tempo map has had
+	// its say. Hold is the count-in to the session's phase (nothing renders, nothing advances); Released
+	// hands the rate back to the engine's own tempo. With sync off this is one relaxed atomic load.
+	const auto followLink = [this](bool rolling) {
+		const LinkPeriod verdict = followLinkSession(*this, rolling);
+		if (verdict == LinkPeriod::Released) { m_tempoMapAppliedTempo = -1; Engine::updateFramesPerTick(); }
+		return verdict != LinkPeriod::Hold;
+	};
+
+	// If nothing is playing, there is nothing to do (the Link follower still sees the stop)
+	if (!m_playing) { followLink(false); return; }
 
 	// The tempo map, if one is in force, sets the frame/tick rate this block
 	// runs at - BEFORE the value is captured below (docs/TEMPO-MAP.md section 4).
 	followTempoMap();
+	if (!followLink(!m_exporting && m_playMode == PlayMode::Song)) { return; }
 
 	// The modulation layer (#602, docs/MODULATION.md): one pass per block,
 	// reading the publisher's lock-free snapshot. It returns before copying

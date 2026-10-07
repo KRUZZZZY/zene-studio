@@ -48,6 +48,7 @@
 #include <QSysInfo>
 #include <QTimer>
 
+#include "AbletonLinkBridge.h"
 #include "Engine.h"
 #include "LinkPeerTransport.h"
 #include "Song.h"
@@ -71,6 +72,15 @@ double wrapPhase(double beats, double period)
 	}
 	const double wrapped = beats - period * std::floor(beats / period);
 	return wrapped < 0.0 ? wrapped + period : wrapped;
+}
+
+/*! The Ableton Link backend wherever the build carries the library, unless the
+ *  environment asks for the zene-link-style fallback by name (include/LinkSync.h). */
+bool wantsAbletonBackend()
+{
+	if (!AbletonLinkSession::compiledIn()) { return false; }
+	const QByteArray requested = qgetenv(LinkSyncEngine::BackendEnvironment);
+	return requested != QByteArray(link::SyncModelName);
 }
 
 } // namespace
@@ -136,6 +146,16 @@ LinkSyncEngine::LinkSyncEngine(QObject* parent) : QObject(parent)
 	m_timer = new QTimer(this);
 	m_timer->setInterval(link::DefaultPublishIntervalMs);
 	connect(m_timer, &QTimer::timeout, this, &LinkSyncEngine::onTick);
+	if (wantsAbletonBackend())
+	{
+		m_ableton = new AbletonLinkBridge();
+		m_timer->setInterval(link::AbletonServiceIntervalMs);
+	}
+}
+
+LinkSyncEngine::~LinkSyncEngine()
+{
+	delete m_ableton;
 }
 
 void LinkSyncEngine::setEnabled(bool enabled)
@@ -145,6 +165,15 @@ void LinkSyncEngine::setEnabled(bool enabled)
 		return;
 	}
 	m_enabled = enabled;
+	if (m_ableton != nullptr)
+	{
+		// Real Ableton Link: the library discovers peers and carries the
+		// session; this class keeps only the service tick (AbletonLinkBridge.h).
+		m_ableton->setEnabled(enabled);
+		if (enabled) { m_timer->start(); }
+		else { m_timer->stop(); }
+		return;
+	}
 	if (!m_enabled)
 	{
 		m_timer->stop();
@@ -174,11 +203,29 @@ bool LinkSyncEngine::setQuantum(int quantum)
 		return false;
 	}
 	m_quantum = quantum;
+	if (m_ableton != nullptr) { m_ableton->setQuantum(quantum); }
 	return true;
+}
+
+void LinkSyncEngine::setStartStopSync(bool on)
+{
+	m_startStopSync = on;
+	if (m_ableton != nullptr) { m_ableton->setStartStopSync(on); }
+}
+
+double LinkSyncEngine::sessionTempo() const
+{
+	return m_ableton != nullptr ? m_ableton->sessionTempo() : m_tempo;
 }
 
 void LinkSyncEngine::setSessionTempo(double bpm)
 {
+	if (m_ableton != nullptr)
+	{
+		m_tempo = bpm;
+		m_ableton->declareTempo(bpm);
+		return;
+	}
 	declareTempo(bpm, monotonicMicros());
 }
 
@@ -186,6 +233,11 @@ void LinkSyncEngine::service()
 {
 	if (!m_enabled)
 	{
+		return;
+	}
+	if (m_ableton != nullptr)
+	{
+		m_ableton->service();
 		return;
 	}
 	const quint64 now = monotonicMicros();
@@ -429,11 +481,13 @@ void LinkSyncEngine::publish(quint64 nowUs)
 
 bool LinkSyncEngine::transportAvailable() const
 {
+	if (m_ableton != nullptr) { return true; }
 	return m_transport != nullptr && m_transport->available();
 }
 
 QString LinkSyncEngine::transportReason() const
 {
+	if (m_ableton != nullptr) { return QString(); }
 	return m_transport != nullptr ? m_transport->reason() : QStringLiteral("no transport");
 }
 

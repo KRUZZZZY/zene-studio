@@ -7,14 +7,14 @@
  * makes any of it drivable, and it is the ONLY way to reach it - there is no
  * interface for session sync in this release (docs/KNOWN-LIMITATIONS.md).
  *
- * What these commands are NOT: a wrapper around the Ableton Link library. The
- * licence analysis in docs/LINK-SYNC.md section 1 says vendoring Link is
- * PERMITTED for this GPL-2.0-or-later product (Link's own LICENSE.md is
- * GPL-2.0-or-later), and it also says it is not done here. `link.get_state`
- * therefore reports the model it is speaking (`zene-link-style`) and an
- * `interop` block that states plainly that real Ableton Link interoperability is
- * not compiled in, with the reason - so a reader can never mistake this for the
- * real protocol.
+ * Which protocol answers. Wherever the build carries the vendored Ableton Link
+ * library (WANT_ABLETON_LINK, src/3rdparty/ableton-link) these commands drive a
+ * REAL Ableton Link session - Live, Bitwig and every Link app on the network are
+ * peers - and `link.get_state` reports model `ableton-link` with an `interop`
+ * block naming the library, its pinned version and the audio-thread follower's
+ * lock. Otherwise (no library, or ZENE_LINK_BACKEND=zene-link-style) they drive
+ * the zene-link-style model that only Zene instances speak, and the same block
+ * says so and why (docs/LINK-SYNC.md sections 1-3).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -42,6 +42,7 @@
 
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "AbletonLinkSession.h"
 #include "ControlVocabulary.h"
 #include "LinkSync.h"
 
@@ -65,6 +66,62 @@ QJsonObject peerJson(const link::LinkPeerView& peer)
 	object.insert(QStringLiteral("playing"), peer.playing);
 	object.insert(QStringLiteral("age_ms"), static_cast<double>(peer.ageMs));
 	return object;
+}
+
+//! The Ableton Link backend's facts: the library, and the audio-thread lock.
+QJsonObject abletonInteropJson(const link::LinkSessionReport& report)
+{
+	QJsonObject audio;
+	audio.insert(QStringLiteral("locked"), report.followerLocked);
+	audio.insert(QStringLiteral("periods"), static_cast<double>(report.followerPeriods));
+	audio.insert(QStringLiteral("holds"), static_cast<double>(report.followerHolds));
+	audio.insert(QStringLiteral("jumps"), static_cast<double>(report.followerJumps));
+	audio.insert(QStringLiteral("last_error_beats"), report.followerErrorBeats);
+	QJsonObject interop;
+	interop.insert(QStringLiteral("library"), QStringLiteral("Ableton Link"));
+	interop.insert(QStringLiteral("version"), report.libraryVersion);
+	interop.insert(QStringLiteral("commit"), report.libraryCommit);
+	interop.insert(QStringLiteral("licence"), QStringLiteral("GPL-2.0-or-later"));
+	interop.insert(QStringLiteral("session_playing"), report.sessionPlaying);
+	interop.insert(QStringLiteral("start_stop_sync_acted"), true);
+	interop.insert(QStringLiteral("peers_identified"), false);
+	interop.insert(QStringLiteral("reason"),
+		QStringLiteral("real Ableton Link: any Link application on the network (Ableton Live, Bitwig, "
+			"Reason, iOS apps) is a peer. Link reports a peer COUNT only, so `peers` is empty and "
+			"`session_revision` is unused - docs/LINK-SYNC.md section 2"));
+	interop.insert(QStringLiteral("clock"),
+		QStringLiteral("Link's own clock synchronisation: each peer measures the others' clock offset, "
+			"so no shared clock is assumed - docs/LINK-SYNC.md section 4"));
+	interop.insert(QStringLiteral("audio"), audio);
+	return interop;
+}
+
+QJsonObject interopJson(const link::LinkSessionReport& report)
+{
+	if (report.abletonLink)
+	{
+		QJsonObject interop = abletonInteropJson(report);
+		interop.insert(QStringLiteral("ableton_link"), true);
+		interop.insert(QStringLiteral("backend"), report.model);
+		return interop;
+	}
+	QJsonObject interop;
+	interop.insert(QStringLiteral("ableton_link"), false);
+	interop.insert(QStringLiteral("backend"), report.model);
+	// Both reasons name the licence record: Link's LICENSE.md is GPL-2.0-or-later,
+	// so its absence here is a build or a choice, never a licence block.
+	interop.insert(QStringLiteral("reason"), AbletonLinkSession::compiledIn()
+		? QStringLiteral("the zene-link-style fallback was selected with ZENE_LINK_BACKEND; only Zene "
+			"instances speak it - unset it to join Ableton Link sessions. The library is in this build "
+			"(its LICENSE.md is GPL-2.0-or-later) - docs/LINK-SYNC.md sections 1 and 3")
+		: QStringLiteral("this build was made without the vendored Ableton Link library "
+			"(WANT_ABLETON_LINK=OFF, or a MinGW cross build), so the zene-link-style fallback syncs Zene "
+			"instances only. Not a licence block: Link's LICENSE.md is GPL-2.0-or-later - "
+			"docs/LINK-SYNC.md section 1"));
+	interop.insert(QStringLiteral("clock"),
+		QStringLiteral("peers are assumed to share a monotone clock; true for instances on one "
+			"host - docs/LINK-SYNC.md section 4"));
+	return interop;
 }
 
 /*! link.get_state's payload, also used as the result half of every setter so a
@@ -117,19 +174,8 @@ QJsonObject linkStateJson()
 	loopback.insert(QStringLiteral("bound_ms"), report.transportProbeBoundMs);
 	transport.insert(QStringLiteral("loopback_probe"), loopback);
 	result.insert(QStringLiteral("transport"), transport);
-	/* The honest half, and the reason it is IN the state and not only in a doc:
-	 * this model syncs Zene instances; it does not speak Ableton Link's
-	 * protocol, so a Link-enabled third-party app will not join it. */
-	QJsonObject interop;
-	interop.insert(QStringLiteral("ableton_link"), false);
-	interop.insert(QStringLiteral("reason"),
-		QStringLiteral("the Ableton Link reference library is not vendored in this build; "
-			"vendoring it is licence-permitted (its LICENSE.md is GPL-2.0-or-later) and is a "
-			"follow-up lane - docs/LINK-SYNC.md section 1"));
-	interop.insert(QStringLiteral("clock"),
-		QStringLiteral("peers are assumed to share a monotone clock; true for instances on one "
-			"host - docs/LINK-SYNC.md section 4"));
-	result.insert(QStringLiteral("interop"), interop);
+	// Which protocol this is, IN the state and not only in a doc.
+	result.insert(QStringLiteral("interop"), interopJson(report));
 	return result;
 }
 
@@ -158,11 +204,12 @@ void registerLinkGetState(ControlRegistry& registry)
 		"how many peers are in the session and who they are, the session tempo and who declared it, "
 		"the shared beat and its phase inside the quantum, this engine's own tempo and phase and the "
 		"error between the two, and whether announcements can travel at all (transport.available / "
-		"transport.reason). The model is 'zene-link-style' - Ableton Link's semantics (a shared "
-		"tempo, a shared beat phase, a quantum, a peer set) without Ableton Link's protocol - and "
-		"the `interop` block says so plainly rather than leaving a reader to infer it. Read-only: no "
-		"transaction is recorded. There is no interface for any of it; drive it through link.set_* "
-		"(docs/KNOWN-LIMITATIONS.md).");
+		"transport.reason). `model` names the protocol: 'ableton-link' is a real Ableton Link session "
+		"(the vendored library; any Link app on the network is a peer, Link reports their COUNT, so "
+		"`peers` is empty) and 'zene-link-style' is the fallback only Zene instances speak. The "
+		"`interop` block says which, the library's pinned version, and the audio-thread phase lock "
+		"(interop.audio). Read-only: no transaction is recorded. The transport's Sync toggle shows the "
+		"peer count; everything else is driven through link.set_* (docs/LINK-SYNC.md).");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("enabled"), booleanProperty()},
@@ -204,15 +251,15 @@ void registerLinkSetEnabled(ControlRegistry& registry)
 	cmd.id = QStringLiteral("link.set_enabled");
 	cmd.group = QStringLiteral("link");
 	cmd.verb = QStringLiteral("set_enabled");
-	cmd.description = QStringLiteral("Join or leave the session: on starts the transport, joins the "
-		"multicast group and begins announcing this instance's tempo and beat every 100 ms; off "
-		"stops both and forgets every peer. While sync is on, a tempo change made here - by any "
-		"means, including transport.set_tempo - is announced to the session, and a peer's newer "
-		"announcement sets this engine's tempo, so two instances stay on one tempo without anyone "
-		"relaying between them. Joining also declares this instance's current tempo, so a session "
-		"that was already running is adopted from its own newest announcement. The quantum and the "
-		"kernel's tempo bounds are reported by link.get_state. Transport is UDP multicast on "
-		"224.76.78.75:20808, the group Ableton Link itself uses for discovery.");
+	cmd.description = QStringLiteral("Join or leave the session. With the Ableton Link backend (the "
+		"default build) on joins the Ableton Link session on the network - Ableton Live, Bitwig and "
+		"every Link app are peers - and off leaves it. While sync is on, a tempo change made here, by "
+		"any means including transport.set_tempo, reaches every peer; a peer's tempo sets this "
+		"engine's tempo (not an undo step); and while the song plays its play head is held on the "
+		"session's beat grid, with a count-in to the session's phase when it starts. With the "
+		"zene-link-style fallback the same contract holds between Zene instances only, announced "
+		"every 100 ms. Discovery is UDP multicast on 224.76.78.75:20808, the group Ableton Link "
+		"itself uses.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("enabled"), booleanProperty()},
 	}, {QStringLiteral("enabled")});
@@ -341,13 +388,14 @@ void registerLinkSetStartStopSync(ControlRegistry& registry)
 	cmd.id = QStringLiteral("link.set_start_stop_sync");
 	cmd.group = QStringLiteral("link");
 	cmd.verb = QStringLiteral("set_start_stop_sync");
-	cmd.description = QStringLiteral("Turn transport-start/stop sharing on or off: the flag that "
-		"says a session's members share not only the tempo and the beat phase but the decision to be "
-		"playing. It is announced to peers (peers report their own through link.get_state) and it is "
-		"reported back, but this release does NOT act on it: nothing here starts or stops another "
-		"instance's transport, because doing so would write the audio thread's play state from a "
-		"network announcement. The flag is the contract's declaration half; the acting half is a "
-		"stated limitation (docs/LINK-SYNC.md section 5).");
+	cmd.description = QStringLiteral("Turn transport-start/stop sharing on or off: whether this "
+		"instance shares not only the tempo and the beat phase but the decision to be playing. With "
+		"the Ableton Link backend it is Link's start/stop sync and it ACTS: a start or stop on any "
+		"peer that also shares it starts or stops this transport (Song::playSong / Song::stop, the "
+		"play and stop buttons' own calls), and this transport's start or stop reaches them. A "
+		"start joins a session already playing in phase; the state a session is in when the flag is "
+		"turned on is left alone. With the zene-link-style fallback the flag is announced and "
+		"reported only (docs/LINK-SYNC.md section 5).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("start_stop_sync"), booleanProperty()},
 	}, {QStringLiteral("start_stop_sync")});

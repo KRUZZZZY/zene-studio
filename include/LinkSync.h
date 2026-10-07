@@ -3,32 +3,25 @@
  *              abstraction and the engine-side state a peer agrees on
  *              (D11 "Ableton Link sync").
  *
- * WHAT THIS IS, AND WHAT IT DELIBERATELY IS NOT.
+ * TWO BACKENDS behind one facade (docs/LINK-SYNC.md sections 1-3):
  *
- * It is a session-sync MODEL with the semantics Ableton Link made standard -
- * every instance in a session announces a tempo, a beat phase on a shared
- * timeline and a quantum; a peer adopts the newest announcement and its own
- * tempo follows - driven between real Zene processes over UDP multicast.
+ *  - "ableton-link" (the default wherever the build carries the vendored
+ *    library, WANT_ABLETON_LINK): REAL Ableton Link 4.1 (src/3rdparty/ableton-link,
+ *    GPL-2.0-or-later). Zene joins the same session as Ableton Live, Bitwig and
+ *    every other Link application: tempo, beat phase and start/stop. The UI half
+ *    is include/AbletonLinkBridge.h, the audio half include/LinkAudioFollower.h.
+ *  - "zene-link-style" (the fallback: a build without the library, or
+ *    ZENE_LINK_BACKEND=zene-link-style in the environment): this project's own
+ *    model with Link's semantics - every instance announces a tempo, a beat
+ *    phase on a shared timeline and a quantum over UDP multicast, and a peer
+ *    adopts the newest announcement. Only other Zene instances speak it; it is
+ *    what Zene 0.3/0.4 builds sync with. Everything below the facade's public
+ *    methods (the packet, the peer table, the revision order) is that model.
  *
- * It is NOT the Ableton Link reference library (github.com/Ableton/link), which
- * this build does not vendor. The licence question was settled before any of
- * this was written and the answer is recorded in docs/LINK-SYNC.md section 1:
- * Link's own LICENSE.md is GPL-2.0-or-later (the "proprietary" line in it is an
- * offer of a separate commercial licence, not a second arm of the granted
- * one), so it is NOT licence-incompatible with this GPL-2.0-or-later product.
- * Real Link interoperability is therefore a feasible follow-up rather than a
- * licence-blocked one - and it is still not what this file is, because
- * vendoring a third-party tree is its own lane. The abstraction exists so that
- * the swap is one transport file: `LinkPeerTransport` below is the seam, and the
- * wire packet names the model it was produced by, so a real-Link transport can
- * be added beside this one instead of replacing it.
- *
- * Real-time rule (AGENTS.md rule 4). NOTHING here runs on the audio thread and
- * nothing here is called from one: the model is serviced by a UI-thread timer,
- * the transport reads its socket through a QSocketNotifier on the UI thread, and
- * the one engine interaction is `Song::setTempo` - the same call the tempo dial
- * makes. There is no allocation, no lock and no unbounded growth on any
- * audio-thread path because there is no audio-thread path.
+ * Real-time rule (AGENTS.md rule 4). The facade, both UI-side backends and the
+ * zene-link-style transport run on the UI thread only. The one audio-thread
+ * path is LinkAudioFollower (Ableton backend), which documents and measures
+ * its own realtime safety.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -65,6 +58,7 @@ class QTimer;
 namespace lmms
 {
 
+class AbletonLinkBridge;
 class LinkPeerTransport;
 
 namespace link
@@ -191,6 +185,18 @@ struct LinkSessionReport
 	//! session is live rather than merely configured.
 	quint64 publishedCount = 0;
 	qint64 lastPacketAgeMs = -1;
+
+	//! The Ableton Link backend's own facts (all false/0 for zene-link-style).
+	bool abletonLink = false;
+	bool sessionPlaying = false;     //!< the session's start/stop state
+	QString libraryVersion;
+	QString libraryCommit;
+	//! The audio-thread follower (include/LinkAudioFollower.h).
+	bool followerLocked = false;
+	quint64 followerPeriods = 0;
+	quint64 followerHolds = 0;
+	quint64 followerJumps = 0;
+	double followerErrorBeats = 0.0;
 };
 
 } // namespace link
@@ -210,6 +216,13 @@ class LMMS_EXPORT LinkSyncEngine : public QObject
 public:
 	static LinkSyncEngine* instance();
 	static void destroy();
+	~LinkSyncEngine() override;
+
+	//! The environment variable that selects the zene-link-style fallback in a
+	//! build that carries Ableton Link (value: "zene-link-style").
+	static constexpr const char* BackendEnvironment = "ZENE_LINK_BACKEND";
+	//! True when this process speaks real Ableton Link (see the file header).
+	bool abletonBackend() const { return m_ableton != nullptr; }
 
 	bool enabled() const { return m_enabled; }
 	//! Enabling starts the transport and the service tick; disabling stops
@@ -221,13 +234,13 @@ public:
 	bool setQuantum(int quantum);
 
 	bool startStopSync() const { return m_startStopSync; }
-	void setStartStopSync(bool on) { m_startStopSync = on; }
+	void setStartStopSync(bool on);
 
 	QString peerId() const { return m_peerId; }
 	QString instanceName() const { return m_name; }
 	void setInstanceName(const QString& name) { m_name = name; }
 
-	double sessionTempo() const { return m_tempo; }
+	double sessionTempo() const;
 	/*! Declare a session tempo: the timeline is re-anchored so the beat count
 	 *  does not jump, the revision advances and every peer follows. This is
 	 *  also what a local `transport.set_tempo` becomes on the next service
@@ -277,6 +290,8 @@ private:
 	explicit LinkSyncEngine(QObject* parent = nullptr);
 
 	void onTick();
+	//! The zene-link-style model's own report (report() overlays the Ableton backend's).
+	link::LinkSessionReport modelReport() const;
 	void publish(quint64 nowUs);
 	void expirePeers(quint64 nowUs);
 	void pollLocalTempo(quint64 nowUs);
@@ -305,6 +320,8 @@ private:
 	void ensureTransport();
 	void dropPeers();
 
+	//! The Ableton Link backend, or null for zene-link-style (file header).
+	AbletonLinkBridge* m_ableton = nullptr;
 	QVector<Peer> m_peers;          //!< bounded by link::MaxPeers
 	LinkPeerTransport* m_transport = nullptr;
 	QTimer* m_timer = nullptr;

@@ -45,6 +45,7 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 
+#include "AbletonLinkBridge.h"
 #include "Engine.h"
 #include "LinkPeerTransport.h"
 #include "LinkSync.h"
@@ -167,6 +168,14 @@ LinkPeerPacket LinkSyncEngine::buildPacket(quint64 sentUs) const
 }
 
 LinkSessionReport LinkSyncEngine::report() const
+{
+	LinkSessionReport report = modelReport();
+	// Real Ableton Link: the library's session replaces every model fact.
+	if (m_ableton != nullptr) { m_ableton->fill(report); }
+	return report;
+}
+
+LinkSessionReport LinkSyncEngine::modelReport() const
 {
 	const quint64 now = monotonicMicros();
 	LinkSessionReport report;

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T17:22:52Z",
+  "captured_at": "2026-10-07T12:34:54Z",
   "commands": [
     {
       "args_schema": {
@@ -10436,7 +10436,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The session-sync state this instance sees: whether sync is on, how many peers are in the session and who they are, the session tempo and who declared it, the shared beat and its phase inside the quantum, this engine's own tempo and phase and the error between the two, and whether announcements can travel at all (transport.available / transport.reason). The model is 'zene-link-style' - Ableton Link's semantics (a shared tempo, a shared beat phase, a quantum, a peer set) without Ableton Link's protocol - and the `interop` block says so plainly rather than leaving a reader to infer it. Read-only: no transaction is recorded. There is no interface for any of it; drive it through link.set_* (docs/KNOWN-LIMITATIONS.md).",
+      "description": "The session-sync state this instance sees: whether sync is on, how many peers are in the session and who they are, the session tempo and who declared it, the shared beat and its phase inside the quantum, this engine's own tempo and phase and the error between the two, and whether announcements can travel at all (transport.available / transport.reason). `model` names the protocol: 'ableton-link' is a real Ableton Link session (the vendored library; any Link app on the network is a peer, Link reports their COUNT, so `peers` is empty) and 'zene-link-style' is the fallback only Zene instances speak. The `interop` block says which, the library's pinned version, and the audio-thread phase lock (interop.audio). Read-only: no transaction is recorded. The transport's Sync toggle shows the peer count; everything else is driven through link.set_* (docs/LINK-SYNC.md).",
       "group": "link",
       "id": "link.get_state",
       "mutating": false,
@@ -10528,7 +10528,7 @@
         ],
         "type": "object"
       },
-      "description": "Join or leave the session: on starts the transport, joins the multicast group and begins announcing this instance's tempo and beat every 100 ms; off stops both and forgets every peer. While sync is on, a tempo change made here - by any means, including transport.set_tempo - is announced to the session, and a peer's newer announcement sets this engine's tempo, so two instances stay on one tempo without anyone relaying between them. Joining also declares this instance's current tempo, so a session that was already running is adopted from its own newest announcement. The quantum and the kernel's tempo bounds are reported by link.get_state. Transport is UDP multicast on 224.76.78.75:20808, the group Ableton Link itself uses for discovery.",
+      "description": "Join or leave the session. With the Ableton Link backend (the default build) on joins the Ableton Link session on the network - Ableton Live, Bitwig and every Link app are peers - and off leaves it. While sync is on, a tempo change made here, by any means including transport.set_tempo, reaches every peer; a peer's tempo sets this engine's tempo (not an undo step); and while the song plays its play head is held on the session's beat grid, with a count-in to the session's phase when it starts. With the zene-link-style fallback the same contract holds between Zene instances only, announced every 100 ms. Discovery is UDP multicast on 224.76.78.75:20808, the group Ableton Link itself uses.",
       "group": "link",
       "id": "link.set_enabled",
       "mutating": true,
@@ -10815,7 +10815,7 @@
         ],
         "type": "object"
       },
-      "description": "Turn transport-start/stop sharing on or off: the flag that says a session's members share not only the tempo and the beat phase but the decision to be playing. It is announced to peers (peers report their own through link.get_state) and it is reported back, but this release does NOT act on it: nothing here starts or stops another instance's transport, because doing so would write the audio thread's play state from a network announcement. The flag is the contract's declaration half; the acting half is a stated limitation (docs/LINK-SYNC.md section 5).",
+      "description": "Turn transport-start/stop sharing on or off: whether this instance shares not only the tempo and the beat phase but the decision to be playing. With the Ableton Link backend it is Link's start/stop sync and it ACTS: a start or stop on any peer that also shares it starts or stops this transport (Song::playSong / Song::stop, the play and stop buttons' own calls), and this transport's start or stop reaches them. A start joins a session already playing in phase; the state a session is in when the flag is turned on is left alone. With the zene-link-style fallback the flag is announced and reported only (docs/LINK-SYNC.md section 5).",
       "group": "link",
       "id": "link.set_start_stop_sync",
       "mutating": true,
@@ -34001,11 +34001,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-link-interop/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-4g8c9srg/zene.sock",
-    "version": "0.4.0-alpha.114+9a9f339"
+    "source_socket": "/tmp/zctl-run-7t9_thff/zene.sock",
+    "version": "0.4.0-alpha.334+3fe2d9b"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

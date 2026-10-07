@@ -63,14 +63,16 @@ struct LinkTimelinePoint
 	bool playing = false;        //!< the session's start/stop state
 	double startBeat = 0.0;      //!< beatAtTime(timeForIsPlaying(), quantum)
 	std::int64_t startTimeUs = 0; //!< timeForIsPlaying(), Link clock microseconds
+	//! audioPeriod() only: this period committed a start or stop of its own.
+	bool committedPlaying = false;
 };
 
 //! What the audio thread asks the session to change in one period.
 struct LinkAudioChange
 {
 	double tempo = 0.0;          //!< > 0: setTempo(tempo, hostTime)
-	int playing = -1;            //!< 0 or 1: setIsPlayingAndRequestBeatAtTime(...)
-	double requestBeat = 0.0;    //!< the beat a start asks to be mapped to hostTime
+	int playing = -1;            //!< 0 or 1, committed only when it changes the session
+	double requestBeat = 0.0;    //!< alone in the session: the beat a start maps to hostTime
 };
 
 class LMMS_EXPORT AbletonLinkSession

@@ -457,6 +457,13 @@ set(LMMS_SRCS
 	core/LinkSync.cpp
 	core/LinkSyncWire.cpp
 	core/LinkUdpTransport.cpp
+	# The real Ableton Link backend (WF-051): the UI-thread bridge, the
+	# audio-thread follower Song::processNextBuffer() calls, and the pure
+	# phase-lock arithmetic it uses. They compile in every build - against the
+	# stub session when the library is not (AbletonLinkSessionStub.cpp).
+	core/AbletonLinkBridge.cpp
+	core/LinkAudioFollower.cpp
+	core/LinkPhaseLock.cpp
 	core/ControlCommandsSettings.cpp
 	core/ControlCommandsSurface.cpp
 	# track.move: the structural half of track.* (task #664, feature row 75) - the

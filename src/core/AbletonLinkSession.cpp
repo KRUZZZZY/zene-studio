@@ -60,25 +60,29 @@ LinkTimelinePoint pointOf(const ableton::Link::SessionState& state, Micros at, d
 	return point;
 }
 
-//! Apply one requested change to a captured state; true when it changed.
-bool applyChange(ableton::Link::SessionState& state, Micros at, double quantum,
-	const LinkAudioChange& change)
+//! Apply a requested start or stop; true when it changed the session.
+bool applyPlaying(ableton::Link::SessionState& state, Micros at, double quantum,
+	const LinkAudioChange& change, bool alone)
 {
-	bool changed = false;
-	if (change.tempo > 0.0)
+	// Committed only when it CHANGES the session: an engine that started because
+	// the session started must not re-announce the start (that would move the
+	// session's start time for every peer).
+	if (change.playing < 0 || state.isPlaying() == (change.playing == 1)) { return false; }
+	if (alone)
 	{
-		state.setTempo(change.tempo, at);
-		changed = true;
-	}
-	if (change.playing >= 0)
-	{
-		// Link's own recipe for a start: the requested beat lands on `at` when
-		// this peer is alone, or on the next time with the same phase when it
-		// is not ("quantized launch", Link.hpp requestBeatAtTime).
+		// Alone, a peer may re-map the beat grid freely (Link.hpp
+		// requestBeatAtTime): the play head's beat lands on `at`, so a start is
+		// immediate.
 		state.setIsPlayingAndRequestBeatAtTime(change.playing == 1, at, change.requestBeat, quantum);
-		changed = true;
+		return true;
 	}
-	return changed;
+	// With peers the grid is theirs too, so only the start/stop state changes.
+	// That is also what keeps the commit from carrying a TIMELINE: within Link's
+	// one-second local-modification grace period (link/Controller.hpp) this
+	// thread's captured timeline can be older than the session's, and committing
+	// it would put a tempo a peer has since replaced back into the session.
+	state.setIsPlaying(change.playing == 1, at);
+	return true;
 }
 
 } // namespace
@@ -130,11 +134,12 @@ LinkTimelinePoint AbletonLinkSession::audioPeriod(std::int64_t hostTimeUs, doubl
 {
 	const Micros at{hostTimeUs};
 	auto state = m_impl->link.captureAudioSessionState();
-	if (applyChange(state, at, quantum, change))
-	{
-		m_impl->link.commitAudioSessionState(state);
-	}
-	return pointOf(state, at, quantum);
+	if (change.tempo > 0.0) { state.setTempo(change.tempo, at); }
+	const bool playing = applyPlaying(state, at, quantum, change, m_impl->link.numPeers() == 0);
+	if (change.tempo > 0.0 || playing) { m_impl->link.commitAudioSessionState(state); }
+	LinkTimelinePoint point = pointOf(state, at, quantum);
+	point.committedPlaying = playing;
+	return point;
 }
 
 std::int64_t AbletonLinkSession::hostTimeAtSample(double sampleTime) noexcept
