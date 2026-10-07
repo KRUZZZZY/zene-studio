@@ -171,7 +171,7 @@ const ReversibilityRow kDeviceRows[] = {
 	R("automation.move_point", RC::TrueInverse, true, "it moves an automation point", "AutomationClip journal checkpoint", ""),
 	R("automation.write_to_end", RC::TrueInverse, true, "it writes a control's value from a tick to the song's end",
 		"AutomationClip journal checkpoint (or an action step removing a created track)", ""),
-	R("note.rotate", RC::TrueInverse, true, "it moves notes, wrapping inside the clip", "MidiClip journal checkpoint", ""),
+	R("note.rotate", RC::TrueInverse, true, "it moves notes (or turns an audio clip's content), wrapping inside the clip", "Clip journal checkpoint (MidiClip notes, or an audio clip's loop and offset)", ""),
 	R("clip.list", RC::NotMutating, false, "it lists clips. Nothing is written", "no write", ""),
 	R("arrangement.next_transient", RC::NotMutating, false, "it moves the play position through transport.seek, which records itself",
 		"no write of its own", ""),

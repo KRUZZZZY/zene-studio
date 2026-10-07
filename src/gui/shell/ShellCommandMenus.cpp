@@ -224,10 +224,12 @@ void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 	add(process, "Print a Chain's Effects onto the Clip...", "clip.process", self, true,
 		{{QStringLiteral("from"), control::trackIdOf(clip->getTrack())}, {QStringLiteral("tail"), 0.0}});
 	add(process, "Pre-Fades...", "clip.pre_fade", self, true);  // W3 (ED-179)
+	add(process, "Rotate Content...", "note.rotate", self, true, {{QStringLiteral("amount"), 48}});  // ED-028: turned with wrap-around
 	Clip* next = nextClip(clip);
 	QAction* fade = add(menu, "Crossfade Into Next Clip...", "clip.crossfade",
 		{{QStringLiteral("out"), id}, {QStringLiteral("in"), next != nullptr ? control::clipIdOf(next) : QString()}}, true);
 	fade->setEnabled(fade->isEnabled() && next != nullptr);
+	crossfadeEditorEntries(menu, clip);  // ED-176 (ShellMenuEntries.cpp)
 }
 
 void midiClipMenus(QMenu* menu, const QJsonObject& self)
@@ -327,7 +329,7 @@ void populateClip(QMenu* menu, Clip* clip)
 	}
 	add(pitch, "Reset", "clip.set_transpose", with(self, "semitones", 0), false);
 	add(pitch, "Transpose...", "clip.set_transpose", self, true, {{QStringLiteral("semitones"), transpose}});
-	if (dynamic_cast<MidiClip*>(clip) != nullptr) { add(menu, "Loop the Content...", "clip.set_loop", self, true, {{QStringLiteral("length"), 192}}); }  // ED-029
+	clipLoopEntries(menu, clip, self);  // ED-029 (ShellMenuEntries.cpp)
 	if (dynamic_cast<SampleClip*>(clip) != nullptr)  // ED-153
 	{
 		choices(pitch, "Keep the Formants", "clip.set_formant", "keep", self);

@@ -162,6 +162,7 @@ include/ChordProgression.h
 include/ChordTrack.h
 include/ChordVocabulary.h
 include/Clip.h
+include/ClipAudioLoop.h
 include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipEditsMenu.h
@@ -254,6 +255,7 @@ include/Controls.h
 include/CrashReportMenu.h
 include/CrashReporter.h
 include/CrashReporterFormat.h
+include/CrossfadeEditorDialog.h
 include/DataFile.h
 include/DawProjectInterchange.h
 include/Delay.h
@@ -1343,6 +1345,7 @@ src/core/ChordProgression.cpp
 src/core/ChordTrack.cpp
 src/core/ChordVocabulary.cpp
 src/core/Clip.cpp
+src/core/ClipAudioLoop.cpp
 src/core/ClipConsolidate.cpp
 src/core/ClipEdits.cpp
 src/core/ClipLinks.cpp
@@ -2069,6 +2072,7 @@ src/gui/ControllerTemplateMenu.cpp
 src/gui/ControllerView.cpp
 src/gui/Controls.cpp
 src/gui/CrashReportMenu.cpp
+src/gui/CrossfadeEditorDialog.cpp
 src/gui/EffectControlDialog.cpp
 src/gui/EffectDeviceMenu.cpp
 src/gui/EffectHostingMenu.cpp
@@ -2364,6 +2368,7 @@ tests/src/core/AudioBufferTest.cpp
 tests/src/core/AudioBurstSupport.h
 tests/src/core/AudioBusHandleTest.cpp
 tests/src/core/AudioBusTest.cpp
+tests/src/core/AudioClipLoopTest.cpp
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioEngineTeardownTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
@@ -2635,6 +2640,7 @@ tests/src/gui/CommandFormTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/ControllerTemplateMenuTest.cpp
 tests/src/gui/CrashReportMenuTest.cpp
+tests/src/gui/CrossfadeEditorTest.cpp
 tests/src/gui/DesignTokensTest.cpp
 tests/src/gui/DevicePanelTest.cpp
 tests/src/gui/EffectHostingMenuTest.cpp

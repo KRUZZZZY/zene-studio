@@ -29,6 +29,7 @@
 
 #include <vector>
 
+#include "ClipAudioLoop.h"
 #include "ClipPreFades.h"
 #include "EffectChain.h"
 #include "Mixer.h"
@@ -166,7 +167,9 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 				if( sClip->isPlaying() == false && _start >= (spanStart + sClip->startTimeOffset()) )
 				{
 					// where this pass begins and ends inside the clip's window
-					const SampleWindow window = prefades::window( *sClip, _start );
+					// 0.5.0 ED-029: a looped clip's window is unfolded (ClipAudioLoop.h); the handle folds its start.
+					const SampleWindow window = audioloop::engaged( *sClip ) ? audioloop::window( *sClip, _start )
+						: prefades::window( *sClip, _start );
 					const auto windowStart = window.sourceIn;
 					const auto windowEnd = window.sourceOut;
 					//we only play within the clip's window - except a clip armed to RECORD, which

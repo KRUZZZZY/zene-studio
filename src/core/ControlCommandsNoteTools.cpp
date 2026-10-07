@@ -36,12 +36,14 @@
 #include <map>
 #include <random>
 
+#include "ClipAudioLoop.h"
 #include "ControlCommandsNoteShared.h"
 #include "ControlCommandDef.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
 #include "ControlVocabulary.h"
+#include "SampleClip.h"
 
 namespace lmms
 {
@@ -251,12 +253,41 @@ ControlResult repeatNotes(const QJsonObject& args)
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.repeat"), {{QStringLiteral("added"), notes.size() * count}}));
 }
 
-//! ED-028: the notes in scope moved 'amount' ticks later (negative: earlier), wrapped inside the clip's length.
+//! 0.5.0 ED-028 (audio): an audio clip's content turned 'amount' ticks later with wrap-around, through its loop
+//! (include/ClipAudioLoop.h) - one Clip checkpoint.
+ControlResult rotateAudio(const ClipRef& ref, SampleClip* clip, const QJsonObject& args)
+{
+	const QString refusal = audioloop::refusal(*clip);
+	if (!refusal.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, refusal); }
+	ClipEdits after = clip->clipEdits();
+	bool turned = false;
+	QString message;
+	if (!audioloop::rotated(*clip, args.value(QStringLiteral("amount")).toInt(), &after, &turned, &message))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, message);
+	}
+	if (!turned) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("rotated"), 0}}); }
+	clip->addJournalCheckPoint();
+	clip->setClipEdits(after);
+	Engine::getSong()->setModified();
+	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("rotated"), 1},
+		{QStringLiteral("offset_frames"), static_cast<double>(after.audioLoopOffset)}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("clip"), clipId(ref.id)}},
+		QStringLiteral("control.undo"), QJsonObject(), true, QStringLiteral("Clip journal checkpoint: undo restores the clip's loop and offset")));
+	return ControlResult::success(result);
+}
+
+//! ED-028: the notes in scope moved 'amount' ticks later (negative: earlier), wrapped inside the clip's length; an
+//! audio clip's content turned the same way (rotateAudio).
 ControlResult rotate(const QJsonObject& args)
 {
 	ClipRef ref;
 	QVector<Note*> notes;
 	ControlResult error;
+	if (resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error))
+	{
+		if (auto* audio = dynamic_cast<SampleClip*>(ref.clip)) { return rotateAudio(ref, audio, args); }
+	}
 	MidiClip* clip = scopedNotes(args, &ref, &notes, &error);
 	if (clip == nullptr) { return error; }
 	// The span the clip plays: a clip trimmed on the left plays only up to length - startTimeOffset, so a wrap past
@@ -382,7 +413,9 @@ void registerNoteToolCommands(ControlRegistry& registry)
 	add(registry, "transpose_in_key", QStringLiteral("Move the notes in 'scope' 'steps' scale degrees (negative: down) within the scale "
 		"scale.set chose, so they stay in key. One undo step."), with({{QStringLiteral("steps"), integerProperty(-24, 24)}}), transposeInKey);
 	add(registry, "rotate", QStringLiteral("Move the notes in 'scope' 'amount' ticks later (negative: earlier), wrapping round inside "
-		"the clip's length, so the pattern turns without growing. One undo step."),
+		"the clip's length, so the pattern turns without growing. On an audio clip its content turns the same way ('scope' is not "
+		"read): inside its loop, or inside the clip, which then loops exactly the audio it plays (refused, typed, for a clip longer "
+		"than its audio with no loop, or one whose loop starts after its first tick). One undo step."),
 		with({{QStringLiteral("amount"), integerProperty(-192 * 256, 192 * 256)}}), rotate);
 	add(registry, "repeat", QStringLiteral("Repeat each note in 'scope' 'count' times (1..64), every 'interval' ticks - a note repeater. "
 		"One undo step."), with({{QStringLiteral("count"), integerProperty(1, 64)}, {QStringLiteral("interval"), integerProperty(1, 3072)}}),

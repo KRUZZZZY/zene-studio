@@ -663,6 +663,8 @@ set(LMMS_TESTS
 	src/core/ModulatorToolsTest.cpp
 	# 0.5.0 W3 engine: latency-compensated automation, post-fader inserts, receives, pre-fades.
 	src/core/W3EngineTest.cpp
+	# 0.5.0 ED-029 / ED-028: an audio clip's content looped and rotated inside the clip, on rendered PCM.
+	src/core/AudioClipLoopTest.cpp
 	# 0.5.0 L05: fade shapes and handles, automatic and range fades, splits, slices, beat mapping.
 	src/core/AudioEditingTest.cpp
 	# 0.5.0 W2 gaps (audit-rows-1): clip.join, ripple on move and insert, controller.map / unmap.
@@ -761,6 +763,8 @@ set(LMMS_TESTS
 	# 0.5.0 wave 3 theme 11/15: lane scales and readouts; the Sample Editor's range fields
 	src/gui/LaneReadoutTest.cpp
 	src/gui/SampleEditorDialogTest.cpp
+	# 0.5.0 ED-176: the crossfade editor, offered where clips overlap and driven through its fields.
+	src/gui/CrossfadeEditorTest.cpp
 	# 0.5.0 theme 1: the note editor follows FL Studio's piano roll.
 	src/gui/NoteEditorFlTest.cpp
 	# 0.5.0 lane 3: the shell selection, the Inspector and the Device panel's cards and
@@ -1402,8 +1406,8 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
 set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(LaneReadoutTest SampleEditorDialogTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest ShellHomesTest
-	TaskCenterTest TaskIndicatorTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
+set_tests_properties(LaneReadoutTest SampleEditorDialogTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
+	ShellHomesTest TaskCenterTest TaskIndicatorTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectRackAddTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

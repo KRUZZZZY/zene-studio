@@ -330,6 +330,9 @@ that is this page's fault — report it and it gets added.
   and Fade shape for both ramps - each change one `control.undo` step (`ClipEditsMenuTest`). These are menu
   items, not drag gestures: there are still no fade handles on the clip, and crossfades (`clip.crossfade`)
   and the source-window trim/slip stay socket-only. The bullet below is the pre-menu record.
+  *(Updated 2026-10-07, 0.5.0 ED-176.)* Crossfades are no longer socket-only: an audio clip that another clip
+  overlaps offers **Crossfade Editor...** (both sides' lengths and shapes, drawn, applied through `clip.crossfade`
+  as one undo step; `CrossfadeEditorTest`). See "0.5.0 audio clips" at the end of this page for what it leaves out.
 - **No clip fade, crossfade or clip-gain gestures.** The clip model is in (an authored window that survives
   playback and is saved with the project) and so, since 2026-09-13, is the fade/gain model — but there are
   **no trim, slip, fade, crossfade or clip-gain tools** in the interface, and **fades, crossfades and clip gain
@@ -2558,3 +2561,42 @@ into an empty launcher cell: it starts on the launch quantisation, stops on the 
   View is in the 0.3.0-alpha builds..." above records that.)
 - **Clips are cached by path** for the open project: a file changed on disk after its cell was first launched
   plays the old audio until the project is reopened.
+
+## 0.5.0 audio clips — looped content, rotation and the crossfade editor (lane `audio-clips`, 2026-10-07)
+
+**Looped audio content (ED-029, `clip.set_loop` on an audio clip).** An audio clip's audio from `start` ticks
+after its in-point, for `length` ticks, repeats across the clip once playback passes the loop's end
+(`include/ClipAudioLoop.h`; proved on rendered PCM by `tests/src/core/AudioClipLoopTest.cpp`). What it does not do:
+- The loop is measured in ticks when it is set and then kept in **source frames** (`loopfrom` / `loopframes`), so a
+  later tempo change keeps it on the same audio rather than on the same bars. There is no "loop follows the grid".
+- It plays only on a plain clip: one with no warp markers and no source tempo, no transpose, no speed change, not
+  armed to record, and on a track with no comp. `clip.set_loop` refuses such a clip, typed; a loop on a clip that
+  becomes one of these later is kept in the file but not played until it is plain again. Pre-fades are not played
+  on a looped clip.
+- A loop is not split-aware: splitting or trimming a looped clip keeps the loop on the source frames it had, and a
+  split past the loop's first pass does not carry the folded position into the right half.
+- The loop is drawn nowhere: the clip still shows its source waveform once, and the only interface is the clip
+  menu's "Loop the Content..." form.
+- An older build loads a looped clip as an unlooped one (it ignores the new attributes), so the clip falls silent
+  after its audio ends there.
+
+**Rotated audio content (ED-028, `note.rotate` on an audio clip).** The clip's content turns `amount` ticks later
+(negative: earlier) with wrap-around - inside its loop, or inside the clip, which then becomes a loop over exactly
+the audio it plays - one undo step each (`AudioClipLoopTest`). What it does not do:
+- It is a loop offset, not an edit of the audio: the waveform drawn on the clip does not move, and the rotation
+  plays only where the loop plays (the plain-clip rule above).
+- It refuses, typed, a clip longer than its audio with no loop (loop it first), a clip whose audio starts after
+  the clip, and a looped clip whose start plays before its loop (an intro does not repeat, so it cannot turn).
+- The command keeps its MIDI name (`note.rotate`) rather than adding a `clip.rotate`, so the canary did not move;
+  `scope` is not read on an audio clip. The clip menu's entry is Process > Rotate Content...
+
+**The crossfade editor (ED-176).** An audio clip's menu offers Crossfade Editor... while another audio clip on
+its track overlaps it; the editor shows the overlap, each side's ramp length (ticks) and shape - the clips' own
+ramps, or the overlap at equal power where a side has none - draws both ramps, and Apply runs `clip.crossfade` with
+both sides (`CrossfadeEditorTest`). What it does not do:
+- It edits numbers, not handles: there is still no crossfade drawn on the clips in the arranger and nothing to drag.
+- It pairs the clip with ONE neighbour (the nearest overlapping clip after it, else before it); a clip overlapped
+  on both sides is edited one pair at a time from each clip's menu.
+- The crossfade is still two independent fades, not a linked object: moving a clip afterwards does not move it.
+- `clip.crossfade`'s undo restores the TRACK checkpoint, which rebuilds the track's clips: an editor left open
+  across an undo loses its clips (Apply then does nothing) and has to be opened again from the menu.

@@ -228,6 +228,14 @@ private:
 	PreFadeSpan m_preFadeSpan;
 	std::int64_t m_preRollFrames = 0;  //!< the frames this pass plays before the clip's first frame
 	bool m_preFaded = false;
+
+	/*! 0.5.0 ED-029 (audio): a looped clip (include/ClipAudioLoop.h) plays a copy of its Sample whose loop points
+	 *  are the clip's loop, in Sample::Loop::On, from the folded frame this pass starts on. Snapshotted at
+	 *  construction; a clip without a loop leaves m_loopMode Off - the render it always had. Defined in
+	 *  src/core/ClipAudioLoop.cpp. */
+	void snapshotAudioLoop(const SampleClip* clip, const SampleWindow& window);
+	std::optional<Sample> m_loopSample;
+	Sample::Loop m_loopMode = Sample::Loop::Off;
 } ;
 
 
