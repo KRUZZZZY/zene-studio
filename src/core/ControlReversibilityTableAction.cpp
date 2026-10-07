@@ -205,11 +205,12 @@ const ReversibilityRow kActionRows[] = {
 		"the sync model is process state (include/LinkSync.h): it is not a "
 		"JournallingObject, so there is no object checkpoint - but joining or "
 		"leaving the session is one bounded flag, and its previous value is "
-		"captured before the write. Enabling also MEASURES whether this host can "
-		"RECEIVE an announcement (a bounded loopback probe, "
-		"docs/LINK-SYNC.md section 3) and reports the measurement in "
-		"transport.loopback_probe; that is a report, not state, so it adds "
-		"nothing to what this row's inverse has to restore",
+		"captured before the write. With the zene-link-style fallback, enabling "
+		"also MEASURES whether this host can RECEIVE an announcement (a bounded "
+		"loopback probe, docs/LINK-SYNC.md section 3) and reports the measurement "
+		"in transport.loopback_probe; that is a report, not state, so it adds "
+		"nothing to what this row's inverse has to restore. With real Ableton "
+		"Link, joining or leaving the library's session is the same one flag",
 		"action checkpoint: the recorded undo step calls LinkSyncEngine::setEnabled "
 		"with the value in before, exactly as the command sets the new one",
 		""),
@@ -233,9 +234,10 @@ const ReversibilityRow kActionRows[] = {
 		"is captured before the declaration and the write itself is the inverse's "
 		"mechanism",
 		"action checkpoint: the recorded undo step DECLARES the previous tempo "
-		"through LinkSyncEngine::setSessionTempo, which re-anchors the shared beat "
-		"and advances the revision - so peers follow the undo exactly as they "
-		"followed the declaration",
+		"through LinkSyncEngine::setSessionTempo - committed to the Ableton Link "
+		"session, or (zene-link-style) re-anchoring the shared beat and advancing "
+		"the revision - so peers follow the undo exactly as they followed the "
+		"declaration",
 		""),
 	R("audio.device_set", RC::TrueInverse, true,
 		"the preference is a scalar in the config file, not in the project",

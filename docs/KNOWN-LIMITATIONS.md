@@ -717,6 +717,22 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   from the interface. `docs/DAWPROJECT-INTERCHANGE.md` records the format version (1.0), the eleven stated
   losses (audio clips, automation, device state, sends, fades, loop points, scenes, folder nesting, mixer
   routing and sharing) and the time convention (beats, 48 ticks per quarter).
+- *(Updated 2026-10-07, WF-051.)* **Session sync is real Ableton Link now.** Wherever the build carries the
+  vendored library (`WANT_ABLETON_LINK`, default ON; Ableton Link 4.1, GPL-2.0-or-later, with standalone asio
+  1.38.2, BSL-1.0, in `src/3rdparty/ableton-link`), the arranger toolbar's **Ableton Link** toggle and the `link.*`
+  commands join the same session as Ableton Live, Bitwig, Reason and every other Link app on the network: tempo
+  both ways (a peer's tempo is not an undo step), the play head held on the session's beat grid while playing, and
+  start/stop both ways with `link.set_start_stop_sync`. The toggle shows the peer count and the session tempo; the
+  quantum and start/stop sync are in Project > Sync and the socket, not on the toolbar. What is still limited, each in
+  `docs/LINK-SYNC.md` §5: peers are counted, not named (Link exposes a count); no test runs against Ableton Live
+  itself - the proof is Zene against the reference library in-process and two Zene binaries over real Link; output
+  latency is one engine period plus the device's reported latency, with no user offset; the tempo map is not
+  followed while a Link session plays; the Song's tempo is a whole number, so a fractional session tempo is shown
+  rounded (the play head runs at the exact rate); a start counts in to the session's phase (up to one quantum) and
+  a seek lands on the session grid (within half a quantum); a MinGW cross build cannot compile Link and gets the
+  zene-link-style fallback, and the Windows and macOS builds of the library were not built in the lane that added
+  it. `ZENE_LINK_BACKEND=zene-link-style` selects the fallback, which is what Zene 0.3/0.4 speak. The two bullets
+  below are the pre-Link record.
 - *(Updated 2026-09-30.)* **The song editor's transport now has a Sync toggle** (`link.set_enabled`) whose
   text shows the peer count and the session tempo while enabled (`SessionSyncAction`,
   `SessionSyncActionTest`). The quantum, start/stop sync and the peer list are still socket-only. The

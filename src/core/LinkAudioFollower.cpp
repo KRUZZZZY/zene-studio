@@ -135,6 +135,8 @@ LinkPeriod LinkAudioFollower::process(Song& song, bool rolling) noexcept
 
 LinkPeriod LinkAudioFollower::disengaged() noexcept
 {
+	// Sync off and nothing to undo: the period pays this test and nothing else.
+	if (!m_wasEngaged && !m_overriding) { return LinkPeriod::Off; }
 	m_wasEngaged = false;
 	m_wasRolling = false;
 	m_lock.reset();

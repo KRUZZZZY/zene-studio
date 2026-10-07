@@ -1,10 +1,12 @@
 /*
- * LinkSync.cpp - the Link-style session-sync model (D11 "Ableton Link sync").
+ * LinkSync.cpp - the session-sync facade (D11 "Ableton Link sync", WF-051) and
+ *                its zene-link-style fallback model.
  *
- * Read include/LinkSync.h first: it holds the shape, the bounds and the
- * statement of what this is (a model with Link's semantics) and is not (the
- * Ableton Link library, which this build does not vendor - the licence analysis
- * that says vendoring it is PERMITTED is in docs/LINK-SYNC.md section 1).
+ * Read include/LinkSync.h first: it holds the shape, the bounds and the two
+ * backends - real Ableton Link (the vendored library, include/AbletonLinkBridge.h,
+ * the default) and the zene-link-style model below, which only Zene instances
+ * speak. Every public method delegates to the Ableton backend when it is the one
+ * in use; the rest of this file is the fallback model.
  *
  * The model's shape and the arithmetic it rests on are stated in ONE place a
  * reader can check them against the code: docs/LINK-SYNC.md section 2 (the

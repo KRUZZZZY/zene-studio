@@ -151,6 +151,13 @@ cell as a new pattern. A Gate cell plays while you hold it. Right-click a cell f
 action after it, its chance and timing) and Jump To (move a playing cell inside its clip); right-click a scene to play
 scenes in order or launch a folder's cells together; the grid's menu captures the playing cells as a new scene and keeps
 a setlist of songs to step through. A marker can run a command when playback crosses it (marker.set 'action').</p>
+<p><b>Ableton Link.</b> The <b>Ableton Link</b> button in the arranger's toolbar (also Project &gt; Sync) plays the
+project in time with Ableton Live, Bitwig, Reason and every other Ableton Link app on your network or on this computer.
+The tempo is shared both ways - a tempo another app sets is not an undo step - and while the song plays it stays on the
+session's beat grid: started on its own, it waits for the session's next bar (the quantum, 4 beats unless Project &gt;
+Sync &gt; Quantum changes it). With Project &gt; Sync &gt; Share Start and Stop on, play and stop in any app that shares
+them start and stop the others. The button shows how many apps are connected and the session tempo; link.get_state
+has the rest.</p>
 
 <h2 id="projects">Projects</h2>
 <p>Projects keep their history: Project &gt; Revisions restores or compares an earlier state. Collect Media copies every

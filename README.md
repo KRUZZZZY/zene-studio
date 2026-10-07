@@ -132,15 +132,18 @@ Not in this build, and not claimed by it:
   This is not the command-line stem *export* above.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON, but the build falls back to OFF when the wasmtime C
   API is absent, and CI provisions none, so it is compiled out in practice.
-- **No plugin editor, no patcher GUI, no Ableton Link** — and no third-party plug-in of any kind has
-  been proven outside the MIT fixtures this tree ships.
+- **No plugin editor and no patcher GUI** — and no third-party plug-in of any kind has
+  been proven outside the MIT fixtures this tree ships. (Ableton Link IS in the build since WF-051:
+  the arranger toolbar's **Ableton Link** toggle syncs tempo, beat phase and start/stop with Live,
+  Bitwig and other Link apps - proven against the reference library and between two Zene instances,
+  not against Live itself; [`docs/LINK-SYNC.md`](docs/LINK-SYNC.md).)
 - **Socket and bridge only, with no interface at all**, each with its stated limits in
   [`docs/KNOWN-LIMITATIONS.md`](docs/KNOWN-LIMITATIONS.md): automation modes (selectable and
   observable through `automation.mode_set` / `automation.get_state`, never in the interface); clip
   fades, crossfades and clip gain; take lanes and comping; punch in/out; freeze and
   bounce-in-place; sample-accurate automation (`automation.ramp_*` — the tick-resolution path is the
-  one the interface uses); MIDI controller surfaces; the groove pool and quantise; session sync
-  between two instances (not Ableton Link); the patcher's wiring edit; a live loudness meter; the
+  one the interface uses); MIDI controller surfaces; the groove pool and quantise; the Ableton Link
+  quantum and start/stop sync (the toggle itself is in the arranger toolbar); the patcher's wiring edit; a live loudness meter; the
   `clip.trim` / `clip.slip` verbs for a clip's source window (**clip *length* resize does work** in
   the interface); and the whole `vca.*`, `rack.*`, `modulator.*`, `comp.*`, `loop`/`chain` and
   `export.*` surface. The three things the socket itself cannot do are named too: `mixer.set_pan`
@@ -214,6 +217,12 @@ Zene Studio is licensed under the **GNU General Public License, version 2 or lat
 
 Zene Studio is built on LMMS (https://github.com/LMMS/lmms), licensed GNU GPL v2. All upstream notices
 retained. Zene Studio is not affiliated with or endorsed by the LMMS project.
+
+Third-party code vendored in this tree keeps its own licence and notices beside it. Among it: **Ableton
+Link 4.1** (Copyright Ableton AG, GPL-2.0-or-later) and the **standalone asio 1.38.2** it bundles (Copyright
+Christopher M. Kohlhoff, Boost Software License 1.0), in `src/3rdparty/ableton-link/` - pin, licences and
+per-file provenance in its `README.lmms` and `MANIFEST.tsv`. "Ableton" and "Ableton Link" are Ableton AG's
+names; Zene Studio is not affiliated with or endorsed by Ableton.
 
 ## Naming
 
