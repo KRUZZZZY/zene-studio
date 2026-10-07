@@ -646,6 +646,8 @@ include/ExportNoiseShaper.h
 include/ExportQualityControls.h
 include/ExportRenderSettings.h
 include/FeedbackModeAction.h
+include/FolderSummary.h
+include/FolderSummaryLane.h
 include/FollowActionEditor.h
 include/GrooveMenu.h
 include/GroovePool.h
@@ -1434,6 +1436,7 @@ src/core/ExportDither.cpp
 src/core/ExportNoiseShaper.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
+src/core/FolderSummary.cpp
 src/core/GroovePool.cpp
 src/core/GrooveTemplate.cpp
 src/core/HardwareInsert.cpp
@@ -1789,6 +1792,7 @@ src/gui/shell/ShellTearOff.cpp
 src/gui/shell/ShellToolsMenu.cpp
 src/gui/shell/TransportReadouts.cpp
 src/gui/shell/WaveformPreview.cpp
+src/gui/tracks/FolderSummaryLane.cpp
 src/gui/widgets/ControlCues.cpp
 src/tracks/InstrumentTrackNotes.cpp
 src/tracks/TrackFolder.cpp

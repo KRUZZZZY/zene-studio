@@ -1039,6 +1039,7 @@ set(LMMS_SRCS
 	core/ControlCommandsRecordTools.cpp
 	core/MetronomeOptions.cpp
 	core/ControlCommandsArrangeTools.cpp
+	core/FolderSummary.cpp
 	core/ControlCommandsSections.cpp
 	core/ArrangementSections.cpp
 	core/ControlCommandsSampleTools.cpp

@@ -29,6 +29,7 @@
 
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "FolderSummaryLane.h"
 #include "Mixer.h"
 #include "Song.h"
 #include "TimePos.h"
@@ -157,9 +158,10 @@ bool TrackFolder::play( const TimePos &, const f_cnt_t, const f_cnt_t, int )
 	return false;
 }
 
-/*! The folder's row: an ordinary `gui::TrackView`.
+/*! The folder's row: an ordinary `gui::TrackView`, with (0.5.0 ED-035) a
+ *  FolderSummaryLane over its content: the children's clips as summary clips.
  *
- *  0.3.0 draws NO folder affordance on it - no chevron, no pin, no child
+ *  0.3.0 drew NO folder affordance on it - no chevron, no pin, no child
  *  indent, no colour header - and collapses nothing in the list. That absence is
  *  stated in one line in docs/RELEASE-NOTES-v0.3.0-alpha.md and in
  *  docs/KNOWN-LIMITATIONS.md; the state it would drive (`collapsed`, `pinned`)
@@ -168,7 +170,10 @@ bool TrackFolder::play( const TimePos &, const f_cnt_t, const f_cnt_t, int )
  */
 gui::TrackView * TrackFolder::createView( gui::TrackContainerView * view )
 {
-	return new gui::TrackView( this, view );
+	auto* trackView = new gui::TrackView( this, view );
+	// 0.5.0 ED-035: the row draws the children's clips as summary clips, each edited as one.
+	new gui::FolderSummaryLane( this, trackView );
+	return trackView;
 }
 
 Clip * TrackFolder::createClip( const TimePos & )

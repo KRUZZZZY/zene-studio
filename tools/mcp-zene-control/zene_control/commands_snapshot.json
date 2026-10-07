@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T17:22:52Z",
+  "captured_at": "2026-10-07T08:14:16Z",
   "commands": [
     {
       "args_schema": {
@@ -27880,8 +27880,18 @@
             "minimum": -1919808,
             "type": "integer"
           },
+          "end": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
           "folder": {
             "type": "string"
+          },
+          "start": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -27890,7 +27900,7 @@
         ],
         "type": "object"
       },
-      "description": "Move every clip inside folder track 'folder' (its sub-folders too) by 'delta' ticks - the folder's part of the song as one block. One undo step.",
+      "description": "Move every clip inside folder track 'folder' (its sub-folders too) by 'delta' ticks - the folder's part of the song as one block. With 'start' and 'end' only the clips starting in [start, end) move: one of the folder's summary clips, the spans its row draws. One undo step.",
       "group": "track",
       "id": "track.folder_move",
       "mutating": true,
@@ -34001,11 +34011,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-arranger-gaps/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-4g8c9srg/zene.sock",
-    "version": "0.4.0-alpha.114+9a9f339"
+    "source_socket": "/tmp/zctl-run-4okxt3jz/zene.sock",
+    "version": "0.4.0-alpha.333+6d1a114"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

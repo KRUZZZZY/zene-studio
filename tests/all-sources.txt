@@ -308,6 +308,8 @@ include/FileRevealer.h
 include/FileSearchJob.h
 include/Flags.h
 include/FloatModelEditorBase.h
+include/FolderSummary.h
+include/FolderSummaryLane.h
 include/FollowActionEditor.h
 include/FontHelper.h
 include/Graph.h
@@ -1712,6 +1714,7 @@ src/core/ExportDither.cpp
 src/core/ExportNoiseShaper.cpp
 src/core/ExportRenderSettings.cpp
 src/core/ExternalProcessStemSeparator.cpp
+src/core/FolderSummary.cpp
 src/core/GroovePool.cpp
 src/core/GrooveTemplate.cpp
 src/core/HardwareInsert.cpp
@@ -2254,6 +2257,7 @@ src/gui/shell/TransportReadouts.cpp
 src/gui/shell/WaveformPreview.cpp
 src/gui/tracks/AutomationTrackView.cpp
 src/gui/tracks/FadeButton.cpp
+src/gui/tracks/FolderSummaryLane.cpp
 src/gui/tracks/InstrumentTrackView.cpp
 src/gui/tracks/PatternTrackView.cpp
 src/gui/tracks/SampleTrackView.cpp
@@ -2599,6 +2603,7 @@ tests/src/gui/DevicePanelTest.cpp
 tests/src/gui/EffectHostingMenuTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
 tests/src/gui/FeedbackModeActionTest.cpp
+tests/src/gui/FolderSummaryLaneTest.cpp
 tests/src/gui/GrooveMenuTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/HelpAccessTest.cpp
