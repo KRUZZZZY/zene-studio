@@ -73,6 +73,7 @@
 #include "Hardware.h"
 #include "ImportFilter.h"
 #include "MainWindow.h"
+#include "MainWindowGeometry.h"
 #include "MixHelpers.h"
 #include "OutputSettings.h"
 #include "ProjectContainer.h"
@@ -1536,7 +1537,10 @@ int main( int argc, char * * argv )
 		getGUI()->mainWindow()->show();
 		if( fullscreen )
 		{
-			getGUI()->mainWindow()->showMaximized();
+			// 0.5.0 theme 22: where the user left it (ui/main.geometry), else maximised as before. An
+			// unattended run keeps the old start and never reads the user's place.
+			if (isUnattendedRun()) { getGUI()->mainWindow()->showMaximized(); }
+			else { gui::mainwindowgeometry::showRestored(getGUI()->mainWindow()); }
 		}
 
 		// Handle macOS-style FileOpen QEvents

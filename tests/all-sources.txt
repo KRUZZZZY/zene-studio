@@ -408,6 +408,7 @@ include/MacroKnobs.h
 include/MacroMenu.h
 include/MainApplication.h
 include/MainWindow.h
+include/MainWindowGeometry.h
 include/MarkerActions.h
 include/MasterLoudnessTap.h
 include/MasteringChain.h
@@ -2082,6 +2083,7 @@ src/gui/MacroKnobs.cpp
 src/gui/MacroMenu.cpp
 src/gui/MainApplication.cpp
 src/gui/MainWindow.cpp
+src/gui/MainWindowGeometry.cpp
 src/gui/MenuBarExtras.cpp
 src/gui/MicrotunerConfig.cpp
 src/gui/MidiCCRackView.cpp
@@ -2611,6 +2613,7 @@ tests/src/gui/ItemListPanelTest.cpp
 tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/LaneReadoutTest.cpp
 tests/src/gui/LibraryMenusTest.cpp
+tests/src/gui/MainWindowGeometryTest.cpp
 tests/src/gui/MenuTestSupport.h
 tests/src/gui/MidiClockMenuTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp

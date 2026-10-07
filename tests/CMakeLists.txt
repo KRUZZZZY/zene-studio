@@ -777,6 +777,8 @@ set(LMMS_TESTS
 	src/gui/TrackFolderMenuTest.cpp
 	# 0.5.0 ED-035: a folder's row draws its children's clips as summary clips, each moved, copied or deleted as one.
 	src/gui/FolderSummaryLaneTest.cpp
+	# 0.5.0 theme 22: the main window opens where, and as large as, it was left (ui/main.geometry).
+	src/gui/MainWindowGeometryTest.cpp
 	# Edit > Undo History: lists the record, undoes and redoes through the registry.
 	src/gui/UndoHistoryPanelTest.cpp
 	# The export dialog's dither and resampling choices, through export.set_*.
@@ -1383,6 +1385,7 @@ set_tests_properties(ArrangerTimelineTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFOR
 set_tests_properties(XyPadPairTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FolderSummaryLaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MainWindowGeometryTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(UndoHistoryPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportQualityControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionSyncActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

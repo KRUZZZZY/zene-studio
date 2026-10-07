@@ -2305,7 +2305,7 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 
 **Workspace and layouts (themes 8, 22).**
 - The controller rack and project notes stay floating tools rather than docked panels: docking them would change what every project file saves.
-- The main window's own geometry is not remembered; it opens maximised.
+- ~~The main window's own geometry is not remembered; it opens maximised.~~ *(Resolved 2026-10-07: it opens where it was left - screen, normal size and place, maximised or not - fitted to a connected screen; maximised only when nothing is remembered. `MainWindowGeometryTest`, docs/UI-SHELL.md §5. An agent-driven or offscreen run neither reads nor writes the place.)*
 - The header and footer overflow are tested offscreen only.
 
 **Arranger and launcher (themes 9, 14).**

@@ -262,6 +262,7 @@ SET(LMMS_SRCS
 	gui/SideBarWidget.cpp
 	gui/StringPairDrag.cpp
 	gui/SubWindow.cpp
+	gui/MainWindowGeometry.cpp
 	gui/ToolWindowMemory.cpp
 	gui/ToolPluginView.cpp
 

@@ -59,6 +59,7 @@
 #include "Engine.h"
 #include "ExportProjectDialog.h"
 #include "FileDialog.h"
+#include "MainWindowGeometry.h"
 #include "Metronome.h"
 #include "MixerView.h"
 #include "GuiApplication.h"
@@ -212,6 +213,9 @@ MainWindow::MainWindow() :
 		// is not a clean one and must keep the marker recoverable.
 		connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::sessionCleanup);
 	}
+	// 0.5.0 theme 22: every clean exit keeps where the window was (ui/main.geometry); the next start opens it there.
+	// Not an unattended run's: an agent's or an offscreen instance's window says nothing about the user's screen.
+	connect(qApp, &QCoreApplication::aboutToQuit, this, [this] { if (!isUnattendedRun()) { mainwindowgeometry::save(this); } });
 
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()),
 				this, SLOT(updatePlayPauseIcons()));

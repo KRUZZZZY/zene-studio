@@ -684,6 +684,7 @@ include/LoudnessReport.h
 include/LufsMeter.h
 include/MacroKnobs.h
 include/MacroMenu.h
+include/MainWindowGeometry.h
 include/MarkerActions.h
 include/MasterLoudnessTap.h
 include/MasteringChain.h
@@ -1675,6 +1676,7 @@ src/gui/LibraryCommandMenus.cpp
 src/gui/ListTable.cpp
 src/gui/MacroKnobs.cpp
 src/gui/MacroMenu.cpp
+src/gui/MainWindowGeometry.cpp
 src/gui/MenuBarExtras.cpp
 src/gui/MidiClockMenu.cpp
 src/gui/MidiControllerMenu.cpp

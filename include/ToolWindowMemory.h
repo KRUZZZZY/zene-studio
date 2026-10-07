@@ -31,6 +31,8 @@
 
 #include "lmms_export.h"
 
+class QPoint;
+class QScreen;
 class QWidget;
 
 namespace lmms::gui
@@ -68,6 +70,10 @@ LMMS_EXPORT QJsonObject remembered();
 
 //! @a saved moved and shrunk as little as it takes to lie inside @a area; @a saved itself for an empty area.
 LMMS_EXPORT QRect fitted(const QRect& saved, const QRect& area);
+
+//! The connected screen called @a name, else the one under @a centre, else the primary one (the main window's
+//! remembered place uses the same rule, MainWindowGeometry.h).
+LMMS_EXPORT const QScreen* screenFor(const QString& name, const QPoint& centre);
 
 } // namespace toolwindows
 
