@@ -455,6 +455,32 @@ private slots:
 			"the second parameter's alias is lost: neither its display name nor its key is in the report");
 	}
 
+	//! A display name can equal ANOTHER parameter's stable key. The duplicate that is reported under
+	//! its stable key must not be overwritten by the parameter whose display name is that key: all
+	//! three aliases stay in the report.
+	void aDisplayNameEqualToAnotherStableKeyDoesNotOverwriteIt()
+	{
+		AliasCollisionEffect effect(nullptr);
+		const QList<AutomatableModel*> all{&effect.m_first, &effect.m_second, &effect.m_third};
+		const QStringList keys = parameteraliases::keysOf(&effect, all);
+		QCOMPARE(keys.size(), 3);
+		effect.m_first.setDisplayName(QStringLiteral("Gain"));
+		effect.m_second.setDisplayName(QStringLiteral("Gain"));
+		effect.m_third.setDisplayName(keys.at(1));
+		DeviceOptions options;
+		parameteraliases::setAlias(&effect, &effect.m_first, QStringLiteral("Level"), &options);
+		parameteraliases::setAlias(&effect, &effect.m_second, QStringLiteral("Drive"), &options);
+		parameteraliases::setAlias(&effect, &effect.m_third, QStringLiteral("Third"), &options);
+
+		const QJsonObject reported = parameteraliases::toJson(&effect, options);
+		QSet<QString> values;
+		for (auto it = reported.begin(); it != reported.end(); ++it) { values.insert(it.value().toString()); }
+		QVERIFY2(values.contains(QStringLiteral("Level")), qPrintable(QString::fromLatin1(QJsonDocument(reported).toJson(QJsonDocument::Compact))));
+		QVERIFY2(values.contains(QStringLiteral("Drive")), qPrintable(QString::fromLatin1(QJsonDocument(reported).toJson(QJsonDocument::Compact))));
+		QVERIFY2(values.contains(QStringLiteral("Third")), qPrintable(QString::fromLatin1(QJsonDocument(reported).toJson(QJsonDocument::Compact))));
+		QCOMPARE(reported.size(), 3);
+	}
+
 	//! MX-093: randomise moves every setting inside its range; blend sets the A/B midpoint; both undo.
 	void settingsAreRandomisedAndBlended()
 	{

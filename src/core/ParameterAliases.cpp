@@ -166,22 +166,26 @@ QJsonObject toJson(Effect* effect, const DeviceOptions& options)
 	const QStringList keys = listKeys(effect, all);
 	QJsonObject out;
 	QSet<QString> reported;
-	QSet<QString> namedNames;
+	const QSet<QString> stableKeys(keys.cbegin(), keys.cend());
+	QSet<QString> emitted;  // every JSON key written so far: an object names each entry once
 	for (int i = 0; i < all.size(); ++i)
 	{
 		const QString name = all.at(i)->displayName();
 		const QString alias = aliasFor(options, keys.at(i), name);
 		if (alias.isEmpty()) { continue; }
-		// Two parameters can show the same display name, and an object names each entry
-		// once: the first keeps the display name and any later one is reported under its
-		// own stable key, so no alias overwrites another's.
-		out.insert(namedNames.contains(name) ? keys.at(i) : name, alias);
-		namedNames.insert(name);
+		// A display name is the key only when no other entry can need it: it is not another
+		// parameter's stable key (that parameter may be reported under it) and no earlier entry
+		// took it. Otherwise the entry is reported under its own stable key, which no display
+		// name can take, so no alias overwrites another's.
+		const bool nameIsFree = !stableKeys.contains(name) && !emitted.contains(name);
+		const QString key = nameIsFree ? name : keys.at(i);
+		out.insert(key, alias);
+		emitted.insert(key);
 		reported << keys.at(i) << name;
 	}
 	for (auto it = options.aliases().cbegin(); it != options.aliases().cend(); ++it)
 	{
-		if (!reported.contains(it.key())) { out.insert(it.key(), it.value()); }
+		if (!reported.contains(it.key()) && !emitted.contains(it.key())) { out.insert(it.key(), it.value()); }
 	}
 	return out;
 }
