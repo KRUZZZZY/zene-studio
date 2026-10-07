@@ -58,6 +58,7 @@
 
 #include "DawProjectInterchange.h"
 #include "DawProjectReadShared.h"
+#include "InstrumentMidiParts.h"
 
 namespace lmms
 {
@@ -66,6 +67,29 @@ namespace interchange
 namespace readdetail
 {
 
+
+//! The reader's MIDI fields must fit both the format's normalized values and
+//! the engine's fixed key and MIDI-channel domains before the session scales them.
+QString noteFieldRangeError(const DawProjectNote& note)
+{
+	if (note.channel < 0 || note.channel >= InstrumentMidiParts::Channels)
+	{
+		return QStringLiteral("the <Note> channel is outside the supported range 0..15");
+	}
+	if (note.key < 0 || note.key >= NumKeys)
+	{
+		return QStringLiteral("the <Note> key is outside the supported range 0..127");
+	}
+	if (note.vel < 0.0 || note.vel > 1.0)
+	{
+		return QStringLiteral("the <Note> vel is outside the supported range 0..1");
+	}
+	if (note.rel < 0.0 || note.rel > 1.0)
+	{
+		return QStringLiteral("the <Note> rel is outside the supported range 0..1");
+	}
+	return {};
+}
 
 void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip)
 {
@@ -100,7 +124,12 @@ void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip
 		note.key = intAttribute(attributes, state, QStringLiteral("key"), 60);
 		note.vel = doubleAttribute(attributes, state, QStringLiteral("vel"), 0.5);
 		note.rel = doubleAttribute(attributes, state, QStringLiteral("rel"), note.vel);
-		clip->notes.append(note);
+		const QString rangeError = noteFieldRangeError(note);
+		if (!rangeError.isEmpty())
+		{
+			if (state.error.isEmpty()) { state.error = rangeError; }
+		}
+		else { clip->notes.append(note); }
 	}
 }
 
