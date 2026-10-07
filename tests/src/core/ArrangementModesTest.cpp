@@ -147,6 +147,30 @@ private slots:
 		QCOMPARE(later->clipEdits().fadeInTicks, 20);
 	}
 
+	//! Rendered envelope of the contained clip: its fade-in must ramp across its own length and reach full gain
+	//! at its last frame. Ticks stand in for frames here - the ramps are ratios, so the unit cancels.
+	void aCrossfadeIntoAContainedClipRendersAFadeInThatReachesFullGain()
+	{
+		clipAt(m_track, 0, 100);                          // [0, 100), the earlier clip
+		Clip* later = clipAt(m_track, 20, 20);            // [20, 40), wholly inside it
+		QCOMPARE(arrangement::applyOverlap(later, arrangement::Overlap::Crossfade), 1);
+		const ClipEdits in = later->clipEdits();
+		const auto frames = static_cast<f_cnt_t>(later->length().getTicks());
+		const auto gainAt = [&](f_cnt_t frame) {
+			return clipFadeGainAt(frame, frames, static_cast<f_cnt_t>(in.fadeInTicks), 0, in.fadeInShape, in.fadeOutShape);
+		};
+		QCOMPARE(gainAt(0), 0.0f);
+		float previous = -1.0f;
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			const float gain = gainAt(frame);
+			QVERIFY(gain >= previous);  // monotonic across the whole clip
+			previous = gain;
+		}
+		// Full gain is reached within one frame of the clip's end, not 60 frames past it.
+		QVERIFY(gainAt(frames - 1) > 0.99f);
+	}
+
 	void aMoveSnapsToAnEdgeOrAMarkerOnlyWhenClose()
 	{
 		Clip* other = clipAt(m_track, 0, Bar);
