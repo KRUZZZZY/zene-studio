@@ -67,6 +67,11 @@ bool partsOf(const QJsonObject& args, MixerSnapshots::Parts* parts, ControlResul
 		}
 		named << value.toString();
 	}
+	if (named.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'parts' must name at least one part"));
+		return false;
+	}
 	*parts = MixerSnapshots::Parts{named.contains(partNames()[0]), named.contains(partNames()[1]), named.contains(partNames()[2]),
 		named.contains(partNames()[3]), named.contains(partNames()[4])};
 	return true;
