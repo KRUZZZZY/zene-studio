@@ -37,7 +37,7 @@ include/MixerChannelView.h	040/m1-checked-coverage (2026-09-29, channel pan): on
 include/MixerView.h	040/m3-registry-actions (2026-09-29, M3.7): refreshVcaStrips() and syncWithMixer(), the VCA area members and the last VCA signature; nothing else moves; 0.5.0 L08: one int, the MixerViewOptions generation last applied; 0.5.0 theme 6: the MixerSendsBanner member and its accessor; 0.5.0 theme 16: the mode bar member
 include/RetroMidiRing.h	BUG-MIDI-004: snapshot writer quiescence prevents non-atomic slot races; covered by RetroMidiRingTest.
 src/core/midi/MidiAlsaSeq.cpp	BUG-MIDI-003: drain ALSA output only on sequencer thread; covered by MidiOutQueueTest.
-src/core/ControlCommandsMidi.cpp	BUG-MIDI-003: report outbound queue overflow counter through midi.retro_capture_status; covered by RetroMidiCaptureCommandsTest.
+src/core/ControlCommandsMidi.cpp	BUG-MIDI-003: report outbound queue overflow counter through midi.retro_capture_status; covered by RetroMidiCaptureCommandsTest. new-p8-201: pass the published capture tick to close unmatched notes at the capture edge; covered by RetroMidiCaptureCommandsTest.
 
 # --- post-alpha/midi-depth (2026-09-11) ------------------------------------
 # --- fork-new developer tooling under tools/ (task #612, 2026-09-11) ---------------------------

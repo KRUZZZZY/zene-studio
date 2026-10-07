@@ -28,6 +28,7 @@
  *  midi.retro_capture_to_clip uses), and the cell is pointed at the pattern. One undo step takes the
  *  cell's previous content back and the pattern away; its redo records it again from the same notes. */
 
+#include <algorithm>
 #include <memory>
 #include <vector>
 
@@ -41,6 +42,7 @@
 #include "MidiClip.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
+#include "RetroMidiCapture.h"
 #include "RetroMidiClipWriter.h"
 #include "Song.h"
 
@@ -61,6 +63,7 @@ struct Captured
 	int instrument = 0;
 	std::vector<RetroMidiEvent> events;
 	tick_t start = 0;
+	tick_t captureEnd = 0;
 	tick_t length = 0;
 	QString session;  //!< the <session> block before
 	//! The pattern track's stable id (-1: none), found again when a step runs: a track.remove and its undo rebuild it
@@ -86,7 +89,8 @@ bool build(Captured* c)
 		removeTrack(patternTrack);
 		return false;
 	}
-	c->written = writeWindowToClip(clip, c->events.data(), c->events.size(), c->start).notes;
+	c->written = writeWindowToClip(clip, c->events.data(), c->events.size(), c->start,
+		c->captureEnd).notes;
 	clip->changeLength(TimePos(c->length));
 	clip->setAutoResize(false);
 	clip->dataChanged();
@@ -120,9 +124,11 @@ ControlResult captureToSlot(const QJsonObject& args)
 	}
 	tick_t end = 0;
 	if (!readRetroWindow(&c->events, &c->start, &end, &error)) { return error; }
+	c->captureEnd = std::max(c->start, RetroMidiCapture::publishedTick());
 	const tick_t bar = std::max<tick_t>(1, Engine::getSong()->ticksPerBar());
 	const int bars = args.value(QStringLiteral("bars")).toInt(0);
-	c->length = bars > 0 ? bars * bar : ((end - c->start) / bar + 1) * bar;
+	const tick_t span = std::max(end, c->captureEnd) - c->start;
+	c->length = bars > 0 ? bars * bar : (span / bar + 1) * bar;
 	c->session = sessionBlockXml(*model);
 	if (!build(c.get()))
 	{
