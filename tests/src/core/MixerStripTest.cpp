@@ -203,6 +203,38 @@ private slots:
 		channel(3)->m_soloSafeModel.setValue(false);
 	}
 
+	void setManyNoOpDoesNotEnterUndoHistory()
+	{
+		channel(1)->m_muteModel.setValue(false);
+		const ControlResult beforeDepth = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(beforeDepth.ok);
+		const int depth = beforeDepth.result.value(QStringLiteral("depth")).toInt();
+
+		QVERIFY(run(QStringLiteral("mixer.set_many"), {{QStringLiteral("channels"), QJsonArray{ch(1)}},
+			{QStringLiteral("muted"), false}}).ok);
+
+		const ControlResult afterDepth = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(afterDepth.ok);
+		QVERIFY2(afterDepth.result.value(QStringLiteral("depth")).toInt() == depth,
+			"a no-op mixer.set_many must leave undo depth unchanged");
+	}
+
+	void setStripNoOpDoesNotEnterUndoHistory()
+	{
+		channel(1)->m_trimModel.setValue(0.f);
+		const ControlResult beforeDepth = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(beforeDepth.ok);
+		const int depth = beforeDepth.result.value(QStringLiteral("depth")).toInt();
+
+		QVERIFY(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(1)},
+			{QStringLiteral("trim_db"), 0.0}}).ok);
+
+		const ControlResult afterDepth = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(afterDepth.ok);
+		QVERIFY2(afterDepth.result.value(QStringLiteral("depth")).toInt() == depth,
+			"a no-op mixer.set_strip must leave undo depth unchanged");
+	}
+
 	void additiveSoloAddsToTheOthers()
 	{
 		QCOMPARE(run(QStringLiteral("mixer.solo_mode")).result.value(QStringLiteral("mode")).toString(), QStringLiteral("exclusive"));
