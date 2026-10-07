@@ -49,6 +49,7 @@
 #include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
 #include "Effect.h"
+#include "EffectControls.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
@@ -56,6 +57,50 @@
 
 using namespace lmms;
 using namespace revtest;
+
+namespace
+{
+
+Plugin::Descriptor oversizedSnapshotTestDescriptor{
+	"oversized-snapshot-test", "Oversized snapshot test", "", "", 1,
+	Plugin::Type::Effect, nullptr, nullptr, nullptr};
+
+class OversizedSnapshotTestControls final : public EffectControls
+{
+public:
+	explicit OversizedSnapshotTestControls(Effect* effect) : EffectControls(effect) {}
+
+	QString nodeName() const override { return QStringLiteral("OversizedSnapshotTestControls"); }
+	gui::EffectControlDialog* createView() override { return nullptr; }
+	int controlCount() override { return 0; }
+
+protected:
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+};
+
+class OversizedSnapshotTestEffect final : public Effect
+{
+public:
+	explicit OversizedSnapshotTestEffect(Model* parent) :
+		Effect(&oversizedSnapshotTestDescriptor, parent, nullptr), m_controls(this) {}
+
+	EffectControls* controls() override { return &m_controls; }
+
+	void saveSettings(QDomDocument& doc, QDomElement& element) override
+	{
+		Effect::saveSettings(doc, element);
+		element.setAttribute(QStringLiteral("payload"), QString(65537, QLatin1Char('x')));
+	}
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, f_cnt_t) override { return ProcessStatus::Continue; }
+
+private:
+	OversizedSnapshotTestControls m_controls;
+};
+
+} // namespace
 
 class ReversibilityUndoTest : public QObject
 {
@@ -434,6 +479,38 @@ private slots:
 			"reported SUCCESS (BUG-CTL-1)");
 		QCOMPARE(deviceCount(track), 0);
 		QVERIFY(run(QStringLiteral("track.list")).ok);
+	}
+
+
+	//! An over-limit unload must not advertise truncated XML as a restorable snapshot.
+	void unloadOverLimitSnapshotIsNotPresentedAsRestorableXml()
+	{
+		const QString track = addTrack();
+		QVERIFY(!track.isEmpty());
+		ControlTarget target; ControlResult error;
+		QVERIFY2(resolveControlTarget(track, &target, &error), qPrintable(error.errorMessage));
+
+		auto* effect = new OversizedSnapshotTestEffect(target.chain);
+		target.chain->appendEffect(effect);
+		const QString fx = QStringLiteral("fx-%1").arg(effect->id());
+		const QString xml = controlEffectStateXml(effect);
+		QVERIFY(xml.size() > 65536);
+		QDomDocument completeDocument;
+		QVERIFY(completeDocument.setContent(xml));
+
+		const ControlResult unloaded = run(QStringLiteral("plugin.unload"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), fx}});
+		QVERIFY2(unloaded.ok, qPrintable(unloaded.errorMessage));
+
+		const QJsonObject tx = stateOf(QStringLiteral("plugin.unload"));
+		const QJsonObject before = tx.value(QStringLiteral("before")).toObject();
+		QCOMPARE(before.value(QStringLiteral("state_truncated")).toBool(), true);
+		QVERIFY2(before.value(QStringLiteral("state_xml")).toString().isEmpty(),
+			"plugin.unload exposed truncated XML as a usable snapshot");
+		QCOMPARE(tx.value(QStringLiteral("reversible")).toBool(), false);
+		const QString note = tx.value(QStringLiteral("inverse")).toObject()
+			.value(QStringLiteral("args")).toObject().value(QStringLiteral("note")).toString();
+		QVERIFY(note.contains(QStringLiteral("no usable state snapshot")));
 	}
 
 
