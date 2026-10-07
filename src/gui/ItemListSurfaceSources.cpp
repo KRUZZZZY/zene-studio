@@ -167,9 +167,27 @@ public:
 	bool remove(const QList<int>& rows) override
 	{
 		if (rowCount() < 2) { refuse(tr("the comp's only segment cannot go")); return false; }
-		const int row = rows.first();
-		const CompSwipeStrip::Segment s = segment(row);
-		return comp(s.begin, s.end, segment(row > 0 ? row - 1 : row + 1).lane);
+		struct Edit
+		{
+			int begin;
+			int end;
+			int lane;
+		};
+		const std::vector<CompSwipeStrip::Segment>& segments = m_strip->segments();
+		std::vector<Edit> edits;
+		edits.reserve(static_cast<std::size_t>(rows.size()));
+		for (const int row : rows)
+		{
+			if (row < 0 || row >= static_cast<int>(segments.size())) { refuse(tr("choose a comp segment")); return false; }
+			const CompSwipeStrip::Segment& s = segments.at(static_cast<std::size_t>(row));
+			const int neighbour = row > 0 ? row - 1 : row + 1;
+			edits.push_back({s.begin, s.end, segments.at(static_cast<std::size_t>(neighbour)).lane});
+		}
+		for (const Edit& edit : edits)
+		{
+			if (!comp(edit.begin, edit.end, edit.lane)) { return false; }
+		}
+		return true;
 	}
 
 private:
