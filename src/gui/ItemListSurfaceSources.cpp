@@ -189,8 +189,7 @@ private:
 
 //! The arrangement's clips, track by track and by start: name, start and length. Selecting a row selects the clip
 //! (window.select, and in the arranger); start and length edits are clip.move and clip.resize; Insert adds a clip after
-//! the current one on its track (clip.add); Delete removes the current clip (clip.delete) - one at a time, so each is
-//! one undo step.
+//! the current one on its track (clip.add); Delete removes selected clips with one clip.delete and one undo step each.
 class ClipsSource : public ItemListSource
 {
 public:
@@ -254,7 +253,19 @@ public:
 
 	bool remove(const QList<int>& rows) override
 	{
-		return runAndLook(QStringLiteral("clip.delete"), {{QStringLiteral("clip"), rowId(rows.first())}});
+		if (rows.isEmpty()) { return false; }
+		QStringList ids;
+		for (const int row : rows)
+		{
+			if (row < 0 || row >= rowCount() || m_clips.at(row) == nullptr) { return false; }
+			ids.append(rowId(row));
+		}
+		for (const QString& id : ids)
+		{
+			if (!run(QStringLiteral("clip.delete"), {{QStringLiteral("clip"), id}})) { look(); return false; }
+		}
+		look();
+		return true;
 	}
 
 	bool tracksSelection() const override { return true; }
