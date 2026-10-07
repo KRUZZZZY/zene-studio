@@ -68,6 +68,31 @@ QJsonObject audioCell(int track, int scene)
 		{QStringLiteral("source"), QStringLiteral("loop%1.wav").arg(track)}};
 }
 
+QStringList& markerActionWarnings()
+{
+	static QStringList warnings;
+	return warnings;
+}
+
+void captureMarkerActionWarning(QtMsgType type, const QMessageLogContext&, const QString& message)
+{
+	if (type == QtWarningMsg) { markerActionWarnings().append(message); }
+}
+
+class MarkerActionWarningCapture
+{
+public:
+	MarkerActionWarningCapture()
+	{
+		m_previous = qInstallMessageHandler(&captureMarkerActionWarning);
+		markerActionWarnings().clear();
+	}
+	~MarkerActionWarningCapture() { qInstallMessageHandler(m_previous); }
+
+private:
+	QtMessageHandler m_previous = nullptr;
+};
+
 } // namespace
 
 class SessionPerformTest : public QObject
@@ -147,6 +172,45 @@ private slots:
 		QCOMPARE(markeractions::advance(300, true), 1);  // crossed again after the loop
 		QCOMPARE(markeractions::advance(400, false), 0);
 		QCOMPARE(ProjectMarkers::instance().markers().front().action, QStringLiteral("session.set_quantisation"));
+	}
+
+	void invalidMarkerActionArgumentsAreReported()
+	{
+		markeractions::advance(0, false);
+		const int id = ProjectMarkers::instance().add(10000, QStringLiteral("Bad action args"), QString());
+		QVERIFY(id > 0);
+		const auto setArgs = [id](const QString& args) {
+			const Marker* stored = ProjectMarkers::instance().find(id);
+			if (stored == nullptr) { return false; }
+			Marker marker = *stored;
+			marker.action = QStringLiteral("session.set_quantisation");
+			marker.args = args;
+			return ProjectMarkers::instance().replace(id, marker);
+		};
+		const auto crossMarker = [] {
+			QCOMPARE(markeractions::advance(9999, true), 0);
+			QCOMPARE(markeractions::advance(10000, true), 1);
+		};
+		MarkerActionWarningCapture warnings;
+
+		QVERIFY(setArgs(QStringLiteral("{")));
+		crossMarker();
+		QCOMPARE(markerActionWarnings().size(), 1);
+		QVERIFY(markerActionWarnings().front().contains(QStringLiteral("args JSON")));
+
+		markeractions::advance(0, false);
+		QVERIFY(setArgs(QStringLiteral("[]")));
+		crossMarker();
+		QCOMPARE(markerActionWarnings().size(), 2);
+		QVERIFY(markerActionWarnings().back().contains(QStringLiteral("JSON object")));
+
+		markeractions::advance(0, false);
+		QVERIFY(setArgs(QStringLiteral("{}")));
+		crossMarker();
+		QCOMPARE(markerActionWarnings().size(), 3);
+		QVERIFY(markerActionWarnings().back().contains(QStringLiteral("session.set_quantisation")));
+		QVERIFY(ProjectMarkers::instance().remove(id));
+		markeractions::advance(0, false);
 	}
 
 	//! 0.5.0 W2: a loop wrap runs the markers the pass crossed in its last stretch before the loop end (the

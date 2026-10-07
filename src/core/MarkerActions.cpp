@@ -23,8 +23,10 @@
  */
 #include "MarkerActions.h"
 
+#include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonParseError>
 #include <QPointer>
 #include <QTimer>
 #include <QVector>
@@ -167,6 +169,35 @@ void followJumps(Song* song)
 	seen() = countsNow(*song);
 }
 
+//! Runs one crossed marker action and reports malformed arguments or command refusals.
+void runMarkerAction(const Marker& marker)
+{
+	QJsonObject args;
+	if (!marker.args.isEmpty())
+	{
+		QJsonParseError parseError;
+		const QJsonDocument document = QJsonDocument::fromJson(marker.args.toUtf8(), &parseError);
+		if (parseError.error != QJsonParseError::NoError)
+		{
+			qWarning("marker action '%s' has invalid args JSON: %s",
+				qPrintable(marker.action), qPrintable(parseError.errorString()));
+			return;
+		}
+		if (!document.isObject())
+		{
+			qWarning("marker action '%s' args must be a JSON object", qPrintable(marker.action));
+			return;
+		}
+		args = document.object();
+	}
+
+	const ControlResult result = ControlRegistry::instance()->invoke(marker.action, args);
+	if (!result.ok)
+	{
+		qWarning("marker action '%s' failed: %s", qPrintable(marker.action), qPrintable(result.errorMessage));
+	}
+}
+
 } // namespace
 
 int advance(tick_t tick, bool playing)
@@ -186,7 +217,7 @@ int advance(tick_t tick, bool playing)
 	last = tick;
 	for (const Marker& marker : crossed)
 	{
-		ControlRegistry::instance()->invoke(marker.action, QJsonDocument::fromJson(marker.args.toUtf8()).object());
+		runMarkerAction(marker);
 	}
 	return static_cast<int>(crossed.size());
 }
