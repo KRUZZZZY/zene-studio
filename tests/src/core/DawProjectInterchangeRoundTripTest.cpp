@@ -393,6 +393,41 @@ private slots:
 		QCOMPARE(extracted.denominator, authored.denominator);
 	}
 
+	//! A Channel IDREF can be named by more than one track, so shared mixer
+	//! destinations survive the session-to-model conversion without loss.
+	void sharedMixerDestinationIsNotReportedLost()
+	{
+		Song* song = Engine::getSong();
+		Engine::mixer()->clear();
+
+		Track* first = Track::create(Track::Type::Instrument, song);
+		Track* second = Track::create(Track::Type::Instrument, song);
+		QVERIFY(first != nullptr);
+		QVERIFY(second != nullptr);
+		QVERIFY(first->mixerChannelModel() != nullptr);
+		QVERIFY(second->mixerChannelModel() != nullptr);
+		first->mixerChannelModel()->setValue(0);
+		second->mixerChannelModel()->setValue(0);
+
+		DawProjectLossReport loss;
+		const DawProjectModel exported = dawProjectModelFromSong(song, &loss);
+		QCOMPARE(exported.tracks.size(), 2);
+		QCOMPARE(exported.tracks[0].destinationChannelId, QStringLiteral("mixer0"));
+		QCOMPARE(exported.tracks[1].destinationChannelId, QStringLiteral("mixer0"));
+
+		const QString file = path(m_directory, QStringLiteral("shared-mixer.dawproject"));
+		DawProjectWriteReport writeReport;
+		QString error;
+		QVERIFY2(writeDawProject(file, exported, &writeReport, &error), qPrintable(error));
+		DawProjectModel readBack;
+		DawProjectReadReport readReport;
+		QVERIFY2(readDawProject(file, &readBack, &readReport, &error), qPrintable(error));
+		QCOMPARE(readBack.tracks.size(), 2);
+		QCOMPARE(readBack.tracks[0].destinationChannelId, QStringLiteral("mixer0"));
+		QCOMPARE(readBack.tracks[1].destinationChannelId, QStringLiteral("mixer0"));
+		QCOMPARE(loss.mixerSharingLost, 0);
+	}
+
 	//! Claim 3: the control command reads the file back and reports the model.
 	void theControlCommandReadsTheModelBack()
 	{

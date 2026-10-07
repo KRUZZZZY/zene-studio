@@ -355,8 +355,8 @@ that marker is published as-is, and no unverified claim is published without one
 - **The mixer model is separate strips.** LMMS' MixerChannel is a summing strip several tracks may feed, not
   a property of any one track, so the format's bare `<Channel>` elements carry the mixer strips and each
   track's `<Channel destination="...">` names the strip it feeds. The one routing fact the format CAN
-  express is preserved; the wider MixerRoute graph, pre/post-fader flags and which tracks share a strip are
-  not (LOSSY #7).
+  express is preserved, including multiple tracks sharing one strip; the wider MixerRoute graph and
+  pre/post-fader flags are not (LOSSY #7).
 - **UI absence — one line: DAWproject import / export is drivable through the socket, not from the
   interface.** Nothing in `src/gui/` writes or reads a DAWproject container. `docs/KNOWN-LIMITATIONS.md`
   carries the same sentence.

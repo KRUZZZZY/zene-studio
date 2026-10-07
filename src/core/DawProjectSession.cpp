@@ -61,7 +61,6 @@
 #include <QString>
 
 #include <cmath>
-#include <map>
 
 #include "lmmsversion.h"
 
@@ -258,9 +257,8 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 		model.mixerChannels.append(entry);
 	}
 
-	// Which mixer strips more than one track feeds: the format joins by a single
-	// IDREF, so the SHARING is what cannot be carried (LOSSY #7).
-	std::map<int, int> channelUse;
+	// A track's destination is an IDREF, so several tracks can retain the same
+	// strip reference without losing their shared mixer assignment.
 
 	for (Track* track : song->tracks())
 	{
@@ -290,9 +288,12 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 				entry.destinationChannelId =
 					model.mixerChannels[entry.mixerChannelIndex].id;
 			}
-			channelUse[entry.mixerChannelIndex]++;
 		}
-		else { local.mixerSharingLost++; }
+		else
+		{
+			// A track without a mixer model cannot emit a destination IDREF.
+			local.mixerSharingLost++;
+		}
 
 		if (FloatModel* panning = panningModelForTrack(track))
 		{
@@ -350,15 +351,6 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 
 		local.folderChildrenLost += lostFolderChildren(track);
 		model.tracks.append(entry);
-	}
-
-	// Tracks sharing one mixer channel: the count of the tracks beyond the first
-	// on each channel. A channel no track is assigned to is not a loss (it is a
-	// bus or an unused strip, and the format can express it as a bare Channel).
-	for (const auto& [index, count] : channelUse)
-	{
-		Q_UNUSED(index);
-		if (count > 1) { local.mixerSharingLost += count - 1; }
 	}
 
 	// LMMS' mixer routes other than the implicit "every channel sums into
