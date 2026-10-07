@@ -1,33 +1,47 @@
-# Cluster new-p8-8 — FIXED
+# cluster new-p8-8
 
-The finding is real. `ChordDetect::detectChords()` reports note positions local to the MIDI clip, while the chord track stores song ticks. `writeDetectedMatch()` now adds the clip's arrangement start before storing each event at [ControlCommandsChordEdit.cpp:243](../../src/core/ControlCommandsChordEdit.cpp#L243). The writer passes that start at line 282. The regression at [ControlChordCommandsTest.cpp:398](../../tests/src/core/ControlChordCommandsTest.cpp#L398) moves a two-chord clip to tick 384 and checks for chord events at 384 and 576.
+Verdict: **FIXED**
 
-Before the fix, the regression failed with `events[0].pos` actual 0, expected 384. Reversing only the production patch reproduced the same failure; restoring the patch made it pass.
+Chord detection returned clip-local match positions, and the writer added the
+clip start without its time offset. A left-trimmed clip therefore wrote events
+at the trimmed edge instead of at the notes' effective song origin. The writer
+now supplies `startPosition() + startTimeOffset()` as the origin.
 
 ## Evidence
 
-Commands below were run from the worktree root unless marked `build/tests`. Build and test output was redirected to new logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs`.
+- [`src/core/ControlCommandsChordEdit.cpp:239`](../../src/core/ControlCommandsChordEdit.cpp#L239)
+  adds the supplied origin to `match.pos`; lines 282-283 now pass the effective
+  MIDI note origin.
+- [`tests/src/core/ControlChordCommandsTest.cpp:397`](../../tests/src/core/ControlChordCommandsTest.cpp#L397)
+  retains the moved-clip regression (events at 384 and 576).
+- [`tests/src/core/ControlChordCommandsTest.cpp:419`](../../tests/src/core/ControlChordCommandsTest.cpp#L419)
+  trims a clip from 384 to 480, verifies its nonzero offset is -96, then checks
+  that detected events remain at 384 and 576.
 
-| Check | Exact command | Exit |
+## Command evidence
+
+The captured exit code is the value printed by `result=$?; echo EXIT=$result`.
+The offset regression failed with the production patch removed and passed after
+the identical patch was restored.
+
+| Purpose | Exact command | Exit |
 |---|---|---:|
-| Pre-fix build | `cmake --build build --target zene ControlChordCommandsTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/build-1.log 2>&1; echo EXIT=$?` | 0 |
-| RED, run from `build/tests` | `ctest -R '^ControlChordCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/test-1.log 2>&1; echo EXIT=$?` | 8 |
-| Fixed focused build | `cmake --build build --target zene ControlChordCommandsTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/build-2.log 2>&1; echo EXIT=$?` | 0 |
-| GREEN, run from `build/tests` | `ctest -R '^ControlChordCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/test-2.log 2>&1; echo EXIT=$?` | 0 |
-| Remove production fix for inversion proof | `git diff -- src/core/ControlCommandsChordEdit.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/fix.patch; echo EXIT=$?` | 0 |
-| Build without fix | `cmake --build build --target zene ControlChordCommandsTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/build-3.log 2>&1; echo EXIT=$?` | 0 |
-| RED without fix, run from `build/tests` | `ctest -R '^ControlChordCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/test-3.log 2>&1; echo EXIT=$?` | 8 |
-| Restore production fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/fix.patch; echo EXIT=$?` | 0 |
-| Rebuild restored fix | `cmake --build build --target zene ControlChordCommandsTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/build-4.log 2>&1; echo EXIT=$?` | 0 |
-| GREEN after restoring fix, run from `build/tests` | `ctest -R '^ControlChordCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/test-4.log 2>&1; echo EXIT=$?` | 0 |
-| Build all chord-family targets | `cmake --build build --target zene ChordTrackTest ChordDetectTest ChordProgressionTest ControlChordCommandsTest ControlChordWriteTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/build-5.log 2>&1; echo EXIT=$?` | 0 |
-| Affected family, run from `build/tests` | `ctest -R '^(ChordTrackTest|ChordDetectTest|ChordProgressionTest|ControlChordCommandsTest|ControlChordWriteTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/test-5.log 2>&1; echo EXIT=$?` | 0 |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/gate-1.log 2>&1; echo EXIT=$?` | 0 |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r1/logs/gate-2.log 2>&1; echo EXIT=$?` | 0 |
+| Build app and focused test with old code | `cmake --build build --target zene ControlChordCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/build-2.log 2>&1; result=$?; echo EXIT=$result` | 0 |
+| RED: offset regression with old code | `./ControlChordCommandsTest theDetectionAddsTheClipTimeOffset > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/test-2.log 2>&1; result=$?; echo EXIT=$result` (from `build/tests`) | 1 |
+| Remove production patch for proof | `git diff -- src/core/ControlCommandsChordEdit.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/fix.patch; result=$?; echo EXIT=$result` | 0 |
+| Rebuild with patch removed | `cmake --build build --target zene ControlChordCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/build-3.log 2>&1; result=$?; echo EXIT=$result` | 0 |
+| RED: required fix-removal proof | `./ControlChordCommandsTest theDetectionAddsTheClipTimeOffset > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/test-3.log 2>&1; result=$?; echo EXIT=$result` (from `build/tests`) | 1 |
+| Restore production patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/fix.patch; result=$?; echo EXIT=$result` | 0 |
+| Rebuild with patch restored | `cmake --build build --target zene ControlChordCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/build-4.log 2>&1; result=$?; echo EXIT=$result` | 0 |
+| GREEN: same offset regression | `./ControlChordCommandsTest theDetectionAddsTheClipTimeOffset > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/test-4.log 2>&1; result=$?; echo EXIT=$result` (from `build/tests`) | 0 |
+| Final build of app and all five chord-family targets | `cmake --build build --target zene ChordTrackTest ChordDetectTest ChordProgressionTest ControlChordCommandsTest ControlChordWriteTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/build-5.log 2>&1; result=$?; echo EXIT=$result` | 0 |
+| Final offset regression | `./ControlChordCommandsTest theDetectionAddsTheClipTimeOffset > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/test-5.log 2>&1; result=$?; echo EXIT=$result` (from `build/tests`) | 0 |
+| Retained moved-clip regression | `./ControlChordCommandsTest theDetectionAddsTheClipArrangementPosition > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/test-6.log 2>&1; result=$?; echo EXIT=$result` (from `build/tests`) | 0 |
+| Chord-family tests | `ctest -R 'ChordTrackTest|ChordDetectTest|ChordProgressionTest|ControlChordCommandsTest|ControlChordWriteTest' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/test-7.log 2>&1; result=$?; echo EXIT=$result` (from `build/tests`) | 0; **5/5 test executables passed** |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/gate-1.log 2>&1; result=$?; echo EXIT=$result` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-8.r2/logs/gate-2.log 2>&1; result=$?; echo EXIT=$result` | 0 |
 
-The affected chord family ran **5 CTest tests; 5 passed**. Both required gates passed.
-
-## Files committed
+## Files in the fix commit
 
 - `src/core/ControlCommandsChordEdit.cpp`
 - `tests/src/core/ControlChordCommandsTest.cpp`

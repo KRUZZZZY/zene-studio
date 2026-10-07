@@ -279,7 +279,8 @@ ControlResult chordDetectToTrack(const QJsonObject& args)
 		// A slice with no name is a real answer (the vocabulary has no entry for
 		// it) and a chord-track event cannot be nameless, so it is counted and
 		// not written - reported as `skipped`, never silently dropped.
-		if (writeDetectedMatch(track, match, clip->startPosition().getTicks())) { ++written; }
+		if (writeDetectedMatch(track, match, clip->startPosition().getTicks()
+			+ clip->startTimeOffset().getTicks())) { ++written; }
 		else { ++skipped; }
 	}
 	if (written == 0)
