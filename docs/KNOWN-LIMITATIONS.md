@@ -2333,3 +2333,56 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - Theme changes apply at the next start, and every reply and the window say so.
 - The plug-in scan, `render.render`, `render.stems` and `browser.peaks` stay synchronous and are not in the task area.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
+
+## The allocation probe: what a "zero allocations" test proves, and what it does not (2026-10-07)
+
+`tests/src/core/AllocationProbe.h` is the runtime half of the realtime rule: a test arms
+`lmms::test::tlCountAllocations` around an audio-thread call and asserts that
+`tlAllocationCount` stayed at 0. Until 2026-10-07 that assertion was **vacuous for library
+code**. The probe's replacement `operator new`/`new[]`/`delete`/`delete[]` were declared
+`inline`, which the standard forbids for a replacement allocation function
+([replacement.functions]); GCC then emitted no definition at all, so `nm -C` on every test
+binary showed only `U operator new(unsigned long)@GLIBCXX_3.4`. Allocations in the test's own
+file were counted (the inline body was visible there), but every allocation inside lmmsobjs,
+the code each test exists to check, went to libstdc++ and was never seen.
+
+**What it guarantees now.** The replacement functions live in `tests/src/core/AllocationProbe.cpp`,
+an ordinary (non-inline) definition compiled once and linked into every test whose source
+includes the header (`lmms_link_allocation_probe` in `tests/CMakeLists.txt`, also used by
+`Vst3InstrumentTest`, which compiles several translation units). One definition in the
+executable replaces `operator new` for the whole process: the test's file, the statically linked
+lmmsobjs, Qt's own `new` calls and any plugin module the test loads. Every form is replaced
+(plain, array, `nothrow`, `align_val_t`, sized delete). The counters are defined in that file
+too, so a test that includes the header without the probe linked fails to link instead of
+quietly counting nothing (that check caught `WarpMarkersTest` and the three `SampleClip*`
+tests, which spell the include `"../core/AllocationProbe.h"`).
+
+Evidence, all from the `050/feat-alloc-probe-fix` lane:
+- `AllocationProbeTest::countsAnAllocationMadeInLibraryCode` (an allocation inside
+  `RoutingGraph::createNode()`, compiled into lmmsobjs) **failed on the old probe**
+  ("counted 0") and passes on the fixed one. `nm -C` on all 41 probe binaries now shows
+  `T operator new(unsigned long)`; before the fix, none of the 40 did.
+- A positive control on two real tests: one `::operator new(16)` injected temporarily into
+  `MasterLoudnessTap::feed()` and `SessionScheduler::processAudio()`. On the old probe
+  `MeterTapTest` and `SessionSchedulerTest` still **passed**. On the fixed probe they fail
+  (`feedingAnArmedTapAllocatesNothing`, `audioThreadPathDoesNotAllocate`: "audio-thread path
+  allocated 20000 times", `commandsCrossThreadsWithoutLoss`). The injection was reverted.
+- All 40 tests that include the probe were rebuilt and re-run on the fixed probe: **40/40 pass**,
+  the same as on the old one. No audio-thread path these tests cover allocates through
+  `operator new`, so the lane has no allocation fixes to list. That is now a measured result
+  rather than an unchecked assumption.
+
+**What it still does not prove.**
+- It counts `operator new` only. `malloc`, `realloc` and Qt's implicitly shared containers
+  (`QString`, `QByteArray` and `QList` allocate through `QArrayData` with `malloc`) are
+  **not counted**. A `QString` built on the audio thread passes a probe test. The static sweep
+  (`docs/RT-SAFETY-SWEEP.md`) is what looks for those.
+- It counts per thread, only on the thread that armed it and only inside the window. A
+  path that hands work to another thread, or allocates on its first call before the window opens,
+  is not measured.
+- Locks, system calls and logging are not measured; it is an allocation counter, not a
+  realtime sanitizer (that is the dispatch-only RTSan job, `lmms::RealtimeScope`).
+- It proves the paths that the 40 tests drive, nothing more. Coverage of the audio thread is
+  whatever those tests call.
+- `tests/src/core/LinkRealtimeProbe.h` on `050/feat-link-interop` is a second, correct
+  probe written for the same reason. Once both lanes are merged, it can be folded into this one.
