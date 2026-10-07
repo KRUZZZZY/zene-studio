@@ -881,6 +881,12 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	ENDIF()
 ENDIF()
 
+# Ableton Link (WF-051, docs/LINK-SYNC.md): the vendored library and its wrapper.
+# Only with the library in the build (WANT_ABLETON_LINK); RUN_SERIAL below.
+IF(LMMS_HAVE_ABLETON_LINK)
+	LIST(APPEND LMMS_TESTS src/core/AbletonLinkSessionTest.cpp)
+ENDIF()
+
 # Peer-to-peer collaboration (0.5.0 F6): the invite, the TLS-PSK transport and the port-mapping
 # codecs exist only with Qt Network.
 IF(ZENE_HAVE_COLLAB)
@@ -3740,6 +3746,13 @@ set_tests_properties(SampleClipStretchTest SampleClipRubberBandTest TakeLaneComp
 # Qt platform plugin even though nothing opens a window.
 set_tests_properties(ControlLinkCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Ableton Link joins the multicast group 224.76.78.75:20808, which is shared state by
+# design: a Link participant in a concurrently running test is a legitimate peer, so
+# these run alone (the same reason ControlLinkSync is RUN_SERIAL).
+IF(LMMS_HAVE_ABLETON_LINK)
+	set_tests_properties(AbletonLinkSessionTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE)
+ENDIF()
 # The browser.* group: BrowserCatalogTest drives libsndfile and the config
 # manager's working directory, ControlBrowserCommandsTest constructs a full
 # Engine and drives project-free commands through the registry. Neither opens a

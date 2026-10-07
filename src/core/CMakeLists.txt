@@ -1,3 +1,12 @@
+# Ableton Link (WF-051, docs/LINK-SYNC.md). With the vendored library
+# (LMMS_HAVE_ABLETON_LINK), src/core/AbletonLinkSession.cpp is compiled as its own
+# static library in src/CMakeLists.txt so Link's asio configuration reaches that
+# one translation unit only; without it, this stub implements the same header
+# (include/AbletonLinkSession.h) and reports the library absent.
+IF(NOT LMMS_HAVE_ABLETON_LINK)
+	SET(LMMS_ABLETON_LINK_STUB_SRCS core/AbletonLinkSessionStub.cpp)
+ENDIF()
+
 # Offline stem separation (opt-in, see doc/STEM-SPLIT.md). The job manager and
 # track builder are pure Qt and always available when the feature is enabled;
 # the C++ ONNX Runtime backend is compiled only when the runtime was found.
@@ -1199,6 +1208,7 @@ set(LMMS_SRCS
 
 	${LMMS_STEM_SRCS}
 	${LMMS_SESSION_SRCS}
+	${LMMS_ABLETON_LINK_STUB_SRCS}
 
 	${LMMS_TELEMETRY_SRCS}
 	${LMMS_COLLAB_SRCS}
