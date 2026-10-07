@@ -206,7 +206,7 @@ void setListenToCue(bool toCue) { s_listenToCue = toCue; }
 bool listenSparesMain()
 {
 	return s_listenToCue && std::any_of(s_cueMasters.begin(), s_cueMasters.end(),
-		[](const CueMaster& cue) { return cue.followListen && !cue.output.none(); });
+		[](const CueMaster& cue) { return cue.followListen && cue.level > 0.f && !cue.output.none(); });
 }
 
 void processInsert(MixerChannel& channel, f_cnt_t frames)

@@ -225,8 +225,17 @@ private slots:
 		mixerlisten::setListening(2, true);
 		const std::vector<SampleFrame> spared = period(mixer);
 		for (std::size_t f = 0; f < mix.size(); ++f) { QCOMPARE(spared[f][0], mix[f][0]); }  // the main output keeps the mix
+		QVERIFY(ok(QStringLiteral("mixer.cue_master"), {{QStringLiteral("cue"), QStringLiteral("A")}, {QStringLiteral("level"), 0.0}}));
+		const std::vector<SampleFrame> silentCue = period(mixer);
+		bool mainCarriesListen = true;
+		for (f_cnt_t f = 0; f < static_cast<f_cnt_t>(silentCue.size()); ++f)
+		{
+			if (std::abs(silentCue[f][0] - varying(f) * 0.5f) >= 1e-5f) { mainCarriesListen = false; break; }
+		}
+		QVERIFY(ok(QStringLiteral("mixer.cue_master"), {{QStringLiteral("cue"), QStringLiteral("A")}, {QStringLiteral("level"), 0.5}}));
 		mixerlisten::clear();
 		QVERIFY(ok(QStringLiteral("mixer.cue_master"), {{QStringLiteral("listen_to"), QStringLiteral("main")}}));
+		QVERIFY2(mainCarriesListen, "a silent following cue must leave the listened signal on the main output");
 	}
 
 	void theRoutedRenderAllocatesNothing()
