@@ -188,6 +188,9 @@ set(LMMS_TESTS
 	# argument contract is proved without running a render. The end-to-end stem
 	# export is the ControlStemExportVerb ctest below, which drives the real binary.
 	src/core/ControlVerbInverseTest.cpp
+	# record.arm_track writes a take outside the project journal: feed a real
+	# interleaved block, then prove control.undo refuses and names the retained file.
+	src/core/ControlRecordingRoutesTest.cpp
 	# The destructive waveform editor's first slice (board card #706, group
 	# sample.*): the five ids with their schemas and their A16 contract rows,
 	# every generator and baker proved the A16 way - invoke through the
@@ -3717,6 +3720,10 @@ set_tests_properties(ControlEditCommandsTest PROPERTIES
 # control.undo, and render.stems' refusals touch the filesystem - so this wants a
 # real Qt platform plugin even though nothing opens a window.
 set_tests_properties(ControlVerbInverseTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The recording route command test starts the recorder and checks its typed
+# undo refusal; it needs a Qt platform even though it opens no window.
+set_tests_properties(ControlRecordingRoutesTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The sample.* first slice (#706) bakes real SampleClip buffers on a real
 # Engine and undoes them through control.undo, which wants a real Qt platform

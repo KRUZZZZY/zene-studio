@@ -197,10 +197,10 @@ ControlResult armTrack(const QJsonObject& args)
 	result.insert(QStringLiteral("input_frames_staged_at_arm"),
 		static_cast<qint64>(Engine::audioEngine() != nullptr
 			? Engine::audioEngine()->inputFramesStaged() : 0u));
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("route"), route);
 	result.insert(QStringLiteral("__transaction"),
-		commandTransaction(before, QStringLiteral("record.disarm_track"), inverseArgs));
+		transactionPayload(before, QString(), QJsonObject(), false,
+			QStringLiteral("none: explicitly call record.disarm_track to stop writing; the take "
+				"file remains at the returned path and can be kept or deleted manually")));
 	return ControlResult::success(result);
 }
 
@@ -340,8 +340,9 @@ void registerArmTrack(ControlRegistry& registry)
 		"absolute and defaults to zene-take-route<N>.wav beside this instance's recovery file; "
 		"'sample_rate', when given, must be the engine's rate (a take records at the rate the "
 		"engine runs). "
-		"Reversible: the recorded inverse is record.disarm_track, which stops the capture and "
-		"retires the journal; the take file itself is left on disk, like any recording you keep.");
+		"Not reversible: control.undo refuses this arm because the take file is outside the "
+		"project journal. Call record.disarm_track to stop writing; the take remains at the "
+		"returned file path and can be kept or deleted manually.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("route"), integerProperty(0, 1024)},
 		{QStringLiteral("file"), stringProperty()},
@@ -364,7 +365,8 @@ void registerDisarmTrack(ControlRegistry& registry)
 		"joined, the WAV is closed, and the take journal is RETIRED - a clean stop leaves no "
 		"journal, which is what makes 'there is a journal' and 'the capture died' the same fact "
 		"(include/RecordingJournal.h). The take file stays on disk. This is record.arm_track's "
-		"recorded inverse, so control.undo after an arm dispatches it. Not reversible itself: "
+		"explicit stop operation, not its undo inverse, since the WAV remains after a clean stop. "
+		"Not reversible itself: "
 		"re-arming writes a NEW take rather than restoring this one, and there is nothing the "
 		"engine could hand back.");
 	cmd.argsSchema = routeSchema();
