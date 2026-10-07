@@ -41,6 +41,7 @@
 #include "Mixer.h"
 #include "MixerSnapshots.h"
 #include "ProjectInfo.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -112,6 +113,26 @@ private slots:
 			ControlErrorKind::NotFound);
 		QCOMPARE(run(QStringLiteral("mixer.snapshot_recall"), {{QStringLiteral("name"), QStringLiteral("Verse")},
 			{QStringLiteral("parts"), QJsonArray{QStringLiteral("eq")}}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	void aSnapshotRejectsAnEmptyPartsListWithoutAnUndoStep()
+	{
+		const QString name = QStringLiteral("Empty parts");
+		MixerSnapshots::instance().remove(name);
+		QVERIFY(MixerSnapshots::instance().store(MixerSnapshots::capture(name)));
+		const int depthBefore = Engine::projectJournal()->undoDepth();
+		const bool modifiedBefore = Engine::getSong()->isModified();
+
+		const ControlResult recalled = run(QStringLiteral("mixer.snapshot_recall"), {{QStringLiteral("name"), name},
+			{QStringLiteral("parts"), QJsonArray{}}});
+		const ControlErrorKind errorKind = recalled.errorKind;
+		const int depthAfter = Engine::projectJournal()->undoDepth();
+		const bool modifiedAfter = Engine::getSong()->isModified();
+		QVERIFY(MixerSnapshots::instance().remove(name));
+
+		QCOMPARE(errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(depthAfter, depthBefore);
+		QCOMPARE(modifiedAfter, modifiedBefore);
 	}
 
 	void aSnapshotSurvivesTheProjectFile()
