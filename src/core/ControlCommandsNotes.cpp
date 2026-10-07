@@ -62,7 +62,7 @@ QJsonObject noteArgsOf(const QJsonObject& args, bool withVelocity)
 	inverseArgs.insert(QStringLiteral("key"), args.value(QStringLiteral("key")).toInt());
 	inverseArgs.insert(QStringLiteral("position"), args.value(QStringLiteral("position")).toInt());
 	inverseArgs.insert(QStringLiteral("length"), args.value(QStringLiteral("length")).toInt());
-	if (withVelocity) { inverseArgs.insert(QStringLiteral("velocity"), args.value(QStringLiteral("velocity")).toInt()); }
+	if (withVelocity) { inverseArgs.insert(QStringLiteral("velocity"), args.value(QStringLiteral("velocity")).toInt(DefaultVolume)); }
 	return inverseArgs;
 }
 
