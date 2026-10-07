@@ -67,3 +67,30 @@ The `fff` grep tool was not exposed in this environment. I searched the logs wit
 - `tests/src/core/ReversibilityUndoTest.cpp`
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p8-27.md`
+
+## Luna QA round 3
+
+Verdict: **FIXED**. The remaining review issue was documentation-only: the two `plugin.unload`
+fallback rows at `docs/A16-REVERSIBILITY.md:119` and `:374` implied that every captured state could
+be restored manually. Both now limit `plugin.state_load` to an untruncated snapshot and state that
+an over-limit snapshot returns empty `state_xml`, sets `state_truncated=true`, and cannot restore
+the removed device's state.
+
+The runtime implementation and regression are unchanged from round 2, whose red/green and
+negative-control evidence is recorded above. This round rebuilt the app and test target, then ran
+the affected CTest family (one registered CTest test, 1/1 executed and passed). Build, test, and
+gate logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-27.r3/logs`.
+
+| Stage | Command | Exit | Result |
+|---|---|---:|---|
+| Prior regression RED (round 2) | `ctest -R ReversibilityUndoTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-27.r2/logs/test-1.log 2>&1` | 8 | The description assertion failed before the round 2 wording fix; one CTest target. |
+| Prior regression GREEN (round 2) | `ctest -R ReversibilityUndoTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-27.r2/logs/test-2.log 2>&1` | 0 | The same CTest target passed after the round 2 wording fix. |
+| Build | `cmake --build build --target zene ReversibilityUndoTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-27.r3/logs/build-1.log 2>&1` | 0 | Rebuilt `zene` and `ReversibilityUndoTest`. |
+| Targeted CTest | `ctest -R ReversibilityUndoTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-27.r3/logs/test-1.log 2>&1` | 0 | 1/1 affected-family CTest test passed. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-27.r3/logs/complexity-1.log 2>&1` | 0 | Passed. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-27.r3/logs/file-length-1.log 2>&1` | 0 | Passed. |
+
+## Round 3 files committed
+
+- `docs/A16-REVERSIBILITY.md`
+- `docs/qwen-fixes-2026-10/cluster-new-p8-27.md`
