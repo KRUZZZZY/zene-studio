@@ -265,6 +265,28 @@ private slots:
 		QCOMPARE(run(QStringLiteral("transport.groove"), {{QStringLiteral("swing"), 0.9}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	void perNoteLyricsRequireText()
+	{
+		Note* note = oneNote();
+		const QString clip = control::clipIdOf(m_clip);
+		QVERIFY(run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip}, {QStringLiteral("text"), QStringLiteral("original")}}).ok);
+		const ControlResult result = run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip},
+			{QStringLiteral("lyrics"), QJsonArray{QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)}}}}});
+		QCOMPARE(lyricText(note->conditions().lyric), QStringLiteral("original"));
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	void perNoteLyricsRequireStringText()
+	{
+		Note* note = oneNote();
+		const QString clip = control::clipIdOf(m_clip);
+		QVERIFY(run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip}, {QStringLiteral("text"), QStringLiteral("original")}}).ok);
+		const ControlResult result = run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip},
+			{QStringLiteral("lyrics"), QJsonArray{QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)}, {QStringLiteral("text"), 42}}}}});
+		QCOMPARE(lyricText(note->conditions().lyric), QStringLiteral("original"));
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
 	void lyricsAndGroups()
 	{
 		oneNote();
