@@ -625,6 +625,41 @@ private slots:
 		QVERIFY(mixer->mixerChannel(a)->m_muteModel.value() == false);
 		mixer->mixerChannel(a)->m_soloModel.setValue(false);
 	}
+
+	// The master (num="0") is a real channel element. Rejecting a non-positive
+	// num must not skip it: a saved master with nondefault state has to come
+	// back with that state. Only a negative number is refused.
+	void aNonDefaultMasterSurvivesReload()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		mixer->clear();
+
+		static const char* kMasterXml =
+			"<mixer>\n"
+			"  <mixerchannel num=\"0\" muted=\"1\" volume=\"0.5\" pan=\"-0.5\" name=\"Mix\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel num=\"-1\" muted=\"0\" volume=\"1\" name=\"Ghost\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"</mixer>\n";
+
+		QDomDocument doc;
+		QDomElement root;
+		QVERIFY2(parseMixerElement(kMasterXml, doc, root), "the fixture is not valid XML");
+		mixer->loadSettings(root);
+
+		QCOMPARE(mixer->numChannels(), 1);
+		MixerChannel* master = mixer->mixerChannel(0);
+		QVERIFY(master != nullptr);
+		QCOMPARE(master->m_name, QString("Mix"));
+		QVERIFY2(qAbs(master->m_volumeModel.value() - 0.5f) < 1e-4f,
+			qPrintable(QString("master volume %1, expected 0.5").arg(master->m_volumeModel.value())));
+		QVERIFY2(qAbs(master->m_panModel.value() + 0.5f) < 1e-4f,
+			qPrintable(QString("master pan %1, expected -0.5").arg(master->m_panModel.value())));
+		QVERIFY2(master->m_muteModel.value(), "master mute did not survive the load");
+	}
 };
 
 QTEST_GUILESS_MAIN(MixerRoutingBackwardCompatTest)

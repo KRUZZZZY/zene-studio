@@ -2523,9 +2523,10 @@ void Mixer::loadSettings( const QDomElement & _this )
 
 		// A channel element whose `num` is not a channel index describes
 		// nothing this mixer can address: m_mixerChannels[num] would read
-		// outside the vector, and the master is created by clear(). Such an
-		// element is skipped whole, exactly as a foreign element is.
-		if( num <= 0 )
+		// outside the vector. Such an element is skipped whole, exactly as a
+		// foreign element is. Zero is the master, a real channel that clear()
+		// creates, so its saved state must still load.
+		if( num < 0 )
 		{
 			node = node.nextSibling();
 			continue;
