@@ -119,6 +119,14 @@ bool isWanService(const QString& type)
 	return type.contains(QLatin1String(":service:WANIPConnection:")) || type.contains(QLatin1String(":service:WANPPPConnection:"));
 }
 
+bool isRouterHttpUrl(const QUrl& url, const QUrl& location)
+{
+	return url.isValid() && location.isValid() && !location.host().isEmpty()
+		&& url.scheme().compare(QLatin1String("http"), Qt::CaseInsensitive) == 0
+		&& url.scheme().compare(location.scheme(), Qt::CaseInsensitive) == 0
+		&& url.host().compare(location.host(), Qt::CaseInsensitive) == 0;
+}
+
 struct DescriptionScan
 {
 	QString urlBase;
@@ -280,7 +288,9 @@ IgdService parseIgdDescription(const QByteArray& xml, const QUrl& location)
 	}
 	if (scan.best.serviceType.isEmpty()) { return IgdService(); }
 	const QUrl base = scan.urlBase.isEmpty() ? location : QUrl(scan.urlBase);
-	scan.best.controlUrl = base.resolved(QUrl(scan.bestControl));
+	const QUrl controlUrl = base.resolved(QUrl(scan.bestControl));
+	if (!isRouterHttpUrl(controlUrl, location)) { return IgdService(); }
+	scan.best.controlUrl = controlUrl;
 	return scan.best;
 }
 
