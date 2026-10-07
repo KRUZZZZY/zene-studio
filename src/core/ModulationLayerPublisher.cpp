@@ -37,6 +37,29 @@
 namespace lmms
 {
 
+namespace
+{
+
+void removeUnfollowedVoices(ModulationVoices& voices,
+	const std::array<std::atomic<int>, ModulationLayer::MaxModulators>& triggerTrack,
+	const std::array<std::atomic<bool>, ModulationLayer::MaxModulators>& perVoice)
+{
+	for (int slot = 0; slot < ModulationVoices::VoiceCount; ++slot)
+	{
+		ModulationVoice voice;
+		if (!voices.voice(slot, &voice)) { continue; }
+		bool followed = false;
+		for (std::size_t m = 0; m < triggerTrack.size() && !followed; ++m)
+		{
+			followed = perVoice[m].load(std::memory_order_relaxed)
+				&& triggerTrack[m].load(std::memory_order_relaxed) == voice.track;
+		}
+		if (!followed) { voices.noteOff(voice.track, voice.channel, voice.key); }
+	}
+}
+
+} // namespace
+
 ModulationLayerPublisher::ModulationLayerPublisher()
 {
 	// -1 for both, never the zero a bare atomic starts at: 0 is a time, and can be a track's id.
@@ -69,6 +92,7 @@ void ModulationLayerPublisher::publishTriggers()
 	m_anyTrigger.store(any, std::memory_order_release);
 	m_anyPerVoice.store(anyPerVoice, std::memory_order_release);
 	if (!anyPerVoice) { m_voices.clear(); }
+	else { removeUnfollowedVoices(m_voices, m_triggerTrack, m_perVoice); }
 }
 
 void ModulationLayerPublisher::voiceChanged(int trackId, bool on, int channel, int key, f_cnt_t offset) noexcept

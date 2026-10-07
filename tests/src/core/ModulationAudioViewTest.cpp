@@ -180,6 +180,40 @@ private slots:
 		QVERIFY(!publisher.hasLayer());
 	}
 
+	void voicesFromTracksNoLongerFollowedAreDiscarded()
+	{
+		ModulationLayerPublisher publisher;
+		auto publishTriggers = [&publisher](int firstTrack) {
+			publisher.edit([firstTrack](ModulationLayer&, ModulationRuntime& runtime) {
+				runtime = ModulationRuntime{};
+				runtime.sourceCount = 2;
+				runtime.sources[0].triggerTrack = firstTrack;
+				runtime.sources[0].perVoice = true;
+				runtime.sources[1].triggerTrack = 22;
+				runtime.sources[1].perVoice = true;
+				return true;
+			});
+		};
+
+		publishTriggers(11);
+		publisher.voiceChanged(11, true, 0, 60, 0);
+		publisher.voiceChanged(22, true, 0, 62, 0);
+		QCOMPARE(publisher.voices().activeCount(), 2);
+
+		publishTriggers(33);
+		publisher.voiceChanged(11, false, 0, 60, 0);  // No longer followed, so this note-off is ignored.
+		publishTriggers(11);
+
+		bool staleVoice = false;
+		for (int slot = 0; slot < ModulationVoices::VoiceCount; ++slot)
+		{
+			ModulationVoice voice;
+			staleVoice = staleVoice || (publisher.voices().voice(slot, &voice) && voice.track == 11);
+		}
+		QVERIFY(!staleVoice);
+		QCOMPARE(publisher.voices().activeCount(), 1);
+	}
+
 	void aBlockThroughTheViewAllocatesNothing()
 	{
 		ModulationLayerPublisher publisher;
