@@ -194,6 +194,19 @@ bool readJitter(const QJsonObject& args, const QString& key, double minimum, dou
 		return false;
 	}
 	const double number = value.toDouble();
+	// NaN and the infinities pass the schema's "number" type check (isDouble is true
+	// for all three) and every range comparison below (each comparison with NaN is
+	// false), so they would reach the roll, whose `> 0` guards then skip the edits
+	// while the handler still checkpoints and answers success - "I edited nothing"
+	// reported as an edit. A jitter this engine cannot mean is refused, typed.
+	if (!std::isfinite(number))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		 QStringLiteral("'%1' is %2, not a finite number: the roll is a fraction of what the note "
+				"already carries, and a non-finite one is refused rather than rolled as a no-op")
+				.arg(key).arg(number));
+		return false;
+	}
 	if (number < minimum || number > maximum)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
