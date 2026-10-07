@@ -313,6 +313,33 @@ private slots:
 		QVERIFY(registry->invoke(QStringLiteral("automation.move_point"), move).ok);  // back at 96
 	}
 
+	//! Luna cluster new-p8-12: an offset OUTSIDE the control's range is refused, and the
+	//! refusal must EXPLAIN the refusal - it says the offset must be within the range,
+	//! not that it already is (the old text read as if the value had been accepted).
+	void trimSetOutOfRangeExplainsTheRefusal()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		QString trackId;
+		QString paramId;
+		double minValue = 0.0;
+		double maxValue = 0.0;
+		if (!findAutomatableParameter(registry, &trackId, &paramId, &minValue, &maxValue))
+		{
+			if (!testHostCanLoadPluginModules()) { QSKIP("this test host cannot load plugin modules (see the slot above)"); }
+			QFAIL("the song exposes no automatable device parameter");
+		}
+		const double range = maxValue - minValue;
+		for (const double offset : { range + 1.0, -(range + 1.0) })
+		{
+			const ControlResult refused = registry->invoke(QStringLiteral("automation.trim_set"),
+				QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("parameter"), paramId},
+					{QStringLiteral("offset"), offset}});
+			QVERIFY2(!refused.ok, qPrintable(refused.errorMessage));
+			QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+			QCOMPARE(refused.errorMessage, qstr("'offset' must be within the control's range"));
+		}
+	}
+
 private:
 	static QString qstr(const char* text) { return QString::fromLatin1(text); }
 

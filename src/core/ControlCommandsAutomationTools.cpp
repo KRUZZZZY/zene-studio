@@ -100,7 +100,7 @@ ControlResult trimSet(const QJsonObject& args)
 	if (!resolveAutomationParameter(args, &target, &parameter, &error)) { return error; }
 	const auto offset = static_cast<float>(args.value(QStringLiteral("offset")).toDouble());
 	const float range = parameter.model->maxValue<float>() - parameter.model->minValue<float>();
-	if (offset < -range || offset > range) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'offset' is within the control's range")); }
+	if (offset < -range || offset > range) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'offset' must be within the control's range")); }
 	// Runtime state, as the mode is (not saved): the step puts the previous offset back by the same id.
 	const QJsonObject where{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()}};
 	const float before = parameter.model->trimOffset();
