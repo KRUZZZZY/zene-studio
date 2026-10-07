@@ -442,6 +442,7 @@ bool ControlServer::sendBytes(int fd, const QByteArray& bytes)
 		// The peer's buffer is full: normal flow control, not a failure. Keep
 		// the tail - whole bytes, so the line stays intact - and finish it when
 		// the socket says it can take more.
+		if (bytes.size() - written > MaxQueuedReplyBytes) { return false; }
 		it->pending = bytes.mid(written);
 		it->writeNotifier->setEnabled(true);
 	}
