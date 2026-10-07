@@ -107,11 +107,26 @@ void NoteEditor::updatePlayhead(bool always)
 	const Song* song = Engine::getSong();
 	if (m_state.clip == nullptr || song == nullptr || (!always && !song->isPlaying()))
 	{
-		if (!always) { m_canvas->setPlayhead(-1); }
+		if (!always) { showPlayhead(-1); }
 		return;
 	}
 	const int tick = song->getPlayPos(Song::PlayMode::Song).getTicks() - m_state.clip->startPosition().getTicks();
-	m_canvas->setPlayhead(tick >= 0 && tick <= m_state.clip->length().getTicks() ? tick : -1);
+	showPlayhead(tick >= 0 && tick <= m_state.clip->length().getTicks() ? tick : -1);
+}
+
+void NoteEditor::showPlayhead(int tick)
+{
+	if (tick == m_canvas->playhead()) { return; }
+	m_canvas->setPlayhead(tick);
+	// 0.5.0 theme 11: the lanes under the notes draw the same line.
+	m_lanes->update();
+	m_ccLane->update();
+}
+
+int NoteEditor::playheadX() const
+{
+	const int tick = m_canvas->playhead();
+	return tick < 0 ? -1 : static_cast<int>(m_state.grid.xOfTick(tick));
 }
 
 void NoteEditor::followScale()

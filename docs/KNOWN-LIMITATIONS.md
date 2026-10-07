@@ -2320,7 +2320,7 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - Screen readers (NVDA, VoiceOver, Orca) are reached through Qt's bridge, which the tests assert. No screen reader was run.
 
 **Lanes and the sample editor (themes 11, 15).**
-- The lanes have no playhead.
+- ~~The lanes have no playhead.~~ *(Resolved 2026-10-07: the expression and controller lanes draw the note area's playhead; `LaneReadoutTest::theLanesShowThePlayhead`, docs/NOTE-EDITOR.md §5.)*
 - No arbitrary controller number can be chosen from the lane.
 
 **Devices and the Inspector (themes 12, 13).**

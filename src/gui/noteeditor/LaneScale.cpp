@@ -206,6 +206,12 @@ void paintLabels(QPainter& p, const QRect& area, const LaneScale& scale, const Y
 	p.restore();
 }
 
+void paintPlayhead(QPainter& p, const QRect& area, int x)
+{
+	if (x < 0) { return; }
+	p.fillRect(QRect(area.left() + x, area.top(), 1, area.height()), tokens::palette().playhead);
+}
+
 void paintReadout(QPainter& p, const QRect& area, const QPoint& anchor, const QString& text)
 {
 	if (text.isEmpty()) { return; }

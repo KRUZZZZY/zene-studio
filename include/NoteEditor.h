@@ -162,6 +162,8 @@ public:
 	//! Show the song position inside the clip on the note area (and follow it while playing);
 	//! @a always shows it even when stopped (after a seek).
 	void updatePlayhead(bool always = false);
+	//! 0.5.0 theme 11: where the lanes draw the playhead - the note area's x of it, or -1 when it is not shown.
+	int playheadX() const;
 
 	//! Audition: press and release a key through the clip's instrument (GUI thread only).
 	void auditionPress(int key, int velocity);
@@ -201,6 +203,8 @@ private:
 	void readScale();
 	//! readScale() when the scale context changed since it last ran (a change made elsewhere).
 	void followScale();
+	//! Show the playhead at @a tick (-1: none) in the note area and the lanes under it.
+	void showPlayhead(int tick);
 	void onClipDestroyed();
 	//! The clip changed or went: every gesture in flight is dropped (none commits to another clip)
 	//! and a held audition key is released on the instrument it sounds on.

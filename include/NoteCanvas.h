@@ -90,6 +90,7 @@ public:
 
 	//! The playhead, in ticks inside the clip, or -1 when the clip is not playing.
 	void setPlayhead(int tick);
+	int playhead() const { return m_playhead; }
 	//! Drop the gesture in flight (the clip changed or went): its release commits nothing to whichever
 	//! clip is open then. The editor releases a held audition key itself.
 	void cancelGesture();

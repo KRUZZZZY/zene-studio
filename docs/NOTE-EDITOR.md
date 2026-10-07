@@ -126,6 +126,11 @@ The lane shows one stem per visible note for the chosen value:
 Drag across stems to draw values. With a selection, only selected notes take the value, so a
 ramp can be drawn over a chord.
 
+The playhead (the song position inside the clip, refreshed at 30 Hz while the song plays) is drawn
+across the expression lane and the controller lane as well as the note area, as one line in the
+same place (2026-10-07; `NoteEditor::showPlayhead`, `lanescale::paintPlayhead`;
+`LaneReadoutTest::theLanesShowThePlayhead`). When the song stops it leaves all three together.
+
 The brief also names a **gain** lane, but this engine has no per-note gain separate from
 velocity, which is the note's volume. Adding one would mean a new note attribute, a new
 project-format field and a change to the render path. That was not done; it is listed in §8.
