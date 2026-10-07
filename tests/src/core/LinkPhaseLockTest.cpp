@@ -11,9 +11,8 @@
  * The realtime half: 64 periods of followLinkSession() - with a tempo committed
  * through the mailbox, a start/stop edge, a count-in, a lock and a re-lock jump
  * among them - allocate nothing on the calling thread. The count goes through
- * LinkRealtimeProbe.h, whose operator new replaces the WHOLE program's (the
- * shared AllocationProbe.h cannot see an allocation outside its own TU; that
- * header's comment has the measurement).
+ * the shared AllocationProbe.h (via LinkRealtimeProbe.h's allocationsDuring()),
+ * whose operator new replaces the WHOLE program's since BUGS_FOUND 13.9's fix.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -44,7 +43,9 @@
 #include "LinkAudioFollower.h"
 #include "LinkPhaseLock.h"
 #include "Song.h"
-// Last: it defines the program-wide operator new replacements (see its header).
+// The shared allocation probe (its operator new replaces the whole program's; naming it here is
+// what links it - tests/CMakeLists.txt) and the Link tests' allocationsDuring() helper over it.
+#include "AllocationProbe.h"
 #include "LinkRealtimeProbe.h"
 
 using namespace lmms;

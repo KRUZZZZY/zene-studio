@@ -48,7 +48,9 @@
 #include "AbletonLinkSession.h"
 #include "LinkPeerTransport.h"
 #include "LinkSync.h"
-// Last: it defines the program-wide operator new replacements (see its header).
+// The shared allocation probe (its operator new replaces the whole program's; naming it here is
+// what links it - tests/CMakeLists.txt) and the Link tests' allocationsDuring() helper over it.
+#include "AllocationProbe.h"
 #include "LinkRealtimeProbe.h"
 
 using namespace lmms;

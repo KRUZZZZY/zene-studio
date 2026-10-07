@@ -448,12 +448,16 @@ periods of `followLinkSession()` - with a posted tempo, a start edge, a lock and
 re-lock jump among them - and counts **0 allocations** on the calling thread;
 an allocation injected into the follower reads 64 and fails it.
 `AbletonLinkSessionTest::audioPeriodDoesNotAllocate` does the same for the
-wrapper's capture/commit (0; 64 with an injected allocation). Both count through
-`tests/src/core/LinkRealtimeProbe.h`, a NON-inline `operator new` replacement:
-the shared `tests/src/core/AllocationProbe.h` defines its replacement `inline`,
-which the standard forbids and which GCC never emits, so it counts only
-allocations made inside the test's own translation unit (measured: an allocation
-injected into `AbletonLinkSession::audioPeriod()` read 0 through it). The
+wrapper's capture/commit (0; 64 with an injected allocation). The lane counted
+through `tests/src/core/LinkRealtimeProbe.h`, its own NON-inline `operator new`
+replacement, because the shared `tests/src/core/AllocationProbe.h` then defined
+its replacement `inline`, which the standard forbids and which GCC never emits, so
+it counted only allocations made inside the test's own translation unit (measured:
+an allocation injected into `AbletonLinkSession::audioPeriod()` read 0 through it).
+That shared probe was fixed the same way (BUGS_FOUND 13.9, `050/feat-alloc-probe-fix`),
+and on the 2026-10-07 feature merge `LinkRealtimeProbe.h` was folded into it: it now
+only wraps `allocationsDuring()` over the shared counters, and both tests link
+`AllocationProbe.cpp` like every other probe test. The
 measurement is headless: with a GUI, `Timeline::setTicks` signals (emitted on a
 re-lock jump, as on every loop wrap) reach whatever receivers the GUI connected.
 

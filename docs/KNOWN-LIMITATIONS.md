@@ -2675,8 +2675,9 @@ Evidence, all from the `050/feat-alloc-probe-fix` lane:
   realtime sanitizer (that is the dispatch-only RTSan job, `lmms::RealtimeScope`).
 - It proves the paths that the 40 tests drive, nothing more. Coverage of the audio thread is
   whatever those tests call.
-- `tests/src/core/LinkRealtimeProbe.h` on `050/feat-link-interop` is a second, correct
-  probe written for the same reason. Once both lanes are merged, it can be folded into this one.
+- `tests/src/core/LinkRealtimeProbe.h` (`050/feat-link-interop`) was a second, correct
+  probe written for the same reason. It was folded into this one on the 2026-10-07 feature merge:
+  it defines no allocation function now, only an `allocationsDuring()` helper over these counters.
 
 ## 0.5.0 launcher in performance — perform mode and sub-scenes (lane launcher-perform, 2026-10-07)
 
