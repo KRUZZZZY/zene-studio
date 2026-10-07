@@ -959,6 +959,67 @@ private slots:
 			"a malformed note key was read as the default 60");
 	}
 
+	//! Luna cluster new-p8-113: the format declares the range of a channel's values
+	//! on the element itself (`<Volume min="0" max="2">`, `<Pan min="0" max="1">`), so
+	//! a finite number OUTSIDE that range is not a value the format can mean - it used
+	//! to read fine and get clamped silently when the model was applied.
+	void outOfRangeChannelValuesAreRefused()
+	{
+		const QString strip =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Channel id=\"m0\" role=\"master\">%1</Channel></Structure></Project>";
+		for (const char* child : {"<Volume value=\"4\"/>", "<Volume value=\"-0.5\"/>",
+			"<Pan value=\"-1\"/>", "<Pan value=\"1.5\"/>"})
+		{
+			const QByteArray xml = strip.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("the mixer strip carried %1").arg(QLatin1String(child))));
+		}
+
+		const QString track =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\">%1</Channel></Track></Structure></Project>";
+		for (const char* child : {"<Volume value=\"2.5\"/>", "<Pan value=\"-0.25\"/>"})
+		{
+			const QByteArray xml = track.arg(QLatin1String(child)).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				"an out-of-range track channel value was accepted");
+		}
+
+		// The positive half: the endpoints of the declared range still read.
+		const QByteArray inRange =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Channel id=\"m0\" role=\"master\">"
+			"<Volume value=\"2\"/><Pan value=\"0\"/></Channel>"
+			"<Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"><Volume value=\"0\"/><Pan value=\"1\"/></Channel></Track>"
+			"</Structure></Project>";
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(inRange, &model, &report, &error), qPrintable(error));
+		QCOMPARE(model.mixerChannels.size(), 1);
+		QCOMPARE(model.mixerChannels[0].volume, 2.0);
+	QCOMPARE(model.tracks.size(), 1);
+	QCOMPARE(model.tracks[0].hasVolume, true);
+	QCOMPARE(model.tracks[0].volume, 0.0);
+	QCOMPARE(model.tracks[0].hasPan, true);
+	QCOMPARE(model.tracks[0].pan, 1.0);
+	}
+
 	//! Luna cluster 5064: an automation point's time is a beat like any other, so
 	//! it goes through the same bounded tick conversion - and is counted in
 	//! `rounded_times` when it is not on the 48-tick grid - instead of being kept

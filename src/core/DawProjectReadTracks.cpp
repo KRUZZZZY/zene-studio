@@ -224,6 +224,19 @@ void parseLanes(QXmlStreamReader& reader, ReadState& state)
 	}
 }
 
+//! The format declares a channel value's range on the element itself
+//! (`<Volume min="0" max="2">`, `<Pan min="0" max="1">`), so a finite number
+//! outside that range is not a value the format can mean: it is refused with the
+//! value named, rather than read and clamped silently when the model is applied.
+inline void channelValueRange(ReadState& state, const QString& name, double value,
+	double lowest, double highest)
+{
+	if (value >= lowest && value <= highest) { return; }
+	if (!state.error.isEmpty()) { return; }
+	state.error = QStringLiteral("the channel %1 carries %2, outside the format's declared "
+		"range %3..%4").arg(name).arg(value).arg(lowest).arg(highest);
+}
+
 /*! The values of one <Channel>, whether it sits inside a <Track> (the track's
  *  own strip) or directly in <Structure> (a mixer strip). The format gives both
  *  the same children - Volume, Mute, Pan, Sends, Devices - so one reader serves
@@ -266,6 +279,7 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 		{
 			values.hasVolume = true;
 			values.volume = doubleAttribute(childAttributes, state, QStringLiteral("value"), 1.0);
+			channelValueRange(state, QStringLiteral("Volume"), values.volume, 0.0, 2.0);
 		}
 		else if (child == QLatin1String("Mute"))
 		{
@@ -275,6 +289,7 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 		{
 			values.hasPan = true;
 			values.pan = doubleAttribute(childAttributes, state, QStringLiteral("value"), 0.5);
+			channelValueRange(state, QStringLiteral("Pan"), values.pan, 0.0, 1.0);
 		}
 		else if (child == QLatin1String("Sends"))
 		{
