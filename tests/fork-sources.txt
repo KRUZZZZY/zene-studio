@@ -763,6 +763,7 @@ include/PluginOrganiser.h
 include/PluginPaths.h
 include/PluginQuarantineMenu.h
 include/PluginScanCache.h
+include/PluginVendors.h
 include/PortMapping.h
 include/PortMappingCodec.h
 include/PreviewOutput.h
@@ -1502,6 +1503,7 @@ src/core/PluginHostNotes.cpp
 src/core/PluginOrganiser.cpp
 src/core/PluginPaths.cpp
 src/core/PluginScanCache.cpp
+src/core/PluginVendors.cpp
 src/core/PortMapping.cpp
 src/core/PortMappingCodec.cpp
 src/core/PortMappingPmp.cpp

@@ -41,6 +41,7 @@
 #include "Engine.h"
 #include "Ladspa2LMMS.h"
 #include "PluginOrganiser.h"
+#include "PluginVendors.h"
 #include "lmmsconfig.h"
 
 #ifdef LMMS_HAVE_LV2
@@ -115,23 +116,40 @@ QString devicelabels::kindLabel(const QString& kind)
 	return DevicePicker::tr("Other");
 }
 
+namespace
+{
+
+QString ladspaMaker(const ControlDeviceEntry& entry)
+{
+	return Engine::getLADSPAManager() != nullptr
+		? Engine::getLADSPAManager()->getMaker(ladspa_key_t(entry.file, entry.label)) : QString();
+}
+
+QString lv2Maker(const ControlDeviceEntry& entry)
+{
+#ifdef LMMS_HAVE_LV2
+	if (Engine::getLv2Manager() == nullptr) { return QString(); }
+	if (const LilvPlugin* plugin = Engine::getLv2Manager()->getPlugin(entry.uri))
+	{
+		return qStringFromPluginNode(plugin, lilv_plugin_get_author_name);
+	}
+#else
+	(void)entry;
+#endif
+	return QString();
+}
+
+} // namespace
+
 QString devicelabels::vendorOf(const ControlDeviceEntry& entry)
 {
 	QString maker;
 	if (entry.format == QLatin1String("builtin")) { maker = QStringLiteral("Zene Studio"); }
-	else if (entry.format == QLatin1String("ladspa") && Engine::getLADSPAManager() != nullptr)
-	{
-		maker = Engine::getLADSPAManager()->getMaker(ladspa_key_t(entry.file, entry.label));
-	}
-#ifdef LMMS_HAVE_LV2
-	else if (entry.format == QLatin1String("lv2") && Engine::getLv2Manager() != nullptr)
-	{
-		if (const LilvPlugin* plugin = Engine::getLv2Manager()->getPlugin(entry.uri))
-		{
-			maker = qStringFromPluginNode(plugin, lilv_plugin_get_author_name);
-		}
-	}
-#endif
+	else if (entry.format == QLatin1String("ladspa")) { maker = ladspaMaker(entry); }
+	else if (entry.format == QLatin1String("lv2")) { maker = lv2Maker(entry); }
+	// VST3 and CLAP: the vendor the module's own factory reported when the catalogue listed it (PluginVendors.h).
+	else if (entry.format == QLatin1String("vst3")) { maker = pluginvendors::vendorOf(entry.file, entry.className); }
+	else if (entry.format == QLatin1String("clap")) { maker = pluginvendors::vendorOf(entry.file, entry.name); }
 	return maker.trimmed().isEmpty() ? DevicePicker::tr("Not reported") : maker.trimmed();
 }
 

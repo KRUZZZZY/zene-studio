@@ -483,3 +483,15 @@ that writes its state back, as it did before. The proof is through the surface:
 directory at the in-tree VST3 effect fixture (the SDK's gain sample) and at `clap-test-gain`, finds each
 in `plugin.list`, and loads it onto a track with `plugin.load`, hosted by `vst3effect` / `clapeffect`.
 Before the change it failed at the first step: `plugin.list format=vst3 does not carry 'AGain Sample Accurate'`.
+
+### The vendor a hosted class reports (same lane)
+
+The device picker's Vendor column read "Not reported" for every VST3 and CLAP class. The hosts did read
+the vendor (`vst3::listClasses`, `clap::listClasses`), but the catalogue entry had nowhere to carry it.
+The two discovery paths (`Vst3SubPluginFeatures`, `ClapSubPluginFeatures`) now record it in
+`include/PluginVendors.h` as they read each factory, and `devicelabels::vendorOf` shows it. For VST3 it is
+the class's vendor; the SDK's `PluginFactory::classInfos` fills that from `PFactoryInfo` when the class
+names none. For CLAP it is the descriptor's `vendor`. It is kept out of the sub-plug-in key on purpose.
+The key's attributes are saved in projects and name the organiser's favourites, so a vendor added there
+would change both. Test: `ControlDeviceCatalogueTest::hostedVendorsAreTheFactoriesOwn` (red: "Not
+reported" where the fixture's factory says "Zene Studio test fixture").

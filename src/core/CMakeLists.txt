@@ -879,6 +879,8 @@ set(LMMS_SRCS
 	core/PluginOrganiser.cpp
 	core/PluginPaths.cpp
 	core/PluginScanCache.cpp
+	# The vendor each VST3 / CLAP class's own factory reports, recorded by the hosts' discovery.
+	core/PluginVendors.cpp
 	core/PresetPreviewPlayHandle.cpp
 	core/ProjectJournal.cpp
 	# The undo stack's two-sided bound and its coalescing primitive, in their own

@@ -2334,7 +2334,11 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - No arbitrary controller number can be chosen from the lane.
 
 **Devices and the Inspector (themes 12, 13).**
-- VST3 and CLAP vendors read "Not reported", because the catalogue carries none.
+- *(Resolved 2026-10-07, plugin-hosting lane.)* VST3 and CLAP vendors no longer read "Not reported". The
+  device picker (the Device panel's Add, the device card's Replace and Insert) shows the vendor the module's
+  own factory reports: a VST3 class's vendor, which the SDK fills from `PFactoryInfo` when the class names
+  none, or a CLAP descriptor's vendor (`include/PluginVendors.h`). A plug-in that reports no vendor still
+  reads "Not reported". `plugin.list` does not carry the vendor, for any format.
 - Channel pan and width still read in the knob's own units.
 - Mixed values cover the selected notes only: the selection holds one clip.
 - The rack's own "Add effect" still uses the older dialog.

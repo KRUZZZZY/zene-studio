@@ -35,6 +35,7 @@
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DevicePicker.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
@@ -541,6 +542,34 @@ private slots:
 			++checked;
 		}
 		if (checked == 0) { QSKIP("this build has neither in-tree effect fixture"); }
+	}
+
+	//! The vendor a VST3 or CLAP device's row shows (the device picker, the device card's Replace and Insert)
+	//! is the one the plug-in's own factory reports - the VST3 class's vendor, which the SDK fills from
+	//! PFactoryInfo when the class names none, and the CLAP descriptor's vendor - not "Not reported".
+	void hostedVendorsAreTheFactoriesOwn()
+	{
+		const QList<QStringList> cases{
+			{QStringLiteral(VST3_TEST_INSTRUMENT_DIR), QStringLiteral("vst3"), QStringLiteral("Zene VST3 Test Instrument"),
+				QStringLiteral("Zene Studio test fixture")},
+			{QStringLiteral(CLAP_TEST_INSTRUMENT_DIR), QStringLiteral("clap"), QStringLiteral("org.lmms.test.clap-instrument"),
+				QStringLiteral("LMMS contributors")},
+			{QStringLiteral(CLAP_TEST_EFFECT_DIR), QStringLiteral("clap"), QStringLiteral("LMMS CLAP Test Gain"),
+				QStringLiteral("LMMS contributors")}};
+		int checked = 0;
+		for (const QStringList& c : cases)
+		{
+			if (c[0].isEmpty() || !QFileInfo::exists(c[0])) { continue; }
+			ConfigManager::inst()->setVSTDir(c[0]);
+			const QString id = listedDevice(c[1], c[2]).value(QStringLiteral("id")).toString();
+			ControlDeviceEntry entry;
+			int index = -1;
+			ControlResult error;
+			QVERIFY2(controlDeviceById(id, &entry, &index, &error), qPrintable(c[2] + QStringLiteral(" is not listed")));
+			QCOMPARE(gui::devicelabels::vendorOf(entry), c[3]);
+			++checked;
+		}
+		if (checked == 0) { QSKIP("this build has no in-tree VST3 or CLAP fixture"); }
 	}
 };
 
