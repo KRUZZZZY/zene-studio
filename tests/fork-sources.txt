@@ -625,6 +625,7 @@ include/ControllerTemplateMenu.h
 include/CrashReportMenu.h
 include/CrashReporter.h
 include/CrashReporterFormat.h
+include/CrossfadeEditorDialog.h
 include/DawProjectInterchange.h
 include/DeltaTap.h
 include/DesignTokens.h
@@ -1658,6 +1659,7 @@ src/gui/ControlCommandsWorkspace.cpp
 src/gui/ControlGuiSupport.cpp
 src/gui/ControllerTemplateMenu.cpp
 src/gui/CrashReportMenu.cpp
+src/gui/CrossfadeEditorDialog.cpp
 src/gui/EffectDeviceMenu.cpp
 src/gui/EffectHostingMenu.cpp
 src/gui/ExportQualityControls.cpp

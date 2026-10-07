@@ -23,16 +23,21 @@
  */
 #include "ShellMenuParts.h"
 
+#include <QAction>
 #include <QFileDialog>
 #include <QMenu>
+#include <QPointer>
 
 #include "AudioEngine.h"
 #include "Clip.h"
 #include "ClipEdits.h"
 #include "CommandForm.h"
+#include "CrossfadeEditorDialog.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClient.h"
+#include "MidiClip.h"
+#include "SampleClip.h"
 #include "Song.h"
 #include "TrackVersions.h"
 
@@ -137,6 +142,28 @@ void trackMidiOutEntries(QMenu* menu, Track* track, const QJsonObject& self)
 	out->addSeparator();
 	add(out, "Channel...", "track.midi_out", self, true, {{QStringLiteral("channel"), 1}});
 	add(out, "Stop Sending MIDI Out", "track.midi_out", with(self, "enabled", false), false);
+}
+
+void clipLoopEntries(QMenu* menu, Clip* clip, const QJsonObject& self)
+{
+	if (dynamic_cast<MidiClip*>(clip) != nullptr) { add(menu, "Loop the Content...", "clip.set_loop", self, true, {{QStringLiteral("length"), 192}}); }
+	if (auto* audio = dynamic_cast<SampleClip*>(clip))  // the whole audio by default, from the in-point
+	{
+		add(menu, "Loop the Content...", "clip.set_loop", self, true, {{QStringLiteral("start"), 0},
+			{QStringLiteral("length"), static_cast<int>(audio->sampleLength().getTicks())}});
+	}
+}
+
+void crossfadeEditorEntries(QMenu* menu, Clip* clip)
+{
+	QAction* editor = menu->addAction(tr("Crossfade Editor..."));
+	editor->setProperty("controlCommand", QStringLiteral("clip.crossfade"));
+	const QPointer<SampleClip> self = dynamic_cast<SampleClip*>(clip);
+	const QPointer<SampleClip> other = CrossfadeEditorDialog::overlapping(clip);
+	editor->setEnabled(!self.isNull() && !other.isNull());
+	QObject::connect(editor, &QAction::triggered, menu, [self, other, menu] {
+		if (self && other) { CrossfadeEditorDialog::openFor(self, other, menu->parentWidget()); }
+	});
 }
 
 } // namespace lmms::gui::menuparts

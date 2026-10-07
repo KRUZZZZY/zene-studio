@@ -311,6 +311,9 @@ that is this page's fault — report it and it gets added.
   and Fade shape for both ramps - each change one `control.undo` step (`ClipEditsMenuTest`). These are menu
   items, not drag gestures: there are still no fade handles on the clip, and crossfades (`clip.crossfade`)
   and the source-window trim/slip stay socket-only. The bullet below is the pre-menu record.
+  *(Updated 2026-10-07, 0.5.0 ED-176.)* Crossfades are no longer socket-only: an audio clip that another clip
+  overlaps offers **Crossfade Editor...** (both sides' lengths and shapes, drawn, applied through `clip.crossfade`
+  as one undo step; `CrossfadeEditorTest`). See "0.5.0 audio clips" at the end of this page for what it leaves out.
 - **No clip fade, crossfade or clip-gain gestures.** The clip model is in (an authored window that survives
   playback and is saved with the project) and so, since 2026-09-13, is the fade/gain model — but there are
   **no trim, slip, fade, crossfade or clip-gain tools** in the interface, and **fades, crossfades and clip gain
@@ -2361,3 +2364,14 @@ the audio it plays - one undo step each (`AudioClipLoopTest`). What it does not 
   the clip, and a looped clip whose start plays before its loop (an intro does not repeat, so it cannot turn).
 - The command keeps its MIDI name (`note.rotate`) rather than adding a `clip.rotate`, so the canary did not move;
   `scope` is not read on an audio clip. The clip menu's entry is Process > Rotate Content...
+
+**The crossfade editor (ED-176).** An audio clip's menu offers Crossfade Editor... while another audio clip on
+its track overlaps it; the editor shows the overlap, each side's ramp length (ticks) and shape - the clips' own
+ramps, or the overlap at equal power where a side has none - draws both ramps, and Apply runs `clip.crossfade` with
+both sides (`CrossfadeEditorTest`). What it does not do:
+- It edits numbers, not handles: there is still no crossfade drawn on the clips in the arranger and nothing to drag.
+- It pairs the clip with ONE neighbour (the nearest overlapping clip after it, else before it); a clip overlapped
+  on both sides is edited one pair at a time from each clip's menu.
+- The crossfade is still two independent fades, not a linked object: moving a clip afterwards does not move it.
+- `clip.crossfade`'s undo restores the TRACK checkpoint, which rebuilds the track's clips: an editor left open
+  across an undo loses its clips (Apply then does nothing) and has to be opened again from the menu.

@@ -149,6 +149,8 @@ SET(LMMS_SRCS
 	gui/shell/ChannelLevelMeter.cpp
 	gui/FollowActionEditor.cpp
 	gui/SampleEditorDialog.cpp
+	# 0.5.0 ED-176: the crossfade editor (both sides of two overlapping clips' crossfade).
+	gui/CrossfadeEditorDialog.cpp
 	gui/SampleRangeFields.cpp
 	gui/SampleSelectionView.cpp
 	gui/ControlCommandsSampleEditor.cpp

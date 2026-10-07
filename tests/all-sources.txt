@@ -254,6 +254,7 @@ include/Controls.h
 include/CrashReportMenu.h
 include/CrashReporter.h
 include/CrashReporterFormat.h
+include/CrossfadeEditorDialog.h
 include/DataFile.h
 include/DawProjectInterchange.h
 include/Delay.h
@@ -2050,6 +2051,7 @@ src/gui/ControllerTemplateMenu.cpp
 src/gui/ControllerView.cpp
 src/gui/Controls.cpp
 src/gui/CrashReportMenu.cpp
+src/gui/CrossfadeEditorDialog.cpp
 src/gui/EffectControlDialog.cpp
 src/gui/EffectDeviceMenu.cpp
 src/gui/EffectHostingMenu.cpp
@@ -2597,6 +2599,7 @@ tests/src/gui/CommandFormTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/ControllerTemplateMenuTest.cpp
 tests/src/gui/CrashReportMenuTest.cpp
+tests/src/gui/CrossfadeEditorTest.cpp
 tests/src/gui/DesignTokensTest.cpp
 tests/src/gui/DevicePanelTest.cpp
 tests/src/gui/EffectHostingMenuTest.cpp
