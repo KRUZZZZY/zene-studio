@@ -765,9 +765,9 @@ include/ParameterAliases.h
 include/ParameterControls.h
 include/ParameterGridDialog.h
 include/PatchWiring.h
+include/PerformView.h
 include/PhaseScopeTap.h
 include/PhaseScopeView.h
-include/PerformView.h
 include/PinConnector.h
 include/PitchTrack.h
 include/PluginAudioPorts.h
@@ -1737,8 +1737,8 @@ src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/ParameterGridDialog.cpp
-src/gui/PhaseScopeView.cpp
 src/gui/PerformView.cpp
+src/gui/PhaseScopeView.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/PluginQuarantineMenu.cpp

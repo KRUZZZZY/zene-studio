@@ -542,9 +542,9 @@ include/PatternTrackView.h
 include/PeakController.h
 include/PeakIndicator.h
 include/PerfLog.h
+include/PerformView.h
 include/PhaseScopeTap.h
 include/PhaseScopeView.h
-include/PerformView.h
 include/Piano.h
 include/PianoRoll.h
 include/PianoView.h
@@ -2151,8 +2151,8 @@ src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/ParameterGridDialog.cpp
 src/gui/PeakControllerDialog.cpp
-src/gui/PhaseScopeView.cpp
 src/gui/PerformView.cpp
+src/gui/PhaseScopeView.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginBrowser.cpp
 src/gui/PluginNativeEditor.cpp
