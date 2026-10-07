@@ -26,18 +26,30 @@
 #ifndef LMMS_TEST_ALLOCATION_PROBE_H
 #define LMMS_TEST_ALLOCATION_PROBE_H
 
-#include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <new>
+
+// The replacement global operator new/new[]/delete/delete[] that do the
+// counting are defined ONCE per test executable, in AllocationProbe.cpp, which
+// tests/CMakeLists.txt links into every test whose source includes this header.
+//
+// They used to be defined here as `inline`. The standard forbids that for a
+// replacement allocation function ([replacement.functions]), and GCC then
+// emitted no definition at all: the test binary had no operator new of its
+// own, so every allocation made OUTSIDE the test's translation unit - i.e. in
+// lmmsobjs, the library code the tests exist to check - went to libstdc++ and
+// was never counted. docs/KNOWN-LIMITATIONS.md ("The allocation probe") has the measurement.
+//
+// The two counters are defined in AllocationProbe.cpp too, so a test that
+// includes this header without linking the probe fails to LINK rather than
+// silently counting nothing.
 
 namespace lmms::test
 {
 
 //! When true, allocations on this thread are counted in tlAllocationCount.
-inline thread_local bool tlCountAllocations = false;
+extern thread_local bool tlCountAllocations;
 //! Allocations observed on this thread while tlCountAllocations was true.
-inline thread_local std::uint64_t tlAllocationCount = 0;
+extern thread_local std::uint64_t tlAllocationCount;
 
 inline void noteAllocation() noexcept
 {
@@ -50,29 +62,5 @@ inline void resetAllocationCount() noexcept
 }
 
 } // namespace lmms::test
-
-// Replaceable global allocation functions: every C++ allocation in the test
-// binary goes through these, so a thread that does not allocate keeps
-// tlAllocationCount at zero.
-inline void* operator new(std::size_t size)
-{
-	lmms::test::noteAllocation();
-	void* ptr = std::malloc(size != 0 ? size : 1);
-	if (ptr == nullptr) { throw std::bad_alloc(); }
-	return ptr;
-}
-
-inline void* operator new[](std::size_t size)
-{
-	lmms::test::noteAllocation();
-	void* ptr = std::malloc(size != 0 ? size : 1);
-	if (ptr == nullptr) { throw std::bad_alloc(); }
-	return ptr;
-}
-
-inline void operator delete(void* ptr) noexcept { std::free(ptr); }
-inline void operator delete[](void* ptr) noexcept { std::free(ptr); }
-inline void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
-inline void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
 
 #endif // LMMS_TEST_ALLOCATION_PROBE_H
