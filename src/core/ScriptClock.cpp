@@ -351,8 +351,10 @@ void ScriptClock::runEntry(ScriptSchedule& entry, int count, qint64 pos)
 			continue;
 		}
 		entry.errors++;
+		// Classify the raw runString error BEFORE folding in script-controlled
+		// log lines: user log text must not masquerade as an engine failure kind.
 		entry.lastError = foldLogs(error, logs);
-		entry.lastErrorKind = errorKindFor(entry.lastError);
+		entry.lastErrorKind = errorKindFor(error);
 		if (entry.lastErrorKind == QLatin1String("budget")) { entry.budgetExceeded++; }
 	}
 	if (entry.budget > 0) { engine->setInstructionBudget(previous); }
