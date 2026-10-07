@@ -83,8 +83,9 @@ void loadCueSends(const QDomElement& element, ChannelHardwareIo& io)
 {
 	for (QDomElement cue = element.firstChildElement(QStringLiteral("cue")); !cue.isNull(); cue = cue.nextSiblingElement(QStringLiteral("cue")))
 	{
-		const int k = cue.attribute(QStringLiteral("index")).toInt();
-		if (k < 0 || k >= hardwareio::MaxCues) { continue; }
+		bool validIndex = false;
+		const int k = cue.attribute(QStringLiteral("index")).toInt(&validIndex);
+		if (!validIndex || k < 0 || k >= hardwareio::MaxCues) { continue; }
 		hardwareio::CueSend& send = io.cues[static_cast<std::size_t>(k)];
 		// A hand-edited project can carry level="nan": std::clamp lets NaN through, so a non-finite
 		// figure falls back to the attribute's own default (no send, centred).
@@ -279,8 +280,9 @@ void loadMixer(const QDomElement& mixerElement)
 	for (QDomElement element = mixerElement.firstChildElement(QStringLiteral("cuemix")); !element.isNull();
 		element = element.nextSiblingElement(QStringLiteral("cuemix")))
 	{
-		const int k = element.attribute(QStringLiteral("index")).toInt();
-		if (k < 0 || k >= MaxCues) { continue; }
+		bool validIndex = false;
+		const int k = element.attribute(QStringLiteral("index")).toInt(&validIndex);
+		if (!validIndex || k < 0 || k >= MaxCues) { continue; }
 		CueMaster& cue = s_cueMasters[static_cast<std::size_t>(k)];
 		cue.name = element.attribute(QStringLiteral("name"));
 		const float cueLevel = element.attribute(QStringLiteral("level"), QStringLiteral("1")).toFloat();

@@ -418,6 +418,47 @@ private slots:
 	 hardwareio::resetMixer();
 	}
 
+	void channelCueLoadsRequireExplicitIndices()
+	{
+		bool ignored = true;
+		for (const bool omitIndex : {true, false})
+		{
+			QDomDocument doc;
+			QDomElement channel = doc.createElement(QStringLiteral("channel"));
+			doc.appendChild(channel);
+			QDomElement hardware = doc.createElement(QStringLiteral("hardwareio"));
+			channel.appendChild(hardware);
+			QDomElement cue = doc.createElement(QStringLiteral("cue"));
+			if (!omitIndex) { cue.setAttribute(QStringLiteral("index"), QStringLiteral("broken")); }
+			cue.setAttribute(QStringLiteral("level"), QStringLiteral("0.75"));
+			hardware.appendChild(cue);
+
+			ChannelHardwareIo io;
+			io.load(channel, Engine::audioEngine()->framesPerPeriod());
+			ignored = ignored && io.cues[0] == hardwareio::CueSend{};
+		}
+		QVERIFY(ignored);
+	}
+
+	void cueMasterLoadsRequireExplicitIndices()
+	{
+		bool ignored = true;
+		for (const bool omitIndex : {true, false})
+		{
+			QDomDocument doc;
+			QDomElement mixer = doc.createElement(QStringLiteral("mixer"));
+			doc.appendChild(mixer);
+			QDomElement cue = doc.createElement(QStringLiteral("cuemix"));
+			if (!omitIndex) { cue.setAttribute(QStringLiteral("index"), QStringLiteral("broken")); }
+			cue.setAttribute(QStringLiteral("name"), QStringLiteral("Invalid cue"));
+			mixer.appendChild(cue);
+
+			hardwareio::loadMixer(mixer);
+			ignored = ignored && hardwareio::cueMaster(0) == hardwareio::CueMaster{};
+		}
+		QVERIFY(ignored);
+	}
+
 private:
 	//! What everythingSurvivesASaveAndLoad routed, read back after the load.
 	static void verifyLoaded(Mixer& mixer)
