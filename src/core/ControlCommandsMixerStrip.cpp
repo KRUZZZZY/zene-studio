@@ -67,6 +67,11 @@ struct StripFlags
 	bool writeSolo = true;
 };
 
+bool flagsDiffer(const StripFlags& before, const StripFlags& after)
+{
+	return (after.writeMute && after.muted != before.muted) || (after.writeSolo && after.soloed != before.soloed);
+}
+
 MixerChannel* channelById(int id)
 {
 	Mixer* mixer = Engine::mixer();
@@ -118,19 +123,24 @@ ControlResult setMany(const QJsonObject& args)
 	}
 	QVector<StripFlags> before;
 	QVector<StripFlags> after;
+	bool changed = false;
 	for (MixerChannel* channel : channels)
 	{
 		const StripFlags was{channel->id(), channel->m_muteModel.value(), channel->m_soloModel.value()};
+		const StripFlags wanted{was.id, args.value(QStringLiteral("muted")).toBool(was.muted),
+			args.value(QStringLiteral("soloed")).toBool(was.soloed), args.contains(QStringLiteral("muted")),
+			args.contains(QStringLiteral("soloed"))};
+		changed = changed || flagsDiffer(was, wanted);
 		before.append(was);
-		after.append({was.id, args.value(QStringLiteral("muted")).toBool(was.muted), args.value(QStringLiteral("soloed")).toBool(was.soloed),
-			args.contains(QStringLiteral("muted")), args.contains(QStringLiteral("soloed"))});
+		after.append(wanted);
 	}
-	addUndoStep([before]() { restoreFlags(before); }, [after]() { restoreFlags(after); });
-	restoreFlags(after);
-	Engine::getSong()->setModified();
 	QJsonArray ids;
 	for (const MixerChannel* channel : channels) { ids.append(channelIdOf(channel)); }
 	QJsonObject result{{QStringLiteral("channels"), ids}, {QStringLiteral("count"), ids.size()}};
+	if (!changed) { return ControlResult::success(result); }
+	addUndoStep([before]() { restoreFlags(before); }, [after]() { restoreFlags(after); });
+	restoreFlags(after);
+	Engine::getSong()->setModified();
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("channels"), ids}}, QStringLiteral("control.undo"), {},
 		true, QStringLiteral("action checkpoint: the recorded undo step puts every channel's mute and solo back")));
 	return ControlResult::success(result);
@@ -151,6 +161,7 @@ struct StripSettings
 	QString note;
 	bool swap = false;  // MX-033
 	bool inputMono = false;  // MX-059
+	bool operator==(const StripSettings&) const = default;
 };
 
 const QStringList& panModeNames()
@@ -238,6 +249,7 @@ ControlResult setStrip(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'trim_db' is -24..24, 'pan_mode' balance / dual / width, "
 			"'width' 0..2, 'pan' and 'pan_right' -1..1"));
 	}
+	if (after == before) { return ControlResult::success(stripJson(channel)); }
 	const int id = channel->id();
 	addUndoStep([id, before]() { applySettings(id, before); }, [id, after]() { applySettings(id, after); });
 	applySettings(id, after);
