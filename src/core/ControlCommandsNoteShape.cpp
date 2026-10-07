@@ -59,13 +59,21 @@ namespace
 
 constexpr int MaxRatchet = 16;
 
-//! Whether scaling @a notes about @a pivot by @a time (positions) and @a length (lengths) keeps them inside the longest song;
-//! asked in doubles, before any tick is rounded (a huge factor would overflow the rounding).
+//! Whether scaling @a notes about @a pivot keeps each rounded note end inside the longest song;
+//! bounds the doubles first so a huge factor cannot overflow the rounding.
 bool scaledFits(const QVector<Note*>& notes, tick_t pivot, double time, double length)
 {
 	const auto limit = static_cast<double>(MaxSongLength);
 	return std::all_of(notes.begin(), notes.end(), [=](const Note* note) {
-		return pivot + (note->pos().getTicks() - pivot) * time <= limit && note->length().getTicks() * length <= limit;
+		const double scaledPosition = pivot + (note->pos().getTicks() - pivot) * time;
+		const double scaledLength = note->length().getTicks() * length;
+		if (!(scaledPosition <= limit) || !(scaledLength <= limit) || !(scaledPosition + scaledLength <= limit))
+		{
+			return false;
+		}
+		const tick_t roundedPosition = static_cast<tick_t>(std::lround(scaledPosition));
+		const tick_t roundedLength = std::max<tick_t>(1, static_cast<tick_t>(std::lround(scaledLength)));
+		return roundedPosition + roundedLength <= MaxSongLength;
 	});
 }
 
