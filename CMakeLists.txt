@@ -141,6 +141,7 @@ option(WANT_DEBUG_CPACK "Show detailed logs for packaging commands" OFF)
 option(WANT_CPACK_TARBALL "Request CPack to create a tarball instead of an installer" OFF)
 option(WANT_QT6 "Build with experimental Qt6 support" OFF)
 option(WANT_WASM "Include the WASM DSP sandbox (requires the wasmtime C API)" ON)
+option(WANT_ABLETON_LINK "Include Ableton Link session sync (vendored in src/3rdparty/ableton-link, GPL-2.0-or-later; docs/LINK-SYNC.md)" ON)
 
 # Opt-in telemetry client (anonymous platform statistics, default off at
 # runtime). This option is the packager kill switch: -DZENE_TELEMETRY=OFF
@@ -1024,6 +1025,27 @@ else()
 	SET(STATUS_WASM "Disabled")
 endif()
 
+# Ableton Link (WF-051, docs/LINK-SYNC.md): the vendored reference library in
+# src/3rdparty/ableton-link (Link 4.1, GPL-2.0-or-later, with the standalone asio
+# it bundles, BSL-1.0 - see README.lmms there). Header-only, so there is nothing to
+# find: the option decides whether the link.* commands speak real Ableton Link
+# (ON) or fall back to the zene-link-style model that only other Zene instances
+# understand (OFF). The one platform it is refused on is a MinGW cross build from
+# a case-sensitive host: Link's Windows headers include <Windows.h>, which the
+# cross toolchain spells <windows.h>, so the fallback is chosen there and said so.
+if(WANT_ABLETON_LINK)
+	if(MINGW AND NOT CMAKE_HOST_WIN32)
+		SET(LMMS_HAVE_ABLETON_LINK FALSE)
+		SET(STATUS_ABLETON_LINK "not built: a MinGW cross build cannot compile Link's <Windows.h> includes; the zene-link-style fallback is used")
+	else()
+		SET(LMMS_HAVE_ABLETON_LINK TRUE)
+		SET(STATUS_ABLETON_LINK "OK (vendored Ableton Link 4.1)")
+	endif()
+else()
+	SET(LMMS_HAVE_ABLETON_LINK FALSE)
+	SET(STATUS_ABLETON_LINK "not built as requested (the zene-link-style fallback is used)")
+endif()
+
 # make sub-directories
 ADD_SUBDIRECTORY(cmake)
 ADD_SUBDIRECTORY(src)
@@ -1157,6 +1179,7 @@ MESSAGE(
 "* Debug assertions                  : ${STATUS_ASSERTIONS}\n"
 "* Experimental Qt6 support          : ${STATUS_QT6}\n"
 "* WASM DSP sandbox                  : ${STATUS_WASM}\n"
+"* Ableton Link session sync         : ${STATUS_ABLETON_LINK}\n"
 )
 
 MESSAGE(

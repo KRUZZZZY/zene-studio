@@ -1,0 +1,78 @@
+Vendored: Ableton Link 4.1, with the standalone asio 1.38.2 it bundles
+=====================================================================
+
+What it is for: real Ableton Link session sync behind the link.* commands and
+the transport's Sync toggle (WF-051, owner decision 2026-10-07). Zene joins the
+same Link session as Ableton Live, Bitwig, Reason and every other Link app on
+the network. docs/LINK-SYNC.md is the design record.
+
+Upstream and pin
+----------------
+Ableton Link
+  Upstream: https://github.com/Ableton/link
+  Pin:      tag Link-4.1, commit 9c9091275e707ab09d09a5a608fcdb84bf0dec85
+            (2026-08-14, "Update README"; the tag and master pointed at the
+            same commit when it was taken, 2026-10-07)
+  Licence:  GPL-2.0-or-later (link/LICENSE.md, verbatim; the GPL text it
+            refers to is link/GNU-GPL-v2.0.md, also verbatim). The final
+            paragraph of LICENSE.md offers a separate proprietary licence by
+            arrangement with Ableton; it does not restrict the GPL grant, and
+            this GPL-2.0-or-later product uses Link under that grant.
+  Headers:  every Link header carries "Copyright <year>, Ableton AG, Berlin"
+            and the same GPL-2.0-or-later grant (ableton/util/Log.hpp carries
+            the copyright line only; LICENSE.md covers it).
+
+asio (standalone), Link's own submodule modules/asio-standalone
+  Upstream: https://github.com/chriskohlhoff/asio
+  Pin:      commit 8806a6803cde7054c3049d3666d3ec36786568c5 ("asio version
+            1.38.2 released", 2026-07-19) - the commit Link-4.1's submodule
+            entry names, not a newer one
+  Licence:  Boost Software License 1.0 (asio/LICENSE_1_0.txt and
+            asio/COPYING, verbatim). All 548 vendored asio headers carry the
+            BSL-1.0 notice ("Copyright (c) 2003-2026 Christopher M. Kohlhoff";
+            a few also name a co-author - Rep Invariant Systems, Oliver
+            Kowalke, Boris Schaeling, Stefan Arentz, Roelof Naude, Klemens D.
+            Morgenstern - under the same licence). BSL-1.0 is a permissive
+            licence the FSF lists as GPL-compatible, so it may be combined
+            with GPL-2.0-or-later code; its one condition (keep the notice and
+            licence text with source copies) is met by keeping both files here
+            and every header unmodified.
+
+Files taken
+-----------
+Only what a build can reach, so nothing unused is shipped:
+  link/include/   the include closure of ableton/Link.hpp and
+                  ableton/link/HostTimeFilter.hpp, following every
+                  #include <ableton/...> line regardless of the platform #if
+                  around it (so the Linux, macOS, Windows and ESP32 branches
+                  are all present) - 70 headers. Not taken: LinkAudio
+                  (ableton/LinkAudio.*, ableton/link_audio/), the test and
+                  serial_io helpers, examples, extensions, the Catch copy.
+  asio/include/   the include closure of asio.hpp and asio/system_timer.hpp
+                  (the two headers Link includes), following every
+                  #include "asio/..." line regardless of #if - 548 headers.
+                  Not taken: asio/ssl, asio/experimental, asio/ts and the
+                  handful of headers nothing above includes.
+  link/LICENSE.md, link/GNU-GPL-v2.0.md, asio/COPYING, asio/LICENSE_1_0.txt.
+
+MANIFEST.tsv lists all 622 files with their upstream path and git blob sha.
+Each local file's `git hash-object` equals the blob sha `git ls-tree` reports
+at the pinned commit, so every vendored file is a byte-identical copy.
+Verify with:
+  cd src/3rdparty/ableton-link && tail -n +2 MANIFEST.tsv | \
+    while IFS=$'\t' read -r path repo up sha; do \
+      [ "$(git hash-object "$path")" = "$sha" ] || echo "DIFFERS: $path"; done
+
+Local modifications: none. The configuration upstream's CMake applies
+(cmake_include/ConfigureAbletonLink.cmake, ConfigureAsioStandalone.cmake) is
+re-stated in CMakeLists.txt here, with this tree's own asio inline namespace
+(zene_link_asio_1_38_2) so this asio copy cannot clash with another.
+
+Build
+-----
+WANT_ABLETON_LINK (top-level CMakeLists.txt, default ON) compiles it in. One
+translation unit includes Link: src/core/AbletonLinkSession.cpp, built as the
+static library zene_ableton_link (src/CMakeLists.txt). With the option OFF -
+or on a MinGW cross build from a case-sensitive host, which cannot compile
+Link's <Windows.h> includes - src/core/AbletonLinkSessionStub.cpp is built
+instead and the link.* commands fall back to the zene-link-style model.

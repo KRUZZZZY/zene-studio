@@ -192,11 +192,11 @@ void snapshotMenu(QMenu* menu)
 	list(snapshots, "Snapshots...", [] { return CommandLists::mixerSnapshots(); });
 }
 
-//! WF-051: syncing with other apps and machines - the Link-style session and MIDI clock.
+//! WF-051: syncing with other apps and machines - the Ableton Link session and MIDI clock.
 void syncMenu(QMenu* menu)
 {
 	QMenu* sync = menu->addMenu(tr("Sync"));
-	addCommandChoices(sync, tr("Link Session"), QStringLiteral("link.set_enabled"), QStringLiteral("enabled"),
+	addCommandChoices(sync, tr("Ableton Link"), QStringLiteral("link.set_enabled"), QStringLiteral("enabled"),
 		[] { return CommandCall{QStringLiteral("link.set_enabled"), {}, {}, QString(), false}; });
 	addCommandChoices(sync, tr("Share Start and Stop"), QStringLiteral("link.set_start_stop_sync"), QStringLiteral("enabled"),
 		[] { return CommandCall{QStringLiteral("link.set_start_stop_sync"), {}, {}, QString(), false}; });

@@ -312,6 +312,21 @@ ENDIF()
 # defect rather than failing later at a link step.
 TARGET_COMPILE_DEFINITIONS(zene_api PRIVATE ZENE_API_BOUNDARY)
 
+# Ableton Link (WF-051, docs/LINK-SYNC.md): the ONE translation unit that
+# includes the vendored library, in a static library of its own so that Link's
+# include directories and asio macros (src/3rdparty/ableton-link/CMakeLists.txt)
+# reach this file and nothing else in the core. It is linked through the tree's
+# static dependency chain exactly as zene_api is above. Without the library the
+# stub (src/core/AbletonLinkSessionStub.cpp) is in LMMS_SRCS instead.
+IF(LMMS_HAVE_ABLETON_LINK)
+	ADD_LIBRARY(zene_ableton_link STATIC core/AbletonLinkSession.cpp)
+	SET_TARGET_PROPERTIES(zene_ableton_link PROPERTIES AUTOMOC OFF POSITION_INDEPENDENT_CODE ON)
+	TARGET_COMPILE_DEFINITIONS(zene_ableton_link PRIVATE -Dlmmsobjs_EXPORTS)
+	TARGET_INCLUDE_DIRECTORIES(zene_ableton_link PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+	TARGET_LINK_LIBRARIES(zene_ableton_link PRIVATE ableton_link)
+	target_static_libraries(lmmsobjs zene_ableton_link)
+ENDIF()
+
 ADD_EXECUTABLE(zene
 	core/main.cpp
 	"${WINRC}"

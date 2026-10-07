@@ -60,6 +60,30 @@ private slots:
 		QCOMPARE(sessionSyncText(QJsonObject{{QStringLiteral("enabled"), false}}), QStringLiteral("Sync"));
 		QCOMPARE(sessionSyncText(QJsonObject{{QStringLiteral("enabled"), true}, {QStringLiteral("peer_count"), 2},
 			{QStringLiteral("session_tempo"), 128.0}}), QStringLiteral("Sync: 2 peer(s), 128.0 BPM"));
+		// The real Ableton Link backend (WF-051) is named in full, as Ableton's Link
+		// guidelines ask, with the peer count while it is enabled.
+		const QString model = QStringLiteral("ableton-link");
+		QCOMPARE(sessionSyncText(QJsonObject{{QStringLiteral("enabled"), false}, {QStringLiteral("model"), model}}),
+			QStringLiteral("Ableton Link"));
+		QCOMPARE(sessionSyncText(QJsonObject{{QStringLiteral("enabled"), true}, {QStringLiteral("model"), model},
+			{QStringLiteral("peer_count"), 3}, {QStringLiteral("session_tempo"), 120.5}}),
+			QStringLiteral("Ableton Link: 3 peer(s), 120.5 BPM"));
+	}
+
+	//! In a build with the library the toggle says what it joins: Ableton Link, and
+	//! the apps on the other end, and whether it is Enabled or Disabled.
+	void theActionNamesAbletonLink()
+	{
+		const QJsonObject state = ControlRegistry::instance()->invoke(QStringLiteral("link.get_state"), QJsonObject{}).result;
+		if (state.value(QStringLiteral("model")).toString() != QStringLiteral("ableton-link"))
+		{
+			QSKIP("this build carries the zene-link-style fallback, not the Ableton Link library");
+		}
+		QObject owner;
+		QAction* sync = makeSessionSyncAction(&owner);
+		QCOMPARE(sync->text(), QStringLiteral("Ableton Link"));
+		QVERIFY2(sync->toolTip().contains(QStringLiteral("Ableton Live")), qPrintable(sync->toolTip()));
+		QVERIFY2(sync->toolTip().contains(QStringLiteral("Disabled")), qPrintable(sync->toolTip()));
 	}
 
 	void togglingRunsTheCommand()
@@ -74,11 +98,18 @@ private slots:
 			QSKIP(qPrintable(QStringLiteral("session sync could not start here (no multicast?): ") + sync->toolTip()));
 		}
 		QVERIFY(sync->isChecked());
-		QVERIFY2(sync->text().startsWith(QStringLiteral("Sync: ")), qPrintable(sync->text()));
+		const bool ableton = on.value(QStringLiteral("model")).toString() == QStringLiteral("ableton-link");
+		const QString label = ableton ? QStringLiteral("Ableton Link") : QStringLiteral("Sync");
+		QVERIFY2(sync->text().startsWith(label + QStringLiteral(": ")), qPrintable(sync->text()));
+		if (ableton)
+		{
+			QVERIFY2(sync->toolTip().contains(QStringLiteral("Enabled")), qPrintable(sync->toolTip()));
+			QVERIFY2(sync->toolTip().contains(QStringLiteral("connected")), qPrintable(sync->toolTip()));
+		}
 		sync->trigger();
 		QVERIFY(!ControlRegistry::instance()->invoke(QStringLiteral("link.get_state"), QJsonObject{})
 			.result.value(QStringLiteral("enabled")).toBool());
-		QCOMPARE(sync->text(), QStringLiteral("Sync"));
+		QCOMPARE(sync->text(), label);
 	}
 };
 

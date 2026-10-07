@@ -171,6 +171,13 @@ play is bound to it.</p>
 chorus. Ctrl+click the cells (or Ctrl+Space on a focused cell) to select them, then right-click and choose Sub-scenes &gt;
 Make a Sub-scene From the Selection; it takes the cells of one scene. The scene's Sub-scenes menu then launches, renames and
 deletes it. Its cells launch as the scene would launch them, on the same bar lines, and the other tracks play on.</p>
+<p><b>Ableton Link.</b> The <b>Ableton Link</b> button in the arranger's toolbar (also Project &gt; Sync) plays the
+project in time with Ableton Live, Bitwig, Reason and every other Ableton Link app on your network or on this computer.
+The tempo is shared both ways - a tempo another app sets is not an undo step - and while the song plays it stays on the
+session's beat grid: started on its own, it waits for the session's next bar (the quantum, 4 beats unless Project &gt;
+Sync &gt; Quantum changes it). With Project &gt; Sync &gt; Share Start and Stop on, play and stop in any app that shares
+them start and stop the others. The button shows how many apps are connected and the session tempo; link.get_state
+has the rest.</p>
 
 <h2 id="projects">Projects</h2>
 <p>Projects keep their history: Project &gt; Revisions restores or compares an earlier state. Collect Media copies every

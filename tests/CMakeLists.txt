@@ -931,6 +931,21 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	ENDIF()
 ENDIF()
 
+# Ableton Link (WF-051, docs/LINK-SYNC.md): the follower's beat-grid arithmetic and its
+# realtime rule. Every build: the follower compiles against the stub session without Link.
+LIST(APPEND LMMS_TESTS src/core/LinkPhaseLockTest.cpp)
+
+# Ableton Link (WF-051, docs/LINK-SYNC.md): the vendored library and its wrapper.
+# Only with the library in the build (WANT_ABLETON_LINK); RUN_SERIAL below.
+IF(LMMS_HAVE_ABLETON_LINK)
+	LIST(APPEND LMMS_TESTS
+		src/core/AbletonLinkSessionTest.cpp
+		# Zene's engine in a real Link session against a peer built from Link's own
+		# API (that test constructs ableton::Link itself, hence the link below).
+		src/core/AbletonLinkInteropTest.cpp
+	)
+ENDIF()
+
 # Peer-to-peer collaboration (0.5.0 F6): the invite, the TLS-PSK transport and the port-mapping
 # codecs exist only with Qt Network.
 IF(ZENE_HAVE_COLLAB)
@@ -3545,12 +3560,32 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-link-sync.py
 			$<TARGET_FILE:zene>)
+	# Pinned to the zene-link-style fallback for the reason ControlLinkCommandsTest is
+	# (its transcript asserts that model's revisions and loopback probe); the two
+	# binaries inherit ctest's environment through control_socket_harness.py.
 	set_tests_properties(ControlLinkSync PROPERTIES
-		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ZENE_LINK_BACKEND=zene-link-style"
 		TIMEOUT 300
 		RUN_SERIAL TRUE
 		SKIP_RETURN_CODE 77
 	)
+	# Two real instances in ONE real Ableton Link session (WF-051): the cross-process
+	# half of the Ableton backend's proof - tempo both ways, start/stop both ways and
+	# both play heads locked to the session phase, nothing but Link's protocol between
+	# them. RUN_SERIAL and SKIP_RETURN_CODE 77 for ControlLinkSync's reasons (a skip
+	# only on a measured multicast failure).
+	IF(LMMS_HAVE_ABLETON_LINK)
+		add_test(NAME ControlLinkInterop
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-link-interop.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlLinkInterop PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 300
+			RUN_SERIAL TRUE
+			SKIP_RETURN_CODE 77
+		)
+	ENDIF()
 	# Auto-mastering wave 1 (feature rows 25 and 72 of docs/FEATURE-LIST-0.3.0.md;
 	# docs/AUTO-MASTERING.md, task #610), which is the release contract's section
 	# 3.1 claim for the `mastering.*` group: it starts the real binary, opens the
@@ -3901,8 +3936,22 @@ set_tests_properties(SampleClipStretchTest SampleClipRubberBandTest TakeLaneComp
 # The link.* group drives the process-wide session model (and the Song's tempo,
 # for an adopted one) and starts the UI-thread service timer, so it wants a real
 # Qt platform plugin even though nothing opens a window.
+#
+# Pinned to the zene-link-style fallback (ZENE_LINK_BACKEND, include/LinkSync.h): this
+# test proves THAT model - its packet codec, revision order and peer table - and those
+# assertions mean nothing for the real Ableton Link backend, which became the default
+# when the library was vendored (WF-051). The Ableton backend has its own proof:
+# AbletonLinkSessionTest and AbletonLinkInteropTest below.
 set_tests_properties(ControlLinkCommandsTest PROPERTIES
-	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ZENE_LINK_BACKEND=zene-link-style")
+# Ableton Link joins the multicast group 224.76.78.75:20808, which is shared state by
+# design: a Link participant in a concurrently running test is a legitimate peer, so
+# these run alone (the same reason ControlLinkSync is RUN_SERIAL).
+IF(LMMS_HAVE_ABLETON_LINK)
+	set_tests_properties(AbletonLinkSessionTest AbletonLinkInteropTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE)
+	target_link_libraries(AbletonLinkInteropTest PRIVATE ableton_link)
+ENDIF()
 # The browser.* group: BrowserCatalogTest drives libsndfile and the config
 # manager's working directory, ControlBrowserCommandsTest constructs a full
 # Engine and drives project-free commands through the registry. Neither opens a

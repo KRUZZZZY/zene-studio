@@ -36,15 +36,20 @@ class QJsonObject;
 namespace lmms::gui
 {
 
-/*! KNOWN-LIMITATIONS "session sync has no interface": a checkable "Sync" action for the transport
- *  toolbar. Toggling runs link.set_enabled; the action's text and tooltip read link.get_state -
- *  peers, the session tempo, the quantum - once a second while it is enabled, so a peer joining or
- *  a tempo arriving shows without a socket client. The model is this project's own session sync,
- *  not Ableton Link, and the tooltip says so. */
+/*! The transport toolbar's checkable session-sync action. Toggling runs link.set_enabled; the
+ *  action's text and tooltip read link.get_state - the peer count and the session tempo - once a
+ *  second while it is enabled, so a peer joining or a tempo arriving shows without a socket client.
+ *  With the Ableton Link backend (the default build, docs/LINK-SYNC.md) it is labelled "Ableton
+ *  Link", the name written in full as Ableton's Link guidelines ask, and the tooltip says it plays
+ *  in time with Ableton Live, Bitwig and other Link apps and states Enabled/Disabled; with the
+ *  zene-link-style fallback it keeps its "Sync" label and says it syncs Zene instances only. */
 LMMS_EXPORT QAction* makeSessionSyncAction(QObject* parent);
 
 //! The text the action shows for a link.get_state reply (split out so a test can read it).
 LMMS_EXPORT QString sessionSyncText(const QJsonObject& state);
+
+//! The tooltip the action shows for a link.get_state reply.
+LMMS_EXPORT QString sessionSyncToolTip(const QJsonObject& state);
 
 } // namespace lmms::gui
 

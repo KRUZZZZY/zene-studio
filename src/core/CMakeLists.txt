@@ -1,3 +1,12 @@
+# Ableton Link (WF-051, docs/LINK-SYNC.md). With the vendored library
+# (LMMS_HAVE_ABLETON_LINK), src/core/AbletonLinkSession.cpp is compiled as its own
+# static library in src/CMakeLists.txt so Link's asio configuration reaches that
+# one translation unit only; without it, this stub implements the same header
+# (include/AbletonLinkSession.h) and reports the library absent.
+IF(NOT LMMS_HAVE_ABLETON_LINK)
+	SET(LMMS_ABLETON_LINK_STUB_SRCS core/AbletonLinkSessionStub.cpp)
+ENDIF()
+
 # Offline stem separation (opt-in, see doc/STEM-SPLIT.md). The job manager and
 # track builder are pure Qt and always available when the feature is enabled;
 # the C++ ONNX Runtime backend is compiled only when the runtime was found.
@@ -453,6 +462,13 @@ set(LMMS_SRCS
 	core/LinkSync.cpp
 	core/LinkSyncWire.cpp
 	core/LinkUdpTransport.cpp
+	# The real Ableton Link backend (WF-051): the UI-thread bridge, the
+	# audio-thread follower Song::processNextBuffer() calls, and the pure
+	# phase-lock arithmetic it uses. They compile in every build - against the
+	# stub session when the library is not (AbletonLinkSessionStub.cpp).
+	core/AbletonLinkBridge.cpp
+	core/LinkAudioFollower.cpp
+	core/LinkPhaseLock.cpp
 	core/ControlCommandsSettings.cpp
 	core/ControlCommandsSurface.cpp
 	# track.move: the structural half of track.* (task #664, feature row 75) - the
@@ -1219,6 +1235,7 @@ set(LMMS_SRCS
 
 	${LMMS_STEM_SRCS}
 	${LMMS_SESSION_SRCS}
+	${LMMS_ABLETON_LINK_STUB_SRCS}
 
 	${LMMS_TELEMETRY_SRCS}
 	${LMMS_COLLAB_SRCS}

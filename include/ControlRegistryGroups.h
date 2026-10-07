@@ -117,14 +117,12 @@ LMMS_EXPORT void registerModulatorRouteCommands(ControlRegistry& registry);
  *  already stores (docs/MPE.md); they are NOT a second expression store. */
 LMMS_EXPORT void registerNoteExpressionCommands(ControlRegistry& registry);
 /*! link.get_state / set_enabled / set_quantum / set_start_stop_sync /
- *  set_session_tempo - session tempo and beat-phase sync (D11 "Ableton Link
- *  sync"). The engine half is include/LinkSync.h and
- *  include/LinkPeerTransport.h (the seam a real Ableton Link transport would
- *  implement); this group is what makes any of it drivable, and it is the ONLY
- *  way to reach it - there is no interface for session sync in this release.
- *  The model is this project's own ("zene-link-style": Link's semantics, not
- *  Link's library, which is not vendored - the licence finding that vendoring
- *  it is permitted is docs/LINK-SYNC.md section 1). */
+ *  set_session_tempo - session tempo, beat-phase and start/stop sync (D11,
+ *  WF-051). The engine half is include/LinkSync.h: real Ableton Link (the
+ *  vendored library, src/3rdparty/ableton-link) wherever the build carries it,
+ *  else the zene-link-style fallback only Zene instances speak
+ *  (docs/LINK-SYNC.md). The transport's Sync toggle (SessionSyncAction) runs
+ *  link.set_enabled; everything else is driven through this group. */
 LMMS_EXPORT void registerLinkCommands(ControlRegistry& registry);
 
 /*! bounce.in_place / freeze.track / freeze.region / freeze.unfreeze - freeze /
