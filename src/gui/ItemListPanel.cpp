@@ -368,7 +368,9 @@ int ItemListPanel::rowOf(const QString& id) const
 void ItemListPanel::selectionEdited()
 {
 	if (m_syncing || !m_source->tracksSelection()) { return; }
-	const QList<int> rows = chosenRows();
+	QList<int> rows;
+	for (const QModelIndex& index : m_table->selectionModel()->selectedRows()) { rows.append(index.row()); }
+	std::sort(rows.begin(), rows.end());
 	if (rows != m_source->selectedRows()) { m_source->select(rows); }
 }
 
