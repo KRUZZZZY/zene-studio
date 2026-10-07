@@ -179,6 +179,7 @@ void SessionGridView::rebuild(int tracks, int scenes)
 	m_tracks = tracks;
 	m_scenes = scenes;
 	m_dropCell = -1;
+	m_selected.clear();  // a cell's index means another cell in a grid of another size
 	m_playingScene.assign(static_cast<std::size_t>(tracks), -1);
 	for (int track = 0; track < tracks; ++track)
 	{
@@ -239,6 +240,7 @@ void SessionGridView::refresh()
 	readColumns(state.result.value(QStringLiteral("columns")).toArray());
 	m_slots = state.result.value(QStringLiteral("slots")).toArray();
 	m_sceneStates = state.result.value(QStringLiteral("scenes")).toArray();
+	m_subScenes = state.result.value(QStringLiteral("subscenes")).toArray();
 	m_names = cellNames(m_slots);
 	paintHeaders();
 	for (int track = 0; track < tracks; ++track)
@@ -259,6 +261,12 @@ QString SessionGridView::statusText(int tracks, int scenes) const
 {
 	if (m_dropCell >= 0) { return dropPreviewText(); }
 	if (!m_notice.isEmpty()) { return m_notice; }
+	if (!m_selected.empty())  // WF-064
+	{
+		return selection().isEmpty() ? tr("%n cell(s) selected, in more than one scene: a sub-scene is one scene's cells", nullptr,
+			static_cast<int>(m_selected.size()))
+			: tr("%n cell(s) selected: right-click for Sub-scenes > Make a Sub-scene From the Selection", nullptr, static_cast<int>(m_selected.size()));
+	}
 	return tracks == 0 || scenes == 0 ? tr("The session grid is empty: Grid... (session.set_grid) sizes it.")
 		: tr("%1 tracks, %2 scenes").arg(tracks).arg(scenes);
 }
@@ -339,8 +347,9 @@ void SessionGridView::paintCell(int track, int scene)
 	cell->setCheckable(true);
 	cell->setChecked(playing);
 	const QString where = tr("Track %1, scene %2").arg(track + 1).arg(scene + 1);
-	cell->setAccessibleName(name.isEmpty() ? tr("%1: empty").arg(where)
-		: tr("%1: %2%3").arg(where, name, phase.isEmpty() ? QString() : QStringLiteral(", ") + phase));
+	const QString selected = isCellSelected(track, scene) ? tr(", selected") : QString();
+	cell->setAccessibleName((name.isEmpty() ? tr("%1: empty").arg(where)
+		: tr("%1: %2%3").arg(where, name, phase.isEmpty() ? QString() : QStringLiteral(", ") + phase)) + selected);
 	if (!recording.isEmpty()) { cell->setAccessibleName(cell->accessibleName() + QStringLiteral(", ") + recording); }
 	setTip(cell, launchNote(track, scene));
 	paintDropPreview(cell, index);
@@ -407,7 +416,7 @@ void SessionGridView::stopColumn(int track)
 bool SessionGridView::eventFilter(QObject* watched, QEvent* event)
 {
 	auto* button = qobject_cast<QToolButton*>(watched);
-	if (button != nullptr && dropOnCell(button, event)) { return true; }
+	if (button != nullptr && (dropOnCell(button, event) || selectOnCell(button, event))) { return true; }
 	if (event->type() != QEvent::KeyPress || button == nullptr) { return QWidget::eventFilter(watched, event); }
 	const auto key = static_cast<QKeyEvent*>(event)->key();
 	if (key == Qt::Key_Return || key == Qt::Key_Enter)
@@ -445,11 +454,13 @@ void SessionGridView::populateMenu(QMenu* menu, QToolButton* button) const
 		{
 			if (action->property("recordTake").toBool()) { connect(action, &QAction::triggered, this, [this] { m_landTake = true; }); }
 		}
+		SessionGridMenus::populateSubScenes(menu, -1, m_subScenes, selection());  // WF-064
 	}
 	else if (button != nullptr && scene != m_sceneButtons.end())
 	{
 		const int row = static_cast<int>(scene - m_sceneButtons.begin());
 		SessionGridMenus::populateScene(menu, row, m_sceneStates.at(row).toObject());
+		SessionGridMenus::populateSubScenes(menu, row, m_subScenes, selection());  // WF-064
 	}
 	else { SessionGridMenus::populateGrid(menu, m_tracks, m_scenes); }
 }

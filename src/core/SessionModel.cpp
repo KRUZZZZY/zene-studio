@@ -30,6 +30,7 @@
 #include <QDomDocument>
 #include <QDomElement>
 #include <QString>
+#include <QStringList>
 
 #include "DocumentIndex.h"
 
@@ -60,6 +61,38 @@ bool restoreScenes( const QDomElement& scenesElement, std::vector<Scene>& scenes
 }
 
 
+//! 0.5.0 WF-064: the sub-scenes as a <subscenes> child of the <session> block - only when there is one, so a block
+//! without sub-scenes keeps its bytes.
+void saveSubScenes( QDomDocument& doc, QDomElement& session, const std::vector<SubScene>& subScenes )
+{
+	if( subScenes.empty() ) { return; }
+	QDomElement list = doc.createElement( QStringLiteral( "subscenes" ) );
+	session.appendChild( list );
+	for( const SubScene& subScene : subScenes )
+	{
+		QDomElement element = doc.createElement( QStringLiteral( "subscene" ) );
+		subScene.saveState( element );
+		list.appendChild( element );
+	}
+}
+
+
+//! Reads the <subscenes> child back; one that does not parse is left out rather than half-read.
+std::vector<SubScene> restoreSubScenes( const QDomElement& session )
+{
+	std::vector<SubScene> subScenes;
+	const QDomElement list = session.firstChildElement( QStringLiteral( "subscenes" ) );
+	for( QDomElement element = list.firstChildElement( QStringLiteral( "subscene" ) );
+		!element.isNull() && static_cast<int>( subScenes.size() ) < SubScene::MaxCount;
+		element = element.nextSiblingElement( QStringLiteral( "subscene" ) ) )
+	{
+		SubScene subScene;
+		if( subScene.restoreState( element ) ) { subScenes.push_back( std::move( subScene ) ); }
+	}
+	return subScenes;
+}
+
+
 //! Restores every <clip> child of a <session> block. Slots pointing outside
 //! the grid are dropped (the block is malformed or truncated).
 bool restoreClips( const QDomElement& clipsElement, SessionModel& model )
@@ -80,6 +113,49 @@ bool restoreClips( const QDomElement& clipsElement, SessionModel& model )
 	}
 	return true;
 }
+}
+
+
+// ---------------------------------------------------------------------------
+// SubScene (0.5.0 WF-064)
+// ---------------------------------------------------------------------------
+
+std::vector<int> SubScene::normalised( std::vector<int> columns )
+{
+	columns.erase( std::remove_if( columns.begin(), columns.end(), []( int column ) { return column < 0; } ), columns.end() );
+	std::sort( columns.begin(), columns.end() );
+	columns.erase( std::unique( columns.begin(), columns.end() ), columns.end() );
+	return columns;
+}
+
+
+void SubScene::saveState( QDomElement& element ) const
+{
+	QStringList columns;
+	for( const int track : tracks ) { columns << QString::number( track ); }
+	element.setAttribute( QStringLiteral( "name" ), name );
+	element.setAttribute( QStringLiteral( "scene" ), scene );
+	element.setAttribute( QStringLiteral( "tracks" ), columns.join( QLatin1Char( ',' ) ) );
+}
+
+
+bool SubScene::restoreState( const QDomElement& element )
+{
+	bool ok = false;
+	const int row = element.attribute( QStringLiteral( "scene" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( row ) >= static_cast<unsigned>( MaxScenes ) ) { return false; }
+	std::vector<int> columns;
+	for( const QString& text : element.attribute( QStringLiteral( "tracks" ) ).split( QLatin1Char( ',' ), Qt::SkipEmptyParts ) )
+	{
+		const int column = text.toInt( &ok );
+		if( !ok || static_cast<unsigned>( column ) >= static_cast<unsigned>( MaxTracks ) ) { return false; }
+		columns.push_back( column );
+	}
+	if( columns.empty() ) { return false; }
+	name = element.attribute( QStringLiteral( "name" ) );
+	scene = row;
+	tracks = normalised( std::move( columns ) );
+	return true;
 }
 
 
@@ -188,7 +264,7 @@ bool SessionModel::isEmpty() const
 	{
 		return false;
 	}
-	if( m_globalLaunchQuantisation != DefaultLaunchQuantisation )
+	if( m_globalLaunchQuantisation != DefaultLaunchQuantisation || !m_subScenes.empty() )
 	{
 		return false;
 	}
@@ -219,6 +295,7 @@ void SessionModel::clear()
 	m_globalLaunchQuantisation = DefaultLaunchQuantisation;
 	m_hadSessionBlock = false;
 	m_preservedUnknownXml.clear();
+	m_subScenes.clear();
 }
 
 
@@ -283,6 +360,7 @@ QDomElement SessionModel::saveState( QDomDocument& doc, QDomElement& parent ) co
 			clipsElement.appendChild( clipElement );
 		}
 	}
+	saveSubScenes( doc, session, m_subScenes );
 
 	return session;
 }
@@ -330,6 +408,7 @@ bool SessionModel::restoreState( const QDomElement& element )
 		clear();
 		return false;
 	}
+	m_subScenes = restoreSubScenes( element );
 
 	return true;
 }
@@ -451,6 +530,8 @@ bool SessionModel::restoreScenesSection( const QDomElement& section )
 	}
 
 	candidate.m_hadSessionBlock = true;
+	// 0.5.0 WF-064: the sub-scenes travel in their own section (<z:subscenes>), which a load may have read first.
+	candidate.m_subScenes = std::move( m_subScenes );
 	*this = std::move( candidate );
 	return true;
 }

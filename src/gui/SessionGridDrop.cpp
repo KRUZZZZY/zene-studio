@@ -149,7 +149,10 @@ void SessionGridView::paintDropPreview(QToolButton* button, int index) const
 	const bool target = index == m_dropCell && index >= 0;
 	if (!target)
 	{
-		if (!button->styleSheet().isEmpty()) { button->setStyleSheet(QString()); }
+		// WF-064: a selected cell's dotted outline (SessionGridSelect.cpp), else no style of its own.
+		const bool selected = m_scenes > 0 && isCellSelected(index / m_scenes, index % m_scenes);
+		const QString wanted = selected ? QStringLiteral("QToolButton { border: 2px dotted %1; }").arg(tokens::palette().accent.name()) : QString();
+		if (button->styleSheet() != wanted) { button->setStyleSheet(wanted); }
 		return;
 	}
 	// The replacement shown before it happens: the words and a dashed outline, so not by colour alone.

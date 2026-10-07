@@ -229,8 +229,9 @@ void registerSessionGetState(ControlRegistry& registry)
 	state.description = QStringLiteral("The Session View: grid dimensions, the global launch "
 		"quantisation, every non-empty clip slot with its launch settings, every scene override, "
 		"and the launch engine's read-back (completed launches, the grid line the newest starts "
-		"fired on, how many clips started on that one line), and `columns`: every column that is "
-		"launching, playing or stopping and the scene it is on.");
+		"fired on, how many clips started on that one line), `columns`: every column that is "
+		"launching, playing or stopping and the scene it is on, and `subscenes`: each sub-scene "
+		"{subscene, name, scene, tracks} (session.subscene_create).");
 	state.argsSchema = objectSchema();
 	state.resultSchema = objectSchema({
 		{QStringLiteral("grid"), objectProperty()},
@@ -239,6 +240,7 @@ void registerSessionGetState(ControlRegistry& registry)
 		{QStringLiteral("scenes"), arrayProperty()},
 		{QStringLiteral("launch"), objectProperty()},
 		{QStringLiteral("columns"), arrayProperty()},
+		{QStringLiteral("subscenes"), arrayProperty()},
 	});
 	state.mutating = false;
 	state.handler = [](const QJsonObject&) {
@@ -271,6 +273,7 @@ void registerSessionGetState(ControlRegistry& registry)
 					: QStringLiteral("stopping")}});
 		}
 		result.insert(QStringLiteral("columns"), columns);
+		result.insert(QStringLiteral("subscenes"), subSceneStates(*model));  // 0.5.0 WF-064
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(state);

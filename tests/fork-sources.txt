@@ -763,6 +763,7 @@ include/ParameterGridDialog.h
 include/PatchWiring.h
 include/PhaseScopeTap.h
 include/PhaseScopeView.h
+include/PerformView.h
 include/PinConnector.h
 include/PitchTrack.h
 include/PluginAudioPorts.h
@@ -854,6 +855,7 @@ include/SessionGridView.h
 include/SessionModel.h
 include/SessionPlayback.h
 include/SessionScheduler.h
+include/SessionSubScenes.h
 include/SessionSyncAction.h
 include/SessionTransportBar.h
 include/SessionTuning.h
@@ -1300,6 +1302,7 @@ src/core/ControlCommandsSessionRecordInternal.h
 src/core/ControlCommandsSessionRecordLand.cpp
 src/core/ControlCommandsSessionSceneFollow.cpp
 src/core/ControlCommandsSessionShared.h
+src/core/ControlCommandsSessionSubScenes.cpp
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSettingsPresets.cpp
 src/core/ControlCommandsStemModel.cpp
@@ -1595,6 +1598,7 @@ src/core/SessionModelPrivate.h
 src/core/SessionPlayback.cpp
 src/core/SessionSceneFollow.cpp
 src/core/SessionScheduler.cpp
+src/core/SessionSubScenes.cpp
 src/core/SessionTuning.cpp
 src/core/SessionTuningMtsEsp.cpp
 src/core/SessionTuningScala.cpp
@@ -1725,6 +1729,7 @@ src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/ParameterGridDialog.cpp
 src/gui/PhaseScopeView.cpp
+src/gui/PerformView.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginNativeEditor.cpp
 src/gui/PluginQuarantineMenu.cpp
@@ -1740,6 +1745,7 @@ src/gui/ScriptBudgetAction.cpp
 src/gui/SessionGridCells.cpp
 src/gui/SessionGridDrop.cpp
 src/gui/SessionGridMenus.cpp
+src/gui/SessionGridSelect.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
 src/gui/SessionTransportBar.cpp

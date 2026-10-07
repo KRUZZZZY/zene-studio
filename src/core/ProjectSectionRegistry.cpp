@@ -36,6 +36,7 @@
 #include "ProjectMarkers.h"
 #include "TrackKeyNames.h"
 #include "ProjectWorkspace.h"
+#include "SessionSubScenes.h"
 #include "TrackLooks.h"
 #include "TrackVersions.h"
 #include "UndoHistory.h"
@@ -63,6 +64,7 @@ void registerAll()
 	VideoReference::instance();  // 0.5.0 F5 (ED-054): the project's video
 	AutomationLatency::instance();  // W3 engine: read by the audio thread's automation ramps
 	UndoHistory::instance().attach(Engine::projectJournal());  // WF-033: the undo history saved with the project
+	SessionSubScenes::instance();  // 0.5.0 L02 (WF-064): the launcher's sub-scenes, <z:subscenes>
 	registerAlternatives();
 	registerSubprojects();
 	metronomeoptions::options();  // reads the config file here, not on the audio thread at the first click

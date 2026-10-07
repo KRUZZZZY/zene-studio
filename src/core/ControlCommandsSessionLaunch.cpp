@@ -47,6 +47,9 @@
  * synchronisation a measurement rather than a restatement of the request.
  */
 
+#include <algorithm>
+#include <vector>
+
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -173,25 +176,10 @@ void registerLaunchSlot(ControlRegistry& registry)
 QJsonArray launchRow(const SessionModel& model, Song& song, int scene, int columns,
 	const QJsonObject& args, int* syncTick, bool* inSync)
 {
-	const SessionClockContext ctx = clockOf(song);
-	QJsonArray launched;
-	publishContentBeforeLaunch(&song);
+	std::vector<int> all(static_cast<std::size_t>(std::max(columns, 0)));
+	for (int track = 0; track < columns; ++track) { all[static_cast<std::size_t>(track)] = track; }
 	LaunchQuantisation rowQuantisation = LaunchQuantisation::None;
-	for (int track = 0; track < columns; ++track)
-	{
-		const ClipSlot& slot = model.slot(track, scene);
-		if (slot.isEmpty()) { continue; }
-		const LaunchRequest request = launchRequestOf(model, slot, args);
-		const QJsonObject entry = launchOne(song.sessionScheduler(), ctx, track, scene, request);
-		const int at = entry.value(QStringLiteral("scheduled_tick")).toInt();
-		if (launched.isEmpty())
-		{
-			rowQuantisation = request.quantisation;
-			*syncTick = at;
-		}
-		*inSync = *inSync && at == *syncTick;
-		launched.append(entry);
-	}
+	const QJsonArray launched = launchCells(model, song, scene, all, columns, args, syncTick, inSync, &rowQuantisation);
 	if (!launched.isEmpty()) { song.sessionScheduler().requestSceneLaunch(scene, rowQuantisation); }
 	return launched;
 }
@@ -317,6 +305,35 @@ void registerStopAll(ControlRegistry& registry)
 }
 
 } // namespace
+
+QJsonArray sessioncontrol::launchCells(const SessionModel& model, Song& song, int scene, const std::vector<int>& columns,
+	int launchable, const QJsonObject& args, int* syncTick, bool* inSync, LaunchQuantisation* quantisation)
+{
+	const SessionClockContext ctx = clockOf(song);
+	QJsonArray launched;
+	publishContentBeforeLaunch(&song);
+	for (const int track : columns)
+	{
+		const ClipSlot& slot = model.slot(track, scene);
+		if (track < 0 || track >= launchable || slot.isEmpty()) { continue; }
+		const LaunchRequest request = launchRequestOf(model, slot, args);
+		const QJsonObject entry = launchOne(song.sessionScheduler(), ctx, track, scene, request);
+		const int at = entry.value(QStringLiteral("scheduled_tick")).toInt();
+		if (launched.isEmpty())
+		{
+			*quantisation = request.quantisation;
+			*syncTick = at;
+		}
+		*inSync = *inSync && at == *syncTick;
+		launched.append(entry);
+	}
+	return launched;
+}
+
+int sessioncontrol::launchableColumnCount(const SessionModel& model, Song& song)
+{
+	return launchableColumns(model, song);
+}
 
 void registerSessionLaunchCommands(ControlRegistry& registry)
 {

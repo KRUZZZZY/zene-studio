@@ -132,6 +132,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerNotePlaybackCommands(registry);
 	registerMixerToolCommands(registry);
 	registerSessionPerformCommands(registry);
+	registerSessionSubSceneCommands(registry);
 	registerCompGroupCommands(registry);
 	registerRecordToolCommands(registry);
 	registerArrangeToolCommands(registry);

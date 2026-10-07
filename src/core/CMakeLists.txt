@@ -1049,6 +1049,8 @@ set(LMMS_SRCS
 	core/ControlCommandsNotePlayback.cpp
 	core/ControlCommandsMixerTools.cpp
 	core/ControlCommandsSessionPerform.cpp
+	core/ControlCommandsSessionSubScenes.cpp
+	core/SessionSubScenes.cpp
 	core/ControlCommandsCompGroup.cpp
 	core/ControlCommandsRecordTools.cpp
 	core/MetronomeOptions.cpp

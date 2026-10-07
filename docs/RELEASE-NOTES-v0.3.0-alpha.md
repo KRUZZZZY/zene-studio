@@ -976,6 +976,10 @@ at the merged tip, configured without wasmtime: `MEASURED rows=818 true_inverse=
 not_mutating=352` (`DECLARED rows=818 entries=818 duplicates=0`) - the block below minus wasm's option row,
 exactly, and the lanes' own deltas summed (+2 f2-ui, +1 meters, +1 editor-lanes, +2 wf033, +3 launcher-rec).
 
+**0.5.0 launcher in performance** (lane launcher-perform, WF-064 sub-scenes; +4): session.subscene_create,
+session.subscene_rename and session.subscene_delete (`true_inverse`, the captured <session> block) and
+session.subscene_launch (`not_mutating`, a launch).
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=827 true_inverse=408 snapshot=41 irreversible=21 not_mutating=357
      configuration: telemetry.status wasm.load session.get_state stem.get_state

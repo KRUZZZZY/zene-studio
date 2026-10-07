@@ -99,6 +99,9 @@ and it declares that command in its `controlCommand` property for the agent-surf
   - `clip_launcher` → `launcher`
   - `pattern`, `automation` and `mixer` are unchanged
   - the floating windows `controller_rack`, `project_notes` and `microtuner`
+  - `perform` (0.5.0, WF-071): perform mode, the launcher's live show window (`PerformView`,
+    View > Perform Mode and Launcher > Perform Mode). It is a top-level window of its own, not a
+    panel, and it does not remember its place (`ToolWindowMemory` does not know it).
 
   Showing a panel hides the panel its region held. A view's centre stays visible. A panel that
   the current view does not offer (the arranger or the launcher in Edit) is revealed by

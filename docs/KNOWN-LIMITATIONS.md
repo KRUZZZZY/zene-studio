@@ -2661,3 +2661,47 @@ Evidence, all from the `050/feat-alloc-probe-fix` lane:
   whatever those tests call.
 - `tests/src/core/LinkRealtimeProbe.h` on `050/feat-link-interop` is a second, correct
   probe written for the same reason. Once both lanes are merged, it can be folded into this one.
+
+## 0.5.0 launcher in performance — perform mode and sub-scenes (lane launcher-perform, 2026-10-07)
+
+**Perform mode (WF-071).** View > Perform Mode and Launcher > Perform Mode (`window.toggle` 'perform') open
+`PerformView`: the setlist's song and the next one, transport and tempo, the playing scene and the next, one big
+button per scene, each column's playing cell and a large Stop All - every press a registered command
+(`PerformViewTest`). What it does not do:
+- Its keys (1-9, Up/Down, Enter, Space, Escape, Page Up/Down) are the window's own and cannot be rebound: the
+  shortcut map (`shortcuts.set`) binds main-window menu actions only. Launcher > Launch Scene 1-8 and Stop All
+  Clips remain rebindable there.
+- MIDI learn reaches what the launcher's controller bindings can do - launch a scene, stop everything
+  (`session.bind_learn`). "Select the next scene", "launch the selected scene", play/stop, tempo and the song
+  steps cannot be bound to a note.
+- Keys 1-9 reach only the first nine scenes; past them, Up/Down and Enter (the scene list scrolls to the
+  selected scene).
+- It does not remember its place or size (`ToolWindowMemory` does not know it), and it is not in the footer's
+  Tools menu.
+- The bar and beat it shows assume four beats of 48 ticks to the bar; a scene's own time signature is not
+  reflected there.
+- Found while testing it: `transport.set_tempo` is undone through a Song checkpoint, which rebuilds the tracks,
+  and each track's view is made by a queued call. Two such undos in one turn of the event loop, with the
+  interface up, crashed in `TrackContainerView::createTrackView` (on a track the second restore had deleted).
+  The application's event loop runs between two presses, so the test lets it run too; the hazard itself is not
+  fixed here.
+
+**Sub-scenes (WF-064).** A sub-scene is a named subset of one scene's cells (some of its columns), made from a grid
+selection (Ctrl+click or Ctrl+Space, then Sub-scenes > Make a Sub-scene From the Selection) or
+`session.subscene_create`, renamed and deleted (one undo step each), launched with `session.subscene_launch`, and kept
+in a project file as its own `<z:subscenes>` section (`docs/SCENES-NATIVE.md` §4; `SessionSubSceneTest`,
+`SessionSubSceneGridTest`). What it does not do:
+- A sub-scene is one scene's cells. Cells from several scenes cannot be combined into one.
+- Launching one does not mark the row as the launched scene, so the scene's own Follow Action chain does not fire,
+  and the grid's scene button shows the row's state, not the sub-scene's. The columns outside it play on.
+- It names columns by position. Moving or deleting a track, or shrinking the grid, does not move or drop a
+  sub-scene: a column or scene that is no longer there is skipped at launch (`skipped`), or the launch is refused
+  when its scene is gone.
+- Making one from the grid names it "Sub-scene N"; renaming is a second step (Sub-scenes > Rename...). The selection
+  stays after it is made.
+- Perform mode has no sub-scene buttons, and the controller bindings (`session.bind`) cannot launch a sub-scene.
+- A project whose `<z:subscenes>` section came from a newer build keeps that section as it came; sub-scenes made in
+  this build on top of it are not saved while it is there.
+- What an older build does with a new project was checked by reading its loader (`Song::restoreNamedSection` has no
+  branch for `<z:subscenes>`, and its `<z:scenes>` claim, unchanged here, still claims the section this build writes -
+  asserted in `SessionSubSceneTest`), not by running an older binary on the file.

@@ -540,6 +540,7 @@ include/PeakIndicator.h
 include/PerfLog.h
 include/PhaseScopeTap.h
 include/PhaseScopeView.h
+include/PerformView.h
 include/Piano.h
 include/PianoRoll.h
 include/PianoView.h
@@ -675,6 +676,7 @@ include/SessionGridView.h
 include/SessionModel.h
 include/SessionPlayback.h
 include/SessionScheduler.h
+include/SessionSubScenes.h
 include/SessionSyncAction.h
 include/SessionTransportBar.h
 include/SessionTuning.h
@@ -1570,6 +1572,7 @@ src/core/ControlCommandsSessionRecordInternal.h
 src/core/ControlCommandsSessionRecordLand.cpp
 src/core/ControlCommandsSessionSceneFollow.cpp
 src/core/ControlCommandsSessionShared.h
+src/core/ControlCommandsSessionSubScenes.cpp
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSettingsPresets.cpp
 src/core/ControlCommandsStemModel.cpp
@@ -1924,6 +1927,7 @@ src/core/SessionModelPrivate.h
 src/core/SessionPlayback.cpp
 src/core/SessionSceneFollow.cpp
 src/core/SessionScheduler.cpp
+src/core/SessionSubScenes.cpp
 src/core/SessionTuning.cpp
 src/core/SessionTuningMtsEsp.cpp
 src/core/SessionTuningScala.cpp
@@ -2139,6 +2143,7 @@ src/gui/NoteTransformActions.cpp
 src/gui/ParameterGridDialog.cpp
 src/gui/PeakControllerDialog.cpp
 src/gui/PhaseScopeView.cpp
+src/gui/PerformView.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginBrowser.cpp
 src/gui/PluginNativeEditor.cpp
@@ -2160,6 +2165,7 @@ src/gui/SendButtonIndicator.cpp
 src/gui/SessionGridCells.cpp
 src/gui/SessionGridDrop.cpp
 src/gui/SessionGridMenus.cpp
+src/gui/SessionGridSelect.cpp
 src/gui/SessionGridView.cpp
 src/gui/SessionSyncAction.cpp
 src/gui/SessionTransportBar.cpp
@@ -2593,6 +2599,7 @@ tests/src/core/SessionPlaybackTest.cpp
 tests/src/core/SessionSceneFollowTest.cpp
 tests/src/core/SessionSchedulerRenderTest.cpp
 tests/src/core/SessionSchedulerTest.cpp
+tests/src/core/SessionSubSceneTest.cpp
 tests/src/core/SessionTuningTest.cpp
 tests/src/core/SidechainInputsTest.cpp
 tests/src/core/SlideNotesTest.cpp
@@ -2682,6 +2689,7 @@ tests/src/gui/NoteEditorFlTest.cpp
 tests/src/gui/NoteEditorTest.cpp
 tests/src/gui/NoteGridTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
+tests/src/gui/PerformViewTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/RackMenuTest.cpp
@@ -2691,6 +2699,7 @@ tests/src/gui/SampleEditorDialogTest.cpp
 tests/src/gui/ScriptBudgetActionTest.cpp
 tests/src/gui/SessionGridRecordTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
+tests/src/gui/SessionSubSceneGridTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp
 tests/src/gui/SessionTransportBarTest.cpp
 tests/src/gui/SessionTuningMenuTest.cpp
