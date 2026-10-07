@@ -980,8 +980,14 @@ exactly, and the lanes' own deltas summed (+2 f2-ui, +1 meters, +1 editor-lanes,
 session.subscene_rename and session.subscene_delete (`true_inverse`, the captured <session> block) and
 session.subscene_launch (`not_mutating`, a launch).
 
+**The 2026-10-07 second feature merge** (`050/features-2026-10-06`: alloc-probe-fix, launcher-perform,
+link-interop) re-took the figure with the probe at the merged tip, configured without wasmtime: `MEASURED rows=822
+true_inverse=410 snapshot=38 irreversible=21 not_mutating=353` (`DECLARED rows=822 entries=822 duplicates=0`) - the
+block below minus wasm's option row, exactly, and launcher-perform's +4 (3 `true_inverse`, 1 `not_mutating`) on the
+first merge's 818; alloc-probe-fix and link-interop add no row.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=827 true_inverse=408 snapshot=41 irreversible=21 not_mutating=357
+     measured: rows=831 true_inverse=411 snapshot=41 irreversible=21 not_mutating=358
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
