@@ -57,7 +57,9 @@ public:
 		PresetPreviewHandle = 0x08,
 		//! R2.1: a sample track's input monitor (InputMonitor.h) - persistent, like an
 		//! instrument's own handle: the song-stop clear keeps it.
-		InputMonitorHandle = 0x10
+		InputMonitorHandle = 0x10,
+		//! WF-055: a sample track's launcher-cell renderer (SessionAudioCells.h) - persistent too.
+		SessionCellHandle = 0x20
 	} ;
 	using Types = Flags<Type>;
 

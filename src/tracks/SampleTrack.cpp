@@ -68,8 +68,8 @@ SampleTrack::SampleTrack(TrackContainer* tc) :
 
 SampleTrack::~SampleTrack()
 {
-	Engine::audioEngine()->removePlayHandlesOfTypes( this,
-		PlayHandle::Type::SamplePlayHandle | PlayHandle::Type::InputMonitorHandle );
+	Engine::audioEngine()->removePlayHandlesOfTypes( this, PlayHandle::Type::SamplePlayHandle
+		| PlayHandle::Type::InputMonitorHandle | PlayHandle::Type::SessionCellHandle );
 }
 
 

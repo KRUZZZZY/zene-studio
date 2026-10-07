@@ -661,6 +661,8 @@ include/ScriptPackage.h
 include/SendButtonIndicator.h
 include/SerializingObject.h
 include/SessionArrangementRecorder.h
+include/SessionAudioCells.h
+include/SessionAudioRecorder.h
 include/SessionFollow.h
 include/SessionGridCells.h
 include/SessionGridMenus.h
@@ -1551,6 +1553,7 @@ src/core/ControlCommandsScoreExport.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSections.cpp
 src/core/ControlCommandsSession.cpp
+src/core/ControlCommandsSessionAudioRecord.cpp
 src/core/ControlCommandsSessionCapture.cpp
 src/core/ControlCommandsSessionFollow.cpp
 src/core/ControlCommandsSessionLaunch.cpp
@@ -1905,6 +1908,8 @@ src/core/ScriptDawEffects.cpp
 src/core/ScriptEngine.cpp
 src/core/ScriptPackage.cpp
 src/core/SerializingObject.cpp
+src/core/SessionAudioCells.cpp
+src/core/SessionAudioRecorder.cpp
 src/core/SessionClip.cpp
 src/core/SessionFollow.cpp
 src/core/SessionModel.cpp
@@ -2564,6 +2569,9 @@ tests/src/core/ScriptEngineTest.cpp
 tests/src/core/ScriptMemoryBudgetTest.cpp
 tests/src/core/ScriptStabilisationTest.cpp
 tests/src/core/SessionArrangementRecordTest.cpp
+tests/src/core/SessionAudioCellPlaybackTest.cpp
+tests/src/core/SessionAudioRecordTest.cpp
+tests/src/core/SessionAudioRecorderTest.cpp
 tests/src/core/SessionFollowTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/SessionPerformTest.cpp
@@ -2665,6 +2673,7 @@ tests/src/gui/RecordingRecoveryMenuTest.cpp
 tests/src/gui/RenderPresetMenuTest.cpp
 tests/src/gui/SampleEditorDialogTest.cpp
 tests/src/gui/ScriptBudgetActionTest.cpp
+tests/src/gui/SessionGridRecordTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp
 tests/src/gui/SessionTransportBarTest.cpp

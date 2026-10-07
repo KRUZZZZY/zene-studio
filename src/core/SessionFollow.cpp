@@ -191,6 +191,7 @@ void SessionScheduler::takeColumnOver( const ActiveSlot& slot ) noexcept
 		other.state.held = false;
 		other.phaseOriginFor = -1;
 		m_recorder.recordStop( other.track, other.scene, slot.state.startedTick );
+		m_audioRecorder.slotStopped( other.track, other.scene, slot.state.startedTick );  // WF-055
 	}
 }
 
@@ -213,6 +214,14 @@ void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockCo
 		slot.phaseOriginFor = slot.state.startedTick;
 		if( event == LaunchEvent::Started ) { takeColumnOver( slot ); }
 		m_recorder.recordStart( slot.track, slot.scene, slot.state.startedTick );
+		// WF-055: a cell recording a fixed length is given its stop now, at the line the take ends on.
+		const tick_t length = event == LaunchEvent::Started
+			? m_audioRecorder.slotStarted( slot.track, slot.scene, slot.state.startedTick, ctx.framesPerTick ) : 0;
+		if( length > 0 )
+		{
+			slot.state.phase = SlotPhase::StopPending;
+			slot.state.pendingTick = slot.state.startedTick + length;
+		}
 		return;
 	}
 
@@ -220,6 +229,7 @@ void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockCo
 	{
 		slot.phaseOriginFor = -1;
 		m_recorder.recordStop( slot.track, slot.scene, slot.state.pendingTick );
+		m_audioRecorder.slotStopped( slot.track, slot.scene, slot.state.pendingTick );  // WF-055
 		return;
 	}
 
@@ -431,6 +441,7 @@ bool SessionScheduler::consumeResetRequest() noexcept
 				|| slot.state.phase == SlotPhase::StopPending ) )
 		{
 			m_recorder.recordStop( slot.track, slot.scene, m_positionTicks );
+			m_audioRecorder.slotStopped( slot.track, slot.scene, m_positionTicks );  // WF-055
 		}
 	}
 	for( auto& slot : m_active )

@@ -34,6 +34,8 @@
 namespace lmms
 {
 
+class SampleBuffer;
+
 /*! One cell's content, as the audio thread sees it. */
 struct SessionSlotContent
 {
@@ -50,6 +52,9 @@ struct SessionSlotContent
 	bool legato = false;
 	//! WF-060: where in the clip a launch starts (the cell's loop start), in ticks.
 	tick_t startTicks = 0;
+	/*! WF-055: an AUDIO cell's clip at the engine's rate, or nullptr. Owned on the model thread by
+	 *  include/SessionAudioCells.h, which keeps it alive while the scheduler can name it. */
+	const SampleBuffer* clip = nullptr;
 };
 
 
@@ -71,7 +76,8 @@ public:
 	/*! Stores one cell's content, REPLACING any previous entry for that cell.
 	 *  Model thread (called via the scheduler's queue). No allocation, no lock.
 	 *  False when the table has no free entry - the caller counts it. */
-	bool install( int track, int scene, int patternId, tick_t loopLengthTicks, bool legato = false, tick_t startTicks = 0 ) noexcept;
+	bool install( int track, int scene, int patternId, tick_t loopLengthTicks, bool legato = false, tick_t startTicks = 0,
+		const SampleBuffer* clip = nullptr ) noexcept;
 
 	/*! The content stored for a cell, or nullptr. AUDIO THREAD: a bounded walk
 	 *  over fixed storage, so it allocates nothing and locks nothing. */
@@ -107,6 +113,11 @@ struct SessionSlotPlayback
 	tick_t positionTicks = 0;
 	//! The published loop length, or 0 when none was published.
 	tick_t loopLengthTicks = 0;
+	//! WF-055: the audio cell's clip (nullptr for a MIDI or empty cell), and which launch is playing - the
+	//! scene and the line it started on - so a renderer can tell a new launch from the same one going on.
+	const SampleBuffer* clip = nullptr;
+	int scene = -1;
+	tick_t startedTick = -1;
 };
 
 
@@ -122,7 +133,8 @@ class SessionModel;
  *  makes Follow Actions work: a chain fires on the audio thread and chooses a
  *  cell the model thread never named. A cell that became empty or became an
  *  AUDIO cell publishes patternId < 0, so it stops rendering rather than keeping
- *  a stale pattern. */
+ *  a stale pattern; an audio cell publishes its clip instead (WF-055,
+ *  include/SessionAudioCells.h), loaded here on the model thread. */
 int publishSessionSlotContent( SessionScheduler& scheduler, const SessionModel& model ) noexcept;
 
 } // namespace lmms

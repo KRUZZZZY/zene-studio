@@ -867,6 +867,8 @@ set(LMMS_TESTS
 	# R5.3: the clip-launch grid - launch, stop and scene-launch from the grid produce the
 	# socket-visible state; every cell focusable and announced; the arrow keys.
 	src/gui/SessionGridViewTest.cpp
+	# 0.5.0 L02 (WF-055): an empty cell records audio from its menu, says so, and the grid lands its own take.
+	src/gui/SessionGridRecordTest.cpp
 	# The clip launcher's Follow Actions / arrangement-record row.
 	src/gui/SessionTransportBarTest.cpp
 	# M3 item 6: the take lanes panel - comp, audition and consolidate from its own buttons.
@@ -959,6 +961,13 @@ ENDIF()
 		# R5.2: Follow Action chains on SCENES - whole rows, precedence over the clip,
 		# the v1/v2 section rule and the socket half (set_slot's missing chain arg).
 		src/core/SessionSceneFollowTest.cpp
+		# 0.5.0 L02 (WF-055): audio recorded into a launcher cell - the take as a unit (round trip, span, length,
+		# the allocation probe on its audio-thread entry points) and on the real engine through the agent surface
+		# (a known input signal, the quantised start, the landed WAV's PCM, one undo step).
+		src/core/SessionAudioRecorderTest.cpp
+		src/core/SessionAudioRecordTest.cpp
+		# ...and a launched audio cell sounding its clip through its sample track (the landed take included).
+		src/core/SessionAudioCellPlaybackTest.cpp
 	)
 
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level
@@ -1403,6 +1412,7 @@ set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SessionGridRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(InstrumentSetupUiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

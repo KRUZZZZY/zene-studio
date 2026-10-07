@@ -89,6 +89,12 @@ const ReversibilityRow kDeviceRows[] = {
 	R("session.capture_to_slot", RC::TrueInverse, true,
 		"it adds a pattern holding what was played and points a launcher cell at it",
 		"action checkpoint: the recorded undo step restores the <session> block and removes the pattern track it made", ""),
+	// 0.5.0 L02 (WF-055): audio into a launcher cell - arming and recording are a launch, landing is the edit.
+	R("session.record_slot", RC::NotMutating, false, "it arms the cell's audio take and launches the cell: a launch, "
+		"not a project edit (the take is landed by session.record_slot_land)", "no write (cancel: true drops the take)", ""),
+	R("session.record_slot_status", RC::NotMutating, false, "it reads the take's progress. Nothing is written", "no write", ""),
+	R("session.record_slot_land", RC::TrueInverse, true, "it writes the take to a WAV and points the launcher cell at it",
+		"action checkpoint: the recorded undo step restores the <session> block (the WAV stays on disk)", ""),
 	// 0.5.0 L01 / L11 / L12 / L14.
 	R("transport.low_latency", RC::NotMutating, false, "it stops high-latency devices processing while monitoring: session "
 		"state (Effect::setDontRun, neither journalled nor saved)", "no project write (enabled:false puts them back)", ""),

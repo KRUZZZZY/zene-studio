@@ -69,6 +69,7 @@
 #include "UndoHistory.h"
 #include "RecordOptions.h"
 #include "RetroMidiCapture.h"
+#include "SessionAudioCells.h"
 #include "ProjectSection.h"
 #include "Scale.h"
 #include "SongEditor.h"
@@ -335,6 +336,11 @@ void Song::processNextBuffer()
 		sessionClock.transportRunning = m_playing && m_playMode == PlayMode::Song;
 		m_sessionScheduler.processAudio(sessionClock,
 			Engine::audioEngine()->framesPerPeriod());
+		// 0.5.0 L02 (WF-055): a launcher cell recording audio takes this period's input, after the
+		// launch events above decided whether it plays. One atomic load while nothing records.
+		AudioEngine* engine = Engine::audioEngine();
+		m_sessionScheduler.audioRecorder().push(engine->inputBuffer(), engine->inputBufferFrames(),
+			engine->inputStreamStarted(), engine->framesPerPeriod());
 	}
 
 	// If nothing is playing, there is nothing to do
@@ -1351,6 +1357,9 @@ void Song::clearProject()
 									clear();
 	AutomationClip::globalAutomationClip( &m_masterPitchModel )->
 									clear();
+	// WF-055: a launcher cell's audio take belongs to the project being closed (no period renders here).
+	m_sessionScheduler.audioRecorder().cancel();
+	sessionaudio::retire();  // and the audio cells' clips (freed at the next close: SessionAudioCells.h)
 
 	Engine::audioEngine()->doneChangeInModel();
 

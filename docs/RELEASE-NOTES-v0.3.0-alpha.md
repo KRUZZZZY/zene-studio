@@ -967,6 +967,9 @@ without wasmtime: `MEASURED rows=810 true_inverse=404 snapshot=37 irreversible=2
 project.set_undo_history (`snapshot`, the inverse is the command with the previous setting) and
 project.undo_history (`not_mutating`).
 
+**0.5.0 L02 launcher-rec** (WF-055, audio into a launcher cell; +3): session.record_slot_land (`true_inverse`);
+session.record_slot and session.record_slot_status (`not_mutating`: arming and recording are a launch).
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=820 true_inverse=406 snapshot=40 irreversible=21 not_mutating=353
      configuration: telemetry.status wasm.load session.get_state stem.get_state

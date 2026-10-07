@@ -92,6 +92,33 @@ void addSongStep(QMenu* menu, const QString& label, const QString& to)
 	});
 }
 
+//! WF-055: record the column's input into this cell (an empty one), for as long as it plays or for some bars, and
+//! drop a take in hand. The two record entries carry "recordTake" so the grid knows to land what they start.
+void addRecordEntries(QMenu* menu, const QJsonObject& where, const QString& title, bool empty)
+{
+	const bool idle = ControlRegistry::instance()->invoke(QStringLiteral("session.record_slot_status")).result
+		.value(QStringLiteral("state")).toString() == QLatin1String("idle");
+	QAction* record = addCommandAction(menu, QObject::tr("Record Audio Into Cell"), QStringLiteral("session.record_slot"),
+		[where, title] { return call(QStringLiteral("session.record_slot"), where, title, false); });
+	QAction* bars = addCommandAction(menu, QObject::tr("Record Audio for Bars..."), QStringLiteral("session.record_slot"),
+		[where, title] {
+			CommandCall timed = call(QStringLiteral("session.record_slot"), where, title);
+			timed.defaults.insert(QStringLiteral("bars"), 1);
+			return timed;
+		});
+	for (QAction* action : {record, bars})
+	{
+		action->setProperty("recordTake", true);
+		action->setEnabled(action->isEnabled() && empty && idle);
+	}
+	QAction* cancel = addCommandAction(menu, QObject::tr("Cancel Recording"), QStringLiteral("session.record_slot"), [where, title] {
+		QJsonObject args = where;
+		args.insert(QStringLiteral("cancel"), true);
+		return call(QStringLiteral("session.record_slot"), args, title, false);
+	});
+	cancel->setEnabled(cancel->isEnabled() && !idle);
+}
+
 } // namespace
 
 //! WF-061: an entry opening the follow-action editor on @a chain, written back through @a command.
@@ -123,6 +150,7 @@ void populateCell(QMenu* menu, int track, int scene, const QJsonObject& slot)
 		audio.insert(QStringLiteral("type"), QStringLiteral("audio"));
 		return call(QStringLiteral("session.set_slot"), audio, title);
 	});
+	addRecordEntries(menu, where, title, slot.isEmpty());  // WF-055
 	const auto set = [where, title] { return call(QStringLiteral("session.set_slot"), where, title); };
 	addCommandChoices(menu, QObject::tr("Launch Mode"), QStringLiteral("session.set_slot"), QStringLiteral("mode"), set);
 	addCommandChoices(menu, QObject::tr("Launch Quantisation"), QStringLiteral("session.set_slot"),

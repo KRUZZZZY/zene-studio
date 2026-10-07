@@ -2526,3 +2526,35 @@ What it leaves out:
 - It acts on the control's first automation clip; a clip that starts after the tick is refused rather than extended
   backwards.
 - The menu item is offered only for a control the command surface can name (as the mode submenu is).
+
+## Recording audio into a launcher cell (WF-055, 0.5.0 L02 `launcher-rec`) — added 2026-10-07
+
+`session.record_slot` / `session.record_slot_status` / `session.record_slot_land` record a sample track's input
+into an empty launcher cell: it starts on the launch quantisation, stops on the cell's quantised stop or after
+`bars`, and lands as the cell's audio clip (a 24-bit WAV), one undo step. Design record and proof:
+`docs/SESSION-AUDIO-RECORD.md`. What it does not do:
+
+- **One take at a time**, on one cell. A finished take blocks the next `session.record_slot` until it is landed
+  or cancelled (`cancel: true`).
+- **Empty cells only.** A filled cell is refused; clear it first. There is no "record over" or overdub.
+- **Sample tracks only**, and the take is the engine's **stereo input bus** (what an arrangement clip records),
+  not a record route's chosen input channel. `track.set_arm` is not consulted: arming the cell is the arm.
+- **The start is period-granular.** The session scheduler decides launches once per audio period, so a take
+  starts with the period in which its grid line is reached (as the cell's own playback does); its length is
+  exact - whole frames of the span, shifted by the recording round trip like an arrangement take.
+- **Landing is explicit on the socket.** The take waits in `done` until `session.record_slot_land` writes it;
+  an agent polls `session.record_slot_status`. The WAV is never deleted by undo.
+- **From the interface** (View ▸ Clip Launcher): an empty cell's right-click menu has Record Audio Into Cell,
+  Record Audio for Bars... and Cancel Recording; the cell reads "● Rec" while it records ("○ Rec" while it waits
+  for its launch, and its accessible name says so in words); the column's stop button ends the take on the
+  quantised stop, and the grid lands the take it started into the user's `samples/Recordings` folder. There is no
+  record BUTTON on the cell itself, no keyboard shortcut for it, no count-in, and the grid does not land a take it
+  did not start (an agent's take is left for the agent).
+- **A launched audio cell renders only on a sample track's column**, through that track, from the clip's top (or
+  its loop start), looping the whole file. The cell's gain, transpose, detune, RAM mode and loop LENGTH are not
+  applied to audio, and there is no warping: a file plays at its own speed whatever the tempo. A file at another
+  sample rate is converted once, when it is first launched. An audio cell on an instrument track's column still
+  only silences the column. (Before this lane no launched audio cell rendered at all - the bullet "The Session
+  View is in the 0.3.0-alpha builds..." above records that.)
+- **Clips are cached by path** for the open project: a file changed on disk after its cell was first launched
+  plays the old audio until the project is reopened.
