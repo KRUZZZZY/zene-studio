@@ -40,6 +40,10 @@
 #include <QThread>
 #include <QVector>
 
+#include "AutomationClip.h"
+#include "AutomationTrack.h"
+#include "ControlAutomationSupport.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ReversibilityTestSupport.h"
@@ -349,6 +353,51 @@ private slots:
 		QVERIFY2(recording.ok, qPrintable(recording.errorMessage));
 		QCOMPARE(recording.result.value(QStringLiteral("mode")).toString(), qstr("on"));
 		QVERIFY(registry->invoke(QStringLiteral("automation.clear"), target).ok);
+	}
+
+	//! A destination before a clip's origin reports a tick refusal for an in-range value.
+	void movingBeforeTheClipOriginReportsATickError()
+	{
+		Engine::getSong()->clearProject();  // discard the empty clip left by the earlier record-mode test
+		m_devicedTrack = revtest::addInstrumentTrack();
+		if (m_devicedTrack.isEmpty() && !testHostCanLoadPluginModules())
+		{
+			QSKIP("the song exposes no automatable device parameter: plugin modules link the zene "
+				"executable, so on Windows their import descriptor names zene.exe and a test host "
+				"cannot satisfy it; the product loads them inside zene.exe where that resolves by "
+				"construction (CI msvc-x64: QLibrary::load -> ERROR_MOD_NOT_FOUND, 126)");
+		}
+		QVERIFY2(!m_devicedTrack.isEmpty(), "no instrument track with parameters in the fresh song");
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult state = registry->invoke(QStringLiteral("automation.get_state"),
+			QJsonObject{{QStringLiteral("track"), m_devicedTrack}});
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		const QJsonArray tracks = state.result.value(QStringLiteral("tracks")).toArray();
+		QVERIFY(!tracks.isEmpty());
+		const QJsonArray parameters = tracks.first().toObject().value(QStringLiteral("parameters")).toArray();
+		QVERIFY2(!parameters.isEmpty(), "no automatable parameter on the instrument track");
+		const QString parameterId = parameters.first().toObject().value(QStringLiteral("id")).toString();
+
+		ControlTarget target;
+		control::AutomationParameter parameter;
+		ControlResult error;
+		const QJsonObject addressed{{QStringLiteral("track"), m_devicedTrack},
+			{QStringLiteral("parameter"), parameterId}};
+		QVERIFY2(control::resolveAutomationParameter(addressed, &target, &parameter, &error), qPrintable(error.errorMessage));
+		const double validValue = (parameter.model->minValue<double>() + parameter.model->maxValue<double>()) / 2.0;
+
+		auto* lane = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
+		auto* clip = dynamic_cast<AutomationClip*>(lane->createClip(TimePos(384)));
+		clip->addObject(parameter.model);
+		clip->changeLength(TimePos(4 * 192));
+		clip->putValue(TimePos(16), 0.f, false, true);  // song tick 400
+		const ControlResult moved = registry->invoke(QStringLiteral("automation.move_point"),
+			QJsonObject{{QStringLiteral("track"), m_devicedTrack}, {QStringLiteral("parameter"), parameterId},
+				{QStringLiteral("ticks"), 400}, {QStringLiteral("new_ticks"), 368}, {QStringLiteral("new_value"), validValue}});
+		QVERIFY(!moved.ok);
+		QCOMPARE(moved.errorMessage, QStringLiteral("destination tick 368 is before automation clip start at 384"));
+		QCOMPARE(moved.errorKind, ControlErrorKind::Refused);
+		QVERIFY(clip->getTimeMap().contains(TimePos(16)));
 	}
 
 	//! The MODES' own proof (the no-destruction property, the mode round trip for all
