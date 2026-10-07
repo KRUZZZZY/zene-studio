@@ -30,6 +30,7 @@
 
 #include <QtTest>
 
+#include <QFile>
 #include <QJsonArray>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -40,6 +41,7 @@
 #include "Engine.h"
 #include "RenderQueue.h"
 #include "TaskCenter.h"
+#include "BrowserTestSupport.h"
 
 using namespace lmms;
 
@@ -206,6 +208,32 @@ private slots:
 		QVERIFY2(cleared.ok, qPrintable(cleared.errorMessage));
 		QVERIFY(cleared.result.value(QStringLiteral("removed")).toInt() >= 1);
 		QCOMPARE(taskWithId(id).id, 0);
+	}
+
+	void convertingAnOldSuffixedSourcePreservesIt()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString source = dir.filePath(QStringLiteral("song.wav.old"));
+		const QString output = dir.filePath(QStringLiteral("song.wav"));
+		QVERIFY(browserfixture::writeWave(source, browserfixture::WaveSpec{}));
+
+		QFile sourceFile(source);
+		QVERIFY(sourceFile.open(QIODevice::ReadOnly));
+		const QByteArray original = sourceFile.readAll();
+		sourceFile.close();
+
+		RenderJob job;
+		job.kind = RenderJob::Kind::Convert;
+		job.source = source;
+		job.out = output;
+		const QString error = RenderQueue::convert(job);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		QFile preservedSource(source);
+		QVERIFY(preservedSource.open(QIODevice::ReadOnly));
+		QCOMPARE(preservedSource.readAll(), original);
+		QVERIFY(QFile::exists(output));
 	}
 
 	void aQueuedRenderIsListedAndCancelledThroughTheList()
