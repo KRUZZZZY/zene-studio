@@ -170,6 +170,29 @@ private slots:
 		QCOMPARE(missing.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	void aNewLinkRecordsItsUnlinkedMembershipAsBeforeState()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("transaction A"));
+		const QString b = addMidiClip(QStringLiteral("transaction B"));
+		QVERIFY(!a.isEmpty());
+		QVERIFY(!b.isEmpty());
+		QCOMPARE(clipLinkId(a), 0);
+
+		const ControlResult linked = registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a},
+				{QStringLiteral("clips"), QJsonArray{b}}});
+		QVERIFY2(linked.ok, qPrintable(linked.errorMessage));
+
+		const QJsonArray transactions = registry->transactions();
+		QVERIFY(!transactions.isEmpty());
+		const QJsonObject record = transactions.last().toObject();
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), QStringLiteral("clip.link_create"));
+		const QJsonObject before = record.value(QStringLiteral("before")).toObject();
+		QCOMPARE(before.value(QStringLiteral("clip")).toString(), a);
+		QCOMPARE(before.value(QStringLiteral("group")).toInt(-1), 0);
+	}
+
 	// -----------------------------------------------------------------------
 	// 1b. the 'clips' reader's own contract: a refusal writes NOTHING
 	// -----------------------------------------------------------------------

@@ -206,6 +206,7 @@ void registerClipLinkCreate(ControlRegistry& registry)
 		QVector<Clip*> newcomers;
 		if (!resolveNewMembers(anchor, requested, &newcomers, &error)) { return error; }
 
+		const QJsonObject before = cliplink::membershipState(anchor.clip);
 		const int group = anchor.clip->linkId() > 0
 			? anchor.clip->linkId()
 			: ClipLinks::allocateGroupId();
@@ -227,7 +228,7 @@ void registerClipLinkCreate(ControlRegistry& registry)
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), cliplink::clipIdOf(anchor.clip));
 		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(cliplink::membershipState(anchor.clip),
+			transactionPayload(before,
 				QStringLiteral("clip.link_remove"), inverseArgs, true,
 				cliplink::ClauseClipLinkJournalled));
 		return ControlResult::success(result);
