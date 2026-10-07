@@ -175,6 +175,16 @@ bool parseGenerate(const QJsonObject& args, GenerateSpec* spec, ControlResult* e
 	return sizeFrames(args, spec, error);
 }
 
+bool validateGenerateEnd(tick_t position, tick_t length, ControlResult* error)
+{
+	const qint64 end = static_cast<qint64>(position) + static_cast<qint64>(length);
+	if (end <= static_cast<qint64>(MaxSongLength)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("generated clip ends at %1, past the song limit of %2")
+			.arg(end).arg(static_cast<qint64>(MaxSongLength)));
+	return false;
+}
+
 } // namespace
 
 void registerSampleCommands(ControlRegistry& registry)
@@ -230,6 +240,7 @@ void registerSampleCommands(ControlRegistry& registry)
 		if (!parseGenerate(args, &spec, &error)) { return error; }
 
 		const tick_t position = static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble(0.0));
+		if (!validateGenerateEnd(position, spec.length, &error)) { return error; }
 		const QString trackArg = args.value(QStringLiteral("track")).toString();
 		QJsonObject before;
 		before.insert(QStringLiteral("track"), trackArg);

@@ -530,6 +530,38 @@ private slots:
 		// buffer) before the remaining slots run.
 		REV_UNDO_OR_FAIL();
 	}
+
+	//! The start and length are individually in range, but their end must be too.
+	void generateChecksClipEndAgainstSongLimit()
+	{
+		const QString track = addTrack(QStringLiteral("sample"));
+		QVERIFY(!track.isEmpty());
+		const ControlResult pastLimit = run(QStringLiteral("sample.generate"),
+			QJsonObject{{QStringLiteral("track"), track},
+				{QStringLiteral("position"), MaxSongLength - 10},
+				{QStringLiteral("length"), 11}, {QStringLiteral("kind"), QStringLiteral("silence")}});
+		QCOMPARE(pastLimit.ok, false);
+		QCOMPARE(pastLimit.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(pastLimit.errorMessage.contains(QStringLiteral("past the song limit")));
+		REV_UNDO_OR_FAIL();
+		QVERIFY(!hasTrack(track));
+
+		const QString boundaryTrack = addTrack(QStringLiteral("sample"));
+		QVERIFY(!boundaryTrack.isEmpty());
+		const ControlResult atLimit = run(QStringLiteral("sample.generate"),
+			QJsonObject{{QStringLiteral("track"), boundaryTrack},
+				{QStringLiteral("position"), MaxSongLength - 1},
+				{QStringLiteral("length"), 1}, {QStringLiteral("kind"), QStringLiteral("silence")}});
+		QVERIFY2(atLimit.ok, qPrintable(atLimit.errorMessage));
+		const QString clip = atLimit.result.value(QStringLiteral("clip")).toString();
+		control::ClipRef ref;
+		ControlResult error;
+		QVERIFY(control::resolveClip(clip, &ref, &error));
+		QCOMPARE(ref.clip->startPosition().getTicks(), static_cast<int>(MaxSongLength - 1));
+		QCOMPARE(ref.clip->endPosition().getTicks(), static_cast<int>(MaxSongLength));
+		REV_UNDO_OR_FAIL();
+		QVERIFY(!control::resolveClip(clip, &ref, &error));
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlSampleOperatorTest)
