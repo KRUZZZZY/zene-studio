@@ -10,8 +10,8 @@ The regression in `tests/src/gui/LaneReadoutTest.cpp:202-231` renders a one-tick
 
 | Check | Result |
 | --- | --- |
-| RED before fix | `LaneReadoutTest`, 1/1 CTest test failed (exit 8); the pixel-color assertion failed |
-| GREEN after fix | `LaneReadoutTest`, 1/1 passed (exit 0) |
+| RED command | `ctest -R '^LaneReadoutTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-177.r1/logs/test-2.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result" >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-177.r1/logs/test-2.log; printf 'EXIT=%s\n' "$result"; exit "$result"` — exit 8; pixel-color assertion failed |
+| GREEN command | `ctest -R '^LaneReadoutTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-177.r1/logs/test-3.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result" >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-177.r1/logs/test-3.log; printf 'EXIT=%s\n' "$result"; exit "$result"` — exit 0 |
 | Reversal proof | Removing only the production patch, rebuilding `zene` and `LaneReadoutTest`, and rerunning the test failed (exit 8); restoring the patch and repeating passed (exit 0) |
 | Affected-family count | 1 CTest executable; 9 QtTest entries including init and cleanup |
 | Complexity gate | exit 0 |
