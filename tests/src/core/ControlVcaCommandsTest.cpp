@@ -279,6 +279,65 @@ private slots:
 			"ghost_unassign_refused=1 undo_membership=1"));
 	}
 
+	//! A deleted track keeps its stable id in the group's edit set so callers
+	//! can see and repair the missing membership. Removing that id must not need
+	//! a live Track object, and its undo restores the same missing membership.
+	void staleTrackMembershipCanBeRemoved()
+	{
+		clearGroups();
+		const QString track = addTrack();
+		const QString group = createGroup(QStringLiteral("Deleted track"));
+		QVERIFY(!track.isEmpty());
+		QVERIFY(!group.isEmpty());
+		QVERIFY(run(QStringLiteral("vca.track_add"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("track"), track}}).ok);
+
+		const ControlResult deleted = run(QStringLiteral("track.remove"),
+			{{QStringLiteral("track"), track}});
+		QVERIFY2(deleted.ok, qPrintable(deleted.errorMessage));
+		const QJsonObject stale = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).result;
+		QCOMPARE(stale.value(QStringLiteral("tracks")).toArray().size(), 1);
+		QCOMPARE(stale.value(QStringLiteral("tracks")).toArray().at(0).toString(), track);
+		QCOMPARE(stale.value(QStringLiteral("missing_tracks")).toArray().size(), 1);
+
+		const ControlResult removed = run(QStringLiteral("vca.track_remove"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("track"), track}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(removed.result.value(QStringLiteral("removed")).toString(), track);
+		QCOMPARE(removed.result.value(QStringLiteral("tracks")).toArray().size(), 0);
+		QCOMPARE(removed.result.value(QStringLiteral("missing_tracks")).toArray().size(), 0);
+
+		REV_UNDO_OR_FAIL();
+		const QJsonObject restored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).result;
+		QCOMPARE(restored.value(QStringLiteral("tracks")).toArray().size(), 1);
+		QCOMPARE(restored.value(QStringLiteral("tracks")).toArray().at(0).toString(), track);
+		QCOMPARE(restored.value(QStringLiteral("missing_tracks")).toArray().size(), 1);
+
+		// The inverse published in the transaction stream is also a replay
+		// promise. A live-track command cannot restore this dead id; replay the
+		// reported operation through the same registry clients use.
+		const ControlResult removedAgain = run(QStringLiteral("vca.track_remove"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("track"), track}});
+		QVERIFY2(removedAgain.ok, qPrintable(removedAgain.errorMessage));
+		const QJsonArray transactions = run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray();
+		QVERIFY(!transactions.isEmpty());
+		const QJsonObject inverse = transactions.last().toObject()
+			.value(QStringLiteral("inverse")).toObject();
+		const ControlResult replayed = run(inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(replayed.ok, qPrintable(QStringLiteral("reported inverse failed: %1 -> %2")
+			.arg(inverse.value(QStringLiteral("op")).toString(), replayed.errorMessage)));
+		const QJsonObject replayRestored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).result;
+		QCOMPARE(replayRestored.value(QStringLiteral("tracks")).toArray().size(), 1);
+		QCOMPARE(replayRestored.value(QStringLiteral("tracks")).toArray().at(0).toString(), track);
+		QCOMPARE(replayRestored.value(QStringLiteral("missing_tracks")).toArray().size(), 1);
+		evidence(QStringLiteral("deleted_track_membership_removed=1 undo_restored=1 inverse_replay_restored=1"));
+	}
+
 	//! `vca.remove` is EXACTLY reversible: the id, name, fader, mute, solo,
 	//! phase lock, member channels and edit tracks all come back, and the
 	//! members publish the group's gain again.
