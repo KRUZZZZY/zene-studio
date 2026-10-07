@@ -29,6 +29,7 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
 #include <QMenu>
 
 #include "ControlRegistry.h"
@@ -110,6 +111,32 @@ private slots:
 		QMenu none;
 		plain.addDefaultActions(&none);
 		QVERIFY(find(none, QMenu::tr("Soft takeover")) == nullptr);
+	}
+
+	void feedbackTakeoverRestoresPortSettingsAfterReload()
+	{
+		MidiController original(Engine::getSong());
+		original.midiPort().setInputChannel(7);
+		original.midiPort().setOutputChannel(3);
+		QCOMPARE(original.midiPort().mode(), MidiPort::Mode::Input);
+
+		original.setFeedbackEnabled(true);
+		QCOMPARE(original.midiPort().mode(), MidiPort::Mode::Duplex);
+		QCOMPARE(original.midiPort().outputChannel(), 7);
+
+		QDomDocument document;
+		QDomElement settings = document.createElement(QStringLiteral("controller"));
+		document.appendChild(settings);
+		original.saveSettings(document, settings);
+
+		MidiController reloaded(Engine::getSong());
+		reloaded.loadSettings(settings);
+		QVERIFY(reloaded.feedbackEnabled());
+		QCOMPARE(reloaded.midiPort().outputChannel(), 7);
+
+		reloaded.setFeedbackEnabled(false);
+		QCOMPARE(reloaded.midiPort().mode(), MidiPort::Mode::Input);
+		QCOMPARE(reloaded.midiPort().outputChannel(), 3);
 	}
 };
 
