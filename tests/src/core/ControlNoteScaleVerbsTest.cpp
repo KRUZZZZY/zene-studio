@@ -122,6 +122,15 @@ bool makeFixture(Fixture* fixture)
 	return true;
 }
 
+bool makeOneNoteFixture(Fixture* fixture)
+{
+	if (!makeFixture(fixture)) { return false; }
+	return run(QStringLiteral("note.add"),
+		QJsonObject{{QStringLiteral("clip"), fixture->clip}, {QStringLiteral("key"), 60},
+			{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24},
+			{QStringLiteral("velocity"), 100}}).ok;
+}
+
 //! Eight notes at distinct keys and positions, all the same velocity, so a roll has
 //! something to move and two takes can be compared note by note.
 bool addRollFixtureNotes(const QString& clip)
@@ -449,6 +458,58 @@ private slots:
 		QCOMPARE(journal->undoDepth(), depthWithSlide + 1);
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(noteState(fixture.clip, 0).value(QStringLiteral("slide")).toBool(), true);
+	}
+
+	//! A zero semitone shift must not leave a clip checkpoint to undo.
+	void zeroSemitoneTransposeDoesNotTakeUndoStep()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		const ControlResult transposed = run(QStringLiteral("note.transpose"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("semitones"), 0}});
+		QVERIFY2(transposed.ok, qPrintable(transposed.errorMessage));
+		QCOMPARE(transposed.result.value(QStringLiteral("notes_changed")).toInt(), 0);
+		const int depthAfter = journal->undoDepth();
+		while (journal->undoDepth() > depthBefore) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(depthAfter, depthBefore);
+	}
+
+	//! A zero velocity delta must not leave a clip checkpoint to undo.
+	void zeroVelocityOffsetDoesNotTakeUndoStep()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		const ControlResult offset = run(QStringLiteral("note.velocity_offset"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("delta"), 0}});
+		QVERIFY2(offset.ok, qPrintable(offset.errorMessage));
+		QCOMPARE(offset.result.value(QStringLiteral("notes_changed")).toInt(), 0);
+		const int depthAfter = journal->undoDepth();
+		while (journal->undoDepth() > depthBefore) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(depthAfter, depthBefore);
+	}
+
+	//! An identity velocity scale must not leave a clip checkpoint to undo.
+	void identityVelocityScaleDoesNotTakeUndoStep()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		const ControlResult scaled = run(QStringLiteral("note.velocity_scale"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("factor"), 1.0}});
+		QVERIFY2(scaled.ok, qPrintable(scaled.errorMessage));
+		QCOMPARE(scaled.result.value(QStringLiteral("notes_changed")).toInt(), 0);
+		const int depthAfter = journal->undoDepth();
+		while (journal->undoDepth() > depthBefore) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(depthAfter, depthBefore);
 	}
 
 	//! W6: the three transforms, each with its inverse exercised for real, plus the

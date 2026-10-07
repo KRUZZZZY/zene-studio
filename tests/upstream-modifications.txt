@@ -1719,3 +1719,4 @@ src/core/ControlCommandsClipLink.cpp	2026-10-07 cluster new-p8-6: capture clip.l
 tests/src/core/ClipLinkTest.cpp	2026-10-07 cluster new-p8-6: add a control-surface regression that checks a newly linked clip's recorded transaction before-state is unlinked.
 tests/src/core/ClipLinkTest.cpp	new-p8-7 (2026-10-07): regression asserts clip.link_remove preserves the prior membership group in its transaction snapshot when a pair dissolves.
 src/core/ControlCommandsNotes.cpp	cluster new-p8-30 (2026-10-07): reject note.resize when its position plus requested length exceeds MaxSongLength before the checkpoint; regression in NoteEditRangeTest.
+tests/src/core/ControlNoteScaleVerbsTest.cpp	new-p8-24: per-command regressions prove zero transpose, zero velocity offset and identity velocity scale do not add ProjectJournal undo steps.
