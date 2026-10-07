@@ -267,6 +267,12 @@ private slots:
 		QVERIFY(run(QStringLiteral("link.set_session_tempo"), {{QStringLiteral("bpm"), 101.5}}).ok);
 		QVERIFY2(pump.until([this] { return sameTempo(peerTempo(), 101.5); }, PropagationTimeoutMs),
 			qPrintable(QStringLiteral("the peer still reads %1 BPM").arg(peerTempo())));
+		// The engine takes the session tempo on Zene's own service tick (25 ms, UI thread),
+		// which is independent of the peer seeing it over the network: the peer can read
+		// 101.5 before that tick has run. Wait for the engine the same bounded way the
+		// peer is waited for, then hold it to the exact rounded value.
+		QVERIFY2(pump.until([] { return Engine::getSong()->getTempo() == 102; }, PropagationTimeoutMs),
+			qPrintable(QStringLiteral("the engine still plays %1 BPM").arg(Engine::getSong()->getTempo())));
 		QCOMPARE(static_cast<int>(Engine::getSong()->getTempo()), 102);
 	}
 
