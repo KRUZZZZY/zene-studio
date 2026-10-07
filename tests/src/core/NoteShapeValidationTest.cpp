@@ -42,6 +42,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -260,6 +261,28 @@ private slots:
 		const ControlResult readBack = run(QStringLiteral("note.select"),
 			{{QStringLiteral("clip"), clip()}, {QStringLiteral("notes"), QJsonArray{}}});
 		QCOMPARE(readBack.result.value(QStringLiteral("previous_notes")).toArray().size(), 2);
+	}
+
+	//! Luna cluster new-p8-38: matching one member of a note group selects the other members too.
+	void select_whereBringsAlongGroupMates()
+	{
+		freshClip();
+		NoteConditions grouped;
+		grouped.group = 7;
+		m_clip->notes()[0]->setConditions(grouped);
+		m_clip->notes()[1]->setConditions(grouped);
+
+		const ControlResult selected = run(QStringLiteral("note.select_where"), {{QStringLiteral("clip"), clip()},
+			{QStringLiteral("filter"), QJsonObject{{QStringLiteral("key_max"), 60}}}});
+		QVERIFY2(selected.ok, qPrintable(selected.errorMessage));
+		QCOMPARE(selected.result.value(QStringLiteral("matched")).toInt(), 1);
+		QVERIFY(m_clip->notes()[0]->selected());
+		QVERIFY(m_clip->notes()[1]->selected());
+		QVERIFY(!m_clip->notes()[2]->selected());
+		const QVector<int> expectedIndices{0, 1};
+		QCOMPARE(control::selectedNoteIndices(clip()), expectedIndices);
+		QJsonArray expectedSelected{noteIds().at(0), noteIds().at(1)};
+		QCOMPARE(selected.result.value(QStringLiteral("selected")).toArray(), expectedSelected);
 	}
 };
 

@@ -351,6 +351,35 @@ NoteVector act(const NoteVector& hits, const QString& action, int amount)
 	return {};
 }
 
+//! Keep filter-hit positions separate from their group-expanded selection.
+QVector<int> matchedPositions(const NoteVector& noteList, const NoteVector& hits)
+{
+	QVector<int> positions;
+	for (int index = 0; index < static_cast<int>(noteList.size()); ++index)
+	{
+		Note* note = noteList.at(index);
+		if (std::find(hits.cbegin(), hits.cend(), note) == hits.cend()) { continue; }
+		positions.append(index);
+	}
+	return positions;
+}
+
+//! Include each matched note's group in the resulting positions.
+void withGroupMates(const NoteVector& noteList, QVector<int>* positions)
+{
+	QVector<int> groups;
+	for (int index : *positions)
+	{
+		const int group = noteList.at(index)->conditions().group;
+		if (group > 0 && !groups.contains(group)) { groups.append(group); }
+	}
+	if (groups.isEmpty()) { return; }
+	for (int index = 0; index < static_cast<int>(noteList.size()); ++index)
+	{
+		if (groups.contains(noteList.at(index)->conditions().group) && !positions->contains(index)) { positions->append(index); }
+	}
+}
+
 //! Selection is view state (note.select's rule): no checkpoint, the previous selection in the reply.
 ControlResult selectWhere(const QJsonObject& args)
 {
@@ -377,14 +406,16 @@ ControlResult selectWhere(const QJsonObject& args)
 		if (!additive) { note->setSelected(false); }
 	}
 	const NoteVector hits = NoteTransform::select(noteList, filter);
+	QVector<int> matched = matchedPositions(noteList, hits);
+	const int matchedCount = static_cast<int>(matched.size());
+	withGroupMates(noteList, &matched);
+	std::sort(matched.begin(), matched.end());
 	QJsonArray selected;
-	for (int index = 0; index < static_cast<int>(noteList.size()); ++index)
+	for (int index : matched)
 	{
-		Note* note = noteList.at(index);
-		if (std::find(hits.cbegin(), hits.cend(), note) == hits.cend()) { continue; }
-		note->setSelected(true);
-		wanted.append(index);
-		selected.append(noteIdOf(note));
+		selected.append(noteIdOf(noteList.at(index)));
+		noteList.at(index)->setSelected(true);
+		if (!wanted.contains(index)) { wanted.append(index); }
 	}
 	// The flags above are half the selection: the index store control::selectNotes owns is
 	// the other half, and note.select writes BOTH (src/core/ControlCommandsNotes.cpp:477).
@@ -392,7 +423,7 @@ ControlResult selectWhere(const QJsonObject& args)
 	// selection this verb had replaced.
 	control::selectNotes(clipId(ref.id), static_cast<int>(noteList.size()), wanted);
 	emit clip->dataChanged();
-	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), selected.size()},
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), matchedCount},
 		{QStringLiteral("selected"), selected}, {QStringLiteral("previous"), previous}});
 }
 
