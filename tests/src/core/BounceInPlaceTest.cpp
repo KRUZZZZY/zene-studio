@@ -31,6 +31,9 @@
 
 #include <QtTest>
 
+#include <filesystem>
+#include <system_error>
+
 #include <QDir>
 #include <QFileInfo>
 #include <QTemporaryDir>
@@ -106,7 +109,9 @@ private slots:
 	 */
 	void trimWavRefusesASymlinkThatNamesTheSource()
 	{
-#ifdef Q_OS_UNIX
+#ifndef Q_OS_UNIX
+		QSKIP("symlinks are exercised on Unix only: QFile::link writes a .lnk shortcut on Windows");
+#else
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
 		const QString source = QDir(dir.path()).filePath(QStringLiteral("source.wav"));
@@ -125,6 +130,35 @@ private slots:
 		QCOMPARE(BounceInPlace::sha256OfFile(source), before);
 		QCOMPARE(BounceInPlace::wavFrameCount(source), kFixtureFrames);
 #endif
+	}
+
+	/*! A HARD link is a second name for the same inode: its canonical path is its
+	 *  own, so a path comparison alone lets the trim open it for writing and
+	 *  truncate the audio still being read. std::filesystem::create_hard_link
+	 *  works on Unix and NTFS alike; a filesystem that refuses it is skipped.
+	 */
+	void trimWavRefusesAHardLinkOfTheSource()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString source = QDir(dir.path()).filePath(QStringLiteral("source.wav"));
+		QVERIFY(writeWave(source, WaveSpec()));
+		const QString before = BounceInPlace::sha256OfFile(source);
+		QVERIFY(!before.isEmpty());
+
+		const QString link = QDir(dir.path()).filePath(QStringLiteral("hardlink.wav"));
+		std::error_code ec;
+		std::filesystem::create_hard_link(source.toLocal8Bit().constData(), link.toLocal8Bit().constData(), ec);
+		if (ec) { QSKIP("this filesystem cannot make a hard link, so the case cannot be exercised here"); }
+
+		qint64 written = -1;
+		QString error;
+		QVERIFY2(!BounceInPlace::trimWav(source, link, 0, 1024, &written, &error),
+			"trimming onto a hard link of the source reported success");
+		QVERIFY2(!error.isEmpty(), "the refusal carried no reason");
+		QCOMPARE(written, qint64(0));
+		QCOMPARE(BounceInPlace::sha256OfFile(source), before);
+		QCOMPARE(BounceInPlace::wavFrameCount(source), kFixtureFrames);
 	}
 };
 

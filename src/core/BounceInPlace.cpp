@@ -25,6 +25,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <system_error>
 #include <vector>
 
 #include <QCoreApplication>
@@ -368,7 +370,10 @@ BounceInPlace::Result BounceInPlace::renderTracks(const std::vector<Track*>& tra
 //! source destroys the audio before a frame is copied - a symlink, a "./" prefix
 //! or a relative spelling all name the same file. A path that does not resolve
 //! yet falls back to its absolute form, which is enough: a target that does not
-//! exist cannot be the file being read.
+//! exist cannot be the file being read. A HARD link has no shared spelling at
+//! all (its canonical path is its own), so the last test asks the filesystem
+//! whether the two names are one file (same device and inode, or the Windows
+//! equivalent), which is also what a symlink to the source reports.
 bool namesTheSameFile(const QString& source, const QString& target)
 {
 	const QFileInfo sourceInfo(source);
@@ -377,7 +382,13 @@ bool namesTheSameFile(const QString& source, const QString& target)
 		sourceInfo.canonicalFilePath().isEmpty() ? sourceInfo.absoluteFilePath() : sourceInfo.canonicalFilePath();
 	const QString targetKey =
 		targetInfo.canonicalFilePath().isEmpty() ? targetInfo.absoluteFilePath() : targetInfo.canonicalFilePath();
-	return sourceKey == targetKey;
+	if (sourceKey == targetKey) { return true; }
+	// equivalent() reports an error (and false) when either name does not exist, which is the no-op case.
+	std::error_code ec;
+	const bool same = std::filesystem::equivalent(
+		std::filesystem::path(source.toLocal8Bit().constData()),
+		std::filesystem::path(target.toLocal8Bit().constData()), ec);
+	return !ec && same;
 }
 
 /*! Opens \a source for reading, seeks it to \a startFrame and reports in
