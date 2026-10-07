@@ -246,9 +246,15 @@ ControlResult switchProject(const QJsonObject& args)
 	ControlResult opened = run(QStringLiteral("project.open"), {{QStringLiteral("path"), target}});
 	if (!opened.ok) { return opened; }
 	QString why;
-	const bool kept = args.value(QStringLiteral("keep_as_reference")).toBool() && !left.isEmpty() && ReferenceProject::instance().open(left, &why);
+	const bool requestedReference = args.value(QStringLiteral("keep_as_reference")).toBool();
+	const bool kept = requestedReference && !left.isEmpty() && ReferenceProject::instance().open(left, &why);
 	opened.result.insert(QStringLiteral("left"), left);
 	opened.result.insert(QStringLiteral("reference"), kept ? left : QString());
+	if (requestedReference && !kept)
+	{
+		opened.result.insert(QStringLiteral("reference_error"), left.isEmpty()
+			? QStringLiteral("the previous session has no project file to keep as a reference") : why);
+	}
 	return opened;
 }
 
@@ -269,7 +275,8 @@ void registerDocumentCommands(ControlRegistry& registry)
 		"project.recent (0, the default, is the most recent other one - so repeating it toggles between two projects). The "
 		"session is saved first when it changed (unless 'save_current' is false; an untitled session with changes is refused "
 		"rather than lost). With 'keep_as_reference' the project left behind stays open as the reference to copy from "
-		"(reference.*). Opens as project.open does, so it is not undoable; switch back instead."),
+		"(reference.*); if it cannot be opened, the switch completes and returns 'reference_error'. Opens as project.open "
+		"does, so it is not undoable; switch back instead."),
 		{{QStringLiteral("path"), stringProperty()}, {QStringLiteral("index"), integerProperty(0, 100)},
 			{QStringLiteral("save_current"), booleanProperty()}, {QStringLiteral("keep_as_reference"), booleanProperty()}},
 		{}, true, switchProject);
