@@ -354,6 +354,7 @@ bool readAaf(const QString& path, const AafReadOptions& options, AafModel* model
 			"not parse) - export AAF from the source application").arg(path);
 		return false;
 	}
+	*loss = AafLossReport(); // each read starts fresh: a caller may reuse one report across reads
 	Context context;
 	if (context.aafi == nullptr) { *error = QStringLiteral("LibAAF could not allocate a context"); return false; }
 	aafi_set_debug(context.aafi, VERB_WARNING, 0, nullptr, &collectLog, loss);
