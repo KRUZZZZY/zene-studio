@@ -51,9 +51,9 @@
  *      per Channel must carry LMMS' two - a MixerChannel fader (0..2, unity
  *      1.0) on the bare <Channel>, the track volume (0..200, unity 100) on the
  *      track's own, divided by 100.
- *   7. MIXER ROUTING AND SHARING: `destination` names the strip a track feeds
- *      (written); LMMS' wider MixerRoute graph, its pre/post-fader flags and
- *      WHICH other tracks share a strip are not carried.
+	 *   7. MIXER ROUTING: `destination` names the strip a track feeds, and
+	 *      multiple tracks may name the same strip. LMMS' wider MixerRoute graph
+	 *      and its pre/post-fader flags are not carried.
  *   8. TEMPO BOUNDS: written as 10..999, and a file outside them is REFUSED.
  *   9. TIME VALUES are beats; a FOREIGN time off LMMS' 48-per-beat grid is
  *      rounded onto it and counted in `rounded_times`.
@@ -265,9 +265,8 @@ struct DawProjectTrack
 	//! The mixer strip this track feeds: the id of a DawProjectMixerChannel.
 	QString destinationChannelId;
 	//! The LMMS MixerChannel index behind destinationChannelId (-1 when none,
-	//! or when the model came from a file). LOSSY #7: the format's
-	//! one-Channel-per-Track model has no way to say "two tracks share this
-	//! strip", so the SHARING is not carried and this is a conversion-time note.
+	//! or when the model came from a file). Session-generated ids are temporary,
+	//! so this index preserves the destination when writing the model.
 	int mixerChannelIndex = -1;
 
 	QVector<DawProjectClip> clips;
@@ -352,9 +351,8 @@ struct DawProjectLossReport
 	int panNotWritten = 0;
 	//! Mixer routes other than "everything to master", not carried.
 	int routingLost = 0;
-	//! Tracks whose assigned MixerChannel is SHARED with another track, or is
-	//! not the one the engine would have given them: the format is
-	//! one-Channel-per-Track and has no way to say it (LOSSY #7).
+	//! Tracks whose type has no mixer channel model, so no destination IDREF
+	//! can be written for them.
 	int mixerSharingLost = 0;
 	//! Notes or clips whose time was not on LMMS' grid and was rounded.
 	int roundedTimes = 0;

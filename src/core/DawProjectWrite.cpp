@@ -302,10 +302,10 @@ void writeBoolParameter(QXmlStreamWriter& writer, const QString& element, const 
  * The writer cannot invent losses it was never told about, so this reports
  * exactly the two facts a model carries across the boundary: a track whose type
  * matched no contentType (`lostContentType`), and the tempo-map events that
- * carried both halves (`splitEvents`). Pan and mixer sharing are deliberately
- * NOT counted here - a model that came from a file cannot tell "this track has
- * no panning model" from "the source document had no <Pan>" - and the
- * conversion that reads a song fills those counts itself. */
+ * carried both halves (`splitEvents`). Pan gaps and missing destinations are
+ * deliberately NOT counted here - a model that came from a file cannot tell
+ * "this track has no panning model" from "the source document had no <Pan>",
+ * and the conversion that reads a song fills those counts itself. */
 DawProjectLossReport lossReportForModel(const DawProjectModel& model)
 {
 	DawProjectLossReport loss;
