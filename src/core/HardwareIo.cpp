@@ -82,8 +82,9 @@ void loadCueSends(const QDomElement& element, ChannelHardwareIo& io)
 {
 	for (QDomElement cue = element.firstChildElement(QStringLiteral("cue")); !cue.isNull(); cue = cue.nextSiblingElement(QStringLiteral("cue")))
 	{
-		const int k = cue.attribute(QStringLiteral("index")).toInt();
-		if (k < 0 || k >= hardwareio::MaxCues) { continue; }
+		bool validIndex = false;
+		const int k = cue.attribute(QStringLiteral("index")).toInt(&validIndex);
+		if (!validIndex || k < 0 || k >= hardwareio::MaxCues) { continue; }
 		hardwareio::CueSend& send = io.cues[static_cast<std::size_t>(k)];
 		send.level = std::clamp(cue.attribute(QStringLiteral("level")).toFloat(), 0.f, 2.f);
 		send.pan = std::clamp(cue.attribute(QStringLiteral("pan")).toFloat(), -1.f, 1.f);
@@ -274,8 +275,9 @@ void loadMixer(const QDomElement& mixerElement)
 	for (QDomElement element = mixerElement.firstChildElement(QStringLiteral("cuemix")); !element.isNull();
 		element = element.nextSiblingElement(QStringLiteral("cuemix")))
 	{
-		const int k = element.attribute(QStringLiteral("index")).toInt();
-		if (k < 0 || k >= MaxCues) { continue; }
+		bool validIndex = false;
+		const int k = element.attribute(QStringLiteral("index")).toInt(&validIndex);
+		if (!validIndex || k < 0 || k >= MaxCues) { continue; }
 		CueMaster& cue = s_cueMasters[static_cast<std::size_t>(k)];
 		cue.name = element.attribute(QStringLiteral("name"));
 		cue.level = std::clamp(element.attribute(QStringLiteral("level"), QStringLiteral("1")).toFloat(), 0.f, 2.f);
