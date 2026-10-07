@@ -171,20 +171,25 @@ ControlResult removeEditTrack(const QJsonObject& args)
 	{
 		return error;
 	}
-	Track* track = control::resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
-	if (track == nullptr)
+	const QString trackAddress = args.value(QStringLiteral("track")).toString();
+	const int trackId = control::idToIndex(trackAddress, QStringLiteral("trk-"));
+	if (trackId < 0)
 	{
-		return error;
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'%1' is not a track id of the form trk-<n>").arg(trackAddress));
 	}
-	if (!group->hasEditTrack(track->id()))
+	if (!group->hasEditTrack(trackId))
 	{
+		// Keep the existing distinction for a live track that is not a member
+		// (refused) and a dead, unrecorded id (not_found).
+		Track* track = control::resolveTrack(trackAddress, &error);
+		if (track == nullptr) { return error; }
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1 is not in %2's edit set")
 				.arg(control::trackIdOf(track), vcaGroupId(group->id())));
 	}
 
 	const int id = group->id();
-	const int trackId = track->id();
 	auto mixerRef = Engine::mixer();
 	control::addUndoStep(
 		[mixerRef, id, trackId]()
@@ -198,15 +203,16 @@ ControlResult removeEditTrack(const QJsonObject& args)
 	group->removeEditTrack(trackId);
 
 	QJsonObject result = groupState(group);
-	result.insert(QStringLiteral("removed"), control::trackIdOf(track));
+	const QString trackIdString = control::trackId(trackId);
+	result.insert(QStringLiteral("removed"), trackIdString);
 	result.insert(QStringLiteral("__transaction"),
 		control::transactionPayload(
 			QJsonObject{{QStringLiteral("group"), vcaGroupId(id)},
-				{QStringLiteral("track"), control::trackIdOf(track)},
+				{QStringLiteral("track"), trackIdString},
 				{QStringLiteral("in_edit_set"), true}},
 			QStringLiteral("vca.track_add"),
 			QJsonObject{{QStringLiteral("group"), vcaGroupId(id)},
-				{QStringLiteral("track"), control::trackIdOf(track)}},
+				{QStringLiteral("track"), trackIdString}},
 			true,
 			QStringLiteral("action checkpoint: the record holds the id this command drops and "
 				"the recorded undo step puts it back through the same VcaGroup::addEditTrack "
