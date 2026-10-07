@@ -458,7 +458,7 @@ command):
 | command | class | what it does |
 |---|---|---|
 | `control.undo_depth` | `not_mutating` | reads the depth, the two caps, the bytes retained, the eviction count and the coalescing rule in force |
-| `control.set_undo_depth` | `snapshot` (reversible) | sets the count cap and/or the byte budget; the previous caps are the before-state and the recorded inverse is the command itself (`applies: command`). What it CANNOT restore is named: the steps a lower cap evicted are gone (`dropped` reports how many) |
+| `control.set_undo_depth` | `snapshot` (reversible only when no steps are dropped) | sets the count cap and/or the byte budget; the previous caps are the before-state and the recorded inverse is the command itself (`applies: command`). When lowering a cap drops history (`dropped` reports how many), the record is irreversible and `control.undo` refuses it because the evicted steps cannot be restored |
 | `control.set_undo_coalescing` | `not_mutating` | sets the window a same-command-same-target run is grouped in; `0` disables grouping, which reproduces the pre-0.3.0 behaviour exactly |
 
 **One new column in the table below, as DATA:** `RC(id, cls, rev, reason, mechanism, fallback, target)`
