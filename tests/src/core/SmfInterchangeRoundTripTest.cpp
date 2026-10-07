@@ -701,6 +701,52 @@ private slots:
 			{{QStringLiteral("path"), good}}).ok, "a representable tick is read");
 	}
 
+	//! A tempo meta event whose payload is not the format's three bytes is
+	//! malformed: FF 51 names microseconds-per-quarter in exactly three bytes,
+	//! and a payload of any other length does not name a tempo this reader can
+	//! place. The reader recorded the event only when the length was exactly 3
+	//! and let every other length fall through as an unknown meta event, so a
+	//! file with a two-byte tempo and a valid end-of-track read as valid with
+	//! the tempo silently dropped - importing it lost the file's tempo change.
+	void aTempoEventWithAWrongPayloadLengthIsRefused()
+	{
+		for (const int payloadLength : {0, 2, 4})
+		{
+			QByteArray body;
+			appendVlq(body, 0);
+			QByteArray payload;
+			for (int i = 0; i < payloadLength; ++i) { payload.append(static_cast<char>(0x07)); }
+			appendMeta(body, 0x51, payload);
+			body += bodyEndingWithEndOfTrack();
+			const QString file = path(m_directory,
+				 QStringLiteral("bad-tempo-length-%1.mid").arg(payloadLength));
+			QVERIFY(writeFile(file, smfFileWithBody(body)));
+			const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY2(!read.ok,
+				qPrintable(QStringLiteral("an FF 51 with %1 payload bytes was accepted").arg(payloadLength)));
+			QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY2(read.errorMessage.contains(QStringLiteral("tempo")),
+				qPrintable(read.errorMessage));
+			const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+				{{QStringLiteral("path"), file}});
+			QVERIFY(!imported.ok);
+			QCOMPARE(digest(mapEvents()), QString());  // a refusal imports nothing
+		}
+
+		// The control: the same event with the format's three bytes is read.
+		QByteArray good;
+		appendVlq(good, 0);
+		appendMeta(good, 0x51, QByteArray("\x07\xA1\x20", 3));  // 120 bpm
+		good += bodyEndingWithEndOfTrack();
+		const QString exact = path(m_directory, QStringLiteral("exact-tempo-length.mid"));
+		QVERIFY(writeFile(exact, smfFileWithBody(good)));
+		const ControlResult goodRead = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), exact}});
+		QVERIFY2(goodRead.ok, "a three-byte tempo event is refused");
+		QCOMPARE(goodRead.result.value(QStringLiteral("event_count")).toVariant().toLongLong(), 1LL);
+	}
+
 private:
 	QTemporaryDir m_directory;
 };
