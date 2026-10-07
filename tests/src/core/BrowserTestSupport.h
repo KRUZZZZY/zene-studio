@@ -177,7 +177,8 @@ inline bool writeText(const QString& path, const QString& text)
 {
 	QFile file(path);
 	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
-	const bool written = file.write(text.toUtf8()) >= 0;
+	const QByteArray utf8 = text.toUtf8();
+	const bool written = file.write(utf8) == utf8.size();
 	file.close();
 	return written;
 }

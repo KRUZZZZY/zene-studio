@@ -46,6 +46,11 @@
 #include <QString>
 #include <QTemporaryDir>
 
+#ifdef Q_OS_UNIX
+#include <csignal>
+#include <sys/resource.h>
+#endif
+
 #include "BrowserCatalog.h"
 #include "BrowserPeakCache.h"
 #include "BrowserTestSupport.h"
@@ -99,6 +104,48 @@ private slots:
 		// outside it is read or written by the rest of this process.
 		BrowserTagStore::instance().openAt(QDir(m_dir.path()).filePath(QStringLiteral("done.json")));
 	}
+
+#ifdef Q_OS_UNIX
+	void textFixtureRejectsShortWrite()
+	{
+		constexpr rlim_t maxFileSize = 1;
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("partial.txt"));
+		struct rlimit previousLimit{};
+		struct sigaction previousAction{};
+		struct sigaction ignoredAction{};
+		ignoredAction.sa_handler = SIG_IGN;
+		sigemptyset(&ignoredAction.sa_mask);
+
+		const bool haveLimit = getrlimit(RLIMIT_FSIZE, &previousLimit) == 0;
+		const bool haveSignalAction = haveLimit
+			&& sigaction(SIGXFSZ, &ignoredAction, &previousAction) == 0;
+		bool limitSet = false;
+		bool writeSucceeded = false;
+		if (haveSignalAction && previousLimit.rlim_max >= maxFileSize)
+		{
+			struct rlimit shortLimit = previousLimit;
+			shortLimit.rlim_cur = maxFileSize;
+			limitSet = setrlimit(RLIMIT_FSIZE, &shortLimit) == 0;
+			if (limitSet)
+			{
+				writeSucceeded = writeText(path, QString(1024 * 1024, QLatin1Char('x')));
+			}
+		}
+
+		const bool limitRestored = !limitSet || setrlimit(RLIMIT_FSIZE, &previousLimit) == 0;
+		const bool signalRestored = !haveSignalAction
+			|| sigaction(SIGXFSZ, &previousAction, nullptr) == 0;
+		const qint64 partialSize = QFileInfo(path).size();
+
+		QVERIFY(haveLimit);
+		QVERIFY(haveSignalAction);
+		QVERIFY(limitSet);
+		QVERIFY(limitRestored);
+		QVERIFY(signalRestored);
+		QCOMPARE(partialSize, qint64(maxFileSize));
+		QVERIFY(!writeSucceeded);
+	}
+#endif
 
 	//! The probe reads the FILE. Every number here is in the fixture's own
 	//! header, and the title is the embedded `LIST`/`INFO` tag.
