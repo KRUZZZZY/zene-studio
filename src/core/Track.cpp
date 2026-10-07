@@ -170,6 +170,16 @@ void claimClipOrPreserveChild(Track& track, const QDomElement& element,
 		|| name == QLatin1String( "automationpattern" ))
 	{
 		Clip* clip = track.createClip(TimePos(0));
+		// A track class that owns no clips - TrackFolder::createClip() returns
+		// null - cannot claim the element, so it is preserved verbatim like any
+		// other unclaimed child: the next save re-emits it and the load report
+		// names it. Dereferencing the null here crashed loading a malformed
+		// project (cluster 5426).
+		if (clip == nullptr)
+		{
+			captureUnclaimed(element, name, unclaimed);
+			return;
+		}
 		clip->restoreState(element);
 		return;
 	}
