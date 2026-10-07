@@ -2358,3 +2358,23 @@ button per scene, each column's playing cell and a large Stop All - every press 
   interface up, crashed in `TrackContainerView::createTrackView` (on a track the second restore had deleted).
   The application's event loop runs between two presses, so the test lets it run too; the hazard itself is not
   fixed here.
+
+**Sub-scenes (WF-064).** A sub-scene is a named subset of one scene's cells (some of its columns), made from a grid
+selection (Ctrl+click or Ctrl+Space, then Sub-scenes > Make a Sub-scene From the Selection) or
+`session.subscene_create`, renamed and deleted (one undo step each), launched with `session.subscene_launch`, and kept
+in a project file as its own `<z:subscenes>` section (`docs/SCENES-NATIVE.md` §4; `SessionSubSceneTest`,
+`SessionSubSceneGridTest`). What it does not do:
+- A sub-scene is one scene's cells. Cells from several scenes cannot be combined into one.
+- Launching one does not mark the row as the launched scene, so the scene's own Follow Action chain does not fire,
+  and the grid's scene button shows the row's state, not the sub-scene's. The columns outside it play on.
+- It names columns by position. Moving or deleting a track, or shrinking the grid, does not move or drop a
+  sub-scene: a column or scene that is no longer there is skipped at launch (`skipped`), or the launch is refused
+  when its scene is gone.
+- Making one from the grid names it "Sub-scene N"; renaming is a second step (Sub-scenes > Rename...). The selection
+  stays after it is made.
+- Perform mode has no sub-scene buttons, and the controller bindings (`session.bind`) cannot launch a sub-scene.
+- A project whose `<z:subscenes>` section came from a newer build keeps that section as it came; sub-scenes made in
+  this build on top of it are not saved while it is there.
+- What an older build does with a new project was checked by reading its loader (`Song::restoreNamedSection` has no
+  branch for `<z:subscenes>`, and its `<z:scenes>` claim, unchanged here, still claims the section this build writes -
+  asserted in `SessionSubSceneTest`), not by running an older binary on the file.

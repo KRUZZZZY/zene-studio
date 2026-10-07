@@ -92,6 +92,16 @@ public:
 	//! The status line's text (a test's view of it).
 	QString statusLine() const;
 
+	/*! 0.5.0 L02 (WF-064): the selection a sub-scene is made from. Ctrl+click (or Ctrl+Space on a focused cell)
+	 *  selects or deselects a cell without launching it; the selected cells carry a dotted outline and say
+	 *  "selected". The grid's menus then offer Sub-scenes > Make a Sub-scene From the Selection (session.subscene_create)
+	 *  while every selected cell is in one scene, and a scene's menu launches, renames and deletes its sub-scenes. */
+	bool isCellSelected(int track, int scene) const;
+	void toggleCellSelection(int track, int scene);
+	//! The selection as session.subscene_create's arguments, {scene, tracks}; empty when nothing is selected or the
+	//! selected cells are in more than one scene.
+	QJsonObject selection() const;
+
 	/*! What a right-click on @a button offers (a cell, a scene button; nullptr = the grid):
 	 *  SessionGridMenus' entries, every one a session.* command. Public so a test can read
 	 *  and trigger the menu without a modal exec. */
@@ -122,6 +132,8 @@ private:
 	void stopColumn(int track);
 	QToolButton* makeButton(const QString& command);
 	void readColumns(const QJsonArray& columns);
+	//! A cell's Ctrl+click or Ctrl+Space: true when @a event on @a button was one (the selection changed).
+	bool selectOnCell(QToolButton* button, QEvent* event);
 	std::vector<QString> cellNames(const QJsonArray& slotList) const;
 	void paintHeaders();
 	void paintCell(int track, int scene);
@@ -141,6 +153,8 @@ private:
 	QString m_notice;          //!< the last button command's refusal, until one succeeds
 	QJsonArray m_slots;        //!< session.get_state's slots, from the last refresh
 	QJsonArray m_sceneStates;  //!< and its scenes
+	QJsonArray m_subScenes;    //!< and its sub-scenes (WF-064)
+	std::vector<int> m_selected;  //!< the selected cells (track * scenes + scene), WF-064
 	std::vector<QToolButton*> m_cells;
 	std::vector<QToolButton*> m_sceneButtons;
 	std::vector<QToolButton*> m_stopButtons;

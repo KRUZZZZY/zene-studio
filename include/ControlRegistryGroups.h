@@ -830,6 +830,9 @@ LMMS_EXPORT void registerMixerToolCommands(ControlRegistry& registry);
 //! 0.5.0 L02 (W3): session.release_slot / jump_slot / capture_scene / set_playlist / launch_group /
 //! setlist / setlist_go (ControlCommandsSessionPerform.cpp).
 LMMS_EXPORT void registerSessionPerformCommands(ControlRegistry& registry);
+//! 0.5.0 L02 (WF-064): session.subscene_create / subscene_rename / subscene_delete / subscene_launch
+//! (ControlCommandsSessionSubScenes.cpp).
+LMMS_EXPORT void registerSessionSubSceneCommands(ControlRegistry& registry);
 //! 0.5.0 L03 (W3): comp.move_edge / select_group (ControlCommandsCompGroup.cpp); transport.metronome_options /
 //! punch_here, record.remaining (ControlCommandsRecordTools.cpp).
 LMMS_EXPORT void registerCompGroupCommands(ControlRegistry& registry);

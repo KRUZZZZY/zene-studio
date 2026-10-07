@@ -186,6 +186,36 @@ void populateScene(QMenu* menu, int scene, const QJsonObject& sceneState)
 		[where, title] { return call(QStringLiteral("session.launch_scene"), where, title, false); });
 }
 
+void populateSubScenes(QMenu* menu, int scene, const QJsonArray& subScenes, const QJsonObject& selection)
+{
+	QMenu* sub = menu->addMenu(QObject::tr("Sub-scenes"));
+	const int picked = selection.value(QStringLiteral("tracks")).toArray().size();
+	const QString title = QObject::tr("Sub-scene");
+	QAction* make = addCommandAction(sub, QObject::tr("Make a Sub-scene From the Selection"), QStringLiteral("session.subscene_create"),
+		[selection, title] { return call(QStringLiteral("session.subscene_create"), selection, title, false); });
+	make->setEnabled(make->isEnabled() && picked > 0);
+	make->setToolTip(picked > 0 ? QObject::tr("Scene %1, %n track(s); rename it after", nullptr, picked).arg(selection.value(QStringLiteral("scene")).toInt() + 1)
+		: QObject::tr("Ctrl+click the cells of one scene first"));
+	sub->setToolTipsVisible(true);
+	for (const QJsonValue& value : subScenes)
+	{
+		const QJsonObject one = value.toObject();
+		if (scene < 0 || one.value(QStringLiteral("scene")).toInt() != scene) { continue; }
+		const QJsonObject which{{QStringLiteral("subscene"), one.value(QStringLiteral("subscene"))}};
+		const QString name = one.value(QStringLiteral("name")).toString();
+		sub->addSeparator();
+		addCommandAction(sub, QObject::tr("Launch %1").arg(name), QStringLiteral("session.subscene_launch"),
+			[which, name] { return call(QStringLiteral("session.subscene_launch"), which, name, false); });
+		addCommandAction(sub, QObject::tr("Rename %1...").arg(name), QStringLiteral("session.subscene_rename"), [which, name] {
+			CommandCall rename = call(QStringLiteral("session.subscene_rename"), which, name);
+			rename.defaults.insert(QStringLiteral("name"), name);
+			return rename;
+		});
+		addCommandAction(sub, QObject::tr("Delete %1").arg(name), QStringLiteral("session.subscene_delete"),
+			[which, name] { return call(QStringLiteral("session.subscene_delete"), which, name, false); });
+	}
+}
+
 void populateGrid(QMenu* menu, int tracks, int scenes)
 {
 	addCommandAction(menu, QObject::tr("Grid Size..."), QStringLiteral("session.set_grid"), [tracks, scenes] {

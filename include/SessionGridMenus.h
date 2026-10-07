@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_SESSION_GRID_MENUS_H
 #define LMMS_GUI_SESSION_GRID_MENUS_H
 
+#include <QJsonArray>
 #include <QJsonObject>
 
 #include "lmms_export.h"
@@ -48,6 +49,11 @@ LMMS_EXPORT void populateCell(QMenu* menu, int track, int scene, const QJsonObje
 
 //! A scene: edit its name, tempo and metre, switch an override off, launch it.
 LMMS_EXPORT void populateScene(QMenu* menu, int scene, const QJsonObject& sceneState);
+
+/*! 0.5.0 L02 (WF-064): Sub-scenes - Make a Sub-scene From the Selection (session.subscene_create on @a selection,
+ *  SessionGridView::selection(); disabled while it is empty), and for each of @a subScenes (session.get_state's) that
+ *  is in @a scene (-1: none) Launch, Rename... and Delete it. */
+LMMS_EXPORT void populateSubScenes(QMenu* menu, int scene, const QJsonArray& subScenes, const QJsonObject& selection);
 
 //! The grid: its size, the global launch quantisation, follow actions on or off.
 LMMS_EXPORT void populateGrid(QMenu* menu, int tracks, int scenes);

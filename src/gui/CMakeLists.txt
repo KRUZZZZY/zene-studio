@@ -119,6 +119,7 @@ SET(LMMS_SRCS
 	gui/SessionGridView.cpp
 	gui/SessionGridCells.cpp
 	gui/SessionGridDrop.cpp
+	gui/SessionGridSelect.cpp
 	gui/SessionSyncAction.cpp
 	gui/SessionTransportBar.cpp
 	gui/PerformView.cpp

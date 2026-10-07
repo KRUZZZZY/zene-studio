@@ -254,6 +254,34 @@ private:
 	QString m_color;
 };
 
+/*! 0.5.0 L02 (WF-064): a sub-scene - a named subset of one scene's cells (some of its columns), launched on its
+ *  own. It references the row and the columns; the cells themselves stay the grid's, so editing a cell edits what
+ *  every sub-scene naming it launches. A sub-scene may name a column whose cell is empty, or (after the grid
+ *  shrank) a row or column outside the grid: a launch skips what is not there and says so. */
+class LMMS_EXPORT SubScene
+{
+public:
+	//! The most sub-scenes a project holds (a file is read within it; a column is within the grid clamp, 256).
+	static constexpr int MaxCount = 256;
+
+	QString name;
+	int scene = 0;
+	std::vector<int> tracks;  //!< the columns, ascending, each once
+
+	//! @a columns sorted, each once, negatives dropped: the one shape `tracks` is kept in.
+	static std::vector<int> normalised( std::vector<int> columns );
+
+	//! Writes the sub-scene's attributes (name, scene, tracks "0,2,5") onto @a element.
+	void saveState( QDomElement& element ) const;
+	//! Reads them back; false (and *this unchanged) when the scene or a column is missing or out of bounds.
+	bool restoreState( const QDomElement& element );
+
+	bool operator==( const SubScene& other ) const
+	{
+		return name == other.name && scene == other.scene && tracks == other.tracks;
+	}
+};
+
 class LMMS_EXPORT SessionModel
 {
 public:
@@ -284,6 +312,10 @@ public:
 	Scene& scene( int scene );
 
 	// ---- session-wide state -------------------------------------------
+
+	//! 0.5.0 WF-064: the sub-scenes, in the order they were made (a sub-scene's number is its place here).
+	const std::vector<SubScene>& subScenes() const { return m_subScenes; }
+	void setSubScenes( std::vector<SubScene> subScenes ) { m_subScenes = std::move( subScenes ); }
 
 	LaunchQuantisation globalLaunchQuantisation() const { return m_globalLaunchQuantisation; }
 	void setGlobalLaunchQuantisation( LaunchQuantisation quantisation ) { m_globalLaunchQuantisation = quantisation; }
@@ -357,6 +389,9 @@ private:
 	LaunchQuantisation m_globalLaunchQuantisation = DefaultLaunchQuantisation;
 	bool m_hadSessionBlock = false;
 	QString m_preservedUnknownXml;
+	//! 0.5.0 WF-064. In the <session> block (the undo payload) as a <subscenes> child; in a project FILE as its
+	//! own top-level <z:subscenes> section (SessionSubScenes.cpp), so <z:scenes> keeps the shape older builds claim.
+	std::vector<SubScene> m_subScenes;
 };
 
 } // namespace lmms

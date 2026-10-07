@@ -47,12 +47,17 @@
 #ifndef LMMS_CONTROL_COMMANDS_SESSION_SHARED_H
 #define LMMS_CONTROL_COMMANDS_SESSION_SHARED_H
 
+#include <functional>
+#include <vector>
+
 #include <QDomDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
 
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "Engine.h"
 #include "SessionModel.h"
 #include "SessionScheduler.h"
@@ -425,6 +430,46 @@ inline void restoreSessionBlock(SessionModel& model, const QString& xml)
 	if (!document.setContent(xml, false)) { return; }
 	const QDomElement block = document.documentElement().firstChildElement(QStringLiteral("session"));
 	if (!block.isNull()) { model.restoreState(block); }
+}
+
+/*! Record an edit of the <session> block as one undo step: the block before (@a before, from sessionBlockXml) and
+ *  after. @a rearm runs after the block is put back either way (what the scheduler must be told again). Shared by
+ *  the perform verbs and the sub-scene verbs (0.5.0 L02). */
+inline void recordSessionEdit(const QString& before, const SessionModel& model, const std::function<void()>& rearm = {})
+{
+	const QString after = sessionBlockXml(model);
+	control::addUndoStep(
+		[before, rearm]() { if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), before); if (rearm) { rearm(); } } },
+		[after, rearm]() { if (Song* song = Engine::getSong()) { restoreSessionBlock(song->sessionModel(), after); if (rearm) { rearm(); } } });
+	Engine::getSong()->setModified();
+}
+
+/*! 0.5.0 WF-064: launch the non-empty cells of @a scene in @a columns (ascending; a column at or past
+ *  @a launchable, the columns a launch can take over, is skipped), each exactly as session.launch_scene launches
+ *  it - launchRequestOf(@a args): its own quantisation unless the call names one, Global resolved against the
+ *  session's - and report whether they all resolved to one grid line (@a syncTick, @a inSync). The row is NOT
+ *  marked as the launched scene: that is session.launch_scene's (ControlCommandsSessionLaunch.cpp). @a quantisation
+ *  receives the first launched cell's resolved quantisation. */
+QJsonArray launchCells(const SessionModel& model, Song& song, int scene, const std::vector<int>& columns, int launchable,
+	const QJsonObject& args, int* syncTick, bool* inSync, LaunchQuantisation* quantisation);
+
+//! The columns a launch can take over: the grid's, but no more than the song has tracks (ControlCommandsSessionLaunch.cpp).
+int launchableColumnCount(const SessionModel& model, Song& song);
+
+//! 0.5.0 WF-064: one sub-scene as session.get_state reports it.
+inline QJsonObject subSceneState(int index, const SubScene& subScene)
+{
+	QJsonArray tracks;
+	for (const int track : subScene.tracks) { tracks.append(track); }
+	return {{QStringLiteral("subscene"), index}, {QStringLiteral("name"), subScene.name},
+		{QStringLiteral("scene"), subScene.scene}, {QStringLiteral("tracks"), tracks}};
+}
+
+inline QJsonArray subSceneStates(const SessionModel& model)
+{
+	QJsonArray out;
+	for (std::size_t i = 0; i < model.subScenes().size(); ++i) { out.append(subSceneState(static_cast<int>(i), model.subScenes()[i])); }
+	return out;
 }
 
 } // namespace sessioncontrol

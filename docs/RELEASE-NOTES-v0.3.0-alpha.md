@@ -951,8 +951,12 @@ window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows becam
 view.announcements (`true_inverse`); window.sample_editor, window.item_list, workflow.resume and task.list, task.cancel,
 task.clear_finished and task.show (`not_mutating`, interface state).
 
+**0.5.0 launcher in performance** (lane launcher-perform, WF-064 sub-scenes; +4): session.subscene_create,
+session.subscene_rename and session.subscene_delete (`true_inverse`, the captured <session> block) and
+session.subscene_launch (`not_mutating`, a launch).
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=818 true_inverse=404 snapshot=40 irreversible=21 not_mutating=353
+     measured: rows=822 true_inverse=407 snapshot=40 irreversible=21 not_mutating=354
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

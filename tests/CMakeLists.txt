@@ -614,6 +614,8 @@ set(LMMS_TESTS
 	src/core/MixerToolsTest.cpp
 	# 0.5.0 L02 (W3): capture a scene, playlists, setlists, marker actions, release and jump.
 	src/core/SessionPerformTest.cpp
+	# 0.5.0 L02 (WF-064): sub-scenes - their commands, their launch and the <z:subscenes> section.
+	src/core/SessionSubSceneTest.cpp
 	# 0.5.0 L03 (W3): comp edges and groups, metronome options, punch here, remaining record time.
 	src/core/RecordToolsTest.cpp
 	# 0.5.0 L04 (W3): the clip list, sections, remove silence, tab to transient, note rotation.
@@ -844,6 +846,8 @@ set(LMMS_TESTS
 	src/gui/SessionTransportBarTest.cpp
 	# 0.5.0 L02 (WF-071): perform mode, the launcher's live show window, over the real application.
 	src/gui/PerformViewTest.cpp
+	# 0.5.0 L02 (WF-064): sub-scenes from the grid - select cells, make one, launch it - over the real application.
+	src/gui/SessionSubSceneGridTest.cpp
 	# M3 item 6: the take lanes panel - comp, audition and consolidate from its own buttons.
 	src/gui/TakeLanesPanelTest.cpp
 	# M3 item 4: the keyboard shortcuts page lists what the menus bind, filterable.
@@ -1361,6 +1365,7 @@ set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=of
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PerformViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SessionSubSceneGridTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

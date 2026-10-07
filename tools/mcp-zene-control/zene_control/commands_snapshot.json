@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-07T10:46:43Z",
+  "captured_at": "2026-10-07T11:26:41Z",
   "commands": [
     {
       "args_schema": {
@@ -25547,7 +25547,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The Session View: grid dimensions, the global launch quantisation, every non-empty clip slot with its launch settings, every scene override, and the launch engine's read-back (completed launches, the grid line the newest starts fired on, how many clips started on that one line), and `columns`: every column that is launching, playing or stopping and the scene it is on.",
+      "description": "The Session View: grid dimensions, the global launch quantisation, every non-empty clip slot with its launch settings, every scene override, and the launch engine's read-back (completed launches, the grid line the newest starts fired on, how many clips started on that one line), `columns`: every column that is launching, playing or stopping and the scene it is on, and `subscenes`: each sub-scene {subscene, name, scene, tracks} (session.subscene_create).",
       "group": "session",
       "id": "session.get_state",
       "mutating": false,
@@ -25571,6 +25571,9 @@
             "type": "array"
           },
           "slots": {
+            "type": "array"
+          },
+          "subscenes": {
             "type": "array"
           }
         },
@@ -26327,6 +26330,137 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "scene",
+          "tracks"
+        ],
+        "type": "object"
+      },
+      "description": "Make a sub-scene: a named subset of one scene's cells - the cells of 'scene' in the columns 'tracks' - that launches on its own (session.subscene_launch). 'name' defaults to \"Sub-scene N\". Its number is its place in session.get_state's 'subscenes'. One undo step.",
+      "group": "session",
+      "id": "session.subscene_create",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "subscene": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "subscene"
+        ],
+        "type": "object"
+      },
+      "description": "Delete sub-scene 'subscene' (the later ones move up one place); its cells are untouched. One undo step.",
+      "group": "session",
+      "id": "session.subscene_delete",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "trigger",
+              "gate",
+              "toggle",
+              "repeat"
+            ],
+            "type": "string"
+          },
+          "quantisation": {
+            "enum": [
+              "global",
+              "none",
+              "1/16",
+              "1/8",
+              "1/4",
+              "1/2",
+              "bar",
+              "two_bars",
+              "four_bars",
+              "8_bars"
+            ],
+            "type": "string"
+          },
+          "subscene": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "subscene"
+        ],
+        "type": "object"
+      },
+      "description": "Launch sub-scene 'subscene': each of its cells exactly as session.launch_scene launches it - with the scene's quantisation (the cell's own, Global meaning the session's), or 'quantisation' / 'mode' for all of them - so they land on the lines the whole scene would. The other columns play on, and the row is not marked as the launched scene (its scene chain does not fire). 'skipped' names the columns with nothing to launch. Not a project edit.",
+      "group": "session",
+      "id": "session.subscene_launch",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "subscene": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "subscene",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Rename sub-scene 'subscene' to 'name'. One undo step.",
+      "group": "session",
+      "id": "session.subscene_rename",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -33997,23 +34131,23 @@
       }
     }
   ],
-  "count": 809,
+  "count": 813,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-launcher-perform",
-    "lane_head": "6d1a1143d032d7ee6d3ceb03caa5f0e41a17245a",
+    "lane_head": "61d2d3ccd15f95bf086c2cddf24ff773d1ee3b9c",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-5086c7vq/zene.sock",
-    "version": "0.4.0-alpha.333+6d1a114"
+    "source_socket": "/tmp/zctl-run-h9gh9ah9/zene.sock",
+    "version": "0.4.0-alpha.334+61d2d3c"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 809,
-    "ids_sha256": "30a5e1ef45f2a6f4cd493d28b6b923826da185f96165d735ba363909b12ca8e2"
+    "id_count": 813,
+    "ids_sha256": "31cd75838822e04c9d3080544753ddeb4db08ee18db938ab531ce9199cfacbfa"
   }
 }
