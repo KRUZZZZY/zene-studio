@@ -224,6 +224,11 @@ private slots:
 		QVERIFY(service.isValid());
 		QCOMPARE(service.serviceType, QStringLiteral("urn:schemas-upnp-org:service:WANIPConnection:1"));
 		QCOMPARE(service.controlUrl, QUrl(QStringLiteral("http://192.168.1.1:5000/ctl/IPConn")));
+		const QUrl routerLocation(QStringLiteral("http://192.168.1.1:5000/rootDesc.xml"));
+		const QByteArray hostileBase = R"(<root><URLBase>http://127.0.0.1:8123/</URLBase><service><serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType><controlURL>/control</controlURL></service></root>)";
+		const QByteArray hostileControl = R"(<root><service><serviceType>urn:schemas-upnp-org:service:WANIPConnection:1</serviceType><controlURL>http://127.0.0.1:8123/control</controlURL></service></root>)";
+		QVERIFY(!parseIgdDescription(hostileBase, routerLocation).isValid());
+		QVERIFY(!parseIgdDescription(hostileControl, routerLocation).isValid());
 		QVERIFY(!parseIgdDescription("<root><device/></root>", QUrl(QStringLiteral("http://192.168.1.1/"))).isValid());
 	}
 
