@@ -314,6 +314,19 @@ private slots:
 		QCOMPARE(world.shell.model().view(), ShellView::Mix);
 	}
 
+	void aMalformedPersonalLayoutRemainsAvailableForRecovery()
+	{
+		World world;
+		const QString malformed = QStringLiteral("{\"view\":");
+		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("shell.personal"), malformed);
+		world.shell.setView(ShellView::Edit);
+
+		QVERIFY(Shell::personalAside());
+		QVERIFY(!world.shell.restorePersonal());
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("shell.personal")), malformed);
+		QCOMPARE(world.shell.model().view(), ShellView::Edit);
+	}
+
 	void theNextStartPrefersThePersonalLayout()
 	{
 		{
