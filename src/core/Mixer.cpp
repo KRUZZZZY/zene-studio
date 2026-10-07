@@ -362,6 +362,9 @@ void MixerChannel::incrementDeps()
 
 void MixerChannel::unmuteForSolo()
 {
+	// Two visited sets, one per walk direction. A channel reached by the
+	// sender walk is not yet expanded by the receiver walk (and the reverse),
+	// so one shared set would hide it from the walk that must still follow it.
 	std::set<MixerChannel*> senderVisited;
 	std::set<MixerChannel*> receiverVisited;
 	m_muteModel.setValue(false);
@@ -371,25 +374,27 @@ void MixerChannel::unmuteForSolo()
 	{
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo(senderVisited);
+			sendsRoute->receiver()->unmuteSenderForSolo(senderVisited, receiverVisited);
 		}
 
 		for (const MixerRoute* receiverRoute : m_receives)
 		{
-			receiverRoute->sender()->unmuteReceiverForSolo(receiverVisited);
+			receiverRoute->sender()->unmuteReceiverForSolo(senderVisited, receiverVisited);
 		}
 	}
 }
 
 void MixerChannel::unmuteSenderForSolo()
 {
-	std::set<MixerChannel*> visited;
-	unmuteSenderForSolo(visited);
+	std::set<MixerChannel*> senderVisited;
+	std::set<MixerChannel*> receiverVisited;
+	unmuteSenderForSolo(senderVisited, receiverVisited);
 }
 
-void MixerChannel::unmuteSenderForSolo(std::set<MixerChannel*>& visited)
+void MixerChannel::unmuteSenderForSolo(std::set<MixerChannel*>& senderVisited,
+	std::set<MixerChannel*>& receiverVisited)
 {
-	if (!visited.insert(this).second) { return; }
+	if (!senderVisited.insert(this).second) { return; }
 	m_muteModel.setValue(false);
 
 	// if channel is not master, unmute every channel it sends to
@@ -397,7 +402,7 @@ void MixerChannel::unmuteSenderForSolo(std::set<MixerChannel*>& visited)
 	{
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo(visited);
+			sendsRoute->receiver()->unmuteSenderForSolo(senderVisited, receiverVisited);
 		}
 	}
 }
@@ -405,13 +410,15 @@ void MixerChannel::unmuteSenderForSolo(std::set<MixerChannel*>& visited)
 
 void MixerChannel::unmuteReceiverForSolo()
 {
-	std::set<MixerChannel*> visited;
-	unmuteReceiverForSolo(visited);
+	std::set<MixerChannel*> senderVisited;
+	std::set<MixerChannel*> receiverVisited;
+	unmuteReceiverForSolo(senderVisited, receiverVisited);
 }
 
-void MixerChannel::unmuteReceiverForSolo(std::set<MixerChannel*>& visited)
+void MixerChannel::unmuteReceiverForSolo(std::set<MixerChannel*>& senderVisited,
+	std::set<MixerChannel*>& receiverVisited)
 {
-	if (!visited.insert(this).second) { return; }
+	if (!receiverVisited.insert(this).second) { return; }
 	m_muteModel.setValue(false);
 
 	// if channel is not master, unmute every channel it receives from, and of those, unmute the channels they send to
@@ -419,12 +426,12 @@ void MixerChannel::unmuteReceiverForSolo(std::set<MixerChannel*>& visited)
 	{
 		for (const MixerRoute* receiverRoute : m_receives)
 		{
-			receiverRoute->sender()->unmuteReceiverForSolo(visited);
+			receiverRoute->sender()->unmuteReceiverForSolo(senderVisited, receiverVisited);
 		}
 
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo(visited);
+			sendsRoute->receiver()->unmuteSenderForSolo(senderVisited, receiverVisited);
 		}
 	}
 }

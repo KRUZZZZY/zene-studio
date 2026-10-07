@@ -271,12 +271,15 @@ public:
 
 private:
 	void doProcessing() override;
-	//! \a visited carries the channels already unmute-d by the ongoing solo
-	//!  propagation. Feedback mode permits real cycles in the send graph, so
-	//!  the traversals below must not follow one twice.
-	void unmuteForSolo(std::set<MixerChannel*>& visited);
-	void unmuteSenderForSolo(std::set<MixerChannel*>& visited);
-	void unmuteReceiverForSolo(std::set<MixerChannel*>& visited);
+	//! The two sets carry the channels already expanded by the ongoing solo
+	//!  propagation, one set per walk direction: a channel reached sender-only
+	//!  must still be expanded by a receiver walk, and the reverse. Feedback
+	//!  mode permits real cycles in the send graph, so each walk expands a
+	//!  channel at most once per direction.
+	void unmuteSenderForSolo(std::set<MixerChannel*>& senderVisited,
+		std::set<MixerChannel*>& receiverVisited);
+	void unmuteReceiverForSolo(std::set<MixerChannel*>& senderVisited,
+		std::set<MixerChannel*>& receiverVisited);
 	int m_channelIndex;
 	/*! The channel's stable id: the number in `ch-<n>`. Assigned once, in the
 	 *  constructor, and taken back from the project file by

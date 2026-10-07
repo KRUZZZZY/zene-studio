@@ -626,6 +626,41 @@ private slots:
 		mixer->mixerChannel(a)->m_soloModel.setValue(false);
 	}
 
+	// Solo propagation must reach every channel that is audible through the
+	// send graph, whichever direction each step walks. Here S receives from
+	// A, A receives from B and D, B sends to D, and E sends to D. Walking B's
+	// send to D in sender mode must not hide D from the receiver walk that
+	// reaches it from A, or E (D's receive) stays muted.
+	void aSoloReachesEveryUpstreamChannelThroughAMixedWalk()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+
+		mixer->clear();
+		while (mixer->numChannels() < 6) { mixer->createChannel(); }
+		for (mix_ch_t ch = 1; ch <= 5; ++ch) { mixer->deleteChannelSend(ch, 0); }
+
+		const mix_ch_t s = 1;
+		const mix_ch_t a = 2;
+		const mix_ch_t b = 3;
+		const mix_ch_t d = 4;
+		const mix_ch_t e = 5;
+		QVERIFY(mixer->createChannelSend(a, s, 1.0f) != nullptr);
+		QVERIFY(mixer->createChannelSend(b, a, 1.0f) != nullptr);
+		QVERIFY(mixer->createChannelSend(d, a, 1.0f) != nullptr);
+		QVERIFY(mixer->createChannelSend(b, d, 1.0f) != nullptr);
+		QVERIFY(mixer->createChannelSend(e, d, 1.0f) != nullptr);
+
+		mixer->mixerChannel(s)->m_soloModel.setValue(true);
+
+		for (mix_ch_t ch : {s, a, b, d, e})
+		{
+			QVERIFY2(!mixer->mixerChannel(ch)->m_muteModel.value(),
+				qPrintable(QString("channel %1 stayed muted under a solo of %2").arg(ch).arg(s)));
+		}
+		mixer->mixerChannel(s)->m_soloModel.setValue(false);
+	}
+
 	// The master (num="0") is a real channel element. Rejecting a non-positive
 	// num must not skip it: a saved master with nondefault state has to come
 	// back with that state. Only a negative number is refused.
