@@ -643,7 +643,8 @@ void AudioEngine::clearInternal()
 	for (auto ph : m_playHandles)
 	{
 		if (ph->type() != PlayHandle::Type::InstrumentPlayHandle
-			&& ph->type() != PlayHandle::Type::InputMonitorHandle)
+			&& ph->type() != PlayHandle::Type::InputMonitorHandle
+			&& ph->type() != PlayHandle::Type::SessionCellHandle)
 		{
 			m_playHandlesToRemove.push_back(ph);
 		}
@@ -733,7 +734,8 @@ bool AudioEngine::addPlayHandle( PlayHandle* handle )
 	// Instrument play handles are not added during playback, but when the
 	// associated instrument is created, so add those unconditionally.
 	if (handle->type() == PlayHandle::Type::InstrumentPlayHandle
-		|| handle->type() == PlayHandle::Type::InputMonitorHandle || !criticalXRuns())
+		|| handle->type() == PlayHandle::Type::InputMonitorHandle
+		|| handle->type() == PlayHandle::Type::SessionCellHandle || !criticalXRuns())
 	{
 		m_newPlayHandles.push( handle );
 		handle->audioBusHandle()->addPlayHandle(handle);

@@ -935,6 +935,8 @@ ENDIF()
 		# (a known input signal, the quantised start, the landed WAV's PCM, one undo step).
 		src/core/SessionAudioRecorderTest.cpp
 		src/core/SessionAudioRecordTest.cpp
+		# ...and a launched audio cell sounding its clip through its sample track (the landed take included).
+		src/core/SessionAudioCellPlaybackTest.cpp
 	)
 
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level

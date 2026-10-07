@@ -248,9 +248,9 @@ public:
 	bool followActionsEnabled() const noexcept;
 
 	//! Publishes what a cell holds so a launched slot renders it (#597); one queue push. @a startTicks
-	//! (WF-060): where in its clip the cell starts playing.
+	//! (WF-060): where in its clip the cell starts playing. @a clip (WF-055): an audio cell's clip.
 	bool publishSlotContent( int track, int scene, int patternId, tick_t loopLengthTicks,
-		bool legato = false, tick_t startTicks = 0 ) noexcept;
+		bool legato = false, tick_t startTicks = 0, const SampleBuffer* clip = nullptr ) noexcept;
 
 	//! What this column should render this period (#597). Audio thread.
 	SessionSlotPlayback playbackForColumn( int track ) const noexcept;

@@ -2351,6 +2351,11 @@ into an empty launcher cell: it starts on the launch quantisation, stops on the 
   exact - whole frames of the span, shifted by the recording round trip like an arrangement take.
 - **Landing is explicit on the socket.** The take waits in `done` until `session.record_slot_land` writes it;
   an agent polls `session.record_slot_status`. The WAV is never deleted by undo.
-- **A launched audio cell does not yet render** in this step: the landed take is the cell's clip and is saved
-  with the project, but launching an audio cell still only takes its column over (the bullet "The Session View
-  is in the 0.3.0-alpha builds..." above).
+- **A launched audio cell renders only on a sample track's column**, through that track, from the clip's top (or
+  its loop start), looping the whole file. The cell's gain, transpose, detune, RAM mode and loop LENGTH are not
+  applied to audio, and there is no warping: a file plays at its own speed whatever the tempo. A file at another
+  sample rate is converted once, when it is first launched. An audio cell on an instrument track's column still
+  only silences the column. (Before this lane no launched audio cell rendered at all - the bullet "The Session
+  View is in the 0.3.0-alpha builds..." above records that.)
+- **Clips are cached by path** for the open project: a file changed on disk after its cell was first launched
+  plays the old audio until the project is reopened.

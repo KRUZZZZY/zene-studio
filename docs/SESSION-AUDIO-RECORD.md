@@ -44,6 +44,32 @@ One take at a time, owned by the session scheduler (`SessionScheduler::audioReco
 the session's own playback of a cell does. Its LENGTH is exact (whole frames of the musical span); its
 START is the period boundary, not the sub-period frame of the line.
 
+## Playback - a launched audio cell sounds (`include/SessionAudioCells.h`)
+
+Before this lane a cell could HOLD an audio file (`session.set_slot type: audio`, the grid's "Audio File..." and
+drops) but launching it only took its column over: `publishSessionSlotContent` published "nothing to render" for
+every audio cell (board card #597 left it to "a later slice"). A landed take is only "ready to launch" if a
+launched audio cell plays, so that slice is here:
+
+- **Publishing** (model thread, every launch path): an audio cell's file is loaded once - and converted to the
+  engine's rate there if it differs - and the content table carries a pointer to the clip beside the pattern id.
+  A missing or unreadable file publishes no clip (the cell stays silent, as before, and no warning box opens).
+- **Rendering**: one persistent `SessionCellPlayHandle` per sample track that holds an audio cell, made on the
+  model thread when such a cell is first published, on the track's own bus - so the clip goes through the track's
+  devices, fader, pan and mixer channel. Each period it reads the scheduler's view of its column; on a new launch
+  (a different clip, scene or start line) it starts from the scheduler's position (the clip's top, its loop start,
+  or a legato phase), then copies frames with wrap-around: no allocation, no lock, no resampler on the audio thread.
+  Like the input monitor's handle it survives the song-stop clear (`PlayHandle::Type::SessionCellHandle`), and the
+  track's destructor removes it.
+- **Lifetime**: the clips of the open project live until the project is closed; `Song::clearProject` retires them
+  and frees the ones retired at the previous close, by which time the scheduler's reset has dropped every
+  reference the audio thread had.
+
+Proof: `tests/src/core/SessionAudioCellPlaybackTest.cpp` (ctest `SessionAudioCellPlaybackTest`) launches a file
+cell and a recorded-and-landed cell through `session.launch_slot` and checks the engine's OUTPUT is the clip frame
+for frame, twice round (from the top and looping); built without this path (the recording step alone) both cases
+render silence. Its third case is the allocation probe on `SessionCellPlayHandle::play`.
+
 ## Proof
 
 - `tests/src/core/SessionAudioRecordTest.cpp` (ctest `SessionAudioRecordTest`): on the Dummy device with

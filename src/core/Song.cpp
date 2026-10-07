@@ -68,6 +68,7 @@
 #include "ProvenanceSection.h"
 #include "RecordOptions.h"
 #include "RetroMidiCapture.h"
+#include "SessionAudioCells.h"
 #include "ProjectSection.h"
 #include "Scale.h"
 #include "SongEditor.h"
@@ -1357,6 +1358,7 @@ void Song::clearProject()
 									clear();
 	// WF-055: a launcher cell's audio take belongs to the project being closed (no period renders here).
 	m_sessionScheduler.audioRecorder().cancel();
+	sessionaudio::retire();  // and the audio cells' clips (freed at the next close: SessionAudioCells.h)
 
 	Engine::audioEngine()->doneChangeInModel();
 

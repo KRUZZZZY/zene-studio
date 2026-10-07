@@ -654,6 +654,7 @@ include/ScriptPackage.h
 include/SendButtonIndicator.h
 include/SerializingObject.h
 include/SessionArrangementRecorder.h
+include/SessionAudioCells.h
 include/SessionAudioRecorder.h
 include/SessionFollow.h
 include/SessionGridCells.h
@@ -1894,6 +1895,7 @@ src/core/ScriptDawEffects.cpp
 src/core/ScriptEngine.cpp
 src/core/ScriptPackage.cpp
 src/core/SerializingObject.cpp
+src/core/SessionAudioCells.cpp
 src/core/SessionAudioRecorder.cpp
 src/core/SessionClip.cpp
 src/core/SessionFollow.cpp
@@ -2538,6 +2540,7 @@ tests/src/core/ScriptEngineTest.cpp
 tests/src/core/ScriptMemoryBudgetTest.cpp
 tests/src/core/ScriptStabilisationTest.cpp
 tests/src/core/SessionArrangementRecordTest.cpp
+tests/src/core/SessionAudioCellPlaybackTest.cpp
 tests/src/core/SessionAudioRecordTest.cpp
 tests/src/core/SessionAudioRecorderTest.cpp
 tests/src/core/SessionFollowTest.cpp

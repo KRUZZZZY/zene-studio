@@ -127,6 +127,8 @@ SET(LMMS_SESSION_SRCS
 		core/ControlCommandsSessionRecordLand.cpp
 		# 0.5.0 L02 (WF-055): the audio take a launcher cell records (include/SessionAudioRecorder.h).
 		core/SessionAudioRecorder.cpp
+		# ...and a launched audio cell rendering its clip through its sample track (include/SessionAudioCells.h).
+		core/SessionAudioCells.cpp
 	)
 
 set(LMMS_SRCS
