@@ -2341,7 +2341,11 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
   reads "Not reported". `plugin.list` does not carry the vendor, for any format.
 - Channel pan and width still read in the knob's own units.
 - Mixed values cover the selected notes only: the selection holds one clip.
-- The rack's own "Add effect" still uses the older dialog.
+- *(Resolved 2026-10-07, plugin-hosting lane.)* The rack's own "Add effect" (a mixer channel's or an
+  instrument's effect chain) now opens the device picker the Device panel uses. It searches every loadable
+  effect of every format and shows each one's vendor and state. The chosen device is still appended to that
+  rack's chain with its controls opened. A device that can no longer be loaded is now reported, where the old
+  dialog added a placeholder. The older select dialog (`EffectSelectDialog`) is no longer opened from anywhere.
 
 **Mixer (theme 16).**
 - There is no "Selected" channel filter; the type filters stand in for it.

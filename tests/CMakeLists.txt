@@ -747,6 +747,8 @@ set(LMMS_TESTS
 	# 0.5.0 lane 3: the shell selection, the Inspector and the Device panel's cards and
 	# modulators over a real engine (the build's plugin modules).
 	src/gui/DevicePanelTest.cpp
+	# 0.5.0 plugin-hosting lane: the effect rack's own "Add effect" picks from the device picker.
+	src/gui/EffectRackAddTest.cpp
 	# 0.5.0 L11 / L12 (W3): the project menu's new entries, a track's lock, the gallery, the browser's remembered sources.
 	src/gui/LibraryMenusTest.cpp
 	# UI precondition #1 (040/ui-precond): include/WcagContrast.h at the AA
@@ -1052,6 +1054,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ModulatorPanelTest"
 		# The Device panel draws one real effect's card and the modulator driving it.
 		OR LMMS_TEST_NAME STREQUAL "DevicePanelTest"
+		# The rack's "Add effect" adds one real effect from the device picker.
+		OR LMMS_TEST_NAME STREQUAL "EffectRackAddTest"
 		# The LV2 state round trip loads the host's real LV2 effects.
 		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
 		# The rack menu binds a macro to a parameter of one real effect.
@@ -1352,6 +1356,7 @@ set_tests_properties(LaneReadoutTest SampleEditorDialogTest MixerModesTest Workf
 	TaskCenterTest TaskIndicatorTest CanvasKeyboardTest ItemListPanelTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(EffectRackAddTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
