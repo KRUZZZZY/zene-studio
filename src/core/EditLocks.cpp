@@ -34,6 +34,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "SampleClip.h"
 #include "Track.h"
 
 namespace lmms
@@ -125,17 +126,33 @@ bool trackRefused(const QString& track, QString* why)
 	return true;
 }
 
-bool trackRemovalRefused(const QJsonObject& args, QString* why)
+QString trackClipAction(const QString& command)
 {
+	if (command == QLatin1String("track.remove")) { return QStringLiteral("removing %1 would delete %2"); }
+	if (command == QLatin1String("track.flatten")) { return QStringLiteral("flattening %1 would delete %2"); }
+	if (command == QLatin1String("project.subproject_refresh")) { return QStringLiteral("refreshing %1 would repoint %2"); }
+	return {};
+}
+
+bool trackClipAffected(const QString& command, const Clip* clip)
+{
+	return command != QLatin1String("project.subproject_refresh") || dynamic_cast<const SampleClip*>(clip) != nullptr;
+}
+
+bool trackClipEditRefused(const QString& command, const QJsonObject& args, QString* why)
+{
+	const QString action = trackClipAction(command);
+	if (action.isEmpty()) { return false; }
+
 	const QString trackId = args.value(QStringLiteral("track")).toString();
 	ControlResult ignored;
 	Track* track = control::resolveTrack(trackId, &ignored);
 	if (track == nullptr) { return false; }
 	for (const Clip* clip : track->getClips())
 	{
-		if (!EditLocks::instance().clipLocked(clip->id())) { continue; }
-		*why = QStringLiteral("removing %1 would delete %2, which is locked against editing (clip.set_locked / "
-			"track.set_locked unlocks it)").arg(trackId, control::clipIdOf(clip));
+		if (!trackClipAffected(command, clip) || !EditLocks::instance().clipLocked(clip->id())) { continue; }
+		*why = QStringLiteral("%1, which is locked against editing (clip.set_locked / track.set_locked unlocks it)")
+			.arg(action.arg(trackId, control::clipIdOf(clip)));
 		return true;
 	}
 	return false;
@@ -188,7 +205,7 @@ bool EditLocks::refuses(const QString& command, const QJsonObject& args, QString
 	if (command == QLatin1String("clip.move") && moveRefused(args, why)) { return true; }
 	const QStringList tracks = idsUnder(args, "track") + idsUnder(args, "tracks");
 	if (std::any_of(tracks.begin(), tracks.end(), [why](const QString& track) { return trackRefused(track, why); })) { return true; }
-	return command == QLatin1String("track.remove") && trackRemovalRefused(args, why);
+	return trackClipEditRefused(command, args, why);
 }
 
 void EditLocks::save(QDomDocument& doc, QDomElement& parent) const

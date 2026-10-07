@@ -1,36 +1,32 @@
-# Cluster new-p8-102: locked clips and track removal
+# Cluster new-p8-102: individually locked clips and track-level edits
 
 **Verdict: FIXED**
 
-`track.remove` was accepted for a track whose clip was individually locked. The guard in [EditLocks.cpp](../../src/core/EditLocks.cpp#L128) now resolves the target track and refuses removal when any clip on it has an individual lock. The check runs in `EditLocks::refuses()` after the existing track lock check and before the command handler ([EditLocks.cpp](../../src/core/EditLocks.cpp#L181)). The regression in [ProjectStateTest.cpp](../../tests/src/core/ProjectStateTest.cpp#L216) confirms refusal and that the track and clip remain present.
+`EditLocks::refuses()` already checked individually locked clips for `track.remove`, but the shared track-level clip check did not cover `track.flatten` or `project.subproject_refresh`. The latter repoints every `SampleClip` on the linked track. The preflight now checks all clips removed by `track.remove` and `track.flatten`, and sample clips repointed by `project.subproject_refresh` ([EditLocks.cpp](../../src/core/EditLocks.cpp#L129), [dispatch](../../src/core/EditLocks.cpp#L208)). It leaves unrelated clip types out of the refresh check because that handler does not repoint them.
 
-Before the fix, `ProjectStateTest::aLockedClipRefusesTrackRemoval()` failed at line 225: the command returned `errorKind` 0 instead of `ControlErrorKind::Refused`. Reversing only the production patch reproduced the same failure; reapplying it passed.
+Regressions in [ProjectToolsTest.cpp](../../tests/src/core/ProjectToolsTest.cpp#L239) verify locked clips produce a lock-specific refusal for both commands. Unlocked clips pass the lock preflight; the refresh test also verifies the handler returns its ordinary `NotFound` result for a track that is not linked as a subproject. The test process cannot complete an unlocked flatten render: `BounceInPlace` launches the current executable as the CLI renderer, and in this test that executable is `ProjectToolsTest`. The lock-specific unlocked behavior is therefore verified at the preflight boundary. The existing [track-removal regression](../../tests/src/core/ProjectStateTest.cpp#L216) still passes.
 
 ## Verification evidence
 
-Build and test output was written to new files under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs`. Each build command rebuilt both `zene` and `ProjectStateTest`; ctest ran from `build/tests`.
+Build and test logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs`. All ctest commands ran from `build/tests`.
 
-| Stage | Command | Exit | Log |
+| Stage | Exact command | Exit | Result |
 | --- | --- | ---: | --- |
-| Original build | `cmake --build build --target zene ProjectStateTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/build-1.log 2>&1` | 0 | `build-1.log` |
-| Original RED | `ctest -R '^ProjectStateTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/test-1.log 2>&1` (cwd: `build/tests`) | 8 | `test-1.log` |
-| Fixed build | `cmake --build build --target zene ProjectStateTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/build-2.log 2>&1` | 0 | `build-2.log` |
-| Fixed GREEN | `ctest -R '^ProjectStateTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/test-2.log 2>&1` (cwd: `build/tests`) | 0 | `test-2.log` |
-| Reverse production patch: `git diff -- src/core/EditLocks.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/fix.patch` | 0 | — |
-| Reversed build | `cmake --build build --target zene ProjectStateTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/build-3.log 2>&1` | 0 | `build-3.log` |
-| Reversed RED | `ctest -R '^ProjectStateTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/test-3.log 2>&1` (cwd: `build/tests`) | 8 | `test-3.log` |
-| Reapply production patch: `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/fix.patch` | 0 | — |
-| Restored build | `cmake --build build --target zene ProjectStateTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/build-4.log 2>&1` | 0 | `build-4.log` |
-| Restored GREEN | `ctest -R '^ProjectStateTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/test-4.log 2>&1` (cwd: `build/tests`) | 0 | `test-4.log` |
-| Complexity gate: `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/gate-1.log 2>&1` | 0 | `gate-1.log` |
-| File length gate: `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r1/logs/gate-2.log 2>&1` | 0 | `gate-2.log` |
+| Reverse final production diff | `git diff -- src/core/EditLocks.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs/fix.patch` | 0 | Final production change removed for red proof |
+| Reversed build | `cmake --build build --target zene ProjectToolsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs/build-7.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 | Rebuilt `zene` and `ProjectToolsTest` without the fix |
+| RED regression | `ctest -R '^ProjectToolsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs/test-6.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 8 | Both locked-operation regressions failed; 12 passed, 2 failed |
+| Restore final production diff | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs/fix.patch` | 0 | Fix restored |
+| Restored build | `cmake --build build --target zene ProjectToolsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs/build-8.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 | Rebuilt `zene` and `ProjectToolsTest` with the fix |
+| GREEN regression | `ctest -R '^ProjectToolsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs/test-7.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 | Same regression family passed |
+| Final affected build | `cmake --build build --target zene ProjectToolsTest ProjectStateTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs/build-9.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 | Rebuilt both affected test targets and `zene` |
+| Final affected tests | `ctest -R '^(ProjectToolsTest|ProjectStateTest)$' --verbose --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs/test-9.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 | 2/2 ctest targets passed; 23 QtTest cases passed (14 + 9) |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs/gate-7.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 | Passed |
+| File length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-102.r2/logs/gate-8.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 | Passed |
 
-Each ctest invocation ran exactly **1/1 affected-family test**, `ProjectStateTest`. The RED runs failed on the new regression; both GREEN runs passed. Build and gate exit codes are recorded in their respective logs.
-
-The `fff` grep tool was not available in this session (`fff` was absent from the callable tools and `command -v fff` returned no path). I searched the relevant logs with `rg -n`, one term at a time (`error`, `FAILED`, and `Assertion`).
+The `fff grep` tool was not available in this session (it was absent from callable tools and `command -v fff` returned no path). I searched build, test, and gate logs with `rg -n`, one term at a time (`error`, `FAILED`, and `Assertion`).
 
 ## Files committed
 
 - `src/core/EditLocks.cpp`
-- `tests/src/core/ProjectStateTest.cpp`
+- `tests/src/core/ProjectToolsTest.cpp`
 - `docs/qwen-fixes-2026-10/cluster-new-p8-102.md`
