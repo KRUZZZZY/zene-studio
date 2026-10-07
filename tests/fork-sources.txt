@@ -833,6 +833,7 @@ include/ScriptLuaQtTypes.h
 include/ScriptMemoryBudget.h
 include/ScriptPackage.h
 include/SessionArrangementRecorder.h
+include/SessionAudioRecorder.h
 include/SessionFollow.h
 include/SessionGridCells.h
 include/SessionGridMenus.h
@@ -1272,6 +1273,7 @@ src/core/ControlCommandsScoreExport.cpp
 src/core/ControlCommandsScript.cpp
 src/core/ControlCommandsSections.cpp
 src/core/ControlCommandsSession.cpp
+src/core/ControlCommandsSessionAudioRecord.cpp
 src/core/ControlCommandsSessionCapture.cpp
 src/core/ControlCommandsSessionFollow.cpp
 src/core/ControlCommandsSessionLaunch.cpp
@@ -1563,6 +1565,7 @@ src/core/ScriptDawEdit.cpp
 src/core/ScriptDawEffects.cpp
 src/core/ScriptEngine.cpp
 src/core/ScriptPackage.cpp
+src/core/SessionAudioRecorder.cpp
 src/core/SessionClip.cpp
 src/core/SessionFollow.cpp
 src/core/SessionModel.cpp

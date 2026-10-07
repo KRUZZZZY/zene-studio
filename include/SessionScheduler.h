@@ -32,6 +32,7 @@
 
 #include "LmmsTypes.h"
 #include "SessionArrangementRecorder.h"
+#include "SessionAudioRecorder.h"
 #include "SessionFollow.h"
 #include "SessionModel.h"
 #include "SessionPlayback.h"
@@ -378,6 +379,11 @@ public:
 	//! Arrangement Record's event ring (task #641): the model thread consumes it
 	//! (ControlCommandsSessionRecord.cpp); the audio thread feeds it while armed.
 	SessionArrangementRecorder& arrangementRecorder() noexcept;
+
+	//! 0.5.0 L02 (WF-055): the audio take a launcher cell is recording, fed from the launch events
+	//! below and from the period's input (Song::processNextBuffer). include/SessionAudioRecorder.h.
+	SessionAudioRecorder& audioRecorder() noexcept { return m_audioRecorder; }
+	const SessionAudioRecorder& audioRecorder() const noexcept { return m_audioRecorder; }
 	const SessionArrangementRecorder& arrangementRecorder() const noexcept;
 
 private:
@@ -579,6 +585,8 @@ private:
 	//! Arrangement Record's ring: fed by the audio thread, drained by the model
 	//! thread (include/SessionArrangementRecorder.h).
 	SessionArrangementRecorder m_recorder;
+	//! WF-055: the cell's audio take (include/SessionAudioRecorder.h).
+	SessionAudioRecorder m_audioRecorder;
 
 	// ---- audio-thread-only session clock (SPEC A2) ---------------------
 	tick_t m_positionTicks = 0;

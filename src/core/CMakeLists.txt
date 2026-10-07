@@ -125,6 +125,8 @@ SET(LMMS_SESSION_SRCS
 		core/ControlCommandsSessionSceneFollow.cpp
 		core/ControlCommandsSessionRecord.cpp
 		core/ControlCommandsSessionRecordLand.cpp
+		# 0.5.0 L02 (WF-055): the audio take a launcher cell records (include/SessionAudioRecorder.h).
+		core/SessionAudioRecorder.cpp
 	)
 
 set(LMMS_SRCS
@@ -255,6 +257,7 @@ set(LMMS_SRCS
 	core/ControlCommandsRangeBounce.cpp
 	core/ControlCommandsRecordingPass.cpp
 	core/ControlCommandsSessionCapture.cpp
+	core/ControlCommandsSessionAudioRecord.cpp
 	core/ControlCommandsTrackPresets.cpp
 	core/ControlCommandsRemote.cpp
 	core/ControlDeviceMoves.cpp

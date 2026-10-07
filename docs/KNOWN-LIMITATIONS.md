@@ -2333,3 +2333,24 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - Theme changes apply at the next start, and every reply and the window say so.
 - The plug-in scan, `render.render`, `render.stems` and `browser.peaks` stay synchronous and are not in the task area.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
+
+## Recording audio into a launcher cell (WF-055, 0.5.0 L02 `launcher-rec`) — added 2026-10-07
+
+`session.record_slot` / `session.record_slot_status` / `session.record_slot_land` record a sample track's input
+into an empty launcher cell: it starts on the launch quantisation, stops on the cell's quantised stop or after
+`bars`, and lands as the cell's audio clip (a 24-bit WAV), one undo step. Design record and proof:
+`docs/SESSION-AUDIO-RECORD.md`. What it does not do:
+
+- **One take at a time**, on one cell. A finished take blocks the next `session.record_slot` until it is landed
+  or cancelled (`cancel: true`).
+- **Empty cells only.** A filled cell is refused; clear it first. There is no "record over" or overdub.
+- **Sample tracks only**, and the take is the engine's **stereo input bus** (what an arrangement clip records),
+  not a record route's chosen input channel. `track.set_arm` is not consulted: arming the cell is the arm.
+- **The start is period-granular.** The session scheduler decides launches once per audio period, so a take
+  starts with the period in which its grid line is reached (as the cell's own playback does); its length is
+  exact - whole frames of the span, shifted by the recording round trip like an arrangement take.
+- **Landing is explicit on the socket.** The take waits in `done` until `session.record_slot_land` writes it;
+  an agent polls `session.record_slot_status`. The WAV is never deleted by undo.
+- **A launched audio cell does not yet render** in this step: the landed take is the cell's clip and is saved
+  with the project, but launching an audio cell still only takes its column over (the bullet "The Session View
+  is in the 0.3.0-alpha builds..." above).

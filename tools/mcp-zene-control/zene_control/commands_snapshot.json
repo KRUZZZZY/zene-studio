@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T17:22:52Z",
+  "captured_at": "2026-10-07T08:50:46Z",
   "commands": [
     {
       "args_schema": {
@@ -25826,6 +25826,98 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "bars": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "cancel": {
+            "type": "boolean"
+          },
+          "quantisation": {
+            "enum": [
+              "global",
+              "none",
+              "1/16",
+              "1/8",
+              "1/4",
+              "1/2",
+              "bar",
+              "two_bars",
+              "four_bars",
+              "8_bars"
+            ],
+            "type": "string"
+          },
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "track",
+          "scene"
+        ],
+        "type": "object"
+      },
+      "description": "Record audio into an empty launcher cell ('track', 'scene') of an audio (sample) track's column: the cell is armed and launched, so the take starts on the launch quantisation's grid line ('quantisation', else the cell's own, else the session's). It takes the engine's stereo input, shifted by the recording round trip, until the cell stops - session.stop_slot's quantised stop, another cell on the column, session.stop_all - or for 'bars' bars. session.record_slot_status follows it; session.record_slot_land makes it the cell's clip. 'cancel': true drops the take in hand (whichever cell it is for) and stops its cell. Not a project edit: no transaction is recorded.",
+      "group": "session",
+      "id": "session.record_slot",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Land a finished launcher-cell take: write it as a 24-bit WAV ('file', absolute; a new take in the user's Recordings folder when left out) and make it the cell's audio clip, named 'name' (the file's name when left out). Refused until session.record_slot_status says done. One undo step: it puts the cell back; the WAV stays on disk.",
+      "group": "session",
+      "id": "session.record_slot_land",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Read the launcher cell's audio recording back: 'state' (idle, armed - waiting for its launch, recording, finishing - stopped and running on to its length, done - ready for session.record_slot_land), the cell, the grid line it started on, the frames taken and the length it will have, the frames a starved writer dropped, the sample rate and the round trip it was shifted by. Read-only.",
+      "group": "session",
+      "id": "session.record_slot_status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "scene": {
             "maximum": 511,
             "minimum": 0,
@@ -33996,23 +34088,23 @@
       }
     }
   ],
-  "count": 809,
+  "count": 812,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
-    "lane_head": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-launcher-rec",
+    "lane_head": "6d1a1143d032d7ee6d3ceb03caa5f0e41a17245a",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-4g8c9srg/zene.sock",
-    "version": "0.4.0-alpha.114+9a9f339"
+    "source_socket": "/tmp/zctl-run-3o1e8zcg/zene.sock",
+    "version": "0.4.0-alpha.333+6d1a114"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 809,
-    "ids_sha256": "30a5e1ef45f2a6f4cd493d28b6b923826da185f96165d735ba363909b12ca8e2"
+    "id_count": 812,
+    "ids_sha256": "9e78042f10bc49c3c1a8e92c261afb8628ac27dc7aa0ee7e0160586ff135c455"
   }
 }

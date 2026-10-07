@@ -951,8 +951,11 @@ window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows becam
 view.announcements (`true_inverse`); window.sample_editor, window.item_list, workflow.resume and task.list, task.cancel,
 task.clear_finished and task.show (`not_mutating`, interface state).
 
+**0.5.0 L02 launcher-rec** (WF-055, audio into a launcher cell; +3): session.record_slot_land (`true_inverse`);
+session.record_slot and session.record_slot_status (`not_mutating`: arming and recording are a launch).
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=818 true_inverse=404 snapshot=40 irreversible=21 not_mutating=353
+     measured: rows=821 true_inverse=405 snapshot=40 irreversible=21 not_mutating=355
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

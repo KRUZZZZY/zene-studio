@@ -930,6 +930,11 @@ ENDIF()
 		# R5.2: Follow Action chains on SCENES - whole rows, precedence over the clip,
 		# the v1/v2 section rule and the socket half (set_slot's missing chain arg).
 		src/core/SessionSceneFollowTest.cpp
+		# 0.5.0 L02 (WF-055): audio recorded into a launcher cell - the take as a unit (round trip, span, length,
+		# the allocation probe on its audio-thread entry points) and on the real engine through the agent surface
+		# (a known input signal, the quantised start, the landed WAV's PCM, one undo step).
+		src/core/SessionAudioRecorderTest.cpp
+		src/core/SessionAudioRecordTest.cpp
 	)
 
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level
