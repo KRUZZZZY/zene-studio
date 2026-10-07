@@ -73,7 +73,12 @@ ControlResult invert(const QJsonObject& args)
 	int high = 0;
 	for (const Note* note : notes) { low = std::min(low, note->key()); high = std::max(high, note->key()); }
 	const int twice = args.contains(QStringLiteral("pivot")) ? 2 * args.value(QStringLiteral("pivot")).toInt() : low + high;
-	clip->addJournalCheckPoint();
+	const bool changes = std::any_of(notes.cbegin(), notes.cend(), [twice](const Note* note)
+	{
+		const int target = std::clamp(twice - note->key(), 0, NumKeys - 1);
+		return target != note->key();
+	});
+	if (changes) { clip->addJournalCheckPoint(); }
 	for (Note* note : notes) { note->setKey(std::clamp(twice - note->key(), 0, NumKeys - 1)); }
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.invert"), {{QStringLiteral("inverted"), notes.size()}}));
 }
@@ -203,7 +208,11 @@ ControlResult transposeInKey(const QJsonObject& args)
 	MidiClip* clip = scopedNotes(args, &ref, &notes, &error);
 	if (clip == nullptr) { return error; }
 	const int steps = args.value(QStringLiteral("steps")).toInt(1);
-	clip->addJournalCheckPoint();
+	const bool changes = std::any_of(notes.cbegin(), notes.cend(), [&classes, steps](const Note* note)
+	{
+		return stepInScale(note->key(), steps, classes) != note->key();
+	});
+	if (changes) { clip->addJournalCheckPoint(); }
 	int moved = 0;  // a note the scale would take past key 0 or 127 stays, and is not counted
 	for (Note* note : notes)
 	{

@@ -58,6 +58,7 @@
  */
 
 #include <algorithm>
+#include <cmath>
 
 #include <QJsonObject>
 #include <QString>
@@ -223,7 +224,14 @@ ControlResult transpose(const QJsonObject& args)
 		return error;
 	}
 
-	clip->addJournalCheckPoint();
+	const int boundedSemitones = std::clamp(semitones, -NumKeys, NumKeys);
+	const bool changes = std::any_of(notes.begin(), notes.end(), [boundedSemitones](const Note* note)
+	{
+		if (note == nullptr) { return false; }
+		const int target = std::clamp(note->key() + boundedSemitones, 0, NumKeys - 1);
+		return target != note->key();
+	});
+	if (changes) { clip->addJournalCheckPoint(); }
 	const int changed = NoteTransform::transpose(notes, semitones);
 	// A transpose moves KEYS, and the clip's own order is (position, then key),
 	// so the list has to be put back - the call note.move makes after it moves one
@@ -262,7 +270,17 @@ ControlResult velocityOffset(const QJsonObject& args)
 		return error;
 	}
 
-	clip->addJournalCheckPoint();
+	const int boundedDelta = std::clamp(delta, -static_cast<int>(MaxVolume),
+		static_cast<int>(MaxVolume));
+	const bool changes = std::any_of(notes.begin(), notes.end(), [boundedDelta](const Note* note)
+	{
+		if (note == nullptr) { return false; }
+		const int current = static_cast<int>(note->getVolume());
+		const int target = std::clamp(current + boundedDelta, static_cast<int>(MinVolume),
+			static_cast<int>(MaxVolume));
+		return target != current;
+	});
+	if (changes) { clip->addJournalCheckPoint(); }
 	const int changed = NoteTransform::offsetVelocity(notes, delta);
 	clip->dataChanged();
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // cluster 5690, as transpose above
@@ -292,8 +310,17 @@ ControlResult velocityScale(const QJsonObject& args)
 		return error;
 	}
 
-	clip->addJournalCheckPoint();
-	const int changed = NoteTransform::scaleVelocity(notes, static_cast<float>(factor));
+	const float boundedFactor = static_cast<float>(factor);
+	const bool changes = std::any_of(notes.begin(), notes.end(), [boundedFactor](const Note* note)
+	{
+		if (note == nullptr) { return false; }
+		const int current = static_cast<int>(note->getVolume());
+		const int target = std::clamp(static_cast<int>(std::lround(current * boundedFactor)),
+			static_cast<int>(MinVolume), static_cast<int>(MaxVolume));
+		return target != current;
+	});
+	if (changes) { clip->addJournalCheckPoint(); }
+	const int changed = NoteTransform::scaleVelocity(notes, boundedFactor);
 	clip->dataChanged();
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // cluster 5690, as transpose above
 

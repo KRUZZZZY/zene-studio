@@ -102,6 +102,21 @@ private slots:
 		QCOMPARE(keysOf(clip), (QList<int>{60, 64, 67}));
 	}
 
+	void aNoOpInvertDoesNotTakeAnUndoStep()
+	{
+		MidiClip* clip = clipWith({{60, 0}});
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+
+		const int depthBefore = journal->undoDepth();
+		const ControlResult inverted = run(QStringLiteral("note.invert"), self(clip));
+		QVERIFY2(inverted.ok, qPrintable(inverted.errorMessage));
+		QCOMPARE(clip->notes()[0]->key(), 60);
+		const int depthAfter = journal->undoDepth();
+		while (journal->undoDepth() > depthBefore) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(depthAfter, depthBefore);
+	}
+
 	void aChordBecomesARun()
 	{
 		MidiClip* clip = clipWith({{60, 0}, {64, 0}, {67, 0}}, 48);
@@ -131,6 +146,25 @@ private slots:
 		QVERIFY(run(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
 		QVERIFY(run(QStringLiteral("note.transpose_in_key"), self(clip)).ok);
 		QCOMPARE(keysOf(clip), (QList<int>{62, 64}));  // C -> D, D -> E: one degree each
+	}
+
+	void zeroStepKeyedTransposeDoesNotTakeAnUndoStep()
+	{
+		MidiClip* clip = clipWith({{60, 0}});
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		QVERIFY(run(QStringLiteral("scale.root_set"), {{QStringLiteral("root"), QStringLiteral("C")}}).ok);
+		QVERIFY(run(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
+		const int depthBefore = journal->undoDepth();
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("steps"), 0);
+		const ControlResult transposed = run(QStringLiteral("note.transpose_in_key"), args);
+		QVERIFY2(transposed.ok, qPrintable(transposed.errorMessage));
+		QCOMPARE(transposed.result.value(QStringLiteral("moved")).toInt(), 0);
+		QCOMPARE(clip->notes()[0]->key(), 60);
+		const int depthAfter = journal->undoDepth();
+		while (journal->undoDepth() > depthBefore) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(depthAfter, depthBefore);
 	}
 
 	void aEuclideanRhythm()
