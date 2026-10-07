@@ -253,7 +253,7 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 	values.role = attribute(attributes, QStringLiteral("role"));
 	values.destination = attribute(attributes, QStringLiteral("destination"));
 	values.audioChannels = intAttribute(attributes, state, QStringLiteral("audioChannels"), 2);
-	values.solo = flagAttribute(attributes, QStringLiteral("solo"));
+	values.solo = flagAttribute(attributes, state, QStringLiteral("solo"));
 
 	while (!reader.atEnd())
 	{
@@ -269,7 +269,7 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 		}
 		else if (child == QLatin1String("Mute"))
 		{
-			values.mute = flagAttribute(childAttributes, QStringLiteral("value"));
+			values.mute = flagAttribute(childAttributes, state, QStringLiteral("value"));
 		}
 		else if (child == QLatin1String("Pan"))
 		{

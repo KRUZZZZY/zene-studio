@@ -959,6 +959,49 @@ private slots:
 			"a malformed note key was read as the default 60");
 	}
 
+	//! XML booleans have four lexical forms. A present value outside that set is
+	//! malformed; it must not silently become false like an absent attribute.
+	void malformedBooleanAttributesAreRefused()
+	{
+		const QString prefix = QStringLiteral(
+			"<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+			"<Structure><Track id=\"t1\" name=\"Track\" contentType=\"notes\">");
+		const QString suffix = QStringLiteral("</Track></Structure></Project>");
+		const QList<QPair<QString, QString>> invalidChannels = {
+			{QStringLiteral("<Channel id=\"c1\" solo=\"yes\"/>"), QStringLiteral("solo")},
+			{QStringLiteral("<Channel id=\"c1\"><Mute value=\"invalid\"/></Channel>"),
+				QStringLiteral("Mute")},
+			{QStringLiteral("<Channel id=\"c1\" solo=\"\"/>"), QStringLiteral("solo")}
+		};
+		for (const auto& invalid : invalidChannels)
+		{
+			const QByteArray xml = (prefix + invalid.first + suffix).toLatin1();
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("invalid %1 boolean was accepted")
+					.arg(invalid.second)));
+			QVERIFY2(error.contains(QStringLiteral("boolean")), qPrintable(error));
+		}
+
+		for (const QString& value : {QStringLiteral("true"), QStringLiteral("false"),
+			QStringLiteral("1"), QStringLiteral("0")})
+		{
+			const QString xml = prefix + QStringLiteral(
+				"<Channel id=\"c1\" solo=\"%1\"><Mute value=\"%1\"/></Channel>").arg(value)
+				+ suffix;
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(dawProjectModelFromXml(xml.toLatin1(), &model, &report, &error),
+				qPrintable(error));
+			const bool expected = value == QLatin1String("true") || value == QLatin1String("1");
+			QCOMPARE(model.tracks[0].solo, expected);
+			QCOMPARE(model.tracks[0].mute, expected);
+		}
+	}
+
 	//! Luna cluster 5064: an automation point's time is a beat like any other, so
 	//! it goes through the same bounded tick conversion - and is counted in
 	//! `rounded_times` when it is not on the 48-tick grid - instead of being kept

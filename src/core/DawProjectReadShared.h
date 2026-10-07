@@ -101,12 +101,6 @@ inline QString attribute(const QXmlStreamAttributes& attributes, const QString& 
 	return attributes.value(name).toString();
 }
 
-inline bool flagAttribute(const QXmlStreamAttributes& attributes, const QString& name)
-{
-	const QString value = attribute(attributes, name);
-	return value == QLatin1String("true") || value == QLatin1String("1");
-}
-
 //! Consume the element the reader is standing on, including everything nested
 //! inside it, and leave the reader on its end element.
 inline void skipElement(QXmlStreamReader& reader)
@@ -134,6 +128,25 @@ struct ReadState
 	//! The effective timeUnit, inherited down the <Lanes> chain.
 	QString timeUnit = QString::fromLatin1(DawProjectTimeUnit);
 };
+
+
+//! An absent optional boolean is false. A present value must use one of the
+//! XML boolean forms; an invalid value records a refusal instead of becoming false.
+inline bool flagAttribute(const QXmlStreamAttributes& attributes, ReadState& state,
+	const QString& name)
+{
+	if (!attributes.hasAttribute(name)) { return false; }
+	const QString rawValue = attribute(attributes, name);
+	const QString value = rawValue.trimmed();
+	if (value == QLatin1String("true") || value == QLatin1String("1")) { return true; }
+	if (value == QLatin1String("false") || value == QLatin1String("0")) { return false; }
+	if (state.error.isEmpty())
+	{
+		state.error = QStringLiteral("the attribute %1 carries \"%2\", which is not an XML boolean this "
+			"reader accepts").arg(name, rawValue);
+	}
+	return false;
+}
 
 
 /*! A numeric attribute that is PRESENT but not a number is not an absent
