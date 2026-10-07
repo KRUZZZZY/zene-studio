@@ -2026,6 +2026,7 @@ tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiInputTransformTest.cpp
 tests/src/core/MidiJackOutScheduleTest.cpp
 tests/src/core/MidiLearnTest.cpp
+tests/src/core/MidiLearnThreadTest.cpp
 tests/src/core/MidiOutQueueTest.cpp
 tests/src/core/MidiProbabilityPersistenceTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp

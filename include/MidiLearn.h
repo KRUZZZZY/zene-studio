@@ -69,11 +69,9 @@ MidiController* bindMidiController(AutomatableModel* target, int channel, int co
 //                in a lock-free slot. It allocates nothing, takes no lock, never
 //                waits, and never touches a model, a Song or a MidiPort.
 //
-// The hand-off carries plain integers (channel, controller number), never a
-// pointer to a model, so there is no object whose lifetime must be kept alive
-// across the hand-off. applyPendingBinding() runs on the GUI thread, resolves
-// the focused control there (a QPointer, so a model that died in the meantime
-// reads as "no target"), and is driven by MidiLearnGui's bind timer.
+// The hand-off carries plain integers (channel, controller number) and the
+// focus generation, never a pointer to a model. applyPendingBinding() runs on
+// the GUI thread and drops requests whose focus generation is stale.
 class MidiLearn
 {
 public:
@@ -124,8 +122,9 @@ private:
 	//! focused control and install it. This is the deferred write.
 	bool bindFocusedControl(int channel, int controllerNum);
 
-	//! MIDI input thread: record the request. No allocation, no lock.
-	void requestBinding(int channel, int controllerNum);
+	//! MIDI input thread: record the request for the observed focus generation.
+	//! No allocation, no lock.
+	void requestBinding(int channel, int controllerNum, unsigned int generation);
 
 	//! True when the calling thread is the application (GUI) thread.
 	static bool onGuiThread();
@@ -136,6 +135,7 @@ private:
 	//! the GUI thread); it reads this flag instead.
 	std::atomic<bool> m_focusTargetSet{false};
 	QPointer<AutomatableModel> m_focusTarget;
+	std::atomic<unsigned int> m_focusGeneration{0};
 
 	//! Lock-free single slot: payload first, then m_pendingBinding with release
 	//! ordering. One outstanding request at a time, by construction - the first
@@ -143,6 +143,7 @@ private:
 	std::atomic<bool> m_pendingBinding{false};
 	std::atomic<int> m_pendingChannel{0};
 	std::atomic<int> m_pendingController{0};
+	std::atomic<unsigned int> m_pendingGeneration{0};
 
 	std::atomic<unsigned int> m_bindingCount{0};
 	std::atomic<Qt::HANDLE> m_lastBindingThreadId{nullptr};
