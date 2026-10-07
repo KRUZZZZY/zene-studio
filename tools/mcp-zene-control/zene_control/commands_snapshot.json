@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-06T15:11:39Z",
+  "captured_at": "2026-10-07T11:17:25Z",
   "commands": [
     {
       "args_schema": {
@@ -1674,6 +1674,41 @@
       "description": "Set a control's trim - an offset (in the control's own unit) added to its written automation as it plays, never written into the clip, so the curve's shape stays and the whole of it moves. Runtime state like the automation mode (not saved). One undo step.",
       "group": "automation",
       "id": "automation.trim_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "parameter": {
+            "type": "string"
+          },
+          "ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "value": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "track",
+          "parameter",
+          "ticks"
+        ],
+        "type": "object"
+      },
+      "description": "Write to end: from 'ticks' (song ticks) to the song's end the control holds 'value' (its own unit, range-checked; its current value when left out). Every later point is removed, the point at 'ticks' steps from the curve's value there to the new one, and a point at the song's end (the end of its last clip) holds it - what a write pass leaves to the end. Creates the automation clip when the control has none. Answers {track, parameter, ticks, end, value, removed, automation}. One undo step.",
+      "group": "automation",
+      "id": "automation.write_to_end",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -5333,6 +5368,11 @@
             "maximum": 49152,
             "minimum": 0,
             "type": "integer"
+          },
+          "start": {
+            "maximum": 49152,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -5341,7 +5381,7 @@
         ],
         "type": "object"
       },
-      "description": "Loop a MIDI clip's content: its notes from the start to 'length' ticks repeat across the whole clip, however long it is drawn (0 stops the loop). Saved with the clip. Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Loop a clip's content: a MIDI clip's notes from the start to 'length' ticks repeat across the whole clip, however long it is drawn (0 stops the loop). An audio clip's audio from 'start' ticks after its in-point (0 when left out) for 'length' ticks repeats the same way once the clip plays past it - kept in source frames, so a tempo change keeps it on the same audio; refused, typed, for a warped, transposed, sped or recording audio clip. Saved with the clip. Reversible through the ProjectJournal (Clip checkpoint).",
       "group": "clip",
       "id": "clip.set_loop",
       "mutating": true,
@@ -15967,7 +16007,7 @@
         ],
         "type": "object"
       },
-      "description": "Move the notes in 'scope' 'amount' ticks later (negative: earlier), wrapping round inside the clip's length, so the pattern turns without growing. One undo step.",
+      "description": "Move the notes in 'scope' 'amount' ticks later (negative: earlier), wrapping round inside the clip's length, so the pattern turns without growing. On an audio clip its content turns the same way ('scope' is not read): inside its loop, or inside the clip, which then loops exactly the audio it plays (refused, typed, for a clip longer than its audio with no loop, or one whose loop starts after its first tick). One undo step.",
       "group": "note",
       "id": "note.rotate",
       "mutating": true,
@@ -17696,6 +17736,76 @@
       "description": "Drop a MIDI part (part-<n>) from an instrument track; a note sounding on its channel still ends there. Reversible through the ProjectJournal.",
       "group": "plugin",
       "id": "plugin.midi_part_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "part": {
+            "type": "string"
+          },
+          "part_count": {
+            "type": "integer"
+          },
+          "parts": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "high_key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "high_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "low_key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "low_velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "midi_channel": {
+            "maximum": 16,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "part": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "part"
+        ],
+        "type": "object"
+      },
+      "description": "Change a MIDI part (part-<n>) of an instrument track in place: its 'midi_channel' (1..16), its key range (0..127) and its velocity range (0..200). A field left out keeps its value, and the part keeps its place in the first-match order. Saved with the track. Reversible through the ProjectJournal.",
+      "group": "plugin",
+      "id": "plugin.midi_part_set",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -20227,6 +20337,9 @@
           },
           "saved": {
             "type": "boolean"
+          },
+          "undo_history": {
+            "type": "object"
           }
         },
         "required": [],
@@ -20282,6 +20395,65 @@
             "type": "string"
           },
           "previous_file": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "setting": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "setting"
+        ],
+        "type": "object"
+      },
+      "description": "Choose whether THIS project saves its undo history with it (WF-033): 'on' or 'off' overrides the global default (setting undohistory/persist, off unless changed), 'default' follows it. Saved with the project. The newest undo steps (undohistory/steps, 20) are written by project.save and the interface's Save as compressed whole-project snapshots under a cap (undohistory/capmb, 64 MB); steps made before it was turned on cannot be saved.",
+      "group": "project",
+      "id": "project.set_undo_history",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cap_bytes": {
+            "type": "number"
+          },
+          "default_enabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "last_load": {
+            "type": "object"
+          },
+          "last_save": {
+            "type": "object"
+          },
+          "max_steps": {
+            "type": "integer"
+          },
+          "oversize": {
+            "type": "boolean"
+          },
+          "previous_setting": {
+            "type": "string"
+          },
+          "saveable_bytes": {
+            "type": "number"
+          },
+          "saveable_steps": {
+            "type": "integer"
+          },
+          "setting": {
             "type": "string"
           }
         },
@@ -20441,6 +20613,59 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Whether this project saves its undo history with it (WF-033): the project's own setting (on / off / default), the global default and caps (settings undohistory/persist, undohistory/steps, undohistory/capmb), what a save would keep NOW (saveable_steps, saveable_bytes, oversize), and what the last save and load did.",
+      "group": "project",
+      "id": "project.undo_history",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cap_bytes": {
+            "type": "number"
+          },
+          "default_enabled": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "last_load": {
+            "type": "object"
+          },
+          "last_save": {
+            "type": "object"
+          },
+          "max_steps": {
+            "type": "integer"
+          },
+          "oversize": {
+            "type": "boolean"
+          },
+          "previous_setting": {
+            "type": "string"
+          },
+          "saveable_bytes": {
+            "type": "number"
+          },
+          "saveable_steps": {
+            "type": "integer"
+          },
+          "setting": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -20647,6 +20872,71 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "level": {
+            "maximum": 2,
+            "minimum": 0,
+            "type": "number"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "solo": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "layer"
+        ],
+        "type": "object"
+      },
+      "description": "Set a layer's mix in an instrument track's layer rack ('layer' layer-<n>; layer-0 is the track's own instrument): 'muted' silences it; while any layer is 'solo', only the soloed layers sound; 'level' (0..2, 1 is unity) is a gain on top of the track's volume - layer-0 has none (its level is the track's volume). A field left out keeps its value. Applied at once, to the notes already sounding too. Saved with the track. Reversible through the ProjectJournal.",
+      "group": "rack",
+      "id": "rack.layer_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "layer_count": {
+            "type": "integer"
+          },
+          "layers": {
+            "type": "array"
+          },
+          "max_layers": {
+            "type": "integer"
+          },
+          "removed": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "zone": {
+            "type": "string"
+          },
+          "zones": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "high_key": {
             "maximum": 127,
             "minimum": 0,
@@ -20784,7 +21074,7 @@
         ],
         "type": "object"
       },
-      "description": "Read an instrument track's layer rack: layer-0 is the track's own instrument, layer-1.. the instruments layered on it, and the key/velocity zones that pick which layers a note plays on (every layer a matching zone names sounds - a layer rack stacks). Read-only.",
+      "description": "Read an instrument track's layer rack: layer-0 is the track's own instrument, layer-1.. the instruments layered on it, and the key/velocity zones that pick which layers a note plays on (every layer a matching zone names sounds - a layer rack stacks). Each layer reports its mix (muted, solo, level - rack.layer_set). Read-only.",
       "group": "rack",
       "id": "rack.layers",
       "mutating": false,
@@ -25839,6 +26129,98 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "bars": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "cancel": {
+            "type": "boolean"
+          },
+          "quantisation": {
+            "enum": [
+              "global",
+              "none",
+              "1/16",
+              "1/8",
+              "1/4",
+              "1/2",
+              "bar",
+              "two_bars",
+              "four_bars",
+              "8_bars"
+            ],
+            "type": "string"
+          },
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "track",
+          "scene"
+        ],
+        "type": "object"
+      },
+      "description": "Record audio into an empty launcher cell ('track', 'scene') of an audio (sample) track's column: the cell is armed and launched, so the take starts on the launch quantisation's grid line ('quantisation', else the cell's own, else the session's). It takes the engine's stereo input, shifted by the recording round trip, until the cell stops - session.stop_slot's quantised stop, another cell on the column, session.stop_all - or for 'bars' bars. session.record_slot_status follows it; session.record_slot_land makes it the cell's clip. 'cancel': true drops the take in hand (whichever cell it is for) and stops its cell. Not a project edit: no transaction is recorded.",
+      "group": "session",
+      "id": "session.record_slot",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Land a finished launcher-cell take: write it as a 24-bit WAV ('file', absolute; a new take in the user's Recordings folder when left out) and make it the cell's audio clip, named 'name' (the file's name when left out). Refused until session.record_slot_status says done. One undo step: it puts the cell back; the WAV stays on disk.",
+      "group": "session",
+      "id": "session.record_slot_land",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Read the launcher cell's audio recording back: 'state' (idle, armed - waiting for its launch, recording, finishing - stopped and running on to its length, done - ready for session.record_slot_land), the cell, the grid line it started on, the frames taken and the length it will have, the frames a starved writer dropped, the sample rate and the round trip it was shifted by. Read-only.",
+      "group": "session",
+      "id": "session.record_slot_status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "scene": {
             "maximum": 511,
             "minimum": 0,
@@ -27893,8 +28275,18 @@
             "minimum": -1919808,
             "type": "integer"
           },
+          "end": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
           "folder": {
             "type": "string"
+          },
+          "start": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
           }
         },
         "required": [
@@ -27903,7 +28295,7 @@
         ],
         "type": "object"
       },
-      "description": "Move every clip inside folder track 'folder' (its sub-folders too) by 'delta' ticks - the folder's part of the song as one block. One undo step.",
+      "description": "Move every clip inside folder track 'folder' (its sub-folders too) by 'delta' ticks - the folder's part of the song as one block. With 'start' and 'end' only the clips starting in [start, end) move: one of the folder's summary clips, the spans its row draws. One undo step.",
       "group": "track",
       "id": "track.folder_move",
       "mutating": true,
@@ -32579,7 +32971,8 @@
               "controller",
               "xy",
               "comp",
-              "clips"
+              "clips",
+              "automation"
             ],
             "type": "string"
           },
@@ -32592,7 +32985,7 @@
         ],
         "type": "object"
       },
-      "description": "Open the editable item list of a canvas beside it, or close it ('visible'; toggles when left out) - 'surface': notes (the open note editor's notes, with the expression lane's value), controller (the controller lane's points), xy (the open XY pad's two axes), comp (the take lanes' comp segments) or clips (the arrangement's clips). Every cell edit, Insert and Delete in the list runs the canvas's own command (note.edit, note.add, note.remove_many, clip.controllers_set, rack.macro_set, comp.select, clip.move, clip.resize, clip.add, clip.delete), one undo step each; selection follows the canvas both ways. Answers the list: {surface, visible, title, columns: [{id, title, editable}], rows: [{id, <column>: text}] (at most 200), count}. Ctrl+Shift+L on a canvas. Interface state.",
+      "description": "Open the editable item list of a canvas beside it, or close it ('visible'; toggles when left out) - 'surface': notes (the open note editor's notes, with the expression lane's value), controller (the controller lane's points), xy (the open XY pad's two axes), comp (the take lanes' comp segments), clips (the arrangement's clips) or automation (the automation editor's points: position and value as a share of the control's range). Every cell edit, Insert and Delete in the list runs the canvas's own command (note.edit, note.add, note.remove_many, clip.controllers_set, rack.macro_set, comp.select, clip.move, clip.resize, clip.add, clip.delete, automation.move_point), one undo step each; selection follows the canvas both ways. Answers the list: {surface, visible, title, columns: [{id, title, editable}], rows: [{id, <column>: text}] (at most 200), count}. Ctrl+Shift+L on a canvas. Interface state.",
       "group": "window",
       "id": "window.item_list",
       "mutating": false,
@@ -32832,7 +33225,16 @@
               "instruments",
               "audio",
               "returns",
-              "used"
+              "used",
+              "selected"
+            ],
+            "type": "string"
+          },
+          "meter_falloff": {
+            "enum": [
+              "fast",
+              "medium",
+              "slow"
             ],
             "type": "string"
           },
@@ -32852,6 +33254,18 @@
               "linear"
             ],
             "type": "string"
+          },
+          "peak_hold": {
+            "enum": [
+              "off",
+              "1.5s",
+              "3s",
+              "6s"
+            ],
+            "type": "string"
+          },
+          "selected_channels": {
+            "type": "array"
           },
           "sends_on_faders": {
             "type": "string"
@@ -32893,7 +33307,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
+      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
       "group": "window",
       "id": "window.mixer_view",
       "mutating": false,
@@ -32917,12 +33331,21 @@
               "instruments",
               "audio",
               "returns",
-              "used"
+              "used",
+              "selected"
             ],
             "type": "string"
           },
           "folded": {
             "type": "array"
+          },
+          "meter_falloff": {
+            "enum": [
+              "fast",
+              "medium",
+              "slow"
+            ],
+            "type": "string"
           },
           "meter_mode": {
             "enum": [
@@ -32940,6 +33363,18 @@
               "linear"
             ],
             "type": "string"
+          },
+          "peak_hold": {
+            "enum": [
+              "off",
+              "1.5s",
+              "3s",
+              "6s"
+            ],
+            "type": "string"
+          },
+          "selected_channels": {
+            "type": "array"
           },
           "sends_on_faders": {
             "type": "string"
@@ -33188,6 +33623,45 @@
           },
           "zoom": {
             "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "MX-137: open the Phase Scope (an open one is raised and moved) on mixer channel 'channel' (a ch-<n> id; left out, the open one's channel, else the master): a goniometer of the channel's newest frames - mono stands up the middle, out of phase lies flat, the left channel alone leans left - beside its phase correlation (+1 mono, 0 wide, -1 out of phase). The answer names the channel ('channel', 'channel_name'), its 'correlation' now and 'frames_seen', the frames the view's tap has been fed since it was pointed at the channel (it grows while the engine runs and the channel is not muted). Closing the window stops the tap. A display.",
+      "group": "window",
+      "id": "window.phase_scope",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "channel_name": {
+            "type": "string"
+          },
+          "correlation": {
+            "type": "number"
+          },
+          "frames_seen": {
+            "type": "number"
+          },
+          "shown": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -34009,23 +34483,23 @@
       }
     }
   ],
-  "count": 809,
+  "count": 818,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-mc-wav/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-features-merge/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-cbrvuhhg/zene.sock",
-    "version": "0.4.0-alpha.333+6d1a114"
+    "source_socket": "/tmp/zctl-run-xo5aotw3/zene.sock",
+    "version": "0.4.0-alpha.374+d1c5ae3"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 809,
-    "ids_sha256": "30a5e1ef45f2a6f4cd493d28b6b923826da185f96165d735ba363909b12ca8e2"
+    "id_count": 818,
+    "ids_sha256": "dcdd3808084b08dff0a15ea46d1d27b6a36936cd149883dc2b5e0a4073dd6193"
   }
 }

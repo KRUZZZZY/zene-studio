@@ -970,8 +970,14 @@ project.undo_history (`not_mutating`).
 **0.5.0 L02 launcher-rec** (WF-055, audio into a launcher cell; +3): session.record_slot_land (`true_inverse`);
 session.record_slot and session.record_slot_status (`not_mutating`: arming and recording are a launch).
 
+**The 2026-10-06/07 feature merge** (`050/features-2026-10-06`: ui-gaps, mc-wav, inst-pdc, f2-ui, meters,
+editor-lanes, wf033, plugin-hosting, launcher-rec, audio-clips, arranger-gaps) re-took the figure with the probe
+at the merged tip, configured without wasmtime: `MEASURED rows=818 true_inverse=407 snapshot=38 irreversible=21
+not_mutating=352` (`DECLARED rows=818 entries=818 duplicates=0`) - the block below minus wasm's option row,
+exactly, and the lanes' own deltas summed (+2 f2-ui, +1 meters, +1 editor-lanes, +2 wf033, +3 launcher-rec).
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=820 true_inverse=406 snapshot=40 irreversible=21 not_mutating=353
+     measured: rows=827 true_inverse=408 snapshot=41 irreversible=21 not_mutating=357
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
