@@ -963,6 +963,10 @@ checkpoint, or an action step removing a created track) (+1). Measured with the 
 without wasmtime: `MEASURED rows=810 true_inverse=404 snapshot=37 irreversible=21 not_mutating=348`
 (`DECLARED rows=810 entries=810 duplicates=0`) - this block minus wasm's option row, exactly.
 
+**WF-033, the undo history saved with the project** (+2, no new group; `docs/UNDO-HISTORY-PERSISTENCE.md`):
+project.set_undo_history (`snapshot`, the inverse is the command with the previous setting) and
+project.undo_history (`not_mutating`).
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=820 true_inverse=406 snapshot=40 irreversible=21 not_mutating=353
      configuration: telemetry.status wasm.load session.get_state stem.get_state

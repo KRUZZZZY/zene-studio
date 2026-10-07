@@ -28,6 +28,7 @@
 
 #include <QtTest>
 
+#include <QComboBox>
 #include <QJsonObject>
 #include <QPushButton>
 #include <QSpinBox>
@@ -117,6 +118,29 @@ private slots:
 		steps->setValue(oldSteps);
 		coalesce->setValue(oldWindow);
 		QCOMPARE(depth().value(QStringLiteral("cap_steps")).toInt(), oldSteps);
+	}
+
+	//! WF-033: the "Save with project" box chooses the PROJECT's own setting through
+	//! project.set_undo_history (the global default box writes the user's config, so it is not
+	//! driven here - this test runs on the real config file).
+	void theSaveWithProjectBoxSetsTheProjectsChoice()
+	{
+		UndoHistoryPanel panel;
+		QComboBox* persist = nullptr;
+		for (QComboBox* box : panel.findChildren<QComboBox*>())
+		{
+			if (box->property("controlCommand").toString() == QLatin1String("project.set_undo_history")) { persist = box; }
+		}
+		QVERIFY(persist != nullptr);
+		const auto setting = [] {
+			return ControlRegistry::instance()->invoke(QStringLiteral("project.undo_history"), QJsonObject{})
+				.result.value(QStringLiteral("setting")).toString();
+		};
+		QCOMPARE(persist->currentData().toString(), setting());
+		persist->setCurrentIndex(persist->findData(QStringLiteral("on")));
+		QCOMPARE(setting(), QStringLiteral("on"));
+		persist->setCurrentIndex(persist->findData(QStringLiteral("default")));
+		QCOMPARE(setting(), QStringLiteral("default"));
 	}
 };
 

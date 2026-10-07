@@ -114,6 +114,12 @@ bool AutomatableModel::mustQuoteName(const QString& name)
 	return !reg.match(name).hasMatch();
 }
 
+//! WF-033: the attribute an undo snapshot carries a plain model's journal id in, beside its value.
+static QString snapshotIdSuffix()
+{
+	return QStringLiteral( "-jid" );
+}
+
 void AutomatableModel::saveSettings( QDomDocument& doc, QDomElement& element, const QString& name )
 {
 	bool mustQuote = mustQuoteName(name);
@@ -125,7 +131,7 @@ void AutomatableModel::saveSettings( QDomDocument& doc, QDomElement& element, co
 		// => it must be appended as a node
 
 		QDomElement me = doc.createElement( mustQuote ? QString("automatablemodel") : name );
-		me.setAttribute( "id", ProjectJournal::idToSave( id() ) );
+		me.setAttribute( "id", ProjectJournal::idToWrite( id() ) );
 		me.setAttribute( "value", m_value );
 		me.setAttribute( "scale_type", m_scaleType == ScaleType::Logarithmic ? "log" : "linear" );
 		if(mustQuote) {
@@ -140,12 +146,19 @@ void AutomatableModel::saveSettings( QDomDocument& doc, QDomElement& element, co
 			QDomElement me = doc.createElement( "automatablemodel" );
 			me.setAttribute( "nodename", name );
 			me.setAttribute( "value", m_value );
+			// WF-033: in an undo snapshot the node carries the id the node branch of loadSettings reads.
+			if( ProjectJournal::snapshotIds() ) { me.setAttribute( "id", id() ); }
 			element.appendChild( me );
 		}
 		else
 		{
 			// non automation, linear scale (default), can be saved as attribute
 			element.setAttribute( name, m_value );
+			// WF-033 (docs/UNDO-HISTORY-PERSISTENCE.md): an undo snapshot carries EVERY model's
+			// journal id, beside the value and in the same form - some loaders read a model's
+			// presence from its attribute (MidiPort's basevelocity compat), so the form must not
+			// change. A project save never writes it.
+			if( ProjectJournal::snapshotIds() ) { element.setAttribute( name + snapshotIdSuffix(), id() ); }
 		}
 	}
 
@@ -294,6 +307,9 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 			// attribute => read the element's value from the attribute list
 		{
 			setInitValue( LocaleHelper::toFloat( element.attribute( name ) ) );
+			// WF-033: the id an undo snapshot carries (saveSettings); absent from every project file.
+			const QString snapshotId = element.attribute( name + snapshotIdSuffix() );
+			if( !snapshotId.isEmpty() ) { changeID( snapshotId.toInt() ); }
 		}
 		else
 		{

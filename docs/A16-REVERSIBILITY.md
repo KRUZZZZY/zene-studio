@@ -423,8 +423,9 @@ The three irreversible commands and what an agent should do instead:
    those land ABOVE the merged step and cost a second undo. Nothing in the current surface does
    that - every handler mutates synchronously - but it is a property to keep, not a guarantee the
    engine can enforce.
-10. **The merged step is not persisted.** Close the app and the undo history is gone, as it was
-    before this change.
+10. **The merged step is not persisted** by default. Close the app and the undo history is gone, as
+    it was before this change - unless the project opts into WF-033 (`docs/UNDO-HISTORY-PERSISTENCE.md`),
+    which saves the newest steps as whole-project snapshots; a merged step is saved as ONE step.
 
 ## 9. Defects found while doing this (all measured, all fixed here)
 

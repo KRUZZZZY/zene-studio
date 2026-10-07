@@ -906,6 +906,7 @@ include/TunerTap.h
 include/UiConfigStore.h
 include/UnattendedRun.h
 include/UnclaimedElements.h
+include/UndoHistory.h
 include/UndoHistoryPanel.h
 include/VcaGroup.h
 include/VcaStripView.h
@@ -1312,6 +1313,7 @@ src/core/ControlCommandsTransport.cpp
 src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsTuner.cpp
 src/core/ControlCommandsUndo.cpp
+src/core/ControlCommandsUndoHistory.cpp
 src/core/ControlCommandsVca.cpp
 src/core/ControlCommandsVcaEdit.cpp
 src/core/ControlCommandsVcaEditMore.cpp
@@ -1520,6 +1522,7 @@ src/core/ProjectContainerEntries.cpp
 src/core/ProjectIds.cpp
 src/core/ProjectInfo.cpp
 src/core/ProjectJournalBounds.cpp
+src/core/ProjectJournalSnapshots.cpp
 src/core/ProjectJournalStructural.cpp
 src/core/ProjectKey.cpp
 src/core/ProjectMarkers.cpp
@@ -1584,6 +1587,7 @@ src/core/SessionTuningScala.cpp
 src/core/SmfInterchange.cpp
 src/core/SmfInterchangeReader.cpp
 src/core/SongSections.cpp
+src/core/SongUndoSnapshot.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
@@ -1603,6 +1607,7 @@ src/core/TrackVersions.cpp
 src/core/TunerTap.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
+src/core/UndoHistory.cpp
 src/core/VcaGroup.cpp
 src/core/VideoAudioExtract.cpp
 src/core/VideoDecoder.cpp
@@ -2079,6 +2084,7 @@ tests/src/core/TaskCenterTest.cpp
 tests/src/core/UnclaimedElementsTest.cpp
 tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
+tests/src/core/UndoHistoryPersistenceTest.cpp
 tests/src/core/UndoHonestyTest.cpp
 tests/src/core/VideoTestClip.h
 tests/src/core/VideoTrackTest.cpp

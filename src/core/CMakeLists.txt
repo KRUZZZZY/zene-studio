@@ -474,6 +474,10 @@ set(LMMS_SRCS
 	# The bounded-undo slice: the depth caps, the coalescing window, and the
 	# commands that expose them (SPEC A16, task #623).
 	core/ControlCommandsUndo.cpp
+	# WF-033: the undo history saved with the project - the policy and section,
+	# its two commands, and the journal's snapshot carriage.
+	core/UndoHistory.cpp
+	core/ControlCommandsUndoHistory.cpp
 	core/ControlCommandsTransportMap.cpp
 	# Punch in/out (0.3.0): the transport's punch region, on the transport group.
 	core/ControlCommandsPunch.cpp
@@ -889,6 +893,7 @@ set(LMMS_SRCS
 	# deleted track's own XML, a removed device's state (task #664, row 75). Its
 	# own translation unit for the same reason as the bound above.
 	core/ProjectJournalStructural.cpp
+	core/ProjectJournalSnapshots.cpp
 	core/ProjectRecovery.cpp
 	# The take journal: what makes a recording in progress recoverable after an
 	# abnormal exit (0.3.0, docs/KNOWN-LIMITATIONS.md for the stated bound).
@@ -951,6 +956,7 @@ set(LMMS_SRCS
 	core/SerializingObject.cpp
 	core/Song.cpp
 	core/SongSections.cpp
+	core/SongUndoSnapshot.cpp
 	core/TempoMap.cpp
 	# The Standard MIDI File conductor track (feature row 33): the encoder and
 	# the bounds-checked reader behind the interchange.* group. Hand-written

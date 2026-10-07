@@ -36,6 +36,7 @@
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "Song.h"
+#include "UndoHistory.h"
 #include "lmmsversion.h"
 
 namespace lmms
@@ -345,6 +346,26 @@ std::optional<ControlResult> undoByCommand(ControlRegistry& registry, const Cont
 	return ControlResult::success(result);
 }
 
+/*! WF-033 (docs/UNDO-HISTORY-PERSISTENCE.md): a project opened WITH its saved undo history. The open itself
+ *  cannot be undone and its record says so, but the steps it loaded can - and while that record is still the
+ *  newest, nothing recorded has been pushed above them, so the journal's newest step is one of them. */
+bool undoesLoadedHistory(const ControlRegistry::Transaction& top)
+{
+	const quint64 loaded = UndoHistory::instance().loadedTopSerial();
+	const ProjectJournal* journal = Engine::projectJournal();
+	return loaded != 0 && top.step == loaded && journal != nullptr && journal->canUndo();
+}
+
+//! The answer when the newest record cannot be undone: the steps a project.open loaded (above), else the typed
+//! refusal naming the command and its fallback. nullopt when the record is reversible.
+std::optional<ControlResult> answerIrreversibleTop(const ControlRegistry::Transaction& top)
+{
+	if (top.reversible) { return std::nullopt; }
+	if (undoesLoadedHistory(top)) { return undoThroughJournal(QString()); }
+	return ControlResult::failure(ControlErrorKind::Irreversible,
+		irreversibleUndoMessage(top, control::ReversibilityTable::instance().lookup(top.command)));
+}
+
 /*! control.undo: undo THE LAST AGENT COMMAND, or refuse typed.
  *
  * Three cases, in this order, and the order is the contract:
@@ -364,11 +385,7 @@ ControlResult undoLastCommand(ControlRegistry& registry)
 	{
 		return undoThroughJournal(QString());
 	}
-	if (!top->reversible)
-	{
-		return ControlResult::failure(ControlErrorKind::Irreversible,
-			irreversibleUndoMessage(*top, control::ReversibilityTable::instance().lookup(top->command)));
-	}
+	if (std::optional<ControlResult> answered = answerIrreversibleTop(*top)) { return *answered; }
 
 	// The stack is BOUNDED (task #623), so a record can outlive the step it
 	// describes: a lower cap, or the byte budget, evicts the oldest steps while
@@ -526,6 +543,7 @@ void registerControlGroupCommands(ControlRegistry& registry)
 	// coalescing window. Its own translation unit because this file is at the
 	// file-length ratchet's limit; the same group either way.
 	registerUndoBoundsCommands(registry);
+	registerUndoHistoryCommands(registry);
 }
 
 } // namespace lmms

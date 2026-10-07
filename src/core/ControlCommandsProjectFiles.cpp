@@ -35,6 +35,7 @@
 #include "ProjectIds.h"
 #include "ProjectRevisions.h"
 #include "Song.h"
+#include "UndoHistory.h"
 
 namespace lmms
 {
@@ -128,6 +129,8 @@ void registerProjectSave(ControlRegistry& registry)
 		{QStringLiteral("revision_kept"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 		{QStringLiteral("revisions"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
 		{QStringLiteral("revision_skipped"), stringProperty()},
+		// WF-033: what the save did with the undo history (docs/UNDO-HISTORY-PERSISTENCE.md).
+		{QStringLiteral("undo_history"), objectProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -152,6 +155,8 @@ void registerProjectSave(ControlRegistry& registry)
 		// reversible is gated on this, not on `!refused`.
 		const bool revisionKept = revisionsKept > 0;
 
+		// WF-033: a real save - the undo history goes with it when the project opted in.
+		const UndoHistory::SaveScope historyScope;
 		if (!song->saveProjectFile(target))
 		{
 			// The engine can state a reason of its own - a partial load is the
@@ -176,6 +181,7 @@ void registerProjectSave(ControlRegistry& registry)
 		result.insert(QStringLiteral("saved"), true);
 		result.insert(QStringLiteral("revision_kept"), revisionKept);
 		result.insert(QStringLiteral("revisions"), control::projectRevisionState(target));
+		result.insert(QStringLiteral("undo_history"), UndoHistory::instance().lastSave().toJson());
 		if (refused) { result.insert(QStringLiteral("revision_skipped"), refusedReason); }
 		else if (!revisionKept)
 		{

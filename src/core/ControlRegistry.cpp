@@ -302,6 +302,35 @@ bool changedNothing(bool journalled, quint64 step, const QString& commandId, con
 	return row != nullptr && row->cls == control::ReversibilityClass::TrueInverse;
 }
 
+//! WF-033: whether a call is an EDIT whose undo step needs the project as it was before it (the journal's
+//! snapshot bracket). Only a true-inverse command leaves a journal step; an unclassified one is assumed to.
+bool bracketsEdit(const ProjectJournal* journal, bool mutating, const QString& commandId)
+{
+	if (journal == nullptr || !mutating) { return false; }
+	const control::ReversibilityEntry* row = control::ReversibilityTable::instance().lookup(commandId);
+	return row == nullptr || row->cls == control::ReversibilityClass::TrueInverse;
+}
+
+//! WF-033: ProjectJournal::beginEdit/endEdit around one handler (docs/UNDO-HISTORY-PERSISTENCE.md).
+class EditBracket
+{
+public:
+	EditBracket(ProjectJournal* journal, bool mutating, const QString& commandId) :
+		m_journal(bracketsEdit(journal, mutating, commandId) ? journal : nullptr)
+	{
+		if (m_journal != nullptr) { m_journal->beginEdit(); }
+	}
+	~EditBracket()
+	{
+		if (m_journal != nullptr) { m_journal->endEdit(); }
+	}
+	EditBracket(const EditBracket&) = delete;
+	EditBracket& operator=(const EditBracket&) = delete;
+
+private:
+	ProjectJournal* m_journal;
+};
+
 //! WF-044: whether a mutating call would edit a locked track or clip (EditLocks), with the reason in @a why.
 bool lockedOut(bool mutating, const QString& commandId, const QJsonObject& args, QString* why)
 {
@@ -323,9 +352,13 @@ ControlResult ControlRegistry::runHandler(
 	const int mark = journal != nullptr ? journal->undoDepth() : -1;
 	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
 
-	++m_depth;
-	ControlResult result = handler(args);
-	--m_depth;
+	ControlResult result;
+	{
+		const EditBracket edit(journal, mutating, commandId);
+		++m_depth;
+		result = handler(args);
+		--m_depth;
+	}
 
 	bool coalesced = false;
 	quint64 step = 0;

@@ -26,6 +26,8 @@
 
 #include <functional>
 
+#include <QCheckBox>
+#include <QComboBox>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -41,6 +43,7 @@
 #include "ControlReversibility.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
+#include "UndoHistory.h"
 
 namespace lmms::gui
 {
@@ -90,6 +93,41 @@ QSpinBox* limitBox(int min, int max, const QString& suffix, const char* command,
 		after();
 	});
 	return box;
+}
+
+//! WF-033: a box that writes the saved-history setting @a key (settings.set, the config key the default lives in).
+QSpinBox* savedHistoryBox(int max, const QString& suffix, const QString& key, const QString& name, QWidget* parent,
+	std::function<void()> after)
+{
+	auto* box = new QSpinBox(parent);
+	box->setRange(1, max);
+	box->setSuffix(suffix);
+	box->setAccessibleName(name);
+	box->setProperty("controlCommand", QStringLiteral("settings.set"));
+	box->setKeyboardTracking(false);
+	QObject::connect(box, QOverload<int>::of(&QSpinBox::valueChanged), box, [=](int value) {
+		ControlRegistry::instance()->invoke(QStringLiteral("settings.set"),
+			{{QStringLiteral("key"), key}, {QStringLiteral("value"), QString::number(value)}});
+		after();
+	});
+	return box;
+}
+
+//! WF-033: what a save would keep of the history now, in a line.
+QString savedHistoryText(const QJsonObject& history)
+{
+	if (!history.value(QStringLiteral("enabled")).toBool())
+	{
+		return UndoHistoryPanel::tr("The undo history is not saved with this project.");
+	}
+	QString text = UndoHistoryPanel::tr("Saved with the project: %1 step(s), %2 KB compressed")
+		.arg(history.value(QStringLiteral("saveable_steps")).toInt())
+		.arg(history.value(QStringLiteral("saveable_bytes")).toDouble() / 1024.0, 0, 'f', 1);
+	if (history.value(QStringLiteral("oversize")).toBool())
+	{
+		text += UndoHistoryPanel::tr(" - one step is over the size cap, so nothing older is saved");
+	}
+	return text;
 }
 
 //! Why a step the panel ran did not go all the way: the refusal, or where a history jump stopped; empty when it did.
@@ -183,6 +221,39 @@ UndoHistoryPanel::UndoHistoryPanel(QWidget* parent) :
 	limits->addWidget(m_coalesce);
 	limits->addStretch();
 
+	// WF-033 (docs/UNDO-HISTORY-PERSISTENCE.md): the history saved WITH the project. The project's own
+	// choice (project.set_undo_history) and the default every project follows (settings.set).
+	m_persist = new QComboBox(this);
+	m_persist->setAccessibleName(tr("Save the undo history with this project"));
+	m_persist->setProperty("controlCommand", QStringLiteral("project.set_undo_history"));
+	m_persist->addItem(tr("As the default"), QStringLiteral("default"));
+	m_persist->addItem(tr("Yes"), QStringLiteral("on"));
+	m_persist->addItem(tr("No"), QStringLiteral("off"));
+	connect(m_persist, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, report](int index) {
+		report(ControlRegistry::instance()->invoke(QStringLiteral("project.set_undo_history"),
+			{{QStringLiteral("setting"), m_persist->itemData(index).toString()}}));
+	});
+	m_persistDefault = new QCheckBox(tr("All projects"), this);
+	m_persistDefault->setAccessibleName(tr("Save the undo history with every project by default"));
+	m_persistDefault->setProperty("controlCommand", QStringLiteral("settings.set"));
+	connect(m_persistDefault, &QCheckBox::toggled, this, [report](bool on) {
+		report(ControlRegistry::instance()->invoke(QStringLiteral("settings.set"),
+			{{QStringLiteral("key"), QStringLiteral("undohistory/persist")}, {QStringLiteral("value"), on ? QStringLiteral("1") : QStringLiteral("0")}}));
+	});
+	m_savedSteps = savedHistoryBox(UndoHistory::MaxStepsLimit, tr(" steps"), QStringLiteral("undohistory/steps"),
+		tr("Undo steps saved with the project"), this, reread);
+	m_savedMb = savedHistoryBox(UndoHistory::MaxCapMb, tr(" MB"), QStringLiteral("undohistory/capmb"),
+		tr("Undo history saved, compressed size cap"), this, reread);
+	m_saved = new QLabel(this);
+	m_saved->setWordWrap(true);
+	auto* saved = new QHBoxLayout;
+	saved->addWidget(new QLabel(tr("Save with project:"), this));
+	saved->addWidget(m_persist);
+	saved->addWidget(m_persistDefault);
+	saved->addWidget(m_savedSteps);
+	saved->addWidget(m_savedMb);
+	saved->addStretch();
+
 	auto* buttons = new QHBoxLayout;
 	buttons->addWidget(m_undo);
 	buttons->addWidget(m_redo);
@@ -192,6 +263,8 @@ UndoHistoryPanel::UndoHistoryPanel(QWidget* parent) :
 	auto* layout = new QVBoxLayout(this);
 	layout->addWidget(m_summary);
 	layout->addLayout(limits);
+	layout->addLayout(saved);
+	layout->addWidget(m_saved);
 	layout->addLayout(buttons);
 	layout->addWidget(m_list, 1);
 	layout->addWidget(note);
@@ -211,6 +284,7 @@ void UndoHistoryPanel::refresh()
 		m_megabytes->setValue(static_cast<int>(depth.value(QStringLiteral("cap_bytes")).toDouble() / (1024.0 * 1024.0)));
 		m_coalesce->setValue(depth.value(QStringLiteral("coalescing")).toObject().value(QStringLiteral("window_ms")).toInt());
 	}
+	refreshSavedHistory();
 	m_list->clear();
 	m_list->setProperty("journalMark", journalMark());  // what the list was read at (the panel's watch compares it)
 	const QJsonArray transactions = read("control.transactions").value(QStringLiteral("transactions")).toArray();
@@ -220,6 +294,17 @@ void UndoHistoryPanel::refresh()
 		auto* item = new QListWidgetItem(transactionText(tx), m_list);
 		item->setToolTip(tx.value(QStringLiteral("mechanism")).toString());
 	}
+}
+
+void UndoHistoryPanel::refreshSavedHistory()
+{
+	const QJsonObject history = read("project.undo_history");
+	const QSignalBlocker a(m_persist), b(m_persistDefault), c(m_savedSteps), d(m_savedMb);
+	m_persist->setCurrentIndex(qMax(0, m_persist->findData(history.value(QStringLiteral("setting")).toString())));
+	m_persistDefault->setChecked(history.value(QStringLiteral("default_enabled")).toBool());
+	m_savedSteps->setValue(history.value(QStringLiteral("max_steps")).toInt());
+	m_savedMb->setValue(static_cast<int>(history.value(QStringLiteral("cap_bytes")).toDouble() / (1024.0 * 1024.0)));
+	m_saved->setText(savedHistoryText(history));
 }
 
 int UndoHistoryPanel::rowCount() const
