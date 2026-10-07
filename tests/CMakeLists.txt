@@ -326,6 +326,8 @@ set(LMMS_TESTS
 	# device. Real-world accuracy is NOT measured here - see
 	# docs/IMPORT-DETECTION.md.
 	src/core/ImportDetectionTest.cpp
+	# ImportFilter must restore the ProjectJournal after a plugin throws.
+	src/core/ImportFilterTest.cpp
 	src/core/MathTest.cpp
 	# The LIVE loudness tap (feature row 24 of docs/FEATURE-LIST-0.3.0.md, the
 	# `meter.*` group's live half): what an armed tap reads, the three negative
@@ -1253,6 +1255,28 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 endforeach()
+
+# ImportFilter's exception-path proof uses a real, isolated importer plugin
+# module so the exception crosses the same PluginFactory/ImportFilter path as
+# a third-party importer. The test pins Qt's plugin search path to this module
+# after PluginFactory construction; LMMS_PLUGIN_DIR is not used.
+add_library(throwing_import_filter_test_plugin MODULE src/core/ThrowingImportFilterPlugin.cpp)
+target_include_directories(throwing_import_filter_test_plugin PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+)
+target_link_libraries(throwing_import_filter_test_plugin PRIVATE zene ${QT_LIBRARIES})
+target_compile_features(throwing_import_filter_test_plugin PRIVATE cxx_std_20)
+set_target_properties(throwing_import_filter_test_plugin PROPERTIES
+	OUTPUT_NAME throwingimportfilter
+	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/throwing-import-filter-test-plugin"
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/throwing-import-filter-test-plugin"
+)
+set_target_properties(ImportFilterTest PROPERTIES ENABLE_EXPORTS ON)
+target_compile_definitions(ImportFilterTest PRIVATE
+	LMMS_TEST_THROWING_IMPORT_FILTER_PLUGIN_DIR="${CMAKE_CURRENT_BINARY_DIR}/throwing-import-filter-test-plugin")
+add_dependencies(ImportFilterTest throwing_import_filter_test_plugin)
+set_tests_properties(ImportFilterTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
 # The subject of the MPE playback proof (0.3.0 feature-list row 8, task #649).
