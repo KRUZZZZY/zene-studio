@@ -105,6 +105,18 @@ void evidence(const char* label, double a, double b = 0.0)
 	std::fflush(stdout);
 }
 
+int maxSampleDelta(const std::vector<std::int16_t>& expected,
+	const std::vector<std::int16_t>& actual)
+{
+	int maximum = 0;
+	for (std::size_t i = 0; i < expected.size(); ++i)
+	{
+		maximum = std::max(maximum, std::abs(
+			static_cast<int>(expected[i]) - static_cast<int>(actual[i])));
+	}
+	return maximum;
+}
+
 } // namespace
 
 class ExportWavDitherTest : public QObject
@@ -149,6 +161,13 @@ private slots:
 		evidence("default export == undithered quantisation", 1.0);
 	}
 
+	void maxSampleDeltaDoesNotWrapAtSignedBoundary()
+	{
+		const std::vector<std::int16_t> expected{-32768};
+		const std::vector<std::int16_t> actual{0};
+		QCOMPARE(maxSampleDelta(expected, actual), 32768);
+	}
+
 	void ditherOnChangesTheBytesAndStaysReproducible()
 	{
 		const std::vector<float> signal = lowLevelSine(2048, 4.0, 0.4);
@@ -171,12 +190,10 @@ private slots:
 		// not the same bytes even though the two input channels are identical.
 		std::size_t differing = 0;
 		std::size_t channelDiffering = 0;
-		std::int16_t maxDelta = 0;
+		const int maxDelta = maxSampleDelta(a, b);
 		for (std::size_t i = 0; i < a.size(); ++i)
 		{
 			if (a[i] != b[i]) { ++differing; }
-			maxDelta = std::max<std::int16_t>(maxDelta,
-				static_cast<std::int16_t>(std::abs(static_cast<int>(a[i]) - static_cast<int>(b[i]))));
 		}
 		for (std::size_t frame = 0; frame < signal.size(); ++frame)
 		{
