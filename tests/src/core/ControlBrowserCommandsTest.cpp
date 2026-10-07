@@ -217,6 +217,17 @@ private slots:
 		QCOMPARE(byMetadata.result.value(QStringLiteral("truncated")).toBool(), false);
 	}
 
+	//! An index query's tag filters contain strings, like browser.query's.
+	void indexQueryRejectsNonStringTags()
+	{
+		QJsonObject args;
+		args.insert(QStringLiteral("tags"), QJsonArray{QStringLiteral("drums"), 4});
+
+		const ControlResult result = run(QStringLiteral("browser.index_query"), args);
+		QVERIFY(!result.ok);
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
 	//! The peaks command answers the waterfall for a file, and the cache is
 	//! observable through the socket: the second call for the same file says
 	//! `cached: true`.

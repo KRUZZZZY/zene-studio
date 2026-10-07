@@ -131,6 +131,15 @@ bool passes(const BrowserItem& item, const QJsonObject& args)
 
 ControlResult indexQuery(const QJsonObject& args)
 {
+	const QJsonArray tags = args.value(QStringLiteral("tags")).toArray();
+	for (int i = 0; i < tags.size(); ++i)
+	{
+		if (!tags.at(i).isString())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("tags[%1] must be a string").arg(i));
+		}
+	}
 	BrowserTagStore::instance().load();
 	const BrowserSearch search(args.value(QStringLiteral("text")).toString());
 	const int limit = args.value(QStringLiteral("limit")).toInt(25);
