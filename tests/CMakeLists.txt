@@ -515,6 +515,8 @@ set(LMMS_TESTS
 	src/core/TaskCenterTest.cpp
 	# 0.5.0 F7: surround channels, the surround panner, the downmix
 	src/core/SurroundTest.cpp
+	# 0.5.0 F7: the multichannel WAV export of a surround master (PCM-measured renders)
+	src/core/SurroundExportTest.cpp
 	# 0.5.0 L09: send pan, sends from many channels, nested / linked / shared VCA groups, mixer view modes.
 	src/core/MixingRoutingTest.cpp
 	# 0.5.0 L08: the strip stages (trim, polarity, mono, pan modes), meters, solo safe, mute / solo many.
@@ -782,6 +784,8 @@ set(LMMS_TESTS
 	src/gui/UndoHistoryPanelTest.cpp
 	# The export dialog's dither and resampling choices, through export.set_*.
 	src/gui/ExportQualityControlsTest.cpp
+	# 0.5.0 F7: the export dialog's Channels row (stereo / surround)
+	src/gui/ExportChannelsTest.cpp
 	# The transport's Sync toggle (link.set_enabled) and its session read-out.
 	src/gui/SessionSyncActionTest.cpp
 	# The piano roll's Randomize / Humanize / Scale velocities items (note.randomize, note.velocity_scale).
@@ -1385,6 +1389,7 @@ set_tests_properties(XyPadPairTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offsc
 set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(UndoHistoryPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportQualityControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ExportChannelsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionSyncActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3498,6 +3503,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# 0.5.0 F7 (MX-060): the surround export through render.render's `channels` and the CLI's
+	# --channels - the schema, the typed refusals, a 6-channel WAVE_FORMAT_EXTENSIBLE render on a 5.1
+	# master. The PCM content is SurroundExportTest's.
+	add_test(NAME ControlRenderSurround
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-render-surround.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlRenderSurround PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# Import detection (0.3.0, feature row 34 of docs/FEATURE-LIST-0.3.0.md): the
 	# `detect.*` group driven END TO END through --control-socket, which is the
 	# release contract's section 3.1 claim for it. The fixtures are SYNTHESISED by
@@ -3786,7 +3802,7 @@ set_tests_properties(DawProjectInterchangeRoundTripTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # 0.5.0 wave 2: AAF import, the video track and hardware I/O build a real Engine and drive the
 # registry (the video window and lane are widgets), so they need a Qt platform plugin.
-set_tests_properties(AafImportTest VideoTrackTest HardwareIoTest SurroundTest PROPERTIES
+set_tests_properties(AafImportTest VideoTrackTest HardwareIoTest SurroundTest SurroundExportTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The retrospective MIDI capture surface (owner item 14) builds a real Engine,
 # a MIDI client and MidiClips and drives the registry commands, so it needs a

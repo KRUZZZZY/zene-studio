@@ -870,6 +870,7 @@ include/StemSeparation/StemSeparator.h
 include/StemSeparation/StemTrackBuilder.h
 include/StemSeparation/StemTypes.h
 include/StemSplitController.h
+include/SurroundExport.h
 include/SurroundPanner.h
 include/TakeLane.h
 include/TakeLanesPanel.h
@@ -1579,6 +1580,7 @@ src/core/SongSections.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
+src/core/SurroundExport.cpp
 src/core/TakeLane.cpp
 src/core/TakeRecorder.cpp
 src/core/TaskCenter.cpp
@@ -1842,6 +1844,7 @@ tests/control-readiness.py
 tests/control-recording-recovery.py
 tests/control-render-format-capability.py
 tests/control-render-presets.py
+tests/control-render-surround.py
 tests/control-retro-capture.py
 tests/control-reversibility-transcript.py
 tests/control-routing-commands.py
@@ -2044,6 +2047,8 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
+tests/src/core/SurroundExportTest.cpp
+tests/src/core/SurroundExportTestSupport.h
 tests/src/core/SurroundTest.cpp
 tests/src/core/TaskCenterTest.cpp
 # 2026-09-22 (040/arch4-s4, ARCH-4 slice S4): tests/src/core/WriteRefusalGateTest.cpp

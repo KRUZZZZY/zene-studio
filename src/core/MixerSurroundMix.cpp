@@ -45,6 +45,7 @@
 #include "MixerSurround.h"
 #include "SampleFrame.h"
 #include "Song.h"
+#include "SurroundExport.h"
 #include "ValueBuffer.h"
 
 namespace lmms::surround
@@ -167,6 +168,28 @@ bool masterPlaysWide(const audioio::Destination& main, int count)
 	return !exporting() && !listenReplaces && main.width == 2 && deviceCarries(main.start, count);
 }
 
+//! Whether a surround export (include/SurroundExport.h) takes the master's side channels this period.
+bool exportTaps()
+{
+	return surroundexport::armed() && exporting();
+}
+
+/*! A surround export: the master's side channels into the export tap, at the master fader and the engine's
+ *  master gain - the gains the pair gets, in the same order (the fader in the master mix, the gain after
+ *  it). A listen replacing the main output replaces the pair only, so the sides stay silent then. */
+void tapSides(const ChannelSurround& s, const FrameGain& fader, f_cnt_t frames)
+{
+	if (mixerlisten::anyListening() && !hardwareio::listenSparesMain()) { return; }
+	const float masterGain = Engine::audioEngine()->masterGain();
+	const f_cnt_t n = std::min(frames, surroundexport::frames());
+	for (int c = 2; c < channelCount(s.format()); ++c)
+	{
+		const float* in = s.plane(c);
+		float* out = surroundexport::writePlane(c);
+		for (f_cnt_t f = 0; f < n; ++f) { out[f] = in[f] * fader.at(f) * masterGain; }
+	}
+}
+
 } // namespace
 
 bool panTakesSend(const MixerRoute& route)
@@ -225,11 +248,18 @@ void processChannel(MixerChannel& channel, f_cnt_t frames)
 
 void masterOutput(Mixer& mixer, SampleFrame* out, f_cnt_t frames)
 {
+	const bool tapping = exportTaps();
+	if (tapping) { surroundexport::beginPeriod(); }  // every period, so a silent one reads as silence
 	MixerChannel& master = *mixer.mixerChannel(0);
 	const ChannelSurround& s = master.m_surround;
 	if (!s.isSurround() || !s.written()) { return; }
 	const FrameGain fader = modelGain(master.m_volumeModel);
 	const f_cnt_t n = std::min(frames, s.frames());
+	if (tapping)
+	{
+		tapSides(s, fader, n);
+		return;
+	}
 	const audioio::Destination main = master.m_hardwareIo.effectiveOutput(true);
 	if (masterPlaysWide(main, channelCount(s.format())))
 	{

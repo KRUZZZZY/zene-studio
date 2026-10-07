@@ -67,7 +67,8 @@ class SampleFrame;
  *    front speaker at -3 dB, 7.1's rear surrounds into 5.1's surrounds, the LFE dropped unless the
  *    downmix options keep it. A surround channel sending into a stereo one (the master, usually)
  *    is downmixed that way, and so is a surround master whenever its outputs are not all on the device,
- *    and in every export (the renderer writes stereo).
+ *    and in a stereo export (the default). A surround export writes the master's channels as they are
+ *    (include/SurroundExport.h, docs/SURROUND-EXPORT.md).
  *  - Hardware: a surround channel's direct out (ChannelHardwareIo) names its FIRST output; it takes as
  *    many consecutive outputs as it has channels. The master's side channels go after its pair. A device
  *    with fewer outputs gets the stereo downmix on the pair instead.

@@ -44,6 +44,7 @@
 #include "ProjectRevisions.h"
 #include "ProjectRenderer.h"
 #include "Song.h"
+#include "SurroundExport.h"
 
 namespace lmms
 {
@@ -208,9 +209,37 @@ namespace
 // render.render
 // ---------------------------------------------------------------------------
 
+/*! 0.5.0 F7 (MX-060): `channels` - "stereo" (absent: the render this command has always made) or
+ *  "surround", one file channel per speaker of the surround master. What the master, the format and the
+ *  loudness report allow is checked HERE, in this process, where the session's master is known, so a
+ *  surround render they cannot carry is refused before the session is serialised or a child spawned. */
+QString parseRenderChannels(const QJsonObject& args, ProjectRenderer::ExportFileFormat format,
+	OutputSettings::ChannelMode* channels)
+{
+	const QString name = args.value(QStringLiteral("channels")).toString(QStringLiteral("stereo"));
+	if (!surroundexport::channelModeFromName(name, channels))
+	{
+		return QStringLiteral("unsupported channels '%1' (expected stereo or surround)").arg(name);
+	}
+	// The probe reads the process-wide loudness choice, as the render child's own settings will.
+	OutputSettings probe(44100, 160, OutputSettings::BitDepth::Depth16Bit);
+	probe.setChannelMode(*channels);
+	return surroundexport::refusal(probe, format == ProjectRenderer::ExportFileFormat::Wave);
+}
+
+//! The reply's `channels` (how many the file has) and `channel_layout` ("stereo", "5.1", ...).
+void insertRenderChannels(QJsonObject& result, OutputSettings::ChannelMode channels)
+{
+	const bool surround = channels == OutputSettings::ChannelMode::Surround;
+	const surround::Format layout = surround ? surroundexport::masterFormat() : surround::Format::Stereo;
+	result.insert(QStringLiteral("channels"), surround::channelCount(layout));
+	result.insert(QStringLiteral("channel_layout"), surround::formatName(layout));
+}
+
 //! Validates the render args; empty string means they are usable.
 QString parseRenderArgs(const QJsonObject& args, QString* out, QString* formatName,
-	ProjectRenderer::ExportFileFormat* format, ControlExportPreset* settings)
+	ProjectRenderer::ExportFileFormat* format, ControlExportPreset* settings,
+	OutputSettings::ChannelMode* channels)
 {
 	*out = args.value(QStringLiteral("out")).toString();
 	if (!out->startsWith(QLatin1Char('/')))
@@ -240,7 +269,7 @@ QString parseRenderArgs(const QJsonObject& args, QString* out, QString* formatNa
 	// its own command line, so an apply changes the render's OPTIONS rather than
 	// its renderer.
 	*settings = ControlExportPresetSettings::effective();
-	return QString();
+	return parseRenderChannels(args, *format, channels);
 }
 
 /*! The render RANGE (feature row 71): both ends in ticks, or neither.
@@ -293,9 +322,15 @@ QString parseRenderRange(const QJsonObject& args, int* begin, int* end)
 //! through controlExportPresetRenderArgs (which carries the `-s <rate>` this
 //! call used to pass as a literal), the range through --range-start/--range-end.
 bool runCliRender(const QString& projectPath, const QString& out, const QString& formatName,
-	const ControlExportPreset& settings, int rangeBegin, int rangeEnd, int* exitCode)
+	const ControlExportPreset& settings, int rangeBegin, int rangeEnd, int* exitCode,
+	OutputSettings::ChannelMode channels = OutputSettings::ChannelMode::Stereo)
 {
-	const QStringList arguments = controlRenderCliArguments(projectPath, out, formatName, settings, rangeBegin, rangeEnd);
+	QStringList arguments = controlRenderCliArguments(projectPath, out, formatName, settings, rangeBegin, rangeEnd);
+	// 0.5.0 F7: only a surround render passes --channels, so a stereo child's command line is unchanged.
+	if (channels == OutputSettings::ChannelMode::Surround)
+	{
+		arguments << QStringLiteral("--channels") << surroundexport::channelModeName(channels);
+	}
 
 	QProcess renderer;
 	renderer.setStandardOutputFile(QProcess::nullDevice());
@@ -313,7 +348,8 @@ ControlResult renderSession(const QJsonObject& args)
 	QString formatName;
 	ProjectRenderer::ExportFileFormat format = ProjectRenderer::ExportFileFormat::Wave;
 	ControlExportPreset settings;
-	const QString invalid = parseRenderArgs(args, &out, &formatName, &format, &settings);
+	OutputSettings::ChannelMode channels = OutputSettings::ChannelMode::Stereo;
+	const QString invalid = parseRenderArgs(args, &out, &formatName, &format, &settings, &channels);
 	if (!invalid.isEmpty())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, invalid);
@@ -349,7 +385,7 @@ ControlResult renderSession(const QJsonObject& args)
 
 	int exitCode = -1;
 	const bool finished = runCliRender(tempProject, out, formatName, settings, rangeBegin,
-		rangeEnd, &exitCode);
+		rangeEnd, &exitCode, channels);
 	QFile::remove(tempProject);
 
 	QFileInfo info(out);
@@ -370,6 +406,7 @@ ControlResult renderSession(const QJsonObject& args)
 	result.insert(QStringLiteral("applied_preset"),
 		ControlExportPresetSettings::activeName());
 	result.insert(QStringLiteral("bytes"), static_cast<qint64>(info.size()));
+	insertRenderChannels(result, channels);
 	const bool wave = format == ProjectRenderer::ExportFileFormat::Wave;
 	result.insert(QStringLiteral("frames"), wave ? wavFrameCount(out) : -1);
 	// The range is reported back as it was applied, so a caller compares the
@@ -404,7 +441,11 @@ void registerRenderRender(ControlRegistry& registry)
 		"no tail bar and no loop repetition - and the reply reports the range and the frame "
 		"count. The render is started with the export settings in force: the preset applied "
 		"through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's "
-		"own defaults when none is applied. Runs in a CHILD process, so the declared bound "
+		"own defaults when none is applied. `channels`: 'stereo' (the default; a surround master is "
+		"folded with the ITU-R BS.775 downmix) or 'surround' - one WAV channel per speaker of the "
+		"surround master (6 for 5.1, 8 for 7.1, WAVE_FORMAT_EXTENSIBLE with its channel mask), refused "
+		"on a stereo master, for a format other than wav, and with the loudness report on; the reply's "
+		"`channels` and `channel_layout` say what the file holds. Runs in a CHILD process, so the declared bound "
 		"applies: this surface does not answer - not even control.ping - until it finishes "
 		"(docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
@@ -415,7 +456,9 @@ void registerRenderRender(ControlRegistry& registry)
 				// (BUG-RENDER-MP3).
 				{QStringLiteral("enum"), renderableFormatNames()}}},
 			{QStringLiteral("start_ticks"), tickProperty()},
-			{QStringLiteral("end_ticks"), tickProperty()}},
+			{QStringLiteral("end_ticks"), tickProperty()},
+			{QStringLiteral("channels"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
+				{QStringLiteral("enum"), QJsonArray::fromStringList(surroundexport::channelModeNames())}}}},
 		{QStringLiteral("out")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("path"), stringProperty()},
@@ -428,6 +471,8 @@ void registerRenderRender(ControlRegistry& registry)
 		{QStringLiteral("range"), nullable(objectProperty())},
 		{QStringLiteral("bytes"), numberProperty()},
 		{QStringLiteral("format"), stringProperty()},
+		{QStringLiteral("channels"), integerProperty()},
+		{QStringLiteral("channel_layout"), stringProperty()},
 	});
 	cmd.handler = [](const QJsonObject& args) { return renderSession(args); };
 	registry.registerCommand(cmd);

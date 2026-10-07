@@ -27,6 +27,7 @@
 
 #include <atomic>
 #include <memory>
+#include <vector>
 
 #include "AudioFileDevice.h"
 #include "AudioEngine.h"
@@ -102,6 +103,12 @@ public:
 	//! Why the report could not be written, empty when it was (or none was asked).
 	QString loudnessReportError() const { return m_loudnessReportError; }
 
+	//! 0.5.0 F7: why these settings cannot be rendered (include/SurroundExport.h), empty when they can.
+	//! A refused render has no file device (isReady() is false) and opens no file.
+	QString refusal() const { return m_refusal; }
+	//! The channels the file is written with: 2, or the surround master's for a surround export.
+	int channels() const { return m_channels; }
+
 public slots:
 	void startProcessing();
 	void abortProcessing();
@@ -122,6 +129,8 @@ private:
 
 	//! Writes the sidecar, tells the console and emits loudnessReportReady().
 	void reportLoudness( const QString& renderedFile );
+	//! 0.5.0 F7: the period's stereo pair and the export tap's side channels, interleaved, to the file.
+	void writeSurround( const SampleFrame* pair, f_cnt_t frames );
 
 	AudioFileDevice * m_fileDev;
 
@@ -141,6 +150,11 @@ private:
 	 */
 	DitherMode m_previousDither;
 	SrcQuality m_previousSrcQuality;
+
+	//! 0.5.0 F7 (MX-060): the surround export. Default-initialised, so the initialiser list is unchanged.
+	QString m_refusal;
+	int m_channels = DEFAULT_CHANNELS;
+	std::vector<float> m_interleaved;  //!< one period, m_channels wide; sized before the render starts
 
 } ;
 

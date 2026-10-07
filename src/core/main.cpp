@@ -82,6 +82,7 @@
 #include "MasteringReport.h"
 #include "RenderManager.h"
 #include "Song.h"
+#include "SurroundExport.h"
 #include "ScriptConsole.h"
 #include "ScriptEngine.h"
 #include "ControlRegistry.h"
@@ -231,6 +232,11 @@ void printHelp()
 		"      --bit-depth <bits>         Bit depth of the render: 16 (default),\n"
 		"          24 or 32. 32 is the same as --float, which stays the\n"
 		"          switch it always was.\n"
+		"      --channels <mode>          'stereo' (default; a surround master is\n"
+		"          folded with the ITU-R BS.775 downmix) or 'surround': one WAV\n"
+		"          channel per speaker of the surround master (6 for 5.1, 8 for\n"
+		"          7.1, WAVE_FORMAT_EXTENSIBLE). \"render\" and WAV only; refused\n"
+		"          on a stereo master and with --loudness-report\n"
 		"  -f, --format <format>         Specify format of render-output where\n"
 		"          Format is either 'wav', 'flac', 'ogg' or 'mp3'.\n"
 		"  -l, --loop                     Render as a loop\n"
@@ -982,6 +988,17 @@ int main( int argc, char * * argv )
 			os.setLoudnessReport(true);
 			ExportRenderSettings::setLoudnessReport(true);
 		}
+		else if( arg == "--channels" )
+		{
+			// 0.5.0 F7 (MX-060): a surround master written as it is (include/SurroundExport.h).
+			++i;
+			OutputSettings::ChannelMode mode = OutputSettings::ChannelMode::Stereo;
+			if( i == argc || !surroundexport::channelModeFromName( argv[i], &mode ) )
+			{
+				return usageError( "--channels takes 'stereo' or 'surround'" );
+			}
+			os.setChannelMode( mode );
+		}
 		else if( arg == "--dither" )
 		{
 			// TPDF dither in the integer WAV depths (include/ExportDither.h).
@@ -1128,6 +1145,14 @@ int main( int argc, char * * argv )
 		return usageError( "No output directory specified for master (use -o)" );
 	}
 
+	// A surround export is one whole-project file: per-track renders, stems and the mastering
+	// candidates stay stereo, so asking for it there is refused rather than ignored.
+	if( os.channelMode() == OutputSettings::ChannelMode::Surround && ( renderTracks || renderStems || mastering ) )
+	{
+		return usageError( "--channels surround is for \"render\" (one whole-project file); rendertracks, "
+			"exportstems and master write stereo" );
+	}
+
 	// A render range is a PAIR: one end alone is a span with a missing side, and
 	// it is refused here - before a project is loaded, before a child is spawned
 	// and before a destination is opened - rather than rendering something the
@@ -1242,6 +1267,17 @@ int main( int argc, char * * argv )
 			exit( EXIT_FAILURE );
 		}
 		printf( "Done\n" );
+
+		// 0.5.0 F7: what the master's format and the file format allow is known now that the
+		// project is loaded; a surround export they cannot carry is refused before a file opens.
+		const QString surroundRefusal = surroundexport::refusal( os, eff == ProjectRenderer::ExportFileFormat::Wave );
+		if( !surroundRefusal.isEmpty() )
+		{
+			fprintf( stderr, "Render refused: %s\n", surroundRefusal.toUtf8().constData() );
+			crashreporter::endSession();
+			safestart::endSession();
+			exit( EXIT_FAILURE );
+		}
 
 		Engine::getSong()->setExportLoop( renderLoop );
 

@@ -2281,8 +2281,14 @@ Fleshed out, because both halves of that sentence hide something real:
 - There is no reconnect, and no HTML remote page, because browsers cannot do TLS-PSK.
 
 **F7, surround (MX-060).**
-- Multichannel WAV export is not built: the renderer writes stereo. A stereo export applies the
-  BS.775 downmix.
+- Multichannel export is WAV only (WAVE_FORMAT_EXTENSIBLE: 6 channels for 5.1, 8 for 7.1, 3 for LCR,
+  4 for quad, at 16/24/32-bit). Stereo, with the BS.775 downmix, stays the default; FLAC, OGG and MP3
+  export stereo. Choose it in the export dialog's Channels row, with `--channels surround`, or with
+  `render.render`'s `channels: "surround"` (docs/SURROUND-EXPORT.md).
+- A surround export carries no loudness report (the meter measures stereo): it is refused while the
+  report is on, and the dialog turns the report off.
+- Per-track renders, stem exports, mastering candidates, the render queue (`render.queue_add`) and
+  `render.stems` stay stereo; export presets do not store the channel choice.
 - A surround channel's extra channels get no PDC delay.
 - Its devices, post-fader inserts, mono/polarity/width/EQ and meters act on L/R only.
 - Cue mixes, listen and the recorder carry L/R.

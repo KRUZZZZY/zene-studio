@@ -33,6 +33,8 @@
 
 #include <sndfile.h>
 
+#include <vector>
+
 namespace lmms
 {
 
@@ -59,8 +61,11 @@ public:
 
 private:
 	void writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames) override;
+	bool writeInterleaved(float* samples, const f_cnt_t frames) override;
 
 	bool startEncoding();
+	//! 0.5.0 F7: a file of more than two channels is WAVE_FORMAT_EXTENSIBLE with the speakers' mask.
+	bool setChannelMap();
 	void finishEncoding();
 
 private:
@@ -73,6 +78,8 @@ private:
 	//! DitherMode::NoiseShaped at 16-bit (include/ExportNoiseShaper.h): the encoder does the
 	//! requantisation itself so the error it feeds back is known.
 	ExportNoiseShaper m_noiseShaper;
+	//! The 16-bit staging of writeInterleaved(), sized on its first call (the render thread is offline).
+	std::vector<int_sample_t> m_interleaved16;
 } ;
 
 
