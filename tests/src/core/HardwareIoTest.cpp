@@ -41,6 +41,7 @@
 
 #include <QDomDocument>
 #include <QJsonArray>
+#include <cmath>
 #include <span>
 #include <vector>
 
@@ -359,6 +360,39 @@ private slots:
 
 		verifyLoaded(*mixer);
 		mixer->clear();
+	}
+
+	void nonFiniteCueSettingsSanitizeToDefaults()
+	{
+		// A hand-edited project can carry level="nan" / pan="nan": std::clamp lets NaN through,
+		// and it contaminates the cue's output samples. Loading must sanitize to the defaults.
+		QDomDocument doc;
+		QDomElement channelElement = doc.createElement(QStringLiteral("mixerchannel"));
+		doc.appendChild(channelElement);
+	 QDomElement element = doc.createElement(QStringLiteral("hardwareio"));
+	 channelElement.appendChild(element);
+	 QDomElement cue = doc.createElement(QStringLiteral("cue"));
+	 cue.setAttribute(QStringLiteral("index"), 0);
+	 cue.setAttribute(QStringLiteral("level"), QStringLiteral("nan"));
+	 cue.setAttribute(QStringLiteral("pan"), QStringLiteral("nan"));
+	 element.appendChild(cue);
+	 ChannelHardwareIo loaded;
+	 loaded.load(channelElement, Engine::audioEngine()->framesPerPeriod());
+	 QVERIFY(std::isfinite(loaded.cues[0].level) && std::isfinite(loaded.cues[0].pan));
+	 QCOMPARE(loaded.cues[0].level, 0.f);  // the attribute's own default: no send
+	 QCOMPARE(loaded.cues[0].pan, 0.f);    // centred
+
+	 QDomDocument mixDoc;
+	 QDomElement mixerElement = mixDoc.createElement(QStringLiteral("mixer"));
+	 mixDoc.appendChild(mixerElement);
+	 QDomElement cuemix = mixDoc.createElement(QStringLiteral("cuemix"));
+	 cuemix.setAttribute(QStringLiteral("index"), 0);
+	 cuemix.setAttribute(QStringLiteral("level"), QStringLiteral("nan"));
+	 mixerElement.appendChild(cuemix);
+	 hardwareio::loadMixer(mixerElement);
+	 QVERIFY(std::isfinite(hardwareio::cueMaster(0).level));
+	 QCOMPARE(hardwareio::cueMaster(0).level, 1.f);  // the cuemix's default level
+	 hardwareio::resetMixer();
 	}
 
 private:

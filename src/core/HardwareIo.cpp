@@ -25,6 +25,7 @@
 #include "HardwareIo.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -85,8 +86,12 @@ void loadCueSends(const QDomElement& element, ChannelHardwareIo& io)
 		const int k = cue.attribute(QStringLiteral("index")).toInt();
 		if (k < 0 || k >= hardwareio::MaxCues) { continue; }
 		hardwareio::CueSend& send = io.cues[static_cast<std::size_t>(k)];
-		send.level = std::clamp(cue.attribute(QStringLiteral("level")).toFloat(), 0.f, 2.f);
-		send.pan = std::clamp(cue.attribute(QStringLiteral("pan")).toFloat(), -1.f, 1.f);
+		// A hand-edited project can carry level="nan": std::clamp lets NaN through, so a non-finite
+		// figure falls back to the attribute's own default (no send, centred).
+		const float sendLevel = cue.attribute(QStringLiteral("level")).toFloat();
+		send.level = std::isfinite(sendLevel) ? std::clamp(sendLevel, 0.f, 2.f) : 0.f;
+		const float sendPan = cue.attribute(QStringLiteral("pan")).toFloat();
+		send.pan = std::isfinite(sendPan) ? std::clamp(sendPan, -1.f, 1.f) : 0.f;
 		send.preFader = cue.attribute(QStringLiteral("prefader"), QStringLiteral("1")).toInt() != 0;
 	}
 }
@@ -278,7 +283,8 @@ void loadMixer(const QDomElement& mixerElement)
 		if (k < 0 || k >= MaxCues) { continue; }
 		CueMaster& cue = s_cueMasters[static_cast<std::size_t>(k)];
 		cue.name = element.attribute(QStringLiteral("name"));
-		cue.level = std::clamp(element.attribute(QStringLiteral("level"), QStringLiteral("1")).toFloat(), 0.f, 2.f);
+		const float cueLevel = element.attribute(QStringLiteral("level"), QStringLiteral("1")).toFloat();
+		cue.level = std::isfinite(cueLevel) ? std::clamp(cueLevel, 0.f, 2.f) : 1.f;  // non-finite: the cuemix's default
 		cue.output = readDestination(element, QStringLiteral("output"));
 		cue.followListen = element.attribute(QStringLiteral("listen"), QStringLiteral("1")).toInt() != 0;
 	}
