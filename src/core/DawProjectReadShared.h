@@ -96,15 +96,32 @@ namespace readdetail
 //! id to track is the only thing this reader needs to keep.
 using IdMap = QMap<QString, int>;
 
+inline QString collapseXmlWhitespace(const QString& value)
+{
+	QString collapsed;
+	collapsed.reserve(value.size());
+	bool pendingSpace = false;
+	for (const QChar character : value)
+	{
+		if (character == QLatin1Char(' ') || character == QLatin1Char('\t') ||
+			character == QLatin1Char('\r') || character == QLatin1Char('\n'))
+		{
+			if (!collapsed.isEmpty()) { pendingSpace = true; }
+			continue;
+		}
+		if (pendingSpace)
+		{
+			collapsed.append(QLatin1Char(' '));
+			pendingSpace = false;
+		}
+		collapsed.append(character);
+	}
+	return collapsed;
+}
+
 inline QString attribute(const QXmlStreamAttributes& attributes, const QString& name)
 {
 	return attributes.value(name).toString();
-}
-
-inline bool flagAttribute(const QXmlStreamAttributes& attributes, const QString& name)
-{
-	const QString value = attribute(attributes, name);
-	return value == QLatin1String("true") || value == QLatin1String("1");
 }
 
 //! Consume the element the reader is standing on, including everything nested
@@ -134,6 +151,25 @@ struct ReadState
 	//! The effective timeUnit, inherited down the <Lanes> chain.
 	QString timeUnit = QString::fromLatin1(DawProjectTimeUnit);
 };
+
+
+//! An absent optional boolean is false. A present value must use one of the
+//! XML boolean forms; an invalid value records a refusal instead of becoming false.
+inline bool flagAttribute(const QXmlStreamAttributes& attributes, ReadState& state,
+	const QString& name)
+{
+	if (!attributes.hasAttribute(name)) { return false; }
+	const QString rawValue = attribute(attributes, name);
+	const QString value = collapseXmlWhitespace(rawValue);
+	if (value == QLatin1String("true") || value == QLatin1String("1")) { return true; }
+	if (value == QLatin1String("false") || value == QLatin1String("0")) { return false; }
+	if (state.error.isEmpty())
+	{
+		state.error = QStringLiteral("the attribute %1 carries \"%2\", which is not an XML boolean this "
+			"reader accepts").arg(name, rawValue);
+	}
+	return false;
+}
 
 
 /*! A numeric attribute that is PRESENT but not a number is not an absent
