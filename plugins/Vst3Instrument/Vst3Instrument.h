@@ -144,6 +144,11 @@ private:
 	void applyChannelCounts();
 	//! MX-114: activates output buses 1..@a bus (re-preparing the plug-in) when a route asks for one.
 	bool enableOutputBus(int bus);
+	/*! MX-157 (BUGS 11.34), GUI thread: the plug-in's latency (IAudioProcessor::getLatencySamples) after
+	 *  its last prepare, reported to the track's delay compensation (Instrument::reportLatency). A
+	 *  kLatencyChanged from the plug-in only raises m_latencyChanged - it may come from any thread - and
+	 *  poll() reads the new value. */
+	void cacheLatency();
 	vst3::HostedPlugin m_plugin;
 	gui::PluginNativeEditor m_editor;
 	std::vector<Vst3ParamModel*> m_paramModels;
@@ -152,6 +157,7 @@ private:
 	std::atomic<bool> m_needsReprepare{false};
 	InstrumentOutputBuses m_outputBuses;  //!< MX-114
 	std::atomic<bool> m_noteIds{false};   //!< MX-120: the plug-in takes note expressions, so notes carry ids
+	std::atomic<bool> m_latencyChanged{false};  //!< MX-157: kLatencyChanged arrived; poll() re-reads
 };
 
 } // namespace lmms

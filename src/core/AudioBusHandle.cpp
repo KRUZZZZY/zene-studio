@@ -25,6 +25,7 @@
 
 #include "AudioBusHandle.h"
 
+#include <algorithm>
 #include <cassert>
 
 #include <QMutexLocker>
@@ -70,7 +71,14 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 
 int AudioBusHandle::latencyFrames() const
 {
-	return m_effects ? m_effects->latencyFrames() : 0;
+	// MX-157: a source that reports no latency adds 0, so such a track is aligned exactly as before.
+	return sourceLatencyFrames() + (m_effects ? m_effects->latencyFrames() : 0);
+}
+
+
+void AudioBusHandle::setSourceLatencyFrames(int frames)
+{
+	m_sourceLatencyFrames.store(std::max(0, frames), std::memory_order_relaxed);
 }
 
 

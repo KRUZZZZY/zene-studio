@@ -38,6 +38,7 @@
 #include "Song.h"
 #include "VcaGroup.h"
 
+#include "InstrumentOutputBuses.h"
 #include "InstrumentTrack.h"
 #include "MixHelpers.h"
 #include "MixerListen.h"
@@ -1797,6 +1798,43 @@ int Mixer::channelInputLatency(mix_ch_t channel) const
 
 
 
+namespace
+{
+
+//! MX-157: whether a hosted instrument's bus routed to @a index counts there: a bus channel takes no
+//! instrument output (mixToChannel refuses it), the same rule as for a track's handle.
+bool takesRoutedBus(const std::vector<MixerChannel*>& channels, int index)
+{
+	const auto at = static_cast<std::size_t>(index);
+	return index >= 0 && at < channels.size() && !channels[at]->isBus();
+}
+
+//! MX-157: a hosted instrument's routed output buses are direct sources of their channels, and as late
+//! as the instrument (InstrumentOutputBuses::forEachLatentRoute; allocation-free).
+void addRoutedBusLatency(const std::vector<MixerChannel*>& channels, std::vector<int>& sourceLatency)
+{
+	InstrumentOutputBuses::forEachLatentRoute([&channels, &sourceLatency](int index, int latency) {
+		if (!takesRoutedBus(channels, index)) { return; }
+		auto& frames = sourceLatency[static_cast<std::size_t>(index)];
+		frames = std::max(frames, latency);
+	});
+}
+
+//! MX-157: @a clamped, or whether a routed bus needs more delay than a delay line holds (the handles'
+//! clamp rule).
+bool routedBusClamped(const std::vector<MixerChannel*>& channels, const std::vector<int>& alignment, int cap,
+	bool clamped)
+{
+	InstrumentOutputBuses::forEachLatentRoute([&](int index, int latency) {
+		clamped = clamped || (takesRoutedBus(channels, index) && alignment[static_cast<std::size_t>(index)] - latency > cap);
+	});
+	return clamped;
+}
+
+} // namespace
+
+
+
 int Mixer::resolveLatency(std::size_t index)
 {
 	if (m_latencyVisitScratch[index] == 2)
@@ -1908,6 +1946,8 @@ void Mixer::updateLatencyCompensation()
 		}
 	}
 
+	addRoutedBusLatency(m_mixerChannels, m_directSourceLatencyScratch);  // MX-157
+
 	for (std::size_t i = 0; i < count; ++i)
 	{
 		resolveLatency(i);
@@ -1968,6 +2008,8 @@ void Mixer::updateLatencyCompensation()
 			}
 		}
 	}
+
+	clamped = routedBusClamped(m_mixerChannels, m_latencyInputScratch, cap, clamped);  // MX-157
 
 	const int masterChain =
 		std::max(0, m_mixerChannels[0]->m_fxChain.latencyFrames())

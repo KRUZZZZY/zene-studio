@@ -1951,6 +1951,7 @@ tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/ImportDetectionTest.cpp
+tests/src/core/InstrumentLatencyPdcTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
 tests/src/core/InstrumentRoutingTest.cpp
 tests/src/core/LibraryBrowserTest.cpp

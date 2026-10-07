@@ -27,6 +27,18 @@
  * so the two buses are told apart by their amplitude. The first class is
  * unchanged: one output port, the same descriptor, the same process().
  *
+ * LATENCY (MX-157, BUGS 11.34): an instance created while the environment
+ * variable CLAP_TEST_INSTRUMENT_LATENCY names a frame count is LATENT. It
+ * implements clap.latency, reports that count, and really delays its output by
+ * it (a ring of the per-frame level), so a host's delay compensation can be
+ * measured on rendered audio. The count is read at activate(), the only time
+ * CLAP lets a latency change: when process() sees the variable name a new
+ * count it asks for a restart (clap_host.request_restart), and the activate()
+ * that follows reads it and says so through clap_host_latency.changed(). An
+ * instance created without the variable is exactly the plug-in it always was.
+ * (Reading the environment in process() is a test-fixture shortcut, not
+ * something a real plug-in would do on its audio thread.)
+ *
  * SPDX-License-Identifier: MIT
  */
 
@@ -53,6 +65,9 @@
 #define TEST_INSTRUMENT_MULTIOUT_NAME "LMMS CLAP Test Instrument (multi-out)"
 /* The Aux port's level, relative to the main port's. */
 #define TEST_INSTRUMENT_AUX_SCALE 0.5
+/* The largest latency a latent instance takes, and the size of its delay ring. */
+#define TEST_INSTRUMENT_MAX_LATENCY 16384u
+#define TEST_INSTRUMENT_LATENCY_ENV "CLAP_TEST_INSTRUMENT_LATENCY"
 
 enum
 {
@@ -131,6 +146,12 @@ typedef struct instrument_plugin
 	uint32_t release_left; /* frames left of the release, 0 when silent */
 	/* 0 for the original class; 1 for TEST_INSTRUMENT_MULTIOUT_ID */
 	int multiout;
+	/* the latency (see LATENCY above); all 0 for an instance that is not latent */
+	int latent;               /* created while TEST_INSTRUMENT_LATENCY_ENV was set */
+	uint32_t latency;         /* frames, read at activate() */
+	int restart_requested;    /* a new count was seen; the restart has not come yet */
+	float* delay_ring;        /* TEST_INSTRUMENT_MAX_LATENCY levels, allocated at activate() */
+	uint32_t ring_pos;
 } instrument_plugin_t;
 
 static const clap_plugin_descriptor_t s_descriptor = {
@@ -383,6 +404,83 @@ static const clap_plugin_state_t s_state = {
 	.load = instrument_state_load,
 };
 
+/* --------------------------------------------------------------- latency -- */
+
+/* The count the environment names now, bounded to the ring. */
+static uint32_t instrument_env_latency(void)
+{
+	const char* frames = getenv(TEST_INSTRUMENT_LATENCY_ENV);
+	const long value = frames != NULL ? atol(frames) : 0;
+	if (value <= 0) { return 0; }
+	/* one short of the ring: a delay of the whole ring would read the frame just written */
+	return value >= (long)TEST_INSTRUMENT_MAX_LATENCY ? TEST_INSTRUMENT_MAX_LATENCY - 1u : (uint32_t)value;
+}
+
+static uint32_t instrument_latency_get(const clap_plugin_t* plugin)
+{
+	const instrument_plugin_t* self = (const instrument_plugin_t*)plugin->plugin_data;
+	return self->latency;
+}
+
+static const clap_plugin_latency_t s_latency = {
+	.get = instrument_latency_get,
+};
+
+/* One frame of the level, delayed by the latency (a latent instance only). */
+static double instrument_delayed(instrument_plugin_t* self, double level)
+{
+	self->delay_ring[self->ring_pos] = (float)level;
+	const uint32_t read = (self->ring_pos + TEST_INSTRUMENT_MAX_LATENCY - self->latency) % TEST_INSTRUMENT_MAX_LATENCY;
+	self->ring_pos = (self->ring_pos + 1) % TEST_INSTRUMENT_MAX_LATENCY;
+	return self->delay_ring[read];
+}
+
+/* A latent instance asks for a restart when the environment names a new count. */
+static void instrument_follow_latency(instrument_plugin_t* self)
+{
+	if (!self->latent || self->restart_requested || instrument_env_latency() == self->latency) { return; }
+	self->restart_requested = 1;
+	self->host->request_restart(self->host);
+}
+
+/* The level on every output port: the multi-output class's Aux port at its own level. */
+static void instrument_write_level(const instrument_plugin_t* self, const clap_process_t* process,
+	double level, uint32_t frames)
+{
+	for (uint32_t p = 0; p < process->audio_outputs_count; ++p)
+	{
+		const clap_audio_buffer_t* buffer = &process->audio_outputs[p];
+		if (!buffer->data32) { continue; }
+		/* the multi-output class's Aux port: the same voice, at its own level */
+		const double port_level = (self->multiout && p > 0) ? level * TEST_INSTRUMENT_AUX_SCALE : level;
+		for (uint32_t c = 0; c < buffer->channel_count; ++c)
+		{
+			float* channel = buffer->data32[c];
+			if (!channel) { continue; }
+			for (uint32_t f = 0; f < frames; ++f) { channel[f] = (float)port_level; }
+		}
+	}
+}
+
+/* A latent instance: the same level, written a frame at a time through its delay ring. */
+static void instrument_write_delayed(instrument_plugin_t* self, const clap_process_t* process,
+	double level, uint32_t frames)
+{
+	for (uint32_t f = 0; f < frames; ++f)
+	{
+		const double delayed = instrument_delayed(self, level);
+		for (uint32_t p = 0; p < process->audio_outputs_count; ++p)
+		{
+			const clap_audio_buffer_t* buffer = &process->audio_outputs[p];
+			const double port_level = (self->multiout && p > 0) ? delayed * TEST_INSTRUMENT_AUX_SCALE : delayed;
+			for (uint32_t c = 0; buffer->data32 && c < buffer->channel_count; ++c)
+			{
+				if (buffer->data32[c]) { buffer->data32[c][f] = (float)port_level; }
+			}
+		}
+	}
+}
+
 /* --------------------------------------------------------------- process -- */
 
 static void instrument_note_event(instrument_plugin_t* self,
@@ -474,21 +572,13 @@ static clap_process_status instrument_process(const clap_plugin_t* plugin,
 	}
 	self->active_voices = (self->sounding || self->release_left > 0) ? 1u : 0u;
 
+	/* --- a latent instance asks for a restart when its count changes ----- */
+	instrument_follow_latency(self);
+
 	/* --- the audio: a constant level per sounding voice ------------------ */
 	const double level = self->gain * TEST_INSTRUMENT_LEVEL * (double)self->active_voices;
-	for (uint32_t p = 0; p < process->audio_outputs_count; ++p)
-	{
-		const clap_audio_buffer_t* buffer = &process->audio_outputs[p];
-		if (!buffer->data32) { continue; }
-		/* the multi-output class's Aux port: the same voice, at its own level */
-		const double port_level = (self->multiout && p > 0) ? level * TEST_INSTRUMENT_AUX_SCALE : level;
-		for (uint32_t c = 0; c < buffer->channel_count; ++c)
-		{
-			float* channel = buffer->data32[c];
-			if (!channel) { continue; }
-			for (uint32_t f = 0; f < frames; ++f) { channel[f] = (float)port_level; }
-		}
-	}
+	if (self->latency > 0) { instrument_write_delayed(self, process, level, frames); }
+	else { instrument_write_level(self, process, level, frames); }
 
 	/* the release is counted in frames written, so it is sample accurate */
 	if (self->release_left > 0)
@@ -509,7 +599,28 @@ static bool instrument_init(const clap_plugin_t* plugin)
 
 static void instrument_destroy(const clap_plugin_t* plugin)
 {
-	free(plugin->plugin_data);
+	instrument_plugin_t* self = (instrument_plugin_t*)plugin->plugin_data;
+	free(self->delay_ring);
+	free(self);
+}
+
+/* A latent instance reads its count here - the one place CLAP lets it change - and says so. */
+static bool instrument_activate_latency(instrument_plugin_t* self)
+{
+	const uint32_t latency = instrument_env_latency();
+	self->restart_requested = 0;
+	free(self->delay_ring);
+	self->delay_ring = (float*)calloc(TEST_INSTRUMENT_MAX_LATENCY, sizeof(float));
+	self->ring_pos = 0;
+	if (!self->delay_ring) { return false; }
+	if (latency != self->latency)
+	{
+		self->latency = latency;
+		const clap_host_latency_t* host_latency =
+			(const clap_host_latency_t*)self->host->get_extension(self->host, CLAP_EXT_LATENCY);
+		if (host_latency && host_latency->changed) { host_latency->changed(self->host); }
+	}
+	return true;
 }
 
 static bool instrument_activate(const clap_plugin_t* plugin, double sample_rate,
@@ -519,12 +630,14 @@ static bool instrument_activate(const clap_plugin_t* plugin, double sample_rate,
 	(void)min_frames_count;
 	instrument_plugin_t* self = (instrument_plugin_t*)plugin->plugin_data;
 	self->declared_max_frames = max_frames_count;
-	return true;
+	return self->latent ? instrument_activate_latency(self) : true;
 }
 
 static void instrument_deactivate(const clap_plugin_t* plugin)
 {
-	(void)plugin;
+	instrument_plugin_t* self = (instrument_plugin_t*)plugin->plugin_data;
+	free(self->delay_ring);
+	self->delay_ring = NULL;
 }
 
 static bool instrument_start_processing(const clap_plugin_t* plugin)
@@ -557,6 +670,7 @@ static const void* instrument_get_extension(const clap_plugin_t* plugin, const c
 	if (!strcmp(id, CLAP_EXT_NOTE_PORTS)) { return &s_note_ports; }
 	if (!strcmp(id, CLAP_EXT_AUDIO_PORTS)) { return self->multiout ? &s_audio_ports_multiout : &s_audio_ports; }
 	if (!strcmp(id, CLAP_EXT_STATE)) { return &s_state; }
+	if (!strcmp(id, CLAP_EXT_LATENCY) && self->latent) { return &s_latency; }
 	return NULL;
 }
 
@@ -572,6 +686,7 @@ static const clap_plugin_t* instrument_create(const clap_host_t* host, int multi
 
 	self->host = host;
 	self->multiout = multiout;
+	self->latent = getenv(TEST_INSTRUMENT_LATENCY_ENV) != NULL;
 	self->gain = 1.0;
 	self->first_note_time = -1;
 	self->last_note_time = -1;
