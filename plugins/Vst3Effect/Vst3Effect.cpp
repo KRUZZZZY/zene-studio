@@ -123,6 +123,7 @@ Vst3Effect::~Vst3Effect() = default;
 
 bool Vst3Effect::openNativeEditor(QString* error)
 {
+	m_plugin.setEditorScale(deviceOptions().editorScale);  // 0.5.0 MX-094, as ClapEffect does
 	return m_editor.open(gui::PluginNativeEditor::Hooks{
 		[this](void* parent, QString* why) { return m_plugin.openEditor(parent, why); },
 		[this] { m_plugin.closeEditor(); },

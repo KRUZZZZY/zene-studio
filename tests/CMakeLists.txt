@@ -2559,6 +2559,10 @@ if(TARGET lmms_vst3_sdk)
 			add_dependencies(Vst3InstrumentIntegrationTest
 				vst3instrument
 				vst3-test-instrument)
+			# 0.5.0 MX-094: the effect host opens the fixture's editor at the device's zoom.
+			if(TARGET vst3effect)
+				add_dependencies(Vst3InstrumentIntegrationTest vst3effect)
+			endif()
 		endif()
 
 		# The SOCKET-DRIVEN half of the same feature (feature row 78, board task

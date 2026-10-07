@@ -39,6 +39,7 @@
  *   the host's event list and its audio buffers.
  */
 
+#include <cstdlib>
 #include <cstring>
 
 #include "public.sdk/source/common/pluginview.h"
@@ -49,6 +50,7 @@
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ustring.h"
 #include "pluginterfaces/gui/iplugview.h"
+#include "pluginterfaces/gui/iplugviewcontentscalesupport.h"
 #include "pluginterfaces/vst/ivstevents.h"
 #include "pluginterfaces/vst/ivstprocesscontext.h"
 #include "pluginterfaces/vst/vstspeaker.h"
@@ -456,11 +458,37 @@ private:
 	uint32 refCount {1};
 };
 
-class TestEditorView : public CPluginView
+// 0.5.0 MX-094: the editor also scales itself, as a real scalable editor does through
+// IPlugViewContentScaleSupport - its size follows the factor and it asks the host for that size
+// through the frame. VST3_TEST_EDITOR_NO_CONTENT_SCALE set in the environment withholds the
+// interface, so the host's other path (it sizes the window itself) can be exercised too.
+class TestEditorView : public CPluginView, public IPlugViewContentScaleSupport
 {
 public:
 	TestEditorView () : CPluginView (&initialSize ()) {}
 	~TestEditorView () override { if (timer) timer->release (); }
+
+	tresult PLUGIN_API setContentScaleFactor (ScaleFactor factor) SMTG_OVERRIDE
+	{
+		if (factor <= 0.f) return kInvalidArgument;
+		ViewRect scaled (0, 0, static_cast<int32> (initialSize ().getWidth () * factor + 0.5f),
+		                 static_cast<int32> (initialSize ().getHeight () * factor + 0.5f));
+		if (plugFrame) return plugFrame->resizeView (this, &scaled);
+		setRect (scaled);
+		return kResultTrue;
+	}
+	tresult PLUGIN_API queryInterface (const TUID iid, void** obj) SMTG_OVERRIDE
+	{
+		if (std::getenv ("VST3_TEST_EDITOR_NO_CONTENT_SCALE") == nullptr &&
+		    FUnknownPrivate::iidEqual (iid, IPlugViewContentScaleSupport::iid))
+		{
+			addRef ();
+			*obj = static_cast<IPlugViewContentScaleSupport*> (this);
+			return kResultOk;
+		}
+		return CPluginView::queryInterface (iid, obj);
+	}
+	REFCOUNT_METHODS (CPluginView)
 
 	tresult PLUGIN_API isPlatformTypeSupported (FIDString type) SMTG_OVERRIDE
 	{

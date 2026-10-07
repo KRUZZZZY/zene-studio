@@ -173,6 +173,7 @@ private slots:
 	void testStateRoundTripsIntoAFreshInstance();
 	void testProcessAllocatesNothing();
 	void testTheEditorAttachesResizesAndDetaches();
+	void testTheEditorOpensAtTheDeviceScale();
 
 private:
 	auto renderWith(const std::vector<MidiEventIn>& events) -> Block;
@@ -507,6 +508,45 @@ void Vst3InstrumentTest::testTheEditorAttachesResizesAndDetaches()
 	QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(error));
 	QCOMPARE(m_plugin.editorTimerCount(), 1);
 	m_plugin.closeEditor();
+}
+
+/*! 0.5.0 MX-094: the editor opens at the device's zoom. A view that scales itself
+ *  (IPlugViewContentScaleSupport) is told the factor and resizes through the frame; a view without
+ *  it is given the scaled size by the host, through its own size constraint; at 1 nothing is asked
+ *  of the view at all. The fixture's view is 400 x 300 and never smaller than 100 x 80. */
+void Vst3InstrumentTest::testTheEditorOpensAtTheDeviceScale()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	QString error;
+	int width = 0;
+	int height = 0;
+
+	m_plugin.setEditorScale(1.5);
+	QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(error));
+	m_plugin.editorSize(&width, &height);
+	QCOMPARE(width, 600);
+	QCOMPARE(height, 450);
+	QVERIFY(m_plugin.editorScaling() == EditorScaling::ByView);
+	m_plugin.closeEditor();
+
+	qputenv("VST3_TEST_EDITOR_NO_CONTENT_SCALE", "1");
+	m_plugin.setEditorScale(0.5);
+	QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(error));
+	m_plugin.editorSize(&width, &height);
+	QCOMPARE(width, 200);
+	QCOMPARE(height, 150);
+	QVERIFY(m_plugin.editorScaling() == EditorScaling::ByWindow);
+	m_plugin.closeEditor();
+	qunsetenv("VST3_TEST_EDITOR_NO_CONTENT_SCALE");
+
+	m_plugin.setEditorScale(1.0);
+	QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(error));
+	m_plugin.editorSize(&width, &height);
+	QCOMPARE(width, 400);
+	QCOMPARE(height, 300);
+	QVERIFY(m_plugin.editorScaling() == EditorScaling::Unscaled);
+	m_plugin.closeEditor();
+	std::printf("VST3_EDITOR_SCALE_EVIDENCE 1.5 by the view -> 600x450, 0.5 by the window -> 200x150, 1 -> 400x300\n");
 }
 
 } // namespace lmms::vst3

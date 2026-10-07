@@ -30,6 +30,8 @@
 
 #include <QString>
 
+#include "Vst3Host.h"
+
 namespace Steinberg::Vst { class IEditController; }
 namespace Steinberg { class IPlugView; }
 
@@ -65,14 +67,22 @@ public:
 	//! The view's current size, in pixels (0 x 0 when closed).
 	void size(int* width, int* height) const;
 
+	//! 0.5.0 MX-094: the zoom the next open() applies (1: none), and how the open view took it.
+	void setScale(double scale) { m_scale = scale > 0.0 ? scale : 1.0; }
+	EditorScaling scaling() const { return m_scaling; }
+
 	//! Timers the editor registered through the run loop, and the onTimer calls delivered.
 	int runLoopTimers() const;
 	std::uint32_t timerDeliveries() const;
 
 private:
+	void applyScale();
+
 	Steinberg::Vst::IEditController* m_controller;
 	Steinberg::IPlugView* m_view = nullptr;
 	HostPlugFrame* m_frame = nullptr;
+	double m_scale = 1.0;
+	EditorScaling m_scaling = EditorScaling::Unscaled;
 };
 
 } // namespace lmms::vst3

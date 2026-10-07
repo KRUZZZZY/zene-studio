@@ -165,6 +165,15 @@ that is this page's fault — report it and it gets added.
   chain keeps a saved one as its placeholder, state intact, as before.
   `ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface` lists and loads the in-tree VST3
   and CLAP effect fixtures through the surface. Still true: no third-party effect has been loaded by us.
+- *(Added 2026-10-07, plugin-hosting lane, MX-094.)* **A VST3 effect's own window now opens at the device's
+  zoom** (`plugin.options editor_scale`, 0.5 to 3), as a CLAP effect's already did. A view that scales itself
+  (`IPlugViewContentScaleSupport`) is told the factor. Any other view that can resize is given the scaled size.
+  A view that can do neither keeps its own size. Limits: the zoom applies when the window opens, not to a window
+  already open. Instruments have no editor-scale option (it is an effect's device option). **LV2 is not
+  covered**: this host does not open an LV2 plug-in's own UI at all (the generic controls only; the "Show GUI"
+  button in `src/gui/Lv2ViewBase.cpp` sits behind `if (false)`), so there is no UI to send `ui:scaleFactor` to, and no
+  LV2 UI fixture exists. Proved offscreen against the in-tree VST3 fixture only; no third-party editor has
+  been zoomed on a real display.
 - *(Updated 2026-09-30, R4.1/R4.2/R4.4.)* **A VST3 plug-in's own editor now opens** - in a window of its
   own, through `plugin.editor_open` (the host's `Vst3EditorSession`: createView, X11 embedding, resize,
   IPlugFrame and Linux::IRunLoop on the Qt loop). What is proved is the contract, offscreen, against the

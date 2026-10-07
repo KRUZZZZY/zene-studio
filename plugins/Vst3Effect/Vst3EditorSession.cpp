@@ -26,11 +26,13 @@
 #include "Vst3Host.h"
 
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <map>
 
 #include "PluginEditorHost.h"
 #include "pluginterfaces/gui/iplugview.h"
+#include "pluginterfaces/gui/iplugviewcontentscalesupport.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 
 namespace lmms::vst3
@@ -204,7 +206,40 @@ bool Vst3EditorSession::open(void* parentWindow, QString* error)
 	}
 	m_view = view;
 	m_frame = frame;
+	applyScale();
 	return true;
+}
+
+
+/*! 0.5.0 MX-094: the device's zoom, after the view is attached (the SDK allows before or after). A view
+ *  that scales itself is told the factor and asks for its new size through the frame, as the SDK
+ *  prescribes; any other view that can resize is given the scaled size, through its own constraint. A
+ *  view that can do neither keeps its size. At 1 nothing is asked of the view, so an editor opens
+ *  exactly as it did before the option existed. */
+void Vst3EditorSession::applyScale()
+{
+	m_scaling = EditorScaling::Unscaled;
+	if (m_scale == 1.0) { return; }
+	IPlugViewContentScaleSupport* scalable = nullptr;
+	if (m_view->queryInterface(IPlugViewContentScaleSupport::iid, reinterpret_cast<void**>(&scalable)) == kResultOk
+		&& scalable != nullptr)
+	{
+		const bool handled = scalable->setContentScaleFactor(static_cast<float>(m_scale)) == kResultTrue;
+		scalable->release();
+		if (handled)
+		{
+			m_scaling = EditorScaling::ByView;
+			return;
+		}
+	}
+	int width = 0;
+	int height = 0;
+	size(&width, &height);
+	if (width > 0 && height > 0
+		&& resize(static_cast<int>(std::lround(width * m_scale)), static_cast<int>(std::lround(height * m_scale))))
+	{
+		m_scaling = EditorScaling::ByWindow;
+	}
 }
 
 
@@ -220,6 +255,7 @@ void Vst3EditorSession::close()
 	m_view->release();
 	m_view = nullptr;
 	m_frame = nullptr;
+	m_scaling = EditorScaling::Unscaled;
 }
 
 
@@ -257,7 +293,18 @@ std::uint32_t Vst3EditorSession::timerDeliveries() const
 auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
 {
 	if (m_editor == nullptr) { m_editor = std::make_unique<Vst3EditorSession>(editController()); }
+	if (!m_editor->isOpen()) { m_editor->setScale(m_editorScale); }
 	return m_editor->open(parentWindow, error);
+}
+
+void HostedPlugin::setEditorScale(double scale)
+{
+	m_editorScale = scale > 0.0 ? scale : 1.0;
+}
+
+auto HostedPlugin::editorScaling() const -> EditorScaling
+{
+	return m_editor != nullptr ? m_editor->scaling() : EditorScaling::Unscaled;
 }
 
 void HostedPlugin::closeEditor()
