@@ -118,12 +118,20 @@ bool isPowerOfTwo(int value)
 	return value > 0 && (value & (value - 1)) == 0;
 }
 
-//! A beat position the format can carry: finite and not before the start of the
-//! timeline. The header's promise is that a NEGATIVE time is refused, and a NaN
-//! or an infinity is not a position at all - QString::number() writes both as
-//! "nan"/"inf", which is not an xs:double and which the reader then has to
-//! refuse, so the writer refuses them first.
-bool isSupportedTime(double beats) { return std::isfinite(beats) && beats >= 0.0; }
+//! A beat position the format can carry: finite, not before the timeline, and
+//! still within tick_t after the six-decimal value is rounded to the reader's
+//! tick grid. Check the unformatted value first so a huge finite input is
+//! refused before it is converted to text.
+bool isSupportedTime(double beats)
+{
+	if (!std::isfinite(beats) || beats < 0.0 || !dawProjectBeatRepresentable(beats))
+	{
+		return false;
+	}
+	bool ok = false;
+	const double serializedBeats = beatsText(beats).toDouble(&ok);
+	return ok && dawProjectBeatRepresentable(serializedBeats);
+}
 
 QString unsupportedTime(const QString& what, double beats)
 {
