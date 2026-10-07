@@ -221,7 +221,7 @@ QString ExternalProcessStemSeparator::defaultModelPath()
 
 
 
-bool ExternalProcessStemSeparator::isAvailable(QString* error)
+bool ExternalProcessStemSeparator::isAvailable(QString* error) const
 {
 	QString localError;
 	const auto python = locatePython(&localError);
@@ -236,7 +236,7 @@ bool ExternalProcessStemSeparator::isAvailable(QString* error)
 		setError(error, localError);
 		return false;
 	}
-	if (!StemModelStore::isModelPresent(defaultModelPath(), &localError))
+	if (!StemModelStore::isModelPresent(m_model, &localError))
 	{
 		setError(error, localError);
 		return false;

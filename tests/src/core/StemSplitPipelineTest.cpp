@@ -93,7 +93,7 @@ private slots:
 		qputenv("LMMS_STEM_PYTHON", QByteArrayLiteral("/usr/bin/python3"));
 
 		QString error;
-		if (!ExternalProcessStemSeparator::isAvailable(&error))
+		if (!ExternalProcessStemSeparator().isAvailable(&error))
 		{
 			QSKIP(qPrintable(QStringLiteral("external-process backend unavailable: ") + error));
 		}
@@ -106,6 +106,36 @@ private slots:
 	void cleanupTestCase()
 	{
 		Engine::destroy();
+	}
+
+	/* Bug (cluster new-p8-120): isAvailable() must honour the model path the
+	 *  instance was configured with - the same one separate() uses - not the
+	 *  class default. */
+	void testAvailabilityHonoursConfiguredModelPath()
+	{
+		const QString configured = stubModelPath();
+		const QString missing = QStringLiteral(LMMS_TEST_DATA_DIR)
+			+ QStringLiteral("/no-such-model.onnx");
+
+		// The class default is absent, but this instance is configured with a
+		// model that exists: it must report available.
+		qputenv("LMMS_STEM_MODEL", QFile::encodeName(missing));
+		ExternalProcessStemSeparator withModel(QString(), QString(), configured);
+		{
+			QString error;
+			QVERIFY2(withModel.isAvailable(&error),
+				qPrintable(QStringLiteral("configured model present: ") + error));
+		}
+
+		// The class default exists, but this instance's model is absent: it must
+		// report unavailable.
+		qputenv("LMMS_STEM_MODEL", QFile::encodeName(configured));
+		ExternalProcessStemSeparator missingModel(QString(), QString(), missing);
+		{
+			QString error;
+			QVERIFY2(!missingModel.isAvailable(&error) && !error.isEmpty(),
+				"configured model absent: availability must report unavailable");
+		}
 	}
 
 	void testSeparatorProducesFourStemsWithProgress()
