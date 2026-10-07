@@ -1723,3 +1723,4 @@ src/core/ControlCommandsNotes.cpp	cluster new-p8-30 (2026-10-07): reject note.re
 tests/src/core/ControlNoteScaleVerbsTest.cpp	new-p8-24: per-command regressions prove zero transpose, zero velocity offset and identity velocity scale do not add ProjectJournal undo steps.
 src/core/HardwareIo.cpp	new-p8-124: only a routed following cue with positive master level spares the main output during listen; level-zero cues are skipped by mixOutputs, so listening falls back to main. Covered by HardwareIoTest::aCueFollowsSoloAndListen.
 src/gui/MainWindow.cpp	new-p8-148 (2026-10-07): MainWindow::finalize() checks audio startup failure independently of first-run setup, so fresh unattended launches report the fallback diagnostic.
+tests/src/gui/TakeLanesPanelTest.cpp	cluster new-p8-139: regression for multi-row comp Delete, confirming the original selected ranges are processed when an earlier reassignment merges rows.

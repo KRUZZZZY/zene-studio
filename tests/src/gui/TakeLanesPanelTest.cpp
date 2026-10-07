@@ -31,17 +31,21 @@
 #include <QtTest>
 
 #include <QComboBox>
+#include <QItemSelectionModel>
 #include <QJsonArray>
 #include <QSpinBox>
+#include <QTableView>
 #include <QToolButton>
 
 #include <memory>
 #include <vector>
 
 #include "AudioEngine.h"
+#include "CompSwipeStrip.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ItemList.h"
 #include "MusicalTime.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -138,6 +142,56 @@ private slots:
 			QVERIFY2(!button->property("controlCommand").toString().isEmpty(),
 				qPrintable(QStringLiteral("an undeclared button: ") + button->text()));
 		}
+	}
+
+	void deletingSeveralCompRowsKeepsTheirOriginalRanges()
+	{
+		const QString id = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		ControlResult error;
+		Track* track = control::resolveTrack(id, &error);
+		QVERIFY(track != nullptr);
+		SampleClip* first = addTake(track, 0.5f);
+		SampleClip* second = addTake(track, 0.25f);
+		SampleClip* third = addTake(track, 0.75f);
+		const int length = first->length().getTicks();
+
+		TakeLanesPanel takePanel(id);
+		for (int i = 0; i < 3; ++i) { QTest::mouseClick(takePanel.addLaneButton(), Qt::LeftButton); }
+		for (const auto& [clip, lane] : {std::pair{first, 0}, std::pair{second, 1}, std::pair{third, 2}})
+		{
+			QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("lane"), lane}}).ok);
+		}
+		const int oneThird = length / 3;
+		const int twoThirds = 2 * length / 3;
+		for (const auto& [begin, end, lane] : {std::tuple{0, oneThird, 0}, std::tuple{oneThird, twoThirds, 1},
+			 std::tuple{twoThirds, length, 2}})
+		{
+			QVERIFY(run(QStringLiteral("comp.select"), {{QStringLiteral("track"), id}, {QStringLiteral("begin"), begin},
+				{QStringLiteral("end"), end}, {QStringLiteral("lane"), lane}}).ok);
+		}
+		takePanel.refresh();
+		CompSwipeStrip* strip = takePanel.findChild<CompSwipeStrip*>();
+		QVERIFY(strip != nullptr);
+		ItemListPanel list(itemlists::compSegments(strip, nullptr), &takePanel, QStringLiteral("comp-segments"));
+		list.show();
+		QCOMPARE(list.table()->model()->rowCount(), 3);
+		list.table()->setSelectionMode(QAbstractItemView::ExtendedSelection);
+		list.table()->selectRow(0);
+		list.table()->selectionModel()->select(list.table()->model()->index(2, 0),
+			QItemSelectionModel::Select | QItemSelectionModel::Rows);
+		QCOMPARE(list.table()->selectionModel()->selectedRows().size(), 2);
+
+		QTest::keyClick(list.table(), Qt::Key_Delete);
+
+		const ControlResult state = run(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), id}});
+		QVERIFY(state.ok);
+		const QJsonArray segments = state.result.value(QStringLiteral("composite")).toObject().value(QStringLiteral("segments")).toArray();
+		QCOMPARE(segments.size(), 1);
+		const QJsonObject segment = segments.first().toObject();
+		QCOMPARE(segment.value(QStringLiteral("begin")).toInt(), 0);
+		QCOMPARE(segment.value(QStringLiteral("end")).toInt(), length);
+		QCOMPARE(segment.value(QStringLiteral("lane")).toInt(), 1);
 	}
 };
 
