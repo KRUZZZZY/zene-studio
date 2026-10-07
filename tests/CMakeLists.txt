@@ -2150,6 +2150,12 @@ if(TARGET lmms_clap)
 		)
 		add_dependencies(ControlDeviceCatalogueTest clap-test-instrument)
 	endif()
+	# The CLAP EFFECT half: plugin.list carries clap-test-gain and plugin.load hosts it in clapeffect.
+	if(TARGET clap-test-gain AND TARGET clapeffect AND TARGET ControlDeviceCatalogueTest)
+		target_compile_definitions(ControlDeviceCatalogueTest PRIVATE
+			CLAP_TEST_EFFECT_DIR="$<TARGET_FILE_DIR:clap-test-gain>")
+		add_dependencies(ControlDeviceCatalogueTest clap-test-gain clapeffect)
+	endif()
 	# MX-114 (plugin.output_*): the fixture's multi-output class is the instrument with output buses.
 	if(TARGET clap-test-instrument AND TARGET InstrumentLayersCommandsTest)
 		target_compile_definitions(InstrumentLayersCommandsTest PRIVATE
@@ -2576,6 +2582,15 @@ if(TARGET lmms_vst3_sdk)
 				vst3instrument
 				vst3-test-instrument
 			)
+		endif()
+		# The VST3 EFFECT half: plugin.list carries the SDK's gain sample and plugin.load hosts it in
+		# vst3effect.
+		if(TARGET vst3effect AND TARGET vst3-test-effect AND TARGET ControlDeviceCatalogueTest)
+			get_filename_component(LMMS_VST3_TEST_EFFECT_FIXTURE_DIR
+				"${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}" DIRECTORY)
+			target_compile_definitions(ControlDeviceCatalogueTest PRIVATE
+				VST3_TEST_EFFECT_DIR="${LMMS_VST3_TEST_EFFECT_FIXTURE_DIR}")
+			add_dependencies(ControlDeviceCatalogueTest vst3effect vst3-test-effect)
 		endif()
 endif()
 endif()

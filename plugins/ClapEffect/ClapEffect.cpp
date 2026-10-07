@@ -28,6 +28,8 @@
 #include "SidechainInputs.h"
 
 #include <algorithm>
+#include <exception>
+#include <memory>
 
 #include <QDebug>
 
@@ -56,6 +58,27 @@ Plugin::Descriptor PLUGIN_EXPORT clapeffect_plugin_descriptor =
 	nullptr,
 	new ClapSubPluginFeatures(Plugin::Type::Effect)
 };
+
+// The module entry point PluginFactory requires of every plug-in library (src/core/PluginFactory.cpp,
+// loadPluginDescriptor). Without it the factory recorded this module as "not a plug-in", so no CLAP
+// effect could be added to a chain - only tests that construct the class directly ever ran one. A class
+// that did not load answers nullptr, so the chain keeps a saved one as its placeholder (DummyEffect, which
+// writes the saved state back) instead of a pass-through that would drop that state on the next save.
+PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* parent, void* data)
+{
+	try
+	{
+		auto effect = std::make_unique<ClapEffect>(parent,
+			static_cast<const Plugin::Descriptor::SubPluginFeatures::Key*>(data));
+		return effect->plugin()->isLoaded() ? effect.release() : nullptr;
+	}
+	catch (const std::exception& error)
+	{
+		// A throw must not cross the extern "C" boundary.
+		qCritical() << "CLAP effect could not be created:" << error.what();
+		return nullptr;
+	}
+}
 
 }
 

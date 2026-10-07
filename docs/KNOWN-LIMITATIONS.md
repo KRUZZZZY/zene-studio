@@ -156,6 +156,15 @@ that is this page's fault — report it and it gets added.
   CI-only evidence (the port's §"CLAP hosting on Windows" below), and **no third-party CLAP plug-in has been
   loaded anywhere** — the only modules proven are the MIT fixtures in the source tree.
 
+- *(Corrected 2026-10-07, plugin-hosting lane.)* **Until now no VST3 or CLAP effect could be added to a
+  chain.** The two effect host modules (`vst3effect`, `clapeffect`) never exported `lmms_plugin_main`, the
+  entry point `PluginFactory` requires of every module, so the factory recorded both as "not a plug-in":
+  `plugin.list` carried no VST3 or CLAP effect, the effect pickers offered none, and a project's saved one
+  loaded as a placeholder. Every earlier proof of the effect hosts constructed the classes directly and never
+  went through the factory. Both modules now export it. A class that does not load answers nothing, so the
+  chain keeps a saved one as its placeholder, state intact, as before.
+  `ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface` lists and loads the in-tree VST3
+  and CLAP effect fixtures through the surface. Still true: no third-party effect has been loaded by us.
 - *(Updated 2026-09-30, R4.1/R4.2/R4.4.)* **A VST3 plug-in's own editor now opens** - in a window of its
   own, through `plugin.editor_open` (the host's `Vst3EditorSession`: createView, X11 embedding, resize,
   IPlugFrame and Linux::IRunLoop on the Qt loop). What is proved is the contract, offscreen, against the
