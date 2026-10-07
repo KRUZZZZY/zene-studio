@@ -1476,6 +1476,27 @@ void archivesPastClassicZipLimitsAreRefused()
 	QCOMPARE(readBack[0].first, QStringLiteral("project.xml"));
 }
 
+//! Luna cluster new-p8-98: the reader uses int offsets and rejects files above
+//! INT_MAX, but the writer only checked the classic ZIP 32-bit limit before
+//! narrowing the local-record size into centralOffset.
+void archivesPastTheReaderSizeLimitAreRefused()
+{
+	const QString entryName = QStringLiteral("oversized.bin");
+	const qsizetype readerLimit = static_cast<qsizetype>(std::numeric_limits<int>::max());
+	const qsizetype localRecordHeaderSize = 30 + entryName.toUtf8().size();
+	const qsizetype bodySize = readerLimit - localRecordHeaderSize + 1;
+	const std::vector<DawProjectEntry> entries = {
+		{entryName, QByteArray(bodySize, '\0')},
+	};
+	const QString file = path(m_directory, QStringLiteral("past-reader-limit.dawproject"));
+	QString error;
+
+	QVERIFY2(!dawProjectZipWrite(file, entries, &error),
+		"the writer accepted a local-record section too large for its reader's int offsets");
+	QVERIFY2(error.contains(QStringLiteral("reader")), qPrintable(error));
+	QVERIFY2(!QFile::exists(file), "a refused archive left a file at the destination");
+}
+
 //! Luna cluster 5075: the reader finds the end record by scanning BACKWARDS for
 //! the signature and accepts the first match, without checking that the record's
 //! own declared comment length carries it to the end of the file. A ZIP comment
