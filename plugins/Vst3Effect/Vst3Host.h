@@ -46,6 +46,14 @@ namespace lmms::vst3
 
 class Vst3EditorSession;
 
+//! 0.5.0 MX-094: how the open editor took the device's zoom (HostedPlugin::setEditorScale).
+enum class EditorScaling
+{
+	Unscaled,  //!< the zoom is 1, or the view could neither scale itself nor be resized
+	ByView,    //!< the view scales itself (IPlugViewContentScaleSupport) and asked for its size
+	ByWindow   //!< the host gave the view the scaled size, through the view's own size constraint
+};
+
 //! A VST3 class as reported by a module's plug-in factory
 struct Vst3ClassInfo
 {
@@ -222,6 +230,10 @@ public:
 	//! Timers the open editor registered through Linux::IRunLoop, and onTimer calls delivered.
 	auto editorTimerCount() const -> int;
 	auto editorTimerDeliveries() const -> std::uint32_t;
+	//! 0.5.0 MX-094: the zoom the editor opens at - the device's editor-scale option. 1 (the default)
+	//! asks nothing of the view; it applies at the next openEditor(), as the CLAP host's does.
+	void setEditorScale(double scale);
+	auto editorScaling() const -> EditorScaling;
 
 private:
 	struct Impl;
@@ -231,6 +243,7 @@ private:
 	//! R4.2: the open editor, if any. Declared after m_impl so it is destroyed first, and
 	//! reset explicitly in the destructor before the controller is released.
 	std::unique_ptr<Vst3EditorSession> m_editor;
+	double m_editorScale = 1.0;
 };
 
 } // namespace lmms::vst3

@@ -35,6 +35,7 @@
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DevicePicker.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
@@ -63,7 +64,39 @@
 #define CLAP_TEST_INSTRUMENT_DIR ""
 #endif
 
+//! The directories holding the in-tree VST3 and CLAP EFFECT fixtures (the SDK's gain sample and
+//! clap-test-gain). Set by tests/CMakeLists.txt when this build has them and their host modules;
+//! empty otherwise, and that half of the effect case skips.
+#ifndef VST3_TEST_EFFECT_DIR
+#define VST3_TEST_EFFECT_DIR ""
+#endif
+#ifndef CLAP_TEST_EFFECT_DIR
+#define CLAP_TEST_EFFECT_DIR ""
+#endif
+
 using namespace lmms;
+
+namespace
+{
+
+//! The plugin.list entry of @a format named @a name (its "name" or "display_name"), or an empty object.
+QJsonObject listedDevice(const QString& format, const QString& name)
+{
+	const ControlResult listed = ControlRegistry::instance()->invoke(QStringLiteral("plugin.list"),
+		QJsonObject{{QStringLiteral("format"), format}});
+	for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
+	{
+		const QJsonObject device = value.toObject();
+		if (device.value(QStringLiteral("name")).toString() == name
+			|| device.value(QStringLiteral("display_name")).toString() == name)
+		{
+			return device;
+		}
+	}
+	return QJsonObject();
+}
+
+} // namespace
 
 //! The catalogue is what plugin.list returns and what every dev-<n> id indexes
 //! into, so its shape and its order are part of the agent surface's contract.
@@ -476,6 +509,67 @@ private slots:
 			ports.value(QStringLiteral("count")).toInt(),
 			audio.value(QStringLiteral("inputs")).toInt(),
 			audio.value(QStringLiteral("outputs")).toInt());
+	}
+
+	//! The VST3 and CLAP EFFECT hosts, through the surface: with each in-tree effect fixture in the
+	//! product's plug-in search directory, plugin.list carries the effect class and plugin.load puts
+	//! it in a track's effect chain, hosted by vst3effect / clapeffect. Before the two modules
+	//! exported lmms_plugin_main, PluginFactory recorded them as "not a plug-in": no VST3 or CLAP
+	//! effect was ever offered, and a project's saved one loaded as a placeholder.
+	void hostedEffectsListAndLoadThroughTheSurface()
+	{
+		const QList<QStringList> cases{
+			{QStringLiteral(VST3_TEST_EFFECT_DIR), QStringLiteral("vst3"), QStringLiteral("AGain Sample Accurate"),
+				QStringLiteral("vst3effect")},
+			{QStringLiteral(CLAP_TEST_EFFECT_DIR), QStringLiteral("clap"), QStringLiteral("LMMS CLAP Test Gain"),
+				QStringLiteral("clapeffect")}};
+		int checked = 0;
+		for (const QStringList& c : cases)
+		{
+			if (c[0].isEmpty() || !QFileInfo::exists(c[0])) { continue; }
+			ConfigManager::inst()->setVSTDir(c[0]);
+			const QJsonObject device = listedDevice(c[1], c[2]);
+			QVERIFY2(!device.isEmpty(), qPrintable(QStringLiteral("plugin.list format=%1 does not carry '%2'")
+				.arg(c[1], c[2])));
+			QCOMPARE(device.value(QStringLiteral("kind")).toString(), QStringLiteral("effect"));
+			auto* track = new InstrumentTrack(Engine::getSong());
+			const ControlResult loaded = ControlRegistry::instance()->invoke(QStringLiteral("plugin.load"),
+				QJsonObject{{QStringLiteral("target"), control::trackIdOf(track)},
+					{QStringLiteral("device"), device.value(QStringLiteral("id")).toString()}});
+			QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+			QCOMPARE(loaded.result.value(QStringLiteral("kind")).toString(), QStringLiteral("effect"));
+			QCOMPARE(loaded.result.value(QStringLiteral("plugin")).toString(), c[3]);
+			++checked;
+		}
+		if (checked == 0) { QSKIP("this build has neither in-tree effect fixture"); }
+	}
+
+	//! The vendor a VST3 or CLAP device's row shows (the device picker, the device card's Replace and Insert)
+	//! is the one the plug-in's own factory reports - the VST3 class's vendor, which the SDK fills from
+	//! PFactoryInfo when the class names none, and the CLAP descriptor's vendor - not "Not reported".
+	void hostedVendorsAreTheFactoriesOwn()
+	{
+		const QList<QStringList> cases{
+			{QStringLiteral(VST3_TEST_INSTRUMENT_DIR), QStringLiteral("vst3"), QStringLiteral("Zene VST3 Test Instrument"),
+				QStringLiteral("Zene Studio test fixture")},
+			{QStringLiteral(CLAP_TEST_INSTRUMENT_DIR), QStringLiteral("clap"), QStringLiteral("org.lmms.test.clap-instrument"),
+				QStringLiteral("LMMS contributors")},
+			{QStringLiteral(CLAP_TEST_EFFECT_DIR), QStringLiteral("clap"), QStringLiteral("LMMS CLAP Test Gain"),
+				QStringLiteral("LMMS contributors")}};
+		int checked = 0;
+		for (const QStringList& c : cases)
+		{
+			if (c[0].isEmpty() || !QFileInfo::exists(c[0])) { continue; }
+			ConfigManager::inst()->setVSTDir(c[0]);
+			const QString id = listedDevice(c[1], c[2]).value(QStringLiteral("id")).toString();
+			ControlDeviceEntry entry;
+			int index = -1;
+			ControlResult error;
+			QVERIFY2(controlDeviceById(id, &entry, &index, &error), qPrintable(c[2] + QStringLiteral(" is not listed")));
+			QCOMPARE(gui::devicelabels::vendorOf(entry), c[3]);
+			++checked;
+		}
+		if (checked == 0) { QSKIP("this build has no in-tree VST3 or CLAP fixture"); }
 	}
 };
 

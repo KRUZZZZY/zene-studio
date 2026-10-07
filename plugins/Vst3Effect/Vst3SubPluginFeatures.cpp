@@ -30,6 +30,7 @@
 #include <QVBoxLayout>
 
 #include "PluginPaths.h"
+#include "PluginVendors.h"
 #include "Vst3Host.h"
 
 namespace lmms
@@ -104,6 +105,8 @@ void Vst3SubPluginFeatures::listSubPluginKeys(const Plugin::Descriptor* descript
 		QString error;
 		for (const auto& info : vst3::listClasses(path, &error))
 		{
+			// Who made it, for the rows that show a vendor; not in the key, which is the device's identity.
+			pluginvendors::remember(path, info.name, info.vendor);
 			if (info.isInstrument != wantInstrument) { continue; }
 
 			Key key;

@@ -70,6 +70,9 @@
 
 #include "AudioBus.h"
 #include "BufferManager.h"
+#include "DeviceOptions.h"
+#include "Effect.h"
+#include "EffectChain.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
@@ -178,6 +181,7 @@ private slots:
 	void testAGuiLessInstrumentExposesItsParameters();
 	void testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow();
 	void testTheInstrumentsOwnEditorOpensInItsOwnWindow();
+	void testAnEffectsEditorOpensAtItsDeviceScale();
 
 private:
 	//! The real module, loaded exactly as the plugin factory loads it.
@@ -691,6 +695,48 @@ void Vst3InstrumentIntegrationTest::testTheInstrumentsOwnEditorOpensInItsOwnWind
 	instrument->closeNativeEditor();
 	ControlRegistry::instance()->setHeadless(headless);
 	ControlRegistry::setReady(false);
+}
+
+/*! 0.5.0 MX-094, through the product's own path: the installed vst3effect module, hosting the
+ *  fixture's class in an effect chain, opens the plug-in's editor at the device's editor-scale
+ *  option (plugin.options editor_scale). The fixture's view scales itself, so the window takes the
+ *  scaled view: 1.5 x 400 x 300. At the default 1 it opens as it always did. */
+void Vst3InstrumentIntegrationTest::testAnEffectsEditorOpensAtItsDeviceScale()
+{
+	Plugin::Descriptor::SubPluginFeatures::Key key;
+	key.name = QStringLiteral("Zene VST3 Test Instrument");
+	key.attributes[QStringLiteral("file")] = QStringLiteral(VST3_TEST_INSTRUMENT_BUNDLE);
+	key.attributes[QStringLiteral("class")] = QStringLiteral("Zene VST3 Test Instrument");
+	EffectChain chain(nullptr);
+	Effect* effect = Effect::instantiate(QStringLiteral("vst3effect"), &chain, &key);
+	QVERIFY2(effect != nullptr, "the vst3effect module did not instantiate through the plug-in factory");
+	chain.appendEffect(effect);
+
+	const auto openWindowHeight = [effect](int* viewHeight) {
+		QString error;
+		if (!effect->openNativeEditor(&error)) { return QStringLiteral("not opened: ") + error; }
+		for (QWidget* top : QApplication::topLevelWidgets())
+		{
+			if (!top->isVisible() || top->windowTitle() != effect->displayName()) { continue; }
+			const auto* header = top->findChild<QWidget*>(QStringLiteral("pluginHostHeader"));
+			*viewHeight = top->height() - (header != nullptr ? header->sizeHint().height() : 0);
+			return QString();
+		}
+		return QStringLiteral("no window titled after the effect is showing");
+	};
+	int viewHeight = 0;
+	effect->deviceOptions().editorScale = 1.5f;
+	QString problem = openWindowHeight(&viewHeight);
+	QVERIFY2(problem.isEmpty(), qPrintable(problem));
+	QCOMPARE(viewHeight, 450);
+	effect->closeNativeEditor();
+
+	effect->deviceOptions().editorScale = 1.f;
+	problem = openWindowHeight(&viewHeight);
+	QVERIFY2(problem.isEmpty(), qPrintable(problem));
+	QCOMPARE(viewHeight, 300);
+	effect->closeNativeEditor();
+	QVERIFY(!effect->nativeEditorOpen());
 }
 
 } // namespace lmms

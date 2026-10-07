@@ -31,6 +31,7 @@
 
 #include "ClapHost.h"
 #include "PluginPaths.h"
+#include "PluginVendors.h"
 
 namespace lmms
 {
@@ -98,6 +99,8 @@ void ClapSubPluginFeatures::listSubPluginKeys(const Plugin::Descriptor* descript
 		QString error;
 		for (const auto& info : clap::listClasses(path, &error))
 		{
+			// Who made it, for the rows that show a vendor; not in the key, which is the device's identity.
+			pluginvendors::remember(path, info.id, info.vendor);
 			if (info.isInstrument != wantInstrument) { continue; }
 
 			Key key;

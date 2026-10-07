@@ -156,6 +156,24 @@ that is this page's fault — report it and it gets added.
   CI-only evidence (the port's §"CLAP hosting on Windows" below), and **no third-party CLAP plug-in has been
   loaded anywhere** — the only modules proven are the MIT fixtures in the source tree.
 
+- *(Corrected 2026-10-07, plugin-hosting lane.)* **Until now no VST3 or CLAP effect could be added to a
+  chain.** The two effect host modules (`vst3effect`, `clapeffect`) never exported `lmms_plugin_main`, the
+  entry point `PluginFactory` requires of every module, so the factory recorded both as "not a plug-in":
+  `plugin.list` carried no VST3 or CLAP effect, the effect pickers offered none, and a project's saved one
+  loaded as a placeholder. Every earlier proof of the effect hosts constructed the classes directly and never
+  went through the factory. Both modules now export it. A class that does not load answers nothing, so the
+  chain keeps a saved one as its placeholder, state intact, as before.
+  `ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface` lists and loads the in-tree VST3
+  and CLAP effect fixtures through the surface. Still true: no third-party effect has been loaded by us.
+- *(Added 2026-10-07, plugin-hosting lane, MX-094.)* **A VST3 effect's own window now opens at the device's
+  zoom** (`plugin.options editor_scale`, 0.5 to 3), as a CLAP effect's already did. A view that scales itself
+  (`IPlugViewContentScaleSupport`) is told the factor. Any other view that can resize is given the scaled size.
+  A view that can do neither keeps its own size. Limits: the zoom applies when the window opens, not to a window
+  already open. Instruments have no editor-scale option (it is an effect's device option). **LV2 is not
+  covered**: this host does not open an LV2 plug-in's own UI at all (the generic controls only; the "Show GUI"
+  button in `src/gui/Lv2ViewBase.cpp` sits behind `if (false)`), so there is no UI to send `ui:scaleFactor` to, and no
+  LV2 UI fixture exists. Proved offscreen against the in-tree VST3 fixture only; no third-party editor has
+  been zoomed on a real display.
 - *(Updated 2026-09-30, R4.1/R4.2/R4.4.)* **A VST3 plug-in's own editor now opens** - in a window of its
   own, through `plugin.editor_open` (the host's `Vst3EditorSession`: createView, X11 embedding, resize,
   IPlugFrame and Linux::IRunLoop on the Qt loop). What is proved is the contract, offscreen, against the
@@ -2392,10 +2410,18 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
   pitch bend, aftertouch and program change (`NoteEditorTest::anyControllerNumberCanBeChosenFromTheLane`).
 
 **Devices and the Inspector (themes 12, 13).**
-- VST3 and CLAP vendors read "Not reported", because the catalogue carries none.
+- *(Resolved 2026-10-07, plugin-hosting lane.)* VST3 and CLAP vendors no longer read "Not reported". The
+  device picker (the Device panel's Add, the device card's Replace and Insert) shows the vendor the module's
+  own factory reports: a VST3 class's vendor, which the SDK fills from `PFactoryInfo` when the class names
+  none, or a CLAP descriptor's vendor (`include/PluginVendors.h`). A plug-in that reports no vendor still
+  reads "Not reported". `plugin.list` does not carry the vendor, for any format.
 - Channel pan and width still read in the knob's own units.
 - Mixed values cover the selected notes only: the selection holds one clip.
-- The rack's own "Add effect" still uses the older dialog.
+- *(Resolved 2026-10-07, plugin-hosting lane.)* The rack's own "Add effect" (a mixer channel's or an
+  instrument's effect chain) now opens the device picker the Device panel uses. It searches every loadable
+  effect of every format and shows each one's vendor and state. The chosen device is still appended to that
+  rack's chain with its controls opened. A device that can no longer be loaded is now reported, where the old
+  dialog added a placeholder. The older select dialog (`EffectSelectDialog`) is no longer opened from anywhere.
 
 **Mixer (theme 16).**
 - *(Superseded 2026-10-06, `050/feat-meters`: the filter has a "Selected" choice - MX-005, `docs/MIXER-METERING.md` §2.)*

@@ -27,12 +27,14 @@
 
 #include <QApplication>
 #include <QAction>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QVBoxLayout>
 
+#include "ControlDeviceSupport.h"
 #include "DeprecationHelper.h"
-#include "EffectSelectDialog.h"
+#include "DevicePicker.h"
 #include "EffectView.h"
 #include "GroupBox.h"
 
@@ -237,17 +239,23 @@ void EffectRackView::update()
 
 void EffectRackView::addEffect()
 {
-	EffectSelectDialog esd( this );
-	esd.exec();
+	// 0.5.0 plugin-hosting lane: the searchable device picker the Device panel uses (DevicePicker.h) - every
+	// loadable effect of every format, with its vendor and state in words - in place of the older select dialog.
+	// The chosen device is appended to this rack's chain, as before.
+	const QString device = DevicePicker::pick(this, DevicePicker::Kind::Effect, tr("Add effect"));
+	if (device.isEmpty()) { return; }
 
-	if( esd.result() == QDialog::Rejected )
+	ControlDeviceEntry entry;
+	int index = -1;
+	ControlResult error;
+	Effect* fx = controlDeviceById(device, &entry, &index, &error)
+		? controlInstantiateDevice(entry, fxChain(), &error) : nullptr;
+	if (fx == nullptr)
 	{
+		// The picker offers only loadable devices; one whose files went away since it listed them says why.
+		QMessageBox::warning(this, tr("Add effect"), error.errorMessage);
 		return;
 	}
-
-	Effect * fx = esd.instantiateSelectedPlugin( fxChain() );
-
-	fxChain()->appendEffect( fx );
 	update();
 
 	// Find the effectView, and show the controls

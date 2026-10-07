@@ -288,6 +288,19 @@ edited here):
    (`ConfigManager::vstEmbedMethod()`, `src/gui/SubWindow.cpp:175-180`, the `qt5-x11embed`
    sub-module) — useful, but the `I…` plumbing and the run loop still have to be written.
 
+*Update 2026-10-07 (0.5.0 MX-094, plugin-hosting lane).* Point 4's content scale is in
+`Vst3EditorSession` (`plugins/Vst3Effect/Vst3EditorSession.cpp`, `applyScale`). After the view
+is attached, a zoom other than 1 goes to the view's `IPlugViewContentScaleSupport::setContentScaleFactor`.
+The view then asks for its new size through `IPlugFrame::resizeView`. A view without that interface,
+but able to resize, gets the scaled size through its own `checkSizeConstraint`. A view that can do
+neither keeps its own size. At 1 nothing is asked of the view. The zoom is a VST3 *effect's* editor-scale
+option (`plugin.options editor_scale`, `DeviceOptions::editorScale`), read when its editor opens, as the
+CLAP effect host does. Instruments have no such option yet. `Vst3InstrumentTest::testTheEditorOpensAtTheDeviceScale`
+covers both paths against the in-tree fixture, whose view now implements the interface (the
+`VST3_TEST_EDITOR_NO_CONTENT_SCALE` environment variable withholds it).
+`Vst3InstrumentIntegrationTest::testAnEffectsEditorOpensAtItsDeviceScale` covers the product path:
+the vst3effect module hosts the fixture's class and opens its window at 1.5 x 300 = 450 pixels of view.
+
 ---
 
 ## 8. Bugs this slice found in the tree (all fixed, all with a test)

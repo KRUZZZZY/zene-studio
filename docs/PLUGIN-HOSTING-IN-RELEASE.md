@@ -463,3 +463,35 @@ milestone to be re-documented, and the programme is now aiming at beta. For the 
 that that build does not contain, and this file is the correction of record. The beta's
 notes must take their advertised feature list from `tests/advertised-features.tsv`, which
 is what the guard reads, and the beta's build is the first one where that claim is true.
+
+---
+
+## Addendum 2026-10-07: the effect modules had no entry point
+
+Building the modules was not enough. `libvst3effect.so` and `libclapeffect.so` were built and shipped,
+but neither exported `lmms_plugin_main`, the symbol `PluginFactory` resolves in every module
+(`src/core/PluginFactory.cpp`, `loadPluginDescriptor`). The factory therefore recorded both as "not a
+plug-in" (`nm -D --defined-only build/plugins/libvst3effect.so | grep -c lmms_plugin_main` printed 0,
+as it did in the integration and survey build trees). So the release notes' "Modern effects load, run
+and save their state" was true only of the integration tests, which construct the effect classes
+directly. The instrument modules always had the entry point.
+
+Both effect modules now export it (`plugins/Vst3Effect/Vst3Effect.cpp`, `plugins/ClapEffect/ClapEffect.cpp`).
+A class that fails to load answers `nullptr`, so `EffectChain` keeps a saved one as a `DummyEffect`
+that writes its state back, as it did before. The proof is through the surface:
+`ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface` points the plug-in search
+directory at the in-tree VST3 effect fixture (the SDK's gain sample) and at `clap-test-gain`, finds each
+in `plugin.list`, and loads it onto a track with `plugin.load`, hosted by `vst3effect` / `clapeffect`.
+Before the change it failed at the first step: `plugin.list format=vst3 does not carry 'AGain Sample Accurate'`.
+
+### The vendor a hosted class reports (same lane)
+
+The device picker's Vendor column read "Not reported" for every VST3 and CLAP class. The hosts did read
+the vendor (`vst3::listClasses`, `clap::listClasses`), but the catalogue entry had nowhere to carry it.
+The two discovery paths (`Vst3SubPluginFeatures`, `ClapSubPluginFeatures`) now record it in
+`include/PluginVendors.h` as they read each factory, and `devicelabels::vendorOf` shows it. For VST3 it is
+the class's vendor; the SDK's `PluginFactory::classInfos` fills that from `PFactoryInfo` when the class
+names none. For CLAP it is the descriptor's `vendor`. It is kept out of the sub-plug-in key on purpose.
+The key's attributes are saved in projects and name the organiser's favourites, so a vendor added there
+would change both. Test: `ControlDeviceCatalogueTest::hostedVendorsAreTheFactoriesOwn` (red: "Not
+reported" where the fixture's factory says "Zene Studio test fixture").
