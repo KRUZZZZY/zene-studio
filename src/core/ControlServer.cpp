@@ -424,9 +424,6 @@ bool ControlServer::sendBytes(int fd, const QByteArray& bytes)
 #else
 	const auto it = m_clients.find(fd);
 	if (it == m_clients.end()) { return false; }
-	// An oversized reply can leave a tail larger than the cap on its very first
-	// partial write, before there is an existing queue to check.
-	if (bytes.size() > MaxQueuedReplyBytes) { return false; }
 	if (!it->pending.isEmpty())
 	{
 		// A line written earlier is still on its way to the peer: it must stay
@@ -445,6 +442,7 @@ bool ControlServer::sendBytes(int fd, const QByteArray& bytes)
 		// The peer's buffer is full: normal flow control, not a failure. Keep
 		// the tail - whole bytes, so the line stays intact - and finish it when
 		// the socket says it can take more.
+		if (bytes.size() - written > MaxQueuedReplyBytes) { return false; }
 		it->pending = bytes.mid(written);
 		it->writeNotifier->setEnabled(true);
 	}

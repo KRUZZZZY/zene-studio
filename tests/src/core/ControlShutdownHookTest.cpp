@@ -60,6 +60,7 @@
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -258,8 +259,78 @@ private slots:
 		const qint64 expectedBytes = exchanged.first().at(1).toByteArray().size() + 1;
 		const ReplyDrain drain = drainReplyUntilClosedOrComplete(client.fd, expectedBytes);
 		QVERIFY2(!drain.failed, "reading the oversized reply failed");
-		QVERIFY2(drain.closed && drain.bytes < expectedBytes,
-			"the server sent a complete oversized reply instead of retiring the client");
+		QVERIFY2(drain.closed && drain.bytes > 0 && drain.bytes < expectedBytes,
+			"the server did not retire the client after sending a prefix with an over-cap tail");
+#endif
+	}
+
+	//! A reply may exceed the cap when its first write leaves a bounded tail.
+	void aLargeReplyWithBoundedTailIsSentCompletely()
+	{
+#if !defined(Q_OS_UNIX)
+		QSKIP("the control socket is AF_UNIX only; listen() refuses on this platform");
+#else
+		ControlRegistry::setReady(true);
+		ReadyStateReset readyStateReset;
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString payload(ControlServer::MaxQueuedReplyBytes + 1024,
+			QLatin1Char('x'));
+		ControlCommand command;
+		command.id = QStringLiteral("test.bounded_tail_reply");
+		command.group = QStringLiteral("test");
+		command.verb = QStringLiteral("bounded_tail_reply");
+		command.description = QStringLiteral("test reply larger than the socket queue cap");
+		command.requiresEngine = false;
+		command.resultSchema = QJsonObject{
+			{QStringLiteral("type"), QStringLiteral("object")},
+			{QStringLiteral("required"), QJsonArray{QStringLiteral("payload")}},
+			{QStringLiteral("properties"), QJsonObject{
+				{QStringLiteral("payload"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")}}}}}};
+		command.handler = [payload](const QJsonObject&) {
+			return ControlResult::success(QJsonObject{{QStringLiteral("payload"), payload}});
+		};
+		registry->registerCommand(command);
+
+		QTemporaryDir dir(QDir::tempPath() + QStringLiteral("/zene-reply-XXXXXX"));
+		QVERIFY2(dir.isValid(), "no temporary directory for the socket path");
+		const QString path = dir.filePath(QStringLiteral("bounded-tail-reply.sock"));
+		ControlServer server(registry);
+		QString error;
+		QVERIFY2(server.listen(path, &error), qPrintable(error));
+		QSignalSpy exchanged(&server, &ControlServer::exchanged);
+		QVERIFY(exchanged.isValid());
+
+		TestSocket client;
+		client.fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+		QVERIFY(client.fd >= 0);
+		int receiveBufferBytes = 128 * 1024;
+		QVERIFY(::setsockopt(client.fd, SOL_SOCKET, SO_RCVBUF, &receiveBufferBytes,
+			sizeof(receiveBufferBytes)) == 0);
+		sockaddr_un address{};
+		address.sun_family = AF_UNIX;
+		const QByteArray nativePath = QFile::encodeName(path);
+		QVERIFY(nativePath.size() < static_cast<qsizetype>(sizeof(address.sun_path)));
+		std::memcpy(address.sun_path, nativePath.constData(), static_cast<size_t>(nativePath.size() + 1));
+		QVERIFY(::connect(client.fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
+		const int flags = ::fcntl(client.fd, F_GETFL, 0);
+		QVERIFY(flags >= 0);
+		QVERIFY(::fcntl(client.fd, F_SETFL, flags | O_NONBLOCK) == 0);
+		const QByteArray request =
+			"{\"id\":1,\"cmd\":\"test.bounded_tail_reply\"}\n";
+		QCOMPARE(::write(client.fd, request.constData(), static_cast<size_t>(request.size())),
+			static_cast<ssize_t>(request.size()));
+		QTRY_COMPARE_WITH_TIMEOUT(exchanged.count(), 1, 10000);
+		const qint64 expectedBytes = exchanged.first().at(1).toByteArray().size() + 1;
+		QVERIFY(expectedBytes > ControlServer::MaxQueuedReplyBytes);
+		int bufferedBytes = 0;
+		QVERIFY(::ioctl(client.fd, FIONREAD, &bufferedBytes) == 0);
+		QVERIFY(static_cast<qint64>(bufferedBytes) >
+			expectedBytes - ControlServer::MaxQueuedReplyBytes);
+		QVERIFY(static_cast<qint64>(bufferedBytes) < expectedBytes);
+		const ReplyDrain drain = drainReplyUntilClosedOrComplete(client.fd, expectedBytes);
+		QVERIFY2(!drain.failed, "reading the bounded-tail oversized reply failed");
+		QVERIFY2(!drain.closed && drain.bytes == expectedBytes,
+			"the server dropped an oversized reply even though its queued tail fit the cap");
 #endif
 	}
 
