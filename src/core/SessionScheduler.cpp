@@ -437,10 +437,13 @@ bool SessionScheduler::trackIsSessionActive( int track ) const noexcept
 	for( const auto& slot : m_active )
 	{
 		// StopPending counts as active: the clip has not stopped yet, so the
-		// track is still taken over until the scheduled stop fires.
+		// track is still taken over until the scheduled stop fires. A pending
+		// retrigger also retains the current take until its grid line.
 		if( slot.track == track
 			&& ( slot.state.phase == SlotPhase::Playing
-				|| slot.state.phase == SlotPhase::StopPending ) )
+				|| slot.state.phase == SlotPhase::StopPending
+				|| ( slot.state.phase == SlotPhase::LaunchPending
+					&& slot.state.startCount > 0 ) ) )
 		{
 			return true;
 		}

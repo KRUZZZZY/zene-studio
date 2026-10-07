@@ -86,6 +86,23 @@ private slots:
 		QVERIFY( !scheduler.playbackForColumn( 3 ).playing );
 	}
 
+	void aTriggerRetriggerKeepsTakingOverItsColumnUntilTheGridLine()
+	{
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger,
+			LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QVERIFY( scheduler.trackIsSessionActive( 0 ) );
+
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger,
+			LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( 100 ), kFramesPerPeriod );
+
+		QCOMPARE( scheduler.slotPhase( 0, 0 ), SlotPhase::LaunchPending );
+		QVERIFY2( scheduler.trackIsSessionActive( 0 ),
+			"a pending retrigger released arrangement takeover before its grid line" );
+	}
+
 	//! The control: an EMPTY cell takes its column over and holds nothing.
 	void anEmptyCellStillTakesItsColumnOverAndHoldsNothing()
 	{
