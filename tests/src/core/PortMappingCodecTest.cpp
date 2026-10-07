@@ -154,7 +154,7 @@ private slots:
 		connect(&m_gateway, &QUdpSocket::readyRead, this, &PortMappingCodecTest::answer);
 	}
 
-	void init() { m_requests.clear(); }
+	void init() { m_requests.clear(); m_held.clear(); m_hold = false; }
 
 	//! Byte-exact NAT-PMP requests (RFC 6886 3.2 / 3.3) and a decoded mapping response.
 	void natPmpEncodeDecode()
@@ -239,6 +239,10 @@ private slots:
 		mapper.setClientAddress(QHostAddress(QStringLiteral("192.168.1.20")));
 		mapper.setRetrySchedule({100, 100});
 		QSignalSpy finished(&mapper, &PmpMapper::finished);
+		auto* originalSocket = mapper.findChild<QUdpSocket*>();
+		QVERIFY(originalSocket);
+		bool originalSocketDestroyed = false;
+		connect(originalSocket, &QObject::destroyed, this, [&originalSocketDestroyed] { originalSocketDestroyed = true; });
 		mapper.map(41740, 41740, 7200);  // attempt 1: PCP request, its reply held back
 		finished.wait(10);  // let the queued request reach the gateway
 		QCOMPARE(m_held.size(), 1);
@@ -246,23 +250,28 @@ private slots:
 		finished.wait(10);
 		releaseReply(0);  // the address reply -> PmpMap; the map reply for 41740 is held
 		finished.wait(10);
-		mapper.map(41741, 41741, 7200);  // restart while attempt 1 still waits for its map reply
+		mapper.map(41740, 41740, 7200);  // restart with identical parameters while attempt 1 waits for its map reply
 		finished.wait(10);
-		QCOMPARE(m_held.size(), 2);  // the stale map reply for 41740 plus attempt 2's pmpOnly
+		QVERIFY(originalSocketDestroyed);  // restart replaces the bound endpoint instead of reusing its socket
+		QCOMPARE(m_held.size(), 2);  // the stale map reply plus attempt 2's pmpOnly
+		const HeldReply staleMap = m_held.at(0);
+		const HeldReply freshPcp = m_held.at(1);
+		QVERIFY(staleMap.target != freshPcp.target || staleMap.port != freshPcp.port);
 		releaseReply(1);  // attempt 2's "unsupported version" -> PmpAddress
 		finished.wait(10);
 		releaseReply(1);  // attempt 2's address reply -> PmpMap
 		finished.wait(10);
-		releaseReply(0);  // the stale map reply for 41740 arrives first
+		releaseReply(0);  // the stale map reply arrives first
 		finished.wait(10);
-		releaseReply(0);  // attempt 2's own map reply for 41741
+		QCOMPARE(finished.count(), 0);  // stale reply must not finish the identical new mapping
+		releaseReply(0);  // attempt 2's own map reply
 		finished.wait(10);
 		m_hold = false;
 		QCOMPARE(finished.count(), 1);
 		const MappingResult result = finished.first().first().value<MappingResult>();
 		QVERIFY(result.ok);
 		QCOMPARE(result.method, QStringLiteral("nat-pmp"));
-		QCOMPARE(result.externalPort, quint16(40001));  // the fresh reply's port, never the stale 40000
+		QCOMPARE(result.externalPort, quint16(40000));
 	}
 
 	void gatewayFromRecordedRouteTable()
