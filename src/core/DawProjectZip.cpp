@@ -181,14 +181,21 @@ QString containerRefusal(const std::vector<DawProjectEntry>& entries)
 	return {};
 }
 
-//! Why the local records assembled so far are already past what the central
-//! directory's 32-bit offset can address, or an empty string when they fit.
-QString assembledRefusal(const QByteArray& file)
+//! Why the complete archive would exceed the size this module's reader supports.
+QString archiveSizeRefusal(const std::vector<DawProjectEntry>& entries)
 {
-	if (file.size() > MaxU32)
+	qint64 archiveSize = EndOfCentralSize;
+	const qint64 readerLimit = std::numeric_limits<int>::max();
+	for (const DawProjectEntry& entry : entries)
 	{
-		return QStringLiteral("the container would already be %1 bytes before its central "
-			"directory, past the %2 a classic ZIP can address").arg(file.size()).arg(MaxU32);
+		const qint64 nameSize = entry.first.toUtf8().size();
+		archiveSize += LocalHeaderSize + nameSize + entry.second.size();
+		archiveSize += CentralHeaderSize + nameSize;
+		if (archiveSize > readerLimit)
+		{
+			return QStringLiteral("the container would be %1 bytes, past this reader's %2-byte "
+				"size limit").arg(archiveSize).arg(readerLimit);
+		}
 	}
 	return {};
 }
@@ -295,6 +302,12 @@ bool dawProjectZipWrite(const QString& path, const std::vector<DawProjectEntry>&
 		if (error) { *error = tooMany; }
 		return false;
 	}
+	const QString tooBig = archiveSizeRefusal(entries);
+	if (!tooBig.isEmpty())
+	{
+		if (error) { *error = tooBig; }
+		return false;
+	}
 
 	QByteArray file;
 	QVector<quint32> offsets;
@@ -322,15 +335,8 @@ bool dawProjectZipWrite(const QString& path, const std::vector<DawProjectEntry>&
 		file.append(body);
 	}
 
-	// Every offset above, and the central directory's own offset and size, are
-	// 32-bit fields, so the archive has to fit before the directory is built.
-	const QString tooBig = assembledRefusal(file);
-	if (!tooBig.isEmpty())
-	{
-		if (error) { *error = tooBig; }
-		return false;
-	}
-
+	// The size preflight includes the complete central directory and end record,
+	// so this offset fits the int range used by the reader.
 	const int centralOffset = file.size();
 	for (int index = 0; index < static_cast<int>(entries.size()); index++)
 	{
