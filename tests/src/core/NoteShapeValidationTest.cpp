@@ -1,6 +1,6 @@
 /*
  * NoteShapeValidationTest.cpp - what the note-shape verbs REFUSE: a note that would end past
- *                               the song limit, a filter field of the wrong type, an amount the
+ *                               the song limit, malformed or unknown filter fields, an amount the
  *                               handler cannot hold, and the selection store after select_where.
  *
  * Copyright (c) 2026 Zene Studio contributors
@@ -171,6 +171,17 @@ private slots:
 		QCOMPARE(transform({{QStringLiteral("key_max"), 61}}, "remove"), ControlErrorKind::None);
 		const QStringList survivors{before.at(2)};
 		QCOMPARE(noteIds(), survivors);
+	}
+
+	//! Luna cluster new-p8-37: an unknown filter key such as key_mni was ignored, leaving an empty
+	//! filter that matched every note and let action: remove erase the clip.
+	void anUnknownFilterKeyIsRefusedWithoutRemovingNotes()
+	{
+		freshClip();
+		const QStringList before = noteIds();
+
+		QCOMPARE(transform({{QStringLiteral("key_mni"), 60}}, "remove"), ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteIds(), before);
 	}
 
 	//! Luna cluster 2877: 'amount' carried no bound, so a value outside int was narrowed to 0

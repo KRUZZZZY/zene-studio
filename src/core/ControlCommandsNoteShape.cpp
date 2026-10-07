@@ -32,6 +32,7 @@
 #include <limits>
 
 #include <QJsonArray>
+#include <QStringList>
 
 #include "ClipLinks.h"
 #include "ControlCommandsNoteShared.h"
@@ -295,10 +296,27 @@ bool readScale(const QJsonValue& value, NoteTransform::Filter* f, ControlResult*
 	return true;
 }
 
-//! The `filter` object as a NoteTransform::Filter: {key,velocity,position,length}_{min,max} (an absent
-//! bound is open), `scale` "in" / "out" (the scale context's pitch classes) and `invert`.
+//! Filter keys are limited to the documented bounds, scale, and invert fields.
+bool readFilterKeys(const QJsonObject& json, ControlResult* error)
+{
+	static const QStringList recognized{
+		QStringLiteral("key_min"), QStringLiteral("key_max"), QStringLiteral("velocity_min"), QStringLiteral("velocity_max"),
+		QStringLiteral("position_min"), QStringLiteral("position_max"), QStringLiteral("length_min"), QStringLiteral("length_max"),
+		QStringLiteral("scale"), QStringLiteral("invert")};
+	for (auto it = json.constBegin(); it != json.constEnd(); ++it)
+	{
+		const QString& key = it.key();
+		if (recognized.contains(key)) { continue; }
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("unknown filter field '%1'").arg(key));
+		return false;
+	}
+	return true;
+}
+
 bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
 {
+	if (!readFilterKeys(json, error)) { return false; }
 	if (!readRanges(json, f))
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number (a JSON number)"));
