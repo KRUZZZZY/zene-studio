@@ -44,6 +44,7 @@
 #include "Note.h"
 #include "NoteConditions.h"
 #include "NotePlayHandle.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -294,6 +295,21 @@ private slots:
 		QCOMPARE(m_clip->notes().back()->conditions().group, 0);
 		QCOMPARE(run(QStringLiteral("note.group"), {{QStringLiteral("clip"), clip}, {QStringLiteral("scope"), QStringLiteral("clip")}}).result
 			.value(QStringLiteral("group")).toInt(), 1);
+	}
+
+	void emptyPerNoteLyricsDoNotCreateAnUndoStep()
+	{
+		oneNote();
+		const QString clip = control::clipIdOf(m_clip);
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+
+		const ControlResult result = run(QStringLiteral("note.lyrics"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("lyrics"), QJsonArray{}}});
+		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		QCOMPARE(result.result.value(QStringLiteral("set")).toInt(), 0);
+		QCOMPARE(journal->undoDepth(), depthBefore);
 	}
 };
 

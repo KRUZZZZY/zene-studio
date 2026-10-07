@@ -84,6 +84,7 @@ ControlResult lyricsByNote(MidiClip* clip, const ClipRef& ref, const QJsonArray&
 		if (note == nullptr) { return error; }
 		writes.emplace_back(note, value.toObject().value(QStringLiteral("text")).toString());
 	}
+	if (writes.empty()) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("set"), 0}}); }
 	clip->addJournalCheckPoint();
 	for (const auto& [note, text] : writes) { setLyric(note, text); }
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.lyrics"), {{QStringLiteral("set"), static_cast<int>(writes.size())}}));
