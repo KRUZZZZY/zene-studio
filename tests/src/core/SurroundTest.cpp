@@ -230,6 +230,32 @@ private slots:
 		QVERIFY(outputAt(back, 4, Panned * Root) && outputAt(back, 5, Panned * Root) && outputAt(back, 2, 0.f));
 	}
 
+	void aSideChannelPanFollowsItsValueBuffer()
+	{
+		Mixer* mixer = Engine::mixer();
+		route51Bus(*mixer);
+		QVERIFY(pan(1, 1.0, -1.0));  // a steady signal on the bus's right surround
+		FloatModel& sidePan = mixer->mixerChannel(3)->m_panModel;
+		sidePan.setValue(0.f);
+		period(mixer);  // settle the centred value before moving it
+
+		sidePan.setValue(-1.f);
+		const ValueBuffer* panValues = sidePan.valueBuffer();
+		QVERIFY(panValues != nullptr);
+		const std::vector<SampleFrame> moving = period(mixer);
+		int mismatches = 0;
+		for (f_cnt_t f = 0; f < static_cast<f_cnt_t>(moving.size()); ++f)
+		{
+			const float expected = Panned * (1.f + panValues->values()[f]);
+			mismatches += std::abs(bus().sample(5, f, moving[f]) - expected) > 1e-5f;
+		}
+		QCOMPARE(mismatches, 0);
+		QVERIFY(bus().sample(5, 0, moving[0]) > bus().sample(5, moving.size() - 1, moving.back()));
+
+		sidePan.setValue(0.f);
+		period(mixer);
+	}
+
 	void theDownmixFollowsBs775()
 	{
 		using surround::Format;
