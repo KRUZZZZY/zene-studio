@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T17:22:52Z",
+  "captured_at": "2026-10-07T10:46:43Z",
   "commands": [
     {
       "args_schema": {
@@ -33591,7 +33591,8 @@
               "detail",
               "devices",
               "inspector",
-              "browser"
+              "browser",
+              "perform"
             ],
             "type": "string"
           }
@@ -33601,7 +33602,7 @@
         ],
         "type": "object"
       },
-      "description": "Show or hide one shell panel or floating window - the View menu, the footer's panel buttons and Tools menu, a region's tabs, Alt+I/B/D/E/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name (song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window (controller_rack, project_notes, microtuner, classic_piano_roll). A panel shares its region with others, so showing it hides the region's previous panel; a view's main panel cannot be hidden (it stays visible); a panel the current view does not offer is revealed by switching to the Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a window), `view` the view afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
+      "description": "Show or hide one shell panel or floating window - the View menu, the footer's panel buttons and Tools menu, a region's tabs, Alt+I/B/D/E/M/A/P/L, the MDI-era Ctrl+1..7 and Edit > Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name (song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window (controller_rack, project_notes, microtuner, classic_piano_roll, perform - perform mode, the launcher's live show window). A panel shares its region with others, so showing it hides the region's previous panel; a view's main panel cannot be hidden (it stays visible); a panel the current view does not offer is revealed by switching to the Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a window), `view` the view afterwards. Interface state, not project state: nothing is journalled. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.toggle",
       "mutating": false,
@@ -34001,11 +34002,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
-    "lane_head": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-launcher-perform",
+    "lane_head": "6d1a1143d032d7ee6d3ceb03caa5f0e41a17245a",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-4g8c9srg/zene.sock",
-    "version": "0.4.0-alpha.114+9a9f339"
+    "source_socket": "/tmp/zctl-run-5086c7vq/zene.sock",
+    "version": "0.4.0-alpha.333+6d1a114"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

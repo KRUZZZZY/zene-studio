@@ -33,6 +33,7 @@
 #include "GuiApplication.h"
 #include "MainWindow.h"
 #include "MicrotunerConfig.h"
+#include "PerformView.h"
 #include "PianoRoll.h"
 #include "ProjectNotes.h"
 #include "SampleEditorDialog.h"
@@ -57,6 +58,7 @@ struct EditorEntry
 	const char* panel;                         //!< shell panel id, or nullptr for a window
 	QWidget* (*window)(gui::GuiApplication*);  //!< the floating window, when not a panel
 	void (gui::MainWindow::*toggle)();
+	void (*toggleWindow)() = nullptr;          //!< a window that is not MainWindow's: its own toggle
 };
 
 const EditorEntry kEditors[] = {
@@ -83,6 +85,9 @@ const EditorEntry kEditors[] = {
 	{"devices", "devices", nullptr, nullptr},
 	{"inspector", "inspector", nullptr, nullptr},
 	{"browser", "browser", nullptr, nullptr},
+	// 0.5.0 L02 (WF-071): perform mode, the launcher's live show window (PerformView.h).
+	{"perform", nullptr, [](gui::GuiApplication*) -> QWidget* { return gui::PerformView::instance(false); }, nullptr,
+		&gui::PerformView::toggle},
 };
 
 const EditorEntry* findEditor(const QString& name)
@@ -131,6 +136,7 @@ ControlResult toggle(const QJsonObject& args)
 	const EditorEntry* entry = findEditor(args.value(QStringLiteral("editor")).toString());
 	if (entry == nullptr) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("unknown editor")); }
 	if (entry->panel != nullptr) { g->mainWindow()->togglePanel(QLatin1String(entry->panel)); }
+	else if (entry->toggleWindow != nullptr) { entry->toggleWindow(); }
 	else { (g->mainWindow()->*entry->toggle)(); }
 	QJsonObject state = editorState(g, *entry);
 	state.insert(QStringLiteral("view"), gui::ShellLayout::viewName(g->mainWindow()->shell()->model().view()));
@@ -204,7 +210,8 @@ void registerWindowCommands(ControlRegistry& registry)
 			"Scales and keymaps dispatch exactly this. `editor` is a panel id (arranger, launcher, "
 			"detail, devices, inspector, browser, mixer, automation, pattern), a 0.4.0 editor name "
 			"(song = arranger, piano_roll = detail, clip_launcher = launcher), or a floating window "
-			"(controller_rack, project_notes, microtuner, classic_piano_roll). A panel shares its region with others, so "
+			"(controller_rack, project_notes, microtuner, classic_piano_roll, perform - perform mode, the launcher's live show "
+			"window). A panel shares its region with others, so "
 			"showing it hides the region's previous panel; a view's main panel cannot be hidden (it "
 			"stays visible); a panel the current view does not offer is revealed by switching to the "
 			"Arrange view. `visible` is the state afterwards, `panel` the panel id (empty for a "

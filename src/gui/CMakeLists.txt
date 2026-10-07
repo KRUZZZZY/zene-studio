@@ -121,6 +121,7 @@ SET(LMMS_SRCS
 	gui/SessionGridDrop.cpp
 	gui/SessionSyncAction.cpp
 	gui/SessionTransportBar.cpp
+	gui/PerformView.cpp
 	gui/ShortcutsPage.cpp
 	gui/StartHub.cpp
 	gui/TakeLanesPanel.cpp

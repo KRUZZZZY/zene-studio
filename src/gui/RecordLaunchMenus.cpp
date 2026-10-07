@@ -154,6 +154,8 @@ void fillLauncher(QMenu* menu)
 	followSceneCount(menu, scenes);
 	run(menu, QObject::tr("Stop All Clips"), QStringLiteral("session.stop_all"));
 	run(menu, QObject::tr("Record What I Played Into a Cell..."), QStringLiteral("session.capture_to_slot"), {}, true);
+	// WF-071: perform mode, the launcher's live show window.
+	run(menu, QObject::tr("Perform Mode"), QStringLiteral("window.toggle"), {{QStringLiteral("editor"), QStringLiteral("perform")}});
 	menu->addSeparator();
 	QMenu* controller = menu->addMenu(QObject::tr("Controller"));
 	run(controller, QObject::tr("Connect..."), QStringLiteral("session.bindings_connect"), {}, true);

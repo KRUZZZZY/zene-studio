@@ -529,6 +529,7 @@ include/PatternTrackView.h
 include/PeakController.h
 include/PeakIndicator.h
 include/PerfLog.h
+include/PerformView.h
 include/Piano.h
 include/PianoRoll.h
 include/PianoView.h
@@ -2105,6 +2106,7 @@ src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/ParameterGridDialog.cpp
 src/gui/PeakControllerDialog.cpp
+src/gui/PerformView.cpp
 src/gui/PinConnector.cpp
 src/gui/PluginBrowser.cpp
 src/gui/PluginNativeEditor.cpp
@@ -2620,6 +2622,7 @@ tests/src/gui/NoteEditorFlTest.cpp
 tests/src/gui/NoteEditorTest.cpp
 tests/src/gui/NoteGridTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
+tests/src/gui/PerformViewTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/RackMenuTest.cpp

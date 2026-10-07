@@ -68,6 +68,7 @@
 #include "InspectorPanel.h"
 #include "MicrotunerConfig.h"
 #include "SessionGridView.h"
+#include "PerformView.h"
 #include "MidiLearnGui.h"
 #include "MpeInputAction.h"
 #include "CrashReportMenu.h"
@@ -135,6 +136,7 @@ QWidget* floatingWindow(const QString& editor)
 	if (editor == QLatin1String("project_notes")) { return gui->getProjectNotes(); }
 	if (editor == QLatin1String("microtuner")) { return gui->getMicrotunerConfig(); }
 	if (editor == QLatin1String("classic_piano_roll")) { return gui->pianoRoll(); }
+	if (editor == QLatin1String("perform")) { return PerformView::instance(false); }  // 0.5.0 WF-071
 	return nullptr;
 }
 
@@ -1249,6 +1251,7 @@ const QList<QAction*>& MainWindow::floatingWindowActions()
 		{"project_notes", tr("Project Notes"), "project_notes", keySequence(Qt::CTRL, Qt::Key_7)},
 		{"microtuner", tr("Scales and Keymaps"), "microtuner", QKeySequence()},
 		{"piano", tr("Classic Piano Roll"), "classic_piano_roll", QKeySequence()},
+		{"play", tr("Perform Mode"), "perform", QKeySequence()},  // 0.5.0 WF-071: the launcher's live show window
 	};
 	for (const Row& row : rows)
 	{

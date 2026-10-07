@@ -2333,3 +2333,28 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 - Theme changes apply at the next start, and every reply and the window say so.
 - The plug-in scan, `render.render`, `render.stems` and `browser.peaks` stay synchronous and are not in the task area.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
+
+
+## 0.5.0 launcher in performance — perform mode and sub-scenes (lane launcher-perform, 2026-10-07)
+
+**Perform mode (WF-071).** View > Perform Mode and Launcher > Perform Mode (`window.toggle` 'perform') open
+`PerformView`: the setlist's song and the next one, transport and tempo, the playing scene and the next, one big
+button per scene, each column's playing cell and a large Stop All - every press a registered command
+(`PerformViewTest`). What it does not do:
+- Its keys (1-9, Up/Down, Enter, Space, Escape, Page Up/Down) are the window's own and cannot be rebound: the
+  shortcut map (`shortcuts.set`) binds main-window menu actions only. Launcher > Launch Scene 1-8 and Stop All
+  Clips remain rebindable there.
+- MIDI learn reaches what the launcher's controller bindings can do - launch a scene, stop everything
+  (`session.bind_learn`). "Select the next scene", "launch the selected scene", play/stop, tempo and the song
+  steps cannot be bound to a note.
+- Keys 1-9 reach only the first nine scenes; past them, Up/Down and Enter (the scene list scrolls to the
+  selected scene).
+- It does not remember its place or size (`ToolWindowMemory` does not know it), and it is not in the footer's
+  Tools menu.
+- The bar and beat it shows assume four beats of 48 ticks to the bar; a scene's own time signature is not
+  reflected there.
+- Found while testing it: `transport.set_tempo` is undone through a Song checkpoint, which rebuilds the tracks,
+  and each track's view is made by a queued call. Two such undos in one turn of the event loop, with the
+  interface up, crashed in `TrackContainerView::createTrackView` (on a track the second restore had deleted).
+  The application's event loop runs between two presses, so the test lets it run too; the hazard itself is not
+  fixed here.
