@@ -155,7 +155,13 @@ ControlResult movePoint(const QJsonObject& args)
 	const float old = clip->getTimeMap().value(TimePos(ticks)).getInValue();
 	const auto to = toSong - origin;
 	const double value = args.value(QStringLiteral("new_value")).toDouble(parameter.model->scaledValue(old));
-	if (value < parameter.model->minValue<float>() || value > parameter.model->maxValue<float>() || to < 0)
+	if (to < 0)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("destination tick %1 is before automation clip start at %2")
+				.arg(static_cast<qint64>(toSong)).arg(static_cast<qint64>(origin)));
+	}
+	if (value < parameter.model->minValue<float>() || value > parameter.model->maxValue<float>())
 	{
 		return automatableRangeRefusal(parameter.model, value);
 	}
