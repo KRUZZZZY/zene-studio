@@ -4,6 +4,19 @@
 
 `plugin.load` replaces the current instrument, but its transaction marked the operation snapshot-only and still advertised a `plugin.load` inverse with no required `device` argument. Replaying that inverse was rejected by the command schema before the handler ran. The transaction now records an empty inverse because it does not preserve the previous instrument's resolvable device id or parameter state.
 
+## Evidence table
+
+| Check | Exact command | Result |
+|---|---|---|
+| RED before fix | `ctest -R ReversibilityUndoTest --output-on-failure --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-26.r1/logs/test-3.log 2>&1; echo EXIT=$?` | Exit 8; inverse replay refused for missing `device`. |
+| GREEN after fix | `ctest -R ReversibilityUndoTest --output-on-failure --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-26.r1/logs/test-4.log 2>&1; echo EXIT=$?` | Exit 0; 1/1 CTest passed. |
+| Fix-removal proof | `ctest -R ReversibilityUndoTest --output-on-failure --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-26.r1/logs/test-5.log 2>&1; echo EXIT=$?` | Exit 8; same missing-`device` failure after removing the fix. |
+| Reapplied-fix proof | `ctest -R ReversibilityUndoTest --output-on-failure --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-26.r1/logs/test-6.log 2>&1; echo EXIT=$?` | Exit 0; 1/1 CTest passed. |
+| Affected family | `ctest -R ReversibilityUndoTest --output-on-failure --verbose` from `build/tests` | 1/1 CTest executed; final QtTest totals 10 passed, 0 failed, 2 skipped. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-26.r1/logs/gate-1.log 2>&1; echo EXIT=$?` | Exit 0. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-26.r1/logs/gate-2.log 2>&1; echo EXIT=$?` | Exit 0. |
+| Files committed | `src/core/ControlCommandsPlugin.cpp`; `tests/src/core/ReversibilityUndoTest.cpp`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p8-26.md` | Fix commit `9ffe284d6`; report table added in the follow-up documentation commit. |
+
 ## Evidence
 
 - [ControlCommandsPlugin.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-26/src/core/ControlCommandsPlugin.cpp:234): instrument replacement records an empty `inverse`; the transaction remains `reversible: false`.
