@@ -95,8 +95,15 @@ bool ImportFilter::tryImportFile( const QString & fileToImport, TrackContainer* 
 	s.detach();
 
 	// do not record changes while importing files
-	const bool j = Engine::projectJournal()->isJournalling();
-	Engine::projectJournal()->setJournalling( false );
+	ProjectJournal* journal = Engine::projectJournal();
+	const bool j = journal->isJournalling();
+	struct JournallingRestore
+	{
+		ProjectJournal* journal;
+		bool previousState;
+		~JournallingRestore() { journal->setJournalling( previousState ); }
+	} restore{ journal, j };
+	journal->setJournalling( false );
 
 	for (const Plugin::Descriptor* desc : getPluginFactory()->descriptors(Plugin::Type::ImportFilter))
 	{
@@ -109,7 +116,6 @@ bool ImportFilter::tryImportFile( const QString & fileToImport, TrackContainer* 
 		}
 	}
 
-	Engine::projectJournal()->setJournalling( j );
 	return successful;
 }
 
