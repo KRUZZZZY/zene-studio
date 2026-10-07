@@ -262,6 +262,36 @@ private slots:
 		QCOMPARE(notes[2].position, 96);
 	}
 
+	void theTrackUsesClipLocalPositionsAfterSlip()
+	{
+		QVERIFY(run(QStringLiteral("chord.set"),
+			{{QStringLiteral("pos"), 600}, {QStringLiteral("chord"), QStringLiteral("Major")},
+				{QStringLiteral("root"), 0}, {QStringLiteral("octave"), 4}}).ok);
+
+		const ControlResult track = run(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY2(track.ok, qPrintable(track.errorMessage));
+		const ControlResult created = run(QStringLiteral("clip.add"),
+			{{QStringLiteral("track"), track.result.value(QStringLiteral("track"))},
+				{QStringLiteral("position"), 384}});
+		QVERIFY2(created.ok, qPrintable(created.errorMessage));
+		const QString clip = created.result.value(QStringLiteral("clip")).toString();
+
+		const ControlResult slipped = run(QStringLiteral("clip.slip"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("offset"), 120}});
+		QVERIFY2(slipped.ok, qPrintable(slipped.errorMessage));
+		const ControlResult written = run(QStringLiteral("chord.track_write"),
+			{{QStringLiteral("clip"), clip}});
+		QVERIFY2(written.ok, qPrintable(written.errorMessage));
+
+		const QVector<NoteAt> notes = notesOf(clip);
+		QCOMPARE(notes.size(), 3);
+		// The note origin is arrangement start 384 plus slip offset 120.
+		QCOMPARE(notes[0].position, 96);
+		QCOMPARE(notes[1].position, 96);
+		QCOMPARE(notes[2].position, 96);
+	}
+
 	/*! The track is PROJECT state: it is written into the project file when it
 	 *  holds a chord, restored when the file is loaded, and - the load-bearing
 	 *  half - a project that holds none carries NO element, so the bytes a
