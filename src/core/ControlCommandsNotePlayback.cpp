@@ -78,11 +78,24 @@ ControlResult lyricsByNote(MidiClip* clip, const ClipRef& ref, const QJsonArray&
 	std::vector<std::pair<Note*, QString>> writes;
 	for (const QJsonValue& value : lyrics)
 	{
+		if (!value.isObject())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("each lyric entry must be an object with string 'note' and 'text' fields"));
+		}
+		const QJsonObject entry = value.toObject();
+		const QJsonValue noteId = entry.value(QStringLiteral("note"));
+		const QJsonValue text = entry.value(QStringLiteral("text"));
+		if (!noteId.isString() || !text.isString())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("each lyric entry needs string 'note' and 'text' fields"));
+		}
 		ControlResult error;
 		int index = -1;
-		Note* note = resolveNote(clip, value.toObject().value(QStringLiteral("note")).toString(), &index, &error);
+		Note* note = resolveNote(clip, noteId.toString(), &index, &error);
 		if (note == nullptr) { return error; }
-		writes.emplace_back(note, value.toObject().value(QStringLiteral("text")).toString());
+		writes.emplace_back(note, text.toString());
 	}
 	if (writes.empty()) { return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("set"), 0}}); }
 	clip->addJournalCheckPoint();
