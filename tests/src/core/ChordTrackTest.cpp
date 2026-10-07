@@ -314,6 +314,34 @@ private slots:
 			"a new project inherited the previous project's chord track");
 	}
 
+	/*! A malformed follower track ID is SKIPPED, not track 0: the same rule the
+	 *  malformed event numbers follow - a number that does not parse is not a
+	 *  zero, and 0 is a perfectly valid track ID, so defaulting would silently
+	 *  make the first track follow the scale. */
+	void malformedFollowerTrackIdsAreSkipped()
+	{
+		ChordTrack track;
+		QDomDocument document;
+		QVERIFY(document.setContent(QStringLiteral(
+			"<chord-track><follow track=\"garbage\" mode=\"scale\"/></chord-track>")));
+		QVERIFY(track.loadSettings(document.documentElement()));
+		QVERIFY2(track.followers().empty(),
+			"a malformed follower track ID became track 0");
+		QCOMPARE(track.followOf(0), ChordFollowMode::Off);
+
+		// The neighbours of a malformed follower are still read: one bad element
+		// must not cost the whole track.
+		QDomDocument mixed;
+		QVERIFY(mixed.setContent(QStringLiteral(
+			"<chord-track><follow track=\"3\" mode=\"chord\"/><follow track=\"nope\" mode=\"scale\"/>"
+			"<follow track=\"5\" mode=\"scale\"/></chord-track>")));
+		QVERIFY(track.loadSettings(mixed.documentElement()));
+		QCOMPARE(track.followers().size(), 2);
+		QCOMPARE(track.followOf(3), ChordFollowMode::Chord);
+		QCOMPARE(track.followOf(5), ChordFollowMode::Scale);
+		QCOMPARE(track.followOf(0), ChordFollowMode::Off);
+	}
+
 	//! 0.5.0 E23, chord follow: a follower's note moves to the nearest tone (down on a tie) of the chord - or
 	//! its scale - sounding where it starts; a track that does not follow, and a silent stretch, play as written.
 	void followedKeySnapsToTheSoundingChord()
