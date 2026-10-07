@@ -224,6 +224,7 @@ void SessionGridView::rebuild(int tracks, int scenes)
 
 void SessionGridView::refresh()
 {
+	readTake();
 	const ControlResult state = run(QStringLiteral("session.get_state"));
 	if (!state.ok)
 	{
@@ -332,11 +333,15 @@ void SessionGridView::paintCell(int track, int scene)
 	const bool playing = phase == QLatin1String("playing");
 	// 0.5.0 theme 14: every filled cell carries its play mark - its launch affordance and, by shape, its state.
 	cell->setText(name.isEmpty() ? QString() : sessiongrid::cellMark(phase, true) + name);
+	const bool taking = m_take.value(QStringLiteral("track")).toInt() == track && m_take.value(QStringLiteral("scene")).toInt() == scene;
+	const QString recording = taking ? sessiongrid::recordingWords(m_take.value(QStringLiteral("state")).toString()) : QString();
+	if (!recording.isEmpty()) { cell->setText(sessiongrid::recordingMark(m_take.value(QStringLiteral("state")).toString()) + name); }
 	cell->setCheckable(true);
 	cell->setChecked(playing);
 	const QString where = tr("Track %1, scene %2").arg(track + 1).arg(scene + 1);
 	cell->setAccessibleName(name.isEmpty() ? tr("%1: empty").arg(where)
 		: tr("%1: %2%3").arg(where, name, phase.isEmpty() ? QString() : QStringLiteral(", ") + phase));
+	if (!recording.isEmpty()) { cell->setAccessibleName(cell->accessibleName() + QStringLiteral(", ") + recording); }
 	setTip(cell, launchNote(track, scene));
 	paintDropPreview(cell, index);
 }
@@ -436,6 +441,10 @@ void SessionGridView::populateMenu(QMenu* menu, QToolButton* button) const
 		const int track = index / m_scenes;
 		const int row = index % m_scenes;
 		SessionGridMenus::populateCell(menu, track, row, slotAt(track, row));
+		for (QAction* action : menu->actions())  // WF-055: a take this grid starts, it lands
+		{
+			if (action->property("recordTake").toBool()) { connect(action, &QAction::triggered, this, [this] { m_landTake = true; }); }
+		}
 	}
 	else if (button != nullptr && scene != m_sceneButtons.end())
 	{
@@ -443,6 +452,22 @@ void SessionGridView::populateMenu(QMenu* menu, QToolButton* button) const
 		SessionGridMenus::populateScene(menu, row, m_sceneStates.at(row).toObject());
 	}
 	else { SessionGridMenus::populateGrid(menu, m_tracks, m_scenes); }
+}
+
+
+void SessionGridView::readTake()
+{
+	m_take = run(QStringLiteral("session.record_slot_status")).result;
+	const QString state = m_take.value(QStringLiteral("state")).toString();
+	if (state == QLatin1String("idle")) { m_landTake = false; }
+	if (state != QLatin1String("done") || !m_landTake) { return; }
+	m_landTake = false;
+	const ControlResult landed = run(QStringLiteral("session.record_slot_land"));
+	m_notice = landed.ok ? tr("Recorded take landed in track %1, scene %2 (%3 s)").arg(m_take.value(QStringLiteral("track")).toInt() + 1)
+		.arg(m_take.value(QStringLiteral("scene")).toInt() + 1).arg(landed.result.value(QStringLiteral("seconds")).toDouble(), 0, 'f', 1)
+		: landed.errorMessage;
+	a11y::announceStatus(m_status, m_notice, landed.ok ? a11y::Politeness::Polite : a11y::Politeness::Assertive);
+	m_take = run(QStringLiteral("session.record_slot_status")).result;
 }
 
 

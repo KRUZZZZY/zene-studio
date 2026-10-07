@@ -131,6 +131,8 @@ private:
 	QWidget* neighbour(QToolButton* button, int key) const;
 	void showMenu(QToolButton* button, const QPoint& global);
 	QJsonObject slotAt(int track, int scene) const;
+	//! WF-055: reads the launcher's audio take, and lands one this grid started once it is finished.
+	void readTake();
 
 	QGridLayout* m_grid = nullptr;
 	QLabel* m_status = nullptr;
@@ -150,6 +152,8 @@ private:
 	QString m_dropFile;                //!< and the audio file it carries
 	std::vector<int> m_playingScene;  //!< per column, from the last refresh; -1 when idle
 	std::vector<QString> m_phases;    //!< per column: launching, playing, stopping or empty
+	QJsonObject m_take;                //!< session.record_slot_status, from the last refresh
+	mutable bool m_landTake = false;   //!< a record entry of this grid's menu started the take in hand
 	int m_tracks = -1;
 	int m_scenes = -1;
 	QTimer m_timer;

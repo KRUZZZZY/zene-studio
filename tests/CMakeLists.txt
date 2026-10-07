@@ -840,6 +840,8 @@ set(LMMS_TESTS
 	# R5.3: the clip-launch grid - launch, stop and scene-launch from the grid produce the
 	# socket-visible state; every cell focusable and announced; the arrow keys.
 	src/gui/SessionGridViewTest.cpp
+	# 0.5.0 L02 (WF-055): an empty cell records audio from its menu, says so, and the grid lands its own take.
+	src/gui/SessionGridRecordTest.cpp
 	# The clip launcher's Follow Actions / arrangement-record row.
 	src/gui/SessionTransportBarTest.cpp
 	# M3 item 6: the take lanes panel - comp, audition and consolidate from its own buttons.
@@ -1364,6 +1366,7 @@ set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SessionGridRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -99,6 +99,18 @@ QString cellMark(const QString& phase, bool filled)
 	return phase == QLatin1String("stopping") ? QStringLiteral("■ ") : stoppedMark();  // ■ stopping
 }
 
+QString recordingMark(const QString& state)
+{
+	if (state == QLatin1String("recording") || state == QLatin1String("finishing")) { return QStringLiteral("\u25CF Rec "); }
+	return state == QLatin1String("armed") ? QStringLiteral("\u25CB Rec ") : QString();
+}
+
+QString recordingWords(const QString& state)
+{
+	if (state == QLatin1String("recording") || state == QLatin1String("finishing")) { return QObject::tr("recording"); }
+	return state == QLatin1String("armed") ? QObject::tr("armed to record") : QString();
+}
+
 QString columnTitle(int track)
 {
 	const Song* song = Engine::getSong();

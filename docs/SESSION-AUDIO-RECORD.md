@@ -70,6 +70,17 @@ cell and a recorded-and-landed cell through `session.launch_slot` and checks the
 for frame, twice round (from the top and looping); built without this path (the recording step alone) both cases
 render silence. Its third case is the allocation probe on `SessionCellPlayHandle::play`.
 
+## Interface - the launcher grid (`src/gui/SessionGridMenus.cpp`, `src/gui/SessionGridView.cpp`)
+
+An empty cell's right-click menu offers **Record Audio Into Cell** (until the cell stops), **Record Audio for
+Bars...** (a form with `bars`) and **Cancel Recording** - each declares `controlCommand` `session.record_slot`.
+While a take is in hand the cell reads `● Rec` (recording or running on to its length) or `○ Rec` (armed, waiting
+for its launch), and its accessible name ends ", recording" / ", armed to record". The column's stop button ends
+it (`session.stop_slot`, quantised). The grid polls `session.record_slot_status` with its own refresh, and when a
+take that ITS menu started is `done` it runs `session.record_slot_land` itself (a new take in the user's
+`samples/Recordings` folder) and says so in its status line; a take started on the socket is left for its owner.
+Proof: `tests/src/gui/SessionGridRecordTest.cpp` (ctest `SessionGridRecordTest`).
+
 ## Proof
 
 - `tests/src/core/SessionAudioRecordTest.cpp` (ctest `SessionAudioRecordTest`): on the Dummy device with

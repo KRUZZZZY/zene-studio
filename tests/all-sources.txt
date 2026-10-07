@@ -2635,6 +2635,7 @@ tests/src/gui/RecordingRecoveryMenuTest.cpp
 tests/src/gui/RenderPresetMenuTest.cpp
 tests/src/gui/SampleEditorDialogTest.cpp
 tests/src/gui/ScriptBudgetActionTest.cpp
+tests/src/gui/SessionGridRecordTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp
 tests/src/gui/SessionTransportBarTest.cpp
