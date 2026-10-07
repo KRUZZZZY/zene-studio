@@ -93,7 +93,7 @@ StemSplitController* StemSplitController::instance()
 QString StemSplitController::availabilityError()
 {
 	QString error;
-	if (!ExternalProcessStemSeparator::isAvailable(&error))
+	if (!ExternalProcessStemSeparator().isAvailable(&error))
 	{
 		return error;
 	}
@@ -106,7 +106,7 @@ QString StemSplitController::availabilityError()
 bool StemSplitController::ensureBackendReady(bool* fetching)
 {
 	QString error;
-	if (ExternalProcessStemSeparator::isAvailable(&error)) { return true; }
+	if (ExternalProcessStemSeparator().isAvailable(&error)) { return true; }
 	if (StemModelStore::canFetchDefaultModel()
 		&& !ExternalProcessStemSeparator::locatePython().isEmpty()
 		&& !ExternalProcessStemSeparator::locateCli().isEmpty())

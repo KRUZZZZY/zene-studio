@@ -403,7 +403,7 @@ private:
 		}
 		return true;
 #else
-		return ExternalProcessStemSeparator::isAvailable(error);
+		return ExternalProcessStemSeparator().isAvailable(error);
 #endif
 	}
 

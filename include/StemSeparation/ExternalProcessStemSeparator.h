@@ -66,7 +66,8 @@ public:
 	// LMMS_STEM_MODEL, else <AppDataLocation>/models/stems/htdemucs-fp16.onnx.
 	static QString defaultModelPath();
 
-	static bool isAvailable(QString* error = nullptr);
+	// Availability of THIS instance: python + CLI + the configured model path.
+	bool isAvailable(QString* error = nullptr) const;
 
 private:
 	QString m_python;
