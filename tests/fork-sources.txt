@@ -527,6 +527,7 @@ include/AudioStretcher.h
 include/AudioWideInputStage.h
 include/AutomationLatency.h
 include/AutomationModeMenu.h
+include/AutomationPointEdit.h
 include/AutomationRamp.h
 include/AutomationSwitches.h
 include/BiquadDesign.h
@@ -1751,6 +1752,10 @@ src/gui/XyPad.cpp
 src/gui/clips/ClipLockFeedback.cpp
 src/gui/clips/ClipViewTheme.cpp
 src/gui/clips/SampleClipOverlays.cpp
+src/gui/editors/AutomationEditorFades.cpp
+src/gui/editors/AutomationEditorKeys.cpp
+src/gui/editors/AutomationPointEdit.cpp
+src/gui/editors/ItemListAutomationSource.cpp
 src/gui/modals/EffectPickerOrganiser.cpp
 src/gui/noteeditor/ControllerLaneView.cpp
 src/gui/noteeditor/ItemListNoteSources.cpp
@@ -1922,6 +1927,7 @@ tests/src/core/AudioBurstSupport.h
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AutomationLanesTest.cpp
+tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipGainEnvelopeTest.cpp

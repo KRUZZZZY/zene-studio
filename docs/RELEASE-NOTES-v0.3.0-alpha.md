@@ -958,6 +958,11 @@ runs; rack.layer_set (`true_inverse`), a layer's mute, solo and level from the l
 display) (+1). Measured by `ReversibilityContractTest` on that lane's build (no wasmtime): `rows=810 true_inverse=403
 snapshot=37 irreversible=21 not_mutating=349`, which is this block minus wasm's option row, exactly.
 
+**0.5.0 editor lanes (2026-10-06)** added automation.write_to_end (ED-201, `true_inverse`: an AutomationClip journal
+checkpoint, or an action step removing a created track) (+1). Measured with the probe on `050/feat-editor-lanes`, configured
+without wasmtime: `MEASURED rows=810 true_inverse=404 snapshot=37 irreversible=21 not_mutating=348`
+(`DECLARED rows=810 entries=810 duplicates=0`) - this block minus wasm's option row, exactly.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=820 true_inverse=406 snapshot=40 irreversible=21 not_mutating=353
      configuration: telemetry.status wasm.load session.get_state stem.get_state

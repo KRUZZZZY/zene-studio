@@ -81,6 +81,7 @@ SET(LMMS_SRCS
 	gui/ControlCommandsAccessibleEditing.cpp
 	gui/ItemListPanel.cpp
 	gui/ItemListSurfaceSources.cpp
+	gui/editors/ItemListAutomationSource.cpp
 	gui/ControlGuiSupport.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
 	gui/ArrangerOverlays.cpp
@@ -279,6 +280,9 @@ SET(LMMS_SRCS
 	gui/clips/SampleClipView.cpp
 
 	gui/editors/AutomationEditor.cpp
+	gui/editors/AutomationEditorFades.cpp
+	gui/editors/AutomationEditorKeys.cpp
+	gui/editors/AutomationPointEdit.cpp
 	gui/editors/Editor.cpp
 	gui/editors/PatternEditor.cpp
 	gui/editors/PianoRoll.cpp

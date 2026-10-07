@@ -114,14 +114,13 @@ ControlResult fadeCurve(const QJsonObject& args)
 	ControlResult error;
 	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
 	const ClipEdits& edits = ref.clip->clipEdits();
-	const auto length = static_cast<f_cnt_t>(std::max<tick_t>(1, ref.clip->length().getTicks()));
+	const tick_t length = std::max<tick_t>(1, ref.clip->length().getTicks());
 	const int points = std::clamp(args.value(QStringLiteral("points")).toInt(64), 2, 1024);
 	QJsonArray curve;
 	for (int i = 0; i < points; ++i)
 	{
 		const double tick = static_cast<double>(length) * i / (points - 1);
-		const float fade = clipFadeGainAt(static_cast<f_cnt_t>(tick), length, edits.fadeInTicks, edits.fadeOutTicks, edits.fadeInShape, edits.fadeOutShape);
-		curve.append(QJsonObject{{QStringLiteral("tick"), tick}, {QStringLiteral("gain"), static_cast<double>(edits.gain * fade * envelopeGainAt(edits, tick))}});
+		curve.append(QJsonObject{{QStringLiteral("tick"), tick}, {QStringLiteral("gain"), static_cast<double>(clipGainCurveAt(edits, length, tick))}});
 	}
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("curve"), curve}});
 }

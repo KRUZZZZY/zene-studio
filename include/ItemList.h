@@ -56,6 +56,7 @@ class QTimer;
 namespace lmms::gui
 {
 
+class AutomationEditor;
 class CompSwipeStrip;
 class NoteEditor;
 class ShellButton;
@@ -170,7 +171,7 @@ private:
 	bool m_syncing = false;
 };
 
-//! The sources of the five canvases (ItemListSources*.cpp).
+//! The sources of the canvases (ItemListSources*.cpp, ItemListAutomationSource.cpp).
 namespace itemlists
 {
 LMMS_EXPORT ItemListSource* notes(NoteEditor* editor, QObject* parent);
@@ -184,6 +185,9 @@ LMMS_EXPORT ItemListSource* clips(QObject* parent);
  *  focus on @a canvas - window.item_list lists the canvas holding it, as Ctrl+Shift+L there does - and runs
  *  window.item_list on @a surface, which opens the list and, pressed again, closes it. A refusal is announced. */
 LMMS_EXPORT ShellButton* listButton(const QString& surface, QWidget* canvas, QWidget* parent);
+
+//! ED-194: the open automation editor's points (ItemListAutomationSource.cpp).
+LMMS_EXPORT ItemListSource* automationPoints(AutomationEditor* editor, QObject* parent);
 } // namespace itemlists
 
 } // namespace lmms::gui

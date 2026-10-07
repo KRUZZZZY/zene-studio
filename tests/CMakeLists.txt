@@ -604,6 +604,8 @@ set(LMMS_TESTS
 	src/core/ArrangementModesTest.cpp
 	# 0.5.0 L06: automation lanes, trim, shapes, transform, thinning, curves, last touched.
 	src/core/AutomationLanesTest.cpp
+	# ED-201: automation.write_to_end holds a value from a tick to the song's end.
+	src/core/AutomationWriteToEndTest.cpp
 	# 0.5.0 L07: the note editor's commands - scale, ratchet, add_many, list, find and change, swing, key names.
 	src/core/NoteEditingCommandsTest.cpp
 	# 0.5.0 L07: note.edit's range validation - a note may not end past MaxSongLength.
@@ -776,6 +778,8 @@ set(LMMS_TESTS
 	src/gui/KnobKeyboardTest.cpp
 	# Every control's context menu sets its automation mode (automation.mode_set).
 	src/gui/AutomationModeMenuTest.cpp
+	# ED-194: the automation editor's keys and item list move points through automation.move_point.
+	src/gui/AutomationEditorEditingTest.cpp
 	# BUGS_FOUND 11.12: a removed VCA group's strip never paints its freed fader model.
 	src/gui/VcaStripLifetimeTest.cpp
 	# 0.5.0 theme 6: sends on faders - the banner names the return, every fader labelled, "No send" faders dimmed in place.
@@ -1064,6 +1068,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ControlAutomationModesTest"
 		# The automation-mode context menu is driven against a real instrument's parameter.
 		OR LMMS_TEST_NAME STREQUAL "AutomationModeMenuTest"
+		# The automation editor's keys move a point of one real instrument's parameter.
+		OR LMMS_TEST_NAME STREQUAL "AutomationEditorEditingTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
 		# The track menu's chain presets save and apply a chain holding one real effect.
 		OR LMMS_TEST_NAME STREQUAL "ChainPresetMenuTest"
@@ -1108,6 +1114,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
 		OR LMMS_TEST_NAME STREQUAL "NoteEditRangeTest"
 		OR LMMS_TEST_NAME STREQUAL "AutomationLanesTest"
+		OR LMMS_TEST_NAME STREQUAL "AutomationWriteToEndTest"
 		# 0.5.0 W3 engine: post-fader inserts and chain.receive load the build's amplifier and receiver modules.
 		OR LMMS_TEST_NAME STREQUAL "W3EngineTest"
 		# 0.5.0 wave 2: layers and parts load a real instrument; the reference project copies a real effect.
@@ -1398,6 +1405,7 @@ set_tests_properties(AccessibilityHelperTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 set_tests_properties(AccessibilityWalkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(KnobKeyboardTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationModeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AutomationEditorEditingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorFlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

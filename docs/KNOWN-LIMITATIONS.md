@@ -2366,13 +2366,17 @@ follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
 
 **Canvases without a mouse, and announcements (themes 10, 17).**
 - The editable item list is a floating tool window, not a docked panel. It opens from the List button on its canvas (the note editor's and the arranger's toolbars; under the lane chooser while it shows a controller lane; beside the XY pad's axes; beside Add lane in the take lanes), with Ctrl+Shift+L, or with `window.item_list`.
+  Since 2026-10-06 (ED-194) the automation editor has a list too (`surface: "automation"`, see the section below). It has
+  no List button: the List buttons (050/feat-ui-gaps) and the automation list (050/feat-editor-lanes) landed in parallel,
+  so that list opens with Ctrl+Shift+L or `window.item_list` only.
 - The sample editor's keyboard route is its range fields. The waveform itself takes no keys.
 - An MPE lane key edits only the cursor note.
 - Screen readers (NVDA, VoiceOver, Orca) are reached through Qt's bridge, which the tests assert. No screen reader was run.
 
 **Lanes and the sample editor (themes 11, 15).**
 - The lanes have no playhead.
-- No arbitrary controller number can be chosen from the lane.
+- *(Resolved 2026-10-06, ED-130.)* The lane chooser now lists every controller number, CC 0 to CC 127, beside
+  pitch bend, aftertouch and program change (`NoteEditorTest::anyControllerNumberCanBeChosenFromTheLane`).
 
 **Devices and the Inspector (themes 12, 13).**
 - VST3 and CLAP vendors read "Not reported", because the catalogue carries none.
@@ -2436,3 +2440,50 @@ The record of what was built is `docs/MIXER-METERING.md`; this is what each piec
   makes the new channel's first block wait for the next period (the tap has one writer at a time).
 - The agent reads the correlation and `frames_seen` (proof the tap is fed), not the drawn points.
 
+
+## 0.5.0 editor lanes — controller lanes, keyboard automation editing, fades in the automation view, write to end (2026-10-06)
+
+**ED-130, any controller lane.** The note editor's lane chooser lists every controller number (CC 0 to 127), pitch
+bend, aftertouch and program change (`docs/NOTE-EDITOR.md` §5). What it leaves out:
+- The chooser is one long list (24 rows visible at a time); there is no search or number field in it.
+- Only the five common controllers and about twenty standard ones carry a name; the rest read "CC <n>".
+
+**ED-194, keyboard editing of automation.** In the automation editor, Ctrl+Left/Right choose the previous/next point
+(from none: the first, or the last), Left/Right move the chosen point one grid step (Shift: four), Up/Down change its
+value by a hundredth of the control's range (Shift: a tenth, never less than the control's own step), Escape lets go
+of it and the arrows scroll again. The chosen point is ringed and named to a screen reader. Each key is one edit and
+one undo step: `automation.move_point` when the control has a command address. A move onto another point is refused
+and spoken. Ctrl+Shift+L, or `window.item_list` with `surface: "automation"`, opens the points as an editable list
+(position, value as a share of the range, stored value); its edits are the same moves, and its current row follows
+the chosen point both ways (`AutomationEditorEditingTest`). What it leaves out:
+- A control the command surface cannot name (a track's volume or pan, the tempo, a mixer fader) and a second clip
+  of the same control are moved in place behind one journal checkpoint, not through `automation.move_point`: still
+  one undo step, but no `control.transactions` entry.
+- One point at a time: there is no keyboard multi-selection, and neither the keys nor the list add or remove points
+  (the canvas, `automation.add_point` and `automation.remove_point` do).
+- Undoing a key move drops the chosen point; Ctrl+Left/Right choose one again.
+- A moved point keeps its curve and bend but not a separate out-value (a step): the move writes one value, as
+  `automation.move_point` does.
+- The list types a value in whole percent of the range; the "Stored value" column shows the exact value.
+
+**ED-180, fades drawn in the automation view.** An audio clip set as the automation editor's ghost ("Set as ghost in
+automation editor") now has its gain curve drawn over its waveform: the fades, the clip gain and the gain envelope -
+the same curve `clip.fade_curve` reports (one definition, `clipGainCurveAt`) - with what the fades take away shaded
+(`AutomationEditorEditingTest::aSampleClipsFadesAreDrawnBehindTheCurve`). What it leaves out:
+- It is drawn, not edited: the fade handles stay on the clip in the arranger (and `clip.set_fade`).
+- Pre-fades (the part of a fade outside the clip) and speed fades are not drawn.
+- The curve runs from tick 0 over the clip's length; the ghost waveform is placed by its own (inherited) rule, so on
+  a clip with a start offset or a trimmed window the two may not line up exactly. Not measured.
+- The curve is redrawn when the editor repaints; a fade changed elsewhere shows on the next repaint.
+
+**ED-201, write to end.** `automation.write_to_end` holds a control's value (its current one when left out) from a
+tick to the song's end: every later point goes, the point at the tick steps from the curve's value there to the new
+one, and a point at the song's end (the end of its last clip) holds it - one undo step. A control's context menu has
+**Write value to end**, which writes the current value from the song position
+(`AutomationLanesTest::writeToEndHoldsAValueToTheSongsEnd`, `AutomationModeMenuTest::theContextMenuWritesTheValueToTheEnd`).
+What it leaves out:
+- It is a helper run after (or instead of) a pass, not a mode of the pass itself: a Touch or Latch pass does not
+  write to the end when it stops, and there is no "write to punch" or "write to start".
+- It acts on the control's first automation clip; a clip that starts after the tick is refused rather than extended
+  backwards.
+- The menu item is offered only for a control the command surface can name (as the mode submenu is).

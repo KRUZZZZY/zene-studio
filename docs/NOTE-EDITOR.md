@@ -126,6 +126,13 @@ The lane shows one stem per visible note for the chosen value:
 Drag across stems to draw values. With a selection, only selected notes take the value, so a
 ramp can be drawn over a chord.
 
+**Controller lanes (ED-130).** Below the per-note values, the same chooser lists the clip's
+controller curves - the curves it plays as MIDI: the five common ones first (mod wheel, breath,
+volume, expression, sustain), then pitch bend, aftertouch and program change, then **every other
+controller number from CC 0 to CC 127**, named where MIDI names it ("Cutoff (CC 74)"). Choosing
+one shows its curve; a stroke writes it with one `clip.controllers_set`. A lane chosen by command
+(`window.note_editor_set` with `controller_lane: "cc:<n>"`) shows in the chooser as well.
+
 The brief also names a **gain** lane, but this engine has no per-note gain separate from
 velocity, which is the note's volume. Adding one would mean a new note attribute, a new
 project-format field and a change to the render path. That was not done; it is listed in §8.

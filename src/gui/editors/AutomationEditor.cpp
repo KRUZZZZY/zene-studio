@@ -177,6 +177,7 @@ void AutomationEditor::setCurrentClip(AutomationClip * new_clip )
 	}
 
 	m_clip = new_clip;
+	setKeyPoint(-1);  // ED-194: a chosen point belongs to the clip it was chosen in
 
 	if (m_clip != nullptr)
 	{
@@ -253,6 +254,7 @@ void AutomationEditor::update()
 
 void AutomationEditor::keyPressEvent(QKeyEvent * ke )
 {
+	if (editPointByKey(ke)) { return; }  // ED-194: the keys edit a chosen point first (AutomationEditorKeys.cpp)
 	switch( ke->key() )
 	{
 		case Qt::Key_Up:
@@ -1226,6 +1228,7 @@ void AutomationEditor::paintEvent(QPaintEvent * pe )
 			};
 
 			m_sampleThumbnail.visualize(param, p);
+			drawGhostFades(p, yOffset, sampleHeight);  // ED-180: the clip's fades over its waveform
 		}
 
 		// draw ghost notes
@@ -1367,6 +1370,7 @@ void AutomationEditor::paintEvent(QPaintEvent * pe )
 		// Draw tangents if necessary (only for manually edited tangents)
 		if (m_clip->canEditTangents() && LOCKEDTAN(it)) { drawAutomationTangents(p, it); }
 	}
+	drawKeyPoint(p);  // ED-194: the point the keys edit is ringed
 
 	// draw clip bounds overlay
 	p.fillRect(xCoordOfTick(m_clip->length() - m_clip->startTimeOffset()), TOP_MARGIN, width() - 10, grid_bottom,

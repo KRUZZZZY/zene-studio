@@ -31,6 +31,8 @@
 #include "AutomatableModel.h"
 #include "ControlAutomationSupport.h"
 #include "ControlRegistry.h"
+#include "Engine.h"
+#include "Song.h"
 
 namespace lmms::gui
 {
@@ -66,6 +68,16 @@ void addAutomationModeMenu(QMenu* menu, AutomatableModel* model)
 					{QStringLiteral("mode"), mode}});
 		});
 	}
+
+	// ED-201, a write-pass helper: the control's current value from the song position to the song's end.
+	QAction* toEnd = menu->addAction(QObject::tr("Write value to end"));
+	toEnd->setData(QStringLiteral("automation.write_to_end"));
+	toEnd->setToolTip(QObject::tr("Hold the current value from the song position to the end of the song"));
+	QObject::connect(toEnd, &QAction::triggered, menu, [target, parameter] {
+		const tick_t from = Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks();
+		ControlRegistry::instance()->invoke(QStringLiteral("automation.write_to_end"),
+			{{QStringLiteral("track"), target}, {QStringLiteral("parameter"), parameter}, {QStringLiteral("ticks"), static_cast<double>(from)}});
+	});
 }
 
 } // namespace lmms::gui

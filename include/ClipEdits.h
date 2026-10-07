@@ -188,6 +188,11 @@ LMMS_EXPORT float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,
 	f_cnt_t fadeInFrames, f_cnt_t fadeOutFrames,
 	FadeShape fadeInShape, FadeShape fadeOutShape);
 
+/*! ED-180: a clip's whole gain at @a tick from its start, for a clip @a lengthTicks long - its gain, its two fades and
+ *  its envelope, in ticks (the fades' own unit). The curve clip.fade_curve reports and the automation editor draws
+ *  behind the clip: ONE definition for both. Allocation-free. */
+LMMS_EXPORT float clipGainCurveAt(const ClipEdits& edits, tick_t lengthTicks, double tick);
+
 //! ED-179: a pre-faded clip's span in output frames - the clip, its pre-fades outside it and its fades inside it.
 struct PreFadeSpan
 {
