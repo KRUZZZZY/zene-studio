@@ -96,6 +96,29 @@ namespace readdetail
 //! id to track is the only thing this reader needs to keep.
 using IdMap = QMap<QString, int>;
 
+inline QString collapseXmlWhitespace(const QString& value)
+{
+	QString collapsed;
+	collapsed.reserve(value.size());
+	bool pendingSpace = false;
+	for (const QChar character : value)
+	{
+		if (character == QLatin1Char(' ') || character == QLatin1Char('\t') ||
+			character == QLatin1Char('\r') || character == QLatin1Char('\n'))
+		{
+			if (!collapsed.isEmpty()) { pendingSpace = true; }
+			continue;
+		}
+		if (pendingSpace)
+		{
+			collapsed.append(QLatin1Char(' '));
+			pendingSpace = false;
+		}
+		collapsed.append(character);
+	}
+	return collapsed;
+}
+
 inline QString attribute(const QXmlStreamAttributes& attributes, const QString& name)
 {
 	return attributes.value(name).toString();
@@ -137,7 +160,7 @@ inline bool flagAttribute(const QXmlStreamAttributes& attributes, ReadState& sta
 {
 	if (!attributes.hasAttribute(name)) { return false; }
 	const QString rawValue = attribute(attributes, name);
-	const QString value = rawValue.trimmed();
+	const QString value = collapseXmlWhitespace(rawValue);
 	if (value == QLatin1String("true") || value == QLatin1String("1")) { return true; }
 	if (value == QLatin1String("false") || value == QLatin1String("0")) { return false; }
 	if (state.error.isEmpty())

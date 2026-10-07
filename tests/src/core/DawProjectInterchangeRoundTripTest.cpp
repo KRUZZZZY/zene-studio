@@ -969,6 +969,7 @@ private slots:
 		const QString suffix = QStringLiteral("</Track></Structure></Project>");
 		const QList<QPair<QString, QString>> invalidChannels = {
 			{QStringLiteral("<Channel id=\"c1\" solo=\"yes\"/>"), QStringLiteral("solo")},
+			{QStringLiteral("<Channel id=\"c1\" solo=\"&#xA0;true\"/>"), QStringLiteral("solo")},
 			{QStringLiteral("<Channel id=\"c1\"><Mute value=\"invalid\"/></Channel>"),
 				QStringLiteral("Mute")},
 			{QStringLiteral("<Channel id=\"c1\" solo=\"\"/>"), QStringLiteral("solo")}
