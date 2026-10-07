@@ -152,8 +152,15 @@ inline void malformedNumericAttribute(ReadState& state, const QString& name, con
 inline double doubleAttribute(const QXmlStreamAttributes& attributes, ReadState& state,
 	const QString& name, double fallback)
 {
+	// The fallback belongs to an attribute the document did not carry; a present
+	// but EMPTY one ("time=\"\"") is malformed, not absent.
+	if (!attributes.hasAttribute(name)) { return fallback; }
 	const QString value = attribute(attributes, name);
-	if (value.isEmpty()) { return fallback; }
+	if (value.isEmpty())
+	{
+		malformedNumericAttribute(state, name, value);
+		return fallback;
+	}
 	bool ok = false;
 	const double parsed = value.toDouble(&ok);
 	if (!ok || !std::isfinite(parsed))
@@ -167,8 +174,13 @@ inline double doubleAttribute(const QXmlStreamAttributes& attributes, ReadState&
 inline int intAttribute(const QXmlStreamAttributes& attributes, ReadState& state,
 	const QString& name, int fallback)
 {
+	if (!attributes.hasAttribute(name)) { return fallback; }
 	const QString value = attribute(attributes, name);
-	if (value.isEmpty()) { return fallback; }
+	if (value.isEmpty())
+	{
+		malformedNumericAttribute(state, name, value);
+		return fallback;
+	}
 	bool ok = false;
 	const int parsed = value.toInt(&ok);
 	if (!ok)
