@@ -22003,7 +22003,7 @@
         ],
         "type": "object"
       },
-      "description": "Arm one record route: start writing the interleaved input channel it selects into a 24-bit WAV, and journal the take beside it (the take journal is what makes a crashed capture recoverable - record.journal_begin's side file, written here by the recorder's own arm()). 'route' is the route index record.get_state reports; 'input_channel' defaults to the route's own index and must be inside [0, input_channel_capacity) - the FRAMES the route records come from the engine's input path, so with no capture device open and no frames staged the take is silent however the route is armed (record.input_get_state says which of those is true). 'file' must be absolute and defaults to zene-take-route<N>.wav beside this instance's recovery file; 'sample_rate', when given, must be the engine's rate (a take records at the rate the engine runs). Reversible: the recorded inverse is record.disarm_track, which stops the capture and retires the journal; the take file itself is left on disk, like any recording you keep.",
+      "description": "Arm one record route: start writing the interleaved input channel it selects into a 24-bit WAV, and journal the take beside it (the take journal is what makes a crashed capture recoverable - record.journal_begin's side file, written here by the recorder's own arm()). 'route' is the route index record.get_state reports; 'input_channel' defaults to the route's own index and must be inside [0, input_channel_capacity) - the FRAMES the route records come from the engine's input path, so with no capture device open and no frames staged the take is silent however the route is armed (record.input_get_state says which of those is true). 'file' must be absolute and defaults to zene-take-route<N>.wav beside this instance's recovery file; 'sample_rate', when given, must be the engine's rate (a take records at the rate the engine runs). Not reversible: control.undo refuses this arm because the take file is outside the project journal. Call record.disarm_track to stop writing; the take remains at the returned file path and can be kept or deleted manually.",
       "group": "record",
       "id": "record.arm_track",
       "mutating": true,
@@ -22106,7 +22106,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Stop one record route: the disk-writer is drained and joined, the WAV is closed, and the take journal is RETIRED - a clean stop leaves no journal, which is what makes 'there is a journal' and 'the capture died' the same fact (include/RecordingJournal.h). The take file stays on disk. This is record.arm_track's recorded inverse, so control.undo after an arm dispatches it. Not reversible itself: re-arming writes a NEW take rather than restoring this one, and there is nothing the engine could hand back.",
+      "description": "Stop one record route: the disk-writer is drained and joined, the WAV is closed, and the take journal is RETIRED - a clean stop leaves no journal, which is what makes 'there is a journal' and 'the capture died' the same fact (include/RecordingJournal.h). The take file stays on disk. This is record.arm_track's explicit stop operation, not its undo inverse, since the WAV remains after a clean stop. Not reversible itself: re-arming writes a NEW take rather than restoring this one, and there is nothing the engine could hand back.",
       "group": "record",
       "id": "record.disarm_track",
       "mutating": false,

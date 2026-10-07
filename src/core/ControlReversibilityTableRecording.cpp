@@ -52,17 +52,6 @@ const ReversibilityRow kRecordingRows[] = {
 	// snapshot - the inverse is a bounded recorded state, and for these rows
 	// that state is a COMMAND: control.undo dispatches the paired verb.
 	// =====================================================================
-	R("record.arm_track", RC::Snapshot, true,
-		"arming starts a real capture: a take file is opened and a take journal is "
-		"written beside it, so the state this command changes is on disk rather than "
-		"in the project - the project journal holds nothing for a side file in a take "
-		"directory (record.journal_begin's own reason, and its own class)",
-		"action checkpoint: the recorded undo step is the paired command "
-		"record.disarm_track, which stops the capture, drains the disk-writer and "
-		"RETIRES the journal. The take file itself stays on disk, exactly as a clean "
-		"stop leaves it; a recording is not something the engine can un-happen",
-		"the take file: delete it where it was written (the reply names the path), or "
-		"keep it and use it - the recording is the point of the command"),
 	R("track.set_arm", RC::Snapshot, true,
 		"arming a song track starts a capture on the record route its position maps "
 		"to, and that capture writes a WAV and a take journal beside it. The TRACK is "
@@ -168,6 +157,19 @@ const ReversibilityRow kRecordingRows[] = {
 		"restore; the file is the deliverable, not a mutation of the session",
 		"the take file: delete it where the reply says it is, or keep it - and 0.3.0 "
 		"does not insert it into the session (docs/KNOWN-LIMITATIONS.md)"),
+
+	// =====================================================================
+	// irreversible - arming creates a take outside the project journal, and
+	// disarming cannot remove its recorded bytes.
+	// =====================================================================
+	R("record.arm_track", RC::Irreversible, false,
+		"arming opens a WAV outside the project journal and writes a take journal "
+		"beside it. Disarming retires that journal but leaves every captured frame "
+		"in the WAV, so the filesystem is not restored to its pre-arm state",
+		"none: the engine cannot discard a take as an inverse; the transaction "
+		"records no inverse",
+		"explicitly call record.disarm_track to stop writing. The take remains at "
+		"the file path in the arm reply; keep it or delete it manually"),
 
 };
 

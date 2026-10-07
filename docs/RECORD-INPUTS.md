@@ -69,7 +69,7 @@ snd_pcm_readi (blocking,       pushInputFramesWide ─┐                   reco
 | `record.input_get_state` | not_mutating | the plan, the device's own answer, the engine's two input stages |
 | `record.input_set` | true_inverse | writes the plan; `restart_required`, previous plan as the inverse |
 | `record.get_state` | not_mutating | every route: arm, channel, take, journal, counters |
-| `record.arm_track` | snapshot | arms one route; inverse = `record.disarm_track` |
+| `record.arm_track` | irreversible | arms one route and creates a take outside the project journal; `control.undo` refuses, and the take remains until kept or deleted manually |
 | `record.disarm_track` / `record.disarm_all` | not_mutating | stop the capture, retire the journal, keep the take |
 | `track.set_arm` | snapshot | arms the route a song track's position maps to (was a refusal until 0.3.0) |
 | `record.retro_capture_arm` / `_status` | not_mutating | the window's mode and its state |
