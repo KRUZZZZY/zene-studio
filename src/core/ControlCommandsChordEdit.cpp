@@ -236,11 +236,11 @@ ControlResult chordFollow(const QJsonObject& args)
  *  the vocabulary, not an error) or when the track refused the event - the
  *  caller counts either as `skipped`, so nothing is silently dropped. Shared by
  *  the write loop so the converter is one definition. */
-bool writeDetectedMatch(ChordTrack* track, const ChordDetect::ChordMatch& match)
+bool writeDetectedMatch(ChordTrack* track, const ChordDetect::ChordMatch& match, tick_t clipStart)
 {
 	if (match.chord.isEmpty() || match.root < 0) { return false; }
 	ChordEvent event;
-	event.pos = match.pos;
+	event.pos = clipStart + match.pos;
 	event.length = 0;
 	event.root = match.root;
 	event.octave = octaveOfKey(match.rootKey);
@@ -279,7 +279,7 @@ ControlResult chordDetectToTrack(const QJsonObject& args)
 		// A slice with no name is a real answer (the vocabulary has no entry for
 		// it) and a chord-track event cannot be nameless, so it is counted and
 		// not written - reported as `skipped`, never silently dropped.
-		if (writeDetectedMatch(track, match)) { ++written; }
+		if (writeDetectedMatch(track, match, clip->startPosition().getTicks())) { ++written; }
 		else { ++skipped; }
 	}
 	if (written == 0)

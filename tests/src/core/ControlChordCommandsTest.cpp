@@ -394,6 +394,28 @@ private slots:
 		QCOMPARE(trackOf()[1].pos, 192);
 	}
 
+	void theDetectionAddsTheClipArrangementPosition()
+	{
+		const QString clip = makeClip();
+		QVERIFY(!clip.isEmpty());
+		QVERIFY(addNote(clip, 60, 0, 100));
+		QVERIFY(addNote(clip, 64, 0, 100));
+		QVERIFY(addNote(clip, 67, 0, 100));
+		QVERIFY(addNote(clip, 65, 192, 100));
+		QVERIFY(addNote(clip, 69, 192, 100));
+		QVERIFY(addNote(clip, 72, 192, 100));
+		QVERIFY(run(QStringLiteral("clip.move"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("position"), 384}}).ok);
+
+		const ControlResult written = run(QStringLiteral("chord.detect_to_track"),
+			{{QStringLiteral("clip"), clip}});
+		QVERIFY2(written.ok, qPrintable(written.errorMessage));
+		const QVector<EventAt> events = trackOf();
+		QCOMPARE(events.size(), 2);
+		QCOMPARE(events[0].pos, 384);
+		QCOMPARE(events[1].pos, 576);
+	}
+
 	/*! THE GENERATOR'S REPEATABILITY PAIR, through the surface: two clips, one
 	 *  seed - identical takes, read note for note off the wire; another seed -
 	 *  a different take. Then control.undo puts the clip back, which is the
