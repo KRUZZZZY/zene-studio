@@ -170,6 +170,28 @@ private slots:
 		QCOMPARE( loaded.velocityJitter(), 0.f );
 	}
 
+	//! Invalid stored probabilities retain the documented default: the note plays.
+	void invalidProbabilityFallsBackToDefault_data()
+	{
+		QTest::addColumn<QString>( "value" );
+		QTest::newRow( "malformed" ) << QStringLiteral( "oops" );
+		QTest::newRow( "non-finite" ) << QStringLiteral( "nan" );
+	}
+
+	void invalidProbabilityFallsBackToDefault()
+	{
+		QFETCH( QString, value );
+		Note source;
+		QDomDocument doc;
+		QDomElement parent = doc.createElement( "notes" );
+		QDomElement element = source.saveState( doc, parent );
+		element.setAttribute( "prob", value );
+
+		Note loaded;
+		loaded.restoreState( element );
+		QCOMPARE( loaded.probability(), 1.f );
+	}
+
 	//! (b) A note with probability and jitter set survives save -> load ->
 	//! save with identical bytes, and the values read back exactly.
 	void probabilityRoundTripsThroughSerialisation()
