@@ -250,7 +250,11 @@ ControlResult switchProject(const QJsonObject& args)
 	const bool kept = requestedReference && !left.isEmpty() && ReferenceProject::instance().open(left, &why);
 	opened.result.insert(QStringLiteral("left"), left);
 	opened.result.insert(QStringLiteral("reference"), kept ? left : QString());
-	if (requestedReference && !left.isEmpty() && !kept) { opened.result.insert(QStringLiteral("reference_error"), why); }
+	if (requestedReference && !kept)
+	{
+		opened.result.insert(QStringLiteral("reference_error"), left.isEmpty()
+			? QStringLiteral("the previous session has no project file to keep as a reference") : why);
+	}
 	return opened;
 }
 

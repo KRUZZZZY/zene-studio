@@ -397,6 +397,25 @@ private slots:
 		QVERIFY(!ReferenceProject::instance().isOpen());
 	}
 
+	void aSwitchReportsWhenTheUntitledSessionCannotBeKeptAsReference()
+	{
+		const QString target = QDir(m_dir.path()).filePath(QStringLiteral("untitled-switch-target.mmp"));
+		ReferenceProject::instance().close();
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		QVERIFY(Engine::getSong()->saveProjectFile(target));
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		QVERIFY(Engine::getSong()->projectFileName().isEmpty());
+
+		const ControlResult switched = run(QStringLiteral("project.switch"), {{QStringLiteral("path"), target},
+			{QStringLiteral("keep_as_reference"), true}});
+		QVERIFY2(switched.ok, qPrintable(switched.errorMessage));
+		QCOMPARE(QFileInfo(Engine::getSong()->projectFileName()).fileName(), QStringLiteral("untitled-switch-target.mmp"));
+		QCOMPARE(switched.result.value(QStringLiteral("reference")).toString(), QString());
+		const QString referenceError = switched.result.value(QStringLiteral("reference_error")).toString();
+		QVERIFY2(referenceError.contains(QStringLiteral("no project file")), qPrintable(referenceError));
+		QVERIFY(!ReferenceProject::instance().isOpen());
+	}
+
 	void aSwitchRefusesToLoseAnUntitledSession()
 	{
 		const QString a = QDir(m_dir.path()).filePath(QStringLiteral("a.mmp"));
