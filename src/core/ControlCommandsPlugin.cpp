@@ -310,11 +310,11 @@ void registerPluginUnload(ControlRegistry& registry)
 	cmd.group = QStringLiteral("plugin");
 	cmd.verb = QStringLiteral("unload");
 	cmd.description = QStringLiteral("Remove a device instance (fx-<n>) from a track's chain or a "
-		"mixer channel. REVERSIBLE: the device's own state document is captured before the "
-		"removal and one control.undo re-instantiates the same plugin at the same index in the "
-		"chain with its settings restored. The transaction's 'before' snapshot still carries the "
-		"state XML, so a client that prefers to rebuild by hand can; a device whose state exceeds "
-		"the capture cap reports itself as snapshot-only instead.");
+		"mixer channel. When its state fits the capture cap and the undo stack is addressable, "
+		"one control.undo re-instantiates the same plugin at the same index with its settings "
+		"restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; "
+		"its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is "
+		"recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.");
 	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("plugin"), stringProperty()}},

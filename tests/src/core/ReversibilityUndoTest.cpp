@@ -511,6 +511,12 @@ private slots:
 		const QString note = tx.value(QStringLiteral("inverse")).toObject()
 			.value(QStringLiteral("args")).toObject().value(QStringLiteral("note")).toString();
 		QVERIFY(note.contains(QStringLiteral("no usable state snapshot")));
+
+		const ControlCommand* unloadCommand = ControlRegistry::instance()->command(QStringLiteral("plugin.unload"));
+		QVERIFY(unloadCommand != nullptr);
+		QVERIFY(unloadCommand->description.contains(QStringLiteral("'state_xml' is empty")));
+		QVERIFY(unloadCommand->description.contains(QStringLiteral("'state_truncated' is true")));
+		QVERIFY(unloadCommand->description.contains(QStringLiteral("cannot be manually restored from that snapshot")));
 	}
 
 

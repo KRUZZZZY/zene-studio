@@ -445,8 +445,8 @@ bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 	// Bounded like every other captured document: an unbounded payload on a
 	// stack with a declared byte budget is a bound that does not hold. A device
 	// whose state document is over the cap refuses the inverse; the command then
-	// reports the removal as snapshot-only instead of claiming a reversibility
-	// it did not record.
+	// reports state unavailable with no usable snapshot instead of claiming a
+	// snapshot or reversibility it did not record.
 	if (xml.isEmpty() || xml.size() > StructuralSnapshotLimit) { return false; }
 
 	// No pointer is kept (see journalEffectLoad in the header): the chain by its owner's address, the device by its slot.
