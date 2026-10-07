@@ -106,33 +106,33 @@ const ReversibilityRow kRecordingRows[] = {
 		"lost the transaction record"),
 
 	// =====================================================================
-	// not_mutating - nothing is written that control.undo could reverse. The
-	// read-only verbs, and the two writers whose write is a FILE the engine
-	// cannot put back (the render.render and midi.retro_capture_arm shape).
+	// irreversible - these stop live captures and retire take journals, but
+	// the take files stay on disk and cannot be restored by control.undo.
+	// =====================================================================
+	R("record.disarm_track", RC::Irreversible, false,
+		"stops one route's capture and retires its journal, and the take file stays "
+		"on disk. Re-arming starts a new take rather than restoring this one",
+		"the registry records the call as irreversible because the retired journal "
+		"is a side file and there is no inverse that restores the stopped take",
+		"the take: it is on disk where the reply says, and re-arming the route writes "
+		"a new one"),
+
+	R("record.disarm_all", RC::Irreversible, false,
+		"stops every armed route and retires its journal, while every take file stays "
+		"where it is",
+		"the registry records the call as irreversible because the retired journals "
+		"are side files and there is no inverse that restores the stopped takes",
+		"the take files: each reply names its route's path"),
+
+	// =====================================================================
+	// not_mutating - no checkpointed session state is written: read-only verbs,
+	// file-only writers and live modes that are intentionally outside undo.
 	// =====================================================================
 	R("record.get_state", RC::NotMutating, false,
 		"reads every route's arm flag, input channel, take path and counters, plus "
 		"the input path's own state; it writes nothing",
 		"no write happens, so no transaction is recorded",
 		""),
-	R("record.disarm_track", RC::NotMutating, false,
-		"stops one route's capture and retires its journal, and the take file stays "
-		"on disk. What it changes is the recorder's live state, which is engine state "
-		"that no project checkpoint holds - and the thing a caller might want back "
-		"(the recording) is a file, not a state",
-		"no state a checkpoint could restore is written: the journal it retires is a "
-		"side file and re-arming writes a NEW take rather than restoring this one, so "
-		"the record states that it recorded no inverse",
-		"the take: it is on disk where the reply says, and re-arming the route writes "
-		"a new one"),
-
-	R("record.disarm_all", RC::NotMutating, false,
-		"the same operation for every route at once: the captures stop and their "
-		"journals are retired, and every take file stays where it is",
-		"no state a checkpoint could restore is written; the record says so rather "
-		"than claiming an inverse",
-		"the take files: each reply names its route's path"),
-
 	R("record.input_get_state", RC::NotMutating, false,
 		"reads the configured plan, the published device state and the engine's two "
 		"input stages; it writes nothing",

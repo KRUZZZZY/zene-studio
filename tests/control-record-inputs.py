@@ -51,7 +51,8 @@ What it drives, in order:
      says the window is empty - never a zero-length file;
  12. `control.transactions`                the A16 records: the arm verbs are
      `snapshot` with a command inverse, `record.input_set` is `true_inverse`, the
-     inspectors and the writers that only touch a file are `not_mutating`.
+     disarm verbs are `irreversible` because they leave the take files on disk,
+     and inspectors and standalone-file writers are `not_mutating`.
 
 Started through the shared harness (tests/control_socket_harness.py), so this file
 adds no second launch path and no second launch recipe.
@@ -173,6 +174,10 @@ def check_registration(session, recorder):
                    all((entries.get(cid) or {}).get("group") == "record"
                        for cid in NEW_IDS),
                    "ids=%r" % (NEW_IDS,))
+    for cid in ("record.disarm_track", "record.disarm_all"):
+        recorder.check("%s is declared mutating" % cid,
+                       (entries.get(cid) or {}).get("mutating") is True,
+                       "entry=%r" % (entries.get(cid) or {}))
     arm = entries.get("track.set_arm") or {}
     recorder.check("track.set_arm no longer describes itself as a refusal",
                    "Refused" not in (arm.get("description") or "")
@@ -302,6 +307,22 @@ def check_instance_b(session, recorder, shared):
     recorder.check("the route reports its channel capacity",
                    entry.get("input_channel_capacity") == 8,
                    "route 0 = %r" % entry)
+
+    single_take = os.path.join(shared, "take-route1.wav")
+    single_arm = session.result("record.arm_track",
+                                {"route": 1, "input_channel": 7, "file": single_take})
+    recorder.check("a second route arms for the single-route disarm proof",
+                   single_arm.get("armed") is True and os.path.exists(single_take),
+                   "result=%r file_exists=%r" % (single_arm, os.path.exists(single_take)))
+    single_journal = single_arm.get("journal") or ""
+    single_stop = session.result("record.disarm_track", {"route": 1})
+    recorder.check("record.disarm_track stops one route and retires its journal",
+                   single_stop.get("armed_before") is True
+                   and single_stop.get("journal_retired") is True
+                   and single_journal and not os.path.exists(single_journal)
+                   and os.path.exists(single_take),
+                   "result=%r journal_exists=%r take_exists=%r"
+                   % (single_stop, os.path.exists(single_journal), os.path.exists(single_take)))
 
     # The route bound, typed.
     error = session.typed_error("record.arm_track", {"route": 99})
@@ -442,6 +463,13 @@ def check_transactions(session, recorder, expect_input_set, expect_arms):
                        and (armed.get("inverse") or {}).get("applies") == "command"
                        and (armed.get("inverse") or {}).get("op") == "record.disarm_track",
                        "record=%r" % armed)
+
+        for command in ("record.disarm_track", "record.disarm_all"):
+            entry = find(command, False)
+            recorder.check("%s is recorded as irreversible" % command,
+                           entry is not None and entry.get("class") == "irreversible"
+                           and "no inverse or snapshot" in (entry.get("mechanism") or ""),
+                           "record=%r" % entry)
 
     if expect_input_set:
         entry = find("record.input_set", True)
