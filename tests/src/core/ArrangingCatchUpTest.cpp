@@ -273,6 +273,30 @@ private slots:
 			ControlErrorKind::NotFound);
 	}
 
+	void aSpacerWithoutItsTrackIdAttachesToNothing()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("track-spacers"));
+		doc.appendChild(root);
+		QDomElement missing = doc.createElement(QStringLiteral("spacer")); // no track attribute at all
+		missing.setAttribute(QStringLiteral("height"), 40);
+		root.appendChild(missing);
+		QDomElement bogus = doc.createElement(QStringLiteral("spacer")); // an id that is not a number
+		bogus.setAttribute(QStringLiteral("track"), QStringLiteral("bogus"));
+		bogus.setAttribute(QStringLiteral("height"), 50);
+		root.appendChild(bogus);
+		QDomElement good = doc.createElement(QStringLiteral("spacer")); // a well-formed spacer still loads
+		good.setAttribute(QStringLiteral("track"), 7);
+		good.setAttribute(QStringLiteral("height"), 30);
+		good.setAttribute(QStringLiteral("label"), QStringLiteral("Drums"));
+		root.appendChild(good);
+		TrackSpacers::instance().load(root);
+		QCOMPARE(TrackSpacers::instance().spacer(0).height, 0);  // a missing or invalid id must not land on track 0
+		QCOMPARE(TrackSpacers::instance().spacer(7).height, 30);
+		QCOMPARE(TrackSpacers::instance().spacer(7).label, QStringLiteral("Drums"));
+		TrackSpacers::instance().clear();
+	}
+
 	void aProjectWithoutSpacersWritesNone()
 	{
 		QVERIFY(run(QStringLiteral("project.new")).ok);
