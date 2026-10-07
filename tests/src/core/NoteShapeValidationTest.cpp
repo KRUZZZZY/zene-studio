@@ -148,6 +148,33 @@ private slots:
 		QCOMPARE(added->pos().getTicks() + added->length().getTicks(), static_cast<int>(MaxSongLength));
 	}
 
+	void scaleRefusesANoteEndingPastTheSongLimit()
+	{
+		freshClip();
+		m_clip->addNote(Note(TimePos(500000), TimePos(1000000), 72), false);
+		Note* note = m_clip->notes().back();
+
+		const ControlResult result = run(QStringLiteral("note.scale"), {{QStringLiteral("clip"), clip()},
+			{QStringLiteral("time_factor"), 1.0}, {QStringLiteral("length_factor"), 2.0}});
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(note->pos().getTicks(), 1000000);
+		QCOMPARE(note->length().getTicks(), 500000);
+	}
+
+	void scaleRefusesARoundedNoteEndPastTheSongLimit()
+	{
+		freshClip();
+		const int position = 2 * MaxSongLength / 3 - 1;
+		m_clip->addNote(Note(TimePos(3), TimePos(position), 72), false);
+		Note* note = m_clip->notes().back();
+
+		const ControlResult result = run(QStringLiteral("note.scale"), {{QStringLiteral("clip"), clip()},
+			{QStringLiteral("time_factor"), 1.5}, {QStringLiteral("length_factor"), 0.5}});
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(note->pos().getTicks(), position);
+		QCOMPARE(note->length().getTicks(), 3);
+	}
+
 	//! Luna cluster 2873: filter.scale and filter.invert were read through toString()/toBool(),
 	//! which read a value of the wrong type as the empty choice - so a malformed filter matched
 	//! every note and 'action: remove' removed all of them.
