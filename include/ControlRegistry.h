@@ -150,6 +150,9 @@ public:
 	 *  new transaction, because the undo that asked for it IS the step (the
 	 *  inverse of a recorded command must not grow the record list). */
 	ControlResult invokeUnrecorded(const QString& id, const QJsonObject& args = QJsonObject());
+	//! The class an aggregate record of several mutating children carries: the weakest of their classes
+	//! ("irreversible" < "snapshot" < "true_inverse"), or "" when a child has no row or is not mutating.
+	static QString aggregateClassOf(const QStringList& childClasses);
 
 	//! Queue \p fn onto the UI thread and wait for its result.
 	static ControlResult runOnUiThread(const std::function<ControlResult()>& fn);
@@ -305,7 +308,6 @@ private:
 	{
 		QString command;
 		ControlResult result;  //!< the call's result, with its __transaction descriptor still in it
-		bool coalesced = false;
 		quint64 step = 0;
 	};
 	QVector<NestedRecord> m_nestedRecords;

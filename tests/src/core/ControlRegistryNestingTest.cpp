@@ -25,7 +25,9 @@
 #include <QtTest>
 
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
+#include "Mixer.h"
 #include "ProjectJournal.h"
 
 using namespace lmms;
@@ -173,14 +175,106 @@ private slots:
 			return ControlResult::success(QJsonObject{{QStringLiteral("__transaction"), transaction}});
 		};
 		registry->registerCommand(source);
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
 		QVERIFY(registry->invoke(source.id).ok);
 		QCOMPARE(registry->transactions().size(), 1);
+		const int depthBefore = journal->undoDepth();
 		const ControlResult undone = registry->invoke(QStringLiteral("control.undo"));
 		QVERIFY(undone.ok);
 		QCOMPARE(undone.result.value(QStringLiteral("restored_by")).toString(), target.id);
 		QCOMPARE(registry->transactions().size(), 1);
+		// The inverse is a command, so the undo takes no journal step: the depth is untouched too.
+		QCOMPARE(journal->undoDepth(), depthBefore);
 	}
 
+
+	//! A mutating call under a wrapper whose OWN descriptor is folded (its nested change not
+	//! covered) is flagged too, on the held path: wrapper -> C (described) -> D (described).
+	void foldedChangeUnderAHeldCallIsFlagged()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		registry->clearTransactions();
+		const ControlCommand inner = describedCommand(QStringLiteral("test.held_inner"), true, QStringLiteral("test.held_inner"));
+		registry->registerCommand(inner);
+		ControlCommand middle = describedCommand(QStringLiteral("test.held_middle"), true, QStringLiteral("test.held_middle"));
+		middle.handler = [inner](const QJsonObject& args) {
+			ControlResult result = ControlRegistry::instance()->invoke(inner.id, args);
+			if (!result.ok) { return result; }
+			result = ControlResult::success();
+			result.result.insert(QStringLiteral("__transaction"), QJsonObject{{QStringLiteral("before"), QJsonObject()},
+				{QStringLiteral("inverse"), QJsonObject{{QStringLiteral("op"), QStringLiteral("test.held_middle")}}},
+				{QStringLiteral("reversible"), true}, {QStringLiteral("mechanism"), QStringLiteral("middle")}});
+			return result;
+		};
+		registry->registerCommand(middle);
+		ControlCommand wrapper = describedCommand(QStringLiteral("test.held_wrapper"), false, QString());
+		wrapper.handler = [middle](const QJsonObject& args) {
+			return ControlRegistry::instance()->invoke(middle.id, args);
+		};
+		registry->registerCommand(wrapper);
+		QVERIFY(registry->invoke(wrapper.id).ok);
+		const QJsonArray transactions = registry->transactions();
+		QCOMPARE(transactions.size(), 1);
+		const QJsonObject record = transactions.last().toObject();
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), middle.id);
+		QVERIFY(!record.value(QStringLiteral("reversible")).toBool());
+		QVERIFY2(record.value(QStringLiteral("mechanism")).toString().contains(QStringLiteral("ran inside itself")),
+			qPrintable(record.value(QStringLiteral("mechanism")).toString()));
+	}
+
+	//! The class of an aggregate is the weakest of its children's, and never the wrapper's own class.
+	void aggregateClassIsTheWeakestChildClass()
+	{
+		using R = ControlRegistry;
+		QCOMPARE(R::aggregateClassOf({QStringLiteral("true_inverse"), QStringLiteral("true_inverse")}), QStringLiteral("true_inverse"));
+		QCOMPARE(R::aggregateClassOf({QStringLiteral("true_inverse"), QStringLiteral("snapshot")}), QStringLiteral("snapshot"));
+		QCOMPARE(R::aggregateClassOf({QStringLiteral("snapshot"), QStringLiteral("irreversible")}), QStringLiteral("irreversible"));
+		// A child with no row, or one that is not mutating, leaves nothing honest to claim.
+		QCOMPARE(R::aggregateClassOf({QStringLiteral("true_inverse"), QString()}), QString());
+		QCOMPARE(R::aggregateClassOf({QStringLiteral("not_mutating"), QStringLiteral("true_inverse")}), QString());
+		QCOMPARE(R::aggregateClassOf({}), QString());
+	}
+
+	//! Two mixer.set_volume calls under a wrapper, after an earlier call on the same channel. Before the
+	//! fix the first wrapped call coalesced into the EARLIER step, so the wrapper's step was empty. Now the
+	//! wrapper's two calls are one new step: depth +1, one aggregate record of class true_inverse, and
+	//! control.undo takes the whole step back.
+	void wrappedCallsDoNotCoalesceIntoAnEarlierStep()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		registry->clearTransactions();
+		// The master channel's persistent id, whatever number this build gave it.
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(0));
+		const QJsonObject earlier{{QStringLiteral("channel"), channel}, {QStringLiteral("volume"), 0.5}};
+		QVERIFY(registry->invoke(QStringLiteral("mixer.set_volume"), earlier).ok);
+		const int depthBefore = journal->undoDepth();
+		const int recordsBefore = registry->transactions().size();
+
+		ControlCommand wrapper = describedCommand(QStringLiteral("test.volume_wrapper"), false, QString());
+		wrapper.handler = [channel](const QJsonObject&) {
+			const bool first = ControlRegistry::instance()->invoke(QStringLiteral("mixer.set_volume"),
+				{{QStringLiteral("channel"), channel}, {QStringLiteral("volume"), 0.6}}).ok;
+			const bool second = ControlRegistry::instance()->invoke(QStringLiteral("mixer.set_volume"),
+				{{QStringLiteral("channel"), channel}, {QStringLiteral("volume"), 0.7}}).ok;
+			return first && second ? ControlResult::success() : ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("refused"));
+		};
+		registry->registerCommand(wrapper);
+		QVERIFY(registry->invoke(wrapper.id).ok);
+		QCOMPARE(journal->undoDepth() - depthBefore, 1);
+		const QJsonArray transactions = registry->transactions();
+		QCOMPARE(transactions.size() - recordsBefore, 1);
+		const QJsonObject record = transactions.last().toObject();
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), wrapper.id);
+		QCOMPARE(record.value(QStringLiteral("class")).toString(), QStringLiteral("true_inverse"));
+		QCOMPARE(record.value(QStringLiteral("commands")).toInt(), 2);
+		QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+
+		QVERIFY(registry->invoke(QStringLiteral("control.undo")).ok);
+		QCOMPARE(journal->undoDepth(), depthBefore);
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlRegistryNestingTest)

@@ -389,7 +389,10 @@ ControlResult ControlRegistry::runHandler(
 		if (produced != serialBefore)
 		{
 			step = produced;
-			coalesced = coalesceStepOf(*journal, commandId, args, true);
+			// A call a wrapper runs is never coalesced: its steps are merged into the wrapper's ONE step
+			// (flushNestedRecords). Coalescing one into a step BEFORE the wrapper would leave that step's
+			// record covering it twice.
+			coalesced = !enclosedByWrapper && coalesceStepOf(*journal, commandId, args, true);
 		}
 	}
 	// A dry run changes NOTHING and so must leave the journal exactly as it found
@@ -416,7 +419,9 @@ void ControlRegistry::recordCall(const QString& commandId, ControlResult* result
 	if (ownStep && enclosedByWrapper)
 	{
 		// Held, with its descriptor, until the wrapper's journal step is known (see flushNestedRecords).
-		m_nestedRecords.append(NestedRecord{commandId, *result, coalesced, step});
+		// A folded nested change is flagged here too, before the descriptor is kept.
+		markFoldedNestedChanges(result, m_foldedNestedRecords, foldedBefore);
+		m_nestedRecords.append(NestedRecord{commandId, *result, step});
 	}
 	else if (ownStep)
 	{
@@ -424,6 +429,25 @@ void ControlRegistry::recordCall(const QString& commandId, ControlResult* result
 		recordTransactionOf(commandId, result, coalesced, step);
 	}
 	if (!mutating && m_wrapperDepth == 0 && !m_nestedRecords.isEmpty()) { flushNestedRecords(commandId, *result, step); }
+}
+
+QString ControlRegistry::aggregateClassOf(const QStringList& childClasses)
+{
+	// Weakest first: a record of several children claims no more than its least reversible one.
+	static const QStringList order{QStringLiteral("irreversible"), QStringLiteral("snapshot"), QStringLiteral("true_inverse")};
+	QString weakest;
+	int weakestRank = order.size();
+	for (const QString& cls : childClasses)
+	{
+		const int rank = order.indexOf(cls);
+		if (rank < 0) { return QString(); }  // no row, or not a mutating class: nothing honest to claim
+		if (rank < weakestRank)
+		{
+			weakestRank = rank;
+			weakest = cls;
+		}
+	}
+	return weakest;
 }
 
 ControlResult ControlRegistry::invokeUnrecorded(const QString& id, const QJsonObject& args)
@@ -444,7 +468,7 @@ void ControlRegistry::flushNestedRecords(const QString& wrapperId, const Control
 	held.swap(m_nestedRecords);
 	if (held.size() == 1)
 	{
-		recordTransactionOf(held[0].command, &held[0].result, held[0].coalesced, held[0].step);
+		recordTransactionOf(held[0].command, &held[0].result, false, held[0].step);
 		return;
 	}
 	Transaction aggregate;
@@ -452,6 +476,7 @@ void ControlRegistry::flushNestedRecords(const QString& wrapperId, const Control
 	aggregate.step = step;
 	aggregate.commands = held.size();
 	QJsonArray children;
+	QStringList classes;
 	bool everyChildReversible = step != 0;
 	for (const NestedRecord& child : held)
 	{
@@ -462,6 +487,7 @@ void ControlRegistry::flushNestedRecords(const QString& wrapperId, const Control
 		stampContract(child.command, &stamped);
 		const bool reversible = stamped.reversible && child.step != 0;
 		everyChildReversible = everyChildReversible && reversible;
+		classes.append(stamped.cls);
 		children.append(QJsonObject{{QStringLiteral("command"), child.command}, {QStringLiteral("class"), stamped.cls},
 			{QStringLiteral("reversible"), reversible}, {QStringLiteral("before"), recorded.value(QStringLiteral("before"))},
 			{QStringLiteral("inverse"), recorded.value(QStringLiteral("inverse"))}});
@@ -469,11 +495,13 @@ void ControlRegistry::flushNestedRecords(const QString& wrapperId, const Control
 	aggregate.inverse = QJsonObject{{QStringLiteral("applies"), QStringLiteral("journal")},
 		{QStringLiteral("children"), children}};
 	aggregate.reversible = everyChildReversible;
+	// The class is the children's, never the wrapper's row: the wrapper is not_mutating, and this record
+	// is the mutating work it ran. stampContract is not applied, for the same reason.
+	aggregate.cls = aggregateClassOf(classes);
 	aggregate.mechanism = everyChildReversible
 		? QStringLiteral("one journal step covering the nested commands listed in inverse.children; control.undo reverts all of them")
 		: QStringLiteral("one journal step covering the nested commands listed in inverse.children, not every one of them "
 			"reversible; the step is not reported as reversible");
-	stampContract(wrapperId, &aggregate);
 	recordTransaction(aggregate);
 	provenance::recordChange(wrapperId, QJsonObject(), wrapper.result);
 }
