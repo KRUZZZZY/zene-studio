@@ -2204,3 +2204,5 @@ tests/src/gui/PinConnectorTest.cpp
 tests/src/core/TrackKeyNamesLoadTest.cpp
 plugins/VstBase/VstMidiEventBatch.h
 tests/src/core/VstMidiEventBatchTest.cpp
+include/MidiHandoffQueue.h
+tests/src/core/MidiHandoffQueueTest.cpp

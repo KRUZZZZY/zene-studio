@@ -451,6 +451,7 @@ include/MidiDummy.h
 include/MidiEvent.h
 include/MidiEventProcessor.h
 include/MidiEventToByteSeq.h
+include/MidiHandoffQueue.h
 include/MidiInputTransform.h
 include/MidiJack.h
 include/MidiJackOutSchedule.h
@@ -2508,6 +2509,7 @@ tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MeterTapTest.cpp
 tests/src/core/MidiClipControllersLoadTest.cpp
 tests/src/core/MidiClockTest.cpp
+tests/src/core/MidiHandoffQueueTest.cpp
 tests/src/core/MidiInputTransformTest.cpp
 tests/src/core/MidiJackOutScheduleTest.cpp
 tests/src/core/MidiLearnTest.cpp

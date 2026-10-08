@@ -31,6 +31,8 @@
 #include <clocale> // IWYU pragma: keep
 #include <cstdio>
 #include <cstdlib>
+#include <charconv>
+#include <cstdint>
 #include <cstring>
 #include <string>
 
@@ -457,6 +459,11 @@ public:
 
 	int sendMessage( const message & _m );
 	message receiveMessage();
+
+	//! Sends a message whose arguments are all integers, in the wire format sendMessage() writes. Each
+	//! argument is formatted into a stack buffer, so unlike building a message with addInt() this does not
+	//! allocate; the audio thread uses it. @return the number of bytes written, as sendMessage() does
+	int sendIntMessage( int _id, const std::int32_t * _values, std::size_t _count );
 
 	inline bool isInvalid() const
 	{

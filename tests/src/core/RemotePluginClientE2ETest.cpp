@@ -75,7 +75,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <atomic>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include "AudioEngine.h"
@@ -495,6 +497,78 @@ private slots:
 		QVERIFY(!plugin.process());
 		QVERIFY2(std::chrono::steady_clock::now() - started < bound,
 			"a second period waited again for the client's owed reply");
+	}
+
+	/*!
+	 * processMidiEvent() never waits for the communication lock.
+	 *
+	 * The instrument hosts call it from the audio thread, while the main thread may hold
+	 * the lock across a whole request/reply exchange. Here another thread holds the lock
+	 * for 300 ms; the call must return at once, and the event is not lost.
+	 */
+	void midiEventDoesNotWaitForTheCommunicationLock()
+	{
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		std::atomic<bool> held{false};
+		std::thread holder{[&] {
+			plugin.lock();
+			held = true;
+			std::this_thread::sleep_for(std::chrono::milliseconds{300});
+			plugin.unlock();
+		}};
+		while (!held) { std::this_thread::yield(); }
+
+		const auto started = std::chrono::steady_clock::now();
+		plugin.processMidiEvent(MidiEvent(MidiNoteOn, 0, 60, 100), 0);
+		const auto elapsed = std::chrono::steady_clock::now() - started;
+		holder.join();
+
+		QVERIFY2(elapsed < std::chrono::milliseconds{100},
+			"processMidiEvent() waited for the communication lock");
+		QCOMPARE(plugin.midiEventsDropped(), std::uint64_t{0});
+	}
+
+	/*!
+	 * MIDI queued with processMidiEvent() reaches the client before its next period.
+	 *
+	 * The "midi" fake client reports how many IdMidiEvent messages it received by asking
+	 * for one more output than that, in a channel-count request sent during the period.
+	 * Three events queued before the period must therefore arrive as 4 outputs, and that
+	 * request is applied on the main thread, not inside the period.
+	 */
+	void queuedMidiEventsReachTheClientBeforeItsPeriod()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the MIDI hand-off "
+				"is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("midi")}),
+			"could not start/connect the midi fake client");
+		QVERIFY2(!plugin.failed(), "the midi fake client did not complete the handshake");
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
+
+		for (int offset = 0; offset < 3; ++offset)
+		{
+			plugin.processMidiEvent(MidiEvent(MidiNoteOn, 0, 60 + offset, 100), offset);
+		}
+
+		auto out = ports.buffers()->output();
+		std::fill(out.bufferPtr(0), out.bufferPtr(0) + frames, 1.0f);
+		std::fill(out.bufferPtr(1), out.bufferPtr(1) + frames, 1.0f);
+
+		QVERIFY(!plugin.process());
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
+		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{4}, 2000);
 	}
 
 	/*!

@@ -36,6 +36,7 @@
 #include <cstdint>
 #include <span>
 
+#include "MidiHandoffQueue.h"
 #include "RemotePluginBase.h"
 #include "SharedMemory.h"
 #include "LmmsTypes.h"
@@ -151,7 +152,13 @@ public:
 	//! @return pointer to the shared buffer, or nullptr on failure
 	auto updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*;
 
+	//! Queues a MIDI event for the client. It never waits, so any thread may call it, the audio thread included:
+	//! the event is sent by the next processing period (see process()). A full queue drops the event, counted
+	//! by midiEventsDropped().
 	void processMidiEvent( const MidiEvent&, const f_cnt_t _offset );
+
+	//! MIDI events refused because the hand-off queue was full, since construction.
+	std::uint64_t midiEventsDropped() const { return m_midiHandoff.dropped(); }
 
 	void updateSampleRate( sample_rate_t _sr )
 	{
@@ -261,6 +268,12 @@ private:
 
 	//! Body of process(), called with m_commMutex held and m_inProcessPeriod set.
 	bool processPeriod();
+
+	//! Sends the MIDI events queued by processMidiEvent(), in order. Called with m_commMutex held.
+	void sendQueuedMidiEvents();
+
+	//! MIDI events waiting for the next processing period; see processMidiEvent().
+	MidiHandoffQueue<256> m_midiHandoff;
 
 	//! Consumes client messages until every owed IdProcessingDone has arrived, or \a deadline passes.
 	//! Non-reply messages go through processMessage(), which defers their main-thread work.

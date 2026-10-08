@@ -469,6 +469,9 @@ set(LMMS_TESTS
 	# The VST remote client's per-period MIDI helpers (plugins/VstBase/VstMidiEventBatch.h): an
 	# allocation-free sort and a bounded queue. The client itself is an out-of-process executable.
 	src/core/VstMidiEventBatchTest.cpp
+	# The bounded lock-free MIDI hand-off the instrument hosts use to get events off their audio paths
+	# (include/MidiHandoffQueue.h): FIFO, drop-and-count when full, no allocation, no lost accepted event.
+	src/core/MidiHandoffQueueTest.cpp
 	src/core/RecordingRealtimeTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/ReversibilityContractTest.cpp

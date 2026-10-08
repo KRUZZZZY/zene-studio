@@ -30,6 +30,7 @@
 #endif
 
 #include <algorithm>
+#include <iterator>
 
 #ifdef LMMS_BUILD_WIN32
 #include <windows.h>
@@ -501,6 +502,9 @@ bool RemotePlugin::processPeriod()
 		return false;
 	}
 
+	// MIDI for this period goes out ahead of the request, so the client has it when it processes.
+	sendQueuedMidiEvents();
+
 	// The request is counted as owed before it is sent, so a late reply is always drained later.
 	++m_owedProcessingReplies;
 	sendMessage(IdStartProcessing);
@@ -608,15 +612,27 @@ void RemotePlugin::reportDeferredClientRequests()
 void RemotePlugin::processMidiEvent( const MidiEvent & _e,
 							const f_cnt_t _offset )
 {
-	message m( IdMidiEvent );
-	m.addInt( _e.type() );
-	m.addInt( _e.channel() );
-	m.addInt( _e.param( 0 ) );
-	m.addInt( _e.param( 1 ) );
-	m.addInt( _offset );
-	lock();
-	sendMessage( m );
-	unlock();
+	// Realtime: no lock and no allocation here, since the instrument hosts call this from the audio thread
+	// while the main thread may hold m_commMutex for a whole request/reply exchange. The event is sent by
+	// the next processing period, from sendQueuedMidiEvents().
+	HandoffMidiEvent event;
+	event.type = static_cast<std::uint8_t>( _e.type() );
+	event.channel = _e.channel();
+	event.param1 = _e.param( 0 );
+	event.param2 = _e.param( 1 );
+	event.offset = static_cast<std::uint32_t>( _offset );
+	m_midiHandoff.push( event );
+}
+
+void RemotePlugin::sendQueuedMidiEvents()
+{
+	HandoffMidiEvent event;
+	while( m_midiHandoff.pop( event ) )
+	{
+		const std::int32_t values[] = {
+			event.type, event.channel, event.param1, event.param2, static_cast<std::int32_t>( event.offset ) };
+		sendIntMessage( IdMidiEvent, values, std::size( values ) );
+	}
 }
 
 void RemotePlugin::showUI()

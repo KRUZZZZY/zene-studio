@@ -24,6 +24,8 @@
 
 #include "RemotePluginBase.h"
 
+#include <charconv>
+
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 #include <QCoreApplication>
 #include <QThread>
@@ -69,6 +71,38 @@ RemotePluginBase::~RemotePluginBase()
 
 
 
+
+int RemotePluginBase::sendIntMessage( int _id, const std::int32_t * _values, std::size_t _count )
+{
+#ifdef SYNC_WITH_SHM_FIFO
+	// The shared-memory FIFO's writer is private to shmFifo, so this transport builds the message the
+	// ordinary way. It allocates; the socket transport below does not.
+	message m( _id );
+	for( std::size_t i = 0; i < _count; ++i )
+	{
+		m.addInt( _values[i] );
+	}
+	return sendMessage( m );
+#else
+	// Each argument is formatted into a stack buffer and written length-prefixed, exactly as addInt()
+	// would store it, so nothing is allocated.
+	char digits[16];
+	std::size_t written = 8;
+	pthread_mutex_lock(&m_sendMutex);
+	writeInt( _id );
+	writeInt( static_cast<int32_t>( _count ) );
+	for( std::size_t i = 0; i < _count; ++i )
+	{
+		const auto end = std::to_chars( digits, digits + sizeof digits, _values[i] ).ptr;
+		const auto length = static_cast<int32_t>( end - digits );
+		writeInt( length );
+		write( digits, length );
+		written += 4 + static_cast<std::size_t>( length );
+	}
+	pthread_mutex_unlock(&m_sendMutex);
+	return static_cast<int>( written );
+#endif
+}
 
 int RemotePluginBase::sendMessage(const message & _m)
 {

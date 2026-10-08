@@ -101,6 +101,11 @@ bool g_stall = false;
 //! writes no planes for it.
 bool g_recount = false;
 
+//! "midi" mode: the client counts the IdMidiEvent messages it receives, and in each period asks for
+//! (count + 1) outputs before its reply, so the host can see how many events arrived before the period.
+bool g_midi = false;
+int g_midiEvents = 0;
+
 //! Shared audio block the host handed out (data, past SharedMemory's header).
 float* g_block = nullptr;
 std::uint64_t g_blockFloats = 0;
@@ -322,8 +327,18 @@ auto handleMessage(const Message& message) -> bool
 		}
 		break;
 
+	case IdMidiEvent:
+		if (g_midi) { ++g_midiEvents; }
+		break;
 	case IdStartProcessing:
 		if (g_stall) { break; }
+		if (g_midi)
+		{
+			const std::string outputs = std::to_string(g_midiEvents + 1);
+			if (!sendMessage(IdChangeInputOutputCount, {"0", outputs})) { return false; }
+			if (!sendMessage(IdProcessingDone, {})) { return false; }
+			break;
+		}
 		if (g_recount)
 		{
 			if (!sendMessage(IdChangeInputOutputCount, {"0", "4"})) { return false; }
@@ -429,14 +444,15 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
 	g_stale = mode == "stale";
 	g_stall = mode == "stall";
 	g_recount = mode == "recount";
-	if (mode != "modern" && mode != "stale" && mode != "stall" && mode != "recount")
+	g_midi = mode == "midi";
+	if (mode != "modern" && mode != "stale" && mode != "stall" && mode != "recount" && mode != "midi")
 	{
 		std::fprintf(stderr, "fakeclient: unknown mode '%s'\n", mode.c_str());
 		return 1;
