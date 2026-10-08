@@ -208,6 +208,45 @@ private slots:
 		QVERIFY(std::abs(middleX - area.width() / 2.0) < 0.6);
 		QVERIFY(std::abs(middleY - area.height() / 2.0) < 0.6);
 	}
+
+	//! The pad's accessors tell a list or a reader where it stands, and refresh() follows an edit made elsewhere.
+	void thePadFollowsTheMacrosItIsOverAndSaysWhereItStands()
+	{
+		while (Engine::mixer()->numChannels() <= 2) { Engine::mixer()->createChannel(); }
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(2));
+		for (const char* name : {"Width", "Colour"})
+		{
+			QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QLatin1String(name)}}).ok);
+		}
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-0")},
+			{QStringLiteral("value"), 0.25}}).ok);
+		XyPadDialog dialog(channel);
+		QCOMPARE(dialog.channel(), channel);
+		QCOMPARE(dialog.macroId(false), QStringLiteral("macro-0"));
+		QCOMPARE(dialog.macroId(true), QStringLiteral("macro-1"));
+		QCOMPARE(dialog.macroName(false), QStringLiteral("Width"));
+		QCOMPARE(dialog.macroName(true), QStringLiteral("Colour"));
+		XyPadArea* area = dialog.area();
+		QVERIFY(area != nullptr);
+		QCOMPARE(area->sizeHint(), QSize(220, 220));
+		QVERIFY(std::abs(area->point().x() - 0.25) < 1e-4);  // opened at the macros' own values
+
+		// An edit made elsewhere is shown once the pad is told to look again.
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-1")},
+			{QStringLiteral("value"), 0.75}}).ok);
+		dialog.refresh();
+		QVERIFY(std::abs(area->point().y() - 0.75) < 1e-4);
+		QVERIFY(std::abs(area->point().x() - 0.25) < 1e-4);
+
+		// The pad reads out both axes by name, and moving it reports the new place.
+		area->setAxisNames(QStringLiteral("Width"), QStringLiteral("Colour"));
+		QCOMPARE(area->accessibleValue(), QStringLiteral("X Width 25 %, Y Colour 75 %"));
+		QPointF reported;
+		area->moved = [&reported](QPointF point) { reported = point; };
+		area->setPoint(QPointF(0.5, 0.5));
+		QTest::keyClick(area, Qt::Key_Right);
+		QVERIFY2(std::abs(reported.x() - 0.51) < 1e-6, "a key press did not report the new place");
+	}
 };
 
 QTEST_MAIN(XyPadPairTest)

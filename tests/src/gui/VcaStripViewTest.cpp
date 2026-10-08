@@ -31,7 +31,12 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QApplication>
+#include <QContextMenuEvent>
 #include <QMenu>
+#include <QPointer>
+#include <QTemporaryDir>
+#include <QTimer>
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
@@ -40,6 +45,7 @@
 #include "Engine.h"
 #include "Fader.h"
 #include "GuiApplication.h"
+#include "GuiTestApplication.h"
 #include "Mixer.h"
 #include "VcaGroup.h"
 #include "VcaStripView.h"
@@ -54,7 +60,10 @@ class VcaStripViewTest : public QObject
 private slots:
 	void initTestCase()
 	{
-		Engine::init(true);
+		// The strip's Fader is a GuiApplication widget, so the real application is started over a throwaway home.
+		QVERIFY(m_home.isValid());
+		guitest::startGui(m_home);
+		QVERIFY(getGUI() != nullptr);
 		Engine::audioEngine()->audioDev()->stopProcessing();
 		ControlRegistry::setReady(true);
 		while (Engine::mixer()->numChannels() < 3) { Engine::mixer()->createChannel(); }
@@ -68,11 +77,6 @@ private slots:
 
 	void theStripsControlsAreTheGroupsOwnModels()
 	{
-		// A Fader's value float is a GuiApplication widget (SimpleTextFloat reads
-		// getGUI()), and a unit test has no GuiApplication. The strip is proved
-		// live instead: tests/control-success-paths.py builds a group on the GUI
-		// instance and renders the mixer (window.screenshot).
-		if (getGUI() == nullptr) { QSKIP("no GuiApplication: a Fader cannot be built in this process"); }
 		VcaGroup* group = Engine::mixer()->createVcaGroup(QStringLiteral("Keys"));
 		group->addMember(1);
 		VcaStripView strip(group);
@@ -117,6 +121,125 @@ private slots:
 		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
 		QVERIFY2(made->contains(2), "control.undo did not restore the membership the menu removed");
 	}
+
+	void theStripsMenuChoosesLinksAndNestingThroughTheCommands()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clearVcaGroups();
+		VcaGroup* outer = mixer->createVcaGroup(QStringLiteral("Outer"));
+		VcaGroup* inner = mixer->createVcaGroup(QStringLiteral("Inner"));
+		VcaGroup* other = mixer->createVcaGroup(QStringLiteral("Other"));
+		VcaStripView strip(inner);
+		QCOMPARE(strip.groupId(), inner->id());
+		QVERIFY(strip.fader() != nullptr);
+		QVERIFY(strip.muteButton() != nullptr && strip.soloButton() != nullptr);
+
+		QMenu menu;
+		strip.fillMenu(&menu);
+		QMenu* links = menuNamed(&menu, QStringLiteral("Links"));
+		QMenu* putInside = menuNamed(&menu, QStringLiteral("Put Inside"));
+		QVERIFY(links != nullptr && putInside != nullptr);
+		QCOMPARE(links->actions().size(), 4);
+		for (QAction* action : links->actions()) { QVERIFY(action->isCheckable()); }
+
+		// Mute is linked from the start; unticking it is one recorded vca.set_links.
+		QAction* mute = actionNamed(links, QStringLiteral("Mute"));
+		QVERIFY(mute->isChecked() == inner->linksMute());
+		const bool before = inner->linksMute();
+		mute->setChecked(!before);
+		QCOMPARE(inner->linksMute(), !before);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
+		QCOMPARE(inner->linksMute(), before);
+
+		// "No Group" is checked while the group sits at the top; choosing another nests it there.
+		QAction* none = actionNamed(putInside, QStringLiteral("No Group"));
+		QVERIFY(none->isChecked());
+		QVERIFY(actionNamed(putInside, QStringLiteral("Inner")) == nullptr);  // never offered as its own parent
+		actionNamed(putInside, QStringLiteral("Outer"))->trigger();
+		QCOMPARE(inner->parentId(), outer->id());
+
+		// Reopened: Outer is checked, and Outer itself - inside Inner's tree now - cannot take Inner as a parent.
+		QMenu again;
+		strip.fillMenu(&again);
+		QMenu* insideAgain = menuNamed(&again, QStringLiteral("Put Inside"));
+		QVERIFY(actionNamed(insideAgain, QStringLiteral("Outer"))->isChecked());
+		VcaStripView outerStrip(outer);
+		QMenu outerMenu;
+		outerStrip.fillMenu(&outerMenu);
+		QAction* loop = actionNamed(menuNamed(&outerMenu, QStringLiteral("Put Inside")), QStringLiteral("Inner"));
+		QVERIFY(loop != nullptr);
+		QVERIFY2(!loop->isEnabled(), "a group was offered a parent that sits inside it");
+		QVERIFY(!loop->toolTip().isEmpty());
+		QVERIFY(actionNamed(menuNamed(&outerMenu, QStringLiteral("Put Inside")), QStringLiteral("Other"))->isEnabled());
+
+		// No Group puts it back at the top.
+		actionNamed(menuNamed(&again, QStringLiteral("Put Inside")), QStringLiteral("No Group"))->trigger();
+		QCOMPARE(inner->parentId(), VcaGroup::NoParent);
+		QVERIFY(mixer->deleteVcaGroup(other->id()));
+		mixer->clearVcaGroups();
+	}
+
+	void aStripWhoseGroupIsRemovedRetiresAtOnce()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clearVcaGroups();
+		VcaGroup* group = mixer->createVcaGroup(QStringLiteral("Doomed"));
+		auto* strip = new VcaStripView(group);
+		strip->show();
+		QVERIFY(strip->isVisible());
+		QVERIFY(mixer->deleteVcaGroup(group->id()));
+		QVERIFY2(!strip->isVisible(), "the strip stayed up over freed models");
+		QTRY_VERIFY(QPointer<VcaStripView>(strip).isNull());  // deleteLater() ran
+	}
+
+	void theContextMenuEventOpensTheSameMenu()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clearVcaGroups();
+		VcaGroup* group = mixer->createVcaGroup(QStringLiteral("Keys"));
+		VcaStripView strip(group);
+		strip.show();
+		bool sawLinks = false;
+		closePopupWhenUp(&sawLinks);
+		QContextMenuEvent event(QContextMenuEvent::Mouse, QPoint(4, 4), strip.mapToGlobal(QPoint(4, 4)));
+		QApplication::sendEvent(&strip, &event);
+		QVERIFY2(sawLinks, "the right-click did not open the strip's menu");
+		mixer->clearVcaGroups();
+	}
+
+private:
+	//! Once the strip's menu is up (it is shown inside exec(), so it is polled for, not waited a fixed time), notes
+	//! whether it carries the Links submenu and closes it.
+	static void closePopupWhenUp(bool* sawLinks, int triesLeft = 200)
+	{
+		QTimer::singleShot(10, [sawLinks, triesLeft] {
+			auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+			if (menu == nullptr)
+			{
+				if (triesLeft > 0) { closePopupWhenUp(sawLinks, triesLeft - 1); }
+				return;
+			}
+			*sawLinks = menuNamed(menu, QStringLiteral("Links")) != nullptr;
+			menu->close();
+		});
+	}
+
+	static QMenu* menuNamed(QMenu* menu, const QString& name)
+	{
+		QAction* action = actionNamed(menu, name);
+		return action != nullptr ? action->menu() : nullptr;
+	}
+
+	static QAction* actionNamed(QMenu* menu, const QString& name)
+	{
+		for (QAction* action : menu->actions())
+		{
+			if (action->text() == name) { return action; }
+		}
+		return nullptr;
+	}
+
+	QTemporaryDir m_home;
 };
 
 QTEST_MAIN(VcaStripViewTest)
