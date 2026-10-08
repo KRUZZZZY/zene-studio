@@ -881,6 +881,9 @@ set(LMMS_TESTS
 	src/gui/PluginControlDialogsTest.cpp
 	# M0 coverage: the mixer's windows (routing matrix, large meters, EQ compare), hardware / surround menus, the surround panner.
 	src/gui/MixerWindowsTest.cpp
+	# M0 coverage: a device's menu (insert, replace, copy, A/B, parameters), the channel picker and the picker organiser.
+	src/gui/EffectDeviceMenuTest.cpp
+	src/gui/EffectPickerOrganiserTest.cpp
 	# The transport's Sync toggle (link.set_enabled) and its session read-out.
 	src/gui/SessionSyncActionTest.cpp
 	# The piano roll's Randomize / Humanize / Scale velocities items (note.randomize, note.velocity_scale).
@@ -1226,6 +1229,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "EffectRackAddTest"
 		# The Gate / Modulation / Receiver dialogs are built over one real effect each.
 		OR LMMS_TEST_NAME STREQUAL "PluginControlDialogsTest"
+		# The device menu acts on real amplifier, recorder and convolution reverb effects.
+		OR LMMS_TEST_NAME STREQUAL "EffectDeviceMenuTest"
+		OR LMMS_TEST_NAME STREQUAL "EffectPickerOrganiserTest"
 		# The LV2 state round trip loads the host's real LV2 effects.
 		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
 		# The rack menu binds a macro to a parameter of one real effect.
@@ -1616,6 +1622,8 @@ set_tests_properties(SessionSyncActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(FollowActionEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginControlDialogsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerWindowsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(EffectDeviceMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(EffectPickerOrganiserTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

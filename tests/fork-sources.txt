@@ -2204,3 +2204,5 @@ tests/src/gui/PinConnectorTest.cpp
 tests/src/core/TrackKeyNamesLoadTest.cpp
 tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/MixerWindowsTest.cpp
+tests/src/gui/EffectDeviceMenuTest.cpp
+tests/src/gui/EffectPickerOrganiserTest.cpp
