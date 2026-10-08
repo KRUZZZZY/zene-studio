@@ -1,21 +1,30 @@
 # Engine batch-07 — Luna clusters 5157, 4288, 5154, 4279, 1512, 5156
 
-> **Correction, 2026-10-08 (rework, see `rework-2026-10-08.md`).** The source review of
-> 2026-10-06 found three claims in this report false, and the rework corrected them:
+> **Correction, 2026-10-08 (rework, rounds 1 and 2; see `rework-2026-10-08.md`).** The
+> source review of 2026-10-06 and an independent review of the rework found the claims
+> below false. The state of each cluster on the current tree:
 >
-> - **4288 (`2fa142d5b`)**: the guard was regressive. It skipped master (num 0) on load, so
->   a saved master lost its state. Fixed in `2ff89cf2c` (only a negative num is refused).
-> - **5154 (`4d50f628b`)**: the two walks did NOT keep separate sets. One visited set was
->   shared by the receiver walk and the sender-only walk, so a channel reached sender-only
->   was skipped by the receiver walk and an upstream channel stayed muted. Fixed in
->   `133960a71` with one visited set per walk direction.
-> - **5156 (`f1a74cc54`)**: the claim "no allocation, no locking" was false. The new read
->   called `valueBuffer()`, which takes `m_valueBufferMutex`. Fixed in `0cfcbfa14`: the
->   sidechain amount is read through `AutomatableModel::publishedValueAt()`, which takes no
->   lock. The lock-freedom is established by reading the code, not by a test (no test can
->   observe a mutex acquisition); the regression test added there only proves zero
->   allocations and the per-frame curve.
+> - **4288 (`2fa142d5b`)**: the original guard was regressive. It skipped master (num 0) on
+>   load, so a saved master lost its state. Round 1 (`2ff89cf2c`) restored master. Round 2
+>   (`2d3c4f1b1`) found that a missing or non-numeric `num` also parsed as 0 and overwrote
+>   the master. Such an element is now skipped too. Only a negative or malformed `num` is
+>   refused; master (0) loads.
+> - **5154 (`4d50f628b`)**: the original claim that the two walks kept separate sets was
+>   false. One visited set was shared by the receiver walk and the sender-only walk, so a
+>   channel reached sender-only was skipped by the receiver walk and an upstream channel
+>   stayed muted. Fixed in `133960a71` with one visited set per walk direction.
+> - **5156 (`f1a74cc54`)**: the claim "no allocation, no locking" was false. The original
+>   read called `valueBuffer()`, which takes `m_valueBufferMutex` on the audio thread. The
+>   attempted fix (`0cfcbfa14`) removed the lock but also changed the behaviour for
+>   controller-driven and manually changed amounts. Round 2 (`74c567843`) restored the
+>   original `valueBuffer()` read exactly, so the lock is back. **This cluster has no lock
+>   fix on the current tree; it is BLOCKED-ON-2647**, the mixer-wide realtime item. The
+>   per-frame behaviour (ramp, controller, interpolation) is covered by tests, and that
+>   coverage is the only thing this cluster now provides.
 >
+> The verdicts and red/green results below describe the ORIGINAL commits. They are kept for
+> the record and are not a statement about the current tree, except where the correction
+> above says otherwise. Clusters 5157, 4279 and 1512 were not in the rework and are unchanged.
 > The verdicts and red/green results below describe the ORIGINAL commits. They are kept for
 > the record and are not a statement about the current tree, except where the correction
 > above says otherwise. Clusters 5157, 4279 and 1512 were not in the rework and are unchanged.
