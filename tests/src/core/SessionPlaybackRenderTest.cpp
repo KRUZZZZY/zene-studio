@@ -120,6 +120,13 @@ class SessionPlaybackRenderTest : public QObject
 private slots:
 	void initTestCase()
 	{
+#ifdef LMMS_TEST_PLUGIN_DIR
+		// The fixture needs a REAL instrument (tripleoscillator). tests/CMakeLists.txt hands this target the
+		// build's plugin directory; without pointing PluginFactory at it before Engine::init scans, the
+		// instrument is never found unless the caller happened to export LMMS_PLUGIN_DIR - and both render
+		// cases then skipped for want of an instrument, which left most of this file unexecuted.
+		qputenv( "LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR );
+#endif
 		Engine::init( true );
 		// 1. The play-handle pool exists only if main() built it; a test binary
 		//    that plays a note must build it itself.
