@@ -26,7 +26,10 @@
 #include "TrackFolder.h"
 
 
+#include <algorithm>
+
 #include <QLayout>
+#include <QPointer>
 #include <QScrollBar>
 #include <QWheelEvent>
 
@@ -121,9 +124,22 @@ TrackContainerView::TrackContainerView( TrackContainer * _tc ) :
 
 	connect( Engine::getSong(), SIGNAL(timeSignatureChanged(int,int)),
 						this, SLOT(realignTracks()));
-	connect( m_tc, SIGNAL(trackAdded(lmms::Track*)),
-			this, SLOT(createTrackView(lmms::Track*)),
-			Qt::QueuedConnection );
+	// The view is built on the next event-loop turn, as before. The track is held in a QPointer, and the view
+	// is built only if the track is still in this container then: a track deleted in the meantime (an undo, a
+	// removal in the same turn) is skipped, never dereferenced (m0 blocker, trackview-uaf). The signal itself is
+	// caught directly, so the track is still alive when it is captured.
+	connect( m_tc, &TrackContainer::trackAdded, this, [this]( Track * track )
+	{
+		QPointer<Track> added( track );
+		QMetaObject::invokeMethod( this, [this, added]
+		{
+			const TrackContainer::TrackList & tracks = m_tc->tracks();
+			if( added && std::find( tracks.begin(), tracks.end(), added.data() ) != tracks.end() )
+			{
+				createTrackView( added.data() );
+			}
+		}, Qt::QueuedConnection );
+	}, Qt::DirectConnection );
 	// A serialization restore deletes the container's tracks wholesale; the
 	// views must be gone before that happens (see the slot and
 	// docs/UNDO-RELEASE-CONFIG.md). Direct connection on purpose: the tracks

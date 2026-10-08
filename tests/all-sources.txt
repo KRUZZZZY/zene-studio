@@ -2757,6 +2757,7 @@ tests/src/gui/TempoMapPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
 tests/src/gui/TrackFolderMenuTest.cpp
 tests/src/gui/TrackRenderMenuTest.cpp
+tests/src/gui/TrackViewDeferredLifetimeTest.cpp
 tests/src/gui/UndoHistoryPanelTest.cpp
 tests/src/gui/VcaStripLifetimeTest.cpp
 tests/src/gui/VcaStripViewTest.cpp

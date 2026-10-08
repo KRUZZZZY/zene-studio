@@ -27,10 +27,13 @@
 
 #include "TrackFolder.h"
 
+#include <algorithm>
+
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPointer>
 #include <QStyleOption>
 #include <QTimer>
 
@@ -116,10 +119,23 @@ TrackView::TrackView( Track * track, TrackContainerView * tcv ) :
 
 
 	connect( m_track, SIGNAL(destroyedTrack()), this, SLOT(close()));
-	connect( m_track,
-		SIGNAL(clipAdded(lmms::Clip*)),
-			this, SLOT(createClipView(lmms::Clip*)),
-			Qt::QueuedConnection );
+	// The clip's view is built on the next event-loop turn, as before. The clip is held in a QPointer, and the
+	// view is built only if the clip is still on this track then: a clip deleted in the meantime (an undo, a
+	// removal in the same turn) is skipped, never dereferenced (m0 blocker, trackview-uaf).
+	connect( m_track, &Track::clipAdded, this, [this]( Clip * clip )
+	{
+		QPointer<Clip> added( clip );
+		QMetaObject::invokeMethod( this, [this, added]
+		{
+			Track * const track = added ? added->getTrack() : nullptr;
+			if( track == nullptr || track != getTrack() ) { return; }
+			const Track::clipVector & clips = track->getClips();
+			if( std::find( clips.begin(), clips.end(), added.data() ) != clips.end() )
+			{
+				createClipView( added.data() );
+			}
+		}, Qt::QueuedConnection );
+	}, Qt::DirectConnection );
 
 	connect( &m_track->m_mutedModel, SIGNAL(dataChanged()),
 			&m_trackContentWidget, SLOT(update()));

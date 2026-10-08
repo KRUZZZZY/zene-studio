@@ -269,6 +269,9 @@ void SampleTrackView::assignMixerLine(int channelIndex)
 
 void SampleTrackView::corruptStateUpdate()
 {
+	// A closed view waits for its deferred deletion after its track has died, and the periodic tick can land
+	// in that window: the model is gone then, so there is no state to read (m0 blocker, trackview-uaf).
+	if (model() == nullptr) { return; }
 	// The monitor mode can change under the view (an agent, an undo): the periodic tick
 	// that already polls the bus state re-reads it too.
 	showMonitorMode();

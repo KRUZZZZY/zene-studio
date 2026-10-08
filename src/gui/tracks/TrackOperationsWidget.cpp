@@ -30,6 +30,7 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPointer>
 #include <QPushButton>
 #include <QToolButton>
 
@@ -150,10 +151,21 @@ TrackOperationsWidget::TrackOperationsWidget( TrackView * parent ) :
 
 	layout->addWidget(operationsWidget, 0, Qt::AlignTop | Qt::AlignLeading);
 
-	connect( this, SIGNAL(trackRemovalScheduled(lmms::gui::TrackView*)),
-			m_trackView->trackContainerView(),
-				SLOT(deleteTrackView(lmms::gui::TrackView*)),
-							Qt::QueuedConnection );
+	// The removal is deferred to the container's next event-loop turn. The row is held in a QPointer, and it is
+	// removed only if it is still one of the container's rows then: a row closed in the meantime (its track
+	// deleted in the same turn) is skipped, not deleted a second time (m0 blocker, trackview-uaf).
+	TrackContainerView * const container = m_trackView->trackContainerView();
+	connect( this, &TrackOperationsWidget::trackRemovalScheduled, this, [container]( TrackView * view )
+	{
+		QPointer<TrackView> scheduled( view );
+		QMetaObject::invokeMethod( container, [container, scheduled]
+		{
+			if( scheduled && container->trackViews().contains( scheduled.data() ) )
+			{
+				container->deleteTrackView( scheduled.data() );
+			}
+		}, Qt::QueuedConnection );
+	}, Qt::DirectConnection );
 
 	connect( m_trackView->getTrack()->getMutedModel(), SIGNAL(dataChanged()),
 			this, SLOT(update()));
