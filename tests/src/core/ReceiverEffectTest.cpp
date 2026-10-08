@@ -33,12 +33,16 @@
 
 #include <QDomDocument>
 #include <QDomElement>
+#include <QTemporaryDir>
+
+#include <sndfile.h>
 
 #include "AudioBuffer.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "EffectControls.h"
 #include "Engine.h"
+#include "TakeRecorder.h"
 
 using namespace lmms;
 
@@ -192,8 +196,8 @@ private slots:
 		chain.clear();
 	}
 
-	//! InsertRecorder records the signal passing it and passes it on unchanged.
-	void theInsertRecorderPassesItsInputThrough()
+	//! InsertRecorder passes its input through unchanged and records it to a take while one is running.
+	void theInsertRecorderPassesItsInputThroughAndRecordsATake()
 	{
 		EffectChain chain{nullptr};
 		Effect* recorder = Effect::instantiate(QStringLiteral("insertrecorder"), &chain, nullptr);
@@ -210,8 +214,44 @@ private slots:
 		QDomDocument doc;
 		QDomElement parent = doc.createElement(QStringLiteral("root"));
 		doc.appendChild(parent);
-		const QDomElement saved = recorder->controls()->saveState(doc, parent);
-		QVERIFY(saved.firstChildElement(QStringLiteral("last-take")).isNull());
+		QVERIFY(!recorder->controls()->saveState(doc, parent).hasAttribute(QStringLiteral("last-take")));
+
+		// A take: the recorder of this device writes what passes it to a WAV, and the sound still passes unchanged.
+		TakeRecorder* take = TakeRecorder::of(recorder);
+		QVERIFY(take != nullptr);
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("take.wav"));
+		QString why;
+		QVERIFY2(take->start(path, 44100, &why), qPrintable(why));
+		QVERIFY(take->recording());
+		for (int i = 0; i < 10; ++i)
+		{
+			AudioBuffer passing = stereoBlock(0.25f, 0.5f);
+			chain.processAudioBuffer(passing, nullptr);
+			QCOMPARE(passing.interleavedBuffer()[0][0], 0.25f);
+		}
+		take->stop();
+		QVERIFY(!take->recording());
+		QCOMPARE(take->lastTake(), path);
+		SF_INFO info{};
+		SNDFILE* wav = sf_open(path.toLocal8Bit().constData(), SFM_READ, &info);
+		QVERIFY2(wav != nullptr, "the take was not written");
+		QCOMPARE(info.channels, 2);
+		QCOMPARE(info.frames, static_cast<sf_count_t>(10 * Frames));
+		sf_close(wav);
+
+		// With a take on disk the device's saved state names it, and a second recorder loads the name back.
+		QDomDocument saved;
+		QDomElement savedParent = saved.createElement(QStringLiteral("root"));
+		saved.appendChild(savedParent);
+		const QDomElement element = recorder->controls()->saveState(saved, savedParent);
+		QCOMPARE(element.attribute(QStringLiteral("last-take")), path);
+		Effect* second = Effect::instantiate(QStringLiteral("insertrecorder"), &chain, nullptr);
+		QVERIFY(second != nullptr);
+		second->controls()->restoreState(element);
+		QCOMPARE(TakeRecorder::of(second)->lastTake(), path);
+		delete second;
 		chain.clear();
 	}
 };
