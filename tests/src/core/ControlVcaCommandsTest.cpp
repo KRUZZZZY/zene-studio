@@ -380,8 +380,20 @@ private slots:
 		QCOMPARE(run(QStringLiteral("vca.get_state"),
 			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 0);
 
+		// The undo path: control.undo restores the SHARED membership in both groups.
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), first}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+
 		// Luna 4911: the ADVERTISED inverse must be replayable as written. It names vca.assign with
-		// also:true - without it, the channel is refused by `first`, which still holds it.
+		// also:true - without it, the channel is refused by `first`, which still holds it. Unassign
+		// again first, so the replay has a membership to put back.
+		QVERIFY(run(QStringLiteral("vca.unassign"), {{QStringLiteral("group"), second},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 0);
 		const QJsonObject inverse = revtest::stateOf(QStringLiteral("vca.unassign"))
 			.value(QStringLiteral("inverse")).toObject();
 		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("vca.assign"));
@@ -389,8 +401,7 @@ private slots:
 		QCOMPARE(inverseArgs.value(QStringLiteral("also")).toBool(), true);
 		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(), inverseArgs).ok,
 			"the advertised vca.assign inverse was refused");
-		// The membership the replay must restore is the one that was there: the
-		// channel is in `second` again AND still in `first`.
+		// The replay must restore the same membership: `second` again AND still `first`.
 		const ControlResult restored = run(QStringLiteral("vca.get_state"),
 			{{QStringLiteral("group"), second}});
 		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
