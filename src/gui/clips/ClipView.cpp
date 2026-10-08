@@ -36,6 +36,7 @@
 #include <QPainter>
 
 #include "AutomationClip.h"
+#include "ClipLinks.h"
 #include "ClipLockFeedback.h"
 #include "Clipboard.h"
 #include "ColorChooser.h"
@@ -47,9 +48,11 @@
 #include "GuiApplication.h"
 #include "KeyboardShortcuts.h"
 #include "lmms_math.h"
+#include "LinkedClipEdits.h"
 #include "MidiClipView.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
+#include "ProjectJournal.h"
 #include "SampleFrameEdits.h"
 #include "Song.h"
 #include "SongEditor.h"
@@ -102,6 +105,50 @@ int lockedAmong(const QVector<selectableObject*>& objects)
 	}));
 }
 
+
+//! A linked clip's left-edge drag is a trim of the whole group (docs/LINKED-CLIPS.md section 2): the press
+//! captures the peers into the drag's own undo step, the release moves their edges by what the dragged clip moved.
+struct LinkedTrimDrag
+{
+	const Clip* clip = nullptr;
+	tick_t start = 0;
+	tick_t end = 0;
+};
+LinkedTrimDrag s_linkedTrim;
+
+int undoDepthNow()
+{
+	const ProjectJournal* journal = Engine::projectJournal();
+	return journal != nullptr ? journal->undoDepth() : 0;
+}
+
+void beginLinkedTrim(Clip* clip, bool leftEdge, int depthBefore)
+{
+	s_linkedTrim = {};
+	if (!leftEdge || clip->linkId() <= 0) { return; }
+	ClipLinks::checkpointPeers(clip);
+	if (ProjectJournal* journal = Engine::projectJournal()) { journal->mergeCheckpointsFrom(depthBefore); }
+	s_linkedTrim = {clip, clip->startPosition().getTicks(), clip->endPosition().getTicks()};
+}
+
+void endLinkedTrim(Clip* clip)
+{
+	const LinkedTrimDrag drag = s_linkedTrim;
+	s_linkedTrim = {};
+	if (drag.clip != clip) { return; }
+	const tick_t startDelta = clip->startPosition().getTicks() - drag.start;
+	const tick_t endDelta = clip->endPosition().getTicks() - drag.end;
+	if (startDelta == 0 && endDelta == 0) { return; }
+	if (ClipLinks::planEdgeEdit(clip, startDelta, endDelta).isEmpty())
+	{
+		ClipLinks::applyEdgeEdit(clip, startDelta, endDelta, false);
+		return;
+	}
+	// A peer cannot take the trim: the whole group's trim is refused, so this clip goes back too.
+	clip->setStartTimeOffset(TimePos(clip->startTimeOffset().getTicks() + startDelta));
+	clip->movePosition(TimePos(drag.start));
+	clip->changeLength(TimePos(drag.end - drag.start));
+}
 } // namespace
 
 
@@ -650,6 +697,7 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 			else
 			{
 				getGUI()->songEditor()->m_editor->selectAllClips( false );
+				const int depthBeforePress = undoDepthNow();
 				m_clip->addJournalCheckPoint();
 
 				// Action::Move, Action::Resize and Action::ResizeLeft
@@ -690,6 +738,8 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 					m_action = Action::Move;
 					setCursor( Qt::SizeAllCursor );
 				}
+
+				beginLinkedTrim(m_clip, m_action == Action::ResizeLeft, depthBeforePress);
 
 				if( m_action == Action::Move )
 				{
@@ -1035,6 +1085,7 @@ void ClipView::mouseReleaseEvent( QMouseEvent * me )
 	{
 		// 0.5.0 ED-021: with zero-crossing snap on, the dragged edge of a sample clip lands on a crossing.
 		arrangement::snapEdgeToZeroCrossing(m_clip, m_action != Action::Move, m_action == Action::ResizeLeft);
+		endLinkedTrim(m_clip);
 		// TODO: Fix m_clip->setJournalling() consistency
 		m_clip->setJournalling( true );
 		// 0.5.0 ED-044: a clip dropped onto others trims or crossfades them, per the overlap mode;
@@ -1540,6 +1591,9 @@ bool ClipView::splitClip(const TimePos pos)
 	if (splitPos <= m_initialClipPos || splitPos >= m_initialClipEnd) { return false; }
 	// 0.5.0 ED-021: with zero-crossing snap on, a sample clip is cut frame-exact at the nearest zero crossing.
 	if (arrangement::splitAtZeroCrossing(m_clip, splitPos.getTicks())) { return true; }
+
+	// A linked clip's cut is the whole group's: the same clip-relative position on every member (one undo step).
+	if (m_clip->linkId() > 0) { return ClipLinks::splitGroupAt(m_clip, splitPos.getTicks()).right != nullptr; }
 
 	m_clip->getTrack()->addJournalCheckPoint();
 	m_clip->getTrack()->saveJournallingState(false);

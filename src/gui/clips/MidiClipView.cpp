@@ -37,6 +37,7 @@
 #include "AutomationEditor.h"
 #include "ClipEditsMenu.h"
 #include "ClipLinks.h"
+#include "LinkedClipEdits.h"
 #include "ConfigManager.h"
 #include "DeprecationHelper.h"
 #include "GuiApplication.h"
@@ -386,7 +387,9 @@ void MidiClipView::mergeClips(QVector<ClipView*> clipvs)
 
 void MidiClipView::clearNotesOutOfBounds()
 {
-	m_clip->getTrack()->addJournalCheckPoint();
+	// A linked clip's trim is the whole group's: the tracks of every member are captured as ONE undo step.
+	if (m_clip->linkId() > 0) { ClipLinks::checkpointGroupTracks(m_clip); }
+	else { m_clip->getTrack()->addJournalCheckPoint(); }
 	m_clip->getTrack()->saveJournallingState(false);
 
 	// The clone keeps this clip's linkId and joins the track, so it is a member
@@ -419,8 +422,12 @@ void MidiClipView::clearNotesOutOfBounds()
 	newClip->changeLength(m_clip->length());
 	newClip->updateLength();
 
+	// The group's other members take the same trimmed notes, re-based the same way, and their start offsets move
+	// by what the notes moved, so each peer still plays them where it did (docs/LINKED-CLIPS.md section 2).
+	Track* track = m_clip->getTrack();
 	remove();
-	m_clip->getTrack()->restoreJournallingState();
+	ClipLinks::adoptTrimmedContent(newClip, startBound.getTicks());
+	track->restoreJournallingState();
 }
 
 void MidiClipView::bulkClearNotesOutOfBounds(QVector<ClipView*> clipvs)
@@ -901,6 +908,13 @@ bool MidiClipView::destructiveSplitClip(const TimePos pos)
 	// Cutting at exactly the start/end position would create a zero length
 	// clip (bad), and a clip the same length as the original one (pointless).
 	if (splitPos <= m_initialClipPos || splitPos >= m_initialClipEnd) { return false; }
+
+	// A destructive cut of one member would leave the group's content diverged, so a linked clip is cut the
+	// way the plain knife cuts: every member at the same clip-relative position, none of them losing a note.
+	if (m_clip->linkId() > 0)
+	{
+		return ClipLinks::splitGroupAt(m_clip, static_cast<tick_t>(m_initialClipPos + pos)).right != nullptr;
+	}
 
 	m_clip->getTrack()->addJournalCheckPoint();
 	m_clip->getTrack()->saveJournallingState(false);

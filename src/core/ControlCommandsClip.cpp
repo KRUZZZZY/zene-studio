@@ -31,6 +31,7 @@
 #include "ControlReversibility.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "LinkedClipEdits.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -273,7 +274,10 @@ void registerClipSplit(ControlRegistry& registry)
 		"ED-021, sample clips only: 'frames' cuts that many engine frames after 'position' (frame-exact - the "
 		"halves' audio meets at that frame, their clips overlap by under a tick), and 'zero_crossing' (default: "
 		"arrangement.modes' snap_to_zero_crossings) moves the cut to the nearest zero crossing within 10 ms; the "
-		"reply then names the source 'frame' cut at.");
+		"reply then names the source 'frame' cut at. A linked clip's split applies to every member of its link "
+		"group at the same clip-relative position, in one undo step: the left halves stay one group ('left_group'), "
+		"the right halves form a second ('right_group'; 0 when only one member could be cut), and 'members_split' "
+		"counts the members cut.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("position"), control::integerProperty(1, MaxSongLength)},
@@ -287,6 +291,9 @@ void registerClipSplit(ControlRegistry& registry)
 		{QStringLiteral("zero_crossing"), control::booleanProperty()},
 		{QStringLiteral("right_position"), control::integerProperty()},
 		{QStringLiteral("lead_frames"), control::integerProperty()},
+		{QStringLiteral("members_split"), control::integerProperty()},
+		{QStringLiteral("right_group"), control::integerProperty()},
+		{QStringLiteral("left_group"), control::integerProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -316,13 +323,31 @@ void registerClipSplit(ControlRegistry& registry)
 
 		// ClipView::splitClip: checkpoint the track, then the one split recipe the range edits
 		// share (arrangement::splitClipAt).
-		ref.track->addJournalCheckPoint();
-		Clip* right = arrangement::splitClipAt(ref.clip, splitPos);
+		// A linked clip's split is the whole group's (ClipLinks::splitGroupAt, which takes its own
+		// checkpoint over every track it cuts): the left halves keep the group, the right halves form a new one.
+		ClipLinks::GroupSplit group;
+		Clip* right = nullptr;
+		if (ref.clip->linkId() > 0)
+		{
+			group = ClipLinks::splitGroupAt(ref.clip, splitPos);
+			right = group.right;
+		}
+		else
+		{
+			ref.track->addJournalCheckPoint();
+			right = arrangement::splitClipAt(ref.clip, splitPos);
+		}
 
 		const int rightOrdinal = ordinalOf(right);
 		QJsonObject result;
 		result.insert(QStringLiteral("left"), control::clipId(ref.id));
 		result.insert(QStringLiteral("right"), control::clipId(rightOrdinal));
+		if (ref.clip->linkId() > 0)
+		{
+			result.insert(QStringLiteral("members_split"), group.members);
+			result.insert(QStringLiteral("right_group"), group.rightGroup);
+			result.insert(QStringLiteral("left_group"), ref.clip->linkId());
+		}
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(before, QStringLiteral("control.undo"),
 				QJsonObject{{QStringLiteral("left"), control::clipId(ref.id)},

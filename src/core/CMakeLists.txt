@@ -220,6 +220,8 @@ set(LMMS_SRCS
 	# helpers the group's two translation units share. See docs/LINKED-CLIPS.md
 	# for the design decision and the edit-kind table.
 	core/ClipLinks.cpp
+	# Trim and split of a linked clip apply to the whole group (owner decision 2026-10-08).
+	core/LinkedClipEdits.cpp
 	core/ControlCommandsClipLink.cpp
 	core/ControlCommandsClipLinkState.cpp
 	# The destructive waveform editor's first slice (board card #706): the

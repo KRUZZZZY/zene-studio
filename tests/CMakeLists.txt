@@ -90,6 +90,8 @@ set(LMMS_TESTS
 	# file-length ratchet is not moved for a new feature; the fixtures both use
 	# are src/core/ClipLinkTestSupport.h.
 	src/core/ClipLinkPersistenceTest.cpp
+	# Owner decision 2026-10-08: a trim or a split of one member of a link group applies to every member.
+	src/core/LinkedClipEditsTest.cpp
 	src/core/ClipSerialisationTest.cpp
 	# ARCH-4 slice S4 (SPEC-ARCH-4 1.7 Requirement 6): the write-refusal gate -
 	# the one-writer rule made mechanical. It reads the write path as text and
@@ -1546,7 +1548,7 @@ set_tests_properties(ControlVcaCommandsTest ControlVcaEditGroupsTest PROPERTIES
 # a human click here?" - so registering the platform is what makes a runner run the
 # test in the headless state the product is told about, not merely what keeps it from
 # aborting. Registration and comment only: no test's behaviour changes.
-set_tests_properties(ClipLinkTest ClipLinkPersistenceTest ImportDetectionTest
+set_tests_properties(ClipLinkTest ClipLinkPersistenceTest LinkedClipEditsTest ImportDetectionTest
 	PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
