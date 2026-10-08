@@ -470,6 +470,9 @@ void Clip::saveClipEdits(QDomElement& element) const
 	{
 		element.setAttribute("fadeout", m_edits.fadeOutTicks);
 	}
+	// Owner decision 2026-10-08: the offset fades are written only when set (I9, additive).
+	if (m_edits.fadeInOffsetTicks != 0) { element.setAttribute("fadeinoffset", m_edits.fadeInOffsetTicks); }
+	if (m_edits.fadeOutOffsetTicks != 0) { element.setAttribute("fadeoutoffset", m_edits.fadeOutOffsetTicks); }
 	if (m_edits.fadeInShape != FadeShape::Linear)
 	{
 		element.setAttribute("fadeinshape", static_cast<int>(m_edits.fadeInShape));
@@ -635,6 +638,8 @@ void Clip::loadClipEdits(const QDomElement& element)
 	}
 	edits.fadeInTicks = std::max(0, element.attribute("fadein", "0").toInt());
 	edits.fadeOutTicks = std::max(0, element.attribute("fadeout", "0").toInt());
+	edits.fadeInOffsetTicks = std::max(0, element.attribute("fadeinoffset", "0").toInt());
+	edits.fadeOutOffsetTicks = std::max(0, element.attribute("fadeoutoffset", "0").toInt());
 
 	const auto shapeFromIndex = [](int index) {
 		switch (index)

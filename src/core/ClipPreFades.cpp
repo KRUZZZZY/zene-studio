@@ -80,7 +80,7 @@ namespace prefades
 bool engaged(const SampleClip& clip)
 {
 	const ClipEdits& edits = clip.clipEdits();
-	return edits.hasPreFade() && clip.rendersLinearly() && edits.transpose == 0 && !edits.hasSpeed() && !clip.isRecord()
+	return edits.hasPreFade() && edits.fadeInOffsetTicks == 0 && edits.fadeOutOffsetTicks == 0 && clip.rendersLinearly() && edits.transpose == 0 && !edits.hasSpeed() && !clip.isRecord()
 		&& !sampleOf(clip).reversed() && !comped(clip) && !audioloop::engaged(clip);  // ED-029: a looped clip plays its loop
 }
 

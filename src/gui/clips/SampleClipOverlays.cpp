@@ -44,11 +44,11 @@ constexpr int ZeroFadeInset = 10;
 
 int xOfTick(const ClipOverlayFrame& frame, int tick) { return frame.xOrigin + static_cast<int>(tick * frame.pixelsPerTick); }
 
-int fadeInX(const ClipEdits& edits, const ClipOverlayFrame& frame) { return xOfTick(frame, edits.fadeInTicks); }
+int fadeInX(const ClipEdits& edits, const ClipOverlayFrame& frame) { return xOfTick(frame, edits.fadeInOffsetTicks + edits.fadeInTicks); }
 
 int fadeOutX(const ClipEdits& edits, int clipTicks, const ClipOverlayFrame& frame)
 {
-	return xOfTick(frame, clipTicks - edits.fadeOutTicks);
+	return xOfTick(frame, clipTicks - edits.fadeOutOffsetTicks - edits.fadeOutTicks);
 }
 
 //! Where a fade's handle is drawn and taken: the end of the fade, or inset from the edge when it is zero.
@@ -106,8 +106,8 @@ void paintGainEnvelope(QPainter& p, const ClipEdits& edits, const ClipOverlayFra
 void paintFades(QPainter& p, const ClipEdits& edits, int clipTicks, const ClipOverlayFrame& frame, const QColor& colour)
 {
 	p.setRenderHint(QPainter::Antialiasing, true);
-	paintRamp(p, edits.fadeInShape, frame.xOrigin, fadeInX(edits, frame), true, frame, colour);
-	paintRamp(p, edits.fadeOutShape, fadeOutX(edits, clipTicks, frame), xOfTick(frame, clipTicks), false, frame, colour);
+	paintRamp(p, edits.fadeInShape, xOfTick(frame, edits.fadeInOffsetTicks), fadeInX(edits, frame), true, frame, colour);
+	paintRamp(p, edits.fadeOutShape, fadeOutX(edits, clipTicks, frame), xOfTick(frame, clipTicks - edits.fadeOutOffsetTicks), false, frame, colour);
 	// The handles: a small square at the top edge where each fade ends.
 	p.setPen(Qt::NoPen);
 	p.setBrush(colour);

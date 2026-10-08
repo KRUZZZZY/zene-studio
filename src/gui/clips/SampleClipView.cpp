@@ -241,6 +241,8 @@ FadeHandle SampleClipView::fadeHandleUnder(const QPoint& pos)
 {
 	// A locked clip (or a clip of a locked track) has no fade to drag: clip.set_fade would refuse it (UX ux06 #25).
 	if (EditLocks::instance().locks(m_clip)) { return FadeHandle::None; }
+	// An offset fade (a crossfade into a contained clip) is edited through clip.set_fade, not dragged.
+	if (m_clip->clipEdits().fadeInOffsetTicks != 0 || m_clip->clipEdits().fadeOutOffsetTicks != 0) { return FadeHandle::None; }
 	return fadeHandleAt(m_clip->clipEdits(), m_clip->length().getTicks(), overlayFrame(0), pos);
 }
 

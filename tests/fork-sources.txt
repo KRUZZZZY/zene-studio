@@ -1989,6 +1989,7 @@ tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipGainEnvelopeTest.cpp
 tests/src/core/ClipJoinRippleTest.cpp
+tests/src/core/ClipOffsetFadeTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ClipTransposeTest.cpp
 tests/src/core/CollabPolicyTest.cpp

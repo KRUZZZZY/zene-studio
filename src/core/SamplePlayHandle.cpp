@@ -216,8 +216,14 @@ void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWin
 	m_clipFrames = framesFor(clipTicks);
 	m_outputFramesPerTick = outputFramesPerTick;
 	const auto autoFade = static_cast<f_cnt_t>(static_cast<double>(autoFadeMs) * outputRate / 1000.0);
-	m_fadeInFrames = std::max(framesFor(m_edits.fadeInTicks), autoFade);
-	m_fadeOutFrames = std::max(framesFor(m_edits.fadeOutTicks), autoFade);
+	m_fadeInOffsetFrames = framesFor(m_edits.fadeInOffsetTicks);
+	m_fadeOutOffsetFrames = framesFor(m_edits.fadeOutOffsetTicks);
+	// An offset fade leaves the clip's real edges unramped, so the automatic fade (a click guard on the edges)
+	// is kept apart from the ramps then; with no offset the two stay one ramp, as ever.
+	const bool offsetFades = m_fadeInOffsetFrames > 0 || m_fadeOutOffsetFrames > 0;
+	m_edgeFadeFrames = offsetFades ? autoFade : 0;
+	m_fadeInFrames = std::max(framesFor(m_edits.fadeInTicks), offsetFades ? f_cnt_t(0) : autoFade);
+	m_fadeOutFrames = std::max(framesFor(m_edits.fadeOutTicks), offsetFades ? f_cnt_t(0) : autoFade);
 	m_autoFaded = autoFade > 0;
 	m_speedInFrames = std::min(framesFor(m_edits.speedInTicks), m_clipFrames);  // ED-152 / ED-179
 	m_speedOutFrames = std::min(framesFor(m_edits.speedOutTicks), m_clipFrames);
@@ -245,11 +251,11 @@ void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWin
 		m_envelopeStart = framesFor(clip->windowTicksFor(head));
 	}
 
-	if (m_fadeInFrames > m_clipFrames) { m_fadeInFrames = m_clipFrames; }
-	if (m_fadeInFrames + m_fadeOutFrames > m_clipFrames)
-	{
-		m_fadeOutFrames = m_clipFrames - m_fadeInFrames;
-	}
+	// The ramps and their offsets must fit one after the other: the fade-in wins the meeting point.
+	m_fadeInOffsetFrames = std::min(m_fadeInOffsetFrames, m_clipFrames);
+	m_fadeInFrames = std::min(m_fadeInFrames, m_clipFrames - m_fadeInOffsetFrames);
+	m_fadeOutOffsetFrames = std::min(m_fadeOutOffsetFrames, m_clipFrames - m_fadeInOffsetFrames - m_fadeInFrames);
+	m_fadeOutFrames = std::min(m_fadeOutFrames, m_clipFrames - m_fadeInOffsetFrames - m_fadeInFrames - m_fadeOutOffsetFrames);
 }
 
 
@@ -339,8 +345,13 @@ void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
 	const float step = frames > 0 ? (to - from) / static_cast<float>(frames) : 0.f;
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
-		const float envelope = clipFadeGainAt(base + f, m_clipFrames,
-			m_fadeInFrames, m_fadeOutFrames, m_edits.fadeInShape, m_edits.fadeOutShape);
+		float envelope = clipFadeGainAt(base + f, m_clipFrames, m_fadeInFrames, m_fadeOutFrames,
+			m_edits.fadeInShape, m_edits.fadeOutShape, m_fadeInOffsetFrames, m_fadeOutOffsetFrames);
+		if (m_edgeFadeFrames > 0)
+		{
+			envelope *= clipFadeGainAt(base + f, m_clipFrames, m_edgeFadeFrames, m_edgeFadeFrames,
+				m_edits.fadeInShape, m_edits.fadeOutShape);
+		}
 		const float gain = m_edits.gain * envelope * (from + step * static_cast<float>(f));
 		buffer[f][0] *= gain;
 		buffer[f][1] *= gain;

@@ -316,6 +316,9 @@ void crossfade(Clip* earlier, Clip* later)
 	ClipEdits out = earlier->clipEdits();
 	out.fadeOutTicks = overlap;
 	out.fadeOutShape = FadeShape::EqualPower;
+	// A later clip wholly inside the earlier one: the earlier clip's fade-out ends where the later clip
+	// ends, not at its own tail, and the tail after it is not faded (owner decision 2026-10-08).
+	out.fadeOutOffsetTicks = static_cast<int>(std::max<tick_t>(0, earlier->endPosition().getTicks() - later->endPosition().getTicks()));
 	earlier->setClipEdits(out);
 	ClipEdits in = later->clipEdits();
 	in.fadeInTicks = overlap;

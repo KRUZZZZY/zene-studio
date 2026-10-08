@@ -157,39 +157,45 @@ float clipGainCurveAt(const ClipEdits& edits, tick_t lengthTicks, double tick)
 {
 	const auto length = static_cast<f_cnt_t>(std::max<tick_t>(1, lengthTicks));
 	const float fade = clipFadeGainAt(static_cast<f_cnt_t>(tick), length, edits.fadeInTicks, edits.fadeOutTicks,
-		edits.fadeInShape, edits.fadeOutShape);
+		edits.fadeInShape, edits.fadeOutShape, edits.fadeInOffsetTicks, edits.fadeOutOffsetTicks);
 	return edits.gain * fade * envelopeGainAt(edits, tick);
 }
 
+namespace
+{
+
+//! The ramp up: the region is the clip's first `fadeInFrames` output frames (after the offset, if any),
+//! so its first frame is exactly silent and the frame after the region is exactly 1.
+double fadeInFactor(f_cnt_t frame, f_cnt_t fadeInFrames, FadeShape shape, f_cnt_t offsetFrames)
+{
+	if (fadeInFrames == 0 || frame < offsetFrames || frame - offsetFrames >= fadeInFrames) { return 1.0; }
+	return fadeShapeGain(shape, static_cast<double>(frame - offsetFrames) / static_cast<double>(fadeInFrames));
+}
+
+//! The ramp down: measured inward from the clip's last output frame (less the offset), so the region is
+//! exactly `fadeOutFrames` long and the ramp is monotonic across it. With an offset the frames after the ramp
+//! are the unfaded tail; with none, the frames past the end stay silent.
+double fadeOutFactor(f_cnt_t frame, f_cnt_t clipFrames, f_cnt_t fadeOutFrames, FadeShape shape, f_cnt_t offsetFrames)
+{
+	if (fadeOutFrames == 0) { return 1.0; }
+	const f_cnt_t end = clipFrames > offsetFrames ? clipFrames - offsetFrames : 0;
+	const f_cnt_t start = end > fadeOutFrames ? end - fadeOutFrames : 0;
+	if (frame < start || (offsetFrames != 0 && frame >= end)) { return 1.0; }
+	const auto remaining = end > frame ? end - frame : 0;
+	return fadeShapeGain(shape, static_cast<double>(remaining) / static_cast<double>(fadeOutFrames));
+}
+
+} // namespace
+
 float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,
 	f_cnt_t fadeInFrames, f_cnt_t fadeOutFrames,
-	FadeShape fadeInShape, FadeShape fadeOutShape)
+	FadeShape fadeInShape, FadeShape fadeOutShape,
+	f_cnt_t fadeInOffsetFrames, f_cnt_t fadeOutOffsetFrames)
 {
 	if (clipFrames == 0) { return 1.0f; }
-
 	double value = 1.0;
-
-	// The ramp up: the region is the clip's first `fadeInFrames` output frames,
-	// so frame 0 is exactly silent and the frame after the region is exactly 1.
-	if (fadeInFrames > 0 && frame < fadeInFrames)
-	{
-		value *= fadeShapeGain(fadeInShape,
-			static_cast<double>(frame) / static_cast<double>(fadeInFrames));
-	}
-
-	// The ramp down: measured inward from the clip's last output frame, so the
-	// region is exactly `fadeOutFrames` long and the ramp is monotonic across it.
-	if (fadeOutFrames > 0)
-	{
-		const f_cnt_t fadeOutStart = clipFrames > fadeOutFrames ? clipFrames - fadeOutFrames : 0;
-		if (frame >= fadeOutStart)
-		{
-			const auto remaining = clipFrames > frame ? clipFrames - frame : 0;
-			value *= fadeShapeGain(fadeOutShape,
-				static_cast<double>(remaining) / static_cast<double>(fadeOutFrames));
-		}
-	}
-
+	value *= fadeInFactor(frame, fadeInFrames, fadeInShape, fadeInOffsetFrames);
+	value *= fadeOutFactor(frame, clipFrames, fadeOutFrames, fadeOutShape, fadeOutOffsetFrames);
 	return static_cast<float>(value);
 }
 

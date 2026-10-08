@@ -81,6 +81,8 @@ set(LMMS_TESTS
 	src/core/BounceInPlaceTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
+	# Owner decision 2026-10-08: the offset fade - a crossfade into a contained clip fades the container where that clip is.
+	src/core/ClipOffsetFadeTest.cpp
 	# Linked / smart clips (feature-list row 6, task #645): the relation, an edit
 	# that propagates across it, an unlink, and the relation surviving a
 	# save/reload round trip - all driven through the control surface.
@@ -1548,7 +1550,7 @@ set_tests_properties(ControlVcaCommandsTest ControlVcaEditGroupsTest PROPERTIES
 # a human click here?" - so registering the platform is what makes a runner run the
 # test in the headless state the product is told about, not merely what keeps it from
 # aborting. Registration and comment only: no test's behaviour changes.
-set_tests_properties(ClipLinkTest ClipLinkPersistenceTest LinkedClipEditsTest ImportDetectionTest
+set_tests_properties(ClipLinkTest ClipLinkPersistenceTest LinkedClipEditsTest ClipOffsetFadeTest ImportDetectionTest
 	PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 

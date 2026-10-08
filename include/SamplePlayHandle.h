@@ -149,6 +149,12 @@ private:
 	//! lengths so the audio path never divides by a clip length.
 	f_cnt_t m_fadeInFrames = 0;
 	f_cnt_t m_fadeOutFrames = 0;
+	//! Owner decision 2026-10-08: how far inside the clip the fade-in starts and the fade-out ends, in output
+	//! frames (0: at the clip's edges), and - only when either is set - the short automatic edge fade, applied
+	//! apart from the ramps so it stays on the clip's real edges.
+	f_cnt_t m_fadeInOffsetFrames = 0;
+	f_cnt_t m_fadeOutOffsetFrames = 0;
+	f_cnt_t m_edgeFadeFrames = 0;
 	//! ED-152 / ED-179: the speed fades in output frames, and whether the clip changes speed at all.
 	f_cnt_t m_speedInFrames = 0;
 	f_cnt_t m_speedOutFrames = 0;
