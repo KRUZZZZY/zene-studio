@@ -2212,3 +2212,5 @@ tests/src/gui/TelemetryConsentDialogTest.cpp
 tests/src/gui/AafImportMenuTest.cpp
 tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
+tests/src/gui/NoteBackgroundAudioTest.cpp
+tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp

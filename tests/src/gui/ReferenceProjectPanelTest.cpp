@@ -222,17 +222,12 @@ private slots:
 		QCOMPARE(target->getClips().size(), std::size_t{0});
 
 		// At the play position instead.
-		Engine::getSong()->setPlayPos(960, Song::PlayMode::Song);
+		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), 960}}).ok);  // the play position, as the transport bar has it
 		panel->findChild<QCheckBox*>()->setChecked(true);
 		panel->tree()->clearSelection();
 		itemNamed(panel->tree(), QStringLiteral("Vox"))->child(0)->setSelected(true);
 		buttonTexted(panel, QStringLiteral("Copy Clips"))->click();
 		QCOMPARE(target->getClips().size(), std::size_t{1});
-		// BUG (found by this test): the panel asks Song::getPlayPos() - the position of the CURRENT play mode's timeline,
-		// which is PlayMode::None while stopped - not the arranger's Song timeline, so "At the play position" lands the
-		// clip at that other timeline's 0 instead of where the playhead stands (src/gui/ReferenceProjectPanel.cpp:257;
-		// ArrangerClipKeys.cpp reads getPlayPos(Song::PlayMode::Song)).
-		QEXPECT_FAIL("", "ReferenceProjectPanel.cpp:257 reads getPlayPos() of the current (None) mode, not the Song timeline", Continue);
 		QCOMPARE(target->getClips().front()->startPosition().getTicks(), 960);
 		panel->findChild<QCheckBox*>()->setChecked(false);
 	}
