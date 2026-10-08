@@ -41,9 +41,9 @@
  * inside the seqlock while the control thread drops it touches freed memory,
  * and destroying the copy can free on the audio thread (2026-09-28 survey, G1).
  * What the audio thread copies is ModulationAudioView: raw pointers, each
- * paired with a per-slot liveness token that QObject::destroyed clears at the
- * same moment a QPointer would null itself. A destroyed target is skipped
- * exactly as before, and the copy is plain bytes.
+ * paired with a per-slot token. Before a target tears down its value state,
+ * the publisher closes that slot and waits on the control thread for existing
+ * audio writes to release their atomic pins. The view remains plain bytes.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -284,8 +284,8 @@ struct ModulationRuntime
 };
 
 /*! The audio thread's copy of the runtime: the same sources and entries, as
- *  plain values. An entry's model is valid only while its slot's liveness token
- *  (ModulationLayerPublisher::targetAlive) still equals the entry's token.
+ *  plain values. An entry's model may be written only after its slot's token
+ *  and atomic writer gate (ModulationLayerPublisher::targetAlive) are checked.
  */
 struct ModulationAudioView
 {
@@ -367,8 +367,37 @@ public:
 	//! Whether @a slot's target is still the one @a token was issued for.
 	bool targetAlive(int slot, std::uint32_t token) const noexcept
 	{
-		return token != 0
-			&& m_alive[static_cast<std::size_t>(slot)].load(std::memory_order_acquire) == token;
+		if (slot < 0 || slot >= ModulationRuntime::MaxEntries || token == 0) { return false; }
+		return m_alive[static_cast<std::size_t>(slot)].load(std::memory_order_acquire) == token
+			&& (m_targetWriters[static_cast<std::size_t>(slot)].load(std::memory_order_acquire)
+				& targetClosingBit) == 0;
+	}
+	//! Audio thread: pin a target's value state until endTargetWrite(). No allocation or wait.
+	bool beginTargetWrite(int slot, std::uint32_t token) const noexcept
+	{
+		if (!targetAlive(slot, token)) { return false; }
+		auto& writers = m_targetWriters[static_cast<std::size_t>(slot)];
+		std::uint32_t state = writers.load(std::memory_order_acquire);
+		while ((state & targetClosingBit) == 0)
+		{
+			if ((state & targetWriterCountMask) == targetWriterCountMask) { return false; }
+			if (writers.compare_exchange_weak(state, state + 1, std::memory_order_acq_rel,
+				std::memory_order_acquire))
+			{
+				if (targetAlive(slot, token)) { return true; }
+				writers.fetch_sub(1, std::memory_order_release);
+				return false;
+			}
+		}
+		return false;
+	}
+	//! Audio thread: release a pin after the target write.
+	void endTargetWrite(int slot) const noexcept
+	{
+		if (slot >= 0 && slot < ModulationRuntime::MaxEntries)
+		{
+			m_targetWriters[static_cast<std::size_t>(slot)].fetch_sub(1, std::memory_order_release);
+		}
 	}
 
 	/*! 0.5.0 L10 (MX-121): a note started on track @a trackId - audio thread (any worker), atomics
@@ -409,6 +438,8 @@ public:
 	}
 
 private:
+	static constexpr std::uint32_t targetClosingBit = std::uint32_t{1} << 31;
+	static constexpr std::uint32_t targetWriterCountMask = targetClosingBit - 1;
 	//! Rebuilds m_view and the liveness watches from m_runtime (control thread,
 	//! inside edit()'s write window).
 	void publishView();
@@ -419,6 +450,7 @@ private:
 	ModulationRuntime m_runtime{};
 	ModulationAudioView m_view{};
 	std::array<std::atomic<std::uint32_t>, ModulationRuntime::MaxEntries> m_alive{};
+	mutable std::array<std::atomic<std::uint32_t>, ModulationRuntime::MaxEntries> m_targetWriters{};
 	std::array<QMetaObject::Connection, ModulationRuntime::MaxEntries> m_watch{};
 	std::uint32_t m_nextToken = 0;
 	std::atomic<bool> m_hasLayer{false};

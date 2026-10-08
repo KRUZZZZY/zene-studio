@@ -74,6 +74,8 @@ AutomatableModel::AutomatableModel(
 
 AutomatableModel::~AutomatableModel()
 {
+	emit aboutToBeDestroyed();
+
 	// The song caches the models it automated on the last frame as RAW pointers
 	// (Song::m_oldAutomatedValues) and walks that cache in two places -
 	// Song::processAutomations(), on the first frame of every tick, and

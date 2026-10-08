@@ -605,6 +605,8 @@ private:
 	static std::atomic<qint64> s_touchTimeoutNs;
 
 signals:
+	//! Emitted before AutomatableModel's value state is torn down.
+	void aboutToBeDestroyed();
 	void initValueChanged( float val );
 	void destroyed( lmms::jo_id_t id );
 

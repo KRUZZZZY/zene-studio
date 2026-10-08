@@ -30,6 +30,7 @@
 #include "ModulationLayer.h"
 
 #include <QObject>
+#include <thread>
 
 #include "AutomatableModel.h"
 #include "Instrument.h"
@@ -146,6 +147,12 @@ void ModulationLayerPublisher::publishView()
 		// Every slot is re-issued: a view published before this edit carries
 		// the old tokens, so it skips the slot rather than writing a target
 		// that may since have been re-bound.
+		auto& writers = m_targetWriters[slot];
+		writers.fetch_or(targetClosingBit, std::memory_order_acq_rel);
+		while ((writers.load(std::memory_order_acquire) & targetWriterCountMask) != 0)
+		{
+			std::this_thread::yield();
+		}
 		QObject::disconnect(m_watch[slot]);
 		m_watch[slot] = QMetaObject::Connection{};
 		m_alive[slot].store(0, std::memory_order_release);
@@ -170,15 +177,21 @@ void ModulationLayerPublisher::publishView()
 		to.token = token;
 		m_alive[slot].store(token, std::memory_order_release);
 
-		// destroyed() is emitted from ~QObject, the same moment a QPointer
-		// nulls itself, and on whichever thread destroys the model - hence an
-		// atomic, compared against the token so a stale watch cannot clear a
-		// slot that was re-issued in the meantime.
+		// Close the slot before AutomatableModel tears down its value state, and
+		// wait off the audio thread for any write that already pinned this token.
 		std::atomic<std::uint32_t>* alive = &m_alive[slot];
-		m_watch[slot] = QObject::connect(model, &QObject::destroyed, [alive, token]() {
-			std::uint32_t expected = token;
-			alive->compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
-		});
+		std::atomic<std::uint32_t>* writersPtr = &writers;
+		m_watch[slot] = QObject::connect(model, &AutomatableModel::aboutToBeDestroyed,
+			[alive, writersPtr, token] {
+				writersPtr->fetch_or(targetClosingBit, std::memory_order_acq_rel);
+				while ((writersPtr->load(std::memory_order_acquire) & targetWriterCountMask) != 0)
+				{
+					std::this_thread::yield();
+				}
+				std::uint32_t expected = token;
+				alive->compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
+			});
+		writers.store(0, std::memory_order_release);
 	}
 	m_view = view;
 }
@@ -236,6 +249,13 @@ void applyModulationBlock(const ModulationLayerPublisher& publisher,
 		const ModulationAudioView::Entry& entry = view.entries[static_cast<std::size_t>(i)];
 		const ModulatorSource* source = drivingSource(publisher, view, i);
 		if (source == nullptr) { continue; }
+		if (!publisher.beginTargetWrite(i, entry.token)) { continue; }
+		struct TargetWritePin
+		{
+			const ModulationLayerPublisher& publisher;
+			int slot;
+			~TargetWritePin() { publisher.endTargetWrite(slot); }
+		} targetPin{publisher, i};
 		// MX-120: per note where the instrument takes it; otherwise the newest note drives the parameter.
 		if (perNoteEntry(*source, entry))
 		{

@@ -40,7 +40,11 @@
 
 #include <QtTest>
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <semaphore>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -111,6 +115,45 @@ private slots:
 		using Snapshot = decltype(std::declval<const ModulationLayerPublisher&>().snapshot());
 		QVERIFY2(std::is_trivially_copyable_v<Snapshot>,
 			"the audio thread's seqlock copy holds a non-trivial type (a QPointer)");
+	}
+
+	void targetDestructionWaitsForAnInFlightAudioWrite()
+	{
+		ModulationLayerPublisher publisher;
+		auto* model = new FloatModel(0.0f, -100.0f, 100.0f, 0.01f);
+		publishOne(publisher, model);
+		const ModulationAudioView view = publisher.snapshot();
+		std::binary_semaphore writeEntered{0};
+		std::binary_semaphore resumeWrite{0};
+		QObject::connect(model, &Model::dataChanged, this, [&] {
+			writeEntered.release();
+			resumeWrite.acquire();
+		}, Qt::DirectConnection);
+
+		std::thread audio([&] { applyModulationBlock(publisher, view, 0.25); });
+		const bool writeReachedModel = writeEntered.try_acquire_for(std::chrono::seconds(2));
+		if (!writeReachedModel)
+		{
+			resumeWrite.release();
+			audio.join();
+			delete model;
+			QVERIFY2(writeReachedModel, "the modulation write did not reach the target");
+		}
+
+		std::atomic<bool> destructionFinished{false};
+		std::thread destroyer([&] {
+			delete model;
+			destructionFinished.store(true, std::memory_order_release);
+		});
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+		const bool waitedForWriter = !destructionFinished.load(std::memory_order_acquire);
+		resumeWrite.release();
+		audio.join();
+		destroyer.join();
+
+		QVERIFY2(waitedForWriter,
+			"the target was destroyed while the audio thread still held its raw pointer");
+		QVERIFY(!publisher.targetAlive(0, view.entries[0].token));
 	}
 
 	void aDestroyedTargetIsSkippedByAnOlderView()
