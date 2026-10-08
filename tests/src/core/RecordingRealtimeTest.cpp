@@ -1040,6 +1040,18 @@ private slots:
 		restored->deleteLater();
 		QTest::qWait(10);
 	}
+
+	//! Record, then Stop while stopped, then Play: the Play is a plain play (no record latch left).
+	void recordThenStopWhileStoppedLeavesNoLatch()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		song->record();
+		song->stop();  // already stopped: the early return must not keep the latch
+		song->playSong();
+		QVERIFY2(!song->isRecording(), "a Play after Record and Stop started a record pass");
+		song->stop();
+	}
 } ;
 
 

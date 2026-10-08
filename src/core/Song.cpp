@@ -935,12 +935,14 @@ void Song::togglePause()
 
 void Song::stop()
 {
+	// A stop ends a record request that Play has not yet taken - also when the transport is already
+	// stopped (Record, then Stop, then Play must not record).
+	m_recordLatched = false;
 	// do not stop/reset things again if we're stopped already
 	if( m_playMode == PlayMode::None )
 	{
 		return;
 	}
-	m_recordLatched = false;  // a stop ends a record request that Play has not yet taken
 	recordoptions::endPass(this);  // 0.5.0 L03: the timeline's own punch region back on the gate
 	MidiPlayback::instance().stopped();  // 0.5.0 L07: the next tick is a start
 
