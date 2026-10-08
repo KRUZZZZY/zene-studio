@@ -4138,6 +4138,11 @@ set_tests_properties(ProvenanceSectionTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ProvenanceVersionTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+IF(LMMS_HAVE_STEM_SPLIT)
+	# The controller regression exercises its progress and completion dialogs.
+	set_tests_properties(StemSplitPipelineTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+ENDIF()
 # Headless load path (task #625, SPEC A13/A15): no modal dialog may block an
 # instance started with --control-socket.
 #
