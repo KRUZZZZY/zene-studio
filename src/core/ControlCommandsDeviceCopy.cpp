@@ -303,6 +303,18 @@ AbRecorded recordAb(const ControlTarget& target, Effect* effect)
 		QString::fromUtf8(effect->descriptor()->name)};
 }
 
+//! Put the A/B slots @a kept back on the device @a recorded names, found again as restoreAb finds it, and rebind
+//! the slots' owner to that device: a store's undo or redo after the device was recreated must not write the
+//! slots under a stale id, or leave an owner plugin.ab would take for a different device.
+void restoreSlots(const AbRecorded& recorded, const AbSlots& kept)
+{
+	Effect* effect = findRecorded(recorded);
+	if (effect == nullptr) { return; }
+	AbSlots restored = kept;
+	restored.owner = effect;
+	abSlots()[effect->id()] = restored;
+}
+
 //! Put a recorded A/B state back on the device @a recorded names: its settings and its slots (which one is
 //! heard, what each holds). Nothing when the device is gone: an undo cannot invent it.
 void restoreAb(const AbRecorded& recorded, const QString& state, const AbSlots& held)
@@ -380,9 +392,10 @@ ControlResult pluginAb(const QJsonObject& args)
 		storeSlot(effect, pair, toB);
 		pair.onB = toB;
 		// The command is registered mutating, so the slots it changed (what they hold, which one is
-		// heard) go back as one undo step - recorded by the device's id, not by a pointer, like the rest.
-		const int id = effect->id();
-		addUndoStep([id, before]() { abSlots()[id] = before; }, [id, pair]() { abSlots()[id] = pair; });
+		// heard) go back as one undo step. The device is recorded like recall's, so its undo and redo
+		// find it again after an unload and its undo rebuilt it.
+		addUndoStep([recorded, before]() { restoreSlots(recorded, before); },
+			[recorded, after = pair]() { restoreSlots(recorded, after); });
 	}
 	return ControlResult::success(abJson(pair));
 }

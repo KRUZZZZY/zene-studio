@@ -521,6 +521,8 @@ set(LMMS_TESTS
 	src/core/MixerStripTest.cpp
 	# 0.5.0 L10: plugin.copy / chain.copy / plugin.ab, the plug-in organiser and folders.
 	src/core/DeviceCopyTest.cpp
+	# 0.5.0 L10 (rework cluster 5639): plugin.ab store undo and redo after the device was recreated.
+	src/core/DeviceAbUndoTest.cpp
 	# 0.5.0 L03 / L02: count-in, pre-roll, the record mode, cycling takes, the launcher's bindings.
 	src/core/RecordingPassTest.cpp
 	# 0.5.0 L11 / L12: search expressions, collections, track presets, importing tracks, the hand-off folder.
@@ -1077,6 +1079,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "AudioEditingTest"
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
+		OR LMMS_TEST_NAME STREQUAL "DeviceAbUndoTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceMovesUndoTest"
 		# 0.5.0 L10 (W3): the device tools load the build's amplifier module.

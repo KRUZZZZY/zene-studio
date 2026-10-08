@@ -1938,6 +1938,7 @@ tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/CustomAccessTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
+tests/src/core/DeviceAbUndoTest.cpp
 tests/src/core/DeviceCopyTest.cpp
 tests/src/core/DeviceDspTest.cpp
 tests/src/core/DeviceMovesUndoTest.cpp
