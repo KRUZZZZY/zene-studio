@@ -1,5 +1,5 @@
 /*
- * DeviceCopyTest.cpp - plugin.copy, chain.copy, plugin.ab and the plug-in organiser and folders
+ * DeviceCopyTest.cpp - plugin.copy, chain.copy, plugin.ab, the rack and drum-rack devices (the organiser: DeviceOrganiserTest.cpp)
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -24,11 +24,10 @@
 /*! 0.5.0 L10: a device copied to another channel keeps its settings and one undo takes it back
  *  (MX-076); a chain copied with 'replace' puts the destination's devices back on undo; plugin.ab
  *  stores two settings, toggles between them and a recall is one undo step (MX-092); a macro target's
- *  curve is accepted by the command (MX-105); plugin.organise marks a device and plugin.organisation
- *  lists it, undoably (MX-166); plugin.paths_set replaces a format's folders (MX-163); chain.bypass_all
- *  bypasses every device and chain.clean removes the bypassed ones, each one undo step (MX-078); the
- *  preferred plug-in format is kept and undone (MX-167). Theme 12: the card's read of the A/B slots, and plugin.move
- *  within a chain, one undo step. */
+ *  curve is accepted by the command (MX-105); chain.bypass_all bypasses every device and chain.clean
+ *  removes the bypassed ones, each one undo step (MX-078). Theme 12: the card's read of the A/B slots, and
+ *  plugin.move within a chain, one undo step. The organiser, folders and preferred format are in
+ *  DeviceOrganiserTest.cpp. */
 
 #include <QtTest>
 
@@ -527,37 +526,6 @@ private slots:
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore);  // the folder went too
 	}
 
-	void theOrganiserMarksADevice()
-	{
-		QCOMPARE(pluginorganiser::keyOf(QStringLiteral("ladspaeffect"), {{QStringLiteral("file"), QStringLiteral("caps")},
-			{QStringLiteral("plugin"), QStringLiteral("Chorus")}}), QStringLiteral("ladspaeffect|file=caps|plugin=Chorus"));
-		const QString key = QStringLiteral("amplifier");
-		const ControlResult marked = run(QStringLiteral("plugin.organise"), {{QStringLiteral("key"), key},
-			{QStringLiteral("favourite"), true}, {QStringLiteral("folder"), QStringLiteral("Gain")}});
-		QVERIFY2(marked.ok, qPrintable(marked.errorMessage));
-		QVERIFY(pluginorganiser::entry(key).favourite);
-		const QJsonObject listed = run(QStringLiteral("plugin.organisation"), {{QStringLiteral("folder"), QStringLiteral("Gain")}}).result;
-		QCOMPARE(listed.value(QStringLiteral("entries")).toArray().size(), 1);
-		QVERIFY(listed.value(QStringLiteral("folders")).toArray().contains(QStringLiteral("Gain")));
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(pluginorganiser::entry(key).isDefault());
-		QCOMPARE(run(QStringLiteral("plugin.organise"), {{QStringLiteral("favourite"), true}}).errorKind, ControlErrorKind::InvalidArgs);
-	}
-
-	void theFoldersAreSetAndUndone()
-	{
-		const QString dir = QDir::tempPath();
-		const ControlResult set = run(QStringLiteral("plugin.paths_set"), {{QStringLiteral("format"), QStringLiteral("vst3")},
-			{QStringLiteral("dirs"), QJsonArray{dir}}});
-		QVERIFY2(set.ok, qPrintable(set.errorMessage));
-		QCOMPARE(pluginpaths::configured(pluginpaths::Format::Vst3), QStringList{dir});
-		QCOMPARE(pluginpaths::searchDirs(pluginpaths::Format::Vst3).front(), dir);  // searched first
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(pluginpaths::configured(pluginpaths::Format::Vst3).isEmpty());
-		QCOMPARE(run(QStringLiteral("plugin.paths_set"), {{QStringLiteral("format"), QStringLiteral("au")},
-			{QStringLiteral("dirs"), QJsonArray{}}}).errorKind, ControlErrorKind::InvalidArgs);
-	}
-
 	void aChainIsBypassedAndCleaned()
 	{
 		const QString target = ch(3);
@@ -581,55 +549,6 @@ private slots:
 		QCOMPARE(after, before);
 	}
 
-	void aPreferredFormatIsKeptAndUndone()
-	{
-		QVERIFY(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("clap")}}).ok);
-		QCOMPARE(pluginorganiser::preferredFormat(), QStringLiteral("clap"));
-		// Luna 5726: a changed format is an edit, so the transaction it records carries
-		// the handler's OWN before-state and mechanism. Without a payload the registry
-		// only knows "some undo step happened" (ControlRegistry.cpp recordTransactionOf).
-		const QJsonObject formatTx = revtest::stateOf(QStringLiteral("plugin.prefer_format"));
-		QVERIFY2(!formatTx.isEmpty(), "the format change recorded no transaction");
-		QVERIFY2(formatTx.value(QStringLiteral("before")).toObject().contains(QStringLiteral("format")),
-			"the transaction carries no prior format to revert to");
-		QCOMPARE(formatTx.value(QStringLiteral("before")).toObject().value(QStringLiteral("format")).toString(),
-			QString());
-		QCOMPARE(formatTx.value(QStringLiteral("inverse")).toObject()
-			.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
-		QCOMPARE(formatTx.value(QStringLiteral("reversible")).toBool(), true);
-		// Writing the format it already holds is not an edit: no new transaction for it.
-		const int stepsBeforeNoOp = revtest::run(QStringLiteral("control.transactions"))
-			.result.value(QStringLiteral("transactions")).toArray().size();
-		QVERIFY(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("clap")}}).ok);
-		QCOMPARE(revtest::run(QStringLiteral("control.transactions"))
-			.result.value(QStringLiteral("transactions")).toArray().size(), stepsBeforeNoOp);
-		QCOMPARE(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("au")}}).errorKind,
-			ControlErrorKind::InvalidArgs);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(pluginorganiser::preferredFormat().isEmpty());
-	}
-
-	//! W6: the organiser tells an open effect picker that it changed - plugin.organise and plugin.prefer_format
-	//! over the socket, and their undo - once per real change, and not for a write that changes nothing.
-	void theOrganiserSignalsItsChanges()
-	{
-		QSignalSpy changed(pluginorganiser::notifier(), &pluginorganiser::Notifier::changed);
-		const QString key = QStringLiteral("amplifier");
-		QVERIFY(run(QStringLiteral("plugin.organise"), {{QStringLiteral("key"), key}, {QStringLiteral("hidden"), true}}).ok);
-		QCOMPARE(changed.count(), 1);
-		pluginorganiser::setEntry(key, pluginorganiser::entry(key));  // the same entry again: nothing to show
-		QCOMPARE(changed.count(), 1);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(changed.count(), 2);
-		QVERIFY(pluginorganiser::entry(key).isDefault());
-		QVERIFY(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("lv2")}}).ok);
-		QCOMPARE(changed.count(), 3);
-		pluginorganiser::setPreferredFormat(QStringLiteral("lv2"));  // unchanged
-		QCOMPARE(changed.count(), 3);
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(changed.count(), 4);
-		QVERIFY(pluginorganiser::preferredFormat().isEmpty());
-	}
 
 	//! A stopped chain copy keeps the call's full destination list in `to`, while `copies` records its progress.
 	void aPartialChainCopyKeepsTheRequestedDestinationList()

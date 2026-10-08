@@ -558,6 +558,9 @@ set(LMMS_TESTS
 	src/core/MixerStripTest.cpp
 	# 0.5.0 L10: plugin.copy / chain.copy / plugin.ab, the plug-in organiser and folders.
 	src/core/DeviceCopyTest.cpp
+	# The organiser, plug-in folder and preferred-format halves of DeviceCopyTest, split out to keep
+	# both files under the file-length ratchet.
+	src/core/DeviceOrganiserTest.cpp
 	# 0.5.0 L10 (rework cluster 5639): plugin.ab store undo and redo after the device was recreated.
 	src/core/DeviceAbUndoTest.cpp
 	# 0.5.0 L03 / L02: count-in, pre-roll, the record mode, cycling takes, the launcher's bindings.
@@ -682,14 +685,23 @@ set(LMMS_TESTS
 	src/core/ProjectToolsTest.cpp
 	# 0.5.0 F3: frame cuts, zero-crossing snap, spacers, the reference project, per-type documents
 	src/core/ArrangingCatchUpTest.cpp
+	# The spacer, reference-project and project-switch halves of ArrangingCatchUpTest, split out to keep
+	# both files under the file-length ratchet.
+	src/core/ArrangingSpacerReferenceTest.cpp
 	# 0.5.0 L10 (W3): rack splits, parameter search and aliases, randomise and blend, folding, device options.
 	src/core/DeviceToolsTest.cpp
+	# The post-fader, delta, clip-print, replace and folding halves of DeviceToolsTest, split out to keep
+	# both files under the file-length ratchet.
+	src/core/DeviceToolsChainTest.cpp
 	# 0.5.0 L10 (W3): the de-esser, transient shaper, vocoder and console devices.
 	src/core/DeviceDspTest.cpp
 	# catch-up W3: atomic snapshots for device options, the compressor key filter, LV2 latency; reduction meters on bypass.
 	src/core/RealtimeSnapshotTest.cpp
 	# catch-up W1: undo honesty - redo failures, list copies, the macro pair, arm many, no journal step refused.
 	src/core/UndoHonestyTest.cpp
+	# The state and preset redo, key-name and inverse-sweep halves of UndoHonestyTest, split out to keep
+	# both files under the file-length ratchet.
+	src/core/UndoHonestyStateTest.cpp
 	# Luna patrol: device undo follows chains and effects rebuilt by track removal's undo.
 	src/core/DeviceMovesUndoTest.cpp
 	# 0.5.0 L10 (W3): formula modulators and modulators restarted by a track's notes.
@@ -1229,14 +1241,17 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "AudioEditingTest"
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
+		OR LMMS_TEST_NAME STREQUAL "DeviceOrganiserTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceAbUndoTest"
 		# Luna 5332: the script's removeEffect undo test loads the build's BassBooster module.
 		OR LMMS_TEST_NAME STREQUAL "ScriptDawBindingTest"
 		OR LMMS_TEST_NAME STREQUAL "ScriptDawRemovalUndoTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyTest"
+		OR LMMS_TEST_NAME STREQUAL "UndoHonestyStateTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceMovesUndoTest"
 		# 0.5.0 L10 (W3): the device tools load the build's amplifier module.
 		OR LMMS_TEST_NAME STREQUAL "DeviceToolsTest"
+		OR LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceDspTest"
 		OR LMMS_TEST_NAME STREQUAL "RealtimeSnapshotTest"
 		# 0.5.0: the note-playback tests play a real instrument (tripleoscillator) on their tracks.
@@ -1254,6 +1269,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLatencyPdcTest"
 		OR LMMS_TEST_NAME STREQUAL "InstrumentSetupUiTest"
 		OR LMMS_TEST_NAME STREQUAL "ArrangingCatchUpTest"
+		OR LMMS_TEST_NAME STREQUAL "ArrangingSpacerReferenceTest"
 		# WF-033: the restored history must bring back a real instrument's own state.
 		OR LMMS_TEST_NAME STREQUAL "UndoHistoryPersistenceTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)

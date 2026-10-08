@@ -2386,6 +2386,7 @@ tests/src/core/AllocationProbeTest.cpp
 tests/src/core/ArrangeToolsTest.cpp
 tests/src/core/ArrangementModesTest.cpp
 tests/src/core/ArrangingCatchUpTest.cpp
+tests/src/core/ArrangingSpacerReferenceTest.cpp
 tests/src/core/ArrayVectorTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
 tests/src/core/AudioAutomationToolsTest.cpp
@@ -2467,6 +2468,8 @@ tests/src/core/DeviceAbUndoTest.cpp
 tests/src/core/DeviceCopyTest.cpp
 tests/src/core/DeviceDspTest.cpp
 tests/src/core/DeviceMovesUndoTest.cpp
+tests/src/core/DeviceOrganiserTest.cpp
+tests/src/core/DeviceToolsChainTest.cpp
 tests/src/core/DeviceToolsTest.cpp
 tests/src/core/DocumentIndexTest.cpp
 tests/src/core/DocumentSectionsTest.cpp
@@ -2657,6 +2660,7 @@ tests/src/core/UnclaimedElementsTest.cpp
 tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
 tests/src/core/UndoHistoryPersistenceTest.cpp
+tests/src/core/UndoHonestyStateTest.cpp
 tests/src/core/UndoHonestyTest.cpp
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/VcaRefreshAtomicityTest.cpp
