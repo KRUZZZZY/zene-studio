@@ -194,6 +194,8 @@ RemotePlugin::RemotePlugin(RemotePluginAudioPortsController& audioPorts) :
 
 RemotePlugin::~RemotePlugin()
 {
+	reportRefusedChannelCounts();
+
 	// Detach from the audio ports controller before the shared buffer is
 	// destroyed, so the controller never holds a freed buffer view.
 	m_audioPorts->disconnectBuffers();
@@ -495,6 +497,7 @@ void RemotePlugin::hideUI()
 
 auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*
 {
+	reportRefusedChannelCounts();
 	if (channelsIn == 0 && channelsOut == 0)
 	{
 		std::cerr << "Invalid channel count for shared audio buffer\n";
@@ -535,6 +538,7 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 void RemotePlugin::processFinished( int exitCode,
 						QProcess::ExitStatus exitStatus )
 {
+	reportRefusedChannelCounts();
 	if ( exitStatus == QProcess::CrashExit )
 	{
 		qCritical() << "Remote plugin crashed";
@@ -576,6 +580,14 @@ void RemotePlugin::processErrored( QProcess::ProcessError err )
 
 
 
+
+bool RemotePlugin::reportRefusedChannelCounts()
+{
+	if (!m_refusalPending.exchange(false)) { return false; }
+	qWarning() << "RemotePlugin: remote client reported an out-of-range channel count"
+		<< m_refusedInCount.load() << "in /" << m_refusedOutCount.load() << "out - refusing the request";
+	return true;
+}
 
 bool RemotePlugin::processMessage( const message & _m )
 {
@@ -638,8 +650,11 @@ bool RemotePlugin::processMessage( const message & _m )
 			{ return count < 0 || count > MaxChannelsPerAudioBuffer; };
 			if (outOfRange(inCount) || outOfRange(outCount))
 			{
-				qWarning() << "RemotePlugin: remote client reported an out-of-range channel count"
-					<< inCount << "in /" << outCount << "out - refusing the request";
+				// Realtime rule: no log here, since this can run on the audio thread (process() pumps
+				// messages while it waits for the client). The refusal is recorded and reported later.
+				m_refusedInCount.store(inCount);
+				m_refusedOutCount.store(outCount);
+				m_refusalPending.store(true);
 				break;
 			}
 			m_audioPorts->audioPortsModel().setChannelCounts(
