@@ -234,15 +234,21 @@ private slots:
 		{
 			undoOk = undo() && undoOk;
 		}
-		const auto discardAt = [this](int position) {
+		const auto clipAt = [this](int position) -> Clip* {
 			for (Clip* clip : m_track->getClips())
 			{
-				if (clip->startPosition().getTicks() == position)
-				{
-					m_track->removeClip(clip);
-					delete clip;
-					return;
-				}
+				if (clip->startPosition().getTicks() == position) { return clip; }
+			}
+			return nullptr;
+		};
+		// Undo restores the track from its checkpoint (Track::restoreState re-loads the clips as new objects), so the
+		// fixture's clip is the restored object now at its start; deleting the old pointer would be a use-after-free.
+		if (Clip* restored = clipAt(0)) { m_clip = dynamic_cast<MidiClip*>(restored); }
+		const auto discardAt = [this, clipAt](int position) {
+			if (Clip* clip = clipAt(position))
+			{
+				m_track->removeClip(clip);
+				delete clip;
 			}
 		};
 		discardAt(firstPosition);
