@@ -193,7 +193,11 @@ public:
 	//! on overflow. While the transport still records (\a continues, a loop wrap or a jump) the
 	//! take becomes a new take clip on a take lane and the clip stays armed; otherwise a
 	//! first-pass take is the clip's own content and the clip is disarmed.
-	void acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, std::uint64_t droppedFrames, bool continues);
+	void acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, std::uint64_t droppedFrames, bool continues,
+		std::uint64_t generation);
+	//! The arming this clip is in: it changes on every arm, so a take prepared under an earlier
+	//! arming can tell it no longer belongs to the current one.
+	std::uint64_t armGeneration() const noexcept { return m_armGeneration; }
 	//! Takes this clip holds ready for its next passes (0 to 2). Zero once disarmed.
 	int recordTakesReady() const noexcept { return (m_preparedRecord != nullptr) + (m_spareRecord != nullptr); }
 	//! Frames the last take of this clip lost to capture overflow (0 before any take).
@@ -241,6 +245,7 @@ private:
 	SampleRecordHandle* m_spareRecord = nullptr;
 	//! Recording passes of the current arming that became takes on the lanes.
 	int m_recordPasses = 0;
+	std::uint64_t m_armGeneration = 0;
 	std::uint64_t m_lastTakeDroppedFrames = 0;
 	//! Main thread: build the missing takes into m_preparedRecord / m_spareRecord.
 	void releaseRecordTakes();

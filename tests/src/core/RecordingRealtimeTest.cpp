@@ -356,6 +356,7 @@ private slots:
 		// Built on the main thread, as SampleClip does before the transport starts, and claimed
 		// as the audio thread does when it starts the pass.
 		auto* handle = new lmms::SampleRecordHandle(clip);
+		handle->setArmGeneration(clip->armGeneration());  // as prepareRecordTake tags it
 		handle->markClaimed();
 
 		lmms::test::resetAllocationCount();
@@ -666,6 +667,26 @@ private slots:
 			if (take->data()[i].left() == 0.0f && take->data()[i].right() == 0.0f) { ++silent; }
 		}
 		QCOMPARE(static_cast<qulonglong>(silent), static_cast<qulonglong>(dropped));
+	}
+
+	//! A take of an earlier arming reaches the main thread after the clip was disarmed and armed
+	//! again: it is installed without disarming the new arming (the race within the reaper's 10 ms).
+	void reArmedClipIsNotDisarmedByAnEarlierTake()
+	{
+		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setRecord(true);
+		lmms::SampleRecordHandle* earlier = clip->claimRecordHandle();
+		QVERIFY2(earlier != nullptr, "the first arming had no take");
+		earlier->markClaimed();
+
+		clip->setRecord(false);  // the first arming ends...
+		clip->setRecord(true);   // ...and a second one starts before the take is reaped
+		delete earlier;          // the first arming's take is queued now
+		QTest::qWait(50);
+		QVERIFY2(clip->isRecord(), "an earlier arming's take disarmed the re-armed clip");
+		delete track;
 	}
 } ;
 

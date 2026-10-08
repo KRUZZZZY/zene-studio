@@ -192,6 +192,7 @@ void SampleClip::prepareRecordTake()
 		}
 		if (!empty) { continue; }
 		auto* handle = new SampleRecordHandle(this);  // allocates: built outside the lock
+		handle->setArmGeneration(m_armGeneration);
 		const auto guard = Engine::audioEngine()->requestChangesGuard();
 		if (*slot == nullptr && isRecord()) { *slot = handle; }
 		else { delete handle; }  // lost a race with a release or another prepare
@@ -200,9 +201,13 @@ void SampleClip::prepareRecordTake()
 
 void SampleClip::armRecordTake()
 {
-	// The arm transition: a clip armed inside its span must not stay latched as playing from the
-	// pass before, or it never starts a take until the playhead leaves the span (BUGS P3).
-	if (isRecord()) { setIsPlaying(false); }
+	// The arm transition (the model signals changes only): a new arming, and a clip armed inside
+	// its span must not stay latched as playing from the pass before (BUGS P3).
+	if (isRecord())
+	{
+		++m_armGeneration;
+		setIsPlaying(false);
+	}
 	prepareRecordTake();
 }
 
@@ -219,10 +224,18 @@ void SampleClip::releaseRecordTakes()
 	delete released[1];
 }
 
-void SampleClip::acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, std::uint64_t droppedFrames, bool continues)
+void SampleClip::acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, std::uint64_t droppedFrames, bool continues,
+	std::uint64_t generation)
 {
 	m_lastTakeDroppedFrames = droppedFrames;
 	if (droppedFrames > 0) { emit recordTakeDropped(droppedFrames); }
+	// A take of an earlier arming (the clip was re-armed before its take was installed) keeps
+	// its audio as a lane take, and leaves the current arming alone: it must not disarm the clip.
+	if (generation != m_armGeneration)
+	{
+		if (take) { addRecordedLane(std::move(take)); }
+		return;
+	}
 	// A take becomes a lane take when the transport goes on recording after it (a loop pass), or
 	// when an earlier pass of this arming already did; the first take of a plain recording stays
 	// the clip's own content, as it always did.

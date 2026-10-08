@@ -68,6 +68,9 @@ public:
 	//! Audio thread: the clip claimed this take, so it is a take that was recorded (and is
 	//! installed when it ends; an unclaimed one is only discarded).
 	void markClaimed() noexcept { m_claimed = true; }
+	//! Main thread, before the take is claimed: the arming (SampleClip::armGeneration) it was
+	//! prepared under. A take of an earlier arming never disarms a re-armed clip.
+	void setArmGeneration(std::uint64_t generation) noexcept;
 
 	//! Main thread: finishes every take queued by a destroyed handle and installs it on its
 	//! clip (a lane take while the transport goes on recording, else the clip itself).

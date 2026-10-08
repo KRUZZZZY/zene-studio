@@ -57,6 +57,7 @@ struct PendingRecordTake
 	std::unique_ptr<SampleRecordAccumulator> accum;
 	QPointer<SampleClip> clip;
 	bool claimed = false;  //!< the clip claimed it: it was recording (see SampleRecordHandle::markClaimed)
+	std::uint64_t generation = 0;  //!< the clip's arming when the take was prepared
 };
 
 
@@ -158,9 +159,17 @@ void SampleRecordHandle::reapRetiredTakes()
 			// lane take and the clip stays armed for the next pass.
 			const Song* song = Engine::getSong();
 			const bool continues = clip->isRecord() && song->isRecording() && song->isPlaying();
-			clip->acceptRecordedTake(std::move(buffer), take->accum->framesDropped(), continues);
+			clip->acceptRecordedTake(std::move(buffer), take->accum->framesDropped(), continues, take->generation);
 		}
 	}
+}
+
+
+
+
+void SampleRecordHandle::setArmGeneration(std::uint64_t generation) noexcept
+{
+	m_take->generation = generation;
 }
 
 
