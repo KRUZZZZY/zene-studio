@@ -68,20 +68,26 @@ void putBigEndian(QByteArray* out, quint32 value, int bytes)
 	for (int shift = (bytes - 1) * 8; shift >= 0; shift -= 8) { out->append(static_cast<char>((value >> shift) & 0xFF)); }
 }
 
-void putVarLen(QByteArray* out, quint32 value)
+//! The largest delta time a Standard MIDI File can hold: a variable-length quantity of at most four bytes.
+constexpr quint32 MaxVarLen = 0x0FFFFFFF;
+
+//! Appends @a value as a variable-length quantity; false, with nothing appended, when it needs more than four bytes.
+bool putVarLen(QByteArray* out, quint32 value)
 {
-	quint8 groups[5];
+	if (value > MaxVarLen) { return false; }
+	quint8 groups[4];
 	int count = 0;
 	do
 	{
 		groups[count++] = value & 0x7F;
 		value >>= 7;
-	} while (value != 0 && count < 5);
+	} while (value != 0);
 	while (count > 0)
 	{
 		--count;
 		out->append(static_cast<char>(groups[count] | (count > 0 ? 0x80 : 0)));
 	}
+	return true;
 }
 
 struct SmfEvent
@@ -93,7 +99,7 @@ struct SmfEvent
 	quint8 velocity = 0;
 };
 
-//! Whether every note of @a clip ends on a tick a MIDI file can hold, computed wide: a note-off past the largest
+//! Whether every note of @a clip ends on a tick the tick type can hold, computed wide: a note-off past the largest
 //! tick cannot be written, and one clamped onto its own note-on would sort before it and stick.
 bool notesFitInSmf(const MidiClip* clip)
 {
@@ -106,7 +112,8 @@ bool notesFitInSmf(const MidiClip* clip)
 	return true;
 }
 
-//! @a clip's notes as a type-0 Standard MIDI File at @a bpm.
+//! @a clip's notes as a type-0 Standard MIDI File at @a bpm; empty when a delta time would not fit a MIDI file's
+//! four-byte variable-length quantity (the caller refuses the save).
 QByteArray smfOf(const MidiClip* clip, int bpm)
 {
 	std::vector<SmfEvent> events;
@@ -130,7 +137,7 @@ QByteArray smfOf(const MidiClip* clip, int bpm)
 	tick_t at = 0;
 	for (const SmfEvent& event : events)
 	{
-		putVarLen(&track, static_cast<quint32>(event.tick - at));
+		if (!putVarLen(&track, static_cast<quint32>(event.tick - at))) { return {}; }
 		at = event.tick;
 		track.append(static_cast<char>(event.status));
 		track.append(static_cast<char>(event.key));
@@ -160,11 +167,17 @@ bool writeClip(Clip* clip, const QString& path, QString* error)
 	}
 	if (!notesFitInSmf(static_cast<MidiClip*>(clip)))
 	{
-		*error = QStringLiteral("a note ends past the largest tick, which a MIDI file cannot hold; nothing was written");
+		*error = QStringLiteral("a note ends past the largest tick the tick type holds; nothing was written");
 		return false;
 	}
 	// Written whole or not at all: a short write must not leave a truncated file (or replace the old one).
 	const QByteArray smf = smfOf(static_cast<MidiClip*>(clip), Engine::getSong()->tempoModel().value());
+	if (smf.isEmpty())
+	{
+		*error = QStringLiteral("two notes are too far apart for a MIDI file's delta time (at most %1 ticks); nothing was written")
+			.arg(MaxVarLen);
+		return false;
+	}
 	QSaveFile file(path);
 	if (!file.open(QIODevice::WriteOnly) || file.write(smf) != smf.size() || !file.commit())
 	{

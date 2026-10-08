@@ -197,7 +197,8 @@ private slots:
 	}
 
 	//! A note whose note-off would pass the largest tick is refused, not written: the end cannot be held, and a clamped
-	//! end would sort onto or before its own note-on. A note that fits is written with its note-off exactly 'length' on.
+	//! end would sort onto or before its own note-on. A MIDI delta time is at most four bytes (0x0FFFFFFF ticks), so a
+	//! note further than that from the event before it is refused too. A note inside both limits is written exactly.
 	void aNoteNearTheTopOfTheRangeIsRefusedOrWrittenExactly()
 	{
 		const tick_t top = std::numeric_limits<tick_t>::max();
@@ -214,8 +215,13 @@ private slots:
 		QVERIFY2(!QFileInfo::exists(refusedPath), "a refused save wrote its file");
 		QCOMPARE(saveNote(top, 1, QStringLiteral("exact")).errorKind, ControlErrorKind::Refused);  // start == largest tick
 		QVERIFY(!QFileInfo::exists(QDir(m_dir.path()).filePath(QStringLiteral("exact.mid"))));
+		// The first delta is the note's start, from the tempo meta at 0: 2^28 is one past a four-byte delta.
+		const tick_t fiveBytes = tick_t{1} << 28;
+		QCOMPARE(saveNote(fiveBytes, 48, QStringLiteral("fivebyte")).errorKind, ControlErrorKind::Refused);
+		QVERIFY(!QFileInfo::exists(QDir(m_dir.path()).filePath(QStringLiteral("fivebyte.mid"))));
 
-		const tick_t start = top - 100;
+		const tick_t maxDelta = (tick_t{1} << 28) - 1;  // 0x0FFFFFFF: the largest four-byte delta
+		const tick_t start = maxDelta - 48;
 		const tick_t length = 48;
 		QVERIFY(saveNote(start, length, QStringLiteral("high")).ok);
 		QFile file(QDir(m_dir.path()).filePath(QStringLiteral("high.mid")));
@@ -224,22 +230,31 @@ private slots:
 		QVERIFY(bytes.startsWith("MThd") && bytes.contains("MTrk"));
 		// The delta-timed track: after the header and the tempo meta event.
 		int at = bytes.indexOf("MTrk") + 4 + 4;
-		const auto readDelta = [&bytes, &at]() {
+		// A valid SMF delta is at most four bytes; a fifth continuation byte fails the read.
+		const auto readDelta = [&bytes, &at](quint32* out) {
 			quint32 value = 0;
-			for (int guard = 0; guard < 5; ++guard)
+			for (int n = 0; n < 4; ++n)
 			{
 				const quint8 byte = static_cast<quint8>(bytes.at(at++));
 				value = (value << 7) | (byte & 0x7F);
-				if ((byte & 0x80) == 0) { return value; }
+				if ((byte & 0x80) == 0)
+				{
+					*out = value;
+					return true;
+				}
 			}
-			return quint32{0};
+			return false;
 		};
-		QCOMPARE(readDelta(), quint32{0});  // the tempo meta's own delta
+		quint32 delta = 0;
+		QVERIFY(readDelta(&delta));
+		QCOMPARE(delta, quint32{0});  // the tempo meta's own delta
 		at += 6;  // FF 51 03 and the three tempo bytes
-		QCOMPARE(readDelta(), quint32{static_cast<quint32>(start)});  // the note-on, at its own start
+		QVERIFY(readDelta(&delta));
+		QCOMPARE(delta, quint32{static_cast<quint32>(start)});  // the note-on, at its own start
 		QCOMPARE(static_cast<quint8>(bytes.at(at++)), quint8{0x90});
 		at += 2;
-		QCOMPARE(readDelta(), quint32{static_cast<quint32>(length)});  // the note-off, 'length' after its note-on
+		QVERIFY(readDelta(&delta));
+		QCOMPARE(delta, quint32{static_cast<quint32>(length)});  // the note-off, 'length' after its note-on
 		QCOMPARE(static_cast<quint8>(bytes.at(at++)), quint8{0x80});
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 	}
