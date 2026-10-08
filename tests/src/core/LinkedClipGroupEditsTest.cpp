@@ -145,6 +145,17 @@ private slots:
 		QCOMPARE(undoDepth(), depth + 1);
 	}
 
+	//! clip.split of a linked clip: the tracks of every member are captured, and it is still ONE step.
+	void aGroupSplitIsOneUndoStep()
+	{
+		const QString a = clipAt(0, 384).second;
+		const QString b = clipAt(768, 384).second;
+		QVERIFY(link({a, b}));
+		const int depth = undoDepth();
+		QVERIFY(run(QStringLiteral("clip.split"), {{QStringLiteral("clip"), a}, {QStringLiteral("position"), 96}}).ok);
+		QCOMPARE(undoDepth(), depth + 1);
+	}
+
 	//! A peer is never left starting before the song start: the whole trim is refused.
 	void aTrimThatWouldPushAPeerBeforeTheSongStartIsRefused()
 	{
@@ -183,7 +194,9 @@ private slots:
 		Clip* pb = clipOf(b);
 		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 96}, {QStringLiteral("end"), 200},
 			{QStringLiteral("tracks"), QJsonArray{trackA}}}).ok);
+		const int depth = undoDepth();
 		QVERIFY(run(QStringLiteral("range.split")).ok);
+		QCOMPARE(undoDepth(), depth + 1);  // the cuts on both tracks are one step
 		QCOMPARE(totalClips(), 6);  // each of the two clips cut at the range's two edges
 		QCOMPARE(pb->length().getTicks(), 96);
 		Track* other = pb->getTrack();
@@ -239,9 +252,11 @@ private slots:
 		{
 			run(QStringLiteral("vca.track_add"), {{QStringLiteral("group"), group}, {QStringLiteral("track"), track}});
 		}
+		const int depth = undoDepth();
 		const ControlResult split = run(QStringLiteral("vca.edit_split"),
 			{{QStringLiteral("group"), group}, {QStringLiteral("clip"), a}, {QStringLiteral("position"), 1200}});
 		QVERIFY2(split.ok, qPrintable(split.errorMessage));
+		QCOMPARE(undoDepth(), depth + 1);
 		QCOMPARE(totalClips(), 8);  // four clips, each cut once
 		QCOMPARE(pb->length().getTicks(), 200);
 		QCOMPARE(pd->length().getTicks(), 200);
