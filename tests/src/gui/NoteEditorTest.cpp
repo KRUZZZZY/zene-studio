@@ -240,7 +240,7 @@ private slots:
 		const NoteGrid& g = m_editor->state().grid;
 		// Qt delivers a fast drag sparsely: one move from the first stem to the last puts the middle
 		// note nowhere near either event, so only the crossed-path walk can reach its stem.
-		const QPoint from(static_cast<int>(g.xOfTick(48)) + 1, 2);
+		const QPoint from(static_cast<int>(g.xOfTick(0)) + 1, 2);  // the first stem: the stroke must start on it
 		const QPoint to(static_cast<int>(g.xOfTick(192)) + 1, 2);
 		QTest::mousePress(lane, Qt::LeftButton, Qt::NoModifier, from);
 		QTest::mouseMove(lane, to);

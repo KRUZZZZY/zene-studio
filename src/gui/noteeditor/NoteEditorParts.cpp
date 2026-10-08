@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <vector>
 
 #include <QJsonArray>
@@ -303,13 +304,18 @@ void NoteLaneView::mousePressEvent(QMouseEvent* event)
 	if (m_state.clip == nullptr || event->button() != Qt::LeftButton) { return; }
 	m_drawing = true;
 	m_pending.clear();
+	m_drawAt = event->pos();
 	drawAt(event->pos());
 }
 
 void NoteLaneView::mouseMoveEvent(QMouseEvent* event)
 {
 	m_hover = event->pos();
-	if (m_drawing) { drawAt(event->pos()); }
+	if (m_drawing)
+	{
+		drawAlong(m_drawAt, event->pos());
+		m_drawAt = event->pos();
+	}
 	else { update(); }  // the readout follows the pointer
 }
 
@@ -341,6 +347,15 @@ void NoteLaneView::drawAt(const QPoint& pos)
 		}
 	}
 	update();
+}
+
+void NoteLaneView::drawAlong(const QPoint& from, const QPoint& to)
+{
+	// Qt coalesces a fast drag into sparse move events, so the path between two events is walked as the
+	// note area's strokes walk theirs: a stem the pointer passed over between them takes the value too.
+	const QPoint path = to - from;
+	const int steps = std::max(1, std::max(std::abs(path.x()), std::abs(path.y())) / 2);
+	for (int i = 1; i <= steps; ++i) { drawAt(from + path * i / steps); }
 }
 
 void NoteLaneView::commit()

@@ -137,6 +137,8 @@ private:
 	int valueAtY(int y) const;
 	int yOfValue(int value) const;
 	void drawAt(const QPoint& pos);
+	//! drawAt for every point of the path from @a from to @a to, so a fast stroke takes the stems it passed over.
+	void drawAlong(const QPoint& from, const QPoint& to);
 	void commit();
 	//! The stems, each in its value's place, its state in its head's shape (NoteLanePaint.cpp).
 	void paintStems(QPainter& p, int baseY) const;
@@ -149,6 +151,7 @@ private:
 	std::map<int, int> m_pending;  //!< Note::id() -> value drawn but not yet written
 	int m_lastValue = 0;           //!< the value the stroke drew last: the new notes' velocity on the Velocity lane
 	bool m_drawing = false;
+	QPoint m_drawAt{-1, -1};       //!< where the stroke in flight last drew
 	QPoint m_hover{-1, -1};        //!< the pointer over the lane, or x < 0 when it is elsewhere
 };
 
