@@ -84,6 +84,7 @@ set(LMMS_TESTS
 	src/core/ControlSessionRecordLandTest.cpp
 	src/core/ControlMidiReconnectSharedTest.cpp
 	src/core/ControlPluginBusesTest.cpp
+	src/core/ControlHostedDeviceCatalogueTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
 	# Linked / smart clips (feature-list row 6, task #645): the relation, an edit
@@ -1430,6 +1431,33 @@ target_compile_definitions(ControlPluginBusesTest PRIVATE
 	LMMS_BUSES_TEST_INSTRUMENT_DIR="${CMAKE_CURRENT_BINARY_DIR}/buses-test-instrument")
 add_dependencies(ControlPluginBusesTest buses_test_instrument)
 set_target_properties(ControlPluginBusesTest PROPERTIES ENABLE_EXPORTS ON)
+
+# ---------------------------------------------------------------------------
+# tests/src/plugins/FakeHostModule.cpp: stand-ins for the CLAP and VST3 host modules (clapeffect, vst3effect,
+# vst3instrument - not clapinstrument, on purpose), so the hosted halves of the device catalogue run in a build with
+# neither SDK. Targets are named fake_host_* to leave the real vst3effect/vst3instrument targets alone; the files they
+# make carry the real module names, in a directory of their own that only ControlHostedDeviceCatalogueTest scans.
+# ---------------------------------------------------------------------------
+foreach(FAKE_HOST IN ITEMS "clapeffect|clap|Effect" "vst3effect|vst3|Effect" "vst3instrument|vst3|Instrument")
+	string(REPLACE "|" ";" FAKE_HOST_PARTS "${FAKE_HOST}")
+	list(GET FAKE_HOST_PARTS 0 FAKE_HOST_NAME)
+	list(GET FAKE_HOST_PARTS 1 FAKE_HOST_FORMAT)
+	list(GET FAKE_HOST_PARTS 2 FAKE_HOST_TYPE)
+	add_library(fake_host_${FAKE_HOST_NAME} MODULE src/plugins/FakeHostModule.cpp)
+	target_include_directories(fake_host_${FAKE_HOST_NAME} PRIVATE $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+	target_compile_definitions(fake_host_${FAKE_HOST_NAME} PRIVATE
+		PLUGIN_NAME=${FAKE_HOST_NAME} FAKE_HOST_FORMAT="${FAKE_HOST_FORMAT}" FAKE_HOST_TYPE=${FAKE_HOST_TYPE})
+	target_compile_features(fake_host_${FAKE_HOST_NAME} PRIVATE cxx_std_20)
+	target_link_libraries(fake_host_${FAKE_HOST_NAME} PRIVATE zene ${QT_LIBRARIES})
+	set_target_properties(fake_host_${FAKE_HOST_NAME} PROPERTIES
+		OUTPUT_NAME ${FAKE_HOST_NAME}
+		LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fake-hosts"
+		RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fake-hosts")
+	add_dependencies(ControlHostedDeviceCatalogueTest fake_host_${FAKE_HOST_NAME})
+endforeach()
+target_compile_definitions(ControlHostedDeviceCatalogueTest PRIVATE
+	LMMS_FAKE_HOSTS_DIR="${CMAKE_CURRENT_BINARY_DIR}/fake-hosts")
+set_target_properties(ControlHostedDeviceCatalogueTest PROPERTIES ENABLE_EXPORTS ON)
 
 # The proof's own wiring: the fixture directory it points LMMS_PLUGIN_DIR at,
 # the module built before ctest runs, and the exports a plug-in module

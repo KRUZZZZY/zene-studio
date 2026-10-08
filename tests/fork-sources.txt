@@ -2006,6 +2006,7 @@ tests/src/core/ControlBrowserCommandsTest.cpp
 
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
+tests/src/core/ControlHostedDeviceCatalogueTest.cpp
 tests/src/core/ControlLinkCommandsTest.cpp
 tests/src/core/ControlMidiReconnectSharedTest.cpp
 tests/src/core/ControlPluginBusesTest.cpp
@@ -2212,3 +2213,4 @@ tests/src/gui/MixerSelectionIdentityTest.cpp
 tests/src/gui/PinConnectorTest.cpp
 tests/src/core/TrackKeyNamesLoadTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
+tests/src/plugins/FakeHostModule.cpp

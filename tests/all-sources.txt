@@ -2441,6 +2441,7 @@ tests/src/core/ControlChordWriteTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlGrooveCommandsTest.cpp
+tests/src/core/ControlHostedDeviceCatalogueTest.cpp
 tests/src/core/ControlLinkCommandsTest.cpp
 tests/src/core/ControlMidiReconnectSharedTest.cpp
 tests/src/core/ControlModulatorCommandsTest.cpp
@@ -2780,6 +2781,7 @@ tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
 tests/src/plugins/ClapLoaderErrorTest.cpp
+tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/FakeRemotePluginClient.cpp
 tests/src/plugins/MpeTestConsumer.cpp
 tests/src/plugins/PluginPortsHarness.h
