@@ -102,7 +102,7 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 		const QString directory = root.absoluteFilePath(entry);
 		const QString entryPath = QDir(directory).absoluteFilePath(
 				QString::fromLatin1(EntryFileName));
-		if (!QFileInfo::exists(entryPath))
+		if (!QFileInfo(entryPath).isFile())
 		{
 			continue;
 		}

@@ -213,6 +213,13 @@ void EffectChain::appendEffect( Effect * _effect )
 
 
 
+void EffectChain::setEnabledUnjournalled(bool on)
+{
+	const bool journalling = m_enabledModel.testAndSetJournalling(false);
+	m_enabledModel.setValue(on);
+	m_enabledModel.setJournalling(journalling);
+}
+
 void EffectChain::removeEffect( Effect * _effect )
 {
 	Engine::audioEngine()->requestChangeInModel();

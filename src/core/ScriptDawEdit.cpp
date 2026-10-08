@@ -49,9 +49,11 @@
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ProjectJournal.h"
 #include "ScriptCommandBridge.h"
 #include "ScriptEngine.h"
 
+#include <QByteArray>
 #include <QString>
 #include <QStringList>
 
@@ -59,6 +61,15 @@
 
 namespace lmms
 {
+
+bool setCommandText(ScriptCommand& command, const QString& text)
+{
+	const QByteArray utf8 = text.toUtf8();
+	if (utf8.size() >= static_cast<int>(sizeof(command.text))) { return false; }
+	std::strncpy(command.text, utf8.constData(), sizeof(command.text) - 1);
+	command.text[sizeof(command.text) - 1] = '\0';
+	return true;
+}
 
 namespace
 {
@@ -80,21 +91,13 @@ void enqueueDaw(ScriptCommand command)
 }
 
 //! A rename travels in the fixed 256-byte payload, like SetTrackName's.
-bool namedDawCommand(ScriptDawBindings::Op op, void* target, const QString& value, ScriptCommand* command)
+//! False when the name does not fit whole: the payload is left empty rather
+//! than carrying a truncation that may also be a broken UTF-8 sequence.
+bool namedDawCommand(ScriptDawBindings::Op op, void* target, const QString& name,
+	ScriptCommand& command)
 {
-	const QByteArray utf8 = value.toUtf8();
-	if (utf8.size() >= static_cast<qsizetype>(sizeof(command->text)))
-	{
-		const QString operation = op == ScriptDawBindings::Op::SetChannelName
-			? QStringLiteral("setting channel name") : QStringLiteral("loading effect");
-		ScriptEngine::instance()->logMessage(QStringLiteral(
-			"[error] %1 refused: UTF-8 value exceeds the %2-byte command payload limit")
-			.arg(operation).arg(static_cast<int>(sizeof(command->text) - 1)));
-		return false;
-	}
-	*command = dawCommand(op, target);
-	std::strncpy(command->text, utf8.constData(), sizeof(command->text) - 1);
-	return true;
+	command = dawCommand(op, target);
+	return setCommandText(command, name);
 }
 
 //! Write one model through the existing vocabulary, with the checkpoint that
@@ -219,7 +222,22 @@ void applyRemoveEffect(EffectChain* chain, int index)
 		return;
 	}
 	Effect* effect = effects[index];
-	chain->removeEffect(effect);
+	// Luna 5332: the removal is recorded before it happens, by the same
+	// implementation plugin.unload and the rack's own delete use, so the
+	// structural undo step re-instantiates the device at its index. A device
+	// whose state cannot be captured (empty, or over the structural budget)
+	// is still removed, as the script asked, but no undo step is claimed for
+	// it: the log says so instead of pretending the removal is reversible.
+	const bool recorded = control::journalEffectRemoval(chain, effect, index);
+	if (!recorded)
+	{
+		ScriptEngine::instance()->logMessage(QStringLiteral(
+			"[note] removing effect %1: its state cannot be captured, so this removal is not undoable")
+			.arg(index));
+	}
+	// A recorded removal pushes exactly one checkpoint: the structural step. The
+	// emptied chain's enabled flag is restored by that step, not journalled apart.
+	control::detachEffect(chain, effect);
 	effect->deleteLater();
 }
 
@@ -338,7 +356,13 @@ void LuaMixerChannel::setName(const QString& name)
 {
 	if (m_channel == nullptr) { return; }
 	ScriptCommand command;
-	if (!namedDawCommand(ScriptDawBindings::Op::SetChannelName, m_channel, name, &command)) { return; }
+	if (!namedDawCommand(ScriptDawBindings::Op::SetChannelName, m_channel, name, command))
+	{
+		logRefusal(QStringLiteral("renaming this channel"), ControlResult::failure(
+			ControlErrorKind::InvalidArgs, QStringLiteral("name exceeds the %1-byte command payload limit")
+				.arg(ScriptCommandTextSize - 1)));
+		return;
+	}
 	enqueueDaw(command);
 }
 
@@ -354,7 +378,13 @@ LuaEffect& LuaEffectChain::loadEffect(const QString& device) const
 	}
 	const int before = effectCount();
 	ScriptCommand command;
-	if (!namedDawCommand(ScriptDawBindings::Op::LoadEffect, m_chain, device, &command)) { return effect(-1); }
+	if (!namedDawCommand(ScriptDawBindings::Op::LoadEffect, m_chain, device, command))
+	{
+		logRefusal(QStringLiteral("loading '%1'").arg(device), ControlResult::failure(
+			ControlErrorKind::InvalidArgs, QStringLiteral("device name exceeds the %1-byte command payload limit")
+				.arg(ScriptCommandTextSize - 1)));
+		return ScriptDawBindings::newEffect(nullptr, nullptr);
+	}
 	enqueueDaw(command);
 	ScriptEngine::instance()->flushCommandsForRead();
 	// The count is the only honest witness that the load happened: the queue

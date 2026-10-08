@@ -81,6 +81,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "Plugin.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackContainer.h"
@@ -280,7 +281,7 @@ void placeEffectAt(EffectChain* chain, Effect* effect, int index)
 	for (int i = count - 1; i > index && i > 0; --i) { chain->moveUp(effect); }
 }
 
-Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int index)
+Effect* instantiateRecordedDevice(EffectChain* chain, const QString& stateXml)
 {
 	if (chain == nullptr || stateXml.isEmpty())
 	{
@@ -321,6 +322,11 @@ Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int
 	Plugin::Descriptor::SubPluginFeatures::Key key;
 	const bool hosted = deviceKeyFromState(root, &key);
 
+	// The plug-in load and the settings restore. Neither needs the device to be in
+	// a chain (the restore reads the device's own parameters and state, and the
+	// device's chain pointer is set at instantiation), and the device is not in
+	// any chain yet, so the render thread never runs it: no audio change lock is
+	// taken here.
 	Effect* effect = Effect::instantiate(pluginName, chain, hosted ? &key : nullptr);
 	if (effect == nullptr)
 	{
@@ -328,28 +334,37 @@ Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int
 			QStringLiteral("the device '%1' could not be re-instantiated, so the removal was "
 				"not undone").arg(pluginName));
 	}
-
-	// appendEffect() puts it at the END of the chain, which is where a project
-	// load leaves it too; the recorded index is restored afterwards.
-	chain->appendEffect(effect);
-	placeEffectAt(chain, effect, index);
-
-	// The settings last, and only onto a device that is already in the chain.
 	// A document the DEVICE refuses (it was written for another plugin) is NOT a
 	// half-restored device to keep: a device at its DEFAULTS is a wrong-sounding
-	// device, and leaving it in the chain would persist those defaults over the
-	// settings the removal captured. So the fresh instance goes back OUT and the
-	// failure is recorded for control.undo to answer with - reporting success
-	// here was the SPEC A16 lie BUG-CTL-1 records.
+	// device, and it must not be put in a chain at all. So the fresh instance is
+	// deleted and the failure is recorded for control.undo to answer with -
+	// reporting success here was the SPEC A16 lie BUG-CTL-1 records.
 	const ControlResult restored = controlRestoreEffectState(effect, stateXml.toUtf8());
 	if (!restored.ok)
 	{
-		chain->removeEffect(effect);
-		// Same lifetime as the removal path beside this: the audio engine may
-		// still hold the pointer for the period in flight.
 		effect->deleteLater();
 		return restoreFailed(restored.errorKind, restored.errorMessage);
 	}
+	return effect;
+}
+
+void attachRecordedDevice(EffectChain* chain, Effect* effect, int index)
+{
+	// The only change to the chain, and the only part that needs the audio change
+	// lock: appendEffect() puts the device at the END of the chain, which is where a
+	// project load leaves it too, and the recorded index is restored afterwards.
+	chain->appendEffect(effect);
+	placeEffectAt(chain, effect, index);
+}
+
+Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int index)
+{
+	Effect* effect = instantiateRecordedDevice(chain, stateXml);
+	if (effect == nullptr) { return nullptr; }
+	// Callers of this composition may hold no change lock, so the attach takes
+	// one; the load and the restore above have already run without it.
+	const auto changes = Engine::audioEngine()->requestChangesGuard();
+	attachRecordedDevice(chain, effect, index);
 	return effect;
 }
 
@@ -437,11 +452,67 @@ void removeRecordedEffect(EffectChain* chain, QPointer<Effect>& made, int slot, 
 	made = nullptr;
 }
 
+//! The redo of a recorded removal: takes off the device its undo built, and only that device, and only while it is
+//! still in the chain. When the undo built none (its rebuild was refused) there is nothing to take off, and
+//! removeRecordedEffect's slot fallback would otherwise take whatever same-plugin device now sits at that slot.
+void removeBuiltDevice(EffectChain* chain, QPointer<Effect>& built, int slot, const QString& plugin)
+{
+	if (chain == nullptr || built.isNull()) { return; }
+	const std::vector<Effect*>& effects = chain->effects();
+	if (std::find(effects.begin(), effects.end(), built.data()) == effects.end())
+	{
+		built = nullptr;
+		return;
+	}
+	removeRecordedEffect(chain, built, slot, plugin);
+}
+
+namespace
+{
+
+//! Suspends the journal for one scope. An undo or a redo writes no checkpoints
+//! of its own: the step being run is the record, and a checkpoint pushed here
+//! would sit on the undo stack above the step it reverses.
+class JournalPause
+{
+public:
+	JournalPause() : m_journal(Engine::projectJournal())
+		, m_was(m_journal != nullptr && m_journal->isJournalling())
+	{
+		if (m_journal != nullptr) { m_journal->setJournalling(false); }
+	}
+	~JournalPause()
+	{
+		if (m_journal != nullptr) { m_journal->setJournalling(m_was); }
+	}
+	JournalPause(const JournalPause&) = delete;
+	JournalPause& operator=(const JournalPause&) = delete;
+
+private:
+	ProjectJournal* m_journal;
+	bool m_was;
+};
+
+} // namespace
+
+void detachEffect(EffectChain* chain, Effect* effect)
+{
+	if (chain == nullptr) { return; }
+	// Both branches of the caller's decision take the same pause: the flag write
+	// of an emptying removal is never a checkpoint of its own.
+	JournalPause quiet;
+	chain->removeEffect(effect);
+}
+
 bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 {
 	if (chain == nullptr || effect == nullptr || index < 0) { return false; }
+	return journalRemovalDocument(chain, effect, index, controlEffectStateXml(effect));
+}
 
-	const QString xml = controlEffectStateXml(effect);
+bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const QString& xml)
+{
+	if (chain == nullptr || effect == nullptr || index < 0) { return false; }
 	// Bounded like every other captured document: an unbounded payload on a
 	// stack with a declared byte budget is a bound that does not hold. A device
 	// whose state document is over the cap refuses the inverse; the command then
@@ -450,14 +521,36 @@ bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 	if (xml.isEmpty() || xml.size() > StructuralSnapshotLimit) { return false; }
 
 	// No pointer is kept (see journalEffectLoad in the header): the chain by its owner's address, the device by its slot.
+	// The enabled flag is part of the record: appending the device switches the
+	// chain on, so the undo puts back the value it had when the device was taken
+	// off. Both closures run with the journal paused, so neither pushes a
+	// checkpoint of its own.
+	const bool wasEnabled = chain->isEnabled();
 	const auto chainOf = recordedChainFinder(chain);
 	const QString plugin = pluginNameOf(effect);
 	auto made = std::make_shared<QPointer<Effect>>();
 	addStructuralUndoStep(
-		[chainOf, xml, index, made]() {
-			if (EffectChain* live = chainOf()) { *made = recreateEffectFromState(live, xml, index); }
+		[chainOf, xml, index, made, wasEnabled]() {
+			JournalPause quiet;
+			EffectChain* live = chainOf();
+			if (live == nullptr) { return; }
+			// The load and the settings restore first, with NO change lock held: the
+			// render thread takes that lock every period, so work held under it stalls
+			// rendering for its whole duration (the realtime rule). Only the append,
+			// the placement and the flag restore are one model change, made under a
+			// single bracket (the lock is recursive, so appendEffect's own lock nests).
+			// Nothing is touched when no device was built.
+			Effect* device = instantiateRecordedDevice(live, xml);
+			if (device == nullptr) { *made = nullptr; return; }
+			const auto changes = Engine::audioEngine()->requestChangesGuard();
+			attachRecordedDevice(live, device, index);
+			*made = device;
+			live->setEnabledUnjournalled(wasEnabled);
 		},
-		[chainOf, made, index, plugin]() { removeRecordedEffect(chainOf(), *made, index, plugin); },
+		[chainOf, made, index, plugin]() {
+			JournalPause quiet;
+			removeBuiltDevice(chainOf(), *made, index, plugin);
+		},
 		xml.size());
 	return true;
 }

@@ -707,6 +707,9 @@ set(LMMS_TESTS
 	# control surface addresses from Lua, reads the engine back (not the script's
 	# own buffer), and checks the version surface zene.apiSurface() reports.
 	src/core/ScriptDawBindingTest.cpp
+	# Round 6 of the script-binding rework: the removal and undo cases, split out of
+	# ScriptDawBindingTest so that file stays under the file-length gate.
+	src/core/ScriptDawRemovalUndoTest.cpp
 	src/core/ScriptEngineTest.cpp
 	# board card #708: the schedule clock's PURE half - the boundary grid, the
 	# registry's typed refusals and the livecode.* A16 rows, no audio device.
@@ -1227,6 +1230,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceAbUndoTest"
+		# Luna 5332: the script's removeEffect undo test loads the build's BassBooster module.
+		OR LMMS_TEST_NAME STREQUAL "ScriptDawBindingTest"
+		OR LMMS_TEST_NAME STREQUAL "ScriptDawRemovalUndoTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceMovesUndoTest"
 		# 0.5.0 L10 (W3): the device tools load the build's amplifier module.
@@ -1383,8 +1389,8 @@ set_tests_properties(RecordingRealtimeTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # ScriptDawBindingTest constructs a real Engine (mixer, script worker thread,
 # ProjectJournal) and drives it through the Lua binding, so it needs the same
-# headless Qt platform.
-set_tests_properties(ScriptDawBindingTest PROPERTIES
+# headless Qt platform. ScriptDawRemovalUndoTest is the same kind of test.
+set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The rack command-group tests (rack.* macros and key/velocity zones) construct a

@@ -25,6 +25,7 @@
 #ifndef LMMS_SCRIPT_ENGINE_H
 #define LMMS_SCRIPT_ENGINE_H
 
+#include <QFileInfo>
 #include <QMutex>
 #include <QObject>
 #include <QSemaphore>
@@ -46,6 +47,23 @@ namespace lmms
 
 class MidiClip;
 class Track;
+
+/*! \brief The deepest ancestor of \a path that already exists on disk.
+ *
+ * Stops at any existing component, including a symlink whose target is
+ * missing: `QFileInfo::exists()` is false for a dangling symlink, so a
+ * naive walk climbs past the link and validates only its in-project
+ * parent. Returns \a root once the walk has consumed it.
+ */
+inline QString deepestExistingAncestor(const QString& path, const QString& root)
+{
+	QString probe = path;
+	while (probe.size() > root.size() && !QFileInfo::exists(probe) && !QFileInfo(probe).isSymLink())
+	{
+		probe = QFileInfo(probe).absolutePath();
+	}
+	return probe;
+}
 
 //! Capacity of the script -> apply-side command queue, in commands.
 constexpr std::size_t ScriptCommandQueueCapacity = 1024;
@@ -97,6 +115,17 @@ struct ScriptCommand
 	float f0{};
 	char text[ScriptCommandTextSize]{};
 };
+
+/*! \brief Copy \a text into \a command's fixed payload, or report that it does not fit.
+ *
+ * The payload is a fixed 256-byte, NUL-terminated buffer, so a strncpy of a
+ * longer name truncates it - and a truncation that lands mid-character splits a
+ * UTF-8 sequence, leaving a corrupt name rather than merely a short one. Callers
+ * that carry a user-visible string refuse instead of storing a damaged one.
+ *
+ * \return false when \a text does not fit whole (the payload is left untouched).
+ */
+bool setCommandText(ScriptCommand& command, const QString& text);
 
 /*! \brief Single-producer / single-consumer command queue.
  *

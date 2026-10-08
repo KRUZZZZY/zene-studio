@@ -173,6 +173,11 @@ public:
 	 */
 	int undoDepth() const { return m_undoCheckPoints.size(); }
 	void mergeCheckpointsFrom( int depth );
+	/*! The same merge, with the window named by SERIAL instead of by index: every
+	 *  step pushed after the newest step whose serial was @a serial (take it with
+	 *  topStepSerial() before the work). An index taken before the work goes
+	 *  stale when a bound evicts steps under it; a serial does not. */
+	void mergeCheckpointsSince( quint64 serial );
 
 	// ---- the bound (Zene Studio, task #623: "undo depth and drag coalescing") ----
 

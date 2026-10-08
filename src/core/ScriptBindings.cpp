@@ -205,8 +205,7 @@ void enqueueTrackRename(Track* track, const QString& name)
 	}
 	ScriptCommand command = makeCommand(ScriptCommand::Type::SetTrackName);
 	command.object0 = track;
-	const QByteArray utf8 = name.toUtf8();
-	std::strncpy(command.text, utf8.constData(), sizeof(command.text) - 1);
+	if (!setCommandText(command, name)) { throw std::runtime_error("setName: name is longer than 255 bytes"); }
 	ScriptEngine::instance()->enqueue(command);
 }
 
@@ -791,13 +790,14 @@ void LuaPatternClip::setName(const QString& name)
 	if (!m_clip) { return; }
 	ScriptCommand command = makeCommand(ScriptCommand::Type::SetClipName);
 	command.object0 = m_clip;
-	const QByteArray utf8 = name.toUtf8();
-	std::strncpy(command.text, utf8.constData(), sizeof(command.text) - 1);
+	if (!setCommandText(command, name)) { throw std::runtime_error("setName: name is longer than 255 bytes"); }
 	ScriptEngine::instance()->enqueue(command);
 }
 
 int LuaPatternClip::lengthTicks() const
 {
+	// Reads see prior writes from the same script (the apply side drains).
+	ScriptEngine::instance()->flushCommandsForRead();
 	return m_clip ? m_clip->length().getTicks() : 0;
 }
 
@@ -997,6 +997,8 @@ int LuaSong::patternCount() const
 
 int LuaSong::tempo() const
 {
+	// Reads see prior writes from the same script (the apply side drains).
+	ScriptEngine::instance()->flushCommandsForRead();
 	return song() ? song()->getTempo() : 0;
 }
 
@@ -1009,6 +1011,8 @@ void LuaSong::setTempo(int bpm)
 
 int LuaSong::masterVolume() const
 {
+	// Reads see prior writes from the same script (the apply side drains).
+	ScriptEngine::instance()->flushCommandsForRead();
 	return song() ? song()->masterVolume() : 0;
 }
 
@@ -1028,6 +1032,10 @@ bool LuaSong::saveProject(const QString& path)
 		throw std::runtime_error(QStringLiteral("saveProject: %1").arg(error).toStdString());
 	}
 	if (!song()) { return false; }
+	// The save reads the Song, so the writes this script already made must be
+	// in it: a setTempo() still sitting in the queue would be written to disk
+	// as the pre-write value, and the file would disagree with the script.
+	ScriptEngine::instance()->flushCommandsForRead();
 	return song()->saveProjectFile(resolved);
 }
 

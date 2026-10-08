@@ -39,6 +39,9 @@
 #include <QStringList>
 
 #include "ControlDeviceSupport.h"
+#include "ControlRegistry.h"
+#include "ControlStructuralSupport.h"
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
@@ -109,6 +112,18 @@ print("refused isValid=" .. tostring(refused:isValid()))
 print("chain effects after refusal=" .. chain:effectCount())
 )LUA";
 
+//! Every id mixer:ids() lists must be resolvable, and must be the id the
+//! channel itself publishes - the vocabulary channelById() understands.
+const char* const IdScript = R"LUA(
+local mixer = zene.mixer()
+local listed = mixer:ids()
+local unresolved = 0
+for i, id in ipairs(listed) do
+  if not mixer:channelById(id):isValid() then unresolved = unresolved + 1 end
+end
+print("listed " .. #listed .. " unresolved " .. unresolved)
+)LUA";
+
 } // namespace
 
 class ScriptDawBindingTest : public QObject
@@ -118,11 +133,18 @@ private slots:
 
 	void initTestCase()
 	{
+#ifdef LMMS_TEST_PLUGIN_DIR
+		// The build's own effect modules (BassBooster for the undo test below),
+		// found the way RackMenuTest finds them. Set before Engine::init scans.
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+#endif
 		Engine::init(true);
+		ControlRegistry::setReady(true);
 	}
 
 	void cleanupTestCase()
 	{
+		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
 
@@ -353,6 +375,41 @@ private slots:
 		journal->undo();  // its channel is gone: nothing to take out, and nothing freed is touched
 		QCOMPARE(static_cast<int>(mixer->numChannels()), index);
 		engine->takeLogMessages();
+	}
+
+	/*! mixer:ids() must publish the CHANNEL ids channel:id() publishes, because
+	 *  those are the ids channelById() resolves. It used to name positions
+	 *  (channelId(index)), so enumerating ids() and feeding the entries back into
+	 *  channelById() addressed nothing: the master is ch-1 but ids() listed ch-0,
+	 *  and a ch-<n> number is an allocated id, never an index. */
+	void mixerIdsListsTheChannelsOwnIdsAndEveryOneResolves()
+	{
+		Mixer* mixer = Engine::mixer();
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(IdScript), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		// The mixer really has that many channels, and every id ids() listed is
+		// one a channel really carries.
+		const int count = static_cast<int>(mixer->numChannels());
+		for (int i = 0; i < count; ++i)
+		{
+			MixerChannel* channel = mixer->mixerChannel(i);
+			const QString id = control::channelIdOf(channel);
+			ControlTarget target;
+			ControlResult result;
+			QVERIFY2(resolveControlTarget(id, &target, &result),
+				qPrintable(result.errorMessage));
+			QCOMPARE(target.chain, &channel->m_fxChain);
+		}
+
+		// And the binding agrees: it listed every channel, and channelById()
+		// resolved every entry back to a live channel. A positional list listed
+		// "ch-0" for the master, which resolves to nothing at all.
+		QCOMPARE(engine->takeLogMessages(), QStringList{
+			qstr("listed %1 unresolved 0").arg(count)});
 	}
 
 	/*! The version policy's Lua face: the surface this build reports is the

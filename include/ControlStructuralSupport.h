@@ -132,6 +132,19 @@ LMMS_EXPORT bool journalTrackMove(Track* track, int fromIndex, int toIndex);
  */
 LMMS_EXPORT bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index);
 
+/*! journalEffectRemoval() with the device document given by the caller: the
+ *  undo rebuilds the device from \a xml, and the step is recorded only when
+ *  \a xml is a usable document. journalEffectRemoval passes the device's own
+ *  document; a caller that passes another one records exactly that document.
+ */
+LMMS_EXPORT bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const QString& xml);
+
+/*! Takes \a effect off \a chain. The removal pushes no checkpoint of its own,
+ *  whether or not journalEffectRemoval recorded it: a recorded removal's one
+ *  structural step restores the chain's enabled flag, and a removal that records
+ *  nothing must not leave an orphan flag step behind. Callers delete the effect. */
+LMMS_EXPORT void detachEffect(EffectChain* chain, Effect* effect);
+
 /*! Records the inverse of loading \a effect, a fresh instance of \a entry that
  *  sits at \a slot of \a chain: ONE action step whose undo takes the device out
  *  and whose redo instantiates \a entry at \a slot again (plugin.load,
@@ -160,6 +173,14 @@ LMMS_EXPORT void removeRecordedEffect(EffectChain* chain, QPointer<Effect>& made
  *  device. The new instance carries the captured settings.
  */
 LMMS_EXPORT Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int index);
+
+/*! The first half of recreateEffectFromState(): validates \a stateXml, loads the
+ *  device it names and restores its recorded settings, WITHOUT attaching it to
+ *  \a chain. None of that takes the audio change lock, so an undo does the work
+ *  here and takes the lock only for the attach. nullptr, with the reason recorded
+ *  for control.undo, when the engine refuses the device or its settings.
+ */
+LMMS_EXPORT Effect* instantiateRecordedDevice(EffectChain* chain, const QString& stateXml);
 
 /*! The failure of the LAST device restore a structural step attempted, or
  *  nullopt when the last one succeeded (or none has run) - BUG-CTL-1, SPEC A16.

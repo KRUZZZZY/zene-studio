@@ -316,6 +316,33 @@ private slots:
 		QCOMPARE(engine->pendingCommandCount(), 0);
 	}
 
+	/*! A name travels to the apply side in a fixed 256-byte payload, so a name
+	 *  that does not fit must be refused with an error rather than silently
+	 *  truncated - and truncation that splits a multibyte UTF-8 character is
+	 *  worse than a refusal, because the stored name is corrupt. */
+	void anOverlongNameIsRefusedRatherThanTruncated()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaPatternStore store;
+		LuaInstrumentTrack& track = store.addInstrumentTrack();
+		QVERIFY(track.isValid());
+
+		const QString before = track.name();
+		const QString longName(400, QLatin1Char('x'));
+		QString message;
+		QVERIFY(throws([&] { track.setName(longName); }, &message));
+		QVERIFY2(!message.isEmpty(), "the refusal said nothing");
+		engine->processCommands();
+		QCOMPARE(track.name(), before);  // unchanged, not truncated
+
+		// A multibyte name that would be cut mid-character is refused too.
+		const QString multiByte = QString(QChar(0x00E4)).repeated(200);
+		QVERIFY(throws([&] { track.setName(multiByte); }));
+		engine->processCommands();
+		QCOMPARE(track.name(), before);
+	}
+
 	void trackWrapper()
 	{
 		using namespace lmms;
@@ -485,6 +512,35 @@ private slots:
 		QCOMPARE(song->isPlaying(), false);
 	}
 
+	/*! A read made right after a queued write must see that write: every
+	 *  getter samples engine state the write has not reached yet, so a getter
+	 *  that skips the flush hands the script the value from before its own
+	 *  call. lengthTicks/tempo/masterVolume are the three that did. */
+	void aGetterRightAfterAQueuedWriteSeesThatWrite()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaSong song;
+
+		LuaPatternClip& clip = song.addPattern();
+		QVERIFY(clip.isValid());
+		const int defaultLength = clip.lengthTicks();
+		QVERIFY(defaultLength > 0);
+
+		// No explicit processCommands()/flush: the getter has to do it.
+		clip.setLengthTicks(100);
+		QCOMPARE(clip.lengthTicks(), 100);
+		QCOMPARE(engine->pendingCommandCount(), 0);
+
+		song.setTempo(140);
+		QCOMPARE(song.tempo(), 140);
+		QCOMPARE(engine->pendingCommandCount(), 0);
+
+		song.setMasterVolume(88);
+		QCOMPARE(song.masterVolume(), 88);
+		QCOMPARE(engine->pendingCommandCount(), 0);
+	}
+
 	void patternStoreWrapper()
 	{
 		using namespace lmms;
@@ -639,6 +695,38 @@ private slots:
 		message.clear();
 		QVERIFY(throws([&] { files.exists(QStringLiteral("x")); }, &message));
 		QVERIFY2(message.contains(QStringLiteral("sandbox root does not exist")), qPrintable(message));
+	}
+
+	/*! saveProject() must capture the state the SCRIPT has already written, not
+	 *  the state the apply side had reached when saveProject() was called: a
+	 *  script that writes and then saves without an explicit processCommands()
+	 *  wrote nothing at all if the save reads Song before the queue drains. */
+	void saveProjectSeesTheScriptsOwnQueuedWrites()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaSong song;
+
+		QTemporaryDir projectDir;
+		QVERIFY(projectDir.isValid());
+		engine->setProjectDir(projectDir.path());
+
+		// No processCommands(): the save itself has to see this write.
+		song.setTempo(150);
+		QCOMPARE(engine->pendingCommandCount(), 1);
+		QVERIFY(song.saveProject(QStringLiteral("queued.mmp")));
+
+		// Drain before the assertions below so this test leaves no queued
+		// command behind for the next case even when one of them fails.
+		engine->processCommands();
+
+		// Read the bpm back OUT of the written document rather than from the
+		// Song, so this asserts what the file holds and not what memory holds.
+		QFile written(QDir(projectDir.path()).absoluteFilePath(QStringLiteral("queued.mmp")));
+		QVERIFY2(written.open(QIODevice::ReadOnly | QIODevice::Text),
+			"the saved project must be readable");
+		const QString xml = QString::fromUtf8(written.readAll());
+		QVERIFY2(xml.contains(QStringLiteral("bpm=\"150\"")), qPrintable(xml.left(200)));
 	}
 
 	void logWrapper()

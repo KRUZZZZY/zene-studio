@@ -33,6 +33,7 @@
 #include "Effect.h"
 #include "EffectChain.h"
 #include "ScriptBindings.h"
+#include "ScriptEngine.h"
 
 #include <QString>
 
@@ -140,6 +141,8 @@ QString LuaEffect::displayName() const
 
 bool LuaEffect::enabled() const
 {
+	// Reads see prior writes from the same script (the apply side drains).
+	ScriptEngine::instance()->flushCommandsForRead();
 	Effect* effect = m_effective();
 	return effect != nullptr && effect->isEnabled();
 }

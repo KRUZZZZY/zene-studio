@@ -362,6 +362,15 @@ void ProjectJournal::mergeCheckpointsFrom( int depth )
 
 
 
+void ProjectJournal::mergeCheckpointsSince( quint64 serial )
+{
+	// Serials rise from the bottom of the stack to the top, so the window is the
+	// run of steps at the top whose serial is newer than the mark.
+	int depth = m_undoCheckPoints.size();
+	while( depth > 0 && m_undoCheckPoints.at( depth - 1 ).serial > serial ) { --depth; }
+	mergeCheckpointsFrom( depth );
+}
+
 void ProjectJournal::clearJournal()
 {
 	m_undoCheckPoints.clear();

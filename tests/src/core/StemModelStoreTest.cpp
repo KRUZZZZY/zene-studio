@@ -23,6 +23,8 @@
 
 #include <QtTest>
 
+#include <atomic>
+
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
@@ -265,6 +267,60 @@ private slots:
 		QVERIFY(file.open(QIODevice::ReadOnly));
 		QCOMPARE(file.readAll(), QByteArrayLiteral("abd"));
 		qunsetenv("LMMS_STEM_OFFLINE");
+	}
+
+	/*! Luna cluster 4495: a nonempty file with the wrong bytes is a broken
+	 *  fetch, not a model. It must not read as "present", or nothing can
+	 *  repair it: the GUI's download action and the first-use fetch both ask
+	 *  whether the model is already there. */
+	void testACorruptDefaultModelIsNotPresentAndStaysFetchable()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto previous = qgetenv("LMMS_STEM_MODEL_DIR");
+		qputenv("LMMS_STEM_MODEL_DIR", dir.path().toUtf8());
+		QVERIFY(qEnvironmentVariableIsEmpty("LMMS_STEM_MODEL"));
+		QVERIFY(!StemModelStore::isOffline());
+
+		const auto spec = StemModelStore::defaultModelSpec();
+		const auto path = StemModelStore::modelPath(spec.name + QStringLiteral(".onnx"));
+		writeFile(path, QByteArrayLiteral("not the pinned model bytes at all"));
+
+		// A corrupt file still leaves a fetch available to repair it.
+		QVERIFY2(StemModelStore::canFetchDefaultModel(),
+			"a corrupt model is treated as present, so it can never be refreshed");
+
+		// Offline, that repair is refused - and refused honestly: the fetch does
+		// not report success for a file it never verified.
+		qputenv("LMMS_STEM_OFFLINE", QByteArrayLiteral("1"));
+		QString error;
+		std::atomic<bool> cancel{false};
+		QVERIFY(!StemModelStore::fetchDefaultModelIfMissing(cancel, {}, &error));
+		QVERIFY2(error.contains(QStringLiteral("offline"), Qt::CaseInsensitive), qPrintable(error));
+		qunsetenv("LMMS_STEM_OFFLINE");
+
+		if (previous.isEmpty()) { qunsetenv("LMMS_STEM_MODEL_DIR"); }
+		else { qputenv("LMMS_STEM_MODEL_DIR", previous); }
+	}
+
+	//! The operator's own file (LMMS_STEM_MODEL) is outside the pinned spec's
+	//! contract, so a nonempty one is still "present" and never overwritten.
+	void testAnExplicitModelPathIsTakenAtFaceValue()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto previous = qgetenv("LMMS_STEM_MODEL");
+		const auto path = QDir(dir.path()).filePath(QStringLiteral("operator.onnx"));
+		qputenv("LMMS_STEM_MODEL", path.toUtf8());
+		writeFile(path, QByteArrayLiteral("whatever the operator put there"));
+
+		std::atomic<bool> cancel{false};
+		QVERIFY(StemModelStore::fetchDefaultModelIfMissing(cancel, {}, nullptr));
+		// ...and it is never a candidate for a download over the top of it.
+		QVERIFY(!StemModelStore::canFetchDefaultModel());
+
+		if (previous.isEmpty()) { qunsetenv("LMMS_STEM_MODEL"); }
+		else { qputenv("LMMS_STEM_MODEL", previous); }
 	}
 };
 

@@ -56,6 +56,21 @@ private:
 	std::function<void()> m_body;
 };
 
+/*! A backend's (or a download's) fraction as a value a listener can use.
+ *  std::clamp does NOT do this on its own: every comparison against a NaN is
+ *  false, so clamp(NaN, 0, 1) hands the NaN straight back. A non-finite value
+ *  is a backend that computed its fraction badly, not progress, so it is
+ *  refused here - otherwise it reaches the GUI (a NaN turned into a percentage
+ *  by the dialog's own arithmetic) and into the atomic a poller reads. */
+float usableFraction(float fraction)
+{
+	if (!std::isfinite(fraction))
+	{
+		return 0.0f;
+	}
+	return std::clamp(fraction, 0.0f, 1.0f);
+}
+
 } // namespace
 
 StemJobManager::StemJobManager(QObject* parent) :
@@ -368,7 +383,7 @@ bool StemJobManager::provisionModel(const std::shared_ptr<Job>& job)
 	job->fetchingModel.store(true);
 	QString provisionError;
 	const bool provisioned = provisioner(job->cancelRequested,
-		[job](float fraction) { job->downloadProgress.store(std::clamp(fraction, 0.0f, 1.0f)); },
+		[job](float fraction) { job->downloadProgress.store(usableFraction(fraction)); },
 		&provisionError);
 	job->fetchingModel.store(false);
 	if (job->cancelRequested.load())
@@ -423,7 +438,7 @@ void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 				job->state.store(State::CancelRequested);
 				return false;
 			}
-			fraction = std::clamp(fraction, 0.0f, 1.0f);
+			fraction = usableFraction(fraction);
 			job->progress.store(fraction);
 			// Throttle: at most one signal per percent of progress. The
 			// worker thread never blocks on the receiver.
@@ -439,6 +454,7 @@ void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 	job->elapsedSeconds = std::chrono::duration<double>(
 		std::chrono::steady_clock::now() - startTime).count();
 
+	bool alreadyEmittedCompletion = false;
 	switch (status)
 	{
 	case StemSeparator::Status::Success:
@@ -447,8 +463,16 @@ void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 			job->stems = stems;
 			job->progress.store(1.0f);
 			job->state.store(State::Completed);
+			// A backend that reported its own 1.0 (the common case: its last
+			// step is step/steps) has already published it through the progress
+			// callback, so publishing it here again would tell every listener
+			// the job completed twice.
+			alreadyEmittedCompletion = job->lastEmittedProgress >= 1.0f;
 		}
-		emit jobProgress(job->id, 1.0f);
+		if (!alreadyEmittedCompletion)
+		{
+			emit jobProgress(job->id, 1.0f);
+		}
 		emit jobFinished(job->id, job->elapsedSeconds);
 		break;
 	case StemSeparator::Status::Cancelled:

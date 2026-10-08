@@ -49,6 +49,27 @@ void setError(QString* error, const QString& text)
 	}
 }
 
+/*! Is the default model there AND usable? A file is only "present" when it
+ *  verifies against the pinned spec: a nonempty file with the wrong bytes is a
+ *  broken fetch, and treating it as present leaves nothing able to repair it.
+ *  An explicit LMMS_STEM_MODEL is the operator's own file, outside the pinned
+ *  spec's contract, so it is taken on its nonempty-ness alone. */
+bool defaultModelUsable()
+{
+	const QString path = StemModelStore::defaultModelPath();
+	if (!qEnvironmentVariableIsEmpty("LMMS_STEM_MODEL"))
+	{
+		return StemModelStore::isModelPresent(path);
+	}
+	const StemModelSpec spec = StemModelStore::defaultModelSpec();
+	if (spec.sha256.trimmed().isEmpty() || spec.sizeBytes <= 0)
+	{
+		// Nothing pinned to check against: nonempty is all that can be asked.
+		return StemModelStore::isModelPresent(path);
+	}
+	return StemModelStore::verify(path, spec.sha256, spec.sizeBytes);
+}
+
 } // namespace
 
 
@@ -215,7 +236,9 @@ bool StemModelStore::isOffline()
 
 bool StemModelStore::canFetchDefaultModel()
 {
-	if (isModelPresent(defaultModelPath()) || isOffline()
+	// Present means verified (see defaultModelUsable), so a corrupt file in the
+	// managed directory still leaves a fetch available to repair it.
+	if (defaultModelUsable() || isOffline()
 		|| !qEnvironmentVariableIsEmpty("LMMS_STEM_MODEL"))
 	{
 		return false;
@@ -230,7 +253,10 @@ bool StemModelStore::canFetchDefaultModel()
 bool StemModelStore::fetchDefaultModelIfMissing(const std::atomic<bool>& cancel,
 	const std::function<void(float)>& progress, QString* error)
 {
-	if (isModelPresent(defaultModelPath())) { return true; }
+	// Verified, not merely nonempty: a corrupt model is reported missing here so
+	// that download() replaces it. download() verifies its .part and only then
+	// removes the old file, so a repair never leaves the project with nothing.
+	if (defaultModelUsable()) { return true; }
 	const StemModelSpec spec = defaultModelSpec();
 	return download(spec, defaultModelDir(),
 		[&progress, &spec](qint64 received, qint64 total)
