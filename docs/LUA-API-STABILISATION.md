@@ -347,6 +347,12 @@ Two rules make it one surface rather than two: the ids (`ch-<n>`, `fx-<n>`, `dev
 read cannot disagree. A parameter is returned as the existing `FloatModel` wrapper, so parameter
 writes inherit that wrapper's journalled `setValue` path.
 
+`EffectChain:removeEffect` is refused when the device's state cannot be captured for an undo step (owner
+decision 2026-10-08): the device stays in the chain, no undo step is pushed, and the script's log gets
+`[error] removing effect <n> refused: its state cannot be captured, so the removal could not be undone; the
+device stays`. A script never takes a device away unrecoverably. The test seam
+`control::setRemovalCaptureFailsForTest` makes the capture fail so `ScriptDawRemovalUndoTest` can reach the branch.
+
 Writes never run on the script's thread. `ScriptCommand::Type::DawEdit` carries an opcode
 (`ScriptDawBindings::Op`) and the apply side dispatches it in `src/core/ScriptDawEdit.cpp`; the
 pattern is `EmitMidiNote`'s (a discriminator field in a fixed POD command), chosen because
