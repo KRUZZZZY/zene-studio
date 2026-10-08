@@ -148,6 +148,9 @@ protected:
 
 	void updateBuffers(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) override
 	{
+		// The view pointers below are read by the render thread; hold rendering off while they change.
+		const RemotePluginBufferChangeGuard guard;
+
 		// Update the shared memory audio buffer in RemotePlugin
 		if (!m_buffers) { return; }
 

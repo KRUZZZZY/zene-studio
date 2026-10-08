@@ -33,6 +33,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <vector>
 #include <cstdint>
 #include <span>
 
@@ -48,6 +49,22 @@ class MidiEvent;
 class RemotePlugin;
 class RemotePluginAudioPortsController;
 class SampleFrame;
+
+//! Holds off rendering while a shared or host-private audio block is re-sized or its view pointers change.
+/*!
+ * The render thread holds the audio engine's change mutex for every period (renderNextPeriod()), so a
+ * resize taken under this guard cannot overlap a period that reads the block. Every resize of a remote
+ * plugin's blocks goes through this guard: RemotePlugin::updateAudioBuffer() and the ports' updateBuffers().
+ * Nests with itself.
+ */
+class LMMS_EXPORT RemotePluginBufferChangeGuard
+{
+public:
+	RemotePluginBufferChangeGuard();
+	~RemotePluginBufferChangeGuard();
+	RemotePluginBufferChangeGuard(const RemotePluginBufferChangeGuard&) = delete;
+	RemotePluginBufferChangeGuard& operator=(const RemotePluginBufferChangeGuard&) = delete;
+};
 
 class ProcessWatcher : public QThread
 {
@@ -299,7 +316,18 @@ private:
 
 	RemotePluginAudioPortsController* const m_audioPorts = nullptr;
 
+	//! The block the client reads and writes. Only process() touches it, and only while a request is
+	//! outstanding or after its reply.
 	SharedMemory<float[]> m_audioBuffer;
+
+	//! Host-private copy of the planar block the instrument reads and writes (what updateAudioBuffer()
+	//! returns). Inputs are copied to the shared block before a request, outputs copied back after a
+	//! completed reply. A period without a completed reply leaves the outputs silent, and a late client can
+	//! never write into them.
+	std::vector<float> m_hostBlock;
+	std::span<float> m_hostInputs;
+	std::span<float> m_hostOutputs;
+	std::span<float> m_sharedInputs;
 
 	//! Channel counts and frame count `m_audioBuffer` was allocated for; a
 	//! repeat call of updateAudioBuffer() with these values is a no-op.
@@ -307,7 +335,7 @@ private:
 	ch_cnt_t m_channelsOut = 0;
 	f_cnt_t m_frames = 0;
 
-	//! View into the output planes of `m_audioBuffer` (see updateAudioBuffer())
+	//! View into the output planes of `m_audioBuffer`: the client's side, read only after a completed reply.
 	std::span<float> m_audioOutputs;
 
 #ifndef SYNC_WITH_SHM_FIFO

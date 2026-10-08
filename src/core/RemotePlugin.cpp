@@ -406,6 +406,16 @@ void RemotePlugin::waitForInitDone(bool busyWaiting)
 
 
 
+RemotePluginBufferChangeGuard::RemotePluginBufferChangeGuard()
+{
+	if (Engine::audioEngine()) { Engine::audioEngine()->requestChangeInModel(); }
+}
+
+RemotePluginBufferChangeGuard::~RemotePluginBufferChangeGuard()
+{
+	if (Engine::audioEngine()) { Engine::audioEngine()->doneChangeInModel(); }
+}
+
 namespace
 {
 
@@ -426,11 +436,10 @@ auto periodBudget() -> std::chrono::steady_clock::duration
 
 bool RemotePlugin::process()
 {
+	// Every silent period zeroes the host-private outputs the instrument reads, never the client's block.
 	if (m_failed || !isRunning())
 	{
-		// Zero the output planes so a failed plugin renders silence instead of
-		// stale audio; there is no separate output buffer to clear anymore.
-		std::ranges::fill(m_audioOutputs, 0.f);
+		std::ranges::fill(m_hostOutputs, 0.f);
 		return false;
 	}
 
@@ -438,7 +447,7 @@ bool RemotePlugin::process()
 	// thread never waits for it. A busy mutex skips this period, rendered as silence.
 	if (!m_commMutex.tryLock())
 	{
-		std::ranges::fill(m_audioOutputs, 0.f);
+		std::ranges::fill(m_hostOutputs, 0.f);
 		return false;
 	}
 
@@ -455,32 +464,25 @@ bool RemotePlugin::process()
 
 bool RemotePlugin::processPeriod()
 {
+	// The instrument reads and writes only the host-private block. Until a reply has completed for this
+	// period, that block is silent, so a late or lost client cannot be heard, and it cannot write into it.
+	std::ranges::fill(m_hostOutputs, 0.f);
+
 	if (!m_audioBuffer)
 	{
 		// We have no shared audio block yet, which means the activation
 		// handshake hasn't completed. Pump messages (and hope we get
 		// information like the shm key) until it has.
 		fetchAndProcessAllMessages();
-
-		std::ranges::fill(m_audioOutputs, 0.f);
 		return false;
 	}
 
-	// Zero the output planes before asking the client for this period. The client
-	// writes them itself, but it returns early when it cannot lock the shared memory
-	// or finds it invalid, and it can die mid-period; the pre-#589 host memset the
-	// whole shared block every period, so silence was guaranteed on those paths and
-	// the router could never read a stale period. Remote plugin output is mixed
-	// additively, so stale planes are rendered as audio.
-	std::ranges::fill(m_audioOutputs, 0.f);
-
 	// The test comes *before* the request on purpose: returning without sending keeps the protocol in step
 	// (an unconsumed reply would be read as the next period's, i.e. one period of skew), and a plugin with
-	// zero output channels - the ports model accepts channelsOut == 0, so m_audioOutputs is then an empty
-	// span - would otherwise collect one reply per period until a socket buffer fills and the audio thread
-	// blocks in sendMessage(). A pending channel-count change is the same kind of stop: the client already
-	// lays its planes out with the new counts, which this host has not applied yet.
-	if (m_failed || m_audioOutputs.empty() || m_countChangePending)
+	// zero output channels would otherwise collect one reply per period until a socket buffer fills.
+	// A pending channel-count change is the same kind of stop: the client already lays its planes out with
+	// the new counts, which this host has not applied yet.
+	if (m_failed || m_hostOutputs.empty() || m_countChangePending)
 	{
 		return false;
 	}
@@ -495,15 +497,17 @@ bool RemotePlugin::processPeriod()
 		break;
 	case ReplyWait::Late:
 		++m_processingOverruns;
-		std::ranges::fill(m_audioOutputs, 0.f);
 		return false;
 	case ReplyWait::Lost:
-		std::ranges::fill(m_audioOutputs, 0.f);
 		return false;
 	}
 
 	// MIDI for this period goes out ahead of the request, so the client has it when it processes.
 	sendQueuedMidiEvents();
+
+	// The inputs for this period go into the shared block only now: no reply is owed, so the client is not
+	// reading it.
+	std::ranges::copy(m_hostInputs, m_sharedInputs.begin());
 
 	// The request is counted as owed before it is sent, so a late reply is always drained later.
 	++m_owedProcessingReplies;
@@ -514,16 +518,12 @@ bool RemotePlugin::processPeriod()
 	case ReplyWait::Done:
 		break;
 	case ReplyWait::Late:
-		// The client did not answer within one period. Render this period as silence and leave the
-		// reply owed, so the next period drains it instead of reading it as its own.
+		// The client did not answer within the period. The reply stays owed: the next period drains it,
+		// and the client's planes for this period are never copied out.
 		++m_processingOverruns;
-		std::ranges::fill(m_audioOutputs, 0.f);
 		return false;
 	case ReplyWait::Lost:
-		// The client died (or abandoned the period) before it replied. Without this check process() would
-		// report success on a period the client may have written only partially, and the router would mix
-		// those planes; silence them, exactly as the neighbouring failure paths do.
-		std::ranges::fill(m_audioOutputs, 0.f);
+		// The client died (or abandoned the period) before it replied.
 		return false;
 	}
 
@@ -531,10 +531,11 @@ bool RemotePlugin::processPeriod()
 	// this host has not applied: they are not usable.
 	if (m_countChangePending)
 	{
-		std::ranges::fill(m_audioOutputs, 0.f);
 		return false;
 	}
 
+	// The reply is complete, so the client has finished writing its planes: copy them out.
+	std::ranges::copy(m_audioOutputs, m_hostOutputs.begin());
 	return true;
 }
 
@@ -659,6 +660,7 @@ void RemotePlugin::hideUI()
 
 auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*
 {
+	const RemotePluginBufferChangeGuard guard;
 	reportRefusedChannelCounts();
 	if (channelsIn == 0 && channelsOut == 0)
 	{
@@ -668,18 +670,24 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 
 	if (channelsIn == m_channelsIn && channelsOut == m_channelsOut && frames == m_frames)
 	{
-		return m_audioBuffer.get();
+		return m_hostBlock.data();
 	}
 
 	try
 	{
+		m_hostInputs = {};
+		m_hostOutputs = {};
+		m_sharedInputs = {};
 		m_audioOutputs = {};
 		m_audioBuffer.create((channelsIn + channelsOut) * frames);
+		m_hostBlock.assign((channelsIn + channelsOut) * frames, 0.f);
 	}
-	catch (const std::runtime_error& error)
+	catch (const std::exception& error)
 	{
 		std::cerr << "Failed to allocate shared audio buffer: " << error.what() << '\n';
 		m_audioBuffer.detach();
+		m_hostBlock.clear();
+		m_hostBlock.shrink_to_fit();
 		return nullptr;
 	}
 
@@ -687,12 +695,18 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 	m_channelsOut = channelsOut;
 	m_frames = frames;
 
-	m_audioOutputs = std::span{m_audioBuffer.get() + channelsIn * frames, channelsOut * frames};
+	const auto inputs = static_cast<std::size_t>(channelsIn * frames);
+	const auto outputs = static_cast<std::size_t>(channelsOut * frames);
+	m_sharedInputs = std::span{m_audioBuffer.get(), inputs};
+	m_audioOutputs = std::span{m_audioBuffer.get() + inputs, outputs};
+	m_hostInputs = std::span{m_hostBlock.data(), inputs};
+	m_hostOutputs = std::span{m_hostBlock.data() + inputs, outputs};
 
 	sendMessage(message(IdChangeSharedMemoryKey).addString(m_audioBuffer.key()));
 
-	return m_audioBuffer.get();
+	return m_hostBlock.data();
 }
+
 
 
 

@@ -572,6 +572,87 @@ private slots:
 	}
 
 	/*!
+	 * A client that answers after the period was given up cannot reach the instrument.
+	 *
+	 * The fake client answers its first request 150 ms late and writes its planes only then.
+	 * The period is silent (process() returns false), and once the planes have been written
+	 * the instrument's output must still be silent: it reads the host's own block, which the
+	 * late client never touches.
+	 */
+	void lateClientCannotReachTheInstrumentOutput()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the late-reply "
+				"isolation is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("late")}),
+			"could not start/connect the late fake client");
+		QVERIFY2(!plugin.failed(), "the late fake client did not complete the handshake");
+
+		auto out = ports.buffers()->output();
+		std::fill(out.bufferPtr(0), out.bufferPtr(0) + frames, 1.0f);
+		std::fill(out.bufferPtr(1), out.bufferPtr(1) + frames, 1.0f);
+
+		QVERIFY(!plugin.process());
+
+		// Let the late client write its planes and send its reply, then look again.
+		std::this_thread::sleep_for(std::chrono::milliseconds{400});
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			QCOMPARE(out.sample(0, frame), 0.0f);
+			QCOMPARE(out.sample(1, frame), 0.0f);
+		}
+	}
+
+	/*!
+	 * Re-sizing a remote plugin's buffers holds off rendering.
+	 *
+	 * Another thread stands in for the render thread by holding the audio engine's change
+	 * mutex for 300 ms. A channel-count change on the main thread must wait for it, because
+	 * it moves the view pointers the render thread reads.
+	 */
+	void bufferResizeWaitsForRenderingToFinish()
+	{
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the resize guard is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client), "could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		std::atomic<bool> held{false};
+		std::thread renderStandIn{[&] {
+			Engine::audioEngine()->requestChangeInModel();
+			held = true;
+			std::this_thread::sleep_for(std::chrono::milliseconds{300});
+			Engine::audioEngine()->doneChangeInModel();
+		}};
+		while (!held) { std::this_thread::yield(); }
+
+		const auto started = std::chrono::steady_clock::now();
+		ports.audioPortsModel().setChannelCounts(0, 3);
+		const auto elapsed = std::chrono::steady_clock::now() - started;
+		renderStandIn.join();
+
+		QVERIFY2(elapsed >= std::chrono::milliseconds{250},
+			"the buffer resize did not wait for the render thread's change guard");
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3});
+	}
+
+	/*!
 	 * A channel-count request sent by the client during a period is not applied on the
 	 * audio thread.
 	 *

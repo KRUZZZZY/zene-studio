@@ -101,6 +101,12 @@ bool g_stall = false;
 //! writes no planes for it.
 bool g_recount = false;
 
+//! "late" mode: the first IdStartProcessing is answered only after LateReplyDelayMs, and the planes are
+//! written after that delay, i.e. after the host has given the period up.
+bool g_late = false;
+bool g_lateUsed = false;
+constexpr int LateReplyDelayMs = 150;
+
 //! "midi" mode: the client counts the IdMidiEvent messages it receives, and in each period asks for
 //! (count + 1) outputs before its reply, so the host can see how many events arrived before the period.
 bool g_midi = false;
@@ -332,6 +338,14 @@ auto handleMessage(const Message& message) -> bool
 		break;
 	case IdStartProcessing:
 		if (g_stall) { break; }
+		if (g_late && !g_lateUsed)
+		{
+			g_lateUsed = true;
+			::usleep(LateReplyDelayMs * 1000);
+			writePlanarPeriod();
+			if (!sendMessage(IdProcessingDone, {})) { return false; }
+			break;
+		}
 		if (g_midi)
 		{
 			const std::string outputs = std::to_string(g_midiEvents + 1);
@@ -444,7 +458,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -452,7 +466,8 @@ int main(int argc, char** argv)
 	g_stall = mode == "stall";
 	g_recount = mode == "recount";
 	g_midi = mode == "midi";
-	if (mode != "modern" && mode != "stale" && mode != "stall" && mode != "recount" && mode != "midi")
+	g_late = mode == "late";
+	if (mode != "modern" && mode != "stale" && mode != "stall" && mode != "recount" && mode != "midi" && mode != "late")
 	{
 		std::fprintf(stderr, "fakeclient: unknown mode '%s'\n", mode.c_str());
 		return 1;
