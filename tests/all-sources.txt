@@ -2625,6 +2625,7 @@ tests/src/gui/NoteEditorTest.cpp
 tests/src/gui/NoteGridTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
+tests/src/gui/PinConnectorTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/RackMenuTest.cpp
 tests/src/gui/RecordingRecoveryMenuTest.cpp
