@@ -1,5 +1,15 @@
 # Engine lane — batch 09 (branch `bugs/bunny-engine-2026-10-05`)
 
+> **Correction, 2026-10-08 (rework, see `rework-2026-10-08.md`).** Cluster 1501 is marked
+> FIXED below, but the fix in `1e1ccd541` was incomplete. The snapshot recall path wrote the
+> send's `preFader` (a plain field the render thread reads) with no change boundary, while the
+> existing-route update in `Mixer::createChannelSend()` takes one. Recall and undo/redo both
+> reach `applySends()`. It is fixed in `2ef8d233c`: each send's write runs inside
+> `requestChangesGuard()`, and the regression is
+> `MixerConcurrencyTest::recallingASnapshotWaitsForTheRenderPeriodToEnd` (red exit 8 without
+> the guard, green exit 0). The capture, recall and XML parts of the 1501 fix are unchanged.
+> The other verdicts in this report were not part of the rework.
+
 Six findings: one FIXED (the real defect), one REAL-UNTESTED (a genuine race I could not make
 deterministic headlessly, so no product code was touched), and four FALSE-POSITIVE against the
 current tree.
