@@ -82,6 +82,12 @@ void onceModal(const std::function<void(QWidget*)>& handle, int triesLeft = 100)
 	QTimer::singleShot(10, [handle, triesLeft] {
 		QWidget* modal = QApplication::activeModalWidget();
 		if (modal == nullptr && triesLeft > 0) { onceModal(handle, triesLeft - 1); return; }
+		if (modal == nullptr)
+		{
+			// The dialog the action should have opened never came: fail the test rather than run a handler on nothing.
+			QTest::qFail("an expected modal dialog never appeared", __FILE__, __LINE__);
+			return;
+		}
 		handle(modal);
 	});
 }

@@ -44,9 +44,12 @@
 #include <QTableView>
 #include <QTemporaryDir>
 
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DesignTokens.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
@@ -55,6 +58,7 @@
 #include "Mixer.h"
 #include "MixerHardwareMenu.h"
 #include "MixerRoutingMatrix.h"
+#include "MixerSurround.h"
 #include "MixerWindows.h"
 #include "SurroundPanner.h"
 
@@ -106,6 +110,25 @@ QJsonObject channelState(const QString& command, const QString& channel)
 	return channels.isEmpty() ? QJsonObject() : channels.at(0).toObject();
 }
 
+//! The pixel of @a pad's grab at the room coordinates (x right, y front, both -1..1), the room being the square
+//! SurroundPanner draws: the pad's smaller side less 56, centred.
+QColor padPixelAtRoom(QWidget* pad, double x, double y)
+{
+	const double side = std::min(pad->width(), pad->height()) - 56.0;
+	const QPointF at(pad->width() / 2.0 + x * side / 2.0, pad->height() / 2.0 - y * side / 2.0);
+	return pad->grab().toImage().pixelColor(static_cast<int>(at.x()), static_cast<int>(at.y()));
+}
+
+//! The Large Meters window's two master bars: the pixel a little above each bar's bottom edge, left then right.
+QColor meterBarPixel(QWidget* window, int side)
+{
+	const int masterWidth = window->width() - 64;  // LargeMeters::InputWidth
+	const int bottom = window->height() - 60;
+	const int left = 20 + side * (masterWidth / 2 - 10);
+	const int width = masterWidth / 2 - 40;
+	return window->grab().toImage().pixelColor(left + width / 2, bottom - 3);
+}
+
 } // namespace
 
 class MixerWindowsTest : public QObject
@@ -118,6 +141,7 @@ private slots:
 		QVERIFY(m_home.isValid());
 		guitest::startGui(m_home);
 		QVERIFY(getGUI() != nullptr);
+		Engine::audioEngine()->audioDev()->stopProcessing();  // the mixer must not overwrite the meter readings set here
 		ControlRegistry::setReady(true);
 		while (Engine::mixer()->numChannels() < 4) { Engine::mixer()->createChannel(); }
 		for (int i = 0; i < 4; ++i) { m_ch[i] = control::channelIdOf(Engine::mixer()->mixerChannel(i)); }
@@ -216,14 +240,21 @@ private slots:
 		QVERIFY(window != nullptr);
 		meters->trigger();
 		QCOMPARE(windowsTitled(QStringLiteral("Large Meters")), 1);
-		QVERIFY(window->grab().width() > 0);  // paints with the master at silence
+		const tokens::Palette& pal = tokens::palette();
+		MixerChannel* master = Engine::mixer()->mixerChannel(0);
+		master->m_rmsLeft.set(0.f);
+		master->m_rmsRight.set(0.f);
+		QCOMPARE(meterBarPixel(window, 0), pal.control);  // silent: both bars are the empty track
+		QCOMPARE(meterBarPixel(window, 1), pal.control);
 		QVERIFY2(window->toolTip().contains(QStringLiteral("Loudness")), qPrintable(window->toolTip()));
 		const QString disarmed = window->toolTip();
 
-		MixerChannel* master = Engine::mixer()->mixerChannel(0);
-		master->m_rmsLeft.set(0.5f);
-		master->m_rmsRight.set(0.9f);
-		QVERIFY(!window->grab().isNull());  // loud bars in the mid and high colours
+		master->m_rmsLeft.set(0.5f);   // -6 dB: the middle colour
+		master->m_rmsRight.set(0.9f);  // -0.9 dB: the high colour
+		QCOMPARE(meterBarPixel(window, 0), pal.meterMid);
+		QCOMPARE(meterBarPixel(window, 1), pal.meterHigh);
+		master->m_rmsLeft.set(0.02f);  // -34 dB: the low colour
+		QCOMPARE(meterBarPixel(window, 0), pal.meterLow);
 		master->m_rmsLeft.set(0.f);
 		master->m_rmsRight.set(0.f);
 
@@ -248,14 +279,41 @@ private slots:
 		QVERIFY(a != nullptr && b != nullptr);
 		QVERIFY(a->count() >= 4);
 		QCOMPARE(b->currentIndex(), 1);  // B starts on the second channel
-		QString summary;
-		for (QLabel* label : window->findChildren<QLabel*>())
+		const auto summaryOf = [window] {
+			for (QLabel* label : window->findChildren<QLabel*>())
+			{
+				if (label->text().startsWith(QStringLiteral("B - A:")) || label->text().startsWith(QStringLiteral("Could not compare"))) { return label->text(); }
+			}
+			return QString();
+		};
+		const QString flat = summaryOf();
+		QVERIFY2(flat.startsWith(QStringLiteral("B - A: low 0.0 dB")) && flat.contains(QStringLiteral("high 0.0 dB")), qPrintable(flat));
+		// B (channel 1) with a high shelf the others lack: the window recompares when a combo moves, and says by how much.
+		Engine::mixer()->mixerChannel(2)->m_eqHighModel.setValue(6.f);
+		b->setCurrentIndex(2);
+		const QString shelved = summaryOf();
+		QVERIFY2(shelved.contains(QStringLiteral("high 6.0 dB")), qPrintable(shelved));
+		a->setCurrentIndex(2);  // A and B the same channel: no difference
+		QVERIFY2(summaryOf().contains(QStringLiteral("high 0.0 dB")), qPrintable(summaryOf()));
+		a->setCurrentIndex(0);
+		b->setCurrentIndex(2);
+		QCOMPARE(summaryOf(), shelved);
+		// The curves are drawn in the two channels' colours: A's flat response in the accent, B's shelf in the middle colour.
+		const QImage curves = window->grab().toImage();
+		const tokens::Palette& pal = tokens::palette();
+		int accentPixels = 0;
+		int middlePixels = 0;
+		for (int y = 0; y < curves.height(); ++y)
 		{
-			if (label->text().startsWith(QStringLiteral("B - A:")) || label->text().startsWith(QStringLiteral("Could not compare"))) { summary = label->text(); }
+			for (int x = 0; x < curves.width(); ++x)
+			{
+				accentPixels += curves.pixelColor(x, y) == pal.accent ? 1 : 0;
+				middlePixels += curves.pixelColor(x, y) == pal.meterMid ? 1 : 0;
+			}
 		}
-		QVERIFY2(!summary.isEmpty(), "the window said nothing about the comparison");
-		a->setCurrentIndex(2);  // recompares
-		QVERIFY(!window->grab().isNull());
+		QVERIFY2(accentPixels > 150, qPrintable(QString::number(accentPixels)));
+		QVERIFY2(middlePixels > 150, qPrintable(QString::number(middlePixels)));
+		Engine::mixer()->mixerChannel(2)->m_eqHighModel.setValue(0.f);
 		window->close();
 	}
 
@@ -303,7 +361,7 @@ private slots:
 	{
 		const ControlResult master = run(QStringLiteral("mixer.cue_master"), {{QStringLiteral("cue"), QStringLiteral("A")},
 			{QStringLiteral("name"), QStringLiteral("Singer")}});
-		if (!master.ok) { QSKIP("this build offers no cue mix"); }
+		QVERIFY2(master.ok, qPrintable(master.errorMessage));
 		QMenu menu;
 		addHardwareMenu(&menu, m_ch[2]);
 		QAction* send = menuAction(&menu, {QStringLiteral("Hardware I/O"), QStringLiteral("Cue Sends"), QStringLiteral("Singer (A)...")});
@@ -352,13 +410,21 @@ private slots:
 
 		QWidget* pad = childNamed<QWidget>(window, QStringLiteral("Surround position"));
 		QVERIFY(pad != nullptr);
-		QVERIFY(!window->grab().isNull());  // the room, the speakers and the point
+		// The point starts at the front (0, 1) as the accent dot, and the 5.1 speakers are drawn as panel-coloured boxes.
+		const tokens::Palette& pal = tokens::palette();
+		QCOMPARE(padPixelAtRoom(pad, 0.0, 1.0), pal.accent);
+		float speakerX = 0.f;
+		float speakerY = 0.f;
+		surround::speakerPoint(surround::Format::Surround51, 0, &speakerX, &speakerY);  // front left
+		QCOMPARE(padPixelAtRoom(pad, speakerX, speakerY), pal.panel);
+		QVERIFY(padPixelAtRoom(pad, -0.9, -0.2) != pal.accent);
 
 		// A click a quarter of the room right of the middle and a quarter up: the point lands there, panner on.
 		const double side = std::min(pad->width(), pad->height()) - 56.0;
 		const QPoint centre(pad->width() / 2, pad->height() / 2);
 		QTest::mouseClick(pad, Qt::LeftButton, Qt::NoModifier, centre + QPoint(static_cast<int>(side / 4), -static_cast<int>(side / 4)));
 		QJsonObject pan = channelState(QStringLiteral("mixer.surround_get"), m_ch[1]).value(QStringLiteral("pan")).toObject();
+		QCOMPARE(padPixelAtRoom(pad, 0.5, 0.5), pal.accent);  // the dot follows the point
 		QVERIFY(std::abs(pan.value(QStringLiteral("x")).toDouble() - 0.5) < 0.05);
 		QVERIFY(std::abs(pan.value(QStringLiteral("y")).toDouble() - 0.5) < 0.05);
 		QVERIFY(pan.value(QStringLiteral("enabled")).toBool());
@@ -397,7 +463,8 @@ private slots:
 		QVERIFY(enabled->isChecked());
 		enabled->click();
 		QVERIFY(!channelState(QStringLiteral("mixer.surround_get"), m_ch[1]).value(QStringLiteral("pan")).toObject().value(QStringLiteral("enabled")).toBool());
-		QVERIFY(!window->grab().isNull());
+		// The pad still shows the last place the point was put (the drag ended at the front, x 0).
+		QCOMPARE(padPixelAtRoom(pad, 0.0, 1.0), pal.accent);
 		window->close();
 	}
 
@@ -409,7 +476,13 @@ private slots:
 		bool says = false;
 		for (QLabel* label : window->findChildren<QLabel*>()) { says = says || label->text().contains(QStringLiteral("sends into no surround channel")); }
 		QVERIFY(says);
-		QVERIFY(!window->grab().isNull());  // the 5.1 room is drawn as the default
+		// ... and draws the 5.1 room as the default: a speaker box where 5.1 puts its front left.
+		QWidget* pad = childNamed<QWidget>(window, QStringLiteral("Surround position"));
+		QVERIFY(pad != nullptr);
+		float speakerX = 0.f;
+		float speakerY = 0.f;
+		surround::speakerPoint(surround::Format::Surround51, 0, &speakerX, &speakerY);
+		QCOMPARE(padPixelAtRoom(pad, speakerX, speakerY), tokens::palette().panel);
 		window->close();
 	}
 

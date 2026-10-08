@@ -101,8 +101,19 @@ private slots:
 	{
 		QMenu file;
 		QAction* action = addAafImportAction(&file);
-		if (!action->isEnabled()) { QSKIP("this build was made without LibAAF"); }
 		const std::size_t tracks = Engine::getSong()->tracks().size();
+		if (!action->isEnabled())
+		{
+			// A build without LibAAF: the entry is greyed out, triggering it opens no file dialog and imports nothing,
+			// and the reason is in its status tip.
+			QVERIFY(!interchange::aafImportAvailable());
+			action->trigger();
+			QTest::qWait(150);  // a negative check: a dialog would be up by now
+			QVERIFY2(QApplication::activeModalWidget() == nullptr, "a disabled Import AAF opened a dialog");
+			QCOMPARE(Engine::getSong()->tracks().size(), tracks);
+			QVERIFY(!action->statusTip().isEmpty());
+			return;
+		}
 		int answered = 0;
 		answerFileDialog(QString(), &answered);
 		action->trigger();

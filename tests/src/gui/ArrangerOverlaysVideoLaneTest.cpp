@@ -39,6 +39,8 @@
 #include "ArrangerOverlays.h"
 #include "ArrangerRulerLanes.h"
 #include "ArrangerZoom.h"
+#include "ClipView.h"
+#include "DesignTokens.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -154,7 +156,11 @@ private slots:
 		QCOMPARE(range.tracks().size(), 3);  // the two ends and the one between
 		QVERIFY(!m_overlay->rangeRect().isEmpty());
 		QVERIFY(m_overlay->rangeRect().contains(QPoint(xAt(3 * Bar), rowY(1))));
-		QVERIFY(!m_overlay->grab().isNull());  // paints the covered rows
+		// The covered rows are painted (a translucent accent); outside the range the overlay paints nothing.
+		const QImage painted = m_overlay->grab().toImage().convertToFormat(QImage::Format_ARGB32);
+		const QRect covered = m_overlay->rangeRect();
+		QVERIFY2(painted.pixelColor(covered.center()).alpha() > 0, "the range's rows were not painted");
+		QCOMPARE(painted.pixelColor(QPoint(xAt(8 * Bar), covered.center().y())).alpha(), 0);
 
 		// Dragging off the rows (above the first, below the last) takes the nearest row, and both ends off reach every track.
 		ArrangerRange::instance().clear();
@@ -229,17 +235,39 @@ private slots:
 
 	void theSmartToolTakesTheDragFromAClipsUpperHalf()
 	{
+		Clip* clip = m_tracks.at(0)->createClip(TimePos(Bar));
+		clip->changeLength(TimePos(4 * Bar));
+		QCoreApplication::processEvents();
+		ClipView* view = nullptr;
+		for (ClipView* candidate : m_editor->findChildren<ClipView*>())
+		{
+			if (candidate->getClip() == clip) { view = candidate; }
+		}
+		QVERIFY2(view != nullptr, "the clip has no view");
 		m_overlay->setTool(ArrangerRangeOverlay::Tool::Smart);
-		QVERIFY(!m_overlay->toolActive());
-		const QPoint from(xAt(Bar), rowY(0));
-		m_overlay->beginRangeFrom(m_overlay->mapToGlobal(from));
-		QTest::mouseMove(m_overlay, QPoint(xAt(3 * Bar), rowY(1)));
-		QTest::mouseRelease(m_overlay, Qt::LeftButton, Qt::NoModifier, QPoint(xAt(3 * Bar), rowY(1)));
+		QVERIFY(!m_overlay->toolActive());  // the overlay lets every press through to the clip
+
+		// A press in the clip's LOWER half is the clip's own (it selects and moves): no range begins.
+		const QPoint lower(10, view->height() * 3 / 4);
+		QTest::mousePress(view, Qt::LeftButton, Qt::NoModifier, lower);
+		QTest::mouseRelease(view, Qt::LeftButton, Qt::NoModifier, lower);
+		QVERIFY(!ArrangerRange::instance().active());
+
+		// A press in the UPPER half hands the gesture to the overlay, which takes the grab and draws the range.
+		const QPoint upper(2, view->height() / 4);
+		QTest::mousePress(view, Qt::LeftButton, Qt::NoModifier, upper);
+		QCOMPARE(QWidget::mouseGrabber(), m_overlay);
+		const QPoint inOverlay = m_overlay->mapFromGlobal(view->mapToGlobal(upper));
+		const QPoint to(xAt(4 * Bar), rowY(1));
+		QTest::mouseMove(m_overlay, to);
+		QTest::mouseRelease(m_overlay, Qt::LeftButton, Qt::NoModifier, to);
 		const ArrangerRange& range = ArrangerRange::instance();
 		QVERIFY(range.active());
-		QCOMPARE(range.start(), Bar);
-		QCOMPARE(range.end(), 3 * Bar);
-		QCOMPARE(range.tracks().size(), 2);
+		QVERIFY2(std::abs(range.start() - Bar) <= 24, qPrintable(QString::number(range.start())));  // where the clip starts, snapped
+		QCOMPARE(range.start(), m_overlay->tickAt(inOverlay.x()));
+		QCOMPARE(range.end(), 4 * Bar);
+		QCOMPARE(range.tracks().size(), 2);  // the clip's track and the one below
+		QVERIFY(QWidget::mouseGrabber() != m_overlay);
 	}
 
 	void theVideoLaneTakesRoomOnlyWhileAVideoIsAttached()
@@ -262,9 +290,13 @@ private slots:
 		VideoReference::instance().set(attachment);
 		QTRY_VERIFY(lane->isVisible());
 		QCOMPARE(lane->height(), VideoLane::LaneHeight);
-		QVERIFY(!lane->grab().isNull());
+		const tokens::Palette& pal = tokens::palette();
+		const QImage plain = lane->grab().toImage();  // paints the strip: plain blocks, no thumbnail has arrived
 		QVERIFY2(lane->drawnSpan().second > lane->drawnSpan().first, "the video's span was not drawn");
 		QCOMPARE(lane->drawnSpan().first, m_editor->timeLine()->markerX(TimePos(2 * Bar)));
+		const int spanWidth = lane->drawnSpan().second - lane->drawnSpan().first;
+		QCOMPARE(plain.pixelColor(lane->drawnSpan().first + 3, 15), pal.control);   // a block in the span
+		QCOMPARE(plain.pixelColor(lane->drawnSpan().first - 3, 15), pal.panel);     // beside the video: the lane's own ground
 
 		// A click on the strip moves the play position to that tick; beside it does nothing.
 		const int inside = (lane->drawnSpan().first + lane->drawnSpan().second) / 2;
@@ -279,7 +311,9 @@ private slots:
 
 		// It follows the ruler's zoom and scroll, and goes away with the video.
 		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 20}, {QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
-		QVERIFY(!lane->grab().isNull());
+		lane->grab();  // repaint at the new zoom, which records the span it drew
+		const int zoomedWidth = lane->drawnSpan().second - lane->drawnSpan().first;
+		QVERIFY2(std::abs(zoomedWidth * 2 - spanWidth) <= 4, qPrintable(QStringLiteral("%1 -> %2").arg(spanWidth).arg(zoomedWidth)));
 		VideoReference::instance().set({});
 		QTRY_VERIFY(!lane->isVisible());
 		QCOMPARE(lane->height(), 0);
@@ -291,11 +325,19 @@ private slots:
 		const QString clip = m_home.filePath(QStringLiteral("clip.mkv"));
 		if (!videotest::makeClip(clip)) { QSKIP("the test clip could not be made"); }
 		auto* lane = m_editor->findChild<VideoLane*>();
+		// Zoomed in until the two-second clip is several tiles wide (at 40 px a bar it is under one).
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 400}, {QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
 		const ControlResult attached = run(QStringLiteral("video.attach"), {{QStringLiteral("path"), clip}});
 		QVERIFY2(attached.ok, qPrintable(attached.errorMessage));
 		QTRY_VERIFY_WITH_TIMEOUT(lane->thumbnailsReady() >= 3, 15000);
-		QVERIFY(lane->thumbnailsReady() <= VideoLane::Thumbnails);
-		QVERIFY(!lane->grab().isNull());  // tiles now draw pictures
+		QTRY_COMPARE_WITH_TIMEOUT(lane->thumbnailsReady(), VideoLane::Thumbnails, 30000);
+		// The clip is one second red, one second blue: the tiles at the two ends of the strip show it.
+		const QImage strip = lane->grab().toImage();
+		QVERIFY(lane->drawnSpan().second > lane->drawnSpan().first);
+		const QColor start = strip.pixelColor(lane->drawnSpan().first + 6, 15);
+		const QColor end = strip.pixelColor(lane->drawnSpan().second - 8, 15);
+		QVERIFY2(start.red() > start.blue() + 60, qPrintable(start.name()));
+		QVERIFY2(end.blue() > end.red() + 60, qPrintable(end.name()));
 		// Attaching again starts over: an answer from before the change is dropped.
 		VideoReference::instance().set({});
 		QCOMPARE(lane->thumbnailsReady(), 0);

@@ -51,6 +51,32 @@ starts the real application (`guitest::startGui`) and the strip case runs; the s
 | src/gui/modals/EffectPickerOrganiser.cpp | 6.6% | 100% | EffectPickerOrganiserTest | keys, star / hidden / folder roles, filters, preferred format, row menu via plugin.organise incl. folder dialog |
 | src/gui/noteeditor/NoteBackgroundAudio.cpp | 0% | 100% | NoteBackgroundAudioTest | overlapping / auto / by id, waveform placement + clipping, silent / off-screen |
 
+## Round 2 (independent review: ACCEPT 2, ACCEPT-NOTE 8, REWORK 4)
+
+Figures above are unchanged (the same 21 tests re-measured: every file within 0.0 points of the table; MixerWindows.cpp
+98.6% again after the compare-EQ test paints its curves). What changed is what the tests assert:
+
+- MixerWindowsTest: the grab-only asserts are gone. Large Meters is read by pixel (silent bars are the control colour; 0.5
+  / 0.9 master levels give the mid / high colours; 0.02 the low one); Compare EQ re-reads the summary after each recompare
+  (flat, then a 6 dB high shelf on a third channel, then the same pair twice) and counts the accent / middle-colour curve
+  pixels; the panner is checked by the accent dot at the room coordinates (default front, clicked place, end of the drag)
+  and by the 5.1 speaker box at its room position, for both the named-target and the default room; a failing
+  `mixer.cue_master` is now a failure, not a skip.
+- ArrangerOverlaysVideoLaneTest: the smart tool is driven by a real press on a `ClipView` (lower half starts nothing,
+  upper half takes the overlay's grab and the range starts at the clip, snapped); the range overlay's rows are checked by
+  alpha inside and outside the range; the video lane by block / ground colours, span width halving with zoom, and, with a
+  real FFmpeg clip zoomed in, a red tile at the start and a blue one at the end.
+- AafImportMenuTest: no QSKIP when LibAAF is absent: the disabled entry is triggered, opens no dialog, imports nothing and
+  keeps its status tip. The LibAAF path is unchanged.
+- TrackIconsLevelBarTest: the header repaint test now needs at least three visible headers and every one of them must
+  paint; the `|| !isVisible()` escape and the QSKIP are gone; the tooltip and orphan-bar cases use QTRY on the poll count
+  and on the track's deletion instead of qWait.
+- Notes: `onceModal` fails the test (`QTest::qFail`) when the expected dialog never appears, instead of running its handler
+  on null; the VCA context-menu check polls for the popup instead of a fixed 50 ms; the editor window height is compared
+  to 150 + the header's size hint; `openReference()` fails on a refused `reference.open`; the Mixer tree check in
+  ReferenceProjectPanelTest asserts the device count in both configurations; ArrangerKeysNavigatorTest checks the
+  navigator's section band, marker and play head colours, and no longer creates an unreachable clip.
+
 ## Configuration dependence
 
 `AafImportMenu.cpp` lines 46-48 are the "this build has no LibAAF" branch; on a build without LibAAF the branch run is

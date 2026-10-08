@@ -176,7 +176,7 @@ private slots:
 		QVERIFY(mixer != nullptr);
 		QVERIFY(mixer->childCount() >= 1);
 		QCOMPARE(mixer->child(0)->text(1), QStringLiteral("channel 0"));
-		if (hasAmplifier()) { QCOMPARE(mixer->child(0)->childCount(), 1); }
+		QCOMPARE(mixer->child(0)->childCount(), hasAmplifier() ? 1 : 0);  // the master carries the source's one device, where it can load
 
 		// The change hook keeps the open window current: a closed reference empties it.
 		QVERIFY(run(QStringLiteral("reference.close")).ok);
@@ -382,7 +382,7 @@ private:
 	ReferenceProjectPanel* openReference()
 	{
 		const ControlResult opened = run(QStringLiteral("reference.open"), {{QStringLiteral("path"), m_source}});
-		if (!opened.ok) { qWarning() << opened.errorMessage; }
+		if (!opened.ok) { QTest::qFail(qPrintable(QStringLiteral("reference.open failed: ") + opened.errorMessage), __FILE__, __LINE__); }
 		ReferenceProjectPanel* panel = ReferenceProjectPanel::showPanel(nullptr);
 		panel->refresh();
 		return panel;

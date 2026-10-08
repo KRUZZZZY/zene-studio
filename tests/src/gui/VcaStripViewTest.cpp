@@ -200,13 +200,7 @@ private slots:
 		VcaStripView strip(group);
 		strip.show();
 		bool sawLinks = false;
-		QTimer::singleShot(50, [&sawLinks] {
-			if (auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget()))
-			{
-				sawLinks = menuNamed(menu, QStringLiteral("Links")) != nullptr;
-				menu->close();
-			}
-		});
+		closePopupWhenUp(&sawLinks);
 		QContextMenuEvent event(QContextMenuEvent::Mouse, QPoint(4, 4), strip.mapToGlobal(QPoint(4, 4)));
 		QApplication::sendEvent(&strip, &event);
 		QVERIFY2(sawLinks, "the right-click did not open the strip's menu");
@@ -214,6 +208,22 @@ private slots:
 	}
 
 private:
+	//! Once the strip's menu is up (it is shown inside exec(), so it is polled for, not waited a fixed time), notes
+	//! whether it carries the Links submenu and closes it.
+	static void closePopupWhenUp(bool* sawLinks, int triesLeft = 200)
+	{
+		QTimer::singleShot(10, [sawLinks, triesLeft] {
+			auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+			if (menu == nullptr)
+			{
+				if (triesLeft > 0) { closePopupWhenUp(sawLinks, triesLeft - 1); }
+				return;
+			}
+			*sawLinks = menuNamed(menu, QStringLiteral("Links")) != nullptr;
+			menu->close();
+		});
+	}
+
 	static QMenu* menuNamed(QMenu* menu, const QString& name)
 	{
 		QAction* action = actionNamed(menu, name);

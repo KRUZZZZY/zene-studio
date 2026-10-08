@@ -29,8 +29,12 @@
 
 #include <QtTest>
 
+#include <memory>
+#include <vector>
+
 #include <QApplication>
 #include <QHelpEvent>
+#include <QPointer>
 #include <QTemporaryDir>
 #include <QToolButton>
 
@@ -46,6 +50,7 @@
 #include "Mixer.h"
 #include "ShellIcons.h"
 #include "Song.h"
+#include "SongEditor.h"
 #include "Track.h"
 #include "TrackIcons.h"
 #include "TrackLabelButton.h"
@@ -150,23 +155,30 @@ private slots:
 
 	void repaintingTheHeadersTouchesEveryTrackLabelButton()
 	{
-		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
-		QCoreApplication::processEvents();
+		for (int i = 0; i < 3; ++i)
+		{
+			Track::create(i == 1 ? Track::Type::Instrument : Track::Type::Sample, Engine::getSong());
+			QCoreApplication::processEvents();
+		}
 		getGUI()->mainWindow()->show();
+		getGUI()->songEditor()->parentWidget()->show();
 		QCoreApplication::processEvents();
-		TrackLabelButton* header = nullptr;
+		QList<TrackLabelButton*> headers;
 		for (QWidget* widget : QApplication::allWidgets())
 		{
 			auto* candidate = qobject_cast<TrackLabelButton*>(widget);
-			if (candidate != nullptr && candidate->isVisibleTo(candidate->window())) { header = candidate; }
+			if (candidate != nullptr && candidate->isVisibleTo(candidate->window())) { headers.append(candidate); }
 		}
-		if (header == nullptr) { QSKIP("no track header is on screen in this layout"); }
-		PaintCounter counter;
-		header->installEventFilter(&counter);
+		QVERIFY2(headers.size() >= 3, qPrintable(QStringLiteral("only %1 track headers are on screen").arg(headers.size())));
+		std::vector<std::unique_ptr<PaintCounter>> counters;
+		for (TrackLabelButton* header : headers)
+		{
+			counters.push_back(std::make_unique<PaintCounter>());
+			header->installEventFilter(counters.back().get());
+		}
 		repaintTrackHeaders();
-		QTRY_VERIFY(counter.paints > 0 || !header->isVisible());
-		header->removeEventFilter(&counter);
-		Q_UNUSED(track);
+		for (const auto& counter : counters) { QTRY_VERIFY(counter->paints > 0); }  // every one of them was painted again
+		for (int i = 0; i < headers.size(); ++i) { headers[i]->removeEventFilter(counters[static_cast<std::size_t>(i)].get()); }
 	}
 
 	void theLevelBarPollsOnlyWhileShownAndPaintsInTheMeterColours()
@@ -210,9 +222,10 @@ private slots:
 	void theTooltipReadsTheLevelInDecibelsWhenItOpens()
 	{
 		float level = 0.5f;
-		LevelBar bar([&level] { return level; }, QStringLiteral("Send"), nullptr);
+		int polls = 0;
+		LevelBar bar([&level, &polls] { ++polls; return level; }, QStringLiteral("Send"), nullptr);
 		bar.show();
-		QTest::qWait(200);
+		QTRY_VERIFY(polls >= 2);  // the reading has been taken before the tooltip opens
 		QHelpEvent help(QEvent::ToolTip, QPoint(2, 2), bar.mapToGlobal(QPoint(2, 2)));
 		QApplication::sendEvent(&bar, &help);
 		QVERIFY2(bar.toolTip().startsWith(QStringLiteral("Send: -6.")), qPrintable(bar.toolTip()));
@@ -245,9 +258,10 @@ private slots:
 		QCoreApplication::processEvents();
 		LevelBar* orphan = trackLevelBar(doomed, nullptr);
 		orphan->show();
+		const QPointer<Track> watched(doomed);
 		doomed->deleteLater();
-		QTest::qWait(150);
-		QCOMPARE(pixelOf(*orphan, 3, 21), pal.control);
+		QTRY_VERIFY(watched.isNull());  // the track is gone
+		QTRY_COMPARE(pixelOf(*orphan, 3, 21), pal.control);
 		delete orphan;
 	}
 

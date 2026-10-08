@@ -228,7 +228,8 @@ private slots:
 		QWidget* window = editorWindow(QStringLiteral("Amp editor"));
 		QWidget* header = window->findChild<QWidget*>(QStringLiteral("pluginHostHeader"));
 		QVERIFY(header != nullptr);
-		QVERIFY(window->height() > 150);  // the view's height plus the header
+		QCOMPARE(window->height(), 150 + header->sizeHint().height());  // the view's height plus the header
+		QVERIFY(header->sizeHint().height() > 0);
 		for (const char* text : {"Bypass", "Store A", "Store B", "A/B", "Save Preset...", "Load Preset...", "Presets..."})
 		{
 			QVERIFY2(buttonTexted(window, QLatin1String(text)) != nullptr, text);

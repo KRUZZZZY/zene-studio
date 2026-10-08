@@ -157,9 +157,7 @@ private slots:
 		Clip* first = clipAt(track(), 0, Bar);
 		track();                                  // an empty track between: skipped
 		Clip* second = clipAt(track(), 2 * Bar, Bar);
-		Clip* third = clipAt(m_tracks.at(0), 5 * Bar, Bar);
 		QCoreApplication::processEvents();
-		Q_UNUSED(third);
 		const Qt::KeyboardModifiers across = Qt::ShiftModifier | Qt::AltModifier;
 
 		// From nothing, Down takes the first track's clip nearest the play position.
@@ -247,7 +245,13 @@ private slots:
 		QAbstractSlider* nav = navigator();
 		QVERIFY(nav != nullptr);
 		QVERIFY(nav->isVisible());
-		QVERIFY(!nav->grab().isNull());  // clips, sections, a marker, the loop, the play position and the viewport
+		// The strip draws what the song holds: the section's band in its colour, the marker's flag, the play head.
+		const QImage strip = nav->grab().toImage();
+		const double perTick = nav->width() / static_cast<double>(std::max<tick_t>((Engine::getSong()->length() + 1) * Bar, visibleNow()));
+		QCOMPARE(strip.pixelColor(static_cast<int>(7.9 * Bar * perTick), 3), QColor(QStringLiteral("#d04040")));  // the Chorus band, near its end
+		const QColor marker = tokens::palette().accent;
+		QCOMPARE(strip.pixelColor(static_cast<int>(12 * Bar * perTick), nav->height() / 2), marker);            // the Drop marker's line
+		QCOMPARE(strip.pixelColor(static_cast<int>(2 * Bar * perTick), nav->height() / 2), tokens::palette().playhead);
 
 		const int width = nav->width();
 		QTest::mouseClick(nav, Qt::LeftButton, Qt::NoModifier, QPoint(width / 10, 10));
