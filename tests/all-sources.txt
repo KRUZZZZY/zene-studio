@@ -2678,6 +2678,7 @@ tests/src/gui/AafImportMenuTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
 tests/src/gui/AccessibilityWalkTest.cpp
 tests/src/gui/AgentSurfaceReportTest.cpp
+tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
 tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp

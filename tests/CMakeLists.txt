@@ -892,6 +892,8 @@ set(LMMS_TESTS
 	src/gui/TelemetryConsentDialogTest.cpp
 	src/gui/AafImportMenuTest.cpp
 	src/gui/TrackIconsLevelBarTest.cpp
+	# M0 coverage: the arranger's clip keys and the navigator strip.
+	src/gui/ArrangerKeysNavigatorTest.cpp
 	# The transport's Sync toggle (link.set_enabled) and its session read-out.
 	src/gui/SessionSyncActionTest.cpp
 	# The piano roll's Randomize / Humanize / Scale velocities items (note.randomize, note.velocity_scale).
@@ -1636,7 +1638,7 @@ set_tests_properties(EffectDeviceMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFOR
 set_tests_properties(EffectPickerOrganiserTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginNativeEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ReferenceProjectPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest ArrangerKeysNavigatorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
