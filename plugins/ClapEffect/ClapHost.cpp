@@ -450,7 +450,7 @@ auto HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outp
 	for (std::size_t p = 0; p < layout.outputPortChannels.size(); ++p)
 	{
 		const auto channels = layout.outputPortChannels[p];
-		auto& buffer = outBuffers[p];
+		auto& buffer = outBuffers[static_cast<std::size_t>(layout.outputPortIndices[p])];
 		buffer = {};
 		buffer.channel_count = static_cast<std::uint32_t>(channels);
 		buffer.data32 = outPtrs.data() + channel;

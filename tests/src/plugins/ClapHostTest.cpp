@@ -196,6 +196,7 @@ private slots:
 	void testParameterRescansRereadTheList();
 	void testAnInvalidParamRangeIsNormalized();
 	void testAnActiveFlushRequestIsAnsweredByProcess();
+	void testAZeroChannelOutputKeepsTheIndexOfLaterPorts();
 	void testANonFiniteSampleRateIsRefused();
 	void testANoteVelocityKeepsItsFraction();
 	void testAPluginClosedEditorIsReopened();
@@ -1150,6 +1151,32 @@ void lmms::clap::ClapHostTest::testReloadingAPluginWithoutNotePortsClearsTheCoun
 		qPrintable(QStringLiteral("the reloaded instance kept the old counters: pushed %1, dropped %2, "
 			"delivered %3, played %4")
 			.arg(after.pushed).arg(after.dropped).arg(after.delivered).arg(after.played)));
+}
+
+/*! A zero-channel output port ahead of the real one must not shift the real output. The plug-in writes its
+ *  main output at its own port index 1, so the host has to hand that index the stereo buffer. Zero-channel
+ *  ports used to be dropped from the buffer list, which put the real output at index 0. */
+void lmms::clap::ClapHostTest::testAZeroChannelOutputKeepsTheIndexOfLaterPorts()
+{
+	qputenv("CLAP_TEST_GAIN_LAYOUT", "zero-output");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	const auto& layout = plugin.busLayout();
+	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, inputs, outputs, TestFrames);
+	for (const auto& channel : outputs)
+	{
+		QVERIFY2(std::all_of(channel.begin(), channel.end(), [](float v) { return v == 0.5f; }),
+			"the main output did not receive the main input: the buffer went to another port");
+	}
+	QCOMPARE(layout.pluginOutputPorts, 2);
+	QCOMPARE(layout.outputPortIndices, std::vector<int>{1});
+	qunsetenv("CLAP_TEST_GAIN_LAYOUT");
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)

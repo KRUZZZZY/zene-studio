@@ -72,7 +72,7 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	impl.inPtrs.assign(std::max<std::size_t>(impl.layout.inputs, 1), nullptr);
 	impl.outPtrs.assign(std::max<std::size_t>(impl.layout.outputs, 1), nullptr);
 	impl.inBuffers.assign(static_cast<std::size_t>(impl.layout.pluginInputPorts), clap_audio_buffer_t{});
-	impl.outBuffers.assign(impl.layout.outputPortChannels.size(), clap_audio_buffer_t{});
+	impl.outBuffers.assign(static_cast<std::size_t>(impl.layout.pluginOutputPorts), clap_audio_buffer_t{});
 	impl.silence.assign(static_cast<std::size_t>(maxBlockSize), 0.0f);
 	impl.outputScratch.assign(static_cast<std::size_t>(impl.layout.outputs) * maxBlockSize, 0.0f);
 	impl.paramEvents.assign(impl.params.size(), clap_event_param_value_t{});

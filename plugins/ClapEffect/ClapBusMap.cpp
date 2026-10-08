@@ -95,14 +95,20 @@ auto mapPorts(const std::vector<PortDescriptor>& ports) -> PortLayout
 	}
 
 	// --- outputs, in the plug-in's own order -------------------------------
+	// Every output port takes its plug-in index, a zero-channel one included, so the buffers stay put.
+	int pluginOutput = 0;
 	for (const auto& port : ports)
 	{
-		if (port.direction != PortDirection::Output || port.channelCount <= 0) { continue; }
+		if (port.direction != PortDirection::Output) { continue; }
+		const auto index = pluginOutput++;
+		if (port.channelCount <= 0) { continue; }
 		const auto channels = std::min(port.channelCount, maxChannels - layout.outputs);
 		if (channels <= 0) { continue; }
 		layout.outputPortChannels.push_back(channels);
+		layout.outputPortIndices.push_back(index);
 		layout.outputs += channels;
 	}
+	layout.pluginOutputPorts = pluginOutput;
 
 	// The side-chain is what follows the main port on the flattened inputs; a plug-in with a single
 	// input port (or one whose extra ports the channel budget dropped) has none.

@@ -78,6 +78,10 @@ struct PortLayout
 	std::vector<int> inputPortIndices;
 	//! how many input ports the plug-in reports, dropped or empty ones included: the audio_inputs length
 	int pluginInputPorts = 0;
+	//! the plug-in's output port index of each entry of outputPortChannels (see inputPortIndices)
+	std::vector<int> outputPortIndices;
+	//! how many output ports the plug-in reports, zero-channel ones included: the audio_outputs length
+	int pluginOutputPorts = 0;
 	std::vector<int> outputPortChannels;
 
 	auto isValid() const -> bool { return inputs > 0 && outputs > 0; }

@@ -253,24 +253,54 @@ static const clap_plugin_params_t s_params = {
 
 /* ----------------------------------------------------------- audio ports -- */
 
+/* CLAP_TEST_GAIN_LAYOUT selects a port layout for the routing tests (ClapHostTest). Without it the
+   fixture keeps its one stereo input and one stereo output, the main port at index 0 of each.
+     sidechain-first   inputs: 0 = side-chain (not main), 1 = main; one stereo output
+     unreadable-input  inputs: 0 reports no info (get() fails), 1 = main; one stereo output
+     zero-output       one stereo input; outputs: 0 = zero-channel, 1 = main stereo
+   Each process() copies the main input to the main output (scaled by the gain), and when the ports do
+   not match the expected indices it writes nothing, so a misrouted buffer reads back as silence. */
+static const char* gain_layout(void) { return getenv("CLAP_TEST_GAIN_LAYOUT"); }
+
+static uint32_t gain_main_index(bool is_input)
+{
+	const char* layout = gain_layout();
+	if (layout == NULL) { return 0; }
+	if (strcmp(layout, "zero-output") == 0) { return is_input ? 0 : 1; }
+	return is_input ? 1 : 0;
+}
+
 static uint32_t gain_audio_ports_count(const clap_plugin_t* plugin, bool is_input)
 {
 	(void)plugin;
-	return 1;
-	(void)is_input;
+	const char* layout = gain_layout();
+	if (layout == NULL) { return 1; }
+	const bool zero = strcmp(layout, "zero-output") == 0;
+	return is_input ? (zero ? 1 : 2) : (zero ? 2 : 1);
 }
 
 static bool gain_audio_ports_get(const clap_plugin_t* plugin, uint32_t index, bool is_input,
 	clap_audio_port_info_t* info)
 {
 	(void)plugin;
-	if (index != 0) { return false; }
+	const char* layout = gain_layout();
+	if (index >= gain_audio_ports_count(plugin, is_input)) { return false; }
+	if (layout != NULL && is_input && index == 0 && strcmp(layout, "unreadable-input") == 0) { return false; }
 	memset(info, 0, sizeof(*info));
-	info->id = is_input ? 0 : 1;
-	strncpy(info->name, is_input ? "Input" : "Output", sizeof(info->name) - 1);
-	info->flags = CLAP_AUDIO_PORT_IS_MAIN;
-	info->channel_count = 2;
-	info->port_type = CLAP_PORT_STEREO;
+	const bool empty = layout != NULL && !is_input && index == 0 && strcmp(layout, "zero-output") == 0;
+	info->id = (is_input ? 0u : 100u) + index;
+	if (layout == NULL)
+	{
+		strncpy(info->name, is_input ? "Input" : "Output", sizeof(info->name) - 1);
+	}
+	else
+	{
+		strncpy(info->name, empty ? "Empty" : (is_input ? (index == gain_main_index(true) ? "Main" : "Side-chain")
+			: "Output"), sizeof(info->name) - 1);
+	}
+	info->flags = index == gain_main_index(is_input) ? CLAP_AUDIO_PORT_IS_MAIN : 0;
+	info->channel_count = empty ? 0 : 2;
+	info->port_type = empty ? NULL : CLAP_PORT_STEREO;
 	info->in_place_pair = CLAP_INVALID_ID;
 	return true;
 }
@@ -577,6 +607,25 @@ static void gain_reset(const clap_plugin_t* plugin)
 	memset(self->recorded, 0, sizeof(self->recorded));
 }
 
+/* The routing modes: the main input, at the index the plug-in calls its main, goes to the main output. */
+static void gain_route_layout(const clap_process_t* process, double gain)
+{
+	const uint32_t src = gain_main_index(true);
+	const uint32_t dst = gain_main_index(false);
+	if (src >= process->audio_inputs_count || dst >= process->audio_outputs_count) { return; }
+	const clap_audio_buffer_t* in = &process->audio_inputs[src];
+	const clap_audio_buffer_t* out = &process->audio_outputs[dst];
+	const uint32_t channels = in->channel_count < out->channel_count ? in->channel_count : out->channel_count;
+	for (uint32_t c = 0; c < channels; ++c)
+	{
+		if (!in->data32[c] || !out->data32[c]) { continue; }
+		for (uint32_t f = 0; f < process->frames_count; ++f)
+		{
+			out->data32[c][f] = (float)(in->data32[c][f] * gain);
+		}
+	}
+}
+
 static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_process_t* process)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
@@ -611,7 +660,9 @@ static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_
 	const double gain = self->bypass >= 0.5 ? 1.0 : self->gain;
 	const uint32_t frames = process->frames_count;
 	const uint32_t input_count = process->audio_inputs_count;
-	for (uint32_t p = 0; p < process->audio_outputs_count; ++p)
+	const char* layout = gain_layout();
+	if (layout != NULL) { gain_route_layout(process, gain); }
+	for (uint32_t p = 0; p < (layout != NULL ? 0u : process->audio_outputs_count); ++p)
 	{
 		const clap_audio_buffer_t* out = &process->audio_outputs[p];
 		const clap_audio_buffer_t* in = p < input_count ? &process->audio_inputs[p] : NULL;
