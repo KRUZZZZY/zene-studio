@@ -29,6 +29,7 @@
 #include "NeuralAmpControls.h"
 
 #include <atomic>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -41,6 +42,14 @@ namespace lmms
 namespace nam
 {
 class NamModel;
+
+//! A missing model rate is accepted; a declared rate must match the engine within half a hertz.
+inline auto sampleRateMatchesEngine(double modelRate, double engineRate) noexcept -> bool
+{
+	if (modelRate == -1.0) { return true; }
+	return std::isfinite(modelRate) && std::isfinite(engineRate)
+		&& modelRate > 0.0 && engineRate > 0.0 && std::abs(modelRate - engineRate) <= 0.5;
+}
 }
 
 /// Real-time effect that runs a .nam neural amplifier model.

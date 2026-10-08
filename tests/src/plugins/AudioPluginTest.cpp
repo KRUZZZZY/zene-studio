@@ -62,7 +62,7 @@
 #include "Engine.h"
 #include "Plugin.h"
 #include "SampleFrame.h"
-#include "../../../plugins/NeuralAmp/nam/NamSampleRate.h"
+#include "../../../plugins/NeuralAmp/NeuralAmpEffect.h"
 
 using namespace lmms;
 

@@ -25,7 +25,6 @@
 #include "NeuralAmpEffect.h"
 
 #include "nam/NamModel.h"
-#include "nam/NamSampleRate.h"
 
 #include "AudioEngine.h"
 #include "Engine.h"
