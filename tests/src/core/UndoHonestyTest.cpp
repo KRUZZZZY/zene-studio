@@ -37,6 +37,7 @@
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "ConfigManager.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -66,6 +67,25 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
 }
+
+//! Points ConfigManager's working directory at a private folder for one scope. Preset files are
+//! written under the working directory, so a case that saves presets must not touch the user's
+//! real preset directory; the previous working directory is restored when the scope ends.
+class PrivateWorkingDir
+{
+public:
+	PrivateWorkingDir() : m_previous(ConfigManager::inst()->workingDir())
+	{
+		ConfigManager::inst()->setWorkingDir(m_dir.filePath(QStringLiteral("work")));
+	}
+	~PrivateWorkingDir() { ConfigManager::inst()->setWorkingDir(m_previous); }
+	PrivateWorkingDir(const PrivateWorkingDir&) = delete;
+	PrivateWorkingDir& operator=(const PrivateWorkingDir&) = delete;
+
+private:
+	QTemporaryDir m_dir;
+	QString m_previous;
+};
 
 QString ch(int index) { return control::channelIdOf(Engine::mixer()->mixerChannel(index)); }
 
@@ -506,6 +526,7 @@ private slots:
 	//! replays what it loaded lands on 'alpha'.
 	void thePresetLoadRedoReplaysTheBytesItLoaded()
 	{
+		PrivateWorkingDir isolated;  // the presets below go to a private directory, never the user's
 		const QString track = revtest::addInstrumentTrack();
 		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
 		const QString pluginId = QStringLiteral("inst");
@@ -514,9 +535,8 @@ private slots:
 				{{QStringLiteral("track"), track}, {QStringLiteral("name"), name}}).ok;
 		};
 		const auto save = [track, pluginId](const QString& name) {
-			// The presets live in the user's REAL preset directory (that is where
-			// plugin.preset_save writes), so replace rather than refuse on a re-run
-			// and take them away again at the end.
+			// The presets live in the PRIVATE working directory set up above (plugin.preset_save
+			// writes under the working directory). Replacing keeps a re-run simple.
 			return revtest::run(QStringLiteral("plugin.preset_save"),
 				{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
 					{QStringLiteral("name"), name}, {QStringLiteral("overwrite"), true}});
