@@ -59,6 +59,22 @@ void applyInsert(const QString& id, const HardwareInsert::Settings& settings)
 	underChangeLock([channel, &settings, frames]() { channel->m_hardwareIo.insert.setSettings(settings, frames); });
 }
 
+//! The ping's undo: under the change lock, so no period is in flight, keep the measurement the ping found (for its
+//! redo), call the ping off and restore the settings. Cancelling outside the lock let a period that had already read
+//! the request store its click state after the cancel, which revived the ping (review cluster 5672).
+void undoPing(const QString& id, const HardwareInsert::Settings& before, HardwareInsert::Settings* found)
+{
+	MixerChannel* undone = channelById(id);
+	if (undone == nullptr) { return; }
+	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+	underChangeLock([undone, &before, found, frames]() {
+		HardwareInsert& insert = undone->m_hardwareIo.insert;
+		*found = insert.settings();
+		insert.cancelPing();
+		insert.setSettings(before, frames);
+	});
+}
+
 bool readInsertFields(const QJsonObject& args, HardwareInsert::Settings* s, ControlResult* error)
 {
 	const double mix = args.value(QStringLiteral("mix")).toDouble(s->mix);
@@ -129,16 +145,9 @@ ControlResult hardwareInsertPing(const QJsonObject& args)
 	auto found = std::make_shared<HardwareInsert::Settings>(before);
 	insert.requestPing();
 	addUndoStep(
-		[id, before, found]() {
-			if (MixerChannel* undone = channelById(id))
-			{
-				*found = undone->m_hardwareIo.insert.settings();
-				// Nobody is waiting for the measurement any more: a ping that landed after the undo would
-				// write a latency into the project the undo just put back.
-				undone->m_hardwareIo.insert.cancelPing();
-			}
-			applyInsert(id, before);
-		},
+		// Nobody is waiting for the measurement any more: a ping that landed after the undo would write a latency
+		// into the project the undo just put back, so the cancel and the restore share one change-lock section.
+		[id, before, found]() { undoPing(id, before, found.get()); },
 		[id, found]() { applyInsert(id, *found); });
 	Engine::getSong()->setModified();
 	QJsonObject result = insertReply(*channel);
