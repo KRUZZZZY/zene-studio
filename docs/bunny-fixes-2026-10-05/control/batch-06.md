@@ -136,3 +136,19 @@ Red/green: none
 Leftovers: clusters 4036, 4039 and 4037 are confirmed-but-unfixed and need an owner who
 can change the dispatch/result contract; the 4037 fix must preserve the `__transaction`
 hand-off from `finishResult` to `recordTransactionOf` if it is ever taken up.
+## Correction (rework 2026-10-08, sha 36a18b930)
+
+The statement above that the universal depth-zero guard is "correct outermost ownership" is **wrong**. Commit
+`4a01e6dd0` suppressed the records of mutating commands that a NON-mutating wrapper runs
+(`range.consolidate`, `arrangement.nudge`, `workflow.run`). Those rows state that each child records and undoes as
+itself.
+
+- Corrected fix: commit `019544a32` (`fix(rework 4a01e6dd0)`). The rule is now: a mutating call records its step
+  unless an enclosing handler is itself mutating (tracked by `m_mutatingDepth`). A nested mutating call folded into an
+  enclosing mutating step is counted, and if that outer call supplied no descriptor its record is written with
+  `reversible: false` and a mechanism that says so.
+- Tests: `ControlRegistryTest::nonMutatingWrapperLetsEachChildRecordItself` and
+  `ControlRegistryTest::foldedNestedChangeIsNotClaimedReversible`. Red on the `4a01e6dd0` registry: EXIT=8 (2 failed).
+  Green: EXIT=0.
+- The relative-recording-path fix in this batch stands. Failed-handler, result-schema and human-dispatch items (4036,
+  4037, 4039) remain unresolved, as the report already says.
