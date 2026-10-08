@@ -144,10 +144,8 @@ private slots:
 	//! silent.
 	void aLaunchedSlotWithContentRendersAudio()
 	{
-		if( !buildFixture( /*withContent=*/true ) )
-		{
-			QSKIP( "no sounding instrument is loadable in this environment" );
-		}
+		QVERIFY2( buildFixture( /*withContent=*/true ),
+			"the sounding instrument (tripleoscillator, built with this test) did not load: a failure, not a skip" );
 
 		const QByteArray silent = render();
 		QVERIFY2( !silent.isEmpty(), "the export produced no file" );
@@ -243,10 +241,8 @@ private slots:
 	//! must be silent in it: the take-over is real and there is nothing to play.
 	void aColumnTakenOverByAnEmptyCellStaysSilent()
 	{
-		if( !buildFixture( /*withContent=*/false ) )
-		{
-			QSKIP( "no sounding instrument is loadable in this environment" );
-		}
+		QVERIFY2( buildFixture( /*withContent=*/false ),
+			"the sounding instrument (tripleoscillator, built with this test) did not load: a failure, not a skip" );
 
 		const QByteArray before = render();
 		QVERIFY( isSilent( before ) );

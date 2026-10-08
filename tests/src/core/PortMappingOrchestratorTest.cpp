@@ -72,38 +72,29 @@ class PortMappingOrchestratorTest : public QObject
 private slots:
 	void initTestCase() { qRegisterMetaType<lmms::portmap::MappingResult>("lmms::portmap::MappingResult"); }
 
+	//! Whatever this machine's network is, discovery obeys its own contract: a gateway that was not guessed is the
+	//! route table's; a guessed one is the .1 of a LAN /24 and says so; no gateway is never reported as guessed.
 	void theDefaultGatewayIsTheRouteTablesOrAGuessReportedAsOne()
 	{
 		bool guessed = true;
 		const QHostAddress gateway = PortMapping::discoverGateway(&guessed);
+		QHostAddress fromTable;
 #ifdef Q_OS_LINUX
 		QFile routes(QStringLiteral("/proc/net/route"));
-		QVERIFY(routes.open(QIODevice::ReadOnly));
-		const QHostAddress fromTable = gatewayFromProcRoute(routes.read(64 * 1024));
-		if (!fromTable.isNull())
-		{
-			QVERIFY(!guessed);
-			QCOMPARE(gateway, fromTable);
-			return;
-		}
+		if (routes.open(QIODevice::ReadOnly)) { fromTable = gatewayFromProcRoute(routes.read(64 * 1024)); }
 #endif
-		// No route table answer: either nothing at all, or the .1 of the LAN's /24, and then it says so.
-		if (gateway.isNull()) { QVERIFY(!guessed); return; }
-		QVERIFY(guessed);
-		QCOMPARE(gateway.toIPv4Address() & 0xffu, 1u);
+		QVERIFY(guessed || gateway.isNull() || gateway == fromTable);   // not guessed: the table's own answer
+		QVERIFY(!guessed || (!gateway.isNull() && (gateway.toIPv4Address() & 0xffu) == 1u));  // guessed: x.y.z.1
+		QVERIFY(fromTable.isNull() == (guessed || gateway.isNull()));   // a table answer is used whenever there is one
 	}
 
+	//! A UDP "connect" sends nothing; toward the loopback the address the kernel would use is the loopback, and
+	//! with no gateway the answer is an up, non-loopback IPv4 interface address or nothing.
 	void theLanAddressIsTheOneTheKernelRoutesTowardTheGateway()
 	{
-		// A UDP "connect" sends nothing; toward the loopback the local address is the loopback.
 		QCOMPARE(PortMapping::lanAddress(QHostAddress(QHostAddress::LocalHost)), QHostAddress(QHostAddress::LocalHost));
-		// With no gateway it falls back to an up, non-loopback IPv4 interface address (or nothing on a machine with none).
 		const QHostAddress lan = PortMapping::lanAddress(QHostAddress());
-		if (!lan.isNull())
-		{
-			QCOMPARE(lan.protocol(), QAbstractSocket::IPv4Protocol);
-			QVERIFY(!lan.isLoopback());
-		}
+		QVERIFY(lan.isNull() || (lan.protocol() == QAbstractSocket::IPv4Protocol && !lan.isLoopback()));
 	}
 
 	void aFreshMappingReportsNothingAndStopIsHarmless()

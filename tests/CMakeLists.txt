@@ -1414,6 +1414,15 @@ set_target_properties(mpe_test_consumer PROPERTIES
 	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mpe-test-consumer"
 )
 
+# The in-tree modules these tests load are built with them, so a targeted build of the test never runs without its
+# module (and a module that fails to load fails the test instead of skipping it).
+if(TARGET receiver AND TARGET insertrecorder)
+	add_dependencies(ReceiverEffectTest receiver insertrecorder)
+endif()
+if(TARGET tripleoscillator)
+	add_dependencies(SessionPlaybackRenderTest tripleoscillator)
+endif()
+
 # ---------------------------------------------------------------------------
 # tests/src/plugins/BusesTestInstrument.cpp: an in-tree instrument that owns an InstrumentOutputBuses, so the
 # plugin.output_* commands are measured on a real model in a build with no CLAP, VST3 or LV2 multi-output

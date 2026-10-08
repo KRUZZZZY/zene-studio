@@ -96,11 +96,36 @@ class VideoTestClipTest : public QObject
 	Q_OBJECT
 
 private slots:
-	void theShapeConstantsAreTheFixturesContract()
+	//! The fixture can also be made by the ffmpeg program when one is installed: that path must agree with the
+	//! in-process encoder on what the clip is (makeClip prefers the program), so a machine with and one without
+	//! ffmpeg run the same test on the same video.
+	void makeClipProducesTheSameShapeWhicheverEncoderMadeIt()
 	{
-		QCOMPARE(videotest::Frames, videotest::Fps * 2);
-		QCOMPARE(videotest::Width * videotest::Height, 160 * 90);
-		QVERIFY(videotest::AudioChunk > 0);
+#ifndef ZENE_HAVE_FFMPEG
+		QSKIP("this build has no FFmpeg, so the test clip is never made");
+#else
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = QDir(dir.path()).filePath(QStringLiteral("made.mkv"));
+		QVERIFY2(videotest::makeClip(path), "makeClip produced no file");
+		AVFormatContext* input = nullptr;
+		const QByteArray name = QFile::encodeName(path);
+		QVERIFY(avformat_open_input(&input, name.constData(), nullptr, nullptr) == 0);
+		QVERIFY(avformat_find_stream_info(input, nullptr) >= 0);
+		bool video = false;
+		bool audio = false;
+		for (unsigned i = 0; i < input->nb_streams; ++i)
+		{
+			const AVCodecParameters* parameters = input->streams[i]->codecpar;
+			if (parameters->codec_type == AVMEDIA_TYPE_VIDEO && parameters->width == videotest::Width && parameters->height == videotest::Height) { video = true; }
+			if (parameters->codec_type == AVMEDIA_TYPE_AUDIO && parameters->sample_rate == videotest::Rate) { audio = true; }
+		}
+		const double seconds = static_cast<double>(input->duration) / AV_TIME_BASE;
+		avformat_close_input(&input);
+		QVERIFY2(video, "no 160x90 video stream");
+		QVERIFY2(audio, "no 44.1 kHz audio stream");
+		QVERIFY2(seconds > 1.8 && seconds < 2.4, qPrintable(QStringLiteral("duration %1 s").arg(seconds)));
+#endif
 	}
 
 	void theLibavcodecEncoderMakesAReadableTwoSecondClip()

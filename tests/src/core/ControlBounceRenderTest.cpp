@@ -35,6 +35,7 @@
 
 #include <QtTest>
 
+#include <QDateTime>
 #include <QDir>
 #include <QDomDocument>
 #include <QFile>
@@ -444,14 +445,18 @@ private slots:
 		QVERIFY(file.readAll().contains("<subprojects>"));
 
 		// The linked file changed after its render: it is reported stale, and a refresh renders it again.
-		QTest::qWait(30);
+		// Stale means "modified after the render": set the file's time one millisecond past the recorded render time
+		// (exact, whatever the filesystem's clock granularity), instead of waiting for the clock to move.
+		const qint64 renderedMs = static_cast<qint64>(listed.result.value(QStringLiteral("subprojects")).toArray().first().toObject()
+			.value(QStringLiteral("rendered_ms")).toDouble());
 		QFile touch(inner);
 		QVERIFY(touch.open(QIODevice::Append));
 		touch.write("\n");
+		QVERIFY(touch.flush());  // the write reaches the file first; the time is set after it
+		QVERIFY(touch.setFileTime(QDateTime::fromMSecsSinceEpoch(renderedMs + 1), QFileDevice::FileModificationTime));
 		touch.close();
 		QVERIFY(run(QStringLiteral("project.subprojects")).result.value(QStringLiteral("subprojects")).toArray().first().toObject()
 			.value(QStringLiteral("stale")).toBool());
-		QTest::qWait(5);
 		const ControlResult refreshed = run(QStringLiteral("project.subproject_refresh"), {{QStringLiteral("track"), control::trackIdOf(track)}});
 		QVERIFY2(refreshed.ok, qPrintable(refreshed.errorMessage));
 		const QString newAudio = refreshed.result.value(QStringLiteral("audio")).toString();

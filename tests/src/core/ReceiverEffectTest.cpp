@@ -98,9 +98,9 @@ class ReceiverEffectTest : public QObject
 private slots:
 	void initTestCase()
 	{
-#ifdef LMMS_TEST_PLUGIN_DIR
-		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
-#endif
+		// The modules under test are built with this target (tests/CMakeLists.txt add_dependencies) and found in the
+		// build's plugin directory, which CMake hands this target; there is no fallback to a global variable.
+		qputenv("LMMS_PLUGIN_DIR", QByteArrayLiteral(LMMS_TEST_PLUGIN_DIR));
 		Engine::init(true);
 	}
 
@@ -110,7 +110,7 @@ private slots:
 	{
 		EffectChain chain{nullptr};
 		Effect* receiver = Effect::instantiate(QStringLiteral("receiver"), &chain, nullptr);
-		if (receiver == nullptr) { QSKIP("this build has no Receiver module"); }
+		QVERIFY2(receiver != nullptr, "the Receiver module did not load: it is built with this test, so this is a failure");
 		chain.appendEffect(receiver);
 
 		QDomDocument doc;
@@ -130,7 +130,7 @@ private slots:
 	{
 		EffectChain chain{nullptr};
 		Effect* receiver = Effect::instantiate(QStringLiteral("receiver"), &chain, nullptr);
-		if (receiver == nullptr) { QSKIP("this build has no Receiver module"); }
+		QVERIFY2(receiver != nullptr, "the Receiver module did not load: it is built with this test, so this is a failure");
 		chain.appendEffect(receiver);
 
 		QDomDocument doc;
@@ -148,7 +148,7 @@ private slots:
 	{
 		EffectChain chain{nullptr};
 		Effect* receiver = Effect::instantiate(QStringLiteral("receiver"), &chain, nullptr);
-		if (receiver == nullptr) { QSKIP("this build has no Receiver module"); }
+		QVERIFY2(receiver != nullptr, "the Receiver module did not load: it is built with this test, so this is a failure");
 		chain.appendEffect(receiver);
 
 		QDomDocument doc;
@@ -170,7 +170,7 @@ private slots:
 	{
 		EffectChain chain{nullptr};
 		Effect* receiver = Effect::instantiate(QStringLiteral("receiver"), &chain, nullptr);
-		if (receiver == nullptr) { QSKIP("this build has no Receiver module"); }
+		QVERIFY2(receiver != nullptr, "the Receiver module did not load: it is built with this test, so this is a failure");
 		chain.appendEffect(receiver);
 		QCOMPARE(receiver->controls()->controlCount(), 2);
 		QCOMPARE(receiver->controls()->nodeName(), QStringLiteral("ReceiverControls"));
@@ -201,7 +201,7 @@ private slots:
 	{
 		EffectChain chain{nullptr};
 		Effect* recorder = Effect::instantiate(QStringLiteral("insertrecorder"), &chain, nullptr);
-		if (recorder == nullptr) { QSKIP("this build has no InsertRecorder module"); }
+		QVERIFY2(recorder != nullptr, "the InsertRecorder module did not load: it is built with this test, so this is a failure");
 		chain.appendEffect(recorder);
 		QVERIFY(recorder->controls() != nullptr);
 

@@ -26,7 +26,7 @@ can only be higher than the "now" column. "Before" is the gate's figure for the 
 | src/core/ControlCommandsTrackFlatten.cpp | 32.3 | 96.9 | ControlBounceRenderTest | replace-in-place, undo/redo restoring index/name/clips, refusals; "too large to keep for undo" branch not reached |
 | src/core/ControlCommandsRangeBounce.cpp | 26.8 | 100 | ControlBounceRenderTest | two tracks rendered together, `mute_sources`, undo/redo, no range, failed render |
 | src/core/ControlCommandsSubprojects.cpp | 43.8 | 94.1 | ControlBounceRenderTest | add, list, stale, refresh, undo/redo, persistence, self and nested-loop refusal, failed render |
-| src/core/ControlCommandsMidiReconnectShared.h | 25.0 | 97.5 | ControlMidiReconnectSharedTest | resolver (name, identity, none, several), assignment JSON, bound-port lookup, lost assignment |
+| src/core/ControlCommandsMidiReconnectShared.h | 25.0 | 97.5 | ControlMidiReconnectSharedTest | arm/disarm with the persisted key (on a home of the test's own), resolver (name, identity, none, several), assignment JSON, bound-port lookup, lost assignment |
 | src/core/ControlCommandsPluginBuses.cpp | 39.2 | 99.5 | ControlPluginBusesTest | list, route, unroute, undo/redo, no-op route, inactive bus activated, refused bus, create-channels |
 | src/core/ControlCommandsSessionRecordInternal.h | 11.5 | 94.9 | ControlSessionRecordLandTest | pairing incl. retrigger, unmatched stop, open start, capacity-full ring |
 | src/core/ControlCommandsSessionRecordLand.cpp | 38.5 | 100 | ControlSessionRecordLandTest | empty ring, refusal that consumes nothing, landing, skipped columns, empty span, undo |
@@ -41,8 +41,8 @@ can only be higher than the "now" column. "Before" is the gate's figure for the 
 | src/core/ScriptDawEffects.cpp | 15.1 | 96.3 | ScriptDawEffectsTest | chain/effect wrappers by position and id, parameters, invalid wrappers, wrapper kept across removal |
 | tests/src/core/ControlDeviceCatalogueTest.cpp | 47.2 | 56.1 | itself (+ a new builtin-listing case) | the four hosted cases still skip: no CLAP/VST3 SDK in this configuration |
 | tests/src/core/Lv2StateTest.cpp | 47.1 | 82.4 | itself (+ two new cases) | the stateful round trip still skips: no installed LV2 effect implements State |
-| tests/src/core/SessionPlaybackRenderTest.cpp | 41.6 | 88.7 | itself | cause fixed (below); both render cases now run |
-| tests/src/core/VideoTestClip.h | 13.8 | 100 | VideoTestClipTest | the in-process libavcodec encoder, read back (streams, duration, first frame red, last blue) |
+| tests/src/core/SessionPlaybackRenderTest.cpp | 41.6 | 89.9 | itself | cause fixed (below); both render cases now run |
+| tests/src/core/VideoTestClip.h | 13.8 | 99.1 | VideoTestClipTest | the in-process libavcodec encoder, read back (streams, duration, first frame red, last blue) |
 
 ## Causes found for the test files under the floor
 
@@ -118,3 +118,31 @@ any 239.255.255.250 (SSDP group) reference: 0
 
 Not run: the full suite or the gates beyond the six cheap ones (fork-sources, all-sources, unregistered-tests,
 complexity, file-length, no-tautology), which passed before every commit.
+
+## Round 2 (review follow-up)
+
+* `ControlMidiReconnectSharedTest`: no longer skips on the developer's config. `HOME` is a temporary directory of the
+  test's own before `Engine::init` (the precedent in `ItemListPanelTest`), so the re-connection mode starts at the
+  product's default and `midi.reconnect_arm`'s config writes stay out of the real file. The arm case now exercises
+  disarm, the unchanged repeat, the default "enable" and the persisted key; `theReadCommands...` compares against
+  written-down values (enabled, persisted, zero assignments/lost/reconnects) instead of the object it tests.
+* `ReceiverEffectTest`: the five `QSKIP`s on in-tree modules are `QVERIFY2` failures; the plugin directory is set
+  unconditionally from `LMMS_TEST_PLUGIN_DIR` (the test already was in that list - `tests/CMakeLists.txt` puts it in
+  the one chain that gives a target both exports and the define; the review's "only in the exports list" is not what
+  the build shows: `flags.make` carries the define), and `receiver` and `insertrecorder` are now `add_dependencies` of
+  the test, as `tripleoscillator` is of `SessionPlaybackRenderTest`, so a targeted build cannot run without its modules.
+* `SessionPlaybackRenderTest`: both `QSKIP`s on the instrument not loading are `QVERIFY2`.
+* `ControlBounceRenderTest`: the stale-subproject case sets the file's modification time with `QFile::setFileTime` to
+  one millisecond past the recorded render time (after flushing the write); no `qWait`.
+* `VideoTestClipTest`: the constants-versus-constants case is replaced by a check that `makeClip` (the ffmpeg
+  program when installed, else libavcodec) yields a 160x90 video and a 44.1 kHz audio stream of about two seconds.
+* `PortMappingOrchestratorTest`: the gateway and LAN-address assertions are unconditional implications (a guessed
+  gateway is an x.y.z.1; an unguessed one is the route table's; the LAN address is null or non-loopback IPv4) with no
+  machine-dependent branch left, plus the deterministic loopback case.
+* `ControlHostedDeviceCatalogueTest`: the comment on the missing-module entry is corrected and list sizes are
+  checked before `list.at(n)`.
+
+Re-measured after these changes (same 24 tests, all passing): every file of the table above is unchanged or higher
+(figures updated); skips left in the measured set are only the hosted cases of `ControlDeviceCatalogueTest` (no
+CLAP/VST3 SDK in this configuration), `Lv2StateTest`'s stateful round trip (no stateful LV2 plug-in installed) and
+`W3EngineTest`'s post-fader case (finding 1, another agent's).

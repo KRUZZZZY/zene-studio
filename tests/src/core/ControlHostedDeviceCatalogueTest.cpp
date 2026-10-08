@@ -177,7 +177,9 @@ private slots:
 		bool useKey = false;
 		ControlResult error;
 
-		// The module file was deleted after the listing.
+		// An entry whose module file does not exist (the stand-in lists one: the case of a plug-in uninstalled while the
+		// product runs) is refused typed.
+		QVERIFY2(list.size() >= 2, "the stand-in host should list a valid class and one whose module is gone");
 		QVERIFY(!controlClapDeviceModule(list.at(1), &plugin, &key, &useKey, &error));
 		QCOMPARE(error.errorKind, ControlErrorKind::NotFound);
 		QVERIFY(error.errorMessage.contains(QStringLiteral("no longer there")));
@@ -211,6 +213,7 @@ private slots:
 		bool useKey = false;
 		ControlResult error;
 
+		QCOMPARE(list.size(), 4);
 		QVERIFY2(controlVst3DeviceModule(list.at(0), &plugin, &key, &useKey, &error), qPrintable(error.errorMessage));
 		QCOMPARE(plugin, QStringLiteral("vst3effect"));
 		QVERIFY(useKey);

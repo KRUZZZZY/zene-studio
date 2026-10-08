@@ -34,6 +34,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QTemporaryDir>
 
 #include "ControlCommandsMidiReconnectShared.h"
 #include "Engine.h"
@@ -60,9 +61,16 @@ class ControlMidiReconnectSharedTest : public QObject
 {
 	Q_OBJECT
 
+	QTemporaryDir m_home;
+
 private slots:
 	void initTestCase()
 	{
+		// The re-connection mode is a key of the user's config file, and midi.reconnect_arm writes it. A home of
+		// this test's own makes the starting state the product's default (on) whatever this machine's config says,
+		// and keeps those writes out of the developer's real file.
+		QVERIFY(m_home.isValid());
+		qputenv("HOME", m_home.path().toLocal8Bit());
 		Engine::init(true);
 		ControlRegistry::setReady(true);
 	}
@@ -162,15 +170,22 @@ private slots:
 		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! A fresh engine on a fresh home: re-connection is on (the product's default), nothing is remembered, and the
+	//! dummy client lists no port. The expected values are written down here, not read back from the object under test.
 	void theReadCommandsReportTheDummyClientsEmptyMemory()
 	{
 		const ControlResult status = run(QStringLiteral("midi.reconnect_status"));
 		QVERIFY2(status.ok, qPrintable(status.errorMessage));
 		QCOMPARE(status.result.value(QStringLiteral("client")).toString(), Engine::audioEngine()->midiClientName());
 		QCOMPARE(status.result.value(QStringLiteral("notice")).toString(), QStringLiteral("none"));
-		QCOMPARE(status.result.value(QStringLiteral("enabled")).toBool(), liveReconnect()->isEnabled());
-		QCOMPARE(status.result.value(QStringLiteral("assignment_count")).toInt(), static_cast<int>(liveReconnect()->assignments().size()));
-		QCOMPARE(status.result.value(QStringLiteral("lost_count")).toInt(), liveReconnect()->lostCount());
+		QCOMPARE(status.result.value(QStringLiteral("enabled")).toBool(), true);
+		QCOMPARE(status.result.value(QStringLiteral("persisted")).toBool(), true);
+		QCOMPARE(status.result.value(QStringLiteral("assignment_count")).toInt(), 0);
+		QCOMPARE(status.result.value(QStringLiteral("assignments")).toArray().size(), 0);
+		QCOMPARE(status.result.value(QStringLiteral("live_count")).toInt(), 0);
+		QCOMPARE(status.result.value(QStringLiteral("lost_count")).toInt(), 0);
+		QCOMPARE(status.result.value(QStringLiteral("reconnects")).toInt(), 0);
+		QCOMPARE(status.result.value(QStringLiteral("lost")).toInt(), 0);
 
 		const ControlResult clients = run(QStringLiteral("midi.clients_list"));
 		QVERIFY2(clients.ok, qPrintable(clients.errorMessage));
@@ -180,14 +195,27 @@ private slots:
 		QCOMPARE(clients.result.value(QStringLiteral("writable_count")).toInt(), 0);
 	}
 
-	void arming_AnAlreadyArmedEngineChangesNothing()
+	//! Arm and disarm, with the persisted key following: armed twice changes nothing the second time.
+	void armingAndDisarmingMoveTheModeAndTheKeyAndReportTheChange()
 	{
-		if (!liveReconnect()->isEnabled()) { QSKIP("this user's config has re-connection off; arming would rewrite it"); }
-		const ControlResult armed = run(QStringLiteral("midi.reconnect_arm"));
-		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
-		QVERIFY(armed.result.value(QStringLiteral("enabled")).toBool());
-		QVERIFY(!armed.result.value(QStringLiteral("changed")).toBool());
-		QCOMPARE(armed.result.value(QStringLiteral("notice")).toString(), QStringLiteral("none"));
+		const ControlResult off = run(QStringLiteral("midi.reconnect_arm"), {{QStringLiteral("enabled"), false}});
+		QVERIFY2(off.ok, qPrintable(off.errorMessage));
+		QVERIFY(!off.result.value(QStringLiteral("enabled")).toBool());
+		QVERIFY(off.result.value(QStringLiteral("changed")).toBool());
+		QVERIFY(!off.result.value(QStringLiteral("persisted")).toBool());
+		QCOMPARE(off.result.value(QStringLiteral("notice")).toString(), QStringLiteral("none"));
+		QVERIFY(!run(QStringLiteral("midi.reconnect_status")).result.value(QStringLiteral("enabled")).toBool());
+
+		// Disarmed again: no change.
+		QVERIFY(!run(QStringLiteral("midi.reconnect_arm"), {{QStringLiteral("enabled"), false}}).result.value(QStringLiteral("changed")).toBool());
+
+		// With no argument the mode is ENABLED.
+		const ControlResult on = run(QStringLiteral("midi.reconnect_arm"));
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+		QVERIFY(on.result.value(QStringLiteral("enabled")).toBool());
+		QVERIFY(on.result.value(QStringLiteral("changed")).toBool());
+		QVERIFY(on.result.value(QStringLiteral("persisted")).toBool());
+		QVERIFY(!run(QStringLiteral("midi.reconnect_arm")).result.value(QStringLiteral("changed")).toBool());
 	}
 
 	void bindingARefusesWhatItCannotResolve()
