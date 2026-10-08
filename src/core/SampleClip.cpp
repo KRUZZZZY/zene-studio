@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <utility>
 
 #include <QDomElement>
 #include <QFileInfo>
@@ -64,7 +65,7 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 			this, SLOT(playbackPositionChanged()), Qt::DirectConnection );
 	//a record take is built here, on the main thread, before the transport can claim it
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()), this, SLOT(prepareRecordTake()) );
-	connect( &m_recordModel, SIGNAL(dataChanged()), this, SLOT(prepareRecordTake()) );
+	connect( &m_recordModel, SIGNAL(dataChanged()), this, SLOT(armRecordTake()) );
 	//care about loops and jumps
 	connect(Engine::getSong(), &Song::playbackPositionJumped,
 			this, &SampleClip::playbackPositionChanged, Qt::DirectConnection);
@@ -109,7 +110,7 @@ SampleClip::SampleClip(const SampleClip& orig) :
 			this, SLOT(playbackPositionChanged()), Qt::DirectConnection );
 	//a record take is built here, on the main thread, before the transport can claim it
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()), this, SLOT(prepareRecordTake()) );
-	connect( &m_recordModel, SIGNAL(dataChanged()), this, SLOT(prepareRecordTake()) );
+	connect( &m_recordModel, SIGNAL(dataChanged()), this, SLOT(armRecordTake()) );
 	//care about loops and jumps
 	connect(Engine::getSong(), &Song::playbackPositionJumped,
 			this, &SampleClip::playbackPositionChanged, Qt::DirectConnection);
@@ -132,7 +133,9 @@ SampleClip::SampleClip(const SampleClip& orig) :
 
 SampleClip::~SampleClip()
 {
-	delete m_preparedRecord;  // main thread: a take nobody claimed (its handle queues the drain)
+	// main thread: takes nobody claimed (their handles queue the drain threads)
+	delete m_preparedRecord;
+	delete m_spareRecord;
 	auto sampletrack = dynamic_cast<SampleTrack*>(getTrack());
 	if ( sampletrack )
 	{
@@ -163,19 +166,94 @@ bool SampleClip::hasSampleFileLoaded(const QString & filename) const
 SampleRecordHandle* SampleClip::claimRecordHandle() noexcept
 {
 	auto* handle = m_preparedRecord;
-	m_preparedRecord = nullptr;
+	m_preparedRecord = m_spareRecord;
+	m_spareRecord = nullptr;
+	if (handle != nullptr) { handle->markClaimed(); }
 	return handle;
 }
 
 void SampleClip::prepareRecordTake()
 {
 	// The connections are automatic: a signal emitted on the audio thread arrives here queued,
-	// so this always runs on the main thread, where the handle may allocate and start its thread.
-	if (m_preparedRecord != nullptr || !isRecord()) { return; }
-	auto* handle = new SampleRecordHandle(this);
-	const auto guard = Engine::audioEngine()->requestChangesGuard();
-	m_preparedRecord = handle;
+	// so this always runs on the main thread, where a handle may allocate and start its thread.
+	if (!isRecord())
+	{
+		releaseRecordTakes();
+		return;
+	}
+	SampleRecordHandle::watchArmedClip(this);
+	for (SampleRecordHandle** slot : { &m_preparedRecord, &m_spareRecord })
+	{
+		bool empty = false;
+		{
+			// the slot is read under the change lock the audio thread's claim also takes
+			const auto guard = Engine::audioEngine()->requestChangesGuard();
+			empty = *slot == nullptr && isRecord();
+		}
+		if (!empty) { continue; }
+		auto* handle = new SampleRecordHandle(this);  // allocates: built outside the lock
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		if (*slot == nullptr && isRecord()) { *slot = handle; }
+		else { delete handle; }  // lost a race with a release or another prepare
+	}
 }
+
+void SampleClip::armRecordTake()
+{
+	// The arm transition: a clip armed inside its span must not stay latched as playing from the
+	// pass before, or it never starts a take until the playhead leaves the span (BUGS P3).
+	if (isRecord()) { setIsPlaying(false); }
+	prepareRecordTake();
+}
+
+void SampleClip::releaseRecordTakes()
+{
+	SampleRecordHandle* released[2] = { nullptr, nullptr };
+	{
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		released[0] = std::exchange(m_preparedRecord, nullptr);
+		released[1] = std::exchange(m_spareRecord, nullptr);
+	}
+	// Deleting an unclaimed handle queues its take; the reaper stops its drain thread.
+	delete released[0];
+	delete released[1];
+}
+
+void SampleClip::acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, std::uint64_t droppedFrames, bool continues)
+{
+	m_lastTakeDroppedFrames = droppedFrames;
+	if (droppedFrames > 0) { emit recordTakeDropped(droppedFrames); }
+	// A take becomes a lane take when the transport goes on recording after it (a loop pass), or
+	// when an earlier pass of this arming already did; the first take of a plain recording stays
+	// the clip's own content, as it always did.
+	if (continues || m_recordPasses > 0)
+	{
+		if (take) { addRecordedLane(std::move(take)); }
+		++m_recordPasses;
+		if (!continues) { m_recordPasses = 0; }
+	}
+	else if (take)
+	{
+		setSampleBuffer(std::move(take));
+	}
+	if (!continues) { setRecord(false); }
+}
+
+void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take)
+{
+	auto* track = dynamic_cast<SampleTrack*>(getTrack());
+	if (track == nullptr) { return; }
+	// The clip is created and added to the track under the change lock the audio thread's
+	// processing takes, as every other clip edit is.
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+	const int lane = track->takeLanes().addLane();
+	auto* take_clip = new SampleClip(track, Sample(std::move(take)), false);
+	take_clip->setLaneIndex(lane);
+	take_clip->movePosition(startPosition());
+	take_clip->updateLength();
+	Engine::getSong()->setModified();
+}
+
 
 void SampleClip::setSampleBuffer(std::shared_ptr<const SampleBuffer> sb)
 {

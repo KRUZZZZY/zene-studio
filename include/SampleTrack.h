@@ -25,6 +25,7 @@
 #ifndef LMMS_SAMPLE_TRACK_H
 #define LMMS_SAMPLE_TRACK_H
 
+#include <cstdint>
 #include "AudioBusHandle.h"
 #include "Track.h"
 
@@ -47,6 +48,8 @@ class SampleTrack : public Track
 {
 	Q_OBJECT
 public:
+	//! Clip starts the per-pass cap deferred to a later pass, process-wide (see play()).
+	static std::uint64_t deferredClipStarts() noexcept;
 	SampleTrack( TrackContainer* tc );
 	~SampleTrack() override;
 

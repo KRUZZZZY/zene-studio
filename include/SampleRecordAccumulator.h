@@ -30,7 +30,9 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -50,6 +52,16 @@ struct SampleRecordTake
 {
 	std::vector<SampleFrame> frames;
 	std::shared_ptr<const SampleBuffer> buffer;
+};
+
+
+//! A run of frames the capture ring could not take. The audio thread records it instead of
+//! dropping it silently: the drain thread puts \a length silent frames after the first
+//! \a position staged frames, so the take keeps the length and timing of what was performed.
+struct SampleRecordGap
+{
+	std::uint64_t position = 0;
+	std::uint64_t length = 0;
 };
 
 
@@ -105,6 +117,7 @@ public:
 	SampleRecordAccumulator& operator=(const SampleRecordAccumulator&) = delete;
 
 	//! Audio-thread entry point: stage \a frames stereo frames for the take.
+	//! Frames the ring cannot take are recorded as a gap, to be padded with silence.
 	//! Realtime-safe by contract - see the class comment.
 	void append(const SampleFrame* frames, f_cnt_t count) noexcept
 	{
@@ -113,6 +126,23 @@ public:
 		{
 			m_framesStaged.fetch_add(written, std::memory_order_relaxed);
 		}
+		if (written < static_cast<std::size_t>(count))
+		{
+			noteGap(m_framesStaged.load(std::memory_order_relaxed), static_cast<std::uint64_t>(count) - written);
+		}
+	}
+
+	//! Frames of silence the take holds in place of dropped input. Valid after finish().
+	std::uint64_t framesPadded() const noexcept
+	{
+		return m_framesPadded.load(std::memory_order_relaxed);
+	}
+
+	//! Dropped frames whose gap record could not be stored (the gap queue was full); those
+	//! frames are counted by framesDropped() but not padded. Always 0 unless the drain stalls.
+	std::uint64_t framesUnpadded() const noexcept
+	{
+		return m_framesUnpadded.load(std::memory_order_relaxed);
 	}
 
 	//! Frames accepted from the audio thread so far, including the ones still
@@ -156,18 +186,62 @@ private:
 		m_result = m_take->buffer;
 	}
 
-	//! Drain whatever the ring holds right now. Returns the frames taken.
-	//! Drain thread only.
+	//! Audio thread: remember that \a length frames were lost after \a position staged frames.
+	//! Single producer. Never blocks: a full gap queue counts the loss instead.
+	void noteGap(std::uint64_t position, std::uint64_t length) noexcept
+	{
+		const auto published = m_gapsPublished.load(std::memory_order_relaxed);
+		if (published - m_gapsRead.load(std::memory_order_acquire) >= m_gaps.size())
+		{
+			m_framesUnpadded.fetch_add(length, std::memory_order_relaxed);
+			return;
+		}
+		m_gaps[published % m_gaps.size()] = SampleRecordGap{position, length};
+		m_gapsPublished.store(published + 1, std::memory_order_release);
+	}
+
+	//! Drain thread: the oldest gap not yet padded, if any.
+	std::optional<SampleRecordGap> nextGap() const
+	{
+		const auto read = m_gapsRead.load(std::memory_order_relaxed);
+		if (read == m_gapsPublished.load(std::memory_order_acquire)) { return std::nullopt; }
+		return m_gaps[read % m_gaps.size()];
+	}
+
+	//! Drain thread: pad the take with the silence of every gap due at the frames read so far.
+	void padDueGaps(std::vector<SampleFrame>& take)
+	{
+		while (const auto gap = nextGap())
+		{
+			if (gap->position != m_framesRead) { break; }
+			take.insert(take.end(), static_cast<std::size_t>(gap->length), SampleFrame{});
+			m_framesPadded.fetch_add(gap->length, std::memory_order_relaxed);
+			m_gapsRead.fetch_add(1, std::memory_order_release);
+		}
+	}
+
+	//! Drain whatever the ring holds right now, padding the gaps in order. Returns the staged
+	//! frames taken (padding is not counted). Drain thread only.
 	std::size_t drainOnce()
 	{
-		const auto frames = m_ring->read(m_scratch.data(), m_scratch.size());
-		if (frames > 0)
+		auto& take = m_take->frames;
+		std::size_t staged = 0;
+		for (;;)
 		{
-			auto& take = m_take->frames;
-			take.insert(take.end(), m_scratch.begin(),
-				m_scratch.begin() + static_cast<std::ptrdiff_t>(frames));
+			padDueGaps(take);
+			std::size_t want = m_scratch.size();
+			if (const auto gap = nextGap())
+			{
+				want = std::min(want, static_cast<std::size_t>(gap->position - m_framesRead));
+			}
+			const auto frames = m_ring->read(m_scratch.data(), want);
+			if (frames == 0) { break; }
+			take.insert(take.end(), m_scratch.begin(), m_scratch.begin() + static_cast<std::ptrdiff_t>(frames));
+			m_framesRead += frames;
+			staged += frames;
 		}
-		return frames;
+		padDueGaps(take);
+		return staged;
 	}
 
 	void drainLoop()
@@ -199,6 +273,15 @@ private:
 	std::atomic<bool> m_finishing{false};
 	std::atomic<std::uint64_t> m_framesStaged{0};
 	std::shared_ptr<const SampleBuffer> m_result;
+
+	//! Gap records: written by the audio thread, consumed by the drain thread, in order.
+	static constexpr std::size_t GapSlots = 256;
+	std::array<SampleRecordGap, GapSlots> m_gaps{};
+	std::atomic<std::uint64_t> m_gapsPublished{0};  //!< producer's count of records stored
+	std::atomic<std::uint64_t> m_gapsRead{0};       //!< drain thread's count of records padded
+	std::atomic<std::uint64_t> m_framesUnpadded{0};
+	std::atomic<std::uint64_t> m_framesPadded{0};
+	std::uint64_t m_framesRead = 0;                  //!< drain thread only: staged frames read
 
 	std::thread m_drainThread;
 } ;

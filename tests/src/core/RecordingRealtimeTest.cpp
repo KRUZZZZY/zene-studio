@@ -42,10 +42,13 @@
 #include "SampleFrame.h"
 #include "SampleFrameRingBuffer.h"
 #include "SampleRecordAccumulator.h"
+#include "SampleBuffer.h"
 #include "SampleRecordHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
+#include "TakeLane.h"
 #include "TimePos.h"
+#include "Track.h"
 
 using lmms::AudioEngine;
 using lmms::f_cnt_t;
@@ -77,6 +80,22 @@ qulonglong asNumber(std::size_t value) { return static_cast<qulonglong>(value); 
 class RecordingRealtimeTest : public QObject
 {
 	Q_OBJECT
+
+private:
+	//! Feed \a periods periods of input and render them, the song recording.
+	void driveRecordPeriods(int periods)
+	{
+		auto* engine = lmms::Engine::audioEngine();
+		const f_cnt_t fpp = engine->framesPerPeriod();
+		std::vector<SampleFrame> block(static_cast<std::size_t>(fpp), SampleFrame(0.5f, 0.5f));
+		for (int i = 0; i < periods; ++i)
+		{
+			engine->pushInputFrames(block.data(), fpp);
+			engine->renderNextPeriod();
+			// Paced like a device: the drain thread polls every 2 ms and must keep up.
+			std::this_thread::sleep_for(std::chrono::milliseconds(3));
+		}
+	}
 
 private slots:
 	void initTestCase()
@@ -333,8 +352,10 @@ private slots:
 		QVERIFY(clip != nullptr);
 		clip->setRecord(true);
 
-		// Built on the main thread, as SampleClip does before the transport starts.
+		// Built on the main thread, as SampleClip does before the transport starts, and claimed
+		// as the audio thread does when it starts the pass.
 		auto* handle = new lmms::SampleRecordHandle(clip);
+		handle->markClaimed();
 
 		lmms::test::resetAllocationCount();
 		lmms::test::tlCountAllocations = true;
@@ -364,11 +385,229 @@ private slots:
 
 		QVERIFY2(handle != nullptr, "the armed clip had no prepared take to claim");
 		QCOMPARE(asNumber(lmms::test::tlAllocationCount), asNumber(0));
-		// A second claim has nothing left: one take per arming.
+		// A standby take is ready for the next pass; after both are claimed there is none.
+		lmms::SampleRecordHandle* standby = clip->claimRecordHandle();
+		QVERIFY2(standby != nullptr, "no standby take was ready for the next pass");
 		QVERIFY(clip->claimRecordHandle() == nullptr);
+		delete standby;
 
 		delete handle;
 		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 2000);
+		delete track;
+	}
+
+	// -----------------------------------------------------------------------
+	// Behaviour of recording takes end to end (the engine is driven period by period).
+	// -----------------------------------------------------------------------
+
+	//! A claimed take records the input it is given, and the take lands in the clip.
+	void claimedTakeRecordsItsInput()
+	{
+		lmms::Engine::getSong()->stop();
+		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(lmms::Engine::getSong()->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+
+		lmms::Engine::getSong()->playAndRecord();
+		driveRecordPeriods(40);
+		lmms::Engine::getSong()->stop();
+
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		QVERIFY2(clip->sample().sampleSize() >= 10 * 256,
+			qPrintable(QStringLiteral("the take holds %1 frames").arg(clip->sample().sampleSize())));
+		delete track;
+	}
+
+	//! Recording pressed, then Play: the pass records (BUGS P2 - the press was lost on Play).
+	void recordPressedThenPlayRecords()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		song->record();
+		song->playSong();
+		QVERIFY2(song->isRecording(), "Play after Record did not start a record pass");
+		song->stop();
+		song->playSong();
+		QVERIFY2(!song->isRecording(), "a plain Play after a stop recorded");
+		song->stop();
+	}
+
+	//! A clip armed while the transport already rolls takes its take on the next pass, instead of
+	//! waiting for the playhead to leave the span (BUGS P3, the playing latch).
+	void clipArmedWhileRollingRecordsOnTheNextPass()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		std::vector<lmms::SampleFrame> sample(100, lmms::SampleFrame(0.25f, 0.25f));
+		clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(sample.data(), sample.size(),
+			static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())));
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+
+		song->playAndRecord();
+		driveRecordPeriods(4);
+		clip->setRecord(true);  // armed inside the span, while rolling
+		driveRecordPeriods(40);
+		song->stop();
+
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		QVERIFY2(clip->sample().sampleSize() > 100,
+			qPrintable(QStringLiteral("the armed clip recorded nothing: %1 frames").arg(clip->sample().sampleSize())));
+		delete track;
+	}
+
+	//! A loop wrap ends a pass: that pass becomes a take on a lane, and the clip stays armed for
+	//! the next pass, which becomes a take too (BUGS P6 - loop record kept only the first pass).
+	void loopWrapMakesEachPassATakeOnALane()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+
+		song->playAndRecord();
+		driveRecordPeriods(20);
+		clip->playbackPositionChanged();  // the playhead wraps: the live take ends here
+		QTest::qWait(50);                 // the main thread installs the pass
+		QVERIFY2(clip->isRecord(), "a loop wrap disarmed the clip");
+		QCOMPARE(track->takeLanes().laneCount(), 1);
+
+		driveRecordPeriods(20);
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		// One lane per pass: the wrap's pass and the final pass.
+		QCOMPARE(track->takeLanes().laneCount(), 2);
+		int laneTakes = 0;
+		for (lmms::Clip* c : track->getClips())
+		{
+			if (c != clip) { ++laneTakes; }
+		}
+		QCOMPARE(laneTakes, 2);
+		delete track;
+	}
+
+	//! Disarming releases the clip's standby takes, so no drain thread is left polling.
+	void disarmReleasesThePreparedTakes()
+	{
+		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setRecord(true);
+		QCOMPARE(clip->recordTakesReady(), 2);
+		clip->setRecord(false);
+		QCOMPARE(clip->recordTakesReady(), 0);
+		delete track;
+	}
+
+	//! A take the clip never claimed is discarded: it does not disarm the clip that armed it.
+	void unclaimedTakeLeavesTheClipArmed()
+	{
+		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setRecord(true);
+		auto* handle = new lmms::SampleRecordHandle(clip);
+		delete handle;  // never claimed
+		QTest::qWait(50);
+		QVERIFY2(clip->isRecord(), "an unclaimed take disarmed the clip");
+		delete track;
+	}
+
+	//! A clip deleted while its take is queued: the take is dropped and nothing is written to it.
+	void clipDeletedBeforeTheTakeIsInstalledIsSafe()
+	{
+		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setRecord(true);
+		auto* handle = clip->claimRecordHandle();
+		QVERIFY(handle != nullptr);
+		handle->markClaimed();
+		delete handle;   // queued for the main thread
+		delete track;    // the clip goes before the reaper runs
+		QTest::qWait(50);
+		QVERIFY(true);
+	}
+
+	//! A take overflows the capture ring: the take keeps the length of the input it was given, with
+	//! silence where the ring could not take it.
+	void droppedFramesArePaddedWithSilenceInTheTake()
+	{
+		constexpr std::size_t ringFrames = 1024;
+		constexpr std::size_t offered = 4096;
+		SampleRecordAccumulator accum{48000, ringFrames};
+		std::vector<SampleFrame> block(offered);
+		for (std::size_t i = 0; i < offered; ++i)
+		{
+			const auto v = static_cast<sample_t>(1 + i % 50) / 64.0f;  // never zero
+			block[i] = SampleFrame(v, v);
+		}
+		accum.append(block.data(), static_cast<f_cnt_t>(offered));
+		const auto dropped = accum.framesDropped();
+		QVERIFY2(dropped > 0, "the ring took everything; the test needs an overflow");
+
+		auto take = accum.finish();
+		QVERIFY(take != nullptr);
+		QCOMPARE(static_cast<qulonglong>(take->size()), static_cast<qulonglong>(offered));
+		const std::size_t written = offered - static_cast<std::size_t>(dropped);
+		for (std::size_t i = 0; i < written; ++i)
+		{
+			QVERIFY2(take->data()[i].left() == block[i].left(),
+				qPrintable(QString("frame %1 of the take is not the input").arg(i)));
+		}
+		for (std::size_t i = written; i < offered; ++i)
+		{
+			QVERIFY2(take->data()[i].left() == 0.0f && take->data()[i].right() == 0.0f,
+				qPrintable(QString("frame %1 of the padded gap is not silence").arg(i)));
+		}
+	}
+
+	//! A take whose handle cannot be queued for the main thread is counted, not lost silently.
+	void queueFullIsCounted()
+	{
+		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		const auto before = lmms::SampleRecordHandle::queueOverflows();
+		// The main thread reaps nothing in this loop: the queue holds 256 takes, the 257th overflows.
+		for (int i = 0; i < 257; ++i)
+		{
+			auto* handle = new lmms::SampleRecordHandle(clip);
+			delete handle;
+		}
+		QCOMPARE(static_cast<qulonglong>(lmms::SampleRecordHandle::queueOverflows() - before), static_cast<qulonglong>(1));
+		QTest::qWait(50);  // the queued takes are discarded: none was claimed
+		delete track;
+	}
+
+	//! A pass that starts more clips than the per-pass cap defers the rest, and counts them.
+	void clipStartsBeyondThePerPassCapAreDeferredAndCounted()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		const auto before = lmms::SampleTrack::deferredClipStarts();
+		std::vector<lmms::SampleFrame> sample(100, lmms::SampleFrame(0.25f, 0.25f));
+		for (int i = 0; i < 65; ++i)
+		{
+			auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+			clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(sample.data(), sample.size(),
+				static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())));
+			clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		}
+		track->play(lmms::TimePos(0), lmms::Engine::audioEngine()->framesPerPeriod(), 0, -1);
+		QCOMPARE(static_cast<qulonglong>(lmms::SampleTrack::deferredClipStarts() - before), static_cast<qulonglong>(1));
+		lmms::Engine::audioEngine()->clear();
 		delete track;
 	}
 } ;

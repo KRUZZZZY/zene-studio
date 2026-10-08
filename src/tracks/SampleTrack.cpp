@@ -26,6 +26,7 @@
 #include "SampleTrack.h"
 
 #include <array>
+#include <atomic>
 
 #include <QDomElement>
 
@@ -101,6 +102,17 @@ void SampleTrack::monitorModeChanged()
 
 
 
+namespace
+{
+//! Clip starts deferred by the per-pass cap in SampleTrack::play, process-wide.
+std::atomic<std::uint64_t> s_deferredClipStarts{0};
+} // namespace
+
+std::uint64_t SampleTrack::deferredClipStarts() noexcept
+{
+	return s_deferredClipStarts.load(std::memory_order_relaxed);
+}
+
 bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					const f_cnt_t _offset, int _clip_num )
 {
@@ -126,9 +138,10 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		SampleWindow window;
 		f_cnt_t lead = 0;  //!< 0.5.0 ED-021: output frames before a frame-exact clip's audio starts
 	};
-	// Fixed storage: the audio thread never grows it. A pass schedules the clips that contain
-	// its position, so a track needs more than this many overlapping at one instant to fill it;
-	// a clip past the limit is not started (its isPlaying flag is left clear).
+	// Fixed storage: the audio thread never grows it. The cap is on the clips that START in one
+	// pass, not on overlaps: overlapping clips are allowed (a script can stack many on one track).
+	// A clip past the cap is deferred: its isPlaying flag stays clear, so it starts on a later pass,
+	// and each deferral is counted (deferredClipStarts).
 	constexpr std::size_t MaxScheduledClipsPerPass = 64;
 	std::array<ScheduledClip, MaxScheduledClipsPerPass> clips{};
 	std::size_t clipCount = 0;
@@ -183,11 +196,22 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					//holds no sample yet (its window is empty) and is exactly the clip that must
 					//start: #611 Slice 0 added the window test and silently stopped clip
 					//recording (BUGS_FOUND 11.8, RecordingLatencyTest)
-					if( ( windowStart < windowEnd || sClip->isRecord() ) && clipCount < clips.size() )
+					// A record-armed clip starts only while the song records: otherwise it is not
+					// scheduled and its playing latch stays clear, so it starts on the pass that
+					// records (BUGS P3: a latch set here blocked the take until the span was re-entered).
+					const bool startable = !sClip->isRecord() || Engine::getSong()->isRecording();
+					if( startable && ( windowStart < windowEnd || sClip->isRecord() ) )
 					{
-						clips[clipCount++] = {sClip, { windowStart, windowEnd }, sClip->leadOutputFramesAt( _start )};
-						sClip->setIsPlaying( true );
-						nowPlaying = true;
+						if( clipCount < clips.size() )
+						{
+							clips[clipCount++] = {sClip, { windowStart, windowEnd }, sClip->leadOutputFramesAt( _start )};
+							sClip->setIsPlaying( true );
+							nowPlaying = true;
+						}
+						else
+						{
+							s_deferredClipStarts.fetch_add( 1, std::memory_order_relaxed );
+						}
 					}
 				}
 			}
@@ -209,9 +233,10 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			PlayHandle* handle;
 			if( st->isRecord() )
 			{
+				// Not scheduled while the song is not recording (see above); kept as a guard.
 				if( !Engine::getSong()->isRecording() )
 				{
-					return played_a_note;
+					continue;
 				}
 				// The take was built on the main thread when the clip was armed or the transport
 				// started (SampleClip::prepareRecordTake): the audio thread only claims it.

@@ -769,6 +769,8 @@ private:
 	bool m_loadOnLaunch;
 
 	volatile bool m_recording;
+	//! Record was pressed (Song::record) and the next Play starts a record pass; a stop clears it.
+	bool m_recordLatched = false;
 	volatile bool m_exporting;
 	volatile bool m_exportLoop;
 	volatile bool m_renderBetweenMarkers;

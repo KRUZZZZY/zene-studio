@@ -65,13 +65,27 @@ public:
 
 	f_cnt_t framesRecorded() const;
 
+	//! Audio thread: the clip claimed this take, so it is a take that was recorded (and is
+	//! installed when it ends; an unclaimed one is only discarded).
+	void markClaimed() noexcept { m_claimed = true; }
+
 	//! Main thread: finishes every take queued by a destroyed handle and installs it on its
-	//! clip (setSampleBuffer, then setRecord(false)). Runs periodically from a main-thread timer.
+	//! clip (a lane take while the transport goes on recording, else the clip itself).
 	static void reapRetiredTakes();
-	//! Frames the take ring dropped on overflow, summed over every take reaped so far.
+	//! Main thread: reap, then top up the takes of every armed clip. Runs every 10 ms from the
+	//! main-thread timer; tests call it directly.
+	static void pumpTakes();
+	//! Main thread: remember an armed clip so pumpTakes() keeps its takes prepared.
+	static void watchArmedClip(SampleClip* clip);
+	//! Frames the take ring dropped on overflow, summed over every take reaped so far. Each was
+	//! padded with silence in its take (framesPaddedTotal), unless the gap queue was full.
 	static std::uint64_t framesDroppedTotal() noexcept;
+	static std::uint64_t framesPaddedTotal() noexcept;
 	//! Recording takes that found no prepared handle when the transport started them.
 	static std::uint64_t unpreparedTakes() noexcept;
+	//! Takes whose handle could not be queued for the main thread (the queue was full); the take
+	//! is leaked and its clip stays armed.
+	static std::uint64_t queueOverflows() noexcept;
 	//! Audio thread: count a take that could not be claimed (it is not recorded).
 	static void countUnpreparedTake() noexcept;
 
@@ -90,6 +104,8 @@ private:
 	// queues it for the main thread.
 	PendingRecordTake* m_take;
 	SampleRecordAccumulator* m_accum;
+	//! Set on the audio thread when the clip claims the take (see markClaimed()).
+	bool m_claimed = false;
 	f_cnt_t m_framesRecorded;
 	TimePos m_minLength;
 

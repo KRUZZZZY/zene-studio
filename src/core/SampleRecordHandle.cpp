@@ -56,6 +56,7 @@ struct PendingRecordTake
 {
 	std::unique_ptr<SampleRecordAccumulator> accum;
 	QPointer<SampleClip> clip;
+	bool claimed = false;  //!< the clip claimed it: it was recording (see SampleRecordHandle::markClaimed)
 };
 
 
@@ -66,19 +67,23 @@ namespace
 //! 256 slots: the main-thread reaper runs every 10 ms, so this only fills if it stops running.
 MpscQueue<PendingRecordTake*, 256> s_retiredTakes;
 std::atomic<std::uint64_t> s_framesDropped{0};
+std::atomic<std::uint64_t> s_framesPadded{0};
 std::atomic<std::uint64_t> s_unpreparedTakes{0};
 //! Takes that could not be queued (the queue was full): leaked rather than freed on the audio thread.
-std::atomic<std::uint64_t> s_retireOverflows{0};
+std::atomic<std::uint64_t> s_queueOverflows{0};
+
+//! Clips armed for recording, main thread only. A QPointer per clip: a deleted clip drops out.
+std::vector<QPointer<SampleClip>> s_armedClips;
 
 //! Main thread only: start the reaper once. Without a running event loop (no QCoreApplication)
-//! takes are reaped only by an explicit reapRetiredTakes() call.
+//! takes are pumped only by an explicit pumpTakes() call.
 void ensureReaperTimer()
 {
 	static QTimer* timer = nullptr;
 	if (timer != nullptr || qApp == nullptr) { return; }
 	timer = new QTimer(qApp);
 	timer->setInterval(10);
-	QObject::connect(timer, &QTimer::timeout, qApp, [] { SampleRecordHandle::reapRetiredTakes(); });
+	QObject::connect(timer, &QTimer::timeout, qApp, [] { SampleRecordHandle::pumpTakes(); });
 	timer->start();
 }
 
@@ -121,7 +126,8 @@ SampleRecordHandle::~SampleRecordHandle()
 	// thread, which installs it in reapRetiredTakes().
 	if (m_take == nullptr) { return; }
 	m_accum->requestFinish();
-	if (!s_retiredTakes.push(m_take)) { s_retireOverflows.fetch_add(1, std::memory_order_relaxed); }
+	m_take->claimed = m_claimed;
+	if (!s_retiredTakes.push(m_take)) { s_queueOverflows.fetch_add(1, std::memory_order_relaxed); }
 	m_take = nullptr;
 	m_accum = nullptr;
 }
@@ -135,21 +141,74 @@ void SampleRecordHandle::reapRetiredTakes()
 	while (s_retiredTakes.pop(&taken))
 	{
 		std::unique_ptr<PendingRecordTake> take{ taken };
-		// The drain thread may still be emptying the ring: finish() joins it first, so the
-		// drop count read below is final.
+		// finish() joins the drain thread first, so the counts below are final.
 		auto buffer = take->accum->finish();
 		if (const auto dropped = take->accum->framesDropped(); dropped > 0)
 		{
 			s_framesDropped.fetch_add(dropped, std::memory_order_relaxed);
-			qWarning("Clip recording dropped %llu frames: the capture ring overflowed",
+			s_framesPadded.fetch_add(take->accum->framesPadded(), std::memory_order_relaxed);
+			qWarning("Clip recording lost %llu frames to a full capture ring; the take is padded with silence",
 				static_cast<unsigned long long>(dropped));
 		}
+		// A take the clip never claimed was never recording: it only stops its drain thread.
+		if (!take->claimed) { continue; }
 		if (SampleClip* clip = take->clip.data())
 		{
-			if (buffer) { clip->setSampleBuffer(std::move(buffer)); }
-			clip->setRecord(false);
+			// The transport still records: this pass ended at a loop wrap or a jump, so the take is a
+			// lane take and the clip stays armed for the next pass.
+			const Song* song = Engine::getSong();
+			const bool continues = clip->isRecord() && song->isRecording() && song->isPlaying();
+			clip->acceptRecordedTake(std::move(buffer), take->accum->framesDropped(), continues);
 		}
 	}
+}
+
+
+
+
+void SampleRecordHandle::pumpTakes()
+{
+	reapRetiredTakes();
+	// Index loop: preparing a take may watch (append to) the list.
+	for (std::size_t i = 0; i < s_armedClips.size(); )
+	{
+		SampleClip* clip = s_armedClips[i].data();
+		if (clip == nullptr || !clip->isRecord())
+		{
+			s_armedClips.erase(s_armedClips.begin() + static_cast<std::ptrdiff_t>(i));
+			continue;
+		}
+		clip->prepareRecordTake();
+		++i;
+	}
+}
+
+
+
+
+void SampleRecordHandle::watchArmedClip(SampleClip* clip)
+{
+	for (const auto& watched : s_armedClips)
+	{
+		if (watched.data() == clip) { return; }
+	}
+	s_armedClips.emplace_back(clip);
+}
+
+
+
+
+std::uint64_t SampleRecordHandle::framesPaddedTotal() noexcept
+{
+	return s_framesPadded.load(std::memory_order_relaxed);
+}
+
+
+
+
+std::uint64_t SampleRecordHandle::queueOverflows() noexcept
+{
+	return s_queueOverflows.load(std::memory_order_relaxed);
 }
 
 
