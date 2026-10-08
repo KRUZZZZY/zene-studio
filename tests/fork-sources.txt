@@ -2070,12 +2070,14 @@ tests/src/core/OutOfProcessHostSupport.h
 tests/src/core/OutOfProcessHostTest.cpp
 tests/src/core/PartialLoadTest.cpp
 tests/src/core/PhaseScopeTapTest.cpp
+tests/src/core/PluginHostMetadataTest.cpp
 tests/src/core/PortMappingCodecTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
 tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
+tests/src/core/ProjectSectionTest.cpp
 tests/src/core/ProjectStateTest.cpp
 tests/src/core/ProjectToolsTest.cpp
 
@@ -2096,6 +2098,7 @@ tests/src/core/RackZoneRoutingTest.cpp
 tests/src/core/RackZonesTest.cpp
 tests/src/core/RangeEditsTest.cpp
 tests/src/core/RealtimeSnapshotTest.cpp
+tests/src/core/ReceiverEffectTest.cpp
 tests/src/core/RecordToolsNoEngineTest.cpp
 tests/src/core/RecordToolsTest.cpp
 tests/src/core/RecordingPassTest.cpp

@@ -668,6 +668,10 @@ set(LMMS_TESTS
 	src/core/SessionSubSceneTest.cpp
 	# 0.5.0 L03 (W3): comp edges and groups, metronome options, punch here, remaining record time.
 	src/core/RecordToolsTest.cpp
+	# Coverage lane (M0, 2026-10-08): the Receiver and InsertRecorder devices processed through a real EffectChain.
+	src/core/ReceiverEffectTest.cpp
+	src/core/ProjectSectionTest.cpp
+	src/core/PluginHostMetadataTest.cpp
 	# The record tool commands on an instance with NO audio engine: typed refusals, no null deref.
 	src/core/RecordToolsNoEngineTest.cpp
 	# 0.5.0 L04 (W3): the clip list, sections, remove silence, tab to transient, note rotation.
@@ -1201,6 +1205,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# song's track holds a parameterless DummyInstrument.
 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
+		OR LMMS_TEST_NAME STREQUAL "ReceiverEffectTest"
 		OR LMMS_TEST_NAME STREQUAL "ScriptMemoryBudgetTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityContractTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest"
