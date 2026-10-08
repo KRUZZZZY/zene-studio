@@ -227,9 +227,7 @@ bool joinable(const QJsonArray& ids, QVector<MidiClip*>* clips, Track** track, C
 	return true;
 }
 
-//! ED-031 (0.5.0 L05): glue MIDI clips into the first - their notes move in at their song positions,
-//! the others go, and the first spans to the last one's end.
-//! Preflight for a join: every controller point of the later clips must land on a storable
+//! Preflight for a join: every note position and controller point of the later clips must land on a storable
 //! song tick once moved by its clip's delta from the first clip's origin, in wide arithmetic.
 bool joinedContentFits(const QVector<MidiClip*>& clips, tick_t origin)
 {
@@ -271,6 +269,8 @@ void mergeControllers(MidiClip* first, const MidiClip* other, tick_t delta)
 	}
 }
 
+//! ED-031 (0.5.0 L05): glue MIDI clips into the first - their notes move in at their song positions,
+//! the others go, and the first spans to the last one's end.
 ControlResult joinClips(const QJsonObject& args)
 {
 	ControlResult error;
