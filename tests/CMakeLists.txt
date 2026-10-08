@@ -1077,6 +1077,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "AudioEditingTest"
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
+		# Luna 5332: the script's removeEffect undo test loads the build's BassBooster module.
+		OR LMMS_TEST_NAME STREQUAL "ScriptDawBindingTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceMovesUndoTest"
 		# 0.5.0 L10 (W3): the device tools load the build's amplifier module.

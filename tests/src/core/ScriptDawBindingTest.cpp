@@ -120,6 +120,11 @@ private slots:
 
 	void initTestCase()
 	{
+#ifdef LMMS_TEST_PLUGIN_DIR
+		// The build's own effect modules (BassBooster for the undo test below),
+		// found the way RackMenuTest finds them. Set before Engine::init scans.
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+#endif
 		Engine::init(true);
 	}
 

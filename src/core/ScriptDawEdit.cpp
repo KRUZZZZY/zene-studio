@@ -49,6 +49,7 @@
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ProjectJournal.h"
 #include "ScriptCommandBridge.h"
 #include "ScriptEngine.h"
 
@@ -221,8 +222,27 @@ void applyRemoveEffect(EffectChain* chain, int index)
 		return;
 	}
 	Effect* effect = effects[index];
+	// Luna 5332: the removal is recorded before it happens, by the same
+	// implementation plugin.unload and the rack's own delete use, so the
+	// structural undo step re-instantiates the device at its index. A device
+	// whose state cannot be captured (empty, or over the structural budget)
+	// is still removed, as the script asked, but no undo step is claimed for
+	// it: the log says so instead of pretending the removal is reversible.
+	ProjectJournal* journal = Engine::projectJournal();
+	const int mark = journal != nullptr ? journal->undoDepth() : 0;
+	if (!control::journalEffectRemoval(chain, effect, index))
+	{
+		ScriptEngine::instance()->logMessage(QStringLiteral(
+			"[note] removing effect %1: its state cannot be captured, so this removal is not undoable")
+			.arg(index));
+	}
 	chain->removeEffect(effect);
 	effect->deleteLater();
+	// Emptying a chain also switches its enabled model off, which journals a
+	// checkpoint of its own after the structural step. Fold the removal's
+	// checkpoints into one step, as the control registry does for one command,
+	// so a single undo restores the device rather than only the flag.
+	if (journal != nullptr) { journal->mergeCheckpointsFrom(mark); }
 }
 
 void applySetEffectEnabled(Effect* effect, bool enabled)
