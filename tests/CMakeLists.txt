@@ -1033,6 +1033,7 @@ IF(ZENE_HAVE_COLLAB)
 		src/core/CollabTransportTest.cpp
 		src/core/PortMappingCodecTest.cpp
 		src/core/PortMappingOrchestratorTest.cpp
+		src/core/UpnpMapperFakeRouterTest.cpp
 		# collab.show_panel (requires: display) over the real main window.
 		src/gui/CollabPanelTest.cpp
 	)
@@ -4656,7 +4657,7 @@ endif()
 # 0.5.0 F6 (WF-050/WF-052): two real instances on 127.0.0.1 - host, a local invite, join, edits both
 # ways, an undo re-sync and a refused viewer. Exits 77 (skipped) where the TLS-PSK backend is missing.
 if(PYTHON3_EXECUTABLE AND ZENE_HAVE_COLLAB)
-	set_tests_properties(CollabPolicyTest CollabTransportTest PortMappingCodecTest PortMappingOrchestratorTest PROPERTIES
+	set_tests_properties(CollabPolicyTest CollabTransportTest PortMappingCodecTest PortMappingOrchestratorTest UpnpMapperFakeRouterTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	add_test(NAME ControlCollab
 		COMMAND ${PYTHON3_EXECUTABLE}
