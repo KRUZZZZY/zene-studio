@@ -217,12 +217,15 @@ private slots:
 		QVERIFY(!QFileInfo::exists(QDir(m_dir.path()).filePath(QStringLiteral("exact.mid"))));
 		// The first delta is the note's start, from the tempo meta at 0: 2^28 is one past a four-byte delta.
 		const tick_t fiveBytes = tick_t{1} << 28;
-		QCOMPARE(saveNote(fiveBytes, 48, QStringLiteral("fivebyte")).errorKind, ControlErrorKind::Refused);
+		const ControlResult fiveByte = saveNote(fiveBytes, 48, QStringLiteral("fivebyte"));
+		QCOMPARE(fiveByte.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(fiveByte.errorMessage.contains(QStringLiteral("tick 268435456")), qPrintable(fiveByte.errorMessage));
 		QVERIFY(!QFileInfo::exists(QDir(m_dir.path()).filePath(QStringLiteral("fivebyte.mid"))));
 
-		const tick_t maxDelta = (tick_t{1} << 28) - 1;  // 0x0FFFFFFF: the largest four-byte delta
-		const tick_t start = maxDelta - 48;
-		const tick_t length = 48;
+		// Exactly the largest four-byte delta: the note's start is 0x0FFFFFFF, its first delta from tick 0.
+		const tick_t maxDelta = (tick_t{1} << 28) - 1;  // 0x0FFFFFFF
+		const tick_t start = maxDelta;
+		const tick_t length = 1;
 		QVERIFY(saveNote(start, length, QStringLiteral("high")).ok);
 		QFile file(QDir(m_dir.path()).filePath(QStringLiteral("high.mid")));
 		QVERIFY(file.open(QIODevice::ReadOnly));

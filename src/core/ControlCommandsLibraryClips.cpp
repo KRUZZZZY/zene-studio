@@ -113,8 +113,8 @@ bool notesFitInSmf(const MidiClip* clip)
 }
 
 //! @a clip's notes as a type-0 Standard MIDI File at @a bpm; empty when a delta time would not fit a MIDI file's
-//! four-byte variable-length quantity (the caller refuses the save).
-QByteArray smfOf(const MidiClip* clip, int bpm)
+//! four-byte variable-length quantity, with @a failedTick the event that does not fit (the caller refuses the save).
+QByteArray smfOf(const MidiClip* clip, int bpm, tick_t* failedTick)
 {
 	std::vector<SmfEvent> events;
 	for (const Note* note : clip->notes())
@@ -137,7 +137,11 @@ QByteArray smfOf(const MidiClip* clip, int bpm)
 	tick_t at = 0;
 	for (const SmfEvent& event : events)
 	{
-		if (!putVarLen(&track, static_cast<quint32>(event.tick - at))) { return {}; }
+		if (!putVarLen(&track, static_cast<quint32>(event.tick - at)))
+		{
+			*failedTick = event.tick;
+			return {};
+		}
 		at = event.tick;
 		track.append(static_cast<char>(event.status));
 		track.append(static_cast<char>(event.key));
@@ -171,11 +175,13 @@ bool writeClip(Clip* clip, const QString& path, QString* error)
 		return false;
 	}
 	// Written whole or not at all: a short write must not leave a truncated file (or replace the old one).
-	const QByteArray smf = smfOf(static_cast<MidiClip*>(clip), Engine::getSong()->tempoModel().value());
+	tick_t failedTick = 0;
+	const QByteArray smf = smfOf(static_cast<MidiClip*>(clip), Engine::getSong()->tempoModel().value(), &failedTick);
 	if (smf.isEmpty())
 	{
-		*error = QStringLiteral("two notes are too far apart for a MIDI file's delta time (at most %1 ticks); nothing was written")
-			.arg(MaxVarLen);
+		// The first delta is measured from tick 0 (the tempo meta), so the event can be the first note's start.
+		*error = QStringLiteral("a delta time exceeds four bytes: the event at tick %1 is more than %2 ticks after the event "
+			"before it; nothing was written").arg(failedTick).arg(MaxVarLen);
 		return false;
 	}
 	QSaveFile file(path);
