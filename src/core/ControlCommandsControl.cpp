@@ -333,7 +333,7 @@ std::optional<ControlResult> undoByCommand(ControlRegistry& registry, const Cont
 	const QString op = inverse.value(QStringLiteral("op")).toString();
 	const QString applies = inverse.value(QStringLiteral("applies")).toString(QStringLiteral("journal"));
 	if (applies != QLatin1String("command") || !registry.hasCommand(op)) { return std::nullopt; }
-	const ControlResult applied = registry.invoke(op, inverse.value(QStringLiteral("args")).toObject());
+	const ControlResult applied = registry.invokeUnrecorded(op, inverse.value(QStringLiteral("args")).toObject());
 	if (!applied.ok) { return applied; }
 	QJsonObject result;
 	result.insert(QStringLiteral("undone"), true);

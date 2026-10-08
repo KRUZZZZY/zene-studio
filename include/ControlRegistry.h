@@ -146,6 +146,10 @@ public:
 	//! Validate, check \c requires and the engine state, then run the handler on
 	//! the UI thread.
 	ControlResult invoke(const QString& id, const QJsonObject& args = QJsonObject());
+	/*! Runs \a id on behalf of control.undo: nothing it does is recorded as a
+	 *  new transaction, because the undo that asked for it IS the step (the
+	 *  inverse of a recorded command must not grow the record list). */
+	ControlResult invokeUnrecorded(const QString& id, const QJsonObject& args = QJsonObject());
 
 	//! Queue \p fn onto the UI thread and wait for its result.
 	static ControlResult runOnUiThread(const std::function<ControlResult()>& fn);
@@ -294,6 +298,23 @@ private:
 	int m_depth = 0;  //!< how many handlers are running (UI thread)
 	int m_mutatingDepth = 0;  //!< how many MUTATING handlers are running (UI thread)
 	int m_foldedNestedRecords = 0;  //!< nested mutating calls whose record was folded into an enclosing step
+	int m_wrapperDepth = 0;  //!< how many NON-mutating handlers are running (wrappers and reads)
+	int m_unrecordedDepth = 0;  //!< > 0 while control.undo runs an inverse: that run records nothing
+	//! A mutating call run by a non-mutating wrapper, held until the wrapper's journal step is known.
+	struct NestedRecord
+	{
+		QString command;
+		ControlResult result;  //!< the call's result, with its __transaction descriptor still in it
+		bool coalesced = false;
+		quint64 step = 0;
+	};
+	QVector<NestedRecord> m_nestedRecords;
+	//! Writes the held records of a wrapper: one record as itself, or ONE aggregate record for the
+	//! whole merged journal step (the wrapper's name, listing the nested commands).
+	void flushNestedRecords(const QString& wrapperId, const ControlResult& wrapper, quint64 step);
+	//! Records, or holds for its wrapper, the step of one finished call (runHandler's tail).
+	void recordCall(const QString& commandId, ControlResult* result, bool coalesced, quint64 step, bool mutating,
+		bool changed, bool enclosedByMutating, bool enclosedByWrapper, int foldedBefore);
 	//! Stamps \a tx with the contract table's class for its command and refuses
 	//! to let a handler claim an inverse the contract says does not exist.
 	void stampContract(const QString& commandId, Transaction* tx) const;

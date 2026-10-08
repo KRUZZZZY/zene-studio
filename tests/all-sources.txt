@@ -2379,6 +2379,7 @@ tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlNoteScaleVerbsTest.cpp
 tests/src/core/ControlProjectArchiveTest.cpp
+tests/src/core/ControlRegistryNestingTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlResultSchemaTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp

@@ -332,13 +332,16 @@ bool foldsIntoEnclosingStep(bool mutating, bool changed, bool enclosedByMutating
  *  journal step alone reverses the nested change. Refuses to claim more than it knows. */
 void markFoldedNestedChanges(ControlResult* result, int folded, int foldedBefore)
 {
-	if (folded == foldedBefore || result->result.contains(QStringLiteral("__transaction"))) { return; }
-	result->result.insert(QStringLiteral("__transaction"), QJsonObject{
-		{QStringLiteral("before"), QJsonObject()},
-		{QStringLiteral("inverse"), QJsonObject()},
-		{QStringLiteral("reversible"), false},
-		{QStringLiteral("mechanism"), QStringLiteral("a command this call ran inside itself changed the project "
-			"and its own inverse is not part of this record, so this step is not reported as reversible")}});
+	if (folded == foldedBefore) { return; }
+	// The outer record keeps its own descriptor (before, inverse) but may not claim more than
+	// the step covers: a nested change folded into it is not reversed by that descriptor.
+	QJsonObject descriptor = result->result.value(QStringLiteral("__transaction")).toObject();
+	const QString prior = descriptor.value(QStringLiteral("mechanism")).toString();
+	descriptor.insert(QStringLiteral("reversible"), false);
+	descriptor.insert(QStringLiteral("mechanism"), QStringLiteral("a command this call ran inside itself changed the "
+		"project and its own inverse is not part of this record, so this step is not reported as reversible")
+		+ (prior.isEmpty() ? QString() : QStringLiteral(" (") + prior + QStringLiteral(")")));
+	result->result.insert(QStringLiteral("__transaction"), descriptor);
 }
 
 } // namespace
@@ -360,12 +363,15 @@ ControlResult ControlRegistry::runHandler(
 	// ancestor's step, and the count of folded nested records tells that ancestor
 	// whether its step holds a change it cannot describe by itself.
 	const bool enclosedByMutating = m_mutatingDepth > 0;
+	const bool enclosedByWrapper = m_wrapperDepth > 0;
 	const int foldedBefore = m_foldedNestedRecords;
 	m_mutatingDepth += static_cast<int>(mutating);
+	m_wrapperDepth += static_cast<int>(!mutating);
 	++m_depth;
 	ControlResult result = handler(args);
 	--m_depth;
 	m_mutatingDepth -= static_cast<int>(mutating);
+	m_wrapperDepth -= static_cast<int>(!mutating);
 
 	bool coalesced = false;
 	quint64 step = 0;
@@ -394,16 +400,82 @@ ControlResult ControlRegistry::runHandler(
 	const bool dryRunPreview = result.result.value(QStringLiteral("dry_run")).toBool(false);
 	// Review W3-batchA #8: a call that changed nothing (a report-only call, a value already set) records nothing.
 	const bool changed = result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId, result);
-	m_foldedNestedRecords += static_cast<int>(foldsIntoEnclosingStep(mutating, changed, enclosedByMutating, result.result));
-	if (recordsItsOwnStep(mutating, changed, enclosedByMutating))
-	{
-		markFoldedNestedChanges(&result, m_foldedNestedRecords, foldedBefore);
-		recordTransactionOf(commandId, &result, coalesced, step);
-	}
+	recordCall(commandId, &result, coalesced, step, mutating, changed, enclosedByMutating, enclosedByWrapper, foldedBefore);
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
 	notifyObserver(commandId, args, mutating, changed);
 	collab::CommandTap::observed(commandId, args, mutating, changed, m_depth);  // F6: what a host streams to its peers
 	return result;
+}
+
+//! Records, or holds for its wrapper, the step of one finished call (see runHandler for the rules).
+void ControlRegistry::recordCall(const QString& commandId, ControlResult* result, bool coalesced, quint64 step,
+	bool mutating, bool changed, bool enclosedByMutating, bool enclosedByWrapper, int foldedBefore)
+{
+	m_foldedNestedRecords += static_cast<int>(foldsIntoEnclosingStep(mutating, changed, enclosedByMutating, result->result));
+	const bool ownStep = m_unrecordedDepth == 0 && recordsItsOwnStep(mutating, changed, enclosedByMutating);
+	if (ownStep && enclosedByWrapper)
+	{
+		// Held, with its descriptor, until the wrapper's journal step is known (see flushNestedRecords).
+		m_nestedRecords.append(NestedRecord{commandId, *result, coalesced, step});
+	}
+	else if (ownStep)
+	{
+		markFoldedNestedChanges(result, m_foldedNestedRecords, foldedBefore);
+		recordTransactionOf(commandId, result, coalesced, step);
+	}
+	if (!mutating && m_wrapperDepth == 0 && !m_nestedRecords.isEmpty()) { flushNestedRecords(commandId, *result, step); }
+}
+
+ControlResult ControlRegistry::invokeUnrecorded(const QString& id, const QJsonObject& args)
+{
+	++m_unrecordedDepth;
+	const ControlResult result = invoke(id, args);
+	--m_unrecordedDepth;
+	return result;
+}
+
+/*! The records of the mutating calls a non-mutating wrapper ran. They share ONE journal step (the
+ *  wrapper's checkpoint merge keeps a single serial), so they become ONE record for that step, named
+ *  for the wrapper and listing its nested commands - one undo step, one record. A single nested call
+ *  keeps its own record, as before. */
+void ControlRegistry::flushNestedRecords(const QString& wrapperId, const ControlResult& wrapper, quint64 step)
+{
+	QVector<NestedRecord> held;
+	held.swap(m_nestedRecords);
+	if (held.size() == 1)
+	{
+		recordTransactionOf(held[0].command, &held[0].result, held[0].coalesced, held[0].step);
+		return;
+	}
+	Transaction aggregate;
+	aggregate.command = wrapperId;
+	aggregate.step = step;
+	aggregate.commands = held.size();
+	QJsonArray children;
+	bool everyChildReversible = step != 0;
+	for (const NestedRecord& child : held)
+	{
+		const QJsonObject recorded = child.result.result.value(QStringLiteral("__transaction")).toObject();
+		Transaction stamped;
+		stamped.command = child.command;
+		stamped.reversible = recorded.value(QStringLiteral("reversible")).toBool(false);
+		stampContract(child.command, &stamped);
+		const bool reversible = stamped.reversible && child.step != 0;
+		everyChildReversible = everyChildReversible && reversible;
+		children.append(QJsonObject{{QStringLiteral("command"), child.command}, {QStringLiteral("class"), stamped.cls},
+			{QStringLiteral("reversible"), reversible}, {QStringLiteral("before"), recorded.value(QStringLiteral("before"))},
+			{QStringLiteral("inverse"), recorded.value(QStringLiteral("inverse"))}});
+	}
+	aggregate.inverse = QJsonObject{{QStringLiteral("applies"), QStringLiteral("journal")},
+		{QStringLiteral("children"), children}};
+	aggregate.reversible = everyChildReversible;
+	aggregate.mechanism = everyChildReversible
+		? QStringLiteral("one journal step covering the nested commands listed in inverse.children; control.undo reverts all of them")
+		: QStringLiteral("one journal step covering the nested commands listed in inverse.children, not every one of them "
+			"reversible; the step is not reported as reversible");
+	stampContract(wrapperId, &aggregate);
+	recordTransaction(aggregate);
+	provenance::recordChange(wrapperId, QJsonObject(), wrapper.result);
 }
 
 //! Records what a successful mutating handler described (SPEC A16).

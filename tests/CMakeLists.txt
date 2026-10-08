@@ -154,6 +154,8 @@ set(LMMS_TESTS
 	# real Engine (the recorded action checkpoint goes on the project journal).
 	src/core/ControlProjectArchiveTest.cpp
 	src/core/ControlRegistryTest.cpp
+	# The undo-record bookkeeping for nested and wrapped commands (one record per journal step).
+	src/core/ControlRegistryNestingTest.cpp
 	# Replies held to their declared resultSchema (ZENE_CONTROL_CHECK_RESULTS), and
 	# every command's id is its group.verb.
 	src/core/ControlResultSchemaTest.cpp

@@ -26,7 +26,6 @@
 
 #include "ControlRegistry.h"
 #include "Engine.h"
-
 using namespace lmms;
 
 class ControlRegistryTest : public QObject
@@ -436,80 +435,6 @@ private slots:
 		const QJsonArray transactions = registry->transactions();
 		QCOMPARE(transactions.size(), 1);
 		QCOMPARE(transactions.last().toObject().value(QStringLiteral("command")).toString(), outer.id);
-	}
-
-	//! A mutating test command whose handler describes \a op as its inverse.
-	static ControlCommand describedCommand(const QString& id, bool mutating, const QString& op)
-	{
-		ControlCommand command;
-		command.id = id;
-		command.group = QStringLiteral("test");
-		command.verb = id.mid(QStringLiteral("test.").size());
-		command.mutating = mutating;
-		command.handler = [op](const QJsonObject&) {
-			QJsonObject transaction{{QStringLiteral("before"), QJsonObject{{QStringLiteral("value"), 1}}},
-				{QStringLiteral("inverse"), QJsonObject{{QStringLiteral("op"), op}}},
-				{QStringLiteral("reversible"), true}, {QStringLiteral("mechanism"), QStringLiteral("test")}};
-			return ControlResult::success(QJsonObject{{QStringLiteral("__transaction"), transaction}});
-		};
-		return command;
-	}
-
-	//! A non-mutating wrapper (range.consolidate, arrangement.nudge, workflow.run) records
-	//! nothing of its own, so each mutating command it runs must still record itself.
-	void nonMutatingWrapperLetsEachChildRecordItself()
-	{
-		ControlRegistry* registry = ControlRegistry::instance();
-		registry->clearTransactions();
-		const ControlCommand childA = describedCommand(QStringLiteral("test.wrap_child_a"), true, QStringLiteral("test.wrap_child_a"));
-		const ControlCommand childB = describedCommand(QStringLiteral("test.wrap_child_b"), true, QStringLiteral("test.wrap_child_b"));
-		registry->registerCommand(childA);
-		registry->registerCommand(childB);
-
-		ControlCommand wrapper = describedCommand(QStringLiteral("test.wrap_outer"), false, QString());
-		wrapper.handler = [childA, childB](const QJsonObject& args) {
-			const bool first = ControlRegistry::instance()->invoke(childA.id, args).ok;
-			const bool second = ControlRegistry::instance()->invoke(childB.id, args).ok;
-			return first && second ? ControlResult::success() : ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a child refused"));
-		};
-		registry->registerCommand(wrapper);
-
-		QVERIFY(registry->invoke(wrapper.id).ok);
-		const QJsonArray transactions = registry->transactions();
-		QCOMPARE(transactions.size(), 2);
-		for (int i = 0; i < 2; ++i)
-		{
-			const QString child = i == 0 ? childA.id : childB.id;
-			const QJsonObject record = transactions.at(i).toObject();
-			QCOMPARE(record.value(QStringLiteral("command")).toString(), child);
-			QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), child);
-		}
-	}
-
-	//! A mutating outer call with NO descriptor of its own, over a nested change whose inverse
-	//! was folded into its step, must not claim the journal step alone reverses that change.
-	void foldedNestedChangeIsNotClaimedReversible()
-	{
-		ControlRegistry* registry = ControlRegistry::instance();
-		registry->clearTransactions();
-		const ControlCommand inner = describedCommand(QStringLiteral("test.folded_inner"), true, QStringLiteral("test.folded_inner"));
-		registry->registerCommand(inner);
-
-		ControlCommand outer = describedCommand(QStringLiteral("test.folded_outer"), true, QString());
-		outer.handler = [inner](const QJsonObject& args) {
-			return ControlRegistry::instance()->invoke(inner.id, args).ok
-				? ControlResult::success() : ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the nested call refused"));
-		};
-		registry->registerCommand(outer);
-
-		QVERIFY(registry->invoke(outer.id).ok);
-		const QJsonArray transactions = registry->transactions();
-		QCOMPARE(transactions.size(), 1);
-		const QJsonObject record = transactions.last().toObject();
-		QCOMPARE(record.value(QStringLiteral("command")).toString(), outer.id);
-		QVERIFY(!record.value(QStringLiteral("reversible")).toBool());
-		QVERIFY2(record.value(QStringLiteral("mechanism")).toString().contains(QStringLiteral("ran inside itself")),
-			qPrintable(record.value(QStringLiteral("mechanism")).toString()));
 	}
 
 	//! The undo/redo commands share the engine's own ProjectJournal.
