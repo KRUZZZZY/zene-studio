@@ -774,6 +774,8 @@ set(LMMS_TESTS
 	src/gui/MixerSendsOnFadersTest.cpp
 	# 0.5.0 theme 16: mixer views, densities, type badges, routing by name, mode bar, sparse routing matrix.
 	src/gui/MixerModesTest.cpp
+	# The selected mixer channel follows its identity through a removal, a removal of itself, and a reorder.
+	src/gui/MixerSelectionIdentityTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
 	src/gui/ArrangerTimelineTest.cpp
 	# catch-up W1: an XY pad drag is one undo step.
@@ -1365,6 +1367,7 @@ set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offs
 set_tests_properties(LaneReadoutTest SampleEditorDialogTest MixerModesTest WorkflowFeedbackTest ShellHomesTest
 	TaskCenterTest TaskIndicatorTest CanvasKeyboardTest ItemListPanelTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

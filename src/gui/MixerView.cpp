@@ -274,9 +274,9 @@ int MixerView::addNewChannel()
 
 void MixerView::refreshDisplay()
 {
-	// the channel the user was on, by its stable id (a channel keeps its id when it moves);
-	// the views it refers to are about to be deleted
-	const int selectedId = m_currentMixerChannel != nullptr ? m_currentMixerChannel->mixerChannel()->id() : -1;
+	// the channel the user was on, by the stable id taken when it was selected: the model may have
+	// changed since (a removal before it moves its index), and the views are about to be deleted
+	const int selectedId = m_selectedChannelId;
 
 	// delete all views and re-add them
 	for (int i = 1; i<m_mixerChannelViews.size(); ++i)
@@ -505,6 +505,9 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 {
 	// select
 	m_currentMixerChannel = channel;
+	// Taken now, while the view's index is current; see m_selectedChannelId.
+	MixerChannel* selected = channel->mixerChannel();
+	m_selectedChannelId = selected != nullptr ? selected->id() : -1;
 	m_racksLayout->setCurrentWidget(m_mixerChannelViews[channel->channelIndex()]->m_effectRackView);
 
 	// set up send knob

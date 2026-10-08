@@ -142,6 +142,9 @@ private:
 	QVector<MixerChannelView*> m_mixerChannelViews;
 
 	MixerChannelView* m_currentMixerChannel;
+	//! The selected channel's stable id, taken when it was selected. The view only knows an index, and a
+	//! model change (a removal, a reorder) moves the index; this id is what the selection follows.
+	int m_selectedChannelId = -1;
 	//! deleteChannel() is between its mixer call and removing the view itself.
 	bool m_deletingOwnChannel = false;
 
