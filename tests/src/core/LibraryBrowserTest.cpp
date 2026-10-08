@@ -147,6 +147,25 @@ private slots:
 		QCOMPARE(back.readAll(), QByteArray("earlier bytes"));
 	}
 
+	//! A dangling link at the clip's file is refused like an unreadable file, not replaced: the link stays.
+	void aSaveNeverReplacesADanglingLink()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("dangling.mid"));
+		const QString missing = m_dir.filePath(QStringLiteral("nowhere.target"));
+		QVERIFY(QFile::link(missing, path));
+		QVERIFY(QFileInfo(path).isSymLink() && !QFileInfo::exists(path));
+
+		const ControlResult refused = run(QStringLiteral("browser.save_clip"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("dir"), m_dir.path()}, {QStringLiteral("name"), QStringLiteral("dangling")}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(QFileInfo(path).isSymLink(), "the save replaced a dangling link it did not write");
+		QCOMPARE(QFile::symLinkTarget(path), missing);
+		QVERIFY(!QFileInfo::exists(missing));
+	}
+
 	// After aMidiClipIsSavedIntoTheLibrary, which ends with its file undone away.
 	void anOverwrittenClipComesBackOnUndo()
 	{

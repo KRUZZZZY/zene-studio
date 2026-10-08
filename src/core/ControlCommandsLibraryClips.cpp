@@ -225,7 +225,8 @@ struct PreviousFile
 PreviousFile readBackIfAny(const QString& path)
 {
 	PreviousFile previous;
-	previous.existed = QFileInfo::exists(path);
+	// A dangling link counts as something there: it reads as missing, but a save would replace it.
+	previous.existed = QFileInfo::exists(path) || QFileInfo(path).isSymLink();
 	if (previous.existed)
 	{
 		QFile file(path);
