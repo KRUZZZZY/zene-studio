@@ -1746,3 +1746,6 @@ src/core/ControlCommandsMidiReconnectEdit.cpp	cluster 5704: records the MIDI bin
 src/core/ControlCommandsMidiReconnectShared.h	cluster 5704: resolves the current MidiPort from its stable track id for both undo and redo closures.
 tests/src/core/MidiReconnectTest.cpp	cluster 5704: verifies the binding inverse follows a replacement InstrumentTrack with the same stable id through undo and redo.
 tests/CMakeLists.txt	cluster 5704: exposes the private core shared header to MidiReconnectTest for the replacement-port regression.
+src/core/CollabHost.cpp	cluster new-p8-306: broadcasts from a copied peer-id list and looks each peer up again after sendLine can synchronously erase it.
+tests/src/core/CollabTransportTest.cpp	cluster new-p8-306: checks the ID-snapshot implementation and broadcasts an over-limit frame to exercise synchronous peer closure.
+tests/CMakeLists.txt	cluster new-p8-306: supplies CollabHost.cpp's source path to the transport test's iteration invariant check.
