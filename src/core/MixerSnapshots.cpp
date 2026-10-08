@@ -28,6 +28,7 @@
 
 #include <QDomElement>
 
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "Mixer.h"
 
@@ -80,6 +81,11 @@ int applySends(MixerChannel* channel, const std::vector<MixerSendState>& sends)
 		const auto route = std::find_if(channel->m_sends.begin(), channel->m_sends.end(),
 			[&send](MixerRoute* each) { return each->receiver()->id() == send.to; });
 		if (route == channel->m_sends.end()) { ++missing; continue; }
+		// The send is written inside the same change boundary that
+		// Mixer::createChannelSend() takes for an existing route: preFader is a
+		// plain field the render thread reads. Recall and undo/redo both come
+		// through here, and ControlRegistry adds no boundary of its own.
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
 		(*route)->amount()->setValue(send.amount);
 		(*route)->pan()->setValue(send.pan);
 		(*route)->enabledModel()->setValue(send.enabled);

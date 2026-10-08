@@ -65,6 +65,7 @@
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "MixerSnapshots.h"
 #include "PlayHandle.h"
 #include "SampleFrame.h"
 
@@ -678,6 +679,33 @@ private slots:
 	// D6 - AudioBusHandle::m_playHandles is appended under m_playHandleLock
 	// but a worker range-fors it without the lock.
 	// -----------------------------------------------------------------------
+	// Recall writes a send's fader tap (preFader) on the control thread, as
+	// createChannelSend() does for an existing route. The write has to wait
+	// for the render period to end, like the route update it mirrors.
+	void recallingASnapshotWaitsForTheRenderPeriodToEnd()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerRoute* send = mixer->createChannelSend(1, 2, 0.5f, true);
+		QVERIFY(send != nullptr);
+		QVERIFY(send->preFader());
+		const MixerSnapshot snapshot = MixerSnapshots::capture(QStringLiteral("Tap"));
+		send->setPreFader(false);
+
+		const bool flippedWhileRendering = escapesTheRenderPeriod(
+			[&snapshot]
+			{
+				MixerSnapshots::apply(snapshot, MixerSnapshots::Parts{});
+			},
+			[send] { return send->preFader(); });
+		QVERIFY2(!flippedWhileRendering,
+			"a snapshot recall wrote a send's fader tap while a render period was in flight");
+		QVERIFY2(send->preFader(),
+			"the recalled fader tap never landed after the render period ended");
+	}
+
 	void addingAPlayHandleIsSerialisedWithTheIterator()
 	{
 		AudioBusHandle handle{QStringLiteral("MixerConcurrencyTest"), false};
