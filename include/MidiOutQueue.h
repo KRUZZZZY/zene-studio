@@ -54,6 +54,22 @@ public:
 		return true;
 	}
 
+	//! Producer side, for a consumer that sleeps in poll() (cluster 5129). Pushes exactly as push() does and
+	//! returns true when the producer must wake the consumer: the push was accepted and no wake has been
+	//! requested since the consumer's last acknowledgeWake(). One wake per drain, not one per event.
+	//! Never waits, allocates, or locks.
+	bool pushAndRequestWake(const MidiEvent& event, const TimePos& time, const MidiPort* port) noexcept
+	{
+		if (!push(event, time, port)) { return false; }
+		return !m_wakePending.exchange(true, std::memory_order_seq_cst);
+	}
+
+	//! Consumer side: call before draining, so the next accepted push requests a wake again.
+	void acknowledgeWake() noexcept
+	{
+		m_wakePending.store(false, std::memory_order_seq_cst);
+	}
+
 	//! Consumer side (the MIDI/sequencer thread). Never allocates or locks.
 	bool pop(Command& command) noexcept
 	{
@@ -74,6 +90,8 @@ private:
 	alignas(64) std::atomic<std::uint64_t> m_write{0};
 	alignas(64) std::atomic<std::uint64_t> m_read{0};
 	std::atomic<std::uint64_t> m_overflow{0};
+	//! Set by the first accepted push after an acknowledgeWake(); see pushAndRequestWake().
+	std::atomic<bool> m_wakePending{false};
 };
 
 } // namespace lmms

@@ -90,6 +90,47 @@ private slots:
 		producer.join();
 		QCOMPARE(static_cast<qulonglong>(received), count);
 	}
+
+	//! Cluster 5129: the sequencer thread sleeps in poll() for up to EventPollTimeOut, so an audio-thread
+	//! push must wake it. The wake is requested once per consumer drain (the first push after the consumer
+	//! acknowledged the previous one), not once per event, and the path stays allocation-free.
+	void FirstPushAfterAnAcknowledgedDrainRequestsOneWake()
+	{
+		MidiOutQueue queue;
+		const auto note = makeMidiEvent(62);
+		const TimePos time;
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		QVERIFY(queue.pushAndRequestWake(note, time, nullptr));   // nothing acknowledged yet: wake
+		QVERIFY(!queue.pushAndRequestWake(note, time, nullptr));  // same batch: no second wake
+		QVERIFY(!queue.pushAndRequestWake(note, time, nullptr));
+		lmms::test::tlCountAllocations = false;
+		QCOMPARE(static_cast<qulonglong>(lmms::test::tlAllocationCount), 0ull);
+
+		// The consumer acknowledges, then drains all three events; the next push asks again.
+		queue.acknowledgeWake();
+		MidiOutQueue::Command command;
+		int drained = 0;
+		while (queue.pop(command)) { ++drained; }
+		QCOMPARE(drained, 3);
+		QVERIFY(queue.pushAndRequestWake(note, time, nullptr));
+		QVERIFY(queue.pop(command));
+	}
+
+	//! A refused push (queue full) requests no wake: there is nothing new to drain.
+	void FullQueue_RequestsNoWake()
+	{
+		MidiOutQueue queue;
+		const auto note = makeMidiEvent(63);
+		const TimePos time;
+		for (std::size_t i = 0; i < MidiOutQueue::Capacity; ++i)
+		{
+			static_cast<void>(queue.pushAndRequestWake(note, time, nullptr));
+		}
+		queue.acknowledgeWake();
+		QVERIFY(!queue.pushAndRequestWake(note, time, nullptr));
+		QCOMPARE(static_cast<qulonglong>(queue.overflowCount()), 1ull);
+	}
 };
 
 QTEST_APPLESS_MAIN(MidiOutQueueTest)

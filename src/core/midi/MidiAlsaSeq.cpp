@@ -33,6 +33,9 @@
 #include <cerrno>
 #include <cstring>
 
+#include <fcntl.h>
+#include <unistd.h>
+
 
 #ifdef LMMS_HAVE_ALSA
 
@@ -200,6 +203,8 @@ MidiAlsaSeq::MidiAlsaSeq() :
 		qCritical( "MidiAlsaSeq: pipe failed: %s", strerror( errno ) );
 		return;
 	}
+	// Cluster 5129: the write end is written from the audio path (processOutEvent), so it must never block.
+	fcntl( m_pipe[1], F_SETFL, fcntl( m_pipe[1], F_GETFL ) | O_NONBLOCK );
 
 	start( QThread::IdlePriority );
 }
@@ -279,7 +284,15 @@ void MidiAlsaSeq::processOutEvent( const MidiEvent& event, const TimePos& time, 
 {
 	// This is called from the audio path. The sequencer thread owns all ALSA
 	// calls and the mutex; enqueueing is bounded, lock-free, and allocation-free.
-	(void) m_outQueue.push(event, time, port);
+	// Cluster 5129: the sequencer thread sleeps in poll() for up to EventPollTimeOut, so the first
+	// push after each drain writes one byte to the wake pipe. One non-blocking write per drain, not per event.
+	if( m_outQueue.pushAndRequestWake( event, time, port ) && m_pipe[1] >= 0 )
+	{
+		const char wake = 0;
+		// A full pipe already holds a pending wake, so a short or refused write loses nothing.
+		const ssize_t written = ::write( m_pipe[1], &wake, 1 );
+		static_cast<void>( written );
+	}
 }
 
 
@@ -718,6 +731,8 @@ void MidiAlsaSeq::run()
 
 	while( m_quit == false )
 	{
+		// Cluster 5129: acknowledge before draining, so a push that lands after this point asks for a wake.
+		m_outQueue.acknowledgeWake();
 		MidiOutQueue::Command command;
 		while (m_outQueue.pop(command))
 		{
@@ -738,6 +753,13 @@ void MidiAlsaSeq::run()
 			}
 			qCritical( "error while polling ALSA sequencer handle" );
 			break;
+		}
+		// Cluster 5129: consume the wake byte(s); poll() reported the pipe readable, so this read does not block.
+		if( pollfd_set[0].revents & POLLIN )
+		{
+			char wakeBytes[64];
+			const ssize_t consumed = ::read( m_pipe[0], wakeBytes, sizeof wakeBytes );
+			static_cast<void>( consumed );
 		}
 		// shutdown?
 		if( m_quit )
