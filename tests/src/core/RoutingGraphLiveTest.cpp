@@ -79,9 +79,25 @@ class LiveScaleEffect : public Effect
 public:
 	LiveScaleEffect(Model* parent, float left, float right) :
 		Effect{&s_descriptor, parent, nullptr},
+		m_chain(static_cast<EffectChain*>(parent)),
 		m_left(left),
 		m_right(right)
 	{
+	}
+
+	LiveScaleEffect(Model* parent, float left, float right, bool* clearedBeforeDelete) :
+		LiveScaleEffect(parent, left, right)
+	{
+		m_clearedBeforeDelete = clearedBeforeDelete;
+	}
+
+	~LiveScaleEffect() override
+	{
+		if (m_clearedBeforeDelete != nullptr)
+		{
+			*m_clearedBeforeDelete = !m_chain->routesThroughGraph()
+				&& m_chain->routingGraph().nodeCount() == 0;
+		}
 	}
 
 	EffectControls* controls() override { return nullptr; }
@@ -98,8 +114,10 @@ protected:
 	}
 
 private:
+	EffectChain* m_chain;
 	float m_left;
 	float m_right;
+	bool* m_clearedBeforeDelete = nullptr;
 
 	static const Plugin::Descriptor s_descriptor;
 };
@@ -296,6 +314,21 @@ private slots:
 		QVERIFY(!empty.routesThroughGraph());
 		QCOMPARE(empty.routingGraph().nodeCount(), 0);
 		QVERIFY(!empty.routingGraph().isPrepared());
+	}
+
+	//! Clear disconnects graph nodes while their Effect targets are still alive.
+	void clearDropsRoutingNodesBeforeDestroyingEffects()
+	{
+		EffectChain chain{nullptr};
+		bool clearedBeforeDelete = false;
+		chain.appendEffect(new LiveScaleEffect(&chain, 1.0f, 1.0f, &clearedBeforeDelete));
+		QVERIFY(chain.routesThroughGraph());
+		QCOMPARE(chain.routingGraph().nodeCount(), 2);
+
+		chain.clear();
+		QVERIFY2(clearedBeforeDelete, "the graph still had nodes when its effect was destroyed");
+		QVERIFY(!chain.routesThroughGraph());
+		QCOMPARE(chain.routingGraph().nodeCount(), 0);
 	}
 
 	//! Liveness: re-directing a connection changes the render, and changes it by
