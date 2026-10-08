@@ -53,6 +53,9 @@
 namespace lmms
 {
 
+//! Test seam (cluster 5313): see SessionTuning::setPublishedHookForTest. Null in the product.
+void (*s_publishedHookForTest)() = nullptr;
+
 namespace
 {
 
@@ -233,49 +236,52 @@ bool SessionTuning::buildTable(const Scale* scale, const Keymap& keymap,
 	return true;
 }
 
+void SessionTuning::setPublishedHookForTest(void (*hook)())
+{
+	s_publishedHookForTest = hook;
+}
+
 void SessionTuning::commit(const Table& next, bool nextActive, const QString& source)
 {
-	// Claim a non-published, reader-free slot before writing it. With three
-	// slots, one can remain published while another is held by a reader and
-	// the third is available for this commit. Concurrent writers retry if a
-	// competing commit publishes first, preserving publication order.
-	for (;;)
+	// Cluster 5313: writers are serialised, so no second writer can claim a slot between the moment the
+	// first one drops its claim and the moment it flips the front. The claim bit is dropped BEFORE the
+	// flip: a reader spins while the slot it reads carries WriterBit, so the slot that is published must
+	// never still carry it. (The old order kept the bit set between the flip and the drop, and a writer
+	// descheduled in that interval stalled every reader on the audio thread without bound.)
 	{
-		const int front = m_front.load(std::memory_order_acquire);
-		int back = (front + 1) % TableCount;
-		bool claimed = false;
-		for (int attempt = 0; attempt < TableCount - 1; ++attempt)
+		const std::lock_guard<std::mutex> writeLock(m_writeMutex);
+		for (;;)
 		{
-			unsigned expected = 0u;
-			if (back != front && m_slotStates[back].compare_exchange_weak(
-				expected, WriterBit, std::memory_order_acquire,
-				std::memory_order_relaxed))
+			// Claim a non-published, reader-free slot before writing it. With three
+			// slots, one can remain published while another is held by a reader and
+			// the third is available for this commit.
+			const int front = m_front.load(std::memory_order_acquire);
+			int back = (front + 1) % TableCount;
+			bool claimed = false;
+			for (int attempt = 0; attempt < TableCount - 1; ++attempt)
 			{
-				claimed = true;
-				break;
+				unsigned expected = 0u;
+				if (back != front && m_slotStates[back].compare_exchange_weak(
+					expected, WriterBit, std::memory_order_acquire,
+					std::memory_order_relaxed))
+				{
+					claimed = true;
+					break;
+				}
+				back = (back + 1) % TableCount;
 			}
-			back = (back + 1) % TableCount;
-		}
-		if (!claimed) { continue; }
+			if (!claimed) { continue; }
 
-		if (m_front.load(std::memory_order_acquire) != front)
-		{
+			Table& target = m_tables[back];
+			target = next;
+			target.active = nextActive;
 			m_slotStates[back].fetch_and(~WriterBit, std::memory_order_release);
-			continue;
-		}
-		Table& target = m_tables[back];
-		target = next;
-		target.active = nextActive;
-		int expectedFront = front;
-		if (m_front.compare_exchange_strong(expectedFront, back,
-			std::memory_order_release, std::memory_order_acquire))
-		{
+			m_front.store(back, std::memory_order_release);
 			m_source = source.left(MaxSourceLength);
-			m_slotStates[back].fetch_and(~WriterBit, std::memory_order_release);
 			break;
 		}
-		m_slotStates[back].fetch_and(~WriterBit, std::memory_order_release);
 	}
+	if (s_publishedHookForTest != nullptr) { s_publishedHookForTest(); }
 
 	retuneSoundingNotes();
 	publishToMtsEsp();

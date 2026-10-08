@@ -61,6 +61,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <mutex>
 
 #include <QJsonObject>
 #include <QString>
@@ -197,6 +198,10 @@ public:
 	//! the registered flag with the connected client count.
 	QJsonObject mtsEspJson() const;
 
+	//! Test seam (cluster 5313): when set, commit() calls it on the WRITING thread right after it publishes a
+	//! table to the readers. Null in the product; the regression test holds the writer there while a reader runs.
+	static void setPublishedHookForTest(void (*hook)());
+
 private:
 	SessionTuning();
 
@@ -255,6 +260,8 @@ private:
 	//! there; a no-op otherwise (and when the table carries unmapped keys).
 	void publishToMtsEsp();
 
+	//! Serialises writers (cluster 5313): commit() holds it across claim, publish and release.
+	std::mutex m_writeMutex;
 	std::atomic<int> m_front{0};
 	mutable std::atomic<unsigned> m_slotStates[TableCount]{};
 	Table m_tables[TableCount];
