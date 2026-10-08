@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-08T01:07:11Z",
+  "captured_at": "2026-10-08T06:43:47Z",
   "commands": [
     {
       "args_schema": {
@@ -19637,7 +19637,7 @@
         ],
         "type": "object"
       },
-      "description": "Write the session's notes as a Standard MIDI File (the midiexport filter; interchange.smf_export writes the tempo map only). File > Export MIDI dispatches this after its file dialog. A missing `.mid` suffix is appended. The session is not modified.",
+      "description": "Write the session's notes as a Standard MIDI File (the midiexport filter; interchange.smf_export writes the tempo map only). File > Export MIDI dispatches this after its file dialog. A missing `.mid` suffix is appended. The export is written to a temporary file and only replaces an existing file once the new output is proven to exist, so a failed export never reports a stale file as a fresh one (and never destroys the previous one). The session is not modified.",
       "group": "project",
       "id": "project.export_midi",
       "mutating": false,
@@ -34623,11 +34623,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train1/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-wtlaxu3_/zene.sock",
-    "version": "0.4.0-alpha.562+2a308d0"
+    "source_socket": "/tmp/zctl-run-4pb1yciw/zene.sock",
+    "version": "0.4.0-alpha.1157+d6254bb"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
