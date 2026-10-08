@@ -132,6 +132,13 @@ LMMS_EXPORT bool journalTrackMove(Track* track, int fromIndex, int toIndex);
  */
 LMMS_EXPORT bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index);
 
+/*! journalEffectRemoval() with the device document given by the caller: the
+ *  undo rebuilds the device from \a xml, and the step is recorded only when
+ *  \a xml is a usable document. journalEffectRemoval passes the device's own
+ *  document; a caller that passes another one records exactly that document.
+ */
+LMMS_EXPORT bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const QString& xml);
+
 /*! Takes \a effect off \a chain. The removal pushes no checkpoint of its own,
  *  whether or not journalEffectRemoval recorded it: a recorded removal's one
  *  structural step restores the chain's enabled flag, and a removal that records

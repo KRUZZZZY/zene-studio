@@ -452,6 +452,21 @@ void removeRecordedEffect(EffectChain* chain, QPointer<Effect>& made, int slot, 
 	made = nullptr;
 }
 
+//! The redo of a recorded removal: takes off the device its undo built, and only that device, and only while it is
+//! still in the chain. When the undo built none (its rebuild was refused) there is nothing to take off, and
+//! removeRecordedEffect's slot fallback would otherwise take whatever same-plugin device now sits at that slot.
+void removeBuiltDevice(EffectChain* chain, QPointer<Effect>& built, int slot, const QString& plugin)
+{
+	if (chain == nullptr || built.isNull()) { return; }
+	const std::vector<Effect*>& effects = chain->effects();
+	if (std::find(effects.begin(), effects.end(), built.data()) == effects.end())
+	{
+		built = nullptr;
+		return;
+	}
+	removeRecordedEffect(chain, built, slot, plugin);
+}
+
 namespace
 {
 
@@ -492,8 +507,12 @@ void detachEffect(EffectChain* chain, Effect* effect)
 bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 {
 	if (chain == nullptr || effect == nullptr || index < 0) { return false; }
+	return journalRemovalDocument(chain, effect, index, controlEffectStateXml(effect));
+}
 
-	const QString xml = controlEffectStateXml(effect);
+bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const QString& xml)
+{
+	if (chain == nullptr || effect == nullptr || index < 0) { return false; }
 	// Bounded like every other captured document: an unbounded payload on a
 	// stack with a declared byte budget is a bound that does not hold. A device
 	// whose state document is over the cap refuses the inverse; the command then
@@ -530,7 +549,7 @@ bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 		},
 		[chainOf, made, index, plugin]() {
 			JournalPause quiet;
-			removeRecordedEffect(chainOf(), *made, index, plugin);
+			removeBuiltDevice(chainOf(), *made, index, plugin);
 		},
 		xml.size());
 	return true;

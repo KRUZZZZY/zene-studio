@@ -27,6 +27,7 @@
  */
 
 #include <QtTest>
+#include <QDomDocument>
 #include <QStringList>
 
 #include <atomic>
@@ -454,7 +455,9 @@ private slots:
 	 *  flag, after the device has been built, with a ten-second safety bound. The
 	 *  case passes only if the holder was released by the flag: a build that
 	 *  waited for the lock would still be waiting when the bound ran out. The
-	 *  check is on ordering, not on speed. */
+	 *  check is on ordering, not on speed. Covers native devices only: a hosted
+	 *  device (LADSPA, LV2, CLAP, VST) takes the same path but is not exercised
+	 *  by this case. */
 	void aRecordedDeviceIsBuiltWithoutTheAudioChangeLock()
 	{
 		QString device;
@@ -500,6 +503,58 @@ private slots:
 
 		mixer->deleteChannel(index);
 		ScriptEngine::instance()->takeLogMessages();
+	}
+
+	/*! A removal whose undo cannot rebuild the device leaves its redo nothing it
+	 *  built, so the redo must remove nothing. Chain [X, B], both the same native
+	 *  device. X (slot 0) is removed, and its recorded document is one the restore
+	 *  refuses (the settings body removed), so the undo builds nothing. The redo
+	 *  used to fall back to the slot and remove B. */
+	void aRedoAfterAFailedUndoRemovesNothing()
+	{
+		QString device;
+		QString deviceName;
+		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
+		ProjectJournal* journal = Engine::projectJournal();
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(
+			"local chain = zene.mixer():channel(%1):chain()\n"
+			"chain:loadEffect(\"%2\")\n"
+			"chain:loadEffect(\"%2\")\n").arg(index).arg(device), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 2);
+		Effect* first = chain->effects().at(0);
+		Effect* second = chain->effects().at(1);
+
+		QDomDocument document;
+		QVERIFY(document.setContent(controlEffectStateXml(first)));
+		const QDomElement body = document.documentElement().firstChildElement(first->nodeName());
+		QVERIFY2(!body.isNull(), "the captured device document carries no body to remove");
+		document.documentElement().removeChild(body);
+
+		journal->clearJournal();
+		QVERIFY(control::journalRemovalDocument(chain, first, 0, document.toString()));
+		control::detachEffect(chain, first);
+		first->deleteLater();
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QVERIFY(chain->effects().front() == second);
+
+		journal->undo();
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QVERIFY(chain->effects().front() == second);
+		QVERIFY(control::takeStructuralRestoreFailure().has_value());
+
+		journal->redo();
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QVERIFY(chain->effects().front() == second);
+
+		mixer->deleteChannel(index);
+		engine->takeLogMessages();
 	}
 
 };
