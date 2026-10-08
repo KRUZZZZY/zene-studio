@@ -468,6 +468,27 @@ private slots:
 		QVERIFY2(inflated.errorMessage.contains(QStringLiteral("over")),
 			qPrintable(QStringLiteral("the refusal did not name the declared size: %1")
 				.arg(inflated.errorMessage)));
+
+		// A genuine qCompress stream of one byte more than the cap, whose header is then
+		// rewritten to declare only 1 KiB. The declared size passes the fast refusal, so
+		// the cap has to hold on the bytes the inflate actually produces. qUncompress would
+		// grow its output past the header to the real size; the refusal must name the limit.
+		QByteArray understated = qCompress(QByteArray(static_cast<int>(lmms::control::MaxProjectAssetDocumentBytes) + 1, '\0'));
+		QVERIFY(understated.size() > 4);
+		const quint32 small = 1024u;
+		understated[0] = static_cast<char>((small >> 24) & 0xFF);
+		understated[1] = static_cast<char>((small >> 16) & 0xFF);
+		understated[2] = static_cast<char>((small >> 8) & 0xFF);
+		understated[3] = static_cast<char>(small & 0xFF);
+		const QString understatedPath = dir.path() + QStringLiteral("/understated.mmpz");
+		QVERIFY(writeBytes(understatedPath, understated));
+		const ControlResult grown = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), understatedPath}});
+		QVERIFY(!grown.ok);
+		QCOMPARE(grown.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(grown.errorMessage.contains(QStringLiteral("limit")),
+			qPrintable(QStringLiteral("an understated header inflated past the cap: %1")
+				.arg(grown.errorMessage)));
 	}
 	//! Hashing is the identity step: the digest is stable, and relinking
 	//! changes it, because the digest covers the reference set and its hashes.

@@ -152,10 +152,10 @@ constexpr qint64 MaxProjectAssetHashBytes = 1024LL * 1024LL * 1024LL;
 /*! The largest project file these verbs read, and the largest expanded document
  *  they will inflate from a .mmpz. Same bound, same reason, and the same
  *  measured-first rule the engine's own document recovery uses
- *  (MaxRecoveredDocumentBytes, src/core/DataFile.cpp:202): qUncompress allocates
- *  exactly the size a compressed body's leading 4 bytes declare before it
- *  decompresses anything, so BOTH the file on disk and the declared size are
- *  measured against this before a single byte is read. The largest project under
+ *  (MaxRecoveredDocumentBytes, src/core/DataFile.cpp:202). The file on disk and
+ *  the size a compressed body declares are measured first as refusals, and the
+ *  bytes actually read or inflated are counted against this same cap. A declared
+ *  size is a hint, not a bound: qUncompress grows its output past the header. The largest project under
  *  data/projects is about 200 kB; this is orders of magnitude above any real one. */
 constexpr qint64 MaxProjectAssetDocumentBytes = 256LL * 1024LL * 1024LL;
 

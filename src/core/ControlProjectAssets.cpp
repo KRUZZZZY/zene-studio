@@ -64,8 +64,14 @@
 #include <QTextStream>
 #include <QtEndian>
 
+#include <algorithm>
+
 #include "ControlProjectAssetsShared.h"
 #include "PathUtil.h"
+
+#if defined(ZENE_HAVE_ZLIB)
+#include <zlib.h>
+#endif
 
 namespace lmms
 {
@@ -154,10 +160,10 @@ void fillReference(const QDomElement& element, const AssetElement& spec, int ind
 		: QStringLiteral("cannot be resolved to a path on this machine");
 }
 
-//! The size on disk is measured BEFORE anything is read: readAll() would
-// otherwise allocate whatever the file happens to be. Same cap and same
-// measured-first rule as the engine's own document recovery
-// (MaxRecoveredDocumentBytes, src/core/DataFile.cpp:202).
+//! The size on disk is measured BEFORE anything is read, as a first refusal. The bytes that are
+// read are capped again by readBoundedBody, because the file can change after this stat.
+// Same cap as the engine's own document recovery (MaxRecoveredDocumentBytes,
+// src/core/DataFile.cpp:202).
 bool storedSizeWithinCap(const QFileInfo& info, const QString& projectPath, ControlResult* error)
 {
 	if (info.size() <= MaxProjectAssetDocumentBytes) { return true; }
@@ -167,10 +173,39 @@ bool storedSizeWithinCap(const QFileInfo& info, const QString& projectPath, Cont
 	return false;
 }
 
-//! Reads a .mmpz body after measuring the size it DECLARES. A qCompress stream
-//! carries its expanded size in the leading 4 bytes, and qUncompress allocates
-//! exactly that much before it inflates anything - so the header alone decides,
-//! and a crafted header never gets the body read.
+//! Reads the body of a file into \a body, never holding more than the cap plus one byte.
+//! The stat taken by storedSizeWithinCap is only a first refusal: a file that grows or is
+//! replaced between that stat and this read is still stopped at the cap while it is read.
+bool readBoundedBody(QFile* file, const QString& projectPath, QByteArray* body, ControlResult* error)
+{
+	constexpr qint64 chunkBytes = 1024LL * 1024LL;
+	body->clear();
+	while (!file->atEnd() && body->size() <= MaxProjectAssetDocumentBytes)
+	{
+		const qint64 room = MaxProjectAssetDocumentBytes + 1 - body->size();
+		const QByteArray chunk = file->read(std::min(chunkBytes, room));
+		if (chunk.isEmpty())
+		{
+			*error = ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("cannot read %1 (%2)").arg(projectPath, file->errorString()));
+			return false;
+		}
+		body->append(chunk);
+	}
+	if (body->size() > MaxProjectAssetDocumentBytes)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 grew past the %2-byte limit while it was read; it was not loaded "
+				"into memory").arg(projectPath).arg(MaxProjectAssetDocumentBytes));
+		return false;
+	}
+	return true;
+}
+
+//! Reads a .mmpz body after measuring the size it DECLARES. A qCompress stream carries its
+//! expanded size in the leading 4 bytes. That header is a hint, not a bound (qUncompress grows
+//! its output past it), so the declared size is refused here only as a fast path; the real
+//! bound is enforced on the output actually produced by inflateWithinCap.
 bool readBoundedCompressed(QFile* file, const QString& projectPath, QByteArray* stored,
 	ControlResult* error)
 {
@@ -191,8 +226,79 @@ bool readBoundedCompressed(QFile* file, const QString& projectPath, QByteArray* 
 			QStringLiteral("cannot rewind %1 (%2)").arg(projectPath, file->errorString()));
 		return false;
 	}
-	*stored = file->readAll();
-	return true;
+	return readBoundedBody(file, projectPath, stored, error);
+}
+
+//! Why a .mmpz body could not be turned into XML within the cap.
+enum class InflateOutcome { Done, Malformed, OverCap };
+
+#if defined(ZENE_HAVE_ZLIB)
+//! The zlib half of inflateWithinCap: \a stored is a qCompress stream (4-byte big-endian
+//! expanded size, then zlib), and the output is counted chunk by chunk, so the cap holds on
+//! the bytes actually produced, whatever the header said.
+InflateOutcome inflateBodyWithinCap(const QByteArray& stored, QByteArray* xml)
+{
+	z_stream stream{};
+	if (inflateInit(&stream) != Z_OK) { return InflateOutcome::Malformed; }
+	stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(stored.constData() + 4));
+	stream.avail_in = static_cast<uInt>(stored.size() - 4);
+	QByteArray chunk(1024 * 1024, Qt::Uninitialized);
+	xml->clear();
+	int status = Z_OK;
+	InflateOutcome outcome = InflateOutcome::Malformed;
+	while (status != Z_STREAM_END)
+	{
+		stream.next_out = reinterpret_cast<Bytef*>(chunk.data());
+		stream.avail_out = static_cast<uInt>(chunk.size());
+		status = inflate(&stream, Z_NO_FLUSH);  // Z_BUF_ERROR: truncated input, no progress possible
+		if (status != Z_OK && status != Z_STREAM_END) { break; }
+		const qint64 produced = chunk.size() - static_cast<qint64>(stream.avail_out);
+		if (xml->size() + produced > MaxProjectAssetDocumentBytes)
+		{
+			outcome = InflateOutcome::OverCap;
+			break;
+		}
+		xml->append(chunk.constData(), produced);
+	}
+	inflateEnd(&stream);
+	if (outcome == InflateOutcome::OverCap) { return outcome; }
+	return status == Z_STREAM_END ? InflateOutcome::Done : InflateOutcome::Malformed;
+}
+#endif
+
+bool refuseNotReadable(const QString& projectPath, ControlResult* error)
+{
+	*error = ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("%1 is not a readable .mmpz: the compressed body did not "
+			"inflate (a .mmpz is qCompress'd XML)").arg(projectPath));
+	return false;
+}
+
+bool refuseOverCap(const QString& projectPath, ControlResult* error)
+{
+	*error = ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("%1 inflates to more than the %2-byte limit this verb reads; it was not "
+			"loaded in full").arg(projectPath).arg(MaxProjectAssetDocumentBytes));
+	return false;
+}
+
+//! Inflates a .mmpz body (a qCompress stream: 4-byte big-endian expanded size, then zlib) and
+//! refuses as soon as the bytes it PRODUCES would pass the cap. Without zlib at configure time
+//! this falls back to qUncompress, which is NOT capped while it inflates: the declared-size
+//! refusal in readBoundedCompressed is then the only bound before that call.
+bool inflateWithinCap(const QString& projectPath, const QByteArray& stored, QByteArray* xml,
+	ControlResult* error)
+{
+	if (stored.size() < 4) { return refuseNotReadable(projectPath, error); }
+#if defined(ZENE_HAVE_ZLIB)
+	const InflateOutcome outcome = inflateBodyWithinCap(stored, xml);
+	if (outcome == InflateOutcome::OverCap) { return refuseOverCap(projectPath, error); }
+	return outcome == InflateOutcome::Done ? true : refuseNotReadable(projectPath, error);
+#else
+	*xml = qUncompress(stored);
+	if (xml->isEmpty()) { return refuseNotReadable(projectPath, error); }
+	return xml->size() > MaxProjectAssetDocumentBytes ? refuseOverCap(projectPath, error) : true;
+#endif
 }
 
 //! The inflate-and-parse half, once the bytes in hand are already bounded.
@@ -200,17 +306,7 @@ bool parseStoredDocument(const QString& projectPath, const QByteArray& stored, b
 	QDomDocument* document, ControlResult* error)
 {
 	QByteArray xml = stored;
-	if (compressed)
-	{
-		xml = qUncompress(stored);
-		if (xml.isEmpty())
-		{
-			*error = ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("%1 is not a readable .mmpz: the compressed body did not "
-					"inflate (a .mmpz is qCompress'd XML)").arg(projectPath));
-			return false;
-		}
-	}
+	if (compressed && !inflateWithinCap(projectPath, stored, &xml, error)) { return false; }
 
 	QString parseError;
 	int line = 0;
@@ -260,9 +356,9 @@ bool readProjectDocument(const QString& projectPath, QDomDocument* document, QSt
 	{
 		if (!readBoundedCompressed(&file, projectPath, &stored, error)) { return false; }
 	}
-	else
+	else if (!readBoundedBody(&file, projectPath, &stored, error))
 	{
-		stored = file.readAll();
+		return false;
 	}
 	return parseStoredDocument(projectPath, stored, compressed, document, error);
 }

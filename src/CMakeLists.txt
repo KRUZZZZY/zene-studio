@@ -413,6 +413,13 @@ IF(LMMS_HAVE_RUBBERBAND)
 	TARGET_INCLUDE_DIRECTORIES(lmmsobjs SYSTEM PRIVATE ${RUBBERBAND_INCLUDE_DIRS})
 	TARGET_LINK_DIRECTORIES(lmmsobjs PRIVATE ${RUBBERBAND_LIBRARY_DIRS})
 ENDIF()
+# zlib lets the project-asset reader inflate a .mmpz with an output cap (ControlProjectAssets.cpp).
+# Without it the reader falls back to qUncompress, which only the declared-size refusal bounds.
+find_package(ZLIB QUIET)
+IF(ZLIB_FOUND)
+	TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE ZENE_HAVE_ZLIB)
+	TARGET_LINK_LIBRARIES(lmmsobjs ZLIB::ZLIB)
+ENDIF()
 IF(ZENE_HAVE_LIBAAF)
 	TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE ZENE_HAVE_LIBAAF)
 	TARGET_LINK_LIBRARIES(lmmsobjs PkgConfig::LIBAAF)
