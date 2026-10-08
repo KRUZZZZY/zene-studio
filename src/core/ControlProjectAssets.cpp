@@ -282,10 +282,26 @@ bool refuseOverCap(const QString& projectPath, ControlResult* error)
 	return false;
 }
 
+//! A .mmpz can only be read when zlib is linked: its body is then inflated under the cap. Without zlib
+//! the only inflate is qUncompress, which grows its output past the header, so the read is refused
+//! here, before any compressed byte is read. This fails closed on purpose.
+bool zlibAvailable(const QString& projectPath, ControlResult* error)
+{
+#if defined(ZENE_HAVE_ZLIB)
+	Q_UNUSED(projectPath)
+	Q_UNUSED(error)
+	return true;
+#else
+	*error = ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("%1 is a compressed .mmpz, and this build has no zlib to inflate it under the "
+			"%2-byte limit this verb reads, so it was not read (configure with zlib available)")
+			.arg(projectPath).arg(MaxProjectAssetDocumentBytes));
+	return false;
+#endif
+}
+
 //! Inflates a .mmpz body (a qCompress stream: 4-byte big-endian expanded size, then zlib) and
-//! refuses as soon as the bytes it PRODUCES would pass the cap. Without zlib at configure time
-//! this falls back to qUncompress, which is NOT capped while it inflates: the declared-size
-//! refusal in readBoundedCompressed is then the only bound before that call.
+//! refuses as soon as the bytes it PRODUCES would pass the cap. Only reached with zlib linked.
 bool inflateWithinCap(const QString& projectPath, const QByteArray& stored, QByteArray* xml,
 	ControlResult* error)
 {
@@ -295,9 +311,7 @@ bool inflateWithinCap(const QString& projectPath, const QByteArray& stored, QByt
 	if (outcome == InflateOutcome::OverCap) { return refuseOverCap(projectPath, error); }
 	return outcome == InflateOutcome::Done ? true : refuseNotReadable(projectPath, error);
 #else
-	*xml = qUncompress(stored);
-	if (xml->isEmpty()) { return refuseNotReadable(projectPath, error); }
-	return xml->size() > MaxProjectAssetDocumentBytes ? refuseOverCap(projectPath, error) : true;
+	return zlibAvailable(projectPath, error);  // unreachable from readProjectDocument; refuses without zlib
 #endif
 }
 
@@ -319,6 +333,14 @@ bool parseStoredDocument(const QString& projectPath, const QByteArray& stored, b
 		return false;
 	}
 	return true;
+}
+
+//! The bounded body of an open project file. A .mmpz is read only when zlib is available to inflate it.
+bool readStoredBody(QFile* file, const QString& projectPath, bool compressed, QByteArray* stored,
+	ControlResult* error)
+{
+	if (!compressed) { return readBoundedBody(file, projectPath, stored, error); }
+	return zlibAvailable(projectPath, error) && readBoundedCompressed(file, projectPath, stored, error);
 }
 
 bool readProjectDocument(const QString& projectPath, QDomDocument* document, QString* format,
@@ -352,14 +374,7 @@ bool readProjectDocument(const QString& projectPath, QDomDocument* document, QSt
 
 	const bool compressed = *format == QLatin1String("mmpz");
 	QByteArray stored;
-	if (compressed)
-	{
-		if (!readBoundedCompressed(&file, projectPath, &stored, error)) { return false; }
-	}
-	else if (!readBoundedBody(&file, projectPath, &stored, error))
-	{
-		return false;
-	}
+	if (!readStoredBody(&file, projectPath, compressed, &stored, error)) { return false; }
 	return parseStoredDocument(projectPath, stored, compressed, document, error);
 }
 

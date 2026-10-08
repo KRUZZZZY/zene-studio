@@ -471,8 +471,7 @@ private slots:
 
 		// A genuine qCompress stream of one byte more than the cap, whose header is then
 		// rewritten to declare only 1 KiB. The declared size passes the fast refusal, so
-		// the cap has to hold on the bytes the inflate actually produces. qUncompress would
-		// grow its output past the header to the real size; the refusal must name the limit.
+		// the cap has to hold on the bytes the inflate actually produces.
 		QByteArray understated = qCompress(QByteArray(static_cast<int>(lmms::control::MaxProjectAssetDocumentBytes) + 1, '\0'));
 		QVERIFY(understated.size() > 4);
 		const quint32 small = 1024u;
@@ -486,7 +485,10 @@ private slots:
 			QJsonObject{{QStringLiteral("project"), understatedPath}});
 		QVERIFY(!grown.ok);
 		QCOMPARE(grown.errorKind, ControlErrorKind::Refused);
-		QVERIFY2(grown.errorMessage.contains(QStringLiteral("limit")),
+		// The refusal must come from the inflate itself (the cap counted on produced bytes), not from a
+		// size check on the header or a parse of the full output: that is what proves the cap held DURING
+		// inflation. Without zlib this build refuses before inflating, so this assertion fails there.
+		QVERIFY2(grown.errorMessage.contains(QStringLiteral("inflates to more than")),
 			qPrintable(QStringLiteral("an understated header inflated past the cap: %1")
 				.arg(grown.errorMessage)));
 	}
