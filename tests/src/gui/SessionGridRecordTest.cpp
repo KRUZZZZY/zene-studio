@@ -44,6 +44,7 @@
 #include "Engine.h"
 #include "MenuTestSupport.h"
 #include "SampleFrame.h"
+#include "SessionScheduler.h"
 #include "SessionGridView.h"
 #include "SessionModel.h"
 #include "Song.h"
@@ -152,6 +153,22 @@ private slots:
 		QAction* record = menuAction(&menu, {QStringLiteral("Record Audio Into Cell")});
 		QVERIFY(record != nullptr);
 		QVERIFY(!record->isEnabled());
+	}
+
+	void landingAMidiSlotIsRefusedWithoutConsumingItsPerformance()
+	{
+		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("type"), QStringLiteral("midi")},
+			{QStringLiteral("pattern"), 0}}).ok);
+		auto& recorder = Engine::getSong()->sessionScheduler().arrangementRecorder();
+		recorder.setArmed(true);
+		QVERIFY(recorder.recordStart(0, 0, 0));
+		QVERIFY(recorder.recordStop(0, 0, 192));
+
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY(!landed.ok);
+		QCOMPARE(recorder.pending(), std::size_t(2));
+		QCOMPARE(Engine::getSong()->tracks().front()->numOfClips(), 0);
 	}
 
 private:
