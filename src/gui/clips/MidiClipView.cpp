@@ -36,6 +36,7 @@
 
 #include "AutomationEditor.h"
 #include "ClipEditsMenu.h"
+#include "ClipLinks.h"
 #include "ConfigManager.h"
 #include "DeprecationHelper.h"
 #include "GuiApplication.h"
@@ -384,6 +385,13 @@ void MidiClipView::clearNotesOutOfBounds()
 	m_clip->getTrack()->addJournalCheckPoint();
 	m_clip->getTrack()->saveJournallingState(false);
 
+	// The clone keeps this clip's linkId and joins the track, so it is a member
+	// of the link group from the moment it exists. Its edits below would then
+	// mirror onto this clip and its peers: a clear would empty the group before
+	// the loop reads this clip's notes, and each add would overwrite them. So
+	// the clone is built with mirroring suspended, and the peers keep their
+	// notes. remove() edits no notes.
+	ClipLinks::MirroringSuspension noMirroring;
 	auto newClip = m_clip->clone();
 	newClip->clearNotes();
 
@@ -893,6 +901,10 @@ bool MidiClipView::destructiveSplitClip(const TimePos pos)
 	m_clip->getTrack()->addJournalCheckPoint();
 	m_clip->getTrack()->saveJournallingState(false);
 
+	// Both halves are clones that join this clip's link group as they are made
+	// (see clearNotesOutOfBounds): built with mirroring suspended, so neither
+	// clear nor copy reaches this clip's notes before the loops below read them.
+	ClipLinks::MirroringSuspension noMirroring;
 	auto leftClip = m_clip->clone();
 	leftClip->clearNotes();
 	auto rightClip =  m_clip->clone();
