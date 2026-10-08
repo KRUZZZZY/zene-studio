@@ -62,6 +62,7 @@
 #include "Engine.h"
 #include "Plugin.h"
 #include "SampleFrame.h"
+#include "../../../plugins/NeuralAmp/nam/NamSampleRate.h"
 
 using namespace lmms;
 
@@ -124,6 +125,7 @@ private slots:
 	void bypassedEffectRunsDefaultBypassImpl();
 	void unknownProcessStatusIsIgnored();
 	void legacyAudioBufferPathRoutesInPlacePorts();
+	void neuralAmpRejectsModelsTrainedAtAnotherSampleRate();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -433,6 +435,16 @@ void AudioPluginTest::legacyAudioBufferPathRoutesInPlacePorts()
 	// 0.8f / 2 and -0.4f / 2 are exact in binary floating point.
 	QCOMPARE(buffer.interleavedBuffer()[0][0], 0.4f);
 	QCOMPARE(buffer.interleavedBuffer()[TestFrames - 1][1], -0.2f);
+}
+
+void AudioPluginTest::neuralAmpRejectsModelsTrainedAtAnotherSampleRate()
+{
+	using nam::sampleRateMatchesEngine;
+	QVERIFY(sampleRateMatchesEngine(-1.0, 48000.0)); // model has no declared rate
+	QVERIFY(sampleRateMatchesEngine(48000.0, 48000.0));
+	QVERIFY(sampleRateMatchesEngine(48000.5, 48000.0));
+	QVERIFY(!sampleRateMatchesEngine(44100.0, 48000.0));
+	QVERIFY(!sampleRateMatchesEngine(48000.0, 0.0));
 }
 
 QTEST_MAIN(AudioPluginTest)

@@ -75,6 +75,7 @@ public:
 private:
 	void loadWorker(QString path);
 	void publishModel(std::unique_ptr<nam::NamModel> model);
+	void refreshSampleRateCompatibility();
 	void setStatus(const std::string& status);
 
 	NeuralAmpControls m_controls;
@@ -83,6 +84,13 @@ private:
 	std::atomic<nam::NamModel*> m_model;
 	/// True while the audio thread is inside processImpl().
 	std::atomic<bool> m_audioActive;
+	/// The model is bypassed while its declared rate does not match the engine.
+	std::atomic<bool> m_sampleRateCompatible;
+	std::mutex m_rateMutex;
+	double m_modelSampleRate = -1.0;
+	double m_engineSampleRate = 0.0;
+	bool m_modelPublicationInProgress = false;
+	std::string m_loadedStatus;
 	/// Worker thread for the most recent load request.
 	std::thread m_loadThread;
 
