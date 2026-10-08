@@ -211,7 +211,8 @@ void AudioEngine::initDevices()
 
 bool AudioEngine::criticalXRuns() const
 {
-	return cpuLoad() >= 99 && Engine::getSong()->isExporting() == false;
+	return m_overloadShedding.load(std::memory_order_relaxed) && cpuLoad() >= 99
+		&& Engine::getSong()->isExporting() == false;
 }
 
 
