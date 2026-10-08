@@ -986,8 +986,14 @@ true_inverse=410 snapshot=38 irreversible=21 not_mutating=353` (`DECLARED rows=8
 block below minus wasm's option row, exactly, and launcher-perform's +4 (3 `true_inverse`, 1 `not_mutating`) on the
 first merge's 818; alloc-probe-fix and link-interop add no row.
 
+**M0 merge train 1** (`050/m0-train-1`, 2026-10-08: 76 accepted Qwen/Luna fixes on the integration tip) adds no row
+and changes classes only. The probe at the train's tip, configured without wasmtime, measures `rows=822
+true_inverse=410 snapshot=37 irreversible=24 not_mutating=351` - the block below minus wasm's option row, exactly.
+Net against the second feature merge: `snapshot` -1, `irreversible` +3, `not_mutating` -2. One of the moves is
+new-p8-51's `record.arm_track` (`snapshot` -> `irreversible`: its take stays after a disarm).
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=831 true_inverse=411 snapshot=41 irreversible=21 not_mutating=358
+     measured: rows=831 true_inverse=411 snapshot=40 irreversible=24 not_mutating=356
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
