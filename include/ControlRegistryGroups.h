@@ -440,6 +440,9 @@ LMMS_EXPORT void registerDetectApplyCommands(ControlRegistry& registry);
  *  - registerNoteSlideCommands: note.slide_set / note.slide_clear - the FL-style
  *    slide (portamento) flag, which the engine has carried since
  *    docs/specs/SPEC-slide-notes.md and never had an id for.
+ *  - registerNoteSelectCommands: note.select - the piano roll's note selection, split
+ *    out of the note.* file (ControlCommandsNotes.cpp) to keep it under the 500-line
+ *    ratchet; called from registerNoteCommands.
  *  - registerNoteTransformCommands: note.transpose / note.velocity_offset /
  *    note.velocity_scale - NoteTransform's three transforms. The grid quantise is
  *    deliberately NOT re-wrapped: groove.quantize already drives
@@ -459,6 +462,7 @@ LMMS_EXPORT void registerDetectApplyCommands(ControlRegistry& registry);
  */
 LMMS_EXPORT void registerNoteRandomCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerNoteSlideCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerNoteSelectCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerNoteTransformCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerScaleCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerScaleEditCommands(ControlRegistry& registry);

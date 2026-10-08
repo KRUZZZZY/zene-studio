@@ -1240,6 +1240,7 @@ src/core/ControlCommandsNoteSlide.cpp
 src/core/ControlCommandsNoteTools.cpp
 src/core/ControlCommandsNoteTransform.cpp
 src/core/ControlCommandsNotes.cpp
+src/core/ControlCommandsNoteSelect.cpp
 src/core/ControlCommandsOutOfProcess.cpp
 src/core/ControlCommandsOutOfProcessEdit.cpp
 src/core/ControlCommandsOutOfProcessShared.h

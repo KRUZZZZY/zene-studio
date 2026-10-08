@@ -1499,6 +1499,7 @@ src/core/ControlCommandsNoteMoves.cpp
 src/core/ControlCommandsNotePlayback.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNoteRandom.cpp
+src/core/ControlCommandsNoteSelect.cpp
 src/core/ControlCommandsNoteShape.cpp
 src/core/ControlCommandsNoteShared.h
 src/core/ControlCommandsNoteSlide.cpp

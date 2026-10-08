@@ -346,6 +346,7 @@ set(LMMS_SRCS
 	core/ControlCommandsMidiReconnect.cpp
 	core/ControlCommandsMidiReconnectEdit.cpp
 	core/ControlCommandsNotes.cpp
+	core/ControlCommandsNoteSelect.cpp
 	# note.probability_set (0.3.0 verb wave): the MIDI-depth probability verb the
 	# engine has carried since docs/MIDI-DEPTH.md and never got an id for.
 	core/ControlCommandsNoteProbability.cpp
