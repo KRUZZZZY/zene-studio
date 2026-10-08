@@ -417,6 +417,10 @@ void ControlRegistry::recordCall(const QString& commandId, const QJsonObject& ar
 {
 	m_foldedNestedRecords += static_cast<int>(foldsIntoEnclosingStep(mutating, changed, enclosedByMutating, result->result));
 	const bool ownStep = m_unrecordedDepth == 0 && recordsItsOwnStep(mutating, changed, enclosedByMutating);
+	// A recorded call that produced NO journal step breaks a coalescing run: its record is not a step the run
+	// can extend, so the next press must open its own step and record (a call that records nothing leaves the
+	// run alone, as documented in ControlUndoCoalescing.cpp).
+	if (ownStep && step == 0) { m_coalescer.breakRun(); }
 	if (ownStep && enclosedByWrapper)
 	{
 		// Held, with its descriptor, until the wrapper's journal step is known (see flushNestedRecords).

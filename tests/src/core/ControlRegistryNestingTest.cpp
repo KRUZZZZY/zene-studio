@@ -356,6 +356,38 @@ private slots:
 		QVERIFY(press(0.7));
 		QCOMPARE(registry->transactions().size() - afterUnrelated, 3);  // press, unrelated, press: three records
 	}
+
+	//! A recorded call that produces NO journal step breaks a coalescing run: the press after it opens its own
+	//! step and record, and never extends the step-less record (a press before and after a step-less one).
+	void aStepLessRecordBreaksACoalescingRun()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		registry->clearTransactions();
+		static bool breakerTouched = true;  // static: the journal keeps the step after the test returns
+		const ControlCommand breaker = describedCommand(QStringLiteral("test.step_breaker"), true,
+			QStringLiteral("test.step_breaker"), &breakerTouched);
+		registry->registerCommand(breaker);
+		const ControlCommand stepless = describedCommand(QStringLiteral("test.stepless"), true, QStringLiteral("test.stepless"));
+		registry->registerCommand(stepless);
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(0));
+		const auto press = [registry, &channel](double volume) {
+			return registry->invoke(QStringLiteral("mixer.set_volume"),
+				{{QStringLiteral("channel"), channel}, {QStringLiteral("volume"), volume}}).ok;
+		};
+
+		QVERIFY(registry->invoke(breaker.id).ok);  // an unrelated step: no run is open
+		const int depthBefore = journal->undoDepth();
+		const int recordsBefore = registry->transactions().size();
+		QVERIFY(press(0.6));
+		QVERIFY(registry->invoke(stepless.id).ok);  // records a transaction, pushes no journal step
+		QVERIFY(press(0.7));
+		QCOMPARE(journal->undoDepth() - depthBefore, 2);  // the two presses are two steps, not one
+		QCOMPARE(registry->transactions().size() - recordsBefore, 3);
+		QCOMPARE(registry->transactions().last().toObject().value(QStringLiteral("command")).toString(),
+			QStringLiteral("mixer.set_volume"));
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlRegistryNestingTest)
