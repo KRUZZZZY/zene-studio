@@ -95,6 +95,9 @@ struct ControlCommand
 	QJsonObject resultSchema;
 	//! records a transaction per SPEC A16
 	bool mutating = false;
+	//! A non-mutating wrapper whose ONE nested call joins that call's coalescing run: a burst of
+	//! its calls (arrangement.nudge) is one undo step. Its nested call's own row sets the target.
+	bool coalescesWrapped = false;
 	//! false for the liveness and bookkeeping commands (control.*) that must answer
 	//! even before the engine is initialised; those report readiness themselves.
 	bool requiresEngine = true;
@@ -308,6 +311,7 @@ private:
 	{
 		QString command;
 		ControlResult result;  //!< the call's result, with its __transaction descriptor still in it
+		QJsonObject args;      //!< the call's arguments (the coalescing key of the run it may join)
 		quint64 step = 0;
 	};
 	QVector<NestedRecord> m_nestedRecords;
@@ -315,8 +319,16 @@ private:
 	//! whole merged journal step (the wrapper's name, listing the nested commands).
 	void flushNestedRecords(const QString& wrapperId, const ControlResult& wrapper, quint64 step);
 	//! Records, or holds for its wrapper, the step of one finished call (runHandler's tail).
-	void recordCall(const QString& commandId, ControlResult* result, bool coalesced, quint64 step, bool mutating,
-		bool changed, bool enclosedByMutating, bool enclosedByWrapper, int foldedBefore);
+	void recordCall(const QString& commandId, const QJsonObject& args, ControlResult* result, bool coalesced,
+		quint64 step, bool mutating, bool changed, bool enclosedByMutating, bool enclosedByWrapper, int foldedBefore);
+	//! The wrapper's one record for several held calls (two or more): the aggregate of flushNestedRecords.
+	void recordAggregate(const QString& wrapperId, const ControlResult& wrapper, quint64 step,
+		const QVector<NestedRecord>& held, const QStringList& nestedIds);
+	//! Whether this finished call may join an earlier run (see runHandler): not a call a wrapper runs, not one a
+	//! mutating call runs, and not a wrapper that joins its nested call's run instead (flushNestedRecords).
+	bool mayCoalesce(const QString& commandId, bool enclosedByWrapper, bool enclosedByMutating) const;
+	//! A coalescing wrapper's burst call joined the previous run: that run's record extends, not a new one.
+	void extendForMergedStep(const NestedRecord& child, const ControlResult& wrapper, const QStringList& nestedIds);
 	//! Stamps \a tx with the contract table's class for its command and refuses
 	//! to let a handler claim an inverse the contract says does not exist.
 	void stampContract(const QString& commandId, Transaction* tx) const;

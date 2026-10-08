@@ -1615,6 +1615,7 @@ src/core/ControlProjectAssetsShared.h
 src/core/ControlRackSupport.cpp
 src/core/ControlRecordingSupport.cpp
 src/core/ControlRegistry.cpp
+src/core/ControlRegistryRecords.cpp
 src/core/ControlRegistryRegistrations.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp

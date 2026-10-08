@@ -80,13 +80,20 @@ const ReversibilityRow kArrangerRows[] = {
 		"Track journal checkpoint: undo removes every copy", ""),
 	R("clip.time_scale", RC::TrueInverse, true, "it rewrites a clip's notes (or its warp) and its length",
 		"Clip journal checkpoint: undo restores the clip's notes (or warp) and length", ""),
+	// The class is not_mutating because the command itself writes nothing. What it records is its
+	// children's: with one covered track, that clip.consolidate's own record; with two or more, one
+	// record for this command whose inverse.children lists each track; with none, no record.
 	R("range.consolidate", RC::NotMutating, false,
-		"it runs clip.consolidate over the range on each covered sample track inside its own handler, so the tracks' "
-		"changes are ONE journal step: ONE record for this command, whose inverse.children lists each track",
-		"the one journal step the tracks' consolidations share: control.undo reverts every track together", ""),
-	R("arrangement.nudge", RC::NotMutating, false,
-		"it runs clip.move on the selected clip, which records itself; nothing of its own is written",
-		"nothing of its own: clip.move's Clip checkpoint", ""),
+		"it runs clip.consolidate over the range on each covered sample track inside its own handler, and records "
+		"nothing of its own: with one track, that clip.consolidate's own record; with two or more, one record for "
+		"this command whose inverse.children lists each track (their changes are one journal step)",
+		"the journal step the tracks' consolidations share: control.undo reverts every track together", ""),
+	// A non-mutating wrapper that declares coalescing (the target is its nested clip.move's): a burst of
+	// presses is one undo step, joined to the previous run of the same clip (ControlRegistry::flushNestedRecords).
+	{ "arrangement.nudge", RC::NotMutating,
+		"it runs clip.move on the selected clip, which records itself; nothing of its own is written. A burst of "
+		"presses joins one undo step",
+		"nothing of its own: clip.move's Clip checkpoint, merged across a burst", "", false, "clip" },
 	R("arrangement.select_clip", RC::NotMutating, false, "it selects the next or previous clip: interface state", "no write", ""),
 	R("track.version_list", RC::NotMutating, false, "it reads a track's versions. Nothing is written", "no write", ""),
 	R("track.version_save", RC::TrueInverse, true, "it keeps a track's clips as a named version", "closure: the previous versions put back", ""),

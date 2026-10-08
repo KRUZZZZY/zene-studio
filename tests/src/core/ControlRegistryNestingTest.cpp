@@ -29,6 +29,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "ProjectJournal.h"
+#include "ProvenanceSection.h"
 
 using namespace lmms;
 
@@ -109,6 +110,9 @@ private slots:
 		QCOMPARE(record.value(QStringLiteral("command")).toString(), wrapper.id);
 		QVERIFY(record.value(QStringLiteral("reversible")).toBool());
 		QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("children")).toArray().size(), 2);
+		// The aggregate's provenance change names the children it covers (none is dropped).
+		const provenance::Section& section = provenance::Section::instance();
+		QCOMPARE(section.at(section.size() - 1).nested, QStringLiteral("test.wrap_child_a test.wrap_child_b"));
 		QVERIFY(registry->invoke(QStringLiteral("control.undo")).ok);
 		QVERIFY(!touchedA);
 		QVERIFY(!touchedB);
@@ -274,6 +278,83 @@ private slots:
 
 		QVERIFY(registry->invoke(QStringLiteral("control.undo")).ok);
 		QCOMPARE(journal->undoDepth(), depthBefore);
+	}
+
+	//! A mutating call run inside a mutating call joins no earlier step: the outer call's step must contain it.
+	void aMutatingChildOfAMutatingCallDoesNotJoinAnEarlierStep()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		registry->clearTransactions();
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(0));
+		QVERIFY(registry->invoke(QStringLiteral("mixer.set_volume"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("volume"), 0.5}}).ok);
+		ControlCommand outer = describedCommand(QStringLiteral("test.guard_outer"), true, QString());
+		outer.handler = [channel](const QJsonObject&) {
+			return ControlRegistry::instance()->invoke(QStringLiteral("mixer.set_volume"),
+				{{QStringLiteral("channel"), channel}, {QStringLiteral("volume"), 0.6}});
+		};
+		registry->registerCommand(outer);
+		const int depthBefore = journal->undoDepth();
+		const int recordsBefore = registry->transactions().size();
+		QVERIFY(registry->invoke(outer.id).ok);
+		QCOMPARE(journal->undoDepth() - depthBefore, 1);
+		QCOMPARE(registry->transactions().size() - recordsBefore, 1);
+	}
+
+	//! A wrapper that declares coalescing (arrangement.nudge) makes a burst of presses ONE undo step: each
+	//! press extends the run's record, and control.undo restores the position from before the burst. A
+	//! press after an unrelated command starts a new step (and a new record).
+	void aBurstOfWrapperCallsIsOneUndoStep()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		registry->clearTransactions();
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(0));
+		static bool unrelatedTouched = true;  // static: the journal keeps the step after the test returns
+		const ControlCommand unrelated = describedCommand(QStringLiteral("test.burst_unrelated"), true,
+			QStringLiteral("test.burst_unrelated"), &unrelatedTouched);
+		registry->registerCommand(unrelated);
+		ControlCommand nudge = describedCommand(QStringLiteral("test.burst_nudge"), false, QString());
+		nudge.coalescesWrapped = true;
+		nudge.handler = [channel](const QJsonObject& args) {
+			return ControlRegistry::instance()->invoke(QStringLiteral("mixer.set_volume"),
+				{{QStringLiteral("channel"), channel}, {QStringLiteral("volume"), args.value(QStringLiteral("volume")).toDouble()}});
+		};
+		registry->registerCommand(nudge);
+		const auto press = [registry, &nudge](double volume) {
+			return registry->invoke(nudge.id, {{QStringLiteral("volume"), volume}}).ok;
+		};
+		QVERIFY(registry->invoke(QStringLiteral("mixer.set_volume"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("volume"), 0.5}}).ok);
+		QVERIFY(registry->invoke(unrelated.id).ok);  // breaks any run: the presses start their own
+		const float pre = Engine::mixer()->mixerChannel(0)->m_volumeModel.value();
+		const int depthBefore = journal->undoDepth();
+		const int recordsBefore = registry->transactions().size();
+
+		QVERIFY(press(0.6));
+		QVERIFY(press(0.7));
+		QVERIFY(press(0.8));
+		QCOMPARE(journal->undoDepth() - depthBefore, 1);
+		QCOMPARE(registry->transactions().size() - recordsBefore, 1);
+		const QJsonObject record = registry->transactions().last().toObject();
+		// One nested call: the record is that call's own (as for one track), extended by each later press.
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), QStringLiteral("mixer.set_volume"));
+		QCOMPARE(record.value(QStringLiteral("commands")).toInt(), 3);
+		QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+		QVERIFY(registry->invoke(QStringLiteral("control.undo")).ok);
+		QCOMPARE(journal->undoDepth(), depthBefore);
+		QVERIFY(qFuzzyCompare(Engine::mixer()->mixerChannel(0)->m_volumeModel.value(), pre));
+
+		// After an unrelated command, a press is a new step and a new record.
+		QVERIFY(registry->invoke(unrelated.id).ok);
+		const int afterUnrelated = registry->transactions().size();
+		QVERIFY(press(0.6));
+		QVERIFY(registry->invoke(unrelated.id).ok);
+		QVERIFY(press(0.7));
+		QCOMPARE(registry->transactions().size() - afterUnrelated, 3);  // press, unrelated, press: three records
 	}
 };
 

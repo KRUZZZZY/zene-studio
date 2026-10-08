@@ -166,6 +166,7 @@ int serialisedBytes(const provenance::Change& change)
 	if (!change.target.isEmpty()) { bytes += attributeBytes("target", change.target); }
 	if (!change.before.isEmpty()) { bytes += attributeBytes("before", change.before); }
 	if (!change.after.isEmpty()) { bytes += attributeBytes("after", change.after); }
+	if (!change.nested.isEmpty()) { bytes += attributeBytes("nested", change.nested); }
 	return bytes;
 }
 
@@ -173,7 +174,7 @@ int serialisedBytes(const provenance::Change& change)
 //! then the three it writes only when they have a value. Anything else on the
 //! element is an attribute this writer never emits.
 const char* const s_supportedAttributes[] = {
-	"seq", "at", "actor", "instance", "command", "target", "before", "after"};
+	"seq", "at", "actor", "instance", "command", "target", "before", "after", "nested"};
 
 //! The attributes whose absence means the entry is not one writeTo produced:
 //! seq (checked separately, as a positive number), and the four it sets
@@ -225,6 +226,7 @@ bool parseChange(const QDomNode& node, provenance::Change& change, quint64& high
 	change.target = element.attribute(QStringLiteral("target"));
 	change.before = element.attribute(QStringLiteral("before"));
 	change.after = element.attribute(QStringLiteral("after"));
+	change.nested = element.attribute(QStringLiteral("nested"));
 	highest = qMax(highest, seq);
 	return true;
 }
@@ -261,12 +263,13 @@ void Section::append(Change change)
 	trim();
 }
 
-void Section::updateLastAfter(const QString& after)
+void Section::updateLastAfter(const QString& after, const QString& nested)
 {
-	if (m_changes.isEmpty() || after.isEmpty()) { return; }
+	if (m_changes.isEmpty() || (after.isEmpty() && nested.isEmpty())) { return; }
 	Change& newest = m_changes.last();
 	const int previous = newest.bytes;
-	newest.after = after;
+	if (!after.isEmpty()) { newest.after = after; }
+	if (!nested.isEmpty()) { newest.nested = newest.nested.isEmpty() ? nested : newest.nested + QLatin1Char(' ') + nested; }
 	newest.bytes = serialisedBytes(newest);
 	m_bytes += newest.bytes - previous;
 	trim();
@@ -327,7 +330,8 @@ bool Section::load(const QDomElement& section)
 	return true;
 }
 
-void recordChange(const QString& command, const QJsonObject& before, const QJsonObject& report)
+void recordChange(const QString& command, const QJsonObject& before, const QJsonObject& report,
+	const QStringList& nested)
 {
 	QJsonObject outcome = report;
 	outcome.remove(QStringLiteral("__transaction"));
@@ -344,15 +348,15 @@ void recordChange(const QString& command, const QJsonObject& before, const QJson
 	change.target = targetFrom(before);
 	if (!before.isEmpty()) { change.before = digestJson(before); }
 	if (!outcome.isEmpty()) { change.after = digestJson(outcome); }
+	change.nested = nested.join(QLatin1Char(' '));
 	Section::instance().append(change);
 }
 
-void extendTopChange(const QJsonObject& report)
+void extendTopChange(const QJsonObject& report, const QStringList& nested)
 {
 	QJsonObject outcome = report;
 	outcome.remove(QStringLiteral("__transaction"));
-	if (outcome.isEmpty()) { return; }
-	Section::instance().updateLastAfter(digestJson(outcome));
+	Section::instance().updateLastAfter(outcome.isEmpty() ? QString() : digestJson(outcome), nested.join(QLatin1Char(' ')));
 }
 
 AgentScope::AgentScope()
@@ -406,6 +410,7 @@ bool writeTo(DataFile& file)
 		if (!change.target.isEmpty()) { child.setAttribute(QStringLiteral("target"), change.target); }
 		if (!change.before.isEmpty()) { child.setAttribute(QStringLiteral("before"), change.before); }
 		if (!change.after.isEmpty()) { child.setAttribute(QStringLiteral("after"), change.after); }
+		if (!change.nested.isEmpty()) { child.setAttribute(QStringLiteral("nested"), change.nested); }
 		element.appendChild(child);
 	}
 	content.appendChild(element);

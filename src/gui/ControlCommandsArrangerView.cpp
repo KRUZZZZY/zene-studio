@@ -420,10 +420,19 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 		"upper half draws a range, its lower half moves). Interface state."),
 		objectSchema({{QStringLiteral("tool"), enumProperty(toolNames())}}, {QStringLiteral("tool")}),
 		objectSchema({{QStringLiteral("tool"), stringProperty()}}), false, setTool);
-	add(registry, "arrangement", "nudge", QStringLiteral("Move the selected clip left or right by 'amount' ticks "
-		"(default: the arranger's snap) - clip.move, which records itself. Refused when the clip is already at the start."),
-		objectSchema({{QStringLiteral("direction"), enumProperty({QStringLiteral("left"), QStringLiteral("right")})},
-			{QStringLiteral("amount"), integerProperty(1, 1 << 20)}}, {QStringLiteral("direction")}), objectProperty(), false, nudge);
+	{
+		// Declared as a coalescing wrapper: a burst of presses is one undo step (the clip.move it runs joins its run).
+		ControlCommand nudgeCommand = guiCommand("arrangement", "nudge");
+		nudgeCommand.description = QStringLiteral("Move the selected clip left or right by 'amount' ticks "
+			"(default: the arranger's snap) - clip.move, which records itself. Refused when the clip is already at the start.");
+		nudgeCommand.argsSchema = objectSchema({{QStringLiteral("direction"), enumProperty({QStringLiteral("left"), QStringLiteral("right")})},
+			{QStringLiteral("amount"), integerProperty(1, 1 << 20)}}, {QStringLiteral("direction")});
+		nudgeCommand.resultSchema = objectProperty();
+		nudgeCommand.mutating = false;
+		nudgeCommand.coalescesWrapped = true;
+		nudgeCommand.handler = nudge;
+		registry.registerCommand(nudgeCommand);
+	}
 	add(registry, "arrangement", "select_clip", QStringLiteral("Select the next or previous clip on the selected clip's "
 		"track (window.select). Interface state."),
 		objectSchema({{QStringLiteral("direction"), enumProperty({QStringLiteral("next"), QStringLiteral("previous")})}},

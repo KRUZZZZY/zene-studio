@@ -437,9 +437,18 @@ private slots:
 		{
 			if (!entry.coalesces()) { continue; }
 			++declared;
-			QCOMPARE(entry.cls, control::ReversibilityClass::TrueInverse);
-			QVERIFY2(registry->command(entry.command) != nullptr,
-				qPrintable(entry.command + " declares coalescing but is not registered"));
+			const ControlCommand* spec = registry->command(entry.command);
+			QVERIFY2(spec != nullptr, qPrintable(entry.command + " declares coalescing but is not registered"));
+			// A wrapper declares its coalescing on its command (ControlCommand::coalescesWrapped) and joins its
+			// nested call's run, whose own row is the true_inverse one. Every other declaration is a true_inverse row.
+			if (spec->coalescesWrapped)
+			{
+				QVERIFY2(!spec->mutating, qPrintable(entry.command + " is a coalescing wrapper but is mutating"));
+			}
+			else
+			{
+				QCOMPARE(entry.cls, control::ReversibilityClass::TrueInverse);
+			}
 		}
 		QVERIFY2(declared > 0, "nothing declares coalescing, so the drag rule has no subject");
 
