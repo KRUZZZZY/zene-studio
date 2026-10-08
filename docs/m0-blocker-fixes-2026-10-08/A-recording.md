@@ -85,3 +85,35 @@ Verification (round 3):
 Open:
 - The GUI notice is not covered by a test.
 - Round-2 open items still stand: GUI wiring of `lastTakeDroppedFrames` per clip beyond the command reply, the audio-thread `AudioBusHandle::addPlayHandle` append (pre-existing), and the one-combined-reversal caveat for the round-2 red evidence.
+
+## Round 4 (2026-10-08)
+
+Commits, oldest first: `c96a6a6f3` (P6 blocker: lane creation), `50fc58f40` (P6: mute rule, comping, undo), `913656b9e` (P2: Record then Stop), `aaec04d57` (arm latch under the lock), `e58ed9f74` (drop count atomic), `adc844f93` (test assertions, idle poll).
+
+| Item (review r2) | Verdict | Fix commit | Test | Red (previous commit) | Green |
+|---|---|---|---|---|---|
+| 1. BLOCKER: lane creation cuts the next loop pass | FIXED. Two causes: `updateTrackClips` reached from the lane clip's construction and its position change, and the lane clip's own `dataChanged` reaching `playbackPositionChanged`. Both removed the track's live handles. Lane creation now suspends the track's clip updates (`setClipUpdatesSuspended`, atomic), and `playbackPositionChanged` does nothing while suspended | c96a6a6f3 | `loopPassesKeepTheirLengthWhileTheReaperRuns`: three passes, a real jump back to the loop start between them (`song->setPlayPos(0)`), the reaper running between periods | exit 1: lanes 9728 / 8943 / 8945 frames | 9728 / 9728 / 9728 (an unbroken recording of 120 periods gives 30208 = 30720 − 512 latency, so each pass loses only the round-trip latency) |
+| 2. Mute rule, comping, undo | FIXED. Only the latest pass gives way to a new one, and only while still audible as recording left it; the pass state starts empty on each arming; a muted take still plays where the composite names its lane (the comp decides its spans); arming checkpoints the track, and the lane take and the disarm are not journalled separately | 50fc58f40 | `aUserUnmutedPassIsNotMutedAgain`, `aNewArmingLeavesEarlierTakesAlone`, `aComposedMutedTakePlaysItsSpan` (the comped first take sounds 0.25 of the second), `oneUndoStepTakesBackARecording` (one undo: no lanes) | exit 4 (all four fail) | 31 of 31 |
+| 3. Record, then Stop while stopped | FIXED: the latch is cleared before `Song::stop`'s early return | 913656b9e | `recordThenStopWhileStoppedLeavesNoLatch` | exit 1 | green |
+| 4. `armRecordTake` writes the playing latch without the lock | FIXED: the write is under `requestChangesGuard` | aaec04d57 | none: the race needs the render thread's read to interleave with the write, which a unit test cannot force | n/a | 32 of 32 |
+| 5. `record.get_state` reads `lastTakeDroppedFrames` | FIXED: the field is atomic, so the read is safe on any thread (whether the command runs on the UI thread is not confirmed; it no longer matters) | e58ed9f74 | the existing notice/reply test stays green | n/a (no behaviour change) | green |
+| 6a. `clipDeletedBeforeTheTakeIsInstalledIsSafe` asserted `QVERIFY(true)` | FIXED: it asserts the reaper took a queued take (`takesReaped`) and that the deleted clip is gone (`QPointer`). The count is not exactly one: deleting the track also queues the clip's standby takes | adc844f93 | itself | compile error on HEAD (`takesReaped` is round-4 API) | green |
+| 6b. `queueFullIsCounted` assumed an empty queue | FIXED: the queue is pumped empty first | adc844f93 | itself | not red-producing | green |
+| 6c. Standby drain threads woke about 1000 times a second per armed clip | FIXED: idle poll 20 ms (about 50 a second). Not on the audio thread; the ring holds about 0.34 s | adc844f93 | none: a timing property | n/a | green |
+
+Decisions to check:
+- Item 2: a recording is journalled as its arm (the record flag, then the track's checkpoint). One undo takes the track back to its state before the arm, which removes the lanes and the mutes. The arm's own record-flag entry is a second, empty step, which the user can undo too.
+- Item 2: the mute rule mutes only the immediately previous pass. Passes two or more back are never touched again, so a user's choice on them persists.
+- Item 1: the earlier 392-frame loss in passes two and three was a test artefact: my first version simulated the wrap without moving the transport, so the passes did not start at the loop start. The real jump gives exact passes.
+
+Verification (round 4):
+- Targeted suites: 26 of 26 pass from `build/tests` (the recording, clip, render, punch and transport suites from round 3, plus TakeLaneTest, TakeLaneCompTest and TakeLaneCompPlaybackTest, since the composite now reaches muted takes). RecordingRealtimeTest: 32 of 32.
+- Gates on the final tree, all exit 0: complexity, file-length, fork-sources, no-upstream-regression (also run at each commit).
+- No command changed in round 4, so the commands snapshot is unchanged.
+- Not run: the full `ctest` bar, `run-all-gates.sh`, `tests/rt-safety-sweep.py`.
+
+Open:
+- The GUI notice is still not covered by a test (round 3).
+- The main-thread join at take end can wait up to the idle poll (20 ms) now.
+- Rp3 windows and B6 (round 2 notes) are closed as far as the tests can show; the mute rule is tested with at most two or three passes.
+- Pre-existing `AudioBusHandle::addPlayHandle` audio-thread append is outside this batch.
