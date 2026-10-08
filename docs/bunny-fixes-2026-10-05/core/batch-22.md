@@ -166,3 +166,13 @@ it — needs the clamp taken alongside a future rescan/browser work item rather 
 as an unverifiable patch. Clusters 2404 and 2403 are real lifetime/ownership
 design changes already noted in docs/PLUGIN-SCAN-CACHE.md; both should be handled
 if/when a "Rescan plugins" button is added. Cluster 5220 is by-design caching.
+## Rework correction (2026-10-08)
+
+Source: `cada6f9a8` (REWORK in `review-core.md`, item 9).
+
+- Cluster 5207 is narrowed from FIXED to: a duplicate display name no longer overwrites another alias. The
+  fallback to the stable key did not check that the key was free, so a display name equal to another
+  parameter's stable key (for example `id:gain#2`) still overwrote that parameter's alias. Fixed in
+  `e7278bd34` (`fix(rework f7056046f)`), test `DeviceToolsTest::aDisplayNameEqualToAnotherStableKeyDoesNotOverwriteIt`
+  (red at HEAD: report `{"Gain":"Level","id:gain#2":"Third"}`, Drive lost). The file-length ratchet failure that
+  commit introduced is corrected in `000ab1155`.

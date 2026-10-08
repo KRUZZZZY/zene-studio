@@ -157,3 +157,15 @@ fails on this worktree because `build/plugins` has no `.so` files; that is a sta
 build artifact, not a code defect, and it predates this batch. `mcp__fff__`'s index
 is stale for this worktree and matched nothing that exists; bounded `rg` plus direct
 reads were used instead.
+## Rework correction (2026-10-08)
+
+Source: `f88de9f79` (REWORK in `review-core.md`, item 4).
+
+- Cluster 1826 is narrowed from FIXED to: the stored **length** of a contained-clip crossfade is now the
+  shared span (`230b454d0`), and the later clip's rendered fade-in is checked (`e318ae28c`, test
+  `ArrangementModesTest::aCrossfadeIntoAContainedClipRendersAFadeInThatReachesFullGain`).
+- Not fixed, verdict BLOCKED: the **earlier** clip's fade-out is anchored to its tail (`ClipEdits` fades
+  are head/tail-anchored), so for `[0,100)` with a contained `[20,40)` it still covers `[80,100)`, not the
+  shared span `[20,40)`. A correct containment crossfade needs an owner decision: split the containing clip
+  at the contained clip's end (which changes the moved clip's identity when it is the container), or add an
+  offset fade to `ClipEdits`. Neither was done in the rework.

@@ -106,3 +106,15 @@ Red/green: none
 
 Leftovers: none. Both fixes are committed with regression tests, the three unresolved clusters were
 resolved from source evidence without product changes, and `git status --short` is clean.
+
+## Rework correction (2026-10-08)
+
+Source: `25023e49a` (REWORK in `review-core.md`, blocking finding 1 and item 2).
+
+- The claim that the new test file was "registered in `tests/fork-sources.txt`" was wrong at `dd604aa40`:
+  the entry named `src/core/InputChannelRingTest.cpp`, which does not exist. The real file is
+  `tests/src/core/InputChannelRingTest.cpp`, which `tests/CMakeLists.txt` already names. Corrected in
+  `29b80e2ff` (`fix(rework dd604aa40)`). Check at HEAD before the fix: that path is missing; after: every
+  fork-sources entry exists.
+- The constructor guards themselves (`refusesACapacityThatCannotBeRoundedUp`,
+  `refusesAStorageSizeThatOverflows`) were not changed by the rework.

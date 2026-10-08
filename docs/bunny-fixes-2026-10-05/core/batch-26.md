@@ -119,3 +119,15 @@ the project/revision test executables listed above. The two reindex helpers assu
 never re-inserted at its old index by an undo — an inner-chain removal records no structural undo step
 in the current code (`journalRemoval`, `src/core/ControlCommandsRack.cpp:213`), so no journal entry is
 silently invalidated, but a future inverse that re-creates an inner chain would need the same treatment.
+## Rework correction (2026-10-08)
+
+Source: `9b92e4180` (REWORK in `review-core.md`, item 12).
+
+- Cluster 5236 is narrowed: the failed **staging copy** case was covered by `02492a165`. The final rename
+  failure, the destination-first removal and the fixed `.rotate` name were not. Fixed in `6dbeb12f4`
+  (`fix(rework 02492a165)`): unique staging via `QTemporaryFile`, replacing move via `std::filesystem::rename`,
+  and a test-only failure seam. Tests `RevisionTimelineTest::aFailedReplacementAfterStagingKeepsTheSlot` (red at
+  HEAD: slot emptied) and `aRotationLeavesAnUnrelatedRotateFileAlone` (red at HEAD: stray file deleted).
+- Cluster 4352 (`be00be4f2`): "a failed copy leaves the live project untouched" held for the copy only. The
+  rename failure and its unchecked fallback copy could still lose the live project. Fixed in `7f1af2029`
+  (`fix(rework be00be4f2)`), test `RevisionTimelineTest::aFailedReplacementAfterStagingKeepsTheLiveProject`.

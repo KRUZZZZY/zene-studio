@@ -126,3 +126,16 @@ change — both need fault injection at the filesystem level (a failing flush/cl
 failure after a successful remove) that no headless test can force; cluster 3417 needs a
 threading redesign deferred off the audio thread, and its VST-side counterpart of cluster 5254
 lives in `plugins/VstBase/RemoteVstPlugin.cpp`, outside this lane's core scope.
+## Rework correction (2026-10-08)
+
+Source: `fe3bcd59b` (REWORK in `review-core.md`, item 15).
+
+- Cluster 5254 said the out-of-range refusal writes "a warning at the wire boundary". That warning ran on the
+  audio thread (`process()` pumps messages while it waits for the client), where a log allocates and locks.
+  Corrected in `181fab290` (`fix(rework 2fe70d746)`): the refusal is recorded in atomics and written by
+  `RemotePlugin::reportRefusedChannelCounts()` from the main thread (`updateAudioBuffer`, `processFinished`,
+  the destructor). Tests `RemotePluginAudioPortsTest::refusedChannelCountsAllocateNothing` (red at HEAD: two
+  warnings on the audio path) and `refusedChannelCountIsReportedOnceFromTheMainThread`.
+- Cluster 3417 stays SKIPPED-SCOPE. The rework changed only the new refusal warning. Still on the audio path,
+  unchanged: `qCritical` for a removed message id (`src/core/RemotePlugin.cpp`, about line 632), the
+  `fprintf` debug message (about line 666), and the model write `setChannelCounts` (about line 660).

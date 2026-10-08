@@ -137,3 +137,14 @@ Leftovers: cluster 5493 is still unfixed in code — the render-to-temp-then-
 replace change is real work but needs a renderer-injection seam to be testable,
 so it is left for a lane that can afford that refactor. No other finding is
 half-done.
+## Rework correction (2026-10-08)
+
+Source: `58887e4f9` (REWORK in `review-core.md`, item 7; it reports on `f8d551dc1`).
+
+- Cluster 919 is narrowed: the probe fixed the audio case, but with `probe=true` and an unfielded
+  exclusion `considerPath` sent every cheap match to the audio-only probe path, and a preset or project
+  match returned from there without being appended. Presets and projects were silently dropped. Fixed in
+  `7801d192c` (`fix(rework f8d551dc1)`), test `BrowserCatalogTest::probeKeepsCheapMatchesOfPresetsAndProjects`
+  (red at HEAD: matched 0, expected 2).
+- Cluster 3738 (`a24df21b5`): the statement that the matched set is unchanged is only true after `7801d192c`.
+  Before it, the probe-on path could lose non-audio matches.
