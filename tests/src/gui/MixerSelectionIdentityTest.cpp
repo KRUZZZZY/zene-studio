@@ -31,6 +31,7 @@
 
 #include <QTemporaryDir>
 
+#include "AutomatableButton.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
@@ -150,6 +151,34 @@ private slots:
 
 		QCOMPARE(selectedName(), QStringLiteral("Reorder B"));
 		QCOMPARE(mixer->currentMixerChannel()->channelIndex(), first);
+	}
+
+	// The same reorder, checked on the strips too: after it, every strip drives the channel now at its
+	// own number, and the selection is still the moved channel.
+	void aReorderRebindsEveryStripAndKeepsTheSelection()
+	{
+		MixerView* mixer = getGUI()->mixerView();
+		const int first = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(first)->m_name = QStringLiteral("Rebind A");
+		const int second = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(second)->m_name = QStringLiteral("Rebind B");
+		for (int i = first; i <= second; ++i)
+		{
+			Engine::mixer()->mixerChannel(i)->m_volumeModel.setValue(0.25f + 0.25f * (i - first));
+		}
+		syncMixer();
+		mixer->setCurrentMixerChannel(second);
+
+		Engine::mixer()->moveChannelLeft(second);
+		syncMixer();
+
+		QCOMPARE(selectedName(), QStringLiteral("Rebind B"));
+		for (int i = 0; i < static_cast<int>(Engine::mixer()->numChannels()); ++i)
+		{
+			MixerChannel* channel = Engine::mixer()->mixerChannel(i);
+			QCOMPARE(mixer->channelView(i)->channelIndex(), i);
+			QCOMPARE(mixer->channelView(i)->soloButton()->model(), &channel->m_soloModel);
+		}
 	}
 
 private:
