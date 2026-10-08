@@ -211,7 +211,11 @@ void SampleClip::armRecordTake()
 	if (isRecord())
 	{
 		++m_armGeneration;
-		setIsPlaying(false);
+		{
+			// The render thread reads the playing latch; write it under the lock it renders under.
+			const auto guard = Engine::audioEngine()->requestChangesGuard();
+			setIsPlaying(false);
+		}
 		// A new arming starts with no pass to give way to. The track is checkpointed once here, so
 		// one undo step takes back the whole recording (its lanes and mutes).
 		m_lastPassTake = nullptr;
