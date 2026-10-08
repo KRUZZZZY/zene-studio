@@ -413,6 +413,49 @@ private slots:
 		QCOMPARE(readBytes(m_project), live);
 	}
 
+	//! A replacement that fails AFTER its staged copy is complete leaves the slot it would have replaced
+	//! exactly as it was, and the rotation reports the refusal. Before the rework the slot was removed
+	//! first, so this failure emptied it.
+	void aFailedReplacementAfterStagingKeepsTheSlot()
+	{
+		buildFixture();
+		const QString rev1 = projectRevisionPath(m_project, 1);
+		const QString rev2 = projectRevisionPath(m_project, 2);
+		QVERIFY(writeBytes(rev1, documentWith(6)));
+		QVERIFY(writeBytes(rev2, documentWith(9)));
+		const QByteArray keptBackup = readBytes(rev2);
+
+		setRevisionReplacementFailureForTest(true);
+		bool refused = false;
+		QString reason;
+		const int kept = rotateProjectRevision(m_project, &refused, &reason);
+		setRevisionReplacementFailureForTest(false);
+
+		QVERIFY2(QFileInfo::exists(rev2), "the failed replacement emptied the slot it would have replaced");
+		QCOMPARE(readBytes(rev2), keptBackup);
+		QVERIFY2(refused, "a failed replacement was reported as a successful rotation");
+		QVERIFY(!reason.isEmpty());
+		QCOMPARE(kept, 0);
+		// The staging file this call created is not left behind.
+		QCOMPARE(QDir(m_dir.path()).entryList({QStringLiteral("*.rotate-*")}).size(), 0);
+	}
+
+	//! A file that is not ours, named the way the old staging file was named, is not deleted by a rotation.
+	void aRotationLeavesAnUnrelatedRotateFileAlone()
+	{
+		buildFixture();
+		const QString stray = projectRevisionPath(m_project, 0) + QStringLiteral(".rotate");
+		QVERIFY(writeBytes(stray, documentWith(5)));
+		const QByteArray before = readBytes(stray);
+
+		bool refused = false;
+		QString reason;
+		rotateProjectRevision(m_project, &refused, &reason);
+
+		QVERIFY2(QFileInfo::exists(stray), "a rotation deleted a file that was not its own");
+		QCOMPARE(readBytes(stray), before);
+	}
+
 	//! An id in the keep-3 set restores through the policy's OWN function, which
 	//! is the whole point of listing those artefacts rather than re-reading them:
 	//! one implementation of the rotation order, and the replaced file is

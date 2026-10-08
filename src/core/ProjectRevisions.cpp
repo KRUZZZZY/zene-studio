@@ -24,10 +24,16 @@
 
 #include "ProjectRevisions.h"
 
+#include <atomic>
+#include <filesystem>
+#include <system_error>
+
 #include <QCryptographicHash>
 #include <QFile>
+#include <QFileDevice>
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QTemporaryFile>
 
 namespace lmms
 {
@@ -46,32 +52,53 @@ QString sha256OfFile(const QString& path)
 	return QString::fromLatin1(hash.result().toHex());
 }
 
+//! Test seam: while set, the replacement step of copyRevision fails once its staged copy is complete,
+//! so a test can prove the slot it would have replaced keeps its bytes. Never set outside tests.
+std::atomic<bool> g_failReplacementForTest{false};
+
+//! Moves the complete staged copy \a staged over \a to. std::filesystem::rename replaces an existing
+//! file in one step (rename(2) on POSIX, MoveFileEx with replace on Windows), so \a to is never
+//! absent: a failure leaves it exactly as it was.
+bool replaceWithStaged(const QString& staged, const QString& to)
+{
+	if (g_failReplacementForTest.load()) { return false; }
+	std::error_code ec;
+	std::filesystem::rename(staged.toLocal8Bit().constData(), to.toLocal8Bit().constData(), ec);
+	return !ec;
+}
+
 //! Copies \a from onto \a to, replacing it. The copy is bounded: a source
 //! larger than the policy's per-revision cap is refused, never truncated.
 //!
-//! Luna cluster 5236: the destination is NOT removed first. The copy lands in a
-//! sibling temporary file and is renamed over \a to only once it is complete, so
-//! a failed copy leaves whatever revision was in \a to exactly as it was - a
-//! backup is never destroyed by a rotation that then fails.
+//! Luna cluster 5236 / 2026-10-08 rework: the destination is never removed before
+//! the copy is known to be good. The bytes land in a uniquely named sibling
+//! (QTemporaryFile, so the name is ours and cannot take a file that is not ours),
+//! and that sibling is moved over \a to in one replacing rename. A failure at any
+//! step leaves whatever was in \a to exactly as it was, and removes only the
+//! staging file this call created.
 bool copyRevision(const QString& from, const QString& to, bool* refused)
 {
-	QFileInfo source(from);
+	const QFileInfo source(from);
 	if (source.size() > ProjectRevisionPolicy::MaxRevisionBytes)
 	{
 		*refused = true;
 		return false;
 	}
-	const QString staged = to + QStringLiteral(".rotate");
-	QFile::remove(staged);
-	if (!QFile::copy(from, staged))
+	QFile in(from);
+	if (!in.open(QIODevice::ReadOnly)) { return false; }
+	const QByteArray bytes = in.readAll();
+	if (in.error() != QFileDevice::NoError) { return false; }
+
+	QTemporaryFile staged(to + QStringLiteral(".rotate-XXXXXX"));
+	staged.setAutoRemove(false);
+	if (!staged.open()) { return false; }
+	const QString stagedPath = staged.fileName();
+	const bool written = staged.write(bytes) == bytes.size() && staged.flush();
+	staged.close();
+	if (!written || staged.error() != QFileDevice::NoError
+		|| !QFile::setPermissions(stagedPath, source.permissions()) || !replaceWithStaged(stagedPath, to))
 	{
-		QFile::remove(staged);
-		return false;
-	}
-	QFile::remove(to);
-	if (!QFile::rename(staged, to))
-	{
-		QFile::remove(staged);
+		QFile::remove(stagedPath);
 		return false;
 	}
 	return true;
@@ -89,6 +116,11 @@ void trimRevisionSet(const QString& projectPath)
 }
 
 } // namespace
+
+void setRevisionReplacementFailureForTest(bool fail)
+{
+	g_failReplacementForTest.store(fail);
+}
 
 QString projectRevisionPath(const QString& projectPath, int revision)
 {

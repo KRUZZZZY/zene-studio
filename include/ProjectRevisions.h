@@ -90,6 +90,11 @@ LMMS_EXPORT bool restoreProjectRevision(const QString& projectPath, int revision
  */
 LMMS_EXPORT bool replaceProjectWithStaged(const QString& projectPath, const QString& staging);
 
+/*! Test seam: while \a fail is true, the replacement step of a revision copy fails once its staged copy is
+ * complete, so a test can prove the slot it would have replaced keeps its bytes. Never set outside tests.
+ */
+LMMS_EXPORT void setRevisionReplacementFailureForTest(bool fail);
+
 } // namespace control
 } // namespace lmms
 
