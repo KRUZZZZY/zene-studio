@@ -226,6 +226,7 @@ void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockCo
 		slot.phaseOrigin = event == LaunchEvent::Started ? legatoOriginFor( slot ) : slot.state.startedTick;
 		slot.phaseOriginFor = slot.state.startedTick;
 		if( event == LaunchEvent::Started ) { takeColumnOver( slot ); }
+		else { m_recorder.recordStop( slot.track, slot.scene, slot.state.startedTick ); }
 		m_recorder.recordStart( slot.track, slot.scene, slot.state.startedTick );
 		// WF-055: a cell recording a fixed length is given its stop now, at the line the take ends on.
 		const tick_t length = event == LaunchEvent::Started

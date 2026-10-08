@@ -458,6 +458,28 @@ private slots:
 		// loss it is there to prevent.
 		QCOMPARE(scheduler.arrangementRecorder().pending(), std::size_t(4));
 	}
+
+	//! Repeat's retrigger closes the previous recorded span before it opens the
+	//! next one, so every launch remains landable after the slot is stopped.
+	void repeatRetriggerRecordsAStopBeforeItsNextStart()
+	{
+		SessionScheduler scheduler;
+		scheduler.arrangementRecorder().setArmed(true);
+		QVERIFY(scheduler.requestLaunch(0, 0, LaunchMode::Repeat, LaunchQuantisation::Bar));
+		SessionClockContext ctx = clock(0);
+		scheduler.processAudio(ctx, kFramesPerPeriod);
+		ctx.positionTicks = kTicksPerBar;
+		scheduler.processAudio(ctx, kFramesPerPeriod);
+
+		SessionArrangementRecorder::Event events[kCapacity];
+		QCOMPARE(scheduler.arrangementRecorder().snapshot(events, kCapacity), std::size_t(3));
+		QVERIFY(events[0].started);
+		QCOMPARE(static_cast<int>(events[0].tick), 0);
+		QVERIFY(!events[1].started);
+		QCOMPARE(static_cast<int>(events[1].tick), static_cast<int>(kTicksPerBar));
+		QVERIFY(events[2].started);
+		QCOMPARE(static_cast<int>(events[2].tick), static_cast<int>(kTicksPerBar));
+	}
 };
 
 QTEST_GUILESS_MAIN(SessionArrangementRecordTest)
