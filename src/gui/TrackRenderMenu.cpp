@@ -80,6 +80,7 @@ void addDawProjectActions(QMenu* fileMenu)
 	const QString filter = QMenu::tr("DAWproject files (*.dawproject)");
 	QAction* import = fileMenu->addAction(QMenu::tr("Import DAWproject..."));
 	import->setData(QStringLiteral("dawproject.import"));
+	import->setToolTip(QMenu::tr("Imports ZIP entries using STORE (method 0). DEFLATE (method 8) is not supported."));
 	QObject::connect(import, &QAction::triggered, fileMenu, [filter] {
 		const QString path = QFileDialog::getOpenFileName(QApplication::activeWindow(), QMenu::tr("Import DAWproject"),
 			ConfigManager::inst()->userProjectsDir(), filter);
