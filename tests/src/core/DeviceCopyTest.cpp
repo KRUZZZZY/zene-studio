@@ -517,6 +517,24 @@ private slots:
 	{
 		QVERIFY(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("clap")}}).ok);
 		QCOMPARE(pluginorganiser::preferredFormat(), QStringLiteral("clap"));
+		// Luna 5726: a changed format is an edit, so the transaction it records carries
+		// the handler's OWN before-state and mechanism. Without a payload the registry
+		// only knows "some undo step happened" (ControlRegistry.cpp recordTransactionOf).
+		const QJsonObject formatTx = revtest::stateOf(QStringLiteral("plugin.prefer_format"));
+		QVERIFY2(!formatTx.isEmpty(), "the format change recorded no transaction");
+		QVERIFY2(formatTx.value(QStringLiteral("before")).toObject().contains(QStringLiteral("format")),
+			"the transaction carries no prior format to revert to");
+		QCOMPARE(formatTx.value(QStringLiteral("before")).toObject().value(QStringLiteral("format")).toString(),
+			QString());
+		QCOMPARE(formatTx.value(QStringLiteral("inverse")).toObject()
+			.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		QCOMPARE(formatTx.value(QStringLiteral("reversible")).toBool(), true);
+		// Writing the format it already holds is not an edit: no new transaction for it.
+		const int stepsBeforeNoOp = revtest::run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray().size();
+		QVERIFY(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("clap")}}).ok);
+		QCOMPARE(revtest::run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray().size(), stepsBeforeNoOp);
 		QCOMPARE(run(QStringLiteral("plugin.prefer_format"), {{QStringLiteral("format"), QStringLiteral("au")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);

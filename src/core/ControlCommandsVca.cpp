@@ -155,9 +155,9 @@ ControlResult createGroup(const QJsonObject& args)
 	auto mixerRef = mixer;
 	control::addUndoStep(
 		[mixerRef, id]() { mixerRef->deleteVcaGroup(id); },
-		[mixerRef, id]()
+		[mixerRef, id, name]()
 		{
-			if (mixerRef->vcaGroup(id) == nullptr) { mixerRef->createVcaGroup(QString(), id); }
+			if (mixerRef->vcaGroup(id) == nullptr) { mixerRef->createVcaGroup(name, id); }
 		});
 
 	QJsonObject result = groupState(group);

@@ -31,10 +31,14 @@
  */
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
+#include <QSaveFile>
+#include <QUuid>
 
 #include "ConfigManager.h"
+#include "ControlProjectAssets.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -46,6 +50,34 @@ namespace lmms
 {
 
 using namespace control;
+
+namespace control
+{
+
+bool controlReplaceFileAtomically(const QString& source, const QString& target, ControlResult* error)
+{
+	QFile input(source);
+	if (!input.open(QIODevice::ReadOnly))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot read '%1' (%2)").arg(source, input.errorString()));
+		return false;
+	}
+	const QByteArray bytes = input.readAll();
+	input.close();
+	// QSaveFile writes beside the target and renames it over the target only on commit(),
+	// so a failure at any step before that leaves the target as it was.
+	QSaveFile output(target);
+	if (!output.open(QIODevice::WriteOnly) || output.write(bytes) != bytes.size() || !output.commit())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot replace '%1' (%2)").arg(target, output.errorString()));
+		return false;
+	}
+	return true;
+}
+
+} // namespace control
 
 namespace
 {
@@ -210,8 +242,10 @@ void registerProjectExportMidi(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("export_midi");
 	cmd.description = QStringLiteral("Write the session's notes as a Standard MIDI File (the "
 		"midiexport filter; interchange.smf_export writes the tempo map only). File > Export MIDI "
-		"dispatches this after its file dialog. A missing `.mid` suffix is appended. The session "
-		"is not modified.");
+		"dispatches this after its file dialog. A missing `.mid` suffix is appended. The export is "
+		"written to a temporary file and only replaces an existing file once the new output is "
+		"proven to exist, so a failed export never reports a stale file as a fresh one (and never "
+		"destroys the previous one). The session is not modified.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}}, {QStringLiteral("path")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("path"), stringProperty()},
@@ -222,15 +256,36 @@ void registerProjectExportMidi(ControlRegistry& registry)
 		QString path = requireAbsolute(args, QStringLiteral("path"), &error);
 		if (path.isEmpty()) { return error; }
 		if (!path.endsWith(QStringLiteral(".mid"))) { path += QStringLiteral(".mid"); }
-		Engine::getSong()->exportProjectMidi(path);
-		const QFileInfo written(path);
+
+		//! WHY A TEMPORARY PATH: the midiexport filter can fail to load, and
+		//! Song::exportProjectMidi then writes nothing and says so only through
+		//! qDebug. Exporting straight onto `path` therefore left a PRE-EXISTING
+		//! `.mid` untouched, and checking that `path` exists afterwards called that
+		//! stale file a successful export of this call. The export goes to a sibling
+		//! path with a UNIQUE name (so no file the user keeps beside the target is
+		//! ever removed), and the target is replaced only once that output is proven.
+		const QString temp = path + QStringLiteral(".zene-export-")
+			+ QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".tmp");
+		Engine::getSong()->exportProjectMidi(temp);
+		const QFileInfo written(temp);
 		if (!written.exists())
 		{
-			return refused(QStringLiteral("no MIDI file was written to '%1' (the midiexport "
+			return refused(QStringLiteral("no MIDI file was written for '%1' (the midiexport "
 				"filter is not loadable in this process)").arg(path));
 		}
+		const qint64 bytes = static_cast<qint64>(written.size());
+		// The replacement is atomic (controlReplaceFileAtomically): on failure the previous
+		// export at `path` is still there, byte for byte, and the call is refused.
+		ControlResult replaceError;
+		const bool replaced = controlReplaceFileAtomically(temp, path, &replaceError);
+		QFile::remove(temp);
+		if (!replaced)
+		{
+			return refused(QStringLiteral("the MIDI file was written but could not replace '%1' (%2)")
+				.arg(path, replaceError.errorMessage));
+		}
 		return ControlResult::success(QJsonObject{{QStringLiteral("path"), path},
-			{QStringLiteral("bytes"), static_cast<qint64>(written.size())}});
+			{QStringLiteral("bytes"), bytes}});
 	};
 	registry.registerCommand(cmd);
 }

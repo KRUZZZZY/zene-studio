@@ -28,6 +28,7 @@
 
 #include "AudioEngine.h"
 
+#include "Appearance.h"
 #include "ControlVocabulary.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
@@ -91,6 +92,18 @@ QJsonObject settingJson(const QString& key)
 	out.insert(QStringLiteral("value"), value);
 	out.insert(QStringLiteral("present"), present);
 	return out;
+}
+
+/*! One config write, exactly as the settings dialog leaves it: the key is set (or DELETED, for an inverse of a
+ *  key that was not there), the scale file is refreshed when the key is the one startup reads from that file,
+ *  and the config file is written. Every write of these commands goes through here, so the file beside the
+ *  config cannot fall behind the config itself (Luna cluster 4937). */
+void writeSetting(const QString& cls, const QString& attribute, const QString& value, bool present)
+{
+	if (present) { ConfigManager::inst()->setValue(cls, attribute, value); }
+	else { ConfigManager::inst()->deleteValue(cls, attribute); }
+	if (cls == QStringLiteral("ui") && attribute == QStringLiteral("scale")) { appearance::syncScaleFile(); }
+	ConfigManager::inst()->saveConfigFile();
 }
 
 //! The audio backends this box can be built with. Filtered through the engine's
@@ -195,22 +208,12 @@ void registerSettingsSet(ControlRegistry& registry)
 		// left behind with an empty value.
 		control::addUndoStep(
 			[cls, attribute, previous, present]() {
-				if (present)
-				{
-					ConfigManager::inst()->setValue(cls, attribute, previous);
-				}
-				else
-				{
-					ConfigManager::inst()->deleteValue(cls, attribute);
-				}
-				ConfigManager::inst()->saveConfigFile();
+				writeSetting(cls, attribute, previous, present);
 			},
 			[cls, attribute, value]() {
-				ConfigManager::inst()->setValue(cls, attribute, value);
-				ConfigManager::inst()->saveConfigFile();
+				writeSetting(cls, attribute, value, true);
 			});
-		ConfigManager::inst()->setValue(cls, attribute, value);
-		ConfigManager::inst()->saveConfigFile();
+		writeSetting(cls, attribute, value, true);
 
 		QJsonObject result = settingJson(key);
 		result.insert(QStringLiteral("previous"), previous);
@@ -221,11 +224,18 @@ void registerSettingsSet(ControlRegistry& registry)
 			QJsonObject{{QStringLiteral("key"), key},
 				{QStringLiteral("value"), previous},
 				{QStringLiteral("present"), present}});
+		// The inverse is the pair that really reverses this call. When the key was
+		// THERE, settings.set with the previous value is that pair exactly. When it
+		// was NOT, that same pair would write an empty key where the client was told
+		// none existed - and settings.set has no delete verb to name instead - so
+		// the action checkpoint is advertised, which is the one command that replays
+		// it and which deletes the key (Luna cluster 4940).
 		transaction.insert(QStringLiteral("inverse"),
-			QJsonObject{{QStringLiteral("op"), QStringLiteral("settings.set")},
-				{QStringLiteral("args"),
-					QJsonObject{{QStringLiteral("key"), key},
-						{QStringLiteral("value"), previous}}}});
+			present ? QJsonObject{{QStringLiteral("op"), QStringLiteral("settings.set")},
+					{QStringLiteral("args"), QJsonObject{{QStringLiteral("key"), key},
+						{QStringLiteral("value"), previous}}}}
+				: QJsonObject{{QStringLiteral("op"), QStringLiteral("control.undo")},
+					{QStringLiteral("args"), QJsonObject()}});
 		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
 			QStringLiteral("action checkpoint: the recorded undo step writes the previous value "
@@ -323,21 +333,19 @@ void registerAudioDeviceSet(ControlRegistry& registry)
 		const QString previous = configValue(QStringLiteral("audioengine"),
 			QStringLiteral("audiodev"), &present);
 		// SPEC A16: the same action-step inverse settings.set uses - a bounded
-		// scalar in a subsystem the engine does not journal.
+		// scalar in a subsystem the engine does not journal - carrying the SAME
+		// 'was the key there at all' state, because the empty previous value of a
+		// key that was absent is not a device name to write back (Luna cluster 4941).
 		control::addUndoStep(
-			[previous]() {
-				ConfigManager::inst()->setValue(QStringLiteral("audioengine"),
-					QStringLiteral("audiodev"), previous);
-				ConfigManager::inst()->saveConfigFile();
+			[previous, present]() {
+				writeSetting(QStringLiteral("audioengine"), QStringLiteral("audiodev"),
+					previous, present);
 			},
 			[device]() {
-				ConfigManager::inst()->setValue(QStringLiteral("audioengine"),
-					QStringLiteral("audiodev"), device);
-				ConfigManager::inst()->saveConfigFile();
+				writeSetting(QStringLiteral("audioengine"), QStringLiteral("audiodev"),
+					device, true);
 			});
-		ConfigManager::inst()->setValue(QStringLiteral("audioengine"), QStringLiteral("audiodev"),
-			device);
-		ConfigManager::inst()->saveConfigFile();
+		writeSetting(QStringLiteral("audioengine"), QStringLiteral("audiodev"), device, true);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("device"), device);
@@ -350,9 +358,15 @@ void registerAudioDeviceSet(ControlRegistry& registry)
 		transaction.insert(QStringLiteral("before"),
 			QJsonObject{{QStringLiteral("device"), previous},
 				{QStringLiteral("present"), present}});
+		// An absent key is reversed by the action checkpoint, which deletes it.
+		// Naming audio.device_set here would name the empty previous value, and
+		// this command REFUSES an empty device name - so the inverse it advertised
+		// could not even be replayed (Luna cluster 4941).
 		transaction.insert(QStringLiteral("inverse"),
-			QJsonObject{{QStringLiteral("op"), QStringLiteral("audio.device_set")},
-				{QStringLiteral("args"), QJsonObject{{QStringLiteral("device"), previous}}}});
+			present ? QJsonObject{{QStringLiteral("op"), QStringLiteral("audio.device_set")},
+					{QStringLiteral("args"), QJsonObject{{QStringLiteral("device"), previous}}}}
+				: QJsonObject{{QStringLiteral("op"), QStringLiteral("control.undo")},
+					{QStringLiteral("args"), QJsonObject()}});
 		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
 			QStringLiteral("action checkpoint: the recorded undo step writes the previous device "

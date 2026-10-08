@@ -651,6 +651,8 @@ set(LMMS_TESTS
 	src/core/SessionSubSceneTest.cpp
 	# 0.5.0 L03 (W3): comp edges and groups, metronome options, punch here, remaining record time.
 	src/core/RecordToolsTest.cpp
+	# The record tool commands on an instance with NO audio engine: typed refusals, no null deref.
+	src/core/RecordToolsNoEngineTest.cpp
 	# 0.5.0 L04 (W3): the clip list, sections, remove silence, tab to transient, note rotation.
 	src/core/ArrangeToolsTest.cpp
 	# 0.5.0 L05/L06 (W3): crop, unique copies, fade curves, asymmetric crossfades, automation switches, trim, moving a point.
@@ -918,6 +920,8 @@ set(LMMS_TESTS
 	src/gui/StartHubTest.cpp
 	# 0.5.0 L14 / L11: the manual and reference, hover help, tours, appearance, the library search view.
 	src/gui/HelpAccessTest.cpp
+	# Luna 4016: control.surface_report keeps the whole menu path of a nested action.
+	src/gui/AgentSurfaceReportTest.cpp
 	# R7.3: the piano roll's frame time at 1k/5k/10k/50k notes (an opt-in +20% gate).
 	src/gui/PianoRollBenchmarkTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
@@ -1016,6 +1020,11 @@ ENDIF()
 		src/core/SessionAudioRecordTest.cpp
 		# ...and a launched audio cell sounding its clip through its sample track (the landed take included).
 		src/core/SessionAudioCellPlaybackTest.cpp
+		# What a <session> command ACCEPTS: a wrong-typed Follow Action field is
+		# refused rather than converted, a non-array `actions` does not fall back to
+		# the stored chain, a cell address needs both coordinates - and the session
+		# model edit that marks the project unsaved.
+		src/core/SessionCommandArgsTest.cpp
 	)
 
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level
@@ -1512,6 +1521,7 @@ set_tests_properties(InstrumentSetupUiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(HelpAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AgentSurfaceReportTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(ZENE_HAVE_COLLAB)
 	set_tests_properties(CollabPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

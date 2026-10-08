@@ -232,8 +232,10 @@ ControlResult removePart(InstrumentTrack* track, const QString& id)
 	});
 	QJsonObject result = partsState(track);
 	result.insert(QStringLiteral("removed"), partId(index));
+	// The advertised inverse is the exact recorded checkpoint, control.undo. A plugin.midi_part_add
+	// replay would APPEND the part and lose its first-match position when it was not the last part.
 	result.insert(QStringLiteral("__transaction"), transactionPayload(partJson(zone, index),
-		QStringLiteral("plugin.midi_part_add"), QJsonObject{{QStringLiteral("target"), trackIdText}}, true,
+		QStringLiteral("control.undo"), QJsonObject{}, true,
 		QStringLiteral("action checkpoint: the recorded undo step re-inserts the captured part at its own index, "
 			"so the first-match order comes back exactly")));
 	return ControlResult::success(result);

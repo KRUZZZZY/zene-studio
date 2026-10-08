@@ -119,6 +119,11 @@ public:
 		std::vector<SampleFrame> frames;
 		bool quiesced = false;    //!< the producer acknowledged before the copy
 		std::size_t refused = 0;  //!< frames retained but not readable just now
+		//! How many frames the ring had overwritten WHEN this window was copied.
+		//! Taken with the frames, because a capture keeps running while the take
+		//! is written: read afterwards it also counts frames the window's frames
+		//! never contained.
+		std::size_t overwritten = 0;
 	};
 
 	//! Consumer side. Never blocks the audio thread: the producer is asked to

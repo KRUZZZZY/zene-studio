@@ -93,6 +93,10 @@ RetroAudioCapture::Window RetroAudioCapture::takeWindow() const
 		// Bounded spin: the producer acknowledges inside its next push().
 	}
 	window.quiesced = ring.writerIdle();
+	// Inside the handshake, so the count is the one that went with these frames:
+	// a capture keeps running while the take is written, and a count read after
+	// the write also counts frames this window never contained (Luna cluster 4901).
+	window.overwritten = static_cast<std::size_t>(ring.overwrittenCount());
 	const std::size_t copied = ring.copyOut(window.frames.data(), window.frames.size());
 	ring.endSnapshot();
 

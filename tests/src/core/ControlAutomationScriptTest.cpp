@@ -32,11 +32,13 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QPair>
+#include <QTemporaryDir>
 #include <QThread>
 #include <QVector>
 
@@ -433,6 +435,65 @@ private slots:
 				qPrintable(QStringLiteral("%1 is not listed (saw %2)").arg(shipped, names.join(QLatin1Char(',')))));
 		}
 		QCOMPARE(result.result.value(QStringLiteral("count")).toInt(), static_cast<int>(names.size()));
+	}
+
+	//! A script whose bytes could NOT be read gets an EMPTY hash, never the
+	//! well-known SHA-256 of zero bytes: 'bytes: 412, sha256: e3b0c442...' reads as
+	//! "here are 412 bytes and this is what they hash to", which is a lie a client
+	//! can act on. The listing says the file is there and says nothing about its
+	//! content, and the empty hash is what says so.
+	void anUnreadableScriptIsListedWithAnEmptyHash()
+	{
+#ifdef Q_OS_WIN
+		QSKIP("POSIX file permissions: a Windows test host cannot make a readable file unreadable this way");
+#else
+		ControlRegistry* registry = ControlRegistry::instance();
+		QTemporaryDir root;
+		QVERIFY(root.isValid());
+		QVERIFY(QDir(root.path()).mkpath(QStringLiteral("scripts")));
+		const QString scripts = root.filePath(QStringLiteral("scripts"));
+
+		const QByteArray body("-- @version 0.1\nprint('hello')\n");
+		for (const QString& name : {QStringLiteral("readable.lua"), QStringLiteral("unreadable.lua")})
+		{
+			QFile file(scripts + QLatin1Char('/') + name);
+			QVERIFY2(file.open(QIODevice::WriteOnly), qPrintable(file.errorString()));
+			QCOMPARE(file.write(body), body.size());
+			file.close();
+		}
+		QVERIFY(QFile::setPermissions(scripts + QStringLiteral("/unreadable.lua"), QFileDevice::Permissions()));
+
+		// script.list resolves 'data:/scripts', so pointing the 'data' search path
+		// at this temporary tree is what puts these two files on the listing. The
+		// path is put back before anything else runs.
+		const QStringList saved = QDir::searchPaths(QStringLiteral("data"));
+		QDir::setSearchPaths(QStringLiteral("data"), QStringList{root.path()} + saved);
+		const ControlResult result = registry->invoke(QStringLiteral("script.list"));
+		QDir::setSearchPaths(QStringLiteral("data"), saved);
+
+		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		QCOMPARE(result.result.value(QStringLiteral("dir")).toString(), scripts);
+		QJsonObject unreadable;
+		for (const QJsonValue& value : result.result.value(QStringLiteral("scripts")).toArray())
+		{
+			const QJsonObject entry = value.toObject();
+			if (entry.value(QStringLiteral("name")).toString() == qstr("unreadable.lua"))
+			{
+				unreadable = entry;
+			}
+			else
+			{
+				// The readable one beside it keeps a real hash, so the empty one
+				// below is about the unreadable file and not about this listing.
+				QVERIFY(!entry.value(QStringLiteral("sha256")).toString().isEmpty());
+			}
+		}
+		QVERIFY2(!unreadable.isEmpty(), "the unreadable script was not listed at all");
+		QCOMPARE(unreadable.value(QStringLiteral("bytes")).toInt(), static_cast<int>(body.size()));
+		QVERIFY2(unreadable.value(QStringLiteral("sha256")).toString().isEmpty(),
+			qPrintable(QStringLiteral("an unreadable script reported the hash '%1' (the hash of empty bytes)")
+				.arg(unreadable.value(QStringLiteral("sha256")).toString())));
+#endif
 	}
 
 	//! script.run drives the embedded engine on its own worker thread; the log

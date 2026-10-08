@@ -438,6 +438,50 @@ private slots:
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(readBytes(project), before);
 	}
+
+	//! The inverse a relink ADVERTISES must be a command a client can actually
+	//! run. project.relink requires `project`, `from` AND `to`
+	//! (ControlCommandsProjectArchive.cpp:305-310), and the advertised inverse
+	//! carried only `project` and a `note`, so replaying it - which is what an
+	//! agent does with the inverse it was handed - was refused as InvalidArgs.
+	//! The inverse IS the recorded action checkpoint, so it is advertised as
+	//! control.undo, the shape every other action checkpoint carries.
+	void theRelinkInverseIsACommandAClientCanReplay()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString project = writeFixture(dir.path(), QStringLiteral("inverse.mmp"), false);
+		const QString found = dir.path() + QStringLiteral("/found/gone.wav");
+		QVERIFY(writeBytes(found, fakeWave(48)));
+
+		const ControlResult relinked = run(QStringLiteral("project.relink"), QJsonObject{
+			{QStringLiteral("project"), project},
+			{QStringLiteral("from"), QStringLiteral("gone.wav")},
+			{QStringLiteral("to"), found}});
+		QVERIFY2(relinked.ok, qPrintable(relinked.errorMessage));
+
+		const QJsonObject inverse = stateOf(QStringLiteral("project.relink"))
+			.value(QStringLiteral("inverse")).toObject();
+		QVERIFY2(!inverse.isEmpty(), "the relink advertised no inverse at all");
+
+		// Every required argument of the advertised inverse command must be
+		// supplied by the advertised inverse's own args.
+		const QString op = inverse.value(QStringLiteral("op")).toString();
+		QVERIFY2(!op.isEmpty(), "the advertised inverse names no command");
+		const ControlCommand* command = ControlRegistry::instance()->command(op);
+		QVERIFY2(command != nullptr,
+			qPrintable(QStringLiteral("the advertised inverse names no registered command: %1")
+				.arg(op)));
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
+		for (const QJsonValue& required : command->argsSchema
+			.value(QStringLiteral("required")).toArray())
+		{
+			QVERIFY2(inverseArgs.contains(required.toString()),
+				qPrintable(QStringLiteral("the advertised inverse %1 is missing the required "
+					"argument '%2'").arg(op, required.toString())));
+		}
+	}
+
 	//! A relink that cannot identify the media must refuse and write NOTHING.
 	void relinkRefusesAMismatchedHash()
 	{

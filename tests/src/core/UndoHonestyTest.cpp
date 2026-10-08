@@ -33,9 +33,11 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QStringList>
+#include <QTemporaryDir>
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "ConfigManager.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -53,6 +55,7 @@
 #include "Note.h"
 #include "ProjectJournal.h"
 #include "Rack.h"
+#include "ReversibilityTestSupport.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -64,6 +67,25 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
 }
+
+//! Points ConfigManager's working directory at a private folder for one scope. Preset files are
+//! written under the working directory, so a case that saves presets must not touch the user's
+//! real preset directory; the previous working directory is restored when the scope ends.
+class PrivateWorkingDir
+{
+public:
+	PrivateWorkingDir() : m_previous(ConfigManager::inst()->workingDir())
+	{
+		ConfigManager::inst()->setWorkingDir(m_dir.filePath(QStringLiteral("work")));
+	}
+	~PrivateWorkingDir() { ConfigManager::inst()->setWorkingDir(m_previous); }
+	PrivateWorkingDir(const PrivateWorkingDir&) = delete;
+	PrivateWorkingDir& operator=(const PrivateWorkingDir&) = delete;
+
+private:
+	QTemporaryDir m_dir;
+	QString m_previous;
+};
 
 QString ch(int index) { return control::channelIdOf(Engine::mixer()->mixerChannel(index)); }
 
@@ -456,6 +478,124 @@ private slots:
 		QCOMPARE(devicesOn(track), boosted);
 		QVERIFY(redone());  // ...and its redo takes that one out again
 		QVERIFY(devicesOn(track).isEmpty());
+	}
+
+	//! Luna cluster 5724: a state load's REDO must replay the BYTES the load
+	//! applied, not whatever the path happens to hold when the redo runs.
+	//!
+	//! The redo closure captured `path` and re-read the file
+	//! (src/core/ControlCommandsPluginState.cpp:190). Replacing that file with a
+	//! DIFFERENT valid document of the same device therefore made the redo apply
+	//! the new state: a redo that reads the file lands on 'decoy', a redo that
+	//! replays what it loaded lands on 'alpha'.
+	//!
+	//! The track NAME is the observable: Track::saveTrack writes it into the
+	//! preset document (src/core/Track.cpp:454) and loadPreset reads it back
+	//! (src/core/Track.cpp:609), and track.rename / track.get_state are commands
+	//! of the surface.
+	void theStateLoadRedoReplaysTheBytesItLoaded()
+	{
+		const QString track = revtest::addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		const QString pluginId = QStringLiteral("inst");
+		const auto rename = [track](const QString& name) {
+			return revtest::run(QStringLiteral("track.rename"),
+				{{QStringLiteral("track"), track}, {QStringLiteral("name"), name}}).ok;
+		};
+		const auto save = [track, pluginId](const QString& path) {
+			return revtest::run(QStringLiteral("plugin.state_save"),
+				{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+					{QStringLiteral("path"), path}}).ok;
+		};
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString loaded = dir.path() + QStringLiteral("/loaded.xml");
+		const QString decoy = dir.path() + QStringLiteral("/decoy.xml");
+
+		QVERIFY(rename(QStringLiteral("alpha")));
+		QVERIFY(save(loaded));
+		QVERIFY(rename(QStringLiteral("decoy")));
+		QVERIFY(save(decoy));
+		QVERIFY(rename(QStringLiteral("gamma")));
+
+		QVERIFY(revtest::run(QStringLiteral("plugin.state_load"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+				{QStringLiteral("path"), loaded}}).ok);
+		QCOMPARE(revtest::trackName(track), QStringLiteral("alpha"));
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(revtest::trackName(track), QStringLiteral("gamma"));
+
+		// The file the redo would RE-READ now holds another valid state of this
+		// very device. Written straight to disk on purpose: a command here would
+		// take an undo step of its own and discard the redo being tested.
+		{
+			QFile out(loaded);
+			QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			out.write(revtest::readBytes(decoy));
+		}
+
+		QVERIFY(revtest::run(QStringLiteral("control.redo")).result.value(QStringLiteral("redone")).toBool());
+		QCOMPARE(revtest::trackName(track), QStringLiteral("alpha"));
+	}
+
+	//! Luna cluster 5722: a preset load's REDO must replay the BYTES it loaded,
+	//! not whatever the preset file holds when the redo runs.
+	//!
+	//! The redo closure captured `path` and re-read it
+	//! (src/core/ControlCommandsPluginPreset.cpp:316-323). Overwriting that
+	//! preset between the undo and the redo therefore made the redo apply the
+	//! replacement: a redo that reads the file lands on 'decoy', a redo that
+	//! replays what it loaded lands on 'alpha'.
+	void thePresetLoadRedoReplaysTheBytesItLoaded()
+	{
+		PrivateWorkingDir isolated;  // the presets below go to a private directory, never the user's
+		const QString track = revtest::addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		const QString pluginId = QStringLiteral("inst");
+		const auto rename = [track](const QString& name) {
+			return revtest::run(QStringLiteral("track.rename"),
+				{{QStringLiteral("track"), track}, {QStringLiteral("name"), name}}).ok;
+		};
+		const auto save = [track, pluginId](const QString& name) {
+			// The presets live in the PRIVATE working directory set up above (plugin.preset_save
+			// writes under the working directory). Replacing keeps a re-run simple.
+			return revtest::run(QStringLiteral("plugin.preset_save"),
+				{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+					{QStringLiteral("name"), name}, {QStringLiteral("overwrite"), true}});
+		};
+
+		QVERIFY(rename(QStringLiteral("alpha")));
+		const ControlResult alpha = save(QStringLiteral("alpha"));
+		QVERIFY2(alpha.ok, qPrintable(alpha.errorMessage));
+		QVERIFY(rename(QStringLiteral("decoy")));
+		const ControlResult decoy = save(QStringLiteral("decoy"));
+		QVERIFY2(decoy.ok, qPrintable(decoy.errorMessage));
+		QVERIFY(rename(QStringLiteral("gamma")));
+
+		QVERIFY(revtest::run(QStringLiteral("plugin.preset_load"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+				{QStringLiteral("name"), QStringLiteral("alpha")}}).ok);
+		QCOMPARE(revtest::trackName(track), QStringLiteral("alpha"));
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(revtest::trackName(track), QStringLiteral("gamma"));
+
+		// The preset the redo would RE-READ now holds another valid state of this
+		// very device. Written straight to disk on purpose: a command here would
+		// take an undo step of its own and discard the redo being tested.
+		{
+			QFile out(alpha.result.value(QStringLiteral("path")).toString());
+			QVERIFY(out.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			out.write(revtest::readBytes(decoy.result.value(QStringLiteral("path")).toString()));
+		}
+
+		QVERIFY(revtest::run(QStringLiteral("control.redo")).result.value(QStringLiteral("redone")).toBool());
+		QCOMPARE(revtest::trackName(track), QStringLiteral("alpha"));
+
+		QFile::remove(alpha.result.value(QStringLiteral("path")).toString());
+		QFile::remove(decoy.result.value(QStringLiteral("path")).toString());
 	}
 
 	//! E19: no record names an "UNIMPLEMENTED" inverse any more - a real one, or an honest one-way record.

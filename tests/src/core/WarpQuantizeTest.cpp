@@ -119,6 +119,39 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	/*! A transient may play BEFORE the clip's own origin - the engine's rule for
+	 *  marker offsets is "strictly increasing", not "non-negative", and
+	 *  offsetTicksProperty() therefore declares the bound signed. A clip whose
+	 *  existing map pins an audio frame 1000 ticks before its origin puts every
+	 *  transient at a negative relative tick, and strength 0 (no movement) must
+	 *  still emit all four of them. A sentinel of -1 for "nothing emitted yet"
+	 *  instead drops every one of them, so quantize reports not_found "no
+	 *  transient found" for a clip whose audio plainly has four. */
+	void negativeRelativeTicksAreStillEmitted()
+	{
+		SampleClip* clip = test::sampleClipOf(clicks(true));
+		const QString id = control::clipIdOf(clip);
+		QVERIFY(run(QStringLiteral("warp.add"), {{QStringLiteral("clip"), id},
+			{QStringLiteral("source_frame"), 0}, {QStringLiteral("offset_ticks"), -1000}}).ok);
+
+		const ControlResult done = run(QStringLiteral("warp.quantize"),
+			{{QStringLiteral("clip"), id}, {QStringLiteral("grid"), 48},
+				{QStringLiteral("strength"), 0.0}});
+		QVERIFY2(done.ok, qPrintable(done.errorMessage));
+		QCOMPARE(done.result.value(QStringLiteral("transients")).toInt(), 4);
+		QCOMPARE(clip->warpMarkers().size(), 4);
+		// Still strictly increasing in both coordinates, still all negative.
+		for (int i = 0; i < clip->warpMarkers().size(); ++i)
+		{
+			QVERIFY(clip->warpMarkers()[i].offsetTicks < 0);
+			if (i > 0)
+			{
+				QVERIFY(clip->warpMarkers()[i - 1].offsetTicks
+					< clip->warpMarkers()[i].offsetTicks);
+			}
+		}
+	}
+
 	void silenceIsRefused()
 	{
 		SampleClip* clip = test::sampleClipOf(clicks(false));

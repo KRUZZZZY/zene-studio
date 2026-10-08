@@ -402,6 +402,9 @@ void registerProjectConflicts(ControlRegistry& registry)
 				QStringLiteral("mmpz-git conflicts refused %1: %2")
 					.arg(file, r.stderrText.left(400)));
 		}
+		// Exit 0/1 are the documented answers ("conflicts", "none marked"); any
+		// other code is a tool that died, not a file that is clean.
+		if (toolFailed(r, QStringLiteral("conflicts"), &error)) { return error; }
 
 		const QString text = r.stdoutText + r.stderrText;
 		int count = conflictCountFromReport(text);
@@ -468,6 +471,9 @@ void registerProjectAudibleDiff(ControlRegistry& registry)
 				QStringLiteral("mmpz-git audible-diff failed: %1")
 					.arg(r.stderrText.left(600)));
 		}
+		// Exit 0/1 mean "matched" / "differ"; any other code means the two
+		// projects were never compared, which is not the same as matching.
+		if (toolFailed(r, QStringLiteral("audible-diff"), &error)) { return error; }
 
 		QJsonObject result;
 		result.insert(QStringLiteral("differ"), r.exitCode == 1);

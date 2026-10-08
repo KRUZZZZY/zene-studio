@@ -190,9 +190,12 @@ ControlResult retroToTake(const QJsonObject& args)
 	result.insert(QStringLiteral("window_quiesced"), window.quiesced);
 	result.insert(QStringLiteral("window_refused_frames"), static_cast<qint64>(window.refused));
 	// The window the take came FROM, so a caller can tell a short take caused by
-	// a short session from one caused by the ring's bound.
+	// a short session from one caused by the ring's bound. It is the count
+	// taken WITH the window (Luna cluster 4901): capture keeps running while
+	// the take is written, so the live ring's count would also report frames
+	// overwritten after the snapshot - frames this take never contained.
 	result.insert(QStringLiteral("overwritten_frames"),
-		static_cast<qint64>(capture->ring().overwrittenCount()));
+		static_cast<qint64>(window.overwritten));
 	result.insert(QStringLiteral("capacity_frames"),
 		static_cast<qint64>(capture->ring().capacity()));
 	return ControlResult::success(result);

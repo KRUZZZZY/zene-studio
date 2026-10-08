@@ -27,6 +27,7 @@
 #include <QJsonObject>
 
 #include "ControlDeviceSupport.h"
+#include "ControlEdit.h"
 
 #include "ControlVocabulary.h"
 #include "ControlRegistry.h"
@@ -176,20 +177,22 @@ void registerStateLoad(ControlRegistry& registry)
 		// pointers, so the step carries ids, not pointers).
 		const QString targetId = args.value(QStringLiteral("target")).toString();
 		const QString pluginId = args.value(QStringLiteral("plugin")).toString();
+		// Restored FIRST: the step is registered only once the load has
+		// succeeded, because a refused document changes nothing - a step taken
+		// for it would undo a device that was never altered and push the real
+		// step before it one further from the keyboard.
+		ControlResult restored = controlRestoreDeviceState(handle, bytes);
+		if (!restored.ok) { return restored; }
 		control::addUndoStep(
 			[targetId, pluginId, previous]() {
 				controlRestoreCapturedState(targetId, pluginId, previous);
 			},
-			[targetId, pluginId, path]() {
-				QByteArray bytes;
-				ControlResult ignored;
-				if (controlReadFileBytes(path, &bytes, &ignored))
-				{
-					controlRestoreCapturedState(targetId, pluginId, bytes);
-				}
+			// The LOADED bytes, not the path: a redo replays what this command
+			// applied. Re-reading the path made a file edited (or replaced) after
+			// the load decide what the redo did.
+			[targetId, pluginId, bytes]() {
+				controlRestoreCapturedState(targetId, pluginId, bytes);
 			});
-		ControlResult restored = controlRestoreDeviceState(handle, bytes);
-		if (!restored.ok) { return restored; }
 
 		QJsonObject result = restored.result;
 		result.insert(QStringLiteral("path"), path);
@@ -202,20 +205,16 @@ void registerStateLoad(ControlRegistry& registry)
 		snapshot.insert(QStringLiteral("state_xml"), boundedState(previous, &truncated));
 		snapshot.insert(QStringLiteral("state_truncated"), truncated);
 
-		QJsonObject transaction;
-		transaction.insert(QStringLiteral("before"), snapshot);
-		transaction.insert(QStringLiteral("inverse"),
-			QJsonObject{{QStringLiteral("op"), QStringLiteral("plugin.state_save")},
-				{QStringLiteral("args"),
-					QJsonObject{{QStringLiteral("note"), QStringLiteral("write before.state_xml "
-						"to a path, then plugin.load (if the device was replaced) and "
-						"plugin.state_load it back")}}}});
-		transaction.insert(QStringLiteral("reversible"), true);
-		transaction.insert(QStringLiteral("mechanism"),
+		// The inverse IS the action checkpoint recorded above, so it is advertised as
+		// the one command that replays it - the same shape every other action
+		// checkpoint carries. Naming plugin.state_save here (with only a `note`)
+		// advertised a command that needs target, plugin and path, and saving a
+		// device's CURRENT state would not restore the previous one anyway.
+		result.insert(QStringLiteral("__transaction"), transactionPayload(snapshot,
+			QStringLiteral("control.undo"), {}, true,
 			QStringLiteral("action checkpoint: the recorded undo step restores the captured "
 				"settings XML by re-resolving the device from the transaction's target and plugin "
-				"ids (a handle's raw device pointers must not outlive the command)"));
-		result.insert(QStringLiteral("__transaction"), transaction);
+				"ids (a handle's raw device pointers must not outlive the command)")));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

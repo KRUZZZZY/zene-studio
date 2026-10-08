@@ -2116,6 +2116,7 @@ void Mixer::updateLatencyCompensation()
 	// cannot be honoured. Publish what the graph can actually apply, keeping
 	// the master chain's own (always applied) latency on top. At or below the
 	// cap this is the exact requested value.
+	m_latencyCompensationClamped.store(clamped, std::memory_order_relaxed);
 	m_totalLatencyFrames.store(
 		(clamped ? std::min(alignment, cap) : alignment) + masterChain,
 		std::memory_order_relaxed);

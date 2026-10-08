@@ -2078,6 +2078,7 @@ tests/src/core/RackZoneRoutingTest.cpp
 tests/src/core/RackZonesTest.cpp
 tests/src/core/RangeEditsTest.cpp
 tests/src/core/RealtimeSnapshotTest.cpp
+tests/src/core/RecordToolsNoEngineTest.cpp
 tests/src/core/RecordToolsTest.cpp
 tests/src/core/RecordingPassTest.cpp
 
@@ -2098,6 +2099,7 @@ tests/src/core/RoutingGraphScheduleTest.cpp
 tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/ScriptCommandBridgeTest.cpp
 tests/src/core/ScriptDawBindingTest.cpp
+tests/src/core/SessionCommandArgsTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/SessionPerformTest.cpp
 tests/src/core/SessionPlaybackRenderTest.cpp
@@ -2170,3 +2172,4 @@ tools/ncpu-shim.c
 tests/src/core/InputChannelRingTest.cpp
 tests/src/core/MidiClipControllersLoadTest.cpp
 tests/src/gui/MidiClipLinkedEditTest.cpp
+tests/src/gui/AgentSurfaceReportTest.cpp

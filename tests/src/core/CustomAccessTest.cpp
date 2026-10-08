@@ -42,6 +42,7 @@
 #include <QJsonArray>
 #include <QTemporaryDir>
 
+#include "Appearance.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -49,6 +50,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "ProjectWorkspace.h"
+#include "ReversibilityTestSupport.h"
 #include "SampleTrack.h"
 #include "Song.h"
 #include "TrackLooks.h"
@@ -61,9 +63,29 @@ using namespace lmms;
 namespace
 {
 
+//! A ui/ key no other case in this file writes, so "it was absent" is true by construction.
+const QString AbsentKey = QStringLiteral("ui/bunnysettingsmarker");
+
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
+}
+
+//! Whether settings.get reports @a key as set at all (rather than defaulted).
+bool settingThere(const QString& key)
+{
+	return run(QStringLiteral("settings.get"), {{QStringLiteral("key"), key}})
+		.result.value(QStringLiteral("present")).toBool();
+}
+
+bool deviceKeyThere() { return settingThere(QStringLiteral("audioengine/audiodev")); }
+
+//! The name of the first backend audio.device_list says this build can open.
+QString someDevice()
+{
+	const QJsonArray devices = run(QStringLiteral("audio.device_list"))
+		.result.value(QStringLiteral("devices")).toArray();
+	return devices.isEmpty() ? QString() : devices.first().toObject().value(QStringLiteral("name")).toString();
 }
 
 QString fileText(const QString& path)
@@ -357,6 +379,63 @@ private slots:
 		QVERIFY(run(QStringLiteral("settings.preset_remove"), {{QStringLiteral("name"), QStringLiteral("studio")}}).ok);
 		QCOMPARE(run(QStringLiteral("settings.preset_apply"), {{QStringLiteral("name"), QStringLiteral("studio")}}).errorKind,
 			ControlErrorKind::NotFound);
+	}
+
+	//! Luna cluster 4941: audio.device_set on a config with no audioengine/audiodev key records an undo that writes
+	//! the empty previous value back, so undoing leaves a key that was never there - and the inverse it advertises
+	//! sets an empty device name, which the command itself refuses.
+	void theDeviceUndoOfAnAbsentKeyDeletesItAgain()
+	{
+		ConfigManager::inst()->deleteValue(QStringLiteral("audioengine"), QStringLiteral("audiodev"));
+		QVERIFY(!deviceKeyThere());
+		QVERIFY(run(QStringLiteral("audio.device_set"), {{QStringLiteral("device"), someDevice()}}).ok);
+		QVERIFY(deviceKeyThere());
+
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("audio.device_set"))
+			.value(QStringLiteral("inverse")).toObject();
+		QVERIFY2(!inverse.isEmpty(), "audio.device_set advertised no inverse at all");
+		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject()).ok,
+			"the advertised inverse of audio.device_set was refused when replayed");
+		QVERIFY2(!deviceKeyThere(),
+			"reversing audio.device_set left an audioengine/audiodev key that was not there before");
+	}
+
+	//! Luna cluster 4940: settings.set on a key that did not exist advertised settings.set with the EMPTY previous
+	//! value as its inverse, which writes an empty key rather than deleting it - so a client that follows the
+	//! transaction ends with a key the command was told never existed.
+	void theSettingUndoOfAnAbsentKeyDeletesItAgain()
+	{
+		ConfigManager::inst()->deleteValue(QStringLiteral("ui"), AbsentKey);
+		QVERIFY(!settingThere(AbsentKey));
+		QVERIFY(run(QStringLiteral("settings.set"), {{QStringLiteral("key"), AbsentKey}, {QStringLiteral("value"), QStringLiteral("1")}}).ok);
+		QVERIFY(settingThere(AbsentKey));
+
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("settings.set"))
+			.value(QStringLiteral("inverse")).toObject();
+		QVERIFY2(!inverse.isEmpty(), "settings.set advertised no inverse at all");
+		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject()).ok,
+			"the advertised inverse of settings.set was refused when replayed");
+		QVERIFY2(!settingThere(AbsentKey),
+			"reversing settings.set left a key that was not there before");
+	}
+
+	//! Luna cluster 4937: the scale is read at startup from a file BESIDE the config (main() -> applyStoredScale),
+	//! so a settings.set of ui/scale that only writes ConfigManager leaves the config and the scale file
+	//! disagreeing - and the new scale is not applied at the next start.
+	void theSettingScaleReachesTheFileStartupReads()
+	{
+		const QString scaled = fileText(appearance::scaleFilePath()).trimmed();
+		QVERIFY(run(QStringLiteral("settings.set"), {{QStringLiteral("key"), QStringLiteral("ui/scale")},
+			{QStringLiteral("value"), QStringLiteral("2")}}).ok);
+		QCOMPARE(fileText(appearance::scaleFilePath()).trimmed(), QStringLiteral("2"));
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(fileText(appearance::scaleFilePath()).trimmed(), scaled);
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(fileText(appearance::scaleFilePath()).trimmed(), QStringLiteral("2"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the config this test borrowed is as it was
 	}
 
 	void theTunerReadsANote()

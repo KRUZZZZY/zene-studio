@@ -171,6 +171,46 @@ private slots:
 	}
 
 
+	//! The caps themselves are reversible even though the call leaves no journal
+	//! step of its own: the record's inverse IS control.set_undo_depth carrying
+	//! the previous caps (applies: command), so control.undo dispatches it and the
+	//! caps come back. A claim that the call "records nothing" and so cannot be
+	//! undone is FALSE (Luna cluster 4907).
+	void setUndoDepthRecordsAnUndoableCapChange()
+	{
+		shipCaps();
+		const int previousSteps = capSteps();
+		const qint64 previousBytes = capBytes();
+		QVERIFY2(previousSteps != 40 && previousBytes != 65536,
+			"this probe needs the ship caps to differ from the ones it sets");
+
+		// The record the call leaves on top. BOTH caps in ONE call: A16 is one
+		// command per undo, so two calls would need two undos.
+		QVERIFY2(run(QStringLiteral("control.set_undo_depth"),
+			{{QStringLiteral("steps"), 40}, {QStringLiteral("bytes"), 65536}}).ok,
+			"control.set_undo_depth refused a cap inside its declared range");
+		QCOMPARE(capSteps(), 40);
+		QCOMPARE(capBytes(), static_cast<qint64>(65536));
+
+		// A transaction IS recorded even though this handler adds no journal step:
+		// it carries the __transaction payload, so the registry records it.
+		const ControlRegistry::Transaction* tx = ControlRegistry::instance()->lastTransaction();
+		QVERIFY2(tx != nullptr, "control.set_undo_depth recorded no transaction at all");
+		QCOMPARE(tx->command, QStringLiteral("control.set_undo_depth"));
+		QVERIFY2(tx->reversible, "the record claims the cap change is not reversible");
+		QCOMPARE(tx->inverse.value(QStringLiteral("op")).toString(),
+			QStringLiteral("control.set_undo_depth"));
+		QCOMPARE(tx->inverse.value(QStringLiteral("applies")).toString(),
+			QStringLiteral("command"));
+
+		// And one control.undo really does put the caps back.
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(capSteps(), previousSteps);
+		QCOMPARE(capBytes(), previousBytes);
+		shipCaps();
+	}
+
 	//! The depth is DECLARED (readable through the socket) and BOUNDED (a cap
 	//! that is enforced, with eviction reported rather than hidden).
 	void undoDepthIsDeclaredAndBounded()

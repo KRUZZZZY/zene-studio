@@ -32,6 +32,7 @@
 
 #include <QDomDocument>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QRegularExpression>
 #include <QTemporaryDir>
@@ -320,6 +321,31 @@ private slots:
 		const QString onDisk = QString::fromUtf8(file.readAll());
 		QVERIFY(onDisk.contains(QStringLiteral("<chord/>")));
 		QCOMPARE(onDisk.count(QStringLiteral("<measure ")), 2);  // the same score the function above builds, in 4/4
+	}
+
+	//! The suffix check must not care about case: '.MUSICXML' and '.XML' are the same
+	//! file types, and a client that names its score 'score.XML' is not wrong.
+	void theScoreSuffixIsCaseInsensitive()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		for (const QString& name : {QStringLiteral("score.MUSICXML"), QStringLiteral("score.XML"),
+				QStringLiteral("score.MusicXml")})
+		{
+			const QString path = dir.filePath(name);
+			const ControlResult written = run(QStringLiteral("clip.export_musicxml"),
+				{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("path"), path}});
+			QVERIFY2(written.ok, qPrintable(QStringLiteral("%1: %2").arg(name, written.errorMessage)));
+			QCOMPARE(written.result.value(QStringLiteral("path")).toString(), path);
+			QVERIFY2(QFileInfo::exists(path), qPrintable(name));
+		}
+		// And a suffix that is not an XML one at all is still refused.
+		QCOMPARE(run(QStringLiteral("clip.export_musicxml"),
+				{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("path"), dir.filePath(QStringLiteral("score.mid"))}}).errorKind,
+			ControlErrorKind::InvalidArgs);
 	}
 
 	//! W6: notes that start together but end apart are written as voices - the short one in voice 1, the long one in

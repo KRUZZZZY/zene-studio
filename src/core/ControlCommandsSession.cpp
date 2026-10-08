@@ -80,10 +80,22 @@ QJsonObject recordSessionEdit(const QString& captured, const QJsonObject& before
 {
 	// Called once the edit is made, so the block now is what a redo puts back (a step without one is a silently dropped redo).
 	const QString edited = Engine::getSong() != nullptr ? sessionBlockXml(Engine::getSong()->sessionModel()) : QString();
+	// Every closure resolves the Song when it RUNS, the same way the block restore does, so a
+	// step never marks one Song while restoring into another. The restore marks the song too:
+	// an undo leaves the same dirty state the edit set, not the flag of an undone edit.
 	const auto restore = [](const QString& block) {
 		Song* song = Engine::getSong();
-		if (song != nullptr) { restoreSessionBlock(song->sessionModel(), block); }
+		if (song != nullptr)
+		{
+			restoreSessionBlock(song->sessionModel(), block);
+			song->setModified();
+		}
 	};
+	// The <session> block is project state the song persists, so an edit to it is an unsaved
+	// change. Recorded here, on the one seam every <session> block edit already passes, because
+	// SessionModel is not a JournallingObject and holds no Song back-pointer of its own: nothing
+	// else marks the song.
+	if (Song* song = Engine::getSong(); song != nullptr) { song->setModified(); }
 	control::addUndoStep([restore, captured]() { restore(captured); }, [restore, edited]() { restore(edited); });
 	// The inverse is the journal step just pushed: no registered command replays a
 	// <session> block, so control.undo reaches it through the journal (it checks

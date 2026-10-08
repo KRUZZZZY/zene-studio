@@ -45,11 +45,13 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QTemporaryDir>
 #include <QTextStream>
 
+#include "ControlProjectAssets.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "MidiEvent.h"
@@ -248,6 +250,177 @@ private slots:
 		// project.audible_diff renders both files through the RUNNING binary as
 		// child processes, which in-process is this test executable: its success
 		// path is driven over the socket instead (tests/control-project-audible-diff.py).
+	}
+
+	/*! Luna cluster 5742: project.export_midi used FILE EXISTENCE as proof of a
+	 *  successful export. When the midiexport filter does not load,
+	 *  Song::exportProjectMidi writes nothing and says so only through qDebug, so
+	 *  exporting onto a path that already held an older `.mid` left that stale
+	 *  file in place and the handler answered `success` with the OLD byte count -
+	 *  telling a caller that had just overwritten its only copy of the session's
+	 *  notes that the write had happened.
+	 *
+	 *  This asserts the REFUSAL half, which is the half that was wrong. A headless
+	 *  test process loads no export filters, so the export writing nothing is the
+	 *  case by construction - the same state a user hits with a build that cannot
+	 *  load midiexport. Were the filter to load, the temporary output is renamed
+	 *  over the target, and the post-condition below (the target no longer holds
+	 *  the bytes this test wrote) holds either way.
+	 */
+	void exportMidiDoesNotReportAStaleFileAsAFreshExport()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("stale.mid"));
+		const QByteArray stale("MThd-STALE-NOT-AN-EXPORT");
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(stale) == stale.size());
+		}
+		QVERIFY(QFileInfo::exists(path));
+
+		const ControlResult result = run(QStringLiteral("project.export_midi"),
+			{{QStringLiteral("path"), path}});
+
+		// The defect: the handler saw the file it was pointed at and called the
+		// pre-existing bytes a successful export of this call.
+		QVERIFY2(!result.ok || result.result.value(QStringLiteral("bytes")).toInteger()
+			!= static_cast<qint64>(stale.size()),
+			"project.export_midi reported success for the pre-existing file");
+		if (result.ok)
+		{
+			// The filter DID load, so the target must now hold the NEW bytes.
+			QFile written(path);
+			QVERIFY(written.open(QIODevice::ReadOnly));
+			QVERIFY(written.readAll() != stale);
+		}
+		else
+		{
+			// A refusal names what went wrong rather than failing silently, and
+			// leaves the previous export in place for the caller to fall back on.
+			QVERIFY(!result.errorMessage.isEmpty());
+			QFile kept(path);
+			QVERIFY(kept.open(QIODevice::ReadOnly));
+			QCOMPARE(kept.readAll(), stale);
+		}
+	}
+
+	/*! Luna 5742 (review): the export's temporary file used one FIXED sibling name and the handler
+	 *  removed it before exporting, so a file the user kept under that name was destroyed. The
+	 *  temporary name is unique now; this proves a user file with the old name survives the call. */
+	void exportMidiLeavesAUserFileWithTheOldTemporaryNameAlone()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("keep-me.mid"));
+		const QString sibling = path + QStringLiteral(".zene-export.tmp");
+		const QByteArray userBytes("USER-FILE-NOT-A-TEMPORARY");
+		{
+			QFile file(sibling);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(userBytes) == userBytes.size());
+		}
+		run(QStringLiteral("project.export_midi"), {{QStringLiteral("path"), path}});
+		QFile kept(sibling);
+		QVERIFY(kept.open(QIODevice::ReadOnly));
+		QCOMPARE(kept.readAll(), userBytes);
+	}
+
+	/*! Luna 5742 (review): the replacement must be atomic. A failed replacement keeps the previous file
+	 *  byte for byte. Each failure below used to remove the target first and rename second, so the
+	 *  target was lost when the rename had nothing to move. */
+	void replacingAnExportIsAtomic()
+	{
+		const QString target = m_dir.filePath(QStringLiteral("atomic.mid"));
+		const QByteArray previous("PREVIOUS-EXPORT");
+		{
+			QFile file(target);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(previous) == previous.size());
+		}
+		ControlResult error;
+
+		// 1. The new output is missing: nothing to move, so the target must keep its bytes.
+		QVERIFY(!control::controlReplaceFileAtomically(m_dir.filePath(QStringLiteral("no-such-output.tmp")),
+			target, &error));
+		QVERIFY(!error.errorMessage.isEmpty());
+		{
+			QFile kept(target);
+			QVERIFY(kept.open(QIODevice::ReadOnly));
+			QCOMPARE(kept.readAll(), previous);
+		}
+
+		// 2. The target cannot be replaced (a directory holds its name): refused, directory intact.
+		const QString directory = m_dir.filePath(QStringLiteral("held.mid"));
+		QVERIFY(QDir().mkpath(directory));
+		const QString child = directory + QStringLiteral("/child.txt");
+		{
+			QFile file(child);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("child") == 5);
+		}
+		const QString output = m_dir.filePath(QStringLiteral("output-2.tmp"));
+		{
+			QFile file(output);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("NEW-BYTES") == 9);
+		}
+		QVERIFY(!control::controlReplaceFileAtomically(output, directory, &error));
+		QVERIFY(QFileInfo(child).exists());
+
+		// 3. The ordinary case still replaces the target with exactly the new bytes.
+		const QString fresh = m_dir.filePath(QStringLiteral("output-3.tmp"));
+		{
+			QFile file(fresh);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("NEW-BYTES") == 9);
+		}
+		QVERIFY2(control::controlReplaceFileAtomically(fresh, target, &error), qPrintable(error.errorMessage));
+		QFile replaced(target);
+		QVERIFY(replaced.open(QIODevice::ReadOnly));
+		QCOMPARE(replaced.readAll(), QByteArray("NEW-BYTES"));
+	}
+
+/*! Luna clusters 5748 / 4833: project.conflicts and project.audible_diff
+	 *  special-cased exit 2 and let every OTHER exit code through. The tool
+	 *  documents 0/1 (success, or "there are conflicts / the renders differ")
+	 *  and 2 (an error it could report); anything else is a tool that died, and
+	 *  answering `success` there told a caller a file was CLEAN (conflict_count
+	 *  0) or that two renders MATCHED (differ:false) when nobody ever compared
+	 *  them - the most dangerous possible answer from a merge-conflict reporter.
+	 *
+	 *  A fake tool makes the failure deterministic: MMPZ_GIT_TOOL wins over the
+	 *  discovered script (ControlCommandsProjectMmpzGit.cpp findMmpzGitTool), so
+	 *  this writes a script that exits 3 and points the commands at it.
+	 */
+	void mmpzToolExitsWithAnUndocumentedCode()
+	{
+		const QString tool = m_dir.filePath(QStringLiteral("fake-mmpz-git.py"));
+		{
+			QFile file(tool);
+			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			QVERIFY(file.write("import sys\n"
+				"sys.stderr.write('fake tool died unexpectedly\\n')\n"
+				"sys.exit(3)\n") > 0);
+		}
+		const QString project = m_dir.filePath(QStringLiteral("mmpz-probe.mmp"));
+		REQUIRE_OK(run(QStringLiteral("project.save"), {{QStringLiteral("path"), project}}),
+			"project.save");
+
+		const QByteArray saved = qgetenv("MMPZ_GIT_TOOL");
+		const bool hadTool = qEnvironmentVariableIsSet("MMPZ_GIT_TOOL");
+		qputenv("MMPZ_GIT_TOOL", tool.toUtf8());
+
+		// The defect, in both handlers: an exit nobody documented is reported
+		// as a clean read of the file.
+		const ControlResult conflicts = run(QStringLiteral("project.conflicts"),
+			{{QStringLiteral("file"), project}});
+		QVERIFY2(!conflicts.ok && !conflicts.errorMessage.isEmpty(),
+			"project.conflicts reported success for an undocumented tool exit");
+		const ControlResult audible = run(QStringLiteral("project.audible_diff"),
+			{{QStringLiteral("a"), project}, {QStringLiteral("b"), project}});
+		QVERIFY2(!audible.ok && !audible.errorMessage.isEmpty(),
+			"project.audible_diff reported success for an undocumented tool exit");
+
+		if (hadTool) { qputenv("MMPZ_GIT_TOOL", saved); }
+		else { qunsetenv("MMPZ_GIT_TOOL"); }
 	}
 
 private:

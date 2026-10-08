@@ -116,16 +116,25 @@ namespace
 ControlResult preferFormat(const QJsonObject& args)
 {
 	const QString before = pluginorganiser::preferredFormat();
+	bool changed = false;
 	if (args.contains(QStringLiteral("format")))
 	{
 		const QString format = args.value(QStringLiteral("format")).toString();
 		if (format != before)
 		{
+			changed = true;
 			pluginorganiser::setPreferredFormat(format);
 			addUndoStep([before]() { pluginorganiser::setPreferredFormat(before); }, [format]() { pluginorganiser::setPreferredFormat(format); });
 		}
 	}
-	return ControlResult::success({{QStringLiteral("format"), pluginorganiser::preferredFormat()}});
+	QJsonObject result{{QStringLiteral("format"), pluginorganiser::preferredFormat()}};
+	// A changed format is an edit: it carries the same transaction the undo step does.
+	if (!changed) { return ControlResult::success(result); }
+	result.insert(QStringLiteral("__transaction"), transactionPayload(
+		QJsonObject{{QStringLiteral("format"), before}},
+		QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("action checkpoint: the recorded undo step writes the previous preferred format back")));
+	return ControlResult::success(result);
 }
 
 } // namespace

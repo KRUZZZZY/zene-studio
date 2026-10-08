@@ -178,7 +178,12 @@ void collectActions(const QList<QAction*>& actions, const QString& containerPath
 		}
 		if (QMenu* submenu = action->menu())
 		{
-			collectActions(submenu->actions(), containerLabel(submenu),
+			// the container path names where the action lives, so a submenu extends its
+			// parent's path instead of replacing it: "File/Render Presets/Default Settings"
+			const QString label = containerLabel(submenu);
+			const QString subPath = containerPath.isEmpty()
+				? label : containerPath + QLatin1Char('/') + label;
+			collectActions(submenu->actions(), subPath,
 				QString::fromLatin1(submenu->metaObject()->className()), out);
 			continue;
 		}

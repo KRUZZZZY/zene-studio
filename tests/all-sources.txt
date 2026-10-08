@@ -2405,6 +2405,7 @@ tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BenchmarkBaseline.h
+tests/src/core/BounceInPlaceTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/CapturePublisherTest.cpp
@@ -2477,6 +2478,7 @@ tests/src/core/GrooveTestSupport.h
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/ImportDetectionTest.cpp
 tests/src/core/ImportFilterTest.cpp
+tests/src/core/InputChannelRingTest.cpp
 tests/src/core/InputMeterTest.cpp
 tests/src/core/InputMonitorTest.cpp
 tests/src/core/InstrumentLatencyPdcTest.cpp
@@ -2495,6 +2497,7 @@ tests/src/core/MasteringTestSupport.h
 tests/src/core/MathTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MeterTapTest.cpp
+tests/src/core/MidiClipControllersLoadTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiInputTransformTest.cpp
 tests/src/core/MidiJackOutScheduleTest.cpp
@@ -2571,6 +2574,7 @@ tests/src/core/RangeEditsTest.cpp
 tests/src/core/RealtimeSnapshotTest.cpp
 tests/src/core/RecordClipTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
+tests/src/core/RecordToolsNoEngineTest.cpp
 tests/src/core/RecordToolsTest.cpp
 tests/src/core/RecordingInputPathTest.cpp
 tests/src/core/RecordingLatencyTest.cpp
@@ -2606,6 +2610,7 @@ tests/src/core/SessionArrangementRecordTest.cpp
 tests/src/core/SessionAudioCellPlaybackTest.cpp
 tests/src/core/SessionAudioRecordTest.cpp
 tests/src/core/SessionAudioRecorderTest.cpp
+tests/src/core/SessionCommandArgsTest.cpp
 tests/src/core/SessionFollowTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/SessionPerformTest.cpp
@@ -2658,6 +2663,7 @@ tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
 tests/src/gui/AccessibilityWalkTest.cpp
+tests/src/gui/AgentSurfaceReportTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
 tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
@@ -2691,6 +2697,7 @@ tests/src/gui/LaneReadoutTest.cpp
 tests/src/gui/LibraryMenusTest.cpp
 tests/src/gui/MainWindowGeometryTest.cpp
 tests/src/gui/MenuTestSupport.h
+tests/src/gui/MidiClipLinkedEditTest.cpp
 tests/src/gui/MidiClockMenuTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp

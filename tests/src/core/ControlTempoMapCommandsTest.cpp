@@ -77,6 +77,38 @@ int tempoAtPosition()
 	return mapState().value(QStringLiteral("tempo_at_position")).toInt();
 }
 
+//! The stored event the map reports at \a tick, or an empty object when there
+//! is none - the entries transport.tempo_map_get publishes.
+QJsonObject eventAt(int tick)
+{
+	const QJsonArray events = mapState().value(QStringLiteral("events")).toArray();
+	for (const QJsonValue& value : events)
+	{
+		const QJsonObject entry = value.toObject();
+		if (entry.value(QStringLiteral("tick")).toInt() == tick) { return entry; }
+	}
+	return QJsonObject();
+}
+
+//! Re-issue the inverse the LAST recorded command advertised, by hand, exactly
+//! as a client reading the record would: its op and its args.
+ControlResult reissueAdvertisedInverse()
+{
+	const ControlRegistry::Transaction* tx = ControlRegistry::instance()->lastTransaction();
+	if (tx == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no transaction was recorded"));
+	}
+	const QString op = tx->inverse.value(QStringLiteral("op")).toString();
+	if (op.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Irreversible,
+			QStringLiteral("the record advertised NO inverse command"));
+	}
+	return run(op, tx->inverse.value(QStringLiteral("args")).toObject());
+}
+
 const control::ReversibilityEntry* contractRow(const QString& id)
 {
 	return control::ReversibilityTable::instance().lookup(id);
@@ -342,14 +374,115 @@ private slots:
 		QCOMPARE(tx->reversible, true);
 		QVERIFY2(tx->mechanism.contains(QStringLiteral("action checkpoint")),
 			qPrintable(tx->mechanism));
-		// The recorded inverse names a real command a reader can re-issue by hand.
-		QCOMPARE(tx->inverse.value(QStringLiteral("op")).toString(),
-			QStringLiteral("transport.tempo_map_remove"));
-		QCOMPARE(tx->inverse.value(QStringLiteral("args")).toObject()
-			.value(QStringLiteral("tick")).toInt(), 0);
+		// This add ACTIVATES the inactive empty map. tempo_map_remove would leave the map active, so it
+		// does not restore the prior state and no command is advertised (Luna 4905, review): the
+		// checkpoint is the way back. This line used to assert the remove here - the defect the review
+		// flagged for an add that changes the active flag.
+		QVERIFY2(tx->inverse.value(QStringLiteral("op")).toString().isEmpty(),
+			"an add that activated the map advertised a remove that leaves it active");
 		// The before-state IS the map, so the record can restore it by hand too.
 		QCOMPARE(tx->before.value(QStringLiteral("event_count")).toInt(), 0);
 		QCOMPARE(tx->before.value(QStringLiteral("active")).toBool(), false);
+	}
+
+	/*! A remove's advertised inverse has to bring back the event EXACTLY as it
+	 *  was, or it is not an inverse: the tempo-map report publishes each event's
+	 *  `ramp` and the map's `active` flag, so a re-issued add that drops either
+	 *  rebuilds a DIFFERENT map than the one the remove took away (Luna cluster
+	 *  4906 / 4000).
+	 */
+	void removeInverseRebuildsRampAndInactiveState()
+	{
+		// A ramping tempo event on an INACTIVE map - both halves an inverse can
+		// silently drop.
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 120}}).ok);
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 768}, {QStringLiteral("bpm"), 90},
+				{QStringLiteral("ramp"), true}}).ok);
+		QVERIFY(run(QStringLiteral("transport.tempo_map_set_active"),
+			{{QStringLiteral("active"), false}}).ok);
+		QCOMPARE(eventAt(768).value(QStringLiteral("ramp")).toBool(), true);
+		QCOMPARE(mapActive(), false);
+
+		QVERIFY(run(QStringLiteral("transport.tempo_map_remove"),
+			{{QStringLiteral("tick"), 768}}).ok);
+		QCOMPARE(eventCount(), 1);
+		QCOMPARE(mapActive(), false);
+
+		// Re-issue the inverse the record advertised, by hand.
+		const ControlResult back = reissueAdvertisedInverse();
+		QVERIFY2(back.ok, qPrintable(back.errorMessage));
+		QCOMPARE(eventCount(), 2);
+		// THE DEFECT: the add inverse named the tempo but not `ramp`, so the
+		// event came back holding instead of ramping.
+		QCOMPARE(eventAt(768).value(QStringLiteral("ramp")).toBool(), true);
+		// AND the map came back IN FORCE: adding an event activates the map
+		// unless `active:false` is passed, and the inverse did not pass it.
+		QCOMPARE(mapActive(), false);
+	}
+
+	/*! Luna cluster 4905 (review): an add to a map that is INACTIVE activates it. tempo_map_remove keeps
+	 *  the flag it finds, so its advertised inverse leaves the map active and does not restore the
+	 *  prior state. The record must name the checkpoint instead, and control.undo must put the
+	 *  inactive map back.
+	 */
+	void anAddThatActivatesAnInactiveMapAdvertisesNoRemoveInverse()
+	{
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 120}}).ok);
+		QVERIFY(run(QStringLiteral("transport.tempo_map_set_active"),
+			{{QStringLiteral("active"), false}}).ok);
+		QCOMPARE(mapActive(), false);
+
+		QVERIFY2(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 768}, {QStringLiteral("bpm"), 90}}).ok, "tempo_map_add refused");
+		QCOMPARE(mapActive(), true);  // the add activated the map
+		const ControlRegistry::Transaction* tx = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(tx != nullptr);
+		QVERIFY2(tx->inverse.value(QStringLiteral("op")).toString().isEmpty(),
+			"an add that activated the map advertised a remove that leaves it active");
+		QVERIFY2(tx->mechanism.contains(QStringLiteral("checkpoint")), qPrintable(tx->mechanism));
+
+		// The honest way back: control.undo restores the map as it was - inactive, one event.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(mapActive(), false);
+		QCOMPARE(eventCount(), 1);
+	}
+
+	/*! An add's advertised inverse must restore the map the add changed. When the
+	 *  add REPLACED the half an existing event carried, the inverse
+	 *  `tempo_map_remove` DELETES that event instead of putting its old contents
+	 *  back - so the record must name the checkpoint as the way back rather than
+	 *  advertise a command that cannot restore the prior state (Luna cluster
+	 *  4905).
+	 */
+	void addInverseIsAdvertisedOnlyWhereItRestoresThePriorState()
+	{
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 120}}).ok);
+		// A plain ADD to a tick carrying nothing: remove at that tick really does
+		// restore the prior map, so the inverse stays advertised and works.
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 768}, {QStringLiteral("bpm"), 90}}).ok);
+		QCOMPARE(eventCount(), 2);
+		QVERIFY2(reissueAdvertisedInverse().ok,
+			"the inverse of a plain add must be advertised and re-issuable");
+		QCOMPARE(eventCount(), 1);
+
+		// A REPLACEMENT at an occupied tick: the contents it overwrote are not
+		// recoverable by remove, so the record must not advertise that command.
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 150}}).ok);
+		const ControlRegistry::Transaction* tx = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(tx != nullptr);
+		QVERIFY2(tx->inverse.value(QStringLiteral("op")).toString().isEmpty(),
+			"a replacing add advertised an inverse that DELETES the event it replaced");
+		QVERIFY2(tx->mechanism.contains(QStringLiteral("checkpoint")),
+			qPrintable(tx->mechanism));
+		// The honest way back still works: control.undo restores the replaced half.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(Engine::getSong()->tempoAtTick(0), 120);
 	}
 
 	/*! THE A16 PROOF. Each case applies an edit, asks control.undo to take it

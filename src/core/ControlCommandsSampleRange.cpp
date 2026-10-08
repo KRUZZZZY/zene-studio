@@ -65,10 +65,10 @@ std::vector<SampleFrame> applied(std::vector<SampleFrame> frames, const QString&
 	if (op == QLatin1String("crop")) { return std::vector<SampleFrame>(begin, end); }
 	if (op == QLatin1String("reverse")) { std::reverse(begin, end); return frames; }
 	// The last frame of the range reaches the fade's end (0 for a fade-out), as sampleops::fade does.
-	const double span = static_cast<double>(std::max<std::size_t>(1, to - from - 1));
+	const std::size_t span = to - from - 1;  // a one-frame range has no ramp: its only frame IS the endpoint
 	for (std::size_t i = from; i < to; ++i)
 	{
-		const double t = static_cast<double>(i - from) / span;
+		const double t = span == 0 ? 1.0 : static_cast<double>(i - from) / static_cast<double>(span);
 		const float factor = op == QLatin1String("silence") ? 0.f : op == QLatin1String("fade_in") ? static_cast<float>(t)
 			: op == QLatin1String("fade_out") ? static_cast<float>(1.0 - t) : gain;
 		frames[i] = SampleFrame(frames[i][0] * factor, frames[i][1] * factor);
@@ -98,6 +98,29 @@ bool deletesWindow(const SampleWindow& window, const QString& op, std::size_t fr
 	return op == QLatin1String("delete") && window.sourceIn >= from && window.sourceOut <= to;
 }
 
+/*! Whether @a op over [@a from, @a to) would move or drop a marker of @a markers: a crop makes the new frame 0
+ *  the old @a from, and a delete closes the range up so every later frame moves earlier - either leaves a marker
+ *  pinning a different frame of the audio, or one the source no longer holds. The ops that write frames in place
+ *  (gain, silence, reverse, the fades) keep every source frame where it was, so they never strand one. */
+bool movesWarpMarkers(const WarpMarkers& markers, const QString& op, std::size_t from, std::size_t to)
+{
+	if (markers.empty()) { return false; }
+	if (op == QLatin1String("crop")) { return true; }  // frame 0 is a different frame of the audio
+	if (op != QLatin1String("delete")) { return false; }
+	// The set is sorted by source frame, so only the last marker decides whether any frame moves.
+	return static_cast<std::size_t>(markers[markers.size() - 1].sourceFrame) >= from;
+}
+
+
+
+//! Whether @a op applies @a db as a gain and it is out of the range the bakers declare.
+bool gainRefused(const QString& op, double db)
+{
+	// gain_db is 'gain's parameter: an op that applies no gain is not refused over it.
+	if (op != QLatin1String("gain")) { return false; }
+	return db < -60.0 || db > 24.0;  // the range sample.amplify and clip.set_gain declare; far beyond it the gain overflows
+}
+
 ControlResult editRange(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -111,11 +134,18 @@ ControlResult editRange(const QJsonObject& args)
 	const QString op = args.value(QStringLiteral("op")).toString();
 	if (to <= from || !operations().contains(op)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a range 'from' < 'to' inside the source, and an 'op'")); }
 	const double db = args.value(QStringLiteral("gain_db")).toDouble(0.0);
-	if (db < -60.0 || db > 24.0)  // the range sample.amplify and clip.set_gain declare; far beyond it the gain overflows
+	if (gainRefused(op, db))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("gain_db %1 is outside -60..24 dB").arg(db));
 	}
 	const SampleWindow window = clip->sampleWindow();
+	// A crop re-bases frame 0 onto 'from' and a delete closes the range up, so a marker would then pin a
+	// different frame of the audio, or one the source no longer holds (the same refusal sample.crop makes).
+	if (movesWarpMarkers(clip->warpMarkers(), op, from, to))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip's warp markers pin frames that %1 would "
+			"move or drop (warp.remove them first)").arg(op));
+	}
 	if (deletesWindow(window, op, from, to))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("that deletes everything the clip plays (clip.delete removes the clip)"));

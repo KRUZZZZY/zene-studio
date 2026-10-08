@@ -55,6 +55,23 @@ QString sha256OfFile(const QString& path)
 	return QString::fromLatin1(hash.result().toHex());
 }
 
+//! The revision of \a projectPath whose bytes hash to \a sha256, or -1 when the
+//! retained set holds no such revision.
+int revisionHoldingBytes(const QString& projectPath, const QString& sha256)
+{
+	if (sha256.isEmpty()) { return -1; }
+	for (const QJsonValue& value
+		: control::projectRevisionState(projectPath).value(QStringLiteral("revisions")).toArray())
+	{
+		const QJsonObject entry = value.toObject();
+		if (entry.value(QStringLiteral("sha256")).toString() == sha256)
+		{
+			return entry.value(QStringLiteral("revision")).toInt();
+		}
+	}
+	return -1;
+}
+
 //! The `__transaction` project.save records, honest PER CALL (BUG-CTL-6).
 //! `revisionKept` is true only when the rotation actually retained a revision,
 //! so the `project.restore_revision {revision: 0}` inverse is recorded ONLY
@@ -143,6 +160,36 @@ void registerProjectSave(ControlRegistry& registry)
 				QStringLiteral("no 'path' given and the session has no project file yet"));
 		}
 
+		// The engine can state a reason of its own - a partial load is the
+		// one it has (ARCH-4 S2b) - and reporting it is the difference
+		// between "try again" and "this session cannot be saved as it
+		// stands, and reopening it whole is the fix".
+		const auto refusalOf = [&song, &target]() -> ControlResult {
+			const QString refusal = song->saveRefusal();
+			return ControlResult::failure(ControlErrorKind::Refused,
+				refusal.isEmpty()
+					? QStringLiteral("the engine refused to write %1").arg(target)
+					: QStringLiteral("%1: %2").arg(target, refusal));
+		};
+
+		// A refusal the engine ALREADY knows about is answered before the
+		// rotation: rotateProjectRevision shifts rev0 -> rev1 -> rev2 and
+		// drops the oldest, so rotating first charged a refused save for the
+		// revision history it never replaced (keep-3, so a full set lost its
+		// oldest entry to a write that did not happen). isPartialLoad() is the
+		// engine's own stated precondition for refusing (include/Song.h:142),
+		// so the gate names the same fact the engine would.
+		if (song->isPartialLoad())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1: this session was loaded PARTIALLY: %2 section(s) are not in "
+					"memory (%3), so saving would write a document missing them. Reopen the "
+					"project without \"sections\" to save it.")
+					.arg(target)
+					.arg(song->notLoadedSections().size())
+					.arg(song->notLoadedSections().join(QStringLiteral(", "))));
+		}
+
 		// SPEC A16 deliverable 4: keep the previous revision BEFORE it is
 		// overwritten. A file over the per-revision cap is not copied at all (a
 		// truncated project is a corrupt one) and the result says so.
@@ -159,15 +206,7 @@ void registerProjectSave(ControlRegistry& registry)
 		const UndoHistory::SaveScope historyScope;
 		if (!song->saveProjectFile(target))
 		{
-			// The engine can state a reason of its own - a partial load is the
-			// one it has (ARCH-4 S2b) - and reporting it is the difference
-			// between "try again" and "this session cannot be saved as it
-			// stands, and reopening it whole is the fix".
-			const QString refusal = song->saveRefusal();
-			return ControlResult::failure(ControlErrorKind::Refused,
-				refusal.isEmpty()
-					? QStringLiteral("the engine refused to write %1").arg(target)
-					: QStringLiteral("%1: %2").arg(target, refusal));
+			return refusalOf();
 		}
 
 		// The file is written; the SESSION state a successful save records is the
@@ -239,25 +278,46 @@ void registerProjectRestoreRevision(ControlRegistry& registry)
 		// The restore rotates the live file in as the new revision 0, so ONE
 		// action step restoring revision 0 again is the exact inverse - and the
 		// redo re-restores the revision this call chose.
+		//
+		// The step is recorded AFTER the restore has succeeded (Luna cluster
+		// 5737): restoreProjectRevision() is the call that can refuse - the
+		// revision is outside the policy, or is simply not there - and a step
+		// registered before it left a failed command's phantom behind, whose
+		// undo "restored" a file the command never touched. The caller's next
+		// control.undo then spent itself on that phantom and moved the real step
+		// before it one further from the keyboard.
+		if (!control::restoreProjectRevision(target, revision, &error))
+		{
+			return ControlResult::failure(ControlErrorKind::NotFound, error);
+		}
+		// What this restore brought in, identified by its CONTENT (Luna cluster
+		// 5738). The number the caller named is not a stable identity: this
+		// restore rotated the live file in, the recorded undo rotates it in again,
+		// and every rotation shifts rev0 -> rev1 -> rev2 - so by the time the redo
+		// ran, revision N held a different file and the redo wrote THAT over the
+		// live one, undoing nothing the caller could see.
+		const QString restoredSha = sha256OfFile(target);
 		control::addUndoStep(
 			[target]() {
 				QString ignored;
 				control::restoreProjectRevision(target, 0, &ignored);
 			},
-			[target, revision]() {
+			[target, restoredSha]() {
 				QString ignored;
-				control::restoreProjectRevision(target, revision, &ignored);
+				// -1: the undo's own rotation left the set in a shape where these
+				// bytes are no longer retained. Restoring some other revision
+				// instead would be a wrong-bytes overwrite, so the redo leaves the
+				// file as the undo left it.
+				const int current = revisionHoldingBytes(target, restoredSha);
+				if (current < 0) { return; }
+				control::restoreProjectRevision(target, current, &ignored);
 			});
-		if (!control::restoreProjectRevision(target, revision, &error))
-		{
-			return ControlResult::failure(ControlErrorKind::NotFound, error);
-		}
 
 		QJsonObject result;
 		result.insert(QStringLiteral("file"), target);
 		result.insert(QStringLiteral("revision"), revision);
 		result.insert(QStringLiteral("restored"), true);
-		result.insert(QStringLiteral("sha256"), sha256OfFile(target));
+		result.insert(QStringLiteral("sha256"), restoredSha);
 		result.insert(QStringLiteral("revisions"), control::projectRevisionState(target));
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"),

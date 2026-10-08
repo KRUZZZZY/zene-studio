@@ -28,8 +28,11 @@
 
 #include <QtTest>
 
+#include <QDir>
 #include <QJsonArray>
+#include <QTemporaryDir>
 
+#include "AudioEngine.h"
 #include "AutomationTrack.h"
 #include "Clip.h"
 #include "ControlCompSupport.h"
@@ -309,6 +312,21 @@ private slots:
 		QCOMPARE(run(QStringLiteral("transport.metronome_options"), {{QStringLiteral("level"), 3.0}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! Luna 3949: 'edge' says which end of the pass this is, so a call without one
+	//! must be refused - punchHere read every value that was not "out" as punch-IN,
+	//! so {} silently armed a punch region at the play position.
+	void punchHereRefusesAMissingEdge()
+	{
+		const QJsonObject before = run(QStringLiteral("transport.punch_get_state")).result;
+		const ControlResult missing = run(QStringLiteral("transport.punch_here"), {});
+		QCOMPARE(missing.errorKind, ControlErrorKind::InvalidArgs);
+		// Nothing was armed, and nothing moved.
+		const QJsonObject after = run(QStringLiteral("transport.punch_get_state")).result;
+		QCOMPARE(after.value(QStringLiteral("punch_armed")), before.value(QStringLiteral("punch_armed")));
+		QCOMPARE(after.value(QStringLiteral("punch_begin")), before.value(QStringLiteral("punch_begin")));
+		QCOMPARE(after.value(QStringLiteral("punch_end")), before.value(QStringLiteral("punch_end")));
+	}
+
 	void punchAtThePlayPosition()
 	{
 		Song* song = Engine::getSong();
@@ -346,6 +364,56 @@ private slots:
 		QVERIFY2(left.ok, qPrintable(left.errorMessage));
 		QVERIFY(left.result.value(QStringLiteral("seconds")).toDouble() >= 0.0);
 		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 0);
+	}
+
+	//! Luna 4900: the remaining time is the free space WHERE TAKES ARE WRITTEN, but
+	//! record.remaining measured the recovery file's directory. An armed route writes to the
+	//! take path the caller chose (record.arm_track's 'file'), which can sit on another
+	//! filesystem - so the answer must be the directory the armed routes actually write.
+	void theRemainingTimeMeasuresWhereTheArmedRoutesWrite()
+	{
+		QTemporaryDir takes;
+		QVERIFY2(takes.isValid(), "could not make a take directory");
+		const QString take = takes.filePath(QStringLiteral("route0.wav"));
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 0},
+			{QStringLiteral("file"), take}}).ok, "record.arm_track refused");
+
+		const ControlResult left = run(QStringLiteral("record.remaining"));
+		QVERIFY2(left.ok, qPrintable(left.errorMessage));
+		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 1);
+		QCOMPARE(left.result.value(QStringLiteral("directory")).toString(), takes.path());
+		QVERIFY2(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok,
+			"record.disarm_track refused");
+	}
+
+	//! Luna 4900 (review): routes on ONE volume share its free space. Two armed directories on the same
+	//! volume must divide the volume's free bytes by both routes' writing rate, not by one route each.
+	void armedRoutesOnOneVolumeShareItsFreeSpace()
+	{
+		QTemporaryDir takes;
+		QVERIFY2(takes.isValid(), "could not make a take directory");
+		QVERIFY(QDir().mkpath(takes.filePath(QStringLiteral("first"))));
+		QVERIFY(QDir().mkpath(takes.filePath(QStringLiteral("second"))));
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 0},
+			{QStringLiteral("file"), takes.filePath(QStringLiteral("first/route0.wav"))}}).ok, "record.arm_track 0 refused");
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 1},
+			{QStringLiteral("file"), takes.filePath(QStringLiteral("second/route1.wav"))}}).ok, "record.arm_track 1 refused");
+
+		const ControlResult left = run(QStringLiteral("record.remaining"));
+		QVERIFY2(left.ok, qPrintable(left.errorMessage));
+		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 2);
+		QVERIFY(left.result.value(QStringLiteral("directory")).toString().startsWith(takes.path()));
+		const double free = left.result.value(QStringLiteral("free_bytes")).toDouble();
+		const double rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+		QVERIFY(free > 0.0);
+		// Both routes write 24-bit mono into the same pool: the volume lasts free / (2 routes * 3 bytes * rate).
+		const double expected = free / (rate * 3.0 * 2.0);
+		const double seconds = left.result.value(QStringLiteral("seconds")).toDouble();
+		QVERIFY2(qAbs(seconds - expected) <= 1e-9 * qMax(1.0, expected),
+			qPrintable(QStringLiteral("seconds %1, expected %2 for two routes on one volume").arg(seconds).arg(expected)));
+
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
 	}
 };
 

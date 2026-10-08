@@ -30,6 +30,7 @@
 
 #include <QFileInfo>
 #include <QJsonObject>
+#include <QMap>
 #include <QStorageInfo>
 
 #include "AudioEngine.h"
@@ -86,9 +87,16 @@ ControlResult metronomeOptions(const QJsonObject& args)
 
 ControlResult punchHere(const QJsonObject& args)
 {
+	// 'edge' says which end of the pass this is, so a call without one is not an
+	// "in" by default: it would silently arm a punch region at the play position.
+	const QString edge = args.value(QStringLiteral("edge")).toString();
+	if (edge != QLatin1String("in") && edge != QLatin1String("out"))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'edge' is 'in' or 'out'"));
+	}
 	const tick_t here = Engine::getSong()->getPlayPos().getTicks();
 	const QJsonObject state = invoke(QStringLiteral("transport.punch_get_state"), {}).result;
-	if (args.value(QStringLiteral("edge")).toString() == QLatin1String("out"))
+	if (edge == QLatin1String("out"))
 	{
 		// Out: the region ends here; with no region armed there is nothing to close.
 		if (!state.value(QStringLiteral("punch_armed")).toBool()) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no punch region is armed")); }
@@ -104,17 +112,92 @@ ControlResult punchHere(const QJsonObject& args)
 		{QStringLiteral("end"), static_cast<double>(end)}, {QStringLiteral("enabled"), true}});
 }
 
+//! Where the armed routes write their takes, counted per directory: an armed route
+//! writes to the file name it was armed with (record.arm_track 'file', which may sit
+//! on another volume), and a route with no path yet writes beside the recovery file.
+//! Routes sharing a directory share its free space.
+QMap<QString, int> armedTakePlaces(const MultiTrackRecorder& recorder, const QString& recoveryDir)
+{
+	QMap<QString, int> places;
+	for (int i = 0; i < recorder.trackCount(); ++i)
+	{
+		const TrackRecorder& route = recorder.track(i);
+		if (!route.isArmed()) { continue; }
+		const QString path = QString::fromStdString(route.filePath());
+		places[path.isEmpty() ? recoveryDir : QFileInfo(path).absolutePath()] += 1;
+	}
+	return places;
+}
+
+//! One filesystem's armed routes: the first directory they write into, the free bytes it has, and how
+//! many routes write into it.
+struct ArmedVolume
+{
+	QString dir;
+	qint64 freeBytes = 0;
+	int routes = 0;
+};
+
+//! Groups the armed places by the volume they sit on. The free space belongs to the VOLUME, not to each
+//! directory: two armed directories on one device draw on the same pool, so their routes are summed per
+//! device. False, with @a unmeasured set, when a place's volume cannot be measured.
+bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>* volumes, QString* unmeasured)
+{
+	for (auto it = places.cbegin(); it != places.cend(); ++it)
+	{
+		const QStorageInfo storage(it.key());
+		if (!storage.isValid())
+		{
+			*unmeasured = it.key();
+			return false;
+		}
+		const QString volume = storage.device().isEmpty() ? storage.rootPath() : QString::fromUtf8(storage.device());
+		ArmedVolume& entry = (*volumes)[volume];
+		if (entry.routes == 0)
+		{
+			entry.dir = it.key();
+			entry.freeBytes = storage.bytesAvailable();
+		}
+		entry.routes += it.value();
+	}
+	return true;
+}
+
 ControlResult remaining(const QJsonObject&)
 {
-	const QString dir = QFileInfo(ConfigManager::inst()->recoveryFile()).absolutePath();
-	QStorageInfo storage(dir);
+	const QString recoveryDir = QFileInfo(ConfigManager::inst()->recoveryFile()).absolutePath();
 	const MultiTrackRecorder& recorder = Engine::audioEngine()->recorder();
 	int armed = 0;
 	for (int i = 0; i < recorder.trackCount(); ++i) { armed += recorder.track(i).isArmed() ? 1 : 0; }
-	const double bytesPerSecond = static_cast<double>(Engine::audioEngine()->outputSampleRate()) * 3.0 * std::max(1, armed);  // 24-bit mono a route
-	const double seconds = storage.isValid() ? static_cast<double>(storage.bytesAvailable()) / bytesPerSecond : 0.0;
+	const double bytesPerRoute = static_cast<double>(Engine::audioEngine()->outputSampleRate()) * 3.0;  // 24-bit mono a route
+	QMap<QString, int> places = armedTakePlaces(recorder, recoveryDir);
+	if (places.isEmpty()) { places[recoveryDir] = 1; }
+	// A place whose volume cannot be measured is refused rather than dropped from the answer.
+	QMap<QString, ArmedVolume> volumes;
+	QString unmeasured;
+	if (!groupByVolume(places, &volumes, &unmeasured))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot measure the volume holding '%1'").arg(unmeasured));
+	}
+	// The pass runs on until the volume with the least room left for its routes runs out.
+	QString dir;
+	qint64 free = 0;
+	double seconds = 0.0;
+	bool seen = false;
+	for (auto it = volumes.cbegin(); it != volumes.cend(); ++it)
+	{
+		const double here = static_cast<double>(it->freeBytes) / (bytesPerRoute * std::max(1, it->routes));
+		if (!seen || here < seconds)
+		{
+			seen = true;
+			seconds = here;
+			free = it->freeBytes;
+			dir = it->dir;
+		}
+	}
 	return ControlResult::success({{QStringLiteral("seconds"), seconds}, {QStringLiteral("armed_routes"), armed},
-		{QStringLiteral("free_bytes"), static_cast<double>(storage.bytesAvailable())}, {QStringLiteral("directory"), dir}});
+		{QStringLiteral("free_bytes"), static_cast<double>(free)}, {QStringLiteral("directory"), dir}});
 }
 
 const QStringList& sourceNames() { static const QStringList names{QStringLiteral("input"), QStringLiteral("master"), QStringLiteral("channel")}; return names; }

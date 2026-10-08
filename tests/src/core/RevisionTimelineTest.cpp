@@ -56,6 +56,7 @@
 #include "ProjectContainer.h"
 #include "ProjectRevisions.h"
 #include "RevisionTimeline.h"
+#include "ReversibilityTestSupport.h"
 
 using namespace lmms;
 using namespace lmms::control;
@@ -100,6 +101,12 @@ QJsonObject entryById(const QJsonObject& result, const QString& id)
 		if (entry.value(QStringLiteral("id")).toString() == id) { return entry; }
 	}
 	return QJsonObject();
+}
+
+//! A command dispatched the way a socket client dispatches it.
+ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
+{
+	return ControlRegistry::instance()->invoke(id, args);
 }
 
 bool gitAvailable()
@@ -602,6 +609,156 @@ private slots:
 		QCOMPARE(readBytes(project), documentWith(1));
 		QVERIFY2(restoreProjectRevision(project, 0, &error), qPrintable(error));
 		QCOMPARE(readBytes(project), documentWith(5));
+	}
+
+	//! Luna cluster 5737: a restore that CANNOT find its revision records no undo
+	//! step. The handler registered the checkpoint before handing the request to
+	//! restoreProjectRevision(), the call that can refuse it, so asking for a
+	//! revision that is not there failed the command and still pushed a step whose
+	//! undo "restores" a file the command never touched. The caller's next
+	//! control.undo then spent itself on that phantom, and the step before it moved
+	//! one further from the keyboard.
+	void aFailedRestoreRecordsNoUndoStep()
+	{
+		// Its OWN file: the shared fixture's revisions are rotated by the cases
+		// above, so revision 2 would exist there.
+		const QString project = path(QStringLiteral("phantom.mmp"));
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev0"), documentWith(2)));
+		const QByteArray before = readBytes(project);
+
+		const ControlResult depth = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(depth.ok);
+		const int beforeDepth = depth.result.value(QStringLiteral("depth")).toInt();
+
+		// The fixture holds revision 0 and NO revision 1: a typed miss.
+		const ControlResult missing = run(QStringLiteral("project.restore_revision"),
+			QJsonObject{{QStringLiteral("path"), project}, {QStringLiteral("revision"), 1}});
+		QVERIFY2(!missing.ok, "a restore of a revision that does not exist reported success");
+		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
+
+		const ControlResult after = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(after.ok);
+		QCOMPARE(after.result.value(QStringLiteral("depth")).toInt(), beforeDepth);
+		QCOMPARE(readBytes(project), before);
+	}
+
+	//! Luna cluster 5738: a redo restores the BYTES the restore selected, not the
+	//! revision NUMBER it named. Every restore rotates the live file in, so the
+	//! numbers shift under the recorded redo: after the undo, revision 1 held a
+	//! different file and the redo put THAT over the live one, which left the
+	//! project holding the pre-restore bytes under a redo that reported success.
+	void aRedoRestoresTheBytesTheRestoreSelected()
+	{
+		const QString project = path(QStringLiteral("redo.mmp"));
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev0"), documentWith(2)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev1"), documentWith(1)));
+
+		const ControlResult restored = run(QStringLiteral("project.restore_revision"),
+			QJsonObject{{QStringLiteral("path"), project}, {QStringLiteral("revision"), 1}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(1));
+
+		// The undo is the displaced live file, which the rotation kept as revision 0.
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(3));
+
+		// The redo must bring back what the restore brought in - the SELECTED
+		// document, which the undo's rotation left somewhere in the retained set.
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(1));
+	}
+
+	void aRefusedRestoreRecordsNoUndoStep()
+	{
+		// Its OWN file. The live file is over MaxRevisionBytes, which is the
+		// refusal the rotation raises; the revision being restored stays UNDER the
+		// cap, so the refusal is the live file's and not the source's.
+		const QString project = path(QStringLiteral("oversize.mmp"));
+		QVERIFY(writeBytes(project, QByteArray(
+			static_cast<int>(ProjectRevisionPolicy::MaxRevisionBytes) + 1024, 'x')));
+		QVERIFY(writeBytes(project + QStringLiteral(".bak"), documentWith(1)));
+		const QByteArray before = readBytes(project);
+
+		const ControlResult depth = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(depth.ok);
+		const int beforeDepth = depth.result.value(QStringLiteral("depth")).toInt();
+
+		const ControlResult refused = run(QStringLiteral("revisions.restore"),
+			QJsonObject{{QStringLiteral("project"), project},
+				{QStringLiteral("id"), QStringLiteral("backup")}});
+		QVERIFY2(!refused.ok, "a restore over the live file's cap reported success");
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+
+		const ControlResult after = run(QStringLiteral("control.undo_depth"));
+		QVERIFY(after.ok);
+		QCOMPARE(after.result.value(QStringLiteral("depth")).toInt(), beforeDepth);
+		QCOMPARE(readBytes(project), before);
+	}
+
+	//! Luna cluster 4878: the redo of a revisions.restore re-resolved the captured
+	//! revision ID. 'rev1' is a POSITION in the keep-3 set, and the restore's own
+	//! rotation plus the undo's rotation each shift every position, so by redo time
+	//! the id named different bytes and the redo wrote those over the live file
+	//! under a success it had not earned.
+	void theTimelineRedoRestoresTheBytesTheRestoreSelected()
+	{
+		const QString project = path(QStringLiteral("timeline-redo.mmp"));
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev0"), documentWith(2)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev1"), documentWith(1)));
+
+		const ControlResult restored = run(QStringLiteral("revisions.restore"),
+			QJsonObject{{QStringLiteral("project"), project},
+				{QStringLiteral("id"), QStringLiteral("rev1")}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(1));
+
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(3));
+
+		// The redo must bring back what the restore brought in.
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(1));
+	}
+
+	//! Luna cluster 1223: the transaction revisions.restore records advertises an
+	//! inverse that can neither run nor mean anything. It named
+	//! `revisions.restore` again with the SAME id, which reapplies the chosen
+	//! revision instead of putting the replaced file back, and it passed the target
+	//! as `path` where the command's args schema takes `project` - so a client
+	//! replaying it either failed argument validation or targeted the session's own
+	//! project instead of the requested file. The advertised inverse must be
+	//! replayable AND be the undo.
+	void theTimelineRestoreAdvertisesAReplayableInverse()
+	{
+		const QString project = path(QStringLiteral("inverse.mmp"));
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(project + QStringLiteral(".rev0"), documentWith(2)));
+
+		const ControlResult restored = run(QStringLiteral("revisions.restore"),
+			QJsonObject{{QStringLiteral("project"), project},
+				{QStringLiteral("id"), QStringLiteral("rev0")}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(project), documentWith(2));
+
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("revisions.restore"))
+			.value(QStringLiteral("inverse")).toObject();
+		QVERIFY2(!inverse.isEmpty(), "revisions.restore advertised no inverse at all");
+		// The advertised args have to satisfy the advertised op's own schema.
+		const QJsonObject args = inverse.value(QStringLiteral("args")).toObject();
+		QVERIFY2(args.value(QStringLiteral("path")).isUndefined(),
+			"the advertised inverse still passes 'path', which revisions.restore does "
+			"not accept");
+		// And replaying what it advertises must actually put the replaced file back.
+		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(), args).ok,
+			"the advertised inverse of revisions.restore was refused when replayed");
+		QCOMPARE(readBytes(project), documentWith(3));
 	}
 };
 

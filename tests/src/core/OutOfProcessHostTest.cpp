@@ -360,6 +360,81 @@ private slots:
 		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
 	}
 
+//! The refusal fields have to agree with the state the same object reports.
+	//! A device whose family ships no client resolves to `refused-no-client`, and
+	//! a reader that checks `refused` instead of `state` was told the device is
+	//! perfectly fine while the state line above it said it was refused.
+	void theRefusalFieldsAgreeWithTheState()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		auto track = std::make_unique<InstrumentTrack>(Engine::getSong());
+#ifdef LMMS_TEST_PLUGIN_DIR
+		track->loadInstrument(QStringLiteral("tripleoscillator"));
+#endif
+		if (track->instrument() == nullptr)
+		{
+			QSKIP("this build's test host can instantiate no instrument at all (no plugin module "
+				"is loadable here), so there is no device to read: UNEXERCISED by this run");
+		}
+
+		const QJsonObject hosting = deviceHosting(registry, QJsonObject{
+			{QStringLiteral("target"), control::trackIdOf(track.get())},
+			{QStringLiteral("plugin"), QStringLiteral("inst")}});
+		QVERIFY2(!hosting.isEmpty(), "oop.get_state did not report the track's instrument at all");
+
+		const QString state = hosting.value(QStringLiteral("state")).toString();
+		if (state != QStringLiteral("refused-no-client"))
+		{
+			QSKIP(qPrintable(QStringLiteral("this build resolved the fresh instrument's family to "
+				"'") + state + "', which is not the no-client refusal this case is about: "
+				"UNEXERCISED by this run"));
+		}
+
+		QCOMPARE(hosting.value(QStringLiteral("refused")).toBool(), true);
+		QVERIFY2(!hosting.value(QStringLiteral("refused_reason")).toString().isEmpty(),
+			"the state says refused-no-client and the refusal fields say nothing about it");
+	}
+
+	//! `cleared` is a claim about a CRASH COUNT that went down, not about a
+	//! client that was merely seen. A record with exits and no crashes has
+	//! nothing to clear, and listing it tells the caller a count was reset that
+	//! was never nonzero.
+	void onlyClientsWithACrashCountAreReportedCleared()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		HostTracker& tracker = HostTracker::instance();
+		// A client that exited cleanly, and another that crashed: the deliberate
+		// one is seeded by noteShutdown because that is the path RemotePlugin
+		// itself takes for a clean stop, and it must never count as a crash.
+		const QString clean = QStringLiteral("OutOfProcessHostTest-reset-clean");
+		const QString crashed = QStringLiteral("OutOfProcessHostTest-reset-crashed");
+
+		tracker.noteStarted(clean, 21, QStringLiteral("test"));
+		tracker.noteShutdown(clean, 0);
+		tracker.noteStarted(crashed, 22, QStringLiteral("test"));
+		tracker.noteExited(crashed, 1, true, QStringLiteral("test"));
+		QCOMPARE(tracker.record(clean).crashes, 0);
+		QCOMPARE(tracker.record(crashed).crashes, 1);
+
+		const ControlResult reset = registry->invoke(QStringLiteral("oop.reset_crashes"), QJsonObject{
+			{QStringLiteral("client"), clean}});
+		QVERIFY2(reset.ok, qPrintable(reset.errorMessage));
+		const QJsonArray cleared = reset.result.value(QStringLiteral("cleared")).toArray();
+		QVERIFY2(!cleared.contains(clean),
+			"a client whose crash count was already zero was reported as cleared");
+		QCOMPARE(reset.result.value(QStringLiteral("cleared_count")).toInt(), 0);
+
+		// And the client that DID crash is still reported cleared, so the
+		// fix is not "cleared is always empty".
+		const ControlResult real = registry->invoke(QStringLiteral("oop.reset_crashes"), QJsonObject{
+			{QStringLiteral("client"), crashed}});
+		QVERIFY2(real.ok, qPrintable(real.errorMessage));
+		QVERIFY2(real.result.value(QStringLiteral("cleared")).toArray().contains(crashed),
+			"a client with a nonzero crash count was not reported as cleared");
+		QCOMPARE(tracker.record(crashed).crashes, 0);
+	}
+
+
 private:
 	bool m_engineInitialised = false;
 };

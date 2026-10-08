@@ -94,6 +94,13 @@ QString clapDevice(const QString& clapId)
 	return QString();
 }
 
+//! How many undo steps the registry holds a transaction for. A command that changed
+//! nothing must not grow this: it would hand out a step it never recorded.
+int transactionCount()
+{
+	return run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().size();
+}
+
 //! The track's state saved and read back into the same track - the project round trip of one track.
 void saveAndReload(InstrumentTrack* track)
 {
@@ -184,6 +191,61 @@ private slots:
 		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
 	}
 
+	//! Luna 5747: rack.layer_zone_remove advertises rack.layer_zone_add, and that inverse must be
+	//! REPLAYABLE - the command also needs the zone's 'layer' and its four range values, not just
+	//! the track. The inverse args have to rebuild the very zone that was dropped.
+	void layerZoneRemoveAdvertisesAReplayableInverse()
+	{
+		if (m_track.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		const int zonesBefore = layerZoneCount(m_track);
+		QVERIFY2(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 70},
+			{QStringLiteral("high_key"), 107}, {QStringLiteral("low_velocity"), 30},
+			{QStringLiteral("high_velocity"), 150}}).ok, "rack.layer_zone_add refused");
+		const QString zone = QStringLiteral("zone-%1").arg(zonesBefore);
+		QVERIFY2(run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("zone"), zone}}).ok, "rack.layer_zone_remove refused");
+		QCOMPARE(layerZoneCount(m_track), zonesBefore);
+
+		// Luna 5747: the advertised inverse is the exact recorded checkpoint, control.undo, which
+		// re-inserts the zone at its own index. A rack.layer_zone_add replay appended it instead.
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("rack.layer_zone_remove"))
+			.value(QStringLiteral("inverse")).toObject();
+		QVERIFY2(!inverse.isEmpty(), "rack.layer_zone_remove advertised no inverse at all");
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(layerZoneCount(m_track), zonesBefore + 1);
+		InstrumentTrack* track = trackOf(m_track);
+		QVERIFY(track != nullptr);
+		QVERIFY(track->layers().basePlays(90, 100));   // the zone is back: keys 70..107 reach layer-0 again
+		QVERIFY(!track->layers().basePlays(65, 100));  // ... and nothing widened past it
+	}
+
+	//! Luna 5747: removing the FIRST of two overlapping layer zones and undoing it restores the zone order.
+	void layerZoneRemoveFirstOfOverlappingUndoKeepsOrder()
+	{
+		if (m_track.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		const int zonesBefore = layerZoneCount(m_track);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 60},
+			{QStringLiteral("high_key"), 100}, {QStringLiteral("low_velocity"), 1},
+			{QStringLiteral("high_velocity"), 200}}).ok);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 70},
+			{QStringLiteral("high_key"), 80}, {QStringLiteral("low_velocity"), 1},
+			{QStringLiteral("high_velocity"), 200}}).ok);
+		const QString first = QStringLiteral("zone-%1").arg(zonesBefore);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("zone"), first}}).ok);
+		QCOMPARE(layerZoneCount(m_track), zonesBefore + 1);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(layerZoneCount(m_track), zonesBefore + 2);
+		InstrumentTrack* track = trackOf(m_track);
+		QVERIFY(track != nullptr);
+		QCOMPARE(track->layers().zones().zone(zonesBefore)->lowKey, 60);   // the removed zone is first again
+		QCOMPARE(track->layers().zones().zone(zonesBefore + 1)->lowKey, 70);
+	}
+
 	//! MX-114: a MIDI part is added and removed through the surface, undone, and saved with the track.
 	void midiPartsAddRemoveUndoReload()
 	{
@@ -202,10 +264,49 @@ private slots:
 		QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
 			{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
 		QCOMPARE(partCount(m_track), 0);
+
+		// Luna 5720/5747: the reported inverse is the exact recorded checkpoint, control.undo.
+		// A plugin.midi_part_add replay appended the part and lost its first-match position.
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("plugin.midi_part_remove"))
+			.value(QStringLiteral("inverse")).toObject();
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		// And it really runs: undoing restores the part.
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(partCount(m_track), 1);
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(0)->chain, 2);  // channel 3 is index 2
+		QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
+		QCOMPARE(partCount(m_track), 0);
+
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(partCount(m_track), 1);
 		QVERIFY(!run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
 			{QStringLiteral("part"), QStringLiteral("part-9")}}).ok);
+	}
+
+	//! Luna 5747: removing the FIRST of two overlapping parts and undoing it must restore the
+	//! original first-match order (part-0 channel 3 wins over part-1 channel 5 on key 60).
+	void midiPartsRemoveFirstOfOverlappingUndoKeepsOrder()
+	{
+		if (m_track.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		while (partCount(m_track) > 0)  // earlier cases leave parts on the shared track
+		{
+			QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
+				{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
+		}
+		QVERIFY(run(QStringLiteral("plugin.midi_part_add"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("midi_channel"), 3}, {QStringLiteral("low_key"), 60}}).ok);
+		QVERIFY(run(QStringLiteral("plugin.midi_part_add"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("midi_channel"), 5}, {QStringLiteral("low_key"), 60}}).ok);
+		QCOMPARE(partCount(m_track), 2);
+		QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
+		QCOMPARE(partCount(m_track), 1);
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(0)->chain, 4);  // channel 5 is index 4
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(partCount(m_track), 2);
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(0)->chain, 2);  // channel 3 wins again
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(1)->chain, 4);
 	}
 
 	//! MX-114: a single-output instrument has no buses to route - refused, typed; a hosted one lists them.
@@ -270,6 +371,17 @@ private slots:
 		InstrumentOutputBuses* model = trackOf(target)->instrument()->outputBuses();
 		QVERIFY(model != nullptr);
 		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), channel);
+
+		// Luna 5718: routing Aux to the channel it ALREADY uses is not an edit. A step
+		// recorded here would be the one the next undo consumes, hiding the route above.
+		const int stepsBeforeNoOp = transactionCount();
+		const ControlResult routedAgain = run(QStringLiteral("plugin.output_bus_route"), {{QStringLiteral("target"), target},
+			{QStringLiteral("bus"), 1}, {QStringLiteral("channel"), channel}});
+		QVERIFY2(routedAgain.ok, qPrintable(routedAgain.errorMessage));
+		QCOMPARE(routedAgain.result.value(QStringLiteral("routed_count")).toInt(), 1);
+		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), channel);
+		QCOMPARE(transactionCount(), stepsBeforeNoOp);  // the same route claims no step
+
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(model->routeOf(1), -1);
 		const ControlResult noBus = run(QStringLiteral("plugin.output_bus_route"), {{QStringLiteral("target"), target},
@@ -290,6 +402,17 @@ private slots:
 		QCOMPARE(mixer->numChannels(), channelsBefore + 1);
 		QCOMPARE(QStringLiteral("ch-%1").arg(model->routeOf(1)), madeChannel);
 		QVERIFY(mixer->mixerChannel(mixer->numChannels() - 1)->m_name.endsWith(QStringLiteral(" Aux")));
+
+		// Luna 5719: Aux is already routed, so there is nothing left to create. The answer
+		// must not advertise a reversible transaction: no step was recorded to undo.
+		const int stepsBeforeEmpty = transactionCount();
+		const ControlResult nothingToDo = run(QStringLiteral("plugin.output_buses_create_channels"),
+			{{QStringLiteral("target"), target}});
+		QVERIFY2(nothingToDo.ok, qPrintable(nothingToDo.errorMessage));
+		QVERIFY(nothingToDo.result.value(QStringLiteral("created")).toArray().isEmpty());
+		QCOMPARE(mixer->numChannels(), channelsBefore + 1);  // and it made no channel
+		QCOMPARE(transactionCount(), stepsBeforeEmpty);
+
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(mixer->numChannels(), channelsBefore);
 		QCOMPARE(model->routeOf(1), -1);

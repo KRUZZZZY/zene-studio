@@ -338,6 +338,29 @@ private slots:
 		evidence(QStringLiteral("deleted_track_membership_removed=1 undo_restored=1 inverse_replay_restored=1"));
 	}
 
+	//! Redoing `vca.create` restores the requested group name, not an empty one.
+	void redoingCreateRestoresTheRequestedName()
+	{
+		clearGroups();
+		const QString name = QStringLiteral("Redo preserves this name");
+		const QString group = createGroup(name);
+		QVERIFY2(!group.isEmpty(), "vca.create failed");
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}}).errorKind, ControlErrorKind::NotFound);
+
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
+		QVERIFY(redone.result.value(QStringLiteral("redone")).toBool());
+		const ControlResult restored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), group}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(restored.result.value(QStringLiteral("name")).toString(), name);
+		clearGroups();
+		evidence(QStringLiteral("create_undo=1 redo=1 name_restored=1"));
+	}
+
 	//! `vca.remove` is EXACTLY reversible: the id, name, fader, mute, solo,
 	//! phase lock, member channels and edit tracks all come back, and the
 	//! members publish the group's gain again.
@@ -386,6 +409,65 @@ private slots:
 		QCOMPARE(static_cast<double>(mixer->mixerChannel(1)->vcaGain()), 0.0);
 		evidence(QStringLiteral("removed=1 undo_restored_fields=%1 published_gain=0")
 			.arg(after.size()));
+	}
+
+	//! Undoing `vca.unassign` restores a SHARED membership: a channel assigned
+	//! with `also:true` lives in two groups, and the undo has to put it back
+	//! with that same multiple-membership mode. Re-adding it single-valued asks
+	//! VcaGroup::addMember to take a channel another group already holds, which
+	//! it refuses - so the undo silently drops a membership that was there
+	//! before the undo, and the channel plays at a group's gain in one bus only.
+	void undoingUnassignRestoresASharedMembership()
+	{
+		clearGroups();
+		const QString first = createGroup(QStringLiteral("Shared one"));
+		const QString second = createGroup(QStringLiteral("Shared two"));
+		QVERIFY(!first.isEmpty());
+		QVERIFY(!second.isEmpty());
+
+		// `also:true` is the multiple-membership mode (0.5.0 L09): the channel
+		// belongs to BOTH groups, and both hold it deliberately.
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), first},
+			{QStringLiteral("channel"), channelId(1)}, {QStringLiteral("also"), true}}).ok);
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), second},
+			{QStringLiteral("channel"), channelId(1)}, {QStringLiteral("also"), true}}).ok);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+
+		QVERIFY(run(QStringLiteral("vca.unassign"), {{QStringLiteral("group"), second},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 0);
+
+		// The undo path: control.undo restores the SHARED membership in both groups.
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), first}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+
+		// Luna 4911: the ADVERTISED inverse must be replayable as written. It names vca.assign with
+		// also:true - without it, the channel is refused by `first`, which still holds it. Unassign
+		// again first, so the replay has a membership to put back.
+		QVERIFY(run(QStringLiteral("vca.unassign"), {{QStringLiteral("group"), second},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 0);
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("vca.unassign"))
+			.value(QStringLiteral("inverse")).toObject();
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("vca.assign"));
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
+		QCOMPARE(inverseArgs.value(QStringLiteral("also")).toBool(), true);
+		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(), inverseArgs).ok,
+			"the advertised vca.assign inverse was refused");
+		// The replay must restore the same membership: `second` again AND still `first`.
+		const ControlResult restored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(restored.result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), first}}).result.value(QStringLiteral("member_count")).toInt(), 1);
+		evidence(QStringLiteral("shared_unassign=1 undo_shared_restored=1"));
 	}
 };
 

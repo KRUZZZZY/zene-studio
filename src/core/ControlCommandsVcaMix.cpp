@@ -61,6 +61,24 @@ namespace
 //! (SPEC A11: typed, never silently adjusted).
 constexpr double kMaxGain = 2.0;
 
+/*! Whether \a channel is a member of a group OTHER than \a own - the
+ *  multiple-membership (`also:true`, 0.5.0 L09) state, which is what makes the
+ *  re-add in `vca.unassign`'s undo a legal one.
+ *
+ *  Mixer::vcaGroupForChannel answers only "some group holds it", which is not
+ *  enough here: the group being edited always holds the channel at that point,
+ *  so it would report true for EVERY unassign. This asks the other direction -
+ *  is there a SECOND holder - by walking the groups the mixer owns.
+ */
+bool sharedElsewhere(Mixer* mixer, VcaGroup* own, mix_ch_t channel)
+{
+	for (VcaGroup* other : mixer->vcaGroups())
+	{
+		if (other != own && other->contains(channel)) { return true; }
+	}
+	return false;
+}
+
 // ---------------------------------------------------------------------------
 // vca.set_gain - the group fader.
 // ---------------------------------------------------------------------------
@@ -298,10 +316,17 @@ ControlResult unassignChannel(const QJsonObject& args)
 	const int id = group->id();
 	auto mixerRef = Engine::mixer();
 	const mix_ch_t member = static_cast<mix_ch_t>(index);
+	// Whether the channel was SHARED is part of the state this call removes, so
+	// it has to be read BEFORE the removal: `also:true` membership puts a channel
+	// in two groups at once (0.5.0 L09), and VcaGroup::addMember refuses to take a
+	// channel another group already holds. Re-adding single-valued would therefore
+	// be refused and the undo would silently lose a membership that existed
+	// before the undo - so the undo restores the SAME membership mode.
+	const bool also = sharedElsewhere(mixerRef, group, member);
 	control::addUndoStep(
-		[mixerRef, id, member]()
+		[mixerRef, id, member, also]()
 		{
-			if (VcaGroup* g = mixerRef->vcaGroup(id)) { g->addMember(member); }
+			if (VcaGroup* g = mixerRef->vcaGroup(id)) { g->addMember(member, also); }
 		},
 		[mixerRef, id, member]()
 		{
@@ -317,8 +342,11 @@ ControlResult unassignChannel(const QJsonObject& args)
 				{QStringLiteral("channel"), control::channelIdOf(channel)},
 				{QStringLiteral("assigned"), true}},
 			QStringLiteral("vca.assign"),
+			// 'also' is part of the inverse: a shared membership is only re-added with it, and
+			// vca.assign refuses a channel another group already holds unless it says also:true.
 			QJsonObject{{QStringLiteral("group"), vcaGroupId(id)},
-				{QStringLiteral("channel"), control::channelIdOf(channel)}},
+				{QStringLiteral("channel"), control::channelIdOf(channel)},
+				{QStringLiteral("also"), also}},
 			true,
 			QStringLiteral("action checkpoint: the recorded undo step puts the channel back "
 				"through the same VcaGroup::addMember call the write path uses, which "
