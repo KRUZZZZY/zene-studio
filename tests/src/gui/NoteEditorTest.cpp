@@ -386,11 +386,12 @@ private slots:
 	void thePaintToolLaysANoteOnEveryCellItCrossesAsOneEdit()
 	{
 		m_editor->setTool(NoteTool::Paint);
-		// x = tick + 2 at 1 px per tick: the press, the midpoint and the release land in the 1/16 cells
-		// starting at 300, 324 and 348.
+		// 1 px per tick, 1/16 cells of 12 ticks: the stroke from 300 to 347 crosses the cells starting at 300,
+		// 312, 324, 336 and 348. The press, the midpoint and the release sample three of them; the path between
+		// the samples crosses the other two, which a fast stroke must paint too (NoteCanvas::paintAlong).
 		drag(point(300, 62), point(347, 62));
-		QCOMPARE(m_clip->notes().size(), std::size_t{5});
-		for (int at : {300, 324, 348})
+		QCOMPARE(m_clip->notes().size(), std::size_t{7});
+		for (int at : {300, 312, 324, 336, 348})
 		{
 			const Note* note = noteAt(m_clip, at, 62);
 			QVERIFY2(note != nullptr, qPrintable(QStringLiteral("no painted note at %1").arg(at)));
