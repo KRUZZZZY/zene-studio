@@ -205,7 +205,7 @@ public:
 	//! Takes this clip holds ready for its next passes (0 to 2). Zero once disarmed.
 	int recordTakesReady() const noexcept { return (m_preparedRecord != nullptr) + (m_spareRecord != nullptr); }
 	//! Frames the last take of this clip lost to capture overflow (0 before any take).
-	std::uint64_t lastTakeDroppedFrames() const noexcept { return m_lastTakeDroppedFrames; }
+	std::uint64_t lastTakeDroppedFrames() const noexcept { return m_lastTakeDroppedFrames.load(std::memory_order_relaxed); }
 	//! 0.5.0: a new source and the window to play of it, in one owner call - what a destructive edit (crop, a range
 	//! edit, a printed chain) does; the window is written here, by the clip, as the one-writer rule requires.
 	void replaceSample(std::shared_ptr<const SampleBuffer> sb, const SampleWindow& window);
@@ -254,7 +254,8 @@ private:
 	//! Recording passes of the current arming that became takes on the lanes.
 	int m_recordPasses = 0;
 	std::uint64_t m_armGeneration = 0;
-	std::uint64_t m_lastTakeDroppedFrames = 0;
+	//! Written on the main thread by the reaper; read by record.get_state, whichever thread asks.
+	std::atomic<std::uint64_t> m_lastTakeDroppedFrames{0};
 	//! Main thread: build the missing takes into m_preparedRecord / m_spareRecord.
 	void releaseRecordTakes();
 	//! Main thread: an armed clip's take on a new take lane.
