@@ -75,10 +75,12 @@ namespace ZeneTestInstrument {
 static const FUID kTestInstrumentUID (0x5A1E57B0, 0x9C4D42E7, 0xB0C3F81A, 0x6D2E4A90);
 
 // One automatable parameter, so the fixture exercises the parameter surface a
-// real instrument has.
+// real instrument has, plus one READ-ONLY parameter (a meter): a host must not
+// present it as an editable control.
 enum
 {
-	kLevelParam = 100
+	kLevelParam = 100,
+	kMeterParam = 101
 };
 
 static const float kDefaultLevel = 0.5f;
@@ -253,6 +255,11 @@ tresult PLUGIN_API TestInstrument::initialize (FUnknown* context)
 
 	parameters.addParameter (STR16 ("Level"), nullptr, /*flags*/ 0, kDefaultLevel,
 	                         ParameterInfo::kCanAutomate, kLevelParam);
+	// A visible read-only parameter: the plug-in owns its value, so a host must
+	// not offer it as an editable knob. SDK argument order is
+	// (title, units, stepCount, default, flags, tag).
+	parameters.addParameter (STR16 ("Meter"), nullptr, /*stepCount*/ 0, 0.0,
+	                         ParameterInfo::kIsReadOnly, kMeterParam);
 	return kResultOk;
 }
 
