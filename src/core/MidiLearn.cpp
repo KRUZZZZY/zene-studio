@@ -101,11 +101,13 @@ void MidiLearn::setEnabled(bool enabled)
 {
 	// GUI thread. Every change takes a new generation, so a control-change the MIDI thread
 	// read under the previous state cannot be published after this change.
+	// Any change also discards a request the MIDI thread has claimed but the GUI has not applied yet:
+	// it was made for the learn state being replaced (see applyPendingBinding).
 	std::uint64_t state = m_slot.load(std::memory_order_acquire);
 	std::uint64_t next = 0;
 	do
 	{
-		next = ((enabled ? (state | kArmed) : (state & ~kArmed)) + kGenerationUnit);
+		next = (((enabled ? (state | kArmed) : (state & ~kArmed)) & ~kPending) + kGenerationUnit);
 	} while (!m_slot.compare_exchange_weak(state, next, std::memory_order_acq_rel, std::memory_order_acquire));
 }
 
@@ -127,8 +129,11 @@ void MidiLearn::setFocusTarget(AutomatableModel* model)
 	m_focusTarget = model;
 	m_focusTargetSet.store(model != nullptr, std::memory_order_release);
 	// A new focus starts a new generation, so a claim made for the old focus is not published.
+	// The new generation also discards a request claimed for the previous focus: a claimed control-change
+	// is applied only if the focus has not moved since it was claimed (the integration branch's
+	// focus-generation rule, carried in this word: a pending bit can only survive from the claim).
 	std::uint64_t state = m_slot.load(std::memory_order_acquire);
-	while (!m_slot.compare_exchange_weak(state, state + kGenerationUnit, std::memory_order_acq_rel,
+	while (!m_slot.compare_exchange_weak(state, (state & ~kPending) + kGenerationUnit, std::memory_order_acq_rel,
 		std::memory_order_acquire)) {}
 }
 
@@ -252,6 +257,9 @@ bool MidiLearn::applyPendingBinding()
 	// GUI thread only. This is the deferred half of handleMidiEvent(): it is
 	// where a control-change seen on the MIDI input thread becomes a binding.
 	// Taking the pending flag and reading the payload come from the same word, so they always agree.
+	// A pending flag is only ever left set by a claim: every GUI-side change (arm, disarm, focus, cancel)
+	// clears it in the same step as it moves the generation. So a request is applied only if the learn
+	// state is unchanged since the control-change was claimed.
 	std::uint64_t state = m_slot.load(std::memory_order_acquire);
 	do
 	{

@@ -283,6 +283,56 @@ private slots:
 		QVERIFY(!MidiLearn::instance()->applyPendingBinding());
 		QVERIFY(second.controllerConnection() == nullptr);
 	}
+
+	// Ported from the integration branch (cluster new-p8-156), unchanged in what it asserts: a pending
+	// request that outlives a disarm/rearm must not bind to the new focus.
+	void PendingBindingIsDiscardedAfterDisarmAndRearm()
+	{
+		FloatModel oldTarget(0.5f, 0.0f, 1.0f, 0.01f);
+		FloatModel newTarget(0.5f, 0.0f, 1.0f, 0.01f);
+		const unsigned int before = MidiLearn::instance()->bindingCount();
+
+		// Keep the GUI timer stopped so the test controls exactly when the
+		// deferred request is drained.
+		MidiLearn::instance()->setFocusTarget(&oldTarget);
+		MidiLearn::instance()->setEnabled(true);
+		const Delivery delivery = deliverFromMidiInputThread(makeCc(1, 16, 96));
+		QVERIFY(delivery.threadId != QThread::currentThreadId());
+		QVERIFY(MidiLearn::instance()->hasPendingBinding());
+
+		// This is the GUI's actual disarm/rearm path. Disarming clears focus,
+		// then a new focus is installed before the pending slot is drained.
+		MidiLearnGui::instance()->setArmed(false);
+		MidiLearnGui::instance()->setArmed(true);
+		MidiLearn::instance()->setFocusTarget(&newTarget);
+
+		QVERIFY(!MidiLearn::instance()->applyPendingBinding());
+		QVERIFY(newTarget.controllerConnection() == nullptr);
+		QCOMPARE(MidiLearn::instance()->bindingCount(), before);
+		QVERIFY(!MidiLearn::instance()->hasPendingBinding());
+	}
+
+	// The defect 156 names, without the disarm in between: a request claimed for one focus must not be
+	// applied once the focus has moved to another control, even while the learn stays armed.
+	void PendingBindingIsDiscardedByAFocusChange()
+	{
+		FloatModel oldTarget(0.5f, 0.0f, 1.0f, 0.01f);
+		FloatModel newTarget(0.5f, 0.0f, 1.0f, 0.01f);
+		const unsigned int before = MidiLearn::instance()->bindingCount();
+
+		MidiLearn::instance()->setFocusTarget(&oldTarget);
+		MidiLearn::instance()->setEnabled(true);
+		deliverFromMidiInputThread(makeCc(1, 17, 64));
+		QVERIFY(MidiLearn::instance()->hasPendingBinding());
+
+		MidiLearn::instance()->setFocusTarget(&newTarget);
+
+		QVERIFY(!MidiLearn::instance()->applyPendingBinding());
+		QVERIFY(newTarget.controllerConnection() == nullptr);
+		QVERIFY(oldTarget.controllerConnection() == nullptr);
+		QCOMPARE(MidiLearn::instance()->bindingCount(), before);
+		QVERIFY(!MidiLearn::instance()->hasPendingBinding());
+	}
 };
 
 QTEST_GUILESS_MAIN(MidiLearnThreadTest)
