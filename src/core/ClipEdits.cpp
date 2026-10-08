@@ -199,21 +199,63 @@ float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,
 	return static_cast<float>(value);
 }
 
-float preFadedGainAt(const PreFadeSpan& span, std::int64_t clipPos, FadeShape fadeInShape, FadeShape fadeOutShape)
+namespace
 {
-	double value = 1.0;
+
+//! The pre-faded fade-in at \p clipPos. With no offset it is ONE ramp from preIn frames before the clip to fadeIn
+//! frames into it; with one the lead is a ramp of its own before the clip and the in-clip ramp sits at its offset.
+double preFadedIn(const PreFadeSpan& span, std::int64_t clipPos, FadeShape shape)
+{
+	if (span.fadeInOffsetFrames > 0)
+	{
+		double value = 1.0;
+		if (span.preInFrames > 0 && clipPos < 0)
+		{
+			const std::int64_t into = clipPos + span.preInFrames;
+			value *= into <= 0 ? 0.0 : fadeShapeGain(shape, static_cast<double>(into) / static_cast<double>(span.preInFrames));
+		}
+		return clipPos < 0 ? value : value * fadeInFactor(static_cast<f_cnt_t>(clipPos), static_cast<f_cnt_t>(span.fadeInFrames), shape,
+			static_cast<f_cnt_t>(span.fadeInOffsetFrames));
+	}
 	const std::int64_t inLength = span.preInFrames + span.fadeInFrames;
 	const std::int64_t intoIn = clipPos + span.preInFrames;  // frames since the fade-in began
 	if (inLength > 0 && intoIn < inLength)
 	{
-		value *= intoIn <= 0 ? 0.0 : fadeShapeGain(fadeInShape, static_cast<double>(intoIn) / static_cast<double>(inLength));
+		return intoIn <= 0 ? 0.0 : fadeShapeGain(shape, static_cast<double>(intoIn) / static_cast<double>(inLength));
+	}
+	return 1.0;
+}
+
+//! The pre-faded fade-out at \p clipPos, the mirror of preFadedIn.
+double preFadedOut(const PreFadeSpan& span, std::int64_t clipPos, FadeShape shape)
+{
+	if (span.fadeOutOffsetFrames > 0)
+	{
+		if (clipPos < span.clipFrames)
+		{
+			return clipPos < 0 ? 1.0 : fadeOutFactor(static_cast<f_cnt_t>(clipPos), static_cast<f_cnt_t>(span.clipFrames),
+				static_cast<f_cnt_t>(span.fadeOutFrames), shape, static_cast<f_cnt_t>(span.fadeOutOffsetFrames));
+		}
+		const std::int64_t left = span.clipFrames + span.preOutFrames - clipPos;
+		if (span.preOutFrames <= 0 || left >= span.preOutFrames) { return 1.0; }
+		return left <= 0 ? 0.0 : fadeShapeGain(shape, static_cast<double>(left) / static_cast<double>(span.preOutFrames));
 	}
 	const std::int64_t outLength = span.fadeOutFrames + span.preOutFrames;
 	const std::int64_t left = span.clipFrames + span.preOutFrames - clipPos;  // frames until the fade-out ends
 	if (outLength > 0 && left < outLength)
 	{
-		value *= left <= 0 ? 0.0 : fadeShapeGain(fadeOutShape, static_cast<double>(left) / static_cast<double>(outLength));
+		return left <= 0 ? 0.0 : fadeShapeGain(shape, static_cast<double>(left) / static_cast<double>(outLength));
 	}
+	return 1.0;
+}
+
+} // namespace
+
+float preFadedGainAt(const PreFadeSpan& span, std::int64_t clipPos, FadeShape fadeInShape, FadeShape fadeOutShape)
+{
+	double value = 1.0;
+	value *= preFadedIn(span, clipPos, fadeInShape);
+	value *= preFadedOut(span, clipPos, fadeOutShape);
 	return static_cast<float>(value);
 }
 

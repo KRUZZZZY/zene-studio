@@ -54,8 +54,8 @@ int fadeOutX(const ClipEdits& edits, int clipTicks, const ClipOverlayFrame& fram
 //! Where a fade's handle is drawn and taken: the end of the fade, or inset from the edge when it is zero.
 int handleX(FadeHandle handle, const ClipEdits& edits, int clipTicks, const ClipOverlayFrame& frame)
 {
-	if (handle == FadeHandle::In) { return edits.fadeInTicks == 0 ? frame.xOrigin + ZeroFadeInset : fadeInX(edits, frame); }
-	return edits.fadeOutTicks == 0 ? xOfTick(frame, clipTicks) - ZeroFadeInset : fadeOutX(edits, clipTicks, frame);
+	if (handle == FadeHandle::In) { return edits.fadeInTicks == 0 ? xOfTick(frame, edits.fadeInOffsetTicks) + ZeroFadeInset : fadeInX(edits, frame); }
+	return edits.fadeOutTicks == 0 ? xOfTick(frame, clipTicks - edits.fadeOutOffsetTicks) - ZeroFadeInset : fadeOutX(edits, clipTicks, frame);
 }
 
 //! One fade's curve from @a x0 to @a x1: rising (fade in) or falling (fade out), shaded above.
@@ -131,10 +131,10 @@ FadeHandle fadeHandleAt(const ClipEdits& edits, int clipTicks, const ClipOverlay
 	return nearer;
 }
 
-int fadeTicksAt(FadeHandle handle, int x, int clipTicks, const ClipOverlayFrame& frame)
+int fadeTicksAt(FadeHandle handle, int x, int clipTicks, const ClipOverlayFrame& frame, int offsetTicks)
 {
 	const int tick = static_cast<int>(std::lround((x - frame.xOrigin) / std::max(0.001f, frame.pixelsPerTick)));
-	const int ticks = handle == FadeHandle::In ? tick : clipTicks - tick;
+	const int ticks = handle == FadeHandle::In ? tick - offsetTicks : clipTicks - offsetTicks - tick;
 	return std::clamp(ticks, 0, clipTicks);
 }
 

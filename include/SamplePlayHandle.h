@@ -196,6 +196,7 @@ private:
 	//! Derives m_clipFrames / m_envelopeStart / the two fade lengths from the
 	//! clip and the window this handle renders (construction time only).
 	void snapshotClipEdits(const SampleClip* clip, const SampleWindow& window);
+	void fitFades();  //!< clamp the ramps and their offsets to the clip (owner decision 2026-10-08)
 
 	/*! R3.1, comp PLAYBACK: when the clip's track has a composite (take lanes
 	 *  comped into one performance, include/TakeLane.h), the spans of this clip's

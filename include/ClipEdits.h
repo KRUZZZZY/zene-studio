@@ -222,6 +222,10 @@ struct PreFadeSpan
 	std::int64_t preOutFrames = 0;  //!< the fade-out's part after the clip's last frame
 	std::int64_t fadeInFrames = 0;  //!< the fade-in's part inside the clip
 	std::int64_t fadeOutFrames = 0; //!< the fade-out's part inside the clip
+	//! The offset fades (ClipEdits::fadeInOffsetTicks / fadeOutOffsetTicks) in frames: with one set, that side's
+	//! pre-fade is a ramp of its own outside the clip and the in-clip ramp sits at its offset.
+	std::int64_t fadeInOffsetFrames = 0;
+	std::int64_t fadeOutOffsetFrames = 0;
 };
 
 /*! ED-179: the fade envelope of a pre-faded clip at @a clipPos output frames from its first frame (negative before

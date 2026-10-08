@@ -35,6 +35,7 @@
 #include "Clip.h"
 #include "ClipEdits.h"
 #include "ClipLinks.h"
+#include "ContainedCrossfade.h"
 #include "LinkedClipEdits.h"
 #include "ConfigManager.h"
 #include "ControlReversibility.h"
@@ -314,25 +315,42 @@ int rippleAfterDelete(Track* track, tick_t start, tick_t length, Ripple mode)
 namespace
 {
 
+//! A clip lying wholly inside another is crossfaded at both of its ends (containedcrossfade): the container ducks
+//! under it and comes back. False when neither contains the other.
+bool crossfadeContained(Clip* a, Clip* b)
+{
+	const Clip* container = nullptr;
+	const Clip* contained = nullptr;
+	if (!containedcrossfade::containment(a, b, &container, &contained)) { return false; }
+	int entry = 0;
+	int exit = 0;
+	if (!containedcrossfade::ramps(*container, *contained, 0, true, &entry, &exit).isEmpty()) { return true; }  // too short to crossfade
+	Clip* outer = container == a ? a : b;
+	Clip* inner = outer == a ? b : a;
+	ClipEdits outerEdits = outer->clipEdits();
+	ClipEdits innerEdits = inner->clipEdits();
+	containedcrossfade::apply(*container, *contained, entry, exit, FadeShape::EqualPower, FadeShape::EqualPower, &outerEdits, &innerEdits);
+	outer->setClipEdits(outerEdits);
+	inner->setClipEdits(innerEdits);
+	return true;
+}
+
 //! Crossfade @a earlier into @a later over their overlap: fade-out on one, fade-in on the other.
 void crossfade(Clip* earlier, Clip* later)
 {
-	// The overlap is the span the two clips SHARE, so it ends at whichever clip ends first: a
-	// later clip wholly inside the earlier one must not be faded in over the earlier clip's
-	// remaining length, or its fade-in would outlast the clip and never reach full gain.
+	if (crossfadeContained(earlier, later)) { return; }
 	const tick_t overlap = std::min(earlier->endPosition().getTicks(), later->endPosition().getTicks())
 		- later->startPosition().getTicks();
 	if (overlap <= 0) { return; }
 	ClipEdits out = earlier->clipEdits();
 	out.fadeOutTicks = overlap;
 	out.fadeOutShape = FadeShape::EqualPower;
-	// A later clip wholly inside the earlier one: the earlier clip's fade-out ends where the later clip
-	// ends, not at its own tail, and the tail after it is not faded (owner decision 2026-10-08).
-	out.fadeOutOffsetTicks = static_cast<int>(std::max<tick_t>(0, earlier->endPosition().getTicks() - later->endPosition().getTicks()));
+	out.fadeOutOffsetTicks = 0;
 	earlier->setClipEdits(out);
 	ClipEdits in = later->clipEdits();
 	in.fadeInTicks = overlap;
 	in.fadeInShape = FadeShape::EqualPower;
+	in.fadeInOffsetTicks = 0;
 	later->setClipEdits(in);
 }
 

@@ -581,6 +581,7 @@ include/CommandMetadata.h
 include/CommandPalette.h
 include/CompSlip.h
 include/CompSwipeStrip.h
+include/ContainedCrossfade.h
 include/ContextHelp.h
 include/ControlArrangingCommands.h
 include/ControlAutomationSupport.h
@@ -1111,6 +1112,7 @@ src/core/CollabPolicy.cpp
 src/core/CollabSession.cpp
 src/core/CollabSessionSync.cpp
 src/core/CompSlip.cpp
+src/core/ContainedCrossfade.cpp
 src/core/ControlAutomationSupport.cpp
 src/core/ControlBounceSupport.cpp
 src/core/ControlBrowserSupport.cpp

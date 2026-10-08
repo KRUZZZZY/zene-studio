@@ -142,9 +142,13 @@ private slots:
 		Clip* earlier = clipAt(m_track, 0, 100);          // [0, 100)
 		Clip* later = clipAt(m_track, 20, 20);            // [20, 40), wholly inside it
 		QCOMPARE(arrangement::applyOverlap(later, arrangement::Overlap::Crossfade), 1);
-		// The shared span is [20, 40) - 20 ticks, not the earlier clip's remaining 80.
-		QCOMPARE(earlier->clipEdits().fadeOutTicks, 20);
-		QCOMPARE(later->clipEdits().fadeInTicks, 20);
+		// The shared span is [20, 40) - 20 ticks, not the earlier clip's remaining 80 - and since the later clip
+		// lies inside the earlier one it is crossfaded at both ends (owner decision 2026-10-08, round 2): the
+		// earlier clip ducks under it over the first 10 ticks and comes back over the last 10.
+		QCOMPARE(earlier->clipEdits().fadeOutTicks, 10);
+		QCOMPARE(earlier->clipEdits().fadeInTicks, 10);
+		QCOMPARE(later->clipEdits().fadeInTicks, 10);
+		QCOMPARE(later->clipEdits().fadeOutTicks, 10);
 	}
 
 	//! Rendered envelope of the contained clip: its fade-in must ramp across its own length and reach full gain

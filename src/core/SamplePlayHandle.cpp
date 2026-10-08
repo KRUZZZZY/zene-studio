@@ -217,7 +217,11 @@ void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWin
 	m_outputFramesPerTick = outputFramesPerTick;
 	const auto autoFade = static_cast<f_cnt_t>(static_cast<double>(autoFadeMs) * outputRate / 1000.0);
 	m_fadeInOffsetFrames = framesFor(m_edits.fadeInOffsetTicks);
-	m_fadeOutOffsetFrames = framesFor(m_edits.fadeOutOffsetTicks);
+	// The fade-out ends at the frame its end TICK falls on (as the fade-in's start does), not at the clip's end less the
+	// rounded offset: two ramps that meet at one tick (a container's V) must meet at one frame, or a frame between
+	// them plays at unity.
+	m_fadeOutOffsetFrames = m_edits.fadeOutOffsetTicks > 0
+		? m_clipFrames - std::min(m_clipFrames, framesFor(std::max(0, clipTicks - m_edits.fadeOutOffsetTicks))) : 0;
 	// An offset fade leaves the clip's real edges unramped, so the automatic fade (a click guard on the edges)
 	// is kept apart from the ramps then; with no offset the two stay one ramp, as ever.
 	const bool offsetFades = m_fadeInOffsetFrames > 0 || m_fadeOutOffsetFrames > 0;
@@ -251,11 +255,24 @@ void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWin
 		m_envelopeStart = framesFor(clip->windowTicksFor(head));
 	}
 
-	// The ramps and their offsets must fit one after the other: the fade-in wins the meeting point.
-	m_fadeInOffsetFrames = std::min(m_fadeInOffsetFrames, m_clipFrames);
-	m_fadeInFrames = std::min(m_fadeInFrames, m_clipFrames - m_fadeInOffsetFrames);
-	m_fadeOutOffsetFrames = std::min(m_fadeOutOffsetFrames, m_clipFrames - m_fadeInOffsetFrames - m_fadeInFrames);
-	m_fadeOutFrames = std::min(m_fadeOutFrames, m_clipFrames - m_fadeInOffsetFrames - m_fadeInFrames - m_fadeOutOffsetFrames);
+	fitFades();
+}
+
+/*! Without offsets the ramps must fit one after the other (the fade-in wins the meeting point), as ever. With
+ *  offsets each ramp sits where its offset puts it - in either order, a container's V is out and then in - so each
+ *  need only fit inside the clip on its own. */
+void SamplePlayHandle::fitFades()
+{
+	if (m_fadeInOffsetFrames > 0 || m_fadeOutOffsetFrames > 0)
+	{
+		m_fadeInOffsetFrames = std::min(m_fadeInOffsetFrames, m_clipFrames);
+		m_fadeInFrames = std::min(m_fadeInFrames, m_clipFrames - m_fadeInOffsetFrames);
+		m_fadeOutOffsetFrames = std::min(m_fadeOutOffsetFrames, m_clipFrames);
+		m_fadeOutFrames = std::min(m_fadeOutFrames, m_clipFrames - m_fadeOutOffsetFrames);
+		return;
+	}
+	if (m_fadeInFrames > m_clipFrames) { m_fadeInFrames = m_clipFrames; }
+	if (m_fadeInFrames + m_fadeOutFrames > m_clipFrames) { m_fadeOutFrames = m_clipFrames - m_fadeInFrames; }
 }
 
 

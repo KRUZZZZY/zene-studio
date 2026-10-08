@@ -241,8 +241,6 @@ FadeHandle SampleClipView::fadeHandleUnder(const QPoint& pos)
 {
 	// A locked clip (or a clip of a locked track) has no fade to drag: clip.set_fade would refuse it (UX ux06 #25).
 	if (EditLocks::instance().locks(m_clip)) { return FadeHandle::None; }
-	// An offset fade (a crossfade into a contained clip) is edited through clip.set_fade, not dragged.
-	if (m_clip->clipEdits().fadeInOffsetTicks != 0 || m_clip->clipEdits().fadeOutOffsetTicks != 0) { return FadeHandle::None; }
 	return fadeHandleAt(m_clip->clipEdits(), m_clip->length().getTicks(), overlayFrame(0), pos);
 }
 
@@ -268,8 +266,13 @@ void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 	}
 	// fade_in + fade_out must fit in the clip (clip.set_fade refuses more), so a fade stops where the other begins.
 	const int clipTicks = m_clip->length().getTicks();
-	const int other = m_fadeDrag == FadeHandle::In ? m_clip->clipEdits().fadeOutTicks : m_clip->clipEdits().fadeInTicks;
-	m_fadeDragTicks = std::max(0, std::min(fadeTicksAt(m_fadeDrag, me->pos().x(), clipTicks, overlayFrame(0)), clipTicks - other));
+	// With an offset fade (a crossfade into a contained clip) the ramps sit apart, each only bounded by the clip.
+	const ClipEdits& edits = m_clip->clipEdits();
+	const bool offsets = edits.fadeInOffsetTicks != 0 || edits.fadeOutOffsetTicks != 0;
+	const int offset = m_fadeDrag == FadeHandle::In ? edits.fadeInOffsetTicks : edits.fadeOutOffsetTicks;
+	const int other = m_fadeDrag == FadeHandle::In ? edits.fadeOutTicks : edits.fadeInTicks;
+	const int room = offsets ? clipTicks - offset : clipTicks - other;
+	m_fadeDragTicks = std::max(0, std::min(fadeTicksAt(m_fadeDrag, me->pos().x(), clipTicks, overlayFrame(0), offset), room));
 	setNeedsUpdate(true);
 	update();
 }
