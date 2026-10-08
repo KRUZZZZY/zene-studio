@@ -57,7 +57,9 @@ inline int fillClapKnobGrid(QGridLayout* grid, const std::vector<ClapParamModel*
 	for (auto* model : models)
 	{
 		const auto& descriptor = model->descriptor();
-		if (descriptor.hidden) { continue; }
+		// A read-only parameter ignores every write (setParamPlain drops it), so an editable knob
+		// would only move and snap back on the next poll - it is not offered at all.
+		if (descriptor.hidden || descriptor.readOnly) { continue; }
 		auto* knob = new Knob(KnobType::Bright26, descriptor.title, parent);
 		knob->setModel(model);
 		knob->setHintText(descriptor.title, QString{});

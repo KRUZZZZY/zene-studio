@@ -118,7 +118,10 @@ ProcessStatus DeEsserEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 	for (f_cnt_t f = 0; f < inOut.frames(); ++f)
 	{
 		auto& frame = inOut.sampleFrameAt(f);
-		const float level = std::abs(m_detector.run(0.5f * (frame[0] + frame[1]), 0));
+		// Linked detection: the louder of the two high bands, not their sum. The sum of sibilance
+		// that is opposite in phase across the channels is near silence, so a mono-sum detector
+		// hears nothing in exactly the material a de-esser exists for.
+		const float level = std::max(std::abs(m_detector.run(frame[0], 0)), std::abs(m_detector.run(frame[1], 1)));
 		m_envelope = level + (level > m_envelope ? attack : release) * (m_envelope - level);
 		const float target = dbfsToAmp(-reductionDb(ampToDbfs(std::max(m_envelope, 1e-6f)), threshold, range));
 		m_gain = target + (target < m_gain ? attack : release) * (m_gain - target);

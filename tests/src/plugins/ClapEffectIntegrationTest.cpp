@@ -44,6 +44,9 @@
 #include "BufferManager.h"
 #include "ClapEffect.h"
 #include "ClapEffectControls.h"
+#include "ClapKnobGrid.h"
+#include "ClapSubPluginFeatures.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "EffectChain.h"
 #include "EffectControlDialog.h"
@@ -56,6 +59,9 @@
 
 #ifndef CLAP_TEST_PLUGIN_PATH
 #define CLAP_TEST_PLUGIN_PATH ""
+#endif
+#ifndef CLAP_TEST_BROKEN_NO_SYMBOL_PATH
+#define CLAP_TEST_BROKEN_NO_SYMBOL_PATH ""
 #endif
 
 namespace lmms
@@ -78,6 +84,9 @@ private slots:
 	void testThePluginsLatencyReachesTheChain();
 	void testThePluginsTailKeepsItRunning();
 	void testParameterRescansRebuildTheModels();
+	void testReadOnlyParametersGetNoKnob();
+	void testAProcessingErrorFallsBackToDryAudio();
+	void testScanFailuresAreReported();
 
 private:
 	auto makeKey() const -> Plugin::Descriptor::SubPluginFeatures::Key;
@@ -87,6 +96,33 @@ namespace
 {
 
 constexpr double kPi = 3.14159265358979323846;
+
+//! qWarning() text collected while a WarningCapture is alive. File-scope so the
+//! static handler Qt wants can reach the capture currently in progress.
+QStringList g_warnings;
+bool g_capturingWarnings = false;
+
+void collectWarning(QtMsgType type, const QMessageLogContext&, const QString& message)
+{
+	if (g_capturingWarnings && type == QtWarningMsg) { g_warnings.push_back(message); }
+}
+
+//! Collects qWarning() text for the length of one scope, so a test can prove that a
+//! scan SAID why a module did not appear instead of dropping the reason on the floor.
+class WarningCapture
+{
+public:
+	WarningCapture() { m_previous = qInstallMessageHandler(&collectWarning); g_capturingWarnings = true; }
+	~WarningCapture()
+	{
+		g_capturingWarnings = false;
+		qInstallMessageHandler(m_previous);
+	}
+	auto warnings() const -> const QStringList& { return g_warnings; }
+
+private:
+	QtMessageHandler m_previous = nullptr;
+};
 
 auto rms(const std::vector<float>& samples) -> double
 {
@@ -585,6 +621,123 @@ void lmms::ClapEffectIntegrationTest::testParameterRescansRebuildTheModels()
 	QVERIFY2(std::abs(storage[0][0] - 0.25f) < 1e-6f, qPrintable(QString::number(storage[0][0])));
 	chain.clear();
 }
+
+/*! BUGS 1902: a read-only CLAP parameter (CLAP_PARAM_IS_READONLY) ignores every write, so the knob the
+ *  dialog used to build for it moved and snapped back on the next poll. The grid now skips it. */
+void lmms::ClapEffectIntegrationTest::testReadOnlyParametersGetNoKnob()
+{
+	BufferManager::init(48);
+	qputenv("CLAP_TEST_GAIN_READONLY", "1");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	qunsetenv("CLAP_TEST_GAIN_READONLY");
+	auto* bypass = controls->modelForParam(2);
+	QVERIFY(bypass != nullptr);
+	QVERIFY(bypass->descriptor().readOnly);
+
+	QWidget parent;
+	QGridLayout grid;
+	const auto rows = gui::fillClapKnobGrid(&grid, controls->paramModels(), &parent,
+		QStringLiteral("no parameters"));
+	QCOMPARE(rows, 1);  // one row: only Gain is left
+	auto knobCount = 0;
+	auto* first = static_cast<gui::Knob*>(nullptr);
+	for (int i = 0; i < grid.count(); ++i)
+	{
+		auto* knob = dynamic_cast<gui::Knob*>(grid.itemAt(i)->widget());
+		if (knob == nullptr) { continue; }
+		++knobCount;
+		if (first == nullptr) { first = knob; }
+	}
+	QCOMPARE(knobCount, 1);
+	QVERIFY(first != nullptr);
+	QCOMPARE(first->getLabel(), QStringLiteral("Gain"));
+	chain.clear();
+}
+
+/*! BUGS 5514: a plug-in that reports CLAP_PROCESS_ERROR leaves the rest of the output block as the host
+ *  handed it over, so the effect must hand the chain the dry signal instead of mixing stale wet audio. */
+void lmms::ClapEffectIntegrationTest::testAProcessingErrorFallsBackToDryAudio()
+{
+	constexpr f_cnt_t fpp = 48;
+	BufferManager::init(fpp);
+	qputenv("CLAP_TEST_GAIN_PROCESS_ERROR", "1");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	controls->modelForParam(1)->setValue(0.5f);  // a successful block would come out at 0.25
+
+	SampleFrame storage[fpp];
+	for (f_cnt_t f = 0; f < fpp; ++f)
+	{
+		storage[f][0] = 0.5f;
+		storage[f][1] = -0.25f;
+	}
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, fpp};
+	QVERIFY(chain.processAudioBuffer(bus));
+	qunsetenv("CLAP_TEST_GAIN_PROCESS_ERROR");
+
+	for (f_cnt_t f = 0; f < fpp; ++f)
+	{
+		QVERIFY2(std::abs(storage[f][0] - 0.5f) < 1e-6f,
+			qPrintable(QStringLiteral("left %1 is not the dry signal").arg(storage[f][0])));
+		QVERIFY2(std::abs(storage[f][1] + 0.25f) < 1e-6f,
+			qPrintable(QStringLiteral("right %1 is not the dry signal").arg(storage[f][1])));
+	}
+	chain.clear();
+}
+
+namespace lmms
+{
+
+void ClapEffectIntegrationTest::testScanFailuresAreReported()
+{
+	// A module that is not a usable CLAP module has to be SAYED to be one: the scan
+	// used to fill the error QString that listClasses writes and then throw it away,
+	// so a broken .clap simply vanished from the browser with no reason anywhere.
+	const auto modulePath = QString::fromLatin1(CLAP_TEST_BROKEN_NO_SYMBOL_PATH);
+	if (!QFileInfo::exists(modulePath))
+	{
+		QSKIP("no broken CLAP test module available (build tests/data/clap-test-plugin "
+			"from the pinned CLAP headers)");
+	}
+
+	auto* config = ConfigManager::inst();
+	const auto previousVstDir = config->vstDir();
+	config->setVSTDir(QFileInfo{modulePath}.absolutePath());
+
+	QStringList reported;
+	{
+		WarningCapture capture;
+		ClapSubPluginFeatures features{Plugin::Type::Effect};
+		Plugin::Descriptor::SubPluginFeatures::KeyList keys;
+		features.listSubPluginKeys(nullptr, keys);
+		reported = capture.warnings();
+	}
+	config->setVSTDir(previousVstDir);
+
+	// The reason the typed ladder gives for this fixture, and the module it is about:
+	// a scan that says neither cannot be told apart from a scan that never looked.
+	const auto moduleName = QFileInfo{modulePath}.fileName();
+	auto named = false;
+	for (const auto& line : reported)
+	{
+		if (line.contains(moduleName) && line.contains(QStringLiteral("symbol-missing"))) { named = true; }
+	}
+	QVERIFY2(named,
+		qPrintable(QStringLiteral("the scan reported %1 warning(s), none naming %2 and its typed reason: %3")
+			.arg(reported.size()).arg(moduleName, reported.join(QStringLiteral(" | ")))));
+}
+
+} // namespace lmms
 
 QTEST_MAIN(lmms::ClapEffectIntegrationTest)
 

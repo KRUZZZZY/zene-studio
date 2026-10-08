@@ -40,8 +40,21 @@ namespace lmms::clap
 auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
 {
 	auto& impl = *m_impl;
-	if (impl.guiCreated) { return true; }
 	const auto* gui = impl.guiExt();
+	if (impl.guiCreated)
+	{
+		// The plug-in closed its own editor but did not destroy it: the GUI is alive, so a reopen
+		// shows it again rather than reporting success while nothing is on screen. (When the
+		// plug-in destroyed it, guiClosed() cleared guiCreated and the ladder below creates a new one.)
+		if (!impl.guiClosedByPlugin) { return true; }
+		if (gui == nullptr || !gui->show(impl.plugin))
+		{
+			*error = QStringLiteral("the plug-in's editor refused to show again");
+			return false;
+		}
+		impl.guiClosedByPlugin = false;
+		return true;
+	}
 	if (gui == nullptr)
 	{
 		*error = QStringLiteral("the plug-in has no editor (no clap.gui extension)");

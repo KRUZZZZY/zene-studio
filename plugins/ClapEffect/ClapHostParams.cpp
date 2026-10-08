@@ -32,6 +32,7 @@
 #include "ClapHostInternals.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -47,15 +48,35 @@ namespace lmms::clap
 namespace
 {
 
+//! CLAP wants a finite [min_value, max_value] with min <= max, and every host-side clamp/normalization
+//! depends on it (std::clamp is undefined behaviour with unordered bounds). A plug-in that reports
+//! anything else gets valid bounds here: non-finite ones become 0..1, a reversed pair is swapped, so the
+//! range stays as close to the plug-in's own as it can be validly expressed.
+void sanitizedRange(const clap_param_info_t& info, ParamDescriptor* descriptor)
+{
+	if (!std::isfinite(info.min_value) || !std::isfinite(info.max_value))
+	{
+		descriptor->minValue = 0.0;
+		descriptor->maxValue = 1.0;
+	}
+	else
+	{
+		descriptor->minValue = std::min(info.min_value, info.max_value);
+		descriptor->maxValue = std::max(info.min_value, info.max_value);
+	}
+	descriptor->defaultValue
+		= std::isfinite(info.default_value) ? info.default_value : descriptor->minValue;
+	descriptor->defaultValue
+		= std::clamp(descriptor->defaultValue, descriptor->minValue, descriptor->maxValue);
+}
+
 auto descriptorOf(const clap_param_info_t& info) -> ParamDescriptor
 {
 	ParamDescriptor descriptor;
 	descriptor.id = info.id;
 	descriptor.title = QString::fromUtf8(info.name);
 	descriptor.module = QString::fromUtf8(info.module);
-	descriptor.minValue = info.min_value;
-	descriptor.maxValue = info.max_value;
-	descriptor.defaultValue = info.default_value;
+	sanitizedRange(info, &descriptor);
 	descriptor.stepped = (info.flags & CLAP_PARAM_IS_STEPPED) != 0;
 	descriptor.periodic = (info.flags & CLAP_PARAM_IS_PERIODIC) != 0;
 	descriptor.readOnly = (info.flags & CLAP_PARAM_IS_READONLY) != 0;
@@ -107,7 +128,7 @@ void HostedPlugin::Impl::scanParams()
 		double value = params[i].defaultValue;
 		if (paramsExt != nullptr && paramsExt->get_value(plugin, params[i].id, &value))
 		{
-			value = std::clamp(value, params[i].minValue, params[i].maxValue);
+			value = sanitizedValue(params[i], value);
 		}
 		paramSlots[i].value.store(value, std::memory_order_relaxed);
 	}
@@ -196,7 +217,7 @@ void HostedPlugin::setParamPlain(std::uint32_t id, double value)
 	const auto index = impl.indexOfParam(id);
 	if (index < 0 || impl.params[index].readOnly) { return; }
 	auto& descriptor = impl.params[index];
-	const auto clamped = std::clamp(value, descriptor.minValue, descriptor.maxValue);
+	const auto clamped = sanitizedValue(descriptor, value);
 	auto& slot = impl.paramSlots[index];
 	if (slot.value.load(std::memory_order_relaxed) == clamped) { return; }
 	slot.value.store(clamped, std::memory_order_relaxed);

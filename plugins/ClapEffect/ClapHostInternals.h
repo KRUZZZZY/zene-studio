@@ -34,7 +34,9 @@
 
 #include "ClapHost.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -70,6 +72,16 @@ inline auto normalize(const ParamDescriptor& descriptor, double value) -> float
 	const auto range = descriptor.maxValue - descriptor.minValue;
 	if (range <= 0.0) { return 0.0f; }
 	return static_cast<float>((value - descriptor.minValue) / range);
+}
+
+//! A value on its way into a parameter slot, from either boundary (the caller and the plug-in's own
+//! reported value). std::clamp does NOT sanitize NaN - every comparison against it is false, so a
+//! non-finite value would be returned unchanged and then handed to the processor as a
+//! CLAP_EVENT_PARAM_VALUE. A value that is not a number falls back to the descriptor's default.
+inline auto sanitizedValue(const ParamDescriptor& descriptor, double value) -> double
+{
+	return std::isfinite(value) ? std::clamp(value, descriptor.minValue, descriptor.maxValue)
+							   : descriptor.defaultValue;
 }
 
 //! Static identity of one CLAP class inside a module. DECLARED here and
@@ -290,9 +302,17 @@ struct HostedPlugin::Impl
 	static auto CLAP_ABI guiRequestShow(const clap_host_t*) -> bool { return true; }
 	static auto CLAP_ABI guiRequestHide(const clap_host_t*) -> bool { return true; }
 
-	static void CLAP_ABI guiClosed(const clap_host_t* host, bool)
+	//! The plug-in closed its own editor. `wasDestroyed` says whether it took the GUI down with it:
+	//! if it did, there is nothing left to show or destroy, so the host forgets the GUI and the next
+	//! openEditor() creates a fresh one; if it did not, the GUI is alive but hidden, and the next
+	//! openEditor() shows it again. Before, both cases only set guiClosedByPlugin, so a reopen
+	//! returned true without showing anything (editorOpen() stayed false) and closeEditor() hid and
+	//! destroyed a GUI the plug-in had already destroyed.
+	static void CLAP_ABI guiClosed(const clap_host_t* host, bool wasDestroyed)
 	{
-		static_cast<Impl*>(host->host_data)->guiClosedByPlugin = true;
+		auto* self = static_cast<Impl*>(host->host_data);
+		self->guiClosedByPlugin = true;
+		if (wasDestroyed) { self->guiCreated = false; }
 	}
 
 	// --- clap.posix-fd-support / clap.timer-support (R4.1) -----------------
@@ -412,7 +432,10 @@ struct HostedPlugin::Impl
 		for (std::size_t i = 0; i < params.size(); ++i)
 		{
 			double value = params[i].defaultValue;
-			if (paramsExt->get_value(plugin, params[i].id, &value)) { paramSlots[i].value.store(value, std::memory_order_relaxed); }
+			if (paramsExt->get_value(plugin, params[i].id, &value))
+			{
+				paramSlots[i].value.store(sanitizedValue(params[i], value), std::memory_order_relaxed);
+			}
 		}
 	}
 

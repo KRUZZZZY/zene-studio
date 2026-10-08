@@ -220,6 +220,39 @@ private slots:
 		QVERIFY2(std::abs(low[0] - 0.5f) < 0.03f, qPrintable(QString::number(low[0])));
 	}
 
+	//! MX-147: the detector is linked, so sibilance that is loud in BOTH channels is caught even when
+	//! the two are opposite in phase. A mono-sum detector reads R = -L as silence and turns nothing
+	//! down, so this is the same 9 kHz tone at the same level as the case above, phase-inverted on
+	//! the right: it must be reduced just the same.
+	void theDeEsserDetectsOppositePhaseSibilance()
+	{
+		const QString deesser = loadByName(ch(1), QStringLiteral("deesser"));
+		if (deesser.isEmpty()) { QSKIP("this build has no de-esser module"); }
+		set(ch(1), deesser, "Threshold", -40.0);
+		set(ch(1), deesser, "Range", 12.0);
+		// The same tone as the case above with the right channel inverted: the mono sum is zero.
+		const Signal opposed = [](long f) {
+			const auto x = static_cast<float>(0.5 * std::sin(kTwoPi * 9000.0 * static_cast<double>(f) / rate()));
+			return SampleFrame(x, -x);
+		};
+		long at = 0;
+		const SampleFrame high = runBlocks(chainOf(1), opposed, 60, &at);
+		QVERIFY2(high[0] < 0.5f * 0.5f, qPrintable(QString("opposite-phase sibilance was not "
+			"detected: left peak %1 (0.5 is untouched, 0.25 is the 6 dB the case above gets)")
+			.arg(high[0])));
+		QVERIFY2(chainOf(1).effects().front()->gainReductionDb() > 6.f,
+			qPrintable(QString("no reduction reported for opposite-phase sibilance: %1 dB")
+				.arg(chainOf(1).effects().front()->gainReductionDb())));
+		// The lows are still left alone: a linked detector must not duck the whole spectrum.
+		at = 0;
+		const Signal opposedLow = [](long f) {
+			const auto x = static_cast<float>(0.5 * std::sin(kTwoPi * 200.0 * static_cast<double>(f) / rate()));
+			return SampleFrame(x, -x);
+		};
+		const SampleFrame low = runBlocks(chainOf(1), opposedLow, 60, &at);
+		QVERIFY2(std::abs(low[0] - 0.5f) < 0.03f, qPrintable(QString::number(low[0])));
+	}
+
 	//! MX-148: +100 % attack lifts the start of a burst; -100 % softens it; neither moves the steady level.
 	void theTransientShaperShapesAnAttack()
 	{

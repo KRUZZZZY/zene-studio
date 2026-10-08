@@ -48,6 +48,21 @@ static float process_frame(DenoiseState *st, const float *in, float *out, int co
 	return v;
 }
 
+/* Opens the optional stats file and writes its header row. The path is optional, but if it IS
+ * given and cannot be written there is nothing to write the per-frame rows into, so this reports
+ * the open failure and stops instead of letting the caller fprintf through a null FILE *. */
+static FILE *open_stats(const char *path)
+{
+	FILE *fs = fopen(path, "w");
+	if (!fs)
+	{
+		perror("stats");
+		exit(2);
+	}
+	fprintf(fs, "frame,in_rms,out_rms,vad_prob\n");
+	return fs;
+}
+
 int main(int argc, char **argv)
 {
 	const float scale = argc < 4 ? 0.0f : parse_scale(argv[3]);
@@ -73,8 +88,7 @@ int main(int argc, char **argv)
 	DenoiseState *st = rnnoise_create(NULL);
 	if (!st) { fprintf(stderr, "rnnoise_create failed\n"); return 2; }
 
-	FILE *fs = NULL;
-	if (argc > 4) { fs = fopen(argv[4], "w"); fprintf(fs, "frame,in_rms,out_rms,vad_prob\n"); }
+	FILE *fs = argc > 4 ? open_stats(argv[4]) : NULL;
 
 	double vsum = 0.0;
 	int nf = 0;

@@ -30,7 +30,9 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 #include <algorithm>
@@ -91,11 +93,13 @@ struct PluginState
 	double gain;
 	double bypass;
 	double framesProcessed;
+	//! params.flush() calls the host made outside process() - it answering a request_flush
+	std::uint32_t hostFlushes;
 };
-static_assert(sizeof(PluginState) == 120, "the state layout in the fixture changed");
+static_assert(sizeof(PluginState) == 128, "the state layout in the fixture changed");
 
 constexpr std::uint32_t PluginStateMagic = 0x4C4D4741u; // "LMGA"
-constexpr std::uint32_t PluginStateVersion = 2u;
+constexpr std::uint32_t PluginStateVersion = 3u;
 
 //! The INSTRUMENT fixture's identity and state (feature row 79), mirroring
 //! tests/data/clap-test-plugin/clap-test-instrument.c: the same read-back trick
@@ -190,6 +194,16 @@ private slots:
 	void testTheEditorEmbedsResizesAndCloses();
 	void testMainThreadRequestsAreServiced();
 	void testParameterRescansRereadTheList();
+	void testAnInvalidParamRangeIsNormalized();
+	void testAnActiveFlushRequestIsAnsweredWithoutAHostFlush();
+	void testAZeroChannelOutputKeepsTheIndexOfLaterPorts();
+	void testAnUnreadableInputPortKeepsItsNeighboursIndex();
+	void testASideChainFirstPluginReadsItsOwnMainInput();
+	void testANonFiniteSampleRateIsRefused();
+	void testANoteVelocityKeepsItsFraction();
+	void testAPluginClosedEditorIsReopened();
+	void testANonFiniteParamValueNeverReachesThePlugin();
+	void testReloadingAPluginWithoutNotePortsClearsTheCounters();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -833,6 +847,398 @@ void lmms::clap::ClapHostTest::testParameterRescansRereadTheList()
 	plugin.setParamPlain(GainParamId, 0.5);
 	process(plugin, inputs, outputs, TestFrames);
 	QVERIFY2(std::abs(rms(outputs[0]) - 0.25) < 1e-6, qPrintable(QString::number(rms(outputs[0]))));
+}
+
+/*! A plug-in that reports min > max used to have those bounds stored verbatim, and every later
+ *  std::clamp(value, min, max) ran with unordered bounds. The host now orders them at load, so the
+ *  stored range is valid and the value the plug-in itself reports survives the clamp. */
+void lmms::clap::ClapHostTest::testAnInvalidParamRangeIsNormalized()
+{
+	qputenv("CLAP_TEST_GAIN_BAD_RANGE", "1");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	const auto& gain = plugin.parameters()[0];
+	QCOMPARE(gain.id, GainParamId);
+	QVERIFY2(gain.minValue <= gain.maxValue,
+		qPrintable(QStringLiteral("the inverted range survived: %1 .. %2")
+			.arg(gain.minValue).arg(gain.maxValue)));
+	QCOMPARE(gain.minValue, 0.0);
+	QCOMPARE(gain.maxValue, 1.0);
+	QVERIFY2(gain.defaultValue >= gain.minValue && gain.defaultValue <= gain.maxValue,
+		"the default value lies outside the range");
+
+	// the value the host holds (loaded through the very clamp) is inside the ordered range
+	const auto held = plugin.paramPlain(GainParamId);
+	QVERIFY2(held >= gain.minValue && held <= gain.maxValue,
+		qPrintable(QStringLiteral("the held value %1 is outside %2 .. %3")
+			.arg(held).arg(gain.minValue).arg(gain.maxValue)));
+
+	// setting a value goes through the same clamp and lands inside the range
+	plugin.setParamPlain(GainParamId, 5.0);
+	QVERIFY(plugin.paramPlain(GainParamId) >= gain.minValue);
+	QVERIFY(plugin.paramPlain(GainParamId) <= gain.maxValue);
+	plugin.setParamPlain(GainParamId, -5.0);
+	QVERIFY(plugin.paramPlain(GainParamId) >= gain.minValue);
+	qunsetenv("CLAP_TEST_GAIN_BAD_RANGE");
+}
+
+/*! A plug-in that changes a value while it is ACTIVE (its own UI) and asks for a flush gets that value back
+ *  through the next process() call: the plug-in returns the changed value in its output events and the host
+ *  publishes it. CLAP would also accept the request being answered by params.flush() (params.h:373-375), and
+ *  says process() alone already achieves the update while processing (params.h:297-301). The host's own
+ *  choice is to make no flush call of its own here, so this test pins that choice and not a CLAP requirement. */
+void lmms::clap::ClapHostTest::testAnActiveFlushRequestIsAnsweredWithoutAHostFlush()
+{
+	qputenv("CLAP_TEST_GAIN_REQUEST_FLUSH", "1");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	PluginState state{};
+	QVERIFY2(readPluginState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.hostFlushes, std::uint32_t{0});
+
+	const auto& layout = plugin.busLayout();
+	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, inputs, outputs, TestFrames);  // start_processing(): the plug-in asks for its own call
+	plugin.serviceMainThread();  // the plug-in's own call: it changes its gain and asks for the flush
+	QVERIFY2(plugin.paramPlain(GainParamId) != 0.75,
+		"the changed value reached the host before the process() call that returns it");
+
+	process(plugin, inputs, outputs, TestFrames);  // answers the request: the value comes back in process()
+	QCOMPARE(plugin.paramPlain(GainParamId), 0.75);
+	QVERIFY2(readPluginState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.hostFlushes, std::uint32_t{0});  // the host's choice: it makes no flush call of its own
+
+	std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+	process(plugin, inputs, outputs, TestFrames);
+	QCOMPARE(plugin.paramPlain(GainParamId), 0.75);
+	QVERIFY2(readPluginState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.hostFlushes, std::uint32_t{0});
+	qunsetenv("CLAP_TEST_GAIN_REQUEST_FLUSH");
+}
+
+/*! A sample rate that is not a usable finite positive number is refused before activate(). The host
+ *  used to reject only <= 0, and every comparison against NaN is false, so a NaN or an infinity
+ *  reached the plug-in's activate() as an invalid rate. */
+void lmms::clap::ClapHostTest::testANonFiniteSampleRateIsRefused()
+{
+	constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
+	constexpr double Infinity = std::numeric_limits<double>::infinity();
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+
+	// The zero and negative cases were already refused; they are the control for the two below.
+	QVERIFY(!plugin.prepare(0.0, TestBlockSize, &error));
+	QVERIFY(!error.isEmpty());
+	error.clear();
+	QVERIFY(!plugin.prepare(-TestSampleRate, TestBlockSize, &error));
+	QVERIFY(!error.isEmpty());
+	error.clear();
+
+	QVERIFY2(!plugin.prepare(NaN, TestBlockSize, &error), "a NaN sample rate reached activate()");
+	QVERIFY(!error.isEmpty());
+	error.clear();
+	QVERIFY2(!plugin.prepare(Infinity, TestBlockSize, &error), "an infinite sample rate reached activate()");
+	QVERIFY(!error.isEmpty());
+
+	// A refused prepare leaves nothing prepared, and a good rate still works afterwards.
+	QVERIFY(!plugin.needsReprepare());
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+}
+
+/*! A note-on's velocity is CLAP's own double in 0..1, and the plug-in must be handed that number,
+ *  not a MIDI-scale integer that is converted back. The host rounded it to 0..127 on the way in, so
+ *  0.5 arrived as 63/127 (the fixture records the velocity in millis, and saw 496). */
+void lmms::clap::ClapHostTest::testANoteVelocityKeepsItsFraction()
+{
+	const QString path = QStringLiteral(CLAP_TEST_INSTRUMENT_PATH);
+	if (path.isEmpty() || !QFileInfo::exists(path))
+	{
+		QSKIP("no CLAP instrument fixture in this build (tests/data/clap-test-plugin/"
+			"clap-test-instrument.c, built when the pinned CLAP headers are present)");
+	}
+
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(path, QString::fromLatin1(TestInstrumentId), &error), qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QVERIFY(plugin.acceptsNotes());
+
+	const std::vector<std::vector<float>> noInputs;
+	std::vector<std::vector<float>> outputs(2, std::vector<float>(TestFrames, 0.0f));
+
+	// Each velocity is the one the plug-in must receive, in millis (the fixture's own unit): the
+	// values a 7-bit round trip cannot represent.
+	const std::vector<std::pair<double, std::uint32_t>> cases{
+		{0.5, 500}, {0.25, 250}, {0.1, 100}, {1.0, 1000}, {0.0, 0}};
+	std::int16_t key = 60;
+	for (const auto& [velocity, expectedMilli] : cases)
+	{
+		plugin.setNoteOn(0, key, velocity, 0);
+		process(plugin, noInputs, outputs, TestFrames);
+		InstrumentState state{};
+		QVERIFY2(readInstrumentState(plugin, &state), "the fixture saved an unexpected state layout");
+		QCOMPARE(state.lastVelocityMilli, expectedMilli);
+		plugin.setNoteOff(0, key, 0);
+		process(plugin, noInputs, outputs, TestFrames);
+		++key;
+	}
+
+	// Out-of-range velocities are still clamped to CLAP's 0..1 scale.
+	plugin.setNoteOn(0, 80, 2.5, 0);
+	process(plugin, noInputs, outputs, TestFrames);
+	InstrumentState state{};
+	QVERIFY2(readInstrumentState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.lastVelocityMilli, std::uint32_t{1000});
+	plugin.setNoteOn(0, 81, -1.0, 0);
+	process(plugin, noInputs, outputs, TestFrames);
+	QVERIFY2(readInstrumentState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.lastVelocityMilli, std::uint32_t{0});
+}
+
+/*! A plug-in that closes its OWN editor (clap.gui's closed callback) leaves the host's GUI state
+ *  stale: guiClosed() only set a flag, so a reopen returned true without showing anything, and a
+ *  GUI the plug-in had already destroyed was hidden and destroyed a second time. Both cases of
+ *  was_destroyed are covered: "hide" leaves the GUI alive, "destroy" takes it down. */
+void lmms::clap::ClapHostTest::testAPluginClosedEditorIsReopened()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+
+	// --- was_destroyed = false: the GUI is alive but hidden, so a reopen SHOWS it again ---
+	qputenv("CLAP_TEST_GAIN_CLOSE_GUI", "hide");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QVERIFY2(plugin.openEditor(standInWindow, &error), qPrintable(error));
+	QVERIFY(plugin.editorOpen());
+	plugin.serviceMainThread();  // the plug-in closes its own editor (the return is the state-dirty flag)
+	QVERIFY(!plugin.editorOpen());
+	QVERIFY2(plugin.openEditor(standInWindow, &error),
+		qPrintable(QStringLiteral("reopening a GUI the plug-in closed: %1").arg(error)));
+	QVERIFY(plugin.editorOpen());
+	plugin.closeEditor();
+	qunsetenv("CLAP_TEST_GAIN_CLOSE_GUI");
+
+	// --- was_destroyed = true: the GUI is gone, so a reopen CREATES a fresh one ---
+	qputenv("CLAP_TEST_GAIN_CLOSE_GUI", "destroy");
+	HostedPlugin recreating;
+	QString recreateError;
+	QVERIFY2(recreating.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId),
+			&recreateError), qPrintable(recreateError));
+	QVERIFY2(recreating.prepare(TestSampleRate, TestBlockSize, &recreateError), qPrintable(recreateError));
+	QVERIFY2(recreating.openEditor(standInWindow, &recreateError), qPrintable(recreateError));
+	recreating.serviceMainThread();  // the plug-in destroys its own editor
+	QVERIFY(!recreating.editorOpen());
+	QVERIFY2(recreating.openEditor(standInWindow, &recreateError),
+		qPrintable(QStringLiteral("reopening a destroyed GUI: %1").arg(recreateError)));
+	QVERIFY(recreating.editorOpen());
+	// The reopened editor is a live one: the new instance is created at the fixture's default size,
+	// not the size of an editor that no longer exists.
+	int width = 0;
+	int height = 0;
+	recreating.editorSize(&width, &height);
+	QCOMPARE(width, 400);
+	QCOMPARE(height, 300);
+	recreating.closeEditor();
+	qunsetenv("CLAP_TEST_GAIN_CLOSE_GUI");
+}
+
+/*! A non-finite value must never reach a plug-in, from either side. std::clamp does NOT sanitize
+ *  NaN: every comparison against it is false, so a NaN is returned unchanged and stored verbatim -
+ *  and then published to the processor as a CLAP_EVENT_PARAM_VALUE. The host now refuses a
+ *  non-finite value at both boundaries (the caller and the plug-in's own reported value). */
+void lmms::clap::ClapHostTest::testANonFiniteParamValueNeverReachesThePlugin()
+{
+	constexpr double NaN = std::numeric_limits<double>::quiet_NaN();
+	constexpr double Infinity = std::numeric_limits<double>::infinity();
+
+	// --- the caller sets a non-finite value: the held value stays the last good one ---
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	plugin.setParamPlain(GainParamId, 0.5);
+	QCOMPARE(plugin.paramPlain(GainParamId), 0.5);
+	plugin.setParamPlain(GainParamId, NaN);
+	QVERIFY2(std::isfinite(plugin.paramPlain(GainParamId)),
+		"a NaN the caller set was stored in the parameter slot");
+	QVERIFY2(plugin.paramPlain(GainParamId) >= 0.0 && plugin.paramPlain(GainParamId) <= 1.0,
+		"a NaN the caller set landed outside the parameter's range");
+	plugin.setParamPlain(GainParamId, Infinity);
+	QVERIFY2(std::isfinite(plugin.paramPlain(GainParamId)),
+		"an infinite value the caller set was stored in the parameter slot");
+	QVERIFY2(plugin.paramPlain(GainParamId) >= 0.0 && plugin.paramPlain(GainParamId) <= 1.0,
+		"an infinite value the caller set landed outside the parameter's range");
+
+	// --- the PLUG-IN reports a non-finite value: what it read back is still finite, and is what
+	//     the processor is handed ---
+	qputenv("CLAP_TEST_GAIN_NAN_VALUE", "1");
+	HostedPlugin reporting;
+	QVERIFY2(reporting.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(reporting.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	const auto held = reporting.paramPlain(GainParamId);
+	QVERIFY2(std::isfinite(held),
+		qPrintable(QStringLiteral("the plug-in's own NaN was stored: %1").arg(held)));
+	const auto& gain = reporting.parameters()[0];
+	QVERIFY2(held >= gain.minValue && held <= gain.maxValue,
+		qPrintable(QStringLiteral("the held value %1 is outside %2 .. %3")
+			.arg(held).arg(gain.minValue).arg(gain.maxValue)));
+
+	// processing it must not put a NaN into the audio either
+	const std::vector<std::vector<float>> noInputs;
+	std::vector<std::vector<float>> outputs(2, std::vector<float>(TestFrames, 0.0f));
+	process(reporting, noInputs, outputs, TestFrames);
+	for (const auto& channel : outputs)
+	{
+		for (const auto sample : channel)
+		{
+			QVERIFY2(std::isfinite(sample), "a NaN parameter value reached the processed audio");
+		}
+	}
+	qunsetenv("CLAP_TEST_GAIN_NAN_VALUE");
+}
+
+/*! The per-instance note counters describe THIS instance, so reloading a plug-in that takes no
+ *  notes must start them over. scanNotePorts() returned before resetting them when the plug-in had
+ *  no clap.note-ports extension at all, so an instance reloaded onto such a plug-in still reported
+ *  the previous instance's totals. */
+void lmms::clap::ClapHostTest::testReloadingAPluginWithoutNotePortsClearsTheCounters()
+{
+	const QString instrumentPath = QStringLiteral(CLAP_TEST_INSTRUMENT_PATH);
+	if (instrumentPath.isEmpty() || !QFileInfo::exists(instrumentPath))
+	{
+		QSKIP("no CLAP instrument fixture in this build (tests/data/clap-test-plugin/"
+			"clap-test-instrument.c, built when the pinned CLAP headers are present)");
+	}
+
+	// --- an instance that DOES take notes: its counters move ---
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(instrumentPath, QString::fromLatin1(TestInstrumentId), &error), qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QVERIFY(plugin.acceptsNotes());
+	QCOMPARE(plugin.noteCounters().ports, std::uint32_t{1});
+	plugin.setNoteOn(0, 60, 1.0, 0);
+	plugin.setNoteOff(0, 60, 0);
+	// Delivering is what process() does, so the block is run: pushed, delivered and played all move.
+	const std::vector<std::vector<float>> noInputs;
+	std::vector<std::vector<float>> outputs(2, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, noInputs, outputs, TestFrames);
+	const auto busy = plugin.noteCounters();
+	QCOMPARE(busy.pushed, std::uint32_t{2});
+	QCOMPARE(busy.delivered, std::uint32_t{2});
+	QCOMPARE(busy.played, std::uint32_t{1});
+
+	// --- the SAME instance reloaded onto a plug-in with no note ports: zeroed, not inherited ---
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY(!plugin.acceptsNotes());
+	QCOMPARE(plugin.noteInputPorts().size(), std::size_t{0});
+	const auto after = plugin.noteCounters();
+	QCOMPARE(after.ports, std::uint32_t{0});
+	QVERIFY2(after.pushed == 0 && after.dropped == 0 && after.delivered == 0 && after.played == 0,
+		qPrintable(QStringLiteral("the reloaded instance kept the old counters: pushed %1, dropped %2, "
+			"delivered %3, played %4")
+			.arg(after.pushed).arg(after.dropped).arg(after.delivered).arg(after.played)));
+}
+
+/*! A zero-channel output port ahead of the real one must not shift the real output. The plug-in writes its
+ *  main output at its own port index 1, so the host has to hand that index the stereo buffer. Zero-channel
+ *  ports used to be dropped from the buffer list, which put the real output at index 0. */
+void lmms::clap::ClapHostTest::testAZeroChannelOutputKeepsTheIndexOfLaterPorts()
+{
+	qputenv("CLAP_TEST_GAIN_LAYOUT", "zero-output");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	const auto& layout = plugin.busLayout();
+	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, inputs, outputs, TestFrames);
+	for (const auto& channel : outputs)
+	{
+		QVERIFY2(std::all_of(channel.begin(), channel.end(), [](float v) { return v == 0.5f; }),
+			"the main output did not receive the main input: the buffer went to another port");
+	}
+	QCOMPARE(layout.pluginOutputPorts, 2);
+	QCOMPARE(layout.outputPortIndices, std::vector<int>{1});
+	qunsetenv("CLAP_TEST_GAIN_LAYOUT");
+}
+
+/*! A plug-in whose clap.audio-ports get() fails for one input must keep that port's slot: the main input is
+ *  the plug-in's port 1, and the host has to hand it audio_inputs[1]. Dropping the unreadable port used to
+ *  put the main input at index 0, and the plug-in then found no main input at its own index. */
+void lmms::clap::ClapHostTest::testAnUnreadableInputPortKeepsItsNeighboursIndex()
+{
+	qputenv("CLAP_TEST_GAIN_LAYOUT", "unreadable-input");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	const auto& layout = plugin.busLayout();
+	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, inputs, outputs, TestFrames);
+	for (const auto& channel : outputs)
+	{
+		QVERIFY2(std::all_of(channel.begin(), channel.end(), [](float v) { return v == 0.5f; }),
+			"the main input did not reach the plug-in's main port: the unreadable port shifted the indices");
+	}
+	QCOMPARE(layout.pluginInputPorts, 2);
+	QCOMPARE(layout.inputPortIndices, std::vector<int>{1});
+	qunsetenv("CLAP_TEST_GAIN_LAYOUT");
+}
+
+/*! A plug-in that reports its side-chain input BEFORE its main one reads its main signal at its own index 1.
+ *  The transport lays the main channels first, so runChunk must hand audio_inputs[1] the transport's first
+ *  channels, not the side-chain. The side-chain is fed at 0.25 and the main at 0.5, so a misplaced buffer
+ *  reads back as 0.25. */
+void lmms::clap::ClapHostTest::testASideChainFirstPluginReadsItsOwnMainInput()
+{
+	qputenv("CLAP_TEST_GAIN_LAYOUT", "sidechain-first");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	const auto& layout = plugin.busLayout();
+	QVERIFY(layout.hasSideChain);
+	QCOMPARE(layout.sideChainChannel, 2);
+	// transport order: the main channels first (0-1), then the side-chain (2-3)
+	std::vector<std::vector<float>> inputs;
+	for (int c = 0; c < layout.inputs; ++c)
+	{
+		inputs.emplace_back(TestFrames, c < layout.sideChainChannel ? 0.5f : 0.25f);
+	}
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, inputs, outputs, TestFrames);
+	for (const auto& channel : outputs)
+	{
+		QVERIFY2(std::all_of(channel.begin(), channel.end(), [](float v) { return v == 0.5f; }),
+			"the plug-in's main input carried the side-chain: runChunk placed the buffers out of port order");
+	}
+	QCOMPARE(layout.pluginInputPorts, 2);
+	QCOMPARE(layout.inputPortIndices, (std::vector<int>{1, 0}));
+	qunsetenv("CLAP_TEST_GAIN_LAYOUT");
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)

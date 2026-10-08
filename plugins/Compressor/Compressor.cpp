@@ -300,8 +300,11 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 		auto drySignal = std::array{frame[0], frame[1]};
 		auto s = std::array{drySignal[0] * m_inGainVal, drySignal[1] * m_inGainVal};
 
-		// Calculate tilt filters, to bias the sidechain to the low or high frequencies
-		if (m_tiltVal)
+		// Calculate tilt filters, to bias the sidechain to the low or high frequencies.
+		// With an external sidechain the detector reads that signal instead of s (below),
+		// so the tilt is applied to the sidechain there, not here: one filter state per
+		// channel, on whichever signal the detector actually listens to.
+		if (m_tiltVal && !scBuffer)
 		{
 			calcTiltFilter(s[0], s[0], 0);
 			calcTiltFilter(s[1], s[1], 1);
@@ -325,8 +328,10 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 			float inputValue;
 			if (scBuffer)
 			{
-				// external sidechain key input
+				// external sidechain key input, biased by the tilt filter just like
+				// the channel signal is above
 				inputValue = (i == 0) ? sc0[f] : sc1[f];
+				if (m_tiltVal) { calcTiltFilter(inputValue, inputValue, i); }
 			}
 			else
 			{

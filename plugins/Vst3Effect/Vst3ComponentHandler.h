@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include "Vst3ParamDescriptor.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 
 namespace lmms::vst3
@@ -75,7 +76,11 @@ public:
 			std::make_pair(static_cast<std::uint32_t>(id), std::size_t{0}));
 		if (it != m_indexById->end() && it->first == static_cast<std::uint32_t>(id))
 		{
-			m_values[it->second].store(static_cast<float>(valueNormalized),
+			// A plug-in that edits a parameter to a value with no meaning (NaN,
+			// an infinity, or a ParamValue too large for float) is refused: the
+			// last good value stays, rather than reaching the audio thread.
+			const auto keep = m_values[it->second].load(std::memory_order_relaxed);
+			m_values[it->second].store(sanitizedNormalized(valueNormalized, keep),
 				std::memory_order_relaxed);
 		}
 		return kResultOk;
@@ -104,9 +109,20 @@ public:
 		m_onLatencyChanged = nullptr;
 	}
 
-	tresult PLUGIN_API queryInterface(const TUID, void** obj) SMTG_OVERRIDE
+	//! The two interfaces this object implements. A plug-in that asks the handler it was given
+	//! for IComponentHandler (or for the FUnknown base) gets them, with the reference count
+	//! incremented for the reference it receives; anything else is kNoInterface.
+	tresult PLUGIN_API queryInterface(const TUID iid, void** obj) SMTG_OVERRIDE
 	{
-		if (obj) { *obj = nullptr; }
+		if (obj == nullptr) { return kInvalidArgument; }
+		if (FUnknownPrivate::iidEqual(iid, IComponentHandler::iid)
+			|| FUnknownPrivate::iidEqual(iid, FUnknown::iid))
+		{
+			*obj = static_cast<IComponentHandler*>(this);
+			addRef();
+			return kResultOk;
+		}
+		*obj = nullptr;
 		return kNoInterface;
 	}
 

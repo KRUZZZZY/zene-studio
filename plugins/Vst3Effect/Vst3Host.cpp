@@ -368,8 +368,11 @@ void HostedPlugin::setParamNormalized(std::uint32_t id, float normalized)
 	auto& d = *m_impl;
 	const auto index = paramIndex(id);
 	if (index < 0) { return; }
-	const auto clamped = std::clamp(normalized, 0.f, 1.f);
-	d.paramValues[index].store(clamped, std::memory_order_relaxed);
+	// A value with no meaning (NaN, an infinity) is refused and the last good one
+	// kept: std::clamp() passes NaN through, and the audio thread would hand this
+	// value to the processor's parameter queue as it is.
+	const auto keep = d.paramValues[index].load(std::memory_order_relaxed);
+	d.paramValues[index].store(sanitizedNormalized(normalized, keep), std::memory_order_relaxed);
 }
 
 void HostedPlugin::notifyController(std::uint32_t id, float normalized)
@@ -378,8 +381,10 @@ void HostedPlugin::notifyController(std::uint32_t id, float normalized)
 	setParamNormalized(id, normalized);
 	if (d.controller)
 	{
+		const auto index = paramIndex(id);
+		const auto keep = index < 0 ? 0.f : d.paramValues[index].load(std::memory_order_relaxed);
 		d.controller->setParamNormalized(static_cast<ParamID>(id),
-			std::clamp(normalized, 0.f, 1.f));
+			sanitizedNormalized(normalized, keep));
 	}
 }
 
@@ -450,8 +455,13 @@ auto HostedPlugin::loadState(const QByteArray& componentState,
 	{
 		for (std::size_t i = 0; i < d.params.size(); ++i)
 		{
-			d.paramValues[i].store(static_cast<float>(
-				d.controller->getParamNormalized(static_cast<ParamID>(d.params[i].id))),
+			// A restored value the plug-in reports is clamped like any other one, and
+			// a value with no meaning leaves the array's own value alone (cluster 3625).
+			const auto keep = d.paramValues[i].load(std::memory_order_relaxed);
+			d.paramValues[i].store(sanitizedNormalized(
+					static_cast<double>(d.controller->getParamNormalized(
+						static_cast<ParamID>(d.params[i].id))),
+					keep),
 				std::memory_order_relaxed);
 		}
 	}

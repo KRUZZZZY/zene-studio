@@ -114,11 +114,18 @@ void HostedPlugin::Impl::scanAudioPorts()
 		const auto portCount = audioPortsExt->count(plugin, isInput);
 		for (std::uint32_t i = 0; i < portCount; ++i)
 		{
-			clap_audio_port_info_t portInfo{};
-			if (!audioPortsExt->get(plugin, i, isInput, &portInfo)) { continue; }
 			PortDescriptor port;
-			port.id = portInfo.id;
 			port.direction = isInput ? PortDirection::Input : PortDirection::Output;
+			clap_audio_port_info_t portInfo{};
+			if (!audioPortsExt->get(plugin, i, isInput, &portInfo))
+			{
+				// The port keeps its slot: the plug-in's index is what its buffers are handed by, so dropping
+				// it would move every later port onto the wrong index. channelCount stays 0, so mapPorts()
+				// treats it as unusable.
+				ports.push_back(port);
+				continue;
+			}
+			port.id = portInfo.id;
 			port.name = QString::fromUtf8(portInfo.name);
 			port.portType = QString::fromUtf8(portInfo.port_type ? portInfo.port_type : "");
 			port.channelCount = static_cast<int>(portInfo.channel_count);
@@ -428,7 +435,9 @@ auto HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outp
 	for (std::size_t p = 0; p < layout.inputPortChannels.size(); ++p)
 	{
 		const auto channels = layout.inputPortChannels[p];
-		auto& buffer = inBuffers[p];
+		// The plug-in reads audio_inputs by its own port index; the transport's main-first order is
+		// only where the channels sit. A port the budget dropped keeps its zeroed buffer.
+		auto& buffer = inBuffers[static_cast<std::size_t>(layout.inputPortIndices[p])];
 		buffer = {};
 		buffer.channel_count = static_cast<std::uint32_t>(channels);
 		// clap_audio_buffer_t::data32 is float** even for inputs; the plug-in
@@ -448,7 +457,7 @@ auto HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outp
 	for (std::size_t p = 0; p < layout.outputPortChannels.size(); ++p)
 	{
 		const auto channels = layout.outputPortChannels[p];
-		auto& buffer = outBuffers[p];
+		auto& buffer = outBuffers[static_cast<std::size_t>(layout.outputPortIndices[p])];
 		buffer = {};
 		buffer.channel_count = static_cast<std::uint32_t>(channels);
 		buffer.data32 = outPtrs.data() + channel;

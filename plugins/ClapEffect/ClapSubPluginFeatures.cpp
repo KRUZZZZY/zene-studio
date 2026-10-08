@@ -24,6 +24,7 @@
 
 #include "ClapSubPluginFeatures.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QLabel>
@@ -96,8 +97,18 @@ void ClapSubPluginFeatures::listSubPluginKeys(const Plugin::Descriptor* descript
 	const bool wantInstrument = m_type == Plugin::Type::Instrument;
 	for (const auto& path : modules)
 	{
+		// The typed reason this module did not load, not only its (empty) class list:
+		// a scan that discards the reason leaves a module that is missing clap_entry,
+		// or a CLAP version this host cannot host, or one whose init() fails, silently
+		// absent from the browser with nothing anywhere saying why.
+		clap::loader::Status status;
 		QString error;
-		for (const auto& info : clap::listClasses(path, &error))
+		const auto classes = clap::listClasses(path, &status, &error);
+		if (status.code != clap::loader::Code::None)
+		{
+			qWarning() << "CLAP: could not scan" << path << clap::loader::token(status.code) << ":" << error;
+		}
+		for (const auto& info : classes)
 		{
 			// Who made it, for the rows that show a vendor; not in the key, which is the device's identity.
 			pluginvendors::remember(path, info.id, info.vendor);
