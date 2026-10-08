@@ -79,6 +79,14 @@ set(LMMS_TESTS
 	# reachable from a test): a range copied to another file, and the refusal
 	# that keeps a self-trim from truncating the file it is reading.
 	src/core/BounceInPlaceTest.cpp
+	# Coverage lane (M0): bounce.land, track.flatten, range.bounce and the subproject verbs through a stand-in render child.
+	src/core/ControlBounceRenderTest.cpp
+	src/core/ControlSessionRecordLandTest.cpp
+	src/core/ControlMidiReconnectSharedTest.cpp
+	src/core/ControlPluginBusesTest.cpp
+	src/core/ControlHostedDeviceCatalogueTest.cpp
+	src/core/RackZoneFeedRunTest.cpp
+	src/core/ScriptDawEffectsTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
 	# Linked / smart clips (feature-list row 6, task #645): the relation, an edit
@@ -626,6 +634,7 @@ set(LMMS_TESTS
 	src/core/SampleBufferResampleTest.cpp
 	# 0.5.0 L13 WF-126: the Mackie Control protocol and a surface driving real tracks.
 	src/core/McuSurfaceTest.cpp
+	src/core/McuSurfaceFeedbackTest.cpp
 	# 0.5.0 L04 ED-048: markers - commands, undo, jump, and the project file.
 	src/core/ProjectMarkersTest.cpp
 	# 0.5.0 L04 ED-011/012: the time range and the edits over it.
@@ -668,6 +677,10 @@ set(LMMS_TESTS
 	src/core/SessionSubSceneTest.cpp
 	# 0.5.0 L03 (W3): comp edges and groups, metronome options, punch here, remaining record time.
 	src/core/RecordToolsTest.cpp
+	# Coverage lane (M0, 2026-10-08): the Receiver and InsertRecorder devices processed through a real EffectChain.
+	src/core/ReceiverEffectTest.cpp
+	src/core/ProjectSectionTest.cpp
+	src/core/PluginHostMetadataTest.cpp
 	# The record tool commands on an instance with NO audio engine: typed refusals, no null deref.
 	src/core/RecordToolsNoEngineTest.cpp
 	# 0.5.0 L04 (W3): the clip list, sections, remove silence, tab to transient, note rotation.
@@ -755,6 +768,7 @@ set(LMMS_TESTS
 	src/core/AafImportTest.cpp
 	# 0.5.0 F5 (ED-054): the video track; the FFmpeg cases skip without the library
 	src/core/VideoTrackTest.cpp
+	src/core/VideoTestClipTest.cpp
 	src/core/StableTrackIdsTest.cpp
 	# ARCH-4 slice S3: the id-family registry (clip/lane/note/scene/warp over
 	# the one counter) and the per-object revision pair - absent rev == 0, an
@@ -1043,6 +1057,8 @@ IF(ZENE_HAVE_COLLAB)
 		src/core/CollabPolicyTest.cpp
 		src/core/CollabTransportTest.cpp
 		src/core/PortMappingCodecTest.cpp
+		src/core/PortMappingOrchestratorTest.cpp
+		src/core/UpnpMapperFakeRouterTest.cpp
 		# collab.show_panel (requires: display) over the real main window.
 		src/gui/CollabPanelTest.cpp
 	)
@@ -1226,6 +1242,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# song's track holds a parameterless DummyInstrument.
 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
+		OR LMMS_TEST_NAME STREQUAL "ReceiverEffectTest"
 		OR LMMS_TEST_NAME STREQUAL "ScriptMemoryBudgetTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityContractTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest"
@@ -1321,6 +1338,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "W3EngineTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier receiver)
 	endif()
+	# ControlMidiReconnectSharedTest drives the inline helpers of a header private to src/core.
+	if(LMMS_TEST_NAME STREQUAL "ControlMidiReconnectSharedTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/core)
+	endif()
+
 	# PluginScanCacheTest drives the scan cache and the quarantine list through
 	# the real PluginFactory, against a copy of the built tripleoscillator
 	# module (the enumeration path, not a stub): the module has to exist before
@@ -1432,6 +1454,64 @@ set_target_properties(mpe_test_consumer PROPERTIES
 	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mpe-test-consumer"
 )
 
+# The in-tree modules these tests load are built with them, so a targeted build of the test never runs without its
+# module (and a module that fails to load fails the test instead of skipping it).
+if(TARGET receiver AND TARGET insertrecorder)
+	add_dependencies(ReceiverEffectTest receiver insertrecorder)
+endif()
+if(TARGET tripleoscillator)
+	add_dependencies(SessionPlaybackRenderTest tripleoscillator)
+endif()
+
+# ---------------------------------------------------------------------------
+# tests/src/plugins/BusesTestInstrument.cpp: an in-tree instrument that owns an InstrumentOutputBuses, so the
+# plugin.output_* commands are measured on a real model in a build with no CLAP, VST3 or LV2 multi-output
+# fixture (the only instruments that otherwise have extra buses). A MODULE in its own directory, never installed;
+# ControlPluginBusesTest points LMMS_PLUGIN_DIR at it.
+# ---------------------------------------------------------------------------
+add_library(buses_test_instrument MODULE src/plugins/BusesTestInstrument.cpp)
+target_include_directories(buses_test_instrument PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+)
+target_compile_definitions(buses_test_instrument PRIVATE PLUGIN_NAME=buses_test_instrument)
+target_compile_features(buses_test_instrument PRIVATE cxx_std_20)
+target_link_libraries(buses_test_instrument PRIVATE zene ${QT_LIBRARIES})
+set_target_properties(buses_test_instrument PROPERTIES
+	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/buses-test-instrument"
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/buses-test-instrument"
+)
+target_compile_definitions(ControlPluginBusesTest PRIVATE
+	LMMS_BUSES_TEST_INSTRUMENT_DIR="${CMAKE_CURRENT_BINARY_DIR}/buses-test-instrument")
+add_dependencies(ControlPluginBusesTest buses_test_instrument)
+set_target_properties(ControlPluginBusesTest PROPERTIES ENABLE_EXPORTS ON)
+
+# ---------------------------------------------------------------------------
+# tests/src/plugins/FakeHostModule.cpp: stand-ins for the CLAP and VST3 host modules (clapeffect, vst3effect,
+# vst3instrument - not clapinstrument, on purpose), so the hosted halves of the device catalogue run in a build with
+# neither SDK. Targets are named fake_host_* to leave the real vst3effect/vst3instrument targets alone; the files they
+# make carry the real module names, in a directory of their own that only ControlHostedDeviceCatalogueTest scans.
+# ---------------------------------------------------------------------------
+foreach(FAKE_HOST IN ITEMS "clapeffect|clap|Effect" "vst3effect|vst3|Effect" "vst3instrument|vst3|Instrument")
+	string(REPLACE "|" ";" FAKE_HOST_PARTS "${FAKE_HOST}")
+	list(GET FAKE_HOST_PARTS 0 FAKE_HOST_NAME)
+	list(GET FAKE_HOST_PARTS 1 FAKE_HOST_FORMAT)
+	list(GET FAKE_HOST_PARTS 2 FAKE_HOST_TYPE)
+	add_library(fake_host_${FAKE_HOST_NAME} MODULE src/plugins/FakeHostModule.cpp)
+	target_include_directories(fake_host_${FAKE_HOST_NAME} PRIVATE $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+	target_compile_definitions(fake_host_${FAKE_HOST_NAME} PRIVATE
+		PLUGIN_NAME=${FAKE_HOST_NAME} FAKE_HOST_FORMAT="${FAKE_HOST_FORMAT}" FAKE_HOST_TYPE=${FAKE_HOST_TYPE})
+	target_compile_features(fake_host_${FAKE_HOST_NAME} PRIVATE cxx_std_20)
+	target_link_libraries(fake_host_${FAKE_HOST_NAME} PRIVATE zene ${QT_LIBRARIES})
+	set_target_properties(fake_host_${FAKE_HOST_NAME} PROPERTIES
+		OUTPUT_NAME ${FAKE_HOST_NAME}
+		LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fake-hosts"
+		RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fake-hosts")
+	add_dependencies(ControlHostedDeviceCatalogueTest fake_host_${FAKE_HOST_NAME})
+endforeach()
+target_compile_definitions(ControlHostedDeviceCatalogueTest PRIVATE
+	LMMS_FAKE_HOSTS_DIR="${CMAKE_CURRENT_BINARY_DIR}/fake-hosts")
+set_target_properties(ControlHostedDeviceCatalogueTest PROPERTIES ENABLE_EXPORTS ON)
+
 # The proof's own wiring: the fixture directory it points LMMS_PLUGIN_DIR at,
 # the module built before ctest runs, and the exports a plug-in module
 # resolves its LMMS symbols from at load time (the zene executable and the
@@ -1450,7 +1530,7 @@ set_tests_properties(RecordingRealtimeTest PROPERTIES
 # ScriptDawBindingTest constructs a real Engine (mixer, script worker thread,
 # ProjectJournal) and drives it through the Lua binding, so it needs the same
 # headless Qt platform. ScriptDawRemovalUndoTest is the same kind of test.
-set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest PROPERTIES
+set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest ScriptDawEffectsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The rack command-group tests (rack.* macros and key/velocity zones) construct a
@@ -4635,7 +4715,7 @@ endif()
 # 0.5.0 F6 (WF-050/WF-052): two real instances on 127.0.0.1 - host, a local invite, join, edits both
 # ways, an undo re-sync and a refused viewer. Exits 77 (skipped) where the TLS-PSK backend is missing.
 if(PYTHON3_EXECUTABLE AND ZENE_HAVE_COLLAB)
-	set_tests_properties(CollabPolicyTest CollabTransportTest PortMappingCodecTest PROPERTIES
+	set_tests_properties(CollabPolicyTest CollabTransportTest PortMappingCodecTest PortMappingOrchestratorTest UpnpMapperFakeRouterTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	add_test(NAME ControlCollab
 		COMMAND ${PYTHON3_EXECUTABLE}

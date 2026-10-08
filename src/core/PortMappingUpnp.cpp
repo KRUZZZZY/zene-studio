@@ -50,11 +50,12 @@ const char* const SearchTargets[] = {"urn:schemas-upnp-org:device:InternetGatewa
 	"urn:schemas-upnp-org:device:InternetGatewayDevice:2", "urn:schemas-upnp-org:service:WANIPConnection:1"};
 
 //! A description is only fetched from a LAN address: an SSDP answer naming an internet host is not a router.
-bool isLanHost(const QString& host)
+bool isLanHost(const QString& host, bool allowLoopback)
 {
 	const QHostAddress address(host);
 	bool isV4 = false;
 	address.toIPv4Address(&isV4);
+	if (allowLoopback && isV4 && address.isLoopback()) { return true; }  // the test seam only
 	return isV4 && !address.isLoopback() && !isPublicIPv4(address);
 }
 
@@ -90,13 +91,24 @@ void UpnpMapper::map(quint16 internalPort, quint16 externalPort, quint32 lease, 
 	m_local = local;
 	m_result = MappingResult();
 	if (m_service.isValid()) { addMapping(lease); return; }  // a renewal: the router is already known
-	if (m_ssdp->state() != QAbstractSocket::BoundState) { m_ssdp->bind(QHostAddress(QHostAddress::AnyIPv4), 0); }
+	if (m_ssdp->state() != QAbstractSocket::BoundState)
+	{
+		// A search sent to a loopback endpoint (the test seam) is answered from, and heard on, loopback only.
+		m_ssdp->bind(m_allowLoopbackRouter ? QHostAddress(QHostAddress::LocalHost) : QHostAddress(QHostAddress::AnyIPv4), 0);
+	}
 	for (const char* target : SearchTargets)
 	{
-		m_ssdp->writeDatagram(ssdpSearch(QString::fromLatin1(target)), QHostAddress(QStringLiteral("239.255.255.250")), SsdpPort);
+		m_ssdp->writeDatagram(ssdpSearch(QString::fromLatin1(target)), m_searchAddress, m_searchPort);
 	}
 	m_searching = true;
 	m_searchTimer->start(SearchMs);
+}
+
+void UpnpMapper::setSearchEndpoint(const QHostAddress& address, quint16 port, bool allowLoopbackRouter)
+{
+	m_searchAddress = address;
+	m_searchPort = port;
+	m_allowLoopbackRouter = allowLoopbackRouter;
 }
 
 void UpnpMapper::onSsdpReadyRead()
@@ -105,7 +117,7 @@ void UpnpMapper::onSsdpReadyRead()
 	{
 		const QNetworkDatagram datagram = m_ssdp->receiveDatagram(4096);
 		const QUrl location = ssdpLocation(datagram.data());
-		if (!m_searching || !location.isValid() || !isLanHost(location.host())) { continue; }
+		if (!m_searching || !location.isValid() || !isLanHost(location.host(), m_allowLoopbackRouter)) { continue; }
 		m_searching = false;
 		m_searchTimer->stop();
 		fetchDescription(location);

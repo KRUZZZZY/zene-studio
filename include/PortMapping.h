@@ -117,6 +117,12 @@ public:
 	void map(quint16 internalPort, quint16 externalPort, quint32 lease, const QHostAddress& local);
 	void unmap();
 
+	/*! TEST SEAM. Where the SSDP search goes, and whether a router on a loopback address is accepted. The defaults
+	 *  are the real ones - the SSDP multicast group on port 1900, LAN routers only - and nothing but C++ calls this:
+	 *  no control command, Lua binding or setting reaches it. The tests point it at a socket on 127.0.0.1 so that
+	 *  nothing they do leaves the machine. */
+	void setSearchEndpoint(const QHostAddress& address, quint16 port, bool allowLoopbackRouter);
+
 signals:
 	void finished(const lmms::portmap::MappingResult& result);
 
@@ -136,6 +142,9 @@ private:
 	QNetworkAccessManager* m_http;
 	IgdService m_service;
 	QHostAddress m_local;
+	QHostAddress m_searchAddress{QStringLiteral("239.255.255.250")};
+	quint16 m_searchPort = 1900;  //!< SsdpPort
+	bool m_allowLoopbackRouter = false;
 	quint16 m_internal = 0;
 	quint16 m_external = 0;
 	bool m_searching = false;
@@ -166,6 +175,20 @@ public:
 	//! This machine's address on the route toward \a gateway (the address peers on the LAN reach).
 	static QHostAddress lanAddress(const QHostAddress& gateway);
 
+	//! The addresses start() would otherwise discover or use from the real network.
+	struct TestEndpoints
+	{
+		QHostAddress gateway;       //!< the PCP/NAT-PMP gateway
+		quint16 gatewayPort = 0;    //!< ... and its port
+		QHostAddress local;         //!< this machine's address, as the mapping names it
+		QHostAddress upnpSearch;    //!< where the UPnP search goes
+		quint16 upnpSearchPort = 0;
+	};
+	/*! TEST SEAM, C++ only (no command, Lua binding or setting reaches it). With endpoints set, start() uses them
+	 *  instead of reading the routing table and instead of the multicast group, and accepts a router on a loopback
+	 *  address, so a test can run the whole mapping against sockets on 127.0.0.1. */
+	void setTestEndpoints(const TestEndpoints& endpoints);
+
 signals:
 	void finished(const lmms::portmap::MappingResult& result);
 
@@ -181,6 +204,8 @@ private:
 	QHostAddress m_gateway;
 	QHostAddress m_local;
 	bool m_gatewayGuessed = false;
+	TestEndpoints m_test;
+	bool m_hasTestEndpoints = false;
 	quint16 m_internal = 0;
 	bool m_busy = false;
 	QString m_pmpFailure;

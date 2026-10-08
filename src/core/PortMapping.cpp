@@ -118,17 +118,33 @@ void PortMapping::start(quint16 internalPort)
 	m_internal = internalPort;
 	m_busy = true;
 	m_pmpFailure.clear();
-	m_gateway = discoverGateway(&m_gatewayGuessed);
-	m_local = lanAddress(m_gateway);
+	if (m_hasTestEndpoints)
+	{
+		m_gateway = m_test.gateway;
+		m_gatewayGuessed = false;
+		m_local = m_test.local;
+	}
+	else
+	{
+		m_gateway = discoverGateway(&m_gatewayGuessed);
+		m_local = lanAddress(m_gateway);
+	}
 	if (m_gateway.isNull())
 	{
 		m_pmpFailure = QStringLiteral("no default gateway was found");
 		m_upnp->map(m_internal, m_internal, UpnpLeaseS, m_local);
 		return;
 	}
-	m_pmp->setServer(m_gateway);
+	m_pmp->setServer(m_gateway, m_hasTestEndpoints ? m_test.gatewayPort : PmpServerPort);
 	m_pmp->setClientAddress(m_local);
 	m_pmp->map(m_internal, m_internal, PmpLifetimeS);
+}
+
+void PortMapping::setTestEndpoints(const TestEndpoints& endpoints)
+{
+	m_test = endpoints;
+	m_hasTestEndpoints = true;
+	m_upnp->setSearchEndpoint(endpoints.upnpSearch, endpoints.upnpSearchPort, true);
 }
 
 void PortMapping::stop()

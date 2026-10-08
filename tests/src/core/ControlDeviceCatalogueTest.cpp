@@ -242,6 +242,44 @@ private slots:
 		}
 	}
 
+	//! plugin.list names every built-in device with the fields a client keys on, and the entry found by
+	//! its name is the one the catalogue holds at that dev-<n>: the listing and the catalogue cannot differ.
+	void builtinDevicesAreListedWithTheirCatalogueFields()
+	{
+		const ControlResult listed = ControlRegistry::instance()->invoke(QStringLiteral("plugin.list"),
+			QJsonObject{{QStringLiteral("format"), QStringLiteral("builtin")}});
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		const QJsonArray devices = listed.result.value(QStringLiteral("devices")).toArray();
+		QVERIFY2(!devices.isEmpty(), "the build lists no built-in device at all");
+		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
+		for (const QJsonValue& value : devices)
+		{
+			const QJsonObject device = value.toObject();
+			QCOMPARE(device.value(QStringLiteral("format")).toString(), QStringLiteral("builtin"));
+			const QString name = device.value(QStringLiteral("name")).toString();
+			QVERIFY(!name.isEmpty());
+			const QJsonObject again = listedDevice(QStringLiteral("builtin"), name);
+			QVERIFY2(!again.isEmpty(), qPrintable(QStringLiteral("'%1' listed but not found by its name").arg(name)));
+			QCOMPARE(again.value(QStringLiteral("id")).toString(), device.value(QStringLiteral("id")).toString());
+			bool inCatalogue = false;
+			for (int i = 0; i < catalogue.size(); ++i)
+			{
+				if (control::deviceId(i) != device.value(QStringLiteral("id")).toString()) { continue; }
+				inCatalogue = true;
+				QCOMPARE(catalogue.at(i).name, name);
+				QCOMPARE(catalogue.at(i).loadable, device.value(QStringLiteral("loadable")).toBool());
+			}
+			QVERIFY2(inCatalogue, "a listed device id names no catalogue entry");
+		}
+		// A name nothing carries finds nothing.
+		QVERIFY(listedDevice(QStringLiteral("builtin"), QStringLiteral("no-such-device")).isEmpty());
+		// A format outside the closed set is refused by the schema, not answered with an empty list.
+		const ControlResult none = ControlRegistry::instance()->invoke(QStringLiteral("plugin.list"),
+			QJsonObject{{QStringLiteral("format"), QStringLiteral("no-such-format")}});
+		QVERIFY(!none.ok);
+		QCOMPARE(none.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
 	//! An unknown dev-<n> is a typed not_found naming how many devices exist,
 	//! and a malformed id is invalid_args - never an empty success.
 	void deviceLookupIsTyped()

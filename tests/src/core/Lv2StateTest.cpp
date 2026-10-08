@@ -140,6 +140,67 @@ private slots:
 #endif
 	}
 
+	/*! The <lv2state> element is written exactly when the plug-in's own state is not empty: a plug-in
+	 *  without the State interface (or with nothing to keep) saves no element, one with state saves one.
+	 *  Checked over the first few loadable LV2 effects of this host, whatever they implement - so the
+	 *  invariant is measured on real plug-ins even where none keeps state. */
+	void theStateElementIsWrittenExactlyWhenThereIsState()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		EffectChain chain{nullptr};
+		int checked = 0;
+		for (const ControlDeviceEntry& entry : controlDeviceCatalogue())
+		{
+			if (checked >= 5) { break; }
+			if (entry.format != QLatin1String("lv2") || entry.kind != QLatin1String("effect") || !entry.loadable) { continue; }
+			ControlResult error;
+			Effect* effect = controlInstantiateDevice(entry, &chain, &error);
+			if (effect == nullptr) { continue; }
+			auto* controls = dynamic_cast<Lv2ControlBase*>(effect->controls());
+			if (controls == nullptr || controls->control(0) == nullptr) { continue; }
+			++checked;
+			const bool hasState = !controls->control(0)->saveState().isEmpty();
+			QDomDocument doc;
+			QDomElement root = doc.createElement(QStringLiteral("root"));
+			doc.appendChild(root);
+			const QDomElement element = effect->controls()->saveState(doc, root);
+			QCOMPARE(!element.firstChildElement(QStringLiteral("lv2state")).isNull(), hasState);
+		}
+		if (checked == 0) { QSKIP("no loadable LV2 effect in this environment"); }
+		chain.clear();
+#endif
+	}
+
+	//! A catalogue entry for the plug-in already loaded is found again by its URI (by name when it has none),
+	//! and instantiating it gives a second device of the same plug-in.
+	void aSecondInstanceIsFoundByTheFirstsUri()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		EffectChain chain{nullptr};
+		for (const ControlDeviceEntry& entry : controlDeviceCatalogue())
+		{
+			if (entry.format != QLatin1String("lv2") || entry.kind != QLatin1String("effect") || !entry.loadable) { continue; }
+			ControlResult error;
+			Effect* first = controlInstantiateDevice(entry, &chain, &error);
+			if (first == nullptr) { continue; }
+			auto* controls = dynamic_cast<Lv2ControlBase*>(first->controls());
+			if (controls == nullptr) { continue; }
+			QVERIFY(samePlugin(entry, first, controls));
+			Effect* second = secondInstance(chain, first, controls, &error);
+			QVERIFY2(second != nullptr, qPrintable(error.errorMessage));
+			QVERIFY(second != first);
+			QCOMPARE(QString::fromUtf8(second->descriptor()->name), QString::fromUtf8(first->descriptor()->name));
+			chain.clear();
+			return;
+		}
+		QSKIP("no loadable LV2 effect in this environment");
+#endif
+	}
+
 	/*! BUG 9 (cluster 3237): a malformed <lv2state> instance attribute must not silently
 	 *  target instance zero - <lv2state instance="bad"> used to restore into the first
 	 *  processor. The decision seam loadSettings uses is checked directly. */

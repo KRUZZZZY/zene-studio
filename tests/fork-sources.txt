@@ -1992,6 +1992,7 @@ tests/src/core/ClipTransposeTest.cpp
 tests/src/core/CollabPolicyTest.cpp
 tests/src/core/CollabTransportTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
+tests/src/core/ControlBounceRenderTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
 
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/agent-surface-gate.py tests/agent_surface_lib.py tests/control-absent-socket.py tests/control-export-settings.py tests/control-freeze-commands-transcript.py tests/control-headless-no-audio-device.py tests/freeze_bounce_evidence.py tests/control-headless-project-open.py tests/control-headless-working-directory.py tests/control-negative-control.py tests/control-no-audio-device.py tests/control-readiness.py tests/control-reversibility-transcript.py tests/control-session-lifecycle-transcript.py tests/control-session-m1.py tests/control-shutdown.py tests/control-socket-path-safety.py tests/control-stable-ids.py tests/control-warp-commands-transcript.py tests/control_instance_diagnosis.py tests/control_socket_diagnosis.py tests/control_socket_flows.py tests/control_socket_harness.py tests/render-software-tag.py tests/control-punch-transcript.py tests/control-recording-recovery.py tests/control-track-folder.py tests/control-retro-capture.py tests/control-chain-presets.py tests/control-vca-commands.py tests/control-pdc-commands.py tests/control-routing-commands.py tests/control-bus-commands.py tests/control-ports-commands.py tests/control-stem-export-verb.py tests/control-plugin-scan-commands.py tests/control-crash-reporter.py tests/control-mastering-commands.py tests/mastering_probe_lib.py tests/control-session-api-proof.py ; \
@@ -2005,9 +2006,13 @@ tests/src/core/ControlBrowserCommandsTest.cpp
 
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
+tests/src/core/ControlHostedDeviceCatalogueTest.cpp
 tests/src/core/ControlLinkCommandsTest.cpp
+tests/src/core/ControlMidiReconnectSharedTest.cpp
+tests/src/core/ControlPluginBusesTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
 tests/src/core/ControlRegistryTest.cpp
+tests/src/core/ControlSessionRecordLandTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
 tests/src/core/ControlRegistryNestingTest.cpp
@@ -2041,6 +2046,7 @@ tests/src/core/LinkPhaseLockTest.cpp
 tests/src/core/LinkRealtimeProbe.h
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
+tests/src/core/McuSurfaceFeedbackTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiInputTransformTest.cpp
@@ -2070,12 +2076,15 @@ tests/src/core/OutOfProcessHostSupport.h
 tests/src/core/OutOfProcessHostTest.cpp
 tests/src/core/PartialLoadTest.cpp
 tests/src/core/PhaseScopeTapTest.cpp
+tests/src/core/PluginHostMetadataTest.cpp
 tests/src/core/PortMappingCodecTest.cpp
+tests/src/core/PortMappingOrchestratorTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
 tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
+tests/src/core/ProjectSectionTest.cpp
 tests/src/core/ProjectStateTest.cpp
 tests/src/core/ProjectToolsTest.cpp
 
@@ -2092,10 +2101,12 @@ tests/src/core/ProvenanceSectionTest.cpp
 tests/src/core/ProvenanceVersionTest.cpp
 tests/src/core/RackMacrosTest.cpp
 tests/src/core/RackTestSupport.h
+tests/src/core/RackZoneFeedRunTest.cpp
 tests/src/core/RackZoneRoutingTest.cpp
 tests/src/core/RackZonesTest.cpp
 tests/src/core/RangeEditsTest.cpp
 tests/src/core/RealtimeSnapshotTest.cpp
+tests/src/core/ReceiverEffectTest.cpp
 tests/src/core/RecordToolsNoEngineTest.cpp
 tests/src/core/RecordToolsTest.cpp
 tests/src/core/RecordingPassTest.cpp
@@ -2118,6 +2129,7 @@ tests/src/core/RoutingGraphScheduleTest.cpp
 tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/ScriptCommandBridgeTest.cpp
 tests/src/core/ScriptDawBindingTest.cpp
+tests/src/core/ScriptDawEffectsTest.cpp
 tests/src/core/SessionCommandArgsTest.cpp
 tests/src/core/ScriptDawRemovalUndoTest.cpp
 tests/src/core/SessionModelTest.cpp
@@ -2156,7 +2168,9 @@ tests/src/core/UndoBoundsTest.cpp
 tests/src/core/UndoHistoryPersistenceTest.cpp
 tests/src/core/UndoHonestyStateTest.cpp
 tests/src/core/UndoHonestyTest.cpp
+tests/src/core/UpnpMapperFakeRouterTest.cpp
 tests/src/core/VideoTestClip.h
+tests/src/core/VideoTestClipTest.cpp
 tests/src/core/VideoTrackTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
@@ -2216,3 +2230,5 @@ tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/NoteBackgroundAudioTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
+tests/src/plugins/BusesTestInstrument.cpp
+tests/src/plugins/FakeHostModule.cpp
