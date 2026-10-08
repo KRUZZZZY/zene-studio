@@ -148,3 +148,15 @@ Leftovers: Cluster 5010's bounded-drain fix is still owed to whoever can build a
 test harness for the control server (a peer that floods while the Qt loop is pumped); clusters
 4996 and 4995 need no work unless the parent reclassifies the `plugin.record` reversibility row
 or the WASM macro's provenance changes.
+## Correction (rework 2026-10-08, sha ae6cdd942)
+
+The custom-scale entry above is described as "defence in depth" with the conversion-before-check hazard unmentioned.
+That omission is corrected here. At `d53d36aec` the entry was converted to `int` BEFORE any range check, so a
+config value such as `1e300` (or any finite double outside the int range) was undefined behaviour in the
+conversion itself. The reviewer's finding is correct.
+
+- At the current tip the order is fixed: `customScaleDegree` checks `std::isfinite` and `0 <= x <= 11` before the cast
+  (`58cf719ea`). The rework adds the missing fixtures (`07404985c`, `fix(rework d53d36aec)`): `-1e300`, `2.5`, `-0.5`,
+  `11.5`, `12.0`, and `-2147483649.0` in the FP-exception case.
+- Red: removing the guard gives `ControlNoteScaleVerbsTest` EXIT=8 (FE_INVALID observed by the test). Green: EXIT=0.
+- The validator in `scale.define` (`ControlCommandsNoteHarmony.cpp:136-140`) was not changed by this rework.
