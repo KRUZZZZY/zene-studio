@@ -509,6 +509,8 @@ private slots:
 		edited.insert(QStringLiteral("Odd"), QJsonArray{true, QStringLiteral("nope")});
 		edited.insert(QStringLiteral("Ragged"), QJsonArray{0, 12, 99, 4});
 		edited.insert(QStringLiteral("Huge"), QJsonArray{1.0e300, 2});
+		// extreme negative, fractional and non-finite-looking inputs: only the whole 0..11 degree survives
+		edited.insert(QStringLiteral("Extremes"), QJsonArray{-1.0e300, 2.5, 7, -0.5, 11.5, 12.0, 7});
 		lmms::control::setCustomScales(edited);
 
 		QVERIFY(lmms::control::scaleDegreesOf(QStringLiteral("Odd")).empty());  // nothing valid: not a "C" scale
@@ -521,11 +523,18 @@ private slots:
 		QCOMPARE(huge.size(), size_t(1));
 		QCOMPARE(huge[0], 2);
 
+		// -1e300, 2.5, -0.5, 11.5 and 12.0 are all refused; only the two whole 7s survive
+		const std::vector<int> extremes = lmms::control::scaleDegreesOf(QStringLiteral("Extremes"));
+		QCOMPARE(extremes.size(), size_t(2));
+		QCOMPARE(extremes[0], 7);
+		QCOMPARE(extremes[1], 7);
+
 		// Keep the FP-exception check separate from 1e300: Qt's JSON parser may
 		// itself raise FE_INVALID while decoding an exponent that large. This
-		// one-past-INT_MAX value isolates the product's out-of-range cast.
+		// fixture isolates the product's out-of-range casts, one past INT_MAX and
+		// one past INT_MIN, both of which would raise FE_INVALID before the range check.
 		QJsonObject overflowEdited = before;
-		overflowEdited.insert(QStringLiteral("Overflow"), QJsonArray{2147483648.0, 2});
+		overflowEdited.insert(QStringLiteral("Overflow"), QJsonArray{2147483648.0, -2147483649.0, 2});
 		lmms::control::setCustomScales(overflowEdited);
 
 		// On Linux x86-64 the overflowing SSE conversion sets FE_INVALID. Check
