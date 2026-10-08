@@ -95,9 +95,10 @@ struct ControlCommand
 	QJsonObject resultSchema;
 	//! records a transaction per SPEC A16
 	bool mutating = false;
-	//! A non-mutating wrapper whose ONE nested call joins that call's coalescing run: a burst of
-	//! its calls (arrangement.nudge) is one undo step. Its nested call's own row sets the target.
-	bool coalescesWrapped = false;
+	//! A non-mutating wrapper joins the coalescing run of the nested command it names here (its row
+	//! declares the target): a burst of its calls (arrangement.nudge -> clip.move) is one undo step.
+	//! Empty for every other command.
+	QString coalescesWrapped;
 	//! false for the liveness and bookkeeping commands (control.*) that must answer
 	//! even before the engine is initialised; those report readiness themselves.
 	bool requiresEngine = true;

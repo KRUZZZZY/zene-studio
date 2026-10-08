@@ -318,7 +318,7 @@ private slots:
 			QStringLiteral("test.burst_unrelated"), &unrelatedTouched);
 		registry->registerCommand(unrelated);
 		ControlCommand nudge = describedCommand(QStringLiteral("test.burst_nudge"), false, QString());
-		nudge.coalescesWrapped = true;
+		nudge.coalescesWrapped = QStringLiteral("mixer.set_volume");
 		nudge.handler = [channel](const QJsonObject& args) {
 			return ControlRegistry::instance()->invoke(QStringLiteral("mixer.set_volume"),
 				{{QStringLiteral("channel"), channel}, {QStringLiteral("volume"), args.value(QStringLiteral("volume")).toDouble()}});

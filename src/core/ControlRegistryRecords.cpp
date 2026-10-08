@@ -35,7 +35,7 @@ namespace lmms
 bool ControlRegistry::mayCoalesce(const QString& commandId, bool enclosedByWrapper, bool enclosedByMutating) const
 {
 	const ControlCommand* spec = command(commandId);
-	return !enclosedByWrapper && !enclosedByMutating && (spec == nullptr || !spec->coalescesWrapped);
+	return !enclosedByWrapper && !enclosedByMutating && (spec == nullptr || spec->coalescesWrapped.isEmpty());
 }
 
 QString ControlRegistry::aggregateClassOf(const QStringList& childClasses)
@@ -57,14 +57,20 @@ QString ControlRegistry::aggregateClassOf(const QStringList& childClasses)
 	return weakest;
 }
 
+/*! The records of the mutating calls a non-mutating wrapper ran. They share ONE journal step (the
+ *  wrapper's checkpoint merge keeps a single serial), so they become ONE record for that step, named
+ *  for the wrapper and listing its nested commands - one undo step, one record. A single nested call
+ *  keeps its own record, as before. */
 void ControlRegistry::flushNestedRecords(const QString& wrapperId, const ControlResult& wrapper, quint64 step)
 {
 	QVector<NestedRecord> held;
 	held.swap(m_nestedRecords);
 	QStringList nestedIds;
 	for (const NestedRecord& child : held) { nestedIds.append(child.command); }
-	// A wrapper that declares coalescing joins its one nested call's run: a burst of its calls is one step.
-	if (held.size() == 1 && step != 0 && m_commands.value(wrapperId).coalescesWrapped)
+	// A wrapper that declares coalescing joins the run of ITS nested call (the one it names): a burst of
+	// its calls is one step. Any other single nested call keeps its own record.
+	const QString joined = m_commands.value(wrapperId).coalescesWrapped;
+	if (held.size() == 1 && step != 0 && !joined.isEmpty() && held[0].command == joined)
 	{
 		ProjectJournal* journal = Engine::projectJournal();
 		if (journal != nullptr && coalesceStepOf(*journal, held[0].command, held[0].args, true))

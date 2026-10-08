@@ -440,10 +440,6 @@ ControlResult ControlRegistry::invokeUnrecorded(const QString& id, const QJsonOb
 	return result;
 }
 
-/*! The records of the mutating calls a non-mutating wrapper ran. They share ONE journal step (the
- *  wrapper's checkpoint merge keeps a single serial), so they become ONE record for that step, named
- *  for the wrapper and listing its nested commands - one undo step, one record. A single nested call
- *  keeps its own record, as before. */
 //! Records what a successful mutating handler described (SPEC A16).
 void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResult* result,
 	bool coalesced, quint64 step)

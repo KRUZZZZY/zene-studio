@@ -429,7 +429,7 @@ void registerArrangerViewCommands(ControlRegistry& registry)
 			{QStringLiteral("amount"), integerProperty(1, 1 << 20)}}, {QStringLiteral("direction")});
 		nudgeCommand.resultSchema = objectProperty();
 		nudgeCommand.mutating = false;
-		nudgeCommand.coalescesWrapped = true;
+		nudgeCommand.coalescesWrapped = QStringLiteral("clip.move");  // the nested call whose run a burst joins
 		nudgeCommand.handler = nudge;
 		registry.registerCommand(nudgeCommand);
 	}

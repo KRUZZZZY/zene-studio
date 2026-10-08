@@ -80,13 +80,13 @@ const ReversibilityRow kArrangerRows[] = {
 		"Track journal checkpoint: undo removes every copy", ""),
 	R("clip.time_scale", RC::TrueInverse, true, "it rewrites a clip's notes (or its warp) and its length",
 		"Clip journal checkpoint: undo restores the clip's notes (or warp) and length", ""),
-	// The class is not_mutating because the command itself writes nothing. What it records is its
-	// children's: with one covered track, that clip.consolidate's own record; with two or more, one
-	// record for this command whose inverse.children lists each track; with none, no record.
+	// The class is not_mutating because the command writes nothing of its own. The records it leaves are its
+	// children's: one covered track leaves that clip.consolidate's own record; several leave one record named
+	// for this command, whose inverse.children lists each track.
 	R("range.consolidate", RC::NotMutating, false,
-		"it runs clip.consolidate over the range on each covered sample track inside its own handler, and records "
-		"nothing of its own: with one track, that clip.consolidate's own record; with two or more, one record for "
-		"this command whose inverse.children lists each track (their changes are one journal step)",
+		"its own write is none: it runs clip.consolidate over the range on each covered sample track inside its "
+		"handler; one track's run is recorded as that clip.consolidate's own record, and a run of several tracks as "
+		"one record named for this command (its inverse.children lists each track)",
 		"the journal step the tracks' consolidations share: control.undo reverts every track together", ""),
 	// A non-mutating wrapper that declares coalescing (the target is its nested clip.move's): a burst of
 	// presses is one undo step, joined to the previous run of the same clip (ControlRegistry::flushNestedRecords).

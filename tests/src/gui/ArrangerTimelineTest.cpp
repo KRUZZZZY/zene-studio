@@ -55,6 +55,8 @@
 #include "ClipView.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "ProjectJournal.h"
+#include "ShellSelection.h"
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "GuiApplication.h"
@@ -362,6 +364,37 @@ private slots:
 		navigator->setValue(2 * Bar);  // what a screen reader's value setting does
 		QTRY_COMPARE(m_editor->currentPosition().getTicks(), 2 * Bar);
 		QVERIFY2(navigator->accessibleDescription().startsWith(QStringLiteral("Showing bars 3 ")), qPrintable(navigator->accessibleDescription()));
+	}
+
+	//! The REAL arrangement.nudge (its production declaration, through the arranger): three presses on one clip are
+	//! one undo step and one record, and control.undo puts the clip back where it started. A press on another clip
+	//! starts its own run.
+	void aBurstOfRealNudgesIsOneUndoStep()
+	{
+		Clip* clip = clipAt(m_track, 2 * Bar, Bar);
+		Clip* other = clipAt(m_track, 8 * Bar, Bar);
+		QCoreApplication::processEvents();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const QJsonObject press{{QStringLiteral("direction"), QStringLiteral("right")}, {QStringLiteral("amount"), 48}};
+		const int start = clip->startPosition().getTicks();
+		ShellSelection::instance()->setClip(clip);
+		const int depthBefore = journal->undoDepth();
+		const int recordsBefore = ControlRegistry::instance()->transactions().size();
+
+		for (int i = 0; i < 3; ++i) { QVERIFY2(run(QStringLiteral("arrangement.nudge"), press).ok, "a press did not nudge"); }
+		QCOMPARE(clip->startPosition().getTicks(), start + 3 * 48);
+		QCOMPARE(journal->undoDepth() - depthBefore, 1);
+		QCOMPARE(ControlRegistry::instance()->transactions().size() - recordsBefore, 1);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(clip->startPosition().getTicks(), start);
+		QCOMPARE(journal->undoDepth(), depthBefore);
+
+		ShellSelection::instance()->setClip(other);
+		QVERIFY2(run(QStringLiteral("arrangement.nudge"), press).ok, "the other clip did not nudge");
+		QCOMPARE(journal->undoDepth() - depthBefore, 1);
+		QCOMPARE(ControlRegistry::instance()->transactions().size() - recordsBefore, 2);
+		ShellSelection::instance()->setClip(nullptr);
 	}
 
 private:
