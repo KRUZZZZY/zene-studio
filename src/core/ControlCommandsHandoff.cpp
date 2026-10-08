@@ -135,6 +135,15 @@ QString takenFile(const QString& file, const QString& manifestFile)
 	return {};
 }
 
+//! Whether anything occupies the hand-off folder's media slot, a folder, a file or a link (a link is
+//! followed by QFileInfo::exists only when it resolves). A hand off never writes into such a folder, and its
+//! rollback removes the media folder, so it must not take one over.
+bool mediaTaken(const QString& media)
+{
+	const QFileInfo info(media);
+	return info.exists() || info.isSymLink();
+}
+
 //! Whether the hand-off manifest lands at @a file.
 bool writeManifest(const QString& file, const QJsonObject& info)
 {
@@ -167,6 +176,11 @@ ControlResult handoff(const QJsonObject& args)
 	if (!taken.isEmpty())
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' already exists; hand off into an empty folder").arg(taken));
+	}
+	const QString media = QDir(dir).filePath(QStringLiteral("media"));
+	if (mediaTaken(media))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' already exists; hand off into an empty folder").arg(media));
 	}
 	if (!song->saveProjectFile(file))
 	{

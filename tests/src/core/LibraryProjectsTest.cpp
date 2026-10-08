@@ -320,6 +320,39 @@ private slots:
 		QVERIFY(QFileInfo(QDir(dir).filePath(QStringLiteral("media"))).isFile());  // what was there before is untouched
 	}
 
+	//! A hand off into a folder whose media folder already holds files is refused before anything is written, and
+	//! the files stay: a failed hand off's rollback removes the media folder, so it must never own one that was there.
+	void aHandOffNeverWritesIntoOrRemovesAnExistingMediaFolder()
+	{
+		const QString dir = m_dir.filePath(QStringLiteral("occupied"));
+		const QString media = QDir(dir).filePath(QStringLiteral("media"));
+		QVERIFY(QDir().mkpath(media));
+		const QString sentinel = QDir(media).filePath(QStringLiteral("keep.txt"));
+		touch(sentinel);
+
+		const ControlResult refused = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(QFileInfo::exists(sentinel), "the existing media folder's file was removed");
+		QVERIFY2(!QFileInfo::exists(QDir(dir).filePath(QStringLiteral("HANDOFF.json"))), "a manifest was written");
+		QVERIFY(QDir(dir).entryList({QStringLiteral("*.mmpz"), QStringLiteral("*.mmp")}, QDir::Files).isEmpty());
+	}
+
+	//! A media link to a folder elsewhere is refused too: the rollback's recursive removal would reach through it.
+	void aHandOffNeverRemovesWhatAMediaLinkPointsAt()
+	{
+		const QString outside = m_dir.filePath(QStringLiteral("outside"));
+		QVERIFY(QDir().mkpath(outside));
+		const QString sentinel = QDir(outside).filePath(QStringLiteral("keep.txt"));
+		touch(sentinel);
+		const QString dir = m_dir.filePath(QStringLiteral("linked"));
+		QVERIFY(QDir().mkpath(dir));
+		QVERIFY(QFile::link(outside, QDir(dir).filePath(QStringLiteral("media"))));
+
+		const ControlResult refused = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(QFileInfo::exists(sentinel), "a rollback removed the file the media link points at");
+	}
+
 private:
 	QTemporaryDir m_dir;
 };
