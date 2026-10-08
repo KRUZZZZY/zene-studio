@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-07T14:38:51Z",
+  "captured_at": "2026-10-08T01:07:11Z",
   "commands": [
     {
       "args_schema": {
@@ -7049,7 +7049,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Set the undo stack's two caps: `steps` (how many undo steps are kept) and/or `bytes` (the serialised size they may occupy). Lowering a cap EVICTS the oldest steps immediately and the result reports how many (`dropped`); the caps themselves are reversible (one control.undo restores them), the evicted steps are not. Refuses a value outside the declared ceilings rather than clamping it.",
+      "description": "Set the undo stack's two caps: `steps` (how many undo steps are kept) and/or `bytes` (the serialised size they may occupy). Lowering a cap EVICTS the oldest steps immediately and the result reports how many (`dropped`). If no steps are dropped, one control.undo restores the caps; a change that drops history is recorded as irreversible and control.undo refuses it. Refuses a value outside the declared ceilings rather than clamping it.",
       "group": "control",
       "id": "control.set_undo_depth",
       "mutating": true,
@@ -19197,7 +19197,7 @@
         ],
         "type": "object"
       },
-      "description": "Remove a device instance (fx-<n>) from a track's chain or a mixer channel. REVERSIBLE: the device's own state document is captured before the removal and one control.undo re-instantiates the same plugin at the same index in the chain with its settings restored. The transaction's 'before' snapshot still carries the state XML, so a client that prefers to rebuild by hand can; a device whose state exceeds the capture cap reports itself as snapshot-only instead.",
+      "description": "Remove a device instance (fx-<n>) from a track's chain or a mixer channel. When its state fits the capture cap and the undo stack is addressable, one control.undo re-instantiates the same plugin at the same index with its settings restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.",
       "group": "plugin",
       "id": "plugin.unload",
       "mutating": true,
@@ -20607,7 +20607,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Switch to another project: 'path', or 'index' into project.recent (0, the default, is the most recent other one - so repeating it toggles between two projects). The session is saved first when it changed (unless 'save_current' is false; an untitled session with changes is refused rather than lost). With 'keep_as_reference' the project left behind stays open as the reference to copy from (reference.*). Opens as project.open does, so it is not undoable; switch back instead.",
+      "description": "Switch to another project: 'path', or 'index' into project.recent (0, the default, is the most recent other one - so repeating it toggles between two projects). The session is saved first when it changed (unless 'save_current' is false; an untitled session with changes is refused rather than lost). With 'keep_as_reference' the project left behind stays open as the reference to copy from (reference.*); if it cannot be opened, the switch completes and returns 'reference_error'. Opens as project.open does, so it is not undoable; switch back instead.",
       "group": "project",
       "id": "project.switch",
       "mutating": true,
@@ -22068,7 +22068,7 @@
       "description": "Stop every armed record route in one call and report the whole recorder afterwards. Each route's take is flushed and closed and its journal retired, exactly as record.disarm_track does for one. Not reversible: every route's take is a file that stays on disk, and re-arming starts a new one.",
       "group": "record",
       "id": "record.disarm_all",
-      "mutating": false,
+      "mutating": true,
       "requires": [],
       "result_schema": {
         "additionalProperties": false,
@@ -22109,7 +22109,7 @@
       "description": "Stop one record route: the disk-writer is drained and joined, the WAV is closed, and the take journal is RETIRED - a clean stop leaves no journal, which is what makes 'there is a journal' and 'the capture died' the same fact (include/RecordingJournal.h). The take file stays on disk. This is record.arm_track's explicit stop operation, not its undo inverse, since the WAV remains after a clean stop. Not reversible itself: re-arming writes a NEW take rather than restoring this one, and there is nothing the engine could hand back.",
       "group": "record",
       "id": "record.disarm_track",
-      "mutating": false,
+      "mutating": true,
       "requires": [],
       "result_schema": {
         "additionalProperties": false,
@@ -34623,11 +34623,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-features-merge/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-reqbrdqs/zene.sock",
-    "version": "0.4.0-alpha.387+f9455b8"
+    "source_socket": "/tmp/zctl-run-wtlaxu3_/zene.sock",
+    "version": "0.4.0-alpha.562+2a308d0"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
