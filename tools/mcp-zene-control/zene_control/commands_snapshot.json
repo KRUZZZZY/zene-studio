@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-08T04:13:42Z",
+  "captured_at": "2026-10-08T04:38:47Z",
   "commands": [
     {
       "args_schema": {
@@ -21468,7 +21468,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Render each covered sample track's clips inside the range into ONE clip (clip.consolidate per track - clips crossing an edge are refused: range.split first). The tracks' consolidations are one undo step: one record, which control.undo reverts for every track together.",
+      "description": "Render each covered sample track's clips inside the range into ONE clip (clip.consolidate per track - clips crossing an edge are refused: range.split first). The tracks' consolidations are one undo step, which control.undo reverts for every track together.",
       "group": "range",
       "id": "range.consolidate",
       "mutating": false,
@@ -34004,7 +34004,7 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-control/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zsnap-3369954/s.sock",
+    "source_socket": "/tmp/zsnap4-3589954/s.sock",
     "version": "0.4.0-alpha.376+04d166d"
   },
   "kind": "zene-control-command-list",

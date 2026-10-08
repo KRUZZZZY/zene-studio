@@ -568,7 +568,7 @@ void registerRangeCommands(ControlRegistry& registry)
 		objectSchema({{QStringLiteral("position"), tickProperty()}}), true, pasteRange);
 	add(registry, "consolidate", QStringLiteral("Render each covered sample track's clips inside the range into ONE clip "
 		"(clip.consolidate per track - clips crossing an edge are refused: range.split first). "
-		"The tracks' consolidations are one undo step: one record, which control.undo reverts for every track together."), objectSchema({}), false, consolidateRange);
+		"The tracks' consolidations are one undo step, which control.undo reverts for every track together."), objectSchema({}), false, consolidateRange);
 	add(registry, "duplicate", QStringLiteral("Copy what is inside the range and paste it right after it; the range moves "
 		"onto the copy, so repeating it repeats the pattern.") + oneStep, objectSchema({}), true, duplicateRange);
 }
