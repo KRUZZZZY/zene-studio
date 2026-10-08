@@ -427,6 +427,48 @@ private slots:
 		engine->takeLogMessages();
 	}
 
+	/*! Luna 5332, with the tightest bound the journal accepts (one step). The
+	 *  removal's structural step must be the step that survives: a second
+	 *  checkpoint pushed after it (the emptied chain switching off) would evict
+	 *  it, and one undo would restore nothing. One undo brings the device back
+	 *  and the chain is enabled again; one redo removes it again. */
+	void aScriptsRemovedEffectIsUndoneOnceAtCapOne()
+	{
+		QString device;
+		QString deviceName;
+		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int oldCap = journal->maxUndoStates();
+		QVERIFY(journal->setMaxUndoStates(1));
+
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(RemoveEffectScript).arg(index).arg(device), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(chain->effects().empty());
+		QVERIFY(!chain->isEnabled());
+		QCOMPARE(journal->undoDepth(), 1);
+
+		journal->undo();
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QCOMPARE(QString::fromUtf8(chain->effects().front()->descriptor()->name), deviceName);
+		QVERIFY(chain->isEnabled());
+
+		journal->redo();
+		QVERIFY(chain->effects().empty());
+		QVERIFY(!chain->isEnabled());
+
+		QVERIFY(journal->setMaxUndoStates(oldCap));
+		mixer->deleteChannel(index);
+		engine->takeLogMessages();
+	}
+
 	/*! The version policy's Lua face: the surface this build reports is the
 	 *  version this translation unit was compiled with, and the DAW-control
 	 *  namespace entry is visible in it. */

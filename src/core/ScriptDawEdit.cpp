@@ -228,23 +228,25 @@ void applyRemoveEffect(EffectChain* chain, int index)
 	// whose state cannot be captured (empty, or over the structural budget)
 	// is still removed, as the script asked, but no undo step is claimed for
 	// it: the log says so instead of pretending the removal is reversible.
-	// The mark is a serial, not an index: a bound can evict steps while this
-	// removal pushes its own, and an index taken before that would be stale.
 	ProjectJournal* journal = Engine::projectJournal();
-	const quint64 mark = journal != nullptr ? journal->topStepSerial() : 0;
 	if (!control::journalEffectRemoval(chain, effect, index))
 	{
 		ScriptEngine::instance()->logMessage(QStringLiteral(
 			"[note] removing effect %1: its state cannot be captured, so this removal is not undoable")
 			.arg(index));
 	}
+	// The removal must push exactly one undo checkpoint: the structural step
+	// above. Emptying the chain would also switch its enabled model off, and
+	// that write journals a checkpoint of its own, pushed after the structural
+	// step. Under a tight undo bound that second push evicts the structural
+	// step, and the device cannot be restored. So the flag write is not
+	// journalled here; the undo re-appends the device, and appending switches
+	// the chain on again (EffectChain::appendEffect).
+	const bool journalling = journal != nullptr && journal->isJournalling();
+	if (journal != nullptr) { journal->setJournalling(false); }
 	chain->removeEffect(effect);
+	if (journal != nullptr) { journal->setJournalling(journalling); }
 	effect->deleteLater();
-	// Emptying a chain also switches its enabled model off, which journals a
-	// checkpoint of its own after the structural step. Fold the removal's
-	// checkpoints into one step, as the control registry does for one command,
-	// so a single undo restores the device rather than only the flag.
-	if (journal != nullptr) { journal->mergeCheckpointsSince(mark); }
 }
 
 void applySetEffectEnabled(Effect* effect, bool enabled)
