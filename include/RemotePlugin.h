@@ -170,12 +170,13 @@ public:
 	auto updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*;
 
 	//! Queues a MIDI event for the client. It never waits, so any thread may call it, the audio thread included:
-	//! the event is sent by the next processing period (see process()). A full queue drops the event, counted
-	//! by midiEventsDropped().
+	//! the event is sent by the next processing period (see process()). When the queue is full the event is
+	//! refused, and its channel is later sent all-notes-off, so no note can be left sounding (see
+	//! sendQueuedMidiEvents()). Refusals are counted by midiEventsDropped() and reported on the main thread.
 	void processMidiEvent( const MidiEvent&, const f_cnt_t _offset );
 
 	//! MIDI events refused because the hand-off queue was full, since construction.
-	std::uint64_t midiEventsDropped() const { return m_midiHandoff.dropped(); }
+	std::uint64_t midiEventsDropped() const { return m_midiOverflow.recorded(); }
 
 	void updateSampleRate( sample_rate_t _sr )
 	{
@@ -294,6 +295,10 @@ private:
 	//! Frame of a MIDI event that could not be sent yet (see sendQueuedMidiEvents()).
 	std::array<char, 128> m_pendingMidi{};
 	std::size_t m_pendingMidiSize = 0;
+	//! Channels whose events the full queue refused; each is sent all-notes-off once the queue has drained.
+	MidiChannelOverflow m_midiOverflow;
+	//! Refusals already reported on the main thread (main thread only).
+	std::uint64_t m_reportedDrops = 0;
 	//! A reply the client asked for during a period could not be sent without blocking; reported on the main thread.
 	bool m_pendingReplyLost = false;
 

@@ -133,6 +133,38 @@ private slots:
 		QCOMPARE(allocations, std::uint64_t{0});
 	}
 
+	//! A refused event is never silently lost: its channel is recorded and comes out of take(), once.
+	void refusedEventsLeaveTheirChannelRecorded()
+	{
+		lmms::MidiHandoffQueue<2> queue;
+		lmms::MidiChannelOverflow overflow;
+
+		lmms::HandoffMidiEvent onChannel5;
+		onChannel5.channel = 5;
+		QVERIFY(lmms::pushOrRecord(queue, overflow, onChannel5));
+		QVERIFY(lmms::pushOrRecord(queue, overflow, onChannel5));
+
+		// The queue is full: a note-off on channel 3 and an event with no channel are refused, and recorded.
+		lmms::HandoffMidiEvent noteOff;
+		noteOff.type = 0x80;
+		noteOff.channel = 3;
+		QVERIFY(!lmms::pushOrRecord(queue, overflow, noteOff));
+		lmms::HandoffMidiEvent noChannel;
+		noChannel.channel = -1;
+		QVERIFY(!lmms::pushOrRecord(queue, overflow, noChannel));
+
+		QCOMPARE(overflow.recorded(), std::uint64_t{2});
+		QCOMPARE(queue.dropped(), std::uint64_t{2});
+		QCOMPARE(overflow.take(), std::uint32_t{0xFFFFu});  // channel 3 plus "all channels", as 16 bits
+		QCOMPARE(overflow.take(), std::uint32_t{0});        // taking clears it
+
+		// Channels that could not be handled are put back, and come out again.
+		overflow.record(7);
+		const auto taken = overflow.take();
+		overflow.restore(taken);
+		QCOMPARE(overflow.take(), std::uint32_t{1u << 7});
+	}
+
 	void concurrentProducersLoseNothingPushAccepted()
 	{
 		constexpr std::uint32_t producers = 4;

@@ -118,6 +118,8 @@ private:
 	//! for the next processed period. handleMidiEvent() only pushes here; processImpl() forwards it under
 	//! processLock(), so the audio thread never waits for the plugin mutex to queue an event.
 	MidiHandoffQueue<256> m_midiHandoff;
+	//! Channels whose events the full queue refused; sent all-notes-off once the queue has drained.
+	MidiChannelOverflow m_midiOverflow;
 
 	QString m_pluginDLL;
 	gui::SubWindow* m_subWindow;

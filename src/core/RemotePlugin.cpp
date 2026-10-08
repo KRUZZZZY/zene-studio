@@ -645,6 +645,14 @@ void RemotePlugin::applyDeferredClientRequests()
 
 void RemotePlugin::reportDeferredClientRequests()
 {
+	const auto drops = m_midiOverflow.recorded();
+	if( drops != m_reportedDrops )
+	{
+		qWarning() << "RemotePlugin:" << ( drops - m_reportedDrops )
+			<< "MIDI event(s) refused by a full queue; their channels were sent all-notes-off (" << drops
+			<< "refused in total)";
+		m_reportedDrops = drops;
+	}
 	if (m_pendingReplyLost)
 	{
 		qCritical() << "RemotePlugin: a reply to the remote client could not be sent without blocking; the plugin is failed";
@@ -681,7 +689,10 @@ void RemotePlugin::processMidiEvent( const MidiEvent & _e,
 	event.param1 = _e.param( 0 );
 	event.param2 = _e.param( 1 );
 	event.offset = static_cast<std::uint32_t>( _offset );
-	m_midiHandoff.push( event );
+	if( !pushOrRecord( m_midiHandoff, m_midiOverflow, event ) )
+	{
+		m_deferredWork = true; // the main thread reports the refusal
+	}
 }
 
 RemotePluginBase::SendResult RemotePlugin::sendQueuedMidiEvents()
@@ -702,6 +713,30 @@ RemotePluginBase::SendResult RemotePlugin::sendQueuedMidiEvents()
 			values, std::size( values ) );
 		const auto result = sendFrameNonBlocking( m_pendingMidi.data(), m_pendingMidiSize );
 		if( result == SendResult::NoRoom ) { return result; } // the event stays in m_pendingMidi
+		m_pendingMidiSize = 0;
+		if( result != SendResult::Sent ) { return result; }
+	}
+
+	// Channels whose events the full queue refused. They are cleared only now, after everything that was
+	// queued before the refusal has been sent, so the notes those events began are ended after them.
+	constexpr std::uint32_t AllChannelBits = 0xFFFFu;
+	constexpr std::int32_t MidiAllNotesOffController = 123;
+	std::uint32_t channels = m_midiOverflow.take();
+	if( channels & MidiChannelOverflow::AllChannels ) { channels |= AllChannelBits; }
+	for( int channel = 0; channel < 16; ++channel )
+	{
+		if( !( channels & ( 1u << channel ) ) ) { continue; }
+		const std::int32_t values[] = {
+			MidiControlChange, channel, MidiAllNotesOffController, 0, 0 };
+		m_pendingMidiSize = frameFromInts( m_pendingMidi.data(), m_pendingMidi.size(), IdMidiEvent,
+			values, std::size( values ) );
+		const auto result = sendFrameNonBlocking( m_pendingMidi.data(), m_pendingMidiSize );
+		if( result == SendResult::NoRoom )
+		{
+			// The frame for this channel waits in m_pendingMidi; the channels after it wait for the next period.
+			m_midiOverflow.restore( channels & ( AllChannelBits << ( channel + 1 ) ) & AllChannelBits );
+			return result;
+		}
 		m_pendingMidiSize = 0;
 		if( result != SendResult::Sent ) { return result; }
 	}

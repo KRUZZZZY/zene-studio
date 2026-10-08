@@ -364,6 +364,16 @@ auto ZynAddSubFxInstrument::processImpl(PlanarBufferView<const float, 0> in, Pla
 		}
 	}
 
+	// Channels whose events the full queue refused are cut with all-notes-off, after everything queued before.
+	const auto refused = m_midiOverflow.take();
+	for (int channel = 0; channel < 16; ++channel)
+	{
+		if (!(refused & (1u << channel))) { continue; }
+		const MidiEvent allNotesOff(MidiControlChange, channel, 123, 0);
+		if (m_remotePlugin) { m_remotePlugin->processMidiEvent(allNotesOff, 0); }
+		else { m_localPlugin->processMidiEvent(allNotesOff); }
+	}
+
 	if (m_remotePlugin)
 	{
 		// The remote client fills the shared block the ports expose; with no
@@ -417,7 +427,7 @@ bool ZynAddSubFxInstrument::handleMidiEvent( const MidiEvent& event, const TimeP
 	queued.param1 = event.param( 0 );
 	queued.param2 = event.param( 1 );
 	queued.offset = 0;
-	m_midiHandoff.push( queued );
+	pushOrRecord( m_midiHandoff, m_midiOverflow, queued );
 
 	return true;
 }

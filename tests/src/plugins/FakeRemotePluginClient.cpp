@@ -114,6 +114,14 @@ bool g_midframeUsed = false;
 constexpr int MidframePauseMs = 1000;
 constexpr std::int32_t IdDebugMessageWire = 25; //!< RemoteMessageIDs::IdDebugMessage
 
+//! "silencer" mode: counts the note-ons it receives, and the all-notes-off messages (control change 123). Each period
+//! it asks for 2 outputs, plus 1 if one all-notes-off arrived right after exactly 256 note-ons, plus 2 more if it
+//! arrived after any other number, so the host can see the conversion and its order.
+bool g_silencer = false;
+int g_silencerNoteOns = 0;
+int g_silencerAllNotesOffAfter = -1;
+int g_silencerAllNotesOff = 0;
+
 //! "midi" mode: the client counts the IdMidiEvent messages it receives, and in each period asks for
 //! (count + 1) outputs before its reply, so the host can see how many events arrived before the period.
 bool g_midi = false;
@@ -342,9 +350,29 @@ auto handleMessage(const Message& message) -> bool
 
 	case IdMidiEvent:
 		if (g_midi) { ++g_midiEvents; }
+		if (g_silencer && message.args.size() >= 3)
+		{
+			if (message.args[0] == "176" && message.args[2] == "123")
+			{
+				++g_silencerAllNotesOff;
+				if (g_silencerAllNotesOffAfter < 0) { g_silencerAllNotesOffAfter = g_silencerNoteOns; }
+			}
+			else if (message.args[0] == "144") { ++g_silencerNoteOns; }
+		}
 		break;
 	case IdStartProcessing:
 		if (g_stall) { break; }
+		if (g_silencer)
+		{
+			int outputs = 2;
+			if (g_silencerAllNotesOff > 0)
+			{
+				outputs = g_silencerAllNotesOffAfter == 256 ? 3 : 4;
+			}
+			if (!sendMessage(IdChangeInputOutputCount, {"0", std::to_string(outputs)})) { return false; }
+			if (!sendMessage(IdProcessingDone, {})) { return false; }
+			break;
+		}
 		if (g_midframe && !g_midframeUsed)
 		{
 			g_midframeUsed = true;
@@ -476,7 +504,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -486,8 +514,9 @@ int main(int argc, char** argv)
 	g_midi = mode == "midi";
 	g_late = mode == "late";
 	g_midframe = mode == "midframe";
+	g_silencer = mode == "silencer";
 	if (mode != "modern" && mode != "stale" && mode != "stall" && mode != "recount" && mode != "midi" && mode != "late"
-		&& mode != "midframe")
+		&& mode != "midframe" && mode != "silencer")
 	{
 		std::fprintf(stderr, "fakeclient: unknown mode '%s'\n", mode.c_str());
 		return 1;

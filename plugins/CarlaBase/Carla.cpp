@@ -553,9 +553,29 @@ void CarlaInstrument::playImpl(std::span<SampleFrame> out)
     // Stage the MIDI queued since the last period. Only this thread pops the queue and reads fMidiEvents.
     fMidiEventCount = 0;
     HandoffMidiEvent queued;
-    while (fMidiEventCount < kMaxMidiEvents && fMidiHandoff.pop(queued))
+    bool drained = false;
+    while (fMidiEventCount < kMaxMidiEvents)
     {
+        if (!fMidiHandoff.pop(queued)) { drained = true; break; }
         if (stageMidiEvent(queued, fMidiEvents[fMidiEventCount])) { ++fMidiEventCount; }
+    }
+
+    // Channels whose events the full queue refused are cut with all-notes-off, once everything queued before
+    // them is staged. If the array is full first, they wait for the next period.
+    if (drained)
+    {
+        std::uint32_t refused = fMidiOverflow.take();
+        for (int channel = 0; channel < 16; ++channel)
+        {
+            if (!(refused & (1u << channel))) { continue; }
+            if (fMidiEventCount >= kMaxMidiEvents) { fMidiOverflow.restore(refused & ~((1u << channel) - 1u)); break; }
+            HandoffMidiEvent allNotesOff;
+            allNotesOff.type = static_cast<std::uint8_t>(MidiControlChange);
+            allNotesOff.channel = static_cast<std::int8_t>(channel);
+            allNotesOff.param1 = 123;
+            allNotesOff.param2 = 0;
+            if (stageMidiEvent(allNotesOff, fMidiEvents[fMidiEventCount])) { ++fMidiEventCount; }
+        }
     }
 
     {
@@ -587,7 +607,9 @@ bool CarlaInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&, f_
     queued.param1 = event.param(0);
     queued.param2 = event.param(1);
     queued.offset = static_cast<std::uint32_t>(offset);
-    return fMidiHandoff.push(queued);
+    // A refused event is recorded and its channel cut later, which ends its notes just the same.
+    pushOrRecord(fMidiHandoff, fMidiOverflow, queued);
+    return true;
 }
 
 gui::PluginView* CarlaInstrument::instantiateView(QWidget* parent)

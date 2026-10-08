@@ -87,6 +87,8 @@
 #include "SharedMemory.h"
 #include "VstSyncData.h"
 
+#include "AllocationProbe.h"
+
 using namespace lmms;
 
 namespace
@@ -170,6 +172,17 @@ inline auto fakeClientExecutable() -> QString { return {}; }
 
 //! Name of the real client executable as RemotePlugin::init() resolves it.
 inline constexpr auto RealClientName = "RemoteZynAddSubFx";
+
+//! The allocations \a body makes on this thread, counted by the allocation probe.
+template<typename Body>
+auto countAllocations(Body&& body) -> std::uint64_t
+{
+	lmms::test::resetAllocationCount();
+	lmms::test::tlCountAllocations = true;
+	body();
+	lmms::test::tlCountAllocations = false;
+	return lmms::test::tlAllocationCount;
+}
 
 /*!
  * Starts `executablePath` as this host's remote client and completes the
@@ -646,6 +659,142 @@ private slots:
 		// The client finishes its message and reply after its pause; the next period completes.
 		std::this_thread::sleep_for(std::chrono::milliseconds{1200});
 		QVERIFY2(plugin.process(), "the period after the client finished its message did not complete");
+	}
+
+	/*!
+	 * A note-off the full queue refuses is not lost: its channel is sent all-notes-off, after the
+	 * events queued before it, and the refusal is counted and reported on the main thread.
+	 *
+	 * 256 note-ons fill the queue; one note-off on channel 3 is refused. The "silencer" fake client
+	 * must receive all 256 note-ons followed by one all-notes-off, and reports exactly that order.
+	 */
+	void refusedNoteOffBecomesAllNotesOffInOrder()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the refused-note-off "
+				"conversion is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("silencer")}),
+			"could not start/connect the silencer fake client");
+		QVERIFY2(!plugin.failed(), "the silencer fake client did not complete the handshake");
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
+
+		constexpr int queueCapacity = 256;
+		for (int i = 0; i < queueCapacity; ++i)
+		{
+			plugin.processMidiEvent(MidiEvent(MidiNoteOn, 0, 60, 100), 0);
+		}
+		QCOMPARE(plugin.midiEventsDropped(), std::uint64_t{0});
+
+		plugin.processMidiEvent(MidiEvent(MidiNoteOff, 3, 60, 0), 0);
+		QCOMPARE(plugin.midiEventsDropped(), std::uint64_t{1});
+
+		m_recorder->clear();
+		QVERIFY(!plugin.process());
+		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3}, 2000);
+
+		// The main-thread pump reports the refusal when it applies the deferred work.
+		QVERIFY2(m_recorder->text().contains(QStringLiteral("refused by a full queue")),
+			"the refused MIDI event was not reported on the main thread");
+	}
+
+	/*!
+	 * A reply that comes after its period is drained, and never read as the next period's.
+	 *
+	 * The "late" client answers its first request 150 ms late, with planes for period 1. Period 2
+	 * must send a new request only after the late reply is consumed, and must render period 2's
+	 * planes (value 2000 + frame, since the client counts its periods) and not period 1's.
+	 */
+	void lateReplyIsDrainedAndNeverUsedForTheNextPeriod()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the late-reply drain "
+				"is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("late")}),
+			"could not start/connect the late fake client");
+		QVERIFY(!plugin.failed());
+
+		QVERIFY(!plugin.process());
+		QCOMPARE(plugin.processingOverruns(), std::uint64_t{1});
+		std::this_thread::sleep_for(std::chrono::milliseconds{400});
+
+		QVERIFY2(plugin.process(), "the period after the late reply did not complete");
+		QCOMPARE(plugin.processingOverruns(), std::uint64_t{1});
+
+		auto out = ports.buffers()->output();
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			QCOMPARE(out.sample(0, frame), 2000.0f + static_cast<float>(frame));
+			QCOMPARE(out.sample(1, frame), -(2000.0f + static_cast<float>(frame)));
+		}
+	}
+
+	/*!
+	 * The realtime paths allocate nothing in steady state.
+	 *
+	 * Counted with the allocation probe, on this thread: process() once a client is running
+	 * and its replies are in step, processMidiEvent() (a queued event), and
+	 * applyDeferredClientRequests() when nothing is pending (the main thread's timer tick).
+	 * Replies to a channel-count change, or a resize, are main-thread work and are not counted.
+	 */
+	void realtimePathsAllocateNothingInSteadyState()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the realtime "
+				"allocation check is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client), "could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		// Warm-up: let every first-use allocation happen before counting.
+		for (int i = 0; i < 3; ++i) { QVERIFY(plugin.process()); }
+		plugin.processMidiEvent(MidiEvent(MidiNoteOn, 0, 60, 100), 0);
+		QVERIFY(plugin.process());
+		plugin.applyDeferredClientRequests();
+
+		const auto processAllocations = countAllocations([&] {
+			for (int i = 0; i < 5; ++i) { plugin.process(); }
+		});
+		QCOMPARE(processAllocations, std::uint64_t{0});
+
+		const auto midiAllocations = countAllocations([&] {
+			for (int i = 0; i < 100; ++i)
+			{
+				plugin.processMidiEvent(MidiEvent(MidiNoteOn, 0, 60 + (i % 12), 100), i);
+			}
+		});
+		QCOMPARE(midiAllocations, std::uint64_t{0});
+		QVERIFY(plugin.process()); // drains those 100 events on the audio side (the queue holds them)
+
+		const auto applyAllocations = countAllocations([&] {
+			for (int i = 0; i < 100; ++i) { plugin.applyDeferredClientRequests(); }
+		});
+		QCOMPARE(applyAllocations, std::uint64_t{0});
 	}
 
 	/*!

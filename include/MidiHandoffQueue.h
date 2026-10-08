@@ -165,6 +165,58 @@ private:
 	std::atomic<std::uint64_t> m_dropped{0};
 };
 
+//! Channels that lost MIDI because the hand-off queue was full. The producer records a channel with
+//! record() (lock-free, no allocation); the consumer takes the set with take() and sends the channel's
+//! all-notes-off, which ends every note on that channel that the lost events would have ended.
+class MidiChannelOverflow
+{
+public:
+	//! Bit 16 stands for "no channel" (an event with a negative channel): all channels are affected.
+	static constexpr std::uint32_t AllChannels = 1u << 16;
+
+	void record(int channel) noexcept
+	{
+		const std::uint32_t bit = (channel >= 0 && channel < 16)
+			? (1u << static_cast<unsigned>(channel))
+			: AllChannels;
+		m_channels.fetch_or(bit, std::memory_order_relaxed);
+		m_recorded.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	//! Takes and clears the recorded channels: bit c for channel c (0..15). A record of "no channel" becomes all 16.
+	auto take() noexcept -> std::uint32_t
+	{
+		const std::uint32_t bits = m_channels.exchange(0, std::memory_order_acquire);
+		return (bits & AllChannels) ? 0xFFFFu : (bits & 0xFFFFu);
+	}
+
+	//! Puts channels back that could not be handled yet.
+	void restore(std::uint32_t channels) noexcept
+	{
+		m_channels.fetch_or(channels, std::memory_order_relaxed);
+	}
+
+	//! Events that were refused by a full queue and turned into all-notes-off, since construction.
+	auto recorded() const noexcept -> std::uint64_t
+	{
+		return m_recorded.load(std::memory_order_relaxed);
+	}
+
+private:
+	std::atomic<std::uint32_t> m_channels{0};
+	std::atomic<std::uint64_t> m_recorded{0};
+};
+
+//! Pushes \a event, or records its channel as overflowed when the queue is full. Never blocks.
+template<std::size_t Capacity>
+auto pushOrRecord(MidiHandoffQueue<Capacity>& queue, MidiChannelOverflow& overflow,
+	const HandoffMidiEvent& event) noexcept -> bool
+{
+	if (queue.push(event)) { return true; }
+	overflow.record(event.channel);
+	return false;
+}
+
 } // namespace lmms
 
 #endif // LMMS_MIDI_HANDOFF_QUEUE_H
