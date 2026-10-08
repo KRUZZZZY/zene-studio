@@ -57,6 +57,7 @@ using lmms::sample_t;
 using lmms::SampleFrame;
 using lmms::SampleFrameRingBuffer;
 using lmms::SampleRecordAccumulator;
+using lmms::SampleRecordGaps;
 
 namespace
 {
@@ -609,6 +610,62 @@ private slots:
 		QCOMPARE(static_cast<qulonglong>(lmms::SampleTrack::deferredClipStarts() - before), static_cast<qulonglong>(1));
 		lmms::Engine::audioEngine()->clear();
 		delete track;
+	}
+
+	//! The gap table keeps every lost frame once it is full: 300 losses into 256 records
+	//! merge their overflow into the newest record, so nothing is counted without being padded.
+	void gapTableKeepsEveryLostFrameWhenItOverflows()
+	{
+		SampleRecordGaps gaps;  // the default 256 records
+		for (std::uint64_t i = 0; i < 300; ++i) { gaps.note(i, 1); }
+		QCOMPARE(gaps.merged(), static_cast<std::uint64_t>(44));
+
+		std::uint64_t records = 0;
+		std::uint64_t lost = 0;
+		std::uint64_t lastLength = 0;
+		while (const auto gap = gaps.takeDue(1000, true))
+		{
+			QCOMPARE(gap->position, records < 256 ? records : std::uint64_t{255});  // timing kept
+			lost += gap->length;
+			lastLength = gap->length;
+			++records;
+		}
+		QCOMPARE(records, static_cast<std::uint64_t>(256));
+		QCOMPARE(lost, static_cast<std::uint64_t>(300));
+		QCOMPARE(lastLength, static_cast<std::uint64_t>(45));  // the newest record took 1 + 44
+	}
+
+	//! A take whose gap table overflows still has its full length, and every dropped frame is
+	//! silence in it: the table never turns a loss into a shorter take.
+	void droppedFramesArePaddedEvenWhenTheGapTableOverflows()
+	{
+		constexpr std::size_t ringFrames = 1024;
+		constexpr std::size_t gapSlots = 2;
+		constexpr std::size_t bursts = 200;
+		SampleRecordAccumulator accum{48000, ringFrames, gapSlots};
+		std::vector<SampleFrame> block(ringFrames + 1);  // one frame more than the ring holds
+		for (std::size_t i = 0; i < block.size(); ++i)
+		{
+			const auto v = static_cast<sample_t>(1 + i % 50) / 64.0f;  // never zero
+			block[i] = SampleFrame(v, v);
+		}
+		for (std::size_t b = 0; b < bursts; ++b)
+		{
+			accum.append(block.data(), static_cast<f_cnt_t>(block.size()));
+		}
+		const auto dropped = accum.framesDropped();
+		QVERIFY2(dropped >= bursts, "every burst should have overflowed the ring");
+
+		auto take = accum.finish();
+		QVERIFY(take != nullptr);
+		const auto offered = bursts * block.size();
+		QCOMPARE(static_cast<qulonglong>(take->size()), static_cast<qulonglong>(offered));
+		std::size_t silent = 0;
+		for (std::size_t i = 0; i < take->size(); ++i)
+		{
+			if (take->data()[i].left() == 0.0f && take->data()[i].right() == 0.0f) { ++silent; }
+		}
+		QCOMPARE(static_cast<qulonglong>(silent), static_cast<qulonglong>(dropped));
 	}
 } ;
 
