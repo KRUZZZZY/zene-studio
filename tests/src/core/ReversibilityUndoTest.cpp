@@ -101,7 +101,7 @@ protected:
 
 private:
 	OversizedSnapshotTestControls m_controls;
-	}
+};
 
 /*! A real Effect, built here rather than LOADED from the device catalogue.
  *
