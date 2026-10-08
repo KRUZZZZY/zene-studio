@@ -51,6 +51,7 @@
 #include <QTemporaryDir>
 #include <QTextStream>
 
+#include "ControlProjectAssets.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "MidiEvent.h"
@@ -301,6 +302,80 @@ private slots:
 			QVERIFY(kept.open(QIODevice::ReadOnly));
 			QCOMPARE(kept.readAll(), stale);
 		}
+	}
+
+	/*! Luna 5742 (review): the export's temporary file used one FIXED sibling name and the handler
+	 *  removed it before exporting, so a file the user kept under that name was destroyed. The
+	 *  temporary name is unique now; this proves a user file with the old name survives the call. */
+	void exportMidiLeavesAUserFileWithTheOldTemporaryNameAlone()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("keep-me.mid"));
+		const QString sibling = path + QStringLiteral(".zene-export.tmp");
+		const QByteArray userBytes("USER-FILE-NOT-A-TEMPORARY");
+		{
+			QFile file(sibling);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(userBytes) == userBytes.size());
+		}
+		run(QStringLiteral("project.export_midi"), {{QStringLiteral("path"), path}});
+		QFile kept(sibling);
+		QVERIFY(kept.open(QIODevice::ReadOnly));
+		QCOMPARE(kept.readAll(), userBytes);
+	}
+
+	/*! Luna 5742 (review): the replacement must be atomic. A failed replacement keeps the previous file
+	 *  byte for byte. Each failure below used to remove the target first and rename second, so the
+	 *  target was lost when the rename had nothing to move. */
+	void replacingAnExportIsAtomic()
+	{
+		const QString target = m_dir.filePath(QStringLiteral("atomic.mid"));
+		const QByteArray previous("PREVIOUS-EXPORT");
+		{
+			QFile file(target);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(previous) == previous.size());
+		}
+		ControlResult error;
+
+		// 1. The new output is missing: nothing to move, so the target must keep its bytes.
+		QVERIFY(!control::controlReplaceFileAtomically(m_dir.filePath(QStringLiteral("no-such-output.tmp")),
+			target, &error));
+		QVERIFY(!error.errorMessage.isEmpty());
+		{
+			QFile kept(target);
+			QVERIFY(kept.open(QIODevice::ReadOnly));
+			QCOMPARE(kept.readAll(), previous);
+		}
+
+		// 2. The target cannot be replaced (a directory holds its name): refused, directory intact.
+		const QString directory = m_dir.filePath(QStringLiteral("held.mid"));
+		QVERIFY(QDir().mkpath(directory));
+		const QString child = directory + QStringLiteral("/child.txt");
+		{
+			QFile file(child);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("child") == 5);
+		}
+		const QString output = m_dir.filePath(QStringLiteral("output-2.tmp"));
+		{
+			QFile file(output);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("NEW-BYTES") == 9);
+		}
+		QVERIFY(!control::controlReplaceFileAtomically(output, directory, &error));
+		QVERIFY(QFileInfo(child).exists());
+
+		// 3. The ordinary case still replaces the target with exactly the new bytes.
+		const QString fresh = m_dir.filePath(QStringLiteral("output-3.tmp"));
+		{
+			QFile file(fresh);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("NEW-BYTES") == 9);
+		}
+		QVERIFY2(control::controlReplaceFileAtomically(fresh, target, &error), qPrintable(error.errorMessage));
+		QFile replaced(target);
+		QVERIFY(replaced.open(QIODevice::ReadOnly));
+		QCOMPARE(replaced.readAll(), QByteArray("NEW-BYTES"));
 	}
 
 /*! Luna clusters 5748 / 4833: project.conflicts and project.audible_diff

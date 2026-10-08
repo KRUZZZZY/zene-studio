@@ -162,6 +162,11 @@ LMMS_EXPORT bool collectProjectMediaInto(const QString& project, const QString& 
 LMMS_EXPORT bool controlScanProjectAssets(const QString& projectPath, ProjectAssetScan* out,
 	ControlResult* error);
 
+/*! Replace the file @a target with the bytes of @a source. Atomic: when this returns false, @a target
+ *  still holds exactly the bytes it held before (a missing source, or a target that cannot be
+ *  replaced, leaves it alone). @a source is left in place for the caller to remove. */
+LMMS_EXPORT bool controlReplaceFileAtomically(const QString& source, const QString& target, ControlResult* error);
+
 /*! controlScanProjectAssets() plus a sha256 per reference that resolves to a
  *  file on disk. Writes nothing to the project; only reads the media. */
 LMMS_EXPORT bool controlHashProjectAssets(const QString& projectPath, ProjectAssetScan* out,

@@ -34,8 +34,11 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
+#include <QSaveFile>
+#include <QUuid>
 
 #include "ConfigManager.h"
+#include "ControlProjectAssets.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -47,6 +50,34 @@ namespace lmms
 {
 
 using namespace control;
+
+namespace control
+{
+
+bool controlReplaceFileAtomically(const QString& source, const QString& target, ControlResult* error)
+{
+	QFile input(source);
+	if (!input.open(QIODevice::ReadOnly))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot read '%1' (%2)").arg(source, input.errorString()));
+		return false;
+	}
+	const QByteArray bytes = input.readAll();
+	input.close();
+	// QSaveFile writes beside the target and renames it over the target only on commit(),
+	// so a failure at any step before that leaves the target as it was.
+	QSaveFile output(target);
+	if (!output.open(QIODevice::WriteOnly) || output.write(bytes) != bytes.size() || !output.commit())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot replace '%1' (%2)").arg(target, output.errorString()));
+		return false;
+	}
+	return true;
+}
+
+} // namespace control
 
 namespace
 {
@@ -230,36 +261,31 @@ void registerProjectExportMidi(ControlRegistry& registry)
 		//! Song::exportProjectMidi then writes nothing and says so only through
 		//! qDebug. Exporting straight onto `path` therefore left a PRE-EXISTING
 		//! `.mid` untouched, and checking that `path` exists afterwards called that
-		//! stale file a successful export of this call - reporting the old byte
-		//! count as if the caller's overwrite had happened. Exporting to a sibling
-		//! temporary path makes existence proof mean "this call wrote it"; the
-		//! target is only replaced once that proof holds.
-		const QString temp = path + QStringLiteral(".zene-export.tmp");
-		QFile::remove(temp);
+		//! stale file a successful export of this call. The export goes to a sibling
+		//! path with a UNIQUE name (so no file the user keeps beside the target is
+		//! ever removed), and the target is replaced only once that output is proven.
+		const QString temp = path + QStringLiteral(".zene-export-")
+			+ QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".tmp");
 		Engine::getSong()->exportProjectMidi(temp);
 		const QFileInfo written(temp);
 		if (!written.exists())
 		{
-			QFile::remove(temp);
 			return refused(QStringLiteral("no MIDI file was written for '%1' (the midiexport "
 				"filter is not loadable in this process)").arg(path));
 		}
 		const qint64 bytes = static_cast<qint64>(written.size());
-		// Move the proven output into place. The temporary path is a SIBLING of the
-		// target, so this is a same-directory rename and cannot fail for a
-		// cross-device reason; the target is removed first because a rename will
-		// not overwrite it. If the move still fails the call is refused rather
-		// than reporting the bytes as exported, and the caller keeps the
-		// temporary file's location in the message to retry from.
-		QFile::remove(path);
-		if (!QFile::rename(temp, path))
+		// The replacement is atomic (controlReplaceFileAtomically): on failure the previous
+		// export at `path` is still there, byte for byte, and the call is refused.
+		ControlResult replaceError;
+		const bool replaced = controlReplaceFileAtomically(temp, path, &replaceError);
+		QFile::remove(temp);
+		if (!replaced)
 		{
-			QFile::remove(temp);
-			return refused(QStringLiteral("the MIDI file was written but could not replace '%1'")
-				.arg(path));
+			return refused(QStringLiteral("the MIDI file was written but could not replace '%1' (%2)")
+				.arg(path, replaceError.errorMessage));
 		}
 		return ControlResult::success(QJsonObject{{QStringLiteral("path"), path},
-			{QStringLiteral("bytes"), static_cast<qint64>(bytes)}});
+			{QStringLiteral("bytes"), bytes}});
 	};
 	registry.registerCommand(cmd);
 }
