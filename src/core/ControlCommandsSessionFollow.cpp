@@ -49,6 +49,8 @@
  */
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 #include <QJsonArray>
@@ -123,7 +125,9 @@ bool boolField(const QJsonObject& entry, const QString& name, bool fallback, boo
 	return true;
 }
 
-//! And for an INTEGER field (`jump_to`).
+//! And for an INTEGER field (`jump_to`). A JSON number is a double, so the value must also be a
+//! whole number inside the int range: toInt() would otherwise truncate 0.5 to 0 and let 1e30
+//! wrap around.
 bool intField(const QJsonObject& entry, const QString& name, int fallback, int* out, QString* error)
 {
 	const QJsonValue value = entry.value(name);
@@ -133,7 +137,15 @@ bool intField(const QJsonObject& entry, const QString& name, int fallback, int* 
 		*error = QStringLiteral("'%1' is an integer, not %2").arg(name, jsonTypeName(value));
 		return false;
 	}
-	*out = value.toInt();
+	const double number = value.toDouble();
+	if (!std::isfinite(number) || number != std::floor(number)
+		|| number < static_cast<double>(std::numeric_limits<int>::min())
+		|| number > static_cast<double>(std::numeric_limits<int>::max()))
+	{
+		*error = QStringLiteral("'%1' is a whole number within the int range, not %2").arg(name).arg(number);
+		return false;
+	}
+	*out = static_cast<int>(number);
 	return true;
 }
 

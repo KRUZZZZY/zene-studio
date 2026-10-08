@@ -146,6 +146,17 @@ private slots:
 					{QStringLiteral("linked"), 7}}}}})
 			.errorKind, ControlErrorKind::InvalidArgs);
 
+		// Numbers a plain toInt() would have truncated or wrapped: 0.5 read as scene 0 and 1e30
+		// read as garbage. A whole number inside the int range is the only jump_to that is read.
+		for (const double jumpTo : {0.5, 1e30})
+		{
+			QCOMPARE(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0},
+				{QStringLiteral("scene"), 0}, {QStringLiteral("follow_actions"),
+					QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("jump")},
+						{QStringLiteral("jump_to"), jumpTo}}}}})
+				.errorKind, ControlErrorKind::InvalidArgs);
+		}
+
 		// Nothing was written by any of them: the cell still has no chain.
 		QCOMPARE(run(QStringLiteral("session.follow_set"),
 			{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0}}).errorKind,
