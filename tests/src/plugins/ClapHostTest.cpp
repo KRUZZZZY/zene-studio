@@ -198,6 +198,7 @@ private slots:
 	void testAnActiveFlushRequestIsAnsweredByProcess();
 	void testAZeroChannelOutputKeepsTheIndexOfLaterPorts();
 	void testAnUnreadableInputPortKeepsItsNeighboursIndex();
+	void testASideChainFirstPluginReadsItsOwnMainInput();
 	void testANonFiniteSampleRateIsRefused();
 	void testANoteVelocityKeepsItsFraction();
 	void testAPluginClosedEditorIsReopened();
@@ -1203,6 +1204,40 @@ void lmms::clap::ClapHostTest::testAnUnreadableInputPortKeepsItsNeighboursIndex(
 	}
 	QCOMPARE(layout.pluginInputPorts, 2);
 	QCOMPARE(layout.inputPortIndices, std::vector<int>{1});
+	qunsetenv("CLAP_TEST_GAIN_LAYOUT");
+}
+
+/*! A plug-in that reports its side-chain input BEFORE its main one reads its main signal at its own index 1.
+ *  The transport lays the main channels first, so runChunk must hand audio_inputs[1] the transport's first
+ *  channels, not the side-chain. The side-chain is fed at 0.25 and the main at 0.5, so a misplaced buffer
+ *  reads back as 0.25. */
+void lmms::clap::ClapHostTest::testASideChainFirstPluginReadsItsOwnMainInput()
+{
+	qputenv("CLAP_TEST_GAIN_LAYOUT", "sidechain-first");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	const auto& layout = plugin.busLayout();
+	QVERIFY(layout.hasSideChain);
+	QCOMPARE(layout.sideChainChannel, 2);
+	// transport order: the main channels first (0-1), then the side-chain (2-3)
+	std::vector<std::vector<float>> inputs;
+	for (int c = 0; c < layout.inputs; ++c)
+	{
+		inputs.emplace_back(TestFrames, c < layout.sideChainChannel ? 0.5f : 0.25f);
+	}
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, inputs, outputs, TestFrames);
+	for (const auto& channel : outputs)
+	{
+		QVERIFY2(std::all_of(channel.begin(), channel.end(), [](float v) { return v == 0.5f; }),
+			"the plug-in's main input carried the side-chain: runChunk placed the buffers out of port order");
+	}
+	QCOMPARE(layout.pluginInputPorts, 2);
+	QCOMPARE(layout.inputPortIndices, (std::vector<int>{1, 0}));
 	qunsetenv("CLAP_TEST_GAIN_LAYOUT");
 }
 
