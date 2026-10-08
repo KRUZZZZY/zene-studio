@@ -59,6 +59,7 @@
 #include "PhaseDMixerTestSupport.h"
 
 #include "AudioDevice.h"
+#include "AllocationProbe.h"
 #include "AudioEngine.h"
 #include "Effect.h"
 #include "EffectChain.h"
@@ -301,6 +302,47 @@ private slots:
 		// A constant-per-block sum would make every frame identical.
 		QVERIFY2(std::fabs(summed[0] - summed[fpp - 1]) > 0.5f,
 			"the sidechain amount was applied as one value for the whole block (5156)");
+	}
+
+	//! The audio-path read of an automated sidechain amount takes no lock and
+	//! allocates nothing. The amount's valueBuffer() takes its mutex, so this
+	//! path reads the published ramp directly and never calls it: nothing is
+	//! computed for the amount before sumSidechainInputs(), and the summed
+	//! curve must still be right, with the allocation probe at zero.
+	void theAutomatedSidechainPathAllocatesNothing()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerChannel* sender = mixer->mixerChannel(1);
+		MixerChannel* receiver = mixer->mixerChannel(2);
+		MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+			SidechainTapPoint::PreFader);
+		QVERIFY(route != nullptr);
+
+		const f_cnt_t fpp = periodFrames();
+		for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+		FloatModel* amount = route->amount();
+		amount->setValue(1.0f);
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.0f));
+		QVERIFY(ramp.addKnot(fpp - 1, 1.0f));
+		amount->publishAutomationRamp(ramp);
+
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		receiver->sumSidechainInputs(fpp);
+		test::tlCountAllocations = false;
+		QCOMPARE(static_cast<unsigned long long>(test::tlAllocationCount), 0ULL);
+
+		const float* summed = receiver->m_sidechainBuffer.buffer(0).data();
+		QVERIFY2(summed[0] < 0.05f,
+			qPrintable(QString("first frame %1 is not near the ramp start").arg(summed[0])));
+		QVERIFY2(summed[fpp - 1] > 0.95f,
+			qPrintable(QString("last frame %1 is not near the ramp end").arg(summed[fpp - 1])));
 	}
 
 	//! 8.1 ducking: the receiver's gain follows the key channel. The ducker

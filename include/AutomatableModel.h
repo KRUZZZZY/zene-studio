@@ -207,6 +207,14 @@ public:
 	 *  parameter is not sample-accurately automated right now. */
 	const AutomationRamp* automationRamp() const noexcept;
 
+	/*! The value at @a frame of the ramp published for the period being
+	 *  rendered, transformed exactly as valueBuffer() transforms it, written to
+	 *  @a out. Returns false, leaving @a out alone, when no ramp is published
+	 *  for this period. Reads the ramp and nothing else: no lock, no
+	 *  allocation, no cache write, so an audio-thread caller that needs the
+	 *  curve per frame does not take valueBuffer()'s mutex. */
+	bool publishedValueAt(f_cnt_t frame, float& out) const noexcept;
+
 	template<class T>
 	T initValue() const
 	{
