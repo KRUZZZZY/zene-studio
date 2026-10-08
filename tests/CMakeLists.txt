@@ -1000,6 +1000,11 @@ ENDIF()
 # realtime rule. Every build: the follower compiles against the stub session without Link.
 LIST(APPEND LMMS_TESTS src/core/LinkPhaseLockTest.cpp)
 
+# JACK port state must be replaced when a dead client is reopened.
+IF(LMMS_HAVE_JACK)
+	LIST(APPEND LMMS_TESTS src/core/AudioJackPortRestartTest.cpp)
+ENDIF()
+
 # Ableton Link (WF-051, docs/LINK-SYNC.md): the vendored library and its wrapper.
 # Only with the library in the build (WANT_ABLETON_LINK); RUN_SERIAL below.
 IF(LMMS_HAVE_ABLETON_LINK)
@@ -4138,6 +4143,10 @@ set_tests_properties(ProvenanceSectionTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ProvenanceVersionTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+IF(LMMS_HAVE_JACK)
+	set_tests_properties(AudioJackPortRestartTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+ENDIF()
 IF(LMMS_HAVE_STEM_SPLIT)
 	# The controller regression exercises its progress and completion dialogs.
 	set_tests_properties(StemSplitPipelineTest PROPERTIES

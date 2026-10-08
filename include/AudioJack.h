@@ -106,6 +106,11 @@ private slots:
 	void restartAfterZombified();
 
 private:
+	friend class AudioJackPortRestartTest;
+
+	static void clearPortState(std::vector<jack_port_t*>& outputPorts,
+		std::vector<jack_port_t*>& inputPorts,
+		std::vector<jack_default_audio_sample_t*>& tempOutputBuffers);
 	bool initJackClient();
 	void resizeInputBuffer(jack_nframes_t nframes);
 

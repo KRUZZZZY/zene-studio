@@ -1739,3 +1739,6 @@ tests/src/core/PluginScanCacheTest.cpp	cluster 2403: regression instantiates the
 tests/src/core/RoutingGraphLiveTest.cpp	cluster 5051: an effect-destructor probe asserts the graph is already empty before its target object is destroyed.
 tests/src/core/StemSplitPipelineTest.cpp	cluster 5398: controller regressions delete a source clip or its track while the asynchronous split is running, then verify the submitted metadata is used and the missing target is skipped.
 tests/CMakeLists.txt	cluster 5398: gives StemSplitPipelineTest the offscreen Qt platform because the controller regression runs progress and completion dialogs.
+include/AudioJack.h	cluster 3711: grants the JACK restart regression access to the private port-state reset helper.
+src/core/audio/AudioJack.cpp	cluster 3711: clears output ports, input ports and output buffers before opening a replacement JACK client; AudioJackPortRestartTest seeds stale entries and verifies they do not survive.
+tests/CMakeLists.txt	cluster 3711: registers AudioJackPortRestartTest only when JACK support is built and gives it the offscreen Qt platform.
