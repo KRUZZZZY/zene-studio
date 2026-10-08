@@ -414,16 +414,12 @@ IF(LMMS_HAVE_RUBBERBAND)
 	TARGET_LINK_DIRECTORIES(lmmsobjs PRIVATE ${RUBBERBAND_LIBRARY_DIRS})
 ENDIF()
 # zlib lets the project-asset reader inflate a .mmpz with an output cap (ControlProjectAssets.cpp).
-# Without it that reader refuses .mmpz files (fail closed), and this configure step says so.
-find_package(ZLIB QUIET)
-IF(ZLIB_FOUND)
-	TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE ZENE_HAVE_ZLIB)
-	TARGET_LINK_LIBRARIES(lmmsobjs ZLIB::ZLIB)
-	message(STATUS "zlib found: .mmpz reads are inflated under the cap")
-ELSE()
-	message(WARNING "zlib not found: project.* verbs will refuse compressed .mmpz files in this build "
-		"(install zlib development files, or vcpkg zlib, to enable them)")
-ENDIF()
+# It is a required dependency (owner decision 2026-10-08): every CI/release manifest already carries it
+# (deps-ubuntu-24.04-gcc/mingw, deps-msys2-clangarm64, vcpkg.json; macOS ships it). The reader's
+# no-zlib branch still refuses .mmpz files (fail closed) should ZENE_HAVE_ZLIB ever be missing.
+find_package(ZLIB REQUIRED)
+TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE ZENE_HAVE_ZLIB)
+TARGET_LINK_LIBRARIES(lmmsobjs ZLIB::ZLIB)
 IF(ZENE_HAVE_LIBAAF)
 	TARGET_COMPILE_DEFINITIONS(lmmsobjs PRIVATE ZENE_HAVE_LIBAAF)
 	TARGET_LINK_LIBRARIES(lmmsobjs PkgConfig::LIBAAF)
