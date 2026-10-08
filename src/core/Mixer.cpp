@@ -2529,14 +2529,15 @@ void Mixer::loadSettings( const QDomElement & _this )
 		}
 
 		// index of the channel we are about to load
-		int num = mixch.attribute( "num" ).toInt();
-
-		// A channel element whose `num` is not a channel index describes
-		// nothing this mixer can address: m_mixerChannels[num] would read
-		// outside the vector. Such an element is skipped whole, exactly as a
-		// foreign element is. Zero is the master, a real channel that clear()
-		// creates, so its saved state must still load.
-		if( num < 0 )
+		// A `num` that does not parse is not channel zero: toInt() alone would
+		// return 0 and let this element overwrite the master. Such an element
+		// is skipped whole, as is a negative one, which names no channel this
+		// mixer can address (m_mixerChannels[num] would read outside the
+		// vector). Zero is the master, a real channel that clear() creates, so
+		// its saved state must still load.
+		bool numOk = false;
+		const int num = mixch.attribute( "num" ).toInt( &numOk );
+		if( ! numOk || num < 0 )
 		{
 			node = node.nextSibling();
 			continue;

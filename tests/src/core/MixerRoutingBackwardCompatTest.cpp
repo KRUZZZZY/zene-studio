@@ -695,6 +695,47 @@ private slots:
 			qPrintable(QString("master pan %1, expected -0.5").arg(master->m_panModel.value())));
 		QVERIFY2(master->m_muteModel.value(), "master mute did not survive the load");
 	}
+	// A <mixerchannel> whose num is missing or not a number parses to 0 with
+	// toInt(), which is the master. Such an element names no channel, so it is
+	// skipped: it must not overwrite the master's saved state.
+	void aMalformedChannelNumberDoesNotOverwriteTheMaster()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		mixer->clear();
+
+		static const char* kMalformedXml =
+			"<mixer>\n"
+			"  <mixerchannel num=\"0\" muted=\"1\" volume=\"0.5\" pan=\"-0.5\" name=\"Mix\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel muted=\"0\" volume=\"0.1\" name=\"NoNumber\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel num=\"abc\" muted=\"0\" volume=\"0.2\" name=\"WordNumber\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel num=\"\" muted=\"0\" volume=\"0.3\" name=\"EmptyNumber\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"    <bus/>\n"
+			"  </mixerchannel>\n"
+			"</mixer>\n";
+
+		QDomDocument doc;
+		QDomElement root;
+		QVERIFY2(parseMixerElement(kMalformedXml, doc, root), "the fixture is not valid XML");
+		mixer->loadSettings(root);
+
+		QCOMPARE(mixer->numChannels(), 1);
+		MixerChannel* master = mixer->mixerChannel(0);
+		QVERIFY(master != nullptr);
+		QCOMPARE(master->m_name, QString("Mix"));
+		QVERIFY2(qAbs(master->m_volumeModel.value() - 0.5f) < 1e-4f,
+			qPrintable(QString("master volume %1, expected 0.5").arg(master->m_volumeModel.value())));
+		QVERIFY2(master->m_muteModel.value(), "a malformed num overwrote the master's mute");
+		QVERIFY2(!master->isBus(), "a malformed num with a bus marker made the master a bus");
+	}
+
 };
 
 QTEST_GUILESS_MAIN(MixerRoutingBackwardCompatTest)
