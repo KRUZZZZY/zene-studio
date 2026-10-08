@@ -183,7 +183,11 @@ private slots:
 		QPushButton* back = buttonFor(panel, "control.history_jump");
 		QVERIFY(back != nullptr);
 
-		// Rows, newest first: the branch edit, then the step under test.
+		// The list has three rows, newest first: the branch edit (serial 3), the undone edit it replaced
+		// (serial 2, still listed, redo-able), and the step below (serial 1). Row 1 is the undone one.
+		// Its jump walks back over the one retained step at or above serial 2 (the branch edit): one
+		// undo, so depthBefore + 1 and the step below stays. A serial difference would give 3 - 2 + 1 = 2
+		// undos, which takes the step below too: that is the defect this test catches.
 		list->setCurrentRow(1);
 		QTest::mouseClick(back, Qt::LeftButton);
 		QCOMPARE(journal->undoDepth(), depthBefore + 1);
