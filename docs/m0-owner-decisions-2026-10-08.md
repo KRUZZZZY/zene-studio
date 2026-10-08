@@ -17,7 +17,7 @@ Also green after the three changes (targeted, from `build/tests`): `ControlComma
 `ClipConsolidateTest`, `RangeEditsTest`, `ClipJoinRippleTest`, `ControlAudioEditing`, and the new tests
 with `ZENE_CONTROL_CHECK_RESULTS=1` (every new reply field is in its result schema).
 
-## Notes and what is left open
+## Notes and what is left open (round 1; round 2 below supersedes notes 1.1, 1.2, 1.3 in part, 2.1 and 2.2)
 
 **1.1 Meaning of "trim".** Three paths are trims and all three now apply to the group: `clip.trim` and
 the left-edge drag move edges (each peer keeps its own position; only the edge moves by the same delta,
@@ -73,3 +73,40 @@ uses it. It is `LMMS_EXPORT` and test-only by name, like `setRevisionReplacement
 suite). Gates were run one at a time; gates 2 (coverage) and 5 (mutation) were not run. The build/ tree
 needed the `amplifier` and `bassbooster` plugin fixtures built to run the script and device tests; those
 are build-tree artefacts, not committed.
+
+## Round 2 (after the independent review)
+
+The owner's rule is "a trim or split applies to all members"; the old per-member length rule in
+`docs/LINKED-CLIPS.md` is superseded and the doc is updated.
+
+| # | Review finding | Verdict | Commit | What changed (file:line) | Tests | Red / green |
+|---|---|---|---|---|---|---|
+| 1a | Tail drag and `clip.resize` changed one member | FIXED | `f971dd288` | `clip.resize` plans and applies the group's end delta (`src/core/ControlCommandsClip.cpp`, resize handler); the right-edge drag is captured and applied like the left (`src/gui/clips/ClipView.cpp:125-160`, `beginLinkedTrim(.., ResizeLeft or Resize, ..)`) | `LinkedClipGroupEditsTest::aResizeOfOneMemberResizesEveryMemberInOneStep`, `...aResizeThatWouldEmptyAPeerIsRefusedWholeAndMovesNothing`; `MidiClipLinkedEditTest::aRightEdgeDragResizesEveryLinkedMember` | red 8 and 8, green 0 and 0 |
+| 1b | Range split, `vca.edit_split`, loop slicing did not reach peers | FIXED | `f971dd288` | `arrangement::splitClipAt` is group-aware, `splitClipAlone` is the primitive (`src/core/ArrangementEdits.cpp:58-75`); `vca.edit_split` uses it and never cuts a peer twice, `vca.edit_trim` carries the lock's trim to linked peers outside the lock (`src/core/ControlCommandsVcaEditMore.cpp`, `cutLockedClip`) | `LinkedClipGroupEditsTest::aRangeSplitReachesTheLinkedClipsOnOtherTracks`, `splitClipAtCutsTheGroup`, `aLockedSplitCutsTheLinkedPeersOutsideTheLockAndNeverTwice`, `aLockedTrimReachesTheLinkedPeersOutsideTheLock`, `anOverlapTrimLeavesThePeersWhole` | red 8, green 0 |
+| 1c | Too-short peers stay whole | DOCUMENTED | `f971dd288` | Only a legacy group (members of different length) can have a member shorter than the cut position; documented in `include/LinkedClipEdits.h` and `docs/LINKED-CLIPS.md` | n/a | n/a |
+| 1d | One undo step for the two checkpoints on the trim path | VERIFIED | `f971dd288`, `3da14ad62`.. | `ControlRegistry.cpp:416` merges the clip's and the peers' checkpoints; asserted as `undoDepth() == before + 1` for `clip.trim`, `clip.resize`, `clip.split`, `range.split`, `vca.edit_split` | `LinkedClipGroupEditsTest::aTrimIsOneUndoStep`, `aResizeOf...`, `aGroupSplitIsOneUndoStep`, `aRangeSplit...`, `aLockedSplit...`; GUI: `MidiClipLinkedEditTest::aRightEdgeDrag...` | green 0 (the merge already held; these pin it) |
+| 1e | A peer's start offset must never come out invalid | FIXED | `f971dd288` | `peerRefusal` (`src/core/LinkedClipEdits.cpp:67-90`) refuses the whole edit when a peer would be emptied, start before the song, or be extended before its own content while the edited clip stays inside its content. Note: a NEGATIVE offset is the normal representation of a head trim (the edited clip gets one too) and is not refused; the invalid state is a peer offset above 0 | `...aTrimThatWouldPushAPeerBeforeTheSongStartIsRefused`, `...aTrimThatWouldExtendAPeerBeforeItsContentIsRefused` | red 8 (extension), green 0 |
+| 1f | A refused GUI drag was silent | FIXED | `f971dd288` | the dragged clip goes back and a message says why (`ClipView.cpp`, `endLinkedTrim`) | `MidiClipLinkedEditTest::aDragAPeerCannotFollowGoesBack` (the revert; the message is not asserted) | red 8, green 0 |
+| 2a | The container's gain stepped from 0.01 to 1 at the end of the offset | FIXED | `5f2532806` | A clip inside another is crossfaded at both ends: the container's fade-out (offset) is followed by a fade-in (offset) that starts at that frame, so its envelope is a V (`include/ContainedCrossfade.h`, `src/core/ContainedCrossfade.cpp`; used by `crossfade()` in `src/core/ArrangementEdits.cpp:318-345` and by `clip.crossfade`, `src/core/ControlCommandsClipEdits.cpp`, `containedSides`). Exit ramp = the contained clip's own fade-out when set, else half; `out_length` / `in_length` name the ramp into it (or out of it when the container is `in`), the other is the rest. The render puts the fade-out's end at the frame its tick falls on (`src/core/SamplePlayHandle.cpp:219-226`): a one-frame gap at unity (a 0.5 step) was found by the new render test and fixed | `ClipOffsetFadeTest::aContainerDucksUnderTheContainedClipAndComesBack` (renders, checks the closed form at both crossfades, and that no two neighbouring samples of the render differ by 0.01), `theEnvelopeIsContinuousAndEqualPowerThroughBothCrossfades`, `theCrossfadeCommandUsesTheRampsAndUndoRestoresThem`, `aContainedClipsOwnFadeOutIsTheExitRamp`; the old encoding of the step is replaced by `anOffsetFadeOutRampSitsBeforeTheClipEnd` (region facts only) | red 8 for each of: containment off, frame rounding reverted (the 0.5 step), pre-fade exclusion, handle offset; green 0 |
+| 2b | Pre-fades silently disabled with an offset fade | FIXED | `5f2532806` | `prefades::engaged` no longer excludes offsets (`src/core/ClipPreFades.cpp:83`); `preFadedGainAt` has offset-aware sides (`src/core/ClipEdits.cpp`, `preFadedIn` / `preFadedOut`); the automatic edge fade stays in the pre-faded path | `ClipOffsetFadeTest::aPreFadeStillAppliesToAClipWithAnOffsetFade`, `anOldProjectsPreFadedEnvelopeIsBitForBitUnchanged` | red 8, green 0 |
+| 2c | Offset fade handles were not draggable | FIXED | `5f2532806` | `fadeHandleUnder` no longer refuses; `fadeTicksAt` takes the ramp's offset and the drag is bounded by the clip, not by the other ramp, when offsets exist (`src/gui/clips/SampleClipOverlays.cpp`, `SampleClipView.cpp`) | `ClipOffsetFadeTest::theFadeHandlesOfAnOffsetFadeCanBeDragged` (geometry and drag arithmetic; the mouse drag on the view is not driven by a test) | red 8, green 0 |
+| 2d | Old projects bit-identical | VERIFIED | `5f2532806` | the clamp is split out (`SamplePlayHandle::fitFades`) and equals the old one with no offsets | dense bit-for-bit checks of `clipFadeGainAt` and `preFadedGainAt` against their previous bodies; `ClipFadesRenderTest` renders hash identically to the pre-change binary (`fe7ab966...`, `3033bbc8...`, `94d35cba...`) | green 0 |
+| 3 | Does the refusal reach the script as a value? | FIXED (it did not) | `76114e409` | `LuaEffectChain::removeEffect` returns `bool` (`src/core/ScriptDawEdit.cpp:395-406`, `include/ScriptDawBindings.h`): `false` when refused or the index is bad, judged by the effect count after the flush | `ScriptDawRemovalUndoTest::aScriptsRemovalThatCannotBeUndoneIsRefused` asserts the script printed `removeEffect returned false`, then `true` once capture works | red 8 (return forced true), green 0 |
+
+Gates at the round-2 HEAD, all exit 0: complexity, file-length, fork-sources, unregistered-tests, no-tautology,
+no-upstream-regression, duplication, evidence (the commands snapshot is 1047895 bytes, 681 under the 1 MiB cap),
+doc-figures. 31 targeted tests exit 0 together, run with `ZENE_CONTROL_CHECK_RESULTS=1` (every reply field is in
+its schema). Not run: the full suite and gates 2 and 5.
+
+**Open after round 2.**
+- The container's own edge fades (fade-in at its head, fade-out at its tail) are replaced by the V when it is crossfaded
+  with a contained clip.
+- A contained clip shorter than 2 ticks cannot be crossfaded at both ends: `clip.crossfade` refuses it; the arranger's
+  drop leaves it uncrossfaded.
+- The offsets are still not in `arrangement.get_state` / `clip.list` (snapshot size); read them from `clip.set_fade`,
+  `clip.set_gain`, `clip.crossfade` replies or `clip.fade_curve`.
+- A drop that trims the clip under it (overlap mode Trim) still cuts that clip only, on purpose: its peers are not under
+  the drop. The destructive shift-knife on a linked clip is the non-destructive cut (round 1 note 1.2).
+- Every `splitClipAt` of a linked clip takes a checkpoint over the members' tracks, so a command that slices one linked
+  clip into N pieces pushes N checkpoints that the registry merges; large N costs serialising the tracks N times.
+- The mouse drag of an offset fade handle and the GUI knife's undo are not driven by a test.
