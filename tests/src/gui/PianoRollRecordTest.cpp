@@ -137,11 +137,11 @@ private slots:
 		Q_EMIT instrument->midiNoteOff(Note(TimePos(96), TimePos(0), Pitch));
 
 		QCOMPARE(static_cast<int>(m_clip->notes().size()), 1);
+		// Exactly the second pass's note: it starts where that pass's key-down was, and lasts until its
+		// key-up. A release that paired with the abandoned pass's start would move the start to tick 0.
 		const Note* recorded = m_clip->notes().front();
-		QVERIFY2(recorded->pos() >= SecondPassStart / 2,
-			qPrintable(QStringLiteral("the release paired with the start of the abandoned pass: the note was "
-				"recorded at tick %1, not at or after tick %2")
-				.arg(static_cast<int>(recorded->pos())).arg(SecondPassStart / 2)));
+		QCOMPARE(static_cast<int>(recorded->pos()), static_cast<int>(SecondPassStart));
+		QCOMPARE(static_cast<int>(recorded->length()), 96);
 	}
 
 private:
