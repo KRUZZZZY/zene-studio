@@ -439,6 +439,31 @@ private slots:
 		}
 	}
 
+	//! The other side of the same load: a pattern longer than one bar is legitimate (addSteps and
+	//! cloneSteps grow it), and a multi-bar step count must come back from a save and load unchanged.
+	void aMultiBarStepCountSurvivesALoad()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+
+		QDomDocument doc;
+		QDomElement parent = doc.createElement("track");
+		const QDomElement authored = clip->saveState(doc, parent);
+		for (const QString& steps : {QStringLiteral("256"), QStringLiteral("1024")})
+		{
+			QDomElement wide = authored.cloneNode(true).toElement();
+			wide.setAttribute("steps", steps);
+			clip->restoreState(wide);
+
+			QDomDocument doc2;
+			QDomElement parent2 = doc2.createElement("track");
+			const int loaded = clip->saveState(doc2, parent2).attribute("steps").toInt();
+			QCOMPARE(loaded, steps.toInt());
+		}
+	}
+
 private:
 	//! The files a round trip needs; `m_dir` outlives every test slot.
 	QString m_wav;
