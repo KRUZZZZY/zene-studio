@@ -583,22 +583,27 @@ private slots:
 
 		control::setRemovalCaptureFailsForTest(true);
 		const auto restore = qScopeGuard([] { control::setRemovalCaptureFailsForTest(false); });
-		QCOMPARE(int(engine->runString(qstr(
-			"zene.mixer():channel(%1):chain():removeEffect(0)\n").arg(index), &error)),
-			int(ScriptEngine::RunResult::Ok));
+		const QString script = qstr(
+			"local ok = zene.mixer():channel(%1):chain():removeEffect(0)\n"
+			"print(\"removeEffect returned \" .. tostring(ok))\n").arg(index);
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
 		QCOMPARE(static_cast<int>(chain->effects().size()), 1);  // the device stays
 		QVERIFY(chain->isEnabled());
 		QCOMPARE(journal->undoDepth(), depth);                   // and no undo step was pushed
 		const QStringList log = engine->takeLogMessages();
-		const bool told = std::any_of(log.begin(), log.end(), [](const QString& line) {
-			return line.contains(QStringLiteral("[error] removing effect 0 refused")); });
-		QVERIFY2(told, qPrintable(log.join(QLatin1Char('|'))));
+		const auto logged = [&log](const QString& text) {
+			return std::any_of(log.begin(), log.end(), [&text](const QString& line) { return line.contains(text); });
+		};
+		QVERIFY2(logged(QStringLiteral("[error] removing effect 0 refused")), qPrintable(log.join(QLatin1Char('|'))));
+		// The script is told by the return value, not only by the log: false.
+		QVERIFY2(logged(QStringLiteral("removeEffect returned false")), qPrintable(log.join(QLatin1Char('|'))));
 
 		control::setRemovalCaptureFailsForTest(false);
-		QCOMPARE(int(engine->runString(qstr(
-			"zene.mixer():channel(%1):chain():removeEffect(0)\n").arg(index), &error)),
-			int(ScriptEngine::RunResult::Ok));
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
 		QVERIFY(chain->effects().empty());                       // capturable again: removed, and undoable
+		const QStringList second = engine->takeLogMessages();
+		QVERIFY2(std::any_of(second.begin(), second.end(), [](const QString& line) {
+			return line.contains(QStringLiteral("removeEffect returned true")); }), qPrintable(second.join(QLatin1Char('|'))));
 		journal->undo();
 		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
 

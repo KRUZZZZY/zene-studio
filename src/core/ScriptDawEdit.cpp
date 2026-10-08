@@ -392,11 +392,16 @@ LuaEffect& LuaEffectChain::loadEffect(const QString& device) const
 	return effect(effectCount() > before ? effectCount() - 1 : -1);
 }
 
-void LuaEffectChain::removeEffect(int index)
+bool LuaEffectChain::removeEffect(int index)
 {
-	if (m_chain == nullptr) { return; }
+	if (m_chain == nullptr) { return false; }
+	const int before = effectCount();
 	enqueueDaw(dawCommand(ScriptDawBindings::Op::RemoveEffect, m_chain, index));
 	ScriptEngine::instance()->flushCommandsForRead();
+	// The queue carries no reply, so the count is the witness (as in loadEffect): false when the removal was
+	// refused - a bad index, or a device whose state cannot be captured so the removal could not be undone
+	// (owner decision 2026-10-08). The refusal is logged for the script as well.
+	return effectCount() < before;
 }
 
 void LuaEffect::setEnabled(bool enabled)

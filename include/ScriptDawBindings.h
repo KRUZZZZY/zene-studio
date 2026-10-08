@@ -186,7 +186,7 @@ public:
 	//! catalogue id (plugin.list) or a plugin name this build can load.
 	LuaEffect& loadEffect(const QString& device) const;
 	//! Unload the effect at \a index. Refused when the index is not there.
-	void removeEffect(int index);
+	bool removeEffect(int index);  //!< true when the effect was removed; false when it was refused (see ScriptDawEdit.cpp)
 
 private:
 	EffectChain* m_chain{nullptr};
