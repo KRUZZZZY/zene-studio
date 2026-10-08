@@ -2674,6 +2674,7 @@ tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpMarkersTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
+tests/src/gui/AafImportMenuTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
 tests/src/gui/AccessibilityWalkTest.cpp
 tests/src/gui/AgentSurfaceReportTest.cpp
@@ -2759,9 +2760,11 @@ tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp
 tests/src/gui/TaskIndicatorTest.cpp
+tests/src/gui/TelemetryConsentDialogTest.cpp
 tests/src/gui/TempoMapPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
 tests/src/gui/TrackFolderMenuTest.cpp
+tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/TrackRenderMenuTest.cpp
 tests/src/gui/UndoHistoryPanelTest.cpp
 tests/src/gui/VcaStripLifetimeTest.cpp

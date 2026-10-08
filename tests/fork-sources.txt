@@ -2208,3 +2208,6 @@ tests/src/gui/EffectDeviceMenuTest.cpp
 tests/src/gui/EffectPickerOrganiserTest.cpp
 tests/src/gui/PluginNativeEditorTest.cpp
 tests/src/gui/ReferenceProjectPanelTest.cpp
+tests/src/gui/TelemetryConsentDialogTest.cpp
+tests/src/gui/AafImportMenuTest.cpp
+tests/src/gui/TrackIconsLevelBarTest.cpp
