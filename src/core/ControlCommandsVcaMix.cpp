@@ -342,8 +342,11 @@ ControlResult unassignChannel(const QJsonObject& args)
 				{QStringLiteral("channel"), control::channelIdOf(channel)},
 				{QStringLiteral("assigned"), true}},
 			QStringLiteral("vca.assign"),
+			// 'also' is part of the inverse: a shared membership is only re-added with it, and
+			// vca.assign refuses a channel another group already holds unless it says also:true.
 			QJsonObject{{QStringLiteral("group"), vcaGroupId(id)},
-				{QStringLiteral("channel"), control::channelIdOf(channel)}},
+				{QStringLiteral("channel"), control::channelIdOf(channel)},
+				{QStringLiteral("also"), also}},
 			true,
 			QStringLiteral("action checkpoint: the recorded undo step puts the channel back "
 				"through the same VcaGroup::addMember call the write path uses, which "

@@ -380,8 +380,16 @@ private slots:
 		QCOMPARE(run(QStringLiteral("vca.get_state"),
 			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("member_count")).toInt(), 0);
 
-		REV_UNDO_OR_FAIL();
-		// The membership the undo must restore is the one that was there: the
+		// Luna 4911: the ADVERTISED inverse must be replayable as written. It names vca.assign with
+		// also:true - without it, the channel is refused by `first`, which still holds it.
+		const QJsonObject inverse = revtest::stateOf(QStringLiteral("vca.unassign"))
+			.value(QStringLiteral("inverse")).toObject();
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("vca.assign"));
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
+		QCOMPARE(inverseArgs.value(QStringLiteral("also")).toBool(), true);
+		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(), inverseArgs).ok,
+			"the advertised vca.assign inverse was refused");
+		// The membership the replay must restore is the one that was there: the
 		// channel is in `second` again AND still in `first`.
 		const ControlResult restored = run(QStringLiteral("vca.get_state"),
 			{{QStringLiteral("group"), second}});
