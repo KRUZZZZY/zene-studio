@@ -277,6 +277,29 @@ private slots:
 		QVERIFY( table.install( 2, 0, 9, 0 ) );  // the freed entry is usable again
 	}
 
+	// An AUDIO cell publishes patternId -1 with its clip (WF-055). It holds something to render, so
+	// it keeps its entry and its clip; only a cell with neither a pattern nor a clip gives it back.
+	void anAudioCellWithoutAPatternKeepsItsEntryAndClip()
+	{
+		SessionSlotContentTable table;
+		// The table only stores the clip's address and never reads it, so a sentinel address stands in
+		// for a loaded SampleBuffer (constructing one needs a running Engine, which this test does not start).
+		static int sentinel = 0;
+		const auto* const clip = reinterpret_cast<const SampleBuffer*>(&sentinel);
+		QVERIFY( table.install( 0, 0, -1, 0, false, 0, clip ) );
+		QCOMPARE( table.installedCount(), std::size_t( 1 ) );
+		QVERIFY( table.find( 0, 0 ) != nullptr );
+		QCOMPARE( table.find( 0, 0 )->clip, clip );
+
+		// Re-publishing the audio cell updates it in place rather than consuming a second entry.
+		QVERIFY( table.install( 0, 0, -1, 0, false, 0, clip ) );
+		QCOMPARE( table.installedCount(), std::size_t( 1 ) );
+
+		// A cell that loses its clip and its pattern is empty again and gives its entry back.
+		QVERIFY( table.install( 0, 0, -1, 0 ) );
+		QCOMPARE( table.installedCount(), std::size_t( 0 ) );
+	}
+
 	//! 0.5.0 WF-060: a cell's own start inside its clip offsets where it plays, and a legato cell
 	//! relaunched while it plays goes on from where it was instead of its top.
 	void aCellStartsAtItsLoopStartAndALegatoRelaunchGoesOn()

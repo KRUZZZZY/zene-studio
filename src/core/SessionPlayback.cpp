@@ -25,6 +25,10 @@ namespace lmms
 bool SessionSlotContentTable::install( int track, int scene, int patternId,
 	tick_t loopLengthTicks, bool legato, tick_t startTicks, const SampleBuffer* clip ) noexcept
 {
+	// A cell has something to render when it holds a pattern OR an audio clip (WF-055: an
+	// audio cell publishes patternId -1 with its clip, so patternId alone cannot tell an
+	// audio cell from an empty one).
+	const bool hasContent = patternId >= 0 || clip != nullptr;
 	// Replace in place when the cell is already known: re-publishing a cell is
 	// the ordinary case (the model edits a slot), and it must not consume a
 	// second entry.
@@ -32,9 +36,9 @@ bool SessionSlotContentTable::install( int track, int scene, int patternId,
 	{
 		if( m_entries[i].track == track && m_entries[i].scene == scene )
 		{
-			if( patternId < 0 )
+			if( !hasContent )
 			{
-				// A cell that LOSES its pattern gives its entry back: the last
+				// A cell that LOSES its content gives its entry back: the last
 				// entry moves into the hole and the count drops. A bounded move
 				// over fixed storage, so the audio thread neither allocates nor
 				// locks, and a churn of real -> empty cells cannot fill the table.
@@ -57,7 +61,7 @@ bool SessionSlotContentTable::install( int track, int scene, int patternId,
 	// cell of the grid, empty ones included, so claiming an entry for each one
 	// filled the fixed table with cells that render nothing - and the MIDI cell
 	// added to a grid one column wider was refused and played silently.
-	if( patternId < 0 )
+	if( !hasContent )
 	{
 		return true;
 	}
