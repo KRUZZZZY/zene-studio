@@ -144,6 +144,12 @@ private slots:
 	//! nothing was scheduled.
 	void resumingAfterAnEmptyPeriodDoesNotFireStaleBoundaries();
 
+	//! A script's own log text must not retype its failure: a scheduled script
+	//! that prints the engine's budget wording and then fails for an unrelated
+	//! reason is a "script" failure, not a "budget" one - the KIND comes from
+	//! the raw run error, while the folded lastError still shows the log line.
+	void aLogLineCannotMasqueradeAsABudgetFailure();
+
 	//! The contract table classes the group's three ids the way the card
 	//! demands: two snapshots with their inverse named, one read that mutates
 	//! nothing. Read out of the table itself, not restated from this file.
@@ -377,6 +383,41 @@ void ScriptClockTest::resumingAfterAnEmptyPeriodDoesNotFireStaleBoundaries()
 
 	song->stop();
 	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-bar2"), &error), qPrintable(error));
+}
+
+void ScriptClockTest::aLogLineCannotMasqueradeAsABudgetFailure()
+{
+	Song* song = Engine::getSong();
+	QVERIFY(song != nullptr);
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+
+	// The script LOGS the engine's own budget wording, then fails for an
+	// unrelated reason. The read-back must still fold the log line into
+	// last_error, but the KIND and the budget_exceeded counter must come
+	// from the raw run error, not from the script's text.
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-masq"), QStringLiteral(
+		"print('instruction budget exceeded') error('unrelated boom')"),
+		"transport", 0, &error), qPrintable(error));
+
+	// Fire exactly once: park the grid, start the transport, poll the edge.
+	clock.pollOnce();
+	song->playSong();
+	clock.pollOnce();
+
+	const QJsonObject entry = entryFor(clock.stateJson(), QStringLiteral("lc-t-masq"));
+	QCOMPARE(entry.value(QStringLiteral("errors")).toInt(), 1);
+	QCOMPARE(entry.value(QStringLiteral("budget_exceeded")).toInt(), 0);
+	QCOMPARE(entry.value(QStringLiteral("last_error_kind")).toString(),
+		QStringLiteral("script"));
+	const QString folded = entry.value(QStringLiteral("last_error")).toString();
+	QVERIFY2(folded.contains(QLatin1String("unrelated boom")),
+		"the failure itself must be in the read-back");
+	QVERIFY2(folded.contains(QLatin1String("instruction budget exceeded")),
+		"the script's log line must still be folded into last_error");
+
+	song->stop();
+	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-masq"), &error), qPrintable(error));
 }
 
 void ScriptClockTest::a16RowsCarryTheGroup()
