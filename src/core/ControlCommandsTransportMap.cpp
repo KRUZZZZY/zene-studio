@@ -266,6 +266,30 @@ void registerGetCommand(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+//! The reply to a tempo_map_add, and the advertised inverse. A REPLACEMENT advertises no command:
+//! the event it overwrote is gone from the map, so tempo_map_remove at that tick would DELETE the
+//! event instead of restoring the contents the call replaced (Luna cluster 4905). Nor does an add
+//! that changes the map's active flag: an add activates the map unless 'active' says otherwise, and
+//! tempo_map_remove keeps the flag it finds. Those cases name the checkpoint as the way back.
+ControlResult addReply(Song* song, const TempoMap& before, const TempoMapEvent& event, bool replaced)
+{
+	QJsonObject result;
+	result.insert(QStringLiteral("tick"), static_cast<qint64>(event.tick));
+	result.insert(QStringLiteral("bpm"), event.hasTempo ? event.tempo : 0);
+	result.insert(QStringLiteral("numerator"), event.hasTimeSignature ? event.numerator : 0);
+	result.insert(QStringLiteral("denominator"), event.hasTimeSignature ? event.denominator : 0);
+	result.insert(QStringLiteral("has_tempo"), event.hasTempo);
+	result.insert(QStringLiteral("has_time_signature"), event.hasTimeSignature);
+	result.insert(QStringLiteral("replaced"), replaced);
+	const bool activeChanged = song->tempoMap().map().active() != before.active();
+	if (replaced || activeChanged)
+	{
+		return mutationResult(song, before, result, QString(), QJsonObject());
+	}
+	return mutationResult(song, before, result, QStringLiteral("transport.tempo_map_remove"),
+		QJsonObject{{QStringLiteral("tick"), static_cast<qint64>(event.tick)}});
+}
+
 void registerAddCommand(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -321,27 +345,7 @@ void registerAddCommand(ControlRegistry& registry)
 			return mapRefusal();
 		}
 
-		QJsonObject result;
-		result.insert(QStringLiteral("tick"), static_cast<qint64>(event.tick));
-		result.insert(QStringLiteral("bpm"), event.hasTempo ? event.tempo : 0);
-		result.insert(QStringLiteral("numerator"), event.hasTimeSignature ? event.numerator : 0);
-		result.insert(QStringLiteral("denominator"), event.hasTimeSignature ? event.denominator : 0);
-		result.insert(QStringLiteral("has_tempo"), event.hasTempo);
-		result.insert(QStringLiteral("has_time_signature"), event.hasTimeSignature);
-		result.insert(QStringLiteral("replaced"), replaced);
-		// The advertised inverse is a COMMAND a reader can re-issue by hand, so it
-		// may only be named where it really restores the prior map (Luna cluster
-		// 4905). A REPLACEMENT is not that: the event it overwrote is gone from the
-		// map, so tempo_map_remove at that tick would DELETE the event rather than
-		// put its old contents back. The recorded before-state (the whole map) and
-		// the action checkpoint are the honest way back - the mechanism already
-		// names the checkpoint - so no inverse command is advertised here.
-		if (replaced)
-		{
-			return mutationResult(song, before, result, QString(), QJsonObject());
-		}
-		return mutationResult(song, before, result, QStringLiteral("transport.tempo_map_remove"),
-			QJsonObject{{QStringLiteral("tick"), static_cast<qint64>(event.tick)}});
+		return addReply(song, before, event, replaced);
 	};
 	registry.registerCommand(cmd);
 }
