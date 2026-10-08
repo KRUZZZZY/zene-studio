@@ -33,6 +33,7 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <limits>
 
 #include "ArrangementEdits.h"
 #include "Clip.h"
@@ -134,6 +135,42 @@ private slots:
 		QCOMPARE(moved->clipEdits().fadeInTicks, 48);
 	}
 
+	//! A crossfade is as long as the clips' SHARED span: when the later clip is wholly inside the
+	//! earlier one, the overlap stops at the later clip's end, not at the earlier one's.
+	void aCrossfadeIntoAContainedClipStopsAtItsEnd()
+	{
+		Clip* earlier = clipAt(m_track, 0, 100);          // [0, 100)
+		Clip* later = clipAt(m_track, 20, 20);            // [20, 40), wholly inside it
+		QCOMPARE(arrangement::applyOverlap(later, arrangement::Overlap::Crossfade), 1);
+		// The shared span is [20, 40) - 20 ticks, not the earlier clip's remaining 80.
+		QCOMPARE(earlier->clipEdits().fadeOutTicks, 20);
+		QCOMPARE(later->clipEdits().fadeInTicks, 20);
+	}
+
+	//! Rendered envelope of the contained clip: its fade-in must ramp across its own length and reach full gain
+	//! at its last frame. Ticks stand in for frames here - the ramps are ratios, so the unit cancels.
+	void aCrossfadeIntoAContainedClipRendersAFadeInThatReachesFullGain()
+	{
+		clipAt(m_track, 0, 100);                          // [0, 100), the earlier clip
+		Clip* later = clipAt(m_track, 20, 20);            // [20, 40), wholly inside it
+		QCOMPARE(arrangement::applyOverlap(later, arrangement::Overlap::Crossfade), 1);
+		const ClipEdits in = later->clipEdits();
+		const auto frames = static_cast<f_cnt_t>(later->length().getTicks());
+		const auto gainAt = [&](f_cnt_t frame) {
+			return clipFadeGainAt(frame, frames, static_cast<f_cnt_t>(in.fadeInTicks), 0, in.fadeInShape, in.fadeOutShape);
+		};
+		QCOMPARE(gainAt(0), 0.0f);
+		float previous = -1.0f;
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			const float gain = gainAt(frame);
+			QVERIFY(gain >= previous);  // monotonic across the whole clip
+			previous = gain;
+		}
+		// Full gain is reached within one frame of the clip's end, not 60 frames past it.
+		QVERIFY(gainAt(frames - 1) > 0.99f);
+	}
+
 	void aMoveSnapsToAnEdgeOrAMarkerOnlyWhenClose()
 	{
 		Clip* other = clipAt(m_track, 0, Bar);
@@ -142,6 +179,16 @@ private slots:
 		QCOMPARE(arrangement::snapToEdges(305, 100, nullptr, 10), 300);       // its end lands on the marker
 		QCOMPARE(arrangement::snapToEdges(250, 100, nullptr, 10), 250);       // nothing near
 		QCOMPARE(arrangement::snapToEdges(190, 100, other, 10), 190);         // its own edges do not count
+	}
+
+	//! A tolerance at the very top of tick_t still snaps: measuring the distance must not wrap.
+	void aMaximumToleranceStillSnaps()
+	{
+		clipAt(m_track, 0, Bar);
+		const tick_t widest = std::numeric_limits<tick_t>::max();
+		QCOMPARE(arrangement::snapToEdges(190, 100, nullptr, widest), Bar);
+		// A candidate far above the proposed start (the difference overflows a 32-bit tick) is not a match.
+		QCOMPARE(arrangement::snapToEdges(-1000, 100, nullptr, 10), -1000);
 	}
 
 	void deleteClosesTheGapInARippleModeAsOneStep()

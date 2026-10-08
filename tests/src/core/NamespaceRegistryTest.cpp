@@ -309,6 +309,18 @@ private slots:
 		QVERIFY( !NamespaceRegistry::isVendorNamespace( QStringLiteral( "example.com:1" ) ) );
 		QVERIFY( !NamespaceRegistry::isVendorNamespace( QString() ) );
 		QVERIFY( NamespaceRegistry::isVendorNamespace( QStringLiteral( "vendor.example.com:1" ) ) );
+
+		// Cluster 5187: the domain is checked in FULL, not for two characters - a newline is
+		// whitespace too, and a URI with one is outside the documented shape.
+		QCOMPARE( NamespaceRegistry::vendorNamespace( QStringLiteral( "a\nb" ), 1 ), QString() );
+		QCOMPARE( NamespaceRegistry::vendorNamespace( QStringLiteral( "a\rb" ), 1 ), QString() );
+		QCOMPARE( NamespaceRegistry::vendorNamespace( QStringLiteral( "a\vb" ), 1 ), QString() );
+		QVERIFY( !NamespaceRegistry::isVendorNamespace( QStringLiteral( "vendor.a\nb.com:1" ) ) );
+
+		// ... and exactly ONE separator colon: a second one belongs to neither the domain nor the version.
+		QVERIFY( !NamespaceRegistry::isVendorNamespace( QStringLiteral( "vendor.example:extra:1" ) ) );
+		QVERIFY( !NamespaceRegistry::isVendorNamespace( QStringLiteral( "vendor.example.com:1:2" ) ) );
+		QVERIFY( NamespaceRegistry::isVendorNamespace( QStringLiteral( "vendor.a-b.example.com:12" ) ) );
 	}
 };
 

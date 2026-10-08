@@ -437,6 +437,7 @@ bool restoreTimelineRevision(const QString& projectPath, const QString& recovery
 	}
 	if (!replaceProjectWithStaged(projectPath, staging))
 	{
+		QFile::remove(staging);  // this function made the staging file; a failed replace keeps it otherwise
 		*error = QStringLiteral("could not move the staged revision over %1").arg(projectPath);
 		return false;
 	}

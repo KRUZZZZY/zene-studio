@@ -32,6 +32,7 @@
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "ScriptBindings.h"
 
 #include <QString>
 
@@ -155,11 +156,14 @@ QString LuaEffect::parameterName(int index) const
 	return models.at(index)->displayName();
 }
 
-AutomatableModel* LuaEffect::parameter(int index) const
+LuaFloatModel& LuaEffect::parameter(int index) const
 {
 	const QList<AutomatableModel*> models = effectParameters(m_effective());
-	if (index < 0 || index >= models.size()) { return nullptr; }
-	return models.at(index);
+	// The pooled FloatModel, like LuaInstrument::parameterModel: a raw
+	// AutomatableModel* is not a class the bridge has registered, so returning
+	// one raised "The class is not registered in LuaBridge" in the script.
+	return ScriptBindings::newFloatModel(
+		index < 0 || index >= models.size() ? nullptr : models.at(index));
 }
 
 } // namespace lmms

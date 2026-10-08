@@ -220,6 +220,52 @@ private slots:
 		}
 	}
 
+	//! Cluster 3145: the dither must reach the BYTES at digital silence.
+	//! The 16-bit dither path stages the dithered floats and hands them to the
+	//! plain (truncating) 16-bit quantiser. An offset of less than one LSB then
+	//! truncates back to zero, so an input of exactly zero - and every input
+	//! below one LSB - exports as bit-exact silence and the dither does nothing:
+	//! the quantisation error stays signal-dependent, which is the one thing
+	//! dither exists to remove.
+	void tpdfDitherReachesTheBytesAtDigitalSilence()
+	{
+		const std::vector<float> silence(2048, 0.0f);
+		const auto depth16 = OutputSettings::BitDepth::Depth16Bit;
+		const std::vector<std::int16_t> off = readWavS16(writeWav(silence, false, depth16, "sil-off.wav"));
+		const std::vector<std::int16_t> on = readWavS16(writeWav(silence, true, depth16, "sil-on.wav"));
+		QCOMPARE(off.size(), silence.size() * 2);
+		QCOMPARE(on.size(), silence.size() * 2);
+
+		// Dither OFF is unchanged: exact digital silence, every sample.
+		for (std::int16_t value : off) { QCOMPARE(value, std::int16_t{0}); }
+
+		// Dither ON is not: the dither is the only thing that can put energy
+		// into this signal, so exact silence here means it was discarded.
+		std::size_t nonZero = 0;
+		int maxAbs = 0;
+		for (std::int16_t value : on)
+		{
+			if (value != 0) { ++nonZero; }
+			maxAbs = std::max(maxAbs, std::abs(static_cast<int>(value)));
+		}
+		evidence("dithered digital silence: non-zero samples", static_cast<double>(nonZero),
+			static_cast<double>(maxAbs));
+		// A TPDF offset is triangular over +/-1 LSB, so under round-to-nearest a
+		// zero sample leaves zero only when |offset| <= 1/2 - analytically 25% of
+		// them, and this test measures 24.8%. Demand a solid eighth (the measured
+		// quarter, well clear of the noise, and far above the truncating
+		// quantiser's zero) and keep an upper bound so the result must stay noise
+		// rather than becoming a constant.
+		QVERIFY2(nonZero * 8 > on.size(), qPrintable(QStringLiteral(
+			"TPDF dither at digital silence left %1 of %2 samples at exact zero - the offsets "
+			"were truncated away instead of quantised").arg(on.size() - nonZero).arg(on.size())));
+		QVERIFY2(nonZero < on.size(), "dithered digital silence became a constant, not noise");
+		// A TPDF offset is bounded by one LSB either way, so the quantised value
+		// can only move by one count from zero.
+		QVERIFY2(maxAbs <= 1, qPrintable(QStringLiteral(
+			"a dithered zero sample quantised to %1 counts").arg(maxAbs)));
+	}
+
 	//! The wiring, at the depth where the quantiser lives: 24-bit output goes
 	//! through the float path, and 32-bit float must be left alone.
 	void theDitherReachesThe24BitPathAndNotTheFloatPath()

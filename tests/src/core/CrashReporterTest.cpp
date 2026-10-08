@@ -154,6 +154,31 @@ private slots:
 		QVERIFY(report.contains("project=/home/someone/Music/my track.mmp\n"));
 	}
 
+	// A second crash must be offered again, not still marked as already offered.
+	void aNewReportIsOfferedAgainAfterAcknowledgement()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QVERIFY(install(dir.path().toStdString()));
+
+		CrashInfo info;
+		info.signal = SIGSEGV;
+		info.unixTime = 1700000000ULL;
+		QVERIFY(writeReportIfIdle(info));
+		QVERIFY(hasPendingReport());
+
+		acknowledgePendingReport();
+		QVERIFY(!hasPendingReport());
+
+		// The next crash overwrites the report file; the old marker must not
+		// mark the new crash as already offered.
+		info.signal = SIGABRT;
+		info.unixTime = 1700000002ULL;
+		QVERIFY(writeReportIfIdle(info));
+		QVERIFY2(hasPendingReport(), "a new crash must be pending again after acknowledgement");
+		QVERIFY(slurp(reportPathIn(dir)).contains("signal=SIGABRT(6)\n"));
+	}
+
 	// -----------------------------------------------------------------------
 	// 2. Bounds: absurd input cannot push the file past the cap.
 	// -----------------------------------------------------------------------

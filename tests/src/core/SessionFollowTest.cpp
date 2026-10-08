@@ -36,6 +36,7 @@
 #include <QtTest>
 
 #include <cstdint>
+#include <limits>
 
 #include "AllocationProbe.h"
 #include "SessionFollow.h"
@@ -180,6 +181,121 @@ private slots:
 		FollowPlan empty = oneBar;
 		empty.count = 0;
 		QCOMPARE(followActionTicks(empty, kTicksPerBar), 0);
+	}
+
+	//! Entry choice and target choice must be INDEPENDENT draws. Sharing one
+	//! draw correlates them: a two-entry equal-weight chain whose entry 0 is Any,
+	//! on a two-scene grid, always picked entry 0 AND always targeted scene 0.
+	void chanceAndTargetUseIndependentDraws()
+	{
+		// Entry chosen by rngUnit; the TARGET by its own independent draw. With
+		// one shared draw, a fixed entry draw pins the target to a single row.
+		FollowPlan anyPlan;
+		anyPlan.enabled = true;
+		anyPlan.count = 1;
+		anyPlan.entries[0] = action(FollowAction::Type::Any, 1.0, false, 1.0, 0);
+		anyPlan.sceneCount = 2;
+
+		QCOMPARE(decideFollowFire(anyPlan, evalAt(0, kTicksPerBar, 0.0, 0, 2)).targetScene, 0);
+		FollowEval high = evalAt(0, kTicksPerBar, 0.0, 0, 2);
+		high.targetRngUnit = 0.75;
+		QCOMPARE(decideFollowFire(anyPlan, high).targetScene, 1);
+
+		// Any over a four-scene grid reaches every row from the target draw alone.
+		bool seen[4] = { false, false, false, false };
+		for (int step = 0; step < 4; ++step)
+		{
+			FollowEval eval = evalAt(0, kTicksPerBar, 0.0, 0, kSceneCount);
+			eval.targetRngUnit = ( step + 0.5 ) / 4.0;
+			const int target = decideFollowFire(anyPlan, eval).targetScene;
+			QVERIFY(target >= 0 && target < kSceneCount);
+			seen[target] = true;
+		}
+		for (const bool hit : seen)
+		{
+			QVERIFY(hit);
+		}
+
+		// The two draws are genuinely independent: one target draw spans both
+		// rows while the entry draw is held fixed.
+		bool sawScene0 = false;
+		bool sawScene1 = false;
+		for (int step = 0; step < 20; ++step)
+		{
+			FollowEval eval = evalAt(0, kTicksPerBar, 0.1, 0, 2);
+			eval.targetRngUnit = step / 20.0;
+			const FollowFire fire = decideFollowFire(anyPlan, eval);
+			QCOMPARE(fire.chosenIndex, 0);
+			if (fire.targetScene == 0) { sawScene0 = true; }
+			if (fire.targetScene == 1) { sawScene1 = true; }
+		}
+		QVERIFY(sawScene0);
+		QVERIFY(sawScene1);
+	}
+
+	//! A malformed (non-finite or absurdly large) unlinked time must not reach
+	//! the tick conversion: converting a double outside tick_t's range is
+	//! undefined behaviour on the audio thread. Such a time is answered as
+	//! "cannot fire" (0), never as a wrapped tick.
+	void malformedFollowTimesAreRefusedBeforeConversion()
+	{
+		const double nonFinite[] = {
+			std::numeric_limits<double>::infinity(),
+			-std::numeric_limits<double>::infinity(),
+			std::numeric_limits<double>::quiet_NaN(),
+		};
+		for (const double time : nonFinite)
+		{
+			const FollowPlan plan = single(action(FollowAction::Type::Next, 1.0, false, time, 0),
+				kSceneCount);
+			QCOMPARE(followActionTicks(plan, kTicksPerBar), 0);
+		}
+
+		// Far beyond tick_t's range: refused rather than converted.
+		const FollowPlan huge = single(action(FollowAction::Type::Next, 1.0, false, 1e100, 0),
+			kSceneCount);
+		QCOMPARE(followActionTicks(huge, kTicksPerBar), 0);
+
+		// A large but in-range time still converts normally.
+		const tick_t halfMax = std::numeric_limits<tick_t>::max() / 2;
+		const double halfMaxBars = static_cast<double>( halfMax )
+			/ static_cast<double>( kTicksPerBar );
+		const FollowPlan largeOk = single(action(FollowAction::Type::Next, 1.0, false,
+			halfMaxBars, 0), kSceneCount);
+		QCOMPARE(followActionTicks(largeOk, kTicksPerBar), halfMax);
+	}
+
+	//! A POSITIVE unlinked time is never zero, however small: 0.001 bars at 192
+	//! ticks per bar rounds to nothing, and a chain that can never fire is
+	//! indistinguishable from a broken one. Only a non-positive time is "cannot
+	//! fire" (0).
+	void positiveFollowTimesAreNeverZero()
+	{
+		const FollowPlan subTick = single(action(FollowAction::Type::Next, 1.0, false, 0.001, 0),
+			kSceneCount);
+		QCOMPARE(followActionTicks(subTick, kTicksPerBar), 1);
+
+		const FollowPlan oneTick = single(action(FollowAction::Type::Next, 1.0, false,
+			1.0 / static_cast<double>( kTicksPerBar ), 0), kSceneCount);
+		QCOMPARE(followActionTicks(oneTick, kTicksPerBar), 1);
+
+		// Rounding is unchanged above the sub-tick range.
+		const FollowPlan twoBars = single(action(FollowAction::Type::Next, 1.0, false, 2.0, 0),
+			kSceneCount);
+		QCOMPARE(followActionTicks(twoBars, kTicksPerBar), 2 * kTicksPerBar);
+
+		// A non-positive time still means "cannot fire".
+		const FollowPlan zero = single(action(FollowAction::Type::Next, 1.0, false, 0.0, 0),
+			kSceneCount);
+		QCOMPARE(followActionTicks(zero, kTicksPerBar), 0);
+		const FollowPlan negative = single(action(FollowAction::Type::Next, 1.0, false, -1.0, 0),
+			kSceneCount);
+		QCOMPARE(followActionTicks(negative, kTicksPerBar), 0);
+
+		// The whole decision must still fire at the clamped one-tick time.
+		const FollowFire fire = decideFollowFire(subTick, evalAt(0, 1));
+		QCOMPARE(static_cast<int>( fire.outcome ), static_cast<int>( FollowOutcome::SwitchScene));
+		QCOMPARE(fire.targetScene, 1);
 	}
 
 	//! Chance A/B weighting: the weights are the entries' own, normalised over

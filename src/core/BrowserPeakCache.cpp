@@ -91,7 +91,12 @@ int bucketOf(qint64 frame, qint64 frames, int buckets)
 //! \a file, read in blocks. Split out of compute() so each function stays inside
 //! this fork's per-method complexity target: the sweep is four loops deep as it
 //! stands, and adding the header arithmetic to it measures over 10.
-void accumulatePeaks(SNDFILE* file, qint64 frames, int channels, QVector<float>* lowest,
+//!
+//! Returns the number of frames actually read. A header that promises more
+//! frames than the file holds reads short, and the caller must be able to tell:
+//! the buckets the missing frames would have filled are still at their initial
+//! +/-infinity, which peaksFromBounds would report as silence.
+qint64 accumulatePeaks(SNDFILE* file, qint64 frames, int channels, QVector<float>* lowest,
 	QVector<float>* highest)
 {
 	const int buckets = static_cast<int>(lowest->size());
@@ -100,7 +105,7 @@ void accumulatePeaks(SNDFILE* file, qint64 frames, int channels, QVector<float>*
 	while (frame < frames)
 	{
 		const sf_count_t read = sf_readf_float(file, block.data(), kReadBlockFrames);
-		if (read <= 0) { return; }
+		if (read <= 0) { break; }
 		for (sf_count_t i = 0; i < read; ++i)
 		{
 			const int bucket = bucketOf(frame + i, frames, buckets);
@@ -116,6 +121,14 @@ void accumulatePeaks(SNDFILE* file, qint64 frames, int channels, QVector<float>*
 		}
 		frame += read;
 	}
+	return frame;
+}
+
+//! Writes \a message through \a error, which a caller may legitimately leave
+//! null: peaksFor()'s error is an optional "tell me why", not a required out.
+void setError(QString* error, const QString& message)
+{
+	if (error != nullptr) { *error = message; }
 }
 
 //! The stored peaks. A bucket no frame landed in (a short file, a truncated
@@ -147,7 +160,7 @@ bool BrowserPeakCache::compute(const QString& path, Entry* entry, QString* error
 	SNDFILE* file = sf_open(encoded.constData(), SFM_READ, &info);
 	if (file == nullptr)
 	{
-		*error = QString::fromUtf8(sf_strerror(nullptr));
+		setError(error, QString::fromUtf8(sf_strerror(nullptr)));
 		return false;
 	}
 	if (info.frames <= 0 || info.channels <= 0)
@@ -155,8 +168,8 @@ bool BrowserPeakCache::compute(const QString& path, Entry* entry, QString* error
 		// A peak map is placed against the file's length; a stream whose length
 		// is not in its header cannot be mapped, and guessing one would draw a
 		// waveform that is not the file's.
-		*error = QStringLiteral("%1 carries no usable length in its header "
-			"(frames=%2, channels=%3)").arg(path).arg(info.frames).arg(info.channels);
+		setError(error, QStringLiteral("%1 carries no usable length in its header "
+			"(frames=%2, channels=%3)").arg(path).arg(info.frames).arg(info.channels));
 		sf_close(file);
 		return false;
 	}
@@ -167,8 +180,18 @@ bool BrowserPeakCache::compute(const QString& path, Entry* entry, QString* error
 
 	QVector<float> lowest(buckets, std::numeric_limits<float>::infinity());
 	QVector<float> highest(buckets, -std::numeric_limits<float>::infinity());
-	accumulatePeaks(file, frames, channels, &lowest, &highest);
+	const qint64 read = accumulatePeaks(file, frames, channels, &lowest, &highest);
 	sf_close(file);
+	if (read < frames)
+	{
+		// The header promised more frames than the file could give. The buckets
+		// the missing frames would have filled are untouched, and peaksFromBounds
+		// would turn that into a flat line presented as the file's own silence -
+		// so an incomplete read is a refusal, not a shorter waveform.
+		setError(error, QStringLiteral("%1 decoded only %2 of the %3 frames its header "
+			"declares").arg(path).arg(read).arg(frames));
+		return false;
+	}
 
 	entry->path = path;
 	entry->sampleRate = info.samplerate;
@@ -183,8 +206,8 @@ bool BrowserPeakCache::entryFor(const QString& path, Entry* entry, bool* cached,
 {
 	const QString key = browserCanonicalKey(path);
 	const QFileInfo info(key);
-	if (!info.exists()) { *error = QStringLiteral("%1 does not exist").arg(key); return false; }
-	if (!info.isFile()) { *error = QStringLiteral("%1 is not a file").arg(key); return false; }
+	if (!info.exists()) { setError(error, QStringLiteral("%1 does not exist").arg(key)); return false; }
+	if (!info.isFile()) { setError(error, QStringLiteral("%1 is not a file").arg(key)); return false; }
 
 	const qint64 modified = info.lastModified().toMSecsSinceEpoch();
 	const qint64 size = info.size();

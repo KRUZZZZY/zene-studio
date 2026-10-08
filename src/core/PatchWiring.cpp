@@ -30,6 +30,9 @@
 #include <QJsonObject>
 #include <QJsonValue>
 
+#include <cmath>
+#include <limits>
+
 namespace lmms
 {
 
@@ -38,6 +41,26 @@ namespace
 
 constexpr auto INPUT_TEXT = "input";
 constexpr auto EFFECT_PREFIX = "effect:";
+
+//! Reads one `from_port`/`to_port` field. Absent (or null) means the node's own
+//! port 0. Present but not a JSON integer that fits an int - a string, a
+//! fraction, an out-of-range number - is malformed and rejected: silently
+//! keeping the default would wire a different port than the caller asked for,
+//! and port 0 usually exists, so nothing downstream would object.
+bool readPortField(const QJsonValue& value, int* port)
+{
+	if (value.isUndefined() || value.isNull()) { return true; }
+	if (!value.isDouble()) { return false; }
+	const double number = value.toDouble();
+	if (!std::isfinite(number) || std::floor(number) != number
+		|| number < static_cast<double>(std::numeric_limits<int>::min())
+		|| number > static_cast<double>(std::numeric_limits<int>::max()))
+	{
+		return false;
+	}
+	*port = static_cast<int>(number);
+	return true;
+}
 
 } // namespace
 
@@ -179,11 +202,16 @@ auto PatchWiring::fromJson(const QJsonArray& array, PatchWiring* wiring, QString
 		{
 			return false;
 		}
-		// A JSON integer, or the port the node has when the field is absent.
-		const QJsonValue fromPort = entry.value(QStringLiteral("from_port"));
-		const QJsonValue toPort = entry.value(QStringLiteral("to_port"));
-		if (fromPort.isDouble()) { edge.fromPort = fromPort.toInt(); }
-		if (toPort.isDouble()) { edge.toPort = toPort.toInt(); }
+		// A JSON integer, or the port the node has when the field is absent. A
+		// field that is present but is not an integer - a string, a fraction, a
+		// number too large for an int - is malformed input, not port 0: silently
+		// keeping the default would wire a different port than the caller asked
+		// for, and port 0 usually exists, so nothing downstream would object.
+		if (!readPortField(entry.value(QStringLiteral("from_port")), &edge.fromPort)
+			|| !readPortField(entry.value(QStringLiteral("to_port")), &edge.toPort))
+		{
+			return fail(QStringLiteral("edge port is not an integer"));
+		}
 		parsed.addEdge(edge);
 	}
 

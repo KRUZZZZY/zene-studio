@@ -242,6 +242,26 @@ void RackMacros::clear()
 	m_macros.clear();
 }
 
+void RackMacros::reindexChains(int removedIndex)
+{
+	if (removedIndex < 1) { return; }
+	for (RackMacro& macro : m_macros)
+	{
+		std::vector<RackMacroTarget> kept;
+		kept.reserve(macro.targets.size());
+		for (const RackMacroTarget& target : macro.targets)
+		{
+			// A target on the chain that is gone would, after the shift, name
+			// whichever chain took that index: the wrong parameter, silently.
+			if (target.chain == removedIndex) { continue; }
+			RackMacroTarget moved = target;
+			if (moved.chain > removedIndex) { --moved.chain; }
+			kept.push_back(moved);
+		}
+		macro.targets.swap(kept);
+	}
+}
+
 void RackMacros::saveSettings(QDomDocument& doc, QDomElement& rackElement) const
 {
 	for (const RackMacro& entry : m_macros)

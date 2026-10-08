@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 
 #include "AutomationClip.h"
@@ -306,7 +307,11 @@ namespace
 //! Crossfade @a earlier into @a later over their overlap: fade-out on one, fade-in on the other.
 void crossfade(Clip* earlier, Clip* later)
 {
-	const tick_t overlap = earlier->endPosition().getTicks() - later->startPosition().getTicks();
+	// The overlap is the span the two clips SHARE, so it ends at whichever clip ends first: a
+	// later clip wholly inside the earlier one must not be faded in over the earlier clip's
+	// remaining length, or its fade-in would outlast the clip and never reach full gain.
+	const tick_t overlap = std::min(earlier->endPosition().getTicks(), later->endPosition().getTicks())
+		- later->startPosition().getTicks();
 	if (overlap <= 0) { return; }
 	ClipEdits out = earlier->clipEdits();
 	out.fadeOutTicks = overlap;
@@ -383,12 +388,16 @@ int applyOverlap(Clip* moved, Overlap mode)
 SnapHit snapToEdgesHit(tick_t proposed, tick_t length, const Clip* moving, tick_t tolerance)
 {
 	SnapHit best{proposed, proposed, SnapHit::Kind::None, QString()};
-	tick_t bestDistance = tolerance + 1;
+	// A tick is 32 bits, so both the tolerance and the difference between two positions can wrap.
+	// Measuring in 64 bits keeps a maximum tolerance (and a candidate at the far end of the song)
+	// comparable with the best distance so far.
+	std::int64_t bestDistance = std::int64_t{tolerance} + 1;
 	const auto consider = [&](tick_t edge, SnapHit::Kind kind, const QString& label) {
 		for (const tick_t candidate : {edge, edge - length})  // the start lands there, or the end does
 		{
-			const tick_t distance = std::abs(candidate - proposed);
-			if (candidate >= 0 && distance < bestDistance) { best = {candidate, edge, kind, label}; bestDistance = distance; }
+			if (candidate < 0) { continue; }  // a start before the song's beginning cannot be snapped to
+			const std::int64_t distance = std::abs(std::int64_t{candidate} - std::int64_t{proposed});
+			if (distance < bestDistance) { best = {candidate, edge, kind, label}; bestDistance = distance; }
 		}
 	};
 	const QString clipEdge = QStringLiteral("Clip edge");

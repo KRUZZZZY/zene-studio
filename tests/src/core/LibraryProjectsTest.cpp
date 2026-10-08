@@ -115,6 +115,21 @@ private slots:
 		QVERIFY(!BrowserSearch(QStringLiteral("\"drum bass\"")).matches(bass));
 	}
 
+	void anIncompleteExpressionDoesNotMatchTheWholeLibrary()
+	{
+		const BrowserItem kick = itemOf(QStringLiteral("/lib/drums/kick 808.wav"), BrowserKind::Audio, {QStringLiteral("Drums")});
+		const BrowserItem loop = itemOf(QStringLiteral("/lib/loops/kick loop.ogg"), BrowserKind::Audio);
+		// An incomplete field term has no value to look for: it must not match everything.
+		QVERIFY(!BrowserSearch(QStringLiteral("tag:")).matches(kick));
+		QVERIFY(!BrowserSearch(QStringLiteral("tag:")).matches(loop));
+		QVERIFY(!BrowserSearch(QStringLiteral("ext:")).matches(loop));
+		// A lone OR is not a search for the text "OR" either.
+		QVERIFY(!BrowserSearch(QStringLiteral("OR")).matches(kick));
+		QVERIFY(!BrowserSearch(QStringLiteral("|")).matches(loop));
+		// Only a genuinely empty query still matches everything.
+		QVERIFY(BrowserSearch(QString()).matches(kick));
+	}
+
 	void aCollectionRunsAndIsUndone()
 	{
 		const QString lib = m_dir.filePath(QStringLiteral("lib"));

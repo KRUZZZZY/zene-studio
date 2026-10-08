@@ -28,6 +28,8 @@
 #include <QtTest>
 
 #include <cstdint>
+#include <limits>
+#include <stdexcept>
 #include <type_traits>
 #include <thread>
 #include <vector>
@@ -85,6 +87,22 @@ private slots:
 
 		RetroMidiRing degenerate{0};
 		QCOMPARE(asNumber(degenerate.capacity()), asNumber(1));
+	}
+
+	// Past the largest power of two a size_t holds, `result <<= 1` wrapped to
+	// zero and the loop never ended, so constructing the ring never returned.
+	// SampleFrameRingBuffer, RetroAudioRing and RecordRingBuffer already refuse
+	// such a value; this ring must refuse it too.
+	//
+	// The capacity is read through a volatile on purpose: as a literal the
+	// compiler constant-folds the shift loop, and the folded result would be
+	// caught by the std::make_unique allocation instead while the runtime path
+	// still spins forever.
+	void refusesACapacityThatCannotBeRoundedUp()
+	{
+		volatile std::size_t beyondLargestPowerOfTwo = (std::numeric_limits<std::size_t>::max() >> 1) + 2;
+		QVERIFY_EXCEPTION_THROWN({ RetroMidiRing ring(beyondLargestPowerOfTwo); },
+			std::length_error);
 	}
 
 	//! A fresh ring holds nothing and reports no loss.

@@ -65,6 +65,9 @@ int ArrangementSections::add(tick_t start, tick_t end, const QString& name, cons
 
 bool ArrangementSections::replace(int id, const ArrangementSection& section)
 {
+	// The same span add() insists on: a section runs from a start at or after the song's beginning
+	// to a later end, or there is nothing to draw or select.
+	if (section.start < 0 || section.end <= section.start) { return false; }
 	for (ArrangementSection& each : m_sections)
 	{
 		if (each.id != id) { continue; }
@@ -116,13 +119,21 @@ void ArrangementSections::save(QDomDocument& doc, QDomElement& parent) const
 namespace
 {
 
-//! One <section> as read, its colour dropped when it is not a colour (a hand-edited file).
-ArrangementSection sectionOf(const QDomElement& child)
+//! One <section> as read, its colour dropped when it is not a colour (a hand-edited file); false
+//! when @a start or @a end is missing or not a number. toInt() reports those as tick zero, which
+//! would read a malformed span as a real one running from the song's beginning.
+bool sectionOf(const QDomElement& child, ArrangementSection* out)
 {
-	ArrangementSection section{child.attribute(QStringLiteral("id")).toInt(), child.attribute(QStringLiteral("start")).toInt(),
-		child.attribute(QStringLiteral("end")).toInt(), child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color"))};
+	bool startOk = false;
+	bool endOk = false;
+	const tick_t start = child.attribute(QStringLiteral("start")).toInt(&startOk);
+	const tick_t end = child.attribute(QStringLiteral("end")).toInt(&endOk);
+	if (!startOk || !endOk) { return false; }
+	ArrangementSection section{child.attribute(QStringLiteral("id")).toInt(), start, end,
+		child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color"))};
 	if (!section.color.isEmpty() && !QColor::isValidColorName(section.color)) { section.color.clear(); }
-	return section;
+	*out = section;
+	return true;
 }
 
 //! Whether a loaded section may keep @a id: positive, not taken in @a loaded, and low enough that the
@@ -142,8 +153,8 @@ void ArrangementSections::load(const QDomElement& element)
 	for (QDomElement child = element.firstChildElement(QStringLiteral("section"));
 		!child.isNull() && loaded.size() + renumbered.size() < MaxSections; child = child.nextSiblingElement(QStringLiteral("section")))
 	{
-		const ArrangementSection section = sectionOf(child);
-		if (section.start < 0 || section.end <= section.start) { continue; }
+		ArrangementSection section;
+		if (!sectionOf(child, &section) || section.start < 0 || section.end <= section.start) { continue; }
 		(keepsId(section.id, loaded) ? loaded : renumbered).append(section);
 	}
 	m_nextId = 1;

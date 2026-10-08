@@ -80,6 +80,25 @@ channel:setGain(0.25)
 print("gain now " .. channel:gain())
 )LUA";
 
+//! The model accessors must cross the bridge as the REGISTERED model classes:
+//! a raw AutomatableModel* is not a registered class, so the call raises.
+const char* const ModelAccessorScript = R"LUA(
+local channel = zene.mixer():channel(%1)
+local gain = channel:gainModel()
+print("gain isValid=" .. tostring(gain:isValid())
+    .. " value=" .. gain:value()
+    .. " min=" .. gain:minValue()
+    .. " max=" .. gain:maxValue()
+    .. " name=" .. gain:name()
+    .. " type=" .. gain:type())
+gain:setValue(0.75)
+print("gain after setValue=" .. gain:value())
+local mute = channel:muteModel()
+local solo = channel:soloModel()
+print("mute isValid=" .. tostring(mute:isValid()) .. " value=" .. tostring(mute:value()))
+print("solo isValid=" .. tostring(solo:isValid()) .. " name=" .. solo:name())
+)LUA";
+
 //! The effect-chain half: address the chain, refuse a bad device load.
 const char* const ChainScript = R"LUA(
 local channel = zene.mixer():channel(%1)
@@ -230,6 +249,42 @@ private slots:
 		QVERIFY2(static_cast<int>(mixer->numChannels()) > index,
 			"the undo removed the channel instead of restoring the fader");
 		QCOMPARE(mixer->mixerChannel(index)->m_volumeModel.value(), 0.5f);
+	}
+
+	/*! The model accessors are the instrument-track bindings' shape: a pooled,
+	 *  REGISTERED wrapper (FloatModel / BoolModel), never a raw
+	 *  AutomatableModel*. A raw model pointer is not a registered class, so
+	 *  `channel:gainModel()` raised "The class is not registered in LuaBridge"
+	 *  and nothing a script did with the result was reachable. */
+	void modelAccessorsReturnRegisteredLuaWrappers()
+	{
+		Mixer* mixer = Engine::mixer();
+		const int index = static_cast<int>(mixer->numChannels()) - 1;
+		MixerChannel* channel = mixer->mixerChannel(index);
+		const float gainBefore = channel->m_volumeModel.value();
+
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(ModelAccessorScript).arg(index), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		const QStringList logs = engine->takeLogMessages();
+		const QString gainLine = logs.value(0);
+		QVERIFY2(gainLine.startsWith(qstr("gain isValid=true value=")),
+			qPrintable(gainLine));
+		// The wrapper read the ENGINE's live value, not a stale or invented one.
+		QCOMPARE(gainLine.section(" value=", 1, 1).section(" ", 0, 0).toFloat(), gainBefore);
+		QVERIFY2(logs.contains(qstr("gain after setValue=0.75")),
+			qPrintable(logs.join(QStringLiteral(" | "))));
+		QVERIFY2(logs.contains(qstr("mute isValid=true value=")
+			+ (channel->m_muteModel.value() ? qstr("true") : qstr("false"))),
+			qPrintable(logs.join(QStringLiteral(" | "))));
+		QVERIFY2(logs.contains(qstr("solo isValid=true name=") + channel->m_soloModel.displayName()),
+			qPrintable(logs.join(QStringLiteral(" | "))));
+
+		// The wrapper's write reached the engine's own model, not just Lua.
+		QCOMPARE(channel->m_volumeModel.value(), 0.75f);
 	}
 
 	/*! The effect-chain half of the binding: the chain a Lua script reaches is

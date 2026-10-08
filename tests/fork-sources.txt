@@ -1969,6 +1969,7 @@ tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
+tests/src/core/BounceInPlaceTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipGainEnvelopeTest.cpp
@@ -2166,3 +2167,4 @@ tools/local-ci.sh
 #     No entry that was already here changed, and none was removed.
 # BUG-A4-1/A4-2: shared iterative XML depth guard used by DataFile and container parsing.
 tools/ncpu-shim.c
+tests/src/core/InputChannelRingTest.cpp

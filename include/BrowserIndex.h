@@ -56,7 +56,12 @@ struct LMMS_EXPORT BrowserFeatures
 
 	//! Measure @a path (decodes it: never on the audio thread). valid false when it cannot be read.
 	static BrowserFeatures analyse(const QString& path);
-	//! How far apart two sounds are: 0 for the same numbers, about 1 for clearly different ones.
+	//! What distance() reports when either record was never measured: further
+	//! apart than any two real measurements can be, so an unmeasured file sorts
+	//! last instead of tying for first.
+	static constexpr double InvalidDistance = 1e9;
+	//! How far apart two sounds are: 0 for the same numbers, about 1 for clearly
+	//! different ones, InvalidDistance when either was never measured.
 	static double distance(const BrowserFeatures& a, const BrowserFeatures& b);
 };
 

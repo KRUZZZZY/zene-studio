@@ -59,18 +59,33 @@ QString ownKeyOf(const AutomatableModel* model, const ParameterControls* registe
 	return {};
 }
 
+//! The key of the @a count-th parameter naming itself @a raw: the name itself first, then
+//! "#2", "#3", ... after it - skipping any that @a taken already holds, so a device that owns
+//! both a port "gain" twice and a port named "gain#2" still keys each parameter on its own.
+QString uniqueKey(const QString& raw, int count, const QSet<QString>& taken)
+{
+	QString key = count > 1 ? QStringLiteral("%1#%2").arg(raw).arg(count) : raw;
+	while (taken.contains(kKeyPrefix + key))
+	{
+		++count;
+		key = QStringLiteral("%1#%2").arg(raw).arg(count);
+	}
+	return kKeyPrefix + key;
+}
+
 //! The key of every parameter in @a all, @a effect's whole list in its own order.
 QStringList listKeys(Effect* effect, const QList<AutomatableModel*>& all)
 {
 	const auto* registered = dynamic_cast<const ParameterControls*>(effect->controls());
 	QStringList keys;
 	QHash<QString, int> seen;
+	QSet<QString> taken;
 	for (int i = 0; i < all.size(); ++i)
 	{
 		QString key = ownKeyOf(all.at(i), registered);
 		if (key.isEmpty()) { key = QStringLiteral("#%1").arg(i); }
-		const int count = ++seen[key];
-		keys << kKeyPrefix + (count > 1 ? QStringLiteral("%1#%2").arg(key).arg(count) : key);
+		keys << uniqueKey(key, ++seen[key], taken);
+		taken.insert(keys.last());
 	}
 	return keys;
 }
@@ -151,17 +166,26 @@ QJsonObject toJson(Effect* effect, const DeviceOptions& options)
 	const QStringList keys = listKeys(effect, all);
 	QJsonObject out;
 	QSet<QString> reported;
+	const QSet<QString> stableKeys(keys.cbegin(), keys.cend());
+	QSet<QString> emitted;  // every JSON key written so far: an object names each entry once
 	for (int i = 0; i < all.size(); ++i)
 	{
 		const QString name = all.at(i)->displayName();
 		const QString alias = aliasFor(options, keys.at(i), name);
 		if (alias.isEmpty()) { continue; }
-		out.insert(name, alias);
+		// A display name is the key only when no other entry can need it: it is not another
+		// parameter's stable key (that parameter may be reported under it) and no earlier entry
+		// took it. Otherwise the entry is reported under its own stable key, which no display
+		// name can take, so no alias overwrites another's.
+		const bool nameIsFree = !stableKeys.contains(name) && !emitted.contains(name);
+		const QString key = nameIsFree ? name : keys.at(i);
+		out.insert(key, alias);
+		emitted.insert(key);
 		reported << keys.at(i) << name;
 	}
 	for (auto it = options.aliases().cbegin(); it != options.aliases().cend(); ++it)
 	{
-		if (!reported.contains(it.key())) { out.insert(it.key(), it.value()); }
+		if (!reported.contains(it.key()) && !emitted.contains(it.key())) { out.insert(it.key(), it.value()); }
 	}
 	return out;
 }

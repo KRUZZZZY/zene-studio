@@ -281,6 +281,7 @@ void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockConte
 	// FollowPlan::sceneCount).
 	eval.sceneCount = plan->sceneCount;
 	eval.rngUnit = followRandomUnit( m_followRng );
+	eval.targetRngUnit = followRandomUnit( m_followRng );
 
 	const FollowFire fire = decideFollowFire( *plan, eval );
 	// The action time this evaluation has reached, taken BEFORE the advance so

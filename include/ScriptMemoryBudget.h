@@ -59,6 +59,11 @@ struct ScriptMemoryState
 	quint64 peak = 0;    //!< high-water mark of live
 	quint64 budget = 0;  //!< the cap, in bytes; 0 disables it (C++ only)
 	quint64 refused = 0; //!< allocations refused because they would cross it
+	//! Allocations the SYSTEM refused (realloc returned null) with the budget
+	//! nowhere near reached. Kept apart from `refused` because the two have
+	//! different causes and a client can only act on one of them: raising the
+	//! budget does nothing for a machine that is out of memory.
+	quint64 failed = 0;
 
 	/*! \brief Lua's allocator: counts live bytes and REFUSES what would cross
 	 *  the budget.
@@ -107,9 +112,12 @@ struct ScriptMemoryState
 		void* block = std::realloc(pointer, nsize);
 		if (block == nullptr)
 		{
-			// A real allocation failure rather than a budget refusal. Counted
-			// with them: from the run's side both are "the allocator said no".
-			++memory->refused;
+			// A real allocation failure rather than a budget refusal: the machine
+			// said no with the budget nowhere near reached. Counted on its own
+			// counter, NOT as a refusal - ScriptEngine's LUA_ERRMEM report reads
+			// the two apart, so a script is no longer told its budget was
+			// exhausted when the system was simply out of memory.
+			++memory->failed;
 			return nullptr;
 		}
 		memory->live = memory->live - held + nsize;
@@ -129,6 +137,25 @@ struct ScriptMemoryState
 		return QStringLiteral("memory budget exceeded (%1 bytes live, peak %2, budget %3, "
 			"%4 refused allocation(s)) - script aborted: %5")
 			.arg(live).arg(peak).arg(budget).arg(refused).arg(luaMessage);
+	}
+
+	//! Why a run failed with LUA_ERRMEM, naming the bound that actually bit.
+	/*! A budget refusal and a system allocation failure are the same Lua error
+	 *  with different causes, and only one of them is fixed by raising the
+	 *  budget - so the report says which one happened instead of always
+	 *  blaming the budget. A refusal still leads with the budget sentence, so
+	 *  the wording a client keys on is unchanged for the budget case. */
+	QString memoryErrorMessage(const QString& luaMessage) const
+	{
+		if (refused == 0 && failed > 0)
+		{
+			return QStringLiteral("system allocation failure, not a memory budget exhaustion "
+				"(%1 bytes live, peak %2, budget %3, %4 system allocation failure(s), 0 refused "
+				"allocation(s)) - the machine could not satisfy the allocation; raising the script "
+				"memory budget will not help - script aborted: %5")
+				.arg(live).arg(peak).arg(budget).arg(failed).arg(luaMessage);
+		}
+		return budgetExceededMessage(luaMessage);
 	}
 
 	//! Why a state could not be opened at all: the budget, named, because

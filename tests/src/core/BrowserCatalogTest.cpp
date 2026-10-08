@@ -82,6 +82,65 @@ QStringList tagListOf(const QString& path)
 	return BrowserTagStore::instance().tagsOf(path);
 }
 
+/*! Writes a FLAC file whose STREAMINFO header declares \a declaredFrames frames
+ *  and which carries no audio frames at all.
+ *
+ *  This is the shape of a file that was cut short - a partial copy, an aborted
+ *  download, a stream whose payload never arrived. The header is intact, so the
+ *  file opens and reports a length, and the decode yields nothing for it.
+ *
+ *  RIFF/WAVE cannot express this: libsndfile recomputes a WAV's length from the
+ *  bytes actually present, so a WAV that lies in its `data` chunk still reads
+ *  exactly as many frames as it holds. FLAC stores the total sample count in the
+ *  header, and trusts it - which is exactly why an incomplete read has to be
+ *  caught here rather than papered over.
+ */
+bool writeHeaderOnlyFlac(const QString& path, quint64 declaredFrames)
+{
+	const quint32 sampleRate = 48000;
+	const quint8 channels = 1;
+	const quint8 bitsPerSample = 16;
+
+	QByteArray info;
+	const auto push = [&info](quint32 value, int bytes)
+	{
+		for (int shift = (bytes - 1) * 8; shift >= 0; shift -= 8)
+		{
+			info.append(static_cast<char>((value >> shift) & 0xff));
+		}
+	};
+	push(4096, 2);  // min block size
+	push(4096, 2);  // max block size
+	push(0, 3);     // min frame size (unknown)
+	push(0, 3);     // max frame size (unknown)
+	// Sample rate (20 bits), channels-1 (3), bits per sample - 1 (5) and the top
+	// 4 bits of the 36-bit total sample count, packed across four bytes and then
+	// the count's low 32 bits.
+	info.append(static_cast<char>((sampleRate >> 12) & 0xff));
+	info.append(static_cast<char>((sampleRate >> 4) & 0xff));
+	info.append(static_cast<char>(((sampleRate & 0xf) << 4) | (((channels - 1) & 0x7) << 1)
+		| (((bitsPerSample - 1) >> 4) & 0x1)));
+	info.append(static_cast<char>((((bitsPerSample - 1) & 0xf) << 4) | ((declaredFrames >> 32) & 0xf)));
+	push(static_cast<quint32>(declaredFrames & 0xffffffff), 4);
+	info.append(QByteArray(16, '\0'));  // the MD5 of the unencoded audio
+	if (info.size() != 34) { return false; }
+
+	QByteArray out("fLaC", 4);
+	out.append(static_cast<char>(0x80));  // last metadata block, type STREAMINFO
+	// The block's length is a 24-bit big-endian count of the bytes that follow.
+	for (int shift = 16; shift >= 0; shift -= 8)
+	{
+		out.append(static_cast<char>((info.size() >> shift) & 0xff));
+	}
+	out.append(info);
+
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
+	const bool written = file.write(out) == out.size();
+	file.close();
+	return written;
+}
+
 } // namespace
 
 class BrowserCatalogTest : public QObject
@@ -321,6 +380,87 @@ private slots:
 		QVERIFY(!why.isEmpty());
 	}
 
+	//! The error out-parameter is optional: a caller that does not want a reason
+	//! passes null, and every refusal path must return false rather than write
+	//! through it.
+	void peaksSurviveANullErrorOutput()
+	{
+		BrowserPeakCache& cache = BrowserPeakCache::instance();
+		cache.clear();
+		BrowserPeakCache::Answer answer;
+		// A file libsndfile cannot read, a file that does not exist, and a path
+		// that is a directory: three different refusals, none of them carrying a
+		// reason to write.
+		QCOMPARE(cache.peaksFor(m_dir.path() + "/notes.txt", 30, &answer, nullptr), false);
+		QCOMPARE(cache.peaksFor(m_dir.path() + "/absent.wav", 30, &answer, nullptr), false);
+		QCOMPARE(cache.peaksFor(m_dir.path(), 30, &answer, nullptr), false);
+		// A caller that wants no answer gets false, and it says nothing.
+		QCOMPARE(cache.peaksFor(m_dir.path() + "/absent.wav", 30, nullptr, nullptr), false);
+		// The happy path still works with a null error out-parameter.
+		QVERIFY(cache.peaksFor(m_wave, 32, &answer, nullptr));
+		QCOMPARE(answer.peaks.size(), 32);
+	}
+
+	//! A file whose header promises more frames than it holds must be a refusal,
+	//! not a peak map whose unread tail is silence.
+	void peaksAreRefusedWhenTheFileIsShorterThanItsHeader()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		// The header claims 160 frames; the file carries a header and no audio
+		// frames at all, so any frame libsndfile hands back is short of the promise.
+		const QString path = QDir(dir.path()).filePath(QStringLiteral("short.flac"));
+		QVERIFY2(writeHeaderOnlyFlac(path, 160), "the truncated fixture was not written");
+
+		BrowserPeakCache& cache = BrowserPeakCache::instance();
+		cache.clear();
+		BrowserPeakCache::Answer answer;
+		QString why;
+		QCOMPARE(cache.peaksFor(path, 32, &answer, &why), false);
+		QVERIFY2(!why.isEmpty(), "an incomplete read reported no reason");
+		// A refused file is not cached as an entry that later reads as silence.
+		cache.forget(path);
+	}
+
+	//! A file nested below the depth limit is one the walk never reaches. The
+	//! answer has to SAY that: an omitted deep file reported as a complete result
+	//! is a caller told its search of the library found everything there was.
+	void reachingTheDepthLimitIsReportedAsTruncation()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		// kMaxDepth is 8, so a file 9 directories below the root is out of reach
+		// while one 8 down is still found. Both are asserted, so this proves the
+		// limit is where it is rather than merely that something was skipped.
+		QString shallow = dir.path();
+		QString deep = dir.path();
+		for (int i = 0; i < 8; ++i)
+		{
+			shallow = QDir(shallow).filePath(QStringLiteral("d%1").arg(i));
+			QVERIFY(QDir().mkpath(shallow));
+			const QString deeper = QDir(deep).filePath(QStringLiteral("d%1").arg(i));
+			QVERIFY(QDir().mkpath(deeper));
+			deep = deeper;
+		}
+		QVERIFY(QDir().mkpath(QDir(deep).filePath(QStringLiteral("beyond"))));
+		deep = QDir(deep).filePath(QStringLiteral("beyond"));
+		WaveSpec spec;
+		spec.title = QStringLiteral("Deep Kit");
+		QVERIFY(writeWave(QDir(shallow).filePath(QStringLiteral("kit_at_limit.wav")), spec));
+		QVERIFY(writeWave(QDir(deep).filePath(QStringLiteral("kit_too_deep.wav")), spec));
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.text = QStringLiteral("kit");
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.matched, 1);
+		QCOMPARE(result.items.size(), 1);
+		QVERIFY(result.items.first().path.endsWith(QStringLiteral("kit_at_limit.wav")));
+		QVERIFY2(result.truncated, "a file below the depth limit was skipped "
+			"without the answer saying the walk was incomplete");
+	}
+
 	//! A query matches on the name, on a tag and - with 'probe' - on the embedded
 	//! metadata. The probe counter is asserted, so "it matched on metadata" is
 	//! not a claim the test can make without opening the file.
@@ -441,6 +581,150 @@ private slots:
 		QVERIFY(store.has(m_wave, QStringLiteral("via-link")));
 		QCOMPARE(store.entryCount(), 1);
 #endif
+	}
+
+//! `scanned` is documented as the files examined after the KIND filter and
+	//! before text filtering, so a file a TAG filter refuses was still examined.
+	void scanCountCoversWhatTheTagFilterRejected()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString kick = writeFixture(dir.path(), QStringLiteral("kick_48k.wav"), WaveSpec());
+		const QString snare = writeFixture(dir.path(), QStringLiteral("snare_48k.wav"), WaveSpec());
+		QVERIFY(BrowserTagStore::instance().add(kick, QStringLiteral("favourite")));
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.kind = QStringLiteral("audio");
+		query.tags = QStringList{QStringLiteral("favourite")};
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.matched, 1);
+		QCOMPARE(result.items.first().path, QFileInfo(kick).absoluteFilePath());
+		// Both audio files were examined; only one carries the tag.
+		QCOMPARE(result.scanned, 2);
+		QVERIFY(result.scanned > result.matched);
+
+		// A kind filter is the only filter `scanned` is documented to precede, so
+		// a file of another kind is not examined at all.
+		BrowserQuery audioOnly = query;
+		audioOnly.tags.clear();
+		writeText(QDir(dir.path()).filePath(QStringLiteral("notes.txt")), QStringLiteral("x"));
+		const BrowserQueryResult byKind = runBrowserQuery(audioOnly);
+		QCOMPARE(byKind.scanned, 2);
+		QVERIFY(snare.endsWith(QStringLiteral("snare_48k.wav")));
+	}
+
+//! A probe budget spent on a file libsndfile cannot read is a probe wasted:
+	//! presets, projects and MIDI carry no audio metadata, so they must not
+	//! consume the limit the audio files need.
+	void probesAreSpentOnAudioCandidatesOnly()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString wave = writeFixture(dir.path(), QStringLiteral("kick_48k.wav"), WaveSpec());
+		writeText(QDir(dir.path()).filePath(QStringLiteral("notes.txt")), QStringLiteral("not audio"));
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.text = QStringLiteral("drum");
+		query.probe = true;
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.matched, 1);
+		QCOMPARE(result.items.first().path, QFileInfo(wave).absoluteFilePath());
+		QVERIFY(result.items.first().hasMetadata);
+		// The directory holds an audio file AND notes.txt; only the audio file is
+		// opened for metadata, so a preset- and project-heavy library cannot
+		// spend the probe limit before the audio candidates are reached.
+		QCOMPARE(result.probed, 1);
+	}
+
+//! An exclusion must see the metadata too. `kick -drum` cannot be settled by
+	//! the name alone: kick_48k.wav says nothing about "drum", so a cheap match
+	//! accepts it, while its embedded title "Kick Drum" is exactly what the
+	//! exclusion names. Accepting the item before the file is read returns a row
+	//! the query's own text excludes.
+	//! A preset or a project has no metadata a probe reads, so an unfielded exclusion
+	//! cannot overturn its cheap match: with the probe on, the matching ones are still
+	//! listed, the excluded one is not, and none of them is probed.
+	void probeKeepsCheapMatchesOfPresetsAndProjects()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		for (const QString& name : {QStringLiteral("kick_bass.xpf"), QStringLiteral("kick_song.mmp"),
+			QStringLiteral("kick_drum.xpf")})
+		{
+			QFile file(QDir(dir.path()).filePath(name));
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QCOMPARE(file.write("placeholder"), qint64(11));
+			file.close();
+		}
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.text = QStringLiteral("kick -drum");
+		query.probe = true;
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.probed, 0);
+		QCOMPARE(result.matched, 2);
+		QVERIFY(!result.items.isEmpty());
+		for (const BrowserItem& item : result.items)
+		{
+			QVERIFY(!item.path.endsWith(QStringLiteral("kick_drum.xpf")));
+		}
+	}
+
+	void metadataCanStillExcludeACheapMatch()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString wave = writeFixture(dir.path(), QStringLiteral("kick_48k.wav"), WaveSpec());
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.text = QStringLiteral("kick -drum");
+		// Without the probe the exclusion is all the name and path can answer,
+		// and the item is found.
+		QCOMPARE(runBrowserQuery(query).matched, 1);
+
+		query.probe = true;
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.probed, 1);
+		QCOMPARE(result.matched, 0);
+		QVERIFY(result.items.isEmpty());
+		QVERIFY(wave.endsWith(QStringLiteral("kick_48k.wav")));
+
+		// The same expression WITHOUT the exclusion still finds it: the probe
+		// did not stop matching, it stopped excluding.
+		BrowserQuery keep = query;
+		keep.text = QStringLiteral("kick");
+		const BrowserQueryResult kept = runBrowserQuery(keep);
+		QCOMPARE(kept.matched, 1);
+		QCOMPARE(kept.probed, 0);
+	}
+
+//! BrowserMaxScanEntries bounds the ENTRIES the walk visits - directories
+	//! included. A tree of directories that holds almost no files used to walk
+	//! all of them and still answer `truncated: false`, so the reported bound
+	//! was not the bound the walk obeyed.
+	void scanLimitBoundsTheWalkOverDirectories()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QDir root(dir.path());
+		// One file, more directories than the limit has entries: the file
+		// counter alone never reaches the bound.
+		for (int i = 0; i <= BrowserMaxScanEntries; ++i)
+		{
+			QVERIFY2(root.mkdir(QStringLiteral("d%1").arg(i)), "a fixture directory was not created");
+		}
+		QVERIFY(writeWave(root.filePath(QStringLiteral("kick_48k.wav")), WaveSpec()));
+
+		BrowserQuery query;
+		query.path = dir.path();
+		query.text = QStringLiteral("kick");
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QVERIFY2(result.truncated, "the walk visited more entries than the limit and did not say so");
+		QVERIFY(result.scanned <= BrowserMaxScanEntries);
 	}
 
 private:

@@ -208,6 +208,7 @@ void SessionScheduler::evaluateSceneFollow( const SessionClockContext& ctx ) noe
 	eval.scene = m_activeScene;
 	eval.sceneCount = plan->sceneCount;
 	eval.rngUnit = followRandomUnit( m_followRng );
+	eval.targetRngUnit = followRandomUnit( m_followRng );
 	const FollowFire fire = decideFollowFire( *plan, eval );
 	// Reported at the tick it was scheduled for, then moved on by one step, so an
 	// outcome that does nothing still consumes its action time (the cells' rule).

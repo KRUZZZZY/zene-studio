@@ -140,6 +140,44 @@ private slots:
 		QCOMPARE(recorder.recorded(), static_cast<std::uint64_t>(kCapacity));
 	}
 
+	//! The ring must hold ONE WHOLE worst-case performance: every slot the
+	//! scheduler can run at once, started and then stopped. A capacity below
+	//! 2 * MaxActiveSlots lets the starts fill the ring, so every later stop is
+	//! DROPPED - and a land pass that sees the unmatched starts refuses and
+	//! consumes nothing, which leaves the performance permanently unlandable
+	//! (disarm and reset do not clear the ring).
+	void recorderCapacityCoversAWorstCasePerformance()
+	{
+		SessionArrangementRecorder recorder;
+		recorder.setArmed(true);
+		QVERIFY(SessionArrangementRecorder::Capacity >= 2 * SessionScheduler::MaxActiveSlots);
+
+		for (std::size_t i = 0; i < SessionScheduler::MaxActiveSlots; ++i)
+		{
+			QVERIFY2(recorder.recordStart(0, 0, static_cast<tick_t>(i)),
+				"the ring refused a launch the scheduler can actually run");
+		}
+		for (std::size_t i = 0; i < SessionScheduler::MaxActiveSlots; ++i)
+		{
+			// The stop that closes an already-recorded start. Losing one here
+			// is what strands the performance.
+			QVERIFY2(recorder.recordStop(0, 0, static_cast<tick_t>(i + 1)),
+				"a stop was dropped, leaving its start open forever");
+		}
+		QCOMPARE(recorder.dropped(), std::uint64_t(0));
+		QCOMPARE(recorder.pending(), 2 * SessionScheduler::MaxActiveSlots);
+
+		SessionArrangementRecorder::Event events[kCapacity];
+		const std::size_t count = recorder.snapshot(events, kCapacity);
+		QCOMPARE(count, 2 * SessionScheduler::MaxActiveSlots);
+		int open = 0;
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			if (events[i].started) { ++open; } else { --open; }
+		}
+		QCOMPARE(open, 0);
+	}
+
 	//! FIFO order, and the snapshot reads without consuming: the pair a land
 	//! pass decides on is the pair it then consumes.
 	void recorderSnapshotIsNonDestructiveAndOrdered()

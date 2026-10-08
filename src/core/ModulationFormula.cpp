@@ -195,7 +195,14 @@ private:
 		}
 		bool ok = false;
 		const double value = m_text.mid(start, m_pos - start).toDouble(&ok);
-		return ok ? put(Op::Constant, static_cast<float>(value)) : fail(QStringLiteral("a malformed number"));
+		if (!ok) { return fail(QStringLiteral("a malformed number")); }
+		// Constants are held as float, so a finite literal outside that range
+		// would compile into an infinity and the evaluator would read it as
+		// silence - not the clamped value the formula contract promises.
+		// Refused here, where the position can still be reported.
+		const float held = static_cast<float>(value);
+		return std::isfinite(held) ? put(Op::Constant, held)
+								   : fail(QStringLiteral("a number too large to hold"));
 	}
 
 	bool call(Op op)

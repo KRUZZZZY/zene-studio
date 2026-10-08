@@ -344,7 +344,12 @@ void ProjectIds::writeRevision(QDomElement& element, int& rev,
 		// This writer is about to emit different bytes for the object than the
 		// ones it loaded: that is a revision.
 		contentHash = now;
-		++rev;
+		// Saturating, like successorOf() for the id counter: readRevision()
+		// accepts any positive int, so a document can carry rev INT_MAX, and
+		// `++rev` there is signed overflow - the next save then wrote no
+		// revision at all, silently dropping the pair off the object. The
+		// space is exhausted and the last number repeats.
+		rev = successorOf(rev);
 		writer = writerInstance();
 	}
 	if (rev > 0)

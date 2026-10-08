@@ -32,6 +32,8 @@
 
 #include <QDomDocument>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QSet>
 
 #include <cmath>
 #include <vector>
@@ -49,6 +51,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "ParameterAliases.h"
+#include "Plugin.h"
 #include "Rack.h"
 #include "RackSplit.h"
 #include "SampleBuffer.h"
@@ -162,6 +165,46 @@ AutomatableModel* volumeOf(Effect* effect)
 	ControlResult error;
 	return controlResolveParameter(effect, QStringLiteral("Volume"), 0, false, &error);
 }
+
+//! A device whose three parameters name themselves "gain", "gain" and "gain#2": the second
+//! "gain" is the one that makes the key "id:gain#2" for the parameter that literally
+//! names itself that. A LADSPA plug-in can own a port whose symbol ends in "#2".
+class AliasCollisionEffect : public Effect
+{
+public:
+	explicit AliasCollisionEffect(Model* parent) : Effect{&s_descriptor, parent, nullptr}
+	{
+		m_first.setObjectName(QStringLiteral("gain"));
+		m_second.setObjectName(QStringLiteral("gain"));
+		m_third.setObjectName(QStringLiteral("gain#2"));
+	}
+
+	EffectControls* controls() override { return nullptr; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, const f_cnt_t) override { return ProcessStatus::Continue; }
+
+public:
+	FloatModel m_first{0.f, 0.f, 1.f, 0.01f, this, QStringLiteral("First")};
+	FloatModel m_second{0.f, 0.f, 1.f, 0.01f, this, QStringLiteral("Second")};
+	FloatModel m_third{0.f, 0.f, 1.f, 0.01f, this, QStringLiteral("Third")};
+
+private:
+	static const Plugin::Descriptor s_descriptor;
+};
+
+const Plugin::Descriptor AliasCollisionEffect::s_descriptor
+{
+	"aliascollisiontest",
+	"Alias key collision effect",
+	"Three same-named parameters, one naming itself the generated key",
+	"LMMS",
+	0x0100,
+	Plugin::Type::Effect,
+	nullptr,
+	nullptr,
+	nullptr
+};
 
 } // namespace
 
@@ -355,6 +398,81 @@ private slots:
 		QCOMPARE(reported.value(QStringLiteral("Volume")).toString(), QStringLiteral("Level"));  // the wire still names it
 		QCOMPARE(reported.value(QStringLiteral("Pegel")).toString(), QStringLiteral("Gain trim"));
 		effect->deviceOptions() = DeviceOptions();
+	}
+
+	//! MX-097: the "#2" suffix a duplicate key gets is checked against every other parameter's
+	//! own key too, so a device that owns a port named "gain" twice AND a port named "gain#2"
+	//! still gives each parameter a key of its own.
+	void generatedKeysNeverCollideWithALiteralParameterKey()
+	{
+		AliasCollisionEffect effect(nullptr);
+		const QList<AutomatableModel*> all{&effect.m_first, &effect.m_second, &effect.m_third};
+		const QStringList keys = parameteraliases::keysOf(&effect, all);
+		QCOMPARE(keys.size(), 3);
+		QCOMPARE(keys.at(0), QStringLiteral("id:gain"));
+		QCOMPARE(keys.at(1), QStringLiteral("id:gain#2"));
+		QVERIFY2(keys.at(2) != keys.at(1), qPrintable(keys.at(2)));  // the port literally named "gain#2"
+		QCOMPARE(QSet<QString>(keys.cbegin(), keys.cend()).size(), 3);  // all three distinct
+
+		DeviceOptions options;  // renaming one must not show on another
+		parameteraliases::setAlias(&effect, &effect.m_second, QStringLiteral("Level"), &options);
+		const QStringList aliases = parameteraliases::aliasesOf(&effect, all, options);
+		QCOMPARE(aliases.at(1), QStringLiteral("Level"));
+		QVERIFY(aliases.at(0).isEmpty());
+		QVERIFY2(aliases.at(2).isEmpty(), qPrintable(aliases.at(2)));
+	}
+
+	//! Two parameters can SHOW the same display name (two sub-sections each naming a knob
+	//! "Gain"), and each keeps its own alias under its own stable key. The report is a JSON
+	//! object, so a display name can only name one of them - the report must still show BOTH
+	//! aliases rather than letting the later one overwrite the earlier.
+	void twoParametersWithTheSameDisplayNameBothKeepTheirAlias()
+	{
+		AliasCollisionEffect effect(nullptr);
+		effect.m_first.setDisplayName(QStringLiteral("Gain"));
+		effect.m_second.setDisplayName(QStringLiteral("Gain"));
+		const QList<AutomatableModel*> all{&effect.m_first, &effect.m_second};
+		DeviceOptions options;
+		parameteraliases::setAlias(&effect, &effect.m_first, QStringLiteral("Level"), &options);
+		parameteraliases::setAlias(&effect, &effect.m_second, QStringLiteral("Drive"), &options);
+
+		const QStringList aliases = parameteraliases::aliasesOf(&effect, all, options);
+		QCOMPARE(aliases.at(0), QStringLiteral("Level"));
+		QCOMPARE(aliases.at(1), QStringLiteral("Drive"));
+
+		// Both aliases are in the report. The first one keeps the display name; the second is
+		// reported under its own stable key, because "Gain" already names the first.
+		const QJsonObject reported = parameteraliases::toJson(&effect, options);
+		const QStringList keys = parameteraliases::keysOf(&effect, all);
+		QSet<QString> values;
+		for (auto it = reported.begin(); it != reported.end(); ++it) { values.insert(it.value().toString()); }
+		QCOMPARE(values.size(), 2);
+		QVERIFY2(values.contains(QStringLiteral("Level")), qPrintable(QString::fromLatin1(QJsonDocument(reported).toJson(QJsonDocument::Compact))));
+		QVERIFY(values.contains(QStringLiteral("Drive")));
+		QVERIFY2(reported.contains(keys.at(0)) || reported.contains(QStringLiteral("Gain")),
+			"the first parameter's alias is reported under neither its display name nor its key");
+		QVERIFY2(reported.contains(keys.at(1)),
+			"the second parameter's alias is lost: neither its display name nor its key is in the report");
+	}
+
+	//! A display name can equal ANOTHER parameter's stable key. The duplicate that is reported under
+	//! its stable key must not be overwritten by the parameter whose display name is that key.
+	void aDisplayNameEqualToAnotherStableKeyDoesNotOverwriteIt()
+	{
+		AliasCollisionEffect effect(nullptr);
+		effect.m_first.setDisplayName(QStringLiteral("Gain"));
+		effect.m_second.setDisplayName(QStringLiteral("Gain"));
+		const QList<AutomatableModel*> all{&effect.m_first, &effect.m_second, &effect.m_third};
+		effect.m_third.setDisplayName(parameteraliases::keysOf(&effect, all).at(1));
+		DeviceOptions options;
+		parameteraliases::setAlias(&effect, &effect.m_first, QStringLiteral("Level"), &options);
+		parameteraliases::setAlias(&effect, &effect.m_second, QStringLiteral("Drive"), &options);
+		parameteraliases::setAlias(&effect, &effect.m_third, QStringLiteral("Third"), &options);
+
+		// All three aliases are in the report, each exactly once.
+		const QJsonObject reported = parameteraliases::toJson(&effect, options);
+		QStringList values; for (auto it = reported.begin(); it != reported.end(); ++it) { values << it.value().toString(); } values.sort();
+		QCOMPARE(values, QStringList({QStringLiteral("Drive"), QStringLiteral("Level"), QStringLiteral("Third")}));
 	}
 
 	//! MX-093: randomise moves every setting inside its range; blend sets the A/B midpoint; both undo.

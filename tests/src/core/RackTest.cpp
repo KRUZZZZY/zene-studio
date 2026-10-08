@@ -616,6 +616,24 @@ private slots:
 		printEvidence("old-project-no-rack", QStringLiteral("chains=1 routed=0 rack_element=0"));
 	}
 
+	//! Luna cluster 5255: clearing a rack - which is what loadSettings() does
+	//! first, and returns from when the project has no <rack> element - drops
+	//! the macros too. A macro left behind is a saved, persisted one: the next
+	//! save of the new project writes the old channel's macros into it.
+	void clearDropsMacros()
+	{
+		Rack& rack = rackUnderTest();
+		QCOMPARE(rack.macros().addMacro(QStringLiteral("Luna5255"), 0.5f), 0);
+		QCOMPARE(rack.macros().macroCount(), 1);
+
+		rack.clear();
+
+		QVERIFY2(rack.macros().macroCount() == 0,
+			"Rack::clear() left macros behind; a load of a project without <rack> keeps them");
+
+		printEvidence("clear-drops-macros", QStringLiteral("before=1 after=0"));
+	}
+
 private:
 	auto rackUnderTest() -> Rack&
 	{

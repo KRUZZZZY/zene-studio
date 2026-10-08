@@ -53,6 +53,12 @@ public:
 	//! True when the text uses any of the operators above (else the old substring rule applies).
 	bool isExpression() const { return m_expression; }
 	bool isEmpty() const { return m_groups.empty(); }
+	/*! True when a term excludes a word with no field (`kick -drum`, not
+	 *  `-name:drum`). Such an exclusion is satisfied by the ABSENCE of the word,
+	 *  so a name that does not contain it matches: only the item's own metadata
+	 *  can rule it out, and a caller that decides from the cheap text alone is
+	 *  reporting a match the expression itself excludes. */
+	bool hasUnfieldedExclusion() const;
 	//! Whether @a item matches; @a metadataText (lowercased) is the probed metadata, or empty.
 	bool matches(const BrowserItem& item, const QStringList& metadataText = {}) const;
 
@@ -68,6 +74,8 @@ private:
 	static bool termHolds(const Term& term, const BrowserItem& item, const QStringList& metadataText);
 	//! One word of an expression: its '-', its field and its value.
 	static Term termOf(QString word);
+	//! Fills @a groups from @a words; drops a leading group and a trailing empty one.
+	void parseExpression(const QStringList& words);
 
 	std::vector<Group> m_groups;  //!< any group may hold
 	bool m_expression = false;

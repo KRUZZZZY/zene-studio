@@ -353,6 +353,151 @@ private slots:
 		QCOMPARE(readBytes(m_project), before);
 	}
 
+	//! Luna cluster 5236: a shift copy that fails does NOT take the destination
+	//! backup with it, and the rotation says it was refused. copyRevision()
+	//! removed the destination BEFORE copying, so a failed shift destroyed an
+	//! older backup while rotation continued as if it had succeeded.
+	void aFailedShiftKeepsTheBackupAndReportsARefusal()
+	{
+		buildFixture();
+		// rev0 is the source the rev1 -> rev2 shift reads; make it unreadable, so
+		// the copy fails on a file the destination cannot afford to lose.
+		const QString rev0 = projectRevisionPath(m_project, 0);
+		const QString rev1 = projectRevisionPath(m_project, 1);
+		QVERIFY(QFile::remove(rev1));
+		QVERIFY(writeBytes(rev1, documentWith(7)));
+		QVERIFY(QFile::setPermissions(rev0, QFile::Permissions()));
+
+		const QByteArray keptBackup = readBytes(rev1);
+		bool refused = false;
+		QString reason;
+		const int kept = rotateProjectRevision(m_project, &refused, &reason);
+
+		// The destination backup survived the failed copy...
+		QVERIFY2(QFileInfo::exists(rev1), "the failed shift deleted the destination backup");
+		QCOMPARE(readBytes(rev1), keptBackup);
+		// ... and rotation reported the refusal rather than claiming success.
+		QVERIFY2(refused, "a failed shift copy was reported as a successful rotation");
+		QVERIFY(!reason.isEmpty());
+		QCOMPARE(kept, 0);
+
+		// Restore the permission so the temp dir can clean up.
+		QVERIFY(QFile::setPermissions(rev0, QFile::ReadOwner | QFile::WriteOwner));
+	}
+
+	//! Luna cluster 4352: a replace that cannot complete leaves the LIVE project
+	//! exactly as it was. replaceProjectWithStaged() removed the live file before
+	//! renaming the staged one into place, and its recovery copies revision 0
+	//! back - so a failure at the moment the disk is full, the one moment the
+	//! recovery copy also cannot succeed, left no project file at all.
+	void aFailedReplaceKeepsTheLiveProject()
+	{
+		buildFixture();
+		const QByteArray live = readBytes(m_project);
+		QCOMPARE(live, documentWith(3));
+		const QString staging = projectRevisionPath(m_project, 0) + QStringLiteral(".restore");
+
+		// No revision 0 to fall back on, and a staging file that is not there to
+		// move: the replacement cannot complete. This is the shape of the
+		// reported failure - the copy into the final name is what fails, which is
+		// what a full destination does - and here the recovery copy has nothing
+		// to recover from either.
+		QVERIFY(QFile::remove(projectRevisionPath(m_project, 0)));
+		QVERIFY(!QFileInfo::exists(staging));
+		QVERIFY(QFileInfo::exists(m_project));
+
+		QVERIFY2(!replaceProjectWithStaged(m_project, staging),
+			"the replace reported success");
+
+		QVERIFY2(QFileInfo::exists(m_project), "the failed replace left no project file at all");
+		QCOMPARE(readBytes(m_project), live);
+	}
+
+	//! The replacement fails AFTER its staged copy is complete: the live project keeps its bytes and the
+	//! staging file survives. Before the rework the live file was removed first, and revision 0 is made
+	//! unreadable here, so the old recovery copy could not put it back and the failure emptied the path.
+	void aFailedReplacementAfterStagingKeepsTheLiveProject()
+	{
+		buildFixture();
+		const QByteArray live = readBytes(m_project);
+		const QString rev0 = projectRevisionPath(m_project, 0);
+		const QString staging = rev0 + QStringLiteral(".restore");
+		QVERIFY(writeBytes(staging, documentWith(5)));
+		// Restores the readable mode however this test leaves, so a failure cannot cascade into the next fixture.
+		struct ReadableAgain { QString path; ~ReadableAgain() { QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner); } };
+		const ReadableAgain restore{rev0};
+		QVERIFY(QFile::setPermissions(rev0, QFile::Permissions()));
+
+		setRevisionReplacementFailureForTest(true);
+		const bool replaced = replaceProjectWithStaged(m_project, staging);
+		setRevisionReplacementFailureForTest(false);
+
+		QVERIFY2(!replaced, "a failed replacement was reported as success");
+		QVERIFY2(QFileInfo::exists(m_project), "the failed replacement emptied the live project");
+		QCOMPARE(readBytes(m_project), live);
+		QVERIFY(QFileInfo::exists(staging));
+	}
+
+	//! A file that is not ours, named the way the old pending copy was named, is not deleted by a restore.
+	void aReplaceLeavesAnUnrelatedReplaceFileAlone()
+	{
+		buildFixture();
+		const QString staging = projectRevisionPath(m_project, 0) + QStringLiteral(".restore");
+		QVERIFY(writeBytes(staging, documentWith(5)));
+		const QString stray = m_project + QStringLiteral(".replace");
+		QVERIFY(writeBytes(stray, documentWith(8)));
+		const QByteArray before = readBytes(stray);
+
+		QVERIFY2(replaceProjectWithStaged(m_project, staging), "the replacement failed");
+		QVERIFY2(QFileInfo::exists(stray), "a replace deleted a file that was not its own");
+		QCOMPARE(readBytes(stray), before);
+		QCOMPARE(readBytes(m_project), documentWith(5));
+		QVERIFY(!QFileInfo::exists(staging));
+	}
+
+	//! A replacement that fails AFTER its staged copy is complete leaves the slot it would have replaced
+	//! exactly as it was, and the rotation reports the refusal. Before the rework the slot was removed
+	//! first, so this failure emptied it.
+	void aFailedReplacementAfterStagingKeepsTheSlot()
+	{
+		buildFixture();
+		const QString rev1 = projectRevisionPath(m_project, 1);
+		const QString rev2 = projectRevisionPath(m_project, 2);
+		QVERIFY(writeBytes(rev1, documentWith(6)));
+		QVERIFY(writeBytes(rev2, documentWith(9)));
+		const QByteArray keptBackup = readBytes(rev2);
+
+		setRevisionReplacementFailureForTest(true);
+		bool refused = false;
+		QString reason;
+		const int kept = rotateProjectRevision(m_project, &refused, &reason);
+		setRevisionReplacementFailureForTest(false);
+
+		QVERIFY2(QFileInfo::exists(rev2), "the failed replacement emptied the slot it would have replaced");
+		QCOMPARE(readBytes(rev2), keptBackup);
+		QVERIFY2(refused, "a failed replacement was reported as a successful rotation");
+		QVERIFY(!reason.isEmpty());
+		QCOMPARE(kept, 0);
+		// The staging file this call created is not left behind.
+		QCOMPARE(QDir(m_dir.path()).entryList({QStringLiteral("*.rotate-*")}).size(), 0);
+	}
+
+	//! A file that is not ours, named the way the old staging file was named, is not deleted by a rotation.
+	void aRotationLeavesAnUnrelatedRotateFileAlone()
+	{
+		buildFixture();
+		const QString stray = projectRevisionPath(m_project, 0) + QStringLiteral(".rotate");
+		QVERIFY(writeBytes(stray, documentWith(5)));
+		const QByteArray before = readBytes(stray);
+
+		bool refused = false;
+		QString reason;
+		rotateProjectRevision(m_project, &refused, &reason);
+
+		QVERIFY2(QFileInfo::exists(stray), "a rotation deleted a file that was not its own");
+		QCOMPARE(readBytes(stray), before);
+	}
+
 	//! An id in the keep-3 set restores through the policy's OWN function, which
 	//! is the whole point of listing those artefacts rather than re-reading them:
 	//! one implementation of the rotation order, and the replaced file is

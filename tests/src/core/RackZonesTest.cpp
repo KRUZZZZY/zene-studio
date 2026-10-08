@@ -295,6 +295,43 @@ private slots:
 		printEvidence("persistence-round-trip",
 			QStringLiteral("saved=macro1/target1/zone2 loaded=same re-saved=same"));
 	}
+
+	//! Luna cluster 5256: removing a chain renumbers the zones that named a
+	//! LATER chain, and drops the ones that named the chain that is gone. A
+	//! stale index either routes to a chain nobody asked for or - once the rack
+	//! has fewer chains than the index - to nothing at all, silently.
+	void removingAChainReindexesTheZones()
+	{
+		Rack& rack = rackUnderTest();
+		while (rack.chainCount() < 5) { rack.addChain(); }
+		QCOMPARE(rack.chainCount(), 5);
+		const int zonesBefore = rack.zones().zoneCount();
+
+		RackZone later;
+		later.lowKey = 60;
+		later.highKey = 72;
+		later.chain = 4;
+		const int laterIndex = rack.zones().addZone(later);
+		QCOMPARE(laterIndex, zonesBefore);
+
+		RackZone onRemoved;
+		onRemoved.lowKey = 73;
+		onRemoved.highKey = 80;
+		onRemoved.chain = 2;
+		rack.zones().addZone(onRemoved);
+		QCOMPARE(rack.zones().zoneCount(), zonesBefore + 2);
+
+		QVERIFY(rack.removeChain(2));
+		QCOMPARE(rack.chainCount(), 4);
+
+		// The zone that named the deleted chain is gone; the one that named the
+		// chain after it slides down with it.
+		QCOMPARE(rack.zones().zoneCount(), zonesBefore + 1);
+		QCOMPARE(rack.zones().zone(laterIndex)->chain, 3);
+		printEvidence("chain-removal-reindexes-zones",
+			QStringLiteral("chains 5 -> 4; zone on chain 4 -> chain 3; zone on the removed "
+				"chain 2 dropped"));
+	}
 };
 
 QTEST_GUILESS_MAIN(RackZonesTest)

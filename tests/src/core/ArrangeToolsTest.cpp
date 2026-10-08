@@ -201,6 +201,63 @@ private slots:
 		QCOMPARE(run(QStringLiteral("section.add"), {{QStringLiteral("start"), 100}, {QStringLiteral("end"), 50}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! A replacement enforces the span checks add() does: a reversed or empty span, or one starting
+	//! before the song, is refused and the stored section is left alone.
+	void aSectionReplacementRefusesAnInvalidSpan()
+	{
+		ArrangementSections& sections = ArrangementSections::instance();
+		const int id = sections.add(0, 768, QStringLiteral("Verse"), QString());
+		QVERIFY(id > 0);
+		ArrangementSection reversed{id, 100, 50, QStringLiteral("Reversed"), QString()};
+		QVERIFY(!sections.replace(id, reversed));   // end before start
+		QCOMPARE(sections.find(id)->end, tick_t{768});
+		ArrangementSection empty{id, 300, 300, QStringLiteral("Empty"), QString()};
+		QVERIFY(!sections.replace(id, empty));     // no span at all
+		QCOMPARE(sections.find(id)->end, tick_t{768});
+		ArrangementSection negative{id, -100, 200, QStringLiteral("Negative"), QString()};
+		QVERIFY(!sections.replace(id, negative));   // starting before the song
+		QCOMPARE(sections.find(id)->start, tick_t{0});
+		ArrangementSection good{id, 192, 960, QStringLiteral("Chorus"), QString()};
+		QVERIFY(sections.replace(id, good));       // a real span still replaces
+		QCOMPARE(sections.find(id)->name, QStringLiteral("Chorus"));
+		QCOMPARE(sections.find(id)->id, id);       // and keeps the id it was found by
+		sections.clear();
+	}
+
+	//! A section whose start or end is missing or not a number is refused, not silently read as tick
+	//! zero: a hand-edited <section start="oops" end="192"/> used to load as a section from 0.
+	void aMalformedSectionSpanIsNotReadAsTickZero()
+	{
+		ArrangementSections& sections = ArrangementSections::instance();
+		QDomDocument doc;
+		QDomElement list = doc.createElement(QStringLiteral("sections"));
+		QDomElement bad = doc.createElement(QStringLiteral("section"));
+		bad.setAttribute(QStringLiteral("id"), 1);
+		bad.setAttribute(QStringLiteral("start"), QStringLiteral("oops"));
+		bad.setAttribute(QStringLiteral("end"), 192);
+		list.appendChild(bad);
+		QDomElement noStart = doc.createElement(QStringLiteral("section"));
+		noStart.setAttribute(QStringLiteral("id"), 2);
+		noStart.setAttribute(QStringLiteral("end"), 192);
+		list.appendChild(noStart);
+		QDomElement noEnd = doc.createElement(QStringLiteral("section"));
+		noEnd.setAttribute(QStringLiteral("id"), 3);
+		noEnd.setAttribute(QStringLiteral("start"), 0);
+		list.appendChild(noEnd);
+		QDomElement good = doc.createElement(QStringLiteral("section"));
+		good.setAttribute(QStringLiteral("id"), 4);
+		good.setAttribute(QStringLiteral("start"), 96);
+		good.setAttribute(QStringLiteral("end"), 288);
+		good.setAttribute(QStringLiteral("name"), QStringLiteral("Chorus"));
+		list.appendChild(good);
+		sections.load(list);
+		QCOMPARE(sections.sections().size(), 1);        // only the one that reads as a real span
+		QVERIFY(sections.at(96) != nullptr);
+		QCOMPARE(sections.at(96)->name, QStringLiteral("Chorus"));
+		QCOMPARE(sections.at(96)->start, tick_t{96});    // and it keeps the start it was written with
+		sections.clear();
+	}
+
 	void aQuietStretchIsCutOut()
 	{
 		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));

@@ -140,9 +140,12 @@ public:
 					: QStringLiteral("unknown Lua error");
 			if (status == LUA_ERRMEM)
 			{
-				// CODE-6: name a memory refusal as a BUDGET one - Lua's own
-				// text ("not enough memory") does not say which bound was hit.
-				*error = memory.budgetExceededMessage(luaMessage);
+				// CODE-6: name the bound that actually bit - Lua's own text
+				// ("not enough memory") says neither whether it was the script's
+				// budget nor the machine. A refusal reads as a budget one; an
+				// allocation the system refused is reported as that instead, so
+				// a client is not told to raise a budget it never reached.
+				*error = memory.memoryErrorMessage(luaMessage);
 			}
 			else
 			{

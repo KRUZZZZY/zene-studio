@@ -199,6 +199,11 @@ auto Rack::removeChain(int index) -> bool
 	// removed drops the rack back to parallel, a later one slides down.
 	if (m_selectedChain == index) { m_selectedChain = Parallel; }
 	else if (m_selectedChain > index) { --m_selectedChain; }
+	// The zones and the macro targets store chain indices, so they have to move
+	// with the chains they name - or they name the wrong chain (Luna clusters
+	// 5256 and 5257). Both take the model-change guard, which nests here.
+	m_zones.reindexChains(index);
+	m_macros.reindexChains(index);
 	rebuildRoutingGraph();
 
 	if (engine != nullptr) { engine->doneChangeInModel(); }
@@ -224,6 +229,10 @@ void Rack::clear()
 	m_parallelChains.clear();
 	m_selectedChain = Parallel;
 	m_split = RackSplit{};
+	// A macro is persisted, so a cleared rack cannot keep one: loadSettings()
+	// returns early for a project with no <rack> element, which left the
+	// previous channel's macros to be written into the new project on save.
+	m_macros.clear();
 	// E20: a zone puts the rack on the path, so a cleared channel - a plain chain - has none.
 	m_zones.clear();
 	rebuildRoutingGraph();

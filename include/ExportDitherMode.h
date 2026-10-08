@@ -71,9 +71,11 @@ inline QStringList ditherModeNames()
 	return {QStringLiteral("off"), QStringLiteral("tpdf"), QStringLiteral("noise_shaped")};
 }
 
-//! Parses a wire name; false (and @a mode untouched) for anything else.
+//! Parses a wire name; false (and @a mode untouched) for anything else, or
+//! for a null \a mode (srcQualityFromName checks its out pointer the same way).
 inline bool ditherModeFromName(const QString& name, DitherMode* mode)
 {
+	if (mode == nullptr) { return false; }
 	const QStringList names = ditherModeNames();
 	const int index = names.indexOf(name);
 	if (index < 0) { return false; }

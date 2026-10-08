@@ -30,22 +30,35 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <cstdint>
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QList>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 
+#include "AllocationProbe.h"
 #include "AudioEngine.h"
 #include "AudioPortsModel.h"
 #include "Engine.h"
+#include "OutOfProcessHosting.h"
 #include "RemotePlugin.h"
 
 using namespace lmms;
 
 namespace
 {
+
+//! Warnings seen while a refusal is processed. Qt's log path allocates through malloc, which the allocation
+//! probe does not see, so a warning is counted directly.
+int g_warningsSeen = 0;
+void countWarnings(QtMsgType type, const QMessageLogContext&, const QString&)
+{
+	if (type == QtWarningMsg) { ++g_warningsSeen; }
+}
 
 //! AudioPortsModel is abstract (bufferPropertiesChanging)
 class TestAudioPortsModel : public AudioPortsModel
@@ -117,6 +130,7 @@ constexpr auto planeOffset(ch_cnt_t channel, f_cnt_t frames) -> std::ptrdiff_t
  *   "silent"       - read and log everything, never answer
  *   "die-on-start" - exit without answering on the first period request, i.e.
  *                    the client dies mid-period
+ *   "no-connect"   - exit at once without ever connecting to the socket
  */
 auto writeTestPeer(const QString& dir, const QString& python) -> QString
 {
@@ -137,6 +151,11 @@ ID_START_PROCESSING = 9
 ID_PROCESSING_DONE = 10
 
 sock_path, log_path, mode = sys.argv[1], sys.argv[2], sys.argv[3]
+
+if mode == "no-connect":
+    # Launched and gone without ever reaching the host socket: the host's
+    # poll() for a connection can only time out.
+    sys.exit(0)
 
 client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 client.connect(sock_path)
@@ -475,6 +494,95 @@ private slots:
 		}
 	}
 
+	//! A client reports its channel counts as signed ints on the wire, and the
+	//! host cast them straight to the unsigned `ch_cnt_t`: a negative count
+	//! wrapped (65535 for -1) and an oversized one was accepted, both sizing the
+	//! shared block from a value no client can have. Out-of-range counts must be
+	//! refused at this boundary - the counts and the allocation stay as they
+	//! were.
+	void outOfRangeChannelCountMessagesAreRefused()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		constexpr auto channelsIn = ch_cnt_t{2};
+		constexpr auto channelsOut = ch_cnt_t{2};
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		ports.audioPortsModel().setChannelCounts(channelsIn, channelsOut);
+		QCOMPARE(ports.buffers()->initialized(), true);
+
+		auto inBefore = ports.buffers()->input();
+		auto outBefore = ports.buffers()->output();
+
+		// Negative: -1 and -8 would wrap to 65535 and 65528
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(-1).addInt(2));
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), channelsIn);
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), channelsOut);
+
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(-8).addInt(2));
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), channelsIn);
+
+		// Oversized: far above MaxChannelsPerAudioBuffer, and the value that
+		// wraps an int into positive range when cast
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(100000).addInt(2));
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), channelsIn);
+
+		plugin.processMessage(
+			RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(100000));
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), channelsOut);
+
+		// Refused all the way: neither the counts nor the block moved
+		QCOMPARE(ports.buffers()->initialized(), true);
+		QCOMPARE(ports.buffers()->input().bufferPtr(0), inBefore.bufferPtr(0));
+		QCOMPARE(ports.buffers()->output().bufferPtr(0), outBefore.bufferPtr(0));
+		QCOMPARE(ports.buffers()->input().channels(), channelsIn);
+		QCOMPARE(ports.buffers()->output().channels(), channelsOut);
+	}
+
+	//! processMessage can run on the audio thread, so a refused count must not log there: a log allocates and
+	//! locks. Counted on this thread, refusing a negative and an oversized count allocates nothing.
+	void refusedChannelCountsAllocateNothing()
+	{
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		ports.audioPortsModel().setChannelCounts(ch_cnt_t{2}, ch_cnt_t{2});
+		QCOMPARE(ports.buffers()->initialized(), true);
+		const auto negative = RemotePlugin::message(IdChangeInputOutputCount).addInt(-1).addInt(2);
+		const auto oversized = RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(100000);
+
+		const QtMessageHandler previous = qInstallMessageHandler(countWarnings);
+		g_warningsSeen = 0;
+		lmms::test::tlCountAllocations = true;
+		lmms::test::resetAllocationCount();
+		plugin.processMessage(negative);
+		plugin.processMessage(oversized);
+		const std::uint64_t allocations = lmms::test::tlAllocationCount;
+		lmms::test::tlCountAllocations = false;
+		qInstallMessageHandler(previous);
+
+		QCOMPARE(allocations, std::uint64_t{0});
+		QCOMPARE(g_warningsSeen, 0);
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), ch_cnt_t{2});
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
+	}
+
+	//! The refusal is not lost: the main-thread side writes the warning once, and nothing is left to report after.
+	void refusedChannelCountIsReportedOnceFromTheMainThread()
+	{
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(-1).addInt(2));
+		QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("out-of-range channel count")));
+		QVERIFY(plugin.reportRefusedChannelCounts());
+		QVERIFY(!plugin.reportRefusedChannelCounts());
+	}
+
 	//! A reallocation that fails must leave the buffers reporting NOT
 	//! initialized. `initialized()` is `m_frames != 0`, so a stale frame count
 	//! keeps the ports "active" while the pointer table is null - the router's
@@ -506,6 +614,44 @@ private slots:
 	}
 
 #ifndef SYNC_WITH_SHM_FIFO
+	//! A client executable that launches but never connects to the host socket
+	//! is not a start: `oop.*` reports starts, and the crash-loop refusal is
+	//! measured against them, so recording one for a client that never reached
+	//! the host invents history the session did not have. The record must stay
+	//! untouched when the poll for a connection times out.
+	//! Costs the poll() timeout in init(), hence the single case here.
+	void clientThatNeverConnectsIsNotRecordedAsAStart()
+	{
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+		const auto client = QFileInfo{peer}.fileName();
+
+		auto& tracker = oop::HostTracker::instance();
+		tracker.resetAll();
+
+		{
+			TestRemotePluginAudioPorts ports{false, nullptr};
+			RemotePlugin plugin{ports.controller()};
+
+			// The peer exits at once without connecting: poll() times out and
+			// no client is on the other end of the socket.
+			plugin.init(peer, false, {logPath, QStringLiteral("no-connect")});
+			QVERIFY(!plugin.isRunning());
+		}
+
+		QCOMPARE(tracker.record(client).starts, 0);
+		tracker.resetAll();
+	}
+
 	//! The client dies mid-period: the wait for IdProcessingDone comes back
 	//! without a reply, and discarding that result made process() report success
 	//! on planes the client may have written only partially - which the router

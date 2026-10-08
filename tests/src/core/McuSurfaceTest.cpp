@@ -164,6 +164,27 @@ private slots:
 		McuSurface::disconnect();
 		qDeleteAll(made);
 	}
+
+	//! The bank follows the track list: deleting tracks past it shows tracks again, not eight blanks.
+	void theBankFollowsTheTrackList()
+	{
+		Song* song = Engine::getSong();
+		QList<Track*> made;
+		for (int i = 0; i < 3; ++i) { made.append(Track::create(Track::Type::Instrument, song)); }
+		McuSurface* surface = McuSurface::connect(QString(), QString());
+		QVERIFY(surface != nullptr);
+		surface->setBank(2);
+		QCOMPARE(surface->bank(), 2);
+		QCOMPARE(surface->stripTrack(0), made.at(2));
+		delete made.takeLast();  // the bank does not move by itself
+		QCOMPARE(static_cast<int>(song->tracks().size()), 2);
+		QVERIFY2(surface->stripTrack(0) != nullptr, "every strip went blank after a track was deleted");
+		// as setBank clamps, the bank falls back to the last track the song still has
+		QCOMPARE(surface->stripTrack(0), made.at(1));
+		QCOMPARE(surface->state().value(QStringLiteral("bank")).toInt(), 1);
+		McuSurface::disconnect();
+		qDeleteAll(made);
+	}
 };
 
 QTEST_MAIN(McuSurfaceTest)

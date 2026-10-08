@@ -194,6 +194,8 @@ RemotePlugin::RemotePlugin(RemotePluginAudioPortsController& audioPorts) :
 
 RemotePlugin::~RemotePlugin()
 {
+	reportRefusedChannelCounts();
+
 	// Detach from the audio ports controller before the shared buffer is
 	// destroyed, so the controller never holds a freed buffer view.
 	m_audioPorts->disconnectBuffers();
@@ -302,7 +304,13 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 	qDebug() << exec << args;
 #endif
 
+	// With the shm-fifo transport there is no socket to accept, so the client is
+	// as connected as it will ever be; the socket transport sets this from the
+	// accept() below.
+	bool connected = true;
+
 #ifndef SYNC_WITH_SHM_FIFO
+	connected = false;
 	struct pollfd pollin;
 	pollin.fd = m_server;
 	pollin.events = POLLIN;
@@ -323,6 +331,10 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 			{
 				qWarning( "Unexpected socket error." );
 			}
+			else
+			{
+				connected = true;
+			}
 	}
 #endif
 
@@ -331,7 +343,10 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 		// start under the client executable's name. The record is what `oop.*`
 		// reports and what the crash-loop REFUSAL is measured against; a start that
 	// never got this far leaves no record, which is correct (there is nothing to
-	// say about a client that never ran).
+	// say about a client that never ran - a client that launched and never
+	// connected is exactly that, and its exit may even have been recorded
+	// before this start).
+	if (connected)
 	{
 		oop::HostTracker& tracker = oop::HostTracker::instance();
 		tracker.noteStarted(QFileInfo{m_exec}.fileName(), m_process.processId(),
@@ -482,6 +497,7 @@ void RemotePlugin::hideUI()
 
 auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*
 {
+	reportRefusedChannelCounts();
 	if (channelsIn == 0 && channelsOut == 0)
 	{
 		std::cerr << "Invalid channel count for shared audio buffer\n";
@@ -522,6 +538,7 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 void RemotePlugin::processFinished( int exitCode,
 						QProcess::ExitStatus exitStatus )
 {
+	reportRefusedChannelCounts();
 	if ( exitStatus == QProcess::CrashExit )
 	{
 		qCritical() << "Remote plugin crashed";
@@ -563,6 +580,14 @@ void RemotePlugin::processErrored( QProcess::ProcessError err )
 
 
 
+
+bool RemotePlugin::reportRefusedChannelCounts()
+{
+	if (!m_refusalPending.exchange(false)) { return false; }
+	qWarning() << "RemotePlugin: remote client reported an out-of-range channel count"
+		<< m_refusedInCount.load() << "in /" << m_refusedOutCount.load() << "out - refusing the request";
+	return true;
+}
 
 bool RemotePlugin::processMessage( const message & _m )
 {
@@ -611,11 +636,31 @@ bool RemotePlugin::processMessage( const message & _m )
 			break;
 
 		case IdChangeInputOutputCount:
+		{
 			// The client reports both counts at once; the ports model owns the
 			// shared buffer sizing from here on (updateAudioBuffer()).
+			//
+			// The wire values are signed ints, `ch_cnt_t` is unsigned: casting a
+			// negative count wrapped it (-1 -> 65535) and no upper bound stopped
+			// an oversized one, and the shared block is sized from these counts.
+			// Refuse anything outside the range a buffer can hold instead.
+			const auto inCount = _m.getInt(0);
+			const auto outCount = _m.getInt(1);
+			const auto outOfRange = [](int count)
+			{ return count < 0 || count > MaxChannelsPerAudioBuffer; };
+			if (outOfRange(inCount) || outOfRange(outCount))
+			{
+				// Realtime rule: no log here, since this can run on the audio thread (process() pumps
+				// messages while it waits for the client). The refusal is recorded and reported later.
+				m_refusedInCount.store(inCount);
+				m_refusedOutCount.store(outCount);
+				m_refusalPending.store(true);
+				break;
+			}
 			m_audioPorts->audioPortsModel().setChannelCounts(
-				static_cast<ch_cnt_t>(_m.getInt(0)), static_cast<ch_cnt_t>(_m.getInt(1)));
+				static_cast<ch_cnt_t>(inCount), static_cast<ch_cnt_t>(outCount));
 			break;
+		}
 
 		case IdDebugMessage:
 			fprintf( stderr, "RemotePlugin::DebugMessage: %s",

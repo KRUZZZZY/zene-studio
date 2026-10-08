@@ -119,6 +119,7 @@ public:
 	 * format libsndfile does not know, a decode error) - a typed refusal, never
 	 * an empty success. On success \a answer also reports whether the data came
 	 * from the cache, which is what makes the cache observable over the socket.
+	 * \a error may be null for a caller that wants the verdict and no reason.
 	 */
 	bool peaksFor(const QString& path, int buckets, Answer* answer, QString* error);
 

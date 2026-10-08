@@ -50,7 +50,9 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <algorithm>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -61,6 +63,7 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
+#include "DeltaTap.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -419,6 +422,45 @@ private slots:
 		QCOMPARE(readState(), before);
 	}
 
+	//! A port field that IS present but is not a JSON integer is not the same
+	//! thing as a port field that is absent. `from_port: "1"` used to leave the
+	//! default 0 in place, so the edit succeeded and connected a DIFFERENT port
+	//! than the caller asked for - and port 0 is usually valid, so nothing
+	//! downstream complained. `to_port: 0.5` was worse still: `toInt()`
+	//! truncated it to 0 silently. Both are now refused as malformed input,
+	//! while an absent port field still defaults to 0.
+	void aPresentButInvalidPortIsRefusedRatherThanBecomingPortZero()
+	{
+		const QJsonObject before = readState();
+
+		QJsonObject stringPort = wire(QStringLiteral("effect:0"), QStringLiteral("effect:1"));
+		stringPort.insert(QStringLiteral("from_port"), QStringLiteral("1"));
+		const ControlResult stringResult = invoke(QStringLiteral("patcher.set_wiring"),
+			{{QStringLiteral("target"), channel()},
+			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")), stringPort}}});
+		QVERIFY(!stringResult.ok);
+		QCOMPARE(stringResult.errorKind, ControlErrorKind::InvalidArgs);
+
+		QJsonObject fractionalPort = wire(QStringLiteral("effect:0"), QStringLiteral("effect:1"));
+		fractionalPort.insert(QStringLiteral("to_port"), 0.5);
+		const ControlResult fractionalResult = invoke(QStringLiteral("patcher.set_wiring"),
+			{{QStringLiteral("target"), channel()},
+			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")), fractionalPort}}});
+		QVERIFY(!fractionalResult.ok);
+		QCOMPARE(fractionalResult.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Neither refusal wrote anything.
+		QCOMPARE(readState(), before);
+
+		// An absent port field still means port 0, and still works.
+		QJsonObject absentPort = wire(QStringLiteral("effect:0"), QStringLiteral("effect:1"));
+		absentPort.remove(QStringLiteral("from_port"));
+		const ControlResult absentResult = invoke(QStringLiteral("patcher.set_wiring"),
+			{{QStringLiteral("target"), channel()},
+			 {QStringLiteral("edges"), QJsonArray{inputTo(QStringLiteral("effect:0")), absentPort}}});
+		QVERIFY(absentResult.ok);
+	}
+
 	//! The measured normal case for a chain of real devices, stated rather than
 	//! hidden: a chain with nothing to route has no graph and reports it
 	//! (`editable.editable` false with the reason), and an edit against it is
@@ -490,6 +532,61 @@ private slots:
 		const std::uint64_t allocations = test::tlAllocationCount;
 		test::tlCountAllocations = false;
 		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
+	//! The AudioBuffer overload runs every effect through its delta tap, like
+	//! the AudioBus fallback (EffectChain.cpp:336) and the graph path
+	//! (RoutingChainNodes.cpp:98) already do. With "hear only what it changes"
+	//! on a doubling effect, a unit block must come out as the change alone
+	//! (1.0), not the effect's own output (2.0), and the tap back off must
+	//! restore the plain output.
+	void theAudioBufferPathAppliesTheDeltaTap()
+	{
+		// One effect only: a legacy effect processes the interleaved scratch and
+		// its result is copied back to the planar channels, so a second effect
+		//! would read a stale input and mask what the first one did.
+		EffectChain* chain = &Engine::mixer()->mixerChannel(kEmptyChannel)->m_fxChain;
+		QVERIFY(chain->effects().empty());
+		auto* effect = new PatcherScaleEffect(chain, kBypassedGain, kBypassedGain);
+		chain->appendEffect(effect);
+		QCOMPARE(chain->effects().size(), std::size_t{1});
+
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		AudioBuffer buffer{fpp};
+		// The legacy effect processes through the interleaved scratch, which a
+		// bare AudioBuffer does not carry.
+		buffer.allocateInterleavedBuffer();
+		DeltaTap& tap = effect->deltaTap();
+
+		// A block is read from the interleaved scratch and written back to the
+		// planar channels; its silence flags are what a sleeping effect checks
+		// before zeroing it.
+		const auto fillWithUnitSignal = [&buffer, fpp]
+		{
+			std::fill_n(buffer.buffer(0).data(), fpp, 1.f);
+			std::fill_n(buffer.buffer(1).data(), fpp, 1.f);
+			toInterleaved(buffer.groupBuffers(0), buffer.interleavedBuffer());
+			buffer.assumeNonSilent(0);
+			buffer.assumeNonSilent(1);
+		};
+
+		// The tap off: the effect's plain output, 1.0 doubled.
+		QVERIFY(!tap.enabled());
+		fillWithUnitSignal();
+		chain->processAudioBuffer(buffer);
+		QCOMPARE(buffer.buffer(0)[0], kBypassedGain);
+		QCOMPARE(buffer.buffer(1)[0], kBypassedGain);
+
+		// The tap on: output minus input, i.e. the doubling itself - 1.0.
+		tap.setEnabled(true, fpp);
+		QVERIFY(tap.enabled());
+		fillWithUnitSignal();
+		chain->processAudioBuffer(buffer);
+		QCOMPARE(buffer.buffer(0)[0], kBypassedGain - 1.f);
+		QCOMPARE(buffer.buffer(1)[0], kBypassedGain - 1.f);
+
+		tap.setEnabled(false, fpp);
+		QVERIFY(!tap.enabled());
 	}
 
 private:

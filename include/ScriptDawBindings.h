@@ -39,6 +39,12 @@ class EffectChain;
 class Effect;
 class AutomatableModel;
 
+//! The REGISTERED model wrappers this header returns (FloatModel / BoolModel).
+//! Declared here rather than reached through ScriptBindings.h so the header
+//! keeps its forward-declaration-only dependency set.
+class LuaFloatModel;
+class LuaBoolModel;
+
 //! Forward declaration at namespace scope: naming it as `const struct
 //! ScriptCommand&` inside ScriptDawBindings would declare a NEW nested type.
 struct ScriptCommand;
@@ -86,9 +92,16 @@ public:
 
 	//! The channel's fader / mute / solo as model wrappers, so a script can
 	//! reach the model (min, max, display name) rather than only the value.
-	AutomatableModel* gainModel() const;
-	AutomatableModel* muteModel() const;
-	AutomatableModel* soloModel() const;
+	//!
+	//! These return the REGISTERED Lua classes - FloatModel / BoolModel -
+	//! pooled the way the instrument-track bindings pool theirs, NOT a raw
+	//! `AutomatableModel*`: the bridge wraps a returned pointer as the class
+	//! that pointer's static type is registered under, and AutomatableModel is
+	//! not a registered class, so a raw model raised "The class is not
+	//! registered in LuaBridge" out of the script.
+	LuaFloatModel& gainModel() const;
+	LuaBoolModel& muteModel() const;
+	LuaBoolModel& soloModel() const;
 
 	//! The channel's effect chain (rack chain 0), as the Lua view of it: the
 	//! registered class is LuaEffectChain ("EffectChain"), so a raw
@@ -146,8 +159,11 @@ public:
 
 	int parameterCount() const;
 	QString parameterName(int index) const;
-	//! Parameter \a index (-1 when out of range).
-	AutomatableModel* parameter(int index) const;
+	//! Parameter \a index as the registered FloatModel wrapper (an invalid
+	//! wrapper when out of range), NOT a raw AutomatableModel*: the bridge
+	//! cannot expose an unregistered class, so the raw model raised out of the
+	//! script before a parameter was reachable from Lua at all.
+	LuaFloatModel& parameter(int index) const;
 
 private:
 	Effect* m_effective() const;

@@ -432,6 +432,10 @@ bool writeReportIfIdle(const CrashInfo& info)
 			O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
 		if (subFd >= 0)
 		{
+			// This report is a NEW crash: clear the marker left by the last
+			// offered one, or hasPendingReport() would call this crash already
+			// offered.  unlinkat() is async-signal-safe, like the rest of here.
+			::unlinkat(subFd, kOfferedMarkerName, 0);
 			fd = ::openat(subFd, kReportFileName,
 				O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0644);
 			::close(subFd);

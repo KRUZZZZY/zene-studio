@@ -43,6 +43,7 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QDirIterator>
 #include <QFileInfo>
 #include <QPair>
 
@@ -175,6 +176,39 @@ BrowserItem makeItem(const QString& path, BrowserKind kind)
 	return item;
 }
 
+/*! Opens \a item for its own embedded metadata and appends it when the WHOLE
+ *  expression then holds.
+ *
+ *  \a cheapMatch is what the name, path and tags already answered. Probing a
+ *  candidate that matched is not free, but for an exclusion it is the only thing
+ *  that decides the row: `-drum` holds precisely because "drum" is ABSENT, and a
+ *  name that does not contain it cannot tell the file's embedded title from its
+ *  own. A probe that learns nothing (an unreadable file, or an exhausted
+ *  budget) leaves the cheap answer standing; a probe that reads the file and
+ *  still excludes it drops the row.
+ */
+void probeAndAppend(BrowserItem* item, bool cheapMatch, QueryContext* context)
+{
+	if (!context->query->probe || context->probed >= BrowserMaxProbes)
+	{
+		if (cheapMatch) { context->matched.append(*item); }
+		return;
+	}
+	item->metadata = probeAudioMetadata(item->path);
+	item->hasMetadata = true;
+	++context->probed;
+	const bool textHolds = item->metadata.valid
+		&& context->search->matches(*item, item->metadata.searchableText());
+	if (textHolds || (cheapMatch && !item->metadata.valid)) { context->matched.append(*item); }
+}
+
+//! True when the file's own metadata can still overturn the cheap answer, i.e.
+//! when the expression excludes a word with no field to exclude it FROM.
+bool metadataCanOverturn(const QueryContext* context)
+{
+	return context->query->probe && context->search->hasUnfieldedExclusion();
+}
+
 /*! Considers one file: the cheap filters first, and a metadata probe only for a
  *  candidate whose name, path and tags did not already answer the query.
  */
@@ -182,54 +216,107 @@ void considerPath(const QString& path, BrowserKind kind, QueryContext* context)
 {
 	BrowserItem item = makeItem(path, kind);
 	item.tags = BrowserTagStore::instance().tagsOf(path);
-	if (!tagsMatch(item.tags, context->query->tags)) { return; }
+	// `scanned` counts the files the walk EXAMINED, and only the kind filter
+	// precedes that count: this file has been read, so a tag filter that refuses
+	// it does not un-read it.
 	++context->scanned;
+	if (!tagsMatch(item.tags, context->query->tags)) { return; }
 
-	if (context->search->matches(item))
+	const bool cheapMatch = context->search->matches(item);
+	// Only audio carries the metadata a probe reads, and the probe budget is a
+	// small fraction of the scan budget: a library of presets and projects must
+	// not spend the probes the audio candidates need. So a preset or project keeps
+	// its cheap answer, match or no match, even when the expression has an
+	// unfielded exclusion that a probe would overturn for audio.
+	if (kind != BrowserKind::Audio || (cheapMatch && !metadataCanOverturn(context)))
 	{
-		context->matched.append(item);
+		if (cheapMatch) { context->matched.append(item); }
 		return;
 	}
-	if (!context->query->probe || context->probed >= BrowserMaxProbes) { return; }
+	probeAndAppend(&item, cheapMatch, context);
+}
 
-	item.metadata = probeAudioMetadata(item.path);
-	item.hasMetadata = true;
-	++context->probed;
-	if (item.metadata.valid && context->search->matches(item, item.metadata.searchableText()))
+//! True when the walk may descend into \a entry: a symlinked directory is a loop
+//! the walk never ends on, a hidden one is not a sample library, and the depth
+//! limit is what keeps a deep tree finite.
+bool walkMayDescend(const QFileInfo& entry, int depth)
+{
+	return !entry.isSymLink() && depth + 1 <= kMaxDepth
+		&& !entry.fileName().startsWith(QLatin1Char('.'));
+}
+
+//! True when \a entry is skipped only because the walk is out of depth. A hidden
+//! or symlinked directory is skipped BY DESIGN - nothing under a dot-directory
+//! or behind a link was ever going to be part of the answer - so only the depth
+//! limit means the answer is a prefix of what the directory holds.
+bool skippedForDepth(const QFileInfo& entry, int depth)
+{
+	return !entry.isSymLink() && !entry.fileName().startsWith(QLatin1Char('.'))
+		&& depth + 1 > kMaxDepth;
+}
+
+/*! Streams every entry of \a dirPath one at a time into \a out (files) and \a
+ *  queue (directories to visit), spending one unit of \a remaining per entry.
+ *
+ *  Entries are read ONE AT A TIME: entryInfoList() would materialise a whole
+ *  directory before the limit could apply to any of it. Directories count against
+ *  the limit too, because BrowserMaxScanEntries bounds the ENTRIES examined - a
+ *  tree of empty directories is bounded by it too.
+ *
+ *  Returns false when the budget ran out mid-directory and the walk must report
+ *  truncation. \a truncated is set when a readable directory is skipped for the
+ *  depth limit alone, so the caller can report an incomplete answer even though
+ *  the scan budget was nowhere near spent.
+ */
+bool readDirectory(const QString& dirPath, int depth, int* remaining,
+		QStringList* out, QList<QPair<QString, int>>* queue, bool* truncated)
+{
+	QDirIterator entries(dirPath,
+		QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable);
+	while (entries.hasNext())
 	{
-		context->matched.append(item);
+		if (*remaining <= 0) { return false; }
+		--(*remaining);
+		const QFileInfo entry = entries.nextFileInfo();
+		if (entry.isDir())
+		{
+			if (walkMayDescend(entry, depth))
+			{
+				queue->append({entry.absoluteFilePath(), depth + 1});
+			}
+			else if (skippedForDepth(entry, depth))
+			{
+				// There may be matching files below this directory that the walk
+				// will never look at. Reporting a complete answer would be a lie
+				// about what was searched.
+				*truncated = true;
+			}
+			continue;
+		}
+		out->append(entry.absoluteFilePath());
 	}
+	return true;
 }
 
 //! Every file under \a root, breadth-first, skipping hidden directories and
-//! symlinked ones (a symlink loop is a walk that never ends).
+//! symlinked ones (a symlink loop is a walk that never ends). \a truncated is set
+//! when the walk stopped early OR when it left a readable directory unread
+//! because it ran out of depth.
 QStringList filesUnder(const QString& root, int* remaining, bool* truncated)
 {
 	QStringList out;
 	QList<QPair<QString, int>> queue{{root, 0}};
+	bool stoppedEarly = false;
 	while (!queue.isEmpty() && *remaining > 0)
 	{
 		const QPair<QString, int> head = queue.takeFirst();
-		QDir dir(head.first);
-		dir.setFilter(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable);
-		const QFileInfoList entries = dir.entryInfoList();
-		for (const QFileInfo& entry : entries)
+		if (!readDirectory(head.first, head.second, remaining, &out, &queue, truncated))
 		{
-			if (*remaining <= 0) { *truncated = true; break; }
-			if (entry.isDir())
-			{
-				if (!entry.isSymLink() && head.second + 1 <= kMaxDepth
-					&& !entry.fileName().startsWith(QLatin1Char('.')))
-				{
-					queue.append({entry.absoluteFilePath(), head.second + 1});
-				}
-				continue;
-			}
-			out.append(entry.absoluteFilePath());
-			--(*remaining);
+			stoppedEarly = true;
+			break;
 		}
 	}
-	if (!queue.isEmpty()) { *truncated = true; }
+	if (!queue.isEmpty() || stoppedEarly) { *truncated = true; }
 	return out;
 }
 

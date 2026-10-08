@@ -29,6 +29,7 @@
 #include <QProcess>
 #include <QRecursiveMutex>
 
+#include <atomic>
 #include <span>
 
 #include "RemotePluginBase.h"
@@ -115,6 +116,12 @@ public:
 	//! @return true if the remote client processed this period
 	bool process();
 
+	//! Writes the warning for a channel-count request that processMessage refused. processMessage also runs on
+	//! the audio thread, where a log would allocate and lock, so the refusal is only recorded there and this
+	//! main-thread side reports it. Called from updateAudioBuffer(), processFinished() and the destructor.
+	//! @return true when a refusal was waiting and has now been reported
+	bool reportRefusedChannelCounts();
+
 	//! (Re)allocates the shared audio buffer used by the ports infrastructure
 	//! and tells the remote client about the new shared memory key (Part C).
 	//! The returned block holds `channelsIn + channelsOut` channel-major planar
@@ -193,6 +200,12 @@ protected:
 private:
 	QProcess m_process;
 	ProcessWatcher m_watcher;
+
+	//! The last channel-count request processMessage refused, and whether one is waiting to be reported.
+	//! Atomics, so the audio thread records them without allocating or locking.
+	std::atomic<bool> m_refusalPending{false};
+	std::atomic<int> m_refusedInCount{0};
+	std::atomic<int> m_refusedOutCount{0};
 
 	QString m_exec;
 	QStringList m_args;

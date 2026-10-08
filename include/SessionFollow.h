@@ -65,6 +65,7 @@
 #define LMMS_SESSION_FOLLOW_H
 
 #include <cstdint>
+#include <limits>
 
 #include "LmmsTypes.h"
 #include "SessionModel.h"
@@ -142,6 +143,12 @@ struct FollowEval
 	int scene = 0;
 	int sceneCount = 0;
 	double rngUnit = 0.0;
+	/*! A SECOND, INDEPENDENT draw in [0, 1), used only to pick Any's/Other's
+	 *  target scene. Selecting the chain entry and selecting that entry's
+	 *  target must not share one draw, or the two choices correlate: on a
+	 *  two-scene grid the entry that "Any" wins is always the entry whose draw
+	 *  lands in the lower half, so its target would always be scene 0. */
+	double targetRngUnit = 0.0;
 };
 
 /*! Ticks between the slot's start and the chain's action time.
@@ -169,7 +176,21 @@ inline tick_t followActionTicks( const FollowPlan& plan, tick_t ticksPerBar ) no
 		return plan.clipLengthTicks > 0 ? plan.clipLengthTicks : ticksPerBar;
 	}
 	const double ticks = first.timeBars * static_cast<double>( ticksPerBar );
-	return ticks > 0.5 ? static_cast<tick_t>( ticks + 0.5 ) : 0;
+	if( !( ticks > 0.0 ) )
+	{
+		return 0;
+	}
+	//! Converting a double outside tick_t's range is undefined behaviour, so a
+	//! malformed (non-finite or absurdly large) time is refused here - "cannot
+	//! fire" - rather than converted into a wrapped tick on the audio thread.
+	if( ticks >= static_cast<double>( std::numeric_limits<tick_t>::max() ) )
+	{
+		return 0;
+	}
+	//! A positive time is never zero: 0.001 bars at 192 ticks per bar rounds to
+	//! nothing, and an unlinked chain that can never fire is indistinguishable
+	//! from a broken one. Only a non-positive time answers 0.
+	return ticks < 1.0 ? tick_t{ 1 } : static_cast<tick_t>( ticks + 0.5 );
 }
 
 /*! Index of the chain entry a draw selects, by Chance A/B weighting (SPEC §4.1).
@@ -303,8 +324,10 @@ inline FollowFire decideFollowFire( const FollowPlan& plan, const FollowEval& ev
 		default:
 			break;
 	}
+	//! The target is chosen by its OWN draw, never by the entry's: sharing one
+	//! draw would make the two correlate (see FollowEval::targetRngUnit).
 	const int target = followTargetScene( action.type, eval.scene, eval.sceneCount,
-		action.jumpTo, eval.rngUnit );
+		action.jumpTo, eval.targetRngUnit );
 	if( target < 0 )
 	{
 		fire.outcome = FollowOutcome::Refused;

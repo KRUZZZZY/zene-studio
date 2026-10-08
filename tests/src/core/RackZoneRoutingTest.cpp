@@ -257,6 +257,44 @@ private slots:
 		QCOMPARE(out[RackZoneVoice::FadeFrames + 8][0], 0.0f);
 	}
 
+	//! E38: a voice renders the sample's LAST source frame (a one-frame sample sounds, it is not silence).
+	void aVoiceRendersTheLastSourceFrame()
+	{
+		const SampleBuffer one(std::vector<SampleFrame>{{0.5f, -0.5f}}, kWavRate);
+		RackZoneVoice voice;
+		voice.restart();
+		std::vector<SampleFrame> out(4, SampleFrame{});
+		QVERIFY(!voice.render(one, out.data(), static_cast<f_cnt_t>(out.size()), 1.0, 1.0f, false));
+		QCOMPARE(out[0][0], 0.5f);
+		QCOMPARE(out[0][1], -0.5f);
+		QCOMPARE(out[1][0], 0.0f);
+
+		const SampleBuffer three(std::vector<SampleFrame>{{1.0f, 1.0f}, {2.0f, 2.0f}, {3.0f, 3.0f}}, kWavRate);
+		RackZoneVoice tail;
+		tail.restart();
+		std::vector<SampleFrame> tailOut(8, SampleFrame{});
+		QVERIFY(!tail.render(three, tailOut.data(), static_cast<f_cnt_t>(tailOut.size()), 1.0, 1.0f, false));
+		QCOMPARE(tailOut[0][0], 1.0f);
+		QCOMPARE(tailOut[1][0], 2.0f);
+		QCOMPARE(tailOut[2][0], 3.0f);  // the last source frame, not dropped
+		QCOMPARE(tailOut[3][0], 0.0f);
+	}
+
+	//! A fractional step (a pitch below the sample's own rate) reaches the last source frame before the position
+	//! passes the end: that frame is held for the rest of its duration, not cut at its first visit.
+	void aFractionalStepHoldsTheLastSourceFrame()
+	{
+		const SampleBuffer three(std::vector<SampleFrame>{{1.0f, 1.0f}, {2.0f, 2.0f}, {3.0f, 3.0f}}, kWavRate);
+		RackZoneVoice voice;
+		voice.restart();
+		std::vector<SampleFrame> out(8, SampleFrame{});
+		// Positions 0, 0.5, ..., 2.5 sound (the last one holds frame 2); the position then passes 3 and the voice ends.
+		QVERIFY(!voice.render(three, out.data(), static_cast<f_cnt_t>(out.size()), 0.5, 1.0f, false));
+		const float expected[] = {1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.0f};
+		for (int i = 0; i < 6; ++i) { QCOMPARE(out[static_cast<std::size_t>(i)][0], expected[i]); }
+		QCOMPARE(out[6][0], 0.0f);
+	}
+
 	//! E20/E38 on the audio path: delivering zoned notes, playing a zone's sample and rendering the rack
 	//! allocate nothing.
 	void zonedNotesAllocateNothing()

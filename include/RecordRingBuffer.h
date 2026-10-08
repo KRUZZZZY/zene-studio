@@ -30,6 +30,8 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <stdexcept>
 #include <vector>
 
 #include "LmmsTypes.h"
@@ -157,6 +159,11 @@ public:
 private:
 	static std::size_t nextPowerOfTwo(std::size_t value)
 	{
+		// Past the largest power of two a size_t holds, `result <<= 1` wraps to 0 and never ends.
+		if (value > (std::numeric_limits<std::size_t>::max() >> 1) + 1)
+		{
+			throw std::length_error("ring capacity cannot be rounded up to a power of two");
+		}
 		std::size_t result = 1;
 		while (result < value) { result <<= 1; }
 		return result;
