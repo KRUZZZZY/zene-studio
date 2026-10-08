@@ -29,6 +29,17 @@ bool SessionSlotContentTable::install( int track, int scene, int patternId,
 	{
 		if( m_entries[i].track == track && m_entries[i].scene == scene )
 		{
+			if( patternId < 0 )
+			{
+				// A cell that LOSES its pattern gives its entry back: the last
+				// entry moves into the hole and the count drops. A bounded move
+				// over fixed storage, so the audio thread neither allocates nor
+				// locks, and a churn of real -> empty cells cannot fill the table.
+				m_entries[i] = m_entries[m_count - 1];
+				m_entries[m_count - 1] = SessionSlotContent{};
+				--m_count;
+				return true;
+			}
 			m_entries[i].patternId = patternId;
 			m_entries[i].loopLengthTicks = loopLengthTicks;
 			m_entries[i].legato = legato;
@@ -41,8 +52,7 @@ bool SessionSlotContentTable::install( int track, int scene, int patternId,
 	// "nothing to render" the render path handles). The model publishes EVERY
 	// cell of the grid, empty ones included, so claiming an entry for each one
 	// filled the fixed table with cells that render nothing - and the MIDI cell
-	// added to a grid one column wider was refused and played silently. A cell
-	// that LOSES its pattern is still updated above, so it stops rendering it.
+	// added to a grid one column wider was refused and played silently.
 	if( patternId < 0 )
 	{
 		return true;

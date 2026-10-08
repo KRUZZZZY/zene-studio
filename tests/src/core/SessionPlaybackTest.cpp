@@ -246,6 +246,37 @@ private slots:
 		QCOMPARE( scheduler.playbackForColumn( 0 ).patternId, -1 );
 	}
 
+	// A cell that held a pattern and then lost it gives its table entry back.
+	// Before this, the entry stayed (patternId -1), so churning real -> empty
+	// across every entry of the table left it full of cells that render nothing.
+	void aCellThatLosesItsPatternGivesItsEntryBack()
+	{
+		SessionSlotContentTable table;
+		for( int scene = 0; scene < int( SessionSlotContentTable::Capacity ); ++scene )
+		{
+			QVERIFY( table.install( 0, scene, 7, 0 ) );
+			QVERIFY( table.install( 0, scene, -1, 0 ) );
+		}
+		QCOMPARE( table.installedCount(), std::size_t( 0 ) );
+
+		// The freed table takes a full set of distinct pattern cells, and no more.
+		for( int scene = 0; scene < int( SessionSlotContentTable::Capacity ); ++scene )
+		{
+			QVERIFY2( table.install( 1, scene, 9, 0 ), "a freed table refused a pattern cell" );
+		}
+		QCOMPARE( table.installedCount(), SessionSlotContentTable::Capacity );
+		QVERIFY( !table.install( 2, 0, 9, 0 ) );
+
+		// Removing an entry from the middle keeps the others findable.
+		QVERIFY( table.install( 1, 3, -1, 0 ) );
+		QCOMPARE( table.installedCount(), SessionSlotContentTable::Capacity - 1 );
+		QVERIFY( table.find( 1, 3 ) == nullptr );
+		QVERIFY( table.find( 1, 4 ) != nullptr );
+		QCOMPARE( table.find( 1, 4 )->patternId, 9 );
+		QVERIFY( table.find( 1, int( SessionSlotContentTable::Capacity ) - 1 ) != nullptr );
+		QVERIFY( table.install( 2, 0, 9, 0 ) );  // the freed entry is usable again
+	}
+
 	//! 0.5.0 WF-060: a cell's own start inside its clip offsets where it plays, and a legato cell
 	//! relaunched while it plays goes on from where it was instead of its top.
 	void aCellStartsAtItsLoopStartAndALegatoRelaunchGoesOn()
