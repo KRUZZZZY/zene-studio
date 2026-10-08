@@ -202,12 +202,21 @@ void SampleClip::prepareRecordTake()
 
 void SampleClip::armRecordTake()
 {
+	// Journalling: the arm is one undo step (the track's checkpoint below). The clip's own changes
+	// while it records - the disarm that ends the recording - are not journalled, so one undo takes
+	// the whole recording back. Journalling resumes when the clip disarms.
+	if (!isRecord()) { setJournalling(true); }
 	// The arm transition (the model signals changes only): a new arming, and a clip armed inside
 	// its span must not stay latched as playing from the pass before (BUGS P3).
 	if (isRecord())
 	{
 		++m_armGeneration;
 		setIsPlaying(false);
+		// A new arming starts with no pass to give way to. The track is checkpointed once here, so
+		// one undo step takes back the whole recording (its lanes and mutes).
+		m_lastPassTake = nullptr;
+		if (Track* track = getTrack()) { track->addJournalCheckPoint(); }
+		setJournalling(false);
 	}
 	prepareRecordTake();
 }
@@ -250,7 +259,13 @@ void SampleClip::acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, st
 	{
 		setSampleBuffer(std::move(take));
 	}
-	if (!continues) { setRecord(false); }
+	if (!continues)
+	{
+		// The disarm that ends a recording is part of the arm's undo step, not a step of its own.
+		m_recordModel.setJournalling(false);
+		setRecord(false);
+		m_recordModel.setJournalling(true);
+	}
 }
 
 void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take)
@@ -265,15 +280,18 @@ void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take)
 	// the track's live play handles - the take of the pass that has just begun. Suspended here.
 	track->setClipUpdatesSuspended(true);
 	auto* take_clip = new SampleClip(track, Sample(std::move(take)), false);
+	// Not journalled on its own: the arm's checkpoint of the track covers the lane (one undo step).
+	take_clip->setJournalling(false);
 	take_clip->setLaneIndex(lane);
 	take_clip->movePosition(startPosition());
 	take_clip->updateLength();
 	track->setClipUpdatesSuspended(false);
 	// The newest pass is the audible take; the earlier passes stay on their lanes, muted, until
 	// the user comps them.
-	std::erase_if(m_passTakes, [](const QPointer<Clip>& take) { return take.isNull(); });
-	for (const QPointer<Clip>& earlier : m_passTakes) { earlier->setMuted(true); }
-	m_passTakes.emplace_back(take_clip);
+	// The previous pass gives way to this one, but only while it is still audible as recording left
+	// it: a take the user muted or unmuted since is theirs, and earlier passes are not touched again.
+	if (m_lastPassTake && !m_lastPassTake->isMuted()) { m_lastPassTake->setMutedUnjournalled(true); }
+	m_lastPassTake = take_clip;
 	Engine::getSong()->setModified();
 }
 

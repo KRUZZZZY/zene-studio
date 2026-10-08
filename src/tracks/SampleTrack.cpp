@@ -44,6 +44,7 @@
 #include "SamplePlayHandle.h"
 #include "SampleRecordHandle.h"
 #include "SampleTrackView.h"
+#include "TakeLane.h"
 #include "Song.h"
 #include "volume.h"
 
@@ -106,6 +107,17 @@ namespace
 {
 //! Clip starts deferred by the per-pass cap in SampleTrack::play, process-wide.
 std::atomic<std::uint64_t> s_deferredClipStarts{0};
+
+//! True when the track's composite names this clip's lane somewhere: that take plays its comped
+//! spans whatever its mute flag says.
+bool namedByComposite( const Track& track, const SampleClip& clip )
+{
+	for( const TakeLaneSegment& segment : track.takeLanes().segments() )
+	{
+		if( segment.laneIndex == clip.laneIndex() ) { return true; }
+	}
+	return false;
+}
 } // namespace
 
 std::uint64_t SampleTrack::deferredClipStarts() noexcept
@@ -228,7 +240,9 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	{
 		const auto& scheduled = clips[i];
 		auto st = scheduled.clip;
-		if( !st->isMuted() )
+		// A muted take still plays where the composite names its lane: the comp, not the mute,
+		// decides what a comped take contributes (BUGS P6, round 4).
+		if( !st->isMuted() || namedByComposite( *this, *st ) )
 		{
 			PlayHandle* handle;
 			if( st->isRecord() )

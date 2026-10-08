@@ -1755,3 +1755,7 @@ include/SampleClip.h	docs/m0-blocker-fixes-2026-10-08 round 3: armGeneration(), 
 src/gui/MainWindow.cpp	docs/m0-blocker-fixes-2026-10-08 round 3: shows a non-modal notice (TextFloat and status bar) when a recording pass lost frames
 include/SampleTrack.h	docs/m0-blocker-fixes-2026-10-08 round 4: clip updates can be suspended (setClipUpdatesSuspended) while a lane take is built, so it cannot remove the live take of the next pass
 src/tracks/SampleTrack.cpp	docs/m0-blocker-fixes-2026-10-08 round 4: updateClips() does nothing while clip updates are suspended
+include/Clip.h	docs/m0-blocker-fixes-2026-10-08 round 4: setMutedUnjournalled(): a mute that belongs to a recording step the caller journals itself (the auto-mute of a loop pass)
+include/SampleClip.h	docs/m0-blocker-fixes-2026-10-08 round 4: m_lastPassTake replaces the pass list: only the latest pass gives way to the next
+src/core/SampleClip.cpp	docs/m0-blocker-fixes-2026-10-08 round 4: a new arming starts with no pass; the arm is one journal step (track checkpoint), the lane take and the disarm are not journalled separately; a previous pass is muted only while still audible as recording left it
+src/tracks/SampleTrack.cpp	docs/m0-blocker-fixes-2026-10-08 round 4: a muted take still plays where the composite names its lane (the comp decides its spans)

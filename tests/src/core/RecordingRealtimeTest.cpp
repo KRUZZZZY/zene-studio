@@ -42,6 +42,7 @@
 
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
+#include "ProjectJournal.h"
 #include "Engine.h"
 #include "SampleClip.h"
 #include "SampleFrame.h"
@@ -874,6 +875,170 @@ private slots:
 			qPrintable(QStringLiteral("a pass of %1 periods came out as %2 frames")
 				.arg(passPeriods).arg(static_cast<qulonglong>(shortest))));
 		delete track;
+	}
+
+	//! The take clips of a track, in lane order, without the armed clip itself.
+	static std::vector<lmms::Clip*> laneTakesOf(lmms::SampleTrack* track, lmms::Clip* armed)
+	{
+		std::vector<lmms::Clip*> takes;
+		for (lmms::Clip* c : track->getClips()) { if (c != armed) { takes.push_back(c); } }
+		std::sort(takes.begin(), takes.end(), [](lmms::Clip* a, lmms::Clip* b) { return a->laneIndex() < b->laneIndex(); });
+		return takes;
+	}
+
+	//! A user's unmute of an earlier pass is theirs: a later pass does not mute it again (round 4).
+	void aUserUnmutedPassIsNotMutedAgain()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+
+		song->playAndRecord();
+		driveRecordPeriods(30, 0.05f);
+		song->setPlayPos(0);
+		QTest::qWait(50);
+		driveRecordPeriods(30, 0.1f);
+		song->setPlayPos(0);
+		QTest::qWait(50);
+		auto takes = laneTakesOf(track, clip);
+		QCOMPARE(takes.size(), static_cast<std::size_t>(2));
+		QVERIFY(takes[0]->isMuted());   // muted by the second pass, as recording left it
+		takes[0]->setMuted(false);      // the user brings pass 1 back
+
+		driveRecordPeriods(30, 0.2f);
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		QTest::qWait(50);
+		takes = laneTakesOf(track, clip);
+		QCOMPARE(takes.size(), static_cast<std::size_t>(3));
+		QVERIFY2(!takes[0]->isMuted(), "a later pass muted a take the user had unmuted");
+		QVERIFY(takes[1]->isMuted());
+		QVERIFY(!takes[2]->isMuted());
+		delete track;
+	}
+
+	//! A new arming does not mute the takes of an earlier arming (its pass state starts empty).
+	void aNewArmingLeavesEarlierTakesAlone()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+
+		clip->setRecord(true);
+		song->playAndRecord();
+		driveRecordPeriods(30, 0.05f);
+		song->setPlayPos(0);
+		QTest::qWait(50);
+		driveRecordPeriods(30, 0.1f);
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		QTest::qWait(50);
+		auto takes = laneTakesOf(track, clip);
+		QCOMPARE(takes.size(), static_cast<std::size_t>(2));
+		QVERIFY(!takes[1]->isMuted());  // the newest take of the first arming stays audible
+
+		clip->setRecord(true);          // a second arming
+		song->playAndRecord();
+		driveRecordPeriods(30, 0.15f);
+		song->setPlayPos(0);
+		QTest::qWait(50);
+		driveRecordPeriods(30, 0.2f);
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		QTest::qWait(50);
+		takes = laneTakesOf(track, clip);
+		QCOMPARE(takes.size(), static_cast<std::size_t>(4));
+		QVERIFY2(!takes[1]->isMuted(), "a new arming muted a take of the earlier arming");
+		delete track;
+	}
+
+	//! A comped take plays its comped span even when its mute flag is set: the comp decides.
+	void aComposedMutedTakePlaysItsSpan()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+		song->playAndRecord();
+		driveRecordPeriods(30, 0.05f);
+		song->setPlayPos(0);
+		QTest::qWait(50);
+		driveRecordPeriods(30, 0.2f);
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		QTest::qWait(50);
+		auto takes = laneTakesOf(track, clip);
+		QCOMPARE(takes.size(), static_cast<std::size_t>(2));
+		QVERIFY(takes[0]->isMuted());
+
+		// Comp the whole bar from the first take's lane, then from the second's, and compare the peaks.
+		const auto bar = song->ticksPerBar();
+		auto* engine = lmms::Engine::audioEngine();
+		const auto peakOfComp = [&](int lane) {
+			track->takeLanes().selectSegment(0, bar, lane);
+			song->playSong();
+			float p = 0.0f;
+			for (int i = 0; i < 12; ++i)
+			{
+				const auto out = engine->renderNextPeriod();
+				if (i < 4) { continue; }  // the round trip
+				for (const auto& f : out) { p = std::max(p, std::abs(f.left())); }
+			}
+			song->stop();
+			return p;
+		};
+		const float fromMuted = peakOfComp(takes[0]->laneIndex());
+		const float fromNewest = peakOfComp(takes[1]->laneIndex());
+		QVERIFY2(fromMuted > 0.0f, "the comp named a muted take and nothing played");
+		const float ratio = fromMuted / fromNewest;
+		QVERIFY2(ratio > 0.15f && ratio < 0.35f,
+			qPrintable(QStringLiteral("the comped first take sounds %1 of the second (expected 0.25)").arg(ratio)));
+		delete track;
+	}
+
+	//! One undo step takes back a whole recording: its lanes and the mutes it made.
+	void oneUndoStepTakesBackARecording()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		const auto trackId = track->id();
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+		song->playAndRecord();
+		driveRecordPeriods(20, 0.05f);
+		song->setPlayPos(0);
+		QTest::qWait(50);
+		driveRecordPeriods(20, 0.1f);
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		QTest::qWait(50);
+		QCOMPARE(track->takeLanes().laneCount(), 2);
+
+		const int depth = lmms::Engine::projectJournal()->undoDepth();
+		lmms::Engine::projectJournal()->undo();  // one step
+		QCOMPARE(lmms::Engine::projectJournal()->undoDepth(), depth - 1);
+		lmms::SampleTrack* restored = nullptr;
+		for (lmms::Track* t : song->tracks()) { if (t->id() == trackId) { restored = dynamic_cast<lmms::SampleTrack*>(t); } }
+		QVERIFY2(restored != nullptr, "undo lost the track");
+		QCOMPARE(restored->takeLanes().laneCount(), 0);
+		int takes = 0;
+		for (lmms::Clip* c : restored->getClips()) { if (c->laneIndex() == 0 && dynamic_cast<lmms::SampleClip*>(c) && static_cast<lmms::SampleClip*>(c)->sample().sampleSize() > 0) { ++takes; } }
+		QCOMPARE(takes, 0);
+		restored->deleteLater();
+		QTest::qWait(10);
 	}
 } ;
 
