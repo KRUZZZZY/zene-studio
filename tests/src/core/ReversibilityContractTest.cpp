@@ -460,9 +460,27 @@ private slots:
 		{
 			if (!entry.coalesces()) { continue; }
 			++declared;
-			QCOMPARE(entry.cls, control::ReversibilityClass::TrueInverse);
-			QVERIFY2(registry->command(entry.command) != nullptr,
-				qPrintable(entry.command + " declares coalescing but is not registered"));
+			const ControlCommand* spec = registry->command(entry.command);
+			QVERIFY2(spec != nullptr, qPrintable(entry.command + " declares coalescing but is not registered"));
+			// A wrapper joins the run of the nested command it names (ControlCommand::coalescesWrapped). That
+			// nested call must be a registered true_inverse coalescing row with the SAME target as the wrapper's row,
+			// so the wrapper's declaration is checked against the call that really records. Every other
+			// declaration is a true_inverse row itself.
+			if (!spec->coalescesWrapped.isEmpty())
+			{
+				QVERIFY2(!spec->mutating, qPrintable(entry.command + " is a coalescing wrapper but is mutating"));
+				const control::ReversibilityEntry* nested = table.lookup(spec->coalescesWrapped);
+				QVERIFY2(nested != nullptr, qPrintable(entry.command + " names a nested command with no row: " + spec->coalescesWrapped));
+				QVERIFY2(registry->command(spec->coalescesWrapped) != nullptr,
+					qPrintable(spec->coalescesWrapped + " is named by " + entry.command + " but is not registered"));
+				QCOMPARE(nested->cls, control::ReversibilityClass::TrueInverse);
+				QVERIFY2(nested->coalesces(), qPrintable(spec->coalescesWrapped + " does not declare coalescing"));
+				QCOMPARE(nested->coalesceTarget, entry.coalesceTarget);
+			}
+			else
+			{
+				QCOMPARE(entry.cls, control::ReversibilityClass::TrueInverse);
+			}
 		}
 		QVERIFY2(declared > 0, "nothing declares coalescing, so the drag rule has no subject");
 

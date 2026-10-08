@@ -113,6 +113,16 @@ registry and `control.undo_depth`:
 | `rack.macro_set` | `channel,macro` | dragging a macro |
 | `rack.macro_set_pair` | `channel,x_macro,y_macro` | dragging the XY pad (two macros, one step) |
 | `chord.set` | `pos` | re-editing the chord event at one timeline position |
+| `arrangement.nudge` (a wrapper, declared on the command: `ControlCommand::coalescesWrapped`) | the target of its one nested `clip.move` | a burst of nudges |
+
+**The wrapper rule (round 4).** Calls a wrapper runs are not coalesced one by one: their steps are merged into the
+wrapper's step, and merging a step into an earlier one would cover a change the record does not contain. A wrapper
+that declares `coalescesWrapped` (only `arrangement.nudge` today) joins its ONE nested call's run as a unit, keyed on
+that call's target: a burst is one undo step and one record (extended per press, `commands` counts the presses), and
+a press after an unrelated command starts a new one. A wrapper with two or more nested calls never joins a run. A call
+a mutating command runs never coalesces into a step below that command (`ControlRegistry::runHandler`). The
+`arrangement.nudge` row is `not_mutating`, so the anti-drift test accepts a declaration on a wrapper only when the
+command is non-mutating and carries `coalescesWrapped`; every other declaration must still be `true_inverse`.
 
 Every one of them is `true_inverse` (a live `ProjectJournal` checkpoint), which is a requirement and not
 a coincidence: a step can only be merged into another step if both restore live state. The anti-drift

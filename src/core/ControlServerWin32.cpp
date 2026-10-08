@@ -403,6 +403,20 @@ bool ControlServer::win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEve
 	{
 		const QByteArray line = buffer.left(newline);
 		buffer.remove(0, newline + 1);
+		// A COMPLETE line over the cap is refused, exactly like one that never
+		// ended: the read loop stops appending once the BUFFER passes the cap,
+		// but a line that arrived whole inside those last bytes is already
+		// complete and would otherwise be dispatched. The refusal goes out and
+		// the caller drains from here, which is the same shape as the
+		// never-ended case below.
+		if (line.size() > MaxRequestLineBytes)
+		{
+			if (!writeAll(pipe, ioEvent, quitEvent, overCapRefusalLine() + '\n')) { return false; }
+			buffer.clear();
+			buffer.squeeze();
+			*overCap = true;
+			return true;
+		}
 		const QByteArray reply = win32Dispatch(line);
 		if (m_win32Quit.load()) { return false; }
 		if (!reply.isEmpty() && !writeAll(pipe, ioEvent, quitEvent, reply + '\n')) { return false; }

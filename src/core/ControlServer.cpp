@@ -367,6 +367,18 @@ bool ControlServer::dispatchPendingLines(int fd, QByteArray& buffer)
 	{
 		const QByteArray line = buffer.left(newline);
 		buffer.remove(0, newline + 1);
+		// A COMPLETE line is over the cap too, not only one that never ended.
+		// The read loop stops appending once the BUFFER passes the cap, but a
+		// line that arrived whole inside those last bytes was already complete:
+		// without this check it was dispatched, which is the cap's whole point
+		// undone (a padded request the cap is there to refuse). Refuse it in the
+		// same vocabulary as a line that never ended, and retire the
+		// connection - there is no safe resynchronisation inside a line.
+		if (line.size() > MaxRequestLineBytes)
+		{
+			refuseOverCapLine(fd, false);
+			return false;
+		}
 		const QByteArray reply = dispatchLine(line);
 		if (!reply.isEmpty() && !sendBytes(fd, reply + '\n'))
 		{

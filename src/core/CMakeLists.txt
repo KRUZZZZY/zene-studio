@@ -576,6 +576,8 @@ set(LMMS_SRCS
 	core/ControlModulationSupport.cpp
 	core/ControlRackSupport.cpp
 	core/ControlRegistry.cpp
+	# The undo-record bookkeeping of nested and wrapped commands (aggregate records, merged runs).
+	core/ControlRegistryRecords.cpp
 	# The registry's COMPOSITION - which command groups exist and in what order -
 	# split out of ControlRegistry.cpp when the vca group and the routing surface
 	# were merged into the same train and pushed it over the file-length ratchet.
@@ -1269,6 +1271,8 @@ set(LMMS_SRCS
 # and register into the same registry from there.
 SET(ZENE_API_SRCS
 	core/ControlRegistry.cpp
+	# The undo-record bookkeeping of nested and wrapped commands (aggregate records, merged runs).
+	core/ControlRegistryRecords.cpp
 	core/ControlRegistryRegistrations.cpp
 	core/ControlReversibility.cpp
 	core/ControlTransactions.cpp

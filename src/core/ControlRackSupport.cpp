@@ -155,7 +155,18 @@ QJsonObject zoneJson(const RackZone& zone, int index)
 int resolveMacroIndex(const Rack& rack, const QString& id, ControlResult* error)
 {
 	const int index = idToIndex(id, QStringLiteral("macro-"));
-	if (index < 0 || rack.macros().macro(index) == nullptr)
+	// Two different failures, two kinds - the split resolveRackChannel already
+	// makes for "ch-<n>" (ControlRackSupport.cpp:54-61). A string that does not
+	// parse is a statement about the ARGUMENTS (invalid_args, retrying will not
+	// help); an id that parses but names no macro is a statement about the RACK
+	// (not_found, and the message carries the range that does exist).
+	if (index < 0)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'%1' is not a macro id of the form macro-<n>").arg(id));
+		return -1;
+	}
+	if (rack.macros().macro(index) == nullptr)
 	{
 		*error = ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("'%1' is not a macro of this rack (it has %2, macro-0..macro-%3)")
@@ -170,7 +181,13 @@ int resolveMacroIndex(const Rack& rack, const QString& id, ControlResult* error)
 int resolveZoneIndex(const Rack& rack, const QString& id, ControlResult* error)
 {
 	const int index = idToIndex(id, QStringLiteral("zone-"));
-	if (index < 0 || rack.zones().zone(index) == nullptr)
+	if (index < 0)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'%1' is not a zone id of the form zone-<n>").arg(id));
+		return -1;
+	}
+	if (rack.zones().zone(index) == nullptr)
 	{
 		*error = ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("'%1' is not a zone of this rack (it has %2, zone-0..zone-%3)")

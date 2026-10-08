@@ -468,6 +468,55 @@ private slots:
 	//! A state load's REDO is covered in UndoHonestyTest
 	//! (theStateLoadRedoReplaysTheBytesItLoaded, Luna cluster 5724): it needs the
 	//! revtest:: fixture helpers and the file-length ratchet leaves no room here.
+
+	/*! An instrument-track state restore accepted ANY parseable XML: the only
+	 *  check was that the parsed content was non-null, then loadPreset was
+	 *  called and `restored: true` reported unconditionally - a document the
+	 *  loader ignores was still reported as applied. track.preset_load (the
+	 *  file-based sibling, ControlCommandsTrackPresets.cpp:85-90) already
+	 *  refuses a content element whose `type` is missing or is another kind of
+	 *  track; plugin.state_load must refuse it too.
+	 */
+	void anInstrumentStateRestoreRefusesAForeignDocument()
+	{
+		const QString track = addTrack();
+		QVERIFY2(!track.isEmpty(), "this build exposes no instrument track to restore into");
+		ControlTarget target; ControlResult error;
+		QVERIFY2(resolveControlTarget(track, &target, &error), qPrintable(error.errorMessage));
+		QVERIFY(target.instrumentTrack != nullptr);
+		ControlDeviceHandle handle;
+		handle.track = target.instrumentTrack;
+		handle.pluginName = QStringLiteral("bundle-test");
+
+		// The happy path is untouched: the engine's own captured state restores.
+		const QByteArray own = controlDeviceStateBytes(handle);
+		QVERIFY2(!own.isEmpty(), "the instrument track captured no state to restore");
+		QVERIFY2(controlRestoreDeviceState(handle, own).ok,
+			"the instrument's own captured state was refused");
+
+		// The defect: a document that parses and DOES carry the content element
+		// DataFile selects, but is not an instrument-track preset - a saved
+		// project, whose root type names a `song` content element. loadPreset was
+		// handed that element and `restored: true` was reported regardless of the
+		// fact that it applied nothing.
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString project = dir.path() + QStringLiteral("/foreign.mmp");
+		QVERIFY2(run(QStringLiteral("project.save"), {{QStringLiteral("path"), project}}).ok,
+			"this build could not save a project document to stand in as the foreign state");
+		ControlResult ignored;
+		QByteArray foreign;
+		QVERIFY(controlReadFileBytes(project, &foreign, &ignored));
+		QVERIFY2(!foreign.isEmpty(), "the saved project document is empty");
+
+		const ControlResult restored = controlRestoreDeviceState(handle, foreign);
+		QVERIFY2(!restored.ok,
+			"controlRestoreDeviceState reported SUCCESS over a saved PROJECT document "
+			"(BUG): the content element exists, so the null check passed, loadPreset was "
+			"handed a <song> element it ignores, and restored:true was returned");
+		QVERIFY2(!restored.result.value(QStringLiteral("restored")).toBool(),
+			"the refusal still carried restored:true");
+	}
 };
 
 QTEST_GUILESS_MAIN(ReversibilityUndoTest)

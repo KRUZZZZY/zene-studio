@@ -104,8 +104,11 @@ struct ProjectAssetScan
 	QString format;
 	QVector<ProjectAssetReference> references;
 	//! sha256 over the reference set in document order, one line per reference
-	//! ("<tag>\t<raw>\t<sha256|embedded|missing>\n"). Two projects whose media
-	//! is byte-identical have the same digest whatever the projects are named.
+	//! ("<tag>\t<raw>\t<sha256|embedded|unhashed|missing>\n"). Two projects whose
+	//! media is byte-identical have the same digest whatever the projects are named.
+	//! "unhashed" is a reference that is on disk but not hashed (this verb hashes
+	//! nothing, and project.hash_assets leaves an over-cap file unhashed); it is
+	//! deliberately NOT the same state as "missing".
 	QString digest;
 	//! Elements that carry their media inline and therefore name no file.
 	int embeddedCount = 0;
@@ -146,6 +149,16 @@ struct ProjectAssetRelink
 constexpr int MaxProjectAssetReferences = 10000;
 constexpr qint64 MaxProjectAssetHashBytes = 1024LL * 1024LL * 1024LL;
 
+/*! The largest project file these verbs read, and the largest expanded document
+ *  they will inflate from a .mmpz. Same bound, same reason, and the same
+ *  measured-first rule the engine's own document recovery uses
+ *  (MaxRecoveredDocumentBytes, src/core/DataFile.cpp:202). The file on disk and
+ *  the size a compressed body declares are measured first as refusals, and the
+ *  bytes actually read or inflated are counted against this same cap. A declared
+ *  size is a hint, not a bound: qUncompress grows its output past the header. The largest project under
+ *  data/projects is about 200 kB; this is orders of magnitude above any real one. */
+constexpr qint64 MaxProjectAssetDocumentBytes = 256LL * 1024LL * 1024LL;
+
 /*! Read the project file at \a projectPath and report every reference it
  *  carries, with what is (or is not) on disk at each one. Writes nothing.
  *
@@ -166,6 +179,12 @@ LMMS_EXPORT bool controlScanProjectAssets(const QString& projectPath, ProjectAss
  *  still holds exactly the bytes it held before (a missing source, or a target that cannot be
  *  replaced, leaves it alone). @a source is left in place for the caller to remove. */
 LMMS_EXPORT bool controlReplaceFileAtomically(const QString& source, const QString& target, ControlResult* error);
+
+/*! Inflates a qCompress() stream (4-byte big-endian expanded size, then zlib) into \a out, refusing
+ *  as soon as the bytes PRODUCED would pass \a cap. False when the stream does not inflate, would pass the
+ *  cap, or this build has no zlib (ZENE_HAVE_ZLIB): the caller then gets nothing, never an unbounded inflate.
+ *  The declared size in the header is not trusted for the bound. */
+bool inflateQtCompressedWithinCap(const QByteArray& stored, qint64 cap, QByteArray* out);
 
 /*! controlScanProjectAssets() plus a sha256 per reference that resolves to a
  *  file on disk. Writes nothing to the project; only reads the media. */

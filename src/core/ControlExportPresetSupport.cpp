@@ -32,12 +32,14 @@
 #include "ControlExportPresetSupport.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QJsonValue>
 
 #include "ConfigManager.h"
+#include "ControlDeviceSupport.h"
 
 namespace lmms
 {
@@ -308,6 +310,14 @@ QJsonObject controlExportPresetJson(const ControlExportPreset& preset, bool deta
 	{
 		const QFileInfo info(preset.path);
 		out.insert(QStringLiteral("bytes"), static_cast<qint64>(info.size()));
+		// The header promises the document's size AND hash: a caller comparing a
+		// listing across an undo needs both, and the hash is the one that says
+		// the bytes are the same rather than merely the same length.
+		QFile document(preset.path);
+		if (document.open(QIODevice::ReadOnly))
+		{
+			out.insert(QStringLiteral("sha256"), controlSha256OfBytes(document.readAll()));
+		}
 	}
 	return out;
 }

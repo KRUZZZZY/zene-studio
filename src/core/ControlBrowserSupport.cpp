@@ -113,11 +113,25 @@ bool readTagList(const QJsonValue& value, QStringList* tags, ControlResult* erro
 }
 
 //! The optional directory a query walks instead of the roots.
+//!
+//! A PRESENT but empty (or whitespace-only) 'path' is a REFUSAL, not "no path
+//! given": the caller named a directory to walk and named nothing, so answering
+//! with a roots-wide query would search somewhere other than what was asked,
+//! silently. An ABSENT key still means "walk the roots".
+//!
+//! The value is NOT trimmed: a filesystem path is addressed exactly, because
+//! "/tmp/a.wav " and "/tmp/a.wav" are two different files.
 bool readQueryPath(const QJsonObject& args, BrowserQuery* query, ControlResult* error)
 {
 	if (!args.contains(QStringLiteral("path"))) { return true; }
-	const QString raw = args.value(QStringLiteral("path")).toString().trimmed();
-	if (raw.isEmpty()) { return true; }
+	const QString raw = args.value(QStringLiteral("path")).toString();
+	if (raw.trimmed().isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'path' is present but empty: name the directory to walk, or leave "
+				"the key out to walk the browser's roots"));
+		return false;
+	}
 	const QFileInfo info(raw);
 	if (!info.isAbsolute())
 	{
@@ -274,10 +288,17 @@ QJsonObject browserStringListProperty()
 		{QStringLiteral("items"), stringProperty()}};
 }
 
+//! The browser addresses a file by its absolute path, EXACTLY as given.
+//!
+//! The value is not trimmed: a leading or trailing space is a legal character in
+//! a filename, so trimming would resolve "kick.wav " onto the DIFFERENT file
+//! "kick.wav" beside it and a tag edit would land on a file the caller never
+//! named. Only a value that is empty or entirely whitespace is refused - there
+//! is no such file to address.
 bool readBrowserFileArgument(const QJsonObject& args, QString* key, ControlResult* error)
 {
-	const QString raw = args.value(QStringLiteral("path")).toString().trimmed();
-	if (raw.isEmpty())
+	const QString raw = args.value(QStringLiteral("path")).toString();
+	if (raw.trimmed().isEmpty())
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'path' is required and is empty: the browser addresses a file by "

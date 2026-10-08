@@ -14,6 +14,7 @@ libgig-mingw-w64
 libglx-dev
 liblist-moreutils-perl
 libmpc3
+libz-mingw-w64-dev
 libopengl-dev
 libxml-perl
 libxml2-utils

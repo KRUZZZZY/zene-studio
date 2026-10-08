@@ -21758,7 +21758,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Render each covered sample track's clips inside the range into ONE clip (clip.consolidate per track - clips crossing an edge are refused: range.split first). Each track records and undoes as its own consolidation.",
+      "description": "Render each covered sample track's clips inside the range into ONE clip (clip.consolidate per track - clips crossing an edge are refused: range.split first). The tracks' consolidations are one undo step, which control.undo reverts for every track together.",
       "group": "range",
       "id": "range.consolidate",
       "mutating": false,

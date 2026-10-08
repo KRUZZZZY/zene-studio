@@ -92,8 +92,11 @@ QStringList masteringWavFiles(const QString& directory)
 	}
 
 	QStringList files;
-	const QStringList entries = dir.entryList(QDir::Files | QDir::Readable | QDir::NoDotAndDotDot,
-		QDir::Name);
+	// NOT filtered by QDir::Readable: an unreadable .wav is still a file this run
+	// may overwrite, so it has to be enumerated here and refused by the capture
+	// below (which names the file) rather than silently left out - a file missing
+	// from the capture is one whose old bytes the inverse does not hold.
+	const QStringList entries = dir.entryList(QDir::Files | QDir::NoDotAndDotDot, QDir::Name);
 	for (const QString& name : entries)
 	{
 		if (isWavName(name))

@@ -46,6 +46,8 @@
 #include <memory>
 #include <vector>
 
+#include "ControlMasteringSupport.h"
+#include "ControlRegistry.h"
 #include "Engine.h"
 #include "MasteringChain.h"
 #include "MasteringJob.h"
@@ -456,6 +458,54 @@ private slots:
 		std::fflush(stdout);
 		QVERIFY2(silent.value(QStringLiteral("lufs_i")).isNull(),
 			"a loudness the meter could not measure was reported as a number");
+	}
+
+	/*! A WAV the run cannot read is REFUSED, never quietly left out. The
+	 *  before-state capture has to hold every .wav the run may overwrite: a file
+	 *  filtered out of the capture is a file whose old bytes are not recorded and
+	 *  which the inverse does not know to restore, so the run would report a
+	 *  working inverse over a directory it never looked at.
+	 *
+	 *  The refusal has to happen BEFORE the child runs, which is what
+	 *  captureMasteringWavDirectory returning false means. */
+	void anUnreadableWavRefusesTheRunInsteadOfBeingOmitted()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString readable = dir.filePath(QStringLiteral("a.wav"));
+		const QString sealed = dir.filePath(QStringLiteral("b.wav"));
+		QFile out(readable);
+		QVERIFY(out.open(QIODevice::WriteOnly));
+		out.write("readable");
+		out.close();
+		QFile copy(readable);
+		QVERIFY(copy.open(QIODevice::ReadOnly));
+		QVERIFY(copy.copy(sealed));
+		copy.close();
+
+		// Write-only, so the entry is there and its bytes are not available to us.
+		QVERIFY(QFile::setPermissions(sealed, QFileDevice::WriteOwner | QFileDevice::ExeOwner));
+		QVERIFY2(!QFile(sealed).open(QIODevice::ReadOnly),
+			"the fixture file is readable, so this proves nothing");
+
+		// Every .wav is enumerated - the unreadable one included.
+		const QStringList files = control::masteringWavFiles(dir.path());
+		QCOMPARE(files.size(), 2);
+		QVERIFY2(files.contains(sealed),
+			"the unreadable wav is missing from the enumeration the capture scans");
+
+		// ... and the capture refuses the run rather than recording an inverse
+		// over a directory it could not read.
+		QMap<QString, QByteArray> capture;
+		ControlResult error;
+		QVERIFY2(!control::captureMasteringWavDirectory(dir.path(), &capture, &error),
+			"an unreadable wav was captured as if it could be read");
+		QCOMPARE(error.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(error.errorMessage.contains(sealed),
+			qPrintable(QStringLiteral("the refusal does not name the file: %1")
+				.arg(error.errorMessage)));
+
+		QVERIFY(QFile::setPermissions(sealed, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
 	}
 
 private:

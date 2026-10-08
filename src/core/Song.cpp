@@ -81,6 +81,12 @@
 namespace lmms
 {
 
+// The load walk adopts at most ONE <z:provenance> element (restoreNamedSection). A second one - a file a
+// 0.4 build wrote into after refusing the first as unclaimed (two provenance elements in one file) - is kept
+// verbatim as unclaimed and re-emitted on save: adopting it would REPLACE the first's entries in memory
+// (Section::load clears first), and the next save would lose them. Reset at the start of every load walk.
+static bool s_provenanceAdoptedThisLoad = false;
+
 tick_t TimePos::s_ticksPerBar = DefaultTicksPerBar;
 
 
@@ -1746,6 +1752,7 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	// adopts its entries, or this session holds none - which is also why a
 	// project that never carried a section still saves without one.
 	provenance::Section::instance().clear();
+	s_provenanceAdoptedThisLoad = false;
 
 	while( !node.isNull() && !isCancelled() )
 	{
@@ -2379,9 +2386,13 @@ bool Song::restoreNamedSection(const QDomElement & element)
 	// <z:change> children - Section::load's contract). A future version or a
 	// foreign child answers false here, so the walk preserves the element
 	// verbatim as unclaimed instead of letting a write-back rewrite it.
-	if( name == provenance::nodeName() )
+	if( name == provenance::nodeName() && !s_provenanceAdoptedThisLoad )
 	{
-		if( provenance::Section::instance().load( element ) ) { return true; }
+		if( provenance::Section::instance().load( element ) )
+		{
+			s_provenanceAdoptedThisLoad = true;
+			return true;
+		}
 	}
 	// ARCH-4 S7 (SPEC-ARCH-4 1.1/2): the lane entities, top-level <z:lanes>.
 	// Claim-or-preserve like the provenance branch: the exact shape this

@@ -167,6 +167,8 @@ set(LMMS_TESTS
 	# real Engine (the recorded action checkpoint goes on the project journal).
 	src/core/ControlProjectArchiveTest.cpp
 	src/core/ControlRegistryTest.cpp
+	# The undo-record bookkeeping for nested and wrapped commands (one record per journal step).
+	src/core/ControlRegistryNestingTest.cpp
 	# Replies held to their declared resultSchema (ZENE_CONTROL_CHECK_RESULTS), and
 	# every command's id is its group.verb.
 	src/core/ControlResultSchemaTest.cpp
@@ -772,6 +774,8 @@ set(LMMS_TESTS
 	# ProjectRevIdsTest entry above (union-of-entries; siblings append theirs
 	# after, never reorder this block).
 	src/core/ProvenanceSectionTest.cpp
+	# The <z:provenance> version (v="2" only with nested ids) and a file holding two provenance sections.
+	src/core/ProvenanceVersionTest.cpp
 	src/core/StemExportTest.cpp
 	src/core/TelemetryTest.cpp
 	# CODE-7: the telemetry transport's two structural properties - https only
@@ -4132,6 +4136,8 @@ set_tests_properties(ProjectRevIdsTest PROPERTIES
 # commands through the registry, save/load/save through Song, no window.
 set_tests_properties(ProvenanceSectionTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ProvenanceVersionTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Headless load path (task #625, SPEC A13/A15): no modal dialog may block an
 # instance started with --control-socket.
 #
@@ -4185,6 +4191,20 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			$<TARGET_FILE:zene>
 	)
 	set_tests_properties(ControlSocketPathSafety PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+
+	# The sibling case above sends an over-cap line with NO newline, which the
+	# never-ended branch already refused. This pins the shape that survived: a valid
+	# request padded past MaxRequestLineBytes and then TERMINATED, so the line is
+	# COMPLETE when the read loop stops appending. Both transports dispatched it.
+	add_test(NAME ControlOversizedRequestLine
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-oversized-request-line.py
+			$<TARGET_FILE:zene>
+	)
+	set_tests_properties(ControlOversizedRequestLine PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

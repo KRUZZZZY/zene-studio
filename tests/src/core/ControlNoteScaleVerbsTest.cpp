@@ -51,6 +51,7 @@
 #include <QtTest>
 
 #include <cmath>
+#include <cfenv>
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -60,6 +61,7 @@
 
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlScaleShared.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "ProjectKey.h"
@@ -583,6 +585,73 @@ private slots:
 		QVERIFY2(run(QStringLiteral("note.select"),
 			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("notes"),
 				QJsonArray()}}).ok, "could not clear the selection");
+	}
+
+	//! A hand-edited scales/custom entry must not turn into a bogus "degree 0" scale.
+	void malformedCustomScaleEntriesAreIgnored()
+	{
+		const QJsonObject before = lmms::control::customScales();
+		QJsonObject edited = before;
+		// an unconvertible value used toInt() into 0; a fractional one was truncated
+		edited.insert(QStringLiteral("Odd"), QJsonArray{true, QStringLiteral("nope")});
+		edited.insert(QStringLiteral("Ragged"), QJsonArray{0, 12, 99, 4});
+		edited.insert(QStringLiteral("Huge"), QJsonArray{1.0e300, 2});
+		// extreme negative, fractional and non-finite-looking inputs: only the whole 0..11 degree survives
+		edited.insert(QStringLiteral("Extremes"), QJsonArray{-1.0e300, 2.5, 7, -0.5, 11.5, 12.0, 7});
+		lmms::control::setCustomScales(edited);
+
+		QVERIFY(lmms::control::scaleDegreesOf(QStringLiteral("Odd")).empty());  // nothing valid: not a "C" scale
+		const std::vector<int> ragged = lmms::control::scaleDegreesOf(QStringLiteral("Ragged"));
+		QCOMPARE(ragged.size(), size_t(2));  // only 0 and 4 survive the 0..11 window
+		QCOMPARE(ragged[0], 0);
+		QCOMPARE(ragged[1], 4);
+
+		const std::vector<int> huge = lmms::control::scaleDegreesOf(QStringLiteral("Huge"));
+		QCOMPARE(huge.size(), size_t(1));
+		QCOMPARE(huge[0], 2);
+
+		// -1e300, 2.5, -0.5, 11.5 and 12.0 are all refused; only the two whole 7s survive
+		const std::vector<int> extremes = lmms::control::scaleDegreesOf(QStringLiteral("Extremes"));
+		QCOMPARE(extremes.size(), size_t(2));
+		QCOMPARE(extremes[0], 7);
+		QCOMPARE(extremes[1], 7);
+
+		// Keep the FP-exception check separate from 1e300: Qt's JSON parser may
+		// itself raise FE_INVALID while decoding an exponent that large. This
+		// fixture isolates the product's out-of-range casts, one past INT_MAX and
+		// one past INT_MIN, both of which would raise FE_INVALID before the range check.
+		QJsonObject overflowEdited = before;
+		overflowEdited.insert(QStringLiteral("Overflow"), QJsonArray{2147483648.0, -2147483649.0, 2});
+		lmms::control::setCustomScales(overflowEdited);
+
+		// On Linux x86-64 the overflowing SSE conversion sets FE_INVALID. Check
+		// that flag around the lookup so this regression detects the undefined
+		// conversion even though its result is discarded by the scale validator.
+#if defined(__linux__) && defined(__x86_64__)
+		std::fenv_t originalEnvironment;
+		QVERIFY(std::fegetenv(&originalEnvironment) == 0);
+		QVERIFY(std::feclearexcept(FE_ALL_EXCEPT) == 0);
+#endif
+		const std::vector<int> overflow = lmms::control::scaleDegreesOf(QStringLiteral("Overflow"));
+#if defined(__linux__) && defined(__x86_64__)
+		const int invalidExceptions = std::fetestexcept(FE_INVALID);
+		QVERIFY(std::fesetenv(&originalEnvironment) == 0);
+#endif
+		lmms::control::setCustomScales(before);
+#if defined(__linux__) && defined(__x86_64__)
+		QCOMPARE(invalidExceptions, 0);
+#endif
+		QCOMPARE(overflow.size(), size_t(1));
+		QCOMPARE(overflow[0], 2);
+
+		// a well-formed custom scale still wins over the engine's table
+		QJsonObject good = edited;
+		good.insert(QStringLiteral("Mine"), QJsonArray{0, 5, 7});
+		lmms::control::setCustomScales(good);
+		const std::vector<int> mine = lmms::control::scaleDegreesOf(QStringLiteral("Mine"));
+		QCOMPARE(mine.size(), size_t(3));
+		QCOMPARE(mine[1], 5);
+		lmms::control::setCustomScales(before);
 	}
 
 	//! W7: the scale vocabulary is the engine's own, and the analysis is a measurement.

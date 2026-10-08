@@ -26,7 +26,6 @@
 
 #include "ControlRegistry.h"
 #include "Engine.h"
-
 using namespace lmms;
 
 class ControlRegistryTest : public QObject
@@ -151,6 +150,17 @@ private slots:
 		QCOMPARE(result.errorKind, ControlErrorKind::NotFound);
 		QCOMPARE(controlErrorKindName(result.errorKind), QStringLiteral("not_found"));
 		QVERIFY(!result.errorMessage.isEmpty());
+	}
+
+	void requiredIsCheckedWithoutAPropertiesObject()
+	{
+		QJsonObject schema;
+		schema.insert(QStringLiteral("type"), QStringLiteral("object"));
+		schema.insert(QStringLiteral("required"), QJsonArray{QStringLiteral("x")});
+		QVERIFY(!ControlRegistry::validateArgs(schema, QJsonObject{}).isEmpty());
+		QJsonObject given;
+		given.insert(QStringLiteral("x"), 1);
+		QVERIFY(ControlRegistry::validateArgs(schema, given).isEmpty());
 	}
 
 	void missingRequiredArgumentIsInvalidArgs()
@@ -413,6 +423,49 @@ private slots:
 		QVERIFY(!transactions.last().toObject().value(QStringLiteral("reversible")).toBool());
 	}
 
+	//! A mutating command that runs another mutating command inside itself
+	//! (document.open, range.consolidate, the alternative switch) records ONE
+	//! transaction: the nested call is part of the outer one, exactly as the
+	//! macro-recorder observer already treats it.
+	void nestedMutatingCommandRecordsOneTransaction()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		registry->clearTransactions();
+
+		ControlCommand inner;
+		inner.id = QStringLiteral("test.nested_inner");
+		inner.group = QStringLiteral("test");
+		inner.verb = QStringLiteral("nested_inner");
+		inner.mutating = true;
+		inner.handler = [](const QJsonObject&) {
+			QJsonObject transaction;
+			transaction.insert(QStringLiteral("before"), QJsonObject{{QStringLiteral("value"), 1}});
+			transaction.insert(QStringLiteral("inverse"),
+				QJsonObject{{QStringLiteral("op"), QStringLiteral("test.nested_inner")},
+					{QStringLiteral("args"), QJsonObject{{QStringLiteral("value"), 1}}}});
+			transaction.insert(QStringLiteral("reversible"), true);
+			transaction.insert(QStringLiteral("mechanism"), QStringLiteral("test"));
+			return ControlResult::success(QJsonObject{{QStringLiteral("value"), 2},
+				{QStringLiteral("__transaction"), transaction}});
+		};
+		registry->registerCommand(inner);
+
+		ControlCommand outer;
+		outer.id = QStringLiteral("test.nested_outer");
+		outer.group = QStringLiteral("test");
+		outer.verb = QStringLiteral("nested_outer");
+		outer.mutating = true;
+		outer.handler = [inner](const QJsonObject& args) {
+			return ControlRegistry::instance()->invoke(inner.id, args);
+		};
+		registry->registerCommand(outer);
+
+		QVERIFY(registry->invoke(outer.id).ok);
+		const QJsonArray transactions = registry->transactions();
+		QCOMPARE(transactions.size(), 1);
+		QCOMPARE(transactions.last().toObject().value(QStringLiteral("command")).toString(), outer.id);
+	}
+
 	//! The undo/redo commands share the engine's own ProjectJournal.
 	void undoRedoUseTheProjectJournal()
 	{
@@ -443,6 +496,24 @@ private slots:
 		QCOMPARE(control::idToIndex(QStringLiteral("ch-0"), QStringLiteral("ch-")), 0);
 		QCOMPARE(control::idToIndex(QStringLiteral("ch-x"), QStringLiteral("ch-")), -1);
 		QCOMPARE(control::idToIndex(QStringLiteral("trk-"), QStringLiteral("trk-")), -1);
+	}
+
+	//! A stable id's suffix is DECIMAL DIGITS and nothing else (Luna cluster
+	//! 5033). QString::toInt() also accepts a sign and surrounding whitespace, so
+	//! "clip--0" used to parse its "-0" suffix as clip 0 and a mutating command
+	//! addressed through the malformed id acted on the real clip. Every suffix
+	//! that is not [0-9]+ must be -1, which is what "does not exist" means.
+	void malformedIdSuffixesDoNotAliasRealObjects()
+	{
+		QCOMPARE(control::idToIndex(QStringLiteral("clip--0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-+0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip- 0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-0 "), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-\t0"), QStringLiteral("clip-")), -1);
+		QCOMPARE(control::idToIndex(QStringLiteral("trk--1"), QStringLiteral("trk-")), -1);
+		// A leading zero is still digits and still names one object, so the
+		// grammar keeps accepting it rather than growing a second rule.
+		QCOMPARE(control::idToIndex(QStringLiteral("clip-007"), QStringLiteral("clip-")), 7);
 	}
 
 	//! mixer.set_pan sets the channel's pan model (it was a typed refusal until

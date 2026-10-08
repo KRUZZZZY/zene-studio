@@ -363,6 +363,37 @@ private slots:
 	}
 
 	//! Every refusal is typed with a message, and nothing is written.
+	//! A filesystem path is addressed EXACTLY: 'kick_48k.wav ' (trailing space)
+	//! and 'kick_48k.wav' are two different files, and a tag edit naming the
+	//! first must not land on the second. Trimming the path before resolving it
+	//! silently redirects the edit to a file the caller never named.
+	void paddedPathsAddressTheFileTheyName()
+	{
+		const QString padded = m_dir.path() + QStringLiteral("/kick_48k.wav ");
+		QVERIFY(writeWave(padded, WaveSpec()));
+		QVERIFY(QFileInfo(padded).isFile());
+
+		// Tagging the padded name must tag the padded FILE: read the store back
+		// for both keys and see which one carries the tag.
+		QVERIFY2(run(QStringLiteral("browser.tag.add"),
+			{{QStringLiteral("path"), padded},
+				{QStringLiteral("tag"), QStringLiteral("spaced")}}).ok, "tag.add refused");
+		QVERIFY(tagsOnDisk(m_store, padded).contains(QStringLiteral("spaced")));
+		QVERIFY2(tagsOnDisk(m_store, m_wave).isEmpty(),
+			"a padded path was redirected onto the unpadded file next to it");
+
+		// And the same for the peaks reader, which resolves a file path too.
+		const ControlResult peaks = run(QStringLiteral("browser.peaks"),
+			{{QStringLiteral("path"), padded}, {QStringLiteral("buckets"), 32}});
+		QVERIFY2(peaks.ok, qPrintable(peaks.errorMessage));
+
+		// Undo the tag so the store this executable shares carries nothing.
+		QVERIFY2(run(QStringLiteral("browser.tag.remove"),
+			{{QStringLiteral("path"), padded},
+				{QStringLiteral("tag"), QStringLiteral("spaced")}}).ok, "tag.remove refused");
+		QVERIFY(tagsOnDisk(m_store, padded).isEmpty());
+	}
+
 	void refusalsAreTypedAndChangeNothing()
 	{
 		// Junk arguments: the sweep that every registered command must survive.
@@ -376,6 +407,14 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 		QCOMPARE(run(QStringLiteral("browser.query"),
 			{{QStringLiteral("path"), m_text}}).errorKind, ControlErrorKind::NotFound);
+		// A PRESENT but empty 'path' is a refusal, not "no path given": the caller
+		// named a directory to walk and named nothing, so answering with a
+		// roots-wide query would silently search somewhere else than asked.
+		QCOMPARE(run(QStringLiteral("browser.query"),
+			{{QStringLiteral("path"), QString()}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("browser.query"),
+			{{QStringLiteral("path"), QStringLiteral("   ")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
 		QCOMPARE(run(QStringLiteral("browser.query"),
 			{{QStringLiteral("tags"), QStringLiteral("not-an-array")}}).errorKind,
 			ControlErrorKind::InvalidArgs);

@@ -41,6 +41,8 @@
 
 #include <QtTest>
 
+#include "ControlProjectAssets.h"
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -319,6 +321,22 @@ private slots:
 		// the slot above pins as readable.
 		QCOMPARE(projectDocumentText(xml), xml);
 		QCOMPARE(projectDocumentText(qCompress(xml)), xml);
+
+		// A compressed revision whose header lies small, over the 64 MiB document cap: refused while it
+		// inflates, so the expanded text is never held in full. revisions.compare reaches this path.
+		QByteArray lying = qCompress(QByteArray(64 * 1024 * 1024 + 1, '\0'));
+		lying[0] = 0;
+		lying[1] = 0;
+		lying[2] = 0x04;
+		lying[3] = 0;  // declares 1 KiB
+		QVERIFY(projectDocumentText(lying).isEmpty());
+		// The bound itself, at a small cap: over it refused, within it inflated exactly.
+		const QByteArray five = qCompress(QByteArray(5000, '\0'));
+		QByteArray out;
+		QVERIFY(!lmms::control::inflateQtCompressedWithinCap(five, 1000, &out));
+		QVERIFY(out.isEmpty());
+		QVERIFY(lmms::control::inflateQtCompressedWithinCap(five, 10000, &out));
+		QCOMPARE(out.size(), 5000);
 
 		// End to end through the registry, which is the path a socket client
 		// takes: a revision that IS a v2 container is reported not readable.

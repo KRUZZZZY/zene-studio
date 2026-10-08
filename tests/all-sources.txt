@@ -1644,6 +1644,7 @@ src/core/ControlProjectAssetsShared.h
 src/core/ControlRackSupport.cpp
 src/core/ControlRecordingSupport.cpp
 src/core/ControlRegistry.cpp
+src/core/ControlRegistryRecords.cpp
 src/core/ControlRegistryRegistrations.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
@@ -2444,6 +2445,7 @@ tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlNoteScaleVerbsTest.cpp
 tests/src/core/ControlProjectArchiveTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
+tests/src/core/ControlRegistryNestingTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlResultSchemaTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
@@ -2569,6 +2571,7 @@ tests/src/core/ProjectStateTest.cpp
 tests/src/core/ProjectToolsTest.cpp
 tests/src/core/ProjectVersionTest.cpp
 tests/src/core/ProvenanceSectionTest.cpp
+tests/src/core/ProvenanceVersionTest.cpp
 tests/src/core/PunchWindowTest.cpp
 tests/src/core/RackMacrosTest.cpp
 tests/src/core/RackTest.cpp

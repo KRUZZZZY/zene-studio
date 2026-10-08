@@ -337,6 +337,42 @@ bool lockedOut(bool mutating, const QString& commandId, const QJsonObject& args,
 	return mutating && EditLocks::refuses(commandId, args, why);
 }
 
+/*! Whether THIS call records the step it changed. A mutating command another
+ *  mutating command runs inside itself is part of that outer step (the journal
+ *  merges both into ONE checkpoint run, ED-056), so only the call whose enclosing
+ *  handlers are all non-mutating records. A non-mutating wrapper (range.consolidate,
+ *  arrangement.nudge, workflow.run) records nothing of its own, so each mutating
+ *  command it runs still records itself - that is the contract those rows state. */
+bool recordsItsOwnStep(bool mutating, bool changed, bool enclosedByMutating)
+{
+	return mutating && changed && !enclosedByMutating;
+}
+
+/*! Whether a nested call's own record is folded into an enclosing mutating step while
+ *  carrying a descriptor that step does not keep. */
+bool foldsIntoEnclosingStep(bool mutating, bool changed, bool enclosedByMutating, const QJsonObject& result)
+{
+	return mutating && changed && enclosedByMutating && result.contains(QStringLiteral("__transaction"));
+}
+
+/*! The record an outer mutating call writes for a step that also holds nested
+ *  changes whose own inverse was not kept (the nested record was folded into this
+ *  step): when the outer handler supplied no descriptor, it must not claim the
+ *  journal step alone reverses the nested change. Refuses to claim more than it knows. */
+void markFoldedNestedChanges(ControlResult* result, int folded, int foldedBefore)
+{
+	if (folded == foldedBefore) { return; }
+	// The outer record keeps its own descriptor (before, inverse) but may not claim more than
+	// the step covers: a nested change folded into it is not reversed by that descriptor.
+	QJsonObject descriptor = result->result.value(QStringLiteral("__transaction")).toObject();
+	const QString prior = descriptor.value(QStringLiteral("mechanism")).toString();
+	descriptor.insert(QStringLiteral("reversible"), false);
+	descriptor.insert(QStringLiteral("mechanism"), QStringLiteral("a command this call ran inside itself changed the "
+		"project and its own inverse is not part of this record, so this step is not reported as reversible")
+		+ (prior.isEmpty() ? QString() : QStringLiteral(" (") + prior + QStringLiteral(")")));
+	result->result.insert(QStringLiteral("__transaction"), descriptor);
+}
+
 } // namespace
 
 ControlResult ControlRegistry::runHandler(
@@ -352,6 +388,14 @@ ControlResult ControlRegistry::runHandler(
 	const int mark = journal != nullptr ? journal->undoDepth() : -1;
 	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
 
+	// Who else is running: a nested mutating call is part of its outermost mutating
+	// ancestor's step, and the count of folded nested records tells that ancestor
+	// whether its step holds a change it cannot describe by itself.
+	const bool enclosedByMutating = m_mutatingDepth > 0;
+	const bool enclosedByWrapper = m_wrapperDepth > 0;
+	const int foldedBefore = m_foldedNestedRecords;
+	m_mutatingDepth += static_cast<int>(mutating);
+	m_wrapperDepth += static_cast<int>(!mutating);
 	ControlResult result;
 	{
 		const EditBracket edit(journal, mutating, commandId);
@@ -359,6 +403,8 @@ ControlResult ControlRegistry::runHandler(
 		result = handler(args);
 		--m_depth;
 	}
+	m_mutatingDepth -= static_cast<int>(mutating);
+	m_wrapperDepth -= static_cast<int>(!mutating);
 
 	bool coalesced = false;
 	quint64 step = 0;
@@ -376,7 +422,10 @@ ControlResult ControlRegistry::runHandler(
 		if (produced != serialBefore)
 		{
 			step = produced;
-			coalesced = coalesceStepOf(*journal, commandId, args, true);
+			// A call a wrapper runs is never coalesced: its steps are merged into the wrapper's ONE step
+			// (flushNestedRecords). Coalescing one into a step BEFORE the wrapper would leave that step's
+			// record covering it twice.
+			coalesced = mayCoalesce(commandId, enclosedByWrapper, enclosedByMutating) && coalesceStepOf(*journal, commandId, args, true);
 		}
 	}
 	// A dry run changes NOTHING and so must leave the journal exactly as it found
@@ -387,13 +436,44 @@ ControlResult ControlRegistry::runHandler(
 	const bool dryRunPreview = result.result.value(QStringLiteral("dry_run")).toBool(false);
 	// Review W3-batchA #8: a call that changed nothing (a report-only call, a value already set) records nothing.
 	const bool changed = result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId, result);
-	if (mutating && changed)
-	{
-		recordTransactionOf(commandId, &result, coalesced, step);
-	}
+	recordCall(commandId, args, &result, coalesced, step, mutating, changed, enclosedByMutating, enclosedByWrapper, foldedBefore);
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
 	notifyObserver(commandId, args, mutating, changed);
 	collab::CommandTap::observed(commandId, args, mutating, changed, m_depth);  // F6: what a host streams to its peers
+	return result;
+}
+
+//! Records, or holds for its wrapper, the step of one finished call (see runHandler for the rules).
+void ControlRegistry::recordCall(const QString& commandId, const QJsonObject& args, ControlResult* result,
+	bool coalesced, quint64 step, bool mutating, bool changed, bool enclosedByMutating, bool enclosedByWrapper,
+	int foldedBefore)
+{
+	m_foldedNestedRecords += static_cast<int>(foldsIntoEnclosingStep(mutating, changed, enclosedByMutating, result->result));
+	const bool ownStep = m_unrecordedDepth == 0 && recordsItsOwnStep(mutating, changed, enclosedByMutating);
+	// A recorded call that produced NO journal step breaks a coalescing run: its record is not a step the run
+	// can extend, so the next press must open its own step and record (a call that records nothing leaves the
+	// run alone, as documented in ControlUndoCoalescing.cpp).
+	if (ownStep && step == 0) { m_coalescer.breakRun(); }
+	if (ownStep && enclosedByWrapper)
+	{
+		// Held, with its descriptor, until the wrapper's journal step is known (see flushNestedRecords).
+		// A folded nested change is flagged here too, before the descriptor is kept.
+		markFoldedNestedChanges(result, m_foldedNestedRecords, foldedBefore);
+		m_nestedRecords.append(NestedRecord{commandId, *result, args, step});
+	}
+	else if (ownStep)
+	{
+		markFoldedNestedChanges(result, m_foldedNestedRecords, foldedBefore);
+		recordTransactionOf(commandId, result, coalesced, step);
+	}
+	if (!mutating && m_wrapperDepth == 0 && !m_nestedRecords.isEmpty()) { flushNestedRecords(commandId, *result, step); }
+}
+
+ControlResult ControlRegistry::invokeUnrecorded(const QString& id, const QJsonObject& args)
+{
+	++m_unrecordedDepth;
+	const ControlResult result = invoke(id, args);
+	--m_unrecordedDepth;
 	return result;
 }
 

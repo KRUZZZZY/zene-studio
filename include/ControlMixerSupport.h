@@ -116,13 +116,19 @@ LMMS_EXPORT QJsonObject mixerSidechainBeforeState(MixerSidechainRoute* route);
  *  DELETING it; one that did exist is undone by writing its captured amount and
  *  pre-fader flag back. The redo re-applies exactly what the write applies, so a
  *  GUI redo is faithful rather than a silently-dropped step.
+ *
+ *  \a fromId and \a toId are the persistent "ch-<n>" channel ids, NOT the
+ *  positions the write found them at: a retained step resolves them back to the
+ *  live channels when it runs, so a reorder or a removal between the write and
+ *  the undo cannot make the step act on a different channel (SPEC-stable-ids.md
+ *  slice 2).
  */
-LMMS_EXPORT void recordMixerRouteStep(mix_ch_t fromIndex, mix_ch_t toIndex,
+LMMS_EXPORT void recordMixerRouteStep(const QString& fromId, const QString& toId,
 	const QJsonObject& before, float wantedAmount, bool wantedPreFader);
 
 //! The same for a sidechain send (the engine derives the deferred flag itself,
 //! so the redo re-creates the route and lets the engine re-derive it).
-LMMS_EXPORT void recordMixerSidechainStep(mix_ch_t fromIndex, mix_ch_t toIndex,
+LMMS_EXPORT void recordMixerSidechainStep(const QString& fromId, const QString& toId,
 	const QJsonObject& before, float wantedAmount, SidechainTapPoint wantedMode);
 
 //! What a regular-send write reports, as the mixer.get_state send shape plus the

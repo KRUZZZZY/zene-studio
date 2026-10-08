@@ -24,6 +24,7 @@
  */
 
 #include <algorithm>
+#include <cmath>
 
 #include "ControlScaleShared.h"
 
@@ -71,6 +72,18 @@ void setCustomScales(const QJsonObject& scales)
 		QString::fromUtf8(QJsonDocument(scales).toJson(QJsonDocument::Compact)));
 }
 
+//! A degree from a hand-edited scales/custom entry, or -1 when the entry is not a whole
+//! semitone offset in the 0..11 window defineScale writes. toInt() alone would turn anything
+//! it cannot read into 0 and make the scale a silent C.
+static int customScaleDegree(const QJsonValue& degree)
+{
+	if (!degree.isDouble()) { return -1; }
+	const double semitones = degree.toDouble();
+	if (!std::isfinite(semitones) || semitones < 0.0 || semitones > 11.0) { return -1; }
+	const int offset = static_cast<int>(semitones);
+	return semitones == static_cast<double>(offset) ? offset : -1;
+}
+
 std::vector<int> scaleDegreesOf(const QString& scale)
 {
 	if (scale.isEmpty()) { return std::vector<int>(); }
@@ -78,9 +91,15 @@ std::vector<int> scaleDegreesOf(const QString& scale)
 	const QJsonArray custom = customScales().value(scale).toArray();
 	if (!custom.isEmpty())
 	{
+		// an entry with nothing usable falls through to the engine table rather than answering
+		// with a one-note scale built out of whatever the file happened to carry.
 		std::vector<int> degrees;
-		for (const QJsonValue& degree : custom) { degrees.push_back(degree.toInt()); }
-		return degrees;
+		for (const QJsonValue& degree : custom)
+		{
+			const int offset = customScaleDegree(degree);
+			if (offset >= 0) { degrees.push_back(offset); }
+		}
+		if (!degrees.empty()) { return degrees; }
 	}
 	const Chord& chord = ChordTable::getInstance().getScaleByName(scale);
 	// getByName returns an EMPTY chord for a name it does not carry, so isEmpty()

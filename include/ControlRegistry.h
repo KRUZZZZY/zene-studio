@@ -95,6 +95,10 @@ struct ControlCommand
 	QJsonObject resultSchema;
 	//! records a transaction per SPEC A16
 	bool mutating = false;
+	//! A non-mutating wrapper joins the coalescing run of the nested command it names here (its row
+	//! declares the target): a burst of its calls (arrangement.nudge -> clip.move) is one undo step.
+	//! Empty for every other command.
+	QString coalescesWrapped;
 	//! false for the liveness and bookkeeping commands (control.*) that must answer
 	//! even before the engine is initialised; those report readiness themselves.
 	bool requiresEngine = true;
@@ -146,6 +150,13 @@ public:
 	//! Validate, check \c requires and the engine state, then run the handler on
 	//! the UI thread.
 	ControlResult invoke(const QString& id, const QJsonObject& args = QJsonObject());
+	/*! Runs \a id on behalf of control.undo: nothing it does is recorded as a
+	 *  new transaction, because the undo that asked for it IS the step (the
+	 *  inverse of a recorded command must not grow the record list). */
+	ControlResult invokeUnrecorded(const QString& id, const QJsonObject& args = QJsonObject());
+	//! The class an aggregate record of several mutating children carries: the weakest of their classes
+	//! ("irreversible" < "snapshot" < "true_inverse"), or "" when a child has no row or is not mutating.
+	static QString aggregateClassOf(const QStringList& childClasses);
 
 	//! Queue \p fn onto the UI thread and wait for its result.
 	static ControlResult runOnUiThread(const std::function<ControlResult()>& fn);
@@ -292,6 +303,33 @@ private:
 	}
 	CommandObserver m_observer;
 	int m_depth = 0;  //!< how many handlers are running (UI thread)
+	int m_mutatingDepth = 0;  //!< how many MUTATING handlers are running (UI thread)
+	int m_foldedNestedRecords = 0;  //!< nested mutating calls whose record was folded into an enclosing step
+	int m_wrapperDepth = 0;  //!< how many NON-mutating handlers are running (wrappers and reads)
+	int m_unrecordedDepth = 0;  //!< > 0 while control.undo runs an inverse: that run records nothing
+	//! A mutating call run by a non-mutating wrapper, held until the wrapper's journal step is known.
+	struct NestedRecord
+	{
+		QString command;
+		ControlResult result;  //!< the call's result, with its __transaction descriptor still in it
+		QJsonObject args;      //!< the call's arguments (the coalescing key of the run it may join)
+		quint64 step = 0;
+	};
+	QVector<NestedRecord> m_nestedRecords;
+	//! Writes the held records of a wrapper: one record as itself, or ONE aggregate record for the
+	//! whole merged journal step (the wrapper's name, listing the nested commands).
+	void flushNestedRecords(const QString& wrapperId, const ControlResult& wrapper, quint64 step);
+	//! Records, or holds for its wrapper, the step of one finished call (runHandler's tail).
+	void recordCall(const QString& commandId, const QJsonObject& args, ControlResult* result, bool coalesced,
+		quint64 step, bool mutating, bool changed, bool enclosedByMutating, bool enclosedByWrapper, int foldedBefore);
+	//! The wrapper's one record for several held calls (two or more): the aggregate of flushNestedRecords.
+	void recordAggregate(const QString& wrapperId, const ControlResult& wrapper, quint64 step,
+		const QVector<NestedRecord>& held, const QStringList& nestedIds);
+	//! Whether this finished call may join an earlier run (see runHandler): not a call a wrapper runs, not one a
+	//! mutating call runs, and not a wrapper that joins its nested call's run instead (flushNestedRecords).
+	bool mayCoalesce(const QString& commandId, bool enclosedByWrapper, bool enclosedByMutating) const;
+	//! A coalescing wrapper's burst call joined the previous run: that run's record extends, not a new one.
+	void extendForMergedStep(const NestedRecord& child, const ControlResult& wrapper, const QStringList& nestedIds);
 	//! Stamps \a tx with the contract table's class for its command and refuses
 	//! to let a handler claim an inverse the contract says does not exist.
 	void stampContract(const QString& commandId, Transaction* tx) const;

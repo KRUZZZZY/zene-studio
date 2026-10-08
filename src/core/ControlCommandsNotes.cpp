@@ -55,6 +55,41 @@ int indexOfNote(MidiClip* clip, const Note* note)
 	return -1;
 }
 
+/**
+ * Snapshot the current selection as note IDS, which travel with the note objects
+ * through a re-sort (Note::id(), SPEC-stable-ids.md slice 2).
+ */
+QVector<QString> selectedNoteIdsSnapshot(MidiClip* clip, const QString& clipText)
+{
+	QVector<QString> ids;
+	for (int position : control::selectedNoteIndices(clipText))
+	{
+		if (position >= 0 && position < static_cast<int>(clip->notes().size()))
+		{
+			ids.append(control::noteIdOf(clip->notes()[position]));
+		}
+	}
+	return ids;
+}
+
+/**
+ * Re-point the selection STORE at the current positions of the notes named by
+ * \a ids, after a reorder moved them. The store holds note-list positions
+ * (control::selectNotes, src/core/ControlEditSupport.cpp:264-275), so a re-sort
+ * that is not followed by this leaves a stored position naming a different note -
+ * which is what note.remove already remaps for its own case.
+ */
+void remapSelectionAfterReorder(MidiClip* clip, const QString& clipText, const QVector<QString>& ids)
+{
+	if (ids.isEmpty()) { return; }
+	QVector<int> positions;
+	for (int i = 0; i < static_cast<int>(clip->notes().size()); ++i)
+	{
+		if (ids.contains(control::noteIdOf(clip->notes()[i]))) { positions.append(i); }
+	}
+	control::selectNotes(clipText, static_cast<int>(clip->notes().size()), positions);
+}
+
 QJsonObject noteArgsOf(const QJsonObject& args, bool withVelocity)
 {
 	QJsonObject inverseArgs;
@@ -195,6 +230,27 @@ void registerNoteRemove(ControlRegistry& registry)
 		clip->removeNote(note);
 		clip->dataChanged();
 
+		// The selection store holds POSITIONS in the note list
+		// (control::selectNotes, ControlEditSupport.cpp:264-275), and this remove
+		// shifts every note after the removed one down by one - so a stored
+		// position now names a different note, or (the removed note's own
+		// position, and any position that has fallen off the end) no note at all
+		// and is silently dropped by rollState. The positions are remapped here,
+		// in the one place that moved them: a position above the removed one comes
+		// down by one, the removed position itself goes, and everything else is
+		// left exactly where it was. Re-writing the store through selectNotes()
+		// also re-sorts and de-duplicates it, so this cannot widen it.
+		if (!control::selectedNoteIndices(control::clipId(ref.id)).isEmpty())
+		{
+			QVector<int> kept;
+			for (int position : control::selectedNoteIndices(control::clipId(ref.id)))
+			{
+				if (position == index) { continue; }
+				kept.append(position > index ? position - 1 : position);
+			}
+			control::selectNotes(control::clipId(ref.id), static_cast<int>(clip->notes().size()), kept);
+		}
+
 		QJsonObject result;
 		result.insert(QStringLiteral("removed"), id);
 		result.insert(QStringLiteral("removed_note"), state);
@@ -258,12 +314,24 @@ void registerNoteMove(ControlRegistry& registry)
 				 .arg(position).arg(note->length().getTicks()).arg(end).arg(MaxSongLength));
 		}
 
+		const QString clipText = control::clipId(ref.id);
+		const QVector<QString> selectionBeforeMove = selectedNoteIdsSnapshot(clip, clipText);
+
 		clip->addJournalCheckPoint();
 		note->setPos(TimePos(position));
 		// Same follow-up calls as a piano-roll drag: re-sort, then let the clip
 		// follow its notes when it is still auto-resizing.
 		clip->rearrangeAllNotes();
 		clip->updateLength();
+		// The re-sort above moved notes around, and the selection store holds
+		// POSITIONS in that list (control::selectNotes,
+		// src/core/ControlEditSupport.cpp:264-275) - so a stored position now
+		// names whichever note took its place, and a selection-scoped edit
+		// after the move would target the wrong note. The positions are
+		// remapped here, in the one place that moved them, exactly as
+		// note.remove remaps them for its own shift. The note objects' own
+		// selection flags travel with the notes and need no remapping.
+		remapSelectionAfterReorder(clip, clipText, selectionBeforeMove);
 		clip->dataChanged();
 		// Row 6: a content edit to a linked clip is an edit to the whole group -
 		// the members' note lists are rebuilt from this clip's, in the same step.

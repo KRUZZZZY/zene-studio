@@ -209,6 +209,28 @@ private slots:
 		QFile::remove(take);
 	}
 
+//! A take named by a RELATIVE path is refused, typed invalid_args, by every
+	//! journal read: record.journal_begin already refuses one, and a relative
+	//! path names a different file in the next process's working directory -
+	//! which is the run the journal exists to be found by.
+	void aRelativeTakeIsRefused()
+	{
+		const ControlResult begun = run(QStringLiteral("record.journal_begin"),
+			{{QStringLiteral("take"), QStringLiteral("relative-take.wav")},
+				{QStringLiteral("sample_rate"), kRate}});
+		QVERIFY(!begun.ok);
+		QCOMPARE(begun.errorKind, ControlErrorKind::InvalidArgs);
+
+		for (const QString& id : {QStringLiteral("record.journal_update"),
+			QStringLiteral("record.journal_finish"), QStringLiteral("record.recovery_restore"),
+			QStringLiteral("record.recovery_discard")})
+		{
+			const ControlResult result = run(id, {{QStringLiteral("take"), QStringLiteral("relative-take.wav")}});
+			QVERIFY2(!result.ok, qPrintable(id + QStringLiteral(" accepted a relative take")));
+			QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		}
+	}
+
 private:
 	QTemporaryDir m_world;
 };
