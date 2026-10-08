@@ -129,6 +129,11 @@ private slots:
 	//! reports it all back through stateJson - none of which needs an engine.
 	void registryRefusalsAreTyped();
 
+	//! The source cap counts UTF-8 BYTES, not UTF-16 code units: a multi-byte
+	//! source inside the unit count but over the byte cap is refused (with the
+	//! byte count in the message), and one inside the byte cap is accepted.
+	void byteCapCountsBytes();
+
 	//! Re-scheduling the same id REPLACES the definition in place (the live
 	//! edit) and keeps the id's place; unscheduling takes it off and the
 	//! counters reset with the slot.
@@ -301,6 +306,29 @@ void ScriptClockTest::registryRefusalsAreTyped()
 	QVERIFY2(!clock.removeSchedule(QStringLiteral("lc-t-ok"), &error),
 		"unscheduling an id that is not on the clock must refuse, typed");
 	QVERIFY(error.contains(QStringLiteral("no scheduled script")));
+}
+
+void ScriptClockTest::byteCapCountsBytes()
+{
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+
+	// A Lua comment padded with 2-byte characters: 40003 UTF-16 code units
+	// (inside the cap) but 80003 UTF-8 bytes (outside it). Counting units let
+	// this through; the cap and its message are in bytes.
+	const QString oversized = QStringLiteral("-- ") + QString(40000, QChar(0x00E9));
+	QVERIFY2(!clock.setSchedule(QStringLiteral("lc-t-bytes"), oversized,
+		QStringLiteral("bar"), 0, &error),
+		"a source over the byte cap must be refused");
+	QVERIFY(error.contains(QStringLiteral("capped at")));
+	QVERIFY(error.contains(QStringLiteral("80003")));
+
+	// A multi-byte source that fits inside the BYTE cap is still accepted.
+	const QString fits = QStringLiteral("-- ") + QString(30000, QChar(0x00E9)); // 60003 bytes
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-bytes-ok"), fits,
+		QStringLiteral("bar"), 0, &error), qPrintable(error));
+	QVERIFY(clock.hasSchedule(QStringLiteral("lc-t-bytes-ok")));
+	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-bytes-ok"), &error), qPrintable(error));
 }
 
 void ScriptClockTest::registryReplaceAndRemove()

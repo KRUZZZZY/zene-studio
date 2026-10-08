@@ -250,10 +250,13 @@ bool ScriptClock::setSchedule(const QString& id, const QString& source, const QS
 		*error = QStringLiteral("the source is empty: there is nothing to evaluate on the hook");
 		return false;
 	}
-	if (source.size() > SourceByteCap)
+	// The cap is in BYTES - the transaction records and the compile check carry
+	// the UTF-8 encoding - so count the encoded size, not the UTF-16 units.
+	const int sourceBytes = source.toUtf8().size();
+	if (sourceBytes > SourceByteCap)
 	{
 		*error = QStringLiteral("the source is %1 bytes; a scheduled script is capped at %2")
-			.arg(source.size()).arg(SourceByteCap);
+			.arg(sourceBytes).arg(SourceByteCap);
 		return false;
 	}
 	if (!parses(source, error)) { return false; }
