@@ -150,8 +150,7 @@ void registerClipTrim(ControlRegistry& registry)
 		"engine frames after its tick (frame-exact: the clip's window takes the frame, the sub-tick rest its "
 		"lead), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves each edge to "
 		"the nearest zero crossing within 10 ms; the reply then adds the window's source frames. A linked clip's "
-		"trim applies to every member of its link group (each edge moves by the same delta, in one undo step; "
-		"'peers_trimmed' counts the others) and is refused whole if any member would be emptied.");
+		"trim applies to the whole link group (one undo step, 'peers_trimmed' others; refused whole if a member would be emptied).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("start"), integerProperty(0, MaxSongLength)},

@@ -243,8 +243,7 @@ void registerClipSetFade(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Set a clip's fade-in and/or fade-out in ticks, with a shape "
 		"each (linear, exponential, logarithmic, s_curve, equal_power). An omitted argument keeps its current value; "
 		"fade_in + fade_out must fit inside the clip. 'fade_in_offset' / 'fade_out_offset' (ticks, default 0) "
-		"start the fade-in that far after the clip's start and end the fade-out that far before its end; the clip "
-		"plays unfaded outside its ramps (what clip.crossfade sets on a clip that contains the other one). "
+		"start the fade-in that far after the clip's start / end the fade-out that far before its end. "
 		"Reversible through the ProjectJournal (Clip checkpoint).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
@@ -328,9 +327,7 @@ void registerClipCrossfade(ControlRegistry& registry)
 		"outgoing clip gets a fade-out and the incoming clip a fade-in, both exactly as long as "
 		"their overlap, with the given shape (default equal_power, which sums the pair to unity "
 		"POWER) - or each side its own: 'out_length' / 'in_length' (ticks) and 'out_shape' / 'in_shape'. "
-		"When one clip lies inside the other, the container's ramp sits where the other clip is (an offset fade: "
-		"'out_fade_out_offset' / 'in_fade_in_offset' report how far from the container's edge) and the rest of the "
-		"container plays unfaded. "
+		"A container's ramp sits where the other clip is (offset fade; its tail plays unfaded). "
 		"Reversible through the ProjectJournal (Track checkpoint).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("out"), control::stringProperty()},

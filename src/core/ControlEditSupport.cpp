@@ -318,10 +318,6 @@ QJsonObject clipState(const ClipRef& ref)
 	entry.insert(QStringLiteral("fade_out"), edits.fadeOutTicks);
 	entry.insert(QStringLiteral("fade_in_shape"), fadeShapeName(edits.fadeInShape));
 	entry.insert(QStringLiteral("fade_out_shape"), fadeShapeName(edits.fadeOutShape));
-	// An offset fade (a crossfade into a contained clip) is reported only when there is one, so every
-	// reply for a clip that has none is what it was.
-	if (edits.fadeInOffsetTicks != 0) { entry.insert(QStringLiteral("fade_in_offset"), edits.fadeInOffsetTicks); }
-	if (edits.fadeOutOffsetTicks != 0) { entry.insert(QStringLiteral("fade_out_offset"), edits.fadeOutOffsetTicks); }
 	return entry;
 }
 

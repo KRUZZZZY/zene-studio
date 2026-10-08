@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-08T06:43:47Z",
+  "captured_at": "2026-10-08T09:35:33Z",
   "commands": [
     {
       "args_schema": {
@@ -4391,7 +4391,7 @@
         ],
         "type": "object"
       },
-      "description": "Ramp two overlapping clips on one track into each other: the outgoing clip gets a fade-out and the incoming clip a fade-in, both exactly as long as their overlap, with the given shape (default equal_power, which sums the pair to unity POWER) - or each side its own: 'out_length' / 'in_length' (ticks) and 'out_shape' / 'in_shape'. Reversible through the ProjectJournal (Track checkpoint).",
+      "description": "Ramp two overlapping clips on one track into each other: the outgoing clip gets a fade-out and the incoming clip a fade-in, both exactly as long as their overlap, with the given shape (default equal_power, which sums the pair to unity POWER) - or each side its own: 'out_length' / 'in_length' (ticks) and 'out_shape' / 'in_shape'. A container's ramp sits where the other clip is (offset fade; its tail plays unfaded). Reversible through the ProjectJournal (Track checkpoint).",
       "group": "clip",
       "id": "clip.crossfade",
       "mutating": true,
@@ -4407,6 +4407,11 @@
             "minimum": 0,
             "type": "integer"
           },
+          "in_fade_in_offset": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
           "in_shape": {
             "type": "string"
           },
@@ -4414,6 +4419,11 @@
             "type": "string"
           },
           "out_fade_out": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "out_fade_out_offset": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
@@ -5198,10 +5208,20 @@
             "minimum": 0,
             "type": "integer"
           },
+          "fade_in_offset": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
           "fade_in_shape": {
             "type": "string"
           },
           "fade_out": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_offset": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
@@ -5215,7 +5235,7 @@
         ],
         "type": "object"
       },
-      "description": "Set a clip's fade-in and/or fade-out in ticks, with a shape each (linear, exponential, logarithmic, s_curve, equal_power). An omitted argument keeps its current value; fade_in + fade_out must fit inside the clip. Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Set a clip's fade-in and/or fade-out in ticks, with a shape each (linear, exponential, logarithmic, s_curve, equal_power). An omitted argument keeps its current value; fade_in + fade_out must fit inside the clip. 'fade_in_offset' / 'fade_out_offset' (ticks, default 0) start the fade-in that far after the clip's start / end the fade-out that far before its end. Reversible through the ProjectJournal (Clip checkpoint).",
       "group": "clip",
       "id": "clip.set_fade",
       "mutating": true,
@@ -5231,10 +5251,20 @@
             "minimum": 0,
             "type": "integer"
           },
+          "fade_in_offset": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
           "fade_in_shape": {
             "type": "string"
           },
           "fade_out": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_offset": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
@@ -5313,10 +5343,20 @@
             "minimum": 0,
             "type": "integer"
           },
+          "fade_in_offset": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
           "fade_in_shape": {
             "type": "string"
           },
           "fade_out": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_offset": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
@@ -5642,7 +5682,7 @@
         ],
         "type": "object"
       },
-      "description": "Split a clip at an absolute tick position, leaving the left part in place and returning both ids. Reversible through the ProjectJournal (Track checkpoint). ED-021, sample clips only: 'frames' cuts that many engine frames after 'position' (frame-exact - the halves' audio meets at that frame, their clips overlap by under a tick), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves the cut to the nearest zero crossing within 10 ms; the reply then names the source 'frame' cut at.",
+      "description": "Split a clip at an absolute tick position, leaving the left part in place and returning both ids. Reversible through the ProjectJournal (Track checkpoint). ED-021, sample clips only: 'frames' cuts that many engine frames after 'position' (frame-exact - the halves' audio meets at that frame, their clips overlap by under a tick), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves the cut to the nearest zero crossing within 10 ms; the reply then names the source 'frame' cut at. A linked clip's split cuts every member of its link group at the same clip-relative position (one undo step): left halves keep the group, right halves form 'right_group' (0 if only one member could be cut).",
       "group": "clip",
       "id": "clip.split",
       "mutating": true,
@@ -5659,8 +5699,17 @@
           "left": {
             "type": "string"
           },
+          "left_group": {
+            "type": "integer"
+          },
+          "members_split": {
+            "type": "integer"
+          },
           "right": {
             "type": "string"
+          },
+          "right_group": {
+            "type": "integer"
           },
           "right_position": {
             "type": "integer"
@@ -5807,7 +5856,7 @@
         ],
         "type": "object"
       },
-      "description": "Move a clip's start edge to an absolute tick, holding the audio the clip already carried at the same song position: the start, the length and the source offset move together, which is what the song editor's own left-edge drag does. An optional 'end' trims the tail in the same step. Reversible through the ProjectJournal (Clip checkpoint). ED-021, sample clips only: 'start_frames' / 'end_frames' put an edge that many engine frames after its tick (frame-exact: the clip's window takes the frame, the sub-tick rest its lead), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves each edge to the nearest zero crossing within 10 ms; the reply then adds the window's source frames.",
+      "description": "Move a clip's start edge to an absolute tick, holding the audio the clip already carried at the same song position: the start, the length and the source offset move together, which is what the song editor's own left-edge drag does. An optional 'end' trims the tail in the same step. Reversible through the ProjectJournal (Clip checkpoint). ED-021, sample clips only: 'start_frames' / 'end_frames' put an edge that many engine frames after its tick (frame-exact: the clip's window takes the frame, the sub-tick rest its lead), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves each edge to the nearest zero crossing within 10 ms; the reply then adds the window's source frames. A linked clip's trim applies to the whole link group (one undo step, 'peers_trimmed' others; refused whole if a member would be emptied).",
       "group": "clip",
       "id": "clip.trim",
       "mutating": true,
@@ -5834,6 +5883,11 @@
           "offset": {
             "maximum": 1919808,
             "minimum": -1919808,
+            "type": "integer"
+          },
+          "peers_trimmed": {
+            "maximum": 1919808,
+            "minimum": 0,
             "type": "integer"
           },
           "position": {
@@ -34623,11 +34677,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-notes/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-4pb1yciw/zene.sock",
-    "version": "0.4.0-alpha.1157+d6254bb"
+    "source_socket": "/tmp/zctl-run-velsjugs/zene.sock",
+    "version": "0.4.0-alpha.1163+2e2ab69"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

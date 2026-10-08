@@ -107,8 +107,6 @@ void registerClipAdd(ControlRegistry& registry)
 		{QStringLiteral("fade_in_shape"), control::stringProperty()},
 		{QStringLiteral("fade_out"), control::numberProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
-		{QStringLiteral("fade_in_offset"), control::integerProperty(0, MaxSongLength)},
-		{QStringLiteral("fade_out_offset"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("gain_db"), control::numberProperty()},
 		{QStringLiteral("id"), control::stringProperty()},
 		{QStringLiteral("index_in_track"), control::numberProperty()},
@@ -276,10 +274,9 @@ void registerClipSplit(ControlRegistry& registry)
 		"ED-021, sample clips only: 'frames' cuts that many engine frames after 'position' (frame-exact - the "
 		"halves' audio meets at that frame, their clips overlap by under a tick), and 'zero_crossing' (default: "
 		"arrangement.modes' snap_to_zero_crossings) moves the cut to the nearest zero crossing within 10 ms; the "
-		"reply then names the source 'frame' cut at. A linked clip's split applies to every member of its link "
-		"group at the same clip-relative position, in one undo step: the left halves stay one group ('left_group'), "
-		"the right halves form a second ('right_group'; 0 when only one member could be cut), and 'members_split' "
-		"counts the members cut.");
+		"reply then names the source 'frame' cut at. A linked clip's split cuts every member of its link "
+		"group at the same clip-relative position (one undo step): left halves keep the group, right halves form "
+		"'right_group' (0 if only one member could be cut).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("position"), control::integerProperty(1, MaxSongLength)},
@@ -381,8 +378,6 @@ void registerClipDelete(ControlRegistry& registry)
 		{QStringLiteral("fade_in_shape"), control::stringProperty()},
 		{QStringLiteral("fade_out"), control::numberProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
-		{QStringLiteral("fade_in_offset"), control::integerProperty(0, MaxSongLength)},
-		{QStringLiteral("fade_out_offset"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("gain_db"), control::numberProperty()},
 		{QStringLiteral("id"), control::stringProperty()},
 		{QStringLiteral("index_in_track"), control::numberProperty()},
