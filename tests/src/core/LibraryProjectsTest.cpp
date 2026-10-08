@@ -275,6 +275,33 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	//! A dangling link where the session copy or the manifest goes is refused, not replaced: the link stays.
+	void aHandOffNeverReplacesADanglingLink()
+	{
+		for (const bool manifestSlot : {false, true})
+		{
+			const QString dir = m_dir.filePath(manifestSlot ? QStringLiteral("dangling-manifest") : QStringLiteral("dangling-copy"));
+			const ControlResult first = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+			QVERIFY2(first.ok, qPrintable(first.errorMessage));
+			const QString copy = first.result.value(QStringLiteral("file")).toString();
+			const QString manifest = QDir(dir).filePath(QStringLiteral("HANDOFF.json"));
+			const QString slot = manifestSlot ? manifest : copy;
+			QVERIFY(QFile::remove(copy));
+			QVERIFY(QFile::remove(manifest));
+			QVERIFY(QDir(QDir(dir).filePath(QStringLiteral("media"))).removeRecursively());  // the first hand off's media
+			const QString missing = m_dir.filePath(QStringLiteral("gone-%1.target").arg(manifestSlot ? 1 : 0));
+			QVERIFY(QFile::link(missing, slot));
+			QVERIFY(QFileInfo(slot).isSymLink() && !QFileInfo::exists(slot));  // a dangling link
+
+			const ControlResult refused = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+			QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+			QVERIFY2(refused.errorMessage.contains(QStringLiteral("already exists")), qPrintable(refused.errorMessage));
+			QVERIFY2(QFileInfo(slot).isSymLink(), "the hand off replaced a dangling link it did not write");
+			QCOMPARE(QFile::symLinkTarget(slot), missing);
+			QVERIFY(!QFileInfo::exists(missing));
+		}
+	}
+
 	// A second hand off into a folder that already carries someone else's
 	// session copy and manifest must be refused, leaving both files alone.
 	void aHandOffNeverOverwritesTheDestinationFolder()

@@ -118,10 +118,11 @@ bool isSessionFile(const QString& file)
 }
 
 //! Whether anything already occupies the hand-off folder's slot for @a file: a hand off never
-//! replaces a file it did not write itself.
+//! replaces a file it did not write itself. A dangling link counts: QFileInfo::exists is false for it,
+//! and a save would replace the link.
 bool isTaken(const QString& file)
 {
-	return QFileInfo::exists(file);
+	return QFileInfo::exists(file) || QFileInfo(file).isSymLink();
 }
 
 //! The first of the hand-off folder's own files that already exists, or an empty string when the
