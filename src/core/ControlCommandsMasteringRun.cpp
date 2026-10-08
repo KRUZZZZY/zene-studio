@@ -95,6 +95,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QProcess>
@@ -148,7 +149,11 @@ QString validateRunArgs(const QJsonObject& args, QString* outDir)
 		return QStringLiteral("'out_dir' is required: a candidate set is several files, so "
 			"mastering writes into a directory the caller names");
 	}
-	if (!outDir->startsWith(QLatin1Char('/')))
+	// The platform's own rule, not a leading '/': on Windows a drive-letter or
+	// UNC path is absolute and must be accepted (cluster 5653, BUG 11). Qt's
+	// resource paths (':/...', ':x') are absolute to QFileInfo on EVERY platform
+	// but are not filesystem output paths, so they stay refused.
+	if (outDir->startsWith(QLatin1Char(':')) || !QFileInfo(*outDir).isAbsolute())
 	{
 		return QStringLiteral("'out_dir' must be an absolute path");
 	}
