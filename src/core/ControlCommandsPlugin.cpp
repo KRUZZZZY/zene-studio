@@ -358,7 +358,7 @@ void registerPluginUnload(ControlRegistry& registry)
 		// checkpoint could restore. The recorded structural step RE-INSTANTIATES
 		// it, at the index it was removed from, with its settings.
 		const bool reversible = control::journalEffectRemoval(chain, effect, index);
-		chain->removeEffect(effect);
+		control::detachEffect(chain, effect, reversible);
 		// Same lifetime as the rack's own delete: the audio engine may still
 		// hold the pointer for the period in flight.
 		effect->deleteLater();

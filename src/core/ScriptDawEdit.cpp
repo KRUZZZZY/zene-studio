@@ -228,24 +228,16 @@ void applyRemoveEffect(EffectChain* chain, int index)
 	// whose state cannot be captured (empty, or over the structural budget)
 	// is still removed, as the script asked, but no undo step is claimed for
 	// it: the log says so instead of pretending the removal is reversible.
-	ProjectJournal* journal = Engine::projectJournal();
-	if (!control::journalEffectRemoval(chain, effect, index))
+	const bool recorded = control::journalEffectRemoval(chain, effect, index);
+	if (!recorded)
 	{
 		ScriptEngine::instance()->logMessage(QStringLiteral(
 			"[note] removing effect %1: its state cannot be captured, so this removal is not undoable")
 			.arg(index));
 	}
-	// The removal must push exactly one undo checkpoint: the structural step
-	// above. Emptying the chain would also switch its enabled model off, and
-	// that write journals a checkpoint of its own, pushed after the structural
-	// step. Under a tight undo bound that second push evicts the structural
-	// step, and the device cannot be restored. So the flag write is not
-	// journalled here; the undo re-appends the device, and appending switches
-	// the chain on again (EffectChain::appendEffect).
-	const bool journalling = journal != nullptr && journal->isJournalling();
-	if (journal != nullptr) { journal->setJournalling(false); }
-	chain->removeEffect(effect);
-	if (journal != nullptr) { journal->setJournalling(journalling); }
+	// A recorded removal pushes exactly one checkpoint: the structural step. The
+	// emptied chain's enabled flag is restored by that step, not journalled apart.
+	control::detachEffect(chain, effect, recorded);
 	effect->deleteLater();
 }
 

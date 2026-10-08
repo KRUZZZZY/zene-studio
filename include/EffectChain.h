@@ -61,6 +61,10 @@ public:
 
 	//! Whether the chain's own on/off switch is on (an off chain calls none of its effects).
 	bool isEnabled() const { return m_enabledModel.value(); }
+	/*! Sets the enabled flag WITHOUT a journal checkpoint. Only the restore of a
+	 *  recorded removal uses it: that step is the checkpoint, and it puts the flag
+	 *  back as it was. */
+	void setEnabledUnjournalled(bool on);
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;

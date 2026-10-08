@@ -81,6 +81,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "Plugin.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackContainer.h"
@@ -437,6 +438,42 @@ void removeRecordedEffect(EffectChain* chain, QPointer<Effect>& made, int slot, 
 	made = nullptr;
 }
 
+namespace
+{
+
+//! Suspends the journal for one scope. An undo or a redo writes no checkpoints
+//! of its own: the step being run is the record, and a checkpoint pushed here
+//! would sit on the undo stack above the step it reverses.
+class JournalPause
+{
+public:
+	JournalPause() : m_journal(Engine::projectJournal())
+		, m_was(m_journal != nullptr && m_journal->isJournalling())
+	{
+		if (m_journal != nullptr) { m_journal->setJournalling(false); }
+	}
+	~JournalPause()
+	{
+		if (m_journal != nullptr) { m_journal->setJournalling(m_was); }
+	}
+	JournalPause(const JournalPause&) = delete;
+	JournalPause& operator=(const JournalPause&) = delete;
+
+private:
+	ProjectJournal* m_journal;
+	bool m_was;
+};
+
+} // namespace
+
+void detachEffect(EffectChain* chain, Effect* effect, bool recorded)
+{
+	if (chain == nullptr) { return; }
+	if (!recorded) { chain->removeEffect(effect); return; }
+	JournalPause quiet;
+	chain->removeEffect(effect);
+}
+
 bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 {
 	if (chain == nullptr || effect == nullptr || index < 0) { return false; }
@@ -450,14 +487,27 @@ bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 	if (xml.isEmpty() || xml.size() > StructuralSnapshotLimit) { return false; }
 
 	// No pointer is kept (see journalEffectLoad in the header): the chain by its owner's address, the device by its slot.
+	// The enabled flag is part of the record: appending the device switches the
+	// chain on, so the undo puts back the value it had when the device was taken
+	// off. Both closures run with the journal paused, so neither pushes a
+	// checkpoint of its own.
+	const bool wasEnabled = chain->isEnabled();
 	const auto chainOf = recordedChainFinder(chain);
 	const QString plugin = pluginNameOf(effect);
 	auto made = std::make_shared<QPointer<Effect>>();
 	addStructuralUndoStep(
-		[chainOf, xml, index, made]() {
-			if (EffectChain* live = chainOf()) { *made = recreateEffectFromState(live, xml, index); }
+		[chainOf, xml, index, made, wasEnabled]() {
+			JournalPause quiet;
+			if (EffectChain* live = chainOf())
+			{
+				*made = recreateEffectFromState(live, xml, index);
+				live->setEnabledUnjournalled(wasEnabled);
+			}
 		},
-		[chainOf, made, index, plugin]() { removeRecordedEffect(chainOf(), *made, index, plugin); },
+		[chainOf, made, index, plugin]() {
+			JournalPause quiet;
+			removeRecordedEffect(chainOf(), *made, index, plugin);
+		},
 		xml.size());
 	return true;
 }

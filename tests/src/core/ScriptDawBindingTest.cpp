@@ -469,6 +469,100 @@ private slots:
 		engine->takeLogMessages();
 	}
 
+	/*! A chain switched off, then its only device removed by a script: one undo
+	 *  must put the device back AND leave the chain off (appending a device
+	 *  switches a chain on, so the undo has to restore the flag it recorded), and
+	 *  the undo must not push a checkpoint of its own. */
+	void aScriptsRemovedLastEffectOfADisabledChainStaysDisabledOnUndo()
+	{
+		QString device;
+		QString deviceName;
+		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(
+			"zene.mixer():channel(%1):chain():loadEffect(\"%2\")\n").arg(index).arg(device), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+
+		chain->setEnabledUnjournalled(false);
+		journal->clearJournal();
+
+		QCOMPARE(int(engine->runString(qstr(
+			"zene.mixer():channel(%1):chain():removeEffect(0)\n").arg(index), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(chain->effects().empty());
+		QVERIFY(!chain->isEnabled());
+		QCOMPARE(journal->undoDepth(), 1);
+
+		journal->undo();
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QCOMPARE(QString::fromUtf8(chain->effects().front()->descriptor()->name), deviceName);
+		QVERIFY(!chain->isEnabled());
+		QCOMPARE(journal->undoDepth(), 0);
+
+		journal->redo();
+		QVERIFY(chain->effects().empty());
+		QVERIFY(!chain->isEnabled());
+
+		mixer->deleteChannel(index);
+		engine->takeLogMessages();
+	}
+
+	/*! The same case through plugin.unload, which shares the recorded removal:
+	 *  one undo restores the device, the chain stays off, and no checkpoint is
+	 *  left behind. */
+	void aPluginUnloadOfTheLastEffectOfADisabledChainStaysDisabledOnUndo()
+	{
+		QString device;
+		QString deviceName;
+		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		const QString channel = control::channelIdOf(mixer->mixerChannel(index));
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(
+			"zene.mixer():channel(%1):chain():loadEffect(\"%2\")\n").arg(index).arg(device), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+
+		// plugin.unload names the device by its engine id (fx-<id>), not its position.
+		const QString fx = QStringLiteral("fx-%1").arg(chain->effects().front()->id());
+		chain->setEnabledUnjournalled(false);
+		journal->clearJournal();
+
+		QCOMPARE(int(engine->runString(qstr(
+			"local reply, err = zene.command('plugin.unload', {target = '%1', plugin = '%2'})\n"
+			"print(reply ~= nil and 'unloaded' or ('refused ' .. tostring(err)))\n").arg(channel, fx), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(engine->takeLogMessages().contains(qstr("unloaded")));
+		QVERIFY(chain->effects().empty());
+		QVERIFY(!chain->isEnabled());
+		QCOMPARE(journal->undoDepth(), 1);
+
+		journal->undo();
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QCOMPARE(QString::fromUtf8(chain->effects().front()->descriptor()->name), deviceName);
+		QVERIFY(!chain->isEnabled());
+		QCOMPARE(journal->undoDepth(), 0);
+
+		mixer->deleteChannel(index);
+		engine->takeLogMessages();
+	}
+
 	/*! The version policy's Lua face: the surface this build reports is the
 	 *  version this translation unit was compiled with, and the DAW-control
 	 *  namespace entry is visible in it. */
