@@ -227,15 +227,20 @@ bool joinable(const QJsonArray& ids, QVector<MidiClip*>* clips, Track** track, C
 	return true;
 }
 
+//! The start of @a clip in song ticks, time offset included, in 64-bit arithmetic: a join's moves are deltas of these.
+long long wideSongStart(const MidiClip* clip)
+{
+	return static_cast<long long>(clip->startPosition().getTicks()) + clip->startTimeOffset().getTicks();
+}
+
 //! Preflight for a join: every note position and controller point of the later clips must land on a storable
 //! song tick once moved by its clip's delta from the first clip's origin, in wide arithmetic.
-bool joinedContentFits(const QVector<MidiClip*>& clips, tick_t origin)
+bool joinedContentFits(const QVector<MidiClip*>& clips, long long origin)
 {
 	for (int i = 1; i < clips.size(); ++i)
 	{
 		const MidiClip* other = clips.at(i);
-		const long long from = static_cast<long long>(other->startPosition().getTicks()) + other->startTimeOffset().getTicks();
-		const long long delta = from - origin;
+		const long long delta = wideSongStart(other) - origin;
 		for (const Note* note : other->notes())
 		{
 			if (!fitsTick(static_cast<long long>(note->pos().getTicks()) + delta)) { return false; }
@@ -278,25 +283,27 @@ ControlResult joinClips(const QJsonObject& args)
 	Track* track = nullptr;
 	if (!joinable(args.value(QStringLiteral("clips")).toArray(), &clips, &track, &error)) { return error; }
 	MidiClip* first = clips.front();
-	const tick_t origin = first->startPosition().getTicks() + first->startTimeOffset().getTicks();
+	const long long origin = wideSongStart(first);
 	if (!joinedContentFits(clips, origin))
 	{
-		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("a controller point would move past the largest tick; nothing was changed"));
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a note or a controller point of a later clip "
+			"would move past the largest tick; nothing was changed"));
 	}
 	addUndoStep(QVector<JournallingObject*>{track});
 	tick_t end = first->endPosition().getTicks();
 	for (int i = 1; i < clips.size(); ++i)
 	{
 		MidiClip* other = clips.at(i);
-		const tick_t from = other->startPosition().getTicks() + other->startTimeOffset().getTicks();
+		// The move is the song delta, computed once in 64-bit arithmetic and added to each note's own position.
+		// (The old order, from + pos - origin, overflowed tick_t in its middle term when the result still fit.)
+		const long long delta = wideSongStart(other) - origin;
 		for (const Note* note : other->notes())
 		{
 			Note moved = *note;
-			moved.setPos(TimePos(from + note->pos().getTicks() - origin));
+			moved.setPos(TimePos(static_cast<tick_t>(note->pos().getTicks() + delta)));  // the preflight checked it fits
 			first->addNote(moved, false);
 		}
-		mergeControllers(first, other, from - origin);
+		mergeControllers(first, other, static_cast<tick_t>(delta));
 		end = std::max(end, other->endPosition().getTicks());
 		arrangement::deleteClip(track, other);
 	}

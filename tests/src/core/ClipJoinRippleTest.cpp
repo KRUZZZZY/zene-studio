@@ -201,6 +201,31 @@ private slots:
 		QCOMPARE(static_cast<int>(a->length().getTicks()), 192);
 	}
 
+	//! A join from a non-zero origin: the later clip starts near the top of the range and its note is moved by the
+	//! song delta. The old order (from + pos - origin) overflowed in its middle term even though the result fits;
+	//! this pins the moved positions at that origin (see the UBSan note in the report: the values agree under wrap).
+	void joiningFromANonZeroOriginKeepsEveryNoteAtItsSongPosition()
+	{
+		const int top = std::numeric_limits<tick_t>::max();
+		MidiClip* a = clipAt(1000, 96, 60);
+		MidiClip* b = clipAt(top - 500, 96, 64);
+		b->addNote(Note(TimePos(12), TimePos(800), 62), false);
+		const ControlResult joined = run(QStringLiteral("clip.join"), {{QStringLiteral("clips"),
+			QJsonArray{control::clipIdOf(a), control::clipIdOf(b)}}});
+		QVERIFY2(joined.ok, qPrintable(joined.errorMessage));
+		QCOMPARE(m_track->getClips().size(), std::size_t{1});
+		const auto positionOf = [a](int key) {
+			for (const Note* note : a->notes())
+			{
+				if (note->key() == key) { return static_cast<int>(note->pos().getTicks()); }
+			}
+			return -1;
+		};
+		QCOMPARE(positionOf(60), 0);               // the first clip's own note, unmoved
+		QCOMPARE(positionOf(64), top - 1500);      // its song start top-500, less the origin 1000
+		QCOMPARE(positionOf(62), top - 700);       // pos 800 on top of that start: top-500+800-1000
+	}
+
 	//! A later clip's note that the join moves past the largest tick used to wrap in tick_t; the join is refused
 	//! before anything moves.
 	void joiningRefusesANotePastTheLargestTick()
