@@ -40,6 +40,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QTemporaryDir>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -94,6 +95,14 @@ private slots:
 		Song* song = Engine::getSong();
 		QVERIFY(run(QStringLiteral("project.new")).ok);
 		QVERIFY2(!song->isModified(), "a new project starts clean");
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		// What a save does to the session state, without a save command: project.save is itself an
+		// undoable record, so control.undo after it would undo the save, not the edit. The save's
+		// own state change is Song::noteProjectSaved, which clears the flag.
+		const auto saveTo = [song, &dir](const QString& name) {
+			song->noteProjectSaved(dir.filePath(name));
+		};
 
 		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1},
 			{QStringLiteral("scenes"), kScenes}}).ok);
@@ -102,10 +111,21 @@ private slots:
 		QVERIFY(run(QStringLiteral("session.set_slot"), audioSlot(0, 0)).ok);
 		QVERIFY2(song->isModified(), "session.set_slot left the project marked clean");
 
-		// One undo puts the block back, and the project is still an unsaved change.
+		// A save clears the flag (Song::noteProjectSaved). The flag can only come back on the undo
+		// through the undo's own mark, so this check fails if the restore does not mark the song.
+		saveTo(QStringLiteral("first.mmpz"));
+		QVERIFY(!song->isModified());
 		REV_UNDO_OR_FAIL();
-		QVERIFY2(song->isModified(), "undoing a session edit cleared the modified flag");
+		QVERIFY2(song->isModified(), "undoing a session edit left the project marked clean");
+
+		// The same for the redo: save to clear the flag, redo, and the flag must be back.
+		saveTo(QStringLiteral("second.mmpz"));
+		QVERIFY(!song->isModified());
+		QVERIFY2(run(QStringLiteral("control.redo")).result.value(QStringLiteral("redone")).toBool(),
+			"nothing was redone");
+		QVERIFY2(song->isModified(), "redoing a session edit left the project marked clean");
 	}
+
 	//! A Follow Action entry whose FIELDS are of the wrong JSON type must be
 	//! refused, not converted. QJsonValue::toDouble()/toInt()/toBool() substitute
 	//! the field's default for anything they cannot convert, so `jump_to:"oops"`
