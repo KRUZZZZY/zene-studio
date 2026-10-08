@@ -56,10 +56,38 @@ VstMidiEventBatchTest, AllocationProbeTest, RemotePluginAudioPortsTest, AudioPor
 ZynSeparateProcessTest, OutOfProcessHostTest, OutOfProcessHostClientLoopTest: all pass. Gates complexity,
 file-length, fork-sources and no-upstream-regression exit 0.
 
+## Round 4 (re-review round 3)
+
+Re-review verdicts: N1, N2, N3, N6 and N7 accepted with notes; the Windows shm wait and the no-buffer branch were
+blockers. The Windows bounded wait is now bounded in design on the audio thread (both blockers closed in code). It is
+still PARTIAL: compiled for Linux only (shm syntax check), the POSIX semaphore backend unit-tested, the Win32 backend
+and the shm FIFO path never compiled or run here. Hosted Windows CI is the first run.
+
+| Item | Verdict | Commit | Test | Red on round 3 | Green now |
+|---|---|---|---|---|---|
+| 1 blocker: the no-buffer branch pumped messages on the audio thread | FIXED: the branch returns silence and reads nothing; the main thread's waits read those messages | 516f3f242 | periodWithoutBufferCannotHoldTheAudioThread (fake halfhandshake) | FAIL (the period waited for the client) | PASS |
+| 2 blocker: shm depth counter ridden by a thread that does not hold the lock | FIXED: the data lock has an owner key; only the owner re-enters without waiting; a timed try never rides another thread's hold. Audit: every host-side shm receive is under the communication lock (waitForMessage, waitForReplyWithin, the audio collect); main-thread sends serialise on the data lock and the audio thread only try-locks and skips | 516f3f242 | none deterministic (ownership is enforced by the lock itself) | not reproduced | compiled |
+| 3 POSIX tryAcquire used wall-clock time | FIXED: steady-clock deadline with sem_trywait polling (no wall-clock deadline) | 516f3f242 | SystemSemaphoreTest (4 cases) | not reproduced (needs a clock step) | PASS |
+| 4 main-thread silent gaps: saveSettings and the other waits | PARTIAL: saveSettings reads the cached visibility; isUIVisible and updateSampleRate wait at most 100 ms and leave a late reply in the connection (processMessage caches visibility and ignores other replies). The VST program, parameter and settings queries stay unbounded (they carry data the caller needs) | 516f3f242 | hungQueryCannotFreezeTheMainThread (fake deafquery) | FAIL (froze more than 1 s) | PASS |
+| 5 shm read() spin under the data lock | FIXED: about 5 ms of spins, then the FIFO is given up (the writer posts only whole messages) | 516f3f242 | not tested (the invariant makes it unreachable without a broken peer) | - | compiled |
+| 5 socket partial-message spin on the audio thread | FIXED: 50 us sleeps while bytes arrive, poll only when nothing is readable | 516f3f242 | not measured | - | compiled |
+| 5 N6 test name and size | FIXED: 900 KB message near the 1 MB window (was 300 KB, misnamed). A frame that has started on the socket is finished on the main thread within the query bound per piece | 516f3f242 | messageNearTheOneMegabyteWindowDoesNotFailThePlugin | FAIL before the started-frame reader (the 900 KB message could not complete) | PASS |
+| N2 remainder: stamp read after the refusal | FIXED: the refusal position comes from the failing push | 516f3f242 | existing ordering tests | - | PASS |
+
+Suites on the final tree (all pass): RemotePluginClientE2ETest (21), MidiHandoffQueueTest (9), SystemSemaphoreTest (4),
+VstMidiEventBatchTest, AllocationProbeTest, RemotePluginAudioPortsTest, AudioPortsTest, AudioPortsModelTest,
+ZynSeparateProcessTest, OutOfProcessHostTest, OutOfProcessHostClientLoopTest. Client executables RemoteZynAddSubFx and
+NativeLinuxRemoteVstPlugin64 build. Gates complexity, file-length, fork-sources and no-upstream-regression exit 0.
+Syntax checks pass with and without -DSYNC_WITH_SHM_FIFO for RemotePluginBase.cpp, RemotePlugin.cpp and SystemSemaphore.cpp.
+
+Not run: the shm FIFO end to end; the Win32 backend; Vestige and Carla note paths (no host or note-capable VST2 here);
+the VST program/parameter/settings waits stay unbounded.
+
 ## Residuals (open, tracked)
 
-- Windows shm transport: bounded in round 3, but only syntax-checked (-DSYNC_WITH_SHM_FIFO) and the POSIX semaphore
-  backend unit-tested; the shm FIFO path and the Win32 backend are not run here. Hosted Windows CI is the first run.
+- Windows shm transport: bounded in design (rounds 3-4), but only syntax-checked (-DSYNC_WITH_SHM_FIFO) and the POSIX
+  semaphore backend unit-tested; the shm FIFO path and the Win32 backend are not run here. Hosted Windows CI is the first run.
+- Main-thread VST program, parameter and settings queries wait without a bound (round 4 item 4).
 - `receiveMessage` still allocates for messages WITH arguments on the audio thread; the no-allocation proof covers
   the steady-state messages without arguments.
 - Main-thread waits (`updateSampleRate`, `waitForInitDone`, `isUIVisible`) hold the communication lock without a
