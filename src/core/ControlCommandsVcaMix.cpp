@@ -39,6 +39,8 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <cmath>
+
 #include <QJsonObject>
 #include <QVector>
 
@@ -91,7 +93,7 @@ ControlResult setGain(const QJsonObject& args)
 		return error;
 	}
 	const double gain = args.value(QStringLiteral("gain")).toDouble();
-	if (gain < 0.0 || gain > kMaxGain)
+	if (!std::isfinite(gain) || gain < 0.0 || gain > kMaxGain)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("gain %1 is outside 0..%2 (1.0 is unity, 2.0 is +6 dB)")
