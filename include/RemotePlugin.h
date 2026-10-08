@@ -28,8 +28,12 @@
 #include <QThread>
 #include <QProcess>
 #include <QRecursiveMutex>
+#include <QTimer>
 
+#include <array>
 #include <atomic>
+#include <chrono>
+#include <cstdint>
 #include <span>
 
 #include "RemotePluginBase.h"
@@ -113,8 +117,24 @@ public:
 	//! the planar port buffers described in updateAudioBuffer(); there is no
 	//! buffered copy in or out. When the plugin is failed, not running or has no
 	//! shared buffer yet, the output planes are zero-filled and false is returned.
+	//!
+	//! Realtime contract: process() never waits for the communication lock (it try-locks and skips the
+	//! period when the main thread holds it), and never waits for the client without a bound. A client that
+	//! does not answer within one period is abandoned for this period: the period is rendered as silence,
+	//! processingOverruns() counts it, and the reply still owed is drained before the next request is sent.
+	//! Client messages that need main-thread work (a channel-count change, a retired message, debug text) are
+	//! recorded here and applied by applyDeferredClientRequests(); while a channel-count change is pending,
+	//! periods are rendered as silence.
 	//! @return true if the remote client processed this period
 	bool process();
+
+	//! Main-thread half of the deferred client requests (see process()): applies a channel-count change the
+	//! client asked for during a period and reports retired messages and debug text. Runs from a timer and
+	//! may be called directly. Must not be called from the audio thread.
+	void applyDeferredClientRequests();
+
+	//! Number of processing periods abandoned because the client did not answer within one period.
+	std::uint64_t processingOverruns() const { return m_processingOverruns.load(); }
 
 	//! Writes the warning for a channel-count request that processMessage refused. processMessage also runs on
 	//! the audio thread, where a log would allocate and lock, so the refusal is only recorded there and this
@@ -206,6 +226,48 @@ private:
 	std::atomic<bool> m_refusalPending{false};
 	std::atomic<int> m_refusedInCount{0};
 	std::atomic<int> m_refusedOutCount{0};
+
+	//! Set by the audio thread when a client message needs main-thread work; read by the main thread, which
+	//! clears it under m_commMutex. The fields below are written only under m_commMutex (audio thread inside
+	//! process(), main thread in applyDeferredClientRequests()), so they need no atomics of their own.
+	std::atomic<bool> m_deferredWork{false};
+	//! True while a client-requested channel-count change is waiting for the main thread; process() renders
+	//! silence while it is, because the client already lays its planes out with the new counts.
+	bool m_countChangePending = false;
+	int m_pendingInCount = 0;
+	int m_pendingOutCount = 0;
+	//! Retired message id a client sent during a period (0 = none); reported and failed on the main thread.
+	int m_pendingRetiredId = 0;
+	//! Debug text a client sent during a period, copied at its first 255 bytes; empty when none is pending.
+	bool m_pendingDebug = false;
+	std::array<char, 256> m_pendingDebugText{};
+	std::size_t m_pendingDebugLength = 0;
+
+	//! True while process() is running on the audio thread: processMessage() defers main-thread work then.
+	bool m_inProcessPeriod = false;
+	//! IdProcessingDone replies owed by the client: sent by process() but not yet received. Non-zero only
+	//! after a period timed out; collectProcessingReplies() drains them before the next request.
+	int m_owedProcessingReplies = 0;
+	std::atomic<std::uint64_t> m_processingOverruns{0};
+	QTimer m_deferredTimer;
+
+	//! How a wait for the client's IdProcessingDone replies ended.
+	enum class ReplyWait
+	{
+		Done, //!< every reply owed was received
+		Late, //!< the deadline passed first; the reply stays owed
+		Lost  //!< the client went away
+	};
+
+	//! Body of process(), called with m_commMutex held and m_inProcessPeriod set.
+	bool processPeriod();
+
+	//! Consumes client messages until every owed IdProcessingDone has arrived, or \a deadline passes.
+	//! Non-reply messages go through processMessage(), which defers their main-thread work.
+	ReplyWait collectProcessingReplies(std::chrono::steady_clock::time_point deadline);
+
+	//! Logs the deferred retired-message and debug-text requests. Main thread only, under m_commMutex.
+	void reportDeferredClientRequests();
 
 	QString m_exec;
 	QStringList m_args;

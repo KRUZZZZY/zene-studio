@@ -94,6 +94,13 @@ int g_socket = -1;
 //! true when emulating the retired, pre-#589 client interface.
 bool g_stale = false;
 
+//! "stall" mode: the client takes IdStartProcessing and never answers it, the way a hung plugin would.
+bool g_stall = false;
+
+//! "recount" mode: the client asks for a new channel layout during the period, before its reply, and
+//! writes no planes for it.
+bool g_recount = false;
+
 //! Shared audio block the host handed out (data, past SharedMemory's header).
 float* g_block = nullptr;
 std::uint64_t g_blockFloats = 0;
@@ -316,6 +323,13 @@ auto handleMessage(const Message& message) -> bool
 		break;
 
 	case IdStartProcessing:
+		if (g_stall) { break; }
+		if (g_recount)
+		{
+			if (!sendMessage(IdChangeInputOutputCount, {"0", "4"})) { return false; }
+			if (!sendMessage(IdProcessingDone, {})) { return false; }
+			break;
+		}
 		if (g_stale) { writeInterleavedPeriod(); }
 		else { writePlanarPeriod(); }
 		if (!sendMessage(IdProcessingDone, {})) { return false; }
@@ -415,12 +429,14 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
 	g_stale = mode == "stale";
-	if (mode != "modern" && mode != "stale")
+	g_stall = mode == "stall";
+	g_recount = mode == "recount";
+	if (mode != "modern" && mode != "stale" && mode != "stall" && mode != "recount")
 	{
 		std::fprintf(stderr, "fakeclient: unknown mode '%s'\n", mode.c_str());
 		return 1;

@@ -73,6 +73,7 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <vector>
@@ -440,6 +441,104 @@ private slots:
 		qInfo("pre-#589 client: retired count message refused, plugin failed, "
 			"%llu already-allocated output frames left silent",
 			static_cast<unsigned long long>(frames));
+	}
+
+	/*!
+	 * A client that never answers IdStartProcessing must not hold the audio thread.
+	 *
+	 * RemotePlugin::process() gives the client one period to reply. Past that it
+	 * renders the period as silence and returns, and the next period does not send
+	 * a new request while the reply is still owed. The fake client here takes the
+	 * request and stays silent, so both calls must come back inside a bounded time
+	 * with silence in the output planes.
+	 */
+	void stalledClientCannotHoldTheAudioPeriod()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the stalled-client "
+				"bound is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("stall")}),
+			"could not start/connect the stalled fake client");
+		QVERIFY2(!plugin.failed(), "the stalled fake client did not complete the handshake");
+		QVERIFY(ports.buffers()->initialized());
+
+		auto out = ports.buffers()->output();
+		std::fill(out.bufferPtr(0), out.bufferPtr(0) + frames, 1.0f);
+		std::fill(out.bufferPtr(1), out.bufferPtr(1) + frames, 1.0f);
+
+		// One period is the budget; the bound below is generous to CI load but far below the
+		// fake client's 30 s read timeout, which is how long the unbounded wait used to take.
+		const auto bound = std::chrono::milliseconds{500};
+
+		auto started = std::chrono::steady_clock::now();
+		QVERIFY2(!plugin.process(), "a period the client never answered reported as processed");
+		QVERIFY2(std::chrono::steady_clock::now() - started < bound,
+			"process() waited for a client that never answered");
+
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			QCOMPARE(out.sample(0, frame), 0.0f);
+			QCOMPARE(out.sample(1, frame), 0.0f);
+		}
+
+		// The reply is still owed, so the next period is skipped without a new request.
+		started = std::chrono::steady_clock::now();
+		QVERIFY(!plugin.process());
+		QVERIFY2(std::chrono::steady_clock::now() - started < bound,
+			"a second period waited again for the client's owed reply");
+	}
+
+	/*!
+	 * A channel-count request sent by the client during a period is not applied on the
+	 * audio thread.
+	 *
+	 * Applying it re-sizes the shared buffer, which allocates and can create shared
+	 * memory. The host must keep its layout for the period, render silence, and apply
+	 * the new counts on the main thread afterwards.
+	 */
+	void channelCountRequestDuringPeriodIsAppliedOnTheMainThread()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the deferred "
+				"channel-count path is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("recount")}),
+			"could not start/connect the recount fake client");
+		QVERIFY2(!plugin.failed(), "the recount fake client did not complete the handshake");
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
+
+		auto out = ports.buffers()->output();
+		std::fill(out.bufferPtr(0), out.bufferPtr(0) + frames, 1.0f);
+		std::fill(out.bufferPtr(1), out.bufferPtr(1) + frames, 1.0f);
+
+		// The client asked for 4 outputs during this period and sent no planes for them.
+		QVERIFY(!plugin.process());
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			QCOMPARE(out.sample(0, frame), 0.0f);
+			QCOMPARE(out.sample(1, frame), 0.0f);
+		}
+
+		// The main thread applies it: its timer runs every 10 ms, so a short event-loop wait is enough.
+		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{4}, 2000);
 	}
 
 private:

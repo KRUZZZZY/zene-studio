@@ -27,6 +27,7 @@
 
 #include <atomic>  // IWYU pragma: keep
 #include <vector>
+#include <cerrno>
 #include <clocale> // IWYU pragma: keep
 #include <cstdio>
 #include <cstdlib>
@@ -400,6 +401,12 @@ public:
 			return data[_p];
 		}
 
+		//! Argument \a _p by reference. getString() returns a copy, which allocates on the audio thread.
+		inline const std::string & stringArgument( int _p = 0 ) const
+		{
+			return data[_p];
+		}
+
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 		inline QString getQString( int _p = 0 ) const
 		{
@@ -520,6 +527,28 @@ public:
 			qWarning( "Unexpected poll error." );
 		}
 		return pollin.revents & POLLIN;
+#endif
+	}
+
+	//! Waits at most \a timeoutMs milliseconds (zero polls) for the next message to start arriving.
+	//! @return false when nothing arrived in time. Only the socket transport can time out: the
+	//! shared-memory FIFO has no timed wait, so it reports ready and the caller blocks in
+	//! receiveMessage() as it always did.
+	inline bool waitForMessageReadable(int timeoutMs)
+	{
+#ifdef SYNC_WITH_SHM_FIFO
+		(void)timeoutMs;
+		return true;
+#else
+		struct pollfd pollin;
+		pollin.fd = m_socket;
+		pollin.events = POLLIN;
+		int ready = 0;
+		do
+		{
+			ready = poll(&pollin, 1, timeoutMs);
+		} while (ready < 0 && errno == EINTR);
+		return ready > 0;
 #endif
 	}
 
