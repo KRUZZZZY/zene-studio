@@ -94,6 +94,30 @@ private slots:
 		delete style;
 	}
 
+	void aNewFileInTheThemeDirectoryDoesNotReloadTheStylesheet()
+	{
+		QVERIFY(m_theme.isValid());
+		const QString css = m_theme.filePath(QStringLiteral("style.css"));
+		writeTheme(css, QStringLiteral("bluemarker"));
+
+		ConfigManager::inst()->setThemeDir(m_theme.path());
+		auto* style = new LmmsStyle();
+		QTRY_VERIFY(qApp->styleSheet().contains(QStringLiteral("bluemarker")));
+
+		// The directory watch reports every entry in the theme folder. A stylesheet that is still
+		// there and still watched has nothing to reload, so an unrelated file must leave the style alone.
+		qApp->setStyleSheet(QStringLiteral("QWidget { color: sentinel; }"));
+		QFile notes(m_theme.filePath(QStringLiteral("notes.txt")));
+		QVERIFY(notes.open(QIODevice::WriteOnly));
+		notes.write("not a stylesheet\n");
+		notes.close();
+		QTest::qWait(700);
+		QVERIFY2(qApp->styleSheet().contains(QStringLiteral("sentinel")),
+			"an unrelated file in the theme folder reloaded the stylesheet");
+
+		delete style;
+	}
+
 private:
 	QTemporaryDir m_home;
 	QTemporaryDir m_theme;

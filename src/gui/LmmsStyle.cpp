@@ -171,8 +171,16 @@ LmmsStyle::LmmsStyle() :
 			if (path == m_customCssPath) { reloadCustomStyle(); }
 		}
 	);
+	// Any entry in the theme directory is reported here, so only the one case that needs a reload is
+	// acted on: the stylesheet is back on disk and no longer under the file watch (it was recreated).
 	connect(&m_styleReloader, &QFileSystemWatcher::directoryChanged, this,
-		[this](const QString&) { reloadCustomStyle(); }
+		[this](const QString&)
+		{
+			if (QFile::exists(m_customCssPath) && !m_styleReloader.files().contains(m_customCssPath))
+			{
+				reloadCustomStyle();
+			}
+		}
 	);
 
 	if( s_palette != nullptr ) { qApp->setPalette( *s_palette ); }
