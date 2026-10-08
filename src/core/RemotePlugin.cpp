@@ -569,6 +569,10 @@ void RemotePlugin::applyDeferredClientRequests()
 {
 	if (!m_deferredWork.load()) { return; }
 
+	// Re-sizing the ports reallocates the shared buffer the audio thread's router reads, so it is done with
+	// rendering held off, as every other main-thread model change is. The request comes first: the audio
+	// thread only ever try-locks m_commMutex, so it cannot be waiting on this thread here.
+	Engine::audioEngine()->requestChangeInModel();
 	lock();
 	m_deferredWork = false;
 	reportDeferredClientRequests();
@@ -583,6 +587,7 @@ void RemotePlugin::applyDeferredClientRequests()
 		}
 	}
 	unlock();
+	Engine::audioEngine()->doneChangeInModel();
 }
 
 
