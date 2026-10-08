@@ -35,8 +35,8 @@ can only be higher than the "now" column. "Before" is the gate's figure for the 
 | src/core/McuSurface.cpp | 49.4 | 96.8 | McuSurfaceFeedbackTest | V-pot, solo, rec, select, transport, jog, inbox from the MIDI thread, dropped burst, motor/LED feedback, touched fader |
 | src/core/PluginHostNotes.cpp | 45.5 | 100 | PluginHostMetadataTest | all counters incl. concurrent writers |
 | src/core/PluginVendors.cpp | 0.0 | 100 | PluginHostMetadataTest | remember/lookup/replace/trim |
-| src/core/PortMapping.cpp | 26.7 | 76.2 | PortMappingOrchestratorTest | gateway and LAN discovery, success/double-NAT message, renewal timing, UPnP failure message, PMP renewal against a loopback gateway. `start()` is NOT run: it would ask the real default gateway for a real port |
-| src/core/PortMappingUpnp.cpp | 10.8 | 95.5 | UpnpMapperFakeRouterTest | SSDP, description, AddPortMapping/GetExternalIPAddress/Delete, renewal, 718, 725-then-permanent, non-IGD, unreadable description. The "no router answers" time-out is NOT tested (see below) |
+| src/core/PortMapping.cpp | 26.7 | 90.9 | PortMappingOrchestratorTest, UpnpMapperFakeRouterTest | gateway and LAN discovery, success/double-NAT message, renewal timing, UPnP failure message, PMP renewal; `start()` end to end through the test seam (NAT-PMP answered, silent gateway falling back to UPnP, both failing, no gateway), `stop()` removing the mapping |
+| src/core/PortMappingUpnp.cpp | 10.8 | 98.3 | UpnpMapperFakeRouterTest | SSDP, description, AddPortMapping/GetExternalIPAddress/Delete, renewal, 718, 725-then-permanent, non-IGD, unreadable description, and the no-router time-out - all on 127.0.0.1 |
 | src/core/RackZoneFeed.cpp | 33.8 | 100 | RackZoneFeedRunTest | `noteOf`, claimed notes summed per chain, buffers released, unclaimed keep theirs, sample voices, wrong-size scratch |
 | src/core/ScriptDawEffects.cpp | 15.1 | 96.3 | ScriptDawEffectsTest | chain/effect wrappers by position and id, parameters, invalid wrappers, wrapper kept across removal |
 | tests/src/core/ControlDeviceCatalogueTest.cpp | 47.2 | 56.1 | itself (+ a new builtin-listing case) | the four hosted cases still skip: no CLAP/VST3 SDK in this configuration |
@@ -71,9 +71,40 @@ can only be higher than the "now" column. "Before" is the gate's figure for the 
 2. `ScriptDawBindingTest::aScriptsLoadedEffectIsUndoneOnTheChannelItNames` skipped in the gate's coverage run with
    `libamplifier.so` built; here, with `amplifier` built, it does not skip. Not reproduced; `ScriptDawEffectsTest`
    does not depend on any plug-in module.
-3. A hazard, measured: `UpnpMapper::map()` multicasts an SSDP search to the real LAN. With a silent fake router,
-   the real router at 192.168.0.1 answered and received a real AddPortMapping (it replied UPnP error 501). That case
-   was removed from the test; with the fake answering (microseconds) the mapper takes the fake's answer first.
+3. (Resolved - see "Hermetic networking" below.) The first version of the UPnP tests multicast an SSDP search to
+   the real LAN, and the real router answered and received an AddPortMapping (UPnP error 501). That was wrong and is
+   gone.
+4. **Not covered:** the "too large to keep for an undo" branch of `track.flatten` and the "no vst3 host" branch.
+
+## Hermetic networking (required change after review)
+
+No test in the lane sends anything off this machine. The smallest product seam that makes that possible, C++ only
+(no control command, Lua binding or setting calls it; the defaults are the real multicast group, port 1900 and
+LAN-only routers):
+
+* `UpnpMapper::setSearchEndpoint(address, port, allowLoopbackRouter)` - where the SSDP search goes, and whether a
+  router on a loopback address is accepted (`include/PortMapping.h`, `src/core/PortMappingUpnp.cpp`; with the
+  loopback allowance the mapper's socket also binds to 127.0.0.1 only).
+* `PortMapping::setTestEndpoints({gateway, gatewayPort, local, upnpSearch, upnpSearchPort})` - `start()` then uses
+  these instead of reading the routing table and the multicast group (`src/core/PortMapping.cpp`).
+
+`UpnpMapperFakeRouterTest` points both at sockets on 127.0.0.1 (a UDP socket for the search, an HTTP server for the
+description and SOAP, a UDP PCP/NAT-PMP gateway) and has the "no router answers" case back, against a silent loopback
+endpoint. Proof - `strace -f -e trace=connect,sendto,sendmsg,sendmmsg,bind` over the three PortMapping/UPnP test
+binaries (`UpnpMapperFakeRouterTest`, `PortMappingOrchestratorTest`, `PortMappingCodecTest`; 11, 10 and 11 cases, all
+passed, 0 skipped):
+
+```
+connect/sendmsg/bind with an inet destination, by address:
+     85 sendmsg  127.0.0.1
+     47 connect  127.0.0.1
+     14 bind     127.0.0.1
+      7 bind     0.0.0.0      (receive-only sockets of PmpMapper; nothing is sent from them anywhere but 127.0.0.1)
+inet destinations that are neither 127.0.0.1 nor 0.0.0.0: none
+AF_INET6 syscalls: 0     address families seen: AF_INET 153, AF_UNIX 6, AF_NETLINK 3 (interface enumeration)
+any 239.255.255.250 (SSDP group) reference: 0
+```
+(`tcpdump` is installed but needs root here, so strace is the evidence.)
 
 ## New test infrastructure
 
@@ -83,7 +114,7 @@ can only be higher than the "now" column. "Before" is the gate's figure for the 
   runs for real and the written level proves which tracks were audible.
 * `tests/src/plugins/BusesTestInstrument.cpp` (instrument with extra output buses) and `FakeHostModule.cpp`
   (stand-ins for `clapeffect`, `vst3effect`, `vst3instrument`; deliberately no `clapinstrument`), both modules in
-  directories of their own, never installed. No product code was changed anywhere in the lane.
+  directories of their own, never installed. The only product code touched is the two test seams above.
 
 Not run: the full suite or the gates beyond the six cheap ones (fork-sources, all-sources, unregistered-tests,
 complexity, file-length, no-tautology), which passed before every commit.
