@@ -434,6 +434,9 @@ QPixmap InstrumentTrackView::determinePixmap(InstrumentTrack* instrumentTrack)
 
 void InstrumentTrackView::corruptStateUpdate()
 {
+	// A closed view waits for its deferred deletion after its track has died, and the periodic tick can land
+	// in that window: the model is gone then, so there is no state to read (m0 blocker, trackview-uaf).
+	if (model() == nullptr) { return; }
 	if (model()->audioBusHandle()->isCorrupted())
 	{
 		m_activityIndicator->setState(FadeButton::State::Corrupted);

@@ -849,6 +849,10 @@ set(LMMS_TESTS
 	src/gui/AutomationEditorEditingTest.cpp
 	# BUGS_FOUND 11.12: a removed VCA group's strip never paints its freed fader model.
 	src/gui/VcaStripLifetimeTest.cpp
+	# m0 blocker (trackview-uaf): a track or clip removed before its queued view is built gets no view.
+	src/gui/TrackViewDeferredLifetimeTest.cpp
+	# m0 blocker (trackview-uaf follow-up): a rack's queued removal of a view that is already gone does nothing.
+	src/gui/RackDeferredLifetimeTest.cpp
 	# 0.5.0 theme 6: sends on faders - the banner names the return, every fader labelled, "No send" faders dimmed in place.
 	src/gui/MixerSendsOnFadersTest.cpp
 	# 0.5.0 theme 16: mixer views, densities, type badges, routing by name, mode bar, sparse routing matrix.
@@ -1253,6 +1257,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyStateTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceMovesUndoTest"
+		# m0 blocker follow-up (trackview-uaf): the rack race cases load the build's amplifier module.
+		OR LMMS_TEST_NAME STREQUAL "RackDeferredLifetimeTest"
 		# 0.5.0 L10 (W3): the device tools load the build's amplifier module.
 		OR LMMS_TEST_NAME STREQUAL "DeviceToolsTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest"
@@ -1595,6 +1601,8 @@ set_tests_properties(KnobKeyboardTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=of
 set_tests_properties(AutomationModeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationEditorEditingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TrackViewDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(RackDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorFlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerTimelineTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

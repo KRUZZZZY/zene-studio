@@ -28,6 +28,7 @@
 #include <QApplication>
 #include <QAction>
 #include <QMessageBox>
+#include <QPointer>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QVBoxLayout>
@@ -179,7 +180,18 @@ void EffectRackView::update()
 			auto view = new EffectView(effect, w);
 			connect(view, &EffectView::movedUp, this, &EffectRackView::moveUp);
 			connect(view, &EffectView::movedDown, this, &EffectRackView::moveDown);
-			connect(view, &EffectView::deletedPlugin, this, &EffectRackView::deletePlugin, Qt::QueuedConnection);
+			// The removal is deferred to the rack's next event-loop turn. The plugin's view is held in a QPointer
+			// (the signal is emitted by the live view), and it is removed only if it is still one of this rack's
+			// views then: a view deleted in the meantime (its chain cleared in the same turn) is skipped, never
+			// dereferenced (m0 blocker, trackview-uaf follow-up).
+			connect(view, &EffectView::deletedPlugin, this, [this](EffectView* removed)
+			{
+				QPointer<EffectView> scheduled(removed);
+				QMetaObject::invokeMethod(this, [this, scheduled]
+				{
+					if (scheduled && m_effectViews.contains(scheduled.data())) { deletePlugin(scheduled.data()); }
+				}, Qt::QueuedConnection);
+			}, Qt::DirectConnection);
 
 			QAction* moveUpAction = new QAction(view);
 			moveUpAction->setShortcut(keySequence(Qt::Key_Up, Qt::AltModifier));
