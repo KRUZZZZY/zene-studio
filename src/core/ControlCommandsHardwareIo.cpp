@@ -139,8 +139,9 @@ ControlResult ioSetup(const QJsonObject& args)
 	const QJsonObject after = audioio::storedEntry(key);
 	addUndoStep([key, before]() { audioio::restoreEntry(key, before); }, [key, after]() { audioio::restoreEntry(key, after); });
 	QJsonObject result = ioReport();
-	const bool reopen = setup.outputs.channels != countBefore && setup.outputs.channels != deviceChannels().outputs;
-	result.insert(QStringLiteral("applied"), reopen ? QStringLiteral("names_now_count_next_start") : QStringLiteral("now"));
+	const bool countChanged = setup.outputs.channels != countBefore;
+	const bool reopen = setup.outputs.channels != deviceChannels().outputs;
+	result.insert(QStringLiteral("applied"), countChanged ? QStringLiteral("names_now_count_next_start") : QStringLiteral("now"));
 	result.insert(QStringLiteral("restart_required"), reopen);
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("device"), key}, {QStringLiteral("entry"), before}},
 		QStringLiteral("control.undo"), {}, true, QStringLiteral("action checkpoint: the recorded undo step puts the device's previous "

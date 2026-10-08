@@ -1,0 +1,159 @@
+/*
+ * DeviceAbUndoTest.cpp - plugin.ab stores and their undo after a device is recreated
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+/*! 0.5.0 L10 (review cluster 5639): a plugin.ab store is one undo step, and its undo and redo still find the
+ *  device after plugin.unload and the undo that rebuilt it as a new object. */
+
+#include <QtTest>
+
+#include <QJsonArray>
+
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
+#include "Effect.h"
+#include "EffectChain.h"
+#include "Engine.h"
+#include "Mixer.h"
+
+using namespace lmms;
+
+namespace
+{
+
+ControlResult run(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
+QString ch(int index) { return control::channelIdOf(Engine::mixer()->mixerChannel(index)); }
+
+EffectChain& chainOf(int index) { return Engine::mixer()->mixerChannel(index)->m_fxChain; }
+
+//! The first effect this build can load onto @a target: its fx-<n>, or empty.
+QString loadAnEffect(const QString& target)
+{
+	for (const QJsonValue& device : run(QStringLiteral("plugin.list"), {{QStringLiteral("kind"), QStringLiteral("effect")},
+		{QStringLiteral("loadable_only"), true}}).result.value(QStringLiteral("devices")).toArray())
+	{
+		const ControlResult loaded = run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), target},
+			{QStringLiteral("device"), device.toObject().value(QStringLiteral("id")).toString()}});
+		if (loaded.ok) { return loaded.result.value(QStringLiteral("id")).toString(); }
+	}
+	return QString();
+}
+
+//! The first float parameter of @a plugin on @a target and a value inside its range away from the current one.
+bool aParameter(const QString& target, const QString& plugin, QString* name, double* other)
+{
+	// plugin.param_get reads ONE parameter (by 'name' or 'index'): walk the indices until there is none.
+	for (int index = 0; index < 256; ++index)
+	{
+		const ControlResult read = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), target},
+			{QStringLiteral("plugin"), plugin}, {QStringLiteral("index"), index}});
+		if (!read.ok) { break; }
+		const QJsonObject p = read.result.value(QStringLiteral("parameter")).toObject();
+		if (p.value(QStringLiteral("type")).toString() == QLatin1String("boolean")) { continue; }  // a float one, not "enabled"
+		const double lo = p.value(QStringLiteral("min")).toDouble();
+		const double hi = p.value(QStringLiteral("max")).toDouble();
+		if (hi - lo <= 0.0) { continue; }
+		*name = p.value(QStringLiteral("name")).toString();
+		const double now = p.value(QStringLiteral("value")).toDouble();
+		*other = std::abs(now - lo) > (hi - lo) * 0.25 ? lo : hi;
+		return true;
+	}
+	return false;
+}
+
+double parameterValue(const QString& target, const QString& plugin, const QString& name)
+{
+	const ControlResult read = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), target},
+		{QStringLiteral("plugin"), plugin}, {QStringLiteral("name"), name}});
+	return read.ok ? read.result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble() : -1e9;
+}
+
+} // namespace
+
+class DeviceAbUndoTest : public QObject
+{
+	Q_OBJECT
+
+private slots:
+	void initTestCase()
+	{
+#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+#endif
+		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();  // the test reads and writes channel buffers itself
+		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
+		ControlRegistry::setReady(true);
+	}
+
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::destroy();
+	}
+
+	//! A store's undo and redo after the device was unloaded and its unload undone (a new effect object): the
+	//! undo and the redo must find the recreated device, not write the slots under the old id or owner.
+	void aStoredSlotSurvivesTheDeviceBeingRecreated()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString target = ch(index);
+		QString plugin = loadAnEffect(target);
+		if (plugin.isEmpty()) { QSKIP("this build loads no effect"); }
+		QString name;
+		double other = 0.0;
+		QVERIFY(aParameter(target, plugin, &name, &other));
+		const auto ab = [target, &plugin](const QString& action, const QString& slot = QString()) {
+			QJsonObject args{{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+				{QStringLiteral("action"), action}};
+			if (!slot.isEmpty()) { args.insert(QStringLiteral("slot"), slot); }
+			return run(QStringLiteral("plugin.ab"), args);
+		};
+		QVERIFY(run(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("name"), name}, {QStringLiteral("value"), other}}).ok);
+		QVERIFY(ab(QStringLiteral("store"), QStringLiteral("a")).ok);                       // the store (step 1)
+		QVERIFY(run(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin}}).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);                                     // the unload: the device is back
+		QCOMPARE(chainOf(index).effects().size(), std::size_t{1});
+		const QString back = control::effectIdOf(chainOf(index).effects().front());
+		plugin = back;  // the recreated device has a new fx id
+		QVERIFY(run(QStringLiteral("control.undo")).ok);                                     // the store is undone
+		const ControlResult undone = ab(QStringLiteral("get"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QVERIFY(!undone.result.value(QStringLiteral("has_a")).toBool());
+		QVERIFY(run(QStringLiteral("control.redo")).ok);                                     // and redone
+		const ControlResult redone = ab(QStringLiteral("get"));
+		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
+		QVERIFY2(redone.result.value(QStringLiteral("has_a")).toBool(), "the redone store lost its slot on the recreated device");
+		QVERIFY(ab(QStringLiteral("recall"), QStringLiteral("a")).ok);
+		QVERIFY(std::abs(parameterValue(target, back, name) - other) < 1e-3);
+		chainOf(index).clear();
+	}
+
+};
+
+QTEST_MAIN(DeviceAbUndoTest)
+#include "DeviceAbUndoTest.moc"

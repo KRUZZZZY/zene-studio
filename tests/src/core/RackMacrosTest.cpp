@@ -57,6 +57,27 @@
 
 using namespace racktest;
 
+namespace
+{
+
+//! What control.id_contract reports as the session's fx-<n> count.
+int fxIdCount()
+{
+	const ControlResult contract = revtest::run(QStringLiteral("control.id_contract"));
+	if (!contract.ok) { return -1; }
+	for (const QJsonValue& family : contract.result.value(QStringLiteral("families")).toArray())
+	{
+		const QJsonObject entry = family.toObject();
+		if (entry.value(QStringLiteral("prefix")).toString() == QLatin1String("fx-"))
+		{
+			return entry.value(QStringLiteral("count")).toInt();
+		}
+	}
+	return -1;
+}
+
+} // namespace
+
 class RackMacrosTest : public QObject
 {
 	Q_OBJECT
@@ -342,6 +363,32 @@ private slots:
 		QCOMPARE(restored.value(QStringLiteral("value")).toDouble(), 0.0);
 		printEvidence("surface-macro-undo",
 			QStringLiteral("control.undo restored the macro to 0.0 and the parameter to 100"));
+	}
+
+	/*! control.id_contract's fx- count answers "how many fx- ids does this
+	 *  session have". A mixer channel carries devices on its own chain, on the
+	 *  rack's parallel chains and on its post-fader inserts - and all three hand
+	 *  out fx- ids (ControlDeviceSupport's rackChainEffect walks exactly them) -
+	 *  so the count must move when a device lands on any of the three. */
+	void theIdContractCountsEveryChainThatHandsOutFxIds()
+	{
+		const int base = fxIdCount();
+		MixerChannel* const channel = Engine::mixer()->mixerChannel(kChannel);
+		QVERIFY(channel != nullptr);
+
+		auto* inRack = new RackParamEffect(channel->m_rack.chain(kDrivenChain));
+		channel->m_rack.chain(kDrivenChain)->appendEffect(inRack);
+		QCOMPARE(fxIdCount(), base + 1);  // a rack chain's device counts
+		channel->m_rack.chain(kDrivenChain)->removeEffect(inRack);
+
+		auto* inPost = new RackParamEffect(&channel->m_postInserts.chain());
+		channel->m_postInserts.chain().appendEffect(inPost);
+		QCOMPARE(fxIdCount(), base + 1);  // and so does a post-fader insert's
+		channel->m_postInserts.chain().removeEffect(inPost);
+
+		QCOMPARE(fxIdCount(), base);  // both taken back out
+		printEvidence("id-contract-fx-count",
+			QStringLiteral("fx- count moved with a rack chain's and a post-insert's device"));
 	}
 
 	//! Typed refusals: a caller is told what is wrong, and never gets "ok" for a

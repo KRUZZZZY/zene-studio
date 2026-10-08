@@ -65,6 +65,16 @@ SampleClip* audioClipOf(const QJsonObject& args, ClipRef* ref, ControlResult* er
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clip' is an audio clip with audio"));
 		return nullptr;
 	}
+	// Everything below is in hz: the pitch detector is handed the clip's own rate, and
+	// the spectrogram's band bins divide by it for Nyquist. A buffer that names no rate
+	// has neither, so it is refused here rather than analysed from an impossible number.
+	if (clip->sample().sampleRate() <= 0)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("this clip's sample data names no sample rate, so there is nothing "
+				"to analyse it in hz against"));
+		return nullptr;
+	}
 	return clip;
 }
 

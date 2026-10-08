@@ -106,6 +106,63 @@ private slots:
 		QVERIFY(mixer->channelSendModel(b, a) == nullptr);
 		QCOMPARE(refreshed, 2);
 	}
+
+	// The state text must describe the state that is actually in force: with the submode
+	// off, pdc_suspended is false, so the reply must not claim compensation is SUSPENDED.
+	void theSuspensionTextFollowsTheSubmode()
+	{
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("feedback.enable"), QJsonObject{}).ok);
+		const QJsonObject on = state();
+		QVERIFY(on.value(QStringLiteral("pdc_suspended")).toBool());
+		QVERIFY(on.value(QStringLiteral("suspension")).toString().contains(QStringLiteral("SUSPENDED")));
+
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("feedback.disable"), QJsonObject{}).ok);
+		const QJsonObject off = state();
+		QVERIFY(!off.value(QStringLiteral("enabled")).toBool());
+		QVERIFY(!off.value(QStringLiteral("pdc_suspended")).toBool());
+		QVERIFY(!off.value(QStringLiteral("suspension")).toString().contains(QStringLiteral("SUSPENDED")));
+	}
+
+	// The inverse feedback.disable advertises must be one command that restores the WHOLE edit:
+	// the mode AND the loop-closing sends the command removed. feedback.enable only turns the
+	// mode back on, so a caller replaying the advertised inverse would lose the routes.
+	void theDisableInverseIsTheCommandThatRestoresTheSends()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		QVERIFY(registry->invoke(QStringLiteral("feedback.enable"), QJsonObject{}).ok);
+		Mixer* mixer = Engine::mixer();
+		const int a = mixer->createChannel();
+		const int b = mixer->createChannel();
+		QVERIFY(mixer->createChannelSend(a, b) != nullptr);
+		QVERIFY(mixer->createChannelSend(b, a) != nullptr);
+		QCOMPARE(state().value(QStringLiteral("feedback_routes")).toArray().size(), 1);
+
+		const ControlResult off = registry->invoke(QStringLiteral("feedback.disable"), QJsonObject{});
+		QVERIFY2(off.ok, qPrintable(off.errorMessage));
+		QCOMPARE(off.result.value(QStringLiteral("removed")).toInt(), 1);
+		// The registry strips the private __transaction key from the wire result, so the
+		// advertised inverse is read back from the recorded transaction.
+		QJsonObject inverse;
+		const QJsonArray records = registry->invoke(QStringLiteral("control.transactions"), QJsonObject{})
+			.result.value(QStringLiteral("transactions")).toArray();
+		for (const QJsonValue& record : records)
+		{
+			const QJsonObject entry = record.toObject();
+			if (entry.value(QStringLiteral("command")).toString() == QLatin1String("feedback.disable"))
+			{
+				inverse = entry.value(QStringLiteral("inverse")).toObject();
+			}
+		}
+		QVERIFY2(!inverse.isEmpty(), "feedback.disable recorded no inverse");
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+
+		// Replaying exactly the advertised inverse has to bring both back.
+		QVERIFY(registry->invoke(inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject()).ok);
+		QVERIFY(state().value(QStringLiteral("enabled")).toBool());
+		QVERIFY2(mixer->channelSendModel(b, a) != nullptr,
+			"the advertised inverse restored the mode but not the removed loop-closing send");
+	}
 };
 
 QTEST_MAIN(FeedbackModeActionTest)

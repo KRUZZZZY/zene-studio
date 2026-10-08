@@ -200,6 +200,29 @@ QJsonObject pairedCommandTransaction(const QJsonObject& before, const QString& i
 ControlResult handleEnable(const QJsonObject& args)
 {
 	const std::string directory = armDirectory(args);
+
+	// Arming somewhere ELSE cannot be undone. uninstall() clears the handlers
+	// but KEEPS the remembered directory, and crash.disable's recorded inverse
+	// (crash.enable) takes no arguments, so the reverse direction could never
+	// move the reporter back: undo would leave it disarmed but pointed at the
+	// new directory, and crash.list_reports would name paths this call invented.
+	// Refuse the move rather than record an inverse that lies, the way this
+	// handler already refuses "already armed". The remembered directory is named
+	// in the refusal so the caller can see where the reporter still points.
+	const std::string remembered = crashreporter::reportDirectory();
+	// Compared CLEANED: main() hands the reporter a path with a trailing slash,
+	// and clean() is what armDirectory() puts both sides through, so comparing
+	// the raw string would refuse the very directory that is already remembered.
+	if (!remembered.empty() && clean(remembered) != directory)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1: the crash reporter is pointed at %2, and crash.enable cannot move it - "
+				"crash.disable's inverse (crash.enable) takes no directory, so an arm somewhere else "
+				"could never be undone and undo would leave the reporter disarmed but naming paths this "
+				"call invented. Nothing was changed. Arm the working directory that was already chosen")
+				.arg(EnableName, wire(remembered)));
+	}
+
 	if (crashreporter::handlersArmed() && crashreporter::isInstalled())
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,

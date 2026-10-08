@@ -32,6 +32,8 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include <QDir>
 #include <QImage>
 #include <QJsonArray>
@@ -112,6 +114,152 @@ private slots:
 		QJsonObject relative = args;
 		relative.insert(QStringLiteral("dir"), QStringLiteral("not/absolute"));
 		QCOMPARE(run(QStringLiteral("browser.save_clip"), relative).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! A save over a file that exists but cannot be read is refused before anything is written: undo could not put
+	//! back what the overwrite destroyed, so the file stays exactly as it was.
+	void aSaveNeverReplacesAFileItCannotRead()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		const QJsonObject args{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("dir"), m_dir.path()},
+			{QStringLiteral("name"), QStringLiteral("unreadable")}, {QStringLiteral("overwrite"), true}};
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("unreadable.mid"));
+		QFile earlier(path);
+		QVERIFY(earlier.open(QIODevice::WriteOnly));
+		earlier.write("earlier bytes");
+		earlier.close();
+		QVERIFY(QFile::setPermissions(path, QFileDevice::WriteOwner));  // write-only: a save can replace it, nothing can read it
+		QFile probe(path);
+		if (probe.open(QIODevice::ReadOnly))  // root reads anything: nothing to prove here
+		{
+			probe.close();
+			QVERIFY(QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+			QSKIP("this account reads files without read permission");
+		}
+
+		const ControlResult refused = run(QStringLiteral("browser.save_clip"), args);
+		QVERIFY(QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QFile back(path);
+		QVERIFY(back.open(QIODevice::ReadOnly));
+		QCOMPARE(back.readAll(), QByteArray("earlier bytes"));
+	}
+
+	//! A dangling link at the clip's file is refused like an unreadable file, not replaced: the link stays.
+	void aSaveNeverReplacesADanglingLink()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("dangling.mid"));
+		const QString missing = m_dir.filePath(QStringLiteral("nowhere.target"));
+		QVERIFY(QFile::link(missing, path));
+		QVERIFY(QFileInfo(path).isSymLink() && !QFileInfo::exists(path));
+
+		const ControlResult refused = run(QStringLiteral("browser.save_clip"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("dir"), m_dir.path()}, {QStringLiteral("name"), QStringLiteral("dangling")}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(QFileInfo(path).isSymLink(), "the save replaced a dangling link it did not write");
+		QCOMPARE(QFile::symLinkTarget(path), missing);
+		QVERIFY(!QFileInfo::exists(missing));
+	}
+
+	// After aMidiClipIsSavedIntoTheLibrary, which ends with its file undone away.
+	void anOverwrittenClipComesBackOnUndo()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		clip->addNote(Note(TimePos(96), TimePos(48), 67), false);
+		const QJsonObject args{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("dir"), m_dir.path()},
+			{QStringLiteral("name"), QStringLiteral("replaced")}};
+		QVERIFY(run(QStringLiteral("browser.save_clip"), args).ok);
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("replaced.mid"));
+		QVERIFY(QFileInfo::exists(path));
+		// Something else of our own stands there: an overwrite replaced it.
+		QFile other(path);
+		QVERIFY(other.open(QIODevice::WriteOnly));
+		other.write("earlier bytes");
+		other.close();
+		QJsonObject over = args;
+		over.insert(QStringLiteral("overwrite"), true);
+		QVERIFY(run(QStringLiteral("browser.save_clip"), over).ok);
+		QVERIFY(QFileInfo(path).size() > 14);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the file the overwrite replaced is back, not deleted
+		QVERIFY(QFileInfo::exists(path));
+		QFile back(path);
+		QVERIFY(back.open(QIODevice::ReadOnly));
+		QCOMPARE(back.readAll(), QByteArray("earlier bytes"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // and the save under it still deletes the file
+		QVERIFY(!QFileInfo::exists(path));
+	}
+
+	//! A note whose note-off would pass the largest tick is refused, not written: the end cannot be held, and a clamped
+	//! end would sort onto or before its own note-on. A MIDI delta time is at most four bytes (0x0FFFFFFF ticks), so a
+	//! note further than that from the event before it is refused too. A note inside both limits is written exactly.
+	void aNoteNearTheTopOfTheRangeIsRefusedOrWrittenExactly()
+	{
+		const tick_t top = std::numeric_limits<tick_t>::max();
+		const auto saveNote = [this](tick_t start, tick_t length, const QString& name) {
+			auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+			auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+			clip->addNote(Note(TimePos(length), TimePos(start), 60), false);  // Note(length, pos, key)
+			return run(QStringLiteral("browser.save_clip"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+				{QStringLiteral("dir"), m_dir.path()}, {QStringLiteral("name"), name}});
+		};
+		const QString refusedPath = QDir(m_dir.path()).filePath(QStringLiteral("overhigh.mid"));
+		const ControlResult overhigh = saveNote(top - 10, 48, QStringLiteral("overhigh"));
+		QCOMPARE(overhigh.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(!QFileInfo::exists(refusedPath), "a refused save wrote its file");
+		QCOMPARE(saveNote(top, 1, QStringLiteral("exact")).errorKind, ControlErrorKind::Refused);  // start == largest tick
+		QVERIFY(!QFileInfo::exists(QDir(m_dir.path()).filePath(QStringLiteral("exact.mid"))));
+		// The first delta is the note's start, from the tempo meta at 0: 2^28 is one past a four-byte delta.
+		const tick_t fiveBytes = tick_t{1} << 28;
+		const ControlResult fiveByte = saveNote(fiveBytes, 48, QStringLiteral("fivebyte"));
+		QCOMPARE(fiveByte.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(fiveByte.errorMessage.contains(QStringLiteral("tick 268435456")), qPrintable(fiveByte.errorMessage));
+		QVERIFY(!QFileInfo::exists(QDir(m_dir.path()).filePath(QStringLiteral("fivebyte.mid"))));
+
+		// Exactly the largest four-byte delta: the note's start is 0x0FFFFFFF, its first delta from tick 0.
+		const tick_t maxDelta = (tick_t{1} << 28) - 1;  // 0x0FFFFFFF
+		const tick_t start = maxDelta;
+		const tick_t length = 1;
+		QVERIFY(saveNote(start, length, QStringLiteral("high")).ok);
+		QFile file(QDir(m_dir.path()).filePath(QStringLiteral("high.mid")));
+		QVERIFY(file.open(QIODevice::ReadOnly));
+		const QByteArray bytes = file.readAll();
+		QVERIFY(bytes.startsWith("MThd") && bytes.contains("MTrk"));
+		// The delta-timed track: after the header and the tempo meta event.
+		int at = bytes.indexOf("MTrk") + 4 + 4;
+		// A valid SMF delta is at most four bytes; a fifth continuation byte fails the read.
+		const auto readDelta = [&bytes, &at](quint32* out) {
+			quint32 value = 0;
+			for (int n = 0; n < 4; ++n)
+			{
+				const quint8 byte = static_cast<quint8>(bytes.at(at++));
+				value = (value << 7) | (byte & 0x7F);
+				if ((byte & 0x80) == 0)
+				{
+					*out = value;
+					return true;
+				}
+			}
+			return false;
+		};
+		quint32 delta = 0;
+		QVERIFY(readDelta(&delta));
+		QCOMPARE(delta, quint32{0});  // the tempo meta's own delta
+		at += 6;  // FF 51 03 and the three tempo bytes
+		QVERIFY(readDelta(&delta));
+		QCOMPARE(delta, quint32{static_cast<quint32>(start)});  // the note-on, at its own start
+		QCOMPARE(static_cast<quint8>(bytes.at(at++)), quint8{0x90});
+		at += 2;
+		QVERIFY(readDelta(&delta));
+		QCOMPARE(delta, quint32{static_cast<quint32>(length)});  // the note-off, 'length' after its note-on
+		QCOMPARE(static_cast<quint8>(bytes.at(at++)), quint8{0x80});
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
 	}
 
 	void aMissingPresetIsRefused()

@@ -274,6 +274,74 @@ private slots:
 		QVERIFY(!control::abSlotState(nullptr, &read));
 	}
 
+	//! 0.5.0 theme 12: plugin.ab store is a change of session state, so it is one undo step: undoing it
+	//! empties the slot it filled again instead of reaching the write before it.
+	void aStoredSlotIsUndone()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString target = ch(index);
+		const QString plugin = loadAnEffect(target);
+		if (plugin.isEmpty()) { QSKIP("this build loads no effect"); }
+		QString name;
+		double other = 0.0;
+		QVERIFY(aParameter(target, plugin, &name, &other));
+		const double before = parameterValue(target, plugin, name);
+		QVERIFY(run(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("name"), name}, {QStringLiteral("value"), other}}).ok);
+		const ControlResult stored = run(QStringLiteral("plugin.ab"), {{QStringLiteral("target"), target},
+			{QStringLiteral("plugin"), plugin}, {QStringLiteral("action"), QStringLiteral("store")}, {QStringLiteral("slot"), QStringLiteral("a")}});
+		QVERIFY2(stored.ok, qPrintable(stored.errorMessage));
+		QVERIFY(stored.result.value(QStringLiteral("has_a")).toBool());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the store, not the parameter write
+		const QJsonObject after = run(QStringLiteral("plugin.ab"), {{QStringLiteral("target"), target},
+			{QStringLiteral("plugin"), plugin}, {QStringLiteral("action"), QStringLiteral("get")}}).result;
+		QVERIFY(!after.value(QStringLiteral("has_a")).toBool());
+		QCOMPARE(run(QStringLiteral("plugin.ab"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("action"), QStringLiteral("recall")}, {QStringLiteral("slot"), QStringLiteral("a")}}).errorKind,
+			ControlErrorKind::NotFound);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // now the parameter write
+		QVERIFY(std::abs(parameterValue(target, plugin, name) - before) < 1e-3);
+		chainOf(index).clear();
+	}
+
+	//! 0.5.0 theme 12: an A/B recall undone after the device was unloaded and its unload undone still puts the
+	//! pre-recall settings back: the step finds the recreated device again instead of a stale pointer.
+	void anAbRecallUndoSurvivesTheDeviceBeingRecreated()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString target = ch(index);
+		const QString plugin = loadAnEffect(target);
+		if (plugin.isEmpty()) { QSKIP("this build loads no effect"); }
+		QString name;
+		double other = 0.0;
+		QVERIFY(aParameter(target, plugin, &name, &other));
+		const auto ab = [target, plugin](const QString& action, const QString& slot = QString()) {
+			QJsonObject args{{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+				{QStringLiteral("action"), action}};
+			if (!slot.isEmpty()) { args.insert(QStringLiteral("slot"), slot); }
+			return run(QStringLiteral("plugin.ab"), args);
+		};
+		const double stored = parameterValue(target, plugin, name);
+		QVERIFY(run(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("name"), name}, {QStringLiteral("value"), other}}).ok);
+		QVERIFY(ab(QStringLiteral("store"), QStringLiteral("a")).ok);
+		QVERIFY(run(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("name"), name}, {QStringLiteral("value"), stored}}).ok);
+		QVERIFY(ab(QStringLiteral("store"), QStringLiteral("b")).ok);
+		QVERIFY(ab(QStringLiteral("recall"), QStringLiteral("a")).ok);
+		QVERIFY(std::abs(parameterValue(target, plugin, name) - other) < 1e-3);  // A is heard
+		// The device goes away and its unload is undone, which builds a NEW effect object: the recall's
+		// undo must still find it and put B's settings back.
+		QVERIFY(run(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin}}).ok);
+		QVERIFY(chainOf(index).effects().empty());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the unload: the device is back
+		QCOMPARE(chainOf(index).effects().size(), std::size_t{1});
+		const QString back = control::effectIdOf(chainOf(index).effects().front());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the recall
+		QVERIFY(std::abs(parameterValue(target, back, name) - stored) < 1e-3);
+		chainOf(index).clear();
+	}
+
 	//! 0.5.0 theme 12: plugin.move puts a device at another slot of its chain (the card's Move Left / Right), one undo
 	//! step that its redo repeats; a slot past the end is the last one, and the slot it is at changes nothing.
 	void aDeviceMovesWithinItsChain()

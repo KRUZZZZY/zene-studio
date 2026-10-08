@@ -57,6 +57,7 @@
 #include "Rack.h"
 #include "ReversibilityTestSupport.h"
 #include "Song.h"
+#include "TrackKeyNames.h"
 
 using namespace lmms;
 
@@ -420,6 +421,39 @@ private slots:
 			static_cast<int>(DefaultVolume));
 	}
 
+	//! The soft-takeover point is part of the binding: undoing a remap puts the OLD binding back, custom target included.
+	void undoingARemapKeepsTheSoftTakeoverTarget()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		// Named, because the parameter is addressed by its display name and an unnamed
+		// track shares that name with every other one the earlier cases created.
+		track->setName(QStringLiteral("TakeoverTarget"));
+		AutomatableModel* volume = track->volumeModel();
+		const ControlResult mapped = run(QStringLiteral("controller.map"), {{QStringLiteral("target"), volume->fullDisplayName()},
+			{QStringLiteral("controller"), 21}, {QStringLiteral("soft_takeover"), true}});
+		QVERIFY2(mapped.ok, qPrintable(mapped.errorMessage));
+		auto* bound = dynamic_cast<MidiController*>(volume->controllerConnection()->getController());
+		QVERIFY(bound != nullptr);
+		bound->setSoftTakeoverTarget(0.75f);
+		QCOMPARE(bound->softTakeoverTarget(), 0.75f);
+
+		// Remap the same parameter elsewhere: the fresh binding starts from the default point.
+		const ControlResult remapped = run(QStringLiteral("controller.map"), {{QStringLiteral("target"), volume->fullDisplayName()},
+			{QStringLiteral("controller"), 22}});
+		QVERIFY2(remapped.ok, qPrintable(remapped.errorMessage));
+		auto* moved = dynamic_cast<MidiController*>(volume->controllerConnection()->getController());
+		QVERIFY(moved != nullptr);
+		QCOMPARE(moved->midiPort().inputController(), 22);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		auto* restored = dynamic_cast<MidiController*>(volume->controllerConnection()->getController());
+		QVERIFY(restored != nullptr);
+		QCOMPARE(restored->midiPort().inputController(), 21);
+		QVERIFY2(restored->softTakeoverEnabled(), "undoing the remap must restore the flag, not only the address");
+		QCOMPARE(restored->softTakeoverTarget(), 0.75f);
+	}
+
 	//! note.pitch_curve_set over several notes: the before-state names each note's curve, not only the first one's.
 	void aCurveWriteRecordsEveryNotesBefore()
 	{
@@ -596,6 +630,58 @@ private slots:
 
 		QFile::remove(alpha.result.value(QStringLiteral("path")).toString());
 		QFile::remove(decoy.result.value(QStringLiteral("path")).toString());
+	}
+
+	//! Luna cluster 1096: the undo closure carried the old names, but the transaction's
+	//! 'before' payload was empty - so the record that claims to restore them described no
+	//! state at all, and a client reading control.transactions saw a reversible step with
+	//! nothing to reverse to.
+	void theKeyNameTransactionCarriesTheNamesItRestores()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		QVERIFY(track != nullptr);
+		const QString id = control::trackIdOf(track);
+		// The first label on a track has no before-state - the track had no names to replace.
+		QVERIFY(run(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QStringLiteral("Kick")}}).ok);
+		const ControlRegistry::Transaction* first = ControlRegistry::instance()->lastTransaction();
+		QVERIFY2(first != nullptr, "setting a key name recorded no transaction");
+		QVERIFY2(first->reversible, "the key-name change recorded no inverse");
+
+		// Replacing it is the case that matters: the step restores "Kick", so the record
+		// has to say so - an empty before-state describes nothing to return to.
+		QVERIFY(run(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QStringLiteral("BD")}}).ok);
+		const ControlRegistry::Transaction* second = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(second != nullptr);
+		const QJsonArray carried = second->before.value(QStringLiteral("names")).toArray();
+		QCOMPARE(carried.size(), 1);
+		QCOMPARE(carried.first().toObject().value(QStringLiteral("name")).toString(), QStringLiteral("Kick"));
+		// And the undo step really does put that name back, as the record claims.
+		QCOMPARE(TrackKeyNames::instance().name(track->id(), 24), QStringLiteral("BD"));
+		QVERIFY(undone());
+		QCOMPARE(TrackKeyNames::instance().name(track->id(), 24), QStringLiteral("Kick"));
+	}
+
+	//! Luna cluster 4836: 'name' is not a required parameter, so a call that left it out
+	//! turned into an empty string - which the handler reads as "remove this key". A caller
+	//! that misspelled or forgot the field silently deleted the label.
+	void aKeyNameSetWithoutANameChangesNothing()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		QVERIFY(track != nullptr);
+		const QString id = control::trackIdOf(track);
+		QVERIFY(run(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QStringLiteral("Kick")}}).ok);
+		// No 'name' at all: refused, and the label it would have deleted is still there.
+		const ControlResult missing = run(QStringLiteral("key_names.set"),
+			{{QStringLiteral("track"), id}, {QStringLiteral("key"), 24}});
+		QCOMPARE(missing.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(TrackKeyNames::instance().name(track->id(), 24), QStringLiteral("Kick"));
+		// An explicit empty name is still how a label is removed - that stays a removal.
+		QVERIFY(run(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QString()}}).ok);
+		QVERIFY(TrackKeyNames::instance().name(track->id(), 24).isEmpty());
 	}
 
 	//! E19: no record names an "UNIMPLEMENTED" inverse any more - a real one, or an honest one-way record.

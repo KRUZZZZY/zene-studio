@@ -71,11 +71,14 @@ bool readStore(QJsonObject* all)
 	return parsed.error == QJsonParseError::NoError && doc.isObject();
 }
 
-QJsonObject readAll()
+//! The stored collections in @a all; false (with @a error) when the store is damaged. A
+//! missing or empty file is an empty store, so this only refuses what cannot be read.
+bool readAll(QJsonObject* all, ControlResult* error)
 {
-	QJsonObject all;
-	readStore(&all);
-	return all;
+	if (readStore(all)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the collections file %1 is not a JSON object, so "
+		"nothing was read from it; repair or move it, then try again").arg(storePath()));
+	return false;
 }
 
 //! readStore for an edit: a damaged store is refused, never overwritten with what one edit leaves of it.
@@ -98,7 +101,9 @@ bool writeAll(const QJsonObject& all)
 //! Replace the store with @a next as one undo step.
 ControlResult store(const QJsonObject& next, const QJsonObject& answer)
 {
-	const QJsonObject before = readAll();
+	QJsonObject before;
+	ControlResult error;
+	if (!readForEdit(&before, &error)) { return error; }
 	if (!writeAll(next))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the collections file %1 could not be written").arg(storePath()));
@@ -140,7 +145,9 @@ ControlResult remove(const QJsonObject& args)
 ControlResult list(const QJsonObject&)
 {
 	QJsonArray out;
-	const QJsonObject all = readAll();
+	QJsonObject all;
+	ControlResult error;
+	if (!readAll(&all, &error)) { return error; }
 	for (auto it = all.begin(); it != all.end(); ++it)
 	{
 		out.append(QJsonObject{{QStringLiteral("name"), it.key()}, {QStringLiteral("query"), it.value()}});
@@ -150,7 +157,9 @@ ControlResult list(const QJsonObject&)
 
 ControlResult run(const QJsonObject& args)
 {
-	const QJsonObject all = readAll();
+	QJsonObject all;
+	ControlResult error;
+	if (!readAll(&all, &error)) { return error; }
 	const QString name = args.value(QStringLiteral("name")).toString();
 	if (!all.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no collection '%1'").arg(name)); }
 	QJsonObject query = all.value(name).toObject();

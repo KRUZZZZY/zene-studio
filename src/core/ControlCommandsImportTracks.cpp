@@ -82,7 +82,10 @@ QList<QDomElement> songTracks(const QDomElement& content)
 void detach(QDomElement element, bool keepFolders)
 {
 	static const QStringList withIds{QStringLiteral("track"), QStringLiteral("effect"), QStringLiteral("midiclip"),
-		QStringLiteral("sampleclip"), QStringLiteral("automationclip"), QStringLiteral("patternclip")};
+		QStringLiteral("sampleclip"), QStringLiteral("automationclip"), QStringLiteral("patternclip"),
+		// A note id is as project-scoped as a track's: keeping one would let an id-based note
+		// operation here address a note of the source project's track.
+		QStringLiteral("note")};
 	if (withIds.contains(element.tagName())) { element.removeAttribute(QStringLiteral("id")); }
 	if (!keepFolders && element.tagName() == QLatin1String("track")) { element.removeAttribute(QStringLiteral("folder")); }
 	if (element.hasAttribute(QStringLiteral("mixch"))) { element.setAttribute(QStringLiteral("mixch"), 0); }
@@ -279,7 +282,11 @@ ControlResult pasteTracks(const QJsonObject&)
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the clipboard's track data is not a project.copy_tracks document"));
 	}
 	QStringList documents;
-	const bool sameProject = doc.documentElement().attribute(QStringLiteral("project")) == Engine::getSong()->projectFileName();
+	// Two unsaved projects both name no file, so an empty == empty match would call every
+	// pair of unsaved projects the same one - and the pasted track would keep a folder id that
+	// here belongs to an unrelated folder. Only a named source can be recognised as this project.
+	const QString source = doc.documentElement().attribute(QStringLiteral("project"));
+	const bool sameProject = !source.isEmpty() && source == Engine::getSong()->projectFileName();
 	for (QDomElement track = doc.documentElement().firstChildElement(QStringLiteral("track")); !track.isNull();
 		track = track.nextSiblingElement(QStringLiteral("track")))
 	{

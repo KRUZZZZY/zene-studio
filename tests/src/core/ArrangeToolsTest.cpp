@@ -78,6 +78,19 @@ SampleClip* loudQuietLoud(Track* track)
 	return clip;
 }
 
+/*! A sample clip of @a rate (NOT the engine's) whose middle @a quietFrames source frames are silent -
+ *  the loud part either side is @a loudFrames. The rate is the point: source frames are counted in
+ *  the SAMPLE's frames, so a stretch's length in ticks depends on it. */
+SampleClip* loudQuietLoudAtRate(Track* track, int rate, int loudFrames, int quietFrames)
+{
+	auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+	std::vector<SampleFrame> data(static_cast<std::size_t>(loudFrames * 2 + quietFrames), SampleFrame(0.5f, 0.5f));
+	for (int f = loudFrames; f < loudFrames + quietFrames; ++f) { data[static_cast<std::size_t>(f)] = SampleFrame(0.f, 0.f); }
+	clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+	clip->movePosition(TimePos(0));
+	return clip;
+}
+
 } // namespace
 
 class ArrangeToolsTest : public QObject
@@ -269,6 +282,33 @@ private slots:
 		QCOMPARE(track->getClips().size(), std::size_t{2});  // the loud parts either side
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(track->getClips().size(), std::size_t{1});
+	}
+
+	//! ED-040: min_length counts TICKS, so it must be compared in the clip's own sample frames. A 96 kHz
+	//! sample in a 48 kHz engine holds twice the frames per tick, and the engine's scalar halved the
+	//! threshold - cutting a stretch half as long as was asked for.
+	void aQuietStretchIsMeasuredInTheClipsOwnRate()
+	{
+		const int engineRate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		const auto engineFramesPerTick = static_cast<int>(Engine::framesPerTick());
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		// 72 engine-frames-per-tick of silence is 36 ticks at the sample's own rate: under the default
+		// min_length of 48 ticks, so nothing qualifies. The engine scalar (48 ticks) would have cut it.
+		SampleClip* clip = loudQuietLoudAtRate(track, engineRate * 2, engineFramesPerTick * 96, engineFramesPerTick * 72);
+		QCOMPARE(run(QStringLiteral("clip.remove_silence"), {{QStringLiteral("clip"), control::clipIdOf(clip)}}).errorKind,
+			ControlErrorKind::NotFound);
+		QCOMPARE(track->getClips().size(), std::size_t{1});  // untouched
+	}
+
+	//! ED-036: a 'track' that names nothing must not read as an empty track. automation.get_state
+	//! (ControlCommandsAutomation.cpp:129) already refuses a filter that matched nothing.
+	void aClipListRefusesATrackThatIsNotThere()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		track->createClip(TimePos(0));
+		QCOMPARE(run(QStringLiteral("clip.list"), {{QStringLiteral("track"), QStringLiteral("trk-999999")}}).errorKind,
+			ControlErrorKind::NotFound);
+		QCOMPARE(run(QStringLiteral("clip.list"), {{QStringLiteral("track"), control::trackIdOf(track)}}).result.value(QStringLiteral("count")).toInt(), 1);
 	}
 
 	void noTransientWithoutAudio()

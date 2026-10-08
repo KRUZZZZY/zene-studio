@@ -352,6 +352,61 @@ private slots:
 		QVERIFY(audioio::storedEntry(key) == before);
 	}
 
+	/*! A restart is required whenever the CONFIGURED output count and the RUNNING
+	 *  device's granted count differ - not only when this very call changed the
+	 *  count. A saved setup that already asks for four outputs, met by a device
+	 *  that granted a stereo pair, still needs a restart: reporting "none" while
+	 *  the counts disagree tells the caller the running device matches what it
+	 *  asked for, and it does not. */
+	void aStillMismatchedOutputCountAsksForARestart()
+	{
+		const QString key = audioio::currentDeviceKey();
+		const QJsonObject before = audioio::storedEntry(key);
+		const QJsonObject listed = run(QStringLiteral("audio.io_list")).result.value(QStringLiteral("outputs")).toObject();
+		const int granted = listed.value(QStringLiteral("granted")).toInt();
+		QVERIFY2(granted > 0, "the running device granted no outputs to compare against");
+
+		QVERIFY(ok(QStringLiteral("audio.io_setup"), {{QStringLiteral("outputs"),
+			QJsonObject{{QStringLiteral("channels"), granted == 4 ? 6 : 4}}}}));
+		// The count now differs from what the running device granted, and it differs
+		// whatever this next call does: it changes only the NAMES.
+		const ControlResult renamed = run(QStringLiteral("audio.io_setup"), {{QStringLiteral("outputs"),
+			QJsonObject{{QStringLiteral("names"), QJsonArray{QStringLiteral("Renamed L"), QStringLiteral("Renamed R")}}}}});
+		QVERIFY2(renamed.ok, qPrintable(renamed.errorMessage));
+		const QJsonObject outputs = renamed.result.value(QStringLiteral("outputs")).toObject();
+		QCOMPARE(outputs.value(QStringLiteral("requested")).toInt(), granted == 4 ? 6 : 4);
+		QCOMPARE(outputs.value(QStringLiteral("granted")).toInt(), granted);
+		QVERIFY2(renamed.result.value(QStringLiteral("restart_required")).toBool(),
+			"the configured count still differs from the running device's, so a restart is still required");
+		// The honest report is the mismatch itself: this call changed no count, so the
+		// names are what took effect now, while the count still waits for the next start.
+		QCOMPARE(renamed.result.value(QStringLiteral("applied")).toString(), QStringLiteral("now"));
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(audioio::storedEntry(key) == before);
+	}
+
+	/*! Undo takes the ping back with it. The measurement lands a few periods later,
+	 *  on the audio thread; an undo that restored the settings but left the ping
+	 *  running would let it finish afterwards and write a measured latency into
+	 *  the project the undo just put back. */
+	void anUndoCancelsThePingItRequested()
+	{
+		QVERIFY(ok(QStringLiteral("mixer.hardware_insert"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("enabled"), true},
+			{QStringLiteral("send"), QStringLiteral("9/10")}, {QStringLiteral("return"), QStringLiteral("3")}}));
+		QVERIFY(ok(QStringLiteral("mixer.hardware_insert_ping"), {{QStringLiteral("channel"), ch(1)}}));
+		auto& insert = Engine::mixer()->mixerChannel(1)->m_hardwareIo.insert;
+		QVERIFY(insert.pingState() != HardwareInsert::PingState::Idle);  // the click is in flight
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(insert.pingState() == HardwareInsert::PingState::Idle,
+			"the undone ping can still land a measured latency after the undo");
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the insert itself
+		QVERIFY(!Engine::mixer()->mixerChannel(1)->m_hardwareIo.insert.enabled());
+	}
+
 	void everythingSurvivesASaveAndLoad()
 	{
 		Mixer* mixer = Engine::mixer();

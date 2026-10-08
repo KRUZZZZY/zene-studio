@@ -72,10 +72,15 @@ ControlResult listClips(const QJsonObject& args)
 	const QString onTrack = args.value(QStringLiteral("track")).toString();
 	const QString text = args.value(QStringLiteral("name")).toString();
 	const int limit = args.value(QStringLiteral("limit")).toInt(500);
+	// A 'track' that names no live track is a typo, not an empty track: refuse it the way
+	// automation.get_state (ControlCommandsAutomation.cpp:129) refuses a filter that matched
+	// nothing, so a misspelt id cannot read as a successful answer about the wrong track.
 	QJsonArray clips;
+	bool matchedTrack = onTrack.isEmpty();
 	for (const Track* track : Engine::getSong()->tracks())
 	{
 		if (!onTrack.isEmpty() && trackIdOf(track) != onTrack) { continue; }
+		matchedTrack = true;
 		for (const Clip* clip : track->getClips())
 		{
 			if (!text.isEmpty() && !clip->name().contains(text, Qt::CaseInsensitive)) { continue; }
@@ -86,6 +91,11 @@ ControlResult listClips(const QJsonObject& args)
 				{QStringLiteral("length"), static_cast<int>(clip->length().getTicks())},
 				{QStringLiteral("kind"), track->type() == Track::Type::Instrument ? QStringLiteral("midi") : kindOf(clip)}});
 		}
+	}
+	if (!matchedTrack)
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no track %1 (the song has %2)").arg(onTrack).arg(Engine::getSong()->tracks().size()));
 	}
 	return ControlResult::success({{QStringLiteral("clips"), clips}, {QStringLiteral("count"), clips.size()}});
 }
@@ -169,7 +179,10 @@ ControlResult removeSilence(const QJsonObject& args)
 	if (clip == nullptr) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clip' is an audio clip")); }
 	const float level = std::pow(10.f, static_cast<float>(args.value(QStringLiteral("threshold_db")).toDouble(-50.0)) / 20.f);
 	const tick_t minTicks = std::max(1, args.value(QStringLiteral("min_length")).toInt(48));
-	const auto minFrames = static_cast<f_cnt_t>(minTicks * Engine::framesPerTick());
+	// min_length counts TICKS and quietRuns() counts frames of the clip's OWN sample, so the scalar
+	// has to be the clip's: at the engine's rate a 96 kHz clip in a 48 kHz engine would cut half the
+	// frames asked for. clipFramesPerTick() is where the clip's tempo mode enters the mapping.
+	const auto minFrames = static_cast<f_cnt_t>(minTicks * clip->clipFramesPerTick());
 	std::vector<std::pair<tick_t, tick_t>> cuts;
 	for (const auto& [from, to] : quietRuns(*clip, level, minFrames))
 	{

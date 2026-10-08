@@ -143,13 +143,18 @@ ControlResult mpeSet(const QJsonObject& args)
 	const bool previous = MpeExpression::isEnabled();
 	MpeExpression::setEnabled(requested);
 
-	control::addUndoStep(
-		[previous]() { MpeExpression::setEnabled(previous); },
-		[requested]() { MpeExpression::setEnabled(requested); });
-
 	QJsonObject result = mpeState();
 	result.insert(QStringLiteral("previous_enabled"), previous);
 	result.insert(QStringLiteral("changed"), MpeExpression::isEnabled() != previous);
+	// A value the flag already had changes nothing, so it takes NO undo step: a step
+	// here would be the history's top entry, and the next control.undo would unwind
+	// the no-op - leaving the real edit behind it applied and reporting itself as the
+	// undone command. The same rule plugin.paths_set uses for its own no-op.
+	if (!result.value(QStringLiteral("changed")).toBool()) { return ControlResult::success(result); }
+
+	control::addUndoStep(
+		[previous]() { MpeExpression::setEnabled(previous); },
+		[requested]() { MpeExpression::setEnabled(requested); });
 	// Turning the input path off does not touch what is already stored on the notes:
 	// note.expression_get still reads it back, and that is the fact a caller needs to
 	// know before it assumes a switch cleared anything.

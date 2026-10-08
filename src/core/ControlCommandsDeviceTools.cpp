@@ -236,6 +236,19 @@ std::vector<Effect*> consolesOn(const EffectChain& chain)
 	return found;
 }
 
+//! The writes in @a writes whose clamped value differs from what the model already carries - the
+//! settings that really change, not the ones merely asked for.
+int countChangedWrites(const std::vector<std::pair<AutomatableModel*, float>>& writes)
+{
+	int changed = 0;
+	for (const auto& [model, value] : writes)
+	{
+		const float clamped = std::clamp(value, model->minValue<float>(), model->maxValue<float>());
+		if (clamped != model->value<float>()) { ++changed; }
+	}
+	return changed;
+}
+
 ControlResult removeConsoles()
 {
 	int removed = 0;
@@ -247,7 +260,7 @@ ControlResult removeConsoles()
 		removeDevicesRecorded(channelChain(channelIdOf(channel)), consoles);
 		removed += static_cast<int>(consoles.size());
 	}
-	Engine::getSong()->setModified();
+	if (removed > 0) { Engine::getSong()->setModified(); }
 	return ControlResult::success({{QStringLiteral("removed"), removed}});
 }
 
@@ -284,9 +297,10 @@ ControlResult consoleApply(const QJsonObject& args)
 	if (!consoleTemplate(args, &state, &error)) { return error; }
 	std::vector<std::pair<AutomatableModel*, float>> writes;
 	const int added = placeConsoles(args, state, &writes);
+	const int changed = countChangedWrites(writes);
 	writeModelsRecorded(writes);
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("added"), added}, {QStringLiteral("changed"), static_cast<int>(writes.size())},
+	return ControlResult::success({{QStringLiteral("added"), added}, {QStringLiteral("changed"), changed},
 		{QStringLiteral("channels"), Engine::mixer()->numChannels()}});
 }
 

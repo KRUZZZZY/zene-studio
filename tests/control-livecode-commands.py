@@ -348,6 +348,8 @@ def check_refusals_are_typed(session, recorder):
          {"source": "return 1", "budget": -1}, "invalid_args"),
         ("a budget that is not an integer is invalid_args", "livecode.schedule",
          {"source": "return 1", "budget": 1.5}, "invalid_args"),
+        ("a relative path is invalid_args", "livecode.schedule",
+         {"path": "scripts/beat.lua"}, "invalid_args"),
         ("an unknown property is invalid_args", "livecode.schedule",
          {"clip": "nope"}, "invalid_args"),
         ("unschedule without an id is invalid_args", "livecode.unschedule", {}, "invalid_args"),

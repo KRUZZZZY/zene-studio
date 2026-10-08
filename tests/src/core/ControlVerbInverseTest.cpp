@@ -57,6 +57,9 @@
 #include "ControlReversibility.h"
 #include "Engine.h"
 #include "ReversibilityTestSupport.h"
+#include "Song.h"                  // Track::create takes a TrackContainer: the base must be complete
+#include "TakeLaneTestSupport.h"   // the shared WAV fixture (ONE definition)
+#include "Track.h"
 
 using namespace lmms;
 using namespace revtest;
@@ -301,6 +304,43 @@ private slots:
 				{QStringLiteral("probability"), std::numeric_limits<double>::infinity()}});
 		QVERIFY2(!infinite.ok, "an infinite probability must be refused, not stored");
 		QCOMPARE(infinite.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	/*! freeze.unfreeze's inverse has to restore the take that came off, not freeze the track
+	 *  as a whole. A regional take cannot come back from freeze.track (which renders the WHOLE
+	 *  track, a different take), so the only exact inverse is the recorded checkpoint the
+	 *  command took before dropping it - control.undo.
+	 *  The take is installed with Track::freezeTo directly, so the proof needs no render. */
+	void theUnfreezeInverseRestoresTheTakeItTookOff()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("take.wav")), 440.0);
+		QVERIFY(!wav.isEmpty());
+
+		const QString id = addTrack();
+		QVERIFY(!id.isEmpty());
+		ControlResult failure;
+		Track* track = control::resolveTrack(id, &failure);
+		QVERIFY(track != nullptr);
+		QString reason;
+		QVERIFY2(track->freezeTo(wav, 0, 1920, {}, &reason),
+			qPrintable(QStringLiteral("the take could not be installed: %1").arg(reason)));
+		QVERIFY(track->isFrozen());
+
+		const ControlResult unfrozen = run(QStringLiteral("freeze.unfreeze"), QJsonObject{{QStringLiteral("track"), id}});
+		QVERIFY2(unfrozen.ok, qPrintable(unfrozen.errorMessage));
+		QVERIFY(!track->isFrozen());
+
+		const QJsonObject inverse = stateOf(QStringLiteral("freeze.unfreeze"))
+			.value(QStringLiteral("inverse")).toObject();
+		QVERIFY2(!inverse.isEmpty(), "freeze.unfreeze recorded no inverse");
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+
+		// And that command really does bring the very same take back.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(track->isFrozen(), "the advertised inverse did not restore the frozen take");
+		QCOMPARE(track->frozenTake().path, wav);
 	}
 
 	//! render.stems' argument contract, proved WITHOUT running a render: every

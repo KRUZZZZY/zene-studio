@@ -117,6 +117,51 @@ bool isSessionFile(const QString& file)
 	return !own.isEmpty() && QFileInfo(file).canonicalFilePath() == own;
 }
 
+//! Whether anything already occupies the hand-off folder's slot for @a file: a hand off never
+//! replaces a file it did not write itself. A dangling link counts: QFileInfo::exists is false for it,
+//! and a save would replace the link.
+bool isTaken(const QString& file)
+{
+	return QFileInfo::exists(file) || QFileInfo(file).isSymLink();
+}
+
+//! The first of the hand-off folder's own files that already exists, or an empty string when the
+//! folder is free for this hand off. The session save also writes '<copy>.new' on its way to the copy
+//! (DataFile::writeFile renames it over the copy), so that name is held too.
+QString takenFile(const QString& file, const QString& manifestFile)
+{
+	for (const QString& candidate : {file, manifestFile, file + QStringLiteral(".new")})
+	{
+		if (isTaken(candidate)) { return candidate; }
+	}
+	return {};
+}
+
+//! Whether anything occupies the hand-off folder's media slot, a folder, a file or a link (a link is
+//! followed by QFileInfo::exists only when it resolves). A hand off never writes into such a folder, and its
+//! rollback removes the media folder, so it must not take one over.
+bool mediaTaken(const QString& media)
+{
+	const QFileInfo info(media);
+	return info.exists() || info.isSymLink();
+}
+
+//! Whether the hand-off manifest lands at @a file.
+bool writeManifest(const QString& file, const QJsonObject& info)
+{
+	QSaveFile out(file);
+	return out.open(QIODevice::WriteOnly) && out.write(QJsonDocument(info).toJson()) >= 0 && out.commit();
+}
+
+//! Take back what this hand off wrote before it failed: the session copy and the media folder
+//! beside it. A hand off folder is all of a bundle or none of it, never half of one.
+void discardPartialBundle(const QString& file)
+{
+	const QDir dir = QFileInfo(file).absoluteDir();
+	QFile::remove(file);
+	QDir(dir.filePath(QStringLiteral("media"))).removeRecursively();
+}
+
 ControlResult handoff(const QJsonObject& args)
 {
 	const QString dir = args.value(QStringLiteral("dir")).toString();
@@ -128,6 +173,17 @@ ControlResult handoff(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' is the session's own file; hand off into another folder").arg(file));
 	}
+	const QString manifestFile = QDir(dir).filePath(QStringLiteral("HANDOFF.json"));
+	const QString taken = takenFile(file, manifestFile);
+	if (!taken.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' already exists; hand off into an empty folder").arg(taken));
+	}
+	const QString media = QDir(dir).filePath(QStringLiteral("media"));
+	if (mediaTaken(media))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' already exists; hand off into an empty folder").arg(media));
+	}
 	if (!song->saveProjectFile(file))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the project could not be written to '%1': %2").arg(file, song->saveRefusal()));
@@ -136,11 +192,15 @@ ControlResult handoff(const QJsonObject& args)
 	QJsonArray failed;
 	int missing = 0;
 	ControlResult error;
-	if (!collectProjectMediaInto(file, QStringLiteral("media"), &copied, &failed, &missing, &error)) { return error; }
-	const QJsonObject info = manifest(file, copied, failed, missing);
-	QSaveFile out(QDir(dir).filePath(QStringLiteral("HANDOFF.json")));
-	if (!out.open(QIODevice::WriteOnly) || out.write(QJsonDocument(info).toJson()) < 0 || !out.commit())
+	if (!collectProjectMediaInto(file, QStringLiteral("media"), &copied, &failed, &missing, &error))
 	{
+		discardPartialBundle(file);
+		return error;
+	}
+	const QJsonObject info = manifest(file, copied, failed, missing);
+	if (!writeManifest(manifestFile, info))
+	{
+		discardPartialBundle(file);
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("HANDOFF.json could not be written"));
 	}
 	QJsonObject result = info;

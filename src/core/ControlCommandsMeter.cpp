@@ -184,43 +184,52 @@ ControlResult handleArm(const QJsonObject& args)
 
 	const bool requested = args.value(QStringLiteral("enabled")).toBool();
 	const bool previous = tap->enabled();
-	tap->setEnabled(requested);
+	const bool changes = requested != previous;
+	if (changes) { tap->setEnabled(requested); }
 	const bool applied = tap->enabled();
 
 	// SPEC A16: the tap's armed flag is engine state with no JournallingObject
 	// behind it, and its inverse is one bounded value, so it becomes ONE recorded
 	// action step on the engine's own undo stack - the mechanism clock.master_set
-	// and export.set_dither use for the same shape. What the step does NOT restore
+	// and export.set_dither use for the same shape. A request already holding
+	// the current flag is a true no-op: it must not reset a running measurement,
+	// add an undo step or report a transaction. What a real step does NOT restore
 	// is a measurement: the readings are surface memory (neither project state nor
 	// saved with a project), and arming starts a new one. The transaction says so
 	// rather than implying a restored readout.
-	control::addUndoStep(
-		[previous]() {
-			MasterLoudnessTap* t = engineTap();
-			if (t != nullptr) { t->setEnabled(previous); }
-		},
-		[requested]() {
-			MasterLoudnessTap* t = engineTap();
-			if (t != nullptr) { t->setEnabled(requested); }
-		});
+	if (changes)
+	{
+		control::addUndoStep(
+			[previous]() {
+				MasterLoudnessTap* t = engineTap();
+				if (t != nullptr) { t->setEnabled(previous); }
+			},
+			[requested]() {
+				MasterLoudnessTap* t = engineTap();
+				if (t != nullptr) { t->setEnabled(requested); }
+			});
+	}
 
 	QJsonObject result = liveStateJson(*tap);
 	result.insert(QStringLiteral("armed"), applied);
 	result.insert(QStringLiteral("previous"), previous);
 
-	QJsonObject transaction;
-	transaction.insert(QStringLiteral("before"),
-		QJsonObject{{QStringLiteral("armed"), previous}});
-	transaction.insert(QStringLiteral("inverse"),
-		QJsonObject{{QStringLiteral("op"), QStringLiteral("meter.arm")},
-			{QStringLiteral("args"), QJsonObject{{QStringLiteral("enabled"), previous}}}});
-	transaction.insert(QStringLiteral("reversible"), true);
-	transaction.insert(QStringLiteral("mechanism"),
-		QStringLiteral("action checkpoint: the recorded undo step calls the tap's setEnabled() with "
-			"the flag the before-state holds, so control.undo disarms an arm and re-arms a disarm. "
-			"A measurement is NOT part of the inverse - the readings are surface memory, and arming "
-			"starts a fresh one"));
-	result.insert(QStringLiteral("__transaction"), transaction);
+	if (changes)
+	{
+		QJsonObject transaction;
+		transaction.insert(QStringLiteral("before"),
+			QJsonObject{{QStringLiteral("armed"), previous}});
+		transaction.insert(QStringLiteral("inverse"),
+			QJsonObject{{QStringLiteral("op"), QStringLiteral("meter.arm")},
+				{QStringLiteral("args"), QJsonObject{{QStringLiteral("enabled"), previous}}}});
+		transaction.insert(QStringLiteral("reversible"), true);
+		transaction.insert(QStringLiteral("mechanism"),
+			QStringLiteral("action checkpoint: the recorded undo step calls the tap's setEnabled() with "
+				"the flag the before-state holds, so control.undo disarms an arm and re-arms a disarm. "
+				"A measurement is NOT part of the inverse - the readings are surface memory, and arming "
+				"starts a fresh one"));
+		result.insert(QStringLiteral("__transaction"), transaction);
+	}
 	return ControlResult::success(result);
 }
 

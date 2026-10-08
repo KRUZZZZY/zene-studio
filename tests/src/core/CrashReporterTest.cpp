@@ -37,6 +37,8 @@
 // and the tests assert that instead of pretending to exercise signals.
 
 #include "CrashReporter.h"
+#include "ControlRegistry.h"
+#include "Engine.h"
 #include "lmmsversion.h"
 
 #include <QtTest>
@@ -382,6 +384,40 @@ private slots:
 		QVERIFY(QDir(dir.path()).entryList(QDir::Files).isEmpty());
 		QVERIFY2(!QDir(dir.path()).exists(QString::fromUtf8(kReportDirName)),
 			"a clean run must not create the crash-reports directory");
+	}
+
+	// -----------------------------------------------------------------------
+	// 7b. A DIRECTORY at the report path is not a crash report. crash.list_reports
+	//     says a report is a FILE that is there, and QFileInfo::exists() answers
+	//     true for a directory too - so a stray directory used to be counted as a
+	//     report, with zero bytes, and acknowledged as one. The command is the
+	//     seam, so the claim is made through it.
+	// -----------------------------------------------------------------------
+	void a_directory_at_the_report_path_is_not_a_crash_report()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+
+		// The fault state: a DIRECTORY where the report file belongs. Nothing
+		// can write a report over it either - the writer opens a FILE.
+		QVERIFY(QDir(dir.path()).mkpath(QString::fromUtf8(kReportDirName)));
+		const QString reportPath = reportPathIn(dir);
+		QVERIFY(QDir().mkpath(reportPath));
+		QVERIFY2(QFileInfo(reportPath).isDir(), "the fault state was not established");
+
+		// The command is engine-gated, so the engine is up for the length of
+		// this case only - the cases around it need no engine and must not get one.
+		lmms::Engine::init(true);
+		lmms::ControlRegistry::setReady(true);
+		const lmms::ControlResult listed = lmms::ControlRegistry::instance()->invoke(QStringLiteral("crash.list_reports"));
+		lmms::ControlRegistry::setReady(false);
+		lmms::Engine::destroy();
+
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		QCOMPARE(listed.result.value(QStringLiteral("report_count")).toInt(), 0);
+		QVERIFY2(listed.result.value(QStringLiteral("reports")).toArray().isEmpty(),
+			"a directory at the report path must not be listed as a crash report");
 	}
 
 	// -----------------------------------------------------------------------

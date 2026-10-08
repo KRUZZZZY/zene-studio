@@ -57,6 +57,7 @@
 #include "InstrumentTrack.h"
 #include "MeterModel.h"
 #include "Mixer.h"
+#include "MixerPostInserts.h"
 #include "ParameterAliases.h"
 #include "Rack.h"
 #include "Song.h"
@@ -229,8 +230,14 @@ void searchTarget(const SearchScope& scope, const QString& targetId)
 	}
 	searchChain(scope, targetId, target.chain);
 	if (!targetId.startsWith(QLatin1String("ch-"))) { return; }
+	if (postinserts::isTarget(targetId)) { return; }  // the post-fader inserts are a target of their own, searched above
 	const Rack* rack = resolveRack(targetId, &ignored);
 	for (int c = 1; rack != nullptr && c < rack->chainCount(); ++c) { searchChain(scope, targetId, rack->chain(c)); }
+	// MX-082: a channel's post-fader inserts hang off that channel, so its search reaches them and
+	// names them by the target that addresses them.
+	const QString postId = postinserts::targetOf(targetId);
+	ControlTarget post;
+	if (resolveControlTarget(postId, &post, &ignored)) { searchChain(scope, postId, post.chain); }
 }
 
 ControlResult paramSearch(const QJsonObject& args)
@@ -273,11 +280,19 @@ bool isSetting(const AutomatableModel* model)
 ControlResult writeValues(const QList<AutomatableModel*>& models, const std::vector<float>& values, const QJsonObject& reply)
 {
 	std::vector<std::pair<AutomatableModel*, float>> writes;
-	for (int i = 0; i < models.size(); ++i) { writes.emplace_back(models.at(i), values[static_cast<std::size_t>(i)]); }
+	for (int i = 0; i < models.size(); ++i)
+	{
+		AutomatableModel* model = models.at(i);
+		const float value = values[static_cast<std::size_t>(i)];
+		// A value that stays the value it already had (plugin.randomise with 'amount: 0') is not a change:
+		// it must not be written, counted or marked as one, and must not take an undo step.
+		if (model->value<float>() == value) { continue; }
+		writes.emplace_back(model, value);
+	}
 	writeModelsRecorded(writes);
-	Engine::getSong()->setModified();
+	if (!writes.empty()) { Engine::getSong()->setModified(); }
 	QJsonObject result = reply;
-	result.insert(QStringLiteral("changed"), static_cast<int>(models.size()));
+	result.insert(QStringLiteral("changed"), static_cast<int>(writes.size()));
 	return ControlResult::success(result);
 }
 

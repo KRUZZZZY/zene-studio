@@ -94,6 +94,12 @@ const QString SUSPENSION = QStringLiteral(
 	"alignment solve does not traverse it, because a loop's latency cannot be compensated - the "
 	"rest of the graph keeps its normal PDC, unchanged");
 
+//! The same sentence for the submode being off: nothing is suspended, because nothing is held
+//! open. Reported instead of SUSPENSION so the text never contradicts pdc_suspended.
+const QString NO_SUSPENSION = QStringLiteral(
+	"nothing is suspended: the submode is off, no cycle-permitted send is held open and the whole "
+	"graph - including the alignment solve - runs its normal PDC");
+
 const QString ENABLE_NOTE = QStringLiteral(
 	"leaving the submode with feedback.disable removes every cycle-permitted send, restores "
 	"normal PDC and makes mixer.send_to / mixer.route_to refuse the loop again");
@@ -155,7 +161,7 @@ QJsonObject feedbackState(Mixer* mixer, const QVector<FeedbackEdge>& edges)
 	state.insert(QStringLiteral("enabled"), mixer->feedbackMode());
 	state.insert(QStringLiteral("pdc_suspended"), mixer->feedbackMode());
 	state.insert(QStringLiteral("feedback_routes"), edgeArray(mixer, edges));
-	state.insert(QStringLiteral("suspension"), SUSPENSION);
+	state.insert(QStringLiteral("suspension"), mixer->feedbackMode() ? SUSPENSION : NO_SUSPENSION);
 	state.insert(QStringLiteral("warning"), REAPER_WARNING);
 	state.insert(QStringLiteral("note"), mixer->feedbackMode() ? ENABLE_NOTE : DISABLE_NOTE);
 	return state;
@@ -241,8 +247,11 @@ ControlResult handleDisable(Mixer* mixer)
 	QJsonObject before;
 	before.insert(QStringLiteral("enabled"), true);
 	before.insert(QStringLiteral("removed"), edges.size());
+	// The inverse NAMED here is control.undo, the one command that restores the WHOLE edit: the
+	// checkpointed undo step turns the submode back on AND re-creates every send this command
+	// removed. feedback.enable is not it - it only sets the flag, leaving the routes missing.
 	result.insert(QStringLiteral("__transaction"), transactionPayload(
-		before, QStringLiteral("feedback.enable"), {}, true,
+		before, QStringLiteral("control.undo"), {}, true,
 		QStringLiteral("action checkpoint: the recorded undo step turns the submode back on and "
 			"re-creates every send this command removed through the same "
 			"Mixer::createChannelSend call with the captured amount and pre-fader flag (a send's "

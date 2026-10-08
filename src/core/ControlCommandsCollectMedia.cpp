@@ -68,9 +68,32 @@ QString destinationFor(const QDir& folder, const QString& source, const QString&
 	return QString();
 }
 
+//! @a path with every symlink on it resolved: the canonical path when the file exists, the
+//! absolute one when it does not (nothing to resolve yet). Both sides of a containment check
+//! go through this, so a link cannot spell a path inside the project and lead elsewhere.
+QString resolvedPath(const QString& path)
+{
+	const QFileInfo info(path);
+	const QString canonical = info.canonicalFilePath();
+	return canonical.isEmpty() ? info.absoluteFilePath() : canonical;
+}
+
+//! Whether @a path really lies inside @a folder, symlinks followed rather than trusted.
 bool insideFolder(const QString& path, const QDir& folder)
 {
-	return QFileInfo(path).absoluteFilePath().startsWith(folder.absolutePath() + QLatin1Char('/'));
+	return resolvedPath(path).startsWith(resolvedPath(folder.absolutePath()) + QLatin1Char('/'));
+}
+
+//! The media folder @a folderPath is to be written to stays inside the project's folder once
+//! every link on it is followed; false (with @a why) when it does not - a project whose `media`
+//! is a link elsewhere must not have copies written through it.
+bool mediaFolderIsContained(const QString& folderPath, const QDir& projectDir, QString* why)
+{
+	if (insideFolder(folderPath, projectDir)) { return true; }
+	*why = QStringLiteral("'%1' resolves to '%2', which is outside the project's folder '%3'")
+		.arg(QDir(projectDir).relativeFilePath(folderPath), QFileInfo(folderPath).canonicalFilePath(),
+			QFileInfo(projectDir.absolutePath()).canonicalFilePath());
+	return false;
 }
 
 //! Copy one reference's file and point the project at the copy; false (with @a why) when either
@@ -148,6 +171,11 @@ ControlResult collectMedia(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot create '%1'").arg(folderName));
 	}
 	const QDir folder(projectDir.filePath(folderName));
+	QString escaped;
+	if (!mediaFolderIsContained(folder.absolutePath(), projectDir, &escaped))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, escaped);
+	}
 	QJsonArray copied;
 	QJsonArray failed;
 	collectAll(project, projectDir, folder, scan, &copied, &failed);
@@ -185,7 +213,14 @@ bool collectProjectMediaInto(const QString& project, const QString& folderName, 
 		*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot create '%1'").arg(folderName));
 		return false;
 	}
-	collectAll(project, projectDir, QDir(projectDir.filePath(folderName)), scan, copied, failed);
+	const QDir folder(projectDir.filePath(folderName));
+	QString escaped;
+	if (!mediaFolderIsContained(folder.absolutePath(), projectDir, &escaped))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused, escaped);
+		return false;
+	}
+	collectAll(project, projectDir, folder, scan, copied, failed);
 	*missing = scan.missingCount();
 	return true;
 }

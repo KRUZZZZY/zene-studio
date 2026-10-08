@@ -210,9 +210,19 @@ void registerApplyCommand(ControlRegistry& registry)
 		result.insert(QStringLiteral("method"), detectMethodJson());
 		result.insert(QStringLiteral("bounds"), detectBoundsJson());
 		result.insert(QStringLiteral("key_state"), detectProjectKeyJson(song->projectKey()));
+		// The result schema DECLARES tempo_map, so a client is told to expect the map
+		// this call produced and not only the partial `tempo` summary above (which
+		// reports the one event, not the map). It is detect.get_state's OWN tempo_map
+		// block, read after both writes, so the two surfaces cannot drift.
+		result.insert(QStringLiteral("tempo_map"),
+			detectStateJson(song).value(QStringLiteral("tempo_map")));
+		// The inverse names control.undo, NOT detect.apply: the recorded step is an
+		// ACTION checkpoint, so re-issuing detect.apply with the same path would run
+		// the detection AGAIN rather than write the before-state back. This is the
+		// descriptor shape scale.from_detected_key records for the same reason.
 		result.insert(QStringLiteral("__transaction"), transactionPayload(beforePayload,
-			QStringLiteral("detect.apply"),
-			QJsonObject{{QStringLiteral("path"), analysis.path}},
+			QStringLiteral("control.undo"),
+			QJsonObject(),
 			true,
 			QStringLiteral("action checkpoint: BOTH halves of a detection are captured "
 				"before the first write - the tempo map (not a JournallingObject, and not "

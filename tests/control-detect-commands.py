@@ -291,7 +291,28 @@ def _check_apply_both_halves(session, recorder, click_path):
         abs(detected - CLICK_BPM) <= BPM_TOLERANCE
         and tempo_result.get("bpm") == int(round(detected)),
         "detected=%.3f written=%r" % (detected, tempo_result.get("bpm")))
+    _check_apply_publishes_the_tempo_map(session, recorder, applied)
     _check_apply_key_half(applied, recorder, click_path)
+
+
+def _check_apply_publishes_the_tempo_map(session, recorder, applied):
+    # The result schema DECLARES `tempo_map`, so a client is told to expect the
+    # resulting map state beside the partial `tempo` summary. It is the map that
+    # the write produced: an event at tick 0 at the applied BPM, switched on.
+    published = applied.get("tempo_map") or {}
+    live = tempo_map_of(session.result("detect.get_state"))
+    recorder.check(
+        "detect.apply publishes the tempo map its own result schema declares",
+        published.get("active") is True and published.get("event_count") == 1
+        and published.get("event_at_tick_0") is True
+        # `global_tempo` is the SONG's own tempo field (the fixture project was
+        # built at 140), so the applied BPM is asserted on the map's own reading
+        # at tick 0, which is what the write put there.
+        and published.get("tempo_at_tick_0") == int(round(CLICK_BPM))
+        and published.get("global_tempo") == live.get("global_tempo")
+        and published.get("event_count") == live.get("event_count")
+        and published.get("active") == live.get("active"),
+        "published=%r live=%r" % (published, live))
 
 
 def _check_apply_key_half(applied, recorder, click_path):
@@ -323,8 +344,27 @@ def _check_tempo_map_verb(session, recorder):
                                                      map_state.get("tempo_at_position")))
 
 
+def _check_advertised_inverse_is_the_undo(session, recorder):
+    # The RECORDED inverse must be able to put the before-state back. A descriptor
+    # that names detect.apply with the same path replays the DETECTION instead, so
+    # the record has to point at the mechanism that restores (control.undo, which
+    # unwinds the recorded action step), the shape scale.from_detected_key uses.
+    records = [record for record in (session.result("control.transactions")
+                                     .get("transactions") or [])
+               if record.get("command") == "detect.apply"]
+    top = records[-1] if records else {}
+    inverse = top.get("inverse") or {}
+    recorder.check(
+        "detect.apply's recorded inverse restores rather than re-applying",
+        bool(records) and top.get("reversible") is True
+        and inverse.get("op") != "detect.apply"
+        and inverse.get("op") == "control.undo",
+        "inverse=%r reversible=%r" % (inverse, top.get("reversible")))
+
+
 def _check_one_undo_takes_both(session, recorder):
     # 8. ONE undo takes BOTH halves off ------------------------------------
+    _check_advertised_inverse_is_the_undo(session, recorder)
     session.result("control.undo")
     state = session.result("detect.get_state")
     recorder.check(

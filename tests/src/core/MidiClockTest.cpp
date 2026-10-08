@@ -52,7 +52,9 @@
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "MidiClient.h"
 #include "MidiClock.h"
@@ -139,6 +141,12 @@ protected:
 	void sendByte(const unsigned char) override { }
 };
 
+
+ControlResult run(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
 } // namespace
 
 class MidiClockTest : public QObject
@@ -153,10 +161,14 @@ private slots:
 		// The test drives the clock's periods itself; the Dummy device's own periods (Song.cpp's call) would
 		// interleave with them - the stray stop and continue of BUGS 10.10.
 		Engine::audioEngine()->audioDev()->stopProcessing();
+		// The command half of the clock: these slots drive clock.master_set /
+		// clock.slave_set over the registry, not the engine directly.
+		ControlRegistry::setReady(true);
 	}
 
 	void cleanupTestCase()
 	{
+		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
 
@@ -168,6 +180,8 @@ private slots:
 		QString ignored;
 		clock->setMasterEnabled(false, QString(), &ignored);
 		clock->setSlaveEnabled(false);
+		clock->setSlaveFollowTempo(false);
+		clock->restoreMaster(false, QString());
 	}
 
 	// ---------------------------------------------------------------- tracker
@@ -610,6 +624,48 @@ private slots:
 		client.feed(0xF1);
 		client.feed(0x3A);
 		QCOMPARE(tracker.lastTimeCode(), 0x3A);
+	}
+
+	//! An empty 'port' means "keep the current subscription", so the recorded REDO must
+	//! re-apply the port the command actually ended up on. Capturing the raw (empty) argument
+	//! makes restoreMaster UNSUBSCRIBE the very port the command kept.
+	void masterRedoKeepsThePortTheCallKept()
+	{
+		MidiClock* clock = MidiClock::instance();
+		const QString port = QStringLiteral("zene-bunny-test-port");
+		const ControlResult first = run(QStringLiteral("clock.master_set"),
+			{{QStringLiteral("enabled"), true}, {QStringLiteral("port"), port}});
+		QVERIFY2(first.ok, qPrintable(first.errorMessage));
+		QCOMPARE(clock->masterPort(), port);
+
+		// Enabled again with NO port: the subscription is kept, and the state says so.
+		const ControlResult again = run(QStringLiteral("clock.master_set"), {{QStringLiteral("enabled"), true}});
+		QVERIFY2(again.ok, qPrintable(again.errorMessage));
+		QCOMPARE(clock->masterPort(), port);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QVERIFY2(clock->masterPort() == port,
+			qPrintable(QStringLiteral("redo dropped the port subscription: '%1'").arg(clock->masterPort())));
+	}
+
+	//! clock.slave_set with only 'enabled: false' stops the follower; it must not also throw
+	//! away the follow preference, or enabling it again without naming follow_tempo leaves
+	//! following off - the user asked to stop, not to un-follow.
+	void disablingTheSlaveKeepsItsFollowPreference()
+	{
+		MidiClock* clock = MidiClock::instance();
+		QVERIFY(run(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), true}, {QStringLiteral("follow_tempo"), true}}).ok);
+		QVERIFY(clock->slaveFollowTempo());
+
+		QVERIFY(run(QStringLiteral("clock.slave_set"), {{QStringLiteral("enabled"), false}}).ok);
+		QVERIFY(!clock->slaveEnabled());
+		QVERIFY2(clock->slaveFollowTempo(), "disabling the slave cleared its follow preference");
+
+		// And enabling it again without naming the flag follows again.
+		QVERIFY(run(QStringLiteral("clock.slave_set"), {{QStringLiteral("enabled"), true}}).ok);
+		QVERIFY(clock->slaveFollowTempo());
 	}
 
 	// ------------------------------------------------------------------- A16

@@ -125,10 +125,18 @@ bool loadScheduledSource(const QJsonObject& args, QString* source, ControlResult
 		return true;
 	}
 	const QString path = args.value(QStringLiteral("path")).toString();
+	// A relative path would be read against whatever working directory the
+	// process happens to have, so it is refused rather than silently resolved.
+	if (!QFileInfo(path).isAbsolute())
+	{
+		*failure = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'path' must be absolute, not '%1'").arg(path));
+		return false;
+	}
 	if (!QFileInfo(path).exists())
 	{
 		*failure = ControlResult::failure(ControlErrorKind::NotFound,
-			QStringLiteral("no Lua script at '%1' (a path argument must be absolute)").arg(path));
+			QStringLiteral("no Lua script at '%1'").arg(path));
 		return false;
 	}
 	QFile file(path);

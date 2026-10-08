@@ -28,6 +28,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSet>
 
 #include "AudioEngine.h"
 #include "AudioInputPath.h"
@@ -324,23 +325,32 @@ struct ArmBatch
 	QString lastReason;
 };
 
-//! Each track @a ids names, through track.set_arm's own handler. A track already in that state (busy) is skipped, not
-//! refused; every other refusal is collected and the rest still go ahead.
+//! Each track @a ids names, through track.set_arm's own handler. A track already in that state is skipped, not
+//! refused; every other refusal is collected and the rest still go ahead. A repeated id names ONE track, so it is
+//! acted on and reported once.
 ArmBatch armEach(const QJsonArray& ids, bool armed)
 {
 	ArmBatch out;
+	QSet<QString> seen;
 	for (const QJsonValue& id : ids)
 	{
-		ControlResult one = setArm({{QStringLiteral("track"), id.toString()}, {QStringLiteral("armed"), armed}});
+		const QString trackId = id.toString();
+		if (seen.contains(trackId)) { continue; }
+		seen.insert(trackId);
+		ControlResult one = setArm({{QStringLiteral("track"), trackId}, {QStringLiteral("armed"), armed}});
 		if (one.ok)
 		{
+			// Disarming an already-disarmed route SUCCEEDS - there is nothing there to
+			// refuse - so the batch has to ask the route's own before-state, or it
+			// reports tracks whose state it never changed.
+			if (!armed && !one.result.value(QStringLiteral("armed_before")).toBool()) { continue; }
 			one.result.remove(QStringLiteral("__transaction"));  // the batch records ONE transaction for all of them
-			out.changed.append(id.toString());
+			out.changed.append(trackId);
 			out.routes.append(one.result);
 			continue;
 		}
 		if (one.errorKind == ControlErrorKind::Busy) { continue; }
-		out.refused.append(QJsonObject{{QStringLiteral("track"), id.toString()}, {QStringLiteral("reason"), one.errorMessage}});
+		out.refused.append(QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("reason"), one.errorMessage}});
 		out.lastReason = one.errorMessage;
 	}
 	return out;
@@ -358,7 +368,9 @@ ControlResult setArmMany(const QJsonObject& args)
 	if (batch.changed.isEmpty())
 	{
 		return batch.refused.isEmpty()
-			? ControlResult::failure(ControlErrorKind::Busy, QStringLiteral("every named track's route is already armed"))
+			? ControlResult::failure(ControlErrorKind::Busy, armed
+				? QStringLiteral("every named track's route is already armed")
+				: QStringLiteral("every named track's route is already disarmed"))
 			: ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no track was armed: %1").arg(batch.lastReason));
 	}
 	QJsonObject result{{QStringLiteral("armed"), armed}, {QStringLiteral("tracks"), batch.changed},

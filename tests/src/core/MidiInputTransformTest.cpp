@@ -315,6 +315,39 @@ private slots:
 			.hasAttribute(QStringLiteral("inputtransform")));  // the identity is not written
 	}
 
+	//! Luna cluster 5643: the probe started from the identity transform, not the track's, and the
+	//! real fromJson() result was thrown away - so a partial update that only conflicts with
+	//! what the track ALREADY holds was accepted, refused, and still reported as success with an
+	//! undo step that restores a state the call never reached.
+	void aPartialUpdateThatConflictsWithTheCurrentTransformIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		const QString id = control::trackIdOf(track);
+		QVERIFY(run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id},
+			{QStringLiteral("key_low"), 60}}).ok);
+		const int highBefore = track->inputTransform().toJson().value(QStringLiteral("key_high")).toInt();
+
+		// key_high below the track's CURRENT key_low: the range would hold no key. The identity
+		// probe sees 0..40 and accepts it; the track's own state says otherwise.
+		const ControlResult refused = run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id},
+			{QStringLiteral("key_high"), 40}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		// Nothing changed, and no undo step was pushed for a call that changed nothing.
+		QCOMPARE(track->inputTransform().toJson().value(QStringLiteral("key_low")).toInt(), 60);
+		QCOMPARE(track->inputTransform().toJson().value(QStringLiteral("key_high")).toInt(), highBefore);
+		// The refused call pushed no step of its own, so one undo reaches the step that IS
+		// there - the key_low set - rather than the refused call's phantom record.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(track->inputTransform().toJson().value(QStringLiteral("key_low")).toInt(), 0);
+
+		// A value that fits the track's range still goes through.
+		QVERIFY(run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id},
+			{QStringLiteral("key_high"), 72}}).ok);
+		QCOMPARE(track->inputTransform().toJson().value(QStringLiteral("key_high")).toInt(), 72);
+	}
+
 	void liveInputPlaysTheTransformedNote()
 	{
 		Song* song = Engine::getSong();

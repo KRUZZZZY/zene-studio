@@ -30,6 +30,8 @@
 
 #include <QJsonArray>
 
+#include <limits>
+
 #include "ArrangementEdits.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -113,6 +115,179 @@ private slots:
 		QCOMPARE(m_track->getClips().size(), std::size_t{2});
 		QCOMPARE(run(QStringLiteral("clip.join"), {{QStringLiteral("clips"), QJsonArray{control::clipIdOf(m_track->getClips().front())}}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+	}
+
+	//! A MIDI clip's controller lanes are in CLIP time, so a time scale has to move them
+	//! with the notes: a CC point at tick 100 next to a note at tick 100 stays next to it.
+	void scalingAMidiClipScalesItsControllerPointsToo()
+	{
+		MidiClip* a = clipAt(0, 192, 60);
+		a->addNote(Note(TimePos(12), TimePos(100), 60), false);  // length 12, at tick 100
+		const QJsonObject set{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("lane"), QStringLiteral("cc:7")},
+			{QStringLiteral("points"), QJsonArray{{QJsonObject{{QStringLiteral("tick"), 100}, {QStringLiteral("value"), 64}}}}}};
+		QVERIFY(run(QStringLiteral("clip.controllers_set"), set).ok);
+		QCOMPARE(a->notes().size(), std::size_t{2});
+
+		QVERIFY(run(QStringLiteral("clip.time_scale"), {{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("factor"), 2}}).ok);
+		QCOMPARE(a->notes().size(), std::size_t{2});
+		QCOMPARE(static_cast<int>(a->notes().back()->pos().getTicks()), 200);  // the note at tick 100 moved to 200
+		const ControllerLane* lane = a->controllers().lane(ControllerKind::ControlChange, 7);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(lane->points.size(), std::size_t{1});
+		QCOMPARE(static_cast<int>(lane->points.front().tick), 200);  // and its point moved with it
+	}
+
+	//! A note whose start scales past the largest tick is refused whole: nothing moves, nothing is checkpointed.
+	void scalingRefusesANotePastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 192, 60);
+		const int top = std::numeric_limits<tick_t>::max();
+		a->addNote(Note(TimePos(12), TimePos(top - 100), 62), false);
+		const ControlResult scaled = run(QStringLiteral("clip.time_scale"),
+			{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("factor"), 2}});
+		QVERIFY(!scaled.ok);
+		QCOMPARE(scaled.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(a->notes().size(), std::size_t{2});
+		QCOMPARE(static_cast<int>(a->notes().back()->pos().getTicks()), top - 100);
+		QCOMPARE(static_cast<int>(a->length().getTicks()), 192);
+	}
+
+	//! A note whose length scales past the largest tick used to clamp silently to a length of 1 (the wrap of the
+	//! narrowing cast). It is refused whole now.
+	void scalingRefusesANoteLengthPastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 192, 60);
+		a->addNote(Note(TimePos(1 << 30), TimePos(10), 62), false);
+		const ControlResult scaled = run(QStringLiteral("clip.time_scale"),
+			{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("factor"), 4}});
+		QVERIFY(!scaled.ok);
+		QCOMPARE(scaled.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(a->notes().size(), std::size_t{2});
+		QCOMPARE(static_cast<int>(a->notes().back()->length().getTicks()), 1 << 30);
+		QCOMPARE(static_cast<int>(a->length().getTicks()), 192);
+	}
+
+	//! A clip whose length scales past the largest tick is refused whole.
+	void scalingRefusesAClipLengthPastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 1 << 30, 60);
+		const ControlResult scaled = run(QStringLiteral("clip.time_scale"),
+			{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("factor"), 4}});
+		QVERIFY(!scaled.ok);
+		QCOMPARE(scaled.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(static_cast<int>(a->length().getTicks()), 1 << 30);
+		QCOMPARE(a->notes().size(), std::size_t{1});
+		QCOMPARE(static_cast<int>(a->notes().front()->pos().getTicks()), 0);  // clipAt's note, untouched
+	}
+
+	//! A controller point near the top of the tick range scaled by 2 used to wrap negative in
+	//! the narrowing cast; the scale is now refused whole, and the point stays where it was.
+	void scalingRefusesAControllerPointPastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 192, 60);
+		const int top = std::numeric_limits<tick_t>::max();
+		const QJsonObject set{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("lane"), QStringLiteral("cc:7")},
+			{QStringLiteral("points"), QJsonArray{{QJsonObject{{QStringLiteral("tick"), top}, {QStringLiteral("value"), 64}}}}}};
+		QVERIFY(run(QStringLiteral("clip.controllers_set"), set).ok);
+
+		const ControlResult scaled = run(QStringLiteral("clip.time_scale"),
+			{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("factor"), 2}});
+		QVERIFY(!scaled.ok);
+		QCOMPARE(scaled.errorKind, ControlErrorKind::Refused);
+		const ControllerLane* lane = a->controllers().lane(ControllerKind::ControlChange, 7);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(lane->points.size(), std::size_t{1});
+		QCOMPARE(static_cast<int>(lane->points.front().tick), top);
+		QCOMPARE(static_cast<int>(a->length().getTicks()), 192);
+	}
+
+	//! A join from a non-zero origin: the later clip starts near the top of the range and its note is moved by the
+	//! song delta. The old order (from + pos - origin) overflowed in its middle term even though the result fits;
+	//! this pins the moved positions at that origin (see the UBSan note in the report: the values agree under wrap).
+	void joiningFromANonZeroOriginKeepsEveryNoteAtItsSongPosition()
+	{
+		const int top = std::numeric_limits<tick_t>::max();
+		MidiClip* a = clipAt(1000, 96, 60);
+		MidiClip* b = clipAt(top - 500, 96, 64);
+		b->addNote(Note(TimePos(12), TimePos(800), 62), false);
+		const ControlResult joined = run(QStringLiteral("clip.join"), {{QStringLiteral("clips"),
+			QJsonArray{control::clipIdOf(a), control::clipIdOf(b)}}});
+		QVERIFY2(joined.ok, qPrintable(joined.errorMessage));
+		QCOMPARE(m_track->getClips().size(), std::size_t{1});
+		const auto positionOf = [a](int key) {
+			for (const Note* note : a->notes())
+			{
+				if (note->key() == key) { return static_cast<int>(note->pos().getTicks()); }
+			}
+			return -1;
+		};
+		QCOMPARE(positionOf(60), 0);               // the first clip's own note, unmoved
+		QCOMPARE(positionOf(64), top - 1500);      // its song start top-500, less the origin 1000
+		QCOMPARE(positionOf(62), top - 700);       // pos 800 on top of that start: top-500+800-1000
+	}
+
+	//! A later clip's note that the join moves past the largest tick used to wrap in tick_t; the join is refused
+	//! before anything moves.
+	void joiningRefusesANotePastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 96, 60);
+		MidiClip* b = clipAt(192, 96, 64);
+		const int top = std::numeric_limits<tick_t>::max();
+		b->addNote(Note(TimePos(12), TimePos(top - 100), 62), false);  // moved by 192: past the largest tick
+
+		const ControlResult joined = run(QStringLiteral("clip.join"), {{QStringLiteral("clips"),
+			QJsonArray{control::clipIdOf(a), control::clipIdOf(b)}}});
+		QVERIFY(!joined.ok);
+		QCOMPARE(joined.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(m_track->getClips().size(), std::size_t{2});
+		QCOMPARE(a->notes().size(), std::size_t{1});
+		QCOMPARE(b->notes().size(), std::size_t{2});
+		QCOMPARE(static_cast<int>(b->notes().back()->pos().getTicks()), top - 100);
+	}
+
+	//! A later clip's controller point that the join moves past the largest tick used to wrap
+	//! in the signed add; the join is refused before anything moves.
+	void joiningRefusesAControllerPointPastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 96, 60);
+		MidiClip* b = clipAt(192, 96, 64);
+		const int nearTop = std::numeric_limits<tick_t>::max() - 100;
+		const QJsonObject set{{QStringLiteral("clip"), control::clipIdOf(b)}, {QStringLiteral("lane"), QStringLiteral("cc:11")},
+			{QStringLiteral("points"), QJsonArray{{QJsonObject{{QStringLiteral("tick"), nearTop}, {QStringLiteral("value"), 90}}}}}};
+		QVERIFY(run(QStringLiteral("clip.controllers_set"), set).ok);
+
+		const ControlResult joined = run(QStringLiteral("clip.join"), {{QStringLiteral("clips"),
+			QJsonArray{control::clipIdOf(a), control::clipIdOf(b)}}});
+		QVERIFY(!joined.ok);
+		QCOMPARE(joined.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(m_track->getClips().size(), std::size_t{2});
+		QVERIFY(a->controllers().lane(ControllerKind::ControlChange, 11) == nullptr);
+		QCOMPARE(b->notes().size(), std::size_t{1});
+	}
+
+	//! ED-031 joins the NOTES of the later clips into the first; their controller lanes are
+	//! their content too, and the clip that carried them is deleted - so they must come too.
+	void joiningKeepsTheOtherClipsControllerLanes()
+	{
+		MidiClip* a = clipAt(0, 96, 60);
+		MidiClip* b = clipAt(192, 96, 64);
+		const QJsonObject first{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 20}};
+		const QJsonObject second{{QStringLiteral("tick"), 24}, {QStringLiteral("value"), 90}};
+		const QJsonObject set{{QStringLiteral("clip"), control::clipIdOf(b)}, {QStringLiteral("lane"), QStringLiteral("cc:11")},
+			{QStringLiteral("points"), QJsonArray{first, second}}};
+		QVERIFY(run(QStringLiteral("clip.controllers_set"), set).ok);
+
+		QVERIFY(run(QStringLiteral("clip.join"), {{QStringLiteral("clips"),
+			QJsonArray{control::clipIdOf(a), control::clipIdOf(b)}}}).ok);
+		QCOMPARE(m_track->getClips().size(), std::size_t{1});
+		const ControllerLane* lane = a->controllers().lane(ControllerKind::ControlChange, 11);
+		QVERIFY2(lane != nullptr, "the joined clip dropped the deleted clip's controller lane");
+		QCOMPARE(lane->points.size(), std::size_t{2});
+		// b started 192 later in song time, and the first clip starts at 0: the points move by
+		// the same delta the notes moved by (192), so tick 24 lands at 216.
+		QCOMPARE(static_cast<int>(lane->points.front().tick), 192);
+		QCOMPARE(static_cast<int>(lane->points.back().tick), 216);
+		QCOMPARE(a->notes().back()->pos().getTicks(), 192);
 	}
 
 	void rippleCarriesWhatFollowsAMove()

@@ -29,11 +29,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 
 #include <QJsonArray>
 
 #include "ArrangementEdits.h"
 #include "Clip.h"
+#include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -87,6 +90,7 @@ ControlResult repeatClip(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+//! The caller has checked scaleFits, so every narrowed tick here is storable.
 void scaleNotes(MidiClip* clip, double factor)
 {
 	for (Note* note : clip->notes())
@@ -95,6 +99,64 @@ void scaleNotes(MidiClip* clip, double factor)
 		note->setLength(TimePos(std::max<tick_t>(1, static_cast<tick_t>(std::lround(note->length().getTicks() * factor)))));
 	}
 	clip->rearrangeAllNotes();
+}
+
+//! Whether @a tick, computed in wide arithmetic, is a tick a controller point can store.
+bool fitsTick(long long tick)
+{
+	return tick >= 0 && tick <= static_cast<long long>(std::numeric_limits<tick_t>::max());
+}
+
+//! Controller points: each must scale onto a storable tick.
+bool scaledControllersFit(const MidiClip* clip, double factor)
+{
+	for (const ControllerLane& lane : clip->controllers().lanes())
+	{
+		for (const ControllerPoint& point : lane.points)
+		{
+			if (!fitsTick(std::llround(static_cast<double>(point.tick) * factor))) { return false; }
+		}
+	}
+	return true;
+}
+
+//! Preflight for a time scale, in wide arithmetic before the checkpoint, so a refused scale mutates nothing: every
+//! tick it writes must be storable - each note's start and end (a note is at least 1 long, as scaleNotes writes it),
+//! each controller point, and the clip's own length (the same rounding timeScale uses).
+//! The narrowing casts that write these values (scaleNotes, scaleControllers and the clip length in timeScale) are
+//! safe only because this is their single guard: timeScale calls it before the checkpoint and before any write,
+//! and none of those casts may be used on a path that does not call it first.
+bool scaleFits(const Clip* clip, double factor)
+{
+	const auto scaled = [factor](tick_t tick) { return std::llround(static_cast<double>(tick) * factor); };
+	if (!fitsTick(std::max<long long>(1, scaled(clip->length().getTicks())))) { return false; }
+	const auto* midi = dynamic_cast<const MidiClip*>(clip);
+	if (midi == nullptr) { return true; }
+	for (const Note* note : midi->notes())
+	{
+		const long long pos = scaled(note->pos().getTicks());
+		const long long length = std::max<long long>(1, scaled(note->length().getTicks()));
+		if (!fitsTick(pos) || !fitsTick(pos + length)) { return false; }
+	}
+	return scaledControllersFit(midi, factor);
+}
+
+//! Controller points carry clip-time ticks, exactly like note positions, so a time scale moves
+//! them by the same factor and the same rounding. Points that scale onto the same tick collapse
+//! (setPoints keeps one per tick) - the same bounds policy the notes get from their >= 1 length.
+//! The caller has checked scaleFits, so every scaled tick is storable.
+void scaleControllers(MidiClip* clip, double factor)
+{
+	for (const ControllerLane& lane : clip->controllers().lanes())
+	{
+		std::vector<ControllerPoint> points;
+		points.reserve(lane.points.size());
+		for (const ControllerPoint& point : lane.points)
+		{
+			points.push_back({static_cast<tick_t>(std::llround(static_cast<double>(point.tick) * factor)), point.value});
+		}
+		clip->setControllerPoints(lane.kind, lane.controller, std::move(points));
+	}
 }
 
 ControlResult timeScale(const QJsonObject& args)
@@ -107,9 +169,23 @@ ControlResult timeScale(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'factor' must be %1..%2").arg(MinFactor).arg(MaxFactor));
 	}
+	if (!scaleFits(ref.clip, factor))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("a tick would scale past the largest tick; nothing was changed"));
+	}
 	const tick_t before = ref.clip->length().getTicks();
 	ref.clip->addJournalCheckPoint();
-	if (auto* midi = dynamic_cast<MidiClip*>(ref.clip)) { scaleNotes(midi, factor); }
+	if (auto* midi = dynamic_cast<MidiClip*>(ref.clip))
+	{
+		scaleNotes(midi, factor);
+		scaleControllers(midi, factor);
+		// Scaling writes the clip's own Note objects, so it writes the group's
+		// shared content without passing a note entry point - the same seam
+		// cluster 5689 measured on note.randomize. One mirror keeps every
+		// member of a link group on the scaled notes (docs/LINKED-CLIPS.md §4).
+		if (midi->linkId() > 0) { ClipLinks::mirrorContent(midi); }
+	}
 	else if (auto* sample = dynamic_cast<SampleClip*>(ref.clip))
 	{
 		// A source tempo of (project tempo x factor) makes the clip play 1/factor as fast: it leads.
@@ -155,6 +231,53 @@ bool joinable(const QJsonArray& ids, QVector<MidiClip*>* clips, Track** track, C
 	return true;
 }
 
+//! The start of @a clip in song ticks, time offset included, in 64-bit arithmetic: a join's moves are deltas of these.
+long long wideSongStart(const MidiClip* clip)
+{
+	return static_cast<long long>(clip->startPosition().getTicks()) + clip->startTimeOffset().getTicks();
+}
+
+//! Preflight for a join: every note position and controller point of the later clips must land on a storable
+//! song tick once moved by its clip's delta from the first clip's origin, in wide arithmetic.
+bool joinedContentFits(const QVector<MidiClip*>& clips, long long origin)
+{
+	for (int i = 1; i < clips.size(); ++i)
+	{
+		const MidiClip* other = clips.at(i);
+		const long long delta = wideSongStart(other) - origin;
+		for (const Note* note : other->notes())
+		{
+			if (!fitsTick(static_cast<long long>(note->pos().getTicks()) + delta)) { return false; }
+		}
+		for (const ControllerLane& lane : other->controllers().lanes())
+		{
+			for (const ControllerPoint& point : lane.points)
+			{
+				if (!fitsTick(static_cast<long long>(point.tick) + delta)) { return false; }
+			}
+		}
+	}
+	return true;
+}
+
+//! The lanes of @a clip moved into @a first by @a delta ticks - the same song-time delta the
+//! notes get. Points that land on the same tick collapse (one point per tick), and a lane that
+//! already exists in @a first is merged into it rather than replacing it.
+void mergeControllers(MidiClip* first, const MidiClip* other, tick_t delta)
+{
+	for (const ControllerLane& lane : other->controllers().lanes())
+	{
+		std::vector<ControllerPoint> points;
+		const ControllerLane* existing = first->controllers().lane(lane.kind, lane.controller);
+		if (existing != nullptr) { points = existing->points; }
+		for (const ControllerPoint& point : lane.points)
+		{
+			points.push_back({point.tick + delta, point.value});
+		}
+		first->setControllerPoints(lane.kind, lane.controller, std::move(points));
+	}
+}
+
 //! ED-031 (0.5.0 L05): glue MIDI clips into the first - their notes move in at their song positions,
 //! the others go, and the first spans to the last one's end.
 ControlResult joinClips(const QJsonObject& args)
@@ -163,20 +286,28 @@ ControlResult joinClips(const QJsonObject& args)
 	QVector<MidiClip*> clips;
 	Track* track = nullptr;
 	if (!joinable(args.value(QStringLiteral("clips")).toArray(), &clips, &track, &error)) { return error; }
-	addUndoStep(QVector<JournallingObject*>{track});
 	MidiClip* first = clips.front();
-	const tick_t origin = first->startPosition().getTicks() + first->startTimeOffset().getTicks();
+	const long long origin = wideSongStart(first);
+	if (!joinedContentFits(clips, origin))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a note or a controller point of a later clip "
+			"would move past the largest tick; nothing was changed"));
+	}
+	addUndoStep(QVector<JournallingObject*>{track});
 	tick_t end = first->endPosition().getTicks();
 	for (int i = 1; i < clips.size(); ++i)
 	{
 		MidiClip* other = clips.at(i);
-		const tick_t from = other->startPosition().getTicks() + other->startTimeOffset().getTicks();
+		// The move is the song delta, computed once in 64-bit arithmetic and added to each note's own position.
+		// (The old order, from + pos - origin, overflowed tick_t in its middle term when the result still fit.)
+		const long long delta = wideSongStart(other) - origin;
 		for (const Note* note : other->notes())
 		{
 			Note moved = *note;
-			moved.setPos(TimePos(from + note->pos().getTicks() - origin));
+			moved.setPos(TimePos(static_cast<tick_t>(note->pos().getTicks() + delta)));  // the preflight checked it fits
 			first->addNote(moved, false);
 		}
+		mergeControllers(first, other, static_cast<tick_t>(delta));
 		end = std::max(end, other->endPosition().getTicks());
 		arrangement::deleteClip(track, other);
 	}

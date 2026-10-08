@@ -86,6 +86,7 @@ Exit codes: 0 every check held; 1 a check failed (the app log is printed);
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -145,6 +146,13 @@ def subset(source, keys):
     instead of a chain of `and`s, and a failure prints the value that differed.
     """
     return {key: (source or {}).get(key) for key in keys}
+
+
+def count_acknowledge_records(session):
+    """How many crash.acknowledge_report transactions are in the A16 journal."""
+    return len([record for record in (session.result("control.transactions")
+                                      .get("transactions") or [])
+                if record.get("command") == "crash.acknowledge_report"])
 
 
 def plant_report(instance, problems):
@@ -261,6 +269,18 @@ def check_acknowledge(session, problems, report_path):
     problems.require(state.get("pending") is False and state.get("offered") is True,
                      "the state must stay acknowledged across reads: %r" % (state.get("pending"),))
 
+    # Acknowledging an ALREADY-offered report changes nothing: the sentinel is
+    # already on disk, so the second call must be a typed refusal and must NOT
+    # record a second irreversible mutation.
+    before_records = count_acknowledge_records(session)
+    again = session.typed_error("crash.acknowledge_report")
+    problems.require(again.get("kind") in ("refused", "conflict", "no_change"),
+                     "acknowledging an already-offered report must be a typed "
+                     "no-change refusal: %r" % (again,))
+    problems.require(count_acknowledge_records(session) == before_records,
+                     "a refused acknowledge must not record another transaction "
+                     "(%d -> %d)" % (before_records, count_acknowledge_records(session)))
+
     refused = session.typed_error("control.undo")
     problems.require(refused.get("kind") == "irreversible"
                      and OFFERED_MARKER_NAME in (refused.get("message") or ""),
@@ -289,6 +309,33 @@ def check_discard(session, problems, report_path):
                      "a second discard with nothing to discard is not_found: %r" % (again,))
 
 
+def check_discard_reads_back(session, problems, report_path):
+    """discard must READ BACK the unlink, like acknowledge does.
+
+    discardPendingReport() returns void and ::unlink fails on a non-empty
+    DIRECTORY, so a path that cannot be unlinked is still there afterwards. The
+    handler must report that instead of claiming discarded:true.
+    """
+    directory = os.path.dirname(report_path)
+    try:
+        os.makedirs(report_path, exist_ok=True)
+        with open(os.path.join(report_path, "not-a-report"), "w", encoding="utf-8") as handle:
+            handle.write("this is a directory, not a report\n")
+    except OSError as error:
+        problems.add("could not plant the undiscardable fixture at %s: %s" % (report_path, error))
+        return
+    try:
+        refused = session.typed_error("crash.discard_report")
+        problems.require(refused.get("kind") in ("busy", "refused", "conflict"),
+                         "a discard whose files remain must be a typed failure, not "
+                         "discarded:true: %r" % (refused,))
+        problems.require(os.path.exists(report_path),
+                         "the fixture that cannot be unlinked must still be there: %s"
+                         % report_path)
+    finally:
+        shutil.rmtree(report_path, ignore_errors=True)
+
+
 def check_transactions(session, problems):
     """The A16 records: both writers are irreversible with a stated mechanism."""
     records = [record for record in session.result("control.transactions").get("transactions") or []
@@ -299,6 +346,34 @@ def check_transactions(session, problems):
                      "acknowledge must record an irreversible transaction: %r" % (classes,))
     problems.require(("crash.discard_report", "irreversible", False, True) in classes,
                      "discard must record an irreversible transaction: %r" % (classes,))
+
+
+def check_arm_cannot_move(session, instance, problems):
+    """Arming somewhere ELSE cannot be undone, so the command must refuse to move.
+
+    uninstall() clears the handlers but KEEPS the remembered directory, and the
+    inverse crash.disable records (crash.enable) takes no arguments, so an arm to
+    a second directory could never be taken back: undo would leave the reporter
+    disarmed but naming paths this call invented.
+    """
+    other = os.path.join(instance.workspace, "second-report-dir")
+    try:
+        os.makedirs(other, exist_ok=True)
+    except OSError as error:
+        problems.add("could not plant the second directory at %s: %s" % (other, error))
+        return
+    moved = session.typed_error("crash.enable", {"directory": other})
+    problems.require(moved.get("kind") in ("refused", "busy", "conflict"),
+                     "arming the reporter at a different directory must be refused, because "
+                     "crash.disable's inverse cannot move it back: %r" % (moved,))
+    still = session.result("crash.list_reports")
+    problems.require(still.get("report_directory") == os.path.join(instance.workspace,
+                                                                     REPORT_DIR_NAME),
+                     "the refused arm must leave the remembered report directory where it was: %r"
+                     % (still.get("report_directory"),))
+    problems.require(still.get("armed") is False,
+                     "the refused arm must not have armed the reporter: %r"
+                     % (subset(still, ["armed"]),))
 
 
 def check_arm_pair(session, instance, problems):
@@ -351,6 +426,8 @@ def check_arm_pair(session, instance, problems):
     again = session.typed_error("crash.disable")
     problems.require(again.get("kind") == "refused",
                      "disarming an already disarmed reporter must be a typed refusal: %r" % (again,))
+
+    check_arm_cannot_move(session, instance, problems)
 
     # The recorded inverse is the paired COMMAND, so one undo re-arms - and the
     # dispatch records ITS own inverse, so the pair is a faithful toggle.
@@ -436,6 +513,7 @@ def main(argv):
             else:
                 check_acknowledge(session, problems, report_path)
                 check_discard(session, problems, report_path)
+                check_discard_reads_back(session, problems, report_path)
             check_transactions(session, problems)
             check_arm_pair(session, instance, problems)
             check_arm_transactions(session, problems)

@@ -80,6 +80,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QStringList>
 
 #include "ControlRegistry.h"
 
@@ -175,11 +176,12 @@ QJsonObject fileJson(const std::string& path)
 		return out;
 	}
 	const QFileInfo info(wire(path));
-	out.insert(QStringLiteral("exists"), info.exists());
-	// A directory is not a report; bytes are 0 for one, as for a missing file.
+	// A report is a FILE: a directory at the reporter's path is not a report, so
+	// it is reported as absent rather than as an existing, zero-byte one.
+	out.insert(QStringLiteral("exists"), info.isFile());
 	out.insert(QStringLiteral("bytes"), info.isFile() ? qint64(info.size()) : qint64(0));
 	out.insert(QStringLiteral("modified_unix"),
-		info.exists() ? qint64(info.lastModified().toSecsSinceEpoch()) : qint64(0));
+		info.isFile() ? qint64(info.lastModified().toSecsSinceEpoch()) : qint64(0));
 	return out;
 }
 
@@ -203,7 +205,7 @@ ControlResult handleListReports()
 	// nothing, and report_path below is where a crash would write one. So
 	// report_count is a count of reports, not of a path the module could use.
 	QJsonArray reports;
-	if (paths.valid && QFileInfo::exists(wire(paths.report))) { reports.append(fileJson(paths.report)); }
+	if (paths.valid && QFileInfo(wire(paths.report)).isFile()) { reports.append(fileJson(paths.report)); }
 
 	QJsonObject result;
 	result.insert(QStringLiteral("installed"), crashreporter::isInstalled());
@@ -278,10 +280,23 @@ ControlResult handleAcknowledgeReport()
 	const CrashPaths paths = crashPaths();
 	if (!paths.valid) { return noReporter(AcknowledgeName); }
 	const QFileInfo report(wire(paths.report));
-	if (!report.exists())
+	if (!report.isFile())
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound,
 			QStringLiteral("%1: there is no report to acknowledge at %2").arg(AcknowledgeName, wire(paths.report)));
+	}
+
+	// An ALREADY-offered report is not a mutation: the sentinel is on disk, so
+	// this call would change nothing while recording an irreversible transaction
+	// for it. Refuse before the write, the way crash.enable refuses "already
+	// armed" and a second discard is not_found - crash.list_reports' `offered`
+	// is where the state this leaves behind is read.
+	if (QFileInfo::exists(wire(paths.offered)))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1: the report at %2 is ALREADY acknowledged (its `offered` sentinel %3 "
+				"exists), so nothing was changed. crash.list_reports' `offered` reports that state")
+				.arg(AcknowledgeName, wire(paths.report), wire(paths.offered)));
 	}
 
 	const QJsonObject before = crashBeforeState(paths);
@@ -319,6 +334,22 @@ ControlResult handleAcknowledgeReport()
 	return ControlResult::success(result);
 }
 
+/*! The paths that were there before the unlink and are STILL there after it.
+ *
+ *  discardPendingReport() returns void and ::unlink fails on a directory (and on
+ *  a read-only directory entry), so the effect has to be READ BACK rather than
+ *  assumed - the same rule handleAcknowledgeReport follows. Claiming
+ *  discarded:true for a report that is still on disk would be a lie the caller
+ *  cannot detect.
+ */
+static QStringList pathsLeftAfterDiscard(const CrashPaths& paths, bool hadReport, bool hadOffered)
+{
+QStringList remaining;
+if (hadReport && QFileInfo::exists(wire(paths.report))) { remaining.append(wire(paths.report)); }
+if (hadOffered && QFileInfo::exists(wire(paths.offered))) { remaining.append(wire(paths.offered)); }
+return remaining;
+}
+
 /*! crash.discard_report - clear the pending report: the engine operation is
  *  crashreporter::discardPendingReport(), which unlinks the report AND the
  *  offered sentinel (CrashReporter.cpp).
@@ -340,6 +371,19 @@ ControlResult handleDiscardReport()
 	}
 
 	crashreporter::discardPendingReport();
+
+	// The unlink is read back, not assumed (see pathsLeftAfterDiscard).
+	const QStringList remaining = pathsLeftAfterDiscard(paths, hadReport, hadOffered);
+	if (!remaining.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("%1: the report at %2 could NOT be discarded - %3 %4 still on disk after the "
+				"unlink, so the report is still pending. Check the directory's permissions; nothing "
+				"else was changed")
+				.arg(DiscardName, wire(paths.report),
+					remaining.size() == 1 ? QStringLiteral("this path is") : QStringLiteral("these paths are"),
+					remaining.join(QStringLiteral(", "))));
+	}
 
 	QJsonArray removed;
 	if (hadReport) { removed.append(wire(paths.report)); }
