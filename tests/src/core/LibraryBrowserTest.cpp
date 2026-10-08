@@ -116,6 +116,37 @@ private slots:
 		QCOMPARE(run(QStringLiteral("browser.save_clip"), relative).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! A save over a file that exists but cannot be read is refused before anything is written: undo could not put
+	//! back what the overwrite destroyed, so the file stays exactly as it was.
+	void aSaveNeverReplacesAFileItCannotRead()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		const QJsonObject args{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("dir"), m_dir.path()},
+			{QStringLiteral("name"), QStringLiteral("unreadable")}, {QStringLiteral("overwrite"), true}};
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("unreadable.mid"));
+		QFile earlier(path);
+		QVERIFY(earlier.open(QIODevice::WriteOnly));
+		earlier.write("earlier bytes");
+		earlier.close();
+		QVERIFY(QFile::setPermissions(path, QFileDevice::WriteOwner));  // write-only: a save can replace it, nothing can read it
+		QFile probe(path);
+		if (probe.open(QIODevice::ReadOnly))  // root reads anything: nothing to prove here
+		{
+			probe.close();
+			QVERIFY(QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+			QSKIP("this account reads files without read permission");
+		}
+
+		const ControlResult refused = run(QStringLiteral("browser.save_clip"), args);
+		QVERIFY(QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QFile back(path);
+		QVERIFY(back.open(QIODevice::ReadOnly));
+		QCOMPARE(back.readAll(), QByteArray("earlier bytes"));
+	}
+
 	// After aMidiClipIsSavedIntoTheLibrary, which ends with its file undone away.
 	void anOverwrittenClipComesBackOnUndo()
 	{

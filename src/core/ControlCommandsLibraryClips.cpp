@@ -203,6 +203,8 @@ struct PreviousFile
 {
 	QByteArray bytes;
 	bool existed = false;
+	//! False when the file exists but could not be read: an overwrite then has nothing it can put back.
+	bool readable = true;
 };
 
 PreviousFile readBackIfAny(const QString& path)
@@ -212,7 +214,13 @@ PreviousFile readBackIfAny(const QString& path)
 	if (previous.existed)
 	{
 		QFile file(path);
-		if (file.open(QIODevice::ReadOnly)) { previous.bytes = file.readAll(); }
+		if (!file.open(QIODevice::ReadOnly))
+		{
+			previous.readable = false;
+			return previous;
+		}
+		previous.bytes = file.readAll();
+		previous.readable = file.error() == QFileDevice::NoError;
 	}
 	return previous;
 }
@@ -229,6 +237,19 @@ void restoreOrRemove(const PreviousFile& previous, const QString& path)
 	if (file.open(QIODevice::WriteOnly) && file.write(previous.bytes) == previous.bytes.size()) { file.commit(); }
 }
 
+//! Writes @a clip to @a path, and first reads what it replaces into @a previous. Refused before any write when that file
+//! exists but cannot be read: an undo could not put back what the overwrite destroyed.
+bool writeKeepingPrevious(Clip* clip, const QString& path, PreviousFile* previous, QString* why)
+{
+	*previous = readBackIfAny(path);
+	if (!previous->readable)
+	{
+		*why = QStringLiteral("'%1' exists but cannot be read, so it would not be replaced; nothing was saved").arg(path);
+		return false;
+	}
+	return writeClip(clip, path, why);
+}
+
 ControlResult saveClip(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -241,9 +262,9 @@ ControlResult saveClip(const QJsonObject& args)
 	QString path;
 	if (!targetPath(args, ref, &path, &error)) { return error; }
 	// What the write is about to replace, read before it: undo puts that file back.
-	const PreviousFile previous = readBackIfAny(path);
+	PreviousFile previous;
 	QString why;
-	if (!writeClip(ref.clip, path, &why)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip was not saved: %1").arg(why)); }
+	if (!writeKeepingPrevious(ref.clip, path, &previous, &why)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip was not saved: %1").arg(why)); }
 	const QStringList tags = addTags(path, args.value(QStringLiteral("tags")).toArray());
 	const int id = ref.clip->id();
 	addUndoStep([path, tags, previous]() {
