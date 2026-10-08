@@ -195,7 +195,7 @@ private slots:
 	void testMainThreadRequestsAreServiced();
 	void testParameterRescansRereadTheList();
 	void testAnInvalidParamRangeIsNormalized();
-	void testAnActiveFlushRequestIsAnsweredByProcess();
+	void testAnActiveFlushRequestIsAnsweredWithoutAHostFlush();
 	void testAZeroChannelOutputKeepsTheIndexOfLaterPorts();
 	void testAnUnreadableInputPortKeepsItsNeighboursIndex();
 	void testASideChainFirstPluginReadsItsOwnMainInput();
@@ -888,10 +888,10 @@ void lmms::clap::ClapHostTest::testAnInvalidParamRangeIsNormalized()
 
 /*! A plug-in that changes a value while it is ACTIVE (its own UI) and asks for a flush gets that value back
  *  through the next process() call: the plug-in returns the changed value in its output events and the host
- *  publishes it. The host makes no params.flush() of its own for it - CLAP says process() already achieves
- *  the update while the plug-in is processing (clap/ext/params.h:297-301), and a request_flush may be answered
- *  by process() or by flush() (params.h:373-375). */
-void lmms::clap::ClapHostTest::testAnActiveFlushRequestIsAnsweredByProcess()
+ *  publishes it. CLAP would also accept the request being answered by params.flush() (params.h:373-375), and
+ *  says process() alone already achieves the update while processing (params.h:297-301). The host's own
+ *  choice is to make no flush call of its own here, so this test pins that choice and not a CLAP requirement. */
+void lmms::clap::ClapHostTest::testAnActiveFlushRequestIsAnsweredWithoutAHostFlush()
 {
 	qputenv("CLAP_TEST_GAIN_REQUEST_FLUSH", "1");
 	HostedPlugin plugin;
@@ -914,7 +914,7 @@ void lmms::clap::ClapHostTest::testAnActiveFlushRequestIsAnsweredByProcess()
 	process(plugin, inputs, outputs, TestFrames);  // answers the request: the value comes back in process()
 	QCOMPARE(plugin.paramPlain(GainParamId), 0.75);
 	QVERIFY2(readPluginState(plugin, &state), "the fixture saved an unexpected state layout");
-	QCOMPARE(state.hostFlushes, std::uint32_t{0});  // no redundant flush outside process()
+	QCOMPARE(state.hostFlushes, std::uint32_t{0});  // the host's choice: it makes no flush call of its own
 
 	std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
 	process(plugin, inputs, outputs, TestFrames);
