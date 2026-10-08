@@ -2202,4 +2202,5 @@ tests/src/gui/FollowActionEditorTest.cpp
 tests/src/gui/MixerSelectionIdentityTest.cpp
 tests/src/gui/PinConnectorTest.cpp
 tests/src/gui/TrackViewDeferredLifetimeTest.cpp
+tests/src/gui/RackDeferredLifetimeTest.cpp
 tests/src/core/TrackKeyNamesLoadTest.cpp

@@ -27,6 +27,7 @@
 
 #include <QApplication>
 #include <QAction>
+#include <QPointer>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QMessageBox>
@@ -170,7 +171,18 @@ void ControllerRackView::addController(Controller* controller)
 
 	connect(controllerView, &ControllerView::movedUp, this, &ControllerRackView::moveUp);
 	connect(controllerView, &ControllerView::movedDown, this, &ControllerRackView::moveDown);
-	connect(controllerView, &ControllerView::removedController, this, &ControllerRackView::deleteController, Qt::QueuedConnection);
+	// The removal is deferred to the rack's next event-loop turn. The controller's view is held in a QPointer
+	// (the signal is emitted by the live view), and it is removed only if it is still one of this rack's views
+	// then: a view deleted in the meantime (the song removed its controller in the same turn) is skipped, never
+	// dereferenced (m0 blocker, trackview-uaf follow-up).
+	connect(controllerView, &ControllerView::removedController, this, [this](ControllerView* removed)
+	{
+		QPointer<ControllerView> scheduled(removed);
+		QMetaObject::invokeMethod(this, [this, scheduled]
+		{
+			if (scheduled && m_controllerViews.contains(scheduled.data())) { deleteController(scheduled.data()); }
+		}, Qt::QueuedConnection);
+	}, Qt::DirectConnection);
 
 	auto moveUpAction = new QAction(controllerView);
 	moveUpAction->setShortcut(keySequence(Qt::Key_Up, Qt::AltModifier));
