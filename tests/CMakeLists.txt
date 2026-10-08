@@ -1287,6 +1287,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 	endif()
 
+	# W3EngineTest loads the build's amplifier (post-fader inserts) and receiver (chain.receive) modules.
+	# Without these dependencies a targeted build (cmake --build build --target W3EngineTest) never builds
+	# them, and both cases skip with "this build loads no ... module" instead of running.
+	if(LMMS_TEST_NAME STREQUAL "W3EngineTest")
+		add_dependencies(${LMMS_TEST_NAME} amplifier receiver)
+	endif()
 	# PluginScanCacheTest drives the scan cache and the quarantine list through
 	# the real PluginFactory, against a copy of the built tripleoscillator
 	# module (the enumeration path, not a stub): the module has to exist before

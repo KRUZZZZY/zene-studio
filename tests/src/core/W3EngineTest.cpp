@@ -46,6 +46,7 @@
 #include "Mixer.h"
 #include "MixerPostInserts.h"
 #include "PhaseDMixerTestSupport.h"
+#include "ProjectJournal.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SamplePlayHandle.h"
@@ -80,11 +81,26 @@ QString loadBuiltin(const QString& target, const QString& name)
 	{
 		const QJsonObject entry = device.toObject();
 		if (entry.value(QStringLiteral("name")).toString() != name || !entry.value(QStringLiteral("loadable")).toBool()) { continue; }
-		return run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), entry.value(QStringLiteral("id"))}})
+		return run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), target}, {QStringLiteral("device"), entry.value(QStringLiteral("id"))}})
 			.result.value(QStringLiteral("id")).toString();
 	}
 	return QString();
 }
+
+//! Turns the journal off for one scope: a restore that is not an undo step, as Song::loadProject does for a project
+//! load (Song.cpp, setJournalling(false) before the mixer loads).
+class JournalOff
+{
+public:
+	JournalOff() : m_journal(Engine::projectJournal()), m_was(m_journal->isJournalling()) { m_journal->setJournalling(false); }
+	~JournalOff() { m_journal->setJournalling(m_was); }
+	JournalOff(const JournalOff&) = delete;
+	JournalOff& operator=(const JournalOff&) = delete;
+
+private:
+	ProjectJournal* m_journal;
+	bool m_was;
+};
 
 //! A one-second 440 Hz tone on @a track at tick @a at.
 SampleClip* toneClip(Track* track, tick_t at)
@@ -242,9 +258,21 @@ private slots:
 		QDomElement element = doc.createElement(QStringLiteral("mixerchannel"));
 		channel(2)->m_postInserts.save(doc, element);
 		QVERIFY(!element.firstChildElement(QStringLiteral("postinserts")).isNull());
-		channel(3)->m_postInserts.load(element);
-		QCOMPARE(channel(3)->m_postInserts.chain().effects().size(), std::size_t{1});
-		channel(3)->m_postInserts.load(doc.createElement(QStringLiteral("mixerchannel")));  // absent: emptied
+		{
+			// A project load restores a channel's post inserts with the journal off (Song::loadProject, then
+			// Mixer::loadSettings -> PostFaderInserts::load, Mixer.cpp:2639), so the restore is not an undo step.
+			// With the journal on, the empty load below runs EffectChain::clear (EffectChain.cpp:443-457), whose
+			// enabled-model write pushes a step no command recorded, and this test's second control.undo would
+			// take that back instead of the plugin.load.
+			const quint64 top = Engine::projectJournal()->topStepSerial();
+			{
+				const JournalOff restoring;
+				channel(3)->m_postInserts.load(element);
+				QCOMPARE(channel(3)->m_postInserts.chain().effects().size(), std::size_t{1});
+				channel(3)->m_postInserts.load(doc.createElement(QStringLiteral("mixerchannel")));  // absent: emptied
+			}
+			QCOMPARE(Engine::projectJournal()->topStepSerial(), top);  // the restore made no undo step
+		}
 		QVERIFY(channel(3)->m_postInserts.chain().effects().empty());
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the plugin.load (the bypass was undone above)
 		QVERIFY(channel(2)->m_postInserts.chain().effects().empty());
