@@ -275,6 +275,12 @@ public:
 
 	bool criticalXRuns() const;
 
+	//! Whether criticalXRuns() may refuse new play handles (on by default). It is a wall-clock
+	//! decision: a build whose period takes longer than the device's period budget sheds the
+	//! clips that start in it. A benchmark has no device deadline and measures the render path,
+	//! so EngineRenderBenchmarkTest turns the shed off; the product never does.
+	void setOverloadSheddingEnabled(bool enabled) { m_overloadShedding.store(enabled, std::memory_order_relaxed); }
+
 	void pushInputFrames( const SampleFrame* _ab, const f_cnt_t _frames ) noexcept;
 
 	inline const SampleFrame* inputBuffer()
@@ -612,6 +618,7 @@ private:
 
 	bool m_clearSignal;
 	std::atomic<bool> m_sanitizationEnabled = false;
+	std::atomic<bool> m_overloadShedding{true};
 
 	std::recursive_mutex m_changeMutex;
 
