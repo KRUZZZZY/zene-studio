@@ -128,6 +128,14 @@ void closeForms()
 	QCoreApplication::processEvents();
 }
 
+//! A track whose view the arranger has built (it builds it from a queued signal that must not outlive the track).
+Track* newTrack()
+{
+	Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
+	QCoreApplication::processEvents();
+	return track;
+}
+
 } // namespace
 
 class EffectDeviceMenuTest : public QObject
@@ -177,7 +185,7 @@ private slots:
 		QCOMPARE(device.value(QStringLiteral("target")), channel.value(QStringLiteral("target")));
 
 		// An instrument track's chain is addressed by the track.
-		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* track = dynamic_cast<InstrumentTrack*>(newTrack());
 		QVERIFY(track != nullptr);
 		EffectChain* trackChain = track->audioBusHandle()->effects();
 		QCOMPARE(chainAddress(trackChain).value(QStringLiteral("target")).toString(), control::trackIdOf(track));
@@ -200,7 +208,6 @@ private slots:
 		QMenu menu(&host);
 		addEffectDeviceMenus(&menu, stray);
 		QVERIFY(menu.actions().isEmpty());
-		track->deleteLater();
 	}
 
 	void theDeviceMenuNamesEveryCommandItRuns()

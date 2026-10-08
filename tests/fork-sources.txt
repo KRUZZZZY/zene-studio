@@ -2206,3 +2206,4 @@ tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/MixerWindowsTest.cpp
 tests/src/gui/EffectDeviceMenuTest.cpp
 tests/src/gui/EffectPickerOrganiserTest.cpp
+tests/src/gui/PluginNativeEditorTest.cpp
