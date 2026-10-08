@@ -82,6 +82,25 @@ private slots:
 		QTest::keyClick(chance, Qt::Key_Return);
 		QCOMPARE(editor.chain().at(0).toObject().value(QStringLiteral("chance")).toDouble(), 0.12);
 	}
+
+	void aPassiveFocusLossKeepsTheLoadedChance()
+	{
+		const QJsonArray chain{QJsonObject{{QStringLiteral("type"), QStringLiteral("next")},
+			{QStringLiteral("chance"), 0.1234},
+			{QStringLiteral("linked"), true},
+			{QStringLiteral("time_bars"), 2.0},
+			{QStringLiteral("jump_to"), 0}}};
+		FollowActionEditor editor(QStringLiteral("session.set_slot"), QJsonObject{}, chain, QStringLiteral("1"));
+		editor.show();
+		QDoubleSpinBox* chance = chanceBoxOf(&editor);
+		QVERIFY(chance != nullptr);
+
+		// Tabbing away from the untouched box makes the spin box emit editingFinished without any typing.
+		// That passive commit is not an edit: the loaded precision survives it. (Simulated directly: a
+		// real focus change in this offscreen run crashes in the D-Bus accessibility bridge.)
+		emit chance->editingFinished();
+		QCOMPARE(editor.chain().at(0).toObject().value(QStringLiteral("chance")).toDouble(), 0.1234);
+	}
 };
 
 QTEST_MAIN(FollowActionEditorTest)
