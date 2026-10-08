@@ -58,6 +58,7 @@ typedef struct gain_plugin
 	clap_plugin_t plugin;
 	uint32_t host_flushes;
 	int in_process;         /* set for the duration of process(), so flush() can tell the two apart */
+	int return_pending;     /* CLAP_TEST_GAIN_REQUEST_FLUSH: the next process() returns the changed value */
 	const clap_host_t* host;
 	const clap_plugin_params_t* params;
 	double gain;
@@ -532,6 +533,7 @@ static bool gain_activate(const clap_plugin_t* plugin, double sample_rate, uint3
 	   host services in HostedPlugin::serviceMainThread() (engine audit E8). */
 	self->host_flushes = 0;
 	self->in_process = 0;
+	self->return_pending = 0;
 	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") != NULL || getenv("CLAP_TEST_GAIN_RESCAN") != NULL
 		|| getenv("CLAP_TEST_GAIN_REQUEST_FLUSH") != NULL || getenv("CLAP_TEST_GAIN_CLOSE_GUI") != NULL)
 	{
@@ -582,6 +584,21 @@ static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_
 
 	/* The host delivers parameter changes through the event list. */
 	self->params->flush(plugin, process->in_events, process->out_events);
+
+	/* CLAP_TEST_GAIN_REQUEST_FLUSH: the value the plug-in changed on the main thread goes back to the host
+	   through this process() call's output events - the plug-in's own update, not a flush the host makes. */
+	if (self->return_pending && process->out_events != NULL)
+	{
+		clap_event_param_value_t event;
+		memset(&event, 0, sizeof(event));
+		event.header.size = sizeof(event);
+		event.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
+		event.header.type = CLAP_EVENT_PARAM_VALUE;
+		event.param_id = PARAM_GAIN;
+		event.value = self->gain;
+		process->out_events->try_push(process->out_events, &event.header);
+		self->return_pending = 0;
+	}
 
 	/* CLAP_TEST_GAIN_PROCESS_ERROR: report a processing error without writing the output block, the way
 	   a plug-in that fails partway through leaves the rest of the buffer as the host handed it over. */
@@ -688,6 +705,7 @@ static void gain_on_main_thread(const clap_plugin_t* plugin)
 	if (getenv("CLAP_TEST_GAIN_REQUEST_FLUSH") != NULL)
 	{
 		self->gain = 0.75;
+		self->return_pending = 1;
 		const clap_host_params_t* flushParams =
 			(const clap_host_params_t*)self->host->get_extension(self->host, CLAP_EXT_PARAMS);
 		if (flushParams != NULL) { flushParams->request_flush(self->host); }
