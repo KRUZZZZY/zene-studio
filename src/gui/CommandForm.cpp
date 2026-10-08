@@ -343,6 +343,9 @@ void CommandForm::accept()
 	QString error;
 	QWidget* invalid = nullptr;
 	for (const Field& field : m_fields) { field.editor->setAccessibleDescription(field.help); }
+	// Every attempt starts with no answer: whatever is on screen belongs to an earlier run, and a
+	// refused or failed attempt must not leave it readable or copyable (nor Close reading as Close).
+	dropAnswer();
 	if (!collect(&args, &error, &invalid))
 	{
 		showError(error, invalid);
@@ -352,7 +355,6 @@ void CommandForm::accept()
 	emit ran(m_result);
 	if (!m_result.ok)
 	{
-		dropAnswer();  // this run has no answer: what is on screen is the previous run's
 		showError(m_result.errorMessage, nullptr);
 		return;
 	}

@@ -275,6 +275,31 @@ private slots:
 		QVERIFY2(copy->isHidden(), "the failed rerun left Copy Result enabled to copy the failed result");
 	}
 
+	void aRefusedEditorAfterASuccessDropsTheAnswerToo()
+	{
+		CommandForm form(echo());
+		form.setField(QStringLiteral("name"), QStringLiteral("good"));
+		form.accept();
+		QVERIFY(form.result().ok);
+		QVERIFY2(!form.resultText().isEmpty(), "the successful run showed no answer to go stale");
+		QPushButton* copy = nullptr;
+		for (QPushButton* button : form.findChildren<QPushButton*>())
+		{
+			if (button->text().contains(QStringLiteral("Copy"), Qt::CaseInsensitive)) { copy = button; }
+		}
+		QVERIFY(copy != nullptr);
+		QVERIFY(!copy->isHidden());
+
+		// The collect step refuses the form before the command runs: the previous success is no answer now.
+		g_lastArgs = {};
+		form.findChild<QLineEdit*>(QStringLiteral("field:count"))->setText(QStringLiteral("abc"));
+		form.accept();
+		QVERIFY2(g_lastArgs.isEmpty(), "the refused form still ran the command");
+		QVERIFY(!form.errorText().isEmpty());
+		QVERIFY2(form.resultText().isEmpty(), "a refused attempt left the previous answer on screen");
+		QVERIFY2(copy->isHidden(), "a refused attempt left Copy Result enabled");
+	}
+
 	void runCommandDispatchesWhenNothingIsLeftToAsk()
 	{
 		CommandForm* form = nullptr;
