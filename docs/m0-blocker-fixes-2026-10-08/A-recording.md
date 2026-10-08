@@ -58,3 +58,30 @@ Round 1: `e3083dce0` (fix), `30b0072ae` (report). Round 2: `ab938848f` (fix, tes
 - Gap records are capped at 256 pending per take. Beyond that the lost frames are counted (`framesUnpadded()`) but not padded and not surfaced.
 - The audio-thread `AudioBusHandle::addPlayHandle` append (pre-existing, every play handle) is outside this batch.
 - Unprepared take in `SampleTrack::play` end to end: not tested.
+
+## Round 3 (2026-10-08)
+
+Commits, oldest first: `ff37cf254` (item 2), `826ad30ad` (item 3), `06a6db8c7` (item 4), `b25936a46` (item 5), `a8107edf2` (item 1, with the manifest and the regenerated commands snapshot).
+
+| Item | Verdict | Fix commit | Test | Red (previous commit) | Green |
+|---|---|---|---|---|---|
+| 1. Drops reach the user | FIXED: non-modal notice (TextFloat + status bar) from a Song signal on the main thread; `record.get_state` `clip_takes.clips` lists each clip with `last_take_dropped_frames`; snapshot regenerated from a live instance | a8107edf2 | droppedFramesReachTheSongAndTheCommandSurface (signal -> count, command reply field) | exit 1 (signal and reply field missing) | 26/26 |
+| 2. Gap records beyond 256 | FIXED: full gap table merges the loss into its newest record; the newest record stays open until a newer one exists or the take finishes, so the drain never reads a record that can still grow; padding is placed at each record's position | ff37cf254 | gapTableKeepsEveryLostFrameWhenItOverflows (300 losses: 256 records, 300 frames); droppedFramesArePaddedEvenWhenTheGapTableOverflows (2 slots, take length and silence count) | compile error (SampleRecordGaps and the gap-slot argument are round-3 API) | 22/22 |
+| 3. Rp3: re-armed clip disarmed by an earlier take | FIXED: each arming has a generation; a take carries the generation it was prepared under; a take of an earlier arming is installed as a lane take and does not touch the current arming | 826ad30ad | reArmedClipIsNotDisarmedByAnEarlierTake | exit 1 (clip disarmed) | 23/23 |
+| 4. P6 passes sounding together | FIXED: the newest pass is the audible take; earlier passes stay on their lanes with their take clip muted | 06a6db8c7 | onlyTheNewestLoopPassIsAudible (takes muted 1 and 2, not 3; render with 1 and 2 unmuted is 1.6-1.9x the render with only 3, expected 0.35/0.2 = 1.75) | exit 1 (first take not muted) | 24/24 |
+| 5. Unprepared take, end to end | DONE: a pass on an armed clip with no prepared takes is counted by SampleTrack::play, records nothing, and makes no lane take | b25936a46 | unpreparedTakeIsCountedAndRecordsNothing | passes on the previous commit (the path existed; this is its first end-to-end test, not a red-producing fix) | 25/25 |
+
+Decisions to check:
+- Item 4 uses the per-take-clip muted flag, as docs/COMPING.md says audibility is (a lane has no mute of its own). The composite was not used: `comp.select` would need a segment per pass, and the repo's composite does not define an active take for a whole track. Newer passes mute earlier ones automatically, so a user who unmutes an earlier pass hears it until the next pass.
+- Item 2: when the gap table is full and frames were staged after the newest record, the merged silence lands at that record's position. The take keeps its length; timing is off by those frames. This happens only after 256 unpadded gap records, i.e. after the drain has stalled for well over a second of overflow. Below 256 the placement is exact.
+- Item 1: the GUI notice is a MainWindow lambda and is not unit-tested (no headless MainWindow test). The `clip_takes` result is declared as a generic object, so the new keys do not show in the declared schema; the regenerated snapshot differs only in its capture timestamp and socket path.
+
+Verification (round 3):
+- Red/green per item: as in the table, each red is the previous commit's product files restored, with the test file unchanged where possible (item 2 is a compile error; item 5 has no red).
+- Targeted suites on the final tree: 23 of 23 pass (`ctest` from `build/tests`): RecordClipTest, RecordingLatencyTest, RecordingPassTest, RecordingInputPathTest, RecordRingBufferTest, ControlRecordingRoutesTest, SampleClipWindowTest, ClipSerialisationTest, SessionAudioRecorderTest, RecordingRealtimeTest (26), ClipFadesRenderTest, AudioClipLoopTest, SessionPlaybackRenderTest, ClipGainEnvelopeTest, RangeEditsTest, ClipLinkTest, ClipWarpPersistenceTest, PunchWindowTest, SessionAudioRecordTest, SessionGridRecordTest, CollabTransportTest, SessionTransportBarTest, TelemetryTransportTest.
+- Gates on the final tree, all exit 0: complexity, file-length, fork-sources, no-upstream-regression.
+- Not run: the full `ctest` bar, `run-all-gates.sh`, `tests/rt-safety-sweep.py`.
+
+Open:
+- The GUI notice is not covered by a test.
+- Round-2 open items still stand: GUI wiring of `lastTakeDroppedFrames` per clip beyond the command reply, the audio-thread `AudioBusHandle::addPlayHandle` append (pre-existing), and the one-combined-reversal caveat for the round-2 red evidence.
