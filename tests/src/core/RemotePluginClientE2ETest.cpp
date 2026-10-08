@@ -613,6 +613,42 @@ private slots:
 	}
 
 	/*!
+	 * A client that stops in the middle of a message cannot hold the audio period.
+	 *
+	 * The fake client sends the start of a message, pauses for a second, then finishes it. The
+	 * period must give up within its budget, not wait for the rest of the message. The next period
+	 * reads the finished message and the reply, and completes.
+	 */
+	void clientStoppingMidMessageCannotHoldThePeriod()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the mid-message bound "
+				"is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("midframe")}),
+			"could not start/connect the midframe fake client");
+		QVERIFY2(!plugin.failed(), "the midframe fake client did not complete the handshake");
+
+		const auto bound = std::chrono::milliseconds{500};
+		const auto started = std::chrono::steady_clock::now();
+		QVERIFY(!plugin.process());
+		QVERIFY2(std::chrono::steady_clock::now() - started < bound,
+			"process() waited for the rest of a message the client had stopped in");
+
+		// The client finishes its message and reply after its pause; the next period completes.
+		std::this_thread::sleep_for(std::chrono::milliseconds{1200});
+		QVERIFY2(plugin.process(), "the period after the client finished its message did not complete");
+	}
+
+	/*!
 	 * Re-sizing a remote plugin's buffers holds off rendering.
 	 *
 	 * Another thread stands in for the render thread by holding the audio engine's change

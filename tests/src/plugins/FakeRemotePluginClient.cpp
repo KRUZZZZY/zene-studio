@@ -107,6 +107,13 @@ bool g_late = false;
 bool g_lateUsed = false;
 constexpr int LateReplyDelayMs = 150;
 
+//! "midframe" mode: the first IdStartProcessing is answered with a message that stops half-way: the header and
+//! part of a debug text, then a pause, then the rest and the reply.
+bool g_midframe = false;
+bool g_midframeUsed = false;
+constexpr int MidframePauseMs = 1000;
+constexpr std::int32_t IdDebugMessageWire = 25; //!< RemoteMessageIDs::IdDebugMessage
+
 //! "midi" mode: the client counts the IdMidiEvent messages it receives, and in each period asks for
 //! (count + 1) outputs before its reply, so the host can see how many events arrived before the period.
 bool g_midi = false;
@@ -338,6 +345,17 @@ auto handleMessage(const Message& message) -> bool
 		break;
 	case IdStartProcessing:
 		if (g_stall) { break; }
+		if (g_midframe && !g_midframeUsed)
+		{
+			g_midframeUsed = true;
+			const std::string text(200, 'x');
+			if (!writeInt32(IdDebugMessageWire) || !writeInt32(1) || !writeInt32(200)) { return false; }
+			if (!writeAll(text.data(), 50)) { return false; }
+			::usleep(MidframePauseMs * 1000);
+			if (!writeAll(text.data() + 50, text.size() - 50)) { return false; }
+			if (!sendMessage(IdProcessingDone, {})) { return false; }
+			break;
+		}
 		if (g_late && !g_lateUsed)
 		{
 			g_lateUsed = true;
@@ -458,7 +476,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -467,7 +485,9 @@ int main(int argc, char** argv)
 	g_recount = mode == "recount";
 	g_midi = mode == "midi";
 	g_late = mode == "late";
-	if (mode != "modern" && mode != "stale" && mode != "stall" && mode != "recount" && mode != "midi" && mode != "late")
+	g_midframe = mode == "midframe";
+	if (mode != "modern" && mode != "stale" && mode != "stall" && mode != "recount" && mode != "midi" && mode != "late"
+		&& mode != "midframe")
 	{
 		std::fprintf(stderr, "fakeclient: unknown mode '%s'\n", mode.c_str());
 		return 1;

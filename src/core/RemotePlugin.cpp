@@ -548,10 +548,25 @@ RemotePlugin::ReplyWait RemotePlugin::collectProcessingReplies(std::chrono::stea
 	{
 		if (isInvalid()) { return ReplyWait::Lost; }
 
-		const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
-		if (!waitForMessageReadable(static_cast<int>(std::max(remaining.count(), std::chrono::milliseconds::rep{0}))))
+		// A message is read only once it is complete in the socket, so the read cannot stall on a client
+		// that stops mid-message. A partial message stays where it is and is read in a later period.
+		switch (peekNextMessage())
 		{
-			return isInvalid() ? ReplyWait::Lost : ReplyWait::Late;
+		case Framing::Unusable:
+			return ReplyWait::Lost;
+		case Framing::Incomplete:
+			if (std::chrono::steady_clock::now() >= deadline) { return ReplyWait::Late; }
+			{
+				const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(
+					deadline - std::chrono::steady_clock::now());
+				if (!waitForMessageReadable(static_cast<int>(remaining.count())))
+				{
+					return isInvalid() ? ReplyWait::Lost : ReplyWait::Late;
+				}
+			}
+			continue;
+		case Framing::Complete:
+			break;
 		}
 
 		message m = receiveMessage();

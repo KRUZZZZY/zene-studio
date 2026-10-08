@@ -70,6 +70,7 @@
 
 #ifndef SYNC_WITH_SHM_FIFO
 #include <poll.h>
+#include <sys/socket.h>
 #include <unistd.h>  // IWYU pragma: keep
 #endif // SYNC_WITH_SHM_FIFO
 
@@ -556,6 +557,58 @@ public:
 			ready = poll(&pollin, 1, timeoutMs);
 		} while (ready < 0 && errno == EINTR);
 		return ready > 0;
+#endif
+	}
+
+	//! What a look at the socket finds at the start of the next message, without consuming anything.
+	enum class Framing
+	{
+		Complete,   //!< the whole message is already in the socket, so receiveMessage() will not block
+		Incomplete, //!< more bytes must still arrive
+		Unusable    //!< the peer closed the connection, or the message is larger than the peek window
+	};
+
+	//! Looks at the next message without consuming it. The audio thread calls receiveMessage() only after
+	//! Complete, so a client that stops mid-message cannot hold it. The shared-memory FIFO has no such look
+	//! and reports Complete, as it always blocks in receiveMessage().
+	inline Framing peekNextMessage()
+	{
+#ifdef SYNC_WITH_SHM_FIFO
+		return Framing::Complete;
+#else
+		constexpr std::size_t PeekWindowBytes = 16384;
+		char window[PeekWindowBytes];
+		const ssize_t available = ::recv(m_socket, window, sizeof window, MSG_PEEK | MSG_DONTWAIT);
+		if (available == 0) { return Framing::Unusable; }
+		if (available < 0)
+		{
+			const bool retry = errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR;
+			return retry ? Framing::Incomplete : Framing::Unusable;
+		}
+		const auto size = static_cast<std::size_t>(available);
+
+		// Wire layout: id, argument count, then each argument as a length followed by its bytes.
+		auto int32At = [&window](std::size_t at) {
+			std::int32_t value = 0;
+			std::memcpy(&value, window + at, sizeof value);
+			return value;
+		};
+		if (size < 8) { return Framing::Incomplete; }
+		const std::int32_t count = int32At(4);
+		if (count < 0) { return Framing::Unusable; }
+
+		std::size_t offset = 8;
+		for (std::int32_t i = 0; i < count; ++i)
+		{
+			if (offset + sizeof(std::int32_t) > PeekWindowBytes) { return Framing::Unusable; }
+			if (offset + sizeof(std::int32_t) > size) { return Framing::Incomplete; }
+			const std::int32_t length = int32At(offset);
+			if (length < 0) { return Framing::Unusable; }
+			offset += sizeof(std::int32_t) + static_cast<std::size_t>(length);
+			if (offset > PeekWindowBytes) { return Framing::Unusable; }
+			if (offset > size) { return Framing::Incomplete; }
+		}
+		return Framing::Complete;
 #endif
 	}
 
