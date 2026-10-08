@@ -235,8 +235,15 @@ void Vst3EffectIntegrationTest::testStateRoundTripThroughMmp()
 	QDomDocument doc;
 	QDomElement element = doc.createElement("effect");
 	effect->saveSettings(doc, element);
+	auto stateElement = element.firstChildElement(QStringLiteral("vst3"));
+	QVERIFY(!stateElement.isNull());
+	QVERIFY(!stateElement.firstChildElement(QStringLiteral("parameters")).isNull());
+	// A VST3 with no state chunks must still restore its exposed parameter values.
+	stateElement.removeChild(stateElement.firstChildElement(QStringLiteral("componentstate")));
+	stateElement.removeChild(stateElement.firstChildElement(QStringLiteral("controllerstate")));
 
 	gain->setValue(0.9f);
+	effect->plugin()->notifyController(1, 0.9f);
 	QVERIFY(std::abs(gain->value() - 0.9f) < 1e-6f);
 
 	effect->loadSettings(element);

@@ -100,7 +100,12 @@ void Vst3EffectControls::saveSettings(QDomDocument& doc, QDomElement& element)
 {
 	QByteArray componentState;
 	QByteArray controllerState;
-	m_effect->plugin()->saveState(&componentState, &controllerState);
+	auto* plugin = m_effect->plugin();
+	const bool stateSaved = plugin->saveState(&componentState, &controllerState);
+	if (!stateSaved)
+	{
+		qWarning() << "VST3: plug-in state chunks could not be saved; writing parameter fallback";
+	}
 
 	auto appendState = [&doc, &element](const QString& name, const QByteArray& data) {
 		if (data.isEmpty()) { return; }
@@ -110,6 +115,19 @@ void Vst3EffectControls::saveSettings(QDomDocument& doc, QDomElement& element)
 	};
 	appendState(QStringLiteral("componentstate"), componentState);
 	appendState(QStringLiteral("controllerstate"), controllerState);
+
+	auto parameters = doc.createElement(QStringLiteral("parameters"));
+	for (const auto& descriptor : plugin->parameters())
+	{
+		if (descriptor.readOnly) { continue; }
+		auto parameter = doc.createElement(QStringLiteral("parameter"));
+		parameter.setAttribute(QStringLiteral("id"), QString::number(descriptor.id));
+		parameter.setAttribute(QStringLiteral("value"),
+			QString::number(plugin->paramNormalized(descriptor.id), 'g', 9));
+		parameters.appendChild(parameter);
+	}
+	if (parameters.hasChildNodes()) { element.appendChild(parameters); }
+
 }
 
 void Vst3EffectControls::loadSettings(const QDomElement& element)
@@ -122,13 +140,33 @@ void Vst3EffectControls::loadSettings(const QDomElement& element)
 
 	const auto componentState = readState(QStringLiteral("componentstate"));
 	const auto controllerState = readState(QStringLiteral("controllerstate"));
-	m_effect->plugin()->loadState(componentState, controllerState);
+	auto* plugin = m_effect->plugin();
+	if (!plugin->loadState(componentState, controllerState))
+	{
+		qWarning() << "VST3: plug-in state chunks could not be restored; applying parameter fallback";
+	}
+
+	const auto parameters = element.firstChildElement(QStringLiteral("parameters"));
+	for (auto parameter = parameters.firstChildElement(QStringLiteral("parameter"));
+		!parameter.isNull(); parameter = parameter.nextSiblingElement(QStringLiteral("parameter")))
+	{
+		bool idOk = false;
+		bool valueOk = false;
+		const auto id = parameter.attribute(QStringLiteral("id")).toUInt(&idOk);
+		const float value = parameter.attribute(QStringLiteral("value")).toFloat(&valueOk);
+		const int index = idOk ? plugin->paramIndex(id) : -1;
+		if (valueOk && std::isfinite(value) && index >= 0
+			&& !plugin->parameters()[static_cast<std::size_t>(index)].readOnly)
+		{
+			plugin->notifyController(id, value);
+		}
+	}
 
 	// reflect the restored state in the models
 	m_syncing = true;
 	for (auto* model : m_paramModels)
 	{
-		model->setValue(m_effect->plugin()->paramNormalized(model->paramId()));
+		model->setValue(plugin->paramNormalized(model->paramId()));
 	}
 	m_syncing = false;
 }

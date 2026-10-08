@@ -401,7 +401,11 @@ void Vst3Instrument::saveSettings(QDomDocument& doc, QDomElement& element)
 {
 	QByteArray componentState;
 	QByteArray controllerState;
-	m_plugin.saveState(&componentState, &controllerState);
+	const bool stateSaved = m_plugin.saveState(&componentState, &controllerState);
+	if (!stateSaved)
+	{
+		qWarning() << "VST3: instrument state chunks could not be saved; writing parameter fallback";
+	}
 
 	auto appendState = [&doc, &element](const QString& name, const QByteArray& data) {
 		if (data.isEmpty()) { return; }
@@ -411,6 +415,19 @@ void Vst3Instrument::saveSettings(QDomDocument& doc, QDomElement& element)
 	};
 	appendState(QStringLiteral("componentstate"), componentState);
 	appendState(QStringLiteral("controllerstate"), controllerState);
+
+	auto parameters = doc.createElement(QStringLiteral("parameters"));
+	for (const auto& descriptor : m_plugin.parameters())
+	{
+		if (descriptor.readOnly) { continue; }
+		auto parameter = doc.createElement(QStringLiteral("parameter"));
+		parameter.setAttribute(QStringLiteral("id"), QString::number(descriptor.id));
+		parameter.setAttribute(QStringLiteral("value"),
+			QString::number(m_plugin.paramNormalized(descriptor.id), 'g', 9));
+		parameters.appendChild(parameter);
+	}
+	if (parameters.hasChildNodes()) { element.appendChild(parameters); }
+
 }
 
 void Vst3Instrument::loadSettings(const QDomElement& element)
@@ -423,7 +440,26 @@ void Vst3Instrument::loadSettings(const QDomElement& element)
 
 	const auto componentState = readState(QStringLiteral("componentstate"));
 	const auto controllerState = readState(QStringLiteral("controllerstate"));
-	m_plugin.loadState(componentState, controllerState);
+	if (!m_plugin.loadState(componentState, controllerState))
+	{
+		qWarning() << "VST3: instrument state chunks could not be restored; applying parameter fallback";
+	}
+
+	const auto parameters = element.firstChildElement(QStringLiteral("parameters"));
+	for (auto parameter = parameters.firstChildElement(QStringLiteral("parameter"));
+		!parameter.isNull(); parameter = parameter.nextSiblingElement(QStringLiteral("parameter")))
+	{
+		bool idOk = false;
+		bool valueOk = false;
+		const auto id = parameter.attribute(QStringLiteral("id")).toUInt(&idOk);
+		const float value = parameter.attribute(QStringLiteral("value")).toFloat(&valueOk);
+		const int index = idOk ? m_plugin.paramIndex(id) : -1;
+		if (valueOk && std::isfinite(value) && index >= 0
+			&& !m_plugin.parameters()[static_cast<std::size_t>(index)].readOnly)
+		{
+			m_plugin.notifyController(id, value);
+		}
+	}
 
 	// reflect the restored state in the models
 	m_syncing = true;

@@ -538,11 +538,16 @@ void Vst3InstrumentIntegrationTest::testStateSurvivesTheProjectFile()
 	QCOMPARE(keyAttribute(keyElement, QStringLiteral("class")),
 		QStringLiteral("Zene VST3 Test Instrument"));
 	// ...and the plug-in's own state next to it
-	const auto stateElement = instrumentElement.firstChildElement();
+	auto stateElement = instrumentElement.firstChildElement();
 	QVERIFY2(!stateElement.isNull(), "the <instrument> element carries no state");
 	QCOMPARE(stateElement.tagName(), QStringLiteral("vst3instrument"));
 	QVERIFY2(!stateElement.firstChildElement(QStringLiteral("componentstate")).isNull(),
 		"the instrument's component state was not written into the project");
+	QVERIFY2(!stateElement.firstChildElement(QStringLiteral("parameters")).isNull(),
+		"the instrument's exposed parameter fallback was not written into the project");
+	// A plug-in with no state chunks must still restore its exposed parameter values.
+	stateElement.removeChild(stateElement.firstChildElement(QStringLiteral("componentstate")));
+	stateElement.removeChild(stateElement.firstChildElement(QStringLiteral("controllerstate")));
 
 	// Reload through the PRODUCT's own reload path: restoreState() on a track
 	// with no instrument re-instantiates the plug-in from the <key> the
@@ -554,7 +559,7 @@ void Vst3InstrumentIntegrationTest::testStateSurvivesTheProjectFile()
 	QVERIFY2(freshInstrument != nullptr, "the project carried no instrument to reload");
 	QCOMPARE(QString::fromLatin1(freshInstrument->descriptor()->name),
 		QStringLiteral("vst3instrument"));
-	QCOMPARE(freshInstrument->parameterModel(0)->value<float>(), FixtureLevel);
+	QCOMPARE(freshInstrument->parameterModel(0)->value<float>(), WrittenLevel);
 
 	const auto restored = renderNote(freshTrack.get(), freshInstrument, note, 0,
 		Blocks * BlockFrames);
