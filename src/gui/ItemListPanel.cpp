@@ -257,7 +257,6 @@ ItemListPanel::ItemListPanel(ItemListSource* source, QWidget* surface, const QSt
 	m_table->setAccessibleDescription(tr("Arrows move; F2 or typing edits a cell; + and - step it; Insert adds an item "
 		"after this one, Delete removes the selected ones; Escape closes the list."));
 	m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-	m_table->setSelectionMode(kind == QStringLiteral("clips") ? QAbstractItemView::ExtendedSelection : QAbstractItemView::SingleSelection);
 	m_table->setEditTriggers(QAbstractItemView::EditKeyPressed | QAbstractItemView::AnyKeyPressed | QAbstractItemView::DoubleClicked);
 	m_table->verticalHeader()->setDefaultSectionSize(tokens::targetSize());  // theme 23: the global zoom and accessible mode
 	m_table->horizontalHeader()->setStretchLastSection(true);
@@ -372,7 +371,6 @@ void ItemListPanel::selectionEdited()
 	QList<int> rows;
 	for (const QModelIndex& index : m_table->selectionModel()->selectedRows()) { rows.append(index.row()); }
 	std::sort(rows.begin(), rows.end());
-	if (rows.size() > 1) { return; }  // the arranger has one current clip, while its list can select several to delete; an empty selection still clears it (new-p8-137)
 	if (rows != m_source->selectedRows()) { m_source->select(rows); }
 }
 
