@@ -89,7 +89,7 @@ class RecordingRealtimeTest : public QObject
 
 private:
 	//! Feed \a periods periods of input and render them, the song recording.
-	void driveRecordPeriods(int periods, float level = 0.5f)
+	void driveRecordPeriods(int periods, float level = 0.5f, bool processEvents = false)
 	{
 		auto* engine = lmms::Engine::audioEngine();
 		const f_cnt_t fpp = engine->framesPerPeriod();
@@ -100,6 +100,8 @@ private:
 			engine->renderNextPeriod();
 			// Paced like a device: the drain thread polls every 2 ms and must keep up.
 			std::this_thread::sleep_for(std::chrono::milliseconds(3));
+			// Lets the main-thread reaper run between periods, as the event loop does in the app.
+			if (processEvents) { QCoreApplication::processEvents(); }
 		}
 	}
 
@@ -823,6 +825,54 @@ private slots:
 				static_cast<qulonglong>(5));
 		}
 		QVERIFY2(listed, "record.get_state does not list the clip whose take lost frames");
+		delete track;
+	}
+
+	//! Three loop passes, each ended by a wrap while the reaper runs between periods: every pass
+	//! keeps the length of the pass. A lane take must not cut the next pass short (BUGS P6, round 4).
+	void loopPassesKeepTheirLengthWhileTheReaperRuns()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+
+		constexpr int passPeriods = 40;
+		const auto fpp = static_cast<std::size_t>(lmms::Engine::audioEngine()->framesPerPeriod());
+		song->playAndRecord();
+		for (int pass = 0; pass < 3; ++pass)
+		{
+			driveRecordPeriods(passPeriods, 0.25f, /*processEvents=*/true);
+			if (pass < 2) { song->setPlayPos(0); }  // the loop wrap: the transport jumps back to the loop start
+		}
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		QTest::qWait(50);
+
+		std::vector<lmms::Clip*> takes;
+		for (lmms::Clip* c : track->getClips()) { if (c != clip) { takes.push_back(c); } }
+		QCOMPARE(takes.size(), static_cast<std::size_t>(3));
+		// Every pass loses the same round trip at its start, so the three takes agree to within one
+		// period; a cut pass is shorter than the others by the reaper's latency (about two periods).
+		std::size_t shortest = ~std::size_t{0};
+		std::size_t longest = 0;
+		for (lmms::Clip* take : takes)
+		{
+			const auto length = static_cast<std::size_t>(dynamic_cast<lmms::SampleClip*>(take)->sample().sampleSize());
+			qInfo("pass take lane %d: %llu frames", take->laneIndex(), static_cast<qulonglong>(length));
+			shortest = std::min(shortest, length);
+			longest = std::max(longest, length);
+		}
+		QVERIFY2(longest - shortest <= fpp,
+			qPrintable(QStringLiteral("the passes differ by %1 frames: a pass was cut short")
+				.arg(static_cast<qulonglong>(longest - shortest))));
+		QVERIFY2(shortest + 4 * fpp >= passPeriods * fpp,
+			qPrintable(QStringLiteral("a pass of %1 periods came out as %2 frames")
+				.arg(passPeriods).arg(static_cast<qulonglong>(shortest))));
 		delete track;
 	}
 } ;

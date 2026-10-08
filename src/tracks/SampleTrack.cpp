@@ -321,6 +321,7 @@ void SampleTrack::loadTrackSpecificSettings(const QDomElement & thisElem)
 
 void SampleTrack::updateClips()
 {
+	if( clipUpdatesSuspended() ) { return; }
 	Engine::audioEngine()->removePlayHandlesOfTypes( this, PlayHandle::Type::SamplePlayHandle );
 	setPlayingClips( false );
 }

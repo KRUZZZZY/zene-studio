@@ -261,10 +261,14 @@ void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take)
 	// processing takes, as every other clip edit is.
 	const auto guard = Engine::audioEngine()->requestChangesGuard();
 	const int lane = track->takeLanes().addLane();
+	// The lane clip's constructor and its position change reach updateClips(), which would remove
+	// the track's live play handles - the take of the pass that has just begun. Suspended here.
+	track->setClipUpdatesSuspended(true);
 	auto* take_clip = new SampleClip(track, Sample(std::move(take)), false);
 	take_clip->setLaneIndex(lane);
 	take_clip->movePosition(startPosition());
 	take_clip->updateLength();
+	track->setClipUpdatesSuspended(false);
 	// The newest pass is the audible take; the earlier passes stay on their lanes, muted, until
 	// the user comps them.
 	std::erase_if(m_passTakes, [](const QPointer<Clip>& take) { return take.isNull(); });
@@ -348,8 +352,11 @@ void SampleClip::toggleRecord()
 
 void SampleClip::playbackPositionChanged()
 {
-	Engine::audioEngine()->removePlayHandlesOfTypes( getTrack(), PlayHandle::Type::SamplePlayHandle );
 	auto st = dynamic_cast<SampleTrack*>(getTrack());
+	// A lane take being built (addRecordedLane) changes its own clip's signals, which reach here:
+	// they must not remove the live take of the pass that has just begun (BUGS P6, round 4).
+	if( st != nullptr && st->clipUpdatesSuspended() ) { return; }
+	Engine::audioEngine()->removePlayHandlesOfTypes( getTrack(), PlayHandle::Type::SamplePlayHandle );
 	st->setPlayingClips( false );
 }
 

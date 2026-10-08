@@ -1753,3 +1753,5 @@ include/Song.h	docs/m0-blocker-fixes-2026-10-08 round 3: recordTakeDropped signa
 src/core/SampleClip.cpp	docs/m0-blocker-fixes-2026-10-08 round 3: arm generation (armRecordTake, acceptRecordedTake tags a stale take), loop-pass takes muted except the newest, drops reported to the Song
 include/SampleClip.h	docs/m0-blocker-fixes-2026-10-08 round 3: armGeneration(), m_passTakes, acceptRecordedTake generation parameter
 src/gui/MainWindow.cpp	docs/m0-blocker-fixes-2026-10-08 round 3: shows a non-modal notice (TextFloat and status bar) when a recording pass lost frames
+include/SampleTrack.h	docs/m0-blocker-fixes-2026-10-08 round 4: clip updates can be suspended (setClipUpdatesSuspended) while a lane take is built, so it cannot remove the live take of the next pass
+src/tracks/SampleTrack.cpp	docs/m0-blocker-fixes-2026-10-08 round 4: updateClips() does nothing while clip updates are suspended
