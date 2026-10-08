@@ -73,7 +73,10 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLibrary>
 #include <QTemporaryDir>
+
+#include <memory>
 
 // LMMS_BUILD_WIN32 is only ever defined by the generated build-tree
 // lmmsconfig.h, never as a compile definition, so without this include the
@@ -90,10 +93,12 @@
 
 #include "embed.h"
 #include "Engine.h"
+#include "InstrumentTrack.h"
 #include "Plugin.h"
 #include "PluginBrowser.h"
 #include "PluginFactory.h"
 #include "PluginScanCache.h"
+#include "Song.h"
 
 //! Build-tree plugin directory, injected by tests/CMakeLists.txt.
 #ifndef LMMS_TEST_SCAN_PLUGIN_DIR
@@ -782,6 +787,37 @@ private slots:
 		}
 
 		browser.hide();
+	}
+
+	//! A live plugin instance owns its module after a rescan replaces PluginInfo.
+	void testPluginInstanceRetainsLibraryAcrossRescan()
+	{
+		using namespace lmms;
+
+		if (!pluginModuleCopied()) { QSKIP("no built tripleoscillator module to scan"); }
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
+		Engine::init(true);
+		struct EngineShutdown
+		{
+			~EngineShutdown() { Engine::destroy(); }
+		} engineShutdown;
+		QDir::setSearchPaths("plugins", QStringList{m_pluginDir->path()});
+		auto* factory = getPluginFactory();
+		factory->discoverPlugins();
+		PluginFactory::PluginInfo info = factory->pluginInfo("tripleoscillator");
+		QVERIFY(!info.isNull());
+		std::weak_ptr<QLibrary> library = info.library;
+		info.library.reset();
+
+		auto track = std::make_unique<InstrumentTrack>(Engine::getSong());
+		auto instance = std::unique_ptr<Plugin>(Plugin::instantiate(QStringLiteral("tripleoscillator"), track.get(), nullptr));
+		QVERIFY(instance != nullptr);
+		factory->discoverPlugins();
+		QVERIFY2(!library.expired(), "a live plugin instance must keep its code module loaded after rescan");
+
+		instance.reset();
+		QVERIFY2(library.expired(), "the instance's module reference must be released with the instance");
 	}
 
 	/*! A full scan that loads an LV2 host module must not crash when the Engine was
