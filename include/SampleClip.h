@@ -38,6 +38,7 @@ namespace lmms
 {
 
 class SampleBuffer;
+class SampleRecordHandle;
 
 namespace gui
 {
@@ -185,6 +186,9 @@ public:
 	bool isPlaying() const;
 	void setIsPlaying(bool isPlaying);
 	void setSampleBuffer(std::shared_ptr<const SampleBuffer> sb);
+	//! Audio thread: take the take prepared for this clip (see prepareRecordTake), or nullptr
+	//! when none is ready. Allocates nothing; the caller owns the handle.
+	SampleRecordHandle* claimRecordHandle() noexcept;
 	//! 0.5.0: a new source and the window to play of it, in one owner call - what a destructive edit (crop, a range
 	//! edit, a printed chain) does; the window is written here, by the clip, as the one-writer rule requires.
 	void replaceSample(std::shared_ptr<const SampleBuffer> sb, const SampleWindow& window);
@@ -200,6 +204,9 @@ public slots:
 	void playbackPositionChanged();
 	void updateTrackClips();
 	void tempoChanged();
+	//! Main thread: build the clip's next record take (its accumulator and drain thread) while
+	//! the clip is armed, so SampleTrack::play never allocates one. Idempotent.
+	void prepareRecordTake();
 
 protected:
 	SampleClip( const SampleClip& orig );
@@ -214,6 +221,9 @@ private:
 	// to Clip with its `<warp>` serialisation (SPEC-ARCH-4 census row 5); the
 	// accessors and the mapping above read the inherited members unchanged.
 	BoolModel m_recordModel;
+	//! The take prepared for the next recording pass (main thread builds it, the audio thread
+	//! claims it through claimRecordHandle()). Written under the engine's change lock.
+	SampleRecordHandle* m_preparedRecord = nullptr;
 	//! See rubberBandPool(); never replaced once built.
 	std::unique_ptr<RubberBandPool> m_rubberBand;
 	//! Builds m_rubberBand if the mode asks for it and it does not exist yet.

@@ -38,9 +38,14 @@
 
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "SampleClip.h"
 #include "SampleFrame.h"
 #include "SampleFrameRingBuffer.h"
 #include "SampleRecordAccumulator.h"
+#include "SampleRecordHandle.h"
+#include "SampleTrack.h"
+#include "Song.h"
+#include "TimePos.h"
 
 using lmms::AudioEngine;
 using lmms::f_cnt_t;
@@ -311,6 +316,60 @@ private slots:
 		QVERIFY2(dropped > 0, "the ring reported no overflow although far more was pushed than fits");
 		// Conservation: no frame vanished silently, and none was stored.
 		QCOMPARE(stagedAfter - stagedBefore + dropped, total);
+	}
+
+	// -----------------------------------------------------------------------
+	// Clip take ownership: the audio thread neither builds a take's threads
+	// and ring nor tears them down or writes the clip.
+	// -----------------------------------------------------------------------
+
+	//! Engine removes a record handle on the audio thread: its destructor must
+	//! allocate nothing and must not write the clip (that is the main thread's
+	//! job, done by the reaper). The clip still leaves record mode afterwards.
+	void recordHandleDestructionPerformsNoAllocation()
+	{
+		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setRecord(true);
+
+		// Built on the main thread, as SampleClip does before the transport starts.
+		auto* handle = new lmms::SampleRecordHandle(clip);
+
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		delete handle;
+		lmms::test::tlCountAllocations = false;
+
+		QCOMPARE(asNumber(lmms::test::tlAllocationCount), asNumber(0));
+		// The main thread installs the (empty) take and disarms the clip.
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 2000);
+		delete track;
+	}
+
+	//! Arming a clip prepares its take on the main thread, so the audio thread
+	//! only claims it: the claim allocates nothing.
+	void armedClipClaimsItsPreparedTakeWithoutAllocation()
+	{
+		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+
+		clip->setRecord(true);
+
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		lmms::SampleRecordHandle* handle = clip->claimRecordHandle();
+		lmms::test::tlCountAllocations = false;
+
+		QVERIFY2(handle != nullptr, "the armed clip had no prepared take to claim");
+		QCOMPARE(asNumber(lmms::test::tlAllocationCount), asNumber(0));
+		// A second claim has nothing left: one take per arming.
+		QVERIFY(clip->claimRecordHandle() == nullptr);
+
+		delete handle;
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 2000);
+		delete track;
 	}
 } ;
 

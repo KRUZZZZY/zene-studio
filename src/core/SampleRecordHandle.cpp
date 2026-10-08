@@ -27,8 +27,16 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <memory>
+
+#include <QCoreApplication>
+#include <QPointer>
+#include <QTimer>
+
 #include "AudioEngine.h"
 #include "Engine.h"
+#include "MpscQueue.h"
 #include "PatternTrack.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -42,10 +50,46 @@ namespace lmms
 {
 
 
+//! What a handle hands back to the main thread: the accumulator (and its drain thread) and the
+//! clip the take goes to. QPointer, so a clip deleted mid-take is simply not written to.
+struct PendingRecordTake
+{
+	std::unique_ptr<SampleRecordAccumulator> accum;
+	QPointer<SampleClip> clip;
+};
+
+
+namespace
+{
+
+//! Takes queued by destroyed handles (any thread, pushes) for the main thread (the one consumer).
+//! 256 slots: the main-thread reaper runs every 10 ms, so this only fills if it stops running.
+MpscQueue<PendingRecordTake*, 256> s_retiredTakes;
+std::atomic<std::uint64_t> s_framesDropped{0};
+std::atomic<std::uint64_t> s_unpreparedTakes{0};
+//! Takes that could not be queued (the queue was full): leaked rather than freed on the audio thread.
+std::atomic<std::uint64_t> s_retireOverflows{0};
+
+//! Main thread only: start the reaper once. Without a running event loop (no QCoreApplication)
+//! takes are reaped only by an explicit reapRetiredTakes() call.
+void ensureReaperTimer()
+{
+	static QTimer* timer = nullptr;
+	if (timer != nullptr || qApp == nullptr) { return; }
+	timer = new QTimer(qApp);
+	timer->setInterval(10);
+	QObject::connect(timer, &QTimer::timeout, qApp, [] { SampleRecordHandle::reapRetiredTakes(); });
+	timer->start();
+}
+
+} // namespace
+
+
 SampleRecordHandle::SampleRecordHandle( SampleClip* clip ) :
 	PlayHandle( Type::SamplePlayHandle ),
-	m_accum( std::make_unique<SampleRecordAccumulator>(
-		Engine::audioEngine() != nullptr ? Engine::audioEngine()->inputSampleRate() : 44100 ) ),
+	m_take( new PendingRecordTake{ std::make_unique<SampleRecordAccumulator>(
+		Engine::audioEngine() != nullptr ? Engine::audioEngine()->inputSampleRate() : 44100 ), clip } ),
+	m_accum( m_take->accum.get() ),
 	m_framesRecorded( 0 ),
 	m_minLength( clip->length() ),
 	m_track( clip->getTrack() ),
@@ -63,6 +107,7 @@ SampleRecordHandle::SampleRecordHandle( SampleClip* clip ) :
 	// bus and uses no buffer, so the bus mixes nothing from it.
 	setAudioBusHandle( static_cast<SampleTrack*>( clip->getTrack() )->audioBusHandle() );
 	setUsesBuffer( false );
+	ensureReaperTimer();
 }
 
 
@@ -70,14 +115,65 @@ SampleRecordHandle::SampleRecordHandle( SampleClip* clip ) :
 
 SampleRecordHandle::~SampleRecordHandle()
 {
-	// D9c: the drain thread inside the accumulator has already assembled the
-	// take and its SampleBuffer, so the audio thread only installs the finished
-	// buffer here instead of building it. See SampleRecordAccumulator.h.
-	if (m_accum != nullptr)
+	// The engine destroys a handle on the audio thread when it is removed, so this must not
+	// allocate, join the drain thread or touch the model. The accumulator is told to finish
+	// (the drain thread assembles the take on its own) and the take is queued for the main
+	// thread, which installs it in reapRetiredTakes().
+	if (m_take == nullptr) { return; }
+	m_accum->requestFinish();
+	if (!s_retiredTakes.push(m_take)) { s_retireOverflows.fetch_add(1, std::memory_order_relaxed); }
+	m_take = nullptr;
+	m_accum = nullptr;
+}
+
+
+
+
+void SampleRecordHandle::reapRetiredTakes()
+{
+	PendingRecordTake* taken = nullptr;
+	while (s_retiredTakes.pop(&taken))
 	{
-		if (auto buffer = m_accum->finish()) { m_clip->setSampleBuffer(std::move(buffer)); }
+		std::unique_ptr<PendingRecordTake> take{ taken };
+		// The drain thread may still be emptying the ring: finish() joins it first, so the
+		// drop count read below is final.
+		auto buffer = take->accum->finish();
+		if (const auto dropped = take->accum->framesDropped(); dropped > 0)
+		{
+			s_framesDropped.fetch_add(dropped, std::memory_order_relaxed);
+			qWarning("Clip recording dropped %llu frames: the capture ring overflowed",
+				static_cast<unsigned long long>(dropped));
+		}
+		if (SampleClip* clip = take->clip.data())
+		{
+			if (buffer) { clip->setSampleBuffer(std::move(buffer)); }
+			clip->setRecord(false);
+		}
 	}
-	m_clip->setRecord( false );
+}
+
+
+
+
+std::uint64_t SampleRecordHandle::framesDroppedTotal() noexcept
+{
+	return s_framesDropped.load(std::memory_order_relaxed);
+}
+
+
+
+
+std::uint64_t SampleRecordHandle::unpreparedTakes() noexcept
+{
+	return s_unpreparedTakes.load(std::memory_order_relaxed);
+}
+
+
+
+
+void SampleRecordHandle::countUnpreparedTake() noexcept
+{
+	s_unpreparedTakes.fetch_add(1, std::memory_order_relaxed);
 }
 
 

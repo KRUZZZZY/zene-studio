@@ -25,6 +25,8 @@
 
 #include "SampleTrack.h"
 
+#include <array>
+
 #include <QDomElement>
 
 #include <vector>
@@ -124,7 +126,12 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		SampleWindow window;
 		f_cnt_t lead = 0;  //!< 0.5.0 ED-021: output frames before a frame-exact clip's audio starts
 	};
-	std::vector<ScheduledClip> clips;
+	// Fixed storage: the audio thread never grows it. A pass schedules the clips that contain
+	// its position, so a track needs more than this many overlapping at one instant to fill it;
+	// a clip past the limit is not started (its isPlaying flag is left clear).
+	constexpr std::size_t MaxScheduledClipsPerPass = 64;
+	std::array<ScheduledClip, MaxScheduledClipsPerPass> clips{};
+	std::size_t clipCount = 0;
 	class PatternTrack * pattern_track = nullptr;
 	if( _clip_num >= 0 )
 	{
@@ -138,7 +145,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			return false;
 		}
-		clips.push_back({sClip, sClip->sampleWindow()});
+		clips[clipCount++] = {sClip, sClip->sampleWindow()};
 		if (trackContainer() == Engine::patternStore())
 		{
 			auto bufferFramesPerTick = Engine::framesPerTick(sClip->sample().sampleRate());
@@ -146,7 +153,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			pattern_track = PatternTrack::findPatternTrack(_clip_num);
 			// this pass starts inside the source; the clip's own window still
 			// bounds it (was: sClip->setSampleStartFrame(), a model write)
-			clips.back().window = { sampleStart, sClip->sampleWindow().sourceOut };
+			clips[clipCount - 1].window = { sampleStart, sClip->sampleWindow().sourceOut };
 			sClip->setIsPlaying(true);
 			setPlaying(true);
 		}
@@ -176,9 +183,9 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					//holds no sample yet (its window is empty) and is exactly the clip that must
 					//start: #611 Slice 0 added the window test and silently stopped clip
 					//recording (BUGS_FOUND 11.8, RecordingLatencyTest)
-					if( windowStart < windowEnd || sClip->isRecord() )
+					if( ( windowStart < windowEnd || sClip->isRecord() ) && clipCount < clips.size() )
 					{
-						clips.push_back({sClip, { windowStart, windowEnd }, sClip->leadOutputFramesAt( _start )});
+						clips[clipCount++] = {sClip, { windowStart, windowEnd }, sClip->leadOutputFramesAt( _start )};
 						sClip->setIsPlaying( true );
 						nowPlaying = true;
 					}
@@ -193,8 +200,9 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		setPlaying(nowPlaying);
 	}
 
-	for (const auto& scheduled : clips)
+	for (std::size_t i = 0; i < clipCount; ++i)
 	{
+		const auto& scheduled = clips[i];
 		auto st = scheduled.clip;
 		if( !st->isMuted() )
 		{
@@ -205,8 +213,14 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 				{
 					return played_a_note;
 				}
-				auto smpHandle = new SampleRecordHandle(st);
-				handle = smpHandle;
+				// The take was built on the main thread when the clip was armed or the transport
+				// started (SampleClip::prepareRecordTake): the audio thread only claims it.
+				handle = st->claimRecordHandle();
+				if( handle == nullptr )
+				{
+					SampleRecordHandle::countUnpreparedTake();
+					continue;
+				}
 			}
 			else
 			{

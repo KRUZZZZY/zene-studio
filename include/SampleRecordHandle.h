@@ -25,7 +25,8 @@
 #ifndef LMMS_SAMPLE_RECORD_HANDLE_H
 #define LMMS_SAMPLE_RECORD_HANDLE_H
 
-#include <memory>
+#include <cstdint>
+#include <span>
 
 #include "PlayHandle.h"
 #include "PunchWindow.h"
@@ -40,12 +41,21 @@ class SampleBuffer;
 class SampleClip;
 class SampleRecordAccumulator;
 class Track;
+struct PendingRecordTake;
 
 
+//! One clip take. Built on the MAIN thread (SampleClip prepares it when the clip is armed or
+//! recording starts) so the audio thread only claims it (SampleClip::claimRecordHandle) and
+//! never allocates, starts a thread or touches the model to record. When the engine removes
+//! the handle, its destructor hands the take to the main thread (reapRetiredTakes), which
+//! finishes the accumulator and installs the take on the clip.
 class SampleRecordHandle : public PlayHandle
 {
 public:
+	//! Main thread only: allocates the accumulator and starts its drain thread.
 	SampleRecordHandle( SampleClip* clip );
+	//! Any thread, realtime-safe: never joins or touches the clip. The take is queued for the
+	//! main thread.
 	~SampleRecordHandle() override;
 
 	void play( std::span<SampleFrame> buffer ) override;
@@ -54,6 +64,16 @@ public:
 	bool isFromTrack( const Track * _track ) const override;
 
 	f_cnt_t framesRecorded() const;
+
+	//! Main thread: finishes every take queued by a destroyed handle and installs it on its
+	//! clip (setSampleBuffer, then setRecord(false)). Runs periodically from a main-thread timer.
+	static void reapRetiredTakes();
+	//! Frames the take ring dropped on overflow, summed over every take reaped so far.
+	static std::uint64_t framesDroppedTotal() noexcept;
+	//! Recording takes that found no prepared handle when the transport started them.
+	static std::uint64_t unpreparedTakes() noexcept;
+	//! Audio thread: count a take that could not be claimed (it is not recorded).
+	static void countUnpreparedTake() noexcept;
 
 
 private:
@@ -66,8 +86,10 @@ private:
 	// D9c (audit grade-B-recording.md): the take is staged into a fixed
 	// pre-allocated ring and assembled on the accumulator's own thread, so the
 	// audio thread neither allocates per period nor builds the take at stop.
-	// See SampleRecordAccumulator.h.
-	std::unique_ptr<SampleRecordAccumulator> m_accum;
+	// See SampleRecordAccumulator.h. Owned by this handle until its destructor
+	// queues it for the main thread.
+	PendingRecordTake* m_take;
+	SampleRecordAccumulator* m_accum;
 	f_cnt_t m_framesRecorded;
 	TimePos m_minLength;
 

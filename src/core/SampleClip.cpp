@@ -36,6 +36,7 @@
 #include "PatternStore.h"
 #include "PathUtil.h"
 #include "SampleClipView.h"
+#include "SampleRecordHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
 
@@ -61,6 +62,9 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	//playbutton clicked or space key / on Export Song set isPlaying to false
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()),
 			this, SLOT(playbackPositionChanged()), Qt::DirectConnection );
+	//a record take is built here, on the main thread, before the transport can claim it
+	connect( Engine::getSong(), SIGNAL(playbackStateChanged()), this, SLOT(prepareRecordTake()) );
+	connect( &m_recordModel, SIGNAL(dataChanged()), this, SLOT(prepareRecordTake()) );
 	//care about loops and jumps
 	connect(Engine::getSong(), &Song::playbackPositionJumped,
 			this, &SampleClip::playbackPositionChanged, Qt::DirectConnection);
@@ -103,6 +107,9 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	//playbutton clicked or space key / on Export Song set isPlaying to false
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()),
 			this, SLOT(playbackPositionChanged()), Qt::DirectConnection );
+	//a record take is built here, on the main thread, before the transport can claim it
+	connect( Engine::getSong(), SIGNAL(playbackStateChanged()), this, SLOT(prepareRecordTake()) );
+	connect( &m_recordModel, SIGNAL(dataChanged()), this, SLOT(prepareRecordTake()) );
 	//care about loops and jumps
 	connect(Engine::getSong(), &Song::playbackPositionJumped,
 			this, &SampleClip::playbackPositionChanged, Qt::DirectConnection);
@@ -125,6 +132,7 @@ SampleClip::SampleClip(const SampleClip& orig) :
 
 SampleClip::~SampleClip()
 {
+	delete m_preparedRecord;  // main thread: a take nobody claimed (its handle queues the drain)
 	auto sampletrack = dynamic_cast<SampleTrack*>(getTrack());
 	if ( sampletrack )
 	{
@@ -150,6 +158,23 @@ const QString& SampleClip::sampleFile() const
 bool SampleClip::hasSampleFileLoaded(const QString & filename) const
 {
 	return m_sample.sampleFile() == filename;
+}
+
+SampleRecordHandle* SampleClip::claimRecordHandle() noexcept
+{
+	auto* handle = m_preparedRecord;
+	m_preparedRecord = nullptr;
+	return handle;
+}
+
+void SampleClip::prepareRecordTake()
+{
+	// The connections are automatic: a signal emitted on the audio thread arrives here queued,
+	// so this always runs on the main thread, where the handle may allocate and start its thread.
+	if (m_preparedRecord != nullptr || !isRecord()) { return; }
+	auto* handle = new SampleRecordHandle(this);
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+	m_preparedRecord = handle;
 }
 
 void SampleClip::setSampleBuffer(std::shared_ptr<const SampleBuffer> sb)

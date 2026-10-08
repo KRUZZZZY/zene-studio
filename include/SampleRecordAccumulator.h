@@ -128,11 +128,19 @@ public:
 		return m_ring->overflowCount();
 	}
 
+	//! Audio-thread safe: ask the drain thread to finish the take and return
+	//! at once. It neither joins nor touches the take; finish() collects it.
+	void requestFinish() noexcept
+	{
+		m_finishing.store(true, std::memory_order_release);
+	}
+
 	//! Stop the drain thread, wait for it, and return the finished take.
 	//! All take-sized work (vector growth, SampleBuffer construction) has
-	//! already happened on the drain thread, so this call allocates nothing on
-	//! the calling thread even when that thread is the audio thread.
+	//! already happened on the drain thread, so this call allocates nothing.
 	//! Returns nullptr when no frames were recorded.
+	//! Joins the drain thread (a few ms at most): call it from the main thread,
+	//! never from the audio thread.
 	std::shared_ptr<const SampleBuffer> finish() noexcept
 	{
 		finishAndJoin();
