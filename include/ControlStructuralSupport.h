@@ -132,11 +132,11 @@ LMMS_EXPORT bool journalTrackMove(Track* track, int fromIndex, int toIndex);
  */
 LMMS_EXPORT bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index);
 
-/*! Takes \a effect off \a chain. When \a recorded is true (journalEffectRemoval
- *  returned true for this removal), the chain's enabled flag is not journalled:
- *  the one structural step is the checkpoint, and its undo restores the flag.
- *  Otherwise it is a plain removal. Callers delete the effect themselves. */
-LMMS_EXPORT void detachEffect(EffectChain* chain, Effect* effect, bool recorded);
+/*! Takes \a effect off \a chain. The removal pushes no checkpoint of its own,
+ *  whether or not journalEffectRemoval recorded it: a recorded removal's one
+ *  structural step restores the chain's enabled flag, and a removal that records
+ *  nothing must not leave an orphan flag step behind. Callers delete the effect. */
+LMMS_EXPORT void detachEffect(EffectChain* chain, Effect* effect);
 
 /*! Records the inverse of loading \a effect, a fresh instance of \a entry that
  *  sits at \a slot of \a chain: ONE action step whose undo takes the device out

@@ -40,6 +40,7 @@
 
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
+#include "ControlStructuralSupport.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
@@ -323,16 +324,7 @@ private slots:
 	{
 		QString device;
 		QString deviceName;
-		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
-		for (int i = 0; i < catalogue.size() && device.isEmpty(); ++i)
-		{
-			if (catalogue.at(i).loadable)
-			{
-				device = control::deviceId(i);
-				deviceName = catalogue.at(i).name;
-			}
-		}
-		if (device.isEmpty()) { QSKIP("this build lists no loadable effect module"); }
+		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
 		Mixer* mixer = Engine::mixer();
 		const int index = mixer->createChannel();
 		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
@@ -385,7 +377,6 @@ private slots:
 		QString deviceName;
 		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
 		ProjectJournal* journal = Engine::projectJournal();
-		QVERIFY(journal != nullptr);
 		const int oldCap = journal->maxUndoStates();
 		constexpr int cap = 8;
 		QVERIFY(journal->setMaxUndoStates(cap));
@@ -438,7 +429,6 @@ private slots:
 		QString deviceName;
 		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
 		ProjectJournal* journal = Engine::projectJournal();
-		QVERIFY(journal != nullptr);
 		const int oldCap = journal->maxUndoStates();
 		QVERIFY(journal->setMaxUndoStates(1));
 
@@ -479,7 +469,6 @@ private slots:
 		QString deviceName;
 		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
 		ProjectJournal* journal = Engine::projectJournal();
-		QVERIFY(journal != nullptr);
 		Mixer* mixer = Engine::mixer();
 		const int index = mixer->createChannel();
 		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
@@ -525,7 +514,6 @@ private slots:
 		QString deviceName;
 		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
 		ProjectJournal* journal = Engine::projectJournal();
-		QVERIFY(journal != nullptr);
 		Mixer* mixer = Engine::mixer();
 		const int index = mixer->createChannel();
 		const QString channel = control::channelIdOf(mixer->mixerChannel(index));
@@ -557,6 +545,120 @@ private slots:
 		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
 		QCOMPARE(QString::fromUtf8(chain->effects().front()->descriptor()->name), deviceName);
 		QVERIFY(!chain->isEnabled());
+		QCOMPARE(journal->undoDepth(), 0);
+
+		mixer->deleteChannel(index);
+		engine->takeLogMessages();
+	}
+
+	/*! The non-recorded branch of detachEffect (the capture-failure path) must
+	 *  push nothing: a removal that claims no undo step cannot own a checkpoint
+	 *  for the chain's enabled flag. Reached directly, since capture failure
+	 *  needs a device over the snapshot limit, which this build cannot load. */
+	void aNonRecordedDetachOfTheLastEffectPushesNoCheckpoint()
+	{
+		QString device;
+		QString deviceName;
+		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
+		ProjectJournal* journal = Engine::projectJournal();
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+		QString error;
+		QCOMPARE(int(ScriptEngine::instance()->runString(qstr(
+			"zene.mixer():channel(%1):chain():loadEffect(\"%2\")\n").arg(index).arg(device), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(chain->isEnabled());
+		Effect* effect = chain->effects().front();
+
+		journal->clearJournal();
+		control::detachEffect(chain, effect);
+		effect->deleteLater();
+		QVERIFY(chain->effects().empty());
+		QVERIFY(!chain->isEnabled());
+		QCOMPARE(journal->undoDepth(), 0);
+
+		mixer->deleteChannel(index);
+		ScriptEngine::instance()->takeLogMessages();
+	}
+
+	/*! A chain with two devices, switched off, loses one by a script: the chain
+	 *  stays non-empty, so the flag does not change, and one undo puts the device
+	 *  back in its place with the chain still off and no checkpoint left. */
+	void aScriptsRemovedEffectFromADisabledChainWithTwoStaysDisabledOnUndo()
+	{
+		QString device;
+		QString deviceName;
+		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
+		ProjectJournal* journal = Engine::projectJournal();
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(
+			"local chain = zene.mixer():channel(%1):chain()\n"
+			"chain:loadEffect(\"%2\")\n"
+			"chain:loadEffect(\"%2\")\n").arg(index).arg(device), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 2);
+
+		chain->setEnabledUnjournalled(false);
+		journal->clearJournal();
+
+		QCOMPARE(int(engine->runString(qstr(
+			"zene.mixer():channel(%1):chain():removeEffect(0)\n").arg(index), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QVERIFY(!chain->isEnabled());
+
+		journal->undo();
+		QCOMPARE(static_cast<int>(chain->effects().size()), 2);
+		QVERIFY(!chain->isEnabled());
+		QCOMPARE(journal->undoDepth(), 0);
+
+		mixer->deleteChannel(index);
+		engine->takeLogMessages();
+	}
+
+	/*! An enabled chain's only device removed through plugin.unload: one undo
+	 *  brings the device back, the chain is on again, and no checkpoint is left. */
+	void aPluginUnloadOfTheLastEffectOfAnEnabledChainRestoresItOnUndo()
+	{
+		QString device;
+		QString deviceName;
+		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
+		ProjectJournal* journal = Engine::projectJournal();
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		const QString channel = control::channelIdOf(mixer->mixerChannel(index));
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(
+			"zene.mixer():channel(%1):chain():loadEffect(\"%2\")\n").arg(index).arg(device), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(chain->isEnabled());
+		const QString fx = QStringLiteral("fx-%1").arg(chain->effects().front()->id());
+		journal->clearJournal();
+
+		QCOMPARE(int(engine->runString(qstr(
+			"local reply, err = zene.command('plugin.unload', {target = '%1', plugin = '%2'})\n"
+			"print(reply ~= nil and 'unloaded' or ('refused ' .. tostring(err)))\n").arg(channel, fx), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(engine->takeLogMessages().contains(qstr("unloaded")));
+		QVERIFY(chain->effects().empty());
+		QVERIFY(!chain->isEnabled());
+
+		journal->undo();
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QCOMPARE(QString::fromUtf8(chain->effects().front()->descriptor()->name), deviceName);
+		QVERIFY(chain->isEnabled());
 		QCOMPARE(journal->undoDepth(), 0);
 
 		mixer->deleteChannel(index);

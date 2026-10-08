@@ -466,10 +466,11 @@ private:
 
 } // namespace
 
-void detachEffect(EffectChain* chain, Effect* effect, bool recorded)
+void detachEffect(EffectChain* chain, Effect* effect)
 {
 	if (chain == nullptr) { return; }
-	if (!recorded) { chain->removeEffect(effect); return; }
+	// Both branches of the caller's decision take the same pause: the flag write
+	// of an emptying removal is never a checkpoint of its own.
 	JournalPause quiet;
 	chain->removeEffect(effect);
 }
@@ -498,6 +499,10 @@ bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 	addStructuralUndoStep(
 		[chainOf, xml, index, made, wasEnabled]() {
 			JournalPause quiet;
+			// The re-append and the flag restore run as one change to the audio
+			// model (the change lock is recursive, so appendEffect's own lock nests),
+			// so no block renders the recreated device with the wrong flag.
+			const auto changes = Engine::audioEngine()->requestChangesGuard();
 			if (EffectChain* live = chainOf())
 			{
 				*made = recreateEffectFromState(live, xml, index);

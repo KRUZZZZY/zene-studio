@@ -237,7 +237,7 @@ void applyRemoveEffect(EffectChain* chain, int index)
 	}
 	// A recorded removal pushes exactly one checkpoint: the structural step. The
 	// emptied chain's enabled flag is restored by that step, not journalled apart.
-	control::detachEffect(chain, effect, recorded);
+	control::detachEffect(chain, effect);
 	effect->deleteLater();
 }
 
