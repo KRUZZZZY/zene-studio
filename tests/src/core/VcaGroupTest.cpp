@@ -736,6 +736,42 @@ private slots:
 		evidence(QStringLiteral("solo_group members_audible=2,4,6 others_muted=1 restored=1"));
 	}
 
+	//! Luna cluster 1523: applyGroupSolo() returned early for a group whose solo
+	//! link is off or which is suspended, BEFORE the `!soloed` branch that calls
+	//! deactivateSolo(). Soloing such a group mutes every non-member; clearing
+	//! the flag then skipped the restore and left them muted for good.
+	void clearingSoloRestoresMutesAfterTheSoloLinkIsTurnedOff()
+	{
+		Mixer* mixer = Engine::mixer();
+		buildGraph(mixer);
+		VcaGroup* group = makeGroup(mixer, kMembers);
+		QVERIFY(group != nullptr);
+		mixer->toggledSolo();
+
+		group->soloModel()->setValue(true);
+		for (int ch = 1; ch < kChannels; ++ch)
+		{
+			if (!isMember(ch))
+			{
+				QVERIFY2(mixer->mixerChannel(ch)->m_muteModel.value() == true,
+					qPrintable(QStringLiteral("non-member %1 was not muted by the solo").arg(ch)));
+			}
+		}
+
+		// The solo link is turned off (or the group suspended) while the solo is
+		// still active, then the solo flag is cleared.
+		group->setLinks(true, true, false);
+		group->soloModel()->setValue(false);
+
+		for (int ch = 1; ch < kChannels; ++ch)
+		{
+			QVERIFY2(mixer->mixerChannel(ch)->m_muteModel.value() == false,
+				qPrintable(QStringLiteral("channel %1 stayed muted after the solo was cleared (1523)")
+					.arg(ch)));
+		}
+		evidence(QStringLiteral("solo_link_off_cleared members_restored=1"));
+	}
+
 	// -- 4. persistence -------------------------------------------------------
 
 	//! The grouping, the fader value and both flags survive save/reload, and the

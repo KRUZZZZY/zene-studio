@@ -250,6 +250,46 @@ private slots:
 		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), clipId}, {QStringLiteral("locked"), false}}).ok);
 		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), trackId}}).ok);
 	}
+
+	// Luna cluster 1501: the fader tap point is part of the send a snapshot holds, so a recall puts a
+	// send switched to the other side of the fader back where the capture found it - and the tap point
+	// survives the project file.
+	void aSnapshotRestoresASendsFaderTap()
+	{
+		MixerRoute* route = control::findMixerRoute(1, 2);
+		QVERIFY(route != nullptr);
+		route->setPreFader(true);
+		QVERIFY(run(QStringLiteral("mixer.snapshot_store"), {{QStringLiteral("name"), QStringLiteral("Tap")}}).ok);
+
+		route->setPreFader(false);
+		QVERIFY(!route->preFader());
+		const ControlResult recalled = run(QStringLiteral("mixer.snapshot_recall"),
+			{{QStringLiteral("name"), QStringLiteral("Tap")}, {QStringLiteral("parts"), QJsonArray{QStringLiteral("sends")}}});
+		QVERIFY2(recalled.ok, qPrintable(recalled.errorMessage));
+		QVERIFY(route->preFader());  // back to the tap the capture took
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("song"));
+		MixerSnapshots::instance().save(doc, root);
+		MixerSnapshots::instance().clear();
+		QVERIFY(MixerSnapshots::instance().find(QStringLiteral("Tap")) == nullptr);
+		MixerSnapshots::instance().load(root.firstChildElement(QStringLiteral("mixer-snapshots")));
+		const MixerSnapshot* back = MixerSnapshots::instance().find(QStringLiteral("Tap"));
+		QVERIFY(back != nullptr);
+		bool sawSend = false;
+		const int target = route->receiver()->id();
+		for (const MixerChannelState& state : back->channels)
+		{
+			for (const MixerSendState& send : state.sends)
+			{
+				if (send.to == target) { sawSend = true; QVERIFY(send.preFader); }
+			}
+		}
+		QVERIFY(sawSend);  // the reloaded snapshot still holds a pre-fader send to channel 2
+
+		QVERIFY(run(QStringLiteral("mixer.snapshot_remove"), {{QStringLiteral("name"), QStringLiteral("Tap")}}).ok);
+		route->setPreFader(false);
+	}
 };
 
 QTEST_MAIN(ProjectStateTest)

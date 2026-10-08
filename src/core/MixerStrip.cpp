@@ -362,6 +362,25 @@ void load(MixerChannel& c, const QDomElement& e)
 	c.m_note = e.attribute(QStringLiteral("note"));
 }
 
+void reset(MixerChannel& c)
+{
+	c.m_trimModel.setValue(0.f);
+	c.m_polarityLeftModel.setValue(false);
+	c.m_polarityRightModel.setValue(false);
+	c.m_monoModel.setValue(false);
+	c.m_swapModel.setValue(false);
+	c.m_inputMonoModel.setValue(false);
+	c.m_crossfadeSideModel.setValue(0);
+	c.m_eqLowModel.setValue(0.f);
+	c.m_eqMidModel.setValue(0.f);
+	c.m_eqMidFreqModel.setValue(1000.f);
+	c.m_eqHighModel.setValue(0.f);
+	c.m_panModeModel.setValue(static_cast<int>(PanMode::Balance));
+	c.m_panRightModel.setValue(0.f);
+	c.m_widthModel.setValue(1.f);
+	c.m_soloSafeModel.setValue(false);
+}
+
 bool additiveSolo()
 {
 	return ConfigManager::inst()->value(QStringLiteral("mixer"), QStringLiteral("additivesolo"), QStringLiteral("0")).toInt() != 0;
@@ -383,6 +402,8 @@ void Mixer::applyAdditiveSolo()
 	// rest are muted, solo-safe ones excepted. The mute state from before the first solo comes back
 	// when the last solo goes.
 	std::vector<MixerChannel*> soloed;
+	// Luna cluster 1523: a channel solo now owns the mute state.
+	m_soloingGroup = nullptr;
 	for (MixerChannel* channel : m_mixerChannels)
 	{
 		if (channel->m_soloModel.value()) { soloed.push_back(channel); }

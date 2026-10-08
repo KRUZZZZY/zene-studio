@@ -43,6 +43,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <set>
+#include <vector>
 #include <QColor>
 
 namespace lmms
@@ -269,6 +271,15 @@ public:
 
 private:
 	void doProcessing() override;
+	//! The two sets carry the channels already expanded by the ongoing solo
+	//!  propagation, one set per walk direction: a channel reached sender-only
+	//!  must still be expanded by a receiver walk, and the reverse. Feedback
+	//!  mode permits real cycles in the send graph, so each walk expands a
+	//!  channel at most once per direction.
+	void unmuteSenderForSolo(std::set<MixerChannel*>& senderVisited,
+		std::set<MixerChannel*>& receiverVisited);
+	void unmuteReceiverForSolo(std::set<MixerChannel*>& senderVisited,
+		std::set<MixerChannel*>& receiverVisited);
 	int m_channelIndex;
 	/*! The channel's stable id: the number in `ch-<n>`. Assigned once, in the
 	 *  constructor, and taken back from the project file by
@@ -477,6 +488,17 @@ public:
 		return m_deferred;
 	}
 
+	//! Luna cluster 4277: restore the persisted deferred flag on load. The
+	//! flag is INFERRED at creation time from the routing graph, and loading
+	//! re-infers it against a half-built graph, so a saved deferred route came
+	//! back gating. The setter only runs on the control thread inside
+	//! loadSettings (before playback starts), the same way setPreFader() is
+	//! applied there.
+	void setDeferred(bool deferred)
+	{
+		m_deferred = deferred;
+	}
+
 	//! Tap snapshot the receiver reads for a deferred route: the sender's
 	//! intermediate as committed at the start of the current period.
 	const AudioBuffer& committed() const
@@ -597,6 +619,11 @@ public:
 	//! Cycle check over the union of regular and sidechain edges, so a
 	//! sidechain edge can never deadlock the dependency counter.
 	bool checkInfiniteLoop( MixerChannel * from, MixerChannel * to );
+	//! The traversal itself: \a visited carries the channels already expanded
+	//! on this walk, so an existing cycle (which the feedback submode permits)
+	//! is cut instead of recursed into forever.
+	bool checkInfiniteLoop( MixerChannel * from, MixerChannel * to,
+		std::vector<MixerChannel*>& visited );
 	//! True when adding from->to would close a cycle made of sidechain sends
 	//! alone. Such a cycle has no regular send to anchor the ordering, so it
 	//! is refused outright (see createSidechainSend).
@@ -737,6 +764,11 @@ private:
 	bool m_feedbackMode = false;
 
 	int m_lastSoloed;
+
+	//! Luna cluster 1523: the group whose flag muted the mix, if a group solo
+	//! is active. Only that group may restore it, so clearing a group flag that
+	//! never soloed cannot unmute a channel solo in progress. Control thread.
+	VcaGroup* m_soloingGroup = nullptr;
 } ;
 
 

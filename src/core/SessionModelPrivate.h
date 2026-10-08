@@ -76,20 +76,28 @@ inline LaunchMode launchModeFromInt( int value )
 
 inline LaunchQuantisation launchQuantisationFromInt( int value, bool allowGlobal )
 {
-	if( allowGlobal && value == static_cast<int>( LaunchQuantisation::Global ) )
+	// EVERY grid the enum names, listed rather than switched on: the sub-bar
+	// values and EightBars carry their own enumerators (include/SessionModel.h),
+	// and a switch that stopped at FourBars sent all of them to the fallback -
+	// a 1/16 cell came back as Global, and a global EightBars came back as Bar.
+	// A value that is not a grid at all still falls back rather than producing
+	// an enum no switch downstream has a case for.
+	static constexpr LaunchQuantisation Grids[] = {
+		LaunchQuantisation::None,
+		LaunchQuantisation::Bar,
+		LaunchQuantisation::TwoBars,
+		LaunchQuantisation::FourBars,
+		LaunchQuantisation::Sixteenth,
+		LaunchQuantisation::Eighth,
+		LaunchQuantisation::Quarter,
+		LaunchQuantisation::Half,
+		LaunchQuantisation::EightBars,
+	};
+	for( const LaunchQuantisation grid : Grids )
 	{
-		return LaunchQuantisation::Global;
+		if( static_cast<int>( grid ) == value ) { return grid; }
 	}
-	switch( value )
-	{
-		case static_cast<int>( LaunchQuantisation::None ):
-		case static_cast<int>( LaunchQuantisation::Bar ):
-		case static_cast<int>( LaunchQuantisation::TwoBars ):
-		case static_cast<int>( LaunchQuantisation::FourBars ):
-			return static_cast<LaunchQuantisation>( value );
-		default:
-			return allowGlobal ? LaunchQuantisation::Global : LaunchQuantisation::Bar;
-	}
+	return allowGlobal ? LaunchQuantisation::Global : LaunchQuantisation::Bar;
 }
 
 inline FollowAction::Type followActionTypeFromInt( int value )

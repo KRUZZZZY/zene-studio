@@ -122,8 +122,12 @@ protected:
 
 	/*! R2.3: sizes the stereo scratch bus for pushes of up to @a maxFrames and selects the
 	 *  captured pair (@a left, @a right) that bus carries. Off the audio thread - at open, or
-	 *  in a backend's buffer-size callback - because publishCaptured() must not allocate. */
-	void prepareCapture( f_cnt_t maxFrames, int left = 0, int right = 1 );
+	 *  in a backend's buffer-size callback - because publishCaptured() must not allocate.
+	 *  A negative @a left or @a right means "the configured pair"
+	 *  (AudioInputPath::configuredPlan()), which is what a backend that passes no pair of its
+	 *  own gets: only ALSA knows its granted width when it opens, so the others cannot
+	 *  clamp the configured pair themselves. */
+	void prepareCapture( f_cnt_t maxFrames, int left = -1, int right = -1 );
 	/*! R2.3: THE capture publisher, one for every backend (it was AudioAlsa's alone, and JACK
 	 *  and SDL each fed a different subset). One interleaved block of @a channels channels
 	 *  feeds all three consumers: the N-channel path (record routes), the stereo bus (the

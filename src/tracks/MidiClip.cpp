@@ -282,6 +282,12 @@ void MidiClip::clearNotes()
 	checkType();
 	updateLength();
 	emit dataChanged();
+
+	// Row 6: a bulk clear is a content edit like any other, so it propagates like
+	// any other. mirrorContent() is re-entrant-safe (ClipLinks.cpp), which is what
+	// makes writeContent() - it clears a member before copying onto it - safe to
+	// reach this entry point.
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
 }
 
 

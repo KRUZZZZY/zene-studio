@@ -99,8 +99,21 @@ bool SessionScheduler::installScenePlan( int scene, const FollowPlan& plan ) noe
 	// none consumes nothing (installFollowPlan's two rules).
 	InstalledScenePlan* target = sceneEntry( scene, plan.enabled );
 	if( target == nullptr ) { return !plan.enabled; }
-	target->scene = scene;
-	target->plan = plan;
+	if( !plan.enabled )
+	{
+		// A DISABLED plan does nothing, so its entry is GIVEN BACK rather than
+		// left addressed to the scene - the same rule installFollowPlan follows
+		// for a cell. The free-entry loop only claims entries whose scene is
+		// negative, so an entry that kept its scene was unreachable again: 16
+		// scenes armed and disabled once each exhausted the table and every
+		// later plan was refused (applySceneCommand counts that as a drop).
+		*target = InstalledScenePlan{};
+	}
+	else
+	{
+		target->scene = scene;
+		target->plan = plan;
+	}
 	int armed = 0;
 	for( const auto& installed : m_scenePlans )
 	{

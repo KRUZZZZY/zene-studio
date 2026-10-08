@@ -313,6 +313,44 @@ private slots:
 		QCOMPARE( output.count( QStringLiteral( "must-survive" ) ), 1 );
 	}
 
+	/*! A pattern attribute that is not an int restores as "no reference" (-1),
+	 *  never as pattern 0: QString::toInt() returns 0 when the conversion
+	 *  fails, and 0 is a VALID pattern id, so a malformed or overflowing
+	 *  reference silently pointed the cell at the first pattern in the store.
+	 */
+	void anUnreadablePatternIdIsNotPatternZero()
+	{
+		QDomDocument doc;
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"999999999999\"/>" ) );
+		const QDomElement overflow = doc.documentElement();
+		QVERIFY( overflow.isElement() );
+		ClipSlot slot;
+		slot.restoreState( overflow );
+		QCOMPARE( static_cast<int>( slot.type() ), static_cast<int>( ClipSlot::Type::Midi ) );
+		QCOMPARE( slot.patternId(), -1 );
+
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"abc\"/>" ) );
+		ClipSlot text;
+		text.restoreState( doc.documentElement() );
+		QCOMPARE( text.patternId(), -1 );
+
+		// A missing attribute keeps its documented default.
+		doc.setContent( QStringLiteral( "<clip type=\"1\"/>" ) );
+		ClipSlot absent;
+		absent.restoreState( doc.documentElement() );
+		QCOMPARE( absent.patternId(), -1 );
+
+		// A well-formed id still round-trips, including 0 itself.
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"7\"/>" ) );
+		ClipSlot good;
+		good.restoreState( doc.documentElement() );
+		QCOMPARE( good.patternId(), 7 );
+		doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"0\"/>" ) );
+		ClipSlot zero;
+		zero.restoreState( doc.documentElement() );
+		QCOMPARE( zero.patternId(), 0 );
+	}
+
 	//! A slot references either a pattern or an audio clip, never both
 	//! (SPEC-zene-studio A1 mutual exclusivity).
 	void slotReferenceIsMutuallyExclusive()
@@ -336,6 +374,55 @@ private slots:
 		slot.clear();
 		QVERIFY( slot.isEmpty() );
 		QCOMPARE( slot.patternId(), -1 );
+	}
+
+	/*! Every launch quantisation survives a save/load cycle. The conversion from
+	 *  the persisted int recognised only None, Bar, TwoBars and FourBars, so the
+	 *  sub-bar values (Sixteenth, Eighth, Quarter, Half) and EightBars fell to the
+	 *  fallback: a cell set to a 1/16 grid came back as Global, and a GLOBAL
+	 *  EightBars came back as Bar.
+	 */
+	void everyLaunchQuantisationSurvivesAReload()
+	{
+		const struct { LaunchQuantisation value; int persisted; } values[] = {
+			{ LaunchQuantisation::None, 0 },
+			{ LaunchQuantisation::Bar, 1 },
+			{ LaunchQuantisation::TwoBars, 2 },
+			{ LaunchQuantisation::FourBars, 4 },
+			{ LaunchQuantisation::Sixteenth, -2 },
+			{ LaunchQuantisation::Eighth, -3 },
+			{ LaunchQuantisation::Quarter, -4 },
+			{ LaunchQuantisation::Half, -5 },
+			{ LaunchQuantisation::EightBars, 8 },
+		};
+		for( const auto& v : values )
+		{
+			QDomDocument doc;
+			doc.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"5\" quantisation=\"%1\"/>" )
+				.arg( v.persisted ) );
+			ClipSlot slot;
+			slot.restoreState( doc.documentElement() );
+			QCOMPARE( static_cast<int>( slot.launchQuantisation() ),
+				static_cast<int>( v.value ) );
+		}
+
+		// Global is a per-clip pointer to the session default, and it is the
+		// fallback the missing cases took - so it must still restore as itself.
+		QDomDocument global;
+		global.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"5\" quantisation=\"-1\"/>" ) );
+		ClipSlot inherited;
+		inherited.restoreState( global.documentElement() );
+		QCOMPARE( static_cast<int>( inherited.launchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::Global ) );
+
+		// A value that is not a grid at all still falls back rather than
+		// producing an enum no switch has a case for.
+		QDomDocument junk;
+		junk.setContent( QStringLiteral( "<clip type=\"1\" pattern=\"5\" quantisation=\"99\"/>" ) );
+		ClipSlot unknown;
+		unknown.restoreState( junk.documentElement() );
+		QCOMPARE( static_cast<int>( unknown.launchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::Global ) );
 	}
 
 	//! Growing and shrinking the grid keeps the slots that remain.

@@ -467,6 +467,13 @@ void AudioPortsModel::Matrix::updateUsedTrackChannels(ch_cnt_t channel)
 
 void AudioPortsModel::Matrix::updateUsedTrackChannels()
 {
+	// BUG-CHBOUND: the bitset is MaxTrackChannels wide, so the loop below only
+	// rewrites the rows that still exist. Clearing first drops the bits of the rows
+	// a shrink removed, which otherwise stayed set and made PinConnector draw a
+	// passthrough line and the ports control command list a track channel the model
+	// no longer has.
+	m_usedTrackChannels.reset();
+
 	for (ch_cnt_t tc = 0; tc < trackChannelCount(); ++tc)
 	{
 		updateUsedTrackChannels(tc);

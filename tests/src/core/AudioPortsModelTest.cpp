@@ -235,6 +235,30 @@ private slots:
 		QCOMPARE(spy.count(), 2);
 	}
 
+	//! Shrinking the track channel count clears the used bits of the rows that are gone
+	void shrinkingTrackChannelCountClearsUsedBits()
+	{
+		TestAudioPortsModel model{2, 2, false};
+		model.setTrackChannelCount(4);
+
+		// Connect a fourth track channel, so bit 3 of the used cache is set.
+		model.out().setPin(3, 0, true);
+		QVERIFY(model.out().usedTrackChannels()[3]);
+		QVERIFY(model.in().usedTrackChannels()[0]);
+
+		// Shrinking to two track channels removes those rows ...
+		model.setTrackChannelCount(2);
+		QCOMPARE(model.trackChannelCount(), ch_cnt_t(2));
+		QCOMPARE(model.out().pins().size(), std::size_t(2));
+
+		// ... so the cache must not still report them as connected: PinConnector draws
+		// a passthrough line and the ports control command lists these bits verbatim.
+		QVERIFY(!model.out().usedTrackChannels()[2]);
+		QVERIFY(!model.out().usedTrackChannels()[3]);
+		QVERIFY(!model.in().usedTrackChannels()[2]);
+		QVERIFY(!model.in().usedTrackChannels()[3]);
+	}
+
 	//! Invalid track channel counts are rejected with a clear message
 	void invalidTrackChannelCountsThrow()
 	{

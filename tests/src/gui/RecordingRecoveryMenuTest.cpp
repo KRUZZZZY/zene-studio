@@ -72,6 +72,24 @@ bool writeWav(const QString& path, int frames)
 	return true;
 }
 
+/*! A 16-bit mono WAV whose header declares \a declaredFrames but which only holds
+ *  \a writtenFrames of them - what a crash or a truncated write leaves: the sizes in
+ *  the header are the sizes the writer INTENDED, not the bytes that reached the disk. */
+bool writeTruncatedWav(const QString& path, int declaredFrames, int writtenFrames)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly)) { return false; }
+	QDataStream out(&file);
+	out.setByteOrder(QDataStream::LittleEndian);
+	const quint32 data = static_cast<quint32>(declaredFrames) * 2;
+	out.writeRawData("RIFF", 4); out << quint32(36 + data);
+	out.writeRawData("WAVEfmt ", 8); out << quint32(16) << quint16(1) << quint16(1) << quint32(kRate)
+		<< quint32(kRate * 2) << quint16(2) << quint16(16);
+	out.writeRawData("data", 4); out << data;
+	for (int i = 0; i < writtenFrames; ++i) { out << qint16((i / 50) % 2 ? 3000 : -3000); }
+	return true;
+}
+
 ControlResult run(const QString& id, const QJsonObject& args = QJsonObject{})
 {
 	return ControlRegistry::instance()->invoke(id, args);
@@ -162,6 +180,33 @@ private slots:
 		emit menu->aboutToShow();
 		QCOMPARE(menu->actions().first()->text(), QStringLiteral("No interrupted recording"));
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+	}
+
+	//! frames_in_file is what the take's bytes can back, never what its header
+	//! declares: a crashed header still says 48000 frames while only half of them
+	//! reached the disk, and an offer built on the declared size promises audio
+	//! that is not there.
+	void aTruncatedTakeIsOfferedWhatIsActuallyOnDisk()
+	{
+		const ControlResult scanned = run(QStringLiteral("record.recovery_get_state"));
+		QVERIFY2(scanned.ok, qPrintable(scanned.errorMessage));
+		const QString dir = scanned.result.value(QStringLiteral("dir")).toString();
+		const QString take = QDir(dir).filePath(QStringLiteral("zene-test-take-truncated.wav"));
+		QVERIFY(writeTruncatedWav(take, 2 * kFrames, kFrames));
+		QVERIFY(run(QStringLiteral("record.journal_begin"), {{QStringLiteral("take"), take},
+			{QStringLiteral("sample_rate"), kRate}, {QStringLiteral("channels"), 1}}).ok);
+		// The journal claims the whole declared length - a recorder that had not
+		// flushed its last update is exactly the state recovery exists for.
+		QVERIFY(run(QStringLiteral("record.journal_update"), {{QStringLiteral("take"), take},
+			{QStringLiteral("frames_on_disk"), 2 * kFrames}}).ok);
+
+		const QJsonObject entry = run(QStringLiteral("record.recovery_restore"),
+			{{QStringLiteral("take"), take}}).result;
+		QCOMPARE(entry.value(QStringLiteral("frames_in_file")).toInt(), kFrames);
+		QCOMPARE(entry.value(QStringLiteral("frames_recoverable")).toInt(), kFrames);
+
+		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
+		QFile::remove(take);
 	}
 
 private:

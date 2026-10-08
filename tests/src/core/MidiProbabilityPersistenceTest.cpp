@@ -31,6 +31,9 @@
 
 #include <QtTest>
 
+#include <cmath>
+#include <limits>
+
 #include <QDomDocument>
 #include <QDomElement>
 #include <QDomNamedNodeMap>
@@ -131,6 +134,26 @@ QString legacyProject( const QString& version )
 		"    </trackcontainer>\n"
 		"  </song>\n"
 		"</lmms-project>\n" ).arg( version );
+}
+
+//! A <note> element carrying the given raw prob/veljit ATTRIBUTE TEXT, exactly
+//! as a hand-edited or corrupt project file would spell it. Built through
+//! QDomElement::setAttribute so the string reaches Note::loadSettings
+//! untouched - QString::toFloat has to see the same bytes the file has.
+QDomElement noteElementWith( QDomDocument& doc, QDomElement& parent, const char* prob,
+	const char* velJitter )
+{
+	QDomElement note = doc.createElement( QStringLiteral( "note" ) );
+	note.setAttribute( QStringLiteral( "key" ), QStringLiteral( "60" ) );
+	note.setAttribute( QStringLiteral( "vol" ), QStringLiteral( "100" ) );
+	note.setAttribute( QStringLiteral( "pan" ), QStringLiteral( "0" ) );
+	note.setAttribute( QStringLiteral( "len" ), QStringLiteral( "384" ) );
+	note.setAttribute( QStringLiteral( "pos" ), QStringLiteral( "0" ) );
+	note.setAttribute( QStringLiteral( "type" ), QStringLiteral( "0" ) );
+	note.setAttribute( QStringLiteral( "prob" ), QLatin1String( prob ) );
+	note.setAttribute( QStringLiteral( "veljit" ), QLatin1String( velJitter ) );
+	parent.appendChild( note );
+	return note;
 }
 
 } // namespace
@@ -349,6 +372,107 @@ private slots:
 		// canonical form rather than the writer's per-process attribute order
 		DataFile roundTrip( first.toUtf8() );
 		QCOMPARE( savedDocumentDigest( fileToString( roundTrip ) ), savedDocumentDigest( first ) );
+	}
+//! (e) Luna cluster 2344 / 3326: a value the file cannot express must not
+	//! become the note's probability or jitter. `toFloat()` without checking
+	//! success turns "bad" into 0 (the note is then silent for the rest of the
+	//! document's life), and std::clamp leaves a NaN NaN because every
+	//! comparison against it is false - so a non-finite value would travel
+	//! straight into the playback roll (NoteRandom).
+	void nonFiniteAndMalformedValuesFallBackToTheDocumentedDefaults()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement( QStringLiteral( "notes" ) );
+
+		// NaN in the file: every clamp comparison is false, so the clamp hands
+		// the NaN straight through unless the value is rejected first.
+		const QDomElement nanElement = noteElementWith( doc, root, "nan", "nan" );
+		Note fromNan;
+		fromNan.restoreState( nanElement );
+		QVERIFY2( std::isfinite( fromNan.probability() ),
+			"prob=\"nan\" was loaded as a non-finite probability" );
+		QCOMPARE( fromNan.probability(), 1.f );
+		QVERIFY( std::isfinite( fromNan.velocityJitter() ) );
+		QCOMPARE( fromNan.velocityJitter(), 0.f );
+
+		// Unparsable text: toFloat() reports failure and yields 0, which used
+		// to be stored as the note's real probability - a silent note.
+		const QDomElement badElement = noteElementWith( doc, root, "bad", "worse" );
+		Note fromBad;
+		fromBad.restoreState( badElement );
+		QCOMPARE( fromBad.probability(), 1.f );
+		QCOMPARE( fromBad.velocityJitter(), 0.f );
+
+		// Out-of-range but FINITE text still clamps - the existing rule is
+		// untouched by this one.
+		const QDomElement hugeElement = noteElementWith( doc, root, "7", "9" );
+		Note fromHuge;
+		fromHuge.restoreState( hugeElement );
+		QCOMPARE( fromHuge.probability(), 1.f );
+		QCOMPARE( fromHuge.velocityJitter(), 1.f );
+
+		// The setters take the same route (control surface / a direct caller),
+		// so they reject a non-finite argument the same way.
+		Note direct;
+		direct.setProbability( std::numeric_limits<float>::quiet_NaN() );
+		QCOMPARE( direct.probability(), 1.f );
+		direct.setVelocityJitter( std::numeric_limits<float>::quiet_NaN() );
+		QCOMPARE( direct.velocityJitter(), 0.f );
+		direct.setProbability( std::numeric_limits<float>::infinity() );
+		QCOMPARE( direct.probability(), 1.f );
+		direct.setVelocityJitter( -std::numeric_limits<float>::infinity() );
+		QCOMPARE( direct.velocityJitter(), 0.f );
+
+		// ...and a finite value on the same object still lands, so the guard
+		// is not swallowing everything.
+		direct.setProbability( 0.25f );
+		QCOMPARE( direct.probability(), 0.25f );
+		direct.setVelocityJitter( 0.75f );
+		QCOMPARE( direct.velocityJitter(), 0.75f );
+	}
+
+	//! (f) Luna cluster 3325: the pre-quantise position and length are optional
+	//! attributes that note.restore_timing puts back, and Note::loadSettings read
+	//! them with toInt() without asking whether the conversion succeeded. QString
+	//! reports that failure by returning 0, so <note qpos="bad" qlen="bad"> loaded
+	//! as "this note was moved to tick 0 and is one tick long" - and restore_timing
+	//! faithfully moved it there. Both halves are required together, so a valid
+	//! qpos with an unreadable qlen is not usable timing either.
+	void unparseableUnquantisedTimingIsNotTreatedAsTickZero()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement( QStringLiteral( "notes" ) );
+
+		for ( const auto& pair : { std::make_pair( "bad", "bad" ), std::make_pair( "96", "" ),
+				 std::make_pair( "", "96" ), std::make_pair( "-1", "8" ),
+				 std::make_pair( "8", "0" ) } )
+		{
+			QDomElement element = noteElementWith( doc, root, "1", "0" );
+			element.setAttribute( QStringLiteral( "pos" ), QStringLiteral( "24" ) );
+			element.setAttribute( QStringLiteral( "len" ), QStringLiteral( "48" ) );
+			element.setAttribute( QStringLiteral( "qpos" ), QString::fromLatin1( pair.first ) );
+			element.setAttribute( QStringLiteral( "qlen" ), QString::fromLatin1( pair.second ) );
+
+			Note loaded;
+			loaded.restoreState( element );
+			// Nothing to restore, so nothing claims the note carries a timing.
+			QVERIFY2( !loaded.hasUnquantisedTiming(), pair.first );
+			QVERIFY( !loaded.restoreTiming() );
+			QCOMPARE( static_cast<int>( loaded.pos().getTicks() ), 24 );
+			QCOMPARE( static_cast<int>( loaded.length().getTicks() ), 48 );
+		}
+
+		// ...and the valid pair is still restored exactly, so the guard rejects
+		// only what the file could not express.
+		Note timed( TimePos( 48 ), TimePos( 24 ), 60 );
+		timed.rememberTiming();
+		timed.setPos( TimePos( 0 ) );
+		Note timedLoaded;
+		timedLoaded.restoreState( timed.saveState( doc, root ) );
+		QVERIFY( timedLoaded.hasUnquantisedTiming() );
+		QVERIFY( timedLoaded.restoreTiming() );
+		QCOMPARE( static_cast<int>( timedLoaded.pos().getTicks() ), 24 );
+		QCOMPARE( static_cast<int>( timedLoaded.length().getTicks() ), 48 );
 	}
 };
 

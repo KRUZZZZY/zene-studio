@@ -52,7 +52,13 @@ MidiPlayback::MidiPlayback()
 
 void MidiPlayback::setSwing(float swing, int grid)
 {
-	m_swing.store(std::clamp(swing, 0.f, MaxSwing), std::memory_order_relaxed);
+	// std::clamp leaves a NaN untouched - every comparison against it is false -
+	// so a project file carrying swing="nan" (or a caller passing one) would store
+	// a non-finite amount that then reaches delayFrames(), save() and
+	// shouldPersist(). Load non-finite as the default, off, exactly like an
+	// unreadable attribute.
+	const float amount = std::isfinite(swing) ? swing : 0.f;
+	m_swing.store(std::clamp(amount, 0.f, MaxSwing), std::memory_order_relaxed);
 	m_swingGrid.store(grid == 2 * DefaultSwingGrid ? grid : DefaultSwingGrid, std::memory_order_relaxed);
 }
 

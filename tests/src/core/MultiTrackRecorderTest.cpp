@@ -147,6 +147,37 @@ private slots:
 		QVERIFY(QFileInfo::exists(take));
 		QCOMPARE(recorder.track(0).journalPath(), std::string());
 	}
+
+	//! A take path may legally END in a space - so the journal must carry it
+	//! through verbatim. Trimming the whole line used to rewrite the path on
+	//! the way back in, and recovery then found no take at the recorded place
+	//! and offered nothing for a capture that really did happen.
+	void JournalRoundTripsATakePathThatEndsInASpace()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString take = dir.filePath("spaced take ");
+		// isRecoverable() asks the filesystem whether the take is there, so the
+		// take itself must exist for this to be about the journal's own parsing.
+		QFile takeFile(take);
+		QVERIFY(takeFile.open(QIODevice::WriteOnly));
+		takeFile.close();
+
+		TakeJournal written;
+		written.state = QStringLiteral("in_progress");
+		written.takePath = take;
+		written.sampleRate = 48000;
+		written.channels = 2;
+		const QString journal = recjournal::journalPathFor(take);
+		QVERIFY(recjournal::write(journal, written));
+
+		TakeJournal opened;
+		QVERIFY(recjournal::read(journal, &opened));
+		QCOMPARE(opened.takePath, take);
+		// the whole point: recovery must find the take it journalled
+		QVERIFY(recjournal::isRecoverable(opened));
+		QCOMPARE(recjournal::scan(dir.path()).size(), 1);
+	}
 } ;
 
 QTEST_APPLESS_MAIN(MultiTrackRecorderTest)

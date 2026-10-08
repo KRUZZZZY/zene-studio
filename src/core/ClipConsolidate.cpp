@@ -55,15 +55,19 @@ void mixClip(SampleClip* clip, tick_t start, double framesPerTick, std::vector<S
 	const tick_t clipStart = clip->startPosition().getTicks();
 	const tick_t from = std::max(clipStart, clipStart + clip->startTimeOffset().getTicks());
 	const tick_t to = clip->endPosition().getTicks();
-	if (from >= to) { return; }
-	const SampleWindow window{clip->sourceFrameAt(TimePos(from)), clip->sourceFrameAt(clip->endPosition())};
+	// The range can start inside the clip: only the audio from the later of the two is in it, and
+	// it is read from the source frame under THAT tick. (Rendering from `from` would place the
+	// clip's first frame before the start of the mix.)
+	const tick_t begin = std::max(from, start);
+	if (begin >= to) { return; }
+	const SampleWindow window{clip->sourceFrameAt(TimePos(begin)), clip->sourceFrameAt(clip->endPosition())};
 	if (window.sourceIn >= window.sourceOut) { return; }
 
 	SamplePlayHandle handle(clip, window);
 	handle.setIgnoresTrackMute(true);
 	// Tick differences in double: a far negative range start must not overflow tick_t.
-	const auto at = static_cast<f_cnt_t>(std::llround((static_cast<double>(from) - start) * framesPerTick));
-	const auto span = static_cast<f_cnt_t>(std::llround((static_cast<double>(to) - from) * framesPerTick));
+	const auto at = static_cast<f_cnt_t>(std::llround((static_cast<double>(begin) - start) * framesPerTick));
+	const auto span = static_cast<f_cnt_t>(std::llround((static_cast<double>(to) - begin) * framesPerTick));
 	const f_cnt_t room = static_cast<f_cnt_t>(mix->size()) > at ? static_cast<f_cnt_t>(mix->size()) - at : 0;
 	const f_cnt_t length = std::min({span, room, handle.totalFrames()});
 

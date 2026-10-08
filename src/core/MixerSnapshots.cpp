@@ -28,6 +28,7 @@
 
 #include <QDomElement>
 
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "Mixer.h"
 
@@ -58,7 +59,7 @@ MixerChannelState stateOf(MixerChannel* channel)
 	for (MixerRoute* route : channel->m_sends)
 	{
 		state.sends.push_back(MixerSendState{route->receiver()->id(), route->amount()->value(), route->pan()->value(),
-			route->enabledModel()->value()});
+			route->enabledModel()->value(), route->preFader()});
 	}
 	return state;
 }
@@ -80,9 +81,17 @@ int applySends(MixerChannel* channel, const std::vector<MixerSendState>& sends)
 		const auto route = std::find_if(channel->m_sends.begin(), channel->m_sends.end(),
 			[&send](MixerRoute* each) { return each->receiver()->id() == send.to; });
 		if (route == channel->m_sends.end()) { ++missing; continue; }
+		// The send is written inside the same change boundary that
+		// Mixer::createChannelSend() takes for an existing route: preFader is a
+		// plain field the render thread reads. Recall and undo/redo both come
+		// through here, and ControlRegistry adds no boundary of its own.
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
 		(*route)->amount()->setValue(send.amount);
 		(*route)->pan()->setValue(send.pan);
 		(*route)->enabledModel()->setValue(send.enabled);
+		// Luna cluster 1501: the tap point is restored with the rest of the send, so a send switched to
+		// the other side of the fader since the capture comes back to where the snapshot found it.
+		(*route)->setPreFader(send.preFader);
 	}
 	return missing;
 }
@@ -102,6 +111,7 @@ QDomElement channelElement(QDomDocument& doc, const MixerChannelState& state)
 		sendElement.setAttribute(QStringLiteral("amount"), send.amount);
 		sendElement.setAttribute(QStringLiteral("pan"), send.pan);
 		sendElement.setAttribute(QStringLiteral("enabled"), send.enabled ? 1 : 0);
+		sendElement.setAttribute(QStringLiteral("prefader"), send.preFader ? 1 : 0);
 		element.appendChild(sendElement);
 	}
 	return element;
@@ -128,7 +138,10 @@ MixerChannelState channelFrom(const QDomElement& element)
 	{
 		state.sends.push_back(MixerSendState{idAttribute(send, QStringLiteral("to")), send.attribute(QStringLiteral("amount"),
 			QStringLiteral("1")).toFloat(), send.attribute(QStringLiteral("pan")).toFloat(),
-			send.attribute(QStringLiteral("enabled"), QStringLiteral("1")).toInt() != 0});
+			send.attribute(QStringLiteral("enabled"), QStringLiteral("1")).toInt() != 0,
+			// Luna cluster 1501: a snapshot written before the tap point was held takes it as the
+			// route constructor's default, post-fader.
+			send.attribute(QStringLiteral("prefader")).toInt() != 0});
 	}
 	return state;
 }

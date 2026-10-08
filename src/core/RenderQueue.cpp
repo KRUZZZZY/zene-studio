@@ -67,8 +67,17 @@ int sndfileFormat(const RenderJob& job)
 
 //! Where a conversion is written first. It is moved over the destination only once complete, so a failed or
 //! cancelled conversion never costs the file already there - which can be the source itself, converted in
-//! place (review L17 #1, #4).
-QString stagedPath(const RenderJob& job) { return job.out + QStringLiteral(".part"); }
+//! place (review L17 #1, #4). A name of the job's own, made once: a fixed "out.part" would be truncated by
+//! every conversion and removed by every cancellation, taking a file the user had put there with it.
+QString stagedPath(const RenderJob& job)
+{
+	if (job.staged.isEmpty())
+	{
+		job.staged = job.out + QStringLiteral(".part.")
+			+ QUuid::createUuid().toString(QUuid::WithoutBraces).left(12);
+	}
+	return job.staged;
+}
 
 QString writeFile(const RenderJob& job, const SampleBuffer& buffer)
 {
@@ -284,6 +293,7 @@ void RenderQueue::runRender(RenderJob& job)
 
 void RenderQueue::runConvert(RenderJob& job)
 {
+	stagedPath(job);  // the worker writes it and finish() commits it: both need this job's own name
 	const RenderJob copy = job;
 	QThreadPool::globalInstance()->start([this, copy] {
 		const QString error = staged(copy);  // committed by finish(), unless the job was cancelled meanwhile

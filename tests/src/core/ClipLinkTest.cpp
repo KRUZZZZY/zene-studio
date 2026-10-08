@@ -56,9 +56,13 @@
 
 #include "ClipLinkTestSupport.h"
 #include "ControlClipLinkSupport.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
+#include "MidiClip.h"
+#include "Song.h"
+#include "Track.h"
 
 using namespace lmms;
 using namespace cliplinktest;
@@ -103,6 +107,17 @@ int divergentCount(const QString& clipId)
 	if (!state.ok) { return -1; }
 	return state.result.value(QStringLiteral("groups")).toArray().first().toObject()
 		.value(QStringLiteral("divergent")).toArray().size();
+}
+
+//! The clip @a clipId names, as the engine holds it - the scene fixtures build
+//! every clip through the surface, and a slot that needs an engine entry point
+//! the surface does not expose (clearNotes) needs the object itself. Null when
+//! no MIDI clip of that id is in the song.
+MidiClip* midiClipOf(const QString& clipId)
+{
+	control::ClipRef ref;
+	ControlResult error;
+	return control::resolveMidiClip(clipId, &ref, &error);
 }
 
 //! The @a index-th expression-carrying note's axes, as the surface reports them.
@@ -437,6 +452,49 @@ private slots:
 			QJsonObject{{QStringLiteral("clip"), a}}).ok, "note.slide_clear refused");
 		QVERIFY2(!slideOfNote(b, 0),
 			"note.slide_clear left the other member's note a slide note");
+	}
+
+	//! Luna cluster 4248: MidiClip::clearNotes() emptied the source clip and emitted
+	//! dataChanged() but - unlike addNote() and both removeNote() overloads, which
+	//! call ClipLinks::mirrorContent - never propagated, so a bulk clear left the
+	//! other members of the group holding the notes the source had before it.
+	void aBulkClearIsSeenByTheOtherMember()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("clear A"));
+		const QString b = addMidiClip(QStringLiteral("clear B"));
+		QVERIFY(!a.isEmpty());
+		QVERIFY(!b.isEmpty());
+		QVERIFY2(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok,
+			"clip.link_create refused");
+
+		// Two notes on A, so a clear is not trivially the empty-to-empty case:
+		// both members must end up with nothing.
+		for (int key : {60, 64})
+		{
+			QVERIFY2(registry->invoke(QStringLiteral("note.add"),
+				QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), key},
+					{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}}).ok,
+				"note.add refused");
+		}
+		QCOMPARE(noteCount(a), 2);
+		QCOMPARE(noteCount(b), 2);
+
+		// The bulk clear. There is no control verb for it (a chord write with
+		// replace re-adds through addNote, which mirrors anyway), so the entry
+		// point under test is the engine's own.
+		MidiClip* source = midiClipOf(a);
+		QVERIFY2(source != nullptr, "the clip the surface added could not be resolved to a MidiClip");
+		source->clearNotes();
+		QCOMPARE(noteCount(a), 0);
+		QVERIFY2(noteCount(b) == 0,
+			qPrintable(QStringLiteral("clearNotes wrote the source clip only: the other member "
+				"still holds %1 note(s), so the group diverged").arg(noteCount(b))));
+
+		// ...and the group reports itself in sync, which is the claim the
+		// divergence reader is there to contradict.
+		QCOMPARE(divergentCount(a), 0);
 	}
 
 	//! Luna cluster 5689: note.randomize rolled the notes' velocities and positions and

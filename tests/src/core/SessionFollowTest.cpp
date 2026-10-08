@@ -492,6 +492,40 @@ private slots:
 			"queueing a Follow Action plan allocated %1 times").arg(queued)));
 	}
 
+	/*! A disarmed plan frees its entry of the fixed table. Disarming REPLACES the
+	 *  plan in place, which left the entry's track and scene set, while an install
+	 *  only claims entries whose track is negative - so the slot was consumed for
+	 *  good: 16 cells armed and disarmed in turn, and the 17th refused.
+	 */
+	void aDisarmedPlanGivesItsSlotBack()
+	{
+		SessionScheduler scheduler;
+		FollowPlan plan = single(action(FollowAction::Type::Next, 1.0, false, 1.0, 0),
+			kSceneCount);
+		const SessionClockContext ctx = clock(0);
+
+		// Fill every entry of the table, then disarm each cell as it is armed.
+		for (int cell = 0; cell < MaxFollowPlans; ++cell)
+		{
+			plan.enabled = true;
+			QVERIFY(scheduler.requestFollowPlan(cell, 0, plan));
+			scheduler.processAudio(ctx, kFramesPerPeriod);
+			QCOMPARE(scheduler.armedFollowCells(), 1);
+			plan.enabled = false;
+			QVERIFY(scheduler.requestFollowPlan(cell, 0, plan));
+			scheduler.processAudio(ctx, kFramesPerPeriod);
+			QCOMPARE(scheduler.armedFollowCells(), 0);
+		}
+		// The table is empty of ARMED plans, so a new cell takes a slot rather
+		// than being refused for a slot a disarmed plan is still sitting on.
+		plan.enabled = true;
+		const std::uint64_t droppedBefore = scheduler.droppedCommands();
+		QVERIFY(scheduler.requestFollowPlan(MaxFollowPlans + 4, 0, plan));
+		scheduler.processAudio(ctx, kFramesPerPeriod);
+		QCOMPARE(scheduler.droppedCommands(), droppedBefore);
+		QCOMPARE(scheduler.armedFollowCells(), 1);
+	}
+
 	//! The audio path with a plan installed and FIRING allocates nothing - the
 	//! realtime rule (AGENTS.md rule 4), on the path this feature added.
 	void audioThreadPathDoesNotAllocateWhileFollowing()

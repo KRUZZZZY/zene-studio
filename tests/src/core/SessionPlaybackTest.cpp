@@ -216,6 +216,67 @@ private slots:
 		QVERIFY2( refused, "the fixed table accepted 300 cells" );
 	}
 
+	/*! A cell with NOTHING to render does not take an entry of the fixed table.
+	 *  The model publishes every cell of the grid, an empty one included, and the
+	 *  table holds 128 entries: a grid one cell wider than that filled the whole
+	 *  table with EMPTY cells, and the MIDI cell in the new column was refused and
+	 *  played silently.
+	 */
+	void emptyCellsDoNotConsumeTheContentTable()
+	{
+		SessionScheduler scheduler;
+		for( int scene = 0; scene < 200; ++scene )
+		{
+			// -1 is what an empty (or audio) cell publishes: nothing to render.
+			QVERIFY( scheduler.publishSlotContent( 0, scene, -1, 0 ) );
+		}
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		// A cell that DOES hold a pattern still fits, and is what plays.
+		QVERIFY( scheduler.publishSlotContent( 0, 200, 7, 0 ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QVERIFY( scheduler.requestLaunch( 0, 200, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QCOMPARE( scheduler.playbackForColumn( 0 ).patternId, 7 );
+
+		// And a cell that LOSES its pattern still stops rendering it: the entry
+		// that exists is updated rather than left stale.
+		QVERIFY( scheduler.publishSlotContent( 0, 200, -1, 0 ) );
+		scheduler.processAudio( clock( 100 ), kFramesPerPeriod );
+		QCOMPARE( scheduler.playbackForColumn( 0 ).patternId, -1 );
+	}
+
+	// A cell that held a pattern and then lost it gives its table entry back.
+	// Before this, the entry stayed (patternId -1), so churning real -> empty
+	// across every entry of the table left it full of cells that render nothing.
+	void aCellThatLosesItsPatternGivesItsEntryBack()
+	{
+		SessionSlotContentTable table;
+		for( int scene = 0; scene < int( SessionSlotContentTable::Capacity ); ++scene )
+		{
+			QVERIFY( table.install( 0, scene, 7, 0 ) );
+			QVERIFY( table.install( 0, scene, -1, 0 ) );
+		}
+		QCOMPARE( table.installedCount(), std::size_t( 0 ) );
+
+		// The freed table takes a full set of distinct pattern cells, and no more.
+		for( int scene = 0; scene < int( SessionSlotContentTable::Capacity ); ++scene )
+		{
+			QVERIFY2( table.install( 1, scene, 9, 0 ), "a freed table refused a pattern cell" );
+		}
+		QCOMPARE( table.installedCount(), SessionSlotContentTable::Capacity );
+		QVERIFY( !table.install( 2, 0, 9, 0 ) );
+
+		// Removing an entry from the middle keeps the others findable.
+		QVERIFY( table.install( 1, 3, -1, 0 ) );
+		QCOMPARE( table.installedCount(), SessionSlotContentTable::Capacity - 1 );
+		QVERIFY( table.find( 1, 3 ) == nullptr );
+		QVERIFY( table.find( 1, 4 ) != nullptr );
+		QCOMPARE( table.find( 1, 4 )->patternId, 9 );
+		QVERIFY( table.find( 1, int( SessionSlotContentTable::Capacity ) - 1 ) != nullptr );
+		QVERIFY( table.install( 2, 0, 9, 0 ) );  // the freed entry is usable again
+	}
+
 	//! 0.5.0 WF-060: a cell's own start inside its clip offsets where it plays, and a legato cell
 	//! relaunched while it plays goes on from where it was instead of its top.
 	void aCellStartsAtItsLoopStartAndALegatoRelaunchGoesOn()

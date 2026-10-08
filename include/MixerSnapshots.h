@@ -42,6 +42,8 @@ struct MixerSendState
 	float amount = 1.f;
 	float pan = 0.f;
 	bool enabled = true;
+	//! Luna cluster 1501: the tap point is part of the send, so a recall puts it back where it was.
+	bool preFader = false;
 };
 
 //! One channel as a snapshot holds it, by its persistent id (ch-<n>), so a moved channel is still found.
@@ -62,7 +64,7 @@ struct MixerSnapshot
 };
 
 /*! 0.5.0 L12 (MX-170): named snapshots of the mixer - every channel's fader, pan, mute and solo and
- *  every send's level, pan and switch - stored with the project as <mixer-snapshots> (written only
+ *  every send's level, pan, switch and fader tap - stored with the project as <mixer-snapshots> (written only
  *  when there is one, so a project that never stored one re-saves byte for byte; an absent element
  *  loads as none). Recall writes the parts it is asked for onto the channels and sends that still
  *  exist and counts the ones that do not; it never creates or deletes a channel or a send, so it

@@ -45,6 +45,7 @@
 #include <vector>
 
 #include "AudioEngine.h"
+#include "ClipConsolidate.h"
 #include "ClipEdits.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
@@ -185,6 +186,27 @@ private slots:
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(track->takeLanes().segments().size(), std::size_t{2});
 		QCOMPARE(clipsOf(track).size(), std::size_t{2});
+	}
+
+	void aClipOverlappingTheRangeStartIsRenderedFromWhereTheRangeBegins()
+	{
+		Track* track = newSampleTrack();
+		SampleClip* clip = addTake(track, 0, 0.5f);
+		const tick_t length = clip->length().getTicks();
+		// render() is exported and takes the range separately: a clip whose audio starts before
+		// the range must contribute from the range's start, not vanish. (clip.consolidate refuses
+		// a clip crossing a region edge; this is the library underneath it.)
+		const QString out = m_dir.filePath(QStringLiteral("overlapping.wav"));
+		const ClipConsolidate::Result rendered = ClipConsolidate::render({clip}, length / 2, length,
+			out);
+		QVERIFY2(rendered.ok, qPrintable(rendered.error));
+		auto* fresh = dynamic_cast<SampleClip*>(track->createClip(TimePos(length / 2)));
+		fresh->setSampleFile(out);
+		fresh->changeLength(TimePos(length / 2));
+		fresh->setAutoResize(false);
+		const tick_t pad = length / 16;
+		QVERIFY2(std::fabs(levelAt(fresh, pad, length / 2 - pad) - 0.5) < 1e-4,
+			"the part of the clip inside the range is missing from the rendered file");
 	}
 
 	void refusalsChangeNothing()

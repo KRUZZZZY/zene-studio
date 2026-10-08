@@ -363,6 +363,11 @@ void MixerChannel::incrementDeps()
 
 void MixerChannel::unmuteForSolo()
 {
+	// Two visited sets, one per walk direction. A channel reached by the
+	// sender walk is not yet expanded by the receiver walk (and the reverse),
+	// so one shared set would hide it from the walk that must still follow it.
+	std::set<MixerChannel*> senderVisited;
+	std::set<MixerChannel*> receiverVisited;
 	m_muteModel.setValue(false);
 
 	// if channel is not master, unmute also every channel it sends to/receives from
@@ -370,18 +375,27 @@ void MixerChannel::unmuteForSolo()
 	{
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
+			sendsRoute->receiver()->unmuteSenderForSolo(senderVisited, receiverVisited);
 		}
 
 		for (const MixerRoute* receiverRoute : m_receives)
 		{
-			receiverRoute->sender()->unmuteReceiverForSolo();
+			receiverRoute->sender()->unmuteReceiverForSolo(senderVisited, receiverVisited);
 		}
 	}
 }
 
 void MixerChannel::unmuteSenderForSolo()
 {
+	std::set<MixerChannel*> senderVisited;
+	std::set<MixerChannel*> receiverVisited;
+	unmuteSenderForSolo(senderVisited, receiverVisited);
+}
+
+void MixerChannel::unmuteSenderForSolo(std::set<MixerChannel*>& senderVisited,
+	std::set<MixerChannel*>& receiverVisited)
+{
+	if (!senderVisited.insert(this).second) { return; }
 	m_muteModel.setValue(false);
 
 	// if channel is not master, unmute every channel it sends to
@@ -389,7 +403,7 @@ void MixerChannel::unmuteSenderForSolo()
 	{
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
+			sendsRoute->receiver()->unmuteSenderForSolo(senderVisited, receiverVisited);
 		}
 	}
 }
@@ -397,6 +411,15 @@ void MixerChannel::unmuteSenderForSolo()
 
 void MixerChannel::unmuteReceiverForSolo()
 {
+	std::set<MixerChannel*> senderVisited;
+	std::set<MixerChannel*> receiverVisited;
+	unmuteReceiverForSolo(senderVisited, receiverVisited);
+}
+
+void MixerChannel::unmuteReceiverForSolo(std::set<MixerChannel*>& senderVisited,
+	std::set<MixerChannel*>& receiverVisited)
+{
+	if (!receiverVisited.insert(this).second) { return; }
 	m_muteModel.setValue(false);
 
 	// if channel is not master, unmute every channel it receives from, and of those, unmute the channels they send to
@@ -404,12 +427,12 @@ void MixerChannel::unmuteReceiverForSolo()
 	{
 		for (const MixerRoute* receiverRoute : m_receives)
 		{
-			receiverRoute->sender()->unmuteReceiverForSolo();
+			receiverRoute->sender()->unmuteReceiverForSolo(senderVisited, receiverVisited);
 		}
 
 		for (const MixerRoute* sendsRoute : m_sends)
 		{
-			sendsRoute->receiver()->unmuteSenderForSolo();
+			sendsRoute->receiver()->unmuteSenderForSolo(senderVisited, receiverVisited);
 		}
 	}
 }
@@ -441,15 +464,27 @@ void MixerChannel::sumSidechainInputs(const f_cnt_t fpp)
 		// Deferred routes do not gate their receiver, so the current
 		// intermediate may not have been written yet this period: read the
 		// snapshot committed in prepareMasterMix() instead (one period late).
-		const float amount = route->mode() == SidechainTapPoint::PostFaderNoGain
-			? 1.0f
-			: route->amount()->value();
+		const bool postNoGain = route->mode() == SidechainTapPoint::PostFaderNoGain;
+		// Luna cluster 5156: an automated amount carries sample-exact data,
+		// exactly like a regular send; read it per frame instead of collapsing
+		// the curve to one scalar for the whole period.
+		ValueBuffer* const amountBuf = postNoGain ? nullptr : route->amount()->valueBuffer();
+		const float amount = postNoGain ? 1.0f : route->amount()->value();
 		// PDC (#605): delay the tap to this channel's alignment point. The
 		// route owns the tap buffer, so the delay is applied in place.
 		const float* s0 = nullptr;
 		const float* s1 = nullptr;
 		route->compensatedTap(route->deferred(), &s0, &s1, fpp);
-		if( amount == 1.0f )
+		if( amountBuf )
+		{
+			for( f_cnt_t f = 0; f < fpp; ++f )
+			{
+				const float a = amountBuf->value( f );
+				dst0[f] += s0[f] * a;
+				dst1[f] += s1[f] * a;
+			}
+		}
+		else if( amount == 1.0f )
 		{
 			for( f_cnt_t f = 0; f < fpp; ++f )
 			{
@@ -900,6 +935,8 @@ void Mixer::toggledSolo()
 {
 	int soloedChan = -1;
 	bool resetSolo = m_lastSoloed != -1;
+	// Luna cluster 1523: a channel solo now owns the mute state.
+	m_soloingGroup = nullptr;
 	// 0.5.0 L08 (MX-029): additive solo keeps the earlier solos (MixerStrip.cpp).
 	if (mixerstrip::additiveSolo()) { applyAdditiveSolo(); return; }
 	//untoggle if lastsoloed is entered
@@ -1064,15 +1101,27 @@ void Mixer::refreshGroups()
 
 void Mixer::applyGroupSolo(VcaGroup* group, bool soloed)
 {
-	// 0.5.0 L09 (MX-071): a group whose solo link is off - or that is suspended - does not solo its members.
-	if (group == nullptr || !group->linksSolo() || group->isSuspended())
+	if (group == nullptr)
 	{
 		return;
 	}
 	if (!soloed)
 	{
+		// Luna cluster 1523: clearing a solo must run BEFORE the link check
+		// below. A group that was soloed while its link was on has muted every
+		// non-member; if the link is then turned off (or the group suspended),
+		// the early return used to skip deactivateSolo() and those mutes were
+		// never restored. Only the group that muted may restore, so clearing a
+		// group that never soloed cannot unmute a channel solo in progress.
+		if (m_soloingGroup != group) { return; }
+		m_soloingGroup = nullptr;
 		deactivateSolo();
 		m_lastSoloed = -1;
+		return;
+	}
+	// 0.5.0 L09 (MX-071): a group whose solo link is off - or that is suspended - does not solo its members.
+	if (!group->linksSolo() || group->isSuspended())
+	{
 		return;
 	}
 
@@ -1099,6 +1148,8 @@ void Mixer::applyGroupSolo(VcaGroup* group, bool soloed)
 	// No channel's own solo flag drove this, so toggledSolo() has nothing to
 	// untoggle later.
 	m_lastSoloed = -1;
+	// Luna cluster 1523: this group owns the mute state until its flag clears.
+	m_soloingGroup = group;
 }
 
 
@@ -1347,9 +1398,14 @@ MixerRoute * Mixer::createChannelSend( mix_ch_t fromChannel, mix_ch_t toChannel,
 	{
 		if (send->receiver() == to)
 		{
+			// Luna cluster 5157: preFader is a plain field the render thread
+			// reads, so an update takes the same change-mutex boundary
+			// createRoute() does.
+			Engine::audioEngine()->requestChangeInModel();
 			// simply adjust the amount
 			send->amount()->setValue(amount);
 			send->setPreFader(routePreFader);
+			Engine::audioEngine()->doneChangeInModel();
 			return send;
 		}
 	}
@@ -1447,8 +1503,13 @@ MixerSidechainRoute * Mixer::createSidechainSend( mix_ch_t fromChannel,
 	{
 		if( route->receiver() == to )
 		{
+			// Luna cluster 5157: the tap mode is a plain field the render
+			// thread reads, so an update takes the same change-mutex
+			// boundary the creation path below does.
+			Engine::audioEngine()->requestChangeInModel();
 			route->amount()->setValue(amount);
 			route->setMode(mode);
+			Engine::audioEngine()->doneChangeInModel();
 			return route;
 		}
 	}
@@ -1630,6 +1691,17 @@ int Mixer::setFeedbackMode( bool enabled )
 
 bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 {
+	// Control thread only (createRoute / createSidechainSend / the GUI's
+	// routing arrows), so the one visited-set allocation below is never on a
+	// process/render/play path.
+	std::vector<MixerChannel*> visited;
+	return checkInfiniteLoop( from, to, visited );
+}
+
+
+bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to,
+	std::vector<MixerChannel*>& visited )
+{
 	// can't send master to anything
 	if( from == m_mixerChannels[0] )
 	{
@@ -1642,6 +1714,16 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 		return true;
 	}
 
+	// Already expanded on this walk: the feedback submode permits real
+	// cycles, so an existing A->B->A would otherwise be followed forever and
+	// blow the stack. Everything reachable from here was decided the first
+	// time, so cutting the revisit cannot change the answer.
+	if (std::find(visited.begin(), visited.end(), to) != visited.end())
+	{
+		return false;
+	}
+	visited.push_back(to);
+
 	// follow sendTo's outputs recursively looking for something that sends
 	// to sendFrom. Phase D: gating sidechain edges are traversed as well,
 	// because a non-deferred sidechain send is a scheduling dependency and a
@@ -1649,7 +1731,13 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 	// routes never gate, so they cannot deadlock and are skipped.
 	for (const auto& send : to->m_sends)
 	{
-		if (checkInfiniteLoop(from, send->receiver()))
+		// A feedback route is cycle-permitted by construction (createRoute
+		// flags the edge that closes one), so it never closes a NEW cycle.
+		if (send->feedback())
+		{
+			continue;
+		}
+		if (checkInfiniteLoop(from, send->receiver(), visited))
 		{
 			return true;
 		}
@@ -1660,7 +1748,7 @@ bool Mixer::checkInfiniteLoop( MixerChannel * from, MixerChannel * to )
 		{
 			continue;
 		}
-		if (checkInfiniteLoop(from, send->receiver()))
+		if (checkInfiniteLoop(from, send->receiver(), visited))
 		{
 			return true;
 		}
@@ -1864,6 +1952,13 @@ int Mixer::resolveLatency(std::size_t index)
 			// compensated, so the edge does not raise the receiver's
 			// alignment point - PDC is suspended for the loop, and this skip
 			// is what keeps the solve acyclic (every cycle has one of these).
+			continue;
+		}
+		if (!route->enabled())
+		{
+			// A switched-off send delivers nothing (0.5.0 L08 / MX-047), so it
+			// cannot raise the alignment point: keeping it here would delay
+			// every other path into this channel for a route that is silent.
 			continue;
 		}
 		resolveLatency(route->senderIndex());
@@ -2208,6 +2303,10 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_panModel.setValue( 0.0f );
 	ch->m_muteModel.setValue( false );
 	ch->m_soloModel.setValue( false );
+	// Luna cluster 4279: the strip's own settings are reset with the rest, so a cleared
+	// channel (the master after Mixer::clear) does not keep applying the previous
+	// project's trim, polarity, EQ, pan mode and the rest to later audio.
+	mixerstrip::reset(*ch);
 	ch->m_name = ( index == 0 ) ? tr( "Master" ) : tr( "Channel %1" ).arg( index );
 	ch->m_volumeModel.setDisplayName( ch->m_name + ">" + tr( "Volume" ) );
 	ch->m_panModel.setDisplayName( ch->m_name + ">" + tr( "Pan" ) );
@@ -2327,7 +2426,11 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			mixch.appendChild( sendsDom );
 
 			sendsDom.setAttribute("channel", send->receiverIndex());
-			if (send->preFader()) { sendsDom.setAttribute("prefader", "1"); }
+			// Luna cluster 1512: a send to a bus is pre-fader by default, so
+			// its post-fader setting has to be written out explicitly -
+			// otherwise the file records nothing and the load applies the
+			// default again.
+			if (send->preFader() || send->receiver()->isBus()) { sendsDom.setAttribute("prefader", send->preFader() ? "1" : "0"); }
 			// board card #709: a cycle-permitted send carries its own flag -
 			// the persisted half of the submode (the mode itself is derived
 			// from these flags on load). A send without the flag writes byte
@@ -2349,6 +2452,13 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 			scDom.setAttribute("channel", send->receiverIndex());
 			scDom.setAttribute("mode", static_cast<int>(send->mode()));
+			// Luna cluster 4277: a deferred route is INFERRED at creation from
+			// the routing graph, and loadSettings re-infers it against a
+			// half-built graph (this channel's element is read before the
+			// regular send that makes it deferred exists), so the flag has to
+			// be written out. Only a deferred route carries the attribute, so a
+			// project with no deferred route saves exactly what it always did.
+			if (send->deferred()) { scDom.setAttribute("deferred", "1"); }
 			send->amount()->saveSettings(_doc, scDom, "amount");
 		}
 	}
@@ -2435,6 +2545,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 			&& ! mixch.firstChildElement( QString( "bus" ) ).isNull() )
 		{
 			const int busNum = mixch.attribute( "num" ).toInt();
+			// A `num` that is not a channel index must be rejected, not used as
+			// one: allocateChannelsTo() ignores a negative number, so indexing
+			// with it read outside m_mixerChannels. Zero is the master, which
+			// cannot be a bus, so only a positive number is one.
+			if( busNum <= 0 ) { continue; }
 			allocateChannelsTo( busNum );
 			m_mixerChannels[busNum]->setIsBus( true );
 		}
@@ -2454,7 +2569,19 @@ void Mixer::loadSettings( const QDomElement & _this )
 		}
 
 		// index of the channel we are about to load
-		int num = mixch.attribute( "num" ).toInt();
+		// A `num` that does not parse is not channel zero: toInt() alone would
+		// return 0 and let this element overwrite the master. Such an element
+		// is skipped whole, as is a negative one, which names no channel this
+		// mixer can address (m_mixerChannels[num] would read outside the
+		// vector). Zero is the master, a real channel that clear() creates, so
+		// its saved state must still load.
+		bool numOk = false;
+		const int num = mixch.attribute( "num" ).toInt( &numOk );
+		if( ! numOk || num < 0 )
+		{
+			node = node.nextSibling();
+			continue;
+		}
 
 		// allocate enough channels
 		allocateChannelsTo( num );
@@ -2520,10 +2647,21 @@ void Mixer::loadSettings( const QDomElement & _this )
 			if( chDataItem.nodeName() == QString( "send" ) )
 			{
 				int sendTo = chDataItem.attribute( "channel" ).toInt();
+				// A `channel` that is not a channel index is not routed
+				// anywhere: createChannelSend() indexes m_mixerChannels with
+				// it. Zero (the master) is the one valid low number, so a
+				// negative target is refused here rather than converted to an
+				// unsigned index downstream.
+				if( sendTo < 0 ) { continue; }
 				allocateChannelsTo( sendTo ) ;
 				const bool preFader =
 					chDataItem.attribute( "prefader" ).toInt() != 0;
 				MixerRoute * mxr = createChannelSend( num, sendTo, 1.0f, preFader );
+				// Luna cluster 1512: createChannelSend() applies the bus
+				// pre-fader default, which is right for a send the file says
+				// nothing about. A file that states the setting is taken at
+				// its word, so a post-fader send to a bus stays post-fader.
+				if( mxr && chDataItem.hasAttribute( "prefader" ) ) { mxr->setPreFader( preFader ); }
 				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
 				if( mxr && chDataItem.hasAttribute( "pan" ) ) { mxr->pan()->loadSettings( chDataItem, "pan" ); }
 				if( mxr ) { mxr->enabledModel()->setValue( chDataItem.attribute( "off" ).toInt() == 0 ); }
@@ -2540,6 +2678,9 @@ void Mixer::loadSettings( const QDomElement & _this )
 			else if( chDataItem.nodeName() == QString( "sidechain-send" ) )
 			{
 				int sendTo = chDataItem.attribute( "channel" ).toInt();
+				// Same rule as a <send>: a negative target is not a channel and
+				// createSidechainSend() converts it to an unsigned index.
+				if( sendTo < 0 ) { continue; }
 				allocateChannelsTo( sendTo );
 				const int mode = chDataItem.attribute( "mode" ).toInt();
 				const SidechainTapPoint tap =
@@ -2548,6 +2689,14 @@ void Mixer::loadSettings( const QDomElement & _this )
 						: SidechainTapPoint::PreFader;
 				MixerSidechainRoute * mxr =
 					createSidechainSend( num, sendTo, 1.0f, tap );
+				// Luna cluster 4277: a file that states the route is deferred
+				// is taken at its word. Inference at this point runs against a
+				// graph whose later channels have not been read yet, so it
+				// cannot see the regular send that closes the cycle.
+				if( mxr && chDataItem.hasAttribute( "deferred" ) )
+				{
+					mxr->setDeferred( chDataItem.attribute( "deferred" ).toInt() != 0 );
+				}
 				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
 			}
 		}
@@ -2610,8 +2759,22 @@ void Mixer::loadSettings( const QDomElement & _this )
 			{
 				continue;
 			}
-			const int channel = memberDom.attribute( "channel" ).toInt();
-			allocateChannelsTo( channel );
+			// Luna cluster 3295: the attribute is read before it is known to be a
+			// channel index. A missing or non-numeric value is 0 (the master,
+			// which is not a member), a negative one wraps to 65535 when cast
+			// to mix_ch_t, and a large positive one is handed to
+			// allocateChannelsTo(), so a malformed file could allocate a whole
+			// mixer. A member must name an EXISTING non-master channel, which
+			// is exactly what a saved group ever names, so nothing is skipped
+			// that a real project could contain.
+			const QString channelAttr = memberDom.attribute( "channel" );
+			bool parsed = false;
+			const int channel = channelAttr.toInt( &parsed );
+			if( ! parsed || channel <= 0
+				|| static_cast<std::size_t>( channel ) >= m_mixerChannels.size() )
+			{
+				continue;
+			}
 			group->addMember( static_cast<mix_ch_t>( channel ) );
 		}
 	}

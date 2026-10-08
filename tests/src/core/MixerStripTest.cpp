@@ -288,6 +288,34 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(channel(2)->m_name, before);
 	}
+
+	//! Luna cluster 4279: Mixer::clearChannel resets volume, pan, mute and solo, but a cleared
+	//! channel kept its trim, polarity, mono, swap, EQ, pan mode, width, solo safe and
+	//! crossfader side - so after mixer.clear() the master still applied them to later audio.
+	void clearingAChannelResetsItsStripSettings()
+	{
+		MixerChannel* master = channel(0);
+		master->m_trimModel.setValue(-6.0206f);
+		master->m_polarityLeftModel.setValue(true);
+		master->m_monoModel.setValue(true);
+		master->m_eqLowModel.setValue(4.f);
+		master->m_panModeModel.setValue(static_cast<int>(mixerstrip::PanMode::Width));
+		master->m_widthModel.setValue(0.f);
+		master->m_soloSafeModel.setValue(true);
+		master->m_crossfadeSideModel.setValue(1);
+		QVERIFY(master->m_monoModel.value());
+
+		Engine::mixer()->clearChannel(0);
+
+		QCOMPARE(master->m_trimModel.value(), 0.f);
+		QVERIFY(!master->m_polarityLeftModel.value());
+		QVERIFY(!master->m_monoModel.value());
+		QCOMPARE(master->m_eqLowModel.value(), 0.f);
+		QCOMPARE(master->m_panModeModel.value(), static_cast<int>(mixerstrip::PanMode::Balance));
+		QCOMPARE(master->m_widthModel.value(), 1.f);
+		QVERIFY(!master->m_soloSafeModel.value());
+		QCOMPARE(master->m_crossfadeSideModel.value(), 0);
+	}
 };
 
 QTEST_MAIN(MixerStripTest)

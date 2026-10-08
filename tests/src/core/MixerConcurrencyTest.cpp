@@ -65,6 +65,7 @@
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "MixerSnapshots.h"
 #include "PlayHandle.h"
 #include "SampleFrame.h"
 
@@ -492,6 +493,44 @@ private slots:
 	// D3 - Mixer::createChannel() reallocates m_mixerChannels and the latency
 	// scratch with no guard, while the render thread iterates them.
 	// -----------------------------------------------------------------------
+	// -----------------------------------------------------------------------
+	// Luna cluster 5157: the update-existing-route branches of
+	// createChannelSend() and createSidechainSend() write plain route fields
+	// (preFader, the sidechain tap mode) that the render thread reads, with
+	// no change-mutex boundary - only createRoute() took one. Deterministic
+	// here for the same reason as D3-D5: the period is held open on this
+	// thread and the mutation is asked whether it got through anyway.
+	// -----------------------------------------------------------------------
+	void updatingAnExistingRouteWaitsForTheRenderPeriodToEnd()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerRoute* send = mixer->createChannelSend(1, 2, 0.5f, true);
+		QVERIFY(send != nullptr);
+		QVERIFY(send->preFader());
+		const bool flippedWhileRendering = escapesTheRenderPeriod(
+			[mixer] { mixer->createChannelSend(1, 2, 0.5f, false); },
+			[send] { return !send->preFader(); });
+		QVERIFY2(!flippedWhileRendering,
+			"createChannelSend() changed an existing send's preFader while a render period was in flight (5157)");
+		QVERIFY2(!send->preFader(),
+			"the pre-fader change never landed after the render period ended");
+		QCOMPARE(send->amount()->value(), 0.5f);
+
+		MixerSidechainRoute* sidechain = mixer->createSidechainSend(1, 2, 0.5f, SidechainTapPoint::PostFader);
+		QVERIFY(sidechain != nullptr);
+		QCOMPARE(sidechain->mode(), SidechainTapPoint::PostFader);
+		const bool movedWhileRendering = escapesTheRenderPeriod(
+			[mixer] { mixer->createSidechainSend(1, 2, 0.5f, SidechainTapPoint::PreFx); },
+			[sidechain] { return sidechain->mode() == SidechainTapPoint::PreFx; });
+		QVERIFY2(!movedWhileRendering,
+			"createSidechainSend() changed an existing route's mode while a render period was in flight (5157)");
+		QVERIFY2(sidechain->mode() == SidechainTapPoint::PreFx,
+			"the tap-point change never landed after the render period ended");
+	}
+
 	void creatingAChannelIsSerialisedWithTheRenderPeriod()
 	{
 		Mixer* mixer = Engine::mixer();
@@ -640,6 +679,33 @@ private slots:
 	// D6 - AudioBusHandle::m_playHandles is appended under m_playHandleLock
 	// but a worker range-fors it without the lock.
 	// -----------------------------------------------------------------------
+	// Recall writes a send's fader tap (preFader) on the control thread, as
+	// createChannelSend() does for an existing route. The write has to wait
+	// for the render period to end, like the route update it mirrors.
+	void recallingASnapshotWaitsForTheRenderPeriodToEnd()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerRoute* send = mixer->createChannelSend(1, 2, 0.5f, true);
+		QVERIFY(send != nullptr);
+		QVERIFY(send->preFader());
+		const MixerSnapshot snapshot = MixerSnapshots::capture(QStringLiteral("Tap"));
+		send->setPreFader(false);
+
+		const bool flippedWhileRendering = escapesTheRenderPeriod(
+			[&snapshot]
+			{
+				MixerSnapshots::apply(snapshot, MixerSnapshots::Parts{});
+			},
+			[send] { return send->preFader(); });
+		QVERIFY2(!flippedWhileRendering,
+			"a snapshot recall wrote a send's fader tap while a render period was in flight");
+		QVERIFY2(send->preFader(),
+			"the recalled fader tap never landed after the render period ended");
+	}
+
 	void addingAPlayHandleIsSerialisedWithTheIterator()
 	{
 		AudioBusHandle handle{QStringLiteral("MixerConcurrencyTest"), false};

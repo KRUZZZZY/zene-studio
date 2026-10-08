@@ -32,6 +32,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -319,6 +320,15 @@ private slots:
 		QCOMPARE( NoteTransform::scaleVelocity( { a }, 10.f ), 1 );
 		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
 
+		// a factor that is not a number has no velocity to scale BY, so it moves
+		// nothing at all rather than rounding an undefined product into the rail
+		QCOMPARE( NoteTransform::scaleVelocity( { a }, std::numeric_limits<float>::quiet_NaN() ), 0 );
+		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
+		QCOMPARE( NoteTransform::scaleVelocity( { a }, std::numeric_limits<float>::infinity() ), 0 );
+		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
+		QCOMPARE( NoteTransform::scaleVelocity( { a }, -std::numeric_limits<float>::infinity() ), 0 );
+		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
+
 		// a factor that rounds back to the same value counts as unchanged
 		QCOMPARE( NoteTransform::scaleVelocity( { a }, 1.0001f ), 0 );
 		QCOMPARE( static_cast<int>( a->getVolume() ), 200 );
@@ -434,6 +444,19 @@ private slots:
 		// an empty scale is a no-op
 		QCOMPARE( NoteTransform::snapToScale( { dSharp }, {} ), 0 );
 		QCOMPARE( dSharp->key(), 62 );
+
+		// A scale whose only pitch class is 11 is eleven semitones from the
+		// bottom key, which is further than the octave the search covers - and
+		// yet 11 is a perfectly legal key, so the note must be taken there
+		// rather than left out of scale with the boundary note claiming it is.
+		Note* lowest = t.add( 0, 384, 96, 100 );
+		QCOMPARE( NoteTransform::snapToScale( { lowest }, { 11 } ), 1 );
+		QCOMPARE( lowest->key(), 11 );
+
+		// and at the top of the range, the other way round
+		Note* highest = t.add( 127, 480, 96, 100 );
+		QCOMPARE( NoteTransform::snapToScale( { highest }, { 0 } ), 1 );
+		QCOMPARE( highest->key(), 120 );
 
 		// a note that has nowhere to go keeps its key and is not counted
 		Note* railed = t.add( 0, 336, 96, 100 );

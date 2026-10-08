@@ -66,6 +66,9 @@ struct LMMS_EXPORT RenderJob
 	qint64 finishedMs = 0;
 	//! What came out: the file's bytes and hash, and the loudness meter's reading of it.
 	QJsonObject report;
+	//! A conversion's own staging file, beside its destination and named for this job alone; made when
+	//! first asked for and never on a name anyone else could be using (RenderQueue::stagedPath).
+	mutable QString staged;
 };
 
 /*! 0.5.0 L12 (WF-040): a render queue. Renders run as the shipped CLI render in a CHILD process, as

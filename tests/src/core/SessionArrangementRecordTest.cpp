@@ -364,6 +364,38 @@ private slots:
 		QCOMPARE(static_cast<int>(events[1].tick), kTicksPerBar);
 	}
 
+	//! A cell the chain ended with a Follow Stop starts again FROM ITS OWN TOP:
+	//! the phase origin of the span that ended is given back with it, so legato
+	//! on the relaunch has nothing left to continue and cannot resume a phase
+	//! that is several bars old.
+	void aFollowStopGivesBackItsLegatoPhaseOrigin()
+	{
+		SessionScheduler scheduler;
+		QVERIFY(scheduler.publishSlotContent(0, 0, 7, 0, true));
+		QVERIFY(scheduler.requestFollowPlan(0, 0,
+			single(action(FollowAction::Type::Stop, 1.0, false, 1.0, 0), kSceneCount)));
+		QVERIFY(scheduler.requestLaunch(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+
+		SessionClockContext ctx = clock(0);
+		scheduler.processAudio(ctx, kFramesPerPeriod);
+		QCOMPARE(static_cast<int>(scheduler.playbackForColumn(0).positionTicks), 0);
+
+		// The chain stops the cell one bar in, so that playback is over.
+		drive(scheduler, ctx, kTickStep, kTicksPerBar + kTickStep);
+		QCOMPARE(static_cast<int>(scheduler.slotPhase(0, 0)), static_cast<int>(SlotPhase::Idle));
+		QVERIFY(!scheduler.trackIsSessionActive(0));
+
+		// Launching the same cell again - the slot is reused, it is not reset - must
+		// start the new playback at its own top. A stale marker left by the stopped
+		// playback would hand legatoOriginFor() the origin of the bar-0 span and the
+		// relaunch would render as if it were still the span that ended.
+		ctx.positionTicks = 2 * kTicksPerBar;
+		QVERIFY(scheduler.requestLaunch(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+		scheduler.processAudio(ctx, kFramesPerPeriod);
+		QCOMPARE(static_cast<int>(scheduler.slotPhase(0, 0)), static_cast<int>(SlotPhase::Playing));
+		QCOMPARE(static_cast<int>(scheduler.playbackForColumn(0).positionTicks), 0);
+	}
+
 	//! A REFUSED action (a jump outside the grid) fires ONCE PER ACTION TIME and
 	//! not once per audio period: the rule that keeps a chain that can do
 	//! nothing from spinning on the audio path.

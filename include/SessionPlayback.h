@@ -74,7 +74,9 @@ public:
 	static constexpr std::size_t Capacity = 128;
 
 	/*! Stores one cell's content, REPLACING any previous entry for that cell.
-	 *  Model thread (called via the scheduler's queue). No allocation, no lock.
+	 *  A patternId below zero means the cell has nothing to render: its entry
+	 *  is removed (or none is taken), so the table holds only cells that do.
+	 *  Audio thread (applied from the scheduler's queue). No allocation, no lock.
 	 *  False when the table has no free entry - the caller counts it. */
 	bool install( int track, int scene, int patternId, tick_t loopLengthTicks, bool legato = false, tick_t startTicks = 0,
 		const SampleBuffer* clip = nullptr ) noexcept;

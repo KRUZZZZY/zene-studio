@@ -183,10 +183,29 @@ bool MidiClock::setMasterEnabled(bool enabled, const QString& port, QString* err
 	}
 	if (!port.isEmpty())
 	{
+		// Naming a new destination is not enough: the port that was there before
+		// keeps its subscription until it is taken away, so a switched clock
+		// would keep reaching the old destination as well. Unsubscribe it first.
+		if (!m_masterPort.isEmpty() && m_masterPort != port)
+		{
+			output->subscribeWritablePort(m_masterPort, false);
+		}
 		output->subscribeWritablePort(port);
 		m_masterPort = port;
 	}
 	m_client.store(midi);
+	// Only an ACTUAL change of mode clears the tracked transport state: a repeat
+	// of the same call is not a new mode and must not invent a second edge. While
+	// the master was off, processAudioPeriod() returned before trackTransport(),
+	// so what was tracked is the transport as it was when the master was switched
+	// off - re-enabling during playback would otherwise see no rising edge and
+	// resume the pulses with no position and no CONTINUE. Clearing it here makes
+	// the next period report the transport that is actually running.
+	if (!m_masterEnabled.load())
+	{
+		m_transportWasRunning.store(false);
+		m_positionKnown.store(false);
+	}
 	m_masterEnabled.store(true);
 	return true;
 }
@@ -194,6 +213,15 @@ bool MidiClock::setMasterEnabled(bool enabled, const QString& port, QString* err
 QString MidiClock::masterPort() const
 {
 	return m_masterPort;
+}
+
+bool MidiClock::masterSubscribedTo(const QString& port) const
+{
+	MidiPort* output = m_outputPort.load();
+	if (output == nullptr) { return false; }
+	const MidiPort::Map& writable = output->writablePorts();
+	auto it = writable.constFind(port);
+	return it != writable.constEnd() && it.value();
 }
 
 void MidiClock::restoreMaster(bool enabled, const QString& port)

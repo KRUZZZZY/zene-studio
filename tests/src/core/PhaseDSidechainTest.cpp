@@ -59,10 +59,14 @@
 #include "PhaseDMixerTestSupport.h"
 
 #include "AudioDevice.h"
+#include "AllocationProbe.h"
 #include "AudioEngine.h"
+#include "Controller.h"
+#include "ControllerConnection.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "LfoController.h"
 #include "Mixer.h"
 #include "Plugin.h"
 
@@ -253,6 +257,161 @@ private slots:
 			probePreFader->firstL(), expectPreFader,
 			probePostFader->firstL(), expectPostFader,
 			probeNoGain->firstL(), expectNoGain);
+	}
+
+	//! Luna cluster 5156: sumSidechainInputs() read the amount with
+	//! amount()->value() and applied that one scalar to every frame of the
+	//! period, so an automated sidechain send lost its curve. A regular send
+	//! multiplies with the amount's ValueBuffer (Mixer.cpp doProcessing).
+	//! Driven directly: publish a sample-exact ramp on the amount, write the
+	//! sender's tap, sum, and read the receiver's sidechain buffer.
+	void anAutomatedSidechainAmountIsAppliedPerFrame()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerChannel* sender = mixer->mixerChannel(1);
+		MixerChannel* receiver = mixer->mixerChannel(2);
+		MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+			SidechainTapPoint::PreFader);
+		QVERIFY(route != nullptr);
+
+		const f_cnt_t fpp = periodFrames();
+		// The sender's signal: a constant 1.0, so the summed buffer IS the
+		// per-frame amount curve.
+		for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+		// A sample-exact ramp 0 -> 1 over this period, published the way the
+		// automation evaluation publishes it (the model's own fixed-capacity
+		// AutomationRamp; valueBuffer() then hands the audio path the curve).
+		FloatModel* amount = route->amount();
+		amount->setValue(1.0f);
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.0f));
+		QVERIFY(ramp.addKnot(fpp - 1, 1.0f));
+		amount->publishAutomationRamp(ramp);
+		QVERIFY(amount->valueBuffer() != nullptr);
+
+		receiver->sumSidechainInputs(fpp);
+
+		const float* summed = receiver->m_sidechainBuffer.buffer(0).data();
+		QVERIFY2(summed[0] < 0.05f,
+			qPrintable(QString("first frame %1 is not near the ramp start").arg(summed[0])));
+		QVERIFY2(summed[fpp - 1] > 0.95f,
+			qPrintable(QString("last frame %1 is not near the ramp end (5156)")
+				.arg(summed[fpp - 1])));
+		// A constant-per-block sum would make every frame identical.
+		QVERIFY2(std::fabs(summed[0] - summed[fpp - 1]) > 0.5f,
+			"the sidechain amount was applied as one value for the whole block (5156)");
+	}
+
+	//! The audio-path sum of a published-ramp amount allocates nothing, and the
+	//! summed curve is right with nothing computed for the amount beforehand.
+	//! The read goes through valueBuffer(), which takes the model's mutex; that
+	//! lock is the mixer-wide realtime item tracked as cluster 2647, not
+	//! something this test can see.
+	void theAutomatedSidechainPathAllocatesNothing()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerChannel* sender = mixer->mixerChannel(1);
+		MixerChannel* receiver = mixer->mixerChannel(2);
+		MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+			SidechainTapPoint::PreFader);
+		QVERIFY(route != nullptr);
+
+		const f_cnt_t fpp = periodFrames();
+		for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+		FloatModel* amount = route->amount();
+		amount->setValue(1.0f);
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.0f));
+		QVERIFY(ramp.addKnot(fpp - 1, 1.0f));
+		amount->publishAutomationRamp(ramp);
+
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		receiver->sumSidechainInputs(fpp);
+		test::tlCountAllocations = false;
+		QCOMPARE(static_cast<unsigned long long>(test::tlAllocationCount), 0ULL);
+
+		const float* summed = receiver->m_sidechainBuffer.buffer(0).data();
+		QVERIFY2(summed[0] < 0.05f,
+			qPrintable(QString("first frame %1 is not near the ramp start").arg(summed[0])));
+		QVERIFY2(summed[fpp - 1] > 0.95f,
+			qPrintable(QString("last frame %1 is not near the ramp end").arg(summed[fpp - 1])));
+	}
+
+	//! A sidechain amount that is NOT a published ramp keeps the per-frame
+	//! valueBuffer() behaviour the amount has everywhere else: a controller
+	//! drives it sample-exact (an LFO here), and the sum must vary across the
+	//! period. The scalar value() path would hold it constant.
+	void aControllerDrivenAmountVariesPerFrame()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerChannel* sender = mixer->mixerChannel(1);
+		MixerChannel* receiver = mixer->mixerChannel(2);
+		MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+			SidechainTapPoint::PreFader);
+		QVERIFY(route != nullptr);
+
+		const f_cnt_t fpp = periodFrames();
+		for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+		// The LFO drives the amount; the model's own value is left alone.
+		auto* lfo = new LfoController(nullptr);
+		route->amount()->setControllerConnection(new ControllerConnection(lfo));
+		route->amount()->setUseControllerValue(true);
+		// End a period, as the engine does, so the LFO's buffer is refilled
+		// for this period rather than left at its constructor fill.
+		Controller::triggerFrameCounter();
+		AutomatableModel::incrementPeriodCounter();
+
+		receiver->sumSidechainInputs(fpp);
+		const float* summed = receiver->m_sidechainBuffer.buffer(0).data();
+		const float spread = std::fabs(summed[fpp - 1] - summed[0]);
+		QVERIFY2(spread > 1e-3f,
+			qPrintable(QString("a controller-driven amount was constant across the period (spread %1)").arg(spread)));
+		route->amount()->setControllerConnection(nullptr);
+	}
+
+	//! A manually changed amount is interpolated across the period by
+	//! valueBuffer() (old value to new value), with no ramp and no controller.
+	void aManuallyChangedAmountInterpolatesAcrossThePeriod()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		MixerChannel* sender = mixer->mixerChannel(1);
+		MixerChannel* receiver = mixer->mixerChannel(2);
+		MixerSidechainRoute* route = mixer->createSidechainSend(1, 2, 0.0f,
+			SidechainTapPoint::PreFader);
+		QVERIFY(route != nullptr);
+
+		const f_cnt_t fpp = periodFrames();
+		for (f_cnt_t f = 0; f < fpp; ++f) { sender->m_buffer[f] = SampleFrame(1.f, 1.f); }
+		sender->writeSidechainTaps(SidechainTapPoint::PreFader, fpp);
+
+		route->amount()->setValue(0.0f);
+		route->amount()->setValue(1.0f);
+		receiver->sumSidechainInputs(fpp);
+
+		const float* summed = receiver->m_sidechainBuffer.buffer(0).data();
+		QVERIFY2(summed[0] < 0.5f,
+			qPrintable(QString("the first frame %1 is not near the old amount 0").arg(summed[0])));
+		QVERIFY2(summed[fpp - 1] > 0.5f,
+			qPrintable(QString("the last frame %1 is not near the new amount 1").arg(summed[fpp - 1])));
 	}
 
 	//! 8.1 ducking: the receiver's gain follows the key channel. The ducker

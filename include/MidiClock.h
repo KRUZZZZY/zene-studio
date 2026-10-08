@@ -270,6 +270,11 @@ public:
 	 *  is a real refusal an agent must see rather than a silent no-op. */
 	bool setMasterEnabled(bool enabled, const QString& port, QString* error);
 	QString masterPort() const;
+	//! Whether this object's own output port is currently SUBSCRIBED to the
+	//! client port named \a port. The subscription map is what a switched
+	//! destination has to keep honest: naming a new one is not enough, the old
+	//! one has to stop receiving. Control thread, diagnostic only.
+	bool masterSubscribedTo(const QString& port) const;
 	/*! The exact inverse of setMasterEnabled for a recorded undo step: when the
 	 *  before-state named no port, unsubscribe the one the call subscribed, so
 	 *  control.undo restores the SUBSCRIPTION and not only the flag. */

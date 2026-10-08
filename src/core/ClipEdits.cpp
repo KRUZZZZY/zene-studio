@@ -132,9 +132,12 @@ void envelopeFromText(const QString& text, ClipEdits* edits)
 	{
 		if (edits->envelopeCount >= MaxGainPoints) { break; }
 		const int colon = part.indexOf(QLatin1Char(':'));
+		bool tickOk = false;
+		const int tick = part.left(colon).toInt(&tickOk);
 		const float db = part.mid(colon + 1).toFloat();
-		if (colon <= 0 || !std::isfinite(db)) { continue; }  // a damaged file never puts an infinite gain on the audio path
-		edits->envelope[edits->envelopeCount++] = {std::max(0, part.left(colon).toInt()), std::clamp(db, MinGainPointDb, MaxGainPointDb)};
+		// A tick that is not a tick used to convert to 0 and put the point at the clip's start.
+		if (colon <= 0 || !tickOk || !std::isfinite(db)) { continue; }  // a damaged file never puts an infinite gain on the audio path
+		edits->envelope[edits->envelopeCount++] = {std::max(0, tick), std::clamp(db, MinGainPointDb, MaxGainPointDb)};
 	}
 	std::sort(edits->envelope.begin(), edits->envelope.begin() + edits->envelopeCount,
 		[](const GainPoint& a, const GainPoint& b) { return a.tick < b.tick; });

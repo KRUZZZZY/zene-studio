@@ -94,6 +94,8 @@ LMMS_EXPORT void silenceMeters(MixerChannel& channel);
 LMMS_EXPORT void save(const MixerChannel& channel, QDomElement& element);
 //! Read back; an absent attribute is the default (so a journal restore takes a setting off again).
 LMMS_EXPORT void load(MixerChannel& channel, const QDomElement& element);
+//! Every strip setting back on its default - what Mixer::clearChannel() applies (Luna cluster 4279).
+LMMS_EXPORT void reset(MixerChannel& channel);
 
 //! MX-029: solo mode - exclusive (the inherited behaviour, the default) or additive. A preference
 //! kept in the config file (mixer/additivesolo), UI thread.

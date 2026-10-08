@@ -58,7 +58,14 @@ void pump(AudioResampler& resampler, const SampleFrame* in, f_cnt_t inFrames, st
 auto resampleBuffer(const std::shared_ptr<const SampleBuffer>& input, sample_rate_t rate)
 	-> std::shared_ptr<const SampleBuffer>
 {
-	if (!input || input->empty() || input->sampleRate() == rate || rate == 0) { return input; }
+	// Luna cluster 5285: the target rate was checked but a zero SOURCE rate was not, and the
+	// ratio below is target/source. A buffer that cannot state its own rate is passed through
+	// untouched, the same way the other unusable cases are.
+	if (!input || input->empty() || input->sampleRate() == 0 || input->sampleRate() == rate
+		|| rate == 0)
+	{
+		return input;
+	}
 	AudioResampler resampler(AudioResampler::Mode::SincBest, 2);
 	resampler.setRatio(input->sampleRate(), rate);
 	const double ratio = static_cast<double>(rate) / input->sampleRate();

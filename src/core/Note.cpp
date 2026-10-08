@@ -35,6 +35,45 @@ namespace lmms
 {
 
 
+namespace
+{
+
+//! The float an optional document attribute spells, or `fallback` when it is
+//! absent, unparseable, or non-finite. QString::toFloat reports failure with 0
+//! and admits "nan"/"inf" as VALID numbers, so neither can be told apart from a
+//! real value by the conversion alone - the caller has to ask, which is what
+//! this does once for both MIDI-depth attributes.
+float loadMidiDepthValue( const QDomElement& element, const char* attribute, float fallback )
+{
+	bool ok = false;
+	const float value = element.attribute( QLatin1String( attribute ) ).toFloat( &ok );
+	return ( ok && std::isfinite( value ) ) ? value : fallback;
+}
+
+//! The saved pre-quantise position and length, when the element carries a pair
+//! that can actually be read. Both are optional: an element with no qpos has no
+//! timing, which is what -1 says. Both are required together, and both must
+//! parse - QString::toInt() reports a failed conversion by yielding 0, which
+//! would otherwise read as "the author had this note at tick 0, one tick long"
+//! and let note.restore_timing move the note there.
+void loadUnquantisedTiming( const QDomElement& element, tick_t& pos, tick_t& length )
+{
+	pos = -1;
+	length = -1;
+
+	bool posOk = false;
+	bool lengthOk = false;
+	const int storedPos = element.attribute( "qpos" ).toInt( &posOk );
+	const int storedLength = element.attribute( "qlen", "1" ).toInt( &lengthOk );
+	if( !posOk || !lengthOk || storedPos < 0 || storedLength < 1 ) { return; }
+
+	pos = storedPos;
+	length = storedLength;
+}
+
+} // namespace
+
+
 Note::Note( const TimePos & length, const TimePos & pos,
 		int key, volume_t volume, panning_t panning,
 						std::shared_ptr<DetuningHelper> detuning ) :
@@ -227,13 +266,19 @@ void Note::setVolume( volume_t volume )
 
 void Note::setProbability( float probability )
 {
-	m_probability = std::clamp( probability, 0.f, 1.f );
+	// A non-finite value is not an out-of-range one: every comparison against a
+	// NaN is false, so std::clamp would hand it straight back unchanged and the
+	// NaN would travel into the playback roll (NoteRandom). Fall back to the
+	// documented neutral default instead - the note always plays.
+	m_probability = std::isfinite( probability ) ? std::clamp( probability, 0.f, 1.f ) : 1.f;
 }
 
 
 void Note::setVelocityJitter( float jitter )
 {
-	m_velocityJitter = std::clamp( jitter, 0.f, 1.f );
+	// As above: an unparseable or non-finite value is not velocity jitter, and
+	// the documented default is an untouched velocity.
+	m_velocityJitter = std::isfinite( jitter ) ? std::clamp( jitter, 0.f, 1.f ) : 0.f;
 }
 
 
@@ -451,16 +496,22 @@ void Note::loadSettings( const QDomElement & _this )
 
 	// Absent attributes mean the neutral MIDI-depth values: the note always
 	// plays and its velocity is untouched, which is what every project saved
-	// before this existed expects.
-	bool probabilityOk = false;
-	float probability = _this.attribute( "prob", "1" ).toFloat( &probabilityOk );
-	if( !probabilityOk || !std::isfinite( probability ) ) { probability = 1.f; }
-	m_probability = std::clamp( probability, 0.f, 1.f );
-	m_velocityJitter = std::clamp( _this.attribute( "veljit", "0" ).toFloat(), 0.f, 1.f );
+	// before this existed expects. An attribute the file CANNOT express - text
+	// that is not a number at all, or a non-finite spelling such as "nan" - is
+	// treated as absent rather than as zero: toFloat() reports failure and
+	// yields 0, and std::clamp leaves a NaN a NaN, either of which would make
+	// the note permanently silent or carry a NaN into the playback roll.
+	// Out-of-range but FINITE text still clamps, as before.
+	setProbability( loadMidiDepthValue( _this, "prob", 1.f ) );
+	setVelocityJitter( loadMidiDepthValue( _this, "veljit", 0.f ) );
 	m_muted = _this.attribute( "mute" ).toInt() != 0;
 	setReleaseVelocity( _this.attribute( "relvel", "-1" ).toInt() );
-	m_unquantisedPos = _this.hasAttribute( "qpos" ) ? std::max( 0, _this.attribute( "qpos" ).toInt() ) : -1;
-	m_unquantisedLength = m_unquantisedPos >= 0 ? std::max( 1, _this.attribute( "qlen", "1" ).toInt() ) : -1;
+	// The pre-quantise timing note.restore_timing puts back is OPTIONAL, and both
+	// halves of it are required. A qpos the file cannot spell - or a qlen it
+	// cannot spell - is not a timing to restore: QString::toInt() reports
+	// failure by yielding 0, so <note qpos="bad"> used to load as "this note was
+	// moved to tick 0" and note.restore_timing faithfully moved it there.
+	loadUnquantisedTiming( _this, m_unquantisedPos, m_unquantisedLength );
 	m_conditions.load( _this );
 
 	// MPE per-note expression (task #601): an old project has none of these, and
