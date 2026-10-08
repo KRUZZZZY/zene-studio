@@ -209,20 +209,13 @@ private slots:
 			{{QStringLiteral("channel"), channel}, {QStringLiteral("zone"), zone}}).ok,
 			"rack.zone_remove refused");
 
+		// Luna 5746: the advertised inverse is the exact recorded checkpoint, control.undo. A
+		// rack.zone_add replay appended the zone; undoing re-inserts it at its own index.
 		const QJsonObject inverse = revtest::stateOf(QStringLiteral("rack.zone_remove"))
 			.value(QStringLiteral("inverse")).toObject();
 		QVERIFY2(!inverse.isEmpty(), "rack.zone_remove advertised no inverse at all");
-		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("rack.zone_add"));
-		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
-		QCOMPARE(inverseArgs.value(QStringLiteral("channel")).toString(), channel);
-		QCOMPARE(inverseArgs.value(QStringLiteral("chain")).toInt(), kDrivenChain);
-		QCOMPARE(inverseArgs.value(QStringLiteral("low_key")).toInt(), 60);
-		QCOMPARE(inverseArgs.value(QStringLiteral("high_key")).toInt(), 72);
-		QCOMPARE(inverseArgs.value(QStringLiteral("low_velocity")).toInt(), 20);
-		QCOMPARE(inverseArgs.value(QStringLiteral("high_velocity")).toInt(), 90);
-		// And it really runs: the advertised args put the very zone back.
-		QVERIFY2(revtest::run(inverse.value(QStringLiteral("op")).toString(), inverseArgs).ok,
-			"the advertised rack.zone_add inverse was refused");
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		REV_UNDO_OR_FAIL();
 		const QJsonObject resolved = revtest::run(QStringLiteral("rack.zone_resolve"),
 			{{QStringLiteral("channel"), channel}, {QStringLiteral("key"), 66},
 				{QStringLiteral("velocity"), 50}}).result;
@@ -232,6 +225,39 @@ private slots:
 		printEvidence("surface-zone-inverse",
 			QStringLiteral("zone_remove's inverse is a rack.zone_add carrying chain and the "
 				"dropped zone's four range values, and it replays"));
+	}
+
+	//! Luna 5746: removing the FIRST of two overlapping zones (with samples) and undoing it restores
+	//! the zone at its own index, its sample, and the first-match order.
+	void zoneRemoveOfAnOverlappingFirstZoneUndoesInOrder()
+	{
+		const QString channel = underTestChannel();
+		RackZones& zones = rackUnderTest().zones();
+		const int before = zones.zoneCount();
+		const ControlResult first = revtest::run(QStringLiteral("rack.zone_add"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("low_key"), 60},
+				{QStringLiteral("high_key"), 72}, {QStringLiteral("low_velocity"), 20},
+				{QStringLiteral("high_velocity"), 90}, {QStringLiteral("chain"), kDrivenChain},
+				{QStringLiteral("sample"), QStringLiteral("first-zone.wav")}});
+		QVERIFY2(first.ok, qPrintable(first.errorMessage));
+		const ControlResult second = revtest::run(QStringLiteral("rack.zone_add"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("low_key"), 66},
+				{QStringLiteral("high_key"), 80}, {QStringLiteral("low_velocity"), 1},
+				{QStringLiteral("high_velocity"), 127}, {QStringLiteral("chain"), kDrivenChain},
+				{QStringLiteral("sample"), QStringLiteral("second-zone.wav")}});
+		QVERIFY2(second.ok, qPrintable(second.errorMessage));
+		QCOMPARE(zones.zoneCount(), before + 2);
+
+		QVERIFY2(revtest::run(QStringLiteral("rack.zone_remove"),
+			{{QStringLiteral("channel"), channel},
+				{QStringLiteral("zone"), first.result.value(QStringLiteral("zone")).toString()}}).ok,
+			"rack.zone_remove refused");
+		QCOMPARE(zones.zoneCount(), before + 1);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(zones.zoneCount(), before + 2);
+		QCOMPARE(zones.zone(before)->sample, QStringLiteral("first-zone.wav"));
+		QCOMPARE(zones.zone(before)->lowKey, 60);
+		QCOMPARE(zones.zone(before + 1)->sample, QStringLiteral("second-zone.wav"));
 	}
 
 	//! The whole configuration - the chains, the selector, the macros with their
