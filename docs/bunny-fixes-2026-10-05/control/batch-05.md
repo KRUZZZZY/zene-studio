@@ -161,3 +161,20 @@ Test: none
 Red/green: none
 
 Leftovers: cluster 2163 is confirmed real but unfixed — a per-file hash cache plus a total-work bound for `project.hash_assets` still needs doing, and needs a way to observe read counts before it can be regression-tested.
+## Correction (rework 2026-10-08, sha 15d82085a)
+
+The verdict for cluster 3054 above is **REWORKED, not FIXED as first written**. Its premise was wrong: the
+4-byte `.mmpz` header is a size hint, not a bound. Qt's `qUncompress` grows its output past the header, so a
+header that understates the expanded size still inflated past the 256 MiB cap. The declared-size refusal in
+`49f0ee50e` is kept only as a fast path.
+
+- Corrected fix: commit `563ce2657` (`fix(rework 49f0ee50e)`). The `.mmpz` body is inflated with zlib and the cap
+  is applied to the bytes produced (`inflateBodyWithinCap`, `src/core/ControlProjectAssets.cpp`); both bodies are
+  read through `readBoundedBody`, which holds at most cap+1 bytes even if the file grows after the stat.
+- Test: `ControlProjectArchiveTest::anOversizedProjectIsRefusedBeforeItIsRead` now includes an understated-header
+  case. Red (pre-fix reader): EXIT=8. Green: EXIT=0.
+- Limit: zlib is linked only when `find_package(ZLIB)` succeeds (`ZENE_HAVE_ZLIB`). Without it the reader falls back
+  to `qUncompress`, where only the declared-size refusal bounds memory. Windows and macOS CI were not run here.
+- Still open, out of this lane: the engine's own recovery in `src/core/DataFile.cpp` (`decompressesAsRecoverableDocument`,
+  around lines 240-258) has the same header-as-bound premise. It checks the size only after `qUncompress` returns.
+- Performance-cache cluster 2163 from this batch remains unfixed, as the reviewer noted.
