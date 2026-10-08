@@ -68,9 +68,9 @@ and the shm FIFO path never compiled or run here. Hosted Windows CI is the first
 | 1 blocker: the no-buffer branch pumped messages on the audio thread | FIXED: the branch returns silence and reads nothing; the main thread's waits read those messages | 516f3f242 | periodWithoutBufferCannotHoldTheAudioThread (fake halfhandshake) | FAIL (the period waited for the client) | PASS |
 | 2 blocker: shm depth counter ridden by a thread that does not hold the lock | FIXED: the data lock has an owner key; only the owner re-enters without waiting; a timed try never rides another thread's hold. Audit: every host-side shm receive is under the communication lock (waitForMessage, waitForReplyWithin, the audio collect); main-thread sends serialise on the data lock and the audio thread only try-locks and skips | 516f3f242 | none deterministic (ownership is enforced by the lock itself) | not reproduced | compiled |
 | 3 POSIX tryAcquire used wall-clock time | FIXED: steady-clock deadline with sem_trywait polling (no wall-clock deadline) | 516f3f242 | SystemSemaphoreTest (4 cases) | not reproduced (needs a clock step) | PASS |
-| 4 main-thread silent gaps: saveSettings and the other waits | PARTIAL: saveSettings reads the cached visibility; isUIVisible and updateSampleRate wait at most 100 ms and leave a late reply in the connection (processMessage caches visibility and ignores other replies). The VST program, parameter and settings queries stay unbounded (they carry data the caller needs) | 516f3f242 | hungQueryCannotFreezeTheMainThread (fake deafquery) | FAIL (froze more than 1 s) | PASS |
-| 5 shm read() spin under the data lock | FIXED: about 5 ms of spins, then the FIFO is given up (the writer posts only whole messages) | 516f3f242 | not tested (the invariant makes it unreachable without a broken peer) | - | compiled |
-| 5 socket partial-message spin on the audio thread | FIXED: 50 us sleeps while bytes arrive, poll only when nothing is readable | 516f3f242 | not measured | - | compiled |
+| 4 main-thread silent gaps: saveSettings and the other waits | PARTIAL: saveSettings reads the cached visibility; isUIVisible and updateSampleRate wait at most 100 ms. Round 4 claimed a late reply was discarded; it was not: the next same-id query took it as its answer (corrected and fixed in round 5). The VST program/parameter/settings queries stay unbounded | 516f3f242 | hungQueryCannotFreezeTheMainThread | FAIL (froze > 1 s) | PASS |
+| 5 shm read() spin under the data lock | Round-4 spin, since replaced in round 5 by a fail-fast read (the spin could never succeed) | 516f3f242 | not tested | - | compiled |
+| 5 socket partial-message spin on the audio thread | FIXED: 50 us sleeps while bytes arrive, poll only when nothing is readable; the audio thread still cannot finish a frame larger than the socket buffer (only the main thread does) | 516f3f242 | not measured | - | compiled |
 | 5 N6 test name and size | FIXED: 900 KB message near the 1 MB window (was 300 KB, misnamed). A frame that has started on the socket is finished on the main thread within the query bound per piece | 516f3f242 | messageNearTheOneMegabyteWindowDoesNotFailThePlugin | FAIL before the started-frame reader (the 900 KB message could not complete) | PASS |
 | N2 remainder: stamp read after the refusal | FIXED: the refusal position comes from the failing push | 516f3f242 | existing ordering tests | - | PASS |
 
@@ -83,6 +83,35 @@ Syntax checks pass with and without -DSYNC_WITH_SHM_FIFO for RemotePluginBase.cp
 Not run: the shm FIFO end to end; the Win32 backend; Vestige and Carla note paths (no host or note-capable VST2 here);
 the VST program/parameter/settings waits stay unbounded.
 
+## Round 5 (re-review round 4)
+
+Re-review verdicts: the round-3 blockers stay closed. Four items were REWORK: the late-reply mis-assignment, the shm
+read spin, the silent lost connection, and the test's global environment variable. All four are fixed here. Two
+round-4 claims were false and are corrected: a late reply was NOT discarded (it answered the next same-id query), and
+a lost connection was NOT a clean failure (the instrument went silent with no report). Windows stays PARTIAL.
+
+| Item | Verdict | Commit | Test | Red on round 4 | Green now |
+|---|---|---|---|---|---|
+| 1 late replies taken as the next same-id answer | FIXED: per-id count of abandoned queries; each later same-id reply is consumed as abandoned, once; processMessage consumes one found by any other wait; the deadline is checked after each non-matching message | 18ae528ff | lateQueryReplyDoesNotAnswerTheNextQuery (fake latequery) | FAIL (the late answer returned) | PASS |
+| 2 shm read() spin under the data lock | FIXED: a short read fails the FIFO at once; no spin | 18ae528ff | not forced (unreachable without a broken peer) | - | compiled |
+| 3 lost connection silent | FIXED: every audio-thread loss invalidates the connection; process() flags it; applyDeferred logs (qCritical) and sets m_failed. A loss found during a main-thread wait is reported by the next period | 18ae528ff | lostConnectionIsReportedOnTheMainThread (fake garbage: negative argument count) | FAIL (plugin not failed) | PASS |
+| 4 test leaves LMMS_PLUGIN_DIR set | FIXED: ScopedPluginDir restores the previous value (or unsets it) when the test ends | 18ae528ff | no-buffer and pre-buffer tests | - | PASS |
+| 5 pre-buffer handshake needs a main-thread wait | FIXED: the deferred timer reads complete messages while there is no shared block and activates the ports on IdInitDone | 18ae528ff | preBufferHandshakeCompletesWithoutAMainThreadWait (fake halfhandshake) | FAIL (never completed) | PASS |
+| 5 m_uiVisible data race | FIXED: std::atomic<int> | 18ae528ff | - | - | compiled |
+| 5 refresh cached visibility on the plugin's own UI close | NOT POSSIBLE on the current protocol: the client does not report its own editor closing; its visibility messages only answer host requests. The cache can be stale after a close inside the plugin's UI | - | - | - | - |
+| 5 started-frame total deadline | FIXED: StartedFrameTimeout (500 ms) on top of the per-piece bound | 18ae528ff | messageNearTheOneMegabyteWindowDoesNotFailThePlugin | - | PASS |
+| 5 saveSettings before any query | Behaviour change, stated: the cache is -1 until a query, show or hide, so a project saved before any of those writes no guivisible attribute | 18ae528ff | - | - | - |
+
+Suites on the final tree (all pass): RemotePluginClientE2ETest (24), MidiHandoffQueueTest (9), SystemSemaphoreTest (4),
+VstMidiEventBatchTest, AllocationProbeTest, RemotePluginAudioPortsTest, AudioPortsTest, AudioPortsModelTest,
+ZynSeparateProcessTest, OutOfProcessHostTest, OutOfProcessHostClientLoopTest. Client executables RemoteZynAddSubFx and
+NativeLinuxRemoteVstPlugin64 build. Gates complexity, file-length, fork-sources and no-upstream-regression exit 0.
+Syntax checks pass with and without -DSYNC_WITH_SHM_FIFO for RemotePluginBase.cpp, RemotePlugin.cpp and SystemSemaphore.cpp.
+
+Windows: still PARTIAL. Compiled for Linux only (shm syntax check; POSIX semaphore unit test). The Win32 backend
+(WaitForSingleObject with a timeout) is not compiled here (no mingw), and the shm FIFO path is not run end to end. A
+Win32 compile break would surface on the hosted Windows job after merge; the owner decides whether to run it first.
+
 ## Residuals (open, tracked)
 
 - Windows shm transport: bounded in design (rounds 3-4), but only syntax-checked (-DSYNC_WITH_SHM_FIFO) and the POSIX
@@ -94,7 +123,11 @@ the VST program/parameter/settings waits stay unbounded.
   bound; the audio thread skips periods (silence) meanwhile.
 - Refusal counters are not in the control surface; the instrument-level queues (Vestige, Zyn, Carla) have no
   counter accessor or warning.
-- Vestige and Carla: compile-only at runtime (see round 3). ZynAddSubFx's out-of-process suites pass but send no notes.
+- Vestige and Carla: compile-only at runtime (see round 3).
+- The plugin's own UI close is not reported by the client protocol: the cached visibility can be stale after it.
+- A frame larger than the socket buffer is only completed by the main thread; during playback such a message leaves the
+  plugin silent until the next main-thread wait.
+- Main-thread VST program, parameter and settings queries wait without a bound (owner to schedule). ZynAddSubFx's out-of-process suites pass but send no notes.
 - Messages above 1 MB on the audio thread still fail the plugin (N6 bound).
 - Main-thread waits now hold the communication lock for their whole wait (N1); the audio thread skips periods
   meanwhile, so a slow client during a main-thread wait is a silence gap.
