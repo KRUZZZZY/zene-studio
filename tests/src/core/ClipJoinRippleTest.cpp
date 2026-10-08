@@ -30,6 +30,8 @@
 
 #include <QJsonArray>
 
+#include <limits>
+
 #include "ArrangementEdits.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -133,6 +135,47 @@ private slots:
 		QVERIFY(lane != nullptr);
 		QCOMPARE(lane->points.size(), std::size_t{1});
 		QCOMPARE(static_cast<int>(lane->points.front().tick), 200);  // and its point moved with it
+	}
+
+	//! A controller point near the top of the tick range scaled by 2 used to wrap negative in
+	//! the narrowing cast; the scale is now refused whole, and the point stays where it was.
+	void scalingRefusesAControllerPointPastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 192, 60);
+		const int top = std::numeric_limits<tick_t>::max();
+		const QJsonObject set{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("lane"), QStringLiteral("cc:7")},
+			{QStringLiteral("points"), QJsonArray{{QJsonObject{{QStringLiteral("tick"), top}, {QStringLiteral("value"), 64}}}}}};
+		QVERIFY(run(QStringLiteral("clip.controllers_set"), set).ok);
+
+		const ControlResult scaled = run(QStringLiteral("clip.time_scale"),
+			{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("factor"), 2}});
+		QVERIFY(!scaled.ok);
+		QCOMPARE(scaled.errorKind, ControlErrorKind::Refused);
+		const ControllerLane* lane = a->controllers().lane(ControllerKind::ControlChange, 7);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(lane->points.size(), std::size_t{1});
+		QCOMPARE(static_cast<int>(lane->points.front().tick), top);
+		QCOMPARE(static_cast<int>(a->length().getTicks()), 192);
+	}
+
+	//! A later clip's controller point that the join moves past the largest tick used to wrap
+	//! in the signed add; the join is refused before anything moves.
+	void joiningRefusesAControllerPointPastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 96, 60);
+		MidiClip* b = clipAt(192, 96, 64);
+		const int nearTop = std::numeric_limits<tick_t>::max() - 100;
+		const QJsonObject set{{QStringLiteral("clip"), control::clipIdOf(b)}, {QStringLiteral("lane"), QStringLiteral("cc:11")},
+			{QStringLiteral("points"), QJsonArray{{QJsonObject{{QStringLiteral("tick"), nearTop}, {QStringLiteral("value"), 90}}}}}};
+		QVERIFY(run(QStringLiteral("clip.controllers_set"), set).ok);
+
+		const ControlResult joined = run(QStringLiteral("clip.join"), {{QStringLiteral("clips"),
+			QJsonArray{control::clipIdOf(a), control::clipIdOf(b)}}});
+		QVERIFY(!joined.ok);
+		QCOMPARE(joined.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(m_track->getClips().size(), std::size_t{2});
+		QVERIFY(a->controllers().lane(ControllerKind::ControlChange, 11) == nullptr);
+		QCOMPARE(b->notes().size(), std::size_t{1});
 	}
 
 	//! ED-031 joins the NOTES of the later clips into the first; their controller lanes are

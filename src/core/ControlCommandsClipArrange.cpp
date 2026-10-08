@@ -29,6 +29,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 
 #include <QJsonArray>
 
@@ -98,9 +100,30 @@ void scaleNotes(MidiClip* clip, double factor)
 	clip->rearrangeAllNotes();
 }
 
+//! Whether @a tick, computed in wide arithmetic, is a tick a controller point can store.
+bool fitsTick(long long tick)
+{
+	return tick >= 0 && tick <= static_cast<long long>(std::numeric_limits<tick_t>::max());
+}
+
+//! Preflight for a time scale: every controller point must scale onto a storable tick. Checked
+//! in wide arithmetic before the checkpoint, so a refused scale mutates nothing.
+bool scaledControllersFit(const MidiClip* clip, double factor)
+{
+	for (const ControllerLane& lane : clip->controllers().lanes())
+	{
+		for (const ControllerPoint& point : lane.points)
+		{
+			if (!fitsTick(std::llround(static_cast<double>(point.tick) * factor))) { return false; }
+		}
+	}
+	return true;
+}
+
 //! Controller points carry clip-time ticks, exactly like note positions, so a time scale moves
 //! them by the same factor and the same rounding. Points that scale onto the same tick collapse
 //! (setPoints keeps one per tick) - the same bounds policy the notes get from their >= 1 length.
+//! The caller has checked scaledControllersFit, so every scaled tick is storable.
 void scaleControllers(MidiClip* clip, double factor)
 {
 	for (const ControllerLane& lane : clip->controllers().lanes())
@@ -109,7 +132,7 @@ void scaleControllers(MidiClip* clip, double factor)
 		points.reserve(lane.points.size());
 		for (const ControllerPoint& point : lane.points)
 		{
-			points.push_back({static_cast<tick_t>(std::lround(point.tick * factor)), point.value});
+			points.push_back({static_cast<tick_t>(std::llround(static_cast<double>(point.tick) * factor)), point.value});
 		}
 		clip->setControllerPoints(lane.kind, lane.controller, std::move(points));
 	}
@@ -124,6 +147,11 @@ ControlResult timeScale(const QJsonObject& args)
 	if (factor < MinFactor || factor > MaxFactor)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'factor' must be %1..%2").arg(MinFactor).arg(MaxFactor));
+	}
+	if (auto* midi = dynamic_cast<MidiClip*>(ref.clip); midi != nullptr && !scaledControllersFit(midi, factor))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("a controller point would scale past the largest tick; nothing was changed"));
 	}
 	const tick_t before = ref.clip->length().getTicks();
 	ref.clip->addJournalCheckPoint();
@@ -184,6 +212,26 @@ bool joinable(const QJsonArray& ids, QVector<MidiClip*>* clips, Track** track, C
 
 //! ED-031 (0.5.0 L05): glue MIDI clips into the first - their notes move in at their song positions,
 //! the others go, and the first spans to the last one's end.
+//! Preflight for a join: every controller point of the later clips must land on a storable
+//! song tick once moved by its clip's delta from the first clip's origin, in wide arithmetic.
+bool joinedControllersFit(const QVector<MidiClip*>& clips, tick_t origin)
+{
+	for (int i = 1; i < clips.size(); ++i)
+	{
+		const MidiClip* other = clips.at(i);
+		const long long from = static_cast<long long>(other->startPosition().getTicks()) + other->startTimeOffset().getTicks();
+		const long long delta = from - origin;
+		for (const ControllerLane& lane : other->controllers().lanes())
+		{
+			for (const ControllerPoint& point : lane.points)
+			{
+				if (!fitsTick(static_cast<long long>(point.tick) + delta)) { return false; }
+			}
+		}
+	}
+	return true;
+}
+
 //! The lanes of @a clip moved into @a first by @a delta ticks - the same song-time delta the
 //! notes get. Points that land on the same tick collapse (one point per tick), and a lane that
 //! already exists in @a first is merged into it rather than replacing it.
@@ -208,9 +256,14 @@ ControlResult joinClips(const QJsonObject& args)
 	QVector<MidiClip*> clips;
 	Track* track = nullptr;
 	if (!joinable(args.value(QStringLiteral("clips")).toArray(), &clips, &track, &error)) { return error; }
-	addUndoStep(QVector<JournallingObject*>{track});
 	MidiClip* first = clips.front();
 	const tick_t origin = first->startPosition().getTicks() + first->startTimeOffset().getTicks();
+	if (!joinedControllersFit(clips, origin))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("a controller point would move past the largest tick; nothing was changed"));
+	}
+	addUndoStep(QVector<JournallingObject*>{track});
 	tick_t end = first->endPosition().getTicks();
 	for (int i = 1; i < clips.size(); ++i)
 	{
