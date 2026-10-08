@@ -79,6 +79,8 @@ set(LMMS_TESTS
 	# reachable from a test): a range copied to another file, and the refusal
 	# that keeps a self-trim from truncating the file it is reading.
 	src/core/BounceInPlaceTest.cpp
+	# Coverage lane (M0): bounce.land, track.flatten, range.bounce and the subproject verbs through a stand-in render child.
+	src/core/ControlBounceRenderTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
 	# Linked / smart clips (feature-list row 6, task #645): the relation, an edit
@@ -626,6 +628,7 @@ set(LMMS_TESTS
 	src/core/SampleBufferResampleTest.cpp
 	# 0.5.0 L13 WF-126: the Mackie Control protocol and a surface driving real tracks.
 	src/core/McuSurfaceTest.cpp
+	src/core/McuSurfaceFeedbackTest.cpp
 	# 0.5.0 L04 ED-048: markers - commands, undo, jump, and the project file.
 	src/core/ProjectMarkersTest.cpp
 	# 0.5.0 L04 ED-011/012: the time range and the edits over it.
@@ -759,6 +762,7 @@ set(LMMS_TESTS
 	src/core/AafImportTest.cpp
 	# 0.5.0 F5 (ED-054): the video track; the FFmpeg cases skip without the library
 	src/core/VideoTrackTest.cpp
+	src/core/VideoTestClipTest.cpp
 	src/core/StableTrackIdsTest.cpp
 	# ARCH-4 slice S3: the id-family registry (clip/lane/note/scene/warp over
 	# the one counter) and the per-object revision pair - absent rev == 0, an
