@@ -31,6 +31,7 @@
 #include "ControlReversibility.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ClipLinks.h"
 #include "LinkedClipEdits.h"
 #include "Song.h"
 #include "Track.h"
@@ -222,7 +223,8 @@ void registerClipResize(ControlRegistry& registry)
 	cmd.id = QStringLiteral("clip.resize");
 	cmd.group = QStringLiteral("clip");
 	cmd.verb = QStringLiteral("resize");
-	cmd.description = QStringLiteral("Set a clip's length in ticks (the clip becomes manually resized). "
+	cmd.description = QStringLiteral("Set a clip's length in ticks (the clip becomes manually resized). A linked "
+		"clip's resize applies to the whole link group (one undo step). "
 		"Reversible through the ProjectJournal (Clip checkpoint).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
@@ -241,10 +243,18 @@ void registerClipResize(ControlRegistry& registry)
 			return error;
 		}
 		const tick_t previous = ref.clip->length().getTicks();
+		const auto wanted = static_cast<tick_t>(args.value(QStringLiteral("length")).toDouble());
+		// A linked clip's resize is the whole group's (docs/LINKED-CLIPS.md section 2): every peer's end moves by
+		// the same delta, planned first so a refusal changes nothing.
+		const QString groupRefusal = ClipLinks::planEdgeEdit(ref.clip, 0, wanted - previous);
+		if (!groupRefusal.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, groupRefusal);
+		}
 		ref.clip->addJournalCheckPoint();
-		ref.clip->changeLength(TimePos(static_cast<tick_t>(
-			args.value(QStringLiteral("length")).toDouble())));
+		ref.clip->changeLength(TimePos(wanted));
 		ref.clip->setAutoResize(false);
+		ClipLinks::applyEdgeEdit(ref.clip, 0, wanted - previous, true);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));

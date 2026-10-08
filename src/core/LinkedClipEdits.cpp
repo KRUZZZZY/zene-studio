@@ -24,6 +24,8 @@
 
 #include "LinkedClipEdits.h"
 
+#include <QPair>
+
 #include "ArrangementEdits.h"
 #include "Clip.h"
 #include "ClipLinks.h"
@@ -64,17 +66,71 @@ QVector<Clip*> peersOf(const Clip* clip)
 	return peers;
 }
 
-QString planEdgeEdit(const Clip* source, tick_t startDelta, tick_t endDelta)
+namespace
 {
-	for (const Clip* peer : peersOf(source))
+
+/*! Why \p peer cannot take an edge edit of (\p startDelta, \p endDelta), or empty. A peer is refused when the
+ *  edit would empty it or push it before the song start, and when it would extend the peer before its own content
+ *  (a start offset above 0, which the song editor never allows) while the edited clip stays inside its content:
+ *  the peers of a group may differ in offset, and the edit must not leave one of them in a state its own drag
+ *  would have refused. The edited clip's own offset is not constrained here (clip.trim accepts any). */
+QString peerRefusal(const Clip* peer, tick_t startDelta, tick_t endDelta, tick_t sourceOffsetAfter)
+{
+	const tick_t start = peer->startPosition().getTicks() + startDelta;
+	const tick_t end = peer->endPosition().getTicks() + endDelta;
+	if (end <= start || start < 0)
 	{
-		const tick_t start = peer->startPosition().getTicks() + startDelta;
-		const tick_t end = peer->endPosition().getTicks() + endDelta;
-		if (end > start && start >= 0) { continue; }
-		return QStringLiteral("the trim would leave the linked clip at %1..%2 (empty or before the "
-			"song start), so the whole group's trim is refused and nothing moved").arg(start).arg(end);
+		return QStringLiteral("the edit would leave the linked clip at %1..%2 (empty or before the "
+			"song start), so the whole group's edit is refused and nothing moved").arg(start).arg(end);
+	}
+	const tick_t offsetBefore = peer->startTimeOffset().getTicks();
+	const tick_t offsetAfter = offsetBefore - startDelta;
+	if (offsetAfter > 0 && offsetAfter > offsetBefore && sourceOffsetAfter <= 0)
+	{
+		return QStringLiteral("the edit would extend a linked clip %1 ticks before its own content, so the "
+			"whole group's edit is refused and nothing moved").arg(offsetAfter);
 	}
 	return QString();
+}
+
+} // namespace
+
+namespace
+{
+
+//! The clips linked to \p edited and not in it, each once, with the edited clip they follow.
+QVector<QPair<Clip*, const Clip*>> followers(const QVector<Clip*>& edited)
+{
+	QVector<QPair<Clip*, const Clip*>> out;
+	QVector<Clip*> seen;
+	for (const Clip* source : edited)
+	{
+		for (Clip* peer : peersOf(source))
+		{
+			if (edited.contains(peer) || seen.contains(peer)) { continue; }
+			seen.append(peer);
+			out.append({peer, source});
+		}
+	}
+	return out;
+}
+
+} // namespace
+
+QString planEdgeEditFor(const QVector<Clip*>& edited, tick_t startDelta, tick_t endDelta)
+{
+	for (const auto& [peer, source] : followers(edited))
+	{
+		const tick_t sourceOffsetAfter = source->startTimeOffset().getTicks() - startDelta;
+		const QString refusal = peerRefusal(peer, startDelta, endDelta, sourceOffsetAfter);
+		if (!refusal.isEmpty()) { return refusal; }
+	}
+	return QString();
+}
+
+QString planEdgeEdit(const Clip* source, tick_t startDelta, tick_t endDelta)
+{
+	return planEdgeEditFor({const_cast<Clip*>(source)}, startDelta, endDelta);
 }
 
 void checkpointPeers(const Clip* source)
@@ -92,23 +148,35 @@ void checkpointGroupTracks(const Clip* source)
 	checkpointObjects(tracks);
 }
 
-int applyEdgeEdit(Clip* source, tick_t startDelta, tick_t endDelta, bool checkpoint)
+int applyEdgeEditFor(const QVector<Clip*>& edited, tick_t startDelta, tick_t endDelta, bool checkpoint)
 {
-	if (checkpoint) { checkpointPeers(source); }
-	int edited = 0;
-	for (Clip* peer : peersOf(source))
+	const auto follow = followers(edited);
+	if (checkpoint)
 	{
+		QVector<JournallingObject*> peers;
+		for (const auto& entry : follow) { peers.append(entry.first); }
+		checkpointObjects(peers);
+	}
+	int count = 0;
+	for (const auto& [peer, source] : follow)
+	{
+		// The edited clip has already been edited: its offset is the one after.
+		if (!peerRefusal(peer, startDelta, endDelta, source->startTimeOffset().getTicks()).isEmpty()) { continue; }
 		const tick_t start = peer->startPosition().getTicks() + startDelta;
 		const tick_t end = peer->endPosition().getTicks() + endDelta;
-		if (end <= start || start < 0) { continue; }
 		const tick_t offset = peer->startTimeOffset().getTicks() - startDelta;  // clip.trim's head-trim rule
 		peer->movePosition(TimePos(start));
 		peer->changeLength(TimePos(end - start));
 		peer->setStartTimeOffset(TimePos(offset));
 		peer->setAutoResize(false);
-		++edited;
+		++count;
 	}
-	return edited;
+	return count;
+}
+
+int applyEdgeEdit(Clip* source, tick_t startDelta, tick_t endDelta, bool checkpoint)
+{
+	return applyEdgeEditFor({source}, startDelta, endDelta, checkpoint);
 }
 
 namespace
@@ -147,9 +215,10 @@ GroupSplit splitGroupAt(Clip* source, tick_t position)
 	report.rightGroup = linked ? allocateGroupId() : 0;
 	for (Clip* member : cut)
 	{
-		Clip* right = arrangement::splitClipAt(member, member->startPosition().getTicks() + relative);
+		Clip* right = arrangement::splitClipAlone(member, member->startPosition().getTicks() + relative);
 		if (right == nullptr) { continue; }
 		right->setLinkId(report.rightGroup);
+		report.lefts.append(member);
 		++report.members;
 		if (member == source) { report.right = right; }
 	}

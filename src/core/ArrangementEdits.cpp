@@ -34,6 +34,8 @@
 #include "AutomationTrack.h"
 #include "Clip.h"
 #include "ClipEdits.h"
+#include "ClipLinks.h"
+#include "LinkedClipEdits.h"
 #include "ConfigManager.h"
 #include "ControlReversibility.h"
 #include "EditLocks.h"
@@ -56,6 +58,14 @@ void deleteClip(Track* track, Clip* clip)
 }
 
 Clip* splitClipAt(Clip* clip, tick_t position)
+{
+	// A linked clip is cut with its whole group (owner decision 2026-10-08): the same clip-relative position on
+	// every member, one journal step over the tracks of the members cut.
+	if (clip->linkId() > 0) { return ClipLinks::splitGroupAt(clip, position).right; }
+	return splitClipAlone(clip, position);
+}
+
+Clip* splitClipAlone(Clip* clip, tick_t position)
 {
 	const tick_t start = clip->startPosition().getTicks();
 	const tick_t end = clip->endPosition().getTicks();
@@ -340,8 +350,9 @@ void overlapOne(Clip* moved, Clip* other, Overlap mode, tick_t start, tick_t end
 		return;
 	}
 	// Trim: cut the other clip at the moved clip's edges and drop what lies under it.
-	splitClipAt(other, end);
-	Clip* inside = splitClipAt(other, start);
+	// Resolving an overlap cuts only the clip under the drop: its link peers are not under it, so they stay whole.
+	splitClipAlone(other, end);
+	Clip* inside = splitClipAlone(other, start);
 	Clip* under = inside != nullptr ? inside : other;
 	if (under->startPosition().getTicks() >= start && under->endPosition().getTicks() <= end) { deleteClip(moved->getTrack(), under); }
 }

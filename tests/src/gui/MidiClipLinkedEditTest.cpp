@@ -288,6 +288,66 @@ private slots:
 		QCOMPARE(b->length().getTicks(), 4 * Bar);
 	}
 
+	//! Dragging one member's right edge resizes every member; one undo puts them all back.
+	void aRightEdgeDragResizesEveryLinkedMember()
+	{
+		MidiClip* a = midiClipAt(m_track, 0, 4 * Bar);
+		MidiClip* b = midiClipAt(m_track, 8 * Bar, 4 * Bar);
+		const int group = ClipLinks::allocateGroupId();
+		a->setLinkId(group);
+		b->setLinkId(group);
+		m_editor->realignTracks();
+		QCoreApplication::processEvents();
+		MidiClipView* view = viewOf(a);
+		QVERIFY(view != nullptr);
+
+		const QPoint grab(view->width() - 2, view->height() / 2);
+		const QPoint drop(grab.x() - view->width() / 4, grab.y());
+		const auto send = [view](QEvent::Type type, const QPoint& where, Qt::MouseButtons buttons) {
+			QMouseEvent event(type, QPointF(where), QPointF(view->mapToGlobal(where)), Qt::LeftButton, buttons, Qt::NoModifier);
+			QCoreApplication::sendEvent(view, &event);
+		};
+		const int undoBefore = Engine::projectJournal()->undoDepth();
+		send(QEvent::MouseButtonPress, grab, Qt::LeftButton);
+		send(QEvent::MouseMove, drop, Qt::LeftButton);
+		send(QEvent::MouseButtonRelease, drop, Qt::NoButton);
+		QCoreApplication::processEvents();
+
+		QVERIFY2(a->length().getTicks() < 4 * Bar, "the drag did not shorten the dragged clip");
+		QCOMPARE(b->length(), a->length());
+		QCOMPARE(b->startPosition().getTicks(), 8 * Bar);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), undoBefore + 1);  // one step, not one per clip
+		Engine::projectJournal()->undo();
+		QCOMPARE(a->length().getTicks(), 4 * Bar);
+		QCOMPARE(b->length().getTicks(), 4 * Bar);
+	}
+
+	//! A drag a peer cannot follow goes back whole: here the peer is too short for the dragged clip's new edge.
+	void aDragAPeerCannotFollowGoesBack()
+	{
+		MidiClip* a = midiClipAt(m_track, 0, 4 * Bar);
+		MidiClip* b = midiClipAt(m_track, 8 * Bar, Bar / 4);  // a quarter bar long
+		const int group = ClipLinks::allocateGroupId();
+		a->setLinkId(group);
+		b->setLinkId(group);
+		m_editor->realignTracks();
+		QCoreApplication::processEvents();
+		MidiClipView* view = viewOf(a);
+		QVERIFY(view != nullptr);
+		const QPoint grab(view->width() - 2, view->height() / 2);
+		const QPoint drop(1, grab.y());  // nearly the whole clip: the peer would lose more than it has
+		const auto send = [view](QEvent::Type type, const QPoint& where, Qt::MouseButtons buttons) {
+			QMouseEvent event(type, QPointF(where), QPointF(view->mapToGlobal(where)), Qt::LeftButton, buttons, Qt::NoModifier);
+			QCoreApplication::sendEvent(view, &event);
+		};
+		send(QEvent::MouseButtonPress, grab, Qt::LeftButton);
+		send(QEvent::MouseMove, drop, Qt::LeftButton);
+		send(QEvent::MouseButtonRelease, drop, Qt::NoButton);
+		QCoreApplication::processEvents();
+		QCOMPARE(a->length().getTicks(), 4 * Bar);   // the dragged clip stayed where it was
+		QCOMPARE(b->length().getTicks(), Bar / 4);   // and so did the peer
+	}
+
 private:
 	QTemporaryDir m_home;
 	SongEditor* m_editor = nullptr;

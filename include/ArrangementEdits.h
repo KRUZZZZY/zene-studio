@@ -46,7 +46,12 @@ namespace arrangement
 
 //! Split @a clip at @a position (strictly inside it): the left part stays, the right part is a
 //! new clip, returned. nullptr when @a position is not inside. The GUI's knife and clip.split.
+//! A linked clip is cut together with every other member of its link group at the same clip-relative
+//! position (ClipLinks::splitGroupAt): the left halves keep the group, the right halves form a new one.
 LMMS_EXPORT Clip* splitClipAt(Clip* clip, tick_t position);
+//! splitClipAt for ONE clip, whatever its link: the primitive the group split is made of, and what an
+//! overlap resolution uses on the clip under a drop.
+LMMS_EXPORT Clip* splitClipAlone(Clip* clip, tick_t position);
 //! clip.delete's recipe: detach @a clip from @a track, then delete it.
 LMMS_EXPORT void deleteClip(Track* track, Clip* clip);
 

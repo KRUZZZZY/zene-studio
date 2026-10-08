@@ -106,7 +106,7 @@ int lockedAmong(const QVector<selectableObject*>& objects)
 }
 
 
-//! A linked clip's left-edge drag is a trim of the whole group (docs/LINKED-CLIPS.md section 2): the press
+//! A linked clip's edge drag (either edge) is a trim of the whole group (docs/LINKED-CLIPS.md section 2): the press
 //! captures the peers into the drag's own undo step, the release moves their edges by what the dragged clip moved.
 struct LinkedTrimDrag
 {
@@ -122,10 +122,10 @@ int undoDepthNow()
 	return journal != nullptr ? journal->undoDepth() : 0;
 }
 
-void beginLinkedTrim(Clip* clip, bool leftEdge, int depthBefore)
+void beginLinkedTrim(Clip* clip, bool edgeDrag, int depthBefore)
 {
 	s_linkedTrim = {};
-	if (!leftEdge || clip->linkId() <= 0) { return; }
+	if (!edgeDrag || clip->linkId() <= 0) { return; }
 	ClipLinks::checkpointPeers(clip);
 	if (ProjectJournal* journal = Engine::projectJournal()) { journal->mergeCheckpointsFrom(depthBefore); }
 	s_linkedTrim = {clip, clip->startPosition().getTicks(), clip->endPosition().getTicks()};
@@ -139,16 +139,28 @@ void endLinkedTrim(Clip* clip)
 	const tick_t startDelta = clip->startPosition().getTicks() - drag.start;
 	const tick_t endDelta = clip->endPosition().getTicks() - drag.end;
 	if (startDelta == 0 && endDelta == 0) { return; }
-	if (ClipLinks::planEdgeEdit(clip, startDelta, endDelta).isEmpty())
-	{
-		ClipLinks::applyEdgeEdit(clip, startDelta, endDelta, false);
-		return;
-	}
-	// A peer cannot take the trim: the whole group's trim is refused, so this clip goes back too.
-	clip->setStartTimeOffset(TimePos(clip->startTimeOffset().getTicks() + startDelta));
+	// The plan is made against the clip as it was before the drag, so put it back for a moment.
+	const TimePos finalStart = clip->startPosition();
+	const TimePos finalLength = clip->length();
+	const TimePos finalOffset = clip->startTimeOffset();
+	clip->setStartTimeOffset(TimePos(finalOffset.getTicks() + startDelta));
 	clip->movePosition(TimePos(drag.start));
 	clip->changeLength(TimePos(drag.end - drag.start));
+	const QString refusal = ClipLinks::planEdgeEdit(clip, startDelta, endDelta);
+	if (!refusal.isEmpty())
+	{
+		// A peer cannot take the trim: the whole group's trim is refused, so this clip stays back - and says so.
+		TextFloat::displayMessage(ClipView::tr("Linked clips"),
+			ClipView::tr("The edit went back: another clip linked to this one could not follow it.\n%1").arg(refusal),
+			embed::getIconPixmap("hint"), 4000);
+		return;
+	}
+	clip->movePosition(finalStart);
+	clip->changeLength(finalLength);
+	clip->setStartTimeOffset(finalOffset);
+	ClipLinks::applyEdgeEdit(clip, startDelta, endDelta, false);
 }
+
 } // namespace
 
 
@@ -739,7 +751,7 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 					setCursor( Qt::SizeAllCursor );
 				}
 
-				beginLinkedTrim(m_clip, m_action == Action::ResizeLeft, depthBeforePress);
+				beginLinkedTrim(m_clip, m_action == Action::ResizeLeft || m_action == Action::Resize, depthBeforePress);
 
 				if( m_action == Action::Move )
 				{
