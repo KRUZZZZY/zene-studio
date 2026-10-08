@@ -2100,6 +2100,7 @@ tests/src/core/ProvenanceSectionTest.cpp
 tests/src/core/ProvenanceVersionTest.cpp
 tests/src/core/RackMacrosTest.cpp
 tests/src/core/RackTestSupport.h
+tests/src/core/RackZoneFeedRunTest.cpp
 tests/src/core/RackZoneRoutingTest.cpp
 tests/src/core/RackZonesTest.cpp
 tests/src/core/RangeEditsTest.cpp
@@ -2127,6 +2128,7 @@ tests/src/core/RoutingGraphScheduleTest.cpp
 tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/ScriptCommandBridgeTest.cpp
 tests/src/core/ScriptDawBindingTest.cpp
+tests/src/core/ScriptDawEffectsTest.cpp
 tests/src/core/SessionCommandArgsTest.cpp
 tests/src/core/ScriptDawRemovalUndoTest.cpp
 tests/src/core/SessionModelTest.cpp

@@ -85,6 +85,8 @@ set(LMMS_TESTS
 	src/core/ControlMidiReconnectSharedTest.cpp
 	src/core/ControlPluginBusesTest.cpp
 	src/core/ControlHostedDeviceCatalogueTest.cpp
+	src/core/RackZoneFeedRunTest.cpp
+	src/core/ScriptDawEffectsTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
 	# Linked / smart clips (feature-list row 6, task #645): the relation, an edit
@@ -1477,7 +1479,7 @@ set_tests_properties(RecordingRealtimeTest PROPERTIES
 # ScriptDawBindingTest constructs a real Engine (mixer, script worker thread,
 # ProjectJournal) and drives it through the Lua binding, so it needs the same
 # headless Qt platform. ScriptDawRemovalUndoTest is the same kind of test.
-set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest PROPERTIES
+set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest ScriptDawEffectsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The rack command-group tests (rack.* macros and key/velocity zones) construct a
