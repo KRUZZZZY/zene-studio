@@ -708,6 +708,8 @@ set(LMMS_TESTS
 	# ProjectRevIdsTest entry above (union-of-entries; siblings append theirs
 	# after, never reorder this block).
 	src/core/ProvenanceSectionTest.cpp
+	# The <z:provenance> version (v="2" only with nested ids) and a file holding two provenance sections.
+	src/core/ProvenanceVersionTest.cpp
 	src/core/StemExportTest.cpp
 	src/core/TelemetryTest.cpp
 	# CODE-7: the telemetry transport's two structural properties - https only
@@ -3810,6 +3812,8 @@ set_tests_properties(ProjectRevIdsTest PROPERTIES
 # ProvenanceSectionTest (ARCH-4 S6) is the same shape: a full Engine, mutating
 # commands through the registry, save/load/save through Song, no window.
 set_tests_properties(ProvenanceSectionTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ProvenanceVersionTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Headless load path (task #625, SPEC A13/A15): no modal dialog may block an
 # instance started with --control-socket.

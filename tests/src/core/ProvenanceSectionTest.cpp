@@ -602,68 +602,6 @@ private slots:
 			"an entry with no command must be refused, not rewritten with an empty one");
 	}
 
-	//! THE VERSION: a section whose entries carry `nested` (an aggregate's children) is written as v="2",
-	//! and only then. Older builds refuse a v="2" section as a whole and keep it verbatim, so no build drops
-	//! the ids by rewriting it. A v="2" section round-trips through a save and a fresh load unchanged.
-	void aSectionWithNestedIdsIsVersionTwoAndRoundTrips()
-	{
-		loadProject(m_pristine);
-		provenance::Section::instance().clear();
-		provenance::recordChange(QStringLiteral("range.consolidate"), QJsonObject(), QJsonObject{{QStringLiteral("n"), 2}},
-			QStringList{QStringLiteral("clip.consolidate"), QStringLiteral("clip.consolidate")});
-		const QString first = m_dir.filePath(QStringLiteral("nested-first.mmp"));
-		QVERIFY(Engine::getSong()->saveProjectFile(first, false));
-		const QDomElement written = provenanceElement(parseFile(first));
-		QCOMPARE(written.attribute(QStringLiteral("v")), QStringLiteral("2"));
-		QCOMPARE(changeElements(written).first().attribute(QStringLiteral("nested")),
-			QStringLiteral("clip.consolidate clip.consolidate"));
-
-		loadProject(first);
-		QCOMPARE(heldChanges().last().nested, QStringLiteral("clip.consolidate clip.consolidate"));
-		const QString second = m_dir.filePath(QStringLiteral("nested-second.mmp"));
-		QVERIFY(Engine::getSong()->saveProjectFile(second, false));
-		const QDomElement resaved = provenanceElement(parseFile(second));
-		QCOMPARE(resaved.attribute(QStringLiteral("v")), QStringLiteral("2"));
-		QVERIFY2(changesFrom(resaved) == changesFrom(written), "the v2 section changed on a fresh load and resave");
-	}
-
-	//! THE OLD SHAPE: a section without nested ids stays v="1", and a v="1" entry that carries `nested` is
-	//! not a shape this writer produces, so it is refused rather than claimed.
-	void aSectionWithoutNestedIdsStaysVersionOneAndRefusesNestedInVersionOne()
-	{
-		loadProject(m_pristine);
-		provenance::Section::instance().clear();
-		provenance::recordChange(QStringLiteral("track.add"), QJsonObject(), QJsonObject{{QStringLiteral("track"), QStringLiteral("trk-1")}});
-		const QString plain = m_dir.filePath(QStringLiteral("plain.mmp"));
-		QVERIFY(Engine::getSong()->saveProjectFile(plain, false));
-		const QDomElement written = provenanceElement(parseFile(plain));
-		QCOMPARE(written.attribute(QStringLiteral("v")), QStringLiteral("1"));
-		QVERIFY(!changeElements(written).first().hasAttribute(QStringLiteral("nested")));
-
-		QDomDocument document;
-		document.setContent(QStringLiteral(
-			"<z:provenance v=\"1\" seq=\"1\"><z:change seq=\"1\" at=\"2026-01-01T00:00:00Z\" actor=\"human\""
-			" instance=\"0123abcd-456\" command=\"range.consolidate\" nested=\"clip.consolidate\"/></z:provenance>"));
-		const int heldBefore = heldChanges().size();
-		QVERIFY2(!provenance::Section::instance().load(document.documentElement()),
-			"a v=\"1\" entry carrying nested ids must be refused, not claimed");
-		QCOMPARE(heldChanges().size(), heldBefore);
-		provenance::Section::instance().clear();
-	}
-
-	//! A literal v="2" section with a nested entry is claimed, and its ids are kept.
-	void aVersionTwoLiteralWithNestedIdsIsAdopted()
-	{
-		QDomDocument document;
-		document.setContent(QStringLiteral(
-			"<z:provenance v=\"2\" seq=\"1\"><z:change seq=\"1\" at=\"2026-01-01T00:00:00Z\" actor=\"human\""
-			" instance=\"0123abcd-456\" command=\"range.consolidate\" nested=\"clip.consolidate clip.consolidate\"/></z:provenance>"));
-		provenance::Section::instance().clear();
-		QVERIFY2(provenance::Section::instance().load(document.documentElement()), "a v=\"2\" section must be adopted");
-		QCOMPARE(heldChanges().last().nested, QStringLiteral("clip.consolidate clip.consolidate"));
-		provenance::Section::instance().clear();
-	}
-
 	//! THE ACTOR: a session KIND, never a person (1.9: "not a credential, not
 	//! a user identity - the file must be shareable"). Outside a socket scope
 	//! the attribution is "human"; the instance is the same non-identifying

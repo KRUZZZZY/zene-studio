@@ -2495,6 +2495,7 @@ tests/src/core/ProjectStateTest.cpp
 tests/src/core/ProjectToolsTest.cpp
 tests/src/core/ProjectVersionTest.cpp
 tests/src/core/ProvenanceSectionTest.cpp
+tests/src/core/ProvenanceVersionTest.cpp
 tests/src/core/PunchWindowTest.cpp
 tests/src/core/RackMacrosTest.cpp
 tests/src/core/RackTest.cpp
