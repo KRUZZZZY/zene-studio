@@ -121,6 +121,14 @@ ControlResult setMany(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("set 'muted' and/or 'soloed'"));
 	}
+	// 'all' names every channel but the master, so a mixer left with only its master names
+	// none: Unmute All / Clear Solo is then a successful no-op, not an error - and nothing
+	// changed, so no undo step is recorded (the empty one would let control.undo claim a
+	// step that puts nothing back).
+	if (channels.isEmpty())
+	{
+		return ControlResult::success({{QStringLiteral("channels"), QJsonArray{}}, {QStringLiteral("count"), 0}});
+	}
 	QVector<StripFlags> before;
 	QVector<StripFlags> after;
 	bool changed = false;
