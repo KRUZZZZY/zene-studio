@@ -90,6 +90,7 @@ ControlResult repeatClip(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+//! The caller has checked scaleFits, so every narrowed tick here is storable.
 void scaleNotes(MidiClip* clip, double factor)
 {
 	for (Note* note : clip->notes())
@@ -122,6 +123,9 @@ bool scaledControllersFit(const MidiClip* clip, double factor)
 //! Preflight for a time scale, in wide arithmetic before the checkpoint, so a refused scale mutates nothing: every
 //! tick it writes must be storable - each note's start and end (a note is at least 1 long, as scaleNotes writes it),
 //! each controller point, and the clip's own length (the same rounding timeScale uses).
+//! The narrowing casts that write these values (scaleNotes, scaleControllers and the clip length in timeScale) are
+//! safe only because this is their single guard: timeScale calls it before the checkpoint and before any write,
+//! and none of those casts may be used on a path that does not call it first.
 bool scaleFits(const Clip* clip, double factor)
 {
 	const auto scaled = [factor](tick_t tick) { return std::llround(static_cast<double>(tick) * factor); };
