@@ -336,27 +336,31 @@ LuaMixerChannel& LuaMixer::addChannel() const
 
 void LuaMixerChannel::setGain(float gain)
 {
-	if (m_channel == nullptr) { return; }
-	enqueueModelWrite(&m_channel->m_volumeModel, gain);
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
+	enqueueModelWrite(&channel->m_volumeModel, gain);
 }
 
 void LuaMixerChannel::setMuted(bool muted)
 {
-	if (m_channel == nullptr) { return; }
-	enqueueModelWrite(&m_channel->m_muteModel, muted ? 1.0f : 0.0f);
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
+	enqueueModelWrite(&channel->m_muteModel, muted ? 1.0f : 0.0f);
 }
 
 void LuaMixerChannel::setSoloed(bool soloed)
 {
-	if (m_channel == nullptr) { return; }
-	enqueueModelWrite(&m_channel->m_soloModel, soloed ? 1.0f : 0.0f);
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
+	enqueueModelWrite(&channel->m_soloModel, soloed ? 1.0f : 0.0f);
 }
 
 void LuaMixerChannel::setName(const QString& name)
 {
-	if (m_channel == nullptr) { return; }
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
 	ScriptCommand command;
-	if (!namedDawCommand(ScriptDawBindings::Op::SetChannelName, m_channel, name, command))
+	if (!namedDawCommand(ScriptDawBindings::Op::SetChannelName, channel, name, command))
 	{
 		logRefusal(QStringLiteral("renaming this channel"), ControlResult::failure(
 			ControlErrorKind::InvalidArgs, QStringLiteral("name exceeds the %1-byte command payload limit")

@@ -70,9 +70,9 @@ class LuaMixerChannel
 {
 public:
 	LuaMixerChannel() = default;
-	explicit LuaMixerChannel(MixerChannel* channel) : m_channel(channel) {}
+	explicit LuaMixerChannel(MixerChannel* channel);
 
-	bool isValid() const { return m_channel != nullptr; }
+	bool isValid() const;
 	int index() const;
 	//! "ch-<n>", the same stable id mixer.* uses.
 	QString id() const;
@@ -115,7 +115,8 @@ public:
 	bool sendPreFader(int index) const;
 
 private:
-	MixerChannel* m_channel{nullptr};
+	MixerChannel* resolve() const;
+	QString m_id;
 };
 
 //! Lua-facing mixer (registered as `Mixer`).

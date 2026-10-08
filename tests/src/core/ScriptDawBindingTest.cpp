@@ -124,6 +124,16 @@ end
 print("listed " .. #listed .. " unresolved " .. unresolved)
 )LUA";
 
+const char* const RemovedChannelScript = R"LUA(
+local mixer = zene.mixer()
+local channel = mixer:addChannel()
+local id = channel:id()
+local removal = zene.command("mixer.remove_channel", {channel = id})
+print("removed=" .. tostring(removal.removed == id)
+    .. " valid=" .. tostring(channel:isValid())
+    .. " gain-zero=" .. tostring(channel:gain() == 0))
+)LUA";
+
 } // namespace
 
 class ScriptDawBindingTest : public QObject
@@ -192,6 +202,22 @@ private slots:
 			qstr("pan is deliberately absent: nil"),
 		};
 		QCOMPARE(engine->takeLogMessages(), expected);
+	}
+
+	void aChannelViewStopsResolvingAfterItsTargetIsRemoved()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		const int before = static_cast<int>(mixer->numChannels());
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(RemovedChannelScript), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(static_cast<int>(mixer->numChannels()), before);
+		QCOMPARE(engine->takeLogMessages(), QStringList{
+			qstr("removed=true valid=false gain-zero=true")});
 	}
 
 	//! An overlong UTF-8 name must be refused intact, not split by the queue payload.
