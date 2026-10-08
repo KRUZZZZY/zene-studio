@@ -747,6 +747,40 @@ private slots:
 			qPrintable(QStringLiteral("the earlier passes did not sound in the unmuted render: ratio %1").arg(ratio)));
 		delete track;
 	}
+
+	//! The transport starts a pass on an armed clip whose takes are all in use: the pass is
+	//! counted as unprepared and records nothing, end to end through SampleTrack::play.
+	void unpreparedTakeIsCountedAndRecordsNothing()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+
+		// Starting the transport re-prepares the takes, so they are used up after it starts.
+		song->playAndRecord();
+		lmms::SampleRecordHandle* first = clip->claimRecordHandle();
+		lmms::SampleRecordHandle* second = clip->claimRecordHandle();
+		QVERIFY(first != nullptr && second != nullptr);
+		QCOMPARE(clip->recordTakesReady(), 0);
+
+		const auto before = lmms::SampleRecordHandle::unpreparedTakes();
+		driveRecordPeriods(10);
+		song->stop();
+		QVERIFY2(lmms::SampleRecordHandle::unpreparedTakes() > before,
+			"a pass without a prepared take was not counted");
+		QCOMPARE(clip->sample().sampleSize(), static_cast<std::size_t>(0));  // nothing was recorded
+		QCOMPARE(track->getClips().size(), static_cast<std::size_t>(1));     // and no lane take
+
+		delete first;   // they were claimed: their drain threads stop at the reaper
+		delete second;
+		QTest::qWait(50);
+		delete track;
+	}
 } ;
 
 
