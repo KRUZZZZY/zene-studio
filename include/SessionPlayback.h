@@ -74,8 +74,9 @@ public:
 	static constexpr std::size_t Capacity = 128;
 
 	/*! Stores one cell's content, REPLACING any previous entry for that cell.
-	 *  A patternId below zero means the cell has nothing to render: its entry
-	 *  is removed (or none is taken), so the table holds only cells that do.
+	 *  A cell with neither a patternId (>= 0) nor an audio clip has nothing to
+	 *  render: its entry is removed (or none is taken), so the table holds only
+	 *  cells that do. An audio cell publishes patternId -1 WITH its clip, and keeps its entry.
 	 *  Audio thread (applied from the scheduler's queue). No allocation, no lock.
 	 *  False when the table has no free entry - the caller counts it. */
 	bool install( int track, int scene, int patternId, tick_t loopLengthTicks, bool legato = false, tick_t startTicks = 0,
