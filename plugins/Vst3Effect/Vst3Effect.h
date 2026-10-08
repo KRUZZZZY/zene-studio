@@ -84,6 +84,7 @@ protected:
 		PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus override;
 
 private:
+	vst3::AudioProcessGate m_processGate;
 	vst3::HostedPlugin m_plugin;
 	gui::PluginNativeEditor m_editor;
 	std::unique_ptr<Vst3EffectControls> m_controls;

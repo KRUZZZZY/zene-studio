@@ -219,6 +219,7 @@ bool Vst3Instrument::enableOutputBus(int bus)
 	// GUI thread, with the render held off: a VST3 bus is activated on an inactive component, and the
 	// transport's channel count follows the new layout before the next block.
 	engine->requestChangeInModel();
+	m_processGate.beginReconfigure();
 	m_plugin.release();
 	const bool activated = m_plugin.activateOutputBuses(bus);
 	QString error;
@@ -230,6 +231,7 @@ bool Vst3Instrument::enableOutputBus(int bus)
 	m_outputBuses.setLayout(vst3::outputBusesOf(m_plugin.outputBusDescriptors()));
 	engine->doneChangeInModel();
 	cacheLatency();  // MX-157
+	m_processGate.endReconfigure();
 	return activated;
 }
 
@@ -267,6 +269,7 @@ void Vst3Instrument::modulateNote(std::int64_t target, int channel, int key, flo
 
 void Vst3Instrument::reprepare()
 {
+	m_processGate.beginReconfigure();
 	if (auto* engine = Engine::audioEngine())
 	{
 		QString error;
@@ -278,6 +281,7 @@ void Vst3Instrument::reprepare()
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
 	cacheLatency();  // MX-157
+	m_processGate.endReconfigure();
 }
 
 bool Vst3Instrument::handleMidiEvent(const MidiEvent& event, const TimePos&,
@@ -348,14 +352,24 @@ bool Vst3Instrument::handleMidiEvent(const MidiEvent& event, const TimePos&,
 }
 
 auto Vst3Instrument::processImpl(PlanarBufferView<const float, DynamicChannelCount> in,
-	PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus
+		PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus
 {
+	if (!m_processGate.tryEnterAudioProcess())
+	{
+		for (ch_cnt_t c = 0; c < out.channels(); ++c)
+		{
+			std::fill_n(out.bufferPtr(c), out.frames(), 0.f);
+		}
+		return lmms::ProcessStatus::Continue;
+	}
+
 	if (!m_plugin.isPrepared())
 	{
 		// Either the plug-in failed to load or the sample rate changed. The
 		// actual re-configuration happens on the GUI thread; this path only
 		// records the request.
 		m_needsReprepare.store(true, std::memory_order_relaxed);
+		m_processGate.leaveAudioProcess();
 		return lmms::ProcessStatus::Continue;
 	}
 
@@ -375,6 +389,7 @@ auto Vst3Instrument::processImpl(PlanarBufferView<const float, DynamicChannelCou
 	// MX-114: the output buses past the main one, into the mixer channels they are routed to.
 	m_outputBuses.deliver(out.data(), static_cast<int>(out.channels()), out.frames(),
 		instrumentTrack() != nullptr && instrumentTrack()->isMuted());
+	m_processGate.leaveAudioProcess();
 
 	return lmms::ProcessStatus::Continue;
 }

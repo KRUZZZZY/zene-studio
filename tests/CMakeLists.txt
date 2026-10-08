@@ -2491,6 +2491,7 @@ if(TARGET lmms_vst3_sdk)
 		lmms_vst3_sdk
 		${CMAKE_DL_LIBS}
 	)
+	lmms_link_allocation_probe(Vst3HostTest "${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/Vst3HostTest.cpp")
 	target_compile_definitions(Vst3HostTest PRIVATE
 		VST3_TEST_PLUGIN_PATH="${LMMS_VST3_TEST_EFFECT_BUNDLE_DIR}")
 	add_dependencies(Vst3HostTest vst3-test-effect)

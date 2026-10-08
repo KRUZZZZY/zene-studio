@@ -149,6 +149,7 @@ private:
 	 *  kLatencyChanged from the plug-in only raises m_latencyChanged - it may come from any thread - and
 	 *  poll() reads the new value. */
 	void cacheLatency();
+	vst3::AudioProcessGate m_processGate;
 	vst3::HostedPlugin m_plugin;
 	gui::PluginNativeEditor m_editor;
 	std::vector<Vst3ParamModel*> m_paramModels;

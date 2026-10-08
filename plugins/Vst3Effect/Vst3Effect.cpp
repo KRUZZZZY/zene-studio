@@ -144,6 +144,7 @@ auto Vst3Effect::controls() -> EffectControls* { return m_controls.get(); }
 
 void Vst3Effect::reprepare()
 {
+	m_processGate.beginReconfigure();
 	if (auto* engine = Engine::audioEngine())
 	{
 		QString error;
@@ -154,6 +155,7 @@ void Vst3Effect::reprepare()
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
 	cacheLatency();
+	m_processGate.endReconfigure();
 }
 
 void Vst3Effect::cacheLatency()
@@ -195,14 +197,21 @@ void passThrough(PlanarBufferView<const float, DynamicChannelCount> in,
 } // namespace
 
 auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> in,
-	PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus
+		PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus
 {
+	if (!m_processGate.tryEnterAudioProcess())
+	{
+		passThrough(in, out, m_plugin.busLayout().sideChainChannel);
+		return lmms::ProcessStatus::Continue;
+	}
+
 	if (!m_plugin.isPrepared())
 	{
 		// Either the plug-in failed to load or the sample rate changed. Do the
 		// actual re-configuration on the GUI thread, this path only records it.
 		m_needsReprepare.store(true, std::memory_order_relaxed);
 		passThrough(in, out, m_plugin.busLayout().sideChainChannel);
+		m_processGate.leaveAudioProcess();
 		return lmms::ProcessStatus::Continue;
 	}
 
@@ -235,6 +244,7 @@ auto Vst3Effect::processImpl(PlanarBufferView<const float, DynamicChannelCount> 
 		}
 	}
 
+	m_processGate.leaveAudioProcess();
 	return lmms::ProcessStatus::Continue;
 }
 
