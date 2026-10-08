@@ -231,13 +231,17 @@ bool joinable(const QJsonArray& ids, QVector<MidiClip*>* clips, Track** track, C
 //! the others go, and the first spans to the last one's end.
 //! Preflight for a join: every controller point of the later clips must land on a storable
 //! song tick once moved by its clip's delta from the first clip's origin, in wide arithmetic.
-bool joinedControllersFit(const QVector<MidiClip*>& clips, tick_t origin)
+bool joinedContentFits(const QVector<MidiClip*>& clips, tick_t origin)
 {
 	for (int i = 1; i < clips.size(); ++i)
 	{
 		const MidiClip* other = clips.at(i);
 		const long long from = static_cast<long long>(other->startPosition().getTicks()) + other->startTimeOffset().getTicks();
 		const long long delta = from - origin;
+		for (const Note* note : other->notes())
+		{
+			if (!fitsTick(static_cast<long long>(note->pos().getTicks()) + delta)) { return false; }
+		}
 		for (const ControllerLane& lane : other->controllers().lanes())
 		{
 			for (const ControllerPoint& point : lane.points)
@@ -275,7 +279,7 @@ ControlResult joinClips(const QJsonObject& args)
 	if (!joinable(args.value(QStringLiteral("clips")).toArray(), &clips, &track, &error)) { return error; }
 	MidiClip* first = clips.front();
 	const tick_t origin = first->startPosition().getTicks() + first->startTimeOffset().getTicks();
-	if (!joinedControllersFit(clips, origin))
+	if (!joinedContentFits(clips, origin))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("a controller point would move past the largest tick; nothing was changed"));

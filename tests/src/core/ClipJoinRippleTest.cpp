@@ -201,6 +201,25 @@ private slots:
 		QCOMPARE(static_cast<int>(a->length().getTicks()), 192);
 	}
 
+	//! A later clip's note that the join moves past the largest tick used to wrap in tick_t; the join is refused
+	//! before anything moves.
+	void joiningRefusesANotePastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 96, 60);
+		MidiClip* b = clipAt(192, 96, 64);
+		const int top = std::numeric_limits<tick_t>::max();
+		b->addNote(Note(TimePos(12), TimePos(top - 100), 62), false);  // moved by 192: past the largest tick
+
+		const ControlResult joined = run(QStringLiteral("clip.join"), {{QStringLiteral("clips"),
+			QJsonArray{control::clipIdOf(a), control::clipIdOf(b)}}});
+		QVERIFY(!joined.ok);
+		QCOMPARE(joined.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(m_track->getClips().size(), std::size_t{2});
+		QCOMPARE(a->notes().size(), std::size_t{1});
+		QCOMPARE(b->notes().size(), std::size_t{2});
+		QCOMPARE(static_cast<int>(b->notes().back()->pos().getTicks()), top - 100);
+	}
+
 	//! A later clip's controller point that the join moves past the largest tick used to wrap
 	//! in the signed add; the join is refused before anything moves.
 	void joiningRefusesAControllerPointPastTheLargestTick()
