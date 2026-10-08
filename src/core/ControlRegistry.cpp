@@ -308,14 +308,37 @@ bool lockedOut(bool mutating, const QString& commandId, const QJsonObject& args,
 	return mutating && EditLocks::refuses(commandId, args, why);
 }
 
-/*! Whether THIS call is the one whose bookkeeping describes the step. A command
- *  another command runs inside itself is part of the outer one - ED-056 says so
- *  for the macro-recorder observer, and CommandTap is told the depth - so the
- *  OUTERMOST handler alone records, and a nested call records neither a second
- *  transaction for the step nor a second extension of the one before it. */
-bool recordsItsOwnStep(bool mutating, bool changed, int depth)
+/*! Whether THIS call records the step it changed. A mutating command another
+ *  mutating command runs inside itself is part of that outer step (the journal
+ *  merges both into ONE checkpoint run, ED-056), so only the call whose enclosing
+ *  handlers are all non-mutating records. A non-mutating wrapper (range.consolidate,
+ *  arrangement.nudge, workflow.run) records nothing of its own, so each mutating
+ *  command it runs still records itself - that is the contract those rows state. */
+bool recordsItsOwnStep(bool mutating, bool changed, bool enclosedByMutating)
 {
-	return mutating && changed && depth == 0;
+	return mutating && changed && !enclosedByMutating;
+}
+
+/*! Whether a nested call's own record is folded into an enclosing mutating step while
+ *  carrying a descriptor that step does not keep. */
+bool foldsIntoEnclosingStep(bool mutating, bool changed, bool enclosedByMutating, const QJsonObject& result)
+{
+	return mutating && changed && enclosedByMutating && result.contains(QStringLiteral("__transaction"));
+}
+
+/*! The record an outer mutating call writes for a step that also holds nested
+ *  changes whose own inverse was not kept (the nested record was folded into this
+ *  step): when the outer handler supplied no descriptor, it must not claim the
+ *  journal step alone reverses the nested change. Refuses to claim more than it knows. */
+void markFoldedNestedChanges(ControlResult* result, int folded, int foldedBefore)
+{
+	if (folded == foldedBefore || result->result.contains(QStringLiteral("__transaction"))) { return; }
+	result->result.insert(QStringLiteral("__transaction"), QJsonObject{
+		{QStringLiteral("before"), QJsonObject()},
+		{QStringLiteral("inverse"), QJsonObject()},
+		{QStringLiteral("reversible"), false},
+		{QStringLiteral("mechanism"), QStringLiteral("a command this call ran inside itself changed the project "
+			"and its own inverse is not part of this record, so this step is not reported as reversible")}});
 }
 
 } // namespace
@@ -333,9 +356,16 @@ ControlResult ControlRegistry::runHandler(
 	const int mark = journal != nullptr ? journal->undoDepth() : -1;
 	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
 
+	// Who else is running: a nested mutating call is part of its outermost mutating
+	// ancestor's step, and the count of folded nested records tells that ancestor
+	// whether its step holds a change it cannot describe by itself.
+	const bool enclosedByMutating = m_mutatingDepth > 0;
+	const int foldedBefore = m_foldedNestedRecords;
+	m_mutatingDepth += static_cast<int>(mutating);
 	++m_depth;
 	ControlResult result = handler(args);
 	--m_depth;
+	m_mutatingDepth -= static_cast<int>(mutating);
 
 	bool coalesced = false;
 	quint64 step = 0;
@@ -364,8 +394,10 @@ ControlResult ControlRegistry::runHandler(
 	const bool dryRunPreview = result.result.value(QStringLiteral("dry_run")).toBool(false);
 	// Review W3-batchA #8: a call that changed nothing (a report-only call, a value already set) records nothing.
 	const bool changed = result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId, result);
-	if (recordsItsOwnStep(mutating, changed, m_depth))
+	m_foldedNestedRecords += static_cast<int>(foldsIntoEnclosingStep(mutating, changed, enclosedByMutating, result.result));
+	if (recordsItsOwnStep(mutating, changed, enclosedByMutating))
 	{
+		markFoldedNestedChanges(&result, m_foldedNestedRecords, foldedBefore);
 		recordTransactionOf(commandId, &result, coalesced, step);
 	}
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);

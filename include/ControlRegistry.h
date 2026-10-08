@@ -292,6 +292,8 @@ private:
 	}
 	CommandObserver m_observer;
 	int m_depth = 0;  //!< how many handlers are running (UI thread)
+	int m_mutatingDepth = 0;  //!< how many MUTATING handlers are running (UI thread)
+	int m_foldedNestedRecords = 0;  //!< nested mutating calls whose record was folded into an enclosing step
 	//! Stamps \a tx with the contract table's class for its command and refuses
 	//! to let a handler claim an inverse the contract says does not exist.
 	void stampContract(const QString& commandId, Transaction* tx) const;
