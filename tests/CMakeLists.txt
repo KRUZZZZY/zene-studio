@@ -886,6 +886,8 @@ set(LMMS_TESTS
 	src/gui/EffectPickerOrganiserTest.cpp
 	# M0 coverage: the plug-in editor window, its host header and the Show plugin editor button.
 	src/gui/PluginNativeEditorTest.cpp
+	# M0 coverage: the reference project's window and its track / clip / device copies.
+	src/gui/ReferenceProjectPanelTest.cpp
 	# The transport's Sync toggle (link.set_enabled) and its session read-out.
 	src/gui/SessionSyncActionTest.cpp
 	# The piano roll's Randomize / Humanize / Scale velocities items (note.randomize, note.velocity_scale).
@@ -1235,6 +1237,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "EffectDeviceMenuTest"
 		OR LMMS_TEST_NAME STREQUAL "EffectPickerOrganiserTest"
 		OR LMMS_TEST_NAME STREQUAL "PluginNativeEditorTest"
+		OR LMMS_TEST_NAME STREQUAL "ReferenceProjectPanelTest"
 		# The LV2 state round trip loads the host's real LV2 effects.
 		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
 		# The rack menu binds a macro to a parameter of one real effect.
@@ -1628,6 +1631,7 @@ set_tests_properties(MixerWindowsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=of
 set_tests_properties(EffectDeviceMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectPickerOrganiserTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginNativeEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ReferenceProjectPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
