@@ -121,11 +121,17 @@ complexity, file-length, no-tautology), which passed before every commit.
 
 ## Round 2 (review follow-up)
 
-* `ControlMidiReconnectSharedTest`: no longer skips on the developer's config. `HOME` is a temporary directory of the
-  test's own before `Engine::init` (the precedent in `ItemListPanelTest`), so the re-connection mode starts at the
-  product's default and `midi.reconnect_arm`'s config writes stay out of the real file. The arm case now exercises
-  disarm, the unchanged repeat, the default "enable" and the persisted key; `theReadCommands...` compares against
-  written-down values (enabled, persisted, zero assignments/lost/reconnects) instead of the object it tests.
+* `ControlMidiReconnectSharedTest`: no longer skips on the developer's config, and (round 3) no longer touches the
+  build tree's shared config. Round 2 redirected `HOME`, which isolates nothing in a development build:
+  `ConfigManager` switches to `<build>/.zenestudio.xml` when it finds `CMakeCache.txt`
+  (`ConfigManager::initDevelopmentWorkingDir`), and the tests never load the config file, so `midi.reconnect_arm`'s
+  `saveConfigFile` rewrote it from the test's in-memory defaults. Now `initTestCase` calls the product's own
+  `ConfigManager::loadConfigFile(path)` (the `--config` override) with a file in a temp directory, sets the product
+  default (`midi/reconnect` = on) and the live memory's mode explicitly and asserts that starting state. The arm case
+  exercises disarm, the unchanged repeat, the default "enable" and the persisted key; `theReadCommands...` compares
+  against written-down values instead of the object it tests. Shown order- and state-independent: two runs in a row
+  with the build config having no `midi` element, and two with it pre-set to the non-default `reconnect="0"`, all
+  9/9 passed, and the build's `.zenestudio.xml` was byte-identical (md5) after each pair.
 * `ReceiverEffectTest`: the five `QSKIP`s on in-tree modules are `QVERIFY2` failures; the plugin directory is set
   unconditionally from `LMMS_TEST_PLUGIN_DIR` (the test already was in that list - `tests/CMakeLists.txt` puts it in
   the one chain that gives a target both exports and the define; the review's "only in the exports list" is not what

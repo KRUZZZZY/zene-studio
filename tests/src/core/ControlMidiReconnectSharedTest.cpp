@@ -36,6 +36,7 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
+#include "ConfigManager.h"
 #include "ControlCommandsMidiReconnectShared.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -61,18 +62,27 @@ class ControlMidiReconnectSharedTest : public QObject
 {
 	Q_OBJECT
 
-	QTemporaryDir m_home;
+	QTemporaryDir m_config;
 
 private slots:
 	void initTestCase()
 	{
-		// The re-connection mode is a key of the user's config file, and midi.reconnect_arm writes it. A home of
-		// this test's own makes the starting state the product's default (on) whatever this machine's config says,
-		// and keeps those writes out of the developer's real file.
-		QVERIFY(m_home.isValid());
-		qputenv("HOME", m_home.path().toLocal8Bit());
+		QVERIFY(m_config.isValid());
 		Engine::init(true);
 		ControlRegistry::setReady(true);
+		// midi.reconnect_arm writes the config file ConfigManager chose. In a development build that is
+		// <build dir>/.zenestudio.xml, shared by every run from that build (redirecting HOME changes nothing: see
+		// ConfigManager::initDevelopmentWorkingDir), and the tests never load it, so a save would rewrite it from
+		// the test's in-memory defaults. ConfigManager::loadConfigFile(path) is the product's own --config override:
+		// it points the manager at a file of this test's own (here one that does not exist yet), so every read and
+		// write below is to that file. The starting state is then set, and asserted, explicitly: the product's
+		// default, re-connection on.
+		ConfigManager* config = ConfigManager::inst();
+		config->loadConfigFile(m_config.filePath(QStringLiteral("zene-test-config.xml")));
+		config->setValue(QStringLiteral("midi"), QStringLiteral("reconnect"), QStringLiteral("1"));
+		liveReconnect()->setEnabled(true);  // the in-memory mode, whatever an earlier read resolved
+		QVERIFY(midiReconnectPersistedEnabled());
+		QVERIFY(liveReconnect()->isEnabled());
 	}
 
 	void cleanupTestCase()
