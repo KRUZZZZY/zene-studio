@@ -342,14 +342,10 @@ ControlResult removeLayerZone(InstrumentTrack* track, const QString& id)
 	});
 	QJsonObject result = layersState(track);
 	result.insert(QStringLiteral("removed"), zoneId(index));
+	// The advertised inverse is the exact recorded checkpoint, control.undo. A rack.layer_zone_add
+	// replay would APPEND the zone and change the first-match order of overlapping zones.
 	result.insert(QStringLiteral("__transaction"), transactionPayload(layerZoneJson(zone, index),
-		QStringLiteral("rack.layer_zone_add"),
-		QJsonObject{{QStringLiteral("target"), trackIdText},
-			{QStringLiteral("layer"), layerId(zone.chain)},
-			{QStringLiteral("low_key"), zone.lowKey},
-			{QStringLiteral("high_key"), zone.highKey},
-			{QStringLiteral("low_velocity"), zone.lowVelocity},
-			{QStringLiteral("high_velocity"), zone.highVelocity}}, true,
+		QStringLiteral("control.undo"), QJsonObject{}, true,
 		QStringLiteral("action checkpoint: the recorded undo step re-inserts the captured zone at its own index")));
 	return ControlResult::success(result);
 }

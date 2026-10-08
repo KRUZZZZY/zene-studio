@@ -207,25 +207,43 @@ private slots:
 			{QStringLiteral("zone"), zone}}).ok, "rack.layer_zone_remove refused");
 		QCOMPARE(layerZoneCount(m_track), zonesBefore);
 
+		// Luna 5747: the advertised inverse is the exact recorded checkpoint, control.undo, which
+		// re-inserts the zone at its own index. A rack.layer_zone_add replay appended it instead.
 		const QJsonObject inverse = revtest::stateOf(QStringLiteral("rack.layer_zone_remove"))
 			.value(QStringLiteral("inverse")).toObject();
 		QVERIFY2(!inverse.isEmpty(), "rack.layer_zone_remove advertised no inverse at all");
-		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("rack.layer_zone_add"));
-		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
-		QCOMPARE(inverseArgs.value(QStringLiteral("target")).toString(), m_track);
-		QCOMPARE(inverseArgs.value(QStringLiteral("layer")).toString(), QStringLiteral("layer-0"));
-		QCOMPARE(inverseArgs.value(QStringLiteral("low_key")).toInt(), 70);
-		QCOMPARE(inverseArgs.value(QStringLiteral("high_key")).toInt(), 107);
-		QCOMPARE(inverseArgs.value(QStringLiteral("low_velocity")).toInt(), 30);
-		QCOMPARE(inverseArgs.value(QStringLiteral("high_velocity")).toInt(), 150);
-		// And it really runs: the advertised args put the dropped zone back.
-		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(), inverseArgs).ok,
-			"the advertised rack.layer_zone_add inverse was refused");
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		REV_UNDO_OR_FAIL();
 		QCOMPARE(layerZoneCount(m_track), zonesBefore + 1);
 		InstrumentTrack* track = trackOf(m_track);
 		QVERIFY(track != nullptr);
 		QVERIFY(track->layers().basePlays(90, 100));   // the zone is back: keys 70..107 reach layer-0 again
 		QVERIFY(!track->layers().basePlays(65, 100));  // ... and nothing widened past it
+	}
+
+	//! Luna 5747: removing the FIRST of two overlapping layer zones and undoing it restores the zone order.
+	void layerZoneRemoveFirstOfOverlappingUndoKeepsOrder()
+	{
+		if (m_track.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		const int zonesBefore = layerZoneCount(m_track);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 60},
+			{QStringLiteral("high_key"), 100}, {QStringLiteral("low_velocity"), 1},
+			{QStringLiteral("high_velocity"), 200}}).ok);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 70},
+			{QStringLiteral("high_key"), 80}, {QStringLiteral("low_velocity"), 1},
+			{QStringLiteral("high_velocity"), 200}}).ok);
+		const QString first = QStringLiteral("zone-%1").arg(zonesBefore);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("zone"), first}}).ok);
+		QCOMPARE(layerZoneCount(m_track), zonesBefore + 1);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(layerZoneCount(m_track), zonesBefore + 2);
+		InstrumentTrack* track = trackOf(m_track);
+		QVERIFY(track != nullptr);
+		QCOMPARE(track->layers().zones().zone(zonesBefore)->lowKey, 60);   // the removed zone is first again
+		QCOMPARE(track->layers().zones().zone(zonesBefore + 1)->lowKey, 70);
 	}
 
 	//! MX-114: a MIDI part is added and removed through the surface, undone, and saved with the track.
