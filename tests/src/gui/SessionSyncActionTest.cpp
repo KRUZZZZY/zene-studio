@@ -142,7 +142,11 @@ private slots:
 			QSKIP(qPrintable(QStringLiteral("session sync could not start here (no multicast?): ") + on.errorMessage));
 		}
 		QTRY_VERIFY_WITH_TIMEOUT(sync->isChecked(), 4000);
-		QVERIFY2(sync->text().startsWith(QStringLiteral("Sync: ")), qPrintable(sync->text()));
+		// The label names the backend, as in the test above: "Ableton Link: " with the library, "Sync: " without.
+		const bool ableton = ControlRegistry::instance()->invoke(QStringLiteral("link.get_state"), QJsonObject{})
+			.result.value(QStringLiteral("model")).toString() == QStringLiteral("ableton-link");
+		const QString label = ableton ? QStringLiteral("Ableton Link: ") : QStringLiteral("Sync: ");
+		QVERIFY2(sync->text().startsWith(label), qPrintable(sync->text()));
 		ControlRegistry::instance()->invoke(QStringLiteral("link.set_enabled"), {{QStringLiteral("enabled"), false}});
 	}
 };
