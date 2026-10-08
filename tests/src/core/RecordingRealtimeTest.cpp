@@ -84,11 +84,11 @@ class RecordingRealtimeTest : public QObject
 
 private:
 	//! Feed \a periods periods of input and render them, the song recording.
-	void driveRecordPeriods(int periods)
+	void driveRecordPeriods(int periods, float level = 0.5f)
 	{
 		auto* engine = lmms::Engine::audioEngine();
 		const f_cnt_t fpp = engine->framesPerPeriod();
-		std::vector<SampleFrame> block(static_cast<std::size_t>(fpp), SampleFrame(0.5f, 0.5f));
+		std::vector<SampleFrame> block(static_cast<std::size_t>(fpp), SampleFrame(level, level));
 		for (int i = 0; i < periods; ++i)
 		{
 			engine->pushInputFrames(block.data(), fpp);
@@ -686,6 +686,65 @@ private slots:
 		delete earlier;          // the first arming's take is queued now
 		QTest::qWait(50);
 		QVERIFY2(clip->isRecord(), "an earlier arming's take disarmed the re-armed clip");
+		delete track;
+	}
+
+	//! Three loop passes make three takes; only the newest is audible: a render of the song
+	//! plays the third take alone, and unmuting the earlier two raises the level by 0.35/0.2.
+	void onlyTheNewestLoopPassIsAudible()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+
+		song->playAndRecord();
+		driveRecordPeriods(30, 0.05f);
+		clip->playbackPositionChanged();  // loop wrap 1 ends pass 1
+		QTest::qWait(50);
+		driveRecordPeriods(30, 0.1f);
+		clip->playbackPositionChanged();  // loop wrap 2 ends pass 2
+		QTest::qWait(50);
+		driveRecordPeriods(30, 0.2f);
+		song->stop();                     // pass 3 ends with the stop
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+
+		QCOMPARE(track->takeLanes().laneCount(), 3);
+		std::vector<lmms::Clip*> takes;
+		for (lmms::Clip* c : track->getClips()) { if (c != clip) { takes.push_back(c); } }
+		QCOMPARE(takes.size(), static_cast<std::size_t>(3));
+		QVERIFY(takes[0]->isMuted());
+		QVERIFY(takes[1]->isMuted());
+		QVERIFY(!takes[2]->isMuted());
+
+		auto* engine = lmms::Engine::audioEngine();
+		const auto peak = [&] {
+			float p = 0.0f;
+			for (int i = 0; i < 10; ++i)  // skip the round trip, then measure
+			{
+				const auto out = engine->renderNextPeriod();
+				if (i < 3) { continue; }
+				for (const auto& f : out) { p = std::max(p, std::abs(f.left())); }
+			}
+			return p;
+		};
+		song->playSong();
+		const float audibleOnly = peak();
+		song->stop();
+		QVERIFY2(audibleOnly > 0.0f, "the newest take was silent");
+
+		takes[0]->setMuted(false);
+		takes[1]->setMuted(false);
+		song->playSong();
+		const float allAudible = peak();
+		song->stop();
+		const float ratio = allAudible / audibleOnly;
+		QVERIFY2(ratio > 1.6f && ratio < 1.9f,
+			qPrintable(QStringLiteral("the earlier passes did not sound in the unmuted render: ratio %1").arg(ratio)));
 		delete track;
 	}
 } ;

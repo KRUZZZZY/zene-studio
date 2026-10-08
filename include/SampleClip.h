@@ -28,6 +28,10 @@
 #include <atomic>
 #include <memory>
 #include <span>
+#include <vector>
+
+#include <QPointer>
+
 #include "Clip.h"
 #include "RubberBandStretch.h"
 #include "Sample.h"
@@ -243,6 +247,9 @@ private:
 	//! The take behind m_preparedRecord: claimed, it becomes the ready one, so a loop wrap
 	//! never finds the clip without a take.
 	SampleRecordHandle* m_spareRecord = nullptr;
+	//! Every take of this clip's recording passes, oldest first: all but the newest are muted (the
+	//! take clips' own muted flag is what the engine reads as audibility; see docs/COMPING.md).
+	std::vector<QPointer<Clip>> m_passTakes;
 	//! Recording passes of the current arming that became takes on the lanes.
 	int m_recordPasses = 0;
 	std::uint64_t m_armGeneration = 0;

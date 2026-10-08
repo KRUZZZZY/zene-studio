@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <algorithm>
 #include <cstdint>
 #include <utility>
 
@@ -264,6 +265,11 @@ void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take)
 	take_clip->setLaneIndex(lane);
 	take_clip->movePosition(startPosition());
 	take_clip->updateLength();
+	// The newest pass is the audible take; the earlier passes stay on their lanes, muted, until
+	// the user comps them.
+	std::erase_if(m_passTakes, [](const QPointer<Clip>& take) { return take.isNull(); });
+	for (const QPointer<Clip>& earlier : m_passTakes) { earlier->setMuted(true); }
+	m_passTakes.emplace_back(take_clip);
 	Engine::getSong()->setModified();
 }
 
