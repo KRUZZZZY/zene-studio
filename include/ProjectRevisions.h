@@ -84,9 +84,10 @@ LMMS_EXPORT bool restoreProjectRevision(const QString& projectPath, int revision
 	QString* error);
 
 /*! Moves \a staging over \a projectPath, for a restore that has already rotated the live file
- * into revision 0 (rotateProjectRevision without a refusal). When the move fails the live file is
- * put back from that revision, so a failed restore never leaves the project path empty. False when
- * the move failed; \a staging is gone either way.
+ * into revision 0 (rotateProjectRevision without a refusal). The live file is replaced in one rename, so
+ * when the replacement cannot be made the live file is left exactly as it was and a failed restore never
+ * empties the project path. False when the replacement did not happen; \a staging is removed only once the
+ * replacement is in place, so a failure keeps the bytes the restore took out.
  */
 LMMS_EXPORT bool replaceProjectWithStaged(const QString& projectPath, const QString& staging);
 

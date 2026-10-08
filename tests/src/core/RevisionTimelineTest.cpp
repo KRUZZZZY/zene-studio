@@ -413,6 +413,48 @@ private slots:
 		QCOMPARE(readBytes(m_project), live);
 	}
 
+	//! The replacement fails AFTER its staged copy is complete: the live project keeps its bytes and the
+	//! staging file survives. Before the rework the live file was removed first, and revision 0 is made
+	//! unreadable here, so the old recovery copy could not put it back and the failure emptied the path.
+	void aFailedReplacementAfterStagingKeepsTheLiveProject()
+	{
+		buildFixture();
+		const QByteArray live = readBytes(m_project);
+		const QString rev0 = projectRevisionPath(m_project, 0);
+		const QString staging = rev0 + QStringLiteral(".restore");
+		QVERIFY(writeBytes(staging, documentWith(5)));
+		// Restores the readable mode however this test leaves, so a failure cannot cascade into the next fixture.
+		struct ReadableAgain { QString path; ~ReadableAgain() { QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner); } };
+		const ReadableAgain restore{rev0};
+		QVERIFY(QFile::setPermissions(rev0, QFile::Permissions()));
+
+		setRevisionReplacementFailureForTest(true);
+		const bool replaced = replaceProjectWithStaged(m_project, staging);
+		setRevisionReplacementFailureForTest(false);
+
+		QVERIFY2(!replaced, "a failed replacement was reported as success");
+		QVERIFY2(QFileInfo::exists(m_project), "the failed replacement emptied the live project");
+		QCOMPARE(readBytes(m_project), live);
+		QVERIFY(QFileInfo::exists(staging));
+	}
+
+	//! A file that is not ours, named the way the old pending copy was named, is not deleted by a restore.
+	void aReplaceLeavesAnUnrelatedReplaceFileAlone()
+	{
+		buildFixture();
+		const QString staging = projectRevisionPath(m_project, 0) + QStringLiteral(".restore");
+		QVERIFY(writeBytes(staging, documentWith(5)));
+		const QString stray = m_project + QStringLiteral(".replace");
+		QVERIFY(writeBytes(stray, documentWith(8)));
+		const QByteArray before = readBytes(stray);
+
+		QVERIFY2(replaceProjectWithStaged(m_project, staging), "the replacement failed");
+		QVERIFY2(QFileInfo::exists(stray), "a replace deleted a file that was not its own");
+		QCOMPARE(readBytes(stray), before);
+		QCOMPARE(readBytes(m_project), documentWith(5));
+		QVERIFY(!QFileInfo::exists(staging));
+	}
+
 	//! A replacement that fails AFTER its staged copy is complete leaves the slot it would have replaced
 	//! exactly as it was, and the rotation reports the refusal. Before the rework the slot was removed
 	//! first, so this failure emptied it.

@@ -67,6 +67,31 @@ bool replaceWithStaged(const QString& staged, const QString& to)
 	return !ec;
 }
 
+//! Writes a copy of \a from into a new sibling named by \a pattern (its trailing XXXXXX becomes a unique
+//! suffix) and keeps \a from's permissions. Returns the new file's path, or an empty string when the copy
+//! failed, having removed whatever it had made. \a from is only read.
+QString stageCopy(const QString& from, const QString& pattern)
+{
+	QFile in(from);
+	if (!in.open(QIODevice::ReadOnly)) { return QString(); }
+	const QByteArray bytes = in.readAll();
+	if (in.error() != QFileDevice::NoError) { return QString(); }
+
+	QTemporaryFile staged(pattern);
+	staged.setAutoRemove(false);
+	if (!staged.open()) { return QString(); }
+	const QString path = staged.fileName();
+	const bool written = staged.write(bytes) == bytes.size() && staged.flush();
+	staged.close();
+	if (!written || staged.error() != QFileDevice::NoError
+		|| !QFile::setPermissions(path, QFileInfo(from).permissions()))
+	{
+		QFile::remove(path);
+		return QString();
+	}
+	return path;
+}
+
 //! Copies \a from onto \a to, replacing it. The copy is bounded: a source
 //! larger than the policy's per-revision cap is refused, never truncated.
 //!
@@ -84,21 +109,11 @@ bool copyRevision(const QString& from, const QString& to, bool* refused)
 		*refused = true;
 		return false;
 	}
-	QFile in(from);
-	if (!in.open(QIODevice::ReadOnly)) { return false; }
-	const QByteArray bytes = in.readAll();
-	if (in.error() != QFileDevice::NoError) { return false; }
-
-	QTemporaryFile staged(to + QStringLiteral(".rotate-XXXXXX"));
-	staged.setAutoRemove(false);
-	if (!staged.open()) { return false; }
-	const QString stagedPath = staged.fileName();
-	const bool written = staged.write(bytes) == bytes.size() && staged.flush();
-	staged.close();
-	if (!written || staged.error() != QFileDevice::NoError
-		|| !QFile::setPermissions(stagedPath, source.permissions()) || !replaceWithStaged(stagedPath, to))
+	const QString staged = stageCopy(from, to + QStringLiteral(".rotate-XXXXXX"));
+	if (staged.isEmpty()) { return false; }
+	if (!replaceWithStaged(staged, to))
 	{
-		QFile::remove(stagedPath);
+		QFile::remove(staged);
 		return false;
 	}
 	return true;
@@ -281,28 +296,20 @@ bool restoreProjectRevision(const QString& projectPath, int revision, QString* e
 
 bool replaceProjectWithStaged(const QString& projectPath, const QString& staging)
 {
-	// Luna cluster 4352: the live file stays put until the replacement is known
-	// to be there. The staged bytes are copied to a sibling first, so a copy
-	// that fails - the out-of-disk case the previous order hit AFTER the live
-	// file was removed - leaves the project exactly as it was, instead of
-	// deleting it and hoping the recovery copy, which fails for the same reason,
-	// can bring it back.
-	const QString pending = projectPath + QStringLiteral(".replace");
-	QFile::remove(pending);
-	if (!QFile::copy(staging, pending))
+	// Luna cluster 4352 / 2026-10-08 rework: the live file is never removed. The staged bytes are copied
+	// to a unique sibling first (a copy that fails leaves the live project and the staging file exactly as
+	// they were), then moved over the live file in one replacing rename. A failed rename leaves the live
+	// project as it was, so there is no recovery copy to fail. The staging file is removed only once the
+	// replacement is in place; until then it still holds the revision the restore took out of the set.
+	const QString pending = stageCopy(staging, projectPath + QStringLiteral(".replace-XXXXXX"));
+	if (pending.isEmpty()) { return false; }
+	if (!replaceWithStaged(pending, projectPath))
 	{
 		QFile::remove(pending);
 		return false;
 	}
 	QFile::remove(staging);
-
-	const bool hadLive = QFileInfo::exists(projectPath);
-	QFile::remove(projectPath);
-	if (QFile::rename(pending, projectPath)) { return true; }
-	QFile::remove(pending);
-	// The rotation just kept the live file as revision 0: put it back rather than leave no project.
-	if (hadLive) { QFile::copy(projectRevisionPath(projectPath, 0), projectPath); }
-	return false;
+	return true;
 }
 
 } // namespace control
