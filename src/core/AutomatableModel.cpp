@@ -691,16 +691,6 @@ const AutomationRamp* AutomatableModel::automationRamp() const noexcept
 }
 
 
-bool AutomatableModel::publishedValueAt(f_cnt_t frame, float& out) const noexcept
-{
-	const AutomationRamp* ramp = automationRamp();
-	if (ramp == nullptr) { return false; }
-	// The same transform valueBuffer() applies to a published ramp.
-	out = fittedValue(effectiveAutomationValue(scaledValue(ramp->valueAt(frame))));
-	return true;
-}
-
-
 void AutomatableModel::unlinkControllerConnection()
 {
 	if( m_controllerConnection )

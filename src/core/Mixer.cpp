@@ -464,24 +464,21 @@ void MixerChannel::sumSidechainInputs(const f_cnt_t fpp)
 		// intermediate may not have been written yet this period: read the
 		// snapshot committed in prepareMasterMix() instead (one period late).
 		const bool postNoGain = route->mode() == SidechainTapPoint::PostFaderNoGain;
-		// Luna cluster 5156: an automated amount carries sample-exact data;
-		// read it per frame instead of collapsing the curve to one scalar for
-		// the whole period. The published ramp is read directly
-		// (publishedValueAt), not through valueBuffer(), which takes the
-		// model's mutex: this is the audio thread (AGENTS.md rule 4).
-		const bool amountRamp = !postNoGain && route->amount()->automationRamp() != nullptr;
+		// Luna cluster 5156: an automated amount carries sample-exact data,
+		// exactly like a regular send; read it per frame instead of collapsing
+		// the curve to one scalar for the whole period.
+		ValueBuffer* const amountBuf = postNoGain ? nullptr : route->amount()->valueBuffer();
 		const float amount = postNoGain ? 1.0f : route->amount()->value();
 		// PDC (#605): delay the tap to this channel's alignment point. The
 		// route owns the tap buffer, so the delay is applied in place.
 		const float* s0 = nullptr;
 		const float* s1 = nullptr;
 		route->compensatedTap(route->deferred(), &s0, &s1, fpp);
-		if( amountRamp )
+		if( amountBuf )
 		{
 			for( f_cnt_t f = 0; f < fpp; ++f )
 			{
-				float a = 0.0f;
-				route->amount()->publishedValueAt( f, a );
+				const float a = amountBuf->value( f );
 				dst0[f] += s0[f] * a;
 				dst1[f] += s1[f] * a;
 			}
