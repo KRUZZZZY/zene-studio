@@ -99,16 +99,21 @@ QString problemOf(const ControlResult& result)
 	return result.result.value(QStringLiteral("stopped")).toString();
 }
 
-//! How many journal steps "undo to here" must walk back for the row at @a row: every step from the
-//! selected one to the newest, counted by SERIAL, because the list shows command steps only - a
-//! direct editor edit is a step in the journal with no row here, and counting rows would step over
-//! it and land one step short. Falls back to the row count when the row names no step (an inverse
-//! that is a command rather than a step), or when the serial is not on the stack any more.
+//! How many journal steps "undo to here" must walk back for the row at @a row: every retained step from
+//! the selected one to the newest. The list shows command steps only - a direct editor edit is a step in
+//! the journal with no row here, so counting rows would stop one short. The count is taken from the
+//! retained stack, not from serial differences, since serials have gaps (redo, coalescing). Falls back to
+//! the row count when the row names no step (an inverse that is a command rather than a step), or when
+//! the step is no longer on the stack.
 int stepsBackTo(int row, quint64 rowStep)
 {
 	const ProjectJournal* journal = Engine::projectJournal();
-	if (journal == nullptr || rowStep == 0 || journal->topStepSerial() < rowStep) { return row + 1; }
-	return static_cast<int>(journal->topStepSerial() - rowStep + 1);
+	if (journal == nullptr || rowStep == 0 || rowStep < journal->oldestStepSerial()
+		|| rowStep > journal->topStepSerial())
+	{
+		return row + 1;
+	}
+	return journal->retainedStepsFrom(rowStep);
 }
 
 //! What the journal holds, in brief: it changes whenever any client - an agent, a script, an editor - adds or takes a step.

@@ -107,6 +107,21 @@ quint64 ProjectJournal::previousStepSerial() const
 
 
 
+int ProjectJournal::retainedStepsFrom(quint64 serial) const
+{
+	// The stack's serials ascend from bottom to top (a push takes a fresh serial; a coalesce keeps the
+	// lower one), so the steps at or above @a serial are a run at the top of the stack.
+	int count = 0;
+	for (int i = m_undoCheckPoints.size() - 1; i >= 0 && m_undoCheckPoints.at(i).serial >= serial; --i)
+	{
+		++count;
+	}
+	return count;
+}
+
+
+
+
 quint64 ProjectJournal::oldestStepSerial() const
 {
 	// An empty stack reports the NEXT serial to be issued: every already-issued
