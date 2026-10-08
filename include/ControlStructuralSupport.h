@@ -167,11 +167,11 @@ LMMS_EXPORT void removeRecordedEffect(EffectChain* chain, QPointer<Effect>& made
  */
 LMMS_EXPORT Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int index);
 
-/*! The first half of recreateEffectFromState(): validates \a stateXml and loads
- *  the device it names, WITHOUT attaching it to \a chain. The load can take a
- *  while and takes no audio change lock, so an undo builds the device here and
- *  only then takes the lock for the attach. nullptr, with the reason recorded
- *  for control.undo, when the engine refuses the device.
+/*! The first half of recreateEffectFromState(): validates \a stateXml, loads the
+ *  device it names and restores its recorded settings, WITHOUT attaching it to
+ *  \a chain. None of that takes the audio change lock, so an undo does the work
+ *  here and takes the lock only for the attach. nullptr, with the reason recorded
+ *  for control.undo, when the engine refuses the device or its settings.
  */
 LMMS_EXPORT Effect* instantiateRecordedDevice(EffectChain* chain, const QString& stateXml);
 

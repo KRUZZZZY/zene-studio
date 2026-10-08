@@ -449,10 +449,12 @@ private slots:
 		ScriptEngine::instance()->takeLogMessages();
 	}
 
-	/*! The plug-in load of a recorded device takes no audio change lock. Another
-	 *  thread holds the lock for three seconds; building the device must return
-	 *  long before that. Built under the lock (the round-6 undo), it waits for
-	 *  the holder, and the case fails. */
+	/*! The load and the settings restore of a recorded device take no audio change
+	 *  lock. A holder thread takes the lock and keeps it until this test sets a
+	 *  flag, after the device has been built, with a ten-second safety bound. The
+	 *  case passes only if the holder was released by the flag: a build that
+	 *  waited for the lock would still be waiting when the bound ran out. The
+	 *  check is on ordering, not on speed. */
 	void aRecordedDeviceIsBuiltWithoutTheAudioChangeLock()
 	{
 		QString device;
@@ -471,23 +473,28 @@ private slots:
 		QVERIFY(!xml.isEmpty());
 
 		std::atomic<bool> held{false};
-		std::thread holder([&held] {
+		std::atomic<bool> release{false};
+		std::atomic<bool> releasedByFlag{false};
+		std::thread holder([&] {
 			Engine::audioEngine()->requestChangeInModel();
 			held = true;
-			std::this_thread::sleep_for(std::chrono::seconds(3));
+			const auto bound = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+			while (!release && std::chrono::steady_clock::now() < bound)
+			{
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			}
+			releasedByFlag = release.load();
 			Engine::audioEngine()->doneChangeInModel();
 		});
 		while (!held) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
 
-		const auto started = std::chrono::steady_clock::now();
 		Effect* built = control::instantiateRecordedDevice(chain, xml);
-		const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-			std::chrono::steady_clock::now() - started).count();
+		release = true;
 		holder.join();
 
+		QVERIFY2(releasedByFlag.load(),
+			"building the recorded device waited for the audio change lock (the holder's safety bound ran out)");
 		QVERIFY2(built != nullptr, "the recorded device could not be built");
-		QVERIFY2(elapsed < 1500,
-			qPrintable(QStringLiteral("building the device waited %1 ms for the change lock").arg(elapsed)));
 		QCOMPARE(QString::fromUtf8(built->descriptor()->name), deviceName);
 		built->deleteLater();
 
