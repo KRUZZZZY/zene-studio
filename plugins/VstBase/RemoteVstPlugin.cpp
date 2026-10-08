@@ -35,6 +35,10 @@
 #include "lmmsconfig.h"
 
 #include "RemotePluginClient.h"
+#include "VstMidiEventBatch.h"
+
+//! MIDI events the client accepts per processing period; the excess is dropped and counted.
+#define MIDI_EVENT_BUFFER_COUNT		1024
 
 #ifdef LMMS_HAVE_FCNTL_H
 #include <fcntl.h>
@@ -477,6 +481,8 @@ private:
 
 	using VstMidiEventList = std::vector<VstMidiEvent>;
 	VstMidiEventList m_midiEvents;
+	//! MIDI events dropped because a period already held MIDI_EVENT_BUFFER_COUNT of them.
+	std::size_t m_droppedMidiEvents = 0;
 
 	bpm_t m_bpm;
 	double m_currentSamplePos;
@@ -522,6 +528,9 @@ RemoteVstPlugin::RemoteVstPlugin( const char * socketPath ) :
 	m_currentProgram(-1)
 {
 	__plugin = this;
+
+	// The queue never grows past one period's capacity, so enqueueing does not allocate.
+	m_midiEvents.reserve( MIDI_EVENT_BUFFER_COUNT );
 
 	// process until we have loaded the plugin
 	while( 1 )
@@ -1051,27 +1060,26 @@ void RemoteVstPlugin::process( const float* _in, float* _out )
 		// have to have them stored somewhere even after
 		// dispatcher-call, so we create static copies of the
 		// data and post them
-#define MIDI_EVENT_BUFFER_COUNT		1024
 		static char eventsBuffer[sizeof( VstEvents ) + sizeof( VstMidiEvent * ) * MIDI_EVENT_BUFFER_COUNT];
 		static VstMidiEvent vme[MIDI_EVENT_BUFFER_COUNT];
 
 		// first sort events chronologically, since some plugins
 		// (e.g. Sinnah) can hang if they're out of order
 		// TODO: Sort on the server side instead
-		std::stable_sort( m_midiEvents.begin(), m_midiEvents.end(),
-				[]( const VstMidiEvent &a, const VstMidiEvent &b )
-				{
-					return a.deltaFrames < b.deltaFrames;
-				} );
+		// In place, without allocating: the host's audio callback waits for this period.
+		vst::sortByDeltaFrames( m_midiEvents.data(), m_midiEvents.size() );
+
+		// processMidiEvent() caps the queue at MIDI_EVENT_BUFFER_COUNT; the arrays are sized for that, so
+		// the count is capped again here rather than trusted.
+		const auto count = std::min<std::size_t>( m_midiEvents.size(), MIDI_EVENT_BUFFER_COUNT );
 
 		auto events = (VstEvents*)eventsBuffer;
 		events->reserved = 0;
-		events->numEvents = m_midiEvents.size();
+		events->numEvents = count;
 
-		int idx = 0;
-		for( VstMidiEventList::iterator it = m_midiEvents.begin(); it != m_midiEvents.end(); ++it, ++idx )
+		for( std::size_t idx = 0; idx < count; ++idx )
 		{
-			memcpy( &vme[idx], &*it, sizeof( VstMidiEvent ) );
+			memcpy( &vme[idx], &m_midiEvents[idx], sizeof( VstMidiEvent ) );
 			events->events[idx] = (VstEvent *) &vme[idx];
 		}
 
@@ -1173,7 +1181,7 @@ void RemoteVstPlugin::processMidiEvent( const MidiEvent& event, const f_cnt_t of
 	vme.midiData[3] = 0;
 
 	// TODO: Would this cause a data race with the process method? The two methods must not be called concurrently
-	m_midiEvents.push_back( vme );
+	vst::appendBounded( m_midiEvents, vme, MIDI_EVENT_BUFFER_COUNT, m_droppedMidiEvents );
 }
 
 

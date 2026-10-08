@@ -466,6 +466,9 @@ set(LMMS_TESTS
 	src/core/InputChannelRingTest.cpp
 	src/core/RecordRingBufferTest.cpp
 	src/core/RetroMidiRingTest.cpp
+	# The VST remote client's per-period MIDI helpers (plugins/VstBase/VstMidiEventBatch.h): an
+	# allocation-free sort and a bounded queue. The client itself is an out-of-process executable.
+	src/core/VstMidiEventBatchTest.cpp
 	src/core/RecordingRealtimeTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/ReversibilityContractTest.cpp
