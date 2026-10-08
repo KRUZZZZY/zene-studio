@@ -205,17 +205,19 @@ void NoteCanvas::wheelView(const QWheelEvent* event, int amount)
 {
 	const Qt::KeyboardModifiers mods = event->modifiers();
 	NoteGrid& g = m_state.grid;
+	// A trackpad sends pixel deltas and no angle deltas: they move the view by their pixels, as a notch by its angle.
+	const int pixels = amount == 0 ? event->pixelDelta().y() : 0;
 	if (mods.testFlag(Qt::ControlModifier))
 	{
 		// Smooth zoom: continuous, anchored under the pointer.
-		g.zoomAround(std::pow(1.0015, amount), event->position().x());
+		g.zoomAround(std::pow(1.0015, amount != 0 ? amount : pixels), event->position().x());
 	}
 	else if (mods.testFlag(Qt::AltModifier)) { g.setRowHeight(g.rowHeight() + (amount > 0 ? 1 : -1)); }  // off the notes
 	else if (mods.testFlag(Qt::ShiftModifier) || event->angleDelta().x() != 0)
 	{
 		g.setScrollTicks(g.scrollTicks() - amount / g.pixelsPerTick() / 4.0);
 	}
-	else { g.setScrollY(g.scrollY() - amount / 2); }
+	else { g.setScrollY(g.scrollY() - (amount != 0 ? amount / 2 : pixels)); }
 }
 
 void NoteCanvas::pressPan()

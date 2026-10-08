@@ -141,7 +141,9 @@ void NoteKeyboardView::mouseReleaseEvent(QMouseEvent*)
 
 void NoteKeyboardView::wheelEvent(QWheelEvent* event)
 {
-	m_state.grid.setScrollY(m_state.grid.scrollY() - event->angleDelta().y() / 2);
+	// A trackpad sends pixel deltas and no angle deltas: those scroll by their pixels.
+	const int angle = event->angleDelta().y();
+	m_state.grid.setScrollY(m_state.grid.scrollY() - (angle != 0 ? angle / 2 : event->pixelDelta().y()));
 	emit m_editor->stateChanged();
 }
 
