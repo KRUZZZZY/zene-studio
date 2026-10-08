@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-08T09:35:33Z",
+  "captured_at": "2026-10-08T19:28:13Z",
   "commands": [
     {
       "args_schema": {
@@ -4391,7 +4391,7 @@
         ],
         "type": "object"
       },
-      "description": "Ramp two overlapping clips on one track into each other: the outgoing clip gets a fade-out and the incoming clip a fade-in, both exactly as long as their overlap, with the given shape (default equal_power, which sums the pair to unity POWER) - or each side its own: 'out_length' / 'in_length' (ticks) and 'out_shape' / 'in_shape'. A container's ramp sits where the other clip is (offset fade; its tail plays unfaded). Reversible through the ProjectJournal (Track checkpoint).",
+      "description": "Ramp two overlapping clips on one track into each other: the outgoing clip gets a fade-out and the incoming clip a fade-in, both exactly as long as their overlap, with the given shape (default equal_power, which sums the pair to unity POWER) - or each side its own: 'out_length' / 'in_length' (ticks) and 'out_shape' / 'in_shape'. A clip lying inside the other is crossfaded at both its ends: the container ducks under it and comes back (offset fades; the lengths name the ramp into it when the container is 'out', out of it when 'in', the other is the rest). Reversible through the ProjectJournal (Track checkpoint).",
       "group": "clip",
       "id": "clip.crossfade",
       "mutating": true,
@@ -5143,7 +5143,7 @@
         ],
         "type": "object"
       },
-      "description": "Set a clip's length in ticks (the clip becomes manually resized). Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Set a clip's length in ticks (the clip becomes manually resized). A linked clip's resize applies to the whole link group (one undo step). Reversible through the ProjectJournal (Clip checkpoint).",
       "group": "clip",
       "id": "clip.resize",
       "mutating": true,
@@ -34680,8 +34680,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-notes/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-velsjugs/zene.sock",
-    "version": "0.4.0-alpha.1163+2e2ab69"
+    "source_socket": "/tmp/zctl-run-mqwp4a5a/zene.sock",
+    "version": "0.4.0-alpha.1169+f971dd2"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
