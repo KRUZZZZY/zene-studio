@@ -132,6 +132,17 @@ constexpr std::size_t BigDebugBytes = 900000;
 //! "deafquery" mode: the client never answers IdIsUIVisible, as a hung editor would not.
 bool g_deafQuery = false;
 
+//! "latequery" mode: the first IdIsUIVisible is answered "1" after LateQueryDelayMs (later than the host waits);
+//! the next one is answered "0" at once.
+bool g_lateQuery = false;
+int g_queriesSeen = 0;
+constexpr int LateQueryDelayMs = 300;
+
+//! "garbage" mode: the reply to the first period is a frame whose argument count is negative, which is not a
+//! message at all: the connection is lost on the host.
+bool g_garbage = false;
+bool g_garbageUsed = false;
+
 //! "halfhandshake" mode: the first start-up message stops half-way (its header, then a pause), as a client that
 //! hangs during start-up does, and is completed after the pause.
 bool g_halfHandshake = false;
@@ -379,7 +390,9 @@ auto handleMessage(const Message& message) -> bool
 
 	case IdIsUIVisibleWire:
 		if (g_deafQuery) { break; }
-		if (!sendMessage(IdIsUIVisibleWire, {"1"})) { return false; }
+		++g_queriesSeen;
+		if (g_lateQuery && g_queriesSeen == 1) { ::usleep(LateQueryDelayMs * 1000); }
+		if (!sendMessage(IdIsUIVisibleWire, {g_lateQuery && g_queriesSeen > 1 ? "0" : "1"})) { return false; }
 		break;
 	case IdMidiEvent:
 		if (g_midi) { ++g_midiEvents; }
@@ -401,6 +414,12 @@ auto handleMessage(const Message& message) -> bool
 		break;
 	case IdStartProcessing:
 		if (g_stall) { break; }
+		if (g_garbage && !g_garbageUsed)
+		{
+			g_garbageUsed = true;
+			if (!writeInt32(10) || !writeInt32(-5)) { return false; }
+			break;
+		}
 		if (g_bigdebug && !g_bigdebugUsed)
 		{
 			g_bigdebugUsed = true;
@@ -575,7 +594,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake|latequery|garbage]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -590,9 +609,11 @@ int main(int argc, char** argv)
 	g_orderer = mode == "orderer";
 	g_capper = mode == "capper";
 	g_deafQuery = mode == "deafquery";
+	g_lateQuery = mode == "latequery";
+	g_garbage = mode == "garbage";
 	g_halfHandshake = mode == "halfhandshake";
 	static const char* const knownModes[] = {"modern", "stale", "stall", "recount", "midi", "late", "midframe",
-		"silencer", "bigdebug", "orderer", "capper", "deafquery", "halfhandshake"};
+		"silencer", "bigdebug", "orderer", "capper", "deafquery", "halfhandshake", "latequery", "garbage"};
 	if (std::find_if(std::begin(knownModes), std::end(knownModes),
 			[&mode](const char* known) { return mode == known; }) == std::end(knownModes))
 	{

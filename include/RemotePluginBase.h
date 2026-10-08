@@ -307,25 +307,12 @@ private:
 			return;
 		}
 		lock();
-		// A reader only reads a message the writer has signalled, and the writer writes it whole under the lock. So
-		// the data is there; if it is not after a short wait, the peer broke that rule and the FIFO is given up.
-		int spins = 0;
-		while( isInvalid() == false &&
-				_len > m_data->endPtr - m_data->startPtr )
-		{
-			if( ++spins > MaxReadSpins )
-			{
-				invalidate();
-				break;
-			}
-			unlock();
-#ifndef LMMS_BUILD_WIN32
-			usleep( 5 );
-#endif
-			lock();
-		}
+		// A reader only reads a message the writer has signalled, and the writer writes it whole under the lock, so
+		// the data is there. If it is not, the peer broke that rule: the FIFO is given up at once. Waiting here would
+		// hold the data lock that the writer needs in order to write, so it could never succeed.
 		if( isInvalid() || _len > m_data->endPtr - m_data->startPtr )
 		{
+			invalidate();
 			memset( _buf, 0, _len );
 			unlock();
 			return;
@@ -370,9 +357,6 @@ private:
 		m_data->endPtr += _len;
 		unlock();
 	}
-
-	//! Polls of a short read before the FIFO is given up: about 5 ms of 5 us steps.
-	static constexpr int MaxReadSpins = 1000;
 
 	volatile bool m_invalid;
 	bool m_master;
@@ -573,11 +557,16 @@ public:
 		std::chrono::milliseconds _progress, message & _out );
 
 #ifndef SYNC_WITH_SHM_FIFO
-	//! Reads exactly _len bytes, waiting at most _progress for each new piece. False if none arrived in time.
-	bool readExactlyWithin( void * _buf, int _len, std::chrono::milliseconds _progress );
-	//! Finishes a frame whose first bytes are on the socket (see receiveWithin()).
+	//! Reads exactly _len bytes, waiting at most _progress for each new piece and never past _total.
+	//! False if the bytes did not all arrive in time.
+	bool readExactlyWithin( void * _buf, int _len, std::chrono::milliseconds _progress,
+		std::chrono::steady_clock::time_point _total );
+	//! Finishes a frame whose first bytes are on the socket (see receiveWithin()), within StartedFrameTimeout.
 	ReceiveResult receiveStartedFrame( std::chrono::milliseconds _progress, message & _out );
 #endif
+
+	//! The whole of a started frame must arrive within this (on top of the per-piece bound of receiveWithin()).
+	static constexpr std::chrono::milliseconds StartedFrameTimeout{500};
 #endif
 
 	//! Writes the tail of an earlier partial non-blocking send, if there is one, without blocking.
@@ -751,6 +740,13 @@ public:
 		}
 		return Framing::Complete;
 #endif
+	}
+
+	//! Whether a complete message is already waiting, so that receiveFrameBefore() with a zero deadline takes it
+	//! without waiting. Never reads anything.
+	inline bool completeMessageWaiting()
+	{
+		return peekNextMessage() == Framing::Complete;
 	}
 
 	inline void fetchAndProcessAllMessages()

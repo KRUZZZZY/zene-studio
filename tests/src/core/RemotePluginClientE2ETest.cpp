@@ -173,6 +173,31 @@ inline auto fakeClientExecutable() -> QString { return {}; }
 //! Name of the real client executable as RemotePlugin::init() resolves it.
 inline constexpr auto RealClientName = "RemoteZynAddSubFx";
 
+//! Points LMMS_PLUGIN_DIR at a directory for one test, and restores what was there before when the test ends.
+class ScopedPluginDir
+{
+public:
+	explicit ScopedPluginDir(const QString& dir)
+		: m_wasSet{qEnvironmentVariableIsSet("LMMS_PLUGIN_DIR")}
+		, m_previous{qEnvironmentVariable("LMMS_PLUGIN_DIR")}
+	{
+		qputenv("LMMS_PLUGIN_DIR", dir.toUtf8());
+	}
+
+	~ScopedPluginDir()
+	{
+		if (m_wasSet) { qputenv("LMMS_PLUGIN_DIR", m_previous.toUtf8()); }
+		else { qunsetenv("LMMS_PLUGIN_DIR"); }
+	}
+
+	ScopedPluginDir(const ScopedPluginDir&) = delete;
+	ScopedPluginDir& operator=(const ScopedPluginDir&) = delete;
+
+private:
+	bool m_wasSet;
+	QString m_previous;
+};
+
 //! The allocations \a body makes on this thread, counted by the allocation probe.
 template<typename Body>
 auto countAllocations(Body&& body) -> std::uint64_t
@@ -1005,7 +1030,7 @@ private slots:
 		}
 
 		const QFileInfo info{client};
-		qputenv("LMMS_PLUGIN_DIR", info.absolutePath().toUtf8());
+		ScopedPluginDir pluginDir{info.absolutePath()};
 		DynamicPlanarPorts ports{false, nullptr};
 		RemotePlugin plugin{ports.controller()};
 		QVERIFY2(!plugin.init(info.fileName(), false, {QStringLiteral("halfhandshake")}),
@@ -1025,6 +1050,98 @@ private slots:
 		plugin.lock();
 		plugin.waitForInitDone(false);
 		plugin.unlock();
+	}
+
+	/*!
+	 * A query whose reply came after its timeout does not answer the next query.
+	 *
+	 * The "latequery" client answers the first visibility query 300 ms late, with "1", and the second at once with
+	 * "0". The first query times out (-1); after the late reply has arrived, the second must return "0", not the
+	 * late "1".
+	 */
+	void lateQueryReplyDoesNotAnswerTheNextQuery()
+	{
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the late-reply accounting is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("latequery")}), "could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		QCOMPARE(plugin.isUIVisible(), -1);
+		std::this_thread::sleep_for(std::chrono::milliseconds{400});
+		QCOMPARE(plugin.isUIVisible(), 0);
+		QCOMPARE(plugin.cachedUIVisible(), 0);
+	}
+
+	/*!
+	 * A handshake completes without any main-thread wait: the deferred timer reads the client's messages while no
+	 * shared block exists. The "halfhandshake" client finishes its start-up after two seconds.
+	 */
+	void preBufferHandshakeCompletesWithoutAMainThreadWait()
+	{
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the pre-buffer pump is "
+				"UNEXERCISED by this run");
+		}
+
+		const QFileInfo info{client};
+		ScopedPluginDir pluginDir{info.absolutePath()};
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(!plugin.init(info.fileName(), false, {QStringLiteral("halfhandshake")}),
+			"could not start the half-handshake client");
+
+		// Only the event loop runs here: the timer is what reads the handshake.
+		for (int waited = 0; waited < 6000 && !ports.buffers()->initialized(); waited += 20)
+		{
+			QTest::qWait(20);
+		}
+		QVERIFY2(ports.buffers()->initialized(), "the handshake did not complete without a main-thread wait");
+		QVERIFY(!plugin.failed());
+
+		plugin.lock();
+		plugin.waitForInitDone(false);
+		plugin.unlock();
+	}
+
+	/*!
+	 * A lost connection is reported on the main thread, and fails the plugin.
+	 *
+	 * The "garbage" client answers the first period with a frame that is not a message. The connection is lost on the
+	 * audio thread; the main thread must log it and mark the plugin failed, not leave the instrument silent without a
+	 * word.
+	 */
+	void lostConnectionIsReportedOnTheMainThread()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the lost-connection report is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("garbage")}), "could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		m_recorder->clear();
+		QVERIFY(!plugin.process());
+		plugin.applyDeferredClientRequests();
+
+		QVERIFY2(plugin.failed(), "a lost connection did not fail the plugin");
+		QVERIFY2(m_recorder->text().contains(QStringLiteral("connection to the remote plugin client was lost")),
+			qPrintable(m_recorder->text()));
 	}
 
 	/*!

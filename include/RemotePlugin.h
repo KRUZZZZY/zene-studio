@@ -35,6 +35,7 @@
 #include <chrono>
 #include <vector>
 #include <cstdint>
+#include <map>
 #include <span>
 
 #include "MidiHandoffQueue.h"
@@ -327,7 +328,21 @@ private:
 	//! Refusals already reported on the main thread (main thread only).
 	std::uint64_t m_reportedDrops = 0;
 	//! Editor visibility as last known: from a query, a show or a hide, or a late reply read by any wait. -1: unknown.
-	int m_uiVisible = -1;
+	//! Written by the main thread and by processMessage() (which the audio thread can run), so atomic.
+	std::atomic<int> m_uiVisible{-1};
+	//! Queries abandoned at their timeout, per reply id: their replies still arrive, and are not the answers to later
+	//! queries. Main thread only (under m_commMutex), except that processMessage() consumes them.
+	std::map<int, int> m_staleQueries;
+	//! Set when the connection was lost on the audio thread; reported and failed on the main thread.
+	std::atomic<bool> m_connectionLost{false};
+	//! IdInitDone has been received (by any wait), so a later waitForInitDone() must not wait for it again.
+	bool m_initDoneSeen = false;
+
+	//! Consumes one abandoned query's reply for \a _id. @return true if the reply was an abandoned query's
+	bool consumeStaleQuery( int _id );
+
+	//! Main-thread drain while there is no shared block: completes the handshake without a main-thread wait.
+	void pumpBeforeBuffer();
 	//! A reply the client asked for during a period could not be sent without blocking; reported on the main thread.
 	bool m_pendingReplyLost = false;
 

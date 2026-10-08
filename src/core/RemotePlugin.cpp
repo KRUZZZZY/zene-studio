@@ -256,6 +256,7 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 		reset( new shmFifo(), new shmFifo() );
 #endif
 		m_failed = false;
+		m_initDoneSeen = false;
 	}
 	QString exec = QFileInfo(QDir("plugins:"), pluginExecutable).absoluteFilePath();
 
@@ -391,7 +392,7 @@ void RemotePlugin::waitForInitDone(bool busyWaiting)
 	// failure path then degrades into the silent wrong audio it exists to prevent
 	// (measured with a pre-#589 client: the refusal was logged, the plugin stayed
 	// unfailed, and the client's interleaved writes were consumed as planar planes).
-	const auto initDone = waitForMessage(IdInitDone, busyWaiting).id == IdInitDone;
+	const bool initDone = m_initDoneSeen || waitForMessage(IdInitDone, busyWaiting).id == IdInitDone;
 	m_failed = m_failed || !initDone;
 
 	if (!m_failed)
@@ -477,6 +478,13 @@ bool RemotePlugin::process()
 	const bool processed = processPeriod();
 	m_inProcessPeriod = false;
 	m_commMutex.unlock();
+
+	// A lost connection is not silence to be left unexplained: the main thread reports it and fails the plugin.
+	if (!processed && isInvalid())
+	{
+		m_connectionLost = true;
+		m_deferredWork = true;
+	}
 
 	return processed;
 }
@@ -619,6 +627,7 @@ RemotePlugin::ReplyWait RemotePlugin::collectProcessingReplies(std::chrono::stea
 			if (std::chrono::steady_clock::now() >= deadline) { return ReplyWait::Late; }
 			continue;
 		case ReceiveResult::Lost:
+			invalidate(); // a connection that cannot be read is lost; the main thread is told (see process())
 			return ReplyWait::Lost;
 		}
 
@@ -633,6 +642,8 @@ RemotePlugin::ReplyWait RemotePlugin::collectProcessingReplies(std::chrono::stea
 
 void RemotePlugin::applyDeferredClientRequests()
 {
+	if (!m_audioBuffer && !m_failed && isRunning()) { pumpBeforeBuffer(); }
+
 	if (!m_deferredWork.load()) { return; }
 
 	// Re-sizing the ports reallocates the shared buffer the audio thread's router reads, so it is done with
@@ -642,6 +653,11 @@ void RemotePlugin::applyDeferredClientRequests()
 	lock();
 	m_deferredWork = false;
 	reportDeferredClientRequests();
+	if (m_connectionLost.exchange(false))
+	{
+		m_failed = true;
+		qCritical() << "RemotePlugin: the connection to the remote plugin client was lost; the plugin is silenced";
+	}
 
 	if (m_countChangePending)
 	{
@@ -773,10 +789,52 @@ RemotePluginBase::message RemotePlugin::waitForReplyWithin( const RemotePluginBa
 	for (;;)
 	{
 		RemotePluginBase::message m;
-		if (receiveWithin(deadline, _timeout, m) != ReceiveResult::Got) { return RemotePluginBase::message(); }
-		if (m.id == _wm.id) { return m; }
-		processMessage(m);
+		if (receiveWithin(deadline, _timeout, m) != ReceiveResult::Got)
+		{
+			// Abandoned: its reply may still arrive, and must not be taken as the answer to a later query.
+			++m_staleQueries[_wm.id];
+			return RemotePluginBase::message();
+		}
+		// The reply to this query is the first one for its id that no abandoned query is waiting for. An abandoned
+		// query's reply is consumed here, once, and the wait goes on; any other message goes through processMessage().
+		if (m.id != _wm.id) { processMessage(m); }
+		else if (!consumeStaleQuery(m.id)) { return m; }
+		if (std::chrono::steady_clock::now() >= deadline)
+		{
+			++m_staleQueries[_wm.id];
+			return RemotePluginBase::message();
+		}
 	}
+}
+
+bool RemotePlugin::consumeStaleQuery( int _id )
+{
+	const auto it = m_staleQueries.find( _id );
+	if( it == m_staleQueries.end() || it->second <= 0 ) { return false; }
+	--it->second;
+	return true;
+}
+
+void RemotePlugin::pumpBeforeBuffer()
+{
+	// A client's handshake messages are read here, on the main thread, while no shared block exists: the audio thread
+	// reads nothing then, and without this nothing would complete the handshake until a main-thread wait ran.
+	lock();
+	const auto now = std::chrono::steady_clock::now();
+	for (;;)
+	{
+		// Only a complete message is taken: a frame still arriving is left for the next tick, not given up on.
+		if (!completeMessageWaiting()) { break; }
+		RemotePluginBase::message m;
+		if (receiveFrameBefore(now, m) != ReceiveResult::Got) { break; }
+		processMessage(m);
+		if (m.id == IdInitDone && !m_failed)
+		{
+			m_audioPorts->activate(Engine::audioEngine()->framesPerPeriod());
+		}
+		if (m_audioBuffer) { break; }
+	}
+	unlock();
 }
 
 
@@ -901,6 +959,7 @@ bool RemotePlugin::processMessage( const message & _m )
 			return false;
 
 		case IdInitDone:
+			m_initDoneSeen = true;
 			reply = true;
 			break;
 
@@ -1007,7 +1066,10 @@ bool RemotePlugin::processMessage( const message & _m )
 			if (m_owedProcessingReplies > 0) { --m_owedProcessingReplies; }
 			break;
 		case IdIsUIVisible:
-			m_uiVisible = _m.getInt() ? 1 : 0;
+			if (!consumeStaleQuery(_m.id)) { m_uiVisible = _m.getInt() ? 1 : 0; }
+			break;
+		case IdInformationUpdated:
+			consumeStaleQuery(_m.id);
 			break;
 		case IdQuit:
 		default:

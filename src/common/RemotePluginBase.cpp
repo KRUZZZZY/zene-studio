@@ -323,13 +323,17 @@ RemotePluginBase::message RemotePluginBase::receiveMessage()
 
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 #ifndef SYNC_WITH_SHM_FIFO
-bool RemotePluginBase::readExactlyWithin(void * _buf, int _len, std::chrono::milliseconds _progress)
+bool RemotePluginBase::readExactlyWithin(void * _buf, int _len, std::chrono::milliseconds _progress,
+	std::chrono::steady_clock::time_point _total)
 {
 	char * out = static_cast<char *>(_buf);
 	int remaining = _len;
 	while (remaining > 0)
 	{
-		if (!waitForMessageReadable(static_cast<int>(_progress.count()))) { return false; }
+		const auto left = std::chrono::ceil<std::chrono::milliseconds>(_total - std::chrono::steady_clock::now());
+		if (left.count() <= 0) { return false; }
+		const auto wait = std::min(_progress, left);
+		if (!waitForMessageReadable(static_cast<int>(wait.count()))) { return false; }
 		const ssize_t n = ::read(m_socket, out, static_cast<std::size_t>(remaining));
 		if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) { continue; }
 		if (n <= 0)
@@ -345,9 +349,10 @@ bool RemotePluginBase::readExactlyWithin(void * _buf, int _len, std::chrono::mil
 
 RemotePluginBase::ReceiveResult RemotePluginBase::receiveStartedFrame(std::chrono::milliseconds _progress, message & _out)
 {
+	const auto total = std::chrono::steady_clock::now() + StartedFrameTimeout;
 	std::int32_t id = 0;
 	std::int32_t count = 0;
-	if (!readExactlyWithin(&id, sizeof id, _progress) || !readExactlyWithin(&count, sizeof count, _progress)
+	if (!readExactlyWithin(&id, sizeof id, _progress, total) || !readExactlyWithin(&count, sizeof count, _progress, total)
 		|| count < 0)
 	{
 		invalidate();
@@ -357,13 +362,13 @@ RemotePluginBase::ReceiveResult RemotePluginBase::receiveStartedFrame(std::chron
 	for (std::int32_t i = 0; i < count; ++i)
 	{
 		std::int32_t length = 0;
-		if (!readExactlyWithin(&length, sizeof length, _progress) || length < 0)
+		if (!readExactlyWithin(&length, sizeof length, _progress, total) || length < 0)
 		{
 			invalidate();
 			return ReceiveResult::Lost;
 		}
 		std::string arg(static_cast<std::size_t>(length), '\0');
-		if (length > 0 && !readExactlyWithin(arg.data(), length, _progress))
+		if (length > 0 && !readExactlyWithin(arg.data(), length, _progress, total))
 		{
 			invalidate();
 			return ReceiveResult::Lost;
@@ -382,6 +387,7 @@ RemotePluginBase::ReceiveResult RemotePluginBase::receiveWithin(std::chrono::ste
 		switch (peekNextMessage())
 		{
 		case Framing::Unusable:
+			invalidate();
 			return ReceiveResult::Lost;
 		case Framing::Complete:
 			_out = receiveMessage();
@@ -458,6 +464,7 @@ RemotePluginBase::ReceiveResult RemotePluginBase::receiveFrameBefore(
 		switch (peekNextMessage())
 		{
 		case Framing::Unusable:
+			invalidate();
 			return ReceiveResult::Lost;
 		case Framing::Incomplete:
 			if (std::chrono::steady_clock::now() >= _deadline) { return ReceiveResult::Timeout; }
