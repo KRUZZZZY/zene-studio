@@ -81,9 +81,9 @@ const ReversibilityRow kArrangerRows[] = {
 	R("clip.time_scale", RC::TrueInverse, true, "it rewrites a clip's notes (or its warp) and its length",
 		"Clip journal checkpoint: undo restores the clip's notes (or warp) and length", ""),
 	R("range.consolidate", RC::NotMutating, false,
-		"it runs clip.consolidate over the range on each covered sample track; each of those records - and undoes - "
-		"as itself (the workflow.run precedent), so this command records nothing of its own",
-		"nothing of its own: undo each track's clip.consolidate", ""),
+		"it runs clip.consolidate over the range on each covered sample track inside its own handler, so the tracks' "
+		"changes are ONE journal step: ONE record for this command, whose inverse.children lists each track",
+		"the one journal step the tracks' consolidations share: control.undo reverts every track together", ""),
 	R("arrangement.nudge", RC::NotMutating, false,
 		"it runs clip.move on the selected clip, which records itself; nothing of its own is written",
 		"nothing of its own: clip.move's Clip checkpoint", ""),

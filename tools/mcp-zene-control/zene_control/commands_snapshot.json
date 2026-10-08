@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-04T17:22:52Z",
+  "captured_at": "2026-10-08T04:13:42Z",
   "commands": [
     {
       "args_schema": {
@@ -21468,7 +21468,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Render each covered sample track's clips inside the range into ONE clip (clip.consolidate per track - clips crossing an edge are refused: range.split first). Each track records and undoes as its own consolidation.",
+      "description": "Render each covered sample track's clips inside the range into ONE clip (clip.consolidate per track - clips crossing an edge are refused: range.split first). The tracks' consolidations are one undo step: one record, which control.undo reverts for every track together.",
       "group": "range",
       "id": "range.consolidate",
       "mutating": false,
@@ -34001,11 +34001,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-survey/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-control/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-4g8c9srg/zene.sock",
-    "version": "0.4.0-alpha.114+9a9f339"
+    "source_socket": "/tmp/zsnap-3369954/s.sock",
+    "version": "0.4.0-alpha.376+04d166d"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
