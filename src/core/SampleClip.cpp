@@ -24,7 +24,9 @@
  
 #include "SampleClip.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 #include <QDomElement>
 #include <QFileInfo>
@@ -525,16 +527,19 @@ TimePos SampleClip::timelinePosAt(f_cnt_t sourceFrame) const
 {
 	const auto framesPerTick = clipFramesPerTick();
 	const auto originTicks = startPosition().getTicks() + startTimeOffset().getTicks();
-	// Luna cluster 2484: this mapping never consulted the play DIRECTION, so a
-	// reversed clip placed every source frame where the forward clip placed it -
-	// the transient overlay, clipTransientTicks, the slice and warp-quantise
-	// commands all followed. A reversed clip plays the window backwards, so frame
-	// f sounds where in + out - 1 - f did. Mirrored before the clamp, so a frame
-	// from outside the window still lands on the edge it is nearest to.
-	const auto mirrored = m_sample.reversed()
-		? m_window.sourceIn + m_window.sourceOut - 1 - sourceFrame
-		: sourceFrame;
-	const auto frame = std::clamp(mirrored, m_window.sourceIn, m_window.sourceOut);
+	// Luna cluster 2484: this mapping never consulted the play DIRECTION, so a reversed clip placed every
+	// source frame where the forward clip placed it. Sample::render reverses the WHOLE buffer: buffer frame
+	// f is read at play frame (size - 1 - f), and the window is played in play frames. So a reversed frame
+	// sounds where play frame size - 1 - f sounds, not where in + out - 1 - f would (those differ whenever
+	// the window does not end at the buffer's end). Mirrored over the buffer, in signed arithmetic (an
+	// unsigned subtraction wraps for a frame past the buffer end), then clamped to the window's edge.
+	std::int64_t played = static_cast<std::int64_t>(sourceFrame);
+	if (m_sample.reversed())
+	{
+		played = static_cast<std::int64_t>(m_sample.sampleSize()) - 1 - played;
+	}
+	const auto frame = static_cast<f_cnt_t>(std::clamp(played,
+		static_cast<std::int64_t>(m_window.sourceIn), static_cast<std::int64_t>(m_window.sourceOut)));
 
 	if (m_warp.empty())
 	{

@@ -434,17 +434,21 @@ private slots:
 		clip->sample().setReversed(true);
 		QCOMPARE(clip->sample().reversed(), true);
 
-		// the mirror of the window: source frame f now plays where the forward clip
-		// played in + out - 1 - f
-		QCOMPARE(forwardOf(in), forwardAtLast);
-		QCOMPARE(forwardOf(out - 1), forwardAtIn);
-		QCOMPARE(forwardOf(in + 1), forwardAtPenultimate);
+		// Sample::render reverses the whole buffer: buffer frame f is played at play frame size - 1 - f.
+		// So the frame that plays at play frame p is the buffer frame size - 1 - p, and that frame's
+		// timeline position is the forward position of p.
+		const auto size = static_cast<f_cnt_t>(clip->sample().sampleSize());
+		QCOMPARE(forwardOf(size - 1 - in), forwardAtIn);
+		QCOMPARE(forwardOf(size - 1 - (in + 1)), forwardAtInNext);
+		QCOMPARE(forwardOf(size - 1 - (out - 1)), forwardAtLast);
+		QCOMPARE(forwardOf(size - 1 - (out - 2)), forwardAtPenultimate);
 
-		// and the ordering inverts: as the source frame ascends, the tick descends.
+		// and the ordering inverts: as the buffer frame ascends, the tick descends.
 		// A whole tick's worth of frames, so the assertion measures direction rather
 		// than the frame-to-tick truncation (two adjacent frames share a tick).
 		const auto aTick = static_cast<f_cnt_t>(Engine::framesPerTick(rate));
-		QVERIFY2(forwardOf((in + out) / 2) > forwardOf((in + out) / 2 + aTick),
+		const auto middle = size - 1 - (in + out) / 2;
+		QVERIFY2(forwardOf(middle) > forwardOf(middle + aTick),
 				 "a reversed clip mapped its frames in ascending order");
 
 		// restoring the direction restores the mapping exactly
@@ -454,6 +458,53 @@ private slots:
 		QCOMPARE(forwardOf((in + out) / 2), forwardAtMid);
 		QCOMPARE(forwardOf(out - 1), forwardAtLast);
 		QCOMPARE(forwardOf(out - 2), forwardAtPenultimate);
+#else
+		QSKIP("the clip-level timeline mapping does not exist on this tree");
+#endif
+	}
+
+	//! Audible, not only mapped: a single impulse in a reversed, trimmed clip must come out of the
+	//! renderer where the timeline mapping says its transient sits (the overlay and the slice and
+	//! warp-quantise commands rely on that mapping).
+	void aReversedImpulseSoundsWhereItsTransientPlaces()
+	{
+#ifdef LMMS_HAVE_SAMPLE_WINDOW
+		const int rate = Engine::audioEngine()->outputSampleRate();
+		const f_cnt_t in = trimIn(rate);
+		const f_cnt_t out = trimOut(rate);
+		const auto frames = static_cast<f_cnt_t>(kSourceSeconds) * rate;
+		// The impulse plays a quarter of the way into the window, so the mapping cannot match by accident.
+		const f_cnt_t playAt = in + (out - in) / 4;
+		const f_cnt_t at = frames - 1 - playAt;
+		std::vector<SampleFrame> data(frames, SampleFrame(0.0f, 0.0f));
+		data[at] = SampleFrame(1.0f, 1.0f);
+
+		SampleTrack track(Engine::getSong());
+		auto* clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+		clip->setSampleStartFrame(in);
+		clip->setSamplePlayLength(out);
+		clip->sample().setReversed(true);
+
+		std::vector<SampleFrame> rendered(out - in + 64, SampleFrame(0.0f, 0.0f));
+		Sample::PlaybackState state;
+		clip->sample().play(rendered.data(), &state, rendered.size());
+		std::size_t peak = 0;
+		for (std::size_t i = 0; i < rendered.size(); ++i)
+		{
+			if (std::abs(rendered[i][0]) > std::abs(rendered[peak][0])) { peak = i; }
+		}
+		const auto expected = static_cast<long long>(playAt - in);
+		QVERIFY2(std::abs(static_cast<long long>(peak) - expected) <= 2,
+				 qPrintable(QStringLiteral("the impulse rendered at frame %1, expected %2").arg(peak).arg(expected)));
+
+		// and the timeline mapping of the same buffer frame lands on that frame, to a tick's precision
+		const auto framesPerTick = static_cast<double>(Engine::framesPerTick(rate));
+		const double mapped = static_cast<double>(clip->timelinePosAt(at).getTicks()) * framesPerTick;
+		QVERIFY2(std::abs(mapped - static_cast<double>(expected)) <= framesPerTick + 2.0,
+				 qPrintable(QStringLiteral("the timeline mapped the impulse to frame %1, rendered at %2")
+							.arg(mapped).arg(expected)));
 #else
 		QSKIP("the clip-level timeline mapping does not exist on this tree");
 #endif
