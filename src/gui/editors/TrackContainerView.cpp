@@ -358,6 +358,7 @@ const TrackView * TrackContainerView::trackViewAt( const int _y ) const
 	for (const auto& trackView : m_trackViews)
 	{
 		if (trackView->parentWidget() != m_scrollArea->widget()) { continue; } // E21: a pinned row
+		if (!trackView->isVisible()) { continue; }
 		const int y_cnt1 = y_cnt;
 		y_cnt += trackView->height();
 		if (abs_y >= y_cnt1 && abs_y < y_cnt) { return trackView; }

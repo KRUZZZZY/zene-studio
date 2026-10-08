@@ -257,6 +257,26 @@ private slots:
 		QVERIFY2(!cliplocks::badgeShown(view), "the padlock stayed after the lock was undone");
 	}
 
+	//! Hidden rows keep QWidget height, but must not claim hit-test space in the arranger.
+	void hiddenTrackRowsDoNotClaimHitTestSpace()
+	{
+		Track* second = Track::create(Track::Type::Instrument, Engine::getSong());
+		QCoreApplication::processEvents();
+		TrackView* firstView = nullptr;
+		TrackView* secondView = nullptr;
+		for (TrackView* view : m_editor->trackViews())
+		{
+			if (view->getTrack() == m_track) { firstView = view; }
+			if (view->getTrack() == second) { secondView = view; }
+		}
+		QVERIFY(firstView != nullptr && secondView != nullptr);
+		m_track->setVisible(false);
+		m_editor->realignTracks();
+		QCoreApplication::processEvents();
+		QVERIFY(!firstView->isVisible());
+		QCOMPARE(m_editor->trackViewAt(0), secondView);
+	}
+
 	//! Luna cluster 4674: the badge stays locked either way, so the tooltip must be refreshed when the
 	//! lock holder moves from the track to the clip - not only when the locked state itself flips.
 	void theLockTooltipFollowsTheLockHolder()
