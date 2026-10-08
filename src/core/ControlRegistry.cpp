@@ -449,7 +449,7 @@ void ControlRegistry::recordCall(const QString& commandId, const QJsonObject& ar
 	int foldedBefore)
 {
 	m_foldedNestedRecords += static_cast<int>(foldsIntoEnclosingStep(mutating, changed, enclosedByMutating, result->result));
-	const bool ownStep = m_unrecordedDepth == 0 && recordsItsOwnStep(mutating, changed, enclosedByMutating);
+	const bool ownStep = recordsItsOwnStep(mutating, changed, enclosedByMutating);
 	// A recorded call that produced NO journal step breaks a coalescing run: its record is not a step the run
 	// can extend, so the next press must open its own step and record (a call that records nothing leaves the
 	// run alone, as documented in ControlUndoCoalescing.cpp).
@@ -469,13 +469,6 @@ void ControlRegistry::recordCall(const QString& commandId, const QJsonObject& ar
 	if (!mutating && m_wrapperDepth == 0 && !m_nestedRecords.isEmpty()) { flushNestedRecords(commandId, *result, step); }
 }
 
-ControlResult ControlRegistry::invokeUnrecorded(const QString& id, const QJsonObject& args)
-{
-	++m_unrecordedDepth;
-	const ControlResult result = invoke(id, args);
-	--m_unrecordedDepth;
-	return result;
-}
 
 //! Records what a successful mutating handler described (SPEC A16).
 void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResult* result,

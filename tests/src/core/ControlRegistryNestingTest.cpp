@@ -162,34 +162,46 @@ private slots:
 		runCase(QStringLiteral("test.fold_via_wrapper"), false, true);
 	}
 
-	//! control.undo runs a command-applies inverse: that run must not add a record, so the count holds.
-	void undoThroughCommandInverseAddsNoRecord()
+	//! THE ESTABLISHED CONTRACT (AGENTS.md "Verified facts", docs/UNDO-BOUNDS.md): a control.undo that runs a
+	//! command-applies inverse RECORDS that inverse run, so a second control.undo reverses it. Two commands invert
+	//! each other: each undo records one transaction and flips the state back, and the top record names the
+	//! command the next undo will run.
+	void undoThroughACommandInverseRecordsTheInverseRun()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
 		registry->clearTransactions();
-		ControlCommand target = describedCommand(QStringLiteral("test.undo_target"), true, QStringLiteral("test.undo_target"));
-		target.handler = [](const QJsonObject&) { return ControlResult::success(); };
-		registry->registerCommand(target);
-		ControlCommand source = describedCommand(QStringLiteral("test.undo_source"), true, QStringLiteral("test.undo_target"));
-		source.handler = [](const QJsonObject&) {
-			QJsonObject transaction{{QStringLiteral("before"), QJsonObject()},
-				{QStringLiteral("inverse"), QJsonObject{{QStringLiteral("applies"), QStringLiteral("command")},
-					{QStringLiteral("op"), QStringLiteral("test.undo_target")}}},
-				{QStringLiteral("reversible"), true}, {QStringLiteral("mechanism"), QStringLiteral("test")}};
-			return ControlResult::success(QJsonObject{{QStringLiteral("__transaction"), transaction}});
+		static int value = 0;  // the state the two commands flip between
+		value = 0;
+		const auto flip = [](const QString& id, int to, const QString& inverseOf) {
+			ControlCommand command = describedCommand(id, true, QString());
+			command.handler = [to, inverseOf](const QJsonObject&) {
+				value = to;
+				QJsonObject transaction{{QStringLiteral("before"), QJsonObject{{QStringLiteral("value"), 1 - to}}},
+					{QStringLiteral("inverse"), QJsonObject{{QStringLiteral("applies"), QStringLiteral("command")},
+						{QStringLiteral("op"), inverseOf}}},
+					{QStringLiteral("reversible"), true}, {QStringLiteral("mechanism"), QStringLiteral("test")}};
+				return ControlResult::success(QJsonObject{{QStringLiteral("__transaction"), transaction}});
+			};
+			return command;
 		};
-		registry->registerCommand(source);
-		ProjectJournal* journal = Engine::projectJournal();
-		QVERIFY(journal != nullptr);
-		QVERIFY(registry->invoke(source.id).ok);
+		const ControlCommand forward = flip(QStringLiteral("test.flip_forward"), 1, QStringLiteral("test.flip_back"));
+		const ControlCommand back = flip(QStringLiteral("test.flip_back"), 0, QStringLiteral("test.flip_forward"));
+		registry->registerCommand(forward);
+		registry->registerCommand(back);
+
+		QVERIFY(registry->invoke(forward.id).ok);
+		QCOMPARE(value, 1);
 		QCOMPARE(registry->transactions().size(), 1);
-		const int depthBefore = journal->undoDepth();
-		const ControlResult undone = registry->invoke(QStringLiteral("control.undo"));
-		QVERIFY(undone.ok);
-		QCOMPARE(undone.result.value(QStringLiteral("restored_by")).toString(), target.id);
-		QCOMPARE(registry->transactions().size(), 1);
-		// The inverse is a command, so the undo takes no journal step: the depth is untouched too.
-		QCOMPARE(journal->undoDepth(), depthBefore);
+
+		QVERIFY2(registry->invoke(QStringLiteral("control.undo")).ok, "the first undo must run the inverse");
+		QCOMPARE(value, 0);
+		QCOMPARE(registry->transactions().size(), 2);  // the inverse run is recorded
+		QCOMPARE(registry->transactions().last().toObject().value(QStringLiteral("command")).toString(), back.id);
+
+		QVERIFY2(registry->invoke(QStringLiteral("control.undo")).ok, "the second undo must reverse the inverse");
+		QCOMPARE(value, 1);
+		QCOMPARE(registry->transactions().size(), 3);
+		QCOMPARE(registry->transactions().last().toObject().value(QStringLiteral("command")).toString(), forward.id);
 	}
 
 

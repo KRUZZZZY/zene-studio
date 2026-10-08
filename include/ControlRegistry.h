@@ -150,10 +150,6 @@ public:
 	//! Validate, check \c requires and the engine state, then run the handler on
 	//! the UI thread.
 	ControlResult invoke(const QString& id, const QJsonObject& args = QJsonObject());
-	/*! Runs \a id on behalf of control.undo: nothing it does is recorded as a
-	 *  new transaction, because the undo that asked for it IS the step (the
-	 *  inverse of a recorded command must not grow the record list). */
-	ControlResult invokeUnrecorded(const QString& id, const QJsonObject& args = QJsonObject());
 	//! The class an aggregate record of several mutating children carries: the weakest of their classes
 	//! ("irreversible" < "snapshot" < "true_inverse"), or "" when a child has no row or is not mutating.
 	static QString aggregateClassOf(const QStringList& childClasses);
@@ -306,7 +302,6 @@ private:
 	int m_mutatingDepth = 0;  //!< how many MUTATING handlers are running (UI thread)
 	int m_foldedNestedRecords = 0;  //!< nested mutating calls whose record was folded into an enclosing step
 	int m_wrapperDepth = 0;  //!< how many NON-mutating handlers are running (wrappers and reads)
-	int m_unrecordedDepth = 0;  //!< > 0 while control.undo runs an inverse: that run records nothing
 	//! A mutating call run by a non-mutating wrapper, held until the wrapper's journal step is known.
 	struct NestedRecord
 	{
