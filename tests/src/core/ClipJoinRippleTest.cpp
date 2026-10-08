@@ -137,6 +137,49 @@ private slots:
 		QCOMPARE(static_cast<int>(lane->points.front().tick), 200);  // and its point moved with it
 	}
 
+	//! A note whose start scales past the largest tick is refused whole: nothing moves, nothing is checkpointed.
+	void scalingRefusesANotePastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 192, 60);
+		const int top = std::numeric_limits<tick_t>::max();
+		a->addNote(Note(TimePos(12), TimePos(top - 100), 62), false);
+		const ControlResult scaled = run(QStringLiteral("clip.time_scale"),
+			{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("factor"), 2}});
+		QVERIFY(!scaled.ok);
+		QCOMPARE(scaled.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(a->notes().size(), std::size_t{2});
+		QCOMPARE(static_cast<int>(a->notes().back()->pos().getTicks()), top - 100);
+		QCOMPARE(static_cast<int>(a->length().getTicks()), 192);
+	}
+
+	//! A note whose length scales past the largest tick used to clamp silently to a length of 1 (the wrap of the
+	//! narrowing cast). It is refused whole now.
+	void scalingRefusesANoteLengthPastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 192, 60);
+		a->addNote(Note(TimePos(1 << 30), TimePos(10), 62), false);
+		const ControlResult scaled = run(QStringLiteral("clip.time_scale"),
+			{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("factor"), 4}});
+		QVERIFY(!scaled.ok);
+		QCOMPARE(scaled.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(a->notes().size(), std::size_t{2});
+		QCOMPARE(static_cast<int>(a->notes().back()->length().getTicks()), 1 << 30);
+		QCOMPARE(static_cast<int>(a->length().getTicks()), 192);
+	}
+
+	//! A clip whose length scales past the largest tick is refused whole.
+	void scalingRefusesAClipLengthPastTheLargestTick()
+	{
+		MidiClip* a = clipAt(0, 1 << 30, 60);
+		const ControlResult scaled = run(QStringLiteral("clip.time_scale"),
+			{{QStringLiteral("clip"), control::clipIdOf(a)}, {QStringLiteral("factor"), 4}});
+		QVERIFY(!scaled.ok);
+		QCOMPARE(scaled.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(static_cast<int>(a->length().getTicks()), 1 << 30);
+		QCOMPARE(a->notes().size(), std::size_t{1});
+		QCOMPARE(static_cast<int>(a->notes().front()->pos().getTicks()), 0);  // clipAt's note, untouched
+	}
+
 	//! A controller point near the top of the tick range scaled by 2 used to wrap negative in
 	//! the narrowing cast; the scale is now refused whole, and the point stays where it was.
 	void scalingRefusesAControllerPointPastTheLargestTick()

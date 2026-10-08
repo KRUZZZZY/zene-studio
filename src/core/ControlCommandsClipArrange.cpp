@@ -106,8 +106,7 @@ bool fitsTick(long long tick)
 	return tick >= 0 && tick <= static_cast<long long>(std::numeric_limits<tick_t>::max());
 }
 
-//! Preflight for a time scale: every controller point must scale onto a storable tick. Checked
-//! in wide arithmetic before the checkpoint, so a refused scale mutates nothing.
+//! Controller points: each must scale onto a storable tick.
 bool scaledControllersFit(const MidiClip* clip, double factor)
 {
 	for (const ControllerLane& lane : clip->controllers().lanes())
@@ -120,10 +119,28 @@ bool scaledControllersFit(const MidiClip* clip, double factor)
 	return true;
 }
 
+//! Preflight for a time scale, in wide arithmetic before the checkpoint, so a refused scale mutates nothing: every
+//! tick it writes must be storable - each note's start and end (a note is at least 1 long, as scaleNotes writes it),
+//! each controller point, and the clip's own length (the same rounding timeScale uses).
+bool scaleFits(const Clip* clip, double factor)
+{
+	const auto scaled = [factor](tick_t tick) { return std::llround(static_cast<double>(tick) * factor); };
+	if (!fitsTick(std::max<long long>(1, scaled(clip->length().getTicks())))) { return false; }
+	const auto* midi = dynamic_cast<const MidiClip*>(clip);
+	if (midi == nullptr) { return true; }
+	for (const Note* note : midi->notes())
+	{
+		const long long pos = scaled(note->pos().getTicks());
+		const long long length = std::max<long long>(1, scaled(note->length().getTicks()));
+		if (!fitsTick(pos) || !fitsTick(pos + length)) { return false; }
+	}
+	return scaledControllersFit(midi, factor);
+}
+
 //! Controller points carry clip-time ticks, exactly like note positions, so a time scale moves
 //! them by the same factor and the same rounding. Points that scale onto the same tick collapse
 //! (setPoints keeps one per tick) - the same bounds policy the notes get from their >= 1 length.
-//! The caller has checked scaledControllersFit, so every scaled tick is storable.
+//! The caller has checked scaleFits, so every scaled tick is storable.
 void scaleControllers(MidiClip* clip, double factor)
 {
 	for (const ControllerLane& lane : clip->controllers().lanes())
@@ -148,10 +165,10 @@ ControlResult timeScale(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'factor' must be %1..%2").arg(MinFactor).arg(MaxFactor));
 	}
-	if (auto* midi = dynamic_cast<MidiClip*>(ref.clip); midi != nullptr && !scaledControllersFit(midi, factor))
+	if (!scaleFits(ref.clip, factor))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("a controller point would scale past the largest tick; nothing was changed"));
+			QStringLiteral("a tick would scale past the largest tick; nothing was changed"));
 	}
 	const tick_t before = ref.clip->length().getTicks();
 	ref.clip->addJournalCheckPoint();
