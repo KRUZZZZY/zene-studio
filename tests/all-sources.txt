@@ -2650,6 +2650,7 @@ tests/src/core/StemSplitPipelineTest.cpp
 tests/src/core/SurroundExportTest.cpp
 tests/src/core/SurroundExportTestSupport.h
 tests/src/core/SurroundTest.cpp
+tests/src/core/SystemSemaphoreTest.cpp
 tests/src/core/TakeLaneCompTest.cpp
 tests/src/core/TakeLaneTest.cpp
 tests/src/core/TakeLaneTestSupport.h

@@ -26,6 +26,7 @@
 #include <QtTest>
 
 #include <atomic>
+#include <string>
 #include <cstdint>
 #include <thread>
 #include <vector>
@@ -133,7 +134,7 @@ private slots:
 		QCOMPARE(allocations, std::uint64_t{0});
 	}
 
-	//! A refused event is never silently lost: its channel is recorded and comes out of take(), once.
+	//! A refused event is never silently lost: its channel is recorded, with the queue position it was refused at.
 	void refusedEventsLeaveTheirChannelRecorded()
 	{
 		lmms::MidiHandoffQueue<2> queue;
@@ -155,14 +156,70 @@ private slots:
 
 		QCOMPARE(overflow.recorded(), std::uint64_t{2});
 		QCOMPARE(queue.dropped(), std::uint64_t{2});
-		QCOMPARE(overflow.take(), std::uint32_t{0xFFFFu});  // channel 3 plus "all channels", as 16 bits
-		QCOMPARE(overflow.take(), std::uint32_t{0});        // taking clears it
+		// Both refusals came after two queued events: their cuts are due once two events have been taken.
+		QVERIFY(!overflow.due(3, 1));
+		QVERIFY(overflow.due(3, 2));
+		QVERIFY(overflow.due(9, 2)); // the no-channel refusal affects every channel
+	}
 
-		// Channels that could not be handled are put back, and come out again.
-		overflow.record(7);
-		const auto taken = overflow.take();
-		overflow.restore(taken);
-		QCOMPARE(overflow.take(), std::uint32_t{1u << 7});
+//! The cut for a refusal goes exactly at the refusal: after the events queued before it, before the events queued
+	//! after it. The sequence is recorded by the emitters.
+	void drainSendsTheCutAtTheRefusalPoint()
+	{
+		lmms::MidiHandoffQueue<4> queue;
+		lmms::MidiChannelOverflow overflow;
+		auto event = [](int channel, std::uint32_t id) {
+			lmms::HandoffMidiEvent e;
+			e.channel = static_cast<std::int8_t>(channel);
+			e.offset = id;
+			return e;
+		};
+
+		// A, B, C, D fill the queue; a note-off on channel 3 (N) is refused after them.
+		for (std::uint32_t id : {1u, 2u, 3u, 4u}) { QVERIFY(lmms::pushOrRecord(queue, overflow, event(0, id))); }
+		QVERIFY(!lmms::pushOrRecord(queue, overflow, event(3, 99)));
+
+		std::vector<std::string> sent;
+		auto emitEvent = [&sent](const lmms::HandoffMidiEvent& e) { sent.push_back("E" + std::to_string(e.offset)); return true; };
+		auto emitCut = [&sent](int channel) { sent.push_back("CUT" + std::to_string(channel)); return true; };
+
+		lmms::drainMidi(queue, overflow, 2, emitEvent, emitCut);       // A, B
+		QVERIFY(lmms::pushOrRecord(queue, overflow, event(0, 5)));      // E, queued after N
+		lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut);      // C, D, then the cut, then E
+
+		const std::vector<std::string> expected{"E1", "E2", "E3", "E4", "CUT3", "E5"};
+		QCOMPARE(sent, expected);
+		QCOMPARE(overflow.stamp(3), std::uint64_t{0});
+	}
+
+	void drainTakesAtMostTheCapPerCall()
+	{
+		lmms::MidiHandoffQueue<16> queue;
+		lmms::MidiChannelOverflow overflow;
+		for (std::uint32_t id = 0; id < 10; ++id) { QVERIFY(queue.push(eventWithOffset(id))); }
+
+		std::size_t emitted = 0;
+		lmms::drainMidi(queue, overflow, 3,
+			[&emitted](const lmms::HandoffMidiEvent&) { ++emitted; return true; },
+			[](int) { return true; });
+		QCOMPARE(emitted, std::size_t{3});
+		QCOMPARE(queue.consumed(), std::uint64_t{3});  // the rest stays queued
+	}
+
+	//! When a cut cannot be sent, the drain stops and the cut stays due for the next call.
+	void drainKeepsACutThatCouldNotBeSent()
+	{
+		lmms::MidiHandoffQueue<4> queue;
+		lmms::MidiChannelOverflow overflow;
+		for (std::uint32_t id = 0; id < 4; ++id) { QVERIFY(queue.push(eventWithOffset(id))); }
+		QVERIFY(!lmms::pushOrRecord(queue, overflow, eventWithOffset(9)));
+		const auto stamp = overflow.stamp(0);
+
+		std::size_t cuts = 0;
+		auto refuseCuts = [&cuts](int) { ++cuts; return false; };
+		lmms::drainMidi(queue, overflow, 10, [](const lmms::HandoffMidiEvent&) { return true; }, refuseCuts);
+		QVERIFY(cuts >= 1);
+		QCOMPARE(overflow.stamp(0), stamp);   // still pending
 	}
 
 	void concurrentProducersLoseNothingPushAccepted()

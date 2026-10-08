@@ -122,6 +122,26 @@ int g_silencerNoteOns = 0;
 int g_silencerAllNotesOffAfter = -1;
 int g_silencerAllNotesOff = 0;
 
+//! "bigdebug" mode: the first IdStartProcessing is answered with one debug text of 300000 bytes, written whole,
+//! then the reply. Larger than any socket buffer, so the host cannot see it complete from the audio thread.
+bool g_bigdebug = false;
+bool g_bigdebugUsed = false;
+constexpr std::size_t BigDebugBytes = 300000;
+
+//! "orderer" mode: after the first all-notes-off, the client counts the note-ons it receives, and each period asks
+//! for 2 outputs, plus 1 if any note-on arrived after the all-notes-off.
+bool g_orderer = false;
+bool g_ordererCut = false;
+int g_ordererAfterCut = 0;
+
+//! "capper" mode: each period asks for 2 outputs plus one per 128 note-ons received in the period before it.
+bool g_capper = false;
+int g_capperNoteOns = 0;
+int g_capperLastPeriod = 0;
+
+//! Host's IdIsUIVisible (RemoteMessageIDs), answered by every mode with "1".
+constexpr int IdIsUIVisibleWire = 18;
+
 //! "midi" mode: the client counts the IdMidiEvent messages it receives, and in each period asks for
 //! (count + 1) outputs before its reply, so the host can see how many events arrived before the period.
 bool g_midi = false;
@@ -348,8 +368,17 @@ auto handleMessage(const Message& message) -> bool
 		}
 		break;
 
+	case IdIsUIVisibleWire:
+		if (!sendMessage(IdIsUIVisibleWire, {"1"})) { return false; }
+		break;
 	case IdMidiEvent:
 		if (g_midi) { ++g_midiEvents; }
+		if ((g_orderer || g_capper) && message.args.size() >= 3)
+		{
+			if (g_orderer && message.args[0] == "176" && message.args[2] == "123") { g_ordererCut = true; }
+			if (g_orderer && g_ordererCut && message.args[0] == "144") { ++g_ordererAfterCut; }
+			if (g_capper && message.args[0] == "144") { ++g_capperNoteOns; }
+		}
 		if (g_silencer && message.args.size() >= 3)
 		{
 			if (message.args[0] == "176" && message.args[2] == "123")
@@ -362,6 +391,31 @@ auto handleMessage(const Message& message) -> bool
 		break;
 	case IdStartProcessing:
 		if (g_stall) { break; }
+		if (g_bigdebug && !g_bigdebugUsed)
+		{
+			g_bigdebugUsed = true;
+			const std::string text(BigDebugBytes, 'b');
+			if (!writeInt32(IdDebugMessageWire) || !writeInt32(1) || !writeInt32(static_cast<std::int32_t>(text.size()))) { return false; }
+			if (!writeAll(text.data(), text.size())) { return false; }
+			if (!sendMessage(IdProcessingDone, {})) { return false; }
+			break;
+		}
+		if (g_orderer)
+		{
+			const int outputs = g_ordererCut ? (g_ordererAfterCut > 0 ? 3 : 2) : 2;
+			if (!sendMessage(IdChangeInputOutputCount, {"0", std::to_string(outputs)})) { return false; }
+			if (!sendMessage(IdProcessingDone, {})) { return false; }
+			break;
+		}
+		if (g_capper)
+		{
+			const int outputs = 2 + g_capperLastPeriod / 128;
+			g_capperLastPeriod = g_capperNoteOns;
+			g_capperNoteOns = 0;
+			if (!sendMessage(IdChangeInputOutputCount, {"0", std::to_string(outputs)})) { return false; }
+			if (!sendMessage(IdProcessingDone, {})) { return false; }
+			break;
+		}
 		if (g_silencer)
 		{
 			int outputs = 2;
@@ -504,7 +558,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -515,8 +569,11 @@ int main(int argc, char** argv)
 	g_late = mode == "late";
 	g_midframe = mode == "midframe";
 	g_silencer = mode == "silencer";
+	g_bigdebug = mode == "bigdebug";
+	g_orderer = mode == "orderer";
+	g_capper = mode == "capper";
 	if (mode != "modern" && mode != "stale" && mode != "stall" && mode != "recount" && mode != "midi" && mode != "late"
-		&& mode != "midframe" && mode != "silencer")
+		&& mode != "midframe" && mode != "silencer" && mode != "bigdebug" && mode != "orderer" && mode != "capper")
 	{
 		std::fprintf(stderr, "fakeclient: unknown mode '%s'\n", mode.c_str());
 		return 1;

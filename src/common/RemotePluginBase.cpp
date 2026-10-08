@@ -49,6 +49,7 @@ RemotePluginBase::RemotePluginBase(shmFifo * _in, shmFifo * _out) :
 #else
 RemotePluginBase::RemotePluginBase() :
 	m_socket(-1),
+	m_peekWindow(PeekWindowBytes),
 	m_invalid(false)
 #endif
 {
@@ -130,9 +131,14 @@ std::size_t RemotePluginBase::frameFromMessage( char * _out, std::size_t _capaci
 RemotePluginBase::SendResult RemotePluginBase::sendFrameNonBlocking( const char * _frame, std::size_t _size )
 {
 #ifdef SYNC_WITH_SHM_FIFO
-	// The FIFO's writer waits on its semaphores and has no non-blocking form. This transport is unproven
-	// against the audio-thread bound; it writes the frame as the blocking path always did.
-	m_out->lock();
+	// Exact room check: the frame is written only when the FIFO has space for all of it, so the write never waits.
+	// A data lock that is busy (the client is writing) means there is no room now.
+	if( !m_out->tryLockFor( 0 ) ) { return SendResult::NoRoom; }
+	if( m_out->freeSpace() < _size )
+	{
+		m_out->unlock();
+		return SendResult::NoRoom;
+	}
 	m_out->writeRaw( _frame, static_cast<int>( _size ) );
 	m_out->unlock();
 	m_out->messageSent();
@@ -141,46 +147,115 @@ RemotePluginBase::SendResult RemotePluginBase::sendFrameNonBlocking( const char 
 	if( isInvalid() ) { return SendResult::Broken; }
 	if( pthread_mutex_trylock( &m_sendMutex ) != 0 ) { return SendResult::NoRoom; }
 
-	SendResult result = SendResult::NoRoom;
-	bool room = true;
-#ifdef SIOCOUTQ
-	// Bytes still queued in the socket's send buffer, and the buffer's size. Linux reports SO_SNDBUF doubled,
-	// so half of it is the conservative figure. A frame is sent only when it fits in what is left of that,
-	// with a margin.
-	int queued = 0;
-	int sndbuf = 0;
-	socklen_t sndbufLength = sizeof sndbuf;
-	room = ::ioctl( m_socket, SIOCOUTQ, &queued ) == 0
-		&& ::getsockopt( m_socket, SOL_SOCKET, SO_SNDBUF, &sndbuf, &sndbufLength ) == 0
-		&& queued >= 0
-		&& static_cast<std::size_t>( queued ) + _size + 1024 <= static_cast<std::size_t>( sndbuf ) / 2;
-#endif
-	if( room )
+	// A tail left by an earlier partial send goes first, so the stream keeps its order.
+	SendResult result = writeTailLocked();
+	if( result == SendResult::Sent )
 	{
-		int flags = MSG_DONTWAIT;
-#ifdef MSG_NOSIGNAL
-		flags |= MSG_NOSIGNAL;
+		result = SendResult::NoRoom;
+		bool room = true;
+#ifdef SIOCOUTQ
+		// Bytes still queued in the socket's send buffer, and the buffer's size. Linux reports SO_SNDBUF doubled,
+		// so half of it is the conservative figure. A frame is sent only when it fits in what is left of that,
+		// with a margin. Elsewhere there is no such count; the partial-write path below covers it.
+		int queued = 0;
+		int sndbuf = 0;
+		socklen_t sndbufLength = sizeof sndbuf;
+		room = ::ioctl( m_socket, SIOCOUTQ, &queued ) == 0
+			&& ::getsockopt( m_socket, SOL_SOCKET, SO_SNDBUF, &sndbuf, &sndbufLength ) == 0
+			&& queued >= 0
+			&& static_cast<std::size_t>( queued ) + _size + 1024 <= static_cast<std::size_t>( sndbuf ) / 2;
 #endif
-		const ssize_t written = ::send( m_socket, _frame, _size, flags );
-		if( written == static_cast<ssize_t>( _size ) )
+		if( room )
 		{
-			result = SendResult::Sent;
-		}
-		else if( written < 0 && ( errno == EAGAIN || errno == EWOULDBLOCK ) )
-		{
-			result = SendResult::NoRoom; // nothing was written
-		}
-		else
-		{
-			// A part of the frame went out, or the connection failed: the stream cannot be resynchronised.
-			invalidate();
-			result = SendResult::Broken;
+			int flags = MSG_DONTWAIT;
+#ifdef MSG_NOSIGNAL
+			flags |= MSG_NOSIGNAL;
+#endif
+			const ssize_t written = ::send( m_socket, _frame, _size, flags );
+			if( written == static_cast<ssize_t>( _size ) )
+			{
+				result = SendResult::Sent;
+			}
+			else if( written >= 0 )
+			{
+				// Part of the frame went out. The rest is kept, and goes out before anything else; the
+				// frame is in the stream, so it counts as sent. The connection is not failed for a short write.
+				const std::size_t rest = _size - static_cast<std::size_t>( written );
+				if( rest > m_txTail.size() )
+				{
+					invalidate();
+					result = SendResult::Broken;
+				}
+				else
+				{
+					std::memcpy( m_txTail.data(), _frame + written, rest );
+					m_txTailOffset = 0;
+					m_txTailSize = rest;
+					result = SendResult::Sent;
+				}
+			}
+			else if( errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR )
+			{
+				result = SendResult::NoRoom; // nothing was written
+			}
+			else
+			{
+				invalidate();
+				result = SendResult::Broken;
+			}
 		}
 	}
 	pthread_mutex_unlock( &m_sendMutex );
 	return result;
 #endif
 }
+
+#ifndef SYNC_WITH_SHM_FIFO
+RemotePluginBase::SendResult RemotePluginBase::writeTailLocked()
+{
+	if( m_txTailSize == 0 ) { return SendResult::Sent; }
+	if( isInvalid() ) { return SendResult::Broken; }
+
+	const std::size_t remaining = m_txTailSize - m_txTailOffset;
+	int flags = MSG_DONTWAIT;
+#ifdef MSG_NOSIGNAL
+	flags |= MSG_NOSIGNAL;
+#endif
+	const ssize_t written = ::send( m_socket, m_txTail.data() + m_txTailOffset, remaining, flags );
+	if( written == static_cast<ssize_t>( remaining ) )
+	{
+		m_txTailOffset = 0;
+		m_txTailSize = 0;
+		return SendResult::Sent;
+	}
+	if( written > 0 )
+	{
+		m_txTailOffset += static_cast<std::size_t>( written );
+		return SendResult::NoRoom;
+	}
+	if( written == 0 || errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR )
+	{
+		return SendResult::NoRoom;
+	}
+	invalidate();
+	return SendResult::Broken;
+}
+
+RemotePluginBase::SendResult RemotePluginBase::flushPendingSend()
+{
+	if( m_txTailSize == 0 ) { return SendResult::Sent; }
+	if( isInvalid() ) { return SendResult::Broken; }
+	if( pthread_mutex_trylock( &m_sendMutex ) != 0 ) { return SendResult::NoRoom; }
+	const SendResult result = writeTailLocked();
+	pthread_mutex_unlock( &m_sendMutex );
+	return result;
+}
+#else
+RemotePluginBase::SendResult RemotePluginBase::flushPendingSend()
+{
+	return SendResult::Sent;
+}
+#endif
 
 int RemotePluginBase::sendMessage(const message & _m)
 {
@@ -198,6 +273,13 @@ int RemotePluginBase::sendMessage(const message & _m)
 	m_out->messageSent();
 #else
 	pthread_mutex_lock(&m_sendMutex);
+	if (m_txTailSize != 0)
+	{
+		// A frame the audio thread left partly sent goes out first, so the stream keeps its order.
+		write(m_txTail.data() + m_txTailOffset, static_cast<int>(m_txTailSize - m_txTailOffset));
+		m_txTailOffset = 0;
+		m_txTailSize = 0;
+	}
 	writeInt(_m.id);
 	writeInt(_m.data.size());
 	int j = 8;
@@ -220,13 +302,7 @@ RemotePluginBase::message RemotePluginBase::receiveMessage()
 #ifdef SYNC_WITH_SHM_FIFO
 	m_in->waitForMessage();
 	m_in->lock();
-	message m;
-	m.id = m_in->readInt();
-	const int s = m_in->readInt();
-	for (int i = 0; i < s; ++i)
-	{
-		m.data.push_back(m_in->readString());
-	}
+	message m = readFrameLocked();
 	m_in->unlock();
 #else
 	pthread_mutex_lock(&m_receiveMutex);
@@ -244,6 +320,68 @@ RemotePluginBase::message RemotePluginBase::receiveMessage()
 
 
 
+
+#ifdef SYNC_WITH_SHM_FIFO
+RemotePluginBase::message RemotePluginBase::readFrameLocked()
+{
+	message m;
+	m.id = m_in->readInt();
+	const int s = m_in->readInt();
+	for (int i = 0; i < s; ++i)
+	{
+		m.data.push_back(m_in->readString());
+	}
+	return m;
+}
+#endif
+
+#ifndef BUILD_REMOTE_PLUGIN_CLIENT
+RemotePluginBase::ReceiveResult RemotePluginBase::receiveFrameBefore(
+	std::chrono::steady_clock::time_point _deadline, message & _out )
+{
+	const auto remainingMs = [_deadline]() -> int
+	{
+		const auto left = std::chrono::ceil<std::chrono::milliseconds>(_deadline - std::chrono::steady_clock::now());
+		return left.count() > 0 ? static_cast<int>(left.count()) : 0;
+	};
+
+#ifdef SYNC_WITH_SHM_FIFO
+	// Each message is written whole and signalled once, so a token means a complete message. The token and the
+	// data lock are both taken within the budget; if the lock is not free the token goes back.
+	if (isInvalid()) { return ReceiveResult::Lost; }
+	if (!m_in->waitMessageFor(remainingMs())) { return isInvalid() ? ReceiveResult::Lost : ReceiveResult::Timeout; }
+	if (!m_in->tryLockFor(remainingMs()))
+	{
+		m_in->messageSent();
+		return isInvalid() ? ReceiveResult::Lost : ReceiveResult::Timeout;
+	}
+	_out = readFrameLocked();
+	m_in->unlock();
+	return _out.id == IdUndefined ? ReceiveResult::Lost : ReceiveResult::Got;
+#else
+	for (;;)
+	{
+		if (isInvalid()) { return ReceiveResult::Lost; }
+		switch (peekNextMessage())
+		{
+		case Framing::Unusable:
+			return ReceiveResult::Lost;
+		case Framing::Incomplete:
+			if (std::chrono::steady_clock::now() >= _deadline) { return ReceiveResult::Timeout; }
+			if (!waitForMessageReadable(remainingMs()))
+			{
+				return isInvalid() ? ReceiveResult::Lost : ReceiveResult::Timeout;
+			}
+			continue;
+		case Framing::Complete:
+			// Every byte is already in the socket, so this read does not wait.
+			_out = receiveMessage();
+			return _out.id == IdUndefined ? ReceiveResult::Lost : ReceiveResult::Got;
+		}
+	}
+#endif
+}
+#endif // BUILD_REMOTE_PLUGIN_CLIENT
 
 RemotePluginBase::message RemotePluginBase::waitForMessage(
 							const message & _wm,

@@ -550,33 +550,26 @@ void CarlaInstrument::playImpl(std::span<SampleFrame> out)
     std::memset(buf1, 0, sizeof(float)*bufsize);
     std::memset(buf2, 0, sizeof(float)*bufsize);
 
-    // Stage the MIDI queued since the last period. Only this thread pops the queue and reads fMidiEvents.
+    // Stage the MIDI queued since the last period, in order, at most one array's worth. A channel whose events the
+    // full queue refused is cut with all-notes-off at the point of the refusal. Only this thread pops the queue.
     fMidiEventCount = 0;
-    HandoffMidiEvent queued;
-    bool drained = false;
-    while (fMidiEventCount < kMaxMidiEvents)
-    {
-        if (!fMidiHandoff.pop(queued)) { drained = true; break; }
-        if (stageMidiEvent(queued, fMidiEvents[fMidiEventCount])) { ++fMidiEventCount; }
-    }
-
-    // Channels whose events the full queue refused are cut with all-notes-off, once everything queued before
-    // them is staged. If the array is full first, they wait for the next period.
-    if (drained)
-    {
-        std::uint32_t refused = fMidiOverflow.take();
-        for (int channel = 0; channel < 16; ++channel)
+    drainMidi(fMidiHandoff, fMidiOverflow, static_cast<std::size_t>(kMaxMidiEvents),
+        [this](const HandoffMidiEvent& queued) -> bool
         {
-            if (!(refused & (1u << channel))) { continue; }
-            if (fMidiEventCount >= kMaxMidiEvents) { fMidiOverflow.restore(refused & ~((1u << channel) - 1u)); break; }
+            if (stageMidiEvent(queued, fMidiEvents[fMidiEventCount])) { ++fMidiEventCount; }
+            return true;
+        },
+        [this](int channel) -> bool
+        {
+            if (fMidiEventCount >= kMaxMidiEvents) { return false; } // no room yet: the cut waits for next period
             HandoffMidiEvent allNotesOff;
             allNotesOff.type = static_cast<std::uint8_t>(MidiControlChange);
             allNotesOff.channel = static_cast<std::int8_t>(channel);
             allNotesOff.param1 = 123;
             allNotesOff.param2 = 0;
             if (stageMidiEvent(allNotesOff, fMidiEvents[fMidiEventCount])) { ++fMidiEventCount; }
-        }
-    }
+            return true;
+        });
 
     {
 // TODO FIXME this is just here so it compiles.

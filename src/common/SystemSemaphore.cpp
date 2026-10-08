@@ -23,6 +23,7 @@
 
 #include "SystemSemaphore.h"
 
+#include <chrono>  // IWYU pragma: keep
 #include <limits>  // IWYU pragma: keep
 #include <system_error>
 #include <type_traits>
@@ -36,8 +37,10 @@
 #endif
 
 #if (_POSIX_SEMAPHORES > 0 && !defined(__MINGW32__)) || defined(LMMS_BUILD_APPLE)
+#	include <ctime>
 #	include <fcntl.h>
 #	include <semaphore.h>
+#	include <unistd.h>
 #elif defined(LMMS_BUILD_WIN32)
 #	include <windows.h>
 #else
@@ -111,6 +114,30 @@ public:
 
 	auto release() noexcept -> bool { return sem_post(m_sem) == 0; }
 
+	//! Waits at most timeoutMs for the count to be positive. Never blocks longer than that.
+	auto tryAcquire(int timeoutMs) noexcept -> bool
+	{
+#ifdef LMMS_BUILD_APPLE
+		// macOS has no sem_timedwait(): poll with sem_trywait() in short steps up to the timeout.
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{timeoutMs < 0 ? 0 : timeoutMs};
+		for (;;)
+		{
+			if (sem_trywait(m_sem) == 0) { return true; }
+			if (std::chrono::steady_clock::now() >= deadline) { return false; }
+			usleep(200);
+		}
+#else
+		timespec until{};
+		clock_gettime(CLOCK_REALTIME, &until);
+		const long long nanos = until.tv_nsec + static_cast<long long>(timeoutMs < 0 ? 0 : timeoutMs) * 1000000LL;
+		until.tv_sec += static_cast<time_t>(nanos / 1000000000LL);
+		until.tv_nsec = static_cast<long>(nanos % 1000000000LL);
+		return retryWhileInterrupted([&]() noexcept {
+			return sem_timedwait(m_sem, &until);
+		}) == 0;
+#endif
+	}
+
 private:
 	std::string m_key;
 	sem_t* m_sem;
@@ -150,6 +177,12 @@ public:
 	auto acquire() noexcept -> bool { return WaitForSingleObject(m_sem.get(), INFINITE) == WAIT_OBJECT_0; }
 	auto release() noexcept -> bool { return ReleaseSemaphore(m_sem.get(), 1, nullptr); }
 
+	//! Waits at most timeoutMs for the count to be positive.
+	auto tryAcquire(int timeoutMs) noexcept -> bool
+	{
+		return WaitForSingleObject(m_sem.get(), static_cast<DWORD>(timeoutMs < 0 ? 0 : timeoutMs)) == WAIT_OBJECT_0;
+	}
+
 private:
 	UniqueHandle m_sem;
 };
@@ -177,5 +210,6 @@ auto SystemSemaphore::operator=(SystemSemaphore&& other) noexcept -> SystemSemap
 
 auto SystemSemaphore::acquire() noexcept -> bool { return m_impl->acquire(); }
 auto SystemSemaphore::release() noexcept -> bool { return m_impl->release(); }
+auto SystemSemaphore::tryAcquire(int timeoutMs) noexcept -> bool { return m_impl->tryAcquire(timeoutMs); }
 
 } // namespace lmms

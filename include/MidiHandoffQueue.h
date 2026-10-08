@@ -144,6 +144,21 @@ public:
 		}
 	}
 
+	//! The number of events the queue holds at most.
+	static constexpr std::size_t capacity() noexcept { return Capacity; }
+
+	//! Events pushed successfully so far. A position in the stream: events are numbered in push order.
+	auto enqueued() const noexcept -> std::uint64_t
+	{
+		return m_enqueue.load(std::memory_order_acquire);
+	}
+
+	//! Events popped so far (single consumer).
+	auto consumed() const noexcept -> std::uint64_t
+	{
+		return m_dequeue.load(std::memory_order_acquire);
+	}
+
 	//! Events refused by push() because the queue was full, since construction.
 	auto dropped() const noexcept -> std::uint64_t
 	{
@@ -165,56 +180,118 @@ private:
 	std::atomic<std::uint64_t> m_dropped{0};
 };
 
-//! Channels that lost MIDI because the hand-off queue was full. The producer records a channel with
-//! record() (lock-free, no allocation); the consumer takes the set with take() and sends the channel's
-//! all-notes-off, which ends every note on that channel that the lost events would have ended.
+//! Channels whose MIDI the full queue refused, each with the point in the stream where its cut belongs.
+/*!
+ * When push() refuses an event, the event's channel is recorded together with the number of events queued
+ * before the refusal. The cut (all-notes-off for the channel) is due once the consumer has taken that many
+ * events, so it lands exactly where the refused event would have been: after the events queued before it,
+ * and before any queued after it. A later refusal on the same channel moves the cut later, never earlier.
+ *
+ * All operations are lock-free and allocate nothing. Producers record; the single consumer takes the due cuts
+ * with drainMidi().
+ */
 class MidiChannelOverflow
 {
 public:
 	//! Bit 16 stands for "no channel" (an event with a negative channel): all channels are affected.
 	static constexpr std::uint32_t AllChannels = 1u << 16;
 
-	void record(int channel) noexcept
+	//! Records a refused event on \a channel. \a queuedBefore is the queue's enqueued() count at the refusal.
+	void record(int channel, std::uint64_t queuedBefore) noexcept
 	{
-		const std::uint32_t bit = (channel >= 0 && channel < 16)
-			? (1u << static_cast<unsigned>(channel))
-			: AllChannels;
-		m_channels.fetch_or(bit, std::memory_order_relaxed);
+		const std::uint64_t stamp = queuedBefore + 1; // 0 is "nothing pending"
+		if (channel >= 0 && channel < 16)
+		{
+			raise(m_cutAt[static_cast<std::size_t>(channel)], stamp);
+		}
+		else
+		{
+			for (auto& cut : m_cutAt) { raise(cut, stamp); }
+		}
 		m_recorded.fetch_add(1, std::memory_order_relaxed);
 	}
 
-	//! Takes and clears the recorded channels: bit c for channel c (0..15). A record of "no channel" becomes all 16.
-	auto take() noexcept -> std::uint32_t
+	//! The stamp of the channel's pending cut, or 0. A cut is due when consumed() reaches stamp - 1.
+	auto stamp(int channel) const noexcept -> std::uint64_t
 	{
-		const std::uint32_t bits = m_channels.exchange(0, std::memory_order_acquire);
-		return (bits & AllChannels) ? 0xFFFFu : (bits & 0xFFFFu);
+		return m_cutAt[static_cast<std::size_t>(channel)].load(std::memory_order_acquire);
 	}
 
-	//! Puts channels back that could not be handled yet.
-	void restore(std::uint32_t channels) noexcept
+	//! Whether the channel's cut is due, given that \a consumed events have been taken from the queue.
+	auto due(int channel, std::uint64_t consumed) const noexcept -> bool
 	{
-		m_channels.fetch_or(channels, std::memory_order_relaxed);
+		const auto value = stamp(channel);
+		return value != 0 && value - 1 <= consumed;
 	}
 
-	//! Events that were refused by a full queue and turned into all-notes-off, since construction.
+	//! Clears a cut once it has been sent. A later refusal that moved the cut is kept.
+	void clear(int channel, std::uint64_t sentStamp) noexcept
+	{
+		auto& cut = m_cutAt[static_cast<std::size_t>(channel)];
+		std::uint64_t expected = sentStamp;
+		cut.compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
+	}
+
+	//! Events refused by a full queue, since construction.
 	auto recorded() const noexcept -> std::uint64_t
 	{
 		return m_recorded.load(std::memory_order_relaxed);
 	}
 
 private:
-	std::atomic<std::uint32_t> m_channels{0};
+	static void raise(std::atomic<std::uint64_t>& cut, std::uint64_t stamp) noexcept
+	{
+		auto current = cut.load(std::memory_order_relaxed);
+		while (current < stamp && !cut.compare_exchange_weak(current, stamp, std::memory_order_acq_rel)) {}
+	}
+
+	std::array<std::atomic<std::uint64_t>, 16> m_cutAt{};
 	std::atomic<std::uint64_t> m_recorded{0};
 };
 
-//! Pushes \a event, or records its channel as overflowed when the queue is full. Never blocks.
+//! Pushes \a event, or records its channel (with the queue's position) when the queue is full. Never blocks.
 template<std::size_t Capacity>
 auto pushOrRecord(MidiHandoffQueue<Capacity>& queue, MidiChannelOverflow& overflow,
 	const HandoffMidiEvent& event) noexcept -> bool
 {
 	if (queue.push(event)) { return true; }
-	overflow.record(event.channel);
+	overflow.record(event.channel, queue.enqueued());
 	return false;
+}
+
+//! Drains the queue in order, for the single consumer. At most \a maxEvents events are taken per call; the rest
+//! stay queued, so the work per period is bounded.
+/*!
+ * \a emitEvent(const HandoffMidiEvent&) -> bool sends one event. It returns false when the event could not be
+ * sent; the emitter then keeps it (for instance in a pending frame), and the drain stops.
+ * \a emitCut(int channel) -> bool sends a channel's all-notes-off. It returns false when it could not be sent,
+ * and the drain stops with the cut still pending.
+ *
+ * A cut is sent before the first event that was queued after its refusal, so a note started after the refusal
+ * is not cut by it. Cuts do not count against \a maxEvents.
+ */
+template<std::size_t Capacity, typename EmitEvent, typename EmitCut>
+void drainMidi(MidiHandoffQueue<Capacity>& queue, MidiChannelOverflow& overflow, std::size_t maxEvents,
+	EmitEvent&& emitEvent, EmitCut&& emitCut)
+{
+	std::size_t taken = 0;
+	for (;;)
+	{
+		const auto consumed = queue.consumed();
+		for (int channel = 0; channel < 16; ++channel)
+		{
+			if (!overflow.due(channel, consumed)) { continue; }
+			const auto sentStamp = overflow.stamp(channel);
+			if (!emitCut(channel)) { return; }
+			overflow.clear(channel, sentStamp);
+		}
+		if (taken >= maxEvents) { return; }
+
+		HandoffMidiEvent event;
+		if (!queue.pop(event)) { return; }
+		++taken;
+		if (!emitEvent(event)) { return; }
+	}
 }
 
 } // namespace lmms

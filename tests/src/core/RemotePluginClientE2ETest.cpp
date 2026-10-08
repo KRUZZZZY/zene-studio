@@ -73,9 +73,9 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
-#include <atomic>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -698,7 +698,12 @@ private slots:
 		QCOMPARE(plugin.midiEventsDropped(), std::uint64_t{1});
 
 		m_recorder->clear();
-		QVERIFY(!plugin.process());
+		// Up to four periods: the drain is capped per period, so the cut comes after the note-ons in the later ones.
+		for (int period = 0; period < 4; ++period)
+		{
+			QVERIFY(!plugin.process());
+			QTest::qWait(30);
+		}
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3}, 2000);
 
 		// The main-thread pump reports the refusal when it applies the deferred work.
@@ -795,6 +800,162 @@ private slots:
 			for (int i = 0; i < 100; ++i) { plugin.applyDeferredClientRequests(); }
 		});
 		QCOMPARE(applyAllocations, std::uint64_t{0});
+	}
+
+	/*!
+	 * A main-thread request during rendering gets its reply, and the audio period is not held behind it.
+	 *
+	 * The main thread asks IdIsUIVisible while another thread renders periods. The answer must come back, and no
+	 * period may take longer than the wait the main thread holds the communication lock for (periods are
+	 * skipped during that wait, never blocked).
+	 */
+	void uiQueryDuringRenderingDoesNotBlockThePeriod()
+	{
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the main-thread query during "
+				"rendering is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client), "could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		std::atomic<bool> rendering{true};
+		std::atomic<long long> slowestPeriodUs{0};
+		std::thread renderer{[&] {
+			while (rendering)
+			{
+				const auto started = std::chrono::steady_clock::now();
+				plugin.process();
+				const auto took = std::chrono::duration_cast<std::chrono::microseconds>(
+					std::chrono::steady_clock::now() - started).count();
+				if (took > slowestPeriodUs) { slowestPeriodUs = took; }
+				std::this_thread::yield();
+			}
+		}};
+
+		// Many queries, each while the renderer is running periods: a reply that the renderer takes instead of the
+		// main thread shows up as a query that never returns.
+		std::this_thread::sleep_for(std::chrono::milliseconds{20});
+		int answers = 0;
+		std::chrono::steady_clock::duration slowestQuery{};
+		for (int query = 0; query < 20; ++query)
+		{
+			const auto started = std::chrono::steady_clock::now();
+			answers += plugin.isUIVisible() == 1 ? 1 : 0;
+			slowestQuery = std::max(slowestQuery, std::chrono::steady_clock::now() - started);
+		}
+		rendering = false;
+		renderer.join();
+
+		QCOMPARE(answers, 20);
+		QVERIFY2(slowestQuery < std::chrono::seconds{2}, "a main-thread query did not get its reply");
+		QVERIFY2(slowestPeriodUs.load() < 200000, "a period was held for the main thread's request");
+		QVERIFY(!plugin.failed());
+	}
+
+	/*!
+	 * A complete message larger than the audio thread's peek window does not fail the plugin.
+	 *
+	 * The fake client writes a 300 KB debug text whole, before its reply. The period cannot see it complete, so it
+	 * gives up (silence, not a failed plugin). The main thread's wait for its own reply then reads the message and
+	 * the reply, and the next period completes.
+	 */
+	void messageLargerThanThePeekWindowDoesNotFailThePlugin()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the large-message path is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("bigdebug")}), "could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		QVERIFY(!plugin.process());
+		QVERIFY2(!plugin.failed(), "a complete message larger than the peek window failed the plugin");
+
+		// The main thread reads the big message as part of its own wait.
+		QCOMPARE(plugin.isUIVisible(), 1);
+		QVERIFY(!plugin.failed());
+		QVERIFY2(plugin.process(), "the period after the large message did not complete");
+	}
+
+	/*!
+	 * A note-on queued after a refused note-off sounds: its channel's all-notes-off is sent at the refusal,
+	 * before that note-on, not after it.
+	 *
+	 * The queue holds 256 note-ons; a note-off on channel 3 is refused; then, once the first periods have drained
+	 * part of the queue, a note-on on channel 3 is queued. The "orderer" client reports 3 outputs only when a
+	 * note-on arrived after the all-notes-off.
+	 */
+	void noteOnAfterARefusedNoteOffSounds()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the refusal ordering is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("orderer")}), "could not start/connect the orderer client");
+		QVERIFY(!plugin.failed());
+
+		for (int i = 0; i < 256; ++i) { plugin.processMidiEvent(MidiEvent(MidiNoteOn, 0, 60, 100), 0); }
+		plugin.processMidiEvent(MidiEvent(MidiNoteOff, 3, 60, 0), 0);
+		QCOMPARE(plugin.midiEventsDropped(), std::uint64_t{1});
+
+		QVERIFY(!plugin.process());
+		QTest::qWait(30);
+		plugin.processMidiEvent(MidiEvent(MidiNoteOn, 3, 64, 100), 0);   // queued after the refusal
+
+		for (int period = 0; period < 4; ++period)
+		{
+			QVERIFY(!plugin.process());
+			QTest::qWait(30);
+		}
+		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3}, 2000);
+	}
+
+	/*!
+	 * The MIDI sent in one period is capped; the rest waits in the queue.
+	 *
+	 * 256 note-ons are queued. The "capper" client reports, in its next period's request, how many note-ons the
+	 * previous period carried, as 2 + (count / 128). A cap of 128 per period gives 3; no cap gives 4.
+	 */
+	void midiSentPerPeriodIsCapped()
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the per-period cap is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("capper")}), "could not start/connect the capper client");
+		QVERIFY(!plugin.failed());
+
+		for (int i = 0; i < 256; ++i) { plugin.processMidiEvent(MidiEvent(MidiNoteOn, 0, 60, 100), 0); }
+		QVERIFY(!plugin.process());
+		QTest::qWait(30);
+		QVERIFY(!plugin.process());
+		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3}, 2000);
 	}
 
 	/*!

@@ -420,6 +420,12 @@ RemotePluginBufferChangeGuard::~RemotePluginBufferChangeGuard()
 namespace
 {
 
+//! MIDI events sent per period at most; the rest wait in the queue (see sendQueuedMidiEvents()).
+constexpr std::size_t MidiDrainPerPeriod = 128;
+
+//! Controller number of "all notes off" (channel mode message).
+constexpr std::int32_t MidiAllNotesOffController = 123;
+
 //! The time one processing period lasts.
 auto periodBudget() -> std::chrono::steady_clock::duration
 {
@@ -436,9 +442,13 @@ auto periodBudget() -> std::chrono::steady_clock::duration
 auto periodDeadline(std::chrono::steady_clock::time_point now) -> std::chrono::steady_clock::time_point
 {
 	const auto budget = periodBudget();
+	// The wait ends an eighth of a period early: the rest of the graph still has time after a late client.
+	const auto usable = budget - budget / 8;
+	// Only the thread that renders a period is inside one; anywhere else the budget is one period from now.
+	if (!RenderPeriodClock::renderingOnThisThread()) { return now + usable; }
 	const auto renderStart = RenderPeriodClock::periodStart();
-	if (now < renderStart || now - renderStart > 2 * budget) { return now + budget; }
-	return renderStart + budget;
+	if (now < renderStart || now - renderStart > 2 * budget) { return now + usable; }
+	return renderStart + usable;
 }
 
 } // namespace
@@ -500,6 +510,14 @@ bool RemotePlugin::processPeriod()
 	}
 
 	const auto start = std::chrono::steady_clock::now();
+
+	// A request that was partly written in an earlier period is finished first. If that cannot happen now, the
+	// period is skipped and nothing new is sent.
+	if (flushPendingSend() != SendResult::Sent)
+	{
+		++m_processingOverruns;
+		return false;
+	}
 
 	// A reply still owed by an earlier, abandoned period comes first. It is drained without waiting: while
 	// one is outstanding the protocol is out of step, so no new request is sent this period.
@@ -580,31 +598,30 @@ RemotePlugin::ReplyWait RemotePlugin::collectProcessingReplies(std::chrono::stea
 {
 	while (m_owedProcessingReplies > 0)
 	{
-		if (isInvalid()) { return ReplyWait::Lost; }
-
-		// A message is read only once it is complete in the socket, so the read cannot stall on a client
-		// that stops mid-message. A partial message stays where it is and is read in a later period.
-		switch (peekNextMessage())
+		// A request that was only partly written must be finished before the client can answer it. While such a
+		// tail waits, the wait is sliced so the tail is retried often; otherwise the wait runs to the deadline.
+		// A reply already complete in the socket is taken even when the deadline has passed; the receive itself
+		// gives up at the deadline when nothing is complete.
+		flushPendingSend();
+		const auto now = std::chrono::steady_clock::now();
+		auto slice = deadline;
+		if (sendTailPending())
 		{
-		case Framing::Unusable:
-			return ReplyWait::Lost;
-		case Framing::Incomplete:
-			if (std::chrono::steady_clock::now() >= deadline) { return ReplyWait::Late; }
-			{
-				const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(
-					deadline - std::chrono::steady_clock::now());
-				if (!waitForMessageReadable(static_cast<int>(remaining.count())))
-				{
-					return isInvalid() ? ReplyWait::Lost : ReplyWait::Late;
-				}
-			}
-			continue;
-		case Framing::Complete:
-			break;
+			const auto retry = now + std::chrono::milliseconds{1};
+			if (retry < slice) { slice = retry; }
 		}
 
-		message m = receiveMessage();
-		if (m.id == IdUndefined) { return ReplyWait::Lost; }
+		message m;
+		switch (receiveFrameBefore(slice, m))
+		{
+		case ReceiveResult::Got:
+			break;
+		case ReceiveResult::Timeout:
+			if (std::chrono::steady_clock::now() >= deadline) { return ReplyWait::Late; }
+			continue;
+		case ReceiveResult::Lost:
+			return ReplyWait::Lost;
+		}
 
 		if (m.id == IdProcessingDone) { --m_owedProcessingReplies; }
 		else { processMessage(m); }
@@ -697,50 +714,41 @@ void RemotePlugin::processMidiEvent( const MidiEvent & _e,
 
 RemotePluginBase::SendResult RemotePlugin::sendQueuedMidiEvents()
 {
-	if( m_pendingMidiSize != 0 )
+	if (m_pendingMidiSize != 0)
 	{
-		const auto result = sendFrameNonBlocking( m_pendingMidi.data(), m_pendingMidiSize );
-		if( result != SendResult::Sent ) { return result; }
+		const auto result = sendFrameNonBlocking(m_pendingMidi.data(), m_pendingMidiSize);
+		if (result != SendResult::Sent) { return result; }
 		m_pendingMidiSize = 0;
 	}
 
-	HandoffMidiEvent event;
-	while( m_midiHandoff.pop( event ) )
+	// The drain is ordered and capped (see drainMidi()). A frame that cannot be sent is kept in m_pendingMidi and
+	// goes first next period, so nothing is taken from the queue without a place to go.
+	SendResult failure = SendResult::Sent;
+	const auto emitFrame = [this, &failure](const std::array<std::int32_t, 5>& values) -> bool
 	{
-		const std::int32_t values[] = {
-			event.type, event.channel, event.param1, event.param2, static_cast<std::int32_t>( event.offset ) };
-		m_pendingMidiSize = frameFromInts( m_pendingMidi.data(), m_pendingMidi.size(), IdMidiEvent,
-			values, std::size( values ) );
-		const auto result = sendFrameNonBlocking( m_pendingMidi.data(), m_pendingMidiSize );
-		if( result == SendResult::NoRoom ) { return result; } // the event stays in m_pendingMidi
-		m_pendingMidiSize = 0;
-		if( result != SendResult::Sent ) { return result; }
-	}
-
-	// Channels whose events the full queue refused. They are cleared only now, after everything that was
-	// queued before the refusal has been sent, so the notes those events began are ended after them.
-	constexpr std::uint32_t AllChannelBits = 0xFFFFu;
-	constexpr std::int32_t MidiAllNotesOffController = 123;
-	std::uint32_t channels = m_midiOverflow.take();
-	if( channels & MidiChannelOverflow::AllChannels ) { channels |= AllChannelBits; }
-	for( int channel = 0; channel < 16; ++channel )
-	{
-		if( !( channels & ( 1u << channel ) ) ) { continue; }
-		const std::int32_t values[] = {
-			MidiControlChange, channel, MidiAllNotesOffController, 0, 0 };
-		m_pendingMidiSize = frameFromInts( m_pendingMidi.data(), m_pendingMidi.size(), IdMidiEvent,
-			values, std::size( values ) );
-		const auto result = sendFrameNonBlocking( m_pendingMidi.data(), m_pendingMidiSize );
-		if( result == SendResult::NoRoom )
+		m_pendingMidiSize = frameFromInts(m_pendingMidi.data(), m_pendingMidi.size(), IdMidiEvent,
+			values.data(), values.size());
+		const auto result = sendFrameNonBlocking(m_pendingMidi.data(), m_pendingMidiSize);
+		if (result == SendResult::Sent)
 		{
-			// The frame for this channel waits in m_pendingMidi; the channels after it wait for the next period.
-			m_midiOverflow.restore( channels & ( AllChannelBits << ( channel + 1 ) ) & AllChannelBits );
-			return result;
+			m_pendingMidiSize = 0;
+			return true;
 		}
-		m_pendingMidiSize = 0;
-		if( result != SendResult::Sent ) { return result; }
-	}
-	return SendResult::Sent;
+		failure = result;
+		return false;
+	};
+
+	drainMidi(m_midiHandoff, m_midiOverflow, MidiDrainPerPeriod,
+		[&](const HandoffMidiEvent& event) -> bool
+		{
+			return emitFrame({event.type, event.channel, event.param1, event.param2,
+				static_cast<std::int32_t>(event.offset)});
+		},
+		[&](int channel) -> bool
+		{
+			return emitFrame({MidiControlChange, channel, MidiAllNotesOffController, 0, 0});
+		});
+	return failure;
 }
 
 void RemotePlugin::showUI()
@@ -980,6 +988,10 @@ bool RemotePlugin::processMessage( const message & _m )
 			break;
 
 		case IdProcessingDone:
+			// Only a main-thread wait gets here (collectProcessingReplies() takes the replies it is owed). The
+			// reply belongs to a period the audio thread gave up on, so that period is no longer owed.
+			if (m_owedProcessingReplies > 0) { --m_owedProcessingReplies; }
+			break;
 		case IdQuit:
 		default:
 			break;

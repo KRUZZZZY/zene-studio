@@ -349,30 +349,23 @@ QString ZynAddSubFxInstrument::nodeName() const
 auto ZynAddSubFxInstrument::processImpl(PlanarBufferView<const float, 0> in, PlanarBufferView<float, 2> out)
 	-> ProcessStatus
 {
-	// MIDI queued since the last period goes to the synth first, in order.
-	HandoffMidiEvent queued;
-	while (m_midiHandoff.pop(queued))
-	{
-		const MidiEvent event(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2);
-		if (m_remotePlugin)
+	// MIDI queued since the last period goes to the synth first, in order. A channel whose events the full queue
+	// refused is cut with all-notes-off at the point of the refusal (see drainMidi()).
+	drainMidi(m_midiHandoff, m_midiOverflow, m_midiHandoff.capacity(),
+		[this](const HandoffMidiEvent& queued) -> bool
 		{
-			m_remotePlugin->processMidiEvent(event, 0);
-		}
-		else
+			const MidiEvent event(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2);
+			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(event, 0); }
+			else { m_localPlugin->processMidiEvent(event); }
+			return true;
+		},
+		[this](int channel) -> bool
 		{
-			m_localPlugin->processMidiEvent(event);
-		}
-	}
-
-	// Channels whose events the full queue refused are cut with all-notes-off, after everything queued before.
-	const auto refused = m_midiOverflow.take();
-	for (int channel = 0; channel < 16; ++channel)
-	{
-		if (!(refused & (1u << channel))) { continue; }
-		const MidiEvent allNotesOff(MidiControlChange, channel, 123, 0);
-		if (m_remotePlugin) { m_remotePlugin->processMidiEvent(allNotesOff, 0); }
-		else { m_localPlugin->processMidiEvent(allNotesOff); }
-	}
+			const MidiEvent allNotesOff(MidiControlChange, static_cast<int8_t>(channel), 123, 0);
+			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(allNotesOff, 0); }
+			else { m_localPlugin->processMidiEvent(allNotesOff); }
+			return true;
+		});
 
 	if (m_remotePlugin)
 	{

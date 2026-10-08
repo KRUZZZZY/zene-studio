@@ -529,6 +529,11 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	const RealtimeScope realtime;
 
 	RenderPeriodClock::markPeriodStart();
+	// Ends the clock's period on every return path of this function.
+	struct PeriodEnd
+	{
+		~PeriodEnd() { RenderPeriodClock::markPeriodEnd(); }
+	} periodEnd;
 	m_profiler.startPeriod();
 	s_renderingThread = true;
 

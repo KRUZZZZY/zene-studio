@@ -32,7 +32,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <charconv>
+#include <array>
+#include <chrono>
 #include <cstdint>
+#include <vector>
 #include <cstring>
 #include <string>
 
@@ -230,6 +233,31 @@ public:
 	inline void writeRaw( const void * _buf, int _len )
 	{
 		write( _buf, _len );
+	}
+
+	//! Timed forms for the audio thread: each waits at most _timeoutMs and returns false when it could not.
+	//! tryLockFor() takes the data lock (recursively, like lock()); waitMessageFor() takes one message token.
+	inline bool tryLockFor( int _timeoutMs )
+	{
+		if( isInvalid() ) { return false; }
+		if( m_lockDepth.fetch_add( 1 ) == 0 )
+		{
+			if( m_dataSem.tryAcquire( _timeoutMs ) ) { return true; }
+			m_lockDepth.fetch_sub( 1 );
+			return false;
+		}
+		return true;
+	}
+
+	inline bool waitMessageFor( int _timeoutMs )
+	{
+		return !isInvalid() && m_messageSem.tryAcquire( _timeoutMs );
+	}
+
+	//! Bytes the FIFO can take now. The caller holds the data lock.
+	inline std::size_t freeSpace()
+	{
+		return static_cast<std::size_t>( SHM_FIFO_SIZE - ( m_data->endPtr - m_data->startPtr ) );
 	}
 
 
@@ -466,6 +494,10 @@ public:
 
 	int sendMessage( const message & _m );
 	message receiveMessage();
+#ifdef SYNC_WITH_SHM_FIFO
+	//! The message of a token already taken on the shared-memory FIFO, with its data lock held by the caller.
+	message readFrameLocked();
+#endif
 
 	//! Sends a message whose arguments are all integers, in the wire format sendMessage() writes. Each
 	//! argument is formatted into a stack buffer, so unlike building a message with addInt() this does not
@@ -482,6 +514,39 @@ public:
 	//! lock or the socket. The socket path checks the send buffer has room for the frame before writing,
 	//! so a short write only happens if that check was wrong, and then the stream is marked broken.
 	SendResult sendFrameNonBlocking( const char * _frame, std::size_t _size );
+
+	//! Outcome of a receive on the audio thread.
+	enum class ReceiveResult
+	{
+		Got,     //!< a complete message was read into the argument
+		Timeout, //!< no complete message arrived before the deadline; nothing was consumed
+		Lost     //!< the connection failed, or the peer closed it
+	};
+
+	//! Receives the next message, waiting no longer than \a _deadline. Reads only a complete message (socket:
+	//! the framing is checked first; shared memory: a token is taken, and each message is written whole), so a
+	//! client that stops mid-message cannot hold the caller. Used on the audio thread.
+#ifndef BUILD_REMOTE_PLUGIN_CLIENT
+	ReceiveResult receiveFrameBefore( std::chrono::steady_clock::time_point _deadline, message & _out );
+#endif
+
+	//! Writes the tail of an earlier partial non-blocking send, if there is one, without blocking.
+	SendResult flushPendingSend();
+
+	//! Whether part of a frame is still waiting to be written (socket transport; always false on shared memory).
+	bool sendTailPending() const
+	{
+#ifdef SYNC_WITH_SHM_FIFO
+		return false;
+#else
+		return m_txTailSize != 0;
+#endif
+	}
+
+#ifndef SYNC_WITH_SHM_FIFO
+	//! Writes the tail with the send mutex held, without blocking. @return Sent when nothing is left
+	SendResult writeTailLocked();
+#endif
 
 	//! Encodes a message of integer arguments in the wire format into \a _out, without allocating.
 	//! @return the frame size, or 0 if it does not fit in \a _capacity bytes
@@ -602,9 +667,9 @@ public:
 #ifdef SYNC_WITH_SHM_FIFO
 		return Framing::Complete;
 #else
-		constexpr std::size_t PeekWindowBytes = 16384;
-		char window[PeekWindowBytes];
-		const ssize_t available = ::recv(m_socket, window, sizeof window, MSG_PEEK | MSG_DONTWAIT);
+		const std::size_t windowBytes = m_peekWindow.size();
+		char * const window = m_peekWindow.data();
+		const ssize_t available = ::recv(m_socket, window, windowBytes, MSG_PEEK | MSG_DONTWAIT);
 		if (available == 0) { return Framing::Unusable; }
 		if (available < 0)
 		{
@@ -626,12 +691,12 @@ public:
 		std::size_t offset = 8;
 		for (std::int32_t i = 0; i < count; ++i)
 		{
-			if (offset + sizeof(std::int32_t) > PeekWindowBytes) { return Framing::Unusable; }
+			if (offset + sizeof(std::int32_t) > windowBytes) { return Framing::Unusable; }
 			if (offset + sizeof(std::int32_t) > size) { return Framing::Incomplete; }
 			const std::int32_t length = int32At(offset);
 			if (length < 0) { return Framing::Unusable; }
 			offset += sizeof(std::int32_t) + static_cast<std::size_t>(length);
-			if (offset > PeekWindowBytes) { return Framing::Unusable; }
+			if (offset > windowBytes) { return Framing::Unusable; }
 			if (offset > size) { return Framing::Incomplete; }
 		}
 		return Framing::Complete;
@@ -682,6 +747,17 @@ protected:
 
 #ifndef SYNC_WITH_SHM_FIFO
 	int m_socket;
+
+	//! What the audio thread peeks into. Allocated once in the constructor, never on the audio thread; a
+	//! complete message longer than this cannot be read without blocking, and is refused (see peekNextMessage()).
+	std::vector<char> m_peekWindow;
+	static constexpr std::size_t PeekWindowBytes = std::size_t{1} << 20;
+
+	//! The unsent tail of a frame that a non-blocking send only partly wrote. It goes out before anything else.
+	std::array<char, 512> m_txTail{};
+	std::size_t m_txTailOffset = 0;
+	std::size_t m_txTailSize = 0;
+
 #endif
 
 

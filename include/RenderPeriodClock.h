@@ -28,6 +28,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <functional>
+#include <thread>
 
 namespace lmms
 {
@@ -43,8 +45,23 @@ class RenderPeriodClock
 public:
 	static void markPeriodStart() noexcept
 	{
+		s_renderThread.store(threadKey(), std::memory_order_relaxed);
 		s_startNs.store(std::chrono::duration_cast<std::chrono::nanoseconds>(
 			std::chrono::steady_clock::now().time_since_epoch()).count(), std::memory_order_relaxed);
+		s_inPeriod.store(true, std::memory_order_release);
+	}
+
+	static void markPeriodEnd() noexcept
+	{
+		s_inPeriod.store(false, std::memory_order_release);
+	}
+
+	//! Whether the calling thread is the one rendering a period right now. Only then is periodStart() the start of
+	//! the period the caller is part of; elsewhere (tests, offline callers) it is not.
+	static auto renderingOnThisThread() noexcept -> bool
+	{
+		return s_inPeriod.load(std::memory_order_acquire)
+			&& s_renderThread.load(std::memory_order_relaxed) == threadKey();
 	}
 
 	static auto periodStart() noexcept -> std::chrono::steady_clock::time_point
@@ -55,7 +72,14 @@ public:
 	}
 
 private:
+	static std::uint64_t threadKey() noexcept
+	{
+		return static_cast<std::uint64_t>(std::hash<std::thread::id>{}(std::this_thread::get_id()));
+	}
+
 	static inline std::atomic<std::int64_t> s_startNs{0};
+	static inline std::atomic<std::uint64_t> s_renderThread{0};
+	static inline std::atomic<bool> s_inPeriod{false};
 };
 
 } // namespace lmms

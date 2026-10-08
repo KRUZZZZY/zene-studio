@@ -472,6 +472,8 @@ set(LMMS_TESTS
 	# The bounded lock-free MIDI hand-off the instrument hosts use to get events off their audio paths
 	# (include/MidiHandoffQueue.h): FIFO, drop-and-count when full, no allocation, no lost accepted event.
 	src/core/MidiHandoffQueueTest.cpp
+	# The system semaphore's timed acquire (the shared-memory transport's audio-thread waits use it).
+	src/core/SystemSemaphoreTest.cpp
 	src/core/RecordingRealtimeTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/ReversibilityContractTest.cpp

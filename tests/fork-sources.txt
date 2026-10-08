@@ -2207,3 +2207,4 @@ tests/src/core/VstMidiEventBatchTest.cpp
 include/MidiHandoffQueue.h
 tests/src/core/MidiHandoffQueueTest.cpp
 include/RenderPeriodClock.h
+tests/src/core/SystemSemaphoreTest.cpp

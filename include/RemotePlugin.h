@@ -198,9 +198,20 @@ public:
 	{
 		lock();
 		sendMessage( IdIsUIVisible );
+		const message m = waitForMessage( IdIsUIVisible );
 		unlock();
-		message m = waitForMessage( IdIsUIVisible );
 		return m.id != IdIsUIVisible ? -1 : m.getInt() ? 1 : 0;
+	}
+
+	//! Main-thread wait for the client's reply to \a _wm. The communication lock is held across the whole wait:
+	//! the audio thread then never reads a reply that is not its own, and it skips its period rather than wait
+	//! for this one. Hides RemotePluginBase::waitForMessage(), which every caller of this class reaches.
+	message waitForMessage( const message & _wm, bool _busyWaiting = false )
+	{
+		lock();
+		const message reply = RemotePluginBase::waitForMessage( _wm, _busyWaiting );
+		unlock();
+		return reply;
 	}
 
 	//! Audio ports controller this plugin is connected to. It is never null: the
@@ -287,9 +298,9 @@ private:
 	//! Body of process(), called with m_commMutex held and m_inProcessPeriod set.
 	bool processPeriod();
 
-	//! Sends the MIDI events queued by processMidiEvent(), in order. Called with m_commMutex held.
-	//! Sends the queued MIDI events on the audio thread, without blocking. A frame that finds no room is kept
-	//! in m_pendingMidi and sent first next period; no event is popped without a place to go.
+	//! Sends the MIDI events queued by processMidiEvent(), in order, on the audio thread without blocking, at most
+	//! MidiDrainPerPeriod of them. A frame that finds no room is kept in m_pendingMidi and sent first next period;
+	//! no event is taken from the queue without a place to go. Called with m_commMutex held.
 	SendResult sendQueuedMidiEvents();
 
 	//! Frame of a MIDI event that could not be sent yet (see sendQueuedMidiEvents()).
