@@ -280,8 +280,6 @@ private:
 signals:
 	void sampleChanged();
 	void wasReversed();
-	//! A recording pass lost \a frames to capture overflow; the GUI may show it. Main thread.
-	void recordTakeDropped(qulonglong frames);
 } ;
 
 

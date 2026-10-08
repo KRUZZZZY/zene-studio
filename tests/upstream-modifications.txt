@@ -1749,3 +1749,7 @@ src/core/SampleRecordHandle.cpp	docs/m0-blocker-fixes-2026-10-08 round 2: reaper
 include/Song.h	docs/m0-blocker-fixes-2026-10-08 round 2: m_recordLatched: a Record press is taken by the next Play (P2)
 src/core/Song.cpp	docs/m0-blocker-fixes-2026-10-08 round 2: startSongPlayback takes the record latch; stop() ends it (P2)
 src/core/ControlCommandsRecordingRoutes.cpp	docs/m0-blocker-fixes-2026-10-08 round 2: record.get_state reports clip_takes (dropped/padded frames, unprepared takes, queue overflows, deferred starts)
+include/Song.h	docs/m0-blocker-fixes-2026-10-08 round 3: recordTakeDropped signal and reportRecordTakeDropped(): a recording pass that lost frames notifies the GUI
+src/core/SampleClip.cpp	docs/m0-blocker-fixes-2026-10-08 round 3: arm generation (armRecordTake, acceptRecordedTake tags a stale take), loop-pass takes muted except the newest, drops reported to the Song
+include/SampleClip.h	docs/m0-blocker-fixes-2026-10-08 round 3: armGeneration(), m_passTakes, acceptRecordedTake generation parameter
+src/gui/MainWindow.cpp	docs/m0-blocker-fixes-2026-10-08 round 3: shows a non-modal notice (TextFloat and status bar) when a recording pass lost frames

@@ -229,7 +229,7 @@ void SampleClip::acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, st
 	std::uint64_t generation)
 {
 	m_lastTakeDroppedFrames = droppedFrames;
-	if (droppedFrames > 0) { emit recordTakeDropped(droppedFrames); }
+	if (droppedFrames > 0) { Engine::getSong()->reportRecordTakeDropped(droppedFrames); }
 	// A take of an earlier arming (the clip was re-armed before its take was installed) keeps
 	// its audio as a lane take, and leaves the current arming alone: it must not disarm the clip.
 	if (generation != m_armGeneration)

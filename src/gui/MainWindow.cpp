@@ -225,6 +225,14 @@ MainWindow::MainWindow() :
 				this, SLOT(updatePlayPauseIcons()));
 
 	connect(Engine::getSong(), SIGNAL(modified()), SLOT(onSongModified()));
+	// A recording pass that lost audio to a full capture buffer: a notice, never a modal dialog.
+	connect(Engine::getSong(), &Song::recordTakeDropped, this, [this](qulonglong frames) {
+		const QString text = tr("%1 frames of the recording were lost to a full capture buffer. "
+			"The take is padded with silence where they were lost.").arg(frames);
+		TextFloat::displayMessage(tr("Recording dropped audio"), text,
+			embed::getIconPixmap("record", 24, 24), 8000);
+		statusBar()->showMessage(text, 8000);
+	});
 	connect(Engine::getSong(), SIGNAL(projectFileNameChanged()), SLOT(onProjectFileNameChanged()));
 
 	maximized = isMaximized();

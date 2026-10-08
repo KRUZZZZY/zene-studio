@@ -36,7 +36,12 @@
 
 #include "AllocationProbe.h"
 
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QSignalSpy>
+
 #include "AudioEngine.h"
+#include "ControlRegistry.h"
 #include "Engine.h"
 #include "SampleClip.h"
 #include "SampleFrame.h"
@@ -106,9 +111,15 @@ private slots:
 		// tests/CMakeLists.txt arranges with QT_QPA_PLATFORM=offscreen.
 		lmms::Engine::init(true);
 		QVERIFY2(lmms::Engine::audioEngine() != nullptr, "engine failed to initialise");
+		lmms::ControlRegistry::setReady(true);  // the agent surface, for the record.get_state test
 		// Nothing may consume the capture staging ring while the bound and the
 		// lock-independence of pushInputFrames() are measured.
 		if (auto dev = lmms::Engine::audioEngine()->audioDev()) { dev->stopProcessing(); }
+	}
+
+	void cleanupTestCase()
+	{
+		lmms::ControlRegistry::setReady(false);
 	}
 
 	// -----------------------------------------------------------------------
@@ -779,6 +790,39 @@ private slots:
 		delete first;   // they were claimed: their drain threads stop at the reaper
 		delete second;
 		QTest::qWait(50);
+		delete track;
+	}
+
+	//! A take that lost frames reaches the user twice: as the Song's drop signal (the GUI shows
+	//! its notice from it), and as the clip's count in the agent surface's record.get_state.
+	void droppedFramesReachTheSongAndTheCommandSurface()
+	{
+		auto* song = lmms::Engine::getSong();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setRecord(true);
+
+		QSignalSpy notices(song, SIGNAL(recordTakeDropped(qulonglong)));
+		clip->acceptRecordedTake(nullptr, 5, false, clip->armGeneration());
+		QCOMPARE(notices.count(), 1);
+		QCOMPARE(notices.at(0).at(0).toULongLong(), static_cast<qulonglong>(5));
+		QCOMPARE(clip->lastTakeDroppedFrames(), static_cast<std::uint64_t>(5));
+
+		const auto reply = lmms::ControlRegistry::instance()->invoke(QStringLiteral("record.get_state"), {});
+		QVERIFY2(reply.ok, qPrintable(reply.errorMessage));
+		const QJsonArray clips = reply.result.value(QStringLiteral("clip_takes")).toObject()
+			.value(QStringLiteral("clips")).toArray();
+		bool listed = false;
+		for (const QJsonValue& entry : clips)
+		{
+			const QJsonObject row = entry.toObject();
+			if (row.value(QStringLiteral("clip_id")).toInt() != clip->id()) { continue; }
+			listed = true;
+			QCOMPARE(row.value(QStringLiteral("last_take_dropped_frames")).toVariant().toULongLong(),
+				static_cast<qulonglong>(5));
+		}
+		QVERIFY2(listed, "record.get_state does not list the clip whose take lost frames");
 		delete track;
 	}
 } ;
