@@ -625,6 +625,51 @@ private slots:
 			"the deferred library must still load on demand");
 		QVERIFY(info.library->isLoaded());
 	}
+
+	//! Cached descriptor memory remains valid for rows holding a pointer across a rescan.
+	void testCachedDescriptorSurvivesRescan()
+	{
+		using namespace lmms;
+
+		if (!pluginModuleCopied()) { QSKIP("no built plugin module to fingerprint"); }
+		const QString cacheFile = cachePath("descriptor-lifetime");
+		QFileInfo file(pluginPath());
+		PluginScanRecord first = recordFor(pluginPath(), PluginScanRecord::Status::HasDescriptor);
+		first.size = file.size();
+		first.mtimeMs = file.lastModified().toMSecsSinceEpoch();
+		first.name = QStringLiteral("tripleoscillator");
+		first.displayName = QStringLiteral("Before rescan");
+		first.description = QStringLiteral("cached descriptor lifetime fixture");
+		first.author = QStringLiteral("Zene Studio test");
+		first.version = 0x0110;
+		first.type = static_cast<int>(Plugin::Type::Instrument);
+		first.hasSubPluginFeatures = false;
+		{
+			PluginScanCache cache(cacheFile);
+			cache.store(first);
+			QVERIFY(cache.save());
+		}
+		qputenv("LMMS_PLUGIN_SCAN_CACHE", cacheFile.toLocal8Bit());
+		QDir::setSearchPaths("plugins", QStringList{m_pluginDir->path()});
+		PluginFactory factory;
+		const Plugin::DescriptorList beforeDescriptors = factory.descriptors(Plugin::Type::Instrument);
+		QCOMPARE(beforeDescriptors.size(), 1);
+		const Plugin::Descriptor* before = beforeDescriptors.first();
+		QCOMPARE(QString::fromUtf8(before->displayName), first.displayName);
+
+		PluginScanRecord second = first;
+		second.displayName = QStringLiteral("After rescan");
+		{
+			PluginScanCache cache(cacheFile);
+			cache.store(second);
+			QVERIFY(cache.save());
+		}
+		factory.discoverPlugins();
+		const Plugin::DescriptorList afterDescriptors = factory.descriptors(Plugin::Type::Instrument);
+		QCOMPARE(afterDescriptors.size(), 1);
+		QCOMPARE(QString::fromUtf8(afterDescriptors.first()->displayName), second.displayName);
+		QCOMPARE(QString::fromUtf8(before->displayName), first.displayName);
+	}
 	void testQuarantinedPluginIsHiddenFromDiscovery()
 	{
 		using namespace lmms;
