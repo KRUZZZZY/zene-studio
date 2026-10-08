@@ -281,7 +281,7 @@ void placeEffectAt(EffectChain* chain, Effect* effect, int index)
 	for (int i = count - 1; i > index && i > 0; --i) { chain->moveUp(effect); }
 }
 
-Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int index)
+Effect* instantiateRecordedDevice(EffectChain* chain, const QString& stateXml)
 {
 	if (chain == nullptr || stateXml.isEmpty())
 	{
@@ -322,6 +322,8 @@ Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int
 	Plugin::Descriptor::SubPluginFeatures::Key key;
 	const bool hosted = deviceKeyFromState(root, &key);
 
+	// The plug-in load. The device is not in any chain yet: attachRecordedDevice
+	// puts it in, under the audio change lock, and the load itself takes none.
 	Effect* effect = Effect::instantiate(pluginName, chain, hosted ? &key : nullptr);
 	if (effect == nullptr)
 	{
@@ -329,7 +331,11 @@ Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int
 			QStringLiteral("the device '%1' could not be re-instantiated, so the removal was "
 				"not undone").arg(pluginName));
 	}
+	return effect;
+}
 
+Effect* attachRecordedDevice(EffectChain* chain, Effect* effect, const QString& stateXml, int index)
+{
 	// appendEffect() puts it at the END of the chain, which is where a project
 	// load leaves it too; the recorded index is restored afterwards.
 	chain->appendEffect(effect);
@@ -352,6 +358,16 @@ Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int
 		return restoreFailed(restored.errorKind, restored.errorMessage);
 	}
 	return effect;
+}
+
+Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int index)
+{
+	Effect* effect = instantiateRecordedDevice(chain, stateXml);
+	if (effect == nullptr) { return nullptr; }
+	// Callers of this composition may hold no change lock, so the attach takes
+	// one; the plug-in load above has already run without it.
+	const auto changes = Engine::audioEngine()->requestChangesGuard();
+	return attachRecordedDevice(chain, effect, stateXml, index);
 }
 
 namespace
@@ -499,15 +515,18 @@ bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 	addStructuralUndoStep(
 		[chainOf, xml, index, made, wasEnabled]() {
 			JournalPause quiet;
-			// The re-append and the flag restore run as one change to the audio
-			// model (the change lock is recursive, so appendEffect's own lock nests),
-			// so no block renders the recreated device with the wrong flag.
+			EffectChain* live = chainOf();
+			if (live == nullptr) { return; }
+			// The plug-in load first, with NO change lock held: the render thread takes
+			// that lock every period, so a load held under it stalls rendering for the
+			// whole load (the realtime rule). Only the attach and the flag restore are
+			// one model change, made under a single bracket (the lock is recursive, so
+			// appendEffect's own lock nests), and no block renders the recreated device
+			// with the wrong flag.
+			Effect* device = instantiateRecordedDevice(live, xml);
 			const auto changes = Engine::audioEngine()->requestChangesGuard();
-			if (EffectChain* live = chainOf())
-			{
-				*made = recreateEffectFromState(live, xml, index);
-				live->setEnabledUnjournalled(wasEnabled);
-			}
+			*made = device != nullptr ? attachRecordedDevice(live, device, xml, index) : nullptr;
+			live->setEnabledUnjournalled(wasEnabled);
 		},
 		[chainOf, made, index, plugin]() {
 			JournalPause quiet;

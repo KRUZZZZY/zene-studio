@@ -28,6 +28,10 @@
 
 #include <QtTest>
 #include <QStringList>
+
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -440,6 +444,52 @@ private slots:
 		QVERIFY(chain->effects().empty());
 		QVERIFY(!chain->isEnabled());
 		QCOMPARE(journal->undoDepth(), 0);
+
+		mixer->deleteChannel(index);
+		ScriptEngine::instance()->takeLogMessages();
+	}
+
+	/*! The plug-in load of a recorded device takes no audio change lock. Another
+	 *  thread holds the lock for three seconds; building the device must return
+	 *  long before that. Built under the lock (the round-6 undo), it waits for
+	 *  the holder, and the case fails. */
+	void aRecordedDeviceIsBuiltWithoutTheAudioChangeLock()
+	{
+		QString device;
+		QString deviceName;
+		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+		QString error;
+		QCOMPARE(int(ScriptEngine::instance()->runString(qstr(
+			"zene.mixer():channel(%1):chain():loadEffect(\"%2\")\n").arg(index).arg(device), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		const QString xml = controlEffectStateXml(chain->effects().front());
+		QVERIFY(!xml.isEmpty());
+
+		std::atomic<bool> held{false};
+		std::thread holder([&held] {
+			Engine::audioEngine()->requestChangeInModel();
+			held = true;
+			std::this_thread::sleep_for(std::chrono::seconds(3));
+			Engine::audioEngine()->doneChangeInModel();
+		});
+		while (!held) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+
+		const auto started = std::chrono::steady_clock::now();
+		Effect* built = control::instantiateRecordedDevice(chain, xml);
+		const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now() - started).count();
+		holder.join();
+
+		QVERIFY2(built != nullptr, "the recorded device could not be built");
+		QVERIFY2(elapsed < 1500,
+			qPrintable(QStringLiteral("building the device waited %1 ms for the change lock").arg(elapsed)));
+		QCOMPARE(QString::fromUtf8(built->descriptor()->name), deviceName);
+		built->deleteLater();
 
 		mixer->deleteChannel(index);
 		ScriptEngine::instance()->takeLogMessages();

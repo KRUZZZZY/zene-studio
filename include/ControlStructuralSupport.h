@@ -167,6 +167,14 @@ LMMS_EXPORT void removeRecordedEffect(EffectChain* chain, QPointer<Effect>& made
  */
 LMMS_EXPORT Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int index);
 
+/*! The first half of recreateEffectFromState(): validates \a stateXml and loads
+ *  the device it names, WITHOUT attaching it to \a chain. The load can take a
+ *  while and takes no audio change lock, so an undo builds the device here and
+ *  only then takes the lock for the attach. nullptr, with the reason recorded
+ *  for control.undo, when the engine refuses the device.
+ */
+LMMS_EXPORT Effect* instantiateRecordedDevice(EffectChain* chain, const QString& stateXml);
+
 /*! The failure of the LAST device restore a structural step attempted, or
  *  nullopt when the last one succeeded (or none has run) - BUG-CTL-1, SPEC A16.
  *
