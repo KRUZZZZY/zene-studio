@@ -72,6 +72,7 @@ std::atomic<std::uint64_t> s_framesPadded{0};
 std::atomic<std::uint64_t> s_unpreparedTakes{0};
 //! Takes that could not be queued (the queue was full): leaked rather than freed on the audio thread.
 std::atomic<std::uint64_t> s_queueOverflows{0};
+std::atomic<std::uint64_t> s_takesReaped{0};
 
 //! Clips armed for recording, main thread only. A QPointer per clip: a deleted clip drops out.
 std::vector<QPointer<SampleClip>> s_armedClips;
@@ -142,6 +143,7 @@ void SampleRecordHandle::reapRetiredTakes()
 	while (s_retiredTakes.pop(&taken))
 	{
 		std::unique_ptr<PendingRecordTake> take{ taken };
+		s_takesReaped.fetch_add(1, std::memory_order_relaxed);
 		// finish() joins the drain thread first, so the counts below are final.
 		auto buffer = take->accum->finish();
 		if (const auto dropped = take->accum->framesDropped(); dropped > 0)
@@ -210,6 +212,14 @@ void SampleRecordHandle::watchArmedClip(SampleClip* clip)
 std::uint64_t SampleRecordHandle::framesPaddedTotal() noexcept
 {
 	return s_framesPadded.load(std::memory_order_relaxed);
+}
+
+
+
+
+std::uint64_t SampleRecordHandle::takesReaped() noexcept
+{
+	return s_takesReaped.load(std::memory_order_relaxed);
 }
 
 

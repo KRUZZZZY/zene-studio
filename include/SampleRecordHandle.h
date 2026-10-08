@@ -89,6 +89,8 @@ public:
 	//! Takes whose handle could not be queued for the main thread (the queue was full); the take
 	//! is leaked and its clip stays armed.
 	static std::uint64_t queueOverflows() noexcept;
+	//! Takes the main thread has reaped (finished and handed back) so far.
+	static std::uint64_t takesReaped() noexcept;
 	//! Audio thread: count a take that could not be claimed (it is not recorded).
 	static void countUnpreparedTake() noexcept;
 

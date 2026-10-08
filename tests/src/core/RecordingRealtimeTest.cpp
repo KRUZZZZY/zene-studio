@@ -38,6 +38,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QPointer>
 #include <QSignalSpy>
 
 #include "AudioEngine.h"
@@ -549,10 +550,15 @@ private slots:
 		auto* handle = clip->claimRecordHandle();
 		QVERIFY(handle != nullptr);
 		handle->markClaimed();
+		const auto reapedBefore = lmms::SampleRecordHandle::takesReaped();
 		delete handle;   // queued for the main thread
+		QPointer<lmms::SampleClip> gone(clip);
 		delete track;    // the clip goes before the reaper runs
-		QTest::qWait(50);
-		QVERIFY(true);
+		QVERIFY(gone.isNull());
+		// The reaper takes the queued take (deleting the track also queues the clip's standby takes,
+		// so the count is not exactly one) and finds its clip gone: nothing is written to it.
+		QTRY_VERIFY_WITH_TIMEOUT(lmms::SampleRecordHandle::takesReaped() > reapedBefore, 3000);
+		QVERIFY(gone.isNull());
 	}
 
 	//! A take overflows the capture ring: the take keeps the length of the input it was given, with
@@ -594,6 +600,8 @@ private slots:
 		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
 		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
 		QVERIFY(clip != nullptr);
+		// Start from an empty queue, whatever earlier tests left in it.
+		lmms::SampleRecordHandle::pumpTakes();
 		const auto before = lmms::SampleRecordHandle::queueOverflows();
 		// The main thread reaps nothing in this loop: the queue holds 256 takes, the 257th overflows.
 		for (int i = 0; i < 257; ++i)

@@ -164,7 +164,7 @@ private:
 class SampleRecordAccumulator
 {
 public:
-	//! Ring capacity: ~0.34 s at 48 kHz, drained every 2 ms by the drain
+	//! Ring capacity: ~0.34 s at 48 kHz, drained every 20 ms when idle by the drain
 	//! thread, so it only overflows if the drain thread is starved for that
 	//! long. Two channels * 4 bytes * 16384 = 128 KiB, allocated once.
 	static constexpr std::size_t DefaultRingFrames = 16384;
@@ -301,7 +301,8 @@ private:
 		{
 			if (drainOnce(false) == 0)
 			{
-				std::this_thread::sleep_for(std::chrono::milliseconds(2));
+				// Idle: a standby take wakes 50 times a second, not 500. The ring holds ~0.34 s of input.
+				std::this_thread::sleep_for(std::chrono::milliseconds(20));
 			}
 		}
 		// Take the tail that was pushed before the finish flag became visible, and the
