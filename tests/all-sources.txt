@@ -2569,6 +2569,7 @@ tests/src/core/PluginHostMetadataTest.cpp
 tests/src/core/PluginLogoResourceTest.cpp
 tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/PortMappingCodecTest.cpp
+tests/src/core/PortMappingOrchestratorTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
 tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectMarkersTest.cpp
