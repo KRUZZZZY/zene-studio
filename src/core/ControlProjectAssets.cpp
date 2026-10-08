@@ -236,7 +236,7 @@ enum class InflateOutcome { Done, Malformed, OverCap };
 //! The zlib half of inflateWithinCap: \a stored is a qCompress stream (4-byte big-endian
 //! expanded size, then zlib), and the output is counted chunk by chunk, so the cap holds on
 //! the bytes actually produced, whatever the header said.
-InflateOutcome inflateBodyWithinCap(const QByteArray& stored, QByteArray* xml)
+InflateOutcome inflateBodyWithinCap(const QByteArray& stored, QByteArray* xml, qint64 cap)
 {
 	z_stream stream{};
 	if (inflateInit(&stream) != Z_OK) { return InflateOutcome::Malformed; }
@@ -253,7 +253,7 @@ InflateOutcome inflateBodyWithinCap(const QByteArray& stored, QByteArray* xml)
 		status = inflate(&stream, Z_NO_FLUSH);  // Z_BUF_ERROR: truncated input, no progress possible
 		if (status != Z_OK && status != Z_STREAM_END) { break; }
 		const qint64 produced = chunk.size() - static_cast<qint64>(stream.avail_out);
-		if (xml->size() + produced > MaxProjectAssetDocumentBytes)
+		if (xml->size() + produced > cap)
 		{
 			outcome = InflateOutcome::OverCap;
 			break;
@@ -307,7 +307,7 @@ bool inflateWithinCap(const QString& projectPath, const QByteArray& stored, QByt
 {
 	if (stored.size() < 4) { return refuseNotReadable(projectPath, error); }
 #if defined(ZENE_HAVE_ZLIB)
-	const InflateOutcome outcome = inflateBodyWithinCap(stored, xml);
+	const InflateOutcome outcome = inflateBodyWithinCap(stored, xml, MaxProjectAssetDocumentBytes);
 	if (outcome == InflateOutcome::OverCap) { return refuseOverCap(projectPath, error); }
 	return outcome == InflateOutcome::Done ? true : refuseNotReadable(projectPath, error);
 #else
@@ -399,6 +399,19 @@ QByteArray serialiseDocument(QDomDocument* document)
 } // namespace projectassets
 
 using namespace projectassets;
+
+bool inflateQtCompressedWithinCap(const QByteArray& stored, qint64 cap, QByteArray* out)
+{
+	if (stored.size() < 4 || out == nullptr) { return false; }
+#if defined(ZENE_HAVE_ZLIB)
+	return projectassets::inflateBodyWithinCap(stored, out, cap) == projectassets::InflateOutcome::Done;
+#else
+	// Fail closed: without zlib there is no inflate that honours the cap, so nothing is inflated.
+	Q_UNUSED(cap)
+	out->clear();
+	return false;
+#endif
+}
 
 namespace
 {

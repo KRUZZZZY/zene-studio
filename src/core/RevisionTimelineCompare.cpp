@@ -35,6 +35,7 @@
 
 #include "RevisionTimeline.h"
 
+#include "ControlProjectAssets.h"
 #include "ProjectContainer.h"
 
 #include <algorithm>
@@ -185,8 +186,10 @@ QByteArray projectDocumentText(const QByteArray& raw)
 	// qCompress's 4-byte big-endian header declares the inflated size, and qUncompress allocates
 	// that up front: a declared size over the cap is refused before anything is inflated.
 	if (raw.size() < 4 || qFromBigEndian<quint32>(raw.constData()) > Bounds::MaxDocumentBytes) { return QByteArray(); }
-	const QByteArray text = qUncompress(raw);
-	if (text.isEmpty() || text.size() > Bounds::MaxDocumentBytes) { return QByteArray(); }
+	// The output is bounded while it inflates (the declared size above is only a fast refusal, because qUncompress
+	// grows its output past the header). Without zlib nothing is inflated: a fail-closed refusal.
+	QByteArray text;
+	if (!inflateQtCompressedWithinCap(raw, Bounds::MaxDocumentBytes, &text) || text.isEmpty()) { return QByteArray(); }
 	return text;
 }
 

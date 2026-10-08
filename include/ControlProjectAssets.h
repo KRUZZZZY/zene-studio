@@ -175,6 +175,12 @@ LMMS_EXPORT bool collectProjectMediaInto(const QString& project, const QString& 
 LMMS_EXPORT bool controlScanProjectAssets(const QString& projectPath, ProjectAssetScan* out,
 	ControlResult* error);
 
+/*! Inflates a qCompress() stream (4-byte big-endian expanded size, then zlib) into \a out, refusing
+ *  as soon as the bytes PRODUCED would pass \a cap. False when the stream does not inflate, would pass the
+ *  cap, or this build has no zlib (ZENE_HAVE_ZLIB): the caller then gets nothing, never an unbounded inflate.
+ *  The declared size in the header is not trusted for the bound. */
+bool inflateQtCompressedWithinCap(const QByteArray& stored, qint64 cap, QByteArray* out);
+
 /*! controlScanProjectAssets() plus a sha256 per reference that resolves to a
  *  file on disk. Writes nothing to the project; only reads the media. */
 LMMS_EXPORT bool controlHashProjectAssets(const QString& projectPath, ProjectAssetScan* out,
