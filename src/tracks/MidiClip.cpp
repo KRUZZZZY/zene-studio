@@ -26,6 +26,7 @@
 #include "MidiClip.h"
 
 #include <algorithm>
+#include <limits>
 #include <QDomElement>
 
 #include "GuiApplication.h"
@@ -541,11 +542,14 @@ void MidiClip::loadSettings( const QDomElement & _this )
 		node = node.nextSibling();
         }
 
-	m_steps = _this.attribute( "steps" ).toInt();
-	if( m_steps == 0 )
-	{
-		m_steps = TimePos::stepsPerBar();
-	}
+	// Luna cluster 3261: a malformed `steps` used to load verbatim whenever it was not exactly 0, and
+	// the beat step-menu and the length arithmetic multiply it in `int`. A pattern spans any number of
+	// bars (addSteps and cloneSteps grow it past one bar), so the limit is the largest count whose
+	// length arithmetic and one doubling by cloneSteps still fit in int, not one bar's tick count.
+	// Anything outside [1, limit] falls back to the default, as 0 always did.
+	const qint64 steps = _this.attribute( "steps" ).toLongLong();
+	const qint64 maxSteps = std::numeric_limits<int>::max() / (2 * static_cast<qint64>(TimePos::ticksPerBar()));
+	m_steps = (steps >= 1 && steps <= maxSteps) ? static_cast<int>(steps) : TimePos::stepsPerBar();
 
 	checkType();
 

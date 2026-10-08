@@ -248,7 +248,7 @@ bool CommandForm::setField(const QString& key, const QJsonValue& value)
 {
 	for (const Field& field : m_fields)
 	{
-		if (field.key == key) { return formfield::writeValue(field.editor, value); }
+		if (field.key == key) { return formfield::writeValue(field.editor, field.spec, value); }
 	}
 	return false;
 }
@@ -314,6 +314,18 @@ void CommandForm::showError(const QString& error, QWidget* invalid)
 	invalid->setFocus(Qt::OtherFocusReason);
 }
 
+void CommandForm::dropAnswer()
+{
+	// A run that did not succeed leaves nothing to read: the answer on screen and the Copy Result
+	// button belong to the previous run, and copying would hand over this run's failed result.
+	m_succeeded = false;
+	m_answer->clear();
+	m_answer->hide();
+	m_copy->hide();
+	m_run->setText(tr("Run"));
+	m_close->setText(tr("Cancel"));
+}
+
 void CommandForm::showAnswer()
 {
 	// The answer stays on screen to be read and copied (UX 97), and Close no longer reads as Cancel.
@@ -331,6 +343,9 @@ void CommandForm::accept()
 	QString error;
 	QWidget* invalid = nullptr;
 	for (const Field& field : m_fields) { field.editor->setAccessibleDescription(field.help); }
+	// Every attempt starts with no answer: whatever is on screen belongs to an earlier run, and a
+	// refused or failed attempt must not leave it readable or copyable (nor Close reading as Close).
+	dropAnswer();
 	if (!collect(&args, &error, &invalid))
 	{
 		showError(error, invalid);

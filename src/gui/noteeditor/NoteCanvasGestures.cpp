@@ -73,8 +73,17 @@ void NoteCanvas::extendPaint(const QPoint& pos)
 	const int start = std::max(0, NoteGrid::snapDown(static_cast<int>(m_state.grid.tickAtX(pos.x())), m_state.gridTicks));
 	if (key < 0) { return; }
 	const bool taken = std::any_of(m_painted.begin(), m_painted.end(),
-		[start](const std::pair<int, int>& cell) { return cell.second == start; });
+		[key, start](const std::pair<int, int>& cell) { return cell.first == key && cell.second == start; });
 	if (!taken) { m_painted.emplace_back(key, start); }
+}
+
+void NoteCanvas::paintAlong(const QPoint& from, const QPoint& to)
+{
+	// As strokeAlong: Qt delivers a fast drag sparsely, so the cells the path crossed between two events
+	// are painted as well - only the press and the delivered positions would otherwise get notes.
+	const QPoint path = to - from;
+	const int steps = std::max(1, std::max(std::abs(path.x()), std::abs(path.y())) / 2);
+	for (int i = 1; i <= steps; ++i) { extendPaint(from + path * i / steps); }
 }
 
 void NoteCanvas::strokeAlong(const QPoint& from, const QPoint& to)

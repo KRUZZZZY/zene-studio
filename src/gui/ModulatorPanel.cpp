@@ -38,6 +38,7 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include "AccessibleWidgets.h"
 #include "CommandForm.h"
 #include "ModulationLayer.h"
 #include "ControlRegistry.h"
@@ -121,6 +122,9 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	setAccessibleName(tr("Modulators"));
 	m_modulators = new QListWidget(this);
 	m_modulators->setAccessibleName(tr("Modulators"));
+	m_status = new QLabel(this);
+	m_status->setAccessibleName(tr("Last refused command"));
+	m_status->setWordWrap(true);
 	m_shape = new QComboBox(this);
 	m_shape->addItems(shapes());
 	m_shape->setProperty("controlCommand", QStringLiteral("modulator.rate_set"));
@@ -155,15 +159,17 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	auto* remove = selectionButton(tr("Remove"), "modulator.remove", this);
 	auto* bindButton = selectionButton(tr("Bind"), "modulator.target_set", this);
 	auto* unbind = selectionButton(tr("Unbind"), "modulator.target_remove", this);
-	connect(add, &QPushButton::clicked, this, [this] { addModulator(m_shape->currentText(), m_rate->value()); });
-	connect(remove, &QPushButton::clicked, this, [this] { removeSelected(); });
+	// The command a refused button ran reports why, and the user has to see it: the panel showed
+	// nothing at all, so Add at the modulator limit (or Remove with nothing selected) just did nothing.
+	connect(add, &QPushButton::clicked, this, [this] { say(addModulator(m_shape->currentText(), m_rate->value())); });
+	connect(remove, &QPushButton::clicked, this, [this] { say(removeSelected()); });
 	connect(bindButton, &QPushButton::clicked, this, [this] {
-		bind(m_channel->currentData().toString(), m_effect->currentData().toInt(), m_parameter->currentText(),
-			m_depth->value());
+		say(bind(m_channel->currentData().toString(), m_effect->currentData().toInt(), m_parameter->currentText(),
+			m_depth->value()));
 	});
-	connect(unbind, &QPushButton::clicked, this, [this] { unbindRow(m_targets->currentRow()); });
+	connect(unbind, &QPushButton::clicked, this, [this] { say(unbindRow(m_targets->currentRow())); });
 	connect(m_modulators, &QListWidget::currentRowChanged, this, [this] { showSelected(); });
-	connect(m_shape, &QComboBox::currentTextChanged, this, [this] { setShapeAndRate(m_shape->currentText(), m_rate->value()); });
+	connect(m_shape, &QComboBox::currentTextChanged, this, [this] { setShape(m_shape->currentText()); });
 	connect(m_rate, &QDoubleSpinBox::editingFinished, this, [this] { setShapeAndRate(m_shape->currentText(), m_rate->value()); });
 	connect(m_channel, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { fillEffects(); });
 	connect(m_effect, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { fillParameters(); });
@@ -213,6 +219,7 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	layout->addWidget(new QLabel(tr("Parameters it drives (a mixer channel's effects):"), this));
 	layout->addWidget(m_targets, 1);
 	layout->addLayout(bindRow);
+	layout->addWidget(m_status);
 	resize(620, 480);
 	fillChannels();
 	refresh();
@@ -236,6 +243,13 @@ void ModulatorPanel::refresh()
 	}
 	if (m_modulators->count() > 0) { m_modulators->setCurrentRow(std::min(keep, m_modulators->count() - 1)); }
 	showSelected();
+}
+
+void ModulatorPanel::say(const QString& message)
+{
+	m_status->setText(message);
+	// A refusal is an error, so it is spoken at once rather than after whatever is being said.
+	if (!message.isEmpty()) { a11y::announceStatus(m_status, message, a11y::Politeness::Assertive); }
 }
 
 void ModulatorPanel::showSelected()
@@ -354,6 +368,17 @@ QString ModulatorPanel::setShapeAndRate(const QString& shape, double rateHz)
 	if (selectedId().isEmpty()) { return tr("no modulator is selected"); }
 	const QString result = refusal(run("modulator.rate_set", {{QStringLiteral("modulator"), selectedId()},
 		{QStringLiteral("shape"), shape}, {QStringLiteral("rate"), rateHz}}));
+	refresh();
+	return result;
+}
+
+QString ModulatorPanel::setShape(const QString& shape)
+{
+	if (selectedId().isEmpty()) { return tr("no modulator is selected"); }
+	// The rate box shows two decimals, so its value is not the modulator's exact rate: sending it
+	// back would round a rate like 1.234 Hz on a shape change. rate_set keeps what a call omits.
+	const QString result = refusal(run("modulator.rate_set", {{QStringLiteral("modulator"), selectedId()},
+		{QStringLiteral("shape"), shape}}));
 	refresh();
 	return result;
 }

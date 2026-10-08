@@ -30,11 +30,13 @@
 
 #include <QComboBox>
 #include <QJsonObject>
+#include <QListWidget>
 #include <QPushButton>
 #include <QSpinBox>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 #include "UndoHistoryPanel.h"
 
@@ -91,6 +93,105 @@ private slots:
 		QVERIFY(redo->isEnabled());
 
 		QTest::mouseClick(redo, Qt::LeftButton);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore + 1);
+	}
+
+	//! The list holds command steps only, but a direct editor edit is a journal step with no row.
+	//! Jumping to a row must count JOURNAL steps, or it stops one short of the row it names.
+	void aJumpToARowCoversTheUnlistedEditorStepsAfterIt()
+	{
+		const int tracksBefore = static_cast<int>(Engine::getSong()->tracks().size());
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("sample")}}).ok);
+		// A step with no transaction record: what an editor edit leaves behind.
+		journal->addJournalAction([] {}, [] {});
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("sample")}}).ok);
+
+		QCOMPARE(journal->undoDepth(), depthBefore + 3);  // two command steps and one editor step
+
+		UndoHistoryPanel panel;
+		QListWidget* list = panel.findChild<QListWidget*>();
+		QVERIFY(list != nullptr);
+		QPushButton* back = buttonFor(panel, "control.history_jump");
+		QVERIFY(back != nullptr);
+
+		// The older command row: undoing it takes all three steps with it.
+		list->setCurrentRow(1);
+		QVERIFY(back->isEnabled());
+		QTest::mouseClick(back, Qt::LeftButton);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore);
+	}
+
+	//! A redo issues a fresh journal serial, so the retained steps have a gap in their serials. A jump to
+	//! an older row must still undo exactly the retained steps from that row up, not one step more.
+	void aJumpAfterARedoCountsRetainedStepsNotSerialGaps()
+	{
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int tracksBefore = static_cast<int>(Engine::getSong()->tracks().size());
+		const int depthBefore = journal->undoDepth();
+		const auto addTrack = [] {
+			return ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+				{{QStringLiteral("type"), QStringLiteral("sample")}}).ok;
+		};
+		// A step below the rows under test, which a too-long jump would also undo.
+		QVERIFY(addTrack());
+		QVERIFY(addTrack());                                              // the row being jumped to
+		journal->addJournalAction([] {}, [] {});                          // an editor step, no row
+		QVERIFY(addTrack());
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), {}).ok);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.redo"), {}).ok);
+		QCOMPARE(journal->undoDepth(), depthBefore + 4);
+
+		UndoHistoryPanel panel;
+		QListWidget* list = panel.findChild<QListWidget*>();
+		QVERIFY(list != nullptr);
+		QPushButton* back = buttonFor(panel, "control.history_jump");
+		QVERIFY(back != nullptr);
+
+		// Rows, newest first: the redone track, the track under test, then the step below it.
+		list->setCurrentRow(1);
+		QTest::mouseClick(back, Qt::LeftButton);
+		QCOMPARE(journal->undoDepth(), depthBefore + 1);     // only the step below the row is left
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore + 1);
+	}
+
+	//! A new edit after an undo starts a new branch: the redone-away step is gone, and the retained steps
+	//! around it have a serial gap. A jump to an older row counts the retained steps only.
+	void aJumpAfterABranchEditCountsRetainedSteps()
+	{
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int tracksBefore = static_cast<int>(Engine::getSong()->tracks().size());
+		const int depthBefore = journal->undoDepth();
+		const auto addTrack = [] {
+			return ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+				{{QStringLiteral("type"), QStringLiteral("sample")}}).ok;
+		};
+		QVERIFY(addTrack());                                              // a step below the row
+		QVERIFY(addTrack());                                              // the row being jumped to
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), {}).ok);
+		QVERIFY(addTrack());                                              // a branch: the undone step is gone
+		QCOMPARE(journal->undoDepth(), depthBefore + 2);
+
+		UndoHistoryPanel panel;
+		QListWidget* list = panel.findChild<QListWidget*>();
+		QVERIFY(list != nullptr);
+		QPushButton* back = buttonFor(panel, "control.history_jump");
+		QVERIFY(back != nullptr);
+
+		// The list has three rows, newest first: the branch edit (serial 3), the undone edit it replaced
+		// (serial 2, still listed, redo-able), and the step below (serial 1). Row 1 is the undone one.
+		// Its jump walks back over the one retained step at or above serial 2 (the branch edit): one
+		// undo, so depthBefore + 1 and the step below stays. A serial difference would give 3 - 2 + 1 = 2
+		// undos, which takes the step below too: that is the defect this test catches.
+		list->setCurrentRow(1);
+		QTest::mouseClick(back, Qt::LeftButton);
+		QCOMPARE(journal->undoDepth(), depthBefore + 1);
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore + 1);
 	}
 

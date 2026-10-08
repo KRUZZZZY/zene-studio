@@ -77,13 +77,42 @@ int lastTempoRow(const QJsonArray& events)
 	return -1;
 }
 
+//! The bar @a row's event falls in, integrating the map's OWN time-signature events: an event's meter
+//! runs from its own tick to the next, so a 3/4 event shortens every bar after it. Dividing every tick by
+//! one global ticksPerBar ignored the map and showed the wrong bar once the metre changed (cluster 1768).
+//! @a events must be in ascending tick order, as transport.tempo_map_get returns them.
+int barAt(const QJsonArray& events, int row, int projectTicksPerBar)
+{
+	int perBar = std::max(1, projectTicksPerBar);
+	int barStart = 0;
+	int bar = 1;
+	for (int i = 0; i <= row; ++i)
+	{
+		const QJsonObject event = events.at(i).toObject();
+		const int tick = event.value(QStringLiteral("tick")).toInt();
+		while (tick - barStart >= perBar)
+		{
+			barStart += perBar;
+			++bar;
+		}
+		// The meter from THIS tick on; the bar it sits in was measured with the previous one.
+		const int numerator = event.value(QStringLiteral("numerator")).toInt();
+		const int denominator = event.value(QStringLiteral("denominator")).toInt();
+		if (numerator > 0 && denominator > 0)
+		{
+			perBar = std::max(1, DefaultTicksPerBar * numerator / denominator);
+		}
+	}
+	return bar;
+}
+
 //! One event's cells: bar, position (in the time format - bars|beats unless ticks or time is chosen, theme 7),
 //! tempo (with its ramp, when it has a later tempo to ramp to) and time signature.
-QStringList eventCells(const QJsonObject& event, int ticksPerBar, bool ramps)
+QStringList eventCells(const QJsonObject& event, int bar, bool ramps)
 {
 	const int tick = event.value(QStringLiteral("tick")).toInt();
 	const int numerator = event.value(QStringLiteral("numerator")).toInt();
-	return {QString::number(tick / std::max(1, ticksPerBar) + 1), musicaltime::positionText(tick),
+	return {QString::number(bar), musicaltime::positionText(tick),
 		cell(event.value(QStringLiteral("bpm")).toInt()) + (ramps ? QStringLiteral("  \u2197 ramp") : QString()),
 		numerator > 0 ? QStringLiteral("%1/%2").arg(numerator).arg(event.value(QStringLiteral("denominator")).toInt())
 			: QStringLiteral("-")};
@@ -224,7 +253,7 @@ void TempoMapPanel::refresh()
 	{
 		const QJsonObject event = events.at(row).toObject();
 		const bool ramps = event.value(QStringLiteral("ramp")).toBool() && row < lastTempo;
-		const QStringList cells = eventCells(event, ticksPerBar, ramps);
+		const QStringList cells = eventCells(event, barAt(events, row, ticksPerBar), ramps);
 		for (int column = 0; column < cells.size(); ++column)
 		{
 			m_table->setItem(row, column, new QTableWidgetItem(cells.at(column)));

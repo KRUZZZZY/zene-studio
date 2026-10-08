@@ -2686,6 +2686,7 @@ tests/src/gui/ExportChannelsTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
 tests/src/gui/FeedbackModeActionTest.cpp
 tests/src/gui/FolderSummaryLaneTest.cpp
+tests/src/gui/FollowActionEditorTest.cpp
 tests/src/gui/GrooveMenuTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/HelpAccessTest.cpp
@@ -2695,7 +2696,9 @@ tests/src/gui/ItemListPanelTest.cpp
 tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/LaneReadoutTest.cpp
 tests/src/gui/LibraryMenusTest.cpp
+tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/MainWindowGeometryTest.cpp
+tests/src/gui/MainWindowTest.cpp
 tests/src/gui/MenuTestSupport.h
 tests/src/gui/MidiClipLinkedEditTest.cpp
 tests/src/gui/MidiClockMenuTest.cpp
@@ -2705,6 +2708,7 @@ tests/src/gui/MidiReconnectActionTest.cpp
 tests/src/gui/MixerLatencyTextTest.cpp
 tests/src/gui/MixerMeteringTest.cpp
 tests/src/gui/MixerModesTest.cpp
+tests/src/gui/MixerSelectionIdentityTest.cpp
 tests/src/gui/MixerSendsOnFadersTest.cpp
 tests/src/gui/ModulatorPanelTest.cpp
 tests/src/gui/MpeInputActionTest.cpp
@@ -2714,6 +2718,8 @@ tests/src/gui/NoteGridTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/PerformViewTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
+tests/src/gui/PianoRollRecordTest.cpp
+tests/src/gui/PinConnectorTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/RackMenuTest.cpp
 tests/src/gui/RecordingRecoveryMenuTest.cpp
@@ -2729,6 +2735,7 @@ tests/src/gui/SessionTuningMenuTest.cpp
 tests/src/gui/ShellHomesTest.cpp
 tests/src/gui/ShellLayoutTest.cpp
 tests/src/gui/ShellTest.cpp
+tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp

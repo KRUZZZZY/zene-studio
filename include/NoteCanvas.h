@@ -178,6 +178,8 @@ private:
 	void extendPaint(const QPoint& pos);
 	//! The stroke's path from @a from to @a to: every note on it is marked, not only the one at its end.
 	void strokeAlong(const QPoint& from, const QPoint& to);
+	//! The paint stroke's path, walked like strokeAlong's: a cell between two mouse events is painted too.
+	void paintAlong(const QPoint& from, const QPoint& to);
 	void commitPaint();
 	void commitMute();
 	int sliceTick() const;  //!< the snapped tick a slice line stands at
@@ -238,6 +240,7 @@ private:
 	int m_muteTo = -1;                   //!< a mute stroke's state: 1 mute, 0 unmute, -1 not yet decided
 	QString m_justDrawn;                 //!< the note the last click drew: a double-click that drew it is not a properties request
 	ulong m_drawnAt = 0;                 //!< the timestamp of the release that drew it
+	double m_wheelNotches = 0.0;         //!< Alt+wheel notches left over from a partial wheel event
 	int m_auditionKey = -1;
 	std::vector<std::pair<int, int>> m_painted;  //!< the paint tool's cells so far: key, start tick
 	double m_panTicks = 0;               //!< the view at a middle-button press

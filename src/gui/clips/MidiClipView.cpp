@@ -240,9 +240,13 @@ void MidiClipView::constructContextMenu( QMenu * _cm )
 	else
 	{
 		// 0.5.0 L07 (ED-085): the chance and ratchet of the step under the menu (ClipEditsMenu.cpp).
+		// Luna cluster 3261: the product and the `- 1` were `int`, so a malformed step count
+		// (a negative or astronomically large one loaded from a project) overflowed here.
 		const QPoint at = mapFromGlobal(QCursor::pos());
-		const int step = (at.x() - BORDER_WIDTH) * m_clip->m_steps / std::max(1, width() - BORDER_WIDTH * 2);
-		addStepEditsMenu(_cm, m_clip, std::clamp(step, 0, std::max(0, m_clip->m_steps - 1)));
+		const qint64 step = (at.x() - BORDER_WIDTH) * m_clip->m_steps
+			/ std::max(1, width() - BORDER_WIDTH * 2);
+		addStepEditsMenu(_cm, m_clip,
+			static_cast<int>(std::clamp(step, qint64{0}, qint64{std::max(0, m_clip->m_steps - 1)})));
 	}
 	_cm->addSeparator();
 

@@ -795,6 +795,11 @@ set(LMMS_TESTS
 	src/gui/EffectRackAddTest.cpp
 	# 0.5.0 L11 / L12 (W3): the project menu's new entries, a track's lock, the gallery, the browser's remembered sources.
 	src/gui/LibraryMenusTest.cpp
+	# The shell window's own startup: a floating editor hides its whole frame, and an unattended
+	# first run does not record the skipped setup as done.
+	src/gui/MainWindowTest.cpp
+	# The custom theme's hot reload survives the stylesheet being deleted and recreated.
+	src/gui/LmmsStyleTest.cpp
 	# UI precondition #1 (040/ui-precond): include/WcagContrast.h at the AA
 	# boundary, and include/Accessibility.h on the shell surface the owner
 	# manual-tests - the helper, then the footer switches, the chrome bands and
@@ -819,6 +824,8 @@ set(LMMS_TESTS
 	src/gui/MixerModesTest.cpp
 	# 0.5.0 L08 metering: ballistics (MX-128), the Selected filter (MX-005), live input meters (MX-134), the phase view (MX-137).
 	src/gui/MixerMeteringTest.cpp
+	# The selected mixer channel follows its identity through a removal, a removal of itself, and a reorder.
+	src/gui/MixerSelectionIdentityTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
 	src/gui/ArrangerTimelineTest.cpp
 	# 4218c1e30 rework: the arranger's trim of a linked MIDI clip keeps the notes of the clip and its peers.
@@ -837,6 +844,8 @@ set(LMMS_TESTS
 	src/gui/ExportQualityControlsTest.cpp
 	# 0.5.0 F7: the export dialog's Channels row (stereo / surround)
 	src/gui/ExportChannelsTest.cpp
+	# The follow-action chain's rows: what the dialog writes for a loaded chance and for an edited one.
+	src/gui/FollowActionEditorTest.cpp
 	# The transport's Sync toggle (link.set_enabled) and its session read-out.
 	src/gui/SessionSyncActionTest.cpp
 	# The piano roll's Randomize / Humanize / Scale velocities items (note.randomize, note.velocity_scale).
@@ -866,6 +875,8 @@ set(LMMS_TESTS
 	src/gui/ChainPresetMenuTest.cpp
 	# A mixer channel's Rack menu (rack.* chains, routing and macros).
 	src/gui/RackMenuTest.cpp
+	# The pin matrix's hover cursor, and what a drag over it does.
+	src/gui/PinConnectorTest.cpp
 	# Edit > Modulators (window.modulators; modulator.*), against one real effect on a mixer channel.
 	src/gui/ModulatorPanelTest.cpp
 	# File > Script Memory Budget... (script.set_memory_budget).
@@ -912,6 +923,9 @@ set(LMMS_TESTS
 	src/gui/InstrumentSetupUiTest.cpp
 	# M3 item 4: the keyboard shortcuts page lists what the menus bind, filterable.
 	src/gui/ShortcutsPageTest.cpp
+	# shortcuts.* driven against the real menus: a value that is not key text, an undo of a set
+	# that must not clear bindings it never touched, and a reset of an action no menu has.
+	src/gui/ShortcutsCommandsTest.cpp
 	# 0.5.0 wave 3 theme 19: the workflow recording indicator and the run report
 	src/gui/WorkflowFeedbackTest.cpp
 	# 0.5.0 theme 24: the task indicator and its list
@@ -924,6 +938,8 @@ set(LMMS_TESTS
 	src/gui/AgentSurfaceReportTest.cpp
 	# R7.3: the piano roll's frame time at 1k/5k/10k/50k notes (an opt-in +20% gate).
 	src/gui/PianoRollBenchmarkTest.cpp
+	# The piano roll's live MIDI record pass: a stopped pass leaves no pending start behind.
+	src/gui/PianoRollRecordTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
@@ -1505,6 +1521,7 @@ set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offs
 set_tests_properties(LaneReadoutTest SampleEditorDialogTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
 	ShellHomesTest TaskCenterTest TaskIndicatorTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectRackAddTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -1519,6 +1536,7 @@ set_tests_properties(SessionSubSceneGridTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(InstrumentSetupUiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ShortcutsCommandsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(HelpAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AgentSurfaceReportTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -1527,6 +1545,7 @@ if(ZENE_HAVE_COLLAB)
 endif()
 set_tests_properties(WorkspaceAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PianoRollBenchmarkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PianoRollRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # AccessibilityHelperTest constructs the shell, so it takes the same
 # platform registration (040/ui-precond). WcagContrastTest is guiless and needs
 # none: QColor loads no platform plugin.
@@ -1548,6 +1567,7 @@ set_tests_properties(UndoHistoryPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFOR
 set_tests_properties(ExportQualityControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportChannelsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionSyncActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(FollowActionEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -1561,6 +1581,7 @@ set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offs
 set_tests_properties(ClipEditsMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PinConnectorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ModulatorPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ScriptBudgetActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectHostingMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

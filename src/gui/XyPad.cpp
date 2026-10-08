@@ -173,7 +173,9 @@ void XyPadArea::paintEvent(QPaintEvent*)
 	p.setPen(QPen(pal.separator, 1));
 	p.drawLine(width() / 2, 0, width() / 2, height());
 	p.drawLine(0, height() / 2, width(), height() / 2);
-	const QPointF at(m_point.x() * width(), (1.0 - m_point.y()) * height());
+	// The last pixel is the end of the range here too, as in moveTo(): drawing over width() would
+	// put the dot's centre outside the widget and clip the circle at a range endpoint.
+	const QPointF at(m_point.x() * std::max(1, width() - 1), (1.0 - m_point.y()) * std::max(1, height() - 1));
 	p.setRenderHint(QPainter::Antialiasing);
 	p.setBrush(pal.accent);
 	p.setPen(Qt::NoPen);

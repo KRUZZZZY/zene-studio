@@ -30,11 +30,14 @@
 #include <QtTest>
 
 #include <QJsonObject>
+#include <QLabel>
 #include <QToolButton>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "SessionArrangementRecorder.h"
 #include "SessionTransportBar.h"
+#include "Song.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -100,6 +103,31 @@ private slots:
 		QVERIFY(!record->isChecked());
 		follow->click();  // back to where it was
 		QCOMPARE(state("session.follow_get_state").value(QStringLiteral("follow_actions_enabled")).toBool(), followBefore);
+	}
+
+	//! Land refuses while a recorded launch has not stopped, and says why. The row threw that
+	//! message away, so the button that did nothing at all was the whole of what the user saw.
+	void aRefusedButtonSaysWhy()
+	{
+		SessionTransportBar bar;
+		QToolButton* record = controlFor(bar, "session.arrangement_record_arm");
+		QToolButton* land = controlFor(bar, "session.arrangement_record_land");
+		QVERIFY(record && land);
+		record->click();  // arm, so the recorder takes what is pushed below
+		QVERIFY(state("session.arrangement_record_status").value(QStringLiteral("armed")).toBool());
+		// A launch with no stop yet: the audio thread would push this while performing.
+		QVERIFY(Engine::getSong()->sessionScheduler().arrangementRecorder().recordStart(0, 0, 0));
+		bar.refresh();
+		QVERIFY(land->isEnabled());  // something is recorded now
+		land->click();
+
+		QStringList shown;
+		for (QLabel* label : bar.findChildren<QLabel*>())
+		{
+			if (!label->text().isEmpty()) { shown << label->text(); }
+		}
+		QVERIFY2(shown.join(QStringLiteral(" | ")).contains(QStringLiteral("have not stopped yet")),
+			qPrintable(shown.join(QStringLiteral(" | "))));
 	}
 };
 

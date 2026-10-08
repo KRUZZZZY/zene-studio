@@ -238,7 +238,7 @@ void NoteCanvas::mouseMoveEvent(QMouseEvent* event)
 	case Drag::Pan: panTo(event->pos()); return;
 	case Drag::Erase:
 	case Drag::Mute: strokeAlong(from, event->pos()); break;
-	case Drag::Paint: extendPaint(event->pos()); break;
+	case Drag::Paint: paintAlong(from, event->pos()); break;
 	case Drag::Audition: scrubTo(event->pos()); break;
 	default: break;
 	}

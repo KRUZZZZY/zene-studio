@@ -30,6 +30,7 @@
 #include <QJsonObject>
 #include <QLineEdit>
 #include <QMenu>
+#include <QSignalBlocker>
 
 #include "BrowserCatalog.h"
 #include "ControlRegistry.h"
@@ -55,9 +56,11 @@ std::optional<QString> askForTag()
 	return ok && !text.isEmpty() ? std::optional<QString>(text) : std::nullopt;
 }
 
-void setTag(const QString& path, const QString& tag, bool on)
+//! Runs the add/remove command. The result is returned so a caller can tell the user when the
+//! store refused or failed to persist: a tag that was not saved must not look like one that was.
+ControlResult setTag(const QString& path, const QString& tag, bool on)
 {
-	ControlRegistry::instance()->invoke(on ? QStringLiteral("browser.tag.add") : QStringLiteral("browser.tag.remove"),
+	return ControlRegistry::instance()->invoke(on ? QStringLiteral("browser.tag.add") : QStringLiteral("browser.tag.remove"),
 		{{QStringLiteral("path"), path}, {QStringLiteral("tag"), tag}});
 }
 
@@ -73,23 +76,33 @@ void addBrowserTagMenu(QMenu* menu, const QString& path)
 	QMenu* tags = menu->addMenu(QMenu::tr("Tags"));
 	const QJsonArray known = ControlRegistry::instance()->invoke(QStringLiteral("browser.tags"), QJsonObject{})
 		.result.value(QStringLiteral("tags")).toArray();
-	// The file's own tags, read from the store under the key the commands use (browser.tags gives
+	// Each file's own tags are read from the store under the key the commands use (browser.tags gives
 	// each tag's file COUNT, not the files). Reading only: every change goes through a command.
-	const QStringList mine = BrowserTagStore::instance().tagsOf(browserCanonicalKey(path));
 	for (const QJsonValue& value : known)
 	{
 		const QString tag = value.toObject().value(QStringLiteral("tag")).toString();
 		QAction* action = tags->addAction(tag);
 		action->setCheckable(true);
-		action->setChecked(mine.contains(tag));
+		// The store compares tags case-insensitively, so ask it rather than QStringList::contains.
+		action->setChecked(BrowserTagStore::instance().has(browserCanonicalKey(path), tag));
 		action->setData(QStringLiteral("browser.tag.add"));
-		QObject::connect(action, &QAction::toggled, tags, [path, tag](bool on) { setTag(path, tag, on); });
+		QObject::connect(action, &QAction::toggled, tags, [path, tag, action](bool on) {
+			const ControlResult result = setTag(path, tag, on);
+			if (result.ok) { return; }
+			// The tag was not persisted: undo the check the click just made, and say why.
+			const QSignalBlocker block(action);  // no recursion: the revert is not another edit
+			action->setChecked(!on);
+			action->setStatusTip(result.errorMessage);
+		});
 	}
 	if (!known.isEmpty()) { tags->addSeparator(); }
 	QAction* fresh = tags->addAction(QMenu::tr("New tag..."));
 	fresh->setData(QStringLiteral("browser.tag.add"));
-	QObject::connect(fresh, &QAction::triggered, tags, [path] {
-		if (const std::optional<QString> tag = askForTag()) { setTag(path, *tag, true); }
+	QObject::connect(fresh, &QAction::triggered, tags, [path, fresh] {
+		const std::optional<QString> tag = askForTag();
+		if (!tag) { return; }
+		const ControlResult result = setTag(path, *tag, true);
+		fresh->setStatusTip(result.ok ? QString() : result.errorMessage);
 	});
 }
 

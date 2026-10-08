@@ -349,10 +349,13 @@ void ClipView::setColor(const std::optional<QColor>& color)
 	std::set<Track*> journaledTracks;
 
 	auto selectedClips = getClickedClips();
+	// 0.5.0 theme 2 (Luna cluster 5578): recoloring edits the clip, so a locked one keeps its color.
+	int kept = 0;
 	for (auto clipv : selectedClips)
 	{
 		auto clip = clipv->getClip();
 		auto track = clip->getTrack();
+		if (EditLocks::instance().locks(clip)) { ++kept; continue; }
 
 		// TODO journal whole Song or group of clips instead of one journal entry for each track
 
@@ -371,6 +374,7 @@ void ClipView::setColor(const std::optional<QColor>& color)
 		clip->setColor(color);
 		clipv->update();
 	}
+	cliplocks::announceKept(kept);
 
 	Engine::getSong()->setModified();
 }
@@ -1267,24 +1271,34 @@ void ClipView::paste()
 
 void ClipView::toggleMute( QVector<ClipView *> clipvs )
 {
+	// 0.5.0 theme 2 (Luna cluster 5578): the Ctrl+middle-click gesture already refuses a locked
+	// clip at the press, so this menu path refuses it too - the edit must not depend on how it was
+	// asked for.
+	int kept = 0;
 	for( auto clipv: clipvs )
 	{
 		// No need to check for nullptr because we check while building the clipvs QVector
+		if (EditLocks::instance().locks(clipv->getClip())) { ++kept; continue; }
 		clipv->getClip()->toggleMute();
 	}
+	cliplocks::announceKept(kept);
 }
 
 void ClipView::toggleSelectedAutoResize()
 {
 	const bool newState = !m_clip->getAutoResize();
 	std::set<Track*> journaledTracks;
+	// 0.5.0 theme 2 (Luna cluster 5578): auto-resize edits the clip, so a locked one keeps its state.
+	int kept = 0;
 	for (auto clipv: getClickedClips())
 	{
 		Clip* clip = clipv->getClip();
+		if (EditLocks::instance().locks(clip)) { ++kept; continue; }
 		if (journaledTracks.insert(clip->getTrack()).second) { clip->getTrack()->addJournalCheckPoint(); }
 		clip->setAutoResize(newState);
 		clip->updateLength();
 	}
+	cliplocks::announceKept(kept);
 }
 
 /*! \brief How many pixels a bar takes for this ClipView.

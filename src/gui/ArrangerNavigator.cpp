@@ -221,8 +221,10 @@ private:
 		setSingleStep(static_cast<int>(std::max<tick_t>(1, view / 8)));
 		setValue(static_cast<int>(start));
 		m_following = false;
+		// The view's end is exclusive: the last bar named is the one the view ends INSIDE.
+		const tick_t lastTick = view > 0 ? start + view - 1 : start;
 		const QString text = QObject::tr("Showing bars %1 to %2 of %3").arg(start / TimePos::ticksPerBar() + 1)
-			.arg((start + view) / TimePos::ticksPerBar() + 1).arg(Engine::getSong()->length());
+			.arg(lastTick / TimePos::ticksPerBar() + 1).arg(Engine::getSong()->length());
 		if (accessibleDescription() != text) { setAccessibleDescription(text); }
 		update();
 	}

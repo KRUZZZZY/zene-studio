@@ -57,6 +57,9 @@ LMMS_EXPORT void addRackMenu(QMenu* menu, const MixerChannel* channel);
 //! The line for a rack.get_state reply.
 LMMS_EXPORT QString rackStatusText(const QJsonObject& state);
 
+//! One "Unbind <macro>" item's label, from a target of rack.get_state.
+LMMS_EXPORT QString unbindTargetText(const QJsonObject& target);
+
 //! Tests replace the macro-name prompt (default: a text input; empty cancels) and the macro-value
 //! prompt (default: a number input 0..1 seeded with @a current; nullopt cancels).
 LMMS_EXPORT void setRackMacroNamePrompt(std::function<QString()> prompt);

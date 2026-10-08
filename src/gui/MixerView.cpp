@@ -244,6 +244,13 @@ MixerView::MixerView(Mixer* mixer) :
 }
 
 
+namespace
+{
+//! Defined with the other helpers below; the call sites that keep the strips in step use it.
+QString channelOrderSignatureOf(Mixer* mixer);
+} // namespace
+
+
 int MixerView::addNewChannel()
 {
 	// add new mixer channel and redraw the form.
@@ -257,6 +264,8 @@ int MixerView::addNewChannel()
 
 	updateMixerChannel(newChannelIndex);
 
+	// the new strip is already in place: the next sync pass has nothing to rebuild
+	m_channelOrderSignature = channelOrderSignatureOf(mix);
 	updateMaxChannelSelector();
 
 	return newChannelIndex;
@@ -265,6 +274,10 @@ int MixerView::addNewChannel()
 
 void MixerView::refreshDisplay()
 {
+	// the channel the user was on, by the stable id taken when it was selected: the model may have
+	// changed since (a removal before it moves its index), and the views are about to be deleted
+	const int selectedId = m_selectedChannelId;
+
 	// delete all views and re-add them
 	for (int i = 1; i<m_mixerChannelViews.size(); ++i)
 	{
@@ -290,8 +303,13 @@ void MixerView::refreshDisplay()
 		m_racksLayout->addWidget(m_mixerChannelViews[i]->m_effectRackView);
 	}
 
-	// set selected mixer channel to 0
-	setCurrentMixerChannel(0);
+	// select the same channel as before, or Master when it is gone (or was Master already)
+	int selected = 0;
+	for (int i = 1; selectedId >= 0 && i < m_mixerChannelViews.size(); ++i)
+	{
+		if (m_mixerChannelViews[i]->mixerChannel()->id() == selectedId) { selected = i; }
+	}
+	setCurrentMixerChannel(selected);
 
 	// update all mixer lines
 	for (int i = 0; i < m_mixerChannelViews.size(); ++i)
@@ -299,6 +317,7 @@ void MixerView::refreshDisplay()
 		updateMixerChannel(i);
 	}
 
+	m_channelOrderSignature = channelOrderSignatureOf(getMixer());
 	updateMaxChannelSelector();
 	refreshVcaStrips();
 }
@@ -320,6 +339,19 @@ QString vcaSignatureOf(const Mixer* mixer)
 	return signature;
 }
 
+//! The channels' ids, in order: what the strips are bound to. A reorder (mixer.order_by_tracks,
+//! moveChannelLeft from the model) keeps the count, so the count alone never notices it.
+QString channelOrderSignatureOf(Mixer* mixer)
+{
+	QString signature;
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+	{
+		MixerChannel* channel = mixer->mixerChannel(i);
+		if (channel != nullptr) { signature += QString::number(channel->id()) + QLatin1Char(','); }
+	}
+	return signature;
+}
+
 //! The fader the arrow keys move: the strip's, unless it is a dimmed "No send" fader (theme 6), which moves nothing.
 Fader* keyboardFader(MixerChannelView* view)
 {
@@ -336,8 +368,11 @@ void MixerView::engineDeletedChannel()
 
 void MixerView::syncWithMixer()
 {
-	if (m_mixerChannelViews.size() != static_cast<int>(getMixer()->numChannels()))
+	if (m_mixerChannelViews.size() != static_cast<int>(getMixer()->numChannels())
+		|| m_channelOrderSignature != channelOrderSignatureOf(getMixer()))
 	{
+		// A reorder keeps the count but moves the channels, and each strip binds its solo, mute,
+		// pan and volume models to the channel at its own number: rebuild them.
 		refreshDisplay();
 		return;
 	}
@@ -470,6 +505,9 @@ void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 {
 	// select
 	m_currentMixerChannel = channel;
+	// Taken now, while the view's index is current; see m_selectedChannelId.
+	MixerChannel* selected = channel->mixerChannel();
+	m_selectedChannelId = selected != nullptr ? selected->id() : -1;
 	m_racksLayout->setCurrentWidget(m_mixerChannelViews[channel->channelIndex()]->m_effectRackView);
 
 	// set up send knob
@@ -558,6 +596,9 @@ void MixerView::deleteChannel(int index)
 	}
 	m_mixerChannelViews.remove(index);
 
+	// the selection follows its channel: a channel deleted in front of it moved it down one
+	if (selLine > index) { --selLine; }
+
 	// select the next channel
 	if (selLine >= m_mixerChannelViews.size())
 	{
@@ -565,6 +606,8 @@ void MixerView::deleteChannel(int index)
 	}
 	setCurrentMixerChannel(selLine);
 
+	// the views were renumbered with the channels: the next sync pass has nothing to rebuild
+	m_channelOrderSignature = channelOrderSignatureOf(getMixer());
 	updateMaxChannelSelector();
 }
 
@@ -598,6 +641,8 @@ void MixerView::moveChannelLeft(int index)
 	m_mixerChannelViews[index]->setChannelIndex(index - 1);
 	m_mixerChannelViews[index - 1]->setChannelIndex(index);
 	std::swap(m_mixerChannelViews[index - 1], m_mixerChannelViews[index]);
+	// the strips moved with the channels, so the next sync pass has nothing to rebuild
+	m_channelOrderSignature = channelOrderSignatureOf(getMixer());
 }
 
 

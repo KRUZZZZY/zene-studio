@@ -240,6 +240,52 @@ private slots:
 		QVERIFY(MidiLearn::instance()->lastBindingThreadId() == seamBefore);
 	}
 
+	// A disarm that races a control-change already claimed or about to be claimed on the MIDI input
+	// thread. Whatever the interleaving, once the GUI thread has disarmed AND cancelled and the input
+	// thread has returned, no control-change may be left waiting: a waiting one would bind to whatever
+	// control the next learn focuses. The interleaving is up to the scheduler, so this repeats the race.
+	void ADisarmRacingAClaimLeavesNothingWaiting()
+	{
+		FloatModel target(0.5f, 0.0f, 1.0f, 0.01f);
+		for (int round = 0; round < 1000; ++round)
+		{
+			MidiLearn::instance()->setEnabled(true);
+			MidiLearn::instance()->setFocusTarget(&target);
+			std::thread inputThread([]() {
+				MidiLearn::instance()->handleMidiEvent(makeCc(2, 74, 127));
+			});
+			MidiLearn::instance()->setEnabled(false);
+			MidiLearn::instance()->cancelPendingBinding();
+			inputThread.join();
+			QVERIFY2(!MidiLearn::instance()->hasPendingBinding(),
+				qPrintable(QStringLiteral("round %1: a control-change claimed across the disarm was left waiting").arg(round)));
+			MidiLearn::instance()->setFocusTarget(nullptr);
+		}
+		QVERIFY(target.controllerConnection() == nullptr);
+	}
+
+	// The stale request, end to end: a control-change claimed for one learn, the learn disarmed and
+	// cancelled, re-armed on another control. Applying the queue must not bind the old request.
+	void AStaleRequestIsNotBoundByALaterLearn()
+	{
+		FloatModel first(0.5f, 0.0f, 1.0f, 0.01f);
+		FloatModel second(0.5f, 0.0f, 1.0f, 0.01f);
+		MidiLearn::instance()->setEnabled(true);
+		MidiLearn::instance()->setFocusTarget(&first);
+		deliverFromMidiInputThread(makeCc(2, 74, 127));
+		QVERIFY(MidiLearn::instance()->hasPendingBinding());
+
+		MidiLearn::instance()->setEnabled(false);
+		MidiLearn::instance()->setFocusTarget(nullptr);
+		MidiLearn::instance()->cancelPendingBinding();
+		MidiLearn::instance()->setEnabled(true);
+		MidiLearn::instance()->setFocusTarget(&second);
+		QVERIFY(!MidiLearn::instance()->applyPendingBinding());
+		QVERIFY(second.controllerConnection() == nullptr);
+	}
+
+	// Ported from the integration branch (cluster new-p8-156), unchanged in what it asserts: a pending
+	// request that outlives a disarm/rearm must not bind to the new focus.
 	void PendingBindingIsDiscardedAfterDisarmAndRearm()
 	{
 		FloatModel oldTarget(0.5f, 0.0f, 1.0f, 0.01f);
@@ -262,6 +308,28 @@ private slots:
 
 		QVERIFY(!MidiLearn::instance()->applyPendingBinding());
 		QVERIFY(newTarget.controllerConnection() == nullptr);
+		QCOMPARE(MidiLearn::instance()->bindingCount(), before);
+		QVERIFY(!MidiLearn::instance()->hasPendingBinding());
+	}
+
+	// The defect 156 names, without the disarm in between: a request claimed for one focus must not be
+	// applied once the focus has moved to another control, even while the learn stays armed.
+	void PendingBindingIsDiscardedByAFocusChange()
+	{
+		FloatModel oldTarget(0.5f, 0.0f, 1.0f, 0.01f);
+		FloatModel newTarget(0.5f, 0.0f, 1.0f, 0.01f);
+		const unsigned int before = MidiLearn::instance()->bindingCount();
+
+		MidiLearn::instance()->setFocusTarget(&oldTarget);
+		MidiLearn::instance()->setEnabled(true);
+		deliverFromMidiInputThread(makeCc(1, 17, 64));
+		QVERIFY(MidiLearn::instance()->hasPendingBinding());
+
+		MidiLearn::instance()->setFocusTarget(&newTarget);
+
+		QVERIFY(!MidiLearn::instance()->applyPendingBinding());
+		QVERIFY(newTarget.controllerConnection() == nullptr);
+		QVERIFY(oldTarget.controllerConnection() == nullptr);
 		QCOMPARE(MidiLearn::instance()->bindingCount(), before);
 		QVERIFY(!MidiLearn::instance()->hasPendingBinding());
 	}

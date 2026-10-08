@@ -31,10 +31,12 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
+#include <QPixmap>
 
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
+#include "DesignTokens.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "XyPad.h"
@@ -58,6 +60,55 @@ double macroValue(const QString& channel, const QString& macro)
 		if (entry.toObject().value(QStringLiteral("macro")).toString() == macro) { return entry.toObject().value(QStringLiteral("value")).toDouble(); }
 	}
 	return -1.0;
+}
+
+//! The sub-pixel centre of the dot along one axis, from the antialiasing coverage of every pixel
+//! (the dot is the accent painted over the pad's control fill, so each pixel's distance from the
+//! accent IS its coverage). Sub-pixel, because a whole-pixel box cannot see a one-pixel offset.
+double dotCentreAlong(XyPadArea& area, Qt::Orientation axis)
+{
+	QPixmap shot(area.size());
+	shot.fill(Qt::transparent);
+	area.render(&shot);
+	const QImage image = shot.toImage().convertToFormat(QImage::Format_RGB32);
+	const QColor accent = tokens::palette().accent;
+	const QColor base = tokens::palette().control;
+	const QColor cross = tokens::palette().separator;
+	const auto channel = [](const QColor& colour, int c) {
+		return c == 0 ? colour.red() : (c == 1 ? colour.green() : colour.blue());
+	};
+	//! The pad paints a flat control fill, a flat separator cross and the accent dot on top, so a
+	//! pixel that is still one of the two flat colours carries no dot and no weight at all.
+	const auto isBackground = [channel, &base, &cross](const QColor& pixel) {
+		return (std::abs(pixel.red() - base.red()) < 2 && std::abs(pixel.green() - base.green()) < 2
+				   && std::abs(pixel.blue() - base.blue()) < 2)
+			|| (std::abs(pixel.red() - cross.red()) < 2 && std::abs(pixel.green() - cross.green()) < 2
+				&& std::abs(pixel.blue() - cross.blue()) < 2);
+	};
+	const auto coverage = [channel, &base](const QColor& pixel, const QColor& over) {
+		double sum = 0.0;
+		for (int c = 0; c < 3; ++c)
+		{
+			const double span = double(channel(over, c)) - double(channel(base, c));
+			if (std::abs(span) < 1.0) { continue; }  // no contrast on this channel: it says nothing
+			sum += std::clamp((double(channel(pixel, c)) - double(channel(base, c))) / span, 0.0, 1.0);
+		}
+		return sum / 3.0;
+	};
+	double weight = 0.0, moment = 0.0;
+	for (int y = 0; y < image.height(); ++y)
+	{
+		for (int x = 0; x < image.width(); ++x)
+		{
+			const QColor pixel = image.pixelColor(x, y);
+			if (isBackground(pixel)) { continue; }
+			const double w = coverage(pixel, accent);
+			if (w <= 0.0) { continue; }
+			weight += w;
+			moment += w * (axis == Qt::Horizontal ? x + 0.5 : y + 0.5);
+		}
+	}
+	return weight > 0.0 ? moment / weight : -1.0;
 }
 
 QLabel* statusOf(XyPadDialog& dialog)
@@ -121,6 +172,41 @@ private slots:
 		area->moved(QPointF(0.7, 0.7));
 		QVERIFY2(status->text().startsWith(QStringLiteral("Not set")), qPrintable(status->text()));
 		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-0")) - x0) < 1e-4);  // X did not move alone
+	}
+
+	//! Cluster 5481: the dot is drawn at point * width() / height(), while the pointer maps a
+	//! position over width() - 1 / height() - 1, so at a range endpoint the dot's centre sits a
+	//! whole pixel outside the widget and half of the circle is clipped away. The dot at one end
+	//! must be the mirror image of the dot at the other end about the widget's centre.
+	void theDotIsNotClippedAtTheRangeEndpoints()
+	{
+		XyPadArea area;
+		area.resize(160, 160);
+		const auto centreAt = [&area](QPointF point, Qt::Orientation axis) {
+			area.setPoint(point);
+			return dotCentreAlong(area, axis);
+		};
+		// The two ends of X, at mid height: the same dot, mirrored about the middle of the widget.
+		const double leftX = centreAt(QPointF(0.0, 0.5), Qt::Horizontal);
+		const double rightX = centreAt(QPointF(1.0, 0.5), Qt::Horizontal);
+		QVERIFY2(leftX > 0.0 && rightX > 0.0, "the pad painted no dot at an X endpoint");
+		QVERIFY2(std::abs(leftX + rightX - (area.width() - 1)) < 0.6,
+			qPrintable(QStringLiteral("the dot at X=0 is centred at %1 and the dot at X=1 at %2; mirrored about the "
+				"widget they would sum to %3 - one end's dot is clipped")
+				.arg(leftX, 0, 'f', 2).arg(rightX, 0, 'f', 2).arg(area.width() - 1)));
+		// The two ends of Y, at mid width.
+		const double bottomY = centreAt(QPointF(0.5, 0.0), Qt::Vertical);
+		const double topY = centreAt(QPointF(0.5, 1.0), Qt::Vertical);
+		QVERIFY2(bottomY > 0.0 && topY > 0.0, "the pad painted no dot at a Y endpoint");
+		QVERIFY2(std::abs(bottomY + topY - (area.height() - 1)) < 0.6,
+			qPrintable(QStringLiteral("the dot at Y=0 is centred at %1 and the dot at Y=1 at %2; mirrored about the "
+				"widget they would sum to %3 - one end's dot is clipped")
+				.arg(bottomY, 0, 'f', 2).arg(topY, 0, 'f', 2).arg(area.height() - 1)));
+		// And a mid-range dot is where it always was (the fix must not move the interior).
+		const double middleX = centreAt(QPointF(0.5, 0.5), Qt::Horizontal);
+		const double middleY = centreAt(QPointF(0.5, 0.5), Qt::Vertical);
+		QVERIFY(std::abs(middleX - area.width() / 2.0) < 0.6);
+		QVERIFY(std::abs(middleY - area.height() / 2.0) < 0.6);
 	}
 };
 

@@ -111,6 +111,40 @@ private slots:
 			.result.value(QStringLiteral("enabled")).toBool());
 		QCOMPARE(sync->text(), label);
 	}
+
+	//! A refused toggle lends its message to the tooltip; the next toggle that succeeds has to
+	//! give the action's own tooltip back, or the failure follows the user around for good.
+	void aRefusedToggleIsForgottenAfterASuccess()
+	{
+		QObject owner;
+		QAction* sync = makeSessionSyncAction(&owner);
+		const QString normal = sync->toolTip();
+		QVERIFY(!normal.isEmpty());
+		sync->setToolTip(QStringLiteral("link.set_enabled refused: no multicast on this host"));
+		sync->trigger();  // either way: this may refuse again and re-set the message
+		sync->trigger();  // ...and this one hands the tooltip back
+		QCOMPARE(sync->toolTip(), normal);
+	}
+
+	//! Sync can be switched on by another client while this action is unchecked. The poll runs
+	//! whatever the toggle reads, so the action learns of it instead of waiting for a local click.
+	void anEnableMadeElsewhereShowsWhileUnchecked()
+	{
+		QObject owner;
+		QAction* sync = makeSessionSyncAction(&owner);
+		QVERIFY(!sync->isChecked());
+		const ControlResult on = ControlRegistry::instance()->invoke(QStringLiteral("link.set_enabled"),
+			{{QStringLiteral("enabled"), true}});
+		if (!on.ok
+			|| !ControlRegistry::instance()->invoke(QStringLiteral("link.get_state"), QJsonObject{})
+				   .result.value(QStringLiteral("enabled")).toBool())
+		{
+			QSKIP(qPrintable(QStringLiteral("session sync could not start here (no multicast?): ") + on.errorMessage));
+		}
+		QTRY_VERIFY_WITH_TIMEOUT(sync->isChecked(), 4000);
+		QVERIFY2(sync->text().startsWith(QStringLiteral("Sync: ")), qPrintable(sync->text()));
+		ControlRegistry::instance()->invoke(QStringLiteral("link.set_enabled"), {{QStringLiteral("enabled"), false}});
+	}
 };
 
 QTEST_MAIN(SessionSyncActionTest)

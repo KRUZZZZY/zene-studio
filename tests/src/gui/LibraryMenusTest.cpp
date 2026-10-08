@@ -47,6 +47,7 @@
 #include "Engine.h"
 #include "LibraryCommandMenus.h"
 #include "MenuTestSupport.h"
+#include "ProjectInfo.h"
 #include "SampleTrack.h"
 #include "SideBarWidget.h"
 #include "Song.h"
@@ -128,6 +129,40 @@ private slots:
 		}
 		QVERIFY(lmms::test::menuAction(&menu, {QStringLiteral("New Document"), QStringLiteral("Mastering")}) != nullptr);
 		QVERIFY(lmms::test::menuAction(&menu, {QStringLiteral("Other Projects"), QStringLiteral("Open as Reference...")}) != nullptr);
+	}
+
+	void theDocumentTypeMenuTicksOneTypeAtATime()  // 0.5.0 F3: WF-048 - the items are exclusive
+	{
+		QMenu menu;
+		LibraryCommandMenus::populateProject(&menu);
+		const QStringList every = ProjectInfo::documentTypes();
+		QVERIFY(every.size() >= 2);
+		QMenu* types = nullptr;
+		for (QAction* action : menu.actions())
+		{
+			if (action->menu() != nullptr && action->text() == QObject::tr("Document Type")) { types = action->menu(); }
+		}
+		QVERIFY(types != nullptr);
+
+		// The document's own type, and no other, is ticked.
+		const auto ticked = [types] {
+			QStringList on;
+			for (QAction* action : types->actions())
+			{
+				if (action->isCheckable() && action->isChecked()) { on << action->text(); }
+			}
+			return on;
+		};
+		QCOMPARE(ticked(), QStringList{ProjectInfo::instance().documentType()});
+
+		const QString other = every.contains(QStringLiteral("mastering")) ? QStringLiteral("mastering") : every.at(1);
+		QAction* chosen = lmms::test::menuAction(&menu, {QObject::tr("Document Type"), other});
+		QVERIFY(chosen != nullptr);
+		chosen->trigger();
+		QCOMPARE(ticked(), QStringList{other});  // choosing a type unticks the one it replaced
+
+		chosen->trigger();  // choosing the type already chosen leaves it ticked
+		QCOMPARE(ticked(), QStringList{other});
 	}
 
 	void theTitleNamesANonDefaultDocumentType()  // 0.5.0 F3: WF-048 (production, the default, is untagged)
@@ -289,6 +324,19 @@ private slots:
 		QCOMPARE(actions->previewing(), wav);
 		emit qApp->focusChanged(search->results(), outside);  // focus leaving it
 		QVERIFY(actions->previewing().isEmpty());
+	}
+
+	void aResultRowForMissingMediaShowsPlaceholdersInsteadOfZeroAnd1970()
+	{
+		const QString gone = m_dir.filePath(QStringLiteral("not-here.wav"));
+		QVERIFY(!QFileInfo::exists(gone));
+		// Project Media marks a missing reference's unknown metadata with -1 rather than QFileInfo's 0 / epoch.
+		QTreeWidgetItem* row = browserresults::rowOf(
+			{{QStringLiteral("name"), QFileInfo(gone).fileName()}, {QStringLiteral("kind"), QStringLiteral("missing")},
+				{QStringLiteral("path"), gone}, {QStringLiteral("size_bytes"), qint64(-1)}, {QStringLiteral("modified_ms"), qint64(-1)}});
+		QCOMPARE(row->text(browserresults::Size), QStringLiteral("-"));       // not "0" for an unknown size
+		QCOMPARE(row->text(browserresults::Modified), QStringLiteral("-"));  // not 1970-01-01
+		QVERIFY(!row->text(browserresults::Name).isEmpty());                  // the rest of the row is untouched
 	}
 
 private:

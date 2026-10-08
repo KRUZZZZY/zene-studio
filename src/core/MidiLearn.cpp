@@ -45,6 +45,32 @@ static_assert(std::atomic<bool>::is_always_lock_free,
 	"MIDI learn arms/disarms with a lock-free atomic: the MIDI input thread reads it per event");
 static_assert(std::atomic<Qt::HANDLE>::is_always_lock_free,
 	"the binding-thread seam is read from the GUI thread only, but stays a plain pointer atomic");
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+	"the learn state is one lock-free word, read by the MIDI input thread per event");
+
+namespace
+{
+// The whole learn state is ONE atomic word, so the MIDI input thread can check it and claim the
+// pending slot in a single compare-and-swap. Layout:
+//   bit 0       a control-change is waiting for the GUI thread (pending)
+//   bit 1       learn mode is armed
+//   bits 2-9    channel of the waiting control-change (1-based; 8 bits)
+//   bits 10-25  controller number of the waiting control-change (16 bits)
+//   bits 32-63  generation: every change the GUI thread makes to the learn state takes a new one
+// A claim from the MIDI thread is published only if the word is still exactly what the thread read
+// when it decided to claim. Any disarm, re-arm, focus change or cancel in between changes the
+// generation, so a stale control-change cannot be published after the learn it belonged to ended.
+constexpr std::uint64_t kPending = 1ull << 0;
+constexpr std::uint64_t kArmed = 1ull << 1;
+constexpr unsigned kChannelShift = 2;
+constexpr std::uint64_t kChannelMask = 0xFFull << kChannelShift;
+constexpr unsigned kControllerShift = 10;
+constexpr std::uint64_t kControllerMask = 0xFFFFull << kControllerShift;
+constexpr std::uint64_t kPayloadMask = kChannelMask | kControllerMask;
+constexpr std::uint64_t kGenerationUnit = 1ull << 32;
+constexpr int kMaxChannel = 0xFF;
+constexpr int kMaxController = 0xFFFF;
+} // namespace
 
 
 
@@ -73,14 +99,23 @@ bool MidiLearn::onGuiThread()
 
 void MidiLearn::setEnabled(bool enabled)
 {
-	m_enabled.store(enabled, std::memory_order_release);
+	// GUI thread. Every change takes a new generation, so a control-change the MIDI thread
+	// read under the previous state cannot be published after this change.
+	// Any change also discards a request the MIDI thread has claimed but the GUI has not applied yet:
+	// it was made for the learn state being replaced (see applyPendingBinding).
+	std::uint64_t state = m_slot.load(std::memory_order_acquire);
+	std::uint64_t next = 0;
+	do
+	{
+		next = (((enabled ? (state | kArmed) : (state & ~kArmed)) & ~kPending) + kGenerationUnit);
+	} while (!m_slot.compare_exchange_weak(state, next, std::memory_order_acq_rel, std::memory_order_acquire));
 }
 
 
 
 bool MidiLearn::isEnabled() const
 {
-	return m_enabled.load(std::memory_order_acquire);
+	return (m_slot.load(std::memory_order_acquire) & kArmed) != 0;
 }
 
 
@@ -92,8 +127,14 @@ void MidiLearn::setFocusTarget(AutomatableModel* model)
 	// deferred bind runs, and the QPointer turns that into "no target" instead
 	// of a dangling read.
 	m_focusTarget = model;
-	m_focusGeneration.fetch_add(1, std::memory_order_release);
 	m_focusTargetSet.store(model != nullptr, std::memory_order_release);
+	// A new focus starts a new generation, so a claim made for the old focus is not published.
+	// The new generation also discards a request claimed for the previous focus: a claimed control-change
+	// is applied only if the focus has not moved since it was claimed (the integration branch's
+	// focus-generation rule, carried in this word: a pending bit can only survive from the claim).
+	std::uint64_t state = m_slot.load(std::memory_order_acquire);
+	while (!m_slot.compare_exchange_weak(state, (state & ~kPending) + kGenerationUnit, std::memory_order_acq_rel,
+		std::memory_order_acquire)) {}
 }
 
 
@@ -117,7 +158,22 @@ unsigned int MidiLearn::bindingCount() const
 
 bool MidiLearn::hasPendingBinding() const
 {
-	return m_pendingBinding.load(std::memory_order_acquire);
+	return (m_slot.load(std::memory_order_acquire) & kPending) != 0;
+}
+
+
+
+void MidiLearn::cancelPendingBinding()
+{
+	// GUI thread. Clears the pending request and starts a new generation in the same step, so a
+	// control-change the MIDI thread is claiming right now either lands before this (and is cleared
+	// here) or fails its claim (and is dropped). It is never left behind to bind to a later learn.
+	std::uint64_t state = m_slot.load(std::memory_order_acquire);
+	std::uint64_t next = 0;
+	do
+	{
+		next = ((state & ~kPending) + kGenerationUnit);
+	} while (!m_slot.compare_exchange_weak(state, next, std::memory_order_acq_rel, std::memory_order_acquire));
 }
 
 
@@ -129,42 +185,33 @@ Qt::HANDLE MidiLearn::lastBindingThreadId() const
 
 
 
-void MidiLearn::requestBinding(int channel, int controllerNum, unsigned int generation)
+void MidiLearn::requestBinding(int channel, int controllerNum, std::uint64_t seen)
 {
-	// MIDI input thread. Nothing here allocates: the payload is atomic stores
-	// followed by a release store on a bool. A request already in the slot is
-	// left alone - the first control-change of an armed learn wins, so a burst of
-	// CC traffic cannot swap the binding under the GUI thread mid-drain.
-	if (generation != m_focusGeneration.load(std::memory_order_acquire) || !isEnabled())
+	// MIDI input thread. Nothing here allocates or locks: one compare-and-swap on the learn word.
+	// The swap publishes the channel and controller number together with the pending flag, and
+	// it disarms the learn, since the first control-change of an armed learn spends it. It only
+	// succeeds if the word still equals @a seen, the state handleMidiEvent() checked; if the GUI
+	// thread changed the learn meanwhile, this control-change is dropped, never published late.
+	if ((seen & kPending) != 0 || (seen & kArmed) == 0)
 	{
-		return;
+		return;  // a request is already waiting (the first one wins), or the learn is no longer armed
 	}
-
-	if (m_pendingBinding.load(std::memory_order_relaxed))
+	if (channel < 0 || channel > kMaxChannel || controllerNum < 0 || controllerNum > kMaxController)
 	{
-		return;
+		return;  // not a value a MIDI message can carry; nothing to bind
 	}
-
-	// Payload first, flag last, so the GUI thread's acquire on the flag also
-	// publishes the channel and controller number.
-	m_pendingChannel.store(channel, std::memory_order_relaxed);
-	m_pendingController.store(controllerNum, std::memory_order_relaxed);
-	m_pendingGeneration.store(generation, std::memory_order_relaxed);
-	m_pendingBinding.store(true, std::memory_order_release);
-
-	// The learn is spent the moment a control-change claims it. Disarming here
-	// (rather than in the bind) is what makes the slot single-shot, and it is
-	// also what tells MidiLearnGui's timer that the learn is over.
-	setEnabled(false);
+	const std::uint64_t payload = (static_cast<std::uint64_t>(channel) << kChannelShift)
+		| (static_cast<std::uint64_t>(controllerNum) << kControllerShift);
+	const std::uint64_t next = ((seen & ~(kArmed | kPayloadMask)) | kPending | payload);
+	m_slot.compare_exchange_strong(seen, next, std::memory_order_acq_rel, std::memory_order_acquire);
 }
-
-
 
 bool MidiLearn::handleMidiEvent(const MidiEvent& event)
 {
 	// Off by default, and the off path is a single atomic load: an inbound CC
 	// stream costs one relaxed read per event when the user is not learning.
-	if (!isEnabled())
+	const std::uint64_t seen = m_slot.load(std::memory_order_acquire);
+	if ((seen & kArmed) == 0)
 	{
 		return false;
 	}
@@ -177,7 +224,6 @@ bool MidiLearn::handleMidiEvent(const MidiEvent& event)
 
 	// Armed but nothing focused: a CC must not invent a target. The flag is read
 	// instead of the target itself because the target is a GUI-thread object.
-	const unsigned int generation = m_focusGeneration.load(std::memory_order_acquire);
 	if (!m_focusTargetSet.load(std::memory_order_acquire))
 	{
 		return false;
@@ -200,7 +246,7 @@ bool MidiLearn::handleMidiEvent(const MidiEvent& event)
 	// MidiController and the ControllerConnection - and the
 	// AutomatableModel::setControllerConnection() write the GUI renders from -
 	// are built later, by applyPendingBinding(), on the thread that owns them.
-	requestBinding(channel, controllerNum, generation);
+	requestBinding(channel, controllerNum, seen);
 	return false;
 }
 
@@ -210,25 +256,23 @@ bool MidiLearn::applyPendingBinding()
 {
 	// GUI thread only. This is the deferred half of handleMidiEvent(): it is
 	// where a control-change seen on the MIDI input thread becomes a binding.
-	if (!m_pendingBinding.exchange(false, std::memory_order_acquire))
+	// Taking the pending flag and reading the payload come from the same word, so they always agree.
+	// A pending flag is only ever left set by a claim: every GUI-side change (arm, disarm, focus, cancel)
+	// clears it in the same step as it moves the generation. So a request is applied only if the learn
+	// state is unchanged since the control-change was claimed.
+	std::uint64_t state = m_slot.load(std::memory_order_acquire);
+	do
 	{
-		return false;
-	}
-
-	// The acquire above synchronises with requestBinding()'s release store, so
-	// these two reads see the channel and controller number it wrote.
-	const int channel = m_pendingChannel.load(std::memory_order_relaxed);
-	const int controllerNum = m_pendingController.load(std::memory_order_relaxed);
-	const unsigned int generation = m_pendingGeneration.load(std::memory_order_relaxed);
-	if (generation != m_focusGeneration.load(std::memory_order_acquire))
-	{
-		return false;
-	}
-
+		if ((state & kPending) == 0)
+		{
+			return false;
+		}
+	} while (!m_slot.compare_exchange_weak(state, state & ~kPending, std::memory_order_acq_rel,
+		std::memory_order_acquire));
+	const int channel = static_cast<int>((state & kChannelMask) >> kChannelShift);
+	const int controllerNum = static_cast<int>((state & kControllerMask) >> kControllerShift);
 	return bindFocusedControl(channel, controllerNum);
 }
-
-
 
 MidiController* bindMidiController(AutomatableModel* target, int channel, int controllerNum)
 {

@@ -95,6 +95,7 @@ private slots:
 		QVERIFY(asked.contains(QStringLiteral("1 loop-closing send")));
 		QVERIFY(state().value(QStringLiteral("enabled")).toBool());
 		QCOMPARE(state().value(QStringLiteral("feedback_routes")).toArray().size(), 1);
+		QVERIFY(allow->isChecked());  // a declined disable leaves feedback on, so the item stays ticked
 
 		QMenu again;
 		QAction* allowAgain = addFeedbackModeAction(&again, [&refreshed] { ++refreshed; });

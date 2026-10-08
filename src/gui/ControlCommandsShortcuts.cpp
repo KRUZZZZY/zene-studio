@@ -128,6 +128,16 @@ ControlResult resetShortcuts(const QJsonObject& args)
 	if (menus == nullptr) { return noInterface(QStringLiteral("shortcuts.reset")); }
 	QJsonObject overrides = sm::overrides();
 	const QString id = args.value(QStringLiteral("id")).toString();
+	// An empty id resets every action; a named one has to exist, or the caller hears "reset" for nothing.
+	if (!id.isEmpty())
+	{
+		const QList<sm::Binding> all = sm::bindings(menus);
+		const bool known = std::any_of(all.cbegin(), all.cend(), [&id](const sm::Binding& b) { return b.id == id; });
+		if (!known)
+		{
+			return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no menu action '%1' (shortcuts.list names them)").arg(id));
+		}
+	}
 	const int before = overrides.size();
 	if (id.isEmpty()) { overrides = QJsonObject(); } else { overrides.remove(id); }
 	return storeOverrides(menus, overrides, {{QStringLiteral("reset"), before - overrides.size()}},
@@ -211,9 +221,10 @@ ControlResult importShortcuts(const QJsonObject& args)
 	QStringList known;
 	for (const sm::Binding& binding : all) { known.append(binding.id); }
 	QJsonArray unknown;
-	QJsonArray invalid;  // not a key sequence: left out (read as empty it would unbind the action)
+	QJsonArray invalid;  // not a string key sequence: left out (read as empty it would unbind the action)
 	for (auto it = incoming.begin(); it != incoming.end(); ++it)
 	{
+		if (!it.value().isString()) { invalid.append(it.key()); continue; }
 		bool ok = false;
 		const QString keys = sm::portable(it.value().toString(), &ok);
 		if (!ok) { invalid.append(it.key()); continue; }

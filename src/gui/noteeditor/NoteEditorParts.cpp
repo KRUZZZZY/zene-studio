@@ -112,7 +112,9 @@ void NoteKeyboardView::mousePressEvent(QMouseEvent* event)
 		m_zoomKey = m_state.grid.keyAtY(m_zoomY);
 		return;
 	}
-	m_pressed = m_state.grid.keyAtY(event->pos().y());
+	// Only the left button auditions: the right one is the editor's context menu, the middle one
+	// the row-height drag below. Neither sounds the key.
+	m_pressed = event->button() == Qt::LeftButton ? m_state.grid.keyAtY(event->pos().y()) : -1;
 	if (m_pressed >= 0) { m_editor->auditionPress(m_pressed, m_state.lastVelocity); }
 	update();
 }

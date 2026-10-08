@@ -268,6 +268,79 @@ private slots:
 		QCOMPARE(model.channelId(4), QStringLiteral("ch-4"));
 	}
 
+// Deleting a channel renumbers the ones behind it. The selection follows the channel itself, not
+	// the number it used to sit at: removing one in front of it left it pointing at whatever channel
+	// then took that number.
+	void deletingAChannelInFrontKeepsTheSelectedChannelSelected()
+	{
+		MixerView* mixer = getGUI()->mixerView();
+		const int front = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(front)->m_name = QStringLiteral("Wedge");
+		const int middle = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(middle)->m_name = QStringLiteral("Room");
+		const int last = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(last)->m_name = QStringLiteral("Plate");
+		mixer->syncWithMixer();
+		// A channel with channels behind it, so the stale number names a real neighbour.
+		mixer->setCurrentMixerChannel(middle);
+		QCOMPARE(mixer->currentMixerChannel()->channelIndex(), middle);
+
+		mixer->deleteChannel(front);
+		QCOMPARE(Engine::mixer()->numChannels(), last);  // one fewer
+		// The same channel, renumbered: its strip, and the selection with it.
+		QCOMPARE(mixer->currentMixerChannel()->channelIndex(), middle - 1);
+		QCOMPARE(Engine::mixer()->mixerChannel(middle - 1)->m_name, QStringLiteral("Room"));
+	}
+
+// A channel added while the mixer was open rebuilds the strips. The selection then jumped to Master
+	// and the user's channel was lost, whatever the rebuild was for.
+	void addingAChannelKeepsTheSelectedChannelSelected()
+	{
+		MixerView* mixer = getGUI()->mixerView();
+		const int selected = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(selected)->m_name = QStringLiteral("Selected");
+		mixer->syncWithMixer();
+		mixer->setCurrentMixerChannel(selected);
+		QCOMPARE(Engine::mixer()->mixerChannel(mixer->currentMixerChannel()->channelIndex())->m_name,
+			QStringLiteral("Selected"));
+
+		// A channel appears from outside the mixer: a script, or the TrackContainer above.
+		QVERIFY(Engine::mixer()->createChannel() > 0);
+		syncMixer();
+
+		QCOMPARE(Engine::mixer()->mixerChannel(mixer->currentMixerChannel()->channelIndex())->m_name,
+			QStringLiteral("Selected"));
+	}
+
+// mixer.order_by_tracks and friends reorder the channels behind the mixer's back: the count never
+	// changes, so nothing rebuilt the strips and each one kept driving the channel that used to sit
+	// at its number.
+	void aReorderWithTheSameCountRebindsEveryStrip()
+	{
+		const int first = Engine::mixer()->createChannel();
+		const int second = Engine::mixer()->createChannel();
+		for (int i = first; i <= second; ++i)
+		{
+			Engine::mixer()->mixerChannel(i)->m_name = QStringLiteral("Reordered %1").arg(i);
+			Engine::mixer()->mixerChannel(i)->m_volumeModel.setValue(0.25f + 0.25f * (i - first));
+		}
+		syncMixer();
+		QCOMPARE(strip(first)->fader()->model(), &Engine::mixer()->mixerChannel(first)->m_volumeModel);
+
+		// The same channel count, a different order: the mixer moves the channels itself.
+		Engine::mixer()->moveChannelLeft(second);
+		QCOMPARE(Engine::mixer()->numChannels(), second + 1);  // the count never changed
+		syncMixer();
+
+		// Every strip's controls drive the channel now at its own number, not the one it was built for.
+		for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+		{
+			MixerChannel* channel = Engine::mixer()->mixerChannel(i);
+			QCOMPARE(strip(i)->channelIndex(), i);
+			QCOMPARE(strip(i)->soloButton()->model(), &channel->m_soloModel);
+		}
+	}
+
 private:
 	QTemporaryDir m_home;
 	int m_sender = -1;

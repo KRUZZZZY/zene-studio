@@ -86,6 +86,38 @@ private slots:
 		QVERIFY(layout.openIn(ShellRegion::Bottom).isEmpty());
 	}
 
+	void onlyOnePanelHoldsAPinInARegion()
+	{
+		ShellLayout layout;
+		QVERIFY(layout.setPinned(QStringLiteral("devices"), true));
+		QVERIFY(layout.isPinned(QStringLiteral("devices")));
+		// Both live in the Bottom region, which the shell says holds one panel at a time, so the
+		// newer pin takes the region rather than the two fighting over it on every view switch.
+		QVERIFY(layout.setPinned(QStringLiteral("detail"), true));
+		QVERIFY(layout.isPinned(QStringLiteral("detail")));
+		QVERIFY(!layout.isPinned(QStringLiteral("devices")));
+		layout.setView(ShellView::Mix);
+		QCOMPARE(layout.openIn(ShellRegion::Bottom), QStringLiteral("detail"));
+		layout.setView(ShellView::Edit);
+		QVERIFY(layout.isVisible(QStringLiteral("detail")));  // it is this view's centre ...
+		QVERIFY(layout.openIn(ShellRegion::Bottom) != QStringLiteral("detail"));  // ... so it is not also the panel below it
+		layout.setView(ShellView::Arrange);
+		QCOMPARE(layout.openIn(ShellRegion::Bottom), QStringLiteral("detail"));
+	}
+
+	void closingAPinnedPanelTakesItsPinWithIt()
+	{
+		ShellLayout layout;
+		QVERIFY(layout.setPinned(QStringLiteral("devices"), true));
+		QVERIFY(layout.close(QStringLiteral("devices")));
+		// Closing is the user saying "not this one": a pin left behind reopens the panel on the
+		// next view switch, which is not what closing it asked for.
+		QVERIFY(!layout.isPinned(QStringLiteral("devices")));
+		layout.setView(ShellView::Mix);
+		layout.setView(ShellView::Arrange);
+		QVERIFY(!layout.isVisible(QStringLiteral("devices")));
+	}
+
 	void aViewRefusesWhatItDoesNotOffer()
 	{
 		ShellLayout layout;

@@ -57,10 +57,18 @@ namespace
 //! A menu's title as a person reads it: no mnemonic ampersand, no tab-shortcut.
 QString clean(QString text)
 {
-	text.remove(QLatin1Char('&'));
-	const int tab = text.indexOf(QLatin1Char('\t'));
-	if (tab >= 0) { text.truncate(tab); }
-	return text.trimmed();
+	// '&&' is how Qt writes a literal ampersand: it must survive as one '&', while a single '&'
+	// is the mnemonic marker and goes. A trailing '&' (mnemonic on the next character) goes too.
+	QString out;
+	out.reserve(text.size());
+	for (int i = 0; i < text.size(); ++i)
+	{
+		if (text.at(i) != QLatin1Char('&')) { out.append(text.at(i)); continue; }
+		if (i + 1 < text.size() && text.at(i + 1) == QLatin1Char('&')) { out.append(QLatin1Char('&')); ++i; }
+	}
+	const int tab = out.indexOf(QLatin1Char('\t'));
+	if (tab >= 0) { out.truncate(tab); }
+	return out.trimmed();
 }
 
 void walk(QMenu* menu, const QString& path, QList<PaletteEntry>& out, QSet<QMenu*>& seen)

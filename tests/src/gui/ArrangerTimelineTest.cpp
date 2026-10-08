@@ -40,6 +40,7 @@
 #include <cstdlib>
 
 #include <QAbstractSlider>
+#include <QRegularExpression>
 #include <QToolBar>
 #include <QWheelEvent>
 
@@ -65,6 +66,7 @@
 #include "SongEditor.h"
 #include "TimeLineWidget.h"
 #include "Track.h"
+#include "TrackView.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -124,6 +126,7 @@ private slots:
 	void init()
 	{
 		Engine::getSong()->clearProject();  // and with it the locks and the markers (project sections)
+		ArrangerRange::instance().clear();  // the range is a singleton: a case must not inherit the last one's
 		m_track = Track::create(Track::Type::Instrument, Engine::getSong());
 		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 40}, {QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
 		QVERIFY(run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 0}}).ok);
@@ -252,6 +255,93 @@ private slots:
 		QVERIFY2(!cliplocks::badgeShown(view), "the padlock stayed after the lock was undone");
 	}
 
+	//! Luna cluster 4674: the badge stays locked either way, so the tooltip must be refreshed when the
+	//! lock holder moves from the track to the clip - not only when the locked state itself flips.
+	void theLockTooltipFollowsTheLockHolder()
+	{
+		Clip* clip = clipAt(m_track, 0, 2 * Bar);
+		QCoreApplication::processEvents();
+		ClipView* view = viewOf(clip);
+		QVERIFY(view != nullptr);
+
+		QVERIFY(run(QStringLiteral("track.set_locked"), {{QStringLiteral("track"), control::trackIdOf(m_track)}}).ok);
+		QVERIFY(cliplocks::badgeShown(view));
+		auto* badge = view->findChild<QWidget*>(QStringLiteral("clipLockBadge"));
+		QVERIFY(badge != nullptr);
+		QVERIFY2(badge->toolTip().contains(QLatin1String("track")), qPrintable(badge->toolTip()));
+
+		// The clip is locked too: still locked, but now it is this clip that holds the lock.
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(clip)}}).ok);
+		QVERIFY2(cliplocks::badgeShown(view), "the padlock went when the clip took over the lock");
+		QVERIFY2(badge->toolTip().contains(QLatin1String("This clip is locked")), qPrintable(badge->toolTip()));
+
+		// And back again: the track takes the lock back when the clip is unlocked.
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("locked"), false}}).ok);
+		QVERIFY2(badge->toolTip().contains(QLatin1String("track")), qPrintable(badge->toolTip()));
+	}
+
+	//! Luna cluster 5578: the lock check hides Delete/Cut and disables Paste, but every other mutating
+	//! context-menu action went through anyway - so a right-clicked locked clip could be muted, recolored or
+	//! toggled to auto-resize, and the mouse's own Ctrl+middle-click mute was refused where the menu's was not.
+	void aLockedClipKeepsEveryMutatingMenuAction()
+	{
+		Clip* clip = clipAt(m_track, 0, 2 * Bar);
+		QCoreApplication::processEvents();
+		ClipView* view = viewOf(clip);
+		QVERIFY(view != nullptr);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(clip)}}).ok);
+		QVERIFY(cliplocks::badgeShown(view));
+
+		// Auto-resize: the menu item that changes the clicked clips without asking their locks.
+		QCOMPARE(clip->getAutoResize(), false);
+		view->toggleSelectedAutoResize();
+		QCOMPARE(clip->getAutoResize(), false);
+
+		// Mute: the same edit the Ctrl+middle-click gesture already refuses at the mouse press.
+		QCOMPARE(clip->isMuted(), false);
+		view->toggleMute(QVector<ClipView*>{view});
+		QCOMPARE(clip->isMuted(), false);
+
+		// And the color menu, which rewrites every clicked clip too (randomizeColor -> setColor).
+		view->randomizeColor();
+		QVERIFY2(!clip->color().has_value(), "a locked clip was recolored");
+
+		// An unlocked clip still takes all three, so the lock is what refuses them and not the fixture.
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("locked"), false}}).ok);
+		view->toggleSelectedAutoResize();
+		QCOMPARE(clip->getAutoResize(), true);
+		view->toggleMute(QVector<ClipView*>{view});
+		QCOMPARE(clip->isMuted(), true);
+		view->randomizeColor();
+		QVERIFY(clip->color().has_value());
+	}
+
+	//! Luna cluster 5578: a lock in a SELECTION keeps the locked clip as it is and still changes the
+	//! unlocked ones, exactly like Delete (WF-044) - the whole selection is not refused just because one
+	//! member is locked.
+	void aLockedClipInASelectionStaysWhileTheOthersChange()
+	{
+		Clip* locked = clipAt(m_track, 0, Bar);
+		Clip* free_ = clipAt(m_track, 2 * Bar, Bar);
+		QCoreApplication::processEvents();
+		ClipView* lockedView = viewOf(locked);
+		ClipView* freeView = viewOf(free_);
+		QVERIFY(lockedView != nullptr && freeView != nullptr);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(locked)}}).ok);
+
+		m_editor->selectAllClips(false);
+		lockedView->setSelected(true);
+		freeView->setSelected(true);
+
+		freeView->toggleSelectedAutoResize();
+		QCOMPARE(locked->getAutoResize(), false);
+		QCOMPARE(free_->getAutoResize(), true);
+
+		lockedView->toggleMute(QVector<ClipView*>{lockedView, freeView});
+		QCOMPARE(locked->isMuted(), false);
+		QCOMPARE(free_->isMuted(), true);
+	}
+
 	//! 0.5.0 theme 9 (wave 3): a wheel turn zooms by its size - a touchpad's tenth-of-a-notch deltas add up to a
 	//! notch's steps - around the tick under the pointer, and one gesture joins the zoom history once.
 	void aWheelZoomIsContinuousAroundThePointer()
@@ -364,7 +454,117 @@ private slots:
 		QVERIFY2(navigator->accessibleDescription().startsWith(QStringLiteral("Showing bars 3 ")), qPrintable(navigator->accessibleDescription()));
 	}
 
-private:
+	//! The navigator names the bars it SHOWS. The view's end is exclusive, so a view that ends exactly on a
+	//! bar line shows one bar fewer than its length in bars - naming the end tick's own bar adds a bar that is
+	//! not on screen.
+	void theNavigatorNamesTheLastBarItShows()
+	{
+		installArrangerNavigator(getGUI()->songEditor());
+		auto* bar = getGUI()->songEditor()->findChild<QToolBar*>(QStringLiteral("arrangerNavigator"));
+		QVERIFY(bar != nullptr);
+		auto* navigator = bar->findChild<QAbstractSlider*>();
+		QVERIFY2(navigator != nullptr, "the navigator is not a slider");
+		clipAt(m_track, 40 * Bar, Bar);
+		QVERIFY(run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 0}}).ok);
+
+		// A zoom whose view ends exactly on a bar line: the boundary the text has to treat as exclusive.
+		tick_t view = 0;
+		for (int ppb = 4; ppb <= 400; ++ppb)
+		{
+			QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), ppb},
+				{QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
+			view = arrangerzoom::visibleTicks(m_editor);
+			if (view > 0 && view % Bar == 0) { break; }
+		}
+		QVERIFY2(view > 0 && view % Bar == 0, "no zoom ended the view exactly on a bar line");
+		QCOMPARE(m_editor->currentPosition().getTicks(), 0);
+
+		static const QRegularExpression said(QStringLiteral("Showing bars (\\d+) to (\\d+) of (\\d+)"));
+		const QRegularExpressionMatch found = said.match(navigator->accessibleDescription());
+		QVERIFY2(found.hasMatch(), qPrintable(navigator->accessibleDescription()));
+		QCOMPARE(found.captured(1).toInt(), 1);
+		QCOMPARE(found.captured(2).toInt(), static_cast<int>(view / Bar));
+	}
+
+	//! A range whose BOTH ends fall off the track rows resolves each to the nearest boundary track, so the
+	//! gesture reaches the tracks it was dragged across instead of selecting none.
+	void aRangeWithBothEndsOffTheRowsReachesTheBoundaryTrack()
+	{
+		auto* overlay = m_editor->findChild<ArrangerRangeOverlay*>();
+		QVERIFY2(overlay != nullptr, "no range overlay on the song editor");
+		Track::create(Track::Type::Instrument, Engine::getSong());
+		QCoreApplication::processEvents();
+		const QList<TrackView*> rows = m_editor->trackViews();
+		QVERIFY(rows.size() >= 2);
+		TrackView* last = rows.last();
+		const int below = last->mapTo(overlay->parentWidget(), QPoint(0, 0)).y() + last->height();
+		QVERIFY2(below + 8 < overlay->height(), "no space below the last track to drag off the rows");
+
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("range")}}).ok);
+		const int x = overlay->width() / 4;
+		// Both presses land below the last row, where trackAt() finds no track either way.
+		QTest::mousePress(overlay, Qt::LeftButton, Qt::NoModifier, QPoint(x, below + 2));
+		QTest::mouseMove(overlay, QPoint(x + overlay->width() / 2, below + 8));
+		QVERIFY2(ArrangerRange::instance().active(), "a range dragged off the rows dispatched no range at all");
+		QCOMPARE(ArrangerRange::instance().tracks(), QVector<Track*>{last->getTrack()});
+		QTest::mouseRelease(overlay, Qt::LeftButton, Qt::NoModifier, QPoint(x + overlay->width() / 2, below + 8));
+		ArrangerRange::instance().clear();
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("select")}}).ok);
+	}
+
+	//! A drag cut short - the grab taken away by a popup, the overlay hidden - does not go on dispatching:
+	//! the gesture belongs to the press that began it.
+	void aRangeDragCutShortByTheGrabBeingTakenStops()
+	{
+		auto* overlay = m_editor->findChild<ArrangerRangeOverlay*>();
+		QVERIFY2(overlay != nullptr, "no range overlay on the song editor");
+		const TrackView* row = m_editor->trackViews().first();
+		const int onRow = row->mapTo(overlay->parentWidget(), QPoint(0, 0)).y() + row->height() / 2;
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("range")}}).ok);
+
+		const int x = overlay->width() / 4;
+		QTest::mousePress(overlay, Qt::LeftButton, Qt::NoModifier, QPoint(x, onRow));
+		QEvent grabLost(QEvent::UngrabMouse);  // a popup took the mouse grab away
+		QCoreApplication::sendEvent(overlay, &grabLost);
+		QTest::mouseMove(overlay, QPoint(x + overlay->width() / 2, onRow));
+		QVERIFY2(!ArrangerRange::instance().active(), "a drag that lost its grab still dispatched a range");
+		QTest::mouseRelease(overlay, Qt::LeftButton, Qt::NoModifier, QPoint(x + overlay->width() / 2, onRow));
+		ArrangerRange::instance().clear();
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("select")}}).ok);
+	}
+
+	//! A tool chosen while an audition is held ends it: the gesture belongs to the tool that began it, so the
+	//! release finishes the audition instead of dispatching a range with the tool that replaced it.
+	void switchingToolsDuringAHeldAuditionStopsIt()
+	{
+		auto* overlay = m_editor->findChild<ArrangerRangeOverlay*>();
+		QVERIFY2(overlay != nullptr, "no range overlay on the song editor");
+		Track* other = Track::create(Track::Type::Instrument, Engine::getSong());
+		QCoreApplication::processEvents();
+		clipAt(m_track, 40 * Bar, Bar);
+		// The press lands on the row the audition silences every other track for.
+		const TrackView* row = m_editor->trackViews().first();
+		const QPoint press(overlay->width() / 2, row->mapTo(overlay->parentWidget(), QPoint(0, 0)).y() + row->height() / 2);
+
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("audition")}}).ok);
+		QCOMPARE(overlay->tool(), ArrangerRangeOverlay::Tool::Audition);
+		QTest::mousePress(overlay, Qt::LeftButton, Qt::NoModifier, press);
+		QVERIFY2(other->isMuted(), "the held audition did not silence the other tracks");
+		QVERIFY(run(QStringLiteral("transport.audition_stop")).ok);  // tidy, should this case fail halfway
+
+		QTest::mousePress(overlay, Qt::LeftButton, Qt::NoModifier, press);
+		QVERIFY2(other->isMuted(), "the second held audition did not silence the other tracks");
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("range")}}).ok);
+		QCOMPARE(overlay->tool(), ArrangerRangeOverlay::Tool::Range);
+		QTest::mouseRelease(overlay, Qt::LeftButton, Qt::NoModifier, QPoint(press.x() + 40, press.y()));
+
+		QVERIFY2(!other->isMuted(), "the audition was still sounding after the release that ended the gesture");
+		QVERIFY2(!ArrangerRange::instance().active(), "a tool change mid-audition still dispatched a range");
+		QVERIFY(run(QStringLiteral("transport.audition_stop")).ok);  // tidy whatever happened
+		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("select")}}).ok);
+	}
+
+	private:
 	QTemporaryDir m_home;
 	SongEditor* m_editor = nullptr;
 	Track* m_track = nullptr;

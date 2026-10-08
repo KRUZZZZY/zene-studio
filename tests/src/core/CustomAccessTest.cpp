@@ -86,6 +86,18 @@ QString someDevice()
 	const QJsonArray devices = run(QStringLiteral("audio.device_list"))
 		.result.value(QStringLiteral("devices")).toArray();
 	return devices.isEmpty() ? QString() : devices.first().toObject().value(QStringLiteral("name")).toString();
+	}
+
+//! The last transaction the engine recorded for @a command, or an empty object when it recorded none.
+QJsonObject transactionOf(const QString& command)
+{
+	QJsonObject found;
+	for (const QJsonValue& value : run(QStringLiteral("control.transactions")).result
+		.value(QStringLiteral("transactions")).toArray())
+	{
+		if (value.toObject().value(QStringLiteral("command")).toString() == command) { found = value.toObject(); }
+	}
+	return found;
 }
 
 QString fileText(const QString& path)
@@ -329,6 +341,53 @@ private slots:
 		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 0}}).ok);
 		// Headless there is no shell, so no project's layout is on screen.
 		QVERIFY(!run(QStringLiteral("window.layout_list")).result.value(QStringLiteral("project_layout_shown")).toBool());
+	}
+
+	//! Luna cluster 4915: a clip id that names no clip is refused, and the empty string is one of
+	//! them - it is not the "nothing unknown" answer the validator used to return.
+	void aClipIdThatNamesNoClipIsRefusedByTheValidator()
+	{
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 0}}).ok);
+		const int kept = run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt();
+		const ControlResult saved = run(QStringLiteral("selection.save"),
+			{{QStringLiteral("name"), QStringLiteral("blank")}, {QStringLiteral("clips"), QJsonArray{QString()}}});
+		QVERIFY2(!saved.ok, "an empty clip id was stored as a clip");
+		QCOMPARE(saved.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt(), kept);
+		// A well-formed id naming no live clip is still refused the same way.
+		const ControlResult ghost = run(QStringLiteral("selection.save"),
+			{{QStringLiteral("name"), QStringLiteral("ghost")}, {QStringLiteral("clips"), QJsonArray{QStringLiteral("clip-99999")}}});
+		QCOMPARE(ghost.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(run(QStringLiteral("selection.list")).result.value(QStringLiteral("count")).toInt(), kept);
+	}
+
+	//! Luna cluster 4917: a view-memory save or remove claims to be undoable and records an undo
+	//! step, so its recorded transaction must say what it took back and how - not fall back on the
+	//! registry's "this command recorded no inverse or snapshot" record.
+	void aViewMemoryChangeReportsTheUndoItRecorded()
+	{
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 1920}}).ok);
+		QVERIFY(run(QStringLiteral("location.save"), {{QStringLiteral("name"), QStringLiteral("paid")}}).ok);
+		const QJsonObject saved = transactionOf(QStringLiteral("location.save"));
+		QVERIFY2(!saved.isEmpty(), "location.save recorded no transaction at all");
+		QVERIFY2(saved.value(QStringLiteral("before")).toObject().contains(QStringLiteral("locations")),
+			"location.save reported no previous list of locations to take back");
+		QVERIFY(saved.value(QStringLiteral("reversible")).toBool());
+		QVERIFY(!saved.value(QStringLiteral("mechanism")).toString()
+			.contains(QStringLiteral("recorded no inverse or snapshot")));
+		QVERIFY(run(QStringLiteral("location.remove"), {{QStringLiteral("name"), QStringLiteral("paid")}}).ok);
+		const QJsonObject removed = transactionOf(QStringLiteral("location.remove"));
+		QVERIFY2(!removed.isEmpty(), "location.remove recorded no transaction at all");
+		QVERIFY(!removed.value(QStringLiteral("mechanism")).toString()
+			.contains(QStringLiteral("recorded no inverse or snapshot")));
+		// The same contract for a saved selection.
+		QVERIFY(run(QStringLiteral("selection.save"), {{QStringLiteral("name"), QStringLiteral("verse")}}).ok);
+		const QJsonObject selection = transactionOf(QStringLiteral("selection.save"));
+		QVERIFY2(selection.value(QStringLiteral("before")).toObject().contains(QStringLiteral("selections")),
+			"selection.save reported no previous list of selections to take back");
+		QVERIFY(run(QStringLiteral("selection.remove"), {{QStringLiteral("name"), QStringLiteral("verse")}}).ok);
+		QVERIFY(!transactionOf(QStringLiteral("selection.remove")).value(QStringLiteral("mechanism")).toString()
+			.contains(QStringLiteral("recorded no inverse or snapshot")));
 	}
 
 	void theHistoryIsWalkedInOneGo()

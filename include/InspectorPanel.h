@@ -110,6 +110,10 @@ private:
 	//! ED-016: the selected notes' Key / Start / Length / Velocity as fields that run note.*.
 	QWidget* notesSection(MidiClip* clip, const QString& id, QWidget* parent);
 	void syncToggles();
+	//! The clip's name and note count show a rename or a note edit made elsewhere (the arranger, the
+	//! note editor) unless the section itself is replaced; the clip key is the pointer, so nothing else
+	//! would redraw them.
+	void syncClipLabels();
 	//! The channel's name field shows a rename made elsewhere (the strip, a script, an undo) unless it is being typed in.
 	void syncChannelName();
 
@@ -125,6 +129,8 @@ private:
 	Section m_clipSection;
 	QLineEdit* m_name = nullptr;
 	QPointer<QLineEdit> m_channelName;  //!< theme 13: the channel's name field, kept in step with renames made elsewhere
+	QPointer<class QLabel> m_clipName;   //!< the clip section's name, kept in step with renames made elsewhere
+	QPointer<class QLabel> m_noteCount;  //!< the clip section's note count, kept in step with edits made elsewhere
 	QToolButton* m_mute = nullptr;
 	QToolButton* m_solo = nullptr;
 	QTimer m_sync;

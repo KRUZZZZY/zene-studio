@@ -33,6 +33,7 @@
 #include <QComboBox>
 #include <QGraphicsEffect>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 
 #include "ControlMixerSupport.h"
@@ -47,6 +48,9 @@
 #include "MixerOverlays.h"
 #include "MixerSendsBanner.h"
 #include "MixerView.h"
+#include "Song.h"
+#include "Track.h"
+#include "TrackFolder.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -160,6 +164,68 @@ private slots:
 		QVERIFY(mixer->sendsBanner()->message()->text().contains(QStringLiteral("Delay")));
 		QCOMPARE(mixeroverlays::faderRole(m_sender), mixeroverlays::FaderRole::NoSend);  // it sends to Verb only
 		QVERIFY(!mixer->channelView(m_sender)->fader()->isEnabled());
+	}
+
+	// A return's strip carries a bus-specific tooltip ("(return - sends into it are
+	// pre-fader)"). Renaming the strip rebuilds the tooltip from the name alone, so a
+	// renamed bus stopped reading as a return until the mixer was rebuilt.
+	void renamingABusKeepsItsReturnTooltip()
+	{
+		const int index = createReturn(QStringLiteral("Plate"));
+		QVERIFY(index > 0);
+		sync();
+		MixerChannelView* view = getGUI()->mixerView()->channelView(index);
+		QVERIFY(view != nullptr);
+		QVERIFY(Engine::mixer()->mixerChannel(index)->isBus());
+		QVERIFY(view->toolTip().contains(QStringLiteral("Return")));
+
+		view->renameChannel();
+		view->nameEdit()->setText(QStringLiteral("Plate Verb"));
+		// renameFinished is a private slot (the line edit's editingFinished is its only
+		// caller), so drive it the way that signal does - through the meta-object.
+		QVERIFY(QMetaObject::invokeMethod(view, "renameFinished"));
+
+		// renameFinished() itself rebuilds the tooltip from the plain name, so check the
+		// state the mixer settles into: the next sync pass re-describes the strip.
+		sync();
+		QVERIFY(view->toolTip().contains(QStringLiteral("Plate Verb")));
+		QVERIFY(view->toolTip().contains(QStringLiteral("Return")));
+		QVERIFY(view->nameEdit()->text().contains(QStringLiteral("Plate Verb")));
+	}
+
+	// A folder inside a folder: collapsedChannels() has to reach the nested folder's own children,
+	// or collapsing it while its parent stays expanded leaves its strips on screen.
+	void collapsingANestedFolderHidesItsChannels()
+	{
+		Song* song = Engine::getSong();
+		auto* outer = dynamic_cast<TrackFolder*>(Track::create(Track::Type::Folder, song));
+		QVERIFY(outer != nullptr);
+		auto* inner = dynamic_cast<TrackFolder*>(Track::create(Track::Type::Folder, song));
+		QVERIFY(inner != nullptr);
+		inner->setParentFolder(outer);
+		Track* leaf = Track::create(Track::Type::Sample, song);
+		leaf->setParentFolder(inner);
+		QCoreApplication::processEvents();
+
+		IntModel* leafChannel = leaf->mixerChannelModel();
+		QVERIFY(leafChannel != nullptr);
+		// A new track starts on the master (0); give it its own strip so the collapse has one to hide.
+		leafChannel->setValue(Engine::mixer()->createChannel());
+		const int index = leafChannel->value();
+		QVERIFY(index > 0);
+		QVERIFY(!mixeroverlays::foldedChannels().contains(index));
+
+		outer->setCollapsed(false);
+		inner->setCollapsed(true);
+		QVERIFY2(mixeroverlays::foldedChannels().contains(index),
+			"a collapsed nested folder does not hide its children's strips");
+		QVERIFY(!outer->isCollapsed());
+
+		outer->setCollapsed(true);
+		QVERIFY(mixeroverlays::foldedChannels().contains(index));
+
+		sync();
+		QVERIFY(!getGUI()->mixerView()->channelView(index)->isVisibleTo(getGUI()->mixerView()));
 	}
 
 	void theBannersButtonPutsTheFadersBack()

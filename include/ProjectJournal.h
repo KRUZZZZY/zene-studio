@@ -230,6 +230,11 @@ public:
 	 *  this call just pushed is the run I am still in" without holding an index:
 	 *  a bound can evict steps under an index, but a serial is stable. */
 	quint64 previousStepSerial() const;
+	/*! How many retained undo steps have a serial at or above @a serial: the number of undos that take the
+	 *  stack back to just before that step. Counted from the stack, because serials are not contiguous -
+	 *  a redo issues a fresh one and a coalesced step keeps an older one - so the serial difference
+	 *  overstates the distance. 0 when no retained step is at or above @a serial. */
+	int retainedStepsFrom(quint64 serial) const;
 
 	// ---- WF-033: the undo history saved with the project ----
 	// (docs/UNDO-HISTORY-PERSISTENCE.md; include/UndoHistory.h is the policy.)

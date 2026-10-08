@@ -32,6 +32,7 @@
 class QComboBox;
 class QDoubleSpinBox;
 class QJsonObject;
+class QLabel;
 class QListWidget;
 class QTableWidget;
 
@@ -56,18 +57,23 @@ public:
 	QString addModulator(const QString& shape, double rateHz);
 	QString removeSelected();
 	QString setShapeAndRate(const QString& shape, double rateHz);
+	//! The shape alone: rate_set keeps an argument a call omits, so the rate stays exactly as it was.
+	QString setShape(const QString& shape);
 	QString bind(const QString& channel, int effect, const QString& parameter, double depth);
 	QString unbindRow(int row);
 	void selectModulator(int row);
 
 private:
 	QString selectedId() const;
+	//! Show a command's refusal in the status label (and speak it). An empty message clears the label.
+	void say(const QString& message);
 	void showSelected();
 	void fillChannels();
 	void fillEffects();
 	void fillParameters();
 
 	QListWidget* m_modulators = nullptr;
+	QLabel* m_status = nullptr;
 	QComboBox* m_shape = nullptr;
 	QDoubleSpinBox* m_rate = nullptr;
 	QTableWidget* m_targets = nullptr;

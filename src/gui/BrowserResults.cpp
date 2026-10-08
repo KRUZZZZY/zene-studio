@@ -100,8 +100,13 @@ QTreeWidgetItem* rowOf(const QJsonObject& item)
 	auto* row = new QTreeWidgetItem;
 	row->setText(Name, item.value(QStringLiteral("name")).toString());
 	row->setText(Kind, item.value(QStringLiteral("kind")).toString());
-	row->setData(Size, Qt::DisplayRole, item.value(QStringLiteral("size_bytes")).toInteger() / 1024);
-	row->setText(Modified, QDateTime::fromMSecsSinceEpoch(item.value(QStringLiteral("modified_ms")).toInteger()).toString(Qt::ISODate));
+	const auto sizeBytes = item.value(QStringLiteral("size_bytes")).toInteger();
+	const auto modifiedMs = item.value(QStringLiteral("modified_ms")).toInteger();
+	// A missing file has no metadata: show a placeholder rather than a real-looking 0 KB / 1970-01-01.
+	if (sizeBytes < 0) { row->setText(Size, QStringLiteral("-")); }
+	else { row->setData(Size, Qt::DisplayRole, sizeBytes / 1024); }
+	if (modifiedMs <= 0) { row->setText(Modified, QStringLiteral("-")); }
+	else { row->setText(Modified, QDateTime::fromMSecsSinceEpoch(modifiedMs).toString(Qt::ISODate)); }
 	QStringList tags;
 	for (const QJsonValue& tag : item.value(QStringLiteral("tags")).toArray()) { tags << tag.toString(); }
 	row->setText(Tags, tags.join(QStringLiteral(", ")));
