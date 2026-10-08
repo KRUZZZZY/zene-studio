@@ -247,20 +247,13 @@ private slots:
 			{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
 		QCOMPARE(partCount(m_track), 0);
 
-		// Luna 5720: the reported inverse must be REPLAYABLE. plugin.midi_part_add also
-		// needs the channel and the zone ranges of the part that was removed.
+		// Luna 5720/5747: the reported inverse is the exact recorded checkpoint, control.undo.
+		// A plugin.midi_part_add replay appended the part and lost its first-match position.
 		const QJsonObject inverse = revtest::stateOf(QStringLiteral("plugin.midi_part_remove"))
 			.value(QStringLiteral("inverse")).toObject();
-		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
-		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("plugin.midi_part_add"));
-		QCOMPARE(inverseArgs.value(QStringLiteral("target")).toString(), m_track);
-		QCOMPARE(inverseArgs.value(QStringLiteral("midi_channel")).toInt(), 3);
-		QCOMPARE(inverseArgs.value(QStringLiteral("low_key")).toInt(), 60);
-		QVERIFY(!inverseArgs.value(QStringLiteral("high_key")).isUndefined());
-		QVERIFY(!inverseArgs.value(QStringLiteral("low_velocity")).isUndefined());
-		QVERIFY(!inverseArgs.value(QStringLiteral("high_velocity")).isUndefined());
-		// And it really runs: the inverse args rebuild the part it took away.
-		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(), inverseArgs).ok, "the reported inverse is refused");
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+		// And it really runs: undoing restores the part.
+		REV_UNDO_OR_FAIL();
 		QCOMPARE(partCount(m_track), 1);
 		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(0)->chain, 2);  // channel 3 is index 2
 		QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
@@ -271,6 +264,31 @@ private slots:
 		QCOMPARE(partCount(m_track), 1);
 		QVERIFY(!run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
 			{QStringLiteral("part"), QStringLiteral("part-9")}}).ok);
+	}
+
+	//! Luna 5747: removing the FIRST of two overlapping parts and undoing it must restore the
+	//! original first-match order (part-0 channel 3 wins over part-1 channel 5 on key 60).
+	void midiPartsRemoveFirstOfOverlappingUndoKeepsOrder()
+	{
+		if (m_track.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		while (partCount(m_track) > 0)  // earlier cases leave parts on the shared track
+		{
+			QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
+				{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
+		}
+		QVERIFY(run(QStringLiteral("plugin.midi_part_add"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("midi_channel"), 3}, {QStringLiteral("low_key"), 60}}).ok);
+		QVERIFY(run(QStringLiteral("plugin.midi_part_add"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("midi_channel"), 5}, {QStringLiteral("low_key"), 60}}).ok);
+		QCOMPARE(partCount(m_track), 2);
+		QVERIFY(run(QStringLiteral("plugin.midi_part_remove"), {{QStringLiteral("target"), m_track},
+			{QStringLiteral("part"), QStringLiteral("part-0")}}).ok);
+		QCOMPARE(partCount(m_track), 1);
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(0)->chain, 4);  // channel 5 is index 4
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(partCount(m_track), 2);
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(0)->chain, 2);  // channel 3 wins again
+		QCOMPARE(trackOf(m_track)->midiParts().zones().zone(1)->chain, 4);
 	}
 
 	//! MX-114: a single-output instrument has no buses to route - refused, typed; a hosted one lists them.
