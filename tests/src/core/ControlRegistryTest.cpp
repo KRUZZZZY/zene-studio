@@ -438,89 +438,67 @@ private slots:
 		QCOMPARE(transactions.last().toObject().value(QStringLiteral("command")).toString(), outer.id);
 	}
 
+	//! A mutating test command whose handler describes \a op as its inverse.
+	static ControlCommand describedCommand(const QString& id, bool mutating, const QString& op)
+	{
+		ControlCommand command;
+		command.id = id;
+		command.group = QStringLiteral("test");
+		command.verb = id.mid(QStringLiteral("test.").size());
+		command.mutating = mutating;
+		command.handler = [op](const QJsonObject&) {
+			QJsonObject transaction{{QStringLiteral("before"), QJsonObject{{QStringLiteral("value"), 1}}},
+				{QStringLiteral("inverse"), QJsonObject{{QStringLiteral("op"), op}}},
+				{QStringLiteral("reversible"), true}, {QStringLiteral("mechanism"), QStringLiteral("test")}};
+			return ControlResult::success(QJsonObject{{QStringLiteral("__transaction"), transaction}});
+		};
+		return command;
+	}
+
 	//! A non-mutating wrapper (range.consolidate, arrangement.nudge, workflow.run) records
-	//! nothing of its own, so each mutating command it runs must still record itself,
-	//! with the descriptor it supplied.
+	//! nothing of its own, so each mutating command it runs must still record itself.
 	void nonMutatingWrapperLetsEachChildRecordItself()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
 		registry->clearTransactions();
-		const auto childOf = [](const QString& id) {
-			ControlCommand child;
-			child.id = id;
-			child.group = QStringLiteral("test");
-			child.verb = id.mid(QStringLiteral("test.").size());
-			child.mutating = true;
-			child.handler = [id](const QJsonObject&) {
-				QJsonObject transaction;
-				transaction.insert(QStringLiteral("before"), QJsonObject{{QStringLiteral("value"), 1}});
-				transaction.insert(QStringLiteral("inverse"),
-					QJsonObject{{QStringLiteral("op"), id}, {QStringLiteral("args"), QJsonObject()}});
-				transaction.insert(QStringLiteral("reversible"), true);
-				transaction.insert(QStringLiteral("mechanism"), QStringLiteral("test"));
-				return ControlResult::success(QJsonObject{{QStringLiteral("value"), 2},
-					{QStringLiteral("__transaction"), transaction}});
-			};
-			return child;
-		};
-		const ControlCommand childA = childOf(QStringLiteral("test.wrap_child_a"));
-		const ControlCommand childB = childOf(QStringLiteral("test.wrap_child_b"));
+		const ControlCommand childA = describedCommand(QStringLiteral("test.wrap_child_a"), true, QStringLiteral("test.wrap_child_a"));
+		const ControlCommand childB = describedCommand(QStringLiteral("test.wrap_child_b"), true, QStringLiteral("test.wrap_child_b"));
 		registry->registerCommand(childA);
 		registry->registerCommand(childB);
 
-		ControlCommand wrapper;
-		wrapper.id = QStringLiteral("test.wrap_outer");
-		wrapper.group = QStringLiteral("test");
-		wrapper.verb = QStringLiteral("wrap_outer");
-		wrapper.mutating = false;
+		ControlCommand wrapper = describedCommand(QStringLiteral("test.wrap_outer"), false, QString());
 		wrapper.handler = [childA, childB](const QJsonObject& args) {
-			const ControlResult first = ControlRegistry::instance()->invoke(childA.id, args);
-			const ControlResult second = ControlRegistry::instance()->invoke(childB.id, args);
-			return first.ok && second.ok ? ControlResult::success() : ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a child refused"));
+			const bool first = ControlRegistry::instance()->invoke(childA.id, args).ok;
+			const bool second = ControlRegistry::instance()->invoke(childB.id, args).ok;
+			return first && second ? ControlResult::success() : ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a child refused"));
 		};
 		registry->registerCommand(wrapper);
 
 		QVERIFY(registry->invoke(wrapper.id).ok);
 		const QJsonArray transactions = registry->transactions();
 		QCOMPARE(transactions.size(), 2);
-		QCOMPARE(transactions.at(0).toObject().value(QStringLiteral("command")).toString(), childA.id);
-		QCOMPARE(transactions.at(1).toObject().value(QStringLiteral("command")).toString(), childB.id);
-		QCOMPARE(transactions.at(0).toObject().value(QStringLiteral("inverse")).toObject()
-			.value(QStringLiteral("op")).toString(), childA.id);
-		QCOMPARE(transactions.at(1).toObject().value(QStringLiteral("inverse")).toObject()
-			.value(QStringLiteral("op")).toString(), childB.id);
+		for (int i = 0; i < 2; ++i)
+		{
+			const QString child = i == 0 ? childA.id : childB.id;
+			const QJsonObject record = transactions.at(i).toObject();
+			QCOMPARE(record.value(QStringLiteral("command")).toString(), child);
+			QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), child);
+		}
 	}
 
-	//! A mutating outer call with NO descriptor of its own, over a nested change whose
-	//! inverse was folded away, must not claim the journal step reverses that change.
+	//! A mutating outer call with NO descriptor of its own, over a nested change whose inverse
+	//! was folded into its step, must not claim the journal step alone reverses that change.
 	void foldedNestedChangeIsNotClaimedReversible()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
 		registry->clearTransactions();
-
-		ControlCommand inner;
-		inner.id = QStringLiteral("test.folded_inner");
-		inner.group = QStringLiteral("test");
-		inner.verb = QStringLiteral("folded_inner");
-		inner.mutating = true;
-		inner.handler = [](const QJsonObject&) {
-			QJsonObject transaction;
-			transaction.insert(QStringLiteral("before"), QJsonObject{{QStringLiteral("value"), 1}});
-			transaction.insert(QStringLiteral("inverse"), QJsonObject{{QStringLiteral("op"), QStringLiteral("test.folded_inner")}});
-			transaction.insert(QStringLiteral("reversible"), true);
-			transaction.insert(QStringLiteral("mechanism"), QStringLiteral("test"));
-			return ControlResult::success(QJsonObject{{QStringLiteral("__transaction"), transaction}});
-		};
+		const ControlCommand inner = describedCommand(QStringLiteral("test.folded_inner"), true, QStringLiteral("test.folded_inner"));
 		registry->registerCommand(inner);
 
-		ControlCommand outer;
-		outer.id = QStringLiteral("test.folded_outer");
-		outer.group = QStringLiteral("test");
-		outer.verb = QStringLiteral("folded_outer");
-		outer.mutating = true;
+		ControlCommand outer = describedCommand(QStringLiteral("test.folded_outer"), true, QString());
 		outer.handler = [inner](const QJsonObject& args) {
-			const ControlResult nested = ControlRegistry::instance()->invoke(inner.id, args);
-			return nested.ok ? ControlResult::success() : ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the nested call refused"));
+			return ControlRegistry::instance()->invoke(inner.id, args).ok
+				? ControlResult::success() : ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the nested call refused"));
 		};
 		registry->registerCommand(outer);
 
