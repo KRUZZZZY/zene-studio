@@ -293,25 +293,43 @@ void Section::trim()
 	}
 }
 
-bool Section::load(const QDomElement& section)
+namespace
 {
-	const QString version = section.attribute(QStringLiteral("v"));
-	if (!version.isEmpty() && version != QLatin1String("1")) { return false; }
 
-	QList<Change> parsed;
-	quint64 highest = 0;
+//! Every child of a section, in order. Refused (false) on a foreign child, a bad entry, or an entry that does
+//! not ascend in seq: those are not shapes this writer produces. A `nested` entry is refused unless the
+//! section is v="2" (versionTwo), since a v="1" section never carries it.
+bool parseEntries(const QDomElement& section, bool versionTwo, QList<Change>* parsed, quint64* highest)
+{
 	for (QDomNode node = section.firstChild(); !node.isNull(); node = node.nextSibling())
 	{
 		Change change;
-		if (!parseChange(node, change, highest)) { return false; }
+		if (!parseChange(node, change, *highest)) { return false; }
+		if (!change.nested.isEmpty() && !versionTwo) { return false; }
 		// STRICTLY ascending, the shape writeTo produces (it assigns
 		// m_nextSeq++ and appends). An entry that does not ascend - or
 		// repeats - was not written by this writer; claiming it would append
 		// a further entry after the break and leave a file its own loader
 		// refuses. Refused, so the caller preserves it verbatim.
-		if (!parsed.isEmpty() && change.seq <= parsed.last().seq) { return false; }
-		parsed.append(change);
+		if (!parsed->isEmpty() && change.seq <= parsed->last().seq) { return false; }
+		parsed->append(change);
 	}
+	return true;
+}
+
+} // namespace
+
+bool Section::load(const QDomElement& section)
+{
+	const QString version = section.attribute(QStringLiteral("v"));
+	// v="2" is the section that carries a change's optional `nested` ids (an aggregate's children).
+	// writeTo sets v="2" only when some entry carries them, so a v="1" section never has `nested`.
+	const bool versionTwo = version == QLatin1String("2");
+	if (!version.isEmpty() && version != QLatin1String("1") && !versionTwo) { return false; }
+
+	QList<Change> parsed;
+	quint64 highest = 0;
+	if (!parseEntries(section, versionTwo, &parsed, &highest)) { return false; }
 	// Claim nothing (and preserve the element verbatim as unclaimed) when the
 	// section is empty or any child is foreign: a write-back of a partial or
 	// future-shaped section would be the rewrite the append-only rule forbids.
@@ -397,7 +415,11 @@ bool writeTo(DataFile& file)
 	// (include/ProvenanceSection.h) and matches `z:provenance` as a literal.
 	element.setAttribute(documentIndexNamespaceAttribute(), documentIndexNamespaceUri());
 	element.setAttribute(QStringLiteral("seq"), QString::number(section.lastSeq()));
-	element.setAttribute(QStringLiteral("v"), QStringLiteral("1"));
+	// v="2" only when an entry carries `nested`: a section without them is byte-for-byte the v="1" shape
+	// that every build with the strict loader reads, and an older build refuses a v="2" section as a whole.
+	bool anyNested = false;
+	for (int i = 0; i < section.size(); ++i) { anyNested = anyNested || !section.at(i).nested.isEmpty(); }
+	element.setAttribute(QStringLiteral("v"), anyNested ? QStringLiteral("2") : QStringLiteral("1"));
 	for (int i = 0; i < section.size(); ++i)
 	{
 		const Change& change = section.at(i);
