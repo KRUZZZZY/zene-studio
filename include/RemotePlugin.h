@@ -182,7 +182,7 @@ public:
 	{
 		lock();
 		sendMessage( message( IdSampleRateInformation ).addInt( _sr ) );
-		waitForMessage( IdInformationUpdated, true );
+		waitForReplyWithin( message( IdInformationUpdated ) );
 		unlock();
 	}
 
@@ -194,14 +194,30 @@ public:
 		unlock();
 	}
 
+	//! How long a main-thread query waits for its reply. A reply that comes later is not waited for: it stays in the
+	//! connection, and the next wait that does not ask for it discards it (processMessage() ignores replies it does
+	//! not expect).
+	static constexpr std::chrono::milliseconds QueryReplyTimeout{100};
+
+	//! Waits up to \a _timeout for the reply to \a _wm, other messages read meanwhile going through processMessage().
+	//! The caller holds the communication lock. @return the reply, or an undefined message on timeout or loss.
+	message waitForReplyWithin( const message & _wm, std::chrono::milliseconds _timeout = QueryReplyTimeout );
+
+	//! Whether the client's editor is visible, from a query with a bounded wait. -1 when the client did not answer.
 	int isUIVisible()
 	{
 		lock();
 		sendMessage( IdIsUIVisible );
-		const message m = waitForMessage( IdIsUIVisible );
+		const message m = waitForReplyWithin( message( IdIsUIVisible ) );
 		unlock();
-		return m.id != IdIsUIVisible ? -1 : m.getInt() ? 1 : 0;
+		if( m.id != IdIsUIVisible ) { return -1; }
+		m_uiVisible = m.getInt() ? 1 : 0;
+		return m_uiVisible;
 	}
+
+	//! The last known editor visibility, without asking the client: -1 until it has been asked or told. Saving a
+	//! project reads this, so a save never waits for the client.
+	int cachedUIVisible() const { return m_uiVisible; }
 
 	//! Main-thread wait for the client's reply to \a _wm. The communication lock is held across the whole wait:
 	//! the audio thread then never reads a reply that is not its own, and it skips its period rather than wait
@@ -310,6 +326,8 @@ private:
 	MidiChannelOverflow m_midiOverflow;
 	//! Refusals already reported on the main thread (main thread only).
 	std::uint64_t m_reportedDrops = 0;
+	//! Editor visibility as last known: from a query, a show or a hide, or a late reply read by any wait. -1: unknown.
+	int m_uiVisible = -1;
 	//! A reply the client asked for during a period could not be sent without blocking; reported on the main thread.
 	bool m_pendingReplyLost = false;
 

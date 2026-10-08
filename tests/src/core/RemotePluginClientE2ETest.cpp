@@ -858,13 +858,14 @@ private slots:
 	}
 
 	/*!
-	 * A complete message larger than the audio thread's peek window does not fail the plugin.
+	 * A complete message near the one-megabyte window does not fail the plugin.
 	 *
-	 * The fake client writes a 300 KB debug text whole, before its reply. The period cannot see it complete, so it
-	 * gives up (silence, not a failed plugin). The main thread's wait for its own reply then reads the message and
-	 * the reply, and the next period completes.
+	 * The fake client writes a 900 KB debug text whole, before its reply: far above the 16 KB window of the first
+	 * version and above any socket buffer, but inside the 1 MB window the audio thread peeks through. The period
+	 * cannot see it complete, so it gives up (silence, not a failed plugin). The main thread's wait for its own
+	 * reply then reads the message and the reply, and the next period completes.
 	 */
-	void messageLargerThanThePeekWindowDoesNotFailThePlugin()
+	void messageNearTheOneMegabyteWindowDoesNotFailThePlugin()
 	{
 		const auto frames = Engine::audioEngine()->framesPerPeriod();
 		QVERIFY(frames > 0);
@@ -881,7 +882,7 @@ private slots:
 		QVERIFY(!plugin.failed());
 
 		QVERIFY(!plugin.process());
-		QVERIFY2(!plugin.failed(), "a complete message larger than the peek window failed the plugin");
+		QVERIFY2(!plugin.failed(), "a complete message near the window size failed the plugin");
 
 		// The main thread reads the big message as part of its own wait.
 		QCOMPARE(plugin.isUIVisible(), 1);
@@ -956,6 +957,74 @@ private slots:
 		QTest::qWait(30);
 		QVERIFY(!plugin.process());
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3}, 2000);
+	}
+
+	/*!
+	 * A hung client cannot freeze a main-thread query for longer than its bound.
+	 *
+	 * The "deafquery" client never answers the visibility query. The query returns -1 within
+	 * RemotePlugin::QueryReplyTimeout, and the cached visibility stays unknown.
+	 */
+	void hungQueryCannotFreezeTheMainThread()
+	{
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the bounded query is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("deafquery")}), "could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		const auto started = std::chrono::steady_clock::now();
+		const int visible = plugin.isUIVisible();
+		const auto elapsed = std::chrono::steady_clock::now() - started;
+
+		QCOMPARE(visible, -1);
+		QCOMPARE(plugin.cachedUIVisible(), -1);
+		QVERIFY2(elapsed < std::chrono::seconds{1}, "a query to a hung client froze the main thread");
+	}
+
+	/*!
+	 * A period before any shared block exists cannot be held by a client stuck mid-message.
+	 *
+	 * The "halfhandshake" client stops half-way through its first message for two seconds. The plugin is started
+	 * without waiting for its handshake, so periods run with no shared block yet. Each must return at once, with
+	 * silence, instead of reading the connection.
+	 */
+	void periodWithoutBufferCannotHoldTheAudioThread()
+	{
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the no-buffer period is "
+				"UNEXERCISED by this run");
+		}
+
+		const QFileInfo info{client};
+		qputenv("LMMS_PLUGIN_DIR", info.absolutePath().toUtf8());
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(!plugin.init(info.fileName(), false, {QStringLiteral("halfhandshake")}),
+			"could not start the half-handshake client");
+		QVERIFY(!plugin.failed());
+		QVERIFY(!ports.buffers()->initialized());
+
+		for (int period = 0; period < 3; ++period)
+		{
+			const auto started = std::chrono::steady_clock::now();
+			QVERIFY(!plugin.process());
+			QVERIFY2(std::chrono::steady_clock::now() - started < std::chrono::milliseconds{500},
+				"a period without a shared block waited for the client");
+		}
+
+		// Let the handshake finish, so the plugin can be torn down cleanly.
+		plugin.lock();
+		plugin.waitForInitDone(false);
+		plugin.unlock();
 	}
 
 	/*!

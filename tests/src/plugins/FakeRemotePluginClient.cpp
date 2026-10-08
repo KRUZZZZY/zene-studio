@@ -36,6 +36,7 @@
  * Licensed under the GNU General Public License version 2 or later.
  */
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -126,7 +127,15 @@ int g_silencerAllNotesOff = 0;
 //! then the reply. Larger than any socket buffer, so the host cannot see it complete from the audio thread.
 bool g_bigdebug = false;
 bool g_bigdebugUsed = false;
-constexpr std::size_t BigDebugBytes = 300000;
+constexpr std::size_t BigDebugBytes = 900000;
+
+//! "deafquery" mode: the client never answers IdIsUIVisible, as a hung editor would not.
+bool g_deafQuery = false;
+
+//! "halfhandshake" mode: the first start-up message stops half-way (its header, then a pause), as a client that
+//! hangs during start-up does, and is completed after the pause.
+bool g_halfHandshake = false;
+constexpr int HalfHandshakePauseMs = 2000;
 
 //! "orderer" mode: after the first all-notes-off, the client counts the note-ons it receives, and each period asks
 //! for 2 outputs, plus 1 if any note-on arrived after the all-notes-off.
@@ -369,6 +378,7 @@ auto handleMessage(const Message& message) -> bool
 		break;
 
 	case IdIsUIVisibleWire:
+		if (g_deafQuery) { break; }
 		if (!sendMessage(IdIsUIVisibleWire, {"1"})) { return false; }
 		break;
 	case IdMidiEvent:
@@ -524,7 +534,14 @@ auto startHandshake() -> bool
 		return sendMessage(IdChangeInputCount, {"0"}) && sendMessage(IdInitDone, {});
 	}
 
-	if (!sendMessage(IdChangeInputOutputCount, {"0", "2"})) { return false; }
+	if (g_halfHandshake)
+	{
+		const std::int32_t header[2] = {static_cast<std::int32_t>(IdChangeInputOutputCount), 2};
+		if (!writeAll(header, sizeof header)) { return false; }
+		::usleep(HalfHandshakePauseMs * 1000);
+		if (!writeString("0") || !writeString("2")) { return false; }
+	}
+	else if (!sendMessage(IdChangeInputOutputCount, {"0", "2"})) { return false; }
 	// Ask for the host's frame count; it answers with IdBufferSizeInformation.
 	if (!sendMessage(IdBufferSizeInformation, {})) { return false; }
 	// IdInitDone is the last start-up message. The host answers it and then
@@ -558,7 +575,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -572,8 +589,12 @@ int main(int argc, char** argv)
 	g_bigdebug = mode == "bigdebug";
 	g_orderer = mode == "orderer";
 	g_capper = mode == "capper";
-	if (mode != "modern" && mode != "stale" && mode != "stall" && mode != "recount" && mode != "midi" && mode != "late"
-		&& mode != "midframe" && mode != "silencer" && mode != "bigdebug" && mode != "orderer" && mode != "capper")
+	g_deafQuery = mode == "deafquery";
+	g_halfHandshake = mode == "halfhandshake";
+	static const char* const knownModes[] = {"modern", "stale", "stall", "recount", "midi", "late", "midframe",
+		"silencer", "bigdebug", "orderer", "capper", "deafquery", "halfhandshake"};
+	if (std::find_if(std::begin(knownModes), std::end(knownModes),
+			[&mode](const char* known) { return mode == known; }) == std::end(knownModes))
 	{
 		std::fprintf(stderr, "fakeclient: unknown mode '%s'\n", mode.c_str());
 		return 1;

@@ -115,27 +115,19 @@ public:
 	auto release() noexcept -> bool { return sem_post(m_sem) == 0; }
 
 	//! Waits at most timeoutMs for the count to be positive. Never blocks longer than that.
+	/*!
+	 * The deadline is measured on steady_clock, so a step of the wall clock cannot stretch the wait. sem_trywait()
+	 * is polled in short steps, which needs no absolute time (sem_timedwait() takes a wall-clock deadline).
+	 */
 	auto tryAcquire(int timeoutMs) noexcept -> bool
 	{
-#ifdef LMMS_BUILD_APPLE
-		// macOS has no sem_timedwait(): poll with sem_trywait() in short steps up to the timeout.
 		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{timeoutMs < 0 ? 0 : timeoutMs};
 		for (;;)
 		{
 			if (sem_trywait(m_sem) == 0) { return true; }
 			if (std::chrono::steady_clock::now() >= deadline) { return false; }
-			usleep(200);
+			usleep(50);
 		}
-#else
-		timespec until{};
-		clock_gettime(CLOCK_REALTIME, &until);
-		const long long nanos = until.tv_nsec + static_cast<long long>(timeoutMs < 0 ? 0 : timeoutMs) * 1000000LL;
-		until.tv_sec += static_cast<time_t>(nanos / 1000000000LL);
-		until.tv_nsec = static_cast<long>(nanos % 1000000000LL);
-		return retryWhileInterrupted([&]() noexcept {
-			return sem_timedwait(m_sem, &until);
-		}) == 0;
-#endif
 	}
 
 private:

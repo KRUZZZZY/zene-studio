@@ -83,7 +83,7 @@ public:
 	MidiHandoffQueue& operator=(const MidiHandoffQueue&) = delete;
 
 	//! Queues \a event. @return false when the queue was full and the event was dropped
-	auto push(const HandoffMidiEvent& event) noexcept -> bool
+	auto push(const HandoffMidiEvent& event, std::uint64_t* refusedAt = nullptr) noexcept -> bool
 	{
 		std::size_t position = m_enqueue.load(std::memory_order_relaxed);
 		for (;;)
@@ -103,7 +103,9 @@ public:
 			}
 			else if (difference < 0)
 			{
-				// The cell still holds an event that has not been popped: the queue is full.
+				// The cell still holds an event that has not been popped: the queue is full. The position is the number
+				// of events queued before this refusal, exactly.
+				if (refusedAt) { *refusedAt = position; }
 				m_dropped.fetch_add(1, std::memory_order_relaxed);
 				return false;
 			}
@@ -254,8 +256,9 @@ template<std::size_t Capacity>
 auto pushOrRecord(MidiHandoffQueue<Capacity>& queue, MidiChannelOverflow& overflow,
 	const HandoffMidiEvent& event) noexcept -> bool
 {
-	if (queue.push(event)) { return true; }
-	overflow.record(event.channel, queue.enqueued());
+	std::uint64_t queuedBefore = 0;
+	if (queue.push(event, &queuedBefore)) { return true; }
+	overflow.record(event.channel, queuedBefore);
 	return false;
 }
 

@@ -321,6 +321,99 @@ RemotePluginBase::message RemotePluginBase::receiveMessage()
 
 
 
+#ifndef BUILD_REMOTE_PLUGIN_CLIENT
+#ifndef SYNC_WITH_SHM_FIFO
+bool RemotePluginBase::readExactlyWithin(void * _buf, int _len, std::chrono::milliseconds _progress)
+{
+	char * out = static_cast<char *>(_buf);
+	int remaining = _len;
+	while (remaining > 0)
+	{
+		if (!waitForMessageReadable(static_cast<int>(_progress.count()))) { return false; }
+		const ssize_t n = ::read(m_socket, out, static_cast<std::size_t>(remaining));
+		if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) { continue; }
+		if (n <= 0)
+		{
+			invalidate();
+			return false;
+		}
+		out += n;
+		remaining -= static_cast<int>(n);
+	}
+	return true;
+}
+
+RemotePluginBase::ReceiveResult RemotePluginBase::receiveStartedFrame(std::chrono::milliseconds _progress, message & _out)
+{
+	std::int32_t id = 0;
+	std::int32_t count = 0;
+	if (!readExactlyWithin(&id, sizeof id, _progress) || !readExactlyWithin(&count, sizeof count, _progress)
+		|| count < 0)
+	{
+		invalidate();
+		return ReceiveResult::Lost;
+	}
+	_out.id = id;
+	for (std::int32_t i = 0; i < count; ++i)
+	{
+		std::int32_t length = 0;
+		if (!readExactlyWithin(&length, sizeof length, _progress) || length < 0)
+		{
+			invalidate();
+			return ReceiveResult::Lost;
+		}
+		std::string arg(static_cast<std::size_t>(length), '\0');
+		if (length > 0 && !readExactlyWithin(arg.data(), length, _progress))
+		{
+			invalidate();
+			return ReceiveResult::Lost;
+		}
+		_out.data.push_back(std::move(arg));
+	}
+	return ReceiveResult::Got;
+}
+
+RemotePluginBase::ReceiveResult RemotePluginBase::receiveWithin(std::chrono::steady_clock::time_point _deadline,
+	std::chrono::milliseconds _progress, message & _out)
+{
+	for (;;)
+	{
+		if (isInvalid()) { return ReceiveResult::Lost; }
+		switch (peekNextMessage())
+		{
+		case Framing::Unusable:
+			return ReceiveResult::Lost;
+		case Framing::Complete:
+			_out = receiveMessage();
+			return _out.id == IdUndefined ? ReceiveResult::Lost : ReceiveResult::Got;
+		case Framing::Incomplete:
+			if (waitForMessageReadable(0))
+			{
+				// The frame has started: finish it, as far as it goes.
+				return receiveStartedFrame(_progress, _out);
+			}
+			if (std::chrono::steady_clock::now() >= _deadline) { return ReceiveResult::Timeout; }
+			{
+				const auto left = std::chrono::ceil<std::chrono::milliseconds>(
+					_deadline - std::chrono::steady_clock::now());
+				if (!waitForMessageReadable(static_cast<int>(left.count())))
+				{
+					return isInvalid() ? ReceiveResult::Lost : ReceiveResult::Timeout;
+				}
+			}
+			continue;
+		}
+	}
+}
+#else
+RemotePluginBase::ReceiveResult RemotePluginBase::receiveWithin(std::chrono::steady_clock::time_point _deadline,
+	std::chrono::milliseconds, message & _out)
+{
+	return receiveFrameBefore(_deadline, _out);
+}
+#endif
+#endif // BUILD_REMOTE_PLUGIN_CLIENT
+
 #ifdef SYNC_WITH_SHM_FIFO
 RemotePluginBase::message RemotePluginBase::readFrameLocked()
 {
@@ -368,7 +461,13 @@ RemotePluginBase::ReceiveResult RemotePluginBase::receiveFrameBefore(
 			return ReceiveResult::Lost;
 		case Framing::Incomplete:
 			if (std::chrono::steady_clock::now() >= _deadline) { return ReceiveResult::Timeout; }
-			if (!waitForMessageReadable(remainingMs()))
+			if (waitForMessageReadable(0))
+			{
+				// Unread bytes make the socket readable at once, so a plain poll would spin here while the rest of the
+				// message is on its way. Step in short sleeps instead; the deadline is checked on every turn.
+				std::this_thread::sleep_for(std::chrono::microseconds{50});
+			}
+			else if (!waitForMessageReadable(remainingMs()))
 			{
 				return isInvalid() ? ReceiveResult::Lost : ReceiveResult::Timeout;
 			}

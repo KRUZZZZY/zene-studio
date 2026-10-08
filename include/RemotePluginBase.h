@@ -35,6 +35,8 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <functional>
+#include <thread>
 #include <vector>
 #include <cstring>
 #include <string>
@@ -121,8 +123,7 @@ public:
 	// constructor for master-side
 	shmFifo() :
 		m_invalid( false ),
-		m_master( true ),
-		m_lockDepth( 0 )
+		m_master( true )
 	{
 		m_data.create();
 		m_data->startPtr = m_data->endPtr = 0;
@@ -138,8 +139,7 @@ public:
 	// the connection to master
 	shmFifo(const std::string& shmKey) :
 		m_invalid( false ),
-		m_master( false ),
-		m_lockDepth( 0 )
+		m_master( false )
 	{
 		m_data.attach(shmKey);
 		m_dataSem = SystemSemaphore{std::to_string(m_data->dataSem.semKey)};
@@ -162,20 +162,35 @@ public:
 		return m_master;
 	}
 
-	// recursive lock
-	inline void lock()
+	//! Identifies the calling thread. The data lock is owned by one thread at a time: only the owner may enter it
+	//! again without waiting, so a thread that does not hold the lock can never ride on another thread's hold.
+	static std::uint64_t callerKey() noexcept
 	{
-		if( !isInvalid() && m_lockDepth.fetch_add( 1 ) == 0 )
-		{
-			m_dataSem.acquire();
-		}
+		return static_cast<std::uint64_t>( std::hash<std::thread::id>{}( std::this_thread::get_id() ) ) | 1u;
 	}
 
-	// recursive unlock
+	// recursive lock, owned per thread
+	inline void lock()
+	{
+		if( isInvalid() ) { return; }
+		const auto me = callerKey();
+		if( m_owner.load( std::memory_order_acquire ) == me )
+		{
+			++m_depth;
+			return;
+		}
+		m_dataSem.acquire();
+		m_owner.store( me, std::memory_order_release );
+		m_depth = 1;
+	}
+
+	// recursive unlock; a thread that does not own the lock does nothing
 	inline void unlock()
 	{
-		if( m_lockDepth.fetch_sub( 1 ) <= 1 )
+		if( m_owner.load( std::memory_order_acquire ) != callerKey() ) { return; }
+		if( --m_depth == 0 )
 		{
+			m_owner.store( 0, std::memory_order_release );
 			m_dataSem.release();
 		}
 	}
@@ -240,12 +255,15 @@ public:
 	inline bool tryLockFor( int _timeoutMs )
 	{
 		if( isInvalid() ) { return false; }
-		if( m_lockDepth.fetch_add( 1 ) == 0 )
+		const auto me = callerKey();
+		if( m_owner.load( std::memory_order_acquire ) == me )
 		{
-			if( m_dataSem.tryAcquire( _timeoutMs ) ) { return true; }
-			m_lockDepth.fetch_sub( 1 );
-			return false;
+			++m_depth;
+			return true;
 		}
+		if( !m_dataSem.tryAcquire( _timeoutMs ) ) { return false; }
+		m_owner.store( me, std::memory_order_release );
+		m_depth = 1;
 		return true;
 	}
 
@@ -289,14 +307,28 @@ private:
 			return;
 		}
 		lock();
+		// A reader only reads a message the writer has signalled, and the writer writes it whole under the lock. So
+		// the data is there; if it is not after a short wait, the peer broke that rule and the FIFO is given up.
+		int spins = 0;
 		while( isInvalid() == false &&
 				_len > m_data->endPtr - m_data->startPtr )
 		{
+			if( ++spins > MaxReadSpins )
+			{
+				invalidate();
+				break;
+			}
 			unlock();
 #ifndef LMMS_BUILD_WIN32
 			usleep( 5 );
 #endif
 			lock();
+		}
+		if( isInvalid() || _len > m_data->endPtr - m_data->startPtr )
+		{
+			memset( _buf, 0, _len );
+			unlock();
+			return;
 		}
 		std::memcpy(_buf, m_data->data + m_data->startPtr, _len);
 		m_data->startPtr += _len;
@@ -339,12 +371,17 @@ private:
 		unlock();
 	}
 
+	//! Polls of a short read before the FIFO is given up: about 5 ms of 5 us steps.
+	static constexpr int MaxReadSpins = 1000;
+
 	volatile bool m_invalid;
 	bool m_master;
 	SharedMemory<shmData> m_data;
 	SystemSemaphore m_dataSem;
 	SystemSemaphore m_messageSem;
-	std::atomic_int m_lockDepth;
+	//! Thread that holds the data lock (0: none) and its recursion depth; the depth is touched by the owner only.
+	std::atomic<std::uint64_t> m_owner{0};
+	int m_depth = 0;
 };
 #endif // SYNC_WITH_SHM_FIFO
 
@@ -528,6 +565,19 @@ public:
 	//! client that stops mid-message cannot hold the caller. Used on the audio thread.
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 	ReceiveResult receiveFrameBefore( std::chrono::steady_clock::time_point _deadline, message & _out );
+
+	//! The main thread's bounded receive. Like receiveFrameBefore(), but a frame that has started on the socket is
+	//! finished rather than abandoned: a frame larger than the socket buffer cannot be complete until it is read.
+	//! Each new piece of it must arrive within _progress, or the connection is taken as lost.
+	ReceiveResult receiveWithin( std::chrono::steady_clock::time_point _deadline,
+		std::chrono::milliseconds _progress, message & _out );
+
+#ifndef SYNC_WITH_SHM_FIFO
+	//! Reads exactly _len bytes, waiting at most _progress for each new piece. False if none arrived in time.
+	bool readExactlyWithin( void * _buf, int _len, std::chrono::milliseconds _progress );
+	//! Finishes a frame whose first bytes are on the socket (see receiveWithin()).
+	ReceiveResult receiveStartedFrame( std::chrono::milliseconds _progress, message & _out );
+#endif
 #endif
 
 	//! Writes the tail of an earlier partial non-blocking send, if there is one, without blocking.

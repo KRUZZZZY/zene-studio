@@ -492,10 +492,9 @@ bool RemotePlugin::processPeriod()
 
 	if (!m_audioBuffer)
 	{
-		// We have no shared audio block yet, which means the activation
-		// handshake hasn't completed. Pump messages (and hope we get
-		// information like the shm key) until it has.
-		fetchAndProcessAllMessages();
+		// No shared audio block yet: the activation handshake has not completed, or the block could not be made.
+		// Nothing is requested, and the audio thread does not read the connection here: a partly written message
+		// or a lock held by the client would hold this period. The main thread's waits read those messages.
 		return false;
 	}
 
@@ -755,6 +754,7 @@ void RemotePlugin::showUI()
 {
 	lock();
 	sendMessage( IdShowUI );
+	m_uiVisible = 1;
 	unlock();
 }
 
@@ -762,7 +762,21 @@ void RemotePlugin::hideUI()
 {
 	lock();
 	sendMessage( IdHideUI );
+	m_uiVisible = 0;
 	unlock();
+}
+
+RemotePluginBase::message RemotePlugin::waitForReplyWithin( const RemotePluginBase::message & _wm,
+	std::chrono::milliseconds _timeout )
+{
+	const auto deadline = std::chrono::steady_clock::now() + _timeout;
+	for (;;)
+	{
+		RemotePluginBase::message m;
+		if (receiveWithin(deadline, _timeout, m) != ReceiveResult::Got) { return RemotePluginBase::message(); }
+		if (m.id == _wm.id) { return m; }
+		processMessage(m);
+	}
 }
 
 
@@ -991,6 +1005,9 @@ bool RemotePlugin::processMessage( const message & _m )
 			// Only a main-thread wait gets here (collectProcessingReplies() takes the replies it is owed). The
 			// reply belongs to a period the audio thread gave up on, so that period is no longer owed.
 			if (m_owedProcessingReplies > 0) { --m_owedProcessingReplies; }
+			break;
+		case IdIsUIVisible:
+			m_uiVisible = _m.getInt() ? 1 : 0;
 			break;
 		case IdQuit:
 		default:
