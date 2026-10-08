@@ -34,13 +34,14 @@ namespace lmms::clap
 namespace
 {
 
-//! One input port as the host feeds it, with the main flag the MAP uses: a port the plug-in flagged
-//! CLAP_AUDIO_PORT_IS_MAIN is the main one, and when no input port carries the flag the plug-in's own
-//! first input port is taken as the main one.
+//! One usable input port with the main flag the MAP uses and its position among the plug-in's input
+//! ports as clap.audio-ports reports them: the host hands the plug-in its audio_inputs in that order, so
+//! the index is what the plug-in reads its port by, whatever order the transport lays the channels in.
 struct MappedInput
 {
 	const PortDescriptor* port;
 	bool main;
+	int pluginIndex;
 };
 
 //! The input ports main-first: a plug-in is free to list its side-chain input before its main one, and
@@ -59,14 +60,14 @@ auto orderedInputs(const std::vector<PortDescriptor>& ports) -> std::vector<Mapp
 {
 	std::vector<MappedInput> ordered;
 	ordered.reserve(ports.size());
+	int pluginIndex = 0;
 	for (const auto& port : ports)
 	{
-		if (isUsableInput(port) && port.isMain) { ordered.push_back({&port, true}); }
+		if (port.direction != PortDirection::Input) { continue; }
+		if (isUsableInput(port)) { ordered.push_back({&port, port.isMain, pluginIndex}); }
+		++pluginIndex;
 	}
-	for (const auto& port : ports)
-	{
-		if (isUsableInput(port) && !port.isMain) { ordered.push_back({&port, false}); }
-	}
+	std::stable_partition(ordered.begin(), ordered.end(), [](const MappedInput& input) { return input.main; });
 	// No input port carries the flag: the reporting order decides, and its first port is the main one.
 	if (!ordered.empty() && !anyMain(ordered)) { ordered.front().main = true; }
 	return ordered;
@@ -81,11 +82,14 @@ auto mapPorts(const std::vector<PortDescriptor>& ports) -> PortLayout
 
 	// --- inputs, main port first ------------------------------------------
 	int mainChannels = 0;
+	layout.pluginInputPorts = static_cast<int>(std::count_if(ports.begin(), ports.end(),
+		[](const PortDescriptor& port) { return port.direction == PortDirection::Input; }));
 	for (const auto& input : orderedInputs(ports))
 	{
 		const auto channels = std::min(input.port->channelCount, maxChannels - layout.inputs);
 		if (channels <= 0) { continue; }
 		layout.inputPortChannels.push_back(channels);
+		layout.inputPortIndices.push_back(input.pluginIndex);
 		layout.inputs += channels;
 		if (input.main) { mainChannels += channels; }
 	}

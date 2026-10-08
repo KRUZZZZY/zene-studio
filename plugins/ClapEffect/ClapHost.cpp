@@ -437,7 +437,9 @@ auto HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outp
 	for (std::size_t p = 0; p < layout.inputPortChannels.size(); ++p)
 	{
 		const auto channels = layout.inputPortChannels[p];
-		auto& buffer = inBuffers[p];
+		// The plug-in reads audio_inputs by its own port index; the transport's main-first order is
+		// only where the channels sit. A port the budget dropped keeps its zeroed buffer.
+		auto& buffer = inBuffers[static_cast<std::size_t>(layout.inputPortIndices[p])];
 		buffer = {};
 		buffer.channel_count = static_cast<std::uint32_t>(channels);
 		// clap_audio_buffer_t::data32 is float** even for inputs; the plug-in

@@ -71,7 +71,7 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	// Every buffer the audio thread touches is allocated here, once.
 	impl.inPtrs.assign(std::max<std::size_t>(impl.layout.inputs, 1), nullptr);
 	impl.outPtrs.assign(std::max<std::size_t>(impl.layout.outputs, 1), nullptr);
-	impl.inBuffers.assign(impl.layout.inputPortChannels.size(), clap_audio_buffer_t{});
+	impl.inBuffers.assign(static_cast<std::size_t>(impl.layout.pluginInputPorts), clap_audio_buffer_t{});
 	impl.outBuffers.assign(impl.layout.outputPortChannels.size(), clap_audio_buffer_t{});
 	impl.silence.assign(static_cast<std::size_t>(maxBlockSize), 0.0f);
 	impl.outputScratch.assign(static_cast<std::size_t>(impl.layout.outputs) * maxBlockSize, 0.0f);
