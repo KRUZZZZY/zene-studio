@@ -114,11 +114,18 @@ void HostedPlugin::Impl::scanAudioPorts()
 		const auto portCount = audioPortsExt->count(plugin, isInput);
 		for (std::uint32_t i = 0; i < portCount; ++i)
 		{
-			clap_audio_port_info_t portInfo{};
-			if (!audioPortsExt->get(plugin, i, isInput, &portInfo)) { continue; }
 			PortDescriptor port;
-			port.id = portInfo.id;
 			port.direction = isInput ? PortDirection::Input : PortDirection::Output;
+			clap_audio_port_info_t portInfo{};
+			if (!audioPortsExt->get(plugin, i, isInput, &portInfo))
+			{
+				// The port keeps its slot: the plug-in's index is what its buffers are handed by, so dropping
+				// it would move every later port onto the wrong index. channelCount stays 0, so mapPorts()
+				// treats it as unusable.
+				ports.push_back(port);
+				continue;
+			}
+			port.id = portInfo.id;
 			port.name = QString::fromUtf8(portInfo.name);
 			port.portType = QString::fromUtf8(portInfo.port_type ? portInfo.port_type : "");
 			port.channelCount = static_cast<int>(portInfo.channel_count);

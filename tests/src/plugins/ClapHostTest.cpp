@@ -197,6 +197,7 @@ private slots:
 	void testAnInvalidParamRangeIsNormalized();
 	void testAnActiveFlushRequestIsAnsweredByProcess();
 	void testAZeroChannelOutputKeepsTheIndexOfLaterPorts();
+	void testAnUnreadableInputPortKeepsItsNeighboursIndex();
 	void testANonFiniteSampleRateIsRefused();
 	void testANoteVelocityKeepsItsFraction();
 	void testAPluginClosedEditorIsReopened();
@@ -1176,6 +1177,32 @@ void lmms::clap::ClapHostTest::testAZeroChannelOutputKeepsTheIndexOfLaterPorts()
 	}
 	QCOMPARE(layout.pluginOutputPorts, 2);
 	QCOMPARE(layout.outputPortIndices, std::vector<int>{1});
+	qunsetenv("CLAP_TEST_GAIN_LAYOUT");
+}
+
+/*! A plug-in whose clap.audio-ports get() fails for one input must keep that port's slot: the main input is
+ *  the plug-in's port 1, and the host has to hand it audio_inputs[1]. Dropping the unreadable port used to
+ *  put the main input at index 0, and the plug-in then found no main input at its own index. */
+void lmms::clap::ClapHostTest::testAnUnreadableInputPortKeepsItsNeighboursIndex()
+{
+	qputenv("CLAP_TEST_GAIN_LAYOUT", "unreadable-input");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	const auto& layout = plugin.busLayout();
+	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, inputs, outputs, TestFrames);
+	for (const auto& channel : outputs)
+	{
+		QVERIFY2(std::all_of(channel.begin(), channel.end(), [](float v) { return v == 0.5f; }),
+			"the main input did not reach the plug-in's main port: the unreadable port shifted the indices");
+	}
+	QCOMPARE(layout.pluginInputPorts, 2);
+	QCOMPARE(layout.inputPortIndices, std::vector<int>{1});
 	qunsetenv("CLAP_TEST_GAIN_LAYOUT");
 }
 
