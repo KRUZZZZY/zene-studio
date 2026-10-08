@@ -26,6 +26,12 @@
 
 #include <charconv>
 
+#ifndef SYNC_WITH_SHM_FIFO
+#include <cerrno>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#endif
+
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 #include <QCoreApplication>
 #include <QThread>
@@ -72,35 +78,107 @@ RemotePluginBase::~RemotePluginBase()
 
 
 
-int RemotePluginBase::sendIntMessage( int _id, const std::int32_t * _values, std::size_t _count )
+std::size_t RemotePluginBase::frameFromInts( char * _out, std::size_t _capacity, int _id,
+					const std::int32_t * _values, std::size_t _count )
+{
+	// Same bytes sendMessage() writes for a message built with addInt(): each argument is its decimal
+	// string, length-prefixed. The digits go into a stack buffer, so nothing is allocated.
+	char * cursor = _out;
+	char * const end = _out + _capacity;
+	const auto put = [&cursor, end]( const void * _data, std::size_t _size ) -> bool
+	{
+		if( static_cast<std::size_t>( end - cursor ) < _size ) { return false; }
+		std::memcpy( cursor, _data, _size );
+		cursor += _size;
+		return true;
+	};
+
+	const std::int32_t header[2] = { _id, static_cast<std::int32_t>( _count ) };
+	if( !put( header, sizeof header ) ) { return 0; }
+	for( std::size_t i = 0; i < _count; ++i )
+	{
+		char digits[16];
+		const auto digitsEnd = std::to_chars( digits, digits + sizeof digits, _values[i] ).ptr;
+		const auto length = static_cast<std::int32_t>( digitsEnd - digits );
+		if( !put( &length, sizeof length ) || !put( digits, static_cast<std::size_t>( length ) ) ) { return 0; }
+	}
+	return static_cast<std::size_t>( cursor - _out );
+}
+
+std::size_t RemotePluginBase::frameFromMessage( char * _out, std::size_t _capacity, const message & _m )
+{
+	char * cursor = _out;
+	char * const end = _out + _capacity;
+	const auto put = [&cursor, end]( const void * _data, std::size_t _size ) -> bool
+	{
+		if( static_cast<std::size_t>( end - cursor ) < _size ) { return false; }
+		std::memcpy( cursor, _data, _size );
+		cursor += _size;
+		return true;
+	};
+
+	const std::int32_t header[2] = { _m.id, static_cast<std::int32_t>( _m.data.size() ) };
+	if( !put( header, sizeof header ) ) { return 0; }
+	for( const auto & arg : _m.data )
+	{
+		const auto length = static_cast<std::int32_t>( arg.size() );
+		if( !put( &length, sizeof length ) || !put( arg.data(), arg.size() ) ) { return 0; }
+	}
+	return static_cast<std::size_t>( cursor - _out );
+}
+
+RemotePluginBase::SendResult RemotePluginBase::sendFrameNonBlocking( const char * _frame, std::size_t _size )
 {
 #ifdef SYNC_WITH_SHM_FIFO
-	// The shared-memory FIFO's writer is private to shmFifo, so this transport builds the message the
-	// ordinary way. It allocates; the socket transport below does not.
-	message m( _id );
-	for( std::size_t i = 0; i < _count; ++i )
-	{
-		m.addInt( _values[i] );
-	}
-	return sendMessage( m );
+	// The FIFO's writer waits on its semaphores and has no non-blocking form. This transport is unproven
+	// against the audio-thread bound; it writes the frame as the blocking path always did.
+	m_out->lock();
+	m_out->writeRaw( _frame, static_cast<int>( _size ) );
+	m_out->unlock();
+	m_out->messageSent();
+	return SendResult::Sent;
 #else
-	// Each argument is formatted into a stack buffer and written length-prefixed, exactly as addInt()
-	// would store it, so nothing is allocated.
-	char digits[16];
-	std::size_t written = 8;
-	pthread_mutex_lock(&m_sendMutex);
-	writeInt( _id );
-	writeInt( static_cast<int32_t>( _count ) );
-	for( std::size_t i = 0; i < _count; ++i )
+	if( isInvalid() ) { return SendResult::Broken; }
+	if( pthread_mutex_trylock( &m_sendMutex ) != 0 ) { return SendResult::NoRoom; }
+
+	SendResult result = SendResult::NoRoom;
+	bool room = true;
+#ifdef SIOCOUTQ
+	// Bytes still queued in the socket's send buffer, and the buffer's size. Linux reports SO_SNDBUF doubled,
+	// so half of it is the conservative figure. A frame is sent only when it fits in what is left of that,
+	// with a margin.
+	int queued = 0;
+	int sndbuf = 0;
+	socklen_t sndbufLength = sizeof sndbuf;
+	room = ::ioctl( m_socket, SIOCOUTQ, &queued ) == 0
+		&& ::getsockopt( m_socket, SOL_SOCKET, SO_SNDBUF, &sndbuf, &sndbufLength ) == 0
+		&& queued >= 0
+		&& static_cast<std::size_t>( queued ) + _size + 1024 <= static_cast<std::size_t>( sndbuf ) / 2;
+#endif
+	if( room )
 	{
-		const auto end = std::to_chars( digits, digits + sizeof digits, _values[i] ).ptr;
-		const auto length = static_cast<int32_t>( end - digits );
-		writeInt( length );
-		write( digits, length );
-		written += 4 + static_cast<std::size_t>( length );
+		int flags = MSG_DONTWAIT;
+#ifdef MSG_NOSIGNAL
+		flags |= MSG_NOSIGNAL;
+#endif
+		const ssize_t written = ::send( m_socket, _frame, _size, flags );
+		if( written == static_cast<ssize_t>( _size ) )
+		{
+			result = SendResult::Sent;
+		}
+		else if( written < 0 && ( errno == EAGAIN || errno == EWOULDBLOCK ) )
+		{
+			result = SendResult::NoRoom; // nothing was written
+		}
+		else
+		{
+			// A part of the frame went out, or the connection failed: the stream cannot be resynchronised.
+			invalidate();
+			result = SendResult::Broken;
+		}
 	}
-	pthread_mutex_unlock(&m_sendMutex);
-	return static_cast<int>( written );
+	pthread_mutex_unlock( &m_sendMutex );
+	return result;
 #endif
 }
 

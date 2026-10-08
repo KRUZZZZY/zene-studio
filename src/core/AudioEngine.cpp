@@ -24,6 +24,7 @@
 
 #include "AudioEngine.h"
 #include "ControlRoom.h"
+#include "RenderPeriodClock.h"
 #include "InputMeter.h"
 #include "PunchWindow.h"
 
@@ -527,6 +528,7 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	// R7.2: under WANT_DEBUG_RTSAN everything from here to the return is checked as realtime code.
 	const RealtimeScope realtime;
 
+	RenderPeriodClock::markPeriodStart();
 	m_profiler.startPeriod();
 	s_renderingThread = true;
 

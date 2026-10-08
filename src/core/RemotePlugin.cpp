@@ -41,6 +41,7 @@
 #include "MidiEvent.h"
 #include "OutOfProcessHosting.h"
 #include "RemotePluginAudioPorts.h"
+#include "RenderPeriodClock.h"
 #include "Song.h"
 
 #include <iostream>
@@ -419,7 +420,7 @@ RemotePluginBufferChangeGuard::~RemotePluginBufferChangeGuard()
 namespace
 {
 
-//! The time one processing period lasts: the budget a client has to answer IdStartProcessing.
+//! The time one processing period lasts.
 auto periodBudget() -> std::chrono::steady_clock::duration
 {
 	const auto frames = Engine::audioEngine()->framesPerPeriod();
@@ -427,6 +428,17 @@ auto periodBudget() -> std::chrono::steady_clock::duration
 	if (rate == 0) { return std::chrono::milliseconds{20}; }
 	return std::chrono::duration_cast<std::chrono::steady_clock::duration>(
 		std::chrono::duration<double>{static_cast<double>(frames) / static_cast<double>(rate)});
+}
+
+//! The instant by which the client must have answered this period: the end of the render period that is
+//! running, so the wait gets only what the callback has left. A render start more than two periods old
+//! means no render period is running (tests, offline callers), and the budget is one period from now.
+auto periodDeadline(std::chrono::steady_clock::time_point now) -> std::chrono::steady_clock::time_point
+{
+	const auto budget = periodBudget();
+	const auto renderStart = RenderPeriodClock::periodStart();
+	if (now < renderStart || now - renderStart > 2 * budget) { return now + budget; }
+	return renderStart + budget;
 }
 
 } // namespace
@@ -502,18 +514,40 @@ bool RemotePlugin::processPeriod()
 		return false;
 	}
 
-	// MIDI for this period goes out ahead of the request, so the client has it when it processes.
-	sendQueuedMidiEvents();
+	// MIDI for this period goes out ahead of the request, so the client has it when it processes. Nothing
+	// here waits: a send that finds no room skips the period, and the events stay queued for it.
+	switch (sendQueuedMidiEvents())
+	{
+	case SendResult::Sent:
+		break;
+	case SendResult::NoRoom:
+		++m_processingOverruns;
+		return false;
+	case SendResult::Broken:
+		return false;
+	}
 
 	// The inputs for this period go into the shared block only now: no reply is owed, so the client is not
 	// reading it.
 	std::ranges::copy(m_hostInputs, m_sharedInputs.begin());
 
-	// The request is counted as owed before it is sent, so a late reply is always drained later.
-	++m_owedProcessingReplies;
-	sendMessage(IdStartProcessing);
+	char startFrame[8];
+	const auto startSize = frameFromInts(startFrame, sizeof startFrame, IdStartProcessing, nullptr, 0);
+	switch (sendFrameNonBlocking(startFrame, startSize))
+	{
+	case SendResult::Sent:
+		break;
+	case SendResult::NoRoom:
+		++m_processingOverruns;
+		return false;
+	case SendResult::Broken:
+		return false;
+	}
 
-	switch (collectProcessingReplies(start + periodBudget()))
+	// The request is counted as owed once sent, so a late reply is always drained later.
+	++m_owedProcessingReplies;
+
+	switch (collectProcessingReplies(periodDeadline(start)))
 	{
 	case ReplyWait::Done:
 		break;
@@ -611,6 +645,11 @@ void RemotePlugin::applyDeferredClientRequests()
 
 void RemotePlugin::reportDeferredClientRequests()
 {
+	if (m_pendingReplyLost)
+	{
+		qCritical() << "RemotePlugin: a reply to the remote client could not be sent without blocking; the plugin is failed";
+		m_pendingReplyLost = false;
+	}
 	if (m_pendingRetiredId != 0)
 	{
 		qCritical() << "RemotePlugin: remote client sent removed message id" << m_pendingRetiredId
@@ -645,15 +684,28 @@ void RemotePlugin::processMidiEvent( const MidiEvent & _e,
 	m_midiHandoff.push( event );
 }
 
-void RemotePlugin::sendQueuedMidiEvents()
+RemotePluginBase::SendResult RemotePlugin::sendQueuedMidiEvents()
 {
+	if( m_pendingMidiSize != 0 )
+	{
+		const auto result = sendFrameNonBlocking( m_pendingMidi.data(), m_pendingMidiSize );
+		if( result != SendResult::Sent ) { return result; }
+		m_pendingMidiSize = 0;
+	}
+
 	HandoffMidiEvent event;
 	while( m_midiHandoff.pop( event ) )
 	{
 		const std::int32_t values[] = {
 			event.type, event.channel, event.param1, event.param2, static_cast<std::int32_t>( event.offset ) };
-		sendIntMessage( IdMidiEvent, values, std::size( values ) );
+		m_pendingMidiSize = frameFromInts( m_pendingMidi.data(), m_pendingMidi.size(), IdMidiEvent,
+			values, std::size( values ) );
+		const auto result = sendFrameNonBlocking( m_pendingMidi.data(), m_pendingMidiSize );
+		if( result == SendResult::NoRoom ) { return result; } // the event stays in m_pendingMidi
+		m_pendingMidiSize = 0;
+		if( result != SendResult::Sent ) { return result; }
 	}
+	return SendResult::Sent;
 }
 
 void RemotePlugin::showUI()
@@ -899,7 +951,23 @@ bool RemotePlugin::processMessage( const message & _m )
 	}
 	if( reply )
 	{
-		sendMessage( reply_message );
+		if( m_inProcessPeriod )
+		{
+			// On the audio thread the reply is written without blocking. If it cannot be, the client
+			// is left waiting for it, which is the same failure as a lost client; it is reported later.
+			std::array<char, 512> frame{};
+			const auto size = frameFromMessage( frame.data(), frame.size(), reply_message );
+			if( size == 0 || sendFrameNonBlocking( frame.data(), size ) != SendResult::Sent )
+			{
+				m_pendingReplyLost = true;
+				m_deferredWork = true;
+				m_failed = true;
+			}
+		}
+		else
+		{
+			sendMessage( reply_message );
+		}
 	}
 	unlock();
 

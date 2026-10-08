@@ -617,6 +617,7 @@ include/RemotePluginBase.h
 include/RemotePluginClient.h
 include/RenameDialog.h
 include/RenderManager.h
+include/RenderPeriodClock.h
 include/RenderPresetMenu.h
 include/RenderQueue.h
 include/RetroAudioCapture.h

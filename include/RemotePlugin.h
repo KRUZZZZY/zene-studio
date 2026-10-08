@@ -287,7 +287,15 @@ private:
 	bool processPeriod();
 
 	//! Sends the MIDI events queued by processMidiEvent(), in order. Called with m_commMutex held.
-	void sendQueuedMidiEvents();
+	//! Sends the queued MIDI events on the audio thread, without blocking. A frame that finds no room is kept
+	//! in m_pendingMidi and sent first next period; no event is popped without a place to go.
+	SendResult sendQueuedMidiEvents();
+
+	//! Frame of a MIDI event that could not be sent yet (see sendQueuedMidiEvents()).
+	std::array<char, 128> m_pendingMidi{};
+	std::size_t m_pendingMidiSize = 0;
+	//! A reply the client asked for during a period could not be sent without blocking; reported on the main thread.
+	bool m_pendingReplyLost = false;
 
 	//! MIDI events waiting for the next processing period; see processMidiEvent().
 	MidiHandoffQueue<256> m_midiHandoff;

@@ -226,6 +226,12 @@ public:
 		write( _s.c_str(), len );
 	}
 
+	//! Writes raw bytes, for a frame built by RemotePluginBase::sendFrameNonBlocking(). Does not allocate.
+	inline void writeRaw( const void * _buf, int _len )
+	{
+		write( _buf, _len );
+	}
+
 
 	inline bool messagesLeft()
 	{
@@ -464,7 +470,27 @@ public:
 	//! Sends a message whose arguments are all integers, in the wire format sendMessage() writes. Each
 	//! argument is formatted into a stack buffer, so unlike building a message with addInt() this does not
 	//! allocate; the audio thread uses it. @return the number of bytes written, as sendMessage() does
-	int sendIntMessage( int _id, const std::int32_t * _values, std::size_t _count );
+	//! Outcome of a send made on the audio thread.
+	enum class SendResult
+	{
+		Sent,   //!< the whole frame was written
+		NoRoom, //!< nothing was written: the send buffer had no room, or the send lock was busy
+		Broken  //!< the connection failed, or a partial frame was written; the stream is no longer usable
+	};
+
+	//! Writes one complete frame without blocking. Used on the audio thread: it never waits for the send
+	//! lock or the socket. The socket path checks the send buffer has room for the frame before writing,
+	//! so a short write only happens if that check was wrong, and then the stream is marked broken.
+	SendResult sendFrameNonBlocking( const char * _frame, std::size_t _size );
+
+	//! Encodes a message of integer arguments in the wire format into \a _out, without allocating.
+	//! @return the frame size, or 0 if it does not fit in \a _capacity bytes
+	static std::size_t frameFromInts( char * _out, std::size_t _capacity, int _id,
+						const std::int32_t * _values, std::size_t _count );
+
+	//! Encodes \a _m in the wire format into \a _out, without allocating.
+	//! @return the frame size, or 0 if it does not fit in \a _capacity bytes
+	static std::size_t frameFromMessage( char * _out, std::size_t _capacity, const message & _m );
 
 	inline bool isInvalid() const
 	{
