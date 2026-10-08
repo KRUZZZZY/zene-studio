@@ -28,9 +28,11 @@
 
 #include <QtTest>
 
+#include <QDir>
 #include <QJsonArray>
 #include <QTemporaryDir>
 
+#include "AudioEngine.h"
 #include "AutomationTrack.h"
 #include "Clip.h"
 #include "ControlCompSupport.h"
@@ -382,6 +384,36 @@ private slots:
 		QCOMPARE(left.result.value(QStringLiteral("directory")).toString(), takes.path());
 		QVERIFY2(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok,
 			"record.disarm_track refused");
+	}
+
+	//! Luna 4900 (review): routes on ONE volume share its free space. Two armed directories on the same
+	//! volume must divide the volume's free bytes by both routes' writing rate, not by one route each.
+	void armedRoutesOnOneVolumeShareItsFreeSpace()
+	{
+		QTemporaryDir takes;
+		QVERIFY2(takes.isValid(), "could not make a take directory");
+		QVERIFY(QDir().mkpath(takes.filePath(QStringLiteral("first"))));
+		QVERIFY(QDir().mkpath(takes.filePath(QStringLiteral("second"))));
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 0},
+			{QStringLiteral("file"), takes.filePath(QStringLiteral("first/route0.wav"))}}).ok, "record.arm_track 0 refused");
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 1},
+			{QStringLiteral("file"), takes.filePath(QStringLiteral("second/route1.wav"))}}).ok, "record.arm_track 1 refused");
+
+		const ControlResult left = run(QStringLiteral("record.remaining"));
+		QVERIFY2(left.ok, qPrintable(left.errorMessage));
+		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 2);
+		QVERIFY(left.result.value(QStringLiteral("directory")).toString().startsWith(takes.path()));
+		const double free = left.result.value(QStringLiteral("free_bytes")).toDouble();
+		const double rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+		QVERIFY(free > 0.0);
+		// Both routes write 24-bit mono into the same pool: the volume lasts free / (2 routes * 3 bytes * rate).
+		const double expected = free / (rate * 3.0 * 2.0);
+		const double seconds = left.result.value(QStringLiteral("seconds")).toDouble();
+		QVERIFY2(qAbs(seconds - expected) <= 1e-9 * qMax(1.0, expected),
+			qPrintable(QStringLiteral("seconds %1, expected %2 for two routes on one volume").arg(seconds).arg(expected)));
+
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
 	}
 };
 
