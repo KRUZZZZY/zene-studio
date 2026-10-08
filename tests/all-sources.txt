@@ -2442,6 +2442,7 @@ tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlGrooveCommandsTest.cpp
 tests/src/core/ControlLinkCommandsTest.cpp
+tests/src/core/ControlMidiReconnectSharedTest.cpp
 tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlNoteScaleVerbsTest.cpp
@@ -2451,6 +2452,7 @@ tests/src/core/ControlRegistryNestingTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlResultSchemaTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
+tests/src/core/ControlSessionRecordLandTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSuccessPathsTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp

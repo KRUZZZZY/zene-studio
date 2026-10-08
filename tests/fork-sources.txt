@@ -2007,8 +2007,10 @@ tests/src/core/ControlBrowserCommandsTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlLinkCommandsTest.cpp
+tests/src/core/ControlMidiReconnectSharedTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
 tests/src/core/ControlRegistryTest.cpp
+tests/src/core/ControlSessionRecordLandTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
 tests/src/core/ControlRegistryNestingTest.cpp

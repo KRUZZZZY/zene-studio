@@ -81,6 +81,8 @@ set(LMMS_TESTS
 	src/core/BounceInPlaceTest.cpp
 	# Coverage lane (M0): bounce.land, track.flatten, range.bounce and the subproject verbs through a stand-in render child.
 	src/core/ControlBounceRenderTest.cpp
+	src/core/ControlSessionRecordLandTest.cpp
+	src/core/ControlMidiReconnectSharedTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
 	# Linked / smart clips (feature-list row 6, task #645): the relation, an edit
@@ -1288,6 +1290,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+	endif()
+
+	# ControlMidiReconnectSharedTest drives the inline helpers of a header private to src/core.
+	if(LMMS_TEST_NAME STREQUAL "ControlMidiReconnectSharedTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src/core)
 	endif()
 
 	# PluginScanCacheTest drives the scan cache and the quarantine list through
