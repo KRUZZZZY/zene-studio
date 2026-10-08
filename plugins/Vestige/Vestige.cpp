@@ -401,6 +401,15 @@ auto VestigeInstrument::processImpl(PlanarBufferView<const float> in, PlanarBuff
 		return ProcessStatus::Continue;
 	}
 
+	// MIDI queued since the last period goes to the plugin first, in order.
+	HandoffMidiEvent queued;
+	while (m_midiHandoff.pop(queued))
+	{
+		m_plugin->processMidiEvent(
+			MidiEvent(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2),
+			queued.offset);
+	}
+
 	// The VST renders into the shared audio block that VestigeAudioPorts()
 	// exposes as this plugin's in/out ports; ProcessStatus::Continue keeps the
 	// audio ports router reading that block.
@@ -432,12 +441,15 @@ void VestigeInstrument::processUnlock()
 
 bool VestigeInstrument::handleMidiEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset )
 {
-	m_pluginMutex.lock();
-	if( m_plugin != nullptr )
-	{
-		m_plugin->processMidiEvent( event, offset );
-	}
-	m_pluginMutex.unlock();
+	// Realtime: this is called from the audio thread too, so it never takes m_pluginMutex. The event is
+	// forwarded by the next processed period (processImpl()). A full queue drops it.
+	HandoffMidiEvent queued;
+	queued.type = static_cast<std::uint8_t>( event.type() );
+	queued.channel = event.channel();
+	queued.param1 = event.param( 0 );
+	queued.param2 = event.param( 1 );
+	queued.offset = static_cast<std::uint32_t>( offset );
+	m_midiHandoff.push( queued );
 
 	return true;
 }

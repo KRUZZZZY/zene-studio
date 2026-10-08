@@ -31,6 +31,7 @@
 
 #include "AudioPlugin.h"
 #include "InstrumentView.h"
+#include "MidiHandoffQueue.h"
 #include "RemotePluginAudioPorts.h"
 #include "SubWindow.h"
 
@@ -112,6 +113,11 @@ private:
 
 	VstPlugin * m_plugin;
 	QMutex m_pluginMutex;
+
+	//! MIDI from any thread (processInEvent() runs on the GUI, the MIDI input and the audio thread), waiting
+	//! for the next processed period. handleMidiEvent() only pushes here; processImpl() forwards it under
+	//! processLock(), so the audio thread never waits for the plugin mutex to queue an event.
+	MidiHandoffQueue<256> m_midiHandoff;
 
 	QString m_pluginDLL;
 	gui::SubWindow* m_subWindow;

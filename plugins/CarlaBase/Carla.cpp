@@ -64,6 +64,24 @@ namespace lmms
 // this doesn't seem to be defined anywhere
 static const double ticksPerBeat = 48.0;
 
+namespace
+{
+
+//! Converts one queued MIDI event into the native form the plugin reads.
+//! @return false when the event has no byte form, in which case it is skipped
+bool stageMidiEvent(const HandoffMidiEvent& queued, NativeMidiEvent& native)
+{
+    const MidiEvent event(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2);
+    std::memset(&native, 0, sizeof(NativeMidiEvent));
+    native.port = 0;
+    native.time = queued.offset;
+    const std::size_t written = writeToByteSeq(event, native.data, sizeof(NativeMidiEvent::data));
+    if (written) { native.size = written; }
+    return written != 0;
+}
+
+} // namespace
+
 /*
  * Current TODO items:
  *  - get plugin instance name (to use in external window title)
@@ -532,8 +550,15 @@ void CarlaInstrument::playImpl(std::span<SampleFrame> out)
     std::memset(buf1, 0, sizeof(float)*bufsize);
     std::memset(buf2, 0, sizeof(float)*bufsize);
 
+    // Stage the MIDI queued since the last period. Only this thread pops the queue and reads fMidiEvents.
+    fMidiEventCount = 0;
+    HandoffMidiEvent queued;
+    while (fMidiEventCount < kMaxMidiEvents && fMidiHandoff.pop(queued))
     {
-        const QMutexLocker ml(&fMutex);
+        if (stageMidiEvent(queued, fMidiEvents[fMidiEventCount])) { ++fMidiEventCount; }
+    }
+
+    {
 // TODO FIXME this is just here so it compiles.
 // https://github.com/falkTX/Carla/blob/8bceb9ed173a10b29038f8abb4383710c0e497c1/source/includes/CarlaNative.h
 //     FIXME for v3.0, use const for the input buffer
@@ -554,21 +579,15 @@ void CarlaInstrument::playImpl(std::span<SampleFrame> out)
 
 bool CarlaInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&, f_cnt_t offset)
 {
-    const QMutexLocker ml(&fMutex);
-
-    if (fMidiEventCount >= kMaxMidiEvents)
-        return false;
-
-    NativeMidiEvent& nEvent(fMidiEvents[fMidiEventCount++]);
-    std::memset(&nEvent, 0, sizeof(NativeMidiEvent));
-
-    nEvent.port    = 0;
-    nEvent.time    = offset;
-    std::size_t written = writeToByteSeq(event, nEvent.data, sizeof(NativeMidiEvent::data));
-    if(written) { nEvent.size = written; }
-    else { --fMidiEventCount; }
-
-    return true;
+    // Realtime: any thread may call this, the audio thread included, and nothing here waits. The event is
+    // staged by the next processed period (playImpl()). A full queue refuses it.
+    HandoffMidiEvent queued;
+    queued.type = static_cast<std::uint8_t>(event.type());
+    queued.channel = event.channel();
+    queued.param1 = event.param(0);
+    queued.param2 = event.param(1);
+    queued.offset = static_cast<std::uint32_t>(offset);
+    return fMidiHandoff.push(queued);
 }
 
 gui::PluginView* CarlaInstrument::instantiateView(QWidget* parent)

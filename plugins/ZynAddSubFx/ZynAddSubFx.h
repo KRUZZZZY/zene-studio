@@ -33,6 +33,7 @@
 #include "AudioPlugin.h"
 #include "AutomatableModel.h"
 #include "InstrumentView.h"
+#include "MidiHandoffQueue.h"
 #include "RemotePlugin.h"
 #include "RemotePluginAudioPorts.h"
 
@@ -153,6 +154,11 @@ private:
 
 	bool m_hasGUI;
 	QMutex m_pluginMutex;
+
+	//! MIDI from any thread (processInEvent() runs on the GUI, the MIDI input and the audio thread), waiting
+	//! for the next processed period. handleMidiEvent() only pushes here; processImpl() forwards it under
+	//! processLock(), so the audio thread never waits for the plugin mutex to queue an event.
+	MidiHandoffQueue<256> m_midiHandoff;
 	LocalZynAddSubFx * m_localPlugin;
 	ZynAddSubFxRemotePlugin * m_remotePlugin;
 

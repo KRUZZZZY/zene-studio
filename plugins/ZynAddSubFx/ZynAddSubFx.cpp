@@ -349,6 +349,21 @@ QString ZynAddSubFxInstrument::nodeName() const
 auto ZynAddSubFxInstrument::processImpl(PlanarBufferView<const float, 0> in, PlanarBufferView<float, 2> out)
 	-> ProcessStatus
 {
+	// MIDI queued since the last period goes to the synth first, in order.
+	HandoffMidiEvent queued;
+	while (m_midiHandoff.pop(queued))
+	{
+		const MidiEvent event(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2);
+		if (m_remotePlugin)
+		{
+			m_remotePlugin->processMidiEvent(event, 0);
+		}
+		else
+		{
+			m_localPlugin->processMidiEvent(event);
+		}
+	}
+
 	if (m_remotePlugin)
 	{
 		// The remote client fills the shared block the ports expose; with no
@@ -394,18 +409,15 @@ bool ZynAddSubFxInstrument::handleMidiEvent( const MidiEvent& event, const TimeP
 		return true;
 	}
 
-	MidiEvent localEvent = event;
-	localEvent.setChannel( 0 );
-	m_pluginMutex.lock();
-	if( m_remotePlugin )
-	{
-		m_remotePlugin->processMidiEvent( localEvent, 0 );
-	}
-	else
-	{
-		m_localPlugin->processMidiEvent( localEvent );
-	}
-	m_pluginMutex.unlock();
+	// Realtime: this is called from the audio thread too, so it never takes m_pluginMutex. The event goes to
+	// the synth (remote or local, chosen in processImpl()) in the next processed period, on channel 0.
+	HandoffMidiEvent queued;
+	queued.type = static_cast<std::uint8_t>( event.type() );
+	queued.channel = 0;
+	queued.param1 = event.param( 0 );
+	queued.param2 = event.param( 1 );
+	queued.offset = 0;
+	m_midiHandoff.push( queued );
 
 	return true;
 }
