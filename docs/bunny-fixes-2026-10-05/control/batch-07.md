@@ -125,3 +125,13 @@ loads no effect"); `ctest -R '^DeviceToolsTest$'` EXIT=8 for the same reason.
 Leftovers: cluster 1313 is an unfixed product defect (`plugin.ab` store leaves the slot changed
 after an undo) awaiting a build tree with loadable native effects, or a test that can fake the
 effect without one.
+## Correction (rework 2026-10-08, sha 880c4c770)
+
+- **5003 is NOT already fixed by `4a01e6dd0`.** At that commit the records of nested children were suppressed, so
+  `range.consolidate` produced no per-track records and its undo was not described. The finding is fixed by
+  `019544a32` (`fix(rework 4a01e6dd0)`): each mutating child of a non-mutating wrapper records itself, and a
+  mutating outer call keeps one record for its step. Test: `ControlRegistryTest::nonMutatingWrapperLetsEachChildRecordItself`
+  (red on the `4a01e6dd0` registry, EXIT=8; green EXIT=0).
+- **5002 (arrangement.nudge, FALSE-POSITIVE) keeps its verdict.** Its rationale relies on the child `clip.move`
+  recording its own step. At `4a01e6dd0` that child bookkeeping was broken; at `019544a32` it is restored, so the
+  rationale holds at the rework tip. The contract row and the handler still match.
