@@ -39,6 +39,8 @@
 #include <QStringList>
 
 #include "ControlDeviceSupport.h"
+#include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
@@ -126,10 +128,12 @@ private slots:
 		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
 #endif
 		Engine::init(true);
+		ControlRegistry::setReady(true);
 	}
 
 	void cleanupTestCase()
 	{
+		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
 
@@ -349,6 +353,76 @@ private slots:
 		journal->redo();
 		QVERIFY(chain->effects().empty());
 
+		mixer->deleteChannel(index);
+		engine->takeLogMessages();
+	}
+
+	/*! The first effect module this build lists as loadable, or false. */
+	static bool loadableDevice(QString* device, QString* deviceName)
+	{
+		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
+		for (int i = 0; i < catalogue.size(); ++i)
+		{
+			if (catalogue.at(i).loadable)
+			{
+				*device = control::deviceId(i);
+				*deviceName = catalogue.at(i).name;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/*! Luna 5332, at the undo cap. With the stack full, the removal's own steps
+	 *  push the stack's oldest steps out. The merge used to be named by an index
+	 *  taken before those pushes, so it could be a silent no-op and one undo
+	 *  restored only the enabled flag. Named by serial it folds the removal's
+	 *  steps into one: one undo brings the device back, re-enables the chain,
+	 *  and leaves the step pushed before the script untouched. */
+	void aScriptsRemovedEffectIsUndoneOnceAtTheUndoCap()
+	{
+		QString device;
+		QString deviceName;
+		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int oldCap = journal->maxUndoStates();
+		constexpr int cap = 8;
+		QVERIFY(journal->setMaxUndoStates(cap));
+
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+
+		// Fill the stack to the cap with steps that touch nothing; the last one
+		// is the sentinel, the step the script's own steps must not reach.
+		auto preceding = std::make_shared<int>(0);
+		while (journal->undoDepth() < cap - 1)
+		{
+			control::addStructuralUndoStep([] {}, [] {}, 0);
+		}
+		control::addStructuralUndoStep([preceding] { ++*preceding; }, [] {}, 0);
+		QCOMPARE(journal->undoDepth(), cap);
+
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(RemoveEffectScript).arg(index).arg(device), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(chain->effects().empty());
+		QVERIFY(!chain->isEnabled());
+
+		journal->undo();
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QCOMPARE(QString::fromUtf8(chain->effects().front()->descriptor()->name), deviceName);
+		QVERIFY(chain->isEnabled());
+		QCOMPARE(*preceding, 0);
+
+		journal->redo();
+		QVERIFY(chain->effects().empty());
+		QVERIFY(!chain->isEnabled());
+
+		QVERIFY(journal->setMaxUndoStates(oldCap));
 		mixer->deleteChannel(index);
 		engine->takeLogMessages();
 	}

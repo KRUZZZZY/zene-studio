@@ -228,8 +228,10 @@ void applyRemoveEffect(EffectChain* chain, int index)
 	// whose state cannot be captured (empty, or over the structural budget)
 	// is still removed, as the script asked, but no undo step is claimed for
 	// it: the log says so instead of pretending the removal is reversible.
+	// The mark is a serial, not an index: a bound can evict steps while this
+	// removal pushes its own, and an index taken before that would be stale.
 	ProjectJournal* journal = Engine::projectJournal();
-	const int mark = journal != nullptr ? journal->undoDepth() : 0;
+	const quint64 mark = journal != nullptr ? journal->topStepSerial() : 0;
 	if (!control::journalEffectRemoval(chain, effect, index))
 	{
 		ScriptEngine::instance()->logMessage(QStringLiteral(
@@ -242,7 +244,7 @@ void applyRemoveEffect(EffectChain* chain, int index)
 	// checkpoint of its own after the structural step. Fold the removal's
 	// checkpoints into one step, as the control registry does for one command,
 	// so a single undo restores the device rather than only the flag.
-	if (journal != nullptr) { journal->mergeCheckpointsFrom(mark); }
+	if (journal != nullptr) { journal->mergeCheckpointsSince(mark); }
 }
 
 void applySetEffectEnabled(Effect* effect, bool enabled)
