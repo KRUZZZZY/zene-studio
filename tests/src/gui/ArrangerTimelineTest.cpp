@@ -277,6 +277,27 @@ private slots:
 		QCOMPARE(m_editor->trackViewAt(0), secondView);
 	}
 
+	//! One Delete gesture over a selection is one undo step, even though each clip removal journals its track.
+	void deletingAClipSelectionCreatesOneUndoStep()
+	{
+		Clip* first = clipAt(m_track, 0, Bar);
+		Clip* second = clipAt(m_track, 2 * Bar, Bar);
+		QCoreApplication::processEvents();
+		ClipView* firstView = viewOf(first);
+		ClipView* secondView = viewOf(second);
+		QVERIFY(firstView != nullptr && secondView != nullptr);
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+
+		ClipView::remove(QVector<ClipView*>{firstView, secondView});
+		QCoreApplication::processEvents();
+		QCOMPARE(m_track->numOfClips(), 0);
+		QCOMPARE(journal->undoDepth(), depthBefore + 1);
+		journal->undo();
+		QCOMPARE(m_track->numOfClips(), 2);
+	}
+
 	//! Luna cluster 4674: the badge stays locked either way, so the tooltip must be refreshed when the
 	//! lock holder moves from the track to the clip - not only when the locked state itself flips.
 	void theLockTooltipFollowsTheLockHolder()
