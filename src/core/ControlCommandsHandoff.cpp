@@ -126,10 +126,11 @@ bool isTaken(const QString& file)
 }
 
 //! The first of the hand-off folder's own files that already exists, or an empty string when the
-//! folder is free for this hand off.
+//! folder is free for this hand off. The session save also writes '<copy>.new' on its way to the copy
+//! (DataFile::writeFile renames it over the copy), so that name is held too.
 QString takenFile(const QString& file, const QString& manifestFile)
 {
-	for (const QString& candidate : {file, manifestFile})
+	for (const QString& candidate : {file, manifestFile, file + QStringLiteral(".new")})
 	{
 		if (isTaken(candidate)) { return candidate; }
 	}

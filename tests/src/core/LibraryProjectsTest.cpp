@@ -302,6 +302,50 @@ private slots:
 		}
 	}
 
+	//! The session save's temporary '<copy>.new' is held like the copy: a regular file or a dangling link there
+	//! is refused and left alone, not renamed over.
+	void aHandOffNeverReplacesTheSaveTemporary()
+	{
+		for (const bool dangling : {false, true})
+		{
+			const QString dir = m_dir.filePath(dangling ? QStringLiteral("temp-link") : QStringLiteral("temp-file"));
+			const ControlResult first = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+			QVERIFY2(first.ok, qPrintable(first.errorMessage));
+			const QString copy = first.result.value(QStringLiteral("file")).toString();
+			const QString temp = copy + QStringLiteral(".new");
+			QVERIFY(QFile::remove(copy));
+			QVERIFY(QFile::remove(QDir(dir).filePath(QStringLiteral("HANDOFF.json"))));
+			QVERIFY(QDir(QDir(dir).filePath(QStringLiteral("media"))).removeRecursively());
+			const QString missing = m_dir.filePath(QStringLiteral("gone-temp.target"));
+			if (dangling)
+			{
+				QVERIFY(QFile::link(missing, temp));
+			}
+			else
+			{
+				QFile theirs(temp);
+				QVERIFY(theirs.open(QIODevice::WriteOnly));
+				theirs.write("not a save temporary");
+				theirs.close();
+			}
+
+			const ControlResult refused = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+			QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+			QVERIFY2(refused.errorMessage.contains(QStringLiteral("already exists")), qPrintable(refused.errorMessage));
+			if (dangling)
+			{
+				QVERIFY2(QFileInfo(temp).isSymLink(), "the hand off replaced a dangling link at its save temporary");
+				QCOMPARE(QFile::symLinkTarget(temp), missing);
+			}
+			else
+			{
+				QFile check(temp);
+				QVERIFY(check.open(QIODevice::ReadOnly));
+				QCOMPARE(check.readAll(), QByteArray("not a save temporary"));
+			}
+		}
+	}
+
 	// A second hand off into a folder that already carries someone else's
 	// session copy and manifest must be refused, leaving both files alone.
 	void aHandOffNeverOverwritesTheDestinationFolder()
