@@ -82,6 +82,15 @@ private slots:
 		// Without the guard this divides by zero below and asks for a huge allocation.
 		QCOMPARE(resampleBuffer(input, 44100).get(), input.get());
 	}
+
+	void aResampledBufferDoesNotPointBackToTheUntransformedSourceFile()
+	{
+		const auto input = std::make_shared<const SampleBuffer>(
+			std::vector<SampleFrame>(4096), 48000, QStringLiteral("source.wav"));
+		const auto output = resampleBuffer(input, 44100);
+		QVERIFY(output.get() != input.get());
+		QVERIFY(output->audioFile().isEmpty());
+	}
 };
 
 QTEST_GUILESS_MAIN(SampleBufferResampleTest)

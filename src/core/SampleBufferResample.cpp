@@ -83,7 +83,9 @@ auto resampleBuffer(const std::shared_ptr<const SampleBuffer>& input, sample_rat
 		if (outPos == before) { break; }
 	}
 	output.resize(static_cast<std::size_t>(std::min(outPos, wanted)));
-	return std::make_shared<const SampleBuffer>(std::move(output), static_cast<int>(rate), input->audioFile());
+	// The new samples no longer match the original file, so they must be
+	// embedded if a clip later saves this buffer.
+	return std::make_shared<const SampleBuffer>(std::move(output), static_cast<int>(rate));
 }
 
 } // namespace lmms
