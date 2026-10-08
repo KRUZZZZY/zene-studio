@@ -1742,3 +1742,7 @@ tests/CMakeLists.txt	cluster 5398: gives StemSplitPipelineTest the offscreen Qt 
 include/AudioJack.h	cluster 3711: grants the JACK restart regression access to the private port-state reset helper.
 src/core/audio/AudioJack.cpp	cluster 3711: clears output ports, input ports and output buffers before opening a replacement JACK client; AudioJackPortRestartTest seeds stale entries and verifies they do not survive.
 tests/CMakeLists.txt	cluster 3711: registers AudioJackPortRestartTest only when JACK support is built and gives it the offscreen Qt platform.
+src/core/ControlCommandsMidiReconnectEdit.cpp	cluster 5704: records the MIDI binding inverse by the track's stable id rather than retaining its MidiPort pointer.
+src/core/ControlCommandsMidiReconnectShared.h	cluster 5704: resolves the current MidiPort from its stable track id for both undo and redo closures.
+tests/src/core/MidiReconnectTest.cpp	cluster 5704: verifies the binding inverse follows a replacement InstrumentTrack with the same stable id through undo and redo.
+tests/CMakeLists.txt	cluster 5704: exposes the private core shared header to MidiReconnectTest for the replacement-port regression.

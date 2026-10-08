@@ -179,37 +179,7 @@ void applyBinding(MidiPort* port, bool readable, const QString& name, bool subsc
 	else { port->subscribeWritablePort(name, subscribe); }
 }
 
-//! The recorded inverse of one midi.reconnect_set call.
-/*!
- * The subscription set is a property of the MidiPort, and
- * MidiPort::subscribeReadablePort is the only call that maintains it - which is
- * why the recorded step goes through that same call rather than through a
- * restore of the pre-write XML: MidiPort::loadSettings only ever SUBSCRIBES the
- * ports a saved element names and never detaches one it does not, so a
- * checkpoint alone could not take a binding back off.
- *
- * \a subscribe is the state the COMMAND left the binding in (!detach: a bind
- * subscribes, a detach unsubscribes), and the two recorded actions are the
- * other way round: the undo puts the binding back where it was, the redo
- * re-applies what the command did. The parameter is named for what it is, not
- * for the command's flag: an earlier version of this function took `detach` and
- * forwarded it straight into applyBinding's `subscribe` position, which SWAPPED
- * the two recorded actions - the undo of a bind subscribed again (a no-op that
- * left the binding on the port) and the redo detached it. The swap was
- * invisible in the engine's own test, which drives MidiReconnect directly;
- * it was the socket transcript's A16 step - bind, then ONE control.undo, then
- * read the port back - that failed on it (measured 2026-09-15: after one
- * control.undo the port still reported bound=true).
- */
-void recordBindingInverse(MidiPort* port, bool readable, const QString& name, bool subscribe)
-{
-	control::addUndoStep(
-		[port, readable, name, subscribe]()
-		{ applyBinding(port, readable, name, !subscribe); },
-		[port, readable, name, subscribe]()
-		{ applyBinding(port, readable, name, subscribe); });
-}
-
+//! The wire result for one midi.reconnect_set call.
 QJsonObject bindingJson(const BindingTarget& target, const MidiReconnectAssignment* binding,
 	bool heldBefore, bool changed, bool detached)
 {
@@ -301,7 +271,7 @@ void registerMidiReconnectEditCommands(ControlRegistry& registry)
 		// The recorded step is told the state this command leaves the binding
 		// in - a bind subscribes, a detach unsubscribes - and derives both of
 		// its actions from that one flag (see recordBindingInverse).
-		recordBindingInverse(target.port, target.readable, target.name, !detach);
+		recordBindingInverse(trackIdOf(target.track), target.readable, target.name, !detach);
 		applyBinding(target.port, target.readable, target.name, !detach);
 
 		const MidiReconnectAssignment* binding =
