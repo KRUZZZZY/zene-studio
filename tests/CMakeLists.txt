@@ -83,6 +83,7 @@ set(LMMS_TESTS
 	src/core/ControlBounceRenderTest.cpp
 	src/core/ControlSessionRecordLandTest.cpp
 	src/core/ControlMidiReconnectSharedTest.cpp
+	src/core/ControlPluginBusesTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
 	# Linked / smart clips (feature-list row 6, task #645): the relation, an edit
@@ -1407,6 +1408,28 @@ set_target_properties(mpe_test_consumer PROPERTIES
 	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mpe-test-consumer"
 	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mpe-test-consumer"
 )
+
+# ---------------------------------------------------------------------------
+# tests/src/plugins/BusesTestInstrument.cpp: an in-tree instrument that owns an InstrumentOutputBuses, so the
+# plugin.output_* commands are measured on a real model in a build with no CLAP, VST3 or LV2 multi-output
+# fixture (the only instruments that otherwise have extra buses). A MODULE in its own directory, never installed;
+# ControlPluginBusesTest points LMMS_PLUGIN_DIR at it.
+# ---------------------------------------------------------------------------
+add_library(buses_test_instrument MODULE src/plugins/BusesTestInstrument.cpp)
+target_include_directories(buses_test_instrument PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+)
+target_compile_definitions(buses_test_instrument PRIVATE PLUGIN_NAME=buses_test_instrument)
+target_compile_features(buses_test_instrument PRIVATE cxx_std_20)
+target_link_libraries(buses_test_instrument PRIVATE zene ${QT_LIBRARIES})
+set_target_properties(buses_test_instrument PROPERTIES
+	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/buses-test-instrument"
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/buses-test-instrument"
+)
+target_compile_definitions(ControlPluginBusesTest PRIVATE
+	LMMS_BUSES_TEST_INSTRUMENT_DIR="${CMAKE_CURRENT_BINARY_DIR}/buses-test-instrument")
+add_dependencies(ControlPluginBusesTest buses_test_instrument)
+set_target_properties(ControlPluginBusesTest PROPERTIES ENABLE_EXPORTS ON)
 
 # The proof's own wiring: the fixture directory it points LMMS_PLUGIN_DIR at,
 # the module built before ctest runs, and the exports a plug-in module

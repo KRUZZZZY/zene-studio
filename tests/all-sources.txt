@@ -2446,6 +2446,7 @@ tests/src/core/ControlMidiReconnectSharedTest.cpp
 tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlNoteScaleVerbsTest.cpp
+tests/src/core/ControlPluginBusesTest.cpp
 tests/src/core/ControlProjectArchiveTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
 tests/src/core/ControlRegistryNestingTest.cpp
@@ -2774,6 +2775,7 @@ tests/src/gui/WorkflowFeedbackTest.cpp
 tests/src/gui/WorkspaceAccessTest.cpp
 tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
+tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
