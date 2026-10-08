@@ -139,6 +139,32 @@ private slots:
 		chain.clear();
 #endif
 	}
+
+	/*! BUG 9 (cluster 3237): a malformed <lv2state> instance attribute must not silently
+	 *  target instance zero - <lv2state instance="bad"> used to restore into the first
+	 *  processor. The decision seam loadSettings uses is checked directly. */
+	void malformedStateInstanceAttributeIsRefused()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		doc.appendChild(root);
+		QDomElement good = doc.createElement(QStringLiteral("lv2state"));
+		good.setAttribute(QStringLiteral("instance"), 1);
+		root.appendChild(good);
+		QDomElement bad = doc.createElement(QStringLiteral("lv2state"));
+		bad.setAttribute(QStringLiteral("instance"), QStringLiteral("bad"));
+		root.appendChild(bad);
+		QDomElement missing = doc.createElement(QStringLiteral("lv2state"));
+		root.appendChild(missing);
+		// Two processors: instance 1 is a valid target.
+		QCOMPARE(lv2StateInstanceIndex(good, 2), 1);
+		QCOMPARE(lv2StateInstanceIndex(bad, 2), -1);
+		QCOMPARE(lv2StateInstanceIndex(missing, 2), -1);
+#endif
+	}
 };
 
 QTEST_MAIN(Lv2StateTest)

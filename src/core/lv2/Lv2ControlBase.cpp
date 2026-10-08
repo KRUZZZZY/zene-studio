@@ -191,6 +191,17 @@ void Lv2ControlBase::saveSettings(QDomDocument &doc, QDomElement &that)
 
 
 
+//! The processor instance a <lv2state> element names, or -1 when the element is malformed
+//! (missing or non-numeric instance attribute) or names an instance beyond @param procCount.
+int lv2StateInstanceIndex(const QDomElement& element, std::size_t procCount)
+{
+	bool ok = false;
+	const int instance = element.attribute(QStringLiteral("instance")).toInt(&ok);
+	// A missing or non-numeric attribute is malformed state, not instance zero (BUG 9).
+	if (!ok || instance < 0 || static_cast<std::size_t>(instance) >= procCount) { return -1; }
+	return instance;
+}
+
 void Lv2ControlBase::loadSettings(const QDomElement &that)
 {
 	LinkedModelGroups::loadSettings(that);
@@ -198,8 +209,8 @@ void Lv2ControlBase::loadSettings(const QDomElement &that)
 	for (QDomElement element = that.firstChildElement(QStringLiteral("lv2state")); !element.isNull();
 		element = element.nextSiblingElement(QStringLiteral("lv2state")))
 	{
-		const int instance = element.attribute(QStringLiteral("instance")).toInt();
-		if (instance >= 0 && static_cast<std::size_t>(instance) < m_procs.size())
+		const int instance = lv2StateInstanceIndex(element, m_procs.size());
+		if (instance >= 0)
 		{
 			m_procs[static_cast<std::size_t>(instance)]->restoreState(element.text());
 		}
