@@ -70,6 +70,10 @@ set(LMMS_TESTS
 	# cache): the metadata probe against a byte-written RIFF/WAVE, the tag
 	# store's round-trip through its file, and the peak cache's hit/miss
 	# behaviour. Headless: no Engine, no window, no audio device.
+	# The query half of the browser engine (name/tag/metadata match, the walk's
+	# scan and depth bounds, the probe budget), split out of BrowserCatalogTest to
+	# keep both files under the file-length ratchet. Headless, like its sibling.
+	src/core/BrowserCatalogQueryTest.cpp
 	src/core/BrowserCatalogTest.cpp
 	# The trim half of a bounce (the render half is a child process, so it is not
 	# reachable from a test): a range copied to another file, and the refusal
@@ -464,6 +468,10 @@ set(LMMS_TESTS
 	src/core/RelativePathsTest.cpp
 	src/core/ReversibilityContractTest.cpp
 	src/core/ReversibilityUndoTest.cpp
+	# The device half of the A16 undo proofs (plugin.bypass, plugin.unload and the
+	# device-state restore), split out of ReversibilityUndoTest to keep both files
+	# under the file-length ratchet.
+	src/core/ReversibilityUndoDeviceTest.cpp
 	# The in-app revision timeline (feature-list row 76, OWNER-31 item 30): the
 	# list/compare/restore surface over the revision artefacts the engine already
 	# writes - real project documents, a real `.bak`/`.rev0`/autosave fixture, and
@@ -1175,6 +1183,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ScriptMemoryBudgetTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityContractTest"
 		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoTest"
+		OR LMMS_TEST_NAME STREQUAL "ReversibilityUndoDeviceTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlAutomationScriptTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlAutomationModesTest"
 		# The automation-mode context menu is driven against a real instrument's parameter.
@@ -4033,7 +4042,7 @@ ENDIF()
 # manager's working directory, ControlBrowserCommandsTest constructs a full
 # Engine and drives project-free commands through the registry. Neither opens a
 # window, both want a real Qt platform plugin.
-set_tests_properties(BrowserCatalogTest ControlBrowserCommandsTest PROPERTIES
+set_tests_properties(BrowserCatalogTest BrowserCatalogQueryTest ControlBrowserCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The chain-preset group constructs a full Engine and drives real devices through
 # the registry (plugin.load, plugin.param_set, chain.save/apply), so it wants a
