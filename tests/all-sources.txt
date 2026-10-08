@@ -2733,6 +2733,7 @@ tests/src/gui/PerformViewTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp
 tests/src/gui/PinConnectorTest.cpp
+tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/RackMenuTest.cpp
 tests/src/gui/RecordingRecoveryMenuTest.cpp

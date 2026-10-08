@@ -877,6 +877,8 @@ set(LMMS_TESTS
 	src/gui/ExportChannelsTest.cpp
 	# The follow-action chain's rows: what the dialog writes for a loaded chance and for an edited one.
 	src/gui/FollowActionEditorTest.cpp
+	# M0 coverage: the Gate, Modulation and Receiver effects' control dialogs, built over the real modules.
+	src/gui/PluginControlDialogsTest.cpp
 	# The transport's Sync toggle (link.set_enabled) and its session read-out.
 	src/gui/SessionSyncActionTest.cpp
 	# The piano roll's Randomize / Humanize / Scale velocities items (note.randomize, note.velocity_scale).
@@ -1220,6 +1222,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "DevicePanelTest"
 		# The rack's "Add effect" adds one real effect from the device picker.
 		OR LMMS_TEST_NAME STREQUAL "EffectRackAddTest"
+		# The Gate / Modulation / Receiver dialogs are built over one real effect each.
+		OR LMMS_TEST_NAME STREQUAL "PluginControlDialogsTest"
 		# The LV2 state round trip loads the host's real LV2 effects.
 		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
 		# The rack menu binds a macro to a parameter of one real effect.
@@ -1608,6 +1612,7 @@ set_tests_properties(ExportQualityControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PL
 set_tests_properties(ExportChannelsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionSyncActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FollowActionEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PluginControlDialogsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
