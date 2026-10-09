@@ -90,6 +90,11 @@ private slots:
 		Engine::init(true);
 	}
 
+	void cleanupTestCase()
+	{
+		Engine::destroy();
+	}
+
 	//! Dynamic channel counts leave the model uninitialized and unrouted
 	void dynamicConstructor()
 	{
