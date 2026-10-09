@@ -25,8 +25,11 @@
 #ifndef LMMS_GUI_TRACK_RENDER_MENU_H
 #define LMMS_GUI_TRACK_RENDER_MENU_H
 
+#include <QString>
+
 #include "lmms_export.h"
 
+class QJsonObject;
 class QMenu;
 
 namespace lmms
@@ -46,6 +49,11 @@ LMMS_EXPORT void addTrackRenderActions(QMenu* menu, Track* track);
  *  DAWproject... and Export DAWproject... (dawproject.import / dawproject.export), each through a
  *  file dialog; the result or the refusal is shown. */
 LMMS_EXPORT void addDawProjectActions(QMenu* fileMenu);
+
+/*! The text the Import DAWproject action shows after an import that succeeded but could not take
+ *  everything in the container as written: one line per entry of the reply's `deviations`. Empty
+ *  when the container was clean. */
+LMMS_EXPORT QString dawProjectImportNotice(const QJsonObject& result);
 
 } // namespace lmms::gui
 

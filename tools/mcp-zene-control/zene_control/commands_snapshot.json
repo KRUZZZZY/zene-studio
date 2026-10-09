@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T06:08:42Z",
+  "captured_at": "2026-10-09T09:19:38Z",
   "commands": [
     {
       "args_schema": {
@@ -8106,7 +8106,7 @@
         ],
         "type": "object"
       },
-      "description": "Write the session as a .dawproject container: a ZIP whose project.xml carries the tracks, their clips and notes, the tempo map and each track's mixer strip, in the published format's own vocabulary at version 1.0. The file is written with STORE entries so it needs no compression dependency and every ZIP reader opens it. `loss` in the reply reports EXACTLY what the format could not carry from this session. Refuses an existing file unless `overwrite` is true, and refuses a relative path. Writes a file; changes nothing in the session.",
+      "description": "Write the session as a .dawproject container: a ZIP whose project.xml carries the tracks, their clips and notes, the tempo map and each track's mixer strip, in the published format's own vocabulary at version 1.0. The file is written with STORE entries so every ZIP reader opens it (import reads STORE and DEFLATE). `loss` in the reply reports EXACTLY what the format could not carry from this session. Refuses an existing file unless `overwrite` is true, and refuses a relative path. Writes a file; changes nothing in the session.",
       "group": "dawproject",
       "id": "dawproject.export",
       "mutating": false,
@@ -8177,7 +8177,7 @@
         ],
         "type": "object"
       },
-      "description": "Apply a .dawproject container's model to the session: REPLACE the tracks, write the global tempo and time signature, replace the tempo map with the file's two automation timelines and set the mixer strips it carries. One command, one undo: the whole session captured before the import is put back through the project loader's own paths when the stack unwinds. `loss` in the reply reports what the file carried that this build does not apply. Refused, typed, when the file cannot be read, when a tempo or metre is outside the engine's own bounds, or when the file needs more tempo-map events than the map holds - a refusal writes nothing.",
+      "description": "Apply a .dawproject container's model to the session: REPLACE the tracks, write the global tempo and time signature, replace the tempo map with the file's two automation timelines and set the mixer strips it carries. One command, one undo: the whole session captured before the import is put back through the project loader's own paths when the stack unwinds. Reads STORE and DEFLATE ZIP entries under a 512 MiB per-entry and 1 GiB total decompressed-size bound. `loss` in the reply reports what the file carried that this build does not apply, and `deviations` lists everything in the container that was not taken as written (a corrupt, CRC-failing, unsupported or oversized entry, a file project.xml references that the container lacks); the import still proceeds when project.xml itself is readable. Refused, typed, when the file cannot be read, when a tempo or metre is outside the engine's own bounds, or when the file needs more tempo-map events than the map holds - a refusal writes nothing.",
       "group": "dawproject",
       "id": "dawproject.import",
       "mutating": true,
@@ -8188,7 +8188,19 @@
           "clip_count": {
             "type": "integer"
           },
+          "deflated_entry_count": {
+            "type": "integer"
+          },
           "denominator": {
+            "type": "integer"
+          },
+          "deviation_count": {
+            "type": "integer"
+          },
+          "deviations": {
+            "type": "array"
+          },
+          "entry_count": {
             "type": "integer"
           },
           "format_version": {
@@ -8218,6 +8230,9 @@
           "path": {
             "type": "string"
           },
+          "referenced_file_count": {
+            "type": "integer"
+          },
           "tempo": {
             "type": "number"
           },
@@ -8245,7 +8260,7 @@
         ],
         "type": "object"
       },
-      "description": "Read a .dawproject container's model WITHOUT touching the session: the format version the file declares, the application that wrote it, every track with its clips and notes, the tempo and time-signature timelines, the mixer strips, the entries the container carries that this module does not use, and the model's printable digest - what makes a round trip checkable against the FILE and the MODEL rather than a hash. Import accepts ZIP entries using STORE (method 0); DEFLATE (method 8) is refused. A file that is not a ZIP, has no project.xml entry, declares another major format version, or carries a value the engine will not accept is a typed refusal.",
+      "description": "Read a .dawproject container's model WITHOUT touching the session: the format version the file declares, the application that wrote it, every track with its clips and notes, the tempo and time-signature timelines, the mixer strips, the entries the container carries that this module does not use, and the model's printable digest - what makes a round trip checkable against the FILE and the MODEL rather than a hash. Reads ZIP entries using STORE (method 0) and DEFLATE (method 8) under a 512 MiB per-entry and 1 GiB total decompressed-size bound. `deviations` lists EVERYTHING in the container that was not taken as written - a corrupt or CRC-failing entry, an unsupported compression method or encryption, an oversized entry, a file project.xml references that the container lacks - while the readable entries are still read. A file that is not a ZIP, has no readable project.xml entry, declares another major format version, or carries a value the engine will not accept is a typed refusal that lists the deviations too.",
       "group": "dawproject",
       "id": "dawproject.read",
       "mutating": false,
@@ -8260,6 +8275,18 @@
             "type": "string"
           },
           "clip_count": {
+            "type": "integer"
+          },
+          "deflated_entry_count": {
+            "type": "integer"
+          },
+          "deviation_count": {
+            "type": "integer"
+          },
+          "deviations": {
+            "type": "array"
+          },
+          "entry_count": {
             "type": "integer"
           },
           "format_version": {
@@ -8288,6 +8315,9 @@
           },
           "path": {
             "type": "string"
+          },
+          "referenced_file_count": {
+            "type": "integer"
           },
           "split_map_events": {
             "type": "integer"
@@ -34764,11 +34794,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-docmodel/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-p1xw5a_7/zene.sock",
-    "version": "0.4.0-alpha.1364+a0295ab"
+    "source_socket": "/tmp/zctl-run-rt6p1tv7/zene.sock",
+    "version": "0.4.0-alpha.1366+888934e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

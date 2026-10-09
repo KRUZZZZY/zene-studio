@@ -30,6 +30,9 @@
 
 #include <QtTest>
 
+#include <QJsonArray>
+#include <QJsonObject>
+
 #include <QMenu>
 
 #include "ControlRegistry.h"
@@ -85,8 +88,20 @@ private slots:
 		QMenu file;
 		addDawProjectActions(&file);
 		QCOMPARE(commandsIn(file), (QStringList{QStringLiteral("dawproject.import"), QStringLiteral("dawproject.export")}));
-		QVERIFY(file.actions().first()->toolTip().contains(QStringLiteral("STORE")));
-		QVERIFY(file.actions().first()->toolTip().contains(QStringLiteral("DEFLATE")));
+		// Q050-001: DEFLATE is read now, so the tooltip no longer discloses a limit; it says what is shown instead.
+		const QString tip = file.actions().first()->toolTip();
+		QVERIFY(tip.contains(QStringLiteral("DEFLATE")));
+		QVERIFY(!tip.contains(QStringLiteral("not supported")));
+		QVERIFY(tip.contains(QStringLiteral("report")));
+
+		// The report the action shows after an import that proceeded: nothing for a clean container, one line each otherwise.
+		QVERIFY(dawProjectImportNotice(QJsonObject{{QStringLiteral("deviations"), QJsonArray()}}).isEmpty());
+		const QString notice = dawProjectImportNotice(QJsonObject{{QStringLiteral("deviations"), QJsonArray{
+			QJsonObject{{QStringLiteral("detail"), QStringLiteral("entry 'a.wav' fails its own CRC")}},
+			QJsonObject{{QStringLiteral("detail"), QStringLiteral("entry 'b.wav' is ENCRYPTED")}}}}});
+		QVERIFY(notice.contains(QStringLiteral("a.wav")));
+		QVERIFY(notice.contains(QStringLiteral("b.wav")));
+		QCOMPARE(notice.count(QLatin1Char('\n')), 2);
 
 		forSample.actions().at(1)->trigger();  // an empty track: refused, logged, no dialog
 	}
