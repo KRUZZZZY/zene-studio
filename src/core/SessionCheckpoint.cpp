@@ -47,38 +47,28 @@ QString megabytes(qint64 bytes)
 	return QString::number(static_cast<double>(bytes) / (1024.0 * 1024.0), 'f', 2);
 }
 
-//! The undo step: undo captures the session as it is then (so a redo can put it back) and restores
-//! \a checkpoint; redo restores what undo captured. With \a restoreFileName the undo also puts the
-//! displaced session's file name back (project.open); a script's undo keeps the current one.
-void pushRestoreStep(const SessionCheckpoint& checkpoint, bool restoreFileName, bool redoable)
+//! The undo step restores the pre-action session; redo restores the captured post-action session.
+void pushRestoreStep(const SessionCheckpoint& checkpoint, bool discardLoadedSteps,
+	const std::shared_ptr<const QByteArray>& after, const QString& fileAfter,
+	const QStringList& skippedAfter)
 {
 	const std::shared_ptr<const QByteArray> before = checkpoint.before;
 	const QString fileBefore = checkpoint.fileBefore;
-	const auto after = std::make_shared<std::shared_ptr<const QByteArray>>();
-	const auto fileAfter = std::make_shared<QString>();
+	const QStringList skippedBefore = checkpoint.skippedBefore;
 
-	std::function<void()> undo = [before, fileBefore, restoreFileName, after, fileAfter]() {
+	std::function<void()> undo = [before, fileBefore, skippedBefore, discardLoadedSteps]() {
 		Song* song = Engine::getSong();
-		*after = song->captureUndoSnapshot();
-		*fileAfter = song->projectFileName();
-		if (restoreFileName)
+		song->restoreUndoSnapshot(*before, fileBefore, skippedBefore);
+		// An opened project's history is that project's, not the displaced session's.
+		if (discardLoadedSteps)
 		{
-			song->restoreUndoSnapshot(*before, fileBefore);
-			// The history the opened project brought is that project's, not the displaced session's.
 			if (ProjectJournal* journal = Engine::projectJournal()) { journal->discardLoadedSteps(); }
 		}
-		else { song->restoreUndoSnapshot(*before); }
 	};
-	std::function<void()> redo;
-	if (redoable)
-	{
-		redo = [restoreFileName, after, fileAfter]() {
-			if (!*after) { return; }
-			Song* song = Engine::getSong();
-			if (restoreFileName) { song->restoreUndoSnapshot(**after, *fileAfter); }
-			else { song->restoreUndoSnapshot(**after); }
-		};
-	}
+	std::function<void()> redo = [after, fileAfter, skippedAfter]() {
+		Song* song = Engine::getSong();
+		song->restoreUndoSnapshot(*after, fileAfter, skippedAfter);
+	};
 	addStructuralUndoStep(std::move(undo), std::move(redo), checkpoint.bytes);
 }
 
@@ -132,14 +122,8 @@ SessionCheckpoint takeSessionCheckpoint(const QString& action, bool onlyWhenModi
 		return skipped(QStringLiteral("the session has no unsaved changes, so the open loses "
 			"nothing that was not already saved"));
 	}
-	if (song->isPartialLoad())
-	{
-		return skipped(QStringLiteral("the session is a partial load (sections were skipped), which "
-			"cannot be captured whole - a restore would bring back a smaller project"));
-	}
-
 	SessionCheckpoint checkpoint;
-	checkpoint.before = song->captureUndoSnapshot();
+	checkpoint.before = song->captureUndoSnapshot(&checkpoint.skippedBefore);
 	if (!checkpoint.before)
 	{
 		return skipped(QStringLiteral("the session cannot be captured right now (a load is running)"));
@@ -178,29 +162,53 @@ bool loadProjectWithCheckpoint(const QString& path, const QStringList& skipSecti
 	// A refused file leaves the session as it was: nothing to undo.
 	if (taken.taken() && song->loadRefusal().isEmpty())
 	{
-		// A partial load of the NEW project cannot be captured, so its redo is not offered.
-		pushRestoreStep(taken, true, !song->isPartialLoad());
+		QStringList skippedAfter;
+		const auto after = song->captureUndoSnapshot(&skippedAfter);
+		if (!after)
+		{
+			song->restoreUndoSnapshot(*taken.before, taken.fileBefore, taken.skippedBefore);
+			const QString why = QStringLiteral("project.open refused: the loaded project could not be captured for redo, "
+				"so the previous session was restored");
+			if (refusal != nullptr) { *refusal = why; }
+			taken.note = why;
+			if (checkpoint != nullptr) { *checkpoint = taken; }
+			return false;
+		}
+		pushRestoreStep(taken, true, after, song->projectFileName(), skippedAfter);
 		taken.pushed = true;
 		if (checkpoint != nullptr) { *checkpoint = taken; }
 	}
 	return true;
 }
 
-void finishScriptCheckpoint(SessionCheckpoint* checkpoint, quint64 serialBefore, bool* changed)
+void finishScriptCheckpoint(SessionCheckpoint* checkpoint, quint64 serialBefore, bool* changed,
+	QString* refusal)
 {
 	*changed = false;
 	ProjectJournal* journal = Engine::projectJournal();
 	if (checkpoint == nullptr || !checkpoint->taken() || journal == nullptr) { return; }
 
-	const std::shared_ptr<const QByteArray> now = Engine::getSong()->captureUndoSnapshot();
-	// A session that cannot be captured or read after the run is assumed changed: the checkpoint is still true.
-	const QString after = now ? contentDigest(*now) : QString();
-	*changed = after.isEmpty() || after != contentDigest(*checkpoint->before);
+	Song* song = Engine::getSong();
+	QStringList skippedAfter;
+	const auto now = song->captureUndoSnapshot(&skippedAfter);
+	if (!now)
+	{
+		journal->discardTopSteps(journal->retainedStepsFrom(serialBefore + 1));
+		song->restoreUndoSnapshot(*checkpoint->before, checkpoint->fileBefore, checkpoint->skippedBefore);
+		const QString why = QStringLiteral("script.run refused: the script's project result could not be captured "
+			"for redo, so the previous session was restored");
+		if (refusal != nullptr) { *refusal = why; }
+		checkpoint->note = why;
+		return;
+	}
+	const QString after = contentDigest(*now);
+	*changed = after.isEmpty() || after != contentDigest(*checkpoint->before)
+		|| song->projectFileName() != checkpoint->fileBefore || skippedAfter != checkpoint->skippedBefore;
 	if (!*changed) { return; }
 
 	// The finer steps the script pushed are subsumed: this one restores the whole project.
 	journal->discardTopSteps(journal->retainedStepsFrom(serialBefore + 1));
-	pushRestoreStep(*checkpoint, false, true);
+	pushRestoreStep(*checkpoint, false, now, song->projectFileName(), skippedAfter);
 	checkpoint->pushed = true;
 }
 

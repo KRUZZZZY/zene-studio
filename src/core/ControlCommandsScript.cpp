@@ -249,26 +249,30 @@ QJsonObject scriptTransaction(const control::SessionCheckpoint& checkpoint)
 	return transaction;
 }
 
-ControlResult scriptRun(const QJsonObject& args)
+bool scriptInput(const QJsonObject& args, QString* path, ControlResult* error)
 {
 	const bool hasPath = args.contains(QStringLiteral("path"));
 	if (hasPath == args.contains(QStringLiteral("source")))
 	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("exactly one of 'path' or 'source' is required: 'path' runs a file, "
 				"'source' runs Lua text supplied inline"));
+		return false;
 	}
+	if (!hasPath) { return true; }
 
+	*path = args.value(QStringLiteral("path")).toString();
+	if (QFileInfo::exists(*path)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::NotFound,
+		QStringLiteral("no Lua script at '%1'").arg(*path));
+	return false;
+}
+
+ControlResult scriptRun(const QJsonObject& args)
+{
 	QString path;
-	if (hasPath)
-	{
-		path = args.value(QStringLiteral("path")).toString();
-		if (!QFileInfo::exists(path))
-		{
-			return ControlResult::failure(ControlErrorKind::NotFound,
-				QStringLiteral("no Lua script at '%1'").arg(path));
-		}
-	}
+	ControlResult inputError;
+	if (!scriptInput(args, &path, &inputError)) { return inputError; }
 
 	ScriptEngine* engine = ScriptEngine::instance();
 	if (engine == nullptr)
@@ -296,7 +300,12 @@ ControlResult scriptRun(const QJsonObject& args)
 	// Everything the script queued is applied before the project is compared with the checkpoint.
 	engine->processCommands();
 	bool changed = false;
-	control::finishScriptCheckpoint(&checkpoint, serialBefore, &changed);
+	QString checkpointRefusal;
+	control::finishScriptCheckpoint(&checkpoint, serialBefore, &changed, &checkpointRefusal);
+	if (!checkpointRefusal.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, checkpointRefusal);
+	}
 
 	if (result != ScriptEngine::RunResult::Ok)
 	{

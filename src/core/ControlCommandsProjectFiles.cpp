@@ -406,7 +406,8 @@ QJsonObject projectOpenTransaction(const QString& previousFile, const QString& p
 		transaction.insert(QStringLiteral("mechanism"),
 			QStringLiteral("snapshot: the session this open displaced, with its unsaved changes, "
 				"was captured whole (%1 bytes compressed, audio files by reference) and one undo "
-				"step puts it back, file name included; redo opens the project again")
+				"step puts it back, file name included; redo restores the project as it was loaded, "
+				"including any skipped sections")
 				.arg(checkpoint.bytes));
 		return transaction;
 	}

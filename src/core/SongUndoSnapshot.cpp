@@ -61,9 +61,10 @@
 namespace lmms
 {
 
-std::shared_ptr<const QByteArray> Song::captureUndoSnapshot()
+std::shared_ptr<const QByteArray> Song::captureUndoSnapshot(QStringList* skippedSections)
 {
-	if( isPartialLoad() || m_loadingProject ) { return {}; }
+	if( (isPartialLoad() && skippedSections == nullptr) || m_loadingProject ) { return {}; }
+	if( skippedSections != nullptr ) { *skippedSections = m_notLoadedSections; }
 	const ProjectIds::PureSaveScope pure;
 	DataFile dataFile( DataFile::Type::SongProject );
 	// Every model writes its journal id, exactly, while this is set (ProjectJournal::idToWrite): a save
@@ -90,7 +91,8 @@ bool Song::restoreUndoSnapshot( const QByteArray & compressed )
 
 
 
-bool Song::restoreUndoSnapshot( const QByteArray & compressed, const QString & restoredFileName )
+bool Song::restoreUndoSnapshot( const QByteArray & compressed, const QString & restoredFileName,
+	const QStringList& skippedSections )
 {
 	const QByteArray document = qUncompress( compressed );
 	QTemporaryDir dir;
@@ -116,6 +118,7 @@ bool Song::restoreUndoSnapshot( const QByteArray & compressed, const QString & r
 	loadProject( path );
 	m_restoringSnapshot = false;
 	const bool restored = m_loadRefusal.isEmpty();
+	if( restored ) { m_notLoadedSections = skippedSections; }
 
 	setProjectFileName( fileName );
 	m_oldFileName = oldFileName;

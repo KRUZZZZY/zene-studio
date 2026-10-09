@@ -49,7 +49,8 @@ namespace control
  *  (ProjectJournal::maxUndoBytes, control.set_undo_depth): a session whose
  *  compressed snapshot is over it is REFUSED before anything changes, because a
  *  step bigger than the budget cannot be kept and "undoable" would be a claim
- *  the engine cannot honour. */
+ *  the engine cannot honour. Partial loads carry their skipped-section list as
+ *  metadata, so undo and redo can preserve their read-only state. */
 struct SessionCheckpoint
 {
 	enum class State
@@ -64,6 +65,7 @@ struct SessionCheckpoint
 	qint64 bytes = 0;      //!< the compressed snapshot, when one was measured
 	qint64 limit = 0;      //!< the byte budget it was measured against
 	QString fileBefore;    //!< the project file name the session had
+	QStringList skippedBefore; //!< sections omitted from a partial session before the action
 	QString note;          //!< the plain-words reason when not Taken
 	bool pushed = false;   //!< the undo step is on the journal
 
@@ -75,8 +77,7 @@ struct SessionCheckpoint
 
 /*! Captures the session for \a action ("project.open", "script.run"). With
  *  \a onlyWhenModified, a session with no unsaved changes is Skipped: its file
- *  already holds it. A partial load (sections skipped) is Skipped too - a
- *  snapshot of part of a project would "restore" a smaller project. */
+ *  already holds it. */
 LMMS_EXPORT SessionCheckpoint takeSessionCheckpoint(const QString& action, bool onlyWhenModified);
 
 /*! project.open's shared body (the control command and the interface's open
@@ -91,7 +92,7 @@ LMMS_EXPORT bool loadProjectWithCheckpoint(const QString& path, const QStringLis
  *  \a serialBefore) with the ONE step that restores the checkpoint. Sets
  *  \a changed to whether the project differs. */
 LMMS_EXPORT void finishScriptCheckpoint(SessionCheckpoint* checkpoint, quint64 serialBefore,
-	bool* changed);
+	bool* changed, QString* refusal);
 
 } // namespace control
 } // namespace lmms

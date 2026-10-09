@@ -179,6 +179,26 @@ private:
 
 	QString path(const QString& name) const { return m_dir.filePath(name); }
 
+	QString makePartialTarget(const QString& suffix)
+	{
+		const QString name = QStringLiteral("session-checkpoint-%1-%2.mmp")
+			.arg(suffix).arg(QCoreApplication::applicationPid());
+		const QString targetPath = QDir::current().filePath(name);
+		freshProject(QStringLiteral("partial-target"), QString());
+		if (!Engine::getSong()->saveProjectFile(targetPath)) { return QString(); }
+		QFile target(targetPath);
+		if (!target.open(QIODevice::ReadOnly)) { return QString(); }
+		QByteArray document = target.readAll();
+		target.close();
+		const qsizetype songEnd = document.indexOf("</song>");
+		if (songEnd < 0) { return QString(); }
+		document.insert(songEnd, "<newsection/>\n");
+		if (!target.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return QString(); }
+		const bool wrote = target.write(document) == static_cast<qint64>(document.size());
+		target.close();
+		return wrote ? name : QString();
+	}
+
 	//! A fresh project with one named instrument track, saved as @a file (or left unsaved when empty).
 	void freshProject(const QString& trackName, const QString& file)
 	{
@@ -308,6 +328,73 @@ private slots:
 			qPrintable(undone.errorMessage + compact(undone.result)));
 		SAME_PROJECT(wholeProject(), before);
 		QVERIFY(!trackNames().contains(QStringLiteral("before-error")));
+	}
+
+	void aScriptThatLeavesAPartialLoadCanRedoIt()
+	{
+		const QString targetName = makePartialTarget(QStringLiteral("script-partial"));
+		QVERIFY(!targetName.isEmpty());
+		const QString partialPath = QDir::current().filePath(targetName);
+
+		freshProject(QStringLiteral("displaced"), QStringLiteral("displaced-partial.mmp"));
+		Engine::projectJournal()->clearJournal();
+		const QString before = wholeProject();
+		const QString beforeFile = Engine::getSong()->projectFileName();
+		const QString source = QStringLiteral(
+			"local opened, err = zene.command('project.open', {path = '%1', "
+			"sections = {'newsection'}})\nif not opened then error(err) end\n").arg(targetName);
+		const ControlResult ran = run(QStringLiteral("script.run"), {{QStringLiteral("source"), source}});
+		QVERIFY2(ran.ok, qPrintable(ran.errorMessage));
+		QVERIFY(Engine::getSong()->isPartialLoad());
+		QCOMPARE(Engine::getSong()->notLoadedSections(), QStringList{QStringLiteral("newsection")});
+		QCOMPARE(trackNames(), QStringList{QStringLiteral("partial-target")});
+
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		SAME_PROJECT(wholeProject(), before);
+		QCOMPARE(Engine::getSong()->projectFileName(), beforeFile);
+		QVERIFY(!Engine::getSong()->isPartialLoad());
+
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
+		QVERIFY(Engine::getSong()->isPartialLoad());
+		QCOMPARE(Engine::getSong()->notLoadedSections(), QStringList{QStringLiteral("newsection")});
+		QCOMPARE(trackNames(), QStringList{QStringLiteral("partial-target")});
+		QCOMPARE(Engine::getSong()->projectFileName(), partialPath);
+		QVERIFY(QFile::remove(partialPath));
+	}
+
+	void openingAPartialProjectOverDirtyWorkCanRedoIt()
+	{
+		const QString targetName = makePartialTarget(QStringLiteral("open-partial"));
+		QVERIFY(!targetName.isEmpty());
+		const QString partialPath = QDir::current().filePath(targetName);
+		freshProject(QStringLiteral("displaced"), QStringLiteral("displaced-open-partial.mmp"));
+		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")},
+			{QStringLiteral("name"), QStringLiteral("unsaved-before-partial-open")}}).ok);
+		Engine::projectJournal()->clearJournal();
+		const QString before = wholeProject();
+		const QString beforeFile = Engine::getSong()->projectFileName();
+
+		const ControlResult opened = run(QStringLiteral("project.open"),
+			{{QStringLiteral("path"), partialPath},
+				{QStringLiteral("sections"), QJsonArray{QStringLiteral("newsection")}}});
+		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+		QVERIFY(opened.result.value(QStringLiteral("checkpoint")).toObject()
+			.value(QStringLiteral("undoable")).toBool());
+		QVERIFY(Engine::getSong()->isPartialLoad());
+		QCOMPARE(Engine::getSong()->notLoadedSections(), QStringList{QStringLiteral("newsection")});
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		SAME_PROJECT(wholeProject(), before);
+		QCOMPARE(Engine::getSong()->projectFileName(), beforeFile);
+		QVERIFY(!Engine::getSong()->isPartialLoad());
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QVERIFY(Engine::getSong()->isPartialLoad());
+		QCOMPARE(Engine::getSong()->notLoadedSections(), QStringList{QStringLiteral("newsection")});
+		QCOMPARE(trackNames(), QStringList{QStringLiteral("partial-target")});
+		QCOMPARE(Engine::getSong()->projectFileName(), partialPath);
+		QVERIFY(QFile::remove(partialPath));
 	}
 
 	void aScriptThatChangesNothingLeavesNoStep()
