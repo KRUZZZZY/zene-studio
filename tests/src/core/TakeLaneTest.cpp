@@ -211,6 +211,53 @@ private slots:
 		QVERIFY(track->takeLanes().segments().empty());
 	}
 
+	//! The project section, the clip group tags and the runtime mirrors round-trip together.
+	void activeTakeAndUserChoiceSurviveProjectReopen()
+	{
+		QVector<SampleClip*> clips;
+		SampleTrack* track = makeTakeTrack(m_dir.path(), 2, &clips);
+		QVERIFY(track != nullptr);
+		TakeLaneModel& model = track->takeLanes();
+		QCOMPARE(model.addLane(), 0);
+		QCOMPARE(model.addLane(), 1);
+		clips[0]->setLaneIndex(0);
+		clips[1]->setLaneIndex(1);
+		const int groupId = clips[0]->id();
+		clips[0]->setTakeGroupId(groupId);
+		clips[1]->setTakeGroupId(groupId);
+		QVERIFY(model.recordTake(groupId, 0, track->getClips()));
+		QVERIFY(model.recordTake(groupId, 1, track->getClips()));	// newest until a user chooses
+		QCOMPARE(model.activeTakeLane(groupId), 1);
+		QVERIFY(!model.userChoseTake(groupId));
+		QVERIFY(model.selectTake(groupId, 0, track->getClips()));
+		model.setPlayAllTakes(true);
+
+		const int trackId = track->id();
+		const QString project = m_dir.filePath(QStringLiteral("active-takes.mmp"));
+		Engine::getSong()->stop();
+		QVERIFY2(Engine::getSong()->saveProjectFile(project, false), "project save failed");
+		Engine::getSong()->loadProject(project);
+
+		Track* reopened = nullptr;
+		for (Track* candidate : Engine::getSong()->tracks())
+		{
+			if (candidate->id() == trackId) { reopened = candidate; break; }
+		}
+		QVERIFY2(reopened != nullptr, "project reopen lost the take track");
+		const TakeLaneModel& restored = reopened->takeLanes();
+		QCOMPARE(restored.activeTakeLane(groupId), 0);
+		QVERIFY(restored.userChoseTake(groupId));
+		QVERIFY(restored.playAllTakes());
+		int restoredGroupClips = 0;
+		for (Clip* clip : reopened->getClips())
+		{
+			if (clip->takeGroupId() != groupId) { continue; }
+			++restoredGroupClips;
+			QCOMPARE(clip->activeTakeLane(), 0);
+		}
+		QCOMPARE(restoredGroupClips, 2);
+	}
+
 	//! I9: a track that never comped writes no element, and a clip that is not a
 	//! take writes no lane attribute - so a project from before this feature
 	//! serialises exactly as it did.

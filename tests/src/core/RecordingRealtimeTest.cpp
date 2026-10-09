@@ -42,6 +42,7 @@
 #include <QSignalSpy>
 
 #include "AudioEngine.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ProjectJournal.h"
 #include "Engine.h"
@@ -711,8 +712,7 @@ private slots:
 		delete track;
 	}
 
-	//! Three loop passes make three takes; only the newest is audible: a render of the song
-	//! plays the third take alone, and unmuting the earlier two raises the level by 0.35/0.2.
+	//! Three loop passes make three takes; the newest lane is active, and Play all takes sums them.
 	void onlyTheNewestLoopPassIsAudible()
 	{
 		auto* song = lmms::Engine::getSong();
@@ -739,9 +739,12 @@ private slots:
 		std::vector<lmms::Clip*> takes;
 		for (lmms::Clip* c : track->getClips()) { if (c != clip) { takes.push_back(c); } }
 		QCOMPARE(takes.size(), static_cast<std::size_t>(3));
-		QVERIFY(takes[0]->isMuted());
-		QVERIFY(takes[1]->isMuted());
-		QVERIFY(!takes[2]->isMuted());
+		for (lmms::Clip* take : takes) { QVERIFY(!take->isMuted()); }
+		QCOMPARE(takes[0]->takeGroupId(), clip->id());
+		QCOMPARE(takes[1]->takeGroupId(), clip->id());
+		QCOMPARE(takes[2]->takeGroupId(), clip->id());
+		QCOMPARE(track->takeLanes().activeTakeLane(clip->id()), takes[2]->laneIndex());
+		QVERIFY(!track->takeLanes().userChoseTake(clip->id()));
 
 		auto* engine = lmms::Engine::audioEngine();
 		const auto peak = [&] {
@@ -759,11 +762,17 @@ private slots:
 		song->stop();
 		QVERIFY2(audibleOnly > 0.0f, "the newest take was silent");
 
-		takes[0]->setMuted(false);
-		takes[1]->setMuted(false);
+		const auto all = lmms::ControlRegistry::instance()->invoke(QStringLiteral("comp.play_all_takes"),
+			{{QStringLiteral("track"), lmms::control::trackIdOf(track)},
+			 {QStringLiteral("enabled"), true}});
+		QVERIFY2(all.ok, qPrintable(all.errorMessage));
 		song->playSong();
 		const float allAudible = peak();
 		song->stop();
+		QVERIFY(track->takeLanes().playAllTakes());
+		QVERIFY(lmms::ControlRegistry::instance()->invoke(QStringLiteral("comp.play_all_takes"),
+			{{QStringLiteral("track"), lmms::control::trackIdOf(track)},
+			 {QStringLiteral("enabled"), false}}).ok);
 		const float ratio = allAudible / audibleOnly;
 		QVERIFY2(ratio > 1.6f && ratio < 1.9f,
 			qPrintable(QStringLiteral("the earlier passes did not sound in the unmuted render: ratio %1").arg(ratio)));
@@ -894,8 +903,8 @@ private slots:
 		return takes;
 	}
 
-	//! A user's unmute of an earlier pass is theirs: a later pass does not mute it again (round 4).
-	void aUserUnmutedPassIsNotMutedAgain()
+	//! A user's take choice survives later loop passes; no take's mute flag is changed.
+	void aUserChoiceSurvivesLaterLoopPasses()
 	{
 		auto* song = lmms::Engine::getSong();
 		song->stop();
@@ -914,8 +923,14 @@ private slots:
 		QTest::qWait(50);
 		auto takes = laneTakesOf(track, clip);
 		QCOMPARE(takes.size(), static_cast<std::size_t>(2));
-		QVERIFY(takes[0]->isMuted());   // muted by the second pass, as recording left it
-		takes[0]->setMuted(false);      // the user brings pass 1 back
+		QVERIFY(!takes[0]->isMuted());
+		const int chosenLane = takes[0]->laneIndex();
+		const auto chosen = lmms::ControlRegistry::instance()->invoke(QStringLiteral("comp.take_select"),
+			{{QStringLiteral("clip"), lmms::control::clipId(takes[0]->id())},
+			 {QStringLiteral("lane"), chosenLane}});
+		QVERIFY2(chosen.ok, qPrintable(chosen.errorMessage));
+		QVERIFY(track->takeLanes().userChoseTake(clip->id()));
+		QCOMPARE(track->takeLanes().activeTakeLane(clip->id()), chosenLane);
 
 		driveRecordPeriods(30, 0.2f);
 		song->stop();
@@ -923,13 +938,13 @@ private slots:
 		QTest::qWait(50);
 		takes = laneTakesOf(track, clip);
 		QCOMPARE(takes.size(), static_cast<std::size_t>(3));
-		QVERIFY2(!takes[0]->isMuted(), "a later pass muted a take the user had unmuted");
-		QVERIFY(takes[1]->isMuted());
-		QVERIFY(!takes[2]->isMuted());
+		for (lmms::Clip* take : takes) { QVERIFY(!take->isMuted()); }
+		QVERIFY2(track->takeLanes().userChoseTake(clip->id()), "a later pass cleared the user's take choice");
+		QCOMPARE(track->takeLanes().activeTakeLane(clip->id()), chosenLane);
 		delete track;
 	}
 
-	//! A new arming does not mute the takes of an earlier arming (its pass state starts empty).
+	//! A second arming contributes newer takes without muting the first arming's takes.
 	void aNewArmingLeavesEarlierTakesAlone()
 	{
 		auto* song = lmms::Engine::getSong();
@@ -950,7 +965,7 @@ private slots:
 		QTest::qWait(50);
 		auto takes = laneTakesOf(track, clip);
 		QCOMPARE(takes.size(), static_cast<std::size_t>(2));
-		QVERIFY(!takes[1]->isMuted());  // the newest take of the first arming stays audible
+		QVERIFY(track->takeLanes().activeTakeLane(clip->id()) == takes[1]->laneIndex());
 
 		clip->setRecord(true);          // a second arming
 		song->playAndRecord();
@@ -963,7 +978,8 @@ private slots:
 		QTest::qWait(50);
 		takes = laneTakesOf(track, clip);
 		QCOMPARE(takes.size(), static_cast<std::size_t>(4));
-		QVERIFY2(!takes[1]->isMuted(), "a new arming muted a take of the earlier arming");
+		for (lmms::Clip* take : takes) { QVERIFY(!take->isMuted()); }
+		QCOMPARE(track->takeLanes().activeTakeLane(clip->id()), takes[3]->laneIndex());
 		delete track;
 	}
 
@@ -987,7 +1003,7 @@ private slots:
 		QTest::qWait(50);
 		auto takes = laneTakesOf(track, clip);
 		QCOMPARE(takes.size(), static_cast<std::size_t>(2));
-		QVERIFY(takes[0]->isMuted());
+		takes[0]->setMuted(true); // comp playback remains authoritative over the normal active-take gate.
 
 		// Comp the whole bar from the first take's lane, then from the second's, and compare the peaks.
 		const auto bar = song->ticksPerBar();
@@ -1014,7 +1030,7 @@ private slots:
 		delete track;
 	}
 
-	//! One undo step takes back a whole recording: its lanes and the mutes it made.
+	//! One undo step takes back a whole recording: its lanes and take selection state.
 	void oneUndoStepTakesBackARecording()
 	{
 		auto* song = lmms::Engine::getSong();

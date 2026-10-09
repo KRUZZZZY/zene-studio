@@ -993,7 +993,7 @@ Net against the second feature merge: `snapshot` -1, `irreversible` +3, `not_mut
 new-p8-51's `record.arm_track` (`snapshot` -> `irreversible`: its take stays after a disarm).
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=831 true_inverse=411 snapshot=40 irreversible=24 not_mutating=356
+     measured: rows=834 true_inverse=414 snapshot=40 irreversible=24 not_mutating=356
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

@@ -35,6 +35,7 @@
 #include "lmms_export.h"
 
 class QComboBox;
+class QCheckBox;
 class QLabel;
 class QSpinBox;
 class QToolButton;
@@ -68,6 +69,10 @@ public:
 	QSpinBox* beginBox() const { return m_begin; }
 	QSpinBox* endBox() const { return m_end; }
 	QComboBox* laneBox() const { return m_lane; }
+	QComboBox* takeGroupBox() const { return m_takeGroup; }
+	QComboBox* takeChoiceBox() const { return m_takeChoice; }
+	QToolButton* useTakeButton() const { return m_useTake; }
+	QCheckBox* playAllTakesBox() const { return m_playAllTakes; }
 	QString compositeText() const;
 	QString statusText() const;
 
@@ -76,6 +81,8 @@ private:
 	void run(const QString& command, const QJsonObject& args);
 	void audition(int lane);
 	void showLanes(const QJsonArray& lanes);
+	void showTakeGroups(const QJsonArray& groups);
+	void showTakeChoices(const QJsonObject& group);
 	void showComposite(const QJsonObject& composite, bool hasLanes);
 
 	QString m_trackId;
@@ -85,12 +92,17 @@ private:
 	QSpinBox* m_begin = nullptr;
 	QSpinBox* m_end = nullptr;
 	QComboBox* m_lane = nullptr;
+	QComboBox* m_takeGroup = nullptr;
+	QComboBox* m_takeChoice = nullptr;
+	QToolButton* m_useTake = nullptr;
+	QCheckBox* m_playAllTakes = nullptr;
 	QToolButton* m_addLane = nullptr;
 	QToolButton* m_comp = nullptr;
 	QToolButton* m_consolidate = nullptr;
 	CompSwipeStrip* m_strip = nullptr;  //!< 0.5.0 L03 (ED-165): comp by swiping
 	std::vector<QToolButton*> m_auditions;
 	std::vector<int> m_laneIndices;
+	QJsonArray m_takeGroups;
 	int m_auditioning = -1;
 	int m_spanBegin = 0;
 	int m_spanEnd = 0;

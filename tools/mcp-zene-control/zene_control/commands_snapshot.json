@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T06:08:42Z",
+  "captured_at": "2026-10-09T11:02:06Z",
   "commands": [
     {
       "args_schema": {
@@ -6486,10 +6486,16 @@
           "name": {
             "type": "string"
           },
+          "play_all_takes": {
+            "type": "boolean"
+          },
           "take_count": {
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "take_groups": {
+            "type": "array"
           },
           "track": {
             "type": "string"
@@ -6664,6 +6670,45 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Set whether every take on this track plays together. This is track-wide and saved with the project. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "comp",
+      "id": "comp.play_all_takes",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "previous": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -6860,6 +6905,57 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "lane": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "lane"
+        ],
+        "type": "object"
+      },
+      "description": "Choose which pass of a recorded clip group plays. Name any take clip in the group and its lane; the choice stays active through later loop passes until chosen again. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "comp",
+      "id": "comp.take_select",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active_lane": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "lane": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "user_chosen": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -34759,23 +34855,23 @@
       }
     }
   ],
-  "count": 823,
+  "count": 825,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-script/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-p1xw5a_7/zene.sock",
-    "version": "0.4.0-alpha.1364+a0295ab"
+    "source_socket": "/tmp/zctl-run-xl0w4q0s/zene.sock",
+    "version": "0.4.0-alpha.1368+468de6c"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 823,
-    "ids_sha256": "61b947e1bfb7cd685ab6dfcb9e0d000c0c1653a3aa89a63ebc1c084f64b14f41"
+    "id_count": 825,
+    "ids_sha256": "4a5b6879d9980ab44cf38678e7da96de89f783cab8fc86317d13fdb56e36c6f9"
   }
 }

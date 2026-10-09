@@ -27,6 +27,7 @@
 #define LMMS_SAMPLE_PLAY_HANDLE_H
 
 #include "Sample.h"
+#include <atomic>
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -207,6 +208,8 @@ private:
 	//! Silences the frames outside the selected spans, with a short ramp at
 	//! every edge so a lane switch does not click. Only run when m_comped.
 	void applyComp(SampleFrame* buffer, f_cnt_t frames) const;
+	//! Lock-free active-take gate; comp playback bypasses this selection entirely.
+	void applyActiveTakeGate(SampleFrame* buffer, f_cnt_t frames) const;
 	//! How many selected spans of this clip's own lane one handle can hold. The
 	//! composite (include/TakeLane.h) stores its segments in a plain vector with no
 	//! count limit, so this is the RENDER budget, not the model's: a fixed array keeps
@@ -217,6 +220,10 @@ private:
 	static constexpr int MaxCompSpans = 256;
 	static constexpr f_cnt_t CompRampFrames = 64;
 	bool m_comped = false;
+	int m_takeGroupId = 0;
+	int m_takeLaneIndex = 0;
+	const std::atomic<int>* m_activeTakeLane = nullptr;
+	const std::atomic<bool>* m_playAllTakes = nullptr;
 	//! 0.5.0 L05 (ED-177): an automatic fade applies to this neutral clip.
 	bool m_autoFaded = false;
 	int m_compSpanCount = 0;

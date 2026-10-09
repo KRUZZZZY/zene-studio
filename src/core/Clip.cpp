@@ -109,6 +109,8 @@ Clip::Clip(const Clip& other):
 	m_color(other.m_color),
 	m_edits(other.m_edits),
 	m_laneIndex(other.m_laneIndex),
+	m_takeGroupId(other.m_takeGroupId),
+	m_activeTakeLane(other.m_activeTakeLane.load(std::memory_order_relaxed)),
 	m_linkId(other.m_linkId)
 {
 	if (getTrack())
@@ -450,6 +452,12 @@ void Clip::saveClipEdits(QDomElement& element) const
 	{
 		element.setAttribute("lane", m_laneIndex);
 	}
+	// The group is additive clip state: ordinary clips keep the old bytes, and
+	// the track-owned TakeLaneModel persists the active lane and user-choice bit.
+	if (m_takeGroupId > 0)
+	{
+		element.setAttribute("takegroup", m_takeGroupId);
+	}
 	/* The link group (row 6). Written only when the clip is a member, like the
 	 * lane above: an unlinked clip - every clip in every project written before
 	 * this feature - carries no `link` attribute at all, so I9 (additive
@@ -585,6 +593,7 @@ struct ClipRestoreRule
 
 constexpr ClipRestoreRule CLIP_RESTORE_SCHEMA[] = {
 	{ "lane", "0" }, // absent => never assigned to a take lane (lane 0)
+	{ "takegroup", "0" }, // absent => not a member of a loop-recording take group
 	{ "link", "0" }, // absent => unlinked, exactly what link_create's checkpoint carries
 };
 
@@ -683,6 +692,8 @@ void Clip::loadClipEdits(const QDomElement& element)
 	// it restores "unlinked" exactly - the inverse of a first link is a real
 	// inverse rather than a no-op.
 	m_laneIndex = std::max(0, element.attribute("lane", clipRestoreDefault("lane")).toInt());
+	m_takeGroupId = std::max(0, element.attribute("takegroup", clipRestoreDefault("takegroup")).toInt());
+	m_activeTakeLane.store(-1, std::memory_order_relaxed); // rebound from TakeLaneModel after load
 	/* An id read from a file is OBSERVED by the project-scoped counter
 	 * (SPEC-stable-ids.md R3), so a group number that a project already uses can
 	 * never be handed out again by allocateGroupId() - including for a reloaded

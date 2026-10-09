@@ -2338,6 +2338,7 @@ static bool loadLanesSection( const Song & song, const QDomElement & section )
 		Track * track = ok ? song.findTrackById( trackId ) : nullptr;
 		if( track == nullptr ) { return false; }
 		track->takeLanes().loadSettings( group );
+		track->takeLanes().synchronizeTakePlayback( track->getClips() );
 	}
 	return true;
 }
