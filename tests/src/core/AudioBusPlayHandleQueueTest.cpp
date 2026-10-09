@@ -45,12 +45,14 @@
 #include "PlayHandle.h"
 #include "RealtimeScope.h"
 #include "SampleFrame.h"
+#include "Song.h"
 #include "Track.h"
 #include "AllocationProbe.h"
 
 #define private public
 #include "AudioBusHandle.h"
 #undef private
+#include "SampleTrack.h"
 
 using namespace lmms;
 
@@ -77,6 +79,52 @@ public:
 	}
 	bool isFinished() const override { return false; }
 	bool isFromTrack(const Track*) const override { return false; }
+};
+
+class CapacityOccupantHandle : public PlayHandle
+{
+public:
+	explicit CapacityOccupantHandle(AudioBusHandle* bus) : PlayHandle(Type::InstrumentPlayHandle)
+	{
+		setAudioBusHandle(bus);
+		setUsesBuffer(false);
+	}
+	void play(std::span<SampleFrame>) override {}
+	bool isFinished() const override { return false; }
+	bool isFromTrack(const Track*) const override { return false; }
+};
+
+class DeferredTrackHandle : public PlayHandle
+{
+public:
+	DeferredTrackHandle(Track* track, AudioBusHandle* bus, std::atomic<int>& played,
+		std::atomic<int>& destroyed, bool affinityMatters)
+		: PlayHandle(Type::SamplePlayHandle), m_track(track), m_played(played), m_destroyed(destroyed),
+		  m_affinityMatters(affinityMatters)
+	{
+		setAudioBusHandle(bus);
+		setUsesBuffer(false);
+	}
+	~DeferredTrackHandle() override { m_destroyed.fetch_add(1, std::memory_order_relaxed); }
+	bool affinityMatters() const override { return m_affinityMatters; }
+	void play(std::span<SampleFrame>) override { m_played.fetch_add(1, std::memory_order_relaxed); }
+	bool isFinished() const override { return false; }
+	bool isFromTrack(const Track* track) const override { return m_track == track; }
+
+private:
+	Track* m_track;
+	std::atomic<int>& m_played;
+	std::atomic<int>& m_destroyed;
+	bool m_affinityMatters;
+};
+
+struct DeferredScenario
+{
+	std::unique_ptr<SampleTrack> track;
+	std::vector<std::unique_ptr<CapacityOccupantHandle>> occupants;
+	std::atomic<int> played{0};
+	std::atomic<int> destroyed{0};
+	DeferredTrackHandle* handle = nullptr;
 };
 
 class AddPlayHandleJob : public ThreadableJob
@@ -267,6 +315,59 @@ private slots:
 		QCOMPARE(bus.droppedPlayHandleEdits(), std::uint64_t{0});
 	}
 
+	void capacityDeferredHandleIsCanceledByClearWithoutAllocating()
+	{
+		DeferredScenario scenario;
+		arrangeDeferredHandle(scenario, true);
+		auto* engine = Engine::audioEngine();
+
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		{
+			const RealtimeScope realtime;
+			const AudioBusHandle::RenderStageScope ownsBusPlayHandleLists;
+			engine->clearInternal();
+		}
+		lmms::test::tlCountAllocations = false;
+		QCOMPARE(static_cast<qulonglong>(lmms::test::tlAllocationCount), 0ull);
+		verifyDeferredHandleStayedCanceled(scenario);
+	}
+
+	void capacityDeferredHandleIsCanceledByRemovePlayHandle()
+	{
+		DeferredScenario scenario;
+		arrangeDeferredHandle(scenario, true);
+		Engine::audioEngine()->removePlayHandle(scenario.handle);
+		verifyDeferredHandleStayedCanceled(scenario);
+	}
+
+	void queuedRemovePlayHandleCancelsCapacityDeferredHandle()
+	{
+		DeferredScenario scenario;
+		arrangeDeferredHandle(scenario, false);
+		auto* engine = Engine::audioEngine();
+		engine->removePlayHandle(scenario.handle);
+		engine->renderStageNoteSetup();
+		verifyDeferredHandleStayedCanceled(scenario);
+	}
+
+	void capacityDeferredHandleIsCanceledByTypeRemoval()
+	{
+		DeferredScenario scenario;
+		arrangeDeferredHandle(scenario, true);
+		auto* engine = Engine::audioEngine();
+		engine->removePlayHandlesOfTypes(scenario.track.get(), PlayHandle::Type::SamplePlayHandle);
+		verifyDeferredHandleStayedCanceled(scenario);
+	}
+
+	void capacityDeferredHandleIsCanceledBeforeItsTrackDies()
+	{
+		DeferredScenario scenario;
+		arrangeDeferredHandle(scenario, true);
+		scenario.track.reset();
+		verifyDeferredHandleStayedCanceled(scenario);
+	}
+
 	//! Edits posted from another thread, including a remove and a re-add of the same handle, land in posting
 	//! order when the bus next processes: the list ends with the handle it was last given.
 	void editsFromAnotherThreadApplyInPostingOrderAtTheNextProcessing()
@@ -293,6 +394,74 @@ private slots:
 		bus.removePlayHandle(&second);
 		bus.doProcessing();
 		QVERIFY(bus.m_playHandles.isEmpty());
+	}
+
+private:
+	void arrangeDeferredHandle(DeferredScenario& scenario, bool affinityMatters)
+	{
+		auto* engine = Engine::audioEngine();
+		QVERIFY(engine->m_playHandles.isEmpty());
+		QCOMPARE(engine->m_capacityDeferredPlayHandleCount, std::size_t{0});
+		scenario.track = std::make_unique<SampleTrack>(Engine::getSong());
+
+		const auto guard = engine->requestChangesGuard();
+		engine->m_playHandleCapacityLow.store(false, std::memory_order_relaxed);
+		engine->m_playHandleCapacityRefreshRequested.store(false, std::memory_order_relaxed);
+		const qsizetype capacity = engine->m_playHandles.capacity();
+		QVERIFY(capacity > 0);
+		scenario.occupants.reserve(static_cast<std::size_t>(capacity));
+		for (qsizetype i = 0; i < capacity; ++i)
+		{
+			auto occupant = std::make_unique<CapacityOccupantHandle>(scenario.track->audioBusHandle());
+			engine->m_playHandles.append(occupant.get());
+			scenario.occupants.push_back(std::move(occupant));
+		}
+
+		scenario.handle = new DeferredTrackHandle(scenario.track.get(), scenario.track->audioBusHandle(),
+			scenario.played, scenario.destroyed, affinityMatters);
+		QVERIFY(engine->addPlayHandle(scenario.handle));
+		engine->renderStageNoteSetup();
+		QCOMPARE(engine->m_capacityDeferredPlayHandleCount, std::size_t{1});
+		QVERIFY(engine->m_newPlayHandles.first() == nullptr);
+	}
+
+	void verifyDeferredHandleStayedCanceled(DeferredScenario& scenario)
+	{
+		auto* engine = Engine::audioEngine();
+		const bool canceledBeforeRetry = scenario.destroyed.load(std::memory_order_relaxed) == 1;
+		engine->m_playHandles.clear();
+		scenario.occupants.clear();
+		engine->renderNextPeriod();
+		const bool appended = engine->m_playHandles.contains(scenario.handle);
+		const int played = scenario.played.load(std::memory_order_relaxed);
+
+		// Keep the red run safe and leak-free before reporting its failed assertion.
+		if (scenario.destroyed.load(std::memory_order_relaxed) == 0)
+		{
+			engine->m_playHandles.removeAll(scenario.handle);
+			for (std::size_t i = 0; i < engine->m_capacityDeferredPlayHandleCount; ++i)
+			{
+				if (engine->m_capacityDeferredPlayHandles[i] != scenario.handle) { continue; }
+				for (std::size_t move = i + 1; move < engine->m_capacityDeferredPlayHandleCount; ++move)
+				{
+					engine->m_capacityDeferredPlayHandles[move - 1] = engine->m_capacityDeferredPlayHandles[move];
+				}
+				--engine->m_capacityDeferredPlayHandleCount;
+				break;
+			}
+			if (scenario.track)
+			{
+				scenario.handle->audioBusHandle()->removePlayHandleUnderEngineChangeLock(scenario.handle);
+			}
+			delete scenario.handle;
+		}
+		scenario.handle = nullptr;
+
+		QVERIFY2(canceledBeforeRetry, "the deferred handle was not destroyed by the removal path");
+		QVERIFY2(!appended, "the deferred handle was appended after removal or track teardown");
+		QCOMPARE(played, 0);
+		QCOMPARE(scenario.destroyed.load(std::memory_order_relaxed), 1);
+		QCOMPARE(engine->m_capacityDeferredPlayHandleCount, std::size_t{0});
 	}
 };
 

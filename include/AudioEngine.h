@@ -53,6 +53,9 @@
 #include "RetroAudioCapture.h"
 #include "SampleFrameRingBuffer.h"
 
+#ifdef LMMS_TESTING
+class AudioBusPlayHandleQueueTest;
+#endif
 
 namespace lmms
 {
@@ -470,6 +473,9 @@ signals:
 
 
 private:
+#ifdef LMMS_TESTING
+	friend class ::AudioBusPlayHandleQueueTest;
+#endif
 	void renderNextBuffer(AudioBufferView<float> auto dst)
 	{
 		for (auto frame = f_cnt_t{0}; frame < dst.frames(); ++frame)
@@ -635,6 +641,7 @@ private:
 	float m_masterGain;
 	void topUpPlayHandleCapacityOnControlThread();
 	bool appendPlayHandleWithoutGrowth(PlayHandle* handle) noexcept;
+	bool removeCapacityDeferredPlayHandle(PlayHandle* handle) noexcept;
 
 	// audio device stuff
 	void doSetAudioDevice( AudioDevice *_dev );

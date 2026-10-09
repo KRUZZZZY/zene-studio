@@ -411,17 +411,27 @@ void AudioEngine::renderStageNoteSetup()
 	ConstPlayHandleList::Iterator it_rem = m_playHandlesToRemove.begin();
 	while( it_rem != m_playHandlesToRemove.end() )
 	{
-		PlayHandleList::Iterator it = std::find( m_playHandles.begin(), m_playHandles.end(), *it_rem );
+		PlayHandle* const handle = const_cast<PlayHandle*>(*it_rem);
+		PlayHandleList::Iterator it = std::find( m_playHandles.begin(), m_playHandles.end(), handle );
 
 		if( it != m_playHandles.end() )
 		{
-			(*it)->audioBusHandle()->removePlayHandle(*it);
-			if((*it)->type() == PlayHandle::Type::NotePlayHandle)
+			handle->audioBusHandle()->removePlayHandle(handle);
+			if(handle->type() == PlayHandle::Type::NotePlayHandle)
 			{
-				NotePlayHandleManager::release((NotePlayHandle*)*it);
+				NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
 			}
-			else delete *it;
+			else delete handle;
 			m_playHandles.erase(it);
+		}
+		else if (removeCapacityDeferredPlayHandle(handle))
+		{
+			handle->audioBusHandle()->removePlayHandleUnderEngineChangeLock(handle);
+			if (handle->type() == PlayHandle::Type::NotePlayHandle)
+			{
+				NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
+			}
+			else { delete handle; }
 		}
 
 		it_rem = m_playHandlesToRemove.erase( it_rem );
@@ -697,6 +707,29 @@ void AudioEngine::clearInternal()
 			m_playHandlesToRemove.push_back(ph);
 		}
 	}
+
+	// Capacity-deferred handles have the same stop semantics as live handles,
+	// but use fixed storage so cancellation cannot grow a container on render.
+	std::size_t remainingDeferred = 0;
+	for (std::size_t i = 0; i < m_capacityDeferredPlayHandleCount; ++i)
+	{
+		PlayHandle* const handle = m_capacityDeferredPlayHandles[i];
+		if (handle->type() == PlayHandle::Type::InstrumentPlayHandle
+			|| handle->type() == PlayHandle::Type::InputMonitorHandle
+			|| handle->type() == PlayHandle::Type::SessionCellHandle)
+		{
+			m_capacityDeferredPlayHandles[remainingDeferred++] = handle;
+			continue;
+		}
+
+		handle->audioBusHandle()->removePlayHandleUnderEngineChangeLock(handle);
+		if (handle->type() == PlayHandle::Type::NotePlayHandle)
+		{
+			NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
+		}
+		else { delete handle; }
+	}
+	m_capacityDeferredPlayHandleCount = remainingDeferred;
 }
 
 void AudioEngine::doSetAudioDevice( AudioDevice * _dev )
@@ -836,6 +869,21 @@ bool AudioEngine::appendPlayHandleWithoutGrowth(PlayHandle* handle) noexcept
 	return true;
 }
 
+bool AudioEngine::removeCapacityDeferredPlayHandle(PlayHandle* handle) noexcept
+{
+	for (std::size_t i = 0; i < m_capacityDeferredPlayHandleCount; ++i)
+	{
+		if (m_capacityDeferredPlayHandles[i] != handle) { continue; }
+		for (std::size_t move = i + 1; move < m_capacityDeferredPlayHandleCount; ++move)
+		{
+			m_capacityDeferredPlayHandles[move - 1] = m_capacityDeferredPlayHandles[move];
+		}
+		--m_capacityDeferredPlayHandleCount;
+		return true;
+	}
+	return false;
+}
+
 void AudioEngine::topUpPlayHandleCapacityOnControlThread()
 {
 	if (RealtimeScope::isActive() || QThread::currentThread() != thread()
@@ -893,6 +941,7 @@ void AudioEngine::removePlayHandle(PlayHandle * ph)
 			m_playHandles.erase(it);
 			removedFromList = true;
 		}
+		removedFromList = removeCapacityDeferredPlayHandle(ph) || removedFromList;
 		// Only deleting PlayHandles that were actually found in the list
 		// "fixes crash when previewing a preset under high load"
 		// (See tobydox's 2008 commit 4583e48)
@@ -976,6 +1025,31 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 			}
 			e = next;
 		}
+	}
+
+	// Handles waiting for an engine-list slot are still owned by the engine.
+	// Track teardown must remove matching deferred entries before the track or
+	// its audio bus can be destroyed.
+	{
+		std::size_t remainingDeferred = 0;
+		for (std::size_t i = 0; i < m_capacityDeferredPlayHandleCount; ++i)
+		{
+			PlayHandle* const handle = m_capacityDeferredPlayHandles[i];
+			if (handle->isFromTrack(track) && (handle->type() & types))
+			{
+				handle->audioBusHandle()->removePlayHandleUnderEngineChangeLock(handle);
+				if (handle->type() == PlayHandle::Type::NotePlayHandle)
+				{
+					NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
+				}
+				else { delete handle; }
+			}
+			else
+			{
+				m_capacityDeferredPlayHandles[remainingDeferred++] = handle;
+			}
+		}
+		m_capacityDeferredPlayHandleCount = remainingDeferred;
 	}
 	doneChangeInModel();
 }
