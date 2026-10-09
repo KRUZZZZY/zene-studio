@@ -307,6 +307,12 @@ double preFadedOut(const PreFadeSpan& span, std::int64_t clipPos, FadeShape shap
 
 float preFadedGainAt(const PreFadeSpan& span, std::int64_t clipPos, FadeShape fadeInShape, FadeShape fadeOutShape)
 {
+	if (span.fadeOffsetGap && span.fadeInOffsetFrames > 0 && span.fadeOutOffsetFrames > 0)
+	{
+		const std::int64_t fadeOutEnd = span.clipFrames > span.fadeOutOffsetFrames
+			? span.clipFrames - span.fadeOutOffsetFrames : 0;
+		if (clipPos >= fadeOutEnd && clipPos < span.fadeInOffsetFrames) { return 0.0f; }
+	}
 	double value = 1.0;
 	value *= preFadedIn(span, clipPos, fadeInShape);
 	value *= preFadedOut(span, clipPos, fadeOutShape);

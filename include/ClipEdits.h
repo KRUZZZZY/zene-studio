@@ -237,11 +237,15 @@ struct PreFadeSpan
 	//! pre-fade is a ramp of its own outside the clip and the in-clip ramp sits at its offset.
 	std::int64_t fadeInOffsetFrames = 0;
 	std::int64_t fadeOutOffsetFrames = 0;
+	//! Only the explicit contained-crossfade gesture silences the span between paired container ramps. Older offset
+	//! pairs leave this false, preserving their historical unity between ramps.
+	bool fadeOffsetGap = false;
 };
 
 /*! ED-179: the fade envelope of a pre-faded clip at @a clipPos output frames from its first frame (negative before
  *  it, past @a span.clipFrames after it). The fade-in is ONE ramp from preIn frames before the clip to fadeIn frames
- *  into it, the fade-out one ramp from fadeOut frames before its end to preOut frames after it; 0 outside both.
+ *  into it, the fade-out one ramp from fadeOut frames before its end to preOut frames after it; an explicitly
+ *  marked container gap stays silent between its ramps; 0 outside both.
  *  Only the pre-faded path calls it (a clip without pre-fades keeps clipFadeGainAt). Allocation-free. */
 LMMS_EXPORT float preFadedGainAt(const PreFadeSpan& span, std::int64_t clipPos, FadeShape fadeInShape, FadeShape fadeOutShape);
 

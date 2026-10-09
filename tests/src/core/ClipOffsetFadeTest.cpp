@@ -221,6 +221,29 @@ private slots:
 		QCOMPARE(in.fadeOutOffsetTicks, 0);
 	}
 
+	//! A pre-fade must not bypass the silent span between a container's paired ramps.
+	void aContainerCrossfadeGapSilencesAPreFadedContainer()
+	{
+		const int second = oneSecondTicks();
+		SampleClip* container = buildScene(second, second / 4, second / 2);
+		ClipEdits outer;
+		outer.preFadeOutTicks = 24;
+		container->setClipEdits(outer);
+		ClipEdits inner;
+		inner.fadeInTicks = 24;
+		inner.fadeOutTicks = 24;
+		m_contained->setClipEdits(inner);
+		QCOMPARE(arrangement::applyOverlap(m_contained, arrangement::Overlap::Crossfade, nullptr, true), 1);
+		QVERIFY(container->clipEdits().fadeOffsetGap);
+		QVERIFY(prefades::engaged(*container));
+
+		const QByteArray wav = render();
+		QVERIFY2(!wav.isEmpty(), "the export produced no file");
+		const int insideGap = framesAt(second / 2);
+		QVERIFY2(std::fabs(wavLeft(wav, insideGap) - kContainedLevel) < 0.01f,
+			"only the contained clip should sound inside the container's silent gap");
+	}
+
 	//! The render path allocates nothing with an offset fade live (the handle is built outside the probe).
 	void theOffsetFadeRendersWithoutAllocating()
 	{

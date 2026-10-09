@@ -170,6 +170,17 @@ private slots:
 		QCOMPARE(withValidOffsetFades(ClipEdits{}, 400), ClipEdits{});
 	}
 
+	//! The additive gap marker silences only the explicit container pair; older unmarked offset pairs retain unity.
+	void anUnmarkedPreFadedOffsetPairKeepsUnityBetweenItsRamps()
+	{
+		const PreFadeSpan legacy{1000, 0, 0, 30, 30, 780, 780};
+		QCOMPARE(preFadedGainAt(legacy, 500, FadeShape::Linear, FadeShape::Linear), 1.0f);
+
+		PreFadeSpan marked = legacy;
+		marked.fadeOffsetGap = true;
+		QCOMPARE(preFadedGainAt(marked, 500, FadeShape::Linear, FadeShape::Linear), 0.0f);
+	}
+
 	//! The render path goes by the same rule: a clip with a lone offset or a drifted pair plays without a step.
 	void theRenderHasNoStep()
 	{
