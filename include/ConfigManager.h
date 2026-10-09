@@ -68,6 +68,8 @@ public:
 		return s_instanceOfMe;
 	}
 
+	//! Destroy the singleton and clear its pointer so a later engine lifetime can recreate it.
+	static void destroy();
 
 	const QString & workingDir() const
 	{

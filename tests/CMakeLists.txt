@@ -1378,6 +1378,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_SCAN_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+		if(TARGET lv2instrument)
+			add_dependencies(${LMMS_TEST_NAME} lv2instrument)
+		endif()
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()

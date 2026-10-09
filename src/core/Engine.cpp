@@ -120,7 +120,7 @@ void Engine::destroy()
 
 	deleteHelper( &s_song );
 
-	delete ConfigManager::inst();
+	ConfigManager::destroy();
 
 	// The oscillator FFT plans remain throughout the application lifecycle
 	// due to being expensive to create, and being used whenever a userwave form is changed

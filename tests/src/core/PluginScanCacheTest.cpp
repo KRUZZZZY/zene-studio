@@ -92,6 +92,7 @@
 #include "lmmsconfig.h"
 
 #include "embed.h"
+#include "ConfigManager.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "Plugin.h"
@@ -845,7 +846,9 @@ private slots:
 		Engine::init(true);
 		struct EngineShutdown
 		{
-			~EngineShutdown() { Engine::destroy(); }
+			bool active = true;
+			~EngineShutdown() { if (active) { Engine::destroy(); } }
+			void shutdown() { Engine::destroy(); active = false; }
 		} engineShutdown;
 		QDir::setSearchPaths("plugins", QStringList{m_pluginDir->path()});
 		auto* factory = getPluginFactory();
@@ -863,6 +866,11 @@ private slots:
 
 		instance.reset();
 		QVERIFY2(library.expired(), "the instance's module reference must be released with the instance");
+
+		track.reset();
+		engineShutdown.shutdown();
+		const QString workingDir = ConfigManager::inst()->workingDir();
+		QVERIFY2(!workingDir.isEmpty(), "ConfigManager::inst() must recreate the manager after Engine::destroy()");
 	}
 
 	/*! A full scan that loads an LV2 host module must not crash when the Engine was
@@ -886,7 +894,7 @@ private slots:
 		// cannot exercise the path, and passing quietly would be a lie.
 		const QString module = QDir(QStringLiteral(LMMS_TEST_SCAN_PLUGIN_DIR))
 			.filePath(QStringLiteral("liblv2instrument.so"));
-		if (!QFileInfo::exists(module)) { QSKIP("this build ships no LV2 host module to scan"); }
+		QVERIFY2(QFileInfo::exists(module), "PluginScanCacheTest must build the LV2 host module it scans");
 		// The pre-condition this regression is about: no Engine::init() in this host.
 		QVERIFY2(Engine::getLv2Manager() == nullptr,
 			"this host must not have initialized the LV2 manager");

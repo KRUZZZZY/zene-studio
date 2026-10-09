@@ -108,6 +108,14 @@ ConfigManager::~ConfigManager()
 }
 
 
+void ConfigManager::destroy()
+{
+	ConfigManager* instance = s_instanceOfMe;
+	s_instanceOfMe = nullptr;
+	delete instance;
+}
+
+
 void ConfigManager::upgrade_1_1_90()
 {
 	// Remove trailing " (bad latency!)" string which was once saved with PulseAudio
