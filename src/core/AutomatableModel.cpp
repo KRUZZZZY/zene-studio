@@ -59,6 +59,11 @@ AudioEngine::RequestChangesGuard modelChangeGuard()
 		: engine->requestChangesGuard();
 }
 
+[[maybe_unused]] bool modelDestructionWouldBlockOnRender(AudioEngine* engine) noexcept
+{
+	return engine != nullptr && RealtimeScope::isActive() && !engine->isRenderThread();
+}
+
 } // namespace
 
 long AutomatableModel::s_periodCounter = 0;
@@ -99,6 +104,11 @@ AutomatableModel::AutomatableModel(
 
 AutomatableModel::~AutomatableModel()
 {
+	AudioEngine* const engine = Engine::audioEngine();
+	Q_ASSERT_X(!modelDestructionWouldBlockOnRender(engine),
+		"AutomatableModel::~AutomatableModel",
+		"an AutomatableModel must not be destroyed on an audio worker during a period");
+
 	emit aboutToBeDestroyed();
 
 	// The song caches the models it automated on the last frame as RAW pointers
@@ -117,7 +127,7 @@ AutomatableModel::~AutomatableModel()
 		if (m_controllerConnection) { delete m_controllerConnection; }
 	};
 
-	if (AudioEngine* const engine = Engine::audioEngine())
+	if (engine != nullptr)
 	{
 		// Close any external lifetime gates before taking the render lock. Once
 		// callbacks return, unregister and remove the render-visible references
@@ -132,6 +142,15 @@ AutomatableModel::~AutomatableModel()
 
 	emit destroyed( id() );
 }
+
+
+
+#ifdef LMMS_TESTING
+bool AutomatableModel::destructorWouldRequestBlockingChangeGuard() noexcept
+{
+	return modelDestructionWouldBlockOnRender(Engine::audioEngine());
+}
+#endif
 
 
 

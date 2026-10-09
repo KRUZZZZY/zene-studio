@@ -137,6 +137,11 @@ public:
 
 	void setControllerConnection( ControllerConnection* c );
 
+#ifdef LMMS_TESTING
+	//! Test the destructor's worker-thread deadlock guard without destroying an object.
+	static bool destructorWouldRequestBlockingChangeGuard() noexcept;
+#endif
+
 
 	template<class T>
 	static T castValue( const float v )
