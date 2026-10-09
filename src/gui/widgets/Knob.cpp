@@ -142,7 +142,9 @@ void Knob::onKnobNumUpdated()
 		{
 			convertPixmapToGrayScale(*m_knobPixmap.get());
 		}
-		setFixedSize( m_knobPixmap->width(), m_knobPixmap->height() );
+		const int accessibleTarget = tokens::accessibleMode() ? tokens::targetSize() : 0;
+		setFixedSize(std::max(m_knobPixmap->width(), accessibleTarget),
+			std::max(m_knobPixmap->height(), accessibleTarget));
 	}
 }
 

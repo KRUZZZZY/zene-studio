@@ -416,7 +416,7 @@ private slots:
 		QVERIFY(qEnvironmentVariableIsSet("ZENE_TEST_ACCESSIBLE"));
 		QVERIFY(tokens::accessibleMode());
 		const int target = tokens::targetSize();
-		QVERIFY(target > 17);
+		QVERIFY(target > 26);
 
 		QWidget window;
 		auto* layout = new QVBoxLayout{&window};
@@ -430,6 +430,18 @@ private slots:
 		QVERIFY2(knob->minimumWidth() >= target, qPrintable(QStringLiteral("width reset to %1, target is %2")
 			.arg(knob->minimumWidth()).arg(target)));
 		QVERIFY2(knob->minimumHeight() >= target, qPrintable(QStringLiteral("height reset to %1, target is %2")
+			.arg(knob->minimumHeight()).arg(target)));
+
+		knob->setknobNum(KnobType::Bright26);  // the pixmap update previously bypassed the accessible target
+		QVERIFY2(knob->minimumWidth() >= target, qPrintable(QStringLiteral("type change shrank width to %1, target is %2")
+			.arg(knob->minimumWidth()).arg(target)));
+		QVERIFY2(knob->minimumHeight() >= target, qPrintable(QStringLiteral("type change shrank height to %1, target is %2")
+			.arg(knob->minimumHeight()).arg(target)));
+
+		knob->setEnabled(false);  // EnabledChange uses the same direct pixmap sizing path.
+		QVERIFY2(knob->minimumWidth() >= target, qPrintable(QStringLiteral("disable shrank width to %1, target is %2")
+			.arg(knob->minimumWidth()).arg(target)));
+		QVERIFY2(knob->minimumHeight() >= target, qPrintable(QStringLiteral("disable shrank height to %1, target is %2")
 			.arg(knob->minimumHeight()).arg(target)));
 	}
 };
