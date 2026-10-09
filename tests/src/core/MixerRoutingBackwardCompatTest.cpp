@@ -444,6 +444,35 @@ private slots:
 			"adding C->A was reported as a cycle although nothing routes back to C");
 	}
 
+	void loadingOnlyRestoresPersistedFeedbackFlags()
+	{
+		static const char* kFeedbackXml =
+			"<mixer>"
+			"<mixerchannel num=\"0\" name=\"Master\"><fxchain/></mixerchannel>"
+			"<mixerchannel num=\"1\" name=\"A\"><fxchain/>"
+				"<send channel=\"2\" feedback=\"1\"/></mixerchannel>"
+			"<mixerchannel num=\"2\" name=\"B\"><fxchain/></mixerchannel>"
+			"<mixerchannel num=\"3\" name=\"C\"><fxchain/>"
+				"<send channel=\"4\"/></mixerchannel>"
+			"<mixerchannel num=\"4\" name=\"D\"><fxchain/>"
+				"<send channel=\"3\"/></mixerchannel>"
+			"</mixer>";
+		QDomDocument doc;
+		QDomElement root;
+		QVERIFY2(parseMixerElement(kFeedbackXml, doc, root), "feedback fixture is invalid XML");
+
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		mixer->loadSettings(root);
+		QCOMPARE(mixer->mixerChannel(1)->m_sends.size(), std::size_t(1));
+		QCOMPARE(mixer->mixerChannel(3)->m_sends.size(), std::size_t(1));
+		QCOMPARE(mixer->mixerChannel(4)->m_sends.size(), std::size_t(1));
+		QVERIFY(mixer->mixerChannel(1)->m_sends.front()->feedback());
+		QVERIFY(!mixer->mixerChannel(3)->m_sends.front()->feedback());
+		QVERIFY(!mixer->mixerChannel(4)->m_sends.front()->feedback());
+		QVERIFY(mixer->feedbackMode());
+	}
+
 	// A channel number that is not a channel must be rejected, not indexed.
 	// The bus pre-pass read m_mixerChannels[busNum] and the main pass
 	// read m_mixerChannels[num] without rejecting a negative `num`, and a

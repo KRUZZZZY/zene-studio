@@ -179,6 +179,7 @@ private slots:
 	void testDistinctInputGivesDistinctOutput();
 	void testTheLevelParameterReachesTheInstrument();
 	void testStateSurvivesTheProjectFile();
+	void testParameterFallbackWithoutStateChunks();
 	void testAGuiLessInstrumentExposesItsParameters();
 	void testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow();
 	void testTheInstrumentsOwnEditorOpensInItsOwnWindow();
@@ -567,6 +568,38 @@ void Vst3InstrumentIntegrationTest::testStateSurvivesTheProjectFile()
 	qInfo("project round trip: saved %.6f, reloaded %.6f (identical render)",
 		rms(saved), rms(restored));
 
+}
+
+void Vst3InstrumentIntegrationTest::testParameterFallbackWithoutStateChunks()
+{
+	auto track = makeTrack();
+	auto* instrument = makeInstrument(track.get());
+	QVERIFY(instrument != nullptr);
+	auto* level = instrument->parameterModel(0);
+	QVERIFY(level != nullptr);
+	level->setValue(WrittenLevel);
+	QTest::qWait(400);
+
+	QDomDocument doc;
+	QDomElement parent = doc.createElement(QStringLiteral("parent"));
+	QDomElement state = instrument->saveState(doc, parent);
+	QVERIFY(!state.firstChildElement(QStringLiteral("parameters")).isNull());
+	QVERIFY(!state.firstChildElement(QStringLiteral("componentstate")).isNull());
+	state.removeChild(state.firstChildElement(QStringLiteral("componentstate")));
+	state.removeChild(state.firstChildElement(QStringLiteral("controllerstate")));
+
+	level->setValue(FixtureLevel);
+	QTest::qWait(400);
+	instrument->restoreState(state);
+	QCOMPARE(level->value<float>(), WrittenLevel);
+
+	const Note note{TimePos::fromFrames(Blocks * BlockFrames, 1.0), TimePos(0), 60,
+		DefaultVolume};
+	const auto restored = renderNote(track.get(), instrument, note, 0,
+		Blocks * BlockFrames);
+	QVERIFY2(std::all_of(restored.begin(), restored.end(),
+		[](float sample) { return sample == WrittenLevel; }),
+		"the no-chunk fallback did not restore the audible parameter");
 }
 
 void Vst3InstrumentIntegrationTest::testAGuiLessInstrumentExposesItsParameters()

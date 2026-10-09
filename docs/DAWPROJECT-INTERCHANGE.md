@@ -49,12 +49,14 @@ and `DawProjectVersionAttribute = "1.0"` written into `<Project version="1.0">`
 document declares DAWproject version N; this module implements 1.0"*), rather than reading a
 document whose semantics it does not know.
 
-**GAP: none claimed.** The format's own version is 1.0, this module writes 1.0 and reads 1.0;
-no part of the published 1.0 schema is implemented as a dialect. What this build does **not**
-implement is *optional content within* 1.0 — that is the list in section 7, and it is stated as
-loss rather than left implicit. `dawproject.convention` reports the version, the container, the
-tick rule and the stated losses **as data on the wire**, so a client can read the same claims
-this document makes without reading the source.
+**Schema gap: none claimed.** The format's own version is 1.0, this module writes 1.0 and reads
+1.0; no part of the published 1.0 schema is implemented as a dialect. Container method support
+is narrower: import accepts ZIP entries using STORE (method 0), while DEFLATE (method 8) is
+valid in the published format but refused by this build. What this build does **not** implement
+within the schema is *optional content within* 1.0 — that is the list in section 7, and it is
+stated as loss rather than left implicit. `dawproject.convention` reports the version, the
+container, the tick rule and the stated losses **as data on the wire**, so a client can read the
+same claims this document makes without reading the source.
 
 The format's own support list (`README.md`, section "DAW Support", line 175) names exactly six
 DAWs at 1.0 — Bitwig Studio 5.0.9, PreSonus Studio One 6.5, Steinberg Cubase 14, Steinberg
@@ -126,6 +128,11 @@ method (method 0). Two reasons, both engine-level: `DataFile`'s `qUncompress` re
 *framed* format and cannot produce a raw DEFLATE stream, so compression would mean a new
 dependency; and a stored entry is a valid entry in every ZIP reader, while the format's spec
 constrains the *entries*, not the compression method.
+
+**The reader's input contract is STORE-only.** A foreign ZIP with a DEFLATE-compressed entry is
+valid DAWproject, but this build returns a typed refusal naming that entry and method. The Import
+DAWproject menu item and `dawproject.read` description state this limit before a user selects a
+file.
 
 ---
 

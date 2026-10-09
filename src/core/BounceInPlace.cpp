@@ -190,7 +190,7 @@ bool runCliRender(const QString& projectPath, const QString& out, int sampleRate
 QString validateRequest(const std::vector<Track*>& tracks, const QString& outPath)
 {
 	if (tracks.empty() || std::find(tracks.begin(), tracks.end(), nullptr) != tracks.end()) { return QStringLiteral("no track to render"); }
-	if (outPath.isEmpty() || !outPath.startsWith(QLatin1Char('/')))
+	if (outPath.isEmpty() || !BounceInPlace::isAbsoluteOutputPath(outPath))
 	{
 		return QStringLiteral("the output path must be absolute");
 	}
@@ -310,6 +310,11 @@ QString prepareOutputDir(const QString& outPath)
 }
 
 } // namespace
+
+bool BounceInPlace::isAbsoluteOutputPath(const QString& outPath)
+{
+	return QDir::isAbsolutePath(outPath);
+}
 
 BounceInPlace::Result BounceInPlace::Result::failure(const QString& why)
 {

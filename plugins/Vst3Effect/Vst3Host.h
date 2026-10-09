@@ -25,10 +25,12 @@
 #ifndef LMMS_VST3_HOST_H
 #define LMMS_VST3_HOST_H
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <cstddef>
+#include <thread>
 #include <vector>
 
 #include <QByteArray>
@@ -72,6 +74,64 @@ auto listClasses(const QString& modulePath, QString* error) -> std::vector<Vst3C
  * host is a plugin module and the `plugin.host_chunking` command is not.
  */
 using HostChunkingStats = control::PluginHostChunkingStats;
+
+/*! Lock-free admission gate between audio processing and GUI-side re-prepare.
+ *
+ * The audio side only performs bounded atomic operations. A reconfiguration
+ * closes admission and waits off the audio thread for every admitted call to
+ * leave before it mutates HostedPlugin's prepared buffers.
+ */
+class AudioProcessGate
+{
+public:
+	static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
+		"VST3 audio process admission must be lock free");
+
+	//! Audio thread: enter only if no reconfiguration is pending.
+	auto tryEnterAudioProcess() noexcept -> bool
+	{
+		if (m_reconfiguring.load(std::memory_order_seq_cst)) { return false; }
+		m_activeCalls.fetch_add(1, std::memory_order_seq_cst);
+		if (m_reconfiguring.load(std::memory_order_seq_cst))
+		{
+			m_activeCalls.fetch_sub(1, std::memory_order_seq_cst);
+			return false;
+		}
+		return true;
+	}
+
+	//! Audio thread: leave after the last HostedPlugin access in the call.
+	void leaveAudioProcess() noexcept
+	{
+		m_activeCalls.fetch_sub(1, std::memory_order_seq_cst);
+	}
+
+	//! GUI/control thread only: stop admission and wait for existing calls to leave.
+	void beginReconfigure() noexcept
+	{
+		m_reconfiguring.store(true, std::memory_order_seq_cst);
+		while (m_activeCalls.load(std::memory_order_seq_cst) != 0)
+		{
+			std::this_thread::yield();
+		}
+	}
+
+	//! GUI/control thread only: reopen admission after prepare/cache work is complete.
+	void endReconfigure() noexcept
+	{
+		m_reconfiguring.store(false, std::memory_order_seq_cst);
+	}
+
+	//! Diagnostic state used by the focused concurrency regression.
+	auto reconfigurationPending() const noexcept -> bool
+	{
+		return m_reconfiguring.load(std::memory_order_seq_cst);
+	}
+
+private:
+	std::atomic<std::uint32_t> m_activeCalls{0};
+	std::atomic<bool> m_reconfiguring{false};
+};
 
 //! Process-wide counters behind HostedPlugin::process(). Any thread.
 auto hostChunkingStats() -> HostChunkingStats;

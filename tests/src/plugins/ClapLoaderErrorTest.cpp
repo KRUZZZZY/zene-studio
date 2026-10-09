@@ -129,6 +129,7 @@ private slots:
 	void testGoodModuleHasNoFailure();
 	void testUnopenableFileIsLibraryUnavailable();
 	void testJunkFileIsLibraryUnavailable();
+	void testBundleDirectoryLoadsItsContentsBinary();
 	void testNoSymbolIsSymbolMissing();
 	void testOldVersionIsVersionUnsupported();
 	void testInitFailureIsEntryInitFailed();
@@ -224,6 +225,21 @@ void ClapLoaderErrorTest::testJunkFileIsLibraryUnavailable()
 	QString error;
 	QVERIFY(!plugin.load(junk, QString(), &error));
 	verifyCode(plugin.lastLoadFailure(), loader::Code::LibraryUnavailable, "library-unavailable");
+}
+
+void ClapLoaderErrorTest::testBundleDirectoryLoadsItsContentsBinary()
+{
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+	const QString bundle = dir.filePath(QStringLiteral("Fixture.clap"));
+	const QString binary = QDir(bundle).filePath(QStringLiteral("Contents/MacOS/Fixture.clap"));
+	QVERIFY(QDir().mkpath(QFileInfo(binary).absolutePath()));
+	QVERIFY2(QFile::copy(goodModule(), binary), qPrintable(QStringLiteral("could not copy CLAP fixture to %1").arg(binary)));
+
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(bundle, QString::fromLatin1(GoodPluginId), &error), qPrintable(error));
+	QVERIFY(plugin.isLoaded());
 }
 
 void ClapLoaderErrorTest::testNoSymbolIsSymbolMissing()

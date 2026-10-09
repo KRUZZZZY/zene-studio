@@ -30,7 +30,10 @@
 #include <QFileInfo>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <thread>
 #include <vector>
 
 #include "AudioBus.h"
@@ -57,7 +60,9 @@ private slots:
 	void initTestCase();
 	void cleanupTestCase();
 	void testProcessesAudioThroughAudioBus();
+	void testWrapperProcessingIsQuiescedDuringReprepare();
 	void testStateRoundTripThroughMmp();
+	void testParameterFallbackWithoutStateChunks();
 	void testRendersBeforeAfterWav();
 
 private:
@@ -198,6 +203,78 @@ void Vst3EffectIntegrationTest::testProcessesAudioThroughAudioBus()
 		storage[0][0], storage[0][1]);
 }
 
+void Vst3EffectIntegrationTest::testWrapperProcessingIsQuiescedDuringReprepare()
+{
+	constexpr f_cnt_t fpp = 48;
+	BufferManager::init(fpp);
+
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new Vst3Effect{&chain, &key};
+	chain.appendEffect(effect);
+	QVERIFY(!effect->isCorrupted());
+	auto* controls = dynamic_cast<Vst3EffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* gain = controls->modelForParam(1);
+	QVERIFY(gain != nullptr);
+	gain->setValue(0.5f);
+
+	SampleFrame storage[fpp];
+	auto fillInput = [&storage, fpp] {
+		for (f_cnt_t frame = 0; frame < fpp; ++frame)
+		{
+			storage[frame][0] = 0.5f;
+			storage[frame][1] = 0.5f;
+		}
+	};
+	fillInput();
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, fpp};
+	QVERIFY(chain.processAudioBuffer(bus));
+	QVERIFY(std::abs(storage[0][0] - 0.25f) < 1e-6f);
+
+	struct PausePoint
+	{
+		std::atomic<bool> entered{false};
+		std::atomic<bool> release{false};
+		std::atomic<bool> processed{false};
+		bool processSucceeded = false;
+		float firstOutput = 0.0f;
+	};
+	PausePoint pause;
+	effect->setReprepareTestHook([](void* context) {
+		auto& point = *static_cast<PausePoint*>(context);
+		point.entered.store(true, std::memory_order_release);
+		while (!point.release.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+	}, &pause);
+
+	std::thread audioCall([&] {
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+		while (!pause.entered.load(std::memory_order_acquire)
+			&& std::chrono::steady_clock::now() < deadline)
+		{
+			std::this_thread::yield();
+		}
+		if (pause.entered.load(std::memory_order_acquire))
+		{
+			fillInput();
+			pause.processSucceeded = chain.processAudioBuffer(bus);
+			pause.firstOutput = storage[0][0];
+			pause.processed.store(true, std::memory_order_release);
+		}
+		pause.release.store(true, std::memory_order_release);
+	});
+	effect->reprepare();
+	audioCall.join();
+
+	QVERIFY(pause.entered.load(std::memory_order_acquire));
+	QVERIFY(pause.processed.load(std::memory_order_acquire));
+	QVERIFY(pause.processSucceeded);
+	QVERIFY2(std::abs(pause.firstOutput - 0.5f) < 1e-6f,
+		qPrintable(QStringLiteral("wrapper processed plugin audio during re-prepare: %1")
+			.arg(pause.firstOutput)));
+}
+
 void Vst3EffectIntegrationTest::testStateRoundTripThroughMmp()
 {
 	constexpr f_cnt_t fpp = 48;
@@ -235,7 +312,6 @@ void Vst3EffectIntegrationTest::testStateRoundTripThroughMmp()
 	QDomDocument doc;
 	QDomElement element = doc.createElement("effect");
 	effect->saveSettings(doc, element);
-
 	gain->setValue(0.9f);
 	QVERIFY(std::abs(gain->value() - 0.9f) < 1e-6f);
 
@@ -250,6 +326,56 @@ void Vst3EffectIntegrationTest::testStateRoundTripThroughMmp()
 		qPrintable(QStringLiteral("processed %1").arg(storage[0][0])));
 	qInfo("state round trip: input 0.5, restored gain 0.3 -> measured out[0]=%.9f",
 		storage[0][0]);
+}
+
+void Vst3EffectIntegrationTest::testParameterFallbackWithoutStateChunks()
+{
+	constexpr f_cnt_t fpp = 48;
+	BufferManager::init(fpp);
+
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new Vst3Effect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<Vst3EffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* gain = controls->modelForParam(1);
+	QVERIFY(gain != nullptr);
+	gain->setValue(0.3f);
+
+	SampleFrame storage[fpp];
+	auto fillInput = [&storage, fpp] {
+		for (f_cnt_t frame = 0; frame < fpp; ++frame)
+		{
+			storage[frame][0] = 0.5f;
+			storage[frame][1] = 0.5f;
+		}
+	};
+	fillInput();
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, fpp};
+	QVERIFY(chain.processAudioBuffer(bus));
+	QVERIFY(std::abs(storage[0][0] - 0.15f) < 1e-6f);
+
+	QDomDocument doc;
+	QDomElement element = doc.createElement("effect");
+	effect->saveSettings(doc, element);
+	auto stateElement = element.firstChildElement(QStringLiteral("vst3"));
+	QVERIFY(!stateElement.isNull());
+	QVERIFY(!stateElement.firstChildElement(QStringLiteral("parameters")).isNull());
+	QVERIFY(!stateElement.firstChildElement(QStringLiteral("componentstate")).isNull());
+	stateElement.removeChild(stateElement.firstChildElement(QStringLiteral("componentstate")));
+	stateElement.removeChild(stateElement.firstChildElement(QStringLiteral("controllerstate")));
+
+	gain->setValue(0.9f);
+	effect->plugin()->notifyController(1, 0.9f);
+	effect->loadSettings(element);
+	QVERIFY(std::abs(gain->value() - 0.3f) < 1e-6f);
+
+	fillInput();
+	QVERIFY(chain.processAudioBuffer(bus));
+	QVERIFY2(std::abs(storage[0][0] - 0.15f) < 1e-6f,
+		qPrintable(QStringLiteral("restored %1 without state chunks").arg(storage[0][0])));
 }
 
 void Vst3EffectIntegrationTest::testRendersBeforeAfterWav()

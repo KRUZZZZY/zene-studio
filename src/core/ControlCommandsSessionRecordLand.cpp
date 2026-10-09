@@ -32,14 +32,13 @@
  * and chain-preset groups use. The pairing the two share is in
  * ControlCommandsSessionRecordInternal.h.
  *
- * WHAT A LANDED CLIP CARRIES. Position and length are the recorded span, and
- * that is all this build can fill in: `pattern` reports the PatternStore
- * reference the session slot names, but the notes are NOT copied into the clip
- * and a session slot does not render audio in 0.3.0 (there is no session-clip
- * playback path - #597). So the landed span is a real, editable arrangement clip
- * in the right place for the right length, and the "rendered audio matches the
- * session playback" half of #596's acceptance is UNMET in this tree rather than
- * faked; docs/KNOWN-LIMITATIONS.md states exactly that.
+ * WHAT A LANDED CLIP CARRIES. Position and length are the recorded span. A
+ * session slot with MIDI or audio content is refused before the ring is
+ * consumed: this build cannot copy that content into an arrangement clip (there
+ * is no session-clip playback path - #597), so reporting a blank clip as a
+ * successful land would discard the recorded performance. Empty slots can
+ * still land as editable spans; docs/KNOWN-LIMITATIONS.md states that their
+ * playback content is not rendered in this build.
  *
  * THE INVERSE. The pass creates clips over one Track journal checkpoint per
  * touched track - the clip.add and midi.retro_capture_to_clip shape - so ONE
@@ -76,6 +75,43 @@ using namespace sessionrecord;
 namespace
 {
 
+ControlResult validateLandRequest(const Song& song, const SessionModel& model,
+	const OpenStart* open, int openCount, const LandPair* pairs, int pairCount)
+{
+	if (openCount > 0)
+	{
+		QStringList stillPlaying;
+		for (int i = 0; i < openCount; ++i)
+		{
+			stillPlaying << QStringLiteral("(track %1, scene %2) from tick %3")
+				.arg(open[i].track).arg(open[i].scene).arg(open[i].tick);
+		}
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("%1 recorded launch(es) have not stopped yet: %2. End the "
+				"session (session.stop_all, or session.back_to_arrangement) and land "
+				"again - nothing was consumed.").arg(openCount)
+				.arg(stillPlaying.join(QStringLiteral(", "))));
+	}
+	for (int i = 0; i < pairCount; ++i)
+	{
+		const LandPair& pair = pairs[i];
+		if (pair.track < 0 || pair.track >= static_cast<int>(song.tracks().size())
+			|| pair.track >= model.trackCount() || pair.scene < 0
+			|| pair.scene >= model.sceneCount())
+		{
+			continue;
+		}
+		if (!model.slot(pair.track, pair.scene).isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("cannot land (track %1, scene %2): its session slot contains content "
+					"that this build cannot copy into the arrangement clip; nothing was consumed")
+					.arg(pair.track).arg(pair.scene));
+		}
+	}
+	return ControlResult::success();
+}
+
 void registerRecordLand(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -86,10 +122,10 @@ void registerRecordLand(ControlRegistry& registry)
 		"with the stop that ended it and create ONE arrangement clip per pair on that column's "
 		"song track, at the recorded ticks. REFUSED - consuming nothing - while any recorded start "
 		"is still open, because a half-landed performance would lose starts or invent their ends; "
-		"stop the session first (session.stop_all, or session.back_to_arrangement). Reversible: "
-		"one Track journal checkpoint per touched track, so one control.undo takes the whole pass "
-		"back. The clip's CONTENT is not copied from the session slot (there is no session-clip "
-		"playback path in 0.3.0): the reply names the slot's pattern reference per clip.");
+		"stop the session first (session.stop_all, or session.back_to_arrangement). Also REFUSED "
+		"without consuming anything when a paired session slot contains MIDI or audio content, "
+		"because this build cannot copy it into the arrangement clip. Reversible: one Track journal "
+		"checkpoint per touched track, so one control.undo takes the whole pass back.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("landed"), arrayProperty()},
@@ -124,23 +160,8 @@ void registerRecordLand(ControlRegistry& registry)
 		int unmatchedStops = 0;
 		const int pairCount = landPairEvents(events, count, pairs, MaxLandEvents,
 			open, &openCount, MaxLandEvents, &unmatchedStops);
-		if (openCount > 0)
-		{
-			// The refusal names what is still playing, because that is what the
-			// client has to stop - and it consumes NOTHING, so the performance it
-			// names is still there to land afterwards.
-			QStringList stillPlaying;
-			for (int i = 0; i < openCount; ++i)
-			{
-				stillPlaying << QStringLiteral("(track %1, scene %2) from tick %3")
-					.arg(open[i].track).arg(open[i].scene).arg(open[i].tick);
-			}
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("%1 recorded launch(es) have not stopped yet: %2. End the "
-					"session (session.stop_all, or session.back_to_arrangement) and land "
-					"again - nothing was consumed.").arg(openCount)
-					.arg(stillPlaying.join(QStringLiteral(", "))));
-		}
+		if (ControlResult validation = validateLandRequest(*song, *model, open, openCount,
+			pairs, pairCount); !validation.ok) { return validation; }
 
 		// Every event is paired or an unmatched stop (which has no clip to make),
 		// so the pass can consume the whole ring.

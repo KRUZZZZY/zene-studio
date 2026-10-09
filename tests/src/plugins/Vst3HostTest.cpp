@@ -29,8 +29,10 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <thread>
 #include <vector>
 
+#include "../core/AllocationProbe.h"
 #include "Midi.h"
 #include "Vst3ComponentHandler.h"
 #include "Vst3Host.h"
@@ -159,6 +161,7 @@ private slots:
 	void testAFullParameterQueueKeepsTheNewestValue();
 	void testComponentHandlerAnswersInterfaceQueries();
 	void testNonFiniteParameterValuesAreRefused();
+	void testReprepareGateQuiescesAllActiveAudioCalls();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -500,6 +503,49 @@ void Vst3HostTest::testNonFiniteParameterValuesAreRefused()
 	QCOMPARE(handler->performEdit(1, 1.0e300), Steinberg::kResultOk); // overflows float
 	QCOMPARE(values[1].load(), 1.0f);
 	handler->release();
+}
+
+void Vst3HostTest::testReprepareGateQuiescesAllActiveAudioCalls()
+{
+	AudioProcessGate gate;
+	QVERIFY(gate.tryEnterAudioProcess());
+	QVERIFY(gate.tryEnterAudioProcess());
+
+	std::atomic<bool> started{false};
+	std::atomic<bool> finished{false};
+	std::thread reconfigure([&] {
+		started.store(true, std::memory_order_release);
+		gate.beginReconfigure();
+		finished.store(true, std::memory_order_release);
+		gate.endReconfigure();
+	});
+	while (!started.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+	while (!gate.reconfigurationPending() && !finished.load(std::memory_order_acquire))
+	{
+		std::this_thread::yield();
+	}
+	const bool pending = gate.reconfigurationPending();
+	const bool waitedForBoth = !finished.load(std::memory_order_acquire);
+	const bool refusedDuringReconfigure = !gate.tryEnterAudioProcess();
+	if (!refusedDuringReconfigure) { gate.leaveAudioProcess(); }
+	gate.leaveAudioProcess();
+	const bool waitedForLastCall = !finished.load(std::memory_order_acquire);
+	gate.leaveAudioProcess();
+	reconfigure.join();
+
+	QVERIFY(pending);
+	QVERIFY(waitedForBoth);
+	QVERIFY(refusedDuringReconfigure);
+	QVERIFY(waitedForLastCall);
+	QVERIFY(finished.load(std::memory_order_acquire));
+
+	lmms::test::resetAllocationCount();
+	lmms::test::tlCountAllocations = true;
+	const bool admitted = gate.tryEnterAudioProcess();
+	if (admitted) { gate.leaveAudioProcess(); }
+	lmms::test::tlCountAllocations = false;
+	QVERIFY(admitted);
+	QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
 }
 
 } // namespace lmms::vst3

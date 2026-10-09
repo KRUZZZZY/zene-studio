@@ -29,6 +29,7 @@
 #include <limits>
 
 #include <QDomElement>
+#include <QScopedValueRollback>
 
 #include "AudioBusHandle.h"
 #include "AudioEngine.h"
@@ -1436,7 +1437,7 @@ MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float a
 	// cannot run, so the default path is byte-for-byte the old one;
 	// loadSettings flags its own sends from their persisted attribute. The
 	// master guard keeps the "master cannot send" rule outside the submode.
-	if( m_feedbackMode && from != m_mixerChannels[0] && checkInfiniteLoop( from, to ) )
+	if( shouldAutoFlagFeedbackRoute(from, to) )
 	{
 		route->setFeedback( true );
 	}
@@ -1452,6 +1453,13 @@ MixerRoute * Mixer::createRoute( MixerChannel * from, MixerChannel * to, float a
 	Engine::audioEngine()->doneChangeInModel();
 
 	return route;
+}
+
+
+bool Mixer::shouldAutoFlagFeedbackRoute(MixerChannel* from, MixerChannel* to)
+{
+	return !m_loadingSettings && m_feedbackMode && from != m_mixerChannels[0]
+		&& checkInfiniteLoop(from, to);
 }
 
 
@@ -2535,6 +2543,8 @@ void Mixer::allocateChannelsTo(int num)
 void Mixer::loadSettings( const QDomElement & _this )
 {
 	clear();
+	m_feedbackMode = false;
+	const QScopedValueRollback<bool> loadingSettings(m_loadingSettings, true);
 	QDomNode node = _this.firstChild();
 
 	// Phase D pre-pass: bus flags must be known before sends are loaded,

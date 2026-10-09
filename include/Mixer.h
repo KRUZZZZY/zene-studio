@@ -746,9 +746,12 @@ private:
 	std::vector<MixerChannel*> m_mixerChannels;
 	//! clear() deletes channel after channel; it announces the result once.
 	bool m_clearing = false;
+	//! loadSettings() applies persisted feedback flags without auto-classifying routes.
+	bool m_loadingSettings = false;
 
 	// make sure we have at least num channels
 	void allocateChannelsTo(int num);
+	bool shouldAutoFlagFeedbackRoute(MixerChannel* from, MixerChannel* to);
 
 	//! PDC (#605): recompute inLat/outLat for every channel and publish the
 	//! per-edge compensation delays. Runs on the audio thread once per period;

@@ -53,6 +53,16 @@ class BounceInPlaceTest : public QObject
 {
 	Q_OBJECT
 private slots:
+	void outputPathAbsoluteSyntaxFollowsThePlatform()
+	{
+#ifdef Q_OS_WIN
+		QVERIFY(BounceInPlace::isAbsoluteOutputPath(QStringLiteral("C:/Bounces/track.wav")));
+		QVERIFY(BounceInPlace::isAbsoluteOutputPath(QStringLiteral("\\\\server\\share\\track.wav")));
+#else
+		QVERIFY(BounceInPlace::isAbsoluteOutputPath(QStringLiteral("/tmp/track.wav")));
+		QVERIFY(!BounceInPlace::isAbsoluteOutputPath(QStringLiteral("relative/track.wav")));
+#endif
+	}
 
 	//! The trim itself: a range of the source, copied to another file, and the
 	//! window clamped to what the source actually has. This is the positive

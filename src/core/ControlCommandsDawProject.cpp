@@ -382,7 +382,8 @@ void registerReadCommand(ControlRegistry& registry)
 		"track with its clips and notes, the tempo and time-signature timelines, the mixer strips, "
 		"the entries the container carries that this module does not use, and the model's "
 		"printable digest - what makes a round trip checkable against the FILE and the MODEL "
-		"rather than a hash. A file that is not a ZIP, has no project.xml entry, declares another "
+		"rather than a hash. Import accepts ZIP entries using STORE (method 0); DEFLATE (method 8) "
+		"is refused. A file that is not a ZIP, has no project.xml entry, declares another "
 		"major format version, or carries a value the engine will not accept is a typed refusal.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}},
 		{QStringLiteral("path")});

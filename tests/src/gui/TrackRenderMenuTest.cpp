@@ -85,6 +85,8 @@ private slots:
 		QMenu file;
 		addDawProjectActions(&file);
 		QCOMPARE(commandsIn(file), (QStringList{QStringLiteral("dawproject.import"), QStringLiteral("dawproject.export")}));
+		QVERIFY(file.actions().first()->toolTip().contains(QStringLiteral("STORE")));
+		QVERIFY(file.actions().first()->toolTip().contains(QStringLiteral("DEFLATE")));
 
 		forSample.actions().at(1)->trigger();  // an empty track: refused, logged, no dialog
 	}

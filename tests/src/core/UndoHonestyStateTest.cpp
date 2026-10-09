@@ -279,6 +279,44 @@ private slots:
 		QVERIFY(TrackKeyNames::instance().name(track->id(), 24).isEmpty());
 	}
 
+	//! An unrecorded journal step above a command is undone without borrowing that command's name.
+	void anUnrecordedTopStepIsReportedWithoutRenamingTheCommandRecord()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		QVERIFY(registry != nullptr);
+		const int coalesceWindow = registry->coalesceWindowMs();
+		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"), {{QStringLiteral("window_ms"), 0}}).ok);
+		FloatModel& volume = Engine::mixer()->mixerChannel(1)->m_volumeModel;
+		const float before = volume.value();
+		QVERIFY(run(QStringLiteral("mixer.set_volume"), {{QStringLiteral("channel"), control::channelIdOf(Engine::mixer()->mixerChannel(1))},
+			{QStringLiteral("volume"), 0.25}}).ok);
+		const ControlRegistry::Transaction* record = registry->lastTransaction();
+		QVERIFY(record != nullptr);
+		const QString command = record->command;
+		const quint64 commandStep = record->step;
+		QCOMPARE(command, QStringLiteral("mixer.set_volume"));
+		QCOMPARE(Engine::projectJournal()->topStepSerial(), commandStep);
+		const int transactionCount = registry->transactions().size();
+
+		volume.setValue(0.75f);
+		control::addUndoStep([&volume] { volume.setValue(0.25f); }, [&volume] { volume.setValue(0.75f); });
+		const quint64 unrecordedStep = Engine::projectJournal()->topStepSerial();
+		QVERIFY(unrecordedStep != commandStep);
+
+		const ControlResult undo = run(QStringLiteral("control.undo"));
+		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+		QVERIFY(undo.result.value(QStringLiteral("undone")).toBool());
+		QCOMPARE(undo.result.value(QStringLiteral("undone_command")).toString(), QStringLiteral("unrecorded edit"));
+		QVERIFY(undo.result.value(QStringLiteral("unrecorded_edit")).toBool());
+		QCOMPARE(static_cast<quint64>(undo.result.value(QStringLiteral("step_serial")).toDouble()), unrecordedStep);
+		QCOMPARE(registry->transactions().size(), transactionCount);
+		QCOMPARE(registry->lastTransaction()->command, command);
+		QCOMPARE(registry->lastTransaction()->step, commandStep);
+		QVERIFY(std::abs(volume.value() - 0.25f) < 1e-4f);
+		volume.setValue(before);
+		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"), {{QStringLiteral("window_ms"), coalesceWindow}}).ok);
+	}
+
 	//! E19: no record names an "UNIMPLEMENTED" inverse any more - a real one, or an honest one-way record.
 	void noRecordNamesAnUnimplementedInverse()
 	{

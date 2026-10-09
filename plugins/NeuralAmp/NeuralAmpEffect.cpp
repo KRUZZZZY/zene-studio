@@ -26,6 +26,8 @@
 
 #include "nam/NamModel.h"
 
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "embed.h"
 #include "plugin_export.h"
 
@@ -63,9 +65,17 @@ NeuralAmpEffect::NeuralAmpEffect(Model* parent,
 	m_controls(this),
 	m_model(nullptr),
 	m_audioActive(false),
+	m_sampleRateCompatible(false),
 	m_scratchIn(nam::NamModel::kMaxBlock, 0.0f),
 	m_scratchOut(nam::NamModel::kMaxBlock, 0.0f)
 {
+	if (auto* engine = Engine::audioEngine())
+	{
+		m_engineSampleRate = engine->outputSampleRate();
+		connect(engine, &AudioEngine::sampleRateChanged, this,
+			[this] { refreshSampleRateCompatibility(); });
+	}
+
 	// Optional default model (used by the headless harness and for convenience):
 	//   LMMS_NAM_MODEL=/path/to/model.nam
 	const QByteArray envPath = qgetenv("LMMS_NAM_MODEL");
@@ -137,9 +147,72 @@ void NeuralAmpEffect::loadWorker(QString path)
 	{
 		status << " trained@" << static_cast<long>(spec.sampleRate) << " Hz";
 	}
-	setStatus(status.str());
+	const std::string loadedStatus = status.str();
+	{
+		std::lock_guard<std::mutex> lock(m_rateMutex);
+		if (auto* engine = Engine::audioEngine())
+		{
+			m_engineSampleRate = engine->outputSampleRate();
+		}
+		if (!nam::sampleRateMatchesEngine(spec.sampleRate, m_engineSampleRate))
+		{
+			std::ostringstream refusal;
+			refusal << "load refused: model trained at " << static_cast<long>(spec.sampleRate)
+				<< " Hz, engine runs at " << static_cast<long>(m_engineSampleRate)
+				<< " Hz; rate adaptation is not implemented";
+			setStatus(refusal.str());
+			return;
+		}
+		m_modelSampleRate = spec.sampleRate;
+		m_loadedStatus = loadedStatus;
+		m_modelPublicationInProgress = true;
+		m_sampleRateCompatible.store(false, std::memory_order_release);
+	}
 
 	publishModel(std::move(model));
+	{
+		std::lock_guard<std::mutex> lock(m_rateMutex);
+		if (auto* engine = Engine::audioEngine())
+		{
+			m_engineSampleRate = engine->outputSampleRate();
+		}
+		m_modelPublicationInProgress = false;
+		m_sampleRateCompatible.store(
+			nam::sampleRateMatchesEngine(m_modelSampleRate, m_engineSampleRate),
+			std::memory_order_release);
+	}
+	refreshSampleRateCompatibility();
+}
+
+
+void NeuralAmpEffect::refreshSampleRateCompatibility()
+{
+	std::string status;
+	bool hasModel = false;
+	{
+		std::lock_guard<std::mutex> lock(m_rateMutex);
+		if (auto* engine = Engine::audioEngine())
+		{
+			m_engineSampleRate = engine->outputSampleRate();
+		}
+		const bool compatible = !m_modelPublicationInProgress
+			&& nam::sampleRateMatchesEngine(m_modelSampleRate, m_engineSampleRate);
+		m_sampleRateCompatible.store(compatible, std::memory_order_release);
+		hasModel = m_model.load(std::memory_order_acquire) != nullptr;
+		if (hasModel)
+		{
+			if (compatible) { status = m_loadedStatus; }
+			else
+			{
+				std::ostringstream message;
+				message << "bypassed: model trained at " << static_cast<long>(m_modelSampleRate)
+					<< " Hz, engine runs at " << static_cast<long>(m_engineSampleRate)
+					<< " Hz; rate adaptation is not implemented";
+				status = message.str();
+			}
+		}
+	}
+	if (hasModel) { setStatus(status); }
 }
 
 
@@ -186,7 +259,8 @@ Effect::ProcessStatus NeuralAmpEffect::processImpl(
 	m_audioActive.store(true, std::memory_order_seq_cst);
 	nam::NamModel* model = m_model.load(std::memory_order_seq_cst);
 
-	if (model == nullptr || !model->ready())
+	if (model == nullptr || !model->ready()
+		|| !m_sampleRateCompatible.load(std::memory_order_acquire))
 	{
 		m_audioActive.store(false, std::memory_order_release);
 		return ProcessStatus::ContinueIfNotQuiet;

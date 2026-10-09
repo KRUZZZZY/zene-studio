@@ -310,7 +310,8 @@ std::optional<ControlResult> restoreFailureOf(const QString& verb, const QString
 //! `undone_commands`, because `undone_command` alone reads as "one command was
 //! undone" and a merged span is NOT one command: BUG-CTL-4 was an agent that
 //! saw the singular claim, read the state back, and found two edits reverted.
-ControlResult undoThroughJournal(const QString& command, int commands = 1)
+ControlResult undoThroughJournal(const QString& command, int commands = 1,
+	quint64 stepSerial = 0, bool unrecordedEdit = false)
 {
 	ProjectJournal* journal = Engine::projectJournal();
 	clearStructuralRestoreFailure();  // see restoreFailureOf
@@ -331,6 +332,11 @@ ControlResult undoThroughJournal(const QString& command, int commands = 1)
 	result.insert(QStringLiteral("mechanism"), QStringLiteral("lmms::ProjectJournal"));
 	result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());
 	result.insert(QStringLiteral("can_redo"), journal != nullptr && journal->canRedo());
+	if (unrecordedEdit)
+	{
+		result.insert(QStringLiteral("unrecorded_edit"), true);
+		result.insert(QStringLiteral("step_serial"), static_cast<double>(stepSerial));
+	}
 	if (!undone)
 	{
 		result.insert(QStringLiteral("reason"), QStringLiteral("the engine's undo stack is empty"));
@@ -370,6 +376,13 @@ bool undoesLoadedHistory(const ControlRegistry::Transaction& top)
 	return loaded != 0 && top.step == loaded && journal != nullptr && journal->canUndo();
 }
 
+//! The journal's newest edit belongs to a control transaction only when its serial matches that record.
+bool unrecordedJournalTop(const ControlRegistry::Transaction& record, const ProjectJournal* journal)
+{
+	return record.step != 0 && journal != nullptr && journal->canUndo()
+		&& journal->topStepSerial() != record.step;
+}
+
 //! The answer when the newest record cannot be undone: the steps a project.open loaded (above), else the typed
 //! refusal naming the command and its fallback. nullopt when the record is reversible.
 std::optional<ControlResult> answerIrreversibleTop(const ControlRegistry::Transaction& top)
@@ -378,6 +391,22 @@ std::optional<ControlResult> answerIrreversibleTop(const ControlRegistry::Transa
 	if (undoesLoadedHistory(top)) { return undoThroughJournal(QString()); }
 	return ControlResult::failure(ControlErrorKind::Irreversible,
 		irreversibleUndoMessage(top, control::ReversibilityTable::instance().lookup(top.command)));
+}
+
+//! Undo a record through the journal, identifying an intervening edit by its own step serial.
+ControlResult undoRecordedJournalStep(const ControlRegistry::Transaction& record, ProjectJournal* journal)
+{
+	// An asynchronous command may leave its journal step after it answered.
+	const bool stepLater = record.inverse.value(QStringLiteral("applies")).toString() == QLatin1String("journal_later");
+	if (record.step == 0 && journal != nullptr && !stepLater)
+	{
+		return ControlResult::failure(ControlErrorKind::Irreversible, unjournalledMessage(record));
+	}
+	if (unrecordedJournalTop(record, journal))
+	{
+		return undoThroughJournal(QStringLiteral("unrecorded edit"), 1, journal->topStepSerial(), true);
+	}
+	return undoThroughJournal(record.command, record.commands);
 }
 
 /*! control.undo: undo THE LAST AGENT COMMAND, or refuse typed.
@@ -441,11 +470,7 @@ ControlResult undoLastCommand(ControlRegistry& registry)
 	// and nothing written about the cause. Copying costs a handful of refcounts.
 	const ControlRegistry::Transaction record = *top;
 	if (std::optional<ControlResult> applied = undoByCommand(registry, record)) { return *applied; }
-	// A record with no step of its own refuses - unwinding would take back an older edit - unless its step arrives
-	// after the command answered (mastering.run's asynchronous run, applies "journal_later").
-	const bool stepLater = record.inverse.value(QStringLiteral("applies")).toString() == QLatin1String("journal_later");
-	if (record.step == 0 && journal != nullptr && !stepLater) { return ControlResult::failure(ControlErrorKind::Irreversible, unjournalledMessage(record)); }
-	return undoThroughJournal(record.command, record.commands);
+	return undoRecordedJournalStep(record, journal);
 }
 
 void registerUndoCommand(ControlRegistry& registry)
@@ -463,12 +488,16 @@ void registerUndoCommand(ControlRegistry& registry)
 		"(docs/UNDO-BOUNDS.md): a run of the same command on the same target inside the "
 		"window - reads in between do not break it - is one step, so the reply's "
 		"'undone_commands' is 1 normally and more for a merged span. Set the window to 0 "
-		"(control.set_undo_coalescing) for strict one-command-per-call granularity.");
+		"(control.set_undo_coalescing) for strict one-command-per-call granularity. If the journal's "
+		"top step has no matching transaction record, the reply identifies it as 'unrecorded edit' "
+		"and includes its step_serial; transaction history is left intact.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("undone"), booleanProperty()},
 		{QStringLiteral("undone_command"), stringProperty()},
 		{QStringLiteral("undone_commands"), integerProperty()},
+		{QStringLiteral("unrecorded_edit"), booleanProperty()},
+		{QStringLiteral("step_serial"), numberProperty()},
 		{QStringLiteral("class"), stringProperty()},
 		{QStringLiteral("restored_by"), stringProperty()},
 		{QStringLiteral("can_undo"), booleanProperty()},

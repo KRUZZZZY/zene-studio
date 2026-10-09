@@ -24,7 +24,9 @@
 
 #include "ClapLoader.h"
 
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 
 #include <iterator>
 #include <utility>
@@ -53,6 +55,15 @@ namespace lmms::clap::loader
 
 namespace
 {
+
+//! A CLAP bundle's module lives inside Contents/MacOS; ordinary file paths pass through unchanged.
+QString moduleBinaryPath(const QString& path)
+{
+	const QFileInfo bundle{path};
+	if (!bundle.isDir()) { return path; }
+	const QString candidate = QDir{path}.filePath(QStringLiteral("Contents/MacOS/%1").arg(bundle.fileName()));
+	return QFileInfo{candidate}.isFile() ? candidate : path;
+}
 
 // --- the platform boundary ---------------------------------------------------
 // The two bodies below are the loader the host has always used: the POSIX half
@@ -202,7 +213,8 @@ void Module::close()
 auto open(const QString& path, Status& status) -> Module
 {
 	status = {};
-	auto handle = openPlatform(path);
+	const QString binaryPath = moduleBinaryPath(path);
+	auto handle = openPlatform(binaryPath);
 	if (!handle)
 	{
 		status.code = Code::LibraryUnavailable;

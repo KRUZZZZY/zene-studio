@@ -49,6 +49,30 @@
 namespace lmms
 {
 
+namespace
+{
+
+void applyParameterFallback(vst3::HostedPlugin& plugin, const QDomElement& element)
+{
+	const auto parameters = element.firstChildElement(QStringLiteral("parameters"));
+	for (auto parameter = parameters.firstChildElement(QStringLiteral("parameter"));
+		!parameter.isNull(); parameter = parameter.nextSiblingElement(QStringLiteral("parameter")))
+	{
+		bool idOk = false;
+		bool valueOk = false;
+		const auto id = parameter.attribute(QStringLiteral("id")).toUInt(&idOk);
+		const float value = parameter.attribute(QStringLiteral("value")).toFloat(&valueOk);
+		const int index = idOk ? plugin.paramIndex(id) : -1;
+		if (valueOk && std::isfinite(value) && index >= 0
+			&& !plugin.parameters()[static_cast<std::size_t>(index)].readOnly)
+		{
+			plugin.notifyController(id, value);
+		}
+	}
+}
+
+} // namespace
+
 extern "C"
 {
 
@@ -219,6 +243,7 @@ bool Vst3Instrument::enableOutputBus(int bus)
 	// GUI thread, with the render held off: a VST3 bus is activated on an inactive component, and the
 	// transport's channel count follows the new layout before the next block.
 	engine->requestChangeInModel();
+	m_processGate.beginReconfigure();
 	m_plugin.release();
 	const bool activated = m_plugin.activateOutputBuses(bus);
 	QString error;
@@ -230,6 +255,7 @@ bool Vst3Instrument::enableOutputBus(int bus)
 	m_outputBuses.setLayout(vst3::outputBusesOf(m_plugin.outputBusDescriptors()));
 	engine->doneChangeInModel();
 	cacheLatency();  // MX-157
+	m_processGate.endReconfigure();
 	return activated;
 }
 
@@ -267,6 +293,7 @@ void Vst3Instrument::modulateNote(std::int64_t target, int channel, int key, flo
 
 void Vst3Instrument::reprepare()
 {
+	m_processGate.beginReconfigure();
 	if (auto* engine = Engine::audioEngine())
 	{
 		QString error;
@@ -278,6 +305,7 @@ void Vst3Instrument::reprepare()
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
 	cacheLatency();  // MX-157
+	m_processGate.endReconfigure();
 }
 
 bool Vst3Instrument::handleMidiEvent(const MidiEvent& event, const TimePos&,
@@ -348,14 +376,24 @@ bool Vst3Instrument::handleMidiEvent(const MidiEvent& event, const TimePos&,
 }
 
 auto Vst3Instrument::processImpl(PlanarBufferView<const float, DynamicChannelCount> in,
-	PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus
+		PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus
 {
+	if (!m_processGate.tryEnterAudioProcess())
+	{
+		for (ch_cnt_t c = 0; c < out.channels(); ++c)
+		{
+			std::fill_n(out.bufferPtr(c), out.frames(), 0.f);
+		}
+		return lmms::ProcessStatus::Continue;
+	}
+
 	if (!m_plugin.isPrepared())
 	{
 		// Either the plug-in failed to load or the sample rate changed. The
 		// actual re-configuration happens on the GUI thread; this path only
 		// records the request.
 		m_needsReprepare.store(true, std::memory_order_relaxed);
+		m_processGate.leaveAudioProcess();
 		return lmms::ProcessStatus::Continue;
 	}
 
@@ -375,6 +413,7 @@ auto Vst3Instrument::processImpl(PlanarBufferView<const float, DynamicChannelCou
 	// MX-114: the output buses past the main one, into the mixer channels they are routed to.
 	m_outputBuses.deliver(out.data(), static_cast<int>(out.channels()), out.frames(),
 		instrumentTrack() != nullptr && instrumentTrack()->isMuted());
+	m_processGate.leaveAudioProcess();
 
 	return lmms::ProcessStatus::Continue;
 }
@@ -401,7 +440,11 @@ void Vst3Instrument::saveSettings(QDomDocument& doc, QDomElement& element)
 {
 	QByteArray componentState;
 	QByteArray controllerState;
-	m_plugin.saveState(&componentState, &controllerState);
+	const bool stateSaved = m_plugin.saveState(&componentState, &controllerState);
+	if (!stateSaved)
+	{
+		qWarning() << "VST3: instrument state chunks could not be saved; writing parameter fallback";
+	}
 
 	auto appendState = [&doc, &element](const QString& name, const QByteArray& data) {
 		if (data.isEmpty()) { return; }
@@ -411,6 +454,19 @@ void Vst3Instrument::saveSettings(QDomDocument& doc, QDomElement& element)
 	};
 	appendState(QStringLiteral("componentstate"), componentState);
 	appendState(QStringLiteral("controllerstate"), controllerState);
+
+	auto parameters = doc.createElement(QStringLiteral("parameters"));
+	for (const auto& descriptor : m_plugin.parameters())
+	{
+		if (descriptor.readOnly) { continue; }
+		auto parameter = doc.createElement(QStringLiteral("parameter"));
+		parameter.setAttribute(QStringLiteral("id"), QString::number(descriptor.id));
+		parameter.setAttribute(QStringLiteral("value"),
+			QString::number(m_plugin.paramNormalized(descriptor.id), 'g', 9));
+		parameters.appendChild(parameter);
+	}
+	if (parameters.hasChildNodes()) { element.appendChild(parameters); }
+
 }
 
 void Vst3Instrument::loadSettings(const QDomElement& element)
@@ -423,7 +479,16 @@ void Vst3Instrument::loadSettings(const QDomElement& element)
 
 	const auto componentState = readState(QStringLiteral("componentstate"));
 	const auto controllerState = readState(QStringLiteral("controllerstate"));
-	m_plugin.loadState(componentState, controllerState);
+	const bool stateRestored = m_plugin.loadState(componentState, controllerState);
+	if (!stateRestored)
+	{
+		qWarning() << "VST3: instrument state chunks could not be restored; applying parameter fallback";
+	}
+
+	if (!stateRestored || (componentState.isEmpty() && controllerState.isEmpty()))
+	{
+		applyParameterFallback(m_plugin, element);
+	}
 
 	// reflect the restored state in the models
 	m_syncing = true;

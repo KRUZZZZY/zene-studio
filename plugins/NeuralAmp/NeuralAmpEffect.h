@@ -29,6 +29,7 @@
 #include "NeuralAmpControls.h"
 
 #include <atomic>
+#include <cmath>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -41,6 +42,14 @@ namespace lmms
 namespace nam
 {
 class NamModel;
+
+//! A missing model rate is accepted; a declared rate must match the engine within half a hertz.
+inline auto sampleRateMatchesEngine(double modelRate, double engineRate) noexcept -> bool
+{
+	if (modelRate == -1.0) { return true; }
+	return std::isfinite(modelRate) && std::isfinite(engineRate)
+		&& modelRate > 0.0 && engineRate > 0.0 && std::abs(modelRate - engineRate) <= 0.5;
+}
 }
 
 /// Real-time effect that runs a .nam neural amplifier model.
@@ -75,6 +84,7 @@ public:
 private:
 	void loadWorker(QString path);
 	void publishModel(std::unique_ptr<nam::NamModel> model);
+	void refreshSampleRateCompatibility();
 	void setStatus(const std::string& status);
 
 	NeuralAmpControls m_controls;
@@ -83,6 +93,13 @@ private:
 	std::atomic<nam::NamModel*> m_model;
 	/// True while the audio thread is inside processImpl().
 	std::atomic<bool> m_audioActive;
+	/// The model is bypassed while its declared rate does not match the engine.
+	std::atomic<bool> m_sampleRateCompatible;
+	std::mutex m_rateMutex;
+	double m_modelSampleRate = -1.0;
+	double m_engineSampleRate = 0.0;
+	bool m_modelPublicationInProgress = false;
+	std::string m_loadedStatus;
 	/// Worker thread for the most recent load request.
 	std::thread m_loadThread;
 

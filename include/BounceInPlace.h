@@ -106,6 +106,9 @@ public:
 	static Result renderTracks(const std::vector<Track*>& tracks, const QString& outPath, const Range& range,
 			int sampleRate = 44100);
 
+	//! Whether the output path uses the current platform's absolute-path syntax.
+	static bool isAbsoluteOutputPath(const QString& outPath);
+
 	//! The whole-track bounce: the same call with an empty range. Declared here
 	//! and defined in the .cpp because a default argument of `Range{}` is
 	//! ill-formed for a NESTED class (its default member initializers are not
