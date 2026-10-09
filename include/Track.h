@@ -244,6 +244,8 @@ public:
 	 *  file cannot be opened - in which case nothing is changed. */
 	bool freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 			const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error);
+	//! Test seam called after any load work and immediately before the frozen-take render lock.
+	static void setFrozenTakeLockProbeForTest(void (*probe)());
 	//! Unmutes the clips this freeze muted and drops the take: the track plays
 	//! its own clips again.
 	void unfreeze();

@@ -88,6 +88,9 @@ constexpr TrackRestoreRule TRACK_RESTORE_SCHEMA[] = {
 	{ "visible", "1" },  // absent => visible
 };
 
+//! Test seam for FrozenTakeHandoffTest; null in product use.
+void (*s_frozenTakeLockProbeForTest)() = nullptr;
+
 //! The schema's default for \a attribute (SPEC-ARCH-4 1.7 R6).
 const char* trackRestoreDefault(const char* attribute)
 {
@@ -219,6 +222,11 @@ std::vector<Track::FrozenTake::MutedClip> parseMutedClipsAttribute(const QString
 }
 
 } // namespace
+
+void Track::setFrozenTakeLockProbeForTest(void (*probe)())
+{
+	s_frozenTakeLockProbeForTest = probe;
+}
 
 /*! \brief Create a new (empty) track object
  *
@@ -1102,6 +1110,7 @@ bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 
 	// Cluster 5415: playFrozenTake() reads the take's buffer and window on the render thread, so
 	// this write waits for the render period to end (the file above was read outside the lock).
+	if (s_frozenTakeLockProbeForTest != nullptr) { s_frozenTakeLockProbeForTest(); }
 	const auto renderLock = Engine::audioEngine()->requestChangesGuard();
 	for (const FrozenTake::MutedClip& muted : mutedClips)
 	{
@@ -1125,6 +1134,7 @@ void Track::unfreeze()
 {
 	// Cluster 5415: the take and the clips it muted are read by the render thread, so the change
 	// waits for the render period (clearFrozenTake() takes the same lock, recursively).
+	if (s_frozenTakeLockProbeForTest != nullptr) { s_frozenTakeLockProbeForTest(); }
 	const auto renderLock = Engine::audioEngine()->requestChangesGuard();
 	// Exactly the clips this freeze muted come back: a clip the user had muted
 	// themselves is not in the record, so it stays muted.

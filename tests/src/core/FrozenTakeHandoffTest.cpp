@@ -31,7 +31,6 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
-#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
@@ -50,14 +49,27 @@ using namespace lmms;
 namespace
 {
 
+std::mutex s_probeMutex;
+std::condition_variable s_probeCv;
+bool s_probeReached = false;
+bool s_allowLockAttempt = false;
+
+void pauseBeforeFrozenTakeLock()
+{
+	std::unique_lock lock(s_probeMutex);
+	s_probeReached = true;
+	s_probeCv.notify_all();
+	s_probeCv.wait(lock, [] { return s_allowLockAttempt; });
+}
+
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
-/*! Holds the engine's change lock on a helper thread (standing in for a render period) until released,
- *  and runs @a work on a second thread while it is held. True when @a work had NOT finished after the
- *  lock had been held for a while: the change waited for the render lock. */
+/*! Holds the engine's change lock, waits until @a work reaches the lock boundary (after any file load),
+ *  then gives it a chance to finish while the lock is held. True only when the synchronized probe was
+ *  reached and the change stayed blocked until the simulated render period ended. */
 template <typename Work>
 bool workWaitsWhileRenderLockHeld(Work work)
 {
@@ -81,13 +93,36 @@ bool workWaitsWhileRenderLockHeld(Work work)
 		cv.wait(lock, [&] { return held; });
 	}
 
-	std::atomic<bool> finished{false};
+	{
+		std::lock_guard lock(s_probeMutex);
+		s_probeReached = false;
+		s_allowLockAttempt = false;
+	}
+	Track::setFrozenTakeLockProbeForTest(&pauseBeforeFrozenTakeLock);
+	std::mutex finishedMutex;
+	std::condition_variable finishedCv;
+	bool finished = false;
 	std::thread worker([&] {
 		work();
-		finished.store(true);
+		{
+			std::lock_guard lock(finishedMutex);
+			finished = true;
+		}
+		finishedCv.notify_all();
 	});
-	std::this_thread::sleep_for(std::chrono::milliseconds(300));
-	const bool waited = !finished.load();
+	bool probeReached = false;
+	{
+		std::unique_lock lock(s_probeMutex);
+		probeReached = s_probeCv.wait_for(lock, std::chrono::seconds(5), [] { return s_probeReached; });
+		s_allowLockAttempt = true;
+	}
+	s_probeCv.notify_all();
+	bool finishedWhileHeld = false;
+	if (probeReached)
+	{
+		std::unique_lock lock(finishedMutex);
+		finishedWhileHeld = finishedCv.wait_for(lock, std::chrono::milliseconds(300), [&] { return finished; });
+	}
 
 	{
 		std::lock_guard lock(mutex);
@@ -96,7 +131,8 @@ bool workWaitsWhileRenderLockHeld(Work work)
 	cv.notify_all();
 	holder.join();
 	worker.join();
-	return waited;
+	Track::setFrozenTakeLockProbeForTest(nullptr);
+	return probeReached && !finishedWhileHeld;
 }
 
 } // namespace
