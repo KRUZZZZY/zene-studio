@@ -161,6 +161,7 @@ set(LMMS_SRCS
 	core/AutomatableModel.cpp
 	core/AutomationClip.cpp
 	core/AutomationClipSnapshot.cpp
+	core/AutomationClipSnapshotPublish.cpp
 	core/AutomationClipTransforms.cpp
 	core/AutomationNode.cpp
 	core/AutomationRamp.cpp

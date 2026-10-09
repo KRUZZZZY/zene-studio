@@ -78,3 +78,8 @@ src/core/AutomationClipSnapshot.cpp	AutomationClip::recordingMapTime	lock-free c
 src/core/AutomationClipSnapshot.cpp	AutomationClip::valueAt	lock-free per-note and normal-automation reader, including the bounded pending-record overlay while the main thread has not drained the queue
 src/core/AutomationClipSnapshot.cpp	AutomationClip::writeBlockRamp	sample-accurate automation reader, including the bounded pending-record overlay while the main thread has not drained the queue
 src/core/AutomationClipSnapshot.cpp	AutomationClip::hasAutomation	audio-side fast path recognizes points waiting in bounded recording queues so value and ramp readers do not skip a clip with an empty published map
+# 0.5.0 M0 cluster 5388 Round 2: automation playback/recording collection now uses Song-owned arrays.
+src/core/Song.cpp	Song::processAutomations	per-tick automation application and recording pass called inside Song::processNextBuffer on the render thread; it must not build the old QMap or clip vector
+src/core/Song.cpp	Song::collectAutomatedValuesForRender	collects active automation and pattern clips into control-grown raw arrays and evaluates current model values on the render thread
+src/core/Song.cpp	Song::pendingAutomationRecordingEvents	copies the live generation's queued events into preallocated per-reader scratch for overlay replay
+include/AutomationRecordingQueue.h	AutomationRecordingQueue::appendPendingEvents	reads one producer ring into a bounded preallocated overlay event array; no allocation or growth

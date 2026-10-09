@@ -19,7 +19,9 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
+#include "AutomationNode.h"
 #include "LmmsTypes.h"
 #include "TimePos.h"
 
@@ -43,6 +45,31 @@ public:
 		std::uint64_t projectGeneration = 0;
 		TimePos time;
 		float value = 0.0f;
+	};
+
+	struct OverlayNode
+	{
+		int tick = 0;
+		float inValue = 0.0f;
+		float outValue = 0.0f;
+		float inTangent = 0.0f;
+		float outTangent = 0.0f;
+		bool lockedTangents = false;
+		float bend = 0.0f;
+		AutomationNode::Curve curve = AutomationNode::Curve::Clip;
+		bool present = false;
+	};
+
+	//! Render-reader-owned replay scratch; one instance belongs to each producer slot.
+	struct OverlayScratch
+	{
+		std::unique_ptr<Event[]> events;
+		std::size_t eventCapacity = 0;
+		std::size_t eventCount = 0;
+		std::unique_ptr<OverlayNode[]> nodes;
+		std::size_t nodeCapacity = 0;
+		std::size_t nodeCount = 0;
+		bool capacityExceeded = false;
 	};
 
 	//! Audio producer. Drop-newest at capacity; no allocation, lock, or wait.
@@ -126,6 +153,35 @@ public:
 		}
 	}
 
+	//! Copy this producer's not-yet-published events for one clip into fixed render scratch.
+	bool appendPendingEvents(jo_id_t clipId, std::uint64_t projectGeneration,
+		std::uint64_t appliedSequence, OverlayScratch& scratch) const noexcept
+	{
+		const auto read = m_readCursor.load(std::memory_order_acquire);
+		const auto write = m_writeCursor.load(std::memory_order_acquire);
+		const auto begin = std::max(read, appliedSequence);
+		for (auto cursor = begin; cursor < write; ++cursor)
+		{
+			const Event event = m_events[cursor & (Capacity - 1)];
+			if (event.clipId != clipId || event.projectGeneration != projectGeneration) { continue; }
+			if (scratch.eventCount == scratch.eventCapacity) { return false; }
+			scratch.events[scratch.eventCount++] = event;
+		}
+		return true;
+	}
+
+	//! Called only on the control thread after Song constructs its producer queues.
+	void reserveOverlayScratch(std::size_t producerCount)
+	{
+		const auto maxEvents = Capacity * producerCount;
+		m_overlayScratch.events = std::make_unique<Event[]>(maxEvents);
+		m_overlayScratch.eventCapacity = maxEvents;
+		m_overlayScratch.nodes = std::make_unique<OverlayNode[]>(maxEvents * 4);
+		m_overlayScratch.nodeCapacity = maxEvents * 4;
+	}
+
+	OverlayScratch& overlayScratch() noexcept { return m_overlayScratch; }
+
 	std::uint64_t overflowCount() const noexcept { return m_overflow.load(std::memory_order_relaxed); }
 	std::uint64_t readCursor() const noexcept { return m_readCursor.load(std::memory_order_acquire); }
 	std::uint64_t writeCursor() const noexcept { return m_writeCursor.load(std::memory_order_acquire); }
@@ -167,6 +223,7 @@ private:
 	}
 
 	std::array<Event, Capacity> m_events{};
+	OverlayScratch m_overlayScratch;
 	alignas(64) std::atomic<std::uint64_t> m_writeCursor{0};
 	alignas(64) std::atomic<std::uint64_t> m_readCursor{0};
 	std::atomic<std::uint64_t> m_overflow{0};

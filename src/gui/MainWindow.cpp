@@ -1710,11 +1710,13 @@ void MainWindow::timerEvent( QTimerEvent * _te)
 	{
 		song->drainAutomationRecordingEvents();
 		const auto status = song->automationRecordingStatus();
-		const auto lossCount = status.droppedEvents + status.staleClipIds + status.membershipOverflows;
+		const auto lossCount = status.droppedEvents + status.staleClipIds + status.membershipOverflows
+			+ status.overlayOverflows + status.renderScratchOverflows;
 		if (lossCount > m_lastAutomationRecordingLossCount)
 		{
-			const QString message = tr("Automation recording lost %1 event(s), %2 stale clip id(s), %3 membership-table overflow event(s).")
-				.arg(status.droppedEvents).arg(status.staleClipIds).arg(status.membershipOverflows);
+			const QString message = tr("Automation recording lost %1 event(s), %2 stale clip id(s), %3 membership-table overflow event(s), %4 overlay overflow(s), %5 render-scratch overflow(s).")
+				.arg(status.droppedEvents).arg(status.staleClipIds).arg(status.membershipOverflows)
+				.arg(status.overlayOverflows).arg(status.renderScratchOverflows);
 			statusBar()->showMessage(message, 8000);
 			m_lastAutomationRecordingLossCount = lossCount;
 		}

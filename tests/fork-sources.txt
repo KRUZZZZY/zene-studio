@@ -2251,9 +2251,13 @@ include/MidiHandoffQueue.h
 tests/src/core/MidiHandoffQueueTest.cpp
 include/RenderPeriodClock.h
 tests/src/core/SystemSemaphoreTest.cpp
+# 2026-10-09, cluster 5388: split snapshot publication from the evaluator; shared private snapshot type.
+src/core/AutomationClipSnapshotInternal.h
+src/core/AutomationClipSnapshotPublish.cpp
 src/core/AutomationClipSnapshot.cpp
 tests/src/core/AutomationClipSnapshotTest.cpp
 tests/src/core/AutomationRecordingTest.cpp
 tests/src/core/AutomationRecordingGenerationTest.cpp
+tests/src/core/AutomationRecordingOverlayTest.cpp
 # 2026-10-09, cluster 5388: fixed-capacity per-audio-producer automation recording queues.
 include/AutomationRecordingQueue.h

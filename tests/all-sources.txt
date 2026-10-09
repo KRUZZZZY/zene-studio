@@ -1344,6 +1344,8 @@ src/core/AudioWideInputStage.cpp
 src/core/AutomatableModel.cpp
 src/core/AutomationClip.cpp
 src/core/AutomationClipSnapshot.cpp
+src/core/AutomationClipSnapshotInternal.h
+src/core/AutomationClipSnapshotPublish.cpp
 src/core/AutomationClipTransforms.cpp
 src/core/AutomationLatency.cpp
 src/core/AutomationNode.cpp
@@ -2419,6 +2421,7 @@ tests/src/core/AutomationClipSnapshotTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/AutomationRecordingGenerationTest.cpp
+tests/src/core/AutomationRecordingOverlayTest.cpp
 tests/src/core/AutomationRecordingTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BenchmarkBaseline.h

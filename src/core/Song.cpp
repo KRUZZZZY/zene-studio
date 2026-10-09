@@ -32,6 +32,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <new>
 
 #include "ControlRoom.h"
 #include "ProjectSectionRegistry.h"
@@ -60,6 +62,7 @@
 #include "MidiPlayback.h"
 #include "MidiClock.h"
 #include "LinkAudioFollower.h"
+#include "PatternClip.h"
 #include "PatternEditor.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
@@ -129,6 +132,10 @@ Song::Song() :
 	const int workers = std::max(0, Engine::audioEngine()->workerCount());
 	m_automationRecordingQueueCount = static_cast<std::size_t>(workers) + 1;
 	m_automationRecordingQueues = std::make_unique<AutomationRecordingQueue[]>(m_automationRecordingQueueCount);
+	for (std::size_t producer = 0; producer < m_automationRecordingQueueCount; ++producer)
+	{
+		m_automationRecordingQueues[producer].reserveOverlayScratch(m_automationRecordingQueueCount);
+	}
 
 	// A model being destroyed reports itself here, before anything in this
 	// object is torn down (see Song::forgetAutomatedModel and
@@ -149,11 +156,15 @@ Song::Song() :
 	m_periodTracks.reserve(256);
 	// ... and grown here, before a track past it could make a period's assign() allocate (review L19 #1): on the
 	// thread adding the track, under the changes guard the period runs under, so no period sees it move.
-	connect(this, &TrackContainer::trackAdded, this, [this] {
-		if (tracks().size() <= m_periodTracks.capacity()) { return; }
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
-		m_periodTracks.reserve(2 * tracks().size());
+	connect(this, &TrackContainer::trackAdded, this, [this](Track* track) {
+		watchAutomationScratchTrack(track);
+		if (tracks().size() > m_periodTracks.capacity())
+		{
+			const auto guard = Engine::audioEngine()->requestChangesGuard();
+			m_periodTracks.reserve(2 * tracks().size());
+		}
 	}, Qt::DirectConnection);
+	watchAutomationScratchTrack(m_globalAutomationTrack);
 
 	connect( &m_tempoModel, SIGNAL(dataChanged()),
 			this, SLOT(setTempo()), Qt::DirectConnection );
@@ -292,6 +303,8 @@ Song::AutomationRecordingStatus Song::automationRecordingStatus() const noexcept
 	AutomationRecordingStatus status;
 	status.staleClipIds = m_staleAutomationRecordingEvents.load(std::memory_order_relaxed);
 	status.membershipOverflows = m_recordedModelMembershipOverflows.load(std::memory_order_relaxed);
+	status.overlayOverflows = m_automationOverlayOverflows.load(std::memory_order_relaxed);
+	status.renderScratchOverflows = m_automationRenderScratchOverflows.load(std::memory_order_relaxed);
 	status.droppedEvents = m_invalidAutomationRecordingProducers.load(std::memory_order_relaxed);
 	for (std::size_t producer = 0; producer < m_automationRecordingQueueCount; ++producer)
 	{
@@ -301,39 +314,110 @@ Song::AutomationRecordingStatus Song::automationRecordingStatus() const noexcept
 }
 
 
-void Song::pendingAutomationRecordBounds(jo_id_t clipId,
-	const std::vector<std::uint64_t>& appliedSequences, const TimePos& time,
-	AutomationRecordingQueue::Event& before, bool& hasBefore,
-	AutomationRecordingQueue::Event& after, bool& hasAfter) const noexcept
+void Song::watchAutomationScratchTrack(Track* track)
 {
-	hasBefore = false;
-	hasAfter = false;
-	std::size_t beforeProducer = 0;
-	std::size_t afterProducer = 0;
+	if (track == nullptr) { return; }
+	const auto watchClip = [this](Clip* clip) {
+		if (dynamic_cast<AutomationClip*>(clip) != nullptr)
+		{
+			connect(clip, &Model::dataChanged, this, [this] { growAutomationRenderScratch(); },
+				Qt::DirectConnection);
+		}
+	};
+	for (Clip* clip : track->getClips()) { watchClip(clip); }
+	connect(track, &Track::clipAdded, this, [this, watchClip](Clip* clip) {
+		watchClip(clip);
+		growAutomationRenderScratch();
+	}, Qt::DirectConnection);
+	growAutomationRenderScratch();
+}
+
+
+void Song::growAutomationRenderScratch()
+{
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+	std::size_t songClipCount = 0;
+	std::size_t patternClipCount = 0;
+	std::size_t modelReferences = 0;
+	auto countContainer = [&](const TrackContainer* container, bool pattern) {
+		if (container == nullptr) { return; }
+		for (const Track* track : container->tracks())
+		{
+			const auto& clips = track->getClips();
+			if (pattern) { patternClipCount += clips.size(); }
+			else { songClipCount += clips.size(); }
+			for (const Clip* clip : clips)
+			{
+				if (const auto* automation = dynamic_cast<const AutomationClip*>(clip))
+				{
+					modelReferences += automation->objects().size();
+				}
+			}
+		}
+	};
+	countContainer(this, false);
+	if (m_globalAutomationTrack != nullptr)
+	{
+		songClipCount += m_globalAutomationTrack->getClips().size();
+		for (const Clip* clip : m_globalAutomationTrack->getClips())
+		{
+			if (const auto* automation = dynamic_cast<const AutomationClip*>(clip))
+			{
+				modelReferences += automation->objects().size();
+			}
+		}
+	}
+	const auto* patternStore = Engine::patternStore();
+	countContainer(patternStore, true);
+	const auto growArray = [this]<typename T>(std::unique_ptr<T[]>& storage, std::size_t& capacity,
+		std::size_t required, std::size_t count) {
+		if (required <= capacity) { return; }
+		const auto nextCapacity = std::max(required + 8, capacity * 2);
+		std::unique_ptr<T[]> replacement(new (std::nothrow) T[nextCapacity]);
+		if (replacement == nullptr)
+		{
+			m_automationRenderScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+		if (storage != nullptr) { std::copy_n(storage.get(), count, replacement.get()); }
+		storage = std::move(replacement);
+		capacity = nextCapacity;
+	};
+	auto& scratch = m_automationRenderScratch;
+	const auto activeClipCapacity = std::max(songClipCount, patternClipCount);
+	growArray(scratch.clips, scratch.clipCapacity, activeClipCapacity, scratch.clipCount);
+	growArray(scratch.recordingClips, scratch.recordingClipCapacity, activeClipCapacity, scratch.recordingClipCount);
+	growArray(scratch.patternClips, scratch.patternClipCapacity, patternClipCount, scratch.patternClipCount);
+	growArray(scratch.values, scratch.valueCapacity, modelReferences, scratch.valueCount);
+	growArray(scratch.patternValues, scratch.patternValueCapacity, modelReferences, scratch.patternValueCount);
+	growArray(m_oldAutomatedValues, m_oldAutomatedValuesCapacity, modelReferences, m_oldAutomatedValuesCount);
+}
+
+
+AutomationRecordingQueue::OverlayScratch* Song::pendingAutomationRecordingEvents(jo_id_t clipId,
+	const std::vector<std::uint64_t>& appliedSequences) const noexcept
+{
+	const auto reader = AudioEngineWorkerThread::currentRecordingProducerSlot();
+	if (reader >= m_automationRecordingQueueCount) { return nullptr; }
+	auto& scratch = m_automationRecordingQueues[reader].overlayScratch();
+	scratch.eventCount = 0;
+	scratch.nodeCount = 0;
+	scratch.capacityExceeded = false;
+	const auto generation = m_automationProjectGeneration.load(std::memory_order_relaxed);
 	for (std::size_t producer = 0; producer < m_automationRecordingQueueCount; ++producer)
 	{
 		const std::uint64_t applied = producer < appliedSequences.size() ? appliedSequences[producer] : 0;
-		AutomationRecordingQueue::Event candidateBefore, candidateAfter;
-		std::uint64_t beforeSequence = 0, afterSequence = 0;
-		bool foundBefore = false, foundAfter = false;
-		m_automationRecordingQueues[producer].pendingBounds(clipId,
-			m_automationProjectGeneration.load(std::memory_order_relaxed), applied, time,
-			candidateBefore, beforeSequence, foundBefore, candidateAfter, afterSequence, foundAfter);
-		if (foundBefore && (!hasBefore || candidateBefore.time > before.time
-			|| (candidateBefore.time == before.time && producer > beforeProducer)))
+		if (!m_automationRecordingQueues[producer].appendPendingEvents(
+			clipId, generation, applied, scratch))
 		{
-			before = candidateBefore;
-			beforeProducer = producer;
-			hasBefore = true;
-		}
-		if (foundAfter && (!hasAfter || candidateAfter.time < after.time
-			|| (candidateAfter.time == after.time && producer > afterProducer)))
-		{
-			after = candidateAfter;
-			afterProducer = producer;
-			hasAfter = true;
+			scratch.capacityExceeded = true;
+			scratch.eventCount = 0;
+			scratch.nodeCount = 0;
+			m_automationOverlayOverflows.fetch_add(1, std::memory_order_relaxed);
+			return nullptr;
 		}
 	}
+	return &scratch;
 }
 
 
@@ -384,7 +468,17 @@ void Song::forgetAutomatedModel( AutomatableModel* model )
 {
 	if( s_automationCacheSong != nullptr )
 	{
-		s_automationCacheSong->m_oldAutomatedValues.remove( model );
+		auto& cache = s_automationCacheSong->m_oldAutomatedValues;
+		auto& count = s_automationCacheSong->m_oldAutomatedValuesCount;
+		for (std::size_t index = 0; index < count;)
+		{
+			if (cache[index].first.data() == model)
+			{
+				for (std::size_t move = index + 1; move < count; ++move) { cache[move - 1] = cache[move]; }
+				--count;
+			}
+			else { ++index; }
+		}
 	}
 }
 
@@ -725,10 +819,204 @@ bool Song::enforceLoop(const TimePos& begin, const TimePos& end, bool wrapping)
 }
 
 
+void Song::collectAutomatedValuesForRender(TrackContainer* container, TimePos time, int clipNum)
+{
+	auto& scratch = m_automationRenderScratch;
+	scratch.clipCount = 0;
+	scratch.recordingClipCount = 0;
+	scratch.patternClipCount = 0;
+	scratch.valueCount = 0;
+	scratch.patternValueCount = 0;
+
+	const auto addSortedClip = [this](Clip* clip, Clip** into, std::size_t& count, std::size_t capacity) {
+		if (count == capacity)
+		{
+			m_automationRenderScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+		std::size_t index = count;
+		while (index > 0 && Clip::comparePosition(clip, into[index - 1]))
+		{
+			into[index] = into[index - 1];
+			--index;
+		}
+		into[index] = clip;
+		++count;
+	};
+	const auto appendClip = [this](Clip* clip, Clip** into, std::size_t& count, std::size_t capacity) {
+		if (count == capacity)
+		{
+			m_automationRenderScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+		into[count++] = clip;
+	};
+	const auto collectTrack = [&](Track* track, const TimePos& at, int selectedClip,
+		Clip** into, std::size_t& count, std::size_t capacity, bool recordingOnly) {
+		if (!recordingOnly && track->isMuted()) { return; }
+		if (recordingOnly)
+		{
+			if (track->type() != Track::Type::Automation) { return; }
+			for (Clip* clip : track->getClips())
+			{
+				if (clip->startPosition() <= at && clip->endPosition() >= TimePos(0))
+				{
+					addSortedClip(clip, into, count, capacity);
+				}
+			}
+			return;
+		}
+		switch (track->type())
+		{
+		case Track::Type::Automation:
+		case Track::Type::HiddenAutomation:
+		case Track::Type::Pattern:
+			if (selectedClip < 0)
+			{
+				for (Clip* clip : track->getClips())
+				{
+					if (clip->startPosition() <= at && clip->endPosition() >= TimePos(0))
+					{
+						addSortedClip(clip, into, count, capacity);
+					}
+				}
+			}
+			else
+			{
+				Q_ASSERT(track->numOfClips() > selectedClip);
+				appendClip(track->getClip(selectedClip), into, count, capacity);
+			}
+			break;
+		default:
+			break;
+		}
+	};
+
+	if (container == this && m_globalAutomationTrack != nullptr)
+	{
+		collectTrack(m_globalAutomationTrack, time, clipNum, scratch.clips.get(),
+			scratch.clipCount, scratch.clipCapacity, false);
+	}
+	for (Track* track : container->tracks())
+	{
+		collectTrack(track, time, clipNum, scratch.clips.get(), scratch.clipCount,
+			scratch.clipCapacity, false);
+		collectTrack(track, time, clipNum, scratch.recordingClips.get(), scratch.recordingClipCount,
+			scratch.recordingClipCapacity, true);
+	}
+
+	const auto findValue = [](AutomationValueEntry* values, std::size_t count, AutomatableModel* model) {
+		for (std::size_t index = 0; index < count; ++index)
+		{
+			if (values[index].model == model) { return &values[index]; }
+		}
+		return static_cast<AutomationValueEntry*>(nullptr);
+	};
+	const auto assignValue = [this, &findValue](AutomationValueEntry* values, std::size_t& count,
+		std::size_t capacity, AutomatableModel* model, float value) {
+		if (auto* existing = findValue(values, count, model)) { existing->value = value; return; }
+		if (count == capacity)
+		{
+			m_automationRenderScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+		values[count++] = AutomationValueEntry{model, value};
+	};
+	const auto applyRelative = [&](Clip** clips, std::size_t clipCount, TimePos at,
+		AutomationValueEntry* values, std::size_t& valueCount, std::size_t valueCapacity) {
+		const quint64 run = AutomatableModel::automationTransportRun();
+		for (std::size_t index = 0; index < clipCount; ++index)
+		{
+			Clip* clip = clips[index];
+			auto* relative = dynamic_cast<AutomationClip*>(clip);
+			const TimePos readTime = AutomationLatency::instance().readTime(clip, at);
+			if (relative == nullptr || !relative->isRelative() || clip->isMuted()
+				|| clip->startPosition() > readTime || !relative->hasAutomation()) { continue; }
+			TimePos relTime = readTime - relative->startPosition() - relative->startTimeOffset();
+			relTime = std::min(static_cast<int>(relTime), relative->length() - relative->startTimeOffset());
+			const float offset = relative->valueAt(relTime)
+				- (relative->getMin() + relative->getMax()) / 2.0f;
+			for (AutomatableModel* model : relative->objects())
+			{
+				if (model == nullptr) { continue; }
+				const auto* existing = findValue(values, valueCount, model);
+				const float base = existing != nullptr ? existing->value
+					: model->inverseScaledValue(model->trimBase(run));
+				assignValue(values, valueCount, valueCapacity, model, std::clamp(base + offset,
+					model->inverseScaledValue(model->minValue<float>()),
+					model->inverseScaledValue(model->maxValue<float>())));
+			}
+		}
+	};
+
+	auto collectValues = [&](auto&& self, Clip** clips, std::size_t clipCount, TimePos at,
+		int selectedClip, AutomationValueEntry* values, std::size_t& valueCount,
+		std::size_t valueCapacity, bool allowPattern) -> void {
+		for (std::size_t index = 0; index < clipCount; ++index)
+		{
+			Clip* clip = clips[index];
+			const TimePos readTime = AutomationLatency::instance().readTime(clip, at);
+			if (clip->isMuted() || clip->startPosition() > readTime) { continue; }
+			if (auto* automation = dynamic_cast<AutomationClip*>(clip))
+			{
+				if (!automation->hasAutomation() || automation->isRelative()) { continue; }
+				TimePos relTime = readTime - automation->startPosition() - automation->startTimeOffset();
+				if (!automation->isInPattern())
+				{
+					relTime = std::min(static_cast<int>(relTime),
+						automation->length() - automation->startTimeOffset());
+				}
+				const float value = automation->valueAt(relTime);
+				for (AutomatableModel* model : automation->objects())
+				{
+					if (model != nullptr) { assignValue(values, valueCount, valueCapacity, model, value); }
+				}
+				continue;
+			}
+			auto* pattern = allowPattern ? dynamic_cast<PatternClip*>(clip) : nullptr;
+			if (pattern == nullptr) { continue; }
+			auto* patternTrack = dynamic_cast<PatternTrack*>(pattern->getTrack());
+			auto* patternStore = Engine::patternStore();
+			if (patternTrack == nullptr || patternStore == nullptr) { continue; }
+			const int patternIndex = patternTrack->patternIndex();
+			TimePos patternTime = at - clip->startPosition();
+			patternTime = std::min(patternTime, clip->length());
+			patternTime = patternTime % (patternStore->lengthOfPattern(patternIndex) * TimePos::ticksPerBar());
+			scratch.patternClipCount = 0;
+			for (Track* track : patternStore->tracks())
+			{
+				collectTrack(track, patternTime, patternIndex, scratch.patternClips.get(),
+					scratch.patternClipCount, scratch.patternClipCapacity, false);
+			}
+			scratch.patternValueCount = 0;
+			self(self, scratch.patternClips.get(), scratch.patternClipCount, patternTime,
+				patternIndex, scratch.patternValues.get(), scratch.patternValueCount,
+				scratch.patternValueCapacity, false);
+			applyRelative(scratch.patternClips.get(), scratch.patternClipCount, patternTime,
+				scratch.patternValues.get(), scratch.patternValueCount, scratch.patternValueCapacity);
+			for (std::size_t nested = 0; nested < scratch.patternValueCount; ++nested)
+			{
+				assignValue(values, valueCount, valueCapacity,
+					scratch.patternValues[nested].model, scratch.patternValues[nested].value);
+			}
+			(void)selectedClip;
+		}
+	};
+	collectValues(collectValues, scratch.clips.get(), scratch.clipCount, time, clipNum,
+		scratch.values.get(), scratch.valueCount, scratch.valueCapacity, true);
+	applyRelative(scratch.clips.get(), scratch.clipCount, time, scratch.values.get(),
+		scratch.valueCount, scratch.valueCapacity);
+	if (scratch.valueCount > 1)
+	{
+		std::sort(scratch.values.get(), scratch.values.get() + scratch.valueCount,
+			[](const AutomationValueEntry& left, const AutomationValueEntry& right) {
+				return std::less<AutomatableModel*>{}(left.model, right.model);
+			});
+	}
+}
+
 void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_cnt_t)
 {
-	AutomatedValueMap values;
-
 	TrackContainer* container = this;
 	int clipNum = -1;
 
@@ -755,16 +1043,11 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	}
 	m_recordedModelMembershipSize = 0;
 
-	values = container->automatedValuesAt(timeStart, clipNum);
-	const TrackList& tracks = container->tracks();
-
-	Track::clipVector clips;
-	for (Track* track : tracks)
-	{
-		if (track->type() == Track::Type::Automation) {
-			track->getClipsInRange(clips, 0, timeStart);
-		}
-	}
+	collectAutomatedValuesForRender(container, timeStart, clipNum);
+	auto& scratch = m_automationRenderScratch;
+	auto* values = scratch.values.get();
+	const auto valueCount = scratch.valueCount;
+	auto* clips = scratch.recordingClips.get();
 
 	// Process recording
 	//
@@ -778,8 +1061,9 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	const quint64 automationRun = AutomatableModel::automationTransportRun();
 	qint64 automationNowNs = 0;
 	bool automationClockRead = false;
-	for (Clip* clip : clips)
+	for (std::size_t clipIndex = 0; clipIndex < scratch.recordingClipCount; ++clipIndex)
 	{
+		Clip* clip = clips[clipIndex];
 		auto p = dynamic_cast<AutomationClip *>(clip);
 		TimePos relTime = timeStart - p->startPosition();
 		if (relTime >= 0 && relTime < p->length())
@@ -816,27 +1100,38 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	// destroyed while it was cached has already dropped itself out of this map
 	// (AutomatableModel's destructor calls Song::forgetAutomatedModel), so no key
 	// here is a stale pointer.
-	for (auto it = m_oldAutomatedValues.begin(); it != m_oldAutomatedValues.end(); it++)
+	for (std::size_t oldIndex = 0; oldIndex < m_oldAutomatedValuesCount; ++oldIndex)
 	{
-		AutomatableModel * am = it.key();
+		AutomatableModel * am = m_oldAutomatedValues[oldIndex].first.data();
 		// A guarded key can be null here: the model was destroyed between the frame
 		// that automated it and this restore (see the member's comment). There is
 		// nothing to move back to a controller for a model that no longer exists.
-		if (am != nullptr && !values.contains(am))
+		bool found = false;
+		for (std::size_t valueIndex = 0; am != nullptr && valueIndex < valueCount; ++valueIndex)
+		{
+			if (values[valueIndex].model == am) { found = true; break; }
+		}
+		if (am != nullptr && !found)
 		{
 			am->setUseControllerValue(true);
 		}
 	}
-	m_oldAutomatedValues.clear();
-	for (auto it = values.begin(); it != values.end(); ++it)
+	m_oldAutomatedValuesCount = 0;
+	for (std::size_t valueIndex = 0; valueIndex < valueCount; ++valueIndex)
 	{
-		m_oldAutomatedValues.insert(it.key(), it.value());
+		if (m_oldAutomatedValuesCount == m_oldAutomatedValuesCapacity)
+		{
+			m_automationRenderScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+			break;
+		}
+		m_oldAutomatedValues[m_oldAutomatedValuesCount++] =
+			{QPointer<AutomatableModel>(values[valueIndex].model), values[valueIndex].value};
 	}
 
 	// Apply values
-	for (auto it = values.begin(); it != values.end(); it++)
+	for (std::size_t valueIndex = 0; valueIndex < valueCount; ++valueIndex)
 	{
-		AutomatableModel* model = it.key();
+		AutomatableModel* model = values[valueIndex].model;
 		bool isRecording = recordedModelInCurrentTick(model->id());
 		model->setUseControllerValue(isRecording);
 
@@ -856,7 +1151,7 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 			// applied here, where the written automation is read out to the
 			// control, and is never written back into the clip - which is what
 			// makes it non-destructive.
-			model->setValue(model->effectiveAutomationValue(model->scaledValue(it.value())), true);
+			model->setValue(model->effectiveAutomationValue(model->scaledValue(values[valueIndex].value)), true);
 		}
 	}
 }
@@ -1163,9 +1458,9 @@ void Song::stop()
 	// that is destroyed while it is cached removes itself from it (the model's
 	// destructor calls Song::forgetAutomatedModel), so nothing here can be a
 	// stale pointer.
-	for (auto it = m_oldAutomatedValues.begin(); it != m_oldAutomatedValues.end(); it++)
+	for (std::size_t index = 0; index < m_oldAutomatedValuesCount; ++index)
 	{
-		AutomatableModel * am = it.key();
+		AutomatableModel * am = m_oldAutomatedValues[index].first.data();
 		// Null when the model was destroyed while the transport was playing (the
 		// member's comment has the mechanism); skipping it is the whole point of
 		// guarding the keys - this loop has no other way to tell.
@@ -1174,7 +1469,7 @@ void Song::stop()
 			am->setUseControllerValue(true);
 		}
 	}
-	m_oldAutomatedValues.clear();
+	m_oldAutomatedValuesCount = 0;
 
 	m_playMode = PlayMode::None;
 
@@ -1473,9 +1768,17 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 
 AutomatedValueMap Song::automatedValuesAt(TimePos time, int clipNum) const
 {
-	auto trackList = TrackList{m_globalAutomationTrack};
-	trackList.insert(trackList.end(), tracks().begin(), tracks().end());
-	return TrackContainer::automatedValuesFromTracks(trackList, time, clipNum);
+	// The map-returning API is for control-side callers; render uses the collector's arrays directly.
+	const auto changes = Engine::audioEngine()->requestChangesGuard();
+	auto* self = const_cast<Song*>(this);
+	self->collectAutomatedValuesForRender(self, time, clipNum);
+	AutomatedValueMap result;
+	for (std::size_t index = 0; index < self->m_automationRenderScratch.valueCount; ++index)
+	{
+		const auto& entry = self->m_automationRenderScratch.values[index];
+		result.insert(entry.model, entry.value);
+	}
+	return result;
 }
 
 
@@ -1536,8 +1839,8 @@ void Song::clearProject()
 	m_masterPitchModel.reset();
 	m_timeSigModel.reset();
 
-	// Clear the m_oldAutomatedValues AutomatedValueMap
-	m_oldAutomatedValues.clear();
+	// Clear the render-owned restore cache for the project being closed.
+	m_oldAutomatedValuesCount = 0;
 
 	AutomationClip::globalAutomationClip( &m_tempoModel )->clear();
 	AutomationClip::globalAutomationClip( &m_masterVolumeModel )->

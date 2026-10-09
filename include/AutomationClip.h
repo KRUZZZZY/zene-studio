@@ -35,6 +35,7 @@
 #include <QPointer>
 
 #include "AutomationNode.h"
+#include "AutomationRecordingQueue.h"
 #include "Clip.h"
 
 class AutomationClipSnapshotTest;
@@ -231,18 +232,9 @@ public:
 	 */
 	void writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart, f_cnt_t frames,
 		double framesPerTick, int frameOffsetInTick ) const;
-	//! Bounded audio-visible projection of queued recording points during the control-thread handoff.
-	struct RecordingOverlayPoint
-	{
-		int tick = 0;
-		float value = 0.0f;
-	};
 	struct RecordingOverlay
 	{
-		RecordingOverlayPoint before{};
-		RecordingOverlayPoint after{};
-		bool hasBefore = false;
-		bool hasAfter = false;
+		AutomationRecordingQueue::OverlayScratch* scratch = nullptr;
 	};
 	void movePosition(const TimePos& pos) override;
 	void changeLength(const TimePos& length) override;

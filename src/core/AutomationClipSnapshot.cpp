@@ -23,13 +23,11 @@
 
 #include <algorithm>
 #include <cmath>
-#include <new>
-#include <vector>
-
-#include <QMutexLocker>
+#include <limits>
 
 #include "AutomationClip.h"
 #include "AutomationRamp.h"
+#include "AutomationClipSnapshotInternal.h"
 #include "Engine.h"
 #include "JournallingObject.h"
 #include "Note.h"
@@ -38,44 +36,10 @@
 namespace lmms
 {
 
-struct AutomationClipReadSnapshot
-{
-	struct Node
-	{
-		int tick;
-		float inValue;
-		float outValue;
-		float inTangent;
-		float outTangent;
-		bool lockedTangents;
-		float bend;
-		AutomationNode::Curve curve;
-	};
-
-	std::vector<Node> nodes;
-	std::vector<std::uint64_t> appliedSequences;
-	AutomationClip::ProgressionType progression = AutomationClip::ProgressionType::Discrete;
-	float tension = 1.0f;
-	int startPosition = 0;
-	int startTimeOffset = 0;
-	int length = 0;
-	bool muted = false;
-	bool inPattern = false;
-	bool sampleAccurate = false;
-	bool relative = false;
-	AutomationClipReadSnapshot* retiredNext = nullptr;
-};
-
 namespace
 {
 
-std::atomic<std::uint32_t> s_activeAutomationSnapshotReaders{0};
-static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
-	"automation snapshot reader count must be lock-free");
-static_assert(std::atomic<AutomationClipReadSnapshot*>::is_always_lock_free,
-	"automation snapshot pointer must be lock-free");
-QMutex s_retiredAutomationSnapshotMutex;
-AutomationClipReadSnapshot* s_retiredAutomationSnapshots = nullptr;
+using namespace automation_snapshot_internal;
 
 class AutomationSnapshotReadScope
 {
@@ -96,24 +60,6 @@ public:
 private:
 	const AutomationClipReadSnapshot* m_snapshot = nullptr;
 };
-
-void collectRetiredAutomationSnapshots()
-{
-	if (s_activeAutomationSnapshotReaders.load(std::memory_order_seq_cst) != 0) { return; }
-	AutomationClipReadSnapshot* retired = nullptr;
-	{
-		QMutexLocker lock(&s_retiredAutomationSnapshotMutex);
-		if (s_activeAutomationSnapshotReaders.load(std::memory_order_seq_cst) != 0) { return; }
-		retired = s_retiredAutomationSnapshots;
-		s_retiredAutomationSnapshots = nullptr;
-	}
-	while (retired != nullptr)
-	{
-		auto* next = retired->retiredNext;
-		delete retired;
-		retired = next;
-	}
-}
 
 float snapshotSegmentValueAtOffset(const AutomationClipReadSnapshot& snapshot,
 	const AutomationClipReadSnapshot::Node& node, const AutomationClipReadSnapshot::Node& next, int offset)
@@ -148,135 +94,288 @@ float snapshotSegmentValueAtOffset(const AutomationClipReadSnapshot& snapshot,
 		+ (t3 - t2) * m2;
 }
 
-float snapshotValueAtOffset(const AutomationClipReadSnapshot& snapshot, std::size_t index, int offset)
+using OverlayScratch = AutomationRecordingQueue::OverlayScratch;
+using SnapshotNode = AutomationClipReadSnapshot::Node;
+const SnapshotNode s_emptyOverlayNode{};
+
+enum class VirtualNodeSource { Base, Edit, None };
+
+std::vector<SnapshotNode>::const_iterator nextBaseNode(const AutomationClipReadSnapshot& snapshot,
+	int tick, bool inclusive)
 {
-	return snapshotSegmentValueAtOffset(snapshot, snapshot.nodes[index], snapshot.nodes[index + 1], offset);
+	if (inclusive)
+	{
+		return std::lower_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
+			[](const SnapshotNode& node, int pos) { return node.tick < pos; });
+	}
+	return std::upper_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
+		[](int pos, const SnapshotNode& node) { return pos < node.tick; });
 }
 
-float snapshotValueAt(const AutomationClipReadSnapshot& snapshot, int tick)
+const SnapshotNode* nextEditNode(const OverlayScratch* overlay, const SnapshotNode* begin,
+	const SnapshotNode* end, int tick, bool inclusive)
 {
-	if (snapshot.nodes.empty()) { return 0.0f; }
-	const auto next = std::lower_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
-		[](const AutomationClipReadSnapshot::Node& node, int pos) { return node.tick < pos; });
-	if (next != snapshot.nodes.end() && next->tick == tick) { return next->inValue; }
-	if (next == snapshot.nodes.begin()) { return 0.0f; }
-	const auto previous = std::prev(next);
-	if (next == snapshot.nodes.end()) { return previous->outValue; }
-	return snapshotValueAtOffset(snapshot, static_cast<std::size_t>(previous - snapshot.nodes.begin()), tick - previous->tick);
+	if (inclusive)
+	{
+		return std::lower_bound(begin, end, tick,
+			[](const SnapshotNode& node, int pos) { return node.tick < pos; });
+	}
+	return std::upper_bound(begin, end, tick,
+		[](int pos, const SnapshotNode& node) { return pos < node.tick; });
 }
 
-AutomationClipReadSnapshot::Node overlayNode(const AutomationClip::RecordingOverlayPoint& point)
+std::vector<SnapshotNode>::const_iterator previousBaseNode(const AutomationClipReadSnapshot& snapshot,
+	int tick, bool inclusive)
 {
-	return {point.tick, point.value, point.value, 0.0f, 0.0f, false, 0.0f, AutomationNode::Curve::Clip};
+	if (inclusive)
+	{
+		return std::upper_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
+			[](int pos, const SnapshotNode& node) { return pos < node.tick; });
+	}
+	return std::lower_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
+		[](const SnapshotNode& node, int pos) { return node.tick < pos; });
 }
 
-void considerNextOverlayNode(const AutomationClip::RecordingOverlayPoint* point, int tick, bool inclusive,
-	bool& found, AutomationClipReadSnapshot::Node& result)
+const SnapshotNode* previousEditNode(const SnapshotNode* begin, const SnapshotNode* end,
+	int tick, bool inclusive)
 {
-	if (point == nullptr) { return; }
-	if (inclusive ? point->tick < tick : point->tick <= tick) { return; }
-	if (found && point->tick > result.tick) { return; }
-	result = overlayNode(*point);
-	found = true;
+	if (inclusive)
+	{
+		return std::upper_bound(begin, end, tick,
+			[](int pos, const SnapshotNode& node) { return pos < node.tick; });
+	}
+	return std::lower_bound(begin, end, tick,
+		[](const SnapshotNode& node, int pos) { return node.tick < pos; });
 }
 
-void considerPreviousOverlayNode(const AutomationClip::RecordingOverlayPoint* point, int tick, bool inclusive,
-	bool& found, AutomationClipReadSnapshot::Node& result)
+VirtualNodeSource nextNodeSource(std::vector<SnapshotNode>::const_iterator base,
+	std::vector<SnapshotNode>::const_iterator baseEnd, const SnapshotNode* edit,
+	const SnapshotNode* editEnd)
 {
-	if (point == nullptr) { return; }
-	if (inclusive ? point->tick > tick : point->tick >= tick) { return; }
-	if (found && point->tick < result.tick) { return; }
-	result = overlayNode(*point);
-	found = true;
+	if (edit == editEnd) { return base == baseEnd ? VirtualNodeSource::None : VirtualNodeSource::Base; }
+	if (base == baseEnd) { return VirtualNodeSource::Edit; }
+	return base->tick < edit->tick ? VirtualNodeSource::Base : VirtualNodeSource::Edit;
 }
 
-bool nextVirtualNode(const AutomationClipReadSnapshot& snapshot, const AutomationClip::RecordingOverlay* overlay,
-	int tick, bool inclusive, AutomationClipReadSnapshot::Node& result)
+VirtualNodeSource previousNodeSource(bool hasBase, std::vector<SnapshotNode>::const_iterator base,
+	bool hasEdit, const SnapshotNode* edit)
 {
-	const auto base = inclusive
-		? std::lower_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
-			[](const AutomationClipReadSnapshot::Node& node, int pos) { return node.tick < pos; })
-		: std::upper_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
-			[](int pos, const AutomationClipReadSnapshot::Node& node) { return pos < node.tick; });
-	bool found = base != snapshot.nodes.end();
-	if (found) { result = *base; }
+	if (!hasEdit) { return hasBase ? VirtualNodeSource::Base : VirtualNodeSource::None; }
+	if (!hasBase) { return VirtualNodeSource::Edit; }
+	return base->tick > edit->tick ? VirtualNodeSource::Base : VirtualNodeSource::Edit;
+}
+
+bool stepPreviousBase(std::vector<SnapshotNode>::const_iterator& base,
+	std::vector<SnapshotNode>::const_iterator begin)
+{
+	if (base == begin) { return false; }
+	--base;
+	return true;
+}
+
+bool stepPreviousEdit(const SnapshotNode*& edit, const SnapshotNode* begin)
+{
+	if (edit == begin) { return false; }
+	--edit;
+	return true;
+}
+
+bool nextVirtualNode(const AutomationClipReadSnapshot& snapshot, const OverlayScratch* overlay,
+	int tick, bool inclusive, SnapshotNode& result)
+{
+	auto base = nextBaseNode(snapshot, tick, inclusive);
+	const SnapshotNode* editBegin = overlay == nullptr ? &s_emptyOverlayNode : overlay->nodes.get();
+	const SnapshotNode* editEnd = editBegin + (overlay == nullptr ? 0 : overlay->nodeCount);
+	auto edit = nextEditNode(overlay, editBegin, editEnd, tick, inclusive);
+	for (;;)
+	{
+		switch (nextNodeSource(base, snapshot.nodes.end(), edit, editEnd))
+		{
+		case VirtualNodeSource::Base:
+			result = *base++;
+			return true;
+		case VirtualNodeSource::Edit:
+		{
+			const auto candidate = *edit++;
+			if (base != snapshot.nodes.end() && base->tick == candidate.tick) { ++base; }
+			if (candidate.present) { result = candidate; return true; }
+			break;
+		}
+		case VirtualNodeSource::None:
+			return false;
+	}
+	}
+}
+
+bool previousVirtualNode(const AutomationClipReadSnapshot& snapshot, const OverlayScratch* overlay,
+	int tick, bool inclusive, SnapshotNode& result)
+{
+	auto base = previousBaseNode(snapshot, tick, inclusive);
+	bool hasBase = stepPreviousBase(base, snapshot.nodes.begin());
+	const SnapshotNode* editBegin = overlay == nullptr ? &s_emptyOverlayNode : overlay->nodes.get();
+	const SnapshotNode* editEnd = editBegin + (overlay == nullptr ? 0 : overlay->nodeCount);
+	auto edit = previousEditNode(editBegin, editEnd, tick, inclusive);
+	bool hasEdit = overlay != nullptr && stepPreviousEdit(edit, editBegin);
+	while (hasBase || hasEdit)
+	{
+		if (previousNodeSource(hasBase, base, hasEdit, edit) == VirtualNodeSource::Base)
+		{
+			result = *base;
+			return true;
+		}
+		const auto candidate = *edit;
+		if (hasBase && base->tick == edit->tick)
+		{
+			hasBase = stepPreviousBase(base, snapshot.nodes.begin());
+		}
+		hasEdit = stepPreviousEdit(edit, editBegin);
+		if (candidate.present) { result = candidate; return true; }
+	}
+	return false;
+}
+
+bool exactVirtualNode(const AutomationClipReadSnapshot& snapshot, const OverlayScratch* overlay,
+	int tick, SnapshotNode& result)
+{
 	if (overlay != nullptr)
 	{
-		considerNextOverlayNode(overlay->hasBefore ? &overlay->before : nullptr, tick, inclusive, found, result);
-		considerNextOverlayNode(overlay->hasAfter ? &overlay->after : nullptr, tick, inclusive, found, result);
+		const auto edit = std::lower_bound(overlay->nodes.get(), overlay->nodes.get() + overlay->nodeCount, tick,
+			[](const SnapshotNode& node, int pos) { return node.tick < pos; });
+		if (edit != overlay->nodes.get() + overlay->nodeCount && edit->tick == tick)
+		{
+			if (edit->present) { result = *edit; return true; }
+			return false;
+		}
 	}
-	return found;
+	const auto base = std::lower_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
+		[](const SnapshotNode& node, int pos) { return node.tick < pos; });
+	if (base == snapshot.nodes.end() || base->tick != tick) { return false; }
+	result = *base;
+	return true;
 }
 
-bool previousVirtualNode(const AutomationClipReadSnapshot& snapshot, const AutomationClip::RecordingOverlay* overlay,
-	int tick, bool inclusive, AutomationClipReadSnapshot::Node& result)
+float virtualValueAt(const AutomationClipReadSnapshot& snapshot, int tick, const OverlayScratch* overlay)
 {
-	const auto base = inclusive
-		? std::upper_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
-			[](int pos, const AutomationClipReadSnapshot::Node& node) { return pos < node.tick; })
-		: std::lower_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
-			[](const AutomationClipReadSnapshot::Node& node, int pos) { return node.tick < pos; });
-	bool found = base != snapshot.nodes.begin();
-	if (found) { result = *std::prev(base); }
-	if (overlay != nullptr)
-	{
-		considerPreviousOverlayNode(overlay->hasBefore ? &overlay->before : nullptr, tick, inclusive, found, result);
-		considerPreviousOverlayNode(overlay->hasAfter ? &overlay->after : nullptr, tick, inclusive, found, result);
-	}
-	return found;
-}
-
-float snapshotValueAt(const AutomationClipReadSnapshot& snapshot, int tick,
-	const AutomationClip::RecordingOverlay* overlay)
-{
-	if (overlay == nullptr || (!overlay->hasBefore && !overlay->hasAfter)) { return snapshotValueAt(snapshot, tick); }
-	AutomationClipReadSnapshot::Node next, previous;
-	if (nextVirtualNode(snapshot, overlay, tick, true, next) && next.tick == tick) { return next.inValue; }
+	SnapshotNode exact, previous, next;
+	if (exactVirtualNode(snapshot, overlay, tick, exact)) { return exact.inValue; }
 	if (!previousVirtualNode(snapshot, overlay, tick, false, previous)) { return 0.0f; }
 	if (!nextVirtualNode(snapshot, overlay, tick, false, next)) { return previous.outValue; }
 	return snapshotSegmentValueAtOffset(snapshot, previous, next, tick - previous.tick);
 }
 
+bool setVirtualNode(OverlayScratch& scratch, const SnapshotNode& node)
+{
+	auto* begin = scratch.nodes.get();
+	auto* end = begin + scratch.nodeCount;
+	auto* edit = std::lower_bound(begin, end, node.tick,
+		[](const SnapshotNode& current, int tick) { return current.tick < tick; });
+	if (edit != end && edit->tick == node.tick) { *edit = node; return true; }
+	if (scratch.nodeCount == scratch.nodeCapacity) { scratch.capacityExceeded = true; return false; }
+	const auto index = static_cast<std::size_t>(edit - begin);
+	for (std::size_t move = scratch.nodeCount; move > index; --move)
+	{
+		scratch.nodes[move] = scratch.nodes[move - 1];
+	}
+	scratch.nodes[index] = node;
+	++scratch.nodeCount;
+	return true;
+}
+
+void recalculateVirtualTangents(const AutomationClipReadSnapshot& snapshot, OverlayScratch& scratch, int changedTick)
+{
+	SnapshotNode current;
+	if (!previousVirtualNode(snapshot, &scratch, changedTick, false, current)
+		&& !nextVirtualNode(snapshot, &scratch, changedTick, true, current)) { return; }
+	for (int count = 0; count < 3; ++count)
+	{
+		SnapshotNode previous, next;
+		const bool hasPrevious = previousVirtualNode(snapshot, &scratch, current.tick, false, previous);
+		const bool hasNext = nextVirtualNode(snapshot, &scratch, current.tick, false, next);
+		if (!current.lockedTangents)
+		{
+			if (!hasNext)
+			{
+				current.inTangent = 0.0f;
+				current.outTangent = 0.0f;
+			}
+			else if (!hasPrevious)
+			{
+				current.inTangent = 0.0f;
+				current.outTangent = (next.inValue - current.outValue) / (next.tick - current.tick);
+			}
+			else if (current.outValue - current.inValue == 0.0f)
+			{
+				const float tangent = (next.inValue - previous.outValue) / (next.tick - previous.tick);
+				current.inTangent = tangent;
+				current.outTangent = tangent;
+			}
+			else
+			{
+				current.inTangent = (current.inValue - previous.outValue) / (current.tick - previous.tick);
+				current.outTangent = (next.inValue - current.outValue) / (next.tick - current.tick);
+			}
+			if (!setVirtualNode(scratch, current)) { return; }
+		}
+		if (!hasNext) { return; }
+		current = next;
+	}
+}
+
+void removeVirtualNode(const AutomationClipReadSnapshot& snapshot, OverlayScratch& scratch, int tick)
+{
+	SnapshotNode node;
+	if (exactVirtualNode(snapshot, &scratch, tick, node))
+	{
+		node.present = false;
+		if (!setVirtualNode(scratch, node)) { return; }
+	}
+	recalculateVirtualTangents(snapshot, scratch, tick);
+}
+
+void replayPendingEvents(const AutomationClipReadSnapshot& snapshot, OverlayScratch& scratch)
+{
+	float lastRecordedValue = snapshot.lastRecordedValue;
+	for (std::size_t index = 0; index < scratch.eventCount; ++index)
+	{
+		const auto& event = scratch.events[index];
+		const int tick = event.time.getTicks();
+		if (event.value != lastRecordedValue)
+		{
+			const SnapshotNode node{tick, event.value, event.value, 0.0f, 0.0f, false, 0.0f,
+				AutomationNode::Curve::Clip, true};
+			if (!setVirtualNode(scratch, node)) { return; }
+			lastRecordedValue = event.value;
+			recalculateVirtualTangents(snapshot, scratch, tick);
+		}
+		else if (virtualValueAt(snapshot, tick, &scratch) != event.value)
+		{
+			removeVirtualNode(snapshot, scratch, tick);
+		}
+	}
+}
+
 void pendingRecordingOverlay(const AutomationClipReadSnapshot& snapshot, jo_id_t clipId,
-	const TimePos& mapTime, AutomationClip::RecordingOverlay& overlay)
+	AutomationClip::RecordingOverlay& overlay)
 {
 	auto* song = Engine::getSong();
 	if (song == nullptr) { return; }
-	AutomationRecordingQueue::Event before, after;
-	song->pendingAutomationRecordBounds(clipId, snapshot.appliedSequences, mapTime,
-		before, overlay.hasBefore, after, overlay.hasAfter);
-	if (overlay.hasBefore)
-	{
-		overlay.before = {before.time.getTicks(), before.value};
-	}
-	if (overlay.hasAfter)
-	{
-		overlay.after = {after.time.getTicks(), after.value};
-	}
+	auto* scratch = song->pendingAutomationRecordingEvents(clipId, snapshot.appliedSequences);
+	if (scratch == nullptr || scratch->eventCount == 0) { return; }
+	replayPendingEvents(snapshot, *scratch);
+	if (!scratch->capacityExceeded) { overlay.scratch = scratch; }
+	else { song->noteAutomationOverlayOverflow(); }
 }
 
-bool hasRecordingOverlayPoints(const AutomationClip::RecordingOverlay* overlay)
+bool hasVirtualNodes(const AutomationClipReadSnapshot& snapshot, const OverlayScratch* overlay)
 {
-	return overlay != nullptr && (overlay->hasBefore || overlay->hasAfter);
+	SnapshotNode first;
+	return nextVirtualNode(snapshot, overlay, std::numeric_limits<int>::min(), true, first);
 }
 
-bool lastVirtualNode(const AutomationClipReadSnapshot& snapshot, const AutomationClip::RecordingOverlay* overlay,
-	AutomationClipReadSnapshot::Node& result)
+bool lastVirtualNode(const AutomationClipReadSnapshot& snapshot, const OverlayScratch* overlay,
+	SnapshotNode& result)
 {
-	bool found = !snapshot.nodes.empty();
-	if (found) { result = snapshot.nodes.back(); }
-	if (overlay == nullptr) { return found; }
-	if (overlay->hasBefore && (!found || overlay->before.tick >= result.tick))
-	{
-		result = overlayNode(overlay->before);
-		found = true;
-	}
-	if (overlay->hasAfter && (!found || overlay->after.tick >= result.tick))
-	{
-		result = overlayNode(overlay->after);
-		found = true;
-	}
-	return found;
+	return previousVirtualNode(snapshot, overlay, std::numeric_limits<int>::max(), true, result);
 }
 
 float rampSegmentValue(const AutomationClipReadSnapshot& snapshot,
@@ -292,36 +391,6 @@ float rampSegmentValue(const AutomationClipReadSnapshot& snapshot,
 
 } // namespace
 
-AutomationClip::~AutomationClip()
-{
-	retireReadSnapshot(m_readSnapshot.exchange(nullptr, std::memory_order_seq_cst));
-}
-
-
-void AutomationClip::retireReadSnapshot(AutomationClipReadSnapshot* snapshot)
-{
-	if (snapshot == nullptr) { return; }
-	{
-		QMutexLocker lock(&s_retiredAutomationSnapshotMutex);
-		snapshot->retiredNext = s_retiredAutomationSnapshots;
-		s_retiredAutomationSnapshots = snapshot;
-	}
-	collectRetiredAutomationSnapshots();
-}
-
-
-void AutomationClip::collectRetiredReadSnapshots()
-{
-	collectRetiredAutomationSnapshots();
-}
-
-
-bool AutomationClip::snapshotReadersActive() noexcept
-{
-	return s_activeAutomationSnapshotReaders.load(std::memory_order_seq_cst) != 0;
-}
-
-
 TimePos AutomationClip::recordingMapTime(const TimePos& clipRelativeTime) const noexcept
 {
 	AutomationSnapshotReadScope read(m_readSnapshot);
@@ -331,79 +400,14 @@ TimePos AutomationClip::recordingMapTime(const TimePos& clipRelativeTime) const 
 }
 
 
-void AutomationClip::beginSnapshotReaderForTest()
-{
-	s_activeAutomationSnapshotReaders.fetch_add(1, std::memory_order_seq_cst);
-}
-
-
-void AutomationClip::endSnapshotReaderForTest()
-{
-	s_activeAutomationSnapshotReaders.fetch_sub(1, std::memory_order_seq_cst);
-}
-
-
-std::size_t AutomationClip::retiredReadSnapshotCountForTest()
-{
-	QMutexLocker lock(&s_retiredAutomationSnapshotMutex);
-	std::size_t count = 0;
-	for (auto* retired = s_retiredAutomationSnapshots; retired != nullptr; retired = retired->retiredNext)
-	{
-		++count;
-	}
-	return count;
-}
-
-
-void AutomationClip::publishReadSnapshot()
-{
-	if (m_snapshotPublicationSuppressed) { return; }
-	AutomationClipReadSnapshot* snapshot = new (std::nothrow) AutomationClipReadSnapshot;
-	if (snapshot == nullptr) { qFatal("could not allocate AutomationClip read snapshot"); }
-	try
-	{
-		snapshot->nodes.reserve(static_cast<std::size_t>(m_timeMap.size()));
-		for (auto it = m_timeMap.cbegin(); it != m_timeMap.cend(); ++it)
-		{
-			const AutomationNode& node = it.value();
-			snapshot->nodes.push_back({it.key(), node.getInValue(), node.getOutValue(),
-				node.getInTangent(), node.getOutTangent(), node.lockedTangents(), node.bend(), node.curve()});
-		}
-		snapshot->appliedSequences = m_appliedRecordingSequences;
-	}
-	catch (const std::bad_alloc&)
-	{
-		delete snapshot;
-		qFatal("could not allocate AutomationClip read snapshot nodes");
-	}
-	snapshot->progression = m_progressionType;
-	snapshot->tension = m_tension;
-	snapshot->startPosition = startPosition().getTicks();
-	snapshot->startTimeOffset = startTimeOffset().getTicks();
-	snapshot->length = length().getTicks();
-	snapshot->muted = Clip::isMuted();
-	snapshot->inPattern = isInPattern();
-	snapshot->sampleAccurate = m_rampSetting == RampSetting::Default
-		? m_progressionType != ProgressionType::Discrete : m_rampSetting == RampSetting::On;
-	snapshot->relative = isRelative();
-	retireReadSnapshot(m_readSnapshot.exchange(snapshot, std::memory_order_seq_cst));
-	++m_readSnapshotPublicationCount;
-}
-
-
 bool AutomationClip::hasAutomation() const
 {
 	AutomationSnapshotReadScope read(m_readSnapshot);
 	const auto* snapshot = read.get();
 	if (snapshot == nullptr) { return false; }
-	if (!snapshot->nodes.empty()) { return true; }
-	auto* song = Engine::getSong();
-	if (song == nullptr) { return false; }
-	AutomationRecordingQueue::Event before, after;
-	bool hasBefore = false, hasAfter = false;
-	song->pendingAutomationRecordBounds(static_cast<const JournallingObject&>(*this).id(),
-		snapshot->appliedSequences, TimePos(0), before, hasBefore, after, hasAfter);
-	return hasBefore || hasAfter;
+	RecordingOverlay overlay;
+	pendingRecordingOverlay(*snapshot, static_cast<const JournallingObject&>(*this).id(), overlay);
+	return hasVirtualNodes(*snapshot, overlay.scratch);
 }
 
 
@@ -469,8 +473,8 @@ float AutomationClip::valueAt( const TimePos & _time ) const
 	if (read.get() == nullptr) { return 0.0f; }
 	RecordingOverlay overlay;
 	pendingRecordingOverlay(*read.get(), static_cast<const JournallingObject&>(*this).id(),
-		_time, overlay);
-	return snapshotValueAt(*read.get(), _time.getTicks(), &overlay);
+		overlay);
+	return virtualValueAt(*read.get(), _time.getTicks(), overlay.scratch);
 }
 
 
@@ -493,10 +497,11 @@ void AutomationClip::setRampSetting( RampSetting setting )
 float AutomationClip::rampValueAt(const AutomationClipReadSnapshot& snapshot, const TimePos& rel, float fraction,
 	const RecordingOverlay* overlay)
 {
-	if (rel < 0 || (snapshot.nodes.empty() && !hasRecordingOverlayPoints(overlay))) { return 0.0f; }
+	const auto* scratch = overlay == nullptr ? nullptr : overlay->scratch;
+	if (rel < 0 || !hasVirtualNodes(snapshot, scratch)) { return 0.0f; }
 	const int ticks = static_cast<int>( rel.getTicks() );
 	AutomationClipReadSnapshot::Node last;
-	if (lastVirtualNode(snapshot, overlay, last) && ticks >= last.tick)
+	if (lastVirtualNode(snapshot, scratch, last) && ticks >= last.tick)
 	{
 		// At or after the last node the curve holds the last node's out value -
 		// exactly what valueAt(TimePos) returns past the end of the map.
@@ -508,14 +513,14 @@ float AutomationClip::rampValueAt(const AutomationClipReadSnapshot& snapshot, co
 	// valueAt(v, 0) returns the IN value, which is the limit the PREVIOUS
 	// segment reaches, not the one this one starts from.
 	AutomationClipReadSnapshot::Node previous, next;
-	if (!previousVirtualNode(snapshot, overlay, ticks, true, previous))
+	if (!previousVirtualNode(snapshot, scratch, ticks, true, previous))
 	{
 		// Before the FIRST node no segment has started, and stepping back from
 		// upperBound() would step off the map: the clip's value there is the one
 		// valueAt(TimePos) returns for the same ticks, which is no value at all.
 		return 0.0f;
 	}
-	if (!nextVirtualNode(snapshot, overlay, ticks, false, next)) { return previous.outValue; }
+	if (!nextVirtualNode(snapshot, scratch, ticks, false, next)) { return previous.outValue; }
 	return rampSegmentValue(snapshot, previous, next, ticks, fraction);
 }
 
@@ -538,8 +543,7 @@ void AutomationClip::addRampKnot(const AutomationClipReadSnapshot& snapshot, Aut
 	RecordingOverlay overlay;
 	if (pendingOverlay == nullptr)
 	{
-		pendingRecordingOverlay(snapshot, static_cast<const JournallingObject&>(*this).id(),
-			rel, overlay);
+		pendingRecordingOverlay(snapshot, static_cast<const JournallingObject&>(*this).id(), overlay);
 		pendingOverlay = &overlay;
 	}
 	ramp.addKnot(static_cast<f_cnt_t>(frame), rampValueAt(snapshot, rel, fraction, pendingOverlay));
@@ -584,17 +588,19 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 		return; // the block starts before this clip does
 	}
 
+	RecordingOverlay overlay;
+	pendingRecordingOverlay(*snapshot, static_cast<const JournallingObject&>(*this).id(), overlay);
 	// The block's own geometry travels with each knot call.
 	// Knot 0 is the block's first sample, at its own position inside its tick.
-	addRampKnot(*snapshot, ramp, relStart, 0, frameOffsetInTick, framesPerTick, nullptr);
+	addRampKnot(*snapshot, ramp, relStart, 0, frameOffsetInTick, framesPerTick, &overlay);
 
 	// Tick-boundary pairs preserve discrete jumps and the line between them.
-	addRampBoundaryKnots(*snapshot, ramp, relStart, frames, frameOffsetInTick, framesPerTick, nullptr);
+	addRampBoundaryKnots(*snapshot, ramp, relStart, frames, frameOffsetInTick, framesPerTick, &overlay);
 
 	// ...and the block's end, so the samples after the last boundary
 	// interpolate to where the curve actually is when the block runs out,
 	// instead of holding the last boundary's value.
-	addRampKnot(*snapshot, ramp, relStart, static_cast<int>(frames), frameOffsetInTick, framesPerTick, nullptr);
+	addRampKnot(*snapshot, ramp, relStart, static_cast<int>(frames), frameOffsetInTick, framesPerTick, &overlay);
 }
 
 
