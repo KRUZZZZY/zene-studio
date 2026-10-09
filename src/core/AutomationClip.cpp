@@ -255,7 +255,10 @@ TimePos AutomationClip::putValue(
 		{
 			// Remove nodes between the quantization points, them not
 			// being included
+			const bool previouslySuppressed = m_snapshotPublicationSuppressed;
+			m_snapshotPublicationSuppressed = true;
 			removeNodes(newTime + 1, newTime + quantization() - 1);
+			m_snapshotPublicationSuppressed = previouslySuppressed;
 		}
 	}
 	if (it != m_timeMap.begin()) { --it; }
@@ -312,7 +315,10 @@ TimePos AutomationClip::putValues(
 		{
 			// Remove nodes between the quantization points, them not
 			// being included
+			const bool previouslySuppressed = m_snapshotPublicationSuppressed;
+			m_snapshotPublicationSuppressed = true;
 			removeNodes(newTime + 1, newTime + quantization() - 1);
+			m_snapshotPublicationSuppressed = previouslySuppressed;
 		}
 	}
 	if (it != m_timeMap.begin()) { --it; }
@@ -359,6 +365,7 @@ void AutomationClip::removeNode(const TimePos & time)
  */
 void AutomationClip::removeNodes(const int tick0, const int tick1)
 {
+	QMutexLocker m(&m_clipMutex);
 	if (tick0 == tick1)
 	{
 		removeNode(TimePos(tick0));
@@ -368,20 +375,18 @@ void AutomationClip::removeNodes(const int tick0, const int tick1)
 	auto start = TimePos(std::min(tick0, tick1));
 	auto end = TimePos(std::max(tick0, tick1));
 
-	// Make a list of TimePos with nodes to be removed
-	// because we can't simply remove the nodes from
-	// the timeMap while we are iterating it.
-	std::vector<TimePos> nodesToRemove;
-
-	for (auto it = m_timeMap.lowerBound(start), endIt = m_timeMap.upperBound(end); it != endIt; ++it)
-	{
-		nodesToRemove.push_back(POS(it));
-	}
-
-	for (auto node: nodesToRemove)
-	{
-		removeNode(node);
-	}
+	auto it = m_timeMap.lowerBound(start);
+	const auto endIt = m_timeMap.upperBound(end);
+	if (it == endIt) { return; }
+	while (it != endIt) { it = m_timeMap.erase(it); }
+	if (it != m_timeMap.begin()) { --it; }
+	generateTangents(it, 3);
+	const bool previouslySuppressed = m_snapshotPublicationSuppressed;
+	m_snapshotPublicationSuppressed = true;
+	updateLength();
+	m_snapshotPublicationSuppressed = previouslySuppressed;
+	publishReadSnapshot();
+	emit dataChanged();
 }
 
 
@@ -658,6 +663,8 @@ TimePos AutomationClip::setDragValue(
 )
 {
 	QMutexLocker m(&m_clipMutex);
+	const bool previouslySuppressed = m_snapshotPublicationSuppressed;
+	m_snapshotPublicationSuppressed = true;
 
 	if (m_dragging == false)
 	{
@@ -727,6 +734,7 @@ TimePos AutomationClip::setDragValue(
 			it.value().setLockedTangents(true);
 		}
 	}
+	m_snapshotPublicationSuppressed = previouslySuppressed;
 	publishReadSnapshot();
 
 	return returnedPos;

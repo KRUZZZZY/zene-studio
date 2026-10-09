@@ -29,6 +29,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -344,6 +345,84 @@ private slots:
 		done.store(true, std::memory_order_release);
 		renderer.join();
 		QVERIFY2(!failed.load(std::memory_order_relaxed), "reader observed a torn or partially edited curve");
+	}
+
+	void draggingPublishesOnlyTheCompletedEdit()
+	{
+		AutomationClip clip(nullptr);
+		clip.setProgressionType(AutomationClip::ProgressionType::Linear);
+		clip.putValue(TimePos(0), 0.1f, false, true);
+		clip.putValue(TimePos(24), 0.4f, false, true);
+		clip.putValue(TimePos(48), 0.8f, false, true);
+		const auto before = clip.m_readSnapshotPublicationCount;
+
+		clip.setDragValue(TimePos(32), 0.6f, false, true);
+
+		QCOMPARE(clip.m_readSnapshotPublicationCount, before + 1);
+		QCOMPARE(bits(clip.valueAt(TimePos(32))), bits(0.6f));
+		clip.applyDragValue();
+	}
+
+	void concurrentCompoundDragsNeverExposeAMissingPoint()
+	{
+		auto makeClip = [] {
+			auto* clip = new AutomationClip(nullptr);
+			clip->setProgressionType(AutomationClip::ProgressionType::Linear);
+			clip->putValue(TimePos(0), 0.25f, false, true);
+			clip->putValue(TimePos(24), 0.5f, false, true);
+			clip->putValue(TimePos(96), 0.75f, false, true);
+			clip->changeLength(TimePos(96));
+			return clip;
+		};
+		auto clip = std::unique_ptr<AutomationClip>(makeClip());
+		auto expectedB = std::unique_ptr<AutomationClip>(makeClip());
+		auto missing = std::unique_ptr<AutomationClip>(makeClip());
+		missing->removeNode(TimePos(24));
+
+		const OldCurve curveA = captureOldCurve(*clip);
+		const auto rampA = oldWriteRamp(curveA, TimePos(0), 64, 1.5, 0);
+		expectedB->setDragValue(TimePos(24), 0.5f, false, true);
+		expectedB->setDragValue(TimePos(32), 0.5f, false, true);
+		expectedB->applyDragValue();
+		const OldCurve curveB = captureOldCurve(*expectedB);
+		const auto rampB = oldWriteRamp(curveB, TimePos(0), 64, 1.5, 0);
+		const auto missingBits = bits(oldValueAt(captureOldCurve(*missing), 24));
+
+		std::atomic<bool> go{false};
+		std::atomic<bool> done{false};
+		std::atomic<bool> failed{false};
+		std::thread renderer([&] {
+			go.store(true, std::memory_order_release);
+			while (!done.load(std::memory_order_acquire))
+			{
+				const auto atDraggedPoint = bits(clip->valueAt(TimePos(24)));
+				if (atDraggedPoint == missingBits
+					|| (atDraggedPoint != bits(oldValueAt(curveA, 24))
+						&& atDraggedPoint != bits(oldValueAt(curveB, 24))))
+				{
+					failed.store(true, std::memory_order_relaxed);
+				}
+				AutomationRamp ramp;
+				clip->writeBlockRamp(ramp, TimePos(0), 64, 1.5, 0);
+				if (!sameRamp(ramp, rampA) && !sameRamp(ramp, rampB))
+				{
+					failed.store(true, std::memory_order_relaxed);
+				}
+			}
+		});
+		while (!go.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+		for (int i = 0; i < 500; ++i)
+		{
+			clip->setDragValue(TimePos(24), 0.5f, false, true);
+			clip->setDragValue(TimePos(32), 0.5f, false, true);
+			clip->applyDragValue();
+			clip->setDragValue(TimePos(32), 0.5f, false, true);
+			clip->setDragValue(TimePos(24), 0.5f, false, true);
+			clip->applyDragValue();
+		}
+		done.store(true, std::memory_order_release);
+		renderer.join();
+		QVERIFY2(!failed.load(std::memory_order_relaxed), "reader observed the dragged point missing from the published curve");
 	}
 };
 

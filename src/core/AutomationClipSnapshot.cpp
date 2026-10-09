@@ -207,6 +207,7 @@ void AutomationClip::publishReadSnapshot()
 		? m_progressionType != ProgressionType::Discrete : m_rampSetting == RampSetting::On;
 	snapshot->relative = isRelative();
 	retireReadSnapshot(m_readSnapshot.exchange(snapshot, std::memory_order_seq_cst));
+	++m_readSnapshotPublicationCount;
 }
 
 

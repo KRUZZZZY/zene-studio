@@ -328,6 +328,7 @@ private:
 	mutable QRecursiveMutex m_clipMutex;
 	std::atomic<AutomationClipReadSnapshot*> m_readSnapshot{nullptr};
 	bool m_snapshotPublicationSuppressed = false;
+	std::uint64_t m_readSnapshotPublicationCount = 0;
 
 	AutomationTrack * m_autoTrack;
 	std::vector<jo_id_t> m_idsToResolve;
