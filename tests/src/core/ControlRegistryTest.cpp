@@ -342,6 +342,10 @@ private slots:
 		QVERIFY(!audio.isEmpty());
 		QVERIFY(audio.contains(QStringLiteral("state")));
 		QVERIFY(audio.contains(QStringLiteral("start_failed")));
+		const QJsonObject overflow = audio.value(QStringLiteral("play_handle_overflow")).toObject();
+		QVERIFY(overflow.contains(QStringLiteral("engine_handles_dropped")));
+		QVERIFY(overflow.contains(QStringLiteral("bus_edits_dropped")));
+		QVERIFY(overflow.contains(QStringLiteral("worker_buffer_overflows")));
 
 		ControlRegistry::setReady(true);
 		const ControlResult ready = registry->invoke(QStringLiteral("control.ping"));

@@ -29,6 +29,7 @@
 #include <QJsonObject>
 
 #include "AudioEngine.h"
+#include "AudioEngineWorkerThread.h"
 
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -63,6 +64,10 @@ QJsonObject audioReport()
 	out.insert(QStringLiteral("requested"), QString());
 	out.insert(QStringLiteral("start_failed"), false);
 	out.insert(QStringLiteral("sound_output"), false);
+	out.insert(QStringLiteral("play_handle_overflow"), QJsonObject{
+		{QStringLiteral("engine_handles_dropped"), 0},
+		{QStringLiteral("bus_edits_dropped"), 0},
+		{QStringLiteral("worker_buffer_overflows"), 0}});
 	AudioEngine* audio = Engine::audioEngine();
 	if (audio == nullptr) { return out; }
 
@@ -73,6 +78,13 @@ QJsonObject audioReport()
 	out.insert(QStringLiteral("requested"), audio->audioDevRequestName());
 	out.insert(QStringLiteral("start_failed"), failed);
 	out.insert(QStringLiteral("sound_output"), !failed);
+	out.insert(QStringLiteral("play_handle_overflow"), QJsonObject{
+		{QStringLiteral("engine_handles_dropped"),
+			static_cast<qint64>(audio->droppedPlayHandles())},
+		{QStringLiteral("bus_edits_dropped"),
+			static_cast<qint64>(audio->droppedPlayHandleEdits())},
+		{QStringLiteral("worker_buffer_overflows"), static_cast<qint64>(
+			AudioEngineWorkerThread::deferredPlayHandleEditOverflowCount())}});
 	if (failed)
 	{
 		out.insert(QStringLiteral("message"), audio->audioDevStartReason());

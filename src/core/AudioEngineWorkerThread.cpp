@@ -32,6 +32,7 @@
 #include <mutex>
 
 #include "AudioEngine.h"
+#include "AudioBusHandle.h"
 #include "Hardware.h"
 #include "RealtimeScope.h"
 #include "ThreadableJob.h"
@@ -43,6 +44,10 @@ namespace lmms
 AudioEngineWorkerThread::JobQueue AudioEngineWorkerThread::globalJobQueue;
 std::atomic<std::uint32_t> AudioEngineWorkerThread::s_wakeGeneration{0};
 QList<AudioEngineWorkerThread *> AudioEngineWorkerThread::workerThreads;
+thread_local AudioEngineWorkerThread::DeferredPlayHandleEdits*
+	AudioEngineWorkerThread::s_currentDeferredPlayHandleEdits = nullptr;
+AudioEngineWorkerThread::DeferredPlayHandleEdits AudioEngineWorkerThread::s_inlineDeferredPlayHandleEdits;
+std::atomic<std::uint64_t> AudioEngineWorkerThread::s_deferredPlayHandleEditOverflows{0};
 
 //! Off when the engine starts: live playback keeps the pool (see the header).
 static std::atomic<bool> s_deterministicProcessing{false};
@@ -55,6 +60,40 @@ void AudioEngineWorkerThread::setDeterministicProcessing(bool deterministic)
 bool AudioEngineWorkerThread::deterministicProcessing()
 {
 	return s_deterministicProcessing.load(std::memory_order_acquire);
+}
+
+bool AudioEngineWorkerThread::deferPlayHandleEdit(AudioBusHandle* bus, PlayHandle* handle, bool add) noexcept
+{
+	DeferredPlayHandleEdits* const pending = s_currentDeferredPlayHandleEdits;
+	if (pending == nullptr) { return false; }
+	if (pending->size == pending->edits.size())
+	{
+		s_deferredPlayHandleEditOverflows.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
+	pending->edits[pending->size++] = DeferredPlayHandleEdit{bus, handle, add};
+	return true;
+}
+
+std::uint64_t AudioEngineWorkerThread::deferredPlayHandleEditOverflowCount() noexcept
+{
+	return s_deferredPlayHandleEditOverflows.load(std::memory_order_relaxed);
+}
+
+void AudioEngineWorkerThread::drainDeferredPlayHandleEdits() noexcept
+{
+	AudioBusHandle::RenderStageScope ownsBusLists;
+	const auto drain = [](DeferredPlayHandleEdits& pending) {
+		for (std::size_t i = 0; i < pending.size; ++i)
+		{
+			const DeferredPlayHandleEdit& edit = pending.edits[i];
+			edit.bus->applyPlayHandleEdit(AudioBusHandle::PlayHandleEdit{edit.handle, edit.add});
+		}
+		pending.size = 0;
+	};
+
+	drain(s_inlineDeferredPlayHandleEdits);
+	for (AudioEngineWorkerThread* worker : workerThreads) { drain(worker->m_deferredPlayHandleEdits); }
 }
 
 // Counted queue-full refusals since the process started (SPEC-MULTICORE-SCHEDULING
@@ -235,6 +274,8 @@ void AudioEngineWorkerThread::wakeWorkers()
 
 void AudioEngineWorkerThread::startAndWaitForJobs()
 {
+	DeferredPlayHandleEdits* const previousPending = s_currentDeferredPlayHandleEdits;
+	s_currentDeferredPlayHandleEdits = &s_inlineDeferredPlayHandleEdits;
 	if (deterministicProcessing())
 	{
 		// Deterministic offline rendering (ProjectRenderer): the calling thread takes
@@ -249,6 +290,8 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 		// both sides: here, and in run().
 		globalJobQueue.run();
 		globalJobQueue.wait();
+		s_currentDeferredPlayHandleEdits = previousPending;
+		drainDeferredPlayHandleEdits();
 		return;
 	}
 
@@ -258,6 +301,8 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 	// that otherwise would be caused by synchronizing with another thread.
 	globalJobQueue.run();
 	globalJobQueue.wait();
+	s_currentDeferredPlayHandleEdits = previousPending;
+	drainDeferredPlayHandleEdits();
 }
 
 
@@ -266,6 +311,8 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 void AudioEngineWorkerThread::run()
 {
 	disableDenormals();
+	DeferredPlayHandleEdits* const previousPending = s_currentDeferredPlayHandleEdits;
+	s_currentDeferredPlayHandleEdits = &m_deferredPlayHandleEdits;
 
 	std::uint32_t seen = s_wakeGeneration.load(std::memory_order_acquire);
 	while( !m_quit.load( std::memory_order_acquire ) )
@@ -292,6 +339,7 @@ void AudioEngineWorkerThread::run()
 			globalJobQueue.run();
 		}
 	}
+	s_currentDeferredPlayHandleEdits = previousPending;
 }
 
 } // namespace lmms

@@ -27,10 +27,12 @@
 
 #include <algorithm>
 #include <cassert>
+#include <QThread>
 
 #include "AudioBus.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AudioEngineWorkerThread.h"
 #include "BufferManager.h"
 #include "Engine.h"
 #include "EffectChain.h"
@@ -41,6 +43,13 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+constexpr qsizetype PlayHandleListLowWater = static_cast<qsizetype>(PlayHandle::MaxNumber / 4);
+
+} // namespace
 
 thread_local bool AudioBusHandle::s_renderStageOwnsList = false;
 
@@ -75,6 +84,13 @@ AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 
 	// PDC (#605): preallocate the compensation history on the control thread.
 	m_compensation.init(m_buffer.size());
+	// Track and instrument buses reserve one full bounded polyphony batch on the
+	// control thread. Standalone sample buses created on the audio path use the
+	// inline handle slot below until the main thread tops up their list.
+	if (!RealtimeScope::isActive() && QThread::currentThread() == Engine::audioEngine()->thread())
+	{
+		m_playHandles.reserve(static_cast<qsizetype>(PlayHandle::MaxNumber));
+	}
 
 	Engine::audioEngine()->addAudioBusHandle(this);
 	setExtOutputEnabled(true);
@@ -169,8 +185,8 @@ void AudioBusHandle::applyVolumeAndPanning(const f_cnt_t fpp)
 
 void AudioBusHandle::doProcessing()
 {
-	// Cluster 5467: the play-handle edits other threads posted since the last period land here, before
-	// anything reads the list (this is the bus's only consumer, and it runs once per period).
+	// Cluster 5467: non-worker off-stage edits land here before this bus reads the list. Worker-stage
+	// edits are drained by the render owner after the worker queue joins.
 	applyPlayHandleEdits();
 	if (m_mutedModel && m_mutedModel->value())
 	{
@@ -187,16 +203,15 @@ void AudioBusHandle::doProcessing()
 	{
 		// D6 (mixer concurrency audit): the list was appended to and erased from
 		// by other threads under a lock held here. Cluster 5467 removes that lock:
-		// edits are queued (postPlayHandleEdit) and applied only by
-		// applyPlayHandleEdits() above, on this thread, so the list has one writer
-		// and one reader and nothing can reallocate or erase under this loop.
+		// non-worker edits are applied above, owner-stage edits run before this bus
+		// worker stage, and worker-stage edits are drained after their jobs join.
+		// This loop therefore reads a stable list with no concurrent writer.
 		// 0.5.0 E20/E38: the notes a key/velocity zone of the channel's rack claims play into that zone's
 		// chain, with this track's volume and pan; their buffers are released, so the loop below skips them.
 		const auto gain = [this, fpp] { applyVolumeAndPanning(fpp); };
 		RackZoneFeed zoneFeed(m_nextMixerChannel, m_effects.get());
 		if (zoneFeed.run(m_playHandles, m_buffer, gain)) { m_bus.silenceAllChannels(); }
-		for (PlayHandle* ph : m_playHandles) // now we mix all playhandle buffers into our internal buffer
-		{
+		const auto mixPlayHandle = [this, fpp](PlayHandle* ph) {
 			if (auto phBuffer = ph->buffer(); phBuffer.data() != nullptr)
 			{
 				assert(phBuffer.size() == fpp);
@@ -210,7 +225,9 @@ void AudioBusHandle::doProcessing()
 				ph->releaseBuffer(); 	// gets rid of playhandle's buffer and sets
 										// pointer to null, so if it doesn't get re-acquired we know to skip it next time
 			}
-		}
+		};
+		for (PlayHandle* ph : m_playHandles) { mixPlayHandle(ph); }
+		if (m_inlinePlayHandle != nullptr) { mixPlayHandle(m_inlinePlayHandle); }
 	}
 
 	if (m_bufferUsage)
@@ -247,6 +264,7 @@ void AudioBusHandle::doProcessing()
 
 void AudioBusHandle::addPlayHandle(PlayHandle* handle)
 {
+	topUpPlayHandleCapacityOnControlThread();
 	postPlayHandleEdit(PlayHandleEdit{handle, true});
 }
 
@@ -271,12 +289,18 @@ void AudioBusHandle::postPlayHandleEdit(PlayHandleEdit edit)
 		applyPlayHandleEdit(edit);
 		return;
 	}
+	if (RealtimeScope::isActive() && AudioEngineWorkerThread::deferPlayHandleEdit(this, edit.handle, edit.add))
+	{
+		return;
+	}
 	if (m_playHandleEdits.push(edit)) { return; }
 	if (RealtimeScope::isActive())
 	{
 		// An unexpected realtime producer has no safe list-ownership handoff here.
-		// Count the refusal and return; note setup uses RenderStageScope and never drops.
-		m_droppedRealtimePlayHandleEdits.fetch_add(1, std::memory_order_relaxed);
+		// Count the refusal and return; worker-stage adds normally use fixed buffers,
+		// while owner-stage additions defer at capacity for the next period.
+		m_droppedPlayHandleEdits.fetch_add(1, std::memory_order_relaxed);
+		Engine::audioEngine()->recordDroppedPlayHandleEdit();
 		return;
 	}
 
@@ -291,6 +315,17 @@ void AudioBusHandle::postPlayHandleEdit(PlayHandleEdit edit)
 
 void AudioBusHandle::applyPlayHandleEdits()
 {
+	std::size_t remaining = 0;
+	for (std::size_t i = 0; i < m_capacityDeferredPlayHandleEditCount; ++i)
+	{
+		const PlayHandleEdit edit = m_capacityDeferredPlayHandleEdits[i];
+		if (!appendPlayHandleWithoutGrowth(edit.handle))
+		{
+			m_capacityDeferredPlayHandleEdits[remaining++] = edit;
+		}
+	}
+	m_capacityDeferredPlayHandleEditCount = remaining;
+
 	PlayHandleEdit edit{};
 	while (m_playHandleEdits.pop(&edit)) { applyPlayHandleEdit(edit); }
 }
@@ -299,13 +334,85 @@ void AudioBusHandle::applyPlayHandleEdit(const PlayHandleEdit& edit)
 {
 	if (edit.add)
 	{
-		m_playHandles.append(edit.handle);
+		if (appendPlayHandleWithoutGrowth(edit.handle)) { return; }
+		m_capacityDeferredPlayHandleEditCountTotal.fetch_add(1, std::memory_order_relaxed);
+		if (m_capacityDeferredPlayHandleEditCount < m_capacityDeferredPlayHandleEdits.size())
+		{
+			m_capacityDeferredPlayHandleEdits[m_capacityDeferredPlayHandleEditCount++] = edit;
+		}
+		else
+		{
+			// The static deferral bound exceeded the realistic polyphony range.
+			// Keep the refusal visible in the engine's control.ping audio status.
+			m_droppedPlayHandleEdits.fetch_add(1, std::memory_order_relaxed);
+			Engine::audioEngine()->recordDroppedPlayHandleEdit();
+		}
 		return;
 	}
 	PlayHandleList::Iterator it = std::find(m_playHandles.begin(), m_playHandles.end(), edit.handle);
 	if (it != m_playHandles.end())
 	{
 		m_playHandles.erase(it);
+		return;
+	}
+	if (m_inlinePlayHandle == edit.handle)
+	{
+		m_inlinePlayHandle = nullptr;
+		return;
+	}
+	for (std::size_t i = 0; i < m_capacityDeferredPlayHandleEditCount; ++i)
+	{
+		if (m_capacityDeferredPlayHandleEdits[i].handle != edit.handle) { continue; }
+		for (std::size_t move = i + 1; move < m_capacityDeferredPlayHandleEditCount; ++move)
+		{
+			m_capacityDeferredPlayHandleEdits[move - 1] = m_capacityDeferredPlayHandleEdits[move];
+		}
+		--m_capacityDeferredPlayHandleEditCount;
+		return;
+	}
+}
+
+bool AudioBusHandle::appendPlayHandleWithoutGrowth(PlayHandle* handle) noexcept
+{
+	if (m_playHandles.size() >= m_playHandles.capacity())
+	{
+		if (m_playHandles.isEmpty() && m_inlinePlayHandle == nullptr)
+		{
+			m_inlinePlayHandle = handle;
+			m_playHandleCapacityLow.store(true, std::memory_order_relaxed);
+			Engine::audioEngine()->requestPlayHandleCapacityRefresh();
+			return true;
+		}
+		m_playHandleCapacityLow.store(true, std::memory_order_relaxed);
+		Engine::audioEngine()->requestPlayHandleCapacityRefresh();
+		return false;
+	}
+	m_playHandles.append(handle);
+	if (m_playHandles.capacity() - m_playHandles.size() <= PlayHandleListLowWater)
+	{
+		m_playHandleCapacityLow.store(true, std::memory_order_relaxed);
+		Engine::audioEngine()->requestPlayHandleCapacityRefresh();
+	}
+	return true;
+}
+
+void AudioBusHandle::topUpPlayHandleCapacityOnControlThread()
+{
+	if (RealtimeScope::isActive() || QThread::currentThread() != Engine::audioEngine()->thread())
+	{
+		return;
+	}
+	Engine::audioEngine()->topUpPlayHandleCapacityOnControlThread();
+}
+
+
+void AudioBusHandle::topUpPlayHandleCapacityUnderEngineChangeLock()
+{
+	if (!m_playHandleCapacityLow.exchange(false, std::memory_order_relaxed)) { return; }
+	const qsizetype capacity = m_playHandles.capacity();
+	if (capacity - m_playHandles.size() <= PlayHandleListLowWater)
+	{
+		m_playHandles.reserve(capacity + static_cast<qsizetype>(PlayHandle::MaxNumber));
 	}
 }
 
