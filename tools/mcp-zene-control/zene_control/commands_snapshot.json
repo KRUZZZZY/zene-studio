@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T05:11:46Z",
+  "captured_at": "2026-10-09T06:08:42Z",
   "commands": [
     {
       "args_schema": {
@@ -23468,7 +23468,7 @@
         ],
         "type": "object"
       },
-      "description": "Render a track or the selected range in the background, then apply one freeze, land, flatten, or range-bounce edit on the UI thread. Returns a job id immediately; follow it with render.queue_list or render.queue_report and cancel with render.queue_cancel. The task indicator also reports the running phase and Cancel. The project identity, target and range are checked before the output is installed; if they changed, the job fails without changing the project or output. For an output-only track bounce, use render.queue_add with operation=bounce and a track. Existing bounce.in_place, freeze.track, freeze.region, bounce.land, track.flatten and range.bounce commands keep their synchronous result contracts for compatibility.",
+      "description": "Render a track or the selected range in the background, then apply one freeze, land, or flatten edit on the UI thread. Returns a job id immediately; follow it with render.queue_list or render.queue_report and cancel with render.queue_cancel. The task indicator also reports the running phase and Cancel. The target is checked before the output is installed; if it changed, the job fails without changing the project or output. Existing bounce.in_place, freeze.track, freeze.region, bounce.land, track.flatten and range.bounce commands keep their synchronous result contracts for compatibility.",
       "group": "render",
       "id": "render.queue_bounce",
       "mutating": true,
@@ -25460,7 +25460,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Land the recorded performance: pair every recorded launch with the stop that ended it and create ONE arrangement clip per pair on that column's song track, at the recorded ticks. REFUSED - consuming nothing - while any recorded start is still open, because a half-landed performance would lose starts or invent their ends; stop the session first (session.stop_all, or session.back_to_arrangement). Also REFUSED without consuming anything when a paired session slot contains MIDI or audio content, because this build cannot copy it into the arrangement clip. Reversible: one Track journal checkpoint per touched track, so one control.undo takes the whole pass back.",
+      "description": "Land the recorded performance: pair every recorded launch with the stop that ended it and create ONE arrangement clip per pair on that column's song track, at the recorded ticks. REFUSED - consuming nothing - while any recorded start is still open, because a half-landed performance would lose starts or invent their ends; stop the session first (session.stop_all, or session.back_to_arrangement). Also REFUSED without consuming anything when MIDI or audio content cannot be copied to the destination track or an audio source cannot be loaded. Reversible: one Track journal checkpoint per touched track, so one control.undo takes the whole pass back.",
       "group": "session",
       "id": "session.arrangement_record_land",
       "mutating": true,
@@ -34761,14 +34761,14 @@
   ],
   "count": 823,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-notes/build/zene",
-    "binary_bytes": 28834416,
-    "binary_sha256": "6382a193d95ee717c0a0af73065593eb0d2ce10d6b9d331c58655bf9f7358090",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-notes",
-    "lane_head": "b2372f288fa656e730965adbb4130122dcf4685e",
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-fuctuf0p/zene.sock",
-    "version": "0.4.0-alpha.1354+b2372f2"
+    "source_socket": "/tmp/zctl-run-p1xw5a_7/zene.sock",
+    "version": "0.4.0-alpha.1364+a0295ab"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
