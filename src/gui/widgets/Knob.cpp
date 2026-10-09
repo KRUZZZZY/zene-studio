@@ -174,6 +174,7 @@ void Knob::setFixedFontSizeLabelRendering()
 
 void Knob::updateFixedSize()
 {
+	const int accessibleTarget = tokens::accessibleMode() ? tokens::targetSize() : 0;
 	if (fixedFontSizeLabelRendering())
 	{
 		if (m_knobPixmap)
@@ -183,7 +184,7 @@ void Knob::updateFixedSize()
 			const int width = std::max(m_knobPixmap->width(), labelWidth);
 
 			// Legacy mode assumes that the label will fit into 10 pixels plus some of the pixmap area
-			setFixedSize(width, m_knobPixmap->height() + 10);
+			setFixedSize(std::max(width, accessibleTarget), std::max(m_knobPixmap->height() + 10, accessibleTarget));
 		}
 	}
 	else
@@ -203,7 +204,7 @@ void Knob::updateFixedSize()
 		const int width = std::max(pixmapSize.width(), fm.horizontalAdvance(m_label));
 		const int height = pixmapSize.height() + fm.height();
 
-		setFixedSize(width, height);
+		setFixedSize(std::max(width, accessibleTarget), std::max(height, accessibleTarget));
 	}
 }
 
