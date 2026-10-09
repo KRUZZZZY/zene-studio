@@ -33,6 +33,8 @@ src/core/AudioEngine.cpp	AudioEngine::drainWideInputStage	the N-channel (feature
 src/core/Song.cpp	Song::processNextBuffer	the song's per-period scheduling, called from STAGE 0 on the audio thread (transport edges, MIDI clock, Session View launch scheduling)
 src/core/Mixer.cpp	Mixer::prepareMasterMix	called from STAGE 0: clears the mixer's per-period buffers before the render
 src/core/Mixer.cpp	Mixer::masterMix	called from STAGE 3: sums every channel into the master buffer on the audio thread
+src/core/Mixer.cpp	MixerChannel::sumSidechainInputs	called from the receiver channel's own processing on the audio thread once per period: sums each sidechain route's tap, scaled by the route amount's sole-reader buffer (review f1a74cc54; PhaseDSidechainTest::theSidechainAmountReadTakesNoLock is the blocking probe)
+src/core/AutomatableModel.cpp	AutomatableModel::valueBufferForSoleReader	valueBuffer()'s computation without the model's mutex, called on the audio thread by sumSidechainInputs for a sidechain amount that only its receiver reads (review f1a74cc54); a linked model is still taken through valueBuffer()
 src/core/SessionScheduler.cpp	SessionScheduler::processAudio	the Session View launch scheduler, called from Song::processNextBuffer on the audio thread once per period
 src/core/SessionScheduler.cpp	SessionScheduler::drainCommands	the bounded drain of the session command queue, called from processAudio on the audio thread
 src/core/SessionScheduler.cpp	SessionScheduler::advanceClock	the session clock's per-period advance, called from processAudio on the audio thread
