@@ -43,6 +43,7 @@ bool WasmWorker::start(const std::string& modulePath, std::string& error,
 	m_modulePath = modulePath;
 	m_stop.store(false, std::memory_order_release);
 	m_state.store(State::Loading, std::memory_order_release);
+	m_audioEndpointsClosed.store(false, std::memory_order_release);
 	// No thread of our own: a lane of the shared pool loads the module and then
 	// runs this worker's blocks. addWorker() asks for a wake-up, so the load
 	// starts immediately rather than at the next tick of a timer.
@@ -73,6 +74,14 @@ bool WasmWorker::start(const std::string& modulePath, std::string& error,
 void WasmWorker::stop()
 {
 	m_stop.store(true, std::memory_order_release);
+	// submit() is the command queue's producer and collect() is the result
+	// queue's consumer. Close both audio endpoints and let an operation already
+	// inside finish before the control thread takes over either SPSC endpoint.
+	m_audioEndpointsClosed.store(true, std::memory_order_release);
+	while (m_audioEndpointUsers.load(std::memory_order_acquire) != 0)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
 	if (m_registeredWithPool)
 	{
 		WasmWorkerPool::instance().removeWorker(this);
@@ -114,6 +123,20 @@ bool WasmWorker::claimForLane()
 void WasmWorker::releaseLane()
 {
 	m_laneClaimed.store(false, std::memory_order_release);
+}
+
+bool WasmWorker::beginAudioEndpoint()
+{
+	if (m_audioEndpointsClosed.load(std::memory_order_acquire)) { return false; }
+	m_audioEndpointUsers.fetch_add(1, std::memory_order_acq_rel);
+	if (!m_audioEndpointsClosed.load(std::memory_order_acquire)) { return true; }
+	m_audioEndpointUsers.fetch_sub(1, std::memory_order_release);
+	return false;
+}
+
+void WasmWorker::endAudioEndpoint()
+{
+	m_audioEndpointUsers.fetch_sub(1, std::memory_order_release);
 }
 
 bool WasmWorker::hasPendingWork() const
@@ -246,10 +269,10 @@ void WasmWorker::processSlot(Slot& slot, float sampleRate)
 	CallResult result;
 	for (int channel = 0; channel < channels; ++channel)
 	{
-		result = m_sandbox->callProcess(
+		result = detail::callProcessAndRefreshMemory(*m_sandbox,
 			inBase + static_cast<std::uint32_t>(channel) * planeBytes,
 			outBase + static_cast<std::uint32_t>(channel) * planeBytes,
-			frames, sampleRate);
+			frames, sampleRate, memory, needed);
 		if (!result.ok())
 		{
 			break;
@@ -300,6 +323,12 @@ bool WasmWorker::reinstantiate(float sampleRate)
 bool WasmWorker::submit(const SampleFrame* interleaved, std::uint32_t frames,
 	float sampleRate)
 {
+	AudioEndpointPin endpoint(*this);
+	if (!endpoint)
+	{
+		m_dropped.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
 	if (frames == 0 || frames > maxBlockFrames ||
 		m_state.load(std::memory_order_acquire) != State::Ready)
 	{
@@ -342,6 +371,8 @@ bool WasmWorker::submit(const SampleFrame* interleaved, std::uint32_t frames,
 
 bool WasmWorker::collect(SampleFrame* interleaved, std::uint32_t frames)
 {
+	AudioEndpointPin endpoint(*this);
+	if (!endpoint) { return false; }
 	std::uint32_t index = 0;
 	if (!m_results.pop(index))
 	{

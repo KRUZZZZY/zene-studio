@@ -118,11 +118,14 @@ public:
 	bool drainOnce(std::size_t lane);
 
 private:
+	friend class WasmWorkerPoolTest;
 	WasmWorkerPool();
 	~WasmWorkerPool();
 
 	void laneMain(std::size_t lane);
 	bool hasPendingWork() const;
+	WasmWorker* acquireWorker(std::size_t slot) const;
+	void releaseWorker(std::size_t slot) const;
 
 	std::thread m_threads[maxLanes];
 	std::atomic<bool> m_stop{false};
@@ -130,6 +133,9 @@ private:
 	//! Dense array of registered workers; a slot is published with a release
 	//! store of m_workerCount after the pointer is written.
 	std::atomic<WasmWorker*> m_workers[maxWorkers]{};
+	//! Per-slot readers pin a loaded raw pointer through claim and drain. Removal
+	//! unpublishes the pointer, then waits for that slot's readers before return.
+	mutable std::atomic<std::uint32_t> m_workerReaders[maxWorkers]{};
 	std::atomic<std::size_t> m_workerCount{0};
 
 	//! The work generation. A lane wakes when this changes, so a wake-up that

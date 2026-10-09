@@ -51,14 +51,21 @@
 #include <QtTest>
 
 #include <QFileInfo>
+#include <QTemporaryFile>
 
+#include <algorithm>
+#include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <semaphore>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "WasmOfflineRender.h"
+#include "WasmSandbox.h"
 #include "WasmWorker.h"
 #include "WasmWorkerPool.h"
 
@@ -89,6 +96,52 @@ std::vector<float> stimulus(std::uint32_t frames, float scale = StimulusGain)
 	}
 	return out;
 }
+
+bool writeMemoryGrowthModule(QTemporaryFile& file)
+{
+	std::vector<std::uint8_t> bytes;
+	std::string error;
+	static constexpr char wat[] = R"WAT((module
+	(memory (export "memory") 1)
+	(global (export "channels") i32 (i32.const 2))
+	(func (export "process") (param $in i32) (param $out i32)
+		(param $frames i32) (param $sample_rate f32) (result i32)
+		(f32.store (local.get $out) (f32.const 42))
+		(drop (memory.grow (i32.const 1)))
+		(f32.store (i32.add (local.get $out) (i32.const 4)) (f32.const 7))
+		(i32.const 0))))WAT";
+	return WasmSandbox::assembleWat(wat, bytes, error) && file.open()
+		&& file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<qint64>(bytes.size()))
+			== static_cast<qint64>(bytes.size())
+		&& file.flush();
+}
+
+class MovingMemorySandbox
+{
+public:
+	MovingMemorySandbox() : m_memory(std::make_unique<std::uint8_t[]>(4)) {}
+
+	std::uint8_t* memoryData() { return m_memory.get(); }
+	std::size_t memorySize() const { return m_size; }
+
+	CallResult callProcess(std::uint32_t, std::uint32_t, std::uint32_t, float)
+	{
+		const std::size_t newSize = m_size * 2;
+		auto moved = std::make_unique<std::uint8_t[]>(newSize);
+		std::copy_n(m_memory.get(), m_size, moved.get());
+		m_previous = std::move(m_memory);
+		m_memory = std::move(moved);
+		m_size = newSize;
+		CallResult result;
+		result.status = CallResult::Status::Ok;
+		return result;
+	}
+
+private:
+	std::unique_ptr<std::uint8_t[]> m_memory;
+	std::unique_ptr<std::uint8_t[]> m_previous;
+	std::size_t m_size = 4;
+};
 } // namespace
 
 class WasmWorkerPoolTest : public QObject
@@ -99,6 +152,11 @@ private slots:
 	void initTestCase();
 	void testPoolIsSharedAndBounded();
 	void testAQueuedBlockIsPickedUpByAWakeUp();
+	void testStopWaitsForAudioEndpointsToQuiesce();
+	void testRemovalWaitsForLoadedWorkerReaders();
+	void testMemoryRefreshReacquiresMovedPointer();
+	void testWasmWorkerRefreshesMemoryAfterGrowth();
+	void testOfflineRenderRefreshesMemoryAfterGrowth();
 	void testOfflineRenderIsDeterministicWithinTheMeasuredFloor();
 	void testComparatorDetectsADifference();
 	void testADifferentStimulusRendersDifferently();
@@ -199,6 +257,123 @@ void WasmWorkerPoolTest::testAQueuedBlockIsPickedUpByAWakeUp()
 						   .arg(0.25f * RenderParam0)));
 	}
 	worker.stop();
+}
+
+void WasmWorkerPoolTest::testStopWaitsForAudioEndpointsToQuiesce()
+{
+	WasmWorker worker;
+	std::string error;
+	QVERIFY2(worker.start(m_module, error), error.c_str());
+	QVERIFY(worker.beginAudioEndpoint());
+
+	std::binary_semaphore stopped{0};
+	std::thread stopper([&] {
+		worker.stop();
+		stopped.release();
+	});
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+	while (!worker.m_audioEndpointsClosed.load(std::memory_order_acquire)
+		&& std::chrono::steady_clock::now() < deadline)
+	{
+		std::this_thread::yield();
+	}
+	const bool stopClosedEndpoints = worker.m_audioEndpointsClosed.load(std::memory_order_acquire);
+	const bool completedWhilePinned = stopped.try_acquire_for(std::chrono::milliseconds(250));
+	worker.endAudioEndpoint();
+	const bool completed = completedWhilePinned
+		|| stopped.try_acquire_for(std::chrono::seconds(5));
+	stopper.join();
+
+	QVERIFY2(stopClosedEndpoints, "stop did not close the audio endpoints");
+	QVERIFY2(completed, "stop did not finish after the audio endpoint was released");
+	QVERIFY2(!completedWhilePinned,
+		"stop took over the SPSC queues while an audio endpoint was still pinned");
+}
+
+void WasmWorkerPoolTest::testRemovalWaitsForLoadedWorkerReaders()
+{
+	WasmWorker worker;
+	WasmWorkerPool& pool = WasmWorkerPool::instance();
+	QVERIFY(pool.addWorker(&worker));
+	std::size_t slot = WasmWorkerPool::maxWorkers;
+	for (std::size_t i = 0; i < WasmWorkerPool::maxWorkers; ++i)
+	{
+		if (pool.m_workers[i].load(std::memory_order_seq_cst) == &worker)
+		{
+			slot = i;
+			break;
+		}
+	}
+	QVERIFY(slot < WasmWorkerPool::maxWorkers);
+	QCOMPARE(pool.acquireWorker(slot), &worker);
+
+	std::binary_semaphore removed{0};
+	std::thread remover([&] {
+		pool.removeWorker(&worker);
+		removed.release();
+	});
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+	while (pool.m_workers[slot].load(std::memory_order_seq_cst) != nullptr
+		&& std::chrono::steady_clock::now() < deadline)
+	{
+		std::this_thread::yield();
+	}
+	const bool pointerUnpublished = pool.m_workers[slot].load(std::memory_order_seq_cst) == nullptr;
+	const bool removedWhileReaderHeld = removed.try_acquire_for(std::chrono::milliseconds(250));
+	pool.releaseWorker(slot);
+	const bool removalCompleted = removedWhileReaderHeld
+		|| removed.try_acquire_for(std::chrono::seconds(5));
+	remover.join();
+
+	QVERIFY2(pointerUnpublished, "removeWorker did not unpublish the worker");
+	QVERIFY2(removalCompleted, "removeWorker did not finish after the lane reader released");
+	QVERIFY2(!removedWhileReaderHeld,
+		"removeWorker returned while a lane still held its raw worker pointer");
+	QCOMPARE(pool.stats().workers, std::uint64_t{0});
+}
+
+void WasmWorkerPoolTest::testWasmWorkerRefreshesMemoryAfterGrowth()
+{
+	QTemporaryFile module;
+	QVERIFY(writeMemoryGrowthModule(module));
+	WasmWorker worker;
+	std::string error;
+	QVERIFY2(worker.start(module.fileName().toStdString(), error), error.c_str());
+
+	const std::array<SampleFrame, 2> input{SampleFrame(0.0f, 0.0f), SampleFrame(0.0f, 0.0f)};
+	std::array<SampleFrame, 2> output{};
+	QVERIFY(worker.submit(input.data(), static_cast<std::uint32_t>(input.size()), TestSampleRate));
+	QVERIFY(worker.waitForIdle(5000));
+	QVERIFY(worker.collect(output.data(), static_cast<std::uint32_t>(output.size())));
+	QCOMPARE(output[0][0], 42.0f);
+	QCOMPARE(output[1][0], 7.0f);
+	QCOMPARE(output[0][1], 42.0f);
+	QCOMPARE(output[1][1], 7.0f);
+	worker.stop();
+}
+
+void WasmWorkerPoolTest::testMemoryRefreshReacquiresMovedPointer()
+{
+	MovingMemorySandbox sandbox;
+	std::uint8_t* memory = sandbox.memoryData();
+	const std::uint8_t* before = memory;
+	QVERIFY(detail::callProcessAndRefreshMemory(sandbox, 0, 0, 1, TestSampleRate,
+		memory, 8).ok());
+	QVERIFY(sandbox.memoryData() != before);
+	QVERIFY(memory == sandbox.memoryData());
+}
+
+void WasmWorkerPoolTest::testOfflineRenderRefreshesMemoryAfterGrowth()
+{
+	QTemporaryFile module;
+	QVERIFY(writeMemoryGrowthModule(module));
+	const OfflineRenderOutcome outcome = renderOffline(module.fileName().toStdString(), 2, 2, 2,
+		TestSampleRate, std::vector<float>(4, 0.0f));
+	QVERIFY2(outcome.ok, outcome.error.c_str());
+	QCOMPARE(outcome.control[0].output[0], 42.0f);
+	QCOMPARE(outcome.control[0].output[1], 7.0f);
+	QCOMPARE(outcome.runs[0].output[0], 42.0f);
+	QCOMPARE(outcome.runs[0].output[1], 7.0f);
 }
 
 void WasmWorkerPoolTest::testOfflineRenderIsDeterministicWithinTheMeasuredFloor()

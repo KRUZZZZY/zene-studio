@@ -125,6 +125,23 @@ private:
 	//! The pool's lanes drive claimForLane()/drainOnLane()/releaseLane(); they
 	//! are the only callers that may, and nothing else reaches them.
 	friend class WasmWorkerPool;
+	friend class WasmWorkerPoolTest;
+
+	//! Pin the audio submit/collect endpoints so stop() can safely take over
+	//! both SPSC queues after the audio side has quiesced.
+	class AudioEndpointPin
+	{
+	public:
+		explicit AudioEndpointPin(WasmWorker& worker) :
+			m_worker(worker.beginAudioEndpoint() ? &worker : nullptr)
+		{
+		}
+		~AudioEndpointPin() { if (m_worker != nullptr) { m_worker->endAudioEndpoint(); } }
+		explicit operator bool() const { return m_worker != nullptr; }
+
+	private:
+		WasmWorker* m_worker;
+	};
 
 	enum class SlotState : std::uint32_t
 	{
@@ -148,6 +165,8 @@ private:
 	 *  makes "one block of one worker at a time, in FIFO order" true. */
 	bool claimForLane();
 	void releaseLane();
+	bool beginAudioEndpoint();
+	void endAudioEndpoint();
 	//! Whether a lane would find work here: a module to load, or blocks queued.
 	bool hasPendingWork() const;
 	/*! Load the module if needed, then run every queued block in order.
@@ -168,6 +187,8 @@ private:
 	//! lanes run drainOnLane().
 	std::atomic<bool> m_laneClaimed{false};
 	std::atomic<bool> m_stop{false};
+	std::atomic<bool> m_audioEndpointsClosed{true};
+	std::atomic<std::uint32_t> m_audioEndpointUsers{0};
 	//! Control thread only: whether this worker is in the pool's registry.
 	bool m_registeredWithPool = false;
 	std::atomic<State> m_state{State::Idle};
