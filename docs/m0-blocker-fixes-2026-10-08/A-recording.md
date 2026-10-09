@@ -117,3 +117,28 @@ Open:
 - The main-thread join at take end can wait up to the idle poll (20 ms) now.
 - Rp3 windows and B6 (round 2 notes) are closed as far as the tests can show; the mute rule is tested with at most two or three passes.
 - Pre-existing `AudioBusHandle::addPlayHandle` audio-thread append is outside this batch.
+
+## Round 5 (2026-10-09)
+
+Commits, oldest first: `6afd3b403` (row 5: take-lane edits under the change lock), `84164b78b` (rows 2, 6, 7: the arm is one undo step with the record flag; lane-creation suspension as an RAII guard), and this report.
+
+| Item (review r3) | Verdict | Fix commit | Test | Red (previous commit) | Green |
+|---|---|---|---|---|---|
+| 6. First-pass install not journalled; one undo leaves the audio | NOT REPRODUCED as a defect. On the round-4 code one undo already restores the earlier audio: the arm's track snapshot holds the pre-record audio (the clip saves its buffer as base64 when it has no file). Added as guards: a plain recording is one undo step (and redo brings it back), and a recording over an existing take is undone to that take | none (guards) | aPlainRecordingIsOneUndoStep, aRecordingOverAnExistingTakeIsUndoneToIt | pass on the previous commit too | green |
+| 7. One undo leaves the clip armed with takes prepared | FIXED. The record flag is not serialised, so no track checkpoint could restore it. The arm now journals one step: a checkpoint of the track and of a small journal object carrying the clip's flag (SampleRecordFlagState). The snapshot records the flag before the arm; restoring sets it through the clip, which releases the prepared takes. The record model no longer journals its own changes. Consistent with the app: clip.set_record is undoable (TrueInverse in the reversibility table) | 84164b78b | anUndoDuringALoopRecordingRestoresTheArmedState (one control.undo while the loop is still armed: lanes gone, clip disarmed, no takes prepared) | exit 1 (the clip stays armed) | green |
+| 2 (notes). Suspension leaks if creation throws | FIXED: RAII guard (ClipUpdatesSuspension) | 84164b78b | none needed: normal paths unchanged | n/a | green |
+| 5 (notes). Comp edits and the render-thread read of segments | FIXED: the TakeLaneModel mutators (addLane, removeLane, selectSegment, fillGaps, rebuild, clear, loadSettings) hold the engine's change lock. The comp commands run on the UI thread with no lock around their handler, so the lock must be in the model. The GUI comp path goes through the same mutators | 6afd3b403 | none: a race between a render read and a UI write is not forced by a unit test; take-lane and comp suites stay green | n/a | green |
+| 16 (notes). Project load with an armed clip | VERIFIED, no change needed. The record flag is not serialised (saveSettings writes no record attribute), so loading never arms a clip and never adds a checkpoint or turns journalling off | none | none | n/a | n/a |
+
+Finding (not in the review): the first version of row 7 journalled the record model itself. Restoring a checkpoint of that model raised a fatal error in AutomatableModel::controllerValue (an unexpected scale type on restore). A journal object of its own, with plain settings hooks, avoids the model path.
+
+Open:
+- An undo pressed while a recording is still armed restores the arm's state, but a live take that is still recording keeps going: when the transport stops, that take is installed as a lane take. Not covered; the undo of a live recording should stop it.
+- Row 6's audio concern does not reproduce on the code as written; if the owner wants the first-pass install journalled as its own step, that would be a new, separate step and would break the one-undo rule for a recording.
+- The GUI notice is still untested (round 3).
+
+Verification (round 5):
+- Recording binary: 35 of 35 pass (RecordingRealtimeTest).
+- Targeted suites: 26 of 26 pass from `build/tests`: RecordClipTest, RecordingLatencyTest, RecordingPassTest, RecordingInputPathTest, RecordRingBufferTest, ControlRecordingRoutesTest, SampleClipWindowTest, ClipSerialisationTest, SessionAudioRecorderTest, RecordingRealtimeTest, ClipFadesRenderTest, AudioClipLoopTest, SessionPlaybackRenderTest, ClipGainEnvelopeTest, RangeEditsTest, ClipLinkTest, ClipWarpPersistenceTest, PunchWindowTest, SessionAudioRecordTest, SessionGridRecordTest, CollabTransportTest, SessionTransportBarTest, TelemetryTransportTest, TakeLaneTest, TakeLaneCompTest, TakeLaneCompPlaybackTest.
+- Gates on the final tree, all exit 0: complexity, file-length, fork-sources, no-upstream-regression.
+- Not run: the full `ctest` bar, `run-all-gates.sh`, `tests/rt-safety-sweep.py`.
