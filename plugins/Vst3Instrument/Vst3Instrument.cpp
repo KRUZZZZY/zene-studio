@@ -49,6 +49,30 @@
 namespace lmms
 {
 
+namespace
+{
+
+void applyParameterFallback(vst3::HostedPlugin& plugin, const QDomElement& element)
+{
+	const auto parameters = element.firstChildElement(QStringLiteral("parameters"));
+	for (auto parameter = parameters.firstChildElement(QStringLiteral("parameter"));
+		!parameter.isNull(); parameter = parameter.nextSiblingElement(QStringLiteral("parameter")))
+	{
+		bool idOk = false;
+		bool valueOk = false;
+		const auto id = parameter.attribute(QStringLiteral("id")).toUInt(&idOk);
+		const float value = parameter.attribute(QStringLiteral("value")).toFloat(&valueOk);
+		const int index = idOk ? plugin.paramIndex(id) : -1;
+		if (valueOk && std::isfinite(value) && index >= 0
+			&& !plugin.parameters()[static_cast<std::size_t>(index)].readOnly)
+		{
+			plugin.notifyController(id, value);
+		}
+	}
+}
+
+} // namespace
+
 extern "C"
 {
 
@@ -455,25 +479,15 @@ void Vst3Instrument::loadSettings(const QDomElement& element)
 
 	const auto componentState = readState(QStringLiteral("componentstate"));
 	const auto controllerState = readState(QStringLiteral("controllerstate"));
-	if (!m_plugin.loadState(componentState, controllerState))
+	const bool stateRestored = m_plugin.loadState(componentState, controllerState);
+	if (!stateRestored)
 	{
 		qWarning() << "VST3: instrument state chunks could not be restored; applying parameter fallback";
 	}
 
-	const auto parameters = element.firstChildElement(QStringLiteral("parameters"));
-	for (auto parameter = parameters.firstChildElement(QStringLiteral("parameter"));
-		!parameter.isNull(); parameter = parameter.nextSiblingElement(QStringLiteral("parameter")))
+	if (!stateRestored || (componentState.isEmpty() && controllerState.isEmpty()))
 	{
-		bool idOk = false;
-		bool valueOk = false;
-		const auto id = parameter.attribute(QStringLiteral("id")).toUInt(&idOk);
-		const float value = parameter.attribute(QStringLiteral("value")).toFloat(&valueOk);
-		const int index = idOk ? m_plugin.paramIndex(id) : -1;
-		if (valueOk && std::isfinite(value) && index >= 0
-			&& !m_plugin.parameters()[static_cast<std::size_t>(index)].readOnly)
-		{
-			m_plugin.notifyController(id, value);
-		}
+		applyParameterFallback(m_plugin, element);
 	}
 
 	// reflect the restored state in the models
