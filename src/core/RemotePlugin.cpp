@@ -257,6 +257,13 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 #endif
 		m_failed = false;
 		m_initDoneSeen = false;
+		// A reused object starts a new connection: the state of the old one (abandoned queries, owed replies, the
+		// cached visibility, MIDI waiting for the old client) must not carry over.
+		m_staleQueries.clear();
+		m_owedProcessingReplies = 0;
+		m_uiVisible = -1;
+		m_pendingMidiSize = 0;
+		m_connectionLost = false;
 	}
 	QString exec = QFileInfo(QDir("plugins:"), pluginExecutable).absoluteFilePath();
 
@@ -792,7 +799,7 @@ RemotePluginBase::message RemotePlugin::waitForReplyWithin( const RemotePluginBa
 		if (receiveWithin(deadline, _timeout, m) != ReceiveResult::Got)
 		{
 			// Abandoned: its reply may still arrive, and must not be taken as the answer to a later query.
-			++m_staleQueries[_wm.id];
+			abandonQuery(_wm.id);
 			return RemotePluginBase::message();
 		}
 		// The reply to this query is the first one for its id that no abandoned query is waiting for. An abandoned
@@ -801,17 +808,30 @@ RemotePluginBase::message RemotePlugin::waitForReplyWithin( const RemotePluginBa
 		else if (!consumeStaleQuery(m.id)) { return m; }
 		if (std::chrono::steady_clock::now() >= deadline)
 		{
-			++m_staleQueries[_wm.id];
+			abandonQuery(_wm.id);
 			return RemotePluginBase::message();
 		}
 	}
 }
 
+void RemotePlugin::abandonQuery( int _id )
+{
+	auto& stale = m_staleQueries[_id];
+	if( stale.count == 0 ) { stale.since = std::chrono::steady_clock::now(); }
+	++stale.count;
+}
+
 bool RemotePlugin::consumeStaleQuery( int _id )
 {
 	const auto it = m_staleQueries.find( _id );
-	if( it == m_staleQueries.end() || it->second <= 0 ) { return false; }
-	--it->second;
+	if( it == m_staleQueries.end() || it->second.count <= 0 ) { return false; }
+	// Expired: the reply was never coming. The next reply for this id is the answer to the next query.
+	if( std::chrono::steady_clock::now() - it->second.since > StaleQueryExpiry )
+	{
+		m_staleQueries.erase( it );
+		return false;
+	}
+	--it->second.count;
 	return true;
 }
 
@@ -821,7 +841,9 @@ void RemotePlugin::pumpBeforeBuffer()
 	// reads nothing then, and without this nothing would complete the handshake until a main-thread wait ran.
 	lock();
 	const auto now = std::chrono::steady_clock::now();
-	for (;;)
+	// A client that floods messages is read a bounded number per tick, so the main thread never stays in here.
+	constexpr int MaxMessagesPerTick = 64;
+	for (int taken = 0; taken < MaxMessagesPerTick; ++taken)
 	{
 		// Only a complete message is taken: a frame still arriving is left for the next tick, not given up on.
 		if (!completeMessageWaiting()) { break; }

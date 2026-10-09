@@ -1080,6 +1080,33 @@ private slots:
 	}
 
 	/*!
+	 * A reply that never arrives does not poison the queries that follow it.
+	 *
+	 * The "dropquery" client never answers the first visibility query. The query times out (-1). Its count of abandoned
+	 * replies expires after RemotePlugin::StaleQueryExpiry, so the next query, whose reply does arrive, returns that
+	 * reply. Without the expiry the count stayed and every later query returned -1.
+	 */
+	void neverArrivingReplyExpiresAndLaterQueriesWork()
+	{
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the expiry of abandoned queries is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("dropquery")}), "could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		QCOMPARE(plugin.isUIVisible(), -1);
+		std::this_thread::sleep_for(RemotePlugin::StaleQueryExpiry + std::chrono::milliseconds{300});
+		QCOMPARE(plugin.isUIVisible(), 1);
+		QCOMPARE(plugin.cachedUIVisible(), 1);
+	}
+
+	/*!
 	 * A handshake completes without any main-thread wait: the deferred timer reads the client's messages while no
 	 * shared block exists. The "halfhandshake" client finishes its start-up after two seconds.
 	 */

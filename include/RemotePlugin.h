@@ -200,6 +200,10 @@ public:
 	//! not expect).
 	static constexpr std::chrono::milliseconds QueryReplyTimeout{100};
 
+	//! How long an abandoned query's reply is still awaited before the count of abandoned queries expires. A reply
+	//! later than this is taken as the answer to the next query of its id (a client that hung for that long).
+	static constexpr std::chrono::seconds StaleQueryExpiry{2};
+
 	//! Waits up to \a _timeout for the reply to \a _wm, other messages read meanwhile going through processMessage().
 	//! The caller holds the communication lock. @return the reply, or an undefined message on timeout or loss.
 	message waitForReplyWithin( const message & _wm, std::chrono::milliseconds _timeout = QueryReplyTimeout );
@@ -268,7 +272,8 @@ public slots:
 	virtual void hideUI();
 
 protected:
-	bool m_failed;
+	//! Set by the main thread (applyDeferredClientRequests, init) and read on the audio thread (process), so atomic.
+	std::atomic<bool> m_failed;
 
 private:
 	QProcess m_process;
@@ -331,8 +336,14 @@ private:
 	//! Written by the main thread and by processMessage() (which the audio thread can run), so atomic.
 	std::atomic<int> m_uiVisible{-1};
 	//! Queries abandoned at their timeout, per reply id: their replies still arrive, and are not the answers to later
-	//! queries. Main thread only (under m_commMutex), except that processMessage() consumes them.
-	std::map<int, int> m_staleQueries;
+	//! queries. Main thread only (under m_commMutex), except that processMessage() consumes them. A count expires
+	//! StaleQueryExpiry after its first abandonment: a reply that never comes must not poison the id for good.
+	struct StaleQueries
+	{
+		int count = 0;
+		std::chrono::steady_clock::time_point since{};
+	};
+	std::map<int, StaleQueries> m_staleQueries;
 	//! Set when the connection was lost on the audio thread; reported and failed on the main thread.
 	std::atomic<bool> m_connectionLost{false};
 	//! IdInitDone has been received (by any wait), so a later waitForInitDone() must not wait for it again.
@@ -340,6 +351,9 @@ private:
 
 	//! Consumes one abandoned query's reply for \a _id. @return true if the reply was an abandoned query's
 	bool consumeStaleQuery( int _id );
+
+	//! Records one abandoned query for \a _id.
+	void abandonQuery( int _id );
 
 	//! Main-thread drain while there is no shared block: completes the handshake without a main-thread wait.
 	void pumpBeforeBuffer();

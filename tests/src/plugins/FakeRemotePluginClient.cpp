@@ -138,6 +138,9 @@ bool g_lateQuery = false;
 int g_queriesSeen = 0;
 constexpr int LateQueryDelayMs = 300;
 
+//! "dropquery" mode: the first IdIsUIVisible is never answered (the reply is lost); the later ones are answered "1".
+bool g_dropQuery = false;
+
 //! "garbage" mode: the reply to the first period is a frame whose argument count is negative, which is not a
 //! message at all: the connection is lost on the host.
 bool g_garbage = false;
@@ -392,6 +395,7 @@ auto handleMessage(const Message& message) -> bool
 		if (g_deafQuery) { break; }
 		++g_queriesSeen;
 		if (g_lateQuery && g_queriesSeen == 1) { ::usleep(LateQueryDelayMs * 1000); }
+		if (g_dropQuery && g_queriesSeen == 1) { break; }
 		if (!sendMessage(IdIsUIVisibleWire, {g_lateQuery && g_queriesSeen > 1 ? "0" : "1"})) { return false; }
 		break;
 	case IdMidiEvent:
@@ -594,7 +598,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake|latequery|garbage]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake|latequery|garbage|dropquery]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -610,10 +614,11 @@ int main(int argc, char** argv)
 	g_capper = mode == "capper";
 	g_deafQuery = mode == "deafquery";
 	g_lateQuery = mode == "latequery";
+	g_dropQuery = mode == "dropquery";
 	g_garbage = mode == "garbage";
 	g_halfHandshake = mode == "halfhandshake";
 	static const char* const knownModes[] = {"modern", "stale", "stall", "recount", "midi", "late", "midframe",
-		"silencer", "bigdebug", "orderer", "capper", "deafquery", "halfhandshake", "latequery", "garbage"};
+		"silencer", "bigdebug", "orderer", "capper", "deafquery", "halfhandshake", "latequery", "garbage", "dropquery"};
 	if (std::find_if(std::begin(knownModes), std::end(knownModes),
 			[&mode](const char* known) { return mode == known; }) == std::end(knownModes))
 	{
