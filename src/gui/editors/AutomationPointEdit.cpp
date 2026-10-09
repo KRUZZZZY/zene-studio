@@ -70,13 +70,12 @@ bool moveInPlace(AutomationClip* clip, int tick, int toTick, float toValue, QStr
 		*error = tr("there is already a point at that position");
 		return false;
 	}
-	const AutomationNode& node = clip->getTimeMap()[TimePos(tick)];
-	const auto curve = node.curve();
-	const float bend = node.bend();
 	clip->addJournalCheckPoint();
-	clip->removeNode(TimePos(tick));
-	clip->putValue(TimePos(toTick), toValue, false);
-	clip->getTimeMap()[TimePos(toTick)].setCurve(curve, bend);
+	if (!clip->moveNode(TimePos(tick), TimePos(toTick), toValue))
+	{
+		*error = tr("there is already a point at that position");
+		return false;
+	}
 	Engine::getSong()->setModified();
 	return true;
 }

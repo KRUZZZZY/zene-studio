@@ -58,14 +58,15 @@ The render path takes `m_clipMutex` in `AutomationClip::writeBlockRamp()` (`src/
 | `src/core/AutomationClipTransforms.cpp:258-275` | Shape draw erases the selected range and inserts generated nodes. | `drawShape()` |
 | `src/core/AutomationClipTransforms.cpp:337-377` | Range transform moves/rescales nodes and installs the result if destinations do not collide. | `transformRange()` |
 | `src/core/AutomationClipTransforms.cpp:415-445` | Thinning removes redundant nodes and recalculates tangents. | `thin()` |
-| `src/gui/editors/AutomationEditor.cpp:368,376-378,398-423` | Fine tune changes values; erase/reset tools remove points, reset out values, or unlock tangents. | `setNodeInValue()` / `setNodeOutValue()` / `removeNode()` / `resetNodes()` / `resetTangents()` |
+| `src/gui/clips/AutomationClipView.cpp:478-495` | Rescales point values when the controlled model's range changes, then regenerates tangents. | Add a clip-owned range-rescale edit method. |
+| `src/gui/editors/AutomationEditor.cpp:368,376-378,398-423` | Fine tune changes values; erase/reset tools remove points, reset out values, or unlock tangents. | `setNodeInValue()` / `setNodeOutValue()` / `removeNode()` / `resetNodes()` / `setNodeLockedTangents()` |
 | `src/gui/editors/AutomationEditor.cpp:570,590,629,839-899` | Draw-out edits values; tangent edit locks then changes one tangent. | `setNodeOutValue()` / `setNodeLockedTangents()` / `setNodeTangent()` |
 | `src/gui/editors/AutomationPointEdit.cpp:65-80` | Point move removes and reinserts a node, then restores its curve/bend. | `moveNode()` |
 | `src/core/ControlCommandsAutomationTools.cpp:65-80,124-181` | Command point move removes and reinserts a node, then restores its curve/bend. | `moveNode()` |
 | `src/core/ControlCommandsAutomationLanes.cpp:202-219` | Control command changes the curve/bend on an existing point. | `setNodeCurve()` |
 | `tests/src/core/AutomationLanesTest.cpp:279-281,299-304,378-380,395-397,424-426,663-669` | Test fixtures directly change tangents, tangent locks, or curves through the mutable accessor. | Migrate fixtures to `setNodeTangents()`, `setNodeLockedTangents()`, and `setNodeCurve()`. |
 
-`Song.cpp:648` and `NotePlayHandle.cpp:672` call `recordValue()` on render/worker audio paths. `PianoRoll.cpp:1122` binds a non-const map reference but only iterates it; the other `getTimeMap()` uses in `PianoRoll.cpp`, `AutomationClipView.cpp`, `AutomationEditorKeys.cpp`, `InlineAutomation.h`, `ItemListAutomationSource.cpp`, control helpers, and tests are read-only. These become const views. `loadSettings()` is also the undo/redo restoration path through `Clip::restoreState()`; no separate mutable undo writer exists.
+`Song.cpp:648` and `NotePlayHandle.cpp:672` call `recordValue()` on render/worker audio paths; the latter is per-note detuning recording. `PianoRoll.cpp:1122` binds a non-const map reference but only iterates it; the other `getTimeMap()` uses in `PianoRoll.cpp`, `AutomationEditor.cpp`, `AutomationClipView.cpp`, `AutomationEditorKeys.cpp`, `InlineAutomation.h`, `ItemListAutomationSource.cpp`, control helpers, and tests are read-only. These become const views. `loadSettings()` is also the undo/redo restoration path through `Clip::restoreState()`; no separate mutable undo writer exists.
 
 ### Chosen design
 

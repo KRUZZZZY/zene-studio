@@ -338,7 +338,7 @@ void AutomationEditor::drawLine( int x0In, float y0, int x1In, float y1 )
 
 
 
-bool AutomationEditor::fineTuneValue(timeMap::iterator node, bool editingOutValue)
+bool AutomationEditor::fineTuneValue(timeMap::const_iterator node, bool editingOutValue)
 {
 	if (node == m_clip->getTimeMap().end()) { return false; }
 
@@ -365,7 +365,7 @@ bool AutomationEditor::fineTuneValue(timeMap::iterator node, bool editingOutValu
 	// Set the new inValue/outValue
 	if (editingOutValue)
 	{
-		node.value().setOutValue(value);
+		m_clip->setNodeOutValue(TimePos(node.key()), static_cast<float>(value));
 	}
 	else
 	{
@@ -373,9 +373,9 @@ bool AutomationEditor::fineTuneValue(timeMap::iterator node, bool editingOutValu
 		// set both to the given value
 		if (OFFSET(node) == 0)
 		{
-			node.value().setOutValue(value);
+			m_clip->setNodeOutValue(TimePos(node.key()), static_cast<float>(value));
 		}
-		node.value().setInValue(value);
+		m_clip->setNodeInValue(TimePos(node.key()), static_cast<float>(value));
 	}
 
 	// Notify listeners (e.g. PianoRoll) that clip data changed
@@ -395,7 +395,7 @@ void AutomationEditor::mousePressEvent( QMouseEvent* mouseEvent )
 	}
 
 	// Some helper lambda functions to avoid repetition of code
-	auto eraseNode = [this](timeMap::iterator node)
+	auto eraseNode = [this](timeMap::const_iterator node)
 	{
 		if (node != m_clip->getTimeMap().end())
 		{
@@ -403,22 +403,20 @@ void AutomationEditor::mousePressEvent( QMouseEvent* mouseEvent )
 			Engine::getSong()->setModified();
 		}
 	};
-	auto resetNode = [this](timeMap::iterator node)
+	auto resetNode = [this](timeMap::const_iterator node)
 	{
 		if (node != m_clip->getTimeMap().end())
 		{
-			node.value().resetOutValue();
+			m_clip->resetNodes(POS(node), POS(node));
 			Engine::getSong()->setModified();
 		}
 	};
-	auto resetTangent = [this](timeMap::iterator node)
+	auto resetTangent = [this](timeMap::const_iterator node)
 	{
 		if (node != m_clip->getTimeMap().end())
 		{
 			// Unlock the tangents from that node
-			node.value().setLockedTangents(false);
-			// Recalculate the tangents
-			m_clip->generateTangents(node, 1);
+			m_clip->setNodeLockedTangents(POS(node), false);
 			Engine::getSong()->setModified();
 		}
 	};
@@ -437,7 +435,7 @@ void AutomationEditor::mousePressEvent( QMouseEvent* mouseEvent )
 		int posTicks = (x * TimePos::ticksPerBar() / m_ppb) + m_currentPosition;
 
 		// Get the time map of current clip
-		timeMap & tm = m_clip->getTimeMap();
+		const timeMap & tm = m_clip->getTimeMap();
 
 		m_mouseDownLeft = (mouseEvent->button() == Qt::LeftButton);
 		m_mouseDownRight = (mouseEvent->button() == Qt::RightButton);
@@ -450,7 +448,7 @@ void AutomationEditor::mousePressEvent( QMouseEvent* mouseEvent )
 			|| (m_editMode == EditMode::Erase && m_mouseDownRight)
 		);
 
-		timeMap::iterator clickedNode = getNodeAt(pos.x(), pos.y(), editingOutValue);
+		timeMap::const_iterator clickedNode = getNodeAt(pos.x(), pos.y(), editingOutValue);
 
 		switch (m_editMode)
 		{
@@ -567,7 +565,7 @@ void AutomationEditor::mousePressEvent( QMouseEvent* mouseEvent )
 					{
 						m_draggedOutValueKey = POS(clickedNode);
 
-						clickedNode.value().setOutValue(level);
+						m_clip->setNodeOutValue(POS(clickedNode), level);
 
 						m_action = Action::MoveOutValue;
 
@@ -587,7 +585,7 @@ void AutomationEditor::mousePressEvent( QMouseEvent* mouseEvent )
 						if (clickedNode != tm.end())
 						{
 							m_draggedOutValueKey = POS(clickedNode);
-							clickedNode.value().setOutValue(level);
+							m_clip->setNodeOutValue(POS(clickedNode), level);
 
 							m_action = Action::MoveOutValue;
 
@@ -619,14 +617,14 @@ void AutomationEditor::mousePressEvent( QMouseEvent* mouseEvent )
 				m_clip->addJournalCheckPoint();
 
 				// Gets the closest node to the mouse click
-				timeMap::iterator node = getClosestNode(pos.x());
+					timeMap::const_iterator node = getClosestNode(pos.x());
 
 				// Starts dragging a tangent
 				if (m_mouseDownLeft && node != tm.end())
 				{
 					// Lock the tangents from that node, so it can only be
 					// manually edited
-					node.value().setLockedTangents(true);
+					m_clip->setNodeLockedTangents(POS(node), true);
 
 					m_draggedTangentTick = POS(node);
 
@@ -669,7 +667,7 @@ void AutomationEditor::mouseDoubleClickEvent(QMouseEvent * mouseEvent)
 
 	// Are we fine tuning the inValue or outValue?
 	const bool isOutVal = (m_editMode == EditMode::DrawOutValues);
-	timeMap::iterator clickedNode = getNodeAt(pos.x(), pos.y(), isOutVal);
+	timeMap::const_iterator clickedNode = getNodeAt(pos.x(), pos.y(), isOutVal);
 
 	switch (m_editMode)
 	{
@@ -836,13 +834,13 @@ void AutomationEditor::mouseMoveEvent(QMouseEvent * mouseEvent )
 					if (m_action == Action::MoveOutValue)
 					{
 						// We are moving the outValue of the node
-						timeMap & tm = m_clip->getTimeMap();
+						const timeMap & tm = m_clip->getTimeMap();
 
-						timeMap::iterator it = tm.find(m_draggedOutValueKey);
+						timeMap::const_iterator it = tm.find(m_draggedOutValueKey);
 						// Safety check
 						if (it != tm.end())
 						{
-							it.value().setOutValue(level);
+							m_clip->setNodeOutValue(TimePos(it.key()), level);
 							Engine::getSong()->setModified();
 						}
 					}
@@ -868,7 +866,7 @@ void AutomationEditor::mouseMoveEvent(QMouseEvent * mouseEvent )
 
 				if (m_mouseDownLeft && m_action == Action::MoveTangent)
 				{
-					timeMap& tm = m_clip->getTimeMap();
+					const timeMap& tm = m_clip->getTimeMap();
 					auto it = tm.find(m_draggedTangentTick);
 
 					// Safety check
@@ -888,14 +886,7 @@ void AutomationEditor::mouseMoveEvent(QMouseEvent * mouseEvent )
 					float dx = std::abs(posTicks - POS(it));
 					float newTangent = dy / std::max(dx, 1.0f);
 
-					if (m_draggedOutTangent)
-					{
-						it.value().setOutTangent(newTangent);
-					}
-					else
-					{
-						it.value().setInTangent(newTangent);
-					}
+					m_clip->setNodeTangent(TimePos(it.key()), m_draggedOutTangent, newTangent);
 				}
 				else if (m_mouseDownRight && m_action == Action::ResetTangents)
 				{
@@ -954,7 +945,7 @@ inline void AutomationEditor::drawCross( QPainter & p )
 
 
 
-inline void AutomationEditor::drawAutomationPoint(QPainter & p, timeMap::iterator it)
+inline void AutomationEditor::drawAutomationPoint(QPainter & p, timeMap::const_iterator it)
 {
 	int x = xCoordOfTick(POS(it));
 	// Below (m_ppb * AutomationClip::quantization() / 576) is used because:
@@ -980,7 +971,7 @@ inline void AutomationEditor::drawAutomationPoint(QPainter & p, timeMap::iterato
 
 
 
-inline void AutomationEditor::drawAutomationTangents(QPainter& p, timeMap::iterator it)
+inline void AutomationEditor::drawAutomationTangents(QPainter& p, timeMap::const_iterator it)
 {
 	int x = xCoordOfTick(POS(it));
 
@@ -1304,12 +1295,12 @@ void AutomationEditor::paintEvent(QPaintEvent * pe )
 	// following code draws all visible values
 	// NEEDS Change in CSS
 	// int len_ticks = 4;
-	timeMap& time_map = m_clip->getTimeMap();
+	const timeMap& time_map = m_clip->getTimeMap();
 
 	// Don't bother doing/rendering anything if there is no automation points
 	if (time_map.size() > 0)
 	{
-		timeMap::iterator it = time_map.begin();
+		timeMap::const_iterator it = time_map.begin();
 		while (std::next(it) != time_map.end())
 		{
 			// skip this section if it occurs completely before the
@@ -1493,7 +1484,7 @@ void AutomationEditor::centerTopBottomScroll()
 	if (m_clip)
 	{
 		// get time map of current clip
-		timeMap & time_map = m_clip->getTimeMap();
+		const timeMap & time_map = m_clip->getTimeMap();
 		// If time_map is not empty...
 		if (!time_map.empty())
 		{
@@ -1930,7 +1921,7 @@ void AutomationEditor::updateTopBottomLevels()
  * @param Int R distance in pixels
  * @return timeMap::iterator with the clicked node, or timeMap.end() if none was clicked.
  */
-AutomationEditor::timeMap::iterator AutomationEditor::getNodeAt(int x, int y, bool outValue /* = false */, int r /* = 5 */)
+AutomationEditor::timeMap::const_iterator AutomationEditor::getNodeAt(int x, int y, bool outValue /* = false */, int r /* = 5 */)
 {
 	// Remove the VALUES_WIDTH from the x position, so we have the actual viewport x
 	x -= VALUES_WIDTH;
@@ -1938,8 +1929,8 @@ AutomationEditor::timeMap::iterator AutomationEditor::getNodeAt(int x, int y, bo
 	int posTicks = (x * TimePos::ticksPerBar() / m_ppb) + m_currentPosition;
 
 	// Get our clip timeMap and create a iterator so we can check the nodes
-	timeMap & tm = m_clip->getTimeMap();
-	timeMap::iterator it = tm.begin();
+	const timeMap & tm = m_clip->getTimeMap();
+	timeMap::const_iterator it = tm.begin();
 
 	// ticksOffset is the number of ticks that match "r" pixels
 	int ticksOffset = TimePos::ticksPerBar() * r / m_ppb;
@@ -1971,7 +1962,7 @@ AutomationEditor::timeMap::iterator AutomationEditor::getNodeAt(int x, int y, bo
 	return tm.end();
 }
 
-AutomationEditor::timeMap::iterator AutomationEditor::getClosestNode(int x)
+AutomationEditor::timeMap::const_iterator AutomationEditor::getClosestNode(int x)
 {
 	// Remove the VALUES_WIDTH from the x position, so we have the actual viewport x
 	x -= VALUES_WIDTH;
@@ -1979,7 +1970,7 @@ AutomationEditor::timeMap::iterator AutomationEditor::getClosestNode(int x)
 	int posTicks = (x * TimePos::ticksPerBar() / m_ppb) + m_currentPosition;
 
 	// Get our pattern timeMap and create a iterator so we can check the nodes
-	timeMap& tm = m_clip->getTimeMap();
+	const timeMap& tm = m_clip->getTimeMap();
 
 	if (tm.isEmpty()) { return tm.end(); }
 
