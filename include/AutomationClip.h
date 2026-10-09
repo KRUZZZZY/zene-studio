@@ -111,6 +111,15 @@ public:
 
 	void removeNode(const TimePos & time);
 	void removeNodes(const int tick0, const int tick1);
+	//! Edit an existing point without exposing a mutable map or node reference.
+	bool setNodeInValue(const TimePos& time, float value);
+	bool setNodeOutValue(const TimePos& time, float value);
+	bool setNodeTangent(const TimePos& time, bool outgoing, float tangent);
+	bool setNodeTangents(const TimePos& time, float inTangent, float outTangent, bool locked);
+	bool setNodeLockedTangents(const TimePos& time, bool locked);
+	bool setNodeCurve(const TimePos& time, AutomationNode::Curve curve, float bend = 0.f);
+	//! Move one point while retaining its curve and bend; refuses an occupied destination.
+	bool moveNode(const TimePos& from, const TimePos& to, float inValue);
 
 	void resetNodes(const int tick0, const int tick1);
 
@@ -141,6 +150,8 @@ public:
 		return m_timeMap;
 	}
 
+	// Kept temporarily while the editor and control callers migrate to the
+	// clip-owned edit methods above; removed when that migration is complete.
 	inline timeMap & getTimeMap()
 	{
 		return m_timeMap;

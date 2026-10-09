@@ -165,6 +165,8 @@ public:
 	void loadCurve(const QDomElement& element);
 
 private:
+	friend class AutomationClip;
+
 	// Clip that this node belongs to
 	AutomationClip* m_clip;
 

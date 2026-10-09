@@ -386,6 +386,103 @@ void AutomationClip::removeNodes(const int tick0, const int tick1)
 }
 
 
+bool AutomationClip::setNodeInValue(const TimePos& time, float value)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	it.value().m_inValue = value;
+	if (it != m_timeMap.begin()) { --it; }
+	generateTangents(it, 3);
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::setNodeOutValue(const TimePos& time, float value)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	it.value().m_outValue = value;
+	if (it != m_timeMap.begin()) { --it; }
+	generateTangents(it, 3);
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::setNodeTangent(const TimePos& time, bool outgoing, float tangent)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	if (outgoing) { it.value().setOutTangent(tangent); }
+	else { it.value().setInTangent(tangent); }
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::setNodeTangents(const TimePos& time, float inTangent, float outTangent, bool locked)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	it.value().setInTangent(inTangent);
+	it.value().setOutTangent(outTangent);
+	it.value().setLockedTangents(locked);
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::setNodeLockedTangents(const TimePos& time, bool locked)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	it.value().setLockedTangents(locked);
+	if (!locked) { generateTangents(it, 1); }
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::setNodeCurve(const TimePos& time, AutomationNode::Curve curve, float bend)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	it.value().setCurve(curve, bend);
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::moveNode(const TimePos& from, const TimePos& to, float inValue)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto source = m_timeMap.find(from);
+	if (source == m_timeMap.end()) { return false; }
+	if (from != to && m_timeMap.contains(to)) { return false; }
+
+	const auto curve = source.value().curve();
+	const float bend = source.value().bend();
+	cleanObjects();
+	const TimePos newTime = std::max(TimePos(0), to);
+	m_timeMap.remove(from);
+	m_timeMap[newTime] = AutomationNode(this, inValue, newTime);
+	auto moved = m_timeMap.find(newTime);
+	moved.value().setCurve(curve, bend);
+	if (moved != m_timeMap.begin()) { --moved; }
+	generateTangents(moved, 3);
+	updateLength();
+	emit dataChanged();
+	return true;
+}
+
+
 
 
 /**
