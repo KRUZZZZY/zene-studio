@@ -89,7 +89,9 @@ constexpr TrackRestoreRule TRACK_RESTORE_SCHEMA[] = {
 };
 
 //! Test seam for FrozenTakeHandoffTest; null in product use.
+#ifdef LMMS_TESTING
 void (*s_frozenTakeLockProbeForTest)() = nullptr;
+#endif
 
 //! The schema's default for \a attribute (SPEC-ARCH-4 1.7 R6).
 const char* trackRestoreDefault(const char* attribute)
@@ -223,10 +225,12 @@ std::vector<Track::FrozenTake::MutedClip> parseMutedClipsAttribute(const QString
 
 } // namespace
 
+#ifdef LMMS_TESTING
 void Track::setFrozenTakeLockProbeForTest(void (*probe)())
 {
 	s_frozenTakeLockProbeForTest = probe;
 }
+#endif
 
 /*! \brief Create a new (empty) track object
  *
@@ -1110,7 +1114,9 @@ bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 
 	// Cluster 5415: playFrozenTake() reads the take's buffer and window on the render thread, so
 	// this write waits for the render period to end (the file above was read outside the lock).
+#ifdef LMMS_TESTING
 	if (s_frozenTakeLockProbeForTest != nullptr) { s_frozenTakeLockProbeForTest(); }
+#endif
 	const auto renderLock = Engine::audioEngine()->requestChangesGuard();
 	for (const FrozenTake::MutedClip& muted : mutedClips)
 	{
@@ -1134,7 +1140,9 @@ void Track::unfreeze()
 {
 	// Cluster 5415: the take and the clips it muted are read by the render thread, so the change
 	// waits for the render period (clearFrozenTake() takes the same lock, recursively).
+#ifdef LMMS_TESTING
 	if (s_frozenTakeLockProbeForTest != nullptr) { s_frozenTakeLockProbeForTest(); }
+#endif
 	const auto renderLock = Engine::audioEngine()->requestChangesGuard();
 	// Exactly the clips this freeze muted come back: a clip the user had muted
 	// themselves is not in the record, so it stays muted.
