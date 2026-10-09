@@ -22,3 +22,17 @@ Cluster 4647's Windows drive-letter and UNC cases are compiled only on Windows. 
 | new-p8-265 | FIXED — persist exposed VST3 parameter values when state chunks are absent | `3749b602d38f7d163a4a17734fc049939ab0a1fd` | `Vst3EffectIntegrationTest`, `Vst3InstrumentIntegrationTest` | 8 | 0 | 0/0/0/0 |
 | new-p8-299 | FIXED — selection deletion creates one journal undo step | `298da770cc321181c98a6c321b5375f33743fa22` | `ArrangerTimelineTest` | 8 | 0 | 0/0/0/0 |
 | control-undo-stale-name | FIXED — identify unmatched journal steps without popping or renaming command records | `61212e169aaecfa469afec70d965a0b6f1249f47` | `UndoHonestyStateTest` | 8 | 0 | 0/0/0/0 |
+
+## Round 2 — independent-review rework (2026-10-09)
+
+The VST3 wrapper regression processes through the real `EffectChain` while `Vst3Effect::reprepare()` has closed audio admission. Removing the re-prepare gate made it fail with plug-in output `0.25` instead of the expected dry output `0.5`. The state tests again restore their saved component/controller chunks; separate cases remove both chunks and exercise the parameter fallback. Valid chunks stay authoritative, while absent or failed chunks use the fallback. The capped undo test fills the journal to 100 entries before deleting two clips and checks one undo restores both.
+
+The final new-p8-175 manifest check found `plugins/NeuralAmp/NeuralAmpEffect.h` in `tests/fork-sources.txt` and no `NamSampleRate.h` entry in either manifest. Historical in-commit registration slips remain unchanged. Cluster 917 remains blocked because the synchronous render result and its model/undo consumers need a render-job lifecycle; no lifecycle change was attempted in this round.
+
+| Cluster | Round-2 result | Fix commit | Targeted test / check | Red exit | Green exit | Gates |
+|---|---|---|---|---:|---:|---|
+| 5459 | FIXED — regression covers wrapper processing during re-prepare | `309e3ce83` | `Vst3EffectIntegrationTest` | 8 | 0 | 0/0/0/0 |
+| new-p8-265 | FIXED — preserve chunk restoration and separately cover no-chunk fallback | `8f40a4f80` | `Vst3EffectIntegrationTest`, `Vst3InstrumentIntegrationTest` | 8 | 0 | 0/0/0/0 |
+| new-p8-299 | FIXED — merge selection deletion by journal serial at the 100-step cap | `ca8dd3245` | `ArrangerTimelineTest` | 8 | 0 | 0/0/0/0 |
+| new-p8-175 | CONFIRMED — final manifests register `NeuralAmpEffect.h` and contain no stale `NamSampleRate.h` entry; prior commits unchanged | — | `fork-sources.txt`, `upstream-modifications.txt` audit | — | — | — |
+| 917 | BLOCKED — render-job lifecycle is feature work owned by another lane; unchanged | — | — | — | — | — |
