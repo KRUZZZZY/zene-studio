@@ -142,3 +142,27 @@ Verification (round 5):
 - Targeted suites: 26 of 26 pass from `build/tests`: RecordClipTest, RecordingLatencyTest, RecordingPassTest, RecordingInputPathTest, RecordRingBufferTest, ControlRecordingRoutesTest, SampleClipWindowTest, ClipSerialisationTest, SessionAudioRecorderTest, RecordingRealtimeTest, ClipFadesRenderTest, AudioClipLoopTest, SessionPlaybackRenderTest, ClipGainEnvelopeTest, RangeEditsTest, ClipLinkTest, ClipWarpPersistenceTest, PunchWindowTest, SessionAudioRecordTest, SessionGridRecordTest, CollabTransportTest, SessionTransportBarTest, TelemetryTransportTest, TakeLaneTest, TakeLaneCompTest, TakeLaneCompPlaybackTest.
 - Gates on the final tree, all exit 0: complexity, file-length, fork-sources, no-upstream-regression.
 - Not run: the full `ctest` bar, `run-all-gates.sh`, `tests/rt-safety-sweep.py`.
+
+## Round 6 (2026-10-09)
+
+Commit: `05a6720c4` (test and correction; no product change). Round 6 added no product code: the investigation below showed the behaviour already holds.
+
+| Item | Verdict | Fix commit | Test | Red | Green |
+|---|---|---|---|---|---|
+| Undo pressed mid-recording: the live take is installed as a lane when the transport stops | NOT REPRODUCED. The undo rebuilds the track's clips, so the armed clip is destroyed. Its destructor removes its live play handle (`updateClips`), and when the reaper finds the take's clip gone it installs nothing. Traced: the live take never reaches an accept call | 05a6720c4 (test only) | anUndoMidPassInstallsNothingAfterwards: loop recording, wrap, undo mid-pass, stop; no lane take, clip back to pre-arm state (no lanes, empty audio, disarmed, no takes prepared) | passes on the round-4 code too (a guard, not a red) | green (36 of 36 in the recording binary) |
+| Row 7 (round 5): one undo left the clip armed | Round 5's red was spurious: the test read the old clip pointer after the undo, which points at a destroyed object (the undo rebuilds the clip). Fixed: the test now looks the restored clip up. The round-4 code passes this test too, so there was no defect. The round-5 journal object for the flag is kept as the cleaner design (one undo step carries the flag), but it does not fix a failing test | 05a6720c4 | anUndoDuringALoopRecordingRestoresTheArmedState (fixed to look the clip up) | not a red: round 4 passes | green |
+| Row 6 (round 5): one undo step for a recording | Kept as it is: the arm, the content and the flag are one undo step | none | aPlainRecordingIsOneUndoStep, aRecordingOverAnExistingTakeIsUndoneToIt | pass on round 4 too | green |
+
+Decisions and caveats:
+- The mid-pass guarantee rests on the undo rebuilding the armed clip. If an undo ever kept the clip object while the recording was live, the live take would still be installed when the transport stops. No such path exists today; an explicit discard would be needed if one is added.
+- A discard path for the live take was considered and reverted: it was never reached (the clip is destroyed first), so it would have been dead code.
+
+Verification (round 6):
+- Recording binary: 36 of 36 pass (RecordingRealtimeTest).
+- Targeted suites: 26 of 26 pass from `build/tests` (the round-5 list).
+- Gates on the final tree, all exit 0: complexity, file-length, fork-sources, no-upstream-regression.
+- Not run: the full `ctest` bar, `run-all-gates.sh`, `tests/rt-safety-sweep.py`.
+
+Open:
+- The GUI notice is still untested (round 3).
+- The round-5 red evidence for row 7 is withdrawn (see above); no other round's red evidence depended on a dead pointer, as far as the tests are concerned (round 5's loop-undo test was the only test that read a clip after its undo).
