@@ -750,6 +750,13 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   written, and only the conductor track is (no notes, clips or automation).
 - *(Updated 2026-09-30.)* **File ▸ Import DAWproject... / Export DAWproject...** now run `dawproject.import` /
   `dawproject.export` through a file dialog. The bullet below is the pre-menu record.
+- *(Updated 2026-10-09, Q050-001.)* **DAWproject import reads DEFLATE now, and lists everything it could not take.**
+  The reader accepts STORE and DEFLATE ZIP entries (what Bitwig, Studio One and Cubase write) under a 512 MiB
+  per-entry and 1 GiB total decompressed-size bound, and `dawproject.read` / `dawproject.import` return a
+  `deviations` array (corrupt, CRC-failing, unsupported-method, encrypted/ZIP64, oversized and truncated-directory
+  entries; files `project.xml` references that the container lacks); the File menu shows the same list after an
+  import. Still not supported: encryption, ZIP64, spanned archives and any method other than STORE and DEFLATE
+  (each is reported, not skipped silently). The writer still stores its entries. See `docs/DAWPROJECT-INTERCHANGE.md`.
 - **DAWproject import / export has no interface — added 2026-09-15.** Tracks, clips, notes, the tempo map
   and mixer strips can be written as a DAWproject container another DAW reads, and a file can be read back
   and imported, through `--control-socket` (`dawproject.convention` / `dawproject.export` / `dawproject.read` /
