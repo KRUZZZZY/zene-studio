@@ -1060,6 +1060,131 @@ private slots:
 		QVERIFY2(!song->isRecording(), "a Play after Record and Stop started a record pass");
 		song->stop();
 	}
+
+	//! A plain recording is one undo step: one control.undo puts the clip back as it was before the
+	//! arm (empty audio, disarmed, no takes prepared), and control.redo brings the recording back.
+	void aPlainRecordingIsOneUndoStep()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		const auto trackId = track->id();
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+		QCOMPARE(clip->sample().sampleSize(), static_cast<std::size_t>(0));
+
+		song->playAndRecord();
+		driveRecordPeriods(30, 0.1f);
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		QTest::qWait(50);
+		const auto recorded = clip->sample().sampleSize();
+		QVERIFY2(recorded > 0, "the plain recording recorded nothing");
+
+		const auto undo = lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), {});
+		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+		lmms::SampleTrack* restored = nullptr;
+		for (lmms::Track* t : song->tracks()) { if (t->id() == trackId) { restored = dynamic_cast<lmms::SampleTrack*>(t); } }
+		QVERIFY2(restored != nullptr, "undo lost the track");
+		lmms::SampleClip* back = nullptr;
+		for (lmms::Clip* c : restored->getClips()) { if (auto* sc = dynamic_cast<lmms::SampleClip*>(c)) { back = sc; } }
+		QVERIFY(back != nullptr);
+		QCOMPARE(back->sample().sampleSize(), static_cast<std::size_t>(0));  // the pre-record audio
+		QVERIFY2(!back->isRecord(), "undo left the clip armed");
+		QCOMPARE(back->recordTakesReady(), 0);
+		QCOMPARE(restored->takeLanes().laneCount(), 0);
+
+		const auto redo = lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.redo"), {});
+		QVERIFY2(redo.ok, qPrintable(redo.errorMessage));
+		restored = nullptr;
+		for (lmms::Track* t : song->tracks()) { if (t->id() == trackId) { restored = dynamic_cast<lmms::SampleTrack*>(t); } }
+		QVERIFY(restored != nullptr);
+		back = nullptr;
+		for (lmms::Clip* c : restored->getClips()) { if (auto* sc = dynamic_cast<lmms::SampleClip*>(c)) { back = sc; } }
+		QVERIFY(back != nullptr);
+		QCOMPARE(back->sample().sampleSize(), recorded);  // the recording is back
+		QVERIFY(!back->isRecord());
+		delete restored;
+		QTest::qWait(10);
+	}
+
+	//! An undo pressed while a loop recording is still armed restores the arm's state as one step:
+	//! the lanes go, the clip is disarmed and no take stays prepared.
+	void anUndoDuringALoopRecordingRestoresTheArmedState()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		const auto trackId = track->id();
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+
+		song->playAndRecord();
+		driveRecordPeriods(20, 0.1f, true);
+		song->setPlayPos(0);            // a loop wrap: one lane take
+		QTest::qWait(50);
+		driveRecordPeriods(20, 0.2f, true);
+		QCOMPARE(track->takeLanes().laneCount(), 1);
+		QVERIFY(clip->isRecord());      // still armed: the loop is still recording
+
+		const auto undo = lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), {});
+		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+		lmms::SampleTrack* restored = nullptr;
+		for (lmms::Track* t : song->tracks()) { if (t->id() == trackId) { restored = dynamic_cast<lmms::SampleTrack*>(t); } }
+		QVERIFY2(restored != nullptr, "undo lost the track");
+		QCOMPARE(restored->takeLanes().laneCount(), 0);
+		QVERIFY2(!clip->isRecord(), "one undo left the clip armed");
+		QCOMPARE(clip->recordTakesReady(), 0);
+
+		song->stop();                   // the live take ends; the disarmed clip is not re-armed by it
+		QTest::qWait(50);
+	}
+
+	//! A recording over an existing take: one undo brings the earlier take back, and redo the recording.
+	void aRecordingOverAnExistingTakeIsUndoneToIt()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		const auto trackId = track->id();
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		std::vector<SampleFrame> earlier(100, SampleFrame(0.375f, 0.375f));
+		clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(earlier.data(), earlier.size(),
+			static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())));
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+
+		song->playAndRecord();
+		driveRecordPeriods(30, 0.1f);
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		QTest::qWait(50);
+		const auto recorded = clip->sample().sampleSize();
+		QVERIFY2(recorded > 100, "the recording did not replace the take");
+
+		QVERIFY(lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), {}).ok);
+		lmms::SampleClip* back = nullptr;
+		for (lmms::Track* t : song->tracks()) { if (t->id() == trackId) { for (lmms::Clip* c : t->getClips()) { if (auto* sc = dynamic_cast<lmms::SampleClip*>(c)) { back = sc; } } } }
+		QVERIFY(back != nullptr);
+		QCOMPARE(back->sample().sampleSize(), static_cast<std::size_t>(100));  // the earlier take is back
+		QVERIFY(!back->isRecord());
+
+		QVERIFY(lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.redo"), {}).ok);
+		back = nullptr;
+		for (lmms::Track* t : song->tracks()) { if (t->id() == trackId) { for (lmms::Clip* c : t->getClips()) { if (auto* sc = dynamic_cast<lmms::SampleClip*>(c)) { back = sc; } } } }
+		QVERIFY(back != nullptr);
+		QCOMPARE(back->sample().sampleSize(), recorded);  // and the recording is back
+		delete back->getTrack();
+		QTest::qWait(10);
+	}
 } ;
 
 

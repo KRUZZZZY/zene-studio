@@ -1761,3 +1761,5 @@ src/core/SampleClip.cpp	docs/m0-blocker-fixes-2026-10-08 round 4: a new arming s
 src/tracks/SampleTrack.cpp	docs/m0-blocker-fixes-2026-10-08 round 4: a muted take still plays where the composite names its lane (the comp decides its spans)
 include/SampleClip.h	docs/m0-blocker-fixes-2026-10-08 round 4: lastTakeDroppedFrames is atomic: written by the reaper on the main thread, read by record.get_state
 src/core/SampleClip.cpp	docs/m0-blocker-fixes-2026-10-08 round 4: acceptRecordedTake stores the last take's drop count atomically
+include/SampleClip.h	docs/m0-blocker-fixes-2026-10-08 round 5: SampleRecordFlagState: the record flag as a journal object, so an arm is one undo step with the track's content
+src/core/SampleClip.cpp	docs/m0-blocker-fixes-2026-10-08 round 5: journalArmStep (one step for the track and the flag), the lane-creation suspension as an RAII guard, the record model no longer journals its own changes

@@ -36,6 +36,7 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "PatternStore.h"
+#include "ProjectJournal.h"
 #include "PathUtil.h"
 #include "SampleClipView.h"
 #include "SampleRecordHandle.h"
@@ -78,6 +79,11 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	//care about Clip position
 	connect( this, SIGNAL(positionChanged()), this, SLOT(updateTrackClips()));
 
+	// The record flag is journalled by the arm's step (journalArmStep), not by the model itself.
+	m_recordModel.setJournalling( false );
+	m_recordFlag = std::make_unique<SampleRecordFlagState>(
+		[this] { return isRecord(); },
+		[this](bool armed) { if( isRecord() != armed ) { setRecord( armed ); } } );
 	updateTrackClips();
 }
 
@@ -123,6 +129,11 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	//care about Clip position
 	connect( this, SIGNAL(positionChanged()), this, SLOT(updateTrackClips()));
 
+	// The record flag is journalled by the arm's step (journalArmStep), not by the model itself.
+	m_recordModel.setJournalling( false );
+	m_recordFlag = std::make_unique<SampleRecordFlagState>(
+		[this] { return isRecord(); },
+		[this](bool armed) { if( isRecord() != armed ) { setRecord( armed ); } } );
 	updateTrackClips();
 	// A copy carries the mode (Clip's copy constructor) but never the source's
 	// voices: each clip claims from its own pool.
@@ -219,10 +230,33 @@ void SampleClip::armRecordTake()
 		// A new arming starts with no pass to give way to. The track is checkpointed once here, so
 		// one undo step takes back the whole recording (its lanes and mutes).
 		m_lastPassTake = nullptr;
-		if (Track* track = getTrack()) { track->addJournalCheckPoint(); }
+		journalArmStep();
 		setJournalling(false);
 	}
 	prepareRecordTake();
+}
+
+void SampleClip::journalArmStep()
+{
+	Track* track = getTrack();
+	ProjectJournal* journal = Engine::projectJournal();
+	if (track == nullptr || journal == nullptr || !track->isJournalling()) { return; }
+	// One step: the track's content and the record flag, both as they were before the arm.
+	m_recordFlag->snapshotValue = false;
+	journal->addJournalCheckPoint(QVector<JournallingObject*>{track, m_recordFlag.get()});
+	m_recordFlag->snapshotValue.reset();
+}
+
+void SampleRecordFlagState::saveSettings(QDomDocument& doc, QDomElement& element)
+{
+	Q_UNUSED(doc)
+	const bool armed = snapshotValue.value_or(m_current());
+	element.setAttribute(QStringLiteral("armed"), armed ? QStringLiteral("1") : QStringLiteral("0"));
+}
+
+void SampleRecordFlagState::loadSettings(const QDomElement& element)
+{
+	m_apply(element.attribute(QStringLiteral("armed")) == QStringLiteral("1"));
 }
 
 void SampleClip::releaseRecordTakes()
@@ -237,6 +271,30 @@ void SampleClip::releaseRecordTakes()
 	delete released[0];
 	delete released[1];
 }
+
+namespace
+{
+
+//! Holds a track's clip updates suspended for its lifetime (see SampleTrack::setClipUpdatesSuspended).
+class ClipUpdatesSuspension
+{
+public:
+	explicit ClipUpdatesSuspension(SampleTrack* track) : m_track(track)
+	{
+		if (m_track != nullptr) { m_track->setClipUpdatesSuspended(true); }
+	}
+	~ClipUpdatesSuspension()
+	{
+		if (m_track != nullptr) { m_track->setClipUpdatesSuspended(false); }
+	}
+	ClipUpdatesSuspension(const ClipUpdatesSuspension&) = delete;
+	ClipUpdatesSuspension& operator=(const ClipUpdatesSuspension&) = delete;
+
+private:
+	SampleTrack* m_track;
+};
+
+} // namespace
 
 void SampleClip::acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, std::uint64_t droppedFrames, bool continues,
 	std::uint64_t generation)
@@ -265,10 +323,7 @@ void SampleClip::acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, st
 	}
 	if (!continues)
 	{
-		// The disarm that ends a recording is part of the arm's undo step, not a step of its own.
-		m_recordModel.setJournalling(false);
-		setRecord(false);
-		m_recordModel.setJournalling(true);
+		setRecord(false);  // not journalled: the arm's step is the recording's undo step
 	}
 }
 
@@ -280,16 +335,19 @@ void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take)
 	// processing takes, as every other clip edit is.
 	const auto guard = Engine::audioEngine()->requestChangesGuard();
 	const int lane = track->takeLanes().addLane();
-	// The lane clip's constructor and its position change reach updateClips(), which would remove
-	// the track's live play handles - the take of the pass that has just begun. Suspended here.
-	track->setClipUpdatesSuspended(true);
-	auto* take_clip = new SampleClip(track, Sample(std::move(take)), false);
-	// Not journalled on its own: the arm's checkpoint of the track covers the lane (one undo step).
-	take_clip->setJournalling(false);
-	take_clip->setLaneIndex(lane);
-	take_clip->movePosition(startPosition());
-	take_clip->updateLength();
-	track->setClipUpdatesSuspended(false);
+	SampleClip* take_clip = nullptr;
+	{
+		// The lane clip's constructor and its position change reach updateClips(), which would remove
+		// the track's live play handles - the take of the pass that has just begun. Suspended for the
+		// creation, even if it throws.
+		const ClipUpdatesSuspension suspended{track};
+		take_clip = new SampleClip(track, Sample(std::move(take)), false);
+		// Not journalled on its own: the arm's step covers the lane (one undo step).
+		take_clip->setJournalling(false);
+		take_clip->setLaneIndex(lane);
+		take_clip->movePosition(startPosition());
+		take_clip->updateLength();
+	}
 	// The newest pass is the audible take; the earlier passes stay on their lanes, muted, until
 	// the user comps them.
 	// The previous pass gives way to this one, but only while it is still audible as recording left
