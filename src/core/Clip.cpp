@@ -362,8 +362,14 @@ bool Clip::manuallyResizable() const
  */
 void Clip::toggleMute()
 {
-	m_mutedModel.setValue( !m_mutedModel.value() );
+	setMuted(!m_mutedModel.value());
 	emit dataChanged();
+}
+
+
+void Clip::setMuted(bool muted)
+{
+	m_mutedModel.setValue(muted);
 }
 
 

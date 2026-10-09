@@ -64,6 +64,7 @@ void AutomationClip::flipY(int min, int max)
 	if (changedTimeMap)
 	{
 		generateTangents();
+		publishReadSnapshot();
 		emit dataChanged();
 	}
 }
@@ -203,6 +204,7 @@ void AutomationClip::flipX(int start, int end)
 	cleanObjects();
 
 	generateTangents();
+	publishReadSnapshot();
 	emit dataChanged();
 }
 
@@ -271,6 +273,7 @@ void AutomationClip::drawShape(int start, int end, Shape shape, int cycles, floa
 		if (tick == end) { break; }
 	}
 	generateTangents();
+	publishReadSnapshot();
 	emit dataChanged();
 }
 
@@ -373,6 +376,7 @@ int AutomationClip::transformRange(int start, int end, double timeScale, int tim
 	}
 	m_timeMap = kept;
 	generateTangents();
+	publishReadSnapshot();
 	emit dataChanged();
 	return static_cast<int>(moved.size());
 }
@@ -403,15 +407,6 @@ void simplify(const std::vector<std::pair<int, float>>& points, std::size_t firs
 
 } // namespace
 
-float AutomationClip::bendValueAt(timeMap::const_iterator v, int offset) const
-{
-	const auto next = std::next(v);
-	const double t = std::clamp(static_cast<double>(offset) / std::max(1, POS(next) - POS(v)), 0.0, 1.0);
-	const double bend = v.value().bend();
-	const double shaped = bend >= 0.0 ? std::pow(t, 1.0 + 4.0 * bend) : 1.0 - std::pow(1.0 - t, 1.0 - 4.0 * bend);
-	return static_cast<float>(OUTVAL(v) + (INVAL(next) - OUTVAL(v)) * shaped);
-}
-
 int AutomationClip::thin(float tolerance)
 {
 	QMutexLocker m(&m_clipMutex);
@@ -441,6 +436,7 @@ int AutomationClip::thin(float tolerance)
 		++removed;
 	}
 	generateTangents();
+	publishReadSnapshot();
 	emit dataChanged();
 	return removed;
 }

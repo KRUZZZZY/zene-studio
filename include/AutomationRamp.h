@@ -53,9 +53,9 @@ namespace lmms
  * knots - nothing else - so:
  *
  *  * no allocation: the array is a member, and `MaxKnots` is the whole bound;
- *  * no locking: a ramp is written and read by the audio thread alone, under
- *    the clip's own (pre-existing) mutex while it is being BUILT, and lock-free
- *    once published;
+ *  * no locking: a ramp is written and read by the audio thread alone, while
+ *    its source curve is pinned as an immutable AutomationClip snapshot, and
+ *    lock-free once published;
  *  * no unbounded growth: a knot that does not fit is refused and COUNTED
  *    (`refusals()`), so a block whose tempo packs more tick boundaries than the
  *    capacity can hold degrades to the knots around them and says so, instead

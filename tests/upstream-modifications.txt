@@ -1842,3 +1842,12 @@ include/AutomationNode.h	0.5.0 m0 cluster 5528: AutomationNode no longer retains
 src/core/AutomationNode.cpp	0.5.0 m0 cluster 5528: removes the node-to-clip value setter path; node values are edited through AutomationClip methods.
 src/core/AutomationClip.cpp	0.5.0 m0 cluster 5528: clip insertions, copy and reset paths construct pure data nodes; reset values are updated only inside the clip edit method.
 src/core/AutomationClipTransforms.cpp	0.5.0 m0 cluster 5528: transforms construct pure value nodes and flipY writes fields only inside the owning AutomationClip transform.
+include/AutomationClip.h	0.5.0 M0 cluster 5528: adds the immutable read-snapshot pointer and clip-owned publish/read declarations, moves audio-facing metadata getters to the published snapshot, and overrides clip position/length/offset/mute setters so snapshot metadata follows the Clip model.
+include/AutomationRamp.h	0.5.0 M0 cluster 5528: documents that ramp generation pins an immutable AutomationClip snapshot instead of taking the clip mutex.
+include/Clip.h	0.5.0 M0 cluster 5528: makes mute access/set virtual so AutomationClip can publish mute metadata on all base-pointer mute changes; default Clip behavior remains a direct BoolModel read/write.
+src/core/AutomationClip.cpp	0.5.0 M0 cluster 5528: control-side map edit methods publish complete snapshots; reset paths now lock the map; recordValue explicitly suppresses publication because its render/worker callers need cluster 5388's safe handoff.
+src/core/AutomationClipTransforms.cpp	0.5.0 M0 cluster 5528: flip, draw, transform, and thin publish the completed map snapshot after each edit.
+src/core/AutomationClipSnapshot.cpp	0.5.0 M0 cluster 5528: adds lock-free immutable snapshot evaluation/publication, global reader-count reclamation, metadata publication, valueAt and writeBlockRamp readers; audio readers allocate and lock nothing.
+src/core/Clip.cpp	0.5.0 M0 cluster 5528: routes toggleMute through virtual setMuted so AutomationClip can publish the changed mute metadata; adds the default Clip BoolModel setter.
+src/core/CMakeLists.txt	0.5.0 M0 cluster 5528: registers AutomationClipSnapshot.cpp as the lock-free reader/publication implementation split from AutomationClip.cpp.
+tests/CMakeLists.txt	0.5.0 M0 cluster 5528: registers AutomationClipSnapshotTest and its offscreen Qt environment for the evaluator equivalence, concurrency, allocation and mutex probes.

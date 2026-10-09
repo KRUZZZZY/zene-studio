@@ -36,12 +36,14 @@
 #include "AutomationNode.h"
 #include "Clip.h"
 
+class AutomationClipSnapshotTest;
 
 namespace lmms
 {
 
 class AutomationTrack;
 class TimePos;
+struct AutomationClipReadSnapshot;
 
 namespace gui
 {
@@ -71,7 +73,7 @@ public:
 	using TimemapIterator = timeMap::const_iterator;
 
 	AutomationClip( AutomationTrack * _auto_track );
-	~AutomationClip() override = default;
+	~AutomationClip() override;
 
 	bool addObject( AutomatableModel * _obj, bool _search_dup = true );
 
@@ -162,10 +164,7 @@ public:
 		return firstObject()->maxValue<float>();
 	}
 
-	inline bool hasAutomation() const
-	{
-		return m_timeMap.isEmpty() == false;
-	}
+	bool hasAutomation() const;
 
 	static bool supportsTangentEditing(ProgressionType pType)
 	{
@@ -203,11 +202,7 @@ public:
 	enum class RampSetting : std::uint8_t { Default, On, Off };
 
 	//! Is this clip rendered at sample precision inside a block? (The resolved setting.)
-	bool sampleAccurate() const
-	{
-		return m_rampSetting == RampSetting::Default ? m_progressionType != ProgressionType::Discrete
-			: m_rampSetting == RampSetting::On;
-	}
+	bool sampleAccurate() const;
 	RampSetting rampSetting() const { return m_rampSetting; }
 	//! Turn it explicitly on or off. Journalled like any other clip edit (the setting is
 	//! serialized, and loadSettings resets it to Default on absence, so a checkpoint
@@ -225,11 +220,16 @@ public:
 	 *  that is the curve itself at every frame, because the curve is linear
 	 *  between two nodes and a node sits on a tick. REALTIME-SAFE: called from
 	 *  the audio thread, allocates nothing (the ramp is the caller's own
-	 *  fixed-capacity object), and takes the clip's own mutex ONCE for the whole
-	 *  block rather than once per evaluation.
+	 *  fixed-capacity object), and reads one immutable snapshot under the
+	 *  lock-free automation reader count. No clip mutex is taken here.
 	 */
 	void writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart, f_cnt_t frames,
 		double framesPerTick, int frameOffsetInTick ) const;
+	void movePosition(const TimePos& pos) override;
+	void changeLength(const TimePos& length) override;
+	void setStartTimeOffset(const TimePos& startTimeOffset) override;
+	bool isMuted() const override;
+	void setMuted(bool muted) override;
 
 	//! 0.5.0 MX-160: the latency (frames) upstream of the parameter this clip drives, which the
 	//! clip's reading lags by while latency-compensated automation is on (AutomationLatency).
@@ -290,7 +290,7 @@ public:
 	 *  distance from the middle of the parameter's range is added to whatever the absolute clips
 	 *  (or, without one, the parameter's own value when playback reached it) say. */
 	bool isRelative() const { return m_relative.load(std::memory_order_relaxed); }
-	void setRelative(bool relative) { m_relative.store(relative, std::memory_order_relaxed); }
+	void setRelative(bool relative);
 
 protected:
 	AutomationClip( const AutomationClip & _clip_to_copy );
@@ -299,19 +299,20 @@ private:
 	void cleanObjects();
 	void generateTangents();
 	void generateTangents(timeMap::iterator it, int numToGenerate);
-	float valueAt( timeMap::const_iterator v, int offset ) const;
-	//! ED-185: a Bend segment's value (AutomationClipTransforms.cpp).
-	float bendValueAt( timeMap::const_iterator v, int offset ) const;
+	float editableValueAt(const TimePos& time) const;
+	void publishReadSnapshot();
+	static void retireReadSnapshot(AutomationClipReadSnapshot* snapshot);
 
 	/*! The curve's value at clip-relative tick @a rel (plus @a fraction of the
 	 *  segment that starts there) - the segment, not the node, so a node whose
-	 *  in- and out-values differ does not make the ramp step early. Caller
-	 *  holds m_clipMutex. Allocates nothing. */
-	float rampValueAt( const TimePos & rel, float fraction ) const;
+	 *  in- and out-values differ does not make the ramp step early. */
+	static float rampValueAt(const AutomationClipReadSnapshot& snapshot, const TimePos& rel, float fraction);
 	//! One knot: the curve at @a frame of the block (whose first sample sits
-	//! @a frameOffsetInTick frames into its tick). Caller holds m_clipMutex.
-	void addRampKnot( AutomationRamp & ramp, const TimePos & relClipStart, int frame,
-		int frameOffsetInTick, double framesPerTick ) const;
+	//! @a frameOffsetInTick frames into its tick).
+	static void addRampKnot(const AutomationClipReadSnapshot& snapshot, AutomationRamp& ramp,
+		const TimePos& relClipStart, int frame, int frameOffsetInTick, double framesPerTick);
+	static void addRampBoundaryKnots(const AutomationClipReadSnapshot& snapshot, AutomationRamp& ramp,
+		const TimePos& relClipStart, f_cnt_t frames, int frameOffsetInTick, double framesPerTick);
 
 	/**
 	 * @brief
@@ -325,6 +326,8 @@ private:
 	// Mutex to make methods involving automation clips thread safe
 	// Mutable so we can lock it from const objects
 	mutable QRecursiveMutex m_clipMutex;
+	std::atomic<AutomationClipReadSnapshot*> m_readSnapshot{nullptr};
+	bool m_snapshotPublicationSuppressed = false;
 
 	AutomationTrack * m_autoTrack;
 	std::vector<jo_id_t> m_idsToResolve;
@@ -361,6 +364,7 @@ private:
 	friend class gui::AutomationClipView;
 	friend class AutomationNode;
 	friend class gui::AutomationEditor;
+	friend class ::AutomationClipSnapshotTest;
 
 } ;
 

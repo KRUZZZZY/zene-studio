@@ -2251,3 +2251,5 @@ include/MidiHandoffQueue.h
 tests/src/core/MidiHandoffQueueTest.cpp
 include/RenderPeriodClock.h
 tests/src/core/SystemSemaphoreTest.cpp
+src/core/AutomationClipSnapshot.cpp
+tests/src/core/AutomationClipSnapshotTest.cpp

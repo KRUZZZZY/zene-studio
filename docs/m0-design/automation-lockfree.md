@@ -2,7 +2,7 @@
 
 **Branch:** `design/m0-automation-lockfree`, based on `c405233f8`
 **Scope:** clusters 2647, 5528, and 5388
-**Status:** design and implementation are separate: the designs below are concrete, but this lane leaves all three fixes BLOCKED until their stated proof conditions can be met. No product source is changed by this design commit.
+**Status:** 5528 has the edit ownership and immutable reader snapshot implementation in this lane. Its audio-side recording writers remain blocked on the 5388 handoff; clusters 2647 and 5388 remain separate.
 
 ## 2647 — `AutomatableModel::valueBuffer()`
 
@@ -49,6 +49,8 @@ The render path takes `m_clipMutex` in `AutomationClip::writeBlockRamp()` (`src/
 | `src/core/AutomationClip.cpp:340-384` | Remove one point or an inclusive range and regenerate neighboring tangents. | `removeNode()` / `removeNodes()` |
 | `src/core/AutomationClip.cpp:396-438` | Reset out values or unlock and regenerate tangents over a range. | `resetNodes()` / `resetTangents()` |
 | `src/core/AutomationClip.cpp:443-455` | Recording inserts or removes points based on the last recorded value. | `recordValue()`; its audio-thread callers require the separate recording handoff in cluster 5388 before publication can be moved off audio. |
+| `src/core/Song.cpp:648` | Render thread records a controlled-model value into its automation clip. | `recordValue()`; publication still awaits the cluster 5388 recording handoff. |
+| `src/core/NotePlayHandle.cpp:672` | Per-note worker records detuning automation into the note's clip. | `recordValue()`; publication still awaits the cluster 5388 recording handoff. |
 | `src/core/AutomationClip.cpp:478-548` | Drag removes/restores a point, inserts its current position/value and restores any locked tangents. | `setDragValue()` |
 | `src/core/AutomationClip.cpp:918-989` | Undo/load clears and repopulates nodes, restores curve/tangent state, and may regenerate tangents. | `loadSettings()` |
 | `src/core/AutomationClip.cpp:1180-1184` | Clear removes the complete map. | `clear()` |
@@ -89,9 +91,17 @@ Before publishing, the writer holds the clip's edit lock, applies the edit to th
 - Publishing from existing mutator methods while leaving `getTimeMap()` mutable is rejected: those writes bypass publication and the node setters currently have no clip-lock boundary.
 - Copying the `QMap` on each render period is rejected: it allocates, performs tree traversal and copying on audio, and creates an unbounded render cost.
 
-### Why implementation is BLOCKED in this lane
+### Implementation boundary
 
-No single writer API currently covers the live-map mutation surface. `AutomationEditor`, `AutomationPointEdit`, `PianoRoll`, automation control commands, `AutomationNode`, transforms, loading/undo, and note-detuning recording all need migration before a snapshot can be authoritative. Until the mutable accessor is removed and a no-allocation audio reader/reclaimer regression exists, retaining `m_clipMutex` is the only correct behavior. Implementing only the two locking getters would leave audio reading a stale or concurrently modified curve.
+The live mutable accessor and node-to-clip setter backdoor are removed. Editor, point-edit, control-command, piano-roll, transform, load/undo, reset, clear, copy and range-rescale writes now go through `AutomationClip` ownership. `valueAt()` and `writeBlockRamp()` read a sorted POD snapshot under a lock-free reader count; old snapshots are retired and freed from control-side publication/destruction. The regression suite compares the legacy evaluator and ramps bit-for-bit, probes allocation and the clip edit mutex, and races complete curve edits against rendering.
+
+`recordValue()` remains the exception. `Song::processAutomations()` and `NotePlayHandle` call it from render/worker audio paths. It still takes `m_clipMutex` and changes the editable map; this implementation suppresses snapshot publication during that call so it does not allocate on audio. Consequently, automation being recorded is not visible in the read snapshot until a safe recording handoff publishes it. Removing this last audio-side clip lock while preserving same-period write/read behavior requires the audio-visible recording overlay or equivalent ordering proof described in cluster 5388. That work is outside 5528 and blocks the unqualified claim that no audio thread takes `m_clipMutex`.
+
+### 5528 validation evidence
+
+- `AutomationClipSnapshotTest` compares the QMap evaluator and snapshot `valueAt()` at each tick from -2 through 48, and compares every ramp knot and generated frame for discrete, linear, cubic, bend, hold, smooth, and sample-accurate settings. Its edit-mutex probe fails when a lock is deliberately reintroduced into either audio reader, then passes without those locks; the concurrent renderer accepts only complete A or B curves.
+- The automated-project render comparison used `tests/data/automation-audio-fixture.mmp` with a master-volume automation track linked to model ID `9000001`, plus flat and no-automation controls. The legacy QMap evaluator from `e0cef61f6` and the snapshot evaluator produced identical WAV data-chunk hashes: automated `231247afe6ef389ae7aa0d1bcd75d82648a137a7e089e3136af351be7dc1689f`, flat `cc77f1f1664dd54e053e5682ff7cb05fe48e10fcf0061c1a50a379fbb098e58a`, and no automation `46cabeacc7caf8a880240165b0035a968ad94a3563bd7ffa3c50e8079cb8944d`. Each control render had a distinct hash.
+- `ctest --output-on-failure -R 'Automation|ControlAutomation|AudioAutomation|NoteCurvesAcross'` from `build/tests`: 12/12 passed. The four required repository gates passed after the final source split.
 
 ## 5388 — recording automation from the render thread
 
