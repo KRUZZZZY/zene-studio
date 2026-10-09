@@ -68,7 +68,9 @@ public:
 
 	inline bool affinityMatters() const override
 	{
-		return true;
+		// Pool slots are constructed on the engine/control thread and reused by
+		// whichever callback or worker renders the next period.
+		return !isPooledVoice();
 	}
 
 

@@ -108,8 +108,9 @@ namespace
 
 constexpr qsizetype PlayHandleListLowWater = static_cast<qsizetype>(PlayHandle::MaxNumber / 4);
 
-constexpr std::size_t SampleVoicePoolCapacity = 512;
-constexpr std::size_t MetronomeVoicePoolCapacity = 32;
+constexpr std::size_t MetronomeVoicePoolCapacity = AudioEngine::MetronomeSampleVoicePoolCapacity;
+constexpr std::size_t SampleVoicePoolCapacity = MetronomeVoicePoolCapacity
+	+ AudioEngine::FrozenSampleVoicePoolCapacity;
 static_assert(SampleVoicePoolCapacity > MetronomeVoicePoolCapacity);
 
 } // namespace

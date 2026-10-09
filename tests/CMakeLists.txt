@@ -393,6 +393,7 @@ set(LMMS_TESTS
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/MidiOutQueueTest.cpp
 	src/core/FrozenTakeHandoffTest.cpp
+	src/core/FrozenTakeRoundTwoTest.cpp
 	src/core/AudioBusPlayHandleQueueTest.cpp
 	src/core/SlicerTPlayheadTest.cpp
 	src/core/RetroMidiCaptureCommandsTest.cpp

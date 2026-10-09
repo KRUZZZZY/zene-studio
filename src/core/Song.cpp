@@ -29,6 +29,7 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QSet>
+#include <QThread>
 
 #include <algorithm>
 #include <cmath>
@@ -191,6 +192,10 @@ Song::Song() :
 		// Every listener of playbackPositionJumped already connects to it directly.
 		connect(&m_timelines[i], &Timeline::positionJumped, this, onPositionJumped, Qt::DirectConnection);
 	}
+	connect(&getTimeline(PlayMode::Song), &Timeline::loopPointsChanged, this,
+		[this] { updateFrozenTakeVoiceCapacities(); }, Qt::DirectConnection);
+	connect(&getTimeline(PlayMode::Song), &Timeline::loopEnabledChanged, this,
+		[this](bool) { updateFrozenTakeVoiceCapacities(); }, Qt::DirectConnection);
 
 	// R2.4: the song timeline's punch region, published to the render thread's
 	// gate every time it changes (a set, a clear, a load, an undo).
@@ -219,6 +224,25 @@ Song::~Song()
 
 	m_playing = false;
 	delete m_globalAutomationTrack;
+}
+
+
+
+void Song::updateFrozenTakeVoiceCapacities()
+{
+	if (QThread::currentThread() != thread())
+	{
+		QMetaObject::invokeMethod(this, [this] { updateFrozenTakeVoiceCapacities(); }, Qt::QueuedConnection);
+		return;
+	}
+
+	const auto renderLock = Engine::audioEngine()->requestChangesGuard();
+	const Timeline& timeline = getTimeline(PlayMode::Song);
+	for (Track* track : tracks())
+	{
+		track->updateFrozenVoiceCapacity(timeline.loopEnabled(), timeline.loopBegin().getTicks(),
+			timeline.loopEnd().getTicks());
+	}
 }
 
 
@@ -792,6 +816,7 @@ void Song::startSongPlayback( bool recording )
 	m_playMode = PlayMode::Song;
 	m_playing = true;
 	m_paused = false;
+	updateFrozenTakeVoiceCapacities();
 
 	m_vstSyncController.setPlaybackState( true );
 

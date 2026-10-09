@@ -694,6 +694,8 @@ private:
 
 	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames);
 	void processMetronome(size_t bufferOffset);
+	//! Recompute every frozen track's overlap allowance on the control thread after loop changes.
+	void updateFrozenTakeVoiceCapacities();
 
 	/*! The tempo-map follower (SPEC-zene-studio D11, docs/TEMPO-MAP.md). Runs
 	 *  once per audio block, and does NOTHING unless the map is active - which

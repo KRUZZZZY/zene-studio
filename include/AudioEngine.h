@@ -84,6 +84,10 @@ class LMMS_EXPORT AudioEngine : public QObject
 {
 	Q_OBJECT
 public:
+	//! Preconstructed sample-voice partitions shared by metronome and frozen takes.
+	static constexpr std::size_t MetronomeSampleVoicePoolCapacity = 32;
+	static constexpr std::size_t FrozenSampleVoicePoolCapacity = 480;
+
 	/**
 	 * @brief RAII helper for requestChangesInModel.
 	 * Used by AudioEngine::requestChangesGuard.

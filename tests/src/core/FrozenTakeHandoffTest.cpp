@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <chrono>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <condition_variable>
 #include <cmath>
@@ -50,6 +51,7 @@
 #include "MetronomeOptions.h"
 #include "SamplePlayHandle.h"
 #include "SampleTrack.h"
+#include "InstrumentTrack.h"
 #include "Song.h"
 #include "Track.h"
 #include "AllocationProbe.h"
@@ -84,12 +86,15 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 }
 
 QString prepareFrozenTake(QTemporaryDir& scratch, double frequency, SampleTrack** track,
-	std::shared_ptr<const SampleBuffer>* source = nullptr)
+	std::shared_ptr<const SampleBuffer>* source = nullptr, tick_t takeEndTicks = 1920)
 {
 	const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("take.wav")), frequency);
 	if (wav.isEmpty()) { return QStringLiteral("could not write a frozen-take fixture"); }
 	Song* const song = Engine::getSong();
 	song->clearProject();
+	Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
+	timeline.setLoopEnabled(false);
+	timeline.setLoopPoints(TimePos(0), TimePos(DefaultTicksPerBar));
 	if (!run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}}).ok)
 	{
 		return QStringLiteral("could not add the sample track");
@@ -97,7 +102,7 @@ QString prepareFrozenTake(QTemporaryDir& scratch, double frequency, SampleTrack*
 	*track = dynamic_cast<SampleTrack*>(song->tracks().back());
 	if (*track == nullptr) { return QStringLiteral("track.add returned a non-sample track"); }
 	QString reason;
-	if (!(*track)->freezeTo(wav, 0, 1920, {}, &reason)) { return reason; }
+	if (!(*track)->freezeTo(wav, 0, takeEndTicks, {}, &reason)) { return reason; }
 	if (source != nullptr)
 	{
 		*source = SampleBuffer::fromFile(wav);
@@ -318,6 +323,7 @@ private slots:
 		QTest::qWait(130);
 	}
 
+
 	//! Cluster 5414: a re-armed voice matches a fresh handle for distinct nonzero source windows.
 	void pooledFrozenVoiceRearmMatchesFreshAudio()
 	{
@@ -392,37 +398,6 @@ private slots:
 		QTest::qWait(130);
 	}
 
-	//! Cluster 5414: eight live passes are accepted and the ninth is counted and refused.
-	void frozenPassLimitIsCounted()
-	{
-		AudioEngine* const audio = Engine::audioEngine();
-		QTemporaryDir scratch;
-		QVERIFY(scratch.isValid());
-		SampleTrack* track = nullptr;
-		const QString error = prepareFrozenTake(scratch, 440.0, &track);
-		QVERIFY2(error.isEmpty(), qPrintable(error));
-		QVERIFY(!track->play(TimePos(-1), audio->framesPerPeriod(), 0, -1));
-		for (int pass = 0; pass < 8; ++pass)
-		{
-			QVERIFY(!track->play(TimePos(1920), audio->framesPerPeriod(), 0, -1));
-			QVERIFY(track->play(TimePos(10 + pass * 20), audio->framesPerPeriod(), 0, -1));
-		}
-		const auto before = run(QStringLiteral("control.ping"));
-		QVERIFY(before.ok);
-		const int overflowBefore = before.result.value(QStringLiteral("audio")).toObject()
-			.value(QStringLiteral("sample_voice_overflow")).toInt();
-		QVERIFY(!track->play(TimePos(1920), audio->framesPerPeriod(), 0, -1));
-		QVERIFY(!track->play(TimePos(180), audio->framesPerPeriod(), 0, -1));
-		const auto after = run(QStringLiteral("control.ping"));
-		QVERIFY(after.ok);
-		const int overflowAfter = after.result.value(QStringLiteral("audio")).toObject()
-			.value(QStringLiteral("sample_voice_overflow")).toInt();
-		QVERIFY(overflowAfter > overflowBefore);
-		renderPeriod();
-		QCOMPARE(frozenPassLengths(audio, track).size(), std::size_t{8});
-		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
-		QTest::qWait(130);
-	}
 
 	//! Cluster 5127: the click and frozen reserves stay separate and both capacities report overflow.
 	void voicePoolCapacityIsPartitionedAndCounted()
@@ -475,14 +450,16 @@ private slots:
 		{
 			const int sourceIn = static_cast<int>(std::llround(passTicks[i] * Engine::framesPerTick(source->sampleRate())));
 			pooled[i] = audio->acquirePooledSampleVoice(source, sourceIn, static_cast<int>(source->size()),
-				1.0f, -1, nullptr, false);
+				1.0f, 0, nullptr, false);
 			QVERIFY(pooled[i] != nullptr);
-			QVERIFY(audio->addPlayHandle(pooled[i]));
+			pooled[i]->doProcessing();
+			pooled[i]->audioBusHandle()->addPlayHandle(pooled[i]);
 		}
-		renderPeriod();
-		const auto pooledPeriod = renderPeriod();
-		const std::vector<SampleFrame> pooledMix(pooledPeriod.begin(), pooledPeriod.end());
-		for (SamplePlayHandle* voice : pooled) { audio->removePlayHandle(voice); }
+		pooled[0]->audioBusHandle()->doProcessing();
+		const auto mixedPoolBus = pooled[0]->audioBusHandle()->buffer();
+		const std::vector<SampleFrame> pooledMix(mixedPoolBus.begin(), mixedPoolBus.end());
+		for (SamplePlayHandle* voice : pooled) { voice->audioBusHandle()->removePlayHandle(voice); }
+		for (SamplePlayHandle* voice : pooled) { audio->recyclePooledSampleVoice(voice, false); }
 		QTest::qWait(130);
 
 		std::array<SamplePlayHandle*, 2> legacy{};
@@ -493,17 +470,27 @@ private slots:
 			sample->setStartFrame(sourceIn);
 			sample->setEndFrame(static_cast<int>(source->size()));
 			legacy[i] = new SamplePlayHandle(sample);
-			legacy[i]->setOffset(-1);
-			QVERIFY(audio->addPlayHandle(legacy[i]));
+			legacy[i]->setOffset(0);
+			legacy[i]->doProcessing();
+			legacy[i]->audioBusHandle()->addPlayHandle(legacy[i]);
 		}
-		renderPeriod();
-		const auto legacyPeriod = renderPeriod();
-		const std::vector<SampleFrame> legacyMix(legacyPeriod.begin(), legacyPeriod.end());
+		std::vector<SampleFrame> legacyMix(audio->framesPerPeriod(), SampleFrame{});
+		for (SamplePlayHandle* voice : legacy)
+		{
+			voice->audioBusHandle()->doProcessing();
+			const auto bus = voice->audioBusHandle()->buffer();
+			for (std::size_t frame = 0; frame < legacyMix.size(); ++frame)
+			{
+				legacyMix[frame][0] += bus[frame][0];
+				legacyMix[frame][1] += bus[frame][1];
+			}
+		}
 		const double difference = maxMixDifference(pooledMix, legacyMix);
 		QVERIFY2(difference <= 1.0e-6, qPrintable(QStringLiteral("overlap mix error %1").arg(difference, 0, 'g', 17)));
-		for (SamplePlayHandle* voice : legacy) { audio->removePlayHandle(voice); }
+		for (SamplePlayHandle* voice : legacy) { voice->audioBusHandle()->removePlayHandle(voice); delete voice; }
 		QTest::qWait(130);
 	}
+
 };
 
 QTEST_GUILESS_MAIN(FrozenTakeHandoffTest)

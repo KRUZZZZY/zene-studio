@@ -465,7 +465,10 @@ protected:
 private:
 	//! AudioEngine calls this exactly once when a pooled frozen voice leaves its active ownership set.
 	void frozenVoiceFinished() noexcept;
+	//! Control-thread update: reserve the required overlapping pass allowance without render allocation.
+	void updateFrozenVoiceCapacity(bool loopEnabled, tick_t loopBegin, tick_t loopEnd) noexcept;
 	friend class AudioEngine;
+	friend class Song;
 
 	bool m_mutedBeforeSolo;
 
@@ -496,7 +499,9 @@ private:
 	FrozenTake m_frozen;
 	std::shared_ptr<const SampleBuffer> m_frozenBuffer;
 	std::atomic<bool> m_frozenTakePlaying{false};
-	std::atomic<std::uint8_t> m_frozenActiveVoiceCount{0};
+	std::atomic<std::uint16_t> m_frozenActiveVoiceCount{0};
+	//! The control thread grows this logical pool limit from the take/loop overlap bound.
+	std::atomic<std::uint16_t> m_frozenVoiceCapacity{8};
 	//! Control-thread only: subscribeFrozenTakeSignals() runs once per track.
 	bool m_frozenSignalsConnected = false;
 

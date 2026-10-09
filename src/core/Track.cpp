@@ -314,11 +314,33 @@ void Track::subscribeFrozenTakeSignals()
 
 void Track::frozenVoiceFinished() noexcept
 {
-	std::uint8_t active = m_frozenActiveVoiceCount.load(std::memory_order_relaxed);
+	std::uint16_t active = m_frozenActiveVoiceCount.load(std::memory_order_relaxed);
 	while (active > 0 && !m_frozenActiveVoiceCount.compare_exchange_weak(
-		active, static_cast<std::uint8_t>(active - 1), std::memory_order_relaxed))
+		active, static_cast<std::uint16_t>(active - 1), std::memory_order_relaxed))
 	{
 	}
+}
+
+
+
+void Track::updateFrozenVoiceCapacity(bool loopEnabled, tick_t loopBegin, tick_t loopEnd) noexcept
+{
+	// Preserve the former eight-pass allowance for seeks and re-entries when
+	// looping is disabled; short loops can require a larger derived allowance.
+	std::uint16_t capacity = 8;
+	if (m_frozen.isFrozen() && m_frozen.endTicks > m_frozen.startTicks && loopEnabled && loopEnd > loopBegin
+		&& loopEnd > m_frozen.startTicks && loopBegin < m_frozen.endTicks)
+	{
+		// A pass may start at take start before the loop is first reached, then
+		// one starts on every loop. Use the full take duration for the bound so
+		// the first pass is included even when the loop starts near take end.
+		const auto takeTicks = static_cast<std::uint64_t>(m_frozen.endTicks - m_frozen.startTicks);
+		const auto loopTicks = static_cast<std::uint64_t>(loopEnd - loopBegin);
+		const auto required = std::max<std::uint64_t>(8, (takeTicks - 1) / loopTicks + 1);
+		capacity = static_cast<std::uint16_t>(std::min<std::uint64_t>(required,
+			AudioEngine::FrozenSampleVoicePoolCapacity));
+	}
+	m_frozenVoiceCapacity.store(capacity, std::memory_order_relaxed);
 }
 
 void Track::setId(int id)
@@ -338,6 +360,13 @@ void Track::setId(int id)
  */
 Track::~Track()
 {
+	// Frozen sample voices retain this Track only for cancellation/accounting.
+	// Remove them under the engine change lock before the base Track state dies;
+	// the main-thread recycler clears the association before returning each slot.
+	if (AudioEngine* const audio = Engine::audioEngine())
+	{
+		audio->removePlayHandlesOfTypes(this, PlayHandle::Type::SamplePlayHandle);
+	}
 	lock();
 	// Unlink from the folder FIRST, before the signal: TrackView closes itself
 	// from destroyedTrack(), so a slot that runs there must not be able to reach
@@ -1143,6 +1172,8 @@ bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 	m_frozen.mutedClips = mutedClips;
 	m_frozenBuffer = buffer;
 	m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+	updateFrozenVoiceCapacity(timeline.loopEnabled(), timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
 	return true;
 }
 
@@ -1175,6 +1206,7 @@ void Track::clearFrozenTake()
 	m_frozen = FrozenTake{};
 	m_frozenBuffer.reset();
 	m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+	m_frozenVoiceCapacity.store(8, std::memory_order_relaxed);
 }
 
 
@@ -1200,6 +1232,8 @@ void Track::loadFrozenTake(const QDomElement& element)
 	// clips it is still reading.
 	subscribeFrozenTakeSignals();
 	m_frozenBuffer = SampleBuffer::fromFile(m_frozen.path);
+	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+	updateFrozenVoiceCapacity(timeline.loopEnabled(), timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
 }
 
 
@@ -1244,12 +1278,13 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 		return false;
 	}
 
-	std::uint8_t active = m_frozenActiveVoiceCount.load(std::memory_order_relaxed);
-	while (active < 8 && !m_frozenActiveVoiceCount.compare_exchange_weak(
-		active, static_cast<std::uint8_t>(active + 1), std::memory_order_relaxed))
+	std::uint16_t active = m_frozenActiveVoiceCount.load(std::memory_order_relaxed);
+	const std::uint16_t capacity = m_frozenVoiceCapacity.load(std::memory_order_relaxed);
+	while (active < capacity && !m_frozenActiveVoiceCount.compare_exchange_weak(
+		active, static_cast<std::uint16_t>(active + 1), std::memory_order_relaxed))
 	{
 	}
-	if (active >= 8)
+	if (active >= capacity)
 	{
 		Engine::audioEngine()->recordSampleVoiceOverflow();
 		return false;

@@ -1849,4 +1849,16 @@ src/core/Track.cpp	Cluster 5414: replace per-pass Sample/handle/bus allocation w
 src/core/Metronome.cpp	Cluster 5127: skip when the reserved voice pool is empty instead of passing a null click handle to AudioEngine.
 src/core/ControlCommandsControl.cpp	Clusters 5127/5414: add stable sample voice overflow and queue-invariant counters to control.ping's audio object.
 tests/src/core/FrozenTakeHandoffTest.cpp	Clusters 5127/5414: allocation-probe pooled click scheduling and completion, assert independent overlapping frozen windows, eight-pass refusal, reserved click capacity, and zero queue invariant failures.
+
+include/AudioEngine.h	voice-pool round 2: expose the fixed 32-click and 480-frozen slot capacities so per-track overlap limits share the preallocated engine pool.
+include/SamplePlayHandle.h	voice-pool round 2: exempt identified pooled slots from construction-thread affinity so callbacks/workers can render and retire them; ordinary handles retain their existing affinity.
+include/Song.h	voice-pool round 2: declare the control-thread recomputation for each frozen track's loop-overlap allowance.
+include/Timeline.h	voice-pool round 2: add loopPointsChanged so loop-bound edits trigger frozen capacity recomputation.
+include/Track.h	voice-pool round 2: store the atomic logical allowance and control-side updater, preserving the eight-pass baseline and growing to the full-take/loop bound.
+src/core/AudioEngine.cpp	voice-pool round 2: define the backing partitions as 32 metronome and 480 frozen voices; slots remain fixed and preconstructed.
+src/core/Song.cpp	voice-pool round 2: recompute frozen allowances under the engine change guard on the Song thread after loop edits and before playback.
+src/core/Timeline.cpp	voice-pool round 2: emit loopPointsChanged when normalized loop points change; loop rendering values remain unchanged.
+src/core/Track.cpp	voice-pool round 2: cancel all associated sample voices under the engine change lock before Track teardown; derive the allowance from full take length / loop length, cap at 480, and count excess passes.
+tests/CMakeLists.txt	voice-pool round 2: register FrozenTakeRoundTwoTest beside FrozenTakeHandoffTest; no existing test properties change.
+tests/src/core/FrozenTakeHandoffTest.cpp	voice-pool round 2: compare shared and legacy bus buffers from the same render stage (the returned master buffer is one period delayed); move added lifecycle/capacity cases into FrozenTakeRoundTwoTest to keep both sources under 500 lines.
 tests/src/core/ControlRegistryTest.cpp	Clusters 5127/5414: assert control.ping publishes sample voice exhaustion and queue-invariant fields.
