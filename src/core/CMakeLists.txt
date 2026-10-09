@@ -1121,8 +1121,10 @@ set(LMMS_SRCS
 	core/BrowserFeatures.cpp
 	# 0.5.0 L12 (W3): the render queue, batch conversion and the task list; flattening a track.
 	core/ControlCommandsRenderQueue.cpp
+	core/ControlCommandsRenderBounce.cpp
 	core/ControlCommandsTrackFlatten.cpp
 	core/RenderQueue.cpp
+	core/RenderQueueBounce.cpp
 	core/ControlCommandsSubprojects.cpp
 	core/ControlCommandsAlternatives.cpp
 	core/ControlTrackCreation.cpp

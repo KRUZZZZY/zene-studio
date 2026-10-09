@@ -43,7 +43,6 @@
 #include "BounceInPlace.h"
 #include "ControlExportPresetSupport.h"
 #include "ControlMeterSupport.h"
-#include "ControlRegistry.h"
 #include "SampleBuffer.h"
 #include "SampleBufferResample.h"
 #include "SampleDecoder.h"
@@ -202,6 +201,14 @@ void endJob(RenderJob* job, bool ok, int exitCode, QString error)
 QString taskTitle(const RenderJob& job)
 {
 	const QString name = QFileInfo(job.out).fileName();
+	if (job.kind == RenderJob::Kind::Bounce)
+	{
+		const QString title = job.operation == QLatin1String("freeze_track") || job.operation == QLatin1String("freeze_region")
+			? QObject::tr("Freeze") : job.operation == QLatin1String("bounce_land") ? QObject::tr("Bounce to track")
+			: job.operation == QLatin1String("flatten") ? QObject::tr("Flatten")
+			: job.operation == QLatin1String("range_bounce") ? QObject::tr("Range bounce") : QObject::tr("Bounce");
+		return QObject::tr("%1 %2").arg(title, name);
+	}
 	return job.kind == RenderJob::Kind::Render ? QObject::tr("Render %1").arg(name) : QObject::tr("Convert %1").arg(name);
 }
 
@@ -222,6 +229,7 @@ RenderQueue& RenderQueue::instance()
 
 QString RenderQueue::kindName(RenderJob::Kind kind)
 {
+	if (kind == RenderJob::Kind::Bounce) { return QStringLiteral("bounce"); }
 	return kind == RenderJob::Kind::Render ? QStringLiteral("render") : QStringLiteral("convert");
 }
 
@@ -234,9 +242,10 @@ QString RenderQueue::stateName(RenderJob::State state)
 
 int RenderQueue::add(RenderJob job)
 {
-	if (static_cast<int>(m_jobs.size()) >= MaxJobs) { return -1; }
+	if (!hasCapacity()) { ++m_capacityRefusals; return -1; }
 	job.id = m_nextId++;
 	job.state = RenderJob::State::Queued;
+	job.phase = QStringLiteral("queued");
 	job.queuedMs = now();
 	if (job.kind == RenderJob::Kind::Render) { job.settings = ControlExportPresetSettings::effective(); }
 	m_jobs.push_back(job);
@@ -267,10 +276,13 @@ void RenderQueue::next()
 	const auto queued = std::find_if(m_jobs.begin(), m_jobs.end(), [](const RenderJob& j) { return j.state == RenderJob::State::Queued; });
 	if (queued == m_jobs.end()) { return; }
 	queued->state = RenderJob::State::Running;
+	queued->phase = queued->kind == RenderJob::Kind::Bounce ? QStringLiteral("starting") : QStringLiteral("running");
 	queued->startedMs = now();
 	m_current = queued->id;
-	TaskCenter::instance().progress(this, queued->id, -1.0);  // running: a child render cannot say how far it is
+	TaskCenter::instance().progress(this, queued->id, -1.0,
+		queued->kind == RenderJob::Kind::Bounce ? tr("Starting render") : QString());
 	if (queued->kind == RenderJob::Kind::Render) { runRender(*queued); }
+	else if (queued->kind == RenderJob::Kind::Bounce) { runBounce(*queued); }
 	else { runConvert(*queued); }
 }
 
@@ -314,6 +326,9 @@ void RenderQueue::finish(int id, bool ok, int exitCode, const QString& error)
 	if (job != nullptr)
 	{
 		endJob(job, ok, exitCode, error);
+		job->progress = job->state == RenderJob::State::Done ? 1.0 : job->progress;
+		job->phase = job->state == RenderJob::State::Done ? QStringLiteral("done")
+			: job->state == RenderJob::State::Cancelled ? QStringLiteral("cancelled") : QStringLiteral("failed");
 		TaskCenter::instance().finish(this, id, taskState(job->state), job->error);
 	}
 	if (m_process != nullptr)
@@ -321,8 +336,7 @@ void RenderQueue::finish(int id, bool ok, int exitCode, const QString& error)
 		m_process->deleteLater();
 		m_process = nullptr;
 	}
-	if (m_current == id) { m_current = -1; }
-	QTimer::singleShot(0, this, &RenderQueue::next);
+	releaseCurrent(id);
 }
 
 bool RenderQueue::cancel(int id)
@@ -332,13 +346,26 @@ bool RenderQueue::cancel(int id)
 	const bool running = job->state == RenderJob::State::Running;
 	job->state = RenderJob::State::Cancelled;
 	job->finishedMs = now();
-	if (!running && job->ownsSource) { QFile::remove(job->source); }
-	if (!running) { TaskCenter::instance().finish(this, id, TaskState::Cancelled); }  // a running one ends in finish()
+	job->phase = running && job->kind == RenderJob::Kind::Bounce
+		? QStringLiteral("cancelling") : QStringLiteral("cancelled");
+	if (!running) { cancelQueued(*job); return true; }
 	// A running render's process is stopped: its finished signal then ends the job (finish() sees it
 	// cancelled and removes what it wrote). A running conversion completes on its worker and is then
 	// dropped the same way, its staged file never moved into place (review L17 #1, #2).
-	if (running && m_process != nullptr) { m_process->kill(); }
+	if (m_process != nullptr) { m_process->kill(); }
 	return true;
+}
+
+void RenderQueue::cancelQueued(RenderJob& job)
+{
+	if (job.ownsSource) { QFile::remove(job.source); }
+	if (job.kind == RenderJob::Kind::Bounce)
+	{
+		BounceInPlace::discardPreparedRender(&job.bounce);
+		job.validateBounce = {};
+		job.applyBounce = {};
+	}
+	TaskCenter::instance().finish(this, job.id, TaskState::Cancelled);
 }
 
 int RenderQueue::clearFinished()

@@ -36,6 +36,7 @@
 #include "ControlStructuralSupport.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
+#include "RenderQueue.h"
 #include "Song.h"
 #include "UndoHistory.h"
 #include "lmmsversion.h"
@@ -101,6 +102,8 @@ QJsonObject pingResult()
 	result.insert(QStringLiteral("engine_ready"), state.ready);
 	result.insert(QStringLiteral("version"), QString::fromUtf8(LMMS_VERSION));
 	result.insert(QStringLiteral("proto"), ControlProtocolVersion);
+	result.insert(QStringLiteral("render_queue_capacity_refusals"),
+		static_cast<double>(RenderQueue::instance().capacityRefusals()));
 	if (!state.ready)
 	{
 		QJsonObject reason;
@@ -156,7 +159,7 @@ void registerPingCommand(ControlRegistry& registry)
 	cmd.group = QStringLiteral("control");
 	cmd.verb = QStringLiteral("ping");
 	cmd.description = QStringLiteral("Liveness probe; also reports whether the engine is addressable "
-		"yet, and why not when it is not.");
+		"yet, why not when it is not, and how many render jobs were refused at the bounded queue capacity.");
 	cmd.requiresEngine = false;
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({
@@ -164,6 +167,7 @@ void registerPingCommand(ControlRegistry& registry)
 		{QStringLiteral("engine_ready"), booleanProperty()},
 		{QStringLiteral("version"), stringProperty()},
 		{QStringLiteral("proto"), integerProperty()},
+		{QStringLiteral("render_queue_capacity_refusals"), integerProperty()},
 		// present only while engine_ready is false: {code, message}
 		{QStringLiteral("reason"), objectProperty()},
 		// always present: the device actually in use and whether it makes sound

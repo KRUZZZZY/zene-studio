@@ -278,7 +278,8 @@ void registerBounceInPlace(ControlRegistry& registry)
 		"whole track. The session is NOT modified: the render runs in a child process against a "
 		"serialised copy with every other track muted, so nothing in this instance changes and "
 		"nothing is journalled. The track menu's Bounce in place runs it; bounce.land is the verb "
-		"that also puts the render on a new audio track.");
+		"that also puts the render on a new audio track. This command keeps its synchronous result "
+		"contract for compatibility; use render.queue_bounce for a cancellable background job.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("track"), stringProperty()},
 		{QStringLiteral("out"), stringProperty()},
@@ -313,7 +314,8 @@ void registerFreezeTrack(ControlRegistry& registry)
 		"carries the track's devices, fader, pan and sends, so it is summed at the mix level and "
 		"not through the track's chain a second time, and the track's volume and effects controls "
 		"are inert until freeze.unfreeze. The state is saved with the project and one control.undo "
-		"takes it off (Track checkpoint). Reversible through the ProjectJournal.");
+		"takes it off (Track checkpoint). Reversible through the ProjectJournal. This command keeps "
+		"its synchronous result contract for compatibility; use render.queue_bounce for a cancellable job.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("track"), stringProperty()},
 		{QStringLiteral("out"), stringProperty()},
@@ -351,7 +353,8 @@ void registerFreezeRegion(ControlRegistry& registry)
 		"and nothing else); a clip that starts before the region and runs into it is left alone "
 		"and named in 'overlapping_clips', because muting it would silence audio outside the "
 		"region - that clip sounds twice inside the region (docs/KNOWN-LIMITATIONS.md). "
-		"Reversible through the ProjectJournal (Track checkpoint).");
+		"Reversible through the ProjectJournal (Track checkpoint). This command keeps its synchronous "
+		"result contract for compatibility; use render.queue_bounce for a cancellable job.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("track"), stringProperty()},
 		{QStringLiteral("start"), integerProperty()},

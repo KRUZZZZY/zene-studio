@@ -85,6 +85,8 @@ const ReversibilityRow kW3LibraryRows[] = {
 	// L12 (WF-040 / WF-046 / ED-207 / WF-042): the render queue, the task list, flattening, copying between projects.
 	R("render.queue_add", RC::NotMutating, false, "it queues a render: the job writes an OUTPUT ARTEFACT from a snapshot of the "
 		"session (or another file), as render.render does; the session is not modified", "no write to the project", ""),
+	R("render.queue_bounce", RC::TrueInverse, true, "it queues an asynchronous render; a completed freeze, land, flatten or range bounce "
+		"records one ProjectJournal step, while a stale target is refused", "the completed job's single journal step (control.undo)", ""),
 	R("render.convert", RC::NotMutating, false, "it queues conversions of audio files into new files; the sources and the "
 		"project are not modified", "no write to the project", ""),
 	R("render.queue_list", RC::NotMutating, false, "it reads the render queue. Nothing is written", "no write", ""),

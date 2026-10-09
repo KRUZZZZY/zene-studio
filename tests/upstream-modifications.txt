@@ -1832,3 +1832,17 @@ src/core/ControlCommandsControl.cpp	5467 round 3: include engine-list, bus-edit 
 tests/src/core/AudioBusPlayHandleQueueTest.cpp	5467 round 3: prove full-capacity appends do not grow the QList, main-thread low-water refill, allocation-free inline fallback, and worker subnote output with the edit queue full; round 4: exercise a capacity-deferred engine handle through clear, direct and queued remove, type removal, and SampleTrack destruction, checking allocation count, destruction, retry, and playback.
 tests/src/core/ControlRegistryTest.cpp	5467 round 3: assert control.ping exposes the play-handle overflow fields.
 tests/src/core/ModulationAudioViewTest.cpp	0.5.0 M0 blockers 5173/5186: pauses an audio modulation write inside dataChanged, deletes its model on another thread, and asserts teardown waits for the in-flight write (red against the token-only implementation).
+include/BounceInPlace.h	cluster 917, 2026-10-09: declare immutable async render inputs and staged-output lifecycle helpers.
+include/ControlRegistry.h	cluster 917, 2026-10-09: expose the control-registry completion hook for edits recorded after an async ACK.
+include/RenderQueue.h	cluster 917, 2026-10-09: carry bounce jobs, target ids, progress, and main-thread completion callbacks.
+include/TrackRenderMenu.h	cluster 917, 2026-10-09: route the track render menu through the asynchronous queue.
+src/core/BounceInPlace.cpp	cluster 917, 2026-10-09: split render preparation/finalization and preserve the synchronous compatibility path.
+src/core/ControlCommandsBounceLand.cpp	cluster 917, 2026-10-09: document the synchronous compatibility verb and async queue path.
+src/core/ControlCommandsFreeze.cpp	cluster 917, 2026-10-09: document the synchronous compatibility verbs and async queue path.
+src/core/ControlCommandsRangeBounce.cpp	cluster 917, 2026-10-09: document the synchronous compatibility verb and async queue path.
+src/core/ControlCommandsRenderQueue.cpp	cluster 917, 2026-10-09: report bounce state/phase/targets, task progress, and register the queue command.
+src/core/ControlCommandsTrackFlatten.cpp	cluster 917, 2026-10-09: document the synchronous compatibility verb and async queue path.
+src/core/ControlReversibilityTableW3Library.cpp	cluster 917, 2026-10-09: classify completed async bounce edits as one journal-backed undo step.
+src/core/ControlTransactions.cpp	cluster 917, 2026-10-09: record completed async edits in bounded transaction history and provenance.
+src/core/RenderQueue.cpp	cluster 917, 2026-10-09: queue renders and conversions asynchronously with worker finalization, cancellation, and reports.
+src/gui/TrackRenderMenu.cpp	cluster 917, 2026-10-09: enqueue bounce/freeze and expose cancellation through the task indicator.

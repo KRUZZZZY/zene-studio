@@ -52,6 +52,8 @@
 namespace lmms
 {
 
+void registerRenderBounceCommand(ControlRegistry& registry);
+
 using namespace control;
 
 namespace
@@ -61,10 +63,15 @@ RenderQueue& queue() { return RenderQueue::instance(); }
 
 QJsonObject jobJson(const RenderJob& job)
 {
+	QJsonArray targetIds;
+	for (const int id : job.targetIds) { targetIds.append(id); }
 	return {{QStringLiteral("job"), job.id}, {QStringLiteral("kind"), RenderQueue::kindName(job.kind)},
 		{QStringLiteral("state"), RenderQueue::stateName(job.state)}, {QStringLiteral("source"), job.source}, {QStringLiteral("out"), job.out},
+		{QStringLiteral("operation"), job.operation}, {QStringLiteral("target_ids"), targetIds},
+		{QStringLiteral("phase"), job.phase}, {QStringLiteral("progress"), job.progress},
 		{QStringLiteral("format"), job.format}, {QStringLiteral("error"), job.error}, {QStringLiteral("exit_code"), job.exitCode},
-		{QStringLiteral("queued_ms"), static_cast<double>(job.queuedMs)}, {QStringLiteral("finished_ms"), static_cast<double>(job.finishedMs)},
+		{QStringLiteral("queued_ms"), static_cast<double>(job.queuedMs)}, {QStringLiteral("started_ms"), static_cast<double>(job.startedMs)},
+		{QStringLiteral("finished_ms"), static_cast<double>(job.finishedMs)},
 		{QStringLiteral("report"), job.report}};
 }
 
@@ -205,7 +212,8 @@ ControlResult queueList(const QJsonObject&)
 		open += job.state == RenderJob::State::Queued || job.state == RenderJob::State::Running ? 1 : 0;
 	}
 	return ControlResult::success({{QStringLiteral("jobs"), jobs}, {QStringLiteral("open"), open}, {QStringLiteral("running"), queue().isRunning()},
-		{QStringLiteral("limit"), RenderQueue::MaxJobs}});
+		{QStringLiteral("limit"), RenderQueue::MaxJobs},
+		{QStringLiteral("capacity_refusals"), static_cast<double>(queue().capacityRefusals())}});
 }
 
 ControlResult queueCancel(const QJsonObject& args)
@@ -248,6 +256,13 @@ void addStemTasks(QJsonArray* tasks)
 	}
 }
 
+double renderTaskProgress(const RenderJob& job)
+{
+	if (job.state == RenderJob::State::Done) { return 1.0; }
+	if (job.state == RenderJob::State::Queued) { return 0.0; }
+	return job.kind == RenderJob::Kind::Bounce ? job.progress : 0.0;
+}
+
 ControlResult tasks(const QJsonObject& args)
 {
 	const bool activeOnly = args.value(QStringLiteral("active_only")).toBool(false);
@@ -255,7 +270,7 @@ ControlResult tasks(const QJsonObject& args)
 	for (const RenderJob& job : queue().jobs())
 	{
 		all.append(task(QStringLiteral("render-%1").arg(job.id), RenderQueue::kindName(job.kind), RenderQueue::stateName(job.state), job.out,
-			job.state == RenderJob::State::Done ? 1.0 : 0.0));
+			renderTaskProgress(job)));
 	}
 	const BrowserIndex::Status scan = BrowserIndex::instance().status();
 	if (scan.running) { all.append(task(QStringLiteral("library-scan"), QStringLiteral("library_scan"), QStringLiteral("running"),
@@ -318,21 +333,22 @@ void registerRenderQueueCommands(ControlRegistry& registry)
 			{QStringLiteral("format"), enumProperty({QStringLiteral("wav"), QStringLiteral("flac")})},
 			{QStringLiteral("sample_rate"), integerProperty(8000, 192000)}, {QStringLiteral("bit_depth"), integerProperty(16, 32)}},
 		{QStringLiteral("files"), QStringLiteral("out_dir")}, convertFiles);
-	add(registry, "render.queue_list", QStringLiteral("The render queue: every job (render or convert), its state (queued, running, "
-		"done, failed, cancelled), its file and, once done, its report."), {}, {}, queueList);
+	add(registry, "render.queue_list", QStringLiteral("The render queue: every job (render, convert or bounce), its state and phase, "
+		"bounce progress when known, target ids, file and, once done, its report."), {}, {}, queueList);
 	add(registry, "render.queue_cancel", QStringLiteral("Cancel render-queue job 'job' (or every open job with 'all'): a queued one "
 		"is dropped, a running render is stopped."),
 		{{QStringLiteral("job"), integerProperty()}, {QStringLiteral("all"), booleanProperty()}}, {}, queueCancel);
 	add(registry, "render.queue_clear", QStringLiteral("Remove the jobs that have ended from the render queue."), {}, {},
 		[](const QJsonObject&) { return ControlResult::success({{QStringLiteral("removed"), queue().clearFinished()}}); });
-	add(registry, "render.queue_report", QStringLiteral("One render-queue job with its report: bytes, sha256, seconds taken and the "
-		"loudness meter's reading of the file (meter.measure_file's payload)."),
+	add(registry, "render.queue_report", QStringLiteral("One render-queue job's current state, phase, progress and target ids, or its terminal "
+		"report: bytes, sha256, seconds taken and the loudness meter's reading of the file (meter.measure_file's payload)."),
 		{{QStringLiteral("job"), integerProperty()}}, {QStringLiteral("job")}, queueReport);
 	add(registry, "app.tasks", QStringLiteral("Every background task in one list - render-queue jobs, the library scan, stem "
 		"separation jobs and auto-mastering - each with an id, kind, state, label and progress (0..1 where it is known); "
 		"'active_only' keeps the queued and running ones."), {{QStringLiteral("active_only"), booleanProperty()}}, {}, tasks);
 	add(registry, "app.task_cancel", QStringLiteral("Cancel background task 'id' (as app.tasks lists it): a render-queue job, the "
 		"library scan or a stem separation job."), {{QStringLiteral("id"), stringProperty()}}, {QStringLiteral("id")}, taskCancel);
+	registerRenderBounceCommand(registry);
 }
 
 } // namespace lmms

@@ -54,12 +54,28 @@ ControlResult runBusy(const QString& title, const QString& command, const QJsonO
 	return result;
 }
 
+//! The two rendering actions enter the cancellable render queue; the task area follows the job after this returns.
+void queueTrackRender(const QString& title, const QString& command, const QString& trackId)
+{
+	const QString operation = command == QLatin1String("freeze.track")
+		? QStringLiteral("freeze_track") : QStringLiteral("bounce");
+	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("render.queue_bounce"),
+		{{QStringLiteral("operation"), operation}, {QStringLiteral("track"), trackId}});
+	if (result.ok) { return; }
+	if (isUnattendedRun()) { qWarning("%s refused: %s", qPrintable(command), qPrintable(result.errorMessage)); }
+	else { QMessageBox::warning(QApplication::activeWindow(), title, result.errorMessage); }
+}
+
 QAction* item(QMenu* menu, const QString& text, const QString& command, const QString& trackId)
 {
 	QAction* action = menu->addAction(text);
 	action->setData(command);
 	QObject::connect(action, &QAction::triggered, menu, [text, command, trackId] {
-		runBusy(text, command, {{QStringLiteral("track"), trackId}});
+		if (command == QLatin1String("bounce.in_place") || command == QLatin1String("freeze.track"))
+		{
+			queueTrackRender(text, command, trackId);
+		}
+		else { runBusy(text, command, {{QStringLiteral("track"), trackId}}); }
 	});
 	return action;
 }
