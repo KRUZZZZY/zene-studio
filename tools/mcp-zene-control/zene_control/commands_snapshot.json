@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-08T19:52:43Z",
+  "captured_at": "2026-10-09T03:48:31Z",
   "commands": [
     {
       "args_schema": {
@@ -7238,7 +7238,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Undo the last agent command: the engine's own ProjectJournal step it recorded (the same stack the GUI's Ctrl+Z unwinds), or the recorded inverse command when the change is file-level. If the last recorded command has no inverse, this FAILS with the typed 'irreversible' error and names the documented fallback instead of undoing an older command. One call unwinds ONE undo STEP, and one step is one command EXCEPT under the coalescing rule (docs/UNDO-BOUNDS.md): a run of the same command on the same target inside the window - reads in between do not break it - is one step, so the reply's 'undone_commands' is 1 normally and more for a merged span. Set the window to 0 (control.set_undo_coalescing) for strict one-command-per-call granularity.",
+      "description": "Undo the last agent command: the engine's own ProjectJournal step it recorded (the same stack the GUI's Ctrl+Z unwinds), or the recorded inverse command when the change is file-level. If the last recorded command has no inverse, this FAILS with the typed 'irreversible' error and names the documented fallback instead of undoing an older command. One call unwinds ONE undo STEP, and one step is one command EXCEPT under the coalescing rule (docs/UNDO-BOUNDS.md): a run of the same command on the same target inside the window - reads in between do not break it - is one step, so the reply's 'undone_commands' is 1 normally and more for a merged span. Set the window to 0 (control.set_undo_coalescing) for strict one-command-per-call granularity. If the journal's top step has no matching transaction record, the reply identifies it as 'unrecorded edit' and includes its step_serial; transaction history is left intact.",
       "group": "control",
       "id": "control.undo",
       "mutating": false,
@@ -7267,6 +7267,9 @@
           "restored_by": {
             "type": "string"
           },
+          "step_serial": {
+            "type": "number"
+          },
           "undone": {
             "type": "boolean"
           },
@@ -7275,6 +7278,9 @@
           },
           "undone_commands": {
             "type": "integer"
+          },
+          "unrecorded_edit": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -8236,7 +8242,7 @@
         ],
         "type": "object"
       },
-      "description": "Read a .dawproject container's model WITHOUT touching the session: the format version the file declares, the application that wrote it, every track with its clips and notes, the tempo and time-signature timelines, the mixer strips, the entries the container carries that this module does not use, and the model's printable digest - what makes a round trip checkable against the FILE and the MODEL rather than a hash. A file that is not a ZIP, has no project.xml entry, declares another major format version, or carries a value the engine will not accept is a typed refusal.",
+      "description": "Read a .dawproject container's model WITHOUT touching the session: the format version the file declares, the application that wrote it, every track with its clips and notes, the tempo and time-signature timelines, the mixer strips, the entries the container carries that this module does not use, and the model's printable digest - what makes a round trip checkable against the FILE and the MODEL rather than a hash. Import accepts ZIP entries using STORE (method 0); DEFLATE (method 8) is refused. A file that is not a ZIP, has no project.xml entry, declares another major format version, or carries a value the engine will not accept is a typed refusal.",
       "group": "dawproject",
       "id": "dawproject.read",
       "mutating": false,
@@ -22239,6 +22245,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "clip_takes": {
+            "type": "object"
+          },
           "input": {
             "type": "object"
           },
@@ -25376,7 +25385,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Land the recorded performance: pair every recorded launch with the stop that ended it and create ONE arrangement clip per pair on that column's song track, at the recorded ticks. REFUSED - consuming nothing - while any recorded start is still open, because a half-landed performance would lose starts or invent their ends; stop the session first (session.stop_all, or session.back_to_arrangement). Reversible: one Track journal checkpoint per touched track, so one control.undo takes the whole pass back. The clip's CONTENT is not copied from the session slot (there is no session-clip playback path in 0.3.0): the reply names the slot's pattern reference per clip.",
+      "description": "Land the recorded performance: pair every recorded launch with the stop that ended it and create ONE arrangement clip per pair on that column's song track, at the recorded ticks. REFUSED - consuming nothing - while any recorded start is still open, because a half-landed performance would lose starts or invent their ends; stop the session first (session.stop_all, or session.back_to_arrangement). Also REFUSED without consuming anything when a paired session slot contains MIDI or audio content, because this build cannot copy it into the arrangement clip. Reversible: one Track journal checkpoint per touched track, so one control.undo takes the whole pass back.",
       "group": "session",
       "id": "session.arrangement_record_land",
       "mutating": true,
@@ -34680,11 +34689,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-notes/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-7q7_24do/zene.sock",
-    "version": "0.4.0-alpha.1174+08f0055"
+    "source_socket": "/tmp/zctl-run-bemamefl/zene.sock",
+    "version": "0.4.0-alpha.1349+ffe891c"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
