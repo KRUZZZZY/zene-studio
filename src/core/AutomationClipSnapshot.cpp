@@ -266,12 +266,12 @@ bool lastVirtualNode(const AutomationClipReadSnapshot& snapshot, const Automatio
 	bool found = !snapshot.nodes.empty();
 	if (found) { result = snapshot.nodes.back(); }
 	if (overlay == nullptr) { return found; }
-	if (overlay->hasBefore && (!found || overlay->before.tick > result.tick))
+	if (overlay->hasBefore && (!found || overlay->before.tick >= result.tick))
 	{
 		result = overlayNode(overlay->before);
 		found = true;
 	}
-	if (overlay->hasAfter && (!found || overlay->after.tick > result.tick))
+	if (overlay->hasAfter && (!found || overlay->after.tick >= result.tick))
 	{
 		result = overlayNode(overlay->after);
 		found = true;
@@ -394,7 +394,16 @@ void AutomationClip::publishReadSnapshot()
 bool AutomationClip::hasAutomation() const
 {
 	AutomationSnapshotReadScope read(m_readSnapshot);
-	return read.get() != nullptr && !read.get()->nodes.empty();
+	const auto* snapshot = read.get();
+	if (snapshot == nullptr) { return false; }
+	if (!snapshot->nodes.empty()) { return true; }
+	auto* song = Engine::getSong();
+	if (song == nullptr) { return false; }
+	AutomationRecordingQueue::Event before, after;
+	bool hasBefore = false, hasAfter = false;
+	song->pendingAutomationRecordBounds(static_cast<const JournallingObject&>(*this).id(),
+		snapshot->appliedSequences, TimePos(0), before, hasBefore, after, hasAfter);
+	return hasBefore || hasAfter;
 }
 
 

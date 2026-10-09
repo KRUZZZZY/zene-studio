@@ -77,3 +77,4 @@ src/core/Song.cpp	Song::enqueueAutomationRecord	audio producer dispatch to its p
 src/core/AutomationClipSnapshot.cpp	AutomationClip::recordingMapTime	lock-free conversion of clip-relative record time into its captured map-relative, quantized tick before queue insertion
 src/core/AutomationClipSnapshot.cpp	AutomationClip::valueAt	lock-free per-note and normal-automation reader, including the bounded pending-record overlay while the main thread has not drained the queue
 src/core/AutomationClipSnapshot.cpp	AutomationClip::writeBlockRamp	sample-accurate automation reader, including the bounded pending-record overlay while the main thread has not drained the queue
+src/core/AutomationClipSnapshot.cpp	AutomationClip::hasAutomation	audio-side fast path recognizes points waiting in bounded recording queues so value and ramp readers do not skip a clip with an empty published map

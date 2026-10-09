@@ -23,6 +23,8 @@
 #include "LmmsTypes.h"
 #include "TimePos.h"
 
+class AutomationRecordingTest;
+
 namespace lmms
 {
 
@@ -127,6 +129,17 @@ public:
 	std::uint64_t writeCursor() const noexcept { return m_writeCursor.load(std::memory_order_acquire); }
 
 private:
+	friend class ::AutomationRecordingTest;
+
+	bool copyEventAtSequence(std::uint64_t sequence, Event& event) const noexcept
+	{
+		const auto read = m_readCursor.load(std::memory_order_acquire);
+		const auto write = m_writeCursor.load(std::memory_order_acquire);
+		if (sequence <= read || sequence > write) { return false; }
+		event = m_events[(sequence - 1) & (Capacity - 1)];
+		return true;
+	}
+
 	static void updateBefore(const Event& candidate, std::uint64_t sequence, Event& before,
 		std::uint64_t& beforeSequence, bool& hasBefore) noexcept
 	{
