@@ -26,9 +26,7 @@
 #define LMMS_SAMPLE_CLIP_H
 
 #include <atomic>
-#include <functional>
 #include <memory>
-#include <optional>
 #include <span>
 #include <vector>
 
@@ -58,31 +56,6 @@ class SampleClipView;
 // WarpMarkers.h with the warp state itself (SPEC-ARCH-4 census row 5: warp is
 // native to the base clip); both names still reach this header through
 // Clip.h/WarpMarkers.h, so no caller of theirs changed.
-
-
-//! A clip's record flag as a journal object. The flag is not serialised with the clip, so the arm's undo
-//! step carries it through this object: the snapshot records the flag as it was before the arm, and a
-//! restore sets it back through the clip (see SampleClip::journalArmStep).
-class SampleRecordFlagState : public JournallingObject
-{
-public:
-	explicit SampleRecordFlagState(std::function<bool()> current, std::function<void(bool)> apply) :
-		m_current(std::move(current)),
-		m_apply(std::move(apply))
-	{
-	}
-
-	//! The value the next snapshot records, when set (the flag before an arm); otherwise the live flag.
-	std::optional<bool> snapshotValue;
-
-	QString nodeName() const override { return QStringLiteral("recordflag"); }
-	void saveSettings(QDomDocument& doc, QDomElement& element) override;
-	void loadSettings(const QDomElement& element) override;
-
-private:
-	std::function<bool()> m_current;
-	std::function<void(bool)> m_apply;
-};
 
 
 class SampleClip : public Clip
@@ -285,11 +258,8 @@ private:
 	std::atomic<std::uint64_t> m_lastTakeDroppedFrames{0};
 	//! Main thread: build the missing takes into m_preparedRecord / m_spareRecord.
 	void releaseRecordTakes();
-	//! Main thread, at the arm: one journal step covering the track and the record flag, taken with
-	//! the flag at its pre-arm value (the flag is not serialised, so the step carries it itself).
+	//! Main thread, at the arm: one journal step, a checkpoint of the track as it was before the arm.
 	void journalArmStep();
-	//! The arm's journal object for the record flag (see SampleRecordFlagState).
-	std::unique_ptr<SampleRecordFlagState> m_recordFlag;
 	//! Main thread: an armed clip's take on a new take lane.
 	void addRecordedLane(std::shared_ptr<const SampleBuffer> take);
 	//! See rubberBandPool(); never replaced once built.

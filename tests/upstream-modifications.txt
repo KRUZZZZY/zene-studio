@@ -1763,3 +1763,5 @@ include/SampleClip.h	docs/m0-blocker-fixes-2026-10-08 round 4: lastTakeDroppedFr
 src/core/SampleClip.cpp	docs/m0-blocker-fixes-2026-10-08 round 4: acceptRecordedTake stores the last take's drop count atomically
 include/SampleClip.h	docs/m0-blocker-fixes-2026-10-08 round 5: SampleRecordFlagState: the record flag as a journal object, so an arm is one undo step with the track's content
 src/core/SampleClip.cpp	docs/m0-blocker-fixes-2026-10-08 round 5: journalArmStep (one step for the track and the flag), the lane-creation suspension as an RAII guard, the record model no longer journals its own changes
+include/SampleClip.h	docs/m0-blocker-fixes-2026-10-08 round 7: the SampleRecordFlagState journal object of round 5 is removed (no observable effect: undo rebuilds the clip); the arm checkpoint is the track's again
+src/core/SampleClip.cpp	docs/m0-blocker-fixes-2026-10-08 round 7: round 5's flag object removed; the record model does not journal its own changes; the undo path's live-take guarantee documented at journalArmStep

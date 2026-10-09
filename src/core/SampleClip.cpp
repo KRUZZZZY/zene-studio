@@ -36,7 +36,6 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "PatternStore.h"
-#include "ProjectJournal.h"
 #include "PathUtil.h"
 #include "SampleClipView.h"
 #include "SampleRecordHandle.h"
@@ -79,11 +78,9 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	//care about Clip position
 	connect( this, SIGNAL(positionChanged()), this, SLOT(updateTrackClips()));
 
-	// The record flag is journalled by the arm's step (journalArmStep), not by the model itself.
+	// The record model does not journal its own changes: the arm's step (journalArmStep) does.
+	// Without this, the model's entry sits in front of the arm's step and a second undo does nothing.
 	m_recordModel.setJournalling( false );
-	m_recordFlag = std::make_unique<SampleRecordFlagState>(
-		[this] { return isRecord(); },
-		[this](bool armed) { if( isRecord() != armed ) { setRecord( armed ); } } );
 	updateTrackClips();
 }
 
@@ -129,11 +126,9 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	//care about Clip position
 	connect( this, SIGNAL(positionChanged()), this, SLOT(updateTrackClips()));
 
-	// The record flag is journalled by the arm's step (journalArmStep), not by the model itself.
+	// The record model does not journal its own changes: the arm's step (journalArmStep) does.
+	// Without this, the model's entry sits in front of the arm's step and a second undo does nothing.
 	m_recordModel.setJournalling( false );
-	m_recordFlag = std::make_unique<SampleRecordFlagState>(
-		[this] { return isRecord(); },
-		[this](bool armed) { if( isRecord() != armed ) { setRecord( armed ); } } );
 	updateTrackClips();
 	// A copy carries the mode (Clip's copy constructor) but never the source's
 	// voices: each clip claims from its own pool.
@@ -238,25 +233,12 @@ void SampleClip::armRecordTake()
 
 void SampleClip::journalArmStep()
 {
-	Track* track = getTrack();
-	ProjectJournal* journal = Engine::projectJournal();
-	if (track == nullptr || journal == nullptr || !track->isJournalling()) { return; }
-	// One step: the track's content and the record flag, both as they were before the arm.
-	m_recordFlag->snapshotValue = false;
-	journal->addJournalCheckPoint(QVector<JournallingObject*>{track, m_recordFlag.get()});
-	m_recordFlag->snapshotValue.reset();
-}
-
-void SampleRecordFlagState::saveSettings(QDomDocument& doc, QDomElement& element)
-{
-	Q_UNUSED(doc)
-	const bool armed = snapshotValue.value_or(m_current());
-	element.setAttribute(QStringLiteral("armed"), armed ? QStringLiteral("1") : QStringLiteral("0"));
-}
-
-void SampleRecordFlagState::loadSettings(const QDomElement& element)
-{
-	m_apply(element.attribute(QStringLiteral("armed")) == QStringLiteral("1"));
+	// The live-take guarantee on undo: an undo rebuilds the track's clips (Track::loadTrack deletes them
+	// and recreates them from the snapshot), so the armed clip is destroyed. Its destructor removes its
+	// live play handle, and the reaper finds no clip to install the live take into, so nothing is
+	// installed when the transport stops. That guarantee rests on the rebuild destroying the armed
+	// clip: if an undo ever kept this clip object, its live take would be installed on stop.
+	if (Track* track = getTrack()) { track->addJournalCheckPoint(); }
 }
 
 void SampleClip::releaseRecordTakes()
