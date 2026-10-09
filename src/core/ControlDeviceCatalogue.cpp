@@ -79,7 +79,14 @@ void appendBuiltinDevices(Plugin::Type type, const QString& kind, QList<ControlD
 	QList<const Plugin::Descriptor*> descriptors;
 	for (const Plugin::Descriptor* descriptor : getPluginFactory()->descriptors(type))
 	{
-		if (descriptor != nullptr) { descriptors.append(descriptor); }
+		// A descriptor with sub-plugin features is a host container, not a
+		// device by itself. Its keyed devices are listed by their host-specific
+		// catalogue below; advertising the container here would let plugin.load
+		// instantiate it without the key it needs.
+		if (descriptor != nullptr && descriptor->subPluginFeatures == nullptr)
+		{
+			descriptors.append(descriptor);
+		}
 	}
 	// Sorted by plugin name so the catalogue order (and therefore every
 	// dev-<n> id) is deterministic for one build.

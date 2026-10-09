@@ -62,6 +62,7 @@ using namespace lmms;
 //! Forward declaration: addInstrumentTrack() uses the catalogue helpers that are
 //! defined below it (one pass, no reordering of the file's narrative).
 inline QString firstLoadable(const QString& kind);
+inline QString firstLoadableInstrument();
 
 inline ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
 {
@@ -99,7 +100,7 @@ inline QString addInstrumentTrack()
 {
 	const QString track = addTrack();
 	if (track.isEmpty()) { return QString(); }
-	const QString device = firstLoadable(QStringLiteral("instrument"));
+	const QString device = firstLoadableInstrument();
 	if (device.isEmpty()) { return QString(); }
 	const ControlResult loaded = run(QStringLiteral("plugin.load"),
 		{{QStringLiteral("target"), track}, {QStringLiteral("device"), device}});
@@ -124,6 +125,26 @@ inline QString firstLoadable(const QString& kind)
 {
 	const QStringList ids = loadableDevices(kind);
 	return ids.isEmpty() ? QString() : ids.first();
+}
+
+//! Prefer the build-owned synth for note-playing fixtures; keep a fallback for reduced builds.
+inline QString firstLoadableInstrument()
+{
+	const ControlResult listed = run(QStringLiteral("plugin.list"),
+		{{QStringLiteral("kind"), QStringLiteral("instrument")},
+			{QStringLiteral("loadable_only"), true}});
+	QString fallback;
+	for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
+	{
+		const QJsonObject device = value.toObject();
+		const QString id = device.value(QStringLiteral("id")).toString();
+		if (fallback.isEmpty()) { fallback = id; }
+		if (device.value(QStringLiteral("name")).toString() == QLatin1String("tripleoscillator"))
+		{
+			return id;
+		}
+	}
+	return fallback;
 }
 
 inline QString firstLoadableEffect() { return firstLoadable(QStringLiteral("effect")); }
