@@ -1838,3 +1838,7 @@ include/AutomationClip.h	0.5.0 m0 cluster 5528: declares rescaleValuesToRange() 
 src/core/AutomationClip.cpp	0.5.0 m0 cluster 5528: implements rescaleValuesToRange() under the clip edit lock and regenerates tangents after the complete range edit.
 src/gui/clips/AutomationClipView.cpp	0.5.0 m0 cluster 5528: scaleTimemapToFit delegates point value updates and tangent regeneration to AutomationClip::rescaleValuesToRange().
 src/gui/editors/PianoRoll.cpp	0.5.0 m0 cluster 5528: drawDetuningInfo binds the automation map through a const reference because this renderer only reads nodes.
+include/AutomationNode.h	0.5.0 m0 cluster 5528: AutomationNode no longer retains a clip pointer or exposes value setters that could mutate its owning map outside AutomationClip.
+src/core/AutomationNode.cpp	0.5.0 m0 cluster 5528: removes the node-to-clip value setter path; node values are edited through AutomationClip methods.
+src/core/AutomationClip.cpp	0.5.0 m0 cluster 5528: clip insertions, copy and reset paths construct pure data nodes; reset values are updated only inside the clip edit method.
+src/core/AutomationClipTransforms.cpp	0.5.0 m0 cluster 5528: transforms construct pure value nodes and flipY writes fields only inside the owning AutomationClip transform.

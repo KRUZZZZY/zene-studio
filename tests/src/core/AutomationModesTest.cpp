@@ -48,6 +48,7 @@
 #include <cstring>
 #include <limits>
 #include <new>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -59,6 +60,9 @@
 #include "TimePos.h"
 
 using namespace lmms;
+
+static_assert(std::is_same_v<decltype(std::declval<AutomationClip&>().getTimeMap()),
+	const AutomationClip::timeMap&>);
 
 namespace
 {

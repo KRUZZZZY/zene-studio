@@ -42,9 +42,9 @@ The render path takes `m_clipMutex` in `AutomationClip::writeBlockRamp()` (`src/
 
 | File:line | Mutation found | `AutomationClip` edit method that owns it |
 |---|---|---|
-| `include/AutomationClip.h:144-147` | Exposes the live map for writes; remove the mutable overload after migration. | No replacement accessor; use the edit methods below. |
-| `src/core/AutomationNode.cpp:75-89,95-109` | Node value setters reach the map through `m_clip`, then regenerate adjacent tangents. | `setNodeInValue()` / `setNodeOutValue()` |
-| `src/core/AutomationClip.cpp:90-91` | Copy constructor inserts copied nodes and rebinds each node to the new clip. | Copy constructor, followed by initial snapshot publication. |
+| `include/AutomationClip.h:144-147` | Exposed the live map for writes; the mutable overload is now removed after caller migration. | No replacement accessor; use the edit methods below. |
+| `src/core/AutomationNode.cpp:75-89,95-109` | Legacy node value setters reached the map through a stored clip pointer, then regenerated adjacent tangents. | The node-to-clip mutation path is removed; `setNodeInValue()` / `setNodeOutValue()` own edits. |
+| `src/core/AutomationClip.cpp:90-91` | Copy constructor inserts copied nodes and rebinds each node to the new clip. | Copy constructor, followed by initial snapshot publication. Node values now carry no clip pointer. |
 | `src/core/AutomationClip.cpp:248,304` | Insert or replace a point, remove quantized neighbors when requested, recalculate tangents. | `putValue()` / `putValues()` |
 | `src/core/AutomationClip.cpp:340-384` | Remove one point or an inclusive range and regenerate neighboring tangents. | `removeNode()` / `removeNodes()` |
 | `src/core/AutomationClip.cpp:396-438` | Reset out values or unlock and regenerate tangents over a range. | `resetNodes()` / `resetTangents()` |

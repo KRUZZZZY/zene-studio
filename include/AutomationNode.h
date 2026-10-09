@@ -31,9 +31,6 @@ class QDomElement;
 namespace lmms
 {
 
-class AutomationClip;
-
-
 // Note: We use the default copy-assignment on the AutomationClip constructor. It's
 // fine for now as we don't have dynamic allocated members, but if any are added we should
 // have an user-defined one to perform a deep-copy.
@@ -41,8 +38,8 @@ class AutomationNode
 {
 public:
 	AutomationNode(); // Dummy constructor for the QMap
-	AutomationNode(AutomationClip* clip, float value, int pos);
-	AutomationNode(AutomationClip* clip, float inValue, float outValue, int pos);
+	AutomationNode(float value);
+	AutomationNode(float inValue, float outValue);
 
 	AutomationNode& operator+=(float f)
 	{
@@ -73,14 +70,11 @@ public:
 	{
 		return m_inValue;
 	}
-	void setInValue(float value);
 
 	inline const float getOutValue() const
 	{
 		return m_outValue;
 	}
-	void setOutValue(float value);
-	void resetOutValue();
 
 	/**
 	 * @brief Gets the offset between inValue and outValue
@@ -143,16 +137,6 @@ public:
 		m_lockedTangents = b;
 	}
 
-	/**
-	 * @brief Sets the clip this node belongs to
-	 * @param AutomationClip* clip that m_clip will be
-	 * set to
-	 */
-	inline void setClip(AutomationClip* clip)
-	{
-		m_clip = clip;
-	}
-
 	/*! 0.5.0 ED-185: this point's own curve to the next point - the clip's progression (Clip), or
 	 *  Hold, Linear, Smooth (cubic Hermite), or Bend (an exponential curve, bend -1..1: negative
 	 *  rises fast then levels, positive starts slow). Saved only when not Clip. */
@@ -166,12 +150,6 @@ public:
 
 private:
 	friend class AutomationClip;
-
-	// Clip that this node belongs to
-	AutomationClip* m_clip;
-
-	// Time position of this node (matches the timeMap key)
-	int m_pos;
 
 	// Values of this node
 	float m_inValue;

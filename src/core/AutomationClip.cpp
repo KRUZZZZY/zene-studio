@@ -88,8 +88,6 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 	{
 		// Copies the automation node (in/out values and in/out tangents)
 		m_timeMap[POS(it)] = it.value();
-		// Sets the node's clip to this one
-		m_timeMap[POS(it)].setClip(this);
 	}
 }
 
@@ -245,7 +243,7 @@ TimePos AutomationClip::putValue(
 	newTime = std::max(TimePos(0), newTime);
 
 	// Create a node or replace the existing one on newTime
-	m_timeMap[newTime] = AutomationNode(this, value, newTime);
+	m_timeMap[newTime] = AutomationNode(value);
 
 	timeMap::iterator it = m_timeMap.find(newTime);
 
@@ -301,7 +299,7 @@ TimePos AutomationClip::putValues(
 	newTime = std::max(TimePos(0), newTime);
 
 	// Create a node or replace the existing one on newTime
-	m_timeMap[newTime] = AutomationNode(this, inValue, outValue, newTime);
+	m_timeMap[newTime] = AutomationNode(inValue, outValue);
 
 	timeMap::iterator it = m_timeMap.find(newTime);
 
@@ -472,7 +470,7 @@ bool AutomationClip::moveNode(const TimePos& from, const TimePos& to, float inVa
 	cleanObjects();
 	const TimePos newTime = std::max(TimePos(0), to);
 	m_timeMap.remove(from);
-	m_timeMap[newTime] = AutomationNode(this, inValue, newTime);
+	m_timeMap[newTime] = AutomationNode(inValue);
 	auto moved = m_timeMap.find(newTime);
 	moved.value().setCurve(curve, bend);
 	if (moved != m_timeMap.begin()) { --moved; }
@@ -514,7 +512,7 @@ void AutomationClip::resetNodes(const int tick0, const int tick1)
 	if (tick0 == tick1)
 	{
 		auto it = m_timeMap.find(TimePos(tick0));
-		if (it != m_timeMap.end()) { it.value().resetOutValue(); }
+		if (it != m_timeMap.end()) { it.value().m_outValue = it.value().m_inValue; }
 		return;
 	}
 
@@ -523,7 +521,7 @@ void AutomationClip::resetNodes(const int tick0, const int tick1)
 
 	for (auto it = m_timeMap.lowerBound(start), endIt = m_timeMap.upperBound(end); it != endIt; ++it)
 	{
-		it.value().resetOutValue();
+		it.value().m_outValue = it.value().m_inValue;
 	}
 }
 
@@ -1070,7 +1068,7 @@ void AutomationClip::loadSettings( const QDomElement & _this )
 			float timeMapInValue = LocaleHelper::toFloat(element.attribute("value"));
 			float timeMapOutValue = LocaleHelper::toFloat(element.attribute("outValue"));
 
-			m_timeMap[timeMapPos] = AutomationNode(this, timeMapInValue, timeMapOutValue, timeMapPos);
+			m_timeMap[timeMapPos] = AutomationNode(timeMapInValue, timeMapOutValue);
 			m_timeMap[timeMapPos].loadCurve(element);
 
 			// Load tangents if there is information about it (it's enough to check for either inTan or outTan)

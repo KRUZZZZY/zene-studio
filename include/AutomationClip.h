@@ -152,13 +152,6 @@ public:
 		return m_timeMap;
 	}
 
-	// Kept temporarily while the editor and control callers migrate to the
-	// clip-owned edit methods above; removed when that migration is complete.
-	inline timeMap & getTimeMap()
-	{
-		return m_timeMap;
-	}
-
 	inline float getMin() const
 	{
 		return firstObject()->minValue<float>();
