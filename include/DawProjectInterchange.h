@@ -441,7 +441,7 @@ struct DawProjectZipReport
 	QStringList entryNames;
 	int entriesRead = 0;       //!< entries whose bytes were decoded and CRC-checked
 	int entriesDeflated = 0;   //!< of those, the ones that were DEFLATE-compressed
-	qint64 inflatedBytes = 0;  //!< decoded bytes, counted against the total bound
+	qint64 inflatedBytes = 0;  //!< every byte decoded, good entry or not: what the total bound counts
 	std::vector<DawProjectDeviation> deviations;
 };
 

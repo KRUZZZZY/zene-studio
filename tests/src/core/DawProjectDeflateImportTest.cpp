@@ -510,6 +510,65 @@ private slots:
 		}
 	}
 
+	//! The total bound counts every byte decoded, not only the bytes of entries that turn out good: entries that
+	//! fail their CRC, or break mid-stream, cannot be inflated past it in aggregate.
+	void failingEntriesStillCountAgainstTheTotalBound()
+	{
+		DawProjectZipLimits limits;
+		limits.maxEntryBytes = 1024 * 1024;
+		limits.maxTotalBytes = 1024 * 1024;
+		const QByteArray block(400 * 1024, 'q');  // 409600 bytes each; two fit the total, a third cannot
+
+		// Eight entries that all FAIL their CRC after inflating in full.
+		std::vector<Spec> badCrc;
+		for (int index = 0; index < 8; index++)
+		{
+			Spec spec = deflated(QStringLiteral("crc%1.bin").arg(index), block);
+			spec.crc ^= 0x5;
+			badCrc.push_back(spec);
+		}
+		std::vector<DawProjectEntry> entries;
+		DawProjectZipReport report;
+		QString error;
+		QVERIFY2(dawProjectZipReadTolerant(containerOf(QStringLiteral("bad-crc.dawproject"), badCrc), &entries,
+			&report, &error, limits), qPrintable(error));
+		QVERIFY(entries.empty());
+		QCOMPARE(report.inflatedBytes, static_cast<qint64>(2 * block.size()));  // two inflated, the rest refused unread
+		QVERIFY(report.inflatedBytes <= limits.maxTotalBytes);
+		int crc = 0;
+		int total = 0;
+		for (const DawProjectDeviation& deviation : report.deviations)
+		{
+			crc += deviation.kind == QLatin1String("crc_mismatch");
+			total += deviation.kind == QLatin1String("total_oversized");
+		}
+		QCOMPARE(crc, 2);
+		QCOMPARE(total, 6);
+
+		// Eight entries whose streams are cut off mid-way: the bytes they did produce are counted too.
+		std::vector<Spec> cut;
+		for (int index = 0; index < 8; index++)
+		{
+			Spec spec = deflated(QStringLiteral("cut%1.bin").arg(index), block);
+			spec.body = spec.body.left(spec.body.size() * 3 / 4);
+			cut.push_back(spec);
+		}
+		QVERIFY2(dawProjectZipReadTolerant(containerOf(QStringLiteral("cut.dawproject"), cut), &entries, &report,
+			&error, limits), qPrintable(error));
+		QVERIFY(entries.empty());
+		QVERIFY(report.inflatedBytes <= limits.maxTotalBytes);
+		QVERIFY(report.inflatedBytes > 0);
+		int corrupt = 0;
+		total = 0;
+		for (const DawProjectDeviation& deviation : report.deviations)
+		{
+			corrupt += deviation.kind == QLatin1String("corrupt_entry");
+			total += deviation.kind == QLatin1String("total_oversized");
+		}
+		QVERIFY2(total > 0, "truncated entries never exhausted the total bound");
+		QCOMPARE(corrupt + total, 8);  // every entry is accounted for, none silently dropped
+	}
+
 	//! `retain` drops the bytes of the other entries but still checks them.
 	void retainedSubsetStillChecksTheOtherEntries()
 	{

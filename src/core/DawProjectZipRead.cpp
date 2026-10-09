@@ -390,12 +390,15 @@ DecodeStatus drain(z_stream* stream, qint64 expected, Sink* sink)
 	int status = Z_OK;
 	while (status != Z_STREAM_END)
 	{
+		// Never ask for more than one byte past the declared size: that byte is how an overrun is seen, and
+		// it keeps the work on a lying entry from running ahead of the bound the entry was admitted under.
+		const qint64 want = std::min<qint64>(chunk.size(), expected - sink->produced + 1);
 		stream->next_out = reinterpret_cast<Bytef*>(chunk.data());
-		stream->avail_out = static_cast<uInt>(chunk.size());
+		stream->avail_out = static_cast<uInt>(want);
 		status = inflate(stream, Z_NO_FLUSH);
 		if (status == Z_BUF_ERROR) { return DecodeStatus::Truncated; }  // input exhausted, no progress
 		if (status != Z_OK && status != Z_STREAM_END) { return DecodeStatus::Damaged; }
-		const qint64 made = chunk.size() - static_cast<qint64>(stream->avail_out);
+		const qint64 made = want - static_cast<qint64>(stream->avail_out);
 		if (!absorb(sink, chunk.constData(), made, expected)) { return DecodeStatus::Overrun; }
 	}
 	return sink->produced == expected ? DecodeStatus::Ok : DecodeStatus::Short;
@@ -466,6 +469,9 @@ void materialise(Scan& scan, const CentralEntry& entry)
 	Sink sink;
 	if (wanted(scan, entry.name)) { sink.out = &body; }
 	const DecodeStatus status = decode(scan, entry, &sink);
+	// Every byte decoded counts against the total bound, whether or not the entry then proves good: a
+	// container of entries that all fail their CRC or break mid-stream must not get to inflate past it.
+	scan.report->inflatedBytes += sink.produced;
 	if (status != DecodeStatus::Ok)
 	{
 		noteDecodeFailure(scan, entry, status, sink.produced);
@@ -481,7 +487,6 @@ void materialise(Scan& scan, const CentralEntry& entry)
 		return;
 	}
 	scan.report->entriesRead++;
-	scan.report->inflatedBytes += sink.produced;
 	if (entry.method == MethodDeflate) { scan.report->entriesDeflated++; }
 	if (sink.out != nullptr) { scan.entries->push_back({entry.name, body}); }
 }
