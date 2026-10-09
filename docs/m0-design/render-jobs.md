@@ -66,3 +66,33 @@ Implementation proof should add targeted cases for: asynchronous acknowledgement
 - [G-behaviour.md](../../../zene-bunny-engine/docs/m0-blocker-fixes-2026-10-08/G-behaviour.md): cluster 917 remains blocked because callers consume the synchronous result before model/undo work.
 - Independent review evidence: `/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/719627a5-c809-46ec-b4a4-231af5d313ec/scratchpad/luna-review-G-behaviour/review.md` confirms the ten-minute wait and inline menu call.
 - Existing patterns: `include/TaskCenter.h`, `src/core/TaskCenter.cpp`, `src/core/RenderQueue.cpp`, `src/core/StemJobManager.cpp`, and `src/core/ControlCommandsMasteringRun.cpp`.
+
+## Round 2 review decisions
+
+### Document identity
+
+The track id and XML fingerprint do not distinguish the original project from a reload of the same file. Add a process-unique `Song` document identity, assign it when a `Song` is constructed, and advance it when `clearProject()` replaces or empties the document. Capture that scalar with the bounce context and compare it before target checks or output installation. This covers accepted project loads, `project.new`, direct project clearing, and replacing the `Song` object without retaining a live model pointer. A mismatch fails the job and removes its scratch/staged data; it does not install the output or mutate the new document.
+
+### Undo coalescing at the cap
+
+`undoDepth()` is not a stable mark: a push at the 100-step cap evicts the oldest entry and leaves the depth unchanged. Capture `ProjectJournal::topStepSerial()` immediately before the completion edit and call `mergeCheckpointsSince(serial)` after `endEdit()`. The serial window remains correct when the cap evicts entries. The regression fills all 100 slots, queues a range bounce over multiple tracks, and verifies that one undo restores all source mutes and removes the landed track.
+
+### Honest operation classes
+
+`render.queue_bounce` remains `true_inverse` and accepts only operations that record a project edit. Move output-only track bounce to the existing `render.queue_add` command as `operation: "bounce"` with a `track`; that command is already `not_mutating` and its output is an artefact, like `render.render`. This keeps the live command count at 823 while giving the output-only operation the correct class. Update the live snapshot schema/description and README canary to 823 ids / 76 groups. A new command id was considered and rejected because it adds no capability beyond the existing output queue and would change the required command-count canary.
+
+### Cancellation proof
+
+The fake render child writes its PID to a test-owned marker before sleeping. The cancellation test waits for that marker, cancels through the task surface, then verifies the OS process no longer exists, the per-job temporary directory is gone, the existing destination bytes are unchanged, and no model edit was applied. The marker path is unique to the test and is not part of product output.
+
+### Legacy synchronous replies
+
+`ControlRegistry::invoke()` returns `ControlResult` synchronously. `ControlServer::dispatchLine()` invokes it and immediately builds that request's response; neither API accepts a completion callback or retains a request id/reply sink. `mastering.run` is asynchronous only because it changes its reply to an ACK and has a poll command, which would break the legacy bounce/freeze/flatten/range result contracts. Per the round-2 instruction, keep those compatibility handlers synchronous and do not add a nested event loop or `processEvents()` to their child wait. The wait blocks its calling thread (and therefore still freezes the GUI if dispatched on the GUI thread); callers that need a responsive UI must use the render queue. This limitation is explicit and unresolved until the control transport gains deferred replies.
+
+### Realtime and behavior
+
+The identity is read and advanced only on the document/UI thread. Queue preparation, journal merging, cancellation, file cleanup, and the legacy child wait remain outside the audio callback. No audio-thread allocation, lock, wait, syscall, or Qt signal is added. The serialized render inputs and child arguments are unchanged, so successful render audio remains governed by the existing audio-comparison test; only stale-document refusal, operation classification, and the full-cap undo result change.
+
+### Round 2 verification
+
+Add cases for reloading/replacing the project while a child runs, one-step range-bounce undo at the 100-step cap, and direct process/temp-directory cleanup assertions on cancellation. Run the focused render-job and compatibility tests, the four required source gates, and `python3 tests/doc-figures-gate.py`. The old synchronous contract is recorded as a limitation rather than claimed fixed because the current registry/transport cannot send a later reply.
