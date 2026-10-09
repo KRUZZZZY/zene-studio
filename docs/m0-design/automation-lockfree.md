@@ -2,7 +2,7 @@
 
 **Branch:** `design/m0-automation-lockfree`, based on `c405233f8`
 **Scope:** clusters 2647, 5528, and 5388
-**Status:** 5528 has the edit ownership and immutable reader snapshot implementation in this lane. Its audio-side recording writers remain blocked on the 5388 handoff; clusters 2647 and 5388 remain separate.
+**Status:** 5528 has the edit ownership and immutable reader snapshot implementation in this lane. This round closes its compound-publication and idle-reclamation gaps and implements the 5388 recording handoff. Cluster 2647 remains separate and blocked.
 
 ## 2647 — `AutomatableModel::valueBuffer()`
 
@@ -99,7 +99,7 @@ Before publishing, the writer holds the clip's edit lock, applies the edit to th
 
 The live mutable accessor and node-to-clip setter backdoor are removed. Editor, point-edit, control-command, piano-roll, transform, load/undo, reset, clear, copy and range-rescale writes now go through `AutomationClip` ownership. `valueAt()` and `writeBlockRamp()` read a sorted POD snapshot under a lock-free reader count; old snapshots are retired and freed from control-side publication/destruction. The regression suite compares the legacy evaluator and ramps bit-for-bit, probes allocation and the clip edit mutex, and races complete curve edits against rendering.
 
-`recordValue()` remains the exception. `Song::processAutomations()` and `NotePlayHandle` call it from render/worker audio paths. It still takes `m_clipMutex` and changes the editable map; this implementation suppresses snapshot publication during that call so it does not allocate on audio. Consequently, automation being recorded is not visible in the read snapshot until a safe recording handoff publishes it. Removing this last audio-side clip lock while preserving same-period write/read behavior requires the audio-visible recording overlay or equivalent ordering proof described in cluster 5388. That work is outside 5528 and blocks the unqualified claim that no audio thread takes `m_clipMutex`.
+`recordValue()` was the exception: `Song::processAutomations()` and `NotePlayHandle` called it from render/worker paths, where it took `m_clipMutex`, edited the map, and suppressed publication. The 5388 handoff below removes those audio-side map writes and keeps pending values visible until the control thread publishes them.
 
 ### 5528 validation evidence
 
@@ -107,39 +107,36 @@ The live mutable accessor and node-to-clip setter backdoor are removed. Editor, 
 - The automated-project render comparison used `tests/data/automation-audio-fixture.mmp` with a master-volume automation track linked to model ID `9000001`, plus flat and no-automation controls. The legacy QMap evaluator matching `e0cef61f6` and the snapshot evaluator produced identical WAV data-chunk hashes: automated `231247afe6ef389ae7aa0d1bcd75d82648a137a7e089e3136af351be7dc1689f`, flat `cc77f1f1664dd54e053e5682ff7cb05fe48e10fcf0061c1a50a379fbb098e58a`, and no automation `46cabeacc7caf8a880240165b0035a968ad94a3563bd7ffa3c50e8079cb8944d`. Each control render had a distinct hash.
 - `ctest --output-on-failure -R 'Automation|ControlAutomation|AudioAutomation|NoteCurvesAcross'` from `build/tests`: 12/12 passed. The four required repository gates passed after the final source split.
 
-## 5388 — recording automation from the render thread
+## 5388 — recording automation from render and worker threads
 
-`Song::processAutomations()` inserts each recording model into a `QSet` and calls `AutomationClip::recordValue()` on the render thread (`src/core/Song.cpp:573-650`); `recordValue()` takes `m_clipMutex` and edits the map (`src/core/AutomationClip.cpp:443-453`). `NotePlayHandle::process` has a second audio-side `recordValue()` caller (`src/core/NotePlayHandle.cpp:672`), so changing only the Song call would not make recording lock-free.
+`Song::processAutomations()` inserts each recording model into a `QSet` and calls `AutomationClip::recordValue()` on the render thread (`src/core/Song.cpp:573-650`). `NotePlayHandle::processTimePos()` is a second writer for per-note detuning (`src/core/NotePlayHandle.cpp:672`). `recordValue()` takes `m_clipMutex` and edits the map, while suppressing snapshot publication; later readers therefore miss points that the legacy map evaluator saw.
 
 ### Chosen design
 
-Use a preallocated, bounded SPSC queue for each audio producer, drained together by the main thread. The fixed producer set is the render thread plus the engine's fixed worker threads; each queue has exactly 4096 pending events, so total storage is `4096 * (workerCount + 1)` events allocated when the worker pool is created. Each event stores the clip's stable project ID, relative musical `TimePos`, inverse-scaled float value, and period token; it stores no raw clip/model pointer beyond the render period. A main-thread poll resolves the ID against the open project and replays every event from each producer queue in order through the same `recordValue()` edit logic, which in turn publishes the immutable clip snapshot from the 5528 design. The two current sources write separate target clips (Song automation clips and per-note detuning clips), so order within each target is producer-local. Preserve the original musical timestamp rather than substituting the drain time.
+`Song` allocates one 4096-event SPSC queue for the render caller and each fixed audio worker when the engine and song are constructed. The render caller owns slot zero; each worker has a fixed slot assigned before it starts. Song and NotePlayHandle producers running on the same thread share that thread's queue, so every queue remains genuinely single-producer. An event contains the clip's stable journal ID, relative `TimePos`, value, and monotonic queue sequence; it contains no clip or model pointer. The UI timer drains each queue in FIFO order, resolves IDs through the live project journal under the control-side change guard, calls `recordValue()` on the resolved clip, and publishes a snapshot carrying that producer's applied-sequence watermark. A missing ID is counted as stale and discarded without dereference.
 
-Replace `QSet<const AutomatableModel*> recordedModels` with a preallocated fixed-capacity membership table owned by `Song`, keyed by stable model ID and reset with a generation counter each automation tick. The render thread applies the same write gates and write decision, captures the same inverse-scaled value, and records the model in the membership table. The main thread replays those values through `recordValue()` in order, which preserves the per-clip `m_lastRecordedValue` equal-value collapse. The table continues to drive `setUseControllerValue()` for the current tick; clip mutation itself is deferred.
+The queue is also the bounded audio-visible overlay. `valueAt()` and `writeBlockRamp()` consult pending events from the calling producer's queue for the clip being evaluated. A per-clip snapshot watermark separates events already represented in the immutable snapshot from newer queued events. Draining publishes the edited map and its watermark before the event slots become reusable; slots are reclaimed only after the snapshot reader count is quiescent. Thus a reader holding an older snapshot still sees its not-yet-published recording events, while a reader holding the new snapshot does not apply them twice. If a queue reaches 4096 pending entries, it drops the newest event and increments its overflow counter; this policy is visible in the UI. Reader-side overlay work is bounded by the queue capacity and does not allocate or lock.
 
-Each producer queue has 4096 pending events, with no overwrite and no waiting: a full push increments an atomic dropped-event counter and keeps rendering. The membership table has 4096 entries and reports overflow separately. The main thread periodically drains every queue in producer order and replays each event without coalescing, then raises one user-visible warning with the dropped counts. If the active clip ID no longer exists at drain time, count it as a stale-target drop and surface it; do not dereference a freed clip. The queues and table are fixed at construction and never grow on audio.
+Replace `QSet<const AutomatableModel*> recordedModels` with a fixed 4096-slot open-addressed membership table owned by `Song`, keyed by stable model journal ID and tagged with a per-tick generation. It drives the existing `setUseControllerValue()` decisions without allocating. A full table is counted and surfaced separately. Preserve the original write gates, inverse scaling, captured musical time, and `recordValue()` equal-value collapse on the main-thread replay.
 
 ### Invariants and realtime argument
 
-- The render thread(s) own event production, musical timestamp/value capture, and the fixed current-tick membership table. The main thread owns dequeue, ID resolution, map mutation, snapshot publication, warnings, and all event/clip-memory reclamation.
-- Each bounded SPSC push has no mutex, allocation, signal, I/O, wait, or retry loop on audio. Capacity is exactly 4096 queued events per producer and 4096 current-tick model entries. Overflow drops the newest event for that producer, increments a visible counter, and never overwrites an unread event.
-- Events carry only stable IDs and values. Draining takes `m_changeMutex` on the main thread before resolving target IDs or publishing clip state. Musical positions use the captured relative tick and remain independent of drain delay.
-- The current tick's model write-mode/controller behavior and every accepted event's `recordValue()` result must match exactly. Song+NotePlayHandle recording tests exercise multiple producers, FIFO behavior per clip, full-queue counts, stale IDs, and equal-value collapse. Before/after audio renders must be bit-identical while recording is active.
+- Each audio thread writes only to its own preallocated SPSC queue. No audio writer takes a mutex, allocates, emits a Qt signal, performs I/O, waits, or retries. Queue, overlay scan, and membership-table probe counts have fixed upper bounds.
+- The main thread alone advances the apply cursor, resolves stable IDs, edits `m_timeMap`, publishes snapshots, warns about overflow/stale IDs, and reclaims queue slots after readers quiesce. Retired snapshots also receive a recurring control-thread collection poll so an idle clip cannot strand retired storage.
+- Stable clip IDs are resolved under the existing model-change guard. A deleted clip is never dereferenced from an event; its event is counted as stale. Each queue holds 4096 pending events, and the Song membership table holds 4096 model IDs. Both reject new entries at capacity and expose counters.
+- `recordValue()` remains the single owner of map insertion/removal and equal-value collapse. Snapshot reads incorporate pending events from the same producer before the drain, so a render cannot observe a stale curve just because the UI timer has not run yet. Song and per-note recording tests check producer paths, per-clip FIFO, capacity, stale IDs, and equal-value collapse.
+- The saved/rendered musical curve must remain bit-identical to the pre-snapshot map evaluator for normal and sample-accurate clips while recording. The legacy value and ramp arithmetic remains unchanged; the overlay only supplies the accepted pending recording edits.
 
 ### Considered and rejected
 
-- A mutex around `recordValue()` is rejected: it only moves the same unbounded wait to the render thread.
-- A dynamically growing `QVector`/`QSet` queue is rejected: it allocates and can grow without bound in `processAutomations()`.
-- Storing clip pointers in deferred events is rejected: a clip can be removed after the render period and before the main-thread drain.
-- Draining on the next audio period is rejected: it would reintroduce clip mutation and snapshot publication on audio.
-
-### Why implementation is BLOCKED in this lane
-
-Moving `recordValue()` to a later main-thread drain changes when the edited curve becomes visible to `buildAutomationRamps()` and `automatedValuesAt()`. In particular, a sample-accurate writing clip can have its next period's read snapshot built before the GUI drains the previous period's event, which can change rendered samples. Preserving only the captured musical timestamp does not prove bit-identical output. The queue design therefore needs a bounded audio-visible recording overlay or a proven ordering contract that makes deferred publication observationally equivalent; neither exists in this branch. The second `NotePlayHandle` producer and the current `QSet` semantics also need regression coverage. Until that bridge is designed and render-compared, moving only the Song write would be an unsafe partial fix.
+- A mutex around `recordValue()` is rejected: it keeps an unbounded audio wait and mutable-map access.
+- A dynamically growing queue or membership set is rejected: both can allocate or grow on audio.
+- Storing clip pointers in events is rejected because the clip can be removed before the UI drain.
+- Draining from the audio period is rejected because it would restore map mutation and snapshot allocation to audio.
 
 ## Work order and acceptance
 
 1. Define and test the coherent model-value publication primitive and exhaustive registry, then install the prepass and remove render-job cache locks (2647).
 2. Add snapshot value-evaluation tests and a complete writer API audit; then remove the mutable map accessor and publish/reclaim snapshots (5528).
-3. Design the render-visible recording overlay, then install the MPSC queue and main-thread drain for both recording producers (5388).
+3. Install the bounded SPSC recording handoff, overlay, fixed model membership table, and main-thread drain for both recording producers (5388).
 4. For each product commit, reverse only that change to prove a red regression, restore and prove green, run the targeted render comparison, and record gate exits. Never claim FIXED from a lock probe alone when its ownership or audio-output invariant remains unproven.
