@@ -28,6 +28,8 @@
 #include <QDragEnterEvent>
 #include <QPushButton>
 
+#include <stdexcept>
+
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentPlayHandle.h"
@@ -43,6 +45,26 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+QString uriForKey(const Plugin::Descriptor::SubPluginFeatures::Key* key)
+{
+	if (key == nullptr || !key->isValid())
+	{
+		throw std::runtime_error("Cannot instantiate LV2 instrument: missing sub-plugin key");
+	}
+
+	const QString uri = key->attributes.value(QStringLiteral("uri"));
+	if (uri.isEmpty())
+	{
+		throw std::runtime_error("Cannot instantiate LV2 instrument: sub-plugin key has no URI");
+	}
+	return uri;
+}
+
+} // namespace
 
 
 extern "C"
@@ -81,7 +103,7 @@ Lv2Instrument::Lv2Instrument(InstrumentTrack *instrumentTrackArg,
 		Flag::IsSingleStreamed
 #endif
 	),
-	Lv2ControlBase(this, key->attributes["uri"])
+	Lv2ControlBase(this, uriForKey(key))
 {
 	clearRunningNotes();
 

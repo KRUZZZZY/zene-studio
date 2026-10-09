@@ -42,6 +42,17 @@
 namespace lmms
 {
 
+namespace
+{
+
+const LilvPlugin* pluginForUri(const QString& uri)
+{
+	Lv2Manager* manager = Engine::getLv2Manager();
+	return manager != nullptr ? manager->getPlugin(uri) : nullptr;
+}
+
+} // namespace
+
 
 Plugin::Type Lv2ControlBase::check(const LilvPlugin *plugin,
 	std::vector<PluginIssue> &issues)
@@ -54,7 +65,7 @@ Plugin::Type Lv2ControlBase::check(const LilvPlugin *plugin,
 
 
 Lv2ControlBase::Lv2ControlBase(Model* that, const QString &uri) :
-	m_plugin(Engine::getLv2Manager()->getPlugin(uri))
+	m_plugin(pluginForUri(uri))
 {
 	if (m_plugin)
 	{

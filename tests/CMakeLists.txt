@@ -1487,6 +1487,27 @@ if(TARGET receiver AND TARGET insertrecorder)
 endif()
 if(TARGET tripleoscillator)
 	add_dependencies(SessionPlaybackRenderTest tripleoscillator)
+	add_dependencies(SessionTuningTest tripleoscillator)
+endif()
+
+# These tests exercise the LV2 host through the plugin factory; build the
+# modules they discover so a targeted build cannot silently skip that path.
+if(LMMS_HAVE_LV2)
+	if(TARGET ControlDeviceCatalogueTest AND TARGET lv2effect AND TARGET lv2instrument)
+		add_dependencies(ControlDeviceCatalogueTest lv2effect lv2instrument)
+	endif()
+	if(TARGET Lv2StateTest AND TARGET lv2effect)
+		add_dependencies(Lv2StateTest lv2effect)
+	endif()
+	if(TARGET ControlDeviceCatalogueTest AND TARGET lv2instrument)
+		# Run only the LV2 key/catalogue slots for the focused red/green regression.
+		add_test(NAME Lv2InstrumentKeyRegressionTest
+			COMMAND $<TARGET_FILE:ControlDeviceCatalogueTest>
+				builtinCatalogueDoesNotListSubPluginHosts
+				lv2InstrumentRefusesMissingOrInvalidKeys)
+		set_tests_properties(Lv2InstrumentKeyRegressionTest PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -2537,11 +2558,11 @@ if(TARGET lmms_clap)
 	# acceptance contract (CHARTER 3.1) counts a feature only when it can be
 	# driven through the socket. The CLAP fixture needs no opt-in option: it is
 	# built from the pinned headers, not from a third-party SDK checkout.
-	if(TARGET clap-test-instrument AND TARGET ControlDeviceCatalogueTest)
+	if(TARGET clap-test-instrument AND TARGET clapinstrument AND TARGET ControlDeviceCatalogueTest)
 		target_compile_definitions(ControlDeviceCatalogueTest PRIVATE
 			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>"
 		)
-		add_dependencies(ControlDeviceCatalogueTest clap-test-instrument)
+		add_dependencies(ControlDeviceCatalogueTest clap-test-instrument clapinstrument)
 	endif()
 	# The CLAP EFFECT half: plugin.list carries clap-test-gain and plugin.load hosts it in clapeffect.
 	if(TARGET clap-test-gain AND TARGET clapeffect AND TARGET ControlDeviceCatalogueTest)

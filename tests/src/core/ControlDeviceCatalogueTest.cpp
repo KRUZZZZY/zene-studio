@@ -26,6 +26,7 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <memory>
 
 #include <QFileInfo>
 #include <QJsonArray>
@@ -36,6 +37,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DevicePicker.h"
+#include "DummyPlugin.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
@@ -172,6 +174,53 @@ private slots:
 						.arg(entry.name)));
 			}
 		}
+	}
+
+	//! A host descriptor is not itself a device: its real entries need a sub-plugin key.
+	void builtinCatalogueDoesNotListSubPluginHosts()
+	{
+		const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
+		for (const Plugin::Type type : {Plugin::Type::Effect, Plugin::Type::Instrument})
+		{
+			for (const Plugin::Descriptor* descriptor : getPluginFactory()->descriptors(type))
+			{
+				if (descriptor == nullptr || descriptor->subPluginFeatures == nullptr) { continue; }
+				for (const ControlDeviceEntry& entry : catalogue)
+				{
+					if (entry.format == QLatin1String("builtin"))
+					{
+						QVERIFY2(entry.name != QLatin1String(descriptor->name),
+							qPrintable(QStringLiteral("host container '%1' was listed as a plain device")
+								.arg(QString::fromUtf8(descriptor->name))));
+					}
+				}
+			}
+		}
+	}
+
+	//! The LV2 host must report a clean refusal for missing or malformed keys, never dereference them.
+	void lv2InstrumentRefusesMissingOrInvalidKeys()
+	{
+#ifdef LMMS_HAVE_LV2
+		const PluginFactory::PluginInfo& info = getPluginFactory()->pluginInfo("lv2instrument");
+		if (info.isNull()) { QSKIP("this build has no lv2instrument module"); }
+
+		QTest::ignoreMessage(QtCriticalMsg,
+			"Cannot instantiate LV2 instrument: missing sub-plugin key");
+		std::unique_ptr<Plugin> missingKey(Plugin::instantiateWithKey(
+			QStringLiteral("lv2instrument"), nullptr, nullptr));
+		QVERIFY(dynamic_cast<DummyPlugin*>(missingKey.get()) != nullptr);
+
+		using Key = Plugin::Descriptor::SubPluginFeatures::Key;
+		const Key invalidKey(info.descriptor, QStringLiteral("missing URI"), {});
+		QTest::ignoreMessage(QtCriticalMsg,
+			"Cannot instantiate LV2 instrument: sub-plugin key has no URI");
+		std::unique_ptr<Plugin> missingUri(Plugin::instantiateWithKey(
+			QStringLiteral("lv2instrument"), nullptr, &invalidKey));
+		QVERIFY(dynamic_cast<DummyPlugin*>(missingUri.get()) != nullptr);
+#else
+		QSKIP("this build has no LV2 host");
+#endif
 	}
 
 	//! Every LV2 entry names the URI the host resolves and plugin.load keys on,
