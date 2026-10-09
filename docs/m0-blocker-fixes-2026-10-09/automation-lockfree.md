@@ -1,19 +1,26 @@
 # M0 automation lock-free lane report — 2026-10-09
 
-Branch `design/m0-automation-lockfree`, based on `c405233f8`. This report records the stage 1 review follow-ups for cluster 5528 and stage 3 implementation for cluster 5388. Review dispositions from stage 1: ACCEPT 1, ACCEPT-NOTE 3, REWORK 4; the requested 5528 follow-ups are included below.
+Branch `design/m0-automation-lockfree`, based on `c405233f8`. This report records stage 3 round 2 against the independent review at `scratchpad/luna-review-automation-stage3/review.md`.
 
-| Cluster | Verdict | Fix commits | Regression / render proof | Red proof | Green proof and gates | Design |
-|---|---|---|---|---|---|---|
-| 2647 — general `AutomatableModel::valueBuffer()` lock | BLOCKED. A complete render-model registry and coherent lock-free old/new value publication are prerequisites; removing the mutex only from consumers leaves shared-controller, linked-model, and `m_oldValue` races. The existing sole-reader sidechain path is already fixed in the base. | — | No product change or render comparison this round. | — | No change-specific gates. | [automation-lockfree.md](../m0-design/automation-lockfree.md) |
-| 5528 — clip snapshot publication and reclamation | FIXED. Compound `setDragValue()` edits defer nested publication until the full map operation completes. Retired snapshots are retried by the 60 Hz main-thread poll after readers become quiescent. | `a3956c3b8`, `354a81d9b` | `AutomationClipSnapshotTest` counts one drag publication, races readers against drag and rejects the intermediate missing point, and holds a reader through retirement before checking a later idle poll. | Reversing drag publication deferral makes `draggingPublishesOnlyTheCompletedEdit` fail; disabling idle collection makes `retiredSnapshotsAreReclaimedOnALaterControlPoll` fail. Both tests use CTest exit 8. | `AutomationClipSnapshotTest` passed; the automation CTest group passed 13/13. All four required repository gates passed (exit 0). | [automation-lockfree.md](../m0-design/automation-lockfree.md) |
-| 5388 — recording automation from render and worker threads | FIXED. Per-producer preallocated SPSC queues carry stable clip IDs, captured map-relative timestamps, and values. `Song` drains them on the control thread through `recordValue()` semantics. The fixed model membership table replaces the recording-path `QSet`. A bounded pending-event overlay keeps recorded values visible to `hasAutomation()`, `valueAt()`, and `writeBlockRamp()` before drain; a pending point replaces a published node at the same tick. Queue drops, stale IDs, and membership-table overflow are counted and surfaced through the status bar. | `2bf0a7ca5`, `5d52420cd` | `AutomationRecordingTest` checks queue-vs-synchronous point/ramp equivalence and compares every stereo sample bit-for-bit in a deterministic 24-period recording render for normal discrete and linear sample-accurate clips. Song and MIDI-input detuning producer paths, FIFO/equal collapse, full queue/drop count, stale IDs, membership overflow, and held-mutex/zero-allocation probes are covered. | Removing pending-aware `hasAutomation()` fails the empty-map visibility assertion (CTest exit 8). Reverting same-tick overlay precedence fails both the evaluator sweep and audio comparison at frame 512 (CTest exit 8). Disabling the original overlay produced 4 expected failures (CTest exit 8; saved in stage 3 scratch). | Both affected test targets built. `AutomationClipSnapshotTest` + `AutomationRecordingTest`: 2/2; automation-related CTest group: 13/13; RT-safety sweep: 38 paths, 4 existing allowlisted hits, 0 fresh. Complexity, file-length, fork-sources, and no-upstream-regression gates all exited 0. | [automation-lockfree.md](../m0-design/automation-lockfree.md) |
+| Item | Verdict | Fix commit(s) | Regression and render proof | Red exit | Green exit | Gate exits | Design |
+|---|---|---|---|---:|---:|---|---|
+| (a) Stage 1 follow-ups | ACCEPT (independent review) | `a3956c3b8`, `354a81d9b` | Compound automation edits publish once; the reader race and idle snapshot-reclamation tests are in `AutomationClipSnapshotTest`. No new stage 3 code. | — | Prior accepted proof; not rerun for this item. | C 0, L 0, F 0, U 0, RT 0 | [automation-lockfree.md](../m0-design/automation-lockfree.md) |
+| (b) Project-generation fence | FIXED | `1d1f98a1b` | `AutomationRecordingGenerationTest` leaves an event pending across clear/load, reloads a clip with the same saved journal ID, and checks that the new clip is unchanged and the old event is counted stale. | 8 (generation comparison reversed) | 0 | C 0, L 0, F 0, U 0, RT 0 | [automation-lockfree.md](../m0-design/automation-lockfree.md) |
+| (c) Exact recording overlay | FIXED | `d25ce7733` | `AutomationRecordingOverlayTest` compares pending cubic insertion and repeated-equal no-op/removal with synchronous `recordValue()`, then bit-compares 12-period sample-accurate cubic and repeated-value renders. | 8 (overlay collapse/tangent replay disabled; both renders mismatch) | 0 | C 0, L 0, F 0, U 0, RT 0 | [automation-lockfree.md](../m0-design/automation-lockfree.md) |
+| (d) Render allocations | FIXED | `d25ce7733` | The allocation probe measures eight real render periods with automation playing and recording, and verifies drained recording points. Render collection now uses control-grown raw arrays for clips and values and a raw-array restore cache. | 8 (old clip-vector collection reintroduced; 13 render allocations) | 0 (zero allocations; no overlay or scratch overflows) | C 0, L 0, F 0, U 0, RT 0 | [automation-lockfree.md](../m0-design/automation-lockfree.md) |
+| (e) Qt 5 compatibility | ACCEPT (independent review) | — | Static review found no Qt 6-only API in the stage 3 changes. No new compatibility-specific code. | — | Review accepted. | C 0, L 0, F 0, U 0, RT 0 | [automation-lockfree.md](../m0-design/automation-lockfree.md) |
 
-## Commits
+Gate abbreviations: C = complexity, L = file length, F = fork sources, U = no upstream regression, RT = `rt-safety-sweep.py --check`. All gate commands exited 0. The RT sweep found four existing allowlisted hits in three keys and no fresh hits. The named regression run passed 5/5: `AutomationClipSnapshotTest`, `AutomationRecordingTest`, `AutomationRecordingGenerationTest`, `AutomationRecordingOverlayTest`, and `SampleAccurateAutomationTest`.
 
-- `9868649d3` — `docs(m0): design automation recording handoff (cluster 5388)`
-- `a3956c3b8` — `fix(automation): publish compound drag edits once (cluster 5528)`
-- `354a81d9b` — `fix(automation): retry idle snapshot reclamation (cluster 5528)`
-- `2bf0a7ca5` — `fix(automation): add lock-free recording handoff (cluster 5388)`.
-- `9cefcf68e` — `docs(m0): record automation lock-free fixes (cluster 5388)`.
-- `5d52420cd` — `fix(automation): preserve pending recording visibility (cluster 5388)`.
-- This report commit — final validation record, including the updated design.
+The independent review began with ACCEPT 2 and REWORK 3. Round 2 closes findings (b)–(d); the stage 3 disposition is now ACCEPT.
+
+## Round 2 commits
+
+- `74f02755d` — `docs(m0): extend automation design for review round 2 (cluster 5388)`
+- `1d1f98a1b` — `fix(automation): fence queued events by project generation (cluster 5388)`
+- `d25ce7733` — `fix(automation): match replay semantics and preallocate render scratch (cluster 5388)`
+- This report commit — final stage 3 round 2 validation record.
+
+## Earlier lane decisions
+
+Cluster 2647 remains blocked on a complete render-model registry and coherent lock-free value publication. Cluster 5528's compound-publication and idle-reclamation follow-ups remain fixed by `a3956c3b8` and `354a81d9b`.
