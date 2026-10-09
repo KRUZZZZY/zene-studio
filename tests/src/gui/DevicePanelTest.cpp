@@ -40,7 +40,7 @@
  *  - 0.5.0 theme 13: the Inspector keeps an unchanged section (and its focus) when the selection moves, says
  *    "Multiple values" for notes that differ and gives a typed value to all of them, reads velocities in %, and
  *    edits a channel's name in place (mixer.rename_channel).
- *  The device half is skipped when this host loads no effect module. */
+ *  The device half requires the build's amplifier and triple oscillator modules. */
 
 #include <QtTest>
 
@@ -448,7 +448,7 @@ private slots:
 		const int index = Engine::mixer()->createChannel();
 		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(index));
 		const QString first = loadAnEffect(channel);
-		if (first.isEmpty()) { QSKIP("this host loads no effect module"); }
+		QVERIFY2(!first.isEmpty(), "DevicePanelTest must load the amplifier module built for this test");
 		const QString second = loadAnEffect(channel);
 		// The parameter list an agent reads for the device (dsp.get_state), which the card draws from.
 		const QJsonArray chains = run(QStringLiteral("dsp.get_state"), {{QStringLiteral("target"), channel}}).result

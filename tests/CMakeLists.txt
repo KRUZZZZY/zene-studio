@@ -1384,6 +1384,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
+	# DevicePanelTest exercises a real instrument and effect. Build both modules with
+	# the same Plugin ABI as the host; stale modules can overwrite the live instance's
+	# library owner when Plugin::instantiate() returns it.
+	if(LMMS_TEST_NAME STREQUAL "DevicePanelTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator amplifier)
+	endif()
 	# OutOfProcessHostTest drives the whole out-of-process loop on a REAL client
 	# when this build has both halves of it: the ZynAddSubFx module (the only
 	# family in this tree with an in-process AND a client implementation) and the
