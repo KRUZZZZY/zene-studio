@@ -38,6 +38,11 @@
 #include "MidiPort.h"
 #include "MidiReconnect.h"
 #include "TimePos.h"
+#include "ControlCommandsMidiReconnectShared.h"
+#include "ControlEdit.h"
+#include "InstrumentTrack.h"
+#include "ProjectJournal.h"
+#include "Song.h"
 
 #include "Engine.h"
 
@@ -281,6 +286,43 @@ private slots:
 		QVERIFY(binding != nullptr);
 		QVERIFY(binding->live);
 		QVERIFY(!binding->lost);
+	}
+
+	//! A recorded binding must follow the stable track id when a deleted track is
+	//! recreated. Allocate its replacement while the original is alive, so this
+	//! catches the old closure without depending on allocator reuse.
+	void bindingUndoAndRedoResolveTheRestoredTrackPort()
+	{
+		Song* song = Engine::getSong();
+		QVERIFY(song != nullptr);
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		journal->clearJournal();
+
+		InstrumentTrack* target = new InstrumentTrack(song);
+		InstrumentTrack* replacement = new InstrumentTrack(song);
+		const QString trackId = control::trackIdOf(target);
+		const int stableId = target->id();
+		MidiPort* oldPort = target->midiPort();
+		QVERIFY(replacement->midiPort() != oldPort);
+		const QString bindingName = QStringLiteral("Lifetime Probe:controller");
+
+		journal->clearJournal();
+		midireconnectcontrol::recordBindingInverse(trackId, true, bindingName, true);
+		target->midiPort()->subscribeReadablePort(bindingName, true);
+		QVERIFY(target->midiPort()->readablePorts().value(bindingName, false));
+		control::removeTrack(target);
+		replacement->setId(stableId);
+		QCOMPARE(midireconnectcontrol::midiPortForTrack(trackId), replacement->midiPort());
+		replacement->midiPort()->subscribeReadablePort(bindingName, true);
+
+		journal->undo();
+		QVERIFY(!replacement->midiPort()->readablePorts().value(bindingName, false));
+		journal->redo();
+		QVERIFY(replacement->midiPort()->readablePorts().value(bindingName, false));
+
+		control::removeTrack(replacement);
+		journal->clearJournal();
 	}
 
 	//! The mode OFF is the whole content of the switch: the loss is still

@@ -38,6 +38,7 @@
 #include "StemSeparation/ExternalProcessStemSeparator.h"
 #include "StemSeparation/StemModelStore.h"
 #include "StemSeparation/StemTrackBuilder.h"
+#include "Track.h"
 
 namespace lmms::gui
 {
@@ -146,20 +147,66 @@ void StemSplitController::splitClipToStems(SampleClip* clip)
 			tr("A stem separation job is already running."));
 		return;
 	}
+	ClipSnapshot snapshot;
+	if (!captureClipSnapshot(clip, &snapshot))
+	{
+		return;
+	}
 
 	bool fetching = false;
 	if (!ensureBackendReady(&fetching)) { return; }
-
-	const auto source = clip->sample().buffer();
-	if (!source || source->empty())
+	if (!targetStillAvailable(snapshot))
+	{
+		return;
+	}
+	if (!snapshot.source || snapshot.source->empty())
 	{
 		QMessageBox::warning(m_parent, tr("Split to stems"), tr("This clip has no audio."));
 		return;
 	}
-	// E27: a clip at another rate is resampled to the model's 44.1 kHz first, not refused.
-	const auto buffer = resampleBuffer(source, StemModelSampleRate);
+	startJob(snapshot, fetching);
+}
 
-	m_clip = clip;
+
+
+
+bool StemSplitController::captureClipSnapshot(SampleClip* clip, ClipSnapshot* snapshot) const
+{
+	Song* song = Engine::getSong();
+	Track* track = clip->getTrack();
+	if (song == nullptr || track == nullptr || song->findTrackById(track->id()) != track)
+	{
+		return false;
+	}
+	snapshot->song = song;
+	snapshot->trackId = track->id();
+	snapshot->position = clip->startPosition();
+	snapshot->name = clip->name();
+	snapshot->source = clip->sample().buffer();
+	return true;
+}
+
+
+
+
+bool StemSplitController::targetStillAvailable(const ClipSnapshot& snapshot) const
+{
+	return !snapshot.song.isNull() && snapshot.song.data() == Engine::getSong()
+		&& snapshot.song->findTrackById(snapshot.trackId) != nullptr;
+}
+
+
+
+
+void StemSplitController::startJob(const ClipSnapshot& snapshot, bool fetching)
+{
+	// E27: a clip at another rate is resampled to the model's 44.1 kHz first, not refused.
+	const auto buffer = resampleBuffer(snapshot.source, StemModelSampleRate);
+
+	m_song = snapshot.song;
+	m_trackId = snapshot.trackId;
+	m_clipPosition = snapshot.position;
+	m_clipName = snapshot.name;
 	m_jobId = m_manager.submit(buffer, buffer->sampleRate(), HTDemucsSegmentFrames);
 
 	m_dialog = new QProgressDialog(fetching
@@ -202,11 +249,18 @@ void StemSplitController::handleFinished(int jobId, double elapsedSeconds)
 		return;
 	}
 	closeDialog();
+	Song* song = m_song.data();
+	if (song == nullptr || song != Engine::getSong() || song->findTrackById(m_trackId) == nullptr)
+	{
+		m_jobId = -1;
+		clearTarget();
+		return;
+	}
 
 	QString error;
 	const auto stems = m_manager.result(jobId);
-	const auto tracks = StemTrackBuilder::createStemTracks(Engine::getSong(), stems,
-		m_clip->startPosition(), m_clip->name(), &error);
+	const auto tracks = StemTrackBuilder::createStemTracks(song, stems,
+		m_clipPosition, m_clipName, &error);
 
 	if (tracks.isEmpty())
 	{
@@ -220,7 +274,7 @@ void StemSplitController::handleFinished(int jobId, double elapsedSeconds)
 	}
 
 	m_jobId = -1;
-	m_clip = nullptr;
+	clearTarget();
 }
 
 
@@ -234,7 +288,7 @@ void StemSplitController::handleCancelled(int jobId)
 	}
 	closeDialog();
 	m_jobId = -1;
-	m_clip = nullptr;
+	clearTarget();
 }
 
 
@@ -250,7 +304,7 @@ void StemSplitController::handleFailed(int jobId, const QString& error)
 	QMessageBox::warning(m_parent, tr("Split to stems"),
 		tr("Stem separation failed:\n\n%1").arg(error));
 	m_jobId = -1;
-	m_clip = nullptr;
+	clearTarget();
 }
 
 
@@ -264,6 +318,17 @@ void StemSplitController::closeDialog()
 		m_dialog->deleteLater();
 		m_dialog = nullptr;
 	}
+}
+
+
+
+
+void StemSplitController::clearTarget()
+{
+	m_song.clear();
+	m_trackId = -1;
+	m_clipPosition = TimePos(0);
+	m_clipName.clear();
 }
 
 } // namespace lmms::gui

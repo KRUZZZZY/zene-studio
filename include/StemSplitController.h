@@ -25,9 +25,13 @@
 #define LMMS_GUI_STEM_SPLIT_CONTROLLER_H
 
 #include <QObject>
+#include <QPointer>
 #include <QString>
 
+#include <memory>
+
 #include "StemSeparation/StemJobManager.h"
+#include "TimePos.h"
 
 class QProgressDialog;
 class QWidget;
@@ -36,6 +40,8 @@ namespace lmms
 {
 
 class SampleClip;
+class SampleBuffer;
+class Song;
 
 namespace gui
 {
@@ -69,17 +75,33 @@ private slots:
 	void handleFailed(int jobId, const QString& error);
 
 private:
+	struct ClipSnapshot
+	{
+		QPointer<Song> song;
+		int trackId = -1;
+		TimePos position;
+		QString name;
+		std::shared_ptr<const SampleBuffer> source;
+	};
+
 	/*! Owner decision 14: true when a job may be submitted - the backend is
 	 *  ready, or only the model is missing and the user agreed to fetch it
 	 *  (\a fetching set). False after telling the user why not. */
 	bool ensureBackendReady(bool* fetching);
+	bool captureClipSnapshot(SampleClip* clip, ClipSnapshot* snapshot) const;
+	bool targetStillAvailable(const ClipSnapshot& snapshot) const;
+	void startJob(const ClipSnapshot& snapshot, bool fetching);
 
 	void closeDialog();
+	void clearTarget();
 
 	QWidget* m_parent = nullptr;
 	StemJobManager m_manager;
 	QProgressDialog* m_dialog = nullptr;
-	SampleClip* m_clip = nullptr;
+	QPointer<Song> m_song;
+	int m_trackId = -1;
+	TimePos m_clipPosition;
+	QString m_clipName;
 	int m_jobId = -1;
 };
 

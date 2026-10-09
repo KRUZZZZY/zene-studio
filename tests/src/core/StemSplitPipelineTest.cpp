@@ -30,15 +30,23 @@
 #include <vector>
 
 #include <QElapsedTimer>
+#include <QApplication>
 #include <QFile>
+#include <QPointer>
+#include <QProgressDialog>
+#include <QMessageBox>
 #include <QSignalSpy>
+#include <QTimer>
 
 #include "Engine.h"
 #include "SampleBuffer.h"
 #include "SampleFrame.h"
+#include "SampleClip.h"
 #include "SampleTrack.h"
 #include "Song.h"
+#include "StemSplitController.h"
 #include "TimePos.h"
+#include "Track.h"
 #include "TrackContainer.h"
 
 #include "StemSeparation/ExternalProcessStemSeparator.h"
@@ -49,6 +57,14 @@ using namespace lmms;
 
 namespace
 {
+
+void closeMessageBoxes()
+{
+	for (QWidget* widget : QApplication::topLevelWidgets())
+	{
+		if (auto* message = qobject_cast<QMessageBox*>(widget)) { message->accept(); }
+	}
+}
 
 // The committed fixture is a tiny linear 4-output ONNX graph (458 bytes), NOT
 // HTDemucs. It exists so the whole pipeline can be exercised without the
@@ -320,6 +336,88 @@ private slots:
 		}
 	}
 
+	void controllerUsesClipSnapshotAfterSourceClipIsDeleted()
+	{
+		auto* song = Engine::getSong();
+		const auto trackIndex = song->tracks().size();
+		auto* sourceTrack = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		QVERIFY(sourceTrack != nullptr);
+
+		const TimePos submittedPosition(384);
+		auto* source = dynamic_cast<SampleClip*>(sourceTrack->createClip(submittedPosition));
+		QVERIFY(source != nullptr);
+		source->setName(QStringLiteral("Submitted source"));
+		source->setSampleBuffer(makeSineMix(1));
+
+		gui::StemSplitController controller;
+		controller.splitClipToStems(source);
+
+		// The worker owns its input buffer. The controller must not need the
+		// source clip after submission; reusing its allocation makes stale reads
+		// observable in the names and positions of the generated tracks.
+		sourceTrack->deleteClips();
+		auto* replacement = dynamic_cast<SampleClip*>(sourceTrack->createClip(TimePos(768)));
+		QVERIFY(replacement != nullptr);
+		replacement->setName(QStringLiteral("Replacement source"));
+		replacement->setSampleBuffer(makeSineMix(1));
+
+		QPointer<QProgressDialog> progress;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			if (auto* dialog = qobject_cast<QProgressDialog*>(widget)) { progress = dialog; }
+		}
+		QVERIFY(!progress.isNull());
+
+		QTimer closeMessageBox;
+		closeMessageBox.setInterval(10);
+		connect(&closeMessageBox, &QTimer::timeout, &closeMessageBoxes);
+		closeMessageBox.start();
+		QTRY_VERIFY_WITH_TIMEOUT(progress.isNull(), 180000);
+		closeMessageBox.stop();
+
+		QCOMPARE(song->tracks().size(), trackIndex + 5);
+		for (int s = 0; s < NumStems; ++s)
+		{
+			auto* stemTrack = dynamic_cast<SampleTrack*>(song->tracks().at(trackIndex + 1 + s));
+			QVERIFY(stemTrack != nullptr);
+			QVERIFY(stemTrack->name().startsWith(QStringLiteral("Submitted source - ")));
+			QCOMPARE(stemTrack->getClips().front()->startPosition().getTicks(), submittedPosition.getTicks());
+		}
+
+		for (int s = 0; s < NumStems; ++s) { delete song->tracks().at(trackIndex + 1); }
+		delete sourceTrack;
+	}
+
+	void controllerSkipsResultsWhenSourceTrackWasDeleted()
+	{
+		auto* song = Engine::getSong();
+		const auto trackCount = song->tracks().size();
+		auto* sourceTrack = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		QVERIFY(sourceTrack != nullptr);
+		auto* source = dynamic_cast<SampleClip*>(sourceTrack->createClip(TimePos(384)));
+		QVERIFY(source != nullptr);
+		source->setName(QStringLiteral("Deleted track source"));
+		source->setSampleBuffer(makeSineMix(1));
+
+		gui::StemSplitController controller;
+		controller.splitClipToStems(source);
+		delete sourceTrack;
+
+		QPointer<QProgressDialog> progress;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			if (auto* dialog = qobject_cast<QProgressDialog*>(widget)) { progress = dialog; }
+		}
+		QVERIFY(!progress.isNull());
+		QTimer closeMessageBox;
+		closeMessageBox.setInterval(10);
+		connect(&closeMessageBox, &QTimer::timeout, &closeMessageBoxes);
+		closeMessageBox.start();
+		QTRY_VERIFY_WITH_TIMEOUT(progress.isNull(), 180000);
+		closeMessageBox.stop();
+		QCOMPARE(song->tracks().size(), trackCount);
+	}
+
 	void testStemTrackBuilderRejectsAnIncompleteSet()
 	{
 		auto* song = Engine::getSong();
@@ -335,5 +433,5 @@ private slots:
 	}
 };
 
-QTEST_GUILESS_MAIN(StemSplitPipelineTest)
+QTEST_MAIN(StemSplitPipelineTest)
 #include "StemSplitPipelineTest.moc"

@@ -446,6 +446,15 @@ void EffectChain::clear()
 
 	Engine::audioEngine()->requestChangeInModel();
 
+	// The routing graph's nodes point at the effects. Drop those nodes while
+	// the effects are still alive and while the audio thread is excluded.
+	m_graph->clear();
+	m_effectNodes.clear();
+	m_graphInput.reset();
+	m_graphOutput.reset();
+	m_graphActive = false;
+	m_patchDropped = false;
+
 	while (m_effects.size())
 	{
 		auto e = m_effects[m_effects.size() - 1];
@@ -456,10 +465,6 @@ void EffectChain::clear()
 	Engine::audioEngine()->doneChangeInModel();
 
 	m_enabledModel.setValue( false );
-
-	// Nothing left to route: the graph goes back to empty (and inactive), so
-	// the chain's signal path is exactly the plain loop again.
-	rebuildRoutingGraph();
 
 	refreshLatency();
 }

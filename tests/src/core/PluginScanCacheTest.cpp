@@ -73,7 +73,10 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLibrary>
 #include <QTemporaryDir>
+
+#include <memory>
 
 // LMMS_BUILD_WIN32 is only ever defined by the generated build-tree
 // lmmsconfig.h, never as a compile definition, so without this include the
@@ -90,10 +93,12 @@
 
 #include "embed.h"
 #include "Engine.h"
+#include "InstrumentTrack.h"
 #include "Plugin.h"
 #include "PluginBrowser.h"
 #include "PluginFactory.h"
 #include "PluginScanCache.h"
+#include "Song.h"
 
 //! Build-tree plugin directory, injected by tests/CMakeLists.txt.
 #ifndef LMMS_TEST_SCAN_PLUGIN_DIR
@@ -620,6 +625,51 @@ private slots:
 			"the deferred library must still load on demand");
 		QVERIFY(info.library->isLoaded());
 	}
+
+	//! Cached descriptor memory remains valid for rows holding a pointer across a rescan.
+	void testCachedDescriptorSurvivesRescan()
+	{
+		using namespace lmms;
+
+		if (!pluginModuleCopied()) { QSKIP("no built plugin module to fingerprint"); }
+		const QString cacheFile = cachePath("descriptor-lifetime");
+		QFileInfo file(pluginPath());
+		PluginScanRecord first = recordFor(pluginPath(), PluginScanRecord::Status::HasDescriptor);
+		first.size = file.size();
+		first.mtimeMs = file.lastModified().toMSecsSinceEpoch();
+		first.name = QStringLiteral("tripleoscillator");
+		first.displayName = QStringLiteral("Before rescan");
+		first.description = QStringLiteral("cached descriptor lifetime fixture");
+		first.author = QStringLiteral("Zene Studio test");
+		first.version = 0x0110;
+		first.type = static_cast<int>(Plugin::Type::Instrument);
+		first.hasSubPluginFeatures = false;
+		{
+			PluginScanCache cache(cacheFile);
+			cache.store(first);
+			QVERIFY(cache.save());
+		}
+		qputenv("LMMS_PLUGIN_SCAN_CACHE", cacheFile.toLocal8Bit());
+		QDir::setSearchPaths("plugins", QStringList{m_pluginDir->path()});
+		PluginFactory factory;
+		const Plugin::DescriptorList beforeDescriptors = factory.descriptors(Plugin::Type::Instrument);
+		QCOMPARE(beforeDescriptors.size(), 1);
+		const Plugin::Descriptor* before = beforeDescriptors.first();
+		QCOMPARE(QString::fromUtf8(before->displayName), first.displayName);
+
+		PluginScanRecord second = first;
+		second.displayName = QStringLiteral("After rescan");
+		{
+			PluginScanCache cache(cacheFile);
+			cache.store(second);
+			QVERIFY(cache.save());
+		}
+		factory.discoverPlugins();
+		const Plugin::DescriptorList afterDescriptors = factory.descriptors(Plugin::Type::Instrument);
+		QCOMPARE(afterDescriptors.size(), 1);
+		QCOMPARE(QString::fromUtf8(afterDescriptors.first()->displayName), second.displayName);
+		QCOMPARE(QString::fromUtf8(before->displayName), first.displayName);
+	}
 	void testQuarantinedPluginIsHiddenFromDiscovery()
 	{
 		using namespace lmms;
@@ -782,6 +832,37 @@ private slots:
 		}
 
 		browser.hide();
+	}
+
+	//! A live plugin instance owns its module after a rescan replaces PluginInfo.
+	void testPluginInstanceRetainsLibraryAcrossRescan()
+	{
+		using namespace lmms;
+
+		if (!pluginModuleCopied()) { QSKIP("no built tripleoscillator module to scan"); }
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
+		Engine::init(true);
+		struct EngineShutdown
+		{
+			~EngineShutdown() { Engine::destroy(); }
+		} engineShutdown;
+		QDir::setSearchPaths("plugins", QStringList{m_pluginDir->path()});
+		auto* factory = getPluginFactory();
+		factory->discoverPlugins();
+		PluginFactory::PluginInfo info = factory->pluginInfo("tripleoscillator");
+		QVERIFY(!info.isNull());
+		std::weak_ptr<QLibrary> library = info.library;
+		info.library.reset();
+
+		auto track = std::make_unique<InstrumentTrack>(Engine::getSong());
+		auto instance = std::unique_ptr<Plugin>(Plugin::instantiate(QStringLiteral("tripleoscillator"), track.get(), nullptr));
+		QVERIFY(instance != nullptr);
+		factory->discoverPlugins();
+		QVERIFY2(!library.expired(), "a live plugin instance must keep its code module loaded after rescan");
+
+		instance.reset();
+		QVERIFY2(library.expired(), "the instance's module reference must be released with the instance");
 	}
 
 	/*! A full scan that loads an LV2 host module must not crash when the Engine was

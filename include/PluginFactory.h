@@ -148,6 +148,9 @@ private:
 	 * the rebuilt descriptor stays valid after the cache is gone.
 	 */
 	class CachedDescriptorStore;
+	// Descriptor pointers escape into browser rows, so each retired store stays
+	// owned until the factory is destroyed.
+	std::vector<std::unique_ptr<CachedDescriptorStore>> m_retiredCachedDescriptors;
 	std::unique_ptr<CachedDescriptorStore> m_cachedDescriptors;
 
 	//! Rebuild a descriptor from a cache record (declared here, defined in the .cpp).

@@ -1982,6 +1982,7 @@ tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBurstSupport.h
 tests/src/core/AudioClipLoopTest.cpp
 tests/src/core/AudioEditingTest.cpp
+tests/src/core/AudioJackPortRestartTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp

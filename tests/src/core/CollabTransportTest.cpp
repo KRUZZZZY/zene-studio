@@ -35,6 +35,7 @@
 
 #ifdef ZENE_HAVE_COLLAB
 
+#include <QFile>
 #include <QJsonDocument>
 #include <QTcpSocket>
 
@@ -186,6 +187,45 @@ private slots:
 		QCOMPARE(m_got.commands.at(1).first, QStringLiteral("track.rename"));
 		QCOMPARE(m_got.commands.at(1).second, second);
 		QCOMPARE(client.sequence(), m_host->sequence());
+	}
+
+	//! The broadcast implementation must snapshot ids and re-look up each peer
+	//! after sendLine can synchronously erase it.
+	void peerBroadcastUsesStableIdSnapshot()
+	{
+		QFile hostSource(QStringLiteral(COLLAB_HOST_SOURCE_PATH));
+		QVERIFY2(hostSource.open(QIODevice::ReadOnly | QIODevice::Text),
+			qPrintable(hostSource.errorString()));
+		const QString source = QString::fromUtf8(hostSource.readAll());
+		const qsizetype start = source.indexOf(QStringLiteral("void CollabHost::sendToProjectPeers("));
+		QVERIFY(start >= 0);
+		const qsizetype end = source.indexOf(QStringLiteral("\n}"), start);
+		QVERIFY(end > start);
+		const QString implementation = source.mid(start, end - start);
+		QVERIFY(implementation.contains(QStringLiteral("m_peers.keys()")));
+		QVERIFY(implementation.contains(QStringLiteral("m_peers.find(peerId)")));
+		QVERIFY(!implementation.contains(QStringLiteral("std::as_const(m_peers)")));
+	}
+
+	//! A queue-limit close erases a peer synchronously while a host broadcast is
+	//! walking the peer set; every affected peer must still be removed safely.
+	void oversizedBroadcastCanClosePeersDuringIteration()
+	{
+		CollabClient first;
+		CollabClient second;
+		wire(first);
+		wire(second);
+		first.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("First"));
+		second.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Second"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(first) && joined(second), 10000);
+		QTRY_COMPARE(m_host->peerCount(), 2);
+
+		// The first sendLine exceeds the real per-peer queue limit and synchronously
+		// emits closed. onPeerClosed erases that entry and emits peersChanged before
+		// this broadcast returns.
+		const QString oversized(static_cast<int>(MaxQueuedBytes + 1), QLatin1Char('x'));
+		m_host->broadcastCommand(oversized, {}, QStringLiteral("host"));
+		QTRY_COMPARE_WITH_TIMEOUT(m_host->peerCount(), 0, 5000);
 	}
 
 	//! A peer's request reaches the host's handler with the peer's role, and the reply comes back to it.

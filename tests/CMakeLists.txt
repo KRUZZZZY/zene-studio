@@ -392,9 +392,11 @@ set(LMMS_TESTS
 	# comes back at a NEW address being re-attached without user action, the mode
 	# that records without re-attaching, an explicit unsubscribe never being
 	# re-attached, and two clients sharing one name being reported rather than
-	# guessed. No Engine and no device: the client and the port are synthetic, so
-	# it is the counterpart of the ControlMidiReconnect transcript below, which
-	# drives the real binary and a real external ALSA client.
+	# guessed. No physical MIDI device is needed: the client and port are
+	# synthetic. The headless Engine supplies the Song and journal for the slot
+	# that proves a recorded binding resolves the replacement port after track
+	# deletion; the ControlMidiReconnect transcript below drives the real binary
+	# and a real external ALSA client.
 	src/core/MidiReconnectTest.cpp
 	src/core/MixerAbRegressionTest.cpp
 	src/core/MixerConcurrencyTest.cpp
@@ -1047,6 +1049,11 @@ ENDIF()
 # realtime rule. Every build: the follower compiles against the stub session without Link.
 LIST(APPEND LMMS_TESTS src/core/LinkPhaseLockTest.cpp)
 
+# JACK port state must be replaced when a dead client is reopened.
+IF(LMMS_HAVE_JACK)
+	LIST(APPEND LMMS_TESTS src/core/AudioJackPortRestartTest.cpp)
+ENDIF()
+
 # Ableton Link (WF-051, docs/LINK-SYNC.md): the vendored library and its wrapper.
 # Only with the library in the build (WANT_ABLETON_LINK); RUN_SERIAL below.
 IF(LMMS_HAVE_ABLETON_LINK)
@@ -1182,6 +1189,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	# TODO CMake 3.12: Propagate usage requirements by linking to lmmsobjs
 	target_include_directories(${LMMS_TEST_NAME} PRIVATE $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+	if(LMMS_TEST_NAME STREQUAL "MidiReconnectTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/src/core")
+	endif()
 
 	target_static_libraries("${LMMS_TEST_NAME}" PRIVATE lmmsobjs)
 	target_link_libraries(${LMMS_TEST_NAME} PRIVATE
@@ -4275,6 +4285,15 @@ set_tests_properties(ProvenanceSectionTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ProvenanceVersionTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+IF(LMMS_HAVE_JACK)
+	set_tests_properties(AudioJackPortRestartTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+ENDIF()
+IF(LMMS_HAVE_STEM_SPLIT)
+	# The controller regression exercises its progress and completion dialogs.
+	set_tests_properties(StemSplitPipelineTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+ENDIF()
 # Headless load path (task #625, SPEC A13/A15): no modal dialog may block an
 # instance started with --control-socket.
 #
@@ -4722,6 +4741,8 @@ endif()
 
 # 0.5.0 F6 (WF-050/WF-052): two real instances on 127.0.0.1 - host, a local invite, join, edits both
 # ways, an undo re-sync and a refused viewer. Exits 77 (skipped) where the TLS-PSK backend is missing.
+target_compile_definitions(CollabTransportTest PRIVATE
+	COLLAB_HOST_SOURCE_PATH="${CMAKE_SOURCE_DIR}/src/core/CollabHost.cpp")
 if(PYTHON3_EXECUTABLE AND ZENE_HAVE_COLLAB)
 	set_tests_properties(CollabPolicyTest CollabTransportTest PortMappingCodecTest PortMappingOrchestratorTest UpnpMapperFakeRouterTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

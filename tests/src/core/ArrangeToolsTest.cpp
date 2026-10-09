@@ -37,7 +37,11 @@
 #include <QRegularExpression>
 #include <QTemporaryDir>
 
+#include <atomic>
+#include <chrono>
 #include <cstdlib>
+#include <memory>
+#include <thread>
 #include <vector>
 
 #include "ArrangementSections.h"
@@ -90,6 +94,86 @@ SampleClip* loudQuietLoudAtRate(Track* track, int rate, int loudFrames, int quie
 	clip->movePosition(TimePos(0));
 	return clip;
 }
+
+class ModelGuardProbe
+{
+public:
+	~ModelGuardProbe() { finish(); }
+
+	void beginDuringCreate()
+	{
+		AudioEngine* const engine = Engine::audioEngine();
+		m_waiter = std::thread([this, engine] {
+			engine->requestChangeInModel();
+			m_acquired.store(true, std::memory_order_release);
+			engine->doneChangeInModel();
+		});
+
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+		while (!m_acquired.load(std::memory_order_acquire)
+			&& std::chrono::steady_clock::now() < deadline)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+		m_guardHeldDuringCreate = !m_acquired.load(std::memory_order_acquire);
+	}
+
+	void observeRestore()
+	{
+		m_guardHeldDuringRestore = !m_acquired.load(std::memory_order_acquire);
+	}
+
+	void finish()
+	{
+		if (m_waiter.joinable()) { m_waiter.join(); }
+		m_releasedAfterRestore = m_acquired.load(std::memory_order_acquire);
+	}
+
+	bool guardHeldDuringCreate() const { return m_guardHeldDuringCreate; }
+	bool guardHeldDuringRestore() const { return m_guardHeldDuringRestore; }
+	bool releasedAfterRestore() const { return m_releasedAfterRestore; }
+
+private:
+	std::thread m_waiter;
+	std::atomic<bool> m_acquired{false};
+	bool m_guardHeldDuringCreate = false;
+	bool m_guardHeldDuringRestore = false;
+	bool m_releasedAfterRestore = false;
+};
+
+class GuardProbeSampleClip : public SampleClip
+{
+public:
+	GuardProbeSampleClip(Track* track, ModelGuardProbe* probe) : SampleClip(track), m_probe(probe) {}
+
+	void restoreState(const QDomElement& element) override
+	{
+		m_probe->observeRestore();
+		SampleClip::restoreState(element);
+	}
+
+private:
+	ModelGuardProbe* m_probe;
+};
+
+class GuardProbeSampleTrack : public SampleTrack
+{
+public:
+	using SampleTrack::SampleTrack;
+
+	Clip* createClip(const TimePos& pos) override
+	{
+		auto* clip = new GuardProbeSampleClip(this, &m_probe);
+		clip->movePosition(pos);
+		m_probe.beginDuringCreate();
+		return clip;
+	}
+
+	ModelGuardProbe& probe() { return m_probe; }
+
+private:
+	ModelGuardProbe m_probe;
+};
 
 } // namespace
 
@@ -146,6 +230,20 @@ private slots:
 			ControlErrorKind::NotFound);
 		QCOMPARE(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral(" ")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+	}
+
+	void replacingTrackVersionKeepsModelGuardThroughClipRestore()
+	{
+		auto track = std::make_unique<GuardProbeSampleTrack>(Engine::getSong());
+		QVERIFY(TrackVersions::replaceClips(track.get(), QStringLiteral("<clips><sampleclip/></clips>")));
+		track->probe().finish();
+
+		QVERIFY2(track->probe().guardHeldDuringCreate(),
+			"another thread entered the audio model while a replacement clip was being created");
+		QVERIFY2(track->probe().guardHeldDuringRestore(),
+			"another thread entered the audio model before a replacement clip finished restoring");
+		QVERIFY(track->probe().releasedAfterRestore());
+		QCOMPARE(track->numOfClips(), 1);
 	}
 
 	void savingAnotherVersionPreservesEditsToTheActiveVersion()

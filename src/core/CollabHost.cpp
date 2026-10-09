@@ -362,9 +362,11 @@ void CollabHost::broadcastCommand(const QString& command, const QJsonObject& arg
 
 void CollabHost::sendToProjectPeers(const QByteArray& line)
 {
-	for (const Peer& peer : std::as_const(m_peers))
+	const QList<int> peerIds = m_peers.keys();
+	for (int peerId : peerIds)
 	{
-		if (holdsProject(peer)) { peer.link->sendLine(line); }
+		auto it = m_peers.find(peerId);
+		if (it != m_peers.end() && holdsProject(*it)) { it->link->sendLine(line); }
 	}
 }
 

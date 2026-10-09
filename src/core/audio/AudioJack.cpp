@@ -173,6 +173,8 @@ AudioJack* AudioJack::addMidiClient(MidiJack* midiClient)
 
 bool AudioJack::initJackClient()
 {
+	clearPortState(m_outputPorts, m_inputPorts, m_tempOutBufs);
+
 	QString clientName = ConfigManager::inst()->value(audioJackClass, clientNameKey);
 	if (clientName.isEmpty()) { clientName = "Zene Studio"; }
 
@@ -239,6 +241,18 @@ bool AudioJack::initJackClient()
 	m_tempOutBufs.assign(m_outputPorts.size(), nullptr);
 
 	return true;
+}
+
+
+
+
+void AudioJack::clearPortState(std::vector<jack_port_t*>& outputPorts,
+	std::vector<jack_port_t*>& inputPorts,
+	std::vector<jack_default_audio_sample_t*>& tempOutputBuffers)
+{
+	outputPorts.clear();
+	inputPorts.clear();
+	tempOutputBuffers.clear();
 }
 
 

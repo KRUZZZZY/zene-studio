@@ -427,6 +427,7 @@ void PluginFactory::discoverPlugins()
 	PluginInfoList pluginInfos;
 	m_pluginByExt.clear();
 	m_scanStats = ScanStats();
+	m_retiredCachedDescriptors.push_back(std::move(m_cachedDescriptors));
 	m_cachedDescriptors = std::make_unique<CachedDescriptorStore>();
 
 	// Re-read the cache on every scan, so an edited quarantine list takes

@@ -298,6 +298,10 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 		}
 	}
 
+	// The factory's scan results are replaceable, but this object's vtable and
+	// destructor live in the plugin module. Keep its QLibrary alive through the
+	// derived destructor, even if a later rescan drops the PluginInfo.
+	inst->m_library = pi.library;
 	return inst;
 }
 
