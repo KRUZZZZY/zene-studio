@@ -59,6 +59,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ClipEdits.h"
 #include "Engine.h"
 #include "MidiClip.h"
 #include "ProjectJournal.h"
@@ -696,6 +697,21 @@ private slots:
 		source->notesChanged();
 		QCOMPARE(noteKeyAt(b, 0), 67);
 		QCOMPARE(divergentCount(a), 0);
+	}
+
+	void loopWindowEditsStayWithTheAddressedLinkedClip()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("loop A"));
+		const QString b = addMidiClip(QStringLiteral("loop B"));
+		QVERIFY(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok);
+
+		const ControlResult loop = registry->invoke(QStringLiteral("clip.set_loop"),
+			QJsonObject{{QStringLiteral("clip"), b}, {QStringLiteral("length"), 48}});
+		QVERIFY2(loop.ok, qPrintable(loop.errorMessage));
+		QCOMPARE(midiClipOf(b)->clipEdits().loopTicks, 48);
+		QCOMPARE(midiClipOf(a)->clipEdits().loopTicks, 0);
 	}
 
 	void makeUniqueDetachesOnlyTheSelectedInstance()

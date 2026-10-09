@@ -22,9 +22,17 @@
 
 #include <QtTest>
 
+#include <QAction>
+#include <QApplication>
 #include <QCoreApplication>
+#include <QContextMenuEvent>
+#include <QImage>
+#include <QMenu>
 #include <QMouseEvent>
+#include <QTimer>
 
+#include "ArrangementEdits.h"
+#include "ClipEdits.h"
 #include "ClipLinks.h"
 #include "ClipView.h"
 #include "ControlRegistry.h"
@@ -36,6 +44,8 @@
 #include "MidiClipView.h"
 #include "Note.h"
 #include "ProjectJournal.h"
+#include "SampleClip.h"
+#include "SampleTrack.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "Track.h"
@@ -68,6 +78,71 @@ MidiClipView* viewOf(const Clip* clip)
 		if (view->getClip() == clip) { return view; }
 	}
 	return nullptr;
+}
+
+ClipView* clipViewOf(const Clip* clip)
+{
+	for (ClipView* view : getGUI()->songEditor()->m_editor->findChildren<ClipView*>())
+	{
+		if (view->getClip() == clip) { return view; }
+	}
+	return nullptr;
+}
+
+QImage widgetImage(QWidget* widget)
+{
+	QImage image(widget->size(), QImage::Format_ARGB32_Premultiplied);
+	image.fill(Qt::transparent);
+	widget->render(&image);
+	return image;
+}
+
+int markerPixelDifferences(const QImage& linked, const QImage& unique, int width)
+{
+	int differences = 0;
+	for (int y = 2; y < 15; ++y)
+	for (int x = width - 22; x < width - 2; ++x)
+	{
+		if (linked.pixel(x, y) != unique.pixel(x, y)) { ++differences; }
+	}
+	return differences;
+}
+
+bool openContextMenuAndTrigger(QWidget* target, const QString& wantedAction)
+{
+	bool found = false;
+	QTimer::singleShot(0, [&]() {
+		auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+		if (menu == nullptr)
+		{
+			for (QWidget* top : QApplication::topLevelWidgets())
+			{
+				if (auto* candidate = qobject_cast<QMenu*>(top); candidate != nullptr && candidate->isVisible())
+				{
+					menu = candidate;
+					break;
+				}
+			}
+		}
+		if (menu == nullptr) { return; }
+		for (QAction* action : menu->actions())
+		{
+			if (action->text() == wantedAction)
+			{
+				found = true;
+				action->trigger();
+				break;
+			}
+		}
+		menu->close();
+	});
+	QTimer::singleShot(1500, []() {
+		if (QWidget* popup = QApplication::activePopupWidget()) { popup->close(); }
+	});
+	const QPoint at(target->width() / 2, target->height() / 2);
+	QContextMenuEvent context(QContextMenuEvent::Mouse, at, target->mapToGlobal(at), Qt::NoModifier);
+	QCoreApplication::sendEvent(target, &context);
+	return found;
 }
 
 } // namespace
@@ -343,6 +418,96 @@ private slots:
 		QCoreApplication::processEvents();
 		QVERIFY(a->length().getTicks() < 4 * Bar);  // the selected window changed
 		QCOMPARE(b->length().getTicks(), Bar / 4);   // peer window stayed independent
+	}
+
+	void linkedClipWidgetShowsMarkerAndAccessibleState()
+	{
+		MidiClip* a = midiClipAt(m_track, 0, Bar);
+		MidiClip* b = midiClipAt(m_track, 4 * Bar, Bar);
+		MidiClip* c = midiClipAt(m_track, 8 * Bar, Bar);
+		for (MidiClip* clip : {a, b, c}) { clip->setName(QStringLiteral("Shared phrase")); }
+		const int group = ClipLinks::allocateGroupId();
+		for (MidiClip* clip : {a, b, c}) { clip->setLinkId(group); }
+		a->addNote(Note(TimePos(24), TimePos(0), 60), false);
+		m_editor->realignTracks();
+		QCoreApplication::processEvents();
+		MidiClipView* view = viewOf(b);
+		QVERIFY(view != nullptr);
+		QVERIFY(view->width() > 24 && view->height() > 16);
+		QCOMPARE(view->accessibleName(), QStringLiteral("Linked MIDI clip: Shared phrase"));
+		QVERIFY(view->accessibleDescription().contains(QStringLiteral("notes, name and colour are shared")));
+
+		const QImage linked = widgetImage(view);
+		b->setLinkId(0);
+		view->update();
+		QCoreApplication::processEvents();
+		QCOMPARE(view->accessibleName(), QStringLiteral("MIDI clip: Shared phrase"));
+		const QImage unique = widgetImage(view);
+		QVERIFY2(markerPixelDifferences(linked, unique, view->width()) > 0,
+			"the linked arranger widget must paint its chain marker");
+		b->setLinkId(group);
+		view->update();
+		QCoreApplication::processEvents();
+	}
+
+	void makeUniqueContextMenuActionDetachesOnlyTheSelectedClip()
+	{
+		MidiClip* a = midiClipAt(m_track, 0, Bar);
+		MidiClip* b = midiClipAt(m_track, 4 * Bar, Bar);
+		MidiClip* c = midiClipAt(m_track, 8 * Bar, Bar);
+		for (MidiClip* clip : {a, b, c}) { clip->setName(QStringLiteral("Shared phrase")); }
+		const int group = ClipLinks::allocateGroupId();
+		for (MidiClip* clip : {a, b, c}) { clip->setLinkId(group); }
+		a->addNote(Note(TimePos(24), TimePos(0), 60), false);
+		m_editor->realignTracks();
+		QCoreApplication::processEvents();
+		MidiClipView* view = viewOf(b);
+		QVERIFY(view != nullptr);
+		QVERIFY2(openContextMenuAndTrigger(view, QStringLiteral("Make Unique")),
+			"the real MIDI clip context menu must expose Make Unique");
+		QCOMPARE(b->linkId(), 0);
+		QCOMPARE(a->linkId(), group);
+		QCOMPARE(c->linkId(), group);
+		QCOMPARE(noteCountOf(b), 1);
+	}
+
+	void altDragOnTheRealSampleClipWidgetUsesContainerCrossfade()
+	{
+		auto* track = new SampleTrack(Engine::getSong());
+		auto* outer = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		auto* inner = dynamic_cast<SampleClip*>(track->createClip(TimePos(10 * Bar)));
+		QVERIFY(outer != nullptr && inner != nullptr);
+		outer->changeLength(TimePos(8 * Bar));
+		outer->setAutoResize(false);
+		inner->changeLength(TimePos(4 * Bar));
+		inner->setAutoResize(false);
+		ClipEdits authored;
+		authored.fadeInTicks = 24;
+		authored.fadeOutTicks = 32;
+		inner->setClipEdits(authored);
+		m_editor->realignTracks();
+		QCoreApplication::processEvents();
+		ClipView* view = clipViewOf(inner);
+		QVERIFY(view != nullptr);
+		QVERIFY(view->width() > 24);
+
+		const QPoint grab(view->width() / 2, view->height() / 2);
+		const double pixelsPerBar = static_cast<double>(view->width() - 1) * Bar / inner->length().getTicks();
+		const int dx = qRound(-8.0 * pixelsPerBar);
+		const QPoint drop(grab.x() + dx, grab.y());
+		const auto send = [view](QEvent::Type type, const QPoint& where, Qt::MouseButton button,
+			Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers) {
+			QMouseEvent event(type, QPointF(where), QPointF(view->mapToGlobal(where)), button, buttons, modifiers);
+			QCoreApplication::sendEvent(view, &event);
+		};
+		send(QEvent::MouseButtonPress, grab, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+		send(QEvent::MouseMove, drop, Qt::NoButton, Qt::LeftButton, Qt::AltModifier);
+		send(QEvent::MouseButtonRelease, drop, Qt::LeftButton, Qt::NoButton, Qt::AltModifier);
+		QCoreApplication::processEvents();
+
+		QCOMPARE(inner->startPosition().getTicks(), 2 * Bar);
+		QVERIFY2(outer->clipEdits().fadeOffsetGap,
+			"holding Alt while dropping a contained sample clip must select the V-shaped container fade");
 	}
 
 private:
