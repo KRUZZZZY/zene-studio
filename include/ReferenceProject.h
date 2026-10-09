@@ -82,7 +82,8 @@ public:
 	static void setChangeHook(ChangeHook hook);
 
 private:
-	ReferenceProject() = default;
+	ReferenceProject();
+	~ReferenceProject();  // out of line: DataFile is incomplete here (MSVC C2027)
 	std::unique_ptr<DataFile> m_file;
 	QString m_path;
 	QDateTime m_parsedAt;

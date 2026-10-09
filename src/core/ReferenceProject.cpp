@@ -90,6 +90,9 @@ QJsonObject trackJson(const QDomElement& track, int index)
 
 } // namespace
 
+ReferenceProject::ReferenceProject() = default;
+ReferenceProject::~ReferenceProject() = default;
+
 ReferenceProject& ReferenceProject::instance()
 {
 	static ReferenceProject reference;

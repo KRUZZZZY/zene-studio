@@ -26,6 +26,7 @@
 #define LMMS_PLAY_HANDLE_H
 
 #include <QList>
+#include <QVector>
 #include <QMutex>
 #include <span>
 #include <vector>
@@ -167,7 +168,14 @@ private:
 	AudioBusHandle* m_audioBusHandle;
 } ;
 
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 using PlayHandleList = QList<PlayHandle*>;
+#else
+// The render paths reserve this list on the main thread and append without growing on the audio thread
+// (AudioEngine/AudioBusHandle: capacity()). Qt 5's QList has no capacity() and can reallocate on append
+// after a front erase; QVector is contiguous and exact on Qt 5 (on Qt 6 QVector is QList).
+using PlayHandleList = QVector<PlayHandle*>;
+#endif
 using ConstPlayHandleList = QList<const PlayHandle*>;
 
 LMMS_DECLARE_OPERATORS_FOR_FLAGS(PlayHandle::Type)
