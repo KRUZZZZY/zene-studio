@@ -53,6 +53,8 @@ namespace lmms
 {
 
 void registerRenderBounceCommand(ControlRegistry& registry);
+ControlResult queueRenderBounce(const QJsonObject& args);
+ControlResult queueOutputTrackBounce(const QJsonObject& args, bool startImmediately);
 
 using namespace control;
 
@@ -117,7 +119,7 @@ ControlResult queued(const RenderJob& job, bool start)
 	return ControlResult::success(jobJson(*queue().job(id)));
 }
 
-ControlResult queueAdd(const QJsonObject& args)
+ControlResult queueSessionRender(const QJsonObject& args)
 {
 	RenderJob job;
 	job.out = args.value(QStringLiteral("out")).toString();
@@ -137,6 +139,32 @@ ControlResult queueAdd(const QJsonObject& args)
 	ControlResult error;
 	if (!renderSource(args, &job, &error)) { return error; }
 	return queued(job, args.value(QStringLiteral("start")).toBool(true));
+}
+
+ControlResult queueTrackBounceOutput(const QJsonObject& args)
+{
+	if (args.value(QStringLiteral("track")).toString().isEmpty()
+		|| !QFileInfo(args.value(QStringLiteral("out")).toString()).isAbsolute()
+		|| args.value(QStringLiteral("format")).toString(QStringLiteral("wav")) != QLatin1String("wav")
+		|| args.contains(QStringLiteral("project")) || args.contains(QStringLiteral("start_ticks"))
+		|| args.contains(QStringLiteral("end_ticks")))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			"a track output bounce needs 'track' and an absolute WAV path, and cannot render a project or project range");
+	}
+	return queueOutputTrackBounce(args, args.value(QStringLiteral("start")).toBool(true));
+}
+
+ControlResult queueAdd(const QJsonObject& args)
+{
+	const QString operation = args.value(QStringLiteral("operation")).toString();
+	if (operation == QLatin1String("bounce")) { return queueTrackBounceOutput(args); }
+	if (!operation.isEmpty() || args.contains(QStringLiteral("track")))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			"a track output render requires operation='bounce' and is written as a WAV artefact");
+	}
+	return queueSessionRender(args);
 }
 
 //! Only what the writer makes: 16, 24, or 32 float in a WAV (review W3-agent-library #1).
@@ -319,12 +347,14 @@ void registerRenderQueueCommands(ControlRegistry& registry)
 {
 	const QJsonObject formats = enumProperty(controlRenderableFormats());
 	add(registry, "render.queue_add", QStringLiteral("Queue a render to 'out' (absolute) as 'format': of the session as it is NOW "
-		"(a snapshot is taken, so later edits do not change it) or of another project file ('project'), whole or one range "
-		"('start_ticks' and 'end_ticks' together), with the export settings in force. Jobs run one after another in a child "
+		"(a snapshot is taken, so later edits do not change it), another project file ('project'), or one track as an output-only "
+		"bounce ('operation':'bounce' with 'track'). Project renders may cover one range ('start_ticks' and 'end_ticks' together) "
+		"with the export settings in force. Jobs run one after another in a child "
 		"process without holding this surface ('start' false queues it without starting the queue now - it runs when the queue next runs); render.queue_list follows them and each ends "
 		"with a report (bytes, sha256, time, loudness)."),
 		{{QStringLiteral("out"), stringProperty()}, {QStringLiteral("format"), formats}, {QStringLiteral("project"), stringProperty()},
-			{QStringLiteral("start_ticks"), tickProperty()}, {QStringLiteral("end_ticks"), tickProperty()}, {QStringLiteral("start"), booleanProperty()}},
+			{QStringLiteral("start_ticks"), tickProperty()}, {QStringLiteral("end_ticks"), tickProperty()}, {QStringLiteral("start"), booleanProperty()},
+			{QStringLiteral("operation"), enumProperty({QStringLiteral("bounce")})}, {QStringLiteral("track"), stringProperty()}},
 		{QStringLiteral("out")}, queueAdd);
 	add(registry, "render.convert", QStringLiteral("Batch conversion: queue every audio file of 'files' (absolute) to be written "
 		"into 'out_dir' as 'format' (wav or flac), at 'sample_rate' (left out: the file's own) and 'bit_depth' (16, 24 - the "
@@ -349,6 +379,25 @@ void registerRenderQueueCommands(ControlRegistry& registry)
 	add(registry, "app.task_cancel", QStringLiteral("Cancel background task 'id' (as app.tasks lists it): a render-queue job, the "
 		"library scan or a stem separation job."), {{QStringLiteral("id"), stringProperty()}}, {QStringLiteral("id")}, taskCancel);
 	registerRenderBounceCommand(registry);
+}
+
+void registerRenderBounceCommand(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("render.queue_bounce");
+	cmd.group = QStringLiteral("render");
+	cmd.verb = QStringLiteral("queue_bounce");
+	cmd.description = QStringLiteral("Render a track or the selected range in the background, then apply one freeze, land, or flatten edit on the UI thread. Returns a job id immediately; follow it with render.queue_list or render.queue_report and cancel with render.queue_cancel. The task indicator also reports the running phase and Cancel. The target is checked before the output is installed; if it changed, the job fails without changing the project or output. Existing bounce.in_place, freeze.track, freeze.region, bounce.land, track.flatten and range.bounce commands keep their synchronous result contracts for compatibility.");
+	cmd.argsSchema = objectSchema({{QStringLiteral("operation"), enumProperty({QStringLiteral("freeze_track"),
+		QStringLiteral("freeze_region"), QStringLiteral("bounce_land"), QStringLiteral("flatten"), QStringLiteral("range_bounce")})},
+		{QStringLiteral("track"), stringProperty()}, {QStringLiteral("out"), stringProperty()},
+		{QStringLiteral("start"), integerProperty()}, {QStringLiteral("end"), integerProperty()},
+		{QStringLiteral("mute_sources"), booleanProperty()}}, {QStringLiteral("operation")});
+	cmd.resultSchema = objectSchema({{QStringLiteral("job"), integerProperty()}, {QStringLiteral("kind"), stringProperty()},
+		{QStringLiteral("operation"), stringProperty()}, {QStringLiteral("state"), stringProperty()}, {QStringLiteral("out"), stringProperty()}});
+	cmd.mutating = true;
+	cmd.handler = queueRenderBounce;
+	registry.registerCommand(cmd);
 }
 
 } // namespace lmms

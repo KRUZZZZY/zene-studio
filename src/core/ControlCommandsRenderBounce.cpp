@@ -64,6 +64,7 @@ struct Target
 struct BounceContext
 {
 	QString operation;
+	quint64 documentIdentity = 0;
 	BounceInPlace::Range range;
 	std::vector<Target> targets;
 	QString sourceId;
@@ -180,6 +181,12 @@ bool tempoStillMatches(const BounceContext& context, QString* error)
 
 bool targetStillMatches(const BounceContext& context, QString* error)
 {
+	Song* song = Engine::getSong();
+	if (song == nullptr || song->documentIdentity() != context.documentIdentity)
+	{
+		*error = QStringLiteral("the project was replaced or reloaded while the render was running; no edit was applied");
+		return false;
+	}
 	for (const Target& expected : context.targets)
 	{
 		Track* track = currentTrack(expected.id);
@@ -369,9 +376,14 @@ QJsonObject applyBounce(const std::shared_ptr<BounceContext>& context,
 
 bool supportedOperation(const QString& operation)
 {
-	return operation == QLatin1String("bounce") || operation == QLatin1String("freeze_track")
-		|| operation == QLatin1String("freeze_region") || operation == QLatin1String("bounce_land")
+	return operation == QLatin1String("freeze_track") || operation == QLatin1String("freeze_region")
+		|| operation == QLatin1String("bounce_land")
 		|| operation == QLatin1String("flatten") || operation == QLatin1String("range_bounce");
+}
+
+bool supportedBounceOperation(const QString& operation, bool allowOutputOnly)
+{
+	return supportedOperation(operation) || (allowOutputOnly && operation == QLatin1String("bounce"));
 }
 
 
@@ -491,18 +503,19 @@ bool prepareBounceJob(const QJsonObject& args, const std::shared_ptr<BounceConte
 	return true;
 }
 
-ControlResult queueBounce(const QJsonObject& args)
+ControlResult queueBounceImpl(const QJsonObject& args, bool allowOutputOnly, bool startImmediately)
 {
 	const QString operation = args.value(QStringLiteral("operation")).toString();
-	if (!supportedOperation(operation))
+	if (!supportedBounceOperation(operation, allowOutputOnly))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'operation' must be bounce, freeze_track, freeze_region, bounce_land, flatten, or range_bounce"));
+			QStringLiteral("'operation' must be freeze_track, freeze_region, bounce_land, flatten, or range_bounce"));
 	}
 	RenderQueue& queue = RenderQueue::instance();
 	if (!queue.hasCapacity()) { return capacityRefusal(queue); }
 	auto context = std::make_shared<BounceContext>();
 	context->operation = operation;
+	context->documentIdentity = Engine::getSong()->documentIdentity();
 	context->tempo = static_cast<int>(Engine::getSong()->getTempo());
 	context->tempoMap = Engine::getSong()->tempoMap().map();
 	QVector<Track*> tracks;
@@ -523,7 +536,7 @@ ControlResult queueBounce(const QJsonObject& args)
 		BounceInPlace::discardPreparedRender(&job.bounce);
 		return capacityError(queue);
 	}
-	queue.start();
+	if (startImmediately) { queue.start(); }
 	const RenderJob* accepted = queue.job(id);
 	return ControlResult::success({{QStringLiteral("job"), id}, {QStringLiteral("kind"), QStringLiteral("bounce")},
 		{QStringLiteral("operation"), operation}, {QStringLiteral("state"), accepted != nullptr ? RenderQueue::stateName(accepted->state) : QStringLiteral("queued")},
@@ -532,23 +545,14 @@ ControlResult queueBounce(const QJsonObject& args)
 
 } // namespace
 
-void registerRenderBounceCommand(ControlRegistry& registry)
+ControlResult queueRenderBounce(const QJsonObject& args)
 {
-	ControlCommand cmd;
-	cmd.id = QStringLiteral("render.queue_bounce");
-	cmd.group = QStringLiteral("render");
-	cmd.verb = QStringLiteral("queue_bounce");
-	cmd.description = QStringLiteral("Render a track or the selected range in the background, then apply one bounce, freeze, land, or flatten edit on the UI thread. Returns a job id immediately; follow it with render.queue_list or render.queue_report and cancel with render.queue_cancel. The task indicator also reports the running phase and Cancel. The target is checked before the output is installed; if it changed, the job fails without changing the project or output. Existing bounce.in_place, freeze.track, freeze.region, bounce.land, track.flatten and range.bounce commands keep their synchronous result contracts for compatibility.");
-	cmd.argsSchema = objectSchema({{QStringLiteral("operation"), enumProperty({QStringLiteral("bounce"), QStringLiteral("freeze_track"),
-		QStringLiteral("freeze_region"), QStringLiteral("bounce_land"), QStringLiteral("flatten"), QStringLiteral("range_bounce")})},
-		{QStringLiteral("track"), stringProperty()}, {QStringLiteral("out"), stringProperty()},
-		{QStringLiteral("start"), integerProperty()}, {QStringLiteral("end"), integerProperty()},
-		{QStringLiteral("mute_sources"), booleanProperty()}}, {QStringLiteral("operation")});
-	cmd.resultSchema = objectSchema({{QStringLiteral("job"), integerProperty()}, {QStringLiteral("kind"), stringProperty()},
-		{QStringLiteral("operation"), stringProperty()}, {QStringLiteral("state"), stringProperty()}, {QStringLiteral("out"), stringProperty()}});
-	cmd.mutating = true;
-	cmd.handler = queueBounce;
-	registry.registerCommand(cmd);
+	return queueBounceImpl(args, false, true);
+}
+
+ControlResult queueOutputTrackBounce(const QJsonObject& args, bool startImmediately)
+{
+	return queueBounceImpl(args, true, startImmediately);
 }
 
 } // namespace lmms

@@ -155,6 +155,11 @@ bool runCliRender(const QString& projectPath, const QString& out, int sampleRate
 		{QStringLiteral("render"), projectPath, QStringLiteral("-o"), out,
 			QStringLiteral("-f"), QStringLiteral("wav"), QStringLiteral("-s"),
 			QString::number(sampleRate)});
+	// Keep this plain blocking wait for the legacy result contract. Do not add
+	// processEvents() or a nested event loop: ControlRegistry::invoke() has no
+	// deferred reply path, and re-entering the project while its render is in
+	// flight would make the synchronous command's target unsafe. A GUI caller
+	// still blocks here; the cancellable RenderQueue is the responsive path.
 	const bool finished = renderer.waitForStarted(30000) && renderer.waitForFinished(600000);
 	if (!finished) { renderer.kill(); }
 	*exitCode = finished ? renderer.exitCode() : -1;

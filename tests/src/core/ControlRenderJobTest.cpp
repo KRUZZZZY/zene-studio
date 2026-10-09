@@ -35,16 +35,29 @@
 #include <QThread>
 
 #include <algorithm>
+#include <cerrno>
 #include <cmath>
 #include <cstring>
 #include <vector>
+
+#if defined(Q_OS_WIN)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <csignal>
+#include <unistd.h>
+#endif
 
 #include <sndfile.h>
 
 #include "ArrangementEdits.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
 #include "RenderQueue.h"
 #include "Song.h"
 #include "TaskCenter.h"
@@ -118,6 +131,13 @@ bool writeTone(const QString& path, int rate, double level)
 int fakeRender(int argc, char** argv)
 {
 	if (std::getenv("ZENE_FAKE_RENDER_FAIL") != nullptr) { return 3; }
+	const QString pidPath = qEnvironmentVariable("ZENE_FAKE_RENDER_PID_PATH");
+	if (!pidPath.isEmpty())
+	{
+		QFile pidFile(pidPath);
+		if (!pidFile.open(QIODevice::WriteOnly)) { return 6; }
+		pidFile.write(QByteArray::number(QCoreApplication::applicationPid()));
+	}
 	const int delay = qEnvironmentVariableIntValue("ZENE_FAKE_RENDER_DELAY_MS");
 	if (delay > 0) { QThread::msleep(static_cast<unsigned long>(delay)); }
 	const RenderRequest request = parseRenderArguments(argc, argv);
@@ -161,6 +181,28 @@ Track* trackWithClip(const QString& name)
 
 int trackCount() { return static_cast<int>(Engine::getSong()->tracks().size()); }
 
+bool processIsRunning(qint64 pid)
+{
+#if defined(Q_OS_WIN)
+	HANDLE process = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, static_cast<DWORD>(pid));
+	if (process == nullptr) { return false; }
+	DWORD code = 0;
+	const bool running = GetExitCodeProcess(process, &code) && code == STILL_ACTIVE;
+	CloseHandle(process);
+	return running;
+#else
+	if (kill(static_cast<pid_t>(pid), 0) == 0) { return true; }
+	return errno != ESRCH;
+#endif
+}
+
+qint64 processIdIn(const QString& path)
+{
+	QFile pidFile(path);
+	if (!pidFile.open(QIODevice::ReadOnly)) { return 0; }
+	return pidFile.readAll().toLongLong();
+}
+
 ControlResult queueBounce(const QString& operation, const QString& trackId, const QString& out,
 		const QJsonObject& extra = {})
 {
@@ -169,6 +211,12 @@ ControlResult queueBounce(const QString& operation, const QString& trackId, cons
 	if (!trackId.isEmpty()) { args.insert(QStringLiteral("track"), trackId); }
 	if (!out.isEmpty()) { args.insert(QStringLiteral("out"), out); }
 	return run(QStringLiteral("render.queue_bounce"), args);
+}
+
+ControlResult queueOutputBounce(const QString& trackId, const QString& out)
+{
+	return run(QStringLiteral("render.queue_add"), {{QStringLiteral("operation"), QStringLiteral("bounce")},
+		{QStringLiteral("track"), trackId}, {QStringLiteral("out"), out}});
 }
 
 int jobId(const ControlResult& accepted) { return accepted.result.value(QStringLiteral("job")).toInt(); }
@@ -201,6 +249,7 @@ private slots:
 	{
 		qunsetenv("ZENE_FAKE_RENDER_FAIL");
 		qunsetenv("ZENE_FAKE_RENDER_DELAY_MS");
+		qunsetenv("ZENE_FAKE_RENDER_PID_PATH");
 		run(QStringLiteral("render.queue_cancel"), {{QStringLiteral("all"), true}});
 		run(QStringLiteral("render.queue_clear"));
 		ArrangerRange::instance().clear();
@@ -215,7 +264,7 @@ private slots:
 			{QStringLiteral("out"), out(QStringLiteral("sync.wav"))}});
 		QVERIFY2(synchronous.ok, qPrintable(synchronous.errorMessage));
 		const int before = trackCount();
-		const ControlResult accepted = queueBounce(QStringLiteral("bounce"), id, out(QStringLiteral("async.wav")));
+		const ControlResult accepted = queueOutputBounce(id, out(QStringLiteral("async.wav")));
 		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
 		const int idNumber = jobId(accepted);
 		QVERIFY(idNumber > 0);
@@ -269,6 +318,31 @@ private slots:
 		QVERIFY(!first->isMuted() && !second->isMuted() && !third->isMuted());
 	}
 
+	void rangeBounceAtUndoCapIsOneStep()
+	{
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		journal->clearJournal();
+		QVERIFY(journal->setMaxUndoStates(100));
+		Track* first = trackWithClip(QStringLiteral("Cap A"));
+		Track* second = trackWithClip(QStringLiteral("Cap B"));
+		trackWithClip(QStringLiteral("Cap C"));
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 192},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(first), control::trackIdOf(second)}}}).ok);
+		for (int i = 0; i < 100; ++i) { journal->addJournalAction([] {}, [] {}); }
+		QCOMPARE(journal->undoDepth(), 100);
+		const quint64 serialBefore = journal->topStepSerial();
+		const ControlResult accepted = queueBounce(QStringLiteral("range_bounce"), QString(), out(QStringLiteral("cap-range.wav")));
+		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
+		QCOMPARE(waitForJob(jobId(accepted)).value(QStringLiteral("state")).toString(), QStringLiteral("done"));
+		QVERIFY(first->isMuted() && second->isMuted());
+		QCOMPARE(journal->retainedStepsFrom(serialBefore + 1), 1);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(journal->retainedStepsFrom(serialBefore + 1), 0);
+		QCOMPARE(trackCount(), 3);
+		QVERIFY(!first->isMuted() && !second->isMuted());
+	}
+
 	void regionFreezeAndBounceLandApplyAndUndoOnce()
 	{
 		Track* region = trackWithClip(QStringLiteral("Region"));
@@ -301,23 +375,89 @@ private slots:
 		QVERIFY(old.open(QIODevice::WriteOnly));
 		QCOMPARE(old.write("previous"), qint64(8));
 		old.close();
-		qputenv("ZENE_FAKE_RENDER_DELAY_MS", "500");
-		ControlResult accepted = queueBounce(QStringLiteral("bounce"), control::trackIdOf(source), path);
+		const QString taskPidFile = out(QStringLiteral("task-cancel.pid"));
+		qputenv("ZENE_FAKE_RENDER_PID_PATH", taskPidFile.toLocal8Bit());
+		qputenv("ZENE_FAKE_RENDER_DELAY_MS", "2000");
+		ControlResult accepted = queueOutputBounce(control::trackIdOf(source), path);
 		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
 		const int id = jobId(accepted);
+		QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(taskPidFile), 3000);
+		const qint64 taskPid = processIdIn(taskPidFile);
+		QVERIFY(taskPid > 0);
+		const QString taskScratch = RenderQueue::instance().job(id)->bounce.scratch->path();
 		const int task = TaskCenter::instance().idOf(&RenderQueue::instance(), id);
 		QVERIFY(task > 0);
 		QCOMPARE(TaskCenter::instance().cancel(task), true);
 		QCOMPARE(waitForJob(id).value(QStringLiteral("state")).toString(), QStringLiteral("cancelled"));
+		QVERIFY(!processIsRunning(taskPid));
+		QVERIFY(!QFileInfo::exists(taskScratch));
 		QFile preserved(path);
 		QVERIFY(preserved.open(QIODevice::ReadOnly));
 		QCOMPARE(preserved.readAll(), QByteArray("previous"));
 		QCOMPARE(trackCount(), 1);
 
-		accepted = queueBounce(QStringLiteral("bounce"), control::trackIdOf(source), out(QStringLiteral("agent-cancel.wav")));
+		const QString agentPidFile = out(QStringLiteral("agent-cancel.pid"));
+		qputenv("ZENE_FAKE_RENDER_PID_PATH", agentPidFile.toLocal8Bit());
+		accepted = queueOutputBounce(control::trackIdOf(source), out(QStringLiteral("agent-cancel.wav")));
 		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
+		const int agentId = jobId(accepted);
+		QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(agentPidFile), 3000);
+		const qint64 agentPid = processIdIn(agentPidFile);
+		QVERIFY(agentPid > 0);
+		const QString agentScratch = RenderQueue::instance().job(agentId)->bounce.scratch->path();
 		QVERIFY(run(QStringLiteral("render.queue_cancel"), {{QStringLiteral("job"), jobId(accepted)}}).ok);
-		QCOMPARE(waitForJob(jobId(accepted)).value(QStringLiteral("state")).toString(), QStringLiteral("cancelled"));
+		QCOMPARE(waitForJob(agentId).value(QStringLiteral("state")).toString(), QStringLiteral("cancelled"));
+		QVERIFY(!processIsRunning(agentPid));
+		QVERIFY(!QFileInfo::exists(agentScratch));
+	}
+
+	void reloadingProjectDuringBounceRefusesStaleSession()
+	{
+		Song* song = Engine::getSong();
+		Track* source = trackWithClip(QStringLiteral("Reloaded"));
+		const int originalTrackId = source->id();
+		const QString projectPath = out(QStringLiteral("reload.mmp"));
+		QVERIFY(song->saveProjectFile(projectPath));
+		const QString output = out(QStringLiteral("reload.wav"));
+		QFile previous(output);
+		QVERIFY(previous.open(QIODevice::WriteOnly));
+		QCOMPARE(previous.write("previous"), qint64(8));
+		previous.close();
+		const QString pidPath = out(QStringLiteral("reload.pid"));
+		qputenv("ZENE_FAKE_RENDER_PID_PATH", pidPath.toLocal8Bit());
+		qputenv("ZENE_FAKE_RENDER_DELAY_MS", "1500");
+		const ControlResult accepted = queueBounce(QStringLiteral("freeze_track"), control::trackIdOf(source), output);
+		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
+		QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(pidPath), 3000);
+		song->loadProject(projectPath);
+		QVERIFY(song->loadRefusal().isEmpty());
+		QCOMPARE(song->tracks().front()->id(), originalTrackId);
+		const QJsonObject failed = waitForJob(jobId(accepted));
+		QCOMPARE(failed.value(QStringLiteral("state")).toString(), QStringLiteral("failed"));
+		QVERIFY(failed.value(QStringLiteral("error")).toString().contains(QStringLiteral("project was replaced or reloaded")));
+		QVERIFY(!song->tracks().front()->isFrozen());
+		QFile kept(output);
+		QVERIFY(kept.open(QIODevice::ReadOnly));
+		QCOMPARE(kept.readAll(), QByteArray("previous"));
+	}
+
+	void outputOnlyTrackBounceUsesNotMutatingQueueCommand()
+	{
+		const auto* outputClass = control::ReversibilityTable::instance().lookup(QStringLiteral("render.queue_add"));
+		QVERIFY(outputClass != nullptr);
+		QCOMPARE(outputClass->cls, control::ReversibilityClass::NotMutating);
+		Track* source = trackWithClip(QStringLiteral("Output only"));
+		const ControlResult oldRoute = queueBounce(QStringLiteral("bounce"), control::trackIdOf(source), out(QStringLiteral("old-route.wav")));
+		QCOMPARE(oldRoute.ok, false);
+		const int undoDepth = Engine::projectJournal()->undoDepth();
+		const ControlResult accepted = run(QStringLiteral("render.queue_add"), {{QStringLiteral("operation"), QStringLiteral("bounce")},
+			{QStringLiteral("track"), control::trackIdOf(source)}, {QStringLiteral("out"), out(QStringLiteral("output-only.wav"))}});
+		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
+		const int id = accepted.result.value(QStringLiteral("job")).toInt();
+		QCOMPARE(RenderQueue::instance().job(id)->operation, QStringLiteral("bounce"));
+		QCOMPARE(waitForJob(id).value(QStringLiteral("state")).toString(), QStringLiteral("done"));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), undoDepth);
+		QCOMPARE(trackCount(), 1);
 	}
 
 	void staleTargetAndCapacityRefusalAreSafeAndVisible()
@@ -366,7 +506,7 @@ private slots:
 
 		run(QStringLiteral("render.queue_clear"));
 		for (int i = 0; i < RenderQueue::MaxJobs; ++i) { QVERIFY(RenderQueue::instance().add(RenderJob{}) > 0); }
-		const ControlResult refused = queueBounce(QStringLiteral("bounce"), sourceId, out(QStringLiteral("full.wav")));
+		const ControlResult refused = queueOutputBounce(sourceId, out(QStringLiteral("full.wav")));
 		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
 		QCOMPARE(RenderQueue::instance().capacityRefusals(), quint64(1));
 		QCOMPARE(run(QStringLiteral("control.ping")).result.value(QStringLiteral("render_queue_capacity_refusals")).toInt(), 1);

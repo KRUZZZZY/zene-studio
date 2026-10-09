@@ -425,6 +425,9 @@ public:
 		return m_fileName;
 	}
 
+	//! Identity of this loaded document; changes whenever clearProject() replaces its contents.
+	quint64 documentIdentity() const { return m_documentIdentity; }
+
 	bool isLoadingProject() const
 	{
 		return m_loadingProject;
@@ -765,6 +768,8 @@ private:
 	ControllerVector m_controllers;
 
 	int m_nLoadingTrack;
+	//! Unique process-wide identity for the current document, distinct across Song instances and reloads.
+	quint64 m_documentIdentity;
 
 	QString m_fileName;
 	QString m_oldFileName;

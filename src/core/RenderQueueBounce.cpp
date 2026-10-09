@@ -83,11 +83,11 @@ bool applyBounceModel(RenderJob& job, const BounceInPlace::Result& rendered, QJs
 	return error->isEmpty();
 }
 
-void closeBounceEdit(ProjectJournal* journal, int depthBefore)
+void closeBounceEdit(ProjectJournal* journal, quint64 serialBefore)
 {
 	if (journal == nullptr) { return; }
 	journal->endEdit();
-	journal->mergeCheckpointsFrom(depthBefore);
+	journal->mergeCheckpointsSince(serialBefore);
 }
 
 void rollbackBounceEdit(ProjectJournal* journal, quint64 serialBefore, BounceInPlace::PreparedRender* prepared)
@@ -257,11 +257,10 @@ bool RenderQueue::applyFinishedBounce(RenderJob& job, BounceInPlace::PreparedRen
 	TaskCenter::instance().progress(this, job.id, -1.0, tr("Applying rendered audio"));
 	if (!BounceInPlace::installPreparedOutput(prepared, error)) { return false; }
 	ProjectJournal* journal = Engine::projectJournal();
-	const int depthBefore = journal != nullptr ? journal->undoDepth() : -1;
 	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
 	if (journal != nullptr) { journal->beginEdit(); }
 	const bool appliedOk = applyBounceModel(job, rendered, applied, error);
-	closeBounceEdit(journal, depthBefore);
+	closeBounceEdit(journal, serialBefore);
 	if (!appliedOk)
 	{
 		rollbackBounceEdit(journal, serialBefore, prepared);

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T04:39:41Z",
+  "captured_at": "2026-10-09T05:11:46Z",
   "commands": [
     {
       "args_schema": {
@@ -23395,6 +23395,12 @@
             ],
             "type": "string"
           },
+          "operation": {
+            "enum": [
+              "bounce"
+            ],
+            "type": "string"
+          },
           "out": {
             "type": "string"
           },
@@ -23408,6 +23414,9 @@
             "maximum": 2147483647,
             "minimum": 0,
             "type": "integer"
+          },
+          "track": {
+            "type": "string"
           }
         },
         "required": [
@@ -23415,7 +23424,7 @@
         ],
         "type": "object"
       },
-      "description": "Queue a render to 'out' (absolute) as 'format': of the session as it is NOW (a snapshot is taken, so later edits do not change it) or of another project file ('project'), whole or one range ('start_ticks' and 'end_ticks' together), with the export settings in force. Jobs run one after another in a child process without holding this surface ('start' false queues it without starting the queue now - it runs when the queue next runs); render.queue_list follows them and each ends with a report (bytes, sha256, time, loudness).",
+      "description": "Queue a render to 'out' (absolute) as 'format': of the session as it is NOW (a snapshot is taken, so later edits do not change it), another project file ('project'), or one track as an output-only bounce ('operation':'bounce' with 'track'). Project renders may cover one range ('start_ticks' and 'end_ticks' together) with the export settings in force. Jobs run one after another in a child process without holding this surface ('start' false queues it without starting the queue now - it runs when the queue next runs); render.queue_list follows them and each ends with a report (bytes, sha256, time, loudness).",
       "group": "render",
       "id": "render.queue_add",
       "mutating": false,
@@ -23436,7 +23445,6 @@
           },
           "operation": {
             "enum": [
-              "bounce",
               "freeze_track",
               "freeze_region",
               "bounce_land",
@@ -23460,7 +23468,7 @@
         ],
         "type": "object"
       },
-      "description": "Render a track or the selected range in the background, then apply one bounce, freeze, land, or flatten edit on the UI thread. Returns a job id immediately; follow it with render.queue_list or render.queue_report and cancel with render.queue_cancel. The task indicator also reports the running phase and Cancel. The target is checked before the output is installed; if it changed, the job fails without changing the project or output. Existing bounce.in_place, freeze.track, freeze.region, bounce.land, track.flatten and range.bounce commands keep their synchronous result contracts for compatibility.",
+      "description": "Render a track or the selected range in the background, then apply one freeze, land, flatten, or range-bounce edit on the UI thread. Returns a job id immediately; follow it with render.queue_list or render.queue_report and cancel with render.queue_cancel. The task indicator also reports the running phase and Cancel. The project identity, target and range are checked before the output is installed; if they changed, the job fails without changing the project or output. For an output-only track bounce, use render.queue_add with operation=bounce and a track. Existing bounce.in_place, freeze.track, freeze.region, bounce.land, track.flatten and range.bounce commands keep their synchronous result contracts for compatibility.",
       "group": "render",
       "id": "render.queue_bounce",
       "mutating": true,
@@ -34753,14 +34761,14 @@
   ],
   "count": 823,
   "instance": {
-    "binary": null,
-    "binary_bytes": null,
-    "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-notes/tools/zene-pa-agentctl",
-    "lane_head": null,
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-notes/build/zene",
+    "binary_bytes": 28834416,
+    "binary_sha256": "6382a193d95ee717c0a0af73065593eb0d2ce10d6b9d331c58655bf9f7358090",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-notes",
+    "lane_head": "b2372f288fa656e730965adbb4130122dcf4685e",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-c_s0nutf/zene.sock",
-    "version": "0.4.0-alpha.1351+b73033a"
+    "source_socket": "/tmp/zctl-run-fuctuf0p/zene.sock",
+    "version": "0.4.0-alpha.1354+b2372f2"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
