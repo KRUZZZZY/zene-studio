@@ -50,7 +50,7 @@ inline auto sampleRateMatchesEngine(double modelRate, double engineRate) noexcep
 	return std::isfinite(modelRate) && std::isfinite(engineRate)
 		&& modelRate > 0.0 && engineRate > 0.0 && std::abs(modelRate - engineRate) <= 0.5;
 }
-}
+} // namespace nam
 
 /// Real-time effect that runs a .nam neural amplifier model.
 ///
