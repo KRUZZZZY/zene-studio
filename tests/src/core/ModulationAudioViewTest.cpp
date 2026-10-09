@@ -40,7 +40,11 @@
 
 #include <QtTest>
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <semaphore>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -111,6 +115,91 @@ private slots:
 		using Snapshot = decltype(std::declval<const ModulationLayerPublisher&>().snapshot());
 		QVERIFY2(std::is_trivially_copyable_v<Snapshot>,
 			"the audio thread's seqlock copy holds a non-trivial type (a QPointer)");
+	}
+
+	void targetDestructionWaitsForAnInFlightAudioWrite()
+	{
+		ModulationLayerPublisher publisher;
+		auto* model = new FloatModel(0.0f, -100.0f, 100.0f, 0.01f);
+		publishOne(publisher, model);
+		const ModulationAudioView view = publisher.snapshot();
+		std::binary_semaphore writeEntered{0};
+		std::binary_semaphore resumeWrite{0};
+		QObject::connect(model, &Model::dataChanged, this, [&] {
+			writeEntered.release();
+			resumeWrite.acquire();
+		}, Qt::DirectConnection);
+
+		std::thread audio([&] { applyModulationBlock(publisher, view, 0.25); });
+		const bool writeReachedModel = writeEntered.try_acquire_for(std::chrono::seconds(2));
+		if (!writeReachedModel)
+		{
+			resumeWrite.release();
+			audio.join();
+			delete model;
+			QVERIFY2(writeReachedModel, "the modulation write did not reach the target");
+		}
+
+		std::atomic<bool> destructionFinished{false};
+		std::thread destroyer([&] {
+			delete model;
+			destructionFinished.store(true, std::memory_order_release);
+		});
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+		while (publisher.targetAlive(0, view.entries[0].token)
+			&& std::chrono::steady_clock::now() < deadline)
+		{
+			std::this_thread::yield();
+		}
+		const bool teardownEntered = !publisher.targetAlive(0, view.entries[0].token);
+		const bool waitedForWriter = teardownEntered
+			&& !destructionFinished.load(std::memory_order_acquire);
+		resumeWrite.release();
+		audio.join();
+		destroyer.join();
+
+		QVERIFY2(teardownEntered, "the destroyer did not close the target gate before teardown");
+		QVERIFY2(waitedForWriter,
+			"the target was destroyed while the audio thread still held its raw pointer");
+		QVERIFY(!publisher.targetAlive(0, view.entries[0].token));
+	}
+
+	void rebindDuringDestructionIgnoresAStaleTargetClosure()
+	{
+		ModulationLayerPublisher publisher;
+		auto* oldModel = new FloatModel(0.0f, -100.0f, 100.0f, 0.01f);
+		std::binary_semaphore teardownEntered{0};
+		std::binary_semaphore resumeTeardown{0};
+		QObject::connect(oldModel, &AutomatableModel::aboutToBeDestroyed, this, [&] {
+			teardownEntered.release();
+			resumeTeardown.acquire();
+		}, Qt::DirectConnection);
+		publishOne(publisher, oldModel);
+		const auto oldView = publisher.snapshot();
+		const std::uint32_t oldToken = oldView.entries[0].token;
+
+		std::thread destroyer([&] { delete oldModel; });
+		if (!teardownEntered.try_acquire_for(std::chrono::seconds(2)))
+		{
+			resumeTeardown.release();
+			destroyer.join();
+			QVERIFY2(false, "the destroyer did not enter model teardown");
+		}
+
+		FloatModel replacement(0.0f, -100.0f, 100.0f, 0.01f);
+		publishOne(publisher, &replacement);
+		const auto newView = publisher.snapshot();
+		QVERIFY(publisher.targetAlive(0, newView.entries[0].token));
+
+		// Exercise the old callback after the new generation has been published,
+		// while the old model's destructor is still held at its teardown signal.
+		ModulationLayerPublisher::retireTarget(publisher.m_alive[0], publisher.m_targetWriters[0], oldToken);
+		const bool reboundTargetStillOpen = publisher.targetAlive(0, newView.entries[0].token)
+			&& publisher.beginTargetWrite(0, newView.entries[0].token);
+		if (reboundTargetStillOpen) { publisher.endTargetWrite(0); }
+		resumeTeardown.release();
+		destroyer.join();
+		QVERIFY2(reboundTargetStillOpen, "a stale destruction callback muted the rebound target");
 	}
 
 	void aDestroyedTargetIsSkippedByAnOlderView()

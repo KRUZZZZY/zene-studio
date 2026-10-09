@@ -70,9 +70,9 @@ class LuaMixerChannel
 {
 public:
 	LuaMixerChannel() = default;
-	explicit LuaMixerChannel(MixerChannel* channel) : m_channel(channel) {}
+	explicit LuaMixerChannel(MixerChannel* channel);
 
-	bool isValid() const { return m_channel != nullptr; }
+	bool isValid() const;
 	int index() const;
 	//! "ch-<n>", the same stable id mixer.* uses.
 	QString id() const;
@@ -115,7 +115,8 @@ public:
 	bool sendPreFader(int index) const;
 
 private:
-	MixerChannel* m_channel{nullptr};
+	MixerChannel* resolve() const;
+	QString m_id;
 };
 
 //! Lua-facing mixer (registered as `Mixer`).
@@ -171,14 +172,15 @@ private:
 	Effect* m_effect{nullptr};
 };
 
-//! Lua-facing effect chain (registered as `EffectChain`).
+//! Lua-facing effect chain (registered as `EffectChain`), resolved through its
+//! owning channel's stable id on each access.
 class LuaEffectChain
 {
 public:
 	LuaEffectChain() = default;
-	explicit LuaEffectChain(EffectChain* chain) : m_chain(chain) {}
+	explicit LuaEffectChain(QString mixerChannelId) : m_mixerChannelId(mixerChannelId) {}
 
-	bool isValid() const { return m_chain != nullptr; }
+	bool isValid() const;
 	int effectCount() const;
 	LuaEffect& effect(int index) const;
 	LuaEffect& effectById(const QString& id) const;
@@ -189,7 +191,8 @@ public:
 	bool removeEffect(int index);  //!< true when the effect was removed; false when it was refused (see ScriptDawEdit.cpp)
 
 private:
-	EffectChain* m_chain{nullptr};
+	EffectChain* resolve() const;
+	QString m_mixerChannelId;
 };
 
 // ---------------------------------------------------------------------------
@@ -226,10 +229,14 @@ void beginRun();
 //! it (ScriptBindings.cpp's LuaFloatModel::value() does the same).
 void syncForRead();
 
+//! Resolve a channel-owned child view by the channel's stable object id.
+AutomatableModel* mixerChannelGainModel(const QString& mixerChannelId);
+EffectChain* mixerChannelEffectChain(const QString& mixerChannelId);
+
 //! Pooled wrappers with stable addresses (Lua userdata holds references to
 //! them). Used by the read side above and by the edit side in ScriptDawEdit.cpp.
 LuaMixerChannel& newMixerChannel(MixerChannel* channel);
-LuaEffectChain& newEffectChain(EffectChain* chain);
+LuaEffectChain& newEffectChain(const QString& mixerChannelId);
 LuaEffect& newEffect(EffectChain* chain, Effect* effect);
 LuaMixer& mixerView();
 

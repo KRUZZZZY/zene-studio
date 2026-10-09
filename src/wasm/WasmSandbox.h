@@ -117,6 +117,35 @@ private:
 	std::unique_ptr<Impl> m_impl;
 };
 
+namespace detail
+{
+
+//! process() may grow linear memory, invalidating the pointer held by the host.
+//! Reacquire both the pointer and its size before the next host-side access.
+template<class Sandbox>
+bool refreshLinearMemoryAfterProcess(Sandbox& sandbox, std::uint8_t*& memory,
+	std::size_t needed)
+{
+	memory = sandbox.memoryData();
+	return memory != nullptr && sandbox.memorySize() >= needed;
+}
+
+template<class Sandbox>
+CallResult callProcessAndRefreshMemory(Sandbox& sandbox, std::uint32_t inOffset,
+	std::uint32_t outOffset, std::uint32_t frames, float sampleRate,
+	std::uint8_t*& memory, std::size_t needed)
+{
+	CallResult result = sandbox.callProcess(inOffset, outOffset, frames, sampleRate);
+	if (!refreshLinearMemoryAfterProcess(sandbox, memory, needed) && result.ok())
+	{
+		result.status = CallResult::Status::Error;
+		result.message = "the module's linear memory no longer holds the requested block after process()";
+	}
+	return result;
+}
+
+} // namespace detail
+
 } // namespace lmms::wasm
 
 #endif // LMMS_WASM_SANDBOX_H

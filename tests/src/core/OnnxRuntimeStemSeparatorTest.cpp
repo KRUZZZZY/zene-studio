@@ -28,9 +28,15 @@
 #include <memory>
 #include <vector>
 
+#include <QSignalSpy>
+#include <QTemporaryFile>
+
+#include <onnxruntime_cxx_api.h>
+
 #include "SampleBuffer.h"
 #include "SampleFrame.h"
 #include "StemSeparation/OnnxRuntimeStemSeparator.h"
+#include "StemSeparation/StemJobManager.h"
 
 using namespace lmms;
 
@@ -50,6 +56,11 @@ std::shared_ptr<const SampleBuffer> makeSineMix(int seconds)
 				0.4f * std::sin(2.0f * float(M_PI) * 330.0f * t));
 	}
 	return std::make_shared<const SampleBuffer>(std::move(data), sampleRate);
+}
+
+void throwFromPostRunValidation()
+{
+	throw Ort::Exception("injected post-Run output validation failure", ORT_FAIL);
 }
 
 } // namespace
@@ -74,6 +85,51 @@ private slots:
 			[](float) { return true; }, stems, error);
 		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
 		QVERIFY(!error.isEmpty());
+	}
+
+	void testMalformedModelFailureIsReportedByStemJob()
+	{
+		QTemporaryFile model;
+		QVERIFY(model.open());
+		QVERIFY(model.write("not an ONNX model") > 0);
+		QVERIFY(model.flush());
+
+		StemJobManager manager;
+		manager.setSeparator(std::make_unique<OnnxRuntimeStemSeparator>(model.fileName()));
+		QSignalSpy failedSpy(&manager, &StemJobManager::jobFailed);
+		const int id = manager.submit(makeSineMix(1), StemModelSampleRate, 16384);
+		QVERIFY(id > 0);
+
+		QTRY_VERIFY_WITH_TIMEOUT(failedSpy.count() == 1, 10000);
+		QCOMPARE(static_cast<int>(manager.state(id)), static_cast<int>(StemJobManager::State::Failed));
+		const QString error = manager.error(id);
+		QVERIFY(!error.isEmpty());
+		QCOMPARE(failedSpy.last().at(0).toInt(), id);
+		QVERIFY(!failedSpy.last().at(1).toString().isEmpty());
+	}
+
+	void testPostRunOrtExceptionIsReturnedAsFailure()
+	{
+		OnnxRuntimeStemSeparator separator(QStringLiteral(LMMS_TEST_DATA_DIR)
+			+ QStringLiteral("/stub-4stem-linear.onnx"));
+		separator.m_postRunTestHook = &throwFromPostRunValidation;
+		StemSet stems;
+		QString error;
+		StemSeparator::Status status = StemSeparator::Status::Success;
+		bool exceptionEscaped = false;
+		try
+		{
+			status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384,
+				[](float) { return true; }, stems, error);
+		}
+		catch (...)
+		{
+			exceptionEscaped = true;
+		}
+
+		QVERIFY2(!exceptionEscaped, "a post-Run ONNX Runtime exception escaped separate()");
+		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
+		QVERIFY(error.contains(QStringLiteral("injected post-Run output validation failure")));
 	}
 
 	void testWrongSampleRateFails()

@@ -114,7 +114,7 @@ void WasmWorkerPool::removeWorker(WasmWorker* worker)
 	for (std::size_t i = 0; i < maxWorkers; ++i)
 	{
 		if (m_workers[i].load(std::memory_order_relaxed) != worker) { continue; }
-		m_workers[i].store(nullptr, std::memory_order_release);
+		m_workers[i].store(nullptr, std::memory_order_seq_cst);
 		// Shrink the dense prefix so lanes stop scanning the far slots. Lanes
 		// may read a stale count for one pass; that is harmless (a null slot is
 		// skipped, and a worker is only reachable through its own claim flag).
@@ -127,6 +127,14 @@ void WasmWorkerPool::removeWorker(WasmWorker* worker)
 				--shrunk;
 			}
 			m_workerCount.store(shrunk, std::memory_order_release);
+		}
+		// A lane increments this slot's reader count before loading its pointer,
+		// then holds that read through claimForLane() and drainOnLane(). Once
+		// the pointer is unpublished, this is the grace period before its owner
+		// may destroy the worker.
+		while (m_workerReaders[i].load(std::memory_order_seq_cst) != 0)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 		return;
 	}
@@ -152,10 +160,30 @@ bool WasmWorkerPool::hasPendingWork() const
 	const std::size_t count = m_workerCount.load(std::memory_order_acquire);
 	for (std::size_t i = 0; i < count; ++i)
 	{
-		const WasmWorker* worker = m_workers[i].load(std::memory_order_acquire);
-		if (worker != nullptr && worker->hasPendingWork()) { return true; }
+		WasmWorker* worker = acquireWorker(i);
+		if (worker == nullptr) { continue; }
+		const bool pending = worker->hasPendingWork();
+		releaseWorker(i);
+		if (pending) { return true; }
 	}
 	return false;
+}
+
+WasmWorker* WasmWorkerPool::acquireWorker(std::size_t slot) const
+{
+	if (slot >= maxWorkers) { return nullptr; }
+	m_workerReaders[slot].fetch_add(1, std::memory_order_seq_cst);
+	WasmWorker* worker = m_workers[slot].load(std::memory_order_seq_cst);
+	if (worker == nullptr) { releaseWorker(slot); }
+	return worker;
+}
+
+void WasmWorkerPool::releaseWorker(std::size_t slot) const
+{
+	if (slot < maxWorkers)
+	{
+		m_workerReaders[slot].fetch_sub(1, std::memory_order_seq_cst);
+	}
 }
 
 bool WasmWorkerPool::drainOnce(std::size_t lane)
@@ -167,9 +195,13 @@ bool WasmWorkerPool::drainOnce(std::size_t lane)
 		// Round robin from this lane's own offset, so two lanes tend to take
 		// different workers and a busy worker cannot starve the rest.
 		const std::size_t slot = (lane + i) % maxWorkers;
-		WasmWorker* worker = m_workers[slot].load(std::memory_order_acquire);
+		WasmWorker* worker = acquireWorker(slot);
 		if (worker == nullptr) { continue; }
-		if (!worker->claimForLane()) { continue; }
+		if (!worker->claimForLane())
+		{
+			releaseWorker(slot);
+			continue;
+		}
 		const bool workerDidWork = worker->drainOnLane();
 		if (workerDidWork)
 		{
@@ -177,6 +209,7 @@ bool WasmWorkerPool::drainOnce(std::size_t lane)
 			m_blocks.fetch_add(1, std::memory_order_relaxed);
 		}
 		worker->releaseLane();
+		releaseWorker(slot);
 	}
 	if (didWork) { m_lanePasses.fetch_add(1, std::memory_order_relaxed); }
 	return didWork;

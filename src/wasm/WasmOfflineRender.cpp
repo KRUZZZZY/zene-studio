@@ -121,8 +121,10 @@ auto renderInline(const std::string& modulePath, std::uint32_t frames, std::uint
 		CallResult result;
 		for (int channel = 0; channel < render.channels; ++channel)
 		{
-			result = sandbox.callProcess(static_cast<std::uint32_t>(channel) * planeBytes,
-				outBase + static_cast<std::uint32_t>(channel) * planeBytes, count, sampleRate);
+			result = detail::callProcessAndRefreshMemory(sandbox,
+				static_cast<std::uint32_t>(channel) * planeBytes,
+				outBase + static_cast<std::uint32_t>(channel) * planeBytes,
+				count, sampleRate, memory, needed);
 			if (!result.ok()) { break; }
 		}
 		++render.blocks;

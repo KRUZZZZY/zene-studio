@@ -262,6 +262,11 @@ LuaFloatModel& newFloatModel(AutomatableModel* model)
 	return floatModelPool().add(LuaFloatModel(model));
 }
 
+LuaFloatModel& newMixerGainModel(const QString& mixerChannelId)
+{
+	return floatModelPool().add(LuaFloatModel(mixerChannelId));
+}
+
 LuaBoolModel& newBoolModel(BoolModel* model)
 {
 	return boolModelPool().add(LuaBoolModel(model));
@@ -539,51 +544,8 @@ LuaNote& LuaNoteBuilder::build() const
 }
 
 // ---------------------------------------------------------------------------
-// LuaFloatModel / LuaBoolModel
+// LuaBoolModel
 // ---------------------------------------------------------------------------
-
-float LuaFloatModel::value() const
-{
-	if (!m_model) { return 0.0f; }
-	// Reads see writes queued earlier in the same script: the apply side
-	// drains pending commands before the value is sampled.
-	ScriptEngine::instance()->flushCommandsForRead();
-	return m_model->value<float>();
-}
-
-void LuaFloatModel::setValue(float value)
-{
-	if (!m_model) { return; }
-	// Model writes are queued, never applied on the worker thread: the apply
-	// side owns the model graph (spec section 4). Read-back flushes the queue.
-	ScriptCommand command = makeCommand(ScriptCommand::Type::SetModelValue);
-	command.object0 = m_model;
-	command.f0 = value;
-	ScriptEngine::instance()->enqueue(command);
-}
-
-float LuaFloatModel::minValue() const
-{
-	return m_model ? m_model->minValue<float>() : 0.0f;
-}
-
-float LuaFloatModel::maxValue() const
-{
-	return m_model ? m_model->maxValue<float>() : 0.0f;
-}
-
-QString LuaFloatModel::name() const
-{
-	return m_model ? m_model->displayName() : QString();
-}
-
-QString LuaFloatModel::type() const
-{
-	if (dynamic_cast<IntModel*>(m_model) != nullptr) { return QStringLiteral("int"); }
-	if (dynamic_cast<BoolModel*>(m_model) != nullptr) { return QStringLiteral("bool"); }
-	if (dynamic_cast<FloatModel*>(m_model) != nullptr) { return QStringLiteral("float"); }
-	return QStringLiteral("unknown");
-}
 
 bool LuaBoolModel::value() const
 {

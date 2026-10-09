@@ -28,6 +28,8 @@
 
 #include "StemSeparation/StemSeparator.h"
 
+class OnnxRuntimeStemSeparatorTest;
+
 namespace lmms
 {
 
@@ -52,6 +54,9 @@ public:
 	static QString runtimeVersion();
 
 private:
+	friend class ::OnnxRuntimeStemSeparatorTest;
+	using PostRunTestHook = void (*)();
+	PostRunTestHook m_postRunTestHook = nullptr;
 	QString m_modelPath;
 };
 

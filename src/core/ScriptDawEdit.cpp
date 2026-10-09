@@ -336,27 +336,31 @@ LuaMixerChannel& LuaMixer::addChannel() const
 
 void LuaMixerChannel::setGain(float gain)
 {
-	if (m_channel == nullptr) { return; }
-	enqueueModelWrite(&m_channel->m_volumeModel, gain);
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
+	enqueueModelWrite(&channel->m_volumeModel, gain);
 }
 
 void LuaMixerChannel::setMuted(bool muted)
 {
-	if (m_channel == nullptr) { return; }
-	enqueueModelWrite(&m_channel->m_muteModel, muted ? 1.0f : 0.0f);
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
+	enqueueModelWrite(&channel->m_muteModel, muted ? 1.0f : 0.0f);
 }
 
 void LuaMixerChannel::setSoloed(bool soloed)
 {
-	if (m_channel == nullptr) { return; }
-	enqueueModelWrite(&m_channel->m_soloModel, soloed ? 1.0f : 0.0f);
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
+	enqueueModelWrite(&channel->m_soloModel, soloed ? 1.0f : 0.0f);
 }
 
 void LuaMixerChannel::setName(const QString& name)
 {
-	if (m_channel == nullptr) { return; }
+	MixerChannel* channel = resolve();
+	if (channel == nullptr) { return; }
 	ScriptCommand command;
-	if (!namedDawCommand(ScriptDawBindings::Op::SetChannelName, m_channel, name, command))
+	if (!namedDawCommand(ScriptDawBindings::Op::SetChannelName, channel, name, command))
 	{
 		logRefusal(QStringLiteral("renaming this channel"), ControlResult::failure(
 			ControlErrorKind::InvalidArgs, QStringLiteral("name exceeds the %1-byte command payload limit")
@@ -372,13 +376,14 @@ void LuaMixerChannel::setName(const QString& name)
 
 LuaEffect& LuaEffectChain::loadEffect(const QString& device) const
 {
-	if (m_chain == nullptr)
+	EffectChain* chain = resolve();
+	if (chain == nullptr)
 	{
 		return ScriptDawBindings::newEffect(nullptr, nullptr);
 	}
-	const int before = effectCount();
+	const int before = static_cast<int>(chain->effects().size());
 	ScriptCommand command;
-	if (!namedDawCommand(ScriptDawBindings::Op::LoadEffect, m_chain, device, command))
+	if (!namedDawCommand(ScriptDawBindings::Op::LoadEffect, chain, device, command))
 	{
 		logRefusal(QStringLiteral("loading '%1'").arg(device), ControlResult::failure(
 			ControlErrorKind::InvalidArgs, QStringLiteral("device name exceeds the %1-byte command payload limit")
@@ -394,9 +399,10 @@ LuaEffect& LuaEffectChain::loadEffect(const QString& device) const
 
 bool LuaEffectChain::removeEffect(int index)
 {
-	if (m_chain == nullptr) { return false; }
+	EffectChain* chain = resolve();
+	if (chain == nullptr) { return false; }
 	const int before = effectCount();
-	enqueueDaw(dawCommand(ScriptDawBindings::Op::RemoveEffect, m_chain, index));
+	enqueueDaw(dawCommand(ScriptDawBindings::Op::RemoveEffect, chain, index));
 	ScriptEngine::instance()->flushCommandsForRead();
 	// The queue carries no reply, so the count is the witness (as in loadEffect): false when the removal was
 	// refused - a bad index, or a device whose state cannot be captured so the removal could not be undone

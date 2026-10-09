@@ -42,6 +42,7 @@
 
 #include "AutomatableModel.h"
 #include "ControlDeviceSupport.h"
+#include "ControlMixerSupport.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "EffectChain.h"
@@ -227,14 +228,30 @@ void syncForRead()
 	ScriptEngine::instance()->flushCommandsForRead();
 }
 
+AutomatableModel* mixerChannelGainModel(const QString& mixerChannelId)
+{
+	if (mixerChannelId.isEmpty()) { return nullptr; }
+	ControlResult error;
+	MixerChannel* channel = control::resolveMixerChannel(mixerChannelId, &error);
+	return channel == nullptr ? nullptr : &channel->m_volumeModel;
+}
+
+EffectChain* mixerChannelEffectChain(const QString& mixerChannelId)
+{
+	if (mixerChannelId.isEmpty()) { return nullptr; }
+	ControlResult error;
+	MixerChannel* channel = control::resolveMixerChannel(mixerChannelId, &error);
+	return channel == nullptr ? nullptr : &channel->m_fxChain;
+}
+
 LuaMixerChannel& newMixerChannel(MixerChannel* channel)
 {
 	return mixerChannelPool().add(LuaMixerChannel(channel));
 }
 
-LuaEffectChain& newEffectChain(EffectChain* chain)
+LuaEffectChain& newEffectChain(const QString& mixerChannelId)
 {
-	return effectChainPool().add(LuaEffectChain(chain));
+	return effectChainPool().add(LuaEffectChain(mixerChannelId));
 }
 
 LuaEffect& newEffect(EffectChain* chain, Effect* effect)
@@ -406,115 +423,202 @@ QStringList LuaMixer::ids() const
 // LuaMixerChannel
 // ---------------------------------------------------------------------------
 
+LuaMixerChannel::LuaMixerChannel(MixerChannel* channel) :
+	m_id(control::channelIdOf(channel))
+{
+}
+
+MixerChannel* LuaMixerChannel::resolve() const
+{
+	if (m_id.isEmpty()) { return nullptr; }
+	ControlResult error;
+	return control::resolveMixerChannel(m_id, &error);
+}
+
+bool LuaMixerChannel::isValid() const
+{
+	ScriptDawBindings::syncForRead();
+	return resolve() != nullptr;
+}
+
 int LuaMixerChannel::index() const
 {
-	return m_channel == nullptr ? -1 : m_channel->index();
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return channel == nullptr ? -1 : channel->index();
 }
 
 QString LuaMixerChannel::id() const
 {
-	// The channel OBJECT's own id, the same number `mixer.get_state` publishes -
-	// not channelId(index). Measured on a live session: the master is ch-1 and
-	// the first added channel ch-7, so `mixer:channelById(channel:id())` used to
-	// be answered with an id no channel carries.
-	return m_channel == nullptr ? QString() : control::channelIdOf(m_channel);
+	return m_id;
 }
 
 QString LuaMixerChannel::name() const
 {
 	ScriptDawBindings::syncForRead();
-	return m_channel == nullptr ? QString() : m_channel->m_name;
+	MixerChannel* channel = resolve();
+	return channel == nullptr ? QString() : channel->m_name;
 }
 
 bool LuaMixerChannel::isMaster() const
 {
-	return m_channel != nullptr && m_channel->isMaster();
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return channel != nullptr && channel->isMaster();
 }
 
 bool LuaMixerChannel::isBus() const
 {
-	return m_channel != nullptr && m_channel->isBus();
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return channel != nullptr && channel->isBus();
 }
 
 float LuaMixerChannel::gain() const
 {
-	if (m_channel == nullptr) { return 0.0f; }
 	ScriptDawBindings::syncForRead();
-	return m_channel->m_volumeModel.value();
+	MixerChannel* channel = resolve();
+	return channel == nullptr ? 0.0f : channel->m_volumeModel.value();
 }
 
 bool LuaMixerChannel::muted() const
 {
-	if (m_channel == nullptr) { return false; }
 	ScriptDawBindings::syncForRead();
-	return m_channel->m_muteModel.value();
+	MixerChannel* channel = resolve();
+	return channel != nullptr && channel->m_muteModel.value();
 }
 
 bool LuaMixerChannel::soloed() const
 {
-	if (m_channel == nullptr) { return false; }
 	ScriptDawBindings::syncForRead();
-	return m_channel->m_soloModel.value();
+	MixerChannel* channel = resolve();
+	return channel != nullptr && channel->m_soloModel.value();
 }
 
 LuaFloatModel& LuaMixerChannel::gainModel() const
 {
-	// The pooled, REGISTERED FloatModel - not a raw AutomatableModel*, which
-	// the bridge cannot expose (no class of that name is registered, so the
-	// call raised "The class is not registered in LuaBridge").
-	ScriptDawBindings::syncForRead();
-	return ScriptBindings::newFloatModel(
-		m_channel == nullptr ? nullptr : &m_channel->m_volumeModel);
+	return ScriptBindings::newMixerGainModel(m_id);
 }
 
 LuaBoolModel& LuaMixerChannel::muteModel() const
 {
 	ScriptDawBindings::syncForRead();
-	return ScriptBindings::newBoolModel(
-		m_channel == nullptr ? nullptr : &m_channel->m_muteModel);
+	MixerChannel* channel = resolve();
+	return ScriptBindings::newBoolModel(channel == nullptr ? nullptr : &channel->m_muteModel);
 }
 
 LuaBoolModel& LuaMixerChannel::soloModel() const
 {
 	ScriptDawBindings::syncForRead();
-	return ScriptBindings::newBoolModel(
-		m_channel == nullptr ? nullptr : &m_channel->m_soloModel);
+	MixerChannel* channel = resolve();
+	return ScriptBindings::newBoolModel(channel == nullptr ? nullptr : &channel->m_soloModel);
 }
 
 LuaEffectChain& LuaMixerChannel::chain() const
 {
-	// The Lua VIEW: lmms::EffectChain is not a registered class (the registered
-	// name "EffectChain" is LuaEffectChain), so the raw EffectChain* this used
-	// to return raised "The class is not registered in LuaBridge" and
-	// `channel:chain():effectCount()` was unreachable from a script.
-	ScriptDawBindings::syncForRead();
-	return ScriptDawBindings::newEffectChain(m_channel == nullptr ? nullptr : &m_channel->m_fxChain);
+	return ScriptDawBindings::newEffectChain(m_id);
 }
 
 int LuaMixerChannel::sendCount() const
 {
-	return m_channel == nullptr ? 0 : static_cast<int>(m_channel->m_sends.size());
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return channel == nullptr ? 0 : static_cast<int>(channel->m_sends.size());
 }
 
 QString LuaMixerChannel::sendTarget(int index) const
 {
-	if (m_channel == nullptr || index < 0 || index >= sendCount()) { return QString(); }
-	// The RECEIVER's own id - never channelId(receiverIndex()), which names a
-	// mixer POSITION, not the object's id the surface resolves.
-	return control::channelIdOf(m_channel->m_sends[index]->receiver());
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	if (channel == nullptr || index < 0 || index >= static_cast<int>(channel->m_sends.size()))
+	{
+		return QString();
+	}
+	return control::channelIdOf(channel->m_sends[index]->receiver());
 }
 
 float LuaMixerChannel::sendAmount(int index) const
 {
-	if (m_channel == nullptr || index < 0 || index >= sendCount()) { return 0.0f; }
 	ScriptDawBindings::syncForRead();
-	return m_channel->m_sends[index]->amount()->value();
+	MixerChannel* channel = resolve();
+	if (channel == nullptr || index < 0 || index >= static_cast<int>(channel->m_sends.size()))
+	{
+		return 0.0f;
+	}
+	return channel->m_sends[index]->amount()->value();
 }
 
 bool LuaMixerChannel::sendPreFader(int index) const
 {
-	if (m_channel == nullptr || index < 0 || index >= sendCount()) { return false; }
-	return m_channel->m_sends[index]->preFader();
+	ScriptDawBindings::syncForRead();
+	MixerChannel* channel = resolve();
+	return channel != nullptr && index >= 0 && index < static_cast<int>(channel->m_sends.size())
+		&& channel->m_sends[index]->preFader();
+}
+
+// ---------------------------------------------------------------------------
+// LuaFloatModel
+// ---------------------------------------------------------------------------
+
+AutomatableModel* LuaFloatModel::resolve() const
+{
+	if (!m_mixerChannelId.isEmpty())
+	{
+		ScriptDawBindings::syncForRead();
+		return ScriptDawBindings::mixerChannelGainModel(m_mixerChannelId);
+	}
+	return m_model;
+}
+
+bool LuaFloatModel::isValid() const
+{
+	return resolve() != nullptr;
+}
+
+float LuaFloatModel::value() const
+{
+	AutomatableModel* model = resolve();
+	if (!model) { return 0.0f; }
+	if (m_mixerChannelId.isEmpty()) { ScriptEngine::instance()->flushCommandsForRead(); }
+	return model->value<float>();
+}
+
+void LuaFloatModel::setValue(float value)
+{
+	AutomatableModel* model = resolve();
+	if (!model) { return; }
+	ScriptCommand command;
+	command.type = ScriptCommand::Type::SetModelValue;
+	command.object0 = model;
+	command.f0 = value;
+	ScriptEngine::instance()->enqueue(command);
+}
+
+float LuaFloatModel::minValue() const
+{
+	AutomatableModel* model = resolve();
+	return model ? model->minValue<float>() : 0.0f;
+}
+
+float LuaFloatModel::maxValue() const
+{
+	AutomatableModel* model = resolve();
+	return model ? model->maxValue<float>() : 0.0f;
+}
+
+QString LuaFloatModel::name() const
+{
+	AutomatableModel* model = resolve();
+	return model ? model->displayName() : QString();
+}
+
+QString LuaFloatModel::type() const
+{
+	AutomatableModel* model = resolve();
+	if (dynamic_cast<IntModel*>(model) != nullptr) { return QStringLiteral("int"); }
+	if (dynamic_cast<BoolModel*>(model) != nullptr) { return QStringLiteral("bool"); }
+	if (dynamic_cast<FloatModel*>(model) != nullptr) { return QStringLiteral("float"); }
+	return QStringLiteral("unknown");
 }
 
 } // namespace lmms
