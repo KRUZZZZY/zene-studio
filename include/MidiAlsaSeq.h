@@ -54,6 +54,11 @@ class MidiAlsaSeq : public QThread, public MidiClient
 public:
 	MidiAlsaSeq();
 	~MidiAlsaSeq() override;
+#ifdef LMMS_TESTING
+	struct PipeOnlyForTesting {};
+	explicit MidiAlsaSeq(PipeOnlyForTesting);
+	int wakeReadFdForTesting() const noexcept { return m_pipe[0]; }
+#endif
 
 	static QString probeDevice();
 

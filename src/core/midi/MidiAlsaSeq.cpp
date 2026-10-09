@@ -207,6 +207,23 @@ MidiAlsaSeq::MidiAlsaSeq() :
 	start( QThread::IdlePriority );
 }
 
+#ifdef LMMS_TESTING
+MidiAlsaSeq::MidiAlsaSeq(PipeOnlyForTesting) :
+	MidiClient(),
+	m_seqMutex(),
+	m_seqHandle(nullptr),
+	m_queueID(-1),
+	m_quit(false),
+	m_portListUpdateTimer(this)
+{
+	if (pipe(m_pipe) == -1) { return; }
+	for (const int fd : m_pipe)
+	{
+		fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+	}
+}
+#endif
+
 
 
 
