@@ -311,6 +311,23 @@ LMMS_EXPORT bool reassembleContainerDocument(
 	const std::vector<std::pair<QString, QByteArray>>& entries,
 	const QString& contentElementName, QByteArray* document, QString* error );
 
+/*! Q050-007: write \a document - a project document carrying a `<z:index>` - as
+ *  a v2 container at \a path: deriveContainerEntries() cuts it along the
+ *  index's section boundaries and writeContainer() stores the pieces. The one
+ *  call a SAVE makes, so the save path owns no entry-naming rule of its own.
+ *  Refusals are the two halves': an unindexed or unfileable document, or a
+ *  write that failed, with \a error set and no file left behind. */
+LMMS_EXPORT bool writeDocumentContainer( const QString& path, const QByteArray& document,
+	const QString& contentElementName, QString* error );
+
+/*! Q050-007: read the v2 container at \a path back into the one document it was
+ *  cut from - readContainer() then reassembleContainerDocument(), so a load needs
+ *  one call and gets the original bytes, raw (the guarantee is
+ *  deriveContainerEntries' contract above). \a document is left as passed on a
+ *  refusal. */
+LMMS_EXPORT bool readDocumentContainer( const QString& path, const QString& contentElementName,
+	QByteArray* document, QString* error );
+
 } // namespace projectcontainer
 
 } // namespace lmms

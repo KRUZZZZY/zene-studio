@@ -372,6 +372,18 @@ bool readProjectDocument(const QString& projectPath, QDomDocument* document, QSt
 		return false;
 	}
 
+	// Q050-007: a v2 container is a ZIP, which neither the bounded qCompress read below
+	// nor the plain-XML read can follow - the first would call its magic a 1.3 GB
+	// "declared size". Refused by name instead of by that accident; this verb reads the
+	// legacy .mmpz and .mmp (saving with format "legacy" gives it one).
+	if (file.peek(4) == QByteArrayLiteral("PK\x03\x04"))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 is a v2 container, which this verb does not read yet: it reads the "
+				"legacy .mmpz and .mmp (project.save with format \"legacy\" writes one)").arg(projectPath));
+		return false;
+	}
+
 	const bool compressed = *format == QLatin1String("mmpz");
 	QByteArray stored;
 	if (!readStoredBody(&file, projectPath, compressed, &stored, error)) { return false; }

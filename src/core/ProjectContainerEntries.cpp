@@ -575,6 +575,30 @@ bool reassembleContainerDocument( const std::vector<std::pair<QString, QByteArra
 	return true;
 }
 
+bool writeDocumentContainer( const QString& path, const QByteArray& document,
+	const QString& contentElementName, QString* error )
+{
+	std::vector<std::pair<QString, QByteArray>> entries;
+	if( !deriveContainerEntries( document, contentElementName, &entries, error ) )
+	{
+		return false;
+	}
+	// deriveContainerEntries() answers the skeleton first, then the sections in
+	// index order - the shape writeContainer() takes apart again.
+	const QByteArray skeleton = entries.front().second;
+	entries.erase( entries.begin() );
+	return writeContainer( path, skeleton, entries, error );
+}
+
+
+bool readDocumentContainer( const QString& path, const QString& contentElementName,
+	QByteArray* document, QString* error )
+{
+	std::vector<std::pair<QString, QByteArray>> entries;
+	if( !readContainer( path, QStringList(), &entries, error ) ) { return false; }
+	return reassembleContainerDocument( entries, contentElementName, document, error );
+}
+
 } // namespace projectcontainer
 
 } // namespace lmms

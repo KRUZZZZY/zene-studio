@@ -26,6 +26,7 @@
 #ifndef LMMS_DATA_FILE_H
 #define LMMS_DATA_FILE_H
 
+#include <functional>
 #include <map>
 #include <QDomDocument>
 #include <QStringList>
@@ -132,6 +133,34 @@ public:
 		m_documentIndexEnabled = enabled;
 	}
 
+	///
+	/// \brief setContainerV2
+	/// Q050-007. Ask writeFile() to write this song project as a `.mmpz` v2
+	/// CONTAINER (a STORE ZIP cut along the document's sections, see
+	/// ProjectContainer.h) instead of the legacy single qCompress() blob. Off by
+	/// default, so a DataFile nobody asked writes exactly the bytes it always
+	/// did. It applies only to a song project written to a `.mmpz` name; any
+	/// other file is written as before, and writeFile() reports through
+	/// containerV2Written() whether the request was honoured.
+	///
+	void setContainerV2( bool enabled )
+	{
+		m_containerV2 = enabled;
+	}
+
+	//! True when the last writeFile() actually wrote a v2 container.
+	bool containerV2Written() const
+	{
+		return m_containerV2Written;
+	}
+
+	//! True when this document was read out of a v2 container (a project file
+	//! whose bytes are a ZIP, told apart by content and never by extension).
+	bool loadedFromContainer() const
+	{
+		return m_loadedFromContainer;
+	}
+
 private:
 	static Type type( const QString& typeName );
 	static QString typeName( Type type );
@@ -219,12 +248,21 @@ private:
 	void loadData( const QByteArray & _data, const QString & _sourceFile,
 		const QStringList & skipSections, QStringList * skippedNames );
 
+	//! Q050-007. Write the document's bytes to \a tempPath in the shape \a fullName's
+	//! extension (and the v2 request) selects: plain XML, the legacy qCompress()
+	//! blob, or a v2 container. False after reporting through \a showError.
+	bool writePayload( const QString& tempPath, const QString& fullName,
+		const std::function<void( const QString&, const QString& )>& showError );
+
 	QString m_fileName; //!< The origin file name or "" if this DataFile didn't originate from a file
 	QDomElement m_content;
 	QDomElement m_head;
 	Type m_type;
 	unsigned int m_fileVersion;
 	bool m_documentIndexEnabled = false;
+	bool m_containerV2 = false;
+	bool m_containerV2Written = false;
+	bool m_loadedFromContainer = false;
 } ;
 
 

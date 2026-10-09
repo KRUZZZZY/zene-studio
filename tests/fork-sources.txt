@@ -1877,6 +1877,7 @@ tests/control-bus-commands.py
 tests/control-chain-presets.py
 tests/control-clock-commands.py
 tests/control-commands-snapshot.py
+tests/control-container-v2.py
 tests/control-crash-reporter.py
 tests/control-detect-commands.py
 tests/control-dry-run-journal.py
@@ -2092,6 +2093,7 @@ tests/src/core/PluginHostMetadataTest.cpp
 tests/src/core/PortMappingCodecTest.cpp
 tests/src/core/PortMappingOrchestratorTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
+tests/src/core/ProjectContainerSaveTest.cpp
 tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp

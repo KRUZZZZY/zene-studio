@@ -48,6 +48,7 @@
 #include "base64.h"
 #include "ConfigManager.h"
 #include "DocumentIndex.h"
+#include "ProjectContainer.h"
 #include "UnattendedRun.h"
 #include "DeprecationHelper.h"
 #include "Effect.h"
@@ -280,6 +281,17 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 	{
 		return true;
 	}
+	// Q050-007: a v2 container's temp is complete when its entries reassemble
+	// into a document this program recognises - a truncated ZIP does not, so an
+	// interrupted v2 save is adopted or discarded by the same rule as a v1 one.
+	if( lmms::projectcontainer::isContainer( bytes ) )
+	{
+		QByteArray document;
+		QString ignored;
+		return lmms::projectcontainer::readDocumentContainer( path,
+				QStringLiteral( "song" ), &document, &ignored )
+			&& parsesAsRecoverableDocument( document );
+	}
 	if( bytes.trimmed().startsWith( '<' ) )
 	{
 		return false;
@@ -424,7 +436,32 @@ DataFile::DataFile( const QString & _fileName, const QStringList & skipSections,
 		return;
 	}
 
-	loadData( inFile.readAll(), _fileName, skipSections, skippedNames );
+	const QByteArray bytes = inFile.readAll();
+	inFile.close();
+
+	// Q050-007: a v2 container is told from the legacy blob by its BYTES (a ZIP's
+	// local-header magic), never by the name - the extension is a configuration
+	// choice (nameWithExtension) and would otherwise make one name mean two
+	// formats. The container is reassembled into the one document it was cut
+	// from, byte for byte, and that document takes the ordinary load below.
+	if( projectcontainer::isContainer( bytes ) )
+	{
+		QByteArray document;
+		QString error;
+		if( !projectcontainer::readDocumentContainer( _fileName,
+			typeName( Type::SongProject ), &document, &error ) )
+		{
+			// The same report an unparseable file gets: no modal in an agent
+			// instance, a typed refusal from project.open (head stays null).
+			qWarning() << "Could not read the v2 container" << _fileName << ":" << error;
+			return;
+		}
+		m_loadedFromContainer = true;
+		loadData( document, _fileName, skipSections, skippedNames );
+		return;
+	}
+
+	loadData( bytes, _fileName, skipSections, skippedNames );
 }
 
 
@@ -622,6 +659,74 @@ void DataFile::write( QTextStream & _strm )
 
 
 
+bool DataFile::writePayload(const QString& tempPath, const QString& fullName,
+	const std::function<void(const QString&, const QString&)>& showError)
+{
+	using gui::SongEditor;
+
+	const QString extension = fullName.section('.', -1);
+
+	// Q050-007: the opt-in v2 container. It is honoured only for a song project
+	// headed for a `.mmpz` name - the one file shape a loader can tell from the
+	// legacy blob by its bytes - and the request is recorded as honoured or not
+	// so a caller reports what was WRITTEN, not what was asked for.
+	m_containerV2Written = false;
+	if (m_containerV2 && extension == "mmpz" && type() == Type::SongProject)
+	{
+		// The container is cut along the <z:index>'s sections, so the index is
+		// switched on for this write whatever the caller's preserved set said.
+		m_documentIndexEnabled = true;
+		QString xml;
+		QTextStream ts( &xml );
+		write( ts );
+		QString error;
+		if (!projectcontainer::writeDocumentContainer(tempPath, xml.toUtf8(), typeName(type()), &error))
+		{
+			showError(SongEditor::tr("Could not write file"),
+				SongEditor::tr("The project could not be written as a v2 container: %1").arg(error));
+			return false;
+		}
+		m_containerV2Written = true;
+		return true;
+	}
+
+	QSaveFile outfile(tempPath);
+
+	if (!outfile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+	{
+		showError(SongEditor::tr("Could not write file"),
+			SongEditor::tr("Could not open %1 for writing. You probably are not permitted to "
+				"write to this file. Please make sure you have write-access to "
+				"the file and try again.").arg(fullName));
+
+		return false;
+	}
+
+	if (extension == "mmpz" || extension == "xptz")
+	{
+		QString xml;
+		QTextStream ts( &xml );
+		write( ts );
+		outfile.write( qCompress( xml.toUtf8() ) );
+	}
+	else
+	{
+		QTextStream ts( &outfile );
+		write( ts );
+	}
+
+	if (!outfile.commit())
+	{
+		showError(SongEditor::tr("Could not write file"),
+			SongEditor::tr("An unknown error has occurred and the file could not be saved."));
+		return false;
+	}
+	return true;
+}
+
+
+
+
 bool DataFile::writeFile(const QString& filename, bool withResources)
 {
 	// Small lambda function for displaying errors
@@ -699,38 +804,7 @@ bool DataFile::writeFile(const QString& filename, bool withResources)
 		}
 	}
 
-	QSaveFile outfile(fullNameTemp);
-
-	if (!outfile.open(QIODevice::WriteOnly | QIODevice::Truncate))
-	{
-		showError(SongEditor::tr("Could not write file"),
-			SongEditor::tr("Could not open %1 for writing. You probably are not permitted to "
-				"write to this file. Please make sure you have write-access to "
-				"the file and try again.").arg(fullName));
-
-		return false;
-	}
-
-	const QString extension = fullName.section('.', -1);
-	if (extension == "mmpz" || extension == "xptz")
-	{
-		QString xml;
-		QTextStream ts( &xml );
-		write( ts );
-		outfile.write( qCompress( xml.toUtf8() ) );
-	}
-	else
-	{
-		QTextStream ts( &outfile );
-		write( ts );
-	}
-
-	if (!outfile.commit())
-	{
-		showError(SongEditor::tr("Could not write file"),
-			SongEditor::tr("An unknown error has occurred and the file could not be saved."));
-		return false;
-	}
+	if (!writePayload(fullNameTemp, fullName, showError)) { return false; }
 
 	// ARCH-4 S5 (SPEC-ARCH-4 1.8): a save must never leave the canonical path
 	// without a complete file, and the completed bytes must be on disk before

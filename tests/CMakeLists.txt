@@ -345,6 +345,12 @@ set(LMMS_TESTS
 	# index - with the pair ORDER shown free, position living inside the name);
 	# and the integration pair through the real writeContainer/readContainer.
 	src/core/ProjectContainerEntriesTest.cpp
+	# Q050-007: the container as something a user SAVES and OPENS - ordinary
+	# Save still legacy, the opt-in through project.save / the Save As choice /
+	# the app/savecontainerv2 setting, project.open telling both by content,
+	# legacy and v2 fixtures compared after save/load, an interrupted v2 save
+	# recovered, a damaged container refused.
+	src/core/ProjectContainerSaveTest.cpp
 	# The export dither (TPDF) and the explicit SRC quality: the statistical
 	# proof of the dither, the byte-level off-by-default proof, the converter
 	# ratio convention, and the quality reaching the resampler.
@@ -3981,6 +3987,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-save-state.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlSaveState PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# Q050-007: the opt-in v2 project container over the control socket of the real
+	# binary - ordinary save legacy, project.save {format: "v2"}, project.open
+	# auto-detecting both, the app/savecontainerv2 setting; see the test's header.
+	add_test(NAME ControlContainerV2
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-container-v2.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlContainerV2 PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

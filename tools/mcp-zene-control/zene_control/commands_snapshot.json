@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T06:08:42Z",
+  "captured_at": "2026-10-09T10:39:15Z",
   "commands": [
     {
       "args_schema": {
@@ -20374,6 +20374,13 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "format": {
+            "enum": [
+              "legacy",
+              "v2"
+            ],
+            "type": "string"
+          },
           "path": {
             "type": "string"
           }
@@ -20381,7 +20388,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Save the session. With no path, saves over the project's own file. Before the write, the file being replaced is rotated into the named 'keep-3' revision set (<file>.rev0..rev2, each capped at 8 MiB), so the previous revision is recoverable through project.restore_revision - and control.undo dispatches exactly that for the save it recorded.",
+      "description": "Save the session. With no path, saves over the project's own file. Before the write, the file being replaced is rotated into the named 'keep-3' revision set (<file>.rev0..rev2, each capped at 8 MiB), so the previous revision is recoverable through project.restore_revision - and control.undo dispatches exactly that for the save it recorded. Q050-007: `format` \"v2\" saves the project as a v2 CONTAINER (a .mmpz ZIP of one entry per section): a LARGER file than the legacy single-blob .mmpz, which builds older than this one cannot open (`format_note` says so). Without `format` the legacy .mmpz is written unless the setting app/savecontainerv2 is \"1\" or the project was opened from a container; \"legacy\" forces the old blob. project.open tells both by content.",
       "group": "project",
       "id": "project.save",
       "mutating": true,
@@ -20389,7 +20396,16 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "bytes": {
+            "type": "integer"
+          },
           "file": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "format_note": {
             "type": "string"
           },
           "revision_kept": {
@@ -34761,14 +34777,7 @@
   ],
   "count": 823,
   "instance": {
-    "binary": null,
-    "binary_bytes": null,
-    "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
-    "lane_head": null,
-    "proto": 1,
-    "source_socket": "/tmp/zctl-run-p1xw5a_7/zene.sock",
-    "version": "0.4.0-alpha.1364+a0295ab"
+    "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/719627a5-c809-46ec-b4a4-231af5d313ec/scratchpad/feat-Q050-007/live-without-wasm.json"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
