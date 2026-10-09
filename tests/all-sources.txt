@@ -2654,6 +2654,7 @@ tests/src/core/SessionArrangementRecordTest.cpp
 tests/src/core/SessionAudioCellPlaybackTest.cpp
 tests/src/core/SessionAudioRecordTest.cpp
 tests/src/core/SessionAudioRecorderTest.cpp
+tests/src/core/SessionCheckpointBudgetTest.cpp
 tests/src/core/SessionCheckpointTest.cpp
 tests/src/core/SessionCommandArgsTest.cpp
 tests/src/core/SessionFollowTest.cpp

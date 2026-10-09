@@ -2259,3 +2259,4 @@ src/core/RenderQueueBounce.cpp
 src/core/SessionCheckpoint.cpp
 tests/src/core/ControlRenderJobTest.cpp
 tests/src/core/SessionCheckpointTest.cpp
+tests/src/core/SessionCheckpointBudgetTest.cpp

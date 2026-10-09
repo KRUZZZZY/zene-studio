@@ -405,10 +405,11 @@ QJsonObject projectOpenTransaction(const QString& previousFile, const QString& p
 		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
 			QStringLiteral("snapshot: the session this open displaced, with its unsaved changes, "
-				"was captured whole (%1 bytes compressed, audio files by reference) and one undo "
+				"and the opened result are captured whole (%1 bytes compressed in total, audio files by reference) "
+				"and one undo "
 				"step puts it back, file name included; redo restores the project as it was loaded, "
 				"including any skipped sections")
-				.arg(checkpoint.bytes));
+				.arg(checkpoint.retainedBytes));
 		return transaction;
 	}
 	transaction.insert(QStringLiteral("inverse"),

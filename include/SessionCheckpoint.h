@@ -45,33 +45,34 @@ namespace control
  *  step carries (Song::captureUndoSnapshot: the save document, audio files by
  *  reference, never by copy), and leave ONE undo step that restores it.
  *
- *  The checkpoint is bounded by the undo stack's byte budget
- *  (ProjectJournal::maxUndoBytes, control.set_undo_depth): a session whose
- *  compressed snapshot is over it is REFUSED before anything changes, because a
- *  step bigger than the budget cannot be kept and "undoable" would be a claim
- *  the engine cannot honour. Partial loads carry their skipped-section list as
- *  metadata, so undo and redo can preserve their read-only state. */
+ *  The checkpoint and its redo state together are bounded by the undo stack's
+ *  byte budget (ProjectJournal::maxUndoBytes, control.set_undo_depth). A large
+ *  pre-state is refused before the action; if the completed action's snapshot
+ *  makes the pair too large, the pre-state is restored before refusal. Partial
+ *  loads carry their skipped-section list as metadata, so undo and redo preserve
+ *  their read-only state. */
 struct SessionCheckpoint
 {
 	enum class State
 	{
 		Skipped,  //!< nothing to protect, or nothing that can be captured: see \a note
 		Taken,    //!< the snapshot is held in \a before
-		TooLarge, //!< over the budget: the destructive action must not run
+		TooLarge, //!< both retained snapshots do not fit; a completed action is restored before refusal
 	};
 
 	State state = State::Skipped;
 	std::shared_ptr<const QByteArray> before;
-	qint64 bytes = 0;      //!< the compressed snapshot, when one was measured
-	qint64 limit = 0;      //!< the byte budget it was measured against
-	QString fileBefore;    //!< the project file name the session had
+	qint64 bytes = 0;          //!< compressed pre-state snapshot, when one was measured
+	qint64 retainedBytes = 0;  //!< combined pre-state and redo-state payload, when a step was pushed
+	qint64 limit = 0;          //!< the byte budget it was measured against
+	QString fileBefore;        //!< the project file name the session had
 	QStringList skippedBefore; //!< sections omitted from a partial session before the action
-	QString note;          //!< the plain-words reason when not Taken
-	bool pushed = false;   //!< the undo step is on the journal
+	QString note;              //!< the plain-words reason when not Taken
+	bool pushed = false;       //!< the undo step is on the journal
 
 	bool taken() const { return state == State::Taken; }
 	bool refused() const { return state == State::TooLarge; }
-	//! The reply field both commands report: taken, pushed, bytes, limit and the note.
+	//! The reply field both commands report: taken, pushed, bytes, retained_bytes, limit and the note.
 	LMMS_EXPORT QJsonObject toJson() const;
 };
 
@@ -83,14 +84,15 @@ LMMS_EXPORT SessionCheckpoint takeSessionCheckpoint(const QString& action, bool 
 /*! project.open's shared body (the control command and the interface's open
  *  paths): checkpoint the displaced session, load \a path, and on a good load
  *  push the one step that returns to the displaced session. False, with
- *  \a refusal set and NOTHING changed, when the checkpoint is over the budget. */
+ *  \a refusal set and NOTHING changed, when both retained snapshots do not fit. */
 LMMS_EXPORT bool loadProjectWithCheckpoint(const QString& path, const QStringList& skipSections,
 	SessionCheckpoint* checkpoint, QString* refusal);
 
 /*! After a script ran: when the project differs from \a checkpoint, replace the
  *  finer journal steps the script pushed (everything newer than
  *  \a serialBefore) with the ONE step that restores the checkpoint. Sets
- *  \a changed to whether the project differs. */
+ *  \a changed to whether the project differs; if the snapshot pair does not fit,
+ *  it restores the checkpoint and sets \a refusal. */
 LMMS_EXPORT void finishScriptCheckpoint(SessionCheckpoint* checkpoint, quint64 serialBefore,
 	bool* changed, QString* refusal);
 

@@ -229,11 +229,11 @@ QJsonObject scriptTransaction(const control::SessionCheckpoint& checkpoint)
 		// The snapshot restores what the commands the script ran (zene.command) did too.
 		transaction.insert(QStringLiteral("covers_nested"), true);
 		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("snapshot: the project was captured whole before the script ran (%1 bytes "
-				"compressed, audio files by reference) and everything the script changed is ONE "
+			QStringLiteral("snapshot: the pre-script and redo-state projects are captured whole (%1 bytes "
+			"compressed in total, audio files by reference) and everything the script changed is ONE "
 				"undo step that restores it exactly; redo reapplies the run's result. The finer "
 				"steps the script pushed while it ran are replaced by that one step")
-				.arg(checkpoint.bytes));
+				.arg(checkpoint.retainedBytes));
 	}
 	else
 	{

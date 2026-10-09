@@ -26,6 +26,8 @@
  *   7. anOverLimitCheckpointRefusesBeforeAnythingChanges
  *        with the budget below the snapshot, project.open and script.run answer a
  *        typed refusal naming the budget, and neither project nor script ran.
+ *   8-9. partial loads produced by project.open and script.run retain their section
+ *        list and filename across one undo and redo.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -48,6 +50,8 @@
  */
 
 #include <QtTest>
+
+#include <cstdint>
 
 #include <QDir>
 #include <QDomDocument>
@@ -252,6 +256,11 @@ private slots:
 		QCOMPARE(int(Engine::mixer()->numChannels()), channelsBefore + 1);
 		QVERIFY(trackNames().contains(QStringLiteral("script-track")));
 		QVERIFY2(ran.result.value(QStringLiteral("changed_project")).toBool(), qPrintable(compact(ran.result)));
+		const QJsonObject checkpoint = ran.result.value(QStringLiteral("checkpoint")).toObject();
+		QVERIFY(checkpoint.value(QStringLiteral("retained_bytes")).toDouble()
+			> checkpoint.value(QStringLiteral("bytes")).toDouble());
+		QCOMPARE(static_cast<qint64>(checkpoint.value(QStringLiteral("retained_bytes")).toDouble()),
+			Engine::projectJournal()->retainedBytes());
 		// One run, one step - however many writes (and nested commands) it made.
 		QCOMPARE(journalDepth(), depthBefore + 1);
 
@@ -433,6 +442,10 @@ private slots:
 		const QJsonObject checkpoint = opened.result.value(QStringLiteral("checkpoint")).toObject();
 		QVERIFY2(checkpoint.value(QStringLiteral("undoable")).toBool(), qPrintable(compact(checkpoint)));
 		QVERIFY(checkpoint.value(QStringLiteral("bytes")).toDouble() > 0);
+		QVERIFY(checkpoint.value(QStringLiteral("retained_bytes")).toDouble()
+			> checkpoint.value(QStringLiteral("bytes")).toDouble());
+		QCOMPARE(static_cast<qint64>(checkpoint.value(QStringLiteral("retained_bytes")).toDouble()),
+			Engine::projectJournal()->retainedBytes());
 		QCOMPARE(trackNames(), QStringList{QStringLiteral("bravo")});
 		QVERIFY(Engine::getSong()->projectFileName().endsWith(QStringLiteral("b.mmp")));
 		const QString opened_b = wholeProject();

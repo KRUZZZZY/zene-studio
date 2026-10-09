@@ -48,7 +48,7 @@ QString megabytes(qint64 bytes)
 }
 
 //! The undo step restores the pre-action session; redo restores the captured post-action session.
-void pushRestoreStep(const SessionCheckpoint& checkpoint, bool discardLoadedSteps,
+void pushRestoreStep(SessionCheckpoint& checkpoint, bool discardLoadedSteps,
 	const std::shared_ptr<const QByteArray>& after, const QString& fileAfter,
 	const QStringList& skippedAfter)
 {
@@ -69,7 +69,7 @@ void pushRestoreStep(const SessionCheckpoint& checkpoint, bool discardLoadedStep
 		Song* song = Engine::getSong();
 		song->restoreUndoSnapshot(*after, fileAfter, skippedAfter);
 	};
-	addStructuralUndoStep(std::move(undo), std::move(redo), checkpoint.bytes);
+	addStructuralUndoStep(std::move(undo), std::move(redo), checkpoint.retainedBytes);
 }
 
 //! What a snapshot says about the project, independent of attribute order (QDom keeps attributes in a
@@ -96,6 +96,50 @@ SessionCheckpoint skipped(const QString& why)
 	return checkpoint;
 }
 
+bool retainedPairFits(SessionCheckpoint* checkpoint, const QString& action,
+	const std::shared_ptr<const QByteArray>& after, QString* refusal)
+{
+	checkpoint->retainedBytes = checkpoint->bytes + after->size();
+	if (checkpoint->retainedBytes <= checkpoint->limit) { return true; }
+	checkpoint->state = SessionCheckpoint::State::TooLarge;
+	checkpoint->note = QStringLiteral("%1 refused: the pre-action snapshot is %2 MiB and its redo state is %3 MiB; "
+		"keeping both would use %4 MiB, over the %5 MiB undo budget. Nothing was changed. Save the project, "
+		"or raise the budget with control.set_undo_depth {bytes} and run it again")
+		.arg(action, megabytes(checkpoint->bytes), megabytes(after->size()),
+			megabytes(checkpoint->retainedBytes), megabytes(checkpoint->limit));
+	if (refusal != nullptr) { *refusal = checkpoint->note; }
+	return false;
+}
+
+bool pushLoadedSessionForRedo(SessionCheckpoint* checkpoint, Song* song, QString* refusal)
+{
+	QStringList skippedAfter;
+	const auto after = song->captureUndoSnapshot(&skippedAfter);
+	if (!after)
+	{
+		song->restoreUndoSnapshot(*checkpoint->before, checkpoint->fileBefore, checkpoint->skippedBefore);
+		checkpoint->note = QStringLiteral("project.open refused: the loaded project could not be captured for redo, "
+			"so the previous session was restored");
+		if (refusal != nullptr) { *refusal = checkpoint->note; }
+		return false;
+	}
+	if (!retainedPairFits(checkpoint, QStringLiteral("project.open"), after, refusal))
+	{
+		song->restoreUndoSnapshot(*checkpoint->before, checkpoint->fileBefore, checkpoint->skippedBefore);
+		return false;
+	}
+	pushRestoreStep(*checkpoint, true, after, song->projectFileName(), skippedAfter);
+	checkpoint->pushed = true;
+	return true;
+}
+
+bool sessionDiffers(const QString& after, const SessionCheckpoint& checkpoint,
+	const QString& fileAfter, const QStringList& skippedAfter)
+{
+	return after.isEmpty() || after != contentDigest(*checkpoint.before)
+		|| fileAfter != checkpoint.fileBefore || skippedAfter != checkpoint.skippedBefore;
+}
+
 } // namespace
 
 QJsonObject SessionCheckpoint::toJson() const
@@ -104,6 +148,7 @@ QJsonObject SessionCheckpoint::toJson() const
 	out.insert(QStringLiteral("taken"), taken());
 	out.insert(QStringLiteral("undoable"), pushed);
 	out.insert(QStringLiteral("bytes"), static_cast<double>(bytes));
+	out.insert(QStringLiteral("retained_bytes"), static_cast<double>(retainedBytes));
 	out.insert(QStringLiteral("limit_bytes"), static_cast<double>(limit));
 	out.insert(QStringLiteral("note"), note);
 	return out;
@@ -158,27 +203,10 @@ bool loadProjectWithCheckpoint(const QString& path, const QStringList& skipSecti
 
 	Song* song = Engine::getSong();
 	song->loadProject(path, skipSections);
-
-	// A refused file leaves the session as it was: nothing to undo.
-	if (taken.taken() && song->loadRefusal().isEmpty())
-	{
-		QStringList skippedAfter;
-		const auto after = song->captureUndoSnapshot(&skippedAfter);
-		if (!after)
-		{
-			song->restoreUndoSnapshot(*taken.before, taken.fileBefore, taken.skippedBefore);
-			const QString why = QStringLiteral("project.open refused: the loaded project could not be captured for redo, "
-				"so the previous session was restored");
-			if (refusal != nullptr) { *refusal = why; }
-			taken.note = why;
-			if (checkpoint != nullptr) { *checkpoint = taken; }
-			return false;
-		}
-		pushRestoreStep(taken, true, after, song->projectFileName(), skippedAfter);
-		taken.pushed = true;
-		if (checkpoint != nullptr) { *checkpoint = taken; }
-	}
-	return true;
+	const bool checkpointReady = !taken.taken() || !song->loadRefusal().isEmpty()
+		|| pushLoadedSessionForRedo(&taken, song, refusal);
+	if (checkpoint != nullptr) { *checkpoint = taken; }
+	return checkpointReady;
 }
 
 void finishScriptCheckpoint(SessionCheckpoint* checkpoint, quint64 serialBefore, bool* changed,
@@ -202,9 +230,15 @@ void finishScriptCheckpoint(SessionCheckpoint* checkpoint, quint64 serialBefore,
 		return;
 	}
 	const QString after = contentDigest(*now);
-	*changed = after.isEmpty() || after != contentDigest(*checkpoint->before)
-		|| song->projectFileName() != checkpoint->fileBefore || skippedAfter != checkpoint->skippedBefore;
+	*changed = sessionDiffers(after, *checkpoint, song->projectFileName(), skippedAfter);
 	if (!*changed) { return; }
+	if (!retainedPairFits(checkpoint, QStringLiteral("script.run"), now, refusal))
+	{
+		journal->discardTopSteps(journal->retainedStepsFrom(serialBefore + 1));
+		song->restoreUndoSnapshot(*checkpoint->before, checkpoint->fileBefore, checkpoint->skippedBefore);
+		*changed = false;
+		return;
+	}
 
 	// The finer steps the script pushed are subsumed: this one restores the whole project.
 	journal->discardTopSteps(journal->retainedStepsFrom(serialBefore + 1));
