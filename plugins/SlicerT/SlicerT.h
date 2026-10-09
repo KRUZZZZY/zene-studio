@@ -25,7 +25,9 @@
 #ifndef LMMS_SLICERT_H
 #define LMMS_SLICERT_H
 
+#include <array>
 #include <atomic>
+#include <cstdint>
 
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
@@ -68,6 +70,15 @@ public:
 
 private:
 	void playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out) override;
+	struct PlaybackSlot
+	{
+		Sample::PlaybackState state;
+		std::atomic<bool> inUse{false};
+	};
+	PlaybackSlot* acquirePlaybackSlot(int startFrame) noexcept;
+	static constexpr std::size_t PlaybackSlotCount = 128;
+	std::array<PlaybackSlot, PlaybackSlotCount> m_playbackSlots{};
+	std::uint8_t m_noPlaybackSlotTag = 0;
 
 	FloatModel m_noteThreshold;
 	FloatModel m_fadeOutFrames;

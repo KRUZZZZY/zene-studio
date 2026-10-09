@@ -34,6 +34,7 @@
 
 #include "AudioEngineWorkerThread.h"
 #include "AudioBusHandle.h"
+#include "MpscQueue.h"
 #include "AudioInputPath.h"
 #include "Hardware.h"
 #include "Mixer.h"
@@ -43,6 +44,8 @@
 #include "NotePlayHandle.h"
 #include "RealtimeScope.h"
 #include "ConfigManager.h"
+#include "SamplePlayHandle.h"
+#include "Track.h"
 
 // platform-specific audio-interface-classes
 #include "AudioAlsa.h"
@@ -72,12 +75,180 @@ namespace lmms
 
 using LocklessListElement = LocklessList<PlayHandle*>::Element;
 
+template <typename T, std::size_t Capacity>
+class SpscQueue
+{
+	static_assert(Capacity > 0 && (Capacity & (Capacity - 1)) == 0);
+public:
+	bool push(T value) noexcept
+	{
+		const std::size_t write = m_write.load(std::memory_order_relaxed);
+		const std::size_t read = m_read.load(std::memory_order_acquire);
+		if (write - read == Capacity) { return false; }
+		m_values[write & (Capacity - 1)] = value;
+		m_write.store(write + 1, std::memory_order_release);
+		return true;
+	}
+	bool pop(T* value) noexcept
+	{
+		const std::size_t read = m_read.load(std::memory_order_relaxed);
+		if (read == m_write.load(std::memory_order_acquire)) { return false; }
+		*value = m_values[read & (Capacity - 1)];
+		m_read.store(read + 1, std::memory_order_release);
+		return true;
+	}
+private:
+	std::array<T, Capacity> m_values{};
+	alignas(64) std::atomic<std::size_t> m_write{0};
+	alignas(64) std::atomic<std::size_t> m_read{0};
+};
+
 namespace
 {
 
 constexpr qsizetype PlayHandleListLowWater = static_cast<qsizetype>(PlayHandle::MaxNumber / 4);
 
+constexpr std::size_t MetronomeVoicePoolCapacity = AudioEngine::MetronomeSampleVoicePoolCapacity;
+constexpr std::size_t SampleVoicePoolCapacity = MetronomeVoicePoolCapacity
+	+ AudioEngine::FrozenSampleVoicePoolCapacity;
+static_assert(SampleVoicePoolCapacity > MetronomeVoicePoolCapacity);
+
 } // namespace
+
+struct AudioEngine::SampleVoicePool
+{
+	struct Slot
+	{
+		Sample sample;
+		SamplePlayHandle handle;
+		Slot() : handle(&sample, false) {}
+	};
+
+	AudioBusHandle bus{"Pooled sample voices", false};
+	std::array<Slot, SampleVoicePoolCapacity> m_voiceSlots{};
+	SpscQueue<std::uint16_t, MetronomeVoicePoolCapacity> metronomeReady;
+	SpscQueue<std::uint16_t, SampleVoicePoolCapacity> frozenReady;
+	SpscQueue<std::uint16_t, SampleVoicePoolCapacity> renderRetired;
+	MpscQueue<std::uint16_t, SampleVoicePoolCapacity> controlRetired;
+	AudioEngine* engine;
+
+	explicit SampleVoicePool(AudioEngine* owner) : engine(owner)
+	{
+		// The common bus feeds the mixer only; do not expose a permanent hardware output port for pool internals.
+		bus.setExtOutputEnabled(false);
+		for (std::size_t i = 0; i < m_voiceSlots.size(); ++i)
+		{
+			Slot& slot = m_voiceSlots[i];
+			slot.handle.setAudioBusHandle(&bus);
+			slot.handle.setPoolSlot(static_cast<std::uint16_t>(i), i >= MetronomeVoicePoolCapacity);
+			const bool queued = i < MetronomeVoicePoolCapacity
+				? metronomeReady.push(static_cast<std::uint16_t>(i))
+				: frozenReady.push(static_cast<std::uint16_t>(i));
+			if (!queued) { engine->m_sampleVoiceQueueInvariantFailureCount.fetch_add(1, std::memory_order_relaxed); }
+		}
+	}
+
+	SamplePlayHandle* acquire(const std::shared_ptr<const SampleBuffer>& buffer, int sourceIn, int sourceOut,
+		float amplification, f_cnt_t offset, Track* track, bool metronome) noexcept
+	{
+		std::uint16_t index = SamplePlayHandle::NotPooled;
+		const bool found = metronome ? metronomeReady.pop(&index) : frozenReady.pop(&index);
+		if (!found)
+		{
+			engine->recordSampleVoiceOverflow();
+			return nullptr;
+		}
+		SamplePlayHandle* const handle = &m_voiceSlots[index].handle;
+		handle->armPooledVoice(buffer, sourceIn, sourceOut, amplification, offset, track);
+		return handle;
+	}
+
+	void retire(std::uint16_t index, bool realtime) noexcept
+	{
+		const bool queued = realtime ? renderRetired.push(index) : controlRetired.push(index);
+		if (!queued) { engine->m_sampleVoiceQueueInvariantFailureCount.fetch_add(1, std::memory_order_relaxed); }
+	}
+
+	bool owns(const SamplePlayHandle* handle) const noexcept
+	{
+		const std::uint16_t index = handle->poolSlot();
+		return index < m_voiceSlots.size() && &m_voiceSlots[index].handle == handle;
+	}
+
+	void service() noexcept
+	{
+		std::uint16_t index = 0;
+		while (renderRetired.pop(&index) || controlRetired.pop(&index))
+		{
+			m_voiceSlots[index].handle.resetPooledVoice();
+			const bool queued = index < MetronomeVoicePoolCapacity
+				? metronomeReady.push(index) : frozenReady.push(index);
+			if (!queued) { engine->m_sampleVoiceQueueInvariantFailureCount.fetch_add(1, std::memory_order_relaxed); }
+		}
+	}
+};
+
+SamplePlayHandle* AudioEngine::acquirePooledSampleVoice(const std::shared_ptr<const SampleBuffer>& buffer,
+	int sourceIn, int sourceOut, float amplification, f_cnt_t offset, Track* track, bool metronome) noexcept
+{
+	if (!m_sampleVoicePool || buffer == nullptr || sourceIn < 0 || sourceOut <= sourceIn)
+	{
+		recordSampleVoiceOverflow();
+		return nullptr;
+	}
+	return m_sampleVoicePool->acquire(buffer, sourceIn, sourceOut, amplification, offset, track, metronome);
+}
+
+
+
+void AudioEngine::recyclePooledSampleVoice(SamplePlayHandle* handle, bool realtime) noexcept
+{
+	if (m_sampleVoicePool == nullptr || handle == nullptr || !handle->isPooledVoice()
+		|| !m_sampleVoicePool->owns(handle))
+	{
+		m_sampleVoiceQueueInvariantFailureCount.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+	if (Track* const track = handle->pooledTrack()) { track->frozenVoiceFinished(); }
+	m_sampleVoicePool->retire(handle->poolSlot(), realtime);
+}
+
+
+
+void AudioEngine::serviceSampleVoicePoolOnControlThread() noexcept
+{
+	if (!RealtimeScope::isActive() && QThread::currentThread() == thread() && m_sampleVoicePool != nullptr)
+	{
+		m_sampleVoicePool->service();
+	}
+}
+
+
+
+void AudioEngine::shutdownSampleVoicePool() noexcept
+{
+	m_sampleVoicePool.reset();
+}
+
+
+
+void AudioEngine::disposePlayHandle(PlayHandle* handle, bool realtime) noexcept
+{
+	if (handle->type() == PlayHandle::Type::SamplePlayHandle)
+	{
+		auto* const sampleHandle = static_cast<SamplePlayHandle*>(handle);
+		if (sampleHandle->isPooledVoice())
+		{
+			recyclePooledSampleVoice(sampleHandle, realtime);
+			return;
+		}
+	}
+	if (handle->type() == PlayHandle::Type::NotePlayHandle)
+	{
+		NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
+	}
+	else { delete handle; }
+}
 
 static thread_local bool s_renderingThread = false;
 
@@ -158,6 +329,7 @@ AudioEngine::AudioEngine(bool renderOnly)
 		m_workers.push_back( wt );
 	}
 	connect(&m_playHandleCapacityTimer, &QTimer::timeout, this, [this] {
+		serviceSampleVoicePoolOnControlThread();
 		topUpPlayHandleCapacityOnControlThread();
 	});
 	m_playHandleCapacityTimer.start(100);
@@ -196,6 +368,8 @@ AudioEngine::~AudioEngine()
 		m_workers[w]->wait();
 	}
 
+	// The pooled bus unregisters its device port in its destructor, so it must go before the device.
+	m_sampleVoicePool.reset();
 	delete m_midiClient;
 	delete m_audioDev;
 
@@ -222,6 +396,7 @@ void AudioEngine::initDevices()
 		m_midiClient = tryMidiClients();
 	}
 	// Loading audio device may have changed the sample rate
+	m_sampleVoicePool = std::make_unique<SampleVoicePool>(this);
 	emit sampleRateChanged();
 }
 
@@ -418,21 +593,13 @@ void AudioEngine::renderStageNoteSetup()
 		if( it != m_playHandles.end() )
 		{
 			handle->audioBusHandle()->removePlayHandle(handle);
-			if(handle->type() == PlayHandle::Type::NotePlayHandle)
-			{
-				NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
-			}
-			else delete handle;
+			disposePlayHandle(handle, true);
 			m_playHandles.erase(it);
 		}
 		else if (removeCapacityDeferredPlayHandle(handle))
 		{
 			handle->audioBusHandle()->removePlayHandleUnderEngineChangeLock(handle);
-			if (handle->type() == PlayHandle::Type::NotePlayHandle)
-			{
-				NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
-			}
-			else { delete handle; }
+			disposePlayHandle(handle, true);
 		}
 
 		it_rem = m_playHandlesToRemove.erase( it_rem );
@@ -482,11 +649,7 @@ void AudioEngine::renderStageNoteSetup()
 			{
 				m_droppedPlayHandleCount.fetch_add(1, std::memory_order_relaxed);
 				handle->audioBusHandle()->removePlayHandle(handle);
-				if (handle->type() == PlayHandle::Type::NotePlayHandle)
-				{
-					NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
-				}
-				else { delete handle; }
+				disposePlayHandle(handle, true);
 			}
 		}
 		LocklessListElement * next = e->next;
@@ -529,11 +692,7 @@ void AudioEngine::renderStageEffects()
 		if( ( *it )->isFinished() )
 		{
 			(*it)->audioBusHandle()->removePlayHandle(*it);
-			if((*it)->type() == PlayHandle::Type::NotePlayHandle)
-			{
-				NotePlayHandleManager::release((NotePlayHandle*)*it);
-			}
-			else delete *it;
+			disposePlayHandle(*it, true);
 			it = m_playHandles.erase(it);
 		}
 		else
@@ -691,6 +850,13 @@ void AudioEngine::clearNewPlayHandles()
 	requestChangeInModel();
 	for( LocklessListElement * e = m_newPlayHandles.popList(); e; )
 	{
+		PlayHandle* const handle = e->value;
+		if (handle->type() == PlayHandle::Type::SamplePlayHandle
+			&& static_cast<SamplePlayHandle*>(handle)->isPooledVoice())
+		{
+			handle->audioBusHandle()->removePlayHandleUnderEngineChangeLock(handle);
+			disposePlayHandle(handle, false);
+		}
 		LocklessListElement * next = e->next;
 		m_newPlayHandles.free( e );
 		e = next;
@@ -730,11 +896,7 @@ void AudioEngine::clearInternal()
 		}
 
 		handle->audioBusHandle()->removePlayHandleUnderEngineChangeLock(handle);
-		if (handle->type() == PlayHandle::Type::NotePlayHandle)
-		{
-			NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
-		}
-		else { delete handle; }
+		disposePlayHandle(handle, true);
 	}
 	m_capacityDeferredPlayHandleCount = remainingDeferred;
 }
@@ -850,11 +1012,7 @@ bool AudioEngine::addPlayHandle( PlayHandle* handle )
 		return true;
 	}
 
-	if( handle->type() == PlayHandle::Type::NotePlayHandle )
-	{
-		NotePlayHandleManager::release( (NotePlayHandle*)handle );
-	}
-	else delete handle;
+	disposePlayHandle(handle, RealtimeScope::isActive());
 
 	return false;
 }
@@ -954,11 +1112,7 @@ void AudioEngine::removePlayHandle(PlayHandle * ph)
 		// (See tobydox's 2008 commit 4583e48)
 		if ( removedFromList )
 		{
-			if (ph->type() == PlayHandle::Type::NotePlayHandle)
-			{
-				NotePlayHandleManager::release(dynamic_cast<NotePlayHandle*>(ph));
-			}
-			else { delete ph; }
+			disposePlayHandle(ph, RealtimeScope::isActive());
 		}
 	}
 	else
@@ -980,11 +1134,7 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 		if ((*it)->isFromTrack(track) && ((*it)->type() & types))
 		{
 			(*it)->audioBusHandle()->removePlayHandleUnderEngineChangeLock(*it);
-			if((*it)->type() == PlayHandle::Type::NotePlayHandle)
-			{
-				NotePlayHandleManager::release((NotePlayHandle*)*it);
-			}
-			else delete *it;
+			disposePlayHandle(*it, RealtimeScope::isActive());
 			it = m_playHandles.erase(it);
 		}
 		else
@@ -1017,11 +1167,7 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 			if (handle->isFromTrack(track) && (handle->type() & types))
 			{
 				handle->audioBusHandle()->removePlayHandleUnderEngineChangeLock(handle);
-				if(handle->type() == PlayHandle::Type::NotePlayHandle)
-				{
-					NotePlayHandleManager::release((NotePlayHandle*)handle);
-				}
-				else delete handle;
+				disposePlayHandle(handle, RealtimeScope::isActive());
 				if( ePrev ) { ePrev->next = next; }
 				else { m_newPlayHandles.setFirst( next ); }
 				m_newPlayHandles.free( e );
@@ -1045,11 +1191,7 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 			if (handle->isFromTrack(track) && (handle->type() & types))
 			{
 				handle->audioBusHandle()->removePlayHandleUnderEngineChangeLock(handle);
-				if (handle->type() == PlayHandle::Type::NotePlayHandle)
-				{
-					NotePlayHandleManager::release(static_cast<NotePlayHandle*>(handle));
-				}
-				else { delete handle; }
+				disposePlayHandle(handle, RealtimeScope::isActive());
 			}
 			else
 			{

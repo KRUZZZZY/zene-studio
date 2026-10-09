@@ -24,7 +24,6 @@
 #include "Timeline.h"
 
 #include <algorithm>
-#include <tuple>
 #include <utility>
 
 #include <QDomElement>
@@ -33,17 +32,34 @@ namespace lmms {
 
 void Timeline::setLoopBegin(TimePos begin)
 {
-	std::tie(m_loopBegin, m_loopEnd) = std::minmax(begin, TimePos{m_loopEnd});
+	const TimePos currentEnd{m_loopEnd};
+	const TimePos loopBegin = std::min(begin, currentEnd);
+	const TimePos loopEnd = std::max(begin, currentEnd);
+	if (loopBegin.getTicks() == m_loopBegin.getTicks() && loopEnd.getTicks() == m_loopEnd.getTicks()) { return; }
+	m_loopBegin = loopBegin;
+	m_loopEnd = loopEnd;
+	emit loopPointsChanged();
 }
 
 void Timeline::setLoopEnd(TimePos end)
 {
-	std::tie(m_loopBegin, m_loopEnd) = std::minmax(TimePos{m_loopBegin}, end);
+	const TimePos currentBegin{m_loopBegin};
+	const TimePos loopBegin = std::min(currentBegin, end);
+	const TimePos loopEnd = std::max(currentBegin, end);
+	if (loopBegin.getTicks() == m_loopBegin.getTicks() && loopEnd.getTicks() == m_loopEnd.getTicks()) { return; }
+	m_loopBegin = loopBegin;
+	m_loopEnd = loopEnd;
+	emit loopPointsChanged();
 }
 
 void Timeline::setLoopPoints(TimePos begin, TimePos end)
 {
-	std::tie(m_loopBegin, m_loopEnd) = std::minmax(begin, end);
+	const TimePos loopBegin = std::min(begin, end);
+	const TimePos loopEnd = std::max(begin, end);
+	if (loopBegin.getTicks() == m_loopBegin.getTicks() && loopEnd.getTicks() == m_loopEnd.getTicks()) { return; }
+	m_loopBegin = loopBegin;
+	m_loopEnd = loopEnd;
+	emit loopPointsChanged();
 }
 
 void Timeline::setLoopEnabled(bool enabled)

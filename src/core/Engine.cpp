@@ -104,6 +104,8 @@ void Engine::destroy()
 	PresetPreviewPlayHandle::cleanup();
 
 	s_song->clearProject();
+	// The sample voice pool owns an AudioBusHandle, which must unregister while the engine pointer and device are live.
+	s_audioEngine->shutdownSampleVoicePool();
 
 	deleteHelper( &s_patternStore );
 

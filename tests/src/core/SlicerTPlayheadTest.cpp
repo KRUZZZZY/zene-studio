@@ -34,8 +34,15 @@
 #include <QTemporaryDir>
 #include <QTimer>
 
+#include <algorithm>
+#include <bit>
+#include <cstdint>
+#include <vector>
+
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AudioEngineWorkerThread.h"
+#include "AllocationProbe.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -67,6 +74,49 @@ void renderPeriod()
 	static_cast<void>(Engine::audioEngine()->renderNextPeriod());
 }
 
+QString prepareSlicerTrack(QTemporaryDir& scratch, InstrumentTrack** track)
+{
+	const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("slicer-pool.wav")), 440.0);
+	if (wav.isEmpty()) { return QStringLiteral("could not write the SlicerT fixture"); }
+	Engine::getSong()->clearProject();
+	const QString id = addTrack(QStringLiteral("instrument"));
+	if (id.isEmpty()) { return QStringLiteral("could not add an instrument track"); }
+	ControlResult failure;
+	*track = dynamic_cast<InstrumentTrack*>(control::resolveTrack(id, &failure));
+	if (*track == nullptr) { return QStringLiteral("track.add did not create an InstrumentTrack"); }
+	InstrumentLoaderThread loader(nullptr, *track, QStringLiteral("slicert"));
+	loader.start();
+	if (!loader.wait()) { return QStringLiteral("the SlicerT loader did not finish"); }
+	QCoreApplication::processEvents();
+	Instrument* const slicer = (*track)->instrument();
+	if (slicer == nullptr || slicer->thread() != QThread::currentThread())
+	{
+		return QStringLiteral("SlicerT was not installed on the control thread");
+	}
+	if (!QMetaObject::invokeMethod(slicer, "updateFile", Qt::DirectConnection, Q_ARG(QString, wav)))
+	{
+		return QStringLiteral("SlicerT did not accept the fixture file");
+	}
+	return {};
+}
+
+bool identicalAudio(const std::vector<SampleFrame>& left, std::span<const SampleFrame> right)
+{
+	if (left.size() != right.size()) { return false; }
+	for (std::size_t frame = 0; frame < left.size(); ++frame)
+	{
+		for (int channel = 0; channel < 2; ++channel)
+		{
+			if (std::bit_cast<std::uint32_t>(left[frame][channel])
+				!= std::bit_cast<std::uint32_t>(right[frame][channel]))
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 } // namespace
 
 class SlicerTPlayheadTest : public QObject
@@ -86,6 +136,7 @@ private slots:
 		guitest::startGui(m_home);
 		QVERIFY(gui::getGUI() != nullptr);
 		Engine::audioEngine()->audioDev()->stopProcessing();  // the test drives the periods itself
+		AudioEngineWorkerThread::setDeterministicProcessing(true);
 		NotePlayHandleManager::init();
 		ControlRegistry::setReady(true);
 	}
@@ -93,6 +144,7 @@ private slots:
 	void cleanupTestCase()
 	{
 		ControlRegistry::setReady(false);
+		AudioEngineWorkerThread::setDeterministicProcessing(false);
 		Engine::getSong()->clearProject();
 		Engine::destroy();
 	}
@@ -165,6 +217,100 @@ private slots:
 		track->processInEvent(noteOff);
 		for (int i = 0; i < 4; ++i) { renderPeriod(); }
 		QTest::qWait(120);
+
+		// The first note above warms the worker and the note buffer path. A later
+		// note still needs its own resampler state, but that state now comes from
+		// the instrument's constructor-time pool. Deterministic processing keeps
+		// this real NotePlayHandle render on the probing thread.
+		track->processInEvent(noteOn);
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		renderPeriod();
+		test::tlCountAllocations = false;
+		QCOMPARE(test::tlAllocationCount, std::uint64_t{0});
+
+		const ControlResult beforeOverflow = ControlRegistry::instance()->invoke(QStringLiteral("control.ping"));
+		QVERIFY(beforeOverflow.ok);
+		const qint64 overflowsBefore = beforeOverflow.result.value(QStringLiteral("audio")).toObject()
+			.value(QStringLiteral("slicert_state_overflow")).toInt();
+		Note overlappingNote(TimePos(1000000), TimePos(0), track->baseNote());
+		Engine::audioEngine()->setOverloadSheddingEnabled(false);
+		for (int i = 0; i < 130; ++i)
+		{
+			auto* handle = NotePlayHandleManager::acquire(track, 0, 1000000, overlappingNote);
+			QVERIFY(Engine::audioEngine()->addPlayHandle(handle));
+		}
+		renderPeriod();
+		const ControlResult afterOverflow = ControlRegistry::instance()->invoke(QStringLiteral("control.ping"));
+		QVERIFY(afterOverflow.ok);
+		const qint64 overflowsAfter = afterOverflow.result.value(QStringLiteral("audio")).toObject()
+			.value(QStringLiteral("slicert_state_overflow")).toInt();
+		QVERIFY2(overflowsAfter > overflowsBefore, "SlicerT state-pool exhaustion was not reported by control.ping");
+		track->processInEvent(noteOff);
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		for (int i = 0; i < 8; ++i) { renderPeriod(); }
+		test::tlCountAllocations = false;
+		QCOMPARE(test::tlAllocationCount, std::uint64_t{0});
+	}
+
+	//! Cluster 4467 round 2: every reused playback slot produces the fresh-state slice output bit-for-bit.
+	void reusedPlaybackStateMatchesFreshStateAcrossManyNotes()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		InstrumentTrack* track = nullptr;
+		const QString error = prepareSlicerTrack(scratch, &track);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		AudioEngine* const audio = Engine::audioEngine();
+		audio->setOverloadSheddingEnabled(false);
+		const Note note(TimePos(1), TimePos(0), track->baseNote());
+		std::vector<SampleFrame> freshOutput;
+
+		for (int noteNumber = 0; noteNumber < 32; ++noteNumber)
+		{
+			auto* const handle = NotePlayHandleManager::acquire(track, 0,
+				audio->framesPerPeriod() * 2, note);
+			QVERIFY(audio->addPlayHandle(handle));
+			audio->renderNextPeriod();
+			const auto output = audio->renderNextPeriod();
+			QVERIFY2(handle->m_pluginData != nullptr, "SlicerT did not claim a playback-state slot");
+			if (noteNumber == 0)
+			{
+				freshOutput.assign(output.begin(), output.end());
+			}
+			else
+			{
+				QVERIFY2(identicalAudio(freshOutput, output),
+					qPrintable(QStringLiteral("reused slice output differs from fresh state at note %1").arg(noteNumber)));
+			}
+			audio->removePlayHandlesOfTypes(track, PlayHandle::Type::NotePlayHandle);
+		}
+	}
+
+	//! Cluster 4467 round 2: removing a track with a live SlicerT state destroys the note before the instrument.
+	void deletingSlicerTrackCancelsActivePlaybackState()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		InstrumentTrack* track = nullptr;
+		const QString error = prepareSlicerTrack(scratch, &track);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		AudioEngine* const audio = Engine::audioEngine();
+		const Note note(TimePos(1000000), TimePos(0), track->baseNote());
+		auto* const handle = NotePlayHandleManager::acquire(track, 0,
+			audio->framesPerPeriod() * 16, note);
+		QVERIFY(audio->addPlayHandle(handle));
+		audio->renderNextPeriod();
+		QVERIFY2(handle->m_pluginData != nullptr, "the active SlicerT note has no pooled state to retire");
+
+		const QString id = QStringLiteral("trk-%1").arg(track->id());
+		const ControlResult removed = revtest::run(QStringLiteral("track.remove"), {{QStringLiteral("track"), id}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		audio->renderNextPeriod();
+		const auto remainingNotes = std::count_if(audio->playHandles().begin(), audio->playHandles().end(),
+			[](PlayHandle* item) { return item->type() == PlayHandle::Type::NotePlayHandle; });
+		QCOMPARE(remainingNotes, qsizetype{0});
 	}
 };
 

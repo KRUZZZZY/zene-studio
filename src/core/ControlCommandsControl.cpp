@@ -69,6 +69,9 @@ QJsonObject audioReport()
 		{QStringLiteral("engine_handles_dropped"), 0},
 		{QStringLiteral("bus_edits_dropped"), 0},
 		{QStringLiteral("worker_buffer_overflows"), 0}});
+	out.insert(QStringLiteral("slicert_state_overflow"), 0);
+	out.insert(QStringLiteral("sample_voice_overflow"), 0);
+	out.insert(QStringLiteral("sample_voice_queue_invariant_failures"), 0);
 	AudioEngine* audio = Engine::audioEngine();
 	if (audio == nullptr) { return out; }
 
@@ -86,6 +89,11 @@ QJsonObject audioReport()
 			static_cast<qint64>(audio->droppedPlayHandleEdits())},
 		{QStringLiteral("worker_buffer_overflows"), static_cast<qint64>(
 			AudioEngineWorkerThread::deferredPlayHandleEditOverflowCount())}});
+	out.insert(QStringLiteral("slicert_state_overflow"),
+		static_cast<qint64>(audio->slicerTStateOverflows()));
+	out.insert(QStringLiteral("sample_voice_overflow"), static_cast<qint64>(audio->sampleVoiceOverflows()));
+	out.insert(QStringLiteral("sample_voice_queue_invariant_failures"),
+		static_cast<qint64>(audio->sampleVoiceQueueInvariantFailures()));
 	if (failed)
 	{
 		out.insert(QStringLiteral("message"), audio->audioDevStartReason());

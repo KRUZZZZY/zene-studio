@@ -28,6 +28,7 @@
 #include <cmath>
 #include <fftw3.h>
 
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "PathUtil.h"
@@ -75,6 +76,21 @@ SlicerT::SlicerT(InstrumentTrack* instrumentTrack)
 	m_sliceSnap.setValue(0);
 }
 
+SlicerT::PlaybackSlot* SlicerT::acquirePlaybackSlot(int startFrame) noexcept
+{
+	for (PlaybackSlot& slot : m_playbackSlots)
+	{
+		bool expected = false;
+		if (slot.inUse.compare_exchange_strong(expected, true, std::memory_order_acquire,
+			std::memory_order_relaxed))
+		{
+			slot.state.setFrameIndex(startFrame);
+			return &slot;
+		}
+	}
+	return nullptr;
+}
+
 void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 {
 	if (m_originalSample.sampleSize() <= 1) { return; }
@@ -108,9 +124,25 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 	}
 
 	const auto startFrame = static_cast<int>(sliceStart * m_originalSample.sampleSize());
-	if (!handle->m_pluginData) { handle->m_pluginData = new Sample::PlaybackState(AudioResampler::Mode::Linear, startFrame); }
+	if (handle->m_pluginData == &m_noPlaybackSlotTag)
+	{
+		publishPlayhead(-1, 0, 0);
+		return;
+	}
+	if (handle->m_pluginData == nullptr)
+	{
+		auto* slot = acquirePlaybackSlot(startFrame);
+		if (slot == nullptr)
+		{
+			handle->m_pluginData = &m_noPlaybackSlotTag;
+			Engine::audioEngine()->recordSlicerTStateOverflow();
+			publishPlayhead(-1, 0, 0);
+			return;
+		}
+		handle->m_pluginData = slot;
+	}
 
-	auto playbackState = static_cast<Sample::PlaybackState*>(handle->m_pluginData);
+	auto* playbackState = &static_cast<PlaybackSlot*>(handle->m_pluginData)->state;
 	const auto endFrame = sliceEnd * m_originalSample.sampleSize();
 	const auto framesLeft = endFrame - playbackState->frameIndex();
 
@@ -139,7 +171,18 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 
 void SlicerT::deleteNotePluginData(NotePlayHandle* handle)
 {
-	delete static_cast<Sample::PlaybackState*>(handle->m_pluginData);
+	if (handle->m_pluginData == &m_noPlaybackSlotTag)
+	{
+		handle->m_pluginData = nullptr;
+		return;
+	}
+	if (handle->m_pluginData != nullptr)
+	{
+		auto* slot = static_cast<PlaybackSlot*>(handle->m_pluginData);
+		slot->state.reset();
+		slot->inUse.store(false, std::memory_order_release);
+		handle->m_pluginData = nullptr;
+	}
 	publishPlayhead(-1, 0, 0);
 }
 

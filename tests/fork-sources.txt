@@ -2042,6 +2042,7 @@ tests/src/core/DocumentSectionsTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/FrozenTakeHandoffTest.cpp
+tests/src/core/FrozenTakeRoundTwoTest.cpp
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/ImportDetectionTest.cpp
 tests/src/core/InputMeterTest.cpp
