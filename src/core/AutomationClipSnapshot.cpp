@@ -176,6 +176,36 @@ void AutomationClip::retireReadSnapshot(AutomationClipReadSnapshot* snapshot)
 }
 
 
+void AutomationClip::collectRetiredReadSnapshots()
+{
+	collectRetiredAutomationSnapshots();
+}
+
+
+void AutomationClip::beginSnapshotReaderForTest()
+{
+	s_activeAutomationSnapshotReaders.fetch_add(1, std::memory_order_seq_cst);
+}
+
+
+void AutomationClip::endSnapshotReaderForTest()
+{
+	s_activeAutomationSnapshotReaders.fetch_sub(1, std::memory_order_seq_cst);
+}
+
+
+std::size_t AutomationClip::retiredReadSnapshotCountForTest()
+{
+	QMutexLocker lock(&s_retiredAutomationSnapshotMutex);
+	std::size_t count = 0;
+	for (auto* retired = s_retiredAutomationSnapshots; retired != nullptr; retired = retired->retiredNext)
+	{
+		++count;
+	}
+	return count;
+}
+
+
 void AutomationClip::publishReadSnapshot()
 {
 	if (m_snapshotPublicationSuppressed) { return; }

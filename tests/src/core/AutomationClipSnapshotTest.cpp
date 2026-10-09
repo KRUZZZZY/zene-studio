@@ -424,6 +424,23 @@ private slots:
 		renderer.join();
 		QVERIFY2(!failed.load(std::memory_order_relaxed), "reader observed the dragged point missing from the published curve");
 	}
+
+	void retiredSnapshotsAreReclaimedOnALaterControlPoll()
+	{
+		AutomationClip clip(nullptr);
+		fillCurve(clip, AutomationClip::ProgressionType::Linear, AutomationNode::Curve::Clip);
+
+		AutomationClip::beginSnapshotReaderForTest();
+		clip.flipY(0, 1);
+		AutomationClip::collectRetiredReadSnapshots();
+		QVERIFY(AutomationClip::retiredReadSnapshotCountForTest() > 0);
+		AutomationClip::endSnapshotReaderForTest();
+
+		// The clip stays idle after the first collection attempt. A later control-thread
+		// timer poll must retry collection without needing another clip edit/publication.
+		AutomationClip::collectRetiredReadSnapshots();
+		QCOMPARE(AutomationClip::retiredReadSnapshotCountForTest(), std::size_t{0});
+	}
 };
 
 QTEST_GUILESS_MAIN(AutomationClipSnapshotTest)

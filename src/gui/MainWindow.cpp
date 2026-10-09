@@ -44,6 +44,7 @@
 #include "Accessibility.h"
 #include "MenuBarExtras.h"
 #include "AboutDialog.h"
+#include "AutomationClip.h"
 #include "AudioEngine.h"
 #include "AutomationEditor.h"
 #include "BrowserPanel.h"
@@ -1705,6 +1706,7 @@ void MainWindow::keyReleaseEvent( QKeyEvent * _ke )
 
 void MainWindow::timerEvent( QTimerEvent * _te)
 {
+	AutomationClip::collectRetiredReadSnapshots();
 	emit periodicUpdate();
 }
 

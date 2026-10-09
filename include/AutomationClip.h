@@ -253,6 +253,8 @@ public:
 	static std::vector<AutomationClip*> clipsForModel(const AutomatableModel* _m);
 	static AutomationClip * globalAutomationClip( AutomatableModel * _m );
 	static void resolveAllIDs();
+	//! Control-thread poll for retired immutable snapshots; safe to call while no edit is occurring.
+	static void collectRetiredReadSnapshots();
 
 	bool isRecording() const { return m_isRecording; }
 	void setRecording( const bool b ) { m_isRecording = b; }
@@ -302,6 +304,9 @@ private:
 	float editableValueAt(const TimePos& time) const;
 	void publishReadSnapshot();
 	static void retireReadSnapshot(AutomationClipReadSnapshot* snapshot);
+	static void beginSnapshotReaderForTest();
+	static void endSnapshotReaderForTest();
+	static std::size_t retiredReadSnapshotCountForTest();
 
 	/*! The curve's value at clip-relative tick @a rel (plus @a fraction of the
 	 *  segment that starts there) - the segment, not the node, so a node whose
