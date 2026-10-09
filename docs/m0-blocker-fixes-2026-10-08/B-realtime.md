@@ -1,16 +1,16 @@
 # M0 blockers - batch B-realtime (audio-thread realtime violations)
 
 Branch `bugs/m0-blk-realtime` (worktree `zene-bunny-midi`). Base: train-2 tip `8eacc41d2`.
-Items from `batch-B-realtime.md`; Round 3 corrects the invalid Round 2 red claim for 5313 and closes the reviewed gaps for 5129 and 5467. Red exits describe the old product ordering/behavior when it was deliberately restored. `N/A` means the platform-specific defect could not be red-tested on this Linux host.
+Items from `batch-B-realtime.md`; Round 3 corrects the invalid Round 2 red claim for 5313 and closes the reviewed gaps for 5129 and 5467. Round 4 closes 5467's capacity-deferred handle lifecycle gap. Red exits describe the old product ordering/behavior when it was deliberately restored. `N/A` means the platform-specific defect could not be red-tested on this Linux host.
 
-## Overall disposition after Round 3
+## Overall disposition after Round 4
 
-| Cluster | Verdict | Round 3 fix commit | Regression | Round 3 red exit | Green exit | Gate exits (complexity / file-length / fork-sources / no-upstream) |
+| Cluster | Verdict | Fix commit(s) | Regression | Red exit(s) | Green exit | Gate exits (complexity / file-length / fork-sources / no-upstream) |
 |---|---|---|---|---|---|---|
 | 5415 frozen-take state written without the render lock | FIXED | `437bc1a22` (test-only seam guard; product fix `29d6279ce`) | `FrozenTakeHandoffTest` (freeze and unfreeze) | — (hook guard only) | 0 | 0 / 0 / 0 / 0 |
 | 5313 SessionTuning reader spins on a published slot whose claim bit is still set | FIXED | `818834a23` | `SessionTuningPublicationTest::readerReturnsWhileWriterIsPausedAfterPublication` | 8 (old order restored; reader timed out during the post-publication pause) | 0 | 0 / 0 / 0 / 0 |
 | 5129 ALSA sequencer never woken for queued output | FIXED | `74fe451db` | `MidiOutQueueTest::processOutEventRequestsTheSequencerWake` | 8 (wake write removed; pipe read returned -1 instead of 1) | 0 | 0 / 0 / 0 / 0 |
-| 5467 AudioBusHandle play-handle lock on the audio worker | FIXED | `0396c7624` | `AudioBusPlayHandleQueueTest` (capacity, low-water refill, inline slot, worker subnote) | 8 (growth restored; timer removed; inline slot removed; worker route disabled) | 0 | 0 / 0 / 0 / 0 |
+| 5467 AudioBusHandle play-handle lock on the audio worker | FIXED | `0396c7624`, `935154415` | `AudioBusPlayHandleQueueTest` (capacity, low-water refill, inline slot, worker subnote, deferred clear/removal/type/track lifetime) | 8 (Round 3 regressions); 8 (Round 4 fix reverted to branch version) | 0 | 0 / 0 / 0 / 0 |
 | 4468 SlicerT playhead timer created on the loader thread | FIXED | `unchanged: e54efbc92` | `SlicerTPlayheadTest` through `InstrumentLoaderThread` | 8 (restored constructor-owned timer; GUI view could not find its timer) | 0 | 0 / 0 / 0 / 0 after ledger follow-up in `1ba4a757e`; first post-commit scan returned 1 |
 | 4467 SlicerT allocates a PlaybackState on the first play | BLOCKED | - | - | - | - | - |
 | 5414 frozen take allocates Sample + SamplePlayHandle per pass | BLOCKED | - | - | - | - | - |
@@ -38,6 +38,12 @@ The first post-commit no-upstream scan after `e54efbc92` found undeclared change
 | 5129 | Add a test-only pipe constructor and read the wake byte after calling `processOutEvent()`. | Exit 8 when the wake request was removed; non-blocking `read()` returned -1 instead of 1. | `MidiOutQueueTest` exit 0. | 0 / 0 / 0 / 0 |
 | 5467 | Reserve bus/engine list capacity on the control thread, refill at low water, keep one inline slot for a bus born in realtime, defer accepted full-list additions, drain per-worker edit buffers, and report overflow through `control.ping`. | Exit 8 when append growth was restored, the low-water timer was removed, the inline slot was removed, and worker-buffer routing was disabled. | `AudioBusPlayHandleQueueTest` exit 0; `ControlRegistryTest` confirms the overflow status fields. | 0 / 0 / 0 / 0 |
 
+## Round 4 verification
+
+| Item | Round 4 change | Red result | Green result | Gate exits (complexity / file-length / fork-sources / no-upstream) |
+|---|---|---|---|---|
+| 5467 | Cancel capacity-deferred handles in `clearInternal()`, direct and queued `removePlayHandle()` paths, and `removePlayHandlesOfTypes()` before their owner or bus can disappear. The sweeps compact fixed storage in place and release notes through `NotePlayHandleManager`, deleting other handle types as before. | CTest exit 8 with the branch's original `AudioEngine.cpp`: all five lifecycle cases failed (clear, direct remove, queued remove, type removal, track destruction). | `AudioBusPlayHandleQueueTest` exit 0. The `clearInternal()` allocation probe measured zero allocations; destruction counters and the retry render checked cancellation, no append, no playback, and one destruction. | 0 / 0 / 0 / 0 |
+
 ## Blocked items - reasons and what was checked
 
 **4467 (SlicerT.cpp, `playNoteImpl`).** The first play of a note creates `new Sample::PlaybackState(...)` (SlicerT.cpp, the `m_pluginData` branch). `PlaybackState`'s constructor builds an `AudioResampler`, whose constructor calls `src_new` (src/core/AudioResampler.cpp:54-55, libsamplerate state allocation), so the allocation is real. The per-note state is owned by the engine's NotePlayHandle plugin-data hook, which runs on the render thread; the plugin cannot create it earlier. Options: (a) engine-level pooled plugin data on NotePlayHandle (an engine change), or (b) a bounded per-instance pool of PlaybackState (about 2 KB of buffer plus resampler state per slot), which silently silences notes above the pool size (an audible behaviour change under heavy polyphony). Neither was taken without a design decision.
@@ -52,7 +58,7 @@ The first post-commit no-upstream scan after `e54efbc92` found undeclared change
 
 1. **5313 suite isolation.** The round-1 `SessionTuningTest` suite crashes in the unrelated LV2 host when it selects an LV2 instrument (`Lv2Instrument::Lv2Instrument`, `plugins/Lv2Instrument/Lv2Instrument.cpp:84`). `SessionTuningPublicationTest` covers the publication race directly; Round 2's seam produced a value-mismatch red result, while Round 3 moves it after publication and reproduces the reader timeout. This report does not claim the broader suite passes.
 2. **5129 platform and integration coverage.** The source and test guards were inspected as described above; an actual non-POSIX build was unavailable. Round 3 calls `processOutEvent()` through a test-only pipe and reads the byte directly, so removing the wake request fails. No ALSA sequencer device was available for an end-to-end run. `processOutEvent()` still makes one non-blocking `write()` to the wake pipe per drain; the pipe is `O_NONBLOCK`, but the syscall has a cost on the audio path.
-3. **5467 capacity and overflow.** Track and instrument buses reserve a bounded polyphony batch on the control thread; a standalone bus born in realtime uses one inline handle slot and requests main-thread growth for later additions. The engine list reserves capacity as buses are added. The render owner never grows a `QList`: a full list defers accepted additions to the next period, and a low-water request is serviced by a main-thread timer. Worker-stage edits use per-worker fixed buffers drained after the jobs join. Engine and bus drops, plus worker-buffer overflow, are reported in `control.ping` under `audio.play_handle_overflow`. The allocation probe counts C++ `operator new`; the capacity assertion also catches `QList` growth through Qt's allocator.
+3. **5467 capacity and overflow.** Track and instrument buses reserve a bounded polyphony batch on the control thread; a standalone bus born in realtime uses one inline handle slot and requests main-thread growth for later additions. The engine list reserves capacity as buses are added. The render owner never grows a `QList`: a full list defers accepted additions to the next period, and a low-water request is serviced by a main-thread timer. Worker-stage edits use per-worker fixed buffers drained after the jobs join. Engine and bus drops, plus worker-buffer overflow, are reported in `control.ping` under `audio.play_handle_overflow`. Round 4 adds in-place deferred-array sweeps for clear, singular removal, and track/type removal; the clear sweep's allocation probe reports zero. The allocation probe counts C++ `operator new`; the capacity assertion also catches `QList` growth through Qt's allocator.
 4. **4468 loader path.** The round-2 regression uses `InstrumentLoaderThread`, then observes the view created on the GUI thread and checks the running timer belongs to that thread. The test passed with the view-owned timer and failed with the old constructor-owned timer.
 5. **5415 test timing.** `FrozenTakeHandoffTest` now waits for a probe after file work and at the lock boundary before checking that the operation remains incomplete while the render lock is held. A bounded condition-variable wait remains as the negative assertion window; it is no longer a blind sleep that can be consumed by file loading before the lock attempt.
 6. **Worktree.** The environment note named `zene-m0-train2` as the primary directory. That worktree belongs to another branch (`050/m0-train-2`) and was not touched; all work is in `zene-bunny-midi` on `bugs/m0-blk-realtime`.
@@ -74,4 +80,5 @@ The first post-commit no-upstream scan after `e54efbc92` found undeclared change
 - `437bc1a22` fix(freeze): compile lock probe only in test builds (cluster 5415)
 - `74fe451db` fix(midi): assert the sequencer wake pipe call (cluster 5129)
 - `0396c7624` fix(audio): keep play-handle edits bounded on render paths (cluster 5467)
-- this commit: record the Round 3 verification and corrected disposition
+- `935154415` fix(audio): cancel capacity-deferred play handles on removal (cluster 5467)
+- this commit: record the Round 4 deferred-handle lifecycle verification
