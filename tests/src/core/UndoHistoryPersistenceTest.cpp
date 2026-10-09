@@ -413,6 +413,12 @@ private slots:
 		QCOMPARE(liveContent(), edited);
 		const int loadSteps = journalDepth();
 
+		// The load above left the session marked modified (its parameter write). Opening over a modified
+		// session now also checkpoints it (Q050-044: one more step, on top), which is SessionCheckpointTest's
+		// subject; this case is about the file's history alone, so the session is saved clean first.
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), path(QStringLiteral("pre-open.mmp"))}}).ok);
+		QVERIFY(!Engine::getSong()->isModified());
+
 		// A fresh open: the session's own journal is gone, the file's history is what comes back.
 		const ControlResult opened = run(QStringLiteral("project.open"), {{QStringLiteral("path"), file}});
 		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));

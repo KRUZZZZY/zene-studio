@@ -84,6 +84,14 @@ std::shared_ptr<const QByteArray> Song::captureUndoSnapshot()
 
 bool Song::restoreUndoSnapshot( const QByteArray & compressed )
 {
+	return restoreUndoSnapshot( compressed, m_fileName );
+}
+
+
+
+
+bool Song::restoreUndoSnapshot( const QByteArray & compressed, const QString & restoredFileName )
+{
 	const QByteArray document = qUncompress( compressed );
 	QTemporaryDir dir;
 	if( document.isEmpty() || !dir.isValid() ) { return false; }
@@ -100,7 +108,7 @@ bool Song::restoreUndoSnapshot( const QByteArray & compressed )
 	ProjectJournal * journal = Engine::projectJournal();
 	ProjectJournal::DetachedHistory history = journal->detachHistory();
 	const UndoHistory::ProjectState persistence = UndoHistory::instance().projectState();
-	const QString fileName = m_fileName;
+	const QString fileName = restoredFileName;
 	const QString oldFileName = m_oldFileName;
 	const int nextId = ProjectIds::next();
 

@@ -406,6 +406,9 @@ public:
 	 *  name, the undo journal around the step, the provenance log, the project's
 	 *  undo-history setting and the id counter (never handed out twice). */
 	bool restoreUndoSnapshot( const QByteArray & compressed );
+	/*! Q050-044: the same restore, putting \a fileName back as the project's file name instead of
+	 *  keeping the current one - the undo of a project.open returns to the DISPLACED session's file. */
+	bool restoreUndoSnapshot( const QByteArray & compressed, const QString & fileName );
 	bool isRestoringUndoSnapshot() const { return m_restoringSnapshot; }
 
 	/*! The session state a SUCCESSFUL save records: the file that was written,

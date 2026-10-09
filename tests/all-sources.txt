@@ -678,6 +678,7 @@ include/SerializingObject.h
 include/SessionArrangementRecorder.h
 include/SessionAudioCells.h
 include/SessionAudioRecorder.h
+include/SessionCheckpoint.h
 include/SessionFollow.h
 include/SessionGridCells.h
 include/SessionGridMenus.h
@@ -1941,6 +1942,7 @@ src/core/ScriptPackage.cpp
 src/core/SerializingObject.cpp
 src/core/SessionAudioCells.cpp
 src/core/SessionAudioRecorder.cpp
+src/core/SessionCheckpoint.cpp
 src/core/SessionClip.cpp
 src/core/SessionFollow.cpp
 src/core/SessionModel.cpp
@@ -2652,6 +2654,7 @@ tests/src/core/SessionArrangementRecordTest.cpp
 tests/src/core/SessionAudioCellPlaybackTest.cpp
 tests/src/core/SessionAudioRecordTest.cpp
 tests/src/core/SessionAudioRecorderTest.cpp
+tests/src/core/SessionCheckpointTest.cpp
 tests/src/core/SessionCommandArgsTest.cpp
 tests/src/core/SessionFollowTest.cpp
 tests/src/core/SessionModelTest.cpp

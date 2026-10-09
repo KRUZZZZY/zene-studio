@@ -307,6 +307,9 @@ bool changedNothing(bool journalled, quint64 step, const QString& commandId, con
 bool bracketsEdit(const ProjectJournal* journal, bool mutating, const QString& commandId)
 {
 	if (journal == nullptr || !mutating) { return false; }
+	// script.run is a snapshot-class row whose one step also carries the bracket's capture (Q050-044), so a
+	// project that persists its undo history keeps the step instead of losing the history behind it.
+	if (commandId == QLatin1String("script.run")) { return true; }
 	const control::ReversibilityEntry* row = control::ReversibilityTable::instance().lookup(commandId);
 	return row == nullptr || row->cls == control::ReversibilityClass::TrueInverse;
 }
@@ -365,6 +368,8 @@ void markFoldedNestedChanges(ControlResult* result, int folded, int foldedBefore
 	// The outer record keeps its own descriptor (before, inverse) but may not claim more than
 	// the step covers: a nested change folded into it is not reversed by that descriptor.
 	QJsonObject descriptor = result->result.value(QStringLiteral("__transaction")).toObject();
+	// A whole-session checkpoint (script.run, Q050-044) restores everything its nested commands did.
+	if (descriptor.value(QStringLiteral("covers_nested")).toBool(false)) { return; }
 	const QString prior = descriptor.value(QStringLiteral("mechanism")).toString();
 	descriptor.insert(QStringLiteral("reversible"), false);
 	descriptor.insert(QStringLiteral("mechanism"), QStringLiteral("a command this call ran inside itself changed the "

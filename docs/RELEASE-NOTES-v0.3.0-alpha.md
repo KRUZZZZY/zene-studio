@@ -993,13 +993,19 @@ Net against the second feature merge: `snapshot` -1, `irreversible` +3, `not_mut
 new-p8-51's `record.arm_track` (`snapshot` -> `irreversible`: its take stays after a disarm).
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=831 true_inverse=411 snapshot=40 irreversible=24 not_mutating=356
+     measured: rows=832 true_inverse=412 snapshot=42 irreversible=22 not_mutating=356
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
      option session.get_state rows=18 true_inverse=7 not_mutating=11
      option stem.get_state rows=7 not_mutating=7
      A16-HISTOGRAM-END -->
+
+Q050-044 (2026-10-09, `feat/050-Q050-044-open-script-undo`): `project.open` and `script.run` moved from `irreversible` to
+`snapshot` (a whole-session checkpoint; reversible per call), so `snapshot` +2 and `irreversible` -2 in the block above;
+`true_inverse` and `rows` are re-taken at 412 and 832 in the same change: the train-2 tip this unit branched from (888934e1b)
+already measured one `true_inverse` row (one registered command) above the figure published before it, and this unit adds no
+command. `docs/A16-REVERSIBILITY.md` §1.2 has the two moved rows.
 
 **The figure checks itself (board card #677).** It used to be a constant in
 `tests/src/core/ReversibilityContractTest.cpp` that a merge step had to hand-refresh - a second copy of a

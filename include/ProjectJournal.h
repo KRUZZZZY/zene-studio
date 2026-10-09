@@ -153,6 +153,16 @@ public:
 	void addJournalStructure( std::function<void()> undo, std::function<void()> redo,
 		qint64 payloadBytes );
 
+	/*! Q050-044: drops the \a count newest undo steps and releases their bytes. A whole-session
+	 *  checkpoint (script.run, project.open) replaces the finer steps a script pushed while it
+	 *  ran: its one step restores the entire project, so those steps would only undo what it
+	 *  already undoes. Returns how many were dropped; the redo stack is left alone. */
+	int discardTopSteps( int count );
+	/*! Q050-044: drops every step a project load put back (pushLoadedStep). Undoing a project.open returns to
+	 *  the displaced session, and the opened project's own history must not stay beneath it: one more undo
+	 *  would replace the restored session with an earlier state of the OTHER project. Returns the count. */
+	int discardLoadedSteps();
+
 	bool isJournalling() const
 	{
 		return m_journalling;

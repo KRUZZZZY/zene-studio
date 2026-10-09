@@ -1847,3 +1847,11 @@ src/core/ControlReversibilityTableW3Library.cpp	cluster 917, 2026-10-09: classif
 src/core/ControlTransactions.cpp	cluster 917, 2026-10-09: record completed async edits in bounded transaction history and provenance.
 src/core/RenderQueue.cpp	cluster 917, 2026-10-09: queue renders and conversions asynchronously with worker finalization, cancellation, and reports.
 src/gui/TrackRenderMenu.cpp	cluster 917, 2026-10-09: enqueue bounce/freeze and expose cancellation through the task indicator.
+include/MainWindow.h	Q050-044 (2026-10-09, feat/050-Q050-044-open-script-undo): declares openProjectFile(path): the interface's open paths (menu, recent list, file browser, drop, file-open event) reach project.open's checkpointed load (src/core/SessionCheckpoint.cpp) instead of calling Song::loadProject directly.
+src/gui/MainWindow.cpp	Q050-044 (2026-10-09, feat/050-Q050-044-open-script-undo): openProjectFile() runs the checkpointed project load and shows a refusal; openProject() uses it; runScript() invokes the registered script.run (the menu and the socket share one command, with its whole-project checkpoint) instead of ScriptEngine::runFile.
+src/gui/menus/RecentProjectsMenu.cpp	Q050-044 (2026-10-09, feat/050-Q050-044-open-script-undo): the recent-projects menu opens through MainWindow::openProjectFile.
+src/gui/FileBrowser.cpp	Q050-044 (2026-10-09, feat/050-Q050-044-open-script-undo): a project file opened from the browser goes through MainWindow::openProjectFile.
+src/gui/editors/TrackContainerView.cpp	Q050-044 (2026-10-09, feat/050-Q050-044-open-script-undo): a project file dropped on the editor opens through MainWindow::openProjectFile.
+src/gui/MainApplication.cpp	Q050-044 (2026-10-09, feat/050-Q050-044-open-script-undo): the OS file-open event opens through MainWindow::openProjectFile.
+include/ProjectJournal.h	Q050-044 (2026-10-09, feat/050-Q050-044-open-script-undo): discardTopSteps / discardLoadedSteps: a whole-session checkpoint replaces the finer steps a script pushed, and undoing an open drops the opened project's loaded history (implemented in the fork TU ProjectJournalStructural.cpp).
+include/Song.h	Q050-044 (2026-10-09, feat/050-Q050-044-open-script-undo): restoreUndoSnapshot(compressed, fileName): the same in-place restore, putting the displaced session's file name back (the undo of a project.open).

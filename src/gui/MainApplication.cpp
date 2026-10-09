@@ -71,7 +71,7 @@ bool MainApplication::event(QEvent* event)
 				if(getGUI()->mainWindow()->mayChangeProject(true))
 				{
 					qDebug() << "Loading file " << m_queuedFile;
-					Engine::getSong()->loadProject(m_queuedFile);
+					getGUI()->mainWindow()->openProjectFile(m_queuedFile);
 				}
 			}
 			else

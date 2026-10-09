@@ -494,7 +494,7 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 	{
 		if( getGUI()->mainWindow()->mayChangeProject(true) )
 		{
-			Engine::getSong()->loadProject( value );
+			getGUI()->mainWindow()->openProjectFile( value );
 		}
 		_de->accept();
 	}

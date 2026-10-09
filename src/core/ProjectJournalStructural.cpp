@@ -82,4 +82,29 @@ void ProjectJournal::addJournalStructure( std::function<void()> undoAction,
 	trimUndoStack();
 }
 
+int ProjectJournal::discardTopSteps( int count )
+{
+	int dropped = 0;
+	while( dropped < count && !m_undoCheckPoints.isEmpty() )
+	{
+		m_retainedBytes -= m_undoCheckPoints.last().bytes;
+		m_undoCheckPoints.removeLast();
+		++dropped;
+	}
+	return dropped;
+}
+
+int ProjectJournal::discardLoadedSteps()
+{
+	int dropped = 0;
+	for( int i = m_undoCheckPoints.size() - 1; i >= 0; --i )
+	{
+		if( !m_undoCheckPoints.at( i ).loaded ) { continue; }
+		m_retainedBytes -= m_undoCheckPoints.at( i ).bytes;
+		m_undoCheckPoints.remove( i );
+		++dropped;
+	}
+	return dropped;
+}
+
 } // namespace lmms

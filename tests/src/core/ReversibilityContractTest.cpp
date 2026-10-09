@@ -493,10 +493,11 @@ private slots:
 	}
 
 
-	//! THE NEGATIVE CONTROL (SPEC A16 deliverable 6). script.run has no inverse:
-	//! control.undo must FAIL with the typed 'irreversible' error naming the
-	//! command and its fallback - and must NOT quietly undo the reversible step
-	//! underneath it.
+	//! THE NEGATIVE CONTROL (SPEC A16 deliverable 6). oop.reset_crashes has no
+	//! inverse (the crashes it counted really happened; script.run was the control
+	//! until Q050-044 gave it a whole-project checkpoint): control.undo must FAIL
+	//! with the typed 'irreversible' error naming the command and its fallback -
+	//! and must NOT quietly undo the reversible step underneath it.
 	void irreversibleUndoFailsTypedAndDoesNotUndoAnOlderStep()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
@@ -508,18 +509,18 @@ private slots:
 		QCOMPARE(run(QStringLiteral("transport.get_state")).result.value(QStringLiteral("tempo")).toInt(),
 			tempoAfter);
 
-		const ControlResult ran = run(QStringLiteral("script.run"),
-			{{QStringLiteral("source"), QStringLiteral("lmms.log():info('a16')\n")}});
+		const ControlResult ran = run(QStringLiteral("oop.reset_crashes"),
+			{{QStringLiteral("client"), QStringLiteral("a16-negative-control")}});
 		QVERIFY2(ran.ok, qPrintable(ran.errorMessage));
-		QCOMPARE(stateOf(QStringLiteral("script.run")).value(QStringLiteral("class")).toString(),
+		QCOMPARE(stateOf(QStringLiteral("oop.reset_crashes")).value(QStringLiteral("class")).toString(),
 			QStringLiteral("irreversible"));
 
 		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"));
 		QVERIFY2(!undo.ok, "control.undo pretended to undo an irreversible command");
 		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
 		QCOMPARE(controlErrorKindName(undo.errorKind), QStringLiteral("irreversible"));
-		QVERIFY2(undo.errorMessage.contains(QStringLiteral("script.run")), qPrintable(undo.errorMessage));
-		QVERIFY2(undo.errorMessage.contains(QStringLiteral("addCheckPoint")),
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("oop.reset_crashes")), qPrintable(undo.errorMessage));
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("crashes really happened")),
 			qPrintable(undo.errorMessage));
 
 		// The proof that nothing was silently unwound: the reversible step

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T06:08:42Z",
+  "captured_at": "2026-10-09T11:06:06Z",
   "commands": [
     {
       "args_schema": {
@@ -20165,6 +20165,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "checkpoint": {
+            "type": "object"
+          },
           "error_count": {
             "type": "integer"
           },
@@ -25115,7 +25118,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Run a Lua script (docs/specs/SPEC-lua-api-v0.md) in this running instance - the same ScriptEngine the run-and-exit `--run-script` CLI flag drives, on its own worker thread with the engine apply side pumped on the UI thread. Returns the Lua log lines, or a typed error carrying them. 'budget' overrides the per-invocation instruction budget (default from the engine) for this call only.",
+      "description": "Run a Lua script (docs/specs/SPEC-lua-api-v0.md) in this running instance - the same ScriptEngine the run-and-exit `--run-script` CLI flag drives, on its own worker thread with the engine apply side pumped on the UI thread. Returns the Lua log lines, or a typed error carrying them. 'budget' overrides the per-invocation instruction budget (default from the engine) for this call only. The project is captured whole before the script runs (bounded by the undo stack's byte budget, control.set_undo_depth; over it the run is REFUSED before anything changes), and everything the script changed is ONE undo step: control.undo restores the exact pre-script project and control.redo reapplies the run's result.",
       "group": "script",
       "id": "script.run",
       "mutating": true,
@@ -25125,6 +25128,12 @@
         "properties": {
           "budget_overridden": {
             "type": "boolean"
+          },
+          "changed_project": {
+            "type": "boolean"
+          },
+          "checkpoint": {
+            "type": "object"
           },
           "instruction_budget": {
             "type": "integer"
@@ -34764,11 +34773,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-core/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-p1xw5a_7/zene.sock",
-    "version": "0.4.0-alpha.1364+a0295ab"
+    "source_socket": "/tmp/zctl-run-0uhvtnvv/zene.sock",
+    "version": "0.4.0-alpha.1366+888934e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
