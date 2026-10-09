@@ -143,7 +143,11 @@ int fakeRender(int argc, char** argv)
 	const RenderRequest request = parseRenderArguments(argc, argv);
 	const int audible = audibleTracks(request.project);
 	if (request.out.isEmpty() || audible < 0) { return 4; }
-	return writeTone(request.out, request.rate, 0.1 * std::max(1, audible)) ? 0 : 5;
+	// main.cpp replaces the requested suffix with the selected render format;
+	// the BounceInPlace child always asks for WAV.
+	const QFileInfo requested(request.out);
+	const QString output = requested.dir().filePath(requested.completeBaseName() + QStringLiteral(".wav"));
+	return writeTone(output, request.rate, 0.1 * std::max(1, audible)) ? 0 : 5;
 }
 
 ControlResult run(const QString& id, const QJsonObject& args = {})

@@ -312,7 +312,10 @@ bool BounceInPlace::prepareRenderTracks(const std::vector<Track*>& tracks, const
 	next.projectPath = next.scratch->filePath(QStringLiteral("session.mmp"));
 	next.mutedProjectPath = next.scratch->filePath(QStringLiteral("muted-session.mmp"));
 	next.trimmed = !range.coversWholeTrack();
-	next.stagedPath = outPath + QStringLiteral(".part.") + QUuid::createUuid().toString(QUuid::WithoutBraces);
+	// `render` replaces the final suffix with the selected format's extension;
+	// retain `.wav` so the child's output path is exactly the staged path we inspect.
+	next.stagedPath = outPath + QStringLiteral(".part.")
+		+ QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".wav");
 	next.renderPath = next.trimmed ? next.scratch->filePath(QStringLiteral("render.wav")) : next.stagedPath;
 	Song* song = Engine::getSong();
 	next.tempoMap = song->tempoMap().map();
