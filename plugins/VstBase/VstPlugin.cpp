@@ -290,7 +290,8 @@ void VstPlugin::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	}
 	else
 	{
-		int visible = isUIVisible();
+		// The last known state: a save never waits for the client (see RemotePlugin::cachedUIVisible()).
+		int visible = cachedUIVisible();
 		if ( visible != -1 )
 		{
 			_this.setAttribute( "guivisible", visible );

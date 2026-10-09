@@ -56,6 +56,7 @@
 // lmms/include/
 #include "AutomatableModel.h"
 #include "Instrument.h"
+#include "MidiHandoffQueue.h"
 #include "InstrumentView.h"
 #include "SubWindow.h"
 
@@ -214,8 +215,11 @@ private:
     NativeMidiEvent fMidiEvents[kMaxMidiEvents];
     NativeTimeInfo  fTimeInfo;
 
-    // this is only needed because note-offs are being sent during play
-    QMutex fMutex;
+    //! MIDI from any thread, waiting for the next processed period. handleMidiEvent() only pushes here, and
+    //! playImpl() stages the events into fMidiEvents, so no lock is shared between the two paths.
+    MidiHandoffQueue<kMaxMidiEvents> fMidiHandoff;
+    //! Channels whose events the full queue refused; cut with all-notes-off once the queue has drained.
+    MidiChannelOverflow fMidiOverflow;
 
     uint8_t m_paramGroupCount;
     std::vector<CarlaParamFloatModel*> m_paramModels;

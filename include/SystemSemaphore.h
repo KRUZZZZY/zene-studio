@@ -47,6 +47,8 @@ public:
 	auto operator=(SystemSemaphore&& other) noexcept -> SystemSemaphore&;
 
 	auto acquire() noexcept -> bool;
+	//! Waits at most \a timeoutMs milliseconds for the count to be positive; false on timeout.
+	auto tryAcquire(int timeoutMs) noexcept -> bool;
 	auto release() noexcept -> bool;
 
 	auto key() const noexcept -> const std::string& { return m_key; }

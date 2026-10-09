@@ -401,6 +401,22 @@ auto VestigeInstrument::processImpl(PlanarBufferView<const float> in, PlanarBuff
 		return ProcessStatus::Continue;
 	}
 
+	// MIDI queued since the last period goes to the plugin first, in order. A channel whose events the full queue
+	// refused is cut with all-notes-off at the point of the refusal (see drainMidi()).
+	drainMidi(m_midiHandoff, m_midiOverflow, m_midiHandoff.capacity(),
+		[this](const HandoffMidiEvent& queued) -> bool
+		{
+			m_plugin->processMidiEvent(
+				MidiEvent(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2),
+				queued.offset);
+			return true;
+		},
+		[this](int channel) -> bool
+		{
+			m_plugin->processMidiEvent(MidiEvent(MidiControlChange, static_cast<int8_t>(channel), 123, 0), 0);
+			return true;
+		});
+
 	// The VST renders into the shared audio block that VestigeAudioPorts()
 	// exposes as this plugin's in/out ports; ProcessStatus::Continue keeps the
 	// audio ports router reading that block.
@@ -432,12 +448,16 @@ void VestigeInstrument::processUnlock()
 
 bool VestigeInstrument::handleMidiEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset )
 {
-	m_pluginMutex.lock();
-	if( m_plugin != nullptr )
-	{
-		m_plugin->processMidiEvent( event, offset );
-	}
-	m_pluginMutex.unlock();
+	// Realtime: this is called from the audio thread too, so it never takes m_pluginMutex. The event is
+	// forwarded by the next processed period (processImpl()). When the queue is full the event's channel
+	// is cut with all-notes-off instead (see processImpl()).
+	HandoffMidiEvent queued;
+	queued.type = static_cast<std::uint8_t>( event.type() );
+	queued.channel = event.channel();
+	queued.param1 = event.param( 0 );
+	queued.param2 = event.param( 1 );
+	queued.offset = static_cast<std::uint32_t>( offset );
+	pushOrRecord( m_midiHandoff, m_midiOverflow, queued );
 
 	return true;
 }
@@ -821,15 +841,16 @@ void VestigeInstrumentView::toggleGUI( void )
 
 void VestigeInstrumentView::noteOffAll( void )
 {
-	m_vi->m_pluginMutex.lock();
-	if( m_vi->m_plugin != nullptr )
+	// Through the same queue as the notes it has to end, so no queued note-on can land after it.
+	for( int key = 0; key <= MidiMaxKey; ++key )
 	{
-		for( int key = 0; key <= MidiMaxKey; ++key )
-		{
-			m_vi->m_plugin->processMidiEvent( MidiEvent( MidiNoteOff, 0, key, 0 ), 0 );
-		}
+		HandoffMidiEvent off;
+		off.type = static_cast<std::uint8_t>( MidiNoteOff );
+		off.channel = 0;
+		off.param1 = static_cast<std::int16_t>( key );
+		off.param2 = 0;
+		pushOrRecord( m_vi->m_midiHandoff, m_vi->m_midiOverflow, off );
 	}
-	m_vi->m_pluginMutex.unlock();
 }
 
 

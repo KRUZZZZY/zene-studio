@@ -27,9 +27,17 @@
 
 #include <atomic>  // IWYU pragma: keep
 #include <vector>
+#include <cerrno>
 #include <clocale> // IWYU pragma: keep
 #include <cstdio>
 #include <cstdlib>
+#include <charconv>
+#include <array>
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <thread>
+#include <vector>
 #include <cstring>
 #include <string>
 
@@ -67,6 +75,7 @@
 
 #ifndef SYNC_WITH_SHM_FIFO
 #include <poll.h>
+#include <sys/socket.h>
 #include <unistd.h>  // IWYU pragma: keep
 #endif // SYNC_WITH_SHM_FIFO
 
@@ -114,8 +123,7 @@ public:
 	// constructor for master-side
 	shmFifo() :
 		m_invalid( false ),
-		m_master( true ),
-		m_lockDepth( 0 )
+		m_master( true )
 	{
 		m_data.create();
 		m_data->startPtr = m_data->endPtr = 0;
@@ -131,8 +139,7 @@ public:
 	// the connection to master
 	shmFifo(const std::string& shmKey) :
 		m_invalid( false ),
-		m_master( false ),
-		m_lockDepth( 0 )
+		m_master( false )
 	{
 		m_data.attach(shmKey);
 		m_dataSem = SystemSemaphore{std::to_string(m_data->dataSem.semKey)};
@@ -155,20 +162,35 @@ public:
 		return m_master;
 	}
 
-	// recursive lock
-	inline void lock()
+	//! Identifies the calling thread. The data lock is owned by one thread at a time: only the owner may enter it
+	//! again without waiting, so a thread that does not hold the lock can never ride on another thread's hold.
+	static std::uint64_t callerKey() noexcept
 	{
-		if( !isInvalid() && m_lockDepth.fetch_add( 1 ) == 0 )
-		{
-			m_dataSem.acquire();
-		}
+		return static_cast<std::uint64_t>( std::hash<std::thread::id>{}( std::this_thread::get_id() ) ) | 1u;
 	}
 
-	// recursive unlock
+	// recursive lock, owned per thread
+	inline void lock()
+	{
+		if( isInvalid() ) { return; }
+		const auto me = callerKey();
+		if( m_owner.load( std::memory_order_acquire ) == me )
+		{
+			++m_depth;
+			return;
+		}
+		m_dataSem.acquire();
+		m_owner.store( me, std::memory_order_release );
+		m_depth = 1;
+	}
+
+	// recursive unlock; a thread that does not own the lock does nothing
 	inline void unlock()
 	{
-		if( m_lockDepth.fetch_sub( 1 ) <= 1 )
+		if( m_owner.load( std::memory_order_acquire ) != callerKey() ) { return; }
+		if( --m_depth == 0 )
 		{
+			m_owner.store( 0, std::memory_order_release );
 			m_dataSem.release();
 		}
 	}
@@ -222,6 +244,40 @@ public:
 		write( _s.c_str(), len );
 	}
 
+	//! Writes raw bytes, for a frame built by RemotePluginBase::sendFrameNonBlocking(). Does not allocate.
+	inline void writeRaw( const void * _buf, int _len )
+	{
+		write( _buf, _len );
+	}
+
+	//! Timed forms for the audio thread: each waits at most _timeoutMs and returns false when it could not.
+	//! tryLockFor() takes the data lock (recursively, like lock()); waitMessageFor() takes one message token.
+	inline bool tryLockFor( int _timeoutMs )
+	{
+		if( isInvalid() ) { return false; }
+		const auto me = callerKey();
+		if( m_owner.load( std::memory_order_acquire ) == me )
+		{
+			++m_depth;
+			return true;
+		}
+		if( !m_dataSem.tryAcquire( _timeoutMs ) ) { return false; }
+		m_owner.store( me, std::memory_order_release );
+		m_depth = 1;
+		return true;
+	}
+
+	inline bool waitMessageFor( int _timeoutMs )
+	{
+		return !isInvalid() && m_messageSem.tryAcquire( _timeoutMs );
+	}
+
+	//! Bytes the FIFO can take now. The caller holds the data lock.
+	inline std::size_t freeSpace()
+	{
+		return static_cast<std::size_t>( SHM_FIFO_SIZE - ( m_data->endPtr - m_data->startPtr ) );
+	}
+
 
 	inline bool messagesLeft()
 	{
@@ -251,14 +307,15 @@ private:
 			return;
 		}
 		lock();
-		while( isInvalid() == false &&
-				_len > m_data->endPtr - m_data->startPtr )
+		// A reader only reads a message the writer has signalled, and the writer writes it whole under the lock, so
+		// the data is there. If it is not, the peer broke that rule: the FIFO is given up at once. Waiting here would
+		// hold the data lock that the writer needs in order to write, so it could never succeed.
+		if( isInvalid() || _len > m_data->endPtr - m_data->startPtr )
 		{
+			invalidate();
+			memset( _buf, 0, _len );
 			unlock();
-#ifndef LMMS_BUILD_WIN32
-			usleep( 5 );
-#endif
-			lock();
+			return;
 		}
 		std::memcpy(_buf, m_data->data + m_data->startPtr, _len);
 		m_data->startPtr += _len;
@@ -306,7 +363,9 @@ private:
 	SharedMemory<shmData> m_data;
 	SystemSemaphore m_dataSem;
 	SystemSemaphore m_messageSem;
-	std::atomic_int m_lockDepth;
+	//! Thread that holds the data lock (0: none) and its recursion depth; the depth is touched by the owner only.
+	std::atomic<std::uint64_t> m_owner{0};
+	int m_depth = 0;
 };
 #endif // SYNC_WITH_SHM_FIFO
 
@@ -400,6 +459,12 @@ public:
 			return data[_p];
 		}
 
+		//! Argument \a _p by reference. getString() returns a copy, which allocates on the audio thread.
+		inline const std::string & stringArgument( int _p = 0 ) const
+		{
+			return data[_p];
+		}
+
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 		inline QString getQString( int _p = 0 ) const
 		{
@@ -450,6 +515,86 @@ public:
 
 	int sendMessage( const message & _m );
 	message receiveMessage();
+#ifdef SYNC_WITH_SHM_FIFO
+	//! The message of a token already taken on the shared-memory FIFO, with its data lock held by the caller.
+	message readFrameLocked();
+#endif
+
+	//! Sends a message whose arguments are all integers, in the wire format sendMessage() writes. Each
+	//! argument is formatted into a stack buffer, so unlike building a message with addInt() this does not
+	//! allocate; the audio thread uses it. @return the number of bytes written, as sendMessage() does
+	//! Outcome of a send made on the audio thread.
+	enum class SendResult
+	{
+		Sent,   //!< the whole frame was written
+		NoRoom, //!< nothing was written: the send buffer had no room, or the send lock was busy
+		Broken  //!< the connection failed, or a partial frame was written; the stream is no longer usable
+	};
+
+	//! Writes one complete frame without blocking. Used on the audio thread: it never waits for the send
+	//! lock or the socket. The socket path checks the send buffer has room for the frame before writing,
+	//! so a short write only happens if that check was wrong, and then the stream is marked broken.
+	SendResult sendFrameNonBlocking( const char * _frame, std::size_t _size );
+
+	//! Outcome of a receive on the audio thread.
+	enum class ReceiveResult
+	{
+		Got,     //!< a complete message was read into the argument
+		Timeout, //!< no complete message arrived before the deadline; nothing was consumed
+		Lost     //!< the connection failed, or the peer closed it
+	};
+
+	//! Receives the next message, waiting no longer than \a _deadline. Reads only a complete message (socket:
+	//! the framing is checked first; shared memory: a token is taken, and each message is written whole), so a
+	//! client that stops mid-message cannot hold the caller. Used on the audio thread.
+#ifndef BUILD_REMOTE_PLUGIN_CLIENT
+	ReceiveResult receiveFrameBefore( std::chrono::steady_clock::time_point _deadline, message & _out );
+
+	//! The main thread's bounded receive. Like receiveFrameBefore(), but a frame that has started on the socket is
+	//! finished rather than abandoned: a frame larger than the socket buffer cannot be complete until it is read.
+	//! Each new piece of it must arrive within _progress, or the connection is taken as lost.
+	ReceiveResult receiveWithin( std::chrono::steady_clock::time_point _deadline,
+		std::chrono::milliseconds _progress, message & _out );
+
+#ifndef SYNC_WITH_SHM_FIFO
+	//! Reads exactly _len bytes, waiting at most _progress for each new piece and never past _total.
+	//! False if the bytes did not all arrive in time.
+	bool readExactlyWithin( void * _buf, int _len, std::chrono::milliseconds _progress,
+		std::chrono::steady_clock::time_point _total );
+	//! Finishes a frame whose first bytes are on the socket (see receiveWithin()), within StartedFrameTimeout.
+	ReceiveResult receiveStartedFrame( std::chrono::milliseconds _progress, message & _out );
+#endif
+
+	//! The whole of a started frame must arrive within this (on top of the per-piece bound of receiveWithin()).
+	static constexpr std::chrono::milliseconds StartedFrameTimeout{2000};
+#endif
+
+	//! Writes the tail of an earlier partial non-blocking send, if there is one, without blocking.
+	SendResult flushPendingSend();
+
+	//! Whether part of a frame is still waiting to be written (socket transport; always false on shared memory).
+	bool sendTailPending() const
+	{
+#ifdef SYNC_WITH_SHM_FIFO
+		return false;
+#else
+		return m_txTailSize != 0;
+#endif
+	}
+
+#ifndef SYNC_WITH_SHM_FIFO
+	//! Writes the tail with the send mutex held, without blocking. @return Sent when nothing is left
+	SendResult writeTailLocked();
+#endif
+
+	//! Encodes a message of integer arguments in the wire format into \a _out, without allocating.
+	//! @return the frame size, or 0 if it does not fit in \a _capacity bytes
+	static std::size_t frameFromInts( char * _out, std::size_t _capacity, int _id,
+						const std::int32_t * _values, std::size_t _count );
+
+	//! Encodes \a _m in the wire format into \a _out, without allocating.
+	//! @return the frame size, or 0 if it does not fit in \a _capacity bytes
+	static std::size_t frameFromMessage( char * _out, std::size_t _capacity, const message & _m );
 
 	inline bool isInvalid() const
 	{
@@ -523,6 +668,87 @@ public:
 #endif
 	}
 
+	//! Waits at most \a timeoutMs milliseconds (zero polls) for the next message to start arriving.
+	//! @return false when nothing arrived in time. Only the socket transport can time out: the
+	//! shared-memory FIFO has no timed wait, so it reports ready and the caller blocks in
+	//! receiveMessage() as it always did.
+	inline bool waitForMessageReadable(int timeoutMs)
+	{
+#ifdef SYNC_WITH_SHM_FIFO
+		(void)timeoutMs;
+		return true;
+#else
+		struct pollfd pollin;
+		pollin.fd = m_socket;
+		pollin.events = POLLIN;
+		int ready = 0;
+		do
+		{
+			ready = poll(&pollin, 1, timeoutMs);
+		} while (ready < 0 && errno == EINTR);
+		return ready > 0;
+#endif
+	}
+
+	//! What a look at the socket finds at the start of the next message, without consuming anything.
+	enum class Framing
+	{
+		Complete,   //!< the whole message is already in the socket, so receiveMessage() will not block
+		Incomplete, //!< more bytes must still arrive
+		Unusable    //!< the peer closed the connection, or the message is larger than the peek window
+	};
+
+	//! Looks at the next message without consuming it. The audio thread calls receiveMessage() only after
+	//! Complete, so a client that stops mid-message cannot hold it. The shared-memory FIFO has no such look
+	//! and reports Complete, as it always blocks in receiveMessage().
+	inline Framing peekNextMessage()
+	{
+#ifdef SYNC_WITH_SHM_FIFO
+		return Framing::Complete;
+#else
+		const std::size_t windowBytes = m_peekWindow.size();
+		char * const window = m_peekWindow.data();
+		const ssize_t available = ::recv(m_socket, window, windowBytes, MSG_PEEK | MSG_DONTWAIT);
+		if (available == 0) { return Framing::Unusable; }
+		if (available < 0)
+		{
+			const bool retry = errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR;
+			return retry ? Framing::Incomplete : Framing::Unusable;
+		}
+		const auto size = static_cast<std::size_t>(available);
+
+		// Wire layout: id, argument count, then each argument as a length followed by its bytes.
+		auto int32At = [&window](std::size_t at) {
+			std::int32_t value = 0;
+			std::memcpy(&value, window + at, sizeof value);
+			return value;
+		};
+		if (size < 8) { return Framing::Incomplete; }
+		const std::int32_t count = int32At(4);
+		if (count < 0) { return Framing::Unusable; }
+
+		std::size_t offset = 8;
+		for (std::int32_t i = 0; i < count; ++i)
+		{
+			if (offset + sizeof(std::int32_t) > windowBytes) { return Framing::Unusable; }
+			if (offset + sizeof(std::int32_t) > size) { return Framing::Incomplete; }
+			const std::int32_t length = int32At(offset);
+			if (length < 0) { return Framing::Unusable; }
+			offset += sizeof(std::int32_t) + static_cast<std::size_t>(length);
+			if (offset > windowBytes) { return Framing::Unusable; }
+			if (offset > size) { return Framing::Incomplete; }
+		}
+		return Framing::Complete;
+#endif
+	}
+
+	//! Whether a complete message is already waiting, so that receiveFrameBefore() with a zero deadline takes it
+	//! without waiting. Never reads anything.
+	inline bool completeMessageWaiting()
+	{
+		return peekNextMessage() == Framing::Complete;
+	}
+
 	inline void fetchAndProcessAllMessages()
 	{
 		while( messagesLeft() )
@@ -567,6 +793,17 @@ protected:
 
 #ifndef SYNC_WITH_SHM_FIFO
 	int m_socket;
+
+	//! What the audio thread peeks into. Allocated once in the constructor, never on the audio thread; a
+	//! complete message longer than this cannot be read without blocking, and is refused (see peekNextMessage()).
+	std::vector<char> m_peekWindow;
+	static constexpr std::size_t PeekWindowBytes = std::size_t{1} << 20;
+
+	//! The unsent tail of a frame that a non-blocking send only partly wrote. It goes out before anything else.
+	std::array<char, 512> m_txTail{};
+	std::size_t m_txTailOffset = 0;
+	std::size_t m_txTailSize = 0;
+
 #endif
 
 

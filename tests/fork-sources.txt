@@ -2241,3 +2241,9 @@ tests/src/gui/NoteBackgroundAudioTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/FakeHostModule.cpp
+plugins/VstBase/VstMidiEventBatch.h
+tests/src/core/VstMidiEventBatchTest.cpp
+include/MidiHandoffQueue.h
+tests/src/core/MidiHandoffQueueTest.cpp
+include/RenderPeriodClock.h
+tests/src/core/SystemSemaphoreTest.cpp

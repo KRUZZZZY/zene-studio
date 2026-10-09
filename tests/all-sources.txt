@@ -453,6 +453,7 @@ include/MidiDummy.h
 include/MidiEvent.h
 include/MidiEventProcessor.h
 include/MidiEventToByteSeq.h
+include/MidiHandoffQueue.h
 include/MidiInputTransform.h
 include/MidiJack.h
 include/MidiJackOutSchedule.h
@@ -618,6 +619,7 @@ include/RemotePluginBase.h
 include/RemotePluginClient.h
 include/RenameDialog.h
 include/RenderManager.h
+include/RenderPeriodClock.h
 include/RenderPresetMenu.h
 include/RenderQueue.h
 include/RetroAudioCapture.h
@@ -1275,6 +1277,7 @@ plugins/Vst3Instrument/Vst3Instrument.h
 plugins/Vst3Instrument/Vst3InstrumentView.cpp
 plugins/Vst3Instrument/Vst3InstrumentView.h
 plugins/VstBase/RemoteVstPlugin.cpp
+plugins/VstBase/VstMidiEventBatch.h
 plugins/VstBase/VstPlugin.cpp
 plugins/VstBase/VstPlugin.h
 plugins/VstBase/communication.h
@@ -2522,6 +2525,7 @@ tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MeterTapTest.cpp
 tests/src/core/MidiClipControllersLoadTest.cpp
 tests/src/core/MidiClockTest.cpp
+tests/src/core/MidiHandoffQueueTest.cpp
 tests/src/core/MidiInputTransformTest.cpp
 tests/src/core/MidiJackOutScheduleTest.cpp
 tests/src/core/MidiLearnTest.cpp
@@ -2667,6 +2671,7 @@ tests/src/core/StemSplitPipelineTest.cpp
 tests/src/core/SurroundExportTest.cpp
 tests/src/core/SurroundExportTestSupport.h
 tests/src/core/SurroundTest.cpp
+tests/src/core/SystemSemaphoreTest.cpp
 tests/src/core/TakeLaneCompTest.cpp
 tests/src/core/TakeLaneTest.cpp
 tests/src/core/TakeLaneTestSupport.h
@@ -2693,6 +2698,7 @@ tests/src/core/VcaRefreshAtomicityTest.cpp
 tests/src/core/VideoTestClip.h
 tests/src/core/VideoTestClipTest.cpp
 tests/src/core/VideoTrackTest.cpp
+tests/src/core/VstMidiEventBatchTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpMarkersTest.cpp
 tests/src/core/WarpQuantizeTest.cpp

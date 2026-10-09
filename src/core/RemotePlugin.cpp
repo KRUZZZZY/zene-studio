@@ -30,6 +30,7 @@
 #endif
 
 #include <algorithm>
+#include <iterator>
 
 #ifdef LMMS_BUILD_WIN32
 #include <windows.h>
@@ -40,6 +41,7 @@
 #include "MidiEvent.h"
 #include "OutOfProcessHosting.h"
 #include "RemotePluginAudioPorts.h"
+#include "RenderPeriodClock.h"
 #include "Song.h"
 
 #include <iostream>
@@ -187,6 +189,12 @@ RemotePlugin::RemotePlugin(RemotePluginAudioPortsController& audioPorts) :
 		Qt::DirectConnection );
 	connect( &m_process, SIGNAL(finished(int,QProcess::ExitStatus)),
 		&m_watcher, SLOT(quit()), Qt::DirectConnection );
+
+	// Main-thread pump for the requests process() had to defer. The timer only takes m_commMutex when
+	// m_deferredWork is set, so an idle plugin never contends with the audio thread.
+	m_deferredTimer.setInterval(std::chrono::milliseconds{10});
+	connect(&m_deferredTimer, &QTimer::timeout, this, &RemotePlugin::applyDeferredClientRequests);
+	m_deferredTimer.start();
 }
 
 
@@ -194,7 +202,9 @@ RemotePlugin::RemotePlugin(RemotePluginAudioPortsController& audioPorts) :
 
 RemotePlugin::~RemotePlugin()
 {
+	m_deferredTimer.stop();
 	reportRefusedChannelCounts();
+	reportDeferredClientRequests();
 
 	// Detach from the audio ports controller before the shared buffer is
 	// destroyed, so the controller never holds a freed buffer view.
@@ -246,6 +256,14 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 		reset( new shmFifo(), new shmFifo() );
 #endif
 		m_failed = false;
+		m_initDoneSeen = false;
+		// A reused object starts a new connection: the state of the old one (abandoned queries, owed replies, the
+		// cached visibility, MIDI waiting for the old client) must not carry over.
+		m_staleQueries.clear();
+		m_owedProcessingReplies = 0;
+		m_uiVisible = -1;
+		m_pendingMidiSize = 0;
+		m_connectionLost = false;
 	}
 	QString exec = QFileInfo(QDir("plugins:"), pluginExecutable).absoluteFilePath();
 
@@ -381,7 +399,7 @@ void RemotePlugin::waitForInitDone(bool busyWaiting)
 	// failure path then degrades into the silent wrong audio it exists to prevent
 	// (measured with a pre-#589 client: the refusal was logged, the plugin stayed
 	// unfailed, and the client's interleaved writes were consumed as planar planes).
-	const auto initDone = waitForMessage(IdInitDone, busyWaiting).id == IdInitDone;
+	const bool initDone = m_initDoneSeen || waitForMessage(IdInitDone, busyWaiting).id == IdInitDone;
 	m_failed = m_failed || !initDone;
 
 	if (!m_failed)
@@ -397,68 +415,302 @@ void RemotePlugin::waitForInitDone(bool busyWaiting)
 
 
 
+RemotePluginBufferChangeGuard::RemotePluginBufferChangeGuard()
+{
+	if (Engine::audioEngine()) { Engine::audioEngine()->requestChangeInModel(); }
+}
+
+RemotePluginBufferChangeGuard::~RemotePluginBufferChangeGuard()
+{
+	if (Engine::audioEngine()) { Engine::audioEngine()->doneChangeInModel(); }
+}
+
+namespace
+{
+
+//! MIDI events sent per period at most; the rest wait in the queue (see sendQueuedMidiEvents()).
+constexpr std::size_t MidiDrainPerPeriod = 128;
+
+//! Controller number of "all notes off" (channel mode message).
+constexpr std::int32_t MidiAllNotesOffController = 123;
+
+//! The time one processing period lasts.
+auto periodBudget() -> std::chrono::steady_clock::duration
+{
+	const auto frames = Engine::audioEngine()->framesPerPeriod();
+	const auto rate = Engine::audioEngine()->outputSampleRate();
+	if (rate == 0) { return std::chrono::milliseconds{20}; }
+	return std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+		std::chrono::duration<double>{static_cast<double>(frames) / static_cast<double>(rate)});
+}
+
+//! The instant by which the client must have answered this period: the end of the render period that is
+//! running, so the wait gets only what the callback has left. A render start more than two periods old
+//! means no render period is running (tests, offline callers), and the budget is one period from now.
+auto periodDeadline(std::chrono::steady_clock::time_point now) -> std::chrono::steady_clock::time_point
+{
+	const auto budget = periodBudget();
+	// The wait ends an eighth of a period early: the rest of the graph still has time after a late client.
+	const auto usable = budget - budget / 8;
+	// Only the thread that renders a period is inside one; anywhere else the budget is one period from now.
+	if (!RenderPeriodClock::renderingOnThisThread()) { return now + usable; }
+	const auto renderStart = RenderPeriodClock::periodStart();
+	if (now < renderStart || now - renderStart > 2 * budget) { return now + usable; }
+	return renderStart + usable;
+}
+
+} // namespace
+
+
+
+
 bool RemotePlugin::process()
 {
+	// Every silent period zeroes the host-private outputs the instrument reads, never the client's block.
 	if (m_failed || !isRunning())
 	{
-		// Zero the output planes so a failed plugin renders silence instead of
-		// stale audio; there is no separate output buffer to clear anymore.
-		std::ranges::fill(m_audioOutputs, 0.f);
+		std::ranges::fill(m_hostOutputs, 0.f);
 		return false;
 	}
+
+	// Realtime: the main thread holds m_commMutex across its own request/reply exchanges, so this
+	// thread never waits for it. A busy mutex skips this period, rendered as silence.
+	if (!m_commMutex.tryLock())
+	{
+		std::ranges::fill(m_hostOutputs, 0.f);
+		return false;
+	}
+
+	m_inProcessPeriod = true;
+	const bool processed = processPeriod();
+	m_inProcessPeriod = false;
+	m_commMutex.unlock();
+
+	// A lost connection is not silence to be left unexplained: the main thread reports it and fails the plugin.
+	if (!processed && isInvalid())
+	{
+		m_connectionLost = true;
+		m_deferredWork = true;
+	}
+
+	return processed;
+}
+
+
+
+
+bool RemotePlugin::processPeriod()
+{
+	// The instrument reads and writes only the host-private block. Until a reply has completed for this
+	// period, that block is silent, so a late or lost client cannot be heard, and it cannot write into it.
+	std::ranges::fill(m_hostOutputs, 0.f);
 
 	if (!m_audioBuffer)
 	{
-		// We have no shared audio block yet, which means the activation
-		// handshake hasn't completed. Pump messages (and hope we get
-		// information like the shm key) until it has.
-		lock();
-		fetchAndProcessAllMessages();
-		unlock();
-
-		std::ranges::fill(m_audioOutputs, 0.f);
+		// No shared audio block yet: the activation handshake has not completed, or the block could not be made.
+		// Nothing is requested, and the audio thread does not read the connection here: a partly written message
+		// or a lock held by the client would hold this period. The main thread's waits read those messages.
 		return false;
 	}
 
+	// The test comes *before* the request on purpose: returning without sending keeps the protocol in step
+	// (an unconsumed reply would be read as the next period's, i.e. one period of skew), and a plugin with
+	// zero output channels would otherwise collect one reply per period until a socket buffer fills.
+	// A pending channel-count change is the same kind of stop: the client already lays its planes out with
+	// the new counts, which this host has not applied yet.
+	if (m_failed || m_hostOutputs.empty() || m_countChangePending)
+	{
+		return false;
+	}
+
+	const auto start = std::chrono::steady_clock::now();
+
+	// A request that was partly written in an earlier period is finished first. If that cannot happen now, the
+	// period is skipped and nothing new is sent.
+	if (flushPendingSend() != SendResult::Sent)
+	{
+		++m_processingOverruns;
+		return false;
+	}
+
+	// A reply still owed by an earlier, abandoned period comes first. It is drained without waiting: while
+	// one is outstanding the protocol is out of step, so no new request is sent this period.
+	switch (collectProcessingReplies(start))
+	{
+	case ReplyWait::Done:
+		break;
+	case ReplyWait::Late:
+		++m_processingOverruns;
+		return false;
+	case ReplyWait::Lost:
+		return false;
+	}
+
+	// MIDI for this period goes out ahead of the request, so the client has it when it processes. Nothing
+	// here waits: a send that finds no room skips the period, and the events stay queued for it.
+	switch (sendQueuedMidiEvents())
+	{
+	case SendResult::Sent:
+		break;
+	case SendResult::NoRoom:
+		++m_processingOverruns;
+		return false;
+	case SendResult::Broken:
+		return false;
+	}
+
+	// The inputs for this period go into the shared block only now: no reply is owed, so the client is not
+	// reading it.
+	std::ranges::copy(m_hostInputs, m_sharedInputs.begin());
+
+	char startFrame[8];
+	const auto startSize = frameFromInts(startFrame, sizeof startFrame, IdStartProcessing, nullptr, 0);
+	switch (sendFrameNonBlocking(startFrame, startSize))
+	{
+	case SendResult::Sent:
+		break;
+	case SendResult::NoRoom:
+		++m_processingOverruns;
+		return false;
+	case SendResult::Broken:
+		return false;
+	}
+
+	// The request is counted as owed once sent, so a late reply is always drained later.
+	++m_owedProcessingReplies;
+
+	switch (collectProcessingReplies(periodDeadline(start)))
+	{
+	case ReplyWait::Done:
+		break;
+	case ReplyWait::Late:
+		// The client did not answer within the period. The reply stays owed: the next period drains it,
+		// and the client's planes for this period are never copied out.
+		++m_processingOverruns;
+		return false;
+	case ReplyWait::Lost:
+		// The client died (or abandoned the period) before it replied.
+		return false;
+	}
+
+	// A channel-count change that arrived during this period means the planes were laid out with counts
+	// this host has not applied: they are not usable.
+	if (m_countChangePending)
+	{
+		return false;
+	}
+
+	// The reply is complete, so the client has finished writing its planes: copy them out.
+	std::ranges::copy(m_audioOutputs, m_hostOutputs.begin());
+	return true;
+}
+
+
+
+
+RemotePlugin::ReplyWait RemotePlugin::collectProcessingReplies(std::chrono::steady_clock::time_point deadline)
+{
+	while (m_owedProcessingReplies > 0)
+	{
+		// A request that was only partly written must be finished before the client can answer it. While such a
+		// tail waits, the wait is sliced so the tail is retried often; otherwise the wait runs to the deadline.
+		// A reply already complete in the socket is taken even when the deadline has passed; the receive itself
+		// gives up at the deadline when nothing is complete.
+		flushPendingSend();
+		const auto now = std::chrono::steady_clock::now();
+		auto slice = deadline;
+		if (sendTailPending())
+		{
+			const auto retry = now + std::chrono::milliseconds{1};
+			if (retry < slice) { slice = retry; }
+		}
+
+		message m;
+		switch (receiveFrameBefore(slice, m))
+		{
+		case ReceiveResult::Got:
+			break;
+		case ReceiveResult::Timeout:
+			if (std::chrono::steady_clock::now() >= deadline) { return ReplyWait::Late; }
+			continue;
+		case ReceiveResult::Lost:
+			invalidate(); // a connection that cannot be read is lost; the main thread is told (see process())
+			return ReplyWait::Lost;
+		}
+
+		if (m.id == IdProcessingDone) { --m_owedProcessingReplies; }
+		else { processMessage(m); }
+	}
+	return ReplyWait::Done;
+}
+
+
+
+
+void RemotePlugin::applyDeferredClientRequests()
+{
+	if (!m_audioBuffer && !m_failed && isRunning()) { pumpBeforeBuffer(); }
+
+	if (!m_deferredWork.load()) { return; }
+
+	// Re-sizing the ports reallocates the shared buffer the audio thread's router reads, so it is done with
+	// rendering held off, as every other main-thread model change is. The request comes first: the audio
+	// thread only ever try-locks m_commMutex, so it cannot be waiting on this thread here.
+	Engine::audioEngine()->requestChangeInModel();
 	lock();
-	// Zero the output planes before asking the client for this period. The client
-	// writes them itself, but it returns early when it cannot lock the shared memory
-	// or finds it invalid, and it can die mid-period; the pre-#589 host memset the
-	// whole shared block every period, so silence was guaranteed on those paths and
-	// the router could never read a stale period. Remote plugin output is mixed
-	// additively, so stale planes are rendered as audio.
-	std::ranges::fill(m_audioOutputs, 0.f);
-
-	if (m_failed || m_audioOutputs.empty())
+	m_deferredWork = false;
+	reportDeferredClientRequests();
+	if (m_connectionLost.exchange(false))
 	{
-		// Failed before this period was requested (or the buffer went away): leave
-		// silence behind for the same reason - a false return must not be able to
-		// leak this period's stale planes into the mix. The test comes *before* the
-		// request on purpose: returning without sending keeps the protocol in step
-		// (an unconsumed reply would be read as the next period's, i.e. one period
-		// of skew), and a plugin with zero output channels - the ports model accepts
-		// channelsOut == 0, so m_audioOutputs is then an empty span - would
-		// otherwise collect one reply per period until a socket buffer fills and
-		// the audio thread blocks in sendMessage().
-		unlock();
-		return false;
+		m_failed = true;
+		qCritical() << "RemotePlugin: the connection to the remote plugin client was lost; the plugin is silenced";
 	}
 
-	sendMessage(IdStartProcessing);
-
-	if (waitForMessage(IdProcessingDone).id != IdProcessingDone)
+	if (m_countChangePending)
 	{
-		// The client died (or abandoned the period) before it replied. Without
-		// this check process() would report success on a period the client may
-		// have written only partially, and the router would mix those planes;
-		// silence them, exactly as the neighbouring failure paths do.
-		std::ranges::fill(m_audioOutputs, 0.f);
-		unlock();
-		return false;
+		m_countChangePending = false;
+		if (!m_failed)
+		{
+			m_audioPorts->audioPortsModel().setChannelCounts(
+				static_cast<ch_cnt_t>(m_pendingInCount), static_cast<ch_cnt_t>(m_pendingOutCount));
+		}
 	}
 	unlock();
+	Engine::audioEngine()->doneChangeInModel();
+}
 
-	return true;
+
+
+
+void RemotePlugin::reportDeferredClientRequests()
+{
+	const auto drops = m_midiOverflow.recorded();
+	if( drops != m_reportedDrops )
+	{
+		qWarning() << "RemotePlugin:" << ( drops - m_reportedDrops )
+			<< "MIDI event(s) refused by a full queue; their channels were sent all-notes-off (" << drops
+			<< "refused in total)";
+		m_reportedDrops = drops;
+	}
+	if (m_pendingReplyLost)
+	{
+		qCritical() << "RemotePlugin: a reply to the remote client could not be sent without blocking; the plugin is failed";
+		m_pendingReplyLost = false;
+	}
+	if (m_pendingRetiredId != 0)
+	{
+		qCritical() << "RemotePlugin: remote client sent removed message id" << m_pendingRetiredId
+			<< "- host and remote plugin client are from different builds"
+			<< "(pre-#589 interleaved protocol); refusing the request and marking the plugin as failed";
+		m_pendingRetiredId = 0;
+	}
+	if (m_pendingDebug)
+	{
+		fprintf( stderr, "RemotePlugin::DebugMessage: %.*s",
+			static_cast<int>(m_pendingDebugLength), m_pendingDebugText.data() );
+		m_pendingDebug = false;
+		m_pendingDebugLength = 0;
+	}
 }
 
 
@@ -467,21 +719,65 @@ bool RemotePlugin::process()
 void RemotePlugin::processMidiEvent( const MidiEvent & _e,
 							const f_cnt_t _offset )
 {
-	message m( IdMidiEvent );
-	m.addInt( _e.type() );
-	m.addInt( _e.channel() );
-	m.addInt( _e.param( 0 ) );
-	m.addInt( _e.param( 1 ) );
-	m.addInt( _offset );
-	lock();
-	sendMessage( m );
-	unlock();
+	// Realtime: no lock and no allocation here, since the instrument hosts call this from the audio thread
+	// while the main thread may hold m_commMutex for a whole request/reply exchange. The event is sent by
+	// the next processing period, from sendQueuedMidiEvents().
+	HandoffMidiEvent event;
+	event.type = static_cast<std::uint8_t>( _e.type() );
+	event.channel = _e.channel();
+	event.param1 = _e.param( 0 );
+	event.param2 = _e.param( 1 );
+	event.offset = static_cast<std::uint32_t>( _offset );
+	if( !pushOrRecord( m_midiHandoff, m_midiOverflow, event ) )
+	{
+		m_deferredWork = true; // the main thread reports the refusal
+	}
+}
+
+RemotePluginBase::SendResult RemotePlugin::sendQueuedMidiEvents()
+{
+	if (m_pendingMidiSize != 0)
+	{
+		const auto result = sendFrameNonBlocking(m_pendingMidi.data(), m_pendingMidiSize);
+		if (result != SendResult::Sent) { return result; }
+		m_pendingMidiSize = 0;
+	}
+
+	// The drain is ordered and capped (see drainMidi()). A frame that cannot be sent is kept in m_pendingMidi and
+	// goes first next period, so nothing is taken from the queue without a place to go.
+	SendResult failure = SendResult::Sent;
+	const auto emitFrame = [this, &failure](const std::array<std::int32_t, 5>& values) -> bool
+	{
+		m_pendingMidiSize = frameFromInts(m_pendingMidi.data(), m_pendingMidi.size(), IdMidiEvent,
+			values.data(), values.size());
+		const auto result = sendFrameNonBlocking(m_pendingMidi.data(), m_pendingMidiSize);
+		if (result == SendResult::Sent)
+		{
+			m_pendingMidiSize = 0;
+			return true;
+		}
+		failure = result;
+		return false;
+	};
+
+	drainMidi(m_midiHandoff, m_midiOverflow, MidiDrainPerPeriod,
+		[&](const HandoffMidiEvent& event) -> bool
+		{
+			return emitFrame({event.type, event.channel, event.param1, event.param2,
+				static_cast<std::int32_t>(event.offset)});
+		},
+		[&](int channel) -> bool
+		{
+			return emitFrame({MidiControlChange, channel, MidiAllNotesOffController, 0, 0});
+		});
+	return failure;
 }
 
 void RemotePlugin::showUI()
 {
 	lock();
 	sendMessage( IdShowUI );
+	m_uiVisible = 1;
 	unlock();
 }
 
@@ -489,6 +785,77 @@ void RemotePlugin::hideUI()
 {
 	lock();
 	sendMessage( IdHideUI );
+	m_uiVisible = 0;
+	unlock();
+}
+
+RemotePluginBase::message RemotePlugin::waitForReplyWithin( const RemotePluginBase::message & _wm,
+	std::chrono::milliseconds _timeout )
+{
+	const auto deadline = std::chrono::steady_clock::now() + _timeout;
+	for (;;)
+	{
+		RemotePluginBase::message m;
+		if (receiveWithin(deadline, _timeout, m) != ReceiveResult::Got)
+		{
+			// Abandoned: its reply may still arrive, and must not be taken as the answer to a later query.
+			abandonQuery(_wm.id);
+			return RemotePluginBase::message();
+		}
+		// The reply to this query is the first one for its id that no abandoned query is waiting for. An abandoned
+		// query's reply is consumed here, once, and the wait goes on; any other message goes through processMessage().
+		if (m.id != _wm.id) { processMessage(m); }
+		else if (!consumeStaleQuery(m.id)) { return m; }
+		if (std::chrono::steady_clock::now() >= deadline)
+		{
+			abandonQuery(_wm.id);
+			return RemotePluginBase::message();
+		}
+	}
+}
+
+void RemotePlugin::abandonQuery( int _id )
+{
+	auto& stale = m_staleQueries[_id];
+	if( stale.count == 0 ) { stale.since = std::chrono::steady_clock::now(); }
+	++stale.count;
+}
+
+bool RemotePlugin::consumeStaleQuery( int _id )
+{
+	const auto it = m_staleQueries.find( _id );
+	if( it == m_staleQueries.end() || it->second.count <= 0 ) { return false; }
+	// Expired: the reply was never coming. The next reply for this id is the answer to the next query.
+	if( std::chrono::steady_clock::now() - it->second.since > StaleQueryExpiry )
+	{
+		m_staleQueries.erase( it );
+		return false;
+	}
+	--it->second.count;
+	return true;
+}
+
+void RemotePlugin::pumpBeforeBuffer()
+{
+	// A client's handshake messages are read here, on the main thread, while no shared block exists: the audio thread
+	// reads nothing then, and without this nothing would complete the handshake until a main-thread wait ran.
+	lock();
+	const auto now = std::chrono::steady_clock::now();
+	// A client that floods messages is read a bounded number per tick, so the main thread never stays in here.
+	constexpr int MaxMessagesPerTick = 64;
+	for (int taken = 0; taken < MaxMessagesPerTick; ++taken)
+	{
+		// Only a complete message is taken: a frame still arriving is left for the next tick, not given up on.
+		if (!completeMessageWaiting()) { break; }
+		RemotePluginBase::message m;
+		if (receiveFrameBefore(now, m) != ReceiveResult::Got) { break; }
+		processMessage(m);
+		if (m.id == IdInitDone && !m_failed)
+		{
+			m_audioPorts->activate(Engine::audioEngine()->framesPerPeriod());
+		}
+		if (m_audioBuffer) { break; }
+	}
 	unlock();
 }
 
@@ -497,6 +864,7 @@ void RemotePlugin::hideUI()
 
 auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, f_cnt_t frames) -> float*
 {
+	const RemotePluginBufferChangeGuard guard;
 	reportRefusedChannelCounts();
 	if (channelsIn == 0 && channelsOut == 0)
 	{
@@ -506,18 +874,24 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 
 	if (channelsIn == m_channelsIn && channelsOut == m_channelsOut && frames == m_frames)
 	{
-		return m_audioBuffer.get();
+		return m_hostBlock.data();
 	}
 
 	try
 	{
+		m_hostInputs = {};
+		m_hostOutputs = {};
+		m_sharedInputs = {};
 		m_audioOutputs = {};
 		m_audioBuffer.create((channelsIn + channelsOut) * frames);
+		m_hostBlock.assign((channelsIn + channelsOut) * frames, 0.f);
 	}
-	catch (const std::runtime_error& error)
+	catch (const std::exception& error)
 	{
 		std::cerr << "Failed to allocate shared audio buffer: " << error.what() << '\n';
 		m_audioBuffer.detach();
+		m_hostBlock.clear();
+		m_hostBlock.shrink_to_fit();
 		return nullptr;
 	}
 
@@ -525,12 +899,18 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 	m_channelsOut = channelsOut;
 	m_frames = frames;
 
-	m_audioOutputs = std::span{m_audioBuffer.get() + channelsIn * frames, channelsOut * frames};
+	const auto inputs = static_cast<std::size_t>(channelsIn * frames);
+	const auto outputs = static_cast<std::size_t>(channelsOut * frames);
+	m_sharedInputs = std::span{m_audioBuffer.get(), inputs};
+	m_audioOutputs = std::span{m_audioBuffer.get() + inputs, outputs};
+	m_hostInputs = std::span{m_hostBlock.data(), inputs};
+	m_hostOutputs = std::span{m_hostBlock.data() + inputs, outputs};
 
 	sendMessage(message(IdChangeSharedMemoryKey).addString(m_audioBuffer.key()));
 
-	return m_audioBuffer.get();
+	return m_hostBlock.data();
 }
+
 
 
 
@@ -601,6 +981,7 @@ bool RemotePlugin::processMessage( const message & _m )
 			return false;
 
 		case IdInitDone:
+			m_initDoneSeen = true;
 			reply = true;
 			break;
 
@@ -629,9 +1010,18 @@ bool RemotePlugin::processMessage( const message & _m )
 			// loudly instead of rendering garbage: fail the plugin, which makes
 			// process() zero-fill the output planes until the host is restarted
 			// with a matching client.
-			qCritical() << "RemotePlugin: remote client sent removed message id" << _m.id
-				<< "- host and remote plugin client are from different builds"
-				<< "(pre-#589 interleaved protocol); refusing the request and marking the plugin as failed";
+			// On the audio thread the log is deferred: it allocates and locks.
+			if (m_inProcessPeriod)
+			{
+				m_pendingRetiredId = _m.id;
+				m_deferredWork = true;
+			}
+			else
+			{
+				qCritical() << "RemotePlugin: remote client sent removed message id" << _m.id
+					<< "- host and remote plugin client are from different builds"
+					<< "(pre-#589 interleaved protocol); refusing the request and marking the plugin as failed";
+			}
 			m_failed = true;
 			break;
 
@@ -657,24 +1047,75 @@ bool RemotePlugin::processMessage( const message & _m )
 				m_refusalPending.store(true);
 				break;
 			}
+			if (m_inProcessPeriod)
+			{
+				// Realtime rule: the ports model re-sizes the shared buffer, which allocates and may
+				// create shared memory. Apply the change on the main thread (applyDeferredClientRequests());
+				// process() renders silence until it has been applied.
+				m_pendingInCount = inCount;
+				m_pendingOutCount = outCount;
+				m_countChangePending = true;
+				m_deferredWork = true;
+				break;
+			}
 			m_audioPorts->audioPortsModel().setChannelCounts(
 				static_cast<ch_cnt_t>(inCount), static_cast<ch_cnt_t>(outCount));
 			break;
 		}
 
 		case IdDebugMessage:
+			if (m_inProcessPeriod)
+			{
+				// Realtime rule: the text is copied into a fixed slot and printed on the main thread. A
+				// second message while one is pending is dropped.
+				if (!m_pendingDebug)
+				{
+					const auto& text = _m.stringArgument(0);
+					m_pendingDebugLength = std::min(text.size(), m_pendingDebugText.size() - 1);
+					std::copy_n(text.data(), m_pendingDebugLength, m_pendingDebugText.data());
+					m_pendingDebug = true;
+					m_deferredWork = true;
+				}
+				break;
+			}
 			fprintf( stderr, "RemotePlugin::DebugMessage: %s",
 						_m.getString( 0 ).c_str() );
 			break;
 
 		case IdProcessingDone:
+			// Only a main-thread wait gets here (collectProcessingReplies() takes the replies it is owed). The
+			// reply belongs to a period the audio thread gave up on, so that period is no longer owed.
+			if (m_owedProcessingReplies > 0) { --m_owedProcessingReplies; }
+			break;
+		case IdIsUIVisible:
+			if (!consumeStaleQuery(_m.id)) { m_uiVisible = _m.getInt() ? 1 : 0; }
+			break;
+		case IdInformationUpdated:
+			consumeStaleQuery(_m.id);
+			break;
 		case IdQuit:
 		default:
 			break;
 	}
 	if( reply )
 	{
-		sendMessage( reply_message );
+		if( m_inProcessPeriod )
+		{
+			// On the audio thread the reply is written without blocking. If it cannot be, the client
+			// is left waiting for it, which is the same failure as a lost client; it is reported later.
+			std::array<char, 512> frame{};
+			const auto size = frameFromMessage( frame.data(), frame.size(), reply_message );
+			if( size == 0 || sendFrameNonBlocking( frame.data(), size ) != SendResult::Sent )
+			{
+				m_pendingReplyLost = true;
+				m_deferredWork = true;
+				m_failed = true;
+			}
+		}
+		else
+		{
+			sendMessage( reply_message );
+		}
 	}
 	unlock();
 
