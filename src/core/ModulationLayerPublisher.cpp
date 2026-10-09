@@ -126,6 +126,37 @@ void ModulationLayerPublisher::noteStarted(int trackId) noexcept
 	}
 }
 
+void ModulationLayerPublisher::retireTarget(std::atomic<std::uint32_t>& alive,
+	std::atomic<std::uint64_t>& writers, std::uint32_t token)
+{
+	std::uint64_t state = writers.load(std::memory_order_acquire);
+	while (targetGeneration(state) == token)
+	{
+		if ((targetWriterState(state) & targetClosingBit) == 0)
+		{
+			const std::uint64_t closed = state | targetClosingBit;
+			if (!writers.compare_exchange_weak(state, closed, std::memory_order_acq_rel,
+				std::memory_order_acquire))
+			{
+				continue;
+			}
+			state = closed;
+		}
+
+		while (targetGeneration(state) == token
+			&& (targetWriterState(state) & targetWriterCountMask) != 0)
+		{
+			std::this_thread::yield();
+			state = writers.load(std::memory_order_acquire);
+		}
+		if (targetGeneration(state) != token) { return; }
+
+		std::uint32_t expected = token;
+		alive.compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
+		return;
+	}
+}
+
 double ModulationLayerPublisher::sinceTrigger(int modulator, int triggerTrack, double seconds) const noexcept
 {
 	if (triggerTrack < 0 || modulator < 0 || modulator >= ModulationLayer::MaxModulators) { return seconds; }
@@ -148,10 +179,21 @@ void ModulationLayerPublisher::publishView()
 		// the old tokens, so it skips the slot rather than writing a target
 		// that may since have been re-bound.
 		auto& writers = m_targetWriters[slot];
-		writers.fetch_or(targetClosingBit, std::memory_order_acq_rel);
-		while ((writers.load(std::memory_order_acquire) & targetWriterCountMask) != 0)
+		std::uint64_t writerState = writers.load(std::memory_order_acquire);
+		while ((targetWriterState(writerState) & targetClosingBit) == 0)
+		{
+			const std::uint64_t closed = writerState | targetClosingBit;
+			if (writers.compare_exchange_weak(writerState, closed, std::memory_order_acq_rel,
+				std::memory_order_acquire))
+			{
+				writerState = closed;
+				break;
+			}
+		}
+		while ((targetWriterState(writerState) & targetWriterCountMask) != 0)
 		{
 			std::this_thread::yield();
+			writerState = writers.load(std::memory_order_acquire);
 		}
 		QObject::disconnect(m_watch[slot]);
 		m_watch[slot] = QMetaObject::Connection{};
@@ -179,19 +221,14 @@ void ModulationLayerPublisher::publishView()
 
 		// Close the slot before AutomatableModel tears down its value state, and
 		// wait off the audio thread for any write that already pinned this token.
+		writers.store(targetGateState(token, targetClosingBit), std::memory_order_release);
 		std::atomic<std::uint32_t>* alive = &m_alive[slot];
-		std::atomic<std::uint32_t>* writersPtr = &writers;
+		std::atomic<std::uint64_t>* writersPtr = &writers;
 		m_watch[slot] = QObject::connect(model, &AutomatableModel::aboutToBeDestroyed,
 			[alive, writersPtr, token] {
-				writersPtr->fetch_or(targetClosingBit, std::memory_order_acq_rel);
-				while ((writersPtr->load(std::memory_order_acquire) & targetWriterCountMask) != 0)
-				{
-					std::this_thread::yield();
-				}
-				std::uint32_t expected = token;
-				alive->compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
+				ModulationLayerPublisher::retireTarget(*alive, *writersPtr, token);
 			});
-		writers.store(0, std::memory_order_release);
+		writers.store(targetGateState(token, 0), std::memory_order_release);
 	}
 	m_view = view;
 }

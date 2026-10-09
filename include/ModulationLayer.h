@@ -86,6 +86,8 @@
 #include "ModulationVoices.h"
 #include "lmms_export.h"
 
+class ModulationAudioViewTest;
+
 namespace lmms
 {
 
@@ -368,19 +370,20 @@ public:
 	bool targetAlive(int slot, std::uint32_t token) const noexcept
 	{
 		if (slot < 0 || slot >= ModulationRuntime::MaxEntries || token == 0) { return false; }
-		return m_alive[static_cast<std::size_t>(slot)].load(std::memory_order_acquire) == token
-			&& (m_targetWriters[static_cast<std::size_t>(slot)].load(std::memory_order_acquire)
-				& targetClosingBit) == 0;
+		const auto index = static_cast<std::size_t>(slot);
+		const std::uint64_t state = m_targetWriters[index].load(std::memory_order_acquire);
+		return m_alive[index].load(std::memory_order_acquire) == token
+			&& targetGeneration(state) == token && (targetWriterState(state) & targetClosingBit) == 0;
 	}
 	//! Audio thread: pin a target's value state until endTargetWrite(). No allocation or wait.
 	bool beginTargetWrite(int slot, std::uint32_t token) const noexcept
 	{
 		if (!targetAlive(slot, token)) { return false; }
 		auto& writers = m_targetWriters[static_cast<std::size_t>(slot)];
-		std::uint32_t state = writers.load(std::memory_order_acquire);
-		while ((state & targetClosingBit) == 0)
+		std::uint64_t state = writers.load(std::memory_order_acquire);
+		while (targetGeneration(state) == token && (targetWriterState(state) & targetClosingBit) == 0)
 		{
-			if ((state & targetWriterCountMask) == targetWriterCountMask) { return false; }
+			if ((targetWriterState(state) & targetWriterCountMask) == targetWriterCountMask) { return false; }
 			if (writers.compare_exchange_weak(state, state + 1, std::memory_order_acq_rel,
 				std::memory_order_acquire))
 			{
@@ -438,8 +441,23 @@ public:
 	}
 
 private:
+	friend class ::ModulationAudioViewTest;
 	static constexpr std::uint32_t targetClosingBit = std::uint32_t{1} << 31;
 	static constexpr std::uint32_t targetWriterCountMask = targetClosingBit - 1;
+	static std::uint32_t targetGeneration(std::uint64_t state) noexcept
+	{
+		return static_cast<std::uint32_t>(state >> 32);
+	}
+	static std::uint32_t targetWriterState(std::uint64_t state) noexcept
+	{
+		return static_cast<std::uint32_t>(state);
+	}
+	static std::uint64_t targetGateState(std::uint32_t token, std::uint32_t writerState) noexcept
+	{
+		return (static_cast<std::uint64_t>(token) << 32) | writerState;
+	}
+	static void retireTarget(std::atomic<std::uint32_t>& alive, std::atomic<std::uint64_t>& writers,
+		std::uint32_t token);
 	//! Rebuilds m_view and the liveness watches from m_runtime (control thread,
 	//! inside edit()'s write window).
 	void publishView();
@@ -450,7 +468,7 @@ private:
 	ModulationRuntime m_runtime{};
 	ModulationAudioView m_view{};
 	std::array<std::atomic<std::uint32_t>, ModulationRuntime::MaxEntries> m_alive{};
-	mutable std::array<std::atomic<std::uint32_t>, ModulationRuntime::MaxEntries> m_targetWriters{};
+	mutable std::array<std::atomic<std::uint64_t>, ModulationRuntime::MaxEntries> m_targetWriters{};
 	std::array<QMetaObject::Connection, ModulationRuntime::MaxEntries> m_watch{};
 	std::uint32_t m_nextToken = 0;
 	std::atomic<bool> m_hasLayer{false};
