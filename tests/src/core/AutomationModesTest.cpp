@@ -834,6 +834,18 @@ private slots:
 		QVERIFY(!clip.moveNode(TimePos(144), TimePos(0), 0.1f));
 		QVERIFY(clip.getTimeMap().contains(144));
 	}
+
+	void clipOwnsRangeRescaling()
+	{
+		Rig rig(Engine::getSong());
+		rig.writeCurve();
+		QVERIFY(rig.clip.rescaleValuesToRange(0.f, 2.f, -1.f, 1.f));
+		QCOMPARE(rig.clip.getTimeMap().value(0).getInValue(), -0.5f);
+		QCOMPARE(rig.clip.getTimeMap().value(0).getOutValue(), -0.5f);
+		QCOMPARE(rig.clip.getTimeMap().value(96).getInValue(), -0.75f);
+		QCOMPARE(rig.clip.getTimeMap().value(192).getInValue(), 0.f);
+		QVERIFY(!rig.clip.rescaleValuesToRange(-1.f, 1.f, -1.f, 1.f));
+	}
 };
 
 QTEST_GUILESS_MAIN(AutomationModesTest)

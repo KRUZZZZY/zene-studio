@@ -120,6 +120,8 @@ public:
 	bool setNodeCurve(const TimePos& time, AutomationNode::Curve curve, float bend = 0.f);
 	//! Move one point while retaining its curve and bend; refuses an occupied destination.
 	bool moveNode(const TimePos& from, const TimePos& to, float inValue);
+	//! Rescale all point values after the controlled model's range changes.
+	bool rescaleValuesToRange(float oldMin, float oldMax, float newMin, float newMax);
 
 	void resetNodes(const int tick0, const int tick1);
 

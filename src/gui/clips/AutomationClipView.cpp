@@ -471,30 +471,7 @@ void AutomationClipView::scaleTimemapToFit( float oldMin, float oldMax )
 		return;
 	}
 
-	// TODO: Currently when rescaling the timeMap values to fit the new range of values (newMin and newMax)
-	// only the inValue is being considered and the outValue is being reset to the inValue (so discrete jumps
-	// are discarded). Possibly later we will want discrete jumps to be maintained so we will need to upgrade
-	// the logic to account for them.
-	for( AutomationClip::timeMap::iterator it = m_clip->m_timeMap.begin();
-		it != m_clip->m_timeMap.end(); ++it )
-	{
-		// If the values are out of the previous range, fix them so they are
-		// between oldMin and oldMax.
-		if (INVAL(it) < oldMin)
-		{
-			it.value().setInValue(oldMin);
-		}
-		else if (INVAL(it) > oldMax)
-		{
-			it.value().setInValue(oldMax);
-		}
-		// Calculate what the value would be proportionally in the new range
-		it.value().setInValue((INVAL(it) - oldMin) * (newMax - newMin) / (oldMax - oldMin) + newMin);
-		// Read earlier TODO comment: For now I'm discarding the discrete jumps during the rescaling
-		it.value().setOutValue(INVAL(it));
-	}
-
-	m_clip->generateTangents();
+	m_clip->rescaleValuesToRange(oldMin, oldMax, newMin, newMax);
 }
 
 } // namespace lmms::gui

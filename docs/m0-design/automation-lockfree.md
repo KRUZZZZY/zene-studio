@@ -58,7 +58,7 @@ The render path takes `m_clipMutex` in `AutomationClip::writeBlockRamp()` (`src/
 | `src/core/AutomationClipTransforms.cpp:258-275` | Shape draw erases the selected range and inserts generated nodes. | `drawShape()` |
 | `src/core/AutomationClipTransforms.cpp:337-377` | Range transform moves/rescales nodes and installs the result if destinations do not collide. | `transformRange()` |
 | `src/core/AutomationClipTransforms.cpp:415-445` | Thinning removes redundant nodes and recalculates tangents. | `thin()` |
-| `src/gui/clips/AutomationClipView.cpp:478-495` | Rescales point values when the controlled model's range changes, then regenerates tangents. | Add a clip-owned range-rescale edit method. |
+| `src/gui/clips/AutomationClipView.cpp:478-495` | Rescales point values when the controlled model's range changes, then regenerates tangents. | `rescaleValuesToRange()` |
 | `src/gui/editors/AutomationEditor.cpp:368,376-378,398-423` | Fine tune changes values; erase/reset tools remove points, reset out values, or unlock tangents. | `setNodeInValue()` / `setNodeOutValue()` / `removeNode()` / `resetNodes()` / `setNodeLockedTangents()` |
 | `src/gui/editors/AutomationEditor.cpp:570,590,629,839-899` | Draw-out edits values; tangent edit locks then changes one tangent. | `setNodeOutValue()` / `setNodeLockedTangents()` / `setNodeTangent()` |
 | `src/gui/editors/AutomationPointEdit.cpp:65-80` | Point move removes and reinserts a node, then restores its curve/bend. | `moveNode()` |

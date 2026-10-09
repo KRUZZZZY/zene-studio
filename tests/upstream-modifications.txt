@@ -1834,3 +1834,7 @@ src/core/ControlCommandsControl.cpp	5467 round 3: include engine-list, bus-edit 
 tests/src/core/AudioBusPlayHandleQueueTest.cpp	5467 round 3: prove full-capacity appends do not grow the QList, main-thread low-water refill, allocation-free inline fallback, and worker subnote output with the edit queue full; round 4: exercise a capacity-deferred engine handle through clear, direct and queued remove, type removal, and SampleTrack destruction, checking allocation count, destruction, retry, and playback.
 tests/src/core/ControlRegistryTest.cpp	5467 round 3: assert control.ping exposes the play-handle overflow fields.
 tests/src/core/ModulationAudioViewTest.cpp	0.5.0 M0 blockers 5173/5186: pauses an audio modulation write inside dataChanged, deletes its model on another thread, and asserts teardown waits for the in-flight write (red against the token-only implementation).
+include/AutomationClip.h	0.5.0 m0 cluster 5528: declares rescaleValuesToRange() so AutomationClipView no longer mutates map nodes itself.
+src/core/AutomationClip.cpp	0.5.0 m0 cluster 5528: implements rescaleValuesToRange() under the clip edit lock and regenerates tangents after the complete range edit.
+src/gui/clips/AutomationClipView.cpp	0.5.0 m0 cluster 5528: scaleTimemapToFit delegates point value updates and tangent regeneration to AutomationClip::rescaleValuesToRange().
+src/gui/editors/PianoRoll.cpp	0.5.0 m0 cluster 5528: drawDetuningInfo binds the automation map through a const reference because this renderer only reads nodes.

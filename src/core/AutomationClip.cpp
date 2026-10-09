@@ -483,6 +483,25 @@ bool AutomationClip::moveNode(const TimePos& from, const TimePos& to, float inVa
 }
 
 
+bool AutomationClip::rescaleValuesToRange(float oldMin, float oldMax, float newMin, float newMax)
+{
+	if (oldMin == oldMax || (oldMin == newMin && oldMax == newMax)) { return false; }
+
+	QMutexLocker m(&m_clipMutex);
+	if (m_timeMap.isEmpty()) { return false; }
+
+	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it)
+	{
+		const float clamped = std::clamp(it.value().m_inValue, oldMin, oldMax);
+		it.value().m_inValue = (clamped - oldMin) * (newMax - newMin) / (oldMax - oldMin) + newMin;
+		it.value().m_outValue = it.value().m_inValue;
+	}
+	generateTangents();
+	emit dataChanged();
+	return true;
+}
+
+
 
 
 /**
