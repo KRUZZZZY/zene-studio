@@ -2719,3 +2719,9 @@ in a project file as its own `<z:subscenes>` section (`docs/SCENES-NATIVE.md` §
 - What an older build does with a new project was checked by reading its loader (`Song::restoreNamedSection` has no
   branch for `<z:subscenes>`, and its `<z:scenes>` claim, unchanged here, still claims the section this build writes -
   asserted in `SessionSubSceneTest`), not by running an older binary on the file.
+
+- **The v2 project container is opt-in and older builds cannot open it (Q050-007).** Saving as a v2 container
+  (`project.save {format: "v2"}`, the Save As checkbox, or `app/savecontainerv2`) writes a larger `.mmpz` that
+  builds before 0.5.0 refuse; ordinary saves stay legacy. The asset verbs (`project.missing_assets`,
+  `project.hash_assets`, `project.relink`) and the revision compare do not read containers yet. See
+  `docs/PROJECT-CONTAINER-V2.md`.
