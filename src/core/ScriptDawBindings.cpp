@@ -228,14 +228,30 @@ void syncForRead()
 	ScriptEngine::instance()->flushCommandsForRead();
 }
 
+AutomatableModel* mixerChannelGainModel(const QString& mixerChannelId)
+{
+	if (mixerChannelId.isEmpty()) { return nullptr; }
+	ControlResult error;
+	MixerChannel* channel = control::resolveMixerChannel(mixerChannelId, &error);
+	return channel == nullptr ? nullptr : &channel->m_volumeModel;
+}
+
+EffectChain* mixerChannelEffectChain(const QString& mixerChannelId)
+{
+	if (mixerChannelId.isEmpty()) { return nullptr; }
+	ControlResult error;
+	MixerChannel* channel = control::resolveMixerChannel(mixerChannelId, &error);
+	return channel == nullptr ? nullptr : &channel->m_fxChain;
+}
+
 LuaMixerChannel& newMixerChannel(MixerChannel* channel)
 {
 	return mixerChannelPool().add(LuaMixerChannel(channel));
 }
 
-LuaEffectChain& newEffectChain(EffectChain* chain)
+LuaEffectChain& newEffectChain(const QString& mixerChannelId)
 {
-	return effectChainPool().add(LuaEffectChain(chain));
+	return effectChainPool().add(LuaEffectChain(mixerChannelId));
 }
 
 LuaEffect& newEffect(EffectChain* chain, Effect* effect)
@@ -481,9 +497,7 @@ bool LuaMixerChannel::soloed() const
 
 LuaFloatModel& LuaMixerChannel::gainModel() const
 {
-	ScriptDawBindings::syncForRead();
-	MixerChannel* channel = resolve();
-	return ScriptBindings::newFloatModel(channel == nullptr ? nullptr : &channel->m_volumeModel);
+	return ScriptBindings::newMixerGainModel(m_id);
 }
 
 LuaBoolModel& LuaMixerChannel::muteModel() const
@@ -502,9 +516,7 @@ LuaBoolModel& LuaMixerChannel::soloModel() const
 
 LuaEffectChain& LuaMixerChannel::chain() const
 {
-	ScriptDawBindings::syncForRead();
-	MixerChannel* channel = resolve();
-	return ScriptDawBindings::newEffectChain(channel == nullptr ? nullptr : &channel->m_fxChain);
+	return ScriptDawBindings::newEffectChain(m_id);
 }
 
 int LuaMixerChannel::sendCount() const
@@ -542,6 +554,71 @@ bool LuaMixerChannel::sendPreFader(int index) const
 	MixerChannel* channel = resolve();
 	return channel != nullptr && index >= 0 && index < static_cast<int>(channel->m_sends.size())
 		&& channel->m_sends[index]->preFader();
+}
+
+// ---------------------------------------------------------------------------
+// LuaFloatModel
+// ---------------------------------------------------------------------------
+
+AutomatableModel* LuaFloatModel::resolve() const
+{
+	if (!m_mixerChannelId.isEmpty())
+	{
+		ScriptDawBindings::syncForRead();
+		return ScriptDawBindings::mixerChannelGainModel(m_mixerChannelId);
+	}
+	return m_model;
+}
+
+bool LuaFloatModel::isValid() const
+{
+	return resolve() != nullptr;
+}
+
+float LuaFloatModel::value() const
+{
+	AutomatableModel* model = resolve();
+	if (!model) { return 0.0f; }
+	if (m_mixerChannelId.isEmpty()) { ScriptEngine::instance()->flushCommandsForRead(); }
+	return model->value<float>();
+}
+
+void LuaFloatModel::setValue(float value)
+{
+	AutomatableModel* model = resolve();
+	if (!model) { return; }
+	ScriptCommand command;
+	command.type = ScriptCommand::Type::SetModelValue;
+	command.object0 = model;
+	command.f0 = value;
+	ScriptEngine::instance()->enqueue(command);
+}
+
+float LuaFloatModel::minValue() const
+{
+	AutomatableModel* model = resolve();
+	return model ? model->minValue<float>() : 0.0f;
+}
+
+float LuaFloatModel::maxValue() const
+{
+	AutomatableModel* model = resolve();
+	return model ? model->maxValue<float>() : 0.0f;
+}
+
+QString LuaFloatModel::name() const
+{
+	AutomatableModel* model = resolve();
+	return model ? model->displayName() : QString();
+}
+
+QString LuaFloatModel::type() const
+{
+	AutomatableModel* model = resolve();
+	if (dynamic_cast<IntModel*>(model) != nullptr) { return QStringLiteral("int"); }
+	if (dynamic_cast<BoolModel*>(model) != nullptr) { return QStringLiteral("bool"); }
+	if (dynamic_cast<FloatModel*>(model) != nullptr) { return QStringLiteral("float"); }
+	return QStringLiteral("unknown");
 }
 
 } // namespace lmms

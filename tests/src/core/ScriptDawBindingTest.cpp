@@ -128,10 +128,14 @@ const char* const RemovedChannelScript = R"LUA(
 local mixer = zene.mixer()
 local channel = mixer:addChannel()
 local id = channel:id()
+local gain = channel:gainModel()
+local chain = channel:chain()
 local removal = zene.command("mixer.remove_channel", {channel = id})
 print("removed=" .. tostring(removal.removed == id)
     .. " valid=" .. tostring(channel:isValid())
-    .. " gain-zero=" .. tostring(channel:gain() == 0))
+    .. " gain-zero=" .. tostring(channel:gain() == 0)
+    .. " gain-view-valid=" .. tostring(gain:isValid())
+    .. " chain-view-valid=" .. tostring(chain:isValid()))
 )LUA";
 
 } // namespace
@@ -217,7 +221,7 @@ private slots:
 		QVERIFY2(error.isEmpty(), qPrintable(error));
 		QCOMPARE(static_cast<int>(mixer->numChannels()), before);
 		QCOMPARE(engine->takeLogMessages(), QStringList{
-			qstr("removed=true valid=false gain-zero=true")});
+			qstr("removed=true valid=false gain-zero=true gain-view-valid=false chain-view-valid=false")});
 	}
 
 	//! An overlong UTF-8 name must be refused intact, not split by the queue payload.

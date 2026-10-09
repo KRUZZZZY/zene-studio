@@ -376,13 +376,14 @@ void LuaMixerChannel::setName(const QString& name)
 
 LuaEffect& LuaEffectChain::loadEffect(const QString& device) const
 {
-	if (m_chain == nullptr)
+	EffectChain* chain = resolve();
+	if (chain == nullptr)
 	{
 		return ScriptDawBindings::newEffect(nullptr, nullptr);
 	}
-	const int before = effectCount();
+	const int before = static_cast<int>(chain->effects().size());
 	ScriptCommand command;
-	if (!namedDawCommand(ScriptDawBindings::Op::LoadEffect, m_chain, device, command))
+	if (!namedDawCommand(ScriptDawBindings::Op::LoadEffect, chain, device, command))
 	{
 		logRefusal(QStringLiteral("loading '%1'").arg(device), ControlResult::failure(
 			ControlErrorKind::InvalidArgs, QStringLiteral("device name exceeds the %1-byte command payload limit")
@@ -398,8 +399,9 @@ LuaEffect& LuaEffectChain::loadEffect(const QString& device) const
 
 void LuaEffectChain::removeEffect(int index)
 {
-	if (m_chain == nullptr) { return; }
-	enqueueDaw(dawCommand(ScriptDawBindings::Op::RemoveEffect, m_chain, index));
+	EffectChain* chain = resolve();
+	if (chain == nullptr) { return; }
+	enqueueDaw(dawCommand(ScriptDawBindings::Op::RemoveEffect, chain, index));
 	ScriptEngine::instance()->flushCommandsForRead();
 }
 

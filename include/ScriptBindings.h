@@ -117,15 +117,17 @@ private:
  *
  *  The wrapper is deliberately generic: AutomatableModel is the common base of
  *  FloatModel, IntModel and BoolModel, so one Lua class covers every parameter
- *  an instrument exposes (spec section 3). \c type() reports the concrete
- *  model kind. */
+ *  an instrument exposes (spec section 3). Mixer gain views additionally keep
+ *  their channel id and resolve the live model on each access. \c type()
+ *  reports the concrete model kind. */
 class LuaFloatModel
 {
 public:
 	LuaFloatModel() = default;
 	explicit LuaFloatModel(AutomatableModel* model) : m_model(model) {}
+	explicit LuaFloatModel(QString mixerChannelId) : m_mixerChannelId(mixerChannelId) {}
 
-	bool isValid() const { return m_model != nullptr; }
+	bool isValid() const;
 	float value() const;
 	void setValue(float value);
 	float minValue() const;
@@ -135,7 +137,9 @@ public:
 	QString type() const;
 
 private:
+	AutomatableModel* resolve() const;
 	AutomatableModel* m_model{nullptr};
+	QString m_mixerChannelId;
 };
 
 //! Lua-facing wrapper for a BoolModel (registered as `BoolModel`).
@@ -404,6 +408,7 @@ LuaTrack& newTrack(Track* track);
 LuaInstrumentTrack& newInstrumentTrack(InstrumentTrack* track);
 LuaInstrument& newInstrument(Instrument* instrument);
 LuaFloatModel& newFloatModel(AutomatableModel* model);
+LuaFloatModel& newMixerGainModel(const QString& mixerChannelId);
 LuaBoolModel& newBoolModel(BoolModel* model);
 LuaMidiEvent& newMidiEvent();
 

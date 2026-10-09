@@ -76,19 +76,32 @@ QList<AutomatableModel*> effectParameters(Effect* effect)
 // LuaEffectChain
 // ---------------------------------------------------------------------------
 
+EffectChain* LuaEffectChain::resolve() const
+{
+	if (m_mixerChannelId.isEmpty()) { return nullptr; }
+	ScriptDawBindings::syncForRead();
+	return ScriptDawBindings::mixerChannelEffectChain(m_mixerChannelId);
+}
+
+bool LuaEffectChain::isValid() const
+{
+	return resolve() != nullptr;
+}
+
 int LuaEffectChain::effectCount() const
 {
-	return m_chain == nullptr ? 0 : static_cast<int>(m_chain->effects().size());
+	EffectChain* chain = resolve();
+	return chain == nullptr ? 0 : static_cast<int>(chain->effects().size());
 }
 
 LuaEffect& LuaEffectChain::effect(int index) const
 {
-	ScriptDawBindings::syncForRead();
-	if (m_chain == nullptr || index < 0 || index >= effectCount())
+	EffectChain* chain = resolve();
+	if (chain == nullptr || index < 0 || index >= static_cast<int>(chain->effects().size()))
 	{
-		return ScriptDawBindings::newEffect(m_chain, nullptr);
+		return ScriptDawBindings::newEffect(chain, nullptr);
 	}
-	return ScriptDawBindings::newEffect(m_chain, m_chain->effects()[index]);
+	return ScriptDawBindings::newEffect(chain, chain->effects()[index]);
 }
 
 LuaEffect& LuaEffectChain::effectById(const QString& id) const
