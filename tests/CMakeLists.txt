@@ -370,6 +370,7 @@ set(LMMS_TESTS
 	src/core/MidiOutQueueTest.cpp
 	src/core/FrozenTakeHandoffTest.cpp
 	src/core/AudioBusPlayHandleQueueTest.cpp
+	src/core/SlicerTPlayheadTest.cpp
 	src/core/RetroMidiCaptureCommandsTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
 	# The engine half of MIDI controller auto-reconnection (0.3.0 feature-list
@@ -1245,6 +1246,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostClientLoopTest"
 		# 0.5.0 L05: slicing to a sampler track loads the build's SlicerT module.
 		OR LMMS_TEST_NAME STREQUAL "AudioEditingTest"
+		# 4468: a sounding slice note, through the SlicerT module built beside the test binary.
+		OR LMMS_TEST_NAME STREQUAL "SlicerTPlayheadTest"
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceOrganiserTest"

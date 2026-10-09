@@ -2137,6 +2137,7 @@ tests/src/core/SidechainInputsTest.cpp
 # tests/src/core/ModulationLayerTest.cpp, which is registered in
 # tests/all-sources.txt instead); re-generating is the merge's job, not a lane's,
 # and this gate's own scan (Gate 9) is green with the entries below.
+tests/src/core/SlicerTPlayheadTest.cpp
 tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h

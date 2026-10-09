@@ -73,6 +73,10 @@ SlicerT::SlicerT(InstrumentTrack* instrumentTrack)
 	m_sliceSnap.addItem("1/16");
 	m_sliceSnap.addItem("1/32");
 	m_sliceSnap.setValue(0);
+
+	// Cluster 4468: the GUI learns the playhead from this timer, never from the render thread.
+	connect(&m_playheadPoll, &QTimer::timeout, this, [this] { pollPlayhead(); });
+	m_playheadPoll.start(20);
 }
 
 void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
@@ -103,7 +107,7 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 	}
 	else
 	{
-		emit isPlaying(-1, 0, 0);
+		publishPlayhead(-1, 0, 0);
 		return;
 	}
 
@@ -132,15 +136,34 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 		}
 
 		const auto currentNote = static_cast<float>(playbackState->frameIndex()) / m_originalSample.sampleSize();
-		emit isPlaying(currentNote, sliceStart, sliceEnd);
+		publishPlayhead(currentNote, sliceStart, sliceEnd);
 	}
-	else { emit isPlaying(-1, 0, 0); }
+	else { publishPlayhead(-1, 0, 0); }
 }
 
 void SlicerT::deleteNotePluginData(NotePlayHandle* handle)
 {
 	delete static_cast<Sample::PlaybackState*>(handle->m_pluginData);
-	emit isPlaying(-1, 0, 0);
+	publishPlayhead(-1, 0, 0);
+}
+
+void SlicerT::publishPlayhead(float current, float start, float end) noexcept
+{
+	m_playheadCurrent.store(current, std::memory_order_relaxed);
+	m_playheadStart.store(start, std::memory_order_relaxed);
+	m_playheadEnd.store(end, std::memory_order_relaxed);
+}
+
+void SlicerT::pollPlayhead()
+{
+	const float current = m_playheadCurrent.load(std::memory_order_relaxed);
+	const float start = m_playheadStart.load(std::memory_order_relaxed);
+	const float end = m_playheadEnd.load(std::memory_order_relaxed);
+	if (current == m_shownCurrent && start == m_shownStart && end == m_shownEnd) { return; }
+	m_shownCurrent = current;
+	m_shownStart = start;
+	m_shownEnd = end;
+	emit isPlaying(current, start, end);
 }
 
 // uses the spectral flux to determine the change in magnitude

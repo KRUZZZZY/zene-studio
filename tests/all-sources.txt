@@ -2635,6 +2635,7 @@ tests/src/core/SessionSchedulerTest.cpp
 tests/src/core/SessionSubSceneTest.cpp
 tests/src/core/SessionTuningTest.cpp
 tests/src/core/SidechainInputsTest.cpp
+tests/src/core/SlicerTPlayheadTest.cpp
 tests/src/core/SlideNotesTest.cpp
 tests/src/core/SmfInterchangeRoundTripTest.cpp
 tests/src/core/SmfInterchangeTest.cpp
