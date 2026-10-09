@@ -84,6 +84,7 @@ private slots:
 	void toggleMixerChannelDeletionWarning(bool enabled);
 	void toggleMMPZ(bool enabled);
 	void toggleDisableBackup(bool enabled);
+	void toggleSaveContainerV2(bool enabled);
 	void toggleOpenLastProject(bool enabled);
 	void detachBehaviorChanged();
 	void loopMarkerModeChanged();
@@ -148,6 +149,7 @@ private:
 	bool m_mixerChannelDeletionWarning;
 	bool m_MMPZ;
 	bool m_disableBackup;
+	bool m_saveContainerV2;
 	bool m_openLastProject;
 	QString m_detachBehavior;
 	QComboBox* m_detachBehaviorComboBox;

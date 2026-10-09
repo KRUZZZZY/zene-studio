@@ -189,8 +189,16 @@ SaveOptionsWidget::SaveOptionsWidget(Song::SaveOptions &saveOptions) {
 	m_saveAsProjectBundleCheckbox->setText(tr("Save As Project Bundle (with resources)"));
 	m_saveAsProjectBundleCheckbox->setModel(&saveOptions.saveAsProjectBundle);
 
+	// Q050-007: the visible choice. Ticked, the project is written as a v2 container; the
+	// cost (a larger file that older builds cannot open) is on the box, not behind a manual.
+	m_saveAsV2ContainerCheckbox = new LedCheckBox(nullptr);
+	m_saveAsV2ContainerCheckbox->setText(tr("Save as v2 container (larger file; older builds cannot open it)"));
+	m_saveAsV2ContainerCheckbox->setToolTip(Song::containerV2Note());
+	m_saveAsV2ContainerCheckbox->setModel(&saveOptions.saveAsV2Container);
+
 	layout->addWidget(m_discardMIDIConnectionsCheckbox);
 	layout->addWidget(m_saveAsProjectBundleCheckbox);
+	layout->addWidget(m_saveAsV2ContainerCheckbox);
 
 	setLayout(layout);
 }

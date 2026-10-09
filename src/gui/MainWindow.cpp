@@ -323,6 +323,11 @@ void MainWindow::finalize()
 	declares(addAction(project_menu, "project_save", tr("Save &As..."),
 		keySequence(Qt::CTRL, Qt::SHIFT, Qt::Key_S), &MainWindow::saveProjectAs), "project.save");
 
+	// Q050-007: the opt-in v2 container, as a menu entry of its own (the Save As dialog also carries
+	// the choice as a checkbox). The same project.save command, with format "v2".
+	declares(addAction(project_menu, "project_save", tr("Save as v2 &Container..."),
+		QKeySequence(), &MainWindow::saveProjectAsV2Container), "project.save");
+
 	declares(addAction(project_menu, "project_save", tr("Save as New &Version"),
 		keySequence(Qt::CTRL, Qt::ALT, Qt::Key_S), &MainWindow::saveProjectAsNewVersion),
 		"project.save_version");
@@ -1026,6 +1031,30 @@ bool MainWindow::saveProject()
 
 bool MainWindow::saveProjectAs()
 {
+	return saveProjectAsWithFormat(false);
+}
+
+
+
+
+bool MainWindow::saveProjectAsV2Container()
+{
+	return saveProjectAsWithFormat(true);
+}
+
+
+
+
+bool MainWindow::saveProjectAsWithFormat(bool preferV2)
+{
+	// Q050-007: the dialog's v2 checkbox starts at what a plain Save of this project would
+	// write - ticked for the entry above, for a project that already is a container, and
+	// when the global setting is on - so unticking it is the way back to the legacy blob.
+	Song * song = Engine::getSong();
+	const QString current = song->projectFileName();
+	song->getSaveOptions().saveAsV2Container.setValue(
+		preferV2 || song->plannedSaveFormat(current.isEmpty() ? QStringLiteral(".mmpz") : current)
+			== Song::SaveFormat::V2Container);
 	auto optionsWidget = new SaveOptionsWidget(Engine::getSong()->getSaveOptions());
 	VersionedSaveDialog sfd( this, optionsWidget, tr( "Save Project" ), "",
 			tr( "Zene Studio Project" ) + " (*.mmpz *.mmp);;" +
@@ -1065,6 +1094,8 @@ bool MainWindow::saveProjectAs()
 				}
 			}
 		}
+		// The dialog was answered: its v2 checkbox now decides the format (see SaveOptions).
+		song->getSaveOptions().formatChosen = true;
 		if( this->guiSaveProjectAs( fname ) )
 		{
 			if( getSession() == SessionState::Recover )
@@ -1074,6 +1105,7 @@ bool MainWindow::saveProjectAs()
 			return true;
 		}
 	}
+	song->getSaveOptions().setDefaultOptions();
 	return false;
 }
 
@@ -1925,6 +1957,11 @@ void MainWindow::handleSaveResult(QString const & filename, bool songSavedSucces
 	{
 		TextFloat::displayMessage( tr( "Project saved" ), tr( "The project %1 is now saved.").arg( filename ),
 				embed::getIconPixmap( "project_save", 24, 24 ), 2000 );
+		// Q050-007: a v2 container is said to be one, with its cost, every time.
+		if (Engine::getSong()->lastSavedFormat() == Song::SaveFormat::V2Container)
+		{
+			statusBar()->showMessage( Song::containerV2Note(), 8000 );
+		}
 	}
 	if (songSavedSuccessfully)
 	{

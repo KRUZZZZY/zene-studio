@@ -166,6 +166,7 @@ public slots:
 	void openProject();
 	bool saveProject();
 	bool saveProjectAs();
+	bool saveProjectAsV2Container();
 	bool saveProjectAsNewVersion();
 	void saveProjectAsDefaultTemplate();
 	void showSettingsDialog();
@@ -231,6 +232,7 @@ private:
 	const QList<QAction*>& floatingWindowActions();
 
 	void exportProject(bool multiExport = false);
+	bool saveProjectAsWithFormat(bool preferV2);
 	void handleSaveResult(QString const & filename, bool songSavedSuccessfully);
 	bool guiSaveProject();
 	bool guiSaveProjectAs( const QString & filename );
