@@ -184,7 +184,7 @@ private slots:
 		const ControlResult beforeOverflow = ControlRegistry::instance()->invoke(QStringLiteral("control.ping"));
 		QVERIFY(beforeOverflow.ok);
 		const qint64 overflowsBefore = beforeOverflow.result.value(QStringLiteral("audio")).toObject()
-			.value(QStringLiteral("slicert_state_overflow")).toInteger();
+			.value(QStringLiteral("slicert_state_overflow")).toInt();
 		Note overlappingNote(TimePos(1000000), TimePos(0), track->baseNote());
 		Engine::audioEngine()->setOverloadSheddingEnabled(false);
 		for (int i = 0; i < 130; ++i)
@@ -196,7 +196,7 @@ private slots:
 		const ControlResult afterOverflow = ControlRegistry::instance()->invoke(QStringLiteral("control.ping"));
 		QVERIFY(afterOverflow.ok);
 		const qint64 overflowsAfter = afterOverflow.result.value(QStringLiteral("audio")).toObject()
-			.value(QStringLiteral("slicert_state_overflow")).toInteger();
+			.value(QStringLiteral("slicert_state_overflow")).toInt();
 		QVERIFY2(overflowsAfter > overflowsBefore, "SlicerT state-pool exhaustion was not reported by control.ping");
 		track->processInEvent(noteOff);
 		test::resetAllocationCount();

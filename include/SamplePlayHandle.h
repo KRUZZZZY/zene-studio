@@ -30,6 +30,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <optional>
 #include <utility>
 
@@ -96,6 +97,20 @@ public:
 	{
 		m_patternTrack = pt;
 	}
+	//! These methods are only for AudioEngine's fixed sample-voice pool.
+	static constexpr std::uint16_t NotPooled = std::numeric_limits<std::uint16_t>::max();
+	void setPoolSlot(std::uint16_t slot, bool frozenTake) noexcept
+	{
+		m_poolSlot = slot;
+		m_frozenTakePoolVoice = frozenTake;
+	}
+	bool isPooledVoice() const noexcept { return m_poolSlot != NotPooled; }
+	std::uint16_t poolSlot() const noexcept { return m_poolSlot; }
+	bool isFrozenTakePoolVoice() const noexcept { return isPooledVoice() && m_frozenTakePoolVoice; }
+	Track* pooledTrack() const noexcept { return isFrozenTakePoolVoice() ? m_track : nullptr; }
+	void armPooledVoice(std::shared_ptr<const SampleBuffer> buffer, int sourceIn, int sourceOut,
+		float amplification, f_cnt_t offset, Track* track) noexcept;
+	void resetPooledVoice() noexcept;
 
 private:
 	Sample::PlaybackState m_state;
@@ -166,6 +181,8 @@ private:
 	bool m_doneMayReturnTrue = true;
 	bool m_ownAudioBusHandle = false;
 	bool m_ignoresTrackMute = false;
+	std::uint16_t m_poolSlot = NotPooled;
+	bool m_frozenTakePoolVoice = false;
 
 	//! The resampler ratio for the period about to be rendered: the local
 	//! warp rate at the source frame this period starts on, over the natural

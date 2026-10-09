@@ -63,6 +63,9 @@ namespace lmms
 class MidiClient;
 class AudioBusHandle;  // IWYU pragma: keep
 class AudioEngineWorkerThread;
+class SampleBuffer;
+class SamplePlayHandle;
+class Track;
 
 constexpr f_cnt_t MINIMUM_BUFFER_SIZE = 32;
 constexpr f_cnt_t DEFAULT_BUFFER_SIZE = 256;
@@ -234,6 +237,25 @@ public:
 	{
 		return m_slicerTStateOverflowCount.load(std::memory_order_relaxed);
 	}
+	//! Claim and arm one preconstructed metronome or frozen-take voice on the render path.
+	SamplePlayHandle* acquirePooledSampleVoice(const std::shared_ptr<const SampleBuffer>& buffer,
+		int sourceIn, int sourceOut, float amplification, f_cnt_t offset, Track* track, bool metronome) noexcept;
+	//! Return a detached pool handle; realtime returns are retired for the main-thread recycler.
+	void recyclePooledSampleVoice(SamplePlayHandle* handle, bool realtime) noexcept;
+	void recordSampleVoiceOverflow() noexcept
+	{
+		m_sampleVoiceOverflowCount.fetch_add(1, std::memory_order_relaxed);
+	}
+	std::uint64_t sampleVoiceOverflows() const noexcept
+	{
+		return m_sampleVoiceOverflowCount.load(std::memory_order_relaxed);
+	}
+	std::uint64_t sampleVoiceQueueInvariantFailures() const noexcept
+	{
+		return m_sampleVoiceQueueInvariantFailureCount.load(std::memory_order_relaxed);
+	}
+	//! Release the pool bus while Engine's global audio-engine pointer and device are still valid.
+	void shutdownSampleVoicePool() noexcept;
 	void recordDroppedPlayHandleEdit() noexcept
 	{
 		m_droppedPlayHandleEditCount.fetch_add(1, std::memory_order_relaxed);
@@ -482,6 +504,9 @@ signals:
 
 
 private:
+	struct SampleVoicePool;
+	void serviceSampleVoicePoolOnControlThread() noexcept;
+	void disposePlayHandle(PlayHandle* handle, bool realtime) noexcept;
 #ifdef LMMS_TESTING
 	friend class ::AudioBusPlayHandleQueueTest;
 #endif
@@ -644,6 +669,9 @@ private:
 	std::atomic<std::uint64_t> m_droppedPlayHandleCount{0};
 	std::atomic<std::uint64_t> m_droppedPlayHandleEditCount{0};
 	std::atomic<std::uint64_t> m_slicerTStateOverflowCount{0};
+	std::atomic<std::uint64_t> m_sampleVoiceOverflowCount{0};
+	std::atomic<std::uint64_t> m_sampleVoiceQueueInvariantFailureCount{0};
+	std::unique_ptr<SampleVoicePool> m_sampleVoicePool;
 	// place where new playhandles are added temporarily
 	LocklessList<PlayHandle *> m_newPlayHandles;
 	ConstPlayHandleList m_playHandlesToRemove;

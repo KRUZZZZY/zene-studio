@@ -1838,3 +1838,15 @@ plugins/SlicerT/SlicerT.cpp	Cluster 4467: replace per-note new/delete of Playbac
 plugins/SlicerT/SlicerT.h	Cluster 4467: stores the fixed per-instance SlicerT playback-state pool and the bounded-overflow sentinel.
 src/core/ControlCommandsControl.cpp	Cluster 4467: add the SlicerT playback-state pool overflow counter to the stable audio object in control.ping.
 tests/src/core/ControlRegistryTest.cpp	Cluster 4467: assert control.ping includes the SlicerT pool overflow counter.
+include/AudioEngine.h	Clusters 5127/5414: declare the bounded engine-owned sample voice pool, acquisition/recycle API, and stable overflow counters.
+src/core/AudioEngine.cpp	Clusters 5127/5414: construct 512 pooled sample handles and one no-effects bus off render; reserve 32 click voices, refill retired/cancelled slots on the main timer, and route pooled cleanup away from render-thread destruction.
+src/core/Engine.cpp	Clusters 5127/5414: shut down the engine-owned pooled bus after project handles are cleared but before Engine drops the global AudioEngine pointer and deletes the mixer/device.
+include/Sample.h	Clusters 5127/5414: let a stable pooled Sample take and release its retained source buffer while frame and loop bounds are reset explicitly.
+include/SamplePlayHandle.h	Clusters 5127/5414: add pool identity plus allocation-free arm/reset operations and retain the frozen track association for teardown.
+src/core/SamplePlayHandle.cpp	Clusters 5127/5414: arm stable pooled handles with per-pass windows and shared buffers; clear resampler and source ownership only on main-thread recycling.
+include/Track.h	Cluster 5414: track the eight-active-pass limit and expose the private completion decrement to AudioEngine.
+src/core/Track.cpp	Cluster 5414: replace per-pass Sample/handle/bus allocation with a bounded pooled voice, preserve sourceIn per pass, retain overlapping voices, and count per-track overflow.
+src/core/Metronome.cpp	Cluster 5127: skip when the reserved voice pool is empty instead of passing a null click handle to AudioEngine.
+src/core/ControlCommandsControl.cpp	Clusters 5127/5414: add stable sample voice overflow and queue-invariant counters to control.ping's audio object.
+tests/src/core/FrozenTakeHandoffTest.cpp	Clusters 5127/5414: allocation-probe pooled click scheduling and completion, assert independent overlapping frozen windows, eight-pass refusal, reserved click capacity, and zero queue invariant failures.
+tests/src/core/ControlRegistryTest.cpp	Clusters 5127/5414: assert control.ping publishes sample voice exhaustion and queue-invariant fields.

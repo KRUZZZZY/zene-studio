@@ -30,7 +30,8 @@
 #include <memory>
 
 #include "ConfigManager.h"
-#include "Sample.h"
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "SampleBuffer.h"
 #include "SamplePlayHandle.h"
 
@@ -147,21 +148,26 @@ bool sounds(bool forced, bool recording)
 
 PlayHandle* click(bool downbeat, std::size_t offset)
 {
-	// The handle owns the sample it is given, as it owned the one it loaded itself before; the
-	// level rides on the sample's own amplification.
+	// Options registration decodes every built-in source on the control thread. If it has not run,
+	// refuse this click instead of reaching the file loader from the render path.
 	const State& s = state();
+	AudioEngine* const audio = Engine::audioEngine();
+	if (audio == nullptr) { return nullptr; }
+	if (!s.loaded.load(std::memory_order_acquire))
+	{
+		audio->recordSampleVoiceOverflow();
+		return nullptr;
+	}
 	const int index = std::clamp(s.sound.load(std::memory_order_relaxed), 0, kSoundCount - 1);
 	const bool accented = downbeat && s.accent.load(std::memory_order_relaxed);
-	std::shared_ptr<const SampleBuffer> buffer = s.loaded.load(std::memory_order_acquire) ? s.buffers[2 * index + (accented ? 1 : 0)] : nullptr;
-	if (!buffer)  // not loaded yet (a click before registration): read it, as every click used to
+	const auto& buffer = s.buffers[2 * index + (accented ? 1 : 0)];
+	if (buffer == nullptr || buffer->empty())
 	{
-		buffer = SampleBuffer::fromFile(QLatin1String(accented ? kSounds[index].accented : kSounds[index].plain));
+		audio->recordSampleVoiceOverflow();
+		return nullptr;
 	}
-	auto* sample = new Sample(std::move(buffer));
-	sample->setAmplification(s.level.load(std::memory_order_relaxed));
-	auto* handle = new SamplePlayHandle(sample, true);
-	handle->setOffset(offset);
-	return handle;
+	return audio->acquirePooledSampleVoice(buffer, 0, static_cast<int>(buffer->size()),
+		s.level.load(std::memory_order_relaxed), static_cast<f_cnt_t>(offset), nullptr, true);
 }
 
 } // namespace lmms::metronomeoptions

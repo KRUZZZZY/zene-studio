@@ -26,6 +26,7 @@
 #define LMMS_TRACK_H
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -462,6 +463,10 @@ protected:
 	bool playFrozenTake(const TimePos& start, f_cnt_t frames, f_cnt_t offset);
 
 private:
+	//! AudioEngine calls this exactly once when a pooled frozen voice leaves its active ownership set.
+	void frozenVoiceFinished() noexcept;
+	friend class AudioEngine;
+
 	bool m_mutedBeforeSolo;
 
 	clipVector m_clips;
@@ -491,6 +496,7 @@ private:
 	FrozenTake m_frozen;
 	std::shared_ptr<const SampleBuffer> m_frozenBuffer;
 	std::atomic<bool> m_frozenTakePlaying{false};
+	std::atomic<std::uint8_t> m_frozenActiveVoiceCount{0};
 	//! Control-thread only: subscribeFrozenTakeSignals() runs once per track.
 	bool m_frozenSignalsConnected = false;
 

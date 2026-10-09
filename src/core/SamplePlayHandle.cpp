@@ -391,6 +391,49 @@ SamplePlayHandle::~SamplePlayHandle()
 
 
 
+void SamplePlayHandle::armPooledVoice(std::shared_ptr<const SampleBuffer> buffer, int sourceIn, int sourceOut,
+	float amplification, f_cnt_t offset, Track* track) noexcept
+{
+	// resetPooledVoice() cleared the prior buffer and resampler on the control thread. The caller retains
+	// the source for the whole arm operation, so this shared-reference copy cannot release audio storage.
+	m_sample->setBuffer(std::move(buffer));
+	m_sample->setStartFrame(sourceIn);
+	m_sample->setEndFrame(sourceOut);
+	m_sample->setAmplification(amplification);
+	m_sample->setFrequency(DefaultBaseFreq);
+	m_sample->setReversed(false);
+	m_state.setFrameIndex(sourceIn);
+	m_window = {static_cast<f_cnt_t>(sourceIn), static_cast<f_cnt_t>(sourceOut)};
+	m_frame = 0;
+	m_track = track;
+	m_patternTrack = nullptr;
+	m_doneMayReturnTrue = true;
+	// Frozen voices were historically unassociated with their track, so muting after a pass starts does
+	// not silence that already-running sample; the owner pointer is carried for teardown only.
+	m_ignoresTrackMute = isFrozenTakePoolVoice();
+	setOffset(offset);
+}
+
+
+
+void SamplePlayHandle::resetPooledVoice() noexcept
+{
+	m_state.reset();
+	m_sample->setBuffer(SampleBuffer::emptyBuffer());
+	m_sample->setAmplification(1.0f);
+	m_sample->setFrequency(DefaultBaseFreq);
+	m_sample->setReversed(false);
+	m_window = {};
+	m_frame = 0;
+	m_track = nullptr;
+	m_patternTrack = nullptr;
+	m_doneMayReturnTrue = true;
+	m_ignoresTrackMute = false;
+	setOffset(0);
+}
+
+
+
 
 void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 {

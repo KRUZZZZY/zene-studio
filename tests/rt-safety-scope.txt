@@ -50,6 +50,15 @@ plugins/SlicerT/SlicerT.cpp	SlicerT::playNoteImpl	SlicerT's per-note render path
 plugins/SlicerT/SlicerT.cpp	SlicerT::acquirePlaybackSlot	bounded 128-slot scan called by SlicerT::playNoteImpl on the audio render path
 plugins/SlicerT/SlicerT.cpp	SlicerT::deleteNotePluginData	called when a SlicerT note ends on the render owner; resets and returns its preallocated state slot
 include/Sample.h	Sample::PlaybackState::reset	resets a reused SlicerT resampler state in place when the render owner releases a note slot
+src/core/AudioEngine.cpp	AudioEngine::acquirePooledSampleVoice	bounded claim and arm of a preconstructed metronome/frozen-take voice on the render path
+src/core/AudioEngine.cpp	AudioEngine::SampleVoicePool::acquire	bounded ready-queue pop and render-side SamplePlayHandle re-arm
+src/core/AudioEngine.cpp	AudioEngine::recyclePooledSampleVoice	retire a detached pooled sample handle without destroying it on render
+src/core/SamplePlayHandle.cpp	SamplePlayHandle::armPooledVoice	arm a stable pooled handle with a retained source buffer and frame window
+src/core/SamplePlayHandle.cpp	SamplePlayHandle::resetPooledVoice	clear the retired pooled handle and resampler on the main-thread recycler
+include/Sample.h	Sample::setBuffer	assign the retained source to a preallocated pooled Sample without loading or allocating
+src/core/Track.cpp	Track::playFrozenTake	bounded frozen-take pass start using a pooled voice; sourceIn is sampled at pass start
+src/core/MetronomeOptions.cpp	metronomeoptions::click	select a main-thread-loaded click buffer and claim a reserved pooled voice
+src/core/Metronome.cpp	Metronome::processTick	metronome render scheduling path; skips cleanly when the reserved voice pool is empty
 
 # --- the fork's own realtime paths on the render thread (0.3.0 additions) ------
 # Each of these is reached from the render callback above and each has a runtime

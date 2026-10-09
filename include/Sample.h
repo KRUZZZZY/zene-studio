@@ -26,6 +26,7 @@
 #define LMMS_SAMPLE_H
 
 #include <memory>
+#include <utility>
 
 #include "AudioResampler.h"
 #include "Note.h"
@@ -113,6 +114,16 @@ public:
 	void setAmplification(float amplification) { m_amplification.store(amplification, std::memory_order_relaxed); }
 	void setFrequency(float frequency) { m_frequency.store(frequency, std::memory_order_relaxed); }
 	void setReversed(bool reversed) { m_reversed.store(reversed, std::memory_order_relaxed); }
+	//! Replace a preallocated pooled voice's source. The pool calls this only while arming on render, when the
+	//! previous source was cleared by the main-thread recycler and still has another owner.
+	void setBuffer(std::shared_ptr<const SampleBuffer> buffer)
+	{
+		m_buffer = std::move(buffer);
+		m_startFrame.store(0, std::memory_order_relaxed);
+		m_endFrame.store(static_cast<int>(m_buffer->size()), std::memory_order_relaxed);
+		m_loopStartFrame.store(0, std::memory_order_relaxed);
+		m_loopEndFrame.store(static_cast<int>(m_buffer->size()), std::memory_order_relaxed);
+	}
 
 private:
 	f_cnt_t render(SampleFrame* dst, f_cnt_t size, PlaybackState* state, Loop loop) const;

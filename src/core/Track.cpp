@@ -310,6 +310,17 @@ void Track::subscribeFrozenTakeSignals()
 	connect(getMutedModel(), &BoolModel::dataChanged, this, endPass, Qt::DirectConnection);
 }
 
+
+
+void Track::frozenVoiceFinished() noexcept
+{
+	std::uint8_t active = m_frozenActiveVoiceCount.load(std::memory_order_relaxed);
+	while (active > 0 && !m_frozenActiveVoiceCount.compare_exchange_weak(
+		active, static_cast<std::uint8_t>(active - 1), std::memory_order_relaxed))
+	{
+	}
+}
+
 void Track::setId(int id)
 {
 	m_id = id;
@@ -1218,10 +1229,9 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 	}
 	if (m_frozenBuffer == nullptr) { return false; }
 
-	// One handle per pass through the take. A handle renders to the end of what
-	// it was given, so queueing one per audio block would stack a copy of the
-	// take on every block (SampleTrack::play's clip handles are created for the
-	// same reason: a clip is started once, not once per block).
+	// One voice per pass through the take. Older passes can still be rendering
+	// when a stop, seek, mute or loop re-enters the window, so the pass latch and
+	// the active-voice count are separate state.
 	if (m_frozenTakePlaying.exchange(true)) { return false; }
 
 	const float framesPerTick = Engine::framesPerTick(m_frozenBuffer->sampleRate());
@@ -1234,17 +1244,29 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 		return false;
 	}
 
-	// The window is [where this pass starts in the take, the take's end): the
-	// Sample shares the loaded buffer, so this copies no audio, and the handle
-	// owns both its own mix-level bus handle and the Sample (the preview and
-	// metronome path's shape).
-	Sample* sample = new Sample(m_frozenBuffer);
-	sample->setStartFrame(static_cast<int>(sourceIn));
-	sample->setEndFrame(static_cast<int>(sourceOut));
-	auto* handle = new SamplePlayHandle(sample);
-	handle->setOffset(offset);
-	Engine::audioEngine()->addPlayHandle(handle);
-	return true;
+	std::uint8_t active = m_frozenActiveVoiceCount.load(std::memory_order_relaxed);
+	while (active < 8 && !m_frozenActiveVoiceCount.compare_exchange_weak(
+		active, static_cast<std::uint8_t>(active + 1), std::memory_order_relaxed))
+	{
+	}
+	if (active >= 8)
+	{
+		Engine::audioEngine()->recordSampleVoiceOverflow();
+		return false;
+	}
+
+	// The half-open source window starts at the transport-derived sourceIn for
+	// this pass. The pool keeps each overlapping pass's cursor and resampler
+	// separate and supplies one shared no-effects bus.
+	AudioEngine* const audio = Engine::audioEngine();
+	auto* const handle = audio->acquirePooledSampleVoice(m_frozenBuffer, static_cast<int>(sourceIn),
+		static_cast<int>(sourceOut), 1.0f, offset, this, false);
+	if (handle == nullptr)
+	{
+		frozenVoiceFinished();
+		return false;
+	}
+	return audio->addPlayHandle(handle);
 }
 
 
