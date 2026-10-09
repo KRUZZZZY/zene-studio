@@ -49,6 +49,7 @@ The verdicts below record the independent review of the Round 1 report. In parti
 - Builds used `-j4`; only focused `ctest -R` cases ran, not the full suite. The configured ccache temp path under
   `/run/user/1000/ccache-tmp` denied writes, so builds set `CCACHE_TEMPDIR=/tmp/luna-F-round2-ccache-temp` and
   completed successfully.
+- Logs are in `/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/719627a5-c809-46ec-b4a4-231af5d313ec/scratchpad/luna-F-round2`.
 
 ## Round 3
 
@@ -70,4 +71,3 @@ The verdicts below record the independent review of the Round 1 report. In parti
   `OnnxRuntimeStemSeparatorTest` with `-j4`; only focused ctest targets ran, not the full suite. All four gates passed
   before each code commit.
 - Round 3 logs are in the `luna-F-round3` scratch folder under `/tmp/claude-1000`.
-- Logs are in `/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/719627a5-c809-46ec-b4a4-231af5d313ec/scratchpad/luna-F-round2`.
