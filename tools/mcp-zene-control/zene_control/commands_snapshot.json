@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-08T19:28:13Z",
+  "captured_at": "2026-10-08T19:52:43Z",
   "commands": [
     {
       "args_schema": {
@@ -4954,6 +4954,9 @@
           "clip": {
             "type": "string"
           },
+          "overlap_skipped": {
+            "type": "string"
+          },
           "position": {
             "maximum": 1919808,
             "minimum": 0,
@@ -5235,7 +5238,7 @@
         ],
         "type": "object"
       },
-      "description": "Set a clip's fade-in and/or fade-out in ticks, with a shape each (linear, exponential, logarithmic, s_curve, equal_power). An omitted argument keeps its current value; fade_in + fade_out must fit inside the clip. 'fade_in_offset' / 'fade_out_offset' (ticks, default 0) start the fade-in that far after the clip's start / end the fade-out that far before its end. Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Set a clip's fade-in and/or fade-out in ticks, with a shape each (linear, exponential, logarithmic, s_curve, equal_power). An omitted argument keeps its current value; fade_in + fade_out must fit inside the clip. 'fade_in_offset' / 'fade_out_offset' (ticks, default 0) start the fade-in that far after the clip's start / end the fade-out that far before its end; set as a pair, the fade-in starting where the fade-out ends. Reversible through the ProjectJournal (Clip checkpoint).",
       "group": "clip",
       "id": "clip.set_fade",
       "mutating": true,
@@ -34680,8 +34683,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-notes/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-mqwp4a5a/zene.sock",
-    "version": "0.4.0-alpha.1169+f971dd2"
+    "source_socket": "/tmp/zctl-run-7q7_24do/zene.sock",
+    "version": "0.4.0-alpha.1174+08f0055"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
