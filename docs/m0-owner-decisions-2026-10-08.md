@@ -110,3 +110,23 @@ its schema). Not run: the full suite and gates 2 and 5.
 - Every `splitClipAt` of a linked clip takes a checkpoint over the members' tracks, so a command that slices one linked
   clip into N pieces pushes N checkpoints that the registry merges; large N costs serialising the tracks N times.
 - The mouse drag of an offset fade handle and the GUI knife's undo are not driven by a test.
+
+## Round 3 (after the round-2 re-review: ACCEPT 5, ACCEPT-NOTE 7, REWORK 1)
+
+| # | Finding | Verdict | Commit | What changed (file:line) | Tests | Red / green |
+|---|---|---|---|---|---|---|
+| R1 | Overlap-mode Trim drop cuts only the clip under it | RULED LOCAL, rule documented | `cd63ef3f5` | The drop stays a positional edit at one place; the piece that keeps the original instance (left) stays in its link group, a piece cut off to its right leaves it (unlinked, as a lone right half in a group split) (`src/core/ArrangementEdits.cpp`, `overlapOne`); `docs/LINKED-CLIPS.md` states the rule next to the group rule | `LinkedClipGroupEditsTest::anOverlapTrimLeavesThePeersWholeAndTheLeftPieceInTheGroup` (peers whole, left piece and peer still one group of 2, tail unlinked) | red 8, green 0 |
+| R2 | A lone `fade_out_offset` steps the gain | FIXED by REFUSING the lone offset, and repairing a drifted pair | `cd63ef3f5` | `withValidOffsetFades` (`src/core/ClipEdits.cpp`): offsets are a pair (both set, both ramps above 0); a lone one is dropped, a pair whose fade-in does not start where the fade-out ends gets its fade-in moved there. Applied in `clip.set_fade` (refuses an untouched-by-the-caller-excepted lone or mismatched offset, `ControlCommandsClipEdits.cpp`, `offsetFadesArePaired`), project load (`Clip.cpp`, `loadClipEdits`: a lone offset loads as the ordinary fades), the render (`SamplePlayHandle::snapshotClipEdits`), the gain curve (`clipGainCurveAt`) and the GUI (`SampleClipView::shownEdits`, handle hit test and drag) | `ClipOffsetFadePairTest`: `setFadeRefusesALoneOffsetAndAcceptsAPair`, `aLoneOffsetLoadsAsTheOrdinaryFades`, `theGainCurveHasNoStep` (lone, drifted after a resize, and proper pair: no tick-to-tick step above one ramp's slope), `theRenderHasNoStep` (a played handle, lone and drifted) | red 8 for each of: pairing off, load check off; the render case alone fails at 0.4999 with the repair off; green 0 |
+| R3 | A contained clip under 2 ticks: `applyOverlap` reported 1 | FIXED | `cd63ef3f5` | `applyOverlap` counts only crossfades made and returns the reason through `skipped` (`ArrangementEdits.cpp`, `crossfade`, `overlapOne`, `applyOverlap`); `clip.move` replies `overlap_skipped` (`ControlCommandsClip.cpp`); the arranger shows "Crossfade not made" (`ClipView.cpp`, `announceSkippedOverlap`); `clip.crossfade` already refused it with the reason | `ClipOffsetFadePairTest::aContainedClipUnderTwoTicksReportsNoCrossfade` (0 and the reason, no edits written, command refusal, `clip.move` reply, a 2-tick clip still crossfaded) | red 8, green 0 |
+
+Snapshot regenerated in `c851e8285`: 1048029 bytes, 547 under the 1 MiB cap. Gates at the round-3 HEAD, all exit 0: complexity,
+file-length, fork-sources, unregistered-tests, no-tautology, no-upstream-regression, duplication, evidence, doc-figures.
+Targeted tests (30, run with `ZENE_CONTROL_CHECK_RESULTS=1`) exit 0, `ClipFadesRenderTest` hashes are still identical to
+the pre-change binary. `ArrangingCatchUpTest::queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie` fails in a build tree
+without the `tripleoscillator` module (it loads a dummy instrument) and passes once that target is built; it is unrelated to
+these changes.
+
+**Open after round 3.** A clip with a stale pair is repaired where it is used, not rewritten in the project, so
+`clip.set_fade`/`clip.list` replies still show the stored offsets after a resize until the clip is crossfaded again. Frames
+of the container and the contained clip are rounded per clip, so the two ramps of a crossfade can meet one sample apart
+across the two clips (not measured).
