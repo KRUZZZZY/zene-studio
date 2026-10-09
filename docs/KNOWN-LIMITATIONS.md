@@ -89,15 +89,13 @@ that is this page's fault — report it and it gets added.
   content, `<bus>` and `<sidechain-send>` routing, `prefader` flags, slide data. Silently is the operative
   word: you get a project that looks fine and is missing content. **Do not open a 0.2 project in an older
   build.** If you must, open a *copy* and compare.
-- **The Session View is in the 0.3.0-alpha builds, and there is still no way to operate it from the
-  interface.** From 0.3.0 `WANT_SESSION_VIEW` **defaults ON**, so the data layer, the launch scheduler and the
-  `session.*` control-surface group are in the release builds. The honest limits, because the option's value is
-  not the claim: there is **no clip launcher, no scene launcher and no clip grid** — no UI at all — and a
-  launched session slot **does not render audio**, because this tree has no session-clip playback path
-  (`src/core/SessionClip.cpp` is serialisation only). An agent can build a grid, launch a clip or a whole
-  scene, and read the launch back through `--control-socket` (`session.get_state`, `session.set_slot`,
-  `session.launch_scene`, ...); a user cannot see or hear any of it. A project containing `<session>` data is
-  also **preserved across a round trip**, which was already fixed in 0.2.1 and is unchanged.
+- **The Session View has no clip launcher, scene launcher or clip grid in the interface.** From 0.3.0
+  `WANT_SESSION_VIEW` **defaults ON**, so the data layer, launch scheduler, MIDI and audio cell playback, and
+  the `session.*` control-surface group are in the release builds. An agent can build a grid, launch a clip
+  or a whole scene, and read the launch back through `--control-socket` (`session.get_state`,
+  `session.set_slot`, `session.launch_scene`, ...); users can hear launched content but cannot see or operate
+  the grid. A project containing `<session>` data is also **preserved across a round trip**, which was already
+  fixed in 0.2.1 and is unchanged.
 - **UI absence — one line: the clip-launch grid is drivable through the socket, not from the
   interface.** The grid, its scenes and its slots ARE the `session.*` command group's objects
   (`session.set_grid`, `session.set_scene`, `session.set_slot`, `session.launch_scene`,
@@ -122,11 +120,10 @@ that is this page's fault — report it and it gets added.
   overrides its cells' chains; `session.set_slot follow_actions` is now how a cell's chain is persisted,
   which no socket path could do before), and through nothing else: there is **no Follow Action editor, no
   Arrangement Record button, no take lane and no Back-to-Arrangement light**, and the clip-launch grid
-  (#598) is **out of 0.3.0**. A landed clip carries the recorded **position and length**, not the
-  session slot's notes (`pattern` reports the reference it names), so the "rendered audio matches the
-  session playback" half of the feature's acceptance is **unmet in this tree** — a launched session slot
-  does not render audio at all (the bullet above). `docs/RELEASE-NOTES-v0.3.0-alpha.md` states the same
-  bounds.
+  (#598) is **out of 0.3.0**. A landed clip carries the recorded **position, length and copyable content**:
+  MIDI notes are copied to instrument clips and audio cells to sample clips. Incompatible destinations and
+  unreadable audio sources are refused without consuming the recorded performance. The release notes state
+  the same bounds.
 - **A failed save is now reported rather than silent.** If a project cannot be moved aside on save (an existing
   file the platform refuses to rename over), the save is refused **and you are told**, rather than reporting
   success.
