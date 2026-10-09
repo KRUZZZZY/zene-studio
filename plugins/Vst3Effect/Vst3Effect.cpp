@@ -145,6 +145,9 @@ auto Vst3Effect::controls() -> EffectControls* { return m_controls.get(); }
 void Vst3Effect::reprepare()
 {
 	m_processGate.beginReconfigure();
+#ifdef LMMS_TESTING
+	if (m_reprepareTestHook != nullptr) { m_reprepareTestHook(m_reprepareTestContext); }
+#endif
 	if (auto* engine = Engine::audioEngine())
 	{
 		QString error;
