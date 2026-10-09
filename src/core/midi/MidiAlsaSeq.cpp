@@ -33,12 +33,10 @@
 #include <cerrno>
 #include <cstring>
 
-#include <fcntl.h>
-#include <unistd.h>
-
-
 #ifdef LMMS_HAVE_ALSA
 
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace lmms
 {
