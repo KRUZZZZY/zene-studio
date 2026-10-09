@@ -106,7 +106,8 @@ void InspectorPanel::retireSection(Section& slot)
 	widget->hide();
 	widget->deleteLater();
 	// The section's live fields and toggles go with it; kept, the list would grow by every replacement.
-	m_liveFields.removeIf([widget](const QPointer<ReadoutField>& field) { return field.isNull() || widget->isAncestorOf(field); });
+	m_liveFields.erase(std::remove_if(m_liveFields.begin(), m_liveFields.end(),
+		[widget](const QPointer<ReadoutField>& field) { return field.isNull() || widget->isAncestorOf(field); }), m_liveFields.end());
 	if (m_name != nullptr && widget->isAncestorOf(m_name))
 	{
 		m_name = nullptr;

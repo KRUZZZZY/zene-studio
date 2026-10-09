@@ -107,7 +107,7 @@ template <class T>
 QList<T*> shownChildren(QWidget* parent)
 {
 	QList<T*> shown = parent->findChildren<T*>();
-	shown.removeIf([parent](const T* child) { return !child->isVisibleTo(parent); });
+	shown.erase(std::remove_if(shown.begin(), shown.end(), [parent](const T* child) { return !child->isVisibleTo(parent); }), shown.end());
 	return shown;
 }
 

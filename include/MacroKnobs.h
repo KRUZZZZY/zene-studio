@@ -53,7 +53,7 @@ class LMMS_EXPORT MacroKnobs : public QWidget
 	Q_OBJECT
 public:
 	//! @a maxKnobs bounds how many macros it shows (the strip shows fewer than the panel).
-	MacroKnobs(const QString& channel, int maxKnobs, bool small, QWidget* parent);
+	MacroKnobs(const QString& channel, int maxKnobs, bool compact, QWidget* parent);
 	~MacroKnobs() override;
 
 	//! Rebuild when the macros changed, else take their values.

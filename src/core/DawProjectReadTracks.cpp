@@ -176,7 +176,7 @@ void parseClips(QXmlStreamReader& reader, ReadState& state)
 			reader.readNext();
 			if (reader.isEndElement() && reader.name() == QLatin1String("Clip")) { break; }
 			if (!reader.isStartElement()) { continue; }
-			const QStringView child = reader.name();
+			const auto child = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 			if (child == QLatin1String("Notes"))
 			{
 				hasNotes = true;
@@ -239,7 +239,7 @@ void parseLanes(QXmlStreamReader& reader, ReadState& state)
 		reader.readNext();
 		if (reader.isEndElement() && reader.name() == QLatin1String("Lanes")) { break; }
 		if (!reader.isStartElement()) { continue; }
-		const QStringView element = reader.name();
+		const auto element = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 		if (element == QLatin1String("Lanes")) { parseNestedLanes(reader, state); }
 		else if (element == QLatin1String("Clips")) { parseClips(reader, state); }
 		else if (element == QLatin1String("Notes") || element == QLatin1String("ClipSlot")
@@ -366,7 +366,7 @@ ChannelValues parseChannel(QXmlStreamReader& reader, ReadState& state)
 		reader.readNext();
 		if (reader.isEndElement() && reader.name() == QLatin1String("Channel")) { break; }
 		if (!reader.isStartElement()) { continue; }
-		const QStringView child = reader.name();
+		const auto child = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 		const QXmlStreamAttributes childAttributes = reader.attributes();
 		if (child == QLatin1String("Volume"))
 		{
@@ -450,7 +450,7 @@ void parseTrack(QXmlStreamReader& reader, ReadState& state, int depth)
 		reader.readNext();
 		if (reader.isEndElement() && reader.name() == QLatin1String("Track")) { break; }
 		if (!reader.isStartElement()) { continue; }
-		const QStringView element = reader.name();
+		const auto element = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 		if (element == QLatin1String("Channel"))
 		{
 			const ChannelValues values = parseChannel(reader, state);

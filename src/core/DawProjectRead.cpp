@@ -187,7 +187,7 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 	{
 		reader.readNext();
 		if (!reader.isStartElement()) { continue; }
-		const QStringView element = reader.name();
+		const auto element = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 		if (element == QLatin1String("Project"))
 		{
 			sawProject = true;
@@ -267,7 +267,7 @@ bool parseDocument(QXmlStreamReader& reader, ReadState& state)
 				reader.readNext();
 				if (reader.isEndElement() && reader.name() == QLatin1String("Arrangement")) { break; }
 				if (!reader.isStartElement()) { continue; }
-				const QStringView child = reader.name();
+				const auto child = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 				if (child == QLatin1String("Lanes"))
 				{
 					const QString unit = attribute(reader.attributes(), QStringLiteral("timeUnit"));

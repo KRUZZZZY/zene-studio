@@ -567,7 +567,7 @@ public:
 
 	//! The whole of a started frame must arrive within this (on top of the per-piece bound of receiveWithin()).
 	static constexpr std::chrono::milliseconds StartedFrameTimeout{2000};
-#endif
+#endif // BUILD_REMOTE_PLUGIN_CLIENT
 
 	//! Writes the tail of an earlier partial non-blocking send, if there is one, without blocking.
 	SendResult flushPendingSend();

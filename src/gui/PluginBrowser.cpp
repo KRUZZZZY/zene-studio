@@ -388,9 +388,9 @@ void PluginDescWidget::paintEvent( QPaintEvent * )
 	p.drawText(textX, 15, m_pluginKey.displayName());
 	// Theme 12: the details at the row's right end, in the muted caption colour, cut short before they reach the name.
 	const int nameEnd = textX + QFontMetrics(f).horizontalAdvance(m_pluginKey.displayName()) + tokens::space::md;
-	const QFont small = tokens::font(tokens::TextRole::Small);
-	const QString shown = QFontMetrics(small).elidedText(m_details, Qt::ElideRight, std::max(0, width() - nameEnd - tokens::space::sm));
-	p.setFont(small);
+	const QFont smallFont = tokens::font(tokens::TextRole::Small);
+	const QString shown = QFontMetrics(smallFont).elidedText(m_details, Qt::ElideRight, std::max(0, width() - nameEnd - tokens::space::sm));
+	p.setFont(smallFont);
 	p.setPen(tokens::palette().textMuted);
 	p.drawText(QRect(nameEnd, 0, width() - nameEnd - tokens::space::sm, height()), Qt::AlignRight | Qt::AlignVCenter, shown);
 }
