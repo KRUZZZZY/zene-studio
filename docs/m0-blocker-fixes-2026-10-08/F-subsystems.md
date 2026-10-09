@@ -49,4 +49,25 @@ The verdicts below record the independent review of the Round 1 report. In parti
 - Builds used `-j4`; only focused `ctest -R` cases ran, not the full suite. The configured ccache temp path under
   `/run/user/1000/ccache-tmp` denied writes, so builds set `CCACHE_TEMPDIR=/tmp/luna-F-round2-ccache-temp` and
   completed successfully.
+
+## Round 3
+
+| Cluster | Verdict | Fix commit | Test | Red exit | Green exit | Gate exits |
+|---|---|---|---|---|---|---|
+| 2658 | FIXED | `c6ecc0d33` | `WasmWorkerPoolTest::testEntryRacesWithStopWithoutPostStopEndpointUse` (100,000 stop races) | build 0; ctest 8 (40 late pins / 200,000 entry attempts, 0.020000%) | build 0; ctest 0 (0 late pins / 200,000 entry attempts) | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+| 5201 | FIXED | `3db2618ef` | `OnnxRuntimeStemSeparatorTest::testPostRunOrtExceptionIsReturnedAsFailure` | build 0; ctest 8 (new test failed on exception escape; malformed-session test passed) | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+
+### Round 3 verification notes
+
+- The WASM regression was run against the round-2 two-atomic implementation and observed 40 late endpoint entries in
+  100,000 stop races. The one-word closed-bit/count gate measured zero late entries in the same 100,000 races; the
+  audio path only performs an atomic pin attempt, while `stop()` waits off the audio thread.
+- The ONNX seam throws an `Ort::Exception` from output validation after `Session::Run`. With round-2's setup and
+  `Run()` catches retained, this test fails because the post-`Run()` exception escapes. The outer catches on
+  `separate()` now return `Status::Failed` and copy the exception message. This scope also covers tensor creation,
+  output inspection/data access, and session setup.
+- Reconfigured with ONNX Runtime 1.28.0 and vendored Wasmtime 48.0.1. Built `zene`, `WasmWorkerPoolTest`, and
+  `OnnxRuntimeStemSeparatorTest` with `-j4`; only focused ctest targets ran, not the full suite. All four gates passed
+  before each code commit.
+- Round 3 logs are in the `luna-F-round3` scratch folder under `/tmp/claude-1000`.
 - Logs are in `/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/719627a5-c809-46ec-b4a4-231af5d313ec/scratchpad/luna-F-round2`.
