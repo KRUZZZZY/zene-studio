@@ -29,6 +29,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <QString>
 #include <QHash>  // IWYU pragma: keep
@@ -36,6 +37,7 @@
 #include <QStringList>
 
 #include "AudioEngine.h"
+#include "AutomationRecordingQueue.h"
 #include "Controller.h"
 #include "Metronome.h"
 #include "lmms_constants.h"
@@ -55,9 +57,13 @@
 #include "SessionModel.h"
 #include "SessionScheduler.h"
 
+class AutomationClipSnapshotTest;
+class AutomationRecordingTest;
+
 namespace lmms
 {
 
+class AutomationClip;
 class AutomationTrack;
 class DataFile;
 class Keymap;
@@ -153,6 +159,23 @@ public:
 	}
 
 	void processNextBuffer();
+
+	struct AutomationRecordingStatus
+	{
+		std::uint64_t droppedEvents = 0;
+		std::uint64_t staleClipIds = 0;
+		std::uint64_t membershipOverflows = 0;
+	};
+
+	//! Audio producer entry: enqueue the already quantized clip-map time to this thread's SPSC queue.
+	bool enqueueAutomationRecord(jo_id_t clipId, const TimePos& mapTime, float value) noexcept;
+	//! Main-thread drain: resolves stable ids, calls recordValue(), and reclaims quiescent slots.
+	void drainAutomationRecordingEvents();
+	AutomationRecordingStatus automationRecordingStatus() const noexcept;
+	//! Realtime reader bridge: returns the closest pending map points across the fixed producer queues.
+	void pendingAutomationRecordBounds(jo_id_t clipId, const std::vector<std::uint64_t>& appliedSequences,
+		const TimePos& time, AutomationRecordingQueue::Event& before, bool& hasBefore,
+		AutomationRecordingQueue::Event& after, bool& hasAfter) const noexcept;
 
 	/*! Sample-accurate automation (feature-list row 9,
 	 *  docs/SAMPLE-ACCURATE-AUTOMATION.md): publish every opt-in automation
@@ -693,6 +716,10 @@ private:
 	bool restoreGuiSection(const QDomElement & element);
 
 	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames);
+	bool markRecordedModelForCurrentTick(jo_id_t id) noexcept;
+	bool recordedModelInCurrentTick(jo_id_t id) const noexcept;
+	bool enqueueAutomationRecordForProducerForTest(std::size_t producer, jo_id_t clipId,
+		const TimePos& time, float value) noexcept;
 	void processMetronome(size_t bufferOffset);
 
 	/*! The tempo-map follower (SPEC-zene-studio D11, docs/TEMPO-MAP.md). Runs
@@ -839,6 +866,22 @@ private:
 	//! model goes, so the restore skips exactly the models that are gone.
 	QMap<QPointer<AutomatableModel>, float> m_oldAutomatedValues;
 
+	static constexpr std::size_t AutomationRecordingMembershipCapacity = 4096;
+	static constexpr std::size_t AutomationRecordingMembershipSlots = 8192;
+	struct RecordedModelMembershipEntry
+	{
+		jo_id_t id = 0;
+		std::uint32_t generation = 0;
+	};
+	std::array<RecordedModelMembershipEntry, AutomationRecordingMembershipSlots> m_recordedModelMembership{};
+	std::uint32_t m_recordedModelMembershipGeneration = 0;
+	std::size_t m_recordedModelMembershipSize = 0;
+	std::atomic<std::uint64_t> m_recordedModelMembershipOverflows{0};
+	std::unique_ptr<AutomationRecordingQueue[]> m_automationRecordingQueues;
+	std::size_t m_automationRecordingQueueCount = 0;
+	std::atomic<std::uint64_t> m_staleAutomationRecordingEvents{0};
+	std::atomic<std::uint64_t> m_invalidAutomationRecordingProducers{0};
+
 	//! The song that `Song::forgetAutomatedModel()` reports into, or nullptr.
 	//! Set by `Song::Song()`, cleared at the top of `Song::~Song()`.
 	//!
@@ -865,6 +908,8 @@ private:
 	friend class Engine;
 	friend class gui::SongEditor;
 	friend class gui::ControllerRackView;
+	friend class ::AutomationClipSnapshotTest;
+	friend class ::AutomationRecordingTest;
 
 signals:
 	//! A recording pass lost \a frames to capture overflow; the GUI shows a notice. Main thread.

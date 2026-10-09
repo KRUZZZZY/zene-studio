@@ -29,6 +29,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <vector>
 
 #include <QMap>
 #include <QPointer>
@@ -37,6 +38,7 @@
 #include "Clip.h"
 
 class AutomationClipSnapshotTest;
+class AutomationRecordingTest;
 
 namespace lmms
 {
@@ -135,6 +137,10 @@ public:
 	void resetTangents(const int tick0, const int tick1);
 
 	void recordValue(TimePos time, float value);
+	//! Convert a clip-relative time to the exact map tick for a recorded value without taking the edit mutex.
+	TimePos recordingMapTime(const TimePos& clipRelativeTime) const noexcept;
+	//! Control consumer path: replay one queued event and publish its per-producer watermark.
+	void recordQueuedValue(TimePos mapTime, float value, std::size_t producer, std::uint64_t sequence);
 
 	TimePos setDragValue( const TimePos & time,
 				const float value,
@@ -225,6 +231,19 @@ public:
 	 */
 	void writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart, f_cnt_t frames,
 		double framesPerTick, int frameOffsetInTick ) const;
+	//! Bounded audio-visible projection of queued recording points during the control-thread handoff.
+	struct RecordingOverlayPoint
+	{
+		int tick = 0;
+		float value = 0.0f;
+	};
+	struct RecordingOverlay
+	{
+		RecordingOverlayPoint before{};
+		RecordingOverlayPoint after{};
+		bool hasBefore = false;
+		bool hasAfter = false;
+	};
 	void movePosition(const TimePos& pos) override;
 	void changeLength(const TimePos& length) override;
 	void setStartTimeOffset(const TimePos& startTimeOffset) override;
@@ -255,12 +274,13 @@ public:
 	static void resolveAllIDs();
 	//! Control-thread poll for retired immutable snapshots; safe to call while no edit is occurring.
 	static void collectRetiredReadSnapshots();
+	static bool snapshotReadersActive() noexcept;
 
 	bool isRecording() const { return m_isRecording; }
 	void setRecording( const bool b ) { m_isRecording = b; }
 
-	static int quantization() { return s_quantization; }
-	static void setQuantization(int q) { s_quantization = q; }
+	static int quantization() { return s_quantization.load(std::memory_order_relaxed); }
+	static void setQuantization(int q) { s_quantization.store(q, std::memory_order_relaxed); }
 
 	AutomationClip* clone() override
 	{
@@ -307,17 +327,19 @@ private:
 	static void beginSnapshotReaderForTest();
 	static void endSnapshotReaderForTest();
 	static std::size_t retiredReadSnapshotCountForTest();
-
 	/*! The curve's value at clip-relative tick @a rel (plus @a fraction of the
 	 *  segment that starts there) - the segment, not the node, so a node whose
 	 *  in- and out-values differ does not make the ramp step early. */
-	static float rampValueAt(const AutomationClipReadSnapshot& snapshot, const TimePos& rel, float fraction);
+	static float rampValueAt(const AutomationClipReadSnapshot& snapshot, const TimePos& rel, float fraction,
+		const RecordingOverlay* overlay = nullptr);
 	//! One knot: the curve at @a frame of the block (whose first sample sits
 	//! @a frameOffsetInTick frames into its tick).
-	static void addRampKnot(const AutomationClipReadSnapshot& snapshot, AutomationRamp& ramp,
-		const TimePos& relClipStart, int frame, int frameOffsetInTick, double framesPerTick);
-	static void addRampBoundaryKnots(const AutomationClipReadSnapshot& snapshot, AutomationRamp& ramp,
-		const TimePos& relClipStart, f_cnt_t frames, int frameOffsetInTick, double framesPerTick);
+	void addRampKnot(const AutomationClipReadSnapshot& snapshot, AutomationRamp& ramp,
+		const TimePos& relClipStart, int frame, int frameOffsetInTick, double framesPerTick,
+		const RecordingOverlay* overlay) const;
+	void addRampBoundaryKnots(const AutomationClipReadSnapshot& snapshot, AutomationRamp& ramp,
+		const TimePos& relClipStart, f_cnt_t frames, int frameOffsetInTick, double framesPerTick,
+		const RecordingOverlay* overlay) const;
 
 	/**
 	 * @brief
@@ -334,6 +356,7 @@ private:
 	std::atomic<AutomationClipReadSnapshot*> m_readSnapshot{nullptr};
 	bool m_snapshotPublicationSuppressed = false;
 	std::uint64_t m_readSnapshotPublicationCount = 0;
+	std::vector<std::uint64_t> m_appliedRecordingSequences;
 
 	AutomationTrack * m_autoTrack;
 	std::vector<jo_id_t> m_idsToResolve;
@@ -362,7 +385,8 @@ private:
 	bool m_isRecording;
 	float m_lastRecordedValue;
 
-	static int s_quantization;
+	static std::atomic<int> s_quantization;
+	void recordValueAtMapTime(TimePos mapTime, float value);
 
 	static const float DEFAULT_MIN_VALUE;
 	static const float DEFAULT_MAX_VALUE;
@@ -371,6 +395,7 @@ private:
 	friend class AutomationNode;
 	friend class gui::AutomationEditor;
 	friend class ::AutomationClipSnapshotTest;
+	friend class ::AutomationRecordingTest;
 
 } ;
 

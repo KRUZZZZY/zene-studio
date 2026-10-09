@@ -47,7 +47,7 @@
 namespace lmms
 {
 
-int AutomationClip::s_quantization = 1;
+std::atomic<int> AutomationClip::s_quantization{1};
 const float AutomationClip::DEFAULT_MIN_VALUE = 0;
 const float AutomationClip::DEFAULT_MAX_VALUE = 1;
 
@@ -588,20 +588,39 @@ void AutomationClip::resetTangents(const int tick0, const int tick1)
 
 void AutomationClip::recordValue(TimePos time, float value)
 {
+	recordValueAtMapTime(recordingMapTime(time), value);
+}
+
+
+void AutomationClip::recordValueAtMapTime(TimePos mapTime, float value)
+{
 	QMutexLocker m(&m_clipMutex);
 	const bool previouslySuppressed = m_snapshotPublicationSuppressed;
 	m_snapshotPublicationSuppressed = true;
 
 	if( value != m_lastRecordedValue )
 	{
-		putValue(time - startTimeOffset(), value, true);
+		putValue(mapTime, value, false, true);
 		m_lastRecordedValue = value;
 	}
-	else if( editableValueAt(time - startTimeOffset()) != value )
+	else if( editableValueAt(mapTime) != value )
 	{
-		removeNode(time - startTimeOffset());
+		removeNode(mapTime);
 	}
 	m_snapshotPublicationSuppressed = previouslySuppressed;
+	if (!previouslySuppressed) { publishReadSnapshot(); }
+}
+
+
+void AutomationClip::recordQueuedValue(TimePos mapTime, float value, std::size_t producer, std::uint64_t sequence)
+{
+	QMutexLocker lock(&m_clipMutex);
+	if (producer >= m_appliedRecordingSequences.size())
+	{
+		m_appliedRecordingSequences.resize(producer + 1, 0);
+	}
+	m_appliedRecordingSequences[producer] = sequence;
+	recordValueAtMapTime(mapTime, value);
 }
 
 

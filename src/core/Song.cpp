@@ -37,6 +37,7 @@
 #include "ProjectSectionRegistry.h"
 #include "AutomationLatency.h"
 #include "AutomationRamp.h"
+#include "AudioEngineWorkerThread.h"
 #include "AutomationSwitches.h"
 #include "AutomationTrack.h"
 #include "AutomationEditor.h"
@@ -125,6 +126,10 @@ Song::Song() :
 	m_loopRenderRemaining(1),
 	m_oldAutomatedValues()
 {
+	const int workers = std::max(0, Engine::audioEngine()->workerCount());
+	m_automationRecordingQueueCount = static_cast<std::size_t>(workers) + 1;
+	m_automationRecordingQueues = std::make_unique<AutomationRecordingQueue[]>(m_automationRecordingQueueCount);
+
 	// A model being destroyed reports itself here, before anything in this
 	// object is torn down (see Song::forgetAutomatedModel and
 	// s_automationCacheSong): the automation cache holds the models automated on
@@ -223,6 +228,145 @@ Song::~Song()
 
 
 Song* Song::s_automationCacheSong = nullptr;
+
+
+bool Song::enqueueAutomationRecord(jo_id_t clipId, const TimePos& mapTime, float value) noexcept
+{
+	const auto producer = AudioEngineWorkerThread::currentRecordingProducerSlot();
+	if (producer >= m_automationRecordingQueueCount)
+	{
+		m_invalidAutomationRecordingProducers.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
+	return m_automationRecordingQueues[producer].push(clipId, mapTime, value);
+}
+
+
+bool Song::enqueueAutomationRecordForProducerForTest(std::size_t producer, jo_id_t clipId,
+	const TimePos& mapTime, float value) noexcept
+{
+	return producer < m_automationRecordingQueueCount
+		&& m_automationRecordingQueues[producer].push(clipId, mapTime, value);
+}
+
+
+void Song::drainAutomationRecordingEvents()
+{
+	const auto changes = Engine::audioEngine()->requestChangesGuard();
+	for (std::size_t producer = 0; producer < m_automationRecordingQueueCount; ++producer)
+	{
+		auto& queue = m_automationRecordingQueues[producer];
+		AutomationRecordingQueue::Event event;
+		std::uint64_t sequence = 0;
+		while (queue.peekApplied(event, sequence))
+		{
+			auto* object = Engine::projectJournal()->journallingObject(event.clipId);
+			auto* clip = dynamic_cast<AutomationClip*>(object);
+			if (clip != nullptr)
+			{
+				clip->recordQueuedValue(event.time, event.value, producer, sequence);
+			}
+			else
+			{
+				m_staleAutomationRecordingEvents.fetch_add(1, std::memory_order_relaxed);
+			}
+			queue.markApplied();
+		}
+		queue.reclaimApplied(!AutomationClip::snapshotReadersActive());
+	}
+}
+
+
+Song::AutomationRecordingStatus Song::automationRecordingStatus() const noexcept
+{
+	AutomationRecordingStatus status;
+	status.staleClipIds = m_staleAutomationRecordingEvents.load(std::memory_order_relaxed);
+	status.membershipOverflows = m_recordedModelMembershipOverflows.load(std::memory_order_relaxed);
+	status.droppedEvents = m_invalidAutomationRecordingProducers.load(std::memory_order_relaxed);
+	for (std::size_t producer = 0; producer < m_automationRecordingQueueCount; ++producer)
+	{
+		status.droppedEvents += m_automationRecordingQueues[producer].overflowCount();
+	}
+	return status;
+}
+
+
+void Song::pendingAutomationRecordBounds(jo_id_t clipId,
+	const std::vector<std::uint64_t>& appliedSequences, const TimePos& time,
+	AutomationRecordingQueue::Event& before, bool& hasBefore,
+	AutomationRecordingQueue::Event& after, bool& hasAfter) const noexcept
+{
+	hasBefore = false;
+	hasAfter = false;
+	std::size_t beforeProducer = 0;
+	std::size_t afterProducer = 0;
+	for (std::size_t producer = 0; producer < m_automationRecordingQueueCount; ++producer)
+	{
+		const std::uint64_t applied = producer < appliedSequences.size() ? appliedSequences[producer] : 0;
+		AutomationRecordingQueue::Event candidateBefore, candidateAfter;
+		std::uint64_t beforeSequence = 0, afterSequence = 0;
+		bool foundBefore = false, foundAfter = false;
+		m_automationRecordingQueues[producer].pendingBounds(clipId, applied, time,
+			candidateBefore, beforeSequence, foundBefore, candidateAfter, afterSequence, foundAfter);
+		if (foundBefore && (!hasBefore || candidateBefore.time > before.time
+			|| (candidateBefore.time == before.time && producer > beforeProducer)))
+		{
+			before = candidateBefore;
+			beforeProducer = producer;
+			hasBefore = true;
+		}
+		if (foundAfter && (!hasAfter || candidateAfter.time < after.time
+			|| (candidateAfter.time == after.time && producer > afterProducer)))
+		{
+			after = candidateAfter;
+			afterProducer = producer;
+			hasAfter = true;
+		}
+	}
+}
+
+
+bool Song::markRecordedModelForCurrentTick(jo_id_t id) noexcept
+{
+	constexpr std::uint64_t hashMultiplier = 11400714819323198485ull;
+	const auto first = static_cast<std::size_t>((static_cast<std::uint64_t>(id) * hashMultiplier)
+		& (AutomationRecordingMembershipSlots - 1));
+	for (std::size_t probe = 0; probe < AutomationRecordingMembershipSlots; ++probe)
+	{
+		auto& entry = m_recordedModelMembership[(first + probe) & (AutomationRecordingMembershipSlots - 1)];
+		if (entry.generation == m_recordedModelMembershipGeneration)
+		{
+			if (entry.id == id) { return true; }
+			continue;
+		}
+		if (m_recordedModelMembershipSize >= AutomationRecordingMembershipCapacity)
+		{
+			m_recordedModelMembershipOverflows.fetch_add(1, std::memory_order_relaxed);
+			return false;
+		}
+		entry.id = id;
+		entry.generation = m_recordedModelMembershipGeneration;
+		++m_recordedModelMembershipSize;
+		return true;
+	}
+	m_recordedModelMembershipOverflows.fetch_add(1, std::memory_order_relaxed);
+	return false;
+}
+
+
+bool Song::recordedModelInCurrentTick(jo_id_t id) const noexcept
+{
+	constexpr std::uint64_t hashMultiplier = 11400714819323198485ull;
+	const auto first = static_cast<std::size_t>((static_cast<std::uint64_t>(id) * hashMultiplier)
+		& (AutomationRecordingMembershipSlots - 1));
+	for (std::size_t probe = 0; probe < AutomationRecordingMembershipSlots; ++probe)
+	{
+		const auto& entry = m_recordedModelMembership[(first + probe) & (AutomationRecordingMembershipSlots - 1)];
+		if (entry.generation != m_recordedModelMembershipGeneration) { return false; }
+		if (entry.id == id) { return true; }
+	}
+	return false;
+}
 
 
 void Song::forgetAutomatedModel( AutomatableModel* model )
@@ -574,8 +718,6 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 {
 	AutomatedValueMap values;
 
-	QSet<const AutomatableModel*> recordedModels;
-
 	TrackContainer* container = this;
 	int clipNum = -1;
 
@@ -595,6 +737,12 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	default:
 		return;
 	}
+	if (++m_recordedModelMembershipGeneration == 0)
+	{
+		for (auto& entry : m_recordedModelMembership) { entry.generation = 0; }
+		m_recordedModelMembershipGeneration = 1;
+	}
+	m_recordedModelMembershipSize = 0;
 
 	values = container->automatedValuesAt(timeStart, clipNum);
 	const TrackList& tracks = container->tracks();
@@ -645,9 +793,9 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 				// you can see that the true values are stored by their inverse scaled value....which is wrong, since they weren't scaled in the first place...?
 				// Anyhow, in the meantime before we redo the automation system, when recording automations, we have to get the inverseScaledValue
 				// and store that so that when playing it back, it scales the value correctly.
-				p->recordValue(relTime, recordedModel->inverseScaledValue(recordedModel->value<float>()));
-
-				recordedModels << recordedModel;
+				const float value = recordedModel->inverseScaledValue(recordedModel->value<float>());
+				enqueueAutomationRecord(static_cast<const JournallingObject*>(p)->id(), p->recordingMapTime(relTime), value);
+				markRecordedModelForCurrentTick(recordedModel->id());
 			}
 		}
 	}
@@ -678,7 +826,7 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	for (auto it = values.begin(); it != values.end(); it++)
 	{
 		AutomatableModel* model = it.key();
-		bool isRecording = recordedModels.contains(model);
+		bool isRecording = recordedModelInCurrentTick(model->id());
 		model->setUseControllerValue(isRecording);
 
 		// Automation modes: a control in Off IGNORES its written automation -

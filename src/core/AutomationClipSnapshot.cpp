@@ -30,6 +30,10 @@
 
 #include "AutomationClip.h"
 #include "AutomationRamp.h"
+#include "Engine.h"
+#include "JournallingObject.h"
+#include "Note.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -49,6 +53,7 @@ struct AutomationClipReadSnapshot
 	};
 
 	std::vector<Node> nodes;
+	std::vector<std::uint64_t> appliedSequences;
 	AutomationClip::ProgressionType progression = AutomationClip::ProgressionType::Discrete;
 	float tension = 1.0f;
 	int startPosition = 0;
@@ -110,11 +115,10 @@ void collectRetiredAutomationSnapshots()
 	}
 }
 
-float snapshotValueAtOffset(const AutomationClipReadSnapshot& snapshot, std::size_t index, int offset)
+float snapshotSegmentValueAtOffset(const AutomationClipReadSnapshot& snapshot,
+	const AutomationClipReadSnapshot::Node& node, const AutomationClipReadSnapshot::Node& next, int offset)
 {
-	const auto& node = snapshot.nodes[index];
 	if (offset == 0) { return node.inValue; }
-	const auto& next = snapshot.nodes[index + 1];
 	if (node.curve == AutomationNode::Curve::Bend)
 	{
 		const double t = std::clamp(static_cast<double>(offset) / std::max(1, next.tick - node.tick), 0.0, 1.0);
@@ -144,6 +148,11 @@ float snapshotValueAtOffset(const AutomationClipReadSnapshot& snapshot, std::siz
 		+ (t3 - t2) * m2;
 }
 
+float snapshotValueAtOffset(const AutomationClipReadSnapshot& snapshot, std::size_t index, int offset)
+{
+	return snapshotSegmentValueAtOffset(snapshot, snapshot.nodes[index], snapshot.nodes[index + 1], offset);
+}
+
 float snapshotValueAt(const AutomationClipReadSnapshot& snapshot, int tick)
 {
 	if (snapshot.nodes.empty()) { return 0.0f; }
@@ -154,6 +163,131 @@ float snapshotValueAt(const AutomationClipReadSnapshot& snapshot, int tick)
 	const auto previous = std::prev(next);
 	if (next == snapshot.nodes.end()) { return previous->outValue; }
 	return snapshotValueAtOffset(snapshot, static_cast<std::size_t>(previous - snapshot.nodes.begin()), tick - previous->tick);
+}
+
+AutomationClipReadSnapshot::Node overlayNode(const AutomationClip::RecordingOverlayPoint& point)
+{
+	return {point.tick, point.value, point.value, 0.0f, 0.0f, false, 0.0f, AutomationNode::Curve::Clip};
+}
+
+void considerNextOverlayNode(const AutomationClip::RecordingOverlayPoint* point, int tick, bool inclusive,
+	bool& found, AutomationClipReadSnapshot::Node& result)
+{
+	if (point == nullptr) { return; }
+	if (inclusive ? point->tick < tick : point->tick <= tick) { return; }
+	if (found && point->tick > result.tick) { return; }
+	result = overlayNode(*point);
+	found = true;
+}
+
+void considerPreviousOverlayNode(const AutomationClip::RecordingOverlayPoint* point, int tick, bool inclusive,
+	bool& found, AutomationClipReadSnapshot::Node& result)
+{
+	if (point == nullptr) { return; }
+	if (inclusive ? point->tick > tick : point->tick >= tick) { return; }
+	if (found && point->tick < result.tick) { return; }
+	result = overlayNode(*point);
+	found = true;
+}
+
+bool nextVirtualNode(const AutomationClipReadSnapshot& snapshot, const AutomationClip::RecordingOverlay* overlay,
+	int tick, bool inclusive, AutomationClipReadSnapshot::Node& result)
+{
+	const auto base = inclusive
+		? std::lower_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
+			[](const AutomationClipReadSnapshot::Node& node, int pos) { return node.tick < pos; })
+		: std::upper_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
+			[](int pos, const AutomationClipReadSnapshot::Node& node) { return pos < node.tick; });
+	bool found = base != snapshot.nodes.end();
+	if (found) { result = *base; }
+	if (overlay != nullptr)
+	{
+		considerNextOverlayNode(overlay->hasBefore ? &overlay->before : nullptr, tick, inclusive, found, result);
+		considerNextOverlayNode(overlay->hasAfter ? &overlay->after : nullptr, tick, inclusive, found, result);
+	}
+	return found;
+}
+
+bool previousVirtualNode(const AutomationClipReadSnapshot& snapshot, const AutomationClip::RecordingOverlay* overlay,
+	int tick, bool inclusive, AutomationClipReadSnapshot::Node& result)
+{
+	const auto base = inclusive
+		? std::upper_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
+			[](int pos, const AutomationClipReadSnapshot::Node& node) { return pos < node.tick; })
+		: std::lower_bound(snapshot.nodes.begin(), snapshot.nodes.end(), tick,
+			[](const AutomationClipReadSnapshot::Node& node, int pos) { return node.tick < pos; });
+	bool found = base != snapshot.nodes.begin();
+	if (found) { result = *std::prev(base); }
+	if (overlay != nullptr)
+	{
+		considerPreviousOverlayNode(overlay->hasBefore ? &overlay->before : nullptr, tick, inclusive, found, result);
+		considerPreviousOverlayNode(overlay->hasAfter ? &overlay->after : nullptr, tick, inclusive, found, result);
+	}
+	return found;
+}
+
+float snapshotValueAt(const AutomationClipReadSnapshot& snapshot, int tick,
+	const AutomationClip::RecordingOverlay* overlay)
+{
+	if (overlay == nullptr || (!overlay->hasBefore && !overlay->hasAfter)) { return snapshotValueAt(snapshot, tick); }
+	AutomationClipReadSnapshot::Node next, previous;
+	if (nextVirtualNode(snapshot, overlay, tick, true, next) && next.tick == tick) { return next.inValue; }
+	if (!previousVirtualNode(snapshot, overlay, tick, false, previous)) { return 0.0f; }
+	if (!nextVirtualNode(snapshot, overlay, tick, false, next)) { return previous.outValue; }
+	return snapshotSegmentValueAtOffset(snapshot, previous, next, tick - previous.tick);
+}
+
+void pendingRecordingOverlay(const AutomationClipReadSnapshot& snapshot, jo_id_t clipId,
+	const TimePos& mapTime, AutomationClip::RecordingOverlay& overlay)
+{
+	auto* song = Engine::getSong();
+	if (song == nullptr) { return; }
+	AutomationRecordingQueue::Event before, after;
+	song->pendingAutomationRecordBounds(clipId, snapshot.appliedSequences, mapTime,
+		before, overlay.hasBefore, after, overlay.hasAfter);
+	if (overlay.hasBefore)
+	{
+		overlay.before = {before.time.getTicks(), before.value};
+	}
+	if (overlay.hasAfter)
+	{
+		overlay.after = {after.time.getTicks(), after.value};
+	}
+}
+
+bool hasRecordingOverlayPoints(const AutomationClip::RecordingOverlay* overlay)
+{
+	return overlay != nullptr && (overlay->hasBefore || overlay->hasAfter);
+}
+
+bool lastVirtualNode(const AutomationClipReadSnapshot& snapshot, const AutomationClip::RecordingOverlay* overlay,
+	AutomationClipReadSnapshot::Node& result)
+{
+	bool found = !snapshot.nodes.empty();
+	if (found) { result = snapshot.nodes.back(); }
+	if (overlay == nullptr) { return found; }
+	if (overlay->hasBefore && (!found || overlay->before.tick > result.tick))
+	{
+		result = overlayNode(overlay->before);
+		found = true;
+	}
+	if (overlay->hasAfter && (!found || overlay->after.tick > result.tick))
+	{
+		result = overlayNode(overlay->after);
+		found = true;
+	}
+	return found;
+}
+
+float rampSegmentValue(const AutomationClipReadSnapshot& snapshot,
+	const AutomationClipReadSnapshot::Node& previous, const AutomationClipReadSnapshot::Node& next,
+	int ticks, float fraction)
+{
+	const int offset = ticks - previous.tick;
+	const float start = offset == 0 ? previous.outValue
+		: snapshotSegmentValueAtOffset(snapshot, previous, next, offset);
+	const float end = snapshotSegmentValueAtOffset(snapshot, previous, next, offset + 1);
+	return start + fraction * (end - start);
 }
 
 } // namespace
@@ -179,6 +313,21 @@ void AutomationClip::retireReadSnapshot(AutomationClipReadSnapshot* snapshot)
 void AutomationClip::collectRetiredReadSnapshots()
 {
 	collectRetiredAutomationSnapshots();
+}
+
+
+bool AutomationClip::snapshotReadersActive() noexcept
+{
+	return s_activeAutomationSnapshotReaders.load(std::memory_order_seq_cst) != 0;
+}
+
+
+TimePos AutomationClip::recordingMapTime(const TimePos& clipRelativeTime) const noexcept
+{
+	AutomationSnapshotReadScope read(m_readSnapshot);
+	const int startOffset = read.get() == nullptr ? 0 : read.get()->startTimeOffset;
+	const TimePos relative = clipRelativeTime - TimePos(startOffset);
+	return std::max(TimePos(0), Note::quantized(relative, quantization()));
 }
 
 
@@ -220,6 +369,7 @@ void AutomationClip::publishReadSnapshot()
 			snapshot->nodes.push_back({it.key(), node.getInValue(), node.getOutValue(),
 				node.getInTangent(), node.getOutTangent(), node.lockedTangents(), node.bend(), node.curve()});
 		}
+		snapshot->appliedSequences = m_appliedRecordingSequences;
 	}
 	catch (const std::bad_alloc&)
 	{
@@ -307,7 +457,11 @@ void AutomationClip::setRelative(bool relative)
 float AutomationClip::valueAt( const TimePos & _time ) const
 {
 	AutomationSnapshotReadScope read(m_readSnapshot);
-	return read.get() == nullptr ? 0.0f : snapshotValueAt(*read.get(), _time.getTicks());
+	if (read.get() == nullptr) { return 0.0f; }
+	RecordingOverlay overlay;
+	pendingRecordingOverlay(*read.get(), static_cast<const JournallingObject&>(*this).id(),
+		_time, overlay);
+	return snapshotValueAt(*read.get(), _time.getTicks(), &overlay);
 }
 
 
@@ -327,46 +481,39 @@ void AutomationClip::setRampSetting( RampSetting setting )
 }
 
 
-float AutomationClip::rampValueAt(const AutomationClipReadSnapshot& snapshot, const TimePos& rel, float fraction)
+float AutomationClip::rampValueAt(const AutomationClipReadSnapshot& snapshot, const TimePos& rel, float fraction,
+	const RecordingOverlay* overlay)
 {
-	if( snapshot.nodes.empty() || rel < 0 )
-	{
-		return 0.0f;
-	}
-
+	if (rel < 0 || (snapshot.nodes.empty() && !hasRecordingOverlayPoints(overlay))) { return 0.0f; }
 	const int ticks = static_cast<int>( rel.getTicks() );
-	const auto last = std::prev(snapshot.nodes.end());
-	if( ticks >= last->tick )
+	AutomationClipReadSnapshot::Node last;
+	if (lastVirtualNode(snapshot, overlay, last) && ticks >= last.tick)
 	{
 		// At or after the last node the curve holds the last node's out value -
 		// exactly what valueAt(TimePos) returns past the end of the map.
-		return last->outValue;
+		return last.outValue;
 	}
 
 	// The segment that starts at the node at or before this tick is the one the
 	// value moves along, so the value at the node itself is its OUT value:
 	// valueAt(v, 0) returns the IN value, which is the limit the PREVIOUS
 	// segment reaches, not the one this one starts from.
-	const auto next = std::upper_bound(snapshot.nodes.begin(), snapshot.nodes.end(), ticks,
-		[](int pos, const AutomationClipReadSnapshot::Node& node) { return pos < node.tick; });
-	if( next == snapshot.nodes.begin() )
+	AutomationClipReadSnapshot::Node previous, next;
+	if (!previousVirtualNode(snapshot, overlay, ticks, true, previous))
 	{
 		// Before the FIRST node no segment has started, and stepping back from
 		// upperBound() would step off the map: the clip's value there is the one
 		// valueAt(TimePos) returns for the same ticks, which is no value at all.
 		return 0.0f;
 	}
-	const auto v = std::prev(next);
-	const auto index = static_cast<std::size_t>(v - snapshot.nodes.begin());
-	const int offset = ticks - v->tick;
-	const float start = ( offset == 0 ) ? v->outValue : snapshotValueAtOffset(snapshot, index, offset);
-	const float end = snapshotValueAtOffset(snapshot, index, offset + 1);
-	return start + fraction * ( end - start );
+	if (!nextVirtualNode(snapshot, overlay, ticks, false, next)) { return previous.outValue; }
+	return rampSegmentValue(snapshot, previous, next, ticks, fraction);
 }
 
 
 void AutomationClip::addRampKnot(const AutomationClipReadSnapshot& snapshot, AutomationRamp& ramp,
-	const TimePos& relClipStart, int frame, int frameOffsetInTick, double framesPerTick)
+	const TimePos& relClipStart, int frame, int frameOffsetInTick, double framesPerTick,
+	const RecordingOverlay* pendingOverlay) const
 {
 	// The knot's own POSITION inside its tick, from the frame it is written on,
 	// so a knot is exactly on the curve rather than at a rounded boundary.
@@ -379,12 +526,20 @@ void AutomationClip::addRampKnot(const AutomationClipReadSnapshot& snapshot, Aut
 	{
 		rel = std::min(static_cast<int>(rel), snapshot.length - snapshot.startTimeOffset);
 	}
-	ramp.addKnot(static_cast<f_cnt_t>(frame), rampValueAt(snapshot, rel, fraction));
+	RecordingOverlay overlay;
+	if (pendingOverlay == nullptr)
+	{
+		pendingRecordingOverlay(snapshot, static_cast<const JournallingObject&>(*this).id(),
+			rel, overlay);
+		pendingOverlay = &overlay;
+	}
+	ramp.addKnot(static_cast<f_cnt_t>(frame), rampValueAt(snapshot, rel, fraction, pendingOverlay));
 }
 
 
 void AutomationClip::addRampBoundaryKnots(const AutomationClipReadSnapshot& snapshot, AutomationRamp& ramp,
-	const TimePos& relClipStart, f_cnt_t frames, int frameOffsetInTick, double framesPerTick)
+	const TimePos& relClipStart, f_cnt_t frames, int frameOffsetInTick, double framesPerTick,
+	const RecordingOverlay* overlay) const
 {
 	for( int tick = 1; ; ++tick )
 	{
@@ -393,10 +548,10 @@ void AutomationClip::addRampBoundaryKnots(const AutomationClipReadSnapshot& snap
 		int before = static_cast<int>( std::floor( knotFrame ) );
 		const int after = static_cast<int>( std::ceil( knotFrame ) );
 		if( before == after ) { before = after - 1; }
-		if( before > 0 ) { addRampKnot(snapshot, ramp, relClipStart, before, frameOffsetInTick, framesPerTick); }
+		if( before > 0 ) { addRampKnot(snapshot, ramp, relClipStart, before, frameOffsetInTick, framesPerTick, overlay); }
 		if( after > 0 && after < static_cast<int>( frames ) )
 		{
-			addRampKnot(snapshot, ramp, relClipStart, after, frameOffsetInTick, framesPerTick);
+			addRampKnot(snapshot, ramp, relClipStart, after, frameOffsetInTick, framesPerTick, overlay);
 		}
 	}
 }
@@ -409,7 +564,7 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 	const auto* snapshot = read.get();
 
 	ramp.reset( frames );
-	if( snapshot == nullptr || snapshot->nodes.empty() || frames == 0 || framesPerTick <= 0.0 )
+	if( snapshot == nullptr || frames == 0 || framesPerTick <= 0.0 )
 	{
 		return;
 	}
@@ -422,15 +577,15 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 
 	// The block's own geometry travels with each knot call.
 	// Knot 0 is the block's first sample, at its own position inside its tick.
-	addRampKnot(*snapshot, ramp, relStart, 0, frameOffsetInTick, framesPerTick);
+	addRampKnot(*snapshot, ramp, relStart, 0, frameOffsetInTick, framesPerTick, nullptr);
 
 	// Tick-boundary pairs preserve discrete jumps and the line between them.
-	addRampBoundaryKnots(*snapshot, ramp, relStart, frames, frameOffsetInTick, framesPerTick);
+	addRampBoundaryKnots(*snapshot, ramp, relStart, frames, frameOffsetInTick, framesPerTick, nullptr);
 
 	// ...and the block's end, so the samples after the last boundary
 	// interpolate to where the curve actually is when the block runs out,
 	// instead of holding the last boundary's value.
-	addRampKnot(*snapshot, ramp, relStart, static_cast<int>(frames), frameOffsetInTick, framesPerTick);
+	addRampKnot(*snapshot, ramp, relStart, static_cast<int>(frames), frameOffsetInTick, framesPerTick, nullptr);
 }
 
 

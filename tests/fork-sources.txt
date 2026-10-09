@@ -2253,3 +2253,6 @@ include/RenderPeriodClock.h
 tests/src/core/SystemSemaphoreTest.cpp
 src/core/AutomationClipSnapshot.cpp
 tests/src/core/AutomationClipSnapshotTest.cpp
+tests/src/core/AutomationRecordingTest.cpp
+# 2026-10-09, cluster 5388: fixed-capacity per-audio-producer automation recording queues.
+include/AutomationRecordingQueue.h

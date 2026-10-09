@@ -150,7 +150,7 @@ AudioEngine::AudioEngine(bool renderOnly)
 
 	for( int i = 0; i < m_numWorkers+1; ++i )
 	{
-		auto wt = new AudioEngineWorkerThread(this);
+		auto wt = new AudioEngineWorkerThread(this, static_cast<std::size_t>(i + 1));
 		if( i < m_numWorkers )
 		{
 			wt->start( QThread::TimeCriticalPriority );

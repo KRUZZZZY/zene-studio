@@ -1706,6 +1706,19 @@ void MainWindow::keyReleaseEvent( QKeyEvent * _ke )
 
 void MainWindow::timerEvent( QTimerEvent * _te)
 {
+	if (auto* song = Engine::getSong())
+	{
+		song->drainAutomationRecordingEvents();
+		const auto status = song->automationRecordingStatus();
+		const auto lossCount = status.droppedEvents + status.staleClipIds + status.membershipOverflows;
+		if (lossCount > m_lastAutomationRecordingLossCount)
+		{
+			const QString message = tr("Automation recording lost %1 event(s), %2 stale clip id(s), %3 membership-table overflow event(s).")
+				.arg(status.droppedEvents).arg(status.staleClipIds).arg(status.membershipOverflows);
+			statusBar()->showMessage(message, 8000);
+			m_lastAutomationRecordingLossCount = lossCount;
+		}
+	}
 	AutomationClip::collectRetiredReadSnapshots();
 	emit periodicUpdate();
 }
