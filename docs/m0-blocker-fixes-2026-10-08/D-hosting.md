@@ -92,7 +92,7 @@ a lost connection was NOT a clean failure (the instrument went silent with no re
 
 | Item | Verdict | Commit | Test | Red on round 4 | Green now |
 |---|---|---|---|---|---|
-| 1 late replies taken as the next same-id answer | FIXED: per-id count of abandoned queries; each later same-id reply is consumed as abandoned, once; processMessage consumes one found by any other wait; the deadline is checked after each non-matching message | 18ae528ff | lateQueryReplyDoesNotAnswerTheNextQuery (fake latequery) | FAIL (the late answer returned) | PASS |
+| 1 late replies taken as the next same-id answer | FIXED, with a caveat (corrected in round 6): per-id count of abandoned queries. A reply that never arrives used to leave the count forever, so every later query timed out; the count now expires after 2 s; each later same-id reply is consumed as abandoned, once; processMessage consumes one found by any other wait; the deadline is checked after each non-matching message | 18ae528ff | lateQueryReplyDoesNotAnswerTheNextQuery (fake latequery) | FAIL (the late answer returned) | PASS |
 | 2 shm read() spin under the data lock | FIXED: a short read fails the FIFO at once; no spin | 18ae528ff | not forced (unreachable without a broken peer) | - | compiled |
 | 3 lost connection silent | FIXED: every audio-thread loss invalidates the connection; process() flags it; applyDeferred logs (qCritical) and sets m_failed. A loss found during a main-thread wait is reported by the next period | 18ae528ff | lostConnectionIsReportedOnTheMainThread (fake garbage: negative argument count) | FAIL (plugin not failed) | PASS |
 | 4 test leaves LMMS_PLUGIN_DIR set | FIXED: ScopedPluginDir restores the previous value (or unsets it) when the test ends | 18ae528ff | no-buffer and pre-buffer tests | - | PASS |
@@ -112,6 +112,44 @@ Windows: still PARTIAL. Compiled for Linux only (shm syntax check; POSIX semapho
 (WaitForSingleObject with a timeout) is not compiled here (no mingw), and the shm FIFO path is not run end to end. A
 Win32 compile break would surface on the hosted Windows job after merge; the owner decides whether to run it first.
 
+## Round 6 (re-review round 5)
+
+Re-review verdict: no open audio-thread blocker on Linux. Three must-fix items, two follow-ups, and the Windows list.
+Round-5 row 1 is corrected above: a reply that never arrives poisoned its id for the life of the connection (the count
+never came down). Fixed here by expiry.
+
+| Item | Verdict | Commit | Test | Red on round 5 | Green now |
+|---|---|---|---|---|---|
+| 1 a reply that never arrives poisons its id | FIXED: the abandoned count expires StaleQueryExpiry (2 s) after its first abandonment. Caveat: a reply later than 2 s is taken as the answer to the next query of its id | 380e23fa8 | neverArrivingReplyExpiresAndLaterQueriesWork (fake dropquery) | FAIL (every later query returned -1) | PASS |
+| 2 m_failed written by the timer, read by the audio thread | FIXED: std::atomic<bool> | 380e23fa8 | - | - | compiled |
+| 3 per-connection state across init() on a reused object | FIXED: init()'s reuse branch clears the abandoned counts, the owed-reply count, the cached visibility, the pending MIDI frame and the lost-connection flag. Code-verified; no test (the reuse path is only reached after a failure) | 380e23fa8 | - | - | - |
+| Pump against a flooding client | FIXED: at most 64 messages per tick | 380e23fa8 | - | - | compiled |
+| Started-frame total bound 500 ms | CHANGED to 2 s (a loaded machine would otherwise kill a plugin over a large message) | 380e23fa8 | messageNearTheOneMegabyteWindowDoesNotFailThePlugin | - | PASS |
+
+Suites on the final tree (all pass): RemotePluginClientE2ETest (25), MidiHandoffQueueTest (9), SystemSemaphoreTest (4),
+VstMidiEventBatchTest, AllocationProbeTest, RemotePluginAudioPortsTest, AudioPortsTest, AudioPortsModelTest,
+ZynSeparateProcessTest, OutOfProcessHostTest, OutOfProcessHostClientLoopTest. Client executables RemoteZynAddSubFx and
+NativeLinuxRemoteVstPlugin64 build. Gates complexity, file-length, fork-sources and no-upstream-regression exit 0.
+Syntax checks pass with and without -DSYNC_WITH_SHM_FIFO for RemotePluginBase.cpp and RemotePlugin.cpp.
+
+### What hosted Windows CI must verify (none of this runs on Linux)
+
+The hosting E2E tests use the POSIX fake client and QSKIP on Windows, so a green Windows job proves compilation only.
+Verify in this order:
+1. Compile the Win32 backend (SystemSemaphore.cpp: WaitForSingleObject with a timeout, DWORD cast), and the shm variant
+   (RemotePluginBase.h: owner key via std::hash<std::thread::id>, tryLockFor, freeSpace; RemotePluginBase.cpp:
+   readFrameLocked, receiveFrameBefore shm branch, sendFrameNonBlocking shm branch; RemotePlugin.cpp).
+2. SystemSemaphoreTest on Windows: it is POSIX-only in practice; either run it on Win32 or record it as unrun.
+3. A real shm run: a Windows client plus a host, a short session (activate, process periods, one isUIVisible query,
+   one save), with the FIFO in both directions. Nothing in CI does this today.
+4. Win32 tryAcquire timeout behaviour: a zero timeout returns at once; 100 ms returns after about 100 ms.
+5. The shm owner key under MSVC: two threads never share a key.
+6. The Windows main-thread waits (VST program and parameter queries) remain unbounded, as on Linux; a hung plugin still
+   freezes the GUI on those actions. Known; owner to schedule.
+
+Until items 1 to 3 have run, Windows must not be described as fixed. Whether to merge before the Windows job runs is the
+owner's decision: a compile break would redden the hosted Windows job on the live line right after merge.
+
 ## Residuals (open, tracked)
 
 - Windows shm transport: bounded in design (rounds 3-4), but only syntax-checked (-DSYNC_WITH_SHM_FIFO) and the POSIX
@@ -127,7 +165,8 @@ Win32 compile break would surface on the hosted Windows job after merge; the own
 - The plugin's own UI close is not reported by the client protocol: the cached visibility can be stale after it.
 - A frame larger than the socket buffer is only completed by the main thread; during playback such a message leaves the
   plugin silent until the next main-thread wait.
-- Main-thread VST program, parameter and settings queries wait without a bound (owner to schedule). ZynAddSubFx's out-of-process suites pass but send no notes.
+- Main-thread VST program, parameter and settings queries wait without a bound (owner to schedule).
+- A reply later than StaleQueryExpiry (2 s) after its query is taken as the answer to the next query of its id. ZynAddSubFx's out-of-process suites pass but send no notes.
 - Messages above 1 MB on the audio thread still fail the plugin (N6 bound).
 - Main-thread waits now hold the communication lock for their whole wait (N1); the audio thread skips periods
   meanwhile, so a slow client during a main-thread wait is a silence gap.
