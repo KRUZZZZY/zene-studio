@@ -56,6 +56,7 @@
 #include "SampleFrameEdits.h"
 #include "Song.h"
 #include "SongEditor.h"
+#include "ArrangerFileDrop.h"
 #include "StringPairDrag.h"
 #include "TextFloat.h"
 #include "TrackContainer.h"
@@ -468,6 +469,13 @@ void ClipView::dragEnterEvent( QDragEnterEvent * dee )
 	TrackContentWidget * tcw = getTrackView()->getTrackContentWidget();
 	TimePos clipPos{m_clip->startPosition()};
 
+	// A file from a plug-in editor or the desktop lands on the lane under this clip (0.5.0 L04, Q050-031).
+	if (arrangerdrop::carriesFile(dee->mimeData()))
+	{
+		dee->acceptProposedAction();
+		return;
+	}
+
 	if( tcw->canPasteSelection( clipPos, dee ) == false )
 	{
 		dee->ignore();
@@ -493,6 +501,14 @@ void ClipView::dragEnterEvent( QDragEnterEvent * dee )
  */
 void ClipView::dropEvent( QDropEvent * de )
 {
+	if (arrangerdrop::carriesFile(de->mimeData()))
+	{
+		TrackContentWidget * lane = getTrackView()->getTrackContentWidget();
+		if (lane->dropFile(de->mimeData(), mapTo(lane, position(de)).x())) { de->acceptProposedAction(); }
+		else { de->ignore(); }
+		return;
+	}
+
 	QString type = StringPairDrag::decodeKey( de );
 	QString value = StringPairDrag::decodeValue( de );
 

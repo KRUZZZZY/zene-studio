@@ -44,6 +44,8 @@
 #include "InstrumentTrack.h"
 #include "PatternTrack.h"
 #include "Song.h"
+#include "ArrangerFileDrop.h"
+#include "DeprecationHelper.h"
 #include "StringPairDrag.h"
 #include "TrackPinStrip.h"
 #include "TrackSpacers.h"
@@ -431,6 +433,12 @@ void TrackContainerView::clearAllTracks()
 
 void TrackContainerView::dragEnterEvent( QDragEnterEvent * _dee )
 {
+	// A file from a plug-in editor or the desktop: taken by the song only (0.5.0 L04, Q050-031).
+	if (arrangerdrop::carriesFile(_dee->mimeData()))
+	{
+		if (m_tc == Engine::getSong()) { _dee->acceptProposedAction(); }
+		return;
+	}
 	StringPairDrag::processDragEnterEvent( _dee,
 		QString( "presetfile,pluginpresetfile,samplefile,instrument,"
 				"importedproject,soundfontfile,patchfile,vstpluginfile,projectfile,"
@@ -453,6 +461,15 @@ void TrackContainerView::stopRubberBand()
 
 void TrackContainerView::dropEvent( QDropEvent * _de )
 {
+	if (arrangerdrop::carriesFile(_de->mimeData()))
+	{
+		// The empty space below the tracks: the file gets a new track of its kind at the drop's time.
+		const bool made = m_tc == Engine::getSong()
+			&& arrangerdrop::dropFileAndReport(_de->mimeData(), nullptr, arrangerdrop::tickAtContainerX(this, position(_de).x()));
+		if (made) { _de->acceptProposedAction(); }
+		else { _de->ignore(); }
+		return;
+	}
 	QString type = StringPairDrag::decodeKey( _de );
 	QString value = StringPairDrag::decodeValue( _de );
 	if( type == "instrument" )

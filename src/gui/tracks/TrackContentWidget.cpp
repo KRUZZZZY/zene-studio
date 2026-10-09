@@ -29,6 +29,7 @@
 #include <QMenu>
 #include <QPainter>
 
+#include "ArrangerFileDrop.h"
 #include "AutomationClip.h"
 #include "Clipboard.h"
 #include "DataFile.h"
@@ -298,6 +299,12 @@ TimePos TrackContentWidget::getPosition( int mouseX )
  */
 void TrackContentWidget::dragEnterEvent( QDragEnterEvent * dee )
 {
+	// A file dragged out of a plug-in editor or the desktop carries no clip key (0.5.0 L04, Q050-031).
+	if (arrangerdrop::carriesFile(dee->mimeData()))
+	{
+		dee->acceptProposedAction();
+		return;
+	}
 	TimePos clipPos = getPosition(position(dee).x());
 	if( canPasteSelection( clipPos, dee ) == false )
 	{
@@ -537,9 +544,29 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, 
  *
  * \param de the Drop Event to respond to
  */
+bool TrackContentWidget::dropFile( const QMimeData * mime, int laneX )
+{
+	if (!arrangerdrop::carriesFile(mime)) { return false; }
+	const float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
+	const TimePos tick = m_trackView->trackContainerView()->fixedClips()
+		? TimePos(0)
+		: TimePos(getPosition(laneX)).quantize(snapSize, true);
+	return arrangerdrop::dropFileAndReport(mime, getTrack(), tick);
+}
+
+
+
+
 void TrackContentWidget::dropEvent( QDropEvent * de )
 {
 	const auto pos = position(de);
+
+	if (arrangerdrop::carriesFile(de->mimeData()))
+	{
+		if (dropFile(de->mimeData(), pos.x())) { de->acceptProposedAction(); }
+		else { de->ignore(); }
+		return;
+	}
 
 	TimePos clipPos = TimePos(getPosition(pos.x()));
 	if( pasteSelection( clipPos, de ) == true )

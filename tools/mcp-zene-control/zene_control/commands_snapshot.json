@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T06:08:42Z",
+  "captured_at": "2026-10-09T11:05:56Z",
   "commands": [
     {
       "args_schema": {
@@ -4684,6 +4684,75 @@
           },
           "points": {
             "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Make a clip of a file: a Standard MIDI File becomes one MIDI clip holding all its notes (on an instrument track), an audio file one sample clip (on a sample track), at 'position' ticks. With 'track' the clip goes on that track, which must be of the kind the file needs; without it a NEW track of that kind, named after the file, is created. This is what dropping a file on the arranger runs - from a plug-in editor, the desktop or the browser. Everything that can fail is checked before anything changes: a missing, empty, malformed or unsupported file, a clip that would end past the song, a track of the wrong kind or a locked one is refused and the project is left exactly as it was. Audio read from the temporary folder (a plug-in's drag file, deleted right after) is embedded in the clip; other audio is referenced by path. One undo step removes the clip (and a track it created).",
+      "group": "clip",
+      "id": "clip.import_file",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "embedded": {
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "midi",
+              "audio"
+            ],
+            "type": "string"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "track_created": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -34759,23 +34828,23 @@
       }
     }
   ],
-  "count": 823,
+  "count": 824,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-p1xw5a_7/zene.sock",
-    "version": "0.4.0-alpha.1364+a0295ab"
+    "source_socket": "/tmp/zctl-run-72nlw06d/zene.sock",
+    "version": "0.4.0-alpha.1366+888934e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 823,
-    "ids_sha256": "61b947e1bfb7cd685ab6dfcb9e0d000c0c1653a3aa89a63ebc1c084f64b14f41"
+    "id_count": 824,
+    "ids_sha256": "6ad50baf0e5262a87436b8b430d808f676ae00e2ec569c032a123c1979d48429"
   }
 }
