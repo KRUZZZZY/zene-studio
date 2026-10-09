@@ -110,6 +110,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Free disk space (a full Debug build + ~500 test executables)
+        # Hosted run 37881021912 (2026-10-09): unit-tests, coverage, tsan and the MCP e2e job
+        # all died with "/usr/bin/ld: final link failed: No space left on device" once the
+        # suite reached ~500 test executables. Same list as build.yml's mingw64 step (which
+        # documents why $AGENT_TOOLSDIRECTORY and /usr/local/share/boost stay).
+        run: |
+          echo "[free-disk-space] df -h / before:"; df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies (Qt6, mirrors the locally verified build)
         run: |
           sudo apt-get update
@@ -177,6 +187,16 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+      - name: Free disk space (a full Debug build + ~500 test executables)
+        # Hosted run 37881021912 (2026-10-09): unit-tests, coverage, tsan and the MCP e2e job
+        # all died with "/usr/bin/ld: final link failed: No space left on device" once the
+        # suite reached ~500 test executables. Same list as build.yml's mingw64 step (which
+        # documents why $AGENT_TOOLSDIRECTORY and /usr/local/share/boost stay).
+        run: |
+          echo "[free-disk-space] df -h / before:"; df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies (Qt6, mirrors the locally verified build)
         run: |
           sudo apt-get update
@@ -220,6 +240,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Free disk space (a full Debug build + ~500 test executables)
+        # Hosted run 37881021912 (2026-10-09): unit-tests, coverage, tsan and the MCP e2e job
+        # all died with "/usr/bin/ld: final link failed: No space left on device" once the
+        # suite reached ~500 test executables. Same list as build.yml's mingw64 step (which
+        # documents why $AGENT_TOOLSDIRECTORY and /usr/local/share/boost stay).
+        run: |
+          echo "[free-disk-space] df -h / before:"; df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies and clang 20 (RTSan needs clang >= 20)
         run: |
           sudo apt-get update
@@ -275,6 +305,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Free disk space (a full Debug build + ~500 test executables)
+        # Hosted run 37881021912 (2026-10-09): unit-tests, coverage, tsan and the MCP e2e job
+        # all died with "/usr/bin/ld: final link failed: No space left on device" once the
+        # suite reached ~500 test executables. Same list as build.yml's mingw64 step (which
+        # documents why $AGENT_TOOLSDIRECTORY and /usr/local/share/boost stay).
+        run: |
+          echo "[free-disk-space] df -h / before:"; df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build and coverage dependencies
         run: |
           sudo apt-get update
@@ -421,6 +461,16 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Free disk space (a full Debug build + ~500 test executables)
+        # Hosted run 37881021912 (2026-10-09): unit-tests, coverage, tsan and the MCP e2e job
+        # all died with "/usr/bin/ld: final link failed: No space left on device" once the
+        # suite reached ~500 test executables. Same list as build.yml's mingw64 step (which
+        # documents why $AGENT_TOOLSDIRECTORY and /usr/local/share/boost stay).
+        run: |
+          echo "[free-disk-space] df -h / before:"; df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies (Qt6, mirrors the locally verified build)
         run: |
           sudo apt-get update
