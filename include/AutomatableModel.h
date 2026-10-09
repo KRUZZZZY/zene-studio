@@ -26,6 +26,7 @@
 #define LMMS_AUTOMATABLE_MODEL_H
 
 #include <atomic>
+#include <cstddef>
 #include <cmath>
 #include <QMap>
 #include <QMutex>
@@ -136,6 +137,11 @@ public:
 
 	void setControllerConnection( ControllerConnection* c );
 
+#ifdef LMMS_TESTING
+	//! Test the destructor's worker-thread deadlock guard without destroying an object.
+	static bool destructorWouldRequestBlockingChangeGuard() noexcept;
+#endif
+
 
 	template<class T>
 	static T castValue( const float v )
@@ -173,7 +179,7 @@ public:
 				}
 			}
 		}
-		return castValue<T>( m_value );
+		return castValue<T>( publishedValue() );
 	}
 
 	float controllerValue( int frameOffset ) const;
@@ -182,14 +188,8 @@ public:
 	//! @return pointer to model's valueBuffer when s.ex.data exists, NULL otherwise
 	ValueBuffer * valueBuffer();
 
-	/*! valueBuffer() without the model's mutex (review f1a74cc54). The same
-	 *  computation and the same state changes, so the same buffer. ONLY for a
-	 *  model that the calling thread alone reads in the period being rendered:
-	 *  the sidechain route amount is the one caller, read by its receiver
-	 *  channel's job, and its ramp is published before those jobs start. A
-	 *  linked model's buffer is still taken through valueBuffer(), so a link
-	 *  keeps that one model's mutex on the audio thread (cluster 2647). */
-	ValueBuffer * valueBufferForSoleReader();
+	//! Serial render prepass entry point; workers only call valueBuffer().
+	void prepareValueBufferForRender(bool skipLinkedControllerLookup = false);
 
 	// -----------------------------------------------------------------------
 	// Sample-accurate automation (feature-list row 9,
@@ -227,7 +227,7 @@ public:
 
 	bool isAtInitValue() const
 	{
-		return m_value == m_initValue;
+		return publishedValue() == m_initValue;
 	}
 
 	template<class T>
@@ -259,7 +259,7 @@ public:
 
 	void incValue( int steps )
 	{
-		setValue( m_value + steps * m_step );
+		setValue( publishedValue() + steps * m_step );
 	}
 
 	float range() const
@@ -502,6 +502,17 @@ protected:
 	float fittedValue( float value ) const;
 
 private:
+	float publishedValue() const noexcept;
+	void publishValuePair(float oldValue, float newValue) noexcept;
+	void consumePublishedValuePair() noexcept;
+	void invalidateValueBufferCache() noexcept;
+	void invalidateLinkedValueBufferCaches() noexcept;
+	ValueBuffer* cachedValueBuffer() noexcept;
+	static std::uint64_t packValuePair(float oldValue, float newValue) noexcept;
+	static float unpackOldValue(std::uint64_t pair) noexcept;
+	static float unpackNewValue(std::uint64_t pair) noexcept;
+	static constexpr std::size_t NotInAudioEngineRegistry = ~std::size_t{0};
+
 	static std::atomic<jo_id_t> s_lastTouched;
 	float m_trimBase = 0.f;  //!< ED-199, see trimBase()
 	quint64 m_trimRun = ~quint64{0};  //!< no token: run 0 (stopped, an export) must read the value too
@@ -551,6 +562,10 @@ private:
 
 	ScaleType m_scaleType; //!< scale type, linear by default
 	float m_value;
+	//! Exact old/new values published by control writes, packed as two float bit patterns.
+	std::atomic<std::uint64_t> m_publishedValuePair{0};
+	//! Advances on every setValueInternal(), including a repeated pair after intervening writes.
+	std::atomic<std::uint64_t> m_valueRevision{0};
 	float m_initValue;
 	float m_minValue;
 	float m_maxValue;
@@ -560,6 +575,11 @@ private:
 
 	bool m_valueChanged;
 	float m_oldValue; //!< used by valueBuffer for interpolation
+	//! Render-owned value snapshot and the last publication consumed by the prepass.
+	float m_renderValue = 0.0f;
+	std::uint64_t m_renderValueRevision = 0;
+	std::atomic<bool> m_registeredWithAudioEngine{false};
+	std::size_t m_audioEngineRegistrySlot = NotInAudioEngineRegistry;
 
 	// used to determine if step size should be applied strictly (ie. always)
 	// or only when value set from gui (default)
@@ -587,7 +607,7 @@ private:
 
 	bool m_hasSampleExactData;
 
-	// prevent several threads from attempting to write the same vb at the same time
+	// Legacy lock retained as a test sentinel; product code no longer acquires it.
 	QMutex m_valueBufferMutex;
 #ifdef LMMS_TESTING
 	// The sidechain lock probe (PhaseDSidechainTest::theSidechainAmountReadTakesNoLock)
@@ -596,6 +616,8 @@ private:
 #endif
 
 	bool m_useControllerValue;
+
+	friend class AudioEngine;
 
 	// -----------------------------------------------------------------------
 	// Automation mode state (post-alpha/automation-modes). Written by the GUI

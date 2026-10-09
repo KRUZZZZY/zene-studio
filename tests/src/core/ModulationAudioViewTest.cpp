@@ -55,6 +55,7 @@
 #include "AutomatableModel.h"
 #include "Engine.h"
 #include "ModulationLayer.h"
+#include "RealtimeScope.h"
 
 using namespace lmms;
 
@@ -130,7 +131,11 @@ private slots:
 			resumeWrite.acquire();
 		}, Qt::DirectConnection);
 
-		std::thread audio([&] { applyModulationBlock(publisher, view, 0.25); });
+		std::thread audio([&]
+		{
+			const RealtimeScope realtime;
+			applyModulationBlock(publisher, view, 0.25);
+		});
 		const bool writeReachedModel = writeEntered.try_acquire_for(std::chrono::seconds(2));
 		if (!writeReachedModel)
 		{

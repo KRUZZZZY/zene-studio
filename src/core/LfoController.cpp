@@ -101,6 +101,9 @@ void LfoController::updateValueBuffer()
 	}
 
 	float amount = m_amountModel.value();
+	// The amount is an AutomatableModel in the same render-owned registry. It
+	// must be prepared before its buffer is read by this one controller update.
+	m_amountModel.prepareValueBufferForRender();
 	ValueBuffer *amountBuffer = m_amountModel.valueBuffer();
 	int amountInc = amountBuffer ? 1 : 0;
 	float *amountPtr = amountBuffer ? &(amountBuffer->values()[ 0 ] ) : &amount;

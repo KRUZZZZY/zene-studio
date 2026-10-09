@@ -66,6 +66,7 @@ class AudioEngineWorkerThread;
 class SampleBuffer;
 class SamplePlayHandle;
 class Track;
+class AutomatableModel;
 
 constexpr f_cnt_t MINIMUM_BUFFER_SIZE = 32;
 constexpr f_cnt_t DEFAULT_BUFFER_SIZE = 256;
@@ -463,6 +464,46 @@ public:
 	 */
 	std::span<const SampleFrame> renderNextPeriod();
 
+	//! Register models from their base constructor; growth is control-thread-only.
+	bool registerAutomatableModel(AutomatableModel* model) noexcept;
+	//! Remove a model slot; realtime teardown only tombstones its preallocated slot.
+	void unregisterAutomatableModel(AutomatableModel* model) noexcept;
+	//! Serial cache pass. The normal caller already owns m_changeMutex.
+	void prepareAutomatableModelBuffers() noexcept;
+	void recordUnregisteredAutomatableBufferRequest() noexcept
+	{
+		m_unregisteredAutomatableBufferRequests.fetch_add(1, std::memory_order_relaxed);
+	}
+	void recordUnpreparedAutomatableBufferRequest() noexcept
+	{
+		m_unpreparedAutomatableBufferRequests.fetch_add(1, std::memory_order_relaxed);
+	}
+	void recordUnpreparedControllerBufferRequest() noexcept
+	{
+		m_unpreparedControllerBufferRequests.fetch_add(1, std::memory_order_relaxed);
+	}
+	std::uint64_t unregisteredAutomatableBufferRequests() const noexcept
+	{
+		return m_unregisteredAutomatableBufferRequests.load(std::memory_order_relaxed);
+	}
+	std::uint64_t unpreparedAutomatableBufferRequests() const noexcept
+	{
+		return m_unpreparedAutomatableBufferRequests.load(std::memory_order_relaxed);
+	}
+	std::uint64_t unpreparedControllerBufferRequests() const noexcept
+	{
+		return m_unpreparedControllerBufferRequests.load(std::memory_order_relaxed);
+	}
+	std::uint64_t registeredAutomatableModelCount() const noexcept
+	{
+		return m_registeredAutomatableModelCount.load(std::memory_order_relaxed);
+	}
+	std::uint64_t automatableModelRegistrationFailures() const noexcept
+	{
+		return m_automatableModelRegistrationFailures.load(std::memory_order_relaxed);
+	}
+	bool isRenderThread() const noexcept;
+
 	/**
 	 * @brief Renders an audio buffer into @a dst.
 	 *
@@ -511,6 +552,7 @@ private:
 	struct SampleVoicePool;
 	void serviceSampleVoicePoolOnControlThread() noexcept;
 	void disposePlayHandle(PlayHandle* handle, bool realtime) noexcept;
+	struct AutomatableModelRegistry;
 #ifdef LMMS_TESTING
 	friend class ::AudioBusPlayHandleQueueTest;
 #endif
@@ -705,8 +747,15 @@ private:
 	std::atomic<bool> m_overloadShedding{true};
 
 	std::recursive_mutex m_changeMutex;
+	std::atomic<AutomatableModelRegistry*> m_automatableModelRegistry{nullptr};
+	std::atomic<std::uint64_t> m_registeredAutomatableModelCount{0};
+	std::atomic<std::uint64_t> m_automatableModelRegistrationFailures{0};
+	std::atomic<std::uint64_t> m_unregisteredAutomatableBufferRequests{0};
+	std::atomic<std::uint64_t> m_unpreparedAutomatableBufferRequests{0};
+	std::atomic<std::uint64_t> m_unpreparedControllerBufferRequests{0};
 
 	friend class Engine;
+	friend class AutomatableModel;
 	friend class AudioBusHandle;
 	friend class AudioEngineWorkerThread;
 	friend class ProjectRenderer;

@@ -471,7 +471,7 @@ void MixerChannel::sumSidechainInputs(const f_cnt_t fpp)
 		// the curve to one scalar for the whole period.
 		// review f1a74cc54 (cluster 2647): this receiver's job is the only reader of the route's amount,
 		// so the sole-reader form takes no mutex. A linked amount still takes the linked model's mutex.
-		ValueBuffer* const amountBuf = postNoGain ? nullptr : route->amount()->valueBufferForSoleReader();
+		ValueBuffer* const amountBuf = postNoGain ? nullptr : route->amount()->valueBuffer();
 		const float amount = postNoGain ? 1.0f : route->amount()->value();
 		// PDC (#605): delay the tap to this channel's alignment point. The
 		// route owns the tap buffer, so the delay is applied in place.

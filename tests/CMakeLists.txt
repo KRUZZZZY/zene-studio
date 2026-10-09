@@ -466,6 +466,9 @@ set(LMMS_TESTS
 	src/core/NoteRandomTest.cpp
 	src/core/NoteTransformTest.cpp
 	src/core/PhaseDSidechainTest.cpp
+	# M0 automation prepass: full mixer renders pinned to the c405233f8 binary,
+	# the immediately-previous-setter interpolation start, and the teardown guard.
+	src/core/AutomationPrepassProofTest.cpp
 	src/core/PhaseFChannelScaleTest.cpp
 	src/core/PluginLogoResourceTest.cpp
 	src/core/PluginAudioPortsTest.cpp
@@ -1599,6 +1602,9 @@ set_target_properties(MpePlaybackTest PROPERTIES ENABLE_EXPORTS ON)
 # (D9a/D9b), which needs a Qt platform plugin even though the test is guiless.
 set_tests_properties(RecordingRealtimeTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AutomationPrepassProofTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_compile_definitions(AutomationPrepassProofTest PRIVATE LMMS_AUTOMATION_PREPASS_DESTRUCTOR_TEST)
 # ScriptDawBindingTest constructs a real Engine (mixer, script worker thread,
 # ProjectJournal) and drives it through the Lua binding, so it needs the same
 # headless Qt platform. ScriptDawRemovalUndoTest is the same kind of test.

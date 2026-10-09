@@ -23,6 +23,7 @@
  */
 
 #include "AudioEngine.h"
+#include "AutomatableModel.h"
 #include "ControlRoom.h"
 #include "RenderPeriodClock.h"
 #include "InputMeter.h"
@@ -70,8 +71,27 @@
 
 #include "BufferManager.h"
 
+#include <limits>
+#include <memory>
+
 namespace lmms
 {
+
+struct AudioEngine::AutomatableModelRegistry
+{
+	explicit AutomatableModelRegistry(std::size_t slotCount) : capacity(slotCount),
+		modelSlots(std::make_unique<std::atomic<AutomatableModel*>[]>(slotCount))
+	{
+		for (std::size_t i = 0; i < capacity; ++i) { modelSlots[i].store(nullptr, std::memory_order_relaxed); }
+	}
+
+	std::size_t capacity;
+	std::unique_ptr<std::atomic<AutomatableModel*>[]> modelSlots;
+	static_assert(std::atomic<AutomatableModel*>::is_always_lock_free,
+		"the render-owned model registry requires lock-free model pointers");
+	static_assert(std::atomic<AutomatableModelRegistry*>::is_always_lock_free,
+		"the render-owned model registry pointer must always be lock-free");
+};
 
 using LocklessListElement = LocklessList<PlayHandle*>::Element;
 
@@ -378,6 +398,132 @@ AudioEngine::~AudioEngine()
 	{
 		delete[] input;
 	}
+	delete m_automatableModelRegistry.exchange(nullptr, std::memory_order_acq_rel);
+}
+
+
+
+bool AudioEngine::isRenderThread() const noexcept
+{
+	return s_renderingThread;
+}
+
+
+
+bool AudioEngine::registerAutomatableModel(AutomatableModel* model) noexcept
+{
+	if (model == nullptr) { return false; }
+	if (RealtimeScope::isActive())
+	{
+		m_automatableModelRegistrationFailures.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
+
+	const auto lock = std::lock_guard{m_changeMutex};
+	if (model->m_registeredWithAudioEngine.load(std::memory_order_relaxed)) { return true; }
+
+	AutomatableModelRegistry* registry = m_automatableModelRegistry.load(std::memory_order_acquire);
+	std::size_t freeSlot = registry != nullptr ? registry->capacity : 0;
+	if (registry != nullptr)
+	{
+		for (std::size_t i = 0; i < registry->capacity; ++i)
+		{
+			if (registry->modelSlots[i].load(std::memory_order_relaxed) == nullptr)
+			{
+				freeSlot = i;
+				break;
+			}
+		}
+	}
+
+	if (freeSlot == (registry != nullptr ? registry->capacity : 0))
+	{
+		const std::size_t oldCapacity = registry != nullptr ? registry->capacity : 0;
+		if (oldCapacity > std::numeric_limits<std::size_t>::max() / 2)
+		{
+			m_automatableModelRegistrationFailures.fetch_add(1, std::memory_order_relaxed);
+			return false;
+		}
+		const std::size_t newCapacity = oldCapacity == 0 ? 64 : oldCapacity * 2;
+		try
+		{
+			auto replacement = std::make_unique<AutomatableModelRegistry>(newCapacity);
+			if (registry != nullptr)
+			{
+				for (std::size_t i = 0; i < registry->capacity; ++i)
+				{
+					replacement->modelSlots[i].store(
+						registry->modelSlots[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
+				}
+			}
+			freeSlot = oldCapacity;
+			replacement->modelSlots[freeSlot].store(model, std::memory_order_relaxed);
+			model->m_audioEngineRegistrySlot = freeSlot;
+			model->m_registeredWithAudioEngine.store(true, std::memory_order_release);
+			AutomatableModelRegistry* const retired = m_automatableModelRegistry.exchange(
+				replacement.release(), std::memory_order_acq_rel);
+			delete retired; // m_changeMutex has waited for the previous render period to quiesce.
+		}
+		catch (...)
+		{
+			m_automatableModelRegistrationFailures.fetch_add(1, std::memory_order_relaxed);
+			return false;
+		}
+	}
+	else
+	{
+		registry->modelSlots[freeSlot].store(model, std::memory_order_release);
+		model->m_audioEngineRegistrySlot = freeSlot;
+		model->m_registeredWithAudioEngine.store(true, std::memory_order_release);
+	}
+	m_registeredAutomatableModelCount.fetch_add(1, std::memory_order_relaxed);
+	return true;
+}
+
+
+
+void AudioEngine::unregisterAutomatableModel(AutomatableModel* model) noexcept
+{
+	if (model == nullptr || !model->m_registeredWithAudioEngine.load(std::memory_order_acquire)) { return; }
+
+	const auto remove = [this, model]() noexcept {
+		AutomatableModelRegistry* const registry = m_automatableModelRegistry.load(std::memory_order_acquire);
+		const std::size_t slot = model->m_audioEngineRegistrySlot;
+		if (registry != nullptr && slot < registry->capacity)
+		{
+			AutomatableModel* expected = model;
+			if (registry->modelSlots[slot].compare_exchange_strong(expected, nullptr,
+				std::memory_order_acq_rel, std::memory_order_relaxed))
+			{
+				m_registeredAutomatableModelCount.fetch_sub(1, std::memory_order_relaxed);
+			}
+		}
+		model->m_audioEngineRegistrySlot = AutomatableModel::NotInAudioEngineRegistry;
+		model->m_registeredWithAudioEngine.store(false, std::memory_order_release);
+	};
+
+	if (RealtimeScope::isActive())
+	{
+		remove(); // the serial prepass is over; a tombstone keeps the slot array stable.
+		return;
+	}
+	const auto lock = std::lock_guard{m_changeMutex};
+	remove();
+}
+
+
+
+void AudioEngine::prepareAutomatableModelBuffers() noexcept
+{
+	AutomatableModelRegistry* const registry = m_automatableModelRegistry.load(std::memory_order_acquire);
+	if (registry == nullptr) { return; }
+	for (std::size_t i = 0; i < registry->capacity; ++i)
+	{
+		if (AutomatableModel* const model = registry->modelSlots[i].load(std::memory_order_acquire))
+		{
+			model->prepareValueBufferForRender();
+		}
+	}
 }
 
 
@@ -633,6 +779,10 @@ void AudioEngine::renderStageNoteSetup()
 
 	// Create play-handles for new notes, samples etc. The owner drains the staging list below.
 	Engine::getSong()->processNextBuffer();
+	// Song automation has now published this period's model values and ramps.
+	// Prepare every registered model and reachable controller once, serially,
+	// before instrument, effect or mixer jobs can read their fixed buffers.
+	prepareAutomatableModelBuffers();
 
 	// add all play-handles that have to be added
 	for( LocklessListElement * e = m_newPlayHandles.popList(); e; )

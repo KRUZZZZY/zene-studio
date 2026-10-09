@@ -72,6 +72,8 @@ public:
 	virtual float currentValue( int _offset );
 	// The per-controller get-value-in-buffers function
 	virtual ValueBuffer * valueBuffer();
+	//! Called by the serial model prepass; shared controllers are stamped once per period.
+	void prepareValueBufferForRender();
 
 	inline bool isSampleExact() const
 	{

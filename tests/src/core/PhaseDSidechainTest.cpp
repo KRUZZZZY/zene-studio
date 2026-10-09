@@ -102,6 +102,24 @@ bool nearValue(float actual, float expected, float eps = 1.0e-6f)
 	return std::fabs(actual - expected) <= eps;
 }
 
+class CountingLfoController : public LfoController
+{
+public:
+	explicit CountingLfoController(Model* parent = nullptr) : LfoController(parent) {}
+	std::uint64_t updateCount() const { return m_updateCount.load(std::memory_order_relaxed); }
+	const ValueBuffer& preparedBuffer() const { return m_valueBuffer; }
+
+protected:
+	void updateValueBuffer() override
+	{
+		m_updateCount.fetch_add(1, std::memory_order_relaxed);
+		LfoController::updateValueBuffer();
+	}
+
+private:
+	std::atomic<std::uint64_t> m_updateCount{0};
+};
+
 //! FNV-1a over the bit pattern of every frame: one changed bit anywhere changes the hash.
 std::uint64_t frameBitsHash(const float* frames, f_cnt_t count)
 {
@@ -449,6 +467,9 @@ private slots:
 			const char* name;
 			Source source;
 		} cases[] = {{"ramp", Source::Ramp}, {"controller", Source::Controller}, {"manual", Source::Manual}};
+		constexpr std::uint64_t rampHash = 0x323a07fa3203dfb1ULL;
+		constexpr std::uint64_t controllerHash = 0x37f34ff56c876b74ULL;
+		constexpr std::uint64_t manualHash = 0x7fad6c72da607ddeULL;
 
 		for (const auto& testCase : cases)
 		{
@@ -514,8 +535,12 @@ private slots:
 					qPrintable(QString("%1: frame %2 is %3, the amount's valueBuffer() says %4")
 						.arg(testCase.name).arg(f).arg(summed[f]).arg(expected->values()[f])));
 			}
+			const std::uint64_t hash = frameBitsHash(summed, fpp);
+			const std::uint64_t expectedHash = testCase.source == Source::Ramp ? rampHash
+				: testCase.source == Source::Controller ? controllerHash : manualHash;
+			QCOMPARE(hash, expectedHash);
 			evidence("PARTD_SIDECHAIN_AMOUNT source=%s fnv1a=%016llx first=%.9g last=%.9g",
-				testCase.name, static_cast<unsigned long long>(frameBitsHash(summed, fpp)),
+				testCase.name, static_cast<unsigned long long>(hash),
 				static_cast<double>(summed[0]), static_cast<double>(summed[fpp - 1]));
 
 			amount->setControllerConnection(nullptr);
@@ -581,6 +606,168 @@ private slots:
 			qPrintable(QString("first frame %1 is not near the ramp start").arg(out[0])));
 		QVERIFY2(out[fpp - 1] > 0.95f,
 			qPrintable(QString("last frame %1 is not near the ramp end").arg(out[fpp - 1])));
+	}
+
+	//! The fader lookup on a mixer job must not wait for the old per-model mutex.
+	void mixerFaderBufferLookupDoesNotWaitOnCacheLock()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 2) { mixer->createChannel(); }
+		MixerChannel* const source = mixer->mixerChannel(1);
+		PeriodHarness harness(mixer);
+		feedDc(harness, 1, 0.25f);
+		harness.render();
+		feedDc(harness, 1, 0.25f);
+
+		std::uint64_t allocations = 0;
+		const bool completed = renderCompletesWhileCacheMutexHeld(&source->m_volumeModel,
+			harness, &allocations);
+		QVERIFY2(completed, "the mixer fader valueBuffer lookup waited on m_valueBufferMutex");
+		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
+	//! The test effect calls valueBuffer() on its own parameter from the mixer
+	//! worker; that prepared lookup must neither wait nor allocate.
+	void pluginParameterBufferLookupDoesNotWaitOrAllocate()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 2) { mixer->createChannel(); }
+		EffectChain* const chain = chainOf(mixer, 1);
+		const std::uint64_t registeredBefore = Engine::audioEngine()->registeredAutomatableModelCount();
+		auto* const effect = new ParameterGainProbeEffect(chain);
+		chain->appendEffect(effect);
+		QVERIFY(Engine::audioEngine()->registeredAutomatableModelCount() > registeredBefore);
+		PeriodHarness harness(mixer);
+		feedDc(harness, 1, 0.25f);
+		harness.render();
+		feedDc(harness, 1, 0.25f);
+
+		std::uint64_t allocations = 0;
+		const bool completed = renderCompletesWhileCacheMutexHeld(&effect->gainModel(),
+			harness, &allocations);
+		QVERIFY2(completed, "the plug-in parameter valueBuffer lookup waited on m_valueBufferMutex");
+		QCOMPARE(allocations, std::uint64_t{0});
+		QVERIFY(effect->valueBufferCalls() > 0);
+		QCOMPARE(effect->valueBufferAllocations(), std::uint64_t{0});
+	}
+
+	//! A missing registry slot must be reported rather than evaluated as a fallback.
+	void unregisteredModelBufferRequestIsReported()
+	{
+		FloatModel model(0.25f, 0.0f, 1.0f, 0.001f);
+		AudioEngine* const engine = Engine::audioEngine();
+		const std::uint64_t before = engine->unregisteredAutomatableBufferRequests();
+		engine->unregisterAutomatableModel(&model);
+		QVERIFY(model.valueBuffer() == nullptr);
+		QCOMPARE(engine->unregisteredAutomatableBufferRequests(), before + 1);
+		QVERIFY(engine->registerAutomatableModel(&model));
+	}
+
+	//! One LFO and a linked pair of mixer controls are read by separate mixer
+	//! jobs. The output hash and update count form the before/after render proof.
+	void oneLfoDrivesLinkedControlsOnParallelMixerJobs()
+	{
+		auto mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		FloatModel* const first = &mixer->mixerChannel(1)->m_volumeModel;
+		FloatModel* const second = &mixer->mixerChannel(2)->m_volumeModel;
+		first->setValue(0.5f);
+		second->setValue(0.5f);
+		first->linkToModel(second);
+		auto* const lfo = new CountingLfoController(nullptr);
+		first->setControllerConnection(new ControllerConnection(lfo));
+		second->setControllerConnection(new ControllerConnection(lfo));
+		first->setUseControllerValue(true);
+		second->setUseControllerValue(true);
+
+		PeriodHarness harness(mixer);
+		const std::uint64_t updatesBefore = lfo->updateCount();
+		AudioEngine* const engine = Engine::audioEngine();
+		const std::uint64_t modelMissesBefore = engine->unpreparedAutomatableBufferRequests();
+		const std::uint64_t controllerMissesBefore = engine->unpreparedControllerBufferRequests();
+		feedDc(harness, 1, 0.25f);
+		feedDc(harness, 2, 0.5f);
+		const std::vector<SampleFrame> output = harness.render();
+		const std::uint64_t updates = lfo->updateCount() - updatesBefore;
+		QCOMPARE(updates, std::uint64_t{1});
+		QCOMPARE(engine->unpreparedAutomatableBufferRequests(), modelMissesBefore);
+		QCOMPARE(engine->unpreparedControllerBufferRequests(), controllerMissesBefore);
+		QVERIFY(meanAbs(output, 0, harness.fpp()) > 0.0);
+		const ValueBuffer& serialLfo = lfo->preparedBuffer();
+		for (f_cnt_t frame = 0; frame < harness.fpp(); ++frame)
+		{
+			const float gain = serialLfo.values()[frame] * 2.0f;
+			const float expected = 0.25f * gain + 0.5f * gain;
+			QCOMPARE(std::bit_cast<std::uint32_t>(output[frame][0]),
+				std::bit_cast<std::uint32_t>(expected));
+			QCOMPARE(std::bit_cast<std::uint32_t>(output[frame][1]),
+				std::bit_cast<std::uint32_t>(expected));
+		}
+		const QByteArray hash = sha256(output);
+		QCOMPARE(hash, QByteArray("e5e6ba72936e7367bc138608fd1ff1768562759a14f6935cb274aafa50e8708e"));
+		evidence("AUTOMATION_PREPASS_SHARED_LFO sha256=%s updates=%llu first=%.9g last=%.9g",
+			hash.constData(), static_cast<unsigned long long>(updates),
+			static_cast<double>(output.front()[0]), static_cast<double>(output.back()[0]));
+
+		first->setControllerConnection(nullptr);
+		second->setControllerConnection(nullptr);
+	}
+
+	//! A repeated old/new pair still uses the immediately previous setter value
+	//! as its ramp start, for both members of a linked ring.
+	void linkedModelsRetainTheImmediatelyPreviousRampStart()
+	{
+		FloatModel first(0.0f, 0.0f, 1.0f, 0.001f);
+		FloatModel second(0.0f, 0.0f, 1.0f, 0.001f);
+		first.linkToModel(&second);
+		first.setValue(1.0f);
+		first.setValue(0.0f);
+		first.setValue(1.0f);
+		AutomatableModel::incrementPeriodCounter();
+
+		const ValueBuffer* const firstBuffer = first.valueBuffer();
+		const ValueBuffer* const secondBuffer = second.valueBuffer();
+		QVERIFY(firstBuffer != nullptr);
+		QVERIFY(secondBuffer != nullptr);
+		QCOMPARE(firstBuffer->values()[0], 0.0f);
+		QCOMPARE(firstBuffer->values()[firstBuffer->length() - 1],
+			static_cast<float>(firstBuffer->length() - 1) / firstBuffer->length());
+		ValueBuffer expected(static_cast<int>(firstBuffer->length()));
+		expected.interpolate(0.0f, 1.0f);
+		for (int frame = 0; frame < firstBuffer->length(); ++frame)
+		{
+			QCOMPARE(std::bit_cast<std::uint32_t>(firstBuffer->values()[frame]),
+				std::bit_cast<std::uint32_t>(expected.values()[frame]));
+			QCOMPARE(std::bit_cast<std::uint32_t>(firstBuffer->values()[frame]),
+				std::bit_cast<std::uint32_t>(secondBuffer->values()[frame]));
+		}
+		evidence("AUTOMATION_PREPASS_LINKED_RAMP fnv1a=%016llx",
+			static_cast<unsigned long long>(frameBitsHash(firstBuffer->values(),
+				static_cast<f_cnt_t>(firstBuffer->length()))));
+	}
+
+	//! A control-side cache cannot hide a value or ramp published before the
+	//! render owner's registry pass for the same period.
+	void controlPreparedCacheRefreshesAfterPublishedChanges()
+	{
+		FloatModel model(0.0f, 0.0f, 1.0f, 0.001f);
+		QVERIFY(model.valueBuffer() == nullptr);
+
+		model.setValue(1.0f);
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.0f));
+		QVERIFY(ramp.addKnot(periodFrames() - 1, 1.0f));
+		model.publishAutomationRamp(ramp);
+		model.prepareValueBufferForRender();
+
+		const ValueBuffer* const refreshed = model.valueBuffer();
+		QVERIFY(refreshed != nullptr);
+		QCOMPARE(refreshed->values()[0], 0.0f);
+		QCOMPARE(refreshed->values()[refreshed->length() - 1], 1.0f);
 	}
 
 	//! 8.1 ducking: the receiver's gain follows the key channel. The ducker
@@ -911,6 +1098,40 @@ private slots:
 	}
 
 private:
+	bool renderCompletesWhileCacheMutexHeld(AutomatableModel* model, PeriodHarness& harness,
+		std::uint64_t* allocations)
+	{
+		QMutex& mutex = model->m_valueBufferMutex;
+		std::promise<void> holding;
+		std::promise<void> release;
+		std::shared_future<void> released = release.get_future().share();
+		std::thread holder([&mutex, &holding, released]
+		{
+			const QMutexLocker held(&mutex);
+			holding.set_value();
+			released.wait();
+		});
+		holding.get_future().wait();
+
+		std::promise<void> rendered;
+		std::future<void> done = rendered.get_future();
+		std::thread renderThread([&harness, allocations, &rendered]
+		{
+			test::resetAllocationCount();
+			const bool wasCounting = test::tlCountAllocations;
+			test::tlCountAllocations = true;
+			harness.render();
+			test::tlCountAllocations = wasCounting;
+			*allocations = test::tlAllocationCount;
+			rendered.set_value();
+		});
+		const bool completed = done.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+		release.set_value();
+		holder.join();
+		renderThread.join();
+		return completed;
+	}
+
 	std::unique_ptr<QTemporaryDir> m_pluginDir;
 };
 

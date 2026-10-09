@@ -29,10 +29,26 @@
 
 
 #include "Song.h"
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "ControllerConnection.h"
+#include "RealtimeScope.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+AudioEngine::RequestChangesGuard connectionChangeGuard()
+{
+	AudioEngine* const engine = Engine::audioEngine();
+	return RealtimeScope::isActive() || engine == nullptr
+		? AudioEngine::RequestChangesGuard{}
+		: engine->requestChangesGuard();
+}
+
+} // namespace
 
 
 ControllerConnectionVector ControllerConnection::s_connections;
@@ -44,6 +60,7 @@ ControllerConnection::ControllerConnection(Controller * _controller) :
 	m_controllerId( -1 ),
 	m_ownsController(false)
 {
+	auto changeGuard = connectionChangeGuard();
 	if( _controller != nullptr )
 	{
 		setController( _controller );
@@ -64,6 +81,7 @@ ControllerConnection::ControllerConnection( int _controllerId ) :
 	m_controllerId( _controllerId ),
 	m_ownsController( false )
 {
+	auto changeGuard = connectionChangeGuard();
 	s_connections.push_back(this);
 }
 
@@ -72,6 +90,7 @@ ControllerConnection::ControllerConnection( int _controllerId ) :
 
 ControllerConnection::~ControllerConnection()
 {
+	auto changeGuard = connectionChangeGuard();
 	if( m_controller && m_controller->type() != Controller::ControllerType::Dummy )
 	{
 		m_controller->removeConnection( this );
@@ -98,6 +117,7 @@ void ControllerConnection::setController( int /*_controllerId*/ )
 
 void ControllerConnection::setController( Controller * _controller )
 {
+	auto changeGuard = connectionChangeGuard();
 	if( m_ownsController && m_controller )
 	{
 		delete m_controller;
@@ -159,6 +179,7 @@ inline void ControllerConnection::setTargetName( const QString & _name )
  */
 void ControllerConnection::finalizeConnections()
 {
+	auto changeGuard = connectionChangeGuard();
 	for (auto i = std::size_t{0}; i < s_connections.size(); ++i)
 	{
 		ControllerConnection * c = s_connections[i];

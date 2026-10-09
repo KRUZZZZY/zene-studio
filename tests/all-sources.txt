@@ -2418,6 +2418,7 @@ tests/src/core/AudioStretcherTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationModesTest.cpp
+tests/src/core/AutomationPrepassProofTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BenchmarkBaseline.h
 tests/src/core/BounceInPlaceTest.cpp
