@@ -53,8 +53,10 @@
 namespace lmms
 {
 
-//! Test seam (cluster 5313): see SessionTuning::setPublicationBoundaryHookForTest. Null in the product.
-void (*s_publicationBoundaryHookForTest)() = nullptr;
+#ifdef LMMS_TESTING
+//! Test seam (cluster 5313), compiled only in test builds.
+static void (*s_publicationBoundaryHookForTest)() = nullptr;
+#endif
 
 namespace
 {
@@ -236,10 +238,12 @@ bool SessionTuning::buildTable(const Scale* scale, const Keymap& keymap,
 	return true;
 }
 
+#ifdef LMMS_TESTING
 void SessionTuning::setPublicationBoundaryHookForTest(void (*hook)())
 {
 	s_publicationBoundaryHookForTest = hook;
 }
+#endif
 
 void SessionTuning::commit(const Table& next, bool nextActive, const QString& source)
 {
@@ -276,10 +280,13 @@ void SessionTuning::commit(const Table& next, bool nextActive, const QString& so
 			target = next;
 			target.active = nextActive;
 			m_slotStates[back].fetch_and(~WriterBit, std::memory_order_release);
-			// This boundary is deliberately between clearing the claim and publishing the slot.
-			// Pausing here makes the old publish-then-clear order reproducible in the test.
-			if (s_publicationBoundaryHookForTest != nullptr) { s_publicationBoundaryHookForTest(); }
 			m_front.store(back, std::memory_order_release);
+			// In the fixed order the slot is readable while the writer pauses. If the
+			// old publish-before-clear order returns, this same seam pauses with the
+			// published slot still claimed, so the reader must time out here.
+#ifdef LMMS_TESTING
+			if (s_publicationBoundaryHookForTest != nullptr) { s_publicationBoundaryHookForTest(); }
+#endif
 			m_source = source.left(MaxSourceLength);
 			break;
 		}

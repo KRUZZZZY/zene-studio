@@ -1,5 +1,11 @@
 include(CTest)
 
+# The production objects are also linked into these white-box regression tests.
+# Compile conditional test seams into that object target only when tests are enabled.
+if(BUILD_TESTING)
+	target_compile_definitions(lmmsobjs PRIVATE LMMS_TESTING)
+endif()
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 

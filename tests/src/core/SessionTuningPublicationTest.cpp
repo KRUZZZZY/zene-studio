@@ -35,6 +35,7 @@ namespace
 
 std::atomic<bool> s_readerStarted{false};
 std::atomic<bool> s_readerReturned{false};
+std::atomic<bool> s_readerStartedInWindow{false};
 std::atomic<bool> s_readerReturnedInWindow{false};
 std::atomic<float> s_readerFrequency{0.0f};
 std::thread s_reader;
@@ -56,6 +57,7 @@ void holdWriterAtPublicationBoundary()
 	{
 		std::this_thread::yield();
 	}
+	s_readerStartedInWindow.store(s_readerStarted.load(std::memory_order_acquire), std::memory_order_relaxed);
 	const auto returnDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
 	while (s_readerStarted.load(std::memory_order_acquire)
 		&& !s_readerReturned.load(std::memory_order_acquire)
@@ -80,13 +82,13 @@ private slots:
 		SessionTuning::instance()->reset();
 	}
 
-	//! The writer pause sits between the claim release and front-slot publish. A reader must return the old
-	//! table during that pause; with the old publish-then-clear order it sees the claimed front slot and stalls.
-	void readerReturnsWhileWriterIsPausedBetweenReleaseAndPublish()
+	//! The seam is after front publication. Restoring publish-before-release makes this reader spin on the
+	//! claimed front slot until the hook releases the writer, so the in-window timeout is the regression.
+	void readerReturnsWhileWriterIsPausedAfterPublication()
 	{
 		SessionTuning* tuning = SessionTuning::instance();
 		tuning->reset();
-		const float oldFrequency = tuning->noteToFreq(60);
+		s_readerStartedInWindow.store(false, std::memory_order_relaxed);
 		s_readerReturnedInWindow.store(false, std::memory_order_relaxed);
 		SessionTuning::setPublicationBoundaryHookForTest(&holdWriterAtPublicationBoundary);
 
@@ -96,9 +98,11 @@ private slots:
 		if (s_reader.joinable()) { s_reader.join(); }
 
 		QVERIFY2(committed, qPrintable(error));
+		QVERIFY2(s_readerStartedInWindow.load(std::memory_order_relaxed),
+			"reader thread did not start while the writer was paused after publication");
 		QVERIFY2(s_readerReturnedInWindow.load(std::memory_order_relaxed),
-			"reader did not return while the writer was paused at the claim-release/publication boundary");
-		QCOMPARE(s_readerFrequency.load(std::memory_order_relaxed), oldFrequency);
+			"reader timed out while the writer was paused after publication");
+		QCOMPARE(s_readerFrequency.load(std::memory_order_relaxed), 450.0f);
 		QCOMPARE(tuning->noteToFreq(60), 450.0f);
 	}
 };

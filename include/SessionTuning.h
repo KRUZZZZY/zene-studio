@@ -198,9 +198,10 @@ public:
 	//! the registered flag with the connected client count.
 	QJsonObject mtsEspJson() const;
 
-	//! Test seam (cluster 5313): called on the writer between releasing a table slot and publishing it as
-	//! the front slot. Null in the product; the regression test pauses here while a reader runs.
+	//! Test seam (cluster 5313): pause after publishing the front slot while the regression reader runs.
+#ifdef LMMS_TESTING
 	static void setPublicationBoundaryHookForTest(void (*hook)());
+#endif
 
 private:
 	SessionTuning();
