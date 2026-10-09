@@ -34,6 +34,7 @@
 #include <QFileInfo>
 
 #include "AudioEngine.h"
+#include "ControlEdit.h"
 #include "Engine.h"
 #include "PatternStore.h"
 #include "PathUtil.h"
@@ -326,7 +327,7 @@ void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take)
 		take_clip = new SampleClip(track, Sample(std::move(take)), false);
 		// Not journalled on its own: the arm's step covers the lane (one undo step).
 		take_clip->setJournalling(false);
-		take_clip->setLaneIndex(lane);
+		control::assignTakeLane(take_clip, lane);
 		take_clip->movePosition(startPosition());
 		take_clip->updateLength();
 	}
