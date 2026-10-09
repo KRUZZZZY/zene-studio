@@ -1135,15 +1135,21 @@ private slots:
 
 		const auto undo = lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), {});
 		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+		// The undo rebuilds the track's clips: `clip` is gone, so look the restored clip up again.
 		lmms::SampleTrack* restored = nullptr;
 		for (lmms::Track* t : song->tracks()) { if (t->id() == trackId) { restored = dynamic_cast<lmms::SampleTrack*>(t); } }
 		QVERIFY2(restored != nullptr, "undo lost the track");
 		QCOMPARE(restored->takeLanes().laneCount(), 0);
-		QVERIFY2(!clip->isRecord(), "one undo left the clip armed");
-		QCOMPARE(clip->recordTakesReady(), 0);
+		lmms::SampleClip* back = nullptr;
+		for (lmms::Clip* c : restored->getClips()) { if (auto* sc = dynamic_cast<lmms::SampleClip*>(c)) { back = sc; } }
+		QVERIFY(back != nullptr);
+		QVERIFY2(!back->isRecord(), "one undo left the clip armed");
+		QCOMPARE(back->recordTakesReady(), 0);
 
 		song->stop();                   // the live take ends; the disarmed clip is not re-armed by it
 		QTest::qWait(50);
+		QCOMPARE(restored->takeLanes().laneCount(), 0);  // and it installed no lane take
+		QVERIFY(!back->isRecord());
 	}
 
 	//! A recording over an existing take: one undo brings the earlier take back, and redo the recording.
@@ -1183,6 +1189,49 @@ private slots:
 		QVERIFY(back != nullptr);
 		QCOMPARE(back->sample().sampleSize(), recorded);  // and the recording is back
 		delete back->getTrack();
+		QTest::qWait(10);
+	}
+
+	//! An undo pressed mid-pass ends the live recording it disarms: the transport stops afterwards and
+	//! nothing is installed - no lane take, no audio on the clip. The clip is in its pre-arm state.
+	void anUndoMidPassInstallsNothingAfterwards()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		const auto trackId = track->id();
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+
+		song->playAndRecord();
+		driveRecordPeriods(20, 0.1f, true);
+		song->setPlayPos(0);            // a loop wrap: one lane take
+		QTest::qWait(50);
+		driveRecordPeriods(20, 0.2f, true);  // mid-pass: the live take is recording
+		QCOMPARE(track->takeLanes().laneCount(), 1);
+
+		const auto undo = lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), {});
+		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+		song->stop();                   // the live take would be installed here, were it not discarded
+		QTest::qWait(100);
+
+		lmms::SampleTrack* restored = nullptr;
+		for (lmms::Track* t : song->tracks()) { if (t->id() == trackId) { restored = dynamic_cast<lmms::SampleTrack*>(t); } }
+		QVERIFY2(restored != nullptr, "undo lost the track");
+		QCOMPARE(restored->takeLanes().laneCount(), 0);
+		int clips = 0;
+		for (lmms::Clip* c : restored->getClips()) { ++clips; QCOMPARE(c->laneIndex(), 0); }
+		QCOMPARE(clips, 1);
+		lmms::SampleClip* back = nullptr;
+		for (lmms::Clip* c : restored->getClips()) { if (auto* sc = dynamic_cast<lmms::SampleClip*>(c)) { back = sc; } }
+		QVERIFY(back != nullptr);
+		QCOMPARE(back->sample().sampleSize(), static_cast<std::size_t>(0));
+		QVERIFY(!back->isRecord());
+		QCOMPARE(back->recordTakesReady(), 0);
+		delete restored;
 		QTest::qWait(10);
 	}
 } ;
