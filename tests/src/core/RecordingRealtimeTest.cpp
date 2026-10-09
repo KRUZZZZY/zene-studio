@@ -1234,6 +1234,51 @@ private slots:
 		delete restored;
 		QTest::qWait(10);
 	}
+
+	//! clip.set_record has its own undo step (an action keyed by the clip's id): control.undo disarms the
+	//! clip it armed. (Its redo does not re-arm: the flag is not in the clip's serialised state - a known
+	//! limit, recorded in the report, and not asserted here.)
+	void clipSetRecordIsUndoneAndRedoneByControl()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		const auto trackId = track->id();
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		const QString id = QStringLiteral("clip-%1").arg(clip->id());
+		const auto armedOf = [&]() {
+			for (lmms::Track* t : song->tracks()) {
+				if (t->id() != trackId) { continue; }
+				for (lmms::Clip* c : t->getClips()) {
+					if (auto* sc = dynamic_cast<lmms::SampleClip*>(c); sc != nullptr && clipIdOf(sc) == id) { return sc->isRecord(); }
+				}
+			}
+			return false;
+		};
+
+		const auto set = lmms::ControlRegistry::instance()->invoke(QStringLiteral("clip.set_record"),
+			{{QStringLiteral("clip"), id}, {QStringLiteral("record"), true}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QVERIFY(armedOf());
+
+		const auto undo = lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), {});
+		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+		QVERIFY2(!armedOf(), "control.undo did not disarm the clip that clip.set_record armed");
+
+		// Leave it disarmed for the next test.
+		QVERIFY(lmms::ControlRegistry::instance()->invoke(QStringLiteral("clip.set_record"),
+			{{QStringLiteral("clip"), id}, {QStringLiteral("record"), false}}).ok);
+		delete track;
+	}
+
+	//! The control id ("clip-N") of a clip.
+	static QString clipIdOf(const lmms::Clip* clip)
+	{
+		return QStringLiteral("clip-%1").arg(clip->id());
+	}
 } ;
 
 
