@@ -311,7 +311,7 @@ void NoteEditor::buildLaneChooser()
 		[this](int index) {
 			m_laneBox->setToolTip(m_laneBox->itemText(index));
 			const QVariant data = m_laneBox->itemData(index);
-			if (data.typeId() == QMetaType::QString) { setControllerLane(data.toString()); return; }
+			if (data.userType() == QMetaType::QString) { setControllerLane(data.toString()); return; }
 			setControllerLane(QString());
 			setLane(static_cast<NoteLane>(data.toInt()));
 		});

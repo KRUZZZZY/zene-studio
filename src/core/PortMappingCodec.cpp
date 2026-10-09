@@ -150,7 +150,7 @@ void finishService(DescriptionScan& scan)
 
 void scanElement(QXmlStreamReader& reader, DescriptionScan& scan)
 {
-	const QStringView name = reader.name();
+	const auto name = reader.name();  // QStringRef on Qt 5, QStringView on Qt 6
 	if (name == QLatin1String("URLBase")) { scan.urlBase = reader.readElementText().trimmed(); }
 	else if (name == QLatin1String("service")) { scan.currentType.clear(); scan.currentControl.clear(); }
 	else if (name == QLatin1String("serviceType")) { scan.currentType = reader.readElementText().trimmed(); }
