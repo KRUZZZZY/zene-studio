@@ -568,6 +568,12 @@ float AutomatableModel::controllerValue( int frameOffset ) const
 ValueBuffer * AutomatableModel::valueBuffer()
 {
 	QMutexLocker m( &m_valueBufferMutex );
+	return valueBufferForSoleReader();
+}
+
+
+ValueBuffer * AutomatableModel::valueBufferForSoleReader()
+{
 	// if we've already calculated the valuebuffer this period, return the cached buffer
 	if( m_lastUpdatedPeriod == s_periodCounter )
 	{

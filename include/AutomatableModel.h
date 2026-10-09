@@ -37,6 +37,9 @@
 #include "ValueBuffer.h"
 #include "ModelVisitor.h"
 
+#ifdef LMMS_TESTING
+class PhaseDSidechainTest;
+#endif
 
 namespace lmms
 {
@@ -178,6 +181,15 @@ public:
 	//! @brief Function that returns sample-exact data as a ValueBuffer
 	//! @return pointer to model's valueBuffer when s.ex.data exists, NULL otherwise
 	ValueBuffer * valueBuffer();
+
+	/*! valueBuffer() without the model's mutex (review f1a74cc54). The same
+	 *  computation and the same state changes, so the same buffer. ONLY for a
+	 *  model that the calling thread alone reads in the period being rendered:
+	 *  the sidechain route amount is the one caller, read by its receiver
+	 *  channel's job, and its ramp is published before those jobs start. A
+	 *  linked model's buffer is still taken through valueBuffer(), so a link
+	 *  keeps that one model's mutex on the audio thread (cluster 2647). */
+	ValueBuffer * valueBufferForSoleReader();
 
 	// -----------------------------------------------------------------------
 	// Sample-accurate automation (feature-list row 9,
@@ -577,6 +589,11 @@ private:
 
 	// prevent several threads from attempting to write the same vb at the same time
 	QMutex m_valueBufferMutex;
+#ifdef LMMS_TESTING
+	// The sidechain lock probe (PhaseDSidechainTest::theSidechainAmountReadTakesNoLock)
+	// holds this mutex from another thread to see whether the sidechain read waits on it.
+	friend class ::PhaseDSidechainTest;
+#endif
 
 	bool m_useControllerValue;
 
