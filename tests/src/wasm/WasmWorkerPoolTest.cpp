@@ -55,6 +55,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <barrier>
 #include <chrono>
 #include <cmath>
@@ -173,6 +174,7 @@ private slots:
 	void testStopWaitsForAudioEndpointsToQuiesce();
 	void testEntryRacesWithStopWithoutPostStopEndpointUse();
 	void testRemovalWaitsForLoadedWorkerReaders();
+	void testConcurrentHostLogSnapshotsAreBoundedAndConsistent();
 	void testMemoryRefreshReacquiresMovedPointer();
 	void testWasmWorkerRefreshesMemoryAfterGrowth();
 	void testOfflineRenderRefreshesMemoryAfterGrowth();
@@ -419,6 +421,100 @@ void WasmWorkerPoolTest::testWasmWorkerRefreshesMemoryAfterGrowth()
 	QCOMPARE(output[1][0], 7.0f);
 	QCOMPARE(output[0][1], 42.0f);
 	QCOMPARE(output[1][1], 7.0f);
+	worker.stop();
+}
+
+void WasmWorkerPoolTest::testConcurrentHostLogSnapshotsAreBoundedAndConsistent()
+{
+	constexpr std::size_t LogBytes = 4095;
+	constexpr std::uint32_t Blocks = 2500;
+	const std::string wat =
+		"(module\n"
+		" (import \"env\" \"host_log\" (func $host_log (param i32 i32)))\n"
+		" (memory (export \"memory\") 1)\n"
+		" (global $toggle (mut i32) (i32.const 0))\n"
+		" (data (i32.const 1024) \"" + std::string(LogBytes, 'A') + "\")\n"
+		" (data (i32.const 8192) \"" + std::string(LogBytes, 'B') + "\")\n"
+		" (func (export \"process\") (param i32 i32 i32 f32) (result i32)\n"
+		"  global.get $toggle\n"
+		"  if (result i32)\n"
+		"   i32.const 8192\n"
+		"  else\n"
+		"   i32.const 1024\n"
+		"  end\n"
+		"  i32.const 4095\n"
+		"  call $host_log\n"
+		"  global.get $toggle\n"
+		"  i32.eqz\n"
+		"  global.set $toggle\n"
+		"  i32.const 0))";
+	std::vector<std::uint8_t> bytes;
+	std::string error;
+	QVERIFY2(WasmSandbox::assembleWat(wat, bytes, error), error.c_str());
+
+	QTemporaryFile module;
+	QVERIFY(module.open());
+	QCOMPARE(module.write(reinterpret_cast<const char*>(bytes.data()),
+		static_cast<qint64>(bytes.size())), static_cast<qint64>(bytes.size()));
+	QVERIFY(module.flush());
+
+	WasmWorker worker;
+	QVERIFY2(worker.start(module.fileName().toStdString(), error), error.c_str());
+	std::vector<SampleFrame> input(32, SampleFrame(0.25f, -0.25f));
+	std::vector<SampleFrame> output(input.size());
+	// The first block can reinstantiate the sandbox at its selected rate. Do
+	// that before the concurrent reader starts so this slot measures log-buffer
+	// synchronization while the same module instance is actively logging.
+	QVERIFY(worker.submit(input.data(), static_cast<std::uint32_t>(input.size()), TestSampleRate));
+	QVERIFY(worker.waitForIdle(5000));
+	QVERIFY(worker.collect(output.data(), static_cast<std::uint32_t>(output.size())));
+	std::atomic<bool> readerReady{false};
+	std::atomic<bool> writerDone{false};
+	std::atomic<std::uint64_t> snapshots{0};
+	std::atomic<std::uint64_t> invalidSnapshots{0};
+	const auto observe = [&](const std::string& log) {
+		if (log.empty()) { return; }
+		snapshots.fetch_add(1, std::memory_order_relaxed);
+		if (log.size() != LogBytes || (log.front() != 'A' && log.front() != 'B') ||
+			!std::all_of(log.begin(), log.end(), [&](char character) { return character == log.front(); }))
+		{
+			invalidSnapshots.fetch_add(1, std::memory_order_relaxed);
+		}
+	};
+	std::thread reader([&] {
+		readerReady.store(true, std::memory_order_release);
+		while (!writerDone.load(std::memory_order_acquire))
+		{
+			observe(worker.takeLog());
+			std::this_thread::yield();
+		}
+	});
+	while (!readerReady.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+
+	bool allBlocksProcessed = true;
+	for (std::uint32_t block = 0; block < Blocks; ++block)
+	{
+		if (!worker.submit(input.data(), static_cast<std::uint32_t>(input.size()), TestSampleRate) ||
+			!worker.waitForIdle(5000) ||
+			!worker.collect(output.data(), static_cast<std::uint32_t>(output.size())))
+		{
+			allBlocksProcessed = false;
+			break;
+		}
+	}
+	writerDone.store(true, std::memory_order_release);
+	reader.join();
+	observe(worker.takeLog());
+
+	QVERIFY2(allBlocksProcessed, "the worker stalled while host_log snapshots were being read");
+	QCOMPARE(worker.processedBlocks(), static_cast<std::uint64_t>(Blocks + 1));
+	QVERIFY(snapshots.load(std::memory_order_relaxed) > 0);
+	QCOMPARE(invalidSnapshots.load(std::memory_order_relaxed), std::uint64_t{0});
+	QVERIFY(worker.isReady());
+	qInfo("WASM log stress: %llu bounded snapshots, %llu worker blocks, %llu invalid snapshots",
+		static_cast<unsigned long long>(snapshots.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(worker.processedBlocks()),
+		static_cast<unsigned long long>(invalidSnapshots.load(std::memory_order_relaxed)));
 	worker.stop();
 }
 

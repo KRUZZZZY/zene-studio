@@ -1859,6 +1859,7 @@ src/gui/widgets/ControlCues.cpp
 src/tracks/InstrumentTrackNotes.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
+src/wasm/WasmLogBuffer.h
 src/wasm/WasmOfflineRender.cpp
 src/wasm/WasmOfflineRender.h
 src/wasm/WasmSandbox.cpp

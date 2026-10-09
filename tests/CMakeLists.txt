@@ -2394,6 +2394,7 @@ if(WANT_WASM)
 	target_compile_features(WasmWorkerPoolTest PRIVATE cxx_std_20)
 	target_compile_definitions(WasmWorkerPoolTest PRIVATE
 		LMMS_TESTING
+		WASM_TEST_DISABLE_PARALLEL_COMPILATION
 		WASM_MODULE_DIR="${CMAKE_BINARY_DIR}/wasm-modules"
 	)
 	add_dependencies(WasmWorkerPoolTest wasm-modules)

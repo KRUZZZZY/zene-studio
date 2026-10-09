@@ -2369,6 +2369,7 @@ src/tracks/PatternTrack.cpp
 src/tracks/SampleTrack.cpp
 src/tracks/TrackFolder.cpp
 src/wasm/WasmAbi.h
+src/wasm/WasmLogBuffer.h
 src/wasm/WasmOfflineRender.cpp
 src/wasm/WasmOfflineRender.h
 src/wasm/WasmSandbox.cpp
