@@ -166,3 +166,27 @@ Verification (round 6):
 Open:
 - The GUI notice is still untested (round 3).
 - The round-5 red evidence for row 7 is withdrawn (see above); no other round's red evidence depended on a dead pointer, as far as the tests are concerned (round 5's loop-undo test was the only test that read a clip after its undo).
+
+## Round 7 (2026-10-09): final rework before merge
+
+Commits, oldest first: `9eeff710a` (revert the record-flag journal object; the arm is the track's checkpoint again; the live-take comment), `82e5b0783` (audition lane written under the change lock), `1970b9713` (clip.set_record undone by control.undo).
+
+| Review item (r4) | Verdict | Fix commit | Test | Red | Green |
+|---|---|---|---|---|---|
+| 1. Revert SampleRecordFlagState (84164b78b) | DONE. Removed: the object, its member, its settings hooks, the arm's flag snapshot. The arm is one track checkpoint again. Kept: `m_recordModel.setJournalling(false)` in both constructors, and the ClipUpdatesSuspension RAII guard | 9eeff710a | the round-5/6 undo tests stay green (anUndoDuringALoopRecordingRestoresTheArmedState, anUndoMidPassInstallsNothingAfterwards, aPlainRecordingIsOneUndoStep, aRecordingOverAnExistingTakeIsUndoneToIt) | no red: the object had no observable effect | green |
+| 2. setAuditionLane not under the change lock | DONE: out of line, under the same lock helper as the other TakeLane mutators | 82e5b0783 | none: the race needs a render read to interleave with the UI write | no red | take-lane and comp suites green |
+| 3. Comment at the undo path (live-take guarantee) | DONE: at journalArmStep. It states the guarantee rests on the rebuild destroying the armed clip, and what happens if an undo ever kept the clip | 9eeff710a | n/a | n/a | n/a |
+| 4. clip.set_record followed by control.undo | DONE: control.undo disarms the clip that clip.set_record armed (the command's own action step, keyed by id) | 1970b9713 | clipSetRecordIsUndoneAndRedoneByControl | a guard: the undo predates round 7 | green |
+
+Known limit (recorded, not asserted by a test): a redo does not re-arm a clip. The record flag is not in the clip's serialised state, so the command's redo has nothing to restore. Unchanged since round 5.
+
+Verification (round 7):
+- Recording binary: 37 of 37 pass (RecordingRealtimeTest).
+- Targeted suites: 26 of 26 pass from `build/tests`: the round-6 list, including TakeLaneTest, TakeLaneCompTest and TakeLaneCompPlaybackTest.
+- The four cheap gates on the final tree, all exit 0: complexity, file-length, fork-sources, no-upstream-regression.
+- Not run: the full `ctest` bar, `run-all-gates.sh`, `tests/rt-safety-sweep.py`.
+
+Open (not blockers, per the review):
+- The MainWindow drop notice needs an on-screen check (the offscreen harness does not show it).
+- The gap-table timing shift after 256 unpadded records is accepted (round 2 note).
+- Known limit above: redo of an arm does not re-arm the clip.
