@@ -1847,3 +1847,5 @@ src/core/ControlReversibilityTableW3Library.cpp	cluster 917, 2026-10-09: classif
 src/core/ControlTransactions.cpp	cluster 917, 2026-10-09: record completed async edits in bounded transaction history and provenance.
 src/core/RenderQueue.cpp	cluster 917, 2026-10-09: queue renders and conversions asynchronously with worker finalization, cancellation, and reports.
 src/gui/TrackRenderMenu.cpp	cluster 917, 2026-10-09: enqueue bounce/freeze and expose cancellation through the task indicator.
+tests/CMakeLists.txt	Q050-021 (0.5.0): registers the isolated ControlStoppedSeek socket regression beside ControlSuccessPaths with the offscreen platform and a bounded timeout.
+tests/CMakeLists.txt	Q050-042 (0.5.0): registers LegacyPatternUpgradeTest in LMMS_TESTS and gives the Engine-backed test the offscreen Qt platform.
