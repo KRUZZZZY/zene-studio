@@ -1042,7 +1042,7 @@ data/tours/mixing.json	0.5.0 L14 (2026-10-03): a guided tour (GuidedTour, app.to
 data/tours/recording.json	0.5.0 L14 (2026-10-03): a guided tour (GuidedTour, app.tour) - the steps and the panels each one points at; a new file, no inherited file changes
 src/gui/tracks/TrackLabelButton.cpp	0.5.0 W3 L13 (WF-120): paintEvent first asks applyTrackIcon (TrackIcons.cpp) for an icon the user chose with track.set_icon; with none chosen - every existing project - it falls through to the unchanged instrument-logo path
 data/whatsnew/notes.json	0.5.0 W3 L14 (WF-141, 2026-10-03): the release notes Help > What's New and app.whats_new show, shipped with the program (nothing is fetched); a new file, no inherited file changes
-src/gui/tracks/TrackContentWidget.cpp	0.5.0 L12 (WF-044): a click on a locked track (EditLocks) does not draw a new clip; nothing changes while nothing is locked; 0.5.0 review round 4: no paste or drop onto a locked track
+src/gui/tracks/TrackContentWidget.cpp	0.5.0 L12 (WF-044): a click on a locked track (EditLocks) does not draw a new clip; nothing changes while nothing is locked; 0.5.0 review round 4: no paste or drop onto a locked track Round 2 review: GUI paste copies clear take-group and lane tags so the new ordinary clip plays on any destination track.
 src/gui/instrument/InstrumentTuningView.cpp	0.5.0 review round 3: Edit scales and keymaps raises an open microtuner instead of toggling it off
 include/AutomatableButton.h	0.5.0 accessibility (theme 10/17): Tab focus (TabFocus, not click focus) and keys; accessible value text; nextCheckState toggles the model
 src/gui/widgets/AutomatableButton.cpp	0.5.0 accessibility (theme 10/17): Tab focus (TabFocus, not click focus) and keys; accessible value text; nextCheckState toggles the model (Space, Enter, an accessibility press)
@@ -1847,13 +1847,13 @@ src/core/ControlReversibilityTableW3Library.cpp	cluster 917, 2026-10-09: classif
 src/core/ControlTransactions.cpp	cluster 917, 2026-10-09: record completed async edits in bounded transaction history and provenance.
 src/core/RenderQueue.cpp	cluster 917, 2026-10-09: queue renders and conversions asynchronously with worker finalization, cancellation, and reports.
 src/gui/TrackRenderMenu.cpp	cluster 917, 2026-10-09: enqueue bounce/freeze and expose cancellation through the task indicator.
-docs/COMPING.md	decisions-r3-takes (2026-10-09 owner ruling): documents newest-active take selection, remembered user choice, Play all takes, persistence and controls. Round 2 review: records non-reused lane identities and their serialized high-water mark.
-tests/rt-safety-scope.txt	decisions-r3-takes (2026-10-09 owner ruling): records the active-take render gate lock-free/no-allocation scope.
+docs/COMPING.md	decisions-r3-takes (2026-10-09 owner ruling): documents newest-active take selection, remembered user choice, Play all takes, persistence and controls. Round 2 review: records non-reused lane identities and their serialized high-water mark. Round 2 review: defines paste copies as independent ungrouped lane-0 clips.
+tests/rt-safety-scope.txt	decisions-r3-takes (2026-10-09 owner ruling): records the active-take render gate lock-free/no-allocation scope. Round 2 review ACCEPT-NOTE: declares the extracted active-take scheduler predicate for the static realtime sweep.
 tests/src/core/RecordingRealtimeTest.cpp	decisions-r3-takes (2026-10-09 owner ruling): covers newest pass, remembered user choice, and all-takes render summing.
 tests/src/core/TakeLaneCompTest.cpp	decisions-r3-takes (2026-10-09 owner ruling): covers control-command take-choice undo/redo and play-all state.
 tests/src/core/TakeLaneTest.cpp	decisions-r3-takes (2026-10-09 owner ruling): covers project save/reopen of active take, user-choice flag and play-all state. Round 2 review: proves a later pass gets a distinct index after removing a populated lane, including after serialized restore.
 tests/src/tracks/TakeLaneCompPlaybackTest.cpp	decisions-r3-takes (2026-10-09 owner ruling): verifies render selection is lock-free and allocation-free.
-docs/m0-design/decisions-r3-takes.md	decisions-r3-takes (2026-10-09 owner ruling): records the active-take design, ownership, persistence, realtime invariants and proof plan. Round 2 review: records that removed lane indices remain retired to prevent pass aliasing.
+docs/m0-design/decisions-r3-takes.md	decisions-r3-takes (2026-10-09 owner ruling): records the active-take design, ownership, persistence, realtime invariants and proof plan. Round 2 review: records that removed lane indices remain retired to prevent pass aliasing. Round 2 review: records copy/paste detachment from take groups.
 include/Clip.h	decisions-r3-takes (2026-10-09 owner ruling): stores take-group identity and lock-free active-lane mirror on clips.
 include/ControlCompSupport.h	decisions-r3-takes (2026-10-09 owner ruling): declares take-group state for comp.get_state.
 include/SampleClip.h	decisions-r3-takes (2026-10-09 owner ruling): removes the previous-pass mute pointer and records the group finalizer API.
@@ -1871,6 +1871,6 @@ src/core/Song.cpp	decisions-r3-takes (2026-10-09 owner ruling): republishes load
 src/core/TakeLane.cpp	decisions-r3-takes (2026-10-09 owner ruling): owns active/user-choice selection, newest-pass updates, persistence and atomic publication. Round 2 review: persists the lane-index high-water mark and never recycles a removed index.
 src/core/Track.cpp	decisions-r3-takes (2026-10-09 owner ruling): republishes checkpoint-loaded selection and reconciles removed take clips.
 src/gui/TakeLanesPanel.cpp	decisions-r3-takes (2026-10-09 owner ruling): wires the active-take selector and Play all takes checkbox to comp commands.
-src/tracks/SampleTrack.cpp	decisions-r3-takes (2026-10-09 owner ruling): schedules only the active recorded pass unless comping or Play all takes applies.
+src/tracks/SampleTrack.cpp	decisions-r3-takes (2026-10-09 owner ruling): schedules only the active recorded pass unless comping or Play all takes applies. Round 2 review ACCEPT-NOTE: extracts the new active-take scheduler predicate into the declared static realtime sweep scope.
 README.md	decisions-r3-takes (2026-10-09 owner ruling): updates the current command-surface canary from the live no-WASM snapshot.
 docs/RELEASE-NOTES-v0.3.0-alpha.md	decisions-r3-takes (2026-10-09 owner ruling): updates the self-checking A16 histogram to the measured reference configuration.

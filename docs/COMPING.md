@@ -39,7 +39,9 @@ decides (§2.2). Concretely:
 
 `comp.assign` tags an existing clip as a take; loop recording also creates one take-lane clip per
 pass and gives the passes of that armed source clip one persistent group id. The lane tag rides
-`Clip::saveClipEdits` on the clip's own element.
+`Clip::saveClipEdits` on the clip's own element. GUI clip paste and `range.paste` create an
+independent ordinary clip: they clear the copied take-group and lane tags to lane 0. The source
+clip remains in its original group and lane.
 
 ## 2. What the COMPOSITE is, and what makes it non-destructive
 

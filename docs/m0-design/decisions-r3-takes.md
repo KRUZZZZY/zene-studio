@@ -5,6 +5,8 @@
 - Lane indices use a persisted, monotonically increasing high-water mark. Removing a lane does
   not free its number because clips keep their old lane tag; recycling it could alias a later
   recorded pass to an earlier one, including after reopening a project.
+- GUI clip paste and `range.paste` detach the new clip from the copied take group and reset its
+  lane to 0. A pasted clip is an independent ordinary clip; the source remains unchanged.
 
 ## Problem
 
