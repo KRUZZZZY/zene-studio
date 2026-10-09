@@ -172,6 +172,7 @@ void registerClipMove(ControlRegistry& registry)
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("position"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("overlap_skipped"), control::stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -195,7 +196,8 @@ void registerClipMove(ControlRegistry& registry)
 		if (trackWide) { ref.track->addJournalCheckPoint(); } else { ref.clip->addJournalCheckPoint(); }
 		ref.clip->movePosition(TimePos(target));
 		arrangement::rippleAfterMove(ref.clip, previous, ripple);
-		arrangement::applyOverlap(ref.clip, overlap);
+		QString overlapSkipped;
+		arrangement::applyOverlap(ref.clip, overlap, &overlapSkipped);
 		// ED-190: the automation lanes following this track carry their points with the clip.
 		arrangement::moveFollowingAutomation(ref.track, previous, ref.clip->length().getTicks(),
 			ref.clip->startPosition().getTicks() - previous, true);
@@ -203,6 +205,7 @@ void registerClipMove(ControlRegistry& registry)
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		result.insert(QStringLiteral("position"), ref.clip->startPosition().getTicks());
+		if (!overlapSkipped.isEmpty()) { result.insert(QStringLiteral("overlap_skipped"), overlapSkipped); }  // why a crossfade was not made
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("position"), previous);

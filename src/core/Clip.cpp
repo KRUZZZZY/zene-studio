@@ -640,6 +640,13 @@ void Clip::loadClipEdits(const QDomElement& element)
 	edits.fadeOutTicks = std::max(0, element.attribute("fadeout", "0").toInt());
 	edits.fadeInOffsetTicks = std::max(0, element.attribute("fadeinoffset", "0").toInt());
 	edits.fadeOutOffsetTicks = std::max(0, element.attribute("fadeoutoffset", "0").toInt());
+	// An offset fade is a pair (withValidOffsetFades); a file with a lone one - or one next to a zero-length ramp - loads
+	// as the ordinary fades. A pair that no longer lines up with the clip's length is repaired where it is used.
+	if (edits.fadeInOffsetTicks == 0 || edits.fadeOutOffsetTicks == 0 || edits.fadeInTicks == 0 || edits.fadeOutTicks == 0)
+	{
+		edits.fadeInOffsetTicks = 0;
+		edits.fadeOutOffsetTicks = 0;
+	}
 
 	const auto shapeFromIndex = [](int index) {
 		switch (index)

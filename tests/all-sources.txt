@@ -2429,6 +2429,7 @@ tests/src/core/ClipJoinRippleTest.cpp
 tests/src/core/ClipLinkPersistenceTest.cpp
 tests/src/core/ClipLinkTest.cpp
 tests/src/core/ClipLinkTestSupport.h
+tests/src/core/ClipOffsetFadePairTest.cpp
 tests/src/core/ClipOffsetFadeTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ClipTransposeTest.cpp

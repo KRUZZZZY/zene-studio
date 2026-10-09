@@ -153,8 +153,25 @@ float clipSpeedAt(const ClipEdits& edits, f_cnt_t frame, f_cnt_t clipFrames, f_c
 	return static_cast<float>(std::max(speed, 1.0 / 32.0));
 }
 
-float clipGainCurveAt(const ClipEdits& edits, tick_t lengthTicks, double tick)
+ClipEdits withValidOffsetFades(const ClipEdits& edits, tick_t lengthTicks)
 {
+	if (edits.fadeInOffsetTicks <= 0 && edits.fadeOutOffsetTicks <= 0) { return edits; }
+	ClipEdits out = edits;
+	const bool pair = edits.fadeInOffsetTicks > 0 && edits.fadeOutOffsetTicks > 0 && edits.fadeInTicks > 0
+		&& edits.fadeOutTicks > 0 && edits.fadeOutOffsetTicks < lengthTicks;
+	if (!pair)
+	{
+		out.fadeInOffsetTicks = 0;
+		out.fadeOutOffsetTicks = 0;
+		return out;
+	}
+	out.fadeInOffsetTicks = static_cast<int>(lengthTicks) - edits.fadeOutOffsetTicks;  // where the fade-out ends
+	return out;
+}
+
+float clipGainCurveAt(const ClipEdits& rawEdits, tick_t lengthTicks, double tick)
+{
+	const ClipEdits edits = withValidOffsetFades(rawEdits, lengthTicks);
 	const auto length = static_cast<f_cnt_t>(std::max<tick_t>(1, lengthTicks));
 	const float fade = clipFadeGainAt(static_cast<f_cnt_t>(tick), length, edits.fadeInTicks, edits.fadeOutTicks,
 		edits.fadeInShape, edits.fadeOutShape, edits.fadeInOffsetTicks, edits.fadeOutOffsetTicks);

@@ -206,6 +206,21 @@ void insertOffsets(QJsonObject* result, const ClipEdits& out, const ClipEdits& i
 	if (in.fadeInOffsetTicks != 0) { result->insert(QStringLiteral("in_fade_in_offset"), in.fadeInOffsetTicks); }
 }
 
+/*! An offset fade is a pair (withValidOffsetFades): a fade-out that ends early needs a fade-in that starts where it
+ *  ends, or the gain would step there. Refused when \p edits has a lone one or a mismatched one. */
+bool offsetFadesArePaired(const ClipRef& ref, const ClipEdits& before, const ClipEdits& edits, ControlResult* error)
+{
+	// Offsets the caller did not touch are not its to answer for (a clip resized after a crossfade is repaired at render).
+	if (edits.fadeInOffsetTicks == before.fadeInOffsetTicks && edits.fadeOutOffsetTicks == before.fadeOutOffsetTicks) { return true; }
+	if (withValidOffsetFades(edits, ref.clip->length().getTicks()) == edits) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("an offset fade is a pair: set fade_in_offset and fade_out_offset together, both ramps above 0, with "
+			"the fade-in starting where the fade-out ends (fade_in_offset = the clip's length %1 - fade_out_offset); a fade-out "
+			"that ends early with nothing to bring the clip back would step the gain. clip.crossfade makes the pair for a clip "
+			"inside another one, and both offsets 0 clear it.").arg(ref.clip->length().getTicks()));
+	return false;
+}
+
 /*! Rejects a fade pair that cannot both fit inside the clip it ramps over. The
  *  rule is the rejected-edit rule and not a clamp (invariant I4's shape): a pair
  *  that overlaps would make the clip's own envelope ambiguous, and the caller
@@ -296,7 +311,7 @@ void registerClipSetFade(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Set a clip's fade-in and/or fade-out in ticks, with a shape "
 		"each (linear, exponential, logarithmic, s_curve, equal_power). An omitted argument keeps its current value; "
 		"fade_in + fade_out must fit inside the clip. 'fade_in_offset' / 'fade_out_offset' (ticks, default 0) "
-		"start the fade-in that far after the clip's start / end the fade-out that far before its end. "
+		"start the fade-in that far after the clip's start / end the fade-out that far before its end; set as a pair, the fade-in starting where the fade-out ends. "
 		"Reversible through the ProjectJournal (Clip checkpoint).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
@@ -349,6 +364,7 @@ void registerClipSetFade(ControlRegistry& registry)
 		{
 			return error;
 		}
+		if (!offsetFadesArePaired(ref, before, after, &error)) { return error; }
 		if (!checkFadesFit(ref, after, &error)) { return error; }
 
 		ref.clip->addJournalCheckPoint();

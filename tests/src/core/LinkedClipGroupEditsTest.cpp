@@ -222,18 +222,29 @@ private slots:
 		QCOMPARE(pb->length().getTicks(), 96);
 	}
 
-	//! A drop that trims the clip under it (overlap mode Trim) cuts that clip only: its peers are not under the drop.
-	void anOverlapTrimLeavesThePeersWhole()
+	//! A drop that trims the clip under it (overlap mode Trim) is a positional edit at one place: it cuts that clip only,
+	//! its peers elsewhere are not under it and stay whole. What is left of the cut clip follows the group rule: the left
+	//! piece (the original instance) stays in the group, the piece cut off to its right leaves it.
+	void anOverlapTrimLeavesThePeersWholeAndTheLeftPieceInTheGroup()
 	{
 		const QString a = clipAt(0, 384).second;
 		const QString b = clipAt(768, 384).second;
 		QVERIFY(link({a, b}));
+		Clip* pa = clipOf(a);
 		Clip* pb = clipOf(b);
-		Clip* dropped = clipOf(a)->getTrack()->createClip(TimePos(100));
+		const int group = pa->linkId();
+		Clip* dropped = pa->getTrack()->createClip(TimePos(100));
 		dropped->changeLength(TimePos(100));
 		QCOMPARE(arrangement::applyOverlap(dropped, arrangement::Overlap::Trim), 1);
 		QCOMPARE(pb->length().getTicks(), 384);
 		QCOMPARE(totalClips(), 4);  // a became two pieces around the dropped clip; b is whole
+		QCOMPARE(pa->length().getTicks(), 100);
+		QCOMPARE(pa->linkId(), group);
+		QCOMPARE(ClipLinks::group(group).size(), 2);  // the left piece and b
+		Clip* tail = nullptr;
+		for (Clip* clip : pa->getTrack()->getClips()) { if (clip->startPosition().getTicks() == 200) { tail = clip; } }
+		QVERIFY(tail != nullptr);
+		QCOMPARE(tail->linkId(), 0);  // the piece cut off to the right is on its own
 	}
 
 	//! A phase-locked split cuts the linked peer that is NOT in the lock, and does not cut twice a peer that is.

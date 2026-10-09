@@ -122,6 +122,14 @@ int undoDepthNow()
 	return journal != nullptr ? journal->undoDepth() : 0;
 }
 
+//! A drop whose crossfade could not be made (a clip too short for it) says so; nothing when \a skipped is empty.
+void announceSkippedOverlap(const QString& skipped)
+{
+	if (skipped.isEmpty()) { return; }
+	TextFloat::displayMessage(ClipView::tr("Crossfade not made"), ClipView::tr("The overlap was left as it was: %1").arg(skipped),
+		embed::getIconPixmap("hint"), 4000);
+}
+
 void beginLinkedTrim(Clip* clip, bool edgeDrag, int depthBefore)
 {
 	s_linkedTrim = {};
@@ -1107,7 +1115,9 @@ void ClipView::mouseReleaseEvent( QMouseEvent * me )
 			ArrangerEditPreview::endDrag(this);
 			const Clip* locked = arrangement::lockedUnder(m_clip, m_clip->startPosition().getTicks(),
 				m_clip->endPosition().getTicks(), arrangement::modes().overlap);
-			if (!arrangement::afterUserMove(m_clip, m_initialClipPos.getTicks()) && locked != nullptr) { cliplocks::refuseDropOnto(locked); }
+			QString skipped;
+			if (!arrangement::afterUserMove(m_clip, m_initialClipPos.getTicks(), &skipped) && locked != nullptr) { cliplocks::refuseDropOnto(locked); }
+			announceSkippedOverlap(skipped);
 		}
 	}
 	else if (m_action == Action::MoveSelection && mouseMovedDistance(me, 2))

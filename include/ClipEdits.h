@@ -173,6 +173,14 @@ struct ClipEdits
 	bool operator!=(const ClipEdits& other) const { return !(*this == other); }
 };
 
+/*! Offset fades come as a PAIR: a fade-out that ends before the clip's end and a fade-in that starts where it ends
+ *  (the container's V of a crossfade into a contained clip). A fade-out that ends early with nothing to bring the clip
+ *  back, or a fade-in that starts late with nothing before it, would step the gain, so a lone offset is dropped (both
+ *  go to 0: the fades are the ordinary ones at the clip's edges), and a pair whose fade-in does not start where the
+ *  fade-out ends - the clip was resized or trimmed after the crossfade - has its fade-in start moved there. Edits with
+ *  no offset come back unchanged. What the render, the gain curve, the GUI and `clip.set_fade` all go by. */
+LMMS_EXPORT ClipEdits withValidOffsetFades(const ClipEdits& edits, tick_t lengthTicks);
+
 /*! ED-042: the gain envelope's LINEAR gain at @a tick (from the clip's start); 1.0 with no
  *  envelope. Realtime-safe: a bounded scan of a fixed array, no allocation. */
 LMMS_EXPORT float envelopeGainAt(const ClipEdits& edits, double tick);

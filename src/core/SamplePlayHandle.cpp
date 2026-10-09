@@ -195,7 +195,7 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
  */
 void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWindow& window)
 {
-	m_edits = clip->clipEdits();
+	m_edits = withValidOffsetFades(clip->clipEdits(), clip->length().getTicks());
 	// The comp gate (R3.1) measures against the same span, so the span is taken
 	// for a comped clip too; a clip with neither stays on the early return.
 	const Track* owner = clip->getTrack();

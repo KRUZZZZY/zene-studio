@@ -115,7 +115,7 @@ LMMS_EXPORT void checkpointForDelete(Track* track, Ripple mode);
  *  (the track's checkpoint), when it is not Free. Nothing when it was dropped where it started.
  *  0.5.0 theme 2: false - and @a moved back at @a oldStart - when the overlap mode would trim or fade
  *  a locked clip (lockedUnder()); the drop is refused, nothing else changes. */
-LMMS_EXPORT bool afterUserMove(Clip* moved, tick_t oldStart = -1);
+LMMS_EXPORT bool afterUserMove(Clip* moved, tick_t oldStart = -1, QString* skipped = nullptr);
 
 /*! ED-190: move the points of every automation lane following @a track that lie in
  *  [@a oldStart, @a oldStart + @a length) by @a delta (when the mode says so). The lanes' clips
@@ -139,7 +139,9 @@ LMMS_EXPORT void rippleAfterMove(Clip* moved, tick_t oldStart, bool ripple);
 
 //! Apply @a mode to the clips under @a moved on its track: trim them away under it, or crossfade
 //! with the ones it overlaps (fades over the overlap). How many clips were changed.
-LMMS_EXPORT int applyOverlap(Clip* moved, Overlap mode);
+//! Clips that could not be changed (a clip too short to be crossfaded at both ends) are not counted; the reason of the
+//! first one goes to \a skipped when given.
+LMMS_EXPORT int applyOverlap(Clip* moved, Overlap mode, QString* skipped = nullptr);
 
 /*! 0.5.0 theme 2: one clip a clip spanning [start, end) on @a moved's track lands on - the part of it
  *  under the span ([from, to)), and whether it is locked (EditLocks), so the overlap mode may not
