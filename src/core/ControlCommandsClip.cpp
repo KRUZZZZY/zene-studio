@@ -31,6 +31,8 @@
 #include "ControlReversibility.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ClipLinks.h"
+#include "LinkedClipEdits.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -170,6 +172,7 @@ void registerClipMove(ControlRegistry& registry)
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("position"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("overlap_skipped"), control::stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -193,7 +196,8 @@ void registerClipMove(ControlRegistry& registry)
 		if (trackWide) { ref.track->addJournalCheckPoint(); } else { ref.clip->addJournalCheckPoint(); }
 		ref.clip->movePosition(TimePos(target));
 		arrangement::rippleAfterMove(ref.clip, previous, ripple);
-		arrangement::applyOverlap(ref.clip, overlap);
+		QString overlapSkipped;
+		arrangement::applyOverlap(ref.clip, overlap, &overlapSkipped);
 		// ED-190: the automation lanes following this track carry their points with the clip.
 		arrangement::moveFollowingAutomation(ref.track, previous, ref.clip->length().getTicks(),
 			ref.clip->startPosition().getTicks() - previous, true);
@@ -201,6 +205,7 @@ void registerClipMove(ControlRegistry& registry)
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		result.insert(QStringLiteral("position"), ref.clip->startPosition().getTicks());
+		if (!overlapSkipped.isEmpty()) { result.insert(QStringLiteral("overlap_skipped"), overlapSkipped); }  // why a crossfade was not made
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("position"), previous);
@@ -221,7 +226,8 @@ void registerClipResize(ControlRegistry& registry)
 	cmd.id = QStringLiteral("clip.resize");
 	cmd.group = QStringLiteral("clip");
 	cmd.verb = QStringLiteral("resize");
-	cmd.description = QStringLiteral("Set a clip's length in ticks (the clip becomes manually resized). "
+	cmd.description = QStringLiteral("Set a clip's length in ticks (the clip becomes manually resized). A linked "
+		"clip's resize applies to the whole link group (one undo step). "
 		"Reversible through the ProjectJournal (Clip checkpoint).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
@@ -240,10 +246,18 @@ void registerClipResize(ControlRegistry& registry)
 			return error;
 		}
 		const tick_t previous = ref.clip->length().getTicks();
+		const auto wanted = static_cast<tick_t>(args.value(QStringLiteral("length")).toDouble());
+		// A linked clip's resize is the whole group's (docs/LINKED-CLIPS.md section 2): every peer's end moves by
+		// the same delta, planned first so a refusal changes nothing.
+		const QString groupRefusal = ClipLinks::planEdgeEdit(ref.clip, 0, wanted - previous);
+		if (!groupRefusal.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, groupRefusal);
+		}
 		ref.clip->addJournalCheckPoint();
-		ref.clip->changeLength(TimePos(static_cast<tick_t>(
-			args.value(QStringLiteral("length")).toDouble())));
+		ref.clip->changeLength(TimePos(wanted));
 		ref.clip->setAutoResize(false);
+		ClipLinks::applyEdgeEdit(ref.clip, 0, wanted - previous, true);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
@@ -273,7 +287,9 @@ void registerClipSplit(ControlRegistry& registry)
 		"ED-021, sample clips only: 'frames' cuts that many engine frames after 'position' (frame-exact - the "
 		"halves' audio meets at that frame, their clips overlap by under a tick), and 'zero_crossing' (default: "
 		"arrangement.modes' snap_to_zero_crossings) moves the cut to the nearest zero crossing within 10 ms; the "
-		"reply then names the source 'frame' cut at.");
+		"reply then names the source 'frame' cut at. A linked clip's split cuts every member of its link "
+		"group at the same clip-relative position (one undo step): left halves keep the group, right halves form "
+		"'right_group' (0 if only one member could be cut).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("position"), control::integerProperty(1, MaxSongLength)},
@@ -287,6 +303,9 @@ void registerClipSplit(ControlRegistry& registry)
 		{QStringLiteral("zero_crossing"), control::booleanProperty()},
 		{QStringLiteral("right_position"), control::integerProperty()},
 		{QStringLiteral("lead_frames"), control::integerProperty()},
+		{QStringLiteral("members_split"), control::integerProperty()},
+		{QStringLiteral("right_group"), control::integerProperty()},
+		{QStringLiteral("left_group"), control::integerProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -316,13 +335,31 @@ void registerClipSplit(ControlRegistry& registry)
 
 		// ClipView::splitClip: checkpoint the track, then the one split recipe the range edits
 		// share (arrangement::splitClipAt).
-		ref.track->addJournalCheckPoint();
-		Clip* right = arrangement::splitClipAt(ref.clip, splitPos);
+		// A linked clip's split is the whole group's (ClipLinks::splitGroupAt, which takes its own
+		// checkpoint over every track it cuts): the left halves keep the group, the right halves form a new one.
+		ClipLinks::GroupSplit group;
+		Clip* right = nullptr;
+		if (ref.clip->linkId() > 0)
+		{
+			group = ClipLinks::splitGroupAt(ref.clip, splitPos);
+			right = group.right;
+		}
+		else
+		{
+			ref.track->addJournalCheckPoint();
+			right = arrangement::splitClipAt(ref.clip, splitPos);
+		}
 
 		const int rightOrdinal = ordinalOf(right);
 		QJsonObject result;
 		result.insert(QStringLiteral("left"), control::clipId(ref.id));
 		result.insert(QStringLiteral("right"), control::clipId(rightOrdinal));
+		if (ref.clip->linkId() > 0)
+		{
+			result.insert(QStringLiteral("members_split"), group.members);
+			result.insert(QStringLiteral("right_group"), group.rightGroup);
+			result.insert(QStringLiteral("left_group"), ref.clip->linkId());
+		}
 		result.insert(QStringLiteral("__transaction"),
 			control::transactionPayload(before, QStringLiteral("control.undo"),
 				QJsonObject{{QStringLiteral("left"), control::clipId(ref.id)},

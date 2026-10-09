@@ -226,14 +226,14 @@ void applyRemoveEffect(EffectChain* chain, int index)
 	// implementation plugin.unload and the rack's own delete use, so the
 	// structural undo step re-instantiates the device at its index. A device
 	// whose state cannot be captured (empty, or over the structural budget)
-	// is still removed, as the script asked, but no undo step is claimed for
-	// it: the log says so instead of pretending the removal is reversible.
-	const bool recorded = control::journalEffectRemoval(chain, effect, index);
-	if (!recorded)
+	// is NOT removed (owner decision 2026-10-08): a script must not take a
+	// device away unrecoverably, so the device stays and the script is told.
+	if (!control::journalEffectRemoval(chain, effect, index))
 	{
-		ScriptEngine::instance()->logMessage(QStringLiteral(
-			"[note] removing effect %1: its state cannot be captured, so this removal is not undoable")
-			.arg(index));
+		ControlResult error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("its state cannot be captured, so the removal could not be undone; the device stays"));
+		logRefusal(QStringLiteral("removing effect %1").arg(index), error);
+		return;
 	}
 	// A recorded removal pushes exactly one checkpoint: the structural step. The
 	// emptied chain's enabled flag is restored by that step, not journalled apart.
@@ -392,11 +392,16 @@ LuaEffect& LuaEffectChain::loadEffect(const QString& device) const
 	return effect(effectCount() > before ? effectCount() - 1 : -1);
 }
 
-void LuaEffectChain::removeEffect(int index)
+bool LuaEffectChain::removeEffect(int index)
 {
-	if (m_chain == nullptr) { return; }
+	if (m_chain == nullptr) { return false; }
+	const int before = effectCount();
 	enqueueDaw(dawCommand(ScriptDawBindings::Op::RemoveEffect, m_chain, index));
 	ScriptEngine::instance()->flushCommandsForRead();
+	// The queue carries no reply, so the count is the witness (as in loadEffect): false when the removal was
+	// refused - a bad index, or a device whose state cannot be captured so the removal could not be undone
+	// (owner decision 2026-10-08). The refusal is logged for the script as well.
+	return effectCount() < before;
 }
 
 void LuaEffect::setEnabled(bool enabled)

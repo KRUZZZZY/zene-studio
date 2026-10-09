@@ -108,6 +108,13 @@ struct ClipEdits
 	int fadeOutTicks = 0;   //!< the ramp down to the clip's last tick
 	FadeShape fadeInShape = FadeShape::Linear;
 	FadeShape fadeOutShape = FadeShape::Linear;
+	//! Owner decision 2026-10-08 (crossfade into a contained clip): the fade-in STARTS this many ticks after the
+	//! clip's first tick, and the fade-out ENDS this many ticks before its last tick. The clip plays unfaded (gain 1)
+	//! outside its ramps, so a container whose fade-out sits where the contained clip is gets its tail back. 0 (the
+	//! default) is the fade at the clip's edge as before; it is saved only when set, so a project that never used
+	//! it is byte-identical.
+	int fadeInOffsetTicks = 0;
+	int fadeOutOffsetTicks = 0;
 	//! ED-038: the clip's non-destructive transpose in semitones (-48..+48): a MIDI clip's notes
 	//! play transposed, a sample clip is pitch-shifted (Rubber Band) with its timing kept.
 	int transpose = 0;
@@ -156,7 +163,7 @@ struct ClipEdits
 	//! Every field but the envelope's points, for comparing (one tuple, so a new field is one more name here).
 	auto scalars() const
 	{
-		return std::tie(gain, fadeInTicks, fadeOutTicks, fadeInShape, fadeOutShape, transpose, keepFormants, formant, loopTicks, snapTicks, speedFrom, speedTo, speedInTicks,
+		return std::tie(gain, fadeInTicks, fadeOutTicks, fadeInShape, fadeOutShape, fadeInOffsetTicks, fadeOutOffsetTicks, transpose, keepFormants, formant, loopTicks, snapTicks, speedFrom, speedTo, speedInTicks,
 			speedOutTicks, preFadeInTicks, preFadeOutTicks, envelopeCount, audioLoopStart, audioLoopFrames, audioLoopOffset);
 	}
 	bool operator==(const ClipEdits& other) const
@@ -165,6 +172,14 @@ struct ClipEdits
 	}
 	bool operator!=(const ClipEdits& other) const { return !(*this == other); }
 };
+
+/*! Offset fades come as a PAIR: a fade-out that ends before the clip's end and a fade-in that starts where it ends
+ *  (the container's V of a crossfade into a contained clip). A fade-out that ends early with nothing to bring the clip
+ *  back, or a fade-in that starts late with nothing before it, would step the gain, so a lone offset is dropped (both
+ *  go to 0: the fades are the ordinary ones at the clip's edges), and a pair whose fade-in does not start where the
+ *  fade-out ends - the clip was resized or trimmed after the crossfade - has its fade-in start moved there. Edits with
+ *  no offset come back unchanged. What the render, the gain curve, the GUI and `clip.set_fade` all go by. */
+LMMS_EXPORT ClipEdits withValidOffsetFades(const ClipEdits& edits, tick_t lengthTicks);
 
 /*! ED-042: the gain envelope's LINEAR gain at @a tick (from the clip's start); 1.0 with no
  *  envelope. Realtime-safe: a bounded scan of a fixed array, no allocation. */
@@ -186,6 +201,11 @@ LMMS_EXPORT void envelopeFromText(const QString& text, ClipEdits* edits);
  *  `fadeInFrames` of 0 and `fadeOutFrames` of 0 both leave the envelope at 1.0.
  *  An overlap longer than the clip is clamped by the caller, never here.
  *
+ *  \p fadeInOffsetFrames / \p fadeOutOffsetFrames move the ramps inward: the fade-in
+ *  runs over [offset, offset + fadeInFrames) and the fade-out over
+ *  [clipFrames - offset - fadeOutFrames, clipFrames - offset); outside its ramps the
+ *  clip is unfaded. With both 0 the result is bit for bit what it was before.
+ *
  *  Allocation-free; no division by a length the caller has not bounded. */
 /*! ED-152 / ED-179: the playback speed (1 is natural) at output frame @a frame of a clip @a clipFrames long, with the
  *  speed fades @a speedInFrames and @a speedOutFrames long (output frames): the ramp from speedFrom to speedTo times
@@ -194,7 +214,8 @@ LMMS_EXPORT float clipSpeedAt(const ClipEdits& edits, f_cnt_t frame, f_cnt_t cli
 
 LMMS_EXPORT float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,
 	f_cnt_t fadeInFrames, f_cnt_t fadeOutFrames,
-	FadeShape fadeInShape, FadeShape fadeOutShape);
+	FadeShape fadeInShape, FadeShape fadeOutShape,
+	f_cnt_t fadeInOffsetFrames = 0, f_cnt_t fadeOutOffsetFrames = 0);
 
 /*! ED-180: a clip's whole gain at @a tick from its start, for a clip @a lengthTicks long - its gain, its two fades and
  *  its envelope, in ticks (the fades' own unit). The curve clip.fade_curve reports and the automation editor draws
@@ -209,6 +230,10 @@ struct PreFadeSpan
 	std::int64_t preOutFrames = 0;  //!< the fade-out's part after the clip's last frame
 	std::int64_t fadeInFrames = 0;  //!< the fade-in's part inside the clip
 	std::int64_t fadeOutFrames = 0; //!< the fade-out's part inside the clip
+	//! The offset fades (ClipEdits::fadeInOffsetTicks / fadeOutOffsetTicks) in frames: with one set, that side's
+	//! pre-fade is a ramp of its own outside the clip and the in-clip ramp sits at its offset.
+	std::int64_t fadeInOffsetFrames = 0;
+	std::int64_t fadeOutOffsetFrames = 0;
 };
 
 /*! ED-179: the fade envelope of a pre-faded clip at @a clipPos output frames from its first frame (negative before

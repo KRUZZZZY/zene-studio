@@ -68,7 +68,10 @@ class MidiClip;
  *  WHAT THE GROUP SHARES is the clip's CONTENT (the note list). What it does
  *  NOT share is where and how each member plays it: position, length, source
  *  offset, fades, gain, mute, name, colour and take lane all stay per-member,
- *  which is what makes a link a smart clip rather than a rename. See
+ *  which is what makes a link a smart clip rather than a rename. EXCEPT that a
+ *  trim, a resize and a split are edits of the group (include/LinkedClipEdits.h,
+ *  owner decision 2026-10-08): they move every member's edges by the same
+ *  amount, so the members' extents never drift apart. See
  *  docs/LINKED-CLIPS.md §4 and the one-line note in docs/KNOWN-LIMITATIONS.md.
  */
 namespace ClipLinks

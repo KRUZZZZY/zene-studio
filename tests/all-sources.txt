@@ -197,6 +197,7 @@ include/CommandPalette.h
 include/CompSlip.h
 include/CompSwipeStrip.h
 include/ConfigManager.h
+include/ContainedCrossfade.h
 include/ContextHelp.h
 include/ControlArrangingCommands.h
 include/ControlAutomationSupport.h
@@ -386,6 +387,7 @@ include/LinkAudioFollower.h
 include/LinkPeerTransport.h
 include/LinkPhaseLock.h
 include/LinkSync.h
+include/LinkedClipEdits.h
 include/LinkedModelGroupViews.h
 include/LinkedModelGroups.h
 include/ListTable.h
@@ -1375,6 +1377,7 @@ src/core/CollabSessionSync.cpp
 src/core/ComboBoxModel.cpp
 src/core/CompSlip.cpp
 src/core/ConfigManager.cpp
+src/core/ContainedCrossfade.cpp
 src/core/ControlAutomationSupport.cpp
 src/core/ControlBounceSupport.cpp
 src/core/ControlBrowserSupport.cpp
@@ -1779,6 +1782,7 @@ src/core/LinkPhaseLock.cpp
 src/core/LinkSync.cpp
 src/core/LinkSyncWire.cpp
 src/core/LinkUdpTransport.cpp
+src/core/LinkedClipEdits.cpp
 src/core/LinkedModelGroups.cpp
 src/core/LmmsSemaphore.cpp
 src/core/LocklessAllocator.cpp
@@ -2425,6 +2429,8 @@ tests/src/core/ClipJoinRippleTest.cpp
 tests/src/core/ClipLinkPersistenceTest.cpp
 tests/src/core/ClipLinkTest.cpp
 tests/src/core/ClipLinkTestSupport.h
+tests/src/core/ClipOffsetFadePairTest.cpp
+tests/src/core/ClipOffsetFadeTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ClipTransposeTest.cpp
 tests/src/core/ClipWarpPersistenceTest.cpp
@@ -2502,6 +2508,8 @@ tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
 tests/src/core/LinkPhaseLockTest.cpp
 tests/src/core/LinkRealtimeProbe.h
+tests/src/core/LinkedClipEditsTest.cpp
+tests/src/core/LinkedClipGroupEditsTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp

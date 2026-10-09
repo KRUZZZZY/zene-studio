@@ -60,6 +60,7 @@
  */
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -504,6 +505,13 @@ void detachEffect(EffectChain* chain, Effect* effect)
 	chain->removeEffect(effect);
 }
 
+namespace
+{
+std::atomic<bool> g_removalCaptureFails{false};  // the test seam: setRemovalCaptureFailsForTest()
+} // namespace
+
+void setRemovalCaptureFailsForTest(bool fails) { g_removalCaptureFails.store(fails); }
+
 bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 {
 	if (chain == nullptr || effect == nullptr || index < 0) { return false; }
@@ -518,7 +526,7 @@ bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const
 	// whose state document is over the cap refuses the inverse; the command then
 	// reports state unavailable with no usable snapshot instead of claiming a
 	// snapshot or reversibility it did not record.
-	if (xml.isEmpty() || xml.size() > StructuralSnapshotLimit) { return false; }
+	if (xml.isEmpty() || xml.size() > StructuralSnapshotLimit || g_removalCaptureFails.load()) { return false; }
 
 	// No pointer is kept (see journalEffectLoad in the header): the chain by its owner's address, the device by its slot.
 	// The enabled flag is part of the record: appending the device switches the

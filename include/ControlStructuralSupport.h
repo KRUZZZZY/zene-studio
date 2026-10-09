@@ -139,6 +139,12 @@ LMMS_EXPORT bool journalEffectRemoval(EffectChain* chain, Effect* effect, int in
  */
 LMMS_EXPORT bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const QString& xml);
 
+/*! TEST SEAM. While set, journalRemovalDocument() (and so journalEffectRemoval()) reports that the device's
+ *  state could not be captured, exactly as it does for an empty document or one over StructuralSnapshotLimit -
+ *  the failure no device loadable in a test build can produce on its own. A production path never sets it.
+ *  Callers that must not remove a device they cannot restore (a script's removeEffect) refuse on that result. */
+LMMS_EXPORT void setRemovalCaptureFailsForTest(bool fails);
+
 /*! Takes \a effect off \a chain. The removal pushes no checkpoint of its own,
  *  whether or not journalEffectRemoval recorded it: a recorded removal's one
  *  structural step restores the chain's enabled flag, and a removal that records

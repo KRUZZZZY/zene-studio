@@ -68,7 +68,7 @@ LMMS_EXPORT void paintFades(QPainter& p, const ClipEdits& edits, int clipTicks, 
 LMMS_EXPORT FadeHandle fadeHandleAt(const ClipEdits& edits, int clipTicks, const ClipOverlayFrame& frame, const QPoint& pos);
 
 //! The fade length, in ticks, a drag of @a handle to pixel @a x sets (0..the clip's length).
-LMMS_EXPORT int fadeTicksAt(FadeHandle handle, int x, int clipTicks, const ClipOverlayFrame& frame);
+LMMS_EXPORT int fadeTicksAt(FadeHandle handle, int x, int clipTicks, const ClipOverlayFrame& frame, int offsetTicks = 0);
 
 //! ED-150: thin marks at the top edge where the clip's audio has a transient (ticks from its start).
 LMMS_EXPORT void paintTransients(QPainter& p, const std::vector<int>& ticks, const ClipOverlayFrame& frame, const QColor& colour);

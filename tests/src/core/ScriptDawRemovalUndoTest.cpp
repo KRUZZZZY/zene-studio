@@ -27,9 +27,11 @@
  */
 
 #include <QtTest>
+#include <QScopeGuard>
 #include <QDomDocument>
 #include <QStringList>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -552,6 +554,58 @@ private slots:
 		journal->redo();
 		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
 		QVERIFY(chain->effects().front() == second);
+
+		mixer->deleteChannel(index);
+		engine->takeLogMessages();
+	}
+
+	/*! Owner decision 2026-10-08: a removal that cannot be undone is refused. With the capture of the device's
+	 *  state failing, the script's removeEffect leaves the device where it is, tells the script (the log's
+	 *  [error] ... refused line), and pushes no undo step. With the capture working again the same script
+	 *  removes the device. */
+	void aScriptsRemovalThatCannotBeUndoneIsRefused()
+	{
+		QString device;
+		QString deviceName;
+		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
+		ProjectJournal* journal = Engine::projectJournal();
+		Mixer* mixer = Engine::mixer();
+		const int index = mixer->createChannel();
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(
+			"zene.mixer():channel(%1):chain():loadEffect(\"%2\")\n").arg(index).arg(device), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		engine->takeLogMessages();
+		const int depth = journal->undoDepth();
+
+		control::setRemovalCaptureFailsForTest(true);
+		const auto restore = qScopeGuard([] { control::setRemovalCaptureFailsForTest(false); });
+		const QString script = qstr(
+			"local ok = zene.mixer():channel(%1):chain():removeEffect(0)\n"
+			"print(\"removeEffect returned \" .. tostring(ok))\n").arg(index);
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);  // the device stays
+		QVERIFY(chain->isEnabled());
+		QCOMPARE(journal->undoDepth(), depth);                   // and no undo step was pushed
+		const QStringList log = engine->takeLogMessages();
+		const auto logged = [&log](const QString& text) {
+			return std::any_of(log.begin(), log.end(), [&text](const QString& line) { return line.contains(text); });
+		};
+		QVERIFY2(logged(QStringLiteral("[error] removing effect 0 refused")), qPrintable(log.join(QLatin1Char('|'))));
+		// The script is told by the return value, not only by the log: false.
+		QVERIFY2(logged(QStringLiteral("removeEffect returned false")), qPrintable(log.join(QLatin1Char('|'))));
+
+		control::setRemovalCaptureFailsForTest(false);
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY(chain->effects().empty());                       // capturable again: removed, and undoable
+		const QStringList second = engine->takeLogMessages();
+		QVERIFY2(std::any_of(second.begin(), second.end(), [](const QString& line) {
+			return line.contains(QStringLiteral("removeEffect returned true")); }), qPrintable(second.join(QLatin1Char('|'))));
+		journal->undo();
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
 
 		mixer->deleteChannel(index);
 		engine->takeLogMessages();

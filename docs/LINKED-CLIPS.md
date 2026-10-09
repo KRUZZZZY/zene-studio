@@ -81,7 +81,22 @@ the disagreement is *reported* rather than silently repaired.
 | `note.move`, `note.resize`, `note.velocity_set` | **yes** | the verbs mirror after the in-place edit (the same call the piano roll's own drag points do not make) |
 | `clip.link_sync` | **yes** — that is its job | the explicit repair/propagation verb: one member's content is written onto the group |
 | `clip.link_create` | **yes**, once | a new member ADOPTS the anchor's content, so a fresh group starts in sync |
-| `clip.move`, `clip.resize`, `clip.trim`, `clip.slip` | no | position, length and source offset describe where a member plays the shared content |
+| `clip.trim`, the song editor's left-edge drag | **yes**, to every member (owner decision 2026-10-08) | every peer's start and end move by the same deltas as the edited clip's and its source offset moves against its start (clip.trim's head-trim rule), as ONE undo step; a trim any peer cannot take (it would be emptied, or start before the song) is refused whole, `peers_trimmed` counts the peers, and the members never diverge |
+| `clip.split`, the knife (plain or shift = destructive) | **yes**, to every member (owner decision 2026-10-08) | every member is cut at the same CLIP-RELATIVE position, as ONE undo step. The left halves keep the group (`left_group`); the right halves form a second linked group (`right_group`, `members_split` members cut). A member too short to be cut there stays whole in the left group; a lone right half is unlinked (`right_group` 0). The cut of a linked clip is always the non-destructive one (both halves keep the note list, the window moves), because a destructive cut of shared content is what made the group disagree |
+| the arranger's "clear notes out of bounds" | **yes**, to every member (owner decision 2026-10-08) | the trimmed, re-based note list is written onto every peer, and each peer's start offset moves by what the notes were re-based by, so a peer plays every kept note where it did (one undo step) |
+| `clip.resize`, the song editor's right-edge drag | **yes**, to every member (owner decision 2026-10-08, round 2) | a resize is a trim of the end: every peer's end moves by the same delta, as ONE undo step; refused whole if a peer would be emptied. This supersedes the earlier rule that a member's length was its own |
+| every other split: the range split (`range.split`, `range.delete`, `range.crop`), `vca.edit_split`, `clip.split_at`, loop slicing (all built on `arrangement::splitClipAt`) | **yes** (round 2) | a linked clip is cut with its group at the same clip-relative position, left halves keeping the group and right halves forming a new one. In a phase-locked split a clip a group cut already reached is not cut a second time. A drop that trims the clip under it (overlap mode Trim) is a positional edit at one place and cuts that clip only: its peers elsewhere are not under the drop and stay whole. What is left of the cut clip follows the group rule: the left piece (the original instance) stays in its link group, a piece cut off to its right leaves it (a lone right half is unlinked, as in a group split) |
+| `vca.edit_trim` | **yes** (round 2) | the linked peers of the locked clips follow the lock's trim, planned with it (refused whole as one) |
+| `clip.move`, `clip.slip` | no | position and source offset describe where a member plays the shared content |
+
+A trim whose peers differ in offset is checked against each peer: the edit is refused whole when it would leave a peer
+empty or before the song start, or would extend a peer before its own content (a start offset above 0, which the song
+editor never allows) while the edited clip stays inside its content. A head trim gives a clip a NEGATIVE start offset;
+that is the normal representation and is not refused.
+
+A split cuts a member only when it is longer than the cut position. Members of a group made and edited as a group have
+equal lengths, so all are cut; a member shorter than the position exists only in a legacy group (or one resized member by
+member before 2026-10-08) and stays whole in the left group.
 | `clip.set_fade`, `clip.set_gain`, `clip.crossfade` | no | the level/fade shape is a member's own |
 | `track.set_mute` / `set_solo`, a member's name or colour, its take lane | no | per-member presentation |
 | a piano-roll gesture that does not pass through the note entry points (an in-place drag that only re-sorts), a hand-edited project file, a Lua edit of the note list | no | `clip.link_get_state` reports the drift and `clip.link_sync` repairs it |
