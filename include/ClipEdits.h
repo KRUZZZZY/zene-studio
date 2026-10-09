@@ -115,6 +115,9 @@ struct ClipEdits
 	//! it is byte-identical.
 	int fadeInOffsetTicks = 0;
 	int fadeOutOffsetTicks = 0;
+	//! True only for the explicit contained-clip gesture when its authored ramps leave a silent span between them.
+	//! Old offset pairs keep the adjacent-ramp behavior when this additive field is absent.
+	bool fadeOffsetGap = false;
 	//! ED-038: the clip's non-destructive transpose in semitones (-48..+48): a MIDI clip's notes
 	//! play transposed, a sample clip is pitch-shifted (Rubber Band) with its timing kept.
 	int transpose = 0;
@@ -163,7 +166,7 @@ struct ClipEdits
 	//! Every field but the envelope's points, for comparing (one tuple, so a new field is one more name here).
 	auto scalars() const
 	{
-		return std::tie(gain, fadeInTicks, fadeOutTicks, fadeInShape, fadeOutShape, fadeInOffsetTicks, fadeOutOffsetTicks, transpose, keepFormants, formant, loopTicks, snapTicks, speedFrom, speedTo, speedInTicks,
+		return std::tie(gain, fadeInTicks, fadeOutTicks, fadeInShape, fadeOutShape, fadeInOffsetTicks, fadeOutOffsetTicks, fadeOffsetGap, transpose, keepFormants, formant, loopTicks, snapTicks, speedFrom, speedTo, speedInTicks,
 			speedOutTicks, preFadeInTicks, preFadeOutTicks, envelopeCount, audioLoopStart, audioLoopFrames, audioLoopOffset);
 	}
 	bool operator==(const ClipEdits& other) const
@@ -174,11 +177,11 @@ struct ClipEdits
 };
 
 /*! Offset fades come as a PAIR: a fade-out that ends before the clip's end and a fade-in that starts where it ends
- *  (the container's V of a crossfade into a contained clip). A fade-out that ends early with nothing to bring the clip
- *  back, or a fade-in that starts late with nothing before it, would step the gain, so a lone offset is dropped (both
- *  go to 0: the fades are the ordinary ones at the clip's edges), and a pair whose fade-in does not start where the
- *  fade-out ends - the clip was resized or trimmed after the crossfade - has its fade-in start moved there. Edits with
- *  no offset come back unchanged. What the render, the gain curve, the GUI and `clip.set_fade` all go by. */
+ *  (the original container V of a contained crossfade). A lone offset is dropped, and a mismatched legacy pair has
+ *  its fade-in start repaired to the fade-out end. The explicit container gesture may mark a separated pair with
+ *  `fadeOffsetGap`; the container stays silent between those ramps. The marker is saved only for that new case, so
+ *  projects with existing offset pairs keep their original adjacent-ramp rendering. What the render, gain curve,
+ *  GUI and `clip.set_fade` all go by. */
 LMMS_EXPORT ClipEdits withValidOffsetFades(const ClipEdits& edits, tick_t lengthTicks);
 
 /*! ED-042: the gain envelope's LINEAR gain at @a tick (from the clip's start); 1.0 with no
@@ -215,7 +218,7 @@ LMMS_EXPORT float clipSpeedAt(const ClipEdits& edits, f_cnt_t frame, f_cnt_t cli
 LMMS_EXPORT float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,
 	f_cnt_t fadeInFrames, f_cnt_t fadeOutFrames,
 	FadeShape fadeInShape, FadeShape fadeOutShape,
-	f_cnt_t fadeInOffsetFrames = 0, f_cnt_t fadeOutOffsetFrames = 0);
+	f_cnt_t fadeInOffsetFrames = 0, f_cnt_t fadeOutOffsetFrames = 0, bool fadeOffsetGap = false);
 
 /*! ED-180: a clip's whole gain at @a tick from its start, for a clip @a lengthTicks long - its gain, its two fades and
  *  its envelope, in ticks (the fades' own unit). The curve clip.fade_curve reports and the automation editor draws

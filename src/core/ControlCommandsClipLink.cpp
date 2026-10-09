@@ -25,12 +25,12 @@
  * name is taken by session tempo/beat sync (docs/LINK-SYNC.md), a different
  * feature that happens to share the English word.
  *
- * WHAT PROPAGATES, stated here because the row asks for the one line: content
- * edits propagate. clip.link_create and clip.link_sync mirror one member's note
- * list to every member, and the note.* verbs (add / remove / move / resize /
+ * WHAT PROPAGATES, stated here because the row asks for the one line: notes,
+ * name and colour propagate. clip.link_create and clip.link_sync mirror one
+ * member's shared state to every member, and the note.* verbs (add / remove / move / resize /
  * velocity_set) mirror through the engine's own note entry points, so an edit to
- * one member IS the edit to all of them. Position, length, source offset, fades,
- * gain, mute, name, colour and take lane are PER-MEMBER and never propagate -
+	 * one member IS the edit to all of them. Position, length, loop window, fades,
+	 * gain, mute and take lane are PER-MEMBER and never propagate -
  * they describe where and how a member plays the shared content, which is what
  * makes a link a smart clip rather than a rename. See docs/LINKED-CLIPS.md §2
  * and the one-line note in docs/KNOWN-LIMITATIONS.md.
@@ -162,18 +162,30 @@ QJsonArray clipIdsOf(const QVector<Clip*>& clips)
 	return ids;
 }
 
+QJsonObject detachTransaction(const QJsonObject& before, Clip* detached, const QVector<Clip*>& remaining)
+{
+	QJsonObject inverseArgs;
+	inverseArgs.insert(QStringLiteral("clip"), cliplink::clipIdOf(remaining.isEmpty()
+		? detached : remaining.first()));
+	QJsonArray inverseClips;
+	inverseClips.append(cliplink::clipIdOf(detached));
+	inverseArgs.insert(QStringLiteral("clips"), inverseClips);
+	return transactionPayload(before, QStringLiteral("clip.link_create"), inverseArgs, true,
+		cliplink::ClauseClipLinkJournalled);
+}
+
 void registerClipLinkCreate(ControlRegistry& registry)
 {
 	ControlCommand cmd;
 	cmd.id = QStringLiteral("clip.link_create");
 	cmd.group = QStringLiteral("clip");
 	cmd.verb = QStringLiteral("link_create");
-	cmd.description = QStringLiteral("Link clips to a clip so they share its content: an edit to "
-		"the note list of any member is seen by every member (linked / smart clips). 'clip' is "
+	cmd.description = QStringLiteral("Link clips to a clip so they share its notes, name and colour: an edit to "
+		"the note list or shared presentation of any member is seen by every member (linked / smart clips). 'clip' is "
 		"the content source and the group's anchor - if it is already linked, the named clips "
 		"join ITS group; otherwise a new group is created and 'clip' joins it. The new members "
-		"ADOPT 'clip'\"s notes (the group starts in sync), while their own position, length, "
-		"source offset, fades, gain and take lane stay their own: a link shares content, not "
+		"ADOPT 'clip'\"s notes, name and colour (the group starts in sync), while their own start, length, "
+		"loop window, fades, gain and take lane stay their own: a link shares content, not "
 		"placement. Reversible through the ProjectJournal (one Clip checkpoint per member "
 		"written, merged into one undo step). See docs/LINKED-CLIPS.md.");
 	cmd.argsSchema = objectSchema({
@@ -221,6 +233,7 @@ void registerClipLinkCreate(ControlRegistry& registry)
 		// mirror takes its own checkpoint over the members it rewrites, and the
 		// registry merges both into this command's one undo step.
 		const ClipLinks::MirrorReport mirror = ClipLinks::mirrorContent(anchor.clip);
+		ClipLinks::mirrorPresentation(anchor.clip);
 
 		QJsonObject result = cliplink::groupState(ClipLinks::group(group));
 		result.insert(QStringLiteral("adopted"), clipIdsOf(newcomers));
@@ -237,6 +250,49 @@ void registerClipLinkCreate(ControlRegistry& registry)
 }
 
 
+
+ControlResult detachClip(const QJsonObject& args, bool makeUniqueVerb)
+{
+	ControlResult error;
+	ClipRef ref;
+	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+	if (ref.clip->linkId() <= 0)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'%1' is not a member of a link group")
+				.arg(args.value(QStringLiteral("clip")).toString()));
+	}
+
+	const int group = ref.clip->linkId();
+	const QVector<Clip*> members = cliplink::groupOf(ref.clip);
+	QVector<Clip*> remaining;
+	for (Clip* member : members)
+	{
+		if (member != ref.clip) { remaining.append(member); }
+	}
+	const bool dissolved = remaining.size() == 1;
+	const QJsonObject before = cliplink::membershipState(ref.clip);
+	QVector<JournallingObject*> toCheckpoint{ref.clip};
+	if (dissolved) { toCheckpoint.append(remaining.first()); }
+	if (ProjectJournal* journal = Engine::projectJournal(); journal != nullptr)
+	{
+		journal->addJournalCheckPoint(toCheckpoint);
+	}
+
+	ref.clip->setLinkId(0);
+	if (dissolved) { remaining.first()->setLinkId(0); }
+
+	QJsonObject result;
+	result.insert(QStringLiteral("removed"), cliplink::clipIdOf(ref.clip));
+	result.insert(QStringLiteral("group"), group);
+	QJsonArray ids;
+	for (Clip* member : remaining) { ids.append(cliplink::clipIdOf(member)); }
+	result.insert(QStringLiteral("remaining"), ids);
+	result.insert(QStringLiteral("dissolved"), dissolved);
+	if (makeUniqueVerb) { result.insert(QStringLiteral("made_unique"), true); }
+	result.insert(QStringLiteral("__transaction"), detachTransaction(before, ref.clip, remaining));
+	return ControlResult::success(result);
+}
 
 void registerClipLinkRemove(ControlRegistry& registry)
 {
@@ -260,66 +316,27 @@ void registerClipLinkRemove(ControlRegistry& registry)
 		{QStringLiteral("dissolved"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
 	});
 	cmd.mutating = true;
-	cmd.handler = [](const QJsonObject& args) {
-		ControlResult error;
-		ClipRef ref;
-		if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error))
-		{
-			return error;
-		}
-		if (ref.clip->linkId() <= 0)
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'%1' is not a member of a link group")
-					.arg(args.value(QStringLiteral("clip")).toString()));
-		}
+	cmd.handler = [](const QJsonObject& args) { return detachClip(args, false); };
+	registry.registerCommand(cmd);
+}
 
-		const int group = ref.clip->linkId();
-		const QVector<Clip*> members = cliplink::groupOf(ref.clip);
-		QVector<Clip*> remaining;
-		for (Clip* member : members)
-		{
-			if (member != ref.clip) { remaining.append(member); }
-		}
-		// A relation needs two ends: the last pair leaving leaves no group of one.
-		const bool dissolved = remaining.size() == 1;
-		const QJsonObject before = cliplink::membershipState(ref.clip);
-
-		QVector<JournallingObject*> toCheckpoint;
-		toCheckpoint.append(ref.clip);
-		if (dissolved) { toCheckpoint.append(remaining.first()); }
-		if (ProjectJournal* journal = Engine::projectJournal(); journal != nullptr)
-		{
-			journal->addJournalCheckPoint(toCheckpoint);
-		}
-
-		ref.clip->setLinkId(0);
-		if (dissolved) { remaining.first()->setLinkId(0); }
-
-		QJsonObject result;
-		result.insert(QStringLiteral("removed"), cliplink::clipIdOf(ref.clip));
-		result.insert(QStringLiteral("group"), group);
-		QJsonArray ids;
-		for (Clip* member : remaining) { ids.append(cliplink::clipIdOf(member)); }
-		result.insert(QStringLiteral("remaining"), ids);
-		result.insert(QStringLiteral("dissolved"), dissolved);
-		/* The inverse of an unlink is the link itself: the removed clip rejoins
-		 * the group it left, which `clip.link_create` with the remaining member
-		 * as the anchor's content source performs. `applies: journal` is what
-		 * control.undo actually uses - the tag is part of each clip's checkpointed
-		 * state - and this inverse names the same operation for a reader and for a
-		 * client replaying the transaction record. */
-		QJsonObject inverseArgs;
-		inverseArgs.insert(QStringLiteral("clip"), cliplink::clipIdOf(remaining.isEmpty()
-			? ref.clip : remaining.first()));
-		QJsonArray inverseClips;
-		inverseClips.append(cliplink::clipIdOf(ref.clip));
-		inverseArgs.insert(QStringLiteral("clips"), inverseClips);
-		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(before, QStringLiteral("clip.link_create"),
-				inverseArgs, true, cliplink::ClauseClipLinkJournalled));
-		return ControlResult::success(result);
-	};
+void registerClipLinkMakeUnique(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("clip.link_make_unique");
+	cmd.group = QStringLiteral("clip");
+	cmd.verb = QStringLiteral("link_make_unique");
+	cmd.description = QStringLiteral("Make this linked MIDI clip unique by detaching its instance with an independent copy of its current content. Other members keep their shared content; when only one member remains, its link is dissolved. Reversible through one ProjectJournal checkpoint.");
+	cmd.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}}, {QStringLiteral("clip")});
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("removed"), stringProperty()},
+		{QStringLiteral("group"), integerProperty()},
+		{QStringLiteral("remaining"), arrayProperty()},
+		{QStringLiteral("dissolved"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
+		{QStringLiteral("made_unique"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
+	});
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) { return detachClip(args, true); };
 	registry.registerCommand(cmd);
 }
 
@@ -330,6 +347,7 @@ void registerClipLinkCommands(ControlRegistry& registry)
 {
 	registerClipLinkCreate(registry);
 	registerClipLinkRemove(registry);
+	registerClipLinkMakeUnique(registry);
 	registerClipLinkStateCommands(registry);
 }
 

@@ -5,16 +5,17 @@ half: `include/ClipLinks.h` (the relation: the group id on the clip, the group,
 the mirror) and `src/core/ClipLinks.cpp` (its implementation). Clip-side state:
 `Clip::linkId()` / `Clip::setLinkId()`, persisted by `Clip::saveClipEdits` /
 `Clip::loadClipEdits` as the `link` attribute of the clip's own element. Surface:
-`src/core/ControlCommandsClipLink.cpp` (`clip.link_create`, `clip.link_remove`)
-and `src/core/ControlCommandsClipLinkState.cpp` (`clip.link_get_state`,
-`clip.link_sync`) — two translation units because the group has four ids and the
+`src/core/ControlCommandsClipLink.cpp` (`clip.link_create`, `clip.link_remove`,
+`clip.link_make_unique`) and `src/core/ControlCommandsClipLinkState.cpp`
+(`clip.link_get_state`, `clip.link_sync`) — two translation units because the group has five ids and the
 file-length ratchet is not moved for a new feature — plus the helpers both halves
 share in `include/ControlClipLinkSupport.h`.
 
-**One-line summary.** Two clips share one source — the clip's content, its note
-list — so an edit to one is seen by all of them; the relation is written to each
-member's own element, so it survives a save/reload; and unlinking is an
-operation, not a side effect of an edit.
+**One-line summary.** Linked clips share notes, name and colour; each instance
+keeps its own start, length and loop window. A geometry edit changes only the
+selected instance, while a note edit in any member updates the shared notes.
+The relation survives save/reload, and **Make Unique** detaches one instance
+with its own content copy.
 
 ---
 
@@ -48,11 +49,10 @@ reasons, in the order they matter here:
    (`Track::takelanes`, `docs/COMPING.md`), by `NoteTransform`'s quantise and by
    the clip's own serialisation. Aliasing it changes the lifetime rule of every
    one of those at once; a mirror changes none of them.
-3. **Content and placement stay separable.** What a link shares is the
-   *content*; where each member plays it — position, length, source offset,
-   fades, gain, mute, name, colour, take lane — stays per-member. That is what
-   makes a link a smart clip and not a rename, and it is only expressible if the
-   members keep their own objects.
+3. **Content and placement stay separable.** A link shares its notes, name and
+   colour. Each member keeps its own start, length, source offset and loop
+   window, fades, gain, mute and take lane. That is what makes a link a smart
+   clip rather than a single shared arrangement window.
 4. **Divergence becomes observable.** With aliasing, disagreement between
    members is impossible by construction — and therefore unreportable when a
    project file, a paste path or a future feature produces one anyway. Here
@@ -77,34 +77,29 @@ the disagreement is *reported* rather than silently repaired.
 
 | edit | propagates? | why |
 |---|---|---|
-| `note.add`, `note.remove` | **yes** | they reach `MidiClip::addNote` / `removeNote`, which mirror |
-| `note.move`, `note.resize`, `note.velocity_set` | **yes** | the verbs mirror after the in-place edit (the same call the piano roll's own drag points do not make) |
-| `clip.link_sync` | **yes** — that is its job | the explicit repair/propagation verb: one member's content is written onto the group |
-| `clip.link_create` | **yes**, once | a new member ADOPTS the anchor's content, so a fresh group starts in sync |
-| `clip.trim`, the song editor's left-edge drag | **yes**, to every member (owner decision 2026-10-08) | every peer's start and end move by the same deltas as the edited clip's and its source offset moves against its start (clip.trim's head-trim rule), as ONE undo step; a trim any peer cannot take (it would be emptied, or start before the song) is refused whole, `peers_trimmed` counts the peers, and the members never diverge |
-| `clip.split`, the knife (plain or shift = destructive) | **yes**, to every member (owner decision 2026-10-08) | every member is cut at the same CLIP-RELATIVE position, as ONE undo step. The left halves keep the group (`left_group`); the right halves form a second linked group (`right_group`, `members_split` members cut). A member too short to be cut there stays whole in the left group; a lone right half is unlinked (`right_group` 0). The cut of a linked clip is always the non-destructive one (both halves keep the note list, the window moves), because a destructive cut of shared content is what made the group disagree |
-| the arranger's "clear notes out of bounds" | **yes**, to every member (owner decision 2026-10-08) | the trimmed, re-based note list is written onto every peer, and each peer's start offset moves by what the notes were re-based by, so a peer plays every kept note where it did (one undo step) |
-| `clip.resize`, the song editor's right-edge drag | **yes**, to every member (owner decision 2026-10-08, round 2) | a resize is a trim of the end: every peer's end moves by the same delta, as ONE undo step; refused whole if a peer would be emptied. This supersedes the earlier rule that a member's length was its own |
-| every other split: the range split (`range.split`, `range.delete`, `range.crop`), `vca.edit_split`, `clip.split_at`, loop slicing (all built on `arrangement::splitClipAt`) | **yes** (round 2) | a linked clip is cut with its group at the same clip-relative position, left halves keeping the group and right halves forming a new one. In a phase-locked split a clip a group cut already reached is not cut a second time. A drop that trims the clip under it (overlap mode Trim) is a positional edit at one place and cuts that clip only: its peers elsewhere are not under the drop and stay whole. What is left of the cut clip follows the group rule: the left piece (the original instance) stays in its link group, a piece cut off to its right leaves it (a lone right half is unlinked, as in a group split) |
-| `vca.edit_trim` | **yes** (round 2) | the linked peers of the locked clips follow the lock's trim, planned with it (refused whole as one) |
-| `clip.move`, `clip.slip` | no | position and source offset describe where a member plays the shared content |
+| `note.add`, `note.remove`, `note.move`, `note.resize`, `note.velocity_set` and other note edits | **yes** | edits to the shared note list are mirrored to every linked MIDI clip |
+| `clip.link_sync` | **yes** — that is its job | the explicit repair/propagation verb writes one member's notes to the group |
+| `clip.link_create` | **yes**, once | a new member adopts the anchor's notes, name and colour, so the group starts in sync |
+| name and colour edits | **yes** | name and colour are shared presentation state |
+| `clip.trim`, `clip.resize`, arranger edge drags and `vca.edit_trim` | **no** | only the edited instance's start, length and source window change; other linked instances keep their geometry |
+| `clip.move`, `clip.slip`, loop start/length/offset edits | **no** | placement and playback windows describe how that instance plays the shared content |
+| `clip.split`, the knife, range/VCA split, loop slicing and overlap trimming | **only the edited instance** | the right piece keeps the original link id, so both pieces show the shared notes through their own windows; other instances remain untouched |
+| `clip.link_make_unique` | **no further propagation** | the selected instance keeps its own copy of the current notes, name and colour; its link id is cleared, and a final remaining member's link is dissolved |
+| the arranger's "clear notes out of bounds" | **yes**, for notes only | it edits the shared note list; each peer's independent position, length and offset stay unchanged |
+| `clip.set_fade`, `clip.set_gain`, `clip.crossfade` | no | the level and fade shape belong to each instance |
+| `track.set_mute` / `set_solo`, take lane | no | these remain per-track or per-instance state |
 
-A trim whose peers differ in offset is checked against each peer: the edit is refused whole when it would leave a peer
-empty or before the song start, or would extend a peer before its own content (a start offset above 0, which the song
-editor never allows) while the edited clip stays inside its content. A head trim gives a clip a NEGATIVE start offset;
-that is the normal representation and is not refused.
+A split is one undo step. The left and right pieces stay in the original link group; they do not form a second group.
+The arranger draws a small chain marker on linked clips, and the marker is exposed in the clip's accessible name.
+The MIDI clip context menu offers **Make Unique**, and `clip.link_make_unique` exposes the same undoable action on
+the control surface.
 
-A split cuts a member only when it is longer than the cut position. Members of a group made and edited as a group have
-equal lengths, so all are cut; a member shorter than the position exists only in a legacy group (or one resized member by
-member before 2026-10-08) and stays whole in the left group.
-| `clip.set_fade`, `clip.set_gain`, `clip.crossfade` | no | the level/fade shape is a member's own |
-| `track.set_mute` / `set_solo`, a member's name or colour, its take lane | no | per-member presentation |
-| a piano-roll gesture that does not pass through the note entry points (an in-place drag that only re-sorts), a hand-edited project file, a Lua edit of the note list | no | `clip.link_get_state` reports the drift and `clip.link_sync` repairs it |
+A hand-edited project file or an edit path outside the shared note entry points can leave divergent note lists.
+`clip.link_get_state` reports the divergence and `clip.link_sync` repairs it.
 
-The one line that ships in the two release documents is
-`docs/KNOWN-LIMITATIONS.md`'s and `docs/RELEASE-NOTES-v0.3.0-alpha.md`'s
-"linked clips" entry, and `ClipLinkTest::theOneLineUiAbsenceIsWrittenDown()`
-reads both files from the built tree and fails if either loses the claim.
+The linked-clips entries in `docs/KNOWN-LIMITATIONS.md` and
+`docs/RELEASE-NOTES-v0.3.0-alpha.md` describe the visible marker, Make Unique
+action and per-instance geometry rule.
 
 **Audio clips cannot be members in 0.3.0.** A link group's content channel is a
 note list, so `clip.link_create` refuses a `SampleClip`, typed
@@ -121,12 +116,13 @@ one-member group.
 |---|---|---|---|
 | `clip.link_create` | `clip` (string, required), `clips` (array of clip ids, required, non-empty) | `group`, `members`, `size`, `content`, `notes`, `adopted`, `mirrored` | `true_inverse`, reversible |
 | `clip.link_remove` | `clip` (string, required) | `removed`, `group`, `remaining`, `dissolved` | `true_inverse`, reversible |
+| `clip.link_make_unique` | `clip` (string, required) | `removed`, `group`, `remaining`, `dissolved`, `made_unique` | `true_inverse`, reversible |
 | `clip.link_get_state` | `clip` (string, optional) | `groups[]` (`group`, `members`, `size`, `content`, `content_members`, `notes`, `reference`, `in_sync[]`, `divergent[]`), `count`, and with `clip`: `linked` | `not_mutating` |
 | `clip.link_sync` | `clip` (string, required) | `clip`, `group`, `members`, `divergent_before`, `written_count`, `content` | `true_inverse`, reversible |
 
 Behaviour worth stating because it is not inferable from the names:
 
-* **A link needs two ends.** `clip.link_remove` that leaves ONE member dissolves
+* **A link needs two ends.** `clip.link_remove` or `clip.link_make_unique` that leaves ONE member dissolves
   the relation entirely (that member loses its tag too), so no group of one
   outlives its last pair. `clip.link_get_state` on that member reports
   `linked: false`.
@@ -137,7 +133,7 @@ Behaviour worth stating because it is not inferable from the names:
 * **A copy of a member is a member.** `Clip`'s copy constructor carries the link
   id and the `link` attribute rides `saveClipEdits`, so a split, a duplicate or a
   paste of a linked clip yields another member of the same group (with its own
-  placement), and `clip.link_remove` is the "make unique" operation.
+  placement). `clip.link_make_unique` is the explicit detach action.
 * **`link.*` is a different feature.** `docs/LINK-SYNC.md`'s `link.*` group is
   Ableton-Link-style session tempo/beat sync; this group's ids keep the `clip.`
   prefix for exactly that reason.
@@ -147,10 +143,9 @@ Behaviour worth stating because it is not inferable from the names:
 ## 4. Reversibility (SPEC A16)
 
 Rows live in `src/core/ControlReversibilityTableVerbs.cpp` beside `clip.trim`'s
-and `clip.slip`'s, for the same reason those two are `true_inverse` rows: what a
-link changes is the clip's own serialized state. The mechanism is the engine's
-live `ProjectJournal` checkpoint, and the three facts that make it a real inverse
-are:
+and `clip.slip`'s. Link creation, removal, Make Unique, and content sync use live
+`ProjectJournal` checkpoints over the clip state they change. The facts that
+make those rows true inverses are:
 
 1. `link` is written **only** when the clip is a member and `loadClipEdits`
    **resets to 0 when the attribute is absent** — so the checkpoint taken before
@@ -169,46 +164,28 @@ are:
 
 ## 5. Proof, and how to re-run it
 
-One registered ctest, run from `<build>/tests` (LMMS rule 7):
+The registered ctests, run from `<build>/tests` (LMMS rule 7):
 
 ```bash
-cd <build>/tests && ctest -R ClipLinkTest --output-on-failure > log 2>&1; echo EXIT=$?
+cd <build>/tests && ctest -R 'ClipLinkTest|LinkedClipGroupEditsTest|MidiClipLinkedEditTest' --output-on-failure > log 2>&1; echo EXIT=$?
 ```
 
-It drives the whole feature through `ControlRegistry::invoke` — the release's
-own door — and covers, in this order: the four ids with both schemas
-(`requiredCommandsAreRegistered`); the relation and the propagation of every
-content verb in both directions, plus the placement edits that must NOT
-propagate (`anEditToOneMemberIsSeenByAll`); the unlink, its dissolve rule, the
-detach being real and the relink (`unlinkDetachesAndKeepsItsContent`); **the save
-/ reload round trip** — the `link` attribute in the saved file, the group still
-there after `loadProject`, the reloaded group still propagating, and a second
-save writing the same relation (`theLinkSurvivesSaveAndReload`); the typed
-refusals (`refusalsAreTypedAndNothingIsHalfWritten`); one undo restoring every
-member (`undoRestoresEveryMemberOfTheGroup`); the A16 rows
-(`theA16ContractHasARowForEachId`); and the two one-line UI-absence notes
-(`theOneLineUiAbsenceIsWrittenDown`).
+`ClipLinkTest` drives the command surface through `ControlRegistry::invoke` and
+covers registration, shared state, Make Unique, undo, save/reload and typed
+refusals. `LinkedClipGroupEditsTest` and `MidiClipLinkedEditTest` cover the
+independent geometry rule in command and GUI paths. The former apply-to-all
+trim/split assertions were changed to assert the owner's 2026-10-09 reversal;
+they were not weakened.
 
 ---
 
-## 6. What is NOT here
+## 6. Bounds
 
-1. **No UI.** There is no link badge, no "Edit shared source" gesture and no
-   linked-clip colour in this release; the relation is created, read, repaired
-   and broken through the socket only (the one line in
-   `docs/KNOWN-LIMITATIONS.md`).
-2. **Audio clips cannot be linked** (§2).
-3. **The mirror writes the whole note list**, not a delta. A one-note edit to a
-   linked clip with a large shared list rewrites every member's list; the cost
-   is bounded by the group's size, not by the edit's. Unconditional-by-design,
-   because a delta-based mirror is where divergence would come from.
-4. **A member with auto-resize on re-sizes to the propagated content**, because
-   that is the engine's own rule for a clip whose notes changed
-   (`MidiClip::updateLength()`); a member that was manually resized
-   (`autoresize=0`) keeps its length.
-5. **Undo granularity outside the command path.** Inside the command path every
-   member written is one step (point 3 of §4). A GUI gesture that calls the note
-   entry points directly — drawing a note in the piano roll of a linked clip —
-   takes its own checkpoint per object the journal sees, so a human's Ctrl+Z
-   there may need more than one press. That is the pre-existing behaviour of a
-   gesture that is not one command, not a change this feature made.
+1. **Audio clips cannot be linked** (§2).
+2. **The mirror writes the whole note list**, not a delta. A one-note edit to a
+   linked clip with a large shared list rewrites every member's list; the work is
+   bounded by the group's size and the note count.
+3. **Geometry stays independent during content writes.** A note edit never
+   changes a peer's start, length, offset, loop window or auto-resize setting.
+4. **One edit is one undo step.** Control commands, arranger edits and note
+   gestures checkpoint the source and every member written as one step.

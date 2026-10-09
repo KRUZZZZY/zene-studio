@@ -169,9 +169,8 @@ private slots:
 		QCOMPARE(ClipLinks::contentFingerprint(members[0]), ClipLinks::contentFingerprint(members[1]));
 	}
 
-	//! A clip trimmed on the left bakes its offset into the notes; a peer's offset moves by the same
-	//! amount, so the peer plays every note where it did.
-	void aHeadTrimmedLinkedClipMovesItsPeersOffsetWithTheNotes()
+	//! The owner ruling changes the former peer-compensation assertion: shared rebased notes do not rewrite a peer's window.
+	void aHeadTrimmedLinkedClipLeavesThePeerWindowAlone()
 	{
 		MidiClip* a = midiClipAt(m_track, 0, Bar);
 		MidiClip* b = midiClipAt(m_track, 4 * Bar, Bar);
@@ -199,18 +198,18 @@ private slots:
 			QCOMPARE(midi->notes().front()->pos().getTicks(), 0);
 		}
 		QCOMPARE(ClipLinks::contentFingerprint(members[0]), ClipLinks::contentFingerprint(members[1]));
-		// The peer never had an offset; it takes the baked 24 so the shifted notes play where they did.
+		// The peer's source window is independent and is not moved by this instance's content trim.
 		const MidiClip* peer = nullptr;
 		for (const Clip* member : members)
 		{
 			if (member->startPosition().getTicks() == 4 * Bar) { peer = static_cast<const MidiClip*>(member); }
 		}
 		QVERIFY(peer != nullptr);
-		QCOMPARE(peer->startTimeOffset().getTicks(), 24);
+		QCOMPARE(peer->startTimeOffset().getTicks(), 0);
 	}
 
-	//! The knife (shift = destructive) on one member cuts every member at the same position.
-	void theKnifeCutsEveryLinkedMember()
+	//! The 2026-10-09 owner ruling changes the former group-cut assertion: both selected pieces retain the shared content and link.
+	void theKnifeCutsOnlyTheSelectedInstanceAndKeepsBothPiecesLinked()
 	{
 		MidiClip* a = midiClipAt(m_track, 0, 4 * Bar);
 		MidiClip* b = midiClipAt(m_track, 8 * Bar, 4 * Bar);
@@ -231,26 +230,24 @@ private slots:
 		m_editor->setEditModeDraw();
 		QCoreApplication::processEvents();
 
-		QCOMPARE(clipsOnTrack(), 4);
-		const QVector<Clip*> lefts = ClipLinks::group(group);
-		QCOMPARE(static_cast<int>(lefts.size()), 2);
-		QCOMPARE(lefts[0]->length(), lefts[1]->length());
-		int rightGroup = 0;
-		for (const Clip* clip : m_track->getClips())
+		QCOMPARE(clipsOnTrack(), 3);
+		const QVector<Clip*> members = ClipLinks::group(group);
+		QCOMPARE(static_cast<int>(members.size()), 3);  // left, right, and untouched peer
+		Clip* right = nullptr;
+		for (Clip* clip : m_track->getClips())
 		{
-			if (clip->linkId() != group) { rightGroup = clip->linkId(); }
+			QCOMPARE(clip->linkId(), group);
+			if (clip->startPosition().getTicks() == 2 * Bar) { right = clip; }
 		}
-		QVERIFY(rightGroup > 0);
-		const QVector<Clip*> rights = ClipLinks::group(rightGroup);
-		QCOMPARE(static_cast<int>(rights.size()), 2);
-		QCOMPARE(rights[0]->length(), rights[1]->length());
-		// Whole content in every half: nothing was lost, so each group agrees inside itself.
-		QCOMPARE(ClipLinks::contentFingerprint(lefts[0]), ClipLinks::contentFingerprint(lefts[1]));
-		QCOMPARE(ClipLinks::contentFingerprint(rights[0]), ClipLinks::contentFingerprint(rights[1]));
+		QVERIFY(right != nullptr);
+		QCOMPARE(right->length().getTicks(), 2 * Bar);
+		QCOMPARE(noteCountOf(a), 2);
+		QCOMPARE(noteCountOf(right), 2);
+		QCOMPARE(ClipLinks::contentFingerprint(a), ClipLinks::contentFingerprint(right));
 	}
 
-	//! Dragging one member's left edge trims every member; one undo puts them all back.
-	void aLeftEdgeDragTrimsEveryLinkedMember()
+	//! The owner ruling changes the former apply-to-all assertion: a left-edge drag trims only this instance.
+	void aLeftEdgeDragTrimsOnlyTheSelectedWindow()
 	{
 		MidiClip* a = midiClipAt(m_track, 0, 4 * Bar);
 		MidiClip* b = midiClipAt(m_track, 8 * Bar, 4 * Bar);
@@ -276,20 +273,20 @@ private slots:
 
 		const int moved = a->startPosition().getTicks();
 		QVERIFY2(moved > 0, "the drag did not move the dragged clip's left edge");
-		QCOMPARE(b->startPosition().getTicks(), 8 * Bar + moved);
-		QCOMPARE(b->length().getTicks(), 4 * Bar - moved);
+		QCOMPARE(b->startPosition().getTicks(), 8 * Bar);
+		QCOMPARE(b->length().getTicks(), 4 * Bar);
 		QCOMPARE(a->length().getTicks(), 4 * Bar - moved);
-		QCOMPARE(b->startTimeOffset(), a->startTimeOffset());
+		QCOMPARE(b->startTimeOffset().getTicks(), 0);
 
-		QVERIFY(Engine::projectJournal()->undoDepth() >= undoBefore + 1);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), undoBefore + 1);
 		Engine::projectJournal()->undo();
 		QCOMPARE(a->startPosition().getTicks(), 0);
 		QCOMPARE(b->startPosition().getTicks(), 8 * Bar);
 		QCOMPARE(b->length().getTicks(), 4 * Bar);
 	}
 
-	//! Dragging one member's right edge resizes every member; one undo puts them all back.
-	void aRightEdgeDragResizesEveryLinkedMember()
+	//! The owner ruling changes the former apply-to-all assertion: a right-edge drag resizes only this instance.
+	void aRightEdgeDragResizesOnlyTheSelectedWindow()
 	{
 		MidiClip* a = midiClipAt(m_track, 0, 4 * Bar);
 		MidiClip* b = midiClipAt(m_track, 8 * Bar, 4 * Bar);
@@ -314,7 +311,7 @@ private slots:
 		QCoreApplication::processEvents();
 
 		QVERIFY2(a->length().getTicks() < 4 * Bar, "the drag did not shorten the dragged clip");
-		QCOMPARE(b->length(), a->length());
+		QCOMPARE(b->length().getTicks(), 4 * Bar);
 		QCOMPARE(b->startPosition().getTicks(), 8 * Bar);
 		QCOMPARE(Engine::projectJournal()->undoDepth(), undoBefore + 1);  // one step, not one per clip
 		Engine::projectJournal()->undo();
@@ -322,8 +319,8 @@ private slots:
 		QCOMPARE(b->length().getTicks(), 4 * Bar);
 	}
 
-	//! A drag a peer cannot follow goes back whole: here the peer is too short for the dragged clip's new edge.
-	void aDragAPeerCannotFollowGoesBack()
+	//! A short linked peer no longer blocks the selected instance's edge drag.
+	void aShortLinkedPeerDoesNotBlockTheEdgeDrag()
 	{
 		MidiClip* a = midiClipAt(m_track, 0, 4 * Bar);
 		MidiClip* b = midiClipAt(m_track, 8 * Bar, Bar / 4);  // a quarter bar long
@@ -344,8 +341,8 @@ private slots:
 		send(QEvent::MouseMove, drop, Qt::LeftButton);
 		send(QEvent::MouseButtonRelease, drop, Qt::NoButton);
 		QCoreApplication::processEvents();
-		QCOMPARE(a->length().getTicks(), 4 * Bar);   // the dragged clip stayed where it was
-		QCOMPARE(b->length().getTicks(), Bar / 4);   // and so did the peer
+		QVERIFY(a->length().getTicks() < 4 * Bar);  // the selected window changed
+		QCOMPARE(b->length().getTicks(), Bar / 4);   // peer window stayed independent
 	}
 
 private:

@@ -49,7 +49,6 @@
 #include "Clip.h"
 #include "ClipEdits.h"
 #include "ClipLinks.h"
-#include "LinkedClipEdits.h"
 #include "ControlCommandsVcaShared.h"
 #include "ControlRegistry.h"
 #include "SampleClip.h"
@@ -154,15 +153,11 @@ QJsonObject clipEdge(Track* track, Clip* clip)
 
 // ---- vca.edit_split -------------------------------------------------------
 
-//! clip.split's own sequence (ClipView::splitClip) on one locked clip: checkpoint the track, cut. A linked clip is
-//! cut with its whole group (ClipLinks::splitGroupAt, its own checkpoint over the members' tracks); the clips that
-//! cut reached are returned so the lock's loop does not cut them again.
-QVector<Clip*> cutLockedClip(const Locked& entry, tick_t at)
+//! clip.split's own sequence (ClipView::splitClip) on one locked clip: checkpoint the track, then cut this instance.
+void cutLockedClip(const Locked& entry, tick_t at)
 {
-	if (entry.clip->linkId() > 0) { return ClipLinks::splitGroupAt(entry.clip, at).lefts; }
 	entry.track->addJournalCheckPoint();
 	arrangement::splitClipAlone(entry.clip, at);
-	return {};
 }
 
 ControlResult editSplit(const QJsonObject& args)
@@ -186,13 +181,12 @@ ControlResult editSplit(const QJsonObject& args)
 				.arg(at).arg(anchor.clip->startPosition().getTicks()).arg(anchor.clip->endPosition().getTicks()));
 	}
 	QJsonArray edits;
-	QVector<Clip*> cutAsPeers;  // linked clips a group cut already reached: not cut a second time
 	for (const Locked& entry : locked)
 	{
-		if (!inside(entry.clip) || cutAsPeers.contains(entry.clip)) { continue; }
+		if (!inside(entry.clip)) { continue; }
 		const tick_t start = entry.clip->startPosition().getTicks();
 		const tick_t end = entry.clip->endPosition().getTicks();
-		cutAsPeers += cutLockedClip(entry, at);
+		cutLockedClip(entry, at);
 		edits.append(QJsonObject{{QStringLiteral("track"), trackIdOf(entry.track)},
 			{QStringLiteral("from"), start}, {QStringLiteral("at"), at}, {QStringLiteral("to"), end}});
 	}
@@ -233,11 +227,6 @@ ControlResult editTrim(const QJsonObject& args)
 					.arg(trackIdOf(entry.track)).arg(s).arg(e));
 		}
 	}
-	// A linked clip's peers follow the lock's trim (they are not in the lock), planned with it.
-	QVector<Clip*> lockedClips;
-	for (const Locked& entry : locked) { lockedClips.append(entry.clip); }
-	const QString peerRefusal = ClipLinks::planEdgeEditFor(lockedClips, dStart, dEnd);
-	if (!peerRefusal.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, peerRefusal); }
 	QJsonArray edits;
 	for (const Locked& entry : locked)
 	{
@@ -253,7 +242,6 @@ ControlResult editTrim(const QJsonObject& args)
 		entry.clip->setAutoResize(false);
 		edits.append(clipEdge(entry.track, entry.clip));
 	}
-	ClipLinks::applyEdgeEditFor(lockedClips, dStart, dEnd, true);
 	QJsonObject result = editReply(args, group, anchor, edits, unlocked, skipped);
 	result.insert(QStringLiteral("delta_start"), dStart);
 	result.insert(QStringLiteral("delta_end"), dEnd);

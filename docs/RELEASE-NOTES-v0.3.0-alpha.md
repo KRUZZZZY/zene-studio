@@ -988,12 +988,13 @@ first merge's 818; alloc-probe-fix and link-interop add no row.
 
 **M0 merge train 1** (`050/m0-train-1`, 2026-10-08: 76 accepted Qwen/Luna fixes on the integration tip) adds no row
 and changes classes only. The probe at the train's tip, configured without wasmtime, measures `rows=822
-true_inverse=410 snapshot=37 irreversible=24 not_mutating=351` - the block below minus wasm's option row, exactly.
+true_inverse=410 snapshot=37 irreversible=24 not_mutating=351` - the measurement at that train's tip, before the
+2026-10-09 linked-clip follow-up below.
 Net against the second feature merge: `snapshot` -1, `irreversible` +3, `not_mutating` -2. One of the moves is
 new-p8-51's `record.arm_track` (`snapshot` -> `irreversible`: its take stays after a disarm).
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=831 true_inverse=411 snapshot=40 irreversible=24 not_mutating=356
+     measured: rows=833 true_inverse=413 snapshot=40 irreversible=24 not_mutating=356
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
@@ -1765,54 +1766,37 @@ Two feature rows, one store and one span. Nothing like either existed: a case-in
   carries the **declared bound** every render-running command carries: the render runs in a child
   process and the control surface does not answer — `control.ping` included — until it finishes
   (`docs/RENDER-CHILD-WAIT.md`); the range does not raise that bound, it is applied inside the child.
-## Linked / smart clips: two clips, one source (`clip.link_*`) — added 2026-09-15
+## Linked / smart clips: shared content with independent windows — updated 2026-10-09
 
-Feature-list row 6 (section 1), board task #645: **a linked clip is a clip that shares its source with
-another, so an edit to one is seen by all.** The engine half is `include/ClipLinks.h` plus
-`Clip::linkId()`; the surface is four ids in the `clip.` group (`clip.link_create`, `clip.link_remove`,
-`clip.link_get_state`, `clip.link_sync` — not `link.*`, which is session tempo/beat sync, `docs/LINK-SYNC.md`).
+Feature-list row 6, board task #645. The relation is a persisted group id on each clip plus write-through
+sharing. **Notes, name and colour are shared.** Start, length, loop start/length/offset, fades, gain and mute are
+per instance. A note edit in one member updates the other members' note lists; `clip.link_sync` repairs drift.
 
-- **The decision this row asked for: a persisted group id plus a WRITE-THROUGH MIRROR — not a shared content
-  object, and not copy-on-write.** The relation is an int on the clip (`0` = unlinked) written to the clip's
-  OWN element as `link="<n>"` only when the clip is a member, and read back with the same reset-on-absence rule
-  the take lane already follows. An edit to a member copies that member's note list onto every other member of
-  the group in the same step. Aliasing one `NoteVector` across N clips was rejected because it needs a
-  load-order re-linking pass (the very thing a save/reload round trip has to prove), because the note list is
-  read as a value by the play handle, the piano roll, the comp lanes and the serialiser, and because a
-  disagreement would then be impossible by construction — and therefore unreportable. Copy-on-write in its
-  strict sense (share until someone edits, then DETACH) is the opposite of the feature: a write fans OUT, and
-  the detach is its own command. `docs/LINKED-CLIPS.md` §1–2 is the full argument.
-- **The relation survives a save/reload**, and that is the registered proof's centrepiece: the `link`
-  attribute rides each member's own element, so a reload rebuilds the group from the clips with no second
-  registry in the file and no repair step. `ClipLinkTest::theLinkSurvivesSaveAndReload()` writes a project,
-  asserts the attribute is in the file, reloads it, asserts the group is still there with both members in
-  sync, and then **edits one reloaded member and asserts the other one changes** — the round trip and the
-  propagation together, which is what makes it a smart clip and not a session hack.
-- **`clip.link_remove` is the unlink, and it is the only detach.** A group needs two ends: an unlink that
-  leaves one member dissolves the relation entirely, so no group of one outlives its last pair. Merging two
-  groups by naming a member of another is refused typed (`refused`) instead of silently overwriting one
-  group's content with the other's.
-- **Reversibility (SPEC A16): `true_inverse` for the three writers, `not_mutating` for the read**, rows in
-  `src/core/ControlReversibilityTableVerbs.cpp` beside `clip.trim`'s. The checkpoint is taken over EVERY
-  member a command writes (`ProjectJournal`'s multi-object overload) and the registry's
-  `mergeCheckpointsFrom()` folds those into the command's one undo step, so **one `control.undo` takes the
-  whole group back** — asserted, not asserted-about: `ClipLinkTest::undoRestoresEveryMemberOfTheGroup()`.
-- **UI absence — one line:** the four ids are drivable through the socket and not from the interface — no
-  link badge, no "edit shared source" gesture, no group colour; and of the edit kinds, `note.add` /
-  `note.remove` / `note.move` / `note.resize` / `note.velocity_set` propagate while `clip.move` /
-  `resize` / `trim` / `slip` / `set_fade` / `set_gain` / `crossfade`, mute/solo, name, colour and take lane
-  stay per-member, and an audio clip cannot be a member at all (the group's content channel is a note list, so
-  `clip.link_create` refuses a `SampleClip` typed). `docs/KNOWN-LIMITATIONS.md` carries the same sentence; the
-  ctest `ClipLinkTest::theOneLineUiAbsenceIsWrittenDown()` reads both files from the built tree and fails if
-  either loses it.
-- **What is NOT here, stated rather than implied:** no UI (§ above); no audio-clip linking; the mirror writes
-  the WHOLE note list rather than a delta (so a one-note edit to a member of a large group rewrites every
-  member's list — unconditional by design, because a delta-based mirror is where divergence would come from);
-  a member with auto-resize on re-sizes to the propagated content, because that is the engine's own rule for a
-  clip whose notes changed, while a manually resized member (`autoresize=0`) keeps its length; and outside the
-  command path a GUI gesture that calls the note entry points directly takes one checkpoint per object the
-  journal sees, so a human's Ctrl+Z there may need more than one press — the pre-existing behaviour of a
-  gesture that is not one command.
+`clip.trim`, `clip.resize`, arranger edge drags and `vca.edit_trim` change only the selected instance's geometry.
+A split cuts only that instance. The right piece retains the link id, so both pieces display the same shared notes
+through their independent windows, and the split is one undo step. The other linked instances are unchanged.
+`clip.link_make_unique` gives one selected instance its own content copy and removes it from the group in one
+undoable action.
+
+The arranger draws a small chain marker on each linked MIDI clip and exposes its linked state through the clip's
+accessible name. **Make Unique** is also available from the MIDI clip context menu.
+
+`clip.link_create` still refuses `SampleClip` because a link group shares a note list. The full decision, edit-kind
+table and bounds are in `docs/LINKED-CLIPS.md`. The behavior is covered by `ClipLinkTest`,
+`LinkedClipGroupEditsTest` and `MidiClipLinkedEditTest`.
+
+## Contained-clip crossfades clamp by default — updated 2026-10-09
+
+Arranger crossfades and clip.crossfade now use ordinary edge fades by default. A contained clip no longer makes the
+outer clip duck and return through a V-shaped offset envelope, and a clamp edit creates no offset fades. Holding Alt
+while dropping a clip onto another on the same track selects the container gesture; control clients can request the
+same behavior with clip.crossfade and mode "container".
+
+The container gesture uses the inner clip's authored fade-in and fade-out lengths. If they do not fit inside the
+inner clip the gesture is skipped or the command is refused. If they leave a gap, the outer clip stays silent
+between ramps. Old projects without the new fadeoffsetgap attribute retain their previous offset-pair rendering.
+See docs/CLIP-CROSSFADE.md; focused tests are ClipOffsetFadeTest and ClipOffsetFadePairTest.
+
 ## The change-plan code rows: a Lua memory budget, an https-only non-blocking telemetry transport, and a shutdown hook that survives its owner (CODE-6, CODE-7, CODE-8)
 
 Three rows of the change-plan register (`BACKLOG.md` § Change-plan register), built together because

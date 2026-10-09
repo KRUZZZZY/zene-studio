@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T06:08:42Z",
+  "captured_at": "2026-10-09T11:05:54Z",
   "commands": [
     {
       "args_schema": {
@@ -4370,6 +4370,9 @@
           "in_shape": {
             "type": "string"
           },
+          "mode": {
+            "type": "string"
+          },
           "out": {
             "type": "string"
           },
@@ -4391,7 +4394,7 @@
         ],
         "type": "object"
       },
-      "description": "Ramp two overlapping clips on one track into each other: the outgoing clip gets a fade-out and the incoming clip a fade-in, both exactly as long as their overlap, with the given shape (default equal_power, which sums the pair to unity POWER) - or each side its own: 'out_length' / 'in_length' (ticks) and 'out_shape' / 'in_shape'. A clip lying inside the other is crossfaded at both its ends: the container ducks under it and comes back (offset fades; the lengths name the ramp into it when the container is 'out', out of it when 'in', the other is the rest). Reversible through the ProjectJournal (Track checkpoint).",
+      "description": "Ramp two overlapping audio clips on one track into each other. mode 'clamp' (default) uses edge fades over the overlap and creates no offset fades. mode 'container' opts into the V-shaped fade for a clip lying inside another; it uses the inner clip's authored fade-in and fade-out lengths and refuses missing or non-fitting ramps. Holding Alt while dropping a clip onto another on the same track invokes that container gesture. outgoing clip gets a fade-out and the incoming clip a fade-in, both exactly as long as their overlap, with the given shape (default equal_power, which sums the pair to unity POWER) - or each side its own: 'out_length' / 'in_length' (ticks) and 'out_shape' / 'in_shape'. Reversible through the ProjectJournal (Track checkpoint).",
       "group": "clip",
       "id": "clip.crossfade",
       "mutating": true,
@@ -4413,6 +4416,9 @@
             "type": "integer"
           },
           "in_shape": {
+            "type": "string"
+          },
+          "mode": {
             "type": "string"
           },
           "out": {
@@ -4729,7 +4735,7 @@
         ],
         "type": "object"
       },
-      "description": "Link clips to a clip so they share its content: an edit to the note list of any member is seen by every member (linked / smart clips). 'clip' is the content source and the group's anchor - if it is already linked, the named clips join ITS group; otherwise a new group is created and 'clip' joins it. The new members ADOPT 'clip'\"s notes (the group starts in sync), while their own position, length, source offset, fades, gain and take lane stay their own: a link shares content, not placement. Reversible through the ProjectJournal (one Clip checkpoint per member written, merged into one undo step). See docs/LINKED-CLIPS.md.",
+      "description": "Link clips to a clip so they share its notes, name and colour: an edit to the note list or shared presentation of any member is seen by every member (linked / smart clips). 'clip' is the content source and the group's anchor - if it is already linked, the named clips join ITS group; otherwise a new group is created and 'clip' joins it. The new members ADOPT 'clip'\"s notes, name and colour (the group starts in sync), while their own start, length, loop window, fades, gain and take lane stay their own: a link shares content, not placement. Reversible through the ProjectJournal (one Clip checkpoint per member written, merged into one undo step). See docs/LINKED-CLIPS.md.",
       "group": "clip",
       "id": "clip.link_create",
       "mutating": true,
@@ -4808,6 +4814,47 @@
           },
           "linked": {
             "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Make this linked MIDI clip unique by detaching its instance with an independent copy of its current content. Other members keep their shared content; when only one member remains, its link is dissolved. Reversible through one ProjectJournal checkpoint.",
+      "group": "clip",
+      "id": "clip.link_make_unique",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dissolved": {
+            "type": "boolean"
+          },
+          "group": {
+            "type": "integer"
+          },
+          "made_unique": {
+            "type": "boolean"
+          },
+          "remaining": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "string"
           }
         },
         "required": [],
@@ -5146,7 +5193,7 @@
         ],
         "type": "object"
       },
-      "description": "Set a clip's length in ticks (the clip becomes manually resized). A linked clip's resize applies to the whole link group (one undo step). Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Set a clip's length in ticks (the clip becomes manually resized). Linked instances keep independent lengths and loop windows. Reversible through the ProjectJournal (Clip checkpoint).",
       "group": "clip",
       "id": "clip.resize",
       "mutating": true,
@@ -5685,7 +5732,7 @@
         ],
         "type": "object"
       },
-      "description": "Split a clip at an absolute tick position, leaving the left part in place and returning both ids. Reversible through the ProjectJournal (Track checkpoint). ED-021, sample clips only: 'frames' cuts that many engine frames after 'position' (frame-exact - the halves' audio meets at that frame, their clips overlap by under a tick), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves the cut to the nearest zero crossing within 10 ms; the reply then names the source 'frame' cut at. A linked clip's split cuts every member of its link group at the same clip-relative position (one undo step): left halves keep the group, right halves form 'right_group' (0 if only one member could be cut).",
+      "description": "Split a clip at an absolute tick position, leaving the left part in place and returning both ids. Reversible through the ProjectJournal (Track checkpoint). ED-021, sample clips only: 'frames' cuts that many engine frames after 'position' (frame-exact - the halves' audio meets at that frame, their clips overlap by under a tick), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves the cut to the nearest zero crossing within 10 ms; the reply then names the source 'frame' cut at. Splitting a linked instance cuts only that instance; both halves stay linked and keep the shared content through their independent windows.",
       "group": "clip",
       "id": "clip.split",
       "mutating": true,
@@ -5859,7 +5906,7 @@
         ],
         "type": "object"
       },
-      "description": "Move a clip's start edge to an absolute tick, holding the audio the clip already carried at the same song position: the start, the length and the source offset move together, which is what the song editor's own left-edge drag does. An optional 'end' trims the tail in the same step. Reversible through the ProjectJournal (Clip checkpoint). ED-021, sample clips only: 'start_frames' / 'end_frames' put an edge that many engine frames after its tick (frame-exact: the clip's window takes the frame, the sub-tick rest its lead), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves each edge to the nearest zero crossing within 10 ms; the reply then adds the window's source frames. A linked clip's trim applies to the whole link group (one undo step, 'peers_trimmed' others; refused whole if a member would be emptied).",
+      "description": "Move a clip's start edge to an absolute tick, holding the audio the clip already carried at the same song position: the start, the length and the source offset move together, which is what the song editor's own left-edge drag does. An optional 'end' trims the tail in the same step. Reversible through the ProjectJournal (Clip checkpoint). ED-021, sample clips only: 'start_frames' / 'end_frames' put an edge that many engine frames after its tick (frame-exact: the clip's window takes the frame, the sub-tick rest its lead), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves each edge to the nearest zero crossing within 10 ms; the reply then adds the window's source frames. Linked instances keep independent position, length and source window.",
       "group": "clip",
       "id": "clip.trim",
       "mutating": true,
@@ -34759,23 +34806,23 @@
       }
     }
   ],
-  "count": 823,
+  "count": 824,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-control/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-p1xw5a_7/zene.sock",
-    "version": "0.4.0-alpha.1364+a0295ab"
+    "source_socket": "/tmp/zctl-run-_zb8pdrl/zene.sock",
+    "version": "0.4.0-alpha.1367+da8f32e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 823,
-    "ids_sha256": "61b947e1bfb7cd685ab6dfcb9e0d000c0c1653a3aa89a63ebc1c084f64b14f41"
+    "id_count": 824,
+    "ids_sha256": "930320ab28fd685b57912506dd2e819b500c8ccf13b1b06bc26bf54d844125c9"
   }
 }
