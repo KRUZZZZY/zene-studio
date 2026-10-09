@@ -279,6 +279,37 @@ private slots:
 		QVERIFY(!trackNames().contains(QStringLiteral("half")));
 	}
 
+	void aFailedScriptStepIsRecordedAboveAnIrreversibleCommand()
+	{
+		freshProject(QStringLiteral("before"), QStringLiteral("before-error.mmp"));
+		freshProject(QStringLiteral("opened"), QStringLiteral("opened-error.mmp"));
+		Engine::projectJournal()->clearJournal();
+		QVERIFY(!Engine::getSong()->isModified());
+
+		// This successful open is intentionally not undoable: it displaced a clean session.
+		const ControlResult opened = run(QStringLiteral("project.open"),
+			{{QStringLiteral("path"), path(QStringLiteral("opened-error.mmp"))}});
+		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+		QVERIFY(!opened.result.value(QStringLiteral("checkpoint")).toObject()
+			.value(QStringLiteral("undoable")).toBool());
+		QCOMPARE(journalDepth(), 0);
+		const QString before = wholeProject();
+
+		const ControlResult failed = run(QStringLiteral("script.run"), {{QStringLiteral("source"),
+			QStringLiteral("zene.command('track.add', {type = 'instrument', name = 'before-error'})\n"
+				"error('intentional failure after the edit')\n")}});
+		QVERIFY(!failed.ok);
+		QVERIFY(trackNames().contains(QStringLiteral("before-error")));
+
+		const QJsonObject record = lastRecord(QStringLiteral("script.run"));
+		QVERIFY2(record.value(QStringLiteral("reversible")).toBool(), qPrintable(compact(record)));
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok && undone.result.value(QStringLiteral("undone")).toBool(),
+			qPrintable(undone.errorMessage + compact(undone.result)));
+		SAME_PROJECT(wholeProject(), before);
+		QVERIFY(!trackNames().contains(QStringLiteral("before-error")));
+	}
+
 	void aScriptThatChangesNothingLeavesNoStep()
 	{
 		freshProject(QStringLiteral("base"), QString());

@@ -303,8 +303,14 @@ ControlResult scriptRun(const QJsonObject& args)
 		QString message = scriptFailureMessage(path.isEmpty() ? QStringLiteral("(inline source)") :
 			QStringLiteral("'%1'").arg(path), error, logs);
 		// The edits made before the error stay in the project; one undo takes them all back.
-		if (checkpoint.pushed) { message += QStringLiteral(" (the edits it made before failing are ONE undo step)"); }
-		return ControlResult::failure(scriptErrorKind(result), message);
+		ControlResult failed = ControlResult::failure(scriptErrorKind(result), message);
+		if (checkpoint.pushed)
+		{
+			message += QStringLiteral(" (the edits it made before failing are ONE undo step)");
+			failed.errorMessage = message;
+			failed.result.insert(QStringLiteral("__transaction"), scriptTransaction(checkpoint));
+		}
+		return failed;
 	}
 
 	QJsonObject out = scriptRunResultJson(result, logs, path, budget, overridden);

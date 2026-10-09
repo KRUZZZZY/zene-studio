@@ -358,6 +358,13 @@ bool foldsIntoEnclosingStep(bool mutating, bool changed, bool enclosedByMutating
 	return mutating && changed && enclosedByMutating && result.contains(QStringLiteral("__transaction"));
 }
 
+//! A script can return an error after it has changed the project and kept its whole-session undo step.
+bool countsAsChangedResult(const ControlResult& result, const QString& commandId, quint64 step)
+{
+	return result.ok || (commandId == QLatin1String("script.run") && step != 0
+		&& result.result.contains(QStringLiteral("__transaction")));
+}
+
 /*! The record an outer mutating call writes for a step that also holds nested
  *  changes whose own inverse was not kept (the nested record was folded into this
  *  step): when the outer handler supplied no descriptor, it must not claim the
@@ -440,7 +447,8 @@ ControlResult ControlRegistry::runHandler(
 	// handlers share the one `dry_run: true` result field, so the seam is here.
 	const bool dryRunPreview = result.result.value(QStringLiteral("dry_run")).toBool(false);
 	// Review W3-batchA #8: a call that changed nothing (a report-only call, a value already set) records nothing.
-	const bool changed = result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId, result);
+	const bool changed = countsAsChangedResult(result, commandId, step) && !dryRunPreview
+		&& !changedNothing(journal != nullptr, step, commandId, result);
 	recordCall(commandId, args, &result, coalesced, step, mutating, changed, enclosedByMutating, enclosedByWrapper, foldedBefore);
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
 	notifyObserver(commandId, args, mutating, changed);
