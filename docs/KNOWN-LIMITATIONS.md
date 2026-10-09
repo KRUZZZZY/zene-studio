@@ -2722,20 +2722,20 @@ in a project file as its own `<z:subscenes>` section (`docs/SCENES-NATIVE.md` §
 
 ## Undo checkpoints for project.open and script.run (Q050-044, 2026-10-09)
 
-`project.open` over a session with unsaved changes, and every `script.run`, leave one undo step that restores the
-whole project (`docs/A16-REVERSIBILITY.md` §1.2; `SessionCheckpointTest`). What they do not do:
+`project.open` over a session with unsaved changes, and a `script.run` that changes the project, leave one undo step
+that restores the whole project (`docs/A16-REVERSIBILITY.md` §1.2; `SessionCheckpointTest`). What they do not do:
 - The checkpoint is the document a save would build, not a copy of the machine's state. Audio files are referenced
   by path, so a file deleted or edited on disk between the run and the undo is not brought back. Samples that live
   only in memory (no file) are inside the document and count toward the size.
 - It is bounded by the undo stack's byte budget (`control.undo_depth` `cap_bytes`, default 16 MiB, set with
-  `control.set_undo_depth`), measured on the compressed document. A session over it is REFUSED (`refused`) before the
-  open or the script changes anything; the message names the size and the budget. There is no "do it anyway": save
-  the project, or raise the budget.
+  `control.set_undo_depth`), measured as the sum of the compressed pre-state and redo-state snapshots. A pre-state over
+  the limit is REFUSED before the open or script runs. If the post-state makes the pair too large, the old project is
+  restored and the action is REFUSED; the message names the sizes and budget. There is no "do it anyway": save the
+  project, or raise the budget.
 - Only a session with unsaved changes is checkpointed by `project.open`. A saved one is held by its file, so the open
   records no step (`reversible: false`, the displaced file and hash are named) and `control.undo` refuses it typed.
-- A partial load (`sections` named on `project.open`) cannot be captured whole, so neither opening over one nor a
-  script run on one leaves a step, and the record says why. Opening a project partially records an undo step but no
-  redo for it.
+- When a checkpoint is held, partial loads retain their skipped-section list in its metadata. Undo and redo preserve
+  the partial state and filename for a partial `project.open` result or a script run that leaves a partial result.
 - Undoing an open brings back the displaced session and its file name, but not its earlier undo steps: the stack
   holds the steps of the project that was opened. A project that persists its undo history (WF-033) and is opened
   over a dirty session has a step with no stored snapshot on top of its loaded history, so a save from there writes
