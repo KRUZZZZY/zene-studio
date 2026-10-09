@@ -27,8 +27,6 @@
 
 #include <atomic>
 
-#include <QTimer>
-
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
 #include "Instrument.h"
@@ -94,8 +92,6 @@ private:
 	float m_shownCurrent = -1.f;
 	float m_shownStart = 0.f;
 	float m_shownEnd = 0.f;
-	QTimer m_playheadPoll;
-
 	friend class gui::SlicerTView;
 	friend class gui::SlicerTWaveform;
 };

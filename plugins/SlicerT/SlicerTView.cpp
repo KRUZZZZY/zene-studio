@@ -49,9 +49,17 @@ namespace gui {
 SlicerTView::SlicerTView(SlicerT* instrument, QWidget* parent)
 	: InstrumentView(instrument, parent)
 	, m_slicerTParent(instrument)
+	, m_playheadPoll(new QTimer(this))
 	, m_fullLogo(PLUGIN_NAME::getIconPixmap("full_logo"))
 	, m_background(PLUGIN_NAME::getIconPixmap("toolbox"))
 {
+	// Cluster 4468: this view is created on the GUI thread after drag-and-drop
+	// has moved the instrument out of InstrumentLoaderThread. Keep the timer
+	// with the GUI object that owns its event loop.
+	m_playheadPoll->setObjectName(QStringLiteral("slicerTPlayheadPoll"));
+	connect(m_playheadPoll, &QTimer::timeout, instrument, &SlicerT::pollPlayhead);
+	m_playheadPoll->start(20);
+
 	// window settings
 	setAcceptDrops(true);
 	setAutoFillBackground(true);

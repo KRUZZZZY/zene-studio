@@ -32,18 +32,26 @@
 #include <QJsonObject>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "GuiApplication.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "InstrumentTrackView.h"
+#include "InstrumentTrackWindow.h"
 #include "MidiEvent.h"
 #include "NotePlayHandle.h"
+#include "SongEditor.h"
 #include "Song.h"
 #include "Track.h"
+#include "TrackContainerView.h"
+#include "PluginView.h"
+#include "../gui/GuiTestApplication.h"
 #include "ReversibilityTestSupport.h"
 #include "TakeLaneTestSupport.h"
 
@@ -65,13 +73,18 @@ class SlicerTPlayheadTest : public QObject
 {
 	Q_OBJECT
 
+private:
+	QTemporaryDir m_home;
+
 private slots:
 	void initTestCase()
 	{
+		QVERIFY(m_home.isValid());
 #ifdef LMMS_TEST_PLUGIN_DIR
 		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
 #endif
-		Engine::init(true);
+		guitest::startGui(m_home);
+		QVERIFY(gui::getGUI() != nullptr);
 		Engine::audioEngine()->audioDev()->stopProcessing();  // the test drives the periods itself
 		NotePlayHandleManager::init();
 		ControlRegistry::setReady(true);
@@ -96,30 +109,37 @@ private slots:
 		Engine::getSong()->clearProject();
 		const QString id = addTrack(QStringLiteral("instrument"));
 		QVERIFY(!id.isEmpty());
-		// The device is named by its catalogue id (dev-<n>): find the SlicerT entry by its plug-in name.
-		const ControlResult listed = run(QStringLiteral("plugin.list"),
-			{{QStringLiteral("kind"), QStringLiteral("instrument")}, {QStringLiteral("loadable_only"), true}});
-		QString device;
-		for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
-		{
-			const QJsonObject entry = value.toObject();
-			if (entry.value(QStringLiteral("name")).toString().compare(QStringLiteral("slicert"), Qt::CaseInsensitive) == 0
-				|| entry.value(QStringLiteral("key")).toString().contains(QStringLiteral("slicert"), Qt::CaseInsensitive))
-			{
-				device = entry.value(QStringLiteral("id")).toString();
-				break;
-			}
-		}
-		QVERIFY2(!device.isEmpty(), "this build's plug-in folder lists no SlicerT instrument");
-		const ControlResult loaded = run(QStringLiteral("plugin.load"),
-			{{QStringLiteral("target"), id}, {QStringLiteral("device"), device}});
-		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
-
 		ControlResult failure;
 		auto* track = dynamic_cast<InstrumentTrack*>(control::resolveTrack(id, &failure));
 		QVERIFY(track != nullptr);
+		// This is the drag-and-drop construction path: the instrument is built on
+		// InstrumentLoaderThread, then moved to the container (GUI) thread.
+		InstrumentLoaderThread loader(nullptr, track, QStringLiteral("slicert"));
+		loader.start();
+		QVERIFY(loader.wait());
+		QCoreApplication::processEvents();
 		Instrument* slicer = track->instrument();
 		QVERIFY(slicer != nullptr);
+		QCOMPARE(slicer->thread(), QThread::currentThread());
+		gui::InstrumentTrackView* trackView = nullptr;
+		for (gui::TrackView* candidate : gui::getGUI()->songEditor()->m_editor->trackViews())
+		{
+			if (candidate->getTrack() == track)
+			{
+				trackView = dynamic_cast<gui::InstrumentTrackView*>(candidate);
+				break;
+			}
+		}
+		QVERIFY(trackView != nullptr);
+		gui::InstrumentTrackWindow* window = trackView->getInstrumentTrackWindow();
+		QVERIFY(window != nullptr);
+		gui::PluginView* view = window->findChild<gui::PluginView*>();
+		QVERIFY(view != nullptr);
+		QCOMPARE(view->thread(), QThread::currentThread());
+		QTimer* pollTimer = window->findChild<QTimer*>(QStringLiteral("slicerTPlayheadPoll"));
+		QVERIFY(pollTimer != nullptr);
+		QCOMPARE(pollTimer->thread(), QThread::currentThread());
+		QVERIFY(pollTimer->isActive());
 		// SlicerT's public slot (loadFile is protected in Plugin); the slot loads the file on the calling thread.
 		QVERIFY(QMetaObject::invokeMethod(slicer, "updateFile", Qt::DirectConnection, Q_ARG(QString, wav)));
 
@@ -148,5 +168,5 @@ private slots:
 	}
 };
 
-QTEST_GUILESS_MAIN(SlicerTPlayheadTest)
+QTEST_MAIN(SlicerTPlayheadTest)
 #include "SlicerTPlayheadTest.moc"

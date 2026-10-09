@@ -73,10 +73,6 @@ SlicerT::SlicerT(InstrumentTrack* instrumentTrack)
 	m_sliceSnap.addItem("1/16");
 	m_sliceSnap.addItem("1/32");
 	m_sliceSnap.setValue(0);
-
-	// Cluster 4468: the GUI learns the playhead from this timer, never from the render thread.
-	connect(&m_playheadPoll, &QTimer::timeout, this, [this] { pollPlayhead(); });
-	m_playheadPoll.start(20);
 }
 
 void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
