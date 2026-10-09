@@ -75,6 +75,8 @@ set(LMMS_TESTS
 	src/core/AutomationRecordingGenerationTest.cpp
 	# Pending queue replay retains recordValue's repeated-value and cubic semantics.
 	src/core/AutomationRecordingOverlayTest.cpp
+	# Selected-pattern automation uses the legacy bar-offset time in both playback containers.
+	src/core/AutomationPatternTimeTest.cpp
 	# Sample-accurate automation (feature-list row 9, board task #646): renders
 	# real blocks through Song::processNextBuffer() and measures the per-sample
 	# buffer the audio path reads against the clip's own curve, frame by frame -
@@ -1635,7 +1637,7 @@ set_tests_properties(ModulationLayerValueTest ModulationLayerTest ModulationAudi
 set_tests_properties(SampleAccurateAutomationTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationClipSnapshotTest AutomationRecordingTest AutomationRecordingGenerationTest
-	AutomationRecordingOverlayTest PROPERTIES
+	AutomationRecordingOverlayTest AutomationPatternTimeTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # UndoBoundsTest constructs a full Engine, drives the control surface and starts

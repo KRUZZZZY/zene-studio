@@ -60,6 +60,7 @@
 
 class AutomationClipSnapshotTest;
 class AutomationRecordingTest;
+class AutomationPatternTimeTest;
 
 namespace lmms
 {
@@ -947,6 +948,7 @@ private:
 	friend class gui::ControllerRackView;
 	friend class ::AutomationClipSnapshotTest;
 	friend class ::AutomationRecordingTest;
+	friend class ::AutomationPatternTimeTest;
 
 signals:
 	//! A recording pass lost \a frames to capture overflow; the GUI shows a notice. Main thread.

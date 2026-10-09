@@ -2420,6 +2420,7 @@ tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationClipSnapshotTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationModesTest.cpp
+tests/src/core/AutomationPatternTimeTest.cpp
 tests/src/core/AutomationRecordingGenerationTest.cpp
 tests/src/core/AutomationRecordingOverlayTest.cpp
 tests/src/core/AutomationRecordingTest.cpp

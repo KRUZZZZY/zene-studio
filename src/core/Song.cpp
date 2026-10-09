@@ -897,9 +897,18 @@ void Song::collectAutomatedValuesForRender(TrackContainer* container, TimePos ti
 		collectTrack(m_globalAutomationTrack, time, clipNum, scratch.clips.get(),
 			scratch.clipCount, scratch.clipCapacity, false);
 	}
+	TimePos automationTime = time;
+	auto* patternStore = Engine::patternStore();
+	if (container == patternStore && clipNum >= 0)
+	{
+		// PatternStore::automatedValuesAt() clamps local time, then evaluates
+		// the selected column at its bar-offset position in the shared tracks.
+		const TimePos patternLength(patternStore->lengthOfPattern(clipNum) * TimePos::ticksPerBar());
+		automationTime = std::min(time, patternLength) + (TimePos::ticksPerBar() * clipNum);
+	}
 	for (Track* track : container->tracks())
 	{
-		collectTrack(track, time, clipNum, scratch.clips.get(), scratch.clipCount,
+		collectTrack(track, automationTime, clipNum, scratch.clips.get(), scratch.clipCount,
 			scratch.clipCapacity, false);
 		collectTrack(track, time, clipNum, scratch.recordingClips.get(), scratch.recordingClipCount,
 			scratch.recordingClipCapacity, true);
@@ -982,17 +991,18 @@ void Song::collectAutomatedValuesForRender(TrackContainer* container, TimePos ti
 			TimePos patternTime = at - clip->startPosition();
 			patternTime = std::min(patternTime, clip->length());
 			patternTime = patternTime % (patternStore->lengthOfPattern(patternIndex) * TimePos::ticksPerBar());
+			const TimePos patternQueryTime = patternTime + (TimePos::ticksPerBar() * patternIndex);
 			scratch.patternClipCount = 0;
 			for (Track* track : patternStore->tracks())
 			{
-				collectTrack(track, patternTime, patternIndex, scratch.patternClips.get(),
+				collectTrack(track, patternQueryTime, patternIndex, scratch.patternClips.get(),
 					scratch.patternClipCount, scratch.patternClipCapacity, false);
 			}
 			scratch.patternValueCount = 0;
-			self(self, scratch.patternClips.get(), scratch.patternClipCount, patternTime,
+			self(self, scratch.patternClips.get(), scratch.patternClipCount, patternQueryTime,
 				patternIndex, scratch.patternValues.get(), scratch.patternValueCount,
 				scratch.patternValueCapacity, false);
-			applyRelative(scratch.patternClips.get(), scratch.patternClipCount, patternTime,
+			applyRelative(scratch.patternClips.get(), scratch.patternClipCount, patternQueryTime,
 				scratch.patternValues.get(), scratch.patternValueCount, scratch.patternValueCapacity);
 			for (std::size_t nested = 0; nested < scratch.patternValueCount; ++nested)
 			{
@@ -1002,9 +1012,9 @@ void Song::collectAutomatedValuesForRender(TrackContainer* container, TimePos ti
 			(void)selectedClip;
 		}
 	};
-	collectValues(collectValues, scratch.clips.get(), scratch.clipCount, time, clipNum,
+	collectValues(collectValues, scratch.clips.get(), scratch.clipCount, automationTime, clipNum,
 		scratch.values.get(), scratch.valueCount, scratch.valueCapacity, true);
-	applyRelative(scratch.clips.get(), scratch.clipCount, time, scratch.values.get(),
+	applyRelative(scratch.clips.get(), scratch.clipCount, automationTime, scratch.values.get(),
 		scratch.valueCount, scratch.valueCapacity);
 	if (scratch.valueCount > 1)
 	{

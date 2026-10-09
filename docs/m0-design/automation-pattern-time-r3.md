@@ -18,7 +18,7 @@ Keep pattern-local time for the arrangement clip's length and wrap calculation. 
 - The render thread computes the offset with stack `TimePos` values and integer arithmetic. PatternStore track traversal and clip/value evaluation continue to use the existing arrays. There is no allocation, mutex acquisition, wait, syscall, or Qt signal emission in the collector.
 - Pattern editor playback and arrangement PatternClips use the same selected-pattern absolute time as `PatternStore::automatedValuesAt()`. Song-level automation continues to use Song time unchanged. Pattern-local wrapping remains local and occurs before the selected pattern offset is applied.
 - Recording clip discovery, queue insertion, snapshot reads, model assignment order, relative-clip order, and the zero-allocation render contract remain unchanged.
-- A regression renders a nonzero pattern index through both the Pattern editor and an arrangement PatternClip. Each path compares collector-applied model values and stereo samples bit-for-bit with a reference render driven by the old `PatternStore::automatedValuesAt()` mapping. The render probe checks zero allocations on warmed periods.
+- A regression renders the same nonzero pattern index through both the Pattern editor and an arrangement PatternClip. The reference applies values from the old `PatternStore::automatedValuesAt()` path in the editor and `TrackContainer::automatedValuesFromTracks()` path in the arrangement, then compares model values and every stereo sample bit-for-bit. Direct probes of the preallocated collector for both PatternStore and Song require zero allocations; the existing warmed render-period probe continues to cover the full audio path.
 
 ## Considered and rejected
 
