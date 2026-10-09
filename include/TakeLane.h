@@ -223,7 +223,8 @@ public:
 	 *  serialized, not journalled, and not part of operator== (a checkpoint or a
 	 *  file never carries it). */
 	int auditionLane() const { return m_auditionLane; }
-	void setAuditionLane(int lane) { m_auditionLane = lane; }
+	//! Under the change lock: the render thread reads the audition lane (SamplePlayHandle, CompSlip, ClipPreFades).
+	void setAuditionLane(int lane);
 
 	// ---- project file ---------------------------------------------------
 	/*! Writes the model's CHILDREN onto \p element (the caller creates and

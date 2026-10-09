@@ -28,6 +28,10 @@
 #include <atomic>
 #include <memory>
 #include <span>
+#include <vector>
+
+#include <QPointer>
+
 #include "Clip.h"
 #include "RubberBandStretch.h"
 #include "Sample.h"
@@ -38,6 +42,7 @@ namespace lmms
 {
 
 class SampleBuffer;
+class SampleRecordHandle;
 
 namespace gui
 {
@@ -185,6 +190,22 @@ public:
 	bool isPlaying() const;
 	void setIsPlaying(bool isPlaying);
 	void setSampleBuffer(std::shared_ptr<const SampleBuffer> sb);
+	//! Audio thread: take the take prepared for this clip (see prepareRecordTake), or nullptr
+	//! when none is ready. Allocates nothing; the caller owns the handle.
+	SampleRecordHandle* claimRecordHandle() noexcept;
+	//! Main thread: a recording pass ended with \a take (may be null) and \a droppedFrames lost
+	//! on overflow. While the transport still records (\a continues, a loop wrap or a jump) the
+	//! take becomes a new take clip on a take lane and the clip stays armed; otherwise a
+	//! first-pass take is the clip's own content and the clip is disarmed.
+	void acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, std::uint64_t droppedFrames, bool continues,
+		std::uint64_t generation);
+	//! The arming this clip is in: it changes on every arm, so a take prepared under an earlier
+	//! arming can tell it no longer belongs to the current one.
+	std::uint64_t armGeneration() const noexcept { return m_armGeneration; }
+	//! Takes this clip holds ready for its next passes (0 to 2). Zero once disarmed.
+	int recordTakesReady() const noexcept { return (m_preparedRecord != nullptr) + (m_spareRecord != nullptr); }
+	//! Frames the last take of this clip lost to capture overflow (0 before any take).
+	std::uint64_t lastTakeDroppedFrames() const noexcept { return m_lastTakeDroppedFrames.load(std::memory_order_relaxed); }
 	//! 0.5.0: a new source and the window to play of it, in one owner call - what a destructive edit (crop, a range
 	//! edit, a printed chain) does; the window is written here, by the clip, as the one-writer rule requires.
 	void replaceSample(std::shared_ptr<const SampleBuffer> sb, const SampleWindow& window);
@@ -200,6 +221,12 @@ public slots:
 	void playbackPositionChanged();
 	void updateTrackClips();
 	void tempoChanged();
+	//! Main thread: build the clip's next record take (its accumulator and drain thread) while
+	//! the clip is armed, so SampleTrack::play never allocates one. Idempotent.
+	void prepareRecordTake();
+	//! Main thread: the record model changed. Arming resets this clip's playing latch, so a
+	//! clip armed inside its span starts with the next pass; then prepares its takes.
+	void armRecordTake();
 
 protected:
 	SampleClip( const SampleClip& orig );
@@ -214,6 +241,27 @@ private:
 	// to Clip with its `<warp>` serialisation (SPEC-ARCH-4 census row 5); the
 	// accessors and the mapping above read the inherited members unchanged.
 	BoolModel m_recordModel;
+	//! The take prepared for the next recording pass (main thread builds it, the audio thread
+	//! claims it through claimRecordHandle()). Written under the engine's change lock.
+	SampleRecordHandle* m_preparedRecord = nullptr;
+	//! The take behind m_preparedRecord: claimed, it becomes the ready one, so a loop wrap
+	//! never finds the clip without a take.
+	SampleRecordHandle* m_spareRecord = nullptr;
+	//! The lane take of the latest recording pass of this arming. When the next pass lands, this
+	//! take gives way (is muted), unless the user changed its mute since. The take clips' own muted
+	//! flag is what the engine reads as audibility (docs/COMPING.md).
+	QPointer<Clip> m_lastPassTake;
+	//! Recording passes of the current arming that became takes on the lanes.
+	int m_recordPasses = 0;
+	std::uint64_t m_armGeneration = 0;
+	//! Written on the main thread by the reaper; read by record.get_state, whichever thread asks.
+	std::atomic<std::uint64_t> m_lastTakeDroppedFrames{0};
+	//! Main thread: build the missing takes into m_preparedRecord / m_spareRecord.
+	void releaseRecordTakes();
+	//! Main thread, at the arm: one journal step, a checkpoint of the track as it was before the arm.
+	void journalArmStep();
+	//! Main thread: an armed clip's take on a new take lane.
+	void addRecordedLane(std::shared_ptr<const SampleBuffer> take);
 	//! See rubberBandPool(); never replaced once built.
 	std::unique_ptr<RubberBandPool> m_rubberBand;
 	//! Builds m_rubberBand if the mode asks for it and it does not exist yet.

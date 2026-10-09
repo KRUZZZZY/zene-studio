@@ -62,6 +62,14 @@ class LMMS_EXPORT Clip : public Model, public JournallingObject
 {
 	Q_OBJECT
 	mapPropertyFromModel(bool,isMuted,setMuted,m_mutedModel);
+	//! setMuted without a journal entry: the change belongs to a step the caller journals itself.
+	void setMutedUnjournalled(bool muted)
+	{
+		const bool journalling = m_mutedModel.isJournalling();
+		m_mutedModel.setJournalling(false);
+		setMuted(muted);
+		m_mutedModel.setJournalling(journalling);
+	}
 	mapPropertyFromModel(bool,isSolo,setSolo,m_soloModel);
 public:
 	Clip( Track * track );

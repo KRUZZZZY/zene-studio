@@ -35,12 +35,28 @@
 #include <QDomNode>
 #include <QLatin1String>
 
+#include "AudioEngine.h"
 #include "Clip.h"
+#include "Engine.h"
 #include "ProjectIds.h"
 #include "TimePos.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+//! The engine's change lock for one lane edit. Render reads the composite under the same lock, so an
+//! edit made from the UI or the socket must hold it. Without an engine there is nothing to race.
+AudioEngine::RequestChangesGuard changeLockForEdit()
+{
+	AudioEngine* engine = Engine::audioEngine();
+	return engine != nullptr ? engine->requestChangesGuard() : AudioEngine::RequestChangesGuard{};
+}
+
+} // namespace
+
 
 namespace
 {
@@ -102,8 +118,15 @@ TakeLaneSegment segmentFromElement(const QDomElement& element)
 } // namespace
 
 
+void TakeLaneModel::setAuditionLane(int lane)
+{
+	const auto changeLock = changeLockForEdit();
+	m_auditionLane = lane;
+}
+
 int TakeLaneModel::addLane(const QString& name)
 {
+	const auto changeLock = changeLockForEdit();
 	// The lowest index the track does not use. Reuse after a removal is
 	// deliberate: every reference to the removed lane was already re-pointed by
 	// removeLane(), so a recycled index cannot alias a stale segment.
@@ -141,6 +164,7 @@ bool TakeLaneModel::hasLane(int index) const
 
 bool TakeLaneModel::removeLane(int index)
 {
+	const auto changeLock = changeLockForEdit();
 	const auto pos = std::lower_bound(m_lanes.begin(), m_lanes.end(), index, laneLessThan);
 	if (pos == m_lanes.end() || pos->index != index) { return false; }
 	m_lanes.erase(pos);
@@ -198,6 +222,7 @@ bool TakeLaneModel::canSelect(int beginTick, int endTick, int laneIndex, int sou
 
 bool TakeLaneModel::selectSegment(int beginTick, int endTick, int laneIndex, int sourceOffset)
 {
+	const auto changeLock = changeLockForEdit();
 	if (!canSelect(beginTick, endTick, laneIndex, sourceOffset)) { return false; }
 
 	std::vector<TakeLaneSegment> painted;
@@ -244,6 +269,7 @@ void TakeLaneModel::mergeSegments()
 
 int TakeLaneModel::fillGaps(int spanBegin, int spanEnd)
 {
+	const auto changeLock = changeLockForEdit();
 	const int base = baseLane();
 	if (base < 0) { return 0; }
 	TakeLaneSegment gap;
@@ -277,6 +303,7 @@ int TakeLaneModel::fillGaps(int spanBegin, int spanEnd)
 
 int TakeLaneModel::rebuild(int spanBegin, int spanEnd)
 {
+	const auto changeLock = changeLockForEdit();
 	sortSegments();
 	mergeSegments();
 	if (m_lanes.empty())
@@ -354,6 +381,7 @@ Clip* TakeLaneModel::takeAt(const std::vector<Clip*>& clips, int tick, int* lane
 
 void TakeLaneModel::clear()
 {
+	const auto changeLock = changeLockForEdit();
 	m_lanes.clear();
 	m_segments.clear();
 }
@@ -386,6 +414,7 @@ void TakeLaneModel::saveSettings(QDomDocument& doc, QDomElement& element) const
 
 void TakeLaneModel::loadSettings(const QDomElement& element)
 {
+	const auto changeLock = changeLockForEdit();
 	// Reset FIRST. A track element that carries no <takelanes> child (or an old
 	// build's file) must leave an empty model, not the previous one: a journal
 	// checkpoint restores by re-loading, so a field that survives its own

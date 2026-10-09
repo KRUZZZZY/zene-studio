@@ -587,6 +587,9 @@ public:
 public slots:
 	void playSong();
 	void record();
+	//! A recording pass lost \a frames to a full capture ring (they are padded with silence in
+	//! their take). Emits recordTakeDropped on the main thread.
+	void reportRecordTakeDropped(qulonglong frames) { emit recordTakeDropped(frames); }
 	void playAndRecord();
 	void playPattern();
 	void playMidiClip( const lmms::MidiClip * midiClipToPlay, bool loop = true );
@@ -769,6 +772,8 @@ private:
 	bool m_loadOnLaunch;
 
 	volatile bool m_recording;
+	//! Record was pressed (Song::record) and the next Play starts a record pass; a stop clears it.
+	bool m_recordLatched = false;
 	volatile bool m_exporting;
 	volatile bool m_exportLoop;
 	volatile bool m_renderBetweenMarkers;
@@ -862,6 +867,8 @@ private:
 	friend class gui::ControllerRackView;
 
 signals:
+	//! A recording pass lost \a frames to capture overflow; the GUI shows a notice. Main thread.
+	void recordTakeDropped(qulonglong frames);
 	void projectLoaded();
 	void playbackStateChanged();
 	void playbackPositionJumped();

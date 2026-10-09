@@ -26,7 +26,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <algorithm>
 #include <cstdint>
+#include <utility>
 
 #include <QDomElement>
 #include <QFileInfo>
@@ -36,6 +38,7 @@
 #include "PatternStore.h"
 #include "PathUtil.h"
 #include "SampleClipView.h"
+#include "SampleRecordHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
 
@@ -61,6 +64,9 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	//playbutton clicked or space key / on Export Song set isPlaying to false
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()),
 			this, SLOT(playbackPositionChanged()), Qt::DirectConnection );
+	//a record take is built here, on the main thread, before the transport can claim it
+	connect( Engine::getSong(), SIGNAL(playbackStateChanged()), this, SLOT(prepareRecordTake()) );
+	connect( &m_recordModel, SIGNAL(dataChanged()), this, SLOT(armRecordTake()) );
 	//care about loops and jumps
 	connect(Engine::getSong(), &Song::playbackPositionJumped,
 			this, &SampleClip::playbackPositionChanged, Qt::DirectConnection);
@@ -72,6 +78,9 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	//care about Clip position
 	connect( this, SIGNAL(positionChanged()), this, SLOT(updateTrackClips()));
 
+	// The record model does not journal its own changes: the arm's step (journalArmStep) does.
+	// Without this, the model's entry sits in front of the arm's step and a second undo does nothing.
+	m_recordModel.setJournalling( false );
 	updateTrackClips();
 }
 
@@ -103,6 +112,9 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	//playbutton clicked or space key / on Export Song set isPlaying to false
 	connect( Engine::getSong(), SIGNAL(playbackStateChanged()),
 			this, SLOT(playbackPositionChanged()), Qt::DirectConnection );
+	//a record take is built here, on the main thread, before the transport can claim it
+	connect( Engine::getSong(), SIGNAL(playbackStateChanged()), this, SLOT(prepareRecordTake()) );
+	connect( &m_recordModel, SIGNAL(dataChanged()), this, SLOT(armRecordTake()) );
 	//care about loops and jumps
 	connect(Engine::getSong(), &Song::playbackPositionJumped,
 			this, &SampleClip::playbackPositionChanged, Qt::DirectConnection);
@@ -114,6 +126,9 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	//care about Clip position
 	connect( this, SIGNAL(positionChanged()), this, SLOT(updateTrackClips()));
 
+	// The record model does not journal its own changes: the arm's step (journalArmStep) does.
+	// Without this, the model's entry sits in front of the arm's step and a second undo does nothing.
+	m_recordModel.setJournalling( false );
 	updateTrackClips();
 	// A copy carries the mode (Clip's copy constructor) but never the source's
 	// voices: each clip claims from its own pool.
@@ -125,6 +140,9 @@ SampleClip::SampleClip(const SampleClip& orig) :
 
 SampleClip::~SampleClip()
 {
+	// main thread: takes nobody claimed (their handles queue the drain threads)
+	delete m_preparedRecord;
+	delete m_spareRecord;
 	auto sampletrack = dynamic_cast<SampleTrack*>(getTrack());
 	if ( sampletrack )
 	{
@@ -151,6 +169,176 @@ bool SampleClip::hasSampleFileLoaded(const QString & filename) const
 {
 	return m_sample.sampleFile() == filename;
 }
+
+SampleRecordHandle* SampleClip::claimRecordHandle() noexcept
+{
+	auto* handle = m_preparedRecord;
+	m_preparedRecord = m_spareRecord;
+	m_spareRecord = nullptr;
+	if (handle != nullptr) { handle->markClaimed(); }
+	return handle;
+}
+
+void SampleClip::prepareRecordTake()
+{
+	// The connections are automatic: a signal emitted on the audio thread arrives here queued,
+	// so this always runs on the main thread, where a handle may allocate and start its thread.
+	if (!isRecord())
+	{
+		releaseRecordTakes();
+		return;
+	}
+	SampleRecordHandle::watchArmedClip(this);
+	for (SampleRecordHandle** slot : { &m_preparedRecord, &m_spareRecord })
+	{
+		bool empty = false;
+		{
+			// the slot is read under the change lock the audio thread's claim also takes
+			const auto guard = Engine::audioEngine()->requestChangesGuard();
+			empty = *slot == nullptr && isRecord();
+		}
+		if (!empty) { continue; }
+		auto* handle = new SampleRecordHandle(this);  // allocates: built outside the lock
+		handle->setArmGeneration(m_armGeneration);
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		if (*slot == nullptr && isRecord()) { *slot = handle; }
+		else { delete handle; }  // lost a race with a release or another prepare
+	}
+}
+
+void SampleClip::armRecordTake()
+{
+	// Journalling: the arm is one undo step (the track's checkpoint below). The clip's own changes
+	// while it records - the disarm that ends the recording - are not journalled, so one undo takes
+	// the whole recording back. Journalling resumes when the clip disarms.
+	if (!isRecord()) { setJournalling(true); }
+	// The arm transition (the model signals changes only): a new arming, and a clip armed inside
+	// its span must not stay latched as playing from the pass before (BUGS P3).
+	if (isRecord())
+	{
+		++m_armGeneration;
+		{
+			// The render thread reads the playing latch; write it under the lock it renders under.
+			const auto guard = Engine::audioEngine()->requestChangesGuard();
+			setIsPlaying(false);
+		}
+		// A new arming starts with no pass to give way to. The track is checkpointed once here, so
+		// one undo step takes back the whole recording (its lanes and mutes).
+		m_lastPassTake = nullptr;
+		journalArmStep();
+		setJournalling(false);
+	}
+	prepareRecordTake();
+}
+
+void SampleClip::journalArmStep()
+{
+	// The live-take guarantee on undo: an undo rebuilds the track's clips (Track::loadTrack deletes them
+	// and recreates them from the snapshot), so the armed clip is destroyed. Its destructor removes its
+	// live play handle, and the reaper finds no clip to install the live take into, so nothing is
+	// installed when the transport stops. That guarantee rests on the rebuild destroying the armed
+	// clip: if an undo ever kept this clip object, its live take would be installed on stop.
+	if (Track* track = getTrack()) { track->addJournalCheckPoint(); }
+}
+
+void SampleClip::releaseRecordTakes()
+{
+	SampleRecordHandle* released[2] = { nullptr, nullptr };
+	{
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		released[0] = std::exchange(m_preparedRecord, nullptr);
+		released[1] = std::exchange(m_spareRecord, nullptr);
+	}
+	// Deleting an unclaimed handle queues its take; the reaper stops its drain thread.
+	delete released[0];
+	delete released[1];
+}
+
+namespace
+{
+
+//! Holds a track's clip updates suspended for its lifetime (see SampleTrack::setClipUpdatesSuspended).
+class ClipUpdatesSuspension
+{
+public:
+	explicit ClipUpdatesSuspension(SampleTrack* track) : m_track(track)
+	{
+		if (m_track != nullptr) { m_track->setClipUpdatesSuspended(true); }
+	}
+	~ClipUpdatesSuspension()
+	{
+		if (m_track != nullptr) { m_track->setClipUpdatesSuspended(false); }
+	}
+	ClipUpdatesSuspension(const ClipUpdatesSuspension&) = delete;
+	ClipUpdatesSuspension& operator=(const ClipUpdatesSuspension&) = delete;
+
+private:
+	SampleTrack* m_track;
+};
+
+} // namespace
+
+void SampleClip::acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, std::uint64_t droppedFrames, bool continues,
+	std::uint64_t generation)
+{
+	m_lastTakeDroppedFrames.store(droppedFrames, std::memory_order_relaxed);
+	if (droppedFrames > 0) { Engine::getSong()->reportRecordTakeDropped(droppedFrames); }
+	// A take of an earlier arming (the clip was re-armed before its take was installed) keeps
+	// its audio as a lane take, and leaves the current arming alone: it must not disarm the clip.
+	if (generation != m_armGeneration)
+	{
+		if (take) { addRecordedLane(std::move(take)); }
+		return;
+	}
+	// A take becomes a lane take when the transport goes on recording after it (a loop pass), or
+	// when an earlier pass of this arming already did; the first take of a plain recording stays
+	// the clip's own content, as it always did.
+	if (continues || m_recordPasses > 0)
+	{
+		if (take) { addRecordedLane(std::move(take)); }
+		++m_recordPasses;
+		if (!continues) { m_recordPasses = 0; }
+	}
+	else if (take)
+	{
+		setSampleBuffer(std::move(take));
+	}
+	if (!continues)
+	{
+		setRecord(false);  // not journalled: the arm's step is the recording's undo step
+	}
+}
+
+void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take)
+{
+	auto* track = dynamic_cast<SampleTrack*>(getTrack());
+	if (track == nullptr) { return; }
+	// The clip is created and added to the track under the change lock the audio thread's
+	// processing takes, as every other clip edit is.
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+	const int lane = track->takeLanes().addLane();
+	SampleClip* take_clip = nullptr;
+	{
+		// The lane clip's constructor and its position change reach updateClips(), which would remove
+		// the track's live play handles - the take of the pass that has just begun. Suspended for the
+		// creation, even if it throws.
+		const ClipUpdatesSuspension suspended{track};
+		take_clip = new SampleClip(track, Sample(std::move(take)), false);
+		// Not journalled on its own: the arm's step covers the lane (one undo step).
+		take_clip->setJournalling(false);
+		take_clip->setLaneIndex(lane);
+		take_clip->movePosition(startPosition());
+		take_clip->updateLength();
+	}
+	// The newest pass is the audible take; the earlier passes stay on their lanes, muted, until
+	// the user comps them.
+	// The previous pass gives way to this one, but only while it is still audible as recording left
+	// it: a take the user muted or unmuted since is theirs, and earlier passes are not touched again.
+	if (m_lastPassTake && !m_lastPassTake->isMuted()) { m_lastPassTake->setMutedUnjournalled(true); }
+	m_lastPassTake = take_clip;
+	Engine::getSong()->setModified();
+}
+
 
 void SampleClip::setSampleBuffer(std::shared_ptr<const SampleBuffer> sb)
 {
@@ -226,8 +414,11 @@ void SampleClip::toggleRecord()
 
 void SampleClip::playbackPositionChanged()
 {
-	Engine::audioEngine()->removePlayHandlesOfTypes( getTrack(), PlayHandle::Type::SamplePlayHandle );
 	auto st = dynamic_cast<SampleTrack*>(getTrack());
+	// A lane take being built (addRecordedLane) changes its own clip's signals, which reach here:
+	// they must not remove the live take of the pass that has just begun (BUGS P6, round 4).
+	if( st != nullptr && st->clipUpdatesSuspended() ) { return; }
+	Engine::audioEngine()->removePlayHandlesOfTypes( getTrack(), PlayHandle::Type::SamplePlayHandle );
 	st->setPlayingClips( false );
 }
 

@@ -46,6 +46,7 @@
 #include <algorithm>
 #include <cstdint>
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
 
@@ -56,6 +57,12 @@
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "MultiTrackRecorder.h"
+#include "Clip.h"
+#include "SampleClip.h"
+#include "SampleRecordHandle.h"
+#include "SampleTrack.h"
+#include "Song.h"
+#include "Track.h"
 #include "TrackRecorder.h"
 
 namespace lmms
@@ -144,6 +151,35 @@ ControlResult getState(const QJsonObject&)
 	result.insert(QStringLiteral("input"), inputPathJson());
 	// R2.2: the round trip a take recorded against playback is shifted back by.
 	result.insert(QStringLiteral("latency_frames"), static_cast<int>(Engine::audioEngine()->recordingLatencyFrames()));
+	// The clip record path (sample tracks armed for recording): frames a full capture ring lost
+	// (each padded with silence in its take, unless padded_frames falls short), takes that found
+	// no prepared handle, takes the main thread could not queue, and clip starts the per-pass cap
+	// deferred. All since the process started.
+	// Per clip: the frames its last take lost to overflow (padded in that take).
+	QJsonArray dropped;
+	for (const Track* track : Engine::getSong()->tracks())
+	{
+		for (const Clip* clip : track->getClips())
+		{
+			const auto* sample = dynamic_cast<const SampleClip*>(clip);
+			if (sample != nullptr && sample->lastTakeDroppedFrames() > 0)
+			{
+				dropped.append(QJsonObject{
+					{QStringLiteral("track_id"), track->id()},
+					{QStringLiteral("clip_id"), clip->id()},
+					{QStringLiteral("last_take_dropped_frames"), static_cast<qint64>(sample->lastTakeDroppedFrames())},
+				});
+			}
+		}
+	}
+	result.insert(QStringLiteral("clip_takes"), QJsonObject{
+		{QStringLiteral("dropped_frames"), static_cast<qint64>(SampleRecordHandle::framesDroppedTotal())},
+		{QStringLiteral("padded_frames"), static_cast<qint64>(SampleRecordHandle::framesPaddedTotal())},
+		{QStringLiteral("unprepared_takes"), static_cast<qint64>(SampleRecordHandle::unpreparedTakes())},
+		{QStringLiteral("queue_overflows"), static_cast<qint64>(SampleRecordHandle::queueOverflows())},
+		{QStringLiteral("deferred_clip_starts"), static_cast<qint64>(SampleTrack::deferredClipStarts())},
+		{QStringLiteral("clips"), dropped},
+	});
 	return ControlResult::success(result);
 }
 
@@ -317,6 +353,7 @@ void registerGetState(ControlRegistry& registry)
 		{QStringLiteral("total_overflow_frames"), integerProperty()},
 		{QStringLiteral("input"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
 		{QStringLiteral("latency_frames"), integerProperty()},
+		{QStringLiteral("clip_takes"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject& args) { return getState(args); };

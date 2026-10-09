@@ -25,6 +25,9 @@
 
 #include "SampleTrack.h"
 
+#include <array>
+#include <atomic>
+
 #include <QDomElement>
 
 #include <vector>
@@ -41,6 +44,7 @@
 #include "SamplePlayHandle.h"
 #include "SampleRecordHandle.h"
 #include "SampleTrackView.h"
+#include "TakeLane.h"
 #include "Song.h"
 #include "volume.h"
 
@@ -99,6 +103,28 @@ void SampleTrack::monitorModeChanged()
 
 
 
+namespace
+{
+//! Clip starts deferred by the per-pass cap in SampleTrack::play, process-wide.
+std::atomic<std::uint64_t> s_deferredClipStarts{0};
+
+//! True when the track's composite names this clip's lane somewhere: that take plays its comped
+//! spans whatever its mute flag says.
+bool namedByComposite( const Track& track, const SampleClip& clip )
+{
+	for( const TakeLaneSegment& segment : track.takeLanes().segments() )
+	{
+		if( segment.laneIndex == clip.laneIndex() ) { return true; }
+	}
+	return false;
+}
+} // namespace
+
+std::uint64_t SampleTrack::deferredClipStarts() noexcept
+{
+	return s_deferredClipStarts.load(std::memory_order_relaxed);
+}
+
 bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					const f_cnt_t _offset, int _clip_num )
 {
@@ -124,7 +150,13 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		SampleWindow window;
 		f_cnt_t lead = 0;  //!< 0.5.0 ED-021: output frames before a frame-exact clip's audio starts
 	};
-	std::vector<ScheduledClip> clips;
+	// Fixed storage: the audio thread never grows it. The cap is on the clips that START in one
+	// pass, not on overlaps: overlapping clips are allowed (a script can stack many on one track).
+	// A clip past the cap is deferred: its isPlaying flag stays clear, so it starts on a later pass,
+	// and each deferral is counted (deferredClipStarts).
+	constexpr std::size_t MaxScheduledClipsPerPass = 64;
+	std::array<ScheduledClip, MaxScheduledClipsPerPass> clips{};
+	std::size_t clipCount = 0;
 	class PatternTrack * pattern_track = nullptr;
 	if( _clip_num >= 0 )
 	{
@@ -138,7 +170,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			return false;
 		}
-		clips.push_back({sClip, sClip->sampleWindow()});
+		clips[clipCount++] = {sClip, sClip->sampleWindow()};
 		if (trackContainer() == Engine::patternStore())
 		{
 			auto bufferFramesPerTick = Engine::framesPerTick(sClip->sample().sampleRate());
@@ -146,7 +178,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			pattern_track = PatternTrack::findPatternTrack(_clip_num);
 			// this pass starts inside the source; the clip's own window still
 			// bounds it (was: sClip->setSampleStartFrame(), a model write)
-			clips.back().window = { sampleStart, sClip->sampleWindow().sourceOut };
+			clips[clipCount - 1].window = { sampleStart, sClip->sampleWindow().sourceOut };
 			sClip->setIsPlaying(true);
 			setPlaying(true);
 		}
@@ -176,11 +208,22 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					//holds no sample yet (its window is empty) and is exactly the clip that must
 					//start: #611 Slice 0 added the window test and silently stopped clip
 					//recording (BUGS_FOUND 11.8, RecordingLatencyTest)
-					if( windowStart < windowEnd || sClip->isRecord() )
+					// A record-armed clip starts only while the song records: otherwise it is not
+					// scheduled and its playing latch stays clear, so it starts on the pass that
+					// records (BUGS P3: a latch set here blocked the take until the span was re-entered).
+					const bool startable = !sClip->isRecord() || Engine::getSong()->isRecording();
+					if( startable && ( windowStart < windowEnd || sClip->isRecord() ) )
 					{
-						clips.push_back({sClip, { windowStart, windowEnd }, sClip->leadOutputFramesAt( _start )});
-						sClip->setIsPlaying( true );
-						nowPlaying = true;
+						if( clipCount < clips.size() )
+						{
+							clips[clipCount++] = {sClip, { windowStart, windowEnd }, sClip->leadOutputFramesAt( _start )};
+							sClip->setIsPlaying( true );
+							nowPlaying = true;
+						}
+						else
+						{
+							s_deferredClipStarts.fetch_add( 1, std::memory_order_relaxed );
+						}
 					}
 				}
 			}
@@ -193,20 +236,30 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		setPlaying(nowPlaying);
 	}
 
-	for (const auto& scheduled : clips)
+	for (std::size_t i = 0; i < clipCount; ++i)
 	{
+		const auto& scheduled = clips[i];
 		auto st = scheduled.clip;
-		if( !st->isMuted() )
+		// A muted take still plays where the composite names its lane: the comp, not the mute,
+		// decides what a comped take contributes (BUGS P6, round 4).
+		if( !st->isMuted() || namedByComposite( *this, *st ) )
 		{
 			PlayHandle* handle;
 			if( st->isRecord() )
 			{
+				// Not scheduled while the song is not recording (see above); kept as a guard.
 				if( !Engine::getSong()->isRecording() )
 				{
-					return played_a_note;
+					continue;
 				}
-				auto smpHandle = new SampleRecordHandle(st);
-				handle = smpHandle;
+				// The take was built on the main thread when the clip was armed or the transport
+				// started (SampleClip::prepareRecordTake): the audio thread only claims it.
+				handle = st->claimRecordHandle();
+				if( handle == nullptr )
+				{
+					SampleRecordHandle::countUnpreparedTake();
+					continue;
+				}
 			}
 			else
 			{
@@ -282,6 +335,7 @@ void SampleTrack::loadTrackSpecificSettings(const QDomElement & thisElem)
 
 void SampleTrack::updateClips()
 {
+	if( clipUpdatesSuspended() ) { return; }
 	Engine::audioEngine()->removePlayHandlesOfTypes( this, PlayHandle::Type::SamplePlayHandle );
 	setPlayingClips( false );
 }

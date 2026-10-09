@@ -25,6 +25,8 @@
 #ifndef LMMS_SAMPLE_TRACK_H
 #define LMMS_SAMPLE_TRACK_H
 
+#include <atomic>
+#include <cstdint>
 #include "AudioBusHandle.h"
 #include "Track.h"
 
@@ -47,6 +49,14 @@ class SampleTrack : public Track
 {
 	Q_OBJECT
 public:
+	//! Main thread: while set, updateClips() does nothing. Lane takes are built under it: their
+	//! construction must not cut the live takes of the next pass (BUGS P6, round 4).
+	void setClipUpdatesSuspended( bool suspended ) noexcept { m_clipUpdatesSuspended.store( suspended, std::memory_order_relaxed ); }
+	//! True while clip updates are suspended (see setClipUpdatesSuspended). Read on the render thread too.
+	bool clipUpdatesSuspended() const noexcept { return m_clipUpdatesSuspended.load( std::memory_order_relaxed ); }
+
+	//! Clip starts the per-pass cap deferred to a later pass, process-wide (see play()).
+	static std::uint64_t deferredClipStarts() noexcept;
 	SampleTrack( TrackContainer* tc );
 	~SampleTrack() override;
 
@@ -96,6 +106,8 @@ signals:
 	void playingChanged();
 
 public slots:
+	//! Drops the track's sample play handles and clears the clips' playing latches, so clips are
+	//! scheduled again. Does nothing while clip updates are suspended.
 	void updateClips();
 	void setPlayingClips( bool isPlaying );
 	void updateMixerChannel();
@@ -104,6 +116,7 @@ protected:
 	void monitorModeChanged() override;
 
 private:
+	std::atomic<bool> m_clipUpdatesSuspended{false};
 	InputMonitorHandle* m_monitorHandle = nullptr;
 	FloatModel m_volumeModel;
 	FloatModel m_panningModel;

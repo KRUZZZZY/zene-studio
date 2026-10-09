@@ -769,6 +769,9 @@ void Song::playSong()
 
 void Song::startSongPlayback( bool recording )
 {
+	// Record pressed before this Play (BUGS P2): the press arms the pass this Play starts.
+	const bool latched = m_recordLatched;
+	m_recordLatched = false;
 	m_recording = false;
 
 	if( isStopped() == false )
@@ -784,7 +787,7 @@ void Song::startSongPlayback( bool recording )
 	// a record clip as playing without starting its handle and the take stayed empty. The
 	// model lock is recursive, so the slots' own requestChangeInModel() nests.
 	Engine::audioEngine()->requestChangeInModel();
-	if( recording ) { m_recording = true; }
+	if( recording || latched ) { m_recording = true; }
 
 	m_playMode = PlayMode::Song;
 	m_playing = true;
@@ -804,6 +807,7 @@ void Song::startSongPlayback( bool recording )
 void Song::record()
 {
 	m_recording = true;
+	m_recordLatched = true;
 	// TODO: Implement
 }
 
@@ -931,6 +935,9 @@ void Song::togglePause()
 
 void Song::stop()
 {
+	// A stop ends a record request that Play has not yet taken - also when the transport is already
+	// stopped (Record, then Stop, then Play must not record).
+	m_recordLatched = false;
 	// do not stop/reset things again if we're stopped already
 	if( m_playMode == PlayMode::None )
 	{
