@@ -277,7 +277,8 @@ bool readDirectory(const QString& dirPath, int depth, int* remaining,
 	{
 		if (*remaining <= 0) { return false; }
 		--(*remaining);
-		const QFileInfo entry = entries.nextFileInfo();
+		entries.next();  // next() + fileInfo(), not nextFileInfo(): that one is Qt 6.3+, and CI builds Qt 5
+		const QFileInfo entry = entries.fileInfo();
 		if (entry.isDir())
 		{
 			if (walkMayDescend(entry, depth))
