@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T06:08:42Z",
+  "captured_at": "2026-10-09T10:38:22Z",
   "commands": [
     {
       "args_schema": {
@@ -19898,7 +19898,7 @@
         ],
         "type": "object"
       },
-      "description": "Tracks from another project ('path', a .mmp or .mmpz): with 'list' it answers that project's song tracks (index, name, type); otherwise it copies the ones in 'tracks' (indices; every one when left out) into this project - device, effects, clips and automation - each playing into the master (mixer channels do not carry between projects). One undo step removes them.",
+      "description": "Tracks from another project ('path', a .mmp or .mmpz): with 'list' it answers that project's song tracks (index, name, type); otherwise it copies the ones in 'tracks' (indices; every one when left out) into this project - device, effects, clips and automation - each keeping its mixer channel: the channel of the same name in this project, or a new one made with the source channel's name, colour, volume, pan and hardware routing (direct out, cue sends, insert send and return); 'created_channels' lists the new ones. A track on the master stays on it. One undo step removes the tracks and the channels made for them.",
       "group": "project",
       "id": "project.import_tracks",
       "mutating": true,
@@ -20235,7 +20235,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Paste the tracks project.copy_tracks put on the clipboard into this project, each playing into the master (mixer channels do not carry between projects) with ids of its own. One undo step removes them.",
+      "description": "Paste the tracks project.copy_tracks put on the clipboard into this project, each keeping its mixer channel: the channel of the same name in this project, or a new one made with the source channel's name, colour, volume, pan and hardware routing (direct out, cue sends, insert send and return); 'created_channels' lists the new ones. A track on the master stays on it. Tracks get ids of their own. One undo step removes the tracks and the channels made for them.",
       "group": "project",
       "id": "project.paste_tracks",
       "mutating": true,
@@ -23170,7 +23170,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Copy the reference's 'tracks' (indices; every one when left out) into this project - device, effects, clips and automation - as project.import_tracks does: each plays into the master, with ids of its own. One undo step removes them.",
+      "description": "Copy the reference's 'tracks' (indices; every one when left out) into this project - device, effects, clips and automation - as project.import_tracks does: each keeps its mixer channel (by name, a new one made when this project has none) and gets ids of its own. One undo step removes them.",
       "group": "reference",
       "id": "reference.copy_tracks",
       "mutating": true,
@@ -34764,11 +34764,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-cmds2/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-p1xw5a_7/zene.sock",
-    "version": "0.4.0-alpha.1364+a0295ab"
+    "source_socket": "/tmp/zctl-run-bgu5dfd8/zene.sock",
+    "version": "0.4.0-alpha.1366+888934e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

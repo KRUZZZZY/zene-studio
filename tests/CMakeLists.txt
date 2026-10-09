@@ -729,6 +729,8 @@ set(LMMS_TESTS
 	src/core/LibraryBrowserTest.cpp
 	# 0.5.0 L12 (W3): the render queue, batch conversion, the task list, flattening, tracks copied between projects.
 	src/core/ProjectToolsTest.cpp
+	# 0.5.0 L09 (Q050-027): imported and pasted tracks keep their mixer channel and its hardware routing.
+	src/core/ImportTrackIoTest.cpp
 	# 0.5.0 F3: frame cuts, zero-crossing snap, spacers, the reference project, per-type documents
 	src/core/ArrangingCatchUpTest.cpp
 	# The spacer, reference-project and project-switch halves of ArrangingCatchUpTest, split out to keep

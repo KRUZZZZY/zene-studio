@@ -24,9 +24,11 @@
 /*! 0.5.0 L12 (WF-036): import tracks from another project. project.import_tracks reads another
  *  project file (.mmp / .mmpz) and lists its song tracks, or copies the chosen ones - each with its
  *  device, effects, clips and automation - into this project. Mixer channel numbers mean nothing
- *  between two projects, so an imported track plays into the master; the ids a track, its clips and
+ *  between two projects, so a track brings its channel by NAME (0.5.0 L09, Q050-027): it plays into the
+ *  channel of that name here, or into a new one made with the source channel's hardware routing; a track
+ *  whose channel is the master or unnamed plays into the master. The ids a track, its clips and
  *  its devices carried are dropped, so the imported ones get ids of their own. One undo step removes
- *  every imported track.
+ *  every imported track and the channels made for them.
  *  0.5.0 L12 (WF-042): project.copy_tracks / paste_tracks copy tracks between two OPEN projects - two
  *  instances, each with its own song - through the system clipboard (MIME type
  *  application/x-zene-tracks), detached the same way an import detaches them.
@@ -144,8 +146,10 @@ QJsonArray listing(const QList<QDomElement>& tracks)
 	return out;
 }
 
-//! The documents of the chosen tracks ('tracks' indices; all when left out), media rebased from @a sourceDir.
-bool chosen(const QJsonObject& args, const QList<QDomElement>& tracks, const QString& sourceDir, QStringList* out, ControlResult* error)
+//! The documents of the chosen tracks ('tracks' indices; all when left out), media rebased from @a sourceDir, and the
+//! channels they play into (described from @a sourceMixer) in @a plan.
+bool chosen(const QJsonObject& args, const QList<QDomElement>& tracks, const QString& sourceDir, const QDomElement& sourceMixer,
+	transplant::TrackPlan* plan, ControlResult* error)
 {
 	std::vector<int> indices;
 	for (const QJsonValue& value : args.value(QStringLiteral("tracks")).toArray()) { indices.push_back(value.toInt(-1)); }
@@ -155,6 +159,7 @@ bool chosen(const QJsonObject& args, const QList<QDomElement>& tracks, const QSt
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'tracks' names no track (leave it out to import every one)"));
 		return false;
 	}
+	transplant::ChannelNeeds needs(sourceMixer, plan);
 	for (const int index : indices)
 	{
 		if (index < 0 || index >= tracks.size())
@@ -164,48 +169,13 @@ bool chosen(const QJsonObject& args, const QList<QDomElement>& tracks, const QSt
 		}
 		QDomDocument doc;
 		QDomElement copy = doc.importNode(tracks[index], true).toElement();
+		plan->need.push_back(needs.noteFor(copy, QStringLiteral("mixch")));  // before detach points it at the master
 		detach(copy);
 		rebaseMedia(copy, sourceDir);
 		doc.appendChild(copy);
-		out->append(doc.toString());
+		plan->documents.append(doc.toString());
 	}
 	return true;
-}
-
-//! The reply of an import or paste: the new tracks' ids under @a key, and how many of the @a asked
-//! documents made no track (a track type this build cannot create - a newer file's).
-QJsonObject madeResult(const QString& key, const std::vector<int>& made, int asked)
-{
-	QJsonArray ids;
-	for (const int id : made) { ids.append(trackId(id)); }
-	QJsonObject result{{key, ids}, {QStringLiteral("count"), ids.size()}};
-	if (ids.size() < asked) { result.insert(QStringLiteral("skipped"), asked - static_cast<int>(ids.size())); }
-	return result;
-}
-
-//! The tracks of @a documents, made in the song; @a made receives their stable ids.
-void build(const QStringList& documents, std::vector<int>* made)
-{
-	made->clear();
-	for (const QString& text : documents)
-	{
-		QDomDocument doc;
-		doc.setContent(text);
-		if (Track* track = Track::create(doc.documentElement(), Engine::getSong())) { made->push_back(track->id()); }
-	}
-}
-
-//! build() as ONE undo step - its undo removes the tracks, its redo makes them again - answering their ids.
-//! The step holds ids, never pointers: track.remove and its undo free a track and build an equal one.
-std::vector<int> buildAsOneStep(const QStringList& documents)
-{
-	auto made = std::make_shared<std::vector<int>>();
-	addUndoStep([made]() {
-		for (auto it = made->rbegin(); it != made->rend(); ++it) { if (Track* live = trackWithId(*it)) { removeTrack(live); } }
-		made->clear();
-	}, [made, documents]() { build(documents, made.get()); });
-	build(documents, made.get());
-	return *made;
 }
 
 ControlResult importTracks(const QJsonObject& args)
@@ -217,13 +187,16 @@ ControlResult importTracks(const QJsonObject& args)
 	const QList<QDomElement> tracks = songTracksOf(file, &error);
 	if (tracks.isEmpty()) { return error; }
 	if (args.value(QStringLiteral("list")).toBool()) { return ControlResult::success({{QStringLiteral("tracks"), listing(tracks)}}); }
-	ControlResult imported = transplant::importTrackElements(tracks, args, QFileInfo(path).absolutePath(), QStringLiteral("imported"));
+	ControlResult imported = transplant::importTrackElements(tracks, args, QFileInfo(path).absolutePath(), QStringLiteral("imported"),
+		file.content().firstChildElement(QStringLiteral("mixer")));
 	if (!imported.ok) { return imported; }
 	imported.result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("path"), path}}, QStringLiteral("control.undo"), {},
-		true, QStringLiteral("action checkpoint: the recorded undo step removes the imported tracks; its redo imports them again")));
+		true, QStringLiteral("action checkpoint: the recorded undo step removes the imported tracks and the mixer channels made for them; its redo imports them again")));
 	return imported;
 }
 
+//! The attribute a copied track keeps its source channel's number in (detach() zeroes its 'mixch').
+const QString SourceChannel = QStringLiteral("source-mixch");
 const QString TracksMime = QStringLiteral("application/x-zene-tracks");
 //! The largest clipboard document copy_tracks writes (a track carries its clips' notes).
 constexpr int MaxClipboardChars = 8 * 1024 * 1024;
@@ -250,13 +223,17 @@ ControlResult copyTracks(const QJsonObject& args)
 	}
 	const QString project = Engine::getSong()->projectFileName();
 	root.setAttribute(QStringLiteral("project"), project);  // the paste keeps folders only in the same project
+	QDomElement mixer = doc.createElement(QStringLiteral("zene-mixer"));  // the channels the tracks play into, for the paste
 	for (QDomElement track = root.firstChildElement(); !track.isNull(); track = track.nextSiblingElement())
 	{
+		transplant::noteLiveChannel(track, mixer, SourceChannel);  // before detach() points the track at the master
 		detach(track, true);
 		if (!project.isEmpty()) { rebaseMedia(track, QFileInfo(project).absolutePath()); }
 	}
+	const bool hasTracks = !root.firstChildElement().isNull();
+	root.appendChild(mixer);
 	const QString text = doc.toString();
-	if (root.firstChildElement().isNull() || text.size() > MaxClipboardChars)
+	if (!hasTracks || text.size() > MaxClipboardChars)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("name the 'tracks' to copy (and at most %1 characters of them)")
 			.arg(MaxClipboardChars));
@@ -281,7 +258,8 @@ ControlResult pasteTracks(const QJsonObject&)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the clipboard's track data is not a project.copy_tracks document"));
 	}
-	QStringList documents;
+	transplant::TrackPlan plan;
+	transplant::ChannelNeeds needs(doc.documentElement().firstChildElement(QStringLiteral("zene-mixer")), &plan);
 	// Two unsaved projects both name no file, so an empty == empty match would call every
 	// pair of unsaved projects the same one - and the pasted track would keep a folder id that
 	// here belongs to an unrelated folder. Only a named source can be recognised as this project.
@@ -292,26 +270,28 @@ ControlResult pasteTracks(const QJsonObject&)
 	{
 		settleFolder(track, sameProject);
 		QDomDocument one;
-		one.appendChild(one.importNode(track, true));
-		documents.append(one.toString());
+		QDomElement copy = one.importNode(track, true).toElement();
+		plan.need.push_back(needs.noteFor(copy, SourceChannel));
+		one.appendChild(copy);
+		plan.documents.append(one.toString());
 	}
-	if (documents.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the clipboard's track data holds no tracks")); }
-	const std::vector<int> made = buildAsOneStep(documents);
+	if (plan.documents.isEmpty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the clipboard's track data holds no tracks")); }
+	const transplant::Built made = transplant::buildAsOneStep(plan);
 	Engine::getSong()->setModified();
-	return ControlResult::success(madeResult(QStringLiteral("pasted"), made, documents.size()));
+	return ControlResult::success(transplant::madeResult(QStringLiteral("pasted"), made, plan.documents.size()));
 }
 
 } // namespace
 
 ControlResult control::transplant::importTrackElements(const QList<QDomElement>& tracks, const QJsonObject& args, const QString& sourceDir,
-	const QString& key)
+	const QString& key, const QDomElement& sourceMixer)
 {
-	QStringList documents;
+	TrackPlan plan;
 	ControlResult error;
-	if (!chosen(args, tracks, sourceDir, &documents, &error)) { return error; }
-	const std::vector<int> made = buildAsOneStep(documents);
+	if (!chosen(args, tracks, sourceDir, sourceMixer, &plan, &error)) { return error; }
+	const Built made = buildAsOneStep(plan);
 	Engine::getSong()->setModified();
-	return ControlResult::success(madeResult(key, made, documents.size()));
+	return ControlResult::success(madeResult(key, made, plan.documents.size()));
 }
 
 void registerImportTracksCommand(ControlRegistry& registry)
@@ -331,8 +311,10 @@ void registerImportTracksCommand(ControlRegistry& registry)
 	paste.id = QStringLiteral("project.paste_tracks");
 	paste.group = QStringLiteral("project");
 	paste.verb = QStringLiteral("paste_tracks");
-	paste.description = QStringLiteral("Paste the tracks project.copy_tracks put on the clipboard into this project, each playing "
-		"into the master (mixer channels do not carry between projects) with ids of its own. One undo step removes them.");
+	paste.description = QStringLiteral("Paste the tracks project.copy_tracks put on the clipboard into this project, each keeping "
+		"its mixer channel: the channel of the same name in this project, or a new one made with the source channel's name, colour, "
+		"volume, pan and hardware routing (direct out, cue sends, insert send and return); 'created_channels' lists the new ones. "
+		"A track on the master stays on it. Tracks get ids of their own. One undo step removes the tracks and the channels made for them.");
 	paste.argsSchema = objectSchema();
 	paste.resultSchema = objectProperty();
 	paste.mutating = true;
@@ -345,8 +327,10 @@ void registerImportTracksCommand(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("import_tracks");
 	cmd.description = QStringLiteral("Tracks from another project ('path', a .mmp or .mmpz): with 'list' it answers that project's "
 		"song tracks (index, name, type); otherwise it copies the ones in 'tracks' (indices; every one when left out) into this "
-		"project - device, effects, clips and automation - each playing into the master (mixer channels do not carry between "
-		"projects). One undo step removes them.");
+		"project - device, effects, clips and automation - each keeping its mixer channel: the channel of the "
+		"same name in this project, or a new one made with the source channel's name, colour, volume, pan and hardware routing "
+		"(direct out, cue sends, insert send and return); 'created_channels' lists the new ones. A track on the master stays on it. "
+		"One undo step removes the tracks and the channels made for them.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}, {QStringLiteral("tracks"), arrayProperty()},
 		{QStringLiteral("list"), booleanProperty()}}, {QStringLiteral("path")});
 	cmd.resultSchema = objectProperty();

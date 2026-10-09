@@ -113,7 +113,7 @@ const ReversibilityRow kDeviceRows[] = {
 	R("range.bounce", RC::TrueInverse, true, "it lands a render of the selection on a new track and mutes the bounced tracks",
 		"action checkpoint: the recorded undo step removes the landed track and puts the mutes back", ""),
 	R("project.import_tracks", RC::TrueInverse, true, "it adds tracks copied from another project",
-		"action checkpoint: the recorded undo step removes the imported tracks", ""),
+		"action checkpoint: the recorded undo step removes the imported tracks and the mixer channels made for them", ""),
 	R("project.handoff", RC::NotMutating, false, "it writes a folder (a project copy, its media, a manifest); the session and "
 		"its own file are untouched", "no write to the project (delete the folder)", ""),
 	R("app.help", RC::NotMutating, false, "it opens the manual or the command reference: interface state", "no write", ""),
