@@ -2,19 +2,51 @@
 
 Branch: `bugs/m0-blk-subsystems`, starting at `8eacc41d2`.
 
+## Round 1 record (review disposition)
+
+The verdicts below record the independent review of the Round 1 report. In particular, Round 1 did not fix the
+5173/5186 generation race or the retained Lua child-view pointers.
+
 | Cluster | Verdict | Fix commit | Test | Red exit | Green exit | Gate exits |
 |---|---|---|---|---|---|---|
-| 5173 | FIXED | `73ecb52ba` | `ModulationAudioViewTest::targetDestructionWaitsForAnInFlightAudioWrite` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
-| 5186 | FIXED | `73ecb52ba` (shared lifetime fix) | `ModulationAudioViewTest::targetDestructionWaitsForAnInFlightAudioWrite` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
-| 2658 | BLOCKED — source confirms `stop()` drains both SPSC queues on the control thread; the reconfigured build reports the Wasmtime C API missing and disables the WASM feature, so its test target is unavailable | — | `WasmWorkerPoolTest` not configured | N/A — target unavailable | N/A — target unavailable | — |
-| 3644 | BLOCKED — source confirms cached linear-memory pointers are read after `callProcess()` in the worker and offline renderer; the Wasmtime C API is missing, so the WASM test target is unavailable | — | `WasmWorkerPoolTest` not configured | N/A — target unavailable | N/A — target unavailable | — |
-| 4628 | BLOCKED — source confirms the pool loads a raw worker pointer before `claimForLane()` without covering that gap; the Wasmtime C API is missing, so the WASM test target is unavailable | — | `WasmWorkerPoolTest` not configured | N/A — target unavailable | N/A — target unavailable | — |
-| 5201 | BLOCKED — source confirms `Ort::Session` construction and `session.Run()` can throw outside a catch; `ONNXRuntime_INCLUDE_DIR` and `ONNXRuntime_LIBRARY` are `NOTFOUND`, so the ONNX test target is unavailable | — | `OnnxRuntimeStemSeparatorTest` not configured | N/A — target unavailable | N/A — target unavailable | — |
+| 5173 | REWORK | `73ecb52ba` | `ModulationAudioViewTest::targetDestructionWaitsForAnInFlightAudioWrite` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+| 5186 | REWORK | `73ecb52ba` (shared lifetime fix) | `ModulationAudioViewTest::targetDestructionWaitsForAnInFlightAudioWrite` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+| 2658 | BLOCKED — Wasmtime C API unavailable in the Round 1 build | — | `WasmWorkerPoolTest` not configured | N/A | N/A | — |
+| 3644 | BLOCKED — Wasmtime C API unavailable in the Round 1 build | — | `WasmWorkerPoolTest` not configured | N/A | N/A | — |
+| 4628 | BLOCKED — Wasmtime C API unavailable in the Round 1 build | — | `WasmWorkerPoolTest` not configured | N/A | N/A | — |
+| 5201 | BLOCKED — ONNX Runtime unavailable in the Round 1 build | — | `OnnxRuntimeStemSeparatorTest` not configured | N/A | N/A | — |
 | 1663 | FIXED | `e228edf8b` | `ScriptDawBindingTest::aChannelViewStopsResolvingAfterItsTargetIsRemoved` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
-| 5335 | FIXED | `e228edf8b` (shared stable-id fix) | `ScriptDawBindingTest::aChannelViewStopsResolvingAfterItsTargetIsRemoved` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+| 5335 | REWORK | `e228edf8b` (channel wrapper only) | `ScriptDawBindingTest::aChannelViewStopsResolvingAfterItsTargetIsRemoved` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
 
-## Verification notes
+### Round 1 verification notes
 
-- `cmake -S . -B build` completed. CMake reported `WASM DSP sandbox: Disabled (wasmtime C API not found; set WASMTIME_ROOT)`. The ONNX Runtime include directory and library were both not found. The four blocked rows have no product change or red/green claim; their regressions could not be built or run in this configured environment.
-- Builds used `-j6`, with the prescribed dependency paths and `LMMS_PLUGIN_DIR` unset. The configured ccache temporary directory under `/run/user/1000/ccache-tmp` denied writes, so subsequent builds set `CCACHE_TEMPDIR=/tmp`. Early build iterations also exposed two Qt connection overload errors, which were corrected; the completed red/green proof builds exited 0 as shown above.
-- Only the focused `ctest -R` cases above were run. The full suite was not run.
+- CMake reported the Wasmtime C API, ONNX Runtime include directory, and ONNX Runtime library unavailable, so the four
+  Round 1 blocked rows could not be built or tested in that configuration.
+- Round 1 used focused `ctest -R` cases; the full suite was not run. Its ccache temporary path denied writes; the
+  report recorded moving `CCACHE_TEMPDIR` under `/tmp` for subsequent builds.
+
+## Round 2
+
+| Cluster | Verdict | Fix commit | Test | Red exit | Green exit | Gate exits |
+|---|---|---|---|---|---|---|
+| 5173 | FIXED | `97789a3fd` | `ModulationAudioViewTest::rebindDuringDestructionIgnoresAStaleTargetClosure` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+| 5186 | FIXED | `97789a3fd` (shared generation-aware gate) | `ModulationAudioViewTest::rebindDuringDestructionIgnoresAStaleTargetClosure` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+| 2658 | FIXED | `e481ddf9d` | `WasmWorkerPoolTest::testStopWaitsForAudioEndpointsToQuiesce` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+| 3644 | FIXED | `e481ddf9d` | `WasmWorkerPoolTest::testMemoryRefreshReacquiresMovedPointer`, `testWasmWorkerRefreshesMemoryAfterGrowth`, `testOfflineRenderRefreshesMemoryAfterGrowth` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+| 4628 | FIXED | `e481ddf9d` | `WasmWorkerPoolTest::testRemovalWaitsForLoadedWorkerReaders` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+| 5201 | FIXED | `2af0fc217` | `OnnxRuntimeStemSeparatorTest::testMalformedModelFailureIsReportedByStemJob` | build 0; ctest 8 (uncaught ORT exception abort) | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+| 1663 | ALREADY-FIXED | `e228edf8b` | `ScriptDawBindingTest::aChannelViewStopsResolvingAfterItsTargetIsRemoved` (Round 1 proof) | Round 1: build 0; ctest 8 | Round 1: build 0; ctest 0 | Round 1: all four gates 0 |
+| 5335 | FIXED | `2bcb5ac80` | `ScriptDawBindingTest::aChannelViewStopsResolvingAfterItsTargetIsRemoved` | build 0; ctest 8 | build 0; ctest 0 | complexity 0; file-length 0; fork-sources 0; no-upstream-regression 0 |
+
+### Round 2 verification notes
+
+- Reconfigured with Wasmtime 48.0.1 at `third_party/wasmtime` and ONNX Runtime 1.28.0 at
+  `$HOME/.local/zene-deps/onnxruntime-linux-x64-1.28.0`; both optional features and their tests were enabled.
+- Each Round 2 source fix has a red/green regression. The modulation destruction test now handshakes with teardown
+  entry instead of sleeping. WASM coverage checks queue endpoint quiescence, moved-memory reacquisition and worker
+  reader lifetime. The malformed ONNX model reproduces the job-thread abort without the catch and reports a failure
+  after it.
+- Builds used `-j4`; only focused `ctest -R` cases ran, not the full suite. The configured ccache temp path under
+  `/run/user/1000/ccache-tmp` denied writes, so builds set `CCACHE_TEMPDIR=/tmp/luna-F-round2-ccache-temp` and
+  completed successfully.
+- Logs are in `/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/719627a5-c809-46ec-b4a4-231af5d313ec/scratchpad/luna-F-round2`.
