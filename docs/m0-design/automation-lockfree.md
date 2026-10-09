@@ -38,6 +38,35 @@ This branch has no complete render-model registry or coherent model-value public
 
 The render path takes `m_clipMutex` in `AutomationClip::writeBlockRamp()` (`src/core/AutomationClip.cpp:760-764`) and in the nested `valueAt()` interpolation path (`:568-612`). The header returns the live `QMap` by both const and mutable reference (`include/AutomationClip.h:144-151`). Editors and control tools mutate that reference in more than a dozen places; `AutomationNode::setInValue()` and `setOutValue()` edit it through the mutable accessor without first taking the clip mutex (`src/core/AutomationNode.cpp:80-107`). A snapshot published only by existing clip methods would therefore become stale as soon as any such writer changed a node.
 
+### Mutation audit (source lines at `ce24bc183`)
+
+| File:line | Mutation found | `AutomationClip` edit method that owns it |
+|---|---|---|
+| `include/AutomationClip.h:144-147` | Exposes the live map for writes; remove the mutable overload after migration. | No replacement accessor; use the edit methods below. |
+| `src/core/AutomationNode.cpp:75-89,95-109` | Node value setters reach the map through `m_clip`, then regenerate adjacent tangents. | `setNodeInValue()` / `setNodeOutValue()` |
+| `src/core/AutomationClip.cpp:90-91` | Copy constructor inserts copied nodes and rebinds each node to the new clip. | Copy constructor, followed by initial snapshot publication. |
+| `src/core/AutomationClip.cpp:248,304` | Insert or replace a point, remove quantized neighbors when requested, recalculate tangents. | `putValue()` / `putValues()` |
+| `src/core/AutomationClip.cpp:340-384` | Remove one point or an inclusive range and regenerate neighboring tangents. | `removeNode()` / `removeNodes()` |
+| `src/core/AutomationClip.cpp:396-438` | Reset out values or unlock and regenerate tangents over a range. | `resetNodes()` / `resetTangents()` |
+| `src/core/AutomationClip.cpp:443-455` | Recording inserts or removes points based on the last recorded value. | `recordValue()`; its audio-thread callers require the separate recording handoff in cluster 5388 before publication can be moved off audio. |
+| `src/core/AutomationClip.cpp:478-548` | Drag removes/restores a point, inserts its current position/value and restores any locked tangents. | `setDragValue()` |
+| `src/core/AutomationClip.cpp:918-989` | Undo/load clears and repopulates nodes, restores curve/tangent state, and may regenerate tangents. | `loadSettings()` |
+| `src/core/AutomationClip.cpp:1180-1184` | Clear removes the complete map. | `clear()` |
+| `src/core/AutomationClip.cpp:1249-1307` | Internal tangent generation changes in/out tangent fields on live nodes. | Called only inside the owning edit operation; that operation publishes once after the complete edit. |
+| `src/core/AutomationClipTransforms.cpp:44-68` | Flip vertically changes node values and recalculates tangents. | `flipY()` |
+| `src/core/AutomationClipTransforms.cpp:179-206` | Flip horizontally builds and installs a mirrored map. | `flipX()` |
+| `src/core/AutomationClipTransforms.cpp:258-275` | Shape draw erases the selected range and inserts generated nodes. | `drawShape()` |
+| `src/core/AutomationClipTransforms.cpp:337-377` | Range transform moves/rescales nodes and installs the result if destinations do not collide. | `transformRange()` |
+| `src/core/AutomationClipTransforms.cpp:415-445` | Thinning removes redundant nodes and recalculates tangents. | `thin()` |
+| `src/gui/editors/AutomationEditor.cpp:368,376-378,398-423` | Fine tune changes values; erase/reset tools remove points, reset out values, or unlock tangents. | `setNodeInValue()` / `setNodeOutValue()` / `removeNode()` / `resetNodes()` / `resetTangents()` |
+| `src/gui/editors/AutomationEditor.cpp:570,590,629,839-899` | Draw-out edits values; tangent edit locks then changes one tangent. | `setNodeOutValue()` / `setNodeLockedTangents()` / `setNodeTangent()` |
+| `src/gui/editors/AutomationPointEdit.cpp:65-80` | Point move removes and reinserts a node, then restores its curve/bend. | `moveNode()` |
+| `src/core/ControlCommandsAutomationTools.cpp:65-80,124-181` | Command point move removes and reinserts a node, then restores its curve/bend. | `moveNode()` |
+| `src/core/ControlCommandsAutomationLanes.cpp:202-219` | Control command changes the curve/bend on an existing point. | `setNodeCurve()` |
+| `tests/src/core/AutomationLanesTest.cpp:279-281,299-304,378-380,395-397,424-426,663-669` | Test fixtures directly change tangents, tangent locks, or curves through the mutable accessor. | Migrate fixtures to `setNodeTangents()`, `setNodeLockedTangents()`, and `setNodeCurve()`. |
+
+`Song.cpp:648` and `NotePlayHandle.cpp:672` call `recordValue()` on render/worker audio paths. `PianoRoll.cpp:1122` binds a non-const map reference but only iterates it; the other `getTimeMap()` uses in `PianoRoll.cpp`, `AutomationClipView.cpp`, `AutomationEditorKeys.cpp`, `InlineAutomation.h`, `ItemListAutomationSource.cpp`, control helpers, and tests are read-only. These become const views. `loadSettings()` is also the undo/redo restoration path through `Clip::restoreState()`; no separate mutable undo writer exists.
+
 ### Chosen design
 
 Keep the editable `QMap` as control-thread state and publish an immutable, sorted, contiguous `AutomationClipReadSnapshot` after each successful edit. The snapshot contains POD node fields (tick, in/out value, in/out tangent, tangent-lock flag, curve and bend) plus every clip-level field the audio evaluator reads (progression, tension, start position, offset, length, mute, and sample-accurate setting). It contains no `AutomationNode`, `AutomationClip`, or GUI object pointer. `writeBlockRamp()` and audio-side `valueAt()` use only the published snapshot and the current arithmetic/order of the existing evaluator; the public map API is read-only, and all mutation goes through clip edit methods that publish before returning.
