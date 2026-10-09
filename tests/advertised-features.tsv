@@ -37,8 +37,9 @@
 # (SPEC-ARCH-4 3.3 step 2: "the gate does not need a row to be changed - it needs the row and the build
 # to agree"). The narrow claim the row carried stays true and stays documented in
 # docs/KNOWN-LIMITATIONS.md: drivable through --control-socket, NO clip-launch grid or scene-launcher
-# UI, and a launched session slot renders no audio. That is a product limitation, not a build option,
-# so this manifest (features keyed to options the binary reports) is not where it lives.
+# UI. Session MIDI and audio cells render through the engine; the missing launcher UI is a product
+# limitation, not a build option, so this manifest (features keyed to options the binary reports) is
+# not where it lives.
 #
 # WHY THERE IS NO ROW FOR TELEMETRY, THOUGH THE RELEASE DOCUMENTS IT.
 # The gate can only judge what the binary REPORTS, and the build-options string is assembled by

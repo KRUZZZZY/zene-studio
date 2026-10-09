@@ -37,10 +37,12 @@
  * a duplicate-symbol link failure. This is the same seam, and the same argument,
  * as ControlCommandsSessionShared.h beside it.
  *
- * Nothing is exported: these are inline definitions in a private namespace. */
+ * Nothing is exported: these are private declarations shared by the two files. */
 
 #ifndef LMMS_CONTROL_COMMANDS_SESSION_RECORD_INTERNAL_H
 #define LMMS_CONTROL_COMMANDS_SESSION_RECORD_INTERNAL_H
+
+#include <memory>
 
 #include <QJsonObject>
 #include <QString>
@@ -55,6 +57,8 @@
 
 namespace lmms
 {
+class SampleBuffer;
+
 namespace sessionrecord
 {
 
@@ -148,72 +152,10 @@ inline void consumeLandEvents( SessionArrangementRecorder& recorder, std::size_t
 	while( seen < count && recorder.pop( event ) ) { ++seen; }
 }
 
-//! The JSON a land reply carries for one pair - whether a clip was created for
-//! it or why it was not.
-inline QJsonObject landPairState( Song& song, const SessionModel& model, const LandPair& pair )
-{
-	QJsonObject landed;
-	landed.insert( QStringLiteral( "track_index" ), pair.track );
-	landed.insert( QStringLiteral( "scene" ), pair.scene );
-	landed.insert( QStringLiteral( "start_tick" ), static_cast<int>( pair.startTick ) );
-	landed.insert( QStringLiteral( "stop_tick" ), static_cast<int>( pair.stopTick ) );
-	if( pair.track < 0 || pair.track >= static_cast<int>( song.tracks().size() ) )
-	{
-		// The engine takes a track over by its POSITION in the song's track
-		// list, and the session grid may be wider than that list (the
-		// launchableColumns rule session.launch_slot states).
-		landed.insert( QStringLiteral( "landed" ), false );
-		landed.insert( QStringLiteral( "reason" ), QStringLiteral( "column_has_no_song_track" ) );
-		return landed;
-	}
-	const tick_t length = pair.stopTick - pair.startTick;
-	if( length <= 0 )
-	{
-		landed.insert( QStringLiteral( "landed" ), false );
-		landed.insert( QStringLiteral( "reason" ), QStringLiteral( "empty_span" ) );
-		return landed;
-	}
-	Track* track = song.tracks()[static_cast<std::size_t>( pair.track )];
-	if( track != nullptr )
-	{
-		// TrackContentWidget::mousePressEvent checkpoints the track and then
-		// calls Track::createClip(); do the same, so the journal owns a real
-		// inverse (the clip.add and midi.retro_capture_to_clip shape).
-		track->addJournalCheckPoint();
-	}
-	const ClipSlot& slot = model.slot( pair.track, pair.scene );
-	Clip* clip = track != nullptr ? track->createClip( TimePos( pair.startTick ) ) : nullptr;
-	if( clip == nullptr )
-	{
-		landed.insert( QStringLiteral( "landed" ), false );
-		landed.insert( QStringLiteral( "reason" ), QStringLiteral( "track_created_no_clip" ) );
-		return landed;
-	}
-	clip->changeLength( TimePos( length ) );
-	// A landed span is a MANUALLY resized clip: the arrangement record says how
-	// long the performance was, and an auto-resizing clip would shrink to its
-	// (here empty) content instead.
-	clip->setAutoResize( false );
-	if( !slot.name().isEmpty() ) { clip->setName( slot.name() ); }
-	clip->dataChanged();
-
-	landed.insert( QStringLiteral( "landed" ), true );
-	landed.insert( QStringLiteral( "track" ), control::trackIdOf( track ) );
-	landed.insert( QStringLiteral( "clip" ), control::clipIdOf( clip ) );
-	landed.insert( QStringLiteral( "position" ),
-		static_cast<int>( clip->startPosition().getTicks() ) );
-	landed.insert( QStringLiteral( "length" ), static_cast<int>( clip->length().getTicks() ) );
-	landed.insert( QStringLiteral( "name" ), clip->name() );
-	// The PatternStore reference the session slot names, reported rather than
-	// copied: this build does not fill the clip's notes from it (see the file
-	// header of ControlCommandsSessionRecordLand.cpp). -1 means the slot carries
-	// no pattern reference at all.
-	landed.insert( QStringLiteral( "pattern" ), slot.patternId() );
-	landed.insert( QStringLiteral( "content" ),
-		slot.patternId() >= 0 ? QStringLiteral( "pattern_reference_not_copied" )
-			: QStringLiteral( "empty" ) );
-	return landed;
-}
+//! Creates and reports one landed clip. Audio is loaded during preflight, before
+//! the recorder ring is consumed, and passed here for the SampleClip to own.
+QJsonObject landPairState( Song& song, const SessionModel& model, const LandPair& pair,
+	const std::shared_ptr<const SampleBuffer>& audioSample );
 
 } // namespace sessionrecord
 } // namespace lmms

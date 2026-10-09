@@ -296,9 +296,9 @@ lock-free queue) and **Arrangement Record** captures a performance's own events
 `tests/control-session-m1.py` — milestone M1: a saved project launches 4 clips across 2 scenes in sync).
 
 **Bounds.** Says the release's own honesty row in `tests/advertised-features.tsv`: there is **no clip
-launcher grid**, no scene launcher UI, and **a launched session slot does not render audio** — this tree
-has no session-clip playback path. A user cannot see or hear the Session View; an agent can drive all
-of it over the socket. The option defaults ON since 0.3.0 and the honesty gate requires it ON.
+launcher grid or scene launcher UI**. A user cannot see or operate the Session View; an agent can drive all
+of it over the socket, and launched MIDI/audio cells render through the engine. The option defaults ON since
+0.3.0 and the honesty gate requires it ON.
 
 ### 3.5 Mixing and routing
 
@@ -650,9 +650,8 @@ sample accuracy outside the opt-in per-clip ramps.
   does not open (a generated knob grid is what opens); no multi-out, no presets, no instrument latency
   in PDC; no out-of-process isolation for the new families; CLAP instruments are new and have no
   third-party witness.
-- **Session view:** no clip launcher grid, and **a launched session slot does not render audio** — a
-  user cannot see or hear it; an agent can drive all of it (`tests/advertised-features.tsv`,
-  `session-view` row's own text).
+- **Session view:** no clip launcher grid or scene launcher UI. An agent can launch MIDI and audio cells
+  through the socket; the engine renders their content.
 - **WASM sandbox shipping status:** the release binaries have `WANT_WASM=OFF` because no CI job
   provisions the wasmtime C API; the `wasm.*` group exists and is drivable only in a build that has it
   (this document's tree build does). The honesty row requires the absence and stays true until the C API
@@ -1193,7 +1192,7 @@ Re-run it with the command in Appendix B, §B.4, and replace this block wholesal
 | command | mutating | description |
 | --- | --- | --- |
 | `session.arrangement_record_arm` | no | Arm (or disarm) Arrangement Record: while it is armed the audio thread pushes one event per session launch and per stop into the engine's ring, at the tick the transition fired on. Disarming KEEPS what the ring already carries - the performance is landed, not dropped - and a reset (session.stop_all, session.back_to_arrangement) records the stop of every slot it ends, so a stopped performance has no launches left open. Mode state, not project state: no transaction is recorded. |
-| `session.arrangement_record_land` | yes | Land the recorded performance: pair every recorded launch with the stop that ended it and create ONE arrangement clip per pair on that column's song track, at the recorded ticks. REFUSED - consuming nothing - while any recorded start is still open, because a half-landed performance would lose starts or invent their ends; stop the session first (session.stop_all, or session.back_to_arrangement). Reversible: one Track journal checkpoint per touched track, so one control.undo takes the whole pass back. The clip's CONTENT is not copied from the session slot (there is no session-clip playback path in 0.3.0): the reply names the slot's pattern reference per clip. |
+| `session.arrangement_record_land` | yes | Land the recorded performance: pair every recorded launch with the stop that ended it and create ONE arrangement clip per pair on that column's song track, at the recorded ticks. MIDI notes from the referenced PatternStore column are copied into instrument clips, and audio cells are loaded into sample clips. REFUSED - consuming nothing - while any recorded start is still open, for an incompatible destination, or for an unreadable audio source. Reversible: one Track journal checkpoint per touched track, so one control.undo takes the whole pass back. |
 | `session.arrangement_record_status` | no | Read Arrangement Record back: whether the tap is armed, how many events it has recorded, how many it dropped because the ring was full, how many are waiting, how many clips a land pass would write, and how many launches are still playing (which is what a land pass refuses on). 'pending' is a bounded estimate - the two ring indices are read separately, so a push landing between them is not counted. Read-only. |
 | `session.back_to_arrangement` | no | The Back-to-Arrangement switch: end the session playback and hand every track back to its arrangement content (SPEC A1 mutual exclusivity - a track plays its session content or its arrangement content, never both). It is one atomic request, the same engine operation session.stop_all makes, and it exists as its own id because it is the ARRANGEMENT's verb: the reply reports the recorded performance, which this does NOT drop - the ring is landed afterwards by session.arrangement_record_land. Not a project edit: no transaction is recorded. |
 | `session.clear` | yes | Empty the whole Session View: no grid, no slot, no scene override, default quantisation. A project that never used the session then re-saves byte-identically (the <session> block is dropped). Reversible through the ProjectJournal. |

@@ -149,13 +149,14 @@ performance, which it does **not** drop. Nothing in `src/gui/` draws it.
 
 ## 4. Bounds, stated rather than implied
 
-1. **A landed clip carries its position and length, not the session clip's notes.** The
-   reply's `pattern` field reports the PatternStore reference the session slot names; the
-   notes are not copied into the clip.
-2. **The "rendered audio matches the session playback" half of #596's acceptance is UNMET
-   in this tree.** A launched session slot does not render audio at all — there is no
-   session-clip playback path (#597) — so there is no session audio for a render comparison
-   to be made against. The position-and-length proof is what this release can hold.
+1. **A landed clip carries the session slot's content when the destination supports it.**
+   MIDI notes from the referenced PatternStore column are copied into an instrument-track
+   clip; an audio cell's sample is loaded into a sample-track clip. The reply's `pattern`
+   field names the source pattern, and `content` reports the copied content. An incompatible
+   destination or unreadable audio source is refused before any recorder events are consumed.
+2. A landed clip therefore carries the recorded position, length, and copyable content.
+   Session playback remains on its own path; landing creates arrangement content from the
+   slot rather than trying to render the session slot as an arrangement clip.
 3. The plan table is a fixed `MaxFollowPlans` (16 cells); a cell armed beyond it is refused
    and counted. A chain longer than `MaxFollowChainEntries` (8) is refused, never truncated.
 4. A `jump` whose target is outside the grid is refused at **set** time (the command's typed

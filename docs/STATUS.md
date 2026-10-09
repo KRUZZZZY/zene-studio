@@ -242,8 +242,8 @@ not rounded up.
 - **Session View data layer + launch scheduler** — *at `5565b4b1b`:* `WANT_SESSION_VIEW` defaults **OFF**
   (`CMakeLists.txt:121`) and no release job passes it. **Superseded at this tip (2026-09-19):** it **defaults ON**
   (`CMakeLists.txt:133`, since 0.3.0-alpha) so every release job builds the group, and the `session-view` row of
-  `tests/advertised-features.tsv` requires it; what remains true is the narrow claim — no clip-launch grid, no
-  scene launcher, and a launched slot does not render audio. In the tree: `include/SessionModel.h`, `src/core/SessionModel.cpp`,
+  `tests/advertised-features.tsv` requires it; what remains true is the narrow claim — no clip-launch grid or
+  scene launcher. Launched MIDI/audio slots render through the engine. In the tree: `include/SessionModel.h`, `src/core/SessionModel.cpp`,
   `SessionScheduler.cpp`, wired into `Song::processNextBuffer` under `#ifdef LMMS_HAVE_SESSION_VIEW`; its tests
   register only inside `IF(LMMS_HAVE_SESSION_VIEW)` (`tests/CMakeLists.txt`). Even a flag-ON build has **no clip
   launcher and no grid**.

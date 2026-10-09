@@ -2843,15 +2843,12 @@ precision inside the block.
   reset path that records the stops it ends, and the allocation probe on the audio path this feature
   added (0 allocations over 20 000 periods with a plan installed and firing).
 - **What this does NOT have, stated rather than implied:**
-  (1) **a landed clip carries its position and length, not the session clip's notes** — `pattern`
-  reports the PatternStore reference the session slot names, and the notes are not copied;
-  (2) therefore the "rendered audio matches the session playback" half of #596's acceptance is
-  **UNMET in this tree**, because a launched session slot does not render audio at all (there is no
-  session-clip playback path, #597) — the render comparison cannot be run against silence;
-  (3) `session.arrangement_record_land` refuses while a recorded launch is still open, so landing
-  mid-performance is a refusal rather than a partial pass;
-  (4) the plan table is a fixed `MaxFollowPlans` (16 cells) and a chain longer than
-  `MaxFollowChainEntries` (8) is **refused, never truncated**.
+  (1) `session.arrangement_record_land` refuses while a recorded launch is still open, so landing
+  mid-performance is a refusal rather than a partial pass; incompatible MIDI/audio destinations and
+  unreadable audio sources are also refused before the recorder is consumed;
+  (2) the plan table is a fixed `MaxFollowPlans` (16 cells) and a chain longer than
+  `MaxFollowChainEntries` (8) is **refused, never truncated**. For supported destinations, the land pass
+  copies MIDI notes from the referenced PatternStore column or loads an audio cell into a sample clip.
 - **UI absence — one line: Follow Actions, Arrangement Record and the Back-to-Arrangement switch are
   drivable through the socket, not from the interface.** There is no Follow Action editor, no
   Arrangement Record button, no take lane and no Back-to-Arrangement light: `grep -rniI

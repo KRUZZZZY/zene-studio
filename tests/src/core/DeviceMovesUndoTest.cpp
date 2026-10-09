@@ -22,6 +22,8 @@
 
 #include <QtTest>
 
+#include <QPointer>
+
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "ControlDeviceMoves.h"
@@ -154,16 +156,18 @@ private slots:
 		const QString target = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}})
 			.result.value(QStringLiteral("track")).toString();
 		QVERIFY(!load(target, QStringLiteral("amplifier")).isEmpty());
-		EffectChain* original = chain(target);
+		QPointer<EffectChain> original = chain(target);
+		QVERIFY(!original.isNull());
 		const std::vector<Effect*> devices = original->effects();
-		control::removeDevicesRecorded(original, devices);
+		control::removeDevicesRecorded(original.data(), devices);
 		QVERIFY(names(target).isEmpty());
 		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), target}}).ok);
 		// Occupy the retired allocations: an undo must work when a rebuilt chain has a different address.
 		Track* intervening = Track::create(Track::Type::Instrument, Engine::getSong());
 		QVERIFY(intervening != nullptr);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(chain(target) != original);
+		QVERIFY(original.isNull());
+		QVERIFY(chain(target) != nullptr);
 		Engine::projectJournal()->undo();  // the helper's step, without a registry transaction
 		QCOMPARE(names(target), QStringList{QStringLiteral("amplifier")});
 		Engine::projectJournal()->redo();

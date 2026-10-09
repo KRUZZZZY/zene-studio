@@ -34,10 +34,18 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QTemporaryDir>
 
+#include "BrowserTestSupport.h"
 #include "Clip.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "InstrumentTrack.h"
+#include "MidiClip.h"
+#include "Note.h"
+#include "PatternStore.h"
+#include "SampleClip.h"
+#include "SampleTrack.h"
 #include "SessionArrangementRecorder.h"
 #include "SessionScheduler.h"
 #include "Song.h"
@@ -76,6 +84,7 @@ class ControlSessionRecordLandTest : public QObject
 	Song* m_song = nullptr;
 	Track* m_first = nullptr;
 	Track* m_second = nullptr;
+	QTemporaryDir m_dir;
 
 private slots:
 	void initTestCase()
@@ -83,6 +92,7 @@ private slots:
 		Engine::init(true);
 		ControlRegistry::setReady(true);
 		m_song = Engine::getSong();
+		QVERIFY(m_dir.isValid());
 	}
 
 	void cleanupTestCase()
@@ -139,7 +149,7 @@ private slots:
 		QCOMPARE(one.value(QStringLiteral("length")).toInt(), 192);
 		QCOMPARE(one.value(QStringLiteral("name")).toString(), QStringLiteral("Verse"));  // the slot's name
 		QCOMPARE(one.value(QStringLiteral("pattern")).toInt(), 0);
-		QCOMPARE(one.value(QStringLiteral("content")).toString(), QStringLiteral("pattern_reference_not_copied"));
+		QCOMPARE(one.value(QStringLiteral("content")).toString(), QStringLiteral("midi_pattern_copied"));
 		const QJsonObject two = landedEntry(landed, 1);
 		QCOMPARE(two.value(QStringLiteral("position")).toInt(), 120);
 		QCOMPARE(two.value(QStringLiteral("length")).toInt(), 96);
@@ -157,6 +167,55 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(m_first->getClips().size(), size_t{0});
 		QCOMPARE(m_second->getClips().size(), size_t{0});
+	}
+
+	void aLandedMidiClipCarriesTheSlotPatternsNotes()
+	{
+		auto* sourceTrack = dynamic_cast<InstrumentTrack*>(
+			Track::create(Track::Type::Instrument, Engine::patternStore()));
+		QVERIFY(sourceTrack != nullptr);
+		Engine::patternStore()->createClipsForPattern(0);
+		auto* source = dynamic_cast<MidiClip*>(sourceTrack->getClip(0));
+		QVERIFY(source != nullptr);
+		source->addNote(Note(TimePos(48), TimePos(24), 67, 101), false);
+
+		QVERIFY(recorder().recordStart(0, 0, 96));
+		QVERIFY(recorder().recordStop(0, 0, 288));
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+
+		auto* copied = dynamic_cast<MidiClip*>(m_first->getClips().front());
+		QVERIFY(copied != nullptr);
+		QCOMPARE(copied->notes().size(), size_t{1});
+		QCOMPARE(copied->notes().front()->key(), 67);
+		QCOMPARE(copied->notes().front()->pos().getTicks(), tick_t{24});
+		QCOMPARE(copied->notes().front()->length().getTicks(), tick_t{48});
+	}
+
+	void aLandedAudioCellCarriesItsSample()
+	{
+		m_song->clearProject();
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, m_song));
+		QVERIFY(track != nullptr);
+		QVERIFY(run(QStringLiteral("session.set_grid"),
+			{{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 1}}).ok);
+		const QString source = m_dir.filePath(QStringLiteral("landed-audio.wav"));
+		QVERIFY(browserfixture::writeWave(source, browserfixture::WaveSpec{}));
+		QVERIFY(run(QStringLiteral("session.set_slot"),
+			{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+				{QStringLiteral("type"), QStringLiteral("audio")},
+				{QStringLiteral("source"), source}, {QStringLiteral("name"), QStringLiteral("Audio take")}}).ok);
+
+		QVERIFY(recorder().recordStart(0, 0, 0));
+		QVERIFY(recorder().recordStop(0, 0, 192));
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+
+		auto* copied = dynamic_cast<SampleClip*>(track->getClips().front());
+		QVERIFY(copied != nullptr);
+		QCOMPARE(copied->name(), QStringLiteral("Audio take"));
+		QCOMPARE(copied->sample().sampleSize(), std::size_t{2048});
+		QVERIFY(!copied->sampleFile().isEmpty());
 	}
 
 	void aRetriggeredCellLandsAsTwoClips()
