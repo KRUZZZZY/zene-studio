@@ -1220,7 +1220,7 @@ void ClipView::remove( QVector<ClipView *> clipvs )
 {
 	int kept = 0;
 	ProjectJournal* journal = Engine::projectJournal();
-	const int undoDepth = journal != nullptr ? journal->undoDepth() : -1;
+	const quint64 undoSerial = journal != nullptr ? journal->topStepSerial() : 0;
 	for( auto clipv: clipvs )
 	{
 		// No need to check if it's nullptr because we check when building the QVector
@@ -1228,7 +1228,7 @@ void ClipView::remove( QVector<ClipView *> clipvs )
 		if (EditLocks::instance().locks(clipv->getClip())) { ++kept; continue; }
 		clipv->remove();
 	}
-	if (journal != nullptr) { journal->mergeCheckpointsFrom(undoDepth); }
+	if (journal != nullptr) { journal->mergeCheckpointsSince(undoSerial); }
 	cliplocks::announceKept(kept);  // 0.5.0 theme 2: and the user is told so
 }
 
