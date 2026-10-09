@@ -28,20 +28,32 @@
 #include <algorithm>
 #include <cassert>
 
-#include <thread>
-
 #include "AudioBus.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "BufferManager.h"
+#include "Engine.h"
 #include "EffectChain.h"
 #include "Mixer.h"
-#include "Engine.h"
 #include "MixHelpers.h"
 #include "RackZoneFeed.h"
+#include "RealtimeScope.h"
 
 namespace lmms
 {
+
+thread_local bool AudioBusHandle::s_renderStageOwnsList = false;
+
+AudioBusHandle::RenderStageScope::RenderStageScope() noexcept
+	: m_previous(s_renderStageOwnsList)
+{
+	s_renderStageOwnsList = true;
+}
+
+AudioBusHandle::RenderStageScope::~RenderStageScope() noexcept
+{
+	s_renderStageOwnsList = m_previous;
+}
 
 AudioBusHandle::AudioBusHandle(const QString& name, bool hasEffectChain,
 	FloatModel* volumeModel, FloatModel* panningModel,
@@ -243,31 +255,57 @@ void AudioBusHandle::removePlayHandle(PlayHandle* handle)
 	postPlayHandleEdit(PlayHandleEdit{handle, false});
 }
 
+void AudioBusHandle::removePlayHandleUnderEngineChangeLock(PlayHandle* handle)
+{
+	// Engine removal already holds its change lock, so drain prior edits and apply this one in order.
+	applyPlayHandleEdits();
+	applyPlayHandleEdit(PlayHandleEdit{handle, false});
+}
+
 void AudioBusHandle::postPlayHandleEdit(PlayHandleEdit edit)
 {
-	// Never a lock. A full queue means this bus has not been processed for PlayHandle::MaxNumber edits,
-	// which cannot happen while the engine renders, so the wait is for the next period's doProcessing().
-	while (!m_playHandleEdits.push(edit))
+	if (s_renderStageOwnsList)
 	{
-		std::this_thread::yield();
+		// Note setup and post-worker cleanup run between bus reads. Editing here avoids
+		// waiting for a consumer stage that cannot start until this stage returns.
+		applyPlayHandleEdit(edit);
+		return;
 	}
+	if (m_playHandleEdits.push(edit)) { return; }
+	if (RealtimeScope::isActive())
+	{
+		// An unexpected realtime producer has no safe list-ownership handoff here.
+		// Count the refusal and return; note setup uses RenderStageScope and never drops.
+		m_droppedRealtimePlayHandleEdits.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+
+	// A control producer can wait for the existing engine change lock and apply the
+	// edit with rendering stopped. It never spins waiting for the audio consumer.
+	AudioEngine* engine = Engine::audioEngine();
+	engine->requestChangeInModel();
+	applyPlayHandleEdits();
+	applyPlayHandleEdit(edit);
+	engine->doneChangeInModel();
 }
 
 void AudioBusHandle::applyPlayHandleEdits()
 {
 	PlayHandleEdit edit{};
-	while (m_playHandleEdits.pop(&edit))
+	while (m_playHandleEdits.pop(&edit)) { applyPlayHandleEdit(edit); }
+}
+
+void AudioBusHandle::applyPlayHandleEdit(const PlayHandleEdit& edit)
+{
+	if (edit.add)
 	{
-		if (edit.add)
-		{
-			m_playHandles.append(edit.handle);
-			continue;
-		}
-		PlayHandleList::Iterator it = std::find(m_playHandles.begin(), m_playHandles.end(), edit.handle);
-		if (it != m_playHandles.end())
-		{
-			m_playHandles.erase(it);
-		}
+		m_playHandles.append(edit.handle);
+		return;
+	}
+	PlayHandleList::Iterator it = std::find(m_playHandles.begin(), m_playHandles.end(), edit.handle);
+	if (it != m_playHandles.end())
+	{
+		m_playHandles.erase(it);
 	}
 }
 

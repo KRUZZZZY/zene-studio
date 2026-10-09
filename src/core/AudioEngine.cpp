@@ -381,6 +381,7 @@ std::uint64_t AudioEngine::inputFramesDropped() const noexcept
 
 void AudioEngine::renderStageNoteSetup()
 {
+	AudioBusHandle::RenderStageScope ownsBusPlayHandleLists;
 	AudioEngineProfiler::Probe profilerProbe(m_profiler, AudioEngineProfiler::DetailType::NoteSetup);
 
 	if( m_clearSignal )
@@ -459,6 +460,7 @@ void AudioEngine::renderStageEffects()
 	AudioEngineWorkerThread::startAndWaitForJobs();
 
 	// removed all play handles which are done
+	AudioBusHandle::RenderStageScope ownsBusPlayHandleLists;
 	for( PlayHandleList::Iterator it = m_playHandles.begin();
 						it != m_playHandles.end(); )
 	{
@@ -760,7 +762,7 @@ void AudioEngine::removePlayHandle(PlayHandle * ph)
 	// which were created in a thread different than the audio engine thread
 	if (ph->affinityMatters() && ph->affinity() == QThread::currentThread())
 	{
-		ph->audioBusHandle()->removePlayHandle(ph);
+		ph->audioBusHandle()->removePlayHandleUnderEngineChangeLock(ph);
 		bool removedFromList = false;
 		// Check m_newPlayHandles first because doing it the other way around
 		// creates a race condition
@@ -819,7 +821,7 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 	{
 		if ((*it)->isFromTrack(track) && ((*it)->type() & types))
 		{
-			(*it)->audioBusHandle()->removePlayHandle(*it);
+			(*it)->audioBusHandle()->removePlayHandleUnderEngineChangeLock(*it);
 			if((*it)->type() == PlayHandle::Type::NotePlayHandle)
 			{
 				NotePlayHandleManager::release((NotePlayHandle*)*it);
@@ -856,7 +858,7 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 			// that deleted the instrument before its track is safe here too.
 			if (handle->isFromTrack(track) && (handle->type() & types))
 			{
-				handle->audioBusHandle()->removePlayHandle(handle);
+				handle->audioBusHandle()->removePlayHandleUnderEngineChangeLock(handle);
 				if(handle->type() == PlayHandle::Type::NotePlayHandle)
 				{
 					NotePlayHandleManager::release((NotePlayHandle*)handle);

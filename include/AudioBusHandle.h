@@ -27,6 +27,7 @@
 #define LMMS_AUDIO_BUS_HANDLE_H
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <vector>
@@ -43,6 +44,7 @@ namespace lmms
 class EffectChain;
 class FloatModel;
 class BoolModel;
+class AudioEngine;
 
 /**
 	@brief Job between @ref PlayHandle and @ref MixerChannel
@@ -82,9 +84,13 @@ public:
 	void doProcessing() override;
 	bool requiresProcessing() const override { return true; }
 
-	//! Any thread. The edit is queued and applied by the next doProcessing() (cluster 5467: no lock).
+	//! Any thread. Render-stage owners apply directly; off-stage edits use the queue (cluster 5467).
 	void addPlayHandle(PlayHandle* handle);
 	void removePlayHandle(PlayHandle* handle);
+	std::uint64_t droppedRealtimePlayHandleEdits() const noexcept
+	{
+		return m_droppedRealtimePlayHandleEdits.load(std::memory_order_relaxed);
+	}
 
 	//! @returns a span over the mixed buffer of this audio bus handle
 	std::span<SampleFrame> buffer() { return m_buffer; }
@@ -110,6 +116,9 @@ public:
 	float gain() const { return m_gain.load(std::memory_order_relaxed); }
 
 private:
+	friend class AudioEngine;
+	//! AudioEngine calls this with rendering quiesced or from its owning render stage.
+	void removePlayHandleUnderEngineChangeLock(PlayHandle* handle);
 	//! The track's volume and panning, applied to m_buffer in place
 	void applyVolumeAndPanning(f_cnt_t fpp);
 
@@ -137,14 +146,27 @@ private:
 		PlayHandle* handle;
 		bool add;
 	};
-	//! Queues one edit (any thread). Never locks; waits only if the queue is full.
+	//! Queues one off-stage edit. The render-stage owner applies its own edits directly.
 	void postPlayHandleEdit(PlayHandleEdit edit);
+	void applyPlayHandleEdit(const PlayHandleEdit& edit);
 	//! Applies every queued edit in the order it was posted. Called by doProcessing() only.
 	void applyPlayHandleEdits();
-	//! Producers (any thread) post here; the single consumer is doProcessing(), which applies every edit
-	//! queued before it reads the list. The bound is PlayHandle::MaxNumber: a bus that is not processed
-	//! for that many edits cannot be rendering.
+	//! Marks the render-stage owner, where no bus worker is reading this list.
+	class RenderStageScope
+	{
+	public:
+		RenderStageScope() noexcept;
+		~RenderStageScope() noexcept;
+		RenderStageScope(const RenderStageScope&) = delete;
+		RenderStageScope& operator=(const RenderStageScope&) = delete;
+
+	private:
+		bool m_previous;
+	};
+	static thread_local bool s_renderStageOwnsList;
+	//! Off-stage producers post here; the single consumer is doProcessing().
 	MpscQueue<PlayHandleEdit, PlayHandle::MaxNumber> m_playHandleEdits;
+	std::atomic<std::uint64_t> m_droppedRealtimePlayHandleEdits{0};
 
 	FloatModel* m_volumeModel;
 	FloatModel* m_panningModel;

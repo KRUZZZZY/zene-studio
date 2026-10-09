@@ -22,15 +22,14 @@
  *
  */
 
-// Cluster 5467 (M0 blockers): AudioBusHandle::addPlayHandle()/removePlayHandle() used to take a mutex that
-// doProcessing() held while it read the list on a worker thread. They now post an edit to a lock-free queue,
-// and doProcessing() applies the queued edits, in posting order, before it reads the list. The white-box
-// access below (the repo's precedent for checking a lock-free handoff: InstrumentRoutingTest) is what lets the
-// test see the list itself; the public API cannot show where an edit is applied.
+// Cluster 5467 (M0 blockers): off-stage edits use a bounded queue, while render-stage setup edits the list
+// directly before the bus worker stage. The white-box access below checks both paths and the full-queue case.
 
 #include <QtTest>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <span>
 #include <thread>
 
@@ -42,6 +41,7 @@
 #include "LatencyCompensation.h"
 #include "MpscQueue.h"
 #include "PlayHandle.h"
+#include "RealtimeScope.h"
 #include "SampleFrame.h"
 #include "Track.h"
 
@@ -82,8 +82,7 @@ private slots:
 		Engine::destroy();
 	}
 
-	//! The posting thread never writes the list itself: an edit is queued and nothing is applied until the
-	//! bus processes. (A direct write would need the lock the render thread holds while it reads the list.)
+	//! An off-stage producer posts the edit; the list changes when the bus consumes it.
 	void postingAnEditDoesNotTouchTheListUntilTheBusProcesses()
 	{
 		AudioBusHandle bus{QStringLiteral("AudioBusPlayHandleQueueTest"), false};
@@ -100,6 +99,46 @@ private slots:
 		bus.removePlayHandle(&handle);
 		bus.doProcessing();
 		QVERIFY(bus.m_playHandles.isEmpty());
+	}
+
+	//! Note setup owns the list before the bus stage starts. It appends directly even when the off-stage edit
+	//! queue is full, returns without waiting for the consumer, and preserves every queued control edit.
+	void audioThreadAddsDuringOwnedRenderStageWhenQueueIsFull()
+	{
+		AudioBusHandle bus{QStringLiteral("AudioBusPlayHandleQueueTest"), false};
+		IdlePlayHandle queued;
+		IdlePlayHandle audioThreadHandle;
+		for (std::size_t i = 0; i < PlayHandle::MaxNumber; ++i)
+		{
+			QVERIFY(bus.m_playHandleEdits.push(AudioBusHandle::PlayHandleEdit{&queued, true}));
+		}
+
+		std::atomic<bool> returned{false};
+		std::thread producer([&] {
+			const RealtimeScope realtime;
+			const AudioBusHandle::RenderStageScope ownsList;
+			bus.addPlayHandle(&audioThreadHandle);
+			returned.store(true, std::memory_order_release);
+		});
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+		while (!returned.load(std::memory_order_acquire)
+			&& std::chrono::steady_clock::now() < deadline)
+		{
+			std::this_thread::yield();
+		}
+		const bool returnedBeforeDrain = returned.load(std::memory_order_acquire);
+
+		// Free the old full-queue producer after measuring; the pre-drain result still records red.
+		bus.applyPlayHandleEdits();
+		producer.join();
+		bus.applyPlayHandleEdits();
+
+		QVERIFY2(returnedBeforeDrain,
+			"audio-thread producer waited for the bus consumer while the queue was full");
+		QVERIFY(std::find(bus.m_playHandles.begin(), bus.m_playHandles.end(), &audioThreadHandle)
+			!= bus.m_playHandles.end());
+		QCOMPARE(bus.droppedRealtimePlayHandleEdits(), std::uint64_t{0});
+		bus.m_playHandles.clear();
 	}
 
 	//! Edits posted from another thread, including a remove and a re-add of the same handle, land in posting
