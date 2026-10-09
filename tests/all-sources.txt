@@ -272,6 +272,7 @@ include/DeviceCardState.h
 include/DeviceOptions.h
 include/DevicePanel.h
 include/DevicePicker.h
+include/DirectChildOfType.h
 include/DocumentIndex.h
 include/DpiHelper.h
 include/Draggable.h

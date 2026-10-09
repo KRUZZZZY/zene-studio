@@ -103,10 +103,20 @@ ControlResult recorded(const std::function<ControlResult()>& edit)
 	return result;
 }
 
+//! QColor::isValidColorName() is Qt 6.4+; the hosted matrix builds Qt 5.15, where isValidColor() is the same test.
+bool isValidColourName(const QString& name)
+{
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 4, 0))
+	return QColor::isValidColorName(name);
+#else
+	return QColor::isValidColor(name);
+#endif
+}
+
 ControlResult addMarker(const QJsonObject& args)
 {
 	const QString color = args.value(QStringLiteral("color")).toString();
-	if (!color.isEmpty() && !QColor::isValidColorName(color)) { return badColour(color); }
+	if (!color.isEmpty() && !isValidColourName(color)) { return badColour(color); }
 	const tick_t tick = args.contains(QStringLiteral("tick")) ? args.value(QStringLiteral("tick")).toInt()
 		: Engine::getSong()->getPlayPos().getTicks();
 	return recorded([&] {
@@ -167,7 +177,7 @@ ControlResult setMarker(const QJsonObject& args)
 	if (args.contains(QStringLiteral("color")))
 	{
 		const QString color = args.value(QStringLiteral("color")).toString();
-		if (!color.isEmpty() && !QColor::isValidColorName(color)) { return badColour(color); }
+		if (!color.isEmpty() && !isValidColourName(color)) { return badColour(color); }
 		changed.color = color.isEmpty() ? color : QColor(color).name();
 	}
 	if (!readMarkerAction(args, &changed)) { return ControlResult::failure(ControlErrorKind::InvalidArgs,

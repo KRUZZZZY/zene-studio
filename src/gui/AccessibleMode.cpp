@@ -23,6 +23,7 @@
  */
 
 #include "AccessibleWidgets.h"
+#include "DirectChildOfType.h"
 
 #include <QAbstractItemView>
 #include <QAbstractSpinBox>
@@ -183,7 +184,7 @@ void installAccessibility()
 {
 	installAccessibleWidgets();
 	auto* app = qobject_cast<QApplication*>(QCoreApplication::instance());
-	if (app == nullptr || app->findChild<AccessibleMode*>(QStringLiteral("zeneAccessibleMode"), Qt::FindDirectChildrenOnly) != nullptr)
+	if (app == nullptr || directChildOfType<AccessibleMode>(app, QStringLiteral("zeneAccessibleMode")) != nullptr)
 	{
 		return;
 	}

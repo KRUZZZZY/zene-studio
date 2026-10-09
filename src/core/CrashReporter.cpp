@@ -30,6 +30,11 @@
 #if defined(__APPLE__) && !defined(_XOPEN_SOURCE)
 	#define _XOPEN_SOURCE 700
 #endif
+// _XOPEN_SOURCE alone hides Darwin's BSD extensions (O_NOFOLLOW below: macos-arm64 "use of undeclared
+// identifier 'O_NOFOLLOW'", hosted run 37892087548); _DARWIN_C_SOURCE brings them back.
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+	#define _DARWIN_C_SOURCE
+#endif
 
 #include "CrashReporter.h"
 #include "CrashReporterFormat.h"

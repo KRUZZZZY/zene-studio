@@ -39,6 +39,7 @@
 #include <QWidget>
 
 #include "AccessibleWidgets.h"
+#include "DirectChildOfType.h"
 #include "Engine.h"
 #include "Song.h"
 #include "UiConfigStore.h"
@@ -182,7 +183,7 @@ void announceTransition(QObject* source, Transition kind, const QString& detail)
 void watchSongTransitions()
 {
 	Song* song = Engine::getSong();
-	if (song == nullptr || song->findChild<SongTransitions*>(QStringLiteral("zeneSongTransitions"), Qt::FindDirectChildrenOnly) != nullptr)
+	if (song == nullptr || directChildOfType<SongTransitions>(song, QStringLiteral("zeneSongTransitions")) != nullptr)
 	{
 		return;
 	}
