@@ -14,6 +14,21 @@ Gate abbreviations: C = complexity, L = file length, F = fork sources, U = no up
 
 The independent review began with ACCEPT 2 and REWORK 3. Round 2 closes findings (b)–(d); the stage 3 disposition is now ACCEPT.
 
+## Round 3 narrow review
+
+The follow-up review accepted all prior findings except (d): the preallocated collector omitted the selected pattern's bar offset when querying automation stored in a `PatternStore`. The collector now uses the legacy clamped-plus-offset time for pattern-editor playback and the corresponding offset time for pattern clips in the song; song-level automation retains song time. `AutomationPatternTimeTest` compares values and rendered samples bit-for-bit against the legacy APIs at a nonzero pattern index, and probes collector allocations.
+
+| Item | Verdict | Fix commit | Regression and render proof | Red exit | Green exit | Gate exits | Design |
+|---|---|---|---|---:|---:|---|---|
+| (d), pattern-indexed automation time | FIXED | `86505ebe1` | `AutomationPatternTimeTest::nonzeroPatternAutomationMatchesLegacyValuesAndRenders` covers the pattern editor and an arrangement pattern clip at index > 0. Reversing only the collector time mapping makes the test fail; with the fix, collected values and every rendered sample match the legacy path bit-for-bit. Collector probes report zero allocations. | 8 | 0 | C 0, L 0, F 0, U 0, RT 0 | [automation-pattern-time-r3.md](../m0-design/automation-pattern-time-r3.md) |
+
+Round 3 red/green commands rebuilt `zene` and `AutomationPatternTimeTest` with `-j4`, then ran only `ctest -R '^AutomationPatternTimeTest$' --output-on-failure` from `build/tests`. The test fails with exit 8 when only the product mapping is reversed and passes with exit 0 after restoration. All five gates exited 0. No render-path allocation was observed.
+
+## Round 3 commits
+
+- `86505ebe1` — `fix(automation): restore pattern-indexed automation time (cluster 5388)`
+- This report commit — final stage 3 round 3 validation record.
+
 ## Round 2 commits
 
 - `74f02755d` — `docs(m0): extend automation design for review round 2 (cluster 5388)`
