@@ -222,6 +222,19 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	connect(m_renameLineEdit, &QLineEdit::editingFinished, this, &MixerChannelView::renameFinished);
 
 	setFocusPolicy(Qt::StrongFocus);
+	// Child controls receive mouse presses directly, so the strip's mousePressEvent does not see them.
+	// Filter every descendant to select this strip before a control handles its press.
+	for (QWidget* widget : findChildren<QWidget*>()) { widget->installEventFilter(this); }
+}
+
+
+bool MixerChannelView::eventFilter(QObject* watched, QEvent* event)
+{
+	if (event->type() == QEvent::MouseButtonPress && m_mixerView->currentMixerChannel() != this)
+	{
+		m_mixerView->setCurrentMixerChannel(this);
+	}
+	return QWidget::eventFilter(watched, event);
 }
 
 void MixerChannelView::setSendsShown(bool shown)

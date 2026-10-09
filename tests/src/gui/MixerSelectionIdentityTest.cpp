@@ -33,8 +33,10 @@
 
 #include "AutomatableButton.h"
 #include "Engine.h"
+#include "Fader.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
+#include "Knob.h"
 #include "MainWindow.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
@@ -179,6 +181,42 @@ private slots:
 			QCOMPARE(mixer->channelView(i)->channelIndex(), i);
 			QCOMPARE(mixer->channelView(i)->soloButton()->model(), &channel->m_soloModel);
 		}
+	}
+
+	// A control receives its own press, not the strip's. Selection must change first, so the next
+	// mixer shortcut edits the strip the user just operated.
+	void pressingAChildControlSelectsItsStripAndRoutesKeyboardFaderAdjustment()
+	{
+		MixerView* mixer = getGUI()->mixerView();
+		const int targetIndex = Engine::mixer()->createChannel();
+		Engine::mixer()->mixerChannel(targetIndex)->m_name = QStringLiteral("Pressed target");
+		syncMixer();
+		MixerChannelView* masterView = mixer->channelView(0);
+		MixerChannelView* targetView = mixer->channelView(targetIndex);
+		AutomatableButton* mute = targetView->findChild<AutomatableButton*>(QStringLiteral("btn-mute"));
+		QVERIFY(mute != nullptr);
+
+		MixerChannel* master = Engine::mixer()->mixerChannel(0);
+		MixerChannel* target = Engine::mixer()->mixerChannel(targetIndex);
+		const auto clickAndRoute = [mixer, masterView, targetView, master, target](QWidget* control)
+		{
+			mixer->setCurrentMixerChannel(masterView);
+			QTest::mouseClick(control, Qt::LeftButton, Qt::NoModifier, control->rect().center());
+			QCOMPARE(mixer->currentMixerChannel(), targetView);
+			QCOMPARE(selectedName(), QStringLiteral("Pressed target"));
+
+			target->m_volumeModel.setValue(0.5f);
+			master->m_volumeModel.setValue(0.5f);
+			const float targetBefore = target->m_volumeModel.value();
+			const float masterBefore = master->m_volumeModel.value();
+			QTest::keyClick(mixer, Qt::Key_Up);
+			QVERIFY(target->m_volumeModel.value() != targetBefore);
+			QCOMPARE(master->m_volumeModel.value(), masterBefore);
+		};
+
+		clickAndRoute(targetView->fader());
+		clickAndRoute(targetView->panKnob());
+		clickAndRoute(mute);
 	}
 
 private:
