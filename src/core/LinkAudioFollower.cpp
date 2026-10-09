@@ -46,6 +46,8 @@ namespace
 constexpr double TicksPerBeat = DefaultTicksPerBar / 4.0;
 //! A period within this of "now" means the audio thread is running.
 constexpr std::int64_t AudioAliveUs = 200000;
+//! Constructed during Song setup; render-thread access is a plain pointer read.
+LinkAudioFollower* s_follower = nullptr;
 
 //! Marks the session in use for the length of one period, so attach(nullptr)
 //! can wait for it to be let go of.
@@ -89,10 +91,17 @@ void jumpTo(Timeline& timeline, double beats, double framesPerTick)
 
 } // namespace
 
+void LinkAudioFollower::initialize()
+{
+	// Called from Song setup on the main thread, before the audio device starts.
+	// Keep the allocation alive for process lifetime; the render thread may still
+	// reach it during static destruction.
+	if (s_follower == nullptr) { s_follower = new LinkAudioFollower(); }
+}
+
 LinkAudioFollower& LinkAudioFollower::instance()
 {
-	// Never destroyed: the audio thread may reach it during static destruction.
-	static auto* s_follower = new LinkAudioFollower();
+	// Song::Song() initializes this on the main thread before rendering starts.
 	return *s_follower;
 }
 

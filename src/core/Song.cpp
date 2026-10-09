@@ -147,6 +147,7 @@ Song::Song() :
 	// first processNextBuffer() used to build it - a `new` on the audio thread. It is built here, on
 	// the thread that builds the song. m_periodTracks is the per-period track list's storage, reserved
 	// once so a period reuses it instead of allocating a copy of tracks().
+	LinkAudioFollower::initialize();
 	MidiClock::instance();
 	m_periodTracks.reserve(256);
 	// ... and grown here, before a track past it could make a period's assign() allocate (review L19 #1): on the
