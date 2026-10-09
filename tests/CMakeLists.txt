@@ -1,5 +1,11 @@
 include(CTest)
 
+# The production objects are also linked into these white-box regression tests.
+# Compile conditional test seams into that object target only when tests are enabled.
+if(BUILD_TESTING)
+	target_compile_definitions(lmmsobjs PRIVATE LMMS_TESTING)
+endif()
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 
@@ -250,6 +256,8 @@ set(LMMS_TESTS
 	# refusals with no table write and no undo step; 128-key parity against
 	# Microtuner::keyToFreq over the SAME Scale/Keymap; the MTS-ESP refusal.
 	src/core/SessionTuningTest.cpp
+	# Cluster 5313: isolate the publication-window reader test from unrelated instrument plug-ins.
+	src/core/SessionTuningPublicationTest.cpp
 	src/core/ControlWarpCommandsTest.cpp
 	# The groove pool and quantise surface (docs/GROOVE-POOL.md): the engine
 	# half (the extraction and application arithmetic and the pool's XML form,
@@ -384,6 +392,9 @@ set(LMMS_TESTS
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/MidiOutQueueTest.cpp
+	src/core/FrozenTakeHandoffTest.cpp
+	src/core/AudioBusPlayHandleQueueTest.cpp
+	src/core/SlicerTPlayheadTest.cpp
 	src/core/RetroMidiCaptureCommandsTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
 	# The engine half of MIDI controller auto-reconnection (0.3.0 feature-list
@@ -1318,6 +1329,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "OutOfProcessHostClientLoopTest"
 		# 0.5.0 L05: slicing to a sampler track loads the build's SlicerT module.
 		OR LMMS_TEST_NAME STREQUAL "AudioEditingTest"
+		# 4468: a sounding slice note, through the SlicerT module built beside the test binary.
+		OR LMMS_TEST_NAME STREQUAL "SlicerTPlayheadTest"
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceOrganiserTest"

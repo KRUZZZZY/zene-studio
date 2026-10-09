@@ -31,8 +31,11 @@
 
 #include <QtTest>
 
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <thread>
 
 #include <QDir>
 #include <QJsonArray>
@@ -991,6 +994,7 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		QVERIFY2(disarmed.ok, qPrintable(disarmed.errorMessage));
 		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
 	}
+
 };
 
 QTEST_GUILESS_MAIN(SessionTuningTest)

@@ -2,11 +2,17 @@
 
 #include "MidiOutQueue.h"
 #include "AllocationProbe.h"
+#include "lmmsconfig.h"
 
 #include <QtTest>
 #include <atomic>
 #include <cstdint>
 #include <thread>
+
+#ifdef LMMS_HAVE_ALSA
+#include <unistd.h>
+#include "MidiAlsaSeq.h"
+#endif
 
 using lmms::MidiEvent;
 using lmms::MidiOutQueue;
@@ -90,6 +96,64 @@ private slots:
 		producer.join();
 		QCOMPARE(static_cast<qulonglong>(received), count);
 	}
+
+	//! Cluster 5129: the sequencer thread sleeps in poll() for up to EventPollTimeOut, so an audio-thread
+	//! push must wake it. The wake is requested once per consumer drain (the first push after the consumer
+	//! acknowledged the previous one), not once per event, and the path stays allocation-free.
+	void FirstPushAfterAnAcknowledgedDrainRequestsOneWake()
+	{
+		MidiOutQueue queue;
+		const auto note = makeMidiEvent(62);
+		const TimePos time;
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		QVERIFY(queue.pushAndRequestWake(note, time, nullptr));   // nothing acknowledged yet: wake
+		QVERIFY(!queue.pushAndRequestWake(note, time, nullptr));  // same batch: no second wake
+		QVERIFY(!queue.pushAndRequestWake(note, time, nullptr));
+		lmms::test::tlCountAllocations = false;
+		QCOMPARE(static_cast<qulonglong>(lmms::test::tlAllocationCount), 0ull);
+
+		// The consumer acknowledges, then drains all three events; the next push asks again.
+		queue.acknowledgeWake();
+		MidiOutQueue::Command command;
+		int drained = 0;
+		while (queue.pop(command)) { ++drained; }
+		QCOMPARE(drained, 3);
+		QVERIFY(queue.pushAndRequestWake(note, time, nullptr));
+		QVERIFY(queue.pop(command));
+	}
+
+	//! A refused push (queue full) requests no wake: there is nothing new to drain.
+	void FullQueue_RequestsNoWake()
+	{
+		MidiOutQueue queue;
+		const auto note = makeMidiEvent(63);
+		const TimePos time;
+		for (std::size_t i = 0; i < MidiOutQueue::Capacity; ++i)
+		{
+			static_cast<void>(queue.pushAndRequestWake(note, time, nullptr));
+		}
+		queue.acknowledgeWake();
+		QVERIFY(!queue.pushAndRequestWake(note, time, nullptr));
+		QCOMPARE(static_cast<qulonglong>(queue.overflowCount()), 1ull);
+	}
+
+#ifdef LMMS_HAVE_ALSA
+	//! Exercise processOutEvent() itself: removing its wake-pipe request leaves this non-blocking read empty.
+	void processOutEventRequestsTheSequencerWake()
+	{
+		lmms::MidiAlsaSeq sequencer{lmms::MidiAlsaSeq::PipeOnlyForTesting{}};
+		const int readFd = sequencer.wakeReadFdForTesting();
+		QVERIFY(readFd >= 0);
+
+		const auto note = makeMidiEvent(64);
+		sequencer.processOutEvent(note, TimePos(), nullptr);
+
+		char wake = 0;
+		QCOMPARE(::read(readFd, &wake, 1), ssize_t{1});
+		QCOMPARE(wake, '\0');
+	}
+#endif
 };
 
 QTEST_APPLESS_MAIN(MidiOutQueueTest)

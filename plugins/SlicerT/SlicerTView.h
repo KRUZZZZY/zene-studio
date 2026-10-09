@@ -26,6 +26,8 @@
 #define LMMS_GUI_SLICERT_VIEW_H
 
 
+#include <QTimer>
+
 #include "InstrumentView.h"
 
 class QPushButton;
@@ -82,6 +84,7 @@ private:
 	bool isResizable() const override { return true; }
 
 	SlicerT* m_slicerTParent;
+	QTimer* m_playheadPoll;
 
 	Knob* m_noteThresholdKnob;
 	Knob* m_fadeOutKnob;

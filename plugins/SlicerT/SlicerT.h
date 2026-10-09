@@ -25,6 +25,8 @@
 #ifndef LMMS_SLICERT_H
 #define LMMS_SLICERT_H
 
+#include <atomic>
+
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
 #include "Instrument.h"
@@ -79,6 +81,17 @@ private:
 
 	InstrumentTrack* m_parentTrack;
 
+	//! The playhead the audio thread last published (cluster 4468): three atomics, written by the render
+	//! thread and read by pollPlayhead() on the GUI thread. The render thread never emits a signal.
+	void publishPlayhead(float current, float start, float end) noexcept;
+	void pollPlayhead();
+	std::atomic<float> m_playheadCurrent{-1.f};
+	std::atomic<float> m_playheadStart{0.f};
+	std::atomic<float> m_playheadEnd{0.f};
+	//! The values pollPlayhead() last emitted (GUI thread only).
+	float m_shownCurrent = -1.f;
+	float m_shownStart = 0.f;
+	float m_shownEnd = 0.f;
 	friend class gui::SlicerTView;
 	friend class gui::SlicerTWaveform;
 };

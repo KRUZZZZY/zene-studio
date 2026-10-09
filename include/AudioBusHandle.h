@@ -27,14 +27,16 @@
 #define LMMS_AUDIO_BUS_HANDLE_H
 
 #include <atomic>
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <vector>
 #include <QString>
-#include <QMutex>
 
 #include "AudioBus.h"
 #include "LatencyCompensation.h"
+#include "MpscQueue.h"
 #include "PlayHandle.h"
 
 namespace lmms
@@ -43,6 +45,7 @@ namespace lmms
 class EffectChain;
 class FloatModel;
 class BoolModel;
+class AudioEngine;
 
 /**
 	@brief Job between @ref PlayHandle and @ref MixerChannel
@@ -82,8 +85,17 @@ public:
 	void doProcessing() override;
 	bool requiresProcessing() const override { return true; }
 
+	//! Any thread. The render owner applies directly, worker edits use fixed buffers, and other off-stage edits use the queue (cluster 5467).
 	void addPlayHandle(PlayHandle* handle);
 	void removePlayHandle(PlayHandle* handle);
+	std::uint64_t droppedPlayHandleEdits() const noexcept
+	{
+		return m_droppedPlayHandleEdits.load(std::memory_order_relaxed);
+	}
+	std::uint64_t capacityDeferredPlayHandleEdits() const noexcept
+	{
+		return m_capacityDeferredPlayHandleEditCountTotal.load(std::memory_order_relaxed);
+	}
 
 	//! @returns a span over the mixed buffer of this audio bus handle
 	std::span<SampleFrame> buffer() { return m_buffer; }
@@ -109,6 +121,9 @@ public:
 	float gain() const { return m_gain.load(std::memory_order_relaxed); }
 
 private:
+	friend class AudioEngine;
+	//! AudioEngine calls this with rendering quiesced or from its owning render stage.
+	void removePlayHandleUnderEngineChangeLock(PlayHandle* handle);
 	//! The track's volume and panning, applied to m_buffer in place
 	void applyVolumeAndPanning(f_cnt_t fpp);
 
@@ -130,7 +145,44 @@ private:
 	std::unique_ptr<EffectChain> m_effects;
 
 	PlayHandleList m_playHandles;
-	QMutex m_playHandleLock;
+	//! One allocation-free slot for a standalone bus created on the audio thread.
+	PlayHandle* m_inlinePlayHandle = nullptr;
+	//! One play-handle list edit posted by addPlayHandle() / removePlayHandle().
+	struct PlayHandleEdit
+	{
+		PlayHandle* handle;
+		bool add;
+	};
+	//! Routes one edit: owner-stage direct, worker-stage buffered, other off-stage queued.
+	void postPlayHandleEdit(PlayHandleEdit edit);
+	void applyPlayHandleEdit(const PlayHandleEdit& edit);
+	//! Applies every queued edit in the order it was posted. Called by doProcessing() only.
+	void applyPlayHandleEdits();
+	//! Grow only from a control thread, after the render lock makes the QList quiescent.
+	void topUpPlayHandleCapacityOnControlThread();
+	void topUpPlayHandleCapacityUnderEngineChangeLock();
+	bool appendPlayHandleWithoutGrowth(PlayHandle* handle) noexcept;
+	//! Marks the render-stage owner, where no bus worker is reading this list.
+	class RenderStageScope
+	{
+	public:
+		RenderStageScope() noexcept;
+		~RenderStageScope() noexcept;
+		RenderStageScope(const RenderStageScope&) = delete;
+		RenderStageScope& operator=(const RenderStageScope&) = delete;
+
+	private:
+		bool m_previous;
+	};
+	static thread_local bool s_renderStageOwnsList;
+	//! Non-worker off-stage producers post here; doProcessing() is the consumer.
+	MpscQueue<PlayHandleEdit, PlayHandle::MaxNumber> m_playHandleEdits;
+	//! A full list defers accepted additions until cleanup frees a reserved slot.
+	std::array<PlayHandleEdit, PlayHandle::MaxNumber> m_capacityDeferredPlayHandleEdits{};
+	std::size_t m_capacityDeferredPlayHandleEditCount = 0;
+	std::atomic<bool> m_playHandleCapacityLow{false};
+	std::atomic<std::uint64_t> m_capacityDeferredPlayHandleEditCountTotal{0};
+	std::atomic<std::uint64_t> m_droppedPlayHandleEdits{0};
 
 	FloatModel* m_volumeModel;
 	FloatModel* m_panningModel;

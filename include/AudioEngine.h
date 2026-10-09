@@ -26,8 +26,13 @@
 #define LMMS_AUDIO_ENGINE_H
 
 #include <mutex>
+#include <array>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
 
 #include <QThread>
+#include <QTimer>
 #include <samplerate.h>
 
 #include <memory>
@@ -48,6 +53,9 @@
 #include "RetroAudioCapture.h"
 #include "SampleFrameRingBuffer.h"
 
+#ifdef LMMS_TESTING
+class AudioBusPlayHandleQueueTest;
+#endif
 
 namespace lmms
 {
@@ -179,12 +187,7 @@ public:
 
 
 	// audio-bus-handle-stuff
-	inline void addAudioBusHandle(AudioBusHandle* busHandle)
-	{
-		requestChangeInModel();
-		m_audioBusHandles.push_back(busHandle);
-		doneChangeInModel();
-	}
+	void addAudioBusHandle(AudioBusHandle* busHandle);
 
 	void removeAudioBusHandle(AudioBusHandle* busHandle);
 
@@ -208,6 +211,29 @@ public:
 
 	// play-handle stuff
 	bool addPlayHandle( PlayHandle* handle );
+	//! Accepted engine-list edits deferred by capacity and out-of-bound overflow, respectively.
+	std::uint64_t capacityDeferredPlayHandles() const noexcept
+	{
+		return m_capacityDeferredPlayHandleCountTotal.load(std::memory_order_relaxed);
+	}
+	std::uint64_t droppedPlayHandles() const noexcept
+	{
+		return m_droppedPlayHandleCount.load(std::memory_order_relaxed);
+	}
+	//! Count of play-handle edits rejected after a bus's fixed storage bounds filled.
+	std::uint64_t droppedPlayHandleEdits() const noexcept
+	{
+		return m_droppedPlayHandleEditCount.load(std::memory_order_relaxed);
+	}
+	void recordDroppedPlayHandleEdit() noexcept
+	{
+		m_droppedPlayHandleEditCount.fetch_add(1, std::memory_order_relaxed);
+	}
+	//! Realtime-safe request for the engine-thread capacity service.
+	void requestPlayHandleCapacityRefresh() noexcept
+	{
+		m_playHandleCapacityRefreshRequested.store(true, std::memory_order_relaxed);
+	}
 
 	void removePlayHandle( PlayHandle* handle );
 
@@ -447,6 +473,9 @@ signals:
 
 
 private:
+#ifdef LMMS_TESTING
+	friend class ::AudioBusPlayHandleQueueTest;
+#endif
 	void renderNextBuffer(AudioBufferView<float> auto dst)
 	{
 		for (auto frame = f_cnt_t{0}; frame < dst.frames(); ++frame)
@@ -592,14 +621,27 @@ private:
 	// worker thread stuff
 	std::vector<AudioEngineWorkerThread *> m_workers;
 	int m_numWorkers;
+	//! Main-thread poll only takes the change guard when a render-stage low-water mark is raised.
+	QTimer m_playHandleCapacityTimer;
 
 	// playhandle stuff
 	PlayHandleList m_playHandles;
+	//! Handles waiting for a reserved engine-list slot; the owner retries them next period.
+	std::array<PlayHandle*, PlayHandle::MaxNumber> m_capacityDeferredPlayHandles{};
+	std::size_t m_capacityDeferredPlayHandleCount = 0;
+	std::atomic<bool> m_playHandleCapacityLow{false};
+	std::atomic<bool> m_playHandleCapacityRefreshRequested{false};
+	std::atomic<std::uint64_t> m_capacityDeferredPlayHandleCountTotal{0};
+	std::atomic<std::uint64_t> m_droppedPlayHandleCount{0};
+	std::atomic<std::uint64_t> m_droppedPlayHandleEditCount{0};
 	// place where new playhandles are added temporarily
 	LocklessList<PlayHandle *> m_newPlayHandles;
 	ConstPlayHandleList m_playHandlesToRemove;
 
 	float m_masterGain;
+	void topUpPlayHandleCapacityOnControlThread();
+	bool appendPlayHandleWithoutGrowth(PlayHandle* handle) noexcept;
+	bool removeCapacityDeferredPlayHandle(PlayHandle* handle) noexcept;
 
 	// audio device stuff
 	void doSetAudioDevice( AudioDevice *_dev );
@@ -623,6 +665,7 @@ private:
 	std::recursive_mutex m_changeMutex;
 
 	friend class Engine;
+	friend class AudioBusHandle;
 	friend class AudioEngineWorkerThread;
 	friend class ProjectRenderer;
 } ;

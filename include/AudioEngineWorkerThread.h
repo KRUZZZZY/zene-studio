@@ -27,7 +27,9 @@
 
 #include <QThread>
 
+#include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 
 
@@ -35,6 +37,8 @@ namespace lmms
 {
 
 class AudioEngine;
+class AudioBusHandle;
+class PlayHandle;
 class ThreadableJob;
 
 class AudioEngineWorkerThread : public QThread
@@ -108,6 +112,9 @@ public:
 	}
 
 	static void startAndWaitForJobs();
+	//! Worker-stage bus edits use per-thread fixed storage and are applied after the job queue joins.
+	static bool deferPlayHandleEdit(AudioBusHandle* bus, PlayHandle* handle, bool add) noexcept;
+	static std::uint64_t deferredPlayHandleEditOverflowCount() noexcept;
 	//! Wake every idle pool worker to drain the queue, without running it here (what
 	//! startAndWaitForJobs() does before it takes its own share). A worker sleeps until woken -
 	//! there is no idle poll - so a caller that queues work for the pool alone uses this.
@@ -134,6 +141,23 @@ public:
 
 
 private:
+	static constexpr std::size_t DeferredPlayHandleEditCapacity = JobQueue::JOB_QUEUE_SIZE;
+	struct DeferredPlayHandleEdit
+	{
+		AudioBusHandle* bus = nullptr;
+		PlayHandle* handle = nullptr;
+		bool add = false;
+	};
+	struct DeferredPlayHandleEdits
+	{
+		std::array<DeferredPlayHandleEdit, DeferredPlayHandleEditCapacity> edits{};
+		std::size_t size = 0;
+	};
+	static void drainDeferredPlayHandleEdits() noexcept;
+	static thread_local DeferredPlayHandleEdits* s_currentDeferredPlayHandleEdits;
+	static DeferredPlayHandleEdits s_inlineDeferredPlayHandleEdits;
+	static std::atomic<std::uint64_t> s_deferredPlayHandleEditOverflows;
+
 	void run() override;
 	//! The platform half of the wake (see the .cpp): post, and wait for the generation to move.
 	static void notifyWorkers();
@@ -149,6 +173,8 @@ private:
 
 	//! Atomic, not volatile: quit() writes it while run() reads it on the worker (10.9a).
 	std::atomic<bool> m_quit;
+	//! Only this worker writes its buffer; the render owner drains it after the job queue joins.
+	DeferredPlayHandleEdits m_deferredPlayHandleEdits;
 } ;
 
 } // namespace lmms
