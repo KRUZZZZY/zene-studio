@@ -31,13 +31,14 @@
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
-#include <QDateTime>
 #include <QDir>
 #include <QDomDocument>
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
 #include <QSet>
+#include <QTemporaryDir>
+#include <QUuid>
 
 #include <sndfile.h>
 
@@ -57,31 +58,6 @@ constexpr int kFirstAutomationType = static_cast<int>(Track::Type::Automation);
 
 //! How many frames of a WAV are copied per read when a range is trimmed.
 constexpr int kTrimBlockFrames = 4096;
-
-//! Temporary files this render owns; removed on every exit path.
-struct TempFiles
-{
-	QString project;      //!< the session, serialised
-	QString mutedProject; //!< the same session with every other track muted
-	QString render;       //!< the untrimmed render, when a range is wanted
-
-	~TempFiles()
-	{
-		for (const QString& path : { project, mutedProject, render })
-		{
-			if (!path.isEmpty()) { QFile::remove(path); }
-		}
-	}
-};
-
-QString tempPath(const QString& suffix)
-{
-	return QDir::tempPath()
-		+ QStringLiteral("/zene-bounce-%1-%2.%3")
-			.arg(QCoreApplication::applicationPid())
-			.arg(QDateTime::currentMSecsSinceEpoch())
-			.arg(suffix);
-}
 
 //! True for a track element that carries audio.
 bool carriesAudio(const QDomElement& element)
@@ -179,6 +155,11 @@ bool runCliRender(const QString& projectPath, const QString& out, int sampleRate
 		{QStringLiteral("render"), projectPath, QStringLiteral("-o"), out,
 			QStringLiteral("-f"), QStringLiteral("wav"), QStringLiteral("-s"),
 			QString::number(sampleRate)});
+	// Keep this plain blocking wait for the legacy result contract. Do not add
+	// processEvents() or a nested event loop: ControlRegistry::invoke() has no
+	// deferred reply path, and re-entering the project while its render is in
+	// flight would make the synchronous command's target unsafe. A GUI caller
+	// still blocks here; the cancellable RenderQueue is the responsive path.
 	const bool finished = renderer.waitForStarted(30000) && renderer.waitForFinished(600000);
 	if (!finished) { renderer.kill(); }
 	*exitCode = finished ? renderer.exitCode() : -1;
@@ -203,69 +184,55 @@ QString validateRequest(const std::vector<Track*>& tracks, const QString& outPat
 }
 
 //! Serialises the session and mutes every track but @a tracks in the copy.
-bool serialiseWithOnlyTracks(const std::vector<Track*>& tracks, TempFiles* temps, QString* error)
+bool serialiseWithOnlyTracks(const std::vector<Track*>& tracks, const QString& projectPath,
+		const QString& mutedProjectPath, QString* error)
 {
-	temps->project = tempPath(QStringLiteral("mmp"));
-	if (!Engine::getSong()->saveProjectFile(temps->project))
+	if (!Engine::getSong()->saveProjectFile(projectPath))
 	{
 		*error = QStringLiteral("could not serialise the session for rendering");
 		return false;
 	}
-	temps->mutedProject = tempPath(QStringLiteral("mmp"));
 	QSet<int> ids;
 	for (const Track* track : tracks) { ids.insert(track->id()); }
-	return muteOtherTracks(temps->project, temps->mutedProject, ids, error);
+	return muteOtherTracks(projectPath, mutedProjectPath, ids, error);
 }
 
-//! True when the render follows a tempo map (Song::followTempoMap), so one frames-per-tick rate does not
-//! hold across the range. An empty map is the project's one rate, so it keeps the rate's own arithmetic.
-bool tempoMapInForce()
+//! True when the render follows a tempo map, so one frames-per-tick rate does not hold across the range.
+bool tempoMapInForce(const TempoMap& map)
 {
-	const TempoMap& map = Engine::getSong()->tempoMap().map();
 	return map.active() && !map.empty();
 }
 
 //! Frames of the render from tick @a from to tick @a to: at the project's one rate, or on the tempo map's
 //! own timeline when it is in force - a range across a tempo change is not at one rate.
-double framesBetween(tick_t from, tick_t to, float framesPerTick, int sampleRate)
+double framesBetween(tick_t from, tick_t to, float framesPerTick, const TempoMap& map,
+		int globalTempo, int sampleRate)
 {
-	if (!tempoMapInForce()) { return (to - from) * framesPerTick; }
-	const Song* song = Engine::getSong();
-	return (song->secondsAtTick(to) - song->secondsAtTick(from)) * sampleRate;
+	if (!tempoMapInForce(map)) { return (to - from) * framesPerTick; }
+	return (map.secondsAtTick(to, globalTempo) - map.secondsAtTick(from, globalTempo)) * sampleRate;
 }
 
 //! The tick @a frames of the render after tick @a start: framesBetween()'s inverse.
-tick_t tickAfter(tick_t start, qint64 frames, float framesPerTick, int sampleRate)
+tick_t tickAfter(tick_t start, qint64 frames, float framesPerTick, const TempoMap& map,
+		int globalTempo, int sampleRate)
 {
-	if (!tempoMapInForce()) { return start + static_cast<tick_t>(std::llround(frames / framesPerTick)); }
-	const Song* song = Engine::getSong();
-	const double seconds = song->secondsAtTick(start) + static_cast<double>(frames) / sampleRate;
-	return song->tempoMap().map().tickAtSeconds(seconds, static_cast<int>(song->getTempo()));
-}
-
-//! Writes the range's frames out of a whole-track render.
-bool writeRange(const QString& rendered, const QString& outPath,
-		const BounceInPlace::Range& range, float framesPerTick, int sampleRate,
-		qint64* framesWritten, QString* error)
-{
-	const qint64 startFrame = static_cast<qint64>(
-		std::llround(framesBetween(0, range.start, framesPerTick, sampleRate)));
-	const qint64 wanted = static_cast<qint64>(
-		std::llround(framesBetween(range.start, range.end, framesPerTick, sampleRate)));
-	return BounceInPlace::trimWav(rendered, outPath, startFrame, wanted, framesWritten, error);
+	if (!tempoMapInForce(map)) { return start + static_cast<tick_t>(std::llround(frames / framesPerTick)); }
+	const double seconds = map.secondsAtTick(start, globalTempo) + static_cast<double>(frames) / sampleRate;
+	return map.tickAtSeconds(seconds, globalTempo);
 }
 
 //! Measures the written file and fills the result's range, bytes and hash.
 BounceInPlace::Result collectResult(const QString& outPath,
-		const BounceInPlace::Range& range, float framesPerTick, int sampleRate,
+		const BounceInPlace::PreparedRender& prepared,
 		qint64 framesWritten, bool trimmed)
 {
 	BounceInPlace::Result result;
-	result.sampleRate = sampleRate;
-	result.range.start = trimmed ? range.start : 0;
+	result.sampleRate = prepared.sampleRate;
+	result.range.start = trimmed ? prepared.range.start : 0;
 	result.frames = trimmed ? framesWritten : BounceInPlace::wavFrameCount(outPath);
-	result.range.end = tickAfter(result.range.start, result.frames, framesPerTick, sampleRate);
-	result.path = outPath;
+	result.range.end = tickAfter(result.range.start, result.frames, prepared.framesPerTick,
+		prepared.tempoMap, prepared.globalTempo, prepared.sampleRate);
+	result.path = prepared.outputPath;
 	result.bytes = QFileInfo(outPath).size();
 	result.sha256 = BounceInPlace::sha256OfFile(outPath);
 	if (result.frames <= 0 || result.sha256.isEmpty())
@@ -323,6 +290,124 @@ BounceInPlace::Result BounceInPlace::Result::failure(const QString& why)
 	return result;
 }
 
+bool BounceInPlace::prepareRenderTracks(const std::vector<Track*>& tracks, const QString& outPath,
+		const Range& range, int sampleRate, PreparedRender* prepared, QString* error)
+{
+	if (prepared == nullptr || error == nullptr) { return false; }
+	const QString problem = validateRequest(tracks, outPath);
+	if (!problem.isEmpty()) { *error = problem; return false; }
+	if (sampleRate <= 0) { *error = QStringLiteral("the sample rate must be positive"); return false; }
+	if (const QString noDir = prepareOutputDir(outPath); !noDir.isEmpty()) { *error = noDir; return false; }
+
+	PreparedRender next;
+	next.scratch = std::make_shared<QTemporaryDir>(QDir::tempPath() + QStringLiteral("/zene-bounce-XXXXXX"));
+	if (!next.scratch->isValid())
+	{
+		*error = QStringLiteral("could not create a temporary directory for the render");
+		return false;
+	}
+	next.outputPath = outPath;
+	next.range = range;
+	next.sampleRate = sampleRate;
+	next.projectPath = next.scratch->filePath(QStringLiteral("session.mmp"));
+	next.mutedProjectPath = next.scratch->filePath(QStringLiteral("muted-session.mmp"));
+	next.trimmed = !range.coversWholeTrack();
+	next.stagedPath = outPath + QStringLiteral(".part.") + QUuid::createUuid().toString(QUuid::WithoutBraces);
+	next.renderPath = next.trimmed ? next.scratch->filePath(QStringLiteral("render.wav")) : next.stagedPath;
+	Song* song = Engine::getSong();
+	next.tempoMap = song->tempoMap().map();
+	next.globalTempo = static_cast<int>(song->getTempo());
+	next.framesPerTick = Engine::framesPerTick(static_cast<sample_rate_t>(sampleRate));
+	if (!serialiseWithOnlyTracks(tracks, next.projectPath, next.mutedProjectPath, error)) { return false; }
+	if (next.trimmed)
+	{
+		next.startFrame = static_cast<qint64>(std::llround(
+			framesBetween(0, range.start, next.framesPerTick, next.tempoMap, next.globalTempo, sampleRate)));
+		next.wantedFrames = static_cast<qint64>(std::llround(
+			framesBetween(range.start, range.end, next.framesPerTick, next.tempoMap, next.globalTempo, sampleRate)));
+	}
+	*prepared = std::move(next);
+	return true;
+}
+
+QStringList BounceInPlace::renderArguments(const PreparedRender& prepared)
+{
+	return {QStringLiteral("render"), prepared.mutedProjectPath, QStringLiteral("-o"), prepared.renderPath,
+		QStringLiteral("-f"), QStringLiteral("wav"), QStringLiteral("-s"), QString::number(prepared.sampleRate)};
+}
+
+BounceInPlace::Result BounceInPlace::finishPreparedRender(const PreparedRender& prepared, QString* error)
+{
+	const QFileInfo rendered(prepared.renderPath);
+	if (!rendered.exists() || rendered.size() == 0)
+	{
+		*error = QStringLiteral("the render produced no audio");
+		return Result::failure(*error);
+	}
+	qint64 written = 0;
+	if (prepared.trimmed && !trimWav(prepared.renderPath, prepared.stagedPath,
+			prepared.startFrame, prepared.wantedFrames, &written, error))
+	{
+		return Result::failure(*error);
+	}
+	Result result = collectResult(prepared.stagedPath, prepared, written, prepared.trimmed);
+	if (!result.ok) { *error = result.error; }
+	return result;
+}
+
+bool BounceInPlace::installPreparedOutput(PreparedRender* prepared, QString* error)
+{
+	if (prepared == nullptr || error == nullptr) { return false; }
+	if (QFileInfo::exists(prepared->outputPath))
+	{
+		prepared->backupPath = prepared->outputPath + QStringLiteral(".backup.")
+			+ QUuid::createUuid().toString(QUuid::WithoutBraces);
+		if (!QFile::rename(prepared->outputPath, prepared->backupPath))
+		{
+			*error = QStringLiteral("could not preserve the existing output file");
+			return false;
+		}
+		prepared->replacedPrevious = true;
+	}
+	if (!QFile::rename(prepared->stagedPath, prepared->outputPath))
+	{
+		if (prepared->replacedPrevious) { QFile::rename(prepared->backupPath, prepared->outputPath); }
+		prepared->replacedPrevious = false;
+		prepared->backupPath.clear();
+		*error = QStringLiteral("could not install the completed render");
+		return false;
+	}
+	prepared->installed = true;
+	return true;
+}
+
+void BounceInPlace::commitPreparedOutput(PreparedRender* prepared)
+{
+	if (prepared == nullptr) { return; }
+	if (prepared->replacedPrevious) { QFile::remove(prepared->backupPath); }
+	prepared->backupPath.clear();
+	prepared->replacedPrevious = false;
+	prepared->installed = false;
+}
+
+void BounceInPlace::rollbackPreparedOutput(PreparedRender* prepared)
+{
+	if (prepared == nullptr || !prepared->installed) { return; }
+	QFile::remove(prepared->outputPath);
+	if (prepared->replacedPrevious) { QFile::rename(prepared->backupPath, prepared->outputPath); }
+	prepared->backupPath.clear();
+	prepared->replacedPrevious = false;
+	prepared->installed = false;
+}
+
+void BounceInPlace::discardPreparedRender(PreparedRender* prepared)
+{
+	if (prepared == nullptr) { return; }
+	if (!prepared->installed) { QFile::remove(prepared->stagedPath); }
+	if (prepared->scratch) { prepared->scratch->remove(); }
+	prepared->scratch.reset();
+}
+
 BounceInPlace::Result BounceInPlace::renderTrack(Track* track, const QString& outPath)
 {
 	return renderTrack(track, outPath, Range{});
@@ -337,37 +422,32 @@ BounceInPlace::Result BounceInPlace::renderTrack(Track* track, const QString& ou
 BounceInPlace::Result BounceInPlace::renderTracks(const std::vector<Track*>& tracks, const QString& outPath,
 		const Range& range, int sampleRate)
 {
-	const QString problem = validateRequest(tracks, outPath);
-	if (!problem.isEmpty()) { return Result::failure(problem); }
-
-	const QString noDir = prepareOutputDir(outPath);
-	if (!noDir.isEmpty()) { return Result::failure(noDir); }
-
-	TempFiles temps;
+	PreparedRender prepared;
 	QString error;
-	if (!serialiseWithOnlyTracks(tracks, &temps, &error)) { return Result::failure(error); }
-
-	// A range is rendered as a trim of the track's own render: the engine's
-	// render always starts at tick 0, and the window the caller asked for is
-	// frames [startFrame, endFrame) of that file.
-	const bool trimmed = !range.coversWholeTrack();
-	const QString renderTarget = trimmed ? tempPath(QStringLiteral("wav")) : outPath;
-	if (trimmed) { temps.render = renderTarget; }
+	if (!prepareRenderTracks(tracks, outPath, range, sampleRate, &prepared, &error)) { return Result::failure(error); }
 
 	int exitCode = -1;
-	const bool finished = runCliRender(temps.mutedProject, renderTarget, sampleRate, &exitCode);
-	if (renderFailed(finished, exitCode, renderTarget))
+	const bool finished = runCliRender(prepared.mutedProjectPath, prepared.renderPath, sampleRate, &exitCode);
+	if (renderFailed(finished, exitCode, prepared.renderPath))
 	{
+		discardPreparedRender(&prepared);
 		return Result::failure(QStringLiteral("the render failed (exit %1)").arg(exitCode));
 	}
 
-	const float framesPerTick = Engine::framesPerTick(static_cast<sample_rate_t>(sampleRate));
-	qint64 written = 0;
-	if (trimmed && !writeRange(renderTarget, outPath, range, framesPerTick, sampleRate, &written, &error))
+	Result result = finishPreparedRender(prepared, &error);
+	if (!result.ok)
 	{
+		discardPreparedRender(&prepared);
 		return Result::failure(error);
 	}
-	return collectResult(outPath, range, framesPerTick, sampleRate, written, trimmed);
+	if (!installPreparedOutput(&prepared, &error))
+	{
+		discardPreparedRender(&prepared);
+		return Result::failure(error);
+	}
+	commitPreparedOutput(&prepared);
+	discardPreparedRender(&prepared);
+	return result;
 }
 
 //! True when \a target names the file \a source is read from. The target is

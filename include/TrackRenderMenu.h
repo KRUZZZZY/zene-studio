@@ -37,11 +37,9 @@ class Track;
 namespace lmms::gui
 {
 
-/*! KNOWN-LIMITATIONS "freeze and bounce-in-place have no interface": for an instrument or sample
- *  track's operations menu, Freeze track (freeze.track) or - on a frozen one - Unfreeze track
- *  (freeze.unfreeze), and Bounce in place (bounce.in_place). Both renders run in a child process
- *  and the command answers when it finishes, so the items show a wait cursor; a refusal is shown,
- *  typed. Other track types get nothing. */
+/*! For an instrument or sample track's operations menu, Freeze track and Bounce in place queue a
+ *  cancellable child render shown in the task indicator; Unfreeze applies immediately. Other track
+ *  types get nothing. */
 LMMS_EXPORT void addTrackRenderActions(QMenu* menu, Track* track);
 
 /*! KNOWN-LIMITATIONS "DAWproject import / export has no interface": File menu items Import

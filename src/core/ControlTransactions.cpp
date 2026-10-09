@@ -38,6 +38,7 @@
 
 #include <QJsonDocument>
 
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 
@@ -108,6 +109,17 @@ void ControlRegistry::recordTransaction(const Transaction& tx)
 	m_transactions.append(stamped);
 	m_recordedBytes += stamped.bytes;
 	trimTransactions();
+}
+
+void ControlRegistry::recordCompletedEdit(const QString& commandId, const QJsonObject& args,
+	const QJsonObject& before, const QJsonObject& report, quint64 step)
+{
+	if (step == 0) { return; }
+	ControlResult result = ControlResult::success(report);
+	result.result.insert(QStringLiteral("__transaction"), control::transactionPayload(before,
+		QStringLiteral("control.undo"), {}, true, QStringLiteral("the completed job's single ProjectJournal step")));
+	recordTransactionOf(commandId, &result, false, step);
+	notifyObserver(commandId, args, true, true);
 }
 
 

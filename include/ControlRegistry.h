@@ -240,6 +240,9 @@ public:
 	static constexpr int ShutdownGuardMs = 10000;
 
 	void recordTransaction(const Transaction& tx);
+	//! Record a journal edit whose asynchronous command completed after invoke() returned.
+	void recordCompletedEdit(const QString& commandId, const QJsonObject& args, const QJsonObject& before,
+		const QJsonObject& report, quint64 step);
 	QJsonArray transactions() const;
 
 	//! The coalescing window in force, milliseconds (0 = grouping disabled),

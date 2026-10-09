@@ -25,11 +25,17 @@
 #ifndef LMMS_BOUNCE_IN_PLACE_H
 #define LMMS_BOUNCE_IN_PLACE_H
 
-#include <QString>
+#include <memory>
 #include <vector>
 
+#include <QString>
+#include <QStringList>
+
 #include "LmmsTypes.h"
+#include "TempoMap.h"
 #include "lmms_export.h"
+
+class QTemporaryDir;
 
 namespace lmms
 {
@@ -87,6 +93,30 @@ public:
 		static Result failure(const QString& why);
 	};
 
+	/*! Immutable inputs for an asynchronous child render. Created on the UI
+	 *  thread while the Song and tracks are live; safe to copy to a worker after
+	 *  that point because it contains no model pointers. */
+	struct PreparedRender
+	{
+		std::shared_ptr<QTemporaryDir> scratch;
+		QString projectPath;
+		QString mutedProjectPath;
+		QString renderPath;
+		QString stagedPath;
+		QString outputPath;
+		QString backupPath;
+		Range range;
+		TempoMap tempoMap;
+		int sampleRate = 44100;
+		int globalTempo = 140;
+		float framesPerTick = 0.0f;
+		qint64 startFrame = 0;
+		qint64 wantedFrames = 0;
+		bool trimmed = false;
+		bool installed = false;
+		bool replacedPrevious = false;
+	};
+
 	/*! Renders \a track's output to \a outPath (WAV, 44100 Hz by default).
 	 *
 	 *  The track is rendered UNMUTED even when the session has it muted - a
@@ -105,6 +135,22 @@ public:
 	 *  their sends and pans, exactly as for one track. */
 	static Result renderTracks(const std::vector<Track*>& tracks, const QString& outPath, const Range& range,
 			int sampleRate = 44100);
+
+	//! Capture the mutable project inputs now. The caller must discard the live
+	//! Track pointers after this returns; only the prepared value object crosses
+	//! to the queued render process.
+	static bool prepareRenderTracks(const std::vector<Track*>& tracks, const QString& outPath,
+			const Range& range, int sampleRate, PreparedRender* prepared, QString* error);
+	//! CLI args for the existing shipped render path.
+	static QStringList renderArguments(const PreparedRender& prepared);
+	//! Trim/validate/hash the child output; contains no Engine or Track access.
+	static Result finishPreparedRender(const PreparedRender& prepared, QString* error);
+	//! Install the finished staged WAV, preserving any old destination for rollback.
+	static bool installPreparedOutput(PreparedRender* prepared, QString* error);
+	static void commitPreparedOutput(PreparedRender* prepared);
+	static void rollbackPreparedOutput(PreparedRender* prepared);
+	//! Remove all job-owned scratch and any uncommitted staged output.
+	static void discardPreparedRender(PreparedRender* prepared);
 
 	//! Whether the output path uses the current platform's absolute-path syntax.
 	static bool isAbsoluteOutputPath(const QString& outPath);

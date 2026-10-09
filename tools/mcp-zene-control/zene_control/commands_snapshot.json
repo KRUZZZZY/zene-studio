@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T03:48:31Z",
+  "captured_at": "2026-10-09T05:11:46Z",
   "commands": [
     {
       "args_schema": {
@@ -1737,7 +1737,7 @@
         ],
         "type": "object"
       },
-      "description": "Render one track's own output - its devices, fader, pan and sends, which is what a stem is - to a WAV file and return the file, its frame count and its sha256. With 'start' and 'end' (ticks) the file covers that region instead of the whole track. The session is NOT modified: the render runs in a child process against a serialised copy with every other track muted, so nothing in this instance changes and nothing is journalled. The track menu's Bounce in place runs it; bounce.land is the verb that also puts the render on a new audio track.",
+      "description": "Render one track's own output - its devices, fader, pan and sends, which is what a stem is - to a WAV file and return the file, its frame count and its sha256. With 'start' and 'end' (ticks) the file covers that region instead of the whole track. The session is NOT modified: the render runs in a child process against a serialised copy with every other track muted, so nothing in this instance changes and nothing is journalled. The track menu's Bounce in place runs it; bounce.land is the verb that also puts the render on a new audio track. This command keeps its synchronous result contract for compatibility; use render.queue_bounce for a cancellable background job.",
       "group": "bounce",
       "id": "bounce.in_place",
       "mutating": false,
@@ -1793,7 +1793,7 @@
         ],
         "type": "object"
       },
-      "description": "Bounce a track in place, the way a DAW's 'bounce to audio' does: render its own output (as bounce.in_place does, the whole track or 'start'/'end' ticks) and put the render on a NEW audio track at the range's start, named '<track> (bounce)', with the source track muted. Reversible: one control.undo removes the new track and restores the source's mute. bounce.in_place stays the render-only verb; freeze.track plays a render on the source track itself.",
+      "description": "Bounce a track in place, the way a DAW's 'bounce to audio' does: render its own output (as bounce.in_place does, the whole track or 'start'/'end' ticks) and put the render on a NEW audio track at the range's start, named '<track> (bounce)', with the source track muted. Reversible: one control.undo removes the new track and restores the source's mute. bounce.in_place stays the render-only verb; freeze.track plays a render on the source track itself. This command keeps its synchronous result contract for compatibility; use render.queue_bounce with operation bounce_land for a cancellable job.",
       "group": "bounce",
       "id": "bounce.land",
       "mutating": true,
@@ -6955,7 +6955,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Liveness probe; also reports whether the engine is addressable yet, and why not when it is not.",
+      "description": "Liveness probe; also reports whether the engine is addressable yet, why not when it is not, and how many render jobs were refused at the bounded queue capacity.",
       "group": "control",
       "id": "control.ping",
       "mutating": false,
@@ -6977,6 +6977,9 @@
           },
           "reason": {
             "type": "object"
+          },
+          "render_queue_capacity_refusals": {
+            "type": "integer"
           },
           "version": {
             "type": "string"
@@ -9162,7 +9165,7 @@
         ],
         "type": "object"
       },
-      "description": "Freeze one tick range of a track: the region is rendered and the take plays inside it, while the source keeps playing outside it. The clips that START inside the region are muted (and recorded, so freeze.unfreeze unmutes exactly those and nothing else); a clip that starts before the region and runs into it is left alone and named in 'overlapping_clips', because muting it would silence audio outside the region - that clip sounds twice inside the region (docs/KNOWN-LIMITATIONS.md). Reversible through the ProjectJournal (Track checkpoint).",
+      "description": "Freeze one tick range of a track: the region is rendered and the take plays inside it, while the source keeps playing outside it. The clips that START inside the region are muted (and recorded, so freeze.unfreeze unmutes exactly those and nothing else); a clip that starts before the region and runs into it is left alone and named in 'overlapping_clips', because muting it would silence audio outside the region - that clip sounds twice inside the region (docs/KNOWN-LIMITATIONS.md). Reversible through the ProjectJournal (Track checkpoint). This command keeps its synchronous result contract for compatibility; use render.queue_bounce for a cancellable job.",
       "group": "freeze",
       "id": "freeze.region",
       "mutating": true,
@@ -9233,7 +9236,7 @@
         ],
         "type": "object"
       },
-      "description": "Bounce a track and make it PLAY THE RENDER instead of its clips: the engine queues the take for every pass inside its window and schedules none of the track's own playback, so the source is disabled for as long as this holds. The take carries the track's devices, fader, pan and sends, so it is summed at the mix level and not through the track's chain a second time, and the track's volume and effects controls are inert until freeze.unfreeze. The state is saved with the project and one control.undo takes it off (Track checkpoint). Reversible through the ProjectJournal.",
+      "description": "Bounce a track and make it PLAY THE RENDER instead of its clips: the engine queues the take for every pass inside its window and schedules none of the track's own playback, so the source is disabled for as long as this holds. The take carries the track's devices, fader, pan and sends, so it is summed at the mix level and not through the track's chain a second time, and the track's volume and effects controls are inert until freeze.unfreeze. The state is saved with the project and one control.undo takes it off (Track checkpoint). Reversible through the ProjectJournal. This command keeps its synchronous result contract for compatibility; use render.queue_bounce for a cancellable job.",
       "group": "freeze",
       "id": "freeze.track",
       "mutating": true,
@@ -21789,7 +21792,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Bounce the selection to a new track: the range's tracks (range.set), over its ticks, rendered together into one file ('out', or beside the project) that lands on a new audio track at the range's start; 'mute_sources' (true when left out) mutes the bounced tracks so the song sounds as before. One undo step.",
+      "description": "Bounce the selection to a new track: the range's tracks (range.set), over its ticks, rendered together into one file ('out', or beside the project) that lands on a new audio track at the range's start; 'mute_sources' (true when left out) mutes the bounced tracks so the song sounds as before. One undo step. This command keeps its synchronous result contract for compatibility; use render.queue_bounce with operation range_bounce for a cancellable job.",
       "group": "range",
       "id": "range.bounce",
       "mutating": true,
@@ -23392,6 +23395,12 @@
             ],
             "type": "string"
           },
+          "operation": {
+            "enum": [
+              "bounce"
+            ],
+            "type": "string"
+          },
           "out": {
             "type": "string"
           },
@@ -23405,6 +23414,9 @@
             "maximum": 2147483647,
             "minimum": 0,
             "type": "integer"
+          },
+          "track": {
+            "type": "string"
           }
         },
         "required": [
@@ -23412,12 +23424,75 @@
         ],
         "type": "object"
       },
-      "description": "Queue a render to 'out' (absolute) as 'format': of the session as it is NOW (a snapshot is taken, so later edits do not change it) or of another project file ('project'), whole or one range ('start_ticks' and 'end_ticks' together), with the export settings in force. Jobs run one after another in a child process without holding this surface ('start' false queues it without starting the queue now - it runs when the queue next runs); render.queue_list follows them and each ends with a report (bytes, sha256, time, loudness).",
+      "description": "Queue a render to 'out' (absolute) as 'format': of the session as it is NOW (a snapshot is taken, so later edits do not change it), another project file ('project'), or one track as an output-only bounce ('operation':'bounce' with 'track'). Project renders may cover one range ('start_ticks' and 'end_ticks' together) with the export settings in force. Jobs run one after another in a child process without holding this surface ('start' false queues it without starting the queue now - it runs when the queue next runs); render.queue_list follows them and each ends with a report (bytes, sha256, time, loudness).",
       "group": "render",
       "id": "render.queue_add",
       "mutating": false,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "type": "integer"
+          },
+          "mute_sources": {
+            "type": "boolean"
+          },
+          "operation": {
+            "enum": [
+              "freeze_track",
+              "freeze_region",
+              "bounce_land",
+              "flatten",
+              "range_bounce"
+            ],
+            "type": "string"
+          },
+          "out": {
+            "type": "string"
+          },
+          "start": {
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "type": "object"
+      },
+      "description": "Render a track or the selected range in the background, then apply one freeze, land, flatten, or range-bounce edit on the UI thread. Returns a job id immediately; follow it with render.queue_list or render.queue_report and cancel with render.queue_cancel. The task indicator also reports the running phase and Cancel. The project identity, target and range are checked before the output is installed; if they changed, the job fails without changing the project or output. For an output-only track bounce, use render.queue_add with operation=bounce and a track. Existing bounce.in_place, freeze.track, freeze.region, bounce.land, track.flatten and range.bounce commands keep their synchronous result contracts for compatibility.",
+      "group": "render",
+      "id": "render.queue_bounce",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "job": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "out": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -23467,7 +23542,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The render queue: every job (render or convert), its state (queued, running, done, failed, cancelled), its file and, once done, its report.",
+      "description": "The render queue: every job (render, convert or bounce), its state and phase, bounce progress when known, target ids, file and, once done, its report.",
       "group": "render",
       "id": "render.queue_list",
       "mutating": false,
@@ -23489,7 +23564,7 @@
         ],
         "type": "object"
       },
-      "description": "One render-queue job with its report: bytes, sha256, seconds taken and the loudness meter's reading of the file (meter.measure_file's payload).",
+      "description": "One render-queue job's current state, phase, progress and target ids, or its terminal report: bytes, sha256, seconds taken and the loudness meter's reading of the file (meter.measure_file's payload).",
       "group": "render",
       "id": "render.queue_report",
       "mutating": false,
@@ -28402,7 +28477,7 @@
         ],
         "type": "object"
       },
-      "description": "Flatten a track: render its output - its instrument or clips through its devices, fader, pan and sends, as bounce.land does (the whole track, or 'start'/'end' ticks; the file at 'out' or beside the project) - and REPLACE the track with an audio track of the same name at the same place playing the render, so the processing is committed and its CPU freed. Refused for a track whose document is too large to keep for an undo. One undo step puts the source track back with its clips, devices and settings.",
+      "description": "Flatten a track: render its output - its instrument or clips through its devices, fader, pan and sends, as bounce.land does (the whole track, or 'start'/'end' ticks; the file at 'out' or beside the project) - and REPLACE the track with an audio track of the same name at the same place playing the render, so the processing is committed and its CPU freed. Refused for a track whose document is too large to keep for an undo. One undo step puts the source track back with its clips, devices and settings. This command keeps its synchronous result contract for compatibility; use render.queue_bounce with operation flatten for a cancellable background job.",
       "group": "track",
       "id": "track.flatten",
       "mutating": true,
@@ -34684,23 +34759,23 @@
       }
     }
   ],
-  "count": 822,
+  "count": 823,
   "instance": {
-    "binary": null,
-    "binary_bytes": null,
-    "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
-    "lane_head": null,
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-notes/build/zene",
+    "binary_bytes": 28834416,
+    "binary_sha256": "6382a193d95ee717c0a0af73065593eb0d2ce10d6b9d331c58655bf9f7358090",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-notes",
+    "lane_head": "b2372f288fa656e730965adbb4130122dcf4685e",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-bemamefl/zene.sock",
-    "version": "0.4.0-alpha.1349+ffe891c"
+    "source_socket": "/tmp/zctl-run-fuctuf0p/zene.sock",
+    "version": "0.4.0-alpha.1354+b2372f2"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 822,
-    "ids_sha256": "5d8e64d560bab264522342d4b7081f9ffcb01726405181adc98254360ca9dea3"
+    "id_count": 823,
+    "ids_sha256": "61b947e1bfb7cd685ab6dfcb9e0d000c0c1653a3aa89a63ebc1c084f64b14f41"
   }
 }

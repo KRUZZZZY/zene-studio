@@ -133,7 +133,8 @@ void registerTrackFlattenCommands(ControlRegistry& registry)
 		"pan and sends, as bounce.land does (the whole track, or 'start'/'end' ticks; the file at 'out' or beside the project) - "
 		"and REPLACE the track with an audio track of the same name at the same place playing the render, so the processing "
 		"is committed and its CPU freed. Refused for a track whose document is too large to keep for an undo. One undo step "
-		"puts the source track back with its clips, devices and settings.");
+		"puts the source track back with its clips, devices and settings. This command keeps its synchronous result contract "
+		"for compatibility; use render.queue_bounce with operation flatten for a cancellable background job.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("track"), stringProperty()}, {QStringLiteral("out"), stringProperty()},
 		{QStringLiteral("start"), integerProperty()}, {QStringLiteral("end"), integerProperty()}}, {QStringLiteral("track")});
 	cmd.resultSchema = objectProperty();

@@ -87,6 +87,8 @@ set(LMMS_TESTS
 	src/core/BounceInPlaceTest.cpp
 	# Coverage lane (M0): bounce.land, track.flatten, range.bounce and the subproject verbs through a stand-in render child.
 	src/core/ControlBounceRenderTest.cpp
+	# Cluster 917: cancellable bounce jobs apply edits on the main thread after stale-target checks.
+	src/core/ControlRenderJobTest.cpp
 	src/core/ControlSessionRecordLandTest.cpp
 	src/core/ControlMidiReconnectSharedTest.cpp
 	src/core/ControlPluginBusesTest.cpp

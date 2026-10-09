@@ -86,6 +86,12 @@ namespace lmms
 // verbatim as unclaimed and re-emitted on save: adopting it would REPLACE the first's entries in memory
 // (Section::load clears first), and the next save would lose them. Reset at the start of every load walk.
 static bool s_provenanceAdoptedThisLoad = false;
+static std::atomic<quint64> s_nextDocumentIdentity{0};
+
+static quint64 nextDocumentIdentity()
+{
+	return s_nextDocumentIdentity.fetch_add(1, std::memory_order_relaxed) + 1;
+}
 
 tick_t TimePos::s_ticksPerBar = DefaultTicksPerBar;
 
@@ -102,6 +108,7 @@ Song::Song() :
 	m_masterVolumeModel( 100, 0, 200, this, tr( "Master volume" ) ),
 	m_masterPitchModel( 0, -12, 12, this, tr( "Master pitch" ) ),
 	m_nLoadingTrack( 0 ),
+	m_documentIdentity(nextDocumentIdentity()),
 	m_fileName(),
 	m_oldFileName(),
 	m_modified( false ),
@@ -1326,6 +1333,7 @@ void Song::clearProject()
 {
 	using gui::getGUI;
 
+	m_documentIdentity = nextDocumentIdentity();
 	Engine::projectJournal()->setJournalling( false );
 
 	if( m_playing )
