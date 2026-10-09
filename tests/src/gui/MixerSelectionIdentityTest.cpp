@@ -29,6 +29,7 @@
 
 #include <QtTest>
 
+#include <QAbstractButton>
 #include <QTemporaryDir>
 
 #include "AutomatableButton.h"
@@ -38,6 +39,8 @@
 #include "GuiTestApplication.h"
 #include "Knob.h"
 #include "MainWindow.h"
+#include "Model.h"
+#include "MacroKnobs.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
 #include "MixerView.h"
@@ -198,10 +201,39 @@ private slots:
 
 		MixerChannel* master = Engine::mixer()->mixerChannel(0);
 		MixerChannel* target = Engine::mixer()->mixerChannel(targetIndex);
-		const auto clickAndRoute = [mixer, masterView, targetView, master, target](QWidget* control)
+		const auto clickAndRoute = [this, mixer, masterView, targetView, master, target](QWidget* control)
 		{
+			bool selectedWhenActionRan = false;
+			QMetaObject::Connection actionConnection;
+			QPoint clickPosition = control->rect().center();
+			if (qobject_cast<Fader*>(control) != nullptr)
+			{
+				target->m_volumeModel.setValue(0.5f);
+				actionConnection = connect(&target->m_volumeModel, &Model::dataChanged, this, [&]
+				{
+					selectedWhenActionRan = mixer->currentMixerChannel() == targetView;
+				});
+				clickPosition.setY(0);  // outside the handle, so the press changes the fader model synchronously
+			}
+			else if (auto* editor = qobject_cast<FloatModelEditorBase*>(control))
+			{
+				actionConnection = connect(editor, &FloatModelEditorBase::sliderPressed, this, [&]
+				{
+					selectedWhenActionRan = mixer->currentMixerChannel() == targetView;
+				});
+			}
+			else if (auto* button = qobject_cast<QAbstractButton*>(control))
+			{
+				actionConnection = connect(button, &QAbstractButton::clicked, this, [&]
+				{
+					selectedWhenActionRan = mixer->currentMixerChannel() == targetView;
+				});
+			}
+			QVERIFY(actionConnection);
 			mixer->setCurrentMixerChannel(masterView);
-			QTest::mouseClick(control, Qt::LeftButton, Qt::NoModifier, control->rect().center());
+			QTest::mouseClick(control, Qt::LeftButton, Qt::NoModifier, clickPosition);
+			disconnect(actionConnection);
+			QVERIFY(selectedWhenActionRan);
 			QCOMPARE(mixer->currentMixerChannel(), targetView);
 			QCOMPARE(selectedName(), QStringLiteral("Pressed target"));
 
@@ -217,6 +249,23 @@ private slots:
 		clickAndRoute(targetView->fader());
 		clickAndRoute(targetView->panKnob());
 		clickAndRoute(mute);
+
+		// MacroKnobs rebuilds after the strip's constructor has installed its initial descendant filters.
+		// Selection must already have changed when this dynamically created knob begins its drag action.
+		target->m_rack.macros().addMacro(QStringLiteral("Dynamic macro"), 0.5f);
+		targetView->macroKnobs()->refresh();
+		Knob* macro = targetView->macroKnobs()->findChild<Knob*>();
+		QVERIFY(macro != nullptr);
+		bool selectedWhenMacroActionRan = false;
+		connect(macro, &FloatModelEditorBase::sliderPressed, this, [&]
+		{
+			selectedWhenMacroActionRan = mixer->currentMixerChannel() == targetView;
+		});
+		mixer->setCurrentMixerChannel(masterView);
+		QTest::mousePress(macro, Qt::LeftButton, Qt::NoModifier, macro->rect().center());
+		QVERIFY(selectedWhenMacroActionRan);
+		QCOMPARE(mixer->currentMixerChannel(), targetView);
+		QTest::mouseRelease(macro, Qt::LeftButton, Qt::NoModifier, macro->rect().center());
 	}
 
 private:

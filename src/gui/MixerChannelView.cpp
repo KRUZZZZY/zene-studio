@@ -27,6 +27,7 @@
 #include "DesignTokens.h"
 
 #include <QCheckBox>
+#include <QChildEvent>
 #include <QFont>
 #include <QGraphicsOpacityEffect>
 #include <QGraphicsProxyWidget>
@@ -230,7 +231,13 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 
 bool MixerChannelView::eventFilter(QObject* watched, QEvent* event)
 {
-	if (event->type() == QEvent::MouseButtonPress && m_mixerView->currentMixerChannel() != this)
+	if (event->type() == QEvent::ChildAdded)
+	{
+		// Descendant controls can be rebuilt after strip construction (for example, rack macro knobs).
+		// Install on the QObject directly so descendants added by it are covered as well.
+		static_cast<QChildEvent*>(event)->child()->installEventFilter(this);
+	}
+	else if (event->type() == QEvent::MouseButtonPress && m_mixerView->currentMixerChannel() != this)
 	{
 		m_mixerView->setCurrentMixerChannel(this);
 	}
