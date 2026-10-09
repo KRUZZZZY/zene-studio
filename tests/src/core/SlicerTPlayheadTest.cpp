@@ -34,6 +34,11 @@
 #include <QTemporaryDir>
 #include <QTimer>
 
+#include <algorithm>
+#include <bit>
+#include <cstdint>
+#include <vector>
+
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
@@ -67,6 +72,49 @@ namespace
 void renderPeriod()
 {
 	static_cast<void>(Engine::audioEngine()->renderNextPeriod());
+}
+
+QString prepareSlicerTrack(QTemporaryDir& scratch, InstrumentTrack** track)
+{
+	const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("slicer-pool.wav")), 440.0);
+	if (wav.isEmpty()) { return QStringLiteral("could not write the SlicerT fixture"); }
+	Engine::getSong()->clearProject();
+	const QString id = addTrack(QStringLiteral("instrument"));
+	if (id.isEmpty()) { return QStringLiteral("could not add an instrument track"); }
+	ControlResult failure;
+	*track = dynamic_cast<InstrumentTrack*>(control::resolveTrack(id, &failure));
+	if (*track == nullptr) { return QStringLiteral("track.add did not create an InstrumentTrack"); }
+	InstrumentLoaderThread loader(nullptr, *track, QStringLiteral("slicert"));
+	loader.start();
+	if (!loader.wait()) { return QStringLiteral("the SlicerT loader did not finish"); }
+	QCoreApplication::processEvents();
+	Instrument* const slicer = (*track)->instrument();
+	if (slicer == nullptr || slicer->thread() != QThread::currentThread())
+	{
+		return QStringLiteral("SlicerT was not installed on the control thread");
+	}
+	if (!QMetaObject::invokeMethod(slicer, "updateFile", Qt::DirectConnection, Q_ARG(QString, wav)))
+	{
+		return QStringLiteral("SlicerT did not accept the fixture file");
+	}
+	return {};
+}
+
+bool identicalAudio(const std::vector<SampleFrame>& left, std::span<const SampleFrame> right)
+{
+	if (left.size() != right.size()) { return false; }
+	for (std::size_t frame = 0; frame < left.size(); ++frame)
+	{
+		for (int channel = 0; channel < 2; ++channel)
+		{
+			if (std::bit_cast<std::uint32_t>(left[frame][channel])
+				!= std::bit_cast<std::uint32_t>(right[frame][channel]))
+			{
+				return false;
+			}
+		}
+	}
+	return true;
 }
 
 } // namespace
@@ -204,6 +252,65 @@ private slots:
 		for (int i = 0; i < 8; ++i) { renderPeriod(); }
 		test::tlCountAllocations = false;
 		QCOMPARE(test::tlAllocationCount, std::uint64_t{0});
+	}
+
+	//! Cluster 4467 round 2: every reused playback slot produces the fresh-state slice output bit-for-bit.
+	void reusedPlaybackStateMatchesFreshStateAcrossManyNotes()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		InstrumentTrack* track = nullptr;
+		const QString error = prepareSlicerTrack(scratch, &track);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		AudioEngine* const audio = Engine::audioEngine();
+		audio->setOverloadSheddingEnabled(false);
+		const Note note(TimePos(1), TimePos(0), track->baseNote());
+		std::vector<SampleFrame> freshOutput;
+
+		for (int noteNumber = 0; noteNumber < 32; ++noteNumber)
+		{
+			auto* const handle = NotePlayHandleManager::acquire(track, 0,
+				audio->framesPerPeriod() * 2, note);
+			QVERIFY(audio->addPlayHandle(handle));
+			audio->renderNextPeriod();
+			const auto output = audio->renderNextPeriod();
+			QVERIFY2(handle->m_pluginData != nullptr, "SlicerT did not claim a playback-state slot");
+			if (noteNumber == 0)
+			{
+				freshOutput.assign(output.begin(), output.end());
+			}
+			else
+			{
+				QVERIFY2(identicalAudio(freshOutput, output),
+					qPrintable(QStringLiteral("reused slice output differs from fresh state at note %1").arg(noteNumber)));
+			}
+			audio->removePlayHandlesOfTypes(track, PlayHandle::Type::NotePlayHandle);
+		}
+	}
+
+	//! Cluster 4467 round 2: removing a track with a live SlicerT state destroys the note before the instrument.
+	void deletingSlicerTrackCancelsActivePlaybackState()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		InstrumentTrack* track = nullptr;
+		const QString error = prepareSlicerTrack(scratch, &track);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		AudioEngine* const audio = Engine::audioEngine();
+		const Note note(TimePos(1000000), TimePos(0), track->baseNote());
+		auto* const handle = NotePlayHandleManager::acquire(track, 0,
+			audio->framesPerPeriod() * 16, note);
+		QVERIFY(audio->addPlayHandle(handle));
+		audio->renderNextPeriod();
+		QVERIFY2(handle->m_pluginData != nullptr, "the active SlicerT note has no pooled state to retire");
+
+		const QString id = QStringLiteral("trk-%1").arg(track->id());
+		const ControlResult removed = revtest::run(QStringLiteral("track.remove"), {{QStringLiteral("track"), id}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		audio->renderNextPeriod();
+		const auto remainingNotes = std::count_if(audio->playHandles().begin(), audio->playHandles().end(),
+			[](PlayHandle* item) { return item->type() == PlayHandle::Type::NotePlayHandle; });
+		QCOMPARE(remainingNotes, qsizetype{0});
 	}
 };
 
