@@ -93,9 +93,9 @@ private slots:
 
 	// ------------------------------------------------------------------ lanes
 
-	//! A lane index is stable: a removal never renumbers the survivors, and the
-	//! next lane added takes the lowest index the track is not using.
-	void laneIndexesAreStableAndTheLowestFreeIsReused()
+	//! A lane index is stable: a removal never renumbers survivors or recycles an
+	//! old identity, and the next lane receives the next index.
+	void laneIndexesAreStableAndNeverReused()
 	{
 		QVector<SampleClip*> clips;
 		SampleTrack* track = makeTakeTrack(m_dir.path(), 1, &clips);
@@ -108,10 +108,50 @@ private slots:
 		QVERIFY(model.removeLane(1));
 		QCOMPARE(laneIndexes(model), (QVector<int>{0, 2}));
 		QVERIFY(!model.hasLane(1));
-		// The gap refills: the index is not monotonic, but it is never a live
-		// lane's index, which is the property stability needs (I7).
-		QCOMPARE(model.addLane(QStringLiteral("take 4")), 1);
+		// The removed slot stays retired so a clip that still carries its tag
+		// cannot alias a later pass.
+		QCOMPARE(model.addLane(QStringLiteral("take 4")), 3);
 		QVERIFY(model.removeLane(99) == false);
+	}
+
+	//! A recorded pass left on a removed lane cannot alias the next pass, even
+	//! after the track's take-lane state is restored from its serialized form.
+	void aRemovedTakeLaneIdentityIsNotReusedForALaterPass()
+	{
+		QVector<SampleClip*> clips;
+		SampleTrack* track = makeTakeTrack(m_dir.path(), 1, &clips);
+		QVERIFY(track != nullptr);
+		TakeLaneModel& model = track->takeLanes();
+		QCOMPARE(model.addLane(), 0);
+		const int groupId = clips.front()->id();
+		clips.front()->setTakeGroupId(groupId);
+		QVERIFY(model.recordTake(groupId, 0, track->getClips()));
+
+		const int removedLane = model.addLane();
+		QCOMPARE(removedLane, 1);
+		auto* oldPass = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(oldPass != nullptr);
+		oldPass->setLaneIndex(removedLane);
+		oldPass->setTakeGroupId(groupId);
+		QVERIFY(model.recordTake(groupId, removedLane, track->getClips()));
+		QVERIFY(model.removeLane(removedLane));
+		QVERIFY(!model.hasLane(removedLane));
+
+		const int nextPassLane = model.addLane(QStringLiteral("next pass"));
+		QCOMPARE(nextPassLane, 2);
+		auto* nextPass = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(nextPass != nullptr);
+		nextPass->setLaneIndex(nextPassLane);
+		nextPass->setTakeGroupId(groupId);
+		QVERIFY(model.recordTake(groupId, nextPassLane, track->getClips()));
+		QCOMPARE(oldPass->laneIndex(), removedLane);
+		QCOMPARE(nextPass->laneIndex(), nextPassLane);
+		QCOMPARE(oldPass->activeTakeLane(), nextPassLane);
+		QCOMPARE(nextPass->activeTakeLane(), nextPassLane);
+
+		Track* restored = reloadTrack(track);
+		QVERIFY(restored != nullptr);
+		QCOMPARE(restored->takeLanes().addLane(), 3);
 	}
 
 	// ------------------------------------------------------------------ the takes

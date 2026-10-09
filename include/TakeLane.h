@@ -165,9 +165,11 @@ class LMMS_EXPORT TakeLaneModel
 {
 public:
 	// ---- lanes ----------------------------------------------------------
-	/*! Adds a lane and returns its index: the lowest index the track does not
-	 *  already use. An index is never reused while a lane still holds it, and a
-	 *  removal never renumbers the survivors (invariant I7). The new lane's
+	/*! Adds a lane and returns its next never-used index. Removed indices are
+	 *  not reused: clips can still carry their old lane tag, so recycling that
+	 *  number could make a later pass alias an earlier one. The high-water mark
+	 *  is serialized with the model, and a removal never renumbers survivors
+	 *  (invariant I7). The new lane's
 	 *  ENTITY id is allocated here too (the `lane-` family, exactly as the
 	 *  Track and Clip constructors allocate theirs - SPEC-ARCH-4 1.5 R4). */
 	int addLane(const QString& name = QString());
@@ -246,7 +248,11 @@ public:
 	Clip* takeAt(const std::vector<Clip*>& clips, int tick, int* laneIndex = nullptr) const;
 
 	void clear();
-	bool isEmpty() const { return m_lanes.empty() && m_segments.empty() && m_takeGroups.empty() && !playAllTakes(); }
+	bool isEmpty() const
+	{
+		return m_lanes.empty() && m_segments.empty() && m_takeGroups.empty()
+			&& !playAllTakes() && m_nextLaneIndex == 0;
+	}
 
 	/*! R3.1, audition: while a lane is auditioned its takes sound WHOLE and every
 	 *  other lane of the track is silent - the composite is set aside, not
@@ -281,6 +287,7 @@ private:
 	static void subtractRange(const TakeLaneSegment& seg, int beginTick, int endTick,
 		std::vector<TakeLaneSegment>* out);
 	void loadTakeGroup(const QDomElement& element);
+	void loadSettingsChild(const QDomElement& child);
 	void sortSegments();
 	//! Merges neighbouring segments that are the same lane at the same slip.
 	void mergeSegments();
@@ -290,6 +297,7 @@ private:
 	std::vector<TakeLane> m_lanes;
 	std::vector<TakeLaneSegment> m_segments;
 	std::vector<TakeGroupSelection> m_takeGroups;
+	int m_nextLaneIndex = 0;
 	std::atomic<bool> m_playAllTakes{false};
 	int m_auditionLane = -1;
 };

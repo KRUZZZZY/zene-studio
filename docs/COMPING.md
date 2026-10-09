@@ -29,8 +29,10 @@ decides (§2.2). Concretely:
   declared and named "entity lands with S7"), and the document carries it in the top-level
   `<z:lanes>` section (§3 below). The `index` stays what it always was: the per-track slot the
   take clips and composite segments reference, stable across save/load (I7);
-- **lane indices are stable** (design I7): a removal never renumbers the survivors, and the next
-  lane added takes the lowest index the track is not using. `removeLane` re-points every
+- **lane indices are stable** (design I7): a removal never renumbers the survivors, and a
+  removed index is never recycled. Clips retain their lane tag after removal, so reusing that
+  number could make an earlier pass alias a later pass. The model persists its next index even
+  when the last lane is removed. `removeLane` re-points every
   composite segment that named the removed lane to the track's **base lane** (the lowest index it
   still has) rather than leaving a hole, because a composite is total over its span (§2 below);
   removing the last lane clears the composite entirely.
@@ -225,7 +227,7 @@ both offscreen Qt and both built on the shared fixtures in `tests/src/core/TakeL
 plus, since ARCH-4 S7, `tests/src/core/LanesUpconvertTest.cpp` (registered ctest
 `LanesUpconvertTest`; the document layer - claim 11 below):
 
-1. lane indices are stable and the lowest free index is reused;
+1. lane indices are stable and a removed index is not reused, including after serialized restore;
 2. an invalid selection is refused and writes nothing;
 3. a selection splits what it overwrites, and the composite stays ordered and gapless;
 4. removing a lane re-points its segments to the base lane; removing the last lane clears the comp;

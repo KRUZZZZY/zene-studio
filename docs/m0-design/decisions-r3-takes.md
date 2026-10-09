@@ -1,5 +1,11 @@
 # Loop recording active-take design
 
+## Round-two review decisions
+
+- Lane indices use a persisted, monotonically increasing high-water mark. Removing a lane does
+  not free its number because clips keep their old lane tag; recycling it could alias a later
+  recorded pass to an earlier one, including after reopening a project.
+
 ## Problem
 
 `SampleClip::addRecordedLane()` in `src/core/SampleClip.cpp` creates a take clip for each loop

@@ -35,6 +35,8 @@
 #include <QDomNode>
 #include <QLatin1String>
 
+#include <limits>
+
 #include "AudioEngine.h"
 #include "Clip.h"
 #include "Engine.h"
@@ -107,6 +109,18 @@ bool isTakeGroupElement(const QDomElement& element)
 {
 	return element.tagName() == QLatin1String("z:takegroup")
 		|| element.tagName() == QLatin1String("takegroup");
+}
+
+int nextLaneAfter(int laneIndex)
+{
+	return laneIndex == std::numeric_limits<int>::max() ? laneIndex : laneIndex + 1;
+}
+
+int nextLaneIndexOf(const QDomElement& element)
+{
+	bool ok = false;
+	const int nextLane = element.attribute(QStringLiteral("nextlane")).toInt(&ok);
+	return ok && nextLane >= 0 ? nextLane : 0;
 }
 
 TakeLane laneFromElement(const QDomElement& element)
@@ -263,15 +277,10 @@ void TakeLaneModel::setPlayAllTakes(bool enabled)
 int TakeLaneModel::addLane(const QString& name)
 {
 	const auto changeLock = changeLockForEdit();
-	// The lowest index the track does not use. Reuse after a removal is
-	// deliberate: every reference to the removed lane was already re-pointed by
-	// removeLane(), so a recycled index cannot alias a stale segment.
-	int index = 0;
-	for (const TakeLane& lane : m_lanes)
-	{
-		if (lane.index != index) { break; }
-		++index;
-	}
+	// Clips keep their lane tag when a lane is removed. Never recycle an index:
+	// a later recorded pass must not inherit the identity of a still-live clip.
+	if (m_nextLaneIndex == std::numeric_limits<int>::max()) { return -1; }
+	const int index = m_nextLaneIndex++;
 	TakeLane added;
 	added.index = index;
 	added.name = name;
@@ -521,6 +530,7 @@ void TakeLaneModel::clear()
 	m_lanes.clear();
 	m_segments.clear();
 	m_takeGroups.clear();
+	m_nextLaneIndex = 0;
 	m_playAllTakes.store(false, std::memory_order_relaxed);
 	m_auditionLane = -1;
 }
@@ -528,6 +538,7 @@ void TakeLaneModel::clear()
 
 void TakeLaneModel::saveSettings(QDomDocument& doc, QDomElement& element) const
 {
+	if (m_nextLaneIndex > 0) { element.setAttribute(QStringLiteral("nextlane"), m_nextLaneIndex); }
 	if (playAllTakes()) { element.setAttribute(QStringLiteral("playall"), 1); }
 	for (const TakeLane& lane : m_lanes)
 	{
@@ -568,37 +579,44 @@ void TakeLaneModel::loadSettings(const QDomElement& element)
 	// checkpoint restores by re-loading, so a field that survives its own
 	// absence could never be undone.
 	clear();
+	m_nextLaneIndex = nextLaneIndexOf(element);
 	m_playAllTakes.store(element.attribute(QStringLiteral("playall"), QStringLiteral("0")).toInt() != 0,
 		std::memory_order_relaxed);
 	for (QDomNode node = element.firstChild(); !node.isNull(); node = node.nextSibling())
 	{
-		const QDomElement child = node.toElement();
-		if (child.isNull()) { continue; }
-		// Read-both spellings (S1's rule, ARCH-4 S7): the `z:`-prefixed one
-		// this build writes in either context, and the bare pre-S7 one a
-		// payload or a hand-written file may still carry.
-		if (child.tagName() == QLatin1String("z:lane") || child.tagName() == QLatin1String("lane"))
-		{
-			const TakeLane lane = laneFromElement(child);
-			const auto pos = std::lower_bound(m_lanes.begin(), m_lanes.end(), lane.index,
-				laneLessThan);
-			m_lanes.insert(pos, lane);
-			continue;
-		}
-		if (isTakeGroupElement(child))
-		{
-			loadTakeGroup(child);
-			continue;
-		}
-		if (child.tagName() == QLatin1String("z:segment")
-			|| child.tagName() == QLatin1String("segment"))
-		{
-			const TakeLaneSegment seg = segmentFromElement(child);
-			if (seg.endTick > seg.beginTick && hasLane(seg.laneIndex)) { m_segments.push_back(seg); }
-		}
+		loadSettingsChild(node.toElement());
 	}
 	sortSegments();
 	mergeSegments();
+}
+
+
+void TakeLaneModel::loadSettingsChild(const QDomElement& child)
+{
+	if (child.isNull()) { return; }
+	// Read-both spellings (S1's rule, ARCH-4 S7): the `z:`-prefixed one this
+	// build writes in either context, and the bare pre-S7 one a payload or a
+	// hand-written file may still carry.
+	if (child.tagName() == QLatin1String("z:lane") || child.tagName() == QLatin1String("lane"))
+	{
+		const TakeLane lane = laneFromElement(child);
+		m_nextLaneIndex = std::max(m_nextLaneIndex, nextLaneAfter(lane.index));
+		const auto pos = std::lower_bound(m_lanes.begin(), m_lanes.end(), lane.index,
+			laneLessThan);
+		m_lanes.insert(pos, lane);
+		return;
+	}
+	if (isTakeGroupElement(child))
+	{
+		loadTakeGroup(child);
+		return;
+	}
+	if (child.tagName() == QLatin1String("z:segment")
+		|| child.tagName() == QLatin1String("segment"))
+	{
+		const TakeLaneSegment seg = segmentFromElement(child);
+		if (seg.endTick > seg.beginTick && hasLane(seg.laneIndex)) { m_segments.push_back(seg); }
+	}
 }
 
 
