@@ -31,6 +31,8 @@
 #include <QSignalSpy>
 #include <QTemporaryFile>
 
+#include <onnxruntime_cxx_api.h>
+
 #include "SampleBuffer.h"
 #include "SampleFrame.h"
 #include "StemSeparation/OnnxRuntimeStemSeparator.h"
@@ -54,6 +56,11 @@ std::shared_ptr<const SampleBuffer> makeSineMix(int seconds)
 				0.4f * std::sin(2.0f * float(M_PI) * 330.0f * t));
 	}
 	return std::make_shared<const SampleBuffer>(std::move(data), sampleRate);
+}
+
+void throwFromPostRunValidation()
+{
+	throw Ort::Exception("injected post-Run output validation failure", ORT_FAIL);
 }
 
 } // namespace
@@ -99,6 +106,30 @@ private slots:
 		QVERIFY(!error.isEmpty());
 		QCOMPARE(failedSpy.last().at(0).toInt(), id);
 		QVERIFY(!failedSpy.last().at(1).toString().isEmpty());
+	}
+
+	void testPostRunOrtExceptionIsReturnedAsFailure()
+	{
+		OnnxRuntimeStemSeparator separator(QStringLiteral(LMMS_TEST_DATA_DIR)
+			+ QStringLiteral("/stub-4stem-linear.onnx"));
+		separator.m_postRunTestHook = &throwFromPostRunValidation;
+		StemSet stems;
+		QString error;
+		StemSeparator::Status status = StemSeparator::Status::Success;
+		bool exceptionEscaped = false;
+		try
+		{
+			status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384,
+				[](float) { return true; }, stems, error);
+		}
+		catch (...)
+		{
+			exceptionEscaped = true;
+		}
+
+		QVERIFY2(!exceptionEscaped, "a post-Run ONNX Runtime exception escaped separate()");
+		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
+		QVERIFY(error.contains(QStringLiteral("injected post-Run output validation failure")));
 	}
 
 	void testWrongSampleRateFails()
