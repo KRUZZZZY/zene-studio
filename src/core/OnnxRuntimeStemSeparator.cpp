@@ -27,6 +27,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -113,6 +114,49 @@ bool outputsHoldSegment(const std::vector<Ort::Value>& outputs, const std::array
 	return true;
 }
 
+bool initializeSession(Ort::Env& env, const QString& modelPath, Ort::SessionOptions& options,
+	int segment, std::unique_ptr<Ort::Session>* session, std::string* inputName,
+	std::vector<std::string>* outputNames, std::array<int, NumStems>* stemOutput,
+	std::ptrdiff_t* stemStride, QString* error)
+{
+	try
+	{
+		session->reset(new Ort::Session(env, modelPath.toStdString().c_str(), options));
+		Ort::AllocatorWithDefaultOptions allocator;
+		const auto inputNameAllocated = (*session)->GetInputNameAllocated(0, allocator);
+		*inputName = inputNameAllocated.get();
+		for (size_t i = 0; i < (*session)->GetOutputCount(); ++i)
+		{
+			outputNames->emplace_back((*session)->GetOutputNameAllocated(i, allocator).get());
+		}
+		return resolveStemOutputs(**session, *outputNames, segment, stemOutput, stemStride, error);
+	}
+	catch (const Ort::Exception& exception)
+	{
+		*error = QString::fromUtf8(exception.what());
+		return false;
+	}
+}
+
+bool runSessionSegment(Ort::Session& session, const std::string& inputName,
+	const std::vector<const char*>& outputNames, Ort::Value* tensor,
+	std::vector<Ort::Value>* outputs, const std::array<int, NumStems>& stemOutput,
+	std::ptrdiff_t stemStride, int segment, QString* error)
+{
+	const char* inputNames[] = { inputName.c_str() };
+	try
+	{
+		*outputs = session.Run(Ort::RunOptions{ nullptr }, inputNames, tensor, 1,
+			outputNames.data(), outputNames.size());
+	}
+	catch (const Ort::Exception& exception)
+	{
+		*error = QString::fromUtf8(exception.what());
+		return false;
+	}
+	return outputsHoldSegment(*outputs, stemOutput, stemStride, segment, error);
+}
+
 } // namespace
 
 
@@ -173,27 +217,20 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 	options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 	options.SetIntraOpNumThreads(std::max(1, QThread::idealThreadCount() - 1));
 
-	Ort::Session session(env, m_modelPath.toStdString().c_str(), options);
-	Ort::AllocatorWithDefaultOptions allocator;
-
-	const auto inputName = session.GetInputNameAllocated(0, allocator);
-	const std::string inputNameStr(inputName.get());
-
+	std::unique_ptr<Ort::Session> session;
+	std::string inputNameStr;
 	std::vector<std::string> outputNames;
-	std::vector<const char*> outputNamesRaw;
-	for (size_t i = 0; i < session.GetOutputCount(); ++i)
+	std::array<int, NumStems> stemOutput{};
+	std::ptrdiff_t stemStride = 0;
+	if (!initializeSession(env, m_modelPath, options, segment, &session, &inputNameStr,
+		&outputNames, &stemOutput, &stemStride, &error))
 	{
-		outputNames.emplace_back(session.GetOutputNameAllocated(i, allocator).get());
+		return Status::Failed;
 	}
+	std::vector<const char*> outputNamesRaw;
 	for (const auto& name : outputNames)
 	{
 		outputNamesRaw.push_back(name.c_str());
-	}
-	std::array<int, NumStems> stemOutput{};
-	std::ptrdiff_t stemStride = 0;
-	if (!resolveStemOutputs(session, outputNames, segment, &stemOutput, &stemStride, &error))
-	{
-		return Status::Failed;
 	}
 
 	const int hop = segment / 2;
@@ -237,10 +274,9 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 		auto tensor = Ort::Value::CreateTensor<float>(memoryInfo,
 			inputTensor.data(), inputTensor.size(), shape.data(), shape.size());
 
-		const char* inputNames[] = { inputNameStr.c_str() };
-		auto outputs = session.Run(Ort::RunOptions{ nullptr },
-			inputNames, &tensor, 1, outputNamesRaw.data(), outputNamesRaw.size());
-		if (!outputsHoldSegment(outputs, stemOutput, stemStride, segment, &error)) { return Status::Failed; }
+		std::vector<Ort::Value> outputs;
+		if (!runSessionSegment(*session, inputNameStr, outputNamesRaw, &tensor,
+			&outputs, stemOutput, stemStride, segment, &error)) { return Status::Failed; }
 
 		for (int s = 0; s < NumStems; ++s)
 		{

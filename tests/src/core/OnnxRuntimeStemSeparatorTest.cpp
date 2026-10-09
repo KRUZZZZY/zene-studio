@@ -28,9 +28,13 @@
 #include <memory>
 #include <vector>
 
+#include <QSignalSpy>
+#include <QTemporaryFile>
+
 #include "SampleBuffer.h"
 #include "SampleFrame.h"
 #include "StemSeparation/OnnxRuntimeStemSeparator.h"
+#include "StemSeparation/StemJobManager.h"
 
 using namespace lmms;
 
@@ -74,6 +78,27 @@ private slots:
 			[](float) { return true; }, stems, error);
 		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
 		QVERIFY(!error.isEmpty());
+	}
+
+	void testMalformedModelFailureIsReportedByStemJob()
+	{
+		QTemporaryFile model;
+		QVERIFY(model.open());
+		QVERIFY(model.write("not an ONNX model") > 0);
+		QVERIFY(model.flush());
+
+		StemJobManager manager;
+		manager.setSeparator(std::make_unique<OnnxRuntimeStemSeparator>(model.fileName()));
+		QSignalSpy failedSpy(&manager, &StemJobManager::jobFailed);
+		const int id = manager.submit(makeSineMix(1), StemModelSampleRate, 16384);
+		QVERIFY(id > 0);
+
+		QTRY_VERIFY_WITH_TIMEOUT(failedSpy.count() == 1, 10000);
+		QCOMPARE(static_cast<int>(manager.state(id)), static_cast<int>(StemJobManager::State::Failed));
+		const QString error = manager.error(id);
+		QVERIFY(!error.isEmpty());
+		QCOMPARE(failedSpy.last().at(0).toInt(), id);
+		QVERIFY(!failedSpy.last().at(1).toString().isEmpty());
 	}
 
 	void testWrongSampleRateFails()
