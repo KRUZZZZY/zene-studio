@@ -34,9 +34,23 @@
 #include "LfoController.h"
 #include "MidiController.h"
 #include "PeakController.h"
+#include "RealtimeScope.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+AudioEngine::RequestChangesGuard controllerChangeGuard()
+{
+	AudioEngine* const engine = Engine::audioEngine();
+	return RealtimeScope::isActive() || engine == nullptr
+		? AudioEngine::RequestChangesGuard{}
+		: engine->requestChangesGuard();
+}
+
+} // namespace
 
 
 std::atomic<long> Controller::s_periods{0};
@@ -53,6 +67,7 @@ Controller::Controller( ControllerType _type, Model * _parent,
 	m_connectionCount( 0 ),
 	m_type( _type )
 {
+	auto changeGuard = controllerChangeGuard();
 	if( _type != ControllerType::Dummy && _type != ControllerType::Midi )
 	{
 		s_controllers.push_back(this);
@@ -86,6 +101,7 @@ Controller::Controller( ControllerType _type, Model * _parent,
 
 Controller::~Controller()
 {
+	auto changeGuard = controllerChangeGuard();
 	auto it = std::find(s_controllers.begin(), s_controllers.end(), this);
 	if (it != s_controllers.end())
 	{
@@ -101,11 +117,13 @@ Controller::~Controller()
 // Get current value, with an offset into the current buffer for sample exactness
 float Controller::currentValue( int _offset )
 {
+	auto changeGuard = controllerChangeGuard();
 	if( _offset == 0 || isSampleExact() )
 	{
-		m_currentValue = fittedValue( value( _offset ) );
+		const float current = fittedValue(value(_offset));
+		if (!RealtimeScope::isActive()) { m_currentValue = current; }
+		return current;
 	}
-	
 	return m_currentValue;
 }
 
@@ -113,9 +131,15 @@ float Controller::currentValue( int _offset )
 
 float Controller::value( int offset )
 {
+	auto changeGuard = controllerChangeGuard();
 	if( m_bufferLastUpdated != s_periods )
 	{
-		updateValueBuffer();
+		if (RealtimeScope::isActive() && !Engine::audioEngine()->isRenderThread())
+		{
+			Engine::audioEngine()->recordUnpreparedControllerBufferRequest();
+			return m_currentValue;
+		}
+		prepareValueBufferForRender();
 	}
 	return m_valueBuffer.values()[ offset ];
 }
@@ -123,11 +147,31 @@ float Controller::value( int offset )
 
 ValueBuffer * Controller::valueBuffer()
 {
+	auto changeGuard = controllerChangeGuard();
 	if( m_bufferLastUpdated != s_periods )
 	{
-		updateValueBuffer();
+		if (RealtimeScope::isActive() && !Engine::audioEngine()->isRenderThread())
+		{
+			Engine::audioEngine()->recordUnpreparedControllerBufferRequest();
+			return nullptr;
+		}
+		prepareValueBufferForRender();
 	}
 	return &m_valueBuffer;
+}
+
+
+
+void Controller::prepareValueBufferForRender()
+{
+	if (m_bufferLastUpdated != s_periods)
+	{
+		updateValueBuffer();
+		// currentValue(offset > 0) historically uses the value observed at
+		// offset 0. Publish that scalar during the serial pass so workers never
+		// need to write shared controller state while reading the buffer.
+		m_currentValue = fittedValue(m_valueBuffer.values()[0]);
+	}
 }
 
 
@@ -156,6 +200,7 @@ float Controller::runningTime()
 
 void Controller::triggerFrameCounter()
 {
+	auto changeGuard = controllerChangeGuard();
 	for (Controller * controller : s_controllers)
 	{
 		// This signal is for updating values for both stubborn knobs and for
@@ -173,6 +218,7 @@ void Controller::triggerFrameCounter()
 
 void Controller::resetFrameCounter()
 {
+	auto changeGuard = controllerChangeGuard();
 	for (Controller * controller : s_controllers)
 	{
 		controller->m_bufferLastUpdated = 0;
@@ -294,6 +340,7 @@ gui::ControllerDialog * Controller::createDialog( QWidget * _parent )
 
 void Controller::addConnection( ControllerConnection * )
 {
+	auto changeGuard = controllerChangeGuard();
 	m_connectionCount++;
 }
 
@@ -302,6 +349,7 @@ void Controller::addConnection( ControllerConnection * )
 
 void Controller::removeConnection( ControllerConnection * )
 {
+	auto changeGuard = controllerChangeGuard();
 	m_connectionCount--;
 	Q_ASSERT( m_connectionCount >= 0 );
 }
@@ -315,7 +363,3 @@ int Controller::connectionCount() const{
 
 
 } // namespace lmms
-
-
-
-

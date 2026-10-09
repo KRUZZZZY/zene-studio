@@ -33,8 +33,15 @@ src/core/AudioEngine.cpp	AudioEngine::drainWideInputStage	the N-channel (feature
 src/core/Song.cpp	Song::processNextBuffer	the song's per-period scheduling, called from STAGE 0 on the audio thread (transport edges, MIDI clock, Session View launch scheduling)
 src/core/Mixer.cpp	Mixer::prepareMasterMix	called from STAGE 0: clears the mixer's per-period buffers before the render
 src/core/Mixer.cpp	Mixer::masterMix	called from STAGE 3: sums every channel into the master buffer on the audio thread
-src/core/Mixer.cpp	MixerChannel::sumSidechainInputs	called from the receiver channel's own processing on the audio thread once per period: sums each sidechain route's tap, scaled by the route amount's sole-reader buffer (review f1a74cc54; PhaseDSidechainTest::theSidechainAmountReadTakesNoLock is the blocking probe)
-src/core/AutomatableModel.cpp	AutomatableModel::valueBufferForSoleReader	valueBuffer()'s computation without the model's mutex, called on the audio thread by sumSidechainInputs for a sidechain amount that only its receiver reads (review f1a74cc54); a linked model is still taken through valueBuffer()
+src/core/Mixer.cpp	MixerChannel::sumSidechainInputs	called from the receiver channel's own processing on the audio thread once per period: sums each sidechain route's tap using the amount model's prepared cache
+src/core/AudioEngine.cpp	AudioEngine::prepareAutomatableModelBuffers	the serial per-period walk of the published model registry, after Song::processNextBuffer and before worker jobs; fixed iteration and prepared model caches only
+src/core/AutomatableModel.cpp	AutomatableModel::prepareValueBufferForRender	the serial evaluator for one registered model, its linked controller source and fixed period buffer; called by the registry pass, a serial render-owner read or a guarded control-side query
+src/core/AutomatableModel.cpp	AutomatableModel::valueBuffer	parallel mixer and plug-in workers perform a read-only lookup of the prepared cache; only the serial render owner may prepare an early Song-side read, and a worker miss is counted without computation or locking
+src/core/Controller.cpp	Controller::prepareValueBufferForRender	called by the serial model pass or render owner to update a connected controller at most once for the current period
+src/core/Controller.cpp	Controller::valueBuffer	parallel model and plug-in workers perform a read-only lookup of the controller buffer prepared by the model pass; an early serial render-owner read may prepare it before the pass
+src/core/Controller.cpp	Controller::currentValue	controller reads from its prepared buffer on mixer workers; realtime callers do not update shared scalar controller state
+src/core/Controller.cpp	Controller::value	controller buffer sample lookup; a stale realtime lookup is counted and returns without updating the buffer
+src/core/LfoController.cpp	LfoController::updateValueBuffer	serial controller prepass update, including its pre-prepared amount model; one state advance per period
 src/core/SessionScheduler.cpp	SessionScheduler::processAudio	the Session View launch scheduler, called from Song::processNextBuffer on the audio thread once per period
 src/core/SessionScheduler.cpp	SessionScheduler::drainCommands	the bounded drain of the session command queue, called from processAudio on the audio thread
 src/core/SessionScheduler.cpp	SessionScheduler::advanceClock	the session clock's per-period advance, called from processAudio on the audio thread

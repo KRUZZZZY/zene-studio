@@ -24,7 +24,9 @@
 
 #include "AutomatableModel.h"
 
+#include <bit>
 #include <chrono>
+#include <new>
 
 #include <QRegularExpression>
 
@@ -35,10 +37,29 @@
 #include "ControllerConnection.h"
 #include "LocaleHelper.h"
 #include "ProjectJournal.h"
+#include "RealtimeScope.h"
 #include "Song.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+	"AutomatableModel value handoff requires an always-lock-free 64-bit atomic");
+static_assert(std::atomic<bool>::is_always_lock_free,
+	"AutomatableModel registration flag requires an always-lock-free bool atomic");
+
+AudioEngine::RequestChangesGuard modelChangeGuard()
+{
+	AudioEngine* const engine = Engine::audioEngine();
+	return RealtimeScope::isActive() || engine == nullptr
+		? AudioEngine::RequestChangesGuard{}
+		: engine->requestChangesGuard();
+}
+
+} // namespace
 
 long AutomatableModel::s_periodCounter = 0;
 
@@ -66,7 +87,11 @@ AutomatableModel::AutomatableModel(
 
 {
 	m_value = fittedValue( val );
+	m_oldValue = m_value;
+	m_renderValue = m_value;
+	m_publishedValuePair.store(packValuePair(m_value, m_value), std::memory_order_relaxed);
 	setInitValue( val );
+	if (!Engine::audioEngine()->registerAutomatableModel(this)) { throw std::bad_alloc{}; }
 }
 
 
@@ -86,14 +111,22 @@ AutomatableModel::~AutomatableModel()
 	// the rigs in tests/src/core/AutomationModesTest.cpp) is setUseControllerValue()
 	// on freed memory, which is a SIGSEGV inside Qt's signal activation -
 	// AutomationModesTest reported exactly that on all seven CI platforms.
-	Song::forgetAutomatedModel( this );
+	const auto removeModelReferences = [this] {
+		Song::forgetAutomatedModel(this);
+		unlink();
+		if (m_controllerConnection) { delete m_controllerConnection; }
+	};
 
-	unlink();
-
-	if (m_controllerConnection)
+	if (AudioEngine* const engine = Engine::audioEngine())
 	{
-		delete m_controllerConnection;
+		// Close any external lifetime gates before taking the render lock. Once
+		// callbacks return, unregister and remove the render-visible references
+		// atomically with respect to the next period.
+		auto changeGuard = engine->requestChangesGuard();
+		engine->unregisterAutomatableModel(this);
+		removeModelReferences();
 	}
+	else { removeModelReferences(); }
 
 	m_valueBuffer.clear();
 
@@ -134,7 +167,7 @@ void AutomatableModel::saveSettings( QDomDocument& doc, QDomElement& element, co
 
 		QDomElement me = doc.createElement( mustQuote ? QString("automatablemodel") : name );
 		me.setAttribute( "id", ProjectJournal::idToWrite( id() ) );
-		me.setAttribute( "value", m_value );
+		me.setAttribute( "value", publishedValue() );
 		me.setAttribute( "scale_type", m_scaleType == ScaleType::Logarithmic ? "log" : "linear" );
 		if(mustQuote) {
 			me.setAttribute( "nodename", name );
@@ -147,7 +180,7 @@ void AutomatableModel::saveSettings( QDomDocument& doc, QDomElement& element, co
 		{
 			QDomElement me = doc.createElement( "automatablemodel" );
 			me.setAttribute( "nodename", name );
-			me.setAttribute( "value", m_value );
+			me.setAttribute( "value", publishedValue() );
 			// WF-033: in an undo snapshot the node carries the id the node branch of loadSettings reads.
 			if( ProjectJournal::snapshotIds() ) { me.setAttribute( "id", id() ); }
 			element.appendChild( me );
@@ -155,7 +188,7 @@ void AutomatableModel::saveSettings( QDomDocument& doc, QDomElement& element, co
 		else
 		{
 			// non automation, linear scale (default), can be saved as attribute
-			element.setAttribute( name, m_value );
+			element.setAttribute( name, publishedValue() );
 			// WF-033 (docs/UNDO-HISTORY-PERSISTENCE.md): an undo snapshot carries EVERY model's
 			// journal id, beside the value and in the same form - some loaders read a model's
 			// presence from its attribute (MidiPort's basevelocity compat), so the form must not
@@ -332,6 +365,7 @@ jo_id_t AutomatableModel::lastTouched()
 
 void AutomatableModel::setValue(const float value, const bool isAutomated)
 {
+	auto changeGuard = modelChangeGuard();
 	if (fittedValue(value) == m_value)
 	{
 		// TODO check why we need this signal, is there a better solution?
@@ -354,10 +388,12 @@ void AutomatableModel::setValue(const float value, const bool isAutomated)
 
 void AutomatableModel::setValueInternal(const float value)
 {
-	m_oldValue = m_value;
+	const float oldValue = m_value;
 	m_value = fittedValue(value);
+	publishValuePair(oldValue, m_value);
+	invalidateValueBufferCache();
 
-	if (m_oldValue != m_value)
+	if (oldValue != m_value)
 	{
 		m_valueChanged = true;
 		emit dataChanged();
@@ -495,6 +531,7 @@ size_t AutomatableModel::countLinks() const
 
 void AutomatableModel::linkToModel(AutomatableModel* other)
 {
+	auto changeGuard = modelChangeGuard();
 	if (isLinkedToModel(other)) { return; }
 
 	if (valueBuffer() && other->valueBuffer())
@@ -504,12 +541,13 @@ void AutomatableModel::linkToModel(AutomatableModel* other)
 			valueBuffer()->data());
 	}
 	// copy data from other to this
-	setValue(other->m_value);
+	setValue(other->publishedValue());
 	// link the models
 	AutomatableModel* thisEnd = getLastLinkedModel();
 	AutomatableModel* otherEnd = other->getLastLinkedModel();
 	thisEnd->m_nextLink = other;
 	otherEnd->m_nextLink = this;
+	invalidateLinkedValueBufferCaches();
 }
 
 
@@ -517,6 +555,8 @@ void AutomatableModel::linkToModel(AutomatableModel* other)
 
 void AutomatableModel::unlink()
 {
+	auto changeGuard = modelChangeGuard();
+	invalidateLinkedValueBufferCaches();
 	getLastLinkedModel()->m_nextLink = m_nextLink;
 	m_nextLink = this;
 }
@@ -526,7 +566,9 @@ void AutomatableModel::unlink()
 
 void AutomatableModel::setControllerConnection( ControllerConnection* c )
 {
+	auto changeGuard = modelChangeGuard();
 	m_controllerConnection = c;
+	invalidateLinkedValueBufferCaches();
 	if( c )
 	{
 		QObject::connect( m_controllerConnection, SIGNAL(valueChanged()),
@@ -569,20 +611,134 @@ float AutomatableModel::controllerValue( int frameOffset ) const
 
 ValueBuffer * AutomatableModel::valueBuffer()
 {
-	QMutexLocker m( &m_valueBufferMutex );
-	return valueBufferForSoleReader();
+	AudioEngine* const engine = Engine::audioEngine();
+	if (!m_registeredWithAudioEngine.load(std::memory_order_acquire))
+	{
+		engine->recordUnregisteredAutomatableBufferRequest();
+		return nullptr;
+	}
+	if (RealtimeScope::isActive())
+	{
+		if (m_lastUpdatedPeriod != s_periodCounter)
+		{
+			if (engine->isRenderThread())
+			{
+				prepareValueBufferForRender();
+				return cachedValueBuffer();
+			}
+			engine->recordUnpreparedAutomatableBufferRequest();
+			return nullptr;
+		}
+		return cachedValueBuffer();
+	}
+
+	// Keep the historic control-side query useful for editors and unit tests.
+	// During a render the caller above is strictly read-only; this guarded path
+	// can prepare a cache only after render has quiesced.
+	auto changeGuard = modelChangeGuard();
+	if (!m_registeredWithAudioEngine.load(std::memory_order_acquire))
+	{
+		engine->recordUnregisteredAutomatableBufferRequest();
+		return nullptr;
+	}
+	prepareValueBufferForRender();
+	return cachedValueBuffer();
 }
 
 
-ValueBuffer * AutomatableModel::valueBufferForSoleReader()
+ValueBuffer* AutomatableModel::cachedValueBuffer() noexcept
 {
-	// if we've already calculated the valuebuffer this period, return the cached buffer
-	if( m_lastUpdatedPeriod == s_periodCounter )
+	return m_lastUpdatedPeriod == s_periodCounter && m_hasSampleExactData ? &m_valueBuffer : nullptr;
+}
+
+
+
+void AutomatableModel::invalidateValueBufferCache() noexcept
+{
+	// A control setter is excluded by m_changeMutex; Song's serial render
+	// owner can also invalidate before the later registry pass. Worker jobs do
+	// not mutate this render-owned stamp.
+	AudioEngine* const engine = Engine::audioEngine();
+	if (!RealtimeScope::isActive() || (engine != nullptr && engine->isRenderThread()))
 	{
-		return m_hasSampleExactData
-			? &m_valueBuffer
-			: nullptr;
+		m_lastUpdatedPeriod = -1;
 	}
+}
+
+
+
+void AutomatableModel::invalidateLinkedValueBufferCaches() noexcept
+{
+	AudioEngine* const engine = Engine::audioEngine();
+	if (RealtimeScope::isActive() && (engine == nullptr || !engine->isRenderThread())) { return; }
+	invalidateValueBufferCache();
+	for (auto model = m_nextLink; model != this; model = model->m_nextLink)
+	{
+		model->invalidateValueBufferCache();
+	}
+}
+
+
+
+std::uint64_t AutomatableModel::packValuePair(float oldValue, float newValue) noexcept
+{
+	return (static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(oldValue)) << 32)
+		| std::bit_cast<std::uint32_t>(newValue);
+}
+
+
+
+float AutomatableModel::unpackOldValue(std::uint64_t pair) noexcept
+{
+	return std::bit_cast<float>(static_cast<std::uint32_t>(pair >> 32));
+}
+
+
+
+float AutomatableModel::unpackNewValue(std::uint64_t pair) noexcept
+{
+	return std::bit_cast<float>(static_cast<std::uint32_t>(pair));
+}
+
+
+
+float AutomatableModel::publishedValue() const noexcept
+{
+	return unpackNewValue(m_publishedValuePair.load(std::memory_order_acquire));
+}
+
+
+
+void AutomatableModel::publishValuePair(float oldValue, float newValue) noexcept
+{
+	m_publishedValuePair.store(packValuePair(oldValue, newValue), std::memory_order_release);
+	m_valueRevision.fetch_add(1, std::memory_order_release);
+}
+
+
+
+void AutomatableModel::consumePublishedValuePair() noexcept
+{
+	const std::uint64_t revision = m_valueRevision.load(std::memory_order_acquire);
+	if (revision == m_renderValueRevision) { return; }
+	const std::uint64_t pair = m_publishedValuePair.load(std::memory_order_acquire);
+	m_oldValue = unpackOldValue(pair);
+	m_renderValue = unpackNewValue(pair);
+	m_renderValueRevision = revision;
+}
+
+
+
+void AutomatableModel::prepareValueBufferForRender(bool skipLinkedControllerLookup)
+{
+	if (!m_registeredWithAudioEngine.load(std::memory_order_acquire))
+	{
+		Engine::audioEngine()->recordUnregisteredAutomatableBufferRequest();
+		return;
+	}
+	// If we've already calculated the buffer this period, keep it unchanged.
+	if (m_lastUpdatedPeriod == s_periodCounter) { return; }
+	consumePublishedValuePair();
 
 	// Sample-accurate automation (feature-list row 9): the automation
 	// evaluation published this parameter's curve for the block being rendered
@@ -604,19 +760,23 @@ ValueBuffer * AutomatableModel::valueBufferForSoleReader()
 			nvalues[i] = fittedValue(effectiveAutomationValue(
 				scaledValue(m_automationRamp.valueAt(static_cast<f_cnt_t>(i)))));
 		}
-		m_oldValue = m_value;
+		m_oldValue = m_renderValue;
 		m_lastUpdatedPeriod = s_periodCounter;
 		m_hasSampleExactData = true;
-		return &m_valueBuffer;
+		return;
 	}
 
-	float val = m_value; // make sure our m_value doesn't change midway
+	const float val = m_renderValue;
 
 	// TODO
 	// Let the Controller set the value of connected Models,
 	// instead of each Model checking the Controller value every time.
 
 	// Get value buffer from our controller
+	if (m_controllerConnection && m_useControllerValue)
+	{
+		m_controllerConnection->getController()->prepareValueBufferForRender();
+	}
 	if (m_controllerConnection && m_useControllerValue && m_controllerConnection->getController()->isSampleExact())
 	{
 		auto vb = m_controllerConnection->valueBuffer();
@@ -645,19 +805,21 @@ ValueBuffer * AutomatableModel::valueBufferForSoleReader()
 			}
 			m_lastUpdatedPeriod = s_periodCounter;
 			m_hasSampleExactData = true;
-			return &m_valueBuffer;
+			return;
 		}
 	}
 
 	// Get value buffer from one of the linked models' controller
-	if (m_useControllerValue)
+	if (m_useControllerValue && !skipLinkedControllerLookup)
 	{
 		for (auto next = m_nextLink; next != this; next = next->m_nextLink)
 		{
 				if (next->controllerConnection() && next->useControllerValue() &&
 						next->controllerConnection()->getController()->isSampleExact())
 				{
-					auto vb = next->valueBuffer();
+					next->prepareValueBufferForRender(true);
+					auto vb = next->cachedValueBuffer();
+					if (vb == nullptr) { continue; }
 					float* values = vb->values();
 					float* nvalues = m_valueBuffer.values();
 					for (int i = 0; i < vb->length(); i++)
@@ -666,13 +828,13 @@ ValueBuffer * AutomatableModel::valueBufferForSoleReader()
 					}
 					m_lastUpdatedPeriod = s_periodCounter;
 					m_hasSampleExactData = true;
-					return &m_valueBuffer;
+					return;
 				}
 		}
 	}
 
 	// Note: if there are linked models but no controller, `setValue()` will have
-	// updated `m_value` and `m_oldValue` across all linked models, so the `valueBuffer()`
+	// published the same old/new pair to all linked models, so the `valueBuffer()`
 	// will be the same (even if it is calculated separatly for each model).
 
 	// Populate value buffer by interpolatating between the old and new value
@@ -682,14 +844,13 @@ ValueBuffer * AutomatableModel::valueBufferForSoleReader()
 		m_oldValue = val;
 		m_lastUpdatedPeriod = s_periodCounter;
 		m_hasSampleExactData = true;
-		return &m_valueBuffer;
+		return;
 	}
 
 	// if we have no sample-exact source for a ValueBuffer, return NULL to signify that no data is available at the moment
 	// in which case the recipient knows to use the static value() instead
 	m_lastUpdatedPeriod = s_periodCounter;
 	m_hasSampleExactData = false;
-	return nullptr;
 }
 
 
@@ -702,6 +863,7 @@ void AutomatableModel::publishAutomationRamp(const AutomationRamp& ramp) noexcep
 	// byte-identical.
 	m_automationRamp = ramp;
 	m_automationRampPeriod = s_periodCounter;
+	invalidateValueBufferCache();
 }
 
 
@@ -717,12 +879,14 @@ const AutomationRamp* AutomatableModel::automationRamp() const noexcept
 
 void AutomatableModel::unlinkControllerConnection()
 {
+	auto changeGuard = modelChangeGuard();
 	if( m_controllerConnection )
 	{
 		m_controllerConnection->disconnect( this );
 	}
 
 	m_controllerConnection = nullptr;
+	invalidateLinkedValueBufferCaches();
 }
 
 
@@ -730,10 +894,13 @@ void AutomatableModel::unlinkControllerConnection()
 
 void AutomatableModel::setInitValue( const float value )
 {
+	auto changeGuard = modelChangeGuard();
 	m_initValue = fittedValue( value );
 	bool journalling = testAndSetJournalling( false );
 	setValue( value );
 	m_oldValue = m_value;
+	publishValuePair(m_value, m_value);
+	invalidateValueBufferCache();
 	setJournalling( journalling );
 	emit initValueChanged( value );
 }
@@ -756,7 +923,7 @@ float AutomatableModel::globalAutomationValueAt( const TimePos& time )
 	if (clips.empty())
 	{
 		// if no such clips exist, return current value
-		return m_value;
+		return publishedValue();
 	}
 	else
 	{
@@ -803,20 +970,23 @@ float AutomatableModel::globalAutomationValueAt( const TimePos& time )
 		}
 		// if we still find no clip, the value at that time is undefined so
 		// just return current value as the best we can do
-		else return m_value;
+		else return publishedValue();
 	}
 }
 
 void AutomatableModel::setUseControllerValue(bool b)
 {
+	auto changeGuard = modelChangeGuard();
 	if (b)
 	{
 		m_useControllerValue = true;
+		invalidateLinkedValueBufferCaches();
 		emit dataChanged();
 	}
 	else if (m_controllerConnection && m_useControllerValue)
 	{
 		m_useControllerValue = false;
+		invalidateLinkedValueBufferCaches();
 		emit dataChanged();
 	}
 }
