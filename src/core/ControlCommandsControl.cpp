@@ -68,6 +68,7 @@ QJsonObject audioReport()
 		{QStringLiteral("engine_handles_dropped"), 0},
 		{QStringLiteral("bus_edits_dropped"), 0},
 		{QStringLiteral("worker_buffer_overflows"), 0}});
+	out.insert(QStringLiteral("slicert_state_overflow"), 0);
 	AudioEngine* audio = Engine::audioEngine();
 	if (audio == nullptr) { return out; }
 
@@ -85,6 +86,8 @@ QJsonObject audioReport()
 			static_cast<qint64>(audio->droppedPlayHandleEdits())},
 		{QStringLiteral("worker_buffer_overflows"), static_cast<qint64>(
 			AudioEngineWorkerThread::deferredPlayHandleEditOverflowCount())}});
+	out.insert(QStringLiteral("slicert_state_overflow"),
+		static_cast<qint64>(audio->slicerTStateOverflows()));
 	if (failed)
 	{
 		out.insert(QStringLiteral("message"), audio->audioDevStartReason());

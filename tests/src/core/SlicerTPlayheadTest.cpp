@@ -36,6 +36,8 @@
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AudioEngineWorkerThread.h"
+#include "AllocationProbe.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -86,6 +88,7 @@ private slots:
 		guitest::startGui(m_home);
 		QVERIFY(gui::getGUI() != nullptr);
 		Engine::audioEngine()->audioDev()->stopProcessing();  // the test drives the periods itself
+		AudioEngineWorkerThread::setDeterministicProcessing(true);
 		NotePlayHandleManager::init();
 		ControlRegistry::setReady(true);
 	}
@@ -93,6 +96,7 @@ private slots:
 	void cleanupTestCase()
 	{
 		ControlRegistry::setReady(false);
+		AudioEngineWorkerThread::setDeterministicProcessing(false);
 		Engine::getSong()->clearProject();
 		Engine::destroy();
 	}
@@ -165,6 +169,41 @@ private slots:
 		track->processInEvent(noteOff);
 		for (int i = 0; i < 4; ++i) { renderPeriod(); }
 		QTest::qWait(120);
+
+		// The first note above warms the worker and the note buffer path. A later
+		// note still needs its own resampler state, but that state now comes from
+		// the instrument's constructor-time pool. Deterministic processing keeps
+		// this real NotePlayHandle render on the probing thread.
+		track->processInEvent(noteOn);
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		renderPeriod();
+		test::tlCountAllocations = false;
+		QCOMPARE(test::tlAllocationCount, std::uint64_t{0});
+
+		const ControlResult beforeOverflow = ControlRegistry::instance()->invoke(QStringLiteral("control.ping"));
+		QVERIFY(beforeOverflow.ok);
+		const qint64 overflowsBefore = beforeOverflow.result.value(QStringLiteral("audio")).toObject()
+			.value(QStringLiteral("slicert_state_overflow")).toInteger();
+		Note overlappingNote(TimePos(1000000), TimePos(0), track->baseNote());
+		Engine::audioEngine()->setOverloadSheddingEnabled(false);
+		for (int i = 0; i < 130; ++i)
+		{
+			auto* handle = NotePlayHandleManager::acquire(track, 0, 1000000, overlappingNote);
+			QVERIFY(Engine::audioEngine()->addPlayHandle(handle));
+		}
+		renderPeriod();
+		const ControlResult afterOverflow = ControlRegistry::instance()->invoke(QStringLiteral("control.ping"));
+		QVERIFY(afterOverflow.ok);
+		const qint64 overflowsAfter = afterOverflow.result.value(QStringLiteral("audio")).toObject()
+			.value(QStringLiteral("slicert_state_overflow")).toInteger();
+		QVERIFY2(overflowsAfter > overflowsBefore, "SlicerT state-pool exhaustion was not reported by control.ping");
+		track->processInEvent(noteOff);
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		for (int i = 0; i < 8; ++i) { renderPeriod(); }
+		test::tlCountAllocations = false;
+		QCOMPARE(test::tlAllocationCount, std::uint64_t{0});
 	}
 };
 

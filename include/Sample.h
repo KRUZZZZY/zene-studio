@@ -57,6 +57,14 @@ public:
 
 		void setFrameIndex(int index) { m_frameIndex = index; }
 		void setBackwards(bool backwards) { m_backwards = backwards; }
+		//! Rewind a preallocated voice for reuse. The resampler is reset in place; no state is allocated or freed.
+		void reset()
+		{
+			m_resampler.reset();
+			m_bufferView = {};
+			m_frameIndex = 0;
+			m_backwards = false;
+		}
 
 	private:
 		AudioResampler m_resampler;

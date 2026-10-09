@@ -346,6 +346,7 @@ private slots:
 		QVERIFY(overflow.contains(QStringLiteral("engine_handles_dropped")));
 		QVERIFY(overflow.contains(QStringLiteral("bus_edits_dropped")));
 		QVERIFY(overflow.contains(QStringLiteral("worker_buffer_overflows")));
+		QVERIFY(audio.contains(QStringLiteral("slicert_state_overflow")));
 
 		ControlRegistry::setReady(true);
 		const ControlResult ready = registry->invoke(QStringLiteral("control.ping"));

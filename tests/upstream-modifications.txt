@@ -1832,3 +1832,9 @@ src/core/ControlCommandsControl.cpp	5467 round 3: include engine-list, bus-edit 
 tests/src/core/AudioBusPlayHandleQueueTest.cpp	5467 round 3: prove full-capacity appends do not grow the QList, main-thread low-water refill, allocation-free inline fallback, and worker subnote output with the edit queue full; round 4: exercise a capacity-deferred engine handle through clear, direct and queued remove, type removal, and SampleTrack destruction, checking allocation count, destruction, retry, and playback.
 tests/src/core/ControlRegistryTest.cpp	5467 round 3: assert control.ping exposes the play-handle overflow fields.
 tests/src/core/ModulationAudioViewTest.cpp	0.5.0 M0 blockers 5173/5186: pauses an audio modulation write inside dataChanged, deletes its model on another thread, and asserts teardown waits for the in-flight write (red against the token-only implementation).
+include/Sample.h	Cluster 4467: Sample::PlaybackState::reset clears a preconstructed resampler and its buffered span for SlicerT slot reuse; no state is allocated or freed.
+include/AudioEngine.h	Cluster 4467: exposes the atomic SlicerT state-pool overflow counter read by control.ping.
+plugins/SlicerT/SlicerT.cpp	Cluster 4467: replace per-note new/delete of PlaybackState with a 128-slot instrument-owned pool; allocation-free claim and reset, counted refusal when full.
+plugins/SlicerT/SlicerT.h	Cluster 4467: stores the fixed per-instance SlicerT playback-state pool and the bounded-overflow sentinel.
+src/core/ControlCommandsControl.cpp	Cluster 4467: add the SlicerT playback-state pool overflow counter to the stable audio object in control.ping.
+tests/src/core/ControlRegistryTest.cpp	Cluster 4467: assert control.ping includes the SlicerT pool overflow counter.

@@ -225,6 +225,15 @@ public:
 	{
 		return m_droppedPlayHandleEditCount.load(std::memory_order_relaxed);
 	}
+	//! SlicerT notes refused because the instrument's fixed playback-state pool was full.
+	void recordSlicerTStateOverflow() noexcept
+	{
+		m_slicerTStateOverflowCount.fetch_add(1, std::memory_order_relaxed);
+	}
+	std::uint64_t slicerTStateOverflows() const noexcept
+	{
+		return m_slicerTStateOverflowCount.load(std::memory_order_relaxed);
+	}
 	void recordDroppedPlayHandleEdit() noexcept
 	{
 		m_droppedPlayHandleEditCount.fetch_add(1, std::memory_order_relaxed);
@@ -634,6 +643,7 @@ private:
 	std::atomic<std::uint64_t> m_capacityDeferredPlayHandleCountTotal{0};
 	std::atomic<std::uint64_t> m_droppedPlayHandleCount{0};
 	std::atomic<std::uint64_t> m_droppedPlayHandleEditCount{0};
+	std::atomic<std::uint64_t> m_slicerTStateOverflowCount{0};
 	// place where new playhandles are added temporarily
 	LocklessList<PlayHandle *> m_newPlayHandles;
 	ConstPlayHandleList m_playHandlesToRemove;
