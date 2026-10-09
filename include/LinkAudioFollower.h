@@ -87,6 +87,8 @@ struct LinkFollowerReading
 class LMMS_EXPORT LinkAudioFollower
 {
 public:
+	//! Main thread: construct the process-wide follower before rendering starts.
+	static void initialize();
 	static LinkAudioFollower& instance();
 
 	// ---- control side (UI thread) ------------------------------------------

@@ -31,6 +31,7 @@ src/core/AudioEngine.cpp	AudioEngine::swapBuffers	called once per period from ST
 src/core/AudioEngine.cpp	AudioEngine::drainInputStage	the stereo input staging drain, once per period on the audio thread ("no lock, no allocation" by contract)
 src/core/AudioEngine.cpp	AudioEngine::drainWideInputStage	the N-channel (feature row 64) input staging drain, once per period on the audio thread
 src/core/Song.cpp	Song::processNextBuffer	the song's per-period scheduling, called from STAGE 0 on the audio thread (transport edges, MIDI clock, Session View launch scheduling)
+src/core/LinkAudioFollower.cpp	LinkAudioFollower::instance	the follower singleton is read by followLinkSession from Song::processNextBuffer once per rendered period; setup constructs it before the audio device starts
 src/core/Mixer.cpp	Mixer::prepareMasterMix	called from STAGE 0: clears the mixer's per-period buffers before the render
 src/core/Mixer.cpp	Mixer::masterMix	called from STAGE 3: sums every channel into the master buffer on the audio thread
 src/core/Mixer.cpp	MixerChannel::sumSidechainInputs	called from the receiver channel's own processing on the audio thread once per period: sums each sidechain route's tap, scaled by the route amount's sole-reader buffer (review f1a74cc54; PhaseDSidechainTest::theSidechainAmountReadTakesNoLock is the blocking probe)
