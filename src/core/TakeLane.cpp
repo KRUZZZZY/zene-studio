@@ -118,6 +118,12 @@ TakeLaneSegment segmentFromElement(const QDomElement& element)
 } // namespace
 
 
+void TakeLaneModel::setAuditionLane(int lane)
+{
+	const auto changeLock = changeLockForEdit();
+	m_auditionLane = lane;
+}
+
 int TakeLaneModel::addLane(const QString& name)
 {
 	const auto changeLock = changeLockForEdit();
