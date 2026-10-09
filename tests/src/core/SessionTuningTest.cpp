@@ -269,30 +269,6 @@ const QVector<RefusalCase>& refusalCases(const QString& missingPath)
 
 } // namespace
 
-//! Cluster 5313: the publish hook (SessionTuning::setPublishedHookForTest) runs on the WRITING thread
-//! right after a table is published. The hook starts a reader and holds the writer until the reader
-//! returns or a window expires, and records which of the two happened. A reader that stalls on the
-//! just-published slot is still spinning when the window expires; the writer then returns, the stall
-//! clears, and the reader is joined by the test after commit() has returned.
-std::atomic<bool> s_readerReturned{false};
-std::atomic<bool> s_readerReturnedInWindow{false};
-std::thread s_reader;
-
-void holdWriterWhileAReaderRuns()
-{
-	s_readerReturned.store(false);
-	s_reader = std::thread([] {
-		static_cast<void>(SessionTuning::instance()->noteToFreq(60));
-		s_readerReturned.store(true);
-	});
-	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-	while (!s_readerReturned.load() && std::chrono::steady_clock::now() < deadline)
-	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	}
-	s_readerReturnedInWindow.store(s_readerReturned.load());
-}
-
 class SessionTuningTest : public QObject
 {
 	Q_OBJECT
@@ -1019,23 +995,6 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
 	}
 
-	//! Cluster 5313: a reader that runs while a writer has just published a table must not spin on the
-	//! writer's claim bit. The hook holds the writer right after the publish; the reader has to return
-	//! inside that window.
-	void aReaderArrivingAtAPublishedTableDoesNotStallOnTheWriter()
-	{
-		SessionTuning* tuning = SessionTuning::instance();
-		s_readerReturnedInWindow.store(false);
-		SessionTuning::setPublishedHookForTest(&holdWriterWhileAReaderRuns);
-		QString error;
-		const bool committed = tuning->setNoteFrequency(60, 450.0, QStringLiteral("hook"), &error);
-		SessionTuning::setPublishedHookForTest(nullptr);
-		if (s_reader.joinable()) { s_reader.join(); }
-		QVERIFY2(committed, qPrintable(error));
-		QVERIFY2(s_readerReturnedInWindow.load(),
-			"a reader stalled on the just-published table while the writer held its claim: noteToFreq never returned");
-		tuning->reset();
-	}
 };
 
 QTEST_GUILESS_MAIN(SessionTuningTest)

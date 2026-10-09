@@ -53,8 +53,8 @@
 namespace lmms
 {
 
-//! Test seam (cluster 5313): see SessionTuning::setPublishedHookForTest. Null in the product.
-void (*s_publishedHookForTest)() = nullptr;
+//! Test seam (cluster 5313): see SessionTuning::setPublicationBoundaryHookForTest. Null in the product.
+void (*s_publicationBoundaryHookForTest)() = nullptr;
 
 namespace
 {
@@ -236,9 +236,9 @@ bool SessionTuning::buildTable(const Scale* scale, const Keymap& keymap,
 	return true;
 }
 
-void SessionTuning::setPublishedHookForTest(void (*hook)())
+void SessionTuning::setPublicationBoundaryHookForTest(void (*hook)())
 {
-	s_publishedHookForTest = hook;
+	s_publicationBoundaryHookForTest = hook;
 }
 
 void SessionTuning::commit(const Table& next, bool nextActive, const QString& source)
@@ -276,13 +276,14 @@ void SessionTuning::commit(const Table& next, bool nextActive, const QString& so
 			target = next;
 			target.active = nextActive;
 			m_slotStates[back].fetch_and(~WriterBit, std::memory_order_release);
+			// This boundary is deliberately between clearing the claim and publishing the slot.
+			// Pausing here makes the old publish-then-clear order reproducible in the test.
+			if (s_publicationBoundaryHookForTest != nullptr) { s_publicationBoundaryHookForTest(); }
 			m_front.store(back, std::memory_order_release);
 			m_source = source.left(MaxSourceLength);
 			break;
 		}
 	}
-	if (s_publishedHookForTest != nullptr) { s_publishedHookForTest(); }
-
 	retuneSoundingNotes();
 	publishToMtsEsp();
 }

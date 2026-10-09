@@ -234,6 +234,8 @@ set(LMMS_TESTS
 	# refusals with no table write and no undo step; 128-key parity against
 	# Microtuner::keyToFreq over the SAME Scale/Keymap; the MTS-ESP refusal.
 	src/core/SessionTuningTest.cpp
+	# Cluster 5313: isolate the publication-window reader test from unrelated instrument plug-ins.
+	src/core/SessionTuningPublicationTest.cpp
 	src/core/ControlWarpCommandsTest.cpp
 	# The groove pool and quantise surface (docs/GROOVE-POOL.md): the engine
 	# half (the extraction and application arithmetic and the pool's XML form,

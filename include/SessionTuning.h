@@ -198,9 +198,9 @@ public:
 	//! the registered flag with the connected client count.
 	QJsonObject mtsEspJson() const;
 
-	//! Test seam (cluster 5313): when set, commit() calls it on the WRITING thread right after it publishes a
-	//! table to the readers. Null in the product; the regression test holds the writer there while a reader runs.
-	static void setPublishedHookForTest(void (*hook)());
+	//! Test seam (cluster 5313): called on the writer between releasing a table slot and publishing it as
+	//! the front slot. Null in the product; the regression test pauses here while a reader runs.
+	static void setPublicationBoundaryHookForTest(void (*hook)());
 
 private:
 	SessionTuning();
