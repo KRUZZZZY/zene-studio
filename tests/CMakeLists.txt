@@ -3636,6 +3636,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# Q050-021: the stopped-seek regression runs alone so unrelated import, export and render
+	# plug-ins are not prerequisites for its control-socket check.
+	add_test(NAME ControlStoppedSeek
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-success-paths.py
+			$<TARGET_FILE:zene> --stopped-seek-only
+	)
+	set_tests_properties(ControlStoppedSeek PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# midi.retro_capture_* (0.3.0, retrospective MIDI capture - owner's-31 item
 	# 14): PLAY real MIDI into the running engine from the host's ALSA sequencer
 	# (`aplaymidi` is an external client, exactly like a keyboard) and recover it

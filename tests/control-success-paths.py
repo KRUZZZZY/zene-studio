@@ -70,6 +70,32 @@ def check_arrangement_record_land(session, recorder):
     session.result("transport.stop")
 
 
+def check_stopped_seek(session, recorder):
+    """Q050-021: a stopped seek is the position the transport starts from."""
+    session.result("project.new")
+    track = session.result("track.add", {"type": "instrument", "name": "Seek target"}).get("track")
+    clip = session.result("clip.add", {"track": track, "position": 0}).get("clip")
+    session.result("note.add", {"clip": clip, "key": 60, "position": 0, "length": 4096, "velocity": 100})
+    target = 960
+    session.result("transport.stop")
+    seek = session.result("transport.seek", {"ticks": target})
+    state = session.result("transport.get_state")
+    arrangement = session.result("arrangement.get_state")
+    recorder.check("stopped transport and arranger playhead report the sought tick",
+                   seek.get("position_ticks") == target and state.get("playing") is False
+                   and state.get("position_ticks") == target
+                   and arrangement.get("playhead_ticks") == target,
+                   "seek=%r state=%r arrangement=%r" % (seek, state, arrangement))
+
+    started = session.result("transport.play")
+    state = session.result("transport.get_state")
+    position = int(state.get("position_ticks", -1))
+    recorder.check("playback starts at the stopped seek tick", started.get("playing") is True
+                   and state.get("playing") is True and target <= position < target + 192,
+                   "play=%r state=%r" % (started, state))
+    session.result("transport.stop")
+
+
 def check_audible_diff(session, recorder, outdir):
     path = os.path.join(outdir, "same.mmp")
     session.result("project.save", {"path": path})
@@ -258,6 +284,10 @@ def main(argv):
     if len(argv) < 2:
         print(__doc__)
         return 2
+    stopped_seek_only = len(argv) == 3 and argv[2] == "--stopped-seek-only"
+    if len(argv) > 2 and not stopped_seek_only:
+        print("usage: control-success-paths.py <zene> [--stopped-seek-only]", file=sys.stderr)
+        return 2
     recorder = Recorder()
     transcript = H.Transcript()
     with H.start_instance(argv[1], workingdir=None) as instance:
@@ -265,14 +295,17 @@ def main(argv):
         client = H.connect(instance)
         H.wait_ready(instance, client, transcript)
         session = Session(client, transcript)
-        check_arrangement_record_land(session, recorder)
-        check_audible_diff(session, recorder, instance.tmp)
-        check_project_lifecycle(session, recorder, instance.tmp)
-        check_subprojects(session, recorder, instance.tmp)
-        check_track_flatten(session, recorder)
-        check_range_bounce(session, recorder, instance.tmp)
-        check_bounce_source_undo(session, recorder, instance.tmp)
-        check_window_shell(session, recorder, instance.tmp)
+        if stopped_seek_only:
+            check_stopped_seek(session, recorder)
+        else:
+            check_arrangement_record_land(session, recorder)
+            check_audible_diff(session, recorder, instance.tmp)
+            check_project_lifecycle(session, recorder, instance.tmp)
+            check_subprojects(session, recorder, instance.tmp)
+            check_track_flatten(session, recorder)
+            check_range_bounce(session, recorder, instance.tmp)
+            check_bounce_source_undo(session, recorder, instance.tmp)
+            check_window_shell(session, recorder, instance.tmp)
         session.call("control.quit")
     report_results(recorder)
     if recorder.problems:

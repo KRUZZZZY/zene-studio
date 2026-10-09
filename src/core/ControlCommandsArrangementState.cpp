@@ -60,7 +60,8 @@ void registerArrangementGetState(ControlRegistry& registry)
 		"clip-<n> ids. The trk-<n> number is assigned at creation and persists in the project file. "
 		"Addressing is scoped to the SONG container: a track inside a nested container (the "
 		"<trackcontainer> a pattern track carries) is not reachable by id, exactly as it is not "
-		"addressable by index.");
+		"addressable by index. `playhead_ticks` reports the arranger's Song-timeline position, also "
+		"used by the video window.");
 	cmd.argsSchema = control::objectSchema({});
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
@@ -68,6 +69,7 @@ void registerArrangementGetState(ControlRegistry& registry)
 		{QStringLiteral("track_count"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("clip_count"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("selected_clip"), control::stringProperty()},
+		{QStringLiteral("playhead_ticks"), control::integerProperty(0, 0x7fffffff)},
 	});
 	cmd.handler = [](const QJsonObject&) {
 		const QVector<control::ClipRef> refs = control::enumerateClips();
@@ -96,6 +98,8 @@ void registerArrangementGetState(ControlRegistry& registry)
 		result.insert(QStringLiteral("track_count"), tracks.size());
 		result.insert(QStringLiteral("clip_count"), clips.size());
 		result.insert(QStringLiteral("selected_clip"), control::selectedClipId());
+		result.insert(QStringLiteral("playhead_ticks"), static_cast<qint64>(
+			Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks()));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
