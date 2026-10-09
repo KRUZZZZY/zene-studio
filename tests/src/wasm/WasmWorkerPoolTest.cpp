@@ -55,6 +55,7 @@
 
 #include <algorithm>
 #include <array>
+#include <barrier>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -84,6 +85,23 @@ constexpr float TestSampleRate = 48000.0f;
 //! What the render drives host_get_param(0) with (WasmOfflineRender.cpp).
 constexpr float RenderParam0 = 0.5f;
 constexpr float StimulusGain = 0.25f;
+
+struct AudioEndpointRaceProbe
+{
+	std::atomic<bool> stopReturned{false};
+	std::atomic<std::uint64_t> entries{0};
+	std::atomic<std::uint64_t> entriesAfterStop{0};
+};
+
+void observeAudioEndpointEntry(void* context)
+{
+	auto& probe = *static_cast<AudioEndpointRaceProbe*>(context);
+	probe.entries.fetch_add(1, std::memory_order_relaxed);
+	if (probe.stopReturned.load(std::memory_order_acquire))
+	{
+		probe.entriesAfterStop.fetch_add(1, std::memory_order_relaxed);
+	}
+}
 
 //! The stimulus: a rising ramp inside one block, repeated - so a block that
 //! was dropped, reordered or processed twice shows up as a displaced sample.
@@ -153,6 +171,7 @@ private slots:
 	void testPoolIsSharedAndBounded();
 	void testAQueuedBlockIsPickedUpByAWakeUp();
 	void testStopWaitsForAudioEndpointsToQuiesce();
+	void testEntryRacesWithStopWithoutPostStopEndpointUse();
 	void testRemovalWaitsForLoadedWorkerReaders();
 	void testMemoryRefreshReacquiresMovedPointer();
 	void testWasmWorkerRefreshesMemoryAfterGrowth();
@@ -272,12 +291,12 @@ void WasmWorkerPoolTest::testStopWaitsForAudioEndpointsToQuiesce()
 		stopped.release();
 	});
 	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-	while (!worker.m_audioEndpointsClosed.load(std::memory_order_acquire)
+	while (!worker.audioEndpointsClosed()
 		&& std::chrono::steady_clock::now() < deadline)
 	{
 		std::this_thread::yield();
 	}
-	const bool stopClosedEndpoints = worker.m_audioEndpointsClosed.load(std::memory_order_acquire);
+	const bool stopClosedEndpoints = worker.audioEndpointsClosed();
 	const bool completedWhilePinned = stopped.try_acquire_for(std::chrono::milliseconds(250));
 	worker.endAudioEndpoint();
 	const bool completed = completedWhilePinned
@@ -288,6 +307,57 @@ void WasmWorkerPoolTest::testStopWaitsForAudioEndpointsToQuiesce()
 	QVERIFY2(completed, "stop did not finish after the audio endpoint was released");
 	QVERIFY2(!completedWhilePinned,
 		"stop took over the SPSC queues while an audio endpoint was still pinned");
+}
+
+void WasmWorkerPoolTest::testEntryRacesWithStopWithoutPostStopEndpointUse()
+{
+	constexpr int StopRaces = 100000;
+	WasmWorker worker;
+	AudioEndpointRaceProbe probe;
+	worker.setAudioEndpointEntryTestHook(&observeAudioEndpointEntry, &probe);
+	std::barrier phase(3);
+
+	std::thread endpoint([&] {
+		for (int race = 0; race < StopRaces; ++race)
+		{
+			phase.arrive_and_wait();
+			worker.submit(nullptr, 0, TestSampleRate);
+			worker.collect(nullptr, 0);
+			phase.arrive_and_wait();
+		}
+	});
+	std::thread stopper([&] {
+		for (int race = 0; race < StopRaces; ++race)
+		{
+			phase.arrive_and_wait();
+			worker.stop();
+			probe.stopReturned.store(true, std::memory_order_release);
+			phase.arrive_and_wait();
+		}
+	});
+
+	for (int race = 0; race < StopRaces; ++race)
+	{
+		worker.openAudioEndpoints();
+		probe.stopReturned.store(false, std::memory_order_relaxed);
+		phase.arrive_and_wait();
+		phase.arrive_and_wait();
+	}
+	endpoint.join();
+	stopper.join();
+	worker.setAudioEndpointEntryTestHook(nullptr, nullptr);
+
+	const std::uint64_t lateEntries = probe.entriesAfterStop.load(std::memory_order_relaxed);
+	const std::uint64_t entered = probe.entries.load(std::memory_order_relaxed);
+	const std::uint64_t attempts = 2 * static_cast<std::uint64_t>(StopRaces);
+	const double failureRate = 100.0 * static_cast<double>(lateEntries)
+		/ static_cast<double>(attempts);
+	qInfo("MEASURED %llu entry attempts, %llu accepted pins, %llu after stop returned "
+		"across %d stop races (%.6f%% late-entry rate)",
+		static_cast<unsigned long long>(attempts),
+		static_cast<unsigned long long>(entered),
+		static_cast<unsigned long long>(lateEntries), StopRaces, failureRate);
+	QCOMPARE(lateEntries, std::uint64_t{0});
 }
 
 void WasmWorkerPoolTest::testRemovalWaitsForLoadedWorkerReaders()

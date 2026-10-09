@@ -31,6 +31,17 @@
 namespace lmms::wasm
 {
 
+#ifdef LMMS_TESTING
+namespace
+{
+
+using AudioEndpointEntryTestHook = void (*)(void*);
+std::atomic<AudioEndpointEntryTestHook> audioEndpointEntryTestHook{nullptr};
+std::atomic<void*> audioEndpointEntryTestContext{nullptr};
+
+} // namespace
+#endif
+
 WasmWorker::~WasmWorker()
 {
 	stop();
@@ -43,7 +54,7 @@ bool WasmWorker::start(const std::string& modulePath, std::string& error,
 	m_modulePath = modulePath;
 	m_stop.store(false, std::memory_order_release);
 	m_state.store(State::Loading, std::memory_order_release);
-	m_audioEndpointsClosed.store(false, std::memory_order_release);
+	openAudioEndpoints();
 	// No thread of our own: a lane of the shared pool loads the module and then
 	// runs this worker's blocks. addWorker() asks for a wake-up, so the load
 	// starts immediately rather than at the next tick of a timer.
@@ -74,14 +85,9 @@ bool WasmWorker::start(const std::string& modulePath, std::string& error,
 void WasmWorker::stop()
 {
 	m_stop.store(true, std::memory_order_release);
-	// submit() is the command queue's producer and collect() is the result
-	// queue's consumer. Close both audio endpoints and let an operation already
-	// inside finish before the control thread takes over either SPSC endpoint.
-	m_audioEndpointsClosed.store(true, std::memory_order_release);
-	while (m_audioEndpointUsers.load(std::memory_order_acquire) != 0)
-	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(1));
-	}
+	// The audio side only makes a bounded atomic attempt. The control thread
+	// closes the gate and waits for already-pinned SPSC access to finish.
+	closeAudioEndpointsAndWait();
 	if (m_registeredWithPool)
 	{
 		WasmWorkerPool::instance().removeWorker(this);
@@ -125,19 +131,61 @@ void WasmWorker::releaseLane()
 	m_laneClaimed.store(false, std::memory_order_release);
 }
 
+void WasmWorker::openAudioEndpoints()
+{
+	m_audioEndpointState.store(0, std::memory_order_release);
+}
+
+void WasmWorker::closeAudioEndpointsAndWait()
+{
+	m_audioEndpointState.fetch_or(audioEndpointClosedBit, std::memory_order_acq_rel);
+	while ((m_audioEndpointState.load(std::memory_order_acquire) & audioEndpointUsersMask) != 0)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+}
+
 bool WasmWorker::beginAudioEndpoint()
 {
-	if (m_audioEndpointsClosed.load(std::memory_order_acquire)) { return false; }
-	m_audioEndpointUsers.fetch_add(1, std::memory_order_acq_rel);
-	if (!m_audioEndpointsClosed.load(std::memory_order_acquire)) { return true; }
-	m_audioEndpointUsers.fetch_sub(1, std::memory_order_release);
-	return false;
+	// Entry and close modify the same atomic word. If this increment wins the
+	// modification order before stop's fetch_or, stop sees the pin and waits;
+	// if close wins first, this CAS observes the closed bit and cannot enter.
+	std::uint32_t state = m_audioEndpointState.load(std::memory_order_acquire);
+	for (;;)
+	{
+		if ((state & audioEndpointClosedBit) != 0
+			|| (state & audioEndpointUsersMask) == audioEndpointUsersMask)
+		{
+			return false;
+		}
+		if (m_audioEndpointState.compare_exchange_weak(state, state + 1,
+			std::memory_order_acq_rel, std::memory_order_acquire))
+		{
+			return true;
+		}
+	}
 }
 
 void WasmWorker::endAudioEndpoint()
 {
-	m_audioEndpointUsers.fetch_sub(1, std::memory_order_release);
+	m_audioEndpointState.fetch_sub(1, std::memory_order_release);
 }
+
+#ifdef LMMS_TESTING
+void WasmWorker::setAudioEndpointEntryTestHook(AudioEndpointEntryTestHook hook, void* context)
+{
+	audioEndpointEntryTestContext.store(context, std::memory_order_relaxed);
+	audioEndpointEntryTestHook.store(hook, std::memory_order_release);
+}
+
+void WasmWorker::notifyAudioEndpointEnteredForTest()
+{
+	if (const auto hook = audioEndpointEntryTestHook.load(std::memory_order_acquire))
+	{
+		hook(audioEndpointEntryTestContext.load(std::memory_order_relaxed));
+	}
+}
+#endif
 
 bool WasmWorker::hasPendingWork() const
 {
@@ -329,6 +377,9 @@ bool WasmWorker::submit(const SampleFrame* interleaved, std::uint32_t frames,
 		m_dropped.fetch_add(1, std::memory_order_relaxed);
 		return false;
 	}
+#ifdef LMMS_TESTING
+	notifyAudioEndpointEnteredForTest();
+#endif
 	if (frames == 0 || frames > maxBlockFrames ||
 		m_state.load(std::memory_order_acquire) != State::Ready)
 	{
@@ -373,6 +424,9 @@ bool WasmWorker::collect(SampleFrame* interleaved, std::uint32_t frames)
 {
 	AudioEndpointPin endpoint(*this);
 	if (!endpoint) { return false; }
+#ifdef LMMS_TESTING
+	notifyAudioEndpointEnteredForTest();
+#endif
 	std::uint32_t index = 0;
 	if (!m_results.pop(index))
 	{

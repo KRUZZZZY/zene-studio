@@ -127,6 +127,12 @@ private:
 	friend class WasmWorkerPool;
 	friend class WasmWorkerPoolTest;
 
+#ifdef LMMS_TESTING
+	using AudioEndpointEntryTestHook = void (*)(void*);
+	static void setAudioEndpointEntryTestHook(AudioEndpointEntryTestHook hook, void* context);
+	static void notifyAudioEndpointEnteredForTest();
+#endif
+
 	//! Pin the audio submit/collect endpoints so stop() can safely take over
 	//! both SPSC queues after the audio side has quiesced.
 	class AudioEndpointPin
@@ -165,6 +171,12 @@ private:
 	 *  makes "one block of one worker at a time, in FIFO order" true. */
 	bool claimForLane();
 	void releaseLane();
+	void openAudioEndpoints();
+	void closeAudioEndpointsAndWait();
+	bool audioEndpointsClosed() const
+	{
+		return (m_audioEndpointState.load(std::memory_order_acquire) & audioEndpointClosedBit) != 0;
+	}
 	bool beginAudioEndpoint();
 	void endAudioEndpoint();
 	//! Whether a lane would find work here: a module to load, or blocks queued.
@@ -187,8 +199,11 @@ private:
 	//! lanes run drainOnLane().
 	std::atomic<bool> m_laneClaimed{false};
 	std::atomic<bool> m_stop{false};
-	std::atomic<bool> m_audioEndpointsClosed{true};
-	std::atomic<std::uint32_t> m_audioEndpointUsers{0};
+	//! A single modification order arbitrates entry against shutdown: bit 31
+	//! closes the gate, and the low bits count audio-side pins.
+	static constexpr std::uint32_t audioEndpointClosedBit = std::uint32_t{1} << 31;
+	static constexpr std::uint32_t audioEndpointUsersMask = audioEndpointClosedBit - 1;
+	std::atomic<std::uint32_t> m_audioEndpointState{audioEndpointClosedBit};
 	//! Control thread only: whether this worker is in the pool's registry.
 	bool m_registeredWithPool = false;
 	std::atomic<State> m_state{State::Idle};
