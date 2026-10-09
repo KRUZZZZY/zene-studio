@@ -56,7 +56,7 @@ namespace
  *  The signature is 0x04034B50 and is stored little-endian, so the bytes on
  *  disk are "PK\3\4". This is a decision about the first four bytes only -
  *  everything after them is the reader's to validate, and it validates all of
- *  it (DawProjectZip.cpp bounds-checks every offset and size, and refuses
+ *  it (DawProjectZipRead.cpp bounds-checks every offset and size, and its strict mode refuses
  *  DEFLATE, encryption, spanning and a bad CRC each by name). */
 bool opensWithZipLocalHeader( const QByteArray& bytes )
 {

@@ -91,6 +91,32 @@ ControlResult missingFile(const QString& path)
 		QStringLiteral("no such file: %1").arg(path));
 }
 
+//! The typed refusal for a container that could not be read: the reader's own sentence, then EVERY
+//! deviation it recorded, because a refusal that names only the first leaves the caller to find
+//! the rest by trial.
+ControlResult unreadable(const QString& error, const dwp::DawProjectReadReport& report)
+{
+	QString message = error;
+	if (!report.deviations.empty())
+	{
+		if (!message.endsWith(QLatin1Char('.'))) { message += QLatin1Char('.'); }
+		message += QStringLiteral(" Container deviations (%1): %2").arg(report.deviations.size())
+			.arg(dwp::dawProjectDeviationText(report.deviations));
+	}
+	return ControlResult::failure(ControlErrorKind::InvalidArgs, message);
+}
+
+//! The container half of a successful reply: how many entries, how many were DEFLATE, and the
+//! deviations (an empty array when the container was clean).
+void insertContainerReport(QJsonObject* result, const dwp::DawProjectReadReport& report)
+{
+	result->insert(QStringLiteral("entry_count"), report.entryCount);
+	result->insert(QStringLiteral("deflated_entry_count"), report.deflatedEntryCount);
+	result->insert(QStringLiteral("referenced_file_count"), report.referencedFileCount);
+	result->insert(QStringLiteral("deviation_count"), static_cast<int>(report.deviations.size()));
+	result->insert(QStringLiteral("deviations"), dwp::dawProjectDeviationsJson(report.deviations));
+}
+
 QJsonObject conventionState()
 {
 	const dwp::DawProjectConvention& convention = dwp::dawProjectConvention();
@@ -311,7 +337,7 @@ void registerExportCommand(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Write the session as a .dawproject container: a ZIP whose "
 		"project.xml carries the tracks, their clips and notes, the tempo map and each track's "
 		"mixer strip, in the published format's own vocabulary at version 1.0. The file is written "
-		"with STORE entries so it needs no compression dependency and every ZIP reader opens it. "
+		"with STORE entries so every ZIP reader opens it (import reads STORE and DEFLATE). "
 		"`loss` in the reply reports EXACTLY what the format could not carry from this session. "
 		"Refuses an existing file unless `overwrite` is true, and refuses a relative path. Writes a "
 		"file; changes nothing in the session.");
@@ -382,9 +408,14 @@ void registerReadCommand(ControlRegistry& registry)
 		"track with its clips and notes, the tempo and time-signature timelines, the mixer strips, "
 		"the entries the container carries that this module does not use, and the model's "
 		"printable digest - what makes a round trip checkable against the FILE and the MODEL "
-		"rather than a hash. Import accepts ZIP entries using STORE (method 0); DEFLATE (method 8) "
-		"is refused. A file that is not a ZIP, has no project.xml entry, declares another "
-		"major format version, or carries a value the engine will not accept is a typed refusal.");
+		"rather than a hash. Reads ZIP entries using STORE (method 0) and DEFLATE (method 8) under a "
+		"512 MiB per-entry and 1 GiB total decompressed-size bound. `deviations` lists EVERYTHING "
+		"in the container that was not taken as written - a corrupt or CRC-failing entry, an "
+		"unsupported compression method or encryption, an oversized entry, a file project.xml "
+		"references that the container lacks - while the readable entries are still read. A file "
+		"that is not a ZIP, has no readable project.xml entry, declares another major format "
+		"version, or carries a value the engine will not accept is a typed refusal that lists the "
+		"deviations too.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}},
 		{QStringLiteral("path")});
 	cmd.resultSchema = objectSchema({
@@ -403,6 +434,11 @@ void registerReadCommand(ControlRegistry& registry)
 		{QStringLiteral("split_map_events"), integerProperty()},
 		{QStringLiteral("model_digest"), stringProperty()},
 		{QStringLiteral("unused_entries"), arrayProperty()},
+		{QStringLiteral("entry_count"), integerProperty()},
+		{QStringLiteral("deflated_entry_count"), integerProperty()},
+		{QStringLiteral("referenced_file_count"), integerProperty()},
+		{QStringLiteral("deviation_count"), integerProperty()},
+		{QStringLiteral("deviations"), arrayProperty()},
 		{QStringLiteral("loss"), objectProperty()},
 		{QStringLiteral("model"), objectProperty()},
 	});
@@ -414,7 +450,7 @@ void registerReadCommand(ControlRegistry& registry)
 		QString error;
 		if (!dwp::readDawProject(path, &model, &report, &error))
 		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs, error);
+			return unreadable(error, report);
 		}
 
 		QJsonObject result;
@@ -426,6 +462,7 @@ void registerReadCommand(ControlRegistry& registry)
 		for (const QString& entry : report.unusedEntries) { unused.append(entry); }
 		result.insert(QStringLiteral("unused_entries"), unused);
 		result.insert(QStringLiteral("loss"), report.loss.toJson());
+		insertContainerReport(&result, report);
 		result.insert(QStringLiteral("model"), dwp::dawProjectModelJson(model));
 		return ControlResult::success(result);
 	};
@@ -442,8 +479,12 @@ void registerImportCommand(ControlRegistry& registry)
 		"REPLACE the tracks, write the global tempo and time signature, replace the tempo map with "
 		"the file's two automation timelines and set the mixer strips it carries. One command, one "
 		"undo: the whole session captured before the import is put back through the project "
-		"loader's own paths when the stack unwinds. `loss` in the reply reports what the file "
-		"carried that this build does not apply. Refused, typed, when the file cannot be read, "
+		"loader's own paths when the stack unwinds. Reads STORE and DEFLATE ZIP entries under a "
+		"512 MiB per-entry and 1 GiB total decompressed-size bound. `loss` in the reply reports "
+		"what the file carried that this build does not apply, and `deviations` lists everything "
+		"in the container that was not taken as written (a corrupt, CRC-failing, unsupported or "
+		"oversized entry, a file project.xml references that the container lacks); the import "
+		"still proceeds when project.xml itself is readable. Refused, typed, when the file cannot be read, "
 		"when a tempo or metre is outside the engine's own bounds, or when the file needs more "
 		"tempo-map events than the map holds - a refusal writes nothing.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}},
@@ -462,6 +503,11 @@ void registerImportCommand(ControlRegistry& registry)
 		{QStringLiteral("meter_point_count"), integerProperty()},
 		{QStringLiteral("map_active"), booleanProperty()},
 		{QStringLiteral("model_digest"), stringProperty()},
+		{QStringLiteral("entry_count"), integerProperty()},
+		{QStringLiteral("deflated_entry_count"), integerProperty()},
+		{QStringLiteral("referenced_file_count"), integerProperty()},
+		{QStringLiteral("deviation_count"), integerProperty()},
+		{QStringLiteral("deviations"), arrayProperty()},
 		{QStringLiteral("loss"), objectProperty()},
 	});
 	cmd.mutating = true;
@@ -473,7 +519,7 @@ void registerImportCommand(ControlRegistry& registry)
 		QString error;
 		if (!dwp::readDawProject(path, &model, &report, &error))
 		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs, error);
+			return unreadable(error, report);
 		}
 
 		Song* song = Engine::getSong();
@@ -521,6 +567,7 @@ void registerImportCommand(ControlRegistry& registry)
 		result.insert(QStringLiteral("model_digest"), dwp::dawProjectModelDigest(after));
 		const QJsonObject loss = report.loss.toJson();
 		result.insert(QStringLiteral("loss"), loss);
+		insertContainerReport(&result, report);
 		// The inverse is a whole captured session, so no single command is the
 		// honest inverse and the record says so (the interchange.smf_import and
 		// transport.tempo_map_clear shape). The `before` half describes the

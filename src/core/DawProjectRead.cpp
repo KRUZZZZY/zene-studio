@@ -358,51 +358,170 @@ bool dawProjectModelFromXml(const QByteArray& xml, DawProjectModel* model,
 	return true;
 }
 
+namespace
+{
+
+//! The container-relative paths project.xml's `<File path="...">` elements name
+//! (Project.xsd: `File` carries `path` and `external`; an `external="true"` path
+//! points outside the container and is not this reader's to find).
+QStringList internalFileReferences(const QByteArray& xml)
+{
+	QStringList paths;
+	QXmlStreamReader reader(xml);
+	while (!reader.atEnd())
+	{
+		reader.readNext();
+		if (!reader.isStartElement() || reader.name() != QLatin1String("File")) { continue; }
+		const QString external = readdetail::attribute(reader.attributes(), QStringLiteral("external"));
+		const QString path = readdetail::attribute(reader.attributes(), QStringLiteral("path"));
+		const bool isExternal = external == QLatin1String("true") || external == QLatin1String("1");
+		if (!isExternal && !path.isEmpty() && !paths.contains(path)) { paths.append(path); }
+	}
+	return paths;
+}
+
+QString metaDataTitle(const QByteArray& metaData)
+{
+	QXmlStreamReader meta(metaData);
+	while (!meta.atEnd())
+	{
+		meta.readNext();
+		if (meta.isStartElement() && meta.name() == QLatin1String("Title"))
+		{
+			return meta.readElementText();
+		}
+	}
+	return QString();
+}
+
+//! What the two entries the reader uses held, and what the others were.
+struct ContainerContents
+{
+	QByteArray projectXml;
+	bool hasProject = false;
+	bool hasMetaData = false;
+	QString title;
+	QStringList unused;
+};
+
+//! Sorts the container's entries into the two this reader uses and the rest. A name seen twice is
+//! reported (the last one wins, as it always has).
+void classifyEntries(const std::vector<DawProjectEntry>& entries, const QStringList& names,
+	ContainerContents* contents, DawProjectReadReport* report)
+{
+	QStringList seen;
+	for (const DawProjectEntry& entry : entries)
+	{
+		if (seen.contains(entry.first))
+		{
+			report->deviations.push_back({entry.first, QString::fromLatin1(DeviationDuplicateEntry),
+				QStringLiteral("entry '%1' appears more than once; the last one is used").arg(entry.first)});
+		}
+		seen.append(entry.first);
+		if (entry.first == QLatin1String(DawProjectProjectEntry))
+		{
+			contents->projectXml = entry.second;
+			contents->hasProject = true;
+		}
+		else if (entry.first == QLatin1String(DawProjectMetaDataEntry))
+		{
+			contents->hasMetaData = true;
+			contents->title = metaDataTitle(entry.second);
+		}
+	}
+	for (const QString& name : names)
+	{
+		if (name != QLatin1String(DawProjectProjectEntry) && name != QLatin1String(DawProjectMetaDataEntry))
+		{
+			contents->unused.append(name);
+		}
+	}
+}
+
+//! One deviation for every file project.xml points at that the container does not hold. An entry
+//! that IS listed but could not be read already has its own deviation, so it is not also "missing".
+void reportMissingReferences(const QStringList& referenced, const QStringList& names,
+	DawProjectReadReport* report)
+{
+	report->referencedFileCount = referenced.size();
+	for (const QString& path : referenced)
+	{
+		if (names.contains(path)) { continue; }
+		report->deviations.push_back({path, QString::fromLatin1(DeviationMissingReferenced),
+			QStringLiteral("project.xml references '%1', which the container does not hold; "
+				"what it points to was not imported").arg(path)});
+	}
+}
+
+//! The refusal for a container whose project.xml cannot be used.
+QString missingProjectMessage(const QString& path, bool listed, DawProjectReadReport* report)
+{
+	if (listed)
+	{
+		return QStringLiteral("%1 holds a '%2' entry that could not be read, so there is nothing to "
+			"import (see the deviations)").arg(path, QString::fromLatin1(DawProjectProjectEntry));
+	}
+	report->deviations.push_back({QString::fromLatin1(DawProjectProjectEntry),
+		QString::fromLatin1(DeviationMissingProject),
+		QStringLiteral("the container has no '%1' entry").arg(QString::fromLatin1(DawProjectProjectEntry))});
+	return QStringLiteral("%1 has no '%2' entry, so it is not a DAWproject container")
+		.arg(path, QString::fromLatin1(DawProjectProjectEntry));
+}
+
+void fillContainerCounts(const DawProjectZipReport& zip, DawProjectReadReport* report)
+{
+	report->entryCount = zip.entryNames.size();
+	report->deflatedEntryCount = zip.entriesDeflated;
+	report->deviations = zip.deviations;
+}
+
+} // namespace
+
 bool readDawProject(const QString& path, DawProjectModel* model, DawProjectReadReport* report,
 	QString* error)
 {
 	std::vector<DawProjectEntry> entries;
-	if (!dawProjectZipRead(path, &entries, error)) { return false; }
-
-	QByteArray projectXml;
-	QStringList unused;
-	bool hasMetaData = false;
-	QString title;
-	for (const DawProjectEntry& entry : entries)
+	DawProjectZipReport zip;
+	QString zipError;
+	const QStringList wanted = {QString::fromLatin1(DawProjectProjectEntry),
+		QString::fromLatin1(DawProjectMetaDataEntry)};
+	if (!dawProjectZipReadTolerant(path, &entries, &zip, &zipError, DawProjectZipLimits(), wanted))
 	{
-		if (entry.first == QLatin1String(DawProjectProjectEntry)) { projectXml = entry.second; }
-		else if (entry.first == QLatin1String(DawProjectMetaDataEntry))
-		{
-			hasMetaData = true;
-			QXmlStreamReader meta(entry.second);
-			while (!meta.atEnd())
-			{
-				meta.readNext();
-				if (meta.isStartElement() && meta.name() == QLatin1String("Title"))
-				{
-					title = meta.readElementText();
-				}
-			}
-		}
-		else { unused.append(entry.first); }
-	}
-	if (projectXml.isEmpty())
-	{
-		if (error)
-		{
-			*error = QStringLiteral("%1 has no '%2' entry, so it is not a DAWproject container")
-				.arg(path, QString::fromLatin1(DawProjectProjectEntry));
-		}
+		if (error) { *error = zipError; }
 		return false;
 	}
 
 	DawProjectReadReport local;
-	if (!dawProjectModelFromXml(projectXml, model, &local, error)) { return false; }
-	local.hasMetaData = hasMetaData;
-	local.title = title;
-	local.unusedEntries = unused;
+	fillContainerCounts(zip, &local);
+	ContainerContents contents;
+	classifyEntries(entries, zip.entryNames, &contents, &local);
+	QString refusal;
+	if (!contents.hasProject)
+	{
+		refusal = missingProjectMessage(path,
+			zip.entryNames.contains(QString::fromLatin1(DawProjectProjectEntry)), &local);
+	}
+	else
+	{
+		reportMissingReferences(internalFileReferences(contents.projectXml), zip.entryNames, &local);
+		DawProjectReadReport parsed;
+		if (dawProjectModelFromXml(contents.projectXml, model, &parsed, &refusal))
+		{
+			parsed.hasMetaData = contents.hasMetaData;
+			parsed.title = contents.title;
+			parsed.unusedEntries = contents.unused;
+			parsed.entryCount = local.entryCount;
+			parsed.deflatedEntryCount = local.deflatedEntryCount;
+			parsed.referencedFileCount = local.referencedFileCount;
+			parsed.deviations = local.deviations;
+			if (report != nullptr) { *report = parsed; }
+			return true;
+		}
+	}
+	local.error = refusal;
 	if (report != nullptr) { *report = local; }
-	return true;
+	if (error) { *error = refusal; }
+	return false;
 }
 
 } // namespace interchange

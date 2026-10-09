@@ -3,7 +3,6 @@
 lmms::interchange::dawProjectXmlFromModel@src/core/DawProjectWrite.cpp	42
 lmms::ExternalProcessStemSeparator::separate@src/core/ExternalProcessStemSeparator.cpp	41
 lmms::interchange::parseDocument@src/core/DawProjectRead.cpp	41
-lmms::interchange::dawProjectZipRead@src/core/DawProjectZip.cpp	36
 lmms::interchange::applyDawProjectModel@src/core/DawProjectSession.cpp	33
 check_result@tests/stem_commands_lib.py	31
 lmms::detection::estimateTempo@src/core/ImportDetectionDsp.cpp	30
@@ -54,7 +53,6 @@ lmms::control::addressableParameterForModel@src/core/ControlAutomationSupport.cp
 lmms::detection::refinedPeriodHops@src/core/ImportDetectionDsp.cpp	12
 lmms::handleRenderOffline@src/core/ControlCommandsWasmRender.cpp	12
 lmms::interchange::dawProjectZipWrite@src/core/DawProjectZip.cpp	12
-lmms::interchange::readDawProject@src/core/DawProjectRead.cpp	12
 lmms::pickFollowIndex@include/SessionFollow.h	12
 lmms::sessionrecord::landPairEvents@src/core/ControlCommandsSessionRecordInternal.h	12
 lmms::wasm::WasmWorker::processSlot@src/wasm/WasmWorker.cpp	12

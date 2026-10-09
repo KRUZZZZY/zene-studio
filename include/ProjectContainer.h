@@ -17,11 +17,13 @@
  * reader already in the tree (DawProjectInterchange.h: dawProjectZipWrite,
  * dawProjectZipRead) - STORE entries, one local header per entry, one central
  * directory, no compression, no directory entries, no data descriptors, no
- * spanning. DawProjectZip.cpp:8-15 records why compression cannot be reused
- * here: DataFile.cpp's mmpz path uses Qt's qCompress/qUncompress, which is
- * zlib's own framed format and NOT a raw DEFLATE stream. The cost of that rule
- * is stated plainly rather than discovered: a v2 container is LARGER than the
- * v1 blob it replaces, because it stores what v1 compressed.
+ * spanning. This container's reader is STRICT and STORE-only (dawProjectZipRead
+ * refuses a DEFLATE entry by name; the DAWproject importer's tolerant, DEFLATE-
+ * reading dawProjectZipReadTolerant is a different entry point). DataFile.cpp's
+ * mmpz path uses Qt's qCompress/qUncompress, which is zlib's own framed format
+ * and NOT a raw DEFLATE stream. The cost of that rule is stated plainly rather
+ * than discovered: a v2 container is LARGER than the v1 blob it replaces,
+ * because it stores what v1 compressed.
  *
  * THIS MODULE DOES NOT PARSE, PRUNE OR REDUCE ANYTHING. It moves entries. The
  * section boundaries come from the index, the bytes come from the caller, and
@@ -96,7 +98,7 @@ enum class Shape
  *  Every test here is cheap and none of them inflates the payload: a ZIP local
  *  header signature, a zlib header, or a leading `<` after an optional BOM and
  *  whitespace. Deciding "this is a v2 container" is a 4-byte comparison; the
- *  full validation is the reader's, and it refuses by name (DawProjectZip.cpp
+ *  full validation is the reader's, and it refuses by name (DawProjectZipRead.cpp
  *  bounds-checks every offset and size against the file's own length). */
 LMMS_EXPORT Shape shapeOf( const QByteArray& bytes );
 
@@ -146,7 +148,7 @@ LMMS_EXPORT bool writeContainer( const QString& path, const QByteArray& skeleton
  *  When \a keepEntries is non-empty only those entries are returned, plus the
  *  skeleton. HONEST LIMIT, stated because it is easy to assume otherwise: the
  *  reader underneath reads the file whole and copies every entry's body before
- *  this selection runs (DawProjectZip.cpp:260, :410, :422). So a subset read
+ *  this selection runs (DawProjectZipRead.cpp: scanDirectory and materialise). So a subset read
  *  saves PARSING, not I/O and not peak memory. Turning the container's
  *  addressing into a real I/O saving needs a filtered reader, which is a
  *  separate change and is recorded as such rather than implied here. */
