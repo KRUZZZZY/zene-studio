@@ -31,10 +31,10 @@
 #include <span>
 #include <vector>
 #include <QString>
-#include <QMutex>
 
 #include "AudioBus.h"
 #include "LatencyCompensation.h"
+#include "MpscQueue.h"
 #include "PlayHandle.h"
 
 namespace lmms
@@ -82,6 +82,7 @@ public:
 	void doProcessing() override;
 	bool requiresProcessing() const override { return true; }
 
+	//! Any thread. The edit is queued and applied by the next doProcessing() (cluster 5467: no lock).
 	void addPlayHandle(PlayHandle* handle);
 	void removePlayHandle(PlayHandle* handle);
 
@@ -130,7 +131,20 @@ private:
 	std::unique_ptr<EffectChain> m_effects;
 
 	PlayHandleList m_playHandles;
-	QMutex m_playHandleLock;
+	//! One play-handle list edit posted by addPlayHandle() / removePlayHandle().
+	struct PlayHandleEdit
+	{
+		PlayHandle* handle;
+		bool add;
+	};
+	//! Queues one edit (any thread). Never locks; waits only if the queue is full.
+	void postPlayHandleEdit(PlayHandleEdit edit);
+	//! Applies every queued edit in the order it was posted. Called by doProcessing() only.
+	void applyPlayHandleEdits();
+	//! Producers (any thread) post here; the single consumer is doProcessing(), which applies every edit
+	//! queued before it reads the list. The bound is PlayHandle::MaxNumber: a bus that is not processed
+	//! for that many edits cannot be rendering.
+	MpscQueue<PlayHandleEdit, PlayHandle::MaxNumber> m_playHandleEdits;
 
 	FloatModel* m_volumeModel;
 	FloatModel* m_panningModel;

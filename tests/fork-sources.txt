@@ -1976,6 +1976,7 @@ tests/src/core/ArrangingSpacerReferenceTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
 tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBurstSupport.h
+tests/src/core/AudioBusPlayHandleQueueTest.cpp
 tests/src/core/AudioClipLoopTest.cpp
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp

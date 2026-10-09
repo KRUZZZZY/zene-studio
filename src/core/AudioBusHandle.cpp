@@ -28,7 +28,7 @@
 #include <algorithm>
 #include <cassert>
 
-#include <QMutexLocker>
+#include <thread>
 
 #include "AudioBus.h"
 #include "AudioDevice.h"
@@ -157,6 +157,9 @@ void AudioBusHandle::applyVolumeAndPanning(const f_cnt_t fpp)
 
 void AudioBusHandle::doProcessing()
 {
+	// Cluster 5467: the play-handle edits other threads posted since the last period land here, before
+	// anything reads the list (this is the bus's only consumer, and it runs once per period).
+	applyPlayHandleEdits();
 	if (m_mutedModel && m_mutedModel->value())
 	{
 		// Keep the compensation timeline aligned while muted (#605).
@@ -170,15 +173,11 @@ void AudioBusHandle::doProcessing()
 
 	//qDebug( "Playhandles: %d", m_playHandles.size() );
 	{
-		// D6 (mixer concurrency audit): addPlayHandle()/removePlayHandle()
-		// append to and erase from this QList under m_playHandleLock, and the
-		// lock is taken here for the same range: without it a reallocation or
-		// an erase under a live iteration is a use-after-free (the audited
-		// trace is a live note-on from the MIDI thread, which reaches
-		// AudioEngine::addPlayHandle -> AudioBusHandle::addPlayHandle while
-		// this loop is running on a worker). The critical section is a
-		// pointer-array scan plus the list's own append/erase.
-		const QMutexLocker playHandleLockGuard(&m_playHandleLock);
+		// D6 (mixer concurrency audit): the list was appended to and erased from
+		// by other threads under a lock held here. Cluster 5467 removes that lock:
+		// edits are queued (postPlayHandleEdit) and applied only by
+		// applyPlayHandleEdits() above, on this thread, so the list has one writer
+		// and one reader and nothing can reallocate or erase under this loop.
 		// 0.5.0 E20/E38: the notes a key/velocity zone of the channel's rack claims play into that zone's
 		// chain, with this track's volume and pan; their buffers are released, so the loop below skips them.
 		const auto gain = [this, fpp] { applyVolumeAndPanning(fpp); };
@@ -236,18 +235,39 @@ void AudioBusHandle::doProcessing()
 
 void AudioBusHandle::addPlayHandle(PlayHandle* handle)
 {
-	QMutexLocker lockGuard(&m_playHandleLock);
-	m_playHandles.append(handle);
+	postPlayHandleEdit(PlayHandleEdit{handle, true});
 }
-
 
 void AudioBusHandle::removePlayHandle(PlayHandle* handle)
 {
-	QMutexLocker lockGuard(&m_playHandleLock);
-	PlayHandleList::Iterator it = std::find(m_playHandles.begin(), m_playHandles.end(), handle);
-	if (it != m_playHandles.end())
+	postPlayHandleEdit(PlayHandleEdit{handle, false});
+}
+
+void AudioBusHandle::postPlayHandleEdit(PlayHandleEdit edit)
+{
+	// Never a lock. A full queue means this bus has not been processed for PlayHandle::MaxNumber edits,
+	// which cannot happen while the engine renders, so the wait is for the next period's doProcessing().
+	while (!m_playHandleEdits.push(edit))
 	{
-		m_playHandles.erase(it);
+		std::this_thread::yield();
+	}
+}
+
+void AudioBusHandle::applyPlayHandleEdits()
+{
+	PlayHandleEdit edit{};
+	while (m_playHandleEdits.pop(&edit))
+	{
+		if (edit.add)
+		{
+			m_playHandles.append(edit.handle);
+			continue;
+		}
+		PlayHandleList::Iterator it = std::find(m_playHandles.begin(), m_playHandles.end(), edit.handle);
+		if (it != m_playHandles.end())
+		{
+			m_playHandles.erase(it);
+		}
 	}
 }
 
