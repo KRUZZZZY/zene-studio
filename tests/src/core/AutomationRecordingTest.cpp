@@ -19,7 +19,6 @@
 #include <vector>
 
 #include <QMutexLocker>
-
 #include "AllocationProbe.h"
 #include "AutomationClip.h"
 #include "AutomationRamp.h"

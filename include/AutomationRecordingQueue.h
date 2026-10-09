@@ -40,12 +40,13 @@ public:
 	struct Event
 	{
 		jo_id_t clipId = 0;
+		std::uint64_t projectGeneration = 0;
 		TimePos time;
 		float value = 0.0f;
 	};
 
 	//! Audio producer. Drop-newest at capacity; no allocation, lock, or wait.
-	bool push(jo_id_t clipId, const TimePos& time, float value) noexcept
+	bool push(jo_id_t clipId, std::uint64_t projectGeneration, const TimePos& time, float value) noexcept
 	{
 		const auto write = m_writeCursor.load(std::memory_order_relaxed);
 		const auto read = m_readCursor.load(std::memory_order_acquire);
@@ -54,7 +55,7 @@ public:
 			m_overflow.fetch_add(1, std::memory_order_relaxed);
 			return false;
 		}
-		m_events[write & (Capacity - 1)] = Event{clipId, time, value};
+		m_events[write & (Capacity - 1)] = Event{clipId, projectGeneration, time, value};
 		m_writeCursor.store(write + 1, std::memory_order_release);
 		return true;
 	}
@@ -99,7 +100,8 @@ public:
 	}
 
 	//! Find the closest pending point on each side of a read position.
-	void pendingBounds(jo_id_t clipId, std::uint64_t appliedSequence, const TimePos& time,
+	void pendingBounds(jo_id_t clipId, std::uint64_t projectGeneration,
+		std::uint64_t appliedSequence, const TimePos& time,
 		Event& before, std::uint64_t& beforeSequence, bool& hasBefore,
 		Event& after, std::uint64_t& afterSequence, bool& hasAfter) const noexcept
 	{
@@ -111,7 +113,7 @@ public:
 		for (auto cursor = begin; cursor < write; ++cursor)
 		{
 			const Event candidate = m_events[cursor & (Capacity - 1)];
-			if (candidate.clipId != clipId) { continue; }
+			if (candidate.clipId != clipId || candidate.projectGeneration != projectGeneration) { continue; }
 			const auto sequence = cursor + 1;
 			if (candidate.time <= time)
 			{

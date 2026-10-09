@@ -238,7 +238,8 @@ bool Song::enqueueAutomationRecord(jo_id_t clipId, const TimePos& mapTime, float
 		m_invalidAutomationRecordingProducers.fetch_add(1, std::memory_order_relaxed);
 		return false;
 	}
-	return m_automationRecordingQueues[producer].push(clipId, mapTime, value);
+	return m_automationRecordingQueues[producer].push(clipId,
+		m_automationProjectGeneration.load(std::memory_order_relaxed), mapTime, value);
 }
 
 
@@ -246,13 +247,15 @@ bool Song::enqueueAutomationRecordForProducerForTest(std::size_t producer, jo_id
 	const TimePos& mapTime, float value) noexcept
 {
 	return producer < m_automationRecordingQueueCount
-		&& m_automationRecordingQueues[producer].push(clipId, mapTime, value);
+		&& m_automationRecordingQueues[producer].push(clipId,
+			m_automationProjectGeneration.load(std::memory_order_relaxed), mapTime, value);
 }
 
 
 void Song::drainAutomationRecordingEvents()
 {
 	const auto changes = Engine::audioEngine()->requestChangesGuard();
+	const auto projectGeneration = m_automationProjectGeneration.load(std::memory_order_relaxed);
 	for (std::size_t producer = 0; producer < m_automationRecordingQueueCount; ++producer)
 	{
 		auto& queue = m_automationRecordingQueues[producer];
@@ -260,15 +263,22 @@ void Song::drainAutomationRecordingEvents()
 		std::uint64_t sequence = 0;
 		while (queue.peekApplied(event, sequence))
 		{
-			auto* object = Engine::projectJournal()->journallingObject(event.clipId);
-			auto* clip = dynamic_cast<AutomationClip*>(object);
-			if (clip != nullptr)
+			if (event.projectGeneration != projectGeneration)
 			{
-				clip->recordQueuedValue(event.time, event.value, producer, sequence);
+				m_staleAutomationRecordingEvents.fetch_add(1, std::memory_order_relaxed);
 			}
 			else
 			{
-				m_staleAutomationRecordingEvents.fetch_add(1, std::memory_order_relaxed);
+				auto* object = Engine::projectJournal()->journallingObject(event.clipId);
+				auto* clip = dynamic_cast<AutomationClip*>(object);
+				if (clip != nullptr)
+				{
+					clip->recordQueuedValue(event.time, event.value, producer, sequence);
+				}
+				else
+				{
+					m_staleAutomationRecordingEvents.fetch_add(1, std::memory_order_relaxed);
+				}
 			}
 			queue.markApplied();
 		}
@@ -306,7 +316,8 @@ void Song::pendingAutomationRecordBounds(jo_id_t clipId,
 		AutomationRecordingQueue::Event candidateBefore, candidateAfter;
 		std::uint64_t beforeSequence = 0, afterSequence = 0;
 		bool foundBefore = false, foundAfter = false;
-		m_automationRecordingQueues[producer].pendingBounds(clipId, applied, time,
+		m_automationRecordingQueues[producer].pendingBounds(clipId,
+			m_automationProjectGeneration.load(std::memory_order_relaxed), applied, time,
 			candidateBefore, beforeSequence, foundBefore, candidateAfter, afterSequence, foundAfter);
 		if (foundBefore && (!hasBefore || candidateBefore.time > before.time
 			|| (candidateBefore.time == before.time && producer > beforeProducer)))
@@ -1488,6 +1499,9 @@ void Song::clearProject()
 
 
 	Engine::audioEngine()->requestChangeInModel();
+	// A saved journal ID may be reused by the project that replaces this one.
+	// Invalidate queued render events before deleting or restoring any such clip.
+	m_automationProjectGeneration.fetch_add(1, std::memory_order_release);
 
 	if( getGUI() != nullptr && getGUI()->patternEditor() )
 	{

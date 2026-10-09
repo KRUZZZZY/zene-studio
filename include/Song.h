@@ -172,6 +172,11 @@ public:
 	//! Main-thread drain: resolves stable ids, calls recordValue(), and reclaims quiescent slots.
 	void drainAutomationRecordingEvents();
 	AutomationRecordingStatus automationRecordingStatus() const noexcept;
+	//! Current document generation stamped into recording events; changed before project tracks are replaced.
+	std::uint64_t automationProjectGeneration() const noexcept
+	{
+		return m_automationProjectGeneration.load(std::memory_order_acquire);
+	}
 	//! Realtime reader bridge: returns the closest pending map points across the fixed producer queues.
 	void pendingAutomationRecordBounds(jo_id_t clipId, const std::vector<std::uint64_t>& appliedSequences,
 		const TimePos& time, AutomationRecordingQueue::Event& before, bool& hasBefore,
@@ -879,6 +884,8 @@ private:
 	std::atomic<std::uint64_t> m_recordedModelMembershipOverflows{0};
 	std::unique_ptr<AutomationRecordingQueue[]> m_automationRecordingQueues;
 	std::size_t m_automationRecordingQueueCount = 0;
+	//! Events may resolve journal IDs only inside the project generation that created them.
+	std::atomic<std::uint64_t> m_automationProjectGeneration{1};
 	std::atomic<std::uint64_t> m_staleAutomationRecordingEvents{0};
 	std::atomic<std::uint64_t> m_invalidAutomationRecordingProducers{0};
 
