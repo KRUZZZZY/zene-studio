@@ -1,38 +1,77 @@
-# Active take selection design — decisions-r3-takes
-
-Base: `888934e1b` (`bugs/m0-decisions-r3-takes`). Owner decision: 2026-10-09.
+# Loop recording active-take design
 
 ## Problem
 
-`SampleClip::addRecordedLane` (`src/core/SampleClip.cpp:313-340`) creates one lane clip for each loop pass, then mutes only `m_lastPassTake` when that prior pass is still unmuted. `m_lastPassTake` is transient arming state (`include/SampleClip.h:250-255`), so audibility is encoded by clip mute flags instead of a remembered take choice. The track scheduler (`src/tracks/SampleTrack.cpp:243-246`) reads those flags, while `SamplePlayHandle::snapshotComp` (`src/core/SamplePlayHandle.cpp:286-320`) snapshots only composite/audition spans. This means the engine has no active-take state, no remembered user choice, and no play-all switch. `TakeLaneModel` already belongs to `Track` and is saved in both track checkpoints and the project's `<z:lanes>` section (`include/TakeLane.h:144-153`, `src/core/Track.cpp:556-560`, `src/core/Song.cpp:1952-1986`); `docs/COMPING.md` currently says clip mute is take audibility. `TakeLanesPanel` exposes lane audition and comp selection only (`src/gui/TakeLanesPanel.cpp:89-168, 242-274`).
+`SampleClip::addRecordedLane()` in `src/core/SampleClip.cpp` creates a take clip for each loop
+pass, then auto-mutes the immediately previous take through `m_lastPassTake`. That encodes
+audibility in mutable clip mute flags, cannot remember an explicit choice when another pass is
+recorded, and has no play-all mode. The owner ruling for 2026-10-09 replaces that behavior with an
+active-take model: newest pass is active by default, a deliberate choice survives later passes,
+and the user can choose to play every pass. Existing comp playback remains authoritative.
 
 ## Chosen design
 
-Each armed source clip's loop passes form one take group, identified by that source clip's stable clip ID. Each recorded pass keeps its existing lane index and gets the group ID on its clip; a pass identity is its lane, so split pieces on that lane stay one take. `TakeLaneModel` owns a main-thread vector of `{groupId, activeLane, userChosen}` records. On the first pass the active lane is the new lane. Each later pass becomes active while `userChosen` is false; selecting a lane sets `userChosen`, and recording later passes preserves the selected lane. The model publishes the chosen lane to each member clip's `std::atomic<int>` runtime mirror. The mirror is derived state: its source of truth is the model's serialized group record.
+Each recorded take clip carries a persistent `takeGroupId`, the stable id of the source clip that
+was armed. `TakeLaneModel` owns a main-thread vector of `{groupId, activeLane, userChosen}` records
+and an atomic track-wide Play all takes flag. On pass finalization, `recordTake()` selects the new
+lane only when no user choice has been recorded. `selectTake()` sets both the lane and the user
+choice flag. The clip stores an atomic mirror of its group's active lane. The model republishes
+that mirror when a pass is added or a choice is made, and after project or checkpoint loading.
 
-The model also owns an atomic track-wide `playAllTakes` flag. `comp.take_select` selects the take lane of a group member clip. `comp.play_all_takes` sets the track-wide switch. Both are true-inverse commands using one Track checkpoint, which already contains the take-lane model and clip attributes. The Take Lanes panel adds a take selector and a “Play all takes” checkbox, driven by `comp.get_state` and those commands.
+`SampleTrack::play()` filters inactive pass clips before starting handles. A handle also reads the
+clip mirror and Play all takes flag at render time, so a handle already running observes selection
+changes. When a composite exists, its existing span gate continues to decide which takes play;
+active-take and Play all takes selection do not override the composite. Play all takes bypasses
+active-lane selection and allows every unmuted grouped take to sum through the existing track bus.
 
-For an un-comped track, `SampleTrack::play` checks each grouped clip's atomic active lane before creating a play handle when play-all is off. `SamplePlayHandle` also checks that same atomic at render time, so an already-running handle follows a take change; if play-all is on, every unmuted grouped clip renders and its frames sum through the existing track bus. Both reads are lock-free. If a composite exists, its span gate remains authoritative: the active-take and play-all gates are bypassed for comped playback, and the existing `SamplePlayHandle::applyComp` spans still decide what sounds.
-
-The take group ID is written with the clip's other non-default take metadata. The active lane and `userChosen` flag are written in the take-lane model's `<takelanes>` checkpoint payload and in the existing top-level `<z:lanes>` project section. Loading a model resets absent values to the default (`playAllTakes = false`, no groups) and republishes group choices to clips after all clips and lanes are loaded. Undo/redo therefore restores both the model state and its render mirror through the same Track checkpoint.
+`comp.take_select` and `comp.play_all_takes` are reversible commands backed by the existing Track
+checkpoint. The take group, active lane, user-choice flag, and Play all takes flag are saved in the
+existing lane section; each clip saves its group id. The Take Lanes panel exposes both controls.
 
 ## Invariants and ownership
 
-- `Track` owns `TakeLaneModel`; its group vector and serialized values are written only by the main/control thread under the engine's existing model-change guard. Group count has no fixed cap; storage grows on the main thread with recorded groups. No group-vector traversal occurs on the audio thread.
-- `Clip` owns its stable take-group ID and lock-free active-lane mirror. The model publishes the mirror after group creation, take selection, model load, and checkpoint restore. The ID is stable while the clip is attached; a split preserves the lane/pass identity. The mirror is read with a relaxed atomic load and written on the main thread while model changes are guarded.
-- `TakeLaneModel` owns `playAllTakes`; it is an atomic boolean with no buffer or pool. Its value is changed and serialized on the main thread, and read lock-free by the render path. It defaults off.
-- No audio-thread allocation, lock, wait, I/O, signal emission, map/vector lookup, or shared-pointer refcount operation is introduced. A handle uses only the clip's lane/group scalar values and atomic state loads; the per-frame gate is bounded by the current buffer length. The group record is never looked up from `SamplePlayHandle::play`.
-- There is no fixed group/take capacity and therefore no bounded-pool overflow case. Track checkpoint or project serialization remains proportional to the already-existing number of clips, lanes, and groups and allocates only off the audio thread.
-- A manual take choice stays selected across later passes until another manual choice. A newly recorded pass still receives a lane and sample buffer even when it does not become active.
-- The composite continues to mask active-take and play-all state. Clip mute remains an explicit mute; recorded passes are not muted as a side effect of recording. Play-all sums every unmuted pass in each group.
-- The previously committed record accumulator, prepared/spare take handoff, drain/reaper, overflow accounting, and bounded audio-thread record queues are unchanged.
+- `Track` owns its clips and `TakeLaneModel`. Each take clip owns its immutable sample buffer,
+  take-group id, lane index, and atomic active-lane mirror. The model owns the dynamic group vector
+  and the Play all takes atomic.
+- `SampleRecordHandle` hands completed passes to `SampleClip::acceptRecordedTake()` on the main
+  thread. Lane creation, group-vector growth, project serialization, and destruction happen on
+  the main thread under the existing audio change guard. Render handles retain no pointer into
+  the group vector; their scalar-state pointers are valid for the clip/track lifetime protected by
+  that same guard.
+- There is no fixed group or take pool and no bounded group count. Group storage grows with the
+  number of recorded source clips on the main thread. No overflow counter is needed for a bound
+  that does not exist; inability to allocate follows the existing main-thread allocation failure
+  behavior. Existing bounded render buffers and clip-start limits are unchanged.
+- Active lane and Play all takes are read and written through atomic scalar mirrors. Render code
+  does not search the model, allocate, lock, wait, perform I/O, emit Qt signals, or update
+  reference-counted pointers. The active-take gate only compares scalars and, when inactive,
+  zeros the current fixed render block in time proportional to its bounded frame count.
+- Project load clears absent group state to defaults, loads clip tags and model state, then
+  republishes active lanes. Checkpoint restore uses the same Track serialization and publication
+  path, so undo/redo restores the user-choice bit as well as the audible lane.
+- Comped playback retains the existing 64-frame span ramp and resolution rules. Ordinary clips,
+  non-recorded clips, explicit mute state, and the loop recording buffer-preparation lifecycle
+  keep their existing behavior.
 
-## Behaviour and alternatives
+## Alternatives considered
 
-This intentionally changes only loop-take audibility: with no manual choice, the newest pass is audible; a manual choice survives additional passes; play-all sums passes. First-pass non-loop recording, recording timing/length, take-lane placement, clip mute, composite playback, and comp undo remain unchanged. Selection, user-choice state, and play-all survive project save/reopen and are undoable. No Qt-6-only API is needed.
-
-Rejected: continue using mute flags, because a later pass can overwrite user mute choices and mute is not a stable selection model; store one active lane for the entire track, because independently armed source clips need independent groups; derive the active take by scanning clips in `SamplePlayHandle::play`, because that would put an unbounded container lookup on the audio thread; and snapshot selection only when constructing a play handle, because a manual choice would not affect already-running audio until another handle starts. A fixed take/group pool was also rejected: no realtime path needs to traverse or allocate the persistent group vector, so a new capacity and overflow policy would add a limit without protecting the audio thread.
+- **Keep muting the previous pass:** rejected because it stores selection as per-clip mute edits,
+  cannot preserve a selected take through later passes, and makes Play all takes an incidental
+  unmute operation.
+- **Search the track's group vector while rendering:** rejected because it adds model lookup and
+  synchronization to an audio-thread path. Per-clip atomic mirrors keep rendering independent of
+  dynamic model storage.
+- **Snapshot selection only when a play handle is created:** rejected because an already-running
+  handle would not observe a take choice or Play all takes toggle until it was restarted.
+- **Replace composite playback with active-lane selection:** rejected because user comping already
+  expresses a finer-grained playback choice and must remain authoritative.
 
 ## Proof plan
 
-Add recording assertions that N passes select the newest lane, and that a user-selected lane and flag survive later passes. Add render comparisons for one-active-take output and play-all summed output, plus an AllocationProbe/RealtimeScope assertion around rendering. Exercise save/reopen, user-choice persistence, and one-step undo/redo of `comp.take_select`. Run the recording suites, the active-take render and control tests, the commands snapshot/canary/A16 histogram refresh, and the requested gates and rt-safety sweep.
+The recording test covers three passes, newest-active default selection, a user choice retained
+through a later pass, unchanged clip mute flags, and a render comparison where Play all takes sums
+the passes. Project save/reopen covers active lane, user-choice state, and runtime mirror
+publication. Control tests cover undo/redo for take choice and Play all takes. An allocation probe
+and realtime scope cover an existing handle observing an active-take change without allocation.
+Existing recording suites, the command snapshot and canary, A16 histogram, repository gates, and
+the real-time safety sweep are run for the lane.
