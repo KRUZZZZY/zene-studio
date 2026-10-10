@@ -32,9 +32,11 @@
 #include <QtTest>
 
 #include <QComboBox>
+#include <QEvent>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPointer>
 #include <QPushButton>
 #include <QToolButton>
 
@@ -48,6 +50,7 @@
 #include "MacroKnobs.h"
 #include "MainWindow.h"
 #include "Mixer.h"
+#include "PinConnector.h"
 #include "MixerChannelView.h"
 #include "MixerModeBar.h"
 #include "MixerRoutingMatrix.h"
@@ -65,6 +68,15 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
 }
+
+class TestAudioPortsModel : public AudioPortsModel
+{
+public:
+	using AudioPortsModel::AudioPortsModel;
+
+protected:
+	void bufferPropertiesChanging(ch_cnt_t, ch_cnt_t, f_cnt_t) override {}
+};
 
 QString ch(int index) { return control::channelIdOf(Engine::mixer()->mixerChannel(index)); }
 
@@ -266,6 +278,47 @@ private slots:
 		QCOMPARE(model.data(model.index(5, 0), Qt::AccessibleTextRole).toString(), QStringLiteral("Ch 5 to Master: no send (Enter makes one)"));
 		QVERIFY(model.flags(model.index(7, 7)) == Qt::NoItemFlags);  // no channel sends to itself
 		QCOMPARE(model.channelId(4), QStringLiteral("ch-4"));
+	}
+
+	void rightClickDoesNotChangePinRouting()
+	{
+		TestAudioPortsModel model{2, 2, true};
+		auto* connector = new PinConnector{&model};
+		QPointer<PinConnector> connectorGuard{connector};
+
+		connector->toggleVisibility();
+		QList<QWidget*> matrices;
+		for (QWidget* child : connector->findChildren<QWidget*>())
+		{
+			if (child->toolTip().contains(QStringLiteral("input(s)"))
+				|| child->toolTip().contains(QStringLiteral("output(s)")))
+			{
+				matrices.append(child);
+			}
+		}
+		const bool matrixCountValid = matrices.size() == 2;
+		const bool matricesVisible = matrixCountValid
+			&& std::all_of(matrices.cbegin(), matrices.cend(), [](const auto* matrix) { return matrix->isVisible(); });
+		const bool inputPinInitiallyDisabled = !model.in().enabled(0, 0);
+		const bool outputPinInitiallyEnabled = model.out().enabled(0, 0);
+		if (matricesVisible)
+		{
+			for (auto* matrix : matrices)
+			{
+				QTest::mouseClick(matrix, Qt::RightButton, Qt::NoModifier, QPoint{8, 8});
+			}
+		}
+		const bool pinsUnchanged = !model.in().enabled(0, 0) && model.out().enabled(0, 0);
+		connector->closeWindow();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		const bool connectorClosed = connectorGuard.isNull();
+
+		QVERIFY(matrixCountValid);
+		QVERIFY(matricesVisible);
+		QVERIFY(inputPinInitiallyDisabled);
+		QVERIFY(outputPinInitiallyEnabled);
+		QVERIFY(connectorClosed);
+		QVERIFY(pinsUnchanged);
 	}
 
 private:
