@@ -109,6 +109,7 @@ void *&Lv2Features::operator[](const char *featName)
 
 void Lv2Features::clear()
 {
+	m_featurePointers.clear();
 	m_features.clear();
 	for (auto& [uri, feature] : m_featureByUri)
 	{
