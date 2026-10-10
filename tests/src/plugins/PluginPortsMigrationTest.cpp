@@ -185,6 +185,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void gigPlayerAcceptsMidiNoteZero();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -207,6 +208,7 @@ void PluginPortsMigrationTest::initTestCase()
 	qputenv("LADSPA_PATH", QByteArray{PART_C_LADSPA_DIR});
 
 	lmms::Engine::init(true);
+	lmms::NotePlayHandleManager::init();
 	QVERIFY2(lmms::Engine::audioEngine() != nullptr, "engine failed to initialise");
 	lmms::Engine::audioEngine()->audioDev()->stopProcessing();
 
@@ -214,6 +216,48 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::gigPlayerAcceptsMidiNoteZero()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer requires libgig and the vendored .gig test instrument");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("gigplayer");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+	partc::applyInstrumentTestSettings(*instrument, "gigplayer");
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames)}, lmms::TimePos{}, 0};
+	auto* noteHandle = lmms::NotePlayHandleManager::acquire(track.get(), 0, frames, note);
+	std::vector<lmms::SampleFrame> output(static_cast<std::size_t>(frames));
+	instrument->playNote(noteHandle, std::span<lmms::SampleFrame>{output});
+	const bool accepted = noteHandle->m_pluginData != nullptr;
+	if (accepted)
+	{
+		instrument->deleteNotePluginData(noteHandle);
+		noteHandle->m_pluginData = nullptr;
+	}
+	lmms::NotePlayHandleManager::release(noteHandle);
+	delete instrument;
+
+	QVERIFY2(accepted, "GigPlayer did not register MIDI note 0");
+#endif
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
