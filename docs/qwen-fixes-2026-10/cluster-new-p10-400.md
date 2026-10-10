@@ -6,6 +6,17 @@ Verdict: **FIXED**.
 
 The affected family is `NoteEditorTest`: 1 registered CTest target. The red QtTest runs recorded 24 passing cases and the new regression failing; the green CTest runs passed 1/1 target.
 
+## Evidence summary
+
+| Evidence | Command or count | Exit |
+| --- | --- | ---: |
+| RED before fix | `ctest -R NoteEditorTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-400.r1/logs/test-1.log 2>&1; echo EXIT=$?` | 8 |
+| GREEN after fix | `ctest -R NoteEditorTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-400.r1/logs/test-2.log 2>&1; echo EXIT=$?` | 0 |
+| Affected family | 1 CTest target; 25 Qt cases in the red run (24 passed, 1 regression failed) | — |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-400.r1/logs/gate-1.log 2>&1; echo EXIT=$?` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-400.r1/logs/gate-2.log 2>&1; echo EXIT=$?` | 0 |
+| Files committed | `src/gui/editors/StepRecorderWidget.cpp`; `tests/src/gui/NoteEditorTest.cpp`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p10-400.md` | — |
+
 ## Validation commands
 
 All test commands ran from `build/tests`. Build, test, and gate output is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-400.r1/logs`. The fff grep tool was not available in the session; I searched the logs for the required terms with `rg`.
