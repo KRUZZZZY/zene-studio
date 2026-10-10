@@ -19,6 +19,19 @@
 namespace lmms
 {
 
+namespace
+{
+
+bool hasCurrentPlaybackTake( const SlotLaunchState& state ) noexcept
+{
+	return state.phase == SlotPhase::Playing
+		|| state.phase == SlotPhase::StopPending
+		|| ( state.phase == SlotPhase::LaunchPending && state.startCount > 0 );
+}
+
+} // namespace
+
+
 bool SessionSlotContentTable::install( int track, int scene, int patternId,
 	tick_t loopLengthTicks, bool legato, tick_t startTicks ) noexcept
 {
@@ -110,11 +123,10 @@ SessionSlotPlayback SessionScheduler::playbackForColumn( int track ) const noexc
 		{
 			continue;
 		}
-		// StopPending counts as playing: the clip has not stopped yet, so the
-		// column is still rendering its content (the same rule
-		// trackIsSessionActive() states).
-		if( slot.state.phase != SlotPhase::Playing
-			&& slot.state.phase != SlotPhase::StopPending )
+		// StopPending counts as playing: the clip has not stopped yet. A pending
+		// retrigger also keeps rendering the last started take until its grid
+		// line. These are the same active-state rules as trackIsSessionActive().
+		if( !hasCurrentPlaybackTake( slot.state ) )
 		{
 			continue;
 		}
