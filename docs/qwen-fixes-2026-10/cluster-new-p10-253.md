@@ -14,6 +14,18 @@
 
 The initial RED run failed at the regression assertion: actual strip index 2, expected index 1. The final verbose GREEN run reports 14 passed QtTest slots; CTest reports the affected family as 1/1 passed.
 
+## QA evidence table
+
+| Evidence | Exact command or committed files | Result |
+|---|---|---|
+| Initial RED | `cd build/tests && ctest -R '^MixerModesTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-253.r1/logs/test-1.log 2>&1; rc=$?; echo EXIT=$rc` | EXIT=8; 13 slots passed and the new assertion failed. |
+| Fix sensitivity RED | `cd build/tests && ctest -R '^MixerModesTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-253.r1/logs/test-5.log 2>&1; rc=$?; echo EXIT=$rc` | EXIT=8 after removing the production patch and rebuilding `zene` plus `MixerModesTest`. |
+| Restored GREEN | `cd build/tests && ctest -R '^MixerModesTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-253.r1/logs/test-6.log 2>&1; rc=$?; echo EXIT=$rc` | EXIT=0 after restoring the patch and rebuilding both targets. |
+| Affected-family count | `cd build/tests && ctest -R '^MixerModesTest$' --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-253.r1/logs/test-7.log 2>&1; rc=$?; echo EXIT=$rc` | EXIT=0; 1 CTest test and 14 QtTest slots passed. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-253.r1/logs/gate-1.log 2>&1; rc=$?; echo EXIT=$rc` | EXIT=0. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-253.r1/logs/gate-2.log 2>&1; rc=$?; echo EXIT=$rc` | EXIT=0. |
+| Files committed in `0327bf8cd` | `docs/qwen-fixes-2026-10/cluster-new-p10-253.md`; `src/gui/MixerChannelView.cpp`; `tests/src/gui/MixerModesTest.cpp`; `tests/upstream-modifications.txt` | Four explicit paths. |
+
 ## Commands and exit codes
 
 The log folder is `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-253.r1/logs`.
