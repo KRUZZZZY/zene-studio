@@ -53,6 +53,7 @@
 #include "MixerRoutingMatrix.h"
 #include "MixerStripInfo.h"
 #include "MixerView.h"
+#include "SendButtonIndicator.h"
 #include "MixerViewOptions.h"
 
 using namespace lmms;
@@ -228,6 +229,30 @@ private slots:
 		syncMixer();
 		QVERIFY(bar()->masterButton()->text().startsWith(QStringLiteral("Master: ")));
 		QVERIFY(!bar()->masterButton()->text().contains(QStringLiteral("ch-")));
+	}
+
+	void sendIndicatorOnlyTogglesOnLeftPress()
+	{
+		MixerView* view = getGUI()->mixerView();
+		view->setCurrentMixerChannel(m_sender);
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer->channelSendModel(m_sender, m_return) != nullptr);
+
+		SendButtonIndicator indicator{nullptr, strip(m_return), view};
+		QMouseEvent rightPress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
+			Qt::RightButton, Qt::RightButton, Qt::NoModifier};
+		QApplication::sendEvent(&indicator, &rightPress);
+		QVERIFY(mixer->channelSendModel(m_sender, m_return) != nullptr);
+
+		QMouseEvent middlePress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
+			Qt::MiddleButton, Qt::MiddleButton, Qt::NoModifier};
+		QApplication::sendEvent(&indicator, &middlePress);
+		QVERIFY(mixer->channelSendModel(m_sender, m_return) != nullptr);
+
+		QMouseEvent leftPress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
+			Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+		QApplication::sendEvent(&indicator, &leftPress);
+		QVERIFY(mixer->channelSendModel(m_sender, m_return) == nullptr);
 	}
 
 	void renamingFromTheStripIsOneUndoStep()
