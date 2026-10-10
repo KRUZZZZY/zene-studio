@@ -149,7 +149,16 @@ void Keymap::loadSettings(const QDomElement &element)
 
 	while (!node.isNull())
 	{
-		m_map.push_back(node.toElement().attribute("value").toInt());
+		if (node.isElement())
+		{
+			const QDomElement child = node.toElement();
+			if (child.tagName() == QLatin1String("degree"))
+			{
+				bool valueOk = false;
+				const int value = child.attribute("value").toInt(&valueOk);
+				if (valueOk) { m_map.push_back(value); }
+			}
+		}
 		node = node.nextSibling();
 	}
 }
