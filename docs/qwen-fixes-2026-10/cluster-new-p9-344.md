@@ -14,12 +14,12 @@ The forced bank-offset compile is the regression for this compile-only defect. T
 cmake --build build --target sf2player -- 'CXX_DEFINES=-DNDEBUG -DNOMINMAX -DNO_JACK_METADATA=1 -DPLUGIN_NAME=sf2player -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_SVG_LIB -DQT_TRANSLATIONS_DIR=\"/usr/share/qt6/translations\" -DQT_WIDGETS_LIB -DQT_XML_LIB -DUSE_WEAK_JACK=1 -Dsf2player_EXPORTS -DCONFIG_FLUID_BANK_OFFSET'
 ```
 
-| Run | State | Log | Result |
-| --- | --- | --- | --- |
-| RED | Original code | `build-1.log` | EXIT=2; compiler reports `sfont` undeclared at line 221. |
-| GREEN | Fix applied | `build-2.log` | EXIT=0. |
-| Reverse-patch RED | Product fix removed with `git apply -R` | `build-3.log` | EXIT=2; same undeclared-identifier failure. |
-| Reapplied GREEN | Product fix restored with `git apply` | `build-4.log` | EXIT=0. |
+| Run | Exact command | Exit |
+| --- | --- | --- |
++| RED, original | `cmake --build build --target sf2player -- 'CXX_DEFINES=-DNDEBUG -DNOMINMAX -DNO_JACK_METADATA=1 -DPLUGIN_NAME=sf2player -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_SVG_LIB -DQT_TRANSLATIONS_DIR=\"/usr/share/qt6/translations\" -DQT_WIDGETS_LIB -DQT_XML_LIB -DUSE_WEAK_JACK=1 -Dsf2player_EXPORTS -DCONFIG_FLUID_BANK_OFFSET' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-344.r1/logs/build-1.log 2>&1; echo EXIT=$?` | 2 |
+| GREEN, fix applied | `cmake --build build --target sf2player -- 'CXX_DEFINES=-DNDEBUG -DNOMINMAX -DNO_JACK_METADATA=1 -DPLUGIN_NAME=sf2player -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_SVG_LIB -DQT_TRANSLATIONS_DIR=\"/usr/share/qt6/translations\" -DQT_WIDGETS_LIB -DQT_XML_LIB -DUSE_WEAK_JACK=1 -Dsf2player_EXPORTS -DCONFIG_FLUID_BANK_OFFSET' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-344.r1/logs/build-2.log 2>&1; echo EXIT=$?` | 0 |
+| Reverse-patch RED | `cmake --build build --target sf2player -- 'CXX_DEFINES=-DNDEBUG -DNOMINMAX -DNO_JACK_METADATA=1 -DPLUGIN_NAME=sf2player -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_SVG_LIB -DQT_TRANSLATIONS_DIR=\"/usr/share/qt6/translations\" -DQT_WIDGETS_LIB -DQT_XML_LIB -DUSE_WEAK_JACK=1 -Dsf2player_EXPORTS -DCONFIG_FLUID_BANK_OFFSET' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-344.r1/logs/build-3.log 2>&1; echo EXIT=$?` | 2 |
+| Reapplied GREEN | `cmake --build build --target sf2player -- 'CXX_DEFINES=-DNDEBUG -DNOMINMAX -DNO_JACK_METADATA=1 -DPLUGIN_NAME=sf2player -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_NO_DEBUG -DQT_SVG_LIB -DQT_TRANSLATIONS_DIR=\"/usr/share/qt6/translations\" -DQT_WIDGETS_LIB -DQT_XML_LIB -DUSE_WEAK_JACK=1 -Dsf2player_EXPORTS -DCONFIG_FLUID_BANK_OFFSET' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-344.r1/logs/build-4.log 2>&1; echo EXIT=$?` | 0 |
 
 The reverse-proof commands both exited 0:
 
