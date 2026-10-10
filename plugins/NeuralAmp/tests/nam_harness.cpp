@@ -244,7 +244,7 @@ bool readWav(const std::string& path, std::vector<float>& out, double* sampleRat
 		}
 		pos += 8 + chunkLen + (chunkLen & 1u);
 	}
-	if (dataOff == 0 || channels != 1) { return false; }
+	if (dataOff == 0 || channels != 1 || rate == 0) { return false; }
 	if (sampleRate != nullptr) { *sampleRate = static_cast<double>(rate); }
 	dataLen = std::min(dataLen, b.size() - dataOff);
 
