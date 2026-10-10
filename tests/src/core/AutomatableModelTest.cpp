@@ -74,6 +74,18 @@ private slots: // tests
 		QVERIFY(nullptr == imPtr->dynamicCast<ComboBoxModel>()); // child class
 	}
 
+	void ComboBoxCurrentDataHandlesEmptyModel()
+	{
+		using namespace lmms;
+
+		ComboBoxModel comboModel;
+		QVERIFY(comboModel.currentData() == nullptr);
+
+		comboModel.addItem(QStringLiteral("choice"));
+		comboModel.clear();
+		QVERIFY(comboModel.currentData() == nullptr);
+	}
+
 	void LinkTests()
 	{
 		using namespace lmms;
