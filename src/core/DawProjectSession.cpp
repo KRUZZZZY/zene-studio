@@ -96,6 +96,12 @@ QString colorText(const std::optional<QColor>& color)
 	return color->name(QColor::HexRgb);
 }
 
+QString defaultMixerChannelName(int position)
+{
+	if (position == 0) { return Mixer::tr("Master"); }
+	return Mixer::tr("Channel %1").arg(position);
+}
+
 //! The engine's own panning scale is -100..100 with 0 centre (include/panning.h);
 //! the format's Pan is normalized 0..1 with 0.5 centre. Both are linear and
 //! centred at the same place, so the conversion is exact in both directions.
@@ -497,7 +503,8 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 		while (static_cast<int>(mixer->numChannels()) <= position) { mixer->createChannel(); }
 		MixerChannel* channel = mixer->mixerChannel(position);
 		const DawProjectMixerChannel& entry = model.mixerChannels[position];
-		if (!entry.name.isEmpty()) { channel->m_name = entry.name; }
+		if (entry.name.isEmpty()) { channel->m_name = defaultMixerChannelName(position); }
+		else { channel->m_name = entry.name; }
 		channel->m_volumeModel.setValue(static_cast<float>(entry.volume));
 		channel->m_muteModel.setValue(entry.mute);
 		channel->m_soloModel.setValue(entry.solo);

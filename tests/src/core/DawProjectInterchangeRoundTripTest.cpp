@@ -393,6 +393,27 @@ private slots:
 		QCOMPARE(extracted.denominator, authored.denominator);
 	}
 
+	void importResetsAnUnnamedMixerChannelToItsDefaultName()
+	{
+		Song* song = Engine::getSong();
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		const int channelIndex = mixer->createChannel();
+		const QString defaultName = mixer->mixerChannel(channelIndex)->m_name;
+		mixer->mixerChannel(channelIndex)->m_name = QStringLiteral("Previous project channel");
+
+		DawProjectModel imported;
+		imported.mixerChannels.append(DawProjectMixerChannel{});
+		imported.mixerChannels.append(DawProjectMixerChannel{});
+		QString error;
+		const bool applied = applyDawProjectModel(song, imported, &error);
+		const QString importedName = mixer->mixerChannel(channelIndex)->m_name;
+		mixer->clear();
+
+		QVERIFY2(applied, qPrintable(error));
+		QCOMPARE(importedName, defaultName);
+	}
+
 	//! Claim 3: the control command reads the file back and reports the model.
 	void theControlCommandReadsTheModelBack()
 	{
