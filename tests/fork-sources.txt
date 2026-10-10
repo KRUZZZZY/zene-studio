@@ -2090,3 +2090,4 @@ tools/local-ci.sh
 #     No entry that was already here changed, and none was removed.
 # BUG-A4-1/A4-2: shared iterative XML depth guard used by DataFile and container parsing.
 tools/ncpu-shim.c
+tests/src/gui/LfoGraphTest.cpp
