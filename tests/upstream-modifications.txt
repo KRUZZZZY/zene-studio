@@ -1051,3 +1051,5 @@ include/LcdWidget.h	0.5.0 themes 20/23: hover state via ControlCues (enabled onl
 src/gui/editors/TimeLineWidget.cpp	0.5.0 theme 9 (wave 3): the bar-number interval also allows for the widest number on screen plus a gap, so numbers never overlap; unchanged wherever the old 35 px minimum already sufficed
 include/InstrumentPlayHandle.h	2026-10-05 audio-worker lifetime fix (be2130796): retain the owning track for isFromTrack without dereferencing a destroyed instrument; regression ArrangingCatchUpTest::queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie.
 src/core/InstrumentPlayHandle.cpp	2026-10-05 audio-worker lifetime fix (be2130796): initialise the retained track pointer while the instrument is alive; regression ArrangingCatchUpTest::queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie and PluginPortsMigrationTest.
+include/Delay.h	BUG new-p9-107: initialise the declared gain and both delay/fraction pairs in the four delay templates; DeviceDspTest explicitly instantiates each template.
+tests/src/core/DeviceDspTest.cpp	BUG new-p9-107: instantiate all four delay templates and exercise the public delay constructors to catch invalid constructor members.
