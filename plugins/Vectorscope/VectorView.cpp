@@ -229,10 +229,10 @@ void VectorView::periodicUpdate()
 // More of an Easter egg, to avoid cluttering the interface with non-essential functionality.
 void VectorView::mouseDoubleClickEvent(QMouseEvent *event)
 {
-	auto colorDialog = new ColorChooser(m_colorTrace, this);
-	if (colorDialog->exec())
+	ColorChooser colorDialog(m_colorTrace, this);
+	if (colorDialog.exec())
 	{
-		m_colorTrace = colorDialog->currentColor();
+		m_colorTrace = colorDialog.currentColor();
 	}
 }
 
