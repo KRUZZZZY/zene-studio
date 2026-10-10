@@ -26,6 +26,7 @@ Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-customisation.py <zene>
 Exit 0 only when every check held.
 """
 
+import json
 import os
 import sys
 import time
@@ -76,6 +77,22 @@ def check_shortcuts(session, recorder, tmp):
     recorder.check("export, reset and import round-trip the set",
                    exported.get("ok") and os.path.exists(path) and reset_ok and imported.get("ok")
                    and binding(session, first).get("keys") == ODD_KEYS, "export=%r import=%r" % (exported, imported))
+    malformed_sets = [
+        ("missing overrides", {"format": "zene-shortcuts", "version": 1}),
+        ("non-object overrides", {"format": "zene-shortcuts", "version": 1, "overrides": []}),
+        ("missing version", {"format": "zene-shortcuts", "overrides": {}}),
+        ("non-integer version", {"format": "zene-shortcuts", "version": "1", "overrides": {}}),
+        ("fractional version", {"format": "zene-shortcuts", "version": 1.5, "overrides": {}}),
+    ]
+    malformed_path = os.path.join(tmp, "malformed-shortcuts.json")
+    for label, document in malformed_sets:
+        session.result("shortcuts.set", {"id": first, "keys": ODD_KEYS})
+        with open(malformed_path, "w", encoding="utf-8") as malformed_file:
+            json.dump(document, malformed_file)
+        rejected = session.call("shortcuts.import", {"file": malformed_path, "replace": True})
+        recorder.check("%s shortcut set is rejected without clearing overrides" % label,
+                       kind(rejected) == "invalid_args" and binding(session, first).get("keys") == ODD_KEYS,
+                       "reply=%r keys=%r" % (rejected, binding(session, first).get("keys")))
     bad = session.call("shortcuts.set", {"id": "No ▸ Such action", "keys": "Ctrl+1"})
     recorder.check("an unknown action is not_found", kind(bad) == "not_found", "reply=%r" % bad)
     session.result("shortcuts.reset")
