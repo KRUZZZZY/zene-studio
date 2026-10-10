@@ -2409,10 +2409,18 @@ target_compile_features(synthetic_audio_plugin PRIVATE cxx_std_20)
 target_link_libraries(synthetic_audio_plugin PRIVATE zene ${QT_LIBRARIES})
 set_target_properties(synthetic_audio_plugin PROPERTIES PREFIX "")
 
-add_executable(AudioPluginTest src/plugins/AudioPluginTest.cpp)
+add_executable(AudioPluginTest
+	src/plugins/AudioPluginTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/TapTempo/TapTempo.cpp
+	${CMAKE_SOURCE_DIR}/plugins/TapTempo/TapTempoView.cpp
+	${CMAKE_SOURCE_DIR}/plugins/TapTempo/TapTempo.h
+	${CMAKE_SOURCE_DIR}/plugins/TapTempo/TapTempoView.h
+)
 add_test(NAME AudioPluginTest COMMAND AudioPluginTest)
 target_include_directories(AudioPluginTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/TapTempo
+	${CMAKE_BINARY_DIR}/plugins/TapTempo
 )
 target_static_libraries(AudioPluginTest PRIVATE lmmsobjs)
 target_link_libraries(AudioPluginTest PRIVATE
@@ -2422,6 +2430,7 @@ target_link_libraries(AudioPluginTest PRIVATE
 target_compile_features(AudioPluginTest PRIVATE cxx_std_20)
 target_compile_definitions(AudioPluginTest PRIVATE
 	LMMS_TESTING
+	PLUGIN_NAME=taptempo
 	SYNTHETIC_PLUGIN_PATH="$<TARGET_FILE:synthetic_audio_plugin>"
 )
 set_target_properties(AudioPluginTest PROPERTIES ENABLE_EXPORTS ON)

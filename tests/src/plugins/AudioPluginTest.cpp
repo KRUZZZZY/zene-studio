@@ -45,6 +45,8 @@
  */
 
 #include <array>
+#include <chrono>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -62,6 +64,11 @@
 #include "Engine.h"
 #include "Plugin.h"
 #include "SampleFrame.h"
+#include "ToolPlugin.h"
+#include "TapTempoView.h"
+#define private public
+#include "TapTempo.h"
+#undef private
 
 using namespace lmms;
 
@@ -124,6 +131,7 @@ private slots:
 	void bypassedEffectRunsDefaultBypassImpl();
 	void unknownProcessStatusIsIgnored();
 	void legacyAudioBufferPathRoutesInPlacePorts();
+	void subMillisecondTapIntervalDoesNotProduceInfiniteTempo();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -433,6 +441,24 @@ void AudioPluginTest::legacyAudioBufferPathRoutesInPlacePorts()
 	// 0.8f / 2 and -0.4f / 2 are exact in binary floating point.
 	QCOMPARE(buffer.interleavedBuffer()[0][0], 0.4f);
 	QCOMPARE(buffer.interleavedBuffer()[TestFrames - 1][1], -0.2f);
+}
+
+//! TapTempo must reject intervals that truncate to zero milliseconds.
+void AudioPluginTest::subMillisecondTapIntervalDoesNotProduceInfiniteTempo()
+{
+	using namespace std::chrono_literals;
+
+	TapTempo tapTempo;
+
+	// Keep the measured delta inside (-1 ms, 1 ms) across the tap's setup so
+	// duration_cast<milliseconds> deterministically produces zero.
+	tapTempo.m_lastTap = TapTempo::clock::now() + 999us;
+	tapTempo.m_taps = 0;
+	tapTempo.m_bpm = 0.0;
+	tapTempo.tap(false);
+
+	QVERIFY(std::isfinite(tapTempo.m_bpm));
+	QCOMPARE(tapTempo.m_bpm, 0.0);
 }
 
 QTEST_MAIN(AudioPluginTest)

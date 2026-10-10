@@ -71,6 +71,11 @@ void TapTempo::tap(bool play)
 	const auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - m_lastTap);
 	constexpr auto resetTime = 2000ms;
 
+	if (delta == 0ms)
+	{
+		return;
+	}
+
 	if (delta >= resetTime)
 	{
 		m_bpm = 0;
