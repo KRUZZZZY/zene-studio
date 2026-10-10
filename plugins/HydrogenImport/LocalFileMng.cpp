@@ -42,7 +42,9 @@ float LocalFileMng::readXmlFloat( QDomNode node , const QString& nodeName, float
 	
 	if( !node.isNull() && !element.isNull() ){
 		if(  !element.text().isEmpty() ){
-			return c_locale.toFloat(element.text());
+			bool conversionOk = false;
+			const float value = c_locale.toFloat(element.text(), &conversionOk);
+			return conversionOk ? value : defaultValue;
 		} else {
 			if ( !bCanBeEmpty ) {
 				//_WARNINGLOG( "Using default value in " + nodeName );
@@ -64,7 +66,9 @@ int LocalFileMng::readXmlInt( QDomNode node , const QString& nodeName, int defau
 	
 	if( !node.isNull() && !element.isNull() ){
 		if(  !element.text().isEmpty() ){
-			return c_locale.toInt( element.text() );
+			bool conversionOk = false;
+			const int value = c_locale.toInt(element.text(), &conversionOk);
+			return conversionOk ? value : defaultValue;
 		} else {
 			if ( !bCanBeEmpty ) {
 				//_WARNINGLOG( "Using default value in " + nodeName );
@@ -87,8 +91,10 @@ bool LocalFileMng::readXmlBool( QDomNode node , const QString& nodeName, bool de
 		if(  !element.text().isEmpty() ){
 			if( element.text() == "true"){
 				return true;
-			} else {
+			} else if( element.text() == "false") {
 				return false;
+			} else {
+				return defaultValue;
 			}
 		} else {
 			//_WARNINGLOG( "Using default value in " + nodeName );
