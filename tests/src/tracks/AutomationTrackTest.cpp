@@ -23,6 +23,8 @@
  */
 
 #include <QtTest>
+#include <QDir>
+#include <QFile>
 
 
 #include "AutomationClip.h"
@@ -83,6 +85,37 @@ private slots:
 		QCOMPARE(c.valueAt(50), 0.0f);
 		QCOMPARE(c.valueAt(100), 1.0f);
 		QCOMPARE(c.valueAt(150), 1.0f);
+	}
+
+	void testValuesAfterPastEnd()
+	{
+		using namespace lmms;
+
+		AutomationClip c(nullptr);
+		c.putValue(0, 0.0, false);
+		c.putValue(100, 1.0, false);
+
+		QVERIFY(c.valuesAfter(150) == nullptr);
+	}
+
+	void testValuesAfterChecksEndBeforeIncrement()
+	{
+		const auto sourcePath = QDir(QCoreApplication::applicationDirPath())
+			.filePath("../../src/core/AutomationClip.cpp");
+		QFile source(sourcePath);
+		QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(sourcePath));
+
+		const QByteArray contents = source.readAll();
+		const int functionStart = contents.indexOf("float *AutomationClip::valuesAfter");
+		QVERIFY(functionStart >= 0);
+
+		const int functionEnd = contents.indexOf("\n}\n", functionStart);
+		QVERIFY(functionEnd >= 0);
+		const QByteArray function = contents.mid(functionStart, functionEnd - functionStart);
+		const int endCheck = function.indexOf("if (v == m_timeMap.end()");
+		const int increment = function.indexOf("std::next(v)");
+		QVERIFY2(endCheck >= 0 && increment >= 0 && endCheck < increment,
+			"valuesAfter must check for end() before advancing the iterator");
 	}
 
 	void testClips()
