@@ -41,6 +41,7 @@
 #include <QHelpEvent>
 #include <QLineEdit>
 #include <QToolTip>
+#include <QWheelEvent>
 
 #include "AutomatableModel.h"
 #include "ComboBox.h"
@@ -49,6 +50,7 @@
 #include "Engine.h"
 #include "Fader.h"
 #include "Knob.h"
+#include "LcdFloatSpinBox.h"
 #include "LcdSpinBox.h"
 #include "LedCheckBox.h"
 
@@ -117,6 +119,27 @@ private slots:
 		QTest::keyClick(&knob, Qt::Key_Space);
 		QCOMPARE(parent.keys, QList<int>{Qt::Key_Space});  // not taken: the transport still has it
 		QCOMPARE(model.value(), 99.f);
+	}
+
+	void lcdFloatWheelHonorsInvertedDirection()
+	{
+		FloatModel model(5.f, 0.f, 10.f, 1.f, nullptr, QStringLiteral("Frequency"));
+		LcdFloatSpinBox spinBox(2, 2, QStringLiteral("Frequency"));
+		spinBox.setModel(&model);
+		spinBox.show();
+		QApplication::processEvents();
+
+		const QPointF localPosition(1, 1);
+		const QPointF globalPosition(spinBox.mapToGlobal(localPosition.toPoint()));
+		QWheelEvent regularWheel(localPosition, globalPosition, QPoint(), QPoint(0, 120), Qt::NoButton,
+			Qt::NoModifier, Qt::NoScrollPhase, false);
+		QApplication::sendEvent(&spinBox, &regularWheel);
+		QCOMPARE(model.value(), 6.f);
+
+		QWheelEvent invertedWheel(localPosition, globalPosition, QPoint(), QPoint(0, 120), Qt::NoButton,
+			Qt::NoModifier, Qt::NoScrollPhase, true);
+		QApplication::sendEvent(&spinBox, &invertedWheel);
+		QCOMPARE(model.value(), 5.f);
 	}
 
 	void theNameComesFromTheKnobItsModelOrItsDescription()
