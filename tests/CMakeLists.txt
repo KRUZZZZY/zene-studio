@@ -716,6 +716,9 @@ set(LMMS_TESTS
 	src/core/TelemetryTransportTest.cpp
 	src/core/TempoMapPersistenceTest.cpp
 	src/core/TempoMapTest.cpp
+	# Tap Tempo's sync button must leave the project tempo alone until a tap
+	# interval has produced a BPM value.
+	src/core/TapTempoTest.cpp
 	src/core/TimelineTest.cpp
 	src/core/TrackFolderTest.cpp
 	src/core/TwoTrackRecordingHarness.cpp
@@ -1150,6 +1153,20 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 endforeach()
+
+# TapTempoTest exercises the real tool plugin's sync slot. Compile the plugin
+# sources into the test binary so the test can construct TapTempo directly.
+target_sources(TapTempoTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/TapTempo/TapTempo.cpp
+	${CMAKE_SOURCE_DIR}/plugins/TapTempo/TapTempoView.cpp
+)
+target_include_directories(TapTempoTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/TapTempo
+	${CMAKE_BINARY_DIR}/plugins/TapTempo
+)
+target_compile_definitions(TapTempoTest PRIVATE PLUGIN_NAME=taptempo)
+set_tests_properties(TapTempoTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
 # The subject of the MPE playback proof (0.3.0 feature-list row 8, task #649).

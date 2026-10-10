@@ -24,6 +24,7 @@
 
 #include "TapTempo.h"
 
+#include <cmath>
 #include <string>
 
 #include "SamplePlayHandle.h"
@@ -105,6 +106,8 @@ void TapTempo::tap(bool play)
 
 void TapTempo::sync()
 {
+	if (!(m_bpm > 0.0) || !std::isfinite(m_bpm)) { return; }
+
 	Engine::getSong()->setTempo(std::round(m_bpm));
 }
 
