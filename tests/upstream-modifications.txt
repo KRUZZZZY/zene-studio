@@ -1036,6 +1036,8 @@ include/LcdFloatSpinBox.h	0.5.0 accessibility (theme 10/17): Tab focus (TabFocus
 src/gui/widgets/LcdFloatSpinBox.cpp	0.5.0 accessibility (theme 10/17): Tab focus (TabFocus, not click focus) and keys; accessible value text; arrows, Page Up/Down, Home/End, Enter opens the value dialog; 0.5.0 themes 20/23: hover state via ControlCues (enabled only); token colours replace fixed ones (fader trough and ticks, default bar paint); LcdWidget::borderColour; LCD float height from tokens (same 32 px). Held by KnobKeyboardTest
 include/LcdSpinBox.h	0.5.0 accessibility (theme 10/17): Tab focus (TabFocus, not click focus) and keys; accessible value text
 src/gui/widgets/LcdSpinBox.cpp	0.5.0 accessibility (theme 10/17): Tab focus (TabFocus, not click focus) and keys; accessible value text; arrows, Page Up/Down, Home/End, Enter opens the value dialog
+
+src/gui/tracks/FadeButton.cpp	cluster new-p9-146: forward the supplied QWidget parent through the palette-based delegating constructor; covered by VcaStripLifetimeTest::aFadeButtonKeepsItsSuppliedParentWithoutALayout.
 src/gui/widgets/TextFloat.cpp	0.5.0 theme 17: a floating message is also announced to screen readers
 include/ClipView.h	0.5.0 themes 2/9: draggedClipPos reports its snap (arrangement::SnapHit); pressLocked/refuseLockedDrag
 include/FileBrowser.h	0.5.0 theme 3 (Browser): stopPreview() is a public slot the Browser panel calls; insertFileItem() declared
