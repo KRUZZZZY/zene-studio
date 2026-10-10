@@ -27,6 +27,8 @@
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
 #include "Engine.h"
+#include "LadspaBase.h"
+#include "LadspaControl.h"
 
 class AutomatableModelTest : public QObject
 {
@@ -53,6 +55,28 @@ private slots: // tests
 	{
 		using namespace lmms;
 		Engine::destroy();
+	}
+
+	void LadspaToggleValuesUsePositiveAsOn()
+	{
+		using namespace lmms;
+
+		port_desc_t port{};
+		port.name = QStringLiteral("Toggle");
+		port.data_type = BufferDataType::Toggled;
+		port.min = 0.0f;
+		port.max = 1.0f;
+		port.def = 0.0f;
+
+		LadspaControl control(nullptr, &port);
+		control.setValue(1.0f);
+		QVERIFY(control.toggledModel()->value());
+
+		control.setValue(-1.0f);
+		QVERIFY(!control.toggledModel()->value());
+
+		control.setValue(0.0f);
+		QVERIFY(!control.toggledModel()->value());
 	}
 
 	void CastTests()
