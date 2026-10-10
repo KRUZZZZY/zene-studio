@@ -367,8 +367,9 @@ void MixerChannelView::paintEvent(QPaintEvent*)
 	}
 }
 
-void MixerChannelView::mousePressEvent(QMouseEvent*)
+void MixerChannelView::mousePressEvent(QMouseEvent* event)
 {
+	if (event->button() != Qt::LeftButton) { return; }
 	if (m_mixerView->currentMixerChannel() != this) { m_mixerView->setCurrentMixerChannel(this); }
 }
 
