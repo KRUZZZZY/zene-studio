@@ -33,6 +33,7 @@
 #include <QtTest>
 
 #include "Engine.h"
+#include "Ladspa2LMMS.h"
 #include "Plugin.h"
 
 namespace
@@ -187,6 +188,7 @@ private slots:
 	void initTestCase();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
+	void nonRealtimeLadspaEffectsAreInvalid();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
@@ -214,6 +216,23 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::nonRealtimeLadspaEffectsAreInvalid()
+{
+	auto* manager = lmms::Engine::getLADSPAManager();
+	const lmms::ladspa_key_t key{"decimator_1202.so", "decimator"};
+	const auto* description = manager->getDescription(key);
+	QVERIFY2(description != nullptr, "SWH Decimator test fixture was not loaded");
+	QVERIFY(description->type == lmms::LadspaPluginType::Transfer);
+	QVERIFY(description->inputChannels == 1 && description->outputChannels == 1);
+	QVERIFY(!manager->isRealTimeCapable(key));
+
+	const auto entry = qMakePair(manager->getName(key), key);
+	QVERIFY2(!manager->getValidEffects().contains(entry),
+		"non-real-time LADSPA plugin was classified as a valid effect");
+	QVERIFY2(manager->getInvalidEffects().contains(entry),
+		"non-real-time LADSPA plugin was not classified as invalid");
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
