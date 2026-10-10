@@ -44,6 +44,9 @@ set(LMMS_TESTS
 	src/core/AudioBusHandleTest.cpp
 	src/core/AudioBusTest.cpp
 	src/core/AudioEngineTeardownTest.cpp
+	# The flanger delay buffer is allocated as an array, so both release sites
+	# must use array delete.
+	src/core/MonoDelayTest.cpp
 	src/core/AudioPortsModelTest.cpp
 	src/core/AudioPortsTest.cpp
 	# Pitch-preserving time stretch (0.3.0 feature-list row 30): the WSOLA DSP

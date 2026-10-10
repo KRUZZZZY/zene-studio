@@ -48,7 +48,7 @@ MonoDelay::~MonoDelay()
 {
 	if( m_buffer )
 	{
-		delete m_buffer;
+		delete[] m_buffer;
 	}
 }
 
@@ -71,7 +71,7 @@ void MonoDelay::setSampleRate( int sampleRate )
 {
 	if( m_buffer )
 	{
-		delete m_buffer;
+		delete[] m_buffer;
 	}
 
 
