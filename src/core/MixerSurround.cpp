@@ -260,6 +260,7 @@ QString formatName(Format format)
 
 bool formatFromName(const QString& name, Format* format)
 {
+	if (!format) { return false; }
 	for (int k = 0; k < FormatCount; ++k)
 	{
 		if (name.compare(QString::fromLatin1(kLayouts[static_cast<std::size_t>(k)].name), Qt::CaseInsensitive) != 0) { continue; }

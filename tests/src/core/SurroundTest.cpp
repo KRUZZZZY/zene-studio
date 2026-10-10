@@ -193,6 +193,11 @@ private slots:
 		Engine::destroy();
 	}
 
+	void aValidFormatRejectsANullOutput()
+	{
+		QVERIFY(!surround::formatFromName(QStringLiteral("5.1"), nullptr));
+	}
+
 	void aStereoProjectIsUnchanged()
 	{
 		Mixer* mixer = Engine::mixer();
