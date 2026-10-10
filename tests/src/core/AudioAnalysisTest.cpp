@@ -36,6 +36,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "fft_helpers.h"
 #include "PitchTrack.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -99,6 +100,17 @@ private slots:
 		QCOMPARE(notes.front().key, 57);
 		const std::vector<float> silence(44100, 0.f);
 		QVERIFY(pitchtrack::detectNotes(silence.data(), silence.size(), 44100).empty());
+	}
+
+	void rejectsShortCosineSumWindows()
+	{
+		constexpr FFTWindow windows[] = {FFTWindow::BlackmanHarris, FFTWindow::Hamming, FFTWindow::Hanning};
+		float sample = 1.0f;
+		for (const FFTWindow window : windows)
+		{
+			QCOMPARE(precomputeWindow(&sample, 0, window), -1);
+			QCOMPARE(precomputeWindow(&sample, 1, window), -1);
+		}
 	}
 
 	void audioBecomesATrackOfNotes()

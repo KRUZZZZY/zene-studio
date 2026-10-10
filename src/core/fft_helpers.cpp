@@ -106,6 +106,10 @@ int precomputeWindow(float *window, unsigned int length, FFTWindow type, bool no
 {
 	using namespace std::numbers;
 	if (window == nullptr) {return -1;}
+	if (length < 2 && (type == FFTWindow::BlackmanHarris || type == FFTWindow::Hamming || type == FFTWindow::Hanning))
+	{
+		return -1;
+	}
 
 	float gain = 0;
 	float a0;
