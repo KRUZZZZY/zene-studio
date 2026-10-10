@@ -113,6 +113,11 @@ RowTableView::~RowTableView()
 void RowTableView::setModel( QAbstractItemModel * model )
 {
 	QTableView::setModel( model );
+	if ( model == nullptr )
+	{
+		return;
+	}
+
 	for ( int i = 0; i < model->rowCount(); i++ )
 	{
 		setItemDelegateForRow( i, m_rowDelegate );
