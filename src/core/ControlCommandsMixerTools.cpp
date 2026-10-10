@@ -208,6 +208,10 @@ ControlResult adjust(const QJsonObject& args)
 	if (!channelsOf(args.value(QStringLiteral("channels")).toArray(), &channels, &error)) { return error; }
 	const double db = args.value(QStringLiteral("volume_db")).toDouble(0.0);
 	const double pan = args.value(QStringLiteral("pan")).toDouble(0.0);
+	if (!std::isfinite(db) || !std::isfinite(pan))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'volume_db' and 'pan' must be finite"));
+	}
 	if (db == 0.0 && pan == 0.0) { return ControlResult::success({{QStringLiteral("adjusted"), 0}}); }  // nothing to move (review W3-batchA #11)
 	QVector<JournallingObject*> models;
 	for (MixerChannel* channel : channels) { models << &channel->m_volumeModel << &channel->m_panModel; }
