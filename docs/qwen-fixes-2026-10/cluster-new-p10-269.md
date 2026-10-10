@@ -10,6 +10,17 @@ Evidence:
 - [tests/src/core/NoteTransformTest.cpp:363](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-269/tests/src/core/NoteTransformTest.cpp:363): regression covers zero and negative grids on the helper and mutators.
 - The original implementation failed the regression with actual `0`, expected `123`. Removing the production patch reproduced that failure; reapplying it passed.
 
+## Evidence table
+
+| Evidence | Exact command / result |
+|---|---|
+| RED on original code | `ctest -R '^NoteTransformTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-269.r1/logs/test-1.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-269.r1/logs/test-1.log; exit $rc` — EXIT=8; 13 passed, regression failed (actual 0, expected 123). |
+| GREEN with fix | `ctest -R '^NoteTransformTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-269.r1/logs/test-2.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-269.r1/logs/test-2.log; exit $rc` — EXIT=0; 1/1 CTest test passed. |
+| Affected family | `ctest -R '^(NoteTransformTest|NoteEditRangeTest|NoteTransformActionsTest|SlideNotesTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-269.r1/logs/test-5.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-269.r1/logs/test-5.log; exit $rc` — EXIT=0; 4/4 CTest tests passed. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-269.r1/logs/gate-1.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-269.r1/logs/gate-1.log; exit $rc` — EXIT=0. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-269.r1/logs/gate-2.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-269.r1/logs/gate-2.log; exit $rc` — EXIT=0. |
+| Files committed | `src/core/Note.cpp`; `tests/src/core/NoteTransformTest.cpp`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p10-269.md`. |
+
 ## Evidence commands
 
 All build and test output was saved in new numbered files under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-269.r1/logs`. The `fff grep` tool was not available in this session; I searched the logs with `rg` for `error`, `FAILED`, and `Assertion`.
