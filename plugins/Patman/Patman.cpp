@@ -180,6 +180,7 @@ void PatmanInstrument::setFile( const QString & _patch_file, bool _rename )
 {
 	if( _patch_file.size() <= 0 )
 	{
+		unloadCurrentPatch();
 		m_patchFile = QString();
 		return;
 	}

@@ -2425,7 +2425,7 @@ target_compile_definitions(AudioPluginTest PRIVATE
 	SYNTHETIC_PLUGIN_PATH="$<TARGET_FILE:synthetic_audio_plugin>"
 )
 set_target_properties(AudioPluginTest PROPERTIES ENABLE_EXPORTS ON)
-add_dependencies(AudioPluginTest synthetic_audio_plugin)
+add_dependencies(AudioPluginTest synthetic_audio_plugin patman)
 set_tests_properties(AudioPluginTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
