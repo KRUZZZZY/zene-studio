@@ -1,28 +1,30 @@
 # Cluster new-p10-108
 
-**Verdict: BLOCKED**
+**Verdict: FIXED**
 
-The finding is supported by the current event handlers: `XyPad::mousePressEvent()` enables input for every button at [plugins/Delay/DelayControlsDialog.cpp:118](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-108/plugins/Delay/DelayControlsDialog.cpp:118), and `mouseMoveEvent()` updates both models at lines 144 and 149 while that flag is set. `mouseReleaseEvent()` clears the flag for every button at line 126.
+XyPad::mousePressEvent() now enables input only for Qt::LeftButton; mouseReleaseEvent() clears it only for that button. mouseMoveEvent() continues updating both models during an active left drag. The handlers are at plugins/Delay/DelayControlsDialog.cpp:118 and :129.
 
-I could not run the required regression. This build has no `DelayControlsDialog` ctest: `ctest -R '^DelayControlsDialog$' --output-on-failure` from `build/tests` reported “No tests were found!!!” (EXIT=0, zero tests, treated as an error by the project rules). The existing `XyPadPairTest` at `tests/src/gui/XyPadPairTest.cpp` tests the Rack XY pad and is not this widget. `tests/reference/Delay/DelayControlsDialog.cpp` is a frozen plugin source, not a test. Creating a focused test needs a CMake target and build regeneration, which conflicts with the explicit “Do not configure” constraint, so I made no production change.
+The direct regression is in tests/src/gui/XyPadPairTest.cpp:113-153. It separately checks right and middle drags, a left drag, and that a right release does not stop an active left drag. The final fix-removal run failed the right, middle, and other-button-release cases; the left drag and existing pair test passed.
 
 ## Evidence
 
-| Check | Exact command | Result |
+| Check | Exact command (working directory as stated) | Result |
 |---|---|---|
-| RED regression | `ctest -R '^DelayControlsDialog$' --output-on-failure` (cwd: `build/tests`) | EXIT=0; zero tests ran, so this is not RED evidence |
-| GREEN regression | Not run; no registered target | N/A |
-| Affected-family test count | Same ctest command | 0 (invalid per the zero-tests rule) |
-| Complexity gate | `bash tests/complexity-gate.sh --check` | EXIT=0 (`gate-3.log`) |
-| File-length gate | `bash tests/file-length-gate.sh --check` | EXIT=0 (`gate-4.log`) |
-| Files committed | `docs/qwen-fixes-2026-10/cluster-new-p10-108.md` | Report only; no production or test file changed |
+| Baseline RED, before production fix | cmake --build build --target XyPadPairTest (worktree root), then ctest -R '^XyPadPairTest$' --output-on-failure (build/tests) | Build EXIT=0 (build-3.log); CTest EXIT=8 (test-1.log), 1 test ran. Right drag changed X from 0.2 to 0.8. |
+| Fix-removal RED, final regression | git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-108.r2/logs/fix.patch; cmake --build build --target delay XyPadPairTest zene (worktree root); ctest -R '^XyPadPairTest$' --output-on-failure (build/tests) | Patch EXIT=0 (patch-3.log); build EXIT=0 (build-7.log); CTest EXIT=8 (test-5.log). Three non-left behaviors failed; left drag passed. |
+| GREEN, restored production fix | git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-108.r2/logs/fix.patch; cmake --build build --target delay XyPadPairTest zene (worktree root); ctest -R '^XyPadPairTest$' --output-on-failure (build/tests) | Patch EXIT=0 (patch-4.log); build EXIT=0 (build-8.log); CTest EXIT=0 (test-6.log), 1/1 registered test passed. |
+| Affected-family count | ctest -R '^XyPadPairTest$' --output-on-failure from build/tests | 1 registered CTest test executed; no zero-test result. |
+| Complexity gate | bash tests/complexity-gate.sh --check | EXIT=0 (gate-3.log). |
+| File-length gate | bash tests/file-length-gate.sh --check | EXIT=0 (gate-4.log). |
 
-## Build attempts
+The fix-removal patch was captured with git diff -- plugins/Delay/DelayControlsDialog.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-108.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-108.r2/logs/fix.patch (EXIT=0, patch-1.log). The final regression was then rerun with the same patch removed and restored as shown above.
 
-The following exploratory builds used temporary edits to `tests/src/gui/XyPadPairTest.cpp`; those edits were reverted and are not part of the worktree diff. Each command was run from the worktree root and returned EXIT=2:
+The initially exploratory test builds also ran cmake --build build --target XyPadPairTest (EXIT=2, build-1.log, deprecated Qt mouse-event constructor) and the same command again (EXIT=2, build-2.log, AUTOMOC shim declarations incomplete). The corrected direct test build passed in build-3.log. All logs are in /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-108.r2/logs. The fff grep tool was not exposed in this session; logs were searched with separate rg terms.
 
-- `cmake --build build --target XyPadPairTest` — `build-1.log`: the test event used a deprecated Qt 6 constructor, promoted to an error.
-- `cmake --build build --target XyPadPairTest` — `build-2.log`: compiling the Delay implementation into this target left its Qt meta-object vtables undefined.
-- `cmake --build build --target XyPadPairTest` — `build-3.log`: CMake AutoMoc rejected the included Delay moc file because its header is not in the target sources.
+## Files committed
 
-The available tool list did not expose the requested `fff` log-search tool; build and test logs were searched with `rg` instead. Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-108.r1/logs`.
+- plugins/Delay/DelayControlsDialog.cpp — left-button gating.
+- tests/src/gui/XyPadPairTest.cpp — direct XyPad regression cases.
+- tests/src/gui/DelayControlsDialog.h and tests/src/gui/EqFader.h — AUTOMOC inputs for the existing configured test target.
+- tests/fork-sources.txt and tests/upstream-modifications.txt — source registrations and reason.
+- docs/qwen-fixes-2026-10/cluster-new-p10-108.md — this report.
