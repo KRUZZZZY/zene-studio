@@ -49,6 +49,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "ParameterAliases.h"
+#include "ProjectJournal.h"
 #include "Rack.h"
 #include "RackSplit.h"
 #include "SampleBuffer.h"
@@ -278,6 +279,33 @@ private slots:
 		QDomElement plain = doc.createElement(QStringLiteral("mixerchannel"));
 		rack.saveSettings(doc, plain);
 		QVERIFY(!plain.firstChildElement(QStringLiteral("rack")).hasAttribute(QStringLiteral("split")));
+	}
+
+	//! Repeating the current mode and crossover must not create a second journal step.
+	void reapplyingAnUnchangedRackSplitDoesNotAddUndoStep()
+	{
+		Rack& rack = channel(2)->m_rack;
+		if (rack.chainCount() < 2)
+		{
+			QVERIFY(run(QStringLiteral("rack.add_chain"), {{QStringLiteral("channel"), ch(2)}}).ok);
+		}
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const QJsonObject split{{QStringLiteral("channel"), ch(2)}, {QStringLiteral("mode"), QStringLiteral("bands")},
+			{QStringLiteral("crossovers"), QJsonArray{1000}}};
+		const int depthBefore = journal->undoDepth();
+		const ControlResult first = run(QStringLiteral("rack.split"), split);
+		QVERIFY2(first.ok, qPrintable(first.errorMessage));
+		QCOMPARE(journal->undoDepth(), depthBefore + 1);
+		const ControlResult repeated = run(QStringLiteral("rack.split"), split);
+		QVERIFY2(repeated.ok, qPrintable(repeated.errorMessage));
+		const bool noExtraStep = journal->undoDepth() == depthBefore + 1;
+		if (!noExtraStep) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		const ControlResult reverted = run(QStringLiteral("control.undo"));
+		QVERIFY2(reverted.ok, qPrintable(reverted.errorMessage));
+		QCOMPARE(journal->undoDepth(), depthBefore);
+		QCOMPARE(rack.split().mode, RackSplitMode::None);
+		QVERIFY(noExtraStep);
 	}
 
 	//! MX-089 / MX-097: a parameter is found by its name, renamed, found by its alias, keeps its own name
