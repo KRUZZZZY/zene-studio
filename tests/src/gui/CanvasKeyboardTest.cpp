@@ -35,12 +35,14 @@
 #include "AccessibleCanvas.h"
 #include "AccessibleWidgets.h"
 #include "ArrangerClipKeys.h"
+#include "AutomatableModel.h"
 #include "CompSwipeStrip.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "Knob.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "NoteCanvas.h"
@@ -214,6 +216,23 @@ private slots:
 		QVERIFY(face->text(QAccessible::Value).startsWith(NoteGrid::keyName(62)));
 		QVERIFY(canvas->findChild<a11y::CanvasKeyCursor*>() != nullptr);
 		QVERIFY(!a11y::CanvasKeyCursor::of(canvas)->mark().isEmpty());  // the cursor note is marked
+	}
+
+	void invalidValueDoesNotChangeAValueControlModel()
+	{
+		a11y::installAccessibleWidgets();
+		FloatModel model(50.f, 0.f, 100.f, 1.f, nullptr, QStringLiteral("Gain"));
+		Knob knob(KnobType::Bright26);
+		knob.setModel(&model);
+		QAccessibleInterface* face = QAccessible::queryAccessibleInterface(&knob);
+		QVERIFY(face != nullptr);
+		QAccessibleValueInterface* value = face->valueInterface();
+		QVERIFY(value != nullptr);
+
+		value->setCurrentValue(QVariant(QStringLiteral("not numeric")));
+		QCOMPARE(model.value(), 50.f);
+		value->setCurrentValue(QVariant(25.f));
+		QCOMPARE(model.value(), 25.f);
 	}
 
 	void theExpressionLaneStepsTheSelectionInOneStep()
