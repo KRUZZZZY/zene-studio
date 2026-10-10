@@ -144,7 +144,7 @@ void CollabLink::send(const QJsonObject& message)
 void CollabLink::sendLine(const QByteArray& line)
 {
 	if (!isOpen()) { return; }
-	if (m_socket->bytesToWrite() + line.size() > MaxQueuedBytes)
+	if (m_socket->bytesToWrite() + line.size() + 1 > MaxQueuedBytes)
 	{
 		close(QStringLiteral("the other side stopped reading"));
 		return;
