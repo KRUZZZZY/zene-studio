@@ -43,6 +43,24 @@
 #include "Song.h"
 #include "TrackFolder.h"
 
+// Compile the private plugin analyser into this test so it can be exercised directly.
+#include "GuiApplication.h"
+#include "MainWindow.h"
+#include "../../../plugins/Eq/EqCurve.h"
+#pragma push_macro("Q_OBJECT")
+#undef Q_OBJECT
+#define Q_OBJECT
+#include "../../../plugins/Eq/EqSpectrumView.cpp"
+#pragma pop_macro("Q_OBJECT")
+
+namespace lmms::gui
+{
+
+// EqAnalyser does not use the view's coordinate mapper; satisfy the unused view code.
+float EqHandle::freqToXPixel(float, int) { return 0.0f; }
+
+} // namespace lmms::gui
+
 using namespace lmms;
 
 namespace
@@ -130,6 +148,16 @@ private slots:
 		const double nyquist = Engine::audioEngine()->outputSampleRate() / 2.0;
 		const int expected = static_cast<int>(32.0 * std::log(1000.0 / 30.0) / std::log(nyquist / 30.0));
 		QVERIFY2(std::abs(loudest - expected) <= 1, qPrintable(QStringLiteral("loudest band %1, expected %2").arg(loudest).arg(expected)));
+	}
+
+	void antiPhaseStereoHasZeroEnergy()
+	{
+		constexpr auto frameCount = static_cast<f_cnt_t>(FFT_BUFFER_SIZE);
+		const std::vector<SampleFrame> input(frameCount, SampleFrame{0.5f, -0.5f});
+		EqAnalyser analyser;
+		analyser.analyze(InterleavedBufferView<const float, 2>{input.data(), frameCount});
+		QVERIFY(std::isfinite(analyser.getEnergy()));
+		QCOMPARE(analyser.getEnergy(), 0.0f);
 	}
 
 	void aRangeIsEdited()
