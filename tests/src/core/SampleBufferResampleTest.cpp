@@ -24,10 +24,15 @@
 
 #include <QtTest>
 
+#include <QFile>
+#include <QProcess>
+#include <QTemporaryDir>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 #include <vector>
 
+#include "DrumSynth.h"
 #include "SampleBufferResample.h"
 
 using namespace lmms;
@@ -70,7 +75,53 @@ private slots:
 		const auto input = std::make_shared<const SampleBuffer>(std::vector<SampleFrame>(100), 44100);
 		QCOMPARE(resampleBuffer(input, 44100).get(), input.get());
 	}
+
+	void negativeDrumSynthDistortionRateDoesNotHang()
+	{
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		QFile file(tempDir.filePath(QStringLiteral("invalid-rate.ds")));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray fixture = R"([General]
+Version=DrumSynth v2.0
+Stretch=100
+[Distortion]
+On=1
+Bits=0
+Rate=-1
+)";
+		QCOMPARE(file.write(fixture), static_cast<qint64>(fixture.size()));
+		file.close();
+
+		QProcess renderer;
+		renderer.start(QCoreApplication::applicationFilePath(),
+			{QStringLiteral("--render-drumsynth"), file.fileName()});
+		QVERIFY(renderer.waitForStarted(5000));
+		const bool completed = renderer.waitForFinished(3000);
+		if (!completed)
+		{
+			renderer.kill();
+			QVERIFY(renderer.waitForFinished(5000));
+		}
+		QVERIFY2(completed, "DrumSynth rendering stalled on Rate=-1");
+		QCOMPARE(renderer.exitStatus(), QProcess::NormalExit);
+		QCOMPARE(renderer.exitCode(), 0);
+	}
 };
 
-QTEST_GUILESS_MAIN(SampleBufferResampleTest)
+int main(int argc, char* argv[])
+{
+	QCoreApplication app(argc, argv);
+	if (app.arguments().size() == 3 && app.arguments().at(1) == QStringLiteral("--render-drumsynth"))
+	{
+		std::int16_t* wave = nullptr;
+		DrumSynth drumSynth;
+		const int samples = drumSynth.GetDSFileSamples(app.arguments().at(2), wave, 1, 44100);
+		delete[] wave;
+		return samples > 0 ? 0 : 1;
+	}
+
+	SampleBufferResampleTest test;
+	return QTest::qExec(&test, argc, argv);
+}
 #include "SampleBufferResampleTest.moc"
