@@ -20,7 +20,9 @@
 
 #include "PluginPortsHarness.h"
 
+#include <cmath>
 #include <cstdio>
+#include <new>
 #include <vector>
 
 #include <QByteArray>
@@ -34,6 +36,10 @@
 
 #include "Engine.h"
 #include "Plugin.h"
+
+// Delay builds Lfo.cpp into a MODULE target, so include its implementation
+// here to exercise the constructor directly without adding a new test target.
+#include "../../../plugins/Delay/Lfo.cpp"
 
 namespace
 {
@@ -185,6 +191,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void lfoStartsFromInitializedState();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +221,25 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::lfoStartsFromInitializedState()
+{
+	const auto alignment = std::align_val_t{alignof(lmms::Lfo)};
+	void* storage = ::operator new(sizeof(lmms::Lfo), alignment);
+	auto* poisonedStorage = static_cast<volatile unsigned char*>(storage);
+	for (std::size_t byte = 0; byte < sizeof(lmms::Lfo); ++byte)
+	{
+		poisonedStorage[byte] = 0xFF;
+	}
+	auto* lfo = new (storage) lmms::Lfo{44100};
+	lfo->setFrequency(2.0);
+	const float firstOutput = lfo->tick();
+	lfo->~Lfo();
+	::operator delete(storage, alignment);
+
+	QVERIFY(std::isfinite(firstOutput));
+	QCOMPARE(firstOutput, 0.0f);
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
