@@ -36,12 +36,15 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
+#include <QDomElement>
 #include <QFile>
 #include <QTemporaryDir>
 
 #include "Engine.h"
 #include "Song.h"
 #include "TempoMap.h"
+#include "TempoSyncKnobModel.h"
 
 using namespace lmms;
 
@@ -154,6 +157,38 @@ private slots:
 		QCOMPARE(song->tempoAtTick(768), kSecondTempo);
 		song->clearProject();
 		QCOMPARE(song->tempoAtTick(768), song->getTempo());
+	}
+
+	void unknownStoredSyncModeFallsBackToNone_data()
+	{
+		QTest::addColumn<int>("serializedMode");
+		QTest::newRow("negative") << -1;
+		QTest::newRow("past-custom") << 999;
+	}
+
+	void unknownStoredSyncModeFallsBackToNone()
+	{
+		QFETCH(int, serializedMode);
+
+		QDomDocument document;
+		QVERIFY(document.setContent(QStringLiteral("<knob/>")));
+		document.documentElement().setAttribute(QStringLiteral("knob_syncmode"), serializedMode);
+
+		TempoSyncKnobModel model(1.0f, 0.0f, 100.0f, 1.0f, 1.0f, nullptr);
+		model.loadSettings(document.documentElement(), QStringLiteral("knob"));
+
+		QVERIFY(model.syncMode() == TempoSyncKnobModel::SyncMode::None);
+	}
+
+	void customStoredSyncModeRemainsValid()
+	{
+		QDomDocument document;
+		QVERIFY(document.setContent(QStringLiteral("<knob knob_syncmode=\"8\"/>")));
+
+		TempoSyncKnobModel model(1.0f, 0.0f, 100.0f, 1.0f, 1.0f, nullptr);
+		model.loadSettings(document.documentElement(), QStringLiteral("knob"));
+
+		QVERIFY(model.syncMode() == TempoSyncKnobModel::SyncMode::Custom);
 	}
 };
 
