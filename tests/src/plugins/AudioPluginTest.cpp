@@ -449,16 +449,24 @@ void AudioPluginTest::subMillisecondTapIntervalDoesNotProduceInfiniteTempo()
 	using namespace std::chrono_literals;
 
 	TapTempo tapTempo;
+	const auto firstTap = TapTempo::clock::time_point{} + 10s;
+	const auto secondTap = firstTap + 999us;
+	tapTempo.m_intervals = {500ms, 600ms, 700ms};
+	tapTempo.m_bpm = 90.0;
 
-	// Keep the measured delta inside (-1 ms, 1 ms) across the tap's setup so
-	// duration_cast<milliseconds> deterministically produces zero.
-	tapTempo.m_lastTap = TapTempo::clock::now() + 999us;
-	tapTempo.m_taps = 0;
-	tapTempo.m_bpm = 0.0;
-	tapTempo.tap(false);
+	tapTempo.updateTempo(firstTap);
+	const auto bpmBeforeShortInterval = tapTempo.m_bpm;
+	const auto tapsBeforeShortInterval = tapTempo.m_taps;
+	const auto intervalsBeforeShortInterval = tapTempo.m_intervals;
+	const auto lastTapBeforeShortInterval = tapTempo.m_lastTap;
+	tapTempo.updateTempo(secondTap);
 
-	QVERIFY(std::isfinite(tapTempo.m_bpm));
-	QCOMPARE(tapTempo.m_bpm, 0.0);
+	QCOMPARE(tapTempo.m_bpm, bpmBeforeShortInterval);
+	QCOMPARE(tapTempo.m_taps, tapsBeforeShortInterval);
+	QCOMPARE(tapTempo.m_intervals[0], intervalsBeforeShortInterval[0]);
+	QCOMPARE(tapTempo.m_intervals[1], intervalsBeforeShortInterval[1]);
+	QCOMPARE(tapTempo.m_intervals[2], intervalsBeforeShortInterval[2]);
+	QCOMPARE(tapTempo.m_lastTap.time_since_epoch().count(), lastTapBeforeShortInterval.time_since_epoch().count());
 }
 
 QTEST_MAIN(AudioPluginTest)

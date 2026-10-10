@@ -52,6 +52,7 @@ public:
 private:
 	static constexpr auto MaxIntervals = 3;
 	using clock = std::chrono::steady_clock;
+	void updateTempo(clock::time_point now);
 	std::chrono::time_point<clock> m_lastTap;
 	std::array<std::chrono::milliseconds, MaxIntervals> m_intervals;
 	int m_beat = 0;
