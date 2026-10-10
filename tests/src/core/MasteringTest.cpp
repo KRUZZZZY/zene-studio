@@ -225,6 +225,16 @@ private slots:
 		m_sourceMetrics = job.sourceMetrics();
 	}
 
+	void reusingJobReportsOnlyTheCurrentRunRenderCount()
+	{
+		ProjectRenderer::resetRenderCount();
+		MasteringJob job(m_outputSettings, ProjectRenderer::ExportFileFormat::Wave, m_dir.path(),
+			twinCandidates());
+		QVERIFY2(job.run() && job.run(), "both mastering runs must succeed");
+		QCOMPARE(job.renderCount(), 1);
+		QCOMPARE(ProjectRenderer::renderCount(), 2);
+	}
+
 	//! Settings that differ must be visible in the measurements. The candidate
 	//! set varies three axes (target loudness, true-peak ceiling, the dynamics
 	//! stage); every pair must differ by more than the meter's tolerance on at
