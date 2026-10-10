@@ -45,14 +45,27 @@
  */
 
 #include <array>
+#include <atomic>
+#include <cstddef>
+#include <cstring>
 #include <memory>
+#include <new>
 #include <vector>
 
+#include <fftw3.h>
+#include <QMutex>
+#include <QRgb>
 #include <QDomDocument>
 #include <QDomElement>
 #include <QLibrary>
 #include <QTextStream>
 #include <QtTest>
+
+#define private public
+#include "../../../plugins/SpectrumAnalyzer/SaProcessor.h"
+#undef private
+
+#include "../../../plugins/SpectrumAnalyzer/SaProcessor.cpp"
 
 #include "AudioBuffer.h"
 #include "AudioBus.h"
@@ -115,6 +128,7 @@ class AudioPluginTest : public QObject
 private slots:
 	void initTestCase();
 
+	void waterfallFlipRequestStartsClear();
 	void audioPortsModelExposesActivePorts();
 	void saveStateRestoreStateRoundTripsAudioPorts();
 	void sleepingEffectSilencesSilentInputAndStaysAsleep();
@@ -179,6 +193,22 @@ void AudioPluginTest::initTestCase()
 	QVERIFY(m_setLockFailures != nullptr);
 	QVERIFY(m_resetCounts != nullptr);
 	QVERIFY(m_getCounts != nullptr);
+}
+
+void AudioPluginTest::waterfallFlipRequestStartsClear()
+{
+	alignas(SaProcessor) std::array<std::byte, sizeof(SaProcessor)> storage;
+	storage.fill(std::byte{0x01});
+	auto* processor = new (storage.data()) SaProcessor(nullptr);
+
+	std::array<unsigned char, sizeof(bool)> actualRepresentation{};
+	std::array<unsigned char, sizeof(bool)> falseRepresentation{};
+	const bool falseValue = false;
+	std::memcpy(actualRepresentation.data(), &processor->m_flipRequest, sizeof(bool));
+	std::memcpy(falseRepresentation.data(), &falseValue, sizeof(bool));
+	std::destroy_at(processor);
+
+	QVERIFY(actualRepresentation == falseRepresentation);
 }
 
 auto AudioPluginTest::createEffect() const -> std::unique_ptr<Effect>
