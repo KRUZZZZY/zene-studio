@@ -307,6 +307,8 @@ private slots:
 		QCOMPARE(metronomeoptions::options().level, 1.f);
 		QVERIFY(metronomeoptions::sounds(false, false));
 		QCOMPARE(run(QStringLiteral("transport.metronome_options"), {{QStringLiteral("level"), 3.0}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("transport.metronome_options"), {{QStringLiteral("level"), 2.00000001}}).errorKind,
+			ControlErrorKind::InvalidArgs);
 	}
 
 	void punchAtThePlayPosition()
