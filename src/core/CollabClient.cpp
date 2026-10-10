@@ -177,6 +177,8 @@ void CollabClient::onClosed(const QString& reason)
 {
 	if (m_link != nullptr) { m_link->deleteLater(); m_link = nullptr; }
 	m_haveSnapshot = false;
+	m_peers = QJsonArray();
+	emit peersChanged();
 	setState(State::Failed, QStringLiteral("disconnected from %1 (%2); join again with the same invite").arg(m_hostLabel, reason));
 }
 
@@ -270,6 +272,8 @@ void CollabClient::onBye(const QJsonObject& message)
 	const QString reason = message.value(QStringLiteral("reason")).toString();
 	if (m_link != nullptr) { m_link->disconnect(this); m_link->close(reason); m_link->deleteLater(); m_link = nullptr; }
 	m_haveSnapshot = false;
+	m_peers = QJsonArray();
+	emit peersChanged();
 	setState(State::Failed, QStringLiteral("the host ended the session: %1").arg(reason));
 }
 
