@@ -20,7 +20,10 @@
 
 #include "PluginPortsHarness.h"
 
+#include <cstddef>
 #include <cstdio>
+#include <cstring>
+#include <new>
 #include <vector>
 
 #include <QByteArray>
@@ -34,6 +37,7 @@
 
 #include "Engine.h"
 #include "Plugin.h"
+#include "plugins/Xpressive/ExprSynth.h"
 
 namespace
 {
@@ -168,6 +172,45 @@ constexpr const char* PluginModuleHostSkipMessage =
 	"cannot satisfy it; the product loads them inside zene.exe where that resolves by "
 	"construction (CI msvc-x64: QLibrary::load -> ERROR_MOD_NOT_FOUND, 126)";
 
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+lmms::WaveSample* constructWaveSampleInPlace(unsigned char* storage)
+{
+	return ::new (storage) lmms::WaveSample{1};
+}
+
+/* Construct from the graphModel path without exposing the caller's seeded bytes. */
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+lmms::WaveSample* constructWaveSampleInPlace(unsigned char* storage, const lmms::graphModel* graph)
+{
+	return ::new (storage) lmms::WaveSample{graph};
+}
+
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+bool sameObjectRepresentation(const unsigned char* actual, const unsigned char* expected,
+	std::size_t size)
+{
+	for (std::size_t i = 0; i < size; ++i)
+	{
+		if (actual[i] != expected[i])
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 } // namespace
 
 class PluginPortsMigrationTest : public QObject
@@ -185,6 +228,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void waveSampleDefaultsInterpolationToDisabled();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +258,34 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::waveSampleDefaultsInterpolationToDisabled()
+{
+	alignas(lmms::WaveSample) unsigned char storage[sizeof(lmms::WaveSample)]{};
+	const bool initialInterpolation = true;
+	const bool disabledInterpolation = false;
+	lmms::graphModel graph{-1.0f, 1.0f, 1, nullptr, true};
+	const auto checkDefault = [&](lmms::WaveSample* wave) {
+		const bool isDisabled = sameObjectRepresentation(
+			storage + offsetof(lmms::WaveSample, m_interpolate),
+			reinterpret_cast<const unsigned char*>(&disabledInterpolation), sizeof(bool));
+		wave->~WaveSample();
+		return isDisabled;
+	};
+
+	std::memcpy(storage + offsetof(lmms::WaveSample, m_interpolate),
+		&initialInterpolation, sizeof(initialInterpolation));
+	auto* wave = constructWaveSampleInPlace(storage);
+	const bool integerConstructorDefault = checkDefault(wave);
+
+	std::memcpy(storage + offsetof(lmms::WaveSample, m_interpolate),
+		&initialInterpolation, sizeof(initialInterpolation));
+	wave = constructWaveSampleInPlace(storage, &graph);
+	const bool graphConstructorDefault = checkDefault(wave);
+
+	QVERIFY2(integerConstructorDefault && graphConstructorDefault,
+		"Both WaveSample constructors must default interpolation to disabled");
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()

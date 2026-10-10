@@ -89,7 +89,7 @@ public:
 	inline void setInterpolate(bool _interpolate) { m_interpolate = _interpolate; }
 	float *m_samples;
 	int m_length;
-	bool m_interpolate;
+	bool m_interpolate = false;
 };
 
 class ExprSynth
