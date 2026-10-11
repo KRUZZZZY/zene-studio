@@ -33,12 +33,25 @@
 #ifdef ZENE_HAVE_COLLAB
 
 #include <QNetworkDatagram>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QUdpSocket>
 
 #include "PortMapping.h"
 #include "PortMappingCodec.h"
 
 using namespace lmms::portmap;
+
+namespace lmms::portmap
+{
+
+struct UpnpMapperTestAccess
+{
+	static void setService(UpnpMapper& mapper, const IgdService& service) { mapper.m_service = service; }
+	static bool searching(const UpnpMapper& mapper) { return mapper.m_searching; }
+};
+
+} // namespace lmms::portmap
 
 namespace
 {
@@ -244,6 +257,37 @@ private slots:
 			"<errorDescription>ConflictInMappingEntry</errorDescription></UPnPError></detail></s:Fault></s:Body></s:Envelope>";
 		QCOMPARE(soapErrorCode(fault), 718);
 		QCOMPARE(soapValue(fault, QStringLiteral("errorDescription")), QStringLiteral("ConflictInMappingEntry"));
+	}
+
+	void failedCachedEndpointTriggersDiscovery()
+	{
+		QTcpServer router;
+		QVERIFY(router.listen(QHostAddress::LocalHost, 0));
+		connect(&router, &QTcpServer::newConnection, &router, [&router]
+		{
+			while (QTcpSocket* socket = router.nextPendingConnection())
+			{
+				connect(socket, &QTcpSocket::readyRead, socket, [socket]
+				{
+					socket->readAll();
+					socket->write("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+					socket->disconnectFromHost();
+				});
+			}
+		});
+
+		UpnpMapper mapper;
+		IgdService service;
+		service.serviceType = QStringLiteral("urn:schemas-upnp-org:service:WANIPConnection:1");
+		service.controlUrl = QUrl(QStringLiteral("http://127.0.0.1:%1/control").arg(router.serverPort()));
+		UpnpMapperTestAccess::setService(mapper, service);
+		QSignalSpy finished(&mapper, &UpnpMapper::finished);
+		mapper.map(41740, 41740, 3600, QHostAddress(QStringLiteral("192.168.1.20")));
+		QVERIFY(finished.wait(3000));
+		QVERIFY(!finished.first().first().value<MappingResult>().ok);
+
+		mapper.map(41740, 41740, 3600, QHostAddress(QStringLiteral("192.168.1.20")));
+		QVERIFY(UpnpMapperTestAccess::searching(mapper));
 	}
 
 	void publicAddressClassification()

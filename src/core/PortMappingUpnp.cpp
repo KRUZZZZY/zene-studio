@@ -169,6 +169,7 @@ void UpnpMapper::onAdded(QNetworkReply* reply, quint32 lease)
 	if (code == OnlyPermanentLeases && lease != 0) { addMapping(0); return; }
 	if (reply->error() != QNetworkReply::NoError || code != 0)
 	{
+		if (code == 0) { m_service = IgdService(); }
 		finish(false, QStringLiteral("the router refused the UPnP mapping (%1)").arg(replyError(reply, body)));
 		return;
 	}
@@ -183,7 +184,9 @@ void UpnpMapper::onAdded(QNetworkReply* reply, quint32 lease)
 void UpnpMapper::onExternalAddress(QNetworkReply* reply)
 {
 	reply->deleteLater();
-	m_result.externalAddress = QHostAddress(soapValue(reply->read(MaxDescriptionBytes), QStringLiteral("NewExternalIPAddress")));
+	const QByteArray body = reply->read(MaxDescriptionBytes);
+	if (reply->error() != QNetworkReply::NoError && soapErrorCode(body) == 0) { m_service = IgdService(); }
+	m_result.externalAddress = QHostAddress(soapValue(body, QStringLiteral("NewExternalIPAddress")));
 	finish(true, QStringLiteral("the router opened TCP port %1 (UPnP)").arg(m_external));
 }
 
