@@ -404,8 +404,20 @@ bool writeConductorTrack(const QString& path, const TempoMap& map, int globalTem
 		}
 		return false;
 	}
+	int seedEvents = 0;
 	const std::vector<SmfInterchangeEvent> events = exportEvents(map, globalTempo, globalSignature,
-		report != nullptr ? &report->seedEvents : nullptr);
+		&seedEvents);
+	if (events.size() > static_cast<std::size_t>(TempoMap::MaxEvents))
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("the export needs %1 conductor ticks after the tick-0 seed and "
+				"the tempo map holds %2 events; nothing was exported")
+				.arg(events.size()).arg(TempoMap::MaxEvents);
+		}
+		return false;
+	}
+	if (report != nullptr) { report->seedEvents = seedEvents; }
 	QByteArray body;
 	if (!trackBody(events, &body, error)) { return false; }
 	const QByteArray bytes = conductorFile(body);
