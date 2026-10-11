@@ -2,37 +2,35 @@
 
 Verdict: **FIXED**
 
-`plugins/NeuralAmp/tests/nam_harness.cpp:439` now rejects a reference WAV whose sample rate differs from the input WAV before checking the sample count or comparing samples. It exits with status 2 and reports both rates. `plugins/NeuralAmp/tests/compare_rate_test.py:22` exercises the real harness CLI: an equal-rate reference passes, while an equal-length 44.1 kHz reference for 48 kHz input must be rejected.
+`plugins/NeuralAmp/tests/nam_harness.cpp:439-445` rejects a reference WAV whose sample rate differs from the input before comparing sample counts or audio. `plugins/NeuralAmp/tests/compare_rate_test.py` covers same-rate acceptance and rejection of an equal-length 44.1 kHz reference for 48 kHz input. The round-one QA rework is addressed by registering this script as `NeuralAmpCompareRateTest` in `tests/CMakeLists.txt:2593-2599`, guarded by Python and the `nam_harness` target. The configured build regenerated automatically during the build; no configure command was run.
 
-The harness test is standalone because the configured `build/tests` tree has no NeuralAmp CTest entry. The user instruction prohibited reconfiguration, so the regression was run directly from `build/tests`. The nearby registered plugin test was also run through CTest.
+For the negative control, I removed only the production rate-check block, saved that one-file diff, rebuilt the harness and ran the same registered CTest test. It failed as expected. I then applied the patch in reverse, rebuilt and reran CTest successfully.
 
 ## Evidence
 
-Commands below ran in the stated working directory. Build and test logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r1/logs`.
+Commands ran in this worktree. Build and test logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r2/logs`.
 
 | Check | Exact command | Exit | Evidence |
 |---|---|---:|---|
-| Original-code RED | `python3 ../../plugins/NeuralAmp/tests/compare_rate_test.py ../plugins/nam_harness` (`build/tests`) | 1 | `test-2.log`: harness returned 0 and printed `reference match: PASS` for the 48 kHz / 44.1 kHz pair; the regression failed as intended. |
-| Fixed-code GREEN | `python3 ../../plugins/NeuralAmp/tests/compare_rate_test.py ../plugins/nam_harness` (`build/tests`) | 0 | `test-3.log`: same-rate control passed and different-rate reference was rejected. Repeated after the negative control in `test-6.log`. |
-| Negative control, remove fix | `git diff -- plugins/NeuralAmp/tests/nam_harness.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r1/logs/fix.patch` | 0 | Saved only the production-file patch. |
-| Negative control, reverse patch | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r1/logs/fix.patch` | 0 | Production check temporarily removed. |
-| Rebuild without fix | `cmake --build build --target nam_harness` (repository root) | 0 | `build-4.log`. |
-| Regression without fix | `python3 ../../plugins/NeuralAmp/tests/compare_rate_test.py ../plugins/nam_harness` (`build/tests`) | 1 | `test-5.log`: again printed `reference match: PASS`; proves the regression catches the original bug. |
-| Negative control, restore patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r1/logs/fix.patch` | 0 | Restored the production check. |
-| Final rebuild | `cmake --build build --target nam_harness` (repository root) | 0 | `build-5.log`. The original-code build in `build-1.log` and first fixed build in `build-2.log` also exited 0. |
-| Final regression | `python3 ../../plugins/NeuralAmp/tests/compare_rate_test.py ../plugins/nam_harness` (`build/tests`) | 0 | `test-6.log`. |
-| Plugin test build | `cmake --build build --target AudioPluginTest` (repository root) | 0 | `build-3.log`. |
-| Registered plugin test | `ctest -R AudioPluginTest --output-on-failure` (`build/tests`) | 0 | `test-4.log`: 1/1 test passed. |
-| Complexity gate | `bash tests/complexity-gate.sh --check` (repository root) | 0 | `gate-3.log`. |
-| File-length gate | `bash tests/file-length-gate.sh --check` (repository root) | 0 | `gate-4.log`. |
+| Build before first registered run (repository root) | `cmake --build build --target nam_harness > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r2/logs/build-2.log 2>&1; echo EXIT=$?` | 0 | Regenerated the configured build and built `nam_harness`. An initial invocation logged to `build-1.log` yielded before its shell exit line was captured; this fully captured repeat is the build used before CTest. |
+| Registered regression with fix (`build/tests`) | `ctest -R NeuralAmpCompareRateTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r2/logs/test-1.log 2>&1; echo EXIT=$?` | 0 | 1/1 test passed. |
+| Save negative-control diff (repository root) | `git diff -- plugins/NeuralAmp/tests/nam_harness.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r2/logs/fix.patch; echo EXIT=$?` | 0 | Diff contains only deletion of the production rate check. |
+| Rebuild with only the production check removed (repository root) | `cmake --build build --target nam_harness > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r2/logs/build-3.log 2>&1; echo EXIT=$?` | 0 | Rebuilt the negative-control harness. |
+| Registered negative control (`build/tests`) | `ctest -R NeuralAmpCompareRateTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r2/logs/test-2.log 2>&1; echo EXIT=$?` | 8 | 1/1 test failed as intended: `different-rate reference was not rejected`. |
+| Restore production check (repository root) | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r2/logs/fix.patch; echo EXIT=$?` | 0 | Restored the committed check. |
+| Final rebuild (repository root) | `cmake --build build --target nam_harness > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r2/logs/build-4.log 2>&1; echo EXIT=$?` | 0 | Rebuilt after restoring the source. |
+| Final registered regression (`build/tests`) | `ctest -R NeuralAmpCompareRateTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r2/logs/test-3.log 2>&1; echo EXIT=$?` | 0 | 1/1 test passed. |
+| Complexity gate (repository root) | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r2/logs/gate-1.log 2>&1; echo EXIT=$?` | 0 | Passed. |
+| File-length gate (repository root) | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-317.r2/logs/gate-2.log 2>&1; echo EXIT=$?` | 0 | Passed. |
 
-Affected-family count: one direct NeuralAmp harness regression script, covering the same-rate and mismatched-rate cases. The closest registered CTest family ran one test (`AudioPluginTest`), with 1/1 passing. An initial runner attempt used the nonexistent path `../plugins/NeuralAmp/tests/nam_harness` and exited 1 (`test-1.log`); the corrected binary path is `../plugins/nam_harness`.
+Affected-family count: one registered CTest test. It ran 1/1 on both fixed-code executions and 1/1 in the negative control. The script checks both same-rate success and mismatched-rate rejection.
 
-The `fff` log search tool was not available in this session; logs were searched with one-term `rg` queries instead.
+The `fff` grep tool was not exposed in this session; I searched the log folder with one-term `rg` searches for `error`, `FAILED`, and `Assertion`.
 
-## Files in the fix commit
+## Files in this follow-up commit
 
-- `plugins/NeuralAmp/tests/nam_harness.cpp`
-- `plugins/NeuralAmp/tests/compare_rate_test.py`
-- `tests/fork-sources.txt`
+- `tests/CMakeLists.txt`
+- `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p9-317.md`
+
+The original production fix, regression script, and `tests/fork-sources.txt` entry are in the preceding fix commit.
