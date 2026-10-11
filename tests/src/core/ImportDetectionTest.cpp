@@ -52,6 +52,7 @@
 #include <QtTest>
 
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <vector>
 
@@ -64,6 +65,8 @@
 
 #include "ImportDetection.h"
 #include "ImportDetectionDsp.h"
+#include "ControlDetectSupport.h"
+#include "ControlRegistry.h"
 #include "ProjectKey.h"
 
 using namespace lmms;
@@ -288,6 +291,21 @@ private slots:
 		const detection::KeyEstimate none =
 			detection::estimateKey(silence.data(), silence.size(), kSampleRate, {});
 		QVERIFY(!none.found);
+	}
+
+	//! An in-process JSON value can carry NaN even though JSON text cannot.
+	void nonFiniteAnalysisBoundIsRefused()
+	{
+		const QJsonValue nanValue(std::numeric_limits<double>::quiet_NaN());
+		QVERIFY(nanValue.isDouble());
+		QVERIFY(std::isnan(nanValue.toDouble()));
+
+		double bound = 0.0;
+		ControlResult error;
+		QVERIFY(!control::readDetectBound(
+			QJsonObject{{QStringLiteral("max_seconds"), nanValue}}, &bound, &error));
+		QVERIFY(!error.ok);
+		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
 	/*! The project's own field: the XML round trip the A16 action checkpoint

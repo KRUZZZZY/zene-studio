@@ -159,7 +159,7 @@ bool readDetectBound(const QJsonObject& args, double* out, ControlResult* error)
 	*out = detection::DefaultAnalysisSeconds;
 	if (!args.contains(QStringLiteral("max_seconds"))) { return true; }
 	const double wanted = args.value(QStringLiteral("max_seconds")).toDouble();
-	if (wanted < 1.0 || wanted > detection::MaxAnalysisSeconds)
+	if (!std::isfinite(wanted) || wanted < 1.0 || wanted > detection::MaxAnalysisSeconds)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("max_seconds must be 1..%1").arg(detection::MaxAnalysisSeconds));
