@@ -40,6 +40,17 @@ The affected ctest family is `^StereoDelay$`: **1 test executed**. The final GRE
 
 The initial root-level target lookup was `cmake --build build --target StereoDelay --parallel 12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-443.r1/logs/build-1.log 2>&1; echo EXIT=$?` (**EXIT=2**). This Makefile build exposes the test target under `build/tests`; subsequent test-target builds used that directory and passed.
 
+## Evidence summary
+
+| Evidence | Command or result |
+| --- | --- |
+| RED, final test with fix removed | `ctest -R '^StereoDelay$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-443.r1/logs/test-6.log 2>&1; echo EXIT=$?` — **EXIT=8** |
+| GREEN, same test after restoring fix | `ctest -R '^StereoDelay$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-443.r1/logs/test-7.log 2>&1; echo EXIT=$?` — **EXIT=0** |
+| Affected-family test count | `^StereoDelay$` — **1 test executed** |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-443.r1/logs/gate-3.log 2>&1; echo EXIT=$?` — **EXIT=0** |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-443.r1/logs/gate-4.log 2>&1; echo EXIT=$?` — **EXIT=0** |
+| Files committed | `plugins/Delay/StereoDelay.cpp`; `tests/src/core/StereoDelay.cpp`; `tests/CMakeLists.txt`; `tests/fork-sources.txt`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p9-443.md` |
+
 ## Files committed
 
 - `plugins/Delay/StereoDelay.cpp`
