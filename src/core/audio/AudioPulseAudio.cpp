@@ -178,6 +178,7 @@ void AudioPulseAudio::run()
 	if ( context == nullptr )
 	{
 		qCritical( "pa_context_new() failed." );
+		pa_mainloop_free( mainLoop );
 		return;
 	}
 

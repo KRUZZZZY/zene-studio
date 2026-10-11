@@ -57,6 +57,7 @@
 
 #include <QThread>
 
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -64,6 +65,7 @@
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
 #include "Engine.h"
+#include "AudioPulseAudio.h"
 
 using namespace lmms;
 
@@ -84,7 +86,34 @@ constexpr int kExitBudgetMs = 2000;
 //! thread's scheduling.
 constexpr int kWorkers = 8;
 
+#if defined(LMMS_HAVE_PULSEAUDIO) && defined(Q_OS_LINUX)
+std::atomic<unsigned> gPulseMainloopFreeCalls{0};
+#endif
+
 } // namespace
+
+#if defined(LMMS_HAVE_PULSEAUDIO) && defined(Q_OS_LINUX)
+// These test-only PulseAudio symbols make mainloop/context creation deterministic.
+extern "C" pa_mainloop* pa_mainloop_new(void)
+{
+	return reinterpret_cast<pa_mainloop*>(1);
+}
+
+extern "C" pa_mainloop_api* pa_mainloop_get_api(pa_mainloop*)
+{
+	return reinterpret_cast<pa_mainloop_api*>(1);
+}
+
+extern "C" pa_context* pa_context_new(pa_mainloop_api*, const char*)
+{
+	return nullptr;
+}
+
+extern "C" void pa_mainloop_free(pa_mainloop*)
+{
+	gPulseMainloopFreeCalls.fetch_add(1, std::memory_order_relaxed);
+}
+#endif
 
 class AudioEngineTeardownTest : public QObject
 {
@@ -177,6 +206,25 @@ private slots:
 			}
 		}
 		QCOMPARE(stranded, 0);
+	}
+
+	void contextCreationFailureFreesPulseMainloop()
+	{
+#if defined(LMMS_HAVE_PULSEAUDIO) && defined(Q_OS_LINUX)
+		bool success = false;
+		AudioPulseAudio device(success, Engine::audioEngine());
+		QVERIFY(success);
+
+		gPulseMainloopFreeCalls.store(0, std::memory_order_relaxed);
+		device.startProcessing();
+		const bool threadStopped = device.wait(kExitBudgetMs);
+		device.stopProcessing();
+
+		QVERIFY(threadStopped);
+		QCOMPARE(gPulseMainloopFreeCalls.load(std::memory_order_relaxed), 1U);
+#else
+		QSKIP("PulseAudio symbol interposition is exercised on Linux builds with PulseAudio support");
+#endif
 	}
 };
 
