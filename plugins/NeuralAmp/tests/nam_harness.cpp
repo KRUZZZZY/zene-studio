@@ -436,6 +436,13 @@ int main(int argc, char** argv)
 					opt.compareRef.c_str());
 				return 2;
 			}
+			if (refRate != wavRate)
+			{
+				std::fprintf(stderr,
+					"error: reference sample rate mismatch (reference %.0f Hz, input %.0f Hz)\n",
+					refRate, wavRate);
+				return 2;
+			}
 			if (ref.size() != wavOut.size())
 			{
 				std::fprintf(stderr, "error: reference has %zu samples, output has %zu\n",
