@@ -101,6 +101,26 @@ std::vector<std::size_t> runOrder(const std::vector<Note>& voices, const QString
 	return order;
 }
 
+constexpr std::size_t MaxArpeggioNotes = 10000;
+
+bool exceedsArpeggioOutputLimit(const std::map<tick_t, std::vector<Note*>>& chords, tick_t rate)
+{
+	std::size_t outputCount = 0;
+	for (const auto& chordEntry : chords)
+	{
+		tick_t length = 0;
+		for (const Note* note : chordEntry.second)
+		{
+			length = std::max<tick_t>(length, note->length().getTicks());
+		}
+		const std::size_t chordCount = static_cast<std::size_t>(length / rate)
+			+ (length % rate == 0 ? 0U : 1U);
+		if (chordCount > MaxArpeggioNotes - outputCount) { return true; }
+		outputCount += chordCount;
+	}
+	return false;
+}
+
 ControlResult arpeggiate(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -111,6 +131,11 @@ ControlResult arpeggiate(const QJsonObject& args)
 	const tick_t rate = std::max(1, args.value(QStringLiteral("rate")).toInt(12));
 	std::map<tick_t, std::vector<Note*>> chords;
 	for (Note* note : notes) { chords[note->pos().getTicks()].push_back(note); }
+	if (exceedsArpeggioOutputLimit(chords, rate))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("arpeggio output is limited to %1 notes").arg(MaxArpeggioNotes));
+	}
 	clip->addJournalCheckPoint();
 	int made = 0;
 	for (auto& [start, chord] : chords)
