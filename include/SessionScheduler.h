@@ -366,8 +366,8 @@ public:
 	std::uint64_t sceneFollowFires() const noexcept;
 
 	/*! R5.3: what column @a track is doing, as the audio thread last published it - the
-	 *  clip-launch grid's reading. Columns past PublishedColumns read as idle. Any thread. */
-	static constexpr int PublishedColumns = 64;
+	 *  clip-launch grid's reading. Covers the Session View's 256 supported tracks. Any thread. */
+	static constexpr int PublishedColumns = 256;
 	struct ColumnState
 	{
 		SlotPhase phase = SlotPhase::Idle;

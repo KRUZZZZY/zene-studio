@@ -102,6 +102,18 @@ class SessionSceneFollowTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void publishesColumnStateForTrack64()
+	{
+		SessionScheduler scheduler;
+		QVERIFY(scheduler.requestLaunch(64, 1, LaunchMode::Trigger, LaunchQuantisation::None));
+		runTo(scheduler, 0, 8);
+
+		QCOMPARE(scheduler.slotPhase(64, 1), SlotPhase::Playing);
+		const SessionScheduler::ColumnState state = scheduler.columnState(64);
+		QCOMPARE(state.phase, SlotPhase::Playing);
+		QCOMPARE(state.scene, 1);
+	}
+
 	void aSceneChainMovesTheWholeRowOnOneLine()
 	{
 		SessionScheduler scheduler;
