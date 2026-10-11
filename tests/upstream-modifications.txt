@@ -638,6 +638,8 @@ plugins/Lv2Instrument/Lv2Instrument.cpp	rename layer 1: user-visible plugin/modu
 plugins/MidiExport/MidiExport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
 plugins/MidiImport/MidiImport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo; #625 headless load: the 'Setup incomplete' boxes are not opened in an unattended run (the import path is reachable from --import at startup)
 plugins/MultitapEcho/MultitapEcho.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Nes/Nes.cpp	new-p9-322: recalculate channel 4 noise wavelength when held-note frequency mode or quantization changes; regression: PluginPortsMigrationTest::nesNoiseFrequencyControlsRetuneHeldNotes
+plugins/Nes/Nes.h	new-p9-322: cache channel 4 noise frequency mode and quantization per note for held-note retuning; regression: PluginPortsMigrationTest::nesNoiseFrequencyControlsRetuneHeldNotes
 plugins/Oscilloscope/Oscilloscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 plugins/PeakControllerEffect/PeakControllerEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)

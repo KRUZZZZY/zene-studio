@@ -95,6 +95,8 @@ NesObject::NesObject( NesInstrument * nes, const sample_rate_t samplerate, NoteP
 	
 	m_lastNoteFreq = 0;
 	m_lastNoiseFreq = -1.0f; // value that is always different than noisefreq so it gets updated at start
+	m_lastNoiseFreqMode = m_parent->m_ch4NoiseFreqMode.value();
+	m_lastNoiseQuantize = m_parent->m_ch4NoiseQuantize.value();
 	
 	m_vibratoPhase = 0;
 	
@@ -458,22 +460,26 @@ void NesObject::updatePitch()
 		m_wlen3 = wavelength( freq * m_parent->m_freq3 );
 	}
 	// noise channel can use either note freq or preset freqs
-	if( m_parent->m_ch4NoiseFreqMode.value() && freq != m_lastNoteFreq ) 
+	const bool noiseFreqMode = m_parent->m_ch4NoiseFreqMode.value();
+	const bool noiseQuantize = m_parent->m_ch4NoiseQuantize.value();
+	if( noiseFreqMode && ( freq != m_lastNoteFreq || !m_lastNoiseFreqMode || noiseQuantize != m_lastNoiseQuantize ) )
 	{
 		float f = freq * 2.0f;
-		if( m_parent->m_ch4NoiseQuantize.value() ) // note freq can be quantized to the preset freqs
+		if( noiseQuantize ) // note freq can be quantized to the preset freqs
 		{
 			f = NOISE_FREQS[ nearestNoiseFreq( f ) ];
 		}
 		m_wlen4 = wavelength( f );
 	}
-	if( ! m_parent->m_ch4NoiseFreqMode.value() && m_lastNoiseFreq != m_parent->m_ch4NoiseFreq.value() )
+	if( !noiseFreqMode && ( m_lastNoiseFreqMode || m_lastNoiseFreq != m_parent->m_ch4NoiseFreq.value() ) )
 	{
 		m_wlen4 = wavelength( NOISE_FREQS[ 15 - static_cast<int>( m_parent->m_ch4NoiseFreq.value() ) ] );
 		m_lastNoiseFreq = m_parent->m_ch4NoiseFreq.value();
 	}
 	
 	m_lastNoteFreq = freq;
+	m_lastNoiseFreqMode = noiseFreqMode;
+	m_lastNoiseQuantize = noiseQuantize;
 }
 
 
