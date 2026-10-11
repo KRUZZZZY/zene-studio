@@ -36,6 +36,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "fft_helpers.h"
 #include "PitchTrack.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -130,6 +131,14 @@ private slots:
 		const double nyquist = Engine::audioEngine()->outputSampleRate() / 2.0;
 		const int expected = static_cast<int>(32.0 * std::log(1000.0 / 30.0) / std::log(nyquist / 30.0));
 		QVERIFY2(std::abs(loudest - expected) <= 1, qPrintable(QStringLiteral("loudest band %1, expected %2").arg(loudest).arg(expected)));
+	}
+
+	void normalizationRejectsAOneSampleBlock()
+	{
+		const std::vector<float> spectrum{1.0f};
+		std::vector<float> normalized{42.0f};
+		QCOMPARE(normalize(spectrum, normalized, 1), -1);
+		QCOMPARE(normalized.front(), 42.0f);
 	}
 
 	void aRangeIsEdited()
