@@ -401,6 +401,32 @@ void simplify(const std::vector<std::pair<int, float>>& points, std::size_t firs
 	simplify(points, at, last, tolerance, keep);
 }
 
+//! Keep custom-curve nodes and their endpoints as anchors for thinning.
+void markThinningAnchors(const AutomationClip::timeMap& nodes, std::vector<bool>& keep)
+{
+	std::size_t i = 0;
+	for (auto it = nodes.begin(); it != nodes.end(); ++it, ++i)
+	{
+		const bool definesOwnSegment = it.value().curve() != AutomationNode::Curve::Clip
+			|| it.value().lockedTangents();
+		if (INVAL(it) != OUTVAL(it) || definesOwnSegment) { keep[i] = true; }
+		if (definesOwnSegment && i + 1 < keep.size()) { keep[i + 1] = true; }
+	}
+}
+
+//! Simplify only between required anchors so one retained point cannot be skipped over.
+void simplifyAtThinningAnchors(const std::vector<std::pair<int, float>>& points, float tolerance,
+	std::vector<bool>& keep)
+{
+	std::size_t first = 0;
+	for (std::size_t last = 1; last < points.size(); ++last)
+	{
+		if (!keep[last]) { continue; }
+		simplify(points, first, last, tolerance, keep);
+		first = last;
+	}
+}
+
 } // namespace
 
 float AutomationClip::bendValueAt(timeMap::const_iterator v, int offset) const
@@ -420,19 +446,8 @@ int AutomationClip::thin(float tolerance)
 	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it) { points.emplace_back(POS(it), OUTVAL(it)); }
 	std::vector<bool> keep(points.size(), false);
 	keep.front() = keep.back() = true;
-	// A step (in != out) or a point with its own curve is not on any straight line: kept (review L06-L07a #7).
-	// A point whose tangents were locked by hand is kept too: its shape is the point's own and the
-	// measurement below only looks at OUT values against a straight line, so it cannot see that shape.
-	std::size_t i = 0;
-	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it, ++i)
-	{
-		if (INVAL(it) != OUTVAL(it) || it.value().curve() != AutomationNode::Curve::Clip
-		    || it.value().lockedTangents())
-		{
-			keep[i] = true;
-		}
-	}
-	simplify(points, 0, points.size() - 1, tolerance, keep);
+	markThinningAnchors(m_timeMap, keep);
+	simplifyAtThinningAnchors(points, tolerance, keep);
 	int removed = 0;
 	for (std::size_t i = 0; i < points.size(); ++i)
 	{

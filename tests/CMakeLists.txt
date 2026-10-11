@@ -594,6 +594,8 @@ set(LMMS_TESTS
 	src/core/ArrangementModesTest.cpp
 	# 0.5.0 L06: automation lanes, trim, shapes, transform, thinning, curves, last touched.
 	src/core/AutomationLanesTest.cpp
+	# ED-187: thinning keeps custom-segment endpoints and preserves the evaluated curve.
+	src/core/AutomationThinTest.cpp
 	# 0.5.0 L07: the note editor's commands - scale, ratchet, add_many, list, find and change, swing, key names.
 	src/core/NoteEditingCommandsTest.cpp
 	# 0.5.0 L07: note.edit's range validation - a note may not end past MaxSongLength.
