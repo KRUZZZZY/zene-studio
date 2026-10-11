@@ -387,32 +387,44 @@ void Sf2Instrument::openFile( const QString & _sf2File, bool updateTrackName )
 	char * sf2Ascii = qstrdup( qPrintable( PathUtil::toAbsolute( _sf2File ) ) );
 	QString relativePath = PathUtil::toShortestRelative( _sf2File );
 
-	// free the soundfont if one is selected
-	freeFont();
-
 	m_synthMutex.lock();
 
-	bool loaded = false;
+	int candidateFontId = -1;
+	fluid_sfont_t* candidateFont = nullptr;
 	if (fluid_is_soundfont(sf2Ascii))
 	{
-		m_fontId = fluid_synth_sfload(m_synth, sf2Ascii, true);
+		candidateFontId = fluid_synth_sfload(m_synth, sf2Ascii, true);
 
-		if (fluid_synth_sfcount(m_synth) > 0)
+		if (candidateFontId >= 0)
 		{
-			// Grab this sf from the top of the stack and add to list
-			m_font = fluid_synth_get_sfont(m_synth, 0);
-			loaded = true;
+			candidateFont = fluid_synth_get_sfont(m_synth, 0);
+			if (candidateFont == nullptr || fluid_sfont_get_id(candidateFont) != candidateFontId)
+			{
+				fluid_synth_sfunload(m_synth, candidateFontId, true);
+				candidateFontId = -1;
+				candidateFont = nullptr;
+			}
 		}
 	}
 
-	if (!loaded)
+	const bool loaded = candidateFont != nullptr;
+	if (loaded)
+	{
+		if (m_font != nullptr)
+		{
+			fluid_synth_sfunload(m_synth, m_fontId, true);
+		}
+		m_font = candidateFont;
+		m_fontId = candidateFontId;
+	}
+	else
 	{
 		collectErrorForUI(Sf2Instrument::tr("A soundfont %1 could not be loaded.").arg(QFileInfo(_sf2File).baseName()));
 	}
 
 	m_synthMutex.unlock();
 
-	if( m_fontId >= 0 )
+	if (loaded)
 	{
 		// Don't reset patch/bank, so that it isn't cleared when
 		// someone resolves a missing file
@@ -425,7 +437,7 @@ void Sf2Instrument::openFile( const QString & _sf2File, bool updateTrackName )
 
 	delete[] sf2Ascii;
 
-	if( updateTrackName || instrumentTrack()->displayName() == displayName() )
+	if (loaded && (updateTrackName || instrumentTrack()->displayName() == displayName()))
 	{
 		instrumentTrack()->setName( PathUtil::cleanName( _sf2File ) );
 	}

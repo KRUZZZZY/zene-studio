@@ -191,6 +191,7 @@ private slots:
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
+	void sf2FailedLoadPreservesCurrentFontAndSource();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -725,6 +726,48 @@ void PluginPortsMigrationTest::slice8PluginsAreLiveAndExact()
 			QVERIFY2(worst > 1e-6f, "slice 8 comparison not sensitive");
 		}
 	}
+}
+
+void PluginPortsMigrationTest::sf2FailedLoadPreservesCurrentFontAndSource()
+{
+#ifndef PART_C_MIGRATED_sf2player
+	QSKIP("Sf2Player is not built in this configuration");
+#else
+	const auto [entry, descriptor] = partc::loadPluginModule(PART_C_MIGRATED_sf2player,
+		QStringLiteral("sf2player"));
+	QVERIFY(entry != nullptr && descriptor != nullptr);
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	const QString validPath = QString::fromUtf8(PART_C_SF2_FILE);
+	QVERIFY(QMetaObject::invokeMethod(instrument, "openFile", Qt::DirectConnection,
+		Q_ARG(QString, validPath), Q_ARG(bool, false)));
+	QDomDocument validDocument;
+	QDomElement validRoot = validDocument.createElement("instrument");
+	const QString validSource = instrument->saveState(validDocument, validRoot).attribute("src");
+	QVERIFY(!validSource.isEmpty());
+
+	const QString invalidPath = QStringLiteral("/missing/soundfonts/corrupt.sf2");
+	QVERIFY(QMetaObject::invokeMethod(instrument, "openFile", Qt::DirectConnection,
+		Q_ARG(QString, invalidPath), Q_ARG(bool, false)));
+
+	QDomDocument failedDocument;
+	QDomElement failedRoot = failedDocument.createElement("instrument");
+	const QString failedSource = instrument->saveState(failedDocument, failedRoot).attribute("src");
+	lmms::NotePlayHandleManager::init();
+	const auto samples = partc::renderInstrumentBuffers(*instrument,
+		lmms::Engine::audioEngine()->framesPerPeriod(), lmms::DefaultKey);
+	const std::vector<float> silence(samples.size(), 0.0f);
+	const float peak = partc::maxAbsDiff(samples, silence);
+	delete instrument;
+
+	const bool sourcePreserved = failedSource == validSource;
+	QVERIFY2(sourcePreserved && peak > 1e-4f,
+		qPrintable(QString("source preserved: %1; retained-font peak: %2")
+			.arg(sourcePreserved ? "yes" : "no").arg(peak, 0, 'g', 4)));
+#endif
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)
