@@ -29,7 +29,9 @@
 
 #include <QtTest>
 
+#include <QDir>
 #include <QDomDocument>
+#include <QFile>
 
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
@@ -102,6 +104,30 @@ private slots:
 	}
 
 	void cleanupTestCase() { Engine::destroy(); }
+
+	void modelChangedConnectionIsInstalledInConstructor()
+	{
+		const QString sourcePath = QDir{QStringLiteral(QT_TESTCASE_SOURCEDIR)}
+			.filePath(QStringLiteral("../plugins/Lv2Effect/Lv2FxControlDialog.cpp"));
+		QFile sourceFile{sourcePath};
+		QVERIFY2(sourceFile.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sourcePath));
+		const QString source = QString::fromUtf8(sourceFile.readAll());
+		const QString connection = QStringLiteral(
+			"connect(lv2Controls(), &Lv2FxControls::modelChanged");
+		QCOMPARE(source.count(connection), 1);
+
+		const qsizetype constructorStart = source.indexOf(
+			QStringLiteral("Lv2FxControlDialog::Lv2FxControlDialog("));
+		const qsizetype modelChangedStart = source.indexOf(
+			QStringLiteral("void Lv2FxControlDialog::modelChanged()"));
+		QVERIFY(constructorStart >= 0);
+		QVERIFY(modelChangedStart > constructorStart);
+		const QString constructorBody = source.mid(constructorStart, modelChangedStart - constructorStart);
+		const QString modelChangedBody = source.mid(modelChangedStart,
+			source.indexOf(QLatin1Char('}'), modelChangedStart) - modelChangedStart);
+		QVERIFY(constructorBody.contains(connection));
+		QVERIFY(!modelChangedBody.contains(connection));
+	}
 
 	void aPluginsOwnStateRoundTrips()
 	{
