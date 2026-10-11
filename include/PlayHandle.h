@@ -162,7 +162,7 @@ private:
 	std::vector<SampleFrame> m_playHandleBuffer;
 	bool m_bufferReleased;
 	bool m_usesBuffer;
-	AudioBusHandle* m_audioBusHandle;
+	AudioBusHandle* m_audioBusHandle{nullptr};
 } ;
 
 using PlayHandleList = QList<PlayHandle*>;
