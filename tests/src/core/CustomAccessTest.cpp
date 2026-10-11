@@ -465,6 +465,42 @@ private slots:
 		QVERIFY(run(QStringLiteral("workflow.remove"), {{QStringLiteral("name"), QStringLiteral("stops")}}).ok);
 	}
 
+	//! Retrying a failed final step that was removed from the saved workflow must not finish an empty run.
+	void retryingADeletedFinalWorkflowStepIsRefused()
+	{
+		const auto step = [](const char* command, const QJsonObject& args) {
+			return QJsonObject{{QStringLiteral("command"), QLatin1String(command)}, {QStringLiteral("args"), args}};
+		};
+		const QJsonArray steps{step("track.list", {}), step("track.list", {}),
+			step("track.remove", {{QStringLiteral("track"), QStringLiteral("no-such-track")}})};
+		const QString name = QStringLiteral("shrinking-final-step");
+		QVERIFY2(run(QStringLiteral("workflow.save"), {{QStringLiteral("name"), name}, {QStringLiteral("steps"), steps}}).ok,
+			"could not save the workflow under test");
+		const auto done = [] { return run(QStringLiteral("workflow.status")).result.value(QStringLiteral("state")).toString() == QStringLiteral("done"); };
+		QVERIFY(run(QStringLiteral("workflow.run"), {{QStringLiteral("name"), name}}).ok);
+		QTRY_VERIFY(done());
+		QCOMPARE(run(QStringLiteral("workflow.status")).result.value(QStringLiteral("stopped_at")).toInt(), 2);
+
+		const QJsonArray shortened{steps.at(0), steps.at(1)};
+		QVERIFY(run(QStringLiteral("workflow.save"), {{QStringLiteral("name"), name}, {QStringLiteral("steps"), shortened}}).ok);
+		const ControlResult retried = run(QStringLiteral("workflow.resume"));
+		QCOMPARE(retried.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("workflow.status")).result.value(QStringLiteral("stopped_at")).toInt(), 2);
+
+		// A failed step that is still the saved workflow's final step can still be skipped to the end.
+		QVERIFY(run(QStringLiteral("workflow.save"), {{QStringLiteral("name"), name}, {QStringLiteral("steps"), steps}}).ok);
+		QVERIFY(run(QStringLiteral("workflow.run"), {{QStringLiteral("name"), name}}).ok);
+		QTRY_VERIFY(done());
+		const ControlResult skipped = run(QStringLiteral("workflow.resume"), {{QStringLiteral("skip"), true}});
+		QVERIFY2(skipped.ok, qPrintable(skipped.errorMessage));
+		QCOMPARE(skipped.result.value(QStringLiteral("skipped")).toInt(), 3);
+		QTRY_VERIFY(done());
+		const QJsonObject status = run(QStringLiteral("workflow.status")).result;
+		QCOMPARE(status.value(QStringLiteral("stopped_at")).toInt(), -1);
+		QCOMPARE(status.value(QStringLiteral("skipped_steps")).toArray(), QJsonArray{3});
+		QVERIFY(run(QStringLiteral("workflow.remove"), {{QStringLiteral("name"), name}}).ok);
+	}
+
 private:
 	QTemporaryDir m_dir;
 	Track* m_track = nullptr;
