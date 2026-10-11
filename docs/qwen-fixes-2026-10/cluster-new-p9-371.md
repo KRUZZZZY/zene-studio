@@ -23,15 +23,17 @@ So the report meters the frames the file writer receives. There is no
 multichannel file render for this reported omission to affect. No product code
 or regression test was added.
 
-## Verification
+## Evidence table
 
 | Check | Command/result |
 |---|---|
 | Symbol check | `rg -n "writeSurround" src` — exit 1 (no match) |
-| Regression RED/GREEN | N/A — step 2 classified the finding as false-positive; regression step skipped. |
+| RED command / exit | N/A — step 2 classified the finding as false-positive, so the regression step was skipped. |
+| GREEN command / exit | N/A — no regression was run for a false-positive finding. |
 | Affected-family test count | N/A — no ctest family was run for a false-positive finding. |
 | Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-371.r1/logs/gate-3.log 2>&1; gate_exit=$?; printf 'EXIT=%s\n' "$gate_exit" >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-371.r1/logs/gate-3.log; exit "$gate_exit"` — exit 0 |
 | File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-371.r1/logs/gate-4.log 2>&1; gate_exit=$?; printf 'EXIT=%s\n' "$gate_exit" >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-371.r1/logs/gate-4.log; exit "$gate_exit"` — exit 0 |
+| Files committed | `docs/qwen-fixes-2026-10/cluster-new-p9-371.md` |
 
 The `fff` command/tool is unavailable in this environment (`command -v fff`
 returned exit 1), so the gate logs were searched with `rg`. The commands
@@ -40,7 +42,3 @@ returned exit 1), so the gate logs were searched with `rg`. The commands
 and
 `rg -n 'Assertion' /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-371.r1/logs`
 each returned exit 1 (no matches).
-
-## Files committed
-
-- `docs/qwen-fixes-2026-10/cluster-new-p9-371.md`
