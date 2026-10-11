@@ -347,11 +347,14 @@ void ClipView::resetColor()
 void ClipView::setColor(const std::optional<QColor>& color)
 {
 	std::set<Track*> journaledTracks;
+	bool colorChanged = false;
 
 	auto selectedClips = getClickedClips();
 	for (auto clipv : selectedClips)
 	{
 		auto clip = clipv->getClip();
+		if (EditLocks::instance().locks(clip) || clip->color() == color) { continue; }
+
 		auto track = clip->getTrack();
 
 		// TODO journal whole Song or group of clips instead of one journal entry for each track
@@ -370,9 +373,10 @@ void ClipView::setColor(const std::optional<QColor>& color)
 
 		clip->setColor(color);
 		clipv->update();
+		colorChanged = true;
 	}
 
-	Engine::getSong()->setModified();
+	if (colorChanged) { Engine::getSong()->setModified(); }
 }
 
 
