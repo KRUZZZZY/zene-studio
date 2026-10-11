@@ -65,6 +65,7 @@
 #include "AudioBufferView.h"
 #include "AudioEngine.h"
 #include "AudioResampler.h"
+#include "Delay.h"
 #include "Engine.h"
 #include "ExportRenderSettings.h"
 #include "Sample.h"
@@ -166,6 +167,27 @@ private slots:
 		QVERIFY2(std::fabs(halvedRatio - 0.5) < 0.02,
 			qPrintable(QStringLiteral("src_ratio 0.5 gave %1 output frames per input frame")
 				.arg(halvedRatio)));
+	}
+
+	void stereoCombAliasesExposeTheirDelayApi()
+	{
+		StereoCombFeedfwd feedforward(4);
+		feedforward.setDelay(1.0);
+		feedforward.setGain(0.25);
+		QCOMPARE(feedforward.update(2.0, 0), 0.5);
+		QCOMPARE(feedforward.update(0.0, 0), 2.0);
+		feedforward.clearHistory();
+		feedforward.setMaxDelay(8);
+		QCOMPARE(feedforward.update(0.0, 0), 0.0);
+
+		StereoCombFeedbackDualtap dualtap(4);
+		dualtap.setDelays(1.0, 2.0);
+		dualtap.setGain(0.5);
+		QCOMPARE(dualtap.update(2.0, 0), 0.0);
+		QCOMPARE(dualtap.update(0.0, 0), 2.0);
+		dualtap.clearHistory();
+		dualtap.setMaxDelay(8);
+		QCOMPARE(dualtap.update(0.0, 0), 0.0);
 	}
 
 	//! The pre-existing path: a 48 kHz source in a 44.1 kHz project. The

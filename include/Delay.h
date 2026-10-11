@@ -69,7 +69,7 @@ public:
 	CombFeedback( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{
@@ -135,12 +135,13 @@ private:
 template<ch_cnt_t CHANNELS>
 class CombFeedfwd
 {
+public:
 	using frame = std::array<double, CHANNELS>;
 
 	CombFeedfwd( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{
@@ -206,14 +207,17 @@ private:
 template<ch_cnt_t CHANNELS>
 class CombFeedbackDualtap
 {
+public:
 	using frame = std::array<double, CHANNELS>;
 
 	CombFeedbackDualtap( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
-		m_delay( 0 ),
-		m_fraction( 0.0 )
+		m_gain( 0.0 ),
+		m_delay1( 0 ),
+		m_delay2( 0 ),
+		m_fraction1( 0.0 ),
+		m_fraction2( 0.0 )
 	{
 		m_buffer = new frame[maxDelay];
 		memset( m_buffer, 0, sizeof( frame ) * maxDelay );
@@ -292,7 +296,7 @@ public:
 	AllpassDelay( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{
