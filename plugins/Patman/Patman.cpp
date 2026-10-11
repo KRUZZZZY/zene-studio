@@ -212,14 +212,13 @@ void PatmanInstrument::setFile( const QString & _patch_file, bool _rename )
 PatmanInstrument::LoadError PatmanInstrument::loadPatch(
 						const QString & _filename )
 {
-	unloadCurrentPatch();
-
 	FILE * fd = fopen( _filename.toUtf8().constData() , "rb" );
 	if( !fd )
 	{
 		perror( "fopen" );
 		return( LoadError::Open );
 	}
+	QVector<std::shared_ptr<Sample>> patchSamples;
 
 	auto header = std::array<unsigned char, 239>{};
 
@@ -361,11 +360,12 @@ PatmanInstrument::LoadError PatmanInstrument::loadPatch(
 			psample->setLoopEndFrame( loop_end );
 		}
 
-		m_patchSamples.push_back(psample);
+		patchSamples.push_back(psample);
 
 		delete[] data;
 	}
 	fclose( fd );
+	m_patchSamples.swap(patchSamples);
 	return( LoadError::OK );
 }
 
