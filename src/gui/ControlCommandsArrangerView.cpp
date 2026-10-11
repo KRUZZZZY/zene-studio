@@ -145,10 +145,10 @@ tick_t zoomAnchor(gui::SongEditor* editor, const QJsonObject& args)
 int requestedZoom(gui::SongEditor* editor, const QJsonObject& args)
 {
 	IntModel* model = editor->zoomingModel();
-	const int value = args.contains(QStringLiteral("pixels_per_bar"))
+	const long long value = args.contains(QStringLiteral("pixels_per_bar"))
 		? editor->zoomValueFor(static_cast<int>(std::lround(args.value(QStringLiteral("pixels_per_bar")).toDouble())))
-		: model->value() + args.value(QStringLiteral("step")).toInt(1);
-	return std::clamp(value, model->minValue(), model->maxValue());
+		: static_cast<long long>(model->value()) + args.value(QStringLiteral("step")).toInt(1);
+	return static_cast<int>(std::clamp(value, static_cast<long long>(model->minValue()), static_cast<long long>(model->maxValue())));
 }
 
 ControlResult zoom(const QJsonObject& args)
