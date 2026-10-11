@@ -32,6 +32,7 @@ output is in the listed file under `/home/kruzzzzy/.local/share/zene-bunny-fix/q
 | `cmake --build build --target help` | 0 | `build-2.log` |
 | `cmake --build build --target all -j2` (bunny-guard rejected target `all`) | 97 | `build-3.log` |
 | `cmake --build build --target cmake_check_build_system` | 0 | `build-4.log` |
+| `cmake --build build --target SerializingObjectHookTest` (registered regression target, before the production edit) | 0 | `build-5.log` |
 | `cmake --build build --target zene SerializingObjectHookTest ClipSerialisationTest` (each build) | 0 | `build-6.log`, `build-7.log`, `build-8.log` |
 | `ctest -R SerializingObjectHookTest --output-on-failure` (from `build/tests`, original implementation) | 8 | `test-1.log` |
 | Same ctest command (from `build/tests`, fixed implementation) | 0 | `test-2.log` |
