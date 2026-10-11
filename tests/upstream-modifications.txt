@@ -30,6 +30,7 @@
 
 # BUG-MIDI-003/004 (2026-09-24): realtime MIDI output queue and defined retro snapshot publication;
 # regression coverage: tests/src/core/MidiOutQueueTest.cpp and RetroMidiRingTest.cpp.
+include/base64.h	new-p9-580: reject base64 payloads whose byte count is not a whole number of T elements; regression in tests/src/plugins/PluginPortsMigrationTest.cpp.
 include/ImportFilter.h	040/m3-registry-actions (2026-09-29, M3.2): declares static bool tryImportFile(file, tc), the dialog-free half of import(); nothing else moves
 include/MidiAlsaSeq.h	BUG-MIDI-003: queue outbound events off the audio thread and expose overflow count; covered by MidiOutQueueTest and RetroMidiCaptureCommandsTest.
 include/MidiClient.h	BUG-MIDI-003: expose realtime MIDI output queue overflow count to status commands; covered by RetroMidiCaptureCommandsTest.

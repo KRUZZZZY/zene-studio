@@ -21,6 +21,7 @@
 #include "PluginPortsHarness.h"
 
 #include <cstdio>
+#include <cstdint>
 #include <vector>
 
 #include <QByteArray>
@@ -185,6 +186,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void typedDecodeRejectsIncompleteElement();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +216,16 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::typedDecodeRejectsIncompleteElement()
+{
+	std::uint32_t* decoded = nullptr;
+	int size = -1;
+	lmms::base64::decode(QStringLiteral("AQID"), &decoded, &size);
+	const bool rejected = decoded == nullptr && size == 0;
+	delete[] decoded;
+	QVERIFY2(rejected, "three decoded bytes cannot form a uint32_t element");
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
