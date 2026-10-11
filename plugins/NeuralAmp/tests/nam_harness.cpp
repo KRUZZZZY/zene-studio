@@ -155,10 +155,10 @@ bool writeWavF32(const std::string& path, const std::vector<float>& x, double sa
 
 	std::FILE* f = std::fopen(path.c_str(), "wb");
 	if (f == nullptr) { return false; }
-	std::fwrite(hdr.data(), 1, hdr.size(), f);
-	std::fwrite(x.data(), sizeof(float), x.size(), f);
-	std::fclose(f);
-	return true;
+	bool ok = std::fwrite(hdr.data(), 1, hdr.size(), f) == hdr.size();
+	ok &= std::fwrite(x.data(), sizeof(float), x.size(), f) == x.size();
+	if (std::fclose(f) != 0) { ok = false; }
+	return ok;
 }
 
 bool writeWav16(const std::string& path, const std::vector<float>& x, double sampleRate)
@@ -171,28 +171,29 @@ bool writeWav16(const std::string& path, const std::vector<float>& x, double sam
 	const uint32_t rate = static_cast<uint32_t>(sampleRate);
 	const uint32_t byteRate = rate * 2;
 	const uint16_t blockAlign = 2;
-	std::fwrite("RIFF", 1, 4, f);
-	std::fwrite(&chunk, 4, 1, f);
-	std::fwrite("WAVEfmt ", 1, 8, f);
+	bool ok = true;
+	ok &= std::fwrite("RIFF", 1, 4, f) == 4;
+	ok &= std::fwrite(&chunk, 4, 1, f) == 1;
+	ok &= std::fwrite("WAVEfmt ", 1, 8, f) == 8;
 	const uint32_t fmtSize = 16;
 	const uint16_t fmt = 1;
-	std::fwrite(&fmtSize, 4, 1, f);
-	std::fwrite(&fmt, 2, 1, f);
-	std::fwrite(&channels, 2, 1, f);
-	std::fwrite(&rate, 4, 1, f);
-	std::fwrite(&byteRate, 4, 1, f);
-	std::fwrite(&blockAlign, 2, 1, f);
-	std::fwrite(&bits, 2, 1, f);
-	std::fwrite("data", 1, 4, f);
-	std::fwrite(&dataBytes, 4, 1, f);
+	ok &= std::fwrite(&fmtSize, 4, 1, f) == 1;
+	ok &= std::fwrite(&fmt, 2, 1, f) == 1;
+	ok &= std::fwrite(&channels, 2, 1, f) == 1;
+	ok &= std::fwrite(&rate, 4, 1, f) == 1;
+	ok &= std::fwrite(&byteRate, 4, 1, f) == 1;
+	ok &= std::fwrite(&blockAlign, 2, 1, f) == 1;
+	ok &= std::fwrite(&bits, 2, 1, f) == 1;
+	ok &= std::fwrite("data", 1, 4, f) == 4;
+	ok &= std::fwrite(&dataBytes, 4, 1, f) == 1;
 	for (float v : x)
 	{
 		const double clipped = std::max(-1.0, std::min(1.0, static_cast<double>(v)));
 		const int16_t s = static_cast<int16_t>(std::lround(clipped * 32767.0));
-		std::fwrite(&s, 2, 1, f);
+		ok &= std::fwrite(&s, 2, 1, f) == 1;
 	}
-	std::fclose(f);
-	return true;
+	if (std::fclose(f) != 0) { ok = false; }
+	return ok;
 }
 
 uint32_t getU32(const std::vector<uint8_t>& b, size_t off)
@@ -650,6 +651,7 @@ int main(int argc, char** argv)
 	{
 		const bool ok = writeWav16(opt.wavPath, measuredOut, opt.sampleRate);
 		std::printf("  wrote %s: %s\n", opt.wavPath.c_str(), ok ? "yes" : "FAILED");
+		if (!ok) { return 2; }
 	}
 
 	return (finiteOk && nonZeroOk && coloursOk) ? 0 : 1;

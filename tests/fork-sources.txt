@@ -982,6 +982,8 @@ plugins/NeuralAmp/NeuralAmpControls.cpp
 plugins/NeuralAmp/NeuralAmpControls.h
 plugins/NeuralAmp/NeuralAmpEffect.cpp
 plugins/NeuralAmp/NeuralAmpEffect.h
+# new-p9-316: regression test for NAM harness WAV write failures.
+plugins/NeuralAmp/tests/wav_write_failure_test.py
 plugins/Receiver/Receiver.cpp
 plugins/Receiver/Receiver.h
 plugins/Receiver/ReceiverControlDialog.cpp
