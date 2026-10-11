@@ -2432,6 +2432,32 @@ set_tests_properties(AudioPluginTest PROPERTIES
 lmms_add_coverage(synthetic_audio_plugin)
 lmms_add_coverage(AudioPluginTest)
 
+# The NAM engine's block-spanning silence prewarm is tested without loading the
+# plugin module, using a small model written by the test itself.
+add_executable(NamModelPrewarmTest
+	src/core/NamModelPrewarmTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModel.cpp
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModelLoader.cpp
+)
+add_test(NAME NamModelPrewarmTest COMMAND NamModelPrewarmTest)
+target_include_directories(NamModelPrewarmTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/Eigen
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/json
+)
+target_link_libraries(NamModelPrewarmTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+	${CMAKE_DL_LIBS}
+)
+if(NOT MSVC)
+	target_link_libraries(NamModelPrewarmTest PRIVATE m)
+endif()
+target_compile_features(NamModelPrewarmTest PRIVATE cxx_std_20)
+set_tests_properties(NamModelPrewarmTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # Native VST3 instrument fixture and its probe.
 #
 # Opt-in on purpose: cmake/modules/Vst3Sdk.cmake builds lmms_vst3_sdk whenever

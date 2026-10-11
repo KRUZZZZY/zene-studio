@@ -96,9 +96,9 @@ void NamModel::prewarm() noexcept
 	while (remaining > 0)
 	{
 		const int chunk = std::min(remaining, kMaxBlock);
-		// In-place is safe: processChunk() copies the input into the
-		// condition matrix before it writes any output, and the output of
-		// prewarm is discarded.
+		// processChunk() writes output into this buffer, so restore silence
+		// before reusing it as the next chunk's input.
+		std::fill_n(m_prewarmBuffer.data(), chunk, 0.0f);
 		processChunk(m_prewarmBuffer.data(), m_prewarmBuffer.data(), chunk);
 		remaining -= chunk;
 	}
