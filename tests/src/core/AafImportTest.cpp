@@ -64,6 +64,7 @@ namespace
 {
 
 const QString Fixture = QStringLiteral(LMMS_TEST_DATA_DIR "/aaf/PR_WAV_Internal.aaf");
+const QString HotTrackGainFixture = QStringLiteral(LMMS_TEST_DATA_DIR "/aaf/PR_WAV_Internal_TrackGain_250pct.aaf");
 
 ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
 {
@@ -392,6 +393,21 @@ private slots:
 		QCOMPARE(clip.value(QStringLiteral("source_offset_frames")).toInteger(), qint64{1602});
 		QVERIFY(!QFileInfo::exists(reply.value(QStringLiteral("media_dir")).toString()));  // nothing extracted
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore);
+	}
+
+	//! A track fader above LMMS' 200% ceiling is reported by the actual dry-run command.
+	void theDryRunReportsOverRangeTrackGain()
+	{
+		if (!aafImportAvailable()) { QSKIP("this build has no LibAAF (ZENE_HAVE_LIBAAF not defined)"); }
+		const ControlResult result = run(QStringLiteral("interchange.aaf_read"),
+			{{QStringLiteral("path"), HotTrackGainFixture}});
+		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		const QJsonObject reply = result.result;
+		const QJsonArray tracks = reply.value(QStringLiteral("model")).toObject().value(QStringLiteral("tracks")).toArray();
+		QCOMPARE(tracks.size(), 1);
+		const QJsonObject track = tracks.at(0).toObject();
+		QVERIFY(track.value(QStringLiteral("gain_db")).toDouble() > 6.0206);  // 250%, above 200%
+		QCOMPARE(reply.value(QStringLiteral("loss")).toObject().value(QStringLiteral("track_gain_clamps")).toInt(), 1);
 	}
 
 	//! The import extracts the embedded WAV, builds the track and its clip, and is ONE undo step.
