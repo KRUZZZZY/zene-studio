@@ -136,8 +136,11 @@ void resolveEssence(Walk& walk, aafiAudioEssenceFile* essence, const AafReadOpti
 	entry->path = text(essence->usable_file_path);
 	if (!entry->path.isEmpty() && !decodable(entry->path))
 	{
-		walk.loss->warnings.append(QStringLiteral("%1: this build cannot decode .%2 files")
-			.arg(entry->path, QFileInfo(entry->path).suffix()));
+		if (walk.loss != nullptr && walk.loss->warnings.size() < AafMaxWarnings)
+		{
+			walk.loss->warnings.append(QStringLiteral("%1: this build cannot decode .%2 files")
+				.arg(entry->path, QFileInfo(entry->path).suffix()));
+		}
 		entry->path.clear();
 	}
 	entry->missing = entry->path.isEmpty();

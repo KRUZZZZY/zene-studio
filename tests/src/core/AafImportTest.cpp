@@ -57,11 +57,41 @@
 #include "SampleTrack.h"
 #include "Song.h"
 
+#if __has_include(<libaaf.h>)
+#define ZENE_HAVE_LIBAAF
+#define aafImportAvailable aafImportAvailableForWarningTest
+#define aafLibraryVersion aafLibraryVersionForWarningTest
+#define readAaf readAafForWarningTest
+#include "../../../src/core/AafImportRead.cpp"
+#undef readAaf
+#undef aafLibraryVersion
+#undef aafImportAvailable
+#undef ZENE_HAVE_LIBAAF
+#endif
+
 using namespace lmms;
 using namespace lmms::interchange;
 
 namespace
 {
+
+#if __has_include(<libaaf.h>)
+QStringList unsupportedMediaWarningsForTest(int mediaCount)
+{
+	AafLossReport loss;
+	Walk walk{nullptr, nullptr, &loss, {}};
+	aafiAudioEssenceFile essence{};
+	QByteArray path = QByteArrayLiteral("unsupported.qwenmedia");
+	essence.usable_file_path = path.data();
+	const AafReadOptions options;
+	for (int i = 0; i < mediaCount; ++i)
+	{
+		AafMedia entry;
+		resolveEssence(walk, &essence, options, &entry);
+	}
+	return loss.warnings;
+}
+#endif
 
 const QString Fixture = QStringLiteral(LMMS_TEST_DATA_DIR "/aaf/PR_WAV_Internal.aaf");
 
@@ -275,6 +305,16 @@ private slots:
 		QCOMPARE(result.result.value(QStringLiteral("available")).toBool(), aafImportAvailable());
 		QCOMPARE(result.result.value(QStringLiteral("omf_supported")).toBool(), false);
 		QVERIFY(!result.result.value(QStringLiteral("stated_losses")).toString().isEmpty());
+	}
+
+	void unsupportedMediaWarningsRespectTheReportLimit()
+	{
+#if __has_include(<libaaf.h>)
+		if (!aafImportAvailable()) { QSKIP("this build has no LibAAF (ZENE_HAVE_LIBAAF not defined)"); }
+		QCOMPARE(unsupportedMediaWarningsForTest(AafMaxWarnings + 5).size(), AafMaxWarnings);
+#else
+		QSKIP("this build has no LibAAF headers");
+#endif
 	}
 
 	//! Refusals every build gives, library or not.
