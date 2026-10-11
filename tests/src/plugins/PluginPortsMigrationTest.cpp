@@ -20,6 +20,8 @@
 
 #include "PluginPortsHarness.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
@@ -191,6 +193,7 @@ private slots:
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
+	void xpressiveRandomVectorRejectsOutOfRangeFloatInputs();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -214,6 +217,67 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::xpressiveRandomVectorRejectsOutOfRangeFloatInputs()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_xpressive)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("xpressive");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	std::unique_ptr<lmms::Instrument> instrument{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+
+	QDomDocument document;
+	QDomElement root = document.createElement("instrument");
+	QDomElement settings = instrument->saveState(document, root);
+	const auto renderExpression = [&](const QString& expression)
+	{
+		settings.setAttribute("O1", expression);
+		settings.setAttribute("O2", "0");
+		instrument->restoreState(settings);
+		return partc::renderInstrumentInFreshThread(*instrument,
+			lmms::Engine::audioEngine()->framesPerPeriod(), lmms::DefaultKey);
+	};
+
+	const auto outOfRangeIndex = renderExpression("randsv(65536*65536,0)");
+	const auto zeroExpression = renderExpression("0");
+	const bool indexFallsBackToZero = !outOfRangeIndex.empty()
+		&& std::all_of(outOfRangeIndex.begin(), outOfRangeIndex.end(),
+			[](const float sample) { return sample == 0.0f; });
+	const bool zeroExpressionIsZero = !zeroExpression.empty()
+		&& std::all_of(zeroExpression.begin(), zeroExpression.end(),
+			[](const float sample) { return sample == 0.0f; });
+
+	const auto zeroSeed = renderExpression("randsv(0,0)");
+	const auto outOfRangeSeed = renderExpression("randsv(0,32768*65536)");
+	const bool seedFallsBackToZero = outOfRangeSeed.size() == zeroSeed.size()
+		&& std::equal(outOfRangeSeed.begin(), outOfRangeSeed.end(), zeroSeed.begin());
+	const auto peak = [](const std::vector<float>& samples)
+	{
+		float result = 0.0f;
+		for (const float sample : samples)
+		{
+			result = std::max(result, std::fabs(sample));
+		}
+		return result;
+	};
+	QVERIFY2(indexFallsBackToZero && zeroExpressionIsZero && seedFallsBackToZero,
+		qPrintable(QString{"index fallback: %1 (peak %2); zero expression: %3; seed fallback: %4 "
+			"(peaks %5, %6; delta %7)"}
+			.arg(indexFallsBackToZero).arg(peak(outOfRangeIndex)).arg(zeroExpressionIsZero)
+			.arg(seedFallsBackToZero).arg(peak(zeroSeed)).arg(peak(outOfRangeSeed))
+			.arg(partc::maxAbsDiff(zeroSeed, outOfRangeSeed))));
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
