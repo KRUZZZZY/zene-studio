@@ -683,6 +683,11 @@ void PianoView::focusOutEvent( QFocusEvent * )
 
 void PianoView::focusInEvent( QFocusEvent * )
 {
+	if( m_piano == nullptr )
+	{
+		return;
+	}
+
 	m_piano->instrumentTrack()->autoAssignMidiDevice(true);
 }
 

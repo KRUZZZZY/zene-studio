@@ -856,6 +856,8 @@ set(LMMS_TESTS
 	src/gui/HelpAccessTest.cpp
 	# R7.3: the piano roll's frame time at 1k/5k/10k/50k notes (an opt-in +20% gate).
 	src/gui/PianoRollBenchmarkTest.cpp
+	# The piano view's focus handler must tolerate its model not being assigned yet.
+	src/gui/PianoViewFocusTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
