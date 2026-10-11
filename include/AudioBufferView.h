@@ -231,7 +231,8 @@ public:
 
 	constexpr auto operator-(InterleavedFrameIterator other) const noexcept -> difference_type
 	{
-		return this->m_data - other.m_data;
+		const auto channels = static_cast<difference_type>(this->channels());
+		return channels == 0 ? 0 : (this->m_data - other.m_data) / channels;
 	}
 
 	constexpr auto operator<=>(InterleavedFrameIterator other) const noexcept

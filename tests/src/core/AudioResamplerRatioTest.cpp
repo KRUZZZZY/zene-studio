@@ -59,7 +59,9 @@
 #include <QtTest>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
+#include <ranges>
 #include <vector>
 
 #include "AudioBufferView.h"
@@ -127,6 +129,24 @@ private slots:
 	{
 		ExportRenderSettings::reset();
 		Engine::destroy();
+	}
+
+	void interleavedFrameIteratorDistanceCountsFrames()
+	{
+		float samples[8]{};
+		InterleavedBufferView<float, 2> staticView{samples, 4};
+		const auto staticFrames = staticView.framesView();
+		const auto staticBegin = staticFrames.begin();
+		const auto staticEnd = staticBegin + 3;
+		QCOMPARE(std::ranges::distance(staticBegin, staticEnd), std::ptrdiff_t{3});
+		QCOMPARE(std::ranges::distance(staticEnd, staticBegin), std::ptrdiff_t{-3});
+
+		InterleavedBufferView<float> dynamicView{samples, 2, 4};
+		const auto dynamicFrames = dynamicView.framesView();
+		const auto dynamicBegin = dynamicFrames.begin();
+		const auto dynamicEnd = detail::InterleavedFrameIterator<float>{samples + 6, 2};
+		QCOMPARE(std::ranges::distance(dynamicBegin, dynamicEnd), std::ptrdiff_t{3});
+		QCOMPARE(std::ranges::distance(dynamicEnd, dynamicBegin), std::ptrdiff_t{-3});
 	}
 
 	// -----------------------------------------------------------------------
