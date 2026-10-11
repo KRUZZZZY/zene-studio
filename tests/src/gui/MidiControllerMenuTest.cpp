@@ -32,6 +32,7 @@
 #include <QMenu>
 
 #include "ControlRegistry.h"
+#include "Controller.h"
 #include "ControllerConnection.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -110,6 +111,15 @@ private slots:
 		QMenu none;
 		plain.addDefaultActions(&none);
 		QVERIFY(find(none, QMenu::tr("Soft takeover")) == nullptr);
+	}
+
+	void settingNullControllerRestoresDummy()
+	{
+		ControllerConnection connection(new MidiController(Engine::getSong()));
+		connection.setController(nullptr);
+
+		QVERIFY(connection.getController() != nullptr);
+		QCOMPARE(connection.getController()->type(), Controller::ControllerType::Dummy);
 	}
 };
 
