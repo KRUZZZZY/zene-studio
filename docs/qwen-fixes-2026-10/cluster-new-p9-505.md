@@ -10,6 +10,14 @@ Verdict: **FIXED**
 - Before the fix, the regression failed at `answers.count()` (actual 0, expected 1). Reversing only the production patch and rebuilding both `zene` and `VideoTrackTest` reproduced that failure. With the patch restored, the same test passed.
 - A verbose passing family run reported 13 passed, 0 failed, 1 skipped. CTest ran 1/1 target (`VideoTrackTest`).
 
+| Required evidence | Exact command and result |
+| --- | --- |
+| RED, patch removed after rebuilding `zene` and `VideoTrackTest` | From `build/tests`: `ctest -R VideoTrackTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-505.r1/logs/test-6.log 2>&1; echo EXIT=$?` → EXIT=8; the detach-response assertion failed. |
+| GREEN, patch restored after rebuilding `zene` and `VideoTrackTest` | From `build/tests`: `ctest -R VideoTrackTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-505.r1/logs/test-7.log 2>&1; echo EXIT=$?` → EXIT=0. |
+| Affected-family count | From `build/tests`: `ctest -R VideoTrackTest --output-on-failure -V > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-505.r1/logs/test-5.log 2>&1; echo EXIT=$?` → EXIT=0; 1/1 CTest target, QtTest totals 13 passed, 0 failed, 1 skipped. |
+| Ratchets | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-505.r1/logs/gate-5.log 2>&1; echo EXIT=$?` → EXIT=0; `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-505.r1/logs/gate-6.log 2>&1; echo EXIT=$?` → EXIT=0. |
+| Files committed for this cluster | `src/gui/VideoLane.cpp`, `tests/src/core/VideoTrackTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p9-505.md`. |
+
 ## Commands and results
 
 All build commands below ran from the worktree root. All CTest commands ran from `build/tests`. Each command wrote its output to the named new log in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-505.r1/logs` and printed the recorded exit code.
