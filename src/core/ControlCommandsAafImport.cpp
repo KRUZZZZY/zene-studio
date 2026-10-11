@@ -277,6 +277,7 @@ ControlResult importFile(const QJsonObject& args)
 	aaf::AafBuildReport report;
 	const std::vector<int> made = buildAsOneStep(model, build, &report);
 	loss.beyondSongLength = report.beyondSongLength;
+	loss.trackGainClamps = report.trackGainClamps;
 	Engine::getSong()->setModified();
 	QJsonObject result = summary(path, model, loss);
 	const QJsonObject built = buildJson(report, made);

@@ -80,6 +80,7 @@ QJsonObject AafLossReport::toJson() const
 		{QStringLiteral("envelope_points_dropped"), envelopePointsDropped},
 		{QStringLiteral("missing_media_clips"), missingMediaClips},
 		{QStringLiteral("beyond_song_length"), beyondSongLength},
+		{QStringLiteral("track_gain_clamps"), trackGainClamps},
 		{QStringLiteral("not_in_libaaf"), QStringLiteral("effects and plug-in state, sends and buses")},
 	};
 	result.insert(QStringLiteral("warnings"), QJsonArray::fromStringList(warnings));

@@ -134,8 +134,11 @@ Track* buildTrack(Song* song, const AafTrack& source, const Placement& place, Aa
 	auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
 	if (track == nullptr) { return nullptr; }
 	track->setName(source.name.isEmpty() ? QStringLiteral("AAF track %1").arg(source.number) : source.name);
-	// The track's fader is LMMS' 0..200 % volume (unity 100); the model clamps a louder gain to its top.
-	track->volumeModel()->setValue(static_cast<float>(source.gain * 100.0));
+	// The track's fader is LMMS' 0..200 % volume (unity 100); count gains that exceed its range.
+	const float requestedVolume = static_cast<float>(source.gain * 100.0);
+	const auto* volume = track->volumeModel();
+	if (requestedVolume < volume->minValue() || requestedVolume > volume->maxValue()) { report->trackGainClamps++; }
+	track->volumeModel()->setValue(requestedVolume);
 	// LibAAF's pan is 0 (left) .. 0.5 (centre) .. 1 (right); LMMS' is -100 .. 100.
 	if (source.hasPan) { track->panningModel()->setValue(static_cast<float>((source.pan - 0.5) * 200.0)); }
 	track->setMuted(source.muted);

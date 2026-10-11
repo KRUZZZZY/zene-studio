@@ -76,6 +76,13 @@ SampleClip* onlyClipOf(Track* track)
 		: nullptr;
 }
 
+template<typename Report>
+int reportedTrackGainClamps(const Report& report)
+{
+	if constexpr (requires { report.trackGainClamps; }) { return report.trackGainClamps; }
+	else { return -1; }
+}
+
 //! Two tracks: one with a fully-edited clip, one with a clip whose media is missing and one past the song.
 AafModel authoredModel(const QString& wave)
 {
@@ -229,6 +236,26 @@ private slots:
 		QCOMPARE(markers[0].tick, tick_t{192});
 		QCOMPARE(markers[0].name, QStringLiteral("Verse"));
 		QCOMPARE(markers[0].color, QStringLiteral("#ff0000"));
+	}
+
+	void theBuilderReportsTrackGainClamps()
+	{
+		AafTrack source;
+		source.number = 1;
+		source.name = QStringLiteral("Hot track");
+		source.gain = 2.5;
+		AafModel model;
+		model.sampleRate = 48000;
+		model.tracks = {source};
+		std::vector<int> made;
+		const AafBuildReport report = buildAafSession(Engine::getSong(), model, AafBuildOptions{}, &made);
+
+		QCOMPARE(report.tracks, 1);
+		QCOMPARE(reportedTrackGainClamps(report), 1);
+		auto* imported = dynamic_cast<SampleTrack*>(control::trackWithId(made.at(0)));
+		QVERIFY(imported != nullptr);
+		QCOMPARE(imported->volumeModel()->value(), 200.f);
+		QVERIFY(AafLossReport{}.toJson().contains(QStringLiteral("track_gain_clamps")));
 	}
 
 	void theShiftStartsTheFirstClipAtZero()
