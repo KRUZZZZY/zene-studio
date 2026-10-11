@@ -41,6 +41,7 @@
 
 #include <QDomDocument>
 #include <QJsonArray>
+#include <cmath>
 #include <span>
 #include <vector>
 
@@ -53,6 +54,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "HardwareInsert.h"
 #include "HardwareIo.h"
 #include "Mixer.h"
 #include "MixerListen.h"
@@ -279,6 +281,32 @@ private slots:
 		QVERIFY(!insert.enabled());
 		engine->renderNextPeriod();
 		QCOMPARE(Engine::mixer()->totalLatencyFrames(), 0);
+	}
+
+	void aNonFiniteSavedMixDoesNotContaminateAudio()
+	{
+		QDomDocument doc;
+		QDomElement channel = doc.createElement(QStringLiteral("channel"));
+		doc.appendChild(channel);
+		QDomElement element = doc.createElement(QStringLiteral("hardwareinsert"));
+		element.setAttribute(QStringLiteral("on"), 1);
+		element.setAttribute(QStringLiteral("mix"), QStringLiteral("nan"));
+		channel.appendChild(element);
+
+		bool parsed = false;
+		QVERIFY(std::isnan(element.attribute(QStringLiteral("mix")).toFloat(&parsed)));
+		QVERIFY(parsed);
+
+		HardwareInsert insert;
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		insert.load(channel, frames);
+		std::vector<SampleFrame> output(static_cast<std::size_t>(frames), SampleFrame(0.25f, -0.25f));
+		insert.process(output.data(), frames, *Engine::audioEngine());
+		for (const SampleFrame& frame : output)
+		{
+			QVERIFY(std::isfinite(frame[0]));
+			QVERIFY(std::isfinite(frame[1]));
+		}
 	}
 
 	void destinationsParse()
