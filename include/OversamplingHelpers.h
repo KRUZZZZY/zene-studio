@@ -80,7 +80,7 @@ public:
 
 	void setup(int stages, float sampleRate, float passband = HIIR_DEFAULT_PASSBAND)
 	{
-		assert(stages <= MaxStages);
+		if (stages < 0 || stages > MaxStages) { return; }
 		m_stages = stages;
 		m_sampleRate = sampleRate;
 		m_passband = passband;
@@ -122,7 +122,12 @@ public:
 	float getSampleRate() const { return m_sampleRate; }
 	float getPassband() const { return m_passband; }
 
-	void setStages(int stages) { m_stages = stages; reset(); }
+	void setStages(int stages)
+	{
+		if (stages < 0 || stages > MaxStages) { return; }
+		m_stages = stages;
+		reset();
+	}
 	void setSampleRate(float sampleRate) { m_sampleRate = sampleRate; reset(); }
 	void setPassband(float passband) { m_passband = passband; reset(); }
 
@@ -181,7 +186,7 @@ public:
 
 	void setup(int stages, float sampleRate, float passband = HIIR_DEFAULT_PASSBAND)
 	{
-		assert(stages <= MaxStages);
+		if (stages < 0 || stages > MaxStages) { return; }
 		m_stages = stages;
 		m_sampleRate = sampleRate;
 		m_passband = passband;
@@ -219,7 +224,12 @@ public:
 	float getSampleRate() const { return m_sampleRate; }
 	float getPassband() const { return m_passband; }
 
-	void setStages(int stages) { m_stages = stages; reset(); }
+	void setStages(int stages)
+	{
+		if (stages < 0 || stages > MaxStages) { return; }
+		m_stages = stages;
+		reset();
+	}
 	void setSampleRate(float sampleRate) { m_sampleRate = sampleRate; reset(); }
 	void setPassband(float passband) { m_passband = passband; reset(); }
 

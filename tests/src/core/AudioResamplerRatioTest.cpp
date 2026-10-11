@@ -67,6 +67,7 @@
 #include "AudioResampler.h"
 #include "Engine.h"
 #include "ExportRenderSettings.h"
+#include "OversamplingHelpers.h"
 #include "Sample.h"
 #include "SampleFrame.h"
 #include "SrcQuality.h"
@@ -350,6 +351,78 @@ private slots:
 			QCOMPARE(byDefault[i][1], byName[i][1]);
 		}
 		evidence("default quality is exactly Linear", 1.0);
+	}
+
+	void upsamplerRejectsOutOfRangeStageChanges()
+	{
+		Upsampler<4> sampler;
+		sampler.setup(2, 48000.0f, 19000.0f);
+
+		sampler.setStages(5);
+		const int tooManyStages = sampler.getStages();
+		sampler.setStages(-1);
+		const int negativeStages = sampler.getStages();
+
+		QCOMPARE(tooManyStages, 2);
+		QCOMPARE(negativeStages, 2);
+	}
+
+	void downsamplerRejectsOutOfRangeStageChanges()
+	{
+		Downsampler<4> sampler;
+		sampler.setup(2, 48000.0f, 19000.0f);
+
+		sampler.setStages(5);
+		const int tooManyStages = sampler.getStages();
+		sampler.setStages(-1);
+		const int negativeStages = sampler.getStages();
+
+		QCOMPARE(tooManyStages, 2);
+		QCOMPARE(negativeStages, 2);
+	}
+
+	void upsamplerSetupRejectsOutOfRangeStages()
+	{
+		Upsampler<4> sampler;
+		sampler.setup(2, 48000.0f, 19000.0f);
+
+		sampler.setup(5, 96000.0f, 21000.0f);
+		const int tooManyStages = sampler.getStages();
+		const float tooManySampleRate = sampler.getSampleRate();
+		const float tooManyPassband = sampler.getPassband();
+		sampler.setup(-1, 22050.0f, 10000.0f);
+		const int negativeStages = sampler.getStages();
+		const float negativeSampleRate = sampler.getSampleRate();
+		const float negativePassband = sampler.getPassband();
+
+		QCOMPARE(tooManyStages, 2);
+		QCOMPARE(tooManySampleRate, 48000.0f);
+		QCOMPARE(tooManyPassband, 19000.0f);
+		QCOMPARE(negativeStages, 2);
+		QCOMPARE(negativeSampleRate, 48000.0f);
+		QCOMPARE(negativePassband, 19000.0f);
+	}
+
+	void downsamplerSetupRejectsOutOfRangeStages()
+	{
+		Downsampler<4> sampler;
+		sampler.setup(2, 48000.0f, 19000.0f);
+
+		sampler.setup(5, 96000.0f, 21000.0f);
+		const int tooManyStages = sampler.getStages();
+		const float tooManySampleRate = sampler.getSampleRate();
+		const float tooManyPassband = sampler.getPassband();
+		sampler.setup(-1, 22050.0f, 10000.0f);
+		const int negativeStages = sampler.getStages();
+		const float negativeSampleRate = sampler.getSampleRate();
+		const float negativePassband = sampler.getPassband();
+
+		QCOMPARE(tooManyStages, 2);
+		QCOMPARE(tooManySampleRate, 48000.0f);
+		QCOMPARE(tooManyPassband, 19000.0f);
+		QCOMPARE(negativeStages, 2);
+		QCOMPARE(negativeSampleRate, 48000.0f);
+		QCOMPARE(negativePassband, 19000.0f);
 	}
 };
 
