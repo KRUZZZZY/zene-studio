@@ -105,18 +105,21 @@ AudioAlsa::AudioAlsa( bool & _success_ful, AudioEngine*  _audioEngine ) :
 	// set FD_CLOEXEC flag for all file descriptors so forked processes
 	// do not inherit them
 	int count = snd_pcm_poll_descriptors_count( m_handle );
-	auto ufds = new pollfd[count];
-	snd_pcm_poll_descriptors( m_handle, ufds, count );
-	for (int i = 0; i < std::max(3, count); ++i)
+	if (count > 0)
 	{
-		const int fd = ( i >= count ) ? ufds[0].fd+i : ufds[i].fd;
-		int oldflags = fcntl( fd, F_GETFD, 0 );
-		if( oldflags < 0 )
-			continue;
-		oldflags |= FD_CLOEXEC;
-		fcntl( fd, F_SETFD, oldflags );
+		auto ufds = new pollfd[count];
+		snd_pcm_poll_descriptors( m_handle, ufds, count );
+		for (int i = 0; i < std::max(3, count); ++i)
+		{
+			const int fd = ( i >= count ) ? ufds[0].fd+i : ufds[i].fd;
+			int oldflags = fcntl( fd, F_GETFD, 0 );
+			if( oldflags < 0 )
+				continue;
+			oldflags |= FD_CLOEXEC;
+			fcntl( fd, F_SETFD, oldflags );
+		}
+		delete[] ufds;
 	}
-	delete[] ufds;
 	_success_ful = true;
 }
 
