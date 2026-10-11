@@ -1770,6 +1770,43 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 		"PART_C_MIGRATED_${PLUGIN_ID}=\"$<TARGET_FILE:${PLUGIN_ID}>\"")
 endforeach()
 
+# ExprFront's allocation-failure path is compiled from the product source so
+# the test observes its constructor and destructor directly. Keep the CTest
+# name aligned with the Xpressive expression frontend test family.
+add_executable(ExprSynthAllocationTest
+	src/plugins/ExprSynthAllocationTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Xpressive/ExprSynth.cpp
+)
+add_test(NAME ExprSynth COMMAND ExprSynthAllocationTest)
+target_include_directories(ExprSynthAllocationTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Xpressive
+)
+target_static_libraries(ExprSynthAllocationTest PRIVATE lmmsobjs)
+target_link_libraries(ExprSynthAllocationTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+	exprtk
+)
+target_compile_features(ExprSynthAllocationTest PRIVATE cxx_std_20)
+target_compile_definitions(ExprSynthAllocationTest PRIVATE
+	exprtk_disable_sc_andor
+	exprtk_disable_return_statement
+	exprtk_disable_break_continue
+	exprtk_disable_comments
+	exprtk_disable_string_capabilities
+	exprtk_disable_rtl_io_file
+	exprtk_disable_rtl_vecops
+)
+if(MSVC)
+	target_compile_options(ExprSynthAllocationTest PRIVATE /bigobj)
+elseif(LMMS_BUILD_WIN32 OR LMMS_BUILD_CYGWIN)
+	target_compile_options(ExprSynthAllocationTest PRIVATE -Wa,-mbig-obj)
+endif()
+set_tests_properties(ExprSynth PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # Slice 6 (task #589): LadspaEffect resolves its LADSPA libraries through
 # LADSPA_PATH at runtime, and both the test and the reference renderer have to
 # point at the in-tree SWH builds. The dir is taken from the plugin targets so
