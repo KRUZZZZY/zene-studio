@@ -85,7 +85,7 @@ int sp_process_raw(sp_data *sp, void *ud, void (*callback)(sp_data *, void *))
             for (chan = 0; chan < sp->nchan; chan++) {
                 fwrite(&sp->out[chan], sizeof(SPFLOAT), 1, stdout);
             }
-            sp->len--;
+            sp->pos++;
         }
     } else {
         while(sp->len > 0) {

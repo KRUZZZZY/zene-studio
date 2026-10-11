@@ -2432,6 +2432,26 @@ set_tests_properties(AudioPluginTest PROPERTIES
 lmms_add_coverage(synthetic_audio_plugin)
 lmms_add_coverage(AudioPluginTest)
 
+# The raw ReverbSC support loop is a separate C source, so compile that exact
+# implementation into its focused streaming regression test.
+add_executable(ReverbSCRawProcessingTest
+	src/plugins/ReverbSCRawProcessingTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c
+)
+add_test(NAME ReverbSCRawProcessingTest COMMAND ReverbSCRawProcessingTest)
+target_include_directories(ReverbSCRawProcessingTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC
+)
+target_link_libraries(ReverbSCRawProcessingTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+if(UNIX)
+	target_link_libraries(ReverbSCRawProcessingTest PRIVATE m)
+endif()
+target_compile_features(ReverbSCRawProcessingTest PRIVATE cxx_std_20)
+lmms_add_coverage(ReverbSCRawProcessingTest)
+
 # Native VST3 instrument fixture and its probe.
 #
 # Opt-in on purpose: cmake/modules/Vst3Sdk.cmake builds lmms_vst3_sdk whenever
