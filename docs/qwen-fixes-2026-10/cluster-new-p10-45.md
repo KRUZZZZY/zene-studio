@@ -27,10 +27,17 @@ Exit 0.
 - RED regression: N/A; no `plugin.midi_part_set` handler exists.
 - GREEN regression: N/A; no `plugin.midi_part_set` handler exists.
 - Affected-family tests: N/A; 0 run because no setter behavior exists to exercise.
-- Complexity gate: `bash tests/complexity-gate.sh --check` — exit 0 (`gate-1.log`).
-- File-length gate: `bash tests/file-length-gate.sh --check` — exit 0 (`gate-2.log`).
 
-Build/test logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-45.r1/logs/`. The inventory and gate commands were captured in `inventory-1.log`, `inventory-2.log`, `gate-1.log`, and `gate-2.log` respectively.
+| Evidence | Exact command | Exit/result |
+|---|---|---|
+| RED regression | N/A; no registered `plugin.midi_part_set` handler to invoke | Not run; N/A |
+| GREEN regression | N/A; no registered `plugin.midi_part_set` handler to invoke | Not run; N/A |
+| Affected-family tests | N/A; no setter behavior exists to exercise | 0 executed; test not run |
+| Complexity gate | `bash tests/complexity-gate.sh --check` | 0 (`gate-5.log`) |
+| File-length gate | `bash tests/file-length-gate.sh --check` | 0 (`gate-6.log`) |
+| Explicit file committed | `docs/qwen-fixes-2026-10/cluster-new-p10-45.md` | Report only |
+
+Build/test logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-45.r1/logs/`. The inventory commands were captured in `inventory-1.log` and `inventory-2.log`; the post-report gate runs were captured in `gate-5.log` and `gate-6.log`.
 
 ## Files committed
 
