@@ -10,13 +10,24 @@ import tempfile
 from pathlib import Path
 
 
-def run_case(harness, model, args, label, require_signal_pass=False):
+def run_case(harness, model, args, label, expected_output, expected_error=None,
+             require_signal_pass=False):
     result = subprocess.run(
         [str(harness), str(model), *args], capture_output=True, text=True
     )
-    if result.returncode == 0:
+    if result.returncode != 2:
         raise AssertionError(
-            f"{label} returned success after a failing WAV write\n"
+            f"{label} expected exit 2 for a failed WAV write, got {result.returncode}\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    if expected_output not in result.stdout:
+        raise AssertionError(
+            f"{label} did not reach the expected WAV output path: {expected_output!r}\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    if expected_error is not None and expected_error not in result.stderr:
+        raise AssertionError(
+            f"{label} did not report the expected write failure: {expected_error!r}\n"
             f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
     if require_signal_pass and not all(
@@ -49,9 +60,13 @@ def make_input_wav(path):
 
 
 def main():
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: wav_write_failure_test.py /path/to/nam_harness")
+    if len(sys.argv) != 3:
+        raise SystemExit(
+            "usage: wav_write_failure_test.py /path/to/nam_harness "
+            "{legacy-wav,write-input-wav,wav-run}"
+        )
     harness = Path(sys.argv[1]).resolve()
+    case = sys.argv[2]
     full_device = Path("/dev/full")
     if not harness.is_file():
         raise SystemExit(f"NAM harness does not exist: {harness}")
@@ -85,28 +100,37 @@ def main():
             ),
             encoding="utf-8",
         )
-        run_case(
-            harness,
-            model,
-            ["--blocks", "8", "--warmup", "1", "--wav", str(full_device)],
-            "legacy --wav",
-            require_signal_pass=True,
-        )
-        run_case(
-            harness,
-            model,
-            ["--blocks", "8", "--warmup", "1", "--write-input-wav", str(full_device)],
-            "--write-input-wav",
-        )
-        input_wav = Path(tmp) / "input.wav"
-        make_input_wav(input_wav)
-        run_case(
-            harness,
-            model,
-            ["--wav-run", str(input_wav), "--wav-out", str(full_device)],
-            "--wav-run --wav-out",
-        )
-    print("PASS all 3 WAV write failure cases")
+        if case == "legacy-wav":
+            run_case(
+                harness,
+                model,
+                ["--blocks", "8", "--warmup", "1", "--wav", str(full_device)],
+                "legacy --wav",
+                f"wrote {full_device}: FAILED",
+                require_signal_pass=True,
+            )
+        elif case == "write-input-wav":
+            run_case(
+                harness,
+                model,
+                ["--blocks", "8", "--warmup", "1", "--write-input-wav", str(full_device)],
+                "--write-input-wav",
+                "== NeuralAmp harness ==",
+                f"error: could not write {full_device}",
+            )
+        elif case == "wav-run":
+            input_wav = Path(tmp) / "input.wav"
+            make_input_wav(input_wav)
+            run_case(
+                harness,
+                model,
+                ["--wav-run", str(input_wav), "--wav-out", str(full_device)],
+                "--wav-run --wav-out",
+                f"wav-out: {input_wav} -> {full_device}",
+            )
+        else:
+            raise SystemExit(f"unknown WAV write failure case: {case}")
+    print(f"PASS {case}: WAV write failure detected")
 
 
 if __name__ == "__main__":

@@ -2587,6 +2587,17 @@ endif()
 # framing and the command groups are exercised end to end.
 # ---------------------------------------------------------------------------
 find_program(PYTHON3_EXECUTABLE NAMES python3 python3.exe python)
+# Keep each NAM WAV output failure independently discoverable and attributable.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE AND TARGET nam_harness)
+	set(NAM_HARNESS_WAV_FAILURE_SCRIPT
+		${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/tests/wav_write_failure_test.py)
+	foreach(case legacy-wav write-input-wav wav-run)
+		add_test(NAME NAMHarnessWavWriteFailure_${case}
+			COMMAND ${PYTHON3_EXECUTABLE} ${NAM_HARNESS_WAV_FAILURE_SCRIPT}
+				$<TARGET_FILE:nam_harness> ${case})
+		set_tests_properties(NAMHarnessWavWriteFailure_${case} PROPERTIES TIMEOUT 60)
+	endforeach()
+endif()
 # The control surface suite is POSIX-only: its clients are AF_UNIX clients, so there is no
 # socket for them to drive on Windows - where the transport is a NAMED PIPE behind the same
 # contract (CODE-9) and has its own Windows-only proof below. The tests were registered on
