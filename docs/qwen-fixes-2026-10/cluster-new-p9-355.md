@@ -33,3 +33,22 @@ The fff grep tool was not available in this session, so log checks used `rg` on 
 - `tests/CMakeLists.txt`
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p9-355.md`
+
+## QA follow-up (round 2: fork-source registration)
+
+The product fix and regression were accepted in round 1. This follow-up registers the new GUI test in `tests/fork-sources.txt`, adds its exact path to both the regenerate and verify recipes, and places it in sorted order. The focused entry check passes. The full documented recipe still exits 1 because of unrelated source-list drift already present before this correction; its diagnostic was byte-identical before and after the change, and the new test path does not appear among those differences.
+
+| Check | Exact command | Result |
+|---|---|---|
+| Full recipe before correction | `bash -c 'sed -n "45,76p" tests/fork-sources.txt \| sed -E "s/^# ?//" \| bash' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-355.r2/logs/manifest-verify-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0` | Captured verifier `EXIT=1`; unrelated list differences. |
+| Exact new entry appears in the fork manifest | `bash -c 'test "$(git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/PianoViewFocusTest.cpp)" = "$(rg -x "tests/src/gui/PianoViewFocusTest.cpp" tests/fork-sources.txt)' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-355.r2/logs/manifest-entry-check-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0` | `EXIT=0`. |
+| Full recipe after correction | `bash -c 'sed -n "45,76p" tests/fork-sources.txt \| sed -E "s/^# ?//" \| bash' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-355.r2/logs/manifest-verify-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0` | Captured verifier `EXIT=1`; same pre-existing list differences as before. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-355.r2/logs/complexity-gate-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc" >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-355.r2/logs/complexity-gate-4.log; printf 'EXIT=%s\n' "$rc"; exit 0` | `EXIT=0`. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-355.r2/logs/file-length-gate-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc" >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-355.r2/logs/file-length-gate-4.log; printf 'EXIT=%s\n' "$rc"; exit 0` | `EXIT=0`. |
+
+No build or ctest rerun was needed for this manifest-only correction; round 1's regression build, RED/GREEN run, and reverse-patch proof remain documented above.
+
+Files in the bookkeeping follow-up commit:
+
+- `tests/fork-sources.txt`
+- `docs/qwen-fixes-2026-10/cluster-new-p9-355.md`
