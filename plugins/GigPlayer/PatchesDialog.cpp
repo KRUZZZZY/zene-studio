@@ -73,6 +73,8 @@ PatchesDialog::PatchesDialog( QWidget * pParent, Qt::WindowFlags wflags )
 	m_iChan  = 0;
 	m_iBank  = 0;
 	m_iProg  = 0;
+	m_originalBank = 0;
+	m_originalProg = 0;
 
 	// Soundfonts list view...
 	QHeaderView * pHeader = m_progListView->header();
@@ -120,6 +122,8 @@ void PatchesDialog::setup( GigInstance * pSynth, int iChan,
 	m_bankModel = bankModel;
 	m_progModel = progModel;
 	m_patchLabel =  patchLabel;
+	m_originalBank = m_bankModel->value();
+	m_originalProg = m_progModel->value();
 
 	// Set the proper caption...
 	setWindowTitle( chanName + " - GIG patches" );
@@ -226,6 +230,9 @@ void PatchesDialog::setBankProg( int iBank, int iProg )
 	{
 		return;
 	}
+
+	m_bankModel->setValue( iBank );
+	m_progModel->setValue( iProg );
 }
 
 
@@ -265,7 +272,7 @@ void PatchesDialog::reject()
 	// Reset selection to initial selection, if applicable...
 	if( m_dirty > 0 )
 	{
-		setBankProg( m_bankModel->value(), m_progModel->value() );
+		setBankProg( m_originalBank, m_originalProg );
 	}
 
 	// Done (hopefully nothing).

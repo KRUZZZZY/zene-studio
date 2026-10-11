@@ -84,6 +84,8 @@ private:
 	int m_iChan;
 	int m_iBank;
 	int m_iProg;
+	int m_originalBank;
+	int m_originalProg;
 
 	int m_dirty;
 
