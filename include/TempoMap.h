@@ -294,14 +294,25 @@ class TempoMapPublisher
 public:
 	/*! One mutation of the map, published the moment it lands. Routing every
 	 *  write through here is what makes a forgotten publish impossible; \a fn
-	 *  returns true when it changed the map. */
+	 *  returns true when it changed the map. If it throws, its partial mutation
+	 *  is rolled back before the exception is rethrown. */
 	template <typename Fn>
 	bool edit(Fn&& fn)
 	{
+		const TempoMap previous = m_map;
 		m_version.fetch_add(1, std::memory_order_acq_rel);
-		const bool changed = fn(m_map);
-		m_version.fetch_add(1, std::memory_order_acq_rel);
-		return changed;
+		try
+		{
+			const bool changed = fn(m_map);
+			m_version.fetch_add(1, std::memory_order_acq_rel);
+			return changed;
+		}
+		catch (...)
+		{
+			m_map = previous;
+			m_version.fetch_add(1, std::memory_order_acq_rel);
+			throw;
+		}
 	}
 
 	//! The authoritative map. Control thread only (it is the value being

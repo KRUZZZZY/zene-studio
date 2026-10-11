@@ -50,6 +50,10 @@
 
 #include <array>
 #include <cmath>
+#include <chrono>
+#include <future>
+#include <memory>
+#include <thread>
 
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -451,6 +455,50 @@ private slots:
 
 		QVERIFY(!publisher.edit([](TempoMap& map) { return map.removeEvent(999); }));
 		QCOMPARE(publisher.snapshot().size(), 3);
+	}
+
+	//! A throwing edit must leave the publisher readable and discard its partial mutation.
+	void thePublisherRecoversAfterAThrowingEdit()
+	{
+		struct EditFailure {};
+		// Keep the publisher alive if the regression detects the old endless retry and
+		// leaves its bounded-check worker detached until this test process exits.
+		static auto* publisher = new TempoMapPublisher;
+		publisher->edit([](TempoMap& map) { map = TempoMap{}; return true; });
+
+		bool threw = false;
+		try
+		{
+			publisher->edit([](TempoMap& map) -> bool
+			{
+				TempoMapEvent event;
+				event.tick = 1;
+				event.hasTempo = true;
+				event.tempo = 111;
+				map.addEvent(event);
+				throw EditFailure{};
+			});
+		}
+		catch (const EditFailure&)
+		{
+			threw = true;
+		}
+		QVERIFY(threw);
+
+		auto completion = std::make_shared<std::promise<TempoMap>>();
+		auto snapshot = completion->get_future();
+		auto* target = publisher;
+		std::thread reader([target, completion]
+		{
+			completion->set_value(target->snapshot());
+		});
+		if (snapshot.wait_for(std::chrono::seconds(1)) != std::future_status::ready)
+		{
+			reader.detach();
+			QFAIL("snapshot() did not return after the edit callback threw");
+		}
+		reader.join();
+		QCOMPARE(snapshot.get().size(), 0);
 	}
 
 	//! BUG-TEMPOSET: set() refuses two events that share a tick and changes nothing,
