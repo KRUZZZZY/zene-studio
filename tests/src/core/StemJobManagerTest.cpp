@@ -225,14 +225,18 @@ private slots:
 
 		const int first = manager.submit(makeMix(), StemModelSampleRate, 1024);
 		QTRY_VERIFY_WITH_TIMEOUT(startedSpy.count() == 1, 10000);
-		const int second = manager.submit(makeMix(), StemModelSampleRate, 1024);
+		auto queuedMix = makeMix();
+		const std::weak_ptr<const SampleBuffer> queuedMixRef = queuedMix;
+		const int second = manager.submit(std::move(queuedMix), StemModelSampleRate, 1024);
 		QCOMPARE(static_cast<int>(manager.state(second)),
 			static_cast<int>(StemJobManager::State::Queued));
+		QVERIFY(!queuedMixRef.expired());
 
 		manager.cancel(second);
 		QCOMPARE(static_cast<int>(manager.state(second)),
 			static_cast<int>(StemJobManager::State::Cancelled));
 		QCOMPARE(cancelledSpy.count(), 1);
+		QVERIFY(queuedMixRef.expired());
 
 		// the first job is unaffected and still completes
 		QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 10000);
