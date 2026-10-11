@@ -53,6 +53,7 @@
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "QuadratureLfo.h"
 #include "SampleFrame.h"
 #include "Song.h"
 
@@ -202,6 +203,20 @@ private slots:
 	void init()
 	{
 		for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { chainOf(i).clear(); }
+	}
+
+	//! A sample-rate drop must keep an existing LFO frequency at or below the new Nyquist limit.
+	void quadratureLfoDoesNotExceedNyquistAfterSampleRateDrop()
+	{
+		QuadratureLfo lfo(48000);
+		lfo.setFrequency(20000.0);
+		lfo.setSampleRate(32000);
+		lfo.restart();
+		float left;
+		float right;
+		lfo.tick(&left, &right);
+		lfo.tick(&left, &right);
+		QVERIFY2(std::abs(left) < 1.0e-5f, qPrintable(QString::number(left)));
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.

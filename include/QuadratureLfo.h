@@ -65,6 +65,10 @@ public:
 	inline void setSampleRate ( int samplerate )
 	{
 		m_samplerate = samplerate;
+		if( m_frequency > m_samplerate / 2.0 )
+		{
+			m_frequency = m_samplerate / 2.0;
+		}
 		m_twoPiOverSr = 2 * std::numbers::pi_v<float> / samplerate;
 		m_increment = m_frequency * m_twoPiOverSr;
 	}
