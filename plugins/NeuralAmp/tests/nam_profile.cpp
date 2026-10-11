@@ -33,10 +33,12 @@
 #include "nam/NamProfile.h"
 
 #include <cmath>
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -93,6 +95,107 @@ const char* slotName(int slot)
 	}
 }
 
+struct ProfileArguments
+{
+	int blocks = 2000;
+	int blockSize = 512;
+	int warmup = 20;
+	double sampleRate = 48000.0;
+};
+
+enum class ArgumentError
+{
+	None,
+	Blocks,
+	BlockSize,
+	Warmup,
+	SampleRate
+};
+
+bool parseInteger(const char* text, int& value)
+{
+	char* end = nullptr;
+	errno = 0;
+	const long parsed = std::strtol(text, &end, 10);
+	if (end == text || *end != '\0' || errno == ERANGE ||
+	    parsed < std::numeric_limits<int>::min() || parsed > std::numeric_limits<int>::max())
+	{
+		return false;
+	}
+	value = static_cast<int>(parsed);
+	return true;
+}
+
+bool parsePositiveBlocks(const char* text, int& value)
+{
+	return parseInteger(text, value) && value > 0;
+}
+
+bool parseBlockSize(const char* text, int& value)
+{
+	return parseInteger(text, value) && value >= 1 && value <= lmms::nam::NamModel::kMaxBlock;
+}
+
+bool parseWarmup(const char* text, int& value)
+{
+	return parseInteger(text, value) && value >= 0;
+}
+
+bool parseSampleRate(const char* text, double& value)
+{
+	char* end = nullptr;
+	errno = 0;
+	const double parsed = std::strtod(text, &end);
+	if (end == text || *end != '\0' || errno == ERANGE || !std::isfinite(parsed) || parsed <= 0.0)
+	{
+		return false;
+	}
+	value = parsed;
+	return true;
+}
+
+ArgumentError parseProfileArguments(int argc, char** argv, ProfileArguments& arguments)
+{
+	if (argc > 2 && !parsePositiveBlocks(argv[2], arguments.blocks))
+	{
+		return ArgumentError::Blocks;
+	}
+	if (argc > 3 && !parseBlockSize(argv[3], arguments.blockSize))
+	{
+		return ArgumentError::BlockSize;
+	}
+	if (argc > 4 && !parseWarmup(argv[4], arguments.warmup))
+	{
+		return ArgumentError::Warmup;
+	}
+	if (argc > 5 && !parseSampleRate(argv[5], arguments.sampleRate))
+	{
+		return ArgumentError::SampleRate;
+	}
+	return ArgumentError::None;
+}
+
+void printArgumentError(ArgumentError error)
+{
+	switch (error)
+	{
+	case ArgumentError::Blocks:
+		std::fprintf(stderr, "blocks must be a positive integer\n");
+		break;
+	case ArgumentError::BlockSize:
+		std::fprintf(stderr, "blockSize must be in [1, %d]\n", lmms::nam::NamModel::kMaxBlock);
+		break;
+	case ArgumentError::Warmup:
+		std::fprintf(stderr, "warmup must be a non-negative integer\n");
+		break;
+	case ArgumentError::SampleRate:
+		std::fprintf(stderr, "sampleRate must be a positive finite number\n");
+		break;
+	case ArgumentError::None:
+		break;
+	}
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -105,14 +208,11 @@ int main(int argc, char** argv)
 		return 2;
 	}
 	const std::string modelPath = argv[1];
-	const int blocks = (argc > 2) ? std::atoi(argv[2]) : 2000;
-	const int blockSize = (argc > 3) ? std::atoi(argv[3]) : 512;
-	const int warmup = (argc > 4) ? std::atoi(argv[4]) : 20;
-	const double sampleRate = (argc > 5) ? std::atof(argv[5]) : 48000.0;
-
-	if (blockSize < 1 || blockSize > lmms::nam::NamModel::kMaxBlock)
+	ProfileArguments arguments;
+	const ArgumentError argumentError = parseProfileArguments(argc, argv, arguments);
+	if (argumentError != ArgumentError::None)
 	{
-		std::fprintf(stderr, "blockSize must be in [1, %d]\n", lmms::nam::NamModel::kMaxBlock);
+		printArgumentError(argumentError);
 		return 2;
 	}
 
@@ -129,27 +229,28 @@ int main(int argc, char** argv)
 	std::printf("arch:       %s v%s\n", spec.architecture.c_str(), spec.version.c_str());
 	std::printf("arrays:     %zu  weights: %zu  RF: %d  prewarm: %d\n",
 		spec.arrays.size(), spec.weightCount, spec.receptiveField, spec.prewarmSamples);
-	std::printf("blocks:     %d x %d frames (warmup %d) @ %.0f Hz\n", blocks, blockSize, warmup, sampleRate);
+	std::printf("blocks:     %d x %d frames (warmup %d) @ %.0f Hz\n", arguments.blocks,
+		arguments.blockSize, arguments.warmup, arguments.sampleRate);
 
-	std::vector<float> in(blockSize);
-	std::vector<float> out(blockSize);
-	for (int i = 0; i < blockSize; ++i)
+	std::vector<float> in(arguments.blockSize);
+	std::vector<float> out(arguments.blockSize);
+	for (int i = 0; i < arguments.blockSize; ++i)
 	{
-		in[i] = static_cast<float>(testSignal(i, sampleRate));
+		in[i] = static_cast<float>(testSignal(i, arguments.sampleRate));
 	}
 
 	model->reset();
 	model->prewarm();
-	for (int b = 0; b < warmup; ++b)
+	for (int b = 0; b < arguments.warmup; ++b)
 	{
-		model->process(in.data(), out.data(), blockSize);
+		model->process(in.data(), out.data(), arguments.blockSize);
 	}
 
 	std::memset(lmms::nam::g_namProfUs, 0, sizeof(lmms::nam::g_namProfUs));
 	const double cpu0 = threadCpuUs();
-	for (int b = 0; b < blocks; ++b)
+	for (int b = 0; b < arguments.blocks; ++b)
 	{
-		model->process(in.data(), out.data(), blockSize);
+		model->process(in.data(), out.data(), arguments.blockSize);
 	}
 	const double cpu1 = threadCpuUs();
 
@@ -160,20 +261,21 @@ int main(int argc, char** argv)
 	}
 
 	const double totalUs = cpu1 - cpu0;
-	const double perBlock = totalUs / static_cast<double>(blocks);
+	const double perBlock = totalUs / static_cast<double>(arguments.blocks);
 	std::printf("\n%-26s %12s %12s %8s\n", "stage", "us total", "us/block", "% slot");
 	for (int s = 0; s < lmms::nam::NAM_PROF_SLOT_COUNT; ++s)
 	{
 		const double v = lmms::nam::g_namProfUs[s];
 		std::printf("%-26s %12.1f %12.3f %7.1f%%\n", slotName(s), v,
-			v / static_cast<double>(blocks), slotSum > 0.0 ? 100.0 * v / slotSum : 0.0);
+			v / static_cast<double>(arguments.blocks), slotSum > 0.0 ? 100.0 * v / slotSum : 0.0);
 	}
 	std::printf("%-26s %12.1f %12.3f %7.1f%%\n", "SUM of slots", slotSum,
-		slotSum / static_cast<double>(blocks), 100.0);
+		slotSum / static_cast<double>(arguments.blocks), 100.0);
 	std::printf("%-26s %12.1f %12.3f\n", "measured process total", totalUs, perBlock);
 	std::printf("%-26s %12.1f %12.3f\n", "unaccounted", totalUs - slotSum,
-		(totalUs - slotSum) / static_cast<double>(blocks));
+		(totalUs - slotSum) / static_cast<double>(arguments.blocks));
 	std::printf("\ncpu/block: %.1f us  (%.3f%% of one 48 kHz core at %d-frame blocks)\n",
-		perBlock, 100.0 * perBlock / (1e6 * blockSize / sampleRate), blockSize);
+		perBlock, 100.0 * perBlock / (1e6 * arguments.blockSize / arguments.sampleRate),
+		arguments.blockSize);
 	return 0;
 }

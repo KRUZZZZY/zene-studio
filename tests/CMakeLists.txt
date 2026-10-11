@@ -1964,6 +1964,16 @@ if(WANT_WASM)
 	add_dependencies(WasmWorkerPoolTest wasm-modules)
 endif()
 
+if(TARGET nam_profile)
+	add_executable(NeuralAmpProfileArgumentsTest src/plugins/NeuralAmpProfileArgumentsTest.cpp)
+	add_test(NAME NeuralAmpProfileArgumentsTest COMMAND NeuralAmpProfileArgumentsTest)
+	target_compile_features(NeuralAmpProfileArgumentsTest PRIVATE cxx_std_20)
+	target_link_libraries(NeuralAmpProfileArgumentsTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+	target_compile_definitions(NeuralAmpProfileArgumentsTest PRIVATE
+		"NAM_PROFILE_EXECUTABLE=\"$<TARGET_FILE:nam_profile>\"")
+	add_dependencies(NeuralAmpProfileArgumentsTest nam_profile)
+endif()
+
 # Native CLAP hosting tests. They only exist when the MIT licensed CLAP headers
 # (>= 1.2.10) are available; see cmake/modules/ClapHeaders.cmake. The port map
 # is pure data transformation, so it is tested without loading a plug-in.
