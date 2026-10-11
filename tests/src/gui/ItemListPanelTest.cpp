@@ -49,6 +49,7 @@
 #include "NoteGrid.h"
 #include "NotePlayHandle.h"
 #include "Song.h"
+#include "../../../src/gui/ValueAnnouncementState.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -277,6 +278,19 @@ private slots:
 		QCOMPARE(a11y::announceLevel(), a11y::AnnounceLevel::All);
 		QCOMPARE(invoke(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("loud")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+	}
+
+	void returningToLastAnnouncedValueCancelsPendingAnnouncement()
+	{
+		bool pending = false;
+		using a11y::detail::ValueChangeAction;
+		using a11y::detail::valueChangeAction;
+		QCOMPARE(valueChangeAction(QStringLiteral("B"), QStringLiteral("A"), false, pending), ValueChangeAction::Announce);
+		pending = false;  // announce() clears the pending flag
+		QCOMPARE(valueChangeAction(QStringLiteral("A"), QStringLiteral("B"), true, pending), ValueChangeAction::Defer);
+		QVERIFY(pending);
+		QCOMPARE(valueChangeAction(QStringLiteral("B"), QStringLiteral("B"), true, pending), ValueChangeAction::NoChange);
+		QVERIFY2(!pending, "returning to the settled value must leave nothing for the timer to announce");
 	}
 
 	void aSaveIsAnnounced()

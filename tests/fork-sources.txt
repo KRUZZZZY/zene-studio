@@ -1612,6 +1612,7 @@ src/gui/AccessibleAnnouncements.cpp
 src/gui/AccessibleCanvas.cpp
 src/gui/AccessibleMode.cpp
 src/gui/AccessibleWidgets.cpp
+src/gui/ValueAnnouncementState.h
 src/gui/ArrangerAids.cpp
 src/gui/ArrangerClipKeys.cpp
 src/gui/ArrangerEditPreview.cpp
