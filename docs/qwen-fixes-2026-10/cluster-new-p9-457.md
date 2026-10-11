@@ -2,6 +2,16 @@
 
 Verdict: FIXED
 
+## Required evidence summary
+
+| Evidence | Exact command or files | Result |
+|---|---|---|
+| RED, final regression with the product patch removed | `ctest -R '^AudioBufferTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-457.r1/logs/test-3.log 2>&1; rc=$?; echo EXIT=$rc` | Exit 8; 1 CTest target and 33 Qt cases (32 passed, regression failed) |
+| GREEN, same regression after reapplying the patch | `ctest -R '^AudioBufferTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-457.r1/logs/test-4.log 2>&1; rc=$?; echo EXIT=$rc` | Exit 0; 1/1 CTest target passed |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-457.r1/logs/gate-1.log 2>&1; rc=$?; echo EXIT=$rc` | Exit 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-457.r1/logs/gate-2.log 2>&1; rc=$?; echo EXIT=$rc` | Exit 0 |
+| Files in fix commit `b56b05a9b` | `src/common/SharedMemory.cpp`; `tests/src/core/AudioBufferTest.cpp`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p9-457.md` | All four paths committed |
+
 ## Evidence
 
 - `src/common/SharedMemory.cpp:113-126` checks that a POSIX mapping contains a full header and rejects a declared array byte count larger than `m_size - sizeof(Header)`. It unmaps before throwing so a failed constructor does not leak the mapping.
