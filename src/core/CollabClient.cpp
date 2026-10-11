@@ -39,6 +39,8 @@ namespace
 {
 
 constexpr int MaxInflight = 256;
+constexpr int MaxBacklogMessages = 1024;
+constexpr qint64 MaxBacklogBytes = MaxHostLineBytes;
 
 //! What a failed connection attempt means to the person who pasted the invite.
 QString explainSocketError(QAbstractSocket::SocketError error, const QString& where)
@@ -145,6 +147,7 @@ void CollabClient::leave()
 	m_peers = QJsonArray();
 	m_inflight.clear();
 	m_backlog.clear();
+	m_backlogBytes = 0;
 	m_haveSnapshot = false;
 	m_peerId = 0;
 	if (m_state != State::Idle) { setState(State::Idle, QString()); }
@@ -180,9 +183,18 @@ void CollabClient::onClosed(const QString& reason)
 	setState(State::Failed, QStringLiteral("disconnected from %1 (%2); join again with the same invite").arg(m_hostLabel, reason));
 }
 
-void CollabClient::onMessage(const QJsonObject& message, const QByteArray&)
+void CollabClient::onMessage(const QJsonObject& message, const QByteArray& line)
 {
-	m_backlog.append(message);
+	if (m_backlog.size() >= MaxBacklogMessages || line.size() > MaxBacklogBytes - m_backlogBytes)
+	{
+		m_backlog.clear();
+		m_backlogBytes = 0;
+		m_drain->stop();
+		if (m_link != nullptr) { m_link->close(QStringLiteral("the incoming message backlog exceeded its limit")); }
+		return;
+	}
+	m_backlog.append({message, line.size()});
+	m_backlogBytes += line.size();
 	drainBacklog();
 }
 
@@ -191,7 +203,9 @@ void CollabClient::drainBacklog()
 	// The main loop is level 1; anything deeper is a nested loop some handler or dialog is running.
 	while (!m_backlog.isEmpty() && QThread::currentThread()->loopLevel() <= 1)
 	{
-		dispatch(m_backlog.takeFirst());
+		const BacklogEntry entry = m_backlog.takeFirst();
+		m_backlogBytes -= entry.bytes;
+		dispatch(entry.message);
 	}
 	if (!m_backlog.isEmpty()) { m_drain->start(); }
 }
