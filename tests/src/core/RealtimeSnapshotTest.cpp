@@ -128,6 +128,20 @@ struct Feed
 	}
 };
 
+//! Tracks the lowest latency reported while a device is running.
+struct LatencyMinimum
+{
+	void observe(int latency)
+	{
+		m_lowest = m_observed ? std::min(m_lowest, latency) : latency;
+		m_observed = true;
+	}
+	int value() const { return m_observed ? m_lowest : -1; }
+
+	int m_lowest{0};
+	bool m_observed{false};
+};
+
 } // namespace
 
 class RealtimeSnapshotTest : public QObject
@@ -294,6 +308,14 @@ private slots:
 		QVERIFY(feed.stripReduction() > 6.f);
 	}
 
+	void latencyMinimumTracksPositiveObservations()
+	{
+		LatencyMinimum minimum;
+		minimum.observe(12);
+		minimum.observe(8);
+		QCOMPARE(minimum.value(), 8);
+	}
+
 	//! An LV2 plug-in's latency is read from what its last run() left, while the audio thread runs it.
 	void anLv2LatencyIsReadWhileItRuns()
 	{
@@ -314,10 +336,10 @@ private slots:
 		Feed feed;
 		std::atomic<bool> done{false};
 		std::thread audio([&feed, &chain, &done] { feed.run(chain, 100); done = true; });
-		int lowest = 0;
-		while (!done) { lowest = std::min(lowest, effect->latencyFrames()); }
+		LatencyMinimum lowest;
+		while (!done) { lowest.observe(effect->latencyFrames()); }
 		audio.join();
-		QCOMPARE(lowest, 0);
+		QCOMPARE(lowest.value(), 0);
 		QVERIFY(effect->latencyFrames() >= 0);
 		chain.clear();
 #endif
