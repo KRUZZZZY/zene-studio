@@ -74,6 +74,8 @@ std::size_t writeToByteSeq(
 			break;
 
 		case MidiKeyPressure:
+			if (ev.key() < 0 || ev.key() > MidiMaxKey)
+				break;
 			data[1] = ev.key();
 			data[2] = ev.velocity();
 			size    = 3;
