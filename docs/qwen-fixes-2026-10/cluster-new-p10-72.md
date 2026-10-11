@@ -1,34 +1,28 @@
 # Cluster new-p10-72: BLOCKED
 
-## Finding and change
+## Finding and fix
 
-The finding is real. `handleSetParam` previously narrowed the JSON `double` to `float` before checking its range. It now rejects nonfinite values and values outside `[-std::numeric_limits<float>::max(), +max]` with `InvalidArgs` before the cast or `setParam()` call ([ControlCommandsWasmEdit.cpp:199](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-72/src/core/ControlCommandsWasmEdit.cpp:199)).
+The finding is real. `handleSetParam` in [ControlCommandsWasmEdit.cpp:199](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-72/src/core/ControlCommandsWasmEdit.cpp:199) now rejects nonfinite values and values outside the finite `float` range before casting or calling `setParam()`. The regression in [control-wasm-sandbox.py:276](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-72/tests/control-wasm-sandbox.py:276) checks that `1e300` returns `invalid_args` and leaves slot 0 unchanged.
 
-The existing WASM control transcript now sends `1e300` after setting slot 0 to `0.25`, and checks for `invalid_args` plus an unchanged slot ([control-wasm-sandbox.py:276](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-72/tests/control-wasm-sandbox.py:276)). It is registered only in a WASM-enabled configuration.
+## Verification status
 
-## Why this remains blocked
+Luna's requested WASM behavioral proof is still blocked by the instruction not to configure this build. The pinned Wasmtime C API was fetched into `third_party/wasmtime`, and rebuilding the existing tree succeeded, but `build/CMakeCache.txt` still records `Wasmtime_INCLUDE_DIR` and `Wasmtime_LIBRARY` as `NOTFOUND`. The generated compile database omits `ControlCommandsWasmEdit.cpp`, and `tests/CMakeLists.txt` registers `ControlWasmSandbox` only under `if(WANT_WASM)` (around line 3226). CTest therefore ran zero tests. Reversing and restoring the product hunk in this tree would still run zero tests, so it cannot provide the requested RED/GREEN proof; no hunk reversal is claimed.
 
-This configured build has `Wasmtime_INCLUDE_DIR` and `Wasmtime_LIBRARY` set to `NOTFOUND` in `build/CMakeCache.txt`; CMake therefore disables WASM. The generated build has no reference to `ControlCommandsWasmEdit.cpp`, and `build/tests/CTestTestfile.cmake` has no `ControlWasmSandbox` registration. `cmake --build ... --target zene` completes, but does not compile the changed handler. Targeted CTest exits 0 while printing `No tests were found!!!`, which is zero tests and is not a passing run.
-
-The no-fix and with-fix cycles below therefore do not demonstrate RED or GREEN. The product change and regression are committed as an unverified fix; verdict stays BLOCKED until these commands run in a WASM-enabled build.
+The current session does not expose the requested `fff` grep tool. Build and test logs were searched with `rg` one term at a time; no `error`, `FAILED`, or `Assertion` matches were found in the build or CTest logs.
 
 ## Evidence
 
-All commands ran from the worktree root. Build and CTest output is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r2/logs/`. The `fff` grep tool was not available, so those logs were searched with `rg`.
+Commands ran from the worktree root except CTest, which ran from `build/tests`. Build and CTest output is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r3/logs/`.
 
-| Check | Exact command | Exit | Observed result |
+| Check | Exact command | Exit | Result |
 | --- | --- | ---: | --- |
-| Remove product hunk | `git diff -- src/core/ControlCommandsWasmEdit.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r2/logs/fix.patch` | 0 | Hunk removed for the no-fix attempt. |
-| Rebuild without fix | `cmake --build build --target zene > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r2/logs/build-red-2.log 2>&1; status=$?; echo EXIT=$status` | 0 | Target completed; handler is absent from this build graph. |
-| RED attempt (not valid) | `cd build/tests && ctest -R ControlWasmSandbox --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r2/logs/test-red-2.log 2>&1; status=$?; echo EXIT=$status` | 0 | `No tests were found!!!`; 0 tests executed, so no RED result. |
-| Restore product hunk | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r2/logs/fix.patch` | 0 | Fix restored. |
-| Rebuild with fix | `cmake --build build --target zene > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r2/logs/build-green-2.log 2>&1; status=$?; echo EXIT=$status` | 0 | Target completed; handler remains absent from this build graph. |
-| GREEN attempt (not valid) | `cd build/tests && ctest -R ControlWasmSandbox --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r2/logs/test-green-2.log 2>&1; status=$?; echo EXIT=$status` | 0 | `No tests were found!!!`; 0 tests executed, so no GREEN result. |
-| Affected-family test count | `ControlWasmSandbox` in `build/tests/CTestTestfile.cmake` | N/A | 0 registered and 0 executed. |
-| Complexity gate, final | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r2/logs/gate-complexity-2.log 2>&1; status=$?; echo EXIT=$status` | 0 | Passed. |
-| File-length gate, final | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r2/logs/gate-file-length-2.log 2>&1; status=$?; echo EXIT=$status` | 0 | Passed. |
-| Python syntax check | `python3 -c 'import ast, pathlib; ast.parse(pathlib.Path("tests/control-wasm-sandbox.py").read_text())' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r2/logs/test-syntax.log 2>&1; status=$?; echo EXIT=$status` | 0 | Regression script parses. |
+| Fetch pinned Wasmtime | `scripts/fetch-wasmtime.sh > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r3/logs/fetch-1.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"` | 0 | Wasmtime C API installed in the worktree. |
+| Build existing configuration with fix | `cmake --build build --target zene > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r3/logs/build-1.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"` | 0 | Build succeeds, but the generated target excludes the WASM handler. |
+| Targeted CTest | `ctest -R ControlWasmSandbox --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r3/logs/test-1.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"` | 0 | CTest says `No tests were found!!!`; zero tests executed. This is not a pass. |
+| Cache check | `rg -n "WANT_WASM|Wasmtime_INCLUDE_DIR|Wasmtime_LIBRARY" build/CMakeCache.txt` | 0 | `WANT_WASM=ON`; both Wasmtime paths remain `NOTFOUND`. |
+| Complexity gate, final | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r3/logs/gate-complexity-2.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"` | 0 | Passed. |
+| File-length gate, final | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-72.r3/logs/gate-file-length-2.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"` | 0 | Passed. |
 
-An earlier complexity-gate attempt returned 1 because `check_param` measured CCN 11. Moving the overflow predicate into a helper brought the final check under the limit; the final gate command above returned 0.
+**Affected-family test count:** 0 registered and 0 executed. Valid RED: not run. Valid GREEN: not run.
 
-**Files committed:** `src/core/ControlCommandsWasmEdit.cpp`, `tests/control-wasm-sandbox.py`, `tests/upstream-modifications.txt`, and this report.
+**Files committed:** the existing fix commit `5fe81e3d7` contains `src/core/ControlCommandsWasmEdit.cpp`, `tests/control-wasm-sandbox.py`, `tests/upstream-modifications.txt`, and this report. This follow-up commit updates only `docs/qwen-fixes-2026-10/cluster-new-p10-72.md` with the current blocker evidence.
