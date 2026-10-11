@@ -47,6 +47,7 @@
 #include "ProjectMarkers.h"
 #include "SampleClipOverlays.h"
 #include "SamplePlayHandle.h"
+#include "SampleWindow.h"
 #include "TempoMap.h"
 
 using namespace lmms;
@@ -224,6 +225,42 @@ private slots:
 		QCOMPARE(notes->notes().front()->key(), slices->baseNote() + 2);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before);
+	}
+
+	void slicingStopsAtTheTrimmedSourceEnd()
+	{
+		SampleClip* audio = test::sampleClipOf(test::burstAudio(200, {10, 58, 106, 154}));
+		const f_cnt_t sourceSize = static_cast<f_cnt_t>(audio->sample().sampleSize());
+		QVERIFY(sourceSize > 1);
+		const f_cnt_t sourceOut = sourceSize / 2;
+		audio->setSampleWindow(SampleWindow(audio->sampleWindow().sourceIn, sourceOut));
+		QCOMPARE(audio->sampleWindow().sourceOut, sourceOut);
+
+		const ControlResult sliced = run(QStringLiteral("clip.slice_to_instrument"),
+			{{QStringLiteral("clip"), control::clipIdOf(audio)}});
+		if (sliced.errorKind == ControlErrorKind::Requires) { QSKIP("this build's plug-in folder has no SlicerT"); }
+		QVERIFY2(sliced.ok, qPrintable(sliced.errorMessage));
+		auto* slices = dynamic_cast<InstrumentTrack*>(Engine::getSong()->tracks().back());
+		QVERIFY(slices != nullptr);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		const QDomElement saved = slices->saveState(doc, root);
+		const QDomNodeList states = saved.elementsByTagName(QStringLiteral("slicert"));
+		QCOMPARE(states.size(), 1);
+		const QDomElement state = states.at(0).toElement();
+		bool validCount = false;
+		const int count = state.attribute(QStringLiteral("totalSlices")).toInt(&validCount);
+		QVERIFY(validCount && count >= 2);
+		bool validEnd = false;
+		const QString lastSlice = QStringLiteral("slice_%1").arg(count - 1);
+		const double actualEnd = state.attribute(lastSlice).toDouble(&validEnd);
+		QVERIFY(validEnd);
+		const double expectedEnd = static_cast<double>(sourceOut) / static_cast<double>(sourceSize);
+		QVERIFY2(std::abs(actualEnd - expectedEnd) < 1e-6,
+			qPrintable(QStringLiteral("last slicer boundary %1 should be the trimmed source end %2")
+				.arg(actualEnd).arg(expectedEnd)));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
 	}
 
 	void aTempoMapFromAFreePerformance()
