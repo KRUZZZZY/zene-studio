@@ -250,6 +250,12 @@ private slots:
 		QString error;
 		QVERIFY(!Invite::decode(flipped, &out, &error));
 		QVERIFY2(error.contains(QStringLiteral("checksum")), qPrintable(error));
+		QString badPaddingBit = text;
+		const QString alphabet = QStringLiteral("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567");
+		const int lastValue = alphabet.indexOf(badPaddingBit.at(badPaddingBit.size() - 1));
+		QVERIFY(lastValue >= 0);
+		badPaddingBit[badPaddingBit.size() - 1] = alphabet.at(lastValue ^ 1);
+		QVERIFY(!Invite::decode(badPaddingBit, &out, &error));
 		QVERIFY(!Invite::decode(text.left(text.size() - 6), &out, &error));
 		QVERIFY(!Invite::decode(QStringLiteral("https://example.org/join"), &out, &error));
 		QVERIFY(!Invite::decode(QStringLiteral("ZENE1-0189"), &out, &error));
