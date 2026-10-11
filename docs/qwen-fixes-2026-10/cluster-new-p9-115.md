@@ -34,9 +34,9 @@ Two initial build attempts exposed test setup issues and were corrected before r
 
 | Exact command | Exit | Result |
 |---|---:|---|
-| `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r1/logs/gate-1.log 2>&1` | 0 | PASS. |
-| `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r1/logs/gate-2.log 2>&1` | 0 | PASS. |
-| `bash tests/fork-sources-gate.sh > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r1/logs/manifest-2.log 2>&1` | 0 | PASS; both source manifests reproduce and all tracked sources are registered. |
+| `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r1/logs/gate-5.log 2>&1` | 0 | PASS. |
+| `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r1/logs/gate-6.log 2>&1` | 0 | PASS. |
+| `bash tests/fork-sources-gate.sh > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r1/logs/manifest-2.log 2>&1` | 0 | PASS; `all-sources.txt` reproduced and all tracked sources are registered. |
 
 ## Files in the commit
 
