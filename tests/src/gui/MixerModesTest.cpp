@@ -31,11 +31,15 @@
 
 #include <QtTest>
 
+#include <QApplication>
 #include <QComboBox>
+#include <QContextMenuEvent>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPushButton>
+#include <QTimer>
 #include <QToolButton>
 
 #include "AutomatableButton.h"
@@ -48,6 +52,7 @@
 #include "MacroKnobs.h"
 #include "MainWindow.h"
 #include "Mixer.h"
+#include "MixerChannelLcdSpinBox.h"
 #include "MixerChannelView.h"
 #include "MixerModeBar.h"
 #include "MixerRoutingMatrix.h"
@@ -110,6 +115,25 @@ private slots:
 	{
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	void aMixerChannelContextMenuWorksWithoutTrackView()
+	{
+		MixerChannelLcdSpinBox spinBox(2, nullptr, QStringLiteral("Mixer channel"));
+		spinBox.show();
+
+		bool menuOpened = false;
+		QTimer::singleShot(0, &spinBox, [&] {
+			if (QMenu* menu = spinBox.findChild<QMenu*>())
+			{
+				menuOpened = true;
+				menu->close();
+			}
+		});
+
+		QContextMenuEvent event(QContextMenuEvent::Mouse, QPoint(0, 0), QPoint(0, 0));
+		QApplication::sendEvent(&spinBox, &event);
+		QVERIFY(menuOpened);
 	}
 
 	void everyStripWearsItsTypeInWords()
