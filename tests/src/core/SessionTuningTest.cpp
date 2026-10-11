@@ -625,6 +625,19 @@ private slots:
 				qPrintable(QStringLiteral("the refused scale still changed the table at key %1")
 					.arg(mismatch)));
 		}
+
+		// Scala ignores description text after the interval value, including
+		// slashes inside that text.
+		const QStringList describedRatio{QStringLiteral("ratio with description"),
+			QStringLiteral("3"), QStringLiteral("1/1"),
+			QStringLiteral("3/2 description/variant"), QStringLiteral("3/2")};
+		const QString describedPath = writeScl(dir, QStringLiteral("described-ratio.scl"),
+			describedRatio);
+		QVERIFY2(!describedPath.isEmpty(), "the described-ratio .scl could not be written");
+		const ControlResult describedLoad = run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), describedPath}});
+		QVERIFY2(describedLoad.ok, qPrintable(QStringLiteral("valid trailing description was refused: %1")
+			.arg(describedLoad.errorMessage)));
 	}
 
 	//! A .kbm with the standard 12-TET shape but \a baseFrequency in field 5 -
