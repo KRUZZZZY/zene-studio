@@ -41,6 +41,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <stdexcept>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -53,6 +54,7 @@
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "RmsHelper.h"
 #include "SampleFrame.h"
 #include "Song.h"
 
@@ -202,6 +204,18 @@ private slots:
 	void init()
 	{
 		for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { chainOf(i).clear(); }
+	}
+
+	void rmsHelperRejectsZeroAtConstruction()
+	{
+		QVERIFY_EXCEPTION_THROWN(RmsHelper(0), std::invalid_argument);
+	}
+
+	void rmsHelperRejectsZeroResize()
+	{
+		RmsHelper rms{1};
+		QVERIFY_EXCEPTION_THROWN(rms.setSize(0), std::invalid_argument);
+		QCOMPARE(rms.update(2.0f), 2.0f);
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.
