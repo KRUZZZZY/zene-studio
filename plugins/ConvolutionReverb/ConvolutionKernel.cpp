@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <new>
 
 namespace lmms
 {
@@ -33,12 +34,17 @@ namespace lmms
 ConvolutionKernel::ConvolutionKernel(const std::vector<float>& left, const std::vector<float>& right) :
 	m_length(static_cast<int>(std::max(left.size(), right.size())))
 {
-	m_timeIn = static_cast<float*>(fftwf_malloc(sizeof(float) * FftSize));
-	m_timeOut = static_cast<float*>(fftwf_malloc(sizeof(float) * FftSize));
-	m_spectrum = static_cast<fftwf_complex*>(fftwf_malloc(sizeof(fftwf_complex) * Bins));
-	m_sum = static_cast<fftwf_complex*>(fftwf_malloc(sizeof(fftwf_complex) * Bins));
-	m_forward = fftwf_plan_dft_r2c_1d(FftSize, m_timeIn, m_spectrum, FFTW_ESTIMATE);
-	m_inverse = fftwf_plan_dft_c2r_1d(FftSize, m_sum, m_timeOut, FFTW_ESTIMATE);
+	m_timeIn.reset(fftwf_malloc(sizeof(float) * FftSize));
+	m_timeOut.reset(fftwf_malloc(sizeof(float) * FftSize));
+	m_spectrum.reset(fftwf_malloc(sizeof(fftwf_complex) * Bins));
+	m_sum.reset(fftwf_malloc(sizeof(fftwf_complex) * Bins));
+	if (!m_timeIn || !m_timeOut || !m_spectrum || !m_sum) { throw std::bad_alloc{}; }
+	m_forward.reset(fftwf_plan_dft_r2c_1d(FftSize, static_cast<float*>(m_timeIn.get()),
+		static_cast<fftwf_complex*>(m_spectrum.get()), FFTW_ESTIMATE));
+	if (!m_forward) { throw std::bad_alloc{}; }
+	m_inverse.reset(fftwf_plan_dft_c2r_1d(FftSize, static_cast<fftwf_complex*>(m_sum.get()),
+		static_cast<float*>(m_timeOut.get()), FFTW_ESTIMATE));
+	if (!m_inverse) { throw std::bad_alloc{}; }
 	m_partitions = std::max(1, (m_length + Partition - 1) / Partition);
 	transformPartitions(left, &m_spectra[0]);
 	transformPartitions(right, &m_spectra[1]);
@@ -49,43 +55,41 @@ ConvolutionKernel::ConvolutionKernel(const std::vector<float>& left, const std::
 	}
 }
 
-ConvolutionKernel::~ConvolutionKernel()
-{
-	fftwf_destroy_plan(m_forward);
-	fftwf_destroy_plan(m_inverse);
-	fftwf_free(m_timeIn);
-	fftwf_free(m_timeOut);
-	fftwf_free(m_spectrum);
-	fftwf_free(m_sum);
-}
+ConvolutionKernel::~ConvolutionKernel() = default;
 
 void ConvolutionKernel::transformPartitions(const std::vector<float>& impulse, std::vector<Complex>* spectra)
 {
+	auto* timeIn = static_cast<float*>(m_timeIn.get());
+	auto* spectrumBuffer = static_cast<fftwf_complex*>(m_spectrum.get());
 	spectra->assign(static_cast<std::size_t>(m_partitions) * Bins, Complex{});
 	for (int k = 0; k < m_partitions; ++k)
 	{
 		// The block in the first half, zeros in the second: the linear part of the circular product.
-		std::fill(m_timeIn, m_timeIn + FftSize, 0.f);
+		std::fill(timeIn, timeIn + FftSize, 0.f);
 		const auto start = static_cast<std::size_t>(k) * Partition;
-		for (std::size_t i = 0; i < static_cast<std::size_t>(Partition) && start + i < impulse.size(); ++i) { m_timeIn[i] = impulse[start + i]; }
-		fftwf_execute(m_forward);
-		const auto* spectrum = reinterpret_cast<const Complex*>(m_spectrum);
+		for (std::size_t i = 0; i < static_cast<std::size_t>(Partition) && start + i < impulse.size(); ++i) { timeIn[i] = impulse[start + i]; }
+		fftwf_execute(m_forward.get());
+		const auto* spectrum = reinterpret_cast<const Complex*>(spectrumBuffer);
 		std::copy(spectrum, spectrum + Bins, spectra->data() + static_cast<std::size_t>(k) * Bins);
 	}
 }
 
 void ConvolutionKernel::convolveChannel(int channel, const float* input, float* output) noexcept
 {
+	auto* timeIn = static_cast<float*>(m_timeIn.get());
+	auto* spectrumBuffer = static_cast<fftwf_complex*>(m_spectrum.get());
+	auto* sumBuffer = static_cast<fftwf_complex*>(m_sum.get());
+	auto* timeOut = static_cast<float*>(m_timeOut.get());
 	// Overlap-save: the previous block and this one, transformed.
-	std::memcpy(m_timeIn, m_previous[channel].data(), sizeof(float) * Partition);
-	std::memcpy(m_timeIn + Partition, input, sizeof(float) * Partition);
+	std::memcpy(timeIn, m_previous[channel].data(), sizeof(float) * Partition);
+	std::memcpy(timeIn + Partition, input, sizeof(float) * Partition);
 	std::memcpy(m_previous[channel].data(), input, sizeof(float) * Partition);
-	fftwf_execute(m_forward);
+	fftwf_execute(m_forward.get());
 	Complex* history = m_history[channel].data();
-	const auto* spectrum = reinterpret_cast<const Complex*>(m_spectrum);
+	const auto* spectrum = reinterpret_cast<const Complex*>(spectrumBuffer);
 	std::copy(spectrum, spectrum + Bins, history + static_cast<std::size_t>(m_head) * Bins);
 	// The sum over the partitions: input spectrum k blocks ago times the impulse's block k.
-	auto* sum = reinterpret_cast<Complex*>(m_sum);
+	auto* sum = reinterpret_cast<Complex*>(sumBuffer);
 	std::fill(sum, sum + Bins, Complex{});
 	const Complex* spectra = m_spectra[channel].data();
 	for (int k = 0; k < m_partitions; ++k)
@@ -95,10 +99,10 @@ void ConvolutionKernel::convolveChannel(int channel, const float* input, float* 
 		const Complex* h = spectra + static_cast<std::size_t>(k) * Bins;
 		for (int b = 0; b < Bins; ++b) { sum[b] += x[b] * h[b]; }
 	}
-	fftwf_execute(m_inverse);
+	fftwf_execute(m_inverse.get());
 	// The second half is the valid output; FFTW's inverse is unnormalised.
 	constexpr float scale = 1.f / static_cast<float>(FftSize);
-	for (int i = 0; i < Partition; ++i) { output[i] = m_timeOut[Partition + i] * scale; }
+	for (int i = 0; i < Partition; ++i) { output[i] = timeOut[Partition + i] * scale; }
 }
 
 void ConvolutionKernel::process(const float* const input[2], float* const output[2]) noexcept

@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <new>
 
 #include <QDomElement>
 
@@ -194,7 +195,16 @@ bool ConvolutionReverbEffect::loadImpulse(const QString& path)
 		right = channelOf(*impulse, 1, limit);
 	}
 	normalise(&left, &right);
-	install(std::make_unique<ConvolutionKernel>(left, right));
+	std::unique_ptr<ConvolutionKernel> kernel;
+	try
+	{
+		kernel = std::make_unique<ConvolutionKernel>(left, right);
+	}
+	catch (const std::bad_alloc&)
+	{
+		return false;
+	}
+	install(std::move(kernel));
 	m_impulsePath = path;
 	return true;
 }
@@ -256,7 +266,7 @@ ProcessStatus ConvolutionReverbEffect::processImpl(InterleavedBufferView<float, 
 		m_position = 0;
 		const float* in[2] = {m_in[0].data(), m_in[1].data()};
 		float* outBlock[2] = {m_out[0].data(), m_out[1].data()};
-		m_kernel->process(in, outBlock);
+		if (m_kernel != nullptr) { m_kernel->process(in, outBlock); }
 	}
 	return ProcessStatus::ContinueIfNotQuiet;
 }

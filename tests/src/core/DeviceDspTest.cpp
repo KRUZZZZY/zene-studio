@@ -40,8 +40,85 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
+#include <new>
 #include <vector>
+
+#include <fftw3.h>
+
+namespace
+{
+	enum class KernelFftwFailure { None, Allocation, Plan };
+	KernelFftwFailure g_kernelFftwFailure = KernelFftwFailure::None;
+	int g_kernelFftwFailureAt = -1;
+	int g_kernelFftwAllocationCalls = 0;
+	int g_kernelFftwPlanCalls = 0;
+	int g_kernelFftwLiveAllocations = 0;
+	int g_kernelFftwLivePlans = 0;
+}
+
+extern "C"
+{
+	void* fftwf_mallocForKernelTest(size_t size)
+	{
+		const int call = g_kernelFftwAllocationCalls++;
+		if (g_kernelFftwFailure == KernelFftwFailure::Allocation && call == g_kernelFftwFailureAt) { return nullptr; }
+		void* allocation = std::calloc(1, size);
+		if (allocation != nullptr) { ++g_kernelFftwLiveAllocations; }
+		return allocation;
+	}
+
+	void fftwf_freeForKernelTest(void* allocation)
+	{
+		if (allocation != nullptr)
+		{
+			--g_kernelFftwLiveAllocations;
+			std::free(allocation);
+		}
+	}
+
+	fftwf_plan fftwf_plan_dft_r2c_1dForKernelTest(int, float* input, fftwf_complex* output, unsigned)
+	{
+		const int call = g_kernelFftwPlanCalls++;
+		if (input == nullptr || output == nullptr ||
+			(g_kernelFftwFailure == KernelFftwFailure::Plan && call == g_kernelFftwFailureAt)) { return nullptr; }
+		++g_kernelFftwLivePlans;
+		return reinterpret_cast<fftwf_plan>(static_cast<std::uintptr_t>(call + 1));
+	}
+
+	fftwf_plan fftwf_plan_dft_c2r_1dForKernelTest(int, fftwf_complex* input, float* output, unsigned)
+	{
+		const int call = g_kernelFftwPlanCalls++;
+		if (input == nullptr || output == nullptr ||
+			(g_kernelFftwFailure == KernelFftwFailure::Plan && call == g_kernelFftwFailureAt)) { return nullptr; }
+		++g_kernelFftwLivePlans;
+		return reinterpret_cast<fftwf_plan>(static_cast<std::uintptr_t>(call + 1));
+	}
+
+	void fftwf_executeForKernelTest(const fftwf_plan) {}
+
+	void fftwf_destroy_planForKernelTest(fftwf_plan plan)
+	{
+		if (plan != nullptr) { --g_kernelFftwLivePlans; }
+	}
+}
+
+#define ConvolutionKernel ConvolutionKernelAllocationTest
+#define fftwf_malloc fftwf_mallocForKernelTest
+#define fftwf_free fftwf_freeForKernelTest
+#define fftwf_plan_dft_r2c_1d fftwf_plan_dft_r2c_1dForKernelTest
+#define fftwf_plan_dft_c2r_1d fftwf_plan_dft_c2r_1dForKernelTest
+#define fftwf_execute fftwf_executeForKernelTest
+#define fftwf_destroy_plan fftwf_destroy_planForKernelTest
+#include "../../../plugins/ConvolutionReverb/ConvolutionKernel.cpp"
+#undef fftwf_destroy_plan
+#undef fftwf_execute
+#undef fftwf_plan_dft_c2r_1d
+#undef fftwf_plan_dft_r2c_1d
+#undef fftwf_free
+#undef fftwf_malloc
+#undef ConvolutionKernel
 
 #include "AllocationProbe.h"
 #include "AudioBus.h"
@@ -60,6 +137,20 @@ using namespace lmms;
 
 namespace
 {
+
+void armKernelFftwFailure(KernelFftwFailure failure, int call)
+{
+	g_kernelFftwFailure = failure;
+	g_kernelFftwFailureAt = call;
+	g_kernelFftwAllocationCalls = 0;
+	g_kernelFftwPlanCalls = 0;
+}
+
+void constructKernelForFftwFailureTest()
+{
+	const std::vector<float> emptyImpulse;
+	lmms::ConvolutionKernelAllocationTest kernel(emptyImpulse, emptyImpulse);
+}
 
 constexpr double kTwoPi = 6.283185307179586;
 
@@ -281,6 +372,21 @@ private slots:
 			return SampleFrame(x, -x);
 		};
 		QVERIFY(std::abs(runBlocks(chainOf(1), sideOnly, 40, &at)[0] - 0.5f) < 0.01f);  // no mid: untouched
+	}
+
+	//! FFTW allocation and plan failures reject the kernel and release resources already acquired.
+	void theConvolutionKernelRejectsFftwResourceFailures()
+	{
+		armKernelFftwFailure(KernelFftwFailure::Allocation, 3);  // the fourth FFTW buffer
+		QVERIFY_EXCEPTION_THROWN(constructKernelForFftwFailureTest(), std::bad_alloc);
+		QCOMPARE(g_kernelFftwLiveAllocations, 0);
+		QCOMPARE(g_kernelFftwLivePlans, 0);
+
+		armKernelFftwFailure(KernelFftwFailure::Plan, 1);  // the inverse plan
+		QVERIFY_EXCEPTION_THROWN(constructKernelForFftwFailureTest(), std::bad_alloc);
+		QCOMPARE(g_kernelFftwLiveAllocations, 0);
+		QCOMPARE(g_kernelFftwLivePlans, 0);
+		g_kernelFftwFailure = KernelFftwFailure::None;
 	}
 
 	//! MX-152: an impulse response of one click plays the input back one partition late at the
