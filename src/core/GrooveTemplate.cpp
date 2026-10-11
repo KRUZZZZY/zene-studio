@@ -155,8 +155,9 @@ bool GrooveTemplate::setStep(int slot, const GrooveStep& value)
 	// is the most a step may reach: a step that shifted a note into the next
 	// slot would be a rearrangement, not a feel.
 	// Both bounds, not std::abs: |INT_MIN| is not representable, so abs() of a loaded one is UB.
-	const tick_t half = m_stepTicks / 2;
-	if (half > 0 ? (value.timing <= -half || value.timing >= half) : value.timing != 0)
+	const long long doubledTiming = static_cast<long long>(value.timing) * 2;
+	const long long slotWidth = static_cast<long long>(m_stepTicks);
+	if (doubledTiming <= -slotWidth || doubledTiming >= slotWidth)
 	{ return false; }
 	const bool noOpinion = value.velocity == GrooveStep::NoVelocityOpinion;
 	if (!noOpinion && (value.velocity < static_cast<int>(MinVolume)
@@ -332,14 +333,13 @@ bool writeSlot(GrooveTemplate* out, int slot, const SlotSums& sums, tick_t stepT
 {
 	if (sums.counts[static_cast<std::size_t>(slot)] == 0) { return true; }
 	GrooveStep value;
-	// The same STRICT half a slot setStep accepts (see it): the clamp stops one
-	// tick short of the boundary, because a note reading its own slot is what
+	// The same STRICT half a slot setStep accepts (see it): the clamp stops at
+	// the greatest integer offset inside the boundary, because reading its own slot is what
 	// makes the groove a fixed point. Clamping to the boundary instead would
 	// produce a step the template refuses, and a refused step falls back to the
 	// neutral one - so an extracted groove whose notes all sit exactly on the
 	// boundary would capture NO feel at all.
-	const int half = static_cast<int>(stepTicks / 2);
-	const int reach = half > 0 ? half - 1 : 0;
+	const int reach = static_cast<int>((stepTicks - 1) / 2);
 	value.timing = static_cast<tick_t>(std::clamp(
 		roundedMean(sums.timing[static_cast<std::size_t>(slot)],
 			sums.counts[static_cast<std::size_t>(slot)]), -reach, reach));

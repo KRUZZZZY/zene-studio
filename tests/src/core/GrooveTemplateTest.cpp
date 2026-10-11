@@ -93,6 +93,17 @@ private slots:
 		QVERIFY(groove.step(0) == (GrooveStep{5, 200}));
 	}
 
+	//! Integer offsets of two ticks are inside half of an odd five-tick slot.
+	void anOddStepAcceptsOffsetsInsideItsHalfSlot()
+	{
+		GrooveTemplate groove(QStringLiteral("odd"), 20, 5);
+		const bool positive = groove.setStep(0, GrooveStep{2, 100});
+		const bool negative = groove.setStep(1, GrooveStep{-2, 100});
+		QVERIFY2(positive && negative, "a two-tick offset is inside half of a five-tick slot");
+		QVERIFY(!groove.setStep(2, GrooveStep{3, 100}));
+		QVERIFY(!groove.setStep(3, GrooveStep{-3, 100}));
+	}
+
 	/*! THE EXTRACTION RULE. Each slot's step is the MEAN signed deviation of
 	 *  the notes that fell in it, and their mean velocity RELATIVE to the clip's
 	 *  own mean - so the template is a shape and not a loudness. */
@@ -135,6 +146,23 @@ private slots:
 		QCOMPARE(twoSlots.step(0), (GrooveStep{0, GrooveStep::NoVelocityOpinion}));
 		QVERIFY(twoSlots.step(0).neutral());
 		QVERIFY(!twoSlots.neutral());
+	}
+
+	//! Extraction preserves the furthest integer offsets inside an odd slot's half-width.
+	void extractionKeepsOffsetsInsideAnOddStepHalfSlot()
+	{
+		NoteTable source;
+		source.add(60, 2, 5, 100);    // slot 0, +2
+		source.add(62, 3, 5, 100);    // slot 1, -2
+		source.add(64, 12, 5, 100);   // slot 2, +2
+		source.add(65, 13, 5, 100);   // slot 3, -2
+
+		GrooveTemplate captured;
+		QVERIFY(extractGroove(source.vector(), QStringLiteral("odd"), 20, 5, &captured, nullptr));
+		QCOMPARE(captured.step(0), (GrooveStep{2, 100}));
+		QCOMPARE(captured.step(1), (GrooveStep{-2, 100}));
+		QCOMPARE(captured.step(2), (GrooveStep{2, 100}));
+		QCOMPARE(captured.step(3), (GrooveStep{-2, 100}));
 	}
 
 	/*! THE APPLICATION: a note moves `strength` of the way to its slot's target
