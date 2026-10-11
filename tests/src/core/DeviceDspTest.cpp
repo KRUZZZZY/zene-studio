@@ -47,6 +47,7 @@
 #include "AudioBus.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "BasicFilters.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
@@ -202,6 +203,23 @@ private slots:
 	void init()
 	{
 		for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { chainOf(i).clear(); }
+	}
+
+	void formantFilterClampsToLastVowel()
+	{
+		using Filter = BasicFilters<1>;
+		Filter endpointFilter{48000};
+		Filter aboveRangeFilter{48000};
+		endpointFilter.setFilterType(Filter::FilterType::Formantfilter);
+		aboveRangeFilter.setFilterType(Filter::FilterType::Formantfilter);
+		endpointFilter.calcFilterCoeffs(17500.0f, 0.5f);
+		aboveRangeFilter.calcFilterCoeffs(20000.0f, 0.5f);
+
+		for (int sample = 0; sample < 64; ++sample)
+		{
+			const float input = sample == 0 ? 0.5f : 0.0f;
+			QCOMPARE(aboveRangeFilter.update(input, 0), endpointFilter.update(input, 0));
+		}
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.
