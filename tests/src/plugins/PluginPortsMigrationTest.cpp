@@ -21,6 +21,8 @@
 #include "PluginPortsHarness.h"
 
 #include <cstdio>
+#include <cmath>
+#include <limits>
 #include <vector>
 
 #include <QByteArray>
@@ -34,6 +36,7 @@
 
 #include "Engine.h"
 #include "Plugin.h"
+#include "../../../plugins/Xpressive/ExprSynth.h"
 
 namespace
 {
@@ -185,6 +188,9 @@ public:
 
 private slots:
 	void initTestCase();
+	void positiveFractionHandlesVeryLargePositiveValues();
+	void positiveFractionHandlesVeryLargeNegativeValues();
+	void positiveFractionPreservesOrdinaryValues();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +220,29 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::positiveFractionHandlesVeryLargePositiveValues()
+{
+	const float result = lmms::positiveFraction(std::numeric_limits<float>::max());
+	QVERIFY(std::isfinite(result));
+	QVERIFY(result >= 0.0f);
+	QVERIFY(result < 1.0f);
+}
+
+void PluginPortsMigrationTest::positiveFractionHandlesVeryLargeNegativeValues()
+{
+	const float result = lmms::positiveFraction(-std::numeric_limits<float>::max());
+	QVERIFY(std::isfinite(result));
+	QVERIFY(result >= 0.0f);
+	QVERIFY(result < 1.0f);
+}
+
+void PluginPortsMigrationTest::positiveFractionPreservesOrdinaryValues()
+{
+	QCOMPARE(lmms::positiveFraction(1.25f), 0.25f);
+	QCOMPARE(lmms::positiveFraction(-0.25f), 0.75f);
+	QCOMPARE(lmms::positiveFraction(-2.0f), 0.0f);
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()

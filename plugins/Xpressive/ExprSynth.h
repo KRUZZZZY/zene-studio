@@ -125,11 +125,15 @@ inline float positiveFraction(float x)
 {
 	if (std::isnan(x) || std::isinf(x))
 		return 0;
-	if (x<0)
+	const float fractionalPart = std::fmod(x, 1.0f);
+	if (fractionalPart == 0.0f)
+		return 0.0f;
+	if (fractionalPart < 0.0f)
 	{
-		x+=static_cast<int>(1-x);
+		const float wrapped = fractionalPart + 1.0f;
+		return wrapped < 1.0f ? wrapped : 0.0f;
 	}
-	return x-static_cast<int>(x);
+	return fractionalPart;
 }
 
 template <typename T>
