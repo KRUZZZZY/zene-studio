@@ -40,6 +40,7 @@ QBrush const & BarModelEditor::getBackgroundBrush() const
 void BarModelEditor::setBackgroundBrush(QBrush const & backgroundBrush)
 {
 	m_backgroundBrush = backgroundBrush;
+	update();
 }
 
 QBrush const & BarModelEditor::getBarBrush() const
@@ -50,6 +51,7 @@ QBrush const & BarModelEditor::getBarBrush() const
 void BarModelEditor::setBarBrush(QBrush const & barBrush)
 {
 	m_barBrush = barBrush;
+	update();
 }
 
 QColor const & BarModelEditor::getTextColor() const
@@ -60,6 +62,7 @@ QColor const & BarModelEditor::getTextColor() const
 void BarModelEditor::setTextColor(QColor const & textColor)
 {
 	m_textColor = textColor;
+	update();
 }
 
 void BarModelEditor::paintEvent(QPaintEvent *event)

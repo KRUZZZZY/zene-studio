@@ -43,6 +43,7 @@
 #include <QToolTip>
 
 #include "AutomatableModel.h"
+#include "BarModelEditor.h"
 #include "ComboBox.h"
 #include "ComboBoxModel.h"
 #include "ControlCues.h"
@@ -73,6 +74,24 @@ protected:
 	}
 };
 
+class PaintCountingBarModelEditor final : public BarModelEditor
+{
+public:
+	using BarModelEditor::BarModelEditor;
+
+	int paintCount() const { return m_paintCount; }
+
+protected:
+	void paintEvent(QPaintEvent* event) override
+	{
+		++m_paintCount;
+		BarModelEditor::paintEvent(event);
+	}
+
+private:
+	int m_paintCount = 0;
+};
+
 } // namespace
 
 class KnobKeyboardTest : public QObject
@@ -87,6 +106,27 @@ private slots:
 	{
 		Knob knob(KnobType::Bright26);
 		QCOMPARE(knob.focusPolicy(), Qt::StrongFocus);
+	}
+
+	void changingBarModelEditorColorsSchedulesRepaints()
+	{
+		FloatModel model(0.5f, 0.f, 1.f, 0.01f);
+		PaintCountingBarModelEditor editor(QStringLiteral("Gain"), &model);
+		editor.resize(120, 24);
+		editor.show();
+		QTRY_VERIFY(editor.paintCount() > 0);
+
+		int paintCount = editor.paintCount();
+		editor.setBackgroundBrush(QBrush(Qt::red));
+		QTRY_VERIFY(editor.paintCount() > paintCount);
+
+		paintCount = editor.paintCount();
+		editor.setBarBrush(QBrush(Qt::green));
+		QTRY_VERIFY(editor.paintCount() > paintCount);
+
+		paintCount = editor.paintCount();
+		editor.setTextColor(Qt::blue);
+		QTRY_VERIFY(editor.paintCount() > paintCount);
 	}
 
 	void theKeysStepAndJumpLikeASlider()
