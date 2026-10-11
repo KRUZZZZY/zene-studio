@@ -213,6 +213,27 @@ const int* handlerSignals(int& count)
 	return kSignals;
 }
 
+bool writeReportFile(int fd, int subFd, const char* buf, unsigned long size)
+{
+	// Bounded write loop: at most 8 write() calls and never more than
+	// kMaxReportBytes bytes, whatever the filesystem does.
+	unsigned long off = 0;
+	int attempts = 0;
+	while (off < size && attempts < 8)
+	{
+		const ssize_t n = ::write(fd, buf + off, size - off);
+		if (n > 0) { off += static_cast<unsigned long>(n); }
+		else if (n < 0 && errno == EINTR) { /* retry, still capped */ }
+		else { break; }
+		++attempts;
+	}
+
+	const bool wrote = (off == size);
+	::close(fd);
+	if (!wrote) { ::unlinkat(subFd, kReportFileName, 0); }
+	return wrote;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -418,6 +439,7 @@ bool writeReportIfIdle(const CrashInfo& info)
 
 	bool wrote = false;
 	int fd = -1;
+	int subFd = -1;
 	const int dirFd = s_dirFd.load();
 	if (dirFd >= 0)
 	{
@@ -428,13 +450,12 @@ bool writeReportIfIdle(const CrashInfo& info)
 		// O_NOFOLLOW on both: a symlink planted at either name is refused
 		// rather than followed to truncate whatever it points at.
 		::mkdirat(dirFd, kReportDirName, 0700);
-		const int subFd = ::openat(dirFd, kReportDirName,
+		subFd = ::openat(dirFd, kReportDirName,
 			O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
 		if (subFd >= 0)
 		{
 			fd = ::openat(subFd, kReportFileName,
 				O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0644);
-			::close(subFd);
 		}
 	}
 
@@ -473,21 +494,9 @@ bool writeReportIfIdle(const CrashInfo& info)
 			kMaxProjectPathBytes);
 		pos = appendStr(buf, cap, pos, "\n");
 
-		// Bounded write loop: at most 8 write() calls and never more than
-		// kMaxReportBytes bytes, whatever the filesystem does.
-		unsigned long off = 0;
-		int attempts = 0;
-		while (off < pos && attempts < 8)
-		{
-			const ssize_t n = ::write(fd, buf + off, pos - off);
-			if (n > 0) { off += static_cast<unsigned long>(n); }
-			else if (n < 0 && errno == EINTR) { /* retry, still capped */ }
-			else { break; }
-			++attempts;
-		}
-		wrote = (off == pos);
-		::close(fd);
+		wrote = writeReportFile(fd, subFd, buf, pos);
 	}
+	if (subFd >= 0) { ::close(subFd); }
 
 	s_active.store(0);
 	return wrote;

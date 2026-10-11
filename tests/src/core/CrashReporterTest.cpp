@@ -51,6 +51,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <sys/types.h>
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -152,6 +153,37 @@ private slots:
 		QVERIFY(report.contains("platform="));
 		// The project that was open is recorded verbatim.
 		QVERIFY(report.contains("project=/home/someone/Music/my track.mmp\n"));
+	}
+
+	void failed_write_removes_partial_report()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		const std::string workDir = dir.path().toStdString();
+		QVERIFY(install(workDir));
+
+		::fflush(nullptr);
+		const pid_t pid = ::fork();
+		QVERIFY2(pid >= 0, "fork failed");
+		if (pid == 0)
+		{
+			const struct rlimit fileSizeLimit = {0, 0};
+			if (::setrlimit(RLIMIT_FSIZE, &fileSizeLimit) != 0) { ::_exit(72); }
+			if (::signal(SIGXFSZ, SIG_IGN) == SIG_ERR) { ::_exit(73); }
+
+			CrashInfo info;
+			info.signal = SIGSEGV;
+			::_exit(writeReportIfIdle(info) ? 74 : 0);
+		}
+
+		int status = 0;
+		QVERIFY2(waitBounded(pid, 15000, status), "the failed-write child hung");
+		QVERIFY(WIFEXITED(status));
+		QCOMPARE(WEXITSTATUS(status), 0);
+
+		QVERIFY(install(workDir));
+		QVERIFY2(!hasPendingReport(), "a failed write must not leave a partial report pending");
+		QVERIFY2(!QFileInfo::exists(reportPathIn(dir)), "a failed write must remove its partial report");
 	}
 
 	// -----------------------------------------------------------------------
