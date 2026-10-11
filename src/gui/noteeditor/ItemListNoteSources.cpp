@@ -240,7 +240,17 @@ public:
 		std::vector<ControllerPoint> all = points();
 		if (row >= static_cast<int>(all.size())) { return false; }
 		ControllerPoint& point = all[static_cast<std::size_t>(row)];
-		if (column == 0) { point.tick = std::max(0, value); }
+		if (column == 0)
+		{
+			const int tick = std::max(0, value);
+			if (std::any_of(all.cbegin(), all.cend(), [&point, tick](const ControllerPoint& other)
+				{ return &other != &point && other.tick == tick; }))
+			{
+				refuse(tr("a controller point already exists at that position"));
+				return false;
+			}
+			point.tick = tick;
+		}
 		else { point.value = std::clamp(value, 0, maximum()); }
 		return write(all);
 	}
@@ -254,6 +264,11 @@ public:
 		if (laneId().isEmpty()) { refuse(tr("choose a controller lane first")); return false; }
 		std::vector<ControllerPoint> all = points();
 		const int tick = row >= 0 && row < static_cast<int>(all.size()) ? static_cast<int>(all[static_cast<std::size_t>(row)].tick) + grid() : 0;
+		if (std::any_of(all.cbegin(), all.cend(), [tick](const ControllerPoint& point) { return point.tick == tick; }))
+		{
+			refuse(tr("a controller point already exists at that position"));
+			return false;
+		}
 		const ControllerLane* shown = lane();
 		all.push_back({tick, shown != nullptr && !shown->points.empty() ? shown->valueAt(tick) : (maximum() + 1) / 2});
 		return write(all);
