@@ -30,13 +30,16 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "Effect.h"
 #include "EffectChain.h"
+#include "EffectDeviceMenu.h"
 #include "EffectHostingMenu.h"
 #include "Engine.h"
 #include "Mixer.h"
@@ -88,6 +91,28 @@ private slots:
 		QCOMPARE(hostingStatusText({{QStringLiteral("hosting"), QJsonObject{{QStringLiteral("state"), QStringLiteral("in-process")}}}}),
 			QStringLiteral("Hosting: in-process"));
 		QCOMPARE(hostingStatusText(QJsonObject{}), QStringLiteral("Hosting: unknown"));
+	}
+
+	void aLoadedDummyEffectHasADeviceAddress()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* channel = Engine::mixer()->mixerChannel(index);
+
+		QDomDocument document;
+		QDomElement chain = document.createElement(QStringLiteral("fxchain"));
+		chain.setAttribute(QStringLiteral("numofeffects"), 1);
+		document.appendChild(chain);
+		QDomElement missingEffect = document.createElement(QStringLiteral("effect"));
+		missingEffect.setAttribute(QStringLiteral("name"), QStringLiteral("missing-effect-for-device-address-test"));
+		missingEffect.appendChild(document.createElement(QStringLiteral("key")));
+		chain.appendChild(missingEffect);
+
+		channel->m_fxChain.loadSettings(chain);
+		QCOMPARE(channel->m_fxChain.effects().size(), size_t{1});
+		Effect* effect = channel->m_fxChain.effects().front();
+		QVERIFY(effect != nullptr);
+		QCOMPARE(effect->effectChain(), &channel->m_fxChain);
+		QVERIFY(!deviceAddress(effect).isEmpty());
 	}
 
 	void theSubmenuFollowsTheDevicesEntry()
