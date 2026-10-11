@@ -138,14 +138,19 @@ ControlResult speed(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a clip that keeps its pitch while stretched cannot change speed: set its stretch mode to resample"));
 	}
-	ClipEdits after = clip->clipEdits();
+	const ClipEdits before = clip->clipEdits();
+	ClipEdits after = before;
 	after.speedFrom = std::clamp(args.value(QStringLiteral("from")).toInt(after.speedFrom), 25, 400);
 	after.speedTo = std::clamp(args.value(QStringLiteral("to")).toInt(args.contains(QStringLiteral("from")) ? after.speedFrom : after.speedTo), 25, 400);
 	after.speedInTicks = std::clamp(args.value(QStringLiteral("fade_in")).toInt(after.speedInTicks), 0, clip->length().getTicks());
 	after.speedOutTicks = std::clamp(args.value(QStringLiteral("fade_out")).toInt(after.speedOutTicks), 0, clip->length().getTicks());
-	clip->addJournalCheckPoint();
-	clip->setClipEdits(after);
-	Engine::getSong()->setModified();
+	if (after.speedFrom != before.speedFrom || after.speedTo != before.speedTo || after.speedInTicks != before.speedInTicks ||
+		after.speedOutTicks != before.speedOutTicks)
+	{
+		clip->addJournalCheckPoint();
+		clip->setClipEdits(after);
+		Engine::getSong()->setModified();
+	}
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("from"), after.speedFrom}, {QStringLiteral("to"), after.speedTo},
 		{QStringLiteral("fade_in"), after.speedInTicks}, {QStringLiteral("fade_out"), after.speedOutTicks}});
 }

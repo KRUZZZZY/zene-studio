@@ -39,6 +39,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
@@ -110,6 +111,15 @@ private slots:
 		QVERIFY(twin->sample().data() != clip->sample().data());
 		QCOMPARE(clip->sample().sampleSize(), twin->sample().sampleSize());
 		delete twin;
+	}
+
+	void aNoOpSpeedEditDoesNotAddUndoCheckpoint()
+	{
+		SampleClip* clip = aClip(m_track, 2880);
+		const QString id = control::clipIdOf(clip);
+		const int depthBefore = Engine::projectJournal()->undoDepth();
+		QVERIFY(run(QStringLiteral("clip.speed"), {{QStringLiteral("clip"), id}}).ok);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
 	}
 
 	void theFadeCurve()
