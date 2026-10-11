@@ -707,6 +707,8 @@ set(LMMS_TESTS
 	# after, never reorder this block).
 	src/core/ProvenanceSectionTest.cpp
 	src/core/StemExportTest.cpp
+	# The delay ring must rebuild its bounds and cursor when the sample rate changes.
+	src/core/StereoDelay.cpp
 	src/core/TelemetryTest.cpp
 	# CODE-7: the telemetry transport's two structural properties - https only
 	# (a plain-http endpoint is refused before the delivery seam is reached, so
@@ -972,6 +974,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	target_include_directories(${LMMS_TEST_NAME} PRIVATE $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
 
 	target_static_libraries("${LMMS_TEST_NAME}" PRIVATE lmmsobjs)
+	if(LMMS_TEST_NAME STREQUAL "StereoDelay")
+		target_sources(StereoDelay PRIVATE "${CMAKE_SOURCE_DIR}/plugins/Delay/StereoDelay.cpp")
+		target_include_directories(StereoDelay PRIVATE "${CMAKE_SOURCE_DIR}/plugins/Delay")
+	endif()
 	target_link_libraries(${LMMS_TEST_NAME} PRIVATE
 		${QT_LIBRARIES}
 		${QT_QTTEST_LIBRARY}
