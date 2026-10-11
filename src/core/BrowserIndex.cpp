@@ -25,6 +25,8 @@
 #include "BrowserIndex.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -42,6 +44,7 @@
 
 #include "ConfigManager.h"
 #include "ImportDetection.h"
+#include "ImportDetectionDsp.h"
 #include "TaskCenter.h"
 
 namespace lmms
@@ -52,6 +55,40 @@ namespace
 
 constexpr int ProgressEvery = 64;
 
+bool finiteFeatureNumber(const QJsonObject& o, const QString& key, double* value)
+{
+	const QJsonValue field = o.value(key);
+	if (!field.isDouble()) { return false; }
+	*value = field.toDouble();
+	return std::isfinite(*value);
+}
+
+bool inFeatureRange(double value, double minimum, double maximum)
+{
+	return value >= minimum && value <= maximum;
+}
+
+bool validFeatureTempo(double bpm)
+{
+	return bpm == 0.0 || inFeatureRange(bpm, detection::MinDetectionBpm, detection::MaxDetectionBpm);
+}
+
+bool validFeatureKey(double key)
+{
+	return key == -1.0 || (inFeatureRange(key, 0.0, 11.0) && std::floor(key) == key);
+}
+
+bool validFeatureValues(const BrowserFeatures& f, double key)
+{
+	if (!inFeatureRange(f.durationSeconds, std::numeric_limits<double>::min(),
+		static_cast<double>(std::numeric_limits<std::size_t>::max()))) { return false; }
+	if (!inFeatureRange(f.loudnessDb, -120.0, 20.0 * std::log10(std::numeric_limits<float>::max()))) { return false; }
+	if (!inFeatureRange(f.centroidHz, 0.0, std::numeric_limits<int>::max() / 2.0)) { return false; }
+	if (!inFeatureRange(f.zeroCrossings, 0.0, std::numeric_limits<int>::max())) { return false; }
+	if (!validFeatureTempo(f.bpm)) { return false; }
+	return validFeatureKey(key);
+}
+
 QJsonObject featuresJson(const BrowserFeatures& f)
 {
 	return {{QStringLiteral("dur"), f.durationSeconds}, {QStringLiteral("db"), f.loudnessDb}, {QStringLiteral("cent"), f.centroidHz},
@@ -61,13 +98,16 @@ QJsonObject featuresJson(const BrowserFeatures& f)
 BrowserFeatures featuresFrom(const QJsonObject& o)
 {
 	BrowserFeatures f;
-	f.valid = !o.isEmpty();
-	f.durationSeconds = o.value(QStringLiteral("dur")).toDouble();
-	f.loudnessDb = o.value(QStringLiteral("db")).toDouble(-120.0);
-	f.centroidHz = o.value(QStringLiteral("cent")).toDouble();
-	f.zeroCrossings = o.value(QStringLiteral("zcr")).toDouble();
-	f.bpm = o.value(QStringLiteral("bpm")).toDouble();
-	f.keyPitchClass = o.value(QStringLiteral("key")).toInt(-1);
+	double key = -1.0;
+	if (!finiteFeatureNumber(o, QStringLiteral("dur"), &f.durationSeconds)
+		|| !finiteFeatureNumber(o, QStringLiteral("db"), &f.loudnessDb)
+		|| !finiteFeatureNumber(o, QStringLiteral("cent"), &f.centroidHz)
+		|| !finiteFeatureNumber(o, QStringLiteral("zcr"), &f.zeroCrossings)
+		|| !finiteFeatureNumber(o, QStringLiteral("bpm"), &f.bpm)
+		|| !finiteFeatureNumber(o, QStringLiteral("key"), &key)
+		|| !validFeatureValues(f, key)) { return f; }
+	f.keyPitchClass = static_cast<int>(key);
+	f.valid = true;
 	return f;
 }
 
