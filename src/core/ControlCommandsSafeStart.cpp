@@ -222,6 +222,7 @@ void registerSafeStartCommands(ControlRegistry& registry)
 			"the mode skipped and why, the directories the third-party classification treats as this "
 			"build's own, the previous session's own record and the offer of a normal start. "
 			"Read-only, and it answers in every configuration.");
+		cmd.requiresEngine = false;
 		cmd.argsSchema = control::objectSchema({});
 		cmd.resultSchema = control::objectSchema({
 			{QStringLiteral("installed"), control::booleanProperty()},

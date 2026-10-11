@@ -49,6 +49,7 @@
 // makes one; child mode is the same engine calls in a process image of its own.
 
 #include "SafeStart.h"
+#include "ControlRegistry.h"
 
 #include <QtTest>
 #include <QByteArray>
@@ -172,6 +173,21 @@ class SafeStartTest : public QObject
 	Q_OBJECT
 
 private slots:
+
+	//! The read-only state command must remain addressable before the engine is up.
+	void stateCommandAnswersBeforeEngineInitialization()
+	{
+		lmms::ControlRegistry::setReady(true);
+		const bool engineReady = lmms::ControlRegistry::isEngineReady();
+		lmms::ControlRegistry* registry = lmms::ControlRegistry::instance();
+		const lmms::ControlResult state = registry->invoke(QStringLiteral("safestart.get_state"));
+		lmms::ControlRegistry::setReady(false);
+		lmms::ControlRegistry::destroy();
+
+		QVERIFY(!engineReady);
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		QVERIFY(state.result.contains(QStringLiteral("installed")));
+	}
 
 	// -----------------------------------------------------------------------
 	// 1. THE NEGATIVE CONTROL. A session that exits cleanly leaves nothing: no
