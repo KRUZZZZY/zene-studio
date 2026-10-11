@@ -28,6 +28,7 @@
  *  and semitones (+-60), linear between. Each write is one MidiClip checkpoint: the curve is saved
  *  inside the note's element. Pressure and timbre stay per-note values (note.expression_set). */
 
+#include <algorithm>
 #include <cmath>
 
 #include <QJsonArray>
@@ -110,6 +111,7 @@ bool targetNotes(MidiClip* clip, const QJsonObject& args, std::vector<Note*>* no
 		int index = -1;
 		Note* note = resolveNote(clip, id.toString(), &index, error);
 		if (note == nullptr) { return false; }
+		if (std::find(notes->begin(), notes->end(), note) != notes->end()) { continue; }
 		notes->push_back(note);
 	}
 	return true;

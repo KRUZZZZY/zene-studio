@@ -145,6 +145,24 @@ private slots:
 		QVERIFY(copy.detuning() == nullptr);
 	}
 
+	void duplicateNoteIdsCountOnlyOneChangedNote()
+	{
+		MidiClip* clip = clipWith(0, {60});
+		const QString clipId = control::clipIdOf(clip);
+		const QString noteId = control::noteIdOf(clip->notes().front());
+		const ControlResult set = run(QStringLiteral("note.pitch_curve_set"), {{QStringLiteral("clip"), clipId},
+			{QStringLiteral("notes"), QJsonArray{noteId, noteId}},
+			{QStringLiteral("points"), QJsonArray{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("semitones"), 3.0}}}}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("notes")).toInt(), 1);
+		const QJsonArray transactions = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray();
+		QVERIFY(!transactions.isEmpty());
+		const QJsonArray before = transactions.at(transactions.size() - 1).toObject().value(QStringLiteral("before")).toObject()
+			.value(QStringLiteral("notes")).toArray();
+		QCOMPARE(before.size(), 1);
+		QCOMPARE(clip->notes().front()->detuning()->automationClip()->getTimeMap().size(), 1);
+	}
+
 	void aRelativeShapeFitsEveryNoteInOneStep()
 	{
 		MidiClip* clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
