@@ -90,7 +90,7 @@ QStringList wordsOf(const QString& text)
 QString plainText(QString html)
 {
 	static const QRegularExpression tag(QStringLiteral("<[^>]+>"));
-	html.remove(tag);
+	html.replace(tag, QStringLiteral(" "));
 	html.replace(QStringLiteral("&gt;"), QStringLiteral(">")).replace(QStringLiteral("&lt;"), QStringLiteral("<"));
 	return html.replace(QStringLiteral("&amp;"), QStringLiteral("&")).simplified();
 }

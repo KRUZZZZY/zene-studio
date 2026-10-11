@@ -37,6 +37,7 @@
 #include <cmath>
 #include <vector>
 
+#include <QDir>
 #include <QDomDocument>
 #include <QFile>
 #include <QJsonArray>
@@ -204,6 +205,34 @@ private slots:
 		QCOMPARE(run(QStringLiteral("app.ask"), {{QStringLiteral("question"), QStringLiteral("a an")}}).errorKind, ControlErrorKind::InvalidArgs);
 		QVERIFY(run(QStringLiteral("app.ask"), {{QStringLiteral("question"), QStringLiteral("qqqzzz xxyyq")}}).result
 			.value(QStringLiteral("answers")).toArray().isEmpty());
+	}
+
+	void manualMarkupPreservesWordBoundaries()
+	{
+		const QStringList originalPaths = QDir::searchPaths(QStringLiteral("data"));
+		const QString manualRoot = m_dir.filePath(QStringLiteral("assistant-manual"));
+		QVERIFY(QDir().mkpath(manualRoot + QStringLiteral("/manual")));
+		QFile file(manualRoot + QStringLiteral("/manual/index.html"));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		QVERIFY(file.write("<html><body><h2 id=\"tag-boundary\">Manual formatting</h2><p>drum</p><p>loop</p></body></html>") > 0);
+		file.close();
+		QDir::setSearchPaths(QStringLiteral("data"), QStringList{manualRoot});
+		const ControlResult result = run(QStringLiteral("app.ask"), {{QStringLiteral("question"), QStringLiteral("drum loop")},
+			{QStringLiteral("limit"), 20}});
+		QDir::setSearchPaths(QStringLiteral("data"), originalPaths);
+
+		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		bool found = false;
+		for (const QJsonValue& value : result.result.value(QStringLiteral("answers")).toArray())
+		{
+			const QJsonObject answer = value.toObject();
+			if (answer.value(QStringLiteral("id")).toString() == QLatin1String("tag-boundary"))
+			{
+				found = true;
+				QCOMPARE(answer.value(QStringLiteral("text")).toString(), QStringLiteral("drum loop"));
+			}
+		}
+		QVERIFY(found);
 	}
 
 	void theReleaseNotesAreShownOncePerVersion()
