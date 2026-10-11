@@ -110,6 +110,15 @@ QString TelemetryNetworkTransport::configuredEndpoint()
 }
 
 
+QString TelemetryNetworkTransport::redactedEndpoint(const QString & endpointUrl)
+{
+	const QUrl endpoint(endpointUrl);
+	const auto safeUrl = QUrl::RemoveUserInfo | QUrl::RemovePath | QUrl::RemoveQuery |
+		QUrl::RemoveFragment;
+	return endpoint.toString(safeUrl);
+}
+
+
 TelemetryNetworkTransport::TelemetryNetworkTransport(const QString & endpointUrl) :
 	m_endpoint(endpointUrl)
 {
@@ -173,9 +182,7 @@ QString TelemetryNetworkTransport::describe() const
 		// where a human reads it, not only in lastRefusal() after a send.
 		return QStringLiteral("endpoint refused: ") + reason;
 	}
-	const auto safeUrl = QUrl::RemoveUserInfo | QUrl::RemovePath | QUrl::RemoveQuery |
-		QUrl::RemoveFragment;
-	return QStringLiteral("https POST to ") + endpoint.toString(safeUrl);
+	return QStringLiteral("https POST to ") + redactedEndpoint(m_endpoint);
 }
 
 } // namespace lmms

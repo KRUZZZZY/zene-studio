@@ -84,6 +84,8 @@ public:
 	//! An empty endpoint (the default) means "not configured": send() refuses
 	//! without opening a socket.
 	static QString configuredEndpoint();
+	//! A display-safe origin, with user info, path, query, and fragment removed.
+	static QString redactedEndpoint(const QString & endpointUrl);
 
 	explicit TelemetryNetworkTransport(const QString & endpointUrl = configuredEndpoint());
 	~TelemetryNetworkTransport() override;
