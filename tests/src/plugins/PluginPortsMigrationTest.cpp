@@ -191,6 +191,7 @@ private slots:
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
+	void nesCoarseDetuneRetunesHeldNote();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -725,6 +726,110 @@ void PluginPortsMigrationTest::slice8PluginsAreLiveAndExact()
 			QVERIFY2(worst > 1e-6f, "slice 8 comparison not sensitive");
 		}
 	}
+}
+
+void PluginPortsMigrationTest::nesCoarseDetuneRetunesHeldNote()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_nes)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	const auto setNesSettings = [](lmms::Instrument& inst, const QString& coarseDetune)
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement("instrument");
+		QDomElement state = inst.saveState(doc, root);
+		state.setAttribute("crs1", coarseDetune);
+		state.setAttribute("on2", "0");
+		state.setAttribute("on3", "0");
+		state.setAttribute("envon1", "0");
+		state.setAttribute("sweep1", "0");
+		state.setAttribute("vibr", "0");
+		inst.restoreState(state);
+	};
+	setNesSettings(*instrument, QStringLiteral("0"));
+
+	const lmms::f_cnt_t frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	constexpr int BeforeDetuneChange = 8;
+	constexpr int WarmupAfterDetune = 8;
+	constexpr int MeasureAfterDetune = 8;
+	constexpr int TotalPeriods = BeforeDetuneChange + WarmupAfterDetune + MeasureAfterDetune;
+	const lmms::Note note{
+		lmms::TimePos{static_cast<lmms::tick_t>(frames * TotalPeriods)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle noteHandle{
+		track.get(), 0, frames * TotalPeriods, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
+	std::vector<float> beforeDetune;
+	std::vector<float> afterDetune;
+	beforeDetune.reserve(static_cast<std::size_t>(BeforeDetuneChange * frames));
+	afterDetune.reserve(static_cast<std::size_t>(MeasureAfterDetune * frames));
+
+	for (int period = 0; period < TotalPeriods; ++period)
+	{
+		if (period == BeforeDetuneChange)
+		{
+			setNesSettings(*instrument, QStringLiteral("12"));
+		}
+		std::fill(buffer.begin(), buffer.end(), lmms::SampleFrame{0.0f, 0.0f});
+		instrument->playNote(&noteHandle, std::span<lmms::SampleFrame>{buffer});
+		if (period < BeforeDetuneChange || period >= BeforeDetuneChange + WarmupAfterDetune)
+		{
+			for (lmms::f_cnt_t frame = 0; frame < frames; ++frame)
+			{
+				auto& samples = period < BeforeDetuneChange ? beforeDetune : afterDetune;
+				samples.push_back(buffer[static_cast<std::size_t>(frame)].left());
+			}
+		}
+	}
+	if (noteHandle.m_pluginData != nullptr)
+	{
+		instrument->deleteNotePluginData(&noteHandle);
+		noteHandle.m_pluginData = nullptr;
+	}
+	delete instrument;
+
+	const auto estimatePeriod = [](const std::vector<float>& samples, int minPeriod, int maxPeriod)
+	{
+		float mean = 0.0f;
+		for (const float sample : samples) { mean += sample; }
+		mean /= static_cast<float>(samples.size());
+		double bestCorrelation = -std::numeric_limits<double>::infinity();
+		int bestPeriod = minPeriod;
+		for (int lag = minPeriod; lag <= maxPeriod; ++lag)
+		{
+			double correlation = 0.0;
+			for (std::size_t index = 0; index + static_cast<std::size_t>(lag) < samples.size(); ++index)
+			{
+				correlation += (samples[index] - mean) * (samples[index + static_cast<std::size_t>(lag)] - mean);
+			}
+			if (correlation > bestCorrelation)
+			{
+				bestCorrelation = correlation;
+				bestPeriod = lag;
+			}
+		}
+		return bestPeriod;
+	};
+	const int initialPeriod = static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()
+		/ noteHandle.frequency());
+	const int beforePeriod = estimatePeriod(beforeDetune, initialPeriod - 2, initialPeriod + 2);
+	const int afterPeriod = estimatePeriod(afterDetune, initialPeriod / 2 - 2, initialPeriod + 2);
+	qInfo("NES held-note oscillator periods: before=%d after=%d", beforePeriod, afterPeriod);
+	QVERIFY2(std::abs(afterPeriod * 2 - beforePeriod) <= 3,
+		"changing NES channel 1 coarse detune did not halve the held note's oscillator period");
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)
