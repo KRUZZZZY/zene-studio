@@ -346,6 +346,22 @@ private slots:
 		QCOMPARE(run(QStringLiteral("mixer.crossfader"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("side"), QStringLiteral("C")}}).ok, false);
 	}
 
+	void loadingNanCrossfaderUsesCentre()
+	{
+		MixerOptions& options = MixerOptions::instance();
+		const float beforeCrossfader = options.crossfader();
+		const PanLaw beforePanLaw = options.panLaw();
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("mixer-options"));
+		element.setAttribute(QStringLiteral("crossfader"), QStringLiteral("nan"));
+		options.load(element);
+		const float loadedCrossfader = options.crossfader();
+		options.setCrossfader(beforeCrossfader);
+		options.setPanLaw(beforePanLaw);
+		QVERIFY(std::isfinite(loadedCrossfader));
+		QCOMPARE(loadedCrossfader, 0.f);
+	}
+
 	void aGroupColoursItsMembers()
 	{
 		VcaGroup* group = Engine::mixer()->createVcaGroup(QStringLiteral("Drums"));
