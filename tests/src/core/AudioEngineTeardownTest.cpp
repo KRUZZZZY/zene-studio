@@ -55,6 +55,8 @@
 
 #include <QtTest>
 
+#include <QFile>
+#include <QRegularExpression>
 #include <QThread>
 
 #include <memory>
@@ -64,6 +66,9 @@
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
 #include "Engine.h"
+#ifdef Q_OS_WIN
+#include "LmmsSemaphore.h"
+#endif
 
 using namespace lmms;
 
@@ -108,6 +113,33 @@ private slots:
 	{
 		// The defect's original site. It must not abort here any more.
 		Engine::destroy();
+	}
+
+	//! The Windows semaphore must keep the handle returned by CreateSemaphore.
+	//! On Windows, exercise the public operations against that handle. Other
+	//! hosts verify the Windows-specific constructor contract directly.
+	void windowsSemaphoreUsesCreatedHandle()
+	{
+#ifdef Q_OS_WIN
+		lmms::Semaphore semaphore(1);
+		semaphore.wait();
+		QVERIFY(!semaphore.tryWait());
+		semaphore.post();
+		QVERIFY(semaphore.tryWait());
+#else
+		QFile implementation(QStringLiteral("../../src/core/LmmsSemaphore.cpp"));
+		QVERIFY2(implementation.open(QIODevice::ReadOnly),
+			qPrintable(implementation.fileName()));
+		const QByteArray source = implementation.readAll();
+		const int windowsBranch = source.indexOf("#elif defined(LMMS_BUILD_WIN32)");
+		QVERIFY(windowsBranch >= 0);
+		const int otherBranch = source.indexOf("#else", windowsBranch);
+		QVERIFY(otherBranch > windowsBranch);
+		const QByteArray branch = source.mid(windowsBranch, otherBranch - windowsBranch);
+		QVERIFY2(QRegularExpression(R"(\bm_sem\s*=\s*CreateSemaphore\s*\()").match(
+			QString::fromUtf8(branch)).hasMatch(),
+			"Windows constructor must store CreateSemaphore's returned handle in m_sem");
+#endif
 	}
 
 	//! A worker parked in the wait condition must end its loop when it is asked to
