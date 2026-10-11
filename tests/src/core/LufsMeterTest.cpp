@@ -285,6 +285,29 @@ private slots:
 		QVERIFY2(lfe == LufsMeter::MinusInfinity, "a tone in the LFE alone must never reach the gate");
 	}
 
+	//! A hot 5.1 programme must not become silence when its level exceeds the
+	//! histogram range; the five measured channels at +15 dBFS read about +19.64 LUFS.
+	void relativeGateKeepsLevelsAboveHistogramRange()
+	{
+		constexpr double LevelDbfs = 15.0;
+		const double expectedLufs = LevelDbfs + 10.0 * std::log10((3.0 + 2.0 * 1.41) / 2.0);
+		const auto frames = static_cast<std::size_t>(1.0 * SampleRate);
+		const auto tone = planarChannel(LevelDbfs, frames);
+		std::array<std::vector<sample_t>, 6> signal{ tone, tone, tone, tone, tone, tone };
+		std::array<const sample_t*, 6> pointers{};
+		for (std::size_t channel = 0; channel < signal.size(); ++channel)
+		{
+			pointers[channel] = signal[channel].data();
+		}
+
+		LufsMeter meter(SampleRate, 6);
+		meter.processPlanar(pointers.data(), 6, frames);
+		const float measured = meter.integratedLufs();
+
+		QVERIFY2(std::fabs(measured - expectedLufs) <= 0.1,
+			qPrintable(describe(measured, expectedLufs, 0.1)));
+	}
+
 	//! Momentary waits for 400 ms, short-term for 3 s, and feeding the same
 	//! signal in small blocks instead of one buffer must not move the numbers.
 	void windowsFillInOrderAndBlockSizeDoesNotMatter()

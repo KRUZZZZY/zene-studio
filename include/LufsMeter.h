@@ -192,9 +192,11 @@ private:
 	static constexpr float AbsoluteGateLufs = -70.0f;
 	static constexpr float RelativeGateLu = -10.0f;
 	static constexpr float LoudnessOffset = -0.691f;
-	//! Gating-block histogram: 0.05 LU bins from the absolute gate up to +5 LUFS.
+	//! Gating-block histogram: 0.05 LU bins up to +5 LUFS, then one bounded overflow bin.
 	static constexpr float BinWidthLu = 0.05f;
 	static constexpr int BinCount = 1501;
+	static constexpr int OverflowBinIndex = BinCount;
+	static constexpr float OverflowBinMinimumLu = AbsoluteGateLufs + static_cast<float>(BinCount - 1) * BinWidthLu;
 	//! BS.1770-4 Annex 2 example true-peak interpolator: 4 phases x 12 taps.
 	static constexpr int TruePeakPhases = 4;
 	static constexpr int TruePeakTaps = 12;
@@ -237,7 +239,7 @@ private:
 	static float loudnessFromEnergy(double energy);
 	static double channelWeight(int channel, int channelCount);
 	int binIndex(float lufs) const;
-	float binLoudness(int index) const;
+	float binLoudness(int index, const GatingBin& bin) const;
 	//! loudnessRangeLu()'s two stages: the short-term relative gate (false when nothing
 	//! is binned), then the 10th..95th percentile spread of the windows above it.
 	bool shortTermRelativeGate(float* threshold) const;
@@ -266,12 +268,12 @@ private:
 	int m_ringWrite = 0;
 	int m_subBlocksClosed = 0;
 
-	std::array<GatingBin, BinCount> m_gating;
+	std::array<GatingBin, BinCount + 1> m_gating;
 	/*! The same bins over the SHORT-TERM (3 s) window rather than the 400 ms
 	 *  block: loudnessRangeLu() reads the distribution of short-term values, and
 	 *  a histogram is what keeps that bounded in memory with no per-block
 	 *  storage growing with programme length. */
-	std::array<GatingBin, BinCount> m_shortTerm;
+	std::array<GatingBin, BinCount + 1> m_shortTerm;
 };
 
 } // namespace lmms
