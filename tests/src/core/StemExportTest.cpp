@@ -138,6 +138,38 @@ private slots:
 		QCOMPARE(RenderManager::stemFileName("X", 7, 120, ".wav"), QString("007_X.wav"));
 	}
 
+	//! Legacy per-track rendering strips forbidden filename characters before
+	//! joining the name to the output directory.
+	void perTrackExportSanitizesTrackNames()
+	{
+		const auto tracks = Engine::getSong()->tracks();
+		QCOMPARE(int(tracks.size()), 3);
+		std::vector<bool> muted;
+		for (auto* track : tracks) { muted.push_back(track->isMuted()); }
+		Track* track = tracks.front();
+		const QString originalName = track->name();
+		track->setName(QStringLiteral("Bass/illegal"));
+		for (auto* candidate : tracks) { candidate->setMuted(candidate != track); }
+
+		const QString dir = QDir(m_dir.path()).filePath("per-track");
+		QDir().mkpath(dir);
+		QDir().mkpath(QDir(dir).filePath("1_Bass"));
+		{
+			RenderManager manager(settings(), ProjectRenderer::ExportFileFormat::Wave, dir);
+			QEventLoop loop;
+			QObject::connect(&manager, &RenderManager::finished, &loop, &QEventLoop::quit);
+			QTimer::singleShot(120000, &loop, &QEventLoop::quit);
+			manager.renderTracks();
+			loop.exec();
+		}
+		stopHeadlessDevice();
+
+		const bool sanitizedFileExists = QFile::exists(QDir(dir).filePath("1_Bassillegal.wav"));
+		track->setName(originalName);
+		for (std::size_t i = 0; i < tracks.size(); ++i) { tracks[i]->setMuted(muted[i]); }
+		QVERIFY2(sanitizedFileExists, "per-track export did not remove forbidden filename characters");
+	}
+
 	//! 1, plus the naming as it lands on disk: one file per track, named in track
 	//! order, non-silent, distinct from the mix and from each other.
 	void stemsAreExportedNonSilentAndDistinct()

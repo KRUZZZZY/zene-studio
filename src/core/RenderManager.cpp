@@ -23,7 +23,6 @@
  */
 
 #include <QDir>
-#include <QRegularExpression>
 
 #include <algorithm>
 
@@ -252,8 +251,15 @@ void RenderManager::restoreMutedState()
 QString RenderManager::pathForTrack(const Track *track, int num)
 {
 	QString extension = ProjectRenderer::getFileExtensionFromFormat( m_format );
-	QString name = track->name();
-	name = name.remove(QRegularExpression(FILENAME_FILTER));
+	const QString trackName = track->name();
+	static const QString illegal = QStringLiteral("\"*/:<>?\\|");
+	QString name;
+	name.reserve(trackName.size());
+	for (const QChar c : trackName)
+	{
+		if (c.unicode() < 0x20 || c.unicode() == 0x7f || illegal.contains(c)) { continue; }
+		name.append(c);
+	}
 	name = QString( "%1_%2%3" ).arg( num ).arg( name ).arg( extension );
 	return QDir(m_outputPath).filePath(name);
 }
