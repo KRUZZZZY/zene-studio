@@ -78,6 +78,7 @@ set(LMMS_TESTS
 	# are src/core/ClipLinkTestSupport.h.
 	src/core/ClipLinkPersistenceTest.cpp
 	src/core/ClipSerialisationTest.cpp
+	src/core/SerializingObjectHookTest.cpp
 	# ARCH-4 slice S4 (SPEC-ARCH-4 1.7 Requirement 6): the write-refusal gate -
 	# the one-writer rule made mechanical. It reads the write path as text and
 	# fails on a setter called for a value it does not own (the shape

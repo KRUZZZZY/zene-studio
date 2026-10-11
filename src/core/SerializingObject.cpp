@@ -90,6 +90,11 @@ void SerializingObject::setHook( SerializingObjectHook* hook )
 
 	if( m_hook )
 	{
+		if( m_hook->m_hookedIn && m_hook->m_hookedIn != this )
+		{
+			m_hook->m_hookedIn->m_hook = nullptr;
+		}
+
 		m_hook->m_hookedIn = this;
 	}
 }
