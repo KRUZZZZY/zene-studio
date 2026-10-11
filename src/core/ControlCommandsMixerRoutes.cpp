@@ -55,9 +55,13 @@
  */
 
 #include <QJsonArray>
+#include <QPointer>
 #include <QVector>
 #include <QJsonObject>
 
+#include "AutomationClip.h"
+#include "AutomationTrack.h"
+#include "Clip.h"
 #include "ControlEdit.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
@@ -65,6 +69,10 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "PatternStore.h"
+#include "Song.h"
+#include "Track.h"
+#include "TrackContainer.h"
 
 namespace lmms
 {
@@ -78,6 +86,42 @@ namespace
 bool validSendAmount(double amount)
 {
 	return amount >= 0.0 && amount <= 2.0;
+}
+
+void collectAutomationClips(Track* track, AutomatableModel* model,
+	QVector<QPointer<AutomationClip>>& clips)
+{
+	if (track == nullptr) { return; }
+	for (Clip* clip : track->getClips())
+	{
+		auto* automation = dynamic_cast<AutomationClip*>(clip);
+		if (automation == nullptr) { continue; }
+		for (const QPointer<AutomatableModel>& object : automation->objects())
+		{
+			if (object == model)
+			{
+				clips.append(automation);
+				break;
+			}
+		}
+	}
+}
+
+void collectAutomationClips(TrackContainer* container, AutomatableModel* model,
+	QVector<QPointer<AutomationClip>>& clips)
+{
+	if (container == nullptr) { return; }
+	for (Track* track : container->tracks()) { collectAutomationClips(track, model, clips); }
+}
+
+QVector<QPointer<AutomationClip>> automationClipsFor(AutomatableModel* model)
+{
+	QVector<QPointer<AutomationClip>> clips;
+	Song* song = Engine::getSong();
+	collectAutomationClips(song, model, clips);
+	collectAutomationClips(Engine::patternStore(), model, clips);
+	if (song != nullptr) { collectAutomationClips(song->globalAutomationTrack(), model, clips); }
+	return clips;
 }
 
 ControlResult handleRouteWrite(const QJsonObject& args, bool auxiliary)
@@ -264,17 +308,26 @@ ControlResult removeRegularSend(Mixer* mixer, const RoutingEnds& ends)
 			QStringLiteral("no send from %1 to %2 (read %1's sends with pdc.report or "
 				"mixer.get_state)").arg(channelIdOf(ends.from), channelIdOf(ends.to)));
 	}
-	const QJsonObject before = mixerRouteBeforeState(route);
+	QJsonObject before = mixerRouteBeforeState(route);
 	const float amount = static_cast<float>(route->amount()->value());
 	const bool preFader = route->preFader();
 	const float pan = route->pan()->value();
 	const bool enabled = route->enabled();
+	before.insert(QStringLiteral("pan"), static_cast<double>(pan));
+	before.insert(QStringLiteral("enabled"), enabled);
+	const auto panAutomation = automationClipsFor(route->pan());
+	const auto panAutomationMode = route->pan()->automationMode();
 	control::addUndoStep(
-		[mixer, fromIndex, toIndex, amount, preFader, pan, enabled]() {
+		[mixer, fromIndex, toIndex, amount, preFader, pan, enabled, panAutomation, panAutomationMode]() {
 			if (MixerRoute* restored = mixer->createChannelSend(fromIndex, toIndex, amount, preFader))
 			{
 				restored->pan()->setValue(pan);
+				restored->pan()->setAutomationMode(panAutomationMode);
 				restored->enabledModel()->setValue(enabled);
+				for (const QPointer<AutomationClip>& automation : panAutomation)
+				{
+					if (automation != nullptr) { automation->addObject(restored->pan(), false); }
+				}
 			}
 		},
 		[mixer, fromIndex, toIndex]() { mixer->deleteChannelSend(fromIndex, toIndex); });
@@ -290,11 +343,13 @@ ControlResult removeRegularSend(Mixer* mixer, const RoutingEnds& ends)
 		QJsonObject{{QStringLiteral("channel"), channelIdOf(ends.from)},
 			{QStringLiteral("to"), channelIdOf(ends.to)},
 			{QStringLiteral("amount"), static_cast<double>(amount)},
-			{QStringLiteral("pre_fader"), preFader}},
+			{QStringLiteral("pre_fader"), preFader},
+			{QStringLiteral("pan"), static_cast<double>(pan)},
+			{QStringLiteral("enabled"), enabled}},
 		true,
 		QStringLiteral("action checkpoint: the recorded undo step re-creates the send through the "
-			"same Mixer::createChannelSend call, then restores the captured pan and enabled state "
-			"alongside the amount and pre-fader flag"));
+			"same Mixer::createChannelSend call, then restores pan and enabled and reattaches the "
+			"captured pan automation clips alongside amount and pre-fader state"));
 	result.insert(QStringLiteral("__transaction"), transaction);
 	return ControlResult::success(result);
 }

@@ -37,6 +37,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "AutomationClip.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -47,6 +48,8 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerSendPan.h"
+#include "Song.h"
+#include "Track.h"
 #include "VcaGroup.h"
 
 using namespace lmms;
@@ -83,6 +86,19 @@ float vcaGainOf(int index) { return Engine::mixer()->mixerChannel(index)->vcaGai
 QString createGroup(const QString& name)
 {
 	return run(QStringLiteral("vca.create"), {{QStringLiteral("name"), name}}).result.value(QStringLiteral("id")).toString();
+}
+
+QJsonObject transactionFor(const QString& command)
+{
+	QJsonObject found;
+	const QJsonArray records = run(QStringLiteral("control.transactions")).result
+		.value(QStringLiteral("transactions")).toArray();
+	for (const QJsonValue& value : records)
+	{
+		const QJsonObject record = value.toObject();
+		if (record.value(QStringLiteral("command")).toString() == command) { found = record; }
+	}
+	return found;
 }
 
 } // namespace
@@ -192,7 +208,11 @@ private slots:
 			{QStringLiteral("pan"), -0.65}}).ok);
 		QVERIFY(run(QStringLiteral("mixer.send_enable"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)},
 			{QStringLiteral("enabled"), false}}).ok);
-		QVERIFY(run(QStringLiteral("mixer.route_remove"), ends).ok);
+		const ControlResult removed = run(QStringLiteral("mixer.route_remove"), ends);
+		const QJsonObject record = transactionFor(QStringLiteral("mixer.route_remove"));
+		const QJsonObject before = record.value(QStringLiteral("before")).toObject();
+		const QJsonObject inverse = record.value(QStringLiteral("inverse")).toObject();
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 
 		MixerRoute* restored = control::findMixerRoute(1, 3);
@@ -201,9 +221,56 @@ private slots:
 		const bool restoredEnabled = restoredExists && restored->enabled();
 		if (restoredExists) { run(QStringLiteral("mixer.route_remove"), ends); }
 
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
 		QVERIFY(restoredExists);
 		QCOMPARE(restoredPan, -0.65f);
 		QVERIFY(!restoredEnabled);
+		QVERIFY(!record.isEmpty());
+		QCOMPARE(static_cast<float>(before.value(QStringLiteral("pan")).toDouble()), -0.65f);
+		QCOMPARE(before.value(QStringLiteral("enabled")).toBool(), false);
+		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("mixer.route_to"));
+		QCOMPARE(static_cast<float>(inverseArgs.value(QStringLiteral("pan")).toDouble()), -0.65f);
+		QCOMPARE(inverseArgs.value(QStringLiteral("enabled")).toBool(), false);
+	}
+
+	void removingThenUndoingSendReattachesPanAutomation()
+	{
+		const QJsonObject ends{{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)}};
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)},
+			{QStringLiteral("amount"), 0.42}}).ok);
+		MixerRoute* route = control::findMixerRoute(1, 3);
+		QVERIFY(route != nullptr);
+		auto* track = Track::create(Track::Type::Automation, Engine::getSong());
+		auto* automation = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		QVERIFY(automation != nullptr);
+		QVERIFY(automation->addObject(route->pan()));
+		automation->setProgressionType(AutomationClip::ProgressionType::Linear);
+		automation->putValue(TimePos(0), -0.4f, false);
+		automation->putValue(TimePos(192), 0.8f, false);
+		route->pan()->setAutomationMode(AutomatableModel::AutomationMode::Read);
+		const float automatedAtMidpoint = automation->valueAt(TimePos(96));
+
+		const ControlResult removed = run(QStringLiteral("mixer.route_remove"), ends);
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		MixerRoute* restored = control::findMixerRoute(1, 3);
+		bool automationAttached = false;
+		if (restored != nullptr)
+		{
+			for (const QPointer<AutomatableModel>& object : automation->objects())
+			{
+				if (object == restored->pan()) { automationAttached = true; }
+			}
+		}
+		const bool isAutomated = restored != nullptr && restored->pan()->isAutomated();
+		const float restoredAutomationValue = automation->valueAt(TimePos(96));
+		if (restored != nullptr) { run(QStringLiteral("mixer.route_remove"), ends); }
+
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QVERIFY(restored != nullptr);
+		QVERIFY(automationAttached);
+		QVERIFY(isAutomated);
+		QCOMPARE(restoredAutomationValue, automatedAtMidpoint);
 	}
 
 	void sendsFromManyChannelsAreOneStep()

@@ -1,50 +1,34 @@
-# Cluster new-p10-34
+# Cluster new-p10-34: send pan lost on route removal
 
-Verdict: **FIXED**
+**Verdict: FIXED**
 
-## Evidence
+## Evidence and change
 
-- `src/core/ControlCommandsMixerRoutes.cpp:267-280` captures a regular send's amount, pre-fader flag, pan and enabled state. Its undo recreates the route, then restores pan and enabled state.
-- `tests/src/core/MixingRoutingTest.cpp:186-206` pans a send to `-0.65`, disables it, removes it, undoes the removal, and checks that both values return.
-- The regression failed before the production change and failed again with the production patch reversed. In both cases the restored pan was `0`, expected `-0.65`. It passed with the patch applied.
+- [ControlCommandsMixerRoutes.cpp](../../src/core/ControlCommandsMixerRoutes.cpp#L316) records the removed route's pan and enabled state in `before`; its inverse args carry those values at lines 347-348.
+- Lines 91-124 collect automation clips attached to the pan model from the song, pattern store, and global automation track. The undo closure at lines 321-331 restores the pan automation mode and reattaches those clips to the recreated pan model.
+- [MixingRoutingTest.cpp](../../tests/src/core/MixingRoutingTest.cpp#L202) checks the `control.transactions` before state and inverse args. Its test at line 236 binds a real automation clip to send pan, removes the route, undoes, and checks that the recreated model is automated by that clip.
 
-## Commands and results
+Both changed source files were already registered in `tests/fork-sources.txt` (source line 1185, test line 1968), so no source registry change was needed.
 
-Build command, run from the worktree root (all four invocations exited 0):
+## Verification
 
-```sh
-cmake --build build --target zene MixingRoutingTest
-```
+| Purpose | Command | Exit | Evidence |
+|---|---|---:|---|
+| Regression RED before production fix | `cd build/tests && ctest -R MixingRoutingTest --output-on-failure` | 8 | `red-1.log`: both new checks failed (before pan was 0; automation was detached); 1/1 CTest target ran. |
+| Regression GREEN after fix | `cd build/tests && ctest -R MixingRoutingTest --output-on-failure` | 0 | `restore-green-1.log`: 1/1 CTest target passed. |
+| Test-family case count | `cd build/tests && ./MixingRoutingTest` | 0 | `family-2.log`: 12 passed, 0 failed. |
+| Reverse production patch | `git diff -- src/core/ControlCommandsMixerRoutes.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r2/logs/fix.patch` | 0 | Production hunks reversed; test changes remained. |
+| Build with production patch reversed | `cmake --build build --target zene MixingRoutingTest` | 0 | `reverse-build-1.log`. |
+| Reverse-patch regression RED | `cd build/tests && ctest -R MixingRoutingTest --output-on-failure` | 8 | `reverse-red-1.log`: both new checks failed again; 1/1 CTest target ran. |
+| Restore production patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r2/logs/fix.patch` | 0 | Patch restored. |
+| Final touched-target build | `cmake --build build --target zene MixingRoutingTest` | 0 | `restore-build-1.log`. |
+| Final regression after patch restoration | `cd build/tests && ctest -R MixingRoutingTest --output-on-failure` | 0 | `restore-green-1.log`: 1/1 CTest target passed. |
+| Complexity gate | `bash tests/complexity-gate.sh --check` | 0 | `gate-1.log`. |
+| File-length gate | `bash tests/file-length-gate.sh --check` | 0 | `gate-2.log`. |
 
-Each build's output was redirected to a new log: `build-1.log`, `build-2.log`, `build-3.log`, and `build-4.log` in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r1/logs`.
+The first test build exited 2 because the test needed an explicit `Song.h` include; its rerun exited 0 (`build-1.log`, `build-2.log`). The first production build exited 2 because the implementation needed an explicit `AutomationTrack.h` include; its rerun exited 0 (`build-3.log`, `build-4.log`). The first GREEN attempt exited 8 when the first pan assertion compared a serialized float to a decimal double; after changing both pan assertions to float precision, the build and test passed (`build-5.log`, `green-2.log`).
 
-The affected family is `MixingRoutingTest`: CTest ran 1 registered target per invocation. The original and reversed-patch runs each exited 8 and reported 10 passed, 1 failed inside QtTest; the assertion showed actual pan `0`, expected `-0.65`. The fixed runs each exited 0 and CTest reported 1/1 passed.
-
-| Phase | Command (run from `build/tests`) | Exit |
-| --- | --- | ---: |
-| Original code, RED | `ctest -R MixingRoutingTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r1/logs/test-1.log 2>&1` | 8 |
-| Fix applied, GREEN | `ctest -R MixingRoutingTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r1/logs/test-2.log 2>&1` | 0 |
-| Production patch reversed, RED | `ctest -R MixingRoutingTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r1/logs/test-3.log 2>&1` | 8 |
-| Patch reapplied, GREEN | `ctest -R MixingRoutingTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r1/logs/test-4.log 2>&1` | 0 |
-
-Reversal proof commands and exits:
-
-```sh
-git diff -- src/core/ControlCommandsMixerRoutes.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r1/logs/fix.patch  # EXIT=0
-git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r1/logs/fix.patch  # EXIT=0
-git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r1/logs/fix.patch  # EXIT=0
-```
-
-Ratchet gates, run from the worktree root after the code and test edits:
-
-| Command | Exit | Log |
-| --- | ---: | --- |
-| `bash tests/complexity-gate.sh --check` | 0 | `gate-1.log` |
-| `bash tests/file-length-gate.sh --check` | 0 | `gate-2.log` |
-
-No `fff` grep tool or executable was available in this session, so the logs were searched with filtered `rg` queries for `error`, `FAILED`, and `Assertion`.
-
-## Files in the commit
+## Files committed
 
 - `src/core/ControlCommandsMixerRoutes.cpp`
 - `tests/src/core/MixingRoutingTest.cpp`
