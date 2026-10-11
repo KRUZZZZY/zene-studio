@@ -34,6 +34,7 @@
 
 #include "Engine.h"
 #include "Plugin.h"
+#include "RmsHelper.h"
 
 namespace
 {
@@ -191,6 +192,7 @@ private slots:
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
+	void rmsHelperCopiesHaveIndependentBuffers();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -725,6 +727,27 @@ void PluginPortsMigrationTest::slice8PluginsAreLiveAndExact()
 			QVERIFY2(worst > 1e-6f, "slice 8 comparison not sensitive");
 		}
 	}
+}
+
+void PluginPortsMigrationTest::rmsHelperCopiesHaveIndependentBuffers()
+{
+	lmms::RmsHelper source{2};
+	source.update(1.0f);
+
+	lmms::RmsHelper constructed{source};
+	lmms::RmsHelper assigned{1};
+	assigned = source;
+
+	source.update(0.0f);
+	source.update(0.0f);
+
+	constructed.update(0.0f);
+	const float constructedRms = constructed.update(0.0f);
+	assigned.update(0.0f);
+	const float assignedRms = assigned.update(0.0f);
+
+	QVERIFY(qFuzzyIsNull(constructedRms));
+	QVERIFY(qFuzzyIsNull(assignedRms));
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)
