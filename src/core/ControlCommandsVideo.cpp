@@ -207,16 +207,19 @@ ControlResult extractInBackground(const VideoAttachment& video, const QString& w
 	tasks.begin(&ExtractionOwner, local, {QStringLiteral("video_audio"), QObject::tr("Extract audio from %1")
 		.arg(QFileInfo(video.path).fileName()), [control] { control->cancel.store(true); },
 		[control] { return static_cast<double>(control->progress.load()); }, false});
+	QMetaObject::Connection shutdownConnection;
 	if (QCoreApplication::instance() != nullptr)  // quitting stops it, so the pool is not held up by a long decode
 	{
-		QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, &tasks,
+		shutdownConnection = QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, &tasks,
 			[weak = std::weak_ptr<VideoExtractControl>(control)] { if (auto live = weak.lock()) { live->cancel.store(true); } });
 	}
-	QThreadPool::globalInstance()->start([control, video, wav, local] {
+	QThreadPool::globalInstance()->start([control, video, wav, local, shutdownConnection] {
 		VideoAudio audio;
 		QString why;
 		extractVideoAudio(video.path, wav, &audio, &why, control.get());
-		QMetaObject::invokeMethod(&TaskCenter::instance(), [video, wav, local, why, cancelled = control->cancel.load()] {
+		QMetaObject::invokeMethod(&TaskCenter::instance(), [video, wav, local, why, shutdownConnection,
+			cancelled = control->cancel.load()] {
+			QObject::disconnect(shutdownConnection);
 			landExtracted(video, wav, local, why, cancelled);
 		}, Qt::QueuedConnection);
 	});
