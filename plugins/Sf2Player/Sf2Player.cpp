@@ -1183,7 +1183,8 @@ void Sf2InstrumentView::updatePatchName()
 
 void Sf2InstrumentView::invalidateFile()
 {
-	m_patchDialogButton->setEnabled( false );
+	auto i = castModel<Sf2Instrument>();
+	m_patchDialogButton->setEnabled( !i->m_filename.isEmpty() );
 }
 
 

@@ -33,7 +33,9 @@
 #include <QtTest>
 
 #include "Engine.h"
+#include "PixmapButton.h"
 #include "Plugin.h"
+#include "PluginView.h"
 
 namespace
 {
@@ -748,10 +750,26 @@ void PluginPortsMigrationTest::sf2FailedLoadPreservesCurrentFontAndSource()
 	QDomElement validRoot = validDocument.createElement("instrument");
 	const QString validSource = instrument->saveState(validDocument, validRoot).attribute("src");
 	QVERIFY(!validSource.isEmpty());
+	QWidget viewRoot;
+	QWidget viewParent(&viewRoot);
+	auto view = std::unique_ptr<lmms::gui::PluginView>(instrument->createView(&viewParent));
+	QVERIFY(view != nullptr);
+	lmms::gui::PixmapButton* patchButton = nullptr;
+	for (auto* button : view->findChildren<lmms::gui::PixmapButton*>())
+	{
+		if (button->toolTip() == QStringLiteral("Choose patch"))
+		{
+			patchButton = button;
+			break;
+		}
+	}
+	QVERIFY(patchButton != nullptr);
+	QVERIFY(patchButton->isEnabled());
 
 	const QString invalidPath = QStringLiteral("/missing/soundfonts/corrupt.sf2");
 	QVERIFY(QMetaObject::invokeMethod(instrument, "openFile", Qt::DirectConnection,
 		Q_ARG(QString, invalidPath), Q_ARG(bool, false)));
+	QVERIFY(patchButton->isEnabled());
 
 	QDomDocument failedDocument;
 	QDomElement failedRoot = failedDocument.createElement("instrument");
@@ -761,6 +779,7 @@ void PluginPortsMigrationTest::sf2FailedLoadPreservesCurrentFontAndSource()
 		lmms::Engine::audioEngine()->framesPerPeriod(), lmms::DefaultKey);
 	const std::vector<float> silence(samples.size(), 0.0f);
 	const float peak = partc::maxAbsDiff(samples, silence);
+	view.reset();
 	delete instrument;
 
 	const bool sourcePreserved = failedSource == validSource;
