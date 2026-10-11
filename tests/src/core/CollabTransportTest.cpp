@@ -36,6 +36,8 @@
 #ifdef ZENE_HAVE_COLLAB
 
 #include <QJsonDocument>
+#include <QSslSocket>
+#include <QTcpServer>
 #include <QTcpSocket>
 
 #include "CollabClient.h"
@@ -225,6 +227,28 @@ private slots:
 		QTRY_COMPARE(m_got.snapshots.size(), 4);
 		QCOMPARE(m_got.snapshots.at(2), changed);
 		QCOMPARE(m_got.snapshots.at(3), changed);
+	}
+
+	//! A complete line over the configured cap closes the link before it reaches the receiver.
+	void completeOversizedLineIsRejected()
+	{
+		QTcpServer server;
+		QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+		auto socket = std::make_unique<QSslSocket>();
+		socket->connectToHost(QHostAddress::LocalHost, server.serverPort());
+		QVERIFY(socket->waitForConnected(5000));
+		QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 5000);
+		auto peer = std::unique_ptr<QTcpSocket>(server.nextPendingConnection());
+		CollabLink link(socket.release(), 4);
+		QSignalSpy received(&link, &CollabLink::received);
+		QSignalSpy closed(&link, &CollabLink::closed);
+
+		QCOMPARE(peer->write(QByteArrayLiteral("12345\n")), qint64(6));
+		QVERIFY(peer->waitForBytesWritten(5000));
+		QTRY_VERIFY_WITH_TIMEOUT(!received.isEmpty() || !closed.isEmpty(), 5000);
+		QCOMPARE(closed.size(), 1);
+		QVERIFY(received.isEmpty());
+		QCOMPARE(closed.first().first().toString(), QStringLiteral("a message was over the size limit"));
 	}
 
 	//! A host that cannot write its project turns the joiner away with the reason instead of a broken copy.
