@@ -27,6 +27,8 @@
 
 #include "EffectControls.h"
 
+#include <vector>
+
 
 #include <QObject>
 
@@ -38,6 +40,26 @@ class QScrollArea;
 
 namespace lmms
 {
+
+namespace vstEffectControlDetail
+{
+
+template<typename Factory>
+void replaceParameterModels(std::vector<FloatModel*>& models, int count, Factory&& factory)
+{
+	for (auto* model : models)
+	{
+		delete model;
+	}
+	models.clear();
+	models.resize(static_cast<std::size_t>(count));
+	for (int i = 0; i < count; ++i)
+	{
+		models[static_cast<std::size_t>(i)] = factory(i);
+	}
+}
+
+} // namespace vstEffectControlDetail
 
 
 class VstEffect;

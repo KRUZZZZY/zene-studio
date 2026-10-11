@@ -39,6 +39,7 @@ if(MSVC)
 endif()
 
 set(LMMS_TESTS
+	src/plugins/VstEffectControlsTest.cpp
 	src/core/ArrayVectorTest.cpp
 	src/core/AudioBufferTest.cpp
 	src/core/AudioBusHandleTest.cpp

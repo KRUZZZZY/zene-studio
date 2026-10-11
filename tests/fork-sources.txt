@@ -2090,3 +2090,5 @@ tools/local-ci.sh
 #     No entry that was already here changed, and none was removed.
 # BUG-A4-1/A4-2: shared iterative XML depth guard used by DataFile and container parsing.
 tools/ncpu-shim.c
+# BUG new-p9-542: VST parameter-model replacement lifetime regression.
+tests/src/plugins/VstEffectControlsTest.cpp
