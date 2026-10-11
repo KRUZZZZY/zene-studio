@@ -89,12 +89,21 @@ void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip
 		if (!reader.isStartElement()) { continue; }
 		if (reader.name() != QLatin1String("Note")) { skipElement(reader); continue; }
 		const QXmlStreamAttributes attributes = reader.attributes();
+		const double duration = doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0);
+		if (duration < 0.0)
+		{
+			if (state.error.isEmpty())
+			{
+				state.error = QStringLiteral("a <Note> has a negative duration");
+			}
+			continue;
+		}
 		DawProjectNote note;
 		note.time = static_cast<double>(ticksFromBeats(state,
 			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0)))
 			/ DawProjectTicksPerQuarterNote;
 		note.duration = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0)))
+			duration))
 			/ DawProjectTicksPerQuarterNote;
 		note.channel = intAttribute(attributes, state, QStringLiteral("channel"), 0);
 		note.key = intAttribute(attributes, state, QStringLiteral("key"), 60);
