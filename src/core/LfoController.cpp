@@ -50,6 +50,7 @@ LfoController::LfoController( Model * _parent ) :
 	m_phaseOffset( 0 ),
 	m_currentPhase( 0 ),
 	m_sampleFunction( &Oscillator::sinSample ),
+	m_heldSample( 0.0f ),
 	m_userDefSampleBuffer(std::make_shared<SampleBuffer>())
 {
 	setSampleExact( true );
@@ -199,6 +200,7 @@ void LfoController::updateSampleFunction()
 			break;
 		case Oscillator::WaveShape::WhiteNoise:
 			m_sampleFunction = &Oscillator::noiseSample;
+			m_heldSample = m_sampleFunction(0.0f);
 			break;
 		case Oscillator::WaveShape::UserDefined:
 			m_sampleFunction = nullptr;
