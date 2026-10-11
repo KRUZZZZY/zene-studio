@@ -429,6 +429,38 @@ private slots:
 
 	void cleanupTestCase() { teardownRackFixture(); }
 
+	//! A creation action must redo the track and point it undid, as its reversible transaction promises.
+	void aCreatedAutomationPointSurvivesUndoAndRedo()
+	{
+		control::AutomationParameter gain;
+		QString why;
+		QVERIFY2(channelGainParameter(&gain, &why), qPrintable(why));
+		QVERIFY(control::existingAutomationClip(gain.model) == nullptr);
+		const tick_t ticks = 96;
+		const float value = 73.25f;
+		const float storedValue = gain.model->inverseScaledValue(value);
+		const ControlResult added = run(QStringLiteral("automation.add_point"),
+			QJsonObject{{QStringLiteral("track"), channelIdOf()}, {QStringLiteral("parameter"), gain.id()},
+				{QStringLiteral("ticks"), static_cast<double>(ticks)}, {QStringLiteral("value"), static_cast<double>(value)}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QVERIFY(added.result.value(QStringLiteral("created_automation_track")).toBool());
+
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QVERIFY(control::existingAutomationClip(gain.model) == nullptr);
+
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(redone.ok, qPrintable(redone.errorMessage));
+		QVERIFY(redone.result.value(QStringLiteral("redone")).toBool());
+		AutomationClip* restored = control::existingAutomationClip(gain.model);
+		QVERIFY(restored != nullptr);
+		QVERIFY(restored->getTimeMap().contains(static_cast<int>(ticks)));
+		QCOMPARE(restored->getTimeMap().value(static_cast<int>(ticks)).getOutValue(), storedValue);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(control::existingAutomationClip(gain.model) == nullptr);
+	}
+
 	//! THE LOAD-BEARING CASE, with its own negative control in the same run.
 	void theAudioPathFollowsTheCurveInsideTheBlock()
 	{
