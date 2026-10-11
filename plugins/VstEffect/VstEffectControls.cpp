@@ -44,6 +44,11 @@
 namespace lmms
 {
 
+#ifdef LMMS_TESTING
+const QMap<QString, QString>* vstEffectControlsTestParameterDump(
+	const VstEffectControls* controls);
+#endif
+
 
 VstEffectControls::VstEffectControls( VstEffect * _eff ) :
 	EffectControls( _eff ),
@@ -70,6 +75,43 @@ VstEffectControls::~VstEffectControls()
 
 void VstEffectControls::loadSettings( const QDomElement & _this )
 {
+	auto loadParameterModels = [this, &_this](const QMap<QString, QString>& dump) {
+		paramCount = dump.size();
+		auto paramStr = std::array<char, 35>{};
+		for (auto* model : knobFModel)
+		{
+			delete model;
+		}
+		knobFModel.clear();
+		knobFModel.resize(paramCount);
+		QStringList s_dumpValues;
+		for (int i = 0; i < paramCount; ++i)
+		{
+			std::snprintf(paramStr.data(), paramStr.size(), "param%d", i);
+			s_dumpValues = dump[paramStr.data()].split(":");
+
+			knobFModel[i] = new FloatModel(0.0f, 0.0f, 1.0f, 0.01f, this, QString::number(i));
+			knobFModel[i]->loadSettings(_this, paramStr.data());
+
+			if (!(knobFModel[i]->isAutomated() || knobFModel[i]->controllerConnection()))
+			{
+				knobFModel[i]->setValue(LocaleHelper::toFloat(s_dumpValues.at(2)));
+				knobFModel[i]->setInitValue(LocaleHelper::toFloat(s_dumpValues.at(2)));
+			}
+
+			connect(knobFModel[i], &FloatModel::dataChanged, this,
+				[this, i]() { setParameter(knobFModel[i]); }, Qt::DirectConnection);
+		}
+	};
+
+#ifdef LMMS_TESTING
+	if (const auto* dump = vstEffectControlsTestParameterDump(this))
+	{
+		loadParameterModels(*dump);
+		return;
+	}
+#endif
+
 	//m_effect->closePlugin();
 	//m_effect->openPlugin( _this.attribute( "plugin" ) );
 	m_effect->m_pluginMutex.lock();
@@ -80,26 +122,7 @@ void VstEffectControls::loadSettings( const QDomElement & _this )
 		m_effect->m_plugin->loadSettings( _this );
 
 		const QMap<QString, QString> & dump = m_effect->m_plugin->parameterDump();
-		paramCount = dump.size();
-		auto paramStr = std::array<char, 35>{};
-		vstEffectControlDetail::replaceParameterModels(knobFModel, paramCount,
-			[this, &_this, &dump, &paramStr](int i) {
-				std::snprintf(paramStr.data(), paramStr.size(), "param%d", i);
-				const QStringList s_dumpValues = dump[paramStr.data()].split(":");
-
-				auto* model = new FloatModel(0.0f, 0.0f, 1.0f, 0.01f, this, QString::number(i));
-				model->loadSettings(_this, paramStr.data());
-
-				if (!(model->isAutomated() || model->controllerConnection()))
-				{
-					model->setValue(LocaleHelper::toFloat(s_dumpValues.at(2)));
-					model->setInitValue(LocaleHelper::toFloat(s_dumpValues.at(2)));
-				}
-
-				connect(model, &FloatModel::dataChanged, this,
-					[this, i]() { setParameter(knobFModel[i]); }, Qt::DirectConnection);
-				return model;
-		});
+		loadParameterModels(dump);
 
 	}
 	m_effect->m_pluginMutex.unlock();

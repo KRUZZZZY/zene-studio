@@ -23,12 +23,27 @@
 
 #include "../../../plugins/VstEffect/VstEffectControls.h"
 
+#include <QDomDocument>
+#include <QMap>
 #include <QtTest>
 
 #include "Engine.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+const VstEffectControls* testControls = nullptr;
+QMap<QString, QString> testParameterDump;
+
+} // namespace
+
+const QMap<QString, QString>* vstEffectControlsTestParameterDump(const VstEffectControls* controls)
+{
+	return controls == testControls ? &testParameterDump : nullptr;
+}
 
 class VstEffectControlsTest : public QObject
 {
@@ -37,7 +52,7 @@ class VstEffectControlsTest : public QObject
 private slots:
 	void initTestCase();
 	void cleanupTestCase();
-	void repeatedParameterLoadsDoNotRetainOldModels();
+	void repeatedSettingsLoadsDoNotRetainOldModels();
 };
 
 void VstEffectControlsTest::initTestCase()
@@ -51,20 +66,24 @@ void VstEffectControlsTest::cleanupTestCase()
 	Engine::destroy();
 }
 
-void VstEffectControlsTest::repeatedParameterLoadsDoNotRetainOldModels()
+void VstEffectControlsTest::repeatedSettingsLoadsDoNotRetainOldModels()
 {
-	FloatModel parent;
-	std::vector<FloatModel*> models;
-	auto createModel = [&parent](int index) {
-		return new FloatModel(0.0f, 0.0f, 1.0f, 0.01f, &parent, QString::number(index));
+	VstEffectControls controls(nullptr);
+	QDomDocument document;
+	const auto settings = document.createElement("vsteffectcontrols");
+	testControls = &controls;
+	testParameterDump = {
+		{"param0", "0:first:0.25"},
+		{"param1", "1:second:0.75"}
 	};
 
-	vstEffectControlDetail::replaceParameterModels(models, 2, createModel);
-	QCOMPARE(parent.findChildren<FloatModel*>().size(), 2);
+	controls.loadSettings(settings);
+	QCOMPARE(controls.findChildren<FloatModel*>().size(), 2);
 
-	vstEffectControlDetail::replaceParameterModels(models, 2, createModel);
-	QCOMPARE(models.size(), std::size_t{2});
-	QCOMPARE(parent.findChildren<FloatModel*>().size(), 2);
+	controls.loadSettings(settings);
+	QCOMPARE(controls.findChildren<FloatModel*>().size(), 2);
+	testControls = nullptr;
+	testParameterDump.clear();
 }
 
 } // namespace lmms

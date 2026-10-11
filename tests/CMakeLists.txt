@@ -977,6 +977,18 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		${QT_LIBRARIES}
 		${QT_QTTEST_LIBRARY}
 	)
+	if(LMMS_TEST_NAME STREQUAL "VstEffectControlsTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect/VstEffectControls.cpp
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect/VstEffectControlDialog.cpp
+			${CMAKE_BINARY_DIR}/plugins/VstEffect/qrc_vsteffect.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			$<TARGET_PROPERTY:vsteffect,INCLUDE_DIRECTORIES>)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			$<TARGET_PROPERTY:vsteffect,COMPILE_DEFINITIONS>)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE vstbase)
+		add_dependencies(${LMMS_TEST_NAME} vsteffect)
+	endif()
 
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
