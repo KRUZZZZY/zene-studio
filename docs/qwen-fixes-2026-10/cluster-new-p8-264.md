@@ -6,6 +6,17 @@ In [Vst3Instrument.cpp](../../plugins/Vst3Instrument/Vst3Instrument.cpp#L338), t
 
 The integration target now compiles and links the existing VST3 host sources so the test can release the same host instance through `Vst3Instrument::vst3Plugin()`. This target setup is recorded in `tests/upstream-modifications.txt`.
 
+## Evidence table
+
+| Evidence | Exact command | Exit | Result |
+|---|---|---:|---|
+| RED, original code | `ctest -R '^Vst3InstrumentIntegrationTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-264.r1/logs/test-1.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 8 | Stale nonzero output assertion failed |
+| GREEN, fixed code | `ctest -R '^Vst3InstrumentIntegrationTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-264.r1/logs/test-2.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | Same assertion passed |
+| Affected-family run | `ctest -R '^Vst3Instrument' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-264.r1/logs/test-5.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | 3/3 ctest targets passed |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-264.r1/logs/gate-1.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | Passed |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-264.r1/logs/gate-2.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | Passed |
+| Files in the fix commit | — | — | `plugins/Vst3Instrument/Vst3Instrument.cpp`; `tests/src/plugins/Vst3InstrumentIntegrationTest.cpp`; `tests/CMakeLists.txt`; `tests/upstream-modifications.txt`; this report |
+
 ## RED/GREEN evidence
 
 The commands below ran from the worktree root for builds and from `build/tests` for ctest.
