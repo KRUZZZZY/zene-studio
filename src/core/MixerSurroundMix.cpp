@@ -183,13 +183,21 @@ void panSend(MixerRoute& route, const SampleFrame* src, f_cnt_t frames)
 	const SendGain gain = stereoSendGain(route);
 	const int count = channelCount(to.format());
 	const f_cnt_t n = std::min(frames, to.frames());
+	bool leftWritten = false;
+	bool rightWritten = false;
 	for (f_cnt_t f = 0; f < n; ++f)
 	{
 		const float s = 0.5f * (src[f][0] + src[f][1]) * gain.at(f);
-		receiver.m_buffer[f][0] += s * g[0];
-		receiver.m_buffer[f][1] += s * g[1];
+		const float left = s * g[0];
+		const float right = s * g[1];
+		receiver.m_buffer[f][0] += left;
+		receiver.m_buffer[f][1] += right;
+		leftWritten = leftWritten || left != 0.f;
+		rightWritten = rightWritten || right != 0.f;
 		for (int c = 2; c < count; ++c) { to.plane(c)[f] += s * g[static_cast<std::size_t>(c)]; }
 	}
+	if (leftWritten) { receiver.m_bus.quietChannels().reset(0); }
+	if (rightWritten) { receiver.m_bus.quietChannels().reset(1); }
 	to.markWritten();
 }
 
