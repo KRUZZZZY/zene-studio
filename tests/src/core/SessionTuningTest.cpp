@@ -904,6 +904,75 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 				.arg(mismatch)));
 	}
 
+	//! Positive doubles that narrow to float zero are not usable render
+	//! frequencies. Mapped zero is different from the intentional unmapped marker.
+	void aKeymapFrequencyThatUnderflowsTheRenderFloatIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		QStringList scaleLines{QStringLiteral("12-tone scale"), QStringLiteral("12")};
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			scaleLines.append(QStringLiteral("%1/1").arg(degree + 1));
+		}
+		const QString scalePath = writeScl(dir, QStringLiteral("twelve.scl"), scaleLines);
+		QVERIFY(!scalePath.isEmpty());
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), scalePath}}).ok, "the scale did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		const QString tinyBase = writeKbm(dir, QStringLiteral("tiny-base.kbm"),
+			QStringLiteral("1e-100"));
+		QVERIFY(!tinyBase.isEmpty());
+		const ControlResult tiny = run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), tinyBase}});
+		QVERIFY2(!tiny.ok, "a positive .kbm base frequency that narrows to float zero was accepted");
+		QCOMPARE(tiny.errorKind, ControlErrorKind::Refused);
+
+		// This base is the smallest positive float. Key 0 is mapped one scale
+		// octave below the reference, so its positive double narrows to float 0.
+		const QStringList lowHeader{QStringLiteral("0"), QStringLiteral("127"),
+			QStringLiteral("127"), QStringLiteral("127"), QStringLiteral("1.40129846e-45")};
+		QStringList wideMap;
+		for (int degree = 0; degree < 128; ++degree)
+		{
+			wideMap.append(degree == 2 ? QStringLiteral("x") : QStringLiteral("0"));
+		}
+		const QString lowPath = writeKbmSized(dir, QStringLiteral("low-render-frequency.kbm"),
+			QStringLiteral("128"), lowHeader, wideMap);
+		QVERIFY(!lowPath.isEmpty());
+		const ControlResult low = run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), lowPath}});
+		QVERIFY2(!low.ok, "a mapped positive frequency that narrows to float zero was accepted");
+		QCOMPARE(low.errorKind, ControlErrorKind::Refused);
+
+		int mismatch = 0;
+		QVERIFY2(sameTable(before, snapshotState(run(QStringLiteral("mts.get_state")).result),
+			&mismatch), qPrintable(QStringLiteral("a refused keymap changed the table at key %1")
+				.arg(mismatch)));
+
+		// An actual 'x' entry remains a valid zero in the table.
+		QStringList sparseMap;
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			sparseMap.append(degree == 1 ? QStringLiteral("x") : QString::number(degree));
+		}
+		const QString sparsePath = writeKbmSized(dir, QStringLiteral("sparse.kbm"),
+			QStringLiteral("12"), {QStringLiteral("0"), QStringLiteral("127"),
+				QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("440.0")}, sparseMap);
+		QVERIFY(!sparsePath.isEmpty());
+		QVERIFY2(run(QStringLiteral("mts.load_keymap"),
+			QJsonObject{{QStringLiteral("path"), sparsePath}}).ok,
+			"a keymap's intentional unmapped entry was rejected");
+		QCOMPARE(tuning->noteToFreq(1), 0.0f);
+		QVERIFY(tuning->noteToFreq(0) > 0.0f);
+	}
+
 	//! The recorded undo step restores the Scale/Keymap the table was BUILT from,
 	//! not just the frequencies: stateJson() carries the table alone, so without
 	//! this mts.get_state kept reporting the scale an undone load had installed.
