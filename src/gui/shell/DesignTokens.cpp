@@ -307,6 +307,7 @@ QString family()
 QFont font(TextRole role)
 {
 	static constexpr std::array<int, 5> pixels{10, 11, 12, 14, 20};
+	if (static_cast<std::size_t>(role) >= pixels.size()) { role = TextRole::Body; }
 	QFont f(family());
 	f.setPixelSize(pixels[static_cast<std::size_t>(role)]);  // the one global zoom scales it (Appearance.h)
 	f.setHintingPreference(QFont::PreferNoHinting);
