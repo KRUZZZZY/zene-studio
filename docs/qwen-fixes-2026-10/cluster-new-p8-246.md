@@ -10,6 +10,18 @@ The journal-only branch now preserves the visibility-set definitions and active 
 
 The affected CTest family is `TrackFolderTest`: one CTest test ran in each invocation (1 executed, not zero). The original code failed at `restored != nullptr` with `journal restore erased the named visibility set`; the fixed code passed.
 
+## Evidence table
+
+| Evidence | Exact command / result | EXIT |
+|---|---|---:|
+| Original-code RED | `ctest -R '^TrackFolderTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-246.r1/logs/test-1.log 2>&1; test_rc=$?; echo EXIT=$test_rc` | 8 |
+| Fixed-code GREEN | `ctest -R '^TrackFolderTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-246.r1/logs/test-2.log 2>&1; test_rc=$?; echo EXIT=$test_rc` | 0 |
+| Patch-reversal proof | Reversed the product diff, rebuilt `zene TrackFolderTest` (EXIT=0), then the `ctest` command targeting `test-3.log` failed on the same assertion (EXIT=8). Reapplied the patch (EXIT=0), rebuilt (EXIT=0), then the `ctest` command targeting `test-4.log` passed (EXIT=0). Exact commands follow below. | 8 then 0 |
+| Affected-family count | `ctest -R '^TrackFolderTest$'`: 1 CTest test executed in each run; GREEN summary was `100% tests passed, 0 tests failed out of 1`. | 1 executed |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-246.r1/logs/gate-1.log 2>&1; gate_rc=$?; echo EXIT=$gate_rc` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-246.r1/logs/gate-2.log 2>&1; gate_rc=$?; echo EXIT=$gate_rc` | 0 |
+| Files in cluster fix commit `c0ac4d061` | `src/core/TrackContainer.cpp`; `tests/src/core/TrackFolderTest.cpp`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p8-246.md` | committed |
+
 ## Commands and results
 
 The fff grep tool was unavailable in this environment, so log checks used `rg` against the specified log folder. Build and test output was redirected to new numbered log files there.
