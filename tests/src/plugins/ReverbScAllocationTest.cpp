@@ -80,17 +80,24 @@ void ReverbScAllocationTest::createReportsAllocationFailure()
 
 void ReverbScAllocationTest::pairAllocationFailureDoesNotReachInit()
 {
+	bool handledBothFailures = true;
 	for (const int failOnAllocation : {1, 2})
 	{
 		QProcess child;
 		child.start(QCoreApplication::applicationFilePath(),
 			{"--dcblock-allocation-failure-child", QString::number(failOnAllocation)});
 		QVERIFY2(child.waitForStarted(), "failed to start allocation-failure child");
-		QVERIFY2(child.waitForFinished(), "allocation-failure child did not finish");
-		QVERIFY2(child.exitStatus() == QProcess::NormalExit,
-			"allocation failure crashed the DC blocker setup caller");
-		QCOMPARE(child.exitCode(), 0);
+		if (!child.waitForFinished())
+		{
+			handledBothFailures = false;
+			continue;
+		}
+		if (child.exitStatus() != QProcess::NormalExit || child.exitCode() != 0)
+		{
+			handledBothFailures = false;
+		}
 	}
+	QVERIFY2(handledBothFailures, "allocation failure crashed the DC blocker setup caller");
 }
 
 int main(int argc, char** argv)

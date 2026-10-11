@@ -28,6 +28,7 @@ int sp_dcblock_create(sp_dcblock **p)
 int sp_dcblock_destroy(sp_dcblock **p)
 {
     free(*p);
+    *p = NULL;
     return SP_OK;
 }
 
@@ -43,10 +44,22 @@ int sp_dcblock_init(sp_data *sp, sp_dcblock *p, int oversampling )
 
 int sp_dcblock_create_and_init_pair(sp_data *sp, sp_dcblock **p, int oversampling)
 {
-    sp_dcblock_create(&p[0]);
-    sp_dcblock_create(&p[1]);
-    sp_dcblock_init(sp, p[0], oversampling);
-    sp_dcblock_init(sp, p[1], oversampling);
+    sp_dcblock *created[2] = {NULL, NULL};
+    p[0] = NULL;
+    p[1] = NULL;
+
+    if (sp_dcblock_create(&created[0]) == SP_NOT_OK ||
+        sp_dcblock_create(&created[1]) == SP_NOT_OK ||
+        sp_dcblock_init(sp, created[0], oversampling) == SP_NOT_OK ||
+        sp_dcblock_init(sp, created[1], oversampling) == SP_NOT_OK)
+    {
+        sp_dcblock_destroy(&created[0]);
+        sp_dcblock_destroy(&created[1]);
+        return SP_NOT_OK;
+    }
+
+    p[0] = created[0];
+    p[1] = created[1];
     return SP_OK;
 }
 

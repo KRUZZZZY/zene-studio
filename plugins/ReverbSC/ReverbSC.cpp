@@ -61,7 +61,10 @@ ReverbSCEffect::ReverbSCEffect( Model* parent, const Descriptor::SubPluginFeatur
 	sp_revsc_create(&revsc);
 	sp_revsc_init(sp, revsc);
 
-	sp_dcblock_create_and_init_pair(sp, dcblk, 1);
+	if (sp_dcblock_create_and_init_pair(sp, dcblk, 1) == SP_NOT_OK)
+	{
+		return;
+	}
 }
 
 ReverbSCEffect::~ReverbSCEffect()
@@ -74,6 +77,12 @@ ReverbSCEffect::~ReverbSCEffect()
 
 ProcessStatus ReverbSCEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 {
+	if (revsc == nullptr || dcblk[0] == nullptr || dcblk[1] == nullptr)
+	{
+		// Allocation failure leaves the effect bypassed and the input untouched.
+		return ProcessStatus::ContinueIfNotQuiet;
+	}
+
 	const float d = dryLevel();
 	const float w = wetLevel();
 
@@ -129,7 +138,11 @@ void ReverbSCEffect::changeSampleRate()
 	sp_revsc_create(&revsc);
 	sp_revsc_init(sp, revsc);
 
-	sp_dcblock_create_and_init_pair(sp, dcblk, 1);
+	if (sp_dcblock_create_and_init_pair(sp, dcblk, 1) == SP_NOT_OK)
+	{
+		mutex.unlock();
+		return;
+	}
 	mutex.unlock();
 }
 
