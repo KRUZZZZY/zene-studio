@@ -27,6 +27,7 @@
 #define LMMS_NOTE_PLAY_HANDLE_H
 
 #include <cmath>
+#include <cstddef>
 #include <memory>
 
 #include "BasicFilters.h"
@@ -71,6 +72,11 @@ public:
 					int midiEventChannel = -1,
 					Origin origin = Origin::MidiClip );
 	~NotePlayHandle() override;
+
+	static constexpr std::size_t PluginDataStorageSize = 512;
+
+	//! In-handle storage for plugin note state that must be created on the audio path.
+	void* pluginDataStorage() noexcept { return m_pluginDataStorage; }
 
 	void * operator new ( size_t size, void * p )
 	{
@@ -382,6 +388,7 @@ private:
 
 	bool m_frequencyNeedsUpdate;				// used to update pitch
 	int m_slideSourceKey;					// key a slide note glides from, -1 = none
+	alignas(std::max_align_t) std::byte m_pluginDataStorage[PluginDataStorageSize];
 } ;
 
 

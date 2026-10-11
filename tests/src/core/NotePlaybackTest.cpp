@@ -33,23 +33,34 @@
 #include <QDomDocument>
 #include <QJsonArray>
 
+#include <cstdlib>
+#include <cstdint>
+#include <new>
+#include <span>
+#include <vector>
+
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MidiPlayback.h"
 #include "Note.h"
 #include "NoteConditions.h"
 #include "NotePlayHandle.h"
+#include "SampleFrame.h"
 #include "Song.h"
 
 using namespace lmms;
 
 namespace
 {
+
+thread_local bool countAllocations = false;
+thread_local std::uint64_t allocationCount = 0;
 
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
@@ -70,6 +81,23 @@ QList<int> handleKeys(const InstrumentTrack* track)
 }
 
 } // namespace
+
+void* operator new(std::size_t size)
+{
+	if (countAllocations) { ++allocationCount; }
+	if (void* memory = std::malloc(size != 0 ? size : 1)) { return memory; }
+	throw std::bad_alloc{};
+}
+
+void* operator new[](std::size_t size)
+{
+	return ::operator new(size);
+}
+
+void operator delete(void* memory) noexcept { std::free(memory); }
+void operator delete[](void* memory) noexcept { std::free(memory); }
+void operator delete(void* memory, std::size_t) noexcept { std::free(memory); }
+void operator delete[](void* memory, std::size_t) noexcept { std::free(memory); }
 
 class NotePlaybackTest : public QObject
 {
@@ -126,6 +154,30 @@ private slots:
 		ControlRegistry::setReady(false);
 		Engine::getSong()->clearProject();
 		Engine::destroy();
+	}
+
+	void monstroNoteStartDoesNotAllocate()
+	{
+		Engine::getSong()->clearProject();
+		m_track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(m_track != nullptr);
+		Instrument* instrument = m_track->loadInstrument(QStringLiteral("monstro"));
+		QVERIFY(instrument != nullptr);
+		QCOMPARE(instrument->nodeName(), QStringLiteral("monstro"));
+
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		std::vector<SampleFrame> output(static_cast<std::size_t>(frames));
+		const Note note(TimePos(384), TimePos(0), 60);
+		NotePlayHandle* nph = NotePlayHandleManager::acquire(m_track, 0, frames, note);
+
+		allocationCount = 0;
+		countAllocations = true;
+		instrument->playNote(nph, std::span<SampleFrame>{output});
+		countAllocations = false;
+		const std::uint64_t allocations = allocationCount;
+		NotePlayHandleManager::release(nph);
+
+		QCOMPARE(static_cast<qulonglong>(allocations), 0ull);
 	}
 
 	void repeatsSoundAsMoreHits()

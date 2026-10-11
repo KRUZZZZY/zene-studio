@@ -24,6 +24,7 @@
 
 #include "Monstro.h"
 
+#include <memory>
 
 #include "ComboBox.h"
 #include "Engine.h"
@@ -100,10 +101,10 @@ MonstroSynth::MonstroSynth( MonstroInstrument * _i, NotePlayHandle * _nph ) :
 	m_counter3l = 0;
 	m_counter3r = 0;
 
-	m_lfo[0].resize( m_parent->m_fpp );
-	m_lfo[1].resize( m_parent->m_fpp );
-	m_env[0].resize( m_parent->m_fpp );
-	m_env[1].resize( m_parent->m_fpp );
+	m_lfo[0] = m_parent->m_lfo[0].data();
+	m_lfo[1] = m_parent->m_lfo[1].data();
+	m_env[0] = m_parent->m_env[0].data();
+	m_env[1] = m_parent->m_env[1].data();
 }
 
 
@@ -340,7 +341,7 @@ void MonstroSynth::renderOutput( f_cnt_t _frames, SampleFrame* _buf  )
 	float sub;
 
 	// render modulators: envelopes, lfos
-	updateModulators( m_env[0].data(), m_env[1].data(), m_lfo[0].data(), m_lfo[1].data(), _frames );
+	updateModulators( m_env[0], m_env[1], m_lfo[0], m_lfo[1], _frames );
 
 	// begin for loop
 	for( f_cnt_t f = 0; f < _frames; ++f )
@@ -1042,6 +1043,8 @@ MonstroInstrument::MonstroInstrument( InstrumentTrack * _instrument_track ) :
 	connect( Engine::audioEngine(), SIGNAL( sampleRateChanged() ), this, SLOT( updateSamplerate() ) );
 
 	m_fpp = Engine::audioEngine()->framesPerPeriod();
+	for (auto& buffer : m_lfo) { buffer.resize(m_fpp); }
+	for (auto& buffer : m_env) { buffer.resize(m_fpp); }
 
 	updateSamplerate();
 	updateVolume1();
@@ -1065,7 +1068,10 @@ void MonstroInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 
 	if (!nph->m_pluginData)
 	{
-		nph->m_pluginData = new MonstroSynth(this, nph);
+		static_assert(sizeof(MonstroSynth) <= NotePlayHandle::PluginDataStorageSize);
+		static_assert(alignof(MonstroSynth) <= alignof(std::max_align_t));
+		nph->m_pluginData = std::construct_at(
+			static_cast<MonstroSynth*>(nph->pluginDataStorage()), this, nph);
 	}
 
 	auto ms = static_cast<MonstroSynth*>(nph->m_pluginData);
@@ -1077,7 +1083,7 @@ void MonstroInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 
 void MonstroInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<MonstroSynth *>( _n->m_pluginData );
+	std::destroy_at(static_cast<MonstroSynth*>(_n->m_pluginData));
 }
 
 

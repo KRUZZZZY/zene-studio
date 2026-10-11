@@ -287,8 +287,9 @@ private:
 	int m_counter3l;
 	int m_counter3r;
 
-	std::vector<float> m_lfo[2];
-	std::vector<float> m_env[2];
+	float* m_lfo[2];
+	float* m_env[2];
+
 };
 
 class MonstroInstrument : public Instrument
@@ -405,6 +406,9 @@ protected:
 
 	sample_rate_t m_samplerate;
 	f_cnt_t m_fpp;
+	// Note rendering is serial per instrument, so these scratch buffers are shared by its voices.
+	std::vector<float> m_lfo[2];
+	std::vector<float> m_env[2];
 	
 	float m_integrator;
 	float m_fmCorrection;
