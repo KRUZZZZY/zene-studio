@@ -192,11 +192,15 @@ private:
 	static constexpr float AbsoluteGateLufs = -70.0f;
 	static constexpr float RelativeGateLu = -10.0f;
 	static constexpr float LoudnessOffset = -0.691f;
-	//! Gating-block histogram: 0.05 LU bins up to +5 LUFS, then one bounded overflow bin.
+	//! Gating histogram: 0.05 LU bins through +5 LUFS, then bounded 0.25 LU bands to +805.
 	static constexpr float BinWidthLu = 0.05f;
 	static constexpr int BinCount = 1501;
+	static constexpr float OverflowBinWidthLu = 0.25f;
+	static constexpr int OverflowBinCount = 3200;
 	static constexpr int OverflowBinIndex = BinCount;
 	static constexpr float OverflowBinMinimumLu = AbsoluteGateLufs + static_cast<float>(BinCount - 1) * BinWidthLu;
+	static constexpr float OverflowBinLimitLu = OverflowBinMinimumLu + OverflowBinCount * OverflowBinWidthLu;
+	static constexpr int LastBinIndex = BinCount + OverflowBinCount - 1;
 	//! BS.1770-4 Annex 2 example true-peak interpolator: 4 phases x 12 taps.
 	static constexpr int TruePeakPhases = 4;
 	static constexpr int TruePeakTaps = 12;
@@ -239,7 +243,7 @@ private:
 	static float loudnessFromEnergy(double energy);
 	static double channelWeight(int channel, int channelCount);
 	int binIndex(float lufs) const;
-	float binLoudness(int index, const GatingBin& bin) const;
+	float binLoudness(int index) const;
 	//! loudnessRangeLu()'s two stages: the short-term relative gate (false when nothing
 	//! is binned), then the 10th..95th percentile spread of the windows above it.
 	bool shortTermRelativeGate(float* threshold) const;
@@ -268,12 +272,12 @@ private:
 	int m_ringWrite = 0;
 	int m_subBlocksClosed = 0;
 
-	std::array<GatingBin, BinCount + 1> m_gating;
+	std::array<GatingBin, BinCount + OverflowBinCount> m_gating;
 	/*! The same bins over the SHORT-TERM (3 s) window rather than the 400 ms
 	 *  block: loudnessRangeLu() reads the distribution of short-term values, and
 	 *  a histogram is what keeps that bounded in memory with no per-block
 	 *  storage growing with programme length. */
-	std::array<GatingBin, BinCount + 1> m_shortTerm;
+	std::array<GatingBin, BinCount + OverflowBinCount> m_shortTerm;
 };
 
 } // namespace lmms

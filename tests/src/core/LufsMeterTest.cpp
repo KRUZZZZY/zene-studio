@@ -308,6 +308,32 @@ private slots:
 			qPrintable(describe(measured, expectedLufs, 0.1)));
 	}
 
+	//! Distinct hot levels must remain separate for the relative gate: 5.1 dBFS
+	//! is more than 10 LU below the mean of equal-length 5.1 / 25.1 dBFS passages.
+	void relativeGateExcludesTheLowerHotPassage()
+	{
+		constexpr double LowerDbfs = 5.1;
+		constexpr double UpperDbfs = 25.1;
+		LufsMeter meter(SampleRate, 2);
+		feed(meter, concat(makeSine(LowerDbfs, 10.0), makeSine(UpperDbfs, 10.0)));
+
+		const float measured = meter.integratedLufs();
+		QVERIFY2(std::fabs(measured - UpperDbfs) <= 0.1,
+			qPrintable(describe(measured, UpperDbfs, 0.1)));
+	}
+
+	//! Short-term overflow bands must preserve the spread of changing hot levels
+	//! for LRA's count percentiles instead of collapsing them to one mean value.
+	void loudnessRangePreservesVaryingHotLevels()
+	{
+		LufsMeter meter(SampleRate, 2);
+		feed(meter, concat(makeSine(5.1, 6.0), makeSine(25.1, 6.0)));
+
+		const float range = meter.loudnessRangeLu();
+		QVERIFY2(range > 10.0f && range < 25.0f,
+			qPrintable(QStringLiteral("hot-level LRA %1 LU, expected roughly 20").arg(range)));
+	}
+
 	//! Momentary waits for 400 ms, short-term for 3 s, and feeding the same
 	//! signal in small blocks instead of one buffer must not move the numbers.
 	void windowsFillInOrderAndBlockSizeDoesNotMatter()

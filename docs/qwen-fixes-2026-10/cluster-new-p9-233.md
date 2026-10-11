@@ -2,32 +2,30 @@
 
 ## Verdict: FIXED
 
-The finding is real. [LufsMeter.cpp:295] routes every LUFS value at or above the histogram ceiling into an overflow bucket. The bucket uses its accumulated mean energy for gate comparisons ([LufsMeter.cpp:300]), instead of the old +4.975 LUFS bin center. Storage remains fixed-size. The same overflow handling is used by the short-term histogram used for LRA.
+The finding is real. The previous single overflow bucket used its mean energy as the representative loudness for every over-range block. That merged distinct levels for the integrated relative gate and short-term LRA percentiles. The histogram now keeps fixed 0.25 LU bands above its existing 0.05 LU range, through +805 LUFS. Both integrated and short-term scans use the bands' center levels; accumulated energy and counts still produce the integrated mean. The bounded histograms require no per-block storage or audio-thread allocation.
 
-The regression at [LufsMeterTest.cpp:290] feeds a 5.1 tone at +15 dBFS on all six channels. The five measured channels should read +19.6389 LUFS. Before the fix and with the saved production patch removed, the result was `-inf`; with the fix restored it passes.
+Evidence locations: [LufsMeter.h:196-203](../../include/LufsMeter.h), [LufsMeter.cpp:290-338](../../src/core/LufsMeter.cpp), and [LufsMeter.cpp:385-435](../../src/core/LufsMeter.cpp). The original uniform +15 dBFS 5.1 regression remains at [LufsMeterTest.cpp:290](../../tests/src/core/LufsMeterTest.cpp); new tests at lines 313 and 327 cover mixed +5.1/+25.1 dBFS stereo passages for integrated gating and LRA.
+
+The initial regression run measured 22.1396 LUFS instead of 25.1 LUFS and LRA 0 LU. After reversing the product patch and rebuilding, both assertions failed again. With the patch restored and rebuilt, both pass.
 
 ## Evidence
 
-| Check | Exact invocation | Exit | Result |
+Exit values below are the captured operation codes printed by each command's `echo EXIT=$rc`.
+
+| Check | Exact command | EXIT | Result |
 |---|---|---:|---|
-| RED before fix (`test-1.log`) | `ctest -R '^LufsMeterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/test-1.log 2>&1; rc=$?; echo EXIT=$rc` | 8 | 1 test executed; regression measured `-inf`, expected `19.6389 +/- 0.1`. |
-| RED with fix removed (`test-4.log`) | `ctest -R '^LufsMeterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/test-4.log 2>&1; rc=$?; echo EXIT=$rc` | 8 | After rebuilding, the same regression failed with the same result. |
-| GREEN after fix restored (`test-5.log`) | `ctest -R '^LufsMeterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/test-5.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | 1/1 passed. |
-| Affected family (`test-7.log`) | `ctest -R '^(LufsMeterTest|LoudnessReportTest|MeterTapTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/test-7.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | 3/3 passed. |
-| Complexity gate (`gate-1.log`) | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/gate-1.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | Passed. |
-| File-length gate (`gate-2.log`) | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/gate-2.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | Passed. |
-
-The affected targets were rebuilt successfully. `cmake --build build --target LufsMeterTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/build-1.log 2>&1; rc=$?; echo EXIT=$rc` exited 0 before the fix. `cmake --build build --target zene LufsMeterTest LoudnessReportTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/build-3.log 2>&1; rc=$?; echo EXIT=$rc` exited 0 with the fix, and the same command logged to `build-4.log` and `build-5.log` exited 0 with the fix removed and restored. `cmake --build build --target MeterTapTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/build-6.log 2>&1; rc=$?; echo EXIT=$rc` exited 0 after the final fix. The unqualified `cmake --build build > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/build-2.log 2>&1; rc=$?; echo EXIT=$rc` exited 97 because the workspace guard requires named targets; its log says full builds are the parent’s job.
-
-The proof patch commands also exited 0:
-
-```sh
-git diff -- include/LufsMeter.h src/core/LufsMeter.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/fix.patch; rc=$?; echo EXIT=$rc  # 0
-git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/fix.patch; rc=$?; echo EXIT=$rc  # 0
-git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs/fix.patch; rc=$?; echo EXIT=$rc  # 0
-```
-
-The build, test, and gate commands redirected output to new numbered logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r1/logs`; each command printed the exit code recorded above.
+| Build regression (`build-1.log`) | `cmake --build build --target LufsMeterTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/build-1.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | Built the test with the new assertions against the round-1 product code. |
+| RED (`test-1.log`) | `ctest -R '^LufsMeterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/test-1.log 2>&1; rc=$?; echo EXIT=$rc` | 8 | Mixed gate read 22.1396 vs 25.1 LUFS; hot-level LRA read 0 LU. |
+| Save product patch | `git diff -- include/LufsMeter.h src/core/LufsMeter.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/fix.patch; rc=$?; echo EXIT=$rc` | 0 | Saved only the product changes for the required reversal proof. |
+| Reverse product patch | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/fix.patch; rc=$?; echo EXIT=$rc` | 0 | Removed the product change while retaining the regression tests. |
+| Rebuild with product patch reversed (`build-4.log`) | `cmake --build build --target zene LufsMeterTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/build-4.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | Rebuilt `zene` and the regression target. |
+| RED with product patch reversed (`test-3.log`) | `ctest -R '^LufsMeterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/test-3.log 2>&1; rc=$?; echo EXIT=$rc` | 8 | Both mixed-level regressions failed again. |
+| Restore product patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/fix.patch; rc=$?; echo EXIT=$rc` | 0 | Restored the fix. |
+| Final affected-target build (`build-5.log`) | `cmake --build build --target zene LufsMeterTest LoudnessReportTest MeterTapTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/build-5.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | Rebuilt `zene` and all affected test targets. |
+| GREEN (`test-4.log`) | `ctest -R '^LufsMeterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/test-4.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | `LufsMeterTest` passed after restoring the fix. |
+| Affected family (`test-5.log`) | <code>ctest -R '^(LufsMeterTest&#124;LoudnessReportTest&#124;MeterTapTest)$' --output-on-failure &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/test-5.log 2&gt;&amp;1; rc=$?; echo EXIT=$rc</code> | 0 | 3/3 CTest targets passed. |
+| Complexity gate (`gate-7.log`) | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/gate-7.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | Passed. |
+| File-length gate (`gate-8.log`) | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-233.r2/logs/gate-8.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | Passed. |
 
 ## Files in the commit
 

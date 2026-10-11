@@ -292,18 +292,22 @@ int LufsMeter::binIndex(float lufs) const
 	// The absolute gate is applied exactly here; what is left is quantised into
 	// bins of BinWidthLu. Bin 0 holds everything at or below the gate (and -inf).
 	if (!(lufs > AbsoluteGateLufs)) { return BelowGateBin; }
-	if (lufs >= OverflowBinMinimumLu) { return OverflowBinIndex; }
+	if (lufs >= OverflowBinMinimumLu)
+	{
+		if (lufs >= OverflowBinLimitLu) { return LastBinIndex; }
+		const int offset = static_cast<int>((lufs - OverflowBinMinimumLu) / OverflowBinWidthLu);
+		return OverflowBinIndex + offset;
+	}
 	const int index = 1 + static_cast<int>((lufs - AbsoluteGateLufs) / BinWidthLu);
 	return std::min(index, BinCount - 1);
 }
 
-float LufsMeter::binLoudness(int index, const GatingBin& bin) const
+float LufsMeter::binLoudness(int index) const
 {
-	if (index == OverflowBinIndex)
+	if (index >= OverflowBinIndex)
 	{
-		// The overflow bucket is bounded in memory, but follows its actual
-		// accumulated energy instead of treating every block as +4.975 LUFS.
-		return bin.count > 0 ? loudnessFromEnergy(bin.energy / static_cast<double>(bin.count)) : MinusInfinity;
+		return OverflowBinMinimumLu +
+			(static_cast<float>(index - OverflowBinIndex) + 0.5f) * OverflowBinWidthLu;
 	}
 	// Bin 0 is not on the scale; every other bin stands for the blocks whose
 	// loudness is within half a bin of its centre.
@@ -316,7 +320,7 @@ float LufsMeter::gatedLoudness() const
 	// gate exactly when the block was added).
 	double energy = 0.0;
 	std::uint64_t count = 0;
-	for (int index = 1; index <= OverflowBinIndex; ++index)
+	for (int index = 1; index <= LastBinIndex; ++index)
 	{
 		energy += m_gating[index].energy;
 		count += m_gating[index].count;
@@ -327,10 +331,10 @@ float LufsMeter::gatedLoudness() const
 	const float threshold = loudnessFromEnergy(energy / static_cast<double>(count)) + RelativeGateLu;
 	double gatedEnergy = 0.0;
 	std::uint64_t gatedCount = 0;
-	for (int index = 1; index <= OverflowBinIndex; ++index)
+	for (int index = 1; index <= LastBinIndex; ++index)
 	{
 		const GatingBin& bin = m_gating[index];
-		if (bin.count == 0 || binLoudness(index, bin) <= threshold) { continue; }
+		if (bin.count == 0 || binLoudness(index) <= threshold) { continue; }
 		gatedEnergy += bin.energy;
 		gatedCount += bin.count;
 	}
@@ -380,7 +384,7 @@ bool LufsMeter::shortTermRelativeGate(float* threshold) const
 
 	double energy = 0.0;
 	std::uint64_t count = 0;
-	for (int index = 1; index <= OverflowBinIndex; ++index)
+	for (int index = 1; index <= LastBinIndex; ++index)
 	{
 		energy += m_shortTerm[index].energy;
 		count += m_shortTerm[index].count;
@@ -396,10 +400,10 @@ bool LufsMeter::shortTermRelativeGate(float* threshold) const
 float LufsMeter::shortTermSpreadAbove(float threshold) const
 {
 	std::uint64_t surviving = 0;
-	for (int index = 1; index <= OverflowBinIndex; ++index)
+	for (int index = 1; index <= LastBinIndex; ++index)
 	{
 		const GatingBin& bin = m_shortTerm[index];
-		if (bin.count > 0 && binLoudness(index, bin) > threshold) { surviving += bin.count; }
+		if (bin.count > 0 && binLoudness(index) > threshold) { surviving += bin.count; }
 	}
 	if (surviving == 0) { return MinusInfinity; }
 
@@ -412,11 +416,11 @@ float LufsMeter::shortTermSpreadAbove(float threshold) const
 
 	// The high percentile first: the low one must be found at or before it (one
 	// scan used to stop at the high bin, so a low bin past it never counted).
-	const int high = shortTermBinAtCount(threshold, highTarget, false, OverflowBinIndex);
+	const int high = shortTermBinAtCount(threshold, highTarget, false, LastBinIndex);
 	if (high < 0) { return MinusInfinity; }
 	const int low = shortTermBinAtCount(threshold, lowTarget, true, high);
 	if (low < 0) { return MinusInfinity; }
-	return binLoudness(high, m_shortTerm[high]) - binLoudness(low, m_shortTerm[low]);
+	return binLoudness(high) - binLoudness(low);
 }
 
 int LufsMeter::shortTermBinAtCount(float threshold, std::uint64_t target, bool strictly,
@@ -428,7 +432,7 @@ int LufsMeter::shortTermBinAtCount(float threshold, std::uint64_t target, bool s
 		// An empty bin is never a percentile: with one surviving window the high
 		// target is 0, and the first bin past the gate would otherwise answer.
 		const GatingBin& bin = m_shortTerm[index];
-		if (bin.count == 0 || binLoudness(index, bin) <= threshold) { continue; }
+		if (bin.count == 0 || binLoudness(index) <= threshold) { continue; }
 		seen += bin.count;
 		if (strictly ? seen > target : seen >= target) { return index; }
 	}
