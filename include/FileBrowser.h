@@ -84,6 +84,7 @@ private slots:
 	void reloadTree();
 	void expandItems(const QList<QString>& expandedDirs, QTreeWidgetItem* item = nullptr);
 	void giveFocusToFilter();
+	void onSearchMatch(quint64 generation, const QString& path);
 
 private:
 	void keyPressEvent( QKeyEvent * ke ) override;
@@ -94,7 +95,6 @@ private:
 	void restoreDirectoriesStates();
 
 	void onSearch(const QString& filter);
-	void onSearchMatch(const QString& path);
 	void onSearchStarted();
 	void onSearchFinished();
 
@@ -123,6 +123,7 @@ private:
 	QBoxLayout *outerLayout = nullptr;
 	QString m_userDir;
 	QString m_factoryDir;
+	quint64 m_searchGeneration = 0;
 	QList<QString> m_savedExpandedDirs;
 	QString m_previousFilterValue;
 } ;

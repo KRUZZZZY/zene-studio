@@ -220,6 +220,8 @@ void FileBrowser::restoreDirectoriesStates()
 
 void FileBrowser::onSearch(const QString& filter)
 {
+	const auto generation = ++m_searchGeneration;
+
 	if (filter.isEmpty())
 	{
 		m_searchTreeWidget->hide();
@@ -243,11 +245,13 @@ void FileBrowser::onSearch(const QString& filter)
 	m_searchTreeWidget->clear();
 	m_searchTreeWidget->show();
 	m_fileBrowserTreeWidget->hide();
-	m_searchJob.search(searchTask);
+	m_searchJob.search(searchTask, generation);
 }
 
-void FileBrowser::onSearchMatch(const QString& path)
+void FileBrowser::onSearchMatch(quint64 generation, const QString& path)
 {
+	if (generation != m_searchGeneration) { return; }
+
 	const auto fileInfo = QFileInfo{path};
 	auto item = static_cast<QTreeWidgetItem*>(nullptr);
 	if (fileInfo.isDir()) { item = new Directory(fileInfo.fileName(), fileInfo.dir().path(), m_filter); }
