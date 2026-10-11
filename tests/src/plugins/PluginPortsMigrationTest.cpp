@@ -326,10 +326,16 @@ void PluginPortsMigrationTest::ladspaEffectSurvivesFailedInstantiationsDuringSam
 	QVERIFY(effect != nullptr);
 	QVERIFY(effect->isOkay());
 	QVERIFY(effect->controls() != nullptr);
+	using CreateView = lmms::gui::EffectControlDialog* (lmms::EffectControls::*)();
+	const CreateView createView = &lmms::EffectControls::createView;
+	auto editor = std::unique_ptr<lmms::gui::EffectControlDialog>{
+		(effect->controls()->*createView)()};
+	QVERIFY(editor != nullptr);
 	{
 		lmms::LadspaInstantiationFailure failure{managerKey};
 		QVERIFY(failure.isValid());
 		emit lmms::Engine::audioEngine()->sampleRateChanged();
+		QVERIFY(effect->controls() == nullptr);
 	}
 	QVERIFY(!effect->isOkay());
 }
