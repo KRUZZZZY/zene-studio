@@ -166,6 +166,11 @@ void remember(int value)
 	if (s_history.size() > HistoryDepth) { s_history.removeFirst(); }
 }
 
+void finishPinch(int startValue, int currentValue, Qt::GestureState state)
+{
+	if ((state == Qt::GestureFinished || state == Qt::GestureCanceled) && currentValue != startValue) { remember(startValue); }
+}
+
 bool takeEarlier(int current, int* earlier)
 {
 	if (s_history.isEmpty()) { return false; }

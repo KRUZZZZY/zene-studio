@@ -76,6 +76,8 @@ constexpr int WheelBurstMs = 400;
 
 //! The zoom history arrangement.zoom_back walks (zoom model values, newest last; UI thread).
 LMMS_EXPORT void remember(int value);
+//! Record the starting zoom when a pinch ends or is canceled, if it changed.
+LMMS_EXPORT void finishPinch(int startValue, int currentValue, Qt::GestureState state);
 //! Swap @a current with the newest remembered value, into @a earlier; false when there is none.
 LMMS_EXPORT bool takeEarlier(int current, int* earlier);
 LMMS_EXPORT int historySize();

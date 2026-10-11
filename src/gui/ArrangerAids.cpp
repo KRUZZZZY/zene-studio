@@ -110,7 +110,7 @@ private:
 
 /*! A pinch on the arranger. 0.5.0 theme 9: it zooms continuously (as finely as the zoom model goes) around
  *  the tick under the pinch's centre where it began, and the zoom it started from joins the history
- *  arrangement.zoom_back walks once, when it ends - not one entry per step. */
+ *  arrangement.zoom_back walks once, when it ends or is canceled - not one entry per step. */
 class PinchZoom : public QObject
 {
 public:
@@ -133,7 +133,7 @@ protected:
 		m_scale *= pinch->scaleFactor();
 		const int value = editor->zoomValueFor(static_cast<int>(std::lround(m_startPixelsPerBar * m_scale)));
 		if (value != editor->zoomingModel()->value()) { arrangerzoom::zoomAround(editor, value, m_anchor); }
-		if (pinch->state() == Qt::GestureFinished && editor->zoomingModel()->value() != m_startValue) { arrangerzoom::remember(m_startValue); }
+		arrangerzoom::finishPinch(m_startValue, editor->zoomingModel()->value(), pinch->state());
 		return true;
 	}
 
