@@ -273,7 +273,9 @@ void XyPadDialog::syncPoint()
 
 void XyPadDialog::send(QPointF point)
 {
-	const auto [id, args] = padCall(m_channel, m_x->currentData().toString(), m_y->currentData().toString(), point);
+	const QString xMacro = m_x->currentData().toString();
+	const QString yMacro = m_y->currentData().toString();
+	const auto [id, args] = padCall(m_channel, xMacro, yMacro, point);
 	const ControlResult result = ControlRegistry::instance()->invoke(id, args);
 	// The result is read (W1): a refused move - a macro an agent removed while the pad was open, say - is named on the
 	// status line, and the dot goes back to where the macros really stand rather than where the pointer is.
@@ -284,6 +286,7 @@ void XyPadDialog::send(QPointF point)
 		syncPoint();
 		return;
 	}
+	if (xMacro == yMacro) { m_area->setPoint(QPointF(point.x(), point.x())); }
 	emit changed();
 }
 
