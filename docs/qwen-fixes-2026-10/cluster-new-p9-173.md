@@ -23,14 +23,24 @@ Evidence:
 
 The test target and `zene` rebuilt with exit 0 after the fix, after patch reversal, and after patch restoration (`build-4.log`, `build-5.log`, `build-6.log`). The final CTest runs each report `1/1` passed.
 
+The required patch reversal proof used these commands and results:
+
+| Step | Command | Exit | Log |
+|---|---|---:|---|
+| Save production patch | `git diff -- include/FileBrowser.h src/gui/FileBrowser.cpp include/FileSearchJob.h src/gui/FileSearchJob.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r1/logs/fix.patch` | 0 | — |
+| Reverse patch | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r1/logs/fix.patch` | 0 | — |
+| Rebuild reversed code | `cmake --build build --target zene FileSearchJobTest` | 0 | `build-5.log` |
+| Reapply patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r1/logs/fix.patch` | 0 | — |
+| Rebuild restored code | `cmake --build build --target zene FileSearchJobTest` | 0 | `build-6.log` |
+
 The build tree did not initially know the newly registered test target: `cmake --build build --target FileSearchJobTest` exited 2 (`build-1.log`). Building the existing `BrowserTagMenuTest` target exited 0 (`build-2.log`) and ran the build system's normal regeneration check; the new test target then built with exit 0 (`build-3.log`). No manual configure command was run.
 
 ## Gates
 
 | Gate | Command | Exit | Log |
 |---|---|---:|---|
-| Complexity | `bash tests/complexity-gate.sh --check` | 0 | `gate-3.log` |
-| File length | `bash tests/file-length-gate.sh --check` | 0 | `gate-4.log` |
+| Complexity | `bash tests/complexity-gate.sh --check` | 0 | `gate-5.log` |
+| File length | `bash tests/file-length-gate.sh --check` | 0 | `gate-6.log` |
 
 Build, test, and gate logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r1/logs`. The `fff` grep tool was not available in this session; log searches used `rg` for `error`, `FAILED`, and `Assertion`.
 
