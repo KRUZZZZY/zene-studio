@@ -30,6 +30,32 @@
 namespace lmms
 {
 
+namespace
+{
+
+bool hasValidIntervalData(const QDomElement& element)
+{
+	const bool hasNumerator = element.hasAttribute(QStringLiteral("num"));
+	const bool hasDenominator = element.hasAttribute(QStringLiteral("den"));
+	const bool hasCents = element.hasAttribute(QStringLiteral("cents"));
+	if (!hasNumerator && !hasDenominator)
+	{
+		if (!hasCents) { return false; }
+		bool validCents = false;
+		const float cents = element.attribute(QStringLiteral("cents")).toFloat(&validCents);
+		return validCents && std::isfinite(cents);
+	}
+	if (!hasNumerator || !hasDenominator || hasCents) { return false; }
+
+	bool validNumerator = false;
+	bool validDenominator = false;
+	const uint numerator = element.attribute(QStringLiteral("num")).toUInt(&validNumerator);
+	const uint denominator = element.attribute(QStringLiteral("den")).toUInt(&validDenominator);
+	return validNumerator && validDenominator && numerator > 0 && denominator > 0;
+}
+
+} // namespace
+
 
 Interval::Interval(float cents) :
 	m_numerator(0),
@@ -118,9 +144,17 @@ void Scale::loadSettings(const QDomElement &element)
 
 	while (!node.isNull())
 	{
-		Interval temp;
-		temp.restoreState(node.toElement());
-		m_intervals.push_back(temp);
+		if (node.isElement())
+		{
+			const QDomElement intervalElement = node.toElement();
+			if (intervalElement.tagName() == QStringLiteral("interval")
+				&& hasValidIntervalData(intervalElement))
+			{
+				Interval temp;
+				temp.restoreState(intervalElement);
+				m_intervals.push_back(temp);
+			}
+		}
 		node = node.nextSibling();
 	}
 }
