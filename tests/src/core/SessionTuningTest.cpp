@@ -33,6 +33,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <memory>
+#include <vector>
 
 #include <QDir>
 #include <QJsonArray>
@@ -59,6 +61,7 @@
 #include "Track.h"
 
 #include "ReversibilityTestSupport.h"
+#include "../../../thirdparty/mts-esp/libMTSClient.h"
 
 using namespace lmms;
 using namespace revtest;
@@ -262,6 +265,37 @@ const QVector<RefusalCase>& refusalCases(const QString& missingPath)
 			ControlErrorKind::InvalidArgs},
 		{QStringLiteral("mts.master_set"), QJsonObject{}, ControlErrorKind::InvalidArgs}};
 	return cases;
+}
+
+using MtsClientPtr = std::unique_ptr<MTSClient, decltype(&MTS_DeregisterClient)>;
+
+std::vector<unsigned char> localMtsScaleOctaveDump()
+{
+	std::vector<unsigned char> message{0xF0, 0x7E, 0x7F, 0x08, 0x05, 0x00, 0x00};
+	for (const char character : QByteArrayLiteral("Test scale"))
+	{
+		message.push_back(static_cast<unsigned char>(character));
+	}
+	message.insert(message.end(), 6, 0);
+	for (int degree = 0; degree < 12; ++degree)
+	{
+		message.push_back(static_cast<unsigned char>(degree == 0 ? 65 : 64));
+	}
+	message.push_back(0);
+	message.push_back(0xF7);
+	return message;
+}
+
+void seedLocalMtsScale(MTSClient* client)
+{
+	const auto message = localMtsScaleOctaveDump();
+	MTS_ParseMIDIDataU(client, message.data(), static_cast<int>(message.size()));
+}
+
+void sendLocalMtsTuningDumpRequest(MTSClient* client)
+{
+	constexpr unsigned char request[]{0xF0, 0x7E, 0x7F, 0x08, 0x00, 0x00, 0xF7};
+	MTS_ParseMIDIDataU(client, request, static_cast<int>(sizeof(request)));
 }
 
 } // namespace
@@ -941,6 +975,37 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 				"still reports '%1' instead of the pre-load '%2'")
 				.arg(installed, reportedBefore)));
 		tuning->reset();
+	}
+
+	void localMtsTuningDumpRequestPreservesScaleName()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		seedLocalMtsScale(client.get());
+		const QByteArray name(MTS_GetScaleName(client.get()));
+		QCOMPARE(name, QByteArrayLiteral("Test scale"));
+
+		sendLocalMtsTuningDumpRequest(client.get());
+
+		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), name);
+	}
+
+	void localMtsTuningDumpRequestPreservesMapMetadata()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		seedLocalMtsScale(client.get());
+		QCOMPARE(MTS_GetMapSize(client.get()), static_cast<signed char>(12));
+		QCOMPARE(MTS_GetMapStartKey(client.get()), static_cast<signed char>(60));
+		const double frequency = MTS_NoteToFrequency(client.get(), 0, 0);
+		const double expectedFrequency = 440.0 * std::pow(2.0, (0.01 - 69.0) / 12.0);
+		QVERIFY(std::abs(frequency - expectedFrequency) < expectedFrequency * 1e-12);
+
+		sendLocalMtsTuningDumpRequest(client.get());
+
+		QCOMPARE(MTS_GetMapSize(client.get()), static_cast<signed char>(12));
+		QCOMPARE(MTS_GetMapStartKey(client.get()), static_cast<signed char>(60));
+		QCOMPARE(MTS_NoteToFrequency(client.get(), 0, 0), frequency);
 	}
 
 	//! This box has no libMTS.so: arming is a typed REFUSAL that writes nothing

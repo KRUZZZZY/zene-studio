@@ -702,7 +702,11 @@ struct MTSClient
                     break;
                 case eMatchingProg:
                     /*prog = b;*/
-                    if (format == eSingle)
+                    if (format == eRequest)
+                    {
+                        state = eIgnoring;
+                    }
+                    else if (format == eSingle)
                     {
                         state = eNumTunings;
                     }
@@ -802,15 +806,18 @@ struct MTSClient
             }
         }
         
-        if (format == eScaleOctOneByte || format == eScaleOctTwoByte || format == eScaleOctOneByteExt || format == eScaleOctTwoByteExt)
+        if (format != eRequest)
         {
-            mapSizeLocal = static_cast<signed char>(12);
-            mapStartKeyLocal = static_cast<signed char>(60);
-        }
-        else
-        {
-            mapSizeLocal = static_cast<signed char>(-1);
-            mapStartKeyLocal = static_cast<signed char>(-1);
+            if (format == eScaleOctOneByte || format == eScaleOctTwoByte || format == eScaleOctOneByteExt || format == eScaleOctTwoByteExt)
+            {
+                mapSizeLocal = static_cast<signed char>(12);
+                mapStartKeyLocal = static_cast<signed char>(60);
+            }
+            else
+            {
+                mapSizeLocal = static_cast<signed char>(-1);
+                mapStartKeyLocal = static_cast<signed char>(-1);
+            }
         }
     }
     
