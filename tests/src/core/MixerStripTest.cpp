@@ -35,15 +35,20 @@
 #include <QDomDocument>
 #include <QJsonArray>
 
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "ControlRegistry.h"
+#include "ControlMixerSupport.h"
 #include "ControlVocabulary.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "MixerPostInserts.h"
 #include "MixerStrip.h"
+#include "PhaseDMixerTestSupport.h"
 #include "SampleFrame.h"
 
 using namespace lmms;
@@ -164,6 +169,35 @@ private slots:
 		QVERIFY(meters.value(QStringLiteral("clipped")).toBool());
 		QVERIFY(run(QStringLiteral("mixer.clear_clips")).ok);
 		QVERIFY(!channel(3)->m_clipped.load());
+	}
+
+	void postFaderSendMeterReadsTheBakedSignal()
+	{
+		QVERIFY(control::findMixerRoute(3, 2) == nullptr);
+		MixerRoute* route = Engine::mixer()->createChannelSend(3, 2, 0.5f);
+		QVERIFY(route != nullptr);
+		MixerChannel* sender = channel(3);
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		sender->m_volumeModel.setValue(0.5f);
+		for (f_cnt_t f = 0; f < frames; ++f) { sender->m_buffer[f] = SampleFrame(0.4f, 0.2f); }
+		sender->updatePostFaderBuffer(0.5f, frames);
+		auto* gain = new partd::FixedGainEffect(&sender->m_postInserts.chain(), 2.f, 2.f);
+		sender->m_postInserts.chain().appendEffect(gain);
+		const float meterGain = sender->m_postInserts.process(*sender, 0.5f, frames);
+		const float bakedLeft = sender->m_buffer[0][0];
+		mixerstrip::updateMeters(*sender, sender->m_buffer, 1.f, frames);
+		float outputPeak = 0.f;
+		for (f_cnt_t f = 0; f < frames; ++f) { outputPeak = std::max(outputPeak, std::abs(sender->m_buffer[f][0])); }
+		const auto level = mixerstrip::sendLevel(*route);
+		const float expected = outputPeak * route->amount()->value();
+		sender->m_postInserts.chain().removeEffect(gain);
+		delete gain;
+		sender->m_postInserts.process(*sender, 0.5f, frames);
+		sender->m_volumeModel.setValue(1.f);
+		Engine::mixer()->deleteChannelSend(route);
+		QCOMPARE(meterGain, 1.f);
+		QVERIFY(bakedLeft > 0.4f);  // the after-fader gain increases the baked sample
+		QVERIFY(std::abs(level[0] - expected) < 1e-5f);  // post-fader output peak x send amount
 	}
 
 	void stripSettingsAreSavedOnlyWhenSet()

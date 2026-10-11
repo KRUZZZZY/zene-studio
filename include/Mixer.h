@@ -146,8 +146,11 @@ public:
 	std::atomic<bool> m_clipped{false};
 	MeterValue m_gainReduction;
 	MeterValue m_correlation;  //!< 0.5.0 L08 (MX-137): the pre-fader phase correlation, -1..1
-	MeterValue m_livePeakLeft;  //!< 0.5.0 L09 (MX-053): this period's peak after the inserts, before the fader; no reader resets it
+	MeterValue m_livePeakLeft;  //!< 0.5.0 L09 (MX-053): the source peak used by pre-fader sends; no reader resets it
 	MeterValue m_livePeakRight;
+	MeterValue m_liveBakedPeakLeft;  //!< The baked post-fader output peak, for post-fader send meters.
+	MeterValue m_liveBakedPeakRight;
+	std::atomic<bool> m_livePostInsertsBaked{false};  //!< Whether this period's live baked peaks are valid.
 	QString m_name;
 	QMutex m_lock;
 	bool m_queued; // are we queued up for rendering yet?

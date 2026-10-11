@@ -142,6 +142,11 @@ std::array<float, 2> sendLevel(MixerRoute& route)
 {
 	const MixerChannel* from = route.sender();
 	if (!route.enabled() || from->m_muted.load(std::memory_order_relaxed)) { return {0.f, 0.f}; }
+	if (!route.preFader() && !route.feedback() && from->m_livePostInsertsBaked.load(std::memory_order_relaxed))
+	{
+		const float amount = route.amount()->value();
+		return {from->m_liveBakedPeakLeft.get() * amount, from->m_liveBakedPeakRight.get() * amount};
+	}
 	const float gain = route.amount()->value() * (route.preFader() ? 1.f : from->m_volumeModel.value());
 	return {from->m_livePeakLeft.get() * gain, from->m_livePeakRight.get() * gain};
 }
@@ -289,10 +294,14 @@ void updateMeters(MixerChannel& channel, const SampleFrame* buffer, float volume
 	channel.m_correlation.set(sumL > 1e-12 && sumR > 1e-12 ? static_cast<float>(sumLR / std::sqrt(sumL * sumR)) : 1.f);
 	// MX-082: baked post-fader inserts put the fader (and their devices) into the buffer; the pre-fader
 	// readings, and the send meters that apply the fader themselves, take the copy kept before them.
-	const SampleFrame pre = channel.m_postInserts.baked() ? getAbsPeakValues(channel.m_postInserts.preFader(), frames)
+	const bool baked = channel.m_postInserts.baked();
+	const SampleFrame pre = baked ? getAbsPeakValues(channel.m_postInserts.preFader(), frames)
 		: SampleFrame(peakL, peakR);
-	channel.m_livePeakLeft.set(pre[0]);  // MX-053: what the send meters read
+	channel.m_livePeakLeft.set(pre[0]);  // MX-053: what pre-fader send meters read
 	channel.m_livePeakRight.set(pre[1]);
+	channel.m_liveBakedPeakLeft.set(peakL);
+	channel.m_liveBakedPeakRight.set(peakR);
+	channel.m_livePostInsertsBaked.store(baked, std::memory_order_relaxed);
 	channel.m_prePeakLeft.raise(pre[0]);
 	channel.m_prePeakRight.raise(pre[1]);
 	channel.m_preMeterLeft.raise(pre[0]);
@@ -310,6 +319,9 @@ void silenceMeters(MixerChannel& channel)
 	channel.m_rmsRight.set(0.f);
 	channel.m_livePeakLeft.set(0.f);
 	channel.m_livePeakRight.set(0.f);
+	channel.m_liveBakedPeakLeft.set(0.f);
+	channel.m_liveBakedPeakRight.set(0.f);
+	channel.m_livePostInsertsBaked.store(false, std::memory_order_relaxed);
 	channel.m_correlation.set(1.f);  // what silence reads (updateMeters)
 	channel.m_gainReduction.set(0.f);
 }
