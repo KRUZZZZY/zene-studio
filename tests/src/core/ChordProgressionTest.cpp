@@ -453,6 +453,10 @@ private slots:
 		notes.clear();
 		layOutChord({}, 0, 96, Pattern::Block, 100, &notes);
 		QVERIFY2(notes.empty(), "an empty chord produced notes");
+
+		notes.clear();
+		layOutChord(keys, 10, 0, Pattern::Block, 100, &notes);
+		QVERIFY2(notes.empty(), "a zero-room chord produced notes");
 	}
 
 	//! The progression as TRACK events: the same walk, with the vocabulary's
