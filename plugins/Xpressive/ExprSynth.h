@@ -78,6 +78,8 @@ public:
 		m_samples = new float[m_length];
 		memcpy(m_samples, graph->samples(), m_length * sizeof(float));
 	}
+	WaveSample(const WaveSample&) = delete;
+	WaveSample& operator=(const WaveSample&) = delete;
 	inline void copyFrom(const graphModel * graph)
 	{
 		memcpy(m_samples, graph->samples(), m_length * sizeof(float));
