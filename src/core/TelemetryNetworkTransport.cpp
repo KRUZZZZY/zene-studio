@@ -165,14 +165,17 @@ QString TelemetryNetworkTransport::describe() const
 		return QStringLiteral("no endpoint configured");
 	}
 
+	const QUrl endpoint(m_endpoint);
 	QString reason;
-	if (!isAllowedEndpoint(QUrl(m_endpoint), &reason))
+	if (!isAllowedEndpoint(endpoint, &reason))
 	{
 		// The endpoint is set but this transport will not post to it. Say so
 		// where a human reads it, not only in lastRefusal() after a send.
 		return QStringLiteral("endpoint refused: ") + reason;
 	}
-	return QStringLiteral("https POST to ") + m_endpoint;
+	const auto safeUrl = QUrl::RemoveUserInfo | QUrl::RemovePath | QUrl::RemoveQuery |
+		QUrl::RemoveFragment;
+	return QStringLiteral("https POST to ") + endpoint.toString(safeUrl);
 }
 
 } // namespace lmms

@@ -163,6 +163,18 @@ private slots:
 			qPrintable(transport.describe()));
 	}
 
+	//! A status description keeps the useful HTTPS origin while omitting every
+	//! URL component that can carry a credential.
+	void endpointDescriptionRedactsCredentials()
+	{
+		TelemetryNetworkTransport transport(QStringLiteral(
+			"https://alice:password-secret@ingest.example.org:8443/internal/path-secret"
+			"?token=query-secret#fragment-secret"));
+
+		QCOMPARE(transport.describe(),
+			QStringLiteral("https POST to https://ingest.example.org:8443"));
+	}
+
 	//! THE DIFFERENTIAL. TEST-NET-1 never answers, so a transport that waits for
 	//! the reply waits for its own timeout. send() must return at once.
 	void aSlowEndpointDoesNotBlockTheCaller()
