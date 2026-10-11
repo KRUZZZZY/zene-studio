@@ -1907,6 +1907,7 @@ tests/src/core/AudioAnalysisTest.cpp
 tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBurstSupport.h
 tests/src/core/AudioEditingTest.cpp
+tests/src/core/AudioFileProcessorWaveViewTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/BrowserCatalogTest.cpp

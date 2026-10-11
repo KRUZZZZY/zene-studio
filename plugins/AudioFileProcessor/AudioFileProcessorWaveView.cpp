@@ -412,7 +412,7 @@ void AudioFileProcessorWaveView::slideSamplePointByPx(Point point, int px)
 {
 	slideSamplePointByFrames(
 		point,
-		f_cnt_t((double(px) / width()) * range())
+		static_cast<long>((double(px) / width()) * range())
 	);
 }
 

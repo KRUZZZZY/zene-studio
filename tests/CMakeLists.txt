@@ -622,6 +622,9 @@ set(LMMS_TESTS
 	src/core/AudioAutomationToolsTest.cpp
 	# 0.5.0 L05 (W3): the YIN pitch tracker, audio to MIDI, the spectrogram, a folder moved as one.
 	src/core/AudioAnalysisTest.cpp
+	# Waveform marker drags in the AudioFileProcessor view, including the
+	# signed frame-offset path used by leftward mouse movement.
+	src/core/AudioFileProcessorWaveViewTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/WorkspaceAccessTest.cpp
 	src/core/CustomAccessTest.cpp
@@ -1150,6 +1153,23 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 endforeach()
+
+# Compile the real AudioFileProcessor waveform view into its regression test.
+# UBSan's float-cast-overflow check makes the old negative-double to f_cnt_t
+# conversion fail deterministically on platforms where that undefined cast
+# happens to round-trip to a signed long in an ordinary build.
+target_sources(AudioFileProcessorWaveViewTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/AudioFileProcessor/AudioFileProcessorWaveView.cpp
+	${CMAKE_SOURCE_DIR}/plugins/AudioFileProcessor/AudioFileProcessorWaveView.h)
+target_include_directories(AudioFileProcessorWaveViewTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/AudioFileProcessor)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+	target_compile_options(AudioFileProcessorWaveViewTest PRIVATE
+		-fsanitize=float-cast-overflow -fno-sanitize-recover=float-cast-overflow)
+	target_link_options(AudioFileProcessorWaveViewTest PRIVATE -fsanitize=float-cast-overflow)
+	set_tests_properties(AudioFileProcessorWaveViewTest PROPERTIES
+		ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1")
+endif()
 
 # ---------------------------------------------------------------------------
 # The subject of the MPE playback proof (0.3.0 feature-list row 8, task #649).

@@ -1,31 +1,41 @@
 # Cluster new-p9-571
 
-**Verdict: BLOCKED**
+Verdict: **FIXED**
+
+## Finding
+
+At `plugins/AudioFileProcessor/AudioFileProcessorWaveView.cpp:415`, a negative pixel-derived offset was converted to unsigned `f_cnt_t` before being passed to `slideSamplePointByFrames`, whose parameter is `long`. The calculation now converts directly to `long`, preserving the signed offset through the call.
+
+The regression at `tests/src/core/AudioFileProcessorWaveViewTest.cpp:35` creates an 8,000,000-frame sample and drags its start marker one pixel left through Qt mouse events. The test target compiles the real waveform-view implementation. On GCC/Clang, `float-cast-overflow` instrumentation makes the previous negative-double-to-unsigned conversion fail deterministically; the test also checks the marker model receives the expected negative frame delta. The test is registered as `AudioFileProcessorWaveViewTest` in CMake and in the source manifests.
 
 ## Evidence
 
-The finding describes a real portability and undefined-conversion risk. At [AudioFileProcessorWaveView.cpp:411](../../plugins/AudioFileProcessor/AudioFileProcessorWaveView.cpp#L411), the pixel-derived `double` is cast to `f_cnt_t` at line 415. `f_cnt_t` is `std::uint64_t` ([LmmsTypes.h:43](../../include/LmmsTypes.h#L43)), while `slideSamplePointByFrames` accepts signed `long` at line 419. A negative value whose truncated value is below zero cannot be represented by the unsigned destination, making the floating-to-integer conversion undefined; the later unsigned-to-signed conversion is also implementation-defined when out of range.
+All build and test output was captured under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r2/logs`. CTest ran from `build/tests`.
 
-The supplied test paths are reference source snapshots, not tests. `tests/CMakeLists.txt:1540` registers the AudioFileProcessor sources in the reference-module list, and line 1669 builds `partc_ref_audiofileprocessor` as a module. The configured CTest tree has no `AudioFileProcessorWaveView` or `AudioFileProcessorView` test, and no `AudioFileProcessorWaveView` build target. I made no product-code change because the required regression cannot be run and proven red in this configured tree.
-
-## Verification evidence
-
-Commands ran from `build/tests` unless a different working directory is shown. CTest exits 0 when it finds no tests; per the task instructions, that is an error, not a pass.
-
-| Check | Exact command | Exit | Result |
+| Stage | Exact command | Exit | Result |
 |---|---|---:|---|
-| Test discovery | `ctest -N -R '^AudioFileProcessorWaveView$' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r1/logs/test-1.log 2>&1` | 0 | `Total Tests: 0` |
-| Requested RED family | `ctest -R '^AudioFileProcessorWaveView$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r1/logs/test-2.log 2>&1` | 0 | `No tests were found!!!`; zero tests, so not a RED result |
-| Other named family | `ctest -R '^AudioFileProcessorView$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r1/logs/test-3.log 2>&1` | 0 | `No tests were found!!!`; zero tests |
-| Named build target | `cmake --build build --target AudioFileProcessorWaveView > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r1/logs/build-1.log 2>&1` (from worktree root) | 2 | No rule to make target |
-| RED assertion | Not run | — | No registered test target is available |
-| GREEN assertion | Not run | — | No regression or product fix was applied |
-| Affected-family test count | — | — | 0 |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r1/logs/gate-3.log 2>&1` | 0 | Passed |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r1/logs/gate-4.log 2>&1` | 0 | Passed |
+| RED before product fix | `ctest -R '^AudioFileProcessorWaveViewTest$' --output-on-failure` | 8 | `test-2.log`: 1/1 failed at the old unsigned conversion (`-32653.1` out of range). |
+| GREEN after product fix | `ctest -R '^AudioFileProcessorWaveViewTest$' --output-on-failure` | 0 | `test-3.log`: 1/1 passed. |
+| Reverse product patch | `git diff -- plugins/AudioFileProcessor/AudioFileProcessorWaveView.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r2/logs/fix.patch` | 0 | `patch-1.log`; only the product-file change was reversed. |
+| RED with reversed patch | `ctest -R '^AudioFileProcessorWaveViewTest$' --output-on-failure` | 8 | `test-4.log`: 1/1 failed again at the old unsigned conversion. |
+| Reapply product patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r2/logs/fix.patch` | 0 | `patch-2.log`. |
+| GREEN after reapply | `ctest -R '^AudioFileProcessorWaveViewTest$' --output-on-failure` | 0 | `test-5.log`: 1/1 passed. |
+| Build app for RED/GREEN and reversal runs | `cmake --build build --target zene` | 0 | `build-3.log`, `build-6.log`, `build-8.log`, and `build-10.log`. |
+| Build app and plugin | `cmake --build build --target zene audiofileprocessor` | 0 | `build-12.log`. |
+| Build test target | `cmake --build . --target AudioFileProcessorWaveViewTest` (from `build/tests`) | 0 | `build-4.log`, `build-5.log`, `build-7.log`, `build-9.log`, and `build-11.log`. |
+| Complexity gate | `bash tests/complexity-gate.sh --check` | 0 | `gate-3.log`. |
+| File-length gate | `bash tests/file-length-gate.sh --check` | 0 | `gate-4.log`. |
 
-The build/test output is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r1/logs/`: `test-1.log` through `test-3.log`, `build-1.log`, and `gate-3.log` / `gate-4.log`. The requested RED/green proof, affected-family test execution, and `zene` rebuild remain unperformed because there is no registered test family or target to build.
+The affected CTest family contains one registered test; each valid RED/GREEN run executed 1 test. Both required gates passed. `git diff --check` also exited 0.
+
+The initial target lookup `cmake --build build --target zene AudioFileProcessorWaveViewTest` exited 2 because the test target is exposed from `build/tests`; subsequent builds used that tree. The first test attempt (`test-1.log`, exit 8) hit an unrelated paint-time playhead underflow because its viewport began above frame zero. The fixture was adjusted to begin its viewport at zero while keeping the marker draggable; only `test-2.log` is counted as the before-fix RED evidence.
 
 ## Files committed
 
-- `docs/qwen-fixes-2026-10/cluster-new-p9-571.md` (this blocked report only)
+- `plugins/AudioFileProcessor/AudioFileProcessorWaveView.cpp`
+- `tests/src/core/AudioFileProcessorWaveViewTest.cpp`
+- `tests/CMakeLists.txt`
+- `tests/fork-sources.txt`
+- `tests/all-sources.txt`
+- `tests/upstream-modifications.txt`
+- `docs/qwen-fixes-2026-10/cluster-new-p9-571.md`

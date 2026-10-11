@@ -2336,6 +2336,7 @@ tests/src/core/AudioBusHandleTest.cpp
 tests/src/core/AudioBusTest.cpp
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioEngineTeardownTest.cpp
+tests/src/core/AudioFileProcessorWaveViewTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
