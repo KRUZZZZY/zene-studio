@@ -35,6 +35,7 @@
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "Fader.h"
+#include "FloatModelEditorBase.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
@@ -96,6 +97,17 @@ private slots:
 		delete model;
 		QVERIFY(fader.model() == nullptr);
 		fader.grab();  // must not read through the null
+	}
+
+	void aFloatModelEditorWhoseModelDiesPaintsNothing()
+	{
+		FloatModelEditorBase editor;
+		auto* model = new FloatModel(1.f, 0.f, 2.f, 0.01f);
+		editor.setModel(model);
+		editor.grab();
+		delete model;
+		QVERIFY(editor.model() == nullptr);
+		editor.grab();  // must not read through the null
 	}
 
 private:
