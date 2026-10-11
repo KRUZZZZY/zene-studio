@@ -128,6 +128,7 @@ void DrumSynth::GetEnv(int env, const char* sec, const char* key, QString ini)
 {
 	char en[256], s[8];
 	int i = 0, o = 0, ep = 0;
+	bool tokenTooLong = false;
 	GetPrivateProfileString(sec, key, "0,0 100,0", en, sizeof(en), ini);
 
 	// be safe!
@@ -138,30 +139,39 @@ void DrumSynth::GetEnv(int env, const char* sec, const char* key, QString ini)
 	{
 		if (en[i] == ',')
 		{
-			if (sscanf(s, "%f", &envpts[env][0][ep]) == 0)
+			if (tokenTooLong || sscanf(s, "%f", &envpts[env][0][ep]) == 0)
 			{
 				envpts[env][0][ep] = 0.f;
 			}
 			o = 0;
+			tokenTooLong = false;
 		}
 		else if (en[i] == ' ')
 		{
-			if (sscanf(s, "%f", &envpts[env][1][ep]) == 0)
+			if (tokenTooLong || sscanf(s, "%f", &envpts[env][1][ep]) == 0)
 			{
 				envpts[env][1][ep] = 0.f;
 			}
 			o = 0;
+			tokenTooLong = false;
 			ep++;
 		}
 		else
 		{
-			s[o] = en[i];
-			o++;
-			s[o] = 0;
+			if (o < static_cast<int>(sizeof(s)) - 1)
+			{
+				s[o] = en[i];
+				o++;
+				s[o] = 0;
+			}
+			else
+			{
+				tokenTooLong = true;
+			}
 		}
 		i++;
 	}
-	if (sscanf(s, "%f", &envpts[env][1][ep]) == 0)
+	if (tokenTooLong || sscanf(s, "%f", &envpts[env][1][ep]) == 0)
 	{
 		envpts[env][1][ep] = 0.f;
 	}
