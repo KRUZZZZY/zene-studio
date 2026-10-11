@@ -261,7 +261,7 @@ void ProjectRenderer::run()
 	// Skip first empty buffer.
 	Engine::audioEngine()->renderNextPeriod();
 
-	m_progress = 0;
+	m_progress.store( 0, std::memory_order_relaxed );
 
 	// Now start processing
 	Engine::audioEngine()->startProcessing();
@@ -282,10 +282,11 @@ void ProjectRenderer::run()
 		m_fileDev->writeBuffer(buffer.data(), buffer.size());
 
 		const int nprog = Engine::getSong()->getExportProgress();
-		if (m_progress != nprog)
+		const int progress = m_progress.load( std::memory_order_relaxed );
+		if (progress != nprog)
 		{
-			m_progress = nprog;
-			emit progressChanged( m_progress );
+			m_progress.store( nprog, std::memory_order_relaxed );
+			emit progressChanged( nprog );
 		}
 	}
 
@@ -352,16 +353,17 @@ void ProjectRenderer::updateConsoleProgress()
 	static int rot = 0;
 	auto buf = std::array<char, 80>{};
 	auto prog = std::array<char, cols + 1>{};
+	const int progress = m_progress.load( std::memory_order_relaxed );
 
 	for( int i = 0; i < cols; ++i )
 	{
-		prog[i] = ( i*100/cols <= m_progress ? '-' : ' ' );
+		prog[i] = ( i*100/cols <= progress ? '-' : ' ' );
 	}
 	prog[cols] = 0;
 
 	const auto activity = "|/-\\";
 	std::fill(buf.begin(), buf.end(), 0);
-	std::snprintf(buf.data(), buf.size(), "\r|%s|    %3d%%   %c  ", prog.data(), m_progress,
+	std::snprintf(buf.data(), buf.size(), "\r|%s|    %3d%%   %c  ", prog.data(), progress,
 							activity[rot] );
 	rot = ( rot+1 ) % 4;
 

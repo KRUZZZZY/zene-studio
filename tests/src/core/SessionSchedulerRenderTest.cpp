@@ -49,6 +49,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 #include "Engine.h"
@@ -91,6 +92,11 @@ class SessionSchedulerRenderTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void progressStorageIsAtomic()
+	{
+		QVERIFY(( std::is_same_v<decltype(ProjectRenderer::m_progress), std::atomic<int>> ));
+	}
+
 	void initTestCase()
 	{
 		Engine::init( true );

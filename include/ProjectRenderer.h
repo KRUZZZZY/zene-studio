@@ -35,6 +35,10 @@
 
 #include "lmms_export.h"
 
+#ifdef LMMS_TESTING
+class SessionSchedulerRenderTest;
+#endif
+
 namespace lmms
 {
 
@@ -118,6 +122,10 @@ signals:
 
 
 private:
+#ifdef LMMS_TESTING
+	friend class ::SessionSchedulerRenderTest;
+#endif
+
 	void run() override;
 
 	//! Writes the sidecar, tells the console and emits loudnessReportReady().
@@ -129,7 +137,7 @@ private:
 	QString m_loudnessReportPath;
 	QString m_loudnessReportError;
 
-	volatile int m_progress;
+	std::atomic<int> m_progress;
 	std::atomic<bool> m_abort;  //!< set by abortProcessing() on another thread; volatile is not a synchronisation
 
 	/*! The selection that was in force before this renderer published its own
