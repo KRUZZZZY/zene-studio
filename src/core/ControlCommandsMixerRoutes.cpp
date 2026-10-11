@@ -251,8 +251,8 @@ ControlResult removeSidechainSend(Mixer* mixer, const RoutingEnds& ends)
 	return ControlResult::success(result);
 }
 
-//! Remove a regular send: re-created by the recorded step with its amount and
-//! pre-fader flag.
+//! Remove a regular send: re-created by the recorded step with its amount,
+//! pre-fader flag, pan and enabled state.
 ControlResult removeRegularSend(Mixer* mixer, const RoutingEnds& ends)
 {
 	const mix_ch_t fromIndex = ends.from->index();
@@ -267,9 +267,15 @@ ControlResult removeRegularSend(Mixer* mixer, const RoutingEnds& ends)
 	const QJsonObject before = mixerRouteBeforeState(route);
 	const float amount = static_cast<float>(route->amount()->value());
 	const bool preFader = route->preFader();
+	const float pan = route->pan()->value();
+	const bool enabled = route->enabled();
 	control::addUndoStep(
-		[mixer, fromIndex, toIndex, amount, preFader]() {
-			mixer->createChannelSend(fromIndex, toIndex, amount, preFader);
+		[mixer, fromIndex, toIndex, amount, preFader, pan, enabled]() {
+			if (MixerRoute* restored = mixer->createChannelSend(fromIndex, toIndex, amount, preFader))
+			{
+				restored->pan()->setValue(pan);
+				restored->enabledModel()->setValue(enabled);
+			}
 		},
 		[mixer, fromIndex, toIndex]() { mixer->deleteChannelSend(fromIndex, toIndex); });
 	mixer->deleteChannelSend(route);
@@ -287,8 +293,8 @@ ControlResult removeRegularSend(Mixer* mixer, const RoutingEnds& ends)
 			{QStringLiteral("pre_fader"), preFader}},
 		true,
 		QStringLiteral("action checkpoint: the recorded undo step re-creates the send through the "
-			"same Mixer::createChannelSend call, with the captured amount and pre-fader flag (a "
-			"send's whole state is those two numbers plus its endpoints)"));
+			"same Mixer::createChannelSend call, then restores the captured pan and enabled state "
+			"alongside the amount and pre-fader flag"));
 	result.insert(QStringLiteral("__transaction"), transaction);
 	return ControlResult::success(result);
 }

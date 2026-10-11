@@ -183,6 +183,29 @@ private slots:
 		run(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)}});
 	}
 
+	void removingThenUndoingSendRestoresItsPanAndEnabledState()
+	{
+		const QJsonObject ends{{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)}};
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)},
+			{QStringLiteral("amount"), 0.37}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_pan"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)},
+			{QStringLiteral("pan"), -0.65}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_enable"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(3)},
+			{QStringLiteral("enabled"), false}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.route_remove"), ends).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+
+		MixerRoute* restored = control::findMixerRoute(1, 3);
+		const bool restoredExists = restored != nullptr;
+		const float restoredPan = restoredExists ? restored->pan()->value() : 0.f;
+		const bool restoredEnabled = restoredExists && restored->enabled();
+		if (restoredExists) { run(QStringLiteral("mixer.route_remove"), ends); }
+
+		QVERIFY(restoredExists);
+		QCOMPARE(restoredPan, -0.65f);
+		QVERIFY(!restoredEnabled);
+	}
+
 	void sendsFromManyChannelsAreOneStep()
 	{
 		// Counted from what each channel already sends (the master route, any a test left).
