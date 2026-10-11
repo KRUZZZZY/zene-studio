@@ -24,6 +24,8 @@
 #include <vector>
 
 #include <QByteArray>
+#include <QDir>
+#include <QFileInfo>
 #include <QLibrary>
 #include <memory>
 #include <QProcess>
@@ -189,6 +191,7 @@ private slots:
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void slice6PluginsAreLiveAndExact();
+	void partialInitializationCleansAcquiredResources();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
 
@@ -204,7 +207,10 @@ void PluginPortsMigrationTest::initTestCase()
 	// Slice 6 (task #589): LadspaManager reads LADSPA_PATH when it is first
 	// constructed, so it has to be set before Engine::init(). The reference
 	// renderer is spawned as a child process and inherits this environment.
-	qputenv("LADSPA_PATH", QByteArray{PART_C_LADSPA_DIR});
+	const auto failurePluginPath = QString::fromUtf8(PART_C_FAILURE_LADSPA_MODULE);
+	const auto ladspaPath = QString::fromUtf8(PART_C_LADSPA_DIR) + QDir::listSeparator()
+		+ QFileInfo{failurePluginPath}.absolutePath();
+	qputenv("LADSPA_PATH", ladspaPath.toLocal8Bit());
 
 	lmms::Engine::init(true);
 	QVERIFY2(lmms::Engine::audioEngine() != nullptr, "engine failed to initialise");
@@ -575,6 +581,50 @@ void PluginPortsMigrationTest::slice6PluginsAreLiveAndExact()
 	QVERIFY2(amp->checksum != djEq->checksum,
 		"distinct LADSPA plugins rendered identically");
 	QVERIFY2(worst > 1e-6f, "LADSPA comparison not sensitive");
+}
+
+
+void PluginPortsMigrationTest::partialInitializationCleansAcquiredResources()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary ladspaLibrary{QString::fromUtf8(PART_C_FAILURE_LADSPA_MODULE)};
+	QVERIFY2(ladspaLibrary.load(), qPrintable(ladspaLibrary.errorString()));
+	auto reset = reinterpret_cast<void (*)()>(
+		ladspaLibrary.resolve("partial_init_failure_reset"));
+	auto instantiations = reinterpret_cast<unsigned long (*)()>(
+		ladspaLibrary.resolve("partial_init_failure_instantiations"));
+	auto cleanups = reinterpret_cast<unsigned long (*)()>(
+		ladspaLibrary.resolve("partial_init_failure_cleanups"));
+	QVERIFY(reset != nullptr);
+	QVERIFY(instantiations != nullptr);
+	QVERIFY(cleanups != nullptr);
+	reset();
+
+	QLibrary effectLibrary{QString::fromUtf8(PART_C_MIGRATED_ladspaeffect)};
+	effectLibrary.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(effectLibrary.load(), qPrintable(effectLibrary.errorString()));
+	auto entry = reinterpret_cast<MainFn>(effectLibrary.resolve("lmms_plugin_main"));
+	auto* descriptor = reinterpret_cast<const lmms::Plugin::Descriptor*>(
+		effectLibrary.resolve("ladspaeffect_plugin_descriptor"));
+	QVERIFY(entry != nullptr);
+	QVERIFY(descriptor != nullptr);
+
+	lmms::Plugin::Descriptor::SubPluginFeatures::Key key{
+		descriptor, QStringLiteral("ladspaeffect:partial_init_failure")};
+	key.attributes[QStringLiteral("file")] =
+		QFileInfo{QString::fromUtf8(PART_C_FAILURE_LADSPA_MODULE)}.fileName();
+	key.attributes[QStringLiteral("plugin")] = QStringLiteral("partial_init_failure");
+	std::unique_ptr<lmms::Effect> effect{
+		static_cast<lmms::Effect*>(entry(nullptr, &key))};
+	QVERIFY(effect != nullptr);
+	QCOMPARE(instantiations(), 2UL);
+	QVERIFY(!effect->isOkay());
+	effect.reset();
+	QCOMPARE(cleanups(), 1UL);
 }
 
 /*!
