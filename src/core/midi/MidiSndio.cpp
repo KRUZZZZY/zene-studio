@@ -68,8 +68,16 @@ MidiSndio::~MidiSndio()
 	if( isRunning() )
 	{
 		m_quit = true;
-		wait( 1000 );
-		terminate();
+		if( !wait( 1000 ) )
+		{
+			terminate();
+			wait();
+		}
+	}
+
+	if( m_hdl != nullptr )
+	{
+		mio_close( m_hdl );
 	}
 }
 

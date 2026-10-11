@@ -27,6 +27,7 @@
 
 #include <QtTest>
 
+#include <atomic>
 #include <cstddef>
 
 #include <QString>
@@ -37,11 +38,71 @@
 #include "MidiEventProcessor.h"
 #include "MidiPort.h"
 #include "MidiReconnect.h"
+#include "MidiSndio.h"
 #include "TimePos.h"
 
 #include "Engine.h"
 
 using namespace lmms;
+
+#ifdef LMMS_HAVE_SNDIO
+#include <poll.h>
+#include <sndio.h>
+
+namespace
+{
+
+std::atomic_int g_mioOpenCount{0};
+std::atomic_int g_mioCloseCount{0};
+std::atomic_bool g_mioCloseWhileRunning{false};
+lmms::MidiSndio* g_clientBeingDestroyed = nullptr;
+int g_fakeMioHandleStorage = 0;
+
+mio_hdl* fakeMioHandle()
+{
+	return reinterpret_cast<mio_hdl*>(&g_fakeMioHandleStorage);
+}
+
+} // namespace
+
+extern "C" mio_hdl* mio_open(const char*, unsigned int, int)
+{
+	++g_mioOpenCount;
+	return fakeMioHandle();
+}
+
+extern "C" void mio_close(mio_hdl* handle)
+{
+	if (handle == fakeMioHandle())
+	{
+		if (g_clientBeingDestroyed != nullptr && g_clientBeingDestroyed->isRunning())
+		{
+			g_mioCloseWhileRunning = true;
+		}
+		++g_mioCloseCount;
+	}
+}
+
+extern "C" size_t mio_write(mio_hdl*, const void*, size_t size)
+{
+	return size;
+}
+
+extern "C" size_t mio_read(mio_hdl*, void*, size_t)
+{
+	return 0;
+}
+
+extern "C" int mio_pollfd(mio_hdl*, struct pollfd*, int)
+{
+	return 0;
+}
+
+extern "C" int mio_revents(mio_hdl*, struct pollfd*)
+{
+	return 0;
+}
+#endif
 
 namespace
 {
@@ -117,6 +178,27 @@ class MidiReconnectTest : public QObject
 	Q_OBJECT
 
 private slots:
+
+#ifdef LMMS_HAVE_SNDIO
+	//! The sndio handle belongs to the client and must be released as that
+	//! client is destroyed. A fake sndio handle makes this independent of host
+	//! devices while still exercising MidiSndio's constructor and destructor.
+	void sndioHandleIsClosedWhenClientIsDestroyed()
+	{
+		g_mioOpenCount = 0;
+		g_mioCloseCount = 0;
+		g_mioCloseWhileRunning = false;
+		{
+			MidiSndio client;
+			g_clientBeingDestroyed = &client;
+			QCOMPARE(g_mioOpenCount.load(), 1);
+			QVERIFY(client.isRunning());
+		}
+		g_clientBeingDestroyed = nullptr;
+		QCOMPARE(g_mioCloseCount.load(), 1);
+		QVERIFY(!g_mioCloseWhileRunning.load());
+	}
+#endif
 
 	//! A real Engine, because a MidiPort is a Model: its AutomatableModels
 	//! register themselves with the running Song (the automation cache), so a
