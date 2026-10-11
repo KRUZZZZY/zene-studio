@@ -32,6 +32,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include "BasicFilters.h"
 #include "Engine.h"
 #include "Plugin.h"
 
@@ -185,6 +186,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void doubleFilterClearHistoryClearsSubfilter();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +216,17 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::doubleFilterClearHistoryClearsSubfilter()
+{
+	lmms::BasicFilters<1> filter{static_cast<lmms::sample_rate_t>(48000)};
+	filter.setFilterType(lmms::BasicFilters<1>::FilterType::DoubleLowPass);
+	filter.calcFilterCoeffs(1000.0f, 0.7f);
+	QVERIFY(filter.update(1.0f, 0) != 0.0f);
+
+	filter.clearHistory();
+	QCOMPARE(filter.update(0.0f, 0), 0.0f);
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()

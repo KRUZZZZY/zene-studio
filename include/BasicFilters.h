@@ -325,6 +325,11 @@ public:
 			m_delay3[_chnl] = 0.0f;
 			m_delay4[_chnl] = 0.0f;
 		}
+
+		if( m_subFilter != nullptr )
+		{
+			m_subFilter->clearHistory();
+		}
 	}
 
 	inline void setSampleRate(const sample_rate_t sampleRate)
