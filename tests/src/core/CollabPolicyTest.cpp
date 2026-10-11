@@ -32,7 +32,26 @@
 #include "ControlRegistry.h"
 
 #ifdef ZENE_HAVE_COLLAB
+#include <memory>
+
+#include <QByteArray>
+#include <QHostAddress>
+#include <QJsonObject>
+#include <QList>
+#include <QObject>
+#include <QString>
+#include <QUrl>
+
+#include "CollabLink.h"
 #include "CollabInvite.h"
+#include "PortMappingCodec.h"
+#include "lmms_export.h"
+
+// The deterministic invite test seeds a router result without depending on the host's real network.
+#define private public
+#include "CollabSession.h"
+#include "PortMapping.h"
+#undef private
 #endif
 
 using namespace lmms;
@@ -253,6 +272,33 @@ private slots:
 		QVERIFY(!Invite::decode(text.left(text.size() - 6), &out, &error));
 		QVERIFY(!Invite::decode(QStringLiteral("https://example.org/join"), &out, &error));
 		QVERIFY(!Invite::decode(QStringLiteral("ZENE1-0189"), &out, &error));
+	}
+
+	//! A public invite must not encode a router address hidden behind CGNAT.
+	void publicInviteRefusesUnreachableMapping()
+	{
+		const QString tlsUnavailable = tlsPskUnavailableReason();
+		if (!tlsUnavailable.isEmpty()) { QSKIP(qPrintable(tlsUnavailable)); }
+		CollabSession* session = CollabSession::instance();
+		struct StopSession
+		{
+			CollabSession* session;
+			~StopSession() { if (session->mode() == CollabSession::Mode::Hosting) { session->stop(); } }
+		} stop{session};
+		const ControlResult hosted = session->host(0, false, QStringLiteral("invite test"));
+		QVERIFY2(hosted.ok, qPrintable(hosted.errorMessage));
+		QVERIFY(session->m_mapping);
+		auto& mapped = session->m_mapping->m_result;
+		mapped.ok = true;
+		mapped.externalAddress = QHostAddress(QStringLiteral("100.64.12.34"));
+		mapped.externalPort = 41741;
+		mapped.message = QStringLiteral("the router reports a CGNAT address; resolve the upstream NAT");
+
+		const ControlResult result = session->invite(CollabRole::Editor, QStringLiteral("public"));
+		QVERIFY2(!result.ok, qPrintable(result.errorMessage));
+		QCOMPARE(result.errorKind, ControlErrorKind::Refused);
+		QVERIFY(result.errorMessage.contains(QStringLiteral("scope 'lan'")));
+		QVERIFY(result.errorMessage.contains(QStringLiteral("upstream NAT")));
 	}
 #endif
 };
