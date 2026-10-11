@@ -213,7 +213,7 @@ QString parseRenderArgs(const QJsonObject& args, QString* out, QString* formatNa
 	ProjectRenderer::ExportFileFormat* format, ControlExportPreset* settings)
 {
 	*out = args.value(QStringLiteral("out")).toString();
-	if (!out->startsWith(QLatin1Char('/')))
+	if (!QFileInfo(*out).isAbsolute())
 	{
 		return QStringLiteral("'out' must be an absolute path");
 	}

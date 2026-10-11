@@ -2380,6 +2380,7 @@ tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlNoteScaleVerbsTest.cpp
 tests/src/core/ControlProjectArchiveTest.cpp
 tests/src/core/ControlRegistryTest.cpp
+tests/src/core/ControlRenderOutputPathTest.cpp
 tests/src/core/ControlResultSchemaTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
