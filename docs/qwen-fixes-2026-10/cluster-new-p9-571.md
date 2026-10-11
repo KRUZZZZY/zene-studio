@@ -30,7 +30,20 @@ The affected CTest family contains one registered test; each valid RED/GREEN run
 
 The initial target lookup `cmake --build build --target zene AudioFileProcessorWaveViewTest` exited 2 because the test target is exposed from `build/tests`; subsequent builds used that tree. The first test attempt (`test-1.log`, exit 8) hit an unrelated paint-time playhead underflow because its viewport began above frame zero. The fixture was adjusted to begin its viewport at zero while keeping the marker draggable; only `test-2.log` is counted as the before-fix RED evidence.
 
-## Files committed
+## Round 3 QA rework
+
+Luna's round 2 review found that the test's sanitizer-specific `ENVIRONMENT` property replaced the shared offscreen setting. `tests/CMakeLists.txt` now sets both `QT_QPA_PLATFORM=offscreen` and `UBSAN_OPTIONS=halt_on_error=1` for `AudioFileProcessorWaveViewTest`. Rebuilt the test target and ran CTest with both `DISPLAY` and `QT_QPA_PLATFORM` removed from the caller environment; CTest supplied its own offscreen setting and passed the single registered test.
+
+| Stage | Exact command | Exit | Result |
+|---|---|---:|---|
+| Rebuild test target (from `build/tests`) | `cmake --build . --target AudioFileProcessorWaveViewTest` | 0 | `build-1.log`. |
+| Headless CTest (from `build/tests`) | `env -u DISPLAY -u QT_QPA_PLATFORM ctest -R '^AudioFileProcessorWaveViewTest$' --output-on-failure` | 0 | `test-1.log`: 1/1 test passed; caller had no `DISPLAY` or `QT_QPA_PLATFORM`. |
+| Complexity gate | `bash tests/complexity-gate.sh --check` | 0 | `gate-1.log`. |
+| File-length gate | `bash tests/file-length-gate.sh --check` | 0 | `gate-2.log`. |
+
+All round 3 build, test and gate logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-571.r3/logs`.
+
+## Files from original fix commit
 
 - `plugins/AudioFileProcessor/AudioFileProcessorWaveView.cpp`
 - `tests/src/core/AudioFileProcessorWaveViewTest.cpp`
@@ -38,4 +51,9 @@ The initial target lookup `cmake --build build --target zene AudioFileProcessorW
 - `tests/fork-sources.txt`
 - `tests/all-sources.txt`
 - `tests/upstream-modifications.txt`
+- `docs/qwen-fixes-2026-10/cluster-new-p9-571.md`
+
+The round 3 QA correction commit contains:
+
+- `tests/CMakeLists.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p9-571.md`

@@ -1168,7 +1168,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 		-fsanitize=float-cast-overflow -fno-sanitize-recover=float-cast-overflow)
 	target_link_options(AudioFileProcessorWaveViewTest PRIVATE -fsanitize=float-cast-overflow)
 	set_tests_properties(AudioFileProcessorWaveViewTest PROPERTIES
-		ENVIRONMENT "UBSAN_OPTIONS=halt_on_error=1")
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen;UBSAN_OPTIONS=halt_on_error=1")
 endif()
 
 # ---------------------------------------------------------------------------
