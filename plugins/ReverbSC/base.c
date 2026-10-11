@@ -8,13 +8,34 @@ int sp_create(sp_data **spp) { return sp_createn(spp, 1); }
 
 int sp_createn(sp_data **spp, int nchan)
 {
+	if (spp == NULL)
+	{
+		return SP_NOT_OK;
+	}
+	*spp = NULL;
+	if (nchan <= 0)
+	{
+		return SP_NOT_OK;
+	}
+
 	const uint32_t sr = 44100; // TODO C23: constexpr auto
 	const unsigned long len_seconds = 5; // TODO C23: constexpr auto
-	*spp = malloc(sizeof(sp_data));
-	**spp = (sp_data){ .out = calloc(nchan, sizeof(float)), .sr = sr,
+	sp_data* sp = malloc(sizeof(sp_data));
+	if (sp == NULL)
+	{
+		return SP_NOT_OK;
+	}
+	SPFLOAT* out = calloc((size_t)nchan, sizeof(float));
+	if (out == NULL)
+	{
+		free(sp);
+		return SP_NOT_OK;
+	}
+	*sp = (sp_data){ .out = out, .sr = sr,
 		.nchan = nchan, .len = len_seconds * sr, .pos = 0,
 		.filename = "test.wav", .rand = 0 };
-	return 0;
+	*spp = sp;
+	return SP_OK;
 }
 
 int sp_destroy(sp_data **spp)
