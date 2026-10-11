@@ -25,7 +25,12 @@
 
 #include "FreeBoy.h"
 
+#include <atomic>
+#include <array>
 #include <cmath>
+#include <memory>
+#include <mutex>
+#include <vector>
 #include <QDomElement>
 
 #include "GbApuWrapper.h"
@@ -50,6 +55,68 @@ namespace
 {
 constexpr blip_time_t FRAME_LENGTH = 70224;
 constexpr long CLOCK_RATE = 4194304;
+constexpr int BUFFER_LENGTH_MS = 25;
+constexpr std::size_t VOICE_POOL_CAPACITY = 1024;
+char noFreeBoyVoiceMarker;
+}
+
+class FreeBoyVoicePool
+{
+public:
+	struct Voice
+	{
+		GbApuWrapper apu;
+		std::atomic_flag inUse = ATOMIC_FLAG_INIT;
+		bool ready = false;
+	};
+
+	explicit FreeBoyVoicePool(long sampleRate) : m_sampleRate{sampleRate}
+	{
+		for (Voice& voice : m_voices)
+		{
+			voice.ready = voice.apu.setSampleRate(sampleRate, CLOCK_RATE, BUFFER_LENGTH_MS) == nullptr;
+		}
+	}
+
+	auto sampleRate() const -> long { return m_sampleRate; }
+
+	auto acquire() noexcept -> Voice*
+	{
+		for (Voice& voice : m_voices)
+		{
+			if (!voice.ready || voice.inUse.test_and_set(std::memory_order_acquire)) { continue; }
+			voice.apu.reset();
+			return &voice;
+		}
+		return nullptr;
+	}
+
+	static void release(Voice* voice) noexcept
+	{
+		voice->inUse.clear(std::memory_order_release);
+	}
+
+private:
+	long m_sampleRate;
+	std::array<Voice, VOICE_POOL_CAPACITY> m_voices;
+};
+
+namespace
+{
+auto freeBoyVoicePoolForSampleRate(long sampleRate) -> FreeBoyVoicePool*
+{
+	static std::mutex poolsMutex;
+	static std::vector<std::unique_ptr<FreeBoyVoicePool>> pools;
+	const std::lock_guard lock{poolsMutex};
+	for (const auto& pool : pools)
+	{
+		if (pool->sampleRate() == sampleRate) { return pool.get(); }
+	}
+	auto pool = std::make_unique<FreeBoyVoicePool>(sampleRate);
+	FreeBoyVoicePool* result = pool.get();
+	pools.push_back(std::move(pool));
+	return result;
+}
 }
 
 extern "C"
@@ -73,6 +140,7 @@ Plugin::Descriptor PLUGIN_EXPORT freeboy_plugin_descriptor =
 
 FreeBoyInstrument::FreeBoyInstrument( InstrumentTrack * _instrument_track ) :
 	Instrument(_instrument_track, &freeboy_plugin_descriptor),
+	m_voicePool{freeBoyVoicePoolForSampleRate(Engine::audioEngine()->outputSampleRate())},
 
 	m_ch1SweepTimeModel( 4.0f, 0.0f, 7.0f, 1.0f, this, tr( "Sweep time" ) ),
 	m_ch1SweepDirModel( false, this, tr( "Sweep direction" ) ),
@@ -124,6 +192,9 @@ FreeBoyInstrument::FreeBoyInstrument( InstrumentTrack * _instrument_track ) :
 
 	m_graphModel( 0, 15, 32, this, false, 1 )
 {
+	QObject::connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this]() {
+		m_voicePool = freeBoyVoicePoolForSampleRate(Engine::audioEngine()->outputSampleRate());
+	});
 }
 
 
@@ -231,17 +302,23 @@ float FreeBoyInstrument::desiredReleaseTimeMs() const
 void FreeBoyInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 {
 	const f_cnt_t tfp = nph->totalFramesPlayed();
-	const int samplerate = Engine::audioEngine()->outputSampleRate();
 	const f_cnt_t frames = nph->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = nph->noteOffset();
 
 	int data = 0;
 	int freq = nph->frequency();
 
+	if (nph->m_pluginData == &noFreeBoyVoiceMarker) { return; }
+
 	if (!nph->m_pluginData)
 	{
-		auto papu = new GbApuWrapper{};
-		papu->setSampleRate(samplerate, CLOCK_RATE);
+		auto voice = m_voicePool->acquire();
+		if (!voice)
+		{
+			nph->m_pluginData = &noFreeBoyVoiceMarker;
+			return;
+		}
+		auto papu = &voice->apu;
 
 		// Master sound circuitry power control
 		papu->writeRegister(0xff26, 0x80);
@@ -268,10 +345,10 @@ void FreeBoyInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 		data += m_ch4SweepStepLengthModel.value();
 		papu->writeRegister(0xff21, data);
 
-		nph->m_pluginData = papu;
+		nph->m_pluginData = voice;
 	}
 
-	auto papu = static_cast<GbApuWrapper*>(nph->m_pluginData);
+	auto papu = &static_cast<FreeBoyVoicePool::Voice*>(nph->m_pluginData)->apu;
 
 	papu->trebleEq(m_trebleModel.value());
 	papu->bassFreq(m_bassModel.value());
@@ -411,7 +488,8 @@ void FreeBoyInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 
 void FreeBoyInstrument::deleteNotePluginData(NotePlayHandle* nph)
 {
-	delete static_cast<GbApuWrapper*>(nph->m_pluginData);
+	if (!nph->m_pluginData || nph->m_pluginData == &noFreeBoyVoiceMarker) { return; }
+	FreeBoyVoicePool::release(static_cast<FreeBoyVoicePool::Voice*>(nph->m_pluginData));
 }
 
 

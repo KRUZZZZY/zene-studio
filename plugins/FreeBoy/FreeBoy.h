@@ -36,6 +36,7 @@ namespace lmms
 {
 
 class NotePlayHandle;  // IWYU pragma: keep
+class FreeBoyVoicePool;
 
 
 namespace gui
@@ -72,6 +73,7 @@ public:
 
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
+	FreeBoyVoicePool* m_voicePool;
 
 	FloatModel m_ch1SweepTimeModel;
 	BoolModel m_ch1SweepDirModel;

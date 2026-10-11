@@ -28,11 +28,18 @@ namespace lmms
 
 
 // Sets specified sample rate and clock rate in Stereo_Buffer
-blargg_err_t GbApuWrapper::setSampleRate(long sampleRate, long clockRate)
+blargg_err_t GbApuWrapper::setSampleRate(long sampleRate, long clockRate, int bufferLengthMs)
 {
 	Gb_Apu::output(m_buf.center(), m_buf.left(), m_buf.right());
 	m_buf.clock_rate(clockRate);
-	return m_buf.set_sample_rate(sampleRate);
+	return m_buf.set_sample_rate(sampleRate, bufferLengthMs);
+}
+
+void GbApuWrapper::reset()
+{
+	Gb_Apu::reset();
+	m_buf.clear();
+	m_time = 0;
 }
 
 // Wrap Stereo_Buffer::samples_avail()

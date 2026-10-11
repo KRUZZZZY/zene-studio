@@ -37,7 +37,8 @@ public:
 	GbApuWrapper() = default;
 	~GbApuWrapper() = default;
 
-	blargg_err_t setSampleRate(long sampleRate, long clockRate);
+	blargg_err_t setSampleRate(long sampleRate, long clockRate, int bufferLengthMs = 250);
+	void reset();
 	void writeRegister(unsigned addr, int data) { Gb_Apu::write_register(fakeClock(), addr, data); }
 	long samplesAvail() const;
 	long readSamples(blip_sample_t* out, long count);

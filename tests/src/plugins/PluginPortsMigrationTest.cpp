@@ -21,6 +21,8 @@
 #include "PluginPortsHarness.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <new>
 #include <vector>
 
 #include <QByteArray>
@@ -34,6 +36,39 @@
 
 #include "Engine.h"
 #include "Plugin.h"
+
+void* operator new(std::size_t size)
+{
+	partc::RealtimeAllocationWatch::allocation();
+	if (void* allocation = std::malloc(size == 0 ? 1 : size)) { return allocation; }
+	throw std::bad_alloc{};
+}
+
+void* operator new[](std::size_t size)
+{
+	return ::operator new(size);
+}
+
+void operator delete(void* allocation) noexcept
+{
+	partc::RealtimeAllocationWatch::deallocation();
+	std::free(allocation);
+}
+
+void operator delete(void* allocation, std::size_t) noexcept
+{
+	::operator delete(allocation);
+}
+
+void operator delete[](void* allocation) noexcept
+{
+	::operator delete(allocation);
+}
+
+void operator delete[](void* allocation, std::size_t) noexcept
+{
+	::operator delete(allocation);
+}
 
 namespace
 {
@@ -276,7 +311,16 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 
 		partc::PluginRender render;
 		render.name = QString::fromUtf8(m.plugin);
-		render.samples = partc::renderInstrumentInFreshThread(*inst, frames, lmms::DefaultKey);
+		partc::RealtimeAllocationCounts realtimeCounts;
+		render.samples = partc::renderInstrumentInFreshThread(*inst, frames, lmms::DefaultKey,
+			m.plugin == std::string{"freeboy"} ? &realtimeCounts : nullptr);
+		if (m.plugin == std::string{"freeboy"})
+		{
+			QVERIFY2(realtimeCounts.allocations == 0 && realtimeCounts.deallocations == 0,
+				qPrintable(QString{"render allocations=%1, deallocations=%2"}
+					.arg(static_cast<qulonglong>(realtimeCounts.allocations))
+					.arg(static_cast<qulonglong>(realtimeCounts.deallocations))));
+		}
 		render.checksum = partc::checksum(render.samples);
 		m_migrated.push_back(std::move(render));
 
