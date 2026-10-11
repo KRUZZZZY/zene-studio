@@ -75,6 +75,16 @@ auto refuse(QString* error, const QString& why) -> bool
 	return false;
 }
 
+void clearCallerOutputs(float* const* outputs, int count, int frames)
+{
+	if (outputs == nullptr || frames <= 0) { return; }
+	const auto bytes = static_cast<std::size_t>(frames) * sizeof(float);
+	for (int channel = 0; channel < count; ++channel)
+	{
+		if (outputs[channel] != nullptr) { std::memset(outputs[channel], 0, bytes); }
+	}
+}
+
 auto fromString128(const String128 text) -> QString
 {
 	return QString::fromUtf16(reinterpret_cast<const char16_t*>(text)).trimmed();
@@ -602,6 +612,7 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 {
 	auto& d = *m_impl;
 	d.blockOutputCount = 0;
+	clearCallerOutputs(outputs, numOutputs, frames);
 	if (!d.prepared || !d.processor || frames <= 0) { return; }
 
 	// Chunking counters, in the CORE (include/PluginHostChunking.h): the audio
@@ -751,10 +762,14 @@ void HostedPlugin::Impl::mapBuses(const float* const* inputs, float* const* outp
 		auto& ptrs = outputChannelPtrs[b];
 		for (int32 c = 0; c < bus.numChannels; ++c, ++channel)
 		{
-			ptrs[c] = channel < static_cast<std::size_t>(numOutputs)
+			const bool hasCallerOutput = channel < static_cast<std::size_t>(numOutputs);
+			ptrs[c] = hasCallerOutput
 				? outputs[channel] + offset
 				: scratchOutput.data();
-			std::memset(ptrs[c], 0, static_cast<std::size_t>(chunk) * sizeof(float));
+			if (!hasCallerOutput)
+			{
+				std::memset(ptrs[c], 0, static_cast<std::size_t>(chunk) * sizeof(float));
+			}
 		}
 		bus.channelBuffers32 = ptrs.data();
 		bus.silenceFlags = 0;

@@ -203,8 +203,9 @@ public:
 	 *    the host applied before it chunked, so a note-off written at a block
 	 *    boundary still releases the note.
 	 *
-	 * A request of 0 frames does nothing at all. Calling process() before
-	 * prepare() (or after release()) does nothing at all.
+	 * A request of 0 frames does nothing at all. If there are frames but the
+	 * host is not prepared (or has been released), every supplied output channel
+	 * is cleared to silence and the plug-in is not called.
 	 */
 	void process(const float* const* inputs, float* const* outputs,
 		int numInputs, int numOutputs, int frames);

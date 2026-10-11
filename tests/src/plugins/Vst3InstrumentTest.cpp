@@ -165,6 +165,8 @@ private slots:
 
 	void testTheFixtureIsAnInstrumentWithAnEventBus();
 	void testNoEventsIsExactlySilent();
+	void testExtraOutputChannelIsCleared();
+	void testUnpreparedProcessClearsOutputs();
 	void testSampleAccurateNoteOff();
 	void testNoteOnOffsetIsHonoured();
 	void testDistinctInputGivesDistinctOutput();
@@ -245,6 +247,41 @@ void Vst3InstrumentTest::testNoEventsIsExactlySilent()
 	// (not a stale one), so the output is exact zero rather than the sentinel.
 	const auto block = renderWith({});
 	QVERIFY2(block.isSilent(), "a block with no MIDI events rendered non-silence");
+}
+
+void Vst3InstrumentTest::testExtraOutputChannelIsCleared()
+{
+	constexpr float Stale = -1.0f;
+	std::vector<float> left(TestBlockSize, Stale);
+	std::vector<float> right(TestBlockSize, Stale);
+	std::vector<float> extra(TestBlockSize, Stale);
+	float* outputs[3] = {left.data(), right.data(), extra.data()};
+
+	// The instrument exposes two bus channels. The host may supply more; the
+	// extra channel must not retain samples from a prior render.
+	m_plugin.process(nullptr, outputs, 0, 3, TestBlockSize);
+	QVERIFY2(std::all_of(extra.begin(), extra.end(), [](float sample) { return sample == 0.0f; }),
+		"an output channel outside the active VST3 buses retained stale samples");
+}
+
+void Vst3InstrumentTest::testUnpreparedProcessClearsOutputs()
+{
+	HostedPlugin unprepared;
+	QString error;
+	QVERIFY2(unprepared.load(QStringLiteral(VST3_TEST_INSTRUMENT_BUNDLE), QString{}, &error),
+		qPrintable(error));
+	QVERIFY(!unprepared.isPrepared());
+
+	constexpr float Stale = -1.0f;
+	std::vector<float> left(TestBlockSize, Stale);
+	std::vector<float> right(TestBlockSize, Stale);
+	float* outputs[2] = {left.data(), right.data()};
+	unprepared.process(nullptr, outputs, 0, 2, TestBlockSize);
+
+	QVERIFY2(std::all_of(left.begin(), left.end(), [](float sample) { return sample == 0.0f; }),
+		"the unprepared host left the first supplied output channel stale");
+	QVERIFY2(std::all_of(right.begin(), right.end(), [](float sample) { return sample == 0.0f; }),
+		"the unprepared host left the second supplied output channel stale");
 }
 
 void Vst3InstrumentTest::testSampleAccurateNoteOff()
