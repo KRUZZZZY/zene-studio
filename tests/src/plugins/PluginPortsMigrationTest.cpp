@@ -20,10 +20,13 @@
 
 #include "PluginPortsHarness.h"
 
+#include <cmath>
 #include <cstdio>
 #include <vector>
 
 #include <QByteArray>
+#include <QDir>
+#include <QDomDocument>
 #include <QLibrary>
 #include <memory>
 #include <QProcess>
@@ -186,6 +189,7 @@ public:
 private slots:
 	void initTestCase();
 	void migratedPluginsPreserveBehaviour();
+	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void slice6PluginsAreLiveAndExact();
@@ -400,6 +404,66 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 		qWarning().noquote() << QString{"UNPROVEN %1: %2"}
 			.arg(QString::fromUtf8(gap.plugin), QString::fromUtf8(gap.reason));
 	}
+}
+
+void PluginPortsMigrationTest::gigplayerBidirectionalLoopReflectsAtExclusiveEnd()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	const QString fixture = QDir{QString{QT_TESTCASE_SOURCEDIR}}
+		.filePath(QStringLiteral("data/gigproof/pingpong.gig"));
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	QDomDocument doc;
+	QDomElement root = doc.createElement(QStringLiteral("instrument"));
+	QDomElement saved = instrument->saveState(doc, root);
+	saved.setAttribute(QStringLiteral("src"), fixture);
+	saved.setAttribute(QStringLiteral("patch"), QStringLiteral("0"));
+	saved.setAttribute(QStringLiteral("bank"), QStringLiteral("0"));
+	instrument->restoreState(saved);
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	lmms::NotePlayHandleManager::init();
+	const auto rendered = partc::renderInstrumentInFreshThread(*instrument, frames, lmms::DefaultKey);
+	delete instrument;
+
+	constexpr int LoopEnd = 128;
+	constexpr int FramesAfterEnd = 8;
+	constexpr double FixtureRate = 44100.0;
+	const double outputRate = lmms::Engine::audioEngine()->outputSampleRate();
+	const auto afterEnd = static_cast<std::size_t>(std::lround(
+		(LoopEnd + FramesAfterEnd) * outputRate / FixtureRate));
+	const auto atEnd = static_cast<std::size_t>(std::lround((LoopEnd + 2) * outputRate / FixtureRate));
+	const auto firstPass = static_cast<std::size_t>(std::lround(
+		(LoopEnd - 2 - FramesAfterEnd) * outputRate / FixtureRate));
+	QVERIFY(rendered.size() > 2 * std::max(afterEnd, firstPass));
+
+	const float endSample = rendered[2 * atEnd];
+	const float reflected = rendered[2 * afterEnd];
+	const float firstPassSample = rendered[2 * firstPass];
+	QVERIFY2(endSample > 1e-4f,
+		qPrintable(QString{"exclusive loop end should reflect to end - 2, got %1"}
+			.arg(endSample, 0, 'g', 6)));
+	QVERIFY(std::fabs(firstPassSample) > 1e-4f);
+	QVERIFY2(std::fabs(reflected - firstPassSample) < 0.02f,
+		qPrintable(QString{"bidirectional loop sample %1 should reflect from exclusive end; first pass %2"}
+			.arg(reflected, 0, 'g', 6).arg(firstPassSample, 0, 'g', 6)));
+#endif
 }
 
 /*!

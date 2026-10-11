@@ -30,6 +30,7 @@
 
 #include "GigPlayer.h"
 
+#include <algorithm>
 #include <cstring>
 #include <QDebug>
 #include <QLayout>
@@ -492,6 +493,98 @@ void GigInstrument::playImpl(std::span<SampleFrame> out)
 
 
 
+namespace
+{
+
+bool readSampleSegment(gig::Sample& sample, std::int8_t* destination, f_cnt_t sourcePosition,
+		f_cnt_t frames, bool reverse)
+{
+	const auto frameSize = sample.FrameSize;
+	const auto readStart = reverse ? sourcePosition - frames + 1 : sourcePosition;
+	sample.SetPos(readStart);
+	const long samplesRead = sample.Read(destination, static_cast<long>(frames));
+	const f_cnt_t framesRead = samplesRead > 0 ? static_cast<f_cnt_t>(samplesRead) : 0;
+
+	if (reverse)
+	{
+		for (f_cnt_t left = 0; left < framesRead / 2; ++left)
+		{
+			const f_cnt_t right = framesRead - left - 1;
+			for (unsigned long byte = 0; byte < frameSize; ++byte)
+			{
+				std::swap(destination[left * frameSize + byte], destination[right * frameSize + byte]);
+			}
+		}
+	}
+
+	if (framesRead < frames)
+	{
+		std::memset(destination + framesRead * frameSize, 0, (frames - framesRead) * frameSize);
+	}
+	return framesRead == frames;
+}
+
+}
+
+
+
+void GigInstrument::loadBidirectionalSample(gig::Sample& sample, std::int8_t* buffer,
+		f_cnt_t position, f_cnt_t samples, f_cnt_t loopStart, f_cnt_t loopEnd)
+{
+	const f_cnt_t loopLength = loopEnd - loopStart;
+	const f_cnt_t halfPeriod = loopLength > 0 ? loopLength - 1 : 0;
+	const f_cnt_t fullPeriod = halfPeriod * 2;
+	f_cnt_t totalRead = 0;
+
+	while (totalRead < samples)
+	{
+		const f_cnt_t currentPosition = position + totalRead;
+		const f_cnt_t remaining = samples - totalRead;
+		f_cnt_t sourcePosition = currentPosition;
+		f_cnt_t segmentLength = remaining;
+		bool reverse = false;
+
+		if (currentPosition < loopStart)
+		{
+			segmentLength = std::min(remaining, loopStart - currentPosition);
+		}
+		else if (currentPosition < loopEnd)
+		{
+			segmentLength = std::min(remaining, loopEnd - currentPosition);
+		}
+		else if (halfPeriod == 0)
+		{
+			sourcePosition = loopStart;
+		}
+		else
+		{
+			const f_cnt_t loopPosition = (currentPosition - loopEnd) % fullPeriod;
+			sourcePosition = getPingPongIndex(currentPosition, loopStart, loopEnd);
+			if (loopPosition < halfPeriod)
+			{
+				segmentLength = std::min(remaining, halfPeriod - loopPosition);
+				reverse = true;
+			}
+			else
+			{
+				segmentLength = std::min(remaining, fullPeriod - loopPosition);
+			}
+		}
+
+		std::int8_t* destination = buffer + totalRead * sample.FrameSize;
+		if (!readSampleSegment(sample, destination, sourcePosition, segmentLength, reverse))
+		{
+			const f_cnt_t tailFrames = remaining - segmentLength;
+			std::memset(destination + segmentLength * sample.FrameSize, 0,
+				tailFrames * sample.FrameSize);
+			break;
+		}
+		totalRead += segmentLength;
+	}
+}
+
+
+
 void GigInstrument::loadSample( GigSample& sample, SampleFrame* sampleData, f_cnt_t samples )
 {
 	if( sampleData == nullptr || samples < 1 )
@@ -525,41 +618,40 @@ void GigInstrument::loadSample( GigSample& sample, SampleFrame* sampleData, f_cn
 	// Load the sample in different ways depending on if we're looping or not
 	if( loop == true && ( sample.pos >= loopStart || sample.pos + samples > loopStart ) )
 	{
-		// Calculate the new position based on the type of loop
 		if( loopType == gig::loop_type_bidirectional )
 		{
-			sample.pos = getPingPongIndex( sample.pos, loopStart, loopStart + loopLength );
+			loadBidirectionalSample(*sample.sample, buffer, sample.pos, samples,
+				loopStart, loopStart + loopLength);
 		}
 		else
 		{
+			// Calculate the new position based on the type of forward loop
 			sample.pos = getLoopedIndex( sample.pos, loopStart, loopStart + loopLength );
 			// TODO: also implement loop_type_backward support
-		}
+			sample.sample->SetPos( sample.pos );
 
-		sample.sample->SetPos( sample.pos );
+			// Load samples around the exclusive end, wrapping to the loop start.
+			long samplestoread = samples;
+			long samplestoloopend = 0;
+			long readsamples = 0;
+			long totalreadsamples = 0;
+			long loopEnd = loopStart + loopLength;
 
-		// Load the samples (based on gig::Sample::ReadAndLoop) even around the end
-		// of a loop boundary wrapping to the beginning of the loop region
-		long samplestoread = samples;
-		long samplestoloopend = 0;
-		long readsamples = 0;
-		long totalreadsamples = 0;
-		long loopEnd = loopStart + loopLength;
-
-		do
-		{
-			samplestoloopend = loopEnd - sample.sample->GetPos();
-			readsamples = sample.sample->Read( &buffer[totalreadsamples * sample.sample->FrameSize],
-					std::min( samplestoread, samplestoloopend ) );
-			samplestoread -= readsamples;
-			totalreadsamples += readsamples;
-
-			if( readsamples >= samplestoloopend )
+			do
 			{
-				sample.sample->SetPos( loopStart );
+				samplestoloopend = loopEnd - sample.sample->GetPos();
+				readsamples = sample.sample->Read( &buffer[totalreadsamples * sample.sample->FrameSize],
+						std::min( samplestoread, samplestoloopend ) );
+				samplestoread -= readsamples;
+				totalreadsamples += readsamples;
+
+				if( readsamples >= samplestoloopend )
+				{
+					sample.sample->SetPos( loopStart );
+				}
 			}
+			while( samplestoread > 0 && readsamples > 0 );
 		}
-		while( samplestoread > 0 && readsamples > 0 );
 	}
 	else
 	{
@@ -650,11 +742,16 @@ f_cnt_t GigInstrument::getPingPongIndex( f_cnt_t index, f_cnt_t startf, f_cnt_t 
 	}
 
 	const f_cnt_t looplen = endf - startf;
-	const f_cnt_t looppos = ( index - endf ) % ( looplen * 2 );
+	if (looplen <= 1)
+	{
+		return startf;
+	}
+	const f_cnt_t halfPeriod = looplen - 1;
+	const f_cnt_t looppos = ( index - endf ) % ( halfPeriod * 2 );
 
-	return ( looppos < looplen )
-		? endf - looppos
-		: startf + ( looppos - looplen );
+	return ( looppos < halfPeriod )
+		? endf - 2 - looppos
+		: startf + 1 + ( looppos - halfPeriod );
 }
 
 
