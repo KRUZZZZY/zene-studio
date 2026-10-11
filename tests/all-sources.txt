@@ -2655,6 +2655,7 @@ tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
 tests/src/plugins/ClapLoaderErrorTest.cpp
+tests/src/plugins/EqFilterTest.cpp
 tests/src/plugins/FakeRemotePluginClient.cpp
 tests/src/plugins/MpeTestConsumer.cpp
 tests/src/plugins/PluginPortsHarness.h
