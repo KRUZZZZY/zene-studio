@@ -857,6 +857,8 @@ set(LMMS_TESTS
 	# R7.3: the piano roll's frame time at 1k/5k/10k/50k notes (an opt-in +20% gate).
 	src/gui/PianoRollBenchmarkTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
+	# Saved EQ bands must be drawn on the first curve paint.
+	src/gui/EqCurveTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
@@ -952,7 +954,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
 
 	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
+	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/Eq/EqCurve.cpp")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/Eq")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=Eq)
+	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
+	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
 	# BUGS_FOUND 11.23: on the hosted msvc-x64 runner the 300+ test executables' linker PDBs filled the
 	# build drive (run 36802800273: LNK1201 writing SessionSceneFollowTest.pdb). Tests link without a
 	# PDB under MSVC; zene.exe and the plugins keep theirs, so packages and crash symbols are unchanged.
