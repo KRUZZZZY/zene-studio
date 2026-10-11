@@ -38,6 +38,7 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "ModulationLayer.h"
 #include "MidiEvent.h"
 #include "MidiInputTransform.h"
 #include "NotePlayHandle.h"
@@ -317,6 +318,39 @@ private slots:
 		off.setSource(MidiEvent::Source::External);
 		track->processInEvent(off, TimePos(0), 0);
 		Engine::audioEngine()->renderNextPeriod();
+	}
+
+	void aStrayNoteOffDoesNotReleaseAnOverlappingVoice()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track != nullptr);
+		QVERIFY(track->loadInstrument(QStringLiteral("missing_test_instrument")) != nullptr);
+
+		auto& modulation = song->modulationLayer();
+		modulation.edit([trackId = track->id()](ModulationLayer&, ModulationRuntime& runtime) {
+			runtime = ModulationRuntime{};
+			runtime.sourceCount = 1;
+			runtime.sources[0].triggerTrack = trackId;
+			runtime.sources[0].perVoice = true;
+			return true;
+		});
+
+		track->processOutEvent(noteOff(60));
+		track->processOutEvent(noteOn(60, 100));
+		track->processOutEvent(noteOn(60, 100));
+		QCOMPARE(modulation.voices().activeCount(), 1);
+		track->processOutEvent(noteOff(60));
+		QCOMPARE(modulation.voices().activeCount(), 1);
+		track->processOutEvent(noteOff(60));
+		QCOMPARE(modulation.voices().activeCount(), 0);
+
+		modulation.edit([](ModulationLayer& layer, ModulationRuntime& runtime) {
+			layer.clear();
+			runtime = ModulationRuntime{};
+			return true;
+		});
 	}
 };
 
