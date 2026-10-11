@@ -1,44 +1,38 @@
 # Cluster new-p9-45 — FIXED
 
-The `mixer.surround_pan` reply could claim that a surround-format source had no surround sends, even when it had one. The note is now emitted only for a stereo source with no surround sends.
+## Change and evidence
 
-## Evidence
+`src/core/ControlCommandsMixerSurround.cpp:211` now gives a surround-format source a note explaining that `mixer.surround_pan` does not pan sends from that source. A stereo source with no surround sends retains the existing no-sends note. A stereo source with a surround send receives no warning.
 
-- `src/core/ControlCommandsMixerSurround.cpp:211` guards the note with `!channel->m_surround.isSurround() && surroundSends(*channel).isEmpty()`.
-- `tests/src/core/SurroundTest.cpp:233` adds a control-surface regression. It verifies that a 5.1 source routed to a 5.1 bus reports its send without the note, while a stereo source without surround sends retains the note.
+`tests/src/core/SurroundTest.cpp:233` covers all four cases: surround-format source with a send, surround-format source without a send, stereo source without a surround send, and stereo source with a surround send. The panner coordinates differ between changes so each command produces a reply rather than taking the unchanged-state early return.
 
 ## Build and test record
 
-All ctest commands below ran from `build/tests`. Each run executed the one registered `SurroundTest` target (1/1); the green runs passed the complete QtTest binary.
+All ctest commands ran from `build/tests`. `ctest -R '^SurroundTest$'` selected and executed the affected family target (1/1). Build and test output went to new numbered files under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs`; each shell command captured its exit status and appended it to its log.
+
+The first two test runs exposed a test setup issue: the surround-format call reused the stereo call's pan coordinates and returned through the unchanged-state path. I changed the second call's coordinates. The corrected run passed before the required reversal proof; the proof below uses that corrected regression.
 
 | Stage | Command | Exit |
 | --- | --- | ---: |
-| Initial regression build | `cmake --build build --target SurroundTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/build-1.log 2>&1; build_status=$?; echo EXIT=$build_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/build-1.log; exit "$build_status"` | 0 |
-| Initial RED | `ctest -R '^SurroundTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/test-1.log 2>&1; test_status=$?; echo EXIT=$test_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/test-1.log; exit "$test_status"` | 8 |
-| Final regression RED build | `cmake --build build --target zene SurroundTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/build-2.log 2>&1; build_status=$?; echo EXIT=$build_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/build-2.log; exit "$build_status"` | 0 |
-| RED on original production code | `ctest -R '^SurroundTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/test-2.log 2>&1; test_status=$?; echo EXIT=$test_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/test-2.log; exit "$test_status"` | 8 |
-| Fixed build | `cmake --build build --target zene SurroundTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/build-3.log 2>&1; build_status=$?; echo EXIT=$build_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/build-3.log; exit "$build_status"` | 0 |
-| GREEN | `ctest -R '^SurroundTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/test-3.log 2>&1; test_status=$?; echo EXIT=$test_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/test-3.log; exit "$test_status"` | 0 |
-| Reverse-fix patch command | `git diff -- src/core/ControlCommandsMixerSurround.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/fix.patch` | 0 |
-| Reversed-fix build | `cmake --build build --target zene SurroundTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/build-4.log 2>&1; build_status=$?; echo EXIT=$build_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/build-4.log; exit "$build_status"` | 0 |
-| RED with production fix reversed | `ctest -R '^SurroundTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/test-4.log 2>&1; test_status=$?; echo EXIT=$test_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/test-4.log; exit "$test_status"` | 8 |
-| Restore-fix patch command | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/fix.patch` | 0 |
-| Restored-fix build | `cmake --build build --target zene SurroundTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/build-5.log 2>&1; build_status=$?; echo EXIT=$build_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/build-5.log; exit "$build_status"` | 0 |
-| GREEN after restore | `ctest -R '^SurroundTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/test-5.log 2>&1; test_status=$?; echo EXIT=$test_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/test-5.log; exit "$test_status"` | 0 |
+| Initial build | `cmake --build build --target zene SurroundTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/build-1.log 2>&1` | 0 |
+| Initial regression run, before production edit | `ctest -R '^SurroundTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/test-1.log 2>&1` | 8 |
+| Build after first production edit | `cmake --build build --target zene SurroundTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/build-2.log 2>&1` | 0 |
+| Test with the initial, unchanged-coordinate setup | `ctest -R '^SurroundTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/test-2.log 2>&1` | 8 |
+| Build with corrected regression inputs | `cmake --build build --target zene SurroundTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/build-3.log 2>&1` | 0 |
+| Corrected regression, fix applied | `ctest -R '^SurroundTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/test-3.log 2>&1` | 0 |
+| Reverse only the production change | `git diff -- src/core/ControlCommandsMixerSurround.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/fix.patch` | 0 |
+| Rebuild with production change reversed | `cmake --build build --target zene SurroundTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/build-4.log 2>&1` | 0 |
+| RED with only production change reversed | `ctest -R '^SurroundTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/test-4.log 2>&1` | 8 |
+| Restore production change | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/fix.patch` | 0 |
+| Rebuild after restoring production change | `cmake --build build --target zene SurroundTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/build-5.log 2>&1` | 0 |
+| GREEN after restore | `ctest -R '^SurroundTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/test-5.log 2>&1` | 0 |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/gate-3.log 2>&1` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r2/logs/gate-4.log 2>&1` | 0 |
 
-The RED runs failed at `aSurroundSourceWithSurroundSendsHasNoMissingSendsNote`: the 5.1 source's reply included the “this channel has none” note. Both green runs reported `100% tests passed, 0 tests failed out of 1`.
-
-## Required gates
-
-| Gate | Command | Exit |
-| --- | --- | ---: |
-| Complexity | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/gate-1.log 2>&1; gate_status=$?; echo EXIT=$gate_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/gate-1.log; exit "$gate_status"` | 0 |
-| File length | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/gate-2.log 2>&1; gate_status=$?; echo EXIT=$gate_status >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-45.r1/logs/gate-2.log; exit "$gate_status"` | 0 |
-
-The `fff` grep tool was not exposed in this environment (`command -v fff` found no executable), so build and gate logs were searched with `rg`, one requested term per search (`error`, `FAILED`, `Assertion`). No matches were found.
+The reversal run failed at `theSurroundPannerExplainsWhichSourcesItAffects` on the surround-format note assertion. The restored run passed the selected `SurroundTest` target (1/1). The final build and gate log searches for `error`, `FAILED`, and `Assertion` found no matches. The `fff` grep tool was not available in this environment, so logs were searched with `rg`, one term per search.
 
 ## Files in commit
 
-- `src/core/ControlCommandsMixerSurround.cpp`
-- `tests/src/core/SurroundTest.cpp`
-- `docs/qwen-fixes-2026-10/cluster-new-p9-45.md`
+- `src/core/ControlCommandsMixerSurround.cpp` — split the response note by source format and sends.
+- `tests/src/core/SurroundTest.cpp` — cover the four response cases.
+- `docs/qwen-fixes-2026-10/cluster-new-p9-45.md` — this report.
