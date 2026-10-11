@@ -293,7 +293,8 @@ void OrganicInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 	// fxKnob is [0;1]
 	float t =  m_fx1Model.value();
 
-	for (auto i = std::size_t{0}; i < frames + offset; i++)
+	for (auto i = static_cast<std::size_t>(offset);
+				 i < static_cast<std::size_t>(frames + offset); ++i)
 	{
 		out[i][0] = waveshape( out[i][0], t ) *
 						m_volModel.value() / 100.0f;
