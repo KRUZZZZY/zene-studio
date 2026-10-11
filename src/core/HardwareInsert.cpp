@@ -88,6 +88,7 @@ void HardwareInsert::setSettings(const Settings& settings, f_cnt_t frames)
 		m_ringFill = 0;
 	}
 	m_settings = settings;
+	if (!settings.enabled) { m_ping.store(static_cast<int>(PingState::Idle), std::memory_order_release); }
 	m_measured.store(settings.measured, Relaxed);
 }
 

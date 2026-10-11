@@ -53,6 +53,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "HardwareInsert.h"
 #include "HardwareIo.h"
 #include "Mixer.h"
 #include "MixerListen.h"
@@ -279,6 +280,29 @@ private slots:
 		QVERIFY(!insert.enabled());
 		engine->renderNextPeriod();
 		QCOMPARE(Engine::mixer()->totalLatencyFrames(), 0);
+	}
+
+	void disablingAnInsertCancelsAnInProgressPing()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		const f_cnt_t fpp = engine->framesPerPeriod();
+		HardwareInsert insert;
+		HardwareInsert::Settings settings;
+		settings.enabled = true;
+		settings.ret = {10000, 2};  // no engine input can accidentally complete the ping
+		insert.setSettings(settings, fpp);
+		insert.requestPing();
+		std::vector<SampleFrame> block(fpp, SampleFrame(0.25f, 0.25f));
+		insert.process(block.data(), fpp, *engine);
+		QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Waiting));
+
+		settings.enabled = false;
+		insert.setSettings(settings, fpp);
+		QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Idle));
+		settings.enabled = true;
+		insert.setSettings(settings, fpp);
+		insert.process(block.data(), fpp, *engine);
+		QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Idle));
 	}
 
 	void destinationsParse()
