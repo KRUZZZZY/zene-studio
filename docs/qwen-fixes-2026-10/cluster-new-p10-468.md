@@ -2,6 +2,17 @@
 
 Verdict: **FIXED**
 
+## Evidence table
+
+| Evidence | Exact command and result |
+|---|---|
+| RED before fix | `ctest -R '^ItemListPanelTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-468.r1/logs/test-6.log 2>&1; code=$?; echo EXIT=$code` — **EXIT=8** |
+| GREEN after fix | `ctest -R '^ItemListPanelTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-468.r1/logs/test-9.log 2>&1; code=$?; echo EXIT=$code` — **EXIT=0** |
+| Affected family | `ItemListPanelTest`: **12 QtTest cases passed, 0 failed, 0 skipped**; CTest ran **1/1** registered test. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-468.r1/logs/gate-1.log 2>&1; code=$?; echo EXIT=$code` — **EXIT=0** |
+| File length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-468.r1/logs/gate-2.log 2>&1; code=$?; echo EXIT=$code` — **EXIT=0** |
+| Files committed | `src/gui/AccessibleWidgets.cpp`; `src/gui/ValueAnnouncementState.h`; `tests/fork-sources.txt`; `tests/src/gui/ItemListPanelTest.cpp`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p10-468.md`. |
+
 ## Finding and code evidence
 
 `ValueAnnouncer::noteChange()` in [AccessibleWidgets.cpp](../../src/gui/AccessibleWidgets.cpp#L90) now delegates the value/settle decision to [ValueAnnouncementState.h](../../src/gui/ValueAnnouncementState.h#L40). When the value equals the last announced value, the policy clears `pending` before returning `NoChange` (line 44), so the timer has no stale event to announce.
