@@ -33,4 +33,4 @@ The affected CTest family ran **1 test executable** (`ArrangerTimelineTest`, CTe
 | File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-15.r1/logs/file-length-gate-2.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 0 |
 | Whitespace check | `git diff --check` | 0 |
 
-Files to commit: `src/gui/clips/ClipView.cpp`, `tests/src/gui/ArrangerTimelineTest.cpp`, `tests/upstream-modifications.txt`, and this report.
+Files committed: `src/gui/clips/ClipView.cpp`, `tests/src/gui/ArrangerTimelineTest.cpp`, `tests/upstream-modifications.txt`, and this report.
