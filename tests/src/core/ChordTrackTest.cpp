@@ -274,6 +274,25 @@ private slots:
 		QCOMPARE(orderOf(track), QStringLiteral("0,192"));
 	}
 
+	//! Missing optional fields keep their defaults; present empty fields are malformed.
+	void emptyOptionalNumbersAreSkipped()
+	{
+		QDomDocument document;
+		QVERIFY(document.setContent(QStringLiteral(
+			"<chord-track><chord pos=\"100\" len=\"\" chord=\"Major\"/>"
+			"<chord pos=\"200\" root=\"\" chord=\"Major\"/>"
+			"<chord pos=\"300\" octave=\"\" chord=\"Major\"/>"
+			"<chord pos=\"400\" chord=\"Major\"/></chord-track>")));
+
+		ChordTrack track;
+		QVERIFY(track.loadSettings(document.documentElement()));
+		QCOMPARE(track.size(), 1);
+		QCOMPARE(track.at(0).pos, 400);
+		QCOMPARE(track.at(0).length, 0);
+		QCOMPARE(track.at(0).root, 0);
+		QCOMPARE(track.at(0).octave, 4);
+	}
+
 	/*! CLEARED FIRST, unconditionally: the state a restore must be able to
 	 *  reach is "no chord track at all", so an absent or foreign element has to
 	 *  leave an EMPTY track rather than the previous project's chords. */
