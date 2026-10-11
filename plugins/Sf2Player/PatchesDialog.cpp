@@ -264,6 +264,8 @@ bool PatchesDialog::validateForm()
 	bool bValid = true;
 
 	bValid = bValid && (m_bankListView->currentItem() != nullptr);
+	bValid = bValid && m_progListView->selectionModel()->hasSelection();
+	bValid = bValid && m_progListView->selectionModel()->currentIndex().isValid();
 
 	return bValid;
 }
@@ -410,10 +412,16 @@ void PatchesDialog::updatePatch(bool updateUi)
 
 void PatchesDialog::progChanged(const QModelIndex& cur, const QModelIndex& prev)
 {
-	if (m_pSynth == nullptr) { return; }
-
 	auto curRow = m_progListProxyModel.mapToSource(cur).row();
-	if (curRow < 0) { return; }
+	if (curRow < 0)
+	{
+		m_selProg = -1;
+		m_selProgName.clear();
+		stabilizeForm();
+		return;
+	}
+
+	if (m_pSynth == nullptr) { return; }
 
 	auto progIdx = m_progListSourceModel.index(curRow, 0);
 	m_selProg = m_progListSourceModel.data(progIdx).toInt();

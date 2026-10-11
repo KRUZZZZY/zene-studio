@@ -24,16 +24,23 @@
 #include <vector>
 
 #include <QByteArray>
+#include <QApplication>
+#include <QDialog>
+#include <QLineEdit>
 #include <QLibrary>
 #include <memory>
+#include <QPushButton>
 #include <QProcess>
 #include <QString>
 #include <QStringList>
+#include <QTableView>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QtTest>
 
 #include "Engine.h"
 #include "Plugin.h"
+#include "PluginView.h"
 
 namespace
 {
@@ -191,6 +198,7 @@ private slots:
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
+	void sf2DialogRejectsAFilteredOutProgram();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -214,6 +222,77 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::sf2DialogRejectsAFilteredOutProgram()
+{
+#ifdef PART_C_MIGRATED_sf2player
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_sf2player)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("sf2player");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+	partc::applyInstrumentTestSettings(*instrument, "sf2player");
+
+	QWidget host;
+	auto* view = instrument->createView(&host);
+	QVERIFY(view != nullptr);
+	bool dialogFound = false;
+	bool filterFound = false;
+	bool acceptButtonFound = false;
+	bool programViewFound = false;
+	bool initiallyAcceptable = false;
+	bool programRowsFilteredOut = false;
+	bool accepted = false;
+	QTimer::singleShot(0, qApp, [&] {
+		auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+		if (dialog == nullptr)
+		{
+			return;
+		}
+		dialogFound = true;
+		auto* filter = dialog->findChild<QLineEdit*>(QStringLiteral("m_filterEdit"));
+		auto* acceptButton = dialog->findChild<QPushButton*>(QStringLiteral("m_okButton"));
+		auto* programView = dialog->findChild<QTableView*>(QStringLiteral("m_progListView"));
+		filterFound = filter != nullptr;
+		acceptButtonFound = acceptButton != nullptr;
+		programViewFound = programView != nullptr;
+		initiallyAcceptable = acceptButton != nullptr && acceptButton->isEnabled();
+		if (filter == nullptr || acceptButton == nullptr || programView == nullptr)
+		{
+			dialog->reject();
+			return;
+		}
+		filter->setText(QStringLiteral("qwen-no-matching-sf2-preset-345"));
+		QCoreApplication::processEvents();
+		programRowsFilteredOut = programView->model()->rowCount() == 0;
+		acceptButton->click();
+		accepted = dialog->result() == QDialog::Accepted;
+		dialog->reject();
+	});
+	QVERIFY(QMetaObject::invokeMethod(view, "showPatchDialog", Qt::DirectConnection));
+	QVERIFY(dialogFound);
+	QVERIFY(filterFound);
+	QVERIFY(acceptButtonFound);
+	QVERIFY(programViewFound);
+	QVERIFY(initiallyAcceptable);
+	QVERIFY(programRowsFilteredOut);
+	QVERIFY2(!accepted, "the dialog accepted a program hidden by its search filter");
+	delete view;
+	delete instrument;
+#else
+	QSKIP("SF2Player is not built in this configuration");
+#endif
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
