@@ -2,56 +2,33 @@
 
 Verdict: **FIXED**
 
-`FileSearchJob` now attaches the initiating query generation to each match. `FileBrowser` advances its generation on every search edit, including clearing the query, and ignores queued matches whose generation is no longer active.
+`FileSearchJob` carries the initiating generation with each match. `FileBrowser` advances the generation for every search edit and discards a queued result if its generation is no longer current. The fix is in [`FileSearchJob.h`](../../include/FileSearchJob.h:63), [`FileSearchJob.cpp`](../../src/gui/FileSearchJob.cpp:47), and [`FileBrowser.cpp`](../../src/gui/FileBrowser.cpp:223) / [the result handler](../../src/gui/FileBrowser.cpp:251).
 
-Evidence:
+## Regression proof
 
-- [`FileSearchJob.h`](../../include/FileSearchJob.h:63) and [`FileSearchJob.cpp`](../../src/gui/FileSearchJob.cpp:47) carry the generation through the worker; matches emit it at line 96.
-- [`FileBrowser.cpp`](../../src/gui/FileBrowser.cpp:223) advances the generation; the queued result handler checks it at lines 251–253. The slot and generation member are declared in [`FileBrowser.h`](../../include/FileBrowser.h:87) and [line 126](../../include/FileBrowser.h:126).
-- [`FileSearchJobTest.cpp`](../../tests/src/gui/FileSearchJobTest.cpp:40) queues a stale result to the actual browser slot and verifies the visible results stay empty.
+The regression in [`FileSearchJobTest.cpp`](../../tests/src/gui/FileSearchJobTest.cpp:67) uses the actual search UI and queued `foundMatch` connection. Its event filter waits for the first search's queued result call, starts a second search before that call reaches `onSearchMatch`, and checks that the stale file is absent. This works with the original API, where `onSearchMatch(const QString&)` was a private method rather than a Qt meta-object slot. With the original product code, the queued result is inserted and the assertion reports actual count `1`, expected `0`. With generation tagging restored, the old result is discarded.
 
-## Regression evidence
+The r1 production fix was already committed as `7980fcd16`, so the worktree diff for those product files was empty. To perform the required reversal proof without rewriting history, `fix.patch` was generated from that commit's product-file delta, reversed for the RED run, then reapplied for GREEN.
 
-`ctest -R FileSearchJobTest --output-on-failure` selects one CTest test. It failed on the original code, passed with the fix, failed again with the production patch reversed, and passed after that patch was restored. The two red runs failed at the queued stale-match delivery assertion in `FileSearchJobTest.cpp:69`.
-
-| Run | Command and working directory | Exit | Log |
+| Evidence | Exact command | Exit | Result / log |
 |---|---|---:|---|
-| RED, original code | `ctest -R FileSearchJobTest --output-on-failure` (`build/tests`) | 8 | `test-1.log` |
-| GREEN, fixed code | `ctest -R FileSearchJobTest --output-on-failure` (`build/tests`) | 0 | `test-2.log` |
-| RED, patch reversed | `ctest -R FileSearchJobTest --output-on-failure` (`build/tests`) | 8 | `test-3.log` |
-| GREEN, patch restored | `ctest -R FileSearchJobTest --output-on-failure` (`build/tests`) | 0 | `test-4.log` |
+| Save committed product delta | `git diff 7980fcd16^ 7980fcd16 -- include/FileBrowser.h src/gui/FileBrowser.cpp include/FileSearchJob.h src/gui/FileSearchJob.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r2/logs/fix.patch` | 0 | `fix.patch` |
+| Reverse product fix | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r2/logs/fix.patch` | 0 | `apply-reverse.log` |
+| Build original product API and regression | `cmake --build build --target zene FileSearchJobTest` | 0 | `build-3.log` |
+| RED, from `build/tests` | `ctest -R '^FileSearchJobTest$' --output-on-failure` | 8 | `test-3.log`: `Actual (results->topLevelItemCount()): 1`, expected `0`; 1/1 CTest test failed |
+| Reapply product fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r2/logs/fix.patch` | 0 | `apply-forward.log` |
+| Build fixed product and regression | `cmake --build build --target zene FileSearchJobTest` | 0 | `build-4.log` |
+| GREEN, from `build/tests` | `ctest -R '^FileSearchJobTest$' --output-on-failure` | 0 | `test-4.log`: 1/1 CTest test passed |
+| Complexity gate | `bash tests/complexity-gate.sh --check` | 0 | `gate-3.log` |
+| File-length gate | `bash tests/file-length-gate.sh --check` | 0 | `gate-4.log` |
 
-The test target and `zene` rebuilt with exit 0 after the fix, after patch reversal, and after patch restoration (`build-4.log`, `build-5.log`, `build-6.log`). The final CTest runs each report `1/1` passed.
+The affected CTest family contains one test, `FileSearchJobTest`; the final GREEN run reports 1/1 passed. No full suite was run.
 
-The required patch reversal proof used these commands and results:
+An earlier test draft used `indexOfSlot("onSearchMatch(quint64,QString)")`; on the original code it failed at the signature check because the old handler was not a registered slot. That run (`ctest -R '^FileSearchJobTest$' --output-on-failure`, exit 8, `test-2.log`) was not treated as RED evidence; the event-filter regression above replaced it.
 
-| Step | Command | Exit | Log |
-|---|---|---:|---|
-| Save production patch | `git diff -- include/FileBrowser.h src/gui/FileBrowser.cpp include/FileSearchJob.h src/gui/FileSearchJob.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r1/logs/fix.patch` | 0 | — |
-| Reverse patch | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r1/logs/fix.patch` | 0 | — |
-| Rebuild reversed code | `cmake --build build --target zene FileSearchJobTest` | 0 | `build-5.log` |
-| Reapply patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r1/logs/fix.patch` | 0 | — |
-| Rebuild restored code | `cmake --build build --target zene FileSearchJobTest` | 0 | `build-6.log` |
+Build/test logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r2/logs`. The `fff` grep tool was unavailable in this session, so logs were searched with `rg` for build errors, assertion details, CTest counts, and gate failures.
 
-The build tree did not initially know the newly registered test target: `cmake --build build --target FileSearchJobTest` exited 2 (`build-1.log`). Building the existing `BrowserTagMenuTest` target exited 0 (`build-2.log`) and ran the build system's normal regeneration check; the new test target then built with exit 0 (`build-3.log`). No manual configure command was run.
+## Files in this commit
 
-## Gates
-
-| Gate | Command | Exit | Log |
-|---|---|---:|---|
-| Complexity | `bash tests/complexity-gate.sh --check` | 0 | `gate-5.log` |
-| File length | `bash tests/file-length-gate.sh --check` | 0 | `gate-6.log` |
-
-Build, test, and gate logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-173.r1/logs`. The `fff` grep tool was not available in this session; log searches used `rg` for `error`, `FAILED`, and `Assertion`.
-
-## Files committed
-
-- `include/FileBrowser.h`
-- `include/FileSearchJob.h`
-- `src/gui/FileBrowser.cpp`
-- `src/gui/FileSearchJob.cpp`
 - `tests/src/gui/FileSearchJobTest.cpp`
-- `tests/CMakeLists.txt`
-- `tests/all-sources.txt`
-- `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p9-173.md`
