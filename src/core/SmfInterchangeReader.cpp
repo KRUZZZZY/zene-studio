@@ -186,6 +186,12 @@ bool skipEventPayload(Cursor& track, unsigned char status, QString* error)
 //! The FF 58 payload's two bytes, once dd is known to be a metre the map holds.
 void readTimeSignaturePayload(const unsigned char* payload, Candidate* candidate, QString* error)
 {
+	if (payload[0] == 0)
+	{
+		*error = QStringLiteral("a time signature has a zero numerator, so it cannot name a number of "
+			"beats per bar");
+		return;
+	}
 	// dd is log2(denominator) and the map holds a power of two up to 32
 	// (TempoMapLargestDenominator), so dd = 0..5. Masking the byte instead
 	// rewrote dd 32 as dd 0 and imported 1/1 - a different metre, not the

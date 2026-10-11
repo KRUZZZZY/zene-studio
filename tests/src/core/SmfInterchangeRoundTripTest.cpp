@@ -390,6 +390,33 @@ private slots:
 		QCOMPARE(digest(mapEvents()), digest(before));  // a refusal writes nothing
 	}
 
+	//! A zero numerator cannot name a number of beats per bar and is refused
+	//! before it becomes a candidate time-signature event.
+	void aZeroMeterNumeratorIsRefused()
+	{
+		QByteArray bytes = plainFile(480, {{0, 120, 4, 4}});
+		const int signatureAt = bytes.indexOf(QByteArrayLiteral("\xFF\x58\x04"));
+		QVERIFY(signatureAt > 0);
+		// nn is payload byte 0: FF 58 04 nn dd cc bb.
+		const int numeratorAt = signatureAt + 3;
+		QCOMPARE(static_cast<int>(static_cast<unsigned char>(bytes[numeratorAt])), 4);
+		bytes[numeratorAt] = 0;
+		const QString file = path(m_directory, QStringLiteral("zero-numerator.mid"));
+		QVERIFY(writeFile(file, bytes));
+
+		const ControlResult read = run(QStringLiteral("interchange.smf_read"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!read.ok, "a time signature with zero beats per bar was accepted");
+		QCOMPARE(read.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(read.errorMessage.contains(QStringLiteral("time signature")),
+			qPrintable(read.errorMessage));
+
+		const ControlResult imported = run(QStringLiteral("interchange.smf_import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(digest(mapEvents()), QString());
+	}
+
 	//! A dd this engine cannot hold is refused, not turned into a different
 	//! metre. dd is log2(denominator) and the map holds a power of two up to 32,
 	//! so dd is 0..5; masking the byte with 0x1F turned 32 into 0 - a silent 4/1
