@@ -29,6 +29,14 @@
 #include <QPainter>
 #include <QDomElement>
 
+#include <cstdint>
+
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <sys/types.h>
+#endif
+
 #include "ConfigManager.h"
 #include "endian_handling.h"
 #include "Engine.h"
@@ -48,6 +56,52 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+#ifdef _WIN32
+using patch_file_offset_t = __int64;
+
+auto patchFileTell(FILE* fd) -> patch_file_offset_t
+{
+	return _ftelli64(fd);
+}
+
+auto patchFileSeek(FILE* fd, patch_file_offset_t offset, int origin) -> int
+{
+	return _fseeki64(fd, offset, origin);
+}
+#else
+using patch_file_offset_t = off_t;
+
+auto patchFileTell(FILE* fd) -> patch_file_offset_t
+{
+	return ftello(fd);
+}
+
+auto patchFileSeek(FILE* fd, patch_file_offset_t offset, int origin) -> int
+{
+	return fseeko(fd, offset, origin);
+}
+#endif
+
+// Keep one patch's retained stereo PCM at or below 128 MiB.
+constexpr f_cnt_t MaxPatchSampleFrames =
+	(128ULL * 1024ULL * 1024ULL) / sizeof(SampleFrame);
+
+auto hasSamplePayload(FILE* fd, unsigned dataLength) -> bool
+{
+	const auto dataStart = patchFileTell(fd);
+	if (dataStart < 0 || patchFileSeek(fd, 0, SEEK_END) != 0) { return false; }
+	const auto fileEnd = patchFileTell(fd);
+	const bool restored = patchFileSeek(fd, dataStart, SEEK_SET) == 0;
+	return restored && fileEnd >= dataStart &&
+		static_cast<std::uint64_t>(dataLength) <=
+			static_cast<std::uint64_t>(fileEnd - dataStart);
+}
+
+} // namespace
 
 
 extern "C"
@@ -244,6 +298,7 @@ PatmanInstrument::LoadError PatmanInstrument::loadPatch(
 	}
 
 	int sample_count = header[198];
+	f_cnt_t patch_frames = 0;
 	for( int i = 0; i < sample_count; ++i )
 	{
 		unsigned short tmpshort;
@@ -296,11 +351,18 @@ PatmanInstrument::LoadError PatmanInstrument::loadPatch(
 		// skip scale frequency, scale factor, reserved space
 		SKIP_BYTES( 2 + 2 + 36 );
 
-		f_cnt_t frames;
+		const f_cnt_t frames = data_length / ((modes & MODES_16BIT) ? 2U : 1U);
+		if (!hasSamplePayload(fd, data_length) ||
+			frames > MaxPatchSampleFrames - patch_frames)
+		{
+			fclose(fd);
+			return LoadError::IO;
+		}
+		patch_frames += frames;
+
 		std::unique_ptr<sample_t[]> wave_samples;
 		if( modes & MODES_16BIT )
 		{
-			frames = data_length >> 1;
 			wave_samples = std::make_unique<sample_t[]>(frames);
 			for( f_cnt_t frame = 0; frame < frames; ++frame )
 			{
@@ -323,7 +385,6 @@ PatmanInstrument::LoadError PatmanInstrument::loadPatch(
 		}
 		else
 		{
-			frames = data_length;
 			wave_samples = std::make_unique<sample_t[]>(frames);
 			for( f_cnt_t frame = 0; frame < frames; ++frame )
 			{
