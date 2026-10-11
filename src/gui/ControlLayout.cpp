@@ -148,7 +148,8 @@ ControlLayout::pairAt(int index) const
 
 	auto skip = [&](QLayoutItem* item) -> bool
 	{
-		return item->widget()->objectName() == s_searchBarName;
+		QWidget* widget = item->widget();
+		return widget && widget->objectName() == s_searchBarName;
 	};
 
 	auto itr = m_itemMap.cbegin();

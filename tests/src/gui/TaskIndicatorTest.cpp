@@ -31,8 +31,10 @@
 
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSpacerItem>
 
 #include "ControlRegistry.h"
+#include "ControlLayout.h"
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "TaskCenter.h"
@@ -144,6 +146,29 @@ private slots:
 		const ControlResult shown = ControlRegistry::instance()->invoke(QStringLiteral("task.show"));
 		QVERIFY(!shown.ok);
 		QCOMPARE(shown.errorKind, ControlErrorKind::Requires);
+	}
+
+	void nonWidgetItemsCanBeIndexedAndTaken()
+	{
+		QWidget parent;
+		ControlLayout layout(&parent);
+		auto* spacer = new QSpacerItem(8, 8);
+		layout.addItem(spacer);
+
+		QCOMPARE(layout.count(), 1);
+		QCOMPARE(layout.itemAt(0), static_cast<QLayoutItem*>(spacer));
+		QCOMPARE(layout.takeAt(0), static_cast<QLayoutItem*>(spacer));
+		delete spacer;
+	}
+
+	void nonWidgetItemsAreDrainedOnDestruction()
+	{
+		QWidget parent;
+		{
+			ControlLayout layout(&parent);
+			layout.addItem(new QSpacerItem(8, 8));
+			QCOMPARE(layout.count(), 1);
+		}
 	}
 };
 
