@@ -82,7 +82,7 @@ void HardwareInsert::setSettings(const Settings& settings, f_cnt_t frames)
 	if (settings.enabled) { prepare(frames); }
 	// Switched on: the return starts from an empty ring, so what it held when it went off cannot shift
 	// the round trip the ping measured (the render is held off: the caller has the change lock).
-	if (settings.enabled && !m_settings.enabled)
+	if (settings.enabled && (!m_settings.enabled || settings.ret != m_settings.ret))
 	{
 		m_ringRead = 0;
 		m_ringFill = 0;
