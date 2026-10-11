@@ -250,7 +250,7 @@ void restoreEntry(const QString& key, const QJsonObject& entry)
 QJsonObject sideJson(const Side& side, int granted)
 {
 	QJsonArray channels;
-	for (int c = 0; c < side.names.size(); ++c)
+	for (int c = 0; c < side.names.size() && c < side.channels; ++c)
 	{
 		channels.append(QJsonObject{{QStringLiteral("number"), c + 1}, {QStringLiteral("name"), side.names[c]},
 			{QStringLiteral("available"), c < granted}});

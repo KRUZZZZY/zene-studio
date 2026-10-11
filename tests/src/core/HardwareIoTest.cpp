@@ -303,15 +303,22 @@ private slots:
 	{
 		const QString key = audioio::currentDeviceKey();
 		const QJsonObject before = audioio::storedEntry(key);
-		QVERIFY(ok(QStringLiteral("audio.io_setup"), {{QStringLiteral("outputs"), QJsonObject{{QStringLiteral("channels"), 4},
+		const QJsonObject outputsSetup{{QStringLiteral("channels"), 4},
 			{QStringLiteral("names"), QJsonArray{QStringLiteral("Main L"), QStringLiteral("Main R"), QStringLiteral("HP L"), QStringLiteral("HP R")}},
 			{QStringLiteral("buses"), QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("Main")}, {QStringLiteral("channels"), QStringLiteral("1/2")}},
-				QJsonObject{{QStringLiteral("name"), QStringLiteral("Phones")}, {QStringLiteral("channels"), QStringLiteral("3/4")}}}}}}}));
+				QJsonObject{{QStringLiteral("name"), QStringLiteral("Phones")}, {QStringLiteral("channels"), QStringLiteral("3/4")}}}}};
+		const QJsonArray inputNames{QStringLiteral("Input 1"), QStringLiteral("Input 2"), QStringLiteral("Input 3"), QStringLiteral("Input 4"),
+			QStringLiteral("Input 5"), QStringLiteral("Input 6"), QStringLiteral("Input 7"), QStringLiteral("Input 8")};
+		const QJsonObject setupArgs{{QStringLiteral("outputs"), outputsSetup},
+			{QStringLiteral("inputs"), QJsonObject{{QStringLiteral("names"), inputNames}}}};
+		QVERIFY(ok(QStringLiteral("audio.io_setup"), setupArgs));
 		const ControlResult list = run(QStringLiteral("audio.io_list"));
 		QVERIFY(list.ok);
 		const QJsonObject outputs = list.result.value(QStringLiteral("outputs")).toObject();
+		const QJsonObject inputs = list.result.value(QStringLiteral("inputs")).toObject();
 		QCOMPARE(outputs.value(QStringLiteral("requested")).toInt(), 4);
 		QCOMPARE(outputs.value(QStringLiteral("granted")).toInt(), 2);  // the Dummy opens a stereo pair
+		QCOMPARE(inputs.value(QStringLiteral("channels")).toArray().size(), inputs.value(QStringLiteral("requested")).toInt());
 		QCOMPARE(outputs.value(QStringLiteral("buses")).toArray().at(1).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("Phones"));
 		QCOMPARE(outputs.value(QStringLiteral("channels")).toArray().at(2).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("HP L"));
 		const ControlResult routed = run(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("output"), QStringLiteral("Phones")}});
