@@ -165,6 +165,29 @@ private slots:
 		QCOMPARE(captured.step(3), (GrooveStep{-2, 100}));
 	}
 
+	//! An extracted odd-width offset survives the XML form used by project saves.
+	void extractionSaveLoadRoundTripsOddStepOffsets()
+	{
+		NoteTable source;
+		source.add(60, 2, 5, 100);    // slot 0, +2
+		source.add(62, 3, 5, 100);    // slot 1, -2
+
+		GrooveTemplate captured;
+		QVERIFY(extractGroove(source.vector(), QStringLiteral("odd"), 20, 5, &captured, nullptr));
+		QCOMPARE(captured.step(0), (GrooveStep{2, 100}));
+		QCOMPARE(captured.step(1), (GrooveStep{-2, 100}));
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("grooves"));
+		captured.saveXml(doc, root);
+		doc.appendChild(root);
+
+		GrooveTemplate loaded;
+		QVERIFY(loaded.loadXml(root.firstChildElement(QStringLiteral("groove"))));
+		QCOMPARE(loaded.step(0), (GrooveStep{2, 100}));
+		QCOMPARE(loaded.step(1), (GrooveStep{-2, 100}));
+	}
+
 	/*! THE APPLICATION: a note moves `strength` of the way to its slot's target
 	 *  (`pos + round(strength * (target - pos))`), at strength 1 it lands on the
 	 *  target exactly, and a second application has nothing to do. */

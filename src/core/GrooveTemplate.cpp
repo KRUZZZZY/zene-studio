@@ -224,15 +224,16 @@ void GrooveTemplate::saveXml(QDomDocument& doc, QDomElement& parent) const
 namespace
 {
 
-//! A saved step's timing as the loader adopts it. Files saved before the
-//! half-slot bound may carry exactly +/-half a slot, which was then the largest
-//! accepted shift: it lands one tick inside the slot instead of being dropped, so
-//! the saved feel survives. Anything wider was never valid and is returned as is,
-//! for setStep() to refuse (the slot stays neutral).
+//! A saved even-width step's exact half-slot boundary was once stored as the
+//! largest accepted shift, so loading keeps that feel one tick inside its slot.
+//! For odd widths the integer half-width is already inside the boundary and is
+//! preserved. Anything wider was never valid and is returned unchanged for
+//! setStep() to refuse (the slot stays neutral).
 tick_t loadedTiming(tick_t timing, tick_t stepTicks)
 {
 	const tick_t half = stepTicks / 2;
-	if (half > 0 && (timing == half || timing == -half)) { return timing > 0 ? half - 1 : -(half - 1); }
+	if (stepTicks % 2 == 0 && half > 0 && (timing == half || timing == -half))
+	{ return timing > 0 ? half - 1 : -(half - 1); }
 	return timing;
 }
 
