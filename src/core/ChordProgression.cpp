@@ -166,8 +166,10 @@ void layOutArpeggio(const std::vector<int>& keys, tick_t pos, tick_t span, bool 
 	for (int voice = 0; voice < voiceCount; ++voice)
 	{
 		const int order = down ? voiceCount - 1 - voice : voice;
+		const qint64 offset = static_cast<qint64>(voice) * static_cast<qint64>(slot);
+		if (offset >= static_cast<qint64>(span)) { break; }
 		appendNote(out, keys[static_cast<std::size_t>(order)],
-			pos + static_cast<tick_t>(voice) * slot, slot, pos, span, velocity);
+			pos + static_cast<tick_t>(offset), slot, pos, span, velocity);
 	}
 }
 
