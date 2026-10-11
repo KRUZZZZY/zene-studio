@@ -89,6 +89,12 @@ private slots:
 		ControlRegistry::setReady(true);
 	}
 
+	void constructionClampsKeysToMidiRange()
+	{
+		const Note note(TimePos(48), TimePos(0), NumKeys);
+		QCOMPARE(note.key(), NumKeys - 1);
+	}
+
 	void cleanupTestCase()
 	{
 		ControlRegistry::setReady(false);
