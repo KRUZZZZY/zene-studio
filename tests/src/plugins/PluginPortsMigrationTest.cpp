@@ -20,10 +20,14 @@
 
 #include "PluginPortsHarness.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 #include <QByteArray>
+#include <QDomDocument>
 #include <QLibrary>
 #include <memory>
 #include <QProcess>
@@ -32,7 +36,10 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include "../../../plugins/Xpressive/Xpressive.h"
 #include "Engine.h"
+#include "Instrument.h"
+#include "InstrumentTrack.h"
 #include "Plugin.h"
 
 namespace
@@ -185,6 +192,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void xpressiveLoadedWaveSamplesAreFinite();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +222,53 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::xpressiveLoadedWaveSamplesAreFinite()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_xpressive)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	std::unique_ptr<lmms::Instrument> instrument{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+
+	constexpr std::size_t SampleCount = 4096;
+	auto encodeSamples = [](const std::vector<float>& samples) {
+		const QByteArray bytes{reinterpret_cast<const char*>(samples.data()),
+			static_cast<int>(samples.size() * sizeof(float))};
+		return QString::fromLatin1(bytes.toBase64());
+	};
+	const std::vector<float> nanSamples(SampleCount, std::numeric_limits<float>::quiet_NaN());
+	const std::vector<float> positiveInfinitySamples(SampleCount,
+		std::numeric_limits<float>::infinity());
+	const std::vector<float> negativeInfinitySamples(SampleCount,
+		-std::numeric_limits<float>::infinity());
+	QDomDocument doc;
+	QDomElement settings = doc.createElement("instrument");
+	settings.setAttribute("W1sample", encodeSamples(nanSamples));
+	settings.setAttribute("W2sample", encodeSamples(positiveInfinitySamples));
+	settings.setAttribute("W3sample", encodeSamples(negativeInfinitySamples));
+	instrument->restoreState(settings);
+
+	auto* xpressive = reinterpret_cast<lmms::Xpressive*>(instrument.get());
+	const auto waveIsFinite = [](const lmms::WaveSample& wave) {
+		return std::all_of(wave.m_samples, wave.m_samples + wave.m_length,
+			[](float sample) { return std::isfinite(sample); });
+	};
+	QVERIFY2(waveIsFinite(xpressive->W1()), "W1 waveform retained a saved NaN sample");
+	QVERIFY2(waveIsFinite(xpressive->W2()), "W2 waveform retained a saved infinite sample");
+	QVERIFY2(waveIsFinite(xpressive->W3()), "W3 waveform retained a saved infinite sample");
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
