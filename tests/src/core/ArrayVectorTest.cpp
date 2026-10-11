@@ -632,6 +632,16 @@ private slots:
 			v.erase(v.cbegin() + 1, v.cbegin() + 3);
 			QCOMPARE(v, (ArrayVector<int, 5>{1, 2, 3}));
 		}
+		{
+			// An empty range must not move-assign its elements
+			auto v = ArrayVector<Constructible, 3>(3);
+			const auto result = v.erase(v.cbegin() + 1, v.cbegin() + 1);
+			QCOMPARE(result - v.begin(), std::ptrdiff_t{1});
+			QCOMPARE(v.size(), std::size_t{3});
+			for (const auto& element : v) {
+				QCOMPARE(element.construction, Construction::Default);
+			}
+		}
 	}
 
 	void pushBackTest()

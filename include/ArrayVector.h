@@ -284,6 +284,7 @@ public:
 		assert(cbegin() <= first && first <= last && last <= cend());
 		const auto mutFirst = begin() + (first - cbegin());
 		const auto mutLast = begin() + (last - cbegin());
+		if (mutFirst == mutLast) { return mutFirst; }
 		const auto newEnd = std::move(mutLast, end(), mutFirst);
 		std::destroy(newEnd, end());
 		m_size = newEnd - begin();

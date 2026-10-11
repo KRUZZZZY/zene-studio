@@ -30,6 +30,7 @@
 
 # BUG-MIDI-003/004 (2026-09-24): realtime MIDI output queue and defined retro snapshot publication;
 # regression coverage: tests/src/core/MidiOutQueueTest.cpp and RetroMidiRingTest.cpp.
+include/ArrayVector.h	new-p9-554: return immediately for empty erase ranges to avoid self-move assignment; covered by ArrayVectorTest::eraseRangeTest.
 include/ImportFilter.h	040/m3-registry-actions (2026-09-29, M3.2): declares static bool tryImportFile(file, tc), the dialog-free half of import(); nothing else moves
 include/MidiAlsaSeq.h	BUG-MIDI-003: queue outbound events off the audio thread and expose overflow count; covered by MidiOutQueueTest and RetroMidiCaptureCommandsTest.
 include/MidiClient.h	BUG-MIDI-003: expose realtime MIDI output queue overflow count to status commands; covered by RetroMidiCaptureCommandsTest.
