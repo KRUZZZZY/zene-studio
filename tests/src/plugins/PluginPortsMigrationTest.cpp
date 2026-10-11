@@ -34,6 +34,12 @@
 
 #include "Engine.h"
 #include "Plugin.h"
+#include "LmmsTypes.h"
+// Check ring bounds directly before the stale-bound path can reach undefined behavior.
+#define private public
+#include "../../../plugins/Flanger/MonoDelay.h"
+#undef private
+#include "../../../plugins/Flanger/MonoDelay.cpp"
 
 namespace
 {
@@ -187,6 +193,7 @@ private slots:
 	void initTestCase();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
+	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
@@ -430,6 +437,23 @@ void PluginPortsMigrationTest::comparisonIsSensitive()
 
 	QVERIFY2(a.checksum != b.checksum, "distinct plugins rendered identically");
 	QVERIFY2(worst > 1e-6f, "comparison is not sensitive to real differences");
+}
+
+void PluginPortsMigrationTest::monoDelayUpdatesItsDelayAcrossSampleRateChanges()
+{
+	lmms::MonoDelay delay{2, 48000};
+	delay.setLength(24000.f);
+
+	lmms::sample_t sample = 0.f;
+	for (int frame = 0; frame < 17; ++frame)
+	{
+		delay.tick(&sample);
+	}
+
+	delay.setSampleRate(44100);
+	QCOMPARE(delay.m_maxLength, 88200);
+	QCOMPARE(delay.m_length, 22050.f);
+	QCOMPARE(delay.m_writeIndex, 0);
 }
 
 /*!
