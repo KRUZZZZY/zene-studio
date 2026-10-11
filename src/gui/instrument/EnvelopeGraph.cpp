@@ -251,7 +251,7 @@ void EnvelopeGraph::toggleAmountModel()
 	auto* params = castModel<EnvelopeAndLfoParameters>();
 	auto& amountModel = params->getAmountModel();
 
-	amountModel.setValue(amountModel.value() < 1.0 ? 1.0 : 0.0);
+	amountModel.setValue(amountModel.value() == 0.0f ? 1.0f : 0.0f);
 }
 
 } // namespace gui

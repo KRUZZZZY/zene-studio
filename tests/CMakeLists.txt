@@ -775,6 +775,8 @@ set(LMMS_TESTS
 	src/gui/XyPadPairTest.cpp
 	# M3: folders from the interface - make one, move a track in, collapse, pin, take it out.
 	src/gui/TrackFolderMenuTest.cpp
+	# BUG new-p11-96: clicking the envelope graph turns a negative amount off.
+	src/gui/EnvelopeGraphTest.cpp
 	# Edit > Undo History: lists the record, undoes and redoes through the registry.
 	src/gui/UndoHistoryPanelTest.cpp
 	# The export dialog's dither and resampling choices, through export.set_*.

@@ -1040,6 +1040,7 @@ src/gui/widgets/TextFloat.cpp	0.5.0 theme 17: a floating message is also announc
 include/ClipView.h	0.5.0 themes 2/9: draggedClipPos reports its snap (arrangement::SnapHit); pressLocked/refuseLockedDrag
 include/FileBrowser.h	0.5.0 theme 3 (Browser): stopPreview() is a public slot the Browser panel calls; insertFileItem() declared
 src/gui/instrument/EnvelopeAndLfoView.cpp	0.5.0 accessibility: the LFO shape buttons are named, with tooltips (they are Tab-reachable now)
+src/gui/instrument/EnvelopeGraph.cpp	new-p11-96: clicking the envelope graph sets any nonzero amount to zero; covered by tests/src/gui/EnvelopeGraphTest.cpp
 docs/ui-logs/050-ux-build/arrange.png	0.5.0 UX build (2026-10-03, b9a463ad4): fork-NEW evidence, not a change to inherited code - a window.screenshot of the shell after the owner's UX decisions, under offscreen; declared because docs/ allows only .md. Under the 1 MiB evidence cap (Gate 11).
 docs/ui-logs/050-ux-build/edit.png	0.5.0 UX build (2026-10-03, b9a463ad4): fork-NEW evidence, not a change to inherited code - a window.screenshot of the shell after the owner's UX decisions, under offscreen; declared because docs/ allows only .md. Under the 1 MiB evidence cap (Gate 11).
 docs/ui-logs/050-ux-build/mix.png	0.5.0 UX build (2026-10-03, b9a463ad4): fork-NEW evidence, not a change to inherited code - a window.screenshot of the shell after the owner's UX decisions, under offscreen; declared because docs/ allows only .md. Under the 1 MiB evidence cap (Gate 11).
