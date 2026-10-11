@@ -62,6 +62,7 @@ bool ratioFromLine(const QString& line, int numerator, Interval* out)
 	int denominator = 1;
 	if (line.contains(QLatin1Char('/')))
 	{
+		if (line.count(QLatin1Char('/')) != 1) { return false; }
 		bool denOk = false;
 		denominator = line.split(QLatin1Char('/')).at(1)
 			.section(QRegularExpression(QStringLiteral("\\s+")), 0, 0, QString::SectionSkipEmpty)
