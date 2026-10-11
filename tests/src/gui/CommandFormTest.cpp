@@ -46,6 +46,7 @@
 #include <QToolButton>
 
 #include "CommandForm.h"
+#include "CommandFormFields.h"
 #include "CommandMetadata.h"
 #include "CommandListDialog.h"
 #include "ControlRegistry.h"
@@ -66,6 +67,18 @@ int g_fixedRuns = 0;
 QJsonObject prop(const char* type)
 {
 	return QJsonObject{{QStringLiteral("type"), QLatin1String(type)}};
+}
+
+QJsonObject boundedIntegerList()
+{
+	QJsonObject item = prop("integer");
+	item.insert(QStringLiteral("minimum"), 1);
+	item.insert(QStringLiteral("maximum"), 10);
+	QJsonObject list = prop("array");
+	list.insert(QStringLiteral("items"), item);
+	list.insert(QStringLiteral("minItems"), 1);
+	list.insert(QStringLiteral("maxItems"), 3);
+	return list;
 }
 
 void add(const char* id, const QJsonObject& properties, const QJsonArray& required,
@@ -326,6 +339,56 @@ private slots:
 		QVERIFY(form.setField(QStringLiteral("gain_db"), -6));
 		QVERIFY2(form.collect(&args, &error), qPrintable(error));
 		QCOMPARE(args.value(QStringLiteral("gain_db")).toDouble(), -6.0);
+	}
+
+	//! A list editor enforces item types and ranges for both supported input syntaxes.
+	void jsonAndCommaListsRejectOutOfRangeItems()
+	{
+		const QJsonObject spec = boundedIntegerList();
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.list"), QStringLiteral("values"), spec, true);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		QJsonValue value;
+		QString error;
+
+		input->setText(QStringLiteral("[11]"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "JSON list accepted an item above its maximum");
+		input->setText(QStringLiteral("1, 11"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "comma list accepted an item above its maximum");
+	}
+
+	//! JSON list elements must match the declared item type, including integer rather than fractional values.
+	void jsonListsRejectNonIntegerItems()
+	{
+		const QJsonObject spec = boundedIntegerList();
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.list"), QStringLiteral("values"), spec, true);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		input->setText(QStringLiteral("[1.5]"));
+		QJsonValue value;
+		QString error;
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "JSON list accepted a fractional integer item");
+	}
+
+	//! Both list syntaxes enforce the array's declared item-count bounds.
+	void jsonAndCommaListsRespectArrayLength()
+	{
+		const QJsonObject spec = boundedIntegerList();
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.list"), QStringLiteral("values"), spec, true);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		QJsonValue value;
+		QString error;
+
+		input->setText(QStringLiteral("[]"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "JSON list ignored its minimum item count");
+		input->setText(QStringLiteral("[1, 2, 3, 4]"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "JSON list ignored its maximum item count");
+		input->setText(QStringLiteral("1, 2, 3, 4"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "comma list ignored its maximum item count");
 	}
 
 	//! 0.5.0 theme 5: an enum offers its values in words (the blank entry says "(Default)"), a list of plain
