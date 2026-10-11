@@ -6,6 +6,19 @@
 
 The configured test tree has no `DynamicsProcessor` ctest, so the regression was added to the existing DSP test target `DeviceDspTest`. CTest ran one affected-family test (`1/1`, test #194). The expected exception assertions both failed on the original code and failed again with only the product patch reversed.
 
+## Evidence summary
+
+| Evidence | Exact command or result | Exit/result |
+| --- | --- | ---: |
+| Original-code RED | `ctest -R '^DeviceDspTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-392.r1/logs/test-1.log 2>&1; status=$?; echo EXIT=$status; exit $status` | 8 |
+| Fixed-code GREEN | `ctest -R '^DeviceDspTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-392.r1/logs/test-2.log 2>&1; status=$?; echo EXIT=$status; exit $status` | 0 |
+| Reversed-patch RED | `ctest -R '^DeviceDspTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-392.r1/logs/test-3.log 2>&1; status=$?; echo EXIT=$status; exit $status` | 8 |
+| Reapplied-patch GREEN | `ctest -R '^DeviceDspTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-392.r1/logs/test-4.log 2>&1; status=$?; echo EXIT=$status; exit $status` | 0 |
+| Affected-family test count | `ctest -R '^DeviceDspTest$'`: 1/1 CTest test, test #194 | 1 executed |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-392.r1/logs/gate-3-complexity.log 2>&1; status=$?; echo EXIT=$status; exit $status` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-392.r1/logs/gate-4-file-length.log 2>&1; status=$?; echo EXIT=$status; exit $status` | 0 |
+| Explicit files committed in `a6dad98a5` | `include/RmsHelper.h`; `tests/src/core/DeviceDspTest.cpp`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p9-392.md` | Committed |
+
 ## Regression evidence
 
 Commands below ran from `build/tests`.
