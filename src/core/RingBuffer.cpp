@@ -31,7 +31,26 @@
 namespace lmms
 {
 
- 
+namespace
+{
+
+std::size_t positionAfterOffset(std::size_t position, std::int64_t offset, std::size_t size)
+{
+	if (offset >= 0)
+	{
+		const auto advance = static_cast<std::size_t>(static_cast<std::uint64_t>(offset) % size);
+		const std::size_t untilWrap = size - position;
+		return advance < untilWrap ? position + advance : advance - untilWrap;
+	}
+
+	const auto magnitude = static_cast<std::uint64_t>(-(offset + 1)) + 1;
+	const auto rewind = static_cast<std::size_t>(magnitude % size);
+	return position >= rewind ? position - rewind : size - (rewind - position);
+}
+
+} // namespace
+
+
 RingBuffer::RingBuffer( f_cnt_t size ) : 
 	m_fpp( Engine::audioEngine()->framesPerPeriod() ),
 	m_samplerate( Engine::audioEngine()->outputSampleRate() ),
@@ -106,15 +125,15 @@ void RingBuffer::advance()
 }
 
 
-void RingBuffer::movePosition( f_cnt_t amount )
+void RingBuffer::movePosition( std::int64_t amount )
 {
-	m_position = ( m_position + amount ) % m_size;
+	m_position = static_cast<unsigned int>(positionAfterOffset(m_position, amount, m_size));
 }
 
 
 void RingBuffer::movePosition( float amount )
 {
-	movePosition( msToFrames( amount ) );
+	movePosition( msToFrameOffset( amount ) );
 }
 
 
@@ -141,9 +160,9 @@ void RingBuffer::pop( SampleFrame* dst )
 }
 
 
-void RingBuffer::read( SampleFrame* dst, f_cnt_t offset )
+void RingBuffer::read( SampleFrame* dst, std::int64_t offset )
 {
-	f_cnt_t pos = ( m_position + offset ) % m_size;
+	const std::size_t pos = positionAfterOffset(m_position, offset, m_size);
 	
 	if( pos + m_fpp <= m_size ) // we won't go over the edge so we can just memcpy here
 	{
@@ -163,13 +182,13 @@ void RingBuffer::read( SampleFrame* dst, f_cnt_t offset )
 
 void RingBuffer::read( SampleFrame* dst, float offset )
 {
-	read( dst, msToFrames( offset ) );
+	read( dst, msToFrameOffset( offset ) );
 }
 
 
-void RingBuffer::read( SampleFrame* dst, f_cnt_t offset, f_cnt_t length )
+void RingBuffer::read( SampleFrame* dst, std::int64_t offset, f_cnt_t length )
 {
-	f_cnt_t pos = ( m_position + offset ) % m_size;
+	const std::size_t pos = positionAfterOffset(m_position, offset, m_size);
 	
 	if( pos + length <= m_size ) // we won't go over the edge so we can just memcpy here
 	{
@@ -189,7 +208,7 @@ void RingBuffer::read( SampleFrame* dst, f_cnt_t offset, f_cnt_t length )
 
 void RingBuffer::read( SampleFrame* dst, float offset, f_cnt_t length )
 {
-	read( dst, msToFrames( offset ), length );
+	read( dst, msToFrameOffset( offset ), length );
 }
 
 

@@ -27,12 +27,22 @@
 
 #include <QtTest>
 
+#include <cmath>
 #include <thread>
 #include <vector>
 
 #include "AllocationProbe.h"
+#include "AudioDevice.h"
+#include "AudioEngine.h"
+#include "Engine.h"
+#include "RingBuffer.h"
+#include "SampleFrame.h"
 
 using lmms::RecordRingBuffer;
+using lmms::RingBuffer;
+using lmms::SampleFrame;
+using lmms::Engine;
+using lmms::f_cnt_t;
 using lmms::sample_t;
 
 namespace
@@ -46,6 +56,53 @@ sample_t testValue(std::uint64_t index)
 	return static_cast<sample_t>(static_cast<long long>(index % 61) - 30) / 64.0f;
 }
 
+template <typename Buffer, typename Offset>
+void readAtFrameOffset(Buffer& buffer, lmms::SampleFrame* destination, Offset offset)
+{
+	if constexpr (requires { buffer.read(destination, offset); })
+	{
+		buffer.read(destination, offset);
+	}
+	else
+	{
+		buffer.read(destination, static_cast<lmms::f_cnt_t>(offset));
+	}
+}
+
+template <typename Buffer, typename Offset>
+void readFramesAtFrameOffset(Buffer& buffer, lmms::SampleFrame* destination, Offset offset,
+	lmms::f_cnt_t length)
+{
+	if constexpr (requires { buffer.read(destination, offset, length); })
+	{
+		buffer.read(destination, offset, length);
+	}
+	else
+	{
+		buffer.read(destination, static_cast<lmms::f_cnt_t>(offset), length);
+	}
+}
+
+template <typename Buffer, typename Offset>
+void moveByFrameOffset(Buffer& buffer, Offset offset)
+{
+	if constexpr (requires { buffer.movePosition(offset); })
+	{
+		buffer.movePosition(offset);
+	}
+	else
+	{
+		buffer.movePosition(static_cast<lmms::f_cnt_t>(offset));
+	}
+}
+
+std::size_t wrappedIndex(std::int64_t offset, std::size_t size)
+{
+	const auto remainder = offset % static_cast<std::int64_t>(size);
+	return remainder < 0 ? static_cast<std::size_t>(static_cast<std::int64_t>(size) + remainder) :
+		static_cast<std::size_t>(remainder);
+}
+
 } // namespace
 
 
@@ -54,6 +111,57 @@ class RecordRingBufferTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void initTestCase()
+	{
+		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();
+	}
+
+	void cleanupTestCase() { Engine::destroy(); }
+
+	//! Negative frame and millisecond offsets address frames before the position, wrapping at zero.
+	void RingBuffer_NegativeOffsetsMoveBackward()
+	{
+		const f_cnt_t period = Engine::audioEngine()->framesPerPeriod();
+		const f_cnt_t capacity = period + 8;
+		const auto size = static_cast<std::size_t>(capacity);
+		RingBuffer ring{f_cnt_t{8}};
+		std::vector<SampleFrame> input(size);
+		for (std::size_t i = 0; i < size; ++i)
+		{
+			input[i] = SampleFrame(static_cast<sample_t>(i), static_cast<sample_t>(-static_cast<float>(i)));
+		}
+		const auto refill = [&] {
+			ring.reset();
+			ring.write(input.data(), f_cnt_t{0}, capacity);
+		};
+		std::vector<SampleFrame> output(static_cast<std::size_t>(period));
+
+		refill();
+		readAtFrameOffset(ring, output.data(), std::int64_t{-1});
+		QCOMPARE(output.front().left(), input[wrappedIndex(-1, size)].left());
+	SampleFrame previousFrame;
+	readFramesAtFrameOffset(ring, &previousFrame, std::int64_t{-1}, f_cnt_t{1});
+	QCOMPARE(previousFrame.left(), input[wrappedIndex(-1, size)].left());
+
+		refill();
+		moveByFrameOffset(ring, std::int64_t{-1});
+		ring.read(output.data());
+		QCOMPARE(output.front().left(), input[wrappedIndex(-1, size)].left());
+
+		const float milliseconds = -1.0f;
+		const auto millisecondOffset = static_cast<std::int64_t>(std::ceil(
+			milliseconds * static_cast<float>(Engine::audioEngine()->outputSampleRate()) * 0.001f));
+		refill();
+		ring.read(output.data(), milliseconds);
+		QCOMPARE(output.front().left(), input[wrappedIndex(millisecondOffset, size)].left());
+
+		refill();
+		ring.movePosition(milliseconds);
+		ring.read(output.data());
+		QCOMPARE(output.front().left(), input[wrappedIndex(millisecondOffset, size)].left());
+	}
+
 	//! Capacity is rounded up to a power of two and never below the request.
 	void Capacity_IsPowerOfTwoAndAtLeastRequested()
 	{
@@ -253,6 +361,6 @@ private slots:
 } ;
 
 
-QTEST_APPLESS_MAIN(RecordRingBufferTest)
+QTEST_GUILESS_MAIN(RecordRingBufferTest)
 
 #include "RecordRingBufferTest.moc"

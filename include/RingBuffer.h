@@ -27,6 +27,7 @@
 #define LMMS_RING_BUFFER_H
 
 #include <cmath>
+#include <cstdint>
 #include <QObject>
 #include "LmmsTypes.h"
 #include "lmms_export.h"
@@ -92,7 +93,7 @@ public:
 /** \brief Moves position forwards/backwards by an amount of frames
  * 	\param amount Number of frames to move, may be negative
  */
-	void movePosition( f_cnt_t amount );
+	void movePosition( std::int64_t amount );
 
 /** \brief Moves position forwards/backwards by an amount of milliseconds
  * 	\param amount Number of milliseconds to move, may be negative
@@ -114,7 +115,7 @@ public:
  * 	\param dst Destination pointer
  * 	\param offset Offset in frames against current position, may be negative
  */
-	void read( SampleFrame* dst, f_cnt_t offset = 0 );
+	void read( SampleFrame* dst, std::int64_t offset = 0 );
 
 /** \brief Reads a period-sized buffer from the ringbuffer and writes it to a specified destination
  * 	\param dst Destination pointer
@@ -127,7 +128,7 @@ public:
  * 	\param offset Offset in frames against current position, may be negative
  * 	\param length Length in frames of the buffer to read - must not be higher than the size of the ringbuffer!
  */
-	void read( SampleFrame* dst, f_cnt_t offset, f_cnt_t length );
+	void read( SampleFrame* dst, std::int64_t offset, f_cnt_t length );
 
 /** \brief Reads a buffer of specified size from the ringbuffer and writes it to a specified destination
  * 	\param dst Destination pointer
@@ -211,6 +212,11 @@ private:
 	inline f_cnt_t msToFrames( float ms )
 	{
 		return static_cast<f_cnt_t>( ceilf( ms * (float)m_samplerate * 0.001f ) );
+	}
+
+	inline std::int64_t msToFrameOffset( float ms )
+	{
+		return static_cast<std::int64_t>( ceilf( ms * (float)m_samplerate * 0.001f ) );
 	}
 
 	const f_cnt_t m_fpp;
