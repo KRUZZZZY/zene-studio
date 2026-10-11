@@ -1602,6 +1602,7 @@ src/core/VideoFramePump.cpp
 src/core/VideoReference.cpp
 src/core/ViewMemory.cpp
 src/core/audio/MultiTrackRecorder.cpp
+src/core/audio/OssSampleConversion.h
 src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
