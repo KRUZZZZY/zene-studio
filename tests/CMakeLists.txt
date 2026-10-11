@@ -513,6 +513,8 @@ set(LMMS_TESTS
 	src/core/HardwareIoTest.cpp
 	# 0.5.0 theme 24: the task area's reporting API and task.* commands
 	src/core/TaskCenterTest.cpp
+	# Destroying a pool drains tasks already queued behind a running task.
+	src/core/ThreadPoolTest.cpp
 	# 0.5.0 F7: surround channels, the surround panner, the downmix
 	src/core/SurroundTest.cpp
 	# 0.5.0 L09: send pan, sends from many channels, nested / linked / shared VCA groups, mixer view modes.

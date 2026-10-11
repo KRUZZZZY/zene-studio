@@ -2046,6 +2046,7 @@ tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
 tests/src/core/SurroundTest.cpp
 tests/src/core/TaskCenterTest.cpp
+tests/src/core/ThreadPoolTest.cpp
 # 2026-09-22 (040/arch4-s4, ARCH-4 slice S4): tests/src/core/WriteRefusalGateTest.cpp
 # enters the list - the write-refusal gate (SPEC-ARCH-4 1.7 Requirement 6): a text scan
 # of the write path that fails on a setter called for a value it does not own, and on a
