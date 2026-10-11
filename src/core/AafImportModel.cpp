@@ -31,8 +31,11 @@
 #include <QFileInfo>
 #include <QJsonArray>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
+
+#include "volume.h"
 
 namespace lmms::interchange
 {
@@ -63,6 +66,14 @@ qint64 AafModel::firstClipFrame() const
 		for (const AafClip& clip : track.clips) { first = std::min(first, clip.positionFrames); }
 	}
 	return first == std::numeric_limits<qint64>::max() ? 0 : first;
+}
+
+void aafPopulateTrackGainClampLoss(const AafModel& model, AafLossReport& loss)
+{
+	loss.trackGainClamps = static_cast<int>(std::count_if(model.tracks.cbegin(), model.tracks.cend(), [](const AafTrack& track) {
+		const float requestedVolume = static_cast<float>(track.gain * 100.0);
+		return requestedVolume < static_cast<float>(MinVolume) || requestedVolume > static_cast<float>(MaxVolume);
+	}));
 }
 
 QJsonObject AafLossReport::toJson() const

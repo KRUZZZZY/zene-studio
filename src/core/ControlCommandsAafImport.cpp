@@ -207,6 +207,7 @@ ControlResult readOnly(const QJsonObject& args)
 	aaf::AafModel model;
 	aaf::AafLossReport loss;
 	if (!readFile(path, options, &model, &loss, &error)) { return error; }
+	aaf::aafPopulateTrackGainClampLoss(model, loss);
 	QJsonObject result = summary(path, model, loss);
 	result.insert(QStringLiteral("media_dir"), mediaDirFor(args, path));
 	result.insert(QStringLiteral("model"), aaf::aafModelJson(model));

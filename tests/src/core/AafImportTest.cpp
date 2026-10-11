@@ -83,6 +83,15 @@ int reportedTrackGainClamps(const Report& report)
 	else { return -1; }
 }
 
+template<typename Model, typename Loss>
+void populateDryRunGainLoss(const Model& model, Loss& loss)
+{
+	if constexpr (requires { aafPopulateTrackGainClampLoss(model, loss); })
+	{
+		aafPopulateTrackGainClampLoss(model, loss);
+	}
+}
+
 //! Two tracks: one with a fully-edited clip, one with a clip whose media is missing and one past the song.
 AafModel authoredModel(const QString& wave)
 {
@@ -255,7 +264,19 @@ private slots:
 		auto* imported = dynamic_cast<SampleTrack*>(control::trackWithId(made.at(0)));
 		QVERIFY(imported != nullptr);
 		QCOMPARE(imported->volumeModel()->value(), 200.f);
-		QVERIFY(AafLossReport{}.toJson().contains(QStringLiteral("track_gain_clamps")));
+		AafLossReport importedLoss;
+		importedLoss.trackGainClamps = reportedTrackGainClamps(report);
+		QCOMPARE(importedLoss.toJson().value(QStringLiteral("track_gain_clamps")).toInt(), 1);
+
+		AafTrack inRange = source;
+		inRange.gain = 1.0;
+		AafModel inRangeModel;
+		inRangeModel.tracks = {inRange};
+		std::vector<int> inRangeIds;
+		const AafBuildReport inRangeReport = buildAafSession(Engine::getSong(), inRangeModel, AafBuildOptions{}, &inRangeIds);
+		AafLossReport inRangeLoss;
+		inRangeLoss.trackGainClamps = reportedTrackGainClamps(inRangeReport);
+		QCOMPARE(inRangeLoss.toJson().value(QStringLiteral("track_gain_clamps")).toInt(), 0);
 	}
 
 	void theShiftStartsTheFirstClipAtZero()
@@ -334,6 +355,21 @@ private slots:
 		QCOMPARE(Engine::projectJournal()->undoDepth(), 0);  // a refusal records nothing
 	}
 
+	void theDryRunLossSerializesTrackGainClamps()
+	{
+		AafTrack hot;
+		hot.gain = 2.5;
+		AafModel model;
+		model.tracks = {hot};
+		AafLossReport loss;
+		populateDryRunGainLoss(model, loss);
+		QCOMPARE(loss.toJson().value(QStringLiteral("track_gain_clamps")).toInt(), 1);
+
+		model.tracks[0].gain = 1.0;
+		populateDryRunGainLoss(model, loss);
+		QCOMPARE(loss.toJson().value(QStringLiteral("track_gain_clamps")).toInt(), 0);
+	}
+
 	//! LibAAF on the real fixture: the dry run reads it and writes nothing.
 	void theDryRunReadsTheFixture()
 	{
@@ -349,6 +385,7 @@ private slots:
 		QCOMPARE(reply.value(QStringLiteral("embedded_media")).toInt(), 1);
 		QVERIFY(reply.value(QStringLiteral("missing_media")).toArray().isEmpty());
 		QCOMPARE(reply.value(QStringLiteral("loss")).toObject().value(QStringLiteral("video_tracks")).toInt(), 1);
+		QCOMPARE(reply.value(QStringLiteral("loss")).toObject().value(QStringLiteral("track_gain_clamps")).toInt(), 0);
 		const QJsonObject clip = reply.value(QStringLiteral("model")).toObject().value(QStringLiteral("tracks"))
 			.toArray().at(0).toObject().value(QStringLiteral("clips")).toArray().at(0).toObject();
 		QCOMPARE(clip.value(QStringLiteral("length_frames")).toInteger(), qint64{48048});
@@ -368,6 +405,8 @@ private slots:
 		QVERIFY2(result.ok, qPrintable(result.errorMessage));
 		QCOMPARE(result.result.value(QStringLiteral("built_tracks")).toInt(), 1);
 		QCOMPARE(result.result.value(QStringLiteral("built_clips")).toInt(), 1);
+		QCOMPARE(result.result.value(QStringLiteral("loss")).toObject()
+			.value(QStringLiteral("track_gain_clamps")).toInt(), 0);
 		QVERIFY(QFileInfo::exists(QDir(media).filePath(QStringLiteral("1000hz-18dbs16b44.1k.wav"))));
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore + 1);
 

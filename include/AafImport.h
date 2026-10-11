@@ -227,11 +227,14 @@ struct AafLossReport
 	int envelopePointsDropped = 0;
 	int missingMediaClips = 0;     //!< clips whose source file is missing (not built)
 	int beyondSongLength = 0;      //!< clips past MaxSongLength (filled in by the builder)
-	int trackGainClamps = 0;      //!< track gains clipped to the sample track's fader range (filled in by the builder)
+	int trackGainClamps = 0;      //!< track gains clipped to the sample fader range (read-only report or builder)
 	QStringList warnings;          //!< LibAAF's own warnings and errors, at most AafMaxWarnings
 
 	QJsonObject toJson() const;
 };
+
+//! Fill the loss caused by track gains outside a SampleTrack's fader range.
+LMMS_EXPORT void aafPopulateTrackGainClampLoss(const AafModel& model, AafLossReport& loss);
 
 //! How readAaf() treats the media.
 struct AafReadOptions
