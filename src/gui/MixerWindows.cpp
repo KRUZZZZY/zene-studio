@@ -94,9 +94,8 @@ protected:
 			const QString figure = levels[side] > 0.f ? QString::number(db, 'f', 1) : QStringLiteral("-inf");
 			p.drawText(QRect(bar.left(), 0, bar.width(), 20), Qt::AlignCenter,
 				QStringLiteral("%1 %2 dB").arg(side == 0 ? QObject::tr("L") : QObject::tr("R"), figure));
-			const int fillHeight = static_cast<int>(share * bar.height());
-			const int top = bar.bottom() - fillHeight + 1;
-			p.fillRect(QRect(bar.left(), top, bar.width(), fillHeight), db > -6.0 ? pal.meterHigh : db > -18.0 ? pal.meterMid : pal.meterLow);
+			const int top = bar.bottom() - static_cast<int>(share * bar.height());
+			p.fillRect(QRect(bar.left(), top, bar.width(), bar.bottom() - top), db > -6.0 ? pal.meterHigh : db > -18.0 ? pal.meterMid : pal.meterLow);
 		}
 		p.setPen(pal.text);
 		p.setFont(tokens::font(tokens::TextRole::Title));

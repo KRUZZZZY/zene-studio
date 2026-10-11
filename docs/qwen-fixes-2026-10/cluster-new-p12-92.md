@@ -1,26 +1,28 @@
-# Cluster new-p12-92 — Full-scale meter fill bounds
+# Cluster new-p12-92 — Full-scale input meter gap
 
-**Verdict: FIXED**
+**Verdict: FALSE-POSITIVE for this branch (finding absent/not applicable).**
 
-The finding names `src/gui/InputLevelMeter.cpp`, which is absent from this branch. The active Large Meters dialog in `src/gui/MixerWindows.cpp:97-99` had the same inclusive-boundary error: at full scale, its fill began one row above the bar and stopped before the bar's bottom row. The fix computes the filled height and derives the top from `bar.bottom()` inclusively, keeping the fill inside the bar.
+The reported `src/gui/InputLevelMeter.cpp:123` is absent from both the base and target trees. The input-level path available here is the read-only `meter.input` command: `inputLevel()` takes left and right peak readings and returns their dB values and clipped flag (`src/core/ControlCommandsMixerTools.cpp:348-355`); its registration explicitly says “Read only” (`:507-508`). There is no input-meter widget `paintEvent()` to fix or exercise in this target.
 
-The regression in `tests/src/gui/MixerModesTest.cpp:238-293` opens the real Large Meters dialog, sets the master RMS to full scale immediately before repaint, and checks that the pixel above the bar stays clear while the bottom row is filled.
+The previous round changed a different display. `LargeMeters::paintEvent()` reads the master channel's RMS output (`src/gui/MixerWindows.cpp:83-84`), and its regression inspected that dialog. Those changes do not address this input-meter finding, so I reverted the `MixerWindows.cpp` change and the corresponding `MixerModesTest.cpp` test. No input-meter regression or product fix was added because the reported path is absent.
 
 ## Evidence
 
 | Check | Exact command and working directory | Exit | Result |
 |---|---|---:|---|
-| Reversed production patch build (worktree) | `cmake --build build --target zene MixerModesTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r1/logs/build-5.log 2>&1; status=$?; echo EXIT=$status` | 0 | Rebuilt `zene` and `MixerModesTest` without the fix. |
-| RED regression (`build/tests`) | `ctest -R MixerModesTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r1/logs/test-5.log 2>&1; status=$?; echo EXIT=$status` | 8 | 1/1 CTest target failed as expected; diagnostic showed the above-bar pixel was meter color `#ff5468` instead of panel `#17191d`, and the bottom was control `#292d33` instead of meter color. QtTest summary: 13 passed, 1 failed. |
-| Restored production patch build (worktree) | `cmake --build build --target zene MixerModesTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r1/logs/build-6.log 2>&1; status=$?; echo EXIT=$status` | 0 | Rebuilt `zene` and the affected test target with the fix. |
-| GREEN regression (`build/tests`) | `ctest -R MixerModesTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r1/logs/test-6.log 2>&1; status=$?; echo EXIT=$status` | 0 | 1/1 CTest target passed. The affected family has 14 QtTest cases. |
-| Complexity gate (worktree) | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r1/logs/gate-1.log 2>&1; status=$?; echo EXIT=$status` | 0 | Passed. |
-| File-length gate (worktree) | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r1/logs/gate-2.log 2>&1; status=$?; echo EXIT=$status` | 0 | Passed. |
+| Input-meter RED regression | Not run; no input-meter widget or affected test target exists in this branch. | N/A | No valid branch-local regression can exercise the reported `paintEvent()`. |
+| Input-meter GREEN regression | Not run for the same reason. | N/A | No input-meter product change was made. |
+| Source presence check | `git cat-file -e HEAD:src/gui/InputLevelMeter.cpp 2>/dev/null; printf 'HEAD lookup exit=%s\n' "$?"; git cat-file -e 'HEAD^:src/gui/InputLevelMeter.cpp' 2>/dev/null; printf 'HEAD^ lookup exit=%s\n' "$?"` (worktree root) | 0 | Both lookups printed exit 128, confirming the source is absent at the target and base revisions. |
+| Historical unrelated RED regression (`build/tests`) | `ctest -R MixerModesTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r1/logs/test-5.log 2>&1; status=$?; echo EXIT=$status` | 8 | This reversed the Large Meters master-output fix; it is not evidence for the input-meter finding. |
+| Historical unrelated GREEN regression (`build/tests`) | `ctest -R MixerModesTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r1/logs/test-6.log 2>&1; status=$?; echo EXIT=$status` | 0 | The same Large Meters master-output test passed with that fix; it is not evidence for the input-meter finding. |
+| Affected-family test count | N/A | N/A | No InputLevelMeter test family exists here. The unrelated historical `MixerModesTest` run had 14 QtTest cases. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r2/logs/gate-5.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status" >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r2/logs/gate-5.log; exit "$status"` (worktree root) | 0 | Passed after the final report edit. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r2/logs/gate-6.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status" >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r2/logs/gate-6.log; exit "$status"` (worktree root) | 0 | Passed after the final report edit. |
 
-The reverse-patch proof used `git diff -- src/gui/MixerWindows.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r1/logs/fix.patch` (exit 0), `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r1/logs/fix.patch` (exit 0), then restored it with `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-92.r1/logs/fix.patch` (exit 0). The RED and GREEN commands above are that same regression with the production patch removed and restored.
+The unrelated product and test changes were reverted with `git restore --source=HEAD^ -- src/gui/MixerWindows.cpp tests/src/gui/MixerModesTest.cpp` (exit 0).
 
 ## Files committed
 
-- `src/gui/MixerWindows.cpp`
-- `tests/src/gui/MixerModesTest.cpp`
-- `docs/qwen-fixes-2026-10/cluster-new-p12-92.md`
+- `src/gui/MixerWindows.cpp` — revert the unrelated master-output meter change.
+- `tests/src/gui/MixerModesTest.cpp` — remove the regression for that unrelated display.
+- `docs/qwen-fixes-2026-10/cluster-new-p12-92.md` — record that the input-meter finding is absent from this branch.
