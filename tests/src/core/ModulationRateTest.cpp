@@ -134,6 +134,26 @@ private slots:
 		QVERIFY2(smooth < stepped / 100.0, qPrintable(QStringLiteral("per sample %1 vs per block %2").arg(smooth).arg(stepped)));
 	}
 
+	void negativeOffsetsWrapToTheBufferEnd()
+	{
+		ValueBuffer buffer(3);
+		buffer.values()[0] = 1.0f;
+		buffer.values()[1] = 2.0f;
+		buffer.values()[2] = 3.0f;
+		const auto readNegative = [&buffer](int offset) {
+			try { return buffer.value(offset); }
+			catch (...) { return -1.0f; }
+		};
+		QCOMPARE(readNegative(-1), 3.0f);
+		QCOMPARE(readNegative(-4), 3.0f);
+	}
+
+	void emptyBufferValueIsZero()
+	{
+		const ValueBuffer buffer;
+		QCOMPARE(buffer.value(0), 0.0f);
+	}
+
 	void theDefaultRouteIsTheOldWriteAndThePerSamplePathDoesNotAllocate()
 	{
 		FloatModel stepped(0.5f, 0.0f, 1.0f, 0.0001f);
