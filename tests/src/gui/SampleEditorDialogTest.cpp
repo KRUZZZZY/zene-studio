@@ -28,6 +28,7 @@
 
 #include <QtTest>
 
+#include <QFile>
 #include <QPushButton>
 
 #include <cmath>
@@ -150,6 +151,24 @@ private slots:
 		QVERIFY(samplerange::frameFromText(QStringLiteral("2.1.1"), ctx, Unit::BarsBeats, &frame));
 		QCOMPARE(frame, std::llround(Engine::getSong()->secondsAtTick(Engine::getSong()->ticksPerBar()) * Rate));
 		QCOMPARE(samplerange::unitFor(musicaltime::Format::Ticks), Unit::Samples);
+	}
+
+	void playbackCursorChecksVisibleRangeBeforeUnsignedSubtraction()
+	{
+		// The product view is a separately built plugin, so enforce its range-check contract here.
+		QFile file(QStringLiteral("../../plugins/AudioFileProcessor/AudioFileProcessorWaveView.cpp"));
+		QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(file.errorString()));
+		const QByteArray source = file.readAll();
+		const auto paintEvent = source.indexOf("void AudioFileProcessorWaveView::paintEvent");
+		QVERIFY(paintEvent >= 0);
+		const auto rangeStartCheck = source.indexOf("m_framesPlayed >= static_cast<f_cnt_t>(m_from)", paintEvent);
+		const auto rangeEndCheck = source.indexOf("m_framesPlayed <= static_cast<f_cnt_t>(m_to)", paintEvent);
+		const auto frameOffset = source.indexOf("m_framesPlayed - static_cast<f_cnt_t>(m_from)", paintEvent);
+		QVERIFY(rangeStartCheck >= paintEvent);
+		QVERIFY(rangeEndCheck >= paintEvent);
+		QVERIFY(frameOffset >= paintEvent);
+		QVERIFY(rangeStartCheck < frameOffset);
+		QVERIFY(rangeEndCheck < frameOffset);
 	}
 
 	void theFieldsShowTheSelection()
