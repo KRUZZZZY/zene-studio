@@ -106,6 +106,11 @@ LadspaEffect::~LadspaEffect()
 
 void LadspaEffect::changeSampleRate()
 {
+	if( m_controls == nullptr )
+	{
+		return;
+	}
+
 	DataFile dataFile( DataFile::Type::EffectSettings );
 	m_controls->saveState( dataFile, dataFile.content() );
 
@@ -116,6 +121,13 @@ void LadspaEffect::changeSampleRate()
 	pluginDestruction();
 	pluginInstantiation();
 	m_pluginMutex.unlock();
+
+	if( m_controls == nullptr )
+	{
+		controls->effectModelChanged( nullptr );
+		delete controls;
+		return;
+	}
 
 	controls->effectModelChanged( m_controls );
 	delete controls;

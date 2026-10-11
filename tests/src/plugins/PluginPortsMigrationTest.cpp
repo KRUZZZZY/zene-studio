@@ -33,7 +33,9 @@
 #include <QtTest>
 
 #include "Engine.h"
+#include "Ladspa2LMMS.h"
 #include "Plugin.h"
+#include "../../../plugins/LadspaEffect/LadspaEffect.h"
 
 namespace
 {
@@ -170,6 +172,72 @@ constexpr const char* PluginModuleHostSkipMessage =
 
 } // namespace
 
+namespace lmms
+{
+
+class LadspaInstantiationFailure
+{
+public:
+	explicit LadspaInstantiationFailure(const ladspa_key_t& key)
+	{
+		auto* manager = Engine::getLADSPAManager();
+		m_description = manager->getDescription(key);
+		if (m_description == nullptr)
+		{
+			return;
+		}
+
+		const LADSPA_Descriptor* descriptor = manager->getDescriptor(key);
+		if (descriptor == nullptr)
+		{
+			return;
+		}
+
+		m_failureDescriptor = *descriptor;
+		m_failureDescriptor.instantiate = failInstantiation;
+		m_originalFunction = m_description->descriptorFunction;
+		s_active = this;
+		m_description->descriptorFunction = descriptorForIndex;
+	}
+
+	~LadspaInstantiationFailure()
+	{
+		if (m_description != nullptr && s_active == this)
+		{
+			m_description->descriptorFunction = m_originalFunction;
+			s_active = nullptr;
+		}
+	}
+
+	auto isValid() const -> bool
+	{
+		return m_description != nullptr && s_active == this;
+	}
+
+private:
+	static auto failInstantiation(const LADSPA_Descriptor*, unsigned long)
+		-> LADSPA_Handle
+	{
+		return nullptr;
+	}
+
+	static auto descriptorForIndex(unsigned long index) -> const LADSPA_Descriptor*
+	{
+		if (s_active == nullptr || index != s_active->m_description->index)
+		{
+			return nullptr;
+		}
+		return &s_active->m_failureDescriptor;
+	}
+
+	inline static LadspaInstantiationFailure* s_active = nullptr;
+	LadspaManagerDescription* m_description = nullptr;
+	LADSPA_Descriptor_Function m_originalFunction = nullptr;
+	LADSPA_Descriptor m_failureDescriptor{};
+};
+
+} // namespace lmms
+
 class PluginPortsMigrationTest : public QObject
 {
 	Q_OBJECT
@@ -185,6 +253,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +283,55 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_ladspaeffect)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto* descriptor = reinterpret_cast<const lmms::Plugin::Descriptor*>(
+		lib->resolve("ladspaeffect_plugin_descriptor"));
+	QVERIFY(descriptor != nullptr);
+
+	const auto& spec = partc::ladspaSpecs().front();
+	auto key = partc::ladspaKeyFor(descriptor, spec);
+	const lmms::ladspa_key_t managerKey{
+		key.attributes.value(QStringLiteral("file")),
+		key.attributes.value(QStringLiteral("plugin"))};
+	{
+		lmms::LadspaInstantiationFailure failure{managerKey};
+		QVERIFY(failure.isValid());
+		auto effect = std::unique_ptr<lmms::LadspaEffect>{
+			static_cast<lmms::LadspaEffect*>(entry(nullptr, &key))};
+		QVERIFY(effect != nullptr);
+		QVERIFY(!effect->isOkay());
+		QVERIFY(effect->controls() == nullptr);
+
+		emit lmms::Engine::audioEngine()->sampleRateChanged();
+		QVERIFY(!effect->isOkay());
+	}
+
+	auto effect = std::unique_ptr<lmms::LadspaEffect>{
+		static_cast<lmms::LadspaEffect*>(entry(nullptr, &key))};
+	QVERIFY(effect != nullptr);
+	QVERIFY(effect->isOkay());
+	QVERIFY(effect->controls() != nullptr);
+	{
+		lmms::LadspaInstantiationFailure failure{managerKey};
+		QVERIFY(failure.isValid());
+		emit lmms::Engine::audioEngine()->sampleRateChanged();
+	}
+	QVERIFY(!effect->isOkay());
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
