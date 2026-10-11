@@ -28,6 +28,8 @@
 #include "LocklessAllocator.h"
 
 #include <atomic>
+#include <memory>
+#include <utility>
 
 namespace lmms
 {
@@ -50,14 +52,29 @@ public:
 
 	~LocklessList()
 	{
+		for (Element * e = m_first.exchange(nullptr, std::memory_order_acquire); e; )
+		{
+			Element * next = e->next;
+			std::destroy_at(e);
+			m_allocator->free(e);
+			e = next;
+		}
 		delete m_allocator;
 	}
 
 	void push( T value )
 	{
 		Element * e = m_allocator->alloc();
-		e->value = value;
-		e->next = m_first.load(std::memory_order_relaxed);
+		try
+		{
+			std::construct_at(e, std::move_if_noexcept(value),
+				m_first.load(std::memory_order_relaxed));
+		}
+		catch (...)
+		{
+			m_allocator->free(e);
+			throw;
+		}
 
 		while (!m_first.compare_exchange_weak(e->next, e,
 				std::memory_order_release,
@@ -84,6 +101,7 @@ public:
 
 	void free( Element * e )
 	{
+		std::destroy_at(e);
 		m_allocator->free( e );
 	}
 
