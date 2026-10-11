@@ -36,7 +36,11 @@
 #ifdef ZENE_HAVE_COLLAB
 
 #include <QJsonDocument>
+#include <QSslPreSharedKeyAuthenticator>
+#include <QSslSocket>
 #include <QTcpSocket>
+
+#include <vector>
 
 #include "CollabClient.h"
 #include "CollabHost.h"
@@ -128,6 +132,45 @@ private slots:
 		QTRY_COMPARE(m_host->peerCount(), 1);
 		QTRY_COMPARE(m_host->peersJson().first().toObject().value(QStringLiteral("name")).toString(), QStringLiteral("Alice"));
 		QCOMPARE(client.role(), CollabRole::Editor);
+	}
+
+	//! Pending handshakes reserve peer slots, even when later handshakes complete after other peers.
+	void pendingHandshakesReservePeerCapacity()
+	{
+		std::vector<std::unique_ptr<QSslSocket>> pending;
+		for (int i = 0; i < 2; ++i)
+		{
+			auto socket = std::make_unique<QSslSocket>();
+			socket->setSslConfiguration(pskConfiguration());
+			connect(socket.get(), &QSslSocket::preSharedKeyAuthenticationRequired, socket.get(), [this](auto* auth) {
+				auth->setIdentity(QByteArrayLiteral("editor"));
+				auth->setPreSharedKey(m_editorKey);
+			});
+			socket->connectToHost(QHostAddress(QHostAddress::LocalHost), m_host->port());
+			QTRY_VERIFY_WITH_TIMEOUT(socket->state() == QAbstractSocket::ConnectedState, 5000);
+			pending.push_back(std::move(socket));
+		}
+
+		std::vector<std::unique_ptr<CollabClient>> clients;
+		for (int i = 0; i < 6; ++i)
+		{
+			auto client = std::make_unique<CollabClient>();
+			wire(*client);
+			client->join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("peer %1").arg(i));
+			QTRY_VERIFY_WITH_TIMEOUT(joined(*client), 10000);
+			clients.push_back(std::move(client));
+		}
+
+		CollabClient extra;
+		wire(extra);
+		extra.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("extra"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(extra) || extra.state() == CollabClient::State::Failed, 10000);
+
+		for (const auto& socket : pending) { socket->startClientEncryption(); }
+		QTRY_VERIFY_WITH_TIMEOUT(pending[0]->isEncrypted() && pending[1]->isEncrypted(), 10000);
+		QTRY_VERIFY_WITH_TIMEOUT(m_host->peerCount() >= MaxPeers, 10000);
+		QVERIFY2(m_host->peerCount() <= MaxPeers, qPrintable(QString::number(m_host->peerCount())));
+		QCOMPARE(extra.state(), CollabClient::State::Failed);
 	}
 
 	//! A wrong key fails the TLS handshake: no peer, no snapshot, and the reason names the key.
