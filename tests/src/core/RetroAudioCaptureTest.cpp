@@ -41,11 +41,14 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <thread>
 #include <vector>
 
+#include <QDir>
 #include <QFileInfo>
 #include <QTemporaryDir>
 
@@ -226,6 +229,110 @@ private slots:
 			QVERIFY(std::fabs(static_cast<double>(interleaved[i * 2 + 1])
 				- static_cast<double>(window.frames[i].right())) <= OneLsb24);
 		}
+	}
+
+	//! Concurrent writes to one destination each commit a complete take. Their
+	//! temporary files must be independent while either writer is still active.
+	void concurrentTakesToOnePathRemainIndependent()
+	{
+		constexpr std::size_t frameCount = 2u * 1024u * 1024u;
+		const SampleFrame firstFrame(sample_t{0.25f}, sample_t{-0.5f});
+		const SampleFrame secondFrame(sample_t{-0.75f}, sample_t{0.125f});
+		const std::vector<SampleFrame> firstFrames(frameCount, firstFrame);
+		const std::vector<SampleFrame> secondFrames(frameCount, secondFrame);
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		QDir dir(tempDir.path());
+		const QString path = dir.filePath(QStringLiteral("concurrent.wav"));
+
+		bool firstOk = false;
+		std::uint64_t firstWritten = 0;
+		QString firstError;
+		std::thread first([&]()
+		{
+			firstOk = lmms::writeRetroAudioTake(path, firstFrames, SampleRate,
+				&firstWritten, &firstError);
+		});
+
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+		bool writerVisible = false;
+		while (!writerVisible && std::chrono::steady_clock::now() < deadline)
+		{
+			const QStringList entries = dir.entryList(QDir::Files | QDir::Hidden
+				| QDir::NoDotAndDotDot);
+			const bool stagingObserved = std::any_of(entries.cbegin(), entries.cend(),
+				[](const QString& entry) { return entry != QStringLiteral("concurrent.wav"); });
+			writerVisible = stagingObserved || QFileInfo::exists(path);
+			if (!writerVisible) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+		}
+
+		if (!writerVisible)
+		{
+			first.join();
+			QFAIL("first writer did not create staging or destination file");
+		}
+
+		bool secondOk = false;
+		std::uint64_t secondWritten = 0;
+		QString secondError;
+		std::thread second([&]()
+		{
+			secondOk = lmms::writeRetroAudioTake(path, secondFrames, SampleRate,
+				&secondWritten, &secondError);
+		});
+		first.join();
+		second.join();
+
+		QVERIFY2(firstOk, qPrintable(firstError));
+		QVERIFY2(secondOk, qPrintable(secondError));
+		QCOMPARE(firstWritten, static_cast<std::uint64_t>(frameCount));
+		QCOMPARE(secondWritten, static_cast<std::uint64_t>(frameCount));
+
+		SF_INFO info{};
+		SNDFILE* file = sf_open(path.toUtf8().constData(), SFM_READ, &info);
+		QVERIFY(file != nullptr);
+		QCOMPARE(info.channels, 2);
+		QCOMPARE(info.frames, static_cast<sf_count_t>(frameCount));
+
+		constexpr sf_count_t blockFrames = 4096;
+		std::vector<sample_t> block(static_cast<std::size_t>(blockFrames) * 2);
+		const auto read = sf_readf_float(file, block.data(), blockFrames);
+		QCOMPARE(read, blockFrames);
+		const sample_t initialLeft = block[0];
+		const sample_t initialRight = block[1];
+		const auto sampleMatches = [](sample_t actual, sample_t expected)
+		{
+			return std::fabs(static_cast<double>(actual) - static_cast<double>(expected))
+				<= 2 * OneLsb24;
+		};
+		const bool containsFirst = sampleMatches(block[0], firstFrame.left())
+			&& sampleMatches(block[1], firstFrame.right());
+		const bool containsSecond = sampleMatches(block[0], secondFrame.left())
+			&& sampleMatches(block[1], secondFrame.right());
+		bool intact = containsFirst || containsSecond;
+		const SampleFrame expected = containsFirst ? firstFrame : secondFrame;
+		for (sf_count_t frame = 0; intact && frame < read; ++frame)
+		{
+			intact = sampleMatches(block[static_cast<std::size_t>(frame) * 2], expected.left())
+				&& sampleMatches(block[static_cast<std::size_t>(frame) * 2 + 1], expected.right());
+		}
+		for (sf_count_t offset = read; intact && offset < info.frames; offset += blockFrames)
+		{
+			const sf_count_t count = std::min(blockFrames, info.frames - offset);
+			const sf_count_t countRead = sf_readf_float(file, block.data(), count);
+			intact = countRead == count;
+			for (sf_count_t frame = 0; intact && frame < count; ++frame)
+			{
+				intact = sampleMatches(block[static_cast<std::size_t>(frame) * 2], expected.left())
+					&& sampleMatches(block[static_cast<std::size_t>(frame) * 2 + 1], expected.right());
+			}
+		}
+		sf_close(file);
+		QVERIFY2(intact, qPrintable(QStringLiteral("initial samples %1/%2; expected %3/%4")
+			.arg(static_cast<double>(initialLeft), 0, 'g', 9)
+			.arg(static_cast<double>(initialRight), 0, 'g', 9)
+			.arg(static_cast<double>(expected.left()), 0, 'g', 9)
+			.arg(static_cast<double>(expected.right()), 0, 'g', 9)));
 	}
 
 	//! An EMPTY window is refused, typed, and no file is created: a take with no

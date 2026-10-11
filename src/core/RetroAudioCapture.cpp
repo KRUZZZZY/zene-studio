@@ -28,7 +28,7 @@
 #include <algorithm>
 
 #include <QElapsedTimer>
-#include <QFile>
+#include <QSaveFile>
 
 #include <sndfile.h>
 
@@ -147,14 +147,21 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 	info.channels = 2;
 	info.format = SF_FORMAT_WAV | SF_FORMAT_PCM_24;
 
-	// Written beside the destination and moved over it only once complete: a failed write must
-	// not destroy the take already there (the default path is reused by every take).
-	const QString partial = filePath + QStringLiteral(".partial");
-	SNDFILE* sf = sf_open(partial.toUtf8().constData(), SFM_WRITE, &info);
-	if (sf == nullptr)
+	// QSaveFile gives this call a unique sibling temporary and replaces the
+	// destination atomically only after the complete WAV has been written.
+	QSaveFile output(filePath);
+	output.setDirectWriteFallback(false);
+	if (!output.open(QIODevice::WriteOnly))
 	{
 		*error = QStringLiteral("cannot open %1 for writing: %2")
-			.arg(partial, QString::fromUtf8(sf_strerror(nullptr)));
+			.arg(filePath, output.errorString());
+		return false;
+	}
+	SNDFILE* sf = sf_open_fd(output.handle(), SFM_WRITE, &info, SF_FALSE);
+	if (sf == nullptr)
+	{
+		*error = QStringLiteral("cannot encode %1: %2")
+			.arg(filePath, QString::fromUtf8(sf_strerror(nullptr)));
 		return false;
 	}
 
@@ -178,14 +185,12 @@ bool writeWindow(const QString& filePath, const std::vector<SampleFrame>& window
 	{
 		*error = QStringLiteral("wrote %1 of %2 frames to %3")
 			.arg(written).arg(window.size()).arg(filePath);
-		QFile::remove(partial);
 		return false;
 	}
-	QFile::remove(filePath);
-	if (!QFile::rename(partial, filePath))
+	if (!output.commit())
 	{
-		*error = QStringLiteral("could not move the written take to %1").arg(filePath);
-		QFile::remove(partial);
+		*error = QStringLiteral("could not commit the written take to %1: %2")
+			.arg(filePath, output.errorString());
 		return false;
 	}
 	*framesWritten = static_cast<std::uint64_t>(written);
