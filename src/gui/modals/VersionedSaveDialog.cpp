@@ -23,6 +23,7 @@
  */
 
 
+#include <QFileInfo>
 #include <QGroupBox>
 #include <QLayout>
 #include <QLineEdit>
@@ -95,7 +96,8 @@ bool VersionedSaveDialog::changeFileNameVersion(QString &fileName, bool incremen
 	int idx = regex.match(fileName).capturedStart();
 	// For file names without extension (no ".mmpz")
 	int insertIndex = fileName.lastIndexOf( '.' );
-	if ( insertIndex < idx+1 )
+	const int basenameStart = fileName.size() - QFileInfo(fileName).fileName().size();
+	if ( insertIndex < basenameStart || insertIndex < idx+1 )
 		insertIndex = fileName.size();
 
 	if ( idx == -1 )

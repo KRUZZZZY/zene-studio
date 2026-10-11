@@ -850,6 +850,8 @@ set(LMMS_TESTS
 	src/gui/WorkflowFeedbackTest.cpp
 	# 0.5.0 theme 24: the task indicator and its list
 	src/gui/TaskIndicatorTest.cpp
+	# Version number insertion with a dotted parent path.
+	src/gui/VersionedSaveDialogTest.cpp
 	# M3 item 10: the start hub reopens a recent project through project.open.
 	src/gui/StartHubTest.cpp
 	# 0.5.0 L14 / L11: the manual and reference, hover help, tours, appearance, the library search view.
