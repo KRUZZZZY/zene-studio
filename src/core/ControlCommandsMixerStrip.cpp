@@ -207,6 +207,11 @@ StripSettings merged(StripSettings s, const QJsonObject& args)
 	return s;
 }
 
+bool finiteStripSettings(const StripSettings& s)
+{
+	return std::isfinite(s.trim) && std::isfinite(s.panLeft) && std::isfinite(s.panRight) && std::isfinite(s.width);
+}
+
 QJsonObject stripJson(const MixerChannel* c)
 {
 	const StripSettings s = settingsOf(c);
@@ -232,7 +237,7 @@ ControlResult setStrip(const QJsonObject& args)
 	if (args.size() == 1) { return ControlResult::success(stripJson(channel)); }
 	const StripSettings before = settingsOf(channel);
 	const StripSettings after = merged(before, args);
-	if (std::abs(after.trim) > 24.f || after.panMode < 0 || after.width < 0.f || after.width > 2.f || std::abs(after.panLeft) > 1.f
+	if (!finiteStripSettings(after) || std::abs(after.trim) > 24.f || after.panMode < 0 || after.width < 0.f || after.width > 2.f || std::abs(after.panLeft) > 1.f
 		|| std::abs(after.panRight) > 1.f)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'trim_db' is -24..24, 'pan_mode' balance / dual / width, "
