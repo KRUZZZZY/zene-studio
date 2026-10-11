@@ -99,6 +99,7 @@ void VideoLane::reload()
 	setFixedHeight(attached ? LaneHeight : 0);
 	setVisible(attached);
 	if (attached) { ask(0); }
+	else { m_pump->request(QString(), 0.0, ThumbnailBox, m_generation * Thumbnails - 1); }
 	update();
 	// The tracks move down or up once the layout settles: the play position line follows them.
 	if (!m_editor.isNull()) { QTimer::singleShot(0, m_editor.data(), &SongEditor::updatePositionLine); }

@@ -35,6 +35,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QThread>
 
@@ -42,10 +43,12 @@
 #include "Engine.h"
 #include "SampleClip.h"
 #include "Song.h"
+#include "SongEditor.h"
 #include "TaskCenter.h"
 #include "Track.h"
 #include "VideoDecoder.h"
 #include "VideoFramePump.h"
+#include "VideoLane.h"
 #include "VideoReference.h"
 #include "VideoTestClip.h"
 #include "VideoWindow.h"
@@ -262,6 +265,28 @@ private slots:
 		pump.request(QString(), 0.0, QSize(), 8);  // an empty path closes the file: a null answer
 		QTRY_COMPARE_WITH_TIMEOUT(tag, 8, 10000);
 		QVERIFY(got.isNull());
+	}
+
+	void theArrangerLaneClosesItsDecoderOnDetach()
+	{
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(run(QStringLiteral("video.attach"), {{QStringLiteral("path"), m_clip}}).ok);
+		{
+			gui::SongEditor editor(song);
+			gui::VideoLane lane(&editor);
+			auto* pump = lane.findChild<VideoFramePump*>();
+			QVERIFY(pump != nullptr);
+			QTRY_COMPARE_WITH_TIMEOUT(lane.thumbnailsReady(), gui::VideoLane::Thumbnails, 10000);
+			QSignalSpy answers(pump, &VideoFramePump::frameReady);
+			QVERIFY(answers.isValid());
+			QVERIFY(run(QStringLiteral("video.detach")).ok);
+			QTRY_COMPARE_WITH_TIMEOUT(answers.count(), 1, 10000);
+			QVERIFY(qvariant_cast<QImage>(answers.takeFirst().at(0)).isNull());
+			QVERIFY(lane.isHidden());
+		}
+		song->clearProject();
 	}
 
 	void theWindowFollowsTheTransport()
