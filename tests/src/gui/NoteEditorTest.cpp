@@ -189,6 +189,26 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{0});
 	}
 
+	void anEraseStrokeRemovesEveryOverlappingNote()
+	{
+		constexpr int start = 300;
+		constexpr int key = 62;
+		m_clip->addNote(Note(TimePos(48), TimePos(start), key, 100), false);
+		m_clip->addNote(Note(TimePos(48), TimePos(start), key, 100), false);
+		m_clip->rearrangeAllNotes();
+
+		m_editor->setTool(NoteTool::Erase);
+		drag(point(start, key), point(start + 18, key));
+
+		int overlapping = 0;
+		for (const Note* note : m_clip->notes())
+		{
+			if (note->pos().getTicks() == start && note->key() == key) { ++overlapping; }
+		}
+		QCOMPARE(overlapping, 0);
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
 	void aRubberBandSelects()
 	{
 		m_editor->setTool(NoteTool::Select);
@@ -400,6 +420,31 @@ private slots:
 		QVERIFY(invoke(write.command, write.args).ok);
 		QCOMPARE(m_clip->notes()[0]->releaseVelocity(), 80);
 		QCOMPARE(notelanes::valueOf(*m_clip->notes()[0], release), 80);
+	}
+
+	void aMuteStrokeMutesEveryOverlappingNote()
+	{
+		constexpr int start = 300;
+		constexpr int key = 62;
+		m_clip->addNote(Note(TimePos(48), TimePos(start), key, 100), false);
+		m_clip->addNote(Note(TimePos(48), TimePos(start), key, 100), false);
+		m_clip->rearrangeAllNotes();
+
+		m_editor->setTool(NoteTool::Mute);
+		drag(point(start, key), point(start + 18, key));
+
+		int overlapping = 0;
+		int muted = 0;
+		for (const Note* note : m_clip->notes())
+		{
+			if (note->pos().getTicks() == start && note->key() == key)
+			{
+				++overlapping;
+				if (note->muted()) { ++muted; }
+			}
+		}
+		QCOMPARE(overlapping, 2);
+		QCOMPARE(muted, overlapping);
 	}
 
 	void aStrokeInTheControllerLaneIsOneEdit()
