@@ -32,6 +32,7 @@
  */
 
 #include <cmath>
+#include <unordered_map>
 #include <vector>
 
 #include <QJsonArray>
@@ -168,6 +169,53 @@ bool checkEndPosition(const QJsonObject& entry, const Note* note, int index, Con
 	return false;
 }
 
+struct FinalNoteShape
+{
+	qint64 position;
+	qint64 length;
+	int index;
+};
+
+using FinalNoteShapes = std::unordered_map<const Note*, FinalNoteShape>;
+
+//! Accumulate the position and length that all rows for one note will leave behind.
+void recordFinalShape(const QJsonObject& entry, const Note* note, int index, FinalNoteShapes* shapes)
+{
+	FinalNoteShape& shape = shapes->try_emplace(note,
+		FinalNoteShape{note->pos().getTicks(), note->length().getTicks(), index}).first->second;
+	if (entry.contains(QStringLiteral("position")))
+	{
+		shape.position = entry.value(QStringLiteral("position")).toInt();
+		shape.index = index;
+	}
+	if (entry.contains(QStringLiteral("length")))
+	{
+		shape.length = entry.value(QStringLiteral("length")).toInt();
+		shape.index = index;
+	}
+}
+
+//! Check the final shape after combining every row that targets the same note.
+bool checkFinalShapes(const FinalNoteShapes& shapes, ControlResult* error)
+{
+	const FinalNoteShape* firstInvalid = nullptr;
+	for (const auto& entry : shapes)
+	{
+		const FinalNoteShape& shape = entry.second;
+		if (shape.position + shape.length > static_cast<qint64>(MaxSongLength)
+			&& (firstInvalid == nullptr || shape.index < firstInvalid->index))
+		{
+			firstInvalid = &shape;
+		}
+	}
+	if (firstInvalid == nullptr) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("edits[%1] ends at %2, past the song limit of %3")
+			.arg(firstInvalid->index).arg(firstInvalid->position + firstInvalid->length)
+			.arg(static_cast<qint64>(MaxSongLength)));
+	return false;
+}
+
 //! A pass mask means nothing without a pattern length - the note's own, or one given beside it.
 bool checkRecurPattern(const QJsonObject& entry, const Note* note, int index, ControlResult* error)
 {
@@ -188,6 +236,7 @@ bool resolveEdits(MidiClip* clip, const QJsonArray& edits, std::vector<Edit>* ou
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'edits' is empty"));
 		return false;
 	}
+	FinalNoteShapes finalShapes;
 	for (int i = 0; i < edits.size(); ++i)
 	{
 		QJsonObject entry = edits.at(i).toObject();
@@ -204,9 +253,10 @@ bool resolveEdits(MidiClip* clip, const QJsonArray& edits, std::vector<Edit>* ou
 		// past MaxSongLength. A wider type than tick_t for the addition itself.
 		if (!checkEndPosition(entry, note, i, error)) { return false; }
 		if (!checkRecurPattern(entry, note, i, error)) { return false; }
+		recordFinalShape(entry, note, i, &finalShapes);
 		out->push_back({note, entry});
 	}
-	return true;
+	return checkFinalShapes(finalShapes, error);
 }
 
 QJsonObject previousValues(const Note* note, const QJsonObject& values)
