@@ -38,11 +38,14 @@
 
 #include <QAccessible>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QHelpEvent>
 #include <QLineEdit>
+#include <QStringList>
 #include <QToolTip>
 
 #include "AutomatableModel.h"
+#include "ColorChooser.h"
 #include "ComboBox.h"
 #include "ComboBoxModel.h"
 #include "ControlCues.h"
@@ -57,6 +60,16 @@ using namespace lmms::gui;
 
 namespace
 {
+
+QStringList qtWarnings;
+
+void collectQtWarning(QtMsgType type, const QMessageLogContext&, const QString& message)
+{
+	if (type == QtWarningMsg || type == QtCriticalMsg)
+	{
+		qtWarnings.append(message);
+	}
+}
 
 //! Records the keys that reach it, i.e. that the knob did not take.
 class KeyCatcher : public QWidget
@@ -117,6 +130,18 @@ private slots:
 		QTest::keyClick(&knob, Qt::Key_Space);
 		QCOMPARE(parent.keys, QList<int>{Qt::Key_Space});  // not taken: the transport still has it
 		QCOMPARE(model.value(), 99.f);
+	}
+
+	void parentlessColorChooserHandlesKeyRelease()
+	{
+		ColorChooser chooser;
+		qtWarnings.clear();
+		const auto oldHandler = qInstallMessageHandler(collectQtWarning);
+		QKeyEvent event(QEvent::KeyRelease, Qt::Key_A, Qt::NoModifier);
+		QApplication::sendEvent(&chooser, &event);
+		qInstallMessageHandler(oldHandler);
+
+		QVERIFY2(qtWarnings.isEmpty(), qPrintable(qtWarnings.join(QLatin1Char('\n'))));
 	}
 
 	void theNameComesFromTheKnobItsModelOrItsDescription()
