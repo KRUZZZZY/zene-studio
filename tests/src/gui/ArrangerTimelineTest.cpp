@@ -40,6 +40,7 @@
 #include <cstdlib>
 
 #include <QAbstractSlider>
+#include <QMouseEvent>
 #include <QToolBar>
 #include <QWheelEvent>
 
@@ -230,6 +231,53 @@ private slots:
 		QVERIFY2(preview->refused(), "a locked clip under the drop was not shown as a refusal");
 		ArrangerEditPreview::endDrag(view);
 		QVERIFY(!preview->isVisible());
+	}
+
+	void theDragPreviewDoesNotWrapAnEndNearTheTickLimit()
+	{
+		constexpr tick_t InitialStart = 1'610'612'641;
+		Clip* clip = clipAt(m_track, InitialStart, 447);
+		QCoreApplication::processEvents();
+		ClipView* view = viewOf(clip);
+		QVERIFY(view != nullptr);
+		auto* preview = m_editor->findChild<ArrangerEditPreview*>();
+		QVERIFY(preview != nullptr);
+
+		const arrangement::Modes previousModes = arrangement::modes();
+		arrangement::Modes previewModes = previousModes;
+		previewModes.overlap = arrangement::Overlap::Free;
+		previewModes.snapToEdges = false;
+		arrangement::setModes(previewModes);
+
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 4}, {QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
+		QCoreApplication::processEvents();
+		view->setSelected(false);
+		const QPoint pressPos(view->width() / 2, view->height() / 2);
+		const QPoint pressGlobal = view->mapToGlobal(pressPos);
+		QMouseEvent press(QEvent::MouseButtonPress, QPointF(pressPos), QPointF(pressGlobal), Qt::LeftButton,
+			Qt::LeftButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(view, &press);
+
+		// At four pixels per bar this moves it by 11,184,810 * 48 ticks, to max(tick_t) - 126.
+		constexpr int DragPixels = 11'184'810;
+		const QPoint dragPos = pressPos + QPoint(DragPixels, 0);
+		const QPoint dragGlobal = view->mapToGlobal(dragPos);
+		QMouseEvent move(QEvent::MouseMove, QPointF(dragPos), QPointF(dragGlobal), Qt::NoButton,
+			Qt::LeftButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(view, &move);
+
+		const tick_t movedStart = clip->startPosition().getTicks();
+		const int snapLine = preview->snapLineX();
+		const int expectedSnapLine = preview->mapFromGlobal(view->mapToGlobal(QPoint(0, 0))).x();
+		clip->movePosition(TimePos(InitialStart));  // keep the release and the next test away from the boundary
+		const QPoint releaseGlobal = view->mapToGlobal(pressPos);
+		QMouseEvent release(QEvent::MouseButtonRelease, QPointF(pressPos), QPointF(releaseGlobal), Qt::LeftButton,
+			Qt::NoButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(view, &release);
+		arrangement::setModes(previousModes);
+
+		QCOMPARE(movedStart, 2'147'483'521);
+		QCOMPARE(snapLine, expectedSnapLine);
 	}
 
 	void aLockedClipWearsAPadlockAndStillSelects()
