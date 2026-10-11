@@ -35,6 +35,8 @@
 #include <QJsonArray>
 #include <QRegularExpression>
 
+#include <cmath>
+
 #include "ArticulationMap.h"
 #include "ControlCommandsNoteShared.h"
 #include "ControlCommandDef.h"
@@ -200,10 +202,14 @@ ControlResult groove(const QJsonObject& args)
 	MidiPlayback& playback = MidiPlayback::instance();
 	const float before = playback.swing();
 	const int beforeGrid = playback.swingGrid();
-	const float swing = static_cast<float>(args.value(QStringLiteral("swing")).toDouble(before));
+	const double swingValue = args.value(QStringLiteral("swing")).toDouble(before);
+	if (!std::isfinite(swingValue) || swingValue < 0.0 || swingValue > MidiPlayback::MaxSwing)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'swing' is 0..0.75"));
+	}
+	const float swing = static_cast<float>(swingValue);
 	const QString gridName = args.value(QStringLiteral("grid")).toString();
 	const int grid = gridName.isEmpty() ? beforeGrid : (gridName == QLatin1String("8th") ? 2 * MidiPlayback::DefaultSwingGrid : MidiPlayback::DefaultSwingGrid);
-	if (swing < 0.f || swing > MidiPlayback::MaxSwing) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'swing' is 0..0.75")); }
 	if (swing == before && grid == beforeGrid) { return ControlResult::success(grooveState()); }
 	playback.setSwing(swing, grid);
 	addUndoStep([before, beforeGrid]() { MidiPlayback::instance().setSwing(before, beforeGrid); },
