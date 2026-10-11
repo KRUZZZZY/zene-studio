@@ -35,6 +35,7 @@
 #include <cmath>
 
 #include <QJsonArray>
+#include <QFile>
 #include <QLabel>
 #include <QPushButton>
 #include <QSlider>
@@ -207,6 +208,27 @@ private slots:
 		QCOMPARE(tokens::themeOverrides().size(), tokens::tokenNames().size());
 		QVERIFY(!run(QStringLiteral("theme.import"), {{QStringLiteral("file"), m_home.filePath(QStringLiteral("missing.json"))}}).ok);
 		for (int step = 0; step < 3; ++step) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QVERIFY(tokens::themeOverrides().isEmpty());
+	}
+
+	void aMalformedThemeFileCannotEraseOverrides()
+	{
+		const ControlResult set = run(QStringLiteral("theme.set_token"), {{QStringLiteral("name"), QStringLiteral("accent")},
+			{QStringLiteral("color"), QStringLiteral("#ff8800")}, {QStringLiteral("allow_low_contrast"), true}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		const QString path = m_home.filePath(QStringLiteral("missing-colors.theme.json"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray malformed = R"({"format":"zene-theme"})";
+		QCOMPARE(file.write(malformed), static_cast<qint64>(malformed.size()));
+		file.close();
+
+		const ControlResult imported = run(QStringLiteral("theme.import"), {{QStringLiteral("file"), path},
+			{QStringLiteral("replace"), true}});
+		QVERIFY(!imported.ok);
+		QCOMPARE(imported.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(tokens::themeOverrides().value(QStringLiteral("accent")).toString(), QStringLiteral("#ff8800"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(tokens::themeOverrides().isEmpty());
 	}
 
