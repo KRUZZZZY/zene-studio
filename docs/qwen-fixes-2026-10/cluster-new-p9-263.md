@@ -8,15 +8,17 @@ Evidence: [Microtuner.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene
 
 ## Verification evidence
 
-The affected ctest family is `SessionTuningTest`: 1/1 registered ctest executed. Its RED output reported 14 passed and the two new assertions failed; the GREEN ctest passed. No tests were skipped in the RED run.
+The affected ctest family is `SessionTuningTest`. The RED run executed 16 QtTest cases: 14 passed and the two new assertions failed, with none skipped. The GREEN ctest ran 1/1 registered test and passed.
 
-| Purpose | Command | Exit | Log |
+| Evidence | Exact command | Exit | Result / log |
 | --- | --- | ---: | --- |
 | Build app and affected test with its real-instrument fixture | `cmake --build build --target zene SessionTuningTest tripleoscillator` | 0 | `build-2.log`, `build-3.log`, `build-6.log` |
-| RED on original production code | `ctest -R '^SessionTuningTest$' --output-on-failure` (from `build/tests`) | 8 | `test-2.log` |
-| GREEN with the fix | `ctest -R '^SessionTuningTest$' --output-on-failure` (from `build/tests`) | 0 | `test-6.log` |
+| RED on original production code | `ctest -R '^SessionTuningTest$' --output-on-failure` (from `build/tests`) | 8 | 14 passed, 2 expected failures; `test-2.log` |
+| GREEN with the fix | `ctest -R '^SessionTuningTest$' --output-on-failure` (from `build/tests`) | 0 | 1/1 registered ctest passed; `test-6.log` |
+| Affected-family test count | `ctest -R '^SessionTuningTest$' --output-on-failure` (from `build/tests`) | 0 | 1/1 ctest; 16 QtTest cases in the RED run; `test-2.log`, `test-6.log` |
 | Complexity gate | `bash tests/complexity-gate.sh --check` | 0 | `gate-3.log` |
 | File length gate | `bash tests/file-length-gate.sh --check` | 0 | `gate-4.log` |
+| Files committed | `git show --stat --oneline HEAD` | 0 | Commit `2a0a0d37f`; explicit paths below |
 
 The first test attempt ran before `tripleoscillator` was built and also failed the preexisting real-instrument slot. After building that fixture, the definitive RED run failed only the two new assertions: degree `-2` returned 783.991 Hz instead of 391.995 Hz, and base degree `-2` returned 246.942 Hz instead of 493.883 Hz.
 
