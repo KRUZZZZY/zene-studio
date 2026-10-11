@@ -412,6 +412,7 @@ set(LMMS_TESTS
 	src/core/PluginLogoResourceTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
+	src/core/VstSubPluginFeaturesTest.cpp
 	# The reader half of ARCH-4 S2b, integration rather than unit: a project opened
 	# with sections named to SKIP. Pinned here: the content element name DERIVED from
 	# the root's type attribute (the "pattern" -> midiclip compat mapping is what
@@ -953,6 +954,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
+	if(LMMS_TEST_NAME STREQUAL "VstSubPluginFeaturesTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect/VstSubPluginFeatures.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES TIMEOUT 10)
+	endif()
 	# BUGS_FOUND 11.23: on the hosted msvc-x64 runner the 300+ test executables' linker PDBs filled the
 	# build drive (run 36802800273: LNK1201 writing SessionSceneFollowTest.pdb). Tests link without a
 	# PDB under MSVC; zene.exe and the plugins keep theirs, so packages and crash symbols are unchanged.

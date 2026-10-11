@@ -658,6 +658,7 @@ plugins/VstBase/vst_base.cpp	rename layer 1: user-visible plugin/module descript
 plugins/VstEffect/VstEffect.cpp	#589 planar-ports migration: no-arg process(), planar wet/dry mixing, lock moved to processLock/processUnlock; rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
 plugins/VstEffect/VstEffect.h	#589 planar-ports migration: VstEffect is an AudioPlugin with dynamic planar ports
 plugins/VstEffect/VstEffectControlDialog.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/VstEffect/VstSubPluginFeatures.cpp	skip directory symlinks while scanning VST plugins to prevent recursive loops
 plugins/WaveShaper/WaveShaper.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
