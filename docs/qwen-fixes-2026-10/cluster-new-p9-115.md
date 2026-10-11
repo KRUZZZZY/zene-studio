@@ -2,40 +2,33 @@
 
 **Verdict: FIXED**
 
-`sp_dcblock_create()` returns `SP_NOT_OK` on allocation failure at [dcblock.c:18](../../plugins/ReverbSC/dcblock.c#L18). The shared pair setup checks each create and init result, destroys any partial state, and leaves both output pointers null on failure ([dcblock.c:45](../../plugins/ReverbSC/dcblock.c#L45)); destroy also clears the pointer ([dcblock.c:28](../../plugins/ReverbSC/dcblock.c#L28)). The constructor and sample-rate reinitializer check the pair result ([ReverbSC.cpp:64](../../plugins/ReverbSC/ReverbSC.cpp#L64), [ReverbSC.cpp:141](../../plugins/ReverbSC/ReverbSC.cpp#L141)). If setup fails, `processImpl` returns without changing the input buffer, so the effect is bypassed ([ReverbSC.cpp:80](../../plugins/ReverbSC/ReverbSC.cpp#L80)).
+The regression injects a deterministic failure into the first `malloc` used by `sp_dcblock_create()`, then checks the existing allocator API returns `SP_NOT_OK` and leaves the output pointer null ([test:34](../../tests/src/plugins/ReverbScAllocationTest.cpp#L34), [test:56](../../tests/src/plugins/ReverbScAllocationTest.cpp#L56)). It does not call `sp_dcblock_create_and_init_pair()`, an API added during the fix. The test is registered as `ReverbScAllocationTest` ([tests/CMakeLists.txt:1156](../../tests/CMakeLists.txt#L1156)).
 
-The deterministic regression forces failure on allocation one and allocation two in separate child processes, then checks the caller setup returns normally with an error and null outputs ([ReverbScAllocationTest.cpp:39](../../tests/src/plugins/ReverbScAllocationTest.cpp#L39), [ReverbScAllocationTest.cpp:81](../../tests/src/plugins/ReverbScAllocationTest.cpp#L81)). The CTest family is `ReverbScAllocationTest`, registered in `tests/CMakeLists.txt:1156`; the source is registered in `tests/fork-sources.txt:2067`.
+The product fix checks the `malloc` result and returns `SP_NOT_OK` on failure ([dcblock.c:18](../../plugins/ReverbSC/dcblock.c#L18)). ReverbSC's pair setup handles allocation failure at construction and sample-rate reinitialization ([ReverbSC.cpp:64](../../plugins/ReverbSC/ReverbSC.cpp#L64), [ReverbSC.cpp:141](../../plugins/ReverbSC/ReverbSC.cpp#L141)); processing bypasses safely when setup left the blockers null ([ReverbSC.cpp:80](../../plugins/ReverbSC/ReverbSC.cpp#L80)).
 
 ## Regression evidence
 
-Each CTest run matched and executed **1 affected-family test**. The RED run below attempted both injected allocation failure points and failed on the `handledBothFailures` assertion because the child caller crashed.
+Each RED and final GREEN CTest command matched and executed **1 affected-family test**. With the product hunks reversed to the pre-fix tree, the test built and failed at line 60: actual status `1` (`SP_OK`), expected `0` (`SP_NOT_OK`). Restoring the product patch produced a passing test.
 
-| Check | Exact command | Exit | Result |
-|---|---|---:|---|
-| RED, safety patch removed (`test-5.log`; cwd `build/tests`) | `ctest -R '^ReverbScAllocationTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r2/logs/test-5.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 8 | Expected failure: caller child crashed for the forced allocation failures. |
-| GREEN, safety patch restored (`test-6.log`; cwd `build/tests`) | `ctest -R '^ReverbScAllocationTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r2/logs/test-6.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 0 | 1/1 test passed. |
-
-## Rebuild and negative control
-
-| Check | Exact command | Exit |
-|---|---|---:|
-| Remove the production safety patch | `git diff -- plugins/ReverbSC/ReverbSC.cpp plugins/ReverbSC/dcblock.c > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r2/logs/fix.patch' && git apply -R '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r2/logs/fix.patch'; code=$?; echo EXIT=$code; exit $code` | 0 |
-| Rebuild without the safety patch (`build-6.log`) | `cmake --build build --target reverbsc ReverbScAllocationTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r2/logs/build-6.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 0 |
-| Restore the production safety patch | `git apply '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r2/logs/fix.patch'; code=$?; echo EXIT=$code; exit $code` | 0 |
-| Rebuild with the safety patch (`build-7.log`) | `cmake --build build --target reverbsc ReverbScAllocationTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r2/logs/build-7.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 0 |
+| Check | Cwd | Exact command | Exit | Result |
+|---|---|---|---:|---|
+| Reverse product patch | worktree | `git diff b03660f4b^ HEAD -- plugins/ReverbSC/dcblock.c plugins/ReverbSC/dcblock.h plugins/ReverbSC/ReverbSC.cpp > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r3/logs/fix.patch' && git apply -R '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r3/logs/fix.patch'; code=$?; echo EXIT=$code; exit $code` | 0 | Reversed product files only; revised test stayed unchanged. |
+| RED rebuild | worktree | `cmake --build build --target zene reverbsc ReverbScAllocationTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r3/logs/build-3-red.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 0 | Pre-fix product and regression compiled. |
+| RED CTest | `build/tests` | `ctest -R '^ReverbScAllocationTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r3/logs/test-2-red.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 8 | 1 test ran and failed on the expected status assertion. |
+| Restore product patch | worktree | `git apply '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r3/logs/fix.patch'; code=$?; echo EXIT=$code; exit $code` | 0 | Restored the product files. |
+| GREEN rebuild | worktree | `cmake --build build --target zene reverbsc ReverbScAllocationTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r3/logs/build-4-green.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 0 | Fixed product and regression compiled. |
+| GREEN CTest | `build/tests` | `ctest -R '^ReverbScAllocationTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r3/logs/test-3-green.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 0 | 1/1 test passed. |
 
 ## Gates
 
 | Exact command | Exit | Result |
 |---|---:|---|
-| `bash tests/complexity-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r2/logs/gate-3.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 0 | PASS. |
-| `bash tests/file-length-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r2/logs/gate-4.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 0 | PASS. |
+| `bash tests/complexity-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r3/logs/gate-1-complexity.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 0 | PASS. |
+| `bash tests/file-length-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-115.r3/logs/gate-2-file-length.log' 2>&1; code=$?; echo EXIT=$code; exit $code` | 0 | PASS. |
 
-## Files committed
+## Files committed in this review correction
 
-- `plugins/ReverbSC/ReverbSC.cpp`
-- `plugins/ReverbSC/dcblock.c`
-- `plugins/ReverbSC/dcblock.h`
 - `tests/src/plugins/ReverbScAllocationTest.cpp`
-- `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p9-115.md`
+
+The product fix is already committed earlier on this branch.
