@@ -26,6 +26,11 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#if defined(Q_OS_UNIX)
+#include <signal.h>
+#include <sys/resource.h>
+#endif
+
 #include "ConfigManager.h"
 
 using namespace lmms;
@@ -55,6 +60,29 @@ QByteArray readFile( const QString & path )
 	if( !f.open( QIODevice::ReadOnly ) ) { return QByteArray(); }
 	return f.readAll();
 }
+
+#if defined(Q_OS_UNIX)
+bool saveWithFileSizeLimit( ConfigManager & configManager )
+{
+	struct rlimit originalLimit;
+	if( getrlimit( RLIMIT_FSIZE, &originalLimit ) != 0 ) { return false; }
+
+	struct sigaction originalAction {};
+	struct sigaction ignoreAction {};
+	ignoreAction.sa_handler = SIG_IGN;
+	sigemptyset( &ignoreAction.sa_mask );
+	if( sigaction( SIGXFSZ, &ignoreAction, &originalAction ) != 0 ) { return false; }
+
+	struct rlimit limited = originalLimit;
+	limited.rlim_cur = 0;
+	const bool limitSet = setrlimit( RLIMIT_FSIZE, &limited ) == 0;
+	if( limitSet ) { configManager.saveConfigFile(); }
+
+	const bool limitRestored = setrlimit( RLIMIT_FSIZE, &originalLimit ) == 0;
+	const bool signalRestored = sigaction( SIGXFSZ, &originalAction, nullptr ) == 0;
+	return limitSet && limitRestored && signalRestored;
+}
+#endif
 
 } // namespace
 
@@ -176,6 +204,28 @@ private slots:
 		QVERIFY( !mixer.isNull() );
 		QCOMPARE( mixer.attribute( "audiodev" ), QStringLiteral( "PulseAudio" ) );
 		QCOMPARE( mixer.attribute( "samplerate" ), QStringLiteral( "44100" ) );
+	}
+
+	void failedConfigWritePreservesExistingFile()
+	{
+#if defined(Q_OS_UNIX)
+		QTemporaryDir tmp;
+		QVERIFY( tmp.isValid() );
+		const QString configPath = tmp.path() + "/.zenestudio.xml";
+		const QString workingDir = tmp.path() + "/working";
+		QVERIFY( QDir().mkpath( workingDir ) );
+		const QByteArray original = ( QStringLiteral(
+			"<zene version=\"1.0.99\" configversion=\"3\"><mixer audiodev=\"saved\"/>"
+			"<paths workingdir=\"") + workingDir + QStringLiteral( "\"/></zene>\n" ) ).toUtf8();
+		QVERIFY( writeFile( configPath, original ) );
+
+		auto * configManager = ConfigManager::inst();
+		configManager->loadConfigFile( configPath );
+		QVERIFY( saveWithFileSizeLimit( *configManager ) );
+		QCOMPARE( readFile( configPath ), original );
+#else
+		QSKIP( "RLIMIT_FSIZE is needed to induce a deterministic write failure" );
+#endif
 	}
 };
 
