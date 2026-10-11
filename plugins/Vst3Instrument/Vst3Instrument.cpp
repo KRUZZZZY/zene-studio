@@ -337,6 +337,14 @@ auto Vst3Instrument::processImpl(PlanarBufferView<const float, DynamicChannelCou
 {
 	if (!m_plugin.isPrepared())
 	{
+		if (!out.empty())
+		{
+			for (ch_cnt_t channel = 0; channel < out.channels(); ++channel)
+			{
+				const auto samples = out.buffer(channel);
+				std::fill(samples.begin(), samples.end(), 0.0f);
+			}
+		}
 		// Either the plug-in failed to load or the sample rate changed. The
 		// actual re-configuration happens on the GUI thread; this path only
 		// records the request.
