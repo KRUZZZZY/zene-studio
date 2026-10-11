@@ -47,6 +47,10 @@
 #include <QString>
 #include <QVector>
 
+#include "AutomationClip.h"
+#include "AutomationNode.h"
+#include "ControlAutomationSupport.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ReversibilityTestSupport.h"
@@ -311,6 +315,51 @@ private slots:
 		QCOMPARE(registry->invoke(QStringLiteral("automation.move_point"), move).errorKind, ControlErrorKind::NotFound);  // nothing at 96 now
 		QVERIFY(registry->invoke(QStringLiteral("control.undo")).ok);
 		QVERIFY(registry->invoke(QStringLiteral("automation.move_point"), move).ok);  // back at 96
+	}
+
+	void movePointPreservesItsDiscontinuityAndLockedTangents()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		QString trackId;
+		QString paramId;
+		double minValue = 0.0;
+		double maxValue = 0.0;
+		QVERIFY(findAutomatableParameter(registry, &trackId, &paramId, &minValue, &maxValue));
+		const QJsonObject where{{QStringLiteral("track"), trackId}, {QStringLiteral("parameter"), paramId}};
+		ControlTarget target;
+		control::AutomationParameter parameter;
+		ControlResult error;
+		QVERIFY2(control::resolveAutomationParameter(where, &target, &parameter, &error), qPrintable(error.errorMessage));
+
+		constexpr int sourceSongTick = 4096;
+		constexpr int destinationSongTick = 4128;
+		QJsonObject point = where;
+		point.insert(QStringLiteral("ticks"), sourceSongTick);
+		point.insert(QStringLiteral("value"), minValue);
+		QVERIFY(registry->invoke(QStringLiteral("automation.add_point"), point).ok);
+		AutomationClip* clip = control::existingAutomationClip(parameter.model);
+		QVERIFY(clip != nullptr);
+		const int sourceTick = sourceSongTick - clip->startPosition().getTicks();
+		const int destinationTick = destinationSongTick - clip->startPosition().getTicks();
+		const float inValue = parameter.model->inverseScaledValue(static_cast<float>(minValue));
+		const float outValue = parameter.model->inverseScaledValue(static_cast<float>(maxValue));
+		clip->putValues(TimePos(sourceTick), inValue, outValue, false, true);
+		AutomationNode& source = clip->getTimeMap()[TimePos(sourceTick)];
+		source.setLockedTangents(true);
+		source.setInTangent(0.125f);
+		source.setOutTangent(-0.25f);
+
+		const ControlResult moved = registry->invoke(QStringLiteral("automation.move_point"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("parameter"), paramId},
+				{QStringLiteral("ticks"), sourceSongTick}, {QStringLiteral("new_ticks"), destinationSongTick}});
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QVERIFY(!clip->getTimeMap().contains(sourceTick));
+		const AutomationNode& relocated = clip->getTimeMap().value(TimePos(destinationTick));
+		QVERIFY(qAbs(relocated.getInValue() - inValue) < 1e-6f);
+		QVERIFY(qAbs(relocated.getOutValue() - outValue) < 1e-6f);
+		QVERIFY(relocated.lockedTangents());
+		QCOMPARE(relocated.getInTangent(), 0.125f);
+		QCOMPARE(relocated.getOutTangent(), -0.25f);
 	}
 
 private:

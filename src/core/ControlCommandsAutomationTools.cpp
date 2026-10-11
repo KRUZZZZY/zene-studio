@@ -127,6 +127,20 @@ ControlResult occupiedDestination(const AutomationClip* clip, tick_t ticks, tick
 	return ControlResult::success();
 }
 
+void putMovedNode(AutomationClip* clip, tick_t to, const AutomationNode& source, float inValue)
+{
+	const float outValue = source.getValueOffset() == 0.f ? inValue : source.getOutValue();
+	clip->putValues(TimePos(to), inValue, outValue, false);
+	AutomationNode& movedNode = clip->getTimeMap()[TimePos(to)];
+	movedNode.setCurve(source.curve(), source.bend());
+	if (source.lockedTangents())
+	{
+		movedNode.setInTangent(source.getInTangent());
+		movedNode.setOutTangent(source.getOutTangent());
+		movedNode.setLockedTangents(true);
+	}
+}
+
 ControlResult movePoint(const QJsonObject& args)
 {
 	ControlTarget target;
@@ -147,7 +161,8 @@ ControlResult movePoint(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("%1 has no point at %2").arg(parameter.id()).arg(static_cast<qint64>(songTicks)));
 	}
-	const float old = clip->getTimeMap().value(TimePos(ticks)).getInValue();
+	const AutomationNode oldNode = clip->getTimeMap().value(TimePos(ticks));
+	const float old = oldNode.getInValue();
 	const auto to = toSong - origin;
 	const double value = args.value(QStringLiteral("new_value")).toDouble(parameter.model->scaledValue(old));
 	if (value < parameter.model->minValue<float>() || value > parameter.model->maxValue<float>() || to < 0)
@@ -156,16 +171,12 @@ ControlResult movePoint(const QJsonObject& args)
 	}
 	if (const ControlResult taken = occupiedDestination(clip, ticks, to, parameter.id(), toSong); !taken.ok) { return taken; }
 	const QJsonArray before = automationPointsJson(clip, parameter.model);
-	// The point's own curve is its progression to the next point, and a Bend carries its bend
-	// amount - neither survives removing the node and letting putValue insert a plain one, so
-	// they are carried across to the destination.
-	const AutomationNode& oldNode = clip->getTimeMap()[TimePos(ticks)];
-	const auto curve = oldNode.curve();
-	const auto bend = oldNode.bend();
+	// Moving the node keeps its out side when it is discontinuous, and a requested new in value
+	// moves only that side, as it does in AutomationClip::setDragValue().
+	const float inValue = parameter.model->inverseScaledValue(static_cast<float>(value));
 	clip->addJournalCheckPoint();
 	clip->removeNode(TimePos(ticks));
-	clip->putValue(TimePos(to), parameter.model->inverseScaledValue(static_cast<float>(value)), false);
-	clip->getTimeMap()[TimePos(to)].setCurve(curve, bend);
+	putMovedNode(clip, to, oldNode, inValue);
 	QJsonObject result{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()}, {QStringLiteral("ticks"), static_cast<double>(toSong)},
 		{QStringLiteral("value"), value}, {QStringLiteral("automation"), automationJson(clip, parameter.model)}};
 	result.insert(QStringLiteral("__transaction"), automationTransaction(parameter, before, before.size(), false));
