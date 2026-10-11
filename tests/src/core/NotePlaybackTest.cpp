@@ -32,11 +32,16 @@
 
 #include <QDomDocument>
 #include <QJsonArray>
+#include <QThread>
 
 #include <cstdlib>
 #include <cstdint>
+#include <barrier>
+#include <cmath>
 #include <new>
 #include <span>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include "AudioDevice.h"
@@ -61,6 +66,34 @@ namespace
 
 thread_local bool countAllocations = false;
 thread_local std::uint64_t allocationCount = 0;
+
+std::pair<InstrumentTrack*, Instrument*> createModulatedMonstroTrack()
+{
+	auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+	if (track == nullptr) { return {nullptr, nullptr}; }
+	auto* instrument = track->loadInstrument(QStringLiteral("monstro"));
+	if (instrument == nullptr) { return {track, nullptr}; }
+	QDomDocument document;
+	QDomElement settings = document.createElement(QStringLiteral("monstro"));
+	settings.setAttribute(QStringLiteral("l1wav"), 0);
+	settings.setAttribute(QStringLiteral("v1l1"), 1.0);
+	instrument->restoreState(settings);
+	return {track, instrument};
+}
+
+bool sameSamples(const std::vector<SampleFrame>& lhs, const std::vector<SampleFrame>& rhs)
+{
+	if (lhs.size() != rhs.size()) { return false; }
+	for (std::size_t frame = 0; frame < lhs.size(); ++frame)
+	{
+		if (std::abs(lhs[frame][0] - rhs[frame][0]) > 1.0e-6f ||
+			std::abs(lhs[frame][1] - rhs[frame][1]) > 1.0e-6f)
+		{
+			return false;
+		}
+	}
+	return true;
+}
 
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
@@ -178,6 +211,63 @@ private slots:
 		NotePlayHandleManager::release(nph);
 
 		QCOMPARE(static_cast<qulonglong>(allocations), 0ull);
+	}
+
+	void monstroConcurrentVoicesKeepIndependentModulation()
+	{
+		const auto [serialTrack, serialInstrument] = createModulatedMonstroTrack();
+		const auto [parallelTrack, parallelInstrument] = createModulatedMonstroTrack();
+		QVERIFY(serialTrack != nullptr && serialInstrument != nullptr);
+		QVERIFY(parallelTrack != nullptr && parallelInstrument != nullptr);
+		if (QThread::idealThreadCount() < 2) { QSKIP("the audio engine has no parallel render worker"); }
+
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		const Note firstNote(TimePos(384), TimePos(0), 60);
+		const Note secondNote(TimePos(384), TimePos(0), 67);
+		NotePlayHandle* serialFirst = NotePlayHandleManager::acquire(serialTrack, 0, frames, firstNote);
+		NotePlayHandle* serialSecond = NotePlayHandleManager::acquire(serialTrack, 0, frames, secondNote);
+		NotePlayHandle* parallelFirst = NotePlayHandleManager::acquire(parallelTrack, 0, frames, firstNote);
+		NotePlayHandle* parallelSecond = NotePlayHandleManager::acquire(parallelTrack, 0, frames, secondNote);
+		std::vector<SampleFrame> serialFirstOutput(static_cast<std::size_t>(frames));
+		std::vector<SampleFrame> serialSecondOutput(static_cast<std::size_t>(frames));
+		std::vector<SampleFrame> parallelFirstOutput(static_cast<std::size_t>(frames));
+		std::vector<SampleFrame> parallelSecondOutput(static_cast<std::size_t>(frames));
+
+		serialInstrument->playNote(serialFirst, serialFirstOutput);
+		parallelInstrument->playNote(parallelFirst, parallelFirstOutput);
+		for (int period = 0; period < 64; ++period)
+		{
+			serialInstrument->playNote(serialFirst, serialFirstOutput);
+			serialInstrument->playNote(serialSecond, serialSecondOutput);
+		}
+
+		std::barrier startVoices{2};
+		std::thread firstVoice([&]
+		{
+			for (int period = 0; period < 64; ++period)
+			{
+				startVoices.arrive_and_wait();
+				parallelInstrument->playNote(parallelFirst, parallelFirstOutput);
+			}
+		});
+		std::thread secondVoice([&]
+		{
+			for (int period = 0; period < 64; ++period)
+			{
+				startVoices.arrive_and_wait();
+				parallelInstrument->playNote(parallelSecond, parallelSecondOutput);
+			}
+		});
+		firstVoice.join();
+		secondVoice.join();
+
+		NotePlayHandleManager::release(serialFirst);
+		NotePlayHandleManager::release(serialSecond);
+		NotePlayHandleManager::release(parallelFirst);
+		NotePlayHandleManager::release(parallelSecond);
+
+		QVERIFY2(sameSamples(serialFirstOutput, parallelFirstOutput), "the first voice's modulation changed during concurrent rendering");
+		QVERIFY2(sameSamples(serialSecondOutput, parallelSecondOutput), "the second voice's modulation changed during concurrent rendering");
 	}
 
 	void repeatsSoundAsMoreHits()

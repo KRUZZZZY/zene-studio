@@ -637,8 +637,8 @@ plugins/Lv2Effect/Lv2Effect.cpp	rename layer 1: user-visible plugin/module descr
 plugins/Lv2Instrument/Lv2Instrument.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo; 0.5.0 F2 (MX-114): extra outputs delivered to routed buses
 plugins/MidiExport/MidiExport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
 plugins/MidiImport/MidiImport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo; #625 headless load: the 'Setup incomplete' boxes are not opened in an unattended run (the import path is reachable from --import at startup)
-plugins/Monstro/Monstro.cpp	2026-10-11 cluster new-p9-295: construct MonstroSynth in each note handle's aligned storage and reuse instrument-owned modulation scratch vectors allocated at instrument setup, removing note-start heap allocation.
-plugins/Monstro/Monstro.h	2026-10-11 cluster new-p9-295: move modulation scratch vectors from per-note MonstroSynth state to the instrument, where they are prepared before rendering.
+plugins/Monstro/Monstro.cpp	2026-10-11 cluster new-p9-295: construct MonstroSynth in each note handle's aligned storage and lease distinct modulation scratch buffers from an instrument pool sized to the audio render worker count, prepared before rendering and released after each voice callback.
+plugins/Monstro/Monstro.h	2026-10-11 cluster new-p9-295: define the bounded instrument-owned pool of atomically leased modulation scratch buffers; per-note synth state retains no scratch allocation.
 plugins/MultitapEcho/MultitapEcho.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Oscilloscope/Oscilloscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)

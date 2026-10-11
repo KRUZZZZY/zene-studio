@@ -24,7 +24,9 @@
 
 #include "Monstro.h"
 
+#include <algorithm>
 #include <memory>
+#include <QThread>
 
 #include "ComboBox.h"
 #include "Engine.h"
@@ -101,10 +103,10 @@ MonstroSynth::MonstroSynth( MonstroInstrument * _i, NotePlayHandle * _nph ) :
 	m_counter3l = 0;
 	m_counter3r = 0;
 
-	m_lfo[0] = m_parent->m_lfo[0].data();
-	m_lfo[1] = m_parent->m_lfo[1].data();
-	m_env[0] = m_parent->m_env[0].data();
-	m_env[1] = m_parent->m_env[1].data();
+	m_lfo[0] = nullptr;
+	m_lfo[1] = nullptr;
+	m_env[0] = nullptr;
+	m_env[1] = nullptr;
 }
 
 
@@ -1043,8 +1045,13 @@ MonstroInstrument::MonstroInstrument( InstrumentTrack * _instrument_track ) :
 	connect( Engine::audioEngine(), SIGNAL( sampleRateChanged() ), this, SLOT( updateSamplerate() ) );
 
 	m_fpp = Engine::audioEngine()->framesPerPeriod();
-	for (auto& buffer : m_lfo) { buffer.resize(m_fpp); }
-	for (auto& buffer : m_env) { buffer.resize(m_fpp); }
+	m_modulationScratchCount = static_cast<std::size_t>(std::max(1, QThread::idealThreadCount()));
+	m_modulationScratch = std::make_unique<ModulationScratch[]>(m_modulationScratchCount);
+	for (std::size_t slot = 0; slot < m_modulationScratchCount; ++slot)
+	{
+		for (auto& buffer : m_modulationScratch[slot].lfo) { buffer.resize(m_fpp); }
+		for (auto& buffer : m_modulationScratch[slot].env) { buffer.resize(m_fpp); }
+	}
 
 	updateSamplerate();
 	updateVolume1();
@@ -1065,6 +1072,17 @@ void MonstroInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 {
 	const f_cnt_t frames = nph->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = nph->noteOffset();
+	ModulationScratch* scratch = nullptr;
+	for (std::size_t slot = 0; slot < m_modulationScratchCount; ++slot)
+	{
+		auto& candidate = m_modulationScratch[slot];
+		if (!candidate.inUse.test_and_set(std::memory_order_acquire))
+		{
+			scratch = &candidate;
+			break;
+		}
+	}
+	if (scratch == nullptr) { return; }
 
 	if (!nph->m_pluginData)
 	{
@@ -1075,8 +1093,17 @@ void MonstroInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 	}
 
 	auto ms = static_cast<MonstroSynth*>(nph->m_pluginData);
+	ms->m_lfo[0] = scratch->lfo[0].data();
+	ms->m_lfo[1] = scratch->lfo[1].data();
+	ms->m_env[0] = scratch->env[0].data();
+	ms->m_env[1] = scratch->env[1].data();
 
 	ms->renderOutput(frames, out.data() + offset);
+	ms->m_lfo[0] = nullptr;
+	ms->m_lfo[1] = nullptr;
+	ms->m_env[0] = nullptr;
+	ms->m_env[1] = nullptr;
+	scratch->inUse.clear(std::memory_order_release);
 
 	//applyRelease(out.data(), nph); // we have our own release
 }

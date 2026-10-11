@@ -26,6 +26,9 @@
 #ifndef MONSTRO_H
 #define MONSTRO_H
 
+#include <atomic>
+#include <cstddef>
+#include <memory>
 #include <vector>
 
 #include "ComboBoxModel.h"
@@ -290,6 +293,7 @@ private:
 	float* m_lfo[2];
 	float* m_env[2];
 
+	friend class MonstroInstrument;
 };
 
 class MonstroInstrument : public Instrument
@@ -406,15 +410,22 @@ protected:
 
 	sample_rate_t m_samplerate;
 	f_cnt_t m_fpp;
-	// Note rendering is serial per instrument, so these scratch buffers are shared by its voices.
-	std::vector<float> m_lfo[2];
-	std::vector<float> m_env[2];
 	
 	float m_integrator;
 	float m_fmCorrection;
 	int m_counterMax;
 
 private:
+	// A callback leases a slot so concurrently rendered voices never share scratch writes.
+	struct ModulationScratch
+	{
+		std::atomic_flag inUse = ATOMIC_FLAG_INIT;
+		std::vector<float> lfo[2];
+		std::vector<float> env[2];
+	};
+	std::unique_ptr<ModulationScratch[]> m_modulationScratch;
+	std::size_t m_modulationScratchCount = 0;
+
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
 
 	inline float leftCh( float _vol, float _pan )
