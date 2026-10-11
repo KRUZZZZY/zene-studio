@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <memory>
 #include <numbers>
 
 #include "lmms_constants.h"
@@ -275,7 +276,7 @@ public:
 			: FilterType::Moog;
 		if( m_subFilter == nullptr )
 		{
-			m_subFilter = new BasicFilters<CHANNELS>(
+			m_subFilter = std::make_unique<BasicFilters<CHANNELS>>(
 						static_cast<sample_rate_t>(
 							m_sampleRate ) );
 		}
@@ -291,10 +292,7 @@ public:
 		clearHistory();
 	}
 
-	inline ~BasicFilters()
-	{
-		delete m_subFilter;
-	}
+	inline ~BasicFilters() = default;
 
 	inline void clearHistory()
 	{
@@ -907,7 +905,7 @@ private:
 
 	float m_sampleRate;
 	float m_sampleRatio;
-	BasicFilters<CHANNELS> * m_subFilter;
+	std::unique_ptr<BasicFilters<CHANNELS>> m_subFilter;
 
 } ;
 

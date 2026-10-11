@@ -20,7 +20,10 @@
 
 #include "PluginPortsHarness.h"
 
+#include "BasicFilters.h"
+
 #include <cstdio>
+#include <type_traits>
 #include <vector>
 
 #include <QByteArray>
@@ -185,6 +188,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void basicFiltersCannotBeCopied();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +218,13 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::basicFiltersCannotBeCopied()
+{
+	using Filter = lmms::BasicFilters<2>;
+	QVERIFY2(!std::is_copy_constructible_v<Filter>, "BasicFilters must not shallow-copy its owned double-filter subfilter");
+	QVERIFY2(!std::is_copy_assignable_v<Filter>, "BasicFilters must not copy-assign its owned double-filter subfilter");
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
