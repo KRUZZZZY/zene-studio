@@ -235,6 +235,10 @@ void ControllerConnection::loadSettings( const QDomElement & _this )
 
 void ControllerConnection::deleteConnection()
 {
+	if( sender() == m_controller )
+	{
+		m_controller = nullptr;
+	}
 	delete this;
 }
 

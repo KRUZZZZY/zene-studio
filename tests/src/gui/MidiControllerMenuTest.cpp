@@ -31,11 +31,14 @@
 
 #include <QMenu>
 
+#include <cstring>
+
 #include "ControlRegistry.h"
 #include "ControllerConnection.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "Knob.h"
+#include "LfoController.h"
 #include "MidiController.h"
 #include "Song.h"
 
@@ -44,6 +47,29 @@ using namespace lmms::gui;
 
 namespace
 {
+
+class LifetimeProbeLfoController final : public LfoController
+{
+public:
+	explicit LifetimeProbeLfoController(Model* parent) : LfoController(parent)
+	{
+		s_connectionCount = &m_connectionCount;
+	}
+
+	static int connectionCountAtDeallocation;
+
+	static void operator delete(void* storage) noexcept
+	{
+		std::memcpy(&connectionCountAtDeallocation, s_connectionCount,
+			sizeof(connectionCountAtDeallocation));
+		::operator delete(storage);
+	}
+
+private:
+	inline static const int* s_connectionCount = nullptr;
+};
+
+int LifetimeProbeLfoController::connectionCountAtDeallocation = -1;
 
 QAction* find(QMenu& menu, const QString& text)
 {
@@ -110,6 +136,19 @@ private slots:
 		QMenu none;
 		plain.addDefaultActions(&none);
 		QVERIFY(find(none, QMenu::tr("Soft takeover")) == nullptr);
+	}
+
+	void destroyingNonMidiControllerDoesNotCallBackIntoIt()
+	{
+		const auto connectionsBefore = ControllerConnection::connections().size();
+		auto* lfo = new LifetimeProbeLfoController(Engine::getSong());
+		new ControllerConnection(lfo);
+		QCOMPARE(lfo->connectionCount(), 1);
+
+		delete lfo;
+
+		QCOMPARE(LifetimeProbeLfoController::connectionCountAtDeallocation, 1);
+		QCOMPARE(ControllerConnection::connections().size(), connectionsBefore);
 	}
 };
 
