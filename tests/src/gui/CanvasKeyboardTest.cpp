@@ -290,6 +290,12 @@ private slots:
 				{QStringLiteral("segments"), QJsonArray{
 					QJsonObject{{QStringLiteral("begin"), 0}, {QStringLiteral("end"), 384}, {QStringLiteral("lane"), 0}},
 					QJsonObject{{QStringLiteral("begin"), 384}, {QStringLiteral("end"), 768}, {QStringLiteral("lane"), 1}}}}}}});
+		QVERIFY((strip.focusPolicy() & Qt::TabFocus) != 0);
+		host.resize(420, 80);
+		host.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&host));
+		QTest::mouseClick(&strip, Qt::LeftButton, Qt::NoModifier, QPoint(10, 10));
+		QVERIFY(strip.hasFocus());
 		QCOMPARE(strip.keyLane(), 0);
 		QTest::keyClick(&strip, Qt::Key_Down);
 		QCOMPARE(strip.keyLane(), 1);
