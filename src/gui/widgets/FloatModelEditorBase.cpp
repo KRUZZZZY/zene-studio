@@ -69,6 +69,23 @@ FloatModelEditorBase::FloatModelEditorBase(DirectionOfManipulation directionOfMa
 	m_directionOfManipulation(directionOfManipulation)
 {
 	initUi(name);
+	watchModelLifetime(model());
+}
+
+
+void FloatModelEditorBase::setModel(Model* model, bool isOldModelValid)
+{
+	FloatModelView::setModel(model, isOldModelValid);
+	watchModelLifetime(this->model());
+}
+
+
+void FloatModelEditorBase::watchModelLifetime(Model* boundModel)
+{
+	if (boundModel == nullptr) { return; }
+	QObject::connect(boundModel, &QObject::destroyed, this, [this] {
+		if (model() == nullptr) { setEnabled(false); }
+	});
 }
 
 

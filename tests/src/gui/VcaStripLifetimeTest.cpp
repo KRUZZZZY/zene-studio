@@ -107,6 +107,7 @@ private slots:
 		editor.grab();
 		delete model;
 		QVERIFY(editor.model() == nullptr);
+		QVERIFY(!editor.isEnabled());
 		editor.grab();  // must not read through the null
 	}
 
