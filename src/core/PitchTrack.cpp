@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace lmms::pitchtrack
 {
@@ -38,6 +39,7 @@ constexpr int Window = 1024;
 constexpr int Hop = 256;
 constexpr int BoundaryWindow = 128;
 constexpr int BoundaryStep = 16;
+constexpr int TransitionWindow = Window / 2;
 constexpr float Threshold = 0.15f;  // YIN's absolute threshold on the normalised difference
 
 float rms(const float* mono, std::size_t count, std::size_t frame, int size)
@@ -124,12 +126,54 @@ std::size_t onsetInWindow(const float* mono, std::size_t count, std::size_t fram
 	return frame;
 }
 
+//! Measure how well a region repeats at a supplied (possibly fractional) period.
+float periodicityError(const float* mono, std::size_t start, int size, float period)
+{
+	if (period < 1.f || period >= static_cast<float>(size - 1)) { return 1.f; }
+	const std::size_t lag = static_cast<std::size_t>(period);
+	const float fraction = period - static_cast<float>(lag);
+	double error = 0.0;
+	double energy = 0.0;
+	const std::size_t end = start + static_cast<std::size_t>(size) - lag - 1;
+	for (std::size_t i = start; i < end; ++i)
+	{
+		const float delayed = mono[i + lag] * (1.f - fraction) + mono[i + lag + 1] * fraction;
+		const double difference = static_cast<double>(mono[i] - delayed);
+		error += difference * difference;
+		energy += static_cast<double>(mono[i]) * mono[i] + static_cast<double>(delayed) * delayed;
+	}
+	return energy > 0.0 ? static_cast<float>(error / energy) : 1.f;
+}
+
+//! Find the pitch transition near a hop by matching each note's periodicity on its own side.
+std::size_t pitchBoundaryInWindow(const float* mono, std::size_t count, std::size_t frame, float previousHz, float nextHz, int rate)
+{
+	const std::size_t section = static_cast<std::size_t>(TransitionWindow);
+	if (previousHz <= 0.f || nextHz <= 0.f || count < section * 2) { return frame; }
+	const std::size_t first = std::max(section, frame > Window ? frame - Window : section);
+	const std::size_t last = std::min(count - section, frame + static_cast<std::size_t>(Window));
+	if (first > last) { return frame; }
+	const float previousPeriod = static_cast<float>(rate) / previousHz;
+	const float nextPeriod = static_cast<float>(rate) / nextHz;
+	float bestError = std::numeric_limits<float>::max();
+	std::size_t boundary = frame;
+	for (std::size_t candidate = first; candidate <= last; candidate += BoundaryStep)
+	{
+		const float error = periodicityError(mono, candidate - section, TransitionWindow, previousPeriod)
+			+ periodicityError(mono, candidate, TransitionWindow, nextPeriod);
+		if (error < bestError) { bestError = error; boundary = candidate; }
+	}
+	return boundary;
+}
+
 //! Hop keys into notes: a note holds while its key stays, and is kept when it lasts long enough.
 struct Segmenter
 {
 	f_cnt_t minFrames;
 	std::vector<PitchNote> notes;
 	PitchNote current;
+	float frequency = 0.f;
+	f_cnt_t lastPitchAt = 0;
 	bool open = false;
 
 	void close(f_cnt_t at)
@@ -138,11 +182,41 @@ struct Segmenter
 		open = false;
 	}
 
-	void feed(int key, float level, f_cnt_t at, f_cnt_t onset)
+	f_cnt_t onsetFor(int key, float hz, f_cnt_t at, const float* mono, std::size_t count, std::size_t frame, float gate,
+		int rate, int factor) const
 	{
-		if (open && key == current.key) { current.level = std::max(current.level, level); return; }
-		close(at);
-		if (key >= 0) { current = PitchNote{onset, onset, key, level}; open = true; }
+		if (key < 0) { return at; }
+		if (frequency > 0.f && key != current.key && at - lastPitchAt <= static_cast<f_cnt_t>(Window * factor))
+		{
+			const std::size_t boundary = pitchBoundaryInWindow(mono, count, frame, frequency, hz, rate / factor);
+			const std::size_t probe = static_cast<std::size_t>(BoundaryWindow);
+			if (boundary >= probe && rms(mono, count, boundary - probe, BoundaryWindow) > gate
+				&& rms(mono, count, boundary, BoundaryWindow) > gate)
+			{
+				return static_cast<f_cnt_t>(boundary) * factor;
+			}
+			if (open) { return at; }
+		}
+		return open ? at : static_cast<f_cnt_t>(onsetInWindow(mono, count, frame, gate)) * factor;
+	}
+
+	void feed(int key, float level, f_cnt_t at, f_cnt_t onset, float hz)
+	{
+		if (open && key == current.key)
+		{
+			current.level = std::max(current.level, level);
+			frequency = hz;
+			lastPitchAt = at;
+			return;
+		}
+		close(open && key >= 0 ? onset : at);
+		if (key >= 0)
+		{
+			current = PitchNote{onset, onset, key, level};
+			frequency = hz;
+			lastPitchAt = at;
+			open = true;
+		}
 	}
 };
 
@@ -160,9 +234,8 @@ std::vector<PitchNote> detectNotes(const float* mono, std::size_t count, int rat
 		const float hz = level > gate ? pitchAt(low.data(), low.size(), frame, Window, rate / factor) : 0.f;
 		const int key = hz > 30.f && hz < 2000.f ? keyOf(hz) : -1;
 		const f_cnt_t at = static_cast<f_cnt_t>(frame) * factor;
-		const f_cnt_t onset = key >= 0 && !segmenter.open
-			? static_cast<f_cnt_t>(onsetInWindow(low.data(), low.size(), frame, gate)) * factor : at;
-		segmenter.feed(key, level, at, onset);
+		const f_cnt_t onset = segmenter.onsetFor(key, hz, at, low.data(), low.size(), frame, gate, rate, factor);
+		segmenter.feed(key, level, at, onset, hz);
 	}
 	segmenter.close(static_cast<f_cnt_t>(count));
 	return segmenter.notes;

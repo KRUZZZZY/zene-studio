@@ -121,6 +121,27 @@ private slots:
 				.arg(static_cast<qulonglong>(onset))));
 	}
 
+	void aLegatoPitchChangeStartsNearItsTransition()
+	{
+		constexpr int rate = 44100;
+		constexpr std::size_t transition = rate * 11 / 20;
+		std::vector<float> audio(static_cast<std::size_t>(rate));
+		for (std::size_t i = 0; i < audio.size(); ++i)
+		{
+			const double phase = i < transition
+				? 2.0 * M_PI * 220.0 * static_cast<double>(i) / rate
+				: 2.0 * M_PI * (220.0 * static_cast<double>(transition) + 330.0 * static_cast<double>(i - transition)) / rate;
+			audio[i] = 0.5f * static_cast<float>(std::sin(phase));
+		}
+		const std::vector<pitchtrack::PitchNote> notes = pitchtrack::detectNotes(audio.data(), audio.size(), rate);
+		QCOMPARE(notes.size(), std::size_t{2});
+		QCOMPARE(notes.back().key, 64);
+		const f_cnt_t tolerance = static_cast<f_cnt_t>(rate / 200);
+		QVERIFY2(notes.back().start >= transition - tolerance && notes.back().start <= transition + tolerance,
+			qPrintable(QStringLiteral("detected transition %1, expected %2").arg(static_cast<qulonglong>(notes.back().start))
+				.arg(static_cast<qulonglong>(transition))));
+	}
+
 	void aNoteEndsNearItsAudioOffset()
 	{
 		constexpr int rate = 44100;
