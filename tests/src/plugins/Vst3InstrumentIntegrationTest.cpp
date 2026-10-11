@@ -66,6 +66,7 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <vector>
 
 #include "AudioBus.h"
@@ -82,6 +83,7 @@
 #include "PluginView.h"
 #include "Song.h"
 #include "TimePos.h"
+#include "Vst3Instrument.h"
 
 #ifndef VST3_INSTRUMENT_PLUGIN_PATH
 #define VST3_INSTRUMENT_PLUGIN_PATH ""
@@ -171,6 +173,7 @@ private slots:
 	void cleanupTestCase();
 
 	void testTheInstalledInstrumentLoadsAndIsMidiBased();
+	void testUnpreparedInstrumentClearsAudioPortsOutput();
 	void testAMidiClipDrivesAudioWithSampleAccuracy();
 	void testDistinctInputGivesDistinctOutput();
 	void testTheLevelParameterReachesTheInstrument();
@@ -330,6 +333,31 @@ void Vst3InstrumentIntegrationTest::testTheInstalledInstrumentLoadsAndIsMidiBase
 		qPrintable(instrument->displayName()), instrument->parameterCount(),
 		qPrintable(instrument->parameterName(0)));
 
+}
+
+void Vst3InstrumentIntegrationTest::testUnpreparedInstrumentClearsAudioPortsOutput()
+{
+	auto track = makeTrack();
+	auto* instrument = static_cast<Vst3Instrument*>(makeInstrument(track.get()));
+	QVERIFY(instrument != nullptr);
+	QVERIFY(instrument->vst3Plugin()->isPrepared());
+
+	const Note held{TimePos::fromFrames(Blocks * BlockFrames * 2, 1.0),
+		TimePos(0), 69, DefaultVolume};
+	const auto primed = renderNote(track.get(), instrument, held, 0,
+		Blocks * BlockFrames * 2);
+	QVERIFY(std::any_of(primed.begin(), primed.end(),
+		[](float sample) { return sample == FixtureLevel; }));
+
+	instrument->vst3Plugin()->release();
+	QVERIFY(!instrument->vst3Plugin()->isPrepared());
+
+	constexpr float Stale = -1.0f;
+	std::vector<SampleFrame> output(BlockFrames, SampleFrame{Stale, Stale});
+	instrument->play(std::span<SampleFrame>{output});
+	QVERIFY2(std::all_of(output.begin(), output.end(), [](const SampleFrame& frame) {
+		return frame.left() == 0.0f && frame.right() == 0.0f;
+	}), "the unprepared instrument routed stale processor samples to the track");
 }
 
 void Vst3InstrumentIntegrationTest::testAMidiClipDrivesAudioWithSampleAccuracy()

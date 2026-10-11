@@ -61,6 +61,9 @@
 #ifndef VST3_TEST_INSTRUMENT_BUNDLE
 #define VST3_TEST_INSTRUMENT_BUNDLE ""
 #endif
+#ifndef VST3_TEST_MONO_INSTRUMENT_BUNDLE
+#define VST3_TEST_MONO_INSTRUMENT_BUNDLE ""
+#endif
 
 namespace lmms::vst3
 {
@@ -166,6 +169,7 @@ private slots:
 	void testTheFixtureIsAnInstrumentWithAnEventBus();
 	void testNoEventsIsExactlySilent();
 	void testExtraOutputChannelIsCleared();
+	void testMonoPluginClearsSecondHostOutput();
 	void testUnpreparedProcessClearsOutputs();
 	void testSampleAccurateNoteOff();
 	void testNoteOnOffsetIsHonoured();
@@ -262,6 +266,26 @@ void Vst3InstrumentTest::testExtraOutputChannelIsCleared()
 	m_plugin.process(nullptr, outputs, 0, 3, TestBlockSize);
 	QVERIFY2(std::all_of(extra.begin(), extra.end(), [](float sample) { return sample == 0.0f; }),
 		"an output channel outside the active VST3 buses retained stale samples");
+}
+
+void Vst3InstrumentTest::testMonoPluginClearsSecondHostOutput()
+{
+	HostedPlugin mono;
+	QString error;
+	QVERIFY2(mono.load(QStringLiteral(VST3_TEST_MONO_INSTRUMENT_BUNDLE), QString{}, &error),
+		qPrintable(error));
+	QCOMPARE(mono.busLayout().outputs, 1);
+	QVERIFY2(mono.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	constexpr float Stale = -1.0f;
+	std::vector<float> monoOutput(TestBlockSize, Stale);
+	std::vector<float> extraOutput(TestBlockSize, Stale);
+	float* outputs[2] = {monoOutput.data(), extraOutput.data()};
+	mono.process(nullptr, outputs, 0, 2, TestBlockSize);
+
+	QVERIFY2(std::all_of(extraOutput.begin(), extraOutput.end(),
+		[](float sample) { return sample == 0.0f; }),
+		"the mono instrument left its second host output channel stale");
 }
 
 void Vst3InstrumentTest::testUnpreparedProcessClearsOutputs()

@@ -2506,8 +2506,11 @@ if(TARGET lmms_vst3_sdk)
 		)
 		target_compile_definitions(Vst3InstrumentTest PRIVATE
 			VST3_TEST_INSTRUMENT_BUNDLE="${LMMS_VST3_TEST_BUNDLE_DIR}"
+			VST3_TEST_MONO_INSTRUMENT_BUNDLE="${LMMS_VST3_MONO_TEST_BUNDLE_DIR}"
 		)
-		add_dependencies(Vst3InstrumentTest vst3-test-instrument)
+		add_dependencies(Vst3InstrumentTest
+			vst3-test-instrument
+			vst3-test-mono-instrument)
 
 		# Product-level proof: a MidiClip drives the real vst3instrument MODULE
 		# through the track's MIDI path, and the instrument's state survives the
@@ -2516,6 +2519,12 @@ if(TARGET lmms_vst3_sdk)
 		if(TARGET vst3instrument)
 			add_executable(Vst3InstrumentIntegrationTest
 				src/plugins/Vst3InstrumentIntegrationTest.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3HostReports.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3EditorSession.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiMapping.cpp
 			)
 			add_test(NAME Vst3InstrumentIntegrationTest
 				COMMAND Vst3InstrumentIntegrationTest)
@@ -2531,15 +2540,19 @@ if(TARGET lmms_vst3_sdk)
 			endif()
 			target_include_directories(Vst3InstrumentIntegrationTest PRIVATE
 				$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Instrument
 			)
 			target_static_libraries(Vst3InstrumentIntegrationTest PRIVATE lmmsobjs)
 			target_link_libraries(Vst3InstrumentIntegrationTest PRIVATE
 				${QT_LIBRARIES}
 				${QT_QTTEST_LIBRARY}
+				lmms_vst3_sdk
 				${CMAKE_DL_LIBS}
 			)
 			target_compile_features(Vst3InstrumentIntegrationTest PRIVATE cxx_std_20)
 			target_compile_definitions(Vst3InstrumentIntegrationTest PRIVATE
+				LMMS_STATIC_DEFINE
 				LMMS_TESTING
 				VST3_INSTRUMENT_PLUGIN_PATH="$<TARGET_FILE:vst3instrument>"
 				VST3_INSTRUMENT_PLUGIN_DIR="$<TARGET_FILE_DIR:vst3instrument>"
