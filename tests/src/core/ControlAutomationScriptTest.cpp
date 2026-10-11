@@ -40,6 +40,8 @@
 #include <QThread>
 #include <QVector>
 
+#include "ControlAutomationSupport.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ReversibilityTestSupport.h"
@@ -231,6 +233,59 @@ private slots:
 						controlErrorKindName(result.errorKind), result.errorMessage)));
 			QVERIFY(!result.errorMessage.isEmpty());
 		}
+	}
+
+	//! Refuse an inverted transform range before editableClip can create automation.
+	void transformRefusesAnInvertedRangeWithoutCreatingAutomation()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString trackId = m_devicedTrack;
+		if (trackId.isEmpty() && !testHostCanLoadPluginModules())
+		{
+			QSKIP("the song exposes no automatable device parameter because this test host cannot load plugin modules");
+		}
+		QVERIFY(!trackId.isEmpty());
+		const ControlResult state = registry->invoke(QStringLiteral("automation.get_state"),
+			QJsonObject{{QStringLiteral("track"), trackId}});
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		QString parameterId;
+		for (const QJsonValue& entry : state.result.value(QStringLiteral("tracks")).toArray())
+		{
+			const QJsonObject track = entry.toObject();
+			if (track.value(QStringLiteral("id")).toString() == trackId)
+			{
+				const QJsonArray parameters = track.value(QStringLiteral("parameters")).toArray();
+				if (!parameters.isEmpty()) { parameterId = parameters.first().toObject().value(QStringLiteral("id")).toString(); }
+				break;
+			}
+		}
+		if (parameterId.isEmpty() && !testHostCanLoadPluginModules())
+		{
+			QSKIP("the song exposes no automatable device parameter because this test host cannot load plugin modules");
+		}
+		QVERIFY(!parameterId.isEmpty());
+
+		ControlTarget target;
+		control::AutomationParameter parameter;
+		ControlResult error;
+		const QJsonObject args{{QStringLiteral("track"), trackId}, {QStringLiteral("parameter"), parameterId}};
+		QVERIFY2(control::resolveAutomationParameter(args, &target, &parameter, &error), qPrintable(error.errorMessage));
+		QVERIFY(control::existingAutomationClip(parameter.model) == nullptr);
+		const int tracksBefore = static_cast<int>(Engine::getSong()->tracks().size());
+		const ControlResult refused = registry->invoke(QStringLiteral("automation.transform"),
+			{{QStringLiteral("track"), trackId}, {QStringLiteral("parameter"), parameterId},
+				{QStringLiteral("start"), 100}, {QStringLiteral("end"), 20}});
+		const int tracksAfter = static_cast<int>(Engine::getSong()->tracks().size());
+		const bool automationWasCreated = control::existingAutomationClip(parameter.model) != nullptr;
+		if (tracksAfter > tracksBefore)
+		{
+			const ControlResult undone = registry->invoke(QStringLiteral("control.undo"));
+			QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		}
+		QVERIFY(!refused.ok);
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(tracksAfter, tracksBefore);
+		QVERIFY(!automationWasCreated);
 	}
 
 	//! mode_set on a valid track+parameter but with no automation clip still

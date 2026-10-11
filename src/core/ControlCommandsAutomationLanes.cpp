@@ -164,6 +164,10 @@ ControlResult drawShape(const QJsonObject& args)
 
 ControlResult transform(const QJsonObject& args)
 {
+	if (args.value(QStringLiteral("end")).toInt() <= args.value(QStringLiteral("start")).toInt())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'end' must be after 'start'"));
+	}
 	ControlTarget target;
 	AutomationParameter parameter;
 	ControlResult error;
