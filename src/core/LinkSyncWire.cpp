@@ -72,11 +72,11 @@ bool isOurEnvelope(const QJsonObject& object)
 
 /*! The payload, or false when it could not have been produced by this model.
  *  A missing id, a tempo outside [MinSessionTempo, MaxSessionTempo], a send
- *  time that is not positive or does not fit a quint64, a beat that is not
- *  finite, or a quantum outside the range this model accepts all make an
+ *  time that is not positive or outside qint64 range, a non-finite beat, or a
+ *  quantum outside the range this model accepts all make an
  *  announcement UNUSABLE rather than partially read: a peer that half-announces
  *  is not half in the session. (The tempo range also refuses NaN and infinity,
- *  and the send-time bound keeps its conversion to quint64 defined.) */
+ *  and the send-time bound keeps both timestamp conversions defined.) */
 bool readPacketFields(const QJsonObject& object, LinkPeerPacket* packet)
 {
 	LinkPeerPacket parsed;
@@ -94,10 +94,11 @@ bool readPacketFields(const QJsonObject& object, LinkPeerPacket* packet)
 	parsed.quantum = object.value(QStringLiteral("quantum")).toInt(link::DefaultQuantum);
 	parsed.startStopSync = object.value(QStringLiteral("start_stop_sync")).toBool();
 	parsed.playing = object.value(QStringLiteral("playing")).toBool();
-	constexpr double SentUsLimit = 18446744073709551616.0;  // 2^64: the first value a quint64 cannot hold
+	constexpr double SignedSentUsLimit = 9223372036854775808.0;
+	// 2^63 is the first value qint64 cannot hold.
 	const bool usable = !parsed.id.isEmpty()
 		&& parsed.tempo >= link::MinSessionTempo && parsed.tempo <= link::MaxSessionTempo
-		&& sentUs > 0.0 && sentUs < SentUsLimit && std::isfinite(parsed.beat)
+		&& sentUs > 0.0 && sentUs < SignedSentUsLimit && std::isfinite(parsed.beat)
 		&& parsed.quantum >= link::MinQuantum && parsed.quantum <= link::MaxQuantum;
 	if (!usable)
 	{
