@@ -153,13 +153,14 @@ void RackZones::assign(std::vector<RackZone> zones)
 auto RackZones::matchMask(int key, int velocity) const -> std::uint64_t
 {
 	std::uint64_t mask = 0;
-	const std::size_t count = std::min<std::size_t>(m_zones.size(), 64);
-	for (std::size_t i = 0; i < count; ++i)
+	for (const RackZone& candidate : m_zones)
 	{
-		const RackZone& candidate = m_zones[i];
 		const bool keyIn = key >= candidate.lowKey && key <= candidate.highKey;
 		const bool velocityIn = velocity >= candidate.lowVelocity && velocity <= candidate.highVelocity;
-		if (keyIn && velocityIn) { mask |= std::uint64_t{1} << i; }
+		if (keyIn && velocityIn && candidate.chain >= 0 && candidate.chain < 64)
+		{
+			mask |= std::uint64_t{1} << candidate.chain;
+		}
 	}
 	return mask;
 }

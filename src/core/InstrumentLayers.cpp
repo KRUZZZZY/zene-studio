@@ -281,13 +281,11 @@ void InstrumentLayers::loadSettings(const QDomElement& parent)
 
 auto InstrumentLayers::layerMask(int key, int volume) const -> std::uint32_t
 {
-	std::uint32_t layers = 0;
 	const std::uint64_t matches = m_zones.matchMask(key, volume);
-	for (int zone = 0; zone < 64 && (matches >> zone) != 0; ++zone)
+	std::uint32_t layers = 0;
+	for (int chain = 0; chain <= MaxLayers; ++chain)
 	{
-		if (((matches >> zone) & 1u) == 0) { continue; }
-		const int chain = m_zones.zone(zone)->chain;
-		if (chain >= 0 && chain <= MaxLayers) { layers |= 1u << chain; }
+		if (((matches >> chain) & 1u) != 0) { layers |= 1u << chain; }
 	}
 	return layers;
 }
