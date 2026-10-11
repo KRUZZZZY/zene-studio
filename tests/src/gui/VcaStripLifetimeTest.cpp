@@ -104,6 +104,7 @@ private slots:
 		FloatModelEditorBase editor;
 		auto* model = new FloatModel(1.f, 0.f, 2.f, 0.01f);
 		editor.setModel(model);
+		QVERIFY(editor.isEnabled());
 		editor.grab();
 		delete model;
 		QVERIFY(editor.model() == nullptr);

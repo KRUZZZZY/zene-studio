@@ -69,7 +69,6 @@ FloatModelEditorBase::FloatModelEditorBase(DirectionOfManipulation directionOfMa
 	m_directionOfManipulation(directionOfManipulation)
 {
 	initUi(name);
-	watchModelLifetime(model());
 }
 
 
