@@ -56,7 +56,7 @@ bool MediaStream::open(const QString& path, AVMediaType type, QString* error)
 	if (code >= 0) { code = avcodec_open2(codec, decoder, nullptr); }
 	if (code < 0)
 	{
-		*error = errorText(code);
+		if (error) { *error = errorText(code); }
 		close();
 		return false;
 	}

@@ -46,6 +46,7 @@
 #include "Track.h"
 #include "VideoDecoder.h"
 #include "VideoFramePump.h"
+#include "VideoFfmpeg.h"
 #include "VideoReference.h"
 #include "VideoTestClip.h"
 #include "VideoWindow.h"
@@ -149,6 +150,17 @@ private slots:
 			QCOMPARE(answer.errorKind, ControlErrorKind::Requires);
 			QVERIFY2(answer.errorMessage.contains(QStringLiteral("unavailable")), qPrintable(answer.errorMessage));
 		}
+	}
+
+	void failedOpenAcceptsNullErrorOutput()
+	{
+#ifdef ZENE_HAVE_FFMPEG
+		lmms::video::MediaStream stream;
+		QVERIFY(!stream.open(m_dir.filePath(QStringLiteral("missing.mkv")), AVMEDIA_TYPE_VIDEO, nullptr));
+		QVERIFY(!stream.isOpen());
+#else
+		QSKIP("this build has no FFmpeg");
+#endif
 	}
 
 	void attachReadsTheFileAndEachEditIsOneUndoStep()
