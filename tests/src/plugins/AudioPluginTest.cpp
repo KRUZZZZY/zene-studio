@@ -48,9 +48,13 @@
 #include <memory>
 #include <vector>
 
+#include <QCoreApplication>
+#include <QDir>
 #include <QDomDocument>
 #include <QDomElement>
+#include <QFileInfo>
 #include <QLibrary>
+#include <QProcess>
 #include <QTextStream>
 #include <QtTest>
 
@@ -124,6 +128,7 @@ private slots:
 	void bypassedEffectRunsDefaultBypassImpl();
 	void unknownProcessStatusIsIgnored();
 	void legacyAudioBufferPathRoutesInPlacePorts();
+	void namHarnessRejectsNegativeWarmup();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -433,6 +438,33 @@ void AudioPluginTest::legacyAudioBufferPathRoutesInPlacePorts()
 	// 0.8f / 2 and -0.4f / 2 are exact in binary floating point.
 	QCOMPARE(buffer.interleavedBuffer()[0][0], 0.4f);
 	QCOMPARE(buffer.interleavedBuffer()[TestFrames - 1][1], -0.2f);
+}
+
+//! Negative warmup counts must be rejected before the harness loads a model.
+void AudioPluginTest::namHarnessRejectsNegativeWarmup()
+{
+	QString harness = QDir::cleanPath(QCoreApplication::applicationDirPath() +
+		QStringLiteral("/../plugins/nam_harness"));
+#ifdef Q_OS_WIN
+	harness += QStringLiteral(".exe");
+#endif
+	QVERIFY2(QFileInfo::exists(harness), qPrintable(harness));
+
+	QProcess process;
+	process.start(harness, {
+		QStringLiteral("--warmup"), QStringLiteral("-1"),
+		QStringLiteral("--blocks"), QStringLiteral("1"),
+		QStringLiteral("missing-negative-warmup-test.nam")
+	});
+	QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
+	QVERIFY2(process.waitForFinished(5000), qPrintable(process.errorString()));
+	QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+	QCOMPARE(process.exitCode(), 2);
+
+	const QByteArray standardError = process.readAllStandardError();
+	QVERIFY2(standardError.contains("error: --warmup must be >= 0"),
+		qPrintable(QString::fromLocal8Bit(standardError)));
+	QVERIFY(!standardError.contains("LOAD FAILED"));
 }
 
 QTEST_MAIN(AudioPluginTest)

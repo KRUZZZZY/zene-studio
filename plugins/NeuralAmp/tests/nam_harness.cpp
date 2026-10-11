@@ -356,6 +356,11 @@ int main(int argc, char** argv)
 		std::fprintf(stderr, "error: --blocks must be >= 1\n");
 		return 2;
 	}
+	if (opt.warmupBlocks < 0)
+	{
+		std::fprintf(stderr, "error: --warmup must be >= 0\n");
+		return 2;
+	}
 
 	std::printf("== NeuralAmp harness ==\n");
 	std::printf("model: %s\n", opt.modelPath.c_str());
