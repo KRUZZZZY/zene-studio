@@ -29,12 +29,14 @@
 #include <QtTest>
 
 #include <QPushButton>
+#include <QSignalSpy>
 
 #include <cmath>
 #include <vector>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "Graph.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleEditorDialog.h"
@@ -150,6 +152,31 @@ private slots:
 		QVERIFY(samplerange::frameFromText(QStringLiteral("2.1.1"), ctx, Unit::BarsBeats, &frame));
 		QCOMPARE(frame, std::llround(Engine::getSong()->secondsAtTick(Engine::getSong()->ticksPerBar()) * Rate));
 		QCOMPARE(samplerange::unitFor(musicaltime::Format::Ticks), Unit::Samples);
+	}
+
+	void graphModelRejectsLengthsBelowTwoSamples()
+	{
+		graphModel model(-1.0f, 1.0f, 4, nullptr);
+		QSignalSpy lengthChanges(&model, &graphModel::lengthChanged);
+		QVERIFY(lengthChanges.isValid());
+
+		for (const int invalidLength : {-1, 0, 1})
+		{
+			model.setLength(invalidLength);
+			QCOMPARE(model.length(), 4);
+		}
+		QCOMPARE(lengthChanges.count(), 0);
+
+		model.setLength(2);
+		QCOMPARE(model.length(), 2);
+		QCOMPARE(lengthChanges.count(), 1);
+		model.smooth();
+		model.normalize();
+
+		graphModel oneSampleModel(-1.0f, 1.0f, 1, nullptr);
+		QCOMPARE(oneSampleModel.length(), 2);
+		oneSampleModel.smooth();
+		oneSampleModel.normalize();
 	}
 
 	void theFieldsShowTheSelection()

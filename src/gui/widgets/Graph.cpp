@@ -34,6 +34,13 @@
 namespace lmms
 {
 
+namespace
+{
+
+constexpr int MinGraphLength = 2;
+
+}
+
 namespace gui
 {
 
@@ -465,8 +472,8 @@ void Graph::updateGraph()
 
 graphModel::graphModel(float ymin, float ymax, int length, Model* parent, bool defaultConstructed, float step) :
 	Model(parent, tr("Graph"), defaultConstructed),
-	m_samples(length),
-	m_length(length),
+	m_samples(std::max(length, MinGraphLength)),
+	m_length(std::max(length, MinGraphLength)),
 	m_minValue(ymin),
 	m_maxValue(ymax),
 	m_step(std::clamp(step, 0.f, std::abs(ymax - ymin)))
@@ -490,6 +497,7 @@ void graphModel::setRange(float ymin, float ymax)
 
 void graphModel::setLength( int _length )
 {
+	if (_length < MinGraphLength) { return; }
 	if( _length != m_length )
 	{
 		m_length = _length;
