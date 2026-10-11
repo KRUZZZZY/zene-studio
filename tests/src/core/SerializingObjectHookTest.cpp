@@ -61,9 +61,9 @@ class SerializingObjectHookTest : public QObject
 private slots:
 	void reassigningHookDetachesPreviousObject()
 	{
+		TestHook hook;
 		TestSerializingObject first;
 		TestSerializingObject second;
-		TestHook hook;
 
 		first.setHook(&hook);
 		QVERIFY(first.hook() == &hook);
