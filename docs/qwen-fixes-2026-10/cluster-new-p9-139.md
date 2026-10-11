@@ -9,6 +9,15 @@ Verdict: **FIXED**. The finding is real: `WaveSample` owns `m_samples` and its d
 - The product header is recorded in [upstream-modifications.txt](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-139/tests/upstream-modifications.txt:1054); the product-new test source is registered in [fork-sources.txt](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-139/tests/fork-sources.txt:2064).
 - The affected family ran **1 CTest target** (`PluginAudioPortsTest`): red 1/1 failed; green 1/1 passed.
 
+| Evidence | Exact command / files | Result |
+|---|---|---|
+| RED | From `build/tests`: `ctest -R '^PluginAudioPortsTest$' --output-on-failure` | Exit 8; 1 target failed with the copy-constructibility assertion. Log: `test-7.log`. |
+| GREEN | From `build/tests`: `ctest -R '^PluginAudioPortsTest$' --output-on-failure` | Exit 0; 1/1 target passed. Log: `test-9.log`. |
+| Affected-family count | `ctest -R '^PluginAudioPortsTest$'` | 1 CTest target. |
+| Complexity ratchet | `bash tests/complexity-gate.sh --check` | Exit 0. Log: `gate-7.log`. |
+| File-length ratchet | `bash tests/file-length-gate.sh --check` | Exit 0. Log: `gate-8.log`. |
+| Files in the fix commit | `plugins/Xpressive/ExprSynth.h`; `tests/src/core/PluginAudioPortsTest.cpp`; `tests/fork-sources.txt`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p9-139.md` | All five committed. |
+
 ## RED/GREEN and reversal proof
 
 Commands below were run in the stated working directories. Build and CTest output is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-139.r1/logs`.
@@ -80,13 +89,13 @@ Exit: **1** (the temporary test source exceeded the file-length limit).
 With the regression in `PluginAudioPortsTest.cpp`, the required post-report gate commands and results are:
 
 ```sh
-bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-139.r1/logs/gate-5.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-139.r1/logs/gate-5.log; echo EXIT=$rc; exit $rc
+bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-139.r1/logs/gate-7.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-139.r1/logs/gate-7.log; echo EXIT=$rc; exit $rc
 ```
 
 Exit: **0**.
 
 ```sh
-bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-139.r1/logs/gate-6.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-139.r1/logs/gate-6.log; echo EXIT=$rc; exit $rc
+bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-139.r1/logs/gate-8.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-139.r1/logs/gate-8.log; echo EXIT=$rc; exit $rc
 ```
 
 Exit: **0**.
