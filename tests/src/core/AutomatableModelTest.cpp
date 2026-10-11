@@ -27,6 +27,7 @@
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
 #include "Engine.h"
+#include "TempoSyncKnobModel.h"
 
 class AutomatableModelTest : public QObject
 {
@@ -115,6 +116,24 @@ private slots: // tests
 		QVERIFY(m2.value() == m3.value());
 		QVERIFY(!m3.value());
 		QVERIFY(m1.countLinks() == 2);
+	}
+
+	void customMeterChangeUpdatesSyncOnceAfterReenteringCustom()
+	{
+		using namespace lmms;
+
+		TempoSyncKnobModel model(1.f, 0.f, 1000.f, 1.f, 1.f, nullptr);
+		int updateCount = 0;
+		connect(&model, &TempoSyncKnobModel::syncModeChanged,
+			[&updateCount](TempoSyncKnobModel::SyncMode) { ++updateCount; });
+
+		model.setSyncMode(TempoSyncKnobModel::SyncMode::Custom);
+		model.setSyncMode(TempoSyncKnobModel::SyncMode::None);
+		model.setSyncMode(TempoSyncKnobModel::SyncMode::Custom);
+		QCOMPARE(updateCount, 3);
+
+		model.getCustomMeterModel().setNumerator(3);
+		QCOMPARE(updateCount, 4);
 	}
 };
 
