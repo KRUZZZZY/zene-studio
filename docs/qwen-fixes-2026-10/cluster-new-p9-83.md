@@ -10,6 +10,19 @@
 - The original code and the patch-reversed code both segfaulted in the new slot. The fixed code passed, and passed again after restoring the exact patch.
 - The affected CTest family selects one target: `MidiControllerMenuTest`. Each RED run was 0/1; each GREEN run was 1/1.
 
+## Evidence table
+
+| Check | Exact command | Exit / result |
+|---|---|---|
+| Original-code RED | `ctest -R '^MidiControllerMenuTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-83.r1/logs/test-1.log' 2>&1; result=$?; echo EXIT=$result` | 8; 0/1, segfault |
+| Fixed-code GREEN | `ctest -R '^MidiControllerMenuTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-83.r1/logs/test-2.log' 2>&1; result=$?; echo EXIT=$result` | 0; 1/1 passed |
+| Patch-reversed RED | `ctest -R '^MidiControllerMenuTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-83.r1/logs/test-3.log' 2>&1; result=$?; echo EXIT=$result` | 8; 0/1, segfault |
+| Restored-patch GREEN | `ctest -R '^MidiControllerMenuTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-83.r1/logs/test-4.log' 2>&1; result=$?; echo EXIT=$result` | 0; 1/1 passed |
+| Affected-family count | `ctest -R '^MidiControllerMenuTest$'` | 1 CTest target |
+| Complexity gate | `bash tests/complexity-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-83.r1/logs/gate-3.log' 2>&1; result=$?; echo EXIT=$result` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-83.r1/logs/gate-4.log' 2>&1; result=$?; echo EXIT=$result` | 0 |
+| Files committed | `src/core/ControllerConnection.cpp`, `tests/src/gui/MidiControllerMenuTest.cpp`, `tests/upstream-modifications.txt`, `docs/qwen-fixes-2026-10/cluster-new-p9-83.md` | Commit `27818be9d` |
+
 The fff grep tool was not exposed in this environment (`command -v fff` returned no path), so I searched the required log terms with `rg` in the specified log folder.
 
 ## Commands and exit codes
