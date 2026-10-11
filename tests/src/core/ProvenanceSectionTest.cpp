@@ -541,6 +541,25 @@ private slots:
 		QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
 	}
 
+	//! THE SEQUENCE SPELLING: writeTo uses QString::number, so a leading zero
+	//! is not a spelling this writer could have emitted. Refuse it instead of
+	//! claiming it and normalising it on the next save.
+	void aNoncanonicalSequenceSpellingIsRefusedRatherThanNormalised()
+	{
+		QDomDocument document;
+		document.setContent(QStringLiteral(
+			"<z:provenance v=\"1\" seq=\"1\">"
+			"<z:change seq=\"01\" at=\"2026-01-01T00:00:00Z\""
+			" actor=\"human\" instance=\"0123abcd-456\" command=\"track.add\"/>"
+			"</z:provenance>"));
+		const int heldBefore = heldChanges().size();
+		const quint64 lastBefore = provenance::Section::instance().lastSeq();
+		QVERIFY2(!provenance::Section::instance().load(document.documentElement()),
+			"a sequence spelling the writer never emits must be refused, not normalized");
+		QCOMPARE(heldChanges().size(), heldBefore);
+		QCOMPARE(provenance::Section::instance().lastSeq(), lastBefore);
+	}
+
 	//! THE ORDER: entries this writer produced are strictly ascending in seq
 	//! (it assigns m_nextSeq++ and appends), and the section's own `seq` is
 	//! the highest of them (writeTo sets it to lastSeq()). A section whose
