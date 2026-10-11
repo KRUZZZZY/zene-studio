@@ -16,6 +16,15 @@ inherited production change is recorded in `tests/upstream-modifications.txt:700
 Build commands ran from the worktree root. CTest commands ran from `build/tests`. Build and test
 output is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-359.r1/logs`.
 
+| Evidence | Exact command and result |
+| --- | --- |
+| RED on original code | `ctest -R '^AudioBusHandleTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-359.r1/logs/test-1.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` (from `build/tests`) — EXIT=8. |
+| GREEN after fix | `ctest -R '^AudioBusHandleTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-359.r1/logs/test-2.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` (from `build/tests`) — EXIT=0. |
+| Affected family | `ctest -R '^(AudioBusHandleTest|SampleClipWindowTest|MixerConcurrencyTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-359.r1/logs/test-5.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` (from `build/tests`) — EXIT=0; 3/3 CTest tests passed. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-359.r1/logs/gate-3.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-359.r1/logs/gate-4.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0. |
+| Explicit committed files | `src/core/PlayHandle.cpp`<br>`tests/src/core/AudioBusHandleTest.cpp`<br>`tests/fork-sources.txt`<br>`tests/upstream-modifications.txt`<br>`docs/qwen-fixes-2026-10/cluster-new-p9-359.md` |
+
 ### RED on the original constructor
 
 - `cmake --build build --target zene AudioBusHandleTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-359.r1/logs/build-1.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0.
