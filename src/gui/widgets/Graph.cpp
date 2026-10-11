@@ -187,7 +187,7 @@ void Graph::drawLineAt( int _x, int _y, int _lastx )
 {
 	float minVal = model()->minValue();
 	float maxVal = model()->maxValue();
-	if ( width() <= 4 )
+	if ( width() <= 4 || height() <= 5 )
 	{
 		return;
 	}
@@ -253,7 +253,7 @@ void Graph::changeSampleAt( int _x, int _y )
 	float minVal = model()->minValue();
 	float maxVal = model()->maxValue();
 
-	if ( width() <= 4 )
+	if ( width() <= 4 || height() <= 5 )
 	{
 		return;
 	}
