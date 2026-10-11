@@ -643,7 +643,7 @@ public:
 					out += bp;
 
 					// second formant
-					in = _in0 + m_vfbp[0][_chnl] * m_vfq;
+					in = _in0 + m_vfbp[1][_chnl] * m_vfq;
 					in = std::clamp(in, -1.0f, 1.0f);
 
 					hp = m_vfc[1] * ( m_vfhp[1][_chnl] + in - m_vflast[1][_chnl] );

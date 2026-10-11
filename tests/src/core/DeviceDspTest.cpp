@@ -47,6 +47,7 @@
 #include "AudioBus.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "BasicFilters.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
@@ -202,6 +203,18 @@ private slots:
 	void init()
 	{
 		for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { chainOf(i).clear(); }
+	}
+
+	//! The second formant's first stage feeds back its own band-pass history.
+	void formantSecondStageUsesItsOwnHistory()
+	{
+		BasicFilters<1> filter{48000};
+		filter.setFilterType(BasicFilters<1>::FilterType::Formantfilter);
+		filter.calcFilterCoeffs(500.0f, 8.0f);
+		filter.update(0.5f, 0);
+		filter.update(0.0f, 0);
+		const float output = filter.update(0.25f, 0);
+		QVERIFY2(std::abs(output - 0.02071115f) < 1.0e-5f, qPrintable(QString::number(output, 'g', 9)));
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.
