@@ -41,6 +41,15 @@ int sp_dcblock_init(sp_data *sp, sp_dcblock *p, int oversampling )
     return SP_OK;
 }
 
+int sp_dcblock_create_and_init_pair(sp_data *sp, sp_dcblock **p, int oversampling)
+{
+    sp_dcblock_create(&p[0]);
+    sp_dcblock_create(&p[1]);
+    sp_dcblock_init(sp, p[0], oversampling);
+    sp_dcblock_init(sp, p[1], oversampling);
+    return SP_OK;
+}
+
 int sp_dcblock_compute(sp_data *sp, sp_dcblock *p, SPFLOAT *in, SPFLOAT *out)
 {
     SPFLOAT gain = p->gain;

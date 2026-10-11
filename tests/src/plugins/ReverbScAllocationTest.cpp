@@ -19,7 +19,10 @@
  */
 
 #include <cstddef>
+#include <cstdlib>
 
+#include <QCoreApplication>
+#include <QProcess>
 #include <QtTest>
 
 extern "C"
@@ -28,9 +31,33 @@ extern "C"
 #include "dcblock.h"
 }
 
-extern "C" void* sp_dcblock_test_malloc(std::size_t)
+namespace
 {
-	return nullptr;
+	int g_failOnAllocation = 0;
+	int g_allocationCount = 0;
+
+	int runAllocationFailureChild(int failOnAllocation)
+	{
+		g_failOnAllocation = failOnAllocation;
+		sp_dcblock* blocks[2] = {nullptr, nullptr};
+		const int status = sp_dcblock_create_and_init_pair(nullptr, blocks, 1);
+
+		if (status != SP_NOT_OK || blocks[0] != nullptr || blocks[1] != nullptr)
+		{
+			return 1;
+		}
+		return 0;
+	}
+}
+
+extern "C" void* sp_dcblock_test_malloc(std::size_t size)
+{
+	++g_allocationCount;
+	if (g_allocationCount == g_failOnAllocation)
+	{
+		return nullptr;
+	}
+	return std::malloc(size);
 }
 
 class ReverbScAllocationTest : public QObject
@@ -39,15 +66,42 @@ class ReverbScAllocationTest : public QObject
 
 private slots:
 	void createReportsAllocationFailure();
+	void pairAllocationFailureDoesNotReachInit();
 };
 
 void ReverbScAllocationTest::createReportsAllocationFailure()
 {
+	g_failOnAllocation = 1;
+	g_allocationCount = 0;
 	sp_dcblock* block = nullptr;
 	QCOMPARE(sp_dcblock_create(&block), SP_NOT_OK);
 	QVERIFY(block == nullptr);
 }
 
-QTEST_GUILESS_MAIN(ReverbScAllocationTest)
+void ReverbScAllocationTest::pairAllocationFailureDoesNotReachInit()
+{
+	for (const int failOnAllocation : {1, 2})
+	{
+		QProcess child;
+		child.start(QCoreApplication::applicationFilePath(),
+			{"--dcblock-allocation-failure-child", QString::number(failOnAllocation)});
+		QVERIFY2(child.waitForStarted(), "failed to start allocation-failure child");
+		QVERIFY2(child.waitForFinished(), "allocation-failure child did not finish");
+		QVERIFY2(child.exitStatus() == QProcess::NormalExit,
+			"allocation failure crashed the DC blocker setup caller");
+		QCOMPARE(child.exitCode(), 0);
+	}
+}
+
+int main(int argc, char** argv)
+{
+	QCoreApplication app(argc, argv);
+	if (argc == 3 && QByteArray(argv[1]) == "--dcblock-allocation-failure-child")
+	{
+		return runAllocationFailureChild(std::atoi(argv[2]));
+	}
+	ReverbScAllocationTest test;
+	return QTest::qExec(&test, argc, argv);
+}
 
 #include "ReverbScAllocationTest.moc"
