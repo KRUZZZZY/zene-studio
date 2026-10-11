@@ -23,11 +23,11 @@
  *
  */
 
-/*! No router and no engine: a CollabHost and CollabClient talk over loopback with the real TLS stack, the
- *  snapshot provider and sinks stand in for the project, and the request handler stands in for the registry.
- *  What is proved: the right key joins and receives the snapshot first; a wrong key is refused before any
- *  application byte; a plaintext client reaches nothing; the host's broadcast and a peer's request both make
- *  the round trip; a role is bound to its key. */
+/*! No router: CollabHost and CollabClient talk over loopback with the real TLS stack, the snapshot provider and
+ *  sinks stand in for the project, and the request handler stands in for the registry. One engine-backed case
+ *  also proves the joined session retries an untracked edit seen inside its resync throttle. Other cases prove
+ *  the right key joins and receives the snapshot first; a wrong key is refused before application bytes; plaintext
+ *  reaches nothing; the host's broadcast and a peer's request round-trip; and a role is bound to its key. */
 
 #include "lmmsconfig.h"
 
@@ -35,14 +35,22 @@
 
 #ifdef ZENE_HAVE_COLLAB
 
+#include <QFile>
 #include <QJsonDocument>
+#include <QTemporaryDir>
 #include <QTcpSocket>
 
 #include "CollabClient.h"
 #include "CollabHost.h"
 #include "CollabInvite.h"
 #include "CollabLink.h"
+#include "CollabSession.h"
+#include "ControlRegistry.h"
+#include "Engine.h"
+#include "ProjectJournal.h"
+#include "Song.h"
 
+using namespace lmms;
 using namespace lmms::collab;
 
 namespace
@@ -67,6 +75,8 @@ private:
 	std::unique_ptr<CollabHost> m_host;
 	QByteArray m_editorKey;
 	Received m_got;
+	collab::CollabSession* m_session = nullptr;
+	bool m_engineStarted = false;
 
 	Invite inviteFor(CollabRole role, const QByteArray& key) const
 	{
@@ -113,7 +123,18 @@ private slots:
 		QVERIFY2(m_host->start(QHostAddress(QHostAddress::LocalHost), 0, &error), qPrintable(error));
 	}
 
-	void cleanup() { m_host.reset(); }
+	void cleanup()
+	{
+		if (m_session != nullptr && m_session->mode() == collab::CollabSession::Mode::Joined) { m_session->leave(); }
+		m_session = nullptr;
+		if (m_engineStarted)
+		{
+			ControlRegistry::setReady(false);
+			Engine::destroy();
+			m_engineStarted = false;
+		}
+		m_host.reset();
+	}
 
 	//! The right key: the handshake completes, the peer is listed, and the FIRST thing it receives is the project.
 	void rightKeyJoinsAndGetsTheSnapshotFirst()
@@ -225,6 +246,55 @@ private slots:
 		QTRY_COMPARE(m_got.snapshots.size(), 4);
 		QCOMPARE(m_got.snapshots.at(2), changed);
 		QCOMPARE(m_got.snapshots.at(3), changed);
+	}
+
+	//! An untracked edit seen during the peer's resync throttle is retried after the interval.
+	void throttledUntrackedEditIsRetried()
+	{
+		Engine::init(true);
+		m_engineStarted = true;
+		ControlRegistry::setReady(true);
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		Song* song = Engine::getSong();
+		const int hostTempo = song->tempoModel().value();
+		const int resyncTempo = hostTempo + 11;
+		const int localTempo = hostTempo + 23;
+		const QString initialPath = directory.filePath(QStringLiteral("host.mmpz"));
+		const QString resyncPath = directory.filePath(QStringLiteral("resync.mmpz"));
+		song->tempoModel().setValue(hostTempo);
+		QVERIFY(song->saveProjectFile(initialPath));
+		song->tempoModel().setValue(resyncTempo);
+		QVERIFY(song->saveProjectFile(resyncPath));
+		song->tempoModel().setValue(localTempo);
+		Engine::projectJournal()->clearJournal();
+		QFile initialFile(initialPath);
+		QVERIFY(initialFile.open(QIODevice::ReadOnly));
+		const QByteArray initialSnapshot = initialFile.readAll();
+		QFile resyncFile(resyncPath);
+		QVERIFY(resyncFile.open(QIODevice::ReadOnly));
+		const QByteArray resyncSnapshot = resyncFile.readAll();
+		int snapshotsSent = 0;
+		m_host->setSnapshotProvider([&](QString*) {
+			return snapshotsSent++ == 0 ? initialSnapshot : resyncSnapshot;
+		});
+
+		m_session = collab::CollabSession::instance();
+		const ControlResult joined = m_session->join(inviteFor(CollabRole::Editor, m_editorKey).encode(), QStringLiteral("Sync test"));
+		QVERIFY2(joined.ok, qPrintable(joined.errorMessage));
+		QTRY_COMPARE_WITH_TIMEOUT(snapshotsSent, 1, 10000);
+		QTRY_COMPARE_WITH_TIMEOUT(song->getTempo(), hostTempo, 10000);
+		QTest::qWait(1600);  // The snapshot grace period has elapsed.
+
+		Engine::projectJournal()->addJournalAction([] {}, [] {});
+		QTRY_COMPARE_WITH_TIMEOUT(snapshotsSent, 2, 5000);
+		QTRY_COMPARE_WITH_TIMEOUT(song->getTempo(), resyncTempo, 5000);  // The first resync snapshot arrived.
+		QTest::qWait(1600);  // Expire snapshot grace while staying inside the three-second request interval.
+
+		Engine::projectJournal()->addJournalAction([] {}, [] {});
+		QTest::qWait(350);  // Let the journal watch observe it while the request is throttled.
+		QCOMPARE(snapshotsSent, 2);
+		QTRY_COMPARE_WITH_TIMEOUT(snapshotsSent, 3, 2500);
 	}
 
 	//! A host that cannot write its project turns the joiner away with the reason instead of a broken copy.

@@ -144,6 +144,7 @@ void CollabSession::resetToIdle()
 	m_client.reset();
 	m_dispatcher.reset();
 	m_mode = Mode::Idle;
+	m_autoResyncPending = false;
 }
 
 ControlResult CollabSession::host(quint16 port, bool mapPort, const QString& name)
