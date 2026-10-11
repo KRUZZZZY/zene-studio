@@ -55,6 +55,7 @@
 
 #include <QtTest>
 
+#include <QFile>
 #include <QThread>
 
 #include <memory>
@@ -64,6 +65,7 @@
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
 #include "Engine.h"
+#include "AudioPulseAudio.h"
 
 using namespace lmms;
 
@@ -108,6 +110,30 @@ private slots:
 	{
 		// The defect's original site. It must not abort here any more.
 		Engine::destroy();
+	}
+
+	//! When PulseAudio cannot allocate a stream, the READY callback must report
+	//! the failure before it attempts to register callbacks on the null stream.
+	void pulseStreamCreationFailureIsHandledBeforeCallbacks()
+	{
+		QFile sourceFile(QStringLiteral(LMMS_TEST_DATA_DIR "/../../src/core/audio/AudioPulseAudio.cpp"));
+		QVERIFY2(sourceFile.open(QIODevice::ReadOnly | QIODevice::Text),
+			"Could not read AudioPulseAudio.cpp");
+		const auto source = QString::fromUtf8(sourceFile.readAll());
+		const auto streamCreation = source.indexOf(QStringLiteral("m_s = pa_stream_new"));
+		const auto stateCallback = source.indexOf(QStringLiteral("pa_stream_set_state_callback"), streamCreation);
+		QVERIFY(streamCreation >= 0);
+		QVERIFY(stateCallback > streamCreation);
+
+		const auto nullCheck = source.indexOf(QStringLiteral("if ( _this->m_s == nullptr )"), streamCreation);
+		const auto failureSignal = source.indexOf(QStringLiteral("signalConnected( false )"), nullCheck);
+		const auto stopSwitchCase = source.indexOf(QStringLiteral("break;"), failureSignal);
+		QVERIFY2(nullCheck > streamCreation && nullCheck < stateCallback,
+			"the stream result must be checked before callback registration");
+		QVERIFY2(failureSignal > nullCheck && failureSignal < stateCallback,
+			"a null stream must report connection failure before callback registration");
+		QVERIFY2(stopSwitchCase > failureSignal && stopSwitchCase < stateCallback,
+			"the READY handler must stop after reporting stream creation failure");
 	}
 
 	//! A worker parked in the wait condition must end its loop when it is asked to
