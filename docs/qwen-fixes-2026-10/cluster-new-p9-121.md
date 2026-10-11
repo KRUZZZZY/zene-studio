@@ -25,8 +25,10 @@ The affected family is `EqCurveTest`: **1 test executed** (`1/1`). The RED asser
 | Restore production fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-121.r1/logs/fix.patch; echo EXIT=$?` | 0 |
 | Rebuild with fix restored | `cmake --build build --target zene EqCurveTest -- -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-121.r1/logs/build-proof-green-1.log 2>&1; echo EXIT=$?` | 0 |
 | Removal proof GREEN | `ctest -R '^EqCurveTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-121.r1/logs/test-proof-green-1.log 2>&1; echo EXIT=$?` | 0 |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-121.r1/logs/complexity-gate-3.log 2>&1; echo EXIT=$?` | 0 |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-121.r1/logs/file-length-gate-3.log 2>&1; echo EXIT=$?` | 0 |
+| Affected-family test count | `ctest -R '^EqCurveTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-121.r1/logs/test-proof-green-1.log 2>&1; echo EXIT=$?` | 1/1 |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-121.r1/logs/complexity-gate-4.log 2>&1; echo EXIT=$?` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-121.r1/logs/file-length-gate-4.log 2>&1; echo EXIT=$?` | 0 |
+| Explicit files committed | `1992c1d78` | `docs/qwen-fixes-2026-10/cluster-new-p9-121.md`; `plugins/Eq/EqCurve.cpp`; `tests/CMakeLists.txt`; `tests/all-sources.txt`; `tests/fork-sources.txt`; `tests/src/gui/EqCurveTest.cpp`; `tests/upstream-modifications.txt` |
 
 The first build attempt returned 2 because the generated Makefile had not exposed the new target yet; the immediate retry regenerated the target and completed. The original-code and removal-proof test failures both reached the regression assertion after a successful rebuild.
 
