@@ -112,12 +112,18 @@ Resolution resolveAssetPath(const QString& projectDir, const QString& raw)
 	// PathUtil owns every other prefix (factorysample:, usersample:, ...) and
 	// the legacy no-prefix form; it returns the input unchanged when none of
 	// its bases holds the file.
+	const PathUtil::Base base = PathUtil::baseLookup(forward);
 	const QString absolute = PathUtil::toAbsolute(forward);
 	if (QFileInfo(absolute).isAbsolute())
 	{
 		out.path = QDir::cleanPath(absolute);
 		out.via = QStringLiteral("absolute");
 		out.resolved = true;
+		return out;
+	}
+	if (base != PathUtil::Base::Absolute)
+	{
+		out.via = QStringLiteral("unresolved-prefix");
 		return out;
 	}
 	out.path = QDir::cleanPath(projectDir + QLatin1Char('/') + absolute);

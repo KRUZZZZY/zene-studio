@@ -60,6 +60,7 @@
 #include <QTemporaryDir>
 
 #include "ControlProjectAssets.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
@@ -283,6 +284,36 @@ private slots:
 			const QString path = ref.value(QStringLiteral("path")).toString();
 			QCOMPARE(ref.value(QStringLiteral("sha256")).toString(), sha256Of(path));
 		}
+	}
+	//! A recognized sample prefix cannot fall back to the project directory when
+	//! its configured base does not produce an absolute path.
+	void unresolvedSamplePrefixesStayUnresolved()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QString document = QString::fromUtf8(fixtureDocument(dir.path()));
+		document.replace(QDir::fromNativeSeparators(dir.path()) + QStringLiteral("/clip.wav"),
+			QStringLiteral("usersample:missing.wav"));
+		const QString project = dir.filePath(QStringLiteral("prefixed.mmp"));
+		QVERIFY(writeBytes(project, document.toUtf8()));
+
+		ConfigManager* config = ConfigManager::inst();
+		const QString workingDir = config->workingDir();
+		config->setWorkingDir(QStringLiteral("relative-sample-base"));
+		const ControlResult scanned = run(QStringLiteral("project.missing_assets"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		config->setWorkingDir(workingDir);
+
+		QVERIFY2(scanned.ok, qPrintable(scanned.errorMessage));
+		QCOMPARE(scanned.result.value(QStringLiteral("unresolved_count")).toInt(), 1);
+		const QJsonObject unresolved = referenceWithRaw(
+			scanned.result.value(QStringLiteral("references")).toArray(),
+			QStringLiteral("usersample:missing.wav"));
+		QVERIFY(!unresolved.isEmpty());
+		QCOMPARE(unresolved.value(QStringLiteral("resolved")).toBool(), false);
+		QCOMPARE(unresolved.value(QStringLiteral("resolved_via")).toString(),
+			QStringLiteral("unresolved-prefix"));
+		QCOMPARE(unresolved.value(QStringLiteral("path")).toString(), QString());
 	}
 	//! The positive half: the four files that are gone are named by the value
 	//! the project STORES (so the caller can pass it straight back to relink),
