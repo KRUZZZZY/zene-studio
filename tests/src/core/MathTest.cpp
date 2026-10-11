@@ -47,6 +47,16 @@ private slots:
 		QCOMPARE(numDigitsAsInt(900000000), 9);
 		QCOMPARE(numDigitsAsInt(-900000000), 10);
 	}
+
+	void FastRandIncReversedUnsignedBoundsTest()
+	{
+		using namespace lmms;
+		for (int i = 0; i < 32; ++i)
+		{
+			const auto result = fastRandInc(10u, 3u);
+			QVERIFY(result >= 3u && result <= 10u);
+		}
+	}
 };
 
 QTEST_GUILESS_MAIN(MathTest)

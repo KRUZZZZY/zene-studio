@@ -181,7 +181,14 @@ inline T fastRandInc(T upper) noexcept
 //! fastRand(a, b) behaves identically to fastRand(b, a).
 //! @returns A pseudorandom integer greater than or equal to @p from and less than or equal to @p to.
 template<typename T> requires std::is_arithmetic_v<T>
-inline auto fastRandInc(T from, T to) noexcept { return from + fastRandInc(to - from); }
+inline auto fastRandInc(T from, T to) noexcept
+{
+	if (to < from)
+	{
+		std::swap(from, to);
+	}
+	return from + fastRandInc(to - from);
+}
 
 
 //! @brief Returns true one in @p chance times at random.
