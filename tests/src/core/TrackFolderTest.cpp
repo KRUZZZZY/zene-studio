@@ -342,6 +342,50 @@ private slots:
 		removeAll(name);
 	}
 
+	//! A song checkpoint restores its tracks through TrackContainer::loadSettings.
+	//! Its external visibility-set definitions and active name are still project
+	//! state and must survive that track-only restore.
+	void visibilitySetsSurviveTrackContainerJournalRestore()
+	{
+		const QString name = QStringLiteral("f-undo-sets");
+		Track* first = addTrack(Track::Type::Instrument, name);
+		Track* second = addTrack(Track::Type::Instrument, name);
+		Song* song = Engine::getSong();
+		const int firstId = first->id();
+		const int secondId = second->id();
+		const std::vector<int> members{firstId};
+		const QString setName = QStringLiteral("Undo focus");
+		QVERIFY(song->saveVisibilitySet(setName, members));
+		int shown = 0;
+		int hidden = 0;
+		QVERIFY(song->applyVisibilitySet(setName, &shown, &hidden));
+		QCOMPARE(shown, 1);
+		QCOMPARE(hidden, static_cast<int>(song->tracks().size()) - 1);
+
+		const int originalTempo = song->getTempo();
+		const int changedTempo = originalTempo == 100 ? 101 : 100;
+		const ControlResult changed = ControlRegistry::instance()->invoke(
+			QStringLiteral("transport.set_tempo"),
+			QJsonObject{{QStringLiteral("bpm"), changedTempo}});
+		QVERIFY2(changed.ok, qPrintable(QStringLiteral("transport.set_tempo failed: ") + changed.errorMessage));
+		const ControlResult undone = ControlRegistry::instance()->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(QStringLiteral("control.undo failed: ") + undone.errorMessage));
+		QCOMPARE(song->getTempo(), originalTempo);
+
+		const TrackContainer::VisibilitySet* restored = song->findVisibilitySet(setName);
+		QVERIFY2(restored != nullptr, "journal restore erased the named visibility set");
+		QCOMPARE(static_cast<int>(restored->trackIds.size()), 1);
+		QCOMPARE(restored->trackIds.front(), firstId);
+		QCOMPARE(song->activeVisibilitySet(), setName);
+		QVERIFY(song->findTrackById(firstId) != nullptr);
+		QVERIFY(song->findTrackById(secondId) != nullptr);
+		QVERIFY(song->findTrackById(firstId)->isVisible());
+		QVERIFY(!song->findTrackById(secondId)->isVisible());
+
+		song->removeVisibilitySet(setName);
+		removeAll(name);
+	}
+
 	//! (g) A project that predates the feature loads with NO folder state and
 	//! re-saves without growing any: no folder attribute, no visible attribute,
 	//! no <trackfolder> and no <visibilitysets> element.
