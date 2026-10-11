@@ -29,6 +29,8 @@
 
 #include <QtAlgorithms>
 #include <algorithm>
+#include <cstdlib>
+#include <memory>
 
 #include "ConfigManager.h"
 #include "MidiPort.h"
@@ -566,16 +568,17 @@ void MidiApple::NotifyCallback( const MIDINotification *message, void *refCon )
 		{
 			MIDIObjectAddRemoveNotification* msg = (MIDIObjectAddRemoveNotification*)message ;
 			MIDIEndpointRef endpoint_ref = (MIDIEndpointRef)msg->child ;
-			char * fullName = midiApple->getFullName(endpoint_ref);
+			std::unique_ptr<char, decltype(&std::free)> fullName{
+				midiApple->getFullName(endpoint_ref), &std::free};
 
 			if (msg->childType == kMIDIObjectType_Source) {
-				qDebug("kMIDIMsgObjectAdded source '%s'",fullName);
+				qDebug("kMIDIMsgObjectAdded source '%s'",fullName.get());
 				// Here your code to save the new source ref
 				// and update your internal "clients" (eg
 				// update a popup menu, a list, ...)
 			}
 			if (msg->childType == kMIDIObjectType_Destination) {
-				qDebug("kMIDIMsgObjectAdded destination '%s'",fullName);
+				qDebug("kMIDIMsgObjectAdded destination '%s'",fullName.get());
 				// Here your code to save the new destination ref
 				// and update your internal "clients"
 			}
@@ -587,17 +590,18 @@ void MidiApple::NotifyCallback( const MIDINotification *message, void *refCon )
 			MIDIObjectAddRemoveNotification*
 			msg = (MIDIObjectAddRemoveNotification*)message ;
 			MIDIEndpointRef endpoint_ref = (MIDIEndpointRef)msg->child ;
-			char * fullName = midiApple->getFullName(endpoint_ref);
+			std::unique_ptr<char, decltype(&std::free)> fullName{
+				midiApple->getFullName(endpoint_ref), &std::free};
 			
 			if (msg->childType == kMIDIObjectType_Source) {
 				// Here your code to remove the source ref
 				// and update your internal "clients"
-				qDebug("kMIDIMsgObjectRemoved source '%s'",fullName);
+				qDebug("kMIDIMsgObjectRemoved source '%s'",fullName.get());
 			}
 			if (msg->childType == kMIDIObjectType_Destination) {
 				// Here your code to remove the destination ref
 				// and update your internal "clients"
-				qDebug("kMIDIMsgObjectRemoved destination '%s'",fullName);			}
+				qDebug("kMIDIMsgObjectRemoved destination '%s'",fullName.get());			}
 			midiApple->queueDeviceListUpdate();  // E26: a device that went away leaves the lists
 			break;
 		}
