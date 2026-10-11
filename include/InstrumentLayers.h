@@ -42,6 +42,7 @@
 
 class QDomDocument;
 class QDomElement;
+class InstrumentLayersCommandsTest;
 
 namespace lmms
 {
@@ -137,6 +138,8 @@ public:
 	void forwardInEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset);
 
 private:
+	friend class ::InstrumentLayersCommandsTest;
+
 	//! One bit per layer index (bit k = layer k) a note of @a key at @a volume plays on.
 	auto layerMask(int key, int volume) const -> std::uint32_t;
 	auto ensureContainer() -> TrackContainer*;
