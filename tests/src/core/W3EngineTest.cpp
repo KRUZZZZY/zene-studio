@@ -37,7 +37,9 @@
 
 #include "AutomationClip.h"
 #include "AutomationLatency.h"
+#include "AutomationRamp.h"
 #include "AutomationTrack.h"
+#include "AutomatableModel.h"
 #include "ClipEdits.h"
 #include "ClipPreFades.h"
 #include "ControlRegistry.h"
@@ -190,6 +192,39 @@ private slots:
 		delete latent;
 		delete after;  // and the probe with it
 		channel(1)->setInputLatencyFrames(0);
+	}
+
+	void discreteAutomationCompensationKeepsItsFrameOffset()
+	{
+		Song* song = Engine::getSong();
+		auto* track = Track::create(Track::Type::Automation, song);
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		auto* model = new FloatModel(0.f, 0.f, 1.f, 0.001f);
+		clip->addObject(model);
+		clip->putValue(TimePos(0), 0.f, false);
+		clip->putValue(TimePos(8), 1.f, false);
+		clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
+
+		constexpr int latencyFrames = 64;
+		AutomationLatency::instance().setEnabled(true);
+		clip->setLatencyFrames(latencyFrames);
+		const double framesPerTick = Engine::framesPerTick();
+		const int frameOffset = static_cast<int>(std::floor(framesPerTick)) - latencyFrames;
+		const int expectedStepFrame = static_cast<int>(std::ceil(framesPerTick - frameOffset + latencyFrames));
+		AutomatableModel::incrementPeriodCounter();
+		song->buildAutomationRamps(song->tracks(), TimePos(7), 256, frameOffset);
+
+		const AutomationRamp* ramp = model->automationRamp();
+		const bool hasRamp = ramp != nullptr;
+		const float before = hasRamp ? ramp->valueAt(expectedStepFrame - 1) : -1.f;
+		const float atStep = hasRamp ? ramp->valueAt(expectedStepFrame) : -1.f;
+		AutomationLatency::instance().setEnabled(false);
+		delete track;
+		delete model;
+
+		QVERIFY2(hasRamp, "a compensated Discrete clip did not publish its frame-shifted ramp");
+		QCOMPARE(before, 0.f);
+		QCOMPARE(atStep, 1.f);
 	}
 
 	void postFaderInsertsBakeTheFaderOnlyWhenTheyHoldDevices()

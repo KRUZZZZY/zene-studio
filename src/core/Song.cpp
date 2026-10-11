@@ -413,8 +413,8 @@ void Song::processNextBuffer()
 	// the whole block's curve has to be in the parameters before the first
 	// sample of it is rendered - that is the difference between a per-sample
 	// ramp and the per-tick writes the loop below makes. It walks only the
-	// clips that opted in (automation.ramp_set) and returns at the first type
-	// test otherwise, so an ordinary project's block is untouched.
+	// clips that opted in (automation.ramp_set), plus default Discrete clips
+	// whose latency compensation needs the frame offset that per-tick reads lose.
 	buildAutomationRamps(trackList, getPlayPos(), framesPerPeriod,
 		static_cast<int>(timeline.frameOffset()));
 
@@ -1247,12 +1247,15 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 		for( Clip* clip : track->getClips() )
 		{
 			auto* automationClip = dynamic_cast<AutomationClip*>( clip );
+			const bool latencyNeedsRamp = automationClip != nullptr
+				&& automationClip->rampSetting() == AutomationClip::RampSetting::Default
+				&& AutomationLatency::instance().enabled() && automationClip->latencyFrames() > 0;
 			// 0.5.0 MX-160: the block as the latent audio sees it - the same start unless the project
 			// turned latency-compensated automation on (moved before the song's start, it reads nothing).
 			TimePos readStart = blockStart;
 			int readOffsetInTick = frameOffsetInTick;
 			AutomationLatency::instance().shiftBlock( automationClip, framesPerTick, &readStart, &readOffsetInTick );
-			if( automationClip == nullptr || !automationClip->sampleAccurate()
+			if( automationClip == nullptr || (!automationClip->sampleAccurate() && !latencyNeedsRamp)
 				|| !automationClip->hasAutomation() || automationClip->isMuted()
 				|| automationClip->startPosition() > readStart )
 			{
