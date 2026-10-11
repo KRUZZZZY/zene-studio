@@ -18,6 +18,10 @@
 int sp_dcblock_create(sp_dcblock **p)
 {
     *p = malloc(sizeof(sp_dcblock));
+    if (*p == NULL)
+    {
+        return SP_NOT_OK;
+    }
     return SP_OK;
 }
 

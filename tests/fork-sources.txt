@@ -13,6 +13,7 @@
 # of the recipe lacked tests/mmpz-v2-container-refusal.py. One pathspec line naming the 23 was added to
 # BOTH copies and the entries re-emitted in the recipe's order. SAME 741-entry set: nothing entered or
 # left any scope.
+# 2026-10-11 (new-p9-115): add the ReverbSC allocation-failure regression source to both recipe copies.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -34,7 +35,8 @@
 #   tests/src/core/ScriptDawBindingTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- scripts/capabilities-dump.py \
 #     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py \
-#     tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp ; \
+#     tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp \
+#     tests/src/plugins/ReverbScAllocationTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
@@ -66,7 +68,8 @@
 #   tests/control_vendor_libs.py \
 #   tests/src/core/ScriptDawBindingTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- scripts/capabilities-dump.py \
-#     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py ; \
+#     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py \
+#     tests/src/plugins/ReverbScAllocationTest.cpp ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
@@ -2061,6 +2064,7 @@ tests/src/core/VideoTrackTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
+tests/src/plugins/ReverbScAllocationTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api boundary's
