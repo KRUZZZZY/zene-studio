@@ -45,9 +45,12 @@
  */
 
 #include <array>
+#include <cmath>
 #include <memory>
 #include <vector>
 
+#include <QCoreApplication>
+#include <QDir>
 #include <QDomDocument>
 #include <QDomElement>
 #include <QLibrary>
@@ -59,6 +62,7 @@
 #include "AudioEngine.h"
 #include "AudioPortsModel.h"
 #include "Effect.h"
+#include "EffectControls.h"
 #include "Engine.h"
 #include "Plugin.h"
 #include "SampleFrame.h"
@@ -119,6 +123,7 @@ private slots:
 	void saveStateRestoreStateRoundTripsAudioPorts();
 	void sleepingEffectSilencesSilentInputAndStaysAsleep();
 	void sleepingEffectWakesOnNoisyInputAndProcesses();
+	void eqActiveFilterKeepsOneFrameOutputFinite();
 	void sleepStatusPutsEffectToSleep();
 	void lockFailureReturnsTrueWithoutProcessing();
 	void bypassedEffectRunsDefaultBypassImpl();
@@ -134,7 +139,9 @@ private:
 	auto counts() const -> std::array<int, 3>;
 
 	QLibrary m_lib;
+	QLibrary m_eqLib;
 	MainFn m_main = nullptr;
+	MainFn m_eqMain = nullptr;
 	MainFn m_createPlain = nullptr;
 	SetIntFn m_setStatus = nullptr;
 	SetIntFn m_setLockFailures = nullptr;
@@ -179,6 +186,13 @@ void AudioPluginTest::initTestCase()
 	QVERIFY(m_setLockFailures != nullptr);
 	QVERIFY(m_resetCounts != nullptr);
 	QVERIFY(m_getCounts != nullptr);
+
+	m_eqLib.setFileName(QDir{QCoreApplication::applicationDirPath()}.filePath(
+		QStringLiteral("../plugins/eq")));
+	m_eqLib.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(m_eqLib.load(), qPrintable(m_eqLib.errorString()));
+	m_eqMain = reinterpret_cast<MainFn>(m_eqLib.resolve("lmms_plugin_main"));
+	QVERIFY(m_eqMain != nullptr);
 }
 
 auto AudioPluginTest::createEffect() const -> std::unique_ptr<Effect>
@@ -300,6 +314,30 @@ void AudioPluginTest::sleepingEffectWakesOnNoisyInputAndProcesses()
 	// are exact in binary floating point.
 	QCOMPARE(data[0].left(), 0.4f);
 	QCOMPARE(data[0].right(), -0.2f);
+}
+
+//! A one-frame EQ block has a defined progress value for active filters.
+void AudioPluginTest::eqActiveFilterKeepsOneFrameOutputFinite()
+{
+	const auto fx = std::unique_ptr<Effect>{static_cast<Effect*>(m_eqMain(nullptr, nullptr))};
+	QVERIFY(fx != nullptr);
+
+	QDomDocument settingsDocument;
+	QDomElement settings = settingsDocument.createElement(QStringLiteral("Eq"));
+	settings.setAttribute(QStringLiteral("HPactive"), QStringLiteral("1"));
+	fx->controls()->restoreState(settings);
+
+	std::array<SampleFrame, 1> data{SampleFrame{0.8f, -0.4f}};
+	SampleFrame* channel = data.data();
+	AudioBus bus{&channel, 1, 1};
+	QVERIFY(!bus.updateAll());
+	QVERIFY(fx->processAudioBuffer(bus));
+	QVERIFY(std::isfinite(data[0].left()));
+	QVERIFY(std::isfinite(data[0].right()));
+	QVERIFY(data[0].left() != 0.8f || data[0].right() != -0.4f);
+	// The audio bus clears any channel containing NaN, so invalid progress
+	// would turn both samples into silence before they reach this assertion.
+	QVERIFY(data[0].left() != 0.0f || data[0].right() != 0.0f);
 }
 
 //! ProcessStatus::Sleep must put the effect back to sleep.

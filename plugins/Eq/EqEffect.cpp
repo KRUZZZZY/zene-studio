@@ -52,6 +52,21 @@ Plugin::Descriptor PLUGIN_EXPORT eq_plugin_descriptor =
 
 }
 
+namespace
+{
+
+float frameProgress(const f_cnt_t frame, const f_cnt_t frames)
+{
+	if (frames <= 1)
+	{
+		return 1.0f;
+	}
+
+	return static_cast<float>(frame) / static_cast<float>(frames - 1);
+}
+
+} // namespace
+
 
 EqEffect::EqEffect( Model *parent, const Plugin::Descriptor::SubPluginFeatures::Key *key) :
 	AudioPlugin(&eq_plugin_descriptor, parent, key),
@@ -169,7 +184,7 @@ ProcessStatus EqEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 	for (f_cnt_t f = 0; f < inOut.frames(); ++f)
 	{
 		auto frame = inOut.frame(f);
-		periodProgress = static_cast<float>(f) / (inOut.frames() - 1);
+		periodProgress = frameProgress(f, inOut.frames());
 		//wet dry buffer
 		dryS[0] = frame[0];
 		dryS[1] = frame[1];
