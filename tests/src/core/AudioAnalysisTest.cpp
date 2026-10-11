@@ -29,6 +29,7 @@
 
 #include <QJsonArray>
 
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -36,6 +37,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "fft_helpers.h"
 #include "PitchTrack.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -89,6 +91,16 @@ private slots:
 	{
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	void unnormalizedFftWindowsKeepTheirPeakAmplitude()
+	{
+		std::array<float, 9> window{};
+		for (const FFTWindow type : {FFTWindow::BlackmanHarris, FFTWindow::Hamming, FFTWindow::Hanning})
+		{
+			QVERIFY(precomputeWindow(window.data(), window.size(), type, false) == 0);
+			QVERIFY(std::abs(window[4] - 1.0f) < 0.0001f);
+		}
 	}
 
 	void aHeldToneIsOneNote()
