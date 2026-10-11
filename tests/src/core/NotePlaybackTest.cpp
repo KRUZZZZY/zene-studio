@@ -34,6 +34,7 @@
 #include <QJsonArray>
 #include <QThread>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstdint>
 #include <barrier>
@@ -43,6 +44,11 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#if defined(Q_OS_LINUX)
+#include <pthread.h>
+#include <sched.h>
+#endif
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
@@ -93,6 +99,136 @@ bool sameSamples(const std::vector<SampleFrame>& lhs, const std::vector<SampleFr
 		}
 	}
 	return true;
+}
+
+int audioEngineRenderContextCount()
+{
+	int count = 0;
+	// AudioEngine owns one QThread child for each worker plus the caller-side context.
+	for (QObject* child : Engine::audioEngine()->children())
+	{
+		if (qobject_cast<QThread*>(child) != nullptr) { ++count; }
+	}
+	return count;
+}
+
+#if defined(Q_OS_LINUX)
+class SingleCpuAffinity
+{
+public:
+	~SingleCpuAffinity()
+	{
+		if (m_changed) { pthread_setaffinity_np(pthread_self(), sizeof(m_original), &m_original); }
+	}
+
+	bool restrictToOneCpu() noexcept
+	{
+		if (pthread_getaffinity_np(pthread_self(), sizeof(m_original), &m_original) != 0) { return false; }
+		for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu)
+		{
+			if (!CPU_ISSET(cpu, &m_original)) { continue; }
+			cpu_set_t singleCpu;
+			CPU_ZERO(&singleCpu);
+			CPU_SET(cpu, &singleCpu);
+			m_changed = pthread_setaffinity_np(pthread_self(), sizeof(singleCpu), &singleCpu) == 0;
+			return m_changed;
+		}
+		return false;
+	}
+
+private:
+	cpu_set_t m_original{};
+	bool m_changed = false;
+};
+#endif
+
+struct MonstroVoiceSet
+{
+	std::vector<NotePlayHandle*> handles;
+	std::vector<std::vector<SampleFrame>> outputs;
+};
+
+MonstroVoiceSet createMonstroVoiceSet(InstrumentTrack* track, std::size_t count, f_cnt_t frames)
+{
+	MonstroVoiceSet voices;
+	voices.handles.reserve(count);
+	voices.outputs.resize(count, std::vector<SampleFrame>(static_cast<std::size_t>(frames)));
+	for (std::size_t voice = 0; voice < count; ++voice)
+	{
+		const Note note(TimePos(384), TimePos(0), 36 + static_cast<int>(voice % 48));
+		voices.handles.push_back(NotePlayHandleManager::acquire(track, 0, frames, note));
+	}
+	return voices;
+}
+
+void primeMonstroVoiceSet(Instrument* instrument, MonstroVoiceSet& voices)
+{
+	for (std::size_t voice = 0; voice < voices.handles.size(); ++voice)
+	{
+		instrument->playNote(voices.handles[voice], voices.outputs[voice]);
+	}
+}
+
+void renderMonstroVoiceSetSerial(Instrument* instrument, MonstroVoiceSet& voices)
+{
+	for (int period = 0; period < 64; ++period)
+	{
+		for (std::size_t voice = 0; voice < voices.handles.size(); ++voice)
+		{
+			instrument->playNote(voices.handles[voice], voices.outputs[voice]);
+		}
+	}
+}
+
+void renderMonstroVoiceSetConcurrent(Instrument* instrument, MonstroVoiceSet& voices)
+{
+	std::barrier startVoices{static_cast<std::ptrdiff_t>(voices.handles.size())};
+	std::vector<std::thread> workers;
+	workers.reserve(voices.handles.size());
+	for (std::size_t voice = 0; voice < voices.handles.size(); ++voice)
+	{
+		workers.emplace_back([&, voice]
+		{
+			for (int period = 0; period < 64; ++period)
+			{
+				startVoices.arrive_and_wait();
+				instrument->playNote(voices.handles[voice], voices.outputs[voice]);
+			}
+		});
+	}
+	for (auto& worker : workers) { worker.join(); }
+}
+
+void releaseMonstroVoiceSet(MonstroVoiceSet& voices)
+{
+	for (NotePlayHandle* handle : voices.handles) { NotePlayHandleManager::release(handle); }
+}
+
+bool monstroVoiceSetsMatch(const MonstroVoiceSet& lhs, const MonstroVoiceSet& rhs)
+{
+	if (lhs.outputs.size() != rhs.outputs.size()) { return false; }
+	for (std::size_t voice = 0; voice < lhs.outputs.size(); ++voice)
+	{
+		if (!sameSamples(lhs.outputs[voice], rhs.outputs[voice])) { return false; }
+	}
+	return true;
+}
+
+std::pair<InstrumentTrack*, Instrument*> createParallelMonstroTrack(int renderContexts,
+	bool* affinityMismatchEstablished)
+{
+	*affinityMismatchEstablished = true;
+#if defined(Q_OS_LINUX)
+	SingleCpuAffinity affinity;
+	if (!affinity.restrictToOneCpu() || QThread::idealThreadCount() >= renderContexts)
+	{
+		*affinityMismatchEstablished = false;
+		return {nullptr, nullptr};
+	}
+#else
+	Q_UNUSED(renderContexts);
+#endif
+	return createModulatedMonstroTrack();
 }
 
 ControlResult run(const QString& id, const QJsonObject& args = {})
@@ -216,58 +352,28 @@ private slots:
 	void monstroConcurrentVoicesKeepIndependentModulation()
 	{
 		const auto [serialTrack, serialInstrument] = createModulatedMonstroTrack();
-		const auto [parallelTrack, parallelInstrument] = createModulatedMonstroTrack();
 		QVERIFY(serialTrack != nullptr && serialInstrument != nullptr);
+		const int renderContexts = audioEngineRenderContextCount();
+		if (renderContexts < 2) { QSKIP("the audio engine has no parallel render worker"); }
+
+		bool affinityMismatchEstablished = false;
+		const auto parallel = createParallelMonstroTrack(renderContexts, &affinityMismatchEstablished);
+		if (!affinityMismatchEstablished) { QSKIP("could not constrain Qt's ideal thread count for this test"); }
+		InstrumentTrack* parallelTrack = parallel.first;
+		Instrument* parallelInstrument = parallel.second;
 		QVERIFY(parallelTrack != nullptr && parallelInstrument != nullptr);
-		if (QThread::idealThreadCount() < 2) { QSKIP("the audio engine has no parallel render worker"); }
 
 		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
-		const Note firstNote(TimePos(384), TimePos(0), 60);
-		const Note secondNote(TimePos(384), TimePos(0), 67);
-		NotePlayHandle* serialFirst = NotePlayHandleManager::acquire(serialTrack, 0, frames, firstNote);
-		NotePlayHandle* serialSecond = NotePlayHandleManager::acquire(serialTrack, 0, frames, secondNote);
-		NotePlayHandle* parallelFirst = NotePlayHandleManager::acquire(parallelTrack, 0, frames, firstNote);
-		NotePlayHandle* parallelSecond = NotePlayHandleManager::acquire(parallelTrack, 0, frames, secondNote);
-		std::vector<SampleFrame> serialFirstOutput(static_cast<std::size_t>(frames));
-		std::vector<SampleFrame> serialSecondOutput(static_cast<std::size_t>(frames));
-		std::vector<SampleFrame> parallelFirstOutput(static_cast<std::size_t>(frames));
-		std::vector<SampleFrame> parallelSecondOutput(static_cast<std::size_t>(frames));
-
-		serialInstrument->playNote(serialFirst, serialFirstOutput);
-		parallelInstrument->playNote(parallelFirst, parallelFirstOutput);
-		for (int period = 0; period < 64; ++period)
-		{
-			serialInstrument->playNote(serialFirst, serialFirstOutput);
-			serialInstrument->playNote(serialSecond, serialSecondOutput);
-		}
-
-		std::barrier startVoices{2};
-		std::thread firstVoice([&]
-		{
-			for (int period = 0; period < 64; ++period)
-			{
-				startVoices.arrive_and_wait();
-				parallelInstrument->playNote(parallelFirst, parallelFirstOutput);
-			}
-		});
-		std::thread secondVoice([&]
-		{
-			for (int period = 0; period < 64; ++period)
-			{
-				startVoices.arrive_and_wait();
-				parallelInstrument->playNote(parallelSecond, parallelSecondOutput);
-			}
-		});
-		firstVoice.join();
-		secondVoice.join();
-
-		NotePlayHandleManager::release(serialFirst);
-		NotePlayHandleManager::release(serialSecond);
-		NotePlayHandleManager::release(parallelFirst);
-		NotePlayHandleManager::release(parallelSecond);
-
-		QVERIFY2(sameSamples(serialFirstOutput, parallelFirstOutput), "the first voice's modulation changed during concurrent rendering");
-		QVERIFY2(sameSamples(serialSecondOutput, parallelSecondOutput), "the second voice's modulation changed during concurrent rendering");
+		auto serialVoices = createMonstroVoiceSet(serialTrack, static_cast<std::size_t>(renderContexts), frames);
+		auto parallelVoices = createMonstroVoiceSet(parallelTrack, static_cast<std::size_t>(renderContexts), frames);
+		primeMonstroVoiceSet(serialInstrument, serialVoices);
+		primeMonstroVoiceSet(parallelInstrument, parallelVoices);
+		renderMonstroVoiceSetSerial(serialInstrument, serialVoices);
+		renderMonstroVoiceSetConcurrent(parallelInstrument, parallelVoices);
+		releaseMonstroVoiceSet(serialVoices);
+		releaseMonstroVoiceSet(parallelVoices);
+		QVERIFY2(monstroVoiceSetsMatch(serialVoices, parallelVoices),
+			"a voice was dropped or its modulation changed at engine render concurrency");
 	}
 
 	void repeatsSoundAsMoreHits()

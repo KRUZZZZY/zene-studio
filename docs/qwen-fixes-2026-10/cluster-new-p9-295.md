@@ -1,43 +1,43 @@
-# Cluster new-p9-295: Monstro note-start allocation and concurrent voices
+# Cluster new-p9-295: Monstro render-pool capacity
 
 **Verdict: FIXED**
 
 ## Finding and fix
 
-Luna's round-1 review is correct. The prior fix removed note-start allocations, then placed the four modulation vectors on `MonstroInstrument`. `MonstroSynth::renderOutput()` writes those vectors before using them, and the audio engine can run separate note handles for one instrument on multiple workers at once.
+Luna's round-2 review was valid. Monstro sized its modulation scratch pool with a fresh `QThread::idealThreadCount()` query at instrument construction. AudioEngine had already fixed its render concurrency from its own query, so a later or thread-specific count could leave the pool too small and make `playNoteImpl()` return without rendering at [Monstro.cpp:1075-1085](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-295/plugins/Monstro/Monstro.cpp:1075).
 
-The instrument now prepares a bounded pool with one scratch slot per audio render worker. Each slot owns its two LFO and two envelope vectors, sized to the period during instrument construction ([Monstro.cpp:1048](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-295/plugins/Monstro/Monstro.cpp:1048), [Monstro.h:420](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-295/plugins/Monstro/Monstro.h:420)). `playNoteImpl()` atomically leases a slot for the callback, passes its buffers to that voice, then releases it ([Monstro.cpp:1071](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-295/plugins/Monstro/Monstro.cpp:1071)). Separate concurrent voices therefore render into distinct scratch. The synth remains constructed in the note handle's aligned storage, and rendering performs no allocation or locking.
+AudioEngine now exposes its fixed render context count as `m_numWorkers + 1`, including the caller-side context ([AudioEngine.h:124-125](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-295/include/AudioEngine.h:124), [AudioEngine.cpp:154-156](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-295/src/core/AudioEngine.cpp:154)). Monstro allocates one scratch slot per such context during instrument construction ([Monstro.cpp:1046-1053](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-295/plugins/Monstro/Monstro.cpp:1046)). The pool therefore covers the engine's maximum render concurrency; scratch vectors remain preallocated and atomically leased on the render path.
 
-`NotePlaybackTest` retains `monstroNoteStartDoesNotAllocate()` ([NotePlaybackTest.cpp:192](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-295/tests/src/core/NotePlaybackTest.cpp:192)). The added `monstroConcurrentVoicesKeepIndependentModulation()` configures an audible LFO, advances one voice, and compares serial output with two synchronized concurrent voices across 64 periods ([NotePlaybackTest.cpp:216](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-295/tests/src/core/NotePlaybackTest.cpp:216)). It skips only when the engine reports fewer than two render workers; this run did not skip.
-
-The configured tree registers the reference Monstro comparison as `PluginPortsMigrationTest` (with a `monstro` instrument entry), rather than a CTest named `Monstro`. That comparison also passed.
+The regression counts AudioEngine's render-thread children, narrows the test thread's CPU affinity while constructing a second Monstro instrument, and drives one synchronized voice callback per engine context. It compares each voice with serial output across 64 periods ([NotePlaybackTest.cpp:104-113](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-295/tests/src/core/NotePlaybackTest.cpp:104), [NotePlaybackTest.cpp:352-377](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-295/tests/src/core/NotePlaybackTest.cpp:352)). The older sizing failed this assertion with product hunks reversed; the fixed sizing passes.
 
 ## Evidence
 
-Log directory: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs`.
+Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs`. Test commands ran from `build/tests`; build and gate commands ran from the worktree root.
 
-| Check | Exact command | Exit and result |
+| Check | Exact command | Exit/result |
 |---|---|---|
-| Initial test-source build attempt | `cmake --build build --target monstro NotePlaybackTest --parallel 12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/build-1.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` | 2 — test helper called protected `loadSettings()`; corrected to public `restoreState()`. |
-| Corrected test-source build | `cmake --build build --target monstro NotePlaybackTest --parallel 12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/build-2.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` | 0 |
-| Regression first run against round-1 product code | `ctest -R '^NotePlaybackTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/test-1.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` (cwd: `build/tests`) | 8 — concurrent modulation assertion failed. |
-| Product hunks reversed | `git diff -- plugins/Monstro/Monstro.cpp plugins/Monstro/Monstro.h > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/fix.patch; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` | 0 |
-| Reversed-product rebuild | `cmake --build build --target zene monstro NotePlaybackTest --parallel 12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/build-12.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` | 0 |
-| **RED proof** with product hunks reversed | `ctest -R '^NotePlaybackTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/test-11.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` (cwd: `build/tests`) | **8** — `monstroConcurrentVoicesKeepIndependentModulation()` failed at the serial/concurrent sample comparison. |
-| Product patch restored | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/fix.patch; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` | 0 |
-| Fixed-product rebuild | `cmake --build build --target zene monstro NotePlaybackTest --parallel 12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/build-13.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` | 0 |
-| **GREEN proof** with product patch restored | `ctest -R '^NotePlaybackTest$' --output-on-failure --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/test-12.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` (cwd: `build/tests`) | **0** — one CTest target; Qt totals: 12 passed, 0 failed, 0 skipped. This includes the retained zero-allocation regression. |
-| Reference behavior rebuild | `cmake --build build --target PluginPortsMigrationTest --parallel 12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/build-10.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` | 0 |
-| Reference behavior test | `ctest -R '^PluginPortsMigrationTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/test-13.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` (cwd: `build/tests`) | 0 — one CTest target passed using the rebuilt Monstro module. |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/gate-5.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` | 0 |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r2/logs/gate-6.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"; exit 0` | 0 |
+| Regression build before fix | `cmake --build build --target NotePlaybackTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/build-1.log 2>&1; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | 0 |
+| Initial RED on old pool sizing | `ctest -R '^NotePlaybackTest$' --output-on-failure --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/test-1-red.log 2>&1; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | 8 — 11 passed, 1 failed; concurrent voice output mismatch |
+| Final product-only reversal | `git diff -- include/AudioEngine.h src/core/AudioEngine.cpp plugins/Monstro/Monstro.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/fix.patch; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` and `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/fix.patch; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | 0 for both commands |
+| Reversed-product rebuild | `cmake --build build --target zene monstro NotePlaybackTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/build-6-final-reversed.log 2>&1; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | 0 |
+| **Final RED with only product hunks reversed** | `ctest -R '^NotePlaybackTest$' --output-on-failure --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/test-8-final-red.log 2>&1; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | **8** — 11 passed, 1 failed at the concurrent render-concurrency assertion |
+| Restore product patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/fix.patch; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | 0 |
+| Final restored rebuild | `cmake --build build --target zene monstro NotePlaybackTest PluginPortsMigrationTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/build-7-final-restored.log 2>&1; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | 0 |
+| **Final GREEN** | `ctest -R '^NotePlaybackTest$' --output-on-failure --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/test-9-final-green.log 2>&1; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | **0** — 12 passed, 0 failed, 0 skipped |
+| Plugin migration regression | `ctest -R '^PluginPortsMigrationTest$' --output-on-failure --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/test-10-final-pluginports.log 2>&1; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | 0 — 8 passed |
+| Initial complexity check during test refactor | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/gate-1-complexity.log 2>&1; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | 1 — regression method CCN 16; helpers were extracted and no limit or baseline changed |
+| Final complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/gate-5-complexity.log 2>&1; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | 0 |
+| Final file-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-295.r3/logs/gate-6-file-length.log 2>&1; status_code=$?; printf 'EXIT=%s\n' "$status_code"; exit "$status_code"` | 0 |
 
-Two affected CTest targets ran: `NotePlaybackTest` (12 Qt test cases passed) and `PluginPortsMigrationTest` (1 target passed). The first test-source build attempt exited 2 because its helper called protected `loadSettings()`; it now calls public `restoreState()`, and the rebuilt target passed. A first `PluginPortsMigrationTest` build launch did not return a captured shell status, so the identical build was rerun as `build-10.log`, which returned 0. The `fff` grep tool was unavailable in this session; build and test logs were searched with `rg -n` using the requested single terms.
+The affected test family ran 12 Qt test cases in one CTest target; PluginPortsMigrationTest ran 8 Qt cases in one CTest target. The initial complexity check during refactoring exited 1 because the regression method was CCN 16; after extracting helpers, the final complexity gate above passed without changing its limit or baseline.
+
+The fff grep tool was unavailable in this session; build and test logs were searched with `rg -n` for the requested terms.
 
 ## Files in this commit
 
+- `include/AudioEngine.h`
+- `src/core/AudioEngine.cpp`
 - `plugins/Monstro/Monstro.cpp`
-- `plugins/Monstro/Monstro.h`
 - `tests/src/core/NotePlaybackTest.cpp`
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p9-295.md`

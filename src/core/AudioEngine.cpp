@@ -151,6 +151,12 @@ AudioEngine::AudioEngine(bool renderOnly)
 
 
 
+int AudioEngine::renderThreadCount() const noexcept
+{
+	return m_numWorkers + 1;
+}
+
+
 AudioEngine::~AudioEngine()
 {
 	for( int w = 0; w < m_numWorkers; ++w )

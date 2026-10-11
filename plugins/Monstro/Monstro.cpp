@@ -26,7 +26,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <QThread>
 
 #include "ComboBox.h"
 #include "Engine.h"
@@ -1045,7 +1044,8 @@ MonstroInstrument::MonstroInstrument( InstrumentTrack * _instrument_track ) :
 	connect( Engine::audioEngine(), SIGNAL( sampleRateChanged() ), this, SLOT( updateSamplerate() ) );
 
 	m_fpp = Engine::audioEngine()->framesPerPeriod();
-	m_modulationScratchCount = static_cast<std::size_t>(std::max(1, QThread::idealThreadCount()));
+	m_modulationScratchCount = static_cast<std::size_t>(
+		std::max(1, Engine::audioEngine()->renderThreadCount()));
 	m_modulationScratch = std::make_unique<ModulationScratch[]>(m_modulationScratchCount);
 	for (std::size_t slot = 0; slot < m_modulationScratchCount; ++slot)
 	{
