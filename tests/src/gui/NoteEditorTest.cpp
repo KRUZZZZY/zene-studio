@@ -189,6 +189,29 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{0});
 	}
 
+	void anEraseStrokeUsesTheEnlargedTargetForShortNotes()
+	{
+		constexpr int start = 300;
+		constexpr int key = 62;
+		m_clip->addNote(Note(TimePos(1), TimePos(start), key, 100), false);
+		m_clip->rearrangeAllNotes();
+		Note* shortNote = noteAt(m_clip, start, key);
+		QVERIFY(shortNote != nullptr);
+
+		NoteCanvas* canvas = m_editor->canvas();
+		const QRect rect = canvas->noteRect(*shortNote);
+		const int y = rect.center().y();
+		const QPoint from(rect.left() - 16, y);
+		const QPoint throughTarget(rect.left() - 1, y);
+		QVERIFY(canvas->noteAt(from) == nullptr);
+		QCOMPARE(canvas->noteAt(throughTarget), shortNote);
+		QVERIFY(!rect.contains(throughTarget));
+
+		m_editor->setTool(NoteTool::Erase);
+		drag(from, throughTarget);
+		QVERIFY(noteAt(m_clip, start, key) == nullptr);
+	}
+
 	void anEraseStrokeRemovesEveryOverlappingNote()
 	{
 		constexpr int start = 300;

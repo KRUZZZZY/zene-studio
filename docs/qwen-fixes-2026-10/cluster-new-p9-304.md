@@ -4,30 +4,29 @@ Verdict: **FIXED**
 
 ## Finding and change
 
-`NoteCanvas::noteAt()` in `src/gui/noteeditor/NoteCanvas.cpp:198-217` scans from the last visible note to the first and returns on its first rectangle hit. `NoteCanvas::strokeAlong()` previously passed each sampled point to that single-note lookup, so coincident note rectangles hid all but the topmost note.
+The overlapping-note fix checks every exact note rectangle, but it skipped `NoteCanvas::noteAt()`'s expanded target for narrow notes. `strokeAlong()` now marks all notes whose actual rectangles contain a sample and uses `noteAt()` only when no actual rectangle contains that sample. This retains overlap handling and the existing short-note target behavior. The fallback in `noteAt()` is at `src/gui/noteeditor/NoteCanvas.cpp:207-216`; the stroke logic is at `src/gui/noteeditor/NoteCanvasGestures.cpp:92-103`.
 
-`src/gui/noteeditor/NoteCanvasGestures.cpp:80-98` now checks every visible note rectangle at each existing 2-pixel path sample, in reverse draw order. This marks every overlapped note while retaining which note sets the mute direction first. Regression slots in `tests/src/gui/NoteEditorTest.cpp:192-210` and `:425-448` drive erase and mute drags across coincident notes.
+The erase regression at `tests/src/gui/NoteEditorTest.cpp:192-212` drags into a one-tick note's expanded target from outside it. Its path stays outside the note's actual rectangle. It fails before the product change and when the product patch is reversed, then passes after restoration.
 
 ## Evidence
 
-All ctest commands below ran from `build/tests`; build, test, and gate output was redirected to the named new log file under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs`. The `EXIT` value is the command status printed by the exact `echo EXIT=$?` wrapper.
+Builds ran from the worktree root. Every ctest command ran from `build/tests`. Build, ctest, and gate output was saved under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs`.
 
-| Stage | Exact command | Recorded exit |
+| Stage | Exact command | Exit |
 | --- | --- | ---: |
-| RED build | `cmake --build build --target NoteEditorTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/build-1.log 2>&1; echo EXIT=$?` | 0 |
-| RED test on original code | `ctest -R '^NoteEditorTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/test-red-1.log 2>&1; echo EXIT=$?` | 8 |
-| GREEN build | `cmake --build build --target zene NoteEditorTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/build-2.log 2>&1; echo EXIT=$?` | 0 |
-| GREEN test | `ctest -R '^NoteEditorTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/test-green-1.log 2>&1; echo EXIT=$?` | 0 |
-| Reverse production patch | `git diff -- src/gui/noteeditor/NoteCanvasGestures.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/fix.patch; echo EXIT=$?` | 0 |
-| Reversal build | `cmake --build build --target zene NoteEditorTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/build-3.log 2>&1; echo EXIT=$?` | 0 |
-| Reversal RED test | `ctest -R '^NoteEditorTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/test-proof-red-1.log 2>&1; echo EXIT=$?` | 8 |
-| Restore production patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/fix.patch; echo EXIT=$?` | 0 |
-| Restored build | `cmake --build build --target zene NoteEditorTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/build-4.log 2>&1; echo EXIT=$?` | 0 |
-| Reversal GREEN test | `ctest -R '^NoteEditorTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/test-proof-green-1.log 2>&1; echo EXIT=$?` | 0 |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/gate-1.log 2>&1; echo EXIT=$?` | 0 |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r1/logs/gate-2.log 2>&1; echo EXIT=$?` | 0 |
+| Initial RED build | `cmake --build build --target NoteEditorTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/build-1.log 2>&1` | 0 |
+| RED test before this product change | `ctest -R NoteEditorTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/test-1.log 2>&1` | 8 |
+| Fixed build | `cmake --build build --target zene NoteEditorTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/build-2.log 2>&1` | 0 |
+| Reverse product patch | `git diff -- src/gui/noteeditor/NoteCanvasGestures.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/fix.patch` | 0 |
+| Reversed build | `cmake --build build --target zene NoteEditorTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/build-3.log 2>&1` | 0 |
+| RED test with product patch reversed | `ctest -R NoteEditorTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/test-2.log 2>&1` | 8 |
+| Restore product patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/fix.patch` | 0 |
+| Restored build | `cmake --build build --target zene NoteEditorTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/build-4.log 2>&1` | 0 |
+| GREEN test | `ctest -R NoteEditorTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/test-3.log 2>&1` | 0 |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/gate-1.log 2>&1` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-304.r2/logs/gate-2.log 2>&1` | 0 |
 
-The affected ctest family ran **1/1** registered test (`NoteEditorTest`). Both new regression slots failed on the original code and after reversing the production patch; the final restored run passed. The original-code RED log records 24 passed and 2 failed Qt test cases. Both required gates passed.
+The affected ctest family ran **1/1** registered test (`NoteEditorTest`). The initial and reversed RED runs each report 26 passed and 1 failed Qt test case; the restored run passed. Both required gates passed.
 
 ## Files committed
 

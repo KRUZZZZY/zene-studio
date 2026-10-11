@@ -89,11 +89,18 @@ void NoteCanvas::strokeAlong(const QPoint& from, const QPoint& to)
 	for (int i = 1; i <= steps; ++i)
 	{
 		const QPoint at = from + path * i / steps;
+		bool hitRectangle = false;
 		for (int index = last - 1; index >= first; --index)
 		{
 			const Note* note = notes[static_cast<std::size_t>(index)];
-			if (noteRect(*note).contains(at)) { markStroke(note); }
+			if (noteRect(*note).contains(at))
+			{
+				hitRectangle = true;
+				markStroke(note);
+			}
 		}
+		// Keep noteAt's wider target for narrow notes where the stroke misses every exact rectangle.
+		if (!hitRectangle) { markStroke(noteAt(at)); }
 	}
 }
 
