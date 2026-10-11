@@ -32,15 +32,19 @@
 #include <QtTest>
 
 #include <QComboBox>
+#include <QDialog>
+#include <QImage>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QPushButton>
 #include <QToolButton>
 
 #include "AutomatableButton.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DesignTokens.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "GuiApplication.h"
@@ -54,6 +58,7 @@
 #include "MixerStripInfo.h"
 #include "MixerView.h"
 #include "MixerViewOptions.h"
+#include "MixerWindows.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -228,6 +233,63 @@ private slots:
 		syncMixer();
 		QVERIFY(bar()->masterButton()->text().startsWith(QStringLiteral("Master: ")));
 		QVERIFY(!bar()->masterButton()->text().contains(QStringLiteral("ch-")));
+	}
+
+	void theLargeMeterFillsItsInclusiveBoundsAtFullScale()
+	{
+		MixerChannel* master = Engine::mixer()->mixerChannel(0);
+		const float oldLeft = master->m_rmsLeft.get();
+		master->m_rmsLeft.set(1.f);
+		QMenu menu;
+		addMixerWindows(&menu);
+		QAction* open = menu.actions().value(0);
+		if (open != nullptr) { open->trigger(); }
+		QApplication::processEvents();
+
+		QDialog* meters = nullptr;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			auto* dialog = qobject_cast<QDialog*>(widget);
+			if (dialog != nullptr && dialog->windowTitle() == QObject::tr("Large Meters"))
+			{
+				meters = dialog;
+				break;
+			}
+		}
+
+		bool topOutsideIsClear = false;
+		bool bottomRowIsFilled = false;
+		QString pixelReport = QStringLiteral("the meter image could not be captured");
+		if (meters != nullptr)
+		{
+			meters->resize(260, 520);
+			meters->show();
+			QApplication::processEvents();
+			master->m_rmsLeft.set(1.f);
+			meters->repaint();
+			const QImage image = meters->grab().toImage();
+			if (!image.isNull())
+			{
+				const qreal scale = image.devicePixelRatio();
+				const tokens::Palette& palette = tokens::palette();
+				const int barTop = 20;
+				const int barBottom = meters->height() - 61;
+				const QColor above = image.pixelColor(qRound(21 * scale), qRound((barTop - 1) * scale));
+				const QColor bottom = image.pixelColor(qRound(21 * scale), qRound(barBottom * scale));
+				topOutsideIsClear = above == palette.panel;
+				bottomRowIsFilled = bottom == palette.meterHigh;
+				pixelReport = QStringLiteral("level %1 dBFS, above %2 (expected %3), bottom %4 (expected %5)")
+					.arg(master->m_rmsLeft.get(), 0, 'f', 2).arg(above.name(), palette.panel.name())
+					.arg(bottom.name(), palette.meterHigh.name());
+			}
+			meters->close();
+			QApplication::processEvents();
+		}
+		master->m_rmsLeft.set(oldLeft);
+
+		QVERIFY2(open != nullptr, "the Large Meters action must exist");
+		QVERIFY2(meters != nullptr, "the Large Meters dialog must open");
+		QVERIFY2(topOutsideIsClear && bottomRowIsFilled, qPrintable(pixelReport));
 	}
 
 	void renamingFromTheStripIsOneUndoStep()
