@@ -36,6 +36,8 @@ namespace
 constexpr int AnalysisRate = 11025;
 constexpr int Window = 1024;
 constexpr int Hop = 256;
+constexpr int BoundaryWindow = 128;
+constexpr int BoundaryStep = 16;
 constexpr float Threshold = 0.15f;  // YIN's absolute threshold on the normalised difference
 
 float rms(const float* mono, std::size_t count, std::size_t frame, int size)
@@ -111,6 +113,17 @@ std::vector<float> decimate(const float* mono, std::size_t count, int factor)
 	return low;
 }
 
+//! Locate the gated signal within a pitch window instead of assigning its left edge as the onset.
+std::size_t onsetInWindow(const float* mono, std::size_t count, std::size_t frame, float gate)
+{
+	const std::size_t end = std::min(count, frame + static_cast<std::size_t>(Window));
+	for (std::size_t candidate = frame; candidate + BoundaryWindow <= end; candidate += BoundaryStep)
+	{
+		if (rms(mono, count, candidate, BoundaryWindow) > gate) { return candidate; }
+	}
+	return frame;
+}
+
 //! Hop keys into notes: a note holds while its key stays, and is kept when it lasts long enough.
 struct Segmenter
 {
@@ -125,11 +138,11 @@ struct Segmenter
 		open = false;
 	}
 
-	void feed(int key, float level, f_cnt_t at)
+	void feed(int key, float level, f_cnt_t at, f_cnt_t onset)
 	{
 		if (open && key == current.key) { current.level = std::max(current.level, level); return; }
 		close(at);
-		if (key >= 0) { current = PitchNote{at, at, key, level}; open = true; }
+		if (key >= 0) { current = PitchNote{onset, onset, key, level}; open = true; }
 	}
 };
 
@@ -145,7 +158,11 @@ std::vector<PitchNote> detectNotes(const float* mono, std::size_t count, int rat
 	{
 		const float level = rms(low.data(), low.size(), frame, Window);
 		const float hz = level > gate ? pitchAt(low.data(), low.size(), frame, Window, rate / factor) : 0.f;
-		segmenter.feed(hz > 30.f && hz < 2000.f ? keyOf(hz) : -1, level, static_cast<f_cnt_t>(frame) * factor);
+		const int key = hz > 30.f && hz < 2000.f ? keyOf(hz) : -1;
+		const f_cnt_t at = static_cast<f_cnt_t>(frame) * factor;
+		const f_cnt_t onset = key >= 0 && !segmenter.open
+			? static_cast<f_cnt_t>(onsetInWindow(low.data(), low.size(), frame, gate)) * factor : at;
+		segmenter.feed(key, level, at, onset);
 	}
 	segmenter.close(static_cast<f_cnt_t>(count));
 	return segmenter.notes;

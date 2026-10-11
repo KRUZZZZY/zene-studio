@@ -60,6 +60,13 @@ std::vector<float> tone(double hz, int rate, double seconds)
 	return out;
 }
 
+std::vector<float> toneWithSilence(int rate, std::size_t start, std::size_t end)
+{
+	std::vector<float> out(static_cast<std::size_t>(rate), 0.f);
+	for (std::size_t i = start; i < end; ++i) { out[i] = 0.5f * static_cast<float>(std::sin(2.0 * M_PI * 220.0 * static_cast<double>(i) / rate)); }
+	return out;
+}
+
 SampleClip* toneClip(Track* track, double hz, tick_t at)
 {
 	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
@@ -99,6 +106,32 @@ private slots:
 		QCOMPARE(notes.front().key, 57);
 		const std::vector<float> silence(44100, 0.f);
 		QVERIFY(pitchtrack::detectNotes(silence.data(), silence.size(), 44100).empty());
+	}
+
+	void aNoteStartsNearItsAudioOnset()
+	{
+		constexpr int rate = 44100;
+		constexpr std::size_t onset = rate * 3 / 40;
+		const std::vector<float> audio = toneWithSilence(rate, onset, rate * 3 / 4);
+		const std::vector<pitchtrack::PitchNote> notes = pitchtrack::detectNotes(audio.data(), audio.size(), rate);
+		QCOMPARE(notes.size(), std::size_t{1});
+		const f_cnt_t tolerance = static_cast<f_cnt_t>(rate / 50);
+		QVERIFY2(notes.front().start >= onset - tolerance && notes.front().start <= onset + tolerance,
+			qPrintable(QStringLiteral("detected onset %1, expected %2").arg(static_cast<qulonglong>(notes.front().start))
+				.arg(static_cast<qulonglong>(onset))));
+	}
+
+	void aNoteEndsNearItsAudioOffset()
+	{
+		constexpr int rate = 44100;
+		constexpr std::size_t offset = rate * 3 / 4;
+		const std::vector<float> audio = toneWithSilence(rate, rate / 4, offset);
+		const std::vector<pitchtrack::PitchNote> notes = pitchtrack::detectNotes(audio.data(), audio.size(), rate);
+		QCOMPARE(notes.size(), std::size_t{1});
+		const f_cnt_t tolerance = static_cast<f_cnt_t>(rate / 50);
+		QVERIFY2(notes.front().end >= offset - tolerance && notes.front().end <= offset + tolerance,
+			qPrintable(QStringLiteral("detected offset %1, expected %2").arg(static_cast<qulonglong>(notes.front().end))
+				.arg(static_cast<qulonglong>(offset))));
 	}
 
 	void audioBecomesATrackOfNotes()
