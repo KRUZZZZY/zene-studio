@@ -208,7 +208,7 @@ ControlResult surroundPan(const QJsonObject& args)
 	addUndoStep([id, before]() { applyPan(id, before); }, [id, after]() { applyPan(id, after); });
 	Engine::getSong()->setModified();
 	QJsonObject result = channelJson(*channel);
-	if (channel->m_surround.isSurround() || surroundSends(*channel).isEmpty())
+	if (!channel->m_surround.isSurround() && surroundSends(*channel).isEmpty())
 	{
 		result.insert(QStringLiteral("note"), QStringLiteral("the panner acts on a stereo channel's sends into surround channels; "
 			"this channel has none (route it into one set with mixer.channel_format)"));

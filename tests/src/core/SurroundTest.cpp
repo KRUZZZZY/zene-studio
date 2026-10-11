@@ -230,6 +230,25 @@ private slots:
 		QVERIFY(outputAt(back, 4, Panned * Root) && outputAt(back, 5, Panned * Root) && outputAt(back, 2, 0.f));
 	}
 
+	void aSurroundSourceWithSurroundSendsHasNoMissingSendsNote()
+	{
+		Mixer* mixer = Engine::mixer();
+		route51Bus(*mixer);
+		QVERIFY(format(1, "5.1"));
+		const ControlResult surroundReply = run(QStringLiteral("mixer.surround_pan"),
+			{{QStringLiteral("channel"), ch(1)}, {QStringLiteral("x"), -0.25}, {QStringLiteral("y"), 0.25}});
+		const ControlResult stereoReply = run(QStringLiteral("mixer.surround_pan"),
+			{{QStringLiteral("channel"), ch(2)}, {QStringLiteral("x"), -0.25}, {QStringLiteral("y"), 0.25}});
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(surroundReply.ok);
+		QCOMPARE(surroundReply.result.value(QStringLiteral("surround_sends")).toArray().size(), 1);
+		QVERIFY2(!surroundReply.result.contains(QStringLiteral("note")), "a surround source with a surround send was reported to have none");
+		QVERIFY(stereoReply.ok);
+		QVERIFY(stereoReply.result.value(QStringLiteral("note")).toString().contains(QStringLiteral("this channel has none")));
+	}
+
 	void theDownmixFollowsBs775()
 	{
 		using surround::Format;
