@@ -56,10 +56,10 @@ DelayControlsDialog::DelayControlsDialog( DelayControls *controls ) :
 	feedbackKnob->setModel( &controls->m_feedbackModel);
 	feedbackKnob->setHintText(tr("Feedback amount:"), "");
 
-	auto lfoFreqKnob = new TempoSyncKnob(KnobType::Bright26, tr("RATE"), this, Knob::LabelRendering::LegacyFixedFontSize);
-	lfoFreqKnob->move( 11, 119 );
-	lfoFreqKnob->setModel( &controls->m_lfoTimeModel );
-	lfoFreqKnob->setHintText(tr("LFO frequency:"), " s");
+	auto lfoPeriodKnob = new TempoSyncKnob(KnobType::Bright26, tr("TIME"), this, Knob::LabelRendering::LegacyFixedFontSize);
+	lfoPeriodKnob->move( 11, 119 );
+	lfoPeriodKnob->setModel( &controls->m_lfoTimeModel );
+	lfoPeriodKnob->setHintText(tr("LFO period:"), " s");
 
 	auto lfoAmtKnob = new TempoSyncKnob(KnobType::Bright26, tr("AMNT"), this, Knob::LabelRendering::LegacyFixedFontSize);
 	lfoAmtKnob->move( 11, 159 );

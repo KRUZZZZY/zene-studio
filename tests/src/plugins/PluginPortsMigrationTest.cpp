@@ -21,9 +21,12 @@
 #include "PluginPortsHarness.h"
 
 #include <cstdio>
+#include <algorithm>
 #include <vector>
+#include <memory>
 
 #include <QByteArray>
+#include <QFile>
 #include <QLibrary>
 #include <memory>
 #include <QProcess>
@@ -33,7 +36,9 @@
 #include <QtTest>
 
 #include "Engine.h"
+#include "EffectControls.h"
 #include "Plugin.h"
+#include "TempoSyncKnobModel.h"
 
 namespace
 {
@@ -185,6 +190,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void delayLfoControlDescribesItsPeriod();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +220,39 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::delayLfoControlDescribesItsPeriod()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_delay)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	std::unique_ptr<lmms::Effect> effect{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+	QVERIFY(effect != nullptr);
+
+	const auto models = effect->controls()->findChildren<lmms::TempoSyncKnobModel*>();
+	const auto lfoModel = std::find_if(models.cbegin(), models.cend(), [](const auto* model)
+	{
+		return model->value() == 2.f;
+	});
+	QVERIFY(lfoModel != models.cend());
+	QCOMPARE((*lfoModel)->displayName(), QStringLiteral("LFO period"));
+
+	QFile dialogSource{QCoreApplication::applicationDirPath()
+		+ QStringLiteral("/../../plugins/Delay/DelayControlsDialog.cpp")};
+	QVERIFY2(dialogSource.open(QIODevice::ReadOnly), qPrintable(dialogSource.errorString()));
+	const auto dialogCode = dialogSource.readAll();
+	QVERIFY(dialogCode.contains("tr(\"TIME\")"));
+	QVERIFY(dialogCode.contains("setHintText(tr(\"LFO period:\"), \" s\")"));
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
