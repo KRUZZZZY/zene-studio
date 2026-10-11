@@ -39,6 +39,7 @@ if(MSVC)
 endif()
 
 set(LMMS_TESTS
+	src/plugins/LadspaChannelCountsTest.cpp
 	src/core/ArrayVectorTest.cpp
 	src/core/AudioBufferTest.cpp
 	src/core/AudioBusHandleTest.cpp
@@ -4256,3 +4257,18 @@ if(PYTHON3_EXECUTABLE AND ZENE_HAVE_COLLAB)
 		SKIP_RETURN_CODE 77
 	)
 endif()
+
+# LADSPA channel-count regression: the module's port names are positional and
+# its control input includes "Input" to ensure only audio ports count.
+set(LADSPA_CHANNEL_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ladspa-channel-fixture")
+add_library(ladspa_channel_count_fixture MODULE src/plugins/LadspaChannelCountFixture.cpp)
+target_include_directories(ladspa_channel_count_fixture PRIVATE "${CMAKE_SOURCE_DIR}/include")
+target_compile_features(ladspa_channel_count_fixture PRIVATE cxx_std_20)
+set_target_properties(ladspa_channel_count_fixture PROPERTIES
+	LIBRARY_OUTPUT_DIRECTORY "${LADSPA_CHANNEL_FIXTURE_DIR}"
+	RUNTIME_OUTPUT_DIRECTORY "${LADSPA_CHANNEL_FIXTURE_DIR}"
+)
+target_compile_definitions(LadspaChannelCountsTest PRIVATE
+	LADSPA_CHANNEL_FIXTURE_PATH="$<TARGET_FILE:ladspa_channel_count_fixture>"
+)
+add_dependencies(LadspaChannelCountsTest ladspa_channel_count_fixture)
