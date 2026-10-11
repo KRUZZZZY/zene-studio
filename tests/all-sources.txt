@@ -2606,6 +2606,7 @@ tests/src/gui/ItemListPanelTest.cpp
 tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/LaneReadoutTest.cpp
 tests/src/gui/LibraryMenusTest.cpp
+tests/src/gui/LinkedModelGroupViewLifetimeTest.cpp
 tests/src/gui/MenuTestSupport.h
 tests/src/gui/MidiClockMenuTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
