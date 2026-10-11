@@ -25,6 +25,8 @@
 
 #include "CollabClient.h"
 
+#include <limits>
+
 #include <QSslPreSharedKeyAuthenticator>
 #include <QSslSocket>
 #include <QThread>
@@ -290,7 +292,12 @@ int CollabClient::request(const QString& command, const QJsonObject& args)
 {
 	if (m_link == nullptr || !m_link->isOpen()) { return 0; }
 	if (m_inflight.size() >= MaxInflight) { m_inflight.clear(); }
-	const int id = ++m_nextRequest;
+	int id = m_nextRequest;
+	do
+	{
+		id = id == std::numeric_limits<int>::max() ? 1 : id + 1;
+	} while (m_inflight.contains(id));
+	m_nextRequest = id;
 	m_inflight.insert(id, command);
 	m_link->send({{QStringLiteral("id"), id}, {QStringLiteral("cmd"), command}, {QStringLiteral("args"), args}});
 	return id;
