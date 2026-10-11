@@ -38,6 +38,8 @@ include/MixerView.h	040/m3-registry-actions (2026-09-29, M3.7): refreshVcaStrips
 include/RetroMidiRing.h	BUG-MIDI-004: snapshot writer quiescence prevents non-atomic slot races; covered by RetroMidiRingTest.
 src/core/midi/MidiAlsaSeq.cpp	BUG-MIDI-003: drain ALSA output only on sequencer thread; covered by MidiOutQueueTest.
 src/core/ControlCommandsMidi.cpp	BUG-MIDI-003: report outbound queue overflow counter through midi.retro_capture_status; covered by RetroMidiCaptureCommandsTest.
+src/common/SharedMemory.cpp	BUG new-p9-457: reject attached array headers whose declared byte count exceeds the mapped region; covered by AudioBufferTest.
+tests/src/core/AudioBufferTest.cpp	BUG new-p9-457: cover rejection of a corrupted shared-memory array length exceeding the mapped object.
 
 # --- post-alpha/midi-depth (2026-09-11) ------------------------------------
 # --- fork-new developer tooling under tools/ (task #612, 2026-09-11) ---------------------------

@@ -31,12 +31,16 @@
 #include "SharedMemory.h"
 
 #ifdef Q_OS_UNIX
+#include <fcntl.h>
+#include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
+#include <stdexcept>
 #include <vector>
 #endif
 
@@ -163,6 +167,26 @@ private slots:
 		// All the bytes in the shared memory should have been used by AudioBuffer
 		QCOMPARE(sm.resource()->availableBytes(), 0);
 	}
+
+#ifdef Q_OS_UNIX
+	//! Rejects an array header that claims more bytes than the shared object contains
+	void SharedMemoryAttach_RejectsOversizedArrayHeader()
+	{
+		lmms::SharedMemory<std::byte[]> owner;
+		owner.create(1);
+
+		const auto fd = ::shm_open(("/" + owner.key()).c_str(), O_RDWR, 0);
+		QVERIFY(fd != -1);
+		constexpr auto corruptedSize = std::numeric_limits<std::uint64_t>::max();
+		const auto written = ::pwrite(fd, &corruptedSize, sizeof(corruptedSize), 0);
+		const auto closeResult = ::close(fd);
+		QCOMPARE(written, static_cast<ssize_t>(sizeof(corruptedSize)));
+		QCOMPARE(closeResult, 0);
+
+		lmms::SharedMemory<std::byte[]> attached;
+		QVERIFY_EXCEPTION_THROWN(attached.attach(owner.key()), std::runtime_error);
+	}
+#endif
 
 	//! Verifies that the `allocateInterleavedBuffer` method allocates the interleaved buffer
 	void AllocateInterleavedBuffer()
