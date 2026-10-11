@@ -34,6 +34,8 @@
 
 #include <clap/clap.h>
 
+#include <cmath>
+
 namespace lmms::clap
 {
 
@@ -75,7 +77,7 @@ auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
 
 void HostedPlugin::setEditorScale(double scale)
 {
-	m_impl->editorScale = scale > 0.0 ? scale : 1.0;
+	m_impl->editorScale = std::isfinite(scale) && scale > 0.0 ? scale : 1.0;
 }
 
 void HostedPlugin::closeEditor()

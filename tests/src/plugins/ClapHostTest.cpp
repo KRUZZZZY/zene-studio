@@ -31,6 +31,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include <algorithm>
@@ -188,6 +189,7 @@ private slots:
 	void testInstrumentNotePath();
 	void testTimerSupportRunsThePluginsTimer();
 	void testTheEditorEmbedsResizesAndCloses();
+	void testEditorScaleRejectsInfinity();
 	void testMainThreadRequestsAreServiced();
 	void testParameterRescansRereadTheList();
 
@@ -766,6 +768,15 @@ void lmms::clap::ClapHostTest::testTheEditorEmbedsResizesAndCloses()
 	m_plugin.closeEditor();
 	QVERIFY2(!m_plugin.openEditor(nullptr, &error), "an editor attached to no window");
 	QVERIFY(!m_plugin.editorOpen());
+}
+
+void lmms::clap::ClapHostTest::testEditorScaleRejectsInfinity()
+{
+	m_plugin.setEditorScale(std::numeric_limits<double>::infinity());
+	QString error;
+	QVERIFY2(m_plugin.openEditor(reinterpret_cast<void*>(std::uintptr_t{0x2a}), &error), qPrintable(error));
+	m_plugin.closeEditor();
+	m_plugin.setEditorScale(1.0);
 }
 
 /*! Engine audit E8: a plug-in's main-thread call is made, its value rescan is honoured and its
