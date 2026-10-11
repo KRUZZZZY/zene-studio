@@ -6,13 +6,14 @@ The static half of the real-time-safety whole-tree sweep (row 52, board card
 the lines it owns. The judgement half - the scope and allowlist ledgers, the
 sweep and its report - is tests/rt_safety_lib.py, which imports this module.
 
-THE RULES. AGENTS.md's realtime rule has exactly three words, and every rule
-below is one of them:
+THE RULES. The sweep checks allocation, locking and growth, plus synchronous
+stdio output in declared audio-thread functions:
 
     allocation  - a new-expression, a C heap call, a smart-pointer factory, a
                   container/string construction that is not a reference
     locking     - a scope guard that takes a lock, or an explicit acquisition
     growth      - container growth, which reallocates
+    blocking-io - synchronous stdio output, which can block the audio thread
 
 A rule is a regex over source text with comments and literals REMOVED, so a
 `new` inside a comment or a message string is not a hit. That filtering is
@@ -35,8 +36,8 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
-#: The rule's own three categories (AGENTS.md: allocation, locking, unbounded growth).
-CATEGORIES = ("allocation", "locking", "growth")
+#: Realtime categories measured by this sweep.
+CATEGORIES = ("allocation", "locking", "growth", "blocking-io")
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,12 @@ RULES: Tuple[Rule, ...] = (
                 r"(append|operator<<|push_back|insert)\b",
         note="Qt implicit-sharing containers grow the same way",
     ),
+    Rule(
+        id="stdio-output",
+        category="blocking-io",
+        pattern=r"\b(printf|fprintf|puts|fputs|perror)\s*\(",
+        note="synchronous stdio output can block the audio thread",
+    ),
 )
 
 RULES_BY_ID: Dict[str, Rule] = {rule.id: rule for rule in RULES}
@@ -121,8 +128,8 @@ BOUND: Tuple[str, ...] = (
     "measured. A new audio-thread path that nobody declares is measured by nothing here.",
     "NO VIRTUAL DISPATCH / FUNCTION POINTERS / MACROS: an implementation reached through "
     "an interface, a macro or an include is checked only if the scope names it too.",
-    "NO COST, NO SYSCALL AND NO I/O CHECK: only allocation, locking and container growth, "
-    "the three words of the AGENTS.md rule.",
+    "NO GENERAL COST, SYSCALL OR I/O CHECK: only allocation, locking, container growth, "
+    "and synchronous stdio output are checked.",
     "NO ALIASING ANALYSIS: a hit is a mention of a construct, not proof that it runs on "
     "the audio thread. An allowlist line with a reason is how a tolerated mention is said.",
 )

@@ -18,6 +18,7 @@ Positive (each MUST fail, and must name the offending path:symbol:rule):
   * a deliberate ALLOCATION on a declared audio-thread path   (new float[64])
   * a deliberate LOCK on a declared audio-thread path         (QMutexLocker)
   * a deliberate GROWTH on a declared audio-thread path       (push_back)
+  * synchronous stdio output on a declared audio-thread path  (printf)
   * the same growth growing PAST an allowlist line's count
   * the CLI's own exit code, which is the number a gate records
 Negative (each MUST pass):
@@ -112,6 +113,18 @@ WITH_GROWTH_TWICE = WITH_GROWTH.replace("trackList.push_back(findTrack(0));",
                                         "trackList.push_back(findTrack(0));\n"
                                         "    trackList.push_back(findTrack(1));")
 
+WITH_STDIO = """\
+void renderStageMix(float* out, std::uint32_t frames) noexcept
+{
+    auto* sid = new SID;  // existing unrelated allocation, excluded by the scope filter
+    printf(\"audio callback diagnostic\");  // the blocking I/O control
+    for (std::uint32_t i = 0; i < frames; ++i)
+    {
+        out[i] = out[i] * 0.5f;
+    }
+}
+"""
+
 #: A clean declared path beside a function nobody declared: the second one is
 #: deliberately dirty, and the sweep must stay silent about it - the scope is
 #: DECLARED, not discovered, and that is this programme's stated bound.
@@ -125,13 +138,13 @@ CLEAN_PLUS_UNDECLARED_DIRT = CLEAN.replace(
 
 } // namespace fixture""")
 
-#: Both a comment and a string literal mention `new` and `push_back`; a sweep
-#: that is fooled by either reports a hit that does not exist.
+#: A comment and a string literal mention forbidden constructs; a sweep that
+#: is fooled by either reports a hit that does not exist.
 DECOYS = """\
 void renderStageMix(float* out, std::uint32_t frames) noexcept
 {
-    // this path must not call new or push_back the way the old one did
-    const char* note = "never new, never push_back, in the message a user reads";
+    // this path must not call new, push_back or printf in a comment
+    const char* note = "never new, never push_back, never printf in a message";
     (void)note;
     for (std::uint32_t i = 0; i < frames; ++i)
     {
@@ -153,6 +166,8 @@ public:
 """
 
 SCOPE_MIX = "src/core/Fixture.cpp\trenderStageMix\tfixture: the render stage, on the audio thread\n"
+SCOPE_MIX_STDIO = ("src/core/Fixture.cpp\trenderStageMix\tfixture: synchronous stdio check\t"
+                   "rules=stdio-output\n")
 SCOPE_IN_CLASS = ("src/core/Fixture.cpp\tAudioEngine::renderNextPeriod\t"
                   "fixture: the render callback, defined in-class\n")
 
@@ -195,6 +210,7 @@ def positive_controls(tmp, check):
     check_new_control(tmp, check)
     check_lock_control(tmp, check)
     check_growth_control(tmp, check)
+    check_stdio_control(tmp, check)
 
 
 def _first_named(verdict, fragment):
@@ -229,6 +245,16 @@ def check_growth_control(tmp, check):
     check("POSITIVE CONTROL: a deliberate container growth on an audio-thread path FAILS",
           verdict.exit_code == 1 and bool(named), "exit %d, %s" % (verdict.exit_code,
                                                                    (named or "-")[:96]))
+
+
+def check_stdio_control(tmp, check):
+    """Synchronous stdio output on an audio-thread path is a blocking I/O hit."""
+    verdict = Fixture(os.path.join(tmp, "stdio"), WITH_STDIO, [SCOPE_MIX_STDIO]).verdict()
+    named = _first_named(verdict, ":stdio-output")
+    check("POSITIVE CONTROL: synchronous printf on an audio-thread path FAILS",
+          verdict.exit_code == 1 and bool(named) and len(verdict.hits) == 1
+          and verdict.hits[0].rule == "stdio-output",
+          "exit %d, %s" % (verdict.exit_code, (named or "-")[:96]))
 
 
 def growth_and_cli_controls(tmp, check):
@@ -286,7 +312,7 @@ def bound_controls(tmp, check):
 
     decoys = Fixture(os.path.join(tmp, "decoys"), DECOYS, [SCOPE_MIX])
     verdict = decoys.verdict()
-    check("BOUND: `new` in a comment and in a string literal is not a hit",
+    check("BOUND: `new` and `printf` in comments and literals are not hits",
           verdict.exit_code == 0 and len(verdict.hits) == 0,
           "exit %d, %d hit(s)" % (verdict.exit_code, len(verdict.hits)))
 
@@ -351,10 +377,10 @@ def staleness_controls(tmp, check):
 
 
 def rule_controls(check):
-    """The rule set itself covers the three words of the AGENTS.md rule."""
+    """The rule set covers realtime hazards measured by this sweep."""
     categories = sorted({rule.category for rule in RULES})
-    check("the rule set covers the AGENTS.md rule's three words",
-          categories == ["allocation", "growth", "locking"],
+    check("the rule set covers allocation, locking, growth and blocking I/O",
+          categories == ["allocation", "blocking-io", "growth", "locking"],
           "rules: %s" % ", ".join(rule.id for rule in RULES))
 
 
@@ -382,7 +408,8 @@ def main():
     if failures:
         print("RESULT: FAIL - %d control(s) did not hold: %s" % (len(failures), failures))
         return 1
-    print("RESULT: PASS - the sweep fails on a deliberate allocation, lock and growth, "
+    print("RESULT: PASS - the sweep fails on deliberate allocation, lock, growth and "
+          "synchronous stdio output, "
           "names each one, passes a clean path, and stays silent exactly where its "
           "stated bound says it does not look.")
     return 0
