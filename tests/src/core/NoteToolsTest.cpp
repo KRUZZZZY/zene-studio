@@ -377,6 +377,29 @@ private slots:
 				.arg(wrapped).arg(clip->startTimeOffset().getTicks()).arg(clip->length().getTicks())));
 	}
 
+	//! Rotating a note across the clip end splits its duration at the wrap instead of growing an auto-resizing clip.
+	void rotatingAWrappedNoteKeepsTheAutoResizingClipSpan()
+	{
+		const tick_t span = TimePos::ticksPerBar();
+		auto* clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setAutoResize(false);
+		clip->changeLength(TimePos(span));
+		clip->addNote(Note(TimePos(span), TimePos(0), 60), false);
+		clip->setAutoResize(true);
+
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("amount"), 20);
+		const ControlResult rotated = run(QStringLiteral("note.rotate"), args);
+		QVERIFY2(rotated.ok, qPrintable(rotated.errorMessage));
+		QCOMPARE(clip->length().getTicks(), span);
+		QCOMPARE(clip->notes().size(), std::size_t{2});
+		QCOMPARE(clip->notes()[0]->pos().getTicks(), tick_t{0});
+		QCOMPARE(clip->notes()[0]->length().getTicks(), tick_t{20});
+		QCOMPARE(clip->notes()[1]->pos().getTicks(), tick_t{20});
+		QCOMPARE(clip->notes()[1]->length().getTicks(), span - 20);
+	}
+
 //! Luna cluster 5693: generate() clamped `pulses` to `steps` and answered ok, so
 	//! `steps: 4, pulses: 7` succeeded as if four pulses had been asked for.
 	void morePulsesThanStepsIsRefusedNotSilentlyReduced()
