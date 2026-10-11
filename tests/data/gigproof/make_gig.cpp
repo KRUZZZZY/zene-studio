@@ -4,7 +4,8 @@
  * By default, create one instrument ("Sine440", bank 0 / program 0), one
  * sample (440 Hz sine, 2 s, 16-bit mono 44100 Hz), one region spanning the
  * whole keyboard, and one dimension region pointing at the sample. Passing
- * --pingpong creates the directional loop fixture used by the regression test.
+ * --pingpong or --single-frame-loop creates directional loop fixtures used by
+ * the regression tests.
  * Built with:
  *   g++ -std=c++17 make_gig.cpp -o make_gig $(pkg-config --cflags --libs gig)
  *
@@ -26,12 +27,13 @@ static const double   FREQ    = 440.0;
 
 int main(int argc, char** argv)
 {
-    const bool pingPong = argc > 1 && std::string(argv[1]) == "--pingpong";
+    const bool singleFrameLoop = argc > 1 && std::string(argv[1]) == "--single-frame-loop";
+    const bool pingPong = (argc > 1 && std::string(argv[1]) == "--pingpong") || singleFrameLoop;
     const std::string out = pingPong
         ? ((argc > 2) ? argv[2] : "pingpong.gig")
         : ((argc > 1) ? argv[1] : "sine440.gig");
     constexpr uint32_t LoopStart = 64;
-    constexpr uint32_t LoopLength = 64;
+    const uint32_t loopLength = singleFrameLoop ? 1 : 64;
     const uint32_t N = pingPong ? SR / 4 : SR * SECONDS;
 
     try
@@ -66,14 +68,31 @@ int main(int argc, char** argv)
         std::vector<int16_t> pcm(N);
         if (pingPong)
         {
-            for (uint32_t i = 0; i < LoopLength; ++i)
+            for (uint32_t i = 0; i < loopLength; ++i)
             {
-                const int16_t ramp = static_cast<int16_t>(4000 + 300 * i);
-                pcm[LoopStart + i] = i < LoopLength / 2 || i == LoopLength - 1
-                    ? static_cast<int16_t>(-ramp)
-                    : ramp;
+                if (singleFrameLoop)
+                {
+                    pcm[LoopStart + i] = -20000;
+                }
+                else
+                {
+                    const int16_t ramp = static_cast<int16_t>(4000 + 300 * i);
+                    pcm[LoopStart + i] = i < loopLength / 2 || i == loopLength - 1
+                        ? static_cast<int16_t>(-ramp)
+                        : ramp;
+                }
             }
-            pcm[LoopStart + LoopLength] = -25000;
+            if (singleFrameLoop)
+            {
+                for (uint32_t i = LoopStart + loopLength; i < N; ++i)
+                {
+                    pcm[i] = static_cast<int16_t>(3000 + (i % 100) * 100);
+                }
+            }
+            else
+            {
+                pcm[LoopStart + loopLength] = -25000;
+            }
         }
         else
         {
@@ -115,7 +134,7 @@ int main(int argc, char** argv)
             loop.Size = sizeof(loop);
             loop.LoopType = gig::loop_type_bidirectional;
             loop.LoopStart = LoopStart;
-            loop.LoopLength = LoopLength;
+            loop.LoopLength = loopLength;
             dr->AddSampleLoop(&loop);
         }
 

@@ -524,6 +524,23 @@ bool readSampleSegment(gig::Sample& sample, std::int8_t* destination, f_cnt_t so
 	return framesRead == frames;
 }
 
+bool repeatSampleFrame(gig::Sample& sample, std::int8_t* destination,
+		f_cnt_t sourcePosition, f_cnt_t frames)
+{
+	const auto frameSize = sample.FrameSize;
+	if (!readSampleSegment(sample, destination, sourcePosition, 1, false))
+	{
+		std::memset(destination + frameSize, 0, (frames - 1) * frameSize);
+		return false;
+	}
+
+	for (f_cnt_t frame = 1; frame < frames; ++frame)
+	{
+		std::memcpy(destination + frame * frameSize, destination, frameSize);
+	}
+	return true;
+}
+
 }
 
 
@@ -554,7 +571,13 @@ void GigInstrument::loadBidirectionalSample(gig::Sample& sample, std::int8_t* bu
 		}
 		else if (halfPeriod == 0)
 		{
-			sourcePosition = loopStart;
+			std::int8_t* destination = buffer + totalRead * sample.FrameSize;
+			if (!repeatSampleFrame(sample, destination, loopStart, remaining))
+			{
+				break;
+			}
+			totalRead += remaining;
+			continue;
 		}
 		else
 		{
