@@ -23,11 +23,18 @@ The affected CTest family is `ItemListPanelTest`. The final green run executed *
 | Restore production fix | `git apply '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-203.r1/logs/fix.patch'; echo EXIT=$?` | 0 |
 | Rebuild restored fix | `cmake --build build --target zene ItemListPanelTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-203.r1/logs/build-4.log' 2>&1; echo EXIT=$?` | 0 |
 | Final GREEN | From `build/tests`: `ctest -R ItemListPanelTest --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-203.r1/logs/test-4.log' 2>&1; echo EXIT=$?` | 0 |
-| Complexity ratchet | `bash tests/complexity-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-203.r1/logs/gate-1.log' 2>&1; echo EXIT=$?` | 0 |
-| File length ratchet | `bash tests/file-length-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-203.r1/logs/gate-2.log' 2>&1; echo EXIT=$?` | 0 |
+| Complexity ratchet | `bash tests/complexity-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-203.r1/logs/gate-5.log' 2>&1; echo EXIT=$?` | 0 |
+| File length ratchet | `bash tests/file-length-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-203.r1/logs/gate-6.log' 2>&1; echo EXIT=$?` | 0 |
 | Whitespace check | `git diff --check; echo EXIT=$?` | 0 |
 
 Both RED runs fail at `ItemListPanelTest.cpp:205`: QtTest reports `!panel.insertItem()` returned FALSE, which means Insert incorrectly returned true on the original code. The final restored-fix run passes.
+
+| Required summary evidence | Result |
+| --- | --- |
+| Affected-family count | `ItemListPanelTest`: 1/1 CTest test executed (test #232), including the new QtTest slot. |
+| Complexity gate | `bash tests/complexity-gate.sh --check`; EXIT=0. |
+| File length gate | `bash tests/file-length-gate.sh --check`; EXIT=0. |
+| Files committed | `src/gui/ItemListSurfaceSources.cpp`; `tests/src/gui/ItemListPanelTest.cpp`; `docs/qwen-fixes-2026-10/cluster-new-p10-203.md`. |
 
 ## Files committed
 
