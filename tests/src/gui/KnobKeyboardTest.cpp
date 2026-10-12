@@ -41,11 +41,14 @@
 #include <QHelpEvent>
 #include <QLineEdit>
 #include <QToolTip>
+#include <QVBoxLayout>
 
 #include "AutomatableModel.h"
 #include "ComboBox.h"
 #include "ComboBoxModel.h"
+#include "ConfigManager.h"
 #include "ControlCues.h"
+#include "DesignTokens.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "Knob.h"
@@ -73,6 +76,14 @@ protected:
 	}
 };
 
+//! Exposes the knob's sizing reset so the accessible-mode regression can exercise the real path.
+class ResizableKnob : public Knob
+{
+public:
+	using Knob::Knob;
+	using Knob::setFixedFontSizeLabelRendering;
+};
+
 } // namespace
 
 class KnobKeyboardTest : public QObject
@@ -80,7 +91,16 @@ class KnobKeyboardTest : public QObject
 	Q_OBJECT
 
 private slots:
-	void initTestCase() { Engine::init(true); }  // a model needs the engine
+	void initTestCase()
+	{
+		// The focused accessible-sizing ctest runs this executable in a fresh process. Configure
+		// accessible mode before the design tokens capture the startup appearance.
+		if (qEnvironmentVariableIsSet("ZENE_TEST_ACCESSIBLE"))
+		{
+			ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("density"), QStringLiteral("accessible"));
+		}
+		Engine::init(true);  // a model needs the engine
+	}
 	void cleanupTestCase() { Engine::destroy(); }
 
 	//! Controls shown before the first event-loop turn still receive their interaction cues.
@@ -388,6 +408,41 @@ private slots:
 		knob->setEnabled(false);
 		QVERIFY(!cues::hovered(knob));
 		QVERIFY(!cues::hovered(nullptr));
+	}
+
+	//! A knob's own fixed-size reset must keep the larger hit target applied at polish time.
+	void accessibleTargetSurvivesKnobSizingReset()
+	{
+		QVERIFY(qEnvironmentVariableIsSet("ZENE_TEST_ACCESSIBLE"));
+		QVERIFY(tokens::accessibleMode());
+		const int target = tokens::targetSize();
+		QVERIFY(target > 26);
+
+		QWidget window;
+		auto* layout = new QVBoxLayout{&window};
+		auto* knob = new ResizableKnob(KnobType::Small17, &window);
+		layout->addWidget(knob);
+		window.show();
+		QTRY_VERIFY(knob->minimumWidth() >= target);
+		QTRY_VERIFY(knob->minimumHeight() >= target);
+
+		knob->setFixedFontSizeLabelRendering();  // updateFixedSize() resets both fixed dimensions
+		QVERIFY2(knob->minimumWidth() >= target, qPrintable(QStringLiteral("width reset to %1, target is %2")
+			.arg(knob->minimumWidth()).arg(target)));
+		QVERIFY2(knob->minimumHeight() >= target, qPrintable(QStringLiteral("height reset to %1, target is %2")
+			.arg(knob->minimumHeight()).arg(target)));
+
+		knob->setknobNum(KnobType::Bright26);  // the pixmap update previously bypassed the accessible target
+		QVERIFY2(knob->minimumWidth() >= target, qPrintable(QStringLiteral("type change shrank width to %1, target is %2")
+			.arg(knob->minimumWidth()).arg(target)));
+		QVERIFY2(knob->minimumHeight() >= target, qPrintable(QStringLiteral("type change shrank height to %1, target is %2")
+			.arg(knob->minimumHeight()).arg(target)));
+
+		knob->setEnabled(false);  // EnabledChange uses the same direct pixmap sizing path.
+		QVERIFY2(knob->minimumWidth() >= target, qPrintable(QStringLiteral("disable shrank width to %1, target is %2")
+			.arg(knob->minimumWidth()).arg(target)));
+		QVERIFY2(knob->minimumHeight() >= target, qPrintable(QStringLiteral("disable shrank height to %1, target is %2")
+			.arg(knob->minimumHeight()).arg(target)));
 	}
 };
 
