@@ -30,6 +30,7 @@
 #include "Effect.h"
 #include "EffectControls.h"
 #include "EffectControlDialog.h"
+#include "ProjectIds.h"
 
 namespace lmms
 {
@@ -97,6 +98,13 @@ public:
 		m_controls( this ),
 		m_originalPluginData( originalPluginData )
 	{
+		if( ProjectIds::isDocumentElement( m_originalPluginData ) )
+		{
+			bool idOk = false;
+			const int storedId = m_originalPluginData.attribute( "id" ).toInt( &idOk );
+			if( idOk && storedId >= 0 ) { setId( storedId ); }
+			else { ProjectIds::noteLoadAssignment( id() ); }
+		}
 		setName();
 		setDontRun(true);
 	}
