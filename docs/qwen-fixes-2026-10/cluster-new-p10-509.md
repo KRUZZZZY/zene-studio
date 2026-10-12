@@ -9,7 +9,7 @@ Evidence locations:
 - `src/core/AutomationClipTransforms.cpp:327` calculates and validates the locked tangent scale and results.
 - `src/core/AutomationClipTransforms.cpp:377` refuses the transform when carrying either tangent is unsafe.
 - `tests/src/core/AutomationLanesTest.cpp:351` adds the regression slot; `tests/src/core/AutomationClipTransformTangentTestSupport.h:28` checks refusal and that the clip remains unchanged.
-- `tests/fork-sources.txt:1912` and `tests/all-sources.txt:2345` register the new test support header.
+- `tests/fork-sources.txt:1957` and `tests/all-sources.txt:2344` register the new test support header, immediately before `AutomationLanesTest.cpp` at `tests/fork-sources.txt:1958` and `tests/all-sources.txt:2345`.
 
 ## Regression evidence
 
@@ -32,6 +32,20 @@ The required fix reversal was also performed. `git diff -- src/core/AutomationCl
 | File length | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-509.r1/logs/gate-file-length-3.log 2>&1; gate_rc=$?; echo EXIT=$gate_rc` | 0 |
 
 The `fff` grep tool was not available in this session (`command -v fff; fff_rc=$?; echo EXIT=$fff_rc` exited `1`). Build and test logs were filtered with `rg -n` for `error`, `FAILED`, and `Assertion` instead of reading whole logs.
+
+## Round 2: generated manifest rework
+
+The fork manifest's documented recipe omitted 60 already-registered fork test sources because its core-test allow-list did not derive them. I added those exact paths to both the `Regenerate with` and `Verify it` recipes, then regenerated the entries while retaining the explanatory comments. This preserved all 1,511 fork-NEW entries and placed `AutomationClipTransformTangentTestSupport.h` before `AutomationLanesTest.cpp` in both manifests.
+
+| Check | Exact command | Exit |
+|---|---|---:|
+| Fork manifest's documented verify recipe | `bash -c "$(awk '/^# Verify it/ { on=1; next } on && /&& echo REPRODUCES/ { sub(/^# ?/, ""); print; exit } on && /^#/ { sub(/^# ?/, ""); print; next } on { exit }' tests/fork-sources.txt)" > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-509.r2/logs/fork-manifest-reproduce-1.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
+| Whole-tree manifest reproduction | `bash tests/all-sources-reproduce.sh > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-509.r2/logs/source-reproduce-1.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
+| Fork source registration gate | `bash tests/fork-sources-gate.sh > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-509.r2/logs/fork-sources-gate-1.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
+| Complexity gate, final report edit | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-509.r2/logs/gate-complexity-3.log 2>&1; gate_rc=$?; echo EXIT=$gate_rc` | 0 |
+| File-length gate, final report edit | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-509.r2/logs/gate-file-length-2.log 2>&1; gate_rc=$?; echo EXIT=$gate_rc` | 0 |
+
+The fork source gate scanned 2,668 tracked source files and reported 1,511 fork-NEW, 1,196 inherited, 48 tooling, and 0 stale entries. `git diff --check` exited `0`. In this round, the rework commit contains `tests/all-sources.txt`, `tests/fork-sources.txt`, and this report.
 
 ## Files committed
 

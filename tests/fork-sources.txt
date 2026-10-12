@@ -13,6 +13,10 @@
 # of the recipe lacked tests/mmpz-v2-container-refusal.py. One pathspec line naming the 23 was added to
 # BOTH copies and the entries re-emitted in the recipe's order. SAME 741-entry set: nothing entered or
 # left any scope.
+# 2026-10-12 (cluster new-p10-509): the recipe allow-list omitted 60 already-registered
+# fork test sources. This named pathspec keeps the generated scope intact, including
+# AutomationClipTransformTangentTestSupport.h and AutomationLanesTest.cpp; the final
+# LC_ALL=C sort -u emits both in their generated order.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -39,6 +43,27 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- \
+#     tests/src/core/AafImportTest.cpp tests/src/core/ArrangeToolsTest.cpp tests/src/core/ArrangementModesTest.cpp \
+#     tests/src/core/ArrangingCatchUpTest.cpp tests/src/core/AudioAnalysisTest.cpp tests/src/core/AudioAutomationToolsTest.cpp \
+#     tests/src/core/AudioBurstSupport.h tests/src/core/AudioEditingTest.cpp tests/src/core/AutomationClipTransformTangentTestSupport.h \
+#     tests/src/core/AutomationLanesTest.cpp tests/src/core/ClipGainEnvelopeTest.cpp tests/src/core/ClipJoinRippleTest.cpp \
+#     tests/src/core/ClipTransposeTest.cpp tests/src/core/CollabPolicyTest.cpp tests/src/core/CollabTransportTest.cpp \
+#     tests/src/core/CustomAccessTest.cpp tests/src/core/DeviceCopyTest.cpp tests/src/core/DeviceDspTest.cpp \
+#     tests/src/core/DeviceToolsTest.cpp tests/src/core/HardwareIoTest.cpp tests/src/core/InstrumentLayersCommandsTest.cpp \
+#     tests/src/core/InstrumentRoutingTest.cpp tests/src/core/LibraryBrowserTest.cpp tests/src/core/LibraryProjectsTest.cpp \
+#     tests/src/core/Lv2StateTest.cpp tests/src/core/McuSurfaceTest.cpp tests/src/core/MidiInputTransformTest.cpp \
+#     tests/src/core/MidiJackOutScheduleTest.cpp tests/src/core/MixerListenTest.cpp tests/src/core/MixerStripTest.cpp \
+#     tests/src/core/MixerToolsTest.cpp tests/src/core/MixingRoutingTest.cpp tests/src/core/ModulatorToolsTest.cpp \
+#     tests/src/core/MpscQueueTest.cpp tests/src/core/NoteCurvesAcrossTest.cpp tests/src/core/NoteEditRangeTest.cpp \
+#     tests/src/core/NoteEditingCommandsTest.cpp tests/src/core/NotePlaybackTest.cpp tests/src/core/NoteShapeValidationTest.cpp \
+#     tests/src/core/NoteToolsTest.cpp tests/src/core/PortMappingCodecTest.cpp tests/src/core/ProjectMarkersTest.cpp \
+#     tests/src/core/ProjectStateTest.cpp tests/src/core/ProjectToolsTest.cpp tests/src/core/RackZoneRoutingTest.cpp \
+#     tests/src/core/RangeEditsTest.cpp tests/src/core/RealtimeSnapshotTest.cpp tests/src/core/RecordToolsTest.cpp \
+#     tests/src/core/RecordingPassTest.cpp tests/src/core/SampleBufferResampleTest.cpp tests/src/core/ScriptCommandBridgeTest.cpp \
+#     tests/src/core/SessionPerformTest.cpp tests/src/core/SidechainInputsTest.cpp tests/src/core/SurroundTest.cpp \
+#     tests/src/core/TaskCenterTest.cpp tests/src/core/UndoHonestyTest.cpp tests/src/core/VideoTestClip.h \
+#     tests/src/core/VideoTrackTest.cpp tests/src/core/W3EngineTest.cpp tests/src/core/WarpQuantizeTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-dry-run-journal.py tests/control-feedback-commands.py tests/control-import-lifetime.py tests/control-mastering-quit.py tests/control-mastering-run-bound.py tests/control-render-format-capability.py tests/control-save-state.py tests/control-tempo-map-persistence.py tests/src/core/DocumentIndexTest.cpp tests/src/core/DocumentSectionsTest.cpp tests/src/core/MidiOutQueueTest.cpp tests/src/core/MidiRetroCaptureTest.cpp tests/src/core/NamespaceRegistryTest.cpp tests/src/core/PartialLoadTest.cpp tests/src/core/ProjectContainerEntriesTest.cpp tests/src/core/ProjectContainerTest.cpp tests/src/core/ProvenanceSectionTest.cpp tests/src/core/RetroMidiRingTest.cpp tests/src/core/SessionPlaybackRenderTest.cpp tests/src/core/SessionPlaybackTest.cpp tests/src/core/StemJobManagerTest.cpp tests/src/core/UnclaimedElementsTest.cpp tests/src/core/UnclaimedTrackTypeTest.cpp ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
@@ -72,6 +97,27 @@
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-tempo-map-persistence.py ; \
+#        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- \
+#          tests/src/core/AafImportTest.cpp tests/src/core/ArrangeToolsTest.cpp tests/src/core/ArrangementModesTest.cpp \
+#          tests/src/core/ArrangingCatchUpTest.cpp tests/src/core/AudioAnalysisTest.cpp tests/src/core/AudioAutomationToolsTest.cpp \
+#          tests/src/core/AudioBurstSupport.h tests/src/core/AudioEditingTest.cpp tests/src/core/AutomationClipTransformTangentTestSupport.h \
+#          tests/src/core/AutomationLanesTest.cpp tests/src/core/ClipGainEnvelopeTest.cpp tests/src/core/ClipJoinRippleTest.cpp \
+#          tests/src/core/ClipTransposeTest.cpp tests/src/core/CollabPolicyTest.cpp tests/src/core/CollabTransportTest.cpp \
+#          tests/src/core/CustomAccessTest.cpp tests/src/core/DeviceCopyTest.cpp tests/src/core/DeviceDspTest.cpp \
+#          tests/src/core/DeviceToolsTest.cpp tests/src/core/HardwareIoTest.cpp tests/src/core/InstrumentLayersCommandsTest.cpp \
+#          tests/src/core/InstrumentRoutingTest.cpp tests/src/core/LibraryBrowserTest.cpp tests/src/core/LibraryProjectsTest.cpp \
+#          tests/src/core/Lv2StateTest.cpp tests/src/core/McuSurfaceTest.cpp tests/src/core/MidiInputTransformTest.cpp \
+#          tests/src/core/MidiJackOutScheduleTest.cpp tests/src/core/MixerListenTest.cpp tests/src/core/MixerStripTest.cpp \
+#          tests/src/core/MixerToolsTest.cpp tests/src/core/MixingRoutingTest.cpp tests/src/core/ModulatorToolsTest.cpp \
+#          tests/src/core/MpscQueueTest.cpp tests/src/core/NoteCurvesAcrossTest.cpp tests/src/core/NoteEditRangeTest.cpp \
+#          tests/src/core/NoteEditingCommandsTest.cpp tests/src/core/NotePlaybackTest.cpp tests/src/core/NoteShapeValidationTest.cpp \
+#          tests/src/core/NoteToolsTest.cpp tests/src/core/PortMappingCodecTest.cpp tests/src/core/ProjectMarkersTest.cpp \
+#          tests/src/core/ProjectStateTest.cpp tests/src/core/ProjectToolsTest.cpp tests/src/core/RackZoneRoutingTest.cpp \
+#          tests/src/core/RangeEditsTest.cpp tests/src/core/RealtimeSnapshotTest.cpp tests/src/core/RecordToolsTest.cpp \
+#          tests/src/core/RecordingPassTest.cpp tests/src/core/SampleBufferResampleTest.cpp tests/src/core/ScriptCommandBridgeTest.cpp \
+#          tests/src/core/SessionPerformTest.cpp tests/src/core/SidechainInputsTest.cpp tests/src/core/SurroundTest.cpp \
+#          tests/src/core/TaskCenterTest.cpp tests/src/core/UndoHonestyTest.cpp tests/src/core/VideoTestClip.h \
+#          tests/src/core/VideoTrackTest.cpp tests/src/core/W3EngineTest.cpp tests/src/core/WarpQuantizeTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-dry-run-journal.py tests/control-feedback-commands.py tests/control-import-lifetime.py tests/control-mastering-quit.py tests/control-mastering-run-bound.py tests/control-render-format-capability.py tests/control-save-state.py tests/control-tempo-map-persistence.py tests/src/core/DocumentIndexTest.cpp tests/src/core/DocumentSectionsTest.cpp tests/src/core/MidiOutQueueTest.cpp tests/src/core/MidiRetroCaptureTest.cpp tests/src/core/NamespaceRegistryTest.cpp tests/src/core/PartialLoadTest.cpp tests/src/core/ProjectContainerEntriesTest.cpp tests/src/core/ProjectContainerTest.cpp tests/src/core/ProvenanceSectionTest.cpp tests/src/core/RetroMidiRingTest.cpp tests/src/core/SessionPlaybackRenderTest.cpp tests/src/core/SessionPlaybackTest.cpp tests/src/core/StemJobManagerTest.cpp tests/src/core/UnclaimedElementsTest.cpp tests/src/core/UnclaimedTrackTypeTest.cpp tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
 # 2026-09-16 (the 0.3.0 fix-up pass, lane 030/fixup-hygiene): three fork-NEW modules enter this
@@ -507,11 +553,11 @@ include/AccessibleWidgets.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangementSections.h
-include/ArrangerNavigator.h
 include/ArrangerAids.h
 include/ArrangerClipKeys.h
 include/ArrangerEditPreview.h
 include/ArrangerLandmarks.h
+include/ArrangerNavigator.h
 include/ArrangerOverlays.h
 include/ArrangerRulerLanes.h
 include/ArrangerZoom.h
@@ -1296,8 +1342,8 @@ src/core/ControlCommandsTrackFlatten.cpp
 src/core/ControlCommandsTrackFolder.cpp
 src/core/ControlCommandsTrackFolderSets.cpp
 src/core/ControlCommandsTrackFolderShared.h
-src/core/ControlCommandsTrackMidiOut.cpp
 src/core/ControlCommandsTrackLooks.cpp
+src/core/ControlCommandsTrackMidiOut.cpp
 src/core/ControlCommandsTrackPresets.cpp
 src/core/ControlCommandsTrackSpacers.cpp
 src/core/ControlCommandsTrackVersions.cpp
@@ -1393,9 +1439,9 @@ src/core/ControlReversibilityTableVca.cpp
 src/core/ControlReversibilityTableVerbs.cpp
 src/core/ControlReversibilityTableVideo.cpp
 src/core/ControlReversibilityTableW3Custom.cpp
-src/core/ControlReversibilityTableW3Library.cpp
 src/core/ControlReversibilityTableW3Devices.cpp
 src/core/ControlReversibilityTableW3Engine.cpp
+src/core/ControlReversibilityTableW3Library.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlRoom.cpp
@@ -1606,7 +1652,6 @@ src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
 src/gui/AafImportMenu.cpp
-src/gui/ArrangerNavigator.cpp
 src/gui/AccessibilityAudit.cpp
 src/gui/AccessibleAnnouncements.cpp
 src/gui/AccessibleCanvas.cpp
@@ -1616,6 +1661,7 @@ src/gui/ArrangerAids.cpp
 src/gui/ArrangerClipKeys.cpp
 src/gui/ArrangerEditPreview.cpp
 src/gui/ArrangerLandmarks.cpp
+src/gui/ArrangerNavigator.cpp
 src/gui/ArrangerOverlays.cpp
 src/gui/ArrangerRulerLanes.cpp
 src/gui/ArrangerRulerTempo.cpp
@@ -1908,8 +1954,8 @@ tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBurstSupport.h
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
-tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationClipTransformTangentTestSupport.h
+tests/src/core/AutomationLanesTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipGainEnvelopeTest.cpp
@@ -1972,8 +2018,8 @@ tests/src/core/ModulatorToolsTest.cpp
 tests/src/core/MpscQueueTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp
 tests/src/core/NoteCurvesAcrossTest.cpp
-tests/src/core/NoteEditingCommandsTest.cpp
 tests/src/core/NoteEditRangeTest.cpp
+tests/src/core/NoteEditingCommandsTest.cpp
 tests/src/core/NotePlaybackTest.cpp
 tests/src/core/NoteShapeValidationTest.cpp
 tests/src/core/NoteToolsTest.cpp

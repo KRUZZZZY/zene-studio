@@ -2341,8 +2341,8 @@ tests/src/core/AudioPortsTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AudioStretcherTest.cpp
 tests/src/core/AutomatableModelTest.cpp
-tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationClipTransformTangentTestSupport.h
+tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/BenchmarkBaseline.h
 tests/src/core/BrowserCatalogTest.cpp
