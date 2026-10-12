@@ -375,30 +375,29 @@ bool closesContentElement( int contentDepth, int depth )
  *
  *  The shift this corrects is CUMULATIVE, so it is invisible on an all-ASCII
  *  document - which is why the reduction measured clean until a project carried
- *  a name in a non-Latin script. The scan walks forward, so a caller may repeat
- *  this for each section; it is linear in the document length, on the load
- *  path, never on an audio thread. */
-qint64 bytePositionOf( const QByteArray & data, qint64 characterOffset )
+ *  a name in a non-Latin script. Reader offsets only move forward during range
+ *  scanning, so the cursor carries conversion forward across sections. The
+ *  total walk is linear in document length, on the load path, never on audio. */
+qint64 bytePositionOf( const QByteArray & data, qint64 characterOffset,
+	qint64 & charactersScanned, qint64 & bytesScanned )
 {
 	if( characterOffset <= 0 ) { return 0; }
 
-	qint64 characters = 0;
-	for( qint64 byte = 0; byte < data.size(); ++byte )
+	while( bytesScanned < data.size() && charactersScanned < characterOffset )
 	{
-		if( characters >= characterOffset ) { return byte; }
-
 		// characterOffset() counts UTF-16 units: a four-byte UTF-8 sequence (lead
 		// byte 0xF0-0xF7, a character outside the BMP) is a surrogate pair, two units.
-		const auto lead = static_cast< unsigned char >( data.at( byte ) );
+		const auto lead = static_cast< unsigned char >( data.at( bytesScanned ) );
 		if( ( lead & 0xC0 ) != 0x80 )
 		{
-			characters += lead >= 0xF0 ? 2 : 1;
+			charactersScanned += lead >= 0xF0 ? 2 : 1;
 		}
+		++bytesScanned;
 	}
 
-	// Past the last character: the end of the document is the honest answer for
-	// an offset that names nothing, and the range's begin is checked anyway.
-	return data.size();
+	// Past the last character, bytesScanned is the end of the document, matching
+	// the previous full-prefix scan's answer for an offset that names nothing.
+	return bytesScanned;
 }
 } // namespace
 
@@ -417,6 +416,8 @@ bool scanSectionRanges( const QByteArray & data, const QString & contentElementN
 
 	int depth = 0;         // open elements
 	int contentDepth = -1; // depth of the content element itself, or -1 outside it
+	qint64 charactersScanned = 0;
+	qint64 bytesScanned = 0;
 
 	while( !xml.atEnd() )
 	{
@@ -438,7 +439,8 @@ bool scanSectionRanges( const QByteArray & data, const QString & contentElementN
 				// CHARACTERS, and the ranges below address a QByteArray, so it is
 				// converted to a byte position first.
 				const qint64 afterTag =
-					bytePositionOf( data, xml.characterOffset() );
+					bytePositionOf( data, xml.characterOffset(), charactersScanned,
+						bytesScanned );
 				const qint64 begin = data.lastIndexOf( '<', afterTag - 1 );
 
 				// Refuse rather than corrupt: an unrecoverable begin offset means
@@ -446,7 +448,8 @@ bool scanSectionRanges( const QByteArray & data, const QString & contentElementN
 				if( begin < 0 ) { return false; }
 
 				xml.skipCurrentElement();
-				const qint64 end = bytePositionOf( data, xml.characterOffset() );
+				const qint64 end = bytePositionOf( data, xml.characterOffset(),
+					charactersScanned, bytesScanned );
 				out.ranges.append( qMakePair( begin, end - begin ) );
 				out.names.append( name );
 
