@@ -271,11 +271,20 @@ private slots:
 
 	void defaultPaletteRestoresAfterTrackPalette()
 	{
+		QVector<QColor> original (48);
+		for (int i = 0; i < original.size(); ++i)
+		{
+			original[i] = QColorDialog::standardColor(i);
+		}
+
 		ColorChooser chooser;
-		const auto original = ColorChooser::getPalette(ColorChooser::Palette::Default);
 		chooser.setPalette(ColorChooser::Palette::Track);
 		chooser.setPalette(ColorChooser::Palette::Default);
-		const auto restored = ColorChooser::getPalette(ColorChooser::Palette::Default);
+		QVector<QColor> restored (48);
+		for (int i = 0; i < restored.size(); ++i)
+		{
+			restored[i] = QColorDialog::standardColor(i);
+		}
 
 		for (int i = 0; i < original.size(); ++i)
 		{
