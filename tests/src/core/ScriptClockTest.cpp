@@ -38,6 +38,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include <limits>
+
 #include "ControlReversibility.h"
 #include "ScriptClock.h"
 
@@ -93,6 +95,13 @@ private slots:
 	//! control thread blocked inside a long script.run - fire the cap and
 	//! count the rest as coalesced instead of firing a thousand stale bars.
 	void overshootCapCoalesces();
+
+	//! Regridding at the largest tick cannot represent a later boundary, so it
+	//! must saturate instead of wrapping the stored next position.
+	void maximumPositionSaturatesGrid();
+
+	//! A crossing excess larger than int is reported with the bounded maximum.
+	void coalescedCountSaturates();
 
 	//! Degenerate strides (meter arithmetic that produced 0) detect nothing
 	//! rather than dividing by zero.
@@ -206,6 +215,29 @@ void ScriptClockTest::overshootCapCoalesces()
 	QCOMPARE(jump.bars, ScriptClockGrid::CrossCap);
 	QVERIFY(jump.coalesced >= 10 - ScriptClockGrid::CrossCap);
 	QCOMPARE(grid.nextBar(), static_cast<qint64>(11 * 192));
+}
+
+void ScriptClockTest::maximumPositionSaturatesGrid()
+{
+	ScriptClockGrid grid;
+	const qint64 maximum = std::numeric_limits<qint64>::max();
+
+	const ScriptTickEvents atLimit = grid.advance(true, maximum, 1, 1);
+	QCOMPARE(atLimit.bars, 0);
+	QCOMPARE(atLimit.beats, 0);
+	QCOMPARE(grid.nextBar(), maximum);
+	QCOMPARE(grid.nextBeat(), maximum);
+}
+
+void ScriptClockTest::coalescedCountSaturates()
+{
+	ScriptClockGrid grid;
+	grid.advance(true, 0, 1, 1);
+
+	const ScriptTickEvents jump = grid.advance(true, std::numeric_limits<qint64>::max(), 1, 1);
+	QCOMPARE(jump.bars, ScriptClockGrid::CrossCap);
+	QCOMPARE(jump.beats, ScriptClockGrid::CrossCap);
+	QCOMPARE(jump.coalesced, std::numeric_limits<int>::max());
 }
 
 void ScriptClockTest::degenerateStridesAreInert()

@@ -104,9 +104,11 @@ public:
 
 private:
 	void regrid(qint64 pos, qint64 ticksPerBar, qint64 ticksPerBeat);
-	static int consume(qint64 pos, qint64 stride, qint64* next, int* coalesced);
+	static int consume(qint64 pos, qint64 stride, qint64* next, bool* hasNext, int* coalesced);
 
 	bool m_playing = false;
+	bool m_hasNextBar = false;
+	bool m_hasNextBeat = false;
 	qint64 m_pos = 0;
 	qint64 m_ticksPerBar = 0;
 	qint64 m_ticksPerBeat = 0;
