@@ -25,6 +25,9 @@
 #define LMMS_GUI_SAMPLE_EDITOR_DIALOG_H
 
 #include <algorithm>
+#include <cstddef>
+#include <limits>
+#include <optional>
 #include <vector>
 
 #include <QDialog>
@@ -53,6 +56,17 @@ class QPushButton;
 namespace lmms::gui
 {
 
+namespace sampleeditor::detail
+{
+
+inline auto representableFrameCount(std::size_t sampleSize) -> std::optional<int>
+{
+	if (sampleSize > static_cast<std::size_t>(std::numeric_limits<int>::max())) { return std::nullopt; }
+	return static_cast<int>(sampleSize);
+}
+
+} // namespace sampleeditor::detail
+
 /*! The waveform of a sample clip's whole source, with a selection dragged across it (source frames, End
  *  exclusive). 0.5.0 theme 15: the selection's edges are handles - drag one to move that edge - and the
  *  waveform zooms (Ctrl+wheel around the pointer, or the dialog's zoom buttons) and scrolls (the wheel). */
@@ -62,6 +76,7 @@ class LMMS_EXPORT SampleSelectionView : public QWidget
 public:
 	explicit SampleSelectionView(QWidget* parent = nullptr);
 	void setClip(SampleClip* clip);
+	bool hasUnsupportedFrameCount() const { return m_unsupportedFrameCount; }
 	int from() const { return std::min(m_anchor, m_end); }
 	int to() const { return std::max(m_anchor, m_end); }
 	int frames() const { return m_frames; }
@@ -102,6 +117,7 @@ private:
 	void paintHandle(QPainter& p, int frame, Edge edge) const;
 	QPointer<SampleClip> m_clip;
 	SampleThumbnail m_thumbnail;
+	bool m_unsupportedFrameCount = false;
 	int m_frames = 0;
 	int m_anchor = 0;
 	int m_end = 0;

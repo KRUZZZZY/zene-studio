@@ -50,7 +50,9 @@ SampleSelectionView::SampleSelectionView(QWidget* parent) :
 
 void SampleSelectionView::setClip(SampleClip* clip)
 {
-	const int frames = clip != nullptr ? static_cast<int>(clip->sample().sampleSize()) : 0;
+	const auto frameCount = clip != nullptr
+		? sampleeditor::detail::representableFrameCount(clip->sample().sampleSize()) : std::optional<int>{0};
+	const int frames = frameCount.value_or(0);
 	// The same clip at the same length (after a gain, silence, reverse or fade) keeps its selection and its
 	// zoom, so the next action applies to it too; a new clip or length starts afresh (review L17 #5).
 	if (clip != m_clip || frames != m_frames)
@@ -60,7 +62,8 @@ void SampleSelectionView::setClip(SampleClip* clip)
 	}
 	m_clip = clip;
 	m_frames = frames;
-	m_thumbnail = clip != nullptr ? SampleThumbnail(clip->sample()) : SampleThumbnail();
+	m_unsupportedFrameCount = clip != nullptr && !frameCount.has_value();
+	m_thumbnail = clip != nullptr && !m_unsupportedFrameCount ? SampleThumbnail(clip->sample()) : SampleThumbnail();
 	update();
 	emit selectionChanged();
 }
