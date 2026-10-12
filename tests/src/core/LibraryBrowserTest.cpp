@@ -33,6 +33,8 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QImage>
 #include <QJsonArray>
 #include <QTemporaryDir>
@@ -112,6 +114,31 @@ private slots:
 		QJsonObject relative = args;
 		relative.insert(QStringLiteral("dir"), QStringLiteral("not/absolute"));
 		QCOMPARE(run(QStringLiteral("browser.save_clip"), relative).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	void aSymlinkDestinationIsRefused()
+	{
+		const QString target = QDir(m_dir.path()).filePath(QStringLiteral("original.mid"));
+		QFile original(target);
+		QVERIFY(original.open(QIODevice::WriteOnly));
+		QCOMPARE(original.write("original midi"), qint64{13});
+		original.close();
+		const QString link = QDir(m_dir.path()).filePath(QStringLiteral("linked.mid"));
+		QVERIFY(QFile::link(target, link));
+
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		const ControlResult saved = run(QStringLiteral("browser.save_clip"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("dir"), m_dir.path()}, {QStringLiteral("name"), QStringLiteral("linked")},
+			{QStringLiteral("overwrite"), true}});
+		if (saved.ok) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+
+		QVERIFY2(!saved.ok, "saving over a symlink destination must be refused");
+		QVERIFY(QFileInfo(link).isSymLink());
+		QCOMPARE(QFileInfo(link).symLinkTarget(), target);
+		QVERIFY(original.open(QIODevice::ReadOnly));
+		QCOMPARE(original.readAll(), QByteArray("original midi"));
 	}
 
 	void aMissingPresetIsRefused()

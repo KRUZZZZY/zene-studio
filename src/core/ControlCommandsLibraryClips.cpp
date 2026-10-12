@@ -153,6 +153,11 @@ bool writeClip(Clip* clip, const QString& path, QString* error)
 	return true;
 }
 
+bool existsWithoutOverwrite(const QFileInfo& target, const QJsonObject& args)
+{
+	return target.exists() && !args.value(QStringLiteral("overwrite")).toBool(false);
+}
+
 //! The file @a args asks for: its folder ('dir' or <user samples>/Clips), name and the clip's extension.
 bool targetPath(const QJsonObject& args, const ClipRef& ref, QString* path, ControlResult* error)
 {
@@ -171,7 +176,13 @@ bool targetPath(const QJsonObject& args, const ClipRef& ref, QString* path, Cont
 	}
 	const bool audio = dynamic_cast<SampleClip*>(ref.clip) != nullptr;
 	*path = QDir(dir).filePath(name + (audio ? QStringLiteral(".wav") : QStringLiteral(".mid")));
-	if (QFileInfo::exists(*path) && !args.value(QStringLiteral("overwrite")).toBool(false))
+	const QFileInfo target(*path);
+	if (target.isSymLink())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 is a symbolic link").arg(*path));
+		return false;
+	}
+	if (existsWithoutOverwrite(target, args))
 	{
 		*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 exists; pass overwrite to replace it").arg(*path));
 		return false;
