@@ -30,6 +30,9 @@
 #include <cmath>
 #include <memory>
 #include <sndfile.h>
+#ifdef LMMS_TESTING
+#include <atomic>
+#endif
 
 #ifdef LMMS_HAVE_OGGVORBIS
 #include <vorbis/vorbisfile.h>
@@ -43,6 +46,11 @@
 namespace lmms {
 
 namespace {
+
+#ifdef LMMS_TESTING
+std::atomic<std::uint64_t> s_fullDecodeCallsForTesting{0};
+std::atomic<std::uint64_t> s_limitedDecodeCallsForTesting{0};
+#endif
 
 using Decoder = std::optional<SampleDecoder::Result> (*)(const QString&);
 
@@ -341,6 +349,9 @@ auto SampleDecoder::supportedAudioTypes() -> const std::vector<AudioType>&
 
 auto SampleDecoder::decode(const QString& audioFile) -> std::optional<Result>
 {
+#ifdef LMMS_TESTING
+	s_fullDecodeCallsForTesting.fetch_add(1, std::memory_order_relaxed);
+#endif
 	auto result = std::optional<Result>{};
 	for (const auto& decoder : decoders)
 	{
@@ -353,6 +364,9 @@ auto SampleDecoder::decode(const QString& audioFile) -> std::optional<Result>
 
 auto SampleDecoder::decodeLimited(const QString& audioFile, double maxSeconds) -> std::optional<BoundedResult>
 {
+#ifdef LMMS_TESTING
+	s_limitedDecodeCallsForTesting.fetch_add(1, std::memory_order_relaxed);
+#endif
 	if (!(maxSeconds > 0.0)) { return std::nullopt; }
 	if (auto r = boundedSF(audioFile, maxSeconds)) { return r; }
 #ifdef LMMS_HAVE_OGGVORBIS
@@ -370,5 +384,18 @@ auto SampleDecoder::decodeLimited(const QString& audioFile, double maxSeconds) -
 	}
 	return BoundedResult{std::move(*whole), total};
 }
+
+#ifdef LMMS_TESTING
+void SampleDecoder::resetDecodeCallCountsForTesting()
+{
+	s_fullDecodeCallsForTesting.store(0, std::memory_order_relaxed);
+	s_limitedDecodeCallsForTesting.store(0, std::memory_order_relaxed);
+}
+
+auto SampleDecoder::decodeCallCountsForTesting() -> DecodeCallCountsForTesting
+{
+	return {s_fullDecodeCallsForTesting.load(std::memory_order_relaxed), s_limitedDecodeCallsForTesting.load(std::memory_order_relaxed)};
+}
+#endif
 
 } // namespace lmms

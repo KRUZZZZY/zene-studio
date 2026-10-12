@@ -63,6 +63,17 @@ public:
 	//! Decodes only the first @a maxSeconds seconds (at the file's own rate) (same channel handling and decoder order as decode()) and
 	//! reports the full length. A synthesised DrumSynth file is produced whole, then cut.
 	static auto decodeLimited(const QString& audioFile, double maxSeconds) -> std::optional<BoundedResult>;
+
+#ifdef LMMS_TESTING
+	struct DecodeCallCountsForTesting
+	{
+		std::uint64_t full = 0;
+		std::uint64_t limited = 0;
+	};
+	static void resetDecodeCallCountsForTesting();
+	static auto decodeCallCountsForTesting() -> DecodeCallCountsForTesting;
+#endif
+
 	static auto supportedAudioTypes() -> const std::vector<AudioType>&;
 };
 } // namespace lmms

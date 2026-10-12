@@ -134,6 +134,18 @@ private slots:
 		QVERIFY(full->data.size() > 2 * one->window.data.size());
 	}
 
+	//! BrowserFeatures::analyse must use the limited decoder, not only produce the same feature values via decode().
+	void analyseUsesBoundedDecodePath()
+	{
+		QVERIFY(writeTone(path(QStringLiteral("analysis.wav")), Wav, 60.0));
+		SampleDecoder::resetDecodeCallCountsForTesting();
+		const BrowserFeatures features = BrowserFeatures::analyse(path(QStringLiteral("analysis.wav")));
+		QVERIFY(features.valid);
+		const auto calls = SampleDecoder::decodeCallCountsForTesting();
+		QCOMPARE(calls.full, std::uint64_t{0});
+		QCOMPARE(calls.limited, std::uint64_t{1});
+	}
+
 	//! A short file is decoded whole, and the bounded and full paths agree sample for sample on the window.
 	void shortFileAndSampleParity()
 	{
