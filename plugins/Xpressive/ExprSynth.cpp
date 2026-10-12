@@ -80,7 +80,7 @@ struct IntegrateFunction : public exprtk::ifunction<T>
 		delete [] m_counters;
 	}
 
-	IntegrateFunction(const unsigned int* frame, unsigned int sample_rate,unsigned int max_counters) :
+	IntegrateFunction(const f_cnt_t* frame, unsigned int sample_rate,unsigned int max_counters) :
 	exprtk::ifunction<T>(1),
 	m_firstValue(0),
 	m_frame(frame),
@@ -127,8 +127,8 @@ struct IntegrateFunction : public exprtk::ifunction<T>
 		m_cc = (m_cc + 1) % m_nCountersCalls;
 		return res / m_sampleRate;
 	}
-	unsigned int m_firstValue;
-	const unsigned int* m_frame;
+	f_cnt_t m_firstValue;
+	const f_cnt_t* m_frame;
 	const unsigned int m_sampleRate;
 	// number of counters allocated
 	const unsigned int m_maxCounters;
@@ -674,7 +674,7 @@ size_t find_occurances(const std::string& haystack, const char* const needle)
 	return count;
 }
 
-void ExprFront::setIntegrate(const unsigned int* const frameCounter, const unsigned int sample_rate)
+void ExprFront::setIntegrate(const f_cnt_t* const frameCounter, const unsigned int sample_rate)
 {
 	if (m_data->m_integ_func == nullptr)
 	{
@@ -785,10 +785,10 @@ void ExprSynth::renderOutput(f_cnt_t frames, SampleFrame* buf)
 				buf[frame][0] = (-pn1 + 0.5) * o1 + (-pn2 + 0.5) * o2;
 				buf[frame][1] = ( pn1 + 0.5) * o1 + ( pn2 + 0.5) * o2;
 				m_note_sample++;
-				m_note_sample_sec = m_note_sample / (float)m_sample_rate;
+				m_note_sample_sec = static_cast<float>(m_note_sample) / static_cast<float>(m_sample_rate);
 				if (is_released)
 				{
-					m_note_rel_sec = (m_note_sample - m_note_rel_sample) / (float)m_sample_rate;
+					m_note_rel_sec = static_cast<float>(m_note_sample - m_note_rel_sample) / static_cast<float>(m_sample_rate);
 				}
 				m_frequency += freq_inc;
 			}
@@ -813,10 +813,10 @@ void ExprSynth::renderOutput(f_cnt_t frames, SampleFrame* buf)
 				buf[frame][0] = (-pn1 + 0.5) * o1;
 				buf[frame][1] = ( pn1 + 0.5) * o1;
 				m_note_sample++;
-				m_note_sample_sec = m_note_sample / (float)m_sample_rate;
+				m_note_sample_sec = static_cast<float>(m_note_sample) / static_cast<float>(m_sample_rate);
 				if (is_released)
 				{
-					m_note_rel_sec = (m_note_sample - m_note_rel_sample) / (float)m_sample_rate;
+					m_note_rel_sec = static_cast<float>(m_note_sample - m_note_rel_sample) / static_cast<float>(m_sample_rate);
 				}
 				m_frequency += freq_inc;
 			}
