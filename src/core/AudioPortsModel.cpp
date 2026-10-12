@@ -238,8 +238,15 @@ void AudioPortsModel::loadSettings(const QDomElement& elem)
 	if (countsInRange) { setChannelCounts(inputs, outputs); }
 	else { qWarning() << "Ignoring out-of-range audio port channel counts"; }
 
-	m_in.loadSettings(pins.firstChildElement("in_matrix"));
-	m_out.loadSettings(pins.firstChildElement("out_matrix"));
+	// BUG-PINZERO: setChannelCounts() rejects some in-range counts too (the 0/0
+	// of a zero-port project), and loading a matrix clears every pin first. Only
+	// load the file's matrices when its counts are actually in effect, so a
+	// rejected load cannot erase the model's existing connections.
+	if (in().channelCount() == inputs && out().channelCount() == outputs)
+	{
+		m_in.loadSettings(pins.firstChildElement("in_matrix"));
+		m_out.loadSettings(pins.firstChildElement("out_matrix"));
+	}
 
 	m_in.updateAllUsedChannels();
 	m_out.updateAllUsedChannels();
