@@ -74,7 +74,23 @@ int headerHeight()
 //! A label as a button shows it: no mnemonic marker, no shortcut suffix.
 QString labelOf(QString text)
 {
-	return text.remove(QLatin1Char('&')).section(QLatin1Char('\t'), 0, 0);
+	text = text.section(QLatin1Char('\t'), 0, 0);
+	QString label;
+	label.reserve(text.size());
+	for (qsizetype i = 0; i < text.size(); ++i)
+	{
+		if (text.at(i) == QLatin1Char('&'))
+		{
+			if (i + 1 < text.size() && text.at(i + 1) == QLatin1Char('&'))
+			{
+				label.append(QLatin1Char('&'));
+				++i;
+			}
+			continue;
+		}
+		label.append(text.at(i));
+	}
+	return label;
 }
 
 //! A view word as the footer shows it: upper case, no mnemonic marker, no shortcut suffix.

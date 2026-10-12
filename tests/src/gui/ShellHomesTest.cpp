@@ -33,6 +33,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QFontMetrics>
 #include <QJsonArray>
 #include <QLayout>
 #include <QMdiArea>
@@ -44,6 +45,7 @@
 
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
+#include "DesignTokens.h"
 #include "Engine.h"
 #include "LayoutMenu.h"
 #include "Shell.h"
@@ -243,6 +245,17 @@ private slots:
 		QCOMPARE(row->fitting(), shelloverflow::Fit::Labelled);
 		QVERIFY(!buttons.at(2)->isVisible());
 		QVERIFY(row->moreButton()->overflowed().isEmpty());
+	}
+
+	void aLabelPreservesAnEscapedAmpersand()
+	{
+		ShellButton button;
+		button.setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+		button.setText(QStringLiteral("Rock && Roll"));
+		const QFontMetrics fm(tokens::font(tokens::TextRole::Small));
+		const int expected = button.iconSize().width() + tokens::space::xs +
+			fm.horizontalAdvance(QStringLiteral("Rock & Roll")) + 2 * tokens::space::md;
+		QCOMPARE(button.sizeHint().width(), expected);
 	}
 
 	void theFooterHasAToolsHomeForEveryToolWindow()
