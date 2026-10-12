@@ -23,6 +23,7 @@
  */
 
 #include <QObject>
+#include <QProcess>
 #include <QtTest>
 
 #include "lmms_math.h"
@@ -47,7 +48,28 @@ private slots:
 		QCOMPARE(numDigitsAsInt(900000000), 9);
 		QCOMPARE(numDigitsAsInt(-900000000), 10);
 	}
+
+	void OneInZeroTest()
+	{
+		QProcess process;
+		process.start(QCoreApplication::applicationFilePath(), {"--one-in-zero-child"});
+		QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
+		QVERIFY2(process.waitForFinished(), qPrintable(process.errorString()));
+		QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+		QCOMPARE(process.exitCode(), 0);
+	}
 };
 
-QTEST_GUILESS_MAIN(MathTest)
+int main(int argc, char* argv[])
+{
+	QCoreApplication application(argc, argv);
+	if (argc == 2 && QByteArray(argv[1]) == "--one-in-zero-child")
+	{
+		return lmms::oneIn(0) ? 1 : 0;
+	}
+
+	MathTest test;
+	return QTest::qExec(&test, argc, argv);
+}
+
 #include "MathTest.moc"

@@ -1049,5 +1049,7 @@ include/Instrument.h	0.5.0 F2 (MX-114/MX-120): virtual outputBuses/perNoteTarget
 plugins/Lv2Instrument/Lv2Instrument.h	0.5.0 F2 (MX-114): output buses member
 include/LcdWidget.h	0.5.0 themes 20/23: hover state via ControlCues (enabled only); token colours replace fixed ones (fader trough and ticks, default bar paint); LcdWidget::borderColour; LCD float height from tokens (same 32 px). Held by KnobKeyboardTest
 src/gui/editors/TimeLineWidget.cpp	0.5.0 theme 9 (wave 3): the bar-number interval also allows for the widest number on screen plus a gap, so numbers never overlap; unchanged wherever the old 35 px minimum already sufficed
+include/lmms_math.h	2026-10-12: document and handle oneIn(0) as false; regression MathTest::OneInZeroTest verifies the call does not crash.
+tests/src/core/MathTest.cpp	2026-10-12: add subprocess regression proving oneIn(0) exits normally with false.
 include/InstrumentPlayHandle.h	2026-10-05 audio-worker lifetime fix (be2130796): retain the owning track for isFromTrack without dereferencing a destroyed instrument; regression ArrangingCatchUpTest::queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie.
 src/core/InstrumentPlayHandle.cpp	2026-10-05 audio-worker lifetime fix (be2130796): initialise the retained track pointer while the instrument is alive; regression ArrangingCatchUpTest::queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie and PluginPortsMigrationTest.
