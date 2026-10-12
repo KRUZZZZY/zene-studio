@@ -252,8 +252,7 @@ int DrumSynth::GetPrivateProfileInt(const char* sec, const char* key, int def, Q
 	int i = 0;
 
 	GetPrivateProfileString(sec, key, "", tmp, sizeof(tmp), file);
-	sscanf(tmp, "%d", &i);
-	if (tmp[0] == 0)
+	if (sscanf(tmp, "%d", &i) != 1)
 	{
 		i = def;
 	}
@@ -267,8 +266,7 @@ float DrumSynth::GetPrivateProfileFloat(const char* sec, const char* key, float 
 	float f = 0.f;
 
 	GetPrivateProfileString(sec, key, "", tmp, sizeof(tmp), file);
-	sscanf(tmp, "%f", &f);
-	if (tmp[0] == 0)
+	if (sscanf(tmp, "%f", &f) != 1)
 	{
 		f = def;
 	}

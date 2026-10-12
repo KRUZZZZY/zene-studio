@@ -52,6 +52,8 @@
 #include <QtTest>
 
 #include <cmath>
+#include <cstdint>
+#include <memory>
 #include <numbers>
 #include <vector>
 
@@ -62,6 +64,7 @@
 #include <QDomElement>
 #include <QTemporaryDir>
 
+#include "DrumSynth.h"
 #include "ImportDetection.h"
 #include "ImportDetectionDsp.h"
 #include "ProjectKey.h"
@@ -79,6 +82,23 @@ constexpr double kFirstBeatSeconds = 0.5;
 constexpr double kOnsetToleranceSeconds = 0.03;
 //! The scale fixture's own answer: A (pitch class 9) major, rooted at 220 Hz.
 constexpr int kExpectedTonic = 9;
+
+std::vector<int16_t> renderDrumSynthPreset(const QString& path, const QByteArray& toneSettings)
+{
+	const QByteArray contents = QByteArrayLiteral(
+		"[General]\nVersion=DrumSynth v2.0\nComment=\n\n[Tone]\nOn=1\n")
+		+ toneSettings + QByteArrayLiteral("\nEnvelope=0,100 2400,0\n");
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly) || file.write(contents) != contents.size()) { return {}; }
+	file.close();
+
+	DrumSynth synth;
+	int16_t* raw = nullptr;
+	const int length = synth.GetDSFileSamples(path, raw, 1, 44100);
+	const std::unique_ptr<int16_t[]> samples{raw};
+	if (length <= 0 || !samples) { return {}; }
+	return {samples.get(), samples.get() + length};
+}
 
 /*! Writes \a samples as a canonical 16-bit mono RIFF/WAVE.
  *
@@ -288,6 +308,24 @@ private slots:
 		const detection::KeyEstimate none =
 			detection::estimateKey(silence.data(), silence.size(), kSampleRate, {});
 		QVERIFY(!none.found);
+	}
+
+	//! Malformed numeric settings retain the defaults the DrumSynth file format specifies.
+	void malformedDrumSynthNumbersUseDefaults()
+	{
+		const auto validLevel = renderDrumSynthPreset(m_dir.filePath(QStringLiteral("level-valid.ds")),
+			QByteArrayLiteral("Level=128\nF1=200"));
+		const auto invalidLevel = renderDrumSynthPreset(m_dir.filePath(QStringLiteral("level-invalid.ds")),
+			QByteArrayLiteral("Level=oops\nF1=200"));
+		QVERIFY(!validLevel.empty());
+		QVERIFY(invalidLevel == validLevel);
+
+		const auto validFrequency = renderDrumSynthPreset(m_dir.filePath(QStringLiteral("frequency-valid.ds")),
+			QByteArrayLiteral("Level=128\nF1=200"));
+		const auto invalidFrequency = renderDrumSynthPreset(m_dir.filePath(QStringLiteral("frequency-invalid.ds")),
+			QByteArrayLiteral("Level=128\nF1=oops"));
+		QVERIFY(!validFrequency.empty());
+		QVERIFY(invalidFrequency == validFrequency);
 	}
 
 	/*! The project's own field: the XML round trip the A16 action checkpoint
