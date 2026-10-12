@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 
 #include <QFileInfo>
 #include <QString>
@@ -39,6 +40,21 @@
 
 namespace lmms
 {
+
+
+namespace recorder_detail
+{
+
+sample_t prepareSampleForPcmWrite(sample_t sample) noexcept
+{
+	if (std::isnan(sample))
+	{
+		return sample_t{0};
+	}
+	return std::clamp(sample, sample_t{-1}, sample_t{1});
+}
+
+}
 
 
 TrackRecorder::TrackRecorder() :
@@ -299,7 +315,7 @@ void TrackRecorder::writerLoop()
 		// in-range sample bit-identical (see RecordClipTest).
 		for (std::size_t i = 0; i < frames; ++i)
 		{
-			m_writeScratch[i] = std::clamp(m_writeScratch[i], sample_t{-1}, sample_t{1});
+			m_writeScratch[i] = recorder_detail::prepareSampleForPcmWrite(m_writeScratch[i]);
 		}
 
 		const auto written = sf_writef_float(m_sf, m_writeScratch.data(),

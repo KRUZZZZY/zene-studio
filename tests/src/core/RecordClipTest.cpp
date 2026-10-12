@@ -57,6 +57,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -70,6 +71,13 @@
 
 using lmms::f_cnt_t;
 using lmms::SampleFrame;
+
+namespace lmms::recorder_detail
+{
+
+sample_t prepareSampleForPcmWrite(sample_t sample) noexcept;
+
+}
 
 namespace
 {
@@ -163,6 +171,20 @@ class RecordClipTest : public QObject
 	Q_OBJECT
 
 private slots:
+	//! Inspect the exact sample value prepared for sf_writef_float.
+	void recorderPcmWritePreparationHandlesNanAndClamps()
+	{
+		const auto nan = std::numeric_limits<lmms::sample_t>::quiet_NaN();
+		const auto infinity = std::numeric_limits<lmms::sample_t>::infinity();
+
+		QCOMPARE(lmms::recorder_detail::prepareSampleForPcmWrite(nan), lmms::sample_t{0});
+		QCOMPARE(lmms::recorder_detail::prepareSampleForPcmWrite(infinity), lmms::sample_t{1});
+		QCOMPARE(lmms::recorder_detail::prepareSampleForPcmWrite(-infinity), lmms::sample_t{-1});
+		QCOMPARE(lmms::recorder_detail::prepareSampleForPcmWrite(1.5f), lmms::sample_t{1});
+		QCOMPARE(lmms::recorder_detail::prepareSampleForPcmWrite(-1.5f), lmms::sample_t{-1});
+		QCOMPARE(lmms::recorder_detail::prepareSampleForPcmWrite(0.5f), lmms::sample_t{0.5});
+	}
+
 	//! The premise of DEFECT 6, measured rather than read off a header: the
 	//! write path that never clamps stores out-of-range floats as WRAPPED
 	//! integers. This is also the inverted control for the fix below.
