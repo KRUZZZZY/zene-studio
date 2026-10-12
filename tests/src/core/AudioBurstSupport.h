@@ -28,6 +28,7 @@
 #include <cmath>
 #include <initializer_list>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 #include "AudioEngine.h"
@@ -45,6 +46,7 @@ namespace lmms::test
 //! @a bursts (ticks) - transients the onset detector finds - or none.
 inline std::vector<SampleFrame> burstAudio(int ticks, std::initializer_list<int> bursts)
 {
+	if (ticks <= 0) { throw std::invalid_argument("burstAudio requires a positive tick count"); }
 	const double framesPerTick = Engine::framesPerTick();
 	std::vector<SampleFrame> data(static_cast<std::size_t>(ticks * framesPerTick), SampleFrame(0.f, 0.f));
 	unsigned seed = 7;
