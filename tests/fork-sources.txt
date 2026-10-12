@@ -1548,6 +1548,7 @@ src/core/RoutingNodes.cpp
 src/core/RubberBandStretch.cpp
 src/core/SafeStart.cpp
 src/core/SampleBufferResample.cpp
+src/core/SampleDecoderFrameLoop.h
 src/core/SampleFrameEdits.cpp
 src/core/SampleOperators.cpp
 src/core/SampleOperators.h
