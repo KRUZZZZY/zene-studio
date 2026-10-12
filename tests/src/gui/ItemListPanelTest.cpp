@@ -168,6 +168,19 @@ private slots:
 		QTRY_VERIFY(m_panel->statusText().startsWith(QStringLiteral("Not done")));
 	}
 
+	void numericEditsRejectPercentCharacters()
+	{
+		QVERIFY(!edit(m_panel, 2, 3, QStringLiteral("1%2")));
+		QCOMPARE(static_cast<int>(noteAt(m_clip, 192, 62)->getVolume()), 100);
+
+		int parsed = -1;
+		QVERIFY(ItemListSource::parse(ItemColumn::Kind::Percent, QStringLiteral("42 %"), &parsed));
+		QCOMPARE(parsed, 42);
+		QVERIFY(!ItemListSource::parse(ItemColumn::Kind::Number, QStringLiteral("42%"), &parsed));
+		QVERIFY(!ItemListSource::parse(ItemColumn::Kind::Percent, QStringLiteral("4%%"), &parsed));
+		QVERIFY(!ItemListSource::parse(ItemColumn::Kind::Percent, QStringLiteral("4%2"), &parsed));
+	}
+
 	void insertAndDeleteAreOneStepEach()
 	{
 		m_panel->table()->setCurrentIndex(m_panel->table()->model()->index(2, 0));
