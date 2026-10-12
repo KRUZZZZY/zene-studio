@@ -213,7 +213,10 @@ private slots:
 		const QJsonObject before = record.value(QStringLiteral("before")).toObject();
 		const QJsonObject inverse = record.value(QStringLiteral("inverse")).toObject();
 		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		const QString inverseOp = inverse.value(QStringLiteral("op")).toString();
+		const QString mechanism = record.value(QStringLiteral("mechanism")).toString();
+		const ControlResult undone = run(inverseOp, inverseArgs);
+		if (!undone.ok) { run(QStringLiteral("control.undo")); }
 
 		MixerRoute* restored = control::findMixerRoute(1, 3);
 		const bool restoredExists = restored != nullptr;
@@ -228,9 +231,12 @@ private slots:
 		QVERIFY(!record.isEmpty());
 		QCOMPARE(static_cast<float>(before.value(QStringLiteral("pan")).toDouble()), -0.65f);
 		QCOMPARE(before.value(QStringLiteral("enabled")).toBool(), false);
-		QCOMPARE(inverse.value(QStringLiteral("op")).toString(), QStringLiteral("mixer.route_to"));
-		QCOMPARE(static_cast<float>(inverseArgs.value(QStringLiteral("pan")).toDouble()), -0.65f);
-		QCOMPARE(inverseArgs.value(QStringLiteral("enabled")).toBool(), false);
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(inverseOp, QStringLiteral("control.undo"));
+		QVERIFY(inverseArgs.isEmpty());
+		QVERIFY(mechanism.contains(QStringLiteral("captured send amount")));
+		QVERIFY(mechanism.contains(QStringLiteral("pan automation mode")));
+		QVERIFY(mechanism.contains(QStringLiteral("pan automation clips")));
 	}
 
 	void removingThenUndoingSendReattachesPanAutomation()

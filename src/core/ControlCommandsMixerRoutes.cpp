@@ -339,17 +339,11 @@ ControlResult removeRegularSend(Mixer* mixer, const RoutingEnds& ends)
 	result.insert(QStringLiteral("from"), channelIdOf(ends.from));
 	result.insert(QStringLiteral("to"), channelIdOf(ends.to));
 	QJsonObject transaction = transactionPayload(before,
-		QStringLiteral("mixer.route_to"),
-		QJsonObject{{QStringLiteral("channel"), channelIdOf(ends.from)},
-			{QStringLiteral("to"), channelIdOf(ends.to)},
-			{QStringLiteral("amount"), static_cast<double>(amount)},
-			{QStringLiteral("pre_fader"), preFader},
-			{QStringLiteral("pan"), static_cast<double>(pan)},
-			{QStringLiteral("enabled"), enabled}},
+		QStringLiteral("control.undo"), QJsonObject{},
 		true,
-		QStringLiteral("action checkpoint: the recorded undo step re-creates the send through the "
-			"same Mixer::createChannelSend call, then restores pan and enabled and reattaches the "
-			"captured pan automation clips alongside amount and pre-fader state"));
+		QStringLiteral("ProjectJournal action checkpoint: control.undo or Ctrl+Z restores the captured "
+			"send amount, pre-fader flag, pan and enabled state, pan automation mode, and attached "
+			"pan automation clips"));
 	result.insert(QStringLiteral("__transaction"), transaction);
 	return ControlResult::success(result);
 }

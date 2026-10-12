@@ -2,31 +2,36 @@
 
 **Verdict: FIXED**
 
-## Evidence and change
+## Finding and evidence
 
-- [ControlCommandsMixerRoutes.cpp](../../src/core/ControlCommandsMixerRoutes.cpp#L316) records the removed route's pan and enabled state in `before`; its inverse args carry those values at lines 347-348.
-- Lines 91-124 collect automation clips attached to the pan model from the song, pattern store, and global automation track. The undo closure at lines 321-331 restores the pan automation mode and reattaches those clips to the recreated pan model.
-- [MixingRoutingTest.cpp](../../tests/src/core/MixingRoutingTest.cpp#L202) checks the `control.transactions` before state and inverse args. Its test at line 236 binds a real automation clip to send pan, removes the route, undoes, and checks that the recreated model is automated by that clip.
-
-Both changed source files were already registered in `tests/fork-sources.txt` (source line 1185, test line 1968), so no source registry change was needed.
+- `removeRegularSend` captures the send amount, pre-fader flag, pan, enabled state, pan automation mode, and attached automation clips. Its journal undo closure recreates the send and restores those captured values in [ControlCommandsMixerRoutes.cpp](../../src/core/ControlCommandsMixerRoutes.cpp#L300).
+- The transaction now reports `control.undo` with empty args at [ControlCommandsMixerRoutes.cpp:341](../../src/core/ControlCommandsMixerRoutes.cpp#L341). Its mechanism explains that the journal restores the captured send state and pan automation; it no longer reports unsupported `mixer.route_to` arguments.
+- [MixingRoutingTest.cpp:202](../../tests/src/core/MixingRoutingTest.cpp#L202) checks the before-state, invokes the reported inverse, verifies the empty args and mechanism, and checks restored pan/enabled state. [MixingRoutingTest.cpp:242](../../tests/src/core/MixingRoutingTest.cpp#L242) retains the regression for reattaching automated pan and preserving its value.
+- The changed source and test files were already registered in `tests/fork-sources.txt`; no source registry edit was needed.
 
 ## Verification
 
-| Purpose | Command | Exit | Evidence |
-|---|---|---:|---|
-| Regression RED before production fix | `cd build/tests && ctest -R MixingRoutingTest --output-on-failure` | 8 | `red-1.log`: both new checks failed (before pan was 0; automation was detached); 1/1 CTest target ran. |
-| Regression GREEN after fix | `cd build/tests && ctest -R MixingRoutingTest --output-on-failure` | 0 | `restore-green-1.log`: 1/1 CTest target passed. |
-| Test-family case count | `cd build/tests && ./MixingRoutingTest` | 0 | `family-2.log`: 12 passed, 0 failed. |
-| Reverse production patch | `git diff -- src/core/ControlCommandsMixerRoutes.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r2/logs/fix.patch` | 0 | Production hunks reversed; test changes remained. |
-| Build with production patch reversed | `cmake --build build --target zene MixingRoutingTest` | 0 | `reverse-build-1.log`. |
-| Reverse-patch regression RED | `cd build/tests && ctest -R MixingRoutingTest --output-on-failure` | 8 | `reverse-red-1.log`: both new checks failed again; 1/1 CTest target ran. |
-| Restore production patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r2/logs/fix.patch` | 0 | Patch restored. |
-| Final touched-target build | `cmake --build build --target zene MixingRoutingTest` | 0 | `restore-build-1.log`. |
-| Final regression after patch restoration | `cd build/tests && ctest -R MixingRoutingTest --output-on-failure` | 0 | `restore-green-1.log`: 1/1 CTest target passed. |
-| Complexity gate | `bash tests/complexity-gate.sh --check` | 0 | `gate-1.log`. |
-| File-length gate | `bash tests/file-length-gate.sh --check` | 0 | `gate-2.log`. |
+Commands with `ctest` ran from `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-34/build/tests`; builds and gates ran from the worktree root. All build, test, and gate output was redirected to new files in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs`.
 
-The first test build exited 2 because the test needed an explicit `Song.h` include; its rerun exited 0 (`build-1.log`, `build-2.log`). The first production build exited 2 because the implementation needed an explicit `AutomationTrack.h` include; its rerun exited 0 (`build-3.log`, `build-4.log`). The first GREEN attempt exited 8 when the first pan assertion compared a serialized float to a decimal double; after changing both pan assertions to float precision, the build and test passed (`build-5.log`, `green-2.log`).
+| Purpose | Exact command | Exit | Evidence |
+|---|---|---:|---|
+| Initial test-only build | `cmake --build build --target zene MixingRoutingTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/build-1.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 0 | Test target rebuilt. |
+| Initial test draft RED | `ctest -R MixingRoutingTest --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/test-1.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 8 | 11 passed, 1 failed at the inverse-op assertion; this draft was strengthened to invoke the reported inverse and check its mechanism. |
+| Final regression RED build | `cmake --build build --target zene MixingRoutingTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/build-2.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 0 | Rebuilt before the final pre-fix run. |
+| **Final regression RED** | `ctest -R MixingRoutingTest --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/test-2.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | **8** | 11 passed, 1 failed because the reported inverse was rejected with `unexpected property 'amount'`. |
+| Fixed build | `cmake --build build --target zene MixingRoutingTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/build-3.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 0 | Rebuilt `zene` and `MixingRoutingTest`. |
+| **GREEN regression** | `ctest -R MixingRoutingTest --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/test-3.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | **0** | 1/1 CTest target passed. |
+| Reverse-source patch proof | `git diff -- src/core/ControlCommandsMixerRoutes.cpp > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/fix.patch' && git apply -R '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/fix.patch'; status=$?; printf 'EXIT=%s\n' "$status"` | 0 | Reversed only the product diff; test changes remained. |
+| Build with product diff reversed | `cmake --build build --target zene MixingRoutingTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/reverse-build-1.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 0 | Rebuilt before the reverse-source check. |
+| Reverse-source RED | `ctest -R MixingRoutingTest --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/reverse-test-1.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 8 | 11 passed, 1 failed on the same schema rejection, proving the regression depends on the product diff. |
+| Restore product diff | `git apply '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/fix.patch'; status=$?; printf 'EXIT=%s\n' "$status"` | 0 | Restored the production change. |
+| Restored build | `cmake --build build --target zene MixingRoutingTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/restore-build-1.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 0 | Rebuilt before the restored regression run. |
+| Restored GREEN | `ctest -R MixingRoutingTest --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/restore-test-1.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 0 | 1/1 CTest target passed. |
+| Affected-family case count | `./MixingRoutingTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/family-1.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 0 | **12 passed, 0 failed.** |
+| Complexity gate | `bash tests/complexity-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/complexity-gate-final-1.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 0 | Passed. |
+| File-length gate | `bash tests/file-length-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-34.r3/logs/file-length-gate-final-1.log' 2>&1; status=$?; printf 'EXIT=%s\n' "$status"` | 0 | Passed. |
+
+The `fff grep` tool/command was unavailable in this runtime, so log checks used `rg` against the required terms and the test summaries.
 
 ## Files committed
 
