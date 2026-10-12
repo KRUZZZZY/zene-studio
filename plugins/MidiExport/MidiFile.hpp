@@ -34,7 +34,9 @@ using std::set;
 namespace MidiFile 
 {
 
-const int TICKSPERBEAT = 128;
+//! 480 ticks per quarter note: ten file ticks per LMMS tick (48 per quarter), so every LMMS tick
+//! position is written exactly (the old 128 truncated 3 of every 8 positions).
+const int TICKSPERBEAT = 480;
 
 
 int writeVarLength(uint32_t val, uint8_t *buffer)
@@ -118,15 +120,17 @@ struct Event
 	uint32_t time;
 	uint32_t tempo;
 	string trackName;
-	enum {NOTE_ON, NOTE_OFF, TEMPO, PROG_CHANGE, TRACK_NAME} type;
+	enum {NOTE_ON, NOTE_OFF, TEMPO, TIME_SIG, PROG_CHANGE, TRACK_NAME} type;
 	// TODO make a union to save up space
 	uint8_t pitch;
 	uint8_t programNumber;
 	uint8_t duration;
 	uint8_t volume;
 	uint8_t channel;
+	uint8_t numerator;
+	uint8_t denominator;
 	
-	Event() {time=tempo=pitch=programNumber=duration=volume=channel=0; trackName="";}
+	Event() {time=tempo=pitch=programNumber=duration=volume=channel=numerator=denominator=0; trackName="";}
 	
 	inline int writeToBuffer(uint8_t *buffer) const 
 	{
@@ -160,7 +164,9 @@ struct Event
 				buffer[size++] = 0x03;
 
 				std::array<uint8_t, 4> fourbytes;
-				writeBigEndian4(int(60000000.0 / tempo), fourbytes.data());
+				// microseconds per quarter note, ROUNDED: the same encoding as the interchange
+				// writer (src/core/SmfInterchange.cpp), exact for every bpm 10..999.
+				writeBigEndian4(uint32_t(60000000.0 / tempo + 0.5), fourbytes.data());
 				
 				//printf("tempo of %x translates to ", tempo);
 				/*
@@ -170,6 +176,20 @@ struct Event
 				buffer[size++] = fourbytes[1];
 				buffer[size++] = fourbytes[2];
 				buffer[size++] = fourbytes[3];
+				break;
+			}
+			case TIME_SIG:
+			{
+				size += writeVarLength(time, buffer+size);
+				buffer[size++] = 0xFF;
+				buffer[size++] = 0x58;
+				buffer[size++] = 0x04;
+				uint8_t power = 0;
+				for (uint32_t d = denominator; d > 1; d >>= 1) { power++; }
+				buffer[size++] = numerator;
+				buffer[size++] = power;
+				buffer[size++] = 24; // MIDI clocks per metronome click
+				buffer[size++] = 8;  // 32nd notes per quarter note
 				break;
 			}
 			case PROG_CHANGE:
@@ -236,6 +256,25 @@ class MIDITrack
 		//printf("note: %d-%d\n", (uint32_t) time * TICKSPERBEAT, (uint32_t)((time+duration) * TICKSPERBEAT));
 	}
 	
+	//! A note at exact file ticks (480 per quarter note); no floating-point rounding.
+	inline void addNoteTicks(uint8_t pitch, uint8_t volume, uint32_t startTick, uint32_t endTick)
+	{
+		Event event; event.channel = channel;
+		event.volume = volume;
+		event.type = Event::NOTE_ON; event.pitch = pitch; event.time = startTick;
+		addEvent(event);
+		event.type = Event::NOTE_OFF; event.time = endTick;
+		addEvent(event);
+	}
+
+	inline void addTimeSignature(uint8_t numerator, uint8_t denominator, uint32_t time)
+	{
+		Event event;
+		event.type = Event::TIME_SIG; event.time = time;
+		event.numerator = numerator; event.denominator = denominator;
+		addEvent(event);
+	}
+
 	inline void addName(const string &name, uint32_t time)
 	{
 		Event event; event.channel = channel;

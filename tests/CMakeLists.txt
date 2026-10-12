@@ -794,6 +794,8 @@ set(LMMS_TESTS
 	# new-file cap; the fixtures both use are in SmfInterchangeTestSupport.h.
 	src/core/SmfInterchangeTest.cpp
 	src/core/SmfInterchangeRoundTripTest.cpp
+	# Q050-020: the MIDI export's conductor track, track identity and 480-ppq timing, parsed back.
+	src/core/MidiExportTest.cpp
 	# DAWproject import / export (feature row 37): the round trip that compares
 	# the MODEL - tracks, clips, notes, mixer channels, tempo map - rather than
 	# the file or its hash. A separate executable so the file stays inside the
@@ -1363,6 +1365,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "AutomationWriteToEndTest"
 		# 0.5.0 W3 engine: post-fader inserts and chain.receive load the build's amplifier and receiver modules.
 		OR LMMS_TEST_NAME STREQUAL "W3EngineTest"
+		OR LMMS_TEST_NAME STREQUAL "MidiExportTest"
 		# 0.5.0 wave 2: layers and parts load a real instrument; the reference project copies a real effect.
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLayersCommandsTest"
 		# MX-157: the hosted instrument modules (clapinstrument, vst3instrument) carry the fixtures.
@@ -1375,6 +1378,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+	endif()
+
+	# Q050-020: the MIDI export test loads the midiexport module through the plug-in factory.
+	if(LMMS_TEST_NAME STREQUAL "MidiExportTest")
+		add_dependencies(${LMMS_TEST_NAME} midiexport)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 
 	# W3EngineTest loads the build's amplifier (post-fader inserts) and receiver (chain.receive) modules.

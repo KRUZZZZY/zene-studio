@@ -241,7 +241,9 @@ void registerProjectExportMidi(ControlRegistry& registry)
 	cmd.group = QStringLiteral("project");
 	cmd.verb = QStringLiteral("export_midi");
 	cmd.description = QStringLiteral("Write the session's notes as a Standard MIDI File (the "
-		"midiexport filter; interchange.smf_export writes the tempo map only). File > Export MIDI "
+		"midiexport filter, 480 ppq: track 0 is the tempo-map conductor track - the same events as "
+		"interchange.smf_export - then one track per instrument with its name, program change, MIDI channel "
+		"and notes). File > Export MIDI "
 		"dispatches this after its file dialog. A missing `.mid` suffix is appended. The export is "
 		"written to a temporary file and only replaces an existing file once the new output is "
 		"proven to exist, so a failed export never reports a stale file as a fresh one (and never "

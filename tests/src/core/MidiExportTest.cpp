@@ -1,0 +1,283 @@
+/*
+ * MidiExportTest.cpp - File > Export MIDI / project.export_midi: tempo map, track identity, timing
+ *
+ * Q050-020. The exported Standard MIDI File is parsed here by this test's own reader (not by the
+ * product's) and checked against what the test authored:
+ *
+ *  1. a session with mid-song tempo and metre changes writes track 0 as a conductor track whose
+ *     tempo and time-signature events are the tempo map's (the same events interchange.smf_export
+ *     writes), at 480 ticks per quarter note;
+ *  2. two instrument tracks with different programs and channels write one MTrk each with the
+ *     track name, program change, the track's own channel, and note-on/off at exact 480-ppq ticks,
+ *     including notes at LMMS ticks that fall between the ticks of the old 128-ppq grid;
+ *  3. a track whose output channel is "--" writes on channel 1, as the engine plays it.
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ */
+
+#include <QtTest>
+
+#include <QJsonObject>
+#include <QTemporaryDir>
+
+#include <vector>
+
+#include "ControlRegistry.h"
+#include "Engine.h"
+#include "InstrumentTrack.h"
+#include "MidiClip.h"
+#include "MidiPort.h"
+#include "Note.h"
+#include "Song.h"
+#include "TimePos.h"
+
+using namespace lmms;
+
+namespace
+{
+
+struct SmfEvent
+{
+	quint32 tick = 0;
+	int status = 0;      //!< 0xFF for meta, else the status byte with channel
+	int type = 0;        //!< meta type, or the first data byte
+	int data2 = 0;
+	QByteArray payload;  //!< meta payload
+};
+
+struct SmfTrack { std::vector<SmfEvent> events; };
+
+struct SmfFile
+{
+	int format = -1;
+	int division = 0;
+	std::vector<SmfTrack> tracks;
+};
+
+quint32 be32(const QByteArray& b, int o)
+{
+	return (quint32(uchar(b[o])) << 24) | (quint32(uchar(b[o + 1])) << 16)
+		| (quint32(uchar(b[o + 2])) << 8) | quint32(uchar(b[o + 3]));
+}
+int be16(const QByteArray& b, int o) { return (uchar(b[o]) << 8) | uchar(b[o + 1]); }
+
+bool parseSmf(const QByteArray& b, SmfFile* out)
+{
+	if (b.size() < 14 || b.left(4) != "MThd") { return false; }
+	out->format = be16(b, 8);
+	const int count = be16(b, 10);
+	out->division = be16(b, 12);
+	int o = 14;
+	for (int t = 0; t < count; ++t)
+	{
+		if (b.mid(o, 4) != "MTrk") { return false; }
+		const int end = o + 8 + int(be32(b, o + 4));
+		o += 8;
+		SmfTrack track;
+		quint32 tick = 0;
+		int running = 0;
+		const auto vlq = [&]() { quint32 v = 0; uchar c; do { c = uchar(b[o++]); v = (v << 7) | (c & 0x7F); } while (c & 0x80); return v; };
+		while (o < end)
+		{
+			tick += vlq();
+			SmfEvent e;
+			e.tick = tick;
+			int status = uchar(b[o]);
+			if (status < 0x80) { status = running; } else { ++o; }
+			e.status = status;
+			if (status == 0xFF)
+			{
+				e.type = uchar(b[o++]);
+				const quint32 len = vlq();
+				e.payload = b.mid(o, int(len));
+				o += int(len);
+			}
+			else
+			{
+				running = status;
+				e.type = uchar(b[o++]);
+				if ((status & 0xF0) != 0xC0 && (status & 0xF0) != 0xD0) { e.data2 = uchar(b[o++]); }
+			}
+			track.events.push_back(e);
+		}
+		o = end;
+		out->tracks.push_back(track);
+	}
+	return true;
+}
+
+int tempoMicros(const SmfEvent& e)
+{
+	return (uchar(e.payload[0]) << 16) | (uchar(e.payload[1]) << 8) | uchar(e.payload[2]);
+}
+
+ControlResult run(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
+} // namespace
+
+class MidiExportTest : public QObject
+{
+	Q_OBJECT
+
+	InstrumentTrack* addTrack(const QString& name, int channel, int program,
+		const std::vector<std::pair<int, int>>& notes)
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		track->setName(name);
+		track->midiPort()->setOutputChannel(channel);
+		track->midiPort()->setOutputProgram(program);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		for (const auto& n : notes) { clip->addNote(Note(TimePos(24), TimePos(n.first), n.second, 100), false); }
+		clip->rearrangeAllNotes();
+		return track;
+	}
+
+	bool exportAndParse(SmfFile* file)
+	{
+		const QString path = m_dir.filePath(QStringLiteral("out.mid"));
+		QFile::remove(path);
+		const ControlResult result = run(QStringLiteral("project.export_midi"), {{QStringLiteral("path"), path}});
+		if (!result.ok) { qWarning() << result.errorMessage; return false; }
+		QFile f(path);
+		return f.open(QIODevice::ReadOnly) && parseSmf(f.readAll(), file);
+	}
+
+private slots:
+	void initTestCase()
+	{
+#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+#endif
+		Engine::init(true);
+		ControlRegistry::setReady(true);
+		QVERIFY(m_dir.isValid());
+	}
+
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::getSong()->clearProject();
+		Engine::destroy();
+	}
+
+	void init() { Engine::getSong()->clearProject(); }
+
+	//! Acceptance 1: mid-song tempo and metre changes are the conductor track's events.
+	void tempoMapChangesAreWrittenToTheConductorTrack()
+	{
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"), {{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 140}}).ok);
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"), {{QStringLiteral("tick"), 384}, {QStringLiteral("bpm"), 90},
+			{QStringLiteral("numerator"), 3}, {QStringLiteral("denominator"), 4}}).ok);
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"), {{QStringLiteral("tick"), 960}, {QStringLiteral("bpm"), 175}}).ok);
+		addTrack(QStringLiteral("Lead"), 1, 1, {{0, 60}});
+
+		SmfFile file;
+		QVERIFY(exportAndParse(&file));
+		QCOMPARE(file.format, 1);
+		QCOMPARE(file.division, 480);
+		QCOMPARE(int(file.tracks.size()), 2); // conductor + one instrument
+
+		std::vector<std::pair<quint32, int>> tempos;
+		std::vector<quint32> meters;
+		for (const SmfEvent& e : file.tracks[0].events)
+		{
+			if (e.status == 0xFF && e.type == 0x51) { tempos.emplace_back(e.tick, tempoMicros(e)); }
+			if (e.status == 0xFF && e.type == 0x58)
+			{
+				meters.push_back(e.tick);
+				if (e.tick == 3840) { QCOMPARE(int(uchar(e.payload[0])), 3); QCOMPARE(int(uchar(e.payload[1])), 2); }
+			}
+		}
+		// LMMS ticks 0/384/960 -> file ticks 0/3840/9600; 60e6/bpm rounded.
+		QCOMPARE(int(tempos.size()), 3);
+		QCOMPARE(tempos[0], (std::pair<quint32, int>(0, 428571)));
+		QCOMPARE(tempos[1], (std::pair<quint32, int>(3840, 666667)));
+		QCOMPARE(tempos[2], (std::pair<quint32, int>(9600, 342857)));
+		QVERIFY(std::find(meters.begin(), meters.end(), 3840u) != meters.end());
+		// The instrument track carries no tempo events of its own.
+		for (const SmfEvent& e : file.tracks[1].events) { QVERIFY(!(e.status == 0xFF && e.type == 0x51)); }
+	}
+
+	//! Acceptance 2: two tracks, two patches, two channels, exact timing.
+	void instrumentTracksCarryNameProgramChannelAndExactTiming()
+	{
+		// Positions 5 and 7 are 1/48-beat ticks that the old 128-ppq grid truncated (5*128/48 = 13.33).
+		addTrack(QStringLiteral("Piano"), 1, 1, {{0, 60}, {5, 64}});
+		addTrack(QStringLiteral("Strings"), 3, 49, {{7, 67}});
+
+		SmfFile file;
+		QVERIFY(exportAndParse(&file));
+		QCOMPARE(file.division, 480);
+		QCOMPARE(int(file.tracks.size()), 3);
+
+		const auto check = [&](int index, const char* name, int channel, int program,
+			const std::vector<std::tuple<quint32, quint32, int>>& notes)
+		{
+			const SmfTrack& t = file.tracks[index];
+			bool sawName = false, sawProgram = false;
+			std::vector<std::tuple<quint32, quint32, int>> found;
+			for (const SmfEvent& e : t.events)
+			{
+				if (e.status == 0xFF && e.type == 0x03) { sawName = (e.payload == name); }
+				if ((e.status & 0xF0) == 0xC0) { sawProgram = true; QCOMPARE(e.status & 0x0F, channel); QCOMPARE(e.type, program); QCOMPARE(e.tick, 0u); }
+				if ((e.status & 0xF0) == 0x90)
+				{
+					QCOMPARE(e.status & 0x0F, channel);
+					found.emplace_back(e.tick, 0u, e.type);
+				}
+				if ((e.status & 0xF0) == 0x80)
+				{
+					QCOMPARE(e.status & 0x0F, channel);
+					for (auto& f : found) { if (std::get<2>(f) == e.type && std::get<1>(f) == 0u) { std::get<1>(f) = e.tick; break; } }
+				}
+			}
+			QVERIFY2(sawName, name);
+			QVERIFY2(sawProgram, name);
+			QCOMPARE(found, notes);
+		};
+		// start tick * 10, end = (start + 24) * 10.
+		check(1, "Piano", 0, 0, {{0, 240, 60}, {50, 290, 64}});
+		check(2, "Strings", 2, 48, {{70, 310, 67}});
+	}
+
+	//! Output channel "--" (0): written on channel 1, as MidiPort::realOutputChannel plays it.
+	void anUnsetChannelIsWrittenOnChannelOne()
+	{
+		addTrack(QStringLiteral("Unset"), 0, 1, {{0, 60}});
+		SmfFile file;
+		QVERIFY(exportAndParse(&file));
+		bool saw = false;
+		for (const SmfEvent& e : file.tracks[1].events)
+		{
+			if ((e.status & 0xF0) == 0x90) { saw = true; QCOMPARE(e.status & 0x0F, 0); }
+			if ((e.status & 0xF0) == 0xC0) { QCOMPARE(e.type, 0); }
+		}
+		QVERIFY(saw);
+	}
+
+private:
+	QTemporaryDir m_dir;
+};
+
+QTEST_GUILESS_MAIN(MidiExportTest)
+#include "MidiExportTest.moc"
