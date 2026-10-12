@@ -27,7 +27,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 
 namespace lmms
 {
@@ -154,50 +153,19 @@ float clipSpeedAt(const ClipEdits& edits, f_cnt_t frame, f_cnt_t clipFrames, f_c
 	return static_cast<float>(std::max(speed, 1.0 / 32.0));
 }
 
-namespace
-{
-
-bool isOffsetFadePair(const ClipEdits& edits, tick_t lengthTicks)
-{
-	return edits.fadeInOffsetTicks > 0 && edits.fadeOutOffsetTicks > 0 && edits.fadeInTicks > 0
-		&& edits.fadeOutTicks > 0 && edits.fadeOutOffsetTicks < lengthTicks;
-}
-
-bool hasValidGap(const ClipEdits& edits, tick_t lengthTicks)
-{
-	const std::int64_t length = lengthTicks;
-	const std::int64_t fadeOutEnd = length - edits.fadeOutOffsetTicks;
-	const std::int64_t fadeOutStart = fadeOutEnd - edits.fadeOutTicks;
-	const std::int64_t fadeInStart = edits.fadeInOffsetTicks;
-	const std::int64_t fadeInEnd = fadeInStart + edits.fadeInTicks;
-	return fadeOutStart >= 0 && fadeInStart >= fadeOutEnd && fadeInEnd <= length;
-}
-
-ClipEdits clearOffsetFades(ClipEdits edits)
-{
-	edits.fadeInOffsetTicks = 0;
-	edits.fadeOutOffsetTicks = 0;
-	edits.fadeOffsetGap = false;
-	return edits;
-}
-
-ClipEdits clearGapMarker(ClipEdits edits)
-{
-	edits.fadeOffsetGap = false;
-	return edits;
-}
-
-} // namespace
-
 ClipEdits withValidOffsetFades(const ClipEdits& edits, tick_t lengthTicks)
 {
-	const bool hasOffsets = edits.fadeInOffsetTicks > 0 || edits.fadeOutOffsetTicks > 0;
-	if (!hasOffsets) { return edits.fadeOffsetGap ? clearGapMarker(edits) : edits; }
-	if (!isOffsetFadePair(edits, lengthTicks)) { return clearOffsetFades(edits); }
-	if (edits.fadeOffsetGap && hasValidGap(edits, lengthTicks)) { return edits; }
+	if (edits.fadeInOffsetTicks <= 0 && edits.fadeOutOffsetTicks <= 0) { return edits; }
 	ClipEdits out = edits;
+	const bool pair = edits.fadeInOffsetTicks > 0 && edits.fadeOutOffsetTicks > 0 && edits.fadeInTicks > 0
+		&& edits.fadeOutTicks > 0 && edits.fadeOutOffsetTicks < lengthTicks;
+	if (!pair)
+	{
+		out.fadeInOffsetTicks = 0;
+		out.fadeOutOffsetTicks = 0;
+		return out;
+	}
 	out.fadeInOffsetTicks = static_cast<int>(lengthTicks) - edits.fadeOutOffsetTicks;  // where the fade-out ends
-	out.fadeOffsetGap = false;
 	return out;
 }
 
@@ -206,7 +174,7 @@ float clipGainCurveAt(const ClipEdits& rawEdits, tick_t lengthTicks, double tick
 	const ClipEdits edits = withValidOffsetFades(rawEdits, lengthTicks);
 	const auto length = static_cast<f_cnt_t>(std::max<tick_t>(1, lengthTicks));
 	const float fade = clipFadeGainAt(static_cast<f_cnt_t>(tick), length, edits.fadeInTicks, edits.fadeOutTicks,
-		edits.fadeInShape, edits.fadeOutShape, edits.fadeInOffsetTicks, edits.fadeOutOffsetTicks, edits.fadeOffsetGap);
+		edits.fadeInShape, edits.fadeOutShape, edits.fadeInOffsetTicks, edits.fadeOutOffsetTicks);
 	return edits.gain * fade * envelopeGainAt(edits, tick);
 }
 
@@ -239,14 +207,9 @@ double fadeOutFactor(f_cnt_t frame, f_cnt_t clipFrames, f_cnt_t fadeOutFrames, F
 float clipFadeGainAt(f_cnt_t frame, f_cnt_t clipFrames,
 	f_cnt_t fadeInFrames, f_cnt_t fadeOutFrames,
 	FadeShape fadeInShape, FadeShape fadeOutShape,
-	f_cnt_t fadeInOffsetFrames, f_cnt_t fadeOutOffsetFrames, bool fadeOffsetGap)
+	f_cnt_t fadeInOffsetFrames, f_cnt_t fadeOutOffsetFrames)
 {
 	if (clipFrames == 0) { return 1.0f; }
-	if (fadeOffsetGap && fadeInOffsetFrames > 0 && fadeOutOffsetFrames > 0)
-	{
-		const f_cnt_t fadeOutEnd = clipFrames > fadeOutOffsetFrames ? clipFrames - fadeOutOffsetFrames : 0;
-		if (frame >= fadeOutEnd && frame < fadeInOffsetFrames) { return 0.0f; }
-	}
 	double value = 1.0;
 	value *= fadeInFactor(frame, fadeInFrames, fadeInShape, fadeInOffsetFrames);
 	value *= fadeOutFactor(frame, clipFrames, fadeOutFrames, fadeOutShape, fadeOutOffsetFrames);
@@ -307,12 +270,6 @@ double preFadedOut(const PreFadeSpan& span, std::int64_t clipPos, FadeShape shap
 
 float preFadedGainAt(const PreFadeSpan& span, std::int64_t clipPos, FadeShape fadeInShape, FadeShape fadeOutShape)
 {
-	if (span.fadeOffsetGap && span.fadeInOffsetFrames > 0 && span.fadeOutOffsetFrames > 0)
-	{
-		const std::int64_t fadeOutEnd = span.clipFrames > span.fadeOutOffsetFrames
-			? span.clipFrames - span.fadeOutOffsetFrames : 0;
-		if (clipPos >= fadeOutEnd && clipPos < span.fadeInOffsetFrames) { return 0.0f; }
-	}
 	double value = 1.0;
 	value *= preFadedIn(span, clipPos, fadeInShape);
 	value *= preFadedOut(span, clipPos, fadeOutShape);

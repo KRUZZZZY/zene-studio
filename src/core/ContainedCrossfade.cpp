@@ -51,25 +51,30 @@ QString ramps(const Clip& container, const Clip& contained, int given, bool give
 {
 	Q_UNUSED(container);
 	const int length = contained.length().getTicks();
-	const ClipEdits& authored = contained.clipEdits();
-	if (given > 0 && givenIsEntry)
+	if (length < 2)
+	{
+		return QStringLiteral("the contained clip is %1 tick(s) long: too short to be crossfaded at both of its ends").arg(length);
+	}
+	const int own = contained.clipEdits().fadeOutTicks;
+	if (given <= 0)
+	{
+		// The exit is the contained clip's own fade-out when it has one that leaves room for an entry, else half.
+		*exit = own > 0 && own < length ? own : length / 2;
+		*entry = length - *exit;
+	}
+	else if (givenIsEntry)
 	{
 		*entry = given;
 		*exit = length - given;
 	}
-	else if (given > 0)
+	else
 	{
 		*exit = given;
 		*entry = length - given;
 	}
-	else
-	{
-		*entry = authored.fadeInTicks;
-		*exit = authored.fadeOutTicks;
-	}
-	if (*entry > 0 && *exit > 0 && *entry <= length && *exit <= length - *entry) { return QString(); }
-	return QStringLiteral("container mode needs positive authored inner fade-in and fade-out ramps that fit inside its "
-		"%3-tick length; got entry %1 + exit %2").arg(*entry).arg(*exit).arg(length);
+	if (*entry >= 1 && *exit >= 1) { return QString(); }
+	return QStringLiteral("a ramp of %1 tick(s) leaves no room for the other ramp inside the contained clip "
+		"(%2 ticks): the entry and exit ramps together span it").arg(given).arg(length);
 }
 
 void apply(const Clip& container, const Clip& contained, int entry, int exit, FadeShape downShape,
@@ -87,7 +92,6 @@ void apply(const Clip& container, const Clip& contained, int entry, int exit, Fa
 	containerEdits->fadeInTicks = exit;
 	containerEdits->fadeInShape = upShape;
 	containerEdits->fadeInOffsetTicks = static_cast<int>(end - exit - containerStart);
-	containerEdits->fadeOffsetGap = entry + exit < contained.length().getTicks();
 
 	// The contained clip: in over its first `entry` ticks, out over its last `exit`.
 	containedEdits->fadeInTicks = entry;
@@ -96,7 +100,6 @@ void apply(const Clip& container, const Clip& contained, int entry, int exit, Fa
 	containedEdits->fadeOutTicks = exit;
 	containedEdits->fadeOutShape = downShape;
 	containedEdits->fadeOutOffsetTicks = 0;
-	containedEdits->fadeOffsetGap = false;
 }
 
 } // namespace lmms::containedcrossfade

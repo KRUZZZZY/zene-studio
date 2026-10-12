@@ -1,7 +1,8 @@
 /*
- * LinkedClipGroupEditsTest.cpp - the 2026-10-09 owner ruling keeps linked clip geometry
- *                                per-instance: resize, range split, overlap trim and VCA edits
- *                                touch only their selected windows, in one undo step.
+ * LinkedClipGroupEditsTest.cpp - round 2 of the linked-clip decision (2026-10-08): every trim and every
+ *                                split reaches the whole link group, in ONE undo step - clip.resize, the range
+ *                                split, the phase-locked splits and trims - and a trim no peer can take is
+ *                                refused whole. LinkedClipEditsTest holds clip.trim and clip.split.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -108,8 +109,8 @@ private slots:
 		clearGroups();
 	}
 
-	//! The owner ruling changes the former apply-to-all assertion: clip.resize changes only the named window.
-	void aResizeOfOneMemberChangesOnlyItsWindowInOneStep()
+	//! clip.resize is a trim of the end: every member's length moves by the same delta, as ONE step.
+	void aResizeOfOneMemberResizesEveryMemberInOneStep()
 	{
 		const QString a = clipAt(0, 384).second;
 		const QString b = clipAt(768, 384).second;
@@ -117,26 +118,24 @@ private slots:
 		QVERIFY(link({a, b, c}));
 		const int depth = undoDepth();
 		QVERIFY(run(QStringLiteral("clip.resize"), {{QStringLiteral("clip"), b}, {QStringLiteral("length"), 200}}).ok);
-		QCOMPARE(clipOf(a)->length().getTicks(), 384);
-		QCOMPARE(clipOf(b)->length().getTicks(), 200);
-		QCOMPARE(clipOf(c)->length().getTicks(), 384);
-		QCOMPARE(undoDepth(), depth + 1);
+		for (const QString& id : {a, b, c}) { QCOMPARE(clipOf(id)->length().getTicks(), 200); }
+		QCOMPARE(undoDepth(), depth + 1);  // the clip's and the peers' checkpoints merged into one step
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		for (const QString& id : {a, b, c}) { QCOMPARE(clipOf(id)->length().getTicks(), 384); }
 	}
 
-	void aResizeThatWouldHaveEmptiedAPeerChangesOnlyTheTarget()
+	void aResizeThatWouldEmptyAPeerIsRefusedWholeAndMovesNothing()
 	{
 		const QString a = clipAt(0, 384).second;
 		const QString shortOne = clipAt(1000, 100).second;
 		QVERIFY(link({a, shortOne}));
-		QVERIFY(run(QStringLiteral("clip.resize"), {{QStringLiteral("clip"), a}, {QStringLiteral("length"), 200}}).ok);
-		QCOMPARE(clipOf(a)->length().getTicks(), 200);
+		QVERIFY(!run(QStringLiteral("clip.resize"), {{QStringLiteral("clip"), a}, {QStringLiteral("length"), 200}}).ok);
+		QCOMPARE(clipOf(a)->length().getTicks(), 384);
 		QCOMPARE(clipOf(shortOne)->length().getTicks(), 100);
 	}
 
-	//! A trim is one undo step and does not edit the other member's window.
-	void aTrimIsOneUndoStepAndLeavesThePeerAlone()
+	//! The trim command takes a checkpoint on the clip and one on the peers; the registry folds them into ONE step.
+	void aTrimIsOneUndoStep()
 	{
 		const QString a = clipAt(0, 384).second;
 		const QString b = clipAt(768, 384).second;
@@ -144,40 +143,34 @@ private slots:
 		const int depth = undoDepth();
 		QVERIFY(run(QStringLiteral("clip.trim"), {{QStringLiteral("clip"), a}, {QStringLiteral("start"), 96}}).ok);
 		QCOMPARE(undoDepth(), depth + 1);
-		QCOMPARE(clipOf(a)->startPosition().getTicks(), 96);
-		QCOMPARE(clipOf(a)->length().getTicks(), 288);
-		QCOMPARE(clipOf(b)->startPosition().getTicks(), 768);
-		QCOMPARE(clipOf(b)->length().getTicks(), 384);
 	}
 
-	//! clip.split edits one instance, keeps both pieces in the original group, and remains ONE step.
-	void aLinkedSplitIsOneUndoStepAndKeepsBothPiecesLinked()
+	//! clip.split of a linked clip: the tracks of every member are captured, and it is still ONE step.
+	void aGroupSplitIsOneUndoStep()
 	{
 		const QString a = clipAt(0, 384).second;
 		const QString b = clipAt(768, 384).second;
 		QVERIFY(link({a, b}));
 		const int depth = undoDepth();
-		const ControlResult split = run(QStringLiteral("clip.split"), {{QStringLiteral("clip"), a}, {QStringLiteral("position"), 96}});
-		QVERIFY2(split.ok, qPrintable(split.errorMessage));
+		QVERIFY(run(QStringLiteral("clip.split"), {{QStringLiteral("clip"), a}, {QStringLiteral("position"), 96}}).ok);
 		QCOMPARE(undoDepth(), depth + 1);
-		QCOMPARE(clipOf(a)->linkId(), clipOf(b)->linkId());
-		QCOMPARE(ClipLinks::group(clipOf(a)->linkId()).size(), 3);
 	}
 
-	//! The owner ruling changes the former peer-refusal assertion: only the named clip moves.
-	void aTrimThatWouldPushAFormerPeerBeforeTheSongStartDoesNotMoveIt()
+	//! A peer is never left starting before the song start: the whole trim is refused.
+	void aTrimThatWouldPushAPeerBeforeTheSongStartIsRefused()
 	{
 		const QString a = clipAt(200, 384).second;
 		const QString b = clipAt(50, 384).second;
 		QVERIFY(link({a, b}));
-		const ControlResult trimmed = run(QStringLiteral("clip.trim"), {{QStringLiteral("clip"), a}, {QStringLiteral("start"), 40}});
-		QVERIFY2(trimmed.ok, qPrintable(trimmed.errorMessage));
-		QCOMPARE(clipOf(a)->startPosition().getTicks(), 40);
+		const ControlResult refused = run(QStringLiteral("clip.trim"), {{QStringLiteral("clip"), a}, {QStringLiteral("start"), 40}});
+		QVERIFY2(!refused.ok, "the peer would start at -110");
+		QCOMPARE(clipOf(a)->startPosition().getTicks(), 200);
 		QCOMPARE(clipOf(b)->startPosition().getTicks(), 50);
 	}
 
-	//! A trim after a slip changes only this member's source window; the peer's offset stays independent.
-	void aTrimAfterASlipLeavesThePeerOffsetAlone()
+	//! A peer is never extended before its own content when the edited clip is not: the group's edit is refused
+	//! rather than leaving a peer in a state its own drag would have refused (a start offset above 0).
+	void aTrimThatWouldExtendAPeerBeforeItsContentIsRefused()
 	{
 		const QString a = clipAt(96, 288).second;
 		const QString b = clipAt(768, 384).second;
@@ -185,15 +178,15 @@ private slots:
 		// a is head-trimmed (offset -96, as if trimmed from 0 to 96); b was never trimmed (offset 0).
 		QVERIFY(run(QStringLiteral("clip.slip"), {{QStringLiteral("clip"), a}, {QStringLiteral("offset"), -96}}).ok);
 		const ControlResult extend = run(QStringLiteral("clip.trim"), {{QStringLiteral("clip"), a}, {QStringLiteral("start"), 0}});
-		QVERIFY2(extend.ok, qPrintable(extend.errorMessage));
-		QCOMPARE(clipOf(a)->startPosition().getTicks(), 0);
-		QCOMPARE(clipOf(a)->startTimeOffset().getTicks(), 0);
+		QVERIFY2(!extend.ok, "b would get a start offset of +96");
+		QCOMPARE(clipOf(a)->startPosition().getTicks(), 96);
 		QCOMPARE(clipOf(b)->startTimeOffset().getTicks(), 0);
 		QCOMPARE(clipOf(b)->startPosition().getTicks(), 768);
 	}
 
-	//! The owner ruling changes the former group-split assertion: range.split cuts selected tracks only.
-	void aRangeSplitLeavesLinkedPeersOnOtherTracksWhole()
+	//! The range split is a split: the range's tracks are cut at the range edges, and the linked clips on any
+	//! other track are cut with them (right halves a new group).
+	void aRangeSplitReachesTheLinkedClipsOnOtherTracks()
 	{
 		const auto [trackA, a] = clipAt(0, 384);
 		const QString b = clipAt(768, 384).second;
@@ -203,30 +196,36 @@ private slots:
 			{QStringLiteral("tracks"), QJsonArray{trackA}}}).ok);
 		const int depth = undoDepth();
 		QVERIFY(run(QStringLiteral("range.split")).ok);
-		QCOMPARE(undoDepth(), depth + 1);
-		QCOMPARE(totalClips(), 4);  // only a was cut at the range's two edges
-		QCOMPARE(pb->length().getTicks(), 384);
+		QCOMPARE(undoDepth(), depth + 1);  // the cuts on both tracks are one step
+		QCOMPARE(totalClips(), 6);  // each of the two clips cut at the range's two edges
+		QCOMPARE(pb->length().getTicks(), 96);
 		Track* other = pb->getTrack();
-		QCOMPARE(other->numOfClips(), 1);
+		QCOMPARE(other->numOfClips(), 3);
+		// The pieces of the other member are the counterparts of the range's: 96, 104 and 184 ticks.
+		QVector<int> lengths;
+		for (Clip* clip : other->getClips()) { lengths.append(clip->length().getTicks()); }
+		std::sort(lengths.begin(), lengths.end());
+		QCOMPARE(lengths, (QVector<int>{96, 104, 184}));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(totalClips(), 2);
 	}
 
-	//! The owner ruling changes the former group-split assertion: splitClipAt adds only one linked piece.
-	void splitClipAtLeavesTheOtherWindowWhole()
+	//! splitClipAt itself is group-aware (the loop slicing and every range edit are built on it).
+	void splitClipAtCutsTheGroup()
 	{
 		const QString a = clipAt(0, 384).second;
 		const QString b = clipAt(768, 384).second;
 		QVERIFY(link({a, b}));
 		Clip* pb = clipOf(b);
 		QVERIFY(arrangement::splitClipAt(clipOf(a), 96) != nullptr);
-		QCOMPARE(totalClips(), 3);
-		QCOMPARE(pb->length().getTicks(), 384);
-		QCOMPARE(ClipLinks::group(clipOf(a)->linkId()).size(), 3);
+		QCOMPARE(totalClips(), 4);
+		QCOMPARE(pb->length().getTicks(), 96);
 	}
 
-	//! An overlap trim cuts only the instance under the drop; both surviving pieces keep the shared link.
-	void anOverlapTrimLeavesBothPiecesLinkedAndPeersWhole()
+	//! A drop that trims the clip under it (overlap mode Trim) is a positional edit at one place: it cuts that clip only,
+	//! its peers elsewhere are not under it and stay whole. What is left of the cut clip follows the group rule: the left
+	//! piece (the original instance) stays in the group, the piece cut off to its right leaves it.
+	void anOverlapTrimLeavesThePeersWholeAndTheLeftPieceInTheGroup()
 	{
 		const QString a = clipAt(0, 384).second;
 		const QString b = clipAt(768, 384).second;
@@ -241,15 +240,15 @@ private slots:
 		QCOMPARE(totalClips(), 4);  // a became two pieces around the dropped clip; b is whole
 		QCOMPARE(pa->length().getTicks(), 100);
 		QCOMPARE(pa->linkId(), group);
-		QCOMPARE(ClipLinks::group(group).size(), 3);  // left piece, tail, and b
+		QCOMPARE(ClipLinks::group(group).size(), 2);  // the left piece and b
 		Clip* tail = nullptr;
 		for (Clip* clip : pa->getTrack()->getClips()) { if (clip->startPosition().getTicks() == 200) { tail = clip; } }
 		QVERIFY(tail != nullptr);
-		QCOMPARE(tail->linkId(), group);
+		QCOMPARE(tail->linkId(), 0);  // the piece cut off to the right is on its own
 	}
 
-	//! A locked split cuts clips explicitly in the lock; linked members outside it keep their windows.
-	void aLockedSplitLeavesLinkedPeersOutsideTheLockWhole()
+	//! A phase-locked split cuts the linked peer that is NOT in the lock, and does not cut twice a peer that is.
+	void aLockedSplitCutsTheLinkedPeersOutsideTheLockAndNeverTwice()
 	{
 		const auto [trackA, a] = clipAt(1000, 500);
 		const auto [trackC, c] = clipAt(1000, 500);
@@ -269,17 +268,15 @@ private slots:
 			{{QStringLiteral("group"), group}, {QStringLiteral("clip"), a}, {QStringLiteral("position"), 1200}});
 		QVERIFY2(split.ok, qPrintable(split.errorMessage));
 		QCOMPARE(undoDepth(), depth + 1);
-		QCOMPARE(totalClips(), 6);  // only the two locked clips are cut
-		QCOMPARE(pb->length().getTicks(), 500);
-		QCOMPARE(pb->startPosition().getTicks(), 4000);
-		QCOMPARE(pd->length().getTicks(), 500);
-		QCOMPARE(pd->startPosition().getTicks(), 6000);
+		QCOMPARE(totalClips(), 8);  // four clips, each cut once
+		QCOMPARE(pb->length().getTicks(), 200);
+		QCOMPARE(pd->length().getTicks(), 200);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(totalClips(), 4);
 	}
 
-	//! A locked trim changes locked instances, but not linked peers outside the lock.
-	void aLockedTrimLeavesLinkedPeersOutsideTheLockAlone()
+	//! A locked trim reaches the linked peers outside the lock, and is refused whole when one cannot take it.
+	void aLockedTrimReachesTheLinkedPeersOutsideTheLock()
 	{
 		const auto [trackA, a] = clipAt(1000, 500);
 		const auto [trackC, c] = clipAt(1000, 500);
@@ -295,11 +292,10 @@ private slots:
 		const ControlResult trimmed = run(QStringLiteral("vca.edit_trim"),
 			{{QStringLiteral("group"), group}, {QStringLiteral("clip"), a}, {QStringLiteral("start"), 1100}});
 		QVERIFY2(trimmed.ok, qPrintable(trimmed.errorMessage));
-		QCOMPARE(pb->startPosition().getTicks(), 4000);
-		QCOMPARE(pb->length().getTicks(), 500);
+		QCOMPARE(pb->startPosition().getTicks(), 4100);
+		QCOMPARE(pb->length().getTicks(), 400);
 		QCOMPARE(pc->startPosition().getTicks(), 1100);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(pb->startPosition().getTicks(), 4000);
 		QCOMPARE(pb->length().getTicks(), 500);
 	}
 };

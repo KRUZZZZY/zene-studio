@@ -62,23 +62,6 @@ namespace
 {
 
 
-void checkpointPresentationChanges(Clip* source, const QVector<Clip*>& members)
-{
-	QVector<JournallingObject*> targets;
-	for (Clip* member : members)
-	{
-		if (member != source && (member->name() != source->name() || member->color() != source->color()))
-		{
-			targets.append(member);
-		}
-	}
-	if (ProjectJournal* journal = Engine::projectJournal(); journal != nullptr && !targets.isEmpty())
-	{
-		journal->addJournalCheckPoint(targets);
-	}
-}
-
-
 void registerClipLinkGetState(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -190,8 +173,7 @@ void registerClipLinkSync(ControlRegistry& registry)
 		const QString wanted = ClipLinks::contentFingerprint(ref.clip);
 		QJsonArray before;
 		QJsonArray members;
-		const QVector<Clip*> group = cliplink::groupOf(ref.clip);
-		for (Clip* member : group)
+		for (Clip* member : cliplink::groupOf(ref.clip))
 		{
 			members.append(cliplink::clipIdOf(member));
 			if (member != ref.clip && ClipLinks::contentFingerprint(member) != wanted)
@@ -199,10 +181,8 @@ void registerClipLinkSync(ControlRegistry& registry)
 				before.append(cliplink::clipIdOf(member));
 			}
 		}
-		checkpointPresentationChanges(ref.clip, group);
 
 		const ClipLinks::MirrorReport mirror = ClipLinks::mirrorContent(ref.clip);
-		ClipLinks::mirrorPresentation(ref.clip);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), cliplink::clipIdOf(ref.clip));

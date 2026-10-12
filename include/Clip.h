@@ -119,7 +119,11 @@ public:
 		return m_name;
 	}
 
-	void setName(const QString& name);
+	inline void setName( const QString & name )
+	{
+		m_name = name;
+		emit dataChanged();
+	}
 
 	QString displayName() const override
 	{
@@ -204,16 +208,12 @@ public:
 	 *  The relation is the clip's OWN attribute, written with the clip's other
 	 *  non-default attributes (Clip::saveClipEdits) and reset to 0 when the
 	 *  attribute is absent, so a group is rebuilt from its members on load with
-	 *  no second registry in the file. What a group shares is its notes, name and
-	 *  colour; each member has independent position, length and loop window. */
+	 *  no second registry in the file. What a group shares is the clip's
+	 *  CONTENT (its note list - see include/ClipLinks.h and
+	 *  docs/LINKED-CLIPS.md); position, length, offset, fades, gain and the rest
+	 *  stay per-member. */
 	int linkId() const { return m_linkId; }
-	void setLinkId(int linkId)
-	{
-		const int normalized = linkId < 0 ? 0 : linkId;
-		if (m_linkId == normalized) { return; }
-		m_linkId = normalized;
-		emit dataChanged();
-	}
+	void setLinkId(int linkId) { m_linkId = linkId < 0 ? 0 : linkId; }
 
 	virtual void movePosition( const TimePos & pos );
 	virtual void changeLength( const TimePos & length );

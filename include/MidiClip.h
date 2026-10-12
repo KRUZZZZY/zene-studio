@@ -70,8 +70,6 @@ public:
 
 	void rearrangeAllNotes();
 	void clearNotes();
-	//! Notify views after an in-place note edit and mirror the resulting shared content.
-	void notesChanged();
 
 	inline const NoteVector & notes() const
 	{

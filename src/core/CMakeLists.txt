@@ -209,7 +209,6 @@ set(LMMS_SRCS
 	core/ControlCommandsBounceLand.cpp
 	core/ControlCommandsBrowserCollections.cpp
 	core/ControlCommandsClipEdits.cpp
-	core/ControlCommandsClipRecord.cpp
 	core/ControlCommandsCollectMedia.cpp
 	# clip.trim / clip.slip (0.3.0 verb wave): the clip group's edge-editing verbs.
 	# Split into its own TU because ControlCommandsClipEdits.cpp is at the file
@@ -223,7 +222,7 @@ set(LMMS_SRCS
 	core/ClipLinks.cpp
 	# A crossfade between a clip and one lying wholly inside it (owner decision 2026-10-08).
 	core/ContainedCrossfade.cpp
-	# Shared-content adjustments for linked clips: linked geometry remains per-instance (owner decision 2026-10-09).
+	# Trim and split of a linked clip apply to the whole group (owner decision 2026-10-08).
 	core/LinkedClipEdits.cpp
 	core/ControlCommandsClipLink.cpp
 	core/ControlCommandsClipLinkState.cpp

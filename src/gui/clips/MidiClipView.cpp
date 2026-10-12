@@ -37,18 +37,15 @@
 #include "AutomationEditor.h"
 #include "ClipEditsMenu.h"
 #include "ClipLinks.h"
+#include "LinkedClipEdits.h"
 #include "ConfigManager.h"
-#include "ControlClipLinkSupport.h"
-#include "ControlRegistry.h"
 #include "DeprecationHelper.h"
 #include "GuiApplication.h"
-#include "LinkedClipEdits.h"
 #include "MainWindow.h"
 #include "NoteEditor.h"
 #include "InstrumentTrackView.h"
 #include "MidiClip.h"
 #include "PianoRoll.h"
-#include "ProjectJournal.h"
 #include "RenameDialog.h"
 #include "SongEditor.h"
 #include "TrackContainerView.h"
@@ -56,28 +53,6 @@
 
 namespace lmms::gui
 {
-
-namespace
-{
-
-void setMidiClipName(MidiClip* clip, const QString& name)
-{
-	if (clip->name() == name) { return; }
-	QVector<JournallingObject*> toCheckpoint;
-	if (clip->linkId() > 0)
-	{
-		for (Clip* member : ClipLinks::groupOf(clip)) { toCheckpoint.append(member); }
-	}
-	else { toCheckpoint.append(clip); }
-	if (ProjectJournal* journal = Engine::projectJournal(); journal != nullptr)
-	{
-		journal->addJournalCheckPoint(toCheckpoint);
-	}
-	clip->setName(name);
-	Engine::getSong()->setModified();
-}
-
-} // namespace
 
 constexpr int BeatStepButtonOffset = 4;
 
@@ -112,11 +87,7 @@ MidiClip* MidiClipView::getMidiClip()
 
 void MidiClipView::update()
 {
-	const bool linked = m_clip->linkId() > 0;
-	const QString label = m_clip->name().isEmpty() ? tr("MIDI clip") : tr("MIDI clip: %1").arg(m_clip->name());
-	setAccessibleName(linked ? tr("Linked %1").arg(label) : label);
-	setAccessibleDescription(linked ? tr("This MIDI clip is linked. Its notes, name and colour are shared.") : label);
-	setToolTip(linked ? tr("%1 (linked)").arg(m_clip->name()) : m_clip->name());
+	setToolTip(m_clip->name());
 
 	ClipView::update();
 }
@@ -154,7 +125,7 @@ void MidiClipView::setGhostInAutomationEditor()
 	getGUI()->mainWindow()->revealPanel(QStringLiteral("automation"));
 }
 
-void MidiClipView::resetName() { setMidiClipName(m_clip, QString()); }
+void MidiClipView::resetName() { m_clip->setName(""); }
 
 
 
@@ -164,7 +135,7 @@ void MidiClipView::changeName()
 	QString s = m_clip->name();
 	RenameDialog rename_dlg( s );
 	rename_dlg.exec();
-	setMidiClipName(m_clip, s);
+	m_clip->setName( s );
 }
 
 
@@ -217,7 +188,7 @@ void MidiClipView::transposeSelection()
 		{
 			note->setKey(note->key() + semitones);
 		}
-		clip->notesChanged();
+		emit clip->dataChanged();
 	}
 	// At least one clip must have notes to show the transpose dialog, so something *has* changed
 	Engine::getSong()->setModified();
@@ -279,13 +250,6 @@ void MidiClipView::constructContextMenu( QMenu * _cm )
 			static_cast<int>(std::clamp(step, qint64{0}, qint64{std::max(0, m_clip->m_steps - 1)})));
 	}
 	_cm->addSeparator();
-	if (m_clip->linkId() > 0)
-	{
-		_cm->addAction(embed::getIconPixmap("edit_copy"), tr("Make Unique"), [this]() {
-			ControlRegistry::instance()->invoke(QStringLiteral("clip.link_make_unique"),
-				{{QStringLiteral("clip"), control::cliplink::clipIdOf(m_clip)}});
-		});
-	}
 
 	_cm->addAction( embed::getIconPixmap( "reload" ), tr( "Reset name" ),
 						this, SLOT(resetName()));
@@ -423,7 +387,7 @@ void MidiClipView::mergeClips(QVector<ClipView*> clipvs)
 
 void MidiClipView::clearNotesOutOfBounds()
 {
-	// This shared note-content edit replaces a clip, so capture every linked track as ONE undo step.
+	// A linked clip's trim is the whole group's: the tracks of every member are captured as ONE undo step.
 	if (m_clip->linkId() > 0) { ClipLinks::checkpointGroupTracks(m_clip); }
 	else { m_clip->getTrack()->addJournalCheckPoint(); }
 	m_clip->getTrack()->saveJournallingState(false);
@@ -458,10 +422,11 @@ void MidiClipView::clearNotesOutOfBounds()
 	newClip->changeLength(m_clip->length());
 	newClip->updateLength();
 
-	// The group's other members take the same shared notes. Each instance keeps its independent source window.
+	// The group's other members take the same trimmed notes, re-based the same way, and their start offsets move
+	// by what the notes moved, so each peer still plays them where it did (docs/LINKED-CLIPS.md section 2).
 	Track* track = m_clip->getTrack();
 	remove();
-	ClipLinks::adoptTrimmedContent(newClip);
+	ClipLinks::adoptTrimmedContent(newClip, startBound.getTicks());
 	track->restoreJournallingState();
 }
 
@@ -594,7 +559,6 @@ void MidiClipView::wheelEvent(QWheelEvent * we)
 			{
 				n->setVolume( qMax( 0, vol - 5 ) );
 			}
-			m_clip->notesChanged();
 
 			Engine::getSong()->setModified();
 			update();
@@ -903,17 +867,6 @@ void MidiClipView::paintEvent( QPaintEvent * )
 	{
 		paintTextLabel(m_clip->name(), p);
 	}
-	if (m_clip->linkId() > 0)
-	{
-		p.save();
-		p.setRenderHint(QPainter::Antialiasing, true);
-	const QColor marker = c.lightness() > 128 ? c.darker(260) : c.lighter(240);
-		p.setPen(QPen(marker, 1.4));
-		p.setBrush(Qt::NoBrush);
-		p.drawRoundedRect(QRectF(width() - 20, 4, 10, 6), 3, 3);
-		p.drawRoundedRect(QRectF(width() - 15, 7, 10, 6), 3, 3);
-		p.restore();
-	}
 
 	if( !( fixedClips() && beatClip ) )
 	{
@@ -956,9 +909,12 @@ bool MidiClipView::destructiveSplitClip(const TimePos pos)
 	// clip (bad), and a clip the same length as the original one (pointless).
 	if (splitPos <= m_initialClipPos || splitPos >= m_initialClipEnd) { return false; }
 
-	// Linked content stays shared: splitting changes only this instance's window, and both pieces
-	// continue to expose the same note list.
-	if (m_clip->linkId() > 0) { return ClipView::splitClip(pos); }
+	// A destructive cut of one member would leave the group's content diverged, so a linked clip is cut the
+	// way the plain knife cuts: every member at the same clip-relative position, none of them losing a note.
+	if (m_clip->linkId() > 0)
+	{
+		return ClipLinks::splitGroupAt(m_clip, static_cast<tick_t>(m_initialClipPos + pos)).right != nullptr;
+	}
 
 	m_clip->getTrack()->addJournalCheckPoint();
 	m_clip->getTrack()->saveJournallingState(false);

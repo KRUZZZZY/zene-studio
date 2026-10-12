@@ -180,13 +180,6 @@ TimePos MidiClip::beatClipLength() const
 
 
 
-void MidiClip::notesChanged()
-{
-	emit dataChanged();
-	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
-}
-
-
 Note * MidiClip::addNote( const Note & _new_note, const bool _quant_pos )
 {
 	auto new_note = _new_note.clone();
@@ -204,7 +197,11 @@ Note * MidiClip::addNote( const Note & _new_note, const bool _quant_pos )
 	checkType();
 	updateLength();
 
-	notesChanged();
+	emit dataChanged();
+
+	// Row 6: a content edit to a linked clip reaches every member of its group, in
+	// the same step. Unlinked clips (the normal case) skip it; see ClipLinks.h.
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
 
 	return new_note;
 }
@@ -222,7 +219,8 @@ NoteVector::const_iterator MidiClip::removeNote(NoteVector::const_iterator it)
 	checkType();
 	updateLength();
 
-	notesChanged();
+	emit dataChanged();
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }   // row 6; see addNote
 	return new_it;
 }
 
@@ -242,7 +240,8 @@ NoteVector::const_iterator MidiClip::removeNote(Note* note)
 	checkType();
 	updateLength();
 
-	notesChanged();
+	emit dataChanged();
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
 	return it;
 }
 
@@ -283,7 +282,13 @@ void MidiClip::clearNotes()
 
 	checkType();
 	updateLength();
-	notesChanged();
+	emit dataChanged();
+
+	// Row 6: a bulk clear is a content edit like any other, so it propagates like
+	// any other. mirrorContent() is re-entrant-safe (ClipLinks.cpp), which is what
+	// makes writeContent() - it clears a member before copying onto it - safe to
+	// reach this entry point.
+	if (linkId() > 0) { ClipLinks::mirrorContent(this); }
 }
 
 
@@ -336,7 +341,7 @@ void MidiClip::reverseNotes(const NoteVector& notes)
 	}
 
 	rearrangeAllNotes();
-	notesChanged();
+	emit dataChanged();
 }
 
 
@@ -368,7 +373,6 @@ void MidiClip::splitNotes(const NoteVector& notes, TimePos pos)
 
 		addNote(newNote, false);
 	}
-	notesChanged();
 }
 
 void MidiClip::splitNotesAlongLine(const NoteVector notes, TimePos pos1, int key1, TimePos pos2, int key2, bool deleteShortEnds)
@@ -416,7 +420,6 @@ void MidiClip::splitNotesAlongLine(const NoteVector notes, TimePos pos1, int key
 			removeNote(note);
 		}
 	}
-	notesChanged();
 }
 
 
@@ -642,7 +645,7 @@ void MidiClip::cloneSteps()
 		}
 	}
 	updateLength();
-	notesChanged();
+	emit dataChanged();
 }
 
 
@@ -659,7 +662,7 @@ void MidiClip::removeSteps()
 		}
 		m_steps -= n;
 		updateLength();
-		notesChanged();
+		emit dataChanged();
 	}
 }
 

@@ -1,6 +1,8 @@
 /*
- * ClipOffsetFadeTest.cpp - contained crossfades clamp by default; the optional
- *                          container gesture uses paired offset fades.
+ * ClipOffsetFadeTest.cpp - the offset fade: a crossfade into a clip that lies
+ *                          wholly inside another one fades the CONTAINER where
+ *                          the contained clip is and leaves its tail unfaded
+ *                          (owner decision 2026-10-08, core lane item 3).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -160,8 +162,10 @@ private slots:
 		Engine::destroy();
 	}
 
-	//! The owner ruling makes ordinary contained crossfades use clip-edge fades with zero offsets.
-	void aDefaultContainedCrossfadeClampsToClipEdges()
+	//! The render: a container one second long with a clip over its second quarter, crossfaded the way the
+	//! arranger crossfades a drop. The container ducks under the contained clip by an equal-power ramp at its
+	//! start and comes back by one at its end, and is audible - not faded - everywhere else.
+	void aContainerDucksUnderTheContainedClipAndComesBack()
 	{
 		const int second = oneSecondTicks();
 		SampleClip* container = buildScene(second, second / 4, second / 4);
@@ -169,79 +173,51 @@ private slots:
 
 		const ClipEdits out = container->clipEdits();
 		const ClipEdits in = m_contained->clipEdits();
-		const int overlap = second / 4;
-		QCOMPARE(out.fadeOutTicks, overlap);
-		QCOMPARE(out.fadeOutOffsetTicks, 0);
-		QCOMPARE(out.fadeInTicks, 0);
-		QCOMPARE(out.fadeInOffsetTicks, 0);
-		QCOMPARE(in.fadeInTicks, overlap);
-		QCOMPARE(in.fadeInOffsetTicks, 0);
-		QCOMPARE(in.fadeOutTicks, 0);
-
-		const QByteArray wav = render();
-		QVERIFY2(!wav.isEmpty(), "the export produced no file");
-		const int start = framesAt(overlap);
-		QVERIFY2(std::fabs(wavLeft(wav, start) - kContainerLevel) < 0.005f,
-			"the contained edge starts with the container at unity");
-		const double innerHalf = kContainerLevel + kContainedLevel * std::sin(kHalfPi / 2.0);
-		QVERIFY2(std::fabs(wavLeft(wav, start + framesAt(overlap / 2)) - innerHalf) < 0.02f,
-			"the container must not duck under the contained clip in default mode");
-		QVERIFY2(std::fabs(wavLeft(wav, framesAt(second * 5 / 8)) - kContainerLevel) < 0.005f,
-			"the container fade stays at its own end");
-		QVERIFY2(std::fabs(wavLeft(wav, framesAt(second * 7 / 8)) - kContainerLevel * std::sin(kHalfPi / 2.0)) < 0.02f,
-			"the container's ordinary fade is anchored to its edge");
-	}
-
-	//! Alt is the arranger's fast gesture for the old V-shaped container fade.
-	void altContainerGestureUsesTheInnerClipsAuthoredFadeLengths()
-	{
-		SampleClip* container = buildScene(400, 100, 100);
-		ClipEdits authored;
-		authored.fadeInTicks = 30;
-		authored.fadeOutTicks = 40;
-		m_contained->setClipEdits(authored);
-		QString why;
-		QCOMPARE(arrangement::applyOverlap(m_contained, arrangement::Overlap::Trim, &why, true), 1);
-		QVERIFY(why.isEmpty());
-		const ClipEdits out = container->clipEdits();
-		const ClipEdits in = m_contained->clipEdits();
-		QCOMPARE(out.fadeOutTicks, 30);
-		QCOMPARE(out.fadeInTicks, 40);
-		QCOMPARE(in.fadeInTicks, 30);
-		QCOMPARE(in.fadeOutTicks, 40);
-		QCOMPARE(out.fadeOutOffsetTicks, 400 - (100 + 30));
-		QCOMPARE(out.fadeInOffsetTicks, 100 + 100 - 40);
-		QVERIFY(out.fadeOffsetGap);
-		QCOMPARE(withValidOffsetFades(out, 400), out);
-		QCOMPARE(clipFadeGainAt(130, 400, out.fadeInTicks, out.fadeOutTicks, out.fadeInShape,
-			out.fadeOutShape, out.fadeInOffsetTicks, out.fadeOutOffsetTicks, out.fadeOffsetGap), 0.0f);
-		QCOMPARE(clipFadeGainAt(145, 400, out.fadeInTicks, out.fadeOutTicks, out.fadeInShape,
-			out.fadeOutShape, out.fadeInOffsetTicks, out.fadeOutOffsetTicks, out.fadeOffsetGap), 0.0f);
+		const int entry = in.fadeInTicks;
+		const int exit = in.fadeOutTicks;
+		QCOMPARE(entry + exit, second / 4);                       // the two ramps span the contained clip
+		QCOMPARE(out.fadeOutTicks, entry);                        // the container goes down as it comes up ...
+		QCOMPARE(out.fadeOutOffsetTicks, second - (second / 4 + entry));
+		QCOMPARE(out.fadeInTicks, exit);                          // ... and comes back as it goes down
+		QCOMPARE(out.fadeInOffsetTicks, second / 4 + entry);
 		QCOMPARE(in.fadeInOffsetTicks, 0);
 		QCOMPARE(in.fadeOutOffsetTicks, 0);
-	}
-
-	//! A pre-fade must not bypass the silent span between a container's paired ramps.
-	void aContainerCrossfadeGapSilencesAPreFadedContainer()
-	{
-		const int second = oneSecondTicks();
-		SampleClip* container = buildScene(second, second / 4, second / 2);
-		ClipEdits outer;
-		outer.preFadeOutTicks = 24;
-		container->setClipEdits(outer);
-		ClipEdits inner;
-		inner.fadeInTicks = 24;
-		inner.fadeOutTicks = 24;
-		m_contained->setClipEdits(inner);
-		QCOMPARE(arrangement::applyOverlap(m_contained, arrangement::Overlap::Crossfade, nullptr, true), 1);
-		QVERIFY(container->clipEdits().fadeOffsetGap);
-		QVERIFY(prefades::engaged(*container));
 
 		const QByteArray wav = render();
 		QVERIFY2(!wav.isEmpty(), "the export produced no file");
-		const int insideGap = framesAt(second / 2);
-		QVERIFY2(std::fabs(wavLeft(wav, insideGap) - kContainedLevel) < 0.01f,
-			"only the contained clip should sound inside the container's silent gap");
+		const int start = framesAt(second / 4);
+		const int entryFrames = framesAt(entry);
+		const int exitFrames = framesAt(exit);
+		QVERIFY2(std::fabs(wavLeft(wav, start / 2) - kContainerLevel) < 0.005f, "the container is not at unity before the crossfade");
+		for (int i = 1; i < 8; ++i)
+		{
+			const double x = i / 8.0;
+			const double down = kContainerLevel * std::sin((1.0 - x) * kHalfPi) + kContainedLevel * std::sin(x * kHalfPi);
+			const float atEntry = wavLeft(wav, start + static_cast<int>(entryFrames * x));
+			QVERIFY2(std::fabs(atEntry - down) < 0.02f,
+				qPrintable(QStringLiteral("entry crossfade at x=%1 measured %2, expected %3").arg(x).arg(atEntry).arg(down)));
+			const double up = kContainerLevel * std::sin(x * kHalfPi) + kContainedLevel * std::sin((1.0 - x) * kHalfPi);
+			const float atExit = wavLeft(wav, start + entryFrames + static_cast<int>(exitFrames * x));
+			QVERIFY2(std::fabs(atExit - up) < 0.02f,
+				qPrintable(QStringLiteral("exit crossfade at x=%1 measured %2, expected %3").arg(x).arg(atExit).arg(up)));
+		}
+		// After the contained clip ends the container is back at unity, all the way to its own end.
+		for (const int at : {start + entryFrames + exitFrames + 2048, framesAt(second * 3 / 4), framesAt(second) - 4096})
+		{
+			QVERIFY2(std::fabs(wavLeft(wav, at) - kContainerLevel) < 0.005f,
+				qPrintable(QStringLiteral("the container is not audible and unfaded at frame %1 (measured %2)").arg(at).arg(wavLeft(wav, at))));
+		}
+		// And nothing steps: no two neighbouring samples of the whole render differ by more than a ramp's own slope.
+		const int frames = framesAt(second);
+		float worst = 0.0f;
+		int worstAt = 0;
+		for (int f = 1; f < frames; ++f)
+		{
+			const float step = std::fabs(wavLeft(wav, f) - wavLeft(wav, f - 1));
+			if (step > worst) { worst = step; worstAt = f; }
+		}
+		QVERIFY2(worst < 0.01f, qPrintable(QStringLiteral("the render steps by %1 at frame %2 (entry %3, exit %4, clip end %5)")
+			.arg(worst).arg(worstAt).arg(start).arg(start + entryFrames + exitFrames).arg(frames)));
 	}
 
 	//! The render path allocates nothing with an offset fade live (the handle is built outside the probe).
@@ -251,11 +227,10 @@ private slots:
 		SampleClip* container = buildScene(second, second / 4, second / 4);
 		ClipEdits edits;
 		edits.fadeInTicks = 48;
-		edits.fadeInOffsetTicks = second - 192 + 96;
+		edits.fadeInOffsetTicks = 24;
 		edits.fadeOutTicks = 96;
 		edits.fadeOutOffsetTicks = 192;
 		edits.fadeOutShape = FadeShape::EqualPower;
-		edits.fadeOffsetGap = true;
 		container->setClipEdits(edits);
 
 		SamplePlayHandle handle(container);
@@ -268,97 +243,59 @@ private slots:
 		QCOMPARE(static_cast<qulonglong>(test::tlAllocationCount), static_cast<qulonglong>(0));
 	}
 
-	//! clip.crossfade defaults to clamp; mode=container uses the inner clip's authored ramps and one undo restores them.
+	//! clip.crossfade writes the same ramps, reports them, takes a length for the ramp INTO the contained clip
+	//! (the other is the rest), refuses what cannot fit, and one undo takes it all away.
 	void theCrossfadeCommandUsesTheRampsAndUndoRestoresThem()
 	{
 		const int second = oneSecondTicks();
 		SampleClip* container = buildScene(second, second / 4, second / 4);
 		const int span = second / 4;
-		const QString containerId = control::clipIdOf(container);
-		const QString containedId = control::clipIdOf(m_contained);
-		ClipEdits authored;
-		authored.fadeInTicks = 6;
-		authored.fadeOutTicks = span - authored.fadeInTicks;
 		const auto crossfade = [&](const QJsonObject& more, SampleClip* out, SampleClip* in) {
 			QJsonObject args{{QStringLiteral("out"), control::clipIdOf(out)}, {QStringLiteral("in"), control::clipIdOf(in)}};
 			for (auto it = more.begin(); it != more.end(); ++it) { args.insert(it.key(), it.value()); }
 			return ControlRegistry::instance()->invoke(QStringLiteral("clip.crossfade"), args);
 		};
-		const auto undoAndResolve = [&]() {
-			const ControlResult undone = ControlRegistry::instance()->invoke(QStringLiteral("control.undo"));
-			QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
-			ControlResult error;
-			control::ClipRef ref;
-			QVERIFY2(control::resolveClip(containerId, &ref, &error), qPrintable(error.errorMessage));
-			container = dynamic_cast<SampleClip*>(ref.clip);
-			QVERIFY(container != nullptr);
-			QVERIFY2(control::resolveClip(containedId, &ref, &error), qPrintable(error.errorMessage));
-			m_contained = dynamic_cast<SampleClip*>(ref.clip);
-			QVERIFY(m_contained != nullptr);
-		};
 		const ControlResult done = crossfade({}, container, m_contained);
 		QVERIFY2(done.ok, qPrintable(done.errorMessage));
-		QCOMPARE(done.result.value(QStringLiteral("mode")).toString(), QStringLiteral("clamp"));
 		QCOMPARE(done.result.value(QStringLiteral("overlap")).toInt(), span);
-		QCOMPARE(container->clipEdits().fadeOutTicks, span);
-		QCOMPARE(container->clipEdits().fadeOutOffsetTicks, 0);
-		QCOMPARE(container->clipEdits().fadeInOffsetTicks, 0);
-		QCOMPARE(m_contained->clipEdits().fadeInTicks, span);
-		QCOMPARE(m_contained->clipEdits().fadeInOffsetTicks, 0);
-		undoAndResolve();
-		QCOMPARE(container->clipEdits(), ClipEdits{});
-		QCOMPARE(m_contained->clipEdits(), ClipEdits{});
-
-		m_contained->setClipEdits(authored);
-		const ControlResult nested = crossfade({{QStringLiteral("mode"), QStringLiteral("container")}}, container, m_contained);
-		QVERIFY2(nested.ok, qPrintable(nested.errorMessage));
-		QCOMPARE(nested.result.value(QStringLiteral("mode")).toString(), QStringLiteral("container"));
-		QCOMPARE(container->clipEdits().fadeOutTicks, authored.fadeInTicks);
-		QCOMPARE(container->clipEdits().fadeInTicks, authored.fadeOutTicks);
-		QCOMPARE(m_contained->clipEdits().fadeInTicks, authored.fadeInTicks);
-		QCOMPARE(m_contained->clipEdits().fadeOutTicks, authored.fadeOutTicks);
-		QCOMPARE(nested.result.value(QStringLiteral("out_fade_out_offset")).toInt(), container->clipEdits().fadeOutOffsetTicks);
+		const int entry = done.result.value(QStringLiteral("out_fade_out")).toInt();
+		QCOMPARE(done.result.value(QStringLiteral("in_fade_in")).toInt(), entry);
+		QCOMPARE(entry + m_contained->clipEdits().fadeOutTicks, span);
+		QCOMPARE(done.result.value(QStringLiteral("out_fade_out_offset")).toInt(), container->clipEdits().fadeOutOffsetTicks);
 		QVERIFY(container->clipEdits().fadeInOffsetTicks > 0);
-		undoAndResolve();
-		QCOMPARE(container->clipEdits(), ClipEdits{});
-		QCOMPARE(m_contained->clipEdits(), authored);
 
-		// A one-sided override changes only that authored ramp; the other keeps its inner-clip length.
-		QVERIFY(crossfade({{QStringLiteral("mode"), QStringLiteral("container")}, {QStringLiteral("out_length"), 5}},
-			container, m_contained).ok);
+		// A length for the ramp into the contained clip: the exit is the rest.
+		QVERIFY(crossfade({{QStringLiteral("out_length"), 5}}, container, m_contained).ok);
 		QCOMPARE(container->clipEdits().fadeOutTicks, 5);
 		QCOMPARE(container->clipEdits().fadeInTicks, span - 5);
-		undoAndResolve();
-		QVERIFY(crossfade({{QStringLiteral("mode"), QStringLiteral("container")}, {QStringLiteral("in_length"), 4}},
-			m_contained, container).ok);
-		QCOMPARE(container->clipEdits().fadeInTicks, 4);
-		QCOMPARE(container->clipEdits().fadeOutTicks, span - 4);
-		undoAndResolve();
-
-		// What cannot fit, or says two different lengths for one requested ramp, is refused and writes nothing.
+		QCOMPARE(m_contained->clipEdits().fadeOutTicks, span - 5);
+		// With the container as 'in', the length names the ramp OUT of the contained clip.
+		QVERIFY(crossfade({{QStringLiteral("in_length"), 5}}, m_contained, container).ok);
+		QCOMPARE(container->clipEdits().fadeInTicks, 5);
+		QCOMPARE(container->clipEdits().fadeOutTicks, span - 5);
+		// What cannot fit, or says two things, is refused and writes nothing.
 		const ClipEdits kept = container->clipEdits();
-		QVERIFY(!crossfade({{QStringLiteral("mode"), QStringLiteral("container")}, {QStringLiteral("out_length"), span}},
-			container, m_contained).ok);
-		QVERIFY(!crossfade({{QStringLiteral("mode"), QStringLiteral("container")}, {QStringLiteral("out_length"), 3},
-			{QStringLiteral("in_length"), 4}}, container, m_contained).ok);
+		QVERIFY(!crossfade({{QStringLiteral("out_length"), span}}, container, m_contained).ok);
+		QVERIFY(!crossfade({{QStringLiteral("out_length"), 3}, {QStringLiteral("in_length"), 4}}, container, m_contained).ok);
 		QCOMPARE(container->clipEdits(), kept);
+
+		for (int i = 0; i < 3; ++i) { QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(container->clipEdits(), ClipEdits{});
+		QCOMPARE(m_contained->clipEdits(), ClipEdits{});
 	}
 
-	//! Container mode requires both authored inner ramps; it has no half-length fallback.
-	void aContainedClipsOwnFadeInAndFadeOutAreTheEntryAndExitRamps()
+	//! The contained clip's own fade-out, when it has one, is the exit ramp.
+	void aContainedClipsOwnFadeOutIsTheExitRamp()
 	{
 		const int second = oneSecondTicks();
 		SampleClip* container = buildScene(second, second / 4, second / 4);
 		ClipEdits own;
-		own.fadeInTicks = 5;
 		own.fadeOutTicks = 6;
 		m_contained->setClipEdits(own);
-		QCOMPARE(arrangement::applyOverlap(m_contained, arrangement::Overlap::Crossfade, nullptr, true), 1);
-		QCOMPARE(m_contained->clipEdits().fadeInTicks, 5);
+		QCOMPARE(arrangement::applyOverlap(m_contained, arrangement::Overlap::Crossfade), 1);
 		QCOMPARE(m_contained->clipEdits().fadeOutTicks, 6);
-		QCOMPARE(container->clipEdits().fadeOutTicks, 5);
 		QCOMPARE(container->clipEdits().fadeInTicks, 6);
-		QVERIFY(container->clipEdits().fadeOffsetGap);
+		QCOMPARE(container->clipEdits().fadeOutTicks, second / 4 - 6);
 	}
 
 	//! Across the whole container the envelope never steps by more than one frame of its ramps' steepest slope,
@@ -366,11 +303,7 @@ private slots:
 	void theEnvelopeIsContinuousAndEqualPowerThroughBothCrossfades()
 	{
 		SampleClip* container = buildScene(400, 100, 100);  // ticks stand in for frames: the ramps are ratios
-		ClipEdits authored;
-		authored.fadeInTicks = 40;
-		authored.fadeOutTicks = 60;
-		m_contained->setClipEdits(authored);
-		QCOMPARE(arrangement::applyOverlap(m_contained, arrangement::Overlap::Crossfade, nullptr, true), 1);
+		QCOMPARE(arrangement::applyOverlap(m_contained, arrangement::Overlap::Crossfade), 1);
 		const ClipEdits out = container->clipEdits();
 		const ClipEdits in = m_contained->clipEdits();
 		const double slope = kHalfPi / std::min(out.fadeOutTicks, out.fadeInTicks);
@@ -485,25 +418,6 @@ private slots:
 		container->loadSettings(plain);  // the old file: no attribute at all
 		QCOMPARE(container->clipEdits().fadeInOffsetTicks, 0);
 		QCOMPARE(container->clipEdits().fadeOutOffsetTicks, 0);
-
-		ClipEdits gap;
-		const int clipLength = container->length().getTicks();
-		gap.fadeInTicks = 5;
-		gap.fadeInOffsetTicks = clipLength - 10;
-		gap.fadeOutTicks = 10;
-		gap.fadeOutOffsetTicks = 20;
-		gap.fadeOffsetGap = true;
-		container->setClipEdits(gap);
-		QDomElement gapped = doc.createElement(QStringLiteral("clip"));
-		container->saveSettings(doc, gapped);
-		QCOMPARE(gapped.attribute(QStringLiteral("fadeoffsetgap")), QStringLiteral("1"));
-		container->setClipEdits(ClipEdits{});
-		container->loadSettings(gapped);
-		QCOMPARE(container->clipEdits().fadeInTicks, gap.fadeInTicks);
-		QCOMPARE(container->clipEdits().fadeOutTicks, gap.fadeOutTicks);
-		QCOMPARE(container->clipEdits().fadeInOffsetTicks, gap.fadeInOffsetTicks);
-		QCOMPARE(container->clipEdits().fadeOutOffsetTicks, gap.fadeOutOffsetTicks);
-		QCOMPARE(container->clipEdits().fadeOffsetGap, gap.fadeOffsetGap);
 	}
 
 	//! An old project - no offsets anywhere - gets bit for bit the envelope it always got, for every clip

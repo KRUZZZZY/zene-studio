@@ -185,8 +185,6 @@ protected:
 	virtual void paintTextLabel(QString const & text, QPainter & painter);
 
 	auto hasCustomColor() const -> bool;
-	/** Split this Clip into two clips at a position relative to its start. */
-	bool splitClip(const TimePos pos);
 
 protected slots:
 	void updateLength();
@@ -256,6 +254,12 @@ private:
 	
 	//! Returns whether the user can left-resize this clip so that the start of the clip bounds is before the start of the clip content.
 	virtual bool isResizableBeforeStart() { return true; };
+	/**
+	* Split this Clip into two clips
+	* @param pos the position of the split, relative to the start of the clip
+	* @return true if the clip could be split
+	*/
+	bool splitClip(const TimePos pos);
 	/**
 	* Destructively split this Clip into two clips. If the clip type does not implement this feature, it will default to normal splitting.
 	* @param pos the position of the split, relative to the start of the clip

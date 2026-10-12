@@ -397,6 +397,7 @@ ControlResult ControlRegistry::runHandler(
 	if (lockedOut(mutating, commandId, args, &locked)) { return ControlResult::failure(ControlErrorKind::Refused, locked); }
 
 	ProjectJournal* journal = Engine::projectJournal();
+	const int mark = journal != nullptr ? journal->undoDepth() : -1;
 	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
 
 	// Who else is running: a nested mutating call is part of its outermost mutating
@@ -421,12 +422,10 @@ ControlResult ControlRegistry::runHandler(
 	quint64 step = 0;
 	if (journal != nullptr)
 	{
-		// Merge by serial, not by stack index: a bounded journal can evict entries
-		// while this handler runs, but every checkpoint pushed after serialBefore
-		// is still exactly this command's window.
+		// The merge first: one command is one step however many models it wrote.
 		// THEN the coalescing rule, which can merge that step into the previous
 		// command's when this call continues the same gesture.
-		journal->mergeCheckpointsSince(serialBefore);
+		journal->mergeCheckpointsFrom(mark);
 		// Did THIS call produce a step? Asked by SERIAL, not by depth: a bound
 		// can evict steps while the handler runs, so the depth can be exactly
 		// what it was before the call even though a step was pushed. (Found by

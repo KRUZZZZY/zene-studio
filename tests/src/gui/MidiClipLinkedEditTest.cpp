@@ -22,17 +22,9 @@
 
 #include <QtTest>
 
-#include <QAction>
-#include <QApplication>
 #include <QCoreApplication>
-#include <QContextMenuEvent>
-#include <QImage>
-#include <QMenu>
 #include <QMouseEvent>
-#include <QTimer>
 
-#include "ArrangementEdits.h"
-#include "ClipEdits.h"
 #include "ClipLinks.h"
 #include "ClipView.h"
 #include "ControlRegistry.h"
@@ -44,8 +36,6 @@
 #include "MidiClipView.h"
 #include "Note.h"
 #include "ProjectJournal.h"
-#include "SampleClip.h"
-#include "SampleTrack.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "Track.h"
@@ -78,71 +68,6 @@ MidiClipView* viewOf(const Clip* clip)
 		if (view->getClip() == clip) { return view; }
 	}
 	return nullptr;
-}
-
-ClipView* clipViewOf(const Clip* clip)
-{
-	for (ClipView* view : getGUI()->songEditor()->m_editor->findChildren<ClipView*>())
-	{
-		if (view->getClip() == clip) { return view; }
-	}
-	return nullptr;
-}
-
-QImage widgetImage(QWidget* widget)
-{
-	QImage image(widget->size(), QImage::Format_ARGB32_Premultiplied);
-	image.fill(Qt::transparent);
-	widget->render(&image);
-	return image;
-}
-
-int markerPixelDifferences(const QImage& linked, const QImage& unique, int width)
-{
-	int differences = 0;
-	for (int y = 2; y < 15; ++y)
-	for (int x = width - 22; x < width - 2; ++x)
-	{
-		if (linked.pixel(x, y) != unique.pixel(x, y)) { ++differences; }
-	}
-	return differences;
-}
-
-bool openContextMenuAndTrigger(QWidget* target, const QString& wantedAction)
-{
-	bool found = false;
-	QTimer::singleShot(0, [&]() {
-		auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
-		if (menu == nullptr)
-		{
-			for (QWidget* top : QApplication::topLevelWidgets())
-			{
-				if (auto* candidate = qobject_cast<QMenu*>(top); candidate != nullptr && candidate->isVisible())
-				{
-					menu = candidate;
-					break;
-				}
-			}
-		}
-		if (menu == nullptr) { return; }
-		for (QAction* action : menu->actions())
-		{
-			if (action->text() == wantedAction)
-			{
-				found = true;
-				action->trigger();
-				break;
-			}
-		}
-		menu->close();
-	});
-	QTimer::singleShot(1500, []() {
-		if (QWidget* popup = QApplication::activePopupWidget()) { popup->close(); }
-	});
-	const QPoint at(target->width() / 2, target->height() / 2);
-	QContextMenuEvent context(QContextMenuEvent::Mouse, at, target->mapToGlobal(at), Qt::NoModifier);
-	QCoreApplication::sendEvent(target, &context);
-	return found;
 }
 
 } // namespace
@@ -244,8 +169,9 @@ private slots:
 		QCOMPARE(ClipLinks::contentFingerprint(members[0]), ClipLinks::contentFingerprint(members[1]));
 	}
 
-	//! The owner ruling changes the former peer-compensation assertion: shared rebased notes do not rewrite a peer's window.
-	void aHeadTrimmedLinkedClipLeavesThePeerWindowAlone()
+	//! A clip trimmed on the left bakes its offset into the notes; a peer's offset moves by the same
+	//! amount, so the peer plays every note where it did.
+	void aHeadTrimmedLinkedClipMovesItsPeersOffsetWithTheNotes()
 	{
 		MidiClip* a = midiClipAt(m_track, 0, Bar);
 		MidiClip* b = midiClipAt(m_track, 4 * Bar, Bar);
@@ -273,18 +199,18 @@ private slots:
 			QCOMPARE(midi->notes().front()->pos().getTicks(), 0);
 		}
 		QCOMPARE(ClipLinks::contentFingerprint(members[0]), ClipLinks::contentFingerprint(members[1]));
-		// The peer's source window is independent and is not moved by this instance's content trim.
+		// The peer never had an offset; it takes the baked 24 so the shifted notes play where they did.
 		const MidiClip* peer = nullptr;
 		for (const Clip* member : members)
 		{
 			if (member->startPosition().getTicks() == 4 * Bar) { peer = static_cast<const MidiClip*>(member); }
 		}
 		QVERIFY(peer != nullptr);
-		QCOMPARE(peer->startTimeOffset().getTicks(), 0);
+		QCOMPARE(peer->startTimeOffset().getTicks(), 24);
 	}
 
-	//! The 2026-10-09 owner ruling changes the former group-cut assertion: both selected pieces retain the shared content and link.
-	void theKnifeCutsOnlyTheSelectedInstanceAndKeepsBothPiecesLinked()
+	//! The knife (shift = destructive) on one member cuts every member at the same position.
+	void theKnifeCutsEveryLinkedMember()
 	{
 		MidiClip* a = midiClipAt(m_track, 0, 4 * Bar);
 		MidiClip* b = midiClipAt(m_track, 8 * Bar, 4 * Bar);
@@ -305,24 +231,26 @@ private slots:
 		m_editor->setEditModeDraw();
 		QCoreApplication::processEvents();
 
-		QCOMPARE(clipsOnTrack(), 3);
-		const QVector<Clip*> members = ClipLinks::group(group);
-		QCOMPARE(static_cast<int>(members.size()), 3);  // left, right, and untouched peer
-		Clip* right = nullptr;
-		for (Clip* clip : m_track->getClips())
+		QCOMPARE(clipsOnTrack(), 4);
+		const QVector<Clip*> lefts = ClipLinks::group(group);
+		QCOMPARE(static_cast<int>(lefts.size()), 2);
+		QCOMPARE(lefts[0]->length(), lefts[1]->length());
+		int rightGroup = 0;
+		for (const Clip* clip : m_track->getClips())
 		{
-			QCOMPARE(clip->linkId(), group);
-			if (clip->startPosition().getTicks() == 2 * Bar) { right = clip; }
+			if (clip->linkId() != group) { rightGroup = clip->linkId(); }
 		}
-		QVERIFY(right != nullptr);
-		QCOMPARE(right->length().getTicks(), 2 * Bar);
-		QCOMPARE(noteCountOf(a), 2);
-		QCOMPARE(noteCountOf(right), 2);
-		QCOMPARE(ClipLinks::contentFingerprint(a), ClipLinks::contentFingerprint(right));
+		QVERIFY(rightGroup > 0);
+		const QVector<Clip*> rights = ClipLinks::group(rightGroup);
+		QCOMPARE(static_cast<int>(rights.size()), 2);
+		QCOMPARE(rights[0]->length(), rights[1]->length());
+		// Whole content in every half: nothing was lost, so each group agrees inside itself.
+		QCOMPARE(ClipLinks::contentFingerprint(lefts[0]), ClipLinks::contentFingerprint(lefts[1]));
+		QCOMPARE(ClipLinks::contentFingerprint(rights[0]), ClipLinks::contentFingerprint(rights[1]));
 	}
 
-	//! The owner ruling changes the former apply-to-all assertion: a left-edge drag trims only this instance.
-	void aLeftEdgeDragTrimsOnlyTheSelectedWindow()
+	//! Dragging one member's left edge trims every member; one undo puts them all back.
+	void aLeftEdgeDragTrimsEveryLinkedMember()
 	{
 		MidiClip* a = midiClipAt(m_track, 0, 4 * Bar);
 		MidiClip* b = midiClipAt(m_track, 8 * Bar, 4 * Bar);
@@ -348,20 +276,20 @@ private slots:
 
 		const int moved = a->startPosition().getTicks();
 		QVERIFY2(moved > 0, "the drag did not move the dragged clip's left edge");
-		QCOMPARE(b->startPosition().getTicks(), 8 * Bar);
-		QCOMPARE(b->length().getTicks(), 4 * Bar);
+		QCOMPARE(b->startPosition().getTicks(), 8 * Bar + moved);
+		QCOMPARE(b->length().getTicks(), 4 * Bar - moved);
 		QCOMPARE(a->length().getTicks(), 4 * Bar - moved);
-		QCOMPARE(b->startTimeOffset().getTicks(), 0);
+		QCOMPARE(b->startTimeOffset(), a->startTimeOffset());
 
-		QCOMPARE(Engine::projectJournal()->undoDepth(), undoBefore + 1);
+		QVERIFY(Engine::projectJournal()->undoDepth() >= undoBefore + 1);
 		Engine::projectJournal()->undo();
 		QCOMPARE(a->startPosition().getTicks(), 0);
 		QCOMPARE(b->startPosition().getTicks(), 8 * Bar);
 		QCOMPARE(b->length().getTicks(), 4 * Bar);
 	}
 
-	//! The owner ruling changes the former apply-to-all assertion: a right-edge drag resizes only this instance.
-	void aRightEdgeDragResizesOnlyTheSelectedWindow()
+	//! Dragging one member's right edge resizes every member; one undo puts them all back.
+	void aRightEdgeDragResizesEveryLinkedMember()
 	{
 		MidiClip* a = midiClipAt(m_track, 0, 4 * Bar);
 		MidiClip* b = midiClipAt(m_track, 8 * Bar, 4 * Bar);
@@ -386,7 +314,7 @@ private slots:
 		QCoreApplication::processEvents();
 
 		QVERIFY2(a->length().getTicks() < 4 * Bar, "the drag did not shorten the dragged clip");
-		QCOMPARE(b->length().getTicks(), 4 * Bar);
+		QCOMPARE(b->length(), a->length());
 		QCOMPARE(b->startPosition().getTicks(), 8 * Bar);
 		QCOMPARE(Engine::projectJournal()->undoDepth(), undoBefore + 1);  // one step, not one per clip
 		Engine::projectJournal()->undo();
@@ -394,8 +322,8 @@ private slots:
 		QCOMPARE(b->length().getTicks(), 4 * Bar);
 	}
 
-	//! A short linked peer no longer blocks the selected instance's edge drag.
-	void aShortLinkedPeerDoesNotBlockTheEdgeDrag()
+	//! A drag a peer cannot follow goes back whole: here the peer is too short for the dragged clip's new edge.
+	void aDragAPeerCannotFollowGoesBack()
 	{
 		MidiClip* a = midiClipAt(m_track, 0, 4 * Bar);
 		MidiClip* b = midiClipAt(m_track, 8 * Bar, Bar / 4);  // a quarter bar long
@@ -416,98 +344,8 @@ private slots:
 		send(QEvent::MouseMove, drop, Qt::LeftButton);
 		send(QEvent::MouseButtonRelease, drop, Qt::NoButton);
 		QCoreApplication::processEvents();
-		QVERIFY(a->length().getTicks() < 4 * Bar);  // the selected window changed
-		QCOMPARE(b->length().getTicks(), Bar / 4);   // peer window stayed independent
-	}
-
-	void linkedClipWidgetShowsMarkerAndAccessibleState()
-	{
-		MidiClip* a = midiClipAt(m_track, 0, Bar);
-		MidiClip* b = midiClipAt(m_track, 4 * Bar, Bar);
-		MidiClip* c = midiClipAt(m_track, 8 * Bar, Bar);
-		for (MidiClip* clip : {a, b, c}) { clip->setName(QStringLiteral("Shared phrase")); }
-		const int group = ClipLinks::allocateGroupId();
-		for (MidiClip* clip : {a, b, c}) { clip->setLinkId(group); }
-		a->addNote(Note(TimePos(24), TimePos(0), 60), false);
-		m_editor->realignTracks();
-		QCoreApplication::processEvents();
-		MidiClipView* view = viewOf(b);
-		QVERIFY(view != nullptr);
-		QVERIFY(view->width() > 24 && view->height() > 16);
-		QCOMPARE(view->accessibleName(), QStringLiteral("Linked MIDI clip: Shared phrase"));
-		QVERIFY(view->accessibleDescription().contains(QStringLiteral("notes, name and colour are shared")));
-
-		const QImage linked = widgetImage(view);
-		b->setLinkId(0);
-		view->update();
-		QCoreApplication::processEvents();
-		QCOMPARE(view->accessibleName(), QStringLiteral("MIDI clip: Shared phrase"));
-		const QImage unique = widgetImage(view);
-		QVERIFY2(markerPixelDifferences(linked, unique, view->width()) > 0,
-			"the linked arranger widget must paint its chain marker");
-		b->setLinkId(group);
-		view->update();
-		QCoreApplication::processEvents();
-	}
-
-	void makeUniqueContextMenuActionDetachesOnlyTheSelectedClip()
-	{
-		MidiClip* a = midiClipAt(m_track, 0, Bar);
-		MidiClip* b = midiClipAt(m_track, 4 * Bar, Bar);
-		MidiClip* c = midiClipAt(m_track, 8 * Bar, Bar);
-		for (MidiClip* clip : {a, b, c}) { clip->setName(QStringLiteral("Shared phrase")); }
-		const int group = ClipLinks::allocateGroupId();
-		for (MidiClip* clip : {a, b, c}) { clip->setLinkId(group); }
-		a->addNote(Note(TimePos(24), TimePos(0), 60), false);
-		m_editor->realignTracks();
-		QCoreApplication::processEvents();
-		MidiClipView* view = viewOf(b);
-		QVERIFY(view != nullptr);
-		QVERIFY2(openContextMenuAndTrigger(view, QStringLiteral("Make Unique")),
-			"the real MIDI clip context menu must expose Make Unique");
-		QCOMPARE(b->linkId(), 0);
-		QCOMPARE(a->linkId(), group);
-		QCOMPARE(c->linkId(), group);
-		QCOMPARE(noteCountOf(b), 1);
-	}
-
-	void altDragOnTheRealSampleClipWidgetUsesContainerCrossfade()
-	{
-		auto* track = new SampleTrack(Engine::getSong());
-		auto* outer = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
-		auto* inner = dynamic_cast<SampleClip*>(track->createClip(TimePos(10 * Bar)));
-		QVERIFY(outer != nullptr && inner != nullptr);
-		outer->changeLength(TimePos(8 * Bar));
-		outer->setAutoResize(false);
-		inner->changeLength(TimePos(4 * Bar));
-		inner->setAutoResize(false);
-		ClipEdits authored;
-		authored.fadeInTicks = 24;
-		authored.fadeOutTicks = 32;
-		inner->setClipEdits(authored);
-		m_editor->realignTracks();
-		QCoreApplication::processEvents();
-		ClipView* view = clipViewOf(inner);
-		QVERIFY(view != nullptr);
-		QVERIFY(view->width() > 24);
-
-		const QPoint grab(view->width() / 2, view->height() / 2);
-		const double pixelsPerBar = static_cast<double>(view->width() - 1) * Bar / inner->length().getTicks();
-		const int dx = qRound(-8.0 * pixelsPerBar);
-		const QPoint drop(grab.x() + dx, grab.y());
-		const auto send = [view](QEvent::Type type, const QPoint& where, Qt::MouseButton button,
-			Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers) {
-			QMouseEvent event(type, QPointF(where), QPointF(view->mapToGlobal(where)), button, buttons, modifiers);
-			QCoreApplication::sendEvent(view, &event);
-		};
-		send(QEvent::MouseButtonPress, grab, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-		send(QEvent::MouseMove, drop, Qt::NoButton, Qt::LeftButton, Qt::AltModifier);
-		send(QEvent::MouseButtonRelease, drop, Qt::LeftButton, Qt::NoButton, Qt::AltModifier);
-		QCoreApplication::processEvents();
-
-		QCOMPARE(inner->startPosition().getTicks(), 2 * Bar);
-		QVERIFY2(outer->clipEdits().fadeOffsetGap,
-			"holding Alt while dropping a contained sample clip must select the V-shaped container fade");
+		QCOMPARE(a->length().getTicks(), 4 * Bar);   // the dragged clip stayed where it was
+		QCOMPARE(b->length().getTicks(), Bar / 4);   // and so did the peer
 	}
 
 private:

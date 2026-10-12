@@ -57,6 +57,7 @@
 #include "ControlClipFrames.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "LinkedClipEdits.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -148,8 +149,8 @@ void registerClipTrim(ControlRegistry& registry)
 		"(Clip checkpoint). ED-021, sample clips only: 'start_frames' / 'end_frames' put an edge that many "
 		"engine frames after its tick (frame-exact: the clip's window takes the frame, the sub-tick rest its "
 		"lead), and 'zero_crossing' (default: arrangement.modes' snap_to_zero_crossings) moves each edge to "
-		"the nearest zero crossing within 10 ms; the reply then adds the window's source frames. Linked instances "
-		"keep independent position, length and source window.");
+		"the nearest zero crossing within 10 ms; the reply then adds the window's source frames. A linked clip's "
+		"trim applies to the whole link group (one undo step, 'peers_trimmed' others; refused whole if a member would be emptied).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("start"), integerProperty(0, MaxSongLength)},
@@ -181,13 +182,25 @@ void registerClipTrim(ControlRegistry& registry)
 		const QJsonObject before = edgeState(ref);
 		if (!planTrim(ref, args, &plan, &error)) { return error; }
 
+		// A linked clip's trim is the whole group's (docs/LINKED-CLIPS.md section 2): every
+		// peer's edges move by the same deltas, planned first so a refusal changes nothing.
+		const tick_t startDelta = plan.start - ref.clip->startPosition().getTicks();
+		const tick_t endDelta = plan.start + plan.length - ref.clip->endPosition().getTicks();
+		const QString groupRefusal = ClipLinks::planEdgeEdit(ref.clip, startDelta, endDelta);
+		if (!groupRefusal.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, groupRefusal);
+		}
+
 		ref.clip->addJournalCheckPoint();
 		ref.clip->movePosition(TimePos(plan.start));
 		ref.clip->changeLength(TimePos(plan.length));
 		ref.clip->setStartTimeOffset(TimePos(plan.offset));
 		ref.clip->setAutoResize(false);
+		const int peersTrimmed = ClipLinks::applyEdgeEdit(ref.clip, startDelta, endDelta, true);
+
 		QJsonObject result = edgeState(ref);
-		result.insert(QStringLiteral("peers_trimmed"), 0);
+		result.insert(QStringLiteral("peers_trimmed"), peersTrimmed);
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("start"), before.value(QStringLiteral("position")));

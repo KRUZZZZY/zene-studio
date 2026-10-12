@@ -47,9 +47,12 @@ class MidiClip;
  *    Clip::loadClipEdits) beside the take lane. There is no second registry in
  *    the project file and no pointer between clips, so a save carries the whole
  *    relation and a reload rebuilds every group from the clips themselves.
- *  - The shared fields are the note list, name and colour. Note edits mirror
- *    through mirrorContent(); name and colour setters mirror through
- *    mirrorPresentation(). Placement and playback windows remain per-instance.
+ *  - An edit to a member is **mirrored** to the other members in the same step:
+ *    the edited clip's content (its note list - the clip's source in the MIDI
+ *    domain) is copied onto every member that differs, so an edit to one IS
+ *    seen by all. The mirror is one function (mirrorContent) and the engine's
+ *    note-mutating entry points call it, so the content channel is link-aware
+ *    wherever it is written.
  *  - The alternative - one NoteVector aliased by N clips through a shared
  *    pointer - buys instant sharing at the cost of a load-order re-linking step
  *    (the very step a save/reload round trip has to prove), of a lifetime rule
@@ -58,14 +61,18 @@ class MidiClip;
  *    rejected for those reasons, not for want of a shared_ptr.
  *  - Copy-on-write in its strict sense (share until someone edits, then
  *    DETACH) is the opposite of what this feature means: an edit to one must be
- *    seen by all, so a write fans out instead of detaching. Detaching with
- *    clip.link_remove or clip.link_make_unique is its own operation, never a
- *    side effect of an edit.
+ *    seen by all, so a write fans out instead of detaching. Unlinking - the
+ *    detach - is its own operation (clip.link_remove), never a side effect of
+ *    an edit.
  *
- *  WHAT THE GROUP SHARES is its note list, name and colour. Each member keeps
- *  its own start, length, loop window, fades, gain, mute and take lane. Trims,
- *  resizes and splits edit only the selected instance; a split's right piece
- *  stays linked and shows the same content through its own window.
+ *  WHAT THE GROUP SHARES is the clip's CONTENT (the note list). What it does
+ *  NOT share is where and how each member plays it: position, length, source
+ *  offset, fades, gain, mute, name, colour and take lane all stay per-member,
+ *  which is what makes a link a smart clip rather than a rename. EXCEPT that a
+ *  trim, a resize and a split are edits of the group (include/LinkedClipEdits.h,
+ *  owner decision 2026-10-08): they move every member's edges by the same
+ *  amount, so the members' extents never drift apart. See
+ *  docs/LINKED-CLIPS.md §4 and the one-line note in docs/KNOWN-LIMITATIONS.md.
  */
 namespace ClipLinks
 {
@@ -76,8 +83,8 @@ LMMS_EXPORT QVector<Clip*> group(int linkId);
 
 /*! The group \p clip is a member of, \p clip included; empty when it is
  *  unlinked. A group of one is a legal (if degenerate) group: a relation whose
- *  other members were deleted. clip.link_get_state reports it and either
- *  detach command clears it. */
+ *  other members were deleted. clip.link_get_state reports it and
+ *  clip.link_remove clears it. */
 LMMS_EXPORT QVector<Clip*> groupOf(const Clip* clip);
 
 //! A group id no live group has used: ProjectIds::allocate() (project-scoped,
@@ -130,10 +137,6 @@ struct MirrorReport
  *  with a content channel at all; an unlinked source is a no-op, not an error.
  */
 LMMS_EXPORT MirrorReport mirrorContent(Clip* source);
-
-//! Mirrors the shared name and colour after a member changes either value.
-//! The load suspension also suppresses this while a project restores members.
-LMMS_EXPORT void mirrorPresentation(Clip* source);
 
 /*! Suspends mirroring for the current call: used by a LOAD pass, where each
  *  clip is re-created in turn and a member's notes are not its own yet. A

@@ -776,7 +776,6 @@ void PianoRoll::fitNoteLengths(bool fill)
 	update();
 	getGUI()->songEditor()->update();
 	Engine::getSong()->setModified();
-	m_midiClip->notesChanged();
 }
 
 
@@ -800,7 +799,6 @@ void PianoRoll::constrainNoteLengths(bool constrainMax)
 	update();
 	getGUI()->songEditor()->update();
 	Engine::getSong()->setModified();
-	m_midiClip->notesChanged();
 }
 
 void PianoRoll::reverseNotes()
@@ -1246,7 +1244,7 @@ void PianoRoll::shiftSemiTone(const NoteVector& notes, int amount)
 	for (Note *note : notes) { note->setKey( note->key() + amount ); }
 
 	m_midiClip->rearrangeAllNotes();
-	m_midiClip->notesChanged();
+	m_midiClip->dataChanged();
 	//We modified the song
 	update();
 	getGUI()->songEditor()->update();
@@ -1282,7 +1280,7 @@ void PianoRoll::shiftPos(const NoteVector& notes, int amount)
 
 	m_midiClip->rearrangeAllNotes();
 	m_midiClip->updateLength();
-	m_midiClip->notesChanged();
+	m_midiClip->dataChanged();
 	// we modified the song
 	update();
 	getGUI()->songEditor()->update();
@@ -2705,7 +2703,8 @@ void PianoRoll::mouseMoveEvent( QMouseEvent * me )
 				++it;
 			}
 
-			m_midiClip->notesChanged();
+			// Emit MIDI clip has changed
+			m_midiClip->dataChanged();
 		}
 
 		else if( me->buttons() == Qt::NoButton && m_editMode == EditMode::Draw )
@@ -3096,7 +3095,7 @@ void PianoRoll::updateStrumPos(QMouseEvent* me, bool initial, bool warp)
 	}
 	m_midiClip->rearrangeAllNotes();
 	m_midiClip->updateLength();
-	m_midiClip->notesChanged();
+	m_midiClip->dataChanged();
 }
 
 
@@ -3317,7 +3316,7 @@ void PianoRoll::dragNotes(int x, int y, bool alt, bool shift, bool ctrl)
 	}
 
 	m_midiClip->updateLength();
-	m_midiClip->notesChanged();
+	m_midiClip->dataChanged();
 	Engine::getSong()->setModified();
 }
 
@@ -4186,6 +4185,8 @@ void PianoRoll::wheelEvent(QWheelEvent * we )
 					// same volume
 					showVolTextFloat(nv[0]->getVolume(), pos, 1000);
 				}
+				// Emit MIDI clip has changed
+				m_midiClip->dataChanged();
 			}
 			else if( m_noteEditMode == NoteEditMode::Panning )
 			{
@@ -4206,7 +4207,6 @@ void PianoRoll::wheelEvent(QWheelEvent * we )
 					showPanTextFloat(nv[0]->getPanning(), pos, 1000);
 				}
 			}
-			m_midiClip->notesChanged();
 			update();
 		}
 	}
@@ -4771,7 +4771,6 @@ void PianoRoll::enterValue( NoteVector* nv )
 		}
 
 	}
-	m_midiClip->notesChanged();
 }
 
 

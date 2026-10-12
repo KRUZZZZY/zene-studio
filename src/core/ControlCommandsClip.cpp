@@ -31,6 +31,8 @@
 #include "ControlReversibility.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ClipLinks.h"
+#include "LinkedClipEdits.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -224,8 +226,8 @@ void registerClipResize(ControlRegistry& registry)
 	cmd.id = QStringLiteral("clip.resize");
 	cmd.group = QStringLiteral("clip");
 	cmd.verb = QStringLiteral("resize");
-	cmd.description = QStringLiteral("Set a clip's length in ticks (the clip becomes manually resized). Linked "
-		"instances keep independent lengths and loop windows. "
+	cmd.description = QStringLiteral("Set a clip's length in ticks (the clip becomes manually resized). A linked "
+		"clip's resize applies to the whole link group (one undo step). "
 		"Reversible through the ProjectJournal (Clip checkpoint).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
@@ -245,9 +247,17 @@ void registerClipResize(ControlRegistry& registry)
 		}
 		const tick_t previous = ref.clip->length().getTicks();
 		const auto wanted = static_cast<tick_t>(args.value(QStringLiteral("length")).toDouble());
+		// A linked clip's resize is the whole group's (docs/LINKED-CLIPS.md section 2): every peer's end moves by
+		// the same delta, planned first so a refusal changes nothing.
+		const QString groupRefusal = ClipLinks::planEdgeEdit(ref.clip, 0, wanted - previous);
+		if (!groupRefusal.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, groupRefusal);
+		}
 		ref.clip->addJournalCheckPoint();
 		ref.clip->changeLength(TimePos(wanted));
 		ref.clip->setAutoResize(false);
+		ClipLinks::applyEdgeEdit(ref.clip, 0, wanted - previous, true);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
@@ -277,8 +287,9 @@ void registerClipSplit(ControlRegistry& registry)
 		"ED-021, sample clips only: 'frames' cuts that many engine frames after 'position' (frame-exact - the "
 		"halves' audio meets at that frame, their clips overlap by under a tick), and 'zero_crossing' (default: "
 		"arrangement.modes' snap_to_zero_crossings) moves the cut to the nearest zero crossing within 10 ms; the "
-		"reply then names the source 'frame' cut at. Splitting a linked instance cuts only that instance; "
-		"both halves stay linked and keep the shared content through their independent windows.");
+		"reply then names the source 'frame' cut at. A linked clip's split cuts every member of its link "
+		"group at the same clip-relative position (one undo step): left halves keep the group, right halves form "
+		"'right_group' (0 if only one member could be cut).");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("clip"), control::stringProperty()},
 		{QStringLiteral("position"), control::integerProperty(1, MaxSongLength)},
@@ -322,10 +333,22 @@ void registerClipSplit(ControlRegistry& registry)
 		before.insert(QStringLiteral("position"), start);
 		before.insert(QStringLiteral("length"), end - start);
 
-		// The right clone keeps the same link id, so both pieces show shared content
-		// through their independent windows. One Track checkpoint undoes the edit.
-		ref.track->addJournalCheckPoint();
-		Clip* right = arrangement::splitClipAt(ref.clip, splitPos);
+		// ClipView::splitClip: checkpoint the track, then the one split recipe the range edits
+		// share (arrangement::splitClipAt).
+		// A linked clip's split is the whole group's (ClipLinks::splitGroupAt, which takes its own
+		// checkpoint over every track it cuts): the left halves keep the group, the right halves form a new one.
+		ClipLinks::GroupSplit group;
+		Clip* right = nullptr;
+		if (ref.clip->linkId() > 0)
+		{
+			group = ClipLinks::splitGroupAt(ref.clip, splitPos);
+			right = group.right;
+		}
+		else
+		{
+			ref.track->addJournalCheckPoint();
+			right = arrangement::splitClipAt(ref.clip, splitPos);
+		}
 
 		const int rightOrdinal = ordinalOf(right);
 		QJsonObject result;
@@ -333,8 +356,8 @@ void registerClipSplit(ControlRegistry& registry)
 		result.insert(QStringLiteral("right"), control::clipId(rightOrdinal));
 		if (ref.clip->linkId() > 0)
 		{
-			result.insert(QStringLiteral("members_split"), 1);
-			result.insert(QStringLiteral("right_group"), ref.clip->linkId());
+			result.insert(QStringLiteral("members_split"), group.members);
+			result.insert(QStringLiteral("right_group"), group.rightGroup);
 			result.insert(QStringLiteral("left_group"), ref.clip->linkId());
 		}
 		result.insert(QStringLiteral("__transaction"),
