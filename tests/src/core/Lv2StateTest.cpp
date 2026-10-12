@@ -39,7 +39,10 @@
 #include "Engine.h"
 
 #ifdef LMMS_HAVE_LV2
+#include <memory>
+
 #include "Lv2ControlBase.h"
+#include "Lv2Evbuf.h"
 #include "Lv2Proc.h"
 #include <lilv/lilv.h>
 #endif
@@ -137,6 +140,22 @@ private slots:
 		QVERIFY(secondControls != nullptr);
 		QCOMPARE(secondControls->control(0)->saveState(), controls->control(0)->saveState());
 		chain.clear();
+#endif
+	}
+
+	void rejectsAnEventWhosePaddingDoesNotFit()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		std::unique_ptr<LV2_Evbuf, decltype(&lv2_evbuf_free)> buffer(
+			lv2_evbuf_new(33, 1, 2), &lv2_evbuf_free);
+		QVERIFY(buffer != nullptr);
+
+		const uint8_t payload = 0x2a;
+		LV2_Evbuf_Iterator iter = lv2_evbuf_begin(buffer.get());
+		QVERIFY(!lv2_evbuf_write(&iter, 0, 3, 1, &payload));
+		QCOMPARE(lv2_evbuf_get_size(buffer.get()), uint32_t{0});
 #endif
 	}
 };
