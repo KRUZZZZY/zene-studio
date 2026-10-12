@@ -36,6 +36,7 @@
 
 #include "AccessibilityAudit.h"
 #include "AccessibleWidgets.h"
+#include "CompSwipeStrip.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -183,6 +184,32 @@ private slots:
 		QVERIFY(noteAt(m_clip, 0, 60) == nullptr);
 		QVERIFY(undo());
 		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+	}
+
+	void insertRefusesOneTickCompSegment()
+	{
+		const QString track = invoke(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		QVERIFY(!track.isEmpty());
+		QVERIFY(invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(invoke(QStringLiteral("comp.select"), {{QStringLiteral("track"), track}, {QStringLiteral("begin"), 10},
+			{QStringLiteral("end"), 11}, {QStringLiteral("lane"), 0}}).ok);
+
+		CompSwipeStrip strip(track, nullptr);
+		strip.setState(invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result);
+		ItemListPanel panel(itemlists::compSegments(&strip, nullptr), &strip, QStringLiteral("comp"));
+		QCOMPARE(panel.table()->model()->rowCount(), 1);
+		panel.table()->setCurrentIndex(panel.table()->model()->index(0, 0));
+
+		QVERIFY(!panel.insertItem());
+		QVERIFY(panel.statusText().startsWith(QStringLiteral("Not done:")));
+		const QJsonArray segments = invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result
+			.value(QStringLiteral("composite")).toObject().value(QStringLiteral("segments")).toArray();
+		QCOMPARE(segments.size(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("begin")).toInt(), 10);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("end")).toInt(), 11);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("lane")).toInt(), 0);
 	}
 
 	void theSelectionFollowsBothWays()
