@@ -13,6 +13,17 @@
 
 The affected CTest family is `ImportDetectionTest`: one registered CTest target ran. The initial RED run had one failed Qt assertion; the green run passed the target.
 
+## Evidence summary
+
+| Evidence | Exact command or value | EXIT |
+|---|---|---:|
+| RED regression | `ctest -R ImportDetectionTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-344.r1/logs/test-1.log 2>&1; code=$?; echo EXIT=$code` — `visited` returned FALSE | 8 |
+| GREEN regression | `ctest -R ImportDetectionTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-344.r1/logs/test-2.log 2>&1; code=$?; echo EXIT=$code` | 0 |
+| Affected-family test count | `ImportDetectionTest`: 1 CTest target executed (`1/1`) | — |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-344.r1/logs/gate-1.log 2>&1; code=$?; echo EXIT=$code` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-344.r1/logs/gate-2.log 2>&1; code=$?; echo EXIT=$code` | 0 |
+| Explicit files committed | `src/core/SampleDecoder.cpp`; `src/core/SampleDecoderFrameLoop.h`; `tests/src/core/ImportDetectionTest.cpp`; `tests/fork-sources.txt`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p10-344.md` | — |
+
 ## Commands and results
 
 Build commands ran from the worktree root. CTest commands ran from `build/tests`. The `EXIT` value is the captured status of the command before `echo`.
