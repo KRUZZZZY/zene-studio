@@ -32,6 +32,7 @@
 
 #include "Engine.h"
 #include "Song.h"
+#include "VideoDecoder.h"
 
 namespace lmms
 {
@@ -105,7 +106,19 @@ void VideoReference::load(const QDomElement& element)
 	video.path = element.attribute(QStringLiteral("path"));
 	video.offset = std::max(0, element.attribute(QStringLiteral("offset")).toInt());
 	video.fps = element.attribute(QStringLiteral("fps")).toDouble();
-	video.duration = element.attribute(QStringLiteral("duration")).toDouble();
+	bool durationOk = false;
+	const double duration = element.attribute(QStringLiteral("duration")).toDouble(&durationOk);
+	if (durationOk && std::isfinite(duration) && duration >= 0.0)
+	{
+		video.duration = duration;
+	}
+	else
+	{
+		VideoProbe probe;
+		QString why;
+		video.duration = VideoDecoder::probe(video.path, &probe, &why) && std::isfinite(probe.duration)
+			? std::max(0.0, probe.duration) : 0.0;
+	}
 	video.width = element.attribute(QStringLiteral("width")).toInt();
 	video.height = element.attribute(QStringLiteral("height")).toInt();
 	video.hasAudio = element.attribute(QStringLiteral("audio")).toInt() != 0;
