@@ -201,7 +201,24 @@ inline bool fsyncPath( const QString &, bool = false )
 //! first 4 bytes are the uncompressed size it declares, and qUncompress
 //! allocates exactly that much before it decompresses anything, so both the
 //! file on disk and the declared size are measured against this first.
-constexpr qint64 MaxRecoveredDocumentBytes = 256LL * 1024 * 1024;
+constexpr qint64 DefaultMaxRecoveredDocumentBytes = 256LL * 1024 * 1024;
+
+//! Q050-007 review: a v2 container stores what v1 compresses, so its FILE is the
+//! document plus ZIP framing (a local header and a central-directory row per entry,
+//! on the order of a hundred bytes each). The framing allowance a container file
+//! gets on top of the document limit; the document itself, once reassembled, is
+//! held to the limit exactly as a v1 document is.
+constexpr qint64 ContainerFramingAllowanceBytes = 1LL * 1024 * 1024;
+
+//! The recovery limit. Fixed in the product; ZENE_TEST_MAX_RECOVERED_BYTES lowers
+//! it for a test (the same test-only seam style as ZENE_TEST_SAVE_FAULT below), so
+//! the boundary can be measured without writing a quarter of a gigabyte.
+qint64 maxRecoveredDocumentBytes()
+{
+	bool ok = false;
+	const qint64 limit = qgetenv( "ZENE_TEST_MAX_RECOVERED_BYTES" ).toLongLong( &ok );
+	return ok && limit > 0 ? limit : DefaultMaxRecoveredDocumentBytes;
+}
 
 //! The uncompressed size a qCompress stream declares in its leading 4 bytes
 //! (big endian), or 0 when the bytes are too short to carry one.
@@ -242,7 +259,7 @@ bool parsesAsRecoverableDocument( const QByteArray & bytes )
 //! was refused, so the caller reports a refusal as itself, not as truncation.
 bool decompressesAsRecoverableDocument( const QByteArray & bytes, QString * reason )
 {
-	if( declaredUncompressedSize( bytes ) > MaxRecoveredDocumentBytes )
+	if( declaredUncompressedSize( bytes ) > maxRecoveredDocumentBytes() )
 	{
 		*reason = QStringLiteral( "oversized" );
 		return false;
@@ -252,7 +269,7 @@ bool decompressesAsRecoverableDocument( const QByteArray & bytes, QString * reas
 	{
 		return false;
 	}
-	if( uncompressed.size() > MaxRecoveredDocumentBytes )
+	if( uncompressed.size() > maxRecoveredDocumentBytes() )
 	{
 		*reason = QStringLiteral( "oversized" );
 		return false;
@@ -267,7 +284,10 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 	{
 		return false;
 	}
-	if( f.size() > MaxRecoveredDocumentBytes )
+	// A container's file is measured with its framing allowance (see above); its
+	// reassembled document is measured against the limit itself, below.
+	const bool container = f.peek( 4 ) == QByteArrayLiteral( "PK\x03\x04" );
+	if( f.size() > maxRecoveredDocumentBytes() + ( container ? ContainerFramingAllowanceBytes : 0 ) )
 	{
 		*reason = QStringLiteral( "oversized" );
 		return false;
@@ -288,9 +308,17 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 	{
 		QByteArray document;
 		QString ignored;
-		return lmms::projectcontainer::readDocumentContainer( path,
-				QStringLiteral( "song" ), &document, &ignored )
-			&& parsesAsRecoverableDocument( document );
+		if( !lmms::projectcontainer::readDocumentContainer( path,
+			QStringLiteral( "song" ), &document, &ignored ) )
+		{
+			return false;
+		}
+		if( document.size() > maxRecoveredDocumentBytes() )
+		{
+			*reason = QStringLiteral( "oversized" );
+			return false;
+		}
+		return parsesAsRecoverableDocument( document );
 	}
 	if( bytes.trimmed().startsWith( '<' ) )
 	{

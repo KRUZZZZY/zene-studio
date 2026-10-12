@@ -2020,13 +2020,21 @@ QString Song::containerV2Note()
 
 
 
+bool Song::isContainerPath(const QString & target)
+{
+	return target.endsWith(QStringLiteral(".mmpz"), Qt::CaseSensitive);
+}
+
+
+
+
 Song::SaveFormat Song::plannedSaveFormat(const QString & target) const
 {
 	// Only a `.mmpz` name can hold a container (a loader tells the two apart by
 	// content, but the extension is the user's hint that a file is a compressed
 	// project), and only an opt-in - the global setting, or a project that already
 	// IS a container - asks for one. Nothing else changes what a save writes.
-	if (!target.endsWith(QStringLiteral(".mmpz"), Qt::CaseInsensitive)) { return SaveFormat::Legacy; }
+	if (!isContainerPath(target)) { return SaveFormat::Legacy; }
 	return (m_containerV2Project || globalContainerV2()) ? SaveFormat::V2Container : SaveFormat::Legacy;
 }
 
@@ -2244,7 +2252,7 @@ bool Song::guiSaveProjectAs(const QString & filename)
 		? (m_saveOptions.saveAsV2Container.value() ? SaveFormat::V2Container : SaveFormat::Legacy)
 		: plannedSaveFormat(fileNameWithExtension);
 	if (format == SaveFormat::V2Container
-		&& !fileNameWithExtension.endsWith(QStringLiteral(".mmpz"), Qt::CaseInsensitive))
+		&& !isContainerPath(fileNameWithExtension))
 	{
 		m_saveRefusal = tr("a v2 container needs a .mmpz file name, and %1 is not one.").arg(fileNameWithExtension);
 		qWarning().noquote() << m_saveRefusal;

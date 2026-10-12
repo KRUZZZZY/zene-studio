@@ -26,6 +26,7 @@
 #include <QtTest>
 
 #include <QByteArray>
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -74,6 +75,9 @@ QStringList stateOf()
 	QStringList state;
 	state << QStringLiteral( "tempo=%1" ).arg( song->getTempo() );
 	state << QStringLiteral( "tracks=%1" ).arg( song->tracks().size() );
+	state << QStringLiteral( "mixer-channels=%1" ).arg( run( QStringLiteral( "mixer.get_state" ) ).result
+		.value( QStringLiteral( "channels" ) ).toArray().size() );
+	state << QStringLiteral( "master-volume=%1" ).arg( song->masterVolumeModel().value() );
 	for( const Track* track : song->tracks() )
 	{
 		state << QStringLiteral( "%1|%2|%3" ).arg( static_cast<int>( track->type() ) )
@@ -411,6 +415,77 @@ private slots:
 		QVERIFY( run( QStringLiteral( "project.open" ), {{ QStringLiteral( "path" ), torn }} ).ok );
 		QCOMPARE( stateOf(), expected );
 		QVERIFY( !QFile::exists( torn + QStringLiteral( ".new" ) ) );
+	}
+
+	//! Review round 2: the writer recognises exactly the lowercase `.mmpz` suffix (anything
+	//! else is renamed to X.<ext>.mmpz by nameWithExtension), so a v2 request for `X.MMPZ`
+	//! must be refused up front instead of saving a different file than the one named and
+	//! reporting success; the global opt-in must not change what such a path gets either.
+	void anUppercaseSuffixIsRefusedForV2AndNeverMislabelled()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		buildSession();
+		const QString upper = dir.filePath( QStringLiteral( "Shout.MMPZ" ) );
+		const ControlResult refused = saveTo( upper, QStringLiteral( "v2" ) );
+		QVERIFY2( !refused.ok, "an explicit v2 save to an uppercase suffix was accepted" );
+		QVERIFY( refused.errorMessage.contains( QStringLiteral( "lowercase" ) ) );
+		QVERIFY( QDir( dir.path() ).entryList( QDir::Files ).isEmpty() );
+
+		QVERIFY( run( QStringLiteral( "settings.set" ), {{ QStringLiteral( "key" ), QStringLiteral( "app/savecontainerv2" ) },
+			{ QStringLiteral( "value" ), QStringLiteral( "1" ) }} ).ok );
+		const ControlResult plain = saveTo( upper );
+		QVERIFY2( plain.ok, qPrintable( plain.errorMessage ) );
+		// What the reply says is what is on disk, wherever the writer put it.
+		const QStringList written = QDir( dir.path() ).entryList( QDir::Files );
+		QVERIFY( written.size() == 1 );
+		const bool onDiskV2 = projectcontainer::isContainer( readBytes( dir.filePath( written.first() ) ) );
+		QCOMPARE( plain.result.value( QStringLiteral( "format" ) ).toString(),
+			onDiskV2 ? QStringLiteral( "v2" ) : QStringLiteral( "legacy" ) );
+		QVERIFY( !onDiskV2 );
+	}
+
+	//! Review round 2: the recovery size bound measures the DOCUMENT, not the ZIP file. A
+	//! container whose file is a little over the limit because of its framing, but whose
+	//! document is within it, is adopted; one whose document is over it is left in place.
+	void recoveryMeasuresTheContainersDocumentNotItsFile()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		buildSession();
+		const QStringList expected = stateOf();
+		const QString good = dir.filePath( QStringLiteral( "good.mmpz" ) );
+		QVERIFY( saveTo( good, QStringLiteral( "v2" ) ).ok );
+		const QByteArray container = readBytes( good );
+		QByteArray document;
+		QString error;
+		QVERIFY2( projectcontainer::readDocumentContainer( good, QStringLiteral( "song" ), &document, &error ), qPrintable( error ) );
+		QVERIFY( container.size() > document.size() );
+
+		// A limit that the document fits under and the file does not.
+		const qint64 limit = document.size() + ( container.size() - document.size() ) / 2;
+		QVERIFY( container.size() > limit && document.size() <= limit );
+		qputenv( "ZENE_TEST_MAX_RECOVERED_BYTES", QByteArray::number( limit ) );
+
+		const QString path = dir.filePath( QStringLiteral( "bound.mmpz" ) );
+		Engine::getSong()->clearProject();
+		QVERIFY( saveTo( path, QStringLiteral( "legacy" ) ).ok );
+		QVERIFY( writeBytes( path + QStringLiteral( ".new" ), container ) );
+		QVERIFY( run( QStringLiteral( "project.open" ), {{ QStringLiteral( "path" ), path }} ).ok );
+		QVERIFY2( projectcontainer::isContainer( readBytes( path ) ), "a complete container within the document limit was not adopted" );
+		QVERIFY( !QFile::exists( path + QStringLiteral( ".new" ) ) );
+
+		// And the bound still bites: a document over the limit is refused, and left in place.
+		qputenv( "ZENE_TEST_MAX_RECOVERED_BYTES", QByteArray::number( document.size() - 1 ) );
+		const QString over = dir.filePath( QStringLiteral( "over.mmpz" ) );
+		Engine::getSong()->clearProject();
+		QVERIFY( saveTo( over, QStringLiteral( "legacy" ) ).ok );
+		const QByteArray legacyBefore = readBytes( over );
+		QVERIFY( writeBytes( over + QStringLiteral( ".new" ), container ) );
+		run( QStringLiteral( "project.open" ), {{ QStringLiteral( "path" ), over }} );
+		qunsetenv( "ZENE_TEST_MAX_RECOVERED_BYTES" );
+		QVERIFY( QFile::exists( over + QStringLiteral( ".new" ) ) );
+		QCOMPARE( readBytes( over ), legacyBefore );
 	}
 
 	//! A damaged container is refused by name by project.open and leaves the

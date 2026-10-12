@@ -147,6 +147,12 @@ public:
 	 *  name; the legacy blob otherwise - which is every save of every project
 	 *  that never opted in. */
 	SaveFormat plannedSaveFormat(const QString & target) const;
+	/*! True when \a target names a file a v2 container may be written to. EXACTLY the
+	 *  lowercase `.mmpz` suffix, because that is the spelling DataFile::nameWithExtension()
+	 *  and the writer recognise: a differently-cased suffix is treated as no suffix and gets
+	 *  `.mmpz` appended, so accepting `X.MMPZ` here would save a different file than the one
+	 *  named. One definition, used by the plan, project.save and the GUI save. */
+	static bool isContainerPath(const QString & target);
 	//! True when this session's project is a v2 container (opened as one, or last saved as one).
 	bool isContainerV2Project() const { return m_containerV2Project; }
 	//! Record the format the session's file now has (called after a successful save to the session's file).

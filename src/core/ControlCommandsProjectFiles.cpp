@@ -138,10 +138,11 @@ bool requestedSaveFormat(const QJsonObject& args, const Song& song, const QStrin
 	const QString name = args.value(QStringLiteral("format")).toString();
 	if (name.isEmpty()) { *format = song.plannedSaveFormat(target); return true; }
 	if (name == QLatin1String("legacy")) { *format = Song::SaveFormat::Legacy; return true; }
-	if (!target.endsWith(QStringLiteral(".mmpz"), Qt::CaseInsensitive))
+	if (!Song::isContainerPath(target))
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("format \"v2\" writes a .mmpz container, and '%1' is not a .mmpz path").arg(target));
+			QStringLiteral("format \"v2\" writes a container to a path ending in exactly \".mmpz\" (lowercase), "
+				"and '%1' does not").arg(target));
 		return false;
 	}
 	*format = Song::SaveFormat::V2Container;
