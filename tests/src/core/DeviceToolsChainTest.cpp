@@ -127,9 +127,15 @@ float runSteady(int index, float level, int blocks)
 	SampleFrame* data[1] = {block.data()};
 	for (int b = 0; b < blocks; ++b)
 	{
+		// Each block is one period: the serial model prepass consumes pending setter ramps first.
+		{
+			auto changeGuard = Engine::audioEngine()->requestChangesGuard();
+			Engine::audioEngine()->prepareAutomatableModelBuffers();
+		}
 		for (SampleFrame& frame : block) { frame = SampleFrame(level, level); }
 		AudioBus bus{data, 1, static_cast<f_cnt_t>(block.size())};
 		channel(index)->m_fxChain.processAudioBuffer(bus);
+		AutomatableModel::incrementPeriodCounter();
 	}
 	return block.front()[0];
 }
