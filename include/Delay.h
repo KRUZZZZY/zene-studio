@@ -27,6 +27,7 @@
 #define LMMS_DELAY_H
 
 #include <cmath>
+#include <limits>
 
 #include "LmmsTypes.h"
 
@@ -69,7 +70,7 @@ public:
 	CombFeedback( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{
@@ -100,6 +101,11 @@ public:
 	
 	inline void setDelay( double delay )
 	{
+		if( !std::isfinite( delay ) || delay < 0.0 || delay > static_cast<double>( std::numeric_limits<int>::max() ) )
+		{
+			return;
+		}
+
 		m_delay = static_cast<int>( ceil( delay ) );
 		m_fraction = 1.0 - ( delay - floor( delay ) );
 	}
@@ -140,7 +146,7 @@ class CombFeedfwd
 	CombFeedfwd( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{
@@ -211,9 +217,11 @@ class CombFeedbackDualtap
 	CombFeedbackDualtap( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
-		m_delay( 0 ),
-		m_fraction( 0.0 )
+		m_gain( 0.0 ),
+		m_delay1( 0 ),
+		m_delay2( 0 ),
+		m_fraction1( 0.0 ),
+		m_fraction2( 0.0 )
 	{
 		m_buffer = new frame[maxDelay];
 		memset( m_buffer, 0, sizeof( frame ) * maxDelay );
@@ -292,7 +300,7 @@ public:
 	AllpassDelay( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{
