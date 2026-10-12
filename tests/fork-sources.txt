@@ -528,6 +528,7 @@ include/AccessibleWidgets.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangementSections.h
+include/ArrangerFileDrop.h
 include/ArrangerNavigator.h
 include/ArrangerAids.h
 include/ArrangerClipKeys.h
@@ -902,6 +903,7 @@ include/ShortcutMap.h
 include/ShortcutsPage.h
 include/SidechainInputs.h
 include/SmfInterchange.h
+include/SmfNoteRead.h
 include/SrcQuality.h
 include/StartHub.h
 include/StemSeparation/ExternalProcessStemSeparator.h
@@ -1166,6 +1168,7 @@ src/core/ControlCommandsClipControllers.cpp
 src/core/ControlCommandsClipEdits.cpp
 src/core/ControlCommandsClipEnvelope.cpp
 src/core/ControlCommandsClipFrames.cpp
+src/core/ControlCommandsClipImportFile.cpp
 src/core/ControlCommandsClipLink.cpp
 src/core/ControlCommandsClipLinkState.cpp
 src/core/ControlCommandsClipProcess.cpp
@@ -1642,6 +1645,7 @@ src/core/SessionTuningMtsEsp.cpp
 src/core/SessionTuningScala.cpp
 src/core/SmfInterchange.cpp
 src/core/SmfInterchangeReader.cpp
+src/core/SmfNoteRead.cpp
 src/core/SongSections.cpp
 src/core/SongUndoSnapshot.cpp
 src/core/StemJobManager.cpp
@@ -1676,6 +1680,7 @@ src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
 src/gui/AafImportMenu.cpp
+src/gui/ArrangerFileDrop.cpp
 src/gui/ArrangerNavigator.cpp
 src/gui/AccessibilityAudit.cpp
 src/gui/AccessibleAnnouncements.cpp
@@ -2012,6 +2017,7 @@ tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserFeaturesWindowTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipGainEnvelopeTest.cpp
+tests/src/core/ClipImportFileTest.cpp
 tests/src/core/ClipJoinRippleTest.cpp
 tests/src/core/ClipOffsetFadePairTest.cpp
 tests/src/core/ClipOffsetFadeTest.cpp
@@ -2242,6 +2248,7 @@ tools/local-ci.sh
 tools/ncpu-shim.c
 tests/src/core/InputChannelRingTest.cpp
 tests/src/core/MidiClipControllersLoadTest.cpp
+tests/src/gui/ArrangerFileDropTest.cpp
 tests/src/gui/MidiClipLinkedEditTest.cpp
 tests/src/gui/AgentSurfaceReportTest.cpp
 tests/src/gui/ShortcutsCommandsTest.cpp

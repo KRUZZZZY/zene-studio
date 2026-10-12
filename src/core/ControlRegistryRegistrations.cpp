@@ -140,6 +140,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerSampleToolCommands(registry);
 	registerAutomationToolCommands(registry);
 	registerAudioAnalysisCommands(registry);
+	registerClipImportFileCommands(registry);  // 0.5.0 L04 (Q050-031)
 	registerSampleRangeCommands(registry);
 	registerMixerMeterCommands(registry);
 	registerHardwareIoCommands(registry);  // 0.5.0 F1: audio.io_*, mixer.hardware_*, mixer.cue_*

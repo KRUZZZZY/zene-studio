@@ -855,6 +855,8 @@ LMMS_EXPORT void registerSampleToolCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerAutomationToolCommands(ControlRegistry& registry);
 //! 0.5.0 L05 (W3): clip.audio_to_midi, sample.spectrogram (ControlCommandsAudioAnalysis.cpp).
 LMMS_EXPORT void registerAudioAnalysisCommands(ControlRegistry& registry);
+//! 0.5.0 L04 (Q050-031): clip.import_file, a dropped MIDI or audio file as a clip (ControlCommandsClipImportFile.cpp).
+LMMS_EXPORT void registerClipImportFileCommands(ControlRegistry& registry);
 //! 0.5.0 L05 (ED-156): sample.edit_range (ControlCommandsSampleRange.cpp).
 LMMS_EXPORT void registerSampleRangeCommands(ControlRegistry& registry);
 //! 0.5.0 L09 (MX-053, MX-140, MX-042): mixer.send_meters, mixer.eq_compare, browser.preview_output, monitor.control_room

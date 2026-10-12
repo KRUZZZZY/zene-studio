@@ -153,6 +153,8 @@ const ReversibilityRow kDeviceRows[] = {
 	R("sample.edit_range", RC::TrueInverse, true, "it bakes an edit of a range into a clip's source", "Clip checkpoint", ""),
 	R("clip.audio_to_midi", RC::TrueInverse, true, "it adds an instrument track with the notes found in the audio",
 		"action checkpoint: the recorded undo step removes the track", ""),
+	R("clip.import_file", RC::TrueInverse, true, "it adds one clip (and, with no track named, the track) made from a MIDI or audio file",
+		"Track checkpoint, or - when it created the track - an action checkpoint: the recorded undo step removes the track", ""),
 	R("sample.spectrogram", RC::NotMutating, false, "it reads a clip's frequency content. Nothing is written", "no write", ""),
 	R("track.folder_move", RC::TrueInverse, true, "it moves every clip inside a folder", "journal checkpoints of the folder's tracks", ""),
 	R("clip.set_loop", RC::TrueInverse, true, "it sets a MIDI clip's content loop", "Clip journal checkpoint", ""),

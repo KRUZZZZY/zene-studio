@@ -38,6 +38,7 @@
 #include <QTimer>
 
 
+#include "ArrangerFileDrop.h"
 #include "AudioEngine.h"
 #include "AutomatableButton.h"
 #include "ConfigManager.h"
@@ -292,6 +293,12 @@ void TrackView::modelChanged()
  */
 void TrackView::dragEnterEvent( QDragEnterEvent * dee )
 {
+	// A file from a plug-in editor or the desktop (0.5.0 L04, Q050-031).
+	if (arrangerdrop::carriesFile(dee->mimeData()))
+	{
+		dee->acceptProposedAction();
+		return;
+	}
 	StringPairDrag::processDragEnterEvent( dee, "track_" +
 					QString::number( static_cast<int>(m_track->type()) ) );
 }
@@ -309,6 +316,13 @@ void TrackView::dragEnterEvent( QDragEnterEvent * dee )
  */
 void TrackView::dropEvent( QDropEvent * de )
 {
+	if (arrangerdrop::carriesFile(de->mimeData()))
+	{
+		const TimePos tick = arrangerdrop::tickAtContainerX(trackContainerView(), position(de).x());
+		if (arrangerdrop::dropFileAndReport(de->mimeData(), m_track, tick)) { de->acceptProposedAction(); }
+		else { de->ignore(); }
+		return;
+	}
 	QString type = StringPairDrag::decodeKey( de );
 	QString value = StringPairDrag::decodeValue( de );
 	if( type == ( "track_" + QString::number( static_cast<int>(m_track->type()) ) ) )

@@ -78,6 +78,8 @@ public:
 	}
 
 	bool canPasteSelection( TimePos clipPos, const QDropEvent *de );
+	//! 0.5.0 L04 (Q050-031): imports the first file \a mime carries as a clip at the lane x \a laneX (snapped). False when it holds no file or the import was refused.
+	bool dropFile( const QMimeData * mime, int laneX );
 	bool canPasteSelection( TimePos clipPos, const QMimeData *md, bool allowSameBar = false );
 	bool pasteSelection( TimePos clipPos, QDropEvent * de );
 	bool pasteSelection( TimePos clipPos, const QMimeData * md, bool skipSafetyCheck = false );

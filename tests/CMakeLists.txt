@@ -240,6 +240,8 @@ set(LMMS_TESTS
 	# it pushed no undo step. Needs a real Engine: the checkpoints are the
 	# Track/Clip journal steps ProjectJournal owns.
 	src/core/ControlSampleOperatorTest.cpp
+	# 0.5.0 L04 (Q050-031): clip.import_file - a MIDI or audio file becomes a clip, a bad one changes nothing - and the SMF note reader.
+	src/core/ClipImportFileTest.cpp
 	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	# 81): the fifteen ids, their contract rows and the REAL inverses - the seed pair
 	# (persisted + undone), the repeatability pair of the seeded roll (same seed ->
@@ -924,6 +926,8 @@ set(LMMS_TESTS
 	src/gui/MixerSelectionIdentityTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
 	src/gui/ArrangerTimelineTest.cpp
+	# 0.5.0 L04 (Q050-031): files dragged out of a plug-in editor become clips where they are dropped.
+	src/gui/ArrangerFileDropTest.cpp
 	# 4218c1e30 rework: the arranger's trim of a linked MIDI clip keeps the notes of the clip and its peers.
 	src/gui/MidiClipLinkedEditTest.cpp
 	# catch-up W1: an XY pad drag is one undo step.
@@ -1817,6 +1821,7 @@ set_tests_properties(RackDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLA
 set_tests_properties(NoteEditorFlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerTimelineTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ArrangerFileDropTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiClipLinkedEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(XyPadPairTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -4302,6 +4307,7 @@ set_tests_properties(ControlRecordingRoutesTest PROPERTIES
 # plugin even though nothing opens a window.
 set_tests_properties(ControlSampleOperatorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ClipImportFileTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The warp.* group edits a SampleClip created through track.add/clip.add, which
 # also wants a real Qt platform plugin even though nothing opens a window.
 set_tests_properties(ControlWarpCommandsTest PROPERTIES

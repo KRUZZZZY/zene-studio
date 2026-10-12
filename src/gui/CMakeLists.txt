@@ -85,6 +85,7 @@ SET(LMMS_SRCS
 	gui/ControlGuiSupport.cpp
 	# M3.4: the command palette (menu actions + argument-free commands, searchable).
 	gui/ArrangerOverlays.cpp
+	gui/ArrangerFileDrop.cpp
 	gui/ArrangerEditPreview.cpp
 	gui/ArrangerRulerLanes.cpp
 	gui/VideoLane.cpp

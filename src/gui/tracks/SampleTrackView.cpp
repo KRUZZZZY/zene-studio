@@ -32,6 +32,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "ArrangerFileDrop.h"
 #include "LevelBar.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
@@ -207,6 +208,11 @@ void SampleTrackView::modelChanged()
 
 void SampleTrackView::dragEnterEvent(QDragEnterEvent *dee)
 {
+	if (arrangerdrop::carriesFile(dee->mimeData()))  // 0.5.0 L04 (Q050-031)
+	{
+		TrackView::dragEnterEvent(dee);
+		return;
+	}
 	StringPairDrag::processDragEnterEvent(dee, QString("samplefile"));
 }
 
@@ -215,6 +221,11 @@ void SampleTrackView::dragEnterEvent(QDragEnterEvent *dee)
 
 void SampleTrackView::dropEvent(QDropEvent *de)
 {
+	if (arrangerdrop::carriesFile(de->mimeData()))  // 0.5.0 L04 (Q050-031)
+	{
+		TrackView::dropEvent(de);
+		return;
+	}
 	QString type  = StringPairDrag::decodeKey(de);
 	QString value = StringPairDrag::decodeValue(de);
 
