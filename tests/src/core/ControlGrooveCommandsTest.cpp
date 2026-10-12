@@ -310,14 +310,33 @@ private slots:
 				{QStringLiteral("strength"), 1.0}, {QStringLiteral("swing"), 1.0}}).ok);
 		QCOMPARE(takeOf(odd)[0].position, 4);  // 3 + 3 / 2, not 3 + 2 = 5
 
-		// An even grid is unchanged: half of 12 is 6, and 6 is the midpoint.
+		// Keep even-grid swing one tick before the nearest-step midpoint, so a
+		// repeated quantise still selects the same odd step.
 		const QString even = makeClip();
 		QVERIFY2(!even.isEmpty(), "the second fixture clip was not created");
 		QVERIFY(addNote(even, 60, 12, 100));
 		QVERIFY(run(QStringLiteral("groove.quantize"),
 			{{QStringLiteral("clip"), even}, {QStringLiteral("grid"), 12},
 				{QStringLiteral("strength"), 1.0}, {QStringLiteral("swing"), 1.0}}).ok);
-		QCOMPARE(takeOf(even)[0].position, 18);
+		QCOMPARE(takeOf(even)[0].position, 17);
+	}
+
+	//! A repeated full-strength swing must keep its first result instead of
+	//! rounding the midpoint onto the following even grid step.
+	void fullStrengthSwingDoesNotDriftWhenRepeated()
+	{
+		const QString clip = makeClip();
+		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
+		QVERIFY(addNote(clip, 60, 12, 100));
+		const QJsonObject args{{QStringLiteral("clip"), clip},
+			{QStringLiteral("grid"), 12}, {QStringLiteral("strength"), 1.0},
+			{QStringLiteral("swing"), 1.0}};
+
+		QVERIFY(run(QStringLiteral("groove.quantize"), args).ok);
+		const int first = takeOf(clip)[0].position;
+		QVERIFY(run(QStringLiteral("groove.quantize"), args).ok);
+		const int repeated = takeOf(clip)[0].position;
+		QCOMPARE(repeated, first);
 	}
 
 	//! A pool edit reverses through the RECORDED ACTION checkpoint: extract,
