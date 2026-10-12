@@ -1270,6 +1270,44 @@ private slots:
 			"a clamped position was not counted in rounded_times");
 	}
 
+	//! The writer refuses a negative timeline position; importing one would put
+	//! a value in the model that this same module cannot write back.
+	void negativeTimelinePositionsAreRefusedByReader()
+	{
+		const QList<QPair<QString, QByteArray>> fixtures = {
+			{QStringLiteral("negative clip time"),
+				QByteArrayLiteral("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+				"<Transport><Tempo value=\"120\"/></Transport>"
+				"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\"><Channel id=\"c1\"/>"
+				"</Track></Structure><Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+				"<Clip time=\"-1\" duration=\"4\"><Notes>"
+				"<Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+				"</Notes></Clip></Clips></Lanes></Lanes></Arrangement></Project>")},
+			{QStringLiteral("negative note time"),
+				QByteArrayLiteral("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+				"<Transport><Tempo value=\"120\"/></Transport>"
+				"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\"><Channel id=\"c1\"/>"
+				"</Track></Structure><Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+				"<Clip time=\"0\" duration=\"4\"><Notes>"
+				"<Note time=\"-1\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+				"</Notes></Clip></Clips></Lanes></Lanes></Arrangement></Project>")},
+			{QStringLiteral("negative tempo map-point time"),
+				QByteArrayLiteral("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+				"<Transport><Tempo value=\"120\"/></Transport>"
+				"<Arrangement><TempoAutomation timeUnit=\"beats\"><RealPoint time=\"-1\" value=\"130\"/>"
+				"</TempoAutomation></Arrangement></Project>")}
+		};
+
+		for (const auto& [description, xml] : fixtures)
+		{
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml, &model, &report, &error),
+				qPrintable(QStringLiteral("%1 was accepted: %2").arg(description, error)));
+		}
+	}
+
 //! Luna cluster 5066: the writer's own header promises a NEGATIVE time is
 //! refused, and a NaN or an infinity is not a position at all - but the only
 //! range tests were the tempo's and the denominator's. A clip at beat -1, a

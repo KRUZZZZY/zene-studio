@@ -119,7 +119,9 @@ bool pointTime(const QXmlStreamAttributes& attributes, ReadState& state, double*
 			"48-tick-per-beat grid can express").arg(raw, 0, 'g', 17);
 		return false;
 	}
-	*beats = static_cast<double>(ticksFromBeats(state, raw)) / DawProjectTicksPerQuarterNote;
+	const qint64 ticks = ticksFromBeats(state, raw);
+	if (!state.error.isEmpty()) { return false; }
+	*beats = static_cast<double>(ticks) / DawProjectTicksPerQuarterNote;
 	return true;
 }
 
