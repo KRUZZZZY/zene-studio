@@ -100,7 +100,7 @@ const ReversibilityRow kW3LibraryRows[] = {
 		"captured before (bounded; a track too large to capture is refused)", ""),
 	R("project.copy_tracks", RC::NotMutating, false, "it writes tracks to the system clipboard, not the project", "no write", ""),
 	R("project.paste_tracks", RC::TrueInverse, true, "it adds the clipboard's tracks to the project",
-		"action checkpoint: the recorded undo step removes the pasted tracks; its redo pastes them again", ""),
+		"action checkpoint: the recorded undo step removes the pasted tracks and the mixer channels made for them; its redo pastes them again", ""),
 	// L12 (WF-045 / WF-032): subprojects and alternatives.
 	R("project.subproject_add", RC::TrueInverse, true, "it renders another project file and adds a track playing it, linked "
 		"in <subprojects>", "action checkpoint: the recorded undo step removes the track and the link", ""),

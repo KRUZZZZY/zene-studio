@@ -118,11 +118,12 @@ ControlResult referenceState(const QJsonObject&)
 ControlResult copyTracks(const QJsonObject& args)
 {
 	if (!reference().isOpen()) { return notOpen(); }
-	ControlResult copied = transplant::importTrackElements(reference().tracks(), args, reference().sourceDir(), QStringLiteral("copied"));
+	ControlResult copied = transplant::importTrackElements(reference().tracks(), args, reference().sourceDir(), QStringLiteral("copied"),
+		reference().mixer());
 	if (!copied.ok) { return copied; }
 	copied.result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("reference"), reference().path()}},
 		QStringLiteral("control.undo"), {}, true,
-		QStringLiteral("action checkpoint: the recorded undo step removes the copied tracks; its redo copies them again")));
+		QStringLiteral("action checkpoint: the recorded undo step removes the copied tracks and the mixer channels made for them; its redo copies them again")));
 	return copied;
 }
 
@@ -248,7 +249,7 @@ void registerReferenceCommands(ControlRegistry& registry)
 		"its tracks - index, name, type, instrument, clips (index, kind, name, position, length) and devices (index, plugin) - and "
 		"its mixer channels with their devices."), {}, {}, false, referenceState);
 	add(registry, "copy_tracks", QStringLiteral("Copy the reference's 'tracks' (indices; every one when left out) into this project - "
-		"device, effects, clips and automation - as project.import_tracks does: each plays into the master, with ids of its own. "
+		"device, effects, clips and automation - as project.import_tracks does: each keeps its mixer channel (by name, a new one made when this project has none) and gets ids of its own. "
 		"One undo step removes them."), {{QStringLiteral("tracks"), arrayProperty()}}, {}, true, copyTracks);
 	add(registry, "copy_clips", QStringLiteral("Copy clips of the reference's track 'track' (index) - 'clips' (indices; every one when "
 		"left out) - onto this project's track 'to' (trk-<n>): note clips onto an instrument track, audio clips onto a sample track. "

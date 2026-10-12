@@ -66,6 +66,8 @@ public:
 
 	//! The reference's song tracks, in its order.
 	QList<QDomElement> tracks() const;
+	//! The project's <mixer> element (null while none is open): copied tracks bring their channels from it.
+	QDomElement mixer() const;
 	//! Its mixer channels (<mixerchannel>), master first.
 	QList<QDomElement> channels() const;
 	//! The clips of a reference @a track element, in its order.

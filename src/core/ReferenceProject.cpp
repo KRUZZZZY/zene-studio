@@ -146,6 +146,11 @@ QList<QDomElement> ReferenceProject::tracks() const
 	return isOpen() ? control::transplant::songTracks(m_file->content()) : QList<QDomElement>();
 }
 
+QDomElement ReferenceProject::mixer() const
+{
+	return isOpen() ? m_file->content().firstChildElement(QStringLiteral("mixer")) : QDomElement();
+}
+
 QList<QDomElement> ReferenceProject::channels() const
 {
 	QList<QDomElement> out;

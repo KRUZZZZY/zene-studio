@@ -697,6 +697,7 @@ set(LMMS_SRCS
 	core/ControlCommandsProjectArchive.cpp
 	core/ControlProjectAssets.cpp
 	core/ControlProjectAssetsRelink.cpp
+	core/ControlProjectTransplantChannels.cpp
 	# The mmpz-git depth group (feature row 42, task #612): the control-surface
 	# wrappers around tools/mmpz-git/mmpz_git.py.
 	core/ControlCommandsProjectMmpzGit.cpp

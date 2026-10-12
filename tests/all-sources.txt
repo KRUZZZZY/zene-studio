@@ -1650,6 +1650,7 @@ src/core/ControlNoteShared.cpp
 src/core/ControlProjectAssets.cpp
 src/core/ControlProjectAssetsRelink.cpp
 src/core/ControlProjectAssetsShared.h
+src/core/ControlProjectTransplantChannels.cpp
 src/core/ControlRackSupport.cpp
 src/core/ControlRecordingSupport.cpp
 src/core/ControlRegistry.cpp
@@ -2511,6 +2512,7 @@ tests/src/core/GrooveTestSupport.h
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/ImportDetectionTest.cpp
 tests/src/core/ImportFilterTest.cpp
+tests/src/core/ImportTrackIoTest.cpp
 tests/src/core/InputChannelRingTest.cpp
 tests/src/core/InputMeterTest.cpp
 tests/src/core/InputMonitorTest.cpp

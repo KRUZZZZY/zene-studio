@@ -1387,6 +1387,7 @@ src/core/ControlNoteShared.cpp
 src/core/ControlProjectAssets.cpp
 src/core/ControlProjectAssetsRelink.cpp
 src/core/ControlProjectAssetsShared.h
+src/core/ControlProjectTransplantChannels.cpp
 src/core/ControlRackSupport.cpp
 src/core/ControlRecordingSupport.cpp
 src/core/ControlRegistry.cpp
@@ -2052,6 +2053,7 @@ tests/src/core/FrozenTakeHandoffTest.cpp
 tests/src/core/FrozenTakeRoundTwoTest.cpp
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/ImportDetectionTest.cpp
+tests/src/core/ImportTrackIoTest.cpp
 tests/src/core/InputMeterTest.cpp
 tests/src/core/InstrumentLatencyPdcTest.cpp
 # cluster new-p8-127 (2026-10-07): import journalling exception regression and throwing importer fixture.
