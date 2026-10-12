@@ -1,46 +1,36 @@
 # Cluster new-p10-286
 
-**Verdict: BLOCKED**
+**Verdict: FIXED**
 
-## Finding evidence
+## Finding
 
-The finding is real in `plugins/Sf2Player/PatchesDialog.cpp:354-356, 382`.
-`bankChanged()` sets `stop` after adding a unique preset, and the outer loop
-condition then prevents visiting any later soundfont. The duplicate check at
-line 375 can remain while the loop visits all soundfonts.
+PatchesDialog::bankChanged() previously stopped scanning later soundfonts after the first soundfont added a unique program. It now uses lmms::sf2::forEachUniquePresetForBank(), which visits all soundfonts and leaves duplicate filtering to the existing findProgItem() lookup. The first soundfont still supplies a duplicated program's name.
 
-## Why the fix is blocked
-
-The configured CTest tree has no `PatchesDialog` test. The search for a
-registered test in `build/tests/CTestTestfile.cmake` returned no match, and
-`tests/src` contains no `PatchesDialog` or `Sf2Player` test source. The
-`tests/CMakeLists.txt` entry at lines 1562-1564 builds the SF2 reference module;
-it does not register a test. Adding and building a regression would require
-changing the test target configuration, which conflicts with the instruction
-not to configure this already-configured build. No production change was made.
-
-The regression RED and GREEN commands were not run. The affected CTest family
-has 0 registered tests, so a CTest run would be invalid under the supplied
-zero-tests rule. The `fff grep` tool was also unavailable in this session, so
-the required log search could not be performed.
+The shared iteration policy is in plugins/Sf2Player/PatchPresetIteration.h:9 and is called from plugins/Sf2Player/PatchesDialog.cpp:339, 375. The deterministic regression is PluginPortsMigrationTest::sf2PatchListKeepsEarlierDuplicateAndLaterUniqueProgram() at tests/src/plugins/PluginPortsMigrationTest.cpp:222-256. It feeds two fixture soundfonts: the later one contains a duplicate program and a unique program. The test checks that the unique program appears and the earlier duplicate remains selected.
 
 ## Evidence table
 
-| Check | Command / result |
+| Check | Exact command and result |
 | --- | --- |
-| RED | Not run; no registered test target. Exit code: N/A. |
-| GREEN | Not run; no registered test target. Exit code: N/A. |
-| Affected-family count | 0 registered tests (`rg` registration search exited 1). |
-| CTest discovery | `ctest -N -R '^PatchesDialog$' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r1/logs/test-list-3.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"` from `build/tests`; EXIT=0. |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r1/logs/gate-3.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"`; EXIT=0. |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r1/logs/gate-4.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"`; EXIT=0. |
-| Registered-test search | `rg -n '^add_test\(PatchesDialog' build/tests/CTestTestfile.cmake`; EXIT=1. |
-| Matching test-source search | `rg --files tests/src | rg 'PatchesDialog|Sf2Player'`; EXIT=1. |
-| Build | Not run; no production changes were made. |
+| PatchesDialog CTest discovery | From build/tests: <code>ctest -N -R '^PatchesDialog$' &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-1.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-1.log; printf 'EXIT=%s\n' "$result"</code>; ctest exit **0**, Total Tests: 0. This was discovery only; the regression runs in an existing registered test target. |
+| Build regression target with old behavior | From the worktree: <code>cmake --build build --target PluginPortsMigrationTest -j2 &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/build-2.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/build-2.log; printf 'EXIT=%s\n' "$result"</code>; build exit **0**. |
+| RED, before fix | From build/tests: <code>ctest -R '^PluginPortsMigrationTest$' --output-on-failure &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-2.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-2.log; printf 'EXIT=%s\n' "$result"</code>. Captured CTest exit: **8**; the regression failed because the later unique program was absent (8 passed, 1 failed in the QtTest suite). |
+| GREEN, after fix | From the worktree: <code>cmake --build build --target zene sf2player PluginPortsMigrationTest -j2 &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/build-3.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/build-3.log; printf 'EXIT=%s\n' "$result"</code>; build exit **0**. From build/tests: <code>ctest -R '^PluginPortsMigrationTest$' --output-on-failure &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-3.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-3.log; printf 'EXIT=%s\n' "$result"</code>. Captured CTest exit **0**, 1/1 registered CTest passed. |
+| Focused regression | From build/tests: <code>./PluginPortsMigrationTest sf2PatchListKeepsEarlierDuplicateAndLaterUniqueProgram &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-4.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-4.log; printf 'EXIT=%s\n' "$result"</code>; exit **0**, 3 passed (setup, regression slot, cleanup). |
+| Affected-family count | PluginPortsMigrationTest is registered as CTest #313; **1 CTest executed** per run. The new regression slot ran in that target. |
+| Inverse-patch generation | From the worktree: <code>git diff -- plugins/Sf2Player/PatchesDialog.cpp plugins/Sf2Player/PatchPresetIteration.h &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/fix.patch; result=$?; printf 'EXIT=%s\n' "$result"</code>; exit **0**. |
+| Inverse proof RED | <code>git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/fix.patch; result=$?; printf 'EXIT=%s\n' "$result"</code>; exit **0**. Rebuild: <code>cmake --build build --target zene sf2player PluginPortsMigrationTest -j2 &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/build-4.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/build-4.log; printf 'EXIT=%s\n' "$result"</code>; build exit **0**. From build/tests, <code>ctest -R '^PluginPortsMigrationTest$' --output-on-failure &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-5.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-5.log; printf 'EXIT=%s\n' "$result"</code>; captured CTest exit **8**, same regression failure. |
+| Inverse proof GREEN | <code>git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/fix.patch; result=$?; printf 'EXIT=%s\n' "$result"</code>; exit **0**. Rebuild: <code>cmake --build build --target zene sf2player PluginPortsMigrationTest -j2 &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/build-5.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/build-5.log; printf 'EXIT=%s\n' "$result"</code>; build exit **0**. From build/tests, <code>ctest -R '^PluginPortsMigrationTest$' --output-on-failure &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-6.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/test-6.log; printf 'EXIT=%s\n' "$result"</code>; captured CTest exit **0**, 1/1 passed. |
+| Complexity gate | <code>bash tests/complexity-gate.sh --check &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/gate-3.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/gate-3.log; printf 'EXIT=%s\n' "$result"</code>; exit **0**. |
+| File-length gate | <code>bash tests/file-length-gate.sh --check &gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/gate-4.log 2&gt;&amp;1; result=$?; printf 'EXIT=%s\n' "$result" &gt;&gt; /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-286.r2/logs/gate-4.log; printf 'EXIT=%s\n' "$result"</code>; exit **0**. |
 
-The first CTest discovery attempt ran from the repository root and returned
-EXIT=97; it was discarded. The corrected discovery above ran from `build/tests`.
+The fff grep tool was unavailable in this session; build and test logs were searched with rg for error, FAILED, and Assertion. No configure was run.
 
 ## Files committed
 
-- `docs/qwen-fixes-2026-10/cluster-new-p10-286.md` — this blocked-status report.
+- plugins/Sf2Player/PatchesDialog.cpp
+- plugins/Sf2Player/PatchPresetIteration.h
+- tests/src/plugins/PluginPortsMigrationTest.cpp
+- tests/fork-sources.txt
+- tests/upstream-modifications.txt
+- docs/qwen-fixes-2026-10/cluster-new-p10-286.md

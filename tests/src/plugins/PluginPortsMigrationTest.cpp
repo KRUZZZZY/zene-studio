@@ -21,6 +21,7 @@
 #include "PluginPortsHarness.h"
 
 #include <cstdio>
+#include <map>
 #include <vector>
 
 #include <QByteArray>
@@ -34,6 +35,7 @@
 
 #include "Engine.h"
 #include "Plugin.h"
+#include "../../../plugins/Sf2Player/PatchPresetIteration.h"
 
 namespace
 {
@@ -191,6 +193,7 @@ private slots:
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
+	void sf2PatchListKeepsEarlierDuplicateAndLaterUniqueProgram();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -214,6 +217,42 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::sf2PatchListKeepsEarlierDuplicateAndLaterUniqueProgram()
+{
+	struct Preset
+	{
+		int bank;
+		int program;
+		QString name;
+	};
+	using SoundFont = std::vector<Preset>;
+	const std::vector<SoundFont> soundFonts{
+		{{0, 5, QStringLiteral("first soundfont")}, {1, 90, QStringLiteral("other bank")}},
+		{{0, 5, QStringLiteral("duplicate")}, {0, 7, QStringLiteral("later unique")}},
+	};
+	std::map<int, QString> programs;
+
+	lmms::sf2::forEachUniquePresetForBank(
+		static_cast<int>(soundFonts.size()), 0,
+		[&soundFonts](int index) { return &soundFonts[static_cast<std::size_t>(index)]; },
+		[](const SoundFont* soundFont, auto&& visitPreset) {
+			for (const auto& preset : *soundFont)
+			{
+				visitPreset(preset);
+			}
+		},
+		[](const SoundFont*, const Preset& preset) { return preset.bank; },
+		[](const Preset& preset) { return preset.program; },
+		[&programs](int program) { return programs.contains(program); },
+		[&programs](const SoundFont*, const Preset& preset, int program) {
+			programs.emplace(program, preset.name);
+		});
+
+	QCOMPARE(programs.size(), std::size_t{2});
+	QCOMPARE(programs.at(5), QStringLiteral("first soundfont"));
+	QVERIFY(programs.contains(7));
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
