@@ -24,6 +24,7 @@
 #include <vector>
 
 #include <QByteArray>
+#include <QDomDocument>
 #include <QLibrary>
 #include <memory>
 #include <QProcess>
@@ -34,6 +35,7 @@
 
 #include "Engine.h"
 #include "Plugin.h"
+#include "../../../plugins/Xpressive/Xpressive.h"
 
 namespace
 {
@@ -185,6 +187,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void xpressiveSelectionRejectsUnavailableGraphs();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +217,43 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::xpressiveSelectionRejectsUnavailableGraphs()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_xpressive)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("xpressive");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+	auto* xpressive = static_cast<lmms::Xpressive*>(instrument);
+
+	for (const int selection : {5, 6})
+	{
+		xpressive->selectedGraph().setValue(selection);
+		QCOMPARE(xpressive->selectedGraph().value(), 4);
+		QDomDocument document;
+		auto settings = document.createElement("xpressive");
+		settings.setAttribute("selectedGraph", selection);
+		settings.setAttribute("id", QString::number(xpressive->selectedGraph().id()));
+		document.appendChild(settings);
+		xpressive->selectedGraph().loadSettings(settings, "selectedGraph");
+		QCOMPARE(xpressive->selectedGraph().value(), 4);
+	}
+
+	delete instrument;
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()

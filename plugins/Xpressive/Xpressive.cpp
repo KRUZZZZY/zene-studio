@@ -87,7 +87,7 @@ Xpressive::Xpressive(InstrumentTrack* instrument_track) :
 	m_rawgraphW1(-1.0f, 1.0f, GRAPH_LENGTH, this),
 	m_rawgraphW2(-1.0f, 1.0f, GRAPH_LENGTH, this),
 	m_rawgraphW3(-1.0f, 1.0f, GRAPH_LENGTH, this),
-	m_selectedGraph(0, 0, 6, this, tr("Selected graph")),
+	m_selectedGraph(0, 0, NUM_EXPRS - 1, this, tr("Selected graph")),
 	m_parameterA1(1, -1.0f, 1.0f, 0.01f, this, tr("A1")),
 	m_parameterA2(1, -1.0f, 1.0f, 0.01f, this, tr("A2")),
 	m_parameterA3(1, -1.0f, 1.0f, 0.01f, this, tr("A3")),
@@ -686,6 +686,11 @@ void XpressiveView::updateLayout() {
 	auto e = castModel<Xpressive>();
 	m_output_expr=false;
 	m_wave_expr=false;
+	if (m_selectedGraphGroup->model()->value() < W1_EXPR ||
+		m_selectedGraphGroup->model()->value() >= NUM_EXPRS)
+	{
+		m_selectedGraphGroup->model()->setValue(W1_EXPR);
+	}
 	switch (m_selectedGraphGroup->model()->value()) {
 	case W1_EXPR:
 		m_wave_expr=true;
