@@ -137,6 +137,41 @@ void setMeterReferenceDbfs(double dbfs)
 	ConfigManager::inst()->setValue(QStringLiteral("meter"), QStringLiteral("referencedbfs"), QString::number(dbfs));
 }
 
+namespace
+{
+
+bool isResourceMeterPath(const QString& path)
+{
+	return path.startsWith(QStringLiteral(":/")) || path.startsWith(QStringLiteral("qrc:/"));
+}
+
+bool isWindowsDriveAbsolutePath(const QString& path)
+{
+	return path.size() >= 3 && path.at(0).isLetter() && path.at(1) == QLatin1Char(':')
+		&& (path.at(2) == QLatin1Char('/') || path.at(2) == QLatin1Char('\\'));
+}
+
+bool isWindowsUncAbsolutePath(const QString& path)
+{
+	if (!path.startsWith(QStringLiteral("\\\\"))) { return false; }
+	for (qsizetype i = 2; i < path.size(); ++i)
+	{
+		if (path.at(i) == QLatin1Char('/') || path.at(i) == QLatin1Char('\\'))
+		{
+			return i > 2 && i + 1 < path.size();
+		}
+	}
+	return false;
+}
+
+bool isAbsoluteMeterFilePath(const QString& path)
+{
+	return !isResourceMeterPath(path) && (QFileInfo(path).isAbsolute()
+		|| isWindowsDriveAbsolutePath(path) || isWindowsUncAbsolutePath(path));
+}
+
+} // namespace
+
 ControlResult meterMeasureFile(const QString& path)
 {
 	if (path.isEmpty())
@@ -144,7 +179,7 @@ ControlResult meterMeasureFile(const QString& path)
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'path' is required: the absolute path of the rendered file to measure"));
 	}
-	if (!path.startsWith(QLatin1Char('/')))
+	if (!isAbsoluteMeterFilePath(path))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'path' must be an absolute path"));

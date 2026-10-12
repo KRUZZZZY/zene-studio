@@ -526,6 +526,25 @@ def check_refusals(session, recorder, workdir):
     session.error("meter.measure_file", {"path": "relative/tone.wav"}, "invalid_args")
     session.error("meter.measure_file", {"path": os.path.join(workdir, "absent.wav")}, "invalid_args")
 
+    windows_paths = [
+        ("Windows drive", r"C:\zene-meter-path-probe-%d\absent.wav" % os.getpid()),
+    ]
+    # A UNC lookup can contact a remote host on Windows. Exercise the UNC syntax
+    # on non-Windows hosts, where this deliberately nonexistent path is local.
+    if os.name != "nt":
+        windows_paths.append(("UNC", r"\\zene-meter-path-probe-%d\share\absent.wav" % os.getpid()))
+    for path_kind, path in windows_paths:
+        error = session.error("meter.measure_file", {"path": path}, "invalid_args")
+        recorder.check("%s absolute paths pass path validation" % path_kind,
+                       "must be an absolute path" not in error["message"],
+                       "message=%r" % error["message"])
+
+    for path in (":/meter/absent.wav", "qrc:/meter/absent.wav"):
+        error = session.error("meter.measure_file", {"path": path}, "invalid_args")
+        recorder.check("resource paths remain rejected (%s)" % path,
+                       "must be an absolute path" in error["message"],
+                       "message=%r" % error["message"])
+
     empty = os.path.join(workdir, "empty.wav")
     with wave.open(empty, "wb") as handle:
         handle.setnchannels(2)
