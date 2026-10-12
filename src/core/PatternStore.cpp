@@ -39,12 +39,6 @@ PatternStore::PatternStore() :
 	m_patternComboBoxModel(this)
 {
 	setType(Type::Pattern);
-	if (auto* song = Engine::getSong())
-	{
-		for (Track* track : tracks()) { song->watchAutomationScratchTrack(track); }
-		connect(this, &TrackContainer::trackAdded, song,
-			[song](Track* track) { song->watchAutomationScratchTrack(track); }, Qt::DirectConnection);
-	}
 }
 
 

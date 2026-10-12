@@ -89,18 +89,3 @@ src/core/RoutingGraph.cpp	RoutingGraph::process	the scheduler's node-execution p
 src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::run	the worker run loop: every pool thread waits here and drains the shared job queue from inside this loop, so the scheduler's jobs and any node-level work they carry executes on this declared body (SPEC §3.2 item 1)
 src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::JobQueue::run	the queue's run loop and the ready-list POP: each slot is taken with an atomic exchange and the job runs inline here, both on a worker thread and on the render thread via startAndWaitForJobs (SPEC §3.2 item 1)
 src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::JobQueue::addJob	the ready-list PUSH: Mixer.cpp:255 and :1729 call it from the audio thread, and this body holds the queue-full refusal branch, which Slice 0 made a counted, allocation-free refusal instead of a qWarning (SPEC §3.2 item 3)
-
-# --- 0.5.0 M0 cluster 5388: recording handoff and render overlay ---------------
-# The queue producer and the readers it exposes are audio-thread leaves. Their
-# runtime half is in AutomationClipSnapshotTest's held-edit-mutex/allocation probe.
-include/AutomationRecordingQueue.h	AutomationRecordingQueue::push	one fixed-ring SPSC write from Song and MIDI-input note recording; drop-newest is counted, with no lock, allocation, or wait
-src/core/Song.cpp	Song::enqueueAutomationRecord	audio producer dispatch to its preallocated per-thread queue; stable ids and TimePos/value are copied into the slot without touching a clip
-src/core/AutomationClipSnapshot.cpp	AutomationClip::recordingMapTime	lock-free conversion of clip-relative record time into its captured map-relative, quantized tick before queue insertion
-src/core/AutomationClipSnapshot.cpp	AutomationClip::valueAt	lock-free per-note and normal-automation reader, including the bounded pending-record overlay while the main thread has not drained the queue
-src/core/AutomationClipSnapshot.cpp	AutomationClip::writeBlockRamp	sample-accurate automation reader, including the bounded pending-record overlay while the main thread has not drained the queue
-src/core/AutomationClipSnapshot.cpp	AutomationClip::hasAutomation	audio-side fast path recognizes points waiting in bounded recording queues so value and ramp readers do not skip a clip with an empty published map
-# 0.5.0 M0 cluster 5388 Round 2: automation playback/recording collection now uses Song-owned arrays.
-src/core/Song.cpp	Song::processAutomations	per-tick automation application and recording pass called inside Song::processNextBuffer on the render thread; it must not build the old QMap or clip vector
-src/core/Song.cpp	Song::collectAutomatedValuesForRender	collects active automation and pattern clips into control-grown raw arrays and evaluates current model values on the render thread
-src/core/Song.cpp	Song::pendingAutomationRecordingEvents	copies the live generation's queued events into preallocated per-reader scratch for overlay replay
-include/AutomationRecordingQueue.h	AutomationRecordingQueue::appendPendingEvents	reads one producer ring into a bounded preallocated overlay event array; no allocation or growth

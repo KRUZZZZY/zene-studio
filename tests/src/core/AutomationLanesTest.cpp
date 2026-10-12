@@ -276,7 +276,9 @@ private slots:
 		clip->setProgressionType(AutomationClip::ProgressionType::Linear);
 		clip->putValue(TimePos(0), 0.f, false, true);
 		clip->putValue(TimePos(100), 100.f, false, true);
-		clip->setNodeTangents(TimePos(0), 0.f, 0.25f, true);
+		clip->getTimeMap()[0].setInTangent(0.f);
+		clip->getTimeMap()[0].setOutTangent(0.25f);
+		clip->getTimeMap()[0].setLockedTangents(true);
 
 		// An identity transform: every destination is where its point already was.
 		QCOMPARE(clip->transformRange(0, 100, 1.0, 0, 1.0, 0.0), 2);
@@ -294,8 +296,12 @@ private slots:
 		clip->setProgressionType(AutomationClip::ProgressionType::CubicHermite);
 		clip->putValue(TimePos(0), 0.f, false, true);
 		clip->putValue(TimePos(100), 100.f, false, true);
-		clip->setNodeTangents(TimePos(0), 0.5f, 0.5f, true);
-		clip->setNodeTangents(TimePos(100), -0.25f, -0.25f, true);
+		clip->getTimeMap()[0].setInTangent(0.5f);
+		clip->getTimeMap()[0].setOutTangent(0.5f);
+		clip->getTimeMap()[100].setInTangent(-0.25f);
+		clip->getTimeMap()[100].setOutTangent(-0.25f);
+		clip->getTimeMap()[0].setLockedTangents(true);
+		clip->getTimeMap()[100].setLockedTangents(true);
 		return clip;
 	}
 
@@ -369,7 +375,9 @@ private slots:
 		clip->setProgressionType(AutomationClip::ProgressionType::CubicHermite);
 		for (const int tick : {0, 96, 192, 288}) { clip->putValue(TimePos(tick), tick / 3.f, false, true); }
 		// 96 and 192 both sit exactly on the line 0..288: only the lock distinguishes them.
-		clip->setNodeTangents(TimePos(96), 0.f, 2.f, true);
+		clip->getTimeMap()[96].setInTangent(0.f);
+		clip->getTimeMap()[96].setOutTangent(2.f);
+		clip->getTimeMap()[96].setLockedTangents(true);
 
 		clip->thin(0.5f);
 		QVERIFY2(clip->getTimeMap().contains(96), "a point whose tangents were locked by hand was thinned away");
@@ -384,9 +392,9 @@ private slots:
 		clip->putValue(TimePos(0), 0.f, false, true);
 		clip->putValue(TimePos(100), 100.f, false, true);
 		QCOMPARE(clip->valueAt(TimePos(50)), 50.f);
-		clip->setNodeCurve(TimePos(0), AutomationNode::Curve::Hold);
+		clip->getTimeMap()[0].setCurve(AutomationNode::Curve::Hold);
 		QCOMPARE(clip->valueAt(TimePos(50)), 0.f);
-		clip->setNodeCurve(TimePos(0), AutomationNode::Curve::Bend, 0.5f);
+		clip->getTimeMap()[0].setCurve(AutomationNode::Curve::Bend, 0.5f);
 		QVERIFY(clip->valueAt(TimePos(50)) < 50.f);  // a positive bend starts slow
 
 		QDomDocument doc;
@@ -413,9 +421,9 @@ private slots:
 	void aFlippedRangeKeepsEachSegmentOwnCurve()
 	{
 		const auto withCurves = [](AutomationClip& clip) {
-			clip.setNodeCurve(TimePos(0), AutomationNode::Curve::Linear);   // 0 -> 48
-			clip.setNodeCurve(TimePos(48), AutomationNode::Curve::Hold);   // 48 -> 96
-			clip.setNodeCurve(TimePos(96), AutomationNode::Curve::Bend, 0.5f);  // 96 -> 192
+			clip.getTimeMap()[0].setCurve(AutomationNode::Curve::Linear);   // 0 -> 48
+			clip.getTimeMap()[48].setCurve(AutomationNode::Curve::Hold);   // 48 -> 96
+			clip.getTimeMap()[96].setCurve(AutomationNode::Curve::Bend, 0.5f);  // 96 -> 192
 		};
 		AutomationClip* original = clipWithCurves(m_track->volumeModel(), withCurves);
 		AutomationClip* flipped = clipWithCurves(m_track->volumeModel(), withCurves);
@@ -652,13 +660,13 @@ private slots:
 		clip->changeLength(TimePos(4 * 192));
 		clip->putValue(TimePos(16), 0.f, false, true);   // song tick 400: the moved point
 		clip->putValue(TimePos(112), 0.f, false, true);  // song tick 496: not touched
-		clip->setNodeCurve(TimePos(16), AutomationNode::Curve::Bend, 0.6f);
-		clip->setNodeCurve(TimePos(112), AutomationNode::Curve::Hold);
+		clip->getTimeMap()[TimePos(16)].setCurve(AutomationNode::Curve::Bend, 0.6f);
+		clip->getTimeMap()[TimePos(112)].setCurve(AutomationNode::Curve::Hold);
 		const ControlResult moved = run(QStringLiteral("automation.move_point"), addressed(id, parameter,
 			{{QStringLiteral("ticks"), 400}, {QStringLiteral("new_ticks"), 448}, {QStringLiteral("new_value"), high}}));
 		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
 		QVERIFY(clip->getTimeMap().contains(64));  // 448 - 384
-		const AutomationNode& node = clip->getTimeMap()[TimePos(64)];
+		AutomationNode& node = clip->getTimeMap()[TimePos(64)];
 		QCOMPARE(int(node.curve()), int(AutomationNode::Curve::Bend));
 		QVERIFY(qAbs(node.bend() - 0.6f) < 1e-6f);
 		QCOMPARE(int(clip->getTimeMap()[TimePos(112)].curve()), int(AutomationNode::Curve::Hold));

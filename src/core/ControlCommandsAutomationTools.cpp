@@ -132,19 +132,6 @@ ControlResult occupiedDestination(const AutomationClip* clip, tick_t ticks, tick
 	return ControlResult::success();
 }
 
-ControlResult moveNode(AutomationClip* clip, tick_t ticks, tick_t to, tick_t toSong,
-	const QString& parameterId, float inValue)
-{
-	if (const ControlResult taken = occupiedDestination(clip, ticks, to, parameterId, toSong); !taken.ok) { return taken; }
-	clip->addJournalCheckPoint();
-	if (!clip->moveNode(TimePos(ticks), TimePos(to), inValue))
-	{
-		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("%1 already has a point at %2").arg(parameterId).arg(static_cast<qint64>(toSong)));
-	}
-	return ControlResult::success();
-}
-
 ControlResult movePoint(const QJsonObject& args)
 {
 	ControlTarget target;
@@ -178,9 +165,18 @@ ControlResult movePoint(const QJsonObject& args)
 	{
 		return automatableRangeRefusal(parameter.model, value);
 	}
+	if (const ControlResult taken = occupiedDestination(clip, ticks, to, parameter.id(), toSong); !taken.ok) { return taken; }
 	const QJsonArray before = automationPointsJson(clip, parameter.model);
-	if (const ControlResult moved = moveNode(clip, ticks, to, toSong, parameter.id(),
-		parameter.model->inverseScaledValue(static_cast<float>(value))); !moved.ok) { return moved; }
+	// The point's own curve is its progression to the next point, and a Bend carries its bend
+	// amount - neither survives removing the node and letting putValue insert a plain one, so
+	// they are carried across to the destination.
+	const AutomationNode& oldNode = clip->getTimeMap()[TimePos(ticks)];
+	const auto curve = oldNode.curve();
+	const auto bend = oldNode.bend();
+	clip->addJournalCheckPoint();
+	clip->removeNode(TimePos(ticks));
+	clip->putValue(TimePos(to), parameter.model->inverseScaledValue(static_cast<float>(value)), false);
+	clip->getTimeMap()[TimePos(to)].setCurve(curve, bend);
 	QJsonObject result{{QStringLiteral("track"), target.id}, {QStringLiteral("parameter"), parameter.id()}, {QStringLiteral("ticks"), static_cast<double>(toSong)},
 		{QStringLiteral("value"), value}, {QStringLiteral("automation"), automationJson(clip, parameter.model)}};
 	result.insert(QStringLiteral("__transaction"), automationTransaction(parameter, before, before.size(), false));

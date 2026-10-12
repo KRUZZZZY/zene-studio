@@ -48,7 +48,6 @@
 #include <cstring>
 #include <limits>
 #include <new>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -60,9 +59,6 @@
 #include "TimePos.h"
 
 using namespace lmms;
-
-static_assert(std::is_same_v<decltype(std::declval<AutomationClip&>().getTimeMap()),
-	const AutomationClip::timeMap&>);
 
 namespace
 {
@@ -810,45 +806,6 @@ private slots:
 		QVERIFY(std::atomic<AutomationMode>::is_always_lock_free);
 		QVERIFY(std::atomic<float>::is_always_lock_free);
 		QVERIFY(std::atomic<qint64>::is_always_lock_free);
-	}
-
-	void clipOwnsPointEdits()
-	{
-		Rig rig(Engine::getSong());
-		auto& clip = rig.clip;
-		clip.putValue(TimePos(0), 0.f, false, true);
-		clip.putValue(TimePos(96), 0.5f, false, true);
-		QVERIFY(clip.setNodeInValue(TimePos(96), 0.25f));
-		QVERIFY(clip.setNodeOutValue(TimePos(96), 0.75f));
-		QVERIFY(clip.setNodeTangents(TimePos(96), -0.5f, 0.5f, true));
-		QVERIFY(clip.setNodeTangent(TimePos(96), true, 0.25f));
-		QVERIFY(clip.setNodeCurve(TimePos(96), AutomationNode::Curve::Bend, 0.4f));
-		const auto node = clip.getTimeMap().value(96);
-		QCOMPARE(node.getInValue(), 0.25f);
-		QCOMPARE(node.getOutValue(), 0.75f);
-		QCOMPARE(node.getInTangent(), -0.5f);
-		QCOMPARE(node.getOutTangent(), 0.25f);
-		QVERIFY(node.lockedTangents());
-		QCOMPARE(node.curve(), AutomationNode::Curve::Bend);
-		QCOMPARE(node.bend(), 0.4f);
-		QVERIFY(clip.moveNode(TimePos(96), TimePos(144), 0.5f));
-		QVERIFY(!clip.getTimeMap().contains(96));
-		QCOMPARE(clip.getTimeMap().value(144).curve(), AutomationNode::Curve::Bend);
-		QCOMPARE(clip.getTimeMap().value(144).bend(), 0.4f);
-		QVERIFY(!clip.moveNode(TimePos(144), TimePos(0), 0.1f));
-		QVERIFY(clip.getTimeMap().contains(144));
-	}
-
-	void clipOwnsRangeRescaling()
-	{
-		Rig rig(Engine::getSong());
-		rig.writeCurve();
-		QVERIFY(rig.clip.rescaleValuesToRange(0.f, 2.f, -1.f, 1.f));
-		QCOMPARE(rig.clip.getTimeMap().value(0).getInValue(), -0.5f);
-		QCOMPARE(rig.clip.getTimeMap().value(0).getOutValue(), -0.5f);
-		QCOMPARE(rig.clip.getTimeMap().value(96).getInValue(), -0.75f);
-		QCOMPARE(rig.clip.getTimeMap().value(192).getInValue(), 0.f);
-		QVERIFY(!rig.clip.rescaleValuesToRange(-1.f, 1.f, -1.f, 1.f));
 	}
 };
 

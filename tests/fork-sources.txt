@@ -2311,15 +2311,3 @@ tests/src/core/MissingDevicesRound2Test.cpp
 tests/src/plugins/MissingDevicesNoEntryModule.cpp
 tests/src/core/SessionCheckpointTest.cpp
 tests/src/core/SessionCheckpointBudgetTest.cpp
-# 2026-10-09, cluster 5388: split snapshot publication from the evaluator; shared private snapshot type.
-src/core/AutomationClipSnapshotInternal.h
-src/core/AutomationClipSnapshotPublish.cpp
-src/core/AutomationClipSnapshot.cpp
-tests/src/core/AutomationClipSnapshotTest.cpp
-tests/src/core/AutomationRecordingTest.cpp
-tests/src/core/AutomationRecordingGenerationTest.cpp
-tests/src/core/AutomationRecordingOverlayTest.cpp
-# 2026-10-09, cluster 5388 stage 3 round 3: selected-pattern automation offset regression.
-tests/src/core/AutomationPatternTimeTest.cpp
-# 2026-10-09, cluster 5388: fixed-capacity per-audio-producer automation recording queues.
-include/AutomationRecordingQueue.h

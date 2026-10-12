@@ -61,10 +61,7 @@ class TrackView;
 class LMMS_EXPORT Clip : public Model, public JournallingObject
 {
 	Q_OBJECT
-	public:
-	virtual bool isMuted() const { return m_mutedModel.value(); }
-	public slots:
-	virtual void setMuted(bool muted);
+	mapPropertyFromModel(bool,isMuted,setMuted,m_mutedModel);
 	//! setMuted without a journal entry: the change belongs to a step the caller journals itself.
 	void setMutedUnjournalled(bool muted)
 	{
@@ -73,7 +70,6 @@ class LMMS_EXPORT Clip : public Model, public JournallingObject
 		setMuted(muted);
 		m_mutedModel.setJournalling(journalling);
 	}
-	public:
 	mapPropertyFromModel(bool,isSolo,setSolo,m_soloModel);
 public:
 	Clip( Track * track );

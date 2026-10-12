@@ -29,8 +29,6 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
-#include <utility>
-#include <vector>
 
 #include <QString>
 #include <QHash>  // IWYU pragma: keep
@@ -38,7 +36,6 @@
 #include <QStringList>
 
 #include "AudioEngine.h"
-#include "AutomationRecordingQueue.h"
 #include "Controller.h"
 #include "Metronome.h"
 #include "lmms_constants.h"
@@ -58,14 +55,9 @@
 #include "SessionModel.h"
 #include "SessionScheduler.h"
 
-class AutomationClipSnapshotTest;
-class AutomationRecordingTest;
-class AutomationPatternTimeTest;
-
 namespace lmms
 {
 
-class AutomationClip;
 class AutomationTrack;
 class DataFile;
 class Keymap;
@@ -210,35 +202,6 @@ public:
 	}
 
 	void processNextBuffer();
-
-	struct AutomationRecordingStatus
-	{
-		std::uint64_t droppedEvents = 0;
-		std::uint64_t staleClipIds = 0;
-		std::uint64_t membershipOverflows = 0;
-		std::uint64_t overlayOverflows = 0;
-		std::uint64_t renderScratchOverflows = 0;
-	};
-
-	//! Audio producer entry: enqueue the already quantized clip-map time to this thread's SPSC queue.
-	bool enqueueAutomationRecord(jo_id_t clipId, const TimePos& mapTime, float value) noexcept;
-	//! Main-thread drain: resolves stable ids, calls recordValue(), and reclaims quiescent slots.
-	void drainAutomationRecordingEvents();
-	AutomationRecordingStatus automationRecordingStatus() const noexcept;
-	//! Connect a container track's structural changes to control-thread scratch growth.
-	void watchAutomationScratchTrack(Track* track);
-	//! Current document generation stamped into recording events; changed before project tracks are replaced.
-	std::uint64_t automationProjectGeneration() const noexcept
-	{
-		return m_automationProjectGeneration.load(std::memory_order_acquire);
-	}
-	//! Realtime reader bridge: copies pending events from all producer queues into this thread's preallocated scratch.
-	AutomationRecordingQueue::OverlayScratch* pendingAutomationRecordingEvents(jo_id_t clipId,
-		const std::vector<std::uint64_t>& appliedSequences) const noexcept;
-	void noteAutomationOverlayOverflow() const noexcept
-	{
-		m_automationOverlayOverflows.fetch_add(1, std::memory_order_relaxed);
-	}
 
 	/*! Sample-accurate automation (feature-list row 9,
 	 *  docs/SAMPLE-ACCURATE-AUTOMATION.md): publish every opt-in automation
@@ -435,11 +398,13 @@ public:
 	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum = -1) const override;
 
 	/*! Forgets @p model in the automated-value cache of the live song, if there
-	 *  is one (see `m_oldAutomatedValues`). The cache holds guarded pointers for
-	 *  models the song automated on the last frame; both
-	 *  `Song::processAutomations()` and `Song::stop()` restore live entries.
-	 *  `AutomatableModel`'s destructor calls this to remove its entry before the
-	 *  model dies.
+	 *  is one (see `m_oldAutomatedValues`). The cache holds the RAW pointers of
+	 *  the models the song automated on the last frame, and both
+	 *  `Song::processAutomations()` and `Song::stop()` dereference every entry;
+	 *  a model that is destroyed while it is cached (an instrument or an
+	 *  automation track deleted while the transport runs) would be a
+	 *  use-after-free in those two walks. `AutomatableModel`'s destructor calls
+	 *  this, so the cache cannot end up naming a dead model.
 	 *
 	 *  Static because the model has no safe way to reach the song: resolving
 	 *  `Engine::getSong()` would hand back a song whose cache may already be
@@ -788,12 +753,6 @@ private:
 	bool restoreGuiSection(const QDomElement & element);
 
 	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames);
-	void collectAutomatedValuesForRender(TrackContainer* container, TimePos time, int clipNum);
-	void growAutomationRenderScratch();
-	bool markRecordedModelForCurrentTick(jo_id_t id) noexcept;
-	bool recordedModelInCurrentTick(jo_id_t id) const noexcept;
-	bool enqueueAutomationRecordForProducerForTest(std::size_t producer, jo_id_t clipId,
-		const TimePos& time, float value) noexcept;
 	void processMetronome(size_t bufferOffset);
 	//! Recompute every frozen track's overlap allowance on the control thread after loop changes.
 	void updateFrozenTakeVoiceCapacities();
@@ -937,55 +896,15 @@ private:
 	std::shared_ptr<Scale> m_scales[MaxScaleCount];
 	std::shared_ptr<Keymap> m_keymaps[MaxKeymapCount];
 
-	//! The models the last rendered frame moved control away from and their restore values.
-	//! Storage is allocated under the model-change guard and reused by render periods.
-	std::unique_ptr<std::pair<QPointer<AutomatableModel>, float>[]> m_oldAutomatedValues;
-	std::size_t m_oldAutomatedValuesCount = 0;
-	std::size_t m_oldAutomatedValuesCapacity = 0;
-	struct AutomationValueEntry
-	{
-		AutomatableModel* model = nullptr;
-		float value = 0.0f;
-	};
-	struct AutomationRenderScratch
-	{
-		std::unique_ptr<Clip*[]> clips;
-		std::size_t clipCount = 0;
-		std::size_t clipCapacity = 0;
-		std::unique_ptr<Clip*[]> recordingClips;
-		std::size_t recordingClipCount = 0;
-		std::size_t recordingClipCapacity = 0;
-		std::unique_ptr<Clip*[]> patternClips;
-		std::size_t patternClipCount = 0;
-		std::size_t patternClipCapacity = 0;
-		std::unique_ptr<AutomationValueEntry[]> values;
-		std::size_t valueCount = 0;
-		std::size_t valueCapacity = 0;
-		std::unique_ptr<AutomationValueEntry[]> patternValues;
-		std::size_t patternValueCount = 0;
-		std::size_t patternValueCapacity = 0;
-	};
-	AutomationRenderScratch m_automationRenderScratch;
-
-	static constexpr std::size_t AutomationRecordingMembershipCapacity = 4096;
-	static constexpr std::size_t AutomationRecordingMembershipSlots = 8192;
-	struct RecordedModelMembershipEntry
-	{
-		jo_id_t id = 0;
-		std::uint32_t generation = 0;
-	};
-	std::array<RecordedModelMembershipEntry, AutomationRecordingMembershipSlots> m_recordedModelMembership{};
-	std::uint32_t m_recordedModelMembershipGeneration = 0;
-	std::size_t m_recordedModelMembershipSize = 0;
-	std::atomic<std::uint64_t> m_recordedModelMembershipOverflows{0};
-	std::unique_ptr<AutomationRecordingQueue[]> m_automationRecordingQueues;
-	std::size_t m_automationRecordingQueueCount = 0;
-	//! Events may resolve journal IDs only inside the project generation that created them.
-	std::atomic<std::uint64_t> m_automationProjectGeneration{1};
-	std::atomic<std::uint64_t> m_staleAutomationRecordingEvents{0};
-	std::atomic<std::uint64_t> m_invalidAutomationRecordingProducers{0};
-	mutable std::atomic<std::uint64_t> m_automationOverlayOverflows{0};
-	std::atomic<std::uint64_t> m_automationRenderScratchOverflows{0};
+	//! The models the last rendered frame moved control away from, and the values
+	//! to put back. GUARDED keys on purpose: the set is written by the render thread
+	//! (processNextBuffer) and restored by stop() on another thread, and a model can
+	//! be destroyed in between (a track deleted, a plugin unloaded). A raw pointer
+	//! here is a use-after-free on the shutdown path - measured as
+	//! `AutomationModesTest` aborting with signal 11 at Song.cpp:778, dereferencing a
+	//! key whose model the test had already destroyed. QPointer nulls itself when the
+	//! model goes, so the restore skips exactly the models that are gone.
+	QMap<QPointer<AutomatableModel>, float> m_oldAutomatedValues;
 
 	//! The song that `Song::forgetAutomatedModel()` reports into, or nullptr.
 	//! Set by `Song::Song()`, cleared at the top of `Song::~Song()`.
@@ -994,7 +913,7 @@ private:
 	//! above, and the cache has to outlive every model that can report into it:
 	//! the song's own models (`m_tempoModel` above, the metronome's below) are
 	//! destroyed *after* `m_oldAutomatedValues` is, so a report that arrived
-	//! during song teardown would reach storage that is already gone. Clearing this
+	//! during song teardown would reach a map that is already gone. Clearing this
 	//! first is what makes the report a no-op from that point on, instead of
 	//! relying on how the members happen to be ordered.
 	static Song* s_automationCacheSong;
@@ -1013,9 +932,6 @@ private:
 	friend class Engine;
 	friend class gui::SongEditor;
 	friend class gui::ControllerRackView;
-	friend class ::AutomationClipSnapshotTest;
-	friend class ::AutomationRecordingTest;
-	friend class ::AutomationPatternTimeTest;
 
 signals:
 	//! A recording pass lost \a frames to capture overflow; the GUI shows a notice. Main thread.

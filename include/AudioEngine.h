@@ -527,7 +527,6 @@ public:
 	//! Block until a change in model can be done (i.e. wait for audio thread)
 	void requestChangeInModel();
 	void doneChangeInModel();
-	int workerCount() const noexcept { return m_numWorkers; }
 
 	RequestChangesGuard requestChangesGuard()
 	{

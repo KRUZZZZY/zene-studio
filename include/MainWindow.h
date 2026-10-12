@@ -25,8 +25,6 @@
 #ifndef LMMS_GUI_MAIN_WINDOW_H
 #define LMMS_GUI_MAIN_WINDOW_H
 
-#include <cstdint>
-
 #include <QBasicTimer>
 #include <QTimer>
 #include <QList>
@@ -290,7 +288,6 @@ private:
 	QBasicTimer m_updateTimer;
 	QTimer m_autoSaveTimer;
 	int m_autoSaveInterval;
-	std::uint64_t m_lastAutomationRecordingLossCount = 0;
 
 	friend class GuiApplication;
 

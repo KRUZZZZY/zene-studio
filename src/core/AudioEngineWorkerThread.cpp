@@ -42,7 +42,6 @@ namespace lmms
 {
 
 AudioEngineWorkerThread::JobQueue AudioEngineWorkerThread::globalJobQueue;
-thread_local std::size_t AudioEngineWorkerThread::s_currentRecordingProducerSlot = 0;
 std::atomic<std::uint32_t> AudioEngineWorkerThread::s_wakeGeneration{0};
 QList<AudioEngineWorkerThread *> AudioEngineWorkerThread::workerThreads;
 thread_local AudioEngineWorkerThread::DeferredPlayHandleEdits*
@@ -180,10 +179,9 @@ void AudioEngineWorkerThread::JobQueue::wait()
 
 // implementation of worker threads
 
-AudioEngineWorkerThread::AudioEngineWorkerThread( AudioEngine* audioEngine, std::size_t recordingProducerSlot ) :
+AudioEngineWorkerThread::AudioEngineWorkerThread( AudioEngine* audioEngine ) :
 	QThread( audioEngine ),
-	m_quit( false ),
-	m_recordingProducerSlot(recordingProducerSlot)
+	m_quit( false )
 {
 	// initialize global static data
 
@@ -312,7 +310,6 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 
 void AudioEngineWorkerThread::run()
 {
-	s_currentRecordingProducerSlot = m_recordingProducerSlot;
 	disableDenormals();
 	DeferredPlayHandleEdits* const previousPending = s_currentDeferredPlayHandleEdits;
 	s_currentDeferredPlayHandleEdits = &m_deferredPlayHandleEdits;
