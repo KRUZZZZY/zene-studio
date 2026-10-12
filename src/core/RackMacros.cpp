@@ -201,7 +201,7 @@ auto RackMacros::removeTarget(int index, int targetIndex) -> bool
 	return true;
 }
 
-auto RackMacros::apply(int index, Rack& rack) -> std::vector<RackMacroWrite>
+auto RackMacros::apply(int index, Rack& rack, bool journalWrites) -> std::vector<RackMacroWrite>
 {
 	std::vector<RackMacroWrite> writes;
 	const RackMacro* entry = macro(index);
@@ -233,8 +233,8 @@ auto RackMacros::apply(int index, Rack& rack) -> std::vector<RackMacroWrite>
 		// are not edits and must not leave a checkpoint on the journal.
 		if (write.previous != write.written)
 		{
-			model->addJournalCheckPoint();
-			model->setValue(written);
+			if (journalWrites) { model->addJournalCheckPoint(); }
+			model->setValue(written, !journalWrites);
 		}
 		writes.push_back(write);
 	}

@@ -156,11 +156,12 @@ public:
 	 * resolves (its chain, its effect or its parameter is gone) is SKIPPED
 	 * rather than guessed at, so the returned size is also the applied count.
 	 *
-	 * Takes a journal checkpoint of every model it writes, so the one merge
-	 * the command registry performs after a handler covers the whole call as a
-	 * single undo step. Control thread only; allocates.
+	 * Takes a journal checkpoint of every model it writes when @a journalWrites
+	 * is true, so the command registry can merge the call into one undo step.
+	 * Pair commands pass false and record their net action as one undo step.
+	 * Control thread only; allocates.
 	 */
-	auto apply(int index, Rack& rack) -> std::vector<RackMacroWrite>;
+	auto apply(int index, Rack& rack, bool journalWrites = true) -> std::vector<RackMacroWrite>;
 
 	//! Drops every macro.
 	void clear();

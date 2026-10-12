@@ -29,6 +29,9 @@
 
 #include <QJsonObject>
 
+#include <algorithm>
+#include <vector>
+
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRackMacroWrites.h"
@@ -45,7 +48,7 @@ namespace lmms
 
 using namespace control;
 
-MacroApplied applyMacroValue(Rack& rack, const QString& channelId, int macro, float value)
+MacroApplied applyMacroValue(Rack& rack, const QString& channelId, int macro, float value, bool journalParameters)
 {
 	MacroApplied out;
 	out.undo.channelId = channelId;
@@ -53,7 +56,7 @@ MacroApplied applyMacroValue(Rack& rack, const QString& channelId, int macro, fl
 	out.undo.value = rack.macros().macro(macro)->value;
 	const auto targets = static_cast<int>(rack.macros().macro(macro)->targets.size());
 	rack.macros().setValue(macro, value);
-	const std::vector<RackMacroWrite> writes = rack.macros().apply(macro, rack);
+	const std::vector<RackMacroWrite> writes = rack.macros().apply(macro, rack, journalParameters);
 	out.redo.channelId = channelId;
 	out.redo.macro = macro;
 	out.redo.value = rack.macros().macro(macro)->value;
@@ -83,6 +86,47 @@ bool macroAppliedChanged(const MacroApplied& applied)
 
 namespace
 {
+
+struct PairParameterState
+{
+	RackMacroTarget target;
+	float before = 0.0f;
+	float after = 0.0f;
+};
+
+bool sameResolvedParameter(const RackMacroTarget& left, const RackMacroTarget& right)
+{
+	return left.chain == right.chain && left.effect == right.effect && left.parameter == right.parameter;
+}
+
+void collectPairParameterStates(const MacroApplied& applied, std::vector<PairParameterState>& states)
+{
+	for (std::size_t i = 0; i < applied.undo.parameters.size(); ++i)
+	{
+		const auto& [target, before] = applied.undo.parameters[i];
+		const float after = applied.redo.parameters[i].second;
+		auto state = std::find_if(states.begin(), states.end(), [&target](const PairParameterState& candidate) {
+			return sameResolvedParameter(candidate.target, target);
+		});
+		if (state == states.end()) { states.push_back({target, before, after}); }
+		else { state->after = after; }
+	}
+}
+
+bool macroPairChanged(const MacroApplied& x, const MacroApplied& y)
+{
+	if (x.undo.value != x.redo.value || y.undo.value != y.redo.value) { return true; }
+	if (x.undo.parameters.size() != x.redo.parameters.size() || y.undo.parameters.size() != y.redo.parameters.size())
+	{
+		return true;
+	}
+	std::vector<PairParameterState> states;
+	collectPairParameterStates(x, states);
+	collectPairParameterStates(y, states);
+	return std::any_of(states.begin(), states.end(), [](const PairParameterState& state) {
+		return state.before != state.after;
+	});
+}
 
 //! One axis of the reply: the macro, the value it holds now, and what it wrote.
 QJsonObject axisJson(const Rack& rack, int macro, const MacroApplied& applied)
@@ -121,9 +165,9 @@ ControlResult setPair(const QJsonObject& args)
 	const QJsonObject before{{QStringLiteral("channel"), id}, {QStringLiteral("x_macro"), macroId(x)},
 		{QStringLiteral("x_value"), static_cast<double>(rack.macros().macro(x)->value)}, {QStringLiteral("y_macro"), macroId(y)},
 		{QStringLiteral("y_value"), static_cast<double>(rack.macros().macro(y)->value)}};
-	const MacroApplied ax = applyMacroValue(rack, id, x, static_cast<float>(args.value(QStringLiteral("x_value")).toDouble()));
-	const MacroApplied ay = applyMacroValue(rack, id, y, static_cast<float>(args.value(QStringLiteral("y_value")).toDouble()));
-	const bool changed = macroAppliedChanged(ax) || macroAppliedChanged(ay);
+	const MacroApplied ax = applyMacroValue(rack, id, x, static_cast<float>(args.value(QStringLiteral("x_value")).toDouble()), false);
+	const MacroApplied ay = applyMacroValue(rack, id, y, static_cast<float>(args.value(QStringLiteral("y_value")).toDouble()), false);
+	const bool changed = macroPairChanged(ax, ay);
 	// ONE step for both macros and every parameter they wrote. Undone in reverse, so a parameter both macros drive gets
 	// back the value it had before X wrote it, not the one Y found.
 	if (changed)
