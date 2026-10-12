@@ -1303,6 +1303,7 @@ src/core/ControlCommandsRecorder.cpp
 src/core/ControlCommandsRecording.cpp
 src/core/ControlCommandsRecordingInput.cpp
 src/core/ControlCommandsRecordingPass.cpp
+src/core/ControlCommandsRecordingPlace.cpp
 src/core/ControlCommandsRecordingRecovery.cpp
 src/core/ControlCommandsRecordingRetro.cpp
 src/core/ControlCommandsRecordingRoutes.cpp

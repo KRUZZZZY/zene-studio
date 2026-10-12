@@ -95,6 +95,12 @@ const ReversibilityRow kRows[] = {
 		"the project changes",
 		"recorded action step (removes the created track, restores the source's mute)",
 		""),
+	R("record.recovery_place", RC::TrueInverse, true,
+		"it creates one sample track holding the recovered take and rewrites the take's journal to "
+		"'restored'; nothing else in the project changes, and the WAV is never touched",
+		"recorded action step (removes the placed track and rewrites the journal as in_progress; redo "
+		"places it again)",
+		""),
 	R("track.set_mixer_channel", RC::TrueInverse, true,
 		"the track's mixer channel is an IntModel, i.e. a JournallingObject of its own",
 		"ProjectJournal (the track's mixer-channel IntModel checkpoint)",

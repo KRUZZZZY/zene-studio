@@ -414,6 +414,7 @@ LMMS_EXPORT void registerRecordingCommands(ControlRegistry& registry);
  *  and warp groups' split). What the next start does with a journal an abnormal
  *  exit left behind, and the BOUND each offer states. */
 LMMS_EXPORT void registerRecordingRecoveryCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerRecordingPlaceCommand(ControlRegistry& registry);  //!< record.recovery_place: the take placed on a new sample track, one undo step (Q050-046)
 LMMS_EXPORT void registerRecordingInputCommands(ControlRegistry& registry);  //!< record.* capture-IN half: input_get_state/set, get_state, arm_track, disarm_track/disarm_all (0.3.0, rows 14/64; docs/RECORD-INPUTS.md)
 LMMS_EXPORT void registerRecordingRetroCommands(ControlRegistry& registry);  //!< record.* retro AUDIO half: retro_capture_arm/status/to_take (0.3.0, row 16; docs/RETRO-AUDIO-CAPTURE.md)
 //! mixer.*

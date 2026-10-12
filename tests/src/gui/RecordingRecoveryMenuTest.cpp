@@ -90,6 +90,18 @@ bool writeTruncatedWav(const QString& path, int declaredFrames, int writtenFrame
 	return true;
 }
 
+//! The `state=` line of a take's journal side file ("" when unreadable).
+QString journalState(const QString& journalPath)
+{
+	QFile file(journalPath);
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) { return QString(); }
+	for (const QByteArray& line : file.readAll().split('\n'))
+	{
+		if (line.startsWith("state=")) { return QString::fromUtf8(line.mid(6)).trimmed(); }
+	}
+	return QString();
+}
+
 ControlResult run(const QString& id, const QJsonObject& args = QJsonObject{})
 {
 	return ControlRegistry::instance()->invoke(id, args);
@@ -173,6 +185,17 @@ private slots:
 			QFileInfo(placed).canonicalFilePath());
 		QVERIFY(clip->sampleLength().getTicks() > 0);
 
+		// The menu ran record.recovery_place: the journal is resolved, and ONE control.undo takes the
+		// track away and puts the offer back; one control.redo places it again.
+		const QString placedJournal = placed + QStringLiteral(".rec-journal");
+		QCOMPARE(journalState(placedJournal), QStringLiteral("restored"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
+		QCOMPARE(journalState(placedJournal), QStringLiteral("in_progress"));
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore + 1);
+		QCOMPARE(journalState(placedJournal), QStringLiteral("restored"));
+
 		item(dismissedTake->menu(), QStringLiteral("Dismiss (keep the file)"))->trigger();
 		QVERIFY(QFileInfo::exists(dismissed));
 		QVERIFY(!QFileInfo::exists(dismissed + QStringLiteral(".rec-journal")));
@@ -180,6 +203,66 @@ private slots:
 		emit menu->aboutToShow();
 		QCOMPARE(menu->actions().first()->text(), QStringLiteral("No interrupted recording"));
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+	}
+
+	//! Acceptance 1: the startup offer asks only when record.recovery_get_state reports an interrupted take.
+	void startupAsksOnlyWhenATakeWasInterrupted()
+	{
+		int asked = 0;
+		const auto neverAsked = [&asked](const QJsonArray&) { ++asked; return StartupRecoveryChoice::Place; };
+		QCOMPARE(run(QStringLiteral("record.recovery_get_state")).result.value(QStringLiteral("count")).toInt(), 0);
+		QVERIFY(offerRecordingRecovery(nullptr, neverAsked) == StartupRecoveryChoice::NothingToOffer);
+		QCOMPARE(asked, 0);
+
+		const QString dir = run(QStringLiteral("record.recovery_get_state")).result.value(QStringLiteral("dir")).toString();
+		const QString take = QDir(dir).filePath(QStringLiteral("zene-test-take-startup.wav"));
+		QVERIFY(writeWav(take, kFrames));
+		QVERIFY(run(QStringLiteral("record.journal_begin"), {{QStringLiteral("take"), take},
+			{QStringLiteral("sample_rate"), kRate}, {QStringLiteral("channels"), 1}}).ok);
+		QVERIFY(run(QStringLiteral("record.journal_update"), {{QStringLiteral("take"), take},
+			{QStringLiteral("frames_on_disk"), kFrames}}).ok);
+		const auto tracksBefore = Engine::getSong()->tracks().size();
+
+		// Decide Later: asked once, with the take named, and nothing changes.
+		int takesOffered = 0;
+		QVERIFY(offerRecordingRecovery(nullptr, [&takesOffered](const QJsonArray& takes) {
+			takesOffered = static_cast<int>(takes.size()); return StartupRecoveryChoice::Later; }) == StartupRecoveryChoice::Later);
+		QCOMPARE(takesOffered, 1);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
+		QCOMPARE(journalState(take + QStringLiteral(".rec-journal")), QStringLiteral("in_progress"));
+
+		// Place: one new track, the offer is resolved, and a second start offers nothing.
+		QVERIFY(offerRecordingRecovery(nullptr, neverAsked) == StartupRecoveryChoice::Place);
+		QCOMPARE(asked, 1);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore + 1);
+		QCOMPARE(journalState(take + QStringLiteral(".rec-journal")), QStringLiteral("restored"));
+		QVERIFY(offerRecordingRecovery(nullptr, neverAsked) == StartupRecoveryChoice::NothingToOffer);
+		QCOMPARE(asked, 1);
+
+		// One control.undo takes the placement back and the offer returns.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
+		QCOMPARE(interruptedTakes().size(), 1);
+		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
+		QFile::remove(take);
+	}
+
+	//! A take with no audio is refused, typed, and leaves the journal alone.
+	void aTakeWithNoAudioCannotBePlaced()
+	{
+		const QString dir = run(QStringLiteral("record.recovery_get_state")).result.value(QStringLiteral("dir")).toString();
+		const QString take = QDir(dir).filePath(QStringLiteral("zene-test-take-empty.wav"));
+		QVERIFY(writeWav(take, 0));
+		QVERIFY(run(QStringLiteral("record.journal_begin"), {{QStringLiteral("take"), take},
+			{QStringLiteral("sample_rate"), kRate}, {QStringLiteral("channels"), 1}}).ok);
+		const auto tracksBefore = Engine::getSong()->tracks().size();
+		const ControlResult placed = run(QStringLiteral("record.recovery_place"), {{QStringLiteral("take"), take}});
+		QVERIFY(!placed.ok);
+		QCOMPARE(placed.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
+		QCOMPARE(journalState(take + QStringLiteral(".rec-journal")), QStringLiteral("in_progress"));
+		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
+		QFile::remove(take);
 	}
 
 	//! frames_in_file is what the take's bytes can back, never what its header
@@ -223,7 +306,7 @@ private slots:
 
 		for (const QString& id : {QStringLiteral("record.journal_update"),
 			QStringLiteral("record.journal_finish"), QStringLiteral("record.recovery_restore"),
-			QStringLiteral("record.recovery_discard")})
+			QStringLiteral("record.recovery_place"), QStringLiteral("record.recovery_discard")})
 		{
 			const ControlResult result = run(id, {{QStringLiteral("take"), QStringLiteral("relative-take.wav")}});
 			QVERIFY2(!result.ok, qPrintable(id + QStringLiteral(" accepted a relative take")));

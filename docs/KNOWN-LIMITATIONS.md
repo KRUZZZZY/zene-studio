@@ -904,10 +904,11 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   progress is journalled to a side file beside its take (`<take>.rec-journal`), a clean stop retires it, and an
   abnormal exit leaves it — so the next start can find the interrupted take and hand the material back, drivable
   through `--control-socket` (`record.journal_begin` / `journal_update` / `journal_finish`,
-  `record.recovery_get_state` / `recovery_restore` / `recovery_discard`) — but **nothing in `src/gui/` offers a
-  recovery prompt, and `record.recovery_restore` does not put the recovered take into the session**: 0.3.0 has
-  no command that imports an audio file onto a track as a clip, so restore resolves the offer and hands back the
-  material untouched (`audio_untouched: true`), which its result says in `next_step`. The bound is stated rather
+  `record.recovery_get_state` / `recovery_restore` / `recovery_discard`) — *(Superseded by Q050-046, 2026-10-12: startup now offers
+  interrupted takes when `record.recovery_get_state` lists any, and `record.recovery_place` puts a take on a new
+  sample track as one undo step; `record.recovery_restore` still only resolves the offer.)* Originally **nothing in
+  `src/gui/` offered a recovery prompt, and `record.recovery_restore` did not put the recovered take into the
+  session**, handing back the material untouched (`audio_untouched: true`). The bound is stated rather
   than implied: **guaranteed recoverable is `min(frames the journal recorded, frames the take's file holds)**;
   NOT recoverable is the audio written after the journal's last update and up to **65536 frames** that were
   still in the recorder's ring buffer when the process died — audio that never reached a file. *(Superseded by
