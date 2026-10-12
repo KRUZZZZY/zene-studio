@@ -36,6 +36,7 @@
 #include "MidiEvent.h"
 #include "MidiLearn.h"
 #include "MidiPort.h"
+#include "PeakController.h"
 #include "Song.h"
 #include "TimePos.h"
 
@@ -112,6 +113,13 @@ private slots:
 		// test - the MidiLearnTest discipline.
 		MidiLearn::instance()->setFocusTarget(nullptr);
 		MidiLearn::instance()->setEnabled(false);
+	}
+
+	void defaultPeakControllerWithoutEffectReturnsSilence()
+	{
+		PeakController controller(Engine::getSong());
+		Controller::triggerFrameCounter();
+		QCOMPARE(controller.currentValue(0), 0.0f);
 	}
 
 	/*! Soft-takeover: a hardware control that is bound to a control whose
