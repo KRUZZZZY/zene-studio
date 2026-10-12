@@ -106,6 +106,7 @@ namespace
 std::atomic_bool failFrameAllocation{false};
 std::atomic_bool failCodecContextAllocation{false};
 std::atomic_bool failCodecAfterStream{false};
+std::atomic_bool failStreamAllocation{false};
 
 //! Run @a checkFailure with one FFmpeg allocation forced to fail; crashes stay inside the child.
 bool allocationFailureIsReported(const std::function<bool()>& checkFailure, std::atomic_bool& fail)
@@ -142,6 +143,7 @@ extern "C" AVCodecContext* avcodec_alloc_context3(const AVCodec* codec)
 
 extern "C" AVStream* avformat_new_stream(AVFormatContext* context, const AVCodec* codec)
 {
+	if (failStreamAllocation.exchange(false, std::memory_order_relaxed)) { return nullptr; }
 	static const auto real = reinterpret_cast<decltype(&avformat_new_stream)>(dlsym(RTLD_NEXT, "avformat_new_stream"));
 	AVStream* stream = real == nullptr ? nullptr : real(context, codec);
 	if (stream != nullptr && failCodecAfterStream.exchange(false, std::memory_order_relaxed))
@@ -441,6 +443,11 @@ private slots:
 		if (!VideoDecoder::available()) { QSKIP("no FFmpeg in this build"); }
 		AVFormatContext* out = nullptr;
 		QVERIFY(avformat_alloc_output_context2(&out, nullptr, "matroska", "clip.mkv") >= 0);
+		videotest::Encoder failedStream;
+		QVERIFY2(allocationFailureIsReported([&out, &failedStream] {
+			const bool added = videotest::addStream(out, failedStream, AV_CODEC_ID_MPEG4, videotest::setupVideo);
+			return !added && failedStream.stream == nullptr && failedStream.codec != nullptr;
+		}, failStreamAllocation), "avformat_new_stream failure was not reported independently");
 		videotest::Encoder streamCase;
 		QVERIFY2(allocationFailureIsReported([&out, &streamCase] {
 			const bool added = videotest::addStream(out, streamCase, AV_CODEC_ID_MPEG4, videotest::setupVideo);
