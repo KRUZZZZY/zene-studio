@@ -78,6 +78,7 @@
 #include "OutputSettings.h"
 #include "ProjectContainer.h"
 #include "ProjectRecovery.h"
+#include "RecordingRecoveryMenu.h"
 #include "ProjectRenderer.h"
 #include "MasteringJob.h"
 #include "MasteringReport.h"
@@ -1684,6 +1685,9 @@ int main( int argc, char * * argv )
 				Engine::getSong()->projectFileName().toStdString() );
 				safestart::setProjectPath(
 					Engine::getSong()->projectFileName().toStdString() ); } );
+
+		// Q050-046: offer the takes an abnormal exit left (only when record.recovery_get_state lists any).
+		gui::offerRecordingRecoveryAtStartup( gui::getGUI()->mainWindow() );
 
 		// Finally we start the auto save timer and also trigger the
 		// autosave one time as recover.mmp is a signal to possible other

@@ -72,6 +72,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerTransportPunchCommands(registry);
 	registerRecordingCommands(registry);
 	registerRecordingRecoveryCommands(registry);
+	registerRecordingPlaceCommand(registry);
 	// The capture-IN half of the `record.` group (0.3.0, feature rows 14 and
 	// 64) and the retrospective AUDIO capture half (row 16), each its own
 	// translation unit. No compile-time switch: the input path's plan is a

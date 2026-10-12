@@ -511,6 +511,7 @@ set(LMMS_SRCS
 	# record.* group (the journalling verbs and the recovery verbs).
 	core/ControlCommandsRecording.cpp
 	core/ControlCommandsRecordingRecovery.cpp
+	core/ControlCommandsRecordingPlace.cpp
 	core/ControlRecordingSupport.cpp
 	# The recording engine surface (0.3.0, feature rows 14/16/64): the capture
 	# IN path's plan and live state, the N-channel staging stage between a

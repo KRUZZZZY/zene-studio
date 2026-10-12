@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T15:39:31Z",
+  "captured_at": "2026-10-12T17:20:42Z",
   "commands": [
     {
       "args_schema": {
@@ -22765,6 +22765,86 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "take": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "take"
+        ],
+        "type": "object"
+      },
+      "description": "Bring an interrupted capture into the project: a new sample track named 'Recovered: <take>' holding the recovered file in a clip at bar 1, and the take's journal marked restored so the next start stops offering it. One undo step: control.undo removes the track and puts the offer back, control.redo places it again. The take's WAV is never moved, rewritten or deleted. record.recovery_restore stays the resolve-only verb; File > Recover Recordings and the startup offer run this command.",
+      "group": "record",
+      "id": "record.recovery_place",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "audio_untouched": {
+            "type": "boolean"
+          },
+          "channels": {
+            "type": "number"
+          },
+          "frames_beyond_the_journal": {
+            "type": "number"
+          },
+          "frames_in_file": {
+            "type": "integer"
+          },
+          "frames_journalled": {
+            "type": "integer"
+          },
+          "frames_recoverable": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "journal_lag_bound_frames": {
+            "type": "number"
+          },
+          "placed": {
+            "type": "boolean"
+          },
+          "placed_track": {
+            "type": "string"
+          },
+          "restored": {
+            "type": "boolean"
+          },
+          "ring_frames_not_recoverable": {
+            "type": "number"
+          },
+          "sample_rate": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string"
+          },
+          "take": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "updated_utc": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "channels": {
             "type": "integer"
           },
@@ -22789,7 +22869,7 @@
         ],
         "type": "object"
       },
-      "description": "Take an interrupted capture's offer: report the material the journal recovered and mark the journal `restored`, so the next start stops offering it. The take's WAV is NOT moved, rewritten or deleted - the material stays exactly where the crash left it, and the result says so (`audio_untouched`). WHAT 0.3.0 DOES NOT DO: bring the take into the session as a clip. No command in this release imports an audio file onto a track, so that half is deferred and named in `next_step` (docs/KNOWN-LIMITATIONS.md). Reversible: the recorded inverse is record.journal_begin with the journal that was restored.",
+      "description": "Take an interrupted capture's offer: report the material the journal recovered and mark the journal `restored`, so the next start stops offering it. The take's WAV is NOT moved, rewritten or deleted - the material stays exactly where the crash left it, and the result says so (`audio_untouched`). This verb only resolves the offer; record.recovery_place is the one that also puts the take on a new sample track, undoably. Reversible: the recorded inverse is record.journal_begin with the journal that was restored.",
       "group": "record",
       "id": "record.recovery_restore",
       "mutating": true,
@@ -34759,23 +34839,23 @@
       }
     }
   ],
-  "count": 823,
+  "count": 824,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-core/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-plugins/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-340_wg3k/zene.sock",
-    "version": "0.4.0-alpha.1389+1902429"
+    "source_socket": "/tmp/zctl-run-3bngyzfp/zene.sock",
+    "version": "0.4.0-alpha.1390+22ca665"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 823,
-    "ids_sha256": "61b947e1bfb7cd685ab6dfcb9e0d000c0c1653a3aa89a63ebc1c084f64b14f41"
+    "id_count": 824,
+    "ids_sha256": "f334960bd5ac2c5636684af1a0de71ed252ef26f183a386e822672624bd54372"
   }
 }

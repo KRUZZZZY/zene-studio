@@ -338,6 +338,80 @@ def check_refusals(session, recorder, take):
                    "kind=%r message=%r" % (no_scan.get("kind"), no_scan.get("message")))
 
 
+def journal_state(take):
+    """The `state` field of a take's journal file on disk ('' when absent)."""
+    try:
+        with open(journal_path(take)) as handle:
+            for line in handle:
+                if line.startswith("state="):
+                    return line[len("state="):].strip()
+    except OSError:
+        pass
+    return ""
+
+
+def track_count(session):
+    return len(session.result("track.list").get("tracks") or [])
+
+
+def placed_state(session, track_id):
+    """The placed track's row and its clips, read back over the socket."""
+    row = next((t for t in session.result("track.list").get("tracks") or [] if t.get("id") == track_id), {})
+    clips = [c for c in session.result("arrangement.get_state").get("clips") or [] if c.get("track") == track_id]
+    return row, clips
+
+
+def check_place_reads_back(session, recorder, take, tracks_before):
+    """record.recovery_place: one new sample track with one clip, and the offer resolved."""
+    placed = session.result("record.recovery_place", {"take": take})
+    track_id = placed.get("placed_track")
+    recorder.check("record.recovery_place reports the placement and resolves the offer",
+                   placed.get("placed") is True and placed.get("state") == "restored" and bool(track_id)
+                   and placed.get("audio_untouched") is True,
+                   "result=%r" % placed)
+    row, clips = placed_state(session, track_id)
+    recorder.check("the recovered take is a new sample track holding one clip, read back over the socket",
+                   track_count(session) == tracks_before + 1 and row.get("type") == "sample"
+                   and len(clips) == 1 and clips[0].get("position") == 0
+                   and str(row.get("name", "")).startswith("Recovered: "),
+                   "row=%r clips=%r tracks=%r->%r" % (row, clips, tracks_before, track_count(session)))
+    recorder.check("the placed take is no longer offered",
+                   find_take(session.result("record.recovery_get_state"), take) is None
+                   and journal_state(take) == "restored",
+                   "journal=%r" % journal_state(take))
+
+
+def check_place_undo_redo(session, recorder, take, tracks_before):
+    """One control.undo takes the placement and the resolution back; control.redo repeats both."""
+    session.result("control.undo")
+    recorder.check("ONE control.undo removes the placed track and puts the offer back",
+                   track_count(session) == tracks_before and journal_state(take) == "in_progress"
+                   and find_take(session.result("record.recovery_get_state"), take) is not None,
+                   "tracks=%r journal=%r" % (track_count(session), journal_state(take)))
+    session.result("control.redo")
+    recorder.check("control.redo places the take again and resolves the offer",
+                   track_count(session) == tracks_before + 1 and journal_state(take) == "restored"
+                   and os.path.exists(take),
+                   "tracks=%r journal=%r" % (track_count(session), journal_state(take)))
+
+
+def check_place(session, recorder, take):
+    """record.recovery_place over the socket, with the recovered project state read back."""
+    begin(session, take)
+    session.result("record.journal_update", {"take": take, "frames_on_disk": 2400})
+    tracks_before = track_count(session)
+    check_place_reads_back(session, recorder, take, tracks_before)
+    check_place_undo_redo(session, recorder, take, tracks_before)
+    records = [r for r in (session.result("control.transactions").get("transactions") or [])
+               if r.get("command") == "record.recovery_place"]
+    recorder.check("the A16 record of the placement is true_inverse",
+                   bool(records) and records[-1].get("class") == "true_inverse",
+                   "records=%r" % records[-1:])
+    again = session.typed_error("record.recovery_place", {"take": take})
+    recorder.check("placing a take that is no longer interrupted is refused",
+                   again.get("kind") == "refused", "error=%r" % again)
+
+
 def journal_records(session):
     """The A16 records of the record.* group, and only that group's."""
     return [r for r in (session.result("control.transactions").get("transactions") or [])
@@ -484,6 +558,7 @@ def run_recovery_with_transcript(argv, recorder, shared, take, before_sha, trans
     check_clean_stop(session, recorder, fresh_take(shared, "take-04.wav"))
     check_refusals(session, recorder, fresh_take(shared, "take-05.wav"))
     check_irreversible_undo_refusal(session, recorder, fresh_take(shared, "take-06.wav"))
+    check_place(session, recorder, fresh_take(shared, "take-07.wav"))
     check_transactions(session, recorder)
     check_transcript_is_evidence(transcript, recorder)
     reply = session.call("control.quit")

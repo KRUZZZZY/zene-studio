@@ -122,9 +122,8 @@ ControlResult recoveryRestore(const QJsonObject& args)
 	result.insert(QStringLiteral("audio_untouched"), true);
 	result.insert(QStringLiteral("audio"), journal.takePath);
 	result.insert(QStringLiteral("next_step"),
-		QStringLiteral("the take is left where the crash left it; 0.3.0 has no command that "
-			"imports an audio file into the session as a clip, so bringing the material in "
-			"is the deferred half (docs/KNOWN-LIMITATIONS.md)"));
+		QStringLiteral("the take is left where the crash left it; record.recovery_place brings it "
+			"into the project on a new sample track as one undo step"));
 	result.insert(QStringLiteral("__transaction"),
 		commandTransaction(before, QStringLiteral("record.journal_begin"), inverseArgs));
 	return ControlResult::success(result);
@@ -206,9 +205,8 @@ void registerRecoveryRestore(ControlRegistry& registry)
 		"material the journal recovered and mark the journal `restored`, so the next start "
 		"stops offering it. The take's WAV is NOT moved, rewritten or deleted - the material "
 		"stays exactly where the crash left it, and the result says so (`audio_untouched`). "
-		"WHAT 0.3.0 DOES NOT DO: bring the take into the session as a clip. No command in "
-		"this release imports an audio file onto a track, so that half is deferred and named "
-		"in `next_step` (docs/KNOWN-LIMITATIONS.md). Reversible: the recorded inverse is "
+		"This verb only resolves the offer; record.recovery_place is the one that also puts "
+		"the take on a new sample track, undoably. Reversible: the recorded inverse is "
 		"record.journal_begin with the journal that was restored.");
 	cmd.argsSchema = journalArgsSchema(true);
 	cmd.resultSchema = objectSchema({
