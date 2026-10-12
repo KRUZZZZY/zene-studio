@@ -39,6 +39,7 @@
 #include <QToolButton>
 
 #include "AutomatableButton.h"
+#include "ColorChooser.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -266,6 +267,21 @@ private slots:
 		QCOMPARE(model.data(model.index(5, 0), Qt::AccessibleTextRole).toString(), QStringLiteral("Ch 5 to Master: no send (Enter makes one)"));
 		QVERIFY(model.flags(model.index(7, 7)) == Qt::NoItemFlags);  // no channel sends to itself
 		QCOMPARE(model.channelId(4), QStringLiteral("ch-4"));
+	}
+
+	void defaultPaletteRestoresAfterTrackPalette()
+	{
+		ColorChooser chooser;
+		const auto original = ColorChooser::getPalette(ColorChooser::Palette::Default);
+		chooser.setPalette(ColorChooser::Palette::Track);
+		chooser.setPalette(ColorChooser::Palette::Default);
+		const auto restored = ColorChooser::getPalette(ColorChooser::Palette::Default);
+
+		for (int i = 0; i < original.size(); ++i)
+		{
+			QColorDialog::setStandardColor(i, original[i]);
+		}
+		QCOMPARE(restored, original);
 	}
 
 private:
