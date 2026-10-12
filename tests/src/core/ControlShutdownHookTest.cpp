@@ -50,6 +50,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -68,6 +69,25 @@ private slots:
 		ControlRegistry* registry = ControlRegistry::instance();
 		registry->runShutdownHooks();
 		QCOMPARE(registry->shutdownHookCount(), 0);
+	}
+
+	void everyNonblankRequestEmitsItsExchange()
+	{
+		ControlServer server(ControlRegistry::instance());
+		QSignalSpy exchanged(&server, &ControlServer::exchanged);
+		QVERIFY(exchanged.isValid());
+
+		const QByteArray malformedRequest = QByteArrayLiteral("{");
+		const QByteArray malformedResponse = server.dispatchLine(malformedRequest);
+		QCOMPARE(exchanged.size(), 1);
+		QCOMPARE(exchanged.at(0).at(0).toByteArray(), malformedRequest);
+		QCOMPARE(exchanged.at(0).at(1).toByteArray(), malformedResponse);
+
+		const QByteArray missingIdRequest = QByteArrayLiteral("{\"cmd\":\"mixer.get_state\"}");
+		const QByteArray missingIdResponse = server.dispatchLine(missingIdRequest);
+		QCOMPARE(exchanged.size(), 2);
+		QCOMPARE(exchanged.at(1).at(0).toByteArray(), missingIdRequest);
+		QCOMPARE(exchanged.at(1).at(1).toByteArray(), missingIdResponse);
 	}
 
 	//! The first half: the hook survives a registry instance it was not
