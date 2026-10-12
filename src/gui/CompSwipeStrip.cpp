@@ -283,7 +283,7 @@ void CompSwipeStrip::compAtCursor()
 {
 	// The marked range, else the segment under the cursor, else the beat there: to the cursor's lane, ONE comp.select.
 	int begin = m_keyAnchor >= 0 ? std::min(m_keyAnchor, m_keyTick) : m_keyTick;
-	int end = m_keyAnchor >= 0 ? std::max(m_keyAnchor, m_keyTick) : m_keyTick + beatTicks();
+	int end = m_keyAnchor >= 0 ? std::max(m_keyAnchor, m_keyTick) : std::min(m_keyTick + beatTicks(), m_end);
 	if (const Segment* under = segmentAt(m_keyTick); under != nullptr && m_keyAnchor < 0)
 	{
 		begin = under->begin;
