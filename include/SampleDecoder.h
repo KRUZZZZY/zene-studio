@@ -26,6 +26,7 @@
 #define LMMS_SAMPLE_DECODER_H
 
 #include <QString>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -48,7 +49,31 @@ public:
 		std::string extension;
 	};
 
+	//! A leading window of a file plus the file's full length (Q050-048).
+	struct BoundedResult
+	{
+		//! At most maxSeconds * sampleRate leading frames; data.capacity() is bounded by the same figure.
+		Result window;
+		//! The whole file's length in frames: from the header where it carries one, else counted while
+		//! discarding the rest in small chunks (memory stays bounded either way).
+		std::int64_t totalFrames = 0;
+	};
+
 	static auto decode(const QString& audioFile) -> std::optional<Result>;
+	//! Decodes only the first @a maxSeconds seconds (at the file's own rate) (same channel handling and decoder order as decode()) and
+	//! reports the full length. A synthesised DrumSynth file is produced whole, then cut.
+	static auto decodeLimited(const QString& audioFile, double maxSeconds) -> std::optional<BoundedResult>;
+
+#ifdef LMMS_TESTING
+	struct DecodeCallCountsForTesting
+	{
+		std::uint64_t full = 0;
+		std::uint64_t limited = 0;
+	};
+	static void resetDecodeCallCountsForTesting();
+	static auto decodeCallCountsForTesting() -> DecodeCallCountsForTesting;
+#endif
+
 	static auto supportedAudioTypes() -> const std::vector<AudioType>&;
 };
 } // namespace lmms

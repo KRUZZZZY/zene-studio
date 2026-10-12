@@ -731,6 +731,8 @@ set(LMMS_TESTS
 	src/core/ProjectStateTest.cpp
 	# 0.5.0 L11 (W3): a clip into the library, the index and similar sounds, thumbnails, the matched preview, history.
 	src/core/LibraryBrowserTest.cpp
+	# 0.5.0 Q050-048: browser feature analysis decodes only its window (WAV/FLAC/OGG), duration from the header.
+	src/core/BrowserFeaturesWindowTest.cpp
 	# 0.5.0 L12 (W3): the render queue, batch conversion, the task list, flattening, tracks copied between projects.
 	src/core/ProjectToolsTest.cpp
 	# 0.5.0 L09 (Q050-027): imported and pasted tracks keep their mixer channel and its hardware routing.
