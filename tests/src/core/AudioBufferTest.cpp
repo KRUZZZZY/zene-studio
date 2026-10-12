@@ -22,9 +22,18 @@
  *
  */
 
+#if defined(__linux__) && defined(__x86_64__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE
+#endif
+
+#if defined(__linux__) && defined(__x86_64__)
+#include <sys/mman.h>
+#endif
+
 #include "AudioBuffer.h"
 
 #include <QtTest>
+#include <array>
 #include <numeric>
 
 #include "MixHelpers.h"
@@ -37,7 +46,30 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <vector>
+#endif
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wattributes"
+#pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
+#include "../../../modules/wasm/demo/gain_clip.c"
+#pragma GCC diagnostic pop
+
+namespace
+{
+float g_gainClipTestGain = 1.0f;
+}
+
+float host_get_param(int)
+{
+	return g_gainClipTestGain;
+}
+
+void host_log(const char*, int)
+{
+}
 #endif
 
 using lmms::AudioBuffer;
@@ -126,6 +158,64 @@ class AudioBufferTest : public QObject
 	Q_OBJECT
 
 private slots:
+	//! Nonfinite module inputs and gains must never make the output nonfinite
+	void WasmGainClipSanitizesNonfiniteInputsAndGain()
+	{
+#if !defined(__GNUC__) || !defined(__linux__) || !defined(__x86_64__) || !defined(MAP_32BIT)
+		QSKIP("The native WASM ABI harness requires Linux x86_64 MAP_32BIT");
+#else
+		constexpr std::size_t frames = 4;
+		constexpr std::size_t bytes = 2 * frames * sizeof(float);
+		void* memory = mmap(nullptr, bytes, PROT_READ | PROT_WRITE,
+			MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0);
+		QVERIFY2(memory != MAP_FAILED, "Could not map low-address WASM linear memory");
+		struct Mapping
+		{
+			void* address;
+			std::size_t size;
+			~Mapping() { if (address != MAP_FAILED) { munmap(address, size); } }
+		} mapping{memory, bytes};
+
+		auto* input = static_cast<float*>(memory);
+		auto* output = input + frames;
+		const auto inputAddress = reinterpret_cast<std::uintptr_t>(input);
+		const auto outputAddress = reinterpret_cast<std::uintptr_t>(output);
+		QVERIFY(inputAddress <= static_cast<std::uintptr_t>(std::numeric_limits<int>::max()));
+		QVERIFY(outputAddress <= static_cast<std::uintptr_t>(std::numeric_limits<int>::max()));
+
+		input[0] = std::numeric_limits<float>::infinity();
+		input[1] = -std::numeric_limits<float>::infinity();
+		input[2] = std::numeric_limits<float>::quiet_NaN();
+		input[3] = 1.0f;
+		g_gainClipTestGain = 1.0f;
+		QCOMPARE(process(static_cast<int>(inputAddress), static_cast<int>(outputAddress),
+			static_cast<int>(frames), 48000.0f), 0);
+		QCOMPARE(output[0], 1.0f);
+		QCOMPARE(output[1], -1.0f);
+		QCOMPARE(output[2], 0.0f);
+		QCOMPARE(output[3], 0.5f);
+
+		const std::array<float, 3> invalidGains{
+			std::numeric_limits<float>::quiet_NaN(),
+			std::numeric_limits<float>::infinity(),
+			-std::numeric_limits<float>::infinity()};
+		for (const float gain : invalidGains)
+		{
+			g_gainClipTestGain = gain;
+			input[0] = -1.0f;
+			input[1] = 0.0f;
+			input[2] = 1.0f;
+			input[3] = 2.0f;
+			QCOMPARE(process(static_cast<int>(inputAddress), static_cast<int>(outputAddress),
+				static_cast<int>(frames), 48000.0f), 0);
+			for (std::size_t i = 0; i < frames; ++i)
+			{
+				QCOMPARE(output[i], 0.0f);
+			}
+		}
+#endif
+	}
+
 	//! Verifies constructor with default channels adds single stereo group
 	void Constructor_DefaultChannels()
 	{
