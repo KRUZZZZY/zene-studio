@@ -754,7 +754,13 @@ void MidiAlsaSeq::run()
 			processQueuedOutEvent(command);
 		}
 
+#ifdef LMMS_TESTING
+		m_pollWaitActiveForTesting.store(true, std::memory_order_release);
+#endif
 		int pollRet = poll( pollfd_set, pollfd_count, EventPollTimeOut );
+#ifdef LMMS_TESTING
+		m_pollWaitActiveForTesting.store(false, std::memory_order_release);
+#endif
 		if( pollRet == 0 )
 		{
 			continue;
