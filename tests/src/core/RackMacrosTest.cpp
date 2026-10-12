@@ -49,6 +49,7 @@
 
 #include "AllocationProbe.h"
 #include "ControlRegistry.h"
+#include "ControlRackSupport.h"
 #include "ControlReversibility.h"
 #include "RackMacros.h"
 #include "RackTestSupport.h"
@@ -68,7 +69,12 @@ private slots:
 		QVERIFY2(initRackFixture(&why), qPrintable(why));
 	}
 
-	void cleanupTestCase() { teardownRackFixture(); }
+	void cleanupTestCase()
+	{
+		revtest::run(QStringLiteral("control.set_undo_coalescing"),
+			{{QStringLiteral("window_ms"), control::UndoCoalesceWindowMs}});
+		teardownRackFixture();
+	}
 
 	//! A macro writes the REAL model, through the window, exactly - on two
 	//! parameters whose ranges are deliberately different, including an
@@ -396,6 +402,106 @@ private slots:
 		printEvidence("typed-refusals",
 			QStringLiteral("no channel -> not_found; empty name / bad selection / dead target / bad "
 				"window -> invalid_args; chain 0 removal -> refused"));
+	}
+
+	//! A repeated selector value is not an undo step of its own.
+	void aNoOpSelectionDoesNotConsumeUndo()
+	{
+		QVERIFY(revtest::run(QStringLiteral("control.set_undo_coalescing"),
+			{{QStringLiteral("window_ms"), 0}}).ok);
+		Rack& rack = rackUnderTest();
+		const int previous = rack.selectedChain();
+		const int selected = previous == kDrivenChain ? Rack::Parallel : kDrivenChain;
+		const QString channel = underTestChannel();
+		const QJsonObject args{{QStringLiteral("channel"), channel},
+			{QStringLiteral("chain"), selected}};
+		QVERIFY2(revtest::run(QStringLiteral("rack.set_selected"), args).ok,
+			"the selection change failed");
+		QVERIFY2(revtest::run(QStringLiteral("rack.set_selected"), args).ok,
+			"the repeated selection failed");
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(rack.selectedChain(), previous);
+	}
+
+	//! A repeated macro value with no changed target write is not an undo step.
+	void aNoOpMacroSetDoesNotConsumeUndo()
+	{
+		QVERIFY(revtest::run(QStringLiteral("control.set_undo_coalescing"),
+			{{QStringLiteral("window_ms"), 0}}).ok);
+		RackMacros& macros = rackUnderTest().macros();
+		const int macro = macros.addMacro(QStringLiteral("Undo no-op"), 0.0f);
+		QVERIFY(macro >= 0);
+		QCOMPARE(macros.addTarget(macro, targetOf(kGainName, 0.25f, 0.75f)), 0);
+		FloatModel* const gain = gainModel();
+		QVERIFY(gain != nullptr);
+		gain->setValue(kGainMaximum);
+		const QJsonObject args{{QStringLiteral("channel"), underTestChannel()},
+			{QStringLiteral("macro"), macroId(macro)}, {QStringLiteral("value"), 1.0}};
+		QVERIFY2(revtest::run(QStringLiteral("rack.macro_set"), args).ok,
+			"the macro change failed");
+		QVERIFY2(revtest::run(QStringLiteral("rack.macro_set"), args).ok,
+			"the repeated macro value failed");
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(macros.macro(macro)->value, 0.0f);
+		QCOMPARE(gain->value(), kGainMaximum);
+		QVERIFY(macros.removeMacro(macro));
+	}
+
+	//! A macro with an unchanged scalar still needs undo when it repairs a target.
+	void anUnchangedMacroScalarStillUndoesItsParameterWrite()
+	{
+		RackMacros& macros = rackUnderTest().macros();
+		const int macro = macros.addMacro(QStringLiteral("Repair parameter"), 0.5f);
+		QVERIFY(macro >= 0);
+		QCOMPARE(macros.addTarget(macro, targetOf(kGainName, 0.0f, 1.0f)), 0);
+		FloatModel* const gain = gainModel();
+		QVERIFY(gain != nullptr);
+		gain->setValue(10.0f);
+		const ControlResult applied = revtest::run(QStringLiteral("rack.macro_set"),
+			{{QStringLiteral("channel"), underTestChannel()}, {QStringLiteral("macro"), macroId(macro)},
+				{QStringLiteral("value"), 0.5}});
+		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+		QCOMPARE(gain->value(), 50.0f);
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(macros.macro(macro)->value, 0.5f);
+		QCOMPARE(gain->value(), 10.0f);
+		QVERIFY(macros.removeMacro(macro));
+	}
+
+	//! Repeating an unchanged XY pair must leave the first pair edit on top.
+	void aNoOpMacroPairDoesNotConsumeUndo()
+	{
+		QVERIFY(revtest::run(QStringLiteral("control.set_undo_coalescing"),
+			{{QStringLiteral("window_ms"), 0}}).ok);
+		RackMacros& macros = rackUnderTest().macros();
+		const int xMacro = macros.addMacro(QStringLiteral("Undo no-op X"), 0.0f);
+		const int yMacro = macros.addMacro(QStringLiteral("Undo no-op Y"), 0.0f);
+		QVERIFY(xMacro >= 0 && yMacro >= 0);
+		QCOMPARE(macros.addTarget(xMacro, targetOf(kGainName, 0.0f, 1.0f)), 0);
+		QCOMPARE(macros.addTarget(yMacro, targetOf(kPanName, 0.0f, 1.0f)), 0);
+		FloatModel* const gain = gainModel();
+		FloatModel* const pan = panModel();
+		QVERIFY(gain != nullptr && pan != nullptr);
+		gain->setValue(10.0f);
+		pan->setValue(20.0f);
+		const QJsonObject args{{QStringLiteral("channel"), underTestChannel()},
+			{QStringLiteral("x_macro"), macroId(xMacro)}, {QStringLiteral("x_value"), 0.25},
+			{QStringLiteral("y_macro"), macroId(yMacro)}, {QStringLiteral("y_value"), 0.75}};
+		QVERIFY2(revtest::run(QStringLiteral("rack.macro_set_pair"), args).ok,
+			"the macro pair change failed");
+		QVERIFY2(revtest::run(QStringLiteral("rack.macro_set_pair"), args).ok,
+			"the repeated macro pair failed");
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(macros.macro(xMacro)->value, 0.0f);
+		QCOMPARE(macros.macro(yMacro)->value, 0.0f);
+		QCOMPARE(gain->value(), 10.0f);
+		QCOMPARE(pan->value(), 20.0f);
+		QVERIFY(macros.removeMacro(yMacro));
+		QVERIFY(macros.removeMacro(xMacro));
 	}
 };
 

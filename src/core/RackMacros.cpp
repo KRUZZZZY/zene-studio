@@ -229,9 +229,13 @@ auto RackMacros::apply(int index, Rack& rack) -> std::vector<RackMacroWrite>
 
 		// The model is a JournallingObject, so this checkpoint is the
 		// parameter half of the inverse for the engine's own undo stack
-		// (SPEC A16) - the same mechanism plugin.param_set uses.
-		model->addJournalCheckPoint();
-		model->setValue(written);
+		// (SPEC A16) - the same mechanism plugin.param_set uses. Equal writes
+		// are not edits and must not leave a checkpoint on the journal.
+		if (write.previous != write.written)
+		{
+			model->addJournalCheckPoint();
+			model->setValue(written);
+		}
 		writes.push_back(write);
 	}
 	return writes;

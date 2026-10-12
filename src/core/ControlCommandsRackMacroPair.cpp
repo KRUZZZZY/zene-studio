@@ -70,6 +70,17 @@ MacroApplied applyMacroValue(Rack& rack, const QString& channelId, int macro, fl
 	return out;
 }
 
+bool macroAppliedChanged(const MacroApplied& applied)
+{
+	if (applied.undo.value != applied.redo.value) { return true; }
+	if (applied.undo.parameters.size() != applied.redo.parameters.size()) { return true; }
+	for (std::size_t i = 0; i < applied.undo.parameters.size(); ++i)
+	{
+		if (applied.undo.parameters[i].second != applied.redo.parameters[i].second) { return true; }
+	}
+	return false;
+}
+
 namespace
 {
 
@@ -112,14 +123,21 @@ ControlResult setPair(const QJsonObject& args)
 		{QStringLiteral("y_value"), static_cast<double>(rack.macros().macro(y)->value)}};
 	const MacroApplied ax = applyMacroValue(rack, id, x, static_cast<float>(args.value(QStringLiteral("x_value")).toDouble()));
 	const MacroApplied ay = applyMacroValue(rack, id, y, static_cast<float>(args.value(QStringLiteral("y_value")).toDouble()));
+	const bool changed = macroAppliedChanged(ax) || macroAppliedChanged(ay);
 	// ONE step for both macros and every parameter they wrote. Undone in reverse, so a parameter both macros drive gets
 	// back the value it had before X wrote it, not the one Y found.
-	addUndoStep([ux = ax.undo, uy = ay.undo]() { writeMacroAssignments(uy); writeMacroAssignments(ux); },
-		[rx = ax.redo, ry = ay.redo]() { writeMacroAssignments(rx); writeMacroAssignments(ry); });
+	if (changed)
+	{
+		addUndoStep([ux = ax.undo, uy = ay.undo]() { writeMacroAssignments(uy); writeMacroAssignments(ux); },
+			[rx = ax.redo, ry = ay.redo]() { writeMacroAssignments(rx); writeMacroAssignments(ry); });
+	}
 	QJsonObject result{{QStringLiteral("channel"), id}, {QStringLiteral("x"), axisJson(rack, x, ax)}, {QStringLiteral("y"), axisJson(rack, y, ay)}};
-	result.insert(QStringLiteral("__transaction"), transactionPayload(before, QStringLiteral("rack.macro_set_pair"), before, true,
-		QStringLiteral("action checkpoint: the recorded undo step puts both macros' own values back and writes every parameter "
-			"the call changed back to the value it had, re-resolved by chain/effect/parameter name at undo time")));
+	if (changed)
+	{
+		result.insert(QStringLiteral("__transaction"), transactionPayload(before, QStringLiteral("rack.macro_set_pair"), before, true,
+			QStringLiteral("action checkpoint: the recorded undo step puts both macros' own values back and writes every parameter "
+				"the call changed back to the value it had, re-resolved by chain/effect/parameter name at undo time")));
+	}
 	return ControlResult::success(result);
 }
 

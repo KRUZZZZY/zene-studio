@@ -45,6 +45,9 @@ struct MacroApplied
 	int skipped = 0;
 };
 
+//! True when setting this macro changed its scalar or any resolved parameter.
+LMMS_EXPORT bool macroAppliedChanged(const MacroApplied& applied);
+
 /*! Sets macro @a macro (a valid index) of @a rack - the rack of the channel @a channelId names - to @a value and drives
  *  every bound parameter through its window. Pushes NO undo step: the caller pushes one for this write together with
  *  any write it pairs it with (rack.macro_set alone, rack.macro_set_pair two at once). Control thread only. */
