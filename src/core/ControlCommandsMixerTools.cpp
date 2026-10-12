@@ -415,9 +415,12 @@ ControlResult colorMembers(const QJsonObject& args)
 	};
 	std::vector<std::pair<int, std::optional<QColor>>> after;
 	for (const auto& entry : before) { after.emplace_back(entry.first, color); }
-	paint(after);
-	addUndoStep([paint, before]() { paint(before); }, [paint, after]() { paint(after); });
-	Engine::getSong()->setModified();
+	if (after != before) // an empty group, or one already in this colour, changes nothing to journal
+	{
+		paint(after);
+		addUndoStep([paint, before]() { paint(before); }, [paint, after]() { paint(after); });
+		Engine::getSong()->setModified();
+	}
 	return ControlResult::success({{QStringLiteral("colored"), static_cast<int>(after.size())}, {QStringLiteral("color"), color.name()}});
 }
 
