@@ -35,6 +35,9 @@
  *  - AudioPortSerializer::saveSettings/loadSettings (the legacy bridge's
  *    serialization hook), including the audioPorts() accessor it calls
  *
+ * It also loads the real Gate module and checks that a nonfinite input sample
+ * does not leave the gate closed after later finite input returns.
+ *
  * The plugin module is only ever used through lmms::Effect; the C knobs the
  * module exports are resolved via QLibrary.
  *
@@ -44,10 +47,13 @@
  * Linux/macOS run every assertion below unchanged.
  */
 
+#include <algorithm>
 #include <array>
+#include <limits>
 #include <memory>
 #include <vector>
 
+#include <QDir>
 #include <QDomDocument>
 #include <QDomElement>
 #include <QLibrary>
@@ -124,6 +130,7 @@ private slots:
 	void bypassedEffectRunsDefaultBypassImpl();
 	void unknownProcessStatusIsIgnored();
 	void legacyAudioBufferPathRoutesInPlacePorts();
+	void gateRecoversAfterNanInput();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -433,6 +440,44 @@ void AudioPluginTest::legacyAudioBufferPathRoutesInPlacePorts()
 	// 0.8f / 2 and -0.4f / 2 are exact in binary floating point.
 	QCOMPARE(buffer.interleavedBuffer()[0][0], 0.4f);
 	QCOMPARE(buffer.interleavedBuffer()[TestFrames - 1][1], -0.2f);
+}
+
+//! A nonfinite key sample must not poison the Gate's state for later samples.
+void AudioPluginTest::gateRecoversAfterNanInput()
+{
+	const QDir pluginsDir{QDir{QCoreApplication::applicationDirPath()}.absoluteFilePath(
+		QStringLiteral("../plugins"))};
+	const QFileInfoList gateModules = pluginsDir.entryInfoList(
+		{QStringLiteral("gate.*"), QStringLiteral("libgate.*")}, QDir::Files);
+	QVERIFY2(!gateModules.isEmpty(), "the built Gate module was not found");
+
+	QLibrary gateLibrary{gateModules.front().absoluteFilePath()};
+	gateLibrary.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(gateLibrary.load(), qPrintable(gateLibrary.errorString()));
+	const auto gateMain = reinterpret_cast<MainFn>(gateLibrary.resolve("lmms_plugin_main"));
+	QVERIFY(gateMain != nullptr);
+	const std::unique_ptr<Effect> gate{
+		static_cast<Effect*>(gateMain(nullptr, nullptr))};
+	QVERIFY(gate != nullptr);
+
+	const f_cnt_t blocks = Engine::audioEngine()->outputSampleRate() / (2 * TestFrames);
+	QVERIFY(blocks > 1);
+	std::vector<SampleFrame> data(TestFrames, SampleFrame{0.5f, 0.5f});
+	const f_cnt_t badFrame = TestFrames / 2;
+	data[badFrame][0] = std::numeric_limits<float>::quiet_NaN();
+	SampleFrame* channel = data.data();
+	AudioBus bus{&channel, 1, TestFrames};
+	bus.updateAll();
+	QVERIFY(gate->processAudioBuffer(bus));
+	for (f_cnt_t block = 1; block < blocks; ++block)
+	{
+		std::fill(data.begin(), data.end(), SampleFrame{0.5f, 0.5f});
+		bus.updateAll();
+		QVERIFY(gate->processAudioBuffer(bus));
+	}
+	QVERIFY2(data.back()[0] > 0.4f && data.back()[1] > 0.4f,
+		qPrintable(QStringLiteral("the Gate did not reopen after NaN: L=%1 R=%2")
+			.arg(data.back()[0]).arg(data.back()[1])));
 }
 
 QTEST_MAIN(AudioPluginTest)
