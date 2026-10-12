@@ -50,6 +50,7 @@ LfoController::LfoController( Model * _parent ) :
 	m_phaseOffset( 0 ),
 	m_currentPhase( 0 ),
 	m_sampleFunction( &Oscillator::sinSample ),
+	m_heldSample( 0.0f ),
 	m_userDefSampleBuffer(std::make_shared<SampleBuffer>())
 {
 	setSampleExact( true );

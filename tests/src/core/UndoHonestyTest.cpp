@@ -30,7 +30,14 @@
 
 #include <QtTest>
 
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstring>
+#include <new>
+
 #include <QFile>
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QStringList>
 
@@ -51,6 +58,7 @@
 #include "MidiController.h"
 #include "Mixer.h"
 #include "Note.h"
+#include "Oscillator.h"
 #include "ProjectJournal.h"
 #include "Rack.h"
 #include "Song.h"
@@ -372,6 +380,32 @@ private slots:
 		QCOMPARE(track->volumeModel()->controllerConnection()->getController(), static_cast<Controller*>(lfo));
 		QVERIFY(run(QStringLiteral("control.redo")).ok);
 		QVERIFY(dynamic_cast<MidiController*>(track->volumeModel()->controllerConnection()->getController()) != nullptr);
+	}
+
+	//! WhiteNoise's first evaluated sample is initialized before the oscillator phase wraps.
+	void whiteNoiseStartsWithAValidHeldSample()
+	{
+		alignas(LfoController) std::array<std::byte, sizeof(LfoController)> storage;
+		std::memset(storage.data(), 0xff, storage.size());
+		auto* lfo = new (storage.data()) LfoController(nullptr);
+		struct LfoCleanup
+		{
+			LfoController* lfo;
+			~LfoCleanup() { lfo->~LfoController(); }
+		} cleanup{lfo};
+
+		QDomDocument settingsDocument;
+		QDomElement settings = settingsDocument.createElement(QStringLiteral("controller"));
+		settings.setAttribute(QStringLiteral("wave"), static_cast<int>(Oscillator::WaveShape::WhiteNoise));
+		lfo->loadSettings(settings);
+
+		Controller::triggerFrameCounter();
+		const ValueBuffer* values = lfo->valueBuffer();
+		QVERIFY(values != nullptr);
+		QVERIFY(values->length() > 0);
+		const float firstSample = values->value(0);
+		QVERIFY(std::isfinite(firstSample));
+		QVERIFY(firstSample >= 0.0f && firstSample <= 1.0f);
 	}
 
 	//! note.pitch_curve_set over several notes: the before-state names each note's curve, not only the first one's.
