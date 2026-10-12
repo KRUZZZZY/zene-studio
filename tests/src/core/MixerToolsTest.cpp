@@ -34,6 +34,7 @@
 
 #include <QDomDocument>
 #include <QJsonArray>
+#include <QTemporaryDir>
 
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
@@ -44,6 +45,7 @@
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "MixerOptions.h"
+#include "ProjectJournal.h"
 #include "MixerStrip.h"
 #include "AudioBusHandle.h"
 #include "PreviewOutput.h"
@@ -357,6 +359,45 @@ private slots:
 		QVERIFY(!channel(2)->color().has_value());
 		QCOMPARE(run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), group->id()}, {QStringLiteral("color"), QStringLiteral("nope")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+	}
+
+	void aClampOnlyAdjustmentDoesNothing()
+	{
+		Song* song = Engine::getSong();
+		ProjectJournal* journal = Engine::projectJournal();
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const bool wasModified = song->isModified();
+		const QString previousProjectFile = song->projectFileName();
+		MixerChannel* selected = channel(1);
+		const float oldVolume = selected->m_volumeModel.value();
+		const float oldPan = selected->m_panModel.value();
+		selected->m_volumeModel.setValue(selected->m_volumeModel.maxValue());
+		selected->m_panModel.setValue(1.f);
+		journal->clearJournal();
+		const QString fixtureFile = directory.filePath(QStringLiteral("mixer-adjust.mmp"));
+		QVERIFY(song->saveProjectFile(fixtureFile, false));
+		song->noteProjectSaved(fixtureFile);
+		QVERIFY(!song->isModified());
+
+		const ControlResult adjusted = run(QStringLiteral("mixer.adjust"), {{QStringLiteral("channels"), QJsonArray{ch(1)}},
+			{QStringLiteral("volume_db"), 6.0}, {QStringLiteral("pan"), 1.0}});
+		const int undoDepth = journal->undoDepth();
+		const bool remainedClean = !song->isModified();
+		const bool valuesStayedPut = selected->m_volumeModel.value() == selected->m_volumeModel.maxValue()
+			&& selected->m_panModel.value() == 1.f;
+
+		selected->m_volumeModel.setValue(oldVolume);
+		selected->m_panModel.setValue(oldPan);
+		journal->clearJournal();
+		song->noteProjectSaved(previousProjectFile);
+		if (wasModified) { song->setModified(); }
+
+		QVERIFY2(adjusted.ok, qPrintable(adjusted.errorMessage));
+		QCOMPARE(undoDepth, 0);
+		QVERIFY(valuesStayedPut);
+		QVERIFY(remainedClean);
+		QCOMPARE(adjusted.result.value(QStringLiteral("adjusted")).toInt(), 0);
 	}
 };
 
