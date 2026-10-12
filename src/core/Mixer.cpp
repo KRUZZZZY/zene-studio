@@ -81,6 +81,8 @@ void MixerRoute::updateName()
 {
 	m_amount.setDisplayName(
 			tr("Amount to send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index()));
+	m_pan.setDisplayName(
+			tr("Pan of the send from channel %1 to channel %2").arg(m_from->index()).arg(m_to->index()));
 }
 
 
@@ -1302,6 +1304,24 @@ void Mixer::moveChannelLeft( int index )
 	// Update m_channelIndex of both channels
 	m_mixerChannels[index]->setIndex(index);
 	m_mixerChannels[index - 1]->setIndex(index - 1);
+
+	// Send model labels include both endpoint indices, so refresh routes touching either moved channel.
+	for (MixerRoute* route : m_mixerRoutes)
+	{
+		if (route->senderIndex() == static_cast<mix_ch_t>(a) || route->senderIndex() == static_cast<mix_ch_t>(b)
+			|| route->receiverIndex() == static_cast<mix_ch_t>(a) || route->receiverIndex() == static_cast<mix_ch_t>(b))
+		{
+			route->updateName();
+		}
+	}
+	for (MixerSidechainRoute* route : m_mixerSidechainRoutes)
+	{
+		if (route->senderIndex() == static_cast<mix_ch_t>(a) || route->senderIndex() == static_cast<mix_ch_t>(b)
+			|| route->receiverIndex() == static_cast<mix_ch_t>(a) || route->receiverIndex() == static_cast<mix_ch_t>(b))
+		{
+			route->updateName();
+		}
+	}
 
 	// #622: group membership follows the channels, not the slots.  Done inside
 	// the same change (D4) as the swap it follows, so the render thread never
