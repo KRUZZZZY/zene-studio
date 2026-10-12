@@ -300,6 +300,113 @@ void add(ControlRegistry& registry, const char* id, const QString& description, 
 	control::defineCommandWithSchema(registry, QLatin1String(id), description, objectSchema(args, QJsonArray::fromStringList(required)), true, handler);
 }
 
+
+void registerTakeSelect(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("comp.take_select");
+	cmd.group = QStringLiteral("comp");
+	cmd.verb = QStringLiteral("take_select");
+	cmd.description = QStringLiteral("Choose which pass of a recorded clip group plays. Name any take clip in the group and its lane; the choice stays active through later loop passes until chosen again. Reversible through the ProjectJournal (Track checkpoint).");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("clip"), stringProperty()},
+		{QStringLiteral("lane"), integerProperty(0, MaxSongLength)},
+	}, {QStringLiteral("clip"), QStringLiteral("lane")});
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("clip"), stringProperty()},
+		{QStringLiteral("track"), stringProperty()},
+		{QStringLiteral("lane"), integerProperty(0, MaxSongLength)},
+		{QStringLiteral("active_lane"), integerProperty(0, MaxSongLength)},
+		{QStringLiteral("user_chosen"), booleanProperty()},
+	});
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) {
+		ControlResult error;
+		ClipRef ref;
+		const QString clipId = args.value(QStringLiteral("clip")).toString();
+		if (!resolveTakeClip(clipId, &ref, &error)) { return error; }
+		const int groupId = ref.clip->takeGroupId();
+		const int lane = args.value(QStringLiteral("lane")).toInt(-1);
+		TakeLaneModel& model = ref.track->takeLanes();
+		if (groupId <= 0 || !model.canSelectTake(groupId, lane, ref.track->getClips()))
+		{
+			return ControlResult::failure(ControlErrorKind::NotFound,
+				QStringLiteral("%1 is not in a recorded take group containing lane %2")
+					.arg(clipId).arg(lane));
+		}
+		const int previousLane = model.activeTakeLane(groupId);
+		const bool previousChoice = model.userChoseTake(groupId);
+		const bool alreadyChosen = previousChoice && previousLane == lane;
+		if (!alreadyChosen)
+		{
+			ref.track->addJournalCheckPoint();
+			model.selectTake(groupId, lane, ref.track->getClips());
+			Engine::getSong()->setModified();
+		}
+		QJsonObject result{{QStringLiteral("clip"), control::takeClipId(ref.clip)},
+			{QStringLiteral("track"), trackIdOf(ref.track)}, {QStringLiteral("lane"), lane},
+			{QStringLiteral("active_lane"), model.activeTakeLane(groupId)},
+			{QStringLiteral("user_chosen"), model.userChoseTake(groupId)}};
+		if (!alreadyChosen)
+		{
+			const QJsonObject before{{QStringLiteral("group"), groupId},
+				{QStringLiteral("active_lane"), previousLane}, {QStringLiteral("user_chosen"), previousChoice}};
+			result.insert(QStringLiteral("__transaction"), transactionPayload(before,
+				QStringLiteral("control.undo"),
+				QJsonObject{{QStringLiteral("clip"), clipId}, {QStringLiteral("lane"), previousLane}}, true,
+				QStringLiteral("ProjectJournal (Track checkpoint: take-group selection is in Track::saveTrack)")));
+		}
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
+
+void registerPlayAllTakes(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("comp.play_all_takes");
+	cmd.group = QStringLiteral("comp");
+	cmd.verb = QStringLiteral("play_all_takes");
+	cmd.description = QStringLiteral("Set whether every take on this track plays together. This is track-wide and saved with the project. Reversible through the ProjectJournal (Track checkpoint).");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("track"), stringProperty()},
+		{QStringLiteral("enabled"), booleanProperty()},
+	}, {QStringLiteral("track"), QStringLiteral("enabled")});
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("track"), stringProperty()},
+		{QStringLiteral("enabled"), booleanProperty()},
+		{QStringLiteral("previous"), booleanProperty()},
+	});
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) {
+		ControlResult error;
+		Track* track = resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
+		if (track == nullptr) { return error; }
+		const bool enabled = args.value(QStringLiteral("enabled")).toBool();
+		TakeLaneModel& model = track->takeLanes();
+		const bool previous = model.playAllTakes();
+		if (previous != enabled)
+		{
+			track->addJournalCheckPoint();
+			model.setPlayAllTakes(enabled);
+			Engine::getSong()->setModified();
+		}
+		QJsonObject result{{QStringLiteral("track"), trackIdOf(track)},
+			{QStringLiteral("enabled"), enabled}, {QStringLiteral("previous"), previous}};
+		if (previous != enabled)
+		{
+			result.insert(QStringLiteral("__transaction"), transactionPayload(
+				QJsonObject{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("enabled"), previous}},
+				QStringLiteral("control.undo"),
+				QJsonObject{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("enabled"), previous}}, true,
+				QStringLiteral("ProjectJournal (Track checkpoint: play-all-takes state is in Track::saveTrack)")));
+		}
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
 } // namespace
 
 void registerCompGroupCommands(ControlRegistry& registry)
@@ -320,6 +427,8 @@ void registerCompGroupCommands(ControlRegistry& registry)
 		{{QStringLiteral("tracks"), arrayProperty()}, {QStringLiteral("group"), integerProperty()}, {QStringLiteral("begin"), tickProperty()},
 			{QStringLiteral("end"), tickProperty()}, {QStringLiteral("lane"), integerProperty(0, MaxSongLength)}, {QStringLiteral("srcpos"), tickProperty()}},
 		{QStringLiteral("begin"), QStringLiteral("end"), QStringLiteral("lane")}, selectGroup);
+	registerTakeSelect(registry);
+	registerPlayAllTakes(registry);
 }
 
 } // namespace lmms

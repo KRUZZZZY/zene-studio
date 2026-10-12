@@ -33,6 +33,7 @@
 
 #include <algorithm>
 
+#include "Clipboard.h"
 #include "Clip.h"
 #include "ClipView.h"
 #include "ConfigManager.h"
@@ -40,6 +41,7 @@
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
+#include "TakeLane.h"
 #include "Song.h"
 #include "TrackContainer.h"
 #include "SongEditor.h"
@@ -151,6 +153,40 @@ private slots:
 		runEvents();                                 // red: createClipView() runs on the freed clip
 		QCOMPARE(clipViewCount(view), 0);
 		QVERIFY(track->getClips().empty());
+		delete track;
+		runEvents();
+	}
+
+	//! GUI clip paste makes an independent ordinary clip rather than copying a
+	//! take-group reference whose active-lane mirror starts unset.
+	void pastedClipLeavesItsTakeGroup()
+	{
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		auto* source = track->createClip(TimePos(0));
+		TakeLaneModel& model = track->takeLanes();
+		QCOMPARE(model.addLane(), 0);
+		const int groupId = source->id();
+		source->setTakeGroupId(groupId);
+		QVERIFY(model.recordTake(groupId, 0, track->getClips()));
+		runEvents();
+
+		TrackView* view = viewOf(track);
+		QVERIFY(view != nullptr);
+		const auto sourceViews = view->findChildren<ClipView*>();
+		QCOMPARE(sourceViews.size(), 1);
+		QVector<ClipView*> selected{sourceViews.front()};
+		sourceViews.front()->copy(selected);
+		const QMimeData* mimeData = Clipboard::getMimeData();
+		TrackContentWidget* content = view->getTrackContentWidget();
+		QVERIFY(content->canPasteSelection(TimePos(2 * TimePos::ticksPerBar()), mimeData));
+		QVERIFY(content->pasteSelection(TimePos(2 * TimePos::ticksPerBar()), mimeData));
+
+		QCOMPARE(static_cast<int>(track->getClips().size()), 2);
+		Clip* pasted = track->getClips().back();
+		QCOMPARE(source->takeGroupId(), groupId);
+		QCOMPARE(pasted->takeGroupId(), 0);
+		QCOMPARE(pasted->laneIndex(), 0);
+		QCOMPARE(pasted->activeTakeLane(), -1);
 		delete track;
 		runEvents();
 	}

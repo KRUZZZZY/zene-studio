@@ -38,10 +38,12 @@
 
 #include <QtTest>
 
+#include <array>
 #include <cmath>
 #include <memory>
 #include <vector>
 
+#include "../core/AllocationProbe.h"
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -50,6 +52,7 @@
 #include "SampleClip.h"
 #include "SamplePlayHandle.h"
 #include "SampleTrack.h"
+#include "RealtimeScope.h"
 #include "Song.h"
 #include "TakeLane.h"
 #include "TimePos.h"
@@ -191,6 +194,50 @@ private slots:
 			QVERIFY(withLanes[i][0] == plain[i][0] && withLanes[i][1] == plain[i][1]);
 		}
 		QVERIFY(std::fabs(meanLevel(plain, 256, plain.size() / 2) - 0.5) < 1e-6);
+	}
+
+	//! Existing play handles follow the atomic active-take mirror without allocation or a lock.
+	void activeTakeRenderGateIsLockFreeAndAllocationFree()
+	{
+		SampleTrack track(Engine::getSong());
+		SampleClip* first = makeTake(track, m_rate, 0.5f, 0);
+		SampleClip* second = makeTake(track, m_rate, 0.25f, 1);
+		TakeLaneModel& model = track.takeLanes();
+		model.addLane();
+		model.addLane();
+		const int groupId = first->id();
+		first->setTakeGroupId(groupId);
+		second->setTakeGroupId(groupId);
+		QVERIFY(model.recordTake(groupId, 0, track.getClips()));
+		QVERIFY(model.recordTake(groupId, 1, track.getClips()));
+		SamplePlayHandle firstHandle(first, first->sampleWindow());
+		SamplePlayHandle secondHandle(second, second->sampleWindow());
+		std::array<SampleFrame, 512> buffer{};
+
+		const auto playRealtime = [&buffer](SamplePlayHandle& handle) {
+			std::fill(buffer.begin(), buffer.end(), SampleFrame(0.0f, 0.0f));
+			test::resetAllocationCount();
+			test::tlCountAllocations = true;
+			{
+				const RealtimeScope realtime;
+				handle.play(std::span<SampleFrame>(buffer));
+			}
+			test::tlCountAllocations = false;
+			return test::tlAllocationCount;
+		};
+		const auto renderedLevel = [&buffer] {
+		double sum = 0.0;
+		for (const SampleFrame& frame : buffer) { sum += std::fabs(frame[0]); }
+		return sum / static_cast<double>(buffer.size());
+		};
+		QCOMPARE(playRealtime(firstHandle), std::uint64_t{0});
+		QCOMPARE(renderedLevel(), 0.0);
+
+		QVERIFY(model.selectTake(groupId, 0, track.getClips()));
+		QCOMPARE(playRealtime(firstHandle), std::uint64_t{0});	// this handle predates the choice
+		QVERIFY(renderedLevel() > 0.49);
+		QCOMPARE(playRealtime(secondHandle), std::uint64_t{0});
+		QCOMPARE(renderedLevel(), 0.0);
 	}
 
 	//! 0.5.0 E2: a slipped segment READS the take slipped. One take, its first half at 0.5 and its second at 0.25,

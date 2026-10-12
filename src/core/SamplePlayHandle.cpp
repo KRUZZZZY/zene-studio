@@ -97,6 +97,13 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 {
 	m_track = clip->getTrack();
 	setAudioBusHandle(((SampleTrack *)clip->getTrack())->audioBusHandle());
+	if (clip->takeGroupId() > 0 && m_track != nullptr)
+	{
+		m_takeGroupId = clip->takeGroupId();
+		m_takeLaneIndex = clip->laneIndex();
+		m_activeTakeLane = clip->activeTakeLaneState();
+		m_playAllTakes = m_track->takeLanes().playAllTakesState();
+	}
 
 	// The clip's authored window is read, never written (Slice 0, I1). Sample's
 	// frame fields already mirror it (SampleClip::setSampleWindow), so this only
@@ -341,6 +348,18 @@ void SamplePlayHandle::applyComp(SampleFrame* buffer, f_cnt_t frames) const
 	}
 }
 
+
+void SamplePlayHandle::applyActiveTakeGate(SampleFrame* buffer, f_cnt_t frames) const
+{
+	if (m_takeGroupId == 0 || m_comped || m_activeTakeLane == nullptr || m_playAllTakes == nullptr
+		|| m_playAllTakes->load(std::memory_order_relaxed))
+	{
+		return;
+	}
+	if (m_activeTakeLane->load(std::memory_order_relaxed) == m_takeLaneIndex) { return; }
+	zeroSampleFrames(buffer, frames);
+}
+
 bool SamplePlayHandle::editsOrAutoFade(int autoFadeMs) const { return !m_edits.isNeutral() || m_edits.hasSpeed() || autoFadeMs > 0; }
 
 float SamplePlayHandle::speedHere() const
@@ -511,6 +530,9 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		{
 			applyClipEdits(workingBuffer, frames);
 		}
+		// With no comp, only the selected take lane of this clip's group renders;
+		// a track-wide play-all switch bypasses the gate. Both state reads are atomic.
+		applyActiveTakeGate(workingBuffer, frames);
 		// R3.1: a comped track plays only its composite - this clip sounds over
 		// the spans the composite selects its lane for.
 		if (m_comped)
