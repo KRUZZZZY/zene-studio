@@ -26,14 +26,19 @@ someone opts in.
 - **A project that already is a container** stays one on ordinary Save (opened from, or last saved as, a
   container). Silently turning it back into a blob would be the surprise.
 
-A container is only ever written to a `.mmpz` name. Asking for one with another name is refused (typed
-`invalid_args` from `project.save`; "not saved" in the GUI) and writes nothing.
+A container is only ever written to a name ending in exactly `.mmpz` (lowercase: the writer treats any
+other spelling as no suffix and would save a different file than the one named). Asking for one with another
+name, `X.MMPZ` included, is refused (typed `invalid_args` from `project.save`; "not saved" in the GUI) and
+writes nothing. A Save As that ends on the v2 side (box ticked, or a project that already is a container) runs
+through the registered `project.save` command, so the GUI and an agent share one implementation, its revision
+rotation and its transaction record; a plain legacy Save As keeps the dialog's own path (bundle and MIDI-connection options).
 
 ## Opening
 
 `project.open`, File > Open and recovery recognise a container by its ZIP signature and reassemble the one
 document it was cut from, byte for byte (`readDocumentContainer`), then load it exactly as a legacy file.
-An interrupted v2 save (`<file>.new`) is adopted or discarded by the same rule as a legacy one. A truncated or
+An interrupted v2 save (`<file>.new`) is adopted or discarded by the same rule as a legacy one; the 256 MiB
+recovery limit is measured on the reassembled document (the ZIP file gets 1 MiB of framing allowance). A truncated or
 foreign ZIP is refused by name and the session is left as it was.
 
 ## Known limits
