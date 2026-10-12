@@ -169,7 +169,12 @@ void PortMapping::succeed(const MappingResult& result)
 			"this port. Share a LAN invite, or forward the port on the outer router too")
 			.arg(result.externalAddress.isNull() ? QStringLiteral("unknown") : result.externalAddress.toString());
 	}
-	if (result.lifetime > 0) { m_renew->start(static_cast<int>(qMin<quint32>(result.lifetime / 2, 3600) * 1000)); }
+	if (result.lifetime > 0)
+	{
+		const quint32 halfLifetime = result.lifetime / 2 + result.lifetime % 2;
+		const quint32 renewalSeconds = qMax<quint32>(1, qMin<quint32>(halfLifetime, 3600));
+		m_renew->start(static_cast<int>(renewalSeconds * 1000));
+	}
 	emit finished(m_result);
 }
 

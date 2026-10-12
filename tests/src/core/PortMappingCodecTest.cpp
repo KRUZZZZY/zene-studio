@@ -33,6 +33,7 @@
 #ifdef ZENE_HAVE_COLLAB
 
 #include <QNetworkDatagram>
+#include <QTimer>
 #include <QUdpSocket>
 
 #include "PortMapping.h"
@@ -191,6 +192,22 @@ private slots:
 		QCOMPARE(result.method, QStringLiteral("pcp"));
 		QCOMPARE(result.externalPort, quint16(40001));
 		QCOMPARE(result.externalAddress, QHostAddress(QStringLiteral("203.0.113.8")));
+	}
+
+	void oneSecondLeaseUsesPositiveRenewalInterval()
+	{
+		PortMapping mapping;
+		MappingResult result;
+		result.ok = true;
+		result.method = QStringLiteral("nat-pmp");
+		result.externalAddress = QHostAddress(QStringLiteral("8.8.8.8"));
+		result.externalPort = 41740;
+		result.lifetime = 1;
+
+		mapping.succeed(result);
+
+		QVERIFY(mapping.m_renew->isActive());
+		QCOMPARE(mapping.m_renew->interval(), 1000);
 	}
 
 	//! A gateway that never answers: retried on the schedule, then a plain failure that says what was tried.
