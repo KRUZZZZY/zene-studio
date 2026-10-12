@@ -51,6 +51,7 @@
 #include "ControlRegistry.h"
 #include "ListTable.h"
 #include "MenuTestSupport.h"
+#include "RenameDialog.h"
 #include "ShortcutMap.h"
 
 using namespace lmms;
@@ -158,6 +159,19 @@ class CommandFormTest : public QObject
 
 private slots:
 	void initTestCase() { registerFakes(); }
+
+	void closingRenameDialogRestoresUnconfirmedText()
+	{
+		QString name = QStringLiteral("Original name");
+		RenameDialog dialog(name);
+		QLineEdit* editor = dialog.findChild<QLineEdit*>();
+		QVERIFY(editor != nullptr);
+		dialog.show();
+		editor->setText(QStringLiteral("Unconfirmed name"));
+		QCOMPARE(editor->text(), QStringLiteral("Unconfirmed name"));
+		QVERIFY(dialog.close());
+		QCOMPARE(name, QStringLiteral("Original name"));
+	}
 
 	void fieldsFollowTheSchemaAndLeaveFixedOut()
 	{
