@@ -63,6 +63,18 @@
 #include "Plugin.h"
 #include "SampleFrame.h"
 
+// ExprFront lives in the Xpressive plugin module rather than lmmsobjs. Compile
+// its implementation into this test host so the regression exercises the
+// production API without adding a separate test target.
+#define exprtk_disable_sc_andor
+#define exprtk_disable_return_statement
+#define exprtk_disable_break_continue
+#define exprtk_disable_comments
+#define exprtk_disable_string_capabilities
+#define exprtk_disable_rtl_io_file
+#define exprtk_disable_rtl_vecops
+#include "../../../plugins/Xpressive/ExprSynth.cpp"
+
 using namespace lmms;
 
 namespace
@@ -124,6 +136,8 @@ private slots:
 	void bypassedEffectRunsDefaultBypassImpl();
 	void unknownProcessStatusIsIgnored();
 	void legacyAudioBufferPathRoutesInPlacePorts();
+	void emptyNonInterpolatedCyclicVectorIsRejected();
+	void emptyInterpolatedCyclicVectorIsRejected();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -433,6 +447,20 @@ void AudioPluginTest::legacyAudioBufferPathRoutesInPlacePorts()
 	// 0.8f / 2 and -0.4f / 2 are exact in binary floating point.
 	QCOMPARE(buffer.interleavedBuffer()[0][0], 0.4f);
 	QCOMPARE(buffer.interleavedBuffer()[TestFrames - 1][1], -0.2f);
+}
+
+void AudioPluginTest::emptyNonInterpolatedCyclicVectorIsRejected()
+{
+	const float samples[] = {0.0f};
+	ExprFront expr("empty(0)", 1);
+	QVERIFY(!expr.add_cyclic_vector("empty", samples, 0, false));
+}
+
+void AudioPluginTest::emptyInterpolatedCyclicVectorIsRejected()
+{
+	const float samples[] = {0.0f};
+	ExprFront expr("empty(0)", 1);
+	QVERIFY(!expr.add_cyclic_vector("empty", samples, 0, true));
 }
 
 QTEST_MAIN(AudioPluginTest)

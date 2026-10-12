@@ -659,6 +659,7 @@ plugins/VstEffect/VstEffect.cpp	#589 planar-ports migration: no-arg process(), p
 plugins/VstEffect/VstEffect.h	#589 planar-ports migration: VstEffect is an AudioPlugin with dynamic planar ports
 plugins/VstEffect/VstEffectControlDialog.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
 plugins/WaveShaper/WaveShaper.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Xpressive/ExprSynth.cpp	Reject zero-length cyclic vectors before registering callbacks, preventing empty vectors from being indexed or used as a modulo divisor
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	#589 planar-ports migration: render straight into the planar port buffers, dropping the scratch copy
 plugins/ZynAddSubFx/LocalZynAddSubFx.h	#589 planar-ports migration: processAudio(SampleFrame*) -> process(PlanarBufferView<float, 2>)
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	#589 planar-ports migration: client reports (0, 2) and renders into the two planar output planes
