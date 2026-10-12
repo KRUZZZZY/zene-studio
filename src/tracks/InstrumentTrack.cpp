@@ -218,6 +218,10 @@ InstrumentTrack::~InstrumentTrack()
 
 	// kill all running notes and the iph
 	silenceAllNotes( true );
+	// Q050-013: and the launcher-cell renderer an audio cell on this column gave the track
+	Engine::audioEngine()->requestChangeInModel();
+	Engine::audioEngine()->removePlayHandlesOfTypes( this, PlayHandle::Type::SessionCellHandle );
+	Engine::audioEngine()->doneChangeInModel();
 
 	// now we're save deleting the instrument
 	if( m_instrument ) delete m_instrument;

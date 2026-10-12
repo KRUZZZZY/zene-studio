@@ -313,6 +313,8 @@ inline QJsonObject clipSlotState(int track, int scene, const ClipSlot& slot)
 	state.insert(QStringLiteral("gain_db"), static_cast<double>(slot.gainDb()));
 	state.insert(QStringLiteral("transpose"), slot.transpose());
 	state.insert(QStringLiteral("detune"), slot.detune());
+	state.insert(QStringLiteral("warp"), slot.warp());
+	state.insert(QStringLiteral("warp_bpm"), slot.warpBpm());
 	state.insert(QStringLiteral("ram"), slot.ramMode());
 	QJsonArray follow;
 	for (const FollowAction& action : slot.followActions())

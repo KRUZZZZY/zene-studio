@@ -1895,3 +1895,5 @@ tests/src/core/ModulationAudioViewTest.cpp	M0 blocker fix 2026-10-09, cluster 26
 include/AutomatableModel.h	M0 automation cluster 2647 round 2: exposes an LMMS_TESTING-only predicate so the destructor's worker-thread blocking-guard assertion can be checked without destroying a model on a thread that would deadlock.
 src/core/AutomatableModel.cpp	M0 automation cluster 2647 round 2: shares one worker-RealtimeScope predicate between the destructor's debug assertion and its test seam; rejects model destruction from a worker that would wait on the render lock.
 tests/CMakeLists.txt	M0 automation cluster 2647 round 2: registers AutomationPrepassProofTest as an isolated full-mixer output baseline and worker-guard test, with offscreen Qt and the test-only destructor seam.
+src/tracks/InstrumentTrack.cpp	0.5.0 L02 Q050-013: the destructor also removes the SessionCellHandle an audio cell on the track's column gave it (SessionAudioCells.h), under requestChangeInModel/doneChangeInModel; nothing else changes
+src/core/CMakeLists.txt	0.5.0 L02 Q050-013: lists core/SessionAudioBake.cpp (the warp/repitch bake of an audio cell); one added source path

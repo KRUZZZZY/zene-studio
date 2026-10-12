@@ -61,6 +61,16 @@ launched audio cell plays, so that slice is here:
   or a legato phase), then copies frames with wrap-around: no allocation, no lock, no resampler on the audio thread.
   Like the input monitor's handle it survives the song-stop clear (`PlayHandle::Type::SessionCellHandle`), and the
   track's destructor removes it.
+- **Instrument columns (Q050-013)**: the same handle is made for an INSTRUMENT track's column; the clip bypasses the
+  instrument and goes to the track's bus, so fader, pan, mixer channel and effects apply. `InstrumentTrack`'s
+  destructor removes it.
+- **Stored settings (Q050-013)**: `gain_db` and the loop region (`loop_start` / `loop_length`, in ticks, turned into
+  frames of the clip at publish) are applied by the renderer. `transpose`, `detune` (resampling, so duration follows
+  pitch as on a sampler) and the tempo warp (`warp: true`, `warp_bpm`: the clip's own tempo; pitch-preserving WSOLA
+  to the song's tempo) are baked ONCE on the model thread into a variant of the clip, held per setting with the
+  file (cap 256 variants), so the audio thread still only copies frames. Limits: the warp follows the song tempo as
+  of the last publish (every launch publishes; a tempo change under a cell that is already playing takes effect on
+  its next launch), and WSOLA only tracks periods shorter than 128 frames, as `AudioStretcher.h` states.
 - **Lifetime**: the clips of the open project live until the project is closed; `Song::clearProject` retires them
   and frees the ones retired at the previous close, by which time the scheduler's reset has dropped every
   reference the audio thread had.
