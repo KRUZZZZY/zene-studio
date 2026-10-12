@@ -2,79 +2,78 @@
 
 Verdict: **FIXED**
 
-## Finding
-`src/core/ControlServerSocket.cpp:451` — `close()` leaves the shutdown hook
-registered, and a later `listen()` overwrites `m_shutdownHookId`. The destructor
-removes only the newest hook, so a server that is closed, listened again, then
-destroyed leaves the old hook behind — still capturing `this` — which the
-forced-exit shutdown path would call `close()` on after destruction.
+## Finding and QA rework
 
-## Evidence
-- `src/core/ControlServerSocket.cpp:451` (`adoptListener`): every listen
-  registers a fresh hook and overwrites `m_shutdownHookId`:
-  `m_shutdownHookId = m_registry->addShutdownHook([this]() { close(); });`
-- `src/core/ControlServerSocket.cpp` `close()` (was lines 458-501): never touched
-  `m_shutdownHookId` — the hook stayed registered after stop-listening.
-- `src/core/ControlServer.cpp:153-167` (`~ControlServer`): removes only
-  `m_shutdownHookId` (the newest id), so an orphaned older hook survives.
-- `src/core/ControlRegistry.cpp:481-526`: hooks live in a process-lifetime store;
-  `runShutdownHooks()` runs whatever is registered on the forced-exit route.
+`ControlServer::close()` must unregister the hook for the listener it stops so a
+later `listen()` cannot orphan a callback capturing the server. Luna's round-one
+review found that calling the non-static remover through `m_registry` was unsafe:
+the documented shutdown path can destroy that registry while the live server's
+hook remains in the process-wide store.
 
-So: listen (hook A, id=A) → close (A still registered) → listen (hook B, id=B,
-A orphaned) → destroy (removes only B) → A survives, capturing freed `this`.
+## Evidence and fix
 
-## Fix
-`close()` is the stop-listening path, so it now takes its own hook back out
-before the platform branch (idempotent, `removeShutdownHook(0)` is a safe no-op,
-so the destructor's own removal agrees):
+- `include/ControlRegistry.h:273`: `removeShutdownHook()` is static. Its
+  implementation in `src/core/ControlRegistry.cpp:489-505` only accesses the
+  process-lifetime hook store, so removal does not need a registry instance.
+- `src/core/ControlServerSocket.cpp:458-469`: `close()` unregisters its id using
+  `ControlRegistry::removeShutdownHook()` before stopping the transport, then
+  clears the id. The earlier re-listen cleanup remains in place.
+- `src/core/ControlServer.cpp:153-164`: destruction also uses the static remover,
+  covering a server whose registry was destroyed before the server itself.
+- `tests/src/core/ControlShutdownHookTest.cpp:117-145` keeps a server listening,
+  destroys its registry, recreates the registry, and runs the surviving hook;
+  the socket is removed and the new registry's hook store is empty.
+- `tests/src/core/ControlShutdownHookTest.cpp:149-154` checks that hook removal
+  is invocable with only an id. It gives a deterministic red result if the
+  process-lifetime removal API becomes instance-bound again.
 
-```cpp
-void ControlServer::close()
-{
-    if (m_registry != nullptr)
-    {
-        m_registry->removeShutdownHook(m_shutdownHookId);
-        m_shutdownHookId = 0;
-    }
-#if !defined(Q_OS_UNIX)
-    ...
-```
+## Verification evidence
 
-Behaviour-preserving otherwise: while listening the hook stays registered (the
-"survives a re-created registry" half is untouched); it is only un-registered
-when the listener stops, which is exactly when its socket is already closed.
+Build and test logs are under
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs`.
+The affected family is `ControlShutdownHookTest`: **1/1 ctest passed**, covering
+7 QtTest slots on this Unix build. The red runs report 8 passes and the expected
+single failure in `shutdownHookRemovalDoesNotRequireARegistryInstance()`.
 
-## Regression
-New slot `aClosedListenerTakesItsHookWithItBeforeTheNextListen()` in the existing
-area test `tests/src/core/ControlShutdownHookTest.cpp` (already registered in
-`tests/CMakeLists.txt` LMMS_TESTS). It does listen → close → listen → destroy and
-asserts `shutdownHookCount()` is 0 after `close()` and after destruction.
+| Evidence | Exact command | Exit |
+|---|---|---:|
+| RED build before static-removal fix | `cmake --build build --target ControlShutdownHookTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/build-3.log' 2>&1; build_rc=$?; echo EXIT=$build_rc` | 0 |
+| Initial test-target compile attempt (macro issue) | `cmake --build build --target ControlShutdownHookTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/build-2.log' 2>&1; build_rc=$?; echo EXIT=$build_rc` | 2 |
+| RED ctest, run from `build/tests` | `ctest -R ControlShutdownHook --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/test-1.log' 2>&1; test_rc=$?; echo EXIT=$test_rc` | 8 |
+| GREEN rebuild | `cmake --build build --target zene ControlShutdownHookTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/build-4.log' 2>&1; build_rc=$?; echo EXIT=$build_rc` | 0 |
+| GREEN ctest, run from `build/tests` | `ctest -R ControlShutdownHook --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/test-2.log' 2>&1; test_rc=$?; echo EXIT=$test_rc` | 0 |
+| Save product-only reversal patch | `git diff -- include/ControlRegistry.h src/core/ControlServer.cpp src/core/ControlServerSocket.cpp > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/fix.patch'; diff_rc=$?; echo EXIT=$diff_rc` | 0 |
+| Reverse product patch | `git apply -R '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/fix.patch'; proof_rc=$?; echo EXIT=$proof_rc` | 0 |
+| Reversed rebuild | `cmake --build build --target zene ControlShutdownHookTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/build-5.log' 2>&1; build_rc=$?; echo EXIT=$build_rc` | 0 |
+| RED ctest with only product patch reversed, from `build/tests` | `ctest -R ControlShutdownHook --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/test-3.log' 2>&1; test_rc=$?; echo EXIT=$test_rc` | 8 |
+| Reapply product patch | `git apply '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/fix.patch'; apply_rc=$?; echo EXIT=$apply_rc` | 0 |
+| Reapplied rebuild | `cmake --build build --target zene ControlShutdownHookTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/build-6.log' 2>&1; build_rc=$?; echo EXIT=$build_rc` | 0 |
+| Reapplied GREEN ctest, run from `build/tests` | `ctest -R ControlShutdownHook --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/test-4.log' 2>&1; test_rc=$?; echo EXIT=$test_rc` | 0 |
+| Final rebuild after header comment clarification | `cmake --build build --target zene ControlShutdownHookTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/build-7.log' 2>&1; build_rc=$?; echo EXIT=$build_rc` | 0 |
+| Final GREEN ctest, run from `build/tests` | `ctest -R ControlShutdownHook --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/test-5.log' 2>&1; test_rc=$?; echo EXIT=$test_rc` | 0 |
+| Final complexity gate | `bash tests/complexity-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/gate-complexity-2.log' 2>&1; gate_rc=$?; echo EXIT=$gate_rc` | 0 |
+| Final file-length gate | `bash tests/file-length-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r2/logs/gate-file-length-2.log' 2>&1; gate_rc=$?; echo EXIT=$gate_rc` | 0 |
 
-## Commands and EXIT codes (as run)
-Build/test logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-76.r1/logs`.
+The first red ctest fails the new instance-independence assertion against the
+round-one implementation. Reversing the static API and dispatch changes
+reproduces the same failure after rebuilding both requested targets. Restoring
+the patch makes the same ctest pass. After the red/green proof, the header comment
+was clarified to name both removal paths; the final build, ctest, and both gates
+were rerun. Every green ctest run reports `1/1` and `0 tests failed`.
 
-- RED (original code):
-  `cmake --build build --target ControlShutdownHookTest > .../build-1.log 2>&1` → BUILD_EXIT=0
-  `ctest -R ControlShutdownHook --output-on-failure > .../test-1.log 2>&1` → **RED_EXIT=8**
-  failing assertion: `Actual (registry->shutdownHookCount()): 1` (expected 0, after `close()`).
-- GREEN (fixed):
-  `cmake --build build --target ControlShutdownHookTest > .../build-2.log 2>&1` → BUILD_EXIT=0
-  `ctest -R ControlShutdownHook --output-on-failure > .../test-2.log 2>&1` → **GREEN_EXIT=0**
-  (`100% tests passed, 0 tests failed out of 1`)
-- QA proof (test catches the bug):
-  `git diff -- src/core/ControlServerSocket.cpp > .../fix.patch && git apply -R .../fix.patch` → REVERSED_OK
-  `cmake --build build --target ControlShutdownHookTest > .../build-3.log 2>&1` → BUILD_EXIT=0
-  `ctest -R ControlShutdownHook --output-on-failure > .../test-3.log 2>&1` → **REVERSED_EXIT=8** (FAIL)
-  `git apply .../fix.patch` → REAPPLIED_OK
-  `cmake --build build --target ControlShutdownHookTest > .../build-4.log 2>&1` → BUILD_EXIT=0
-  `ctest -R ControlShutdownHook --output-on-failure > .../test-4.log 2>&1` → **REAPPLIED_EXIT=0** (PASS)
-- Gates:
-  `bash tests/complexity-gate.sh --check` → **COMPLEXITY_EXIT=0**
-  `bash tests/file-length-gate.sh --check` → **LENGTH_EXIT=0**
+The first logged rebuild attempt exposed a test-only `QVERIFY2` macro parsing
+issue with template commas. Parenthesizing the trait expression fixed it; the
+subsequent `build-3.log` test-target build succeeded. Its repeat build in
+`build-2.log` exited 2 before that correction.
 
-Affected-family test count: 1 ctest (`ControlShutdownHookTest`), 5 slots including the new one.
+The `fff` grep tool was not available in this session (`command -v fff` returned
+no path), so log matching was done with `rg` for `error`, `failed`, and
+`assertion`, plus short summaries. No full logs were printed.
 
 ## Files committed
-- `src/core/ControlServerSocket.cpp` (fork-NEW, already in `tests/fork-sources.txt`)
-- `tests/src/core/ControlShutdownHookTest.cpp` (existing area test, new slot)
-- `docs/qwen-fixes-2026-10/cluster-new-p11-76.md` (this report)
+
+- `include/ControlRegistry.h`
+- `src/core/ControlServer.cpp`
+- `src/core/ControlServerSocket.cpp`
+- `tests/src/core/ControlShutdownHookTest.cpp`
+- `docs/qwen-fixes-2026-10/cluster-new-p11-76.md`

@@ -158,11 +158,8 @@ ControlServer::~ControlServer()
 	// first removes the socket file, and close() is idempotent. A hook left
 	// behind is a call on freed memory on the forced-exit path - the one route
 	// where it is the ONLY thing that removes the file.
-	if (m_registry != nullptr)
-	{
-		m_registry->removeShutdownHook(m_shutdownHookId);
-		m_shutdownHookId = 0;
-	}
+	ControlRegistry::removeShutdownHook(m_shutdownHookId);
+	m_shutdownHookId = 0;
 	close();
 }
 

@@ -53,6 +53,8 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include <type_traits>
+
 using namespace lmms;
 
 class ControlShutdownHookTest : public QObject
@@ -107,6 +109,48 @@ private slots:
 		recreated->runShutdownHooks();
 		QCOMPARE(ran, 1);
 		QCOMPARE(recreated->shutdownHookCount(), 0);
+	}
+
+	//! A live server's hook survives registry destruction and closes the socket
+	//! when the recreated registry runs it. Removal must not use the server's
+	//! stale pointer to the registry that was destroyed.
+	void aLiveServerHookRunsThroughARecreatedRegistry()
+	{
+#if !defined(Q_OS_UNIX)
+		QSKIP("the control socket is AF_UNIX only; listen() refuses on this platform");
+#else
+		ControlRegistry* registry = ControlRegistry::instance();
+		QTemporaryDir dir(QDir::tempPath() + QStringLiteral("/zene-hook-XXXXXX"));
+		QVERIFY2(dir.isValid(), "no temporary directory for the socket path");
+		const QString path = dir.filePath(QStringLiteral("recreated-registry.sock"));
+		const QString marker = QStringLiteral("old-registry-instance");
+
+		ControlServer server(registry);
+		QString error;
+		QVERIFY2(server.listen(path, &error), qPrintable(error));
+		registry->setObjectName(marker);
+		QCOMPARE(registry->shutdownHookCount(), 1);
+
+		ControlRegistry::destroy();
+		ControlRegistry* recreated = ControlRegistry::instance();
+		QVERIFY2(recreated->objectName() != marker,
+			"destroy() did not replace the registry used by the live server");
+		QCOMPARE(recreated->shutdownHookCount(), 1);
+
+		recreated->runShutdownHooks();
+		QVERIFY(!server.isListening());
+		QVERIFY2(!QFile::exists(path), "the live server hook left its socket behind");
+		QCOMPARE(recreated->shutdownHookCount(), 0);
+#endif
+	}
+
+	//! Removal acts on process-lifetime state and must be callable without a
+	//! ControlRegistry instance that may already have been destroyed.
+	void shutdownHookRemovalDoesNotRequireARegistryInstance()
+	{
+		using RemovalFunction = decltype(&ControlRegistry::removeShutdownHook);
+		QVERIFY2((std::is_invocable_r_v<bool, RemovalFunction, ControlRegistry::ShutdownHookId>),
+			"shutdown hook removal still requires a registry instance");
 	}
 
 	//! The second half: the owner's death takes the hook with it, and the socket

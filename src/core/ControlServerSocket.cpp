@@ -462,14 +462,11 @@ void ControlServer::close()
 	// owner dies. If it stayed registered, a later listen() would overwrite
 	// m_shutdownHookId and orphan the old hook - still capturing `this` - and the
 	// destructor (which removes only the newest id) would leave that orphan behind
-	// to call close() on freed memory on the forced-exit shutdown path. removeShutdownHook
-	// is unconditional-safe (id 0 = none), and close() is idempotent, so the
-	// destructor's own removal and this one agree.
-	if (m_registry != nullptr)
-	{
-		m_registry->removeShutdownHook(m_shutdownHookId);
-		m_shutdownHookId = 0;
-	}
+	// to call close() on freed memory on the forced-exit shutdown path. Hooks
+	// outlive registry instances, so removal is static and never calls through
+	// m_registry, which may point at a destroyed instance. Id 0 is a safe no-op.
+	ControlRegistry::removeShutdownHook(m_shutdownHookId);
+	m_shutdownHookId = 0;
 #if !defined(Q_OS_UNIX)
 	// Windows: stop the transport - acceptor, then every client thread.
 	closeWin32();

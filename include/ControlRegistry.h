@@ -263,14 +263,14 @@ public:
 	 *  itself whatever route the process leaves by ("the socket file is removed
 	 *  on exit"). HOLD THE ID: a hook captures the object that registered it, and
 	 *  an object destroyed before shutdown must un-register it rather than leave
-	 *  a call on freed memory behind (CODE-8; ControlServer's destructor is the
-	 *  only production caller). Hooks live in a PROCESS-lifetime store, not in
-	 *  the registry instance, so they survive a destroyed-and-recreated one.
+	 *  a call on freed memory behind (CODE-8; ControlServer::close() and its
+	 *  destructor are the only production callers). Hooks live in a PROCESS-lifetime
+	 *  store, not in the registry instance, so they survive a destroyed-and-recreated one.
 	 */
 	ShutdownHookId addShutdownHook(std::function<void()> hook);
 	//! Un-register \p id; false when unknown (including 0), so a caller may
 	//! un-register unconditionally.
-	bool removeShutdownHook(ShutdownHookId id);
+	static bool removeShutdownHook(ShutdownHookId id);
 	//! How many hooks are registered right now.
 	int shutdownHookCount() const;
 	//! Runs every registered hook once, in registration order, and clears them.
