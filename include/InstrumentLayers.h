@@ -159,9 +159,9 @@ private:
 	RackZones m_zones;
 	//! Per key: the layers a live note-on was passed to (bit k = layer k), for its note-off.
 	std::array<std::atomic<std::uint32_t>, NumKeys> m_liveLayers{};
-	//! Per key: whether the track's own instrument declined the note-on (processOutEvent), so its note-off is
-	//! declined too.
-	std::array<std::atomic<bool>, NumKeys> m_baseSkipped{};
+	//! Per key: accepted and skipped base-instrument note-ons, so overlapping notes keep their note-offs paired.
+	std::array<std::atomic<std::uint32_t>, NumKeys> m_baseAccepted{};
+	std::array<std::atomic<std::uint32_t>, NumKeys> m_baseSkipped{};
 };
 
 } // namespace lmms

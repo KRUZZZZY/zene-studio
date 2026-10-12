@@ -124,6 +124,49 @@ private slots:
 
 	void cleanupTestCase() { teardownRackFixture(); }
 
+	//! MX-112: overlapping same-key notes keep a separate base-instrument note-off for every accepted note-on.
+	void overlappingSameKeyBaseNotesKeepTheirNoteOffs()
+	{
+		if (m_track.isEmpty() || m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		InstrumentTrack* track = trackOf(m_track);
+		QVERIFY(track != nullptr);
+		const ControlResult added = run(QStringLiteral("rack.layer_add"),
+			{{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+
+		constexpr int key = 117;
+		RackZone zone;
+		zone.lowKey = key;
+		zone.highKey = key;
+		zone.highVelocity = 120;
+		const int zoneIndex = track->layers().zones().addZone(zone);
+		QVERIFY(zoneIndex >= 0);
+
+		auto& layers = track->layers();
+		const bool accepted = layers.baseTakesNoteOn(key, 64);  // zone velocity 100
+		const bool skipped = layers.baseTakesNoteOn(key, 127);  // outside the base zone
+		const bool acceptedOff = layers.baseTakesNoteOff(key);
+		const bool skippedOff = layers.baseTakesNoteOff(key);
+
+		const bool skippedFirst = layers.baseTakesNoteOn(key, 127);
+		const bool acceptedSecond = layers.baseTakesNoteOn(key, 64);
+		const bool firstMixedOff = layers.baseTakesNoteOff(key);
+		const bool secondMixedOff = layers.baseTakesNoteOff(key);
+		const bool removed = track->layers().zones().removeZone(zoneIndex);
+		const bool removedLayer = layers.removeLayer(1);
+
+		QVERIFY(removed);
+		QVERIFY(removedLayer);
+		QVERIFY(accepted);
+		QVERIFY(!skipped);
+		QVERIFY(acceptedOff);
+		QVERIFY(!skippedOff);
+		QVERIFY(!skippedFirst);
+		QVERIFY(acceptedSecond);
+		QVERIFY(firstMixedOff);
+		QVERIFY(!secondMixedOff);
+	}
+
 	//! MX-112: a layer is added with a whole-keyboard zone, zones gate the track's own instrument, a removal
 	//! takes the layer's zones with it, control.undo brings both back, and the rack survives save/load.
 	void layersAddZoneRemoveUndoReload()
