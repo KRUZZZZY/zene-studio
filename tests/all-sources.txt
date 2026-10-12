@@ -680,7 +680,6 @@ include/ScriptPackage.h
 include/SendButtonIndicator.h
 include/SerializingObject.h
 include/SessionArrangementRecorder.h
-include/SessionAudioBake.h
 include/SessionAudioCells.h
 include/SessionAudioRecorder.h
 include/SessionFollow.h
@@ -1951,7 +1950,6 @@ src/core/ScriptDawEffects.cpp
 src/core/ScriptEngine.cpp
 src/core/ScriptPackage.cpp
 src/core/SerializingObject.cpp
-src/core/SessionAudioBake.cpp
 src/core/SessionAudioCells.cpp
 src/core/SessionAudioRecorder.cpp
 src/core/SessionClip.cpp

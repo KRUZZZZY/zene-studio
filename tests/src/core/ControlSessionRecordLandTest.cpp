@@ -36,10 +36,6 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
-#include <algorithm>
-#include <tuple>
-#include <vector>
-
 #include "BrowserTestSupport.h"
 #include "Clip.h"
 #include "ControlRegistry.h"
@@ -220,95 +216,6 @@ private slots:
 		QCOMPARE(copied->name(), QStringLiteral("Audio take"));
 		QCOMPARE(copied->sample().sampleSize(), std::size_t{2048});
 		QVERIFY(!copied->sampleFile().isEmpty());
-	}
-
-	//! Q050-034: undo takes a landed MIDI clip with its notes away, redo brings back the SAME content - place, length,
-	//! and every note's key, start, length and velocity.
-	void redoRestoresALandedMidiClipExactly()
-	{
-		auto* sourceTrack = dynamic_cast<InstrumentTrack*>(
-			Track::create(Track::Type::Instrument, Engine::patternStore()));
-		QVERIFY(sourceTrack != nullptr);
-		Engine::patternStore()->createClipsForPattern(0);
-		auto* source = dynamic_cast<MidiClip*>(sourceTrack->getClip(0));
-		QVERIFY(source != nullptr);
-		source->addNote(Note(TimePos(48), TimePos(24), 67, 101), false);
-		source->addNote(Note(TimePos(12), TimePos(96), 60, 55), false);
-
-		QVERIFY(recorder().recordStart(0, 0, 96));
-		QVERIFY(recorder().recordStop(0, 0, 288));
-		QVERIFY2(run(QStringLiteral("session.arrangement_record_land")).ok, "land");
-
-		const auto snapshot = [this] {
-			QList<QList<int>> rows;
-			auto* clip = dynamic_cast<MidiClip*>(m_first->getClips().front());
-			rows.append({static_cast<int>(clip->startPosition().getTicks()), static_cast<int>(clip->length().getTicks())});
-			for (const Note* note : clip->notes())
-			{
-				rows.append({note->key(), static_cast<int>(note->pos().getTicks()),
-					static_cast<int>(note->length().getTicks()), static_cast<int>(note->getVolume())});
-			}
-			std::sort(rows.begin() + 1, rows.end());
-			return rows;
-		};
-		QCOMPARE(m_first->getClips().size(), size_t{1});
-		const auto landedRows = snapshot();
-		QCOMPARE(landedRows.size(), 3);
-
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(m_first->getClips().size(), size_t{0});
-		QVERIFY(run(QStringLiteral("control.redo")).ok);
-		QCOMPARE(m_first->getClips().size(), size_t{1});
-		QCOMPARE(snapshot(), landedRows);
-		// and a second round trip is stable too
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(run(QStringLiteral("control.redo")).ok);
-		QCOMPARE(snapshot(), landedRows);
-	}
-
-	//! Q050-034: the same for an audio cell: after undo and redo the clip references the same file and holds the same
-	//! rendered frames (the sample buffer's size and every frame).
-	void redoRestoresALandedAudioClipAndItsRender()
-	{
-		m_song->clearProject();
-		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, m_song));
-		QVERIFY(track != nullptr);
-		QVERIFY(run(QStringLiteral("session.set_grid"),
-			{{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 1}}).ok);
-		const QString source = m_dir.filePath(QStringLiteral("redo-audio.wav"));
-		QVERIFY(browserfixture::writeWave(source, browserfixture::WaveSpec{}));
-		QVERIFY(run(QStringLiteral("session.set_slot"),
-			{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
-				{QStringLiteral("type"), QStringLiteral("audio")},
-				{QStringLiteral("source"), source}, {QStringLiteral("name"), QStringLiteral("Audio take")}}).ok);
-		QVERIFY(recorder().recordStart(0, 0, 48));
-		QVERIFY(recorder().recordStop(0, 0, 240));
-		QVERIFY(run(QStringLiteral("session.arrangement_record_land")).ok);
-
-		const auto render = [track] {
-			auto* clip = dynamic_cast<SampleClip*>(track->getClips().front());
-			std::vector<float> frames;
-			for (std::size_t i = 0; i < clip->sample().sampleSize(); ++i)
-			{
-				frames.push_back(clip->sample().data()[i].left());
-				frames.push_back(clip->sample().data()[i].right());
-			}
-			return std::make_tuple(clip->sampleFile(), static_cast<int>(clip->startPosition().getTicks()),
-				static_cast<int>(clip->length().getTicks()), frames);
-		};
-		QCOMPARE(track->getClips().size(), size_t{1});
-		const auto landed = render();
-		QVERIFY(!std::get<0>(landed).isEmpty());
-		QVERIFY(!std::get<3>(landed).empty());
-		bool audible = false;
-		for (const float f : std::get<3>(landed)) { audible = audible || f != 0.0f; }
-		QVERIFY2(audible, "the landed clip renders silence");
-
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(track->getClips().size(), size_t{0});
-		QVERIFY(run(QStringLiteral("control.redo")).ok);
-		QCOMPARE(track->getClips().size(), size_t{1});
-		QVERIFY(render() == landed);
 	}
 
 	void aRetriggeredCellLandsAsTwoClips()

@@ -177,12 +177,6 @@ public:
 	void setTranspose( int semitones ) { m_transpose = semitones; }
 	int detune() const { return m_detune; }
 	void setDetune( int cents ) { m_detune = cents; }
-	//! Q050-013: tempo warping of an AUDIO cell. On, the clip - recorded at warpBpm() - is time-stretched
-	//! (pitch preserved) to the session's tempo when the cell is published for a launch.
-	bool warp() const { return m_warp; }
-	void setWarp( bool warp ) { m_warp = warp; }
-	double warpBpm() const { return m_warpBpm; }
-	void setWarpBpm( double bpm ) { m_warpBpm = bpm; }
 	bool ramMode() const { return m_ramMode; }
 	void setRamMode( bool ramMode ) { m_ramMode = ramMode; }
 
@@ -207,8 +201,6 @@ private:
 	float m_gainDb = 0.0f;
 	int m_transpose = 0;
 	int m_detune = 0;
-	bool m_warp = false;
-	double m_warpBpm = 120.0;
 	bool m_ramMode = false;
 	std::vector<FollowAction> m_followActions;
 };

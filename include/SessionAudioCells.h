@@ -31,27 +31,19 @@
 
 #include "LmmsTypes.h"
 #include "PlayHandle.h"
-#include "SessionPlayback.h"
 #include "lmms_export.h"
 
 namespace lmms
 {
 
-class AudioBusHandle;
-class ClipSlot;
-class InstrumentTrack;
 class SampleBuffer;
 class SampleTrack;
 class Song;
-class Track;
 
 /*! The playback path of AUDIO cells (docs/SESSION-AUDIO-RECORD.md section "Playback"). A MIDI cell renders a
  *  pattern through the pattern store; an audio cell had no path at all - the slot carried a file and a launch
  *  only silenced its column. Now a launched audio cell on a SAMPLE track's column plays its file through that
  *  track - its devices, fader, pan and mixer channel - from the clip's top at the launch, looping its length.
- *  Q050-013: the same on an INSTRUMENT track's column (the clip bypasses the instrument and goes to the track's
- *  bus), and the cell's settings are honoured: gain, loop region (rendered here), transpose / detune / tempo
- *  warp (rendered once on the model thread into the published clip: SessionAudioBake.h).
  *
  *  ONE PERSISTENT HANDLE PER SAMPLE TRACK that holds an audio cell, made on the model thread the first time
  *  a cell of its column is published and kept until the track goes (SampleTrack's destructor removes it, and
@@ -63,7 +55,6 @@ class LMMS_EXPORT SessionCellPlayHandle : public PlayHandle
 {
 public:
 	explicit SessionCellPlayHandle(SampleTrack* track);
-	explicit SessionCellPlayHandle(InstrumentTrack* track);
 
 	void play(std::span<SampleFrame> buffer) override;
 	bool isFinished() const override { return false; }
@@ -73,9 +64,7 @@ public:
 	std::uint64_t framesRendered() const noexcept { return m_framesRendered.load(std::memory_order_relaxed); }
 
 private:
-	SessionCellPlayHandle(Track* track, AudioBusHandle* bus);
-
-	Track* m_track;
+	SampleTrack* m_track;
 	const SampleBuffer* m_clip = nullptr;  //!< the clip of the launch being played
 	int m_scene = -1;
 	tick_t m_launchTick = -1;
@@ -86,20 +75,11 @@ private:
 namespace sessionaudio
 {
 
-//! What prepare() hands the scheduler for one cell.
-struct Prepared
-{
-	const SampleBuffer* clip = nullptr;
-	SessionAudioShape shape;
-};
-
-/*! Model thread: the clip of the audio cell @a slot - its file loaded (and converted to the engine's rate) the
- *  first time, then warped to @a tempo and repitched as the cell asks (cached per setting) - with the cell's gain
- *  and loop region as frames of that clip, and a play handle for @a column's track when it is a sample or an
- *  instrument track. A null clip when the file cannot be read or the column has no such track - the cell then
- *  stays silent, as before. Never throws. The pointer stays valid until the project is closed twice over
- *  (retire()). */
-LMMS_EXPORT Prepared prepare(Song& song, int column, const ClipSlot& slot, double tempo) noexcept;
+/*! Model thread: the clip of the audio cell whose file is @a source, loaded (and converted to the engine's
+ *  rate) the first time, and a play handle for @a column's track when it is a sample track. nullptr when the
+ *  file cannot be read or the column has no sample track - the cell then stays silent, as before. Never
+ *  throws. The pointer stays valid until the project is closed twice over (retire()). */
+LMMS_EXPORT const SampleBuffer* prepare(Song& song, int column, const QString& source) noexcept;
 
 /*! Model thread, with no period rendering (Song::clearProject holds the model-change lock): the clips of
  *  the project being closed are retired, and the ones retired at the previous close are freed - by then the

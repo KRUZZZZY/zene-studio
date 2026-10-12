@@ -192,8 +192,6 @@ void applySlotShape(ClipSlot& slot, const QJsonObject& args)
 	if (args.contains(QStringLiteral("ram"))) { slot.setRamMode(args.value(QStringLiteral("ram")).toBool()); }
 	if (args.contains(QStringLiteral("transpose"))) { slot.setTranspose(args.value(QStringLiteral("transpose")).toInt()); }
 	if (args.contains(QStringLiteral("detune"))) { slot.setDetune(args.value(QStringLiteral("detune")).toInt()); }
-	if (args.contains(QStringLiteral("warp"))) { slot.setWarp(args.value(QStringLiteral("warp")).toBool()); }
-	if (args.contains(QStringLiteral("warp_bpm"))) { slot.setWarpBpm(args.value(QStringLiteral("warp_bpm")).toDouble()); }
 }
 
 } // namespace
@@ -467,8 +465,6 @@ void registerSessionSetSlot(ControlRegistry& registry)
 		{QStringLiteral("gain_db"), numberProperty()},
 		{QStringLiteral("transpose"), integerProperty(-128, 128)},
 		{QStringLiteral("detune"), integerProperty(-1200, 1200)},
-		{QStringLiteral("warp"), booleanProperty()},
-		{QStringLiteral("warp_bpm"), numberProperty()},
 		{QStringLiteral("ram"), booleanProperty()},
 		{QStringLiteral("follow_actions"), arrayProperty()},
 	}, {QStringLiteral("track"), QStringLiteral("scene")});

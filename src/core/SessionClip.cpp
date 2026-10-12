@@ -132,11 +132,6 @@ void ClipSlot::saveState( QDomDocument& doc, QDomElement& element ) const
 	element.setAttribute( QStringLiteral( "transpose" ), m_transpose );
 	element.setAttribute( QStringLiteral( "detune" ), m_detune );
 	element.setAttribute( QStringLiteral( "ram" ), m_ramMode ? 1 : 0 );
-	if( m_warp )  // only when set: a project that never warps saves exactly as before
-	{
-		element.setAttribute( QStringLiteral( "warp" ), 1 );
-		element.setAttribute( QStringLiteral( "warpbpm" ), doubleToAttribute( m_warpBpm ) );
-	}
 
 	saveFollowChain( doc, element, m_followActions );
 }
@@ -184,8 +179,6 @@ void ClipSlot::restoreState( const QDomElement& element )
 	m_transpose = element.attribute( QStringLiteral( "transpose" ), QStringLiteral( "0" ) ).toInt();
 	m_detune = element.attribute( QStringLiteral( "detune" ), QStringLiteral( "0" ) ).toInt();
 	m_ramMode = element.attribute( QStringLiteral( "ram" ), QStringLiteral( "0" ) ).toInt() != 0;
-	m_warp = element.attribute( QStringLiteral( "warp" ), QStringLiteral( "0" ) ).toInt() != 0;
-	m_warpBpm = doubleAttribute( element, QStringLiteral( "warpbpm" ), 120.0 );
 
 	m_followActions = restoreFollowChain( element );
 }

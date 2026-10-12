@@ -23,7 +23,7 @@ namespace lmms
 {
 
 bool SessionSlotContentTable::install( int track, int scene, int patternId,
-	tick_t loopLengthTicks, bool legato, tick_t startTicks, const SampleBuffer* clip, const SessionAudioShape& audio ) noexcept
+	tick_t loopLengthTicks, bool legato, tick_t startTicks, const SampleBuffer* clip ) noexcept
 {
 	// A cell has something to render when it holds a pattern OR an audio clip (WF-055: an
 	// audio cell publishes patternId -1 with its clip, so patternId alone cannot tell an
@@ -52,7 +52,6 @@ bool SessionSlotContentTable::install( int track, int scene, int patternId,
 			m_entries[i].legato = legato;
 			m_entries[i].startTicks = startTicks;
 			m_entries[i].clip = clip;
-			m_entries[i].audio = audio;
 			return true;
 		}
 	}
@@ -77,7 +76,6 @@ bool SessionSlotContentTable::install( int track, int scene, int patternId,
 	m_entries[m_count].legato = legato;
 	m_entries[m_count].startTicks = startTicks;
 	m_entries[m_count].clip = clip;
-	m_entries[m_count].audio = audio;
 	++m_count;
 	return true;
 }
@@ -107,7 +105,7 @@ void SessionSlotContentTable::clear() noexcept
 
 
 bool SessionScheduler::publishSlotContent( int track, int scene, int patternId,
-	tick_t loopLengthTicks, bool legato, tick_t startTicks, const SampleBuffer* clip, const SessionAudioShape& audio ) noexcept
+	tick_t loopLengthTicks, bool legato, tick_t startTicks, const SampleBuffer* clip ) noexcept
 {
 	// One queue push, exactly like requestLaunch/installFollowPlan: no
 	// allocation, no lock, no syscall. The audio thread applies it into the
@@ -116,7 +114,7 @@ bool SessionScheduler::publishSlotContent( int track, int scene, int patternId,
 	command.track = track;
 	command.scene = scene;
 	command.type = LaunchCommandType::Content;
-	command.content = SessionSlotContent{ track, scene, patternId, loopLengthTicks, legato, startTicks, clip, audio };
+	command.content = SessionSlotContent{ track, scene, patternId, loopLengthTicks, legato, startTicks, clip };
 	return enqueue( command );
 }
 
@@ -129,7 +127,7 @@ bool SessionScheduler::applySlotContent( const SessionSlotContent& content ) noe
 	// pre-#597 behaviour for that slot: it takes its column over and renders
 	// nothing, which is observable rather than a crash or a clamp.
 	return m_slotContent.install( content.track, content.scene, content.patternId,
-		content.loopLengthTicks, content.legato, content.startTicks, content.clip, content.audio );
+		content.loopLengthTicks, content.legato, content.startTicks, content.clip );
 }
 
 
@@ -163,7 +161,6 @@ SessionSlotPlayback SessionScheduler::playbackForColumn( int track ) const noexc
 		{
 			view.patternId = content->patternId;
 			view.loopLengthTicks = content->loopLengthTicks;
-			view.audio = content->audio;
 			view.clip = content->clip;  // WF-055: an audio cell's clip, rendered by SessionCellPlayHandle
 			start = content->startTicks;  // WF-060: the cell's own start inside its clip
 		}
@@ -208,18 +205,14 @@ int publishSessionSlotContent( SessionScheduler& scheduler, const SessionModel& 
 			// WF-055: an audio cell's clip, loaded (and its column's track given a renderer) here, on the
 			// model thread; nullptr for every other cell, so a cell that stopped being audio stops sounding.
 			Song* song = Engine::getSong();
-			sessionaudio::Prepared audio;
-			if( song != nullptr && slot.type() == ClipSlot::Type::Audio )
-			{
-				audio = sessionaudio::prepare( *song, track, slot, song->getTempo() );
-			}
-			const SampleBuffer* clip = audio.clip;
+			const SampleBuffer* clip = song != nullptr && slot.type() == ClipSlot::Type::Audio
+				? sessionaudio::prepare( *song, track, slot.audioSource() ) : nullptr;
 
 			// The loop length is left 0: PatternStore::play wraps the position
 			// by the pattern's own length (src/core/PatternStore.cpp:56), so the
 			// render is correct without the model computing one, and a length
 			// published here would be a second source of truth for it.
-			if( scheduler.publishSlotContent( track, scene, patternId, 0, slot.legato(), slot.loopStart(), clip, audio.shape ) )
+			if( scheduler.publishSlotContent( track, scene, patternId, 0, slot.legato(), slot.loopStart(), clip ) )
 			{
 				++published;
 			}

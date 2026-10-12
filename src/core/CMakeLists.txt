@@ -138,7 +138,6 @@ SET(LMMS_SESSION_SRCS
 		core/SessionAudioRecorder.cpp
 		# ...and a launched audio cell rendering its clip through its sample track (include/SessionAudioCells.h).
 		core/SessionAudioCells.cpp
-		core/SessionAudioBake.cpp
 	)
 
 set(LMMS_SRCS
