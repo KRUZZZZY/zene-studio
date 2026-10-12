@@ -28,13 +28,18 @@
 
 #include <QtTest>
 
+#include <QApplication>
+#include <QFileDialog>
 #include <QPushButton>
+#include <QTemporaryDir>
+#include <QTimer>
 
 #include <cmath>
 #include <vector>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "FileDialog.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleEditorDialog.h"
@@ -229,6 +234,39 @@ private slots:
 		QCOMPARE(m_dialog->view()->from(), 0);
 		QCOMPARE(m_dialog->view()->to(), Rate);
 		QCOMPARE(static_cast<int>(m_clip->sample().sampleSize()), Rate);
+	}
+
+	void audioOpenDialogUsesSingleFileSelection()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+
+		bool dialogFound = false;
+		auto fileMode = QFileDialog::AnyFile;
+		QTimer dialogProbe;
+		dialogProbe.setInterval(10);
+		connect(&dialogProbe, &QTimer::timeout, this, [&]
+		{
+			auto* dialog = qobject_cast<QFileDialog*>(QApplication::activeModalWidget());
+			if (dialog == nullptr) { return; }
+
+			dialogFound = true;
+			fileMode = dialog->fileMode();
+			dialogProbe.stop();
+			dialog->reject();
+		});
+
+		QTimer watchdog;
+		watchdog.setSingleShot(true);
+		connect(&watchdog, &QTimer::timeout, []
+		{
+			if (auto* modal = QApplication::activeModalWidget()) { modal->close(); }
+		});
+		dialogProbe.start();
+		watchdog.start(5000);
+		FileDialog::openAudioFile(directory.filePath(QStringLiteral("selected.wav")));
+		QVERIFY(dialogFound);
+		QCOMPARE(fileMode, QFileDialog::ExistingFile);
 	}
 
 private:
