@@ -40,6 +40,7 @@
 #include <cstdlib>
 
 #include <QAbstractSlider>
+#include <QScrollBar>
 #include <QToolBar>
 #include <QWheelEvent>
 
@@ -362,6 +363,17 @@ private slots:
 		navigator->setValue(2 * Bar);  // what a screen reader's value setting does
 		QTRY_COMPARE(m_editor->currentPosition().getTicks(), 2 * Bar);
 		QVERIFY2(navigator->accessibleDescription().startsWith(QStringLiteral("Showing bars 3 ")), qPrintable(navigator->accessibleDescription()));
+	}
+
+	void oversizedScrollPositionsReachTheEndOfTheArranger()
+	{
+		clipAt(m_track, 40 * Bar, Bar);
+		auto* scrollbar = m_editor->horizontalScroll();
+		QVERIFY(scrollbar->maximum() > 0);
+
+		const ControlResult result = run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 2147483648LL}});
+		QVERIFY(result.ok);
+		QCOMPARE(scrollbar->value(), scrollbar->maximum());
 	}
 
 private:
