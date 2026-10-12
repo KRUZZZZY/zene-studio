@@ -126,7 +126,8 @@ quint32 MidiClock::songPositionOf(qint64 ticks) noexcept
 	// i.e. a sixteenth note, which is TicksPerMidiBeat of this engine's ticks.
 	// A position before the start is 0, and the wire form is 14-bit.
 	if (ticks <= 0) { return 0; }
-	return static_cast<quint32>(ticks / TicksPerMidiBeat) & 0x3FFF;
+	const qint64 beats = ticks / TicksPerMidiBeat;
+	return static_cast<quint32>(beats > 0x3FFF ? 0x3FFF : beats);
 }
 
 MidiClient* MidiClock::client() const
