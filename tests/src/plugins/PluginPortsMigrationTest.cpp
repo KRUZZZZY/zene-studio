@@ -186,6 +186,7 @@ public:
 private slots:
 	void initTestCase();
 	void migratedPluginsPreserveBehaviour();
+	void dispersionRemainsStableAboveNyquist();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void slice6PluginsAreLiveAndExact();
@@ -400,6 +401,76 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 		qWarning().noquote() << QString{"UNPROVEN %1: %2"}
 			.arg(QString::fromUtf8(gap.plugin), QString::fromUtf8(gap.reason));
 	}
+}
+
+void PluginPortsMigrationTest::dispersionRemainsStableAboveNyquist()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* device = lmms::Engine::audioEngine()->audioDev();
+	QVERIFY(device != nullptr);
+	const auto originalRate = device->sampleRate();
+	struct RestoreSampleRate
+	{
+		lmms::AudioDevice* device;
+		lmms::sample_rate_t rate;
+		~RestoreSampleRate() { device->setSampleRateForTesting(rate); }
+	} restoreRate{device, originalRate};
+
+	device->setSampleRateForTesting(32000);
+	QCOMPARE(device->sampleRate(), 32000);
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_dispersion)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto effect = std::unique_ptr<lmms::Effect>{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+	QVERIFY(effect != nullptr);
+
+	QDomDocument doc;
+	QDomElement root = doc.createElement("effect");
+	root.setAttribute("on", 1);
+	root.setAttribute("wet", 1);
+	root.setAttribute("autoquit", 0);
+	QDomElement controls = effect->controls()->saveState(doc, root);
+	controls.setAttribute("amount", "1");
+	QDomElement frequency = controls.firstChildElement("freq");
+	QVERIFY(!frequency.isNull());
+	frequency.setAttribute("value", "20000");
+	QDomElement resonance = controls.firstChildElement("reso");
+	QVERIFY(!resonance.isNull());
+	resonance.setAttribute("value", "0.707");
+	controls.setAttribute("feedback", "0");
+	controls.setAttribute("dc", "0");
+	effect->loadSettings(root);
+	QDomDocument actualDoc;
+	QDomElement actualRoot = actualDoc.createElement("effect");
+	const QDomElement actualControls = effect->controls()->saveState(actualDoc, actualRoot);
+	QCOMPARE(actualControls.attribute("amount").toInt(), 1);
+	QCOMPARE(actualControls.firstChildElement("freq").attribute("value").toFloat(), 20000.0f);
+
+	constexpr lmms::f_cnt_t frames = 128;
+	std::array<lmms::SampleFrame, frames> buffer{};
+	lmms::SampleFrame* busPointers[] = {buffer.data()};
+	float peak = 0.0f;
+	for (int block = 0; block < 32; ++block)
+	{
+		buffer.fill(lmms::SampleFrame{0.0f, 0.0f});
+		if (block == 0) { buffer[0] = lmms::SampleFrame{1.0f, 1.0f}; }
+		lmms::AudioBus bus{busPointers, 1, frames};
+		effect->processAudioBuffer(bus);
+		for (const auto& sample : buffer)
+		{
+			QVERIFY(std::isfinite(sample.left()) && std::isfinite(sample.right()));
+			peak = std::max(peak, std::max(std::abs(sample.left()), std::abs(sample.right())));
+		}
+	}
+	qInfo("Dispersion high-frequency render peak=%g", peak);
+	QVERIFY(peak < 1000.0f);
 }
 
 /*!
