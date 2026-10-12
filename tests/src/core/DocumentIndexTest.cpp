@@ -384,6 +384,31 @@ private slots:
 		QVERIFY( index.section( QStringLiteral( "absent" ) ) == nullptr );
 	}
 
+	//! Named rows are useful only when every field the index promises is present
+	//! and the version is numeric; one malformed row invalidates the whole index.
+	void aNamedEntryWithIncompleteMetadataIsRejected()
+	{
+		const QStringList malformedRows = {
+			QStringLiteral( "<z:section name=\"trackcontainer\" v=\"31\" digest=\"sha256:x\"/>" ),
+			QStringLiteral( "<z:section name=\"trackcontainer\" entry=\"\" v=\"31\" digest=\"sha256:x\"/>" ),
+			QStringLiteral( "<z:section name=\"trackcontainer\" entry=\"trackcontainer.xml\" v=\"31\"/>" ),
+			QStringLiteral( "<z:section name=\"trackcontainer\" entry=\"trackcontainer.xml\" v=\"31\" digest=\"\"/>" ),
+			QStringLiteral( "<z:section name=\"trackcontainer\" entry=\"trackcontainer.xml\" digest=\"sha256:x\"/>" ),
+			QStringLiteral( "<z:section name=\"trackcontainer\" entry=\"trackcontainer.xml\" v=\"bad\" digest=\"sha256:x\"/>" )
+		};
+
+		for( const QString& row : malformedRows )
+		{
+			QDomDocument document;
+			QVERIFY( document.setContent( QStringLiteral(
+				"<zene-project xmlns:z=\"urn:zene:core:1\"><z:index>"
+				"<z:section name=\"valid\" entry=\"valid.xml\" v=\"31\" digest=\"sha256:x\"/>%1"
+				"</z:index></zene-project>" )
+				.arg( row ) ) );
+			QVERIFY2( parseDocumentIndex( document.documentElement() ).isEmpty(), qPrintable( row ) );
+		}
+	}
+
 	// -----------------------------------------------------------------------
 	// The gate: which projects may carry one (SPEC-ARCH-4 5.2 risk 2)
 	// -----------------------------------------------------------------------
