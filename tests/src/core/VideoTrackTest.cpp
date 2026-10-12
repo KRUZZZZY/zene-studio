@@ -50,6 +50,15 @@
 #include "VideoTestClip.h"
 #include "VideoWindow.h"
 
+#ifdef ZENE_HAVE_FFMPEG
+#include <dlfcn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <cerrno>
+#include <atomic>
+#include <functional>
+#endif
+
 using namespace lmms;
 
 namespace
@@ -89,6 +98,46 @@ bool bluish(const QImage& image)
 }
 
 } // namespace
+
+#ifdef ZENE_HAVE_FFMPEG
+namespace
+{
+
+//! Test-only libavutil allocator switch: with the flag set, every libavutil allocation fails,
+//! the way an out-of-memory run would; the clip's makers must report that, not crash.
+std::atomic_bool avMallocFails{false};
+
+//! Run @a make in a child process where every libavutil allocation fails; true only when the child
+//! exits normally reporting failure - a buggy dereference of the null result kills the child instead.
+bool failedAllocationIsReported(const std::function<bool()>& make)
+{
+	const pid_t child = fork();
+	if (child < 0) { return false; }
+	if (child == 0)
+	{
+		avMallocFails.store(true, std::memory_order_relaxed);
+		const bool ok = make();
+		_exit(ok ? 1 : 0);
+	}
+	int status = 0;
+	if (waitpid(child, &status, 0) < 0) { return false; }
+	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+} // namespace
+
+//! At file scope on purpose: the test executable must export this symbol (default visibility)
+//! so libavutil's av_mallocz resolves its posix_memalign call to it - see the ENABLE_EXPORTS line.
+#pragma GCC visibility push(default)
+extern "C" int posix_memalign(void** p, std::size_t alignment, std::size_t size)
+{
+	if (avMallocFails.load(std::memory_order_relaxed)) { *p = nullptr; return ENOMEM; }
+	using PosixMemalign = int (*)(void**, std::size_t, std::size_t);
+	static const PosixMemalign real = reinterpret_cast<PosixMemalign>(dlsym(RTLD_NEXT, "posix_memalign"));
+	return real(p, alignment, size);
+}
+#pragma GCC visibility pop
+#endif // ZENE_HAVE_FFMPEG
 
 class VideoTrackTest : public QObject
 {
@@ -369,6 +418,29 @@ private slots:
 		QCOMPARE(song->tracks().size(), tracksBefore + (done ? 1 : 0));
 		if (!done) { QVERIFY2(!QFileInfo::exists(out), "a cancelled extraction left its WAV"); }
 		song->clearProject();
+	}
+
+	//! Simulated OOM (VideoTestClip.h): a failed libavutil allocation is reported, not dereferenced.
+	void failedAllocationsAreReportedNotCrashed()
+	{
+#ifdef ZENE_HAVE_FFMPEG
+		if (!VideoDecoder::available()) { QSKIP("no FFmpeg in this build"); }
+		videotest::Encoder frameCase;
+		frameCase.codec = avcodec_alloc_context3(avcodec_find_encoder(AV_CODEC_ID_MPEG4));
+		QVERIFY(frameCase.codec != nullptr);
+		videotest::setupVideo(frameCase.codec);
+		QVERIFY2(failedAllocationIsReported([&frameCase] { return videotest::allocateFrame(frameCase); }),
+			"allocateFrame dereferenced the failed av_frame_alloc");
+		AVFormatContext* out = nullptr;
+		QVERIFY(avformat_alloc_output_context2(&out, nullptr, "matroska", "clip.mkv") >= 0);
+		videotest::Encoder streamCase;
+		QVERIFY2(failedAllocationIsReported([&out, &streamCase] {
+			return videotest::addStream(out, streamCase, AV_CODEC_ID_MPEG4, videotest::setupVideo); }),
+			"addStream dereferenced a failed stream or codec allocation");
+		avformat_free_context(out);
+#else
+		QSKIP("this build has no FFmpeg");
+#endif
 	}
 };
 
