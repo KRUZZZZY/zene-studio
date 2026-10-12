@@ -193,8 +193,14 @@ bool McuSurface::applyBank(mcu::Kind kind)
 {
 	switch (kind)
 	{
-	case mcu::Kind::BankLeft: setBank(m_bank - mcu::Strips); return true;
-	case mcu::Kind::BankRight: setBank(m_bank + mcu::Strips); return true;
+	case mcu::Kind::BankLeft:
+	case mcu::Kind::BankRight:
+	{
+		const int lastPage = std::max(0, (static_cast<int>(bankable().size()) - 1) / mcu::Strips) * mcu::Strips;
+		const int offset = kind == mcu::Kind::BankRight ? mcu::Strips : -mcu::Strips;
+		setBank(std::clamp(m_bank + offset, 0, lastPage));
+		return true;
+	}
 	case mcu::Kind::ChannelLeft: setBank(m_bank - 1); return true;
 	case mcu::Kind::ChannelRight: setBank(m_bank + 1); return true;
 	default: return false;
