@@ -832,11 +832,15 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	class PatternTrack * pattern_track = nullptr;
 	if( _clip_num >= 0 )
 	{
-		Clip * clip = getClip( _clip_num );
-		clips.push_back( clip );
-		if (trackContainer() == Engine::patternStore())
+		// Render thread: a clip this track does not hold has no notes, so nothing is created here.
+		// getClip() would construct a MidiClip (and its automatable models) on the audio thread.
+		if (_clip_num < numOfClips())
 		{
-			pattern_track = PatternTrack::findPatternTrack(_clip_num);
+			clips.push_back( getClip( _clip_num ) );
+			if (trackContainer() == Engine::patternStore())
+			{
+				pattern_track = PatternTrack::findPatternTrack(_clip_num);
+			}
 		}
 	}
 	else
