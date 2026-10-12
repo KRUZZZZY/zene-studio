@@ -506,6 +506,8 @@ set(LMMS_TESTS
 	src/core/RecordClipTest.cpp
 	src/core/InputChannelRingTest.cpp
 	src/core/RecordRingBufferTest.cpp
+	# Q050-045: a real SIGKILL of a recording child, recovery measured against the captured frames.
+	src/core/RecordingCrashLossTest.cpp
 	src/core/RetroMidiRingTest.cpp
 	# The VST remote client's per-period MIDI helpers (plugins/VstBase/VstMidiEventBatch.h): an
 	# allocation-free sort and a bounded queue. The client itself is an out-of-process executable.

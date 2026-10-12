@@ -178,8 +178,9 @@ void registerRecoveryGetState(ControlRegistry& registry)
 		"recorded at its last update), frames_in_file (measured from the take's RIFF header, "
 		"falling back to the file's real length when a crashed header was never updated) and "
 		"frames_recoverable (the SMALLER of the two - the guaranteed count). The bound travels "
-		"with every entry: the journal lags by up to one second of audio, and up to 65536 "
-		"frames still in the recorder's ring at the crash are gone for good. Writes nothing.");
+		"with every entry: a crash loses at most journal_lag_bound_frames plus one 4096-frame writer batch "
+		"(0.185 s at 48 kHz, Q050-045) while the disk-writer is healthy; only a STALLED writer can lose "
+		"up to 65536 frames still in the recorder's ring. Writes nothing.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("dir"), stringProperty()},
 	});

@@ -284,17 +284,30 @@ std::uint64_t recoverableFrames(const TakeJournal& journal)
 
 std::uint64_t updateIntervalFrames(int sampleRate)
 {
-	return sampleRate > 0 ? static_cast<std::uint64_t>(sampleRate) : 1u;
+	// A tenth of a second of audio (Q050-045). It was a whole second, which left a
+	// second of already-written audio uncounted and, with the unflushed WAV header,
+	// made a SIGKILLed take read as empty.
+	return sampleRate >= 10 ? static_cast<std::uint64_t>(sampleRate) / 10u : 1u;
+}
+
+std::uint64_t lossBoundFrames(int sampleRate)
+{
+	return updateIntervalFrames(sampleRate) + WriterBatchFrames;
 }
 
 QString boundText(int sampleRate)
 {
+	const double seconds = sampleRate > 0
+		? static_cast<double>(lossBoundFrames(sampleRate)) / sampleRate : 0.0;
 	return QStringLiteral("recoverable: min(frames_on_disk, frames in the take's file); "
-		"not recoverable: audio written after the last journal update (at most %1 frames, "
-		"one second at %2 Hz) and up to %3 frames still in the recorder's ring when the "
-		"process died")
-		.arg(updateIntervalFrames(sampleRate))
+		"a crash loses at most %1 frames (%2 s at %3 Hz) while the disk-writer is healthy: "
+		"audio written after the last commit (every %4 frames) plus one writer batch in "
+		"flight; if the writer is stalled, up to %5 frames still in the recorder's ring are "
+		"also lost")
+		.arg(lossBoundFrames(sampleRate))
+		.arg(seconds, 0, 'f', 3)
 		.arg(sampleRate)
+		.arg(updateIntervalFrames(sampleRate))
 		.arg(RingFramesNotRecoverable);
 }
 

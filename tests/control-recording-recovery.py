@@ -12,7 +12,7 @@ directory - which is what "the next start can recover it" means.
 What it drives, in order:
 
   1. instance A: a real WAV on disk (N frames) + `record.journal_begin` +
-     `record.journal_update` to M frames (M < N by half a second of audio, i.e.
+     `record.journal_update` to M frames (M < N by a twentieth of a second of audio, i.e.
      inside the documented lag bound);
   2. `record.recovery_get_state`        the capture is visible BEFORE the crash,
      which is what makes the after-crash find meaningful;
@@ -25,7 +25,7 @@ What it drives, in order:
      frames_recoverable is min(M, N) = M, so the offer cannot promise audio that
      is not there;
   5. THE BOUND AS OBSERVED               `frames_in_file - frames_journalled`
-     is asserted to be within `journal_lag_bound_frames` (one second of audio),
+     is asserted to be within `journal_lag_bound_frames` (a tenth of a second of audio, Q050-045),
      and the ring frames a crash loses for good are reported as 65536. The bound
      the code documents is the bound this run measures;
   6. `record.recovery_restore`           the offer is taken: the journal is
@@ -69,9 +69,9 @@ REQUEST_IDS = iter(range(1, 1000))
 RATE = 48000
 #: Frames in the crashed take: two seconds of audio at 48 kHz.
 TAKE_FRAMES = 2 * RATE
-#: Frames the journal was last told about: half a second behind, which is INSIDE
-#: the documented lag bound of one second (RATE frames).
-JOURNALLED_FRAMES = TAKE_FRAMES - RATE // 2
+#: Frames the journal was last told about: a twentieth of a second behind, which is INSIDE
+#: the documented lag bound of a tenth of a second (RATE // 10 frames, Q050-045).
+JOURNALLED_FRAMES = TAKE_FRAMES - RATE // 20
 #: TrackRecorder::RingCapacityFrames - audio that never reached a file.
 RING_FRAMES = 65536
 
@@ -224,7 +224,7 @@ def check_the_bound_as_observed(entry, recorder):
     beyond = entry.get("frames_beyond_the_journal")
     lag_bound = entry.get("journal_lag_bound_frames")
     recorder.check("the material beyond the journal is inside the stated lag bound",
-                   beyond == TAKE_FRAMES - JOURNALLED_FRAMES and lag_bound == RATE
+                   beyond == TAKE_FRAMES - JOURNALLED_FRAMES and lag_bound == RATE // 10
                    and beyond <= lag_bound,
                    "beyond=%r lag_bound=%r" % (beyond, lag_bound))
     recorder.check("the ring frames a crash loses for good are reported, not hidden",
