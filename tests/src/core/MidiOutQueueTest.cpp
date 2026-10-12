@@ -2,11 +2,20 @@
 
 #include "MidiOutQueue.h"
 #include "AllocationProbe.h"
+#include "lmmsconfig.h"
 
 #include <QtTest>
 #include <atomic>
 #include <cstdint>
 #include <thread>
+
+#ifdef LMMS_HAVE_ALSA
+#include "MidiAlsaRaw.h"
+
+#include <cerrno>
+#include <poll.h>
+#include <unistd.h>
+#endif
 
 using lmms::MidiEvent;
 using lmms::MidiOutQueue;
@@ -14,6 +23,14 @@ using lmms::TimePos;
 
 namespace
 {
+#ifdef LMMS_HAVE_ALSA
+int g_pollReadFd = -1;
+int g_inputHandle;
+int g_outputHandle;
+std::atomic<int> g_closedHandles{0};
+std::atomic<int> g_pollErrors{0};
+#endif
+
 MidiEvent makeMidiEvent(std::uint8_t note)
 {
 	MidiEvent value;
@@ -23,6 +40,50 @@ MidiEvent makeMidiEvent(std::uint8_t note)
 	return value;
 }
 }
+
+#ifdef LMMS_HAVE_ALSA
+extern "C" int snd_rawmidi_open(snd_rawmidi_t** input, snd_rawmidi_t** output, const char*, int)
+{
+	*input = reinterpret_cast<snd_rawmidi_t*>(&g_inputHandle);
+	*output = reinterpret_cast<snd_rawmidi_t*>(&g_outputHandle);
+	return 0;
+}
+
+extern "C" int snd_rawmidi_close(snd_rawmidi_t*)
+{
+	++g_closedHandles;
+	return 0;
+}
+
+extern "C" int snd_rawmidi_nonblock(snd_rawmidi_t*, int)
+{
+	return 0;
+}
+
+extern "C" int snd_rawmidi_poll_descriptors_count(snd_rawmidi_t*)
+{
+	return 1;
+}
+
+extern "C" int snd_rawmidi_poll_descriptors(snd_rawmidi_t*, pollfd* descriptors, unsigned int)
+{
+	descriptors[0] = {g_pollReadFd, POLLIN, 0};
+	return 1;
+}
+
+extern "C" int snd_rawmidi_poll_descriptors_revents(snd_rawmidi_t*, pollfd*, unsigned int,
+		unsigned short* revents)
+{
+	*revents = POLLIN;
+	++g_pollErrors;
+	return -EIO;
+}
+
+extern "C" ssize_t snd_rawmidi_read(snd_rawmidi_t*, void*, size_t)
+{
+	return 0;
+}
+#endif
 
 class MidiOutQueueTest : public QObject
 {
@@ -90,6 +151,29 @@ private slots:
 		producer.join();
 		QCOMPARE(static_cast<qulonglong>(received), count);
 	}
+
+#ifdef LMMS_HAVE_ALSA
+	void AlsaRaw_ClosesHandlesAfterWorkerExitsOnPollError()
+	{
+		int pipeFds[2];
+		QVERIFY(pipe(pipeFds) == 0);
+		const char ready = 'x';
+		QCOMPARE(write(pipeFds[1], &ready, 1), ssize_t{1});
+		g_pollReadFd = pipeFds[0];
+		g_closedHandles = 0;
+		g_pollErrors = 0;
+		{
+			lmms::MidiAlsaRaw client;
+			QVERIFY(client.wait(1000));
+			QVERIFY(!client.isRunning());
+			QCOMPARE(g_pollErrors.load(), 1);
+		}
+		QCOMPARE(g_closedHandles.load(), 2);
+		g_pollReadFd = -1;
+		QVERIFY(close(pipeFds[0]) == 0);
+		QVERIFY(close(pipeFds[1]) == 0);
+	}
+#endif
 };
 
 QTEST_APPLESS_MAIN(MidiOutQueueTest)

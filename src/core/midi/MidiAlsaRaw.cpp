@@ -35,8 +35,12 @@ namespace lmms
 
 MidiAlsaRaw::MidiAlsaRaw() :
 	MidiClientRaw(),
+	m_input(nullptr),
 	m_inputp( &m_input ),
+	m_output(nullptr),
 	m_outputp( &m_output ),
+	m_npfds(0),
+	m_pfds(nullptr),
 	m_quit( false )
 {
 	if (int err = snd_rawmidi_open(m_inputp, m_outputp, probeDevice().toLatin1().constData(), 0); err < 0)
@@ -63,13 +67,22 @@ MidiAlsaRaw::~MidiAlsaRaw()
 	if( isRunning() )
 	{
 		m_quit = true;
-		wait( 1000 );
-		terminate();
-
-		snd_rawmidi_close( m_input );
-		snd_rawmidi_close( m_output );
-		delete[] m_pfds;
+		if (!wait(1000))
+		{
+			terminate();
+			wait();
+		}
 	}
+
+	if (m_input != nullptr)
+	{
+		snd_rawmidi_close( m_input );
+	}
+	if (m_output != nullptr)
+	{
+		snd_rawmidi_close( m_output );
+	}
+	delete[] m_pfds;
 }
 
 
