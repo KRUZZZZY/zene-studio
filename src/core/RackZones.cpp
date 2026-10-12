@@ -51,6 +51,13 @@ bool isValidRange(int low, int high, int minimum, int maximum)
 	return low <= high;
 }
 
+bool readIntAttribute(const QDomElement& element, const QString& name, int fallback, int& value)
+{
+	bool converted = false;
+	value = element.attribute(name, QString::number(fallback)).toInt(&converted);
+	return converted;
+}
+
 } // namespace
 
 bool isValidRackZone(const RackZone& zone, int chainCount)
@@ -198,15 +205,31 @@ void RackZones::loadSettings(const QDomElement& rackElement)
 		zoneElement = zoneElement.nextSiblingElement(QStringLiteral("zone")))
 	{
 		RackZone zone;
-		zone.lowKey = zoneElement.attribute(QStringLiteral("low_key"),
-			QString::number(RackZoneMinKey)).toInt();
-		zone.highKey = zoneElement.attribute(QStringLiteral("high_key"),
-			QString::number(RackZoneMaxKey)).toInt();
-		zone.lowVelocity = zoneElement.attribute(QStringLiteral("low_velocity"),
-			QString::number(RackZoneMinVelocity)).toInt();
-		zone.highVelocity = zoneElement.attribute(QStringLiteral("high_velocity"),
-			QString::number(RackZoneMaxVelocity)).toInt();
-		zone.chain = zoneElement.attribute(QStringLiteral("chain"), QStringLiteral("0")).toInt();
+		if (!readIntAttribute(zoneElement, QStringLiteral("low_key"), RackZoneMinKey, zone.lowKey))
+		{
+			continue;
+		}
+		if (!readIntAttribute(zoneElement, QStringLiteral("high_key"), RackZoneMaxKey, zone.highKey))
+		{
+			continue;
+		}
+		if (!readIntAttribute(zoneElement, QStringLiteral("low_velocity"), RackZoneMinVelocity,
+				zone.lowVelocity))
+		{
+			continue;
+		}
+		if (!readIntAttribute(zoneElement, QStringLiteral("high_velocity"), RackZoneMaxVelocity,
+				zone.highVelocity))
+		{
+			continue;
+		}
+		if (!readIntAttribute(zoneElement, QStringLiteral("chain"), 0, zone.chain)) { continue; }
+		if (!isValidRange(zone.lowKey, zone.highKey, RackZoneMinKey, RackZoneMaxKey)) { continue; }
+		if (!isValidRange(zone.lowVelocity, zone.highVelocity, RackZoneMinVelocity,
+				RackZoneMaxVelocity))
+		{
+			continue;
+		}
 		zone.sample = zoneElement.attribute(QStringLiteral("sample"));
 		loadRackZoneSample(zone);  // a missing file keeps its reference (saved back unchanged)
 		read.push_back(std::move(zone));

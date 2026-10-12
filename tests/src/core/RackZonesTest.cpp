@@ -122,6 +122,27 @@ private slots:
 		QVERIFY(!isValidRackZone(noChain, rackUnderTest().chainCount()));
 	}
 
+	//! Project data is checked just like command-created zones: malformed and
+	//! out-of-range bounds are discarded without losing valid neighbors.
+	void malformedProjectZoneBoundsAreRejected()
+	{
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<rack>"
+			"<zone low_key=\"oops\" high_key=\"127\" chain=\"0\"/>"
+			"<zone low_key=\"36\" high_key=\"48\" low_velocity=\"-1\" chain=\"0\"/>"
+			"<zone low_key=\"36\" high_key=\"48\" chain=\"0\"/>"
+			"</rack>")));
+
+		RackZones zones;
+		zones.loadSettings(doc.documentElement());
+		QCOMPARE(zones.zoneCount(), 1);
+		QCOMPARE(zones.zone(0)->lowKey, 36);
+		QCOMPARE(zones.zone(0)->highKey, 48);
+		QCOMPARE(zones.resolve(36, 100), 0);
+		QCOMPARE(zones.resolve(0, 100), -1);
+	}
+
 	//! The zone surface: add through the registry, resolve, remove, and take the
 	//! removal back with control.undo - the zone returns at its own index, which
 	//! is the order the first-match rule reads.
