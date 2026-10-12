@@ -1119,7 +1119,7 @@ void PianoRoll::drawDetuningInfo( QPainter & _p, const Note * _n, int _x,
 	int old_x = 0;
 	int old_y = 0;
 
-	timeMap & map = _n->detuning()->automationClip()->getTimeMap();
+	const timeMap & map = _n->detuning()->automationClip()->getTimeMap();
 	for (timeMap::const_iterator it = map.begin(); it != map.end(); ++it)
 	{
 		// Current node values

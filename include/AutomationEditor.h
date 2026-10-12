@@ -140,17 +140,17 @@ protected:
 	//! the waveform drawn behind the automation, in the band @a top..@a top + @a height.
 	void drawGhostFades(QPainter& p, int top, int height);
 
-	timeMap::iterator getNodeAt(int x, int y, bool outValue = false, int r = 5);
+	timeMap::const_iterator getNodeAt(int x, int y, bool outValue = false, int r = 5);
 	/**
 	 * @brief Given a mouse X coordinate, returns a timeMap::iterator that points to
 	 *        the closest node.
 	 * @param Int X coordinate
 	 * @return timeMap::iterator with the closest node or timeMap.end() if there are no nodes.
 	 */
-	timeMap::iterator getClosestNode(int x);
+	timeMap::const_iterator getClosestNode(int x);
 
 	void drawLine( int x0, float y0, int x1, float y1 );
-	bool fineTuneValue(timeMap::iterator node, bool editingOutValue);
+	bool fineTuneValue(timeMap::const_iterator node, bool editingOutValue);
 
 protected slots:
 	void play();
@@ -291,8 +291,8 @@ private:
 	int m_keyTick = -1;  //!< ED-194: the point the keys edit, or -1
 
 	void drawCross(QPainter & p );
-	void drawAutomationPoint( QPainter & p, timeMap::iterator it );
-	void drawAutomationTangents(QPainter& p, timeMap::iterator it);
+	void drawAutomationPoint( QPainter & p, timeMap::const_iterator it );
+	void drawAutomationTangents(QPainter& p, timeMap::const_iterator it);
 	bool inPatternEditor();
 
 	QColor m_barLineColor;

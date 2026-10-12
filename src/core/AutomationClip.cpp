@@ -25,6 +25,7 @@
  */
 
 #include <cmath>
+#include <new>
 #include <vector>
 
 #include "AutomationRamp.h"
@@ -46,7 +47,7 @@
 namespace lmms
 {
 
-int AutomationClip::s_quantization = 1;
+std::atomic<int> AutomationClip::s_quantization{1};
 const float AutomationClip::DEFAULT_MIN_VALUE = 0;
 const float AutomationClip::DEFAULT_MAX_VALUE = 1;
 
@@ -63,8 +64,6 @@ AutomationClip::AutomationClip( AutomationTrack * _auto_track ) :
 {
 	changeLength( TimePos( 1, 0 ) );
 }
-
-
 
 
 AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
@@ -88,9 +87,8 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 	{
 		// Copies the automation node (in/out values and in/out tangents)
 		m_timeMap[POS(it)] = it.value();
-		// Sets the node's clip to this one
-		m_timeMap[POS(it)].setClip(this);
 	}
+	publishReadSnapshot();
 }
 
 bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
@@ -133,6 +131,7 @@ void AutomationClip::setProgressionType(
 		_new_progression_type == ProgressionType::CubicHermite )
 	{
 		m_progressionType = _new_progression_type;
+		publishReadSnapshot();
 		emit dataChanged();
 	}
 }
@@ -150,6 +149,7 @@ void AutomationClip::setTension( QString _new_tension )
 	if( ok && nt > -0.01 && nt < 1.01 )
 	{
 		m_tension = nt;
+		publishReadSnapshot();
 	}
 }
 
@@ -158,8 +158,6 @@ void AutomationClip::setTension( QString _new_tension )
 
 const AutomatableModel * AutomationClip::firstObject() const
 {
-	QMutexLocker m(&m_clipMutex);
-
 	AutomatableModel* model;
 	if (!m_objects.empty() && (model = m_objects.front()) != nullptr)
 	{
@@ -172,8 +170,6 @@ const AutomatableModel * AutomationClip::firstObject() const
 
 const AutomationClip::objectVector& AutomationClip::objects() const
 {
-	QMutexLocker m(&m_clipMutex);
-
 	return m_objects;
 }
 
@@ -245,7 +241,7 @@ TimePos AutomationClip::putValue(
 	newTime = std::max(TimePos(0), newTime);
 
 	// Create a node or replace the existing one on newTime
-	m_timeMap[newTime] = AutomationNode(this, value, newTime);
+	m_timeMap[newTime] = AutomationNode(value);
 
 	timeMap::iterator it = m_timeMap.find(newTime);
 
@@ -259,7 +255,10 @@ TimePos AutomationClip::putValue(
 		{
 			// Remove nodes between the quantization points, them not
 			// being included
+			const bool previouslySuppressed = m_snapshotPublicationSuppressed;
+			m_snapshotPublicationSuppressed = true;
 			removeNodes(newTime + 1, newTime + quantization() - 1);
+			m_snapshotPublicationSuppressed = previouslySuppressed;
 		}
 	}
 	if (it != m_timeMap.begin()) { --it; }
@@ -267,6 +266,7 @@ TimePos AutomationClip::putValue(
 
 	updateLength();
 
+	publishReadSnapshot();
 	emit dataChanged();
 
 	return newTime;
@@ -301,7 +301,7 @@ TimePos AutomationClip::putValues(
 	newTime = std::max(TimePos(0), newTime);
 
 	// Create a node or replace the existing one on newTime
-	m_timeMap[newTime] = AutomationNode(this, inValue, outValue, newTime);
+	m_timeMap[newTime] = AutomationNode(inValue, outValue);
 
 	timeMap::iterator it = m_timeMap.find(newTime);
 
@@ -315,7 +315,10 @@ TimePos AutomationClip::putValues(
 		{
 			// Remove nodes between the quantization points, them not
 			// being included
+			const bool previouslySuppressed = m_snapshotPublicationSuppressed;
+			m_snapshotPublicationSuppressed = true;
 			removeNodes(newTime + 1, newTime + quantization() - 1);
+			m_snapshotPublicationSuppressed = previouslySuppressed;
 		}
 	}
 	if (it != m_timeMap.begin()) { --it; }
@@ -323,6 +326,7 @@ TimePos AutomationClip::putValues(
 
 	updateLength();
 
+	publishReadSnapshot();
 	emit dataChanged();
 
 	return newTime;
@@ -347,6 +351,7 @@ void AutomationClip::removeNode(const TimePos & time)
 
 	updateLength();
 
+	publishReadSnapshot();
 	emit dataChanged();
 }
 
@@ -360,6 +365,7 @@ void AutomationClip::removeNode(const TimePos & time)
  */
 void AutomationClip::removeNodes(const int tick0, const int tick1)
 {
+	QMutexLocker m(&m_clipMutex);
 	if (tick0 == tick1)
 	{
 		removeNode(TimePos(tick0));
@@ -369,20 +375,142 @@ void AutomationClip::removeNodes(const int tick0, const int tick1)
 	auto start = TimePos(std::min(tick0, tick1));
 	auto end = TimePos(std::max(tick0, tick1));
 
-	// Make a list of TimePos with nodes to be removed
-	// because we can't simply remove the nodes from
-	// the timeMap while we are iterating it.
-	std::vector<TimePos> nodesToRemove;
+	auto it = m_timeMap.lowerBound(start);
+	const auto endIt = m_timeMap.upperBound(end);
+	if (it == endIt) { return; }
+	while (it != endIt) { it = m_timeMap.erase(it); }
+	if (it != m_timeMap.begin()) { --it; }
+	generateTangents(it, 3);
+	const bool previouslySuppressed = m_snapshotPublicationSuppressed;
+	m_snapshotPublicationSuppressed = true;
+	updateLength();
+	m_snapshotPublicationSuppressed = previouslySuppressed;
+	publishReadSnapshot();
+	emit dataChanged();
+}
 
-	for (auto it = m_timeMap.lowerBound(start), endIt = m_timeMap.upperBound(end); it != endIt; ++it)
-	{
-		nodesToRemove.push_back(POS(it));
-	}
 
-	for (auto node: nodesToRemove)
+bool AutomationClip::setNodeInValue(const TimePos& time, float value)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	it.value().m_inValue = value;
+	if (it != m_timeMap.begin()) { --it; }
+	generateTangents(it, 3);
+	publishReadSnapshot();
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::setNodeOutValue(const TimePos& time, float value)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	it.value().m_outValue = value;
+	if (it != m_timeMap.begin()) { --it; }
+	generateTangents(it, 3);
+	publishReadSnapshot();
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::setNodeTangent(const TimePos& time, bool outgoing, float tangent)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	if (outgoing) { it.value().setOutTangent(tangent); }
+	else { it.value().setInTangent(tangent); }
+	publishReadSnapshot();
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::setNodeTangents(const TimePos& time, float inTangent, float outTangent, bool locked)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	it.value().setInTangent(inTangent);
+	it.value().setOutTangent(outTangent);
+	it.value().setLockedTangents(locked);
+	publishReadSnapshot();
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::setNodeLockedTangents(const TimePos& time, bool locked)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	it.value().setLockedTangents(locked);
+	if (!locked) { generateTangents(it, 1); }
+	publishReadSnapshot();
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::setNodeCurve(const TimePos& time, AutomationNode::Curve curve, float bend)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto it = m_timeMap.find(time);
+	if (it == m_timeMap.end()) { return false; }
+	it.value().setCurve(curve, bend);
+	publishReadSnapshot();
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::moveNode(const TimePos& from, const TimePos& to, float inValue)
+{
+	QMutexLocker m(&m_clipMutex);
+	auto source = m_timeMap.find(from);
+	if (source == m_timeMap.end()) { return false; }
+	if (from != to && m_timeMap.contains(to)) { return false; }
+
+	const auto curve = source.value().curve();
+	const float bend = source.value().bend();
+	cleanObjects();
+	const TimePos newTime = std::max(TimePos(0), to);
+	m_timeMap.remove(from);
+	m_timeMap[newTime] = AutomationNode(inValue);
+	auto moved = m_timeMap.find(newTime);
+	moved.value().setCurve(curve, bend);
+	if (moved != m_timeMap.begin()) { --moved; }
+	generateTangents(moved, 3);
+	updateLength();
+	publishReadSnapshot();
+	emit dataChanged();
+	return true;
+}
+
+
+bool AutomationClip::rescaleValuesToRange(float oldMin, float oldMax, float newMin, float newMax)
+{
+	if (oldMin == oldMax || (oldMin == newMin && oldMax == newMax)) { return false; }
+
+	QMutexLocker m(&m_clipMutex);
+	if (m_timeMap.isEmpty()) { return false; }
+
+	for (auto it = m_timeMap.begin(); it != m_timeMap.end(); ++it)
 	{
-		removeNode(node);
+		const float clamped = std::clamp(it.value().m_inValue, oldMin, oldMax);
+		it.value().m_inValue = (clamped - oldMin) * (newMax - newMin) / (oldMax - oldMin) + newMin;
+		it.value().m_outValue = it.value().m_inValue;
 	}
+	generateTangents();
+	publishReadSnapshot();
+	emit dataChanged();
+	return true;
 }
 
 
@@ -395,10 +523,17 @@ void AutomationClip::removeNodes(const int tick0, const int tick1)
  */
 void AutomationClip::resetNodes(const int tick0, const int tick1)
 {
+	QMutexLocker m(&m_clipMutex);
+	bool changed = false;
 	if (tick0 == tick1)
 	{
 		auto it = m_timeMap.find(TimePos(tick0));
-		if (it != m_timeMap.end()) { it.value().resetOutValue(); }
+		if (it != m_timeMap.end() && it.value().m_outValue != it.value().m_inValue)
+		{
+			it.value().m_outValue = it.value().m_inValue;
+			changed = true;
+		}
+		if (changed) { publishReadSnapshot(); }
 		return;
 	}
 
@@ -407,8 +542,13 @@ void AutomationClip::resetNodes(const int tick0, const int tick1)
 
 	for (auto it = m_timeMap.lowerBound(start), endIt = m_timeMap.upperBound(end); it != endIt; ++it)
 	{
-		it.value().resetOutValue();
+		if (it.value().m_outValue != it.value().m_inValue)
+		{
+			it.value().m_outValue = it.value().m_inValue;
+			changed = true;
+		}
 	}
+	if (changed) { publishReadSnapshot(); }
 }
 
 
@@ -416,6 +556,8 @@ void AutomationClip::resetNodes(const int tick0, const int tick1)
 
 void AutomationClip::resetTangents(const int tick0, const int tick1)
 {
+	QMutexLocker m(&m_clipMutex);
+	bool changed = false;
 	if (tick0 == tick1)
 	{
 		auto it = m_timeMap.find(TimePos(tick0));
@@ -423,7 +565,9 @@ void AutomationClip::resetTangents(const int tick0, const int tick1)
 		{
 			it.value().setLockedTangents(false);
 			generateTangents(it, 1);
+			changed = true;
 		}
+		if (changed) { publishReadSnapshot(); }
 		return;
 	}
 
@@ -434,7 +578,9 @@ void AutomationClip::resetTangents(const int tick0, const int tick1)
 	{
 		it.value().setLockedTangents(false);
 		generateTangents(it, 1);
+		changed = true;
 	}
+	if (changed) { publishReadSnapshot(); }
 }
 
 
@@ -442,17 +588,77 @@ void AutomationClip::resetTangents(const int tick0, const int tick1)
 
 void AutomationClip::recordValue(TimePos time, float value)
 {
+	recordValueAtMapTime(recordingMapTime(time), value);
+}
+
+
+void AutomationClip::recordValueAtMapTime(TimePos mapTime, float value)
+{
 	QMutexLocker m(&m_clipMutex);
+	const bool previouslySuppressed = m_snapshotPublicationSuppressed;
+	m_snapshotPublicationSuppressed = true;
 
 	if( value != m_lastRecordedValue )
 	{
-		putValue(time - startTimeOffset(), value, true);
+		putValue(mapTime, value, false, true);
 		m_lastRecordedValue = value;
 	}
-	else if( valueAt(time - startTimeOffset()) != value )
+	else if( editableValueAt(mapTime) != value )
 	{
-		removeNode(time - startTimeOffset());
+		removeNode(mapTime);
 	}
+	m_snapshotPublicationSuppressed = previouslySuppressed;
+	if (!previouslySuppressed) { publishReadSnapshot(); }
+}
+
+
+void AutomationClip::recordQueuedValue(TimePos mapTime, float value, std::size_t producer, std::uint64_t sequence)
+{
+	QMutexLocker lock(&m_clipMutex);
+	if (producer >= m_appliedRecordingSequences.size())
+	{
+		m_appliedRecordingSequences.resize(producer + 1, 0);
+	}
+	m_appliedRecordingSequences[producer] = sequence;
+	recordValueAtMapTime(mapTime, value);
+}
+
+
+float AutomationClip::editableValueAt(const TimePos& time) const
+{
+	if (m_timeMap.isEmpty()) { return 0.0f; }
+	auto next = m_timeMap.lowerBound(time);
+	if (next != m_timeMap.end() && POS(next) == time) { return INVAL(next); }
+	if (next == m_timeMap.begin()) { return 0.0f; }
+	auto previous = std::prev(next);
+	if (next == m_timeMap.end()) { return OUTVAL(previous); }
+	const int offset = time - POS(previous);
+	if (offset == 0) { return INVAL(previous); }
+	const auto curve = previous.value().curve();
+	if (curve == AutomationNode::Curve::Bend)
+	{
+		const double t = std::clamp(static_cast<double>(offset) / std::max(1, POS(next) - POS(previous)), 0.0, 1.0);
+		const double bend = previous.value().bend();
+		const double shaped = bend >= 0.0 ? std::pow(t, 1.0 + 4.0 * bend)
+			: 1.0 - std::pow(1.0 - t, 1.0 - 4.0 * bend);
+		return static_cast<float>(OUTVAL(previous) + (INVAL(next) - OUTVAL(previous)) * shaped);
+	}
+	const auto type = curve == AutomationNode::Curve::Clip ? m_progressionType
+		: curve == AutomationNode::Curve::Hold ? ProgressionType::Discrete
+		: curve == AutomationNode::Curve::Linear ? ProgressionType::Linear : ProgressionType::CubicHermite;
+	if (type == ProgressionType::Discrete) { return OUTVAL(previous); }
+	if (type == ProgressionType::Linear)
+	{
+		const float slope = (INVAL(next) - OUTVAL(previous)) / (POS(next) - POS(previous));
+		return OUTVAL(previous) + offset * slope;
+	}
+	const int numValues = POS(next) - POS(previous);
+	const float t = static_cast<float>(offset) / static_cast<float>(numValues);
+	const float m1 = OUTTAN(previous) * numValues * m_tension;
+	const float m2 = INTAN(next) * numValues * m_tension;
+	const auto t2 = t * t, t3 = t2 * t;
+	return (2 * t3 - 3 * t2 + 1) * OUTVAL(previous)
+		+ (t3 - 2 * t2 + t) * m1 + (-2 * t3 + 3 * t2) * INVAL(next) + (t3 - t2) * m2;
 }
 
 
@@ -476,6 +682,8 @@ TimePos AutomationClip::setDragValue(
 )
 {
 	QMutexLocker m(&m_clipMutex);
+	const bool previouslySuppressed = m_snapshotPublicationSuppressed;
+	m_snapshotPublicationSuppressed = true;
 
 	if (m_dragging == false)
 	{
@@ -545,6 +753,8 @@ TimePos AutomationClip::setDragValue(
 			it.value().setLockedTangents(true);
 		}
 	}
+	m_snapshotPublicationSuppressed = previouslySuppressed;
+	publishReadSnapshot();
 
 	return returnedPos;
 }
@@ -560,103 +770,6 @@ void AutomationClip::applyDragValue()
 	QMutexLocker m(&m_clipMutex);
 
 	m_dragging = false;
-}
-
-
-
-
-float AutomationClip::valueAt( const TimePos & _time ) const
-{
-	QMutexLocker m(&m_clipMutex);
-
-	if( m_timeMap.isEmpty() )
-	{
-		return 0;
-	}
-
-	// If we have a node at that time, just return its value
-	if (m_timeMap.contains(_time))
-	{
-		// When the time is exactly the node's time, we want the inValue
-		return m_timeMap[_time].getInValue();
-	}
-
-	// lowerBound returns next value with equal or greater key. Since we already
-	// checked if the key contains a node, we know the returned node has a greater
-	// key than _time. Therefore we take the previous element to calculate the current value
-	timeMap::const_iterator v = m_timeMap.lowerBound(_time);
-
-	if( v == m_timeMap.begin() )
-	{
-		return 0;
-	}
-
-	const auto pv = std::prev(v);
-
-	if( v == m_timeMap.end() )
-	{
-		// When the time is after the last node, we want the outValue of it
-		return OUTVAL(pv);
-	}
-
-	return valueAt(pv, _time - POS(pv));
-}
-
-
-
-
-// This method will get the value at an offset from a node, so we use the outValue of
-// that node and the inValue of the next node for the calculations.
-float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
-{
-	QMutexLocker m(&m_clipMutex);
-
-	// We never use it with offset 0, but doesn't hurt to return a correct
-	// value if we do
-	if (offset == 0) { return INVAL(v); }
-
-	// 0.5.0 ED-185: a point may carry its own curve to the next point.
-	const AutomationNode::Curve curve = v.value().curve();
-	if (curve == AutomationNode::Curve::Bend) { return bendValueAt(v, offset); }
-	const ProgressionType type = curve == AutomationNode::Curve::Clip ? m_progressionType
-		: curve == AutomationNode::Curve::Hold ? ProgressionType::Discrete
-		: curve == AutomationNode::Curve::Linear ? ProgressionType::Linear : ProgressionType::CubicHermite;
-	if (type == ProgressionType::Discrete)
-	{
-		return OUTVAL(v);
-	}
-	else if( type == ProgressionType::Linear )
-	{
-		auto const nv = std::next(v);
-		float slope =
-			(INVAL(nv) - OUTVAL(v))
-			/ (POS(nv) - POS(v));
-
-		return OUTVAL(v) + offset * slope;
-	}
-	else /* ProgressionType::CubicHermite */
-	{
-		// Implements a Cubic Hermite spline as explained at:
-		// http://en.wikipedia.org/wiki/Cubic_Hermite_spline#Unit_interval_.280.2C_1.29
-		//
-		// Note that we are not interpolating a 2 dimensional point over
-		// time as the article describes.  We are interpolating a single
-		// value: y.  To make this work we map the values of x that this
-		// segment spans to values of t for t = 0.0 -> 1.0 and scale the
-		// tangents _m1 and _m2
-		auto const nv = std::next(v);
-
-		int numValues = (POS(nv) - POS(v));
-		float t = (float) offset / (float) numValues;
-		float m1 = OUTTAN(v) * numValues * m_tension;
-		float m2 = INTAN(nv) * numValues * m_tension;
-
-		auto t2 = t * t, t3 = t2 * t;
-		return (2 * t3 - 3 * t2 + 1) * OUTVAL(v)
-			+ (t3 - 2 * t2 + t) * m1
-			+ (-2 * t3 + 3 * t2) * INVAL(nv)
-			+ (t3 - t2) * m2;
-	}
 }
 
 
@@ -690,142 +803,6 @@ float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
 static_assert( 2 * ( ( DEFAULT_BUFFER_SIZE * 999 * 48 ) / ( 22050 * 60 ) + 1 ) + 2 <= AutomationRamp::MaxKnots,
 	"a 256-frame block at 999 BPM and 22.05 kHz must fit the automation ramp" );
 
-void AutomationClip::setSampleAccurate( bool on )
-{
-	setRampSetting( on ? RampSetting::On : RampSetting::Off );
-}
-
-
-void AutomationClip::setRampSetting( RampSetting setting )
-{
-	QMutexLocker m(&m_clipMutex);
-	m_rampSetting = setting;
-}
-
-
-float AutomationClip::rampValueAt( const TimePos & rel, float fraction ) const
-{
-	if( m_timeMap.isEmpty() || rel < 0 )
-	{
-		return 0.0f;
-	}
-
-	const int ticks = static_cast<int>( rel.getTicks() );
-	const timeMap::const_iterator last = std::prev( m_timeMap.end() );
-	if( ticks >= POS( last ) )
-	{
-		// At or after the last node the curve holds the last node's out value -
-		// exactly what valueAt(TimePos) returns past the end of the map.
-		return OUTVAL( last );
-	}
-
-	// The segment that starts at the node at or before this tick is the one the
-	// value moves along, so the value at the node itself is its OUT value:
-	// valueAt(v, 0) returns the IN value, which is the limit the PREVIOUS
-	// segment reaches, not the one this one starts from.
-	const timeMap::const_iterator next = m_timeMap.upperBound( ticks );
-	if( next == m_timeMap.begin() )
-	{
-		// Before the FIRST node no segment has started, and stepping back from
-		// upperBound() would step off the map: the clip's value there is the one
-		// valueAt(TimePos) returns for the same ticks, which is no value at all.
-		return 0.0f;
-	}
-	const timeMap::const_iterator v = std::prev( next );
-	const int offset = ticks - POS( v );
-	const float start = ( offset == 0 ) ? OUTVAL( v ) : valueAt( v, offset );
-	const float end = valueAt( v, offset + 1 );
-	return start + fraction * ( end - start );
-}
-
-
-void AutomationClip::addRampKnot( AutomationRamp & ramp, const TimePos & relClipStart,
-	int frame, int frameOffsetInTick, double framesPerTick ) const
-{
-	// The knot's own POSITION inside its tick, from the frame it is written on,
-	// so a knot is exactly on the curve rather than at a rounded boundary.
-	const double position = ( static_cast<double>( frameOffsetInTick ) + frame ) / framesPerTick;
-	const int tickOffset = static_cast<int>( std::floor( position ) );
-	const float fraction = static_cast<float>( position - tickOffset );
-
-	TimePos rel = relClipStart + tickOffset;
-	if( !isInPattern() )
-	{
-		rel = std::min( static_cast<int>( rel ), length() - startTimeOffset() );
-	}
-	ramp.addKnot( static_cast<f_cnt_t>( frame ), rampValueAt( rel, fraction ) );
-}
-
-
-void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart,
-	f_cnt_t frames, double framesPerTick, int frameOffsetInTick ) const
-{
-	QMutexLocker m(&m_clipMutex);
-
-	ramp.reset( frames );
-	if( m_timeMap.isEmpty() || frames == 0 || framesPerTick <= 0.0 )
-	{
-		return;
-	}
-
-	const TimePos relStart = blockStart - startPosition() - startTimeOffset();
-	if( relStart < 0 )
-	{
-		return; // the block starts before this clip does
-	}
-
-	// The block's own geometry travels with each knot call.
-	// Knot 0 is the block's first sample, at its own position inside its tick.
-	addRampKnot( ramp, relStart, 0, frameOffsetInTick, framesPerTick );
-
-	// Then one PAIR of knots per tick boundary inside the block: the frame
-	// before the boundary holds the value the curve had coming into it, the
-	// boundary carries the value it takes going out. For a Discrete curve that
-	// pair IS the step; for a Linear one it is two points on the same line. A
-	// boundary landing exactly ON the block's last frame is written too - the
-	// block's own end knot carries that frame's value, so the frame before it
-	// still needs the value coming in or the step smears back over it.
-	for( int tick = 1; ; ++tick )
-	{
-		const double knotFrame = tick * framesPerTick - frameOffsetInTick;
-		if( knotFrame > static_cast<double>( frames ) )
-		{
-			break;
-		}
-		// floor/ceil, not round: the frame just BEFORE the boundary carries the
-		// value the curve had coming into it and the first frame ON or after it
-		// carries the value it takes going out, so a Discrete curve's step
-		// lands on the first sample that is past it - never a sample early.
-		int before = static_cast<int>( std::floor( knotFrame ) );
-		const int after = static_cast<int>( std::ceil( knotFrame ) );
-		if( before == after )
-		{
-			// The boundary falls EXACTLY on a sample, so both knots would land on
-			// that one frame and both would carry the value the curve takes going
-			// OUT - leaving the ramp to interpolate into the step over the frames
-			// before it. The frame just before it holds the value coming in.
-			before = after - 1;
-		}
-		// The sample before the boundary is any frame past the block's own first
-		// knot, which already carries the value coming in - frame 0 is that knot,
-		// so it is the one frame that must not be written twice.
-		if( before > 0 )
-		{
-			addRampKnot( ramp, relStart, before, frameOffsetInTick, framesPerTick );
-		}
-		if( after > 0 && after < static_cast<int>( frames ) )
-		{
-			addRampKnot( ramp, relStart, after, frameOffsetInTick, framesPerTick );
-		}
-	}
-
-	// ...and the block's end, so the samples after the last boundary
-	// interpolate to where the curve actually is when the block runs out,
-	// instead of holding the last boundary's value.
-	addRampKnot( ramp, relStart, static_cast<int>( frames ), frameOffsetInTick, framesPerTick );
-}
-
-
 float *AutomationClip::valuesAfter( const TimePos & _time ) const
 {
 	QMutexLocker m(&m_clipMutex);
@@ -843,7 +820,7 @@ float *AutomationClip::valuesAfter( const TimePos & _time ) const
 
 	for( int i = 0; i < numValues; i++ )
 	{
-		ret[i] = valueAt( v, i );
+		ret[i] = editableValueAt(POS(v) + i);
 	}
 
 	return ret;
@@ -954,7 +931,7 @@ void AutomationClip::loadSettings( const QDomElement & _this )
 			float timeMapInValue = LocaleHelper::toFloat(element.attribute("value"));
 			float timeMapOutValue = LocaleHelper::toFloat(element.attribute("outValue"));
 
-			m_timeMap[timeMapPos] = AutomationNode(this, timeMapInValue, timeMapOutValue, timeMapPos);
+			m_timeMap[timeMapPos] = AutomationNode(timeMapInValue, timeMapOutValue);
 			m_timeMap[timeMapPos].loadCurve(element);
 
 			// Load tangents if there is information about it (it's enough to check for either inTan or outTan)
@@ -996,6 +973,7 @@ void AutomationClip::loadSettings( const QDomElement & _this )
 	}
 
 	if (shouldGenerateTangents) { generateTangents(); }
+	publishReadSnapshot();
 }
 
 
@@ -1180,6 +1158,7 @@ void AutomationClip::clear()
 	QMutexLocker m(&m_clipMutex);
 
 	m_timeMap.clear();
+	publishReadSnapshot();
 
 	emit dataChanged();
 }

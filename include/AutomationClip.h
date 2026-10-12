@@ -29,19 +29,24 @@
 
 #include <atomic>
 #include <cstdint>
+#include <vector>
 
 #include <QMap>
 #include <QPointer>
 
 #include "AutomationNode.h"
+#include "AutomationRecordingQueue.h"
 #include "Clip.h"
 
+class AutomationClipSnapshotTest;
+class AutomationRecordingTest;
 
 namespace lmms
 {
 
 class AutomationTrack;
 class TimePos;
+struct AutomationClipReadSnapshot;
 
 namespace gui
 {
@@ -71,7 +76,7 @@ public:
 	using TimemapIterator = timeMap::const_iterator;
 
 	AutomationClip( AutomationTrack * _auto_track );
-	~AutomationClip() override = default;
+	~AutomationClip() override;
 
 	bool addObject( AutomatableModel * _obj, bool _search_dup = true );
 
@@ -111,6 +116,17 @@ public:
 
 	void removeNode(const TimePos & time);
 	void removeNodes(const int tick0, const int tick1);
+	//! Edit an existing point without exposing a mutable map or node reference.
+	bool setNodeInValue(const TimePos& time, float value);
+	bool setNodeOutValue(const TimePos& time, float value);
+	bool setNodeTangent(const TimePos& time, bool outgoing, float tangent);
+	bool setNodeTangents(const TimePos& time, float inTangent, float outTangent, bool locked);
+	bool setNodeLockedTangents(const TimePos& time, bool locked);
+	bool setNodeCurve(const TimePos& time, AutomationNode::Curve curve, float bend = 0.f);
+	//! Move one point while retaining its curve and bend; refuses an occupied destination.
+	bool moveNode(const TimePos& from, const TimePos& to, float inValue);
+	//! Rescale all point values after the controlled model's range changes.
+	bool rescaleValuesToRange(float oldMin, float oldMax, float newMin, float newMax);
 
 	void resetNodes(const int tick0, const int tick1);
 
@@ -122,6 +138,10 @@ public:
 	void resetTangents(const int tick0, const int tick1);
 
 	void recordValue(TimePos time, float value);
+	//! Convert a clip-relative time to the exact map tick for a recorded value without taking the edit mutex.
+	TimePos recordingMapTime(const TimePos& clipRelativeTime) const noexcept;
+	//! Control consumer path: replay one queued event and publish its per-producer watermark.
+	void recordQueuedValue(TimePos mapTime, float value, std::size_t producer, std::uint64_t sequence);
 
 	TimePos setDragValue( const TimePos & time,
 				const float value,
@@ -141,11 +161,6 @@ public:
 		return m_timeMap;
 	}
 
-	inline timeMap & getTimeMap()
-	{
-		return m_timeMap;
-	}
-
 	inline float getMin() const
 	{
 		return firstObject()->minValue<float>();
@@ -156,10 +171,7 @@ public:
 		return firstObject()->maxValue<float>();
 	}
 
-	inline bool hasAutomation() const
-	{
-		return m_timeMap.isEmpty() == false;
-	}
+	bool hasAutomation() const;
 
 	static bool supportsTangentEditing(ProgressionType pType)
 	{
@@ -197,11 +209,7 @@ public:
 	enum class RampSetting : std::uint8_t { Default, On, Off };
 
 	//! Is this clip rendered at sample precision inside a block? (The resolved setting.)
-	bool sampleAccurate() const
-	{
-		return m_rampSetting == RampSetting::Default ? m_progressionType != ProgressionType::Discrete
-			: m_rampSetting == RampSetting::On;
-	}
+	bool sampleAccurate() const;
 	RampSetting rampSetting() const { return m_rampSetting; }
 	//! Turn it explicitly on or off. Journalled like any other clip edit (the setting is
 	//! serialized, and loadSettings resets it to Default on absence, so a checkpoint
@@ -219,11 +227,20 @@ public:
 	 *  that is the curve itself at every frame, because the curve is linear
 	 *  between two nodes and a node sits on a tick. REALTIME-SAFE: called from
 	 *  the audio thread, allocates nothing (the ramp is the caller's own
-	 *  fixed-capacity object), and takes the clip's own mutex ONCE for the whole
-	 *  block rather than once per evaluation.
+	 *  fixed-capacity object), and reads one immutable snapshot under the
+	 *  lock-free automation reader count. No clip mutex is taken here.
 	 */
 	void writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart, f_cnt_t frames,
 		double framesPerTick, int frameOffsetInTick ) const;
+	struct RecordingOverlay
+	{
+		AutomationRecordingQueue::OverlayScratch* scratch = nullptr;
+	};
+	void movePosition(const TimePos& pos) override;
+	void changeLength(const TimePos& length) override;
+	void setStartTimeOffset(const TimePos& startTimeOffset) override;
+	bool isMuted() const override;
+	void setMuted(bool muted) override;
 
 	//! 0.5.0 MX-160: the latency (frames) upstream of the parameter this clip drives, which the
 	//! clip's reading lags by while latency-compensated automation is on (AutomationLatency).
@@ -247,12 +264,15 @@ public:
 	static std::vector<AutomationClip*> clipsForModel(const AutomatableModel* _m);
 	static AutomationClip * globalAutomationClip( AutomatableModel * _m );
 	static void resolveAllIDs();
+	//! Control-thread poll for retired immutable snapshots; safe to call while no edit is occurring.
+	static void collectRetiredReadSnapshots();
+	static bool snapshotReadersActive() noexcept;
 
 	bool isRecording() const { return m_isRecording; }
 	void setRecording( const bool b ) { m_isRecording = b; }
 
-	static int quantization() { return s_quantization; }
-	static void setQuantization(int q) { s_quantization = q; }
+	static int quantization() { return s_quantization.load(std::memory_order_relaxed); }
+	static void setQuantization(int q) { s_quantization.store(q, std::memory_order_relaxed); }
 
 	AutomationClip* clone() override
 	{
@@ -284,7 +304,7 @@ public:
 	 *  distance from the middle of the parameter's range is added to whatever the absolute clips
 	 *  (or, without one, the parameter's own value when playback reached it) say. */
 	bool isRelative() const { return m_relative.load(std::memory_order_relaxed); }
-	void setRelative(bool relative) { m_relative.store(relative, std::memory_order_relaxed); }
+	void setRelative(bool relative);
 
 protected:
 	AutomationClip( const AutomationClip & _clip_to_copy );
@@ -293,19 +313,25 @@ private:
 	void cleanObjects();
 	void generateTangents();
 	void generateTangents(timeMap::iterator it, int numToGenerate);
-	float valueAt( timeMap::const_iterator v, int offset ) const;
-	//! ED-185: a Bend segment's value (AutomationClipTransforms.cpp).
-	float bendValueAt( timeMap::const_iterator v, int offset ) const;
-
+	float editableValueAt(const TimePos& time) const;
+	void publishReadSnapshot();
+	static void retireReadSnapshot(AutomationClipReadSnapshot* snapshot);
+	static void beginSnapshotReaderForTest();
+	static void endSnapshotReaderForTest();
+	static std::size_t retiredReadSnapshotCountForTest();
 	/*! The curve's value at clip-relative tick @a rel (plus @a fraction of the
 	 *  segment that starts there) - the segment, not the node, so a node whose
-	 *  in- and out-values differ does not make the ramp step early. Caller
-	 *  holds m_clipMutex. Allocates nothing. */
-	float rampValueAt( const TimePos & rel, float fraction ) const;
+	 *  in- and out-values differ does not make the ramp step early. */
+	static float rampValueAt(const AutomationClipReadSnapshot& snapshot, const TimePos& rel, float fraction,
+		const RecordingOverlay* overlay = nullptr);
 	//! One knot: the curve at @a frame of the block (whose first sample sits
-	//! @a frameOffsetInTick frames into its tick). Caller holds m_clipMutex.
-	void addRampKnot( AutomationRamp & ramp, const TimePos & relClipStart, int frame,
-		int frameOffsetInTick, double framesPerTick ) const;
+	//! @a frameOffsetInTick frames into its tick).
+	void addRampKnot(const AutomationClipReadSnapshot& snapshot, AutomationRamp& ramp,
+		const TimePos& relClipStart, int frame, int frameOffsetInTick, double framesPerTick,
+		const RecordingOverlay* overlay) const;
+	void addRampBoundaryKnots(const AutomationClipReadSnapshot& snapshot, AutomationRamp& ramp,
+		const TimePos& relClipStart, f_cnt_t frames, int frameOffsetInTick, double framesPerTick,
+		const RecordingOverlay* overlay) const;
 
 	/**
 	 * @brief
@@ -319,6 +345,10 @@ private:
 	// Mutex to make methods involving automation clips thread safe
 	// Mutable so we can lock it from const objects
 	mutable QRecursiveMutex m_clipMutex;
+	std::atomic<AutomationClipReadSnapshot*> m_readSnapshot{nullptr};
+	bool m_snapshotPublicationSuppressed = false;
+	std::uint64_t m_readSnapshotPublicationCount = 0;
+	std::vector<std::uint64_t> m_appliedRecordingSequences;
 
 	AutomationTrack * m_autoTrack;
 	std::vector<jo_id_t> m_idsToResolve;
@@ -347,7 +377,8 @@ private:
 	bool m_isRecording;
 	float m_lastRecordedValue;
 
-	static int s_quantization;
+	static std::atomic<int> s_quantization;
+	void recordValueAtMapTime(TimePos mapTime, float value);
 
 	static const float DEFAULT_MIN_VALUE;
 	static const float DEFAULT_MAX_VALUE;
@@ -355,6 +386,8 @@ private:
 	friend class gui::AutomationClipView;
 	friend class AutomationNode;
 	friend class gui::AutomationEditor;
+	friend class ::AutomationClipSnapshotTest;
+	friend class ::AutomationRecordingTest;
 
 } ;
 

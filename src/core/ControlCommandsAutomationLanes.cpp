@@ -212,9 +212,8 @@ ControlResult setCurve(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no automation point at that tick"));
 	}
 	clip->addJournalCheckPoint();
-	clip->getTimeMap()[at].setCurve(static_cast<AutomationNode::Curve>(curveNames().indexOf(args.value(QStringLiteral("curve")).toString())),
+	clip->setNodeCurve(TimePos(at), static_cast<AutomationNode::Curve>(curveNames().indexOf(args.value(QStringLiteral("curve")).toString())),
 		static_cast<float>(args.value(QStringLiteral("bend")).toDouble(0.0)));
-	emit clip->dataChanged();
 	return ControlResult::success(clipReply(target, parameter, clip));
 }
 

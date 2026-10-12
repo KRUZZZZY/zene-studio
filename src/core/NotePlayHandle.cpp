@@ -669,7 +669,10 @@ void NotePlayHandle::processTimePos(const TimePos& time, float pitchValue, bool 
 
 	if (isRecording && m_origin == Origin::MidiInput)
 	{
-		detuning()->automationClip()->recordValue(time - songGlobalParentOffset() - pos(), pitchValue / 100);
+		auto* clip = detuning()->automationClip();
+		Engine::getSong()->enqueueAutomationRecord(
+			static_cast<const JournallingObject&>(*clip).id(),
+			clip->recordingMapTime(time - songGlobalParentOffset() - pos()), pitchValue / 100);
 	}
 	else
 	{

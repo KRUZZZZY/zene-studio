@@ -137,6 +137,7 @@ include/AutomationModeMenu.h
 include/AutomationNode.h
 include/AutomationPointEdit.h
 include/AutomationRamp.h
+include/AutomationRecordingQueue.h
 include/AutomationSwitches.h
 include/AutomationTrack.h
 include/AutomationTrackView.h
@@ -1349,6 +1350,9 @@ src/core/AudioStretcher.cpp
 src/core/AudioWideInputStage.cpp
 src/core/AutomatableModel.cpp
 src/core/AutomationClip.cpp
+src/core/AutomationClipSnapshot.cpp
+src/core/AutomationClipSnapshotInternal.h
+src/core/AutomationClipSnapshotPublish.cpp
 src/core/AutomationClipTransforms.cpp
 src/core/AutomationLatency.cpp
 src/core/AutomationNode.cpp
@@ -2433,9 +2437,14 @@ tests/src/core/AudioPortsTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AudioStretcherTest.cpp
 tests/src/core/AutomatableModelTest.cpp
+tests/src/core/AutomationClipSnapshotTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationModesTest.cpp
+tests/src/core/AutomationPatternTimeTest.cpp
 tests/src/core/AutomationPrepassProofTest.cpp
+tests/src/core/AutomationRecordingGenerationTest.cpp
+tests/src/core/AutomationRecordingOverlayTest.cpp
+tests/src/core/AutomationRecordingTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BenchmarkBaseline.h
 tests/src/core/BounceInPlaceTest.cpp

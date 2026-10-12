@@ -55,8 +55,8 @@ void AutomationClip::flipY(int min, int max)
 
 		// To flip, that will be the new distance between
 		// the IN/OUT values and the min value
-		it.value().setInValue(min + inValDist);
-		it.value().setOutValue(min + outValDist);
+		it.value().m_inValue = min + inValDist;
+		it.value().m_outValue = min + outValDist;
 
 		changedTimeMap = true;
 	}
@@ -64,6 +64,7 @@ void AutomationClip::flipY(int min, int max)
 	if (changedTimeMap)
 	{
 		generateTangents();
+		publishReadSnapshot();
 		emit dataChanged();
 	}
 }
@@ -86,7 +87,7 @@ using TimeMap = AutomationClip::timeMap;
 
 //! flipX's body, split out unchanged for the CCN target (tests/complexity-gate.sh): the points in
 //! [start, end] mirrored in time into @a out, the others copied.
-void mirrorRange(AutomationClip* clip, const TimeMap& map, int start, int end, TimeMap& out)
+void mirrorRange(const TimeMap& map, int start, int end, TimeMap& out)
 {
 	const TimeMap::const_iterator firstIterator = map.lowerBound(0);
 	for (auto it = map.begin(); it != map.end(); ++it)
@@ -101,11 +102,11 @@ void mirrorRange(AutomationClip* clip, const TimeMap& map, int start, int end, T
 			// we have to set its in value to 0.
 			if (it == firstIterator && POS(firstIterator) > 0)
 			{
-				out[end - (POS(it) - start)] = AutomationNode(clip, OUTVAL(it), 0, end - (POS(it) - start));
+				out[end - (POS(it) - start)] = AutomationNode(OUTVAL(it), 0);
 			}
 			else
 			{
-				out[end - (POS(it) - start)] = AutomationNode(clip, OUTVAL(it), INVAL(it), end - (POS(it) - start));
+				out[end - (POS(it) - start)] = AutomationNode(OUTVAL(it), INVAL(it));
 			}
 			// The curve of the mirrored point is settled by mirrorSegmentCurves() below, once the
 			// whole map is known: it belongs to the segment the mirror STARTS, not to this one.
@@ -150,23 +151,23 @@ void flipEnds(AutomationClip* clip, const TimeMap& map, int start, int end, Time
 {
 	if (map.contains(start) && map.contains(end))
 	{
-		out[start] = AutomationNode(clip, map[start].getInValue(), map[end].getInValue(), start);
-		out[end] = AutomationNode(clip, map[start].getOutValue(), map[end].getOutValue(), end);
+		out[start] = AutomationNode(map[start].getInValue(), map[end].getInValue());
+		out[end] = AutomationNode(map[start].getOutValue(), map[end].getOutValue());
 	}
 	else if (map.contains(start))
 	{
-		out[start] = AutomationNode(clip, map[start].getInValue(), clip->valueAt(end), start);
-		out[end] = AutomationNode(clip, map[start].getOutValue(), clip->valueAt(end), end);
+		out[start] = AutomationNode(map[start].getInValue(), clip->valueAt(end));
+		out[end] = AutomationNode(map[start].getOutValue(), clip->valueAt(end));
 	}
 	else if (map.contains(end))
 	{
-		out[start] = AutomationNode(clip, clip->valueAt(start), map[end].getInValue(), start);
-		out[end] = AutomationNode(clip, clip->valueAt(start), map[end].getOutValue(), end);
+		out[start] = AutomationNode(clip->valueAt(start), map[end].getInValue());
+		out[end] = AutomationNode(clip->valueAt(start), map[end].getOutValue());
 	}
 	else
 	{
-		out[start] = AutomationNode(clip, clip->valueAt(start), clip->valueAt(end), start);
-		out[end] = AutomationNode(clip, clip->valueAt(start), clip->valueAt(end), end);
+		out[start] = AutomationNode(clip->valueAt(start), clip->valueAt(end));
+		out[end] = AutomationNode(clip->valueAt(start), clip->valueAt(end));
 	}
 
 	// The curves are not settled here: these two points are rebuilt, not mirrored, and the
@@ -190,7 +191,7 @@ void AutomationClip::flipX(int start, int end)
 	// Temporary map where we will store the flipped version
 	// of our clip
 	timeMap tempMap;
-	mirrorRange(this, m_timeMap, start, end, tempMap);
+	mirrorRange(m_timeMap, start, end, tempMap);
 	flipEnds(this, m_timeMap, start, end, tempMap);
 	// Last: a point's curve decides the segment after it, so which curve a mirrored point takes
 	// can only be read off the finished map.
@@ -203,6 +204,7 @@ void AutomationClip::flipX(int start, int end)
 	cleanObjects();
 
 	generateTangents();
+	publishReadSnapshot();
 	emit dataChanged();
 }
 
@@ -267,10 +269,11 @@ void AutomationClip::drawShape(int start, int end, Shape shape, int cycles, floa
 		const double phase = std::fmod(x * std::max(1, cycles), 1.0);
 		const float level = shape == Shape::Adsr ? adsrAt(x) : shapeAt(shape, phase, uniform(rng));
 		const float value = low + (high - low) * level;
-		m_timeMap[tick] = AutomationNode(this, value, tick);
+			m_timeMap[tick] = AutomationNode(value);
 		if (tick == end) { break; }
 	}
 	generateTangents();
+	publishReadSnapshot();
 	emit dataChanged();
 }
 
@@ -362,7 +365,7 @@ int AutomationClip::transformRange(int start, int end, double timeScale, int tim
 		// transform does not silently regenerate a hand-drawn slope. The generated
 		// tangents of an unlocked point are left at their defaults - generateTangents()
 		// below derives them from the values and the neighbours anyway.
-		AutomationNode point(this, value(moved[i].second.getInValue()), value(moved[i].second.getOutValue()), tick);
+		AutomationNode point(value(moved[i].second.getInValue()), value(moved[i].second.getOutValue()));
 		point.setCurve(moved[i].second.curve(), moved[i].second.bend());
 		point.setLockedTangents(moved[i].second.lockedTangents());
 		if (moved[i].second.lockedTangents())
@@ -373,6 +376,7 @@ int AutomationClip::transformRange(int start, int end, double timeScale, int tim
 	}
 	m_timeMap = kept;
 	generateTangents();
+	publishReadSnapshot();
 	emit dataChanged();
 	return static_cast<int>(moved.size());
 }
@@ -403,15 +407,6 @@ void simplify(const std::vector<std::pair<int, float>>& points, std::size_t firs
 
 } // namespace
 
-float AutomationClip::bendValueAt(timeMap::const_iterator v, int offset) const
-{
-	const auto next = std::next(v);
-	const double t = std::clamp(static_cast<double>(offset) / std::max(1, POS(next) - POS(v)), 0.0, 1.0);
-	const double bend = v.value().bend();
-	const double shaped = bend >= 0.0 ? std::pow(t, 1.0 + 4.0 * bend) : 1.0 - std::pow(1.0 - t, 1.0 - 4.0 * bend);
-	return static_cast<float>(OUTVAL(v) + (INVAL(next) - OUTVAL(v)) * shaped);
-}
-
 int AutomationClip::thin(float tolerance)
 {
 	QMutexLocker m(&m_clipMutex);
@@ -441,6 +436,7 @@ int AutomationClip::thin(float tolerance)
 		++removed;
 	}
 	generateTangents();
+	publishReadSnapshot();
 	emit dataChanged();
 	return removed;
 }

@@ -82,8 +82,10 @@ public:
 	} ;
 
 
-	AudioEngineWorkerThread( AudioEngine* audioEngine );
+	AudioEngineWorkerThread( AudioEngine* audioEngine, std::size_t recordingProducerSlot );
 	~AudioEngineWorkerThread() override;
+	//! Queue slot zero is the render caller; workers use the slot assigned before they start.
+	static std::size_t currentRecordingProducerSlot() noexcept { return s_currentRecordingProducerSlot; }
 
 	virtual void quit();
 
@@ -164,6 +166,7 @@ private:
 	static void waitForWake(std::uint32_t seen);
 
 	static JobQueue globalJobQueue;
+	static thread_local std::size_t s_currentRecordingProducerSlot;
 	//! The wake (R7.2, BUGS_FOUND 11.22 a): startAndWaitForJobs() and quit() bump it and
 	//! notify; a worker waits for it to move. Replaces a QWaitCondition, whose wakeAll() took a
 	//! mutex on the render thread every period. A wait on a value that has already moved returns
@@ -173,6 +176,7 @@ private:
 
 	//! Atomic, not volatile: quit() writes it while run() reads it on the worker (10.9a).
 	std::atomic<bool> m_quit;
+	std::size_t m_recordingProducerSlot;
 	//! Only this worker writes its buffer; the render owner drains it after the job queue joins.
 	DeferredPlayHandleEdits m_deferredPlayHandleEdits;
 } ;
