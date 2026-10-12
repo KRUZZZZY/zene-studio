@@ -2062,6 +2062,8 @@ tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
+# cluster new-p10-116: the anchored-name regression for favourite effects in the picker.
+tests/src/gui/EffectSelectDialogFilterTest.cpp
 tests/stem_commands_lib.py
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api boundary's
 # public header and its proof test. Both are fork-NEW and both are registered here
