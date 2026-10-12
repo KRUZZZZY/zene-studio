@@ -38,11 +38,14 @@
 #include <QTemporaryDir>
 #include <QThread>
 
+#include <limits>
+
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "SampleClip.h"
 #include "Song.h"
 #include "TaskCenter.h"
+#include "VideoFfmpeg.h"
 #include "Track.h"
 #include "VideoDecoder.h"
 #include "VideoFramePump.h"
@@ -240,6 +243,35 @@ private slots:
 		QVERIFY(qAbs(decoder.shownSeconds() - 0.28) < 0.03);
 		QVERIFY(bluish(decoder.frameAt(1.2, QSize(40, 40))));  // forward across the cut without a seek
 		QVERIFY(bluish(decoder.frameAt(99.0, QSize(40, 40))));  // past the end: the last frame
+	}
+
+	void anUnrepresentableSeekKeepsDecoderProgress()
+	{
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+#ifdef ZENE_HAVE_FFMPEG
+		video::MediaStream media;
+		QString why;
+		QVERIFY2(media.open(m_clip, AVMEDIA_TYPE_VIDEO, &why), qPrintable(why));
+		AVFrame* frame = av_frame_alloc();
+		AVPacket* packet = av_packet_alloc();
+		QVERIFY(frame != nullptr);
+		QVERIFY(packet != nullptr);
+
+		for (int i = 0; i < 30; ++i) { QVERIFY(media.receive(frame, packet)); }
+		const auto timestamp = [](const AVFrame* decoded) {
+			return decoded->best_effort_timestamp != AV_NOPTS_VALUE ? decoded->best_effort_timestamp : decoded->pts;
+		};
+		const int64_t previous = timestamp(frame);
+		QVERIFY(previous != AV_NOPTS_VALUE);
+
+		media.seek(std::numeric_limits<double>::max());
+		QVERIFY(media.receive(frame, packet));
+		const int64_t next = timestamp(frame);
+		QVERIFY2(next > previous, "an unrepresentable seek rewound or discarded decoded video progress");
+
+		av_frame_free(&frame);
+		av_packet_free(&packet);
+#endif
 	}
 
 	void thePumpAnswersOnTheInterfaceThread()
