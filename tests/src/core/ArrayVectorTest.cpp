@@ -23,11 +23,13 @@
  */
 
 #include "ArrayVector.h"
+#include "LocklessAllocator.h"
 
 #include <QObject>
 #include <QtTest>
 #include <array>
 #include <iterator>
+#include <stdexcept>
 
 using lmms::ArrayVector;
 
@@ -63,6 +65,11 @@ class ArrayVectorTest : public QObject
 {
 	Q_OBJECT
 private slots:
+	void zeroElementSizeConstructorTest()
+	{
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(1, 0)), std::invalid_argument);
+	}
+
 	void defaultConstructorTest()
 	{
 		// Ensure no elements are constructed
