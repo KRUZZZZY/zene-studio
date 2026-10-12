@@ -745,6 +745,8 @@ set(LMMS_TESTS
 	src/core/DeviceToolsChainTest.cpp
 	# 0.5.0 L10 (W3): the de-esser, transient shaper, vocoder and console devices.
 	src/core/DeviceDspTest.cpp
+	# Q050-030: selecting a Neural Amp model never waits behind a load (the effect is compiled in with a test seam).
+	src/plugins/NeuralAmpModelLoadTest.cpp
 	# catch-up W3: atomic snapshots for device options, the compressor key filter, LV2 latency; reduction meters on bypass.
 	src/core/RealtimeSnapshotTest.cpp
 	# catch-up W1: undo honesty - redo failures, list copies, the macro pair, arm many, no journal step refused.
@@ -1375,6 +1377,21 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+	endif()
+
+	# Q050-030: NeuralAmpModelLoadTest compiles the effect and its engine in, with the worker-delay seam
+	# that exists only in this executable.
+	if(LMMS_TEST_NAME STREQUAL "NeuralAmpModelLoadTest")
+		set(NAM_DIR "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${NAM_DIR}/NeuralAmpEffect.cpp ${NAM_DIR}/NeuralAmpControls.cpp ${NAM_DIR}/NeuralAmpControlDialog.cpp
+			${NAM_DIR}/nam/NamModel.cpp ${NAM_DIR}/nam/NamModelLoader.cpp)
+		# plugin_export.h is generated beside the plug-in module, so it has to exist first.
+		add_dependencies(${LMMS_TEST_NAME} neuralamp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${NAM_DIR} "${CMAKE_BINARY_DIR}/plugins/NeuralAmp"
+			${NAM_DIR}/rtneural/modules/Eigen ${NAM_DIR}/rtneural/modules/json)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_NAM_TEST_SEAM PLUGIN_NAME=neuralamp)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 
 	# W3EngineTest loads the build's amplifier (post-fader inserts) and receiver (chain.receive) modules.
