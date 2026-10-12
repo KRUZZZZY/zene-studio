@@ -29,6 +29,9 @@
 
 #ifdef LMMS_HAVE_ALSA
 #include <cstdint>
+#ifdef LMMS_TESTING
+#include <atomic>
+#endif
 
 #include <alsa/asoundlib.h>
 
@@ -58,6 +61,10 @@ public:
 	struct PipeOnlyForTesting {};
 	explicit MidiAlsaSeq(PipeOnlyForTesting);
 	int wakeReadFdForTesting() const noexcept { return m_pipe[0]; }
+	bool pollWaitActiveForTesting() const noexcept
+	{
+		return m_pollWaitActiveForTesting.load(std::memory_order_acquire);
+	}
 #endif
 
 	static QString probeDevice();
@@ -168,6 +175,9 @@ private:
 	QStringList m_writablePorts;
 
 	int m_pipe[2] = {-1, -1};
+#ifdef LMMS_TESTING
+	std::atomic<bool> m_pollWaitActiveForTesting{false};
+#endif
 
 
 signals:
