@@ -40,6 +40,8 @@ endif()
 
 set(LMMS_TESTS
 	src/core/ArrayVectorTest.cpp
+	# Short ALSA writes must advance through every remaining frame in a period.
+	src/core/AudioAlsaWriteTest.cpp
 	src/core/AudioBufferTest.cpp
 	src/core/AudioBusHandleTest.cpp
 	src/core/AudioBusTest.cpp
