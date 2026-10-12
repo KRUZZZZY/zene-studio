@@ -30,6 +30,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace lmms
 {
@@ -271,29 +272,35 @@ auto pushOrRecord(MidiHandoffQueue<Capacity>& queue, MidiChannelOverflow& overfl
  * and the drain stops with the cut still pending.
  *
  * A cut is sent before the first event that was queued after its refusal, so a note started after the refusal
- * is not cut by it. Cuts do not count against \a maxEvents.
+ * is not cut by it. \a maxEvents caps queue events taken; \a maxEmittedEvents caps both queue events and cuts
+ * successfully emitted. Remaining events and cuts stay queued or pending for the next call.
  */
 template<std::size_t Capacity, typename EmitEvent, typename EmitCut>
 void drainMidi(MidiHandoffQueue<Capacity>& queue, MidiChannelOverflow& overflow, std::size_t maxEvents,
-	EmitEvent&& emitEvent, EmitCut&& emitCut)
+	EmitEvent&& emitEvent, EmitCut&& emitCut,
+	std::size_t maxEmittedEvents = std::numeric_limits<std::size_t>::max())
 {
 	std::size_t taken = 0;
+	std::size_t emitted = 0;
 	for (;;)
 	{
 		const auto consumed = queue.consumed();
 		for (int channel = 0; channel < 16; ++channel)
 		{
 			if (!overflow.due(channel, consumed)) { continue; }
+			if (emitted >= maxEmittedEvents) { return; }
 			const auto sentStamp = overflow.stamp(channel);
 			if (!emitCut(channel)) { return; }
+			++emitted;
 			overflow.clear(channel, sentStamp);
 		}
-		if (taken >= maxEvents) { return; }
+		if (taken >= maxEvents || emitted >= maxEmittedEvents) { return; }
 
 		HandoffMidiEvent event;
 		if (!queue.pop(event)) { return; }
 		++taken;
 		if (!emitEvent(event)) { return; }
+		++emitted;
 	}
 }
 

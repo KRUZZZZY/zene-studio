@@ -856,6 +856,7 @@ plugins/Bitcrush/BitcrushControls.h
 plugins/CarlaBase/Carla.cpp
 plugins/CarlaBase/Carla.h
 plugins/CarlaBase/CarlaConfig/config.h
+plugins/CarlaBase/CarlaMidiHandoff.h
 plugins/CarlaBase/DummyCarla.cpp
 plugins/CarlaPatchbay/CarlaPatchbay.cpp
 plugins/CarlaRack/CarlaRack.cpp
@@ -2820,6 +2821,7 @@ tests/src/gui/WorkspaceAccessTest.cpp
 tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
+tests/src/plugins/CarlaMidiHandoffTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp

@@ -64,24 +64,6 @@ namespace lmms
 // this doesn't seem to be defined anywhere
 static const double ticksPerBeat = 48.0;
 
-namespace
-{
-
-//! Converts one queued MIDI event into the native form the plugin reads.
-//! @return false when the event has no byte form, in which case it is skipped
-bool stageMidiEvent(const HandoffMidiEvent& queued, NativeMidiEvent& native)
-{
-    const MidiEvent event(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2);
-    std::memset(&native, 0, sizeof(NativeMidiEvent));
-    native.port = 0;
-    native.time = queued.offset;
-    const std::size_t written = writeToByteSeq(event, native.data, sizeof(NativeMidiEvent::data));
-    if (written) { native.size = written; }
-    return written != 0;
-}
-
-} // namespace
-
 /*
  * Current TODO items:
  *  - get plugin instance name (to use in external window title)
@@ -172,7 +154,6 @@ CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const D
       kIsPatchbay(isPatchbay),
       fHandle(nullptr),
       fDescriptor(isPatchbay ? carla_get_native_patchbay_plugin() : carla_get_native_rack_plugin()),
-      fMidiEventCount(0),
       m_paramModels()
 {
     fHost.handle      = this;
@@ -550,38 +531,18 @@ void CarlaInstrument::playImpl(std::span<SampleFrame> out)
     std::memset(buf1, 0, sizeof(float)*bufsize);
     std::memset(buf2, 0, sizeof(float)*bufsize);
 
-    // Stage the MIDI queued since the last period, in order, at most one array's worth. A channel whose events the
-    // full queue refused is cut with all-notes-off at the point of the refusal. Only this thread pops the queue.
-    fMidiEventCount = 0;
-    drainMidi(fMidiHandoff, fMidiOverflow, static_cast<std::size_t>(kMaxMidiEvents),
-        [this](const HandoffMidiEvent& queued) -> bool
-        {
-            if (stageMidiEvent(queued, fMidiEvents[fMidiEventCount])) { ++fMidiEventCount; }
-            return true;
-        },
-        [this](int channel) -> bool
-        {
-            if (fMidiEventCount >= kMaxMidiEvents) { return false; } // no room yet: the cut waits for next period
-            HandoffMidiEvent allNotesOff;
-            allNotesOff.type = static_cast<std::uint8_t>(MidiControlChange);
-            allNotesOff.channel = static_cast<std::int8_t>(channel);
-            allNotesOff.param1 = 123;
-            allNotesOff.param2 = 0;
-            if (stageMidiEvent(allNotesOff, fMidiEvents[fMidiEventCount])) { ++fMidiEventCount; }
-            return true;
-        });
-
+    float** const buffers = rBuf;
+    fMidiHandoff.processPeriod([this, buffers, bufsize](const NativeMidiEvent* events, std::uint32_t eventCount)
     {
 // TODO FIXME this is just here so it compiles.
 // https://github.com/falkTX/Carla/blob/8bceb9ed173a10b29038f8abb4383710c0e497c1/source/includes/CarlaNative.h
 //     FIXME for v3.0, use const for the input buffer
 #if CARLA_VERSION_HEX >= CARLA_VERSION_HEX_3
-        fDescriptor->process(fHandle, (const float**)rBuf, rBuf, bufsize, fMidiEvents, fMidiEventCount);
+        fDescriptor->process(fHandle, (const float**)buffers, buffers, bufsize, events, eventCount);
 #else
-        fDescriptor->process(fHandle, rBuf, rBuf, bufsize, fMidiEvents, fMidiEventCount);
+        fDescriptor->process(fHandle, buffers, buffers, bufsize, events, eventCount);
 #endif
-        fMidiEventCount = 0;
-    }
+    });
 
     for (uint i=0; i < bufsize; ++i)
     {
@@ -594,14 +555,8 @@ bool CarlaInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&, f_
 {
     // Realtime: any thread may call this, the audio thread included, and nothing here waits. The event is
     // staged by the next processed period (playImpl()). A full queue refuses it.
-    HandoffMidiEvent queued;
-    queued.type = static_cast<std::uint8_t>(event.type());
-    queued.channel = event.channel();
-    queued.param1 = event.param(0);
-    queued.param2 = event.param(1);
-    queued.offset = static_cast<std::uint32_t>(offset);
     // A refused event is recorded and its channel cut later, which ends its notes just the same.
-    pushOrRecord(fMidiHandoff, fMidiOverflow, queued);
+    fMidiHandoff.enqueue(event, static_cast<std::uint32_t>(offset));
     return true;
 }
 
