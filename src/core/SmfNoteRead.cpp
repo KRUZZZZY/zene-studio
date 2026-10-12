@@ -99,6 +99,16 @@ long long be32(const QByteArray& bytes, int at)
 	return (static_cast<long long>(be16(bytes, at)) << 16) | be16(bytes, at + 2);
 }
 
+bool isZeroPadding(const QByteArray& bytes, long long from)
+{
+	if (from >= bytes.size()) { return false; }
+	for (long long at = from; at < bytes.size(); ++at)
+	{
+		if (bytes[static_cast<int>(at)] != '\0') { return false; }
+	}
+	return true;
+}
+
 //! One track being read: where it is in file ticks, its running status, and the notes still sounding.
 struct TrackWalk
 {
@@ -261,7 +271,7 @@ bool readChunks(const QByteArray& bytes, SmfNoteRead* read)
 		}
 		at = body + length;
 	}
-	if (at != bytes.size())
+	if (at != bytes.size() && !isZeroPadding(bytes, at))
 	{
 		return failWith(read, QStringLiteral("the MIDI file has %1 stray bytes after its last chunk").arg(bytes.size() - at));
 	}

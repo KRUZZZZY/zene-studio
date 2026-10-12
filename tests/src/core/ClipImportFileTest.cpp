@@ -225,6 +225,23 @@ private slots:
 		QCOMPARE(read.endTick, 192LL);
 	}
 
+	void aMidiFileWithTrailingZeroPaddingCanBeImported()
+	{
+		const QString track = addTrack(QStringLiteral("instrument"));
+		const QString file = m_dir.filePath(QStringLiteral("padded.mid"));
+		QVERIFY(write(file, chordTrack() + QByteArray(3, '\0')));
+
+		const ControlResult made = run(QStringLiteral("clip.import_file"),
+			{{QStringLiteral("path"), file}, {QStringLiteral("track"), track}, {QStringLiteral("position"), 384}});
+		QVERIFY2(made.ok, qPrintable(made.errorMessage));
+		QCOMPARE(made.result.value(QStringLiteral("kind")).toString(), QStringLiteral("midi"));
+		QCOMPARE(made.result.value(QStringLiteral("note_count")).toInt(), 3);
+		MidiClip* clip = midiClipOf(made.result.value(QStringLiteral("clip")).toString());
+		QVERIFY(clip != nullptr);
+		QCOMPARE(clip->startPosition().getTicks(), 384);
+		QCOMPARE(static_cast<int>(clip->notes().size()), 3);
+	}
+
 	void theReaderRefusesWhatIsNotAUsableMidiFile()
 	{
 		QVERIFY(!interchange::readSmfNotes(QByteArray()).ok);
