@@ -229,6 +229,7 @@ Lb302Synth::Lb302Synth(InstrumentTrack* instrumentTrack)
 	, m_vcfs{std::make_unique<Lb302FilterIIR2>(&m_fs), std::make_unique<Lb302Filter3Pole>(&m_fs)}
 {
 	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, &Lb302Synth::filterChanged);
+	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, &Lb302Synth::decayChanged);
 	connect(&m_vcfCutKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
 	connect(&m_vcfResKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
 	connect(&m_vcfModKnob, &FloatModel::dataChanged, this, &Lb302Synth::filterChanged);
