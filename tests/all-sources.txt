@@ -2636,6 +2636,7 @@ tests/src/gui/ShellLayoutTest.cpp
 tests/src/gui/ShellTest.cpp
 tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
+tests/src/gui/StepRecorderWidgetTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp
 tests/src/gui/TaskIndicatorTest.cpp
 tests/src/gui/TempoMapPanelTest.cpp
