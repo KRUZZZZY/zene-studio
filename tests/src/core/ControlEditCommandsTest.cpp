@@ -315,6 +315,44 @@ private slots:
 		QCOMPARE(removed.result.value(QStringLiteral("track_count")).toInt(), countBefore - 1);
 	}
 
+	//! In a headless process the surface can name one clip, but the arranger selection did not come back.
+	void headlessSelectionApplyReportsClipsSkipped()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult addedTrack = registry->invoke(QStringLiteral("track.add"),
+			QJsonObject{{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY2(addedTrack.ok, qPrintable(addedTrack.errorMessage));
+		const QString track = addedTrack.result.value(QStringLiteral("track")).toString();
+
+		const ControlResult firstAdded = registry->invoke(QStringLiteral("clip.add"),
+			QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("position"), 0},
+				{QStringLiteral("length"), 192}});
+		QVERIFY2(firstAdded.ok, qPrintable(firstAdded.errorMessage));
+		const ControlResult secondAdded = registry->invoke(QStringLiteral("clip.add"),
+			QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("position"), 384},
+				{QStringLiteral("length"), 192}});
+		QVERIFY2(secondAdded.ok, qPrintable(secondAdded.errorMessage));
+		const QJsonArray clips{firstAdded.result.value(QStringLiteral("clip")),
+			secondAdded.result.value(QStringLiteral("clip"))};
+
+		const ControlResult saved = registry->invoke(QStringLiteral("selection.save"),
+			QJsonObject{{QStringLiteral("name"), QStringLiteral("headless-multiple-clips")},
+				{QStringLiteral("clips"), clips}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		const ControlResult applied = registry->invoke(QStringLiteral("selection.apply"),
+			QJsonObject{{QStringLiteral("name"), QStringLiteral("headless-multiple-clips")}});
+		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+
+		QCOMPARE(applied.result.value(QStringLiteral("clips")).toArray(), clips);
+		QCOMPARE(applied.result.value(QStringLiteral("missing")).toInt(), 0);
+		QVERIFY(!applied.result.value(QStringLiteral("restored")).toArray().contains(QStringLiteral("clips")));
+		QCOMPARE(applied.result.value(QStringLiteral("skipped")).toArray(), QJsonArray{QStringLiteral("clips")});
+
+		const ControlResult state = registry->invoke(QStringLiteral("arrangement.get_state"));
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		QCOMPARE(state.result.value(QStringLiteral("selected_clip")).toString(), clips.first().toString());
+	}
+
 	//! track.add's undo finds its track by id when it runs: track.remove and its undo rebuild the
 	//! track as a new object, and the step used to remove the freed one it kept a pointer to.
 	void trackAddUndoFindsItsTrackAfterARemovalIsUndone()
