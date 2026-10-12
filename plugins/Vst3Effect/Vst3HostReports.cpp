@@ -75,17 +75,23 @@ auto HostedPlugin::activateOutputBuses(int upTo) -> bool
 	auto& d = *m_impl;
 	if (d.prepared || !d.component) { return false; }
 	const int last = std::min(upTo, static_cast<int>(d.outputBusDescs.size()) - 1);
+	if (upTo > last) { return false; }
+	bool activated = true;
 	for (int bus = 1; bus <= last; ++bus)
 	{
 		auto& desc = d.outputBusDescs[static_cast<std::size_t>(bus)];
 		if (desc.active) { continue; }
-		if (d.component->activateBus(kAudio, kOutput, bus, true) != kResultOk) { return false; }
+		if (d.component->activateBus(kAudio, kOutput, bus, true) != kResultOk)
+		{
+			activated = false;
+			break;
+		}
 		desc.active = true;
 	}
 	std::vector<BusDescriptor> all = d.inputBusDescs;
 	all.insert(all.end(), d.outputBusDescs.begin(), d.outputBusDescs.end());
 	d.layout = mapBuses(all);
-	return upTo <= last;
+	return activated;
 }
 
 void HostedPlugin::refreshNoteExpressions()

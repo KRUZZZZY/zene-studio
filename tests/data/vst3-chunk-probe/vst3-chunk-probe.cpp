@@ -114,6 +114,8 @@ public:
 
 	//--- IComponent -----------------------------------------------------
 	tresult PLUGIN_API setActive (TBool state) SMTG_OVERRIDE;
+	tresult PLUGIN_API activateBus (MediaType type, BusDirection dir, int32 index,
+	                                TBool state) SMTG_OVERRIDE;
 	tresult PLUGIN_API setState (IBStream* state) SMTG_OVERRIDE;
 	tresult PLUGIN_API getState (IBStream* state) SMTG_OVERRIDE;
 
@@ -176,9 +178,11 @@ tresult PLUGIN_API ChunkProbe::initialize (FUnknown* context)
 		return result;
 	}
 
-	// An effect: one stereo input, one stereo output, no event bus.
+	// An effect: one stereo input, one active stereo output, two inactive auxiliary outputs.
 	addAudioInput (STR16 ("Audio In"), SpeakerArr::kStereo);
 	addAudioOutput (STR16 ("Audio Out"), SpeakerArr::kStereo);
+	addAudioOutput (STR16 ("Aux Out 1"), SpeakerArr::kMono, kAux, 0);
+	addAudioOutput (STR16 ("Aux Out 2"), SpeakerArr::kMono, kAux, 0);
 
 	parameters.addParameter (STR16 ("Gain"), nullptr, /*flags*/ 0, kDefaultGain,
 	                         ParameterInfo::kCanAutomate, kGainParam);
@@ -218,6 +222,18 @@ tresult PLUGIN_API ChunkProbe::setActive (TBool state)
 		}
 	}
 	return SingleComponentEffect::setActive (state);
+}
+
+//------------------------------------------------------------------------
+tresult PLUGIN_API ChunkProbe::activateBus (MediaType type, BusDirection dir,
+						   int32 index, TBool state)
+{
+	// The host regression exercises a successful prefix followed by refusal.
+	if (type == kAudio && dir == kOutput && index == 2 && state)
+	{
+		return kResultFalse;
+	}
+	return SingleComponentEffect::activateBus (type, dir, index, state);
 }
 
 //------------------------------------------------------------------------
