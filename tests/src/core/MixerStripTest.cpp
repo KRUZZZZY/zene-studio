@@ -60,6 +60,18 @@ MixerChannel* channel(int index) { return Engine::mixer()->mixerChannel(index); 
 
 QString ch(int index) { return control::channelIdOf(channel(index)); }
 
+void verifyLastUndoTransaction(const QString& command)
+{
+	const QJsonArray records = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray();
+	QVERIFY(!records.isEmpty());
+	if (records.isEmpty()) { return; }
+	const QJsonObject record = records.last().toObject();
+	QCOMPARE(record.value(QStringLiteral("command")).toString(), command);
+	QVERIFY(!record.value(QStringLiteral("before")).toObject().isEmpty());
+	QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+	QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+}
+
 //! Channel @a index's buffer filled with (left, right), @a frames frames.
 void fill(int index, float left, float right, int frames = 8)
 {
@@ -245,6 +257,7 @@ private slots:
 		QVERIFY2(renamed.ok, qPrintable(renamed.errorMessage));
 		QCOMPARE(channel(2)->m_name, QStringLiteral("Drum Bus"));  // trimmed
 		QCOMPARE(renamed.result.value(QStringLiteral("previous")).toString(), before);
+		verifyLastUndoTransaction(QStringLiteral("mixer.rename_channel"));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(channel(2)->m_name, before);
 		QVERIFY(run(QStringLiteral("control.redo")).ok);

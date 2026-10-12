@@ -124,8 +124,15 @@ ControlResult sendEnable(const QJsonObject& args)
 		addUndoStep([from, to, before]() { setSendEnabled(from, to, before); }, [from, to, on]() { setSendEnabled(from, to, on); });
 		Engine::getSong()->setModified();
 	}
-	return ControlResult::success({{QStringLiteral("from"), channelIdOf(ends.from)}, {QStringLiteral("to"), channelIdOf(ends.to)},
-		{QStringLiteral("enabled"), on}, {QStringLiteral("amount"), static_cast<double>(route->amount()->value())}});
+	QJsonObject result{{QStringLiteral("from"), channelIdOf(ends.from)}, {QStringLiteral("to"), channelIdOf(ends.to)},
+		{QStringLiteral("enabled"), on}, {QStringLiteral("amount"), static_cast<double>(route->amount()->value())}};
+	if (on != before)
+	{
+		result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("from"), channelIdOf(ends.from)},
+			{QStringLiteral("to"), channelIdOf(ends.to)}, {QStringLiteral("enabled"), before}}, QStringLiteral("control.undo"), {}, true,
+			QStringLiteral("action checkpoint: the recorded undo step restores the send's previous enabled state")));
+	}
+	return ControlResult::success(result);
 }
 
 //! A return channel named @a name, fed from channel @a fromId at @a amount; its index.
@@ -168,8 +175,12 @@ ControlResult createReturn(const QJsonObject& args)
 	};
 	addUndoStep(removeMade, [made, fromId, name, amount, preFader]() { *made = mixer()->mixerChannel(buildReturn(fromId, name, amount, preFader))->id(); });
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("channel"), channelIdOf(mixer()->mixerChannel(index))},
-		{QStringLiteral("from"), channelIdOf(from)}, {QStringLiteral("name"), name}});
+	const QString madeId = channelIdOf(mixer()->mixerChannel(index));
+	QJsonObject result{{QStringLiteral("channel"), madeId}, {QStringLiteral("from"), channelIdOf(from)}, {QStringLiteral("name"), name}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("channel"), madeId},
+		{QStringLiteral("from"), channelIdOf(from)}, {QStringLiteral("existed"), false}}, QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("action checkpoint: the recorded undo step removes the created return and its send")));
+	return ControlResult::success(result);
 }
 
 ControlResult find(const QJsonObject& args)

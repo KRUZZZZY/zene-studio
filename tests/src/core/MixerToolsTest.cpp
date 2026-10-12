@@ -68,6 +68,18 @@ MixerChannel* channel(int index) { return Engine::mixer()->mixerChannel(index); 
 
 QString ch(int index) { return control::channelIdOf(channel(index)); }
 
+void verifyLastUndoTransaction(const QString& command)
+{
+	const QJsonArray records = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray();
+	QVERIFY(!records.isEmpty());
+	if (records.isEmpty()) { return; }
+	const QJsonObject record = records.last().toObject();
+	QCOMPARE(record.value(QStringLiteral("command")).toString(), command);
+	QVERIFY(!record.value(QStringLiteral("before")).toObject().isEmpty());
+	QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+	QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+}
+
 void fill(int index, float left, float right)
 {
 	for (int f = 0; f < 8; ++f) { channel(index)->m_buffer[f] = SampleFrame(left, right); }
@@ -132,6 +144,7 @@ private slots:
 			{QStringLiteral("amount"), 0.5}}).ok);
 		QVERIFY(run(QStringLiteral("mixer.send_enable"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(2)},
 			{QStringLiteral("enabled"), false}}).ok);
+		verifyLastUndoTransaction(QStringLiteral("mixer.send_enable"));
 		MixerRoute* route = control::findMixerRoute(1, 2);
 		QVERIFY(route != nullptr && !route->enabled());
 		QCOMPARE(route->amount()->value(), 0.5f);
@@ -147,6 +160,7 @@ private slots:
 		const ControlResult made = run(QStringLiteral("mixer.create_return"), {{QStringLiteral("channel"), ch(1)},
 			{QStringLiteral("name"), QStringLiteral("Plate")}});
 		QVERIFY2(made.ok, qPrintable(made.errorMessage));
+		verifyLastUndoTransaction(QStringLiteral("mixer.create_return"));
 		QCOMPARE(Engine::mixer()->numChannels(), before + 1);
 		MixerChannel* back = channel(before);
 		QVERIFY(back->isBus());
