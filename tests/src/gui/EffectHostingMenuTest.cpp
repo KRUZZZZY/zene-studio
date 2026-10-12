@@ -38,6 +38,7 @@
 #include "ControlVocabulary.h"
 #include "EffectChain.h"
 #include "EffectHostingMenu.h"
+#include "EffectSelectDialog.h"
 #include "Engine.h"
 #include "Mixer.h"
 
@@ -88,6 +89,21 @@ private slots:
 		QCOMPARE(hostingStatusText({{QStringLiteral("hosting"), QJsonObject{{QStringLiteral("state"), QStringLiteral("in-process")}}}}),
 			QStringLiteral("Hosting: in-process"));
 		QCOMPARE(hostingStatusText(QJsonObject{}), QStringLiteral("Hosting: unknown"));
+	}
+
+	void anchoredSearchIncludesFavouriteRows()
+	{
+		QStandardItemModel source;
+		source.setColumnCount(2);
+		source.appendRow({new QStandardItem(QStringLiteral("Foo")), new QStandardItem(QStringLiteral("Zene Studio"))});
+		source.appendRow({new QStandardItem(QStringLiteral("★ Foo")), new QStandardItem(QStringLiteral("Zene Studio"))});
+		source.item(1, 0)->setData(true, pickerorganiser::FavouriteRole);
+
+		DualColumnFilterProxyModel filter;
+		filter.setSourceModel(&source);
+		filter.setFilterRegularExpression(QRegularExpression(QStringLiteral("^Foo$"), QRegularExpression::CaseInsensitiveOption));
+
+		QCOMPARE(filter.rowCount(), 2);
 	}
 
 	void theSubmenuFollowsTheDevicesEntry()
