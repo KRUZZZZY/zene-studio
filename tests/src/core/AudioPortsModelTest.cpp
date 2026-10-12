@@ -522,6 +522,25 @@ private slots:
 		QVERIFY(model.in().enabled(0, 0));
 		QVERIFY(model.out().enabled(1, 1));
 	}
+
+	//! A failed count parse can leave a zero default matching a valid zero-port side.
+	//! It must still prevent the associated matrix from clearing existing pins.
+	void outOfRangeCountsKeepExistingPins()
+	{
+		TestAudioPortsModel model{2, 0, false};
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.in().enabled(1, 1));
+
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"2\" outputs=\"134\">"
+			"<in_matrix/><out_matrix/></pins></audioengine>")));
+		model.loadSettings(doc.documentElement());
+
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.in().enabled(1, 1));
+		QVERIFY(!model.in().enabled(0, 1));
+	}
 };
 
 QTEST_GUILESS_MAIN(AudioPortsModelTest)

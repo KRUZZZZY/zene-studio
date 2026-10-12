@@ -1,61 +1,65 @@
-# Cluster new-p10-489 — Rejected zero-port project settings still erase existing pin connections
+# Cluster new-p10-489 — Rejected settings can still erase existing input pins
 
 **Verdict: FIXED**
 
 ## Finding
-`src/core/AudioPortsModel.cpp` (`AudioPortsModel::loadSettings`): when a project
-carries `<pins inputs="0" outputs="0">`, `parseAttributeInRange` accepts both
-counts (0 is inside `[0, MaxChannelsPerAudioBuffer]`), so `setChannelCounts(0, 0)`
-is called — and `setProcessorChannelCountsImpl` refuses it
-("At least one port count must be non-zero", AudioPortsModel.cpp:175-179).
-Loading then fell through to `m_in.loadSettings(...)` / `m_out.loadSettings(...)`,
-and `Matrix::loadSettings` clears every pin before applying the file's
-attributes (AudioPortsModel.cpp:530-534). An initialized processor therefore
-silently lost its existing routing even though the counts were rejected.
 
-## Fix
-`src/core/AudioPortsModel.cpp` (`loadSettings`): only load the file's matrices
-when the file's counts are actually in effect after the count application
-(`in().channelCount() == inputs && out().channelCount() == outputs`). A rejected
-load (0/0 against an initialized model, or an out-of-range count) no longer
-touches the pin matrices. Behaviour-preserving otherwise: accepted counts still
-load both matrices, and the existing out-of-range tests keep passing because
-their assertions hold on the untouched default connections.
+In `AudioPortsModel::loadSettings`, parsing `inputs="2" outputs="134"` updates
+`inputs` to 2, rejects the out-of-range output value, and leaves the initialized
+`outputs` value at 0. For a model with two input ports and zero output ports,
+the old equality-only guard matched both current counts and loaded the empty input
+matrix. `Matrix::loadSettings` clears all pins before applying matrix attributes,
+so existing input routing was erased even though the count parse had failed.
 
-## Evidence
-- `src/core/AudioPortsModel.cpp:238` — `if (countsInRange) { setChannelCounts(inputs, outputs); }`
-  followed unconditionally by the two matrix loads (pre-fix).
-- `src/core/AudioPortsModel.cpp:175-179` — `setProcessorChannelCountsImpl` rejects
-  `inCount == 0 && outCount == 0`.
-- `src/core/AudioPortsModel.cpp:530-534` — `Matrix::loadSettings` fills all pins with
-  false before applying attributes.
-- Regression test: `tests/src/core/AudioPortsModelTest.cpp::rejectedZeroPortCountsKeepExistingPins`
-  (empty and missing matrices variants).
+## Fix and regression
 
-## Commands and exit codes (logs in ~/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r1/logs)
-RED (original code):
-- `cmake --build build --target AudioPortsModelTest > LOGS/build-1.log 2>&1` — background task status: succeeded
-- `cd build/tests && ctest -R '^AudioPortsModelTest$' --output-on-failure > LOGS/test-1.log 2>&1` — **EXIT=8**
-  - `FAIL! : AudioPortsModelTest::rejectedZeroPortCountsKeepExistingPins() 'model.in().enabled(0, 0)' returned FALSE.` (AudioPortsModelTest.cpp:509)
-  - `Totals: 17 passed, 1 failed, 0 skipped, 0 blacklisted, 1219ms` (family: 18 test cases)
+The matrix load now requires both `countsInRange` and equality between the
+current counts and the parsed counts. The regression
+`AudioPortsModelTest::outOfRangeCountsKeepExistingPins` uses
+`TestAudioPortsModel{2, 0, false}`, loads `inputs="2" outputs="134"` with empty
+matrices, and verifies both existing diagonal input pins remain enabled.
 
-GREEN (with fix):
-- `cmake --build build --target AudioPortsModelTest > LOGS/build-2.log 2>&1` — EXIT=0
-- `cd build/tests && ctest -R '^AudioPortsModelTest$' --output-on-failure > LOGS/test-2.log 2>&1` — **EXIT=0**
+## File:line evidence
 
-Test-catches-bug proof (step 4b):
-- `git diff -- src/core/AudioPortsModel.cpp > LOGS/fix.patch && git apply -R LOGS/fix.patch` — applied OK
-- `cmake --build build --target AudioPortsModelTest > LOGS/build-3.log 2>&1` — EXIT=0
-- `cd build/tests && ctest -R '^AudioPortsModelTest$' --output-on-failure > LOGS/test-3.log 2>&1` — **EXIT=8** (fails without the fix; `Totals: 17 passed, 1 failed`)
-- `git apply LOGS/fix.patch` — applied OK
-- `cmake --build build --target AudioPortsModelTest > LOGS/build-4.log 2>&1` — EXIT=0
-- `cd build/tests && ctest -R '^AudioPortsModelTest$' --output-on-failure > LOGS/test-4.log 2>&1` — **EXIT=0**
+- `src/core/AudioPortsModel.cpp:226-249` — `loadSettings` parses the counts,
+  applies valid counts, and now guards both matrix loads with
+  `countsInRange && in().channelCount() == inputs && out().channelCount() == outputs`.
+- `src/core/AudioPortsModel.cpp:537-541` — `Matrix::loadSettings` fills all pins
+  with false before applying XML attributes.
+- `tests/src/core/AudioPortsModelTest.cpp:528-543` —
+  `outOfRangeCountsKeepExistingPins` covers the rejected output count and empty
+  input matrix.
 
-Gates:
-- `bash tests/complexity-gate.sh --check` — EXIT=0
-- `bash tests/file-length-gate.sh --check` — EXIT=0
+## Verification evidence
+
+All build and test logs are in
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs`.
+CTest commands ran from `build/tests`. The affected family contains one
+registered CTest test (`AudioPortsModelTest`); its QtTest run reported 19 cases
+in the red run (18 passed and the regression failed). Green ctest runs returned
+success for the same family.
+
+| Evidence | Exact command | Exit |
+| --- | --- | ---: |
+| RED build | `cmake --build build --target AudioPortsModelTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/build-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| RED test | `ctest -R '^AudioPortsModelTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/test-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 8 |
+| GREEN build | `cmake --build build --target zene AudioPortsModelTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/build-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| GREEN test | `ctest -R '^AudioPortsModelTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/test-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| Reverse only the product fix | `{ git diff -- src/core/AudioPortsModel.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/fix.patch; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"; } > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/proof-1.log 2>&1` | 0 |
+| Rebuild without product fix | `cmake --build build --target zene AudioPortsModelTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/build-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| Proof test without product fix | `ctest -R '^AudioPortsModelTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/test-3.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 8 |
+| Restore product fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/fix.patch > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/proof-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| Rebuild with product fix restored | `cmake --build build --target zene AudioPortsModelTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/build-5.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| Proof test with product fix restored | `ctest -R '^AudioPortsModelTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/test-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/gate-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+| File length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-489.r2/logs/gate-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 |
+
+The red runs failed specifically at
+`AudioPortsModelTest::outOfRangeCountsKeepExistingPins` because input pin
+`(0, 0)` was false. Both green runs passed the focused CTest family.
 
 ## Files committed
-- `src/core/AudioPortsModel.cpp` (fork-NEW, already listed in tests/fork-sources.txt — no ledger entry needed)
-- `tests/src/core/AudioPortsModelTest.cpp` (tests/** — allowed by the divergence gate)
+
+- `src/core/AudioPortsModel.cpp`
+- `tests/src/core/AudioPortsModelTest.cpp`
 - `docs/qwen-fixes-2026-10/cluster-new-p10-489.md`
