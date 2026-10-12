@@ -79,6 +79,29 @@ MidiController* bindThroughMidiLearn(AutomatableModel* model, int channel,
 	return boundMidiController(model);
 }
 
+class BufferResetProbeController final : public Controller
+{
+public:
+	explicit BufferResetProbeController() :
+		Controller(ControllerType::Lfo, Engine::getSong(), QStringLiteral("Buffer Reset Probe"))
+	{}
+
+	void setNextValue(float value) { m_nextValue = value; }
+	int updateCount() const { return m_updateCount; }
+
+protected:
+	void updateValueBuffer() override
+	{
+		m_valueBuffer.fill(m_nextValue);
+		m_bufferLastUpdated = runningPeriods();
+		++m_updateCount;
+	}
+
+private:
+	float m_nextValue = 0.5f;
+	int m_updateCount = 0;
+};
+
 //! The template name this file uses. Deliberately not a name a user would
 //! pick: saveTemplate() writes a REAL file under the user config dir, and the
 //! tests remove it again.
@@ -112,6 +135,26 @@ private slots:
 		// test - the MidiLearnTest discipline.
 		MidiLearn::instance()->setFocusTarget(nullptr);
 		MidiLearn::instance()->setEnabled(false);
+	}
+
+	void resettingFrameCounterRefreshesControllerBuffer()
+	{
+		Controller::resetFrameCounter();
+		BufferResetProbeController controller;
+		controller.setNextValue(0.2f);
+		Controller::triggerFrameCounter();
+		QCOMPARE(controller.currentValue(0), 0.2f);
+		QCOMPARE(controller.updateCount(), 1);
+
+		controller.setNextValue(0.8f);
+		Controller::triggerFrameCounter();
+		QCOMPARE(controller.currentValue(0), 0.8f);
+		QCOMPARE(controller.updateCount(), 2);
+
+		controller.setNextValue(0.4f);
+		Controller::resetFrameCounter();
+		QCOMPARE(controller.currentValue(0), 0.4f);
+		QCOMPARE(controller.updateCount(), 3);
 	}
 
 	/*! Soft-takeover: a hardware control that is bound to a control whose

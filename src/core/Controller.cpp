@@ -175,7 +175,7 @@ void Controller::resetFrameCounter()
 {
 	for (Controller * controller : s_controllers)
 	{
-		controller->m_bufferLastUpdated = 0;
+		controller->m_bufferLastUpdated = -1;
 	}
 	s_periods = 0;
 }
