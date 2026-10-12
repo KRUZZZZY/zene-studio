@@ -219,6 +219,37 @@ private slots:
 			"a clean run must leave no file of ours in the working directory");
 	}
 
+	// The production startup path begins SafeStart once before GuiApplication,
+	// then installs and begins it again after GuiApplication may create the
+	// working directory. Both calls belong to one process session: the GUI offer
+	// must still see the suspect read by the first call.
+	void startupSequenceKeepsSuspectAcrossBothBeginCalls()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString plugin = dir.filePath(QStringLiteral("plugins/libcrashed.so"));
+		QVERIFY(QDir().mkpath(QFileInfo(plugin).absolutePath()));
+		QFile marker(dir.filePath(QString::fromLatin1(kMarkerName)));
+		QVERIFY(marker.open(QIODevice::WriteOnly));
+		QVERIFY(marker.write(("Zene Studio safe-start marker v1\npid=4242\ntime_unix=1\n"
+			"active_phase=scan\nactive_format=lmms-module\nactive_plugin=crashy\nactive_file="
+			+ plugin + "\n").toUtf8()) > 0);
+		marker.close();
+
+		const std::string workDir = dir.path().toStdString();
+		QVERIFY(install(workDir));
+		beginSession(); // main.cpp: safe-start setup before GuiApplication
+		QVERIFY(crashSuspect().present);
+
+		QVERIFY(install(workDir));
+		beginSession(); // main.cpp: safe-start setup after GuiApplication
+		const ActivePlugin suspect = crashSuspect();
+		QVERIFY2(suspect.present, "the GUI startup offer must retain the first beginSession() suspect");
+		QCOMPARE(QString::fromStdString(suspect.file), plugin);
+		QCOMPARE(QString::fromStdString(suspect.phase), QStringLiteral("scan"));
+		endSession();
+	}
+
 	// -----------------------------------------------------------------------
 	// 2. THE KEY ARTEFACT. A child that REALLY faults leaves the marker for the
 	//    next launch, which reads the crashed session's own record and starts
@@ -344,8 +375,12 @@ private slots:
 		QTest::addColumn<int>("signal");
 		QTest::addColumn<QString>("phase");
 		QTest::addColumn<QString>("name");
+#ifndef Q_OS_WIN
 		QTest::newRow("segv while scanning") << "active-segv-scan" << int(SIGSEGV) << "scan" << "";
 		QTest::newRow("sigkill while instantiating") << "active-kill" << int(SIGKILL) << "instantiate" << "crashy";
+#else
+		QTest::newRow("POSIX signal cases unavailable") << QString() << 0 << QString() << QString();
+#endif
 	}
 
 	void aCrashInsideAPluginScopeNamesThePlugin()
@@ -423,6 +458,22 @@ private slots:
 				QCOMPARE(QString::fromStdString(currentActivePlugin().file), QString::fromStdString(inner));
 			}
 			// leaving the inner scope restores the enclosing plug-in
+			QVERIFY(markerBytes().contains(QByteArray::fromStdString("active_file=" + outer)));
+
+			// An engine-owned module nested inside a third-party load does not push
+			// an entry, so its scope must not pop the outer plug-in on destruction.
+			QTemporaryDir ownNested;
+			QVERIFY(ownNested.isValid());
+			const QByteArray savedPluginDir = qgetenv("LMMS_PLUGIN_DIR");
+			qputenv("LMMS_PLUGIN_DIR", ownNested.path().toLocal8Bit());
+			{
+				ActivePluginScope engineOwned("scan", "shipped", ownNested.path().toStdString()
+					+ "/libshipped.so", "lmms-module");
+				QCOMPARE(QString::fromStdString(currentActivePlugin().file), QString::fromStdString(outer));
+			}
+			if (savedPluginDir.isNull()) { qunsetenv("LMMS_PLUGIN_DIR"); }
+			else { qputenv("LMMS_PLUGIN_DIR", savedPluginDir); }
+			QCOMPARE(QString::fromStdString(currentActivePlugin().file), QString::fromStdString(outer));
 			QVERIFY(markerBytes().contains(QByteArray::fromStdString("active_file=" + outer)));
 		}
 		QVERIFY2(!markerBytes().contains("active_file"), "no stale plug-in may outlive its scope");

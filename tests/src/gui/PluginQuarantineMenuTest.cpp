@@ -80,13 +80,15 @@ private slots:
 		qputenv("LMMS_PLUGIN_SCAN_CACHE", m_home.filePath(QStringLiteral("plugin-scan-cache.json")).toLocal8Bit());
 		ConfigManager::inst()->loadConfigFile(m_home.filePath(QStringLiteral("zene.xml")));
 		Engine::init(true);
-		ControlRegistry::setReady(true);
+		QVERIFY2(!ControlRegistry::startupComplete(),
+			"the GUI prompt runs before the registry startup-ready flag is set");
 	}
 
 	void cleanupTestCase()
 	{
 		setPluginQuarantinePicker({});
-		ControlRegistry::setReady(false);
+		setCrashQuarantineAsker({});
+		setCrashQuarantineFailureReporter({});
 		Engine::destroy();
 	}
 
@@ -131,6 +133,11 @@ private slots:
 		release->trigger();
 		QVERIFY(!quarantined().contains(plugin));
 		QVERIFY(item(menu, QStringLiteral("Release libcrashy.so (file gone)")) == nullptr);
+		QAction* rescan = item(menu, QStringLiteral("Rescan Plugins"));
+		QVERIFY(rescan != nullptr);
+		rescan->trigger();
+		QVERIFY2(!menu->actions().first()->text().startsWith(QStringLiteral("Refused:")),
+			"the release menu's rescan command must work before registry startup readiness");
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 	}
 
@@ -150,8 +157,11 @@ private slots:
 				+ plugin + "\n").toUtf8());
 		}
 		QVERIFY(safestart::install(work.path().toStdString()));
-		safestart::beginSession();
+		safestart::beginSession(); // initial safe-start setup before GuiApplication
+		QVERIFY(safestart::install(work.path().toStdString()));
+		safestart::beginSession(); // GUI setup repeats it after GuiApplication
 		QVERIFY(safestart::crashSuspect().present);
+		QVERIFY(!ControlRegistry::startupComplete());
 
 		int asked = 0;
 		QString prompt;
@@ -165,6 +175,14 @@ private slots:
 		QVERIFY(offerCrashQuarantine());
 		QVERIFY(quarantined().contains(plugin));
 
+		int failures = 0;
+		QString failure;
+		setCrashQuarantineFailureReporter([&](const QString& text) { ++failures; failure = text; });
+		QVERIFY(!offerCrashQuarantine());
+		QCOMPARE(asked, 3);
+		QCOMPARE(failures, 1);
+		QVERIFY(failure.contains(QStringLiteral("already quarantined")));
+
 		QMenu parent;
 		QMenu* menu = addPluginQuarantineMenu(&parent);
 		emit menu->aboutToShow();
@@ -175,6 +193,7 @@ private slots:
 		QVERIFY2(!quarantined().contains(plugin), "the crash-quarantined entry must be releasable");
 
 		setCrashQuarantineAsker({});
+		setCrashQuarantineFailureReporter({});
 		safestart::endSession();
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 	}

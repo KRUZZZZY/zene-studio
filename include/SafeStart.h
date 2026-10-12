@@ -28,6 +28,7 @@
 #ifndef ZENE_SAFE_START_H
 #define ZENE_SAFE_START_H
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -225,17 +226,19 @@ void setProjectPath(const std::string& path);
 //! The project hint THIS session's marker carries ("" when none is set).
 std::string projectPath();
 
-//! Mark \a file as the plugin this session is about to scan or instantiate, by
-//! rewriting the marker (one small atomic write, GUI/loader thread only - never
-//! the audio thread). Only THIRD-PARTY files are recorded (isThirdPartyPluginFile),
-//! so the engine's own modules cost nothing. Calls nest: endActivePlugin() restores
-//! the enclosing one. A no-op when no marker is on disk.
-void beginActivePlugin(const std::string& phase, const std::string& name,
+//! Mark \a file as the plugin this session is about to scan or instantiate.
+//! Returns true when a third-party scope was pushed. An existing marker is
+//! rewritten with a bounded atomic write on the GUI/loader path, never audio;
+//! no timing claim is made. An owned file is not pushed, and no marker is
+//! created when none exists. Calls nest: endActivePlugin() restores the enclosing one.
+bool beginActivePlugin(const std::string& phase, const std::string& name,
 	const std::string& file, const std::string& format);
 //! Leave the plugin entered by the matching beginActivePlugin().
 void endActivePlugin();
 //! The plugin the CURRENT session is inside right now (present=false when none).
 ActivePlugin currentActivePlugin();
+//! Test seam for observing the real scan/instantiate instrumentation call sites.
+void setActivePluginObserverForTests(std::function<void(const ActivePlugin&)> observer);
 
 //! RAII pair for the two calls above.
 class ActivePluginScope
@@ -243,12 +246,15 @@ class ActivePluginScope
 public:
 	ActivePluginScope(const std::string& phase, const std::string& name,
 		const std::string& file, const std::string& format)
+		: m_active(beginActivePlugin(phase, name, file, format))
 	{
-		beginActivePlugin(phase, name, file, format);
 	}
-	~ActivePluginScope() { endActivePlugin(); }
+	~ActivePluginScope() { if (m_active) { endActivePlugin(); } }
 	ActivePluginScope(const ActivePluginScope&) = delete;
 	ActivePluginScope& operator=(const ActivePluginScope&) = delete;
+
+private:
+	bool m_active;
 };
 
 //! The plugin the PREVIOUS session died inside, when that run did not exit

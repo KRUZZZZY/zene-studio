@@ -344,6 +344,9 @@ void registerPluginScanCommands(ControlRegistry& registry)
 			{QStringLiteral("last_scan"), objectProperty()},
 			{QStringLiteral("note"), stringProperty()},
 		});
+		// The GUI quarantine menu reads this file-backed state before the command
+		// registry's project-edit readiness point. No song state is accessed.
+		cmd.requiresEngine = false;
 		cmd.handler = [](const QJsonObject&) { return handleScanCacheGetState(); };
 		registry.registerCommand(cmd);
 	}

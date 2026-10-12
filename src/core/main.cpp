@@ -1235,8 +1235,12 @@ int main( int argc, char * * argv )
 	safestart::install( ConfigManager::inst()->workingDir().toStdString() );
 	safestart::beginSession();
 	announceSafeStart();
-	// Headless/early path: never a modal here, the offer is the stderr line.
-	offerCrashQuarantineIfNamed( false );
+	// Core-only runs have no later GUI startup point, so make their offer here.
+	// GUI runs keep the suspect latched and offer once after GuiApplication exists.
+	if( coreOnly )
+	{
+		offerCrashQuarantineIfNamed( false );
+	}
 	if( coreOnly && crashreporter::hasPendingReport() )
 	{
 		// A headless run (render / --run-script) cannot show a dialog; offer

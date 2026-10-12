@@ -50,6 +50,7 @@
 #include "PluginFactory.h"
 
 #include <QtTest>
+#include <algorithm>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -139,6 +140,15 @@ private slots:
 		beginSession();
 		QVERIFY(safeStartActive());
 		resetSkippedInstances();
+		std::vector<ActivePlugin> observedScopes;
+		setActivePluginObserverForTests([&observedScopes](const ActivePlugin& active)
+		{
+			observedScopes.push_back(active);
+		});
+		struct ObserverReset
+		{
+			~ObserverReset() { setActivePluginObserverForTests({}); }
+		} observerReset;
 
 		// 1) SAFE: the instance is NOT created - and the module IS in the
 		//    factory's catalogue, so the skip is the mode's doing.
@@ -148,6 +158,11 @@ private slots:
 		QVERIFY2(factory->pluginInfo("midiexport").file.absoluteFilePath()
 				== fixture.filePath(QString::fromUtf8(moduleFileName())),
 			"the name must resolve to the FIXTURE copy: that is what makes it third-party");
+		const QString fixturePath = fixture.filePath(QString::fromUtf8(moduleFileName()));
+		QVERIFY2(std::any_of(observedScopes.begin(), observedScopes.end(), [&fixturePath](const ActivePlugin& active)
+			{
+				return active.phase == "scan" && QString::fromStdString(active.file) == fixturePath;
+			}), "PluginFactory::loadPluginDescriptor must enter the real scan marker scope");
 		lmms::Plugin* skipped = lmms::Plugin::instantiate(QStringLiteral("midiexport"),
 			nullptr, nullptr);
 		QVERIFY2(skipped != nullptr, "Plugin::instantiate must still return an object");
@@ -165,6 +180,10 @@ private slots:
 		QVERIFY2(dynamic_cast<lmms::DummyPlugin*>(loaded) == nullptr,
 			"with the session switch off the module must really load, or the skip above proves "
 			"nothing about safe-start mode");
+		QVERIFY2(std::any_of(observedScopes.begin(), observedScopes.end(), [&fixturePath](const ActivePlugin& active)
+			{
+				return active.phase == "instantiate" && QString::fromStdString(active.file) == fixturePath;
+			}), "Plugin::instantiate must enter the real module-instantiation marker scope");
 		delete loaded;
 		QCOMPARE(skippedCount(), 1);   // the control added no record
 

@@ -43,6 +43,7 @@ namespace
 
 std::function<QString()> s_picker;
 std::function<bool(const QString&)> s_crashAsker;
+std::function<void(const QString&)> s_crashFailureReporter;
 
 QString pickFile()
 {
@@ -133,6 +134,11 @@ QMenu* addPluginQuarantineMenu(QMenu* menu)
 
 void setCrashQuarantineAsker(std::function<bool(const QString&)> asker) { s_crashAsker = std::move(asker); }
 
+void setCrashQuarantineFailureReporter(std::function<void(const QString&)> reporter)
+{
+	s_crashFailureReporter = std::move(reporter);
+}
+
 bool offerCrashQuarantine()
 {
 	const safestart::ActivePlugin suspect = safestart::crashSuspect();
@@ -158,7 +164,12 @@ bool offerCrashQuarantine()
 		{{QStringLiteral("path"), file},
 		 {QStringLiteral("reason"), scanning ? QMenu::tr("crashed the previous session while it was being scanned")
 			: QMenu::tr("crashed the previous session while it was being instantiated")}});
-	return added.ok;
+	if (added.ok) { return true; }
+	const QString failure = QMenu::tr("Could not quarantine this plug-in. The scan cache was not changed.\n\n%1")
+		.arg(added.errorMessage);
+	if (s_crashFailureReporter) { s_crashFailureReporter(failure); }
+	else { QMessageBox::warning(nullptr, QMenu::tr("Plug-in quarantine failed"), failure); }
+	return false;
 }
 
 } // namespace lmms::gui

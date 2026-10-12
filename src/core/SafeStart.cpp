@@ -59,6 +59,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <mutex>
+#include <utility>
 
 #ifndef Q_OS_WIN
 #include <unistd.h>
@@ -87,6 +88,9 @@ struct State
 	//! Has beginSession() run yet? Before it, the marker on disk still belongs
 	//! to the PREVIOUS run, so the disk itself answers the previous-run question.
 	bool sessionBegun = false;
+	//! install() is repeated once during GUI startup; the matching next
+	//! beginSession() must keep the first read for this process.
+	bool preserveSessionOnNextBegin = false;
 	//! True when this session must skip third-party plugin instances.
 	bool safeStart = false;
 	//! Consecutive safe starts, 1 for the first one after the crash.
@@ -99,6 +103,7 @@ struct State
 	std::vector<SkippedInstance> skipped;
 	//! Plugins this session is inside (innermost last); the marker names the last.
 	std::vector<ActivePlugin> active;
+	std::function<void(const ActivePlugin&)> activePluginObserver;
 	std::mutex activeMutex;
 };
 
@@ -279,17 +284,45 @@ bool writeAcknowledged(const std::string& path)
 bool install(const std::string& workingDirectory)
 {
 	State& s = state();
-	s.installed = false;
-	s.directory.clear();
-	// A fresh install is a fresh session context, whether it succeeds or not:
-	// nothing has begun yet, so the disk answers the previous-run question
-	// again - even a FAILED install must not leave a stale session snapshot
-	// behind from a session that no longer exists.
-	s.sessionBegun = false;
-	if (workingDirectory.empty()) { return false; }
+	auto resetInstall = [&s]()
+	{
+		s.installed = false;
+		s.directory.clear();
+		// A fresh install is a fresh session context, even when it fails.
+		s.sessionBegun = false;
+		s.preserveSessionOnNextBegin = false;
+	};
+	if (workingDirectory.empty())
+	{
+		resetInstall();
+		return false;
+	}
 	const QFileInfo info(QString::fromStdString(workingDirectory));
-	if (!info.exists() || !info.isDir()) { return false; }
-	s.directory = QDir::cleanPath(info.absoluteFilePath()).toStdString();
+	if (!info.exists() || !info.isDir())
+	{
+		resetInstall();
+		return false;
+	}
+	const std::string directory = QDir::cleanPath(info.absoluteFilePath()).toStdString();
+	if (s.installed && s.sessionBegun && directory == s.directory)
+	{
+		// main() installs and begins SafeStart before GuiApplication, then repeats
+		// both calls after GuiApplication may have created the same directory.
+		// Keep the first read if the marker is still this process's own session
+		// marker. A different pid means this call models a new process/session.
+		const SessionRecord marker = readMarker(directory + "/" + kMarkerName);
+		if (!marker.present || marker.processId == processIdNow())
+		{
+			s.preserveSessionOnNextBegin = true;
+			return true;
+		}
+	}
+
+	// A fresh install is a fresh session context, whether it succeeds or not:
+	// even a FAILED install must not leave a stale session snapshot behind from
+	// a session that no longer exists.
+	resetInstall();
+	s.directory = directory;
 	s.installed = true;
 	return true;
 }
@@ -305,6 +338,11 @@ std::string acknowledgedPath() { return fileInDirectory(kAcknowledgedName); }
 void beginSession()
 {
 	State& s = state();
+	if (s.preserveSessionOnNextBegin)
+	{
+		s.preserveSessionOnNextBegin = false;
+		return;
+	}
 	s.skipped.clear();
 	{
 		const std::lock_guard<std::mutex> lock(s.activeMutex);
@@ -368,6 +406,7 @@ void endSession()
 	// the previous-run question for the NEXT launch again - and the disk is
 	// clean, because the marker was just unlinked above.
 	s.sessionBegun = false;
+	s.preserveSessionOnNextBegin = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -410,21 +449,27 @@ void setProjectPath(const std::string& path)
 	writeMarker(markerPath(), markerText());
 }
 
-void beginActivePlugin(const std::string& phase, const std::string& name,
+bool beginActivePlugin(const std::string& phase, const std::string& name,
 	const std::string& file, const std::string& format)
 {
 	State& s = state();
-	if (!s.installed || file.empty() || !isThirdPartyPluginFile(file)) { return; }
-	const std::lock_guard<std::mutex> lock(s.activeMutex);
+	if (!s.installed || file.empty() || !isThirdPartyPluginFile(file)) { return false; }
 	ActivePlugin entry;
 	entry.present = true;
 	entry.phase = phase;
 	entry.name = name;
 	entry.file = file;
 	entry.format = format;
-	s.active.push_back(entry);
-	// Only an existing marker is rewritten: this must never create crash state.
-	if (markerExists()) { writeMarker(markerPath(), markerText()); }
+	std::function<void(const ActivePlugin&)> observer;
+	{
+		const std::lock_guard<std::mutex> lock(s.activeMutex);
+		s.active.push_back(entry);
+		observer = s.activePluginObserver;
+		// Only an existing marker is rewritten: this must never create crash state.
+		if (markerExists()) { writeMarker(markerPath(), markerText()); }
+	}
+	if (observer) { observer(entry); }
+	return true;
 }
 
 void endActivePlugin()
@@ -442,6 +487,13 @@ ActivePlugin currentActivePlugin()
 	State& s = state();
 	const std::lock_guard<std::mutex> lock(s.activeMutex);
 	return s.active.empty() ? ActivePlugin() : s.active.back();
+}
+
+void setActivePluginObserverForTests(std::function<void(const ActivePlugin&)> observer)
+{
+	State& s = state();
+	const std::lock_guard<std::mutex> lock(s.activeMutex);
+	s.activePluginObserver = std::move(observer);
 }
 
 ActivePlugin crashSuspect()

@@ -1159,9 +1159,10 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   offers to quarantine exactly that file.** Before this, the marker recorded only the pid, time and project, so
   nothing could say which third-party plug-in killed the run. While `PluginFactory` dlopens a module (phase
   `scan`) or `Plugin::instantiate()` runs a plug-in's own entry point (phase `instantiate`), the marker carries
-  `active_phase` / `active_format` / `active_plugin` / `active_file` (one small atomic rewrite on the loading
-  thread, never the audio thread; only third-party files, so the engine's own modules cost nothing; nested loads
-  restore the enclosing one). The next start reads it back (`safestart::crashSuspect()`): the GUI asks **once**
+  `active_phase` / `active_format` / `active_plugin` / `active_file` through bounded atomic writes on the loading
+  thread, never the audio thread. The I/O cost has not been benchmarked; a scope for an engine-owned module does
+  not write the marker, and nested scopes restore their enclosing entry. When those writes succeed, the next
+  start reads the suspect back (`safestart::crashSuspect()`): the GUI asks **once**
   ("quarantine this plug-in?", `gui::offerCrashQuarantine`), and an unattended run prints one stderr line;
   `safestart.get_state` reports `crash_suspect` and `offer.quarantine` (the registered
   `plugin.scan_cache_quarantine_add` call with its arguments). Yes goes through that command, so **Edit ▸ Plugin

@@ -64,6 +64,10 @@ LMMS_EXPORT bool offerCrashQuarantine();
 //! Tests replace the yes/no question (argument: the prompt text). An empty function restores the box.
 LMMS_EXPORT void setCrashQuarantineAsker(std::function<bool(const QString&)> asker);
 
+//! Tests replace the failure notice (default: a warning box) to prove that a
+//! refused quarantine is reported to the user.
+LMMS_EXPORT void setCrashQuarantineFailureReporter(std::function<void(const QString&)> reporter);
+
 } // namespace lmms::gui
 
 #endif // LMMS_GUI_PLUGIN_QUARANTINE_MENU_H
