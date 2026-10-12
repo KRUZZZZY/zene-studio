@@ -167,6 +167,31 @@ private slots:
 		QVERIFY(!why.isEmpty());
 	}
 
+	//! Tags are normalized before persistence, and whitespace cannot become a
+	//! tag that disappears on the next load.
+	void tagInputIsTrimmedAndWhitespaceOnlyTagsAreRefused()
+	{
+		BrowserTagStore& store = BrowserTagStore::instance();
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("whitespace-tags.json"));
+		QVERIFY(store.openAt(path));
+		store.clear();
+		QVERIFY(store.save());
+
+		QString why;
+		QVERIFY2(!store.add(m_wave, QStringLiteral(" \t\n "), &why),
+			"a whitespace-only tag was accepted");
+		QVERIFY2(!why.isEmpty(), "refusing an empty tag reported no reason");
+		QCOMPARE(store.entryCount(), 0);
+		QVERIFY2(store.load(), qPrintable(store.lastError()));
+		QVERIFY(store.tagsOf(m_wave).isEmpty());
+
+		QVERIFY2(store.add(m_wave, QStringLiteral("  cymbal  "), &why), qPrintable(why));
+		QCOMPARE(store.tagsOf(m_wave), QStringList({QStringLiteral("cymbal")}));
+		store.clear();
+		QVERIFY2(store.load(), qPrintable(store.lastError()));
+		QCOMPARE(store.tagsOf(m_wave), QStringList({QStringLiteral("cymbal")}));
+	}
+
 	//! A store that cannot be parsed is refused loudly: silently starting from an
 	//! empty library would destroy the one on disk at the next save.
 	void unreadableStoreIsReported()
