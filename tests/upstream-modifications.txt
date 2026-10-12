@@ -626,6 +626,7 @@ plugins/Delay/DelayEffect.cpp	rename layer 1: built-in plugin logo resource key 
 plugins/Dispersion/Dispersion.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/DualFilter/DualFilter.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/DynamicsProcessor/DynamicsProcessor.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/DynamicsProcessor/DynamicsProcessorControls.cpp	validate decoded wave-shape size against the fixed 200-float model; malformed saved shapes restore the default curve, covered by PluginPortsMigrationTest::dynamicsProcessorRejectsShortWaveShape
 plugins/Eq/EqEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Flanger/FlangerEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/FrequencyShifter/FrequencyShifterEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
