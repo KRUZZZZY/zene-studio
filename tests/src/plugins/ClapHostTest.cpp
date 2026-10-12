@@ -31,6 +31,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include <algorithm>
@@ -186,6 +187,7 @@ private slots:
 	void testChunkedProcessing();
 	void testEffectRefusesNotes();
 	void testInstrumentNotePath();
+	void testNoteOnRefusesNaNVelocity();
 	void testTimerSupportRunsThePluginsTimer();
 	void testTheEditorEmbedsResizesAndCloses();
 	void testMainThreadRequestsAreServiced();
@@ -700,6 +702,45 @@ void ClapHostTest::testInstrumentNotePath()
 	qInfo("MEASURED %d-frame request into a 64-frame block: %u plug-in calls, %u note(s) "
 		  "delivered, audio level %f",
 		ChunkedFrames, chunkedState.blocks, chunkedState.noteOnCount, rms(chunkedOutputs[0]));
+}
+
+//! A NaN velocity is not a note: std::clamp passes NaN through and converting
+//! it to the queue's int16 velocity is undefined, so the host must refuse the
+//! note-on and count it - like every event with nowhere to go - rather than
+//! queue a malformed event that would start a voice at an arbitrary level.
+void ClapHostTest::testNoteOnRefusesNaNVelocity()
+{
+	const QString path = QStringLiteral(CLAP_TEST_INSTRUMENT_PATH);
+	if (path.isEmpty() || !QFileInfo::exists(path))
+	{
+		QSKIP("no CLAP instrument fixture in this build (tests/data/clap-test-plugin/"
+			"clap-test-instrument.c, built when the pinned CLAP headers are present)");
+	}
+
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(path, QString::fromLatin1(TestInstrumentId), &error), qPrintable(error));
+	QVERIFY(plugin.acceptsNotes());
+	QString prepareError;
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &prepareError), qPrintable(prepareError));
+
+	const std::vector<std::vector<float>> noInputs;
+	std::vector<std::vector<float>> outputs(2, std::vector<float>(TestFrames, 0.0f));
+
+	const auto before = plugin.noteCounters();
+	plugin.setNoteOn(0, 60, std::numeric_limits<double>::quiet_NaN(), 0);
+	const auto after = plugin.noteCounters();
+	QCOMPARE(after.pushed - before.pushed, std::uint32_t{0});
+	QCOMPARE(after.dropped - before.dropped, std::uint32_t{1});
+
+	// The refused note must not reach the plug-in either: no event, no voice.
+	process(plugin, noInputs, outputs, TestFrames);
+	QCOMPARE(plugin.noteCounters().delivered - before.delivered, std::uint32_t{0});
+	InstrumentState state{};
+	QVERIFY2(readInstrumentState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.noteOnCount, std::uint32_t{0});
+	QCOMPARE(state.activeVoices, std::uint32_t{0});
+	QCOMPARE(rms(outputs[0]), 0.0);
 }
 
 void ClapHostTest::process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
