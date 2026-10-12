@@ -40,6 +40,7 @@
 #include "MidiSetupWidget.h"
 #include "ProjectJournal.h"
 #include "SetupDialog.h"
+#include "Song.h"
 #include "TabBar.h"
 #include "TabButton.h"
 #include "TimeLineWidget.h"
@@ -117,6 +118,7 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 			"app", "nommpz").toInt()),
 	m_disableBackup(!ConfigManager::inst()->value(
 			"app", "disablebackup").toInt()),
+	m_saveContainerV2(Song::globalContainerV2()),
 	m_openLastProject(ConfigManager::inst()->value(
 			"app", "openlastproject").toInt()),
 	m_detachBehavior{ConfigManager::inst()->value("ui", "detachbehavior", "show")},
@@ -308,6 +310,9 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 		m_MMPZ, SLOT(toggleMMPZ(bool)), true);
 	addCheckBox(tr("Create a backup file when saving a project"), projectsGroupBox, projectsGroupLayout,
 		m_disableBackup, SLOT(toggleDisableBackup(bool)), false);
+	// Q050-007: the global opt-in to the v2 container. Off by default; the cost is on the box itself.
+	addCheckBox(tr("Save .mmpz projects as v2 containers"), projectsGroupBox, projectsGroupLayout,
+		m_saveContainerV2, SLOT(toggleSaveContainerV2(bool)), false)->setToolTip(Song::containerV2Note());
 	addCheckBox(tr("Reopen last project on startup"), projectsGroupBox, projectsGroupLayout,
 		m_openLastProject, SLOT(toggleOpenLastProject(bool)), false);
 
@@ -1007,6 +1012,8 @@ void SetupDialog::accept()
 					QString::number(!m_MMPZ));
 	ConfigManager::inst()->setValue("app", "disablebackup",
 					QString::number(!m_disableBackup));
+	ConfigManager::inst()->setValue("app", Song::containerV2ConfigAttribute(),
+					QString::number(m_saveContainerV2));
 	ConfigManager::inst()->setValue("app", "openlastproject",
 					QString::number(m_openLastProject));
 	ConfigManager::inst()->setValue("ui", "detachbehavior", m_detachBehavior);
@@ -1135,6 +1142,12 @@ void SetupDialog::toggleMixerChannelDeletionWarning(bool enabled)
 void SetupDialog::toggleMMPZ(bool enabled)
 {
 	m_MMPZ = enabled;
+}
+
+
+void SetupDialog::toggleSaveContainerV2(bool enabled)
+{
+	m_saveContainerV2 = enabled;
 }
 
 

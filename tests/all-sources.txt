@@ -2618,6 +2618,7 @@ tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/PortMappingCodecTest.cpp
 tests/src/core/PortMappingOrchestratorTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
+tests/src/core/ProjectContainerSaveTest.cpp
 tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
@@ -2812,6 +2813,7 @@ tests/src/gui/PinConnectorTest.cpp
 tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/PluginNativeEditorTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
+tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/RackDeferredLifetimeTest.cpp
 tests/src/gui/RackMenuTest.cpp
 tests/src/gui/RecordingRecoveryMenuTest.cpp

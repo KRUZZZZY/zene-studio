@@ -2768,3 +2768,8 @@ that restores the whole project (`docs/A16-REVERSIBILITY.md` §1.2; `SessionChec
   `project.new` and `project.new_document` take no checkpoint. `project.switch` and `session.setlist_go` run `project.open`, so a dirty session they displace is
   checkpointed and the interface's Ctrl+Z restores it (`project.switch` saves the current project first, so there is
   usually nothing to displace), but their own records still refuse `control.undo`.
+- **The v2 project container is opt-in and older builds cannot open it (Q050-007).** Saving as a v2 container
+  (`project.save {format: "v2"}`, the Save As checkbox, or `app/savecontainerv2`) writes a larger `.mmpz` that
+  builds before 0.5.0 refuse; ordinary saves stay legacy. The asset verbs (`project.missing_assets`,
+  `project.hash_assets`, `project.relink`) and the revision compare do not read containers yet. See
+  `docs/PROJECT-CONTAINER-V2.md`.

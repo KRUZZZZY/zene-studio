@@ -75,6 +75,7 @@ const std::vector<Setting>& catalogue()
 		{"app/openlastproject", "General", "Open the last project at start"},
 		{"app/nommpz", "General", "Save projects uncompressed (.mmp)"},
 		{"app/disablebackup", "General", "Do not keep a backup when saving"},
+		{"app/savecontainerv2", "General", "Save .mmpz projects as v2 containers (larger; older builds cannot open them)"},
 		{"app/sololegacybehavior", "General", "Solo: the legacy behaviour"},
 		{"app/loopmarkermode", "General", "How the loop markers are dragged"},
 		{"ui/trackdeletionwarning", "General", "Warn before deleting a track"},

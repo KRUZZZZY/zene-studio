@@ -138,6 +138,37 @@ QJsonObject saveTransaction(const QString& target, bool refused, bool revisionKe
 // project.save (SPEC A16 deliverable 4: the previous revision is kept)
 // ---------------------------------------------------------------------------
 
+//! Q050-007: the format a project.save to \a target writes. `format` absent
+//! follows the session (Song::plannedSaveFormat - legacy unless the global
+//! opt-in is on or the project already is a v2 container); "legacy" and "v2"
+//! name it. "v2" for a path that is not `.mmpz` is refused, typed, BEFORE any
+//! revision is rotated: a container is only ever a `.mmpz`.
+bool requestedSaveFormat(const QJsonObject& args, const Song& song, const QString& target,
+	Song::SaveFormat* format, ControlResult* error)
+{
+	const QString name = args.value(QStringLiteral("format")).toString();
+	if (name.isEmpty()) { *format = song.plannedSaveFormat(target); return true; }
+	if (name == QLatin1String("legacy")) { *format = Song::SaveFormat::Legacy; return true; }
+	if (!Song::isContainerPath(target))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("format \"v2\" writes a container to a path ending in exactly \".mmpz\" (lowercase), "
+				"and '%1' does not").arg(target));
+		return false;
+	}
+	*format = Song::SaveFormat::V2Container;
+	return true;
+}
+
+//! What a save wrote, said in the reply: the format, the file's size, and - for a container - the cost.
+void describeSavedFormat(QJsonObject* result, const Song& song, const QString& target)
+{
+	const bool v2 = song.lastSavedFormat() == Song::SaveFormat::V2Container;
+	result->insert(QStringLiteral("format"), v2 ? QStringLiteral("v2") : QStringLiteral("legacy"));
+	result->insert(QStringLiteral("bytes"), static_cast<qint64>(QFileInfo(target).size()));
+	if (v2) { result->insert(QStringLiteral("format_note"), Song::containerV2Note()); }
+}
+
 
 void registerProjectSave(ControlRegistry& registry)
 {
@@ -149,8 +180,18 @@ void registerProjectSave(ControlRegistry& registry)
 		"file. Before the write, the file being replaced is rotated into the named 'keep-3' "
 		"revision set (<file>.rev0..rev2, each capped at 8 MiB), so the previous revision is "
 		"recoverable through project.restore_revision - and control.undo dispatches exactly that "
-		"for the save it recorded.");
-	cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}});
+		"for the save it recorded. Q050-007: `format` \"v2\" saves the project as a v2 CONTAINER "
+		"(a .mmpz ZIP of one entry per section): a LARGER file than the legacy single-blob .mmpz, "
+		"which builds older than this one cannot open (`format_note` says so). Without `format` the "
+		"legacy .mmpz is written unless the setting app/savecontainerv2 is \"1\" or the project was "
+		"opened from a container; \"legacy\" forces the old blob. project.open tells both by content.");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("path"), stringProperty()},
+		// Q050-007: the opt-in v2 container. Absent, a save writes what the session
+		// already has: the legacy single-blob .mmpz, unless the global setting
+		// app/savecontainerv2 is on or the project was opened from a container.
+		{QStringLiteral("format"), enumProperty({QStringLiteral("legacy"), QStringLiteral("v2")})},
+	});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("file"), stringProperty()},
 		{QStringLiteral("saved"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
@@ -159,6 +200,10 @@ void registerProjectSave(ControlRegistry& registry)
 		{QStringLiteral("revision_skipped"), stringProperty()},
 		// WF-033: what the save did with the undo history (docs/UNDO-HISTORY-PERSISTENCE.md).
 		{QStringLiteral("undo_history"), objectProperty()},
+		// Q050-007: the format the file was written in, its size, and for a v2 container the cost.
+		{QStringLiteral("format"), stringProperty()},
+		{QStringLiteral("bytes"), integerProperty()},
+		{QStringLiteral("format_note"), stringProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -201,6 +246,10 @@ void registerProjectSave(ControlRegistry& registry)
 					.arg(song->notLoadedSections().join(QStringLiteral(", "))));
 		}
 
+		Song::SaveFormat format = Song::SaveFormat::Legacy;
+		ControlResult formatError;
+		if (!requestedSaveFormat(args, *song, target, &format, &formatError)) { return formatError; }
+
 		// SPEC A16 deliverable 4: keep the previous revision BEFORE it is
 		// overwritten. A file over the per-revision cap is not copied at all (a
 		// truncated project is a corrupt one) and the result says so.
@@ -215,7 +264,7 @@ void registerProjectSave(ControlRegistry& registry)
 
 		// WF-033: a real save - the undo history goes with it when the project opted in.
 		const UndoHistory::SaveScope historyScope;
-		if (!song->saveProjectFile(target))
+		if (!song->saveProjectFile(target, false, format))
 		{
 			return refusalOf();
 		}
@@ -225,10 +274,12 @@ void registerProjectSave(ControlRegistry& registry)
 		// get_state still said modified:true with no file name and the bare save
 		// and control.quit {save:true} then refused (BUG-SAVE-01).
 		song->noteProjectSaved(target);
+		song->setContainerV2Project(song->lastSavedFormat() == Song::SaveFormat::V2Container);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("file"), target);
 		result.insert(QStringLiteral("saved"), true);
+		describeSavedFormat(&result, *song, target);
 		result.insert(QStringLiteral("revision_kept"), revisionKept);
 		result.insert(QStringLiteral("revisions"), control::projectRevisionState(target));
 		result.insert(QStringLiteral("undo_history"), UndoHistory::instance().lastSave().toJson());

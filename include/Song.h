@@ -104,12 +104,61 @@ public:
 		 * Should we save the project as a project bundle? (with resources)
 		 */
 		BoolModel saveAsProjectBundle{false};
+		/**
+		 * Q050-007: write this save as a `.mmpz` v2 container instead of the
+		 * legacy single blob. A one-shot choice like the two above.
+		 */
+		BoolModel saveAsV2Container{false};
+		/**
+		 * True once the Save As dialog was answered: saveAsV2Container then
+		 * decides the format, ticked or not (unticking is the way a v2 project
+		 * goes back to legacy). False for every other save, which takes
+		 * Song::plannedSaveFormat().
+		 */
+		bool formatChosen = false;
 
 		void setDefaultOptions() {
 			discardMIDIConnections.setValue(false);
 			saveAsProjectBundle.setValue(false);
+			saveAsV2Container.setValue(false);
+			formatChosen = false;
 		}
 	};
+
+	/*! Q050-007: the two shapes a `.mmpz` project can be saved in. Legacy is the
+	 *  single qCompress() blob every earlier build wrote and reads - the default
+	 *  of every save. V2Container is the opt-in STORE-ZIP of one entry per
+	 *  section (ProjectContainer.h): larger, and unreadable by builds that
+	 *  predate it. */
+	enum class SaveFormat { Legacy, V2Container };
+
+	//! The config key (class "app") of the GLOBAL opt-in: "1" makes every save of
+	//! a `.mmpz` project a v2 container. Absent or "0" - the default - saves legacy.
+	static QString containerV2ConfigAttribute();
+	//! True when the global opt-in above is on.
+	static bool globalContainerV2();
+	//! The one-sentence cost of the v2 container, shown wherever a user or an
+	//! agent is offered or told about it: the larger file and the older builds.
+	static QString containerV2Note();
+
+	/*! The format a save to \a target takes when the caller named none: the
+	 *  v2 container when the global opt-in is on OR this project was opened from
+	 *  (or last explicitly saved as) a v2 container, and the target is a `.mmpz`
+	 *  name; the legacy blob otherwise - which is every save of every project
+	 *  that never opted in. */
+	SaveFormat plannedSaveFormat(const QString & target) const;
+	/*! True when \a target names a file a v2 container may be written to. EXACTLY the
+	 *  lowercase `.mmpz` suffix, because that is the spelling DataFile::nameWithExtension()
+	 *  and the writer recognise: a differently-cased suffix is treated as no suffix and gets
+	 *  `.mmpz` appended, so accepting `X.MMPZ` here would save a different file than the one
+	 *  named. One definition, used by the plan, project.save and the GUI save. */
+	static bool isContainerPath(const QString & target);
+	//! True when this session's project is a v2 container (opened as one, or last saved as one).
+	bool isContainerV2Project() const { return m_containerV2Project; }
+	//! Record the format the session's file now has (called after a successful save to the session's file).
+	void setContainerV2Project(bool v2) { m_containerV2Project = v2; }
+	//! The format the most recent saveProjectFile() actually wrote.
+	SaveFormat lastSavedFormat() const { return m_lastSavedFormat; }
 
 	void clearErrors();
 	void collectError( const QString error );
@@ -389,7 +438,8 @@ public:
 	void loadProject( const QString & filename, const QStringList & skipSections = QStringList() );
 	bool guiSaveProject();
 	bool guiSaveProjectAs(const QString & filename);
-	bool saveProjectFile(const QString & filename, bool withResources = false);
+	bool saveProjectFile(const QString & filename, bool withResources = false,
+		SaveFormat format = SaveFormat::Legacy);
 
 	/*! WF-033 (docs/UNDO-HISTORY-PERSISTENCE.md): the project as ONE document,
 	 *  built exactly as saveProjectFile() builds it - the same writers, plug-in
@@ -815,6 +865,9 @@ private:
 	QStringList m_notLoadedSections;
 	//! Set by saveProjectFile() when it refuses; empty after a write.
 	QString m_saveRefusal;
+	//! Q050-007: the session's project file is a v2 container (see isContainerV2Project()).
+	bool m_containerV2Project = false;
+	SaveFormat m_lastSavedFormat = SaveFormat::Legacy;
 
 	std::array<Timeline, PlayModeCount> m_timelines;
 

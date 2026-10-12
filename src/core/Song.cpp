@@ -1359,6 +1359,8 @@ void Song::clearProject()
 {
 	using gui::getGUI;
 
+	m_containerV2Project = false;
+
 	m_documentIdentity = nextDocumentIdentity();
 	Engine::projectJournal()->setJournalling( false );
 
@@ -1706,6 +1708,9 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	// (ARCH-4 S2b). clearProject() runs first because it is what resets the rest
 	// of the per-document state and this belongs with it.
 	m_notLoadedSections = skippedSections;
+	// Q050-007: a project opened from a v2 container stays one on an ordinary
+	// save - silently turning it back into a legacy blob would be the surprise.
+	m_containerV2Project = dataFile.loadedFromContainer();
 
 	// WF-033: the undo history's fingerprint is taken over the document as the
 	// FILE has it - before any reader below runs (docs/UNDO-HISTORY-PERSISTENCE.md).
@@ -2015,7 +2020,54 @@ static void writeLanesSection( DataFile & dataFile, const TrackContainer::TrackL
 	content.appendChild( section );
 }
 
-bool Song::saveProjectFile(const QString & filename, bool withResources)
+QString Song::containerV2ConfigAttribute()
+{
+	return QStringLiteral("savecontainerv2");
+}
+
+
+
+
+bool Song::globalContainerV2()
+{
+	return ConfigManager::inst()->value(QStringLiteral("app"), containerV2ConfigAttribute()).toInt() != 0;
+}
+
+
+
+
+QString Song::containerV2Note()
+{
+	return tr("A v2 container is a larger file than the legacy .mmpz (its sections are stored, "
+		"not compressed), and builds older than this one cannot open it. Ordinary saves stay "
+		"legacy unless you opt in.");
+}
+
+
+
+
+bool Song::isContainerPath(const QString & target)
+{
+	return target.endsWith(QStringLiteral(".mmpz"), Qt::CaseSensitive);
+}
+
+
+
+
+Song::SaveFormat Song::plannedSaveFormat(const QString & target) const
+{
+	// Only a `.mmpz` name can hold a container (a loader tells the two apart by
+	// content, but the extension is the user's hint that a file is a compressed
+	// project), and only an opt-in - the global setting, or a project that already
+	// IS a container - asks for one. Nothing else changes what a save writes.
+	if (!isContainerPath(target)) { return SaveFormat::Legacy; }
+	return (m_containerV2Project || globalContainerV2()) ? SaveFormat::V2Container : SaveFormat::Legacy;
+}
+
+
+
+
+bool Song::saveProjectFile(const QString & filename, bool withResources, SaveFormat format)
 {
 	// ARCH-4 S2b, and the whole of the read-only policy for a partial load. A
 	// session that holds LESS than the file it came from must not write that
@@ -2049,7 +2101,10 @@ bool Song::saveProjectFile(const QString & filename, bool withResources)
 	// UndoHistory::SaveScope and only when the project opted in; sealed last so
 	// its fingerprint covers the document exactly as it is about to be written.
 	UndoHistory::instance().seal( dataFile, withResources );
-	return dataFile.writeFile(filename, withResources);
+	dataFile.setContainerV2(format == SaveFormat::V2Container);
+	const bool written = dataFile.writeFile(filename, withResources);
+	m_lastSavedFormat = written && dataFile.containerV2Written() ? SaveFormat::V2Container : SaveFormat::Legacy;
+	return written;
 }
 
 
@@ -2214,11 +2269,28 @@ bool Song::guiSaveProjectAs(const QString & filename)
 
 	bool withResources = m_saveOptions.saveAsProjectBundle.value();
 
+	// Q050-007: the Save As dialog's answer decides when it was given; every other
+	// save takes the plan (global opt-in, or a project that already is a v2
+	// container). A v2 container asked for by name is refused for a name that is
+	// not `.mmpz` rather than written as something the user did not choose.
+	const bool chosen = m_saveOptions.formatChosen;
+	const SaveFormat format = chosen
+		? (m_saveOptions.saveAsV2Container.value() ? SaveFormat::V2Container : SaveFormat::Legacy)
+		: plannedSaveFormat(fileNameWithExtension);
+	if (format == SaveFormat::V2Container
+		&& !isContainerPath(fileNameWithExtension))
+	{
+		m_saveRefusal = tr("a v2 container needs a .mmpz file name, and %1 is not one.").arg(fileNameWithExtension);
+		qWarning().noquote() << m_saveRefusal;
+		m_saveOptions.setDefaultOptions();
+		return false;
+	}
+
 	// WF-033: Save / Save As is a real save - it carries the undo history when
 	// the project opted in (UndoHistory::SaveScope; templates, autosave and
 	// render temporaries hold none and never do).
 	const UndoHistory::SaveScope historyScope;
-	bool const saveResult = saveProjectFile(fileNameWithExtension, withResources);
+	bool const saveResult = saveProjectFile(fileNameWithExtension, withResources, format);
 
 	// After saving, restore default save options.
 	m_saveOptions.setDefaultOptions();
@@ -2228,6 +2300,7 @@ bool Song::guiSaveProjectAs(const QString & filename)
 	if (saveResult && !withResources)
 	{
 		noteProjectSaved(fileNameWithExtension);
+		m_containerV2Project = m_lastSavedFormat == SaveFormat::V2Container;
 	}
 
 	return saveResult;
