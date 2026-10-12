@@ -42,9 +42,31 @@ The `fff grep` tool was not exposed in this session, so captured logs were
 filtered with `rg` for `error`, `FAILED`, and `Assertion`, and ctest summaries
 were checked for the executed test count.
 
-## Files committed
+## Round-2 QA correction: test source registration
 
-- `src/core/TimePos.cpp`
-- `tests/src/core/SessionSchedulerTest.cpp`
+`git diff --name-status 4e677cb6c6ab..HEAD -- tests/src/core/SessionSchedulerTest.cpp`
+reports `A`, so this test is fork-added. I removed it from
+`tests/upstream-modifications.txt`, added it in sorted order to
+`tests/fork-sources.txt`, and added its name to both copies of the manifest
+recipe's `awk` allow-list. The inherited production change remains in the
+upstream-modifications manifest.
+
+| Correction evidence | Exact command | Exit |
+| --- | --- | ---: |
+| Fork source registration gate | `bash tests/fork-sources-gate.sh > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r3/logs/gate-1-fork-sources.log 2>&1; echo EXIT=$?` | 0 |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r3/logs/gate-2-complexity.log 2>&1; echo EXIT=$?` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r3/logs/gate-3-file-length.log 2>&1; echo EXIT=$?` | 0 |
+
+The registration gate reports 1511 fork-new sources, 1195 inherited sources,
+48 tooling sources, and no stale entries. The embedded full `Verify it` recipe
+still reports unrelated list differences: I ran the committed pre-correction
+and corrected copies, and both exited 1. The corrected recipe's diff contains
+no `SessionSchedulerTest.cpp` mismatch. Those verifier logs are
+`verify-2-original-fork-recipe.log` and `verify-1-fork-sources-recipe.log` in
+the same log folder; Gate 9 and both required ratchets pass.
+
+## Files in the QA correction commit
+
 - `tests/upstream-modifications.txt`
+- `tests/fork-sources.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p10-428.md`
