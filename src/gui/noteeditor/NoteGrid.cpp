@@ -69,6 +69,7 @@ NoteGrid::NoteGrid()
 
 void NoteGrid::setPixelsPerTick(double ppt)
 {
+	if (!std::isfinite(ppt)) { return; }
 	m_pixelsPerTick = std::clamp(ppt, minPixelsPerTick, maxPixelsPerTick);
 }
 
@@ -85,7 +86,11 @@ void NoteGrid::setRowHeight(int px)
 	clampScrollY();
 }
 
-void NoteGrid::setScrollTicks(double ticks) { m_scrollTicks = std::max(0.0, ticks); }
+void NoteGrid::setScrollTicks(double ticks)
+{
+	if (!std::isfinite(ticks)) { return; }
+	m_scrollTicks = std::max(0.0, ticks);
+}
 
 void NoteGrid::setScrollY(int px)
 {
