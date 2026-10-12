@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T11:10:58Z",
+  "captured_at": "2026-10-12T19:54:56Z",
   "commands": [
     {
       "args_schema": {
@@ -4699,6 +4699,75 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "path": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Make a clip of a file: a Standard MIDI File becomes one MIDI clip holding all its notes (on an instrument track), an audio file one sample clip (on a sample track), at 'position' ticks. With 'track' the clip goes on that track, which must be of the kind the file needs; without it a NEW track of that kind, named after the file, is created. This is what dropping a file on the arranger runs - from a plug-in editor, the desktop or the browser. Everything that can fail is checked before anything changes: a missing, empty, malformed or unsupported file, a clip that would end past the song, a track of the wrong kind or a locked one is refused and the project is left exactly as it was. Audio read from the temporary folder (a plug-in's drag file, deleted right after) is embedded in the clip; other audio is referenced by path. One undo step removes the clip (and a track it created).",
+      "group": "clip",
+      "id": "clip.import_file",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "embedded": {
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "midi",
+              "audio"
+            ],
+            "type": "string"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note_count": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          },
+          "track_created": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "clips": {
             "type": "array"
           }
@@ -8111,7 +8180,7 @@
         ],
         "type": "object"
       },
-      "description": "Write the session as a .dawproject container: a ZIP whose project.xml carries the tracks, their clips and notes, the tempo map and each track's mixer strip, in the published format's own vocabulary at version 1.0. The file is written with STORE entries so it needs no compression dependency and every ZIP reader opens it. `loss` in the reply reports EXACTLY what the format could not carry from this session. Refuses an existing file unless `overwrite` is true, and refuses a relative path. Writes a file; changes nothing in the session.",
+      "description": "Write the session as a .dawproject container: a ZIP whose project.xml carries the tracks, their clips and notes, the tempo map and each track's mixer strip, in the published format's own vocabulary at version 1.0. The file is written with STORE entries so every ZIP reader opens it (import reads STORE and DEFLATE). `loss` in the reply reports EXACTLY what the format could not carry from this session. Refuses an existing file unless `overwrite` is true, and refuses a relative path. Writes a file; changes nothing in the session.",
       "group": "dawproject",
       "id": "dawproject.export",
       "mutating": false,
@@ -8182,7 +8251,7 @@
         ],
         "type": "object"
       },
-      "description": "Apply a .dawproject container's model to the session: REPLACE the tracks, write the global tempo and time signature, replace the tempo map with the file's two automation timelines and set the mixer strips it carries. One command, one undo: the whole session captured before the import is put back through the project loader's own paths when the stack unwinds. `loss` in the reply reports what the file carried that this build does not apply. Refused, typed, when the file cannot be read, when a tempo or metre is outside the engine's own bounds, or when the file needs more tempo-map events than the map holds - a refusal writes nothing.",
+      "description": "Apply a .dawproject container's model to the session: REPLACE the tracks, write the global tempo and time signature, replace the tempo map with the file's two automation timelines and set the mixer strips it carries. One command, one undo: the whole session captured before the import is put back through the project loader's own paths when the stack unwinds. Reads STORE and DEFLATE ZIP entries under a 512 MiB per-entry and 1 GiB total decompressed-size bound. `loss` in the reply reports what the file carried that this build does not apply, and `deviations` lists everything in the container that was not taken as written (a corrupt, CRC-failing, unsupported or oversized entry, a file project.xml references that the container lacks); the import still proceeds when project.xml itself is readable. Refused, typed, when the file cannot be read, when a tempo or metre is outside the engine's own bounds, or when the file needs more tempo-map events than the map holds - a refusal writes nothing.",
       "group": "dawproject",
       "id": "dawproject.import",
       "mutating": true,
@@ -8193,7 +8262,19 @@
           "clip_count": {
             "type": "integer"
           },
+          "deflated_entry_count": {
+            "type": "integer"
+          },
           "denominator": {
+            "type": "integer"
+          },
+          "deviation_count": {
+            "type": "integer"
+          },
+          "deviations": {
+            "type": "array"
+          },
+          "entry_count": {
             "type": "integer"
           },
           "format_version": {
@@ -8223,6 +8304,9 @@
           "path": {
             "type": "string"
           },
+          "referenced_file_count": {
+            "type": "integer"
+          },
           "tempo": {
             "type": "number"
           },
@@ -8250,7 +8334,7 @@
         ],
         "type": "object"
       },
-      "description": "Read a .dawproject container's model WITHOUT touching the session: the format version the file declares, the application that wrote it, every track with its clips and notes, the tempo and time-signature timelines, the mixer strips, the entries the container carries that this module does not use, and the model's printable digest - what makes a round trip checkable against the FILE and the MODEL rather than a hash. Import accepts ZIP entries using STORE (method 0); DEFLATE (method 8) is refused. A file that is not a ZIP, has no project.xml entry, declares another major format version, or carries a value the engine will not accept is a typed refusal.",
+      "description": "Read a .dawproject container's model WITHOUT touching the session: the format version the file declares, the application that wrote it, every track with its clips and notes, the tempo and time-signature timelines, the mixer strips, the entries the container carries that this module does not use, and the model's printable digest - what makes a round trip checkable against the FILE and the MODEL rather than a hash. Reads ZIP entries using STORE (method 0) and DEFLATE (method 8) under a 512 MiB per-entry and 1 GiB total decompressed-size bound. `deviations` lists EVERYTHING in the container that was not taken as written - a corrupt or CRC-failing entry, an unsupported compression method or encryption, an oversized entry, a file project.xml references that the container lacks - while the readable entries are still read. A file that is not a ZIP, has no readable project.xml entry, declares another major format version, or carries a value the engine will not accept is a typed refusal that lists the deviations too.",
       "group": "dawproject",
       "id": "dawproject.read",
       "mutating": false,
@@ -8265,6 +8349,18 @@
             "type": "string"
           },
           "clip_count": {
+            "type": "integer"
+          },
+          "deflated_entry_count": {
+            "type": "integer"
+          },
+          "deviation_count": {
+            "type": "integer"
+          },
+          "deviations": {
+            "type": "array"
+          },
+          "entry_count": {
             "type": "integer"
           },
           "format_version": {
@@ -8293,6 +8389,9 @@
           },
           "path": {
             "type": "string"
+          },
+          "referenced_file_count": {
+            "type": "integer"
           },
           "split_map_events": {
             "type": "integer"
@@ -19708,7 +19807,7 @@
         ],
         "type": "object"
       },
-      "description": "Write the session's notes as a Standard MIDI File (the midiexport filter; interchange.smf_export writes the tempo map only). File > Export MIDI dispatches this after its file dialog. A missing `.mid` suffix is appended. The export is written to a temporary file and only replaces an existing file once the new output is proven to exist, so a failed export never reports a stale file as a fresh one (and never destroys the previous one). The session is not modified.",
+      "description": "Write the session's notes as a Standard MIDI File (the midiexport filter, 480 ppq: track 0 is the tempo-map conductor track - the same events as interchange.smf_export - then one track per instrument with its name, program change, MIDI channel and notes). File > Export MIDI dispatches this after its file dialog. A missing `.mid` suffix is appended. The export is written to a temporary file and only replaces an existing file once the new output is proven to exist, so a failed export never reports a stale file as a fresh one (and never destroys the previous one). The session is not modified.",
       "group": "project",
       "id": "project.export_midi",
       "mutating": false,
@@ -19744,6 +19843,12 @@
         "properties": {
           "file": {
             "type": "string"
+          },
+          "missing_device_count": {
+            "type": "integer"
+          },
+          "missing_devices": {
+            "type": "array"
           },
           "modified": {
             "type": "boolean"
@@ -19903,7 +20008,7 @@
         ],
         "type": "object"
       },
-      "description": "Tracks from another project ('path', a .mmp or .mmpz): with 'list' it answers that project's song tracks (index, name, type); otherwise it copies the ones in 'tracks' (indices; every one when left out) into this project - device, effects, clips and automation - each playing into the master (mixer channels do not carry between projects). One undo step removes them.",
+      "description": "Tracks from another project ('path', a .mmp or .mmpz): with 'list' it answers that project's song tracks (index, name, type); otherwise it copies the ones in 'tracks' (indices; every one when left out) into this project - device, effects, clips and automation - each keeping its mixer channel: the channel of the same name in this project, or a new one made with the source channel's name, colour, volume, pan and hardware routing (direct out, cue sends, insert send and return); 'created_channels' lists the new ones. A track on the master stays on it. One undo step removes the tracks and the channels made for them.",
       "group": "project",
       "id": "project.import_tracks",
       "mutating": true,
@@ -20170,6 +20275,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "checkpoint": {
+            "type": "object"
+          },
           "error_count": {
             "type": "integer"
           },
@@ -20200,6 +20308,12 @@
           },
           "loaded_with_errors": {
             "type": "boolean"
+          },
+          "missing_device_count": {
+            "type": "integer"
+          },
+          "missing_devices": {
+            "type": "array"
           },
           "not_loaded": {
             "items": {
@@ -20240,7 +20354,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Paste the tracks project.copy_tracks put on the clipboard into this project, each playing into the master (mixer channels do not carry between projects) with ids of its own. One undo step removes them.",
+      "description": "Paste the tracks project.copy_tracks put on the clipboard into this project, each keeping its mixer channel: the channel of the same name in this project, or a new one made with the source channel's name, colour, volume, pan and hardware routing (direct out, cue sends, insert send and return); 'created_channels' lists the new ones. A track on the master stays on it. Tracks get ids of their own. One undo step removes the tracks and the channels made for them.",
       "group": "project",
       "id": "project.paste_tracks",
       "mutating": true,
@@ -20379,6 +20493,13 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "format": {
+            "enum": [
+              "legacy",
+              "v2"
+            ],
+            "type": "string"
+          },
           "path": {
             "type": "string"
           }
@@ -20386,7 +20507,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Save the session. With no path, saves over the project's own file. Before the write, the file being replaced is rotated into the named 'keep-3' revision set (<file>.rev0..rev2, each capped at 8 MiB), so the previous revision is recoverable through project.restore_revision - and control.undo dispatches exactly that for the save it recorded.",
+      "description": "Save the session. With no path, saves over the project's own file. Before the write, the file being replaced is rotated into the named 'keep-3' revision set (<file>.rev0..rev2, each capped at 8 MiB), so the previous revision is recoverable through project.restore_revision - and control.undo dispatches exactly that for the save it recorded. Q050-007: `format` \"v2\" saves the project as a v2 CONTAINER (a .mmpz ZIP of one entry per section): a LARGER file than the legacy single-blob .mmpz, which builds older than this one cannot open (`format_note` says so). Without `format` the legacy .mmpz is written unless the setting app/savecontainerv2 is \"1\" or the project was opened from a container; \"legacy\" forces the old blob. project.open tells both by content.",
       "group": "project",
       "id": "project.save",
       "mutating": true,
@@ -20394,7 +20515,16 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "bytes": {
+            "type": "integer"
+          },
           "file": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "format_note": {
             "type": "string"
           },
           "revision_kept": {
@@ -22616,7 +22746,7 @@
         ],
         "type": "object"
       },
-      "description": "Record how much of the take had reached disk at the last flush ('frames_on_disk'), which is the count the recovery offer reports as guaranteed. It must not move backwards: the journal only ever records that MORE of the take reached disk. The recorder's own disk-writer does this once per second of audio (RecordingJournal::UpdateIntervalFrames), which is the whole of the lag bound. Reversible (paired command).",
+      "description": "Record how much of the take had reached disk at the last flush ('frames_on_disk'), which is the count the recovery offer reports as guaranteed. It must not move backwards: the journal only ever records that MORE of the take reached disk. The recorder's own disk-writer does this every tenth of a second of audio (recordingjournal::updateIntervalFrames), which is the whole of the lag bound. Reversible (paired command).",
       "group": "record",
       "id": "record.journal_update",
       "mutating": true,
@@ -22738,7 +22868,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every capture an abnormal exit left behind in `dir` (default: this instance's working directory): one entry per in-progress take journal whose WAV still exists. Each entry reports frames_journalled (what the journal recorded at its last update), frames_in_file (measured from the take's RIFF header, falling back to the file's real length when a crashed header was never updated) and frames_recoverable (the SMALLER of the two - the guaranteed count). The bound travels with every entry: the journal lags by up to one second of audio, and up to 65536 frames still in the recorder's ring at the crash are gone for good. Writes nothing.",
+      "description": "Every capture an abnormal exit left behind in `dir` (default: this instance's working directory): one entry per in-progress take journal whose WAV still exists. Each entry reports frames_journalled (what the journal recorded at its last update), frames_in_file (measured from the take's RIFF header, falling back to the file's real length when a crashed header was never updated) and frames_recoverable (the SMALLER of the two - the guaranteed count). The bound travels with every entry: a crash loses at most journal_lag_bound_frames plus one 4096-frame writer batch (0.185 s at 48 kHz, Q050-045) while the disk-writer is healthy; only a STALLED writer can lose up to 65536 frames still in the recorder's ring. Writes nothing.",
       "group": "record",
       "id": "record.recovery_get_state",
       "mutating": false,
@@ -22760,6 +22890,86 @@
           },
           "takes": {
             "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "take": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "take"
+        ],
+        "type": "object"
+      },
+      "description": "Bring an interrupted capture into the project: a new sample track named 'Recovered: <take>' holding the recovered file in a clip at bar 1, and the take's journal marked restored so the next start stops offering it. One undo step: control.undo removes the track and puts the offer back, control.redo places it again. The take's WAV is never moved, rewritten or deleted. record.recovery_restore stays the resolve-only verb; File > Recover Recordings and the startup offer run this command.",
+      "group": "record",
+      "id": "record.recovery_place",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "audio_untouched": {
+            "type": "boolean"
+          },
+          "channels": {
+            "type": "number"
+          },
+          "frames_beyond_the_journal": {
+            "type": "number"
+          },
+          "frames_in_file": {
+            "type": "integer"
+          },
+          "frames_journalled": {
+            "type": "integer"
+          },
+          "frames_recoverable": {
+            "type": "integer"
+          },
+          "journal": {
+            "type": "string"
+          },
+          "journal_lag_bound_frames": {
+            "type": "number"
+          },
+          "placed": {
+            "type": "boolean"
+          },
+          "placed_track": {
+            "type": "string"
+          },
+          "restored": {
+            "type": "boolean"
+          },
+          "ring_frames_not_recoverable": {
+            "type": "number"
+          },
+          "sample_rate": {
+            "type": "number"
+          },
+          "state": {
+            "type": "string"
+          },
+          "take": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          },
+          "updated_utc": {
+            "type": "string"
           }
         },
         "required": [],
@@ -22794,7 +23004,7 @@
         ],
         "type": "object"
       },
-      "description": "Take an interrupted capture's offer: report the material the journal recovered and mark the journal `restored`, so the next start stops offering it. The take's WAV is NOT moved, rewritten or deleted - the material stays exactly where the crash left it, and the result says so (`audio_untouched`). WHAT 0.3.0 DOES NOT DO: bring the take into the session as a clip. No command in this release imports an audio file onto a track, so that half is deferred and named in `next_step` (docs/KNOWN-LIMITATIONS.md). Reversible: the recorded inverse is record.journal_begin with the journal that was restored.",
+      "description": "Take an interrupted capture's offer: report the material the journal recovered and mark the journal `restored`, so the next start stops offering it. The take's WAV is NOT moved, rewritten or deleted - the material stays exactly where the crash left it, and the result says so (`audio_untouched`). This verb only resolves the offer; record.recovery_place is the one that also puts the take on a new sample track, undoably. Reversible: the recorded inverse is record.journal_begin with the journal that was restored.",
       "group": "record",
       "id": "record.recovery_restore",
       "mutating": true,
@@ -23175,7 +23385,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Copy the reference's 'tracks' (indices; every one when left out) into this project - device, effects, clips and automation - as project.import_tracks does: each plays into the master, with ids of its own. One undo step removes them.",
+      "description": "Copy the reference's 'tracks' (indices; every one when left out) into this project - device, effects, clips and automation - as project.import_tracks does: each keeps its mixer channel (by name, a new one made when this project has none) and gets ids of its own. One undo step removes them.",
       "group": "reference",
       "id": "reference.copy_tracks",
       "mutating": true,
@@ -25120,7 +25330,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Run a Lua script (docs/specs/SPEC-lua-api-v0.md) in this running instance - the same ScriptEngine the run-and-exit `--run-script` CLI flag drives, on its own worker thread with the engine apply side pumped on the UI thread. Returns the Lua log lines, or a typed error carrying them. 'budget' overrides the per-invocation instruction budget (default from the engine) for this call only.",
+      "description": "Run a Lua script (docs/specs/SPEC-lua-api-v0.md) in this running instance - the same ScriptEngine the run-and-exit `--run-script` CLI flag drives, on its own worker thread with the engine apply side pumped on the UI thread. Returns the Lua log lines, or a typed error carrying them. 'budget' overrides the per-invocation instruction budget (default from the engine) for this call only. The project is captured whole before the script runs (bounded by the undo stack's byte budget, control.set_undo_depth; over it the run is REFUSED before anything changes), and everything the script changed is ONE undo step: control.undo restores the exact pre-script project and control.redo reapplies the run's result.",
       "group": "script",
       "id": "script.run",
       "mutating": true,
@@ -25130,6 +25340,12 @@
         "properties": {
           "budget_overridden": {
             "type": "boolean"
+          },
+          "changed_project": {
+            "type": "boolean"
+          },
+          "checkpoint": {
+            "type": "object"
           },
           "instruction_budget": {
             "type": "integer"
@@ -34764,23 +34980,23 @@
       }
     }
   ],
-  "count": 823,
+  "count": 825,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-plugins/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-gu2c4b8s/zene.sock",
-    "version": "0.4.0-alpha.1366+888934e"
+    "source_socket": "/tmp/zctl-run-66wptg36/zene.sock",
+    "version": "0.4.0-alpha.1506+eb1431a"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 823,
-    "ids_sha256": "61b947e1bfb7cd685ab6dfcb9e0d000c0c1653a3aa89a63ebc1c084f64b14f41"
+    "id_count": 825,
+    "ids_sha256": "995f9e67130cf3951f1c1246ed18d8efa876b9e2ea696a6d9ccdc083c1383008"
   }
 }
