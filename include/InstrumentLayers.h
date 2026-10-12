@@ -127,9 +127,9 @@ public:
 
 	//! Whether the track's own instrument plays a note of @a key at note volume @a volume.
 	auto basePlays(int key, int volume) const -> bool;
-	//! processOutEvent's note-on gate for the track's instrument (MIDI velocity); remembered for the note-off.
-	auto baseTakesNoteOn(int key, int velocity) -> bool;
-	auto baseTakesNoteOff(int key) -> bool;
+	//! processOutEvent's note-on gate; @a noteAccepted carries a clip handle's decision to its own note-off.
+	auto baseTakesNoteOn(int key, int velocity, std::atomic_bool* noteAccepted = nullptr) -> bool;
+	auto baseTakesNoteOff(int key, const std::atomic_bool* noteAccepted = nullptr) -> bool;
 	//! Render thread: starts @a note (the track's own, decorated) on every layer it falls into, in
 	//! @a patternTrack's pattern when it plays in one.
 	void playNote(const NotePlayHandle& note, f_cnt_t offset, f_cnt_t frames, Track* patternTrack);

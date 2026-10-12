@@ -583,6 +583,18 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 
 void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset )
 {
+	processOutEventImpl(event, time, offset, nullptr);
+}
+
+void InstrumentTrack::processOutEventForNote(const MidiEvent& event, const TimePos& time, f_cnt_t offset,
+	std::atomic_bool& baseInstrumentAccepted)
+{
+	processOutEventImpl(event, time, offset, &baseInstrumentAccepted);
+}
+
+void InstrumentTrack::processOutEventImpl(const MidiEvent& event, const TimePos& time, f_cnt_t offset,
+	std::atomic_bool* baseInstrumentAccepted)
+{
 	// do nothing if we do not have an instrument instance (e.g. when loading settings)
 	if( m_instrument == nullptr )
 	{
@@ -603,11 +615,11 @@ void InstrumentTrack::processOutEvent( const MidiEvent& event, const TimePos& ti
 		// 0.5.0 (MX-112 layer zones, MX-114 MIDI parts, MX-120 voices): the note paths are in
 		// InstrumentTrackNotes.cpp, moved out of this function unchanged but for those three.
 		case MidiNoteOn:
-			sendNoteOn( event, key, handleEventOutputChannel, time, offset );
+			sendNoteOn( event, key, handleEventOutputChannel, time, offset, baseInstrumentAccepted );
 			break;
 
 		case MidiNoteOff:
-			sendNoteOff( event, key, handleEventOutputChannel, time, offset );
+			sendNoteOff( event, key, handleEventOutputChannel, time, offset, baseInstrumentAccepted );
 			break;
 
 		default:

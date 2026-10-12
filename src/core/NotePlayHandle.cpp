@@ -68,6 +68,7 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 	m_released( false ),
 	m_releaseStarted( false ),
 	m_hasMidiNote( false ),
+	m_baseInstrumentNoteAccepted( true ),
 	m_hasParent( parent != nullptr  ),
 	m_parent( parent ),
 	m_hadChildren( false ),
@@ -266,10 +267,10 @@ void NotePlayHandle::play( std::span<SampleFrame> buffer )
 		const int baseVelocity = m_instrumentTrack->midiPort()->baseVelocity();
 
 		// send MidiNoteOn event
-		m_instrumentTrack->processOutEvent(
+		m_instrumentTrack->processOutEventForNote(
 			MidiEvent( MidiNoteOn, midiChannel(), midiKey(), midiVelocity( baseVelocity ) ),
 			TimePos::fromFrames( offset(), Engine::framesPerTick() ),
-			offset() );
+			offset(), m_baseInstrumentNoteAccepted );
 
 		// MPE (task #649): the note's captured pressure and timbre follow its
 		// note-on to the instrument, on the note's own channel, at the note's
@@ -434,11 +435,11 @@ void NotePlayHandle::noteOff( const f_cnt_t _s )
 		m_hasMidiNote = false;
 
 		// send MidiNoteOff event
-		m_instrumentTrack->processOutEvent(
+		m_instrumentTrack->processOutEventForNote(
 				MidiEvent( MidiNoteOff, midiChannel(), midiKey(),
 					midiReleaseVelocity( m_instrumentTrack->midiPort()->baseVelocity() ) ),
 				TimePos::fromFrames( _s, Engine::framesPerTick() ),
-				_s );
+				_s, m_baseInstrumentNoteAccepted );
 	}
 
 	// inform attached components about MIDI finished (used for recording in Piano Roll)

@@ -26,6 +26,9 @@
 
 #include <QtTest>
 
+#include <span>
+#include <vector>
+
 #include <QDomDocument>
 #include <QDomElement>
 #include <QJsonArray>
@@ -43,7 +46,9 @@
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "ModulationLayer.h"
+#include "NotePlayHandle.h"
 #include "PluginFactory.h"
+#include "SampleFrame.h"
 #include "Song.h"
 #include "RackTestSupport.h"
 #include "ReversibilityTestSupport.h"
@@ -118,6 +123,7 @@ private slots:
 #endif
 		QString why;
 		QVERIFY2(initRackFixture(&why), qPrintable(why));
+		NotePlayHandleManager::init();
 		m_track = revtest::addInstrumentTrack();
 		m_device = revtest::firstLoadable(QStringLiteral("instrument"));
 	}
@@ -165,6 +171,67 @@ private slots:
 		QVERIFY(acceptedSecond);
 		QVERIFY(firstMixedOff);
 		QVERIFY(!secondMixedOff);
+	}
+
+	//! MX-112: a clip note's own duration orders its note-off, so the base route follows that note instance.
+	void overlappingClipNotesKeepTheirOwnBaseNoteOffRouting()
+	{
+		if (m_track.isEmpty() || m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		InstrumentTrack* track = trackOf(m_track);
+		QVERIFY(track != nullptr);
+		const ControlResult added = run(QStringLiteral("rack.layer_add"),
+			{{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+
+		constexpr int key = 117;
+		RackZone zone;
+		zone.lowKey = key;
+		zone.highKey = key;
+		zone.highVelocity = 120;
+		const int zoneIndex = track->layers().zones().addZone(zone);
+		QVERIFY(zoneIndex >= 0);
+
+		const f_cnt_t period = Engine::audioEngine()->framesPerPeriod();
+		std::vector<SampleFrame> samples(static_cast<std::size_t>(period));
+		const std::span<SampleFrame> buffer(samples);
+		QSignalSpy noteOffs(track, &InstrumentTrack::endNote);
+		QVERIFY(noteOffs.isValid());
+
+		// The skipped note is shorter, so its off arrives while the accepted note is still sounding.
+		int skippedShortOffs = 0;
+		int acceptedLongOffs = 0;
+		{
+			NotePlayHandle acceptedLong(track, 0, period * 4, Note(TimePos(384), TimePos(0), key, 64));
+			NotePlayHandle skippedShort(track, 0, period, Note(TimePos(384), TimePos(0), key, 127));
+			acceptedLong.play(buffer);
+			skippedShort.play(buffer);
+			skippedShort.noteOff(0);
+			skippedShortOffs = noteOffs.count();
+			acceptedLong.noteOff(0);
+			acceptedLongOffs = noteOffs.count();
+		}
+
+		// Reverse the durations: the accepted note now ends first, but still owns the routed off.
+		noteOffs.clear();
+		int acceptedShortOffs = 0;
+		int skippedLongOffs = 0;
+		{
+			NotePlayHandle skippedLong(track, 0, period * 4, Note(TimePos(384), TimePos(0), key, 127));
+			NotePlayHandle acceptedShort(track, 0, period, Note(TimePos(384), TimePos(0), key, 64));
+			skippedLong.play(buffer);
+			acceptedShort.play(buffer);
+			acceptedShort.noteOff(0);
+			acceptedShortOffs = noteOffs.count();
+			skippedLong.noteOff(0);
+			skippedLongOffs = noteOffs.count();
+		}
+
+		QVERIFY(track->layers().zones().removeZone(zoneIndex));
+		QVERIFY(track->layers().removeLayer(1));
+		QCOMPARE(skippedShortOffs, 0);  // the skipped note's off must not reach the base instrument
+		QCOMPARE(acceptedLongOffs, 1);  // the accepted note's off must reach it
+		QCOMPARE(acceptedShortOffs, 1);
+		QCOMPARE(skippedLongOffs, 1);  // only the accepted note's off reaches the base instrument
 	}
 
 	//! MX-112: a layer is added with a whole-keyboard zone, zones gate the track's own instrument, a removal

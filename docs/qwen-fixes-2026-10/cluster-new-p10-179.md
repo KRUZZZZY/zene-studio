@@ -1,46 +1,41 @@
 # Cluster new-p10-179 — FIXED
 
-## Finding and evidence
+## Finding and fix
 
-**Verdict: FIXED.** The old state at `src/core/InstrumentLayers.cpp:315` stored one skip bit per key, so a later same-key note-on replaced the earlier routing result. The new state in `include/InstrumentLayers.h:163-164` counts accepted and skipped note-ons per key. `src/core/InstrumentLayers.cpp:324-330` consumes an accepted count first and suppresses note-offs while skipped counts remain. This uses atomics and fixed storage on the event path.
+The finding was real. MIDI clip notes use separate NotePlayHandle instances, but both note events previously reached the base-instrument gate with only a key. Per-key accepted/skipped counters could therefore route a shorter skipped note's off to the base instrument while swallowing the accepted longer note's off.
 
-The regression at `tests/src/core/InstrumentLayersCommandsTest.cpp:128-169` routes the same key through base-zone velocities that are accepted and skipped, in both note-on orders. It verifies the base receives exactly one of the two note-offs.
+Each note handle now carries its base-instrument routing decision in an atomic flag. Its note-on stores the decision, and its own note-off reads that same flag. Direct MIDI events continue to use the per-key counters. The new regression covers both accepted-longer/skipped-shorter and skipped-longer/accepted-shorter, checking the track's endNote signal to verify which offs pass the base gate.
 
-## RED/GREEN evidence
+Evidence: [InstrumentLayers.h](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-179/include/InstrumentLayers.h:131), [InstrumentLayers.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-179/src/core/InstrumentLayers.cpp:315), [NotePlayHandle.h](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-179/include/NotePlayHandle.h:363), [NotePlayHandle.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-179/src/core/NotePlayHandle.cpp:270), [InstrumentTrack.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-179/src/tracks/InstrumentTrack.cpp:589), and [InstrumentLayersCommandsTest.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-179/tests/src/core/InstrumentLayersCommandsTest.cpp:177). The RED assertion was skippedShortOffs: actual 1, expected 0 (test line 231).
 
-The first valid RED run used the original production code. It failed at `acceptedOff` because the skipped note-on overwrote the accepted note's state.
+## Verification evidence
 
-| Check | Exact command | Exit |
-|---|---|---:|
-| RED, original code (`test-5.log`) | `ctest -R '^InstrumentLayersCommandsTest$' --output-on-failure -V > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/test-5.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"` | 8 |
-| RED, production patch removed (`test-10.log`) | `ctest -R '^InstrumentLayersCommandsTest$' --output-on-failure -V > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/test-10.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"` | 8 |
-| GREEN, patch restored (`test-11.log`) | `ctest -R '^InstrumentLayersCommandsTest$' --output-on-failure -V > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/test-11.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"` | 0 |
-
-The final run executed 1/1 CTest family test. QtTest reported 7 passed, 0 failed, 1 skipped; the skipped slot requires the unavailable CLAP multi-output fixture. The regression slot itself passed.
-
-## Build, proof, and gates
+All build and test logs are new files under /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r2/logs.
 
 | Purpose | Exact command | Exit |
 |---|---|---:|
-| Build the test instrument fixture (`build-3.log`) | `cmake --build build --target tripleoscillator > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/build-3.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"` | 0 |
-| Build the regression before the original-code RED (`build-4.log`) | `cmake --build build --target InstrumentLayersCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/build-4.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"` | 0 |
-| Save the final production patch | `git diff -- include/InstrumentLayers.h src/core/InstrumentLayers.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/fix.patch; result=$?; printf 'EXIT=%s\n' "$result"` | 0 |
-| Remove the production patch for RED | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/fix.patch; result=$?; printf 'EXIT=%s\n' "$result"` | 0 |
-| Rebuild `zene` and the test with the patch removed (`build-9.log`) | `cmake --build build --target zene InstrumentLayersCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/build-9.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"` | 0 |
-| Restore the production patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/fix.patch; result=$?; printf 'EXIT=%s\n' "$result"` | 0 |
-| Rebuild `zene` and the test after restoration (`build-10.log`) | `cmake --build build --target zene InstrumentLayersCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/build-10.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"` | 0 |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/gate-3.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"` | 0 |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs/gate-4.log 2>&1; result=$?; printf 'EXIT=%s\n' "$result"` | 0 |
+| Build with production patch removed | cmake --build build --target zene InstrumentLayersCommandsTest -j12 > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r2/logs/build-9.log' 2>&1; result=$?; echo EXIT=$result; exit 0 | 0 |
+| RED with production patch removed, from build/tests | ctest -R '^InstrumentLayersCommandsTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r2/logs/red-4.log' 2>&1; result=$?; echo EXIT=$result; exit 0 | 8 |
+| Restore production patch | git apply '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r2/logs/fix.patch' | 0 |
+| Build restored patch | cmake --build build --target zene InstrumentLayersCommandsTest -j12 > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r2/logs/build-10.log' 2>&1; result=$?; echo EXIT=$result; exit 0 | 0 |
+| GREEN, from build/tests | ctest -R '^InstrumentLayersCommandsTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r2/logs/green-4.log' 2>&1; result=$?; echo EXIT=$result; exit 0 | 0 |
+| Verbose family count, from build/tests | ctest -V -R '^InstrumentLayersCommandsTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r2/logs/test-verbose-1.log' 2>&1; result=$?; echo EXIT=$result; exit 0 | 0 |
+| Complexity gate | bash tests/complexity-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r2/logs/gate-complexity-1.log' 2>&1; result=$?; echo EXIT=$result; exit 0 | 0 |
+| File-length gate | bash tests/file-length-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r2/logs/gate-file-length-1.log' 2>&1; result=$?; echo EXIT=$result; exit 0 | 0 |
 
-The unrestricted `cmake --build build` attempt exited 97 because the worktree build guard permits named targets only. The named `zene` and `InstrumentLayersCommandsTest` targets both rebuilt successfully with the production patch removed and restored. The first test attempts also exposed a skipped plugin fixture and an inactive-rack test setup; those runs were not counted as RED evidence. Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r1/logs`.
+The required reversible-patch proof also used git diff -- include/InstrumentLayers.h src/core/InstrumentLayers.cpp include/InstrumentTrack.h include/NotePlayHandle.h src/core/NotePlayHandle.cpp src/tracks/InstrumentTrack.cpp src/tracks/InstrumentTrackNotes.cpp > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r2/logs/fix.patch' && git apply -R '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-179.r2/logs/fix.patch' (EXIT 0). Rebuilding and rerunning the same targeted CTest without those product changes failed at the stated assertion; reapplying the patch, rebuilding, and rerunning passed.
 
-The `fff` grep tool was not available in this session; build, test, and gate logs were searched with `rg` for `error`, `FAILED`, and `Assertion`.
+The affected family executed 1/1 CTest target. Its verbose QtTest run reported 8 passed, 0 failed, and 1 skipped (multiOutputBusesRouteCreateUndo, because this build has no CLAP instrument module). Both required gates passed.
 
 ## Files committed
 
-- `include/InstrumentLayers.h`
-- `src/core/InstrumentLayers.cpp`
-- `tests/src/core/InstrumentLayersCommandsTest.cpp`
-- `docs/qwen-fixes-2026-10/cluster-new-p10-179.md`
-
-The three C++ files were already registered in `tests/fork-sources.txt`; no source-list change was needed.
+- include/InstrumentLayers.h
+- include/InstrumentTrack.h
+- include/NotePlayHandle.h
+- src/core/InstrumentLayers.cpp
+- src/core/NotePlayHandle.cpp
+- src/tracks/InstrumentTrack.cpp
+- src/tracks/InstrumentTrackNotes.cpp
+- tests/src/core/InstrumentLayersCommandsTest.cpp
+- tests/upstream-modifications.txt
+- docs/qwen-fixes-2026-10/cluster-new-p10-179.md

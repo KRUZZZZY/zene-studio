@@ -80,6 +80,9 @@ public:
 
 	void processInEvent( const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0 ) override;
 	void processOutEvent( const MidiEvent& event, const TimePos& time = TimePos(), f_cnt_t offset = 0 ) override;
+	//! NotePlayHandle path: preserve this handle's base-instrument decision through its own note-off.
+	void processOutEventForNote( const MidiEvent& event, const TimePos& time, f_cnt_t offset,
+		std::atomic_bool& baseInstrumentAccepted );
 
 	/*! MPE per-note expression capture (task #601).
 	 *
@@ -365,6 +368,8 @@ protected slots:
 
 private:
 	void processCCEvent(int controller);
+	void processOutEventImpl(const MidiEvent& event, const TimePos& time, f_cnt_t offset,
+		std::atomic_bool* baseInstrumentAccepted);
 
 	// MPE capture (task #601). Both run on the MIDI-input thread and only
 	// touch fixed arrays plus plain int writes on live note handles.
@@ -377,8 +382,10 @@ private:
 	// 0.5.0 MX-112/MX-114/MX-120 (InstrumentTrackNotes.cpp)
 	//! processOutEvent's note-on, note-off and other messages to the instrument (@a fallbackChannel is the
 	//! channel the track would use without MIDI parts).
-	void sendNoteOn( const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset );
-	void sendNoteOff( const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset );
+	void sendNoteOn( const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset,
+		std::atomic_bool* baseInstrumentAccepted );
+	void sendNoteOff( const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset,
+		std::atomic_bool* baseInstrumentAccepted );
 	void sendChannelEvent( const MidiEvent& event, const TimePos& time, f_cnt_t offset );
 	//! The <midicontrollers> element: the MIDI CC rack's knob values.
 	void loadMidiControllers( const QDomElement& element );

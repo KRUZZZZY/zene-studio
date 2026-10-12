@@ -312,20 +312,30 @@ auto InstrumentLayers::basePlays(int key, int volume) const -> bool
 	return !zoned || (layerMask(key, volume) & 1u) != 0;
 }
 
-auto InstrumentLayers::baseTakesNoteOn(int key, int velocity) -> bool
+auto InstrumentLayers::baseTakesNoteOn(int key, int velocity, std::atomic_bool* noteAccepted) -> bool
 {
-	if (!validKey(key)) { return true; }
+	if (!validKey(key))
+	{
+		if (noteAccepted != nullptr) { noteAccepted->store(true, std::memory_order_release); }
+		return true;
+	}
 	const bool plays = basePlays(key, volumeOfVelocity(velocity));
+	if (noteAccepted != nullptr)
+	{
+		noteAccepted->store(plays, std::memory_order_release);
+		return plays;
+	}
 	auto& pending = plays ? m_baseAccepted[static_cast<std::size_t>(key)] : m_baseSkipped[static_cast<std::size_t>(key)];
 	pending.fetch_add(1, std::memory_order_relaxed);
 	return plays;
 }
 
-auto InstrumentLayers::baseTakesNoteOff(int key) -> bool
+auto InstrumentLayers::baseTakesNoteOff(int key, const std::atomic_bool* noteAccepted) -> bool
 {
 	if (!validKey(key)) { return true; }
+	if (noteAccepted != nullptr) { return noteAccepted->load(std::memory_order_acquire); }
 	const auto at = static_cast<std::size_t>(key);
-	// MIDI note-offs identify only the key: release accepted notes first, then suppress skipped-note offs.
+	// Direct MIDI note-offs identify only the key: release accepted notes first, then suppress skipped-note offs.
 	if (consumePending(m_baseAccepted[at])) { return true; }
 	return !consumePending(m_baseSkipped[at]);
 }
