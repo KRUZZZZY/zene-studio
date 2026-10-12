@@ -119,11 +119,11 @@ bool writeWave(const QString& path, const std::vector<double>& samples)
 }
 
 //! A click track at \a bpm, 25 ms decaying 1 kHz bursts, first burst at 0.5 s.
-std::vector<double> clickTrack(double bpm, double seconds)
+std::vector<double> clickTrack(double bpm, double seconds, double firstBeatSeconds = kFirstBeatSeconds)
 {
 	std::vector<double> samples(static_cast<std::size_t>(seconds * kSampleRate), 0.0);
 	const int burst = kSampleRate / 40;
-	for (double beat = kFirstBeatSeconds; beat < seconds; beat += 60.0 / bpm)
+	for (double beat = firstBeatSeconds; beat < seconds; beat += 60.0 / bpm)
 	{
 		const std::size_t start = static_cast<std::size_t>(beat * kSampleRate);
 		for (int i = 0; i < burst && start + i < samples.size(); ++i)
@@ -231,6 +231,22 @@ private slots:
 			<= kOnsetToleranceSeconds,
 			qPrintable(QStringLiteral("the fixture's first click is at %1 s, the estimate found %2 s")
 				.arg(kFirstBeatSeconds).arg(analysis.tempo.firstOnsetSeconds, 0, 'f', 3)));
+	}
+
+	//! A click at sample zero is not hidden by the lack of a preceding spectrum.
+	void aTransientAtTheStartOfTheFileIsFound()
+	{
+		const std::vector<double> track = clickTrack(kClickBpmA, 4.0, 0.0);
+		std::vector<float> mono;
+		mono.reserve(track.size());
+		for (const double sample : track) { mono.push_back(static_cast<float>(sample)); }
+		const std::vector<std::int64_t> onsets =
+			detection::detectOnsetFrames(mono.data(), mono.size(), kSampleRate, 4.0);
+
+		QVERIFY2(!onsets.empty(), "the click track's transients were not detected");
+		QVERIFY2(onsets.front() <= static_cast<std::int64_t>(kOnsetToleranceSeconds * kSampleRate),
+			qPrintable(QStringLiteral("the first reported onset is %1 samples after the file start")
+				.arg(onsets.front())));
 	}
 
 	/*! The key, named in the vocabulary that already existed. The name is
