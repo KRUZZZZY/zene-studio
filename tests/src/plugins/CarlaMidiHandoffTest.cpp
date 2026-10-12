@@ -113,6 +113,8 @@ struct ConcurrentStressRun
 	NativePluginDescriptor descriptor{};
 	std::array<std::atomic<std::uint64_t>, ProducerCount> accepted{};
 	std::array<std::atomic<std::uint64_t>, ProducerCount> producerAllocations{};
+	std::array<std::atomic<std::uint64_t>, ProducerCount> refused{};
+	std::array<std::atomic<std::uint32_t>, ProducerCount> maxPushAttempts{};
 	std::atomic<std::uint32_t> finished{0};
 	std::atomic<std::uint32_t> activeProducers{0};
 	std::atomic<bool> renderStarted{false};
@@ -151,18 +153,25 @@ struct ConcurrentStressRun
 		activeProducers.fetch_add(1, std::memory_order_release);
 		lmms::test::resetAllocationCount();
 		lmms::test::tlCountAllocations = true;
+		std::uint64_t refusedCount = 0;
+		std::uint32_t greatestAttemptCount = 0;
 		for (std::uint32_t index = 0; index < EventsPerProducer; ++index)
 		{
 			const auto key = static_cast<std::int16_t>(index & 0x7f);
 			const auto velocity = static_cast<std::int16_t>(1 + (index >> 7));
+			std::uint32_t attempts = 0;
 			if (handoff.enqueue(lmms::MidiEvent(lmms::MidiNoteOn,
-				static_cast<std::int8_t>(producer), key, velocity), 0))
+				static_cast<std::int8_t>(producer), key, velocity), 0, &attempts))
 			{
 				accepted[producer].fetch_add(1, std::memory_order_relaxed);
 			}
+			else { ++refusedCount; }
+			if (attempts > greatestAttemptCount) { greatestAttemptCount = attempts; }
 		}
 		lmms::test::tlCountAllocations = false;
 		producerAllocations[producer].store(lmms::test::tlAllocationCount, std::memory_order_relaxed);
+		refused[producer].store(refusedCount, std::memory_order_relaxed);
+		maxPushAttempts[producer].store(greatestAttemptCount, std::memory_order_relaxed);
 		activeProducers.fetch_sub(1, std::memory_order_release);
 		finished.fetch_add(1, std::memory_order_release);
 	}
@@ -202,6 +211,24 @@ struct ConcurrentStressRun
 		std::uint64_t total = 0;
 		for (const auto& count : accepted) { total += count.load(std::memory_order_relaxed); }
 		return total;
+	}
+
+	auto refusedCount() const -> std::uint64_t
+	{
+		std::uint64_t total = 0;
+		for (const auto& count : refused) { total += count.load(std::memory_order_relaxed); }
+		return total;
+	}
+
+	auto greatestPushAttemptCount() const -> std::uint32_t
+	{
+		std::uint32_t greatest = 0;
+		for (const auto& count : maxPushAttempts)
+		{
+			const auto observed = count.load(std::memory_order_relaxed);
+			if (observed > greatest) { greatest = observed; }
+		}
+		return greatest;
 	}
 
 	auto receivedCount() const -> std::uint64_t
@@ -355,6 +382,11 @@ private slots:
 		QVERIFY(run.producersAllocatedNothing());
 		QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
 		QCOMPARE(run.totalAccepted, run.totalReceived);
+		QCOMPARE(run.totalAccepted + run.refusedCount(),
+			static_cast<std::uint64_t>(ConcurrentStressRun::ProducerCount) * ConcurrentStressRun::EventsPerProducer);
+		QVERIFY(run.greatestPushAttemptCount() <= lmms::MidiHandoffQueue<MidiCapacity>::MaxPushAttempts);
+		QCOMPARE(run.handoff.droppedEvents(), run.refusedCount());
+		QCOMPARE(run.handoff.recordedOverflows(), run.refusedCount());
 	}
 };
 

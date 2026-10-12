@@ -134,6 +134,43 @@ private slots:
 		QCOMPARE(allocations, std::uint64_t{0});
 	}
 
+	void contentionRetriesAreBoundedAndEveryDropIsRecorded()
+	{
+		lmms::MidiHandoffQueue<64> queue;
+		lmms::MidiChannelOverflow overflow;
+		std::uint32_t competingReservations = 0;
+		bool competitorsAccepted = true;
+		const auto scheduleCompetingReservation = [&](std::uint32_t)
+		{
+			if (!queue.push(eventWithOffset(competingReservations))) { competitorsAccepted = false; }
+			else { ++competingReservations; }
+		};
+		auto refusedEvent = eventWithOffset(999);
+		refusedEvent.channel = 5;
+		std::uint64_t refusedAt = 0;
+		std::uint32_t attemptsUsed = 0;
+		const bool accepted = queue.pushWithTestHook(refusedEvent, &refusedAt, &attemptsUsed,
+			scheduleCompetingReservation);
+
+		QVERIFY(!accepted);
+		QVERIFY(competitorsAccepted);
+		QCOMPARE(competingReservations, lmms::MidiHandoffQueue<64>::MaxPushAttempts);
+		QCOMPARE(attemptsUsed, lmms::MidiHandoffQueue<64>::MaxPushAttempts);
+		QVERIFY(attemptsUsed <= lmms::MidiHandoffQueue<64>::MaxPushAttempts);
+		QCOMPARE(queue.dropped(), std::uint64_t{1});
+		overflow.record(refusedEvent.channel, refusedAt);
+		QCOMPARE(overflow.recorded(), std::uint64_t{1});
+
+		for (std::uint32_t offset = 0; offset < competingReservations; ++offset)
+		{
+			lmms::HandoffMidiEvent event;
+			QVERIFY(queue.pop(event));
+			QCOMPARE(event.offset, offset);
+		}
+		lmms::HandoffMidiEvent empty;
+		QVERIFY(!queue.pop(empty));
+	}
+
 	//! A refused event is never silently lost: its channel is recorded, with the queue position it was refused at.
 	void refusedEventsLeaveTheirChannelRecorded()
 	{

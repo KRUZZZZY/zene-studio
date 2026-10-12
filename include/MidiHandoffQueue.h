@@ -56,8 +56,9 @@ struct HandoffMidiEvent
  *
  * The contract, which is what makes it safe to use from the audio thread:
  *  - storage is the fixed array inside the object: nothing allocates, nothing locks;
- *  - push() never waits. A full queue refuses the event, counts it in dropped()
- *    and returns false, so a producer that cannot be served is never blocked;
+ *  - push() makes at most MaxPushAttempts reservation attempts. A full queue or
+ *    exhausted contention budget refuses the event, counts it in dropped() and
+ *    returns false, so a producer that cannot be served is never blocked;
  *  - pop() never waits and returns false when the queue is empty.
  *
  * Events come out in the order their pushes completed. Any number of threads may
@@ -72,6 +73,9 @@ class MidiHandoffQueue
 		"the capacity must be a power of two, at least 2");
 
 public:
+	//! Maximum reservation attempts made by one push(), including the first attempt.
+	static constexpr std::uint32_t MaxPushAttempts = 8;
+
 	MidiHandoffQueue()
 	{
 		for (std::size_t i = 0; i < Capacity; ++i)
@@ -83,18 +87,29 @@ public:
 	MidiHandoffQueue(const MidiHandoffQueue&) = delete;
 	MidiHandoffQueue& operator=(const MidiHandoffQueue&) = delete;
 
-	//! Queues \a event. @return false when the queue was full and the event was dropped
-	auto push(const HandoffMidiEvent& event, std::uint64_t* refusedAt = nullptr) noexcept -> bool
+	//! Queues \a event. @return false when the queue was full or contention exhausted the retry budget
+	auto push(const HandoffMidiEvent& event, std::uint64_t* refusedAt = nullptr,
+		std::uint32_t* attemptsUsed = nullptr) noexcept -> bool
+	{
+		return pushWithTestHook(event, refusedAt, attemptsUsed, [](std::uint32_t) noexcept {});
+	}
+
+	//! Test seam that lets a queue test schedule a competing reservation before a producer's compare-exchange.
+	template<typename BeforeCompareExchange>
+	auto pushWithTestHook(const HandoffMidiEvent& event, std::uint64_t* refusedAt,
+		std::uint32_t* attemptsUsed, BeforeCompareExchange&& beforeCompareExchange) noexcept -> bool
 	{
 		std::size_t position = m_enqueue.load(std::memory_order_relaxed);
-		for (;;)
+		for (std::uint32_t attempt = 1; attempt <= MaxPushAttempts; ++attempt)
 		{
+			if (attemptsUsed) { *attemptsUsed = attempt; }
 			Cell& cell = m_cells[position & Mask];
 			const std::size_t sequence = cell.sequence.load(std::memory_order_acquire);
 			const auto difference = static_cast<std::intptr_t>(sequence)
 				- static_cast<std::intptr_t>(position);
 			if (difference == 0)
 			{
+				beforeCompareExchange(attempt);
 				if (m_enqueue.compare_exchange_weak(position, position + 1, std::memory_order_relaxed))
 				{
 					cell.event = event;
@@ -115,6 +130,12 @@ public:
 				position = m_enqueue.load(std::memory_order_relaxed);
 			}
 		}
+
+		// Contention used the entire retry budget. Count this refusal just like a full-queue refusal and return
+		// the latest reservation position so pushOrRecord() can preserve the overflow cut.
+		if (refusedAt) { *refusedAt = m_enqueue.load(std::memory_order_relaxed); }
+		m_dropped.fetch_add(1, std::memory_order_relaxed);
+		return false;
 	}
 
 	//! Takes the oldest queued event into \a event. @return false when the queue is empty
@@ -162,7 +183,7 @@ public:
 		return m_dequeue.load(std::memory_order_acquire);
 	}
 
-	//! Events refused by push() because the queue was full, since construction.
+	//! Events refused by push() because the queue was full or contention exhausted its retry budget.
 	auto dropped() const noexcept -> std::uint64_t
 	{
 		return m_dropped.load(std::memory_order_relaxed);
@@ -252,13 +273,13 @@ private:
 	std::atomic<std::uint64_t> m_recorded{0};
 };
 
-//! Pushes \a event, or records its channel (with the queue's position) when the queue is full. Never blocks.
+//! Pushes \a event, or records its channel (with the queue's position) when push() refuses it. Never blocks.
 template<std::size_t Capacity>
 auto pushOrRecord(MidiHandoffQueue<Capacity>& queue, MidiChannelOverflow& overflow,
-	const HandoffMidiEvent& event) noexcept -> bool
+	const HandoffMidiEvent& event, std::uint32_t* attemptsUsed = nullptr) noexcept -> bool
 {
 	std::uint64_t queuedBefore = 0;
-	if (queue.push(event, &queuedBefore)) { return true; }
+	if (queue.push(event, &queuedBefore, attemptsUsed)) { return true; }
 	overflow.record(event.channel, queuedBefore);
 	return false;
 }

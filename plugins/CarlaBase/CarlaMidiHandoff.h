@@ -44,7 +44,7 @@ template<std::size_t Capacity>
 class CarlaMidiHandoff
 {
 public:
-	auto enqueue(const MidiEvent& event, std::uint32_t offset) noexcept -> bool
+	auto enqueue(const MidiEvent& event, std::uint32_t offset, std::uint32_t* pushAttempts = nullptr) noexcept -> bool
 	{
 		HandoffMidiEvent queued;
 		queued.type = static_cast<std::uint8_t>(event.type());
@@ -52,8 +52,14 @@ public:
 		queued.param1 = event.param(0);
 		queued.param2 = event.param(1);
 		queued.offset = offset;
-		return pushOrRecord(m_queue, m_overflow, queued);
+		return pushOrRecord(m_queue, m_overflow, queued, pushAttempts);
 	}
+
+	//! Events refused by the fixed queue, including those refused after the bounded contention retry budget.
+	auto droppedEvents() const noexcept -> std::uint64_t { return m_queue.dropped(); }
+
+	//! Refused events recorded for channel all-notes-off recovery.
+	auto recordedOverflows() const noexcept -> std::uint64_t { return m_overflow.recorded(); }
 
 	template<typename Process>
 	void processPeriod(Process&& process)
