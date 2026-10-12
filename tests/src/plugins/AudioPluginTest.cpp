@@ -45,7 +45,9 @@
  */
 
 #include <array>
+#include <chrono>
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 #include <QDomDocument>
@@ -63,6 +65,18 @@
 #include "Plugin.h"
 #include "SampleFrame.h"
 
+// Inspect Analyzer's SA_DEBUG-only timer declaration without linking the
+// Spectrum Analyzer plugin into this generic AudioPlugin test executable.
+#include "../../../plugins/SpectrumAnalyzer/DataprocLauncher.h"
+#include "LocklessRingBuffer.h"
+#include "../../../plugins/SpectrumAnalyzer/SaControls.h"
+#include "../../../plugins/SpectrumAnalyzer/SaProcessor.h"
+#define SA_DEBUG
+#define private public
+#include "../../../plugins/SpectrumAnalyzer/Analyzer.h"
+#undef private
+#undef SA_DEBUG
+
 using namespace lmms;
 
 namespace
@@ -74,6 +88,18 @@ using VoidFn = void (*)();
 using GetCountsFn = void (*)(int*, int*, int*);
 
 constexpr f_cnt_t TestFrames = 64;
+
+template<typename AnalyzerType>
+auto analyzerDebugTimerReportsAfter(std::chrono::seconds elapsed) -> bool
+{
+	using Clock = std::chrono::steady_clock;
+	if constexpr (requires(Clock::time_point now) { AnalyzerType::isStatsIntervalElapsed(now, now); })
+	{
+		const auto last = Clock::time_point{};
+		return AnalyzerType::isStatsIntervalElapsed(last + elapsed, last);
+	}
+	return false;
+}
 
 //! 0 = Continue, 1 = ContinueIfNotQuiet, 2 = Sleep
 enum StatusCode
@@ -124,6 +150,7 @@ private slots:
 	void bypassedEffectRunsDefaultBypassImpl();
 	void unknownProcessStatusIsIgnored();
 	void legacyAudioBufferPathRoutesInPlacePorts();
+	void analyzerDebugTimerUsesMonotonicTimePoint();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -433,6 +460,13 @@ void AudioPluginTest::legacyAudioBufferPathRoutesInPlacePorts()
 	// 0.8f / 2 and -0.4f / 2 are exact in binary floating point.
 	QCOMPARE(buffer.interleavedBuffer()[0][0], 0.4f);
 	QCOMPARE(buffer.interleavedBuffer()[TestFrames - 1][1], -0.2f);
+}
+
+void AudioPluginTest::analyzerDebugTimerUsesMonotonicTimePoint()
+{
+	QVERIFY(!analyzerDebugTimerReportsAfter<Analyzer>(std::chrono::seconds{4}));
+	QVERIFY(analyzerDebugTimerReportsAfter<Analyzer>(std::chrono::seconds{6}));
+	QVERIFY((std::is_same_v<decltype(Analyzer::m_last_dump_time), std::chrono::steady_clock::time_point>));
 }
 
 QTEST_MAIN(AudioPluginTest)

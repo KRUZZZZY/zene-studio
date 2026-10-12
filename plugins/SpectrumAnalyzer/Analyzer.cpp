@@ -64,6 +64,12 @@ Analyzer::Analyzer(Model *parent, const Plugin::Descriptor::SubPluginFeatures::K
 	// Buffer is sized to cover 4* the current maximum LMMS audio buffer size,
 	// so that it has some reserve space in case data processor is busy.
 	m_inputBuffer(4 * m_maxBufferSize)
+	#ifdef SA_DEBUG
+	, m_last_dump_time(std::chrono::steady_clock::now())
+	, m_dump_count(0)
+	, m_sum_execution(0.0f)
+	, m_max_execution(0.0f)
+	#endif
 {
 	m_processorThread.start();
 }
@@ -81,11 +87,14 @@ ProcessStatus Analyzer::processImpl(InterleavedBufferView<float, 2> in)
 {
 	// Measure time spent in audio thread; both average and peak should be well under 1 ms.
 	#ifdef SA_DEBUG
-		unsigned int audio_time = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-		if (audio_time - m_last_dump_time > 5000000000)	// print every 5 seconds
+		const auto audio_time = std::chrono::steady_clock::now();
+		if (isStatsIntervalElapsed(audio_time, m_last_dump_time))	// print every 5 seconds
 		{
-			std::cout << "Analyzer audio thread: " << m_sum_execution / m_dump_count << " ms avg / "
-				<< m_max_execution << " ms peak." << std::endl;
+			if (m_dump_count > 0)
+			{
+				std::cout << "Analyzer audio thread: " << m_sum_execution / m_dump_count << " ms avg / "
+					<< m_max_execution << " ms peak." << std::endl;
+			}
 			m_last_dump_time = audio_time;
 			m_sum_execution = m_max_execution = m_dump_count = 0;
 		}
@@ -99,10 +108,11 @@ ProcessStatus Analyzer::processImpl(InterleavedBufferView<float, 2> in)
 		m_inputBuffer.write(reinterpret_cast<SampleFrame*>(in.data()), in.frames(), true);
 	}
 	#ifdef SA_DEBUG
-		audio_time = std::chrono::high_resolution_clock::now().time_since_epoch().count() - audio_time;
+		const auto execution_time = std::chrono::duration<float, std::milli>(
+			std::chrono::steady_clock::now() - audio_time).count();
 		m_dump_count++;
-		m_sum_execution += audio_time / 1000000.0;
-		if (audio_time / 1000000.0 > m_max_execution) {m_max_execution = audio_time / 1000000.0;}
+		m_sum_execution += execution_time;
+		if (execution_time > m_max_execution) {m_max_execution = execution_time;}
 	#endif
 
 	return ProcessStatus::Continue;
