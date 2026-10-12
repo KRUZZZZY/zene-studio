@@ -64,6 +64,7 @@
 #include "MidiClip.h"
 #include "Mixer.h"
 #include "ProjectJournal.h"
+#include "SampleTrack.h"
 #include "Song.h"
 #include "TempoMap.h"
 #include "Track.h"
@@ -391,6 +392,27 @@ private slots:
 		QCOMPARE(extracted.tempo, authored.tempo);
 		QCOMPARE(extracted.numerator, authored.numerator);
 		QCOMPARE(extracted.denominator, authored.denominator);
+	}
+
+	void sampleTrackPanIsAppliedOnImport()
+	{
+		DawProjectModel model;
+		DawProjectTrack sampleEntry;
+		sampleEntry.id = QStringLiteral("sample");
+		sampleEntry.name = QStringLiteral("Sample");
+		sampleEntry.contentType = QStringLiteral("audio");
+		sampleEntry.typeName = QStringLiteral("sample");
+		sampleEntry.hasPan = true;
+		sampleEntry.pan = 0.75;
+		model.tracks.append(sampleEntry);
+
+		QString error;
+		Song* song = Engine::getSong();
+		QVERIFY2(applyDawProjectModel(song, model, &error), qPrintable(error));
+		QCOMPARE(song->tracks().size(), 1);
+		auto* sampleTrack = dynamic_cast<SampleTrack*>(song->tracks().front());
+		QVERIFY(sampleTrack != nullptr);
+		QCOMPARE(sampleTrack->panningModel()->value(), 50.f);
 	}
 
 	//! Claim 3: the control command reads the file back and reports the model.

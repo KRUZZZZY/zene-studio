@@ -160,17 +160,18 @@ bool allTrackTypesCreatable(const DawProjectModel& model, QString* error)
 	return true;
 }
 
-//! The panning model a track type has, or nullptr. This is the LOSSY #6 seam:
-//! MixerChannel carries volume, mute and solo but no pan, so the value the
-//! format's <Pan> carries comes from the TRACK - and only InstrumentTrack
-//! EXPOSES its panning model. SampleTrack has one (m_panningModel) but no
-//! public accessor, so a sample track's pan is not reachable from here and is
-//! reported rather than guessed at through a private member.
+//! The panning model a track type exposes, or nullptr. MixerChannel carries
+//! volume, mute and solo but no pan, so the format's <Pan> value comes from the
+//! track. InstrumentTrack and SampleTrack both expose their panning models.
 FloatModel* panningModelForTrack(Track* track)
 {
 	if (auto* instrument = dynamic_cast<InstrumentTrack*>(track))
 	{
 		return instrument->panningModel();
+	}
+	if (auto* sample = dynamic_cast<SampleTrack*>(track))
+	{
+		return sample->panningModel();
 	}
 	return nullptr;
 }
