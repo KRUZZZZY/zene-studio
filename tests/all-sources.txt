@@ -670,6 +670,7 @@ include/ScriptCommandBridge.h
 include/ScriptConsole.h
 include/ScriptDawBindings.h
 include/ScriptEngine.h
+include/ScriptImport.h
 include/ScriptLuaQtTypes.h
 include/ScriptMemoryBudget.h
 include/ScriptPackage.h
@@ -1938,6 +1939,7 @@ src/core/ScriptDawBindings.cpp
 src/core/ScriptDawEdit.cpp
 src/core/ScriptDawEffects.cpp
 src/core/ScriptEngine.cpp
+src/core/ScriptImport.cpp
 src/core/ScriptPackage.cpp
 src/core/SerializingObject.cpp
 src/core/SessionAudioCells.cpp
@@ -2648,6 +2650,7 @@ tests/src/core/ScriptDawBindingTest.cpp
 tests/src/core/ScriptDawEffectsTest.cpp
 tests/src/core/ScriptDawRemovalUndoTest.cpp
 tests/src/core/ScriptEngineTest.cpp
+tests/src/core/ScriptImportTest.cpp
 tests/src/core/ScriptMemoryBudgetTest.cpp
 tests/src/core/ScriptStabilisationTest.cpp
 tests/src/core/SessionArrangementRecordTest.cpp

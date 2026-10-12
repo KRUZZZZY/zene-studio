@@ -12,7 +12,8 @@ layout is prescribed:
 
 ```
 <scripts root>/<name>/package.lua     the entry point (required)
-<scripts root>/<name>/...             any sibling files the entry script uses
+<scripts root>/<name>/<module>.lua    sibling modules, loaded with require (section 1a)
+<scripts root>/<name>/<dir>/<m>.lua   modules in sub-directories (require("dir.m"))
 ```
 
 `package.lua` is an ordinary v0 script: it needs the
@@ -20,6 +21,48 @@ layout is prescribed:
 command queue as a loose script, and is run with
 `ScriptEngine::runFile(entryPath)` — the package adds *discovery*, not a second
 execution path.
+
+## 1a. Importing sibling modules (`require`)
+
+A script **file** run with `ScriptEngine::runFile` (a loose script or a package
+entry) gets a sandboxed `require`. Source: `include/ScriptImport.h`,
+`src/core/ScriptImport.cpp`.
+
+* **Root.** The directory that holds the entry script: the package directory for
+  `package.lua`, the script's own directory for a loose script. Nothing outside
+  that directory's canonical path can be imported. A package cannot import from
+  a sibling package; a loose script sitting in the scripts root can name the
+  packages beneath it (`require("arp.package")`), since they are inside its root.
+* **Names.** `require("util")` loads `<root>/util.lua`; `require("lib.util")`
+  loads `<root>/lib/util.lua`. Each dot-separated part is an identifier
+  (`[A-Za-z_][A-Za-z0-9_]*`, at most 64 characters; 128 bytes in all). Refused
+  with a clear error: `..`, `/` or `\` separators, absolute paths (`/x`, `\x`,
+  `C:x`, `\\server\share`), empty parts, NUL bytes, and file extensions.
+* **Symlinks and races.** The candidate's canonical path (symlinks resolved)
+  must lie under the canonical root, so a symlink inside the root that points
+  outside it is refused. The file is opened only after that check, then
+  re-checked: the path must still resolve to the same canonical file and, on
+  POSIX, the open descriptor must be the same device/inode as the path, so a
+  swap between check and open is refused.
+* **Semantics like Lua's `require`.** The module chunk runs once per script run
+  with the module name and its root-relative path as `...`; its return value
+  (or `true`) is cached and returned by later `require` calls of that name. A
+  fresh run starts with an empty cache. Module errors propagate to the caller
+  and are not cached.
+* **Cycles and bounds.** An import cycle is refused (`import cycle: a -> b -> a`).
+  Limits: nesting depth 16, 64 distinct modules per run, 256 KiB per module.
+  Modules are loaded as text only; precompiled bytecode is refused.
+* **Sandbox unchanged.** Modules run in the same globals as the entry script:
+  `os`, `io`, `package`, `dofile`, `loadfile`, `load`, `loadstring` and `module`
+  stay absent, and the same instruction and memory budgets apply across modules.
+  Imported modules do not need the `--! lmms-api` header; the entry script's
+  header gates the whole run.
+* **`runString` has no `require`.** A script run from memory (the `script.run`
+  source argument, livecode, the schedule clock) has no directory to confine
+  imports to, so `require` is absent there.
+
+Tests: `ScriptImportTest` (every refusal above, the symlink and swap cases, the
+cache, packages and loose scripts, the sandbox inside modules).
 
 ## 2. Naming
 
@@ -83,8 +126,9 @@ directory (`data/scripts/`, installed by `data/scripts/CMakeLists.txt`). There i
    dependency declaration.
 4. **No engine-side package awareness at run time.** A package's entry is run by
    path; the engine does not know or care that it came from a package, which is
-   deliberate for v0 (one execution path, one sandbox).
+   deliberate for v0 (one execution path, one sandbox). The import root is simply
+   the entry script's directory (section 1a).
 
 Tests: `ScriptStabilisationTest::packageNamesAreValidated`,
 `packagesAreDiscoveredAndTheirEntryScriptsRun` (including the proof that a
-package entry cannot bypass the version gate), `manifestParsingIsStrict`.
+package entry cannot bypass the version gate), `manifestParsingIsStrict`; imports: `ScriptImportTest`.

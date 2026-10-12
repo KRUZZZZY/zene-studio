@@ -56,6 +56,7 @@ extern "C"
 #include "ScriptBindings.h"
 #include "ScriptConsole.h"
 #include "ScriptDawBindings.h"
+#include "ScriptImport.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackContainer.h"
@@ -94,7 +95,7 @@ public:
 	}
 
 	ScriptEngine::RunResult run(const QString& source, const QString& chunkName,
-					QString* error)
+					QString* error, const QString& importRoot = QString())
 	{
 		// CODE-6: the budget travels with the state it bounds. The allocator is
 		// ScriptMemoryState::allocate (include/ScriptMemoryBudget.h) - the second
@@ -116,6 +117,9 @@ public:
 		openSandbox(L);
 		ScriptBindings::registerAll(L, m_engine);
 		ScriptDawBindings::registerAll(L);
+		// Q050-051: sibling `require` for script FILES only (root = entry dir).
+		ScriptImport imports(importRoot); // outlives lua_close(): upvalue target
+		if (!importRoot.isEmpty()) { imports.install(L); }
 
 		m_state.instructions = 0;
 		m_state.budget = m_engine->instructionBudget();
@@ -354,7 +358,7 @@ ScriptEngine::RunResult ScriptEngine::runFile(const QString& path, QString* erro
 		return RunResult::VersionError;
 	}
 
-	return runOnWorker(source, path, error);
+	return runOnWorker(source, path, error, QFileInfo(path).absolutePath());
 }
 
 
@@ -366,7 +370,7 @@ ScriptEngine::RunResult ScriptEngine::runString(const QString& source, QString* 
 
 
 ScriptEngine::RunResult ScriptEngine::runOnWorker(const QString& source, const QString& chunkName,
-							QString* error)
+							QString* error, const QString& importRoot)
 {
 	RunResult result = RunResult::ScriptError;
 	QString message;
@@ -390,7 +394,7 @@ ScriptEngine::RunResult ScriptEngine::runOnWorker(const QString& source, const Q
 	{
 		// Re-entrant invocation from the worker itself: run inline. No
 		// apply-side pump exists, so flushCommandsForRead() applies inline too.
-		result = m_worker->run(source, chunkName, &message);
+		result = m_worker->run(source, chunkName, &message, importRoot);
 	}
 	else
 	{
@@ -399,7 +403,7 @@ ScriptEngine::RunResult ScriptEngine::runOnWorker(const QString& source, const Q
 		m_applyPumpActive.store(true, std::memory_order_release);
 
 		const bool invoked = QMetaObject::invokeMethod(m_worker, [&]() {
-			result = m_worker->run(source, chunkName, &message);
+			result = m_worker->run(source, chunkName, &message, importRoot);
 			finished.store(true, std::memory_order_release);
 		}, Qt::QueuedConnection);
 		if (!invoked)

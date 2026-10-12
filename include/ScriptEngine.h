@@ -314,7 +314,9 @@ private:
 	explicit ScriptEngine(QObject* parent = nullptr);
 	~ScriptEngine() override;
 
-	RunResult runOnWorker(const QString& source, const QString& chunkName, QString* error);
+	//! \p importRoot: directory `require` may load siblings from; empty = no `require`.
+	RunResult runOnWorker(const QString& source, const QString& chunkName, QString* error,
+				const QString& importRoot = QString());
 
 	void applyCommand(const ScriptCommand& command);
 	void applyCommands(std::size_t max);

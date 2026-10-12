@@ -14,4 +14,6 @@ print("hello.lua finished")
 -- Basic sandbox sanity: the dangerous stdlib must not be reachable.
 assert(os == nil, "os must not be exposed")
 assert(io == nil, "io must not be exposed")
-assert(require == nil, "require must not be exposed")
+assert(package == nil and dofile == nil and loadfile == nil, "file loaders must not be exposed")
+-- `require` exists for script files, but only loads sibling modules (Q050-051).
+assert(type(require) == "function", "sandboxed require expected")
