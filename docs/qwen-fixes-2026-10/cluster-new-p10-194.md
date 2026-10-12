@@ -27,7 +27,24 @@ The test source manifest checks also passed: `bash tests/all-sources-reproduce.s
 
 The reversal proof used `git diff -- include/LadspaManager.h src/core/LadspaManager.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r1/logs/fix.patch` (exit 0), `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r1/logs/fix.patch` (exit 0), then `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r1/logs/fix.patch` (exit 0).
 
-## Files committed
+## Round 2 scope-registration correction
+
+The review found that the two new test sources were in `tests/all-sources.txt` but missing from the recipe-backed source list in `tests/fork-sources.txt`. Both entries are now present in sorted order at [tests/fork-sources.txt:1953](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-194/tests/fork-sources.txt:1953) and [tests/fork-sources.txt:1954](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-194/tests/fork-sources.txt:1954). `tests/all-sources.txt` remains recipe-reproducible.
+
+Round 2 verification (all logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r2/logs`):
+
+| Check | Exact command | Exit | Result |
+|---|---|---:|---|
+| Product fix, RED with original code | `ctest -R '^LadspaManagerTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r1/logs/test-red-1.log 2>&1` | 8 | 1/1 timed out at 20.03 s |
+| Product fix, GREEN with fix applied | `ctest -R '^LadspaManagerTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r1/logs/test-green-1.log 2>&1` | 0 | 1/1 passed |
+| Build affected family | `cmake --build build --parallel 4 --target LadspaManagerTest PluginPortsMigrationTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r2/logs/build-family-1.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | Both targets built |
+| Affected family | `ctest -R '^(LadspaManagerTest|PluginPortsMigrationTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r2/logs/test-family-1.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | 2/2 passed; 2 ctest tests executed |
+| Fork source scope gate | `bash tests/fork-sources-gate.sh > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r2/logs/fork-sources-gate-1.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | Passed; both added tests classified as fork-new |
+| All-sources reproduction | `bash tests/all-sources-reproduce.sh > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r2/logs/all-sources-reproduce-1.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | `REPRODUCES` |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r2/logs/complexity-gate-1.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | Passed |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-194.r2/logs/file-length-gate-1.log 2>&1; rc=$?; echo EXIT=$rc` | 0 | Passed |
+
+## Files committed across the fix and review correction
 
 - `include/LadspaManager.h`
 - `src/core/LadspaManager.cpp`
@@ -36,4 +53,5 @@ The reversal proof used `git diff -- include/LadspaManager.h src/core/LadspaMana
 - `tests/src/core/LadspaManagerTest.cpp`
 - `tests/src/core/LadspaPortCountFixture.cpp`
 - `tests/upstream-modifications.txt`
+- `tests/fork-sources.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p10-194.md`
