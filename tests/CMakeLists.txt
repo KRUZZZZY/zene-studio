@@ -629,6 +629,7 @@ set(LMMS_TESTS
 	src/core/ProjectStateTest.cpp
 	# 0.5.0 L11 (W3): a clip into the library, the index and similar sounds, thumbnails, the matched preview, history.
 	src/core/LibraryBrowserTest.cpp
+	src/core/LadspaManagerTest.cpp
 	# 0.5.0 L12 (W3): the render queue, batch conversion, the task list, flattening, tracks copied between projects.
 	src/core/ProjectToolsTest.cpp
 	# 0.5.0 F3: frame cuts, zero-crossing snap, spacers, the reference project, per-type documents
@@ -1151,6 +1152,17 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 endforeach()
 
+add_library(LadspaPortCountFixture MODULE src/core/LadspaPortCountFixture.cpp)
+target_include_directories(LadspaPortCountFixture PRIVATE "${CMAKE_SOURCE_DIR}/include")
+target_compile_features(LadspaPortCountFixture PRIVATE cxx_std_20)
+set_target_properties(LadspaPortCountFixture PROPERTIES
+	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ladspa-fixtures"
+	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ladspa-fixtures")
+add_dependencies(LadspaManagerTest LadspaPortCountFixture)
+set_tests_properties(LadspaManagerTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen;LADSPA_PATH=$<TARGET_FILE_DIR:LadspaPortCountFixture>"
+	TIMEOUT 20)
+
 # ---------------------------------------------------------------------------
 # The subject of the MPE playback proof (0.3.0 feature-list row 8, task #649).
 #
@@ -1659,6 +1671,7 @@ foreach(ENTRY IN LISTS PART_C_REFERENCE_MODULES)
 	foreach(SRC IN LISTS FIELDS)
 		list(APPEND PLUGIN_SOURCES "${PART_C_REFERENCE_DIR}/${PLUGIN_DIR}/${SRC}")
 	endforeach()
+
 	if(PLUGIN_ID STREQUAL "delay" OR PLUGIN_ID STREQUAL "compressor" OR PLUGIN_ID STREQUAL "eq")
 		# EqFader is header-only; AUTOMOC needs the header to emit its
 		# metaobject and vtable, which DelayControlsDialog.cpp and
