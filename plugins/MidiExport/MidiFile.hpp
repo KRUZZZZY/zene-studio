@@ -31,58 +31,56 @@ using std::string;
 using std::vector;
 using std::set;
 
-namespace MidiFile 
+namespace MidiFile
 {
 
 //! 480 ticks per quarter note: ten file ticks per LMMS tick (48 per quarter), so every LMMS tick
 //! position is written exactly (the old 128 truncated 3 of every 8 positions).
 const int TICKSPERBEAT = 480;
 
+// Every writer below APPENDS to a growable byte vector. Nothing is written into a fixed-size buffer,
+// so a track of any size is written whole: there is no cap to exceed and nothing to truncate.
 
-int writeVarLength(uint32_t val, uint8_t *buffer)
+
+inline int writeVarLength(uint32_t val, vector<uint8_t> &out)
 {
 	/*
-	Accept an input, and write a MIDI-compatible variable length stream
-	
+	Accept an input, and append a MIDI-compatible variable length stream
+
 	The MIDI format is a little strange, and makes use of so-called variable
 	length quantities. These quantities are a stream of bytes. If the most
 	significant bit is 1, then more bytes follow. If it is zero, then the
 	byte in question is the last in the stream
 	*/
+	uint8_t groups[5];
 	int size = 0;
-	uint8_t little_endian[4];
-	uint8_t result = val & 0x7F;
-	little_endian[size++] = result;
+	groups[size++] = val & 0x7F;
 	val = val >> 7;
 	while (val > 0)
 	{
-		result = val & 0x7F;
-		result = result | 0x80;
-		little_endian[size++] = result;
+		groups[size++] = (val & 0x7F) | 0x80;
 		val = val >> 7;
 	}
-	for (int i=0; i<size; i++)
+	// most significant group first
+	for (int i = size - 1; i >= 0; i--)
 	{
-		buffer[i] = little_endian[size-i-1];
+		out.push_back(groups[i]);
 	}
-
 	return size;
 }
 
-int writeBigEndian4(uint32_t val, uint8_t *buf)
+inline void writeBigEndian4(uint32_t val, vector<uint8_t> &out)
 {
-	buf[0] = val >> 24;
-	buf[1] = val >> 16 & 0xff;
-	buf[2] = val >> 8 & 0xff;
-	buf[3] = val & 0xff;
-	return 4;
+	out.push_back(uint8_t(val >> 24));
+	out.push_back(uint8_t(val >> 16));
+	out.push_back(uint8_t(val >> 8));
+	out.push_back(uint8_t(val));
 }
 
-int writeBigEndian2(uint16_t val, uint8_t *buf)
+inline void writeBigEndian2(uint16_t val, vector<uint8_t> &out)
 {
-	buf[0] = val >> 8 & 0xff;
-	buf[1] = val & 0xff;
-	return 2;
+	out.push_back(uint8_t(val >> 8));
+	out.push_back(uint8_t(val));
 }
 
 
@@ -91,27 +89,23 @@ class MIDIHeader
 	// Class to encapsulate the MIDI header structure.
 	uint16_t numTracks;
 	uint16_t ticksPerBeat;
-	
+
 	public:
-	
+
 	MIDIHeader(uint16_t nTracks, uint16_t ticksPB=TICKSPERBEAT): numTracks(nTracks), ticksPerBeat(ticksPB) {}
-	
-	inline int writeToBuffer(uint8_t *buffer, int start=0) const
+
+	inline void writeToBuffer(vector<uint8_t> &out) const
 	{
 		// chunk ID
-		buffer[start++] = 'M'; buffer[start++] = 'T'; buffer[start++] = 'h'; buffer[start++] = 'd';
+		out.push_back('M'); out.push_back('T'); out.push_back('h'); out.push_back('d');
 		// chunk size (6 bytes always)
-		buffer[start++] = 0; buffer[start++] = 0; buffer[start++] = 0; buffer[start++] = 0x06;
+		writeBigEndian4(6, out);
 		// format: 1 (multitrack)
-		buffer[start++] = 0; buffer[start++] = 0x01;
-		
-		start += writeBigEndian2(numTracks, buffer+start);
-		
-		start += writeBigEndian2(ticksPerBeat, buffer+start);
-		
-		return start;
+		writeBigEndian2(1, out);
+		writeBigEndian2(numTracks, out);
+		writeBigEndian2(ticksPerBeat, out);
 	}
-	
+
 };
 
 
@@ -129,94 +123,77 @@ struct Event
 	uint8_t channel;
 	uint8_t numerator;
 	uint8_t denominator;
-	
+
 	Event() {time=tempo=pitch=programNumber=duration=volume=channel=numerator=denominator=0; trackName="";}
-	
-	inline int writeToBuffer(uint8_t *buffer) const 
+
+	inline void writeToBuffer(vector<uint8_t> &out) const
 	{
-		int size = 0;
 		switch (type)
 		{
 			case NOTE_ON:
 			{
-				uint8_t code = 0x9 << 4 | channel;
-				size += writeVarLength(time, buffer+size);
-				buffer[size++] = code;
-				buffer[size++] = pitch;
-				buffer[size++] = volume;
+				writeVarLength(time, out);
+				out.push_back(uint8_t(0x9 << 4 | channel));
+				out.push_back(pitch);
+				out.push_back(volume);
 				break;
 			}
 			case NOTE_OFF:
 			{
-				uint8_t code = 0x8 << 4 | channel;
-				size += writeVarLength(time, buffer+size);
-				buffer[size++] = code;
-				buffer[size++] = pitch;
-				buffer[size++] = volume;
+				writeVarLength(time, out);
+				out.push_back(uint8_t(0x8 << 4 | channel));
+				out.push_back(pitch);
+				out.push_back(volume);
 				break;
 			}
 			case TEMPO:
 			{
-				uint8_t code = 0xFF;
-				size += writeVarLength(time, buffer+size);
-				buffer[size++] = code;
-				buffer[size++] = 0x51;
-				buffer[size++] = 0x03;
-
-				std::array<uint8_t, 4> fourbytes;
+				writeVarLength(time, out);
+				out.push_back(0xFF);
+				out.push_back(0x51);
+				out.push_back(0x03);
 				// microseconds per quarter note, ROUNDED: the same encoding as the interchange
 				// writer (src/core/SmfInterchange.cpp), exact for every bpm 10..999.
-				writeBigEndian4(uint32_t(60000000.0 / tempo + 0.5), fourbytes.data());
-				
-				//printf("tempo of %x translates to ", tempo);
-				/*
-				for (int i=0; i<3; i++) printf("%02x ", fourbytes[i+1]);
-				printf("\n");
-				*/
-				buffer[size++] = fourbytes[1];
-				buffer[size++] = fourbytes[2];
-				buffer[size++] = fourbytes[3];
+				const auto usecs = uint32_t(60000000.0 / tempo + 0.5);
+				out.push_back(uint8_t(usecs >> 16));
+				out.push_back(uint8_t(usecs >> 8));
+				out.push_back(uint8_t(usecs));
 				break;
 			}
 			case TIME_SIG:
 			{
-				size += writeVarLength(time, buffer+size);
-				buffer[size++] = 0xFF;
-				buffer[size++] = 0x58;
-				buffer[size++] = 0x04;
+				writeVarLength(time, out);
+				out.push_back(0xFF);
+				out.push_back(0x58);
+				out.push_back(0x04);
 				uint8_t power = 0;
 				for (uint32_t d = denominator; d > 1; d >>= 1) { power++; }
-				buffer[size++] = numerator;
-				buffer[size++] = power;
-				buffer[size++] = 24; // MIDI clocks per metronome click
-				buffer[size++] = 8;  // 32nd notes per quarter note
+				out.push_back(numerator);
+				out.push_back(power);
+				out.push_back(24); // MIDI clocks per metronome click
+				out.push_back(8);  // 32nd notes per quarter note
 				break;
 			}
 			case PROG_CHANGE:
 			{
-				uint8_t code = 0xC << 4 | channel;
-				size += writeVarLength(time, buffer+size);
-				buffer[size++] = code;
-				buffer[size++] = programNumber;
+				writeVarLength(time, out);
+				out.push_back(uint8_t(0xC << 4 | channel));
+				out.push_back(programNumber);
 				break;
 			}
 			case TRACK_NAME:
 			{
-				size += writeVarLength(time, buffer+size);
-				buffer[size++] = 0xFF;
-				buffer[size++] = 0x03;
-				size += writeVarLength(trackName.size(), buffer+size);
-				trackName.copy((char *)(&buffer[size]), trackName.size());
-				size += trackName.size();
+				writeVarLength(time, out);
+				out.push_back(0xFF);
+				out.push_back(0x03);
+				writeVarLength(uint32_t(trackName.size()), out);
+				out.insert(out.end(), trackName.begin(), trackName.end());
 				break;
-				//				 buffer[size++] = '\0';
-				//				 buffer[size++] = '\0';
 			}
 		}
-		return size;
-	} // writeEventsToBuffer
-	
-	
+	} // writeToBuffer
+
+
 	// events are sorted by their time
 	inline bool operator < (const Event& b) const {
 		return this->time < b.time ||
@@ -224,38 +201,35 @@ struct Event
 	}
 };
 
-template<const int MAX_TRACK_SIZE>
 class MIDITrack
 {
 	// A class that encapsulates a MIDI track
 	// Nested class definitions.
 	vector<Event> events;
-	
+
 	public:
 	uint8_t channel;
-	
+
 	MIDITrack(): channel(0) {}
-		
+
 	inline void addEvent(const Event &e)
 	{
 		Event E = e;
 		events.push_back(E);
 	}
-	
+
 	inline void addNote(uint8_t pitch, uint8_t volume, double time, double duration)
 	{
 		Event event; event.channel = channel;
 		event.volume = volume;
-		
+
 		event.type = Event::NOTE_ON; event.pitch = pitch; event.time= (uint32_t) (time * TICKSPERBEAT);
 		addEvent(event);
-		
+
 		event.type = Event::NOTE_OFF; event.pitch = pitch; event.time=(uint32_t) ((time+duration) * TICKSPERBEAT);
 		addEvent(event);
-		
-		//printf("note: %d-%d\n", (uint32_t) time * TICKSPERBEAT, (uint32_t)((time+duration) * TICKSPERBEAT));
 	}
-	
+
 	//! A note at exact file ticks (480 per quarter note); no floating-point rounding.
 	inline void addNoteTicks(uint8_t pitch, uint8_t volume, uint32_t startTick, uint32_t endTick)
 	{
@@ -281,14 +255,14 @@ class MIDITrack
 		event.type = Event::TRACK_NAME; event.time=time; event.trackName = name;
 		addEvent(event);
 	}
-	
+
 	inline void addProgramChange(uint8_t prog, uint32_t time)
 	{
 		Event event; event.channel = channel;
 		event.type = Event::PROG_CHANGE; event.time=time; event.programNumber = prog;
 		addEvent(event);
 	}
-	
+
 	inline void addTempo(uint32_t tempo, uint32_t time)
 	{
 		Event event;
@@ -300,64 +274,39 @@ class MIDITrack
 
 		addEvent(event);
 	}
-	
-	inline int writeMIDIToBuffer(uint8_t *buffer, int start=0) const
+
+	//! Appends the events to out as delta-timed MIDI events, sorted by time (no end-of-track event).
+	inline void writeEventsToBuffer(vector<uint8_t> &out) const
 	{
-		// Write the meta data and note data to the packed MIDI stream.
-		// Process the events in the eventList
-
-		start += writeEventsToBuffer(buffer, start);
-
-		// Write MIDI close event.
-		buffer[start++] = 0x00;
-		buffer[start++] = 0xFF;
-		buffer[start++] = 0x2F;
-		buffer[start++] = 0x00;
-		
-		// return the entire length of the data and write to the header
-		
-		return start;
-	}
-
-	inline int writeEventsToBuffer(uint8_t *buffer, int start=0) const
-	{
-		// Write the events in MIDIEvents to the MIDI stream.
 		vector<Event> _events = events;
 		std::sort(_events.begin(), _events.end());
-		vector<Event>::const_iterator it;
 		uint32_t time_last = 0;
-		for (it = _events.begin(); it!=_events.end(); ++it)
+		for (const Event &e : _events)
 		{
-			Event e = *it;
-			if (e.time < time_last){
-				printf("error: e.time=%d  time_last=%d\n", e.time, time_last);
-				assert(false);
-			}
-			uint32_t tmp = e.time;
-			e.time -= time_last;
-			time_last = tmp;
-			start += e.writeToBuffer(buffer+start);
-			if (start >= MAX_TRACK_SIZE) {
-				break;
-			}
+			Event delta = e;
+			delta.time = e.time - time_last;
+			time_last = e.time;
+			delta.writeToBuffer(out);
 		}
-		return start;
 	}
-	
-	inline int writeToBuffer(uint8_t *buffer, int start=0) const
+
+	//! Appends one complete MTrk chunk: the events, then the end-of-track meta event.
+	//! Every event is written, however many there are; the chunk length is the real length.
+	inline void writeToBuffer(vector<uint8_t> &out) const
 	{
-		uint8_t eventsBuffer[MAX_TRACK_SIZE];
-		uint32_t events_size = writeMIDIToBuffer(eventsBuffer);
-		//printf(">> track %lu events took 0x%x bytes\n", events.size(), events_size);
-		
+		vector<uint8_t> body;
+		writeEventsToBuffer(body);
+		// end of track
+		body.push_back(0x00);
+		body.push_back(0xFF);
+		body.push_back(0x2F);
+		body.push_back(0x00);
+
 		// chunk ID
-		buffer[start++] = 'M'; buffer[start++] = 'T'; buffer[start++] = 'r'; buffer[start++] = 'k';
+		out.push_back('M'); out.push_back('T'); out.push_back('r'); out.push_back('k');
 		// chunk size
-		start += writeBigEndian4(events_size, buffer+start);
-		// copy events data
-		memmove(buffer+start, eventsBuffer, events_size);
-		start += events_size;
-		return start;
+		writeBigEndian4(uint32_t(body.size()), out);
+		out.insert(out.end(), body.begin(), body.end());
 	}
 };
 

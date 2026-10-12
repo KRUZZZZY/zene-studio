@@ -83,21 +83,26 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 
 
 	int nTracks = 1; // the conductor track
-	auto buffer = std::array<uint8_t, BUFFER_SIZE>{};
+	// One growable chunk buffer for every MTrk and the header; each is written whole, never capped.
+	std::vector<uint8_t> chunk;
+	const auto writeChunk = [&](const auto &writable)
+	{
+		chunk.clear();
+		writable.writeToBuffer(chunk);
+		midiout.writeRawData(reinterpret_cast<const char *>(chunk.data()), int(chunk.size()));
+	};
 
 	for (const Track* track : tracks) if (track->type() == Track::Type::Instrument) nTracks++;
 	for (const Track* track : patternStoreTracks) if (track->type() == Track::Type::Instrument) nTracks++;
 
 	// midi header
 	MidiFile::MIDIHeader header(nTracks);
-	uint32_t size = header.writeToBuffer(buffer.data());
-	midiout.writeRawData((char *)buffer.data(), size);
+	writeChunk(header);
 
 	{
 		MTrack conductor;
 		writeConductor(conductor, tempo);
-		size = conductor.writeToBuffer(buffer.data());
-		midiout.writeRawData((char *)buffer.data(), size);
+		writeChunk(conductor);
 	}
 
 	std::vector<std::vector<std::pair<int,int>>> plists;
@@ -144,8 +149,7 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 			}
 			processPatternNotes(midiClip, INT_MAX);
 			writeMidiClipToTrack(mtrack, midiClip);
-			size = mtrack.writeToBuffer(buffer.data());
-			midiout.writeRawData((char *)buffer.data(), size);
+			writeChunk(mtrack);
 		}
 
 		if (track->type() == Track::Type::Pattern)
@@ -256,8 +260,7 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 				++itr;
 			}
 		}
-		size = mtrack.writeToBuffer(buffer.data());
-		midiout.writeRawData((char *)buffer.data(), size);
+		writeChunk(mtrack);
 	}
 
 	return true;

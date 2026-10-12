@@ -2533,6 +2533,7 @@ tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MeterTapTest.cpp
 tests/src/core/MidiClipControllersLoadTest.cpp
 tests/src/core/MidiClockTest.cpp
+tests/src/core/MidiExportTest.cpp
 tests/src/core/MidiHandoffQueueTest.cpp
 tests/src/core/MidiInputTransformTest.cpp
 tests/src/core/MidiJackOutScheduleTest.cpp

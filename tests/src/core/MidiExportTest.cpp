@@ -78,6 +78,36 @@ quint32 be32(const QByteArray& b, int o)
 }
 int be16(const QByteArray& b, int o) { return (uchar(b[o]) << 8) | uchar(b[o + 1]); }
 
+quint32 readVlq(const QByteArray& b, int& o)
+{
+	quint32 v = 0;
+	uchar c;
+	do { c = uchar(b[o++]); v = (v << 7) | (c & 0x7F); } while (c & 0x80);
+	return v;
+}
+
+//! Reads one event at o (after its delta time); running status is carried in `running`.
+SmfEvent readEvent(const QByteArray& b, int& o, quint32 tick, int& running)
+{
+	SmfEvent e;
+	e.tick = tick;
+	int status = uchar(b[o]);
+	if (status < 0x80) { status = running; } else { ++o; }
+	e.status = status;
+	if (status == 0xFF)
+	{
+		e.type = uchar(b[o++]);
+		const quint32 len = readVlq(b, o);
+		e.payload = b.mid(o, int(len));
+		o += int(len);
+		return e;
+	}
+	running = status;
+	e.type = uchar(b[o++]);
+	if ((status & 0xF0) != 0xC0 && (status & 0xF0) != 0xD0) { e.data2 = uchar(b[o++]); }
+	return e;
+}
+
 bool parseSmf(const QByteArray& b, SmfFile* out)
 {
 	if (b.size() < 14 || b.left(4) != "MThd") { return false; }
@@ -93,29 +123,10 @@ bool parseSmf(const QByteArray& b, SmfFile* out)
 		SmfTrack track;
 		quint32 tick = 0;
 		int running = 0;
-		const auto vlq = [&]() { quint32 v = 0; uchar c; do { c = uchar(b[o++]); v = (v << 7) | (c & 0x7F); } while (c & 0x80); return v; };
 		while (o < end)
 		{
-			tick += vlq();
-			SmfEvent e;
-			e.tick = tick;
-			int status = uchar(b[o]);
-			if (status < 0x80) { status = running; } else { ++o; }
-			e.status = status;
-			if (status == 0xFF)
-			{
-				e.type = uchar(b[o++]);
-				const quint32 len = vlq();
-				e.payload = b.mid(o, int(len));
-				o += int(len);
-			}
-			else
-			{
-				running = status;
-				e.type = uchar(b[o++]);
-				if ((status & 0xF0) != 0xC0 && (status & 0xF0) != 0xD0) { e.data2 = uchar(b[o++]); }
-			}
-			track.events.push_back(e);
+			tick += readVlq(b, o);
+			track.events.push_back(readEvent(b, o, tick, running));
 		}
 		o = end;
 		out->tracks.push_back(track);
@@ -273,6 +284,32 @@ private slots:
 			if ((e.status & 0xF0) == 0xC0) { QCOMPARE(e.type, 0); }
 		}
 		QVERIFY(saw);
+	}
+
+	//! Round 2: a track denser than the old 50 KiB cap is written whole, never truncated or overrun.
+	void aDenseTrackIsWrittenWhole()
+	{
+		// 6,000 sequential notes, 48 LMMS ticks apart and 24 long: about 60,000 bytes of events at 480 ppq.
+		std::vector<std::pair<int, int>> notes;
+		for (int k = 0; k < 6000; ++k) { notes.emplace_back(k * 48, 60 + k % 12); }
+		addTrack(QStringLiteral("Dense"), 1, 1, notes);
+
+		SmfFile file;
+		QVERIFY(exportAndParse(&file));
+		QCOMPARE(int(file.tracks.size()), 2);
+		int ons = 0, offs = 0;
+		quint32 lastOff = 0;
+		for (const SmfEvent& e : file.tracks[1].events)
+		{
+			if ((e.status & 0xF0) == 0x90) { ++ons; }
+			if ((e.status & 0xF0) == 0x80) { ++offs; lastOff = e.tick; }
+		}
+		QCOMPARE(ons, 6000);
+		QCOMPARE(offs, 6000);
+		QCOMPARE(lastOff, quint32((5999 * 48 + 24) * 10));
+		QVERIFY(!file.tracks[1].events.empty());
+		QCOMPARE(file.tracks[1].events.back().status, 0xFF);
+		QCOMPARE(file.tracks[1].events.back().type, 0x2F);
 	}
 
 private:

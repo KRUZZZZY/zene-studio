@@ -39,8 +39,7 @@ namespace lmms
 {
 
 
-const int BUFFER_SIZE = 50*1024;
-using MTrack = MidiFile::MIDITrack<BUFFER_SIZE>;
+using MTrack = MidiFile::MIDITrack;
 
 struct MidiNote
 {
