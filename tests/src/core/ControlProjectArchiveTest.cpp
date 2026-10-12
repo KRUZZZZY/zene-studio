@@ -60,6 +60,7 @@
 #include <QTemporaryDir>
 
 #include "ControlProjectAssets.h"
+#include "../../../src/core/ControlProjectAssetsShared.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
@@ -350,6 +351,33 @@ private slots:
 		QVERIFY(after.ok);
 		QVERIFY2(after.result.value(QStringLiteral("digest")).toString() != digest,
 			"the digest did not move with the reference set");
+	}
+	//! A scan's file size can be stale by the time hashing opens the path. The
+	//! hash must still enforce its byte cap while reading the grown file.
+	void fileGrowthAfterScanRespectsHashCap()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString project = writeFixture(dir.path(), QStringLiteral("growth.mmp"), true);
+		const QString asset = dir.path() + QStringLiteral("/clip.wav");
+		QVERIFY(writeBytes(asset, QByteArray("small")));
+
+		control::ProjectAssetScan scan;
+		ControlResult error;
+		QVERIFY2(control::controlScanProjectAssets(project, &scan, &error),
+			qPrintable(error.errorMessage));
+		int index = -1;
+		for (int i = 0; i < scan.references.size(); ++i)
+		{
+			if (scan.references[i].path == asset) { index = i; break; }
+		}
+		QVERIFY(index >= 0);
+		QCOMPARE(scan.references[index].bytes, qint64(5));
+		QVERIFY(writeBytes(asset, QByteArray("this file is now over the cap")));
+
+		control::projectassets::hashReference(&scan.references[index], 16);
+		QVERIFY(!scan.references[index].hashed);
+		QVERIFY(scan.references[index].error.contains(QStringLiteral("cap")));
 	}
 	//! The relink's inverse, for real: the file is rewritten (the reference
 	//! resolves again, and a rescan says so), then ONE control.undo puts back the
