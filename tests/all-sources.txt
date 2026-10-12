@@ -2424,6 +2424,7 @@ tests/src/core/BenchmarkBaseline.h
 tests/src/core/BounceInPlaceTest.cpp
 tests/src/core/BrowserCatalogQueryTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
+tests/src/core/BrowserFeaturesWindowTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/CapturePublisherTest.cpp
 tests/src/core/ChordDetectTest.cpp

@@ -118,14 +118,16 @@ double keyDistance(int a, int b)
 BrowserFeatures BrowserFeatures::analyse(const QString& path)
 {
 	BrowserFeatures features;
-	const std::optional<SampleDecoder::Result> decoded = SampleDecoder::decode(path);
-	if (!decoded || decoded->data.empty() || decoded->sampleRate <= 0) { return features; }
-	const int rate = decoded->sampleRate;
-	// Only the analysed window is mixed: a mono copy of the whole file would scale with its length.
-	const std::size_t count = std::min(decoded->data.size(), static_cast<std::size_t>(FeatureSeconds * rate));
-	const std::vector<float> mono = monoMix(decoded->data.data(), count);
+	// Only the leading FeatureSeconds are decoded (Q050-048), so memory and time follow the window; the
+	// duration still comes from the whole file's length as the decoder reports it.
+	const std::optional<SampleDecoder::BoundedResult> bounded = SampleDecoder::decodeLimited(path, FeatureSeconds);
+	if (!bounded || bounded->window.data.empty() || bounded->window.sampleRate <= 0) { return features; }
+	const SampleDecoder::Result& decoded = bounded->window;
+	const int rate = decoded.sampleRate;
+	const std::size_t count = std::min(decoded.data.size(), static_cast<std::size_t>(FeatureSeconds * rate));
+	const std::vector<float> mono = monoMix(decoded.data.data(), count);
 	features.valid = true;
-	features.durationSeconds = static_cast<double>(decoded->data.size()) / rate;
+	features.durationSeconds = static_cast<double>(bounded->totalFrames) / rate;
 	features.loudnessDb = rmsDb(mono, count);
 	features.zeroCrossings = crossingsPerSecond(mono, count, rate);
 	features.centroidHz = meanCentroid(mono, count, rate);
