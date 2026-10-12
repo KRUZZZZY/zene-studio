@@ -170,6 +170,17 @@ private slots:
 		QCOMPARE(withValidOffsetFades(ClipEdits{}, 400), ClipEdits{});
 	}
 
+	//! The additive gap marker silences only the explicit container pair; older unmarked offset pairs retain unity.
+	void anUnmarkedPreFadedOffsetPairKeepsUnityBetweenItsRamps()
+	{
+		const PreFadeSpan legacy{1000, 0, 0, 30, 30, 780, 780};
+		QCOMPARE(preFadedGainAt(legacy, 500, FadeShape::Linear, FadeShape::Linear), 1.0f);
+
+		PreFadeSpan marked = legacy;
+		marked.fadeOffsetGap = true;
+		QCOMPARE(preFadedGainAt(marked, 500, FadeShape::Linear, FadeShape::Linear), 0.0f);
+	}
+
 	//! The render path goes by the same rule: a clip with a lone offset or a drifted pair plays without a step.
 	void theRenderHasNoStep()
 	{
@@ -202,22 +213,24 @@ private slots:
 		}
 	}
 
-	//! A clip under 2 ticks cannot be crossfaded at both ends: the overlap reports nothing made and why; clip.crossfade
-	//! refuses it; clip.move says so in its reply.
-	void aContainedClipUnderTwoTicksReportsNoCrossfade()
+	//! Clamp mode accepts a one-tick edge fade; only explicit container mode needs both authored inner fades.
+	void aTinyContainedClipClampsByDefaultAndRefusesContainerMode()
 	{
 		SampleClip* container = sampleClipAt(0, 400);
 		SampleClip* tiny = sampleClipAt(100, 1);
 		QString why;
-		QCOMPARE(arrangement::applyOverlap(tiny, arrangement::Overlap::Crossfade, &why), 0);
-		QVERIFY2(why.contains(QStringLiteral("too short")), qPrintable(why));
-		QCOMPARE(container->clipEdits(), ClipEdits{});
-		QCOMPARE(tiny->clipEdits(), ClipEdits{});
+		QCOMPARE(arrangement::applyOverlap(tiny, arrangement::Overlap::Crossfade, &why), 1);
+		QVERIFY(why.isEmpty());
+		QCOMPARE(container->clipEdits().fadeOutTicks, 1);
+		QCOMPARE(container->clipEdits().fadeOutOffsetTicks, 0);
+		QCOMPARE(tiny->clipEdits().fadeInTicks, 1);
+		QCOMPARE(tiny->clipEdits().fadeInOffsetTicks, 0);
 
 		const ControlResult refused = ControlRegistry::instance()->invoke(QStringLiteral("clip.crossfade"),
-			QJsonObject{{QStringLiteral("out"), control::clipIdOf(container)}, {QStringLiteral("in"), control::clipIdOf(tiny)}});
+			QJsonObject{{QStringLiteral("out"), control::clipIdOf(container)}, {QStringLiteral("in"), control::clipIdOf(tiny)},
+				{QStringLiteral("mode"), QStringLiteral("container")}});
 		QVERIFY(!refused.ok);
-		QVERIFY2(refused.errorMessage.contains(QStringLiteral("too short")), qPrintable(refused.errorMessage));
+		QVERIFY2(refused.errorMessage.contains(QStringLiteral("authored inner fade")), qPrintable(refused.errorMessage));
 
 		const ControlResult modes = ControlRegistry::instance()->invoke(QStringLiteral("arrangement.modes"),
 			QJsonObject{{QStringLiteral("overlap"), QStringLiteral("crossfade")}});
@@ -226,9 +239,11 @@ private slots:
 			QJsonObject{{QStringLiteral("clip"), control::clipIdOf(tiny)}, {QStringLiteral("position"), 120}});
 		ControlRegistry::instance()->invoke(QStringLiteral("arrangement.modes"), QJsonObject{{QStringLiteral("overlap"), QStringLiteral("trim")}});
 		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
-		QVERIFY2(moved.result.value(QStringLiteral("overlap_skipped")).toString().contains(QStringLiteral("too short")),
+		QVERIFY2(moved.result.value(QStringLiteral("overlap_skipped")).toString().isEmpty(),
 			qPrintable(QString::fromUtf8(QJsonDocument(moved.result).toJson())));
-		// A clip of 2 ticks is crossfaded at both ends as before.
+		QCOMPARE(container->clipEdits().fadeOutOffsetTicks, 0);
+		QCOMPARE(tiny->clipEdits().fadeInOffsetTicks, 0);
+		// Edge clamp also accepts a two-tick overlap; the old both-ends restriction belonged only to container mode.
 		SampleClip* two = sampleClipAt(200, 2);
 		QCOMPARE(arrangement::applyOverlap(two, arrangement::Overlap::Crossfade, &why), 1);
 	}

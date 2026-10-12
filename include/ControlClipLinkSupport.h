@@ -74,8 +74,7 @@ namespace cliplink
  *    inverse of clip.link_create a real inverse (compare `clip.trim`'s clause in
  *    ControlCommandsClipTrim.cpp for the same rule on the edge attributes).
  *  - the members' note lists are MidiClip state: MidiClip::loadSettings clears
- *    and re-loads the list, which is the mechanism the piano roll's own note
- *    edits already reverse with.
+ *    and re-loads the list. Name and colour are part of Clip's serialized state.
  *  - ProjectJournal's multi-object overload takes ONE checkpoint covering every
  *    member written, and the registry's mergeCheckpointsFrom() folds it into the
  *    one step the command makes, so ONE undo restores the whole group rather than

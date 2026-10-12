@@ -36,19 +36,19 @@ namespace lmms
 
 class Clip;
 
-/*! A clip lying wholly inside another is crossfaded at BOTH of its ends: at its start the container ducks under
+/*! The optional container gesture crossfades a clip lying wholly inside another at BOTH of its ends: at its start the container ducks under
  *  it (the contained clip fades in as the container fades out), and at its end the container comes back (the
- *  contained clip fades out as the container fades in). The two ramps are adjacent and together span the
- *  contained clip: `entry + exit == its length`, so the container's envelope is a V (down over the entry ramp,
+ *  contained clip fades out as the container fades in). Each ramp uses the corresponding authored fade on the
+ *  contained clip; when they do not meet, the container stays silent between them. The container's
+ *  envelope is a V (down over the entry ramp,
  *  up over the exit ramp) and never steps.
  *
  *  It is the offset fades that place the container's two ramps inside it (ClipEdits): its fade-out ends
  *  `fadeOutOffsetTicks` before its end, its fade-in starts `fadeInOffsetTicks` after its start, and it is
  *  unfaded outside them. The container's own edge fades are replaced.
  *
- *  Lengths: with neither given, the exit is the contained clip's own fade-out when it has one, else half of it,
- *  and the entry is the rest. With one given the other is the rest. A pair that does not sum to the contained
- *  clip's length is refused. */
+ *  Lengths: by default the entry is the contained clip's own fade-in and the exit its own fade-out. Either may be
+ *  overridden by the caller. Missing, zero, or non-fitting ramps are refused; there is no half-length fallback. */
 namespace containedcrossfade
 {
 

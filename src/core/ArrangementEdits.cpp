@@ -34,9 +34,7 @@
 #include "AutomationTrack.h"
 #include "Clip.h"
 #include "ClipEdits.h"
-#include "ClipLinks.h"
 #include "ContainedCrossfade.h"
-#include "LinkedClipEdits.h"
 #include "ConfigManager.h"
 #include "ControlReversibility.h"
 #include "EditLocks.h"
@@ -60,9 +58,8 @@ void deleteClip(Track* track, Clip* clip)
 
 Clip* splitClipAt(Clip* clip, tick_t position)
 {
-	// A linked clip is cut with its whole group (owner decision 2026-10-08): the same clip-relative position on
-	// every member, one journal step over the tracks of the members cut.
-	if (clip->linkId() > 0) { return ClipLinks::splitGroupAt(clip, position).right; }
+	// A split changes this instance's independent window. The clone keeps the same
+	// link id, so both pieces continue to show the shared content through their windows.
 	return splitClipAlone(clip, position);
 }
 
@@ -251,13 +248,13 @@ bool movedOnATrack(const Clip* moved, tick_t oldStart) { return moved != nullptr
 
 } // namespace
 
-bool afterUserMove(Clip* moved, tick_t oldStart, QString* skipped)
+bool afterUserMove(Clip* moved, tick_t oldStart, QString* skipped, bool containerCrossfade)
 {
 	if (!movedOnATrack(moved, oldStart)) { return true; }
 	const tick_t newStart = moved->startPosition().getTicks();
 	// A press released where it started (a click, or a drag back) moved nothing onto anything.
 	if (newStart == oldStart) { return true; }
-	const Overlap mode = modes().overlap;
+	const Overlap mode = containerCrossfade ? Overlap::Crossfade : modes().overlap;
 	// 0.5.0 theme 2: a drop that would trim or fade a locked clip is refused - the clip goes back.
 	if (lockedUnder(moved, newStart, moved->endPosition().getTicks(), mode) != nullptr)
 	{
@@ -278,7 +275,7 @@ bool afterUserMove(Clip* moved, tick_t oldStart, QString* skipped)
 	moved->movePosition(TimePos(newStart));
 	rippleAfterMove(moved, oldStart, ripple);
 	if (follow) { moveFollowingAutomation(track, oldStart, moved->length().getTicks(), newStart - oldStart, true); }
-	applyOverlap(moved, mode, skipped);
+	applyOverlap(moved, mode, skipped, containerCrossfade);
 	mergeFrom(journal, mark);
 	return true;
 }
@@ -315,20 +312,19 @@ int rippleAfterDelete(Track* track, tick_t start, tick_t length, Ripple mode)
 namespace
 {
 
-//! A clip lying wholly inside another is crossfaded at both ends (containedcrossfade): the container ducks
-//! under it and comes back. 0 when neither contains the other, 1 when the ramps were written, -1 (with \a why) when
-//! the contained clip is too short to be crossfaded at both ends and nothing was written.
-int crossfadeContained(Clip* a, Clip* b, QString* why)
+//! The explicit container gesture fades a containing pair at both inner edges. 0 when neither contains the other,
+//! 1 when the ramps were written, -1 (with \a why) when authored inner fades do not fit.
+int crossfadeContainer(Clip* a, Clip* b, QString* why)
 {
 	const Clip* container = nullptr;
 	const Clip* contained = nullptr;
 	if (!containedcrossfade::containment(a, b, &container, &contained)) { return 0; }
 	int entry = 0;
 	int exit = 0;
-	const QString tooShort = containedcrossfade::ramps(*container, *contained, 0, true, &entry, &exit);
-	if (!tooShort.isEmpty())
+	const QString invalidRamps = containedcrossfade::ramps(*container, *contained, 0, true, &entry, &exit);
+	if (!invalidRamps.isEmpty())
 	{
-		if (why != nullptr) { *why = tooShort; }
+		if (why != nullptr) { *why = invalidRamps; }
 		return -1;
 	}
 	Clip* outer = container == a ? a : b;
@@ -341,24 +337,25 @@ int crossfadeContained(Clip* a, Clip* b, QString* why)
 	return 1;
 }
 
-//! Crossfade @a earlier into @a later over their overlap: fade-out on one, fade-in on the other. False when
-//! nothing was written (a contained clip too short for it, with \a why).
-bool crossfade(Clip* earlier, Clip* later, QString* why)
+//! Crossfade @a earlier into @a later over their overlap using edge-anchored ramps.
+bool crossfade(Clip* earlier, Clip* later)
 {
-	const int contained = crossfadeContained(earlier, later, why);
-	if (contained != 0) { return contained > 0; }
 	const tick_t overlap = std::min(earlier->endPosition().getTicks(), later->endPosition().getTicks())
 		- later->startPosition().getTicks();
 	if (overlap <= 0) { return true; }
 	ClipEdits out = earlier->clipEdits();
+	out.fadeInOffsetTicks = 0;
 	out.fadeOutTicks = overlap;
 	out.fadeOutShape = FadeShape::EqualPower;
 	out.fadeOutOffsetTicks = 0;
+	out.fadeOffsetGap = false;
 	earlier->setClipEdits(out);
 	ClipEdits in = later->clipEdits();
+	in.fadeOutOffsetTicks = 0;
 	in.fadeInTicks = overlap;
 	in.fadeInShape = FadeShape::EqualPower;
 	in.fadeInOffsetTicks = 0;
+	in.fadeOffsetGap = false;
 	later->setClipEdits(in);
 	return true;
 }
@@ -370,18 +367,20 @@ namespace
 
 //! What the overlap mode does to ONE clip @a other under @a moved (which spans [start, end)). False when it could
 //! do nothing (a crossfade of a clip too short for it, with \a why).
-bool overlapOne(Clip* moved, Clip* other, Overlap mode, tick_t start, tick_t end, QString* why)
+bool overlapOne(Clip* moved, Clip* other, Overlap mode, tick_t start, tick_t end, bool containerGesture, QString* why)
 {
 	if (mode == Overlap::Crossfade)
 	{
-		return other->startPosition().getTicks() < start ? crossfade(other, moved, why) : crossfade(moved, other, why);
+		if (containerGesture)
+		{
+			const int container = crossfadeContainer(moved, other, why);
+			if (container != 0) { return container > 0; }
+		}
+		return other->startPosition().getTicks() < start ? crossfade(other, moved) : crossfade(moved, other);
 	}
 	// Trim: cut the other clip at the moved clip's edges and drop what lies under it.
-	// A drop is a positional edit at one place: it cuts the clip under it and its link peers elsewhere are not under it,
-	// so they stay whole (owner ruling, round 3). What is left of the cut clip stays consistent with the group rule: the
-	// piece that keeps the original instance (the left one) stays in its link group, a piece cut off to its right
-	// leaves it - a lone right half is unlinked, as in a group split.
-	if (Clip* tail = splitClipAlone(other, end)) { tail->setLinkId(0); }
+	// Each resulting piece keeps its own independent window and the original link id.
+	splitClipAlone(other, end);
 	Clip* inside = splitClipAlone(other, start);
 	Clip* under = inside != nullptr ? inside : other;
 	if (under->startPosition().getTicks() >= start && under->endPosition().getTicks() <= end) { deleteClip(moved->getTrack(), under); }
@@ -414,9 +413,10 @@ const Clip* lockedUnder(const Clip* moved, tick_t start, tick_t end, Overlap mod
 	return nullptr;
 }
 
-int applyOverlap(Clip* moved, Overlap mode, QString* skipped)
+int applyOverlap(Clip* moved, Overlap mode, QString* skipped, bool containerGesture)
 {
-	if (mode == Overlap::Free) { return 0; }
+	const Overlap effectiveMode = containerGesture ? Overlap::Crossfade : mode;
+	if (effectiveMode == Overlap::Free) { return 0; }
 	const tick_t start = moved->startPosition().getTicks();
 	const tick_t end = moved->endPosition().getTicks();
 	int changed = 0;
@@ -425,7 +425,7 @@ int applyOverlap(Clip* moved, Overlap mode, QString* skipped)
 	{
 		if (effect.locked) { continue; }  // a lock protects it (the drop or the command was refused already)
 		QString why;
-		if (overlapOne(moved, effect.clip, mode, start, end, &why)) { ++changed; }
+		if (overlapOne(moved, effect.clip, effectiveMode, start, end, containerGesture, &why)) { ++changed; }
 		else if (skipped != nullptr && skipped->isEmpty()) { *skipped = why; }
 	}
 	return changed;

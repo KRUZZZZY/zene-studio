@@ -1172,6 +1172,7 @@ src/core/ControlCommandsClipImportFile.cpp
 src/core/ControlCommandsClipLink.cpp
 src/core/ControlCommandsClipLinkState.cpp
 src/core/ControlCommandsClipProcess.cpp
+src/core/ControlCommandsClipRecord.cpp
 src/core/ControlCommandsClipTrim.cpp
 src/core/ControlCommandsClock.cpp
 src/core/ControlCommandsCollab.cpp

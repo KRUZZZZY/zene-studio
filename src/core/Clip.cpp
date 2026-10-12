@@ -34,6 +34,7 @@
 
 #include "AutomationEditor.h"
 #include "AutomationClip.h"
+#include "ClipLinks.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "ProjectIds.h"
@@ -473,6 +474,7 @@ void Clip::saveClipEdits(QDomElement& element) const
 	// Owner decision 2026-10-08: the offset fades are written only when set (I9, additive).
 	if (m_edits.fadeInOffsetTicks != 0) { element.setAttribute("fadeinoffset", m_edits.fadeInOffsetTicks); }
 	if (m_edits.fadeOutOffsetTicks != 0) { element.setAttribute("fadeoutoffset", m_edits.fadeOutOffsetTicks); }
+	if (m_edits.fadeOffsetGap) { element.setAttribute("fadeoffsetgap", "1"); }
 	if (m_edits.fadeInShape != FadeShape::Linear)
 	{
 		element.setAttribute("fadeinshape", static_cast<int>(m_edits.fadeInShape));
@@ -640,12 +642,14 @@ void Clip::loadClipEdits(const QDomElement& element)
 	edits.fadeOutTicks = std::max(0, element.attribute("fadeout", "0").toInt());
 	edits.fadeInOffsetTicks = std::max(0, element.attribute("fadeinoffset", "0").toInt());
 	edits.fadeOutOffsetTicks = std::max(0, element.attribute("fadeoutoffset", "0").toInt());
+	edits.fadeOffsetGap = element.attribute("fadeoffsetgap", "0") == "1";
 	// An offset fade is a pair (withValidOffsetFades); a file with a lone one - or one next to a zero-length ramp - loads
 	// as the ordinary fades. A pair that no longer lines up with the clip's length is repaired where it is used.
 	if (edits.fadeInOffsetTicks == 0 || edits.fadeOutOffsetTicks == 0 || edits.fadeInTicks == 0 || edits.fadeOutTicks == 0)
 	{
 		edits.fadeInOffsetTicks = 0;
 		edits.fadeOutOffsetTicks = 0;
+		edits.fadeOffsetGap = false;
 	}
 
 	const auto shapeFromIndex = [](int index) {
@@ -765,10 +769,20 @@ void Clip::loadWarp(const QDomElement& element)
 	}
 }
 
+void Clip::setName(const QString& name)
+{
+	if (m_name == name) { return; }
+	m_name = name;
+	emit dataChanged();
+	ClipLinks::mirrorPresentation(this);
+}
+
 void Clip::setColor(const std::optional<QColor>& color)
 {
+	if (m_color == color) { return; }
 	m_color = color;
 	emit colorChanged();
+	ClipLinks::mirrorPresentation(this);
 }
 
 } // namespace lmms
