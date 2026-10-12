@@ -138,6 +138,27 @@ private slots:
 		QCOMPARE(m_clip->notes().front()->conditions().repeats, 0);
 	}
 
+	void upDownArpeggioHandlesRepeatedSinglePitch()
+	{
+		oneNote();
+		QDomDocument doc;
+		QDomElement trackSettings = doc.createElement(QStringLiteral("instrumenttrack"));
+		QDomElement arpeggio = doc.createElement(QStringLiteral("arpeggiator"));
+		arpeggio.setAttribute(QStringLiteral("arp-enabled"), 1);
+		arpeggio.setAttribute(QStringLiteral("arp"), 0); // The "octave" chord contains one pitch.
+		arpeggio.setAttribute(QStringLiteral("arprange"), 1);
+		arpeggio.setAttribute(QStringLiteral("arprepeats"), 2);
+		arpeggio.setAttribute(QStringLiteral("arpdir"), static_cast<int>(InstrumentFunctionArpeggio::ArpDirection::UpAndDown));
+		arpeggio.setAttribute(QStringLiteral("arptime"), 25);
+		trackSettings.appendChild(arpeggio);
+		m_track->loadTrackSpecificSettings(trackSettings);
+		QVERIFY(m_track->isArpeggioEnabled());
+
+		const QList<int> keys = playFrom(0, 3);
+		QVERIFY2(keys.size() >= 2, qPrintable(QString::number(keys.size())));
+		QVERIFY(std::all_of(keys.cbegin(), keys.cend(), [](int key) { return key == 60; }));
+	}
+
 	void aRecurrenceSkipsThePassesItIsNotOn()
 	{
 		Note* note = oneNote();

@@ -437,7 +437,8 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 		{
 			cur_arp_idx = (cur_frame / arp_frames) % range;
 		}
-		else if ((dir == ArpDirection::UpAndDown || dir == ArpDirection::DownAndUp) && range > 1)
+		else if ((dir == ArpDirection::UpAndDown || dir == ArpDirection::DownAndUp) &&
+			range > static_cast<int>(m_arpRepeatsModel.value()))
 		{
 			// imagine, we had to play the arp once up and then
 			// once down -> makes 2 * range possible notes...
