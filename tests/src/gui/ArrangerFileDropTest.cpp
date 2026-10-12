@@ -250,14 +250,13 @@ private slots:
 		}
 		QVERIFY(view != nullptr);
 		PluginDrag drag({file(QStringLiteral("generated.mid"))});
-		QVERIFY(drag.dropOn(view, QPoint(1, 5)));
+		QVERIFY(drag.dropOn(view, QPoint(0, 5)));
 		QCOMPARE(m_instrument->numOfClips(), 2);
 		bool placed = false;
 		for (int i = 0; i < m_instrument->numOfClips(); ++i)
 		{
 			auto* midi = dynamic_cast<MidiClip*>(m_instrument->getClip(i));
-			placed = placed || (midi != nullptr && midi->notes().size() == 1 && midi->startPosition().getTicks() >= 3 * Bar
-				&& midi->startPosition().getTicks() < 4 * Bar);
+			placed = placed || (midi != nullptr && midi->notes().size() == 1 && midi->startPosition().getTicks() == 3 * Bar);
 		}
 		QVERIFY2(placed, "the dropped file's clip is not where the drop was");
 	}

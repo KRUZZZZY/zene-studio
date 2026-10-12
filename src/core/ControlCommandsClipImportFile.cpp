@@ -78,7 +78,7 @@ struct Prepared
 	QString path;
 	interchange::SmfNoteRead notes;                  //!< midi
 	std::shared_ptr<const SampleBuffer> buffer;      //!< audio
-	tick_t lengthTicks = 0;                          //!< the clip's length, an estimate for audio
+	qint64 lengthTicks = 0;                          //!< the clip's length: exact for MIDI, an estimate for audio
 	bool embedded = false;                           //!< audio read from the temporary folder
 };
 
@@ -156,7 +156,14 @@ bool prepareMidi(const QString& path, Prepared* out, ControlResult* error)
 		return false;
 	}
 	out->midi = true;
-	out->lengthTicks = static_cast<tick_t>(std::min<long long>(out->notes.endTick, MaxSongLength));
+	// Refused, not clamped: a clamped length would let notes past the song's end through to fillMidi.
+	if (out->notes.endTick > static_cast<long long>(MaxSongLength))
+	{
+		*error = invalid(QStringLiteral("'%1' runs to tick %2, past the song's limit of %3")
+			.arg(QFileInfo(path).fileName()).arg(out->notes.endTick).arg(MaxSongLength));
+		return false;
+	}
+	out->lengthTicks = out->notes.endTick;
 	return true;
 }
 
@@ -175,7 +182,7 @@ bool prepareAudio(const QString& path, Prepared* out, ControlResult* error)
 		return false;
 	}
 	const double ticks = static_cast<double>(decoded->data.size()) / static_cast<double>(Engine::framesPerTick(decoded->sampleRate));
-	out->lengthTicks = static_cast<tick_t>(std::min<double>(ticks, static_cast<double>(MaxSongLength) + 1.0));
+	out->lengthTicks = static_cast<qint64>(std::min<double>(ticks, static_cast<double>(MaxSongLength) + 1.0));
 	out->embedded = inTemporaryFolder(path);
 	out->buffer = std::make_shared<SampleBuffer>(std::move(decoded->data), decoded->sampleRate,
 		out->embedded ? QString() : PathUtil::toShortestRelative(path));

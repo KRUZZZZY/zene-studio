@@ -205,7 +205,7 @@ bool readTrack(const QByteArray& bytes, int from, int to, int division, std::vec
 		if (out->size() > static_cast<std::size_t>(SmfNoteMaxCount)) { return false; }
 	}
 	walk.closeAll();  // a note never closed ends where its track does
-	return true;
+	return out->size() <= static_cast<std::size_t>(SmfNoteMaxCount);  // counted after the unclosed ones are closed
 }
 
 bool failWith(SmfNoteRead* read, const QString& message)
@@ -261,7 +261,15 @@ bool readChunks(const QByteArray& bytes, SmfNoteRead* read)
 		}
 		at = body + length;
 	}
+	if (at != bytes.size())
+	{
+		return failWith(read, QStringLiteral("the MIDI file has %1 stray bytes after its last chunk").arg(bytes.size() - at));
+	}
 	if (tracksRead == 0) { return failWith(read, QStringLiteral("the MIDI file holds no track")); }
+	if (tracksRead != read->trackCount)
+	{
+		return failWith(read, QStringLiteral("the MIDI file declares %1 tracks but holds %2").arg(read->trackCount).arg(tracksRead));
+	}
 	return true;
 }
 

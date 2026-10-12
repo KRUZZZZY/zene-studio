@@ -100,6 +100,27 @@ QByteArray chordTrack()
 	return smf(body);
 }
 
+//! \a count note-ons of one key and no note-off, as one track: the notes close at the track's end.
+QByteArray unclosedNotes(int count)
+{
+	QByteArray body;
+	for (int i = 0; i < count; ++i) { body.append("\x00\x90\x3C\x40", 4); }
+	body.append("\x00\xFF\x2F\x00", 4);
+	return smf(body);
+}
+
+//! One note whose on-event lies \a delta file ticks into the track (the largest delta a four-byte quantity holds is 0x0FFFFFFF).
+QByteArray lateNote(quint32 delta)
+{
+	QByteArray body;
+	body.append(char(0x80 | ((delta >> 21) & 0x7F)));
+	body.append(char(0x80 | ((delta >> 14) & 0x7F)));
+	body.append(char(0x80 | ((delta >> 7) & 0x7F)));
+	body.append(char(delta & 0x7F));
+	body.append("\x90\x3C\x40\x10\x80\x3C\x00\x00\xFF\x2F\x00", 11);
+	return smf(body);
+}
+
 QByteArray silentTrack() { return smf(QByteArray("\x00\xFF\x2F\x00", 4)); }
 
 bool write(const QString& path, const QByteArray& bytes)
@@ -213,6 +234,13 @@ private slots:
 		QVERIFY(!interchange::readSmfNotes(smf(QByteArray("\x00\x90\x3C\x90", 4))).ok);  // data byte with its high bit set
 		QVERIFY(!interchange::readSmfNotes(smf(QByteArray("\x00\x3C\x64", 3))).ok);      // data with no status to run on
 		QVERIFY(!interchange::readSmfNotes(smf(QByteArray("\x00\xFF\x01\x7F", 4))).ok);  // a meta event longer than its track
+		// A declared track count that is not the MTrk chunks there are, stray bytes after the last chunk, and more
+		// notes than the cap once the unclosed ones are counted are refused too (review round 2).
+		QVERIFY(!interchange::readSmfNotes(smf(chordTrack().mid(22), 96, 1, 2)).ok);
+		QVERIFY(!interchange::readSmfNotes(chordTrack() + chordTrack().mid(14)).ok);
+		QVERIFY(!interchange::readSmfNotes(chordTrack() + QByteArray("\x00\x01\x02", 3)).ok);
+		QVERIFY(interchange::readSmfNotes(unclosedNotes(1000)).ok);
+		QVERIFY(!interchange::readSmfNotes(unclosedNotes(interchange::SmfNoteMaxCount + 1)).ok);
 		const QByteArray valid = chordTrack();
 		for (int cut = 0; cut < valid.size(); ++cut)
 		{
@@ -392,6 +420,16 @@ private slots:
 		QVERIFY(write(garbageWav, "RIFF....WAVEjunk junk junk junk"));
 		const QString audio = m_dir.filePath(QStringLiteral("ok.wav"));
 		QVERIFY(write(audio, wav(1)));
+		const QString badCount = m_dir.filePath(QStringLiteral("count.mid"));
+		QVERIFY(write(badCount, smf(chordTrack().mid(22), 96, 1, 2)));
+		const QString stray = m_dir.filePath(QStringLiteral("stray.mid"));
+		QVERIFY(write(stray, chordTrack() + QByteArray("\x00\x01\x02", 3)));
+		const QString manyUnclosed = m_dir.filePath(QStringLiteral("many.mid"));
+		QVERIFY(write(manyUnclosed, unclosedNotes(interchange::SmfNoteMaxCount + 1)));
+		const QString tooLong = m_dir.filePath(QStringLiteral("long.mid"));
+		QVERIFY(write(tooLong, lateNote(0x0FFFFFFF)));
+		const QString justOver = m_dir.filePath(QStringLiteral("over.mid"));
+		QVERIFY(write(justOver, lateNote(static_cast<quint32>(MaxSongLength) * 2 + 2000)));  // division 96 -> 2 file ticks a LMMS tick
 		const QString folder = m_dir.filePath(QStringLiteral("folder"));
 		QVERIFY(QDir().mkpath(folder));
 
@@ -404,6 +442,11 @@ private slots:
 			{QStringLiteral("empty file"), {{QStringLiteral("path"), emptyFile}}},
 			{QStringLiteral("truncated midi"), {{QStringLiteral("path"), cut}}},
 			{QStringLiteral("midi without notes"), {{QStringLiteral("path"), noNotes}}},
+			{QStringLiteral("declared track count not the tracks there are"), {{QStringLiteral("path"), badCount}}},
+			{QStringLiteral("stray bytes after the last chunk"), {{QStringLiteral("path"), stray}}},
+			{QStringLiteral("more unclosed notes than the cap"), {{QStringLiteral("path"), manyUnclosed}}},
+			{QStringLiteral("notes far past the song limit"), {{QStringLiteral("path"), tooLong}}},
+			{QStringLiteral("notes just past the song limit"), {{QStringLiteral("path"), justOver}}},
 			{QStringLiteral("smpte midi"), {{QStringLiteral("path"), smpte}}},
 			{QStringLiteral("damaged audio"), {{QStringLiteral("path"), garbageWav}}},
 			{QStringLiteral("midi on a sample track"), {{QStringLiteral("path"), good}, {QStringLiteral("track"), sample}}},
