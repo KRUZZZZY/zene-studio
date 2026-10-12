@@ -281,6 +281,9 @@ int TrackFolder::savedChannelFor( int childId ) const
  */
 void TrackFolder::routeChild( Track * child )
 {
+	Mixer * mixer = Engine::mixer();
+	if( mixer == nullptr || m_mixerChannel < 0
+		|| m_mixerChannel >= static_cast<int>( mixer->numChannels() ) ) { return; }
 	IntModel * model = child->mixerChannelModel();
 	if( model == nullptr ) { return; }   // a track type with no channel of its own
 	if( alreadyRouted( child ) ) { return; }
