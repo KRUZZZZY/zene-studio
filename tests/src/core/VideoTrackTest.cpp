@@ -135,6 +135,12 @@ private slots:
 		QCOMPARE(VideoReference::timecode(59.999, 29.97), QStringLiteral("00:00:59:29"));
 	}
 
+	void negativeSubFrameTimecodeKeepsItsSign()
+	{
+		// a time before the video's start that rounds to frame zero still shows the minus sign
+		QCOMPARE(VideoReference::timecode(-0.01, 25.0), QStringLiteral("-00:00:00:00"));
+	}
+
 	void withoutFfmpegEveryCommandIsUnavailable()
 	{
 		if (VideoDecoder::available()) { QSKIP("this build has FFmpeg"); }

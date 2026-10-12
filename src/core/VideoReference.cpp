@@ -74,7 +74,7 @@ QString VideoReference::timecode(double seconds, double fps)
 	const int frame = std::clamp(static_cast<int>(std::floor((magnitude - static_cast<double>(whole)) * rate + 1e-6)), 0,
 		std::max(0, static_cast<int>(std::ceil(rate)) - 1));
 	return QStringLiteral("%1%2:%3:%4:%5")
-		.arg(seconds < 0.0 && (whole > 0 || frame > 0) ? QStringLiteral("-") : QString())
+		.arg(seconds < 0.0 ? QStringLiteral("-") : QString())
 		.arg(whole / 3600, 2, 10, QLatin1Char('0'))
 		.arg(whole / 60 % 60, 2, 10, QLatin1Char('0'))
 		.arg(whole % 60, 2, 10, QLatin1Char('0'))
