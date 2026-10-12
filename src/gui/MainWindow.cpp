@@ -1095,8 +1095,23 @@ bool MainWindow::saveProjectAsWithFormat(bool preferV2)
 			}
 		}
 		// The dialog was answered: its v2 checkbox now decides the format (see SaveOptions).
-		song->getSaveOptions().formatChosen = true;
-		if( this->guiSaveProjectAs( fname ) )
+		// A template (.mpt) is never a container, whatever the box says.
+		Song::SaveOptions & options = song->getSaveOptions();
+		if( fname.endsWith( ".mpt" ) ) { options.saveAsV2Container.setValue( false ); }
+		options.formatChosen = true;
+		const bool v2 = options.saveAsV2Container.value();
+		const QString target = DataFile( DataFile::Type::SongProject ).nameWithExtension( fname );
+
+		// Q050-007: every save whose format the person (or the project) put on the v2 side
+		// of the line is the registered project.save command - the one the agent surface
+		// calls, with its revision rotation and its transaction - and not a private GUI
+		// writer. A plain legacy Save As keeps the dialog's own path (and its bundle and
+		// MIDI-connection options, which project.save does not carry).
+		const bool viaCommand = !options.saveAsProjectBundle.value() && !fname.endsWith( ".mpt" )
+			&& ( v2 || song->plannedSaveFormat( target ) == Song::SaveFormat::V2Container );
+		const bool saved = viaCommand ? saveThroughCommand( target, v2 ) : this->guiSaveProjectAs( fname );
+		options.setDefaultOptions();
+		if( saved )
 		{
 			if( getSession() == SessionState::Recover )
 			{
@@ -1104,9 +1119,23 @@ bool MainWindow::saveProjectAsWithFormat(bool preferV2)
 			}
 			return true;
 		}
+		return false;
 	}
 	song->getSaveOptions().setDefaultOptions();
 	return false;
+}
+
+
+
+
+bool MainWindow::saveThroughCommand( const QString & target, bool v2 )
+{
+	const ControlResult saved = ControlRegistry::instance()->invoke( QStringLiteral( "project.save" ),
+		QJsonObject{ { QStringLiteral( "path" ), target },
+			{ QStringLiteral( "format" ), v2 ? QStringLiteral( "v2" ) : QStringLiteral( "legacy" ) } } );
+	handleSaveResult( target, saved.ok );
+	if( !saved.ok ) { statusBar()->showMessage( saved.errorMessage, 8000 ); }
+	return saved.ok;
 }
 
 

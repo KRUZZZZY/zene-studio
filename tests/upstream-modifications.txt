@@ -1847,3 +1847,6 @@ src/core/ControlReversibilityTableW3Library.cpp	cluster 917, 2026-10-09: classif
 src/core/ControlTransactions.cpp	cluster 917, 2026-10-09: record completed async edits in bounded transaction history and provenance.
 src/core/RenderQueue.cpp	cluster 917, 2026-10-09: queue renders and conversions asynchronously with worker finalization, cancellation, and reports.
 src/gui/TrackRenderMenu.cpp	cluster 917, 2026-10-09: enqueue bounce/freeze and expose cancellation through the task indicator.
+include/SetupDialog.h	Q050-007 (2026-10-12): declares toggleSaveContainerV2 and m_saveContainerV2 for the Settings > Projects opt-in checkbox; no behaviour change when the setting is off (held by tests/src/core/ProjectContainerSaveTest.cpp).
+include/VersionedSaveDialog.h	Q050-007 (2026-10-12): the Save As options widget gains the 'Save as v2 container' checkbox member; nothing else in the dialog changes (held by tests/src/gui/ProjectContainerSaveAsGuiTest.cpp).
+src/gui/modals/VersionedSaveDialog.cpp	Q050-007 (2026-10-12): builds the 'Save as v2 container (larger file; older builds cannot open it)' checkbox on the Save As options widget, bound to Song::SaveOptions::saveAsV2Container (held by tests/src/gui/ProjectContainerSaveAsGuiTest.cpp).

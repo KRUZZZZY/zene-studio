@@ -967,6 +967,9 @@ set(LMMS_TESTS
 	src/gui/VisibilitySetMenuTest.cpp
 	# Edit > Capture MIDI names what the retrospective capture window holds.
 	src/gui/CaptureMidiMenuTest.cpp
+	# Q050-007: the visible Save As v2 choice - the File menu entry and the dialog's checkbox
+	# driven as widgets, the file checked on disk and the project.save transaction in the log.
+	src/gui/ProjectContainerSaveAsGuiTest.cpp
 	# A MIDI-driven control's menu: soft takeover and LED feedback through controller.*.
 	src/gui/MidiControllerMenuTest.cpp
 	# Edit > Controller Templates over a throwaway working directory.
@@ -1820,6 +1823,7 @@ set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=o
 set_tests_properties(BrowserTagMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VisibilitySetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CaptureMidiMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ProjectContainerSaveAsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiControllerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControllerTemplateMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

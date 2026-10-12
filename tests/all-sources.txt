@@ -2781,6 +2781,7 @@ tests/src/gui/PinConnectorTest.cpp
 tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/PluginNativeEditorTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
+tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/RackDeferredLifetimeTest.cpp
 tests/src/gui/RackMenuTest.cpp
 tests/src/gui/RecordingRecoveryMenuTest.cpp

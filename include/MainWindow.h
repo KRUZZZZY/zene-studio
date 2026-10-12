@@ -233,6 +233,8 @@ private:
 
 	void exportProject(bool multiExport = false);
 	bool saveProjectAsWithFormat(bool preferV2);
+	//! Q050-007: save through the registered project.save command (the v2 side of the Save As choice).
+	bool saveThroughCommand(const QString & target, bool v2);
 	void handleSaveResult(QString const & filename, bool songSavedSuccessfully);
 	bool guiSaveProject();
 	bool guiSaveProjectAs( const QString & filename );
