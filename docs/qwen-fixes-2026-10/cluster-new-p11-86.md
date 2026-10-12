@@ -17,6 +17,17 @@ executed 1/1 CTest targets. The corrected RED run failed on the previous master
 name; the GREEN run passed. Reversing only the product patch reproduced that
 failure, and reapplying it restored the pass.
 
+| Evidence | Exact command or files | Exit / count |
+| --- | --- | ---: |
+| RED on original code | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-86.r1/logs/test-3.log 2>&1; echo EXIT=$?` | 8 |
+| GREEN with fix | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-86.r1/logs/test-4.log 2>&1; echo EXIT=$?` | 0 |
+| RED with product patch reversed | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-86.r1/logs/test-5.log 2>&1; echo EXIT=$?` | 8 |
+| GREEN after patch reapplication | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-86.r1/logs/test-6.log 2>&1; echo EXIT=$?` | 0 |
+| Affected-family test count | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure` | 1/1 CTest target |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-86.r1/logs/gate-complexity-1.log 2>&1; echo EXIT=$?` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-86.r1/logs/gate-file-length-1.log 2>&1; echo EXIT=$?` | 0 |
+| Committed files | `src/core/DawProjectSession.cpp`<br>`tests/src/core/DawProjectInterchangeRoundTripTest.cpp`<br>`docs/qwen-fixes-2026-10/cluster-new-p11-86.md` | 3 |
+
 All build commands below ran from the worktree root and exited 0:
 
 1. `cmake --build build --target zene DawProjectInterchangeRoundTripTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-86.r1/logs/build-1.log 2>&1; echo EXIT=$?`
