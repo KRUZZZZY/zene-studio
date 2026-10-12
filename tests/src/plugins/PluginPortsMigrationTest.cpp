@@ -26,6 +26,7 @@
 #include <QByteArray>
 #include <QLibrary>
 #include <memory>
+#include <QPlainTextEdit>
 #include <QProcess>
 #include <QString>
 #include <QStringList>
@@ -33,6 +34,7 @@
 #include <QtTest>
 
 #include "Engine.h"
+#include "PluginView.h"
 #include "Plugin.h"
 
 namespace
@@ -185,6 +187,8 @@ public:
 
 private slots:
 	void initTestCase();
+	void xpressiveExpressionEditsMarkSongModified_data();
+	void xpressiveExpressionEditsMarkSongModified();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -197,7 +201,68 @@ private:
 	std::vector<partc::PluginRender> m_migrated;
 	std::vector<partc::PluginRender> m_reference;
 	std::vector<partc::LadspaRender> m_ladspa;
+	QTemporaryDir m_cleanProjectDir;
 };
+
+void PluginPortsMigrationTest::xpressiveExpressionEditsMarkSongModified_data()
+{
+	QTest::addColumn<QString>("expression");
+	QTest::addColumn<bool>("startWithExpression");
+	QTest::newRow("invalid expression") << QStringLiteral("(") << false;
+	QTest::newRow("cleared expression") << QString{} << true;
+}
+
+void PluginPortsMigrationTest::xpressiveExpressionEditsMarkSongModified()
+{
+	QFETCH(QString, expression);
+	QFETCH(bool, startWithExpression);
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	const auto& instruments = migratedInstruments();
+	const auto xpressive = std::find_if(instruments.begin(), instruments.end(), [](const auto& candidate)
+	{
+		return QString::fromUtf8(candidate.plugin) == QLatin1String("xpressive");
+	});
+	QVERIFY(xpressive != instruments.end());
+
+	QLibrary library{QString::fromUtf8(xpressive->path)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	std::unique_ptr<lmms::Instrument> instrument{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+	QWidget host;
+	QWidget tabContainer{&host};
+	std::unique_ptr<lmms::gui::PluginView> view{instrument->createView(&tabContainer)};
+	QVERIFY(view != nullptr);
+	auto* editor = view->findChild<QPlainTextEdit*>();
+	QVERIFY(editor != nullptr);
+
+	auto* song = lmms::Engine::getSong();
+	if (startWithExpression)
+	{
+		QDomDocument document;
+		auto parent = document.createElement(QStringLiteral("instrument"));
+		auto settings = instrument->saveState(document, parent);
+		settings.setAttribute(QStringLiteral("W1"), QStringLiteral("t"));
+		instrument->restoreState(settings);
+		const bool wasBlocked = editor->blockSignals(true);
+		editor->setPlainText(QStringLiteral("t"));
+		editor->blockSignals(wasBlocked);
+	}
+	QVERIFY(m_cleanProjectDir.isValid());
+	QVERIFY2(song->guiSaveProjectAs(m_cleanProjectDir.filePath(QStringLiteral("clean.mmp"))),
+		"saving a clean baseline must reset the song's modified state");
+	editor->setPlainText(expression);
+	QVERIFY2(song->isModified(), "changing Xpressive expression text must mark the song modified");
+}
 
 void PluginPortsMigrationTest::initTestCase()
 {
