@@ -22,6 +22,12 @@
  *
  */
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#endif // _WIN32
+
 #include "ScriptImport.h"
 
 #include <QDir>
@@ -31,6 +37,9 @@
 
 #ifndef _WIN32
 #include <sys/stat.h>
+#else
+#include <io.h>
+#include <windows.h>
 #endif
 
 extern "C"
@@ -52,6 +61,27 @@ bool isIdentifierPart(const QString& part)
 {
 	static const QRegularExpression pattern(QStringLiteral("^[A-Za-z_][A-Za-z0-9_]{0,63}$"));
 	return pattern.match(part).hasMatch();
+}
+
+bool isReservedWindowsDeviceName(const QString& part)
+{
+#ifdef _WIN32
+	const QString upper = part.toUpper();
+	if (upper == QLatin1String("CON") || upper == QLatin1String("PRN")
+		|| upper == QLatin1String("AUX") || upper == QLatin1String("NUL"))
+	{
+		return true;
+	}
+	if (upper.size() == 4 && (upper.startsWith(QLatin1String("COM"))
+		|| upper.startsWith(QLatin1String("LPT"))))
+	{
+		const QChar digit = upper.at(3);
+		return digit >= QLatin1Char('1') && digit <= QLatin1Char('9');
+	}
+#else
+	Q_UNUSED(part);
+#endif
+	return false;
 }
 
 //! A clearer reason than "bad name" for the shapes an author might try.
@@ -81,6 +111,29 @@ bool underRoot(const QString& root, const QString& path)
 }
 
 #ifndef _WIN32
+struct OpenFileInfo
+{
+	quint64 device{0};
+	quint64 file{0};
+	quint64 links{0};
+	bool regular{false};
+};
+
+//! Read identity and link count from the open descriptor, never from its pathname.
+bool openFileInfo(const QFile& file, OpenFileInfo* result)
+{
+	struct stat info;
+	if (::fstat(file.handle(), &info) != 0)
+	{
+		return false;
+	}
+	result->device = static_cast<quint64>(info.st_dev);
+	result->file = static_cast<quint64>(info.st_ino);
+	result->links = static_cast<quint64>(info.st_nlink);
+	result->regular = S_ISREG(info.st_mode);
+	return true;
+}
+
 //! The open descriptor and the path must still be the same regular file.
 bool sameFile(const QFile& file, const QString& canonicalPath)
 {
@@ -94,7 +147,78 @@ bool sameFile(const QFile& file, const QString& canonicalPath)
 	return S_ISREG(byDescriptor.st_mode) && byDescriptor.st_dev == byPath.st_dev
 		&& byDescriptor.st_ino == byPath.st_ino;
 }
+#else
+struct OpenFileInfo
+{
+	quint64 device{0};
+	quint64 file{0};
+	quint64 links{0};
+	bool regular{false};
+};
+
+//! Read volume, file index and link count from the open Windows file handle.
+bool openFileInfo(const QFile& file, OpenFileInfo* result)
+{
+	const auto nativeHandle = _get_osfhandle(file.handle());
+	if (nativeHandle == -1)
+	{
+		return false;
+	}
+	const HANDLE handle = reinterpret_cast<HANDLE>(nativeHandle);
+	BY_HANDLE_FILE_INFORMATION info{};
+	if (!GetFileInformationByHandle(handle, &info))
+	{
+		return false;
+	}
+	result->device = static_cast<quint64>(info.dwVolumeSerialNumber);
+	result->file = (static_cast<quint64>(info.nFileIndexHigh) << 32)
+			| static_cast<quint64>(info.nFileIndexLow);
+	result->links = static_cast<quint64>(info.nNumberOfLinks);
+	result->regular = GetFileType(handle) == FILE_TYPE_DISK
+			&& (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+	return true;
+}
 #endif
+
+bool pathStillResolvesInsideRoot(const QString& root, const QString& canonicalPath)
+{
+	return QFileInfo(canonicalPath).canonicalFilePath() == canonicalPath
+			&& underRoot(root, canonicalPath);
+}
+
+bool matchesResolvedIdentity(const OpenFileInfo& opened,
+				const ScriptImport::FileIdentity& expected)
+{
+	return expected.valid && opened.regular && opened.device == expected.device
+			&& opened.file == expected.file;
+}
+
+bool validateOpenedModule(QFile& file, const QString& root, const QString& canonicalPath,
+				const ScriptImport::FileIdentity& identity, QString* error)
+{
+	OpenFileInfo opened;
+	const bool haveOpenInfo = openFileInfo(file, &opened);
+	if (haveOpenInfo && opened.links > 1)
+	{
+		*error = QStringLiteral("hard-linked modules are refused (open handle has %1 links)")
+				.arg(opened.links);
+		return false;
+	}
+	bool unchanged = pathStillResolvesInsideRoot(root, canonicalPath)
+			&& haveOpenInfo && matchesResolvedIdentity(opened, identity);
+#ifndef _WIN32
+	if (unchanged)
+	{
+		unchanged = sameFile(file, canonicalPath);
+	}
+#endif
+	if (!unchanged)
+	{
+		*error = QStringLiteral("module changed while it was being opened; refused");
+		return false;
+	}
+	return true;
+}
 
 //! Pcall'd helper: stack [name] -> [cached value or nil]. POD only.
 int cacheLookup(lua_State* L)
@@ -174,6 +298,11 @@ bool ScriptImport::parseModuleName(const QByteArray& name, QStringList* parts, Q
 			*error = classifyBadName(text);
 			return false;
 		}
+		if (isReservedWindowsDeviceName(part))
+		{
+			*error = QStringLiteral("'%1' is a reserved Windows device name").arg(part);
+			return false;
+		}
 	}
 	*parts = split;
 	return true;
@@ -181,8 +310,9 @@ bool ScriptImport::parseModuleName(const QByteArray& name, QStringList* parts, Q
 
 
 bool ScriptImport::resolve(const QString& root, const QStringList& parts,
-				QString* canonicalPath, QString* error)
+				QString* canonicalPath, FileIdentity* identity, QString* error)
 {
+	identity->valid = false;
 	if (root.isEmpty())
 	{
 		*error = QStringLiteral("imports are unavailable: this script has no import root");
@@ -202,13 +332,28 @@ bool ScriptImport::resolve(const QString& root, const QStringList& parts,
 				.arg(parts.join(QLatin1Char('.')));
 		return false;
 	}
+	QFile file(canonical);
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		*error = QStringLiteral("cannot inspect module: %1").arg(file.errorString());
+		return false;
+	}
+	OpenFileInfo info;
+	if (!openFileInfo(file, &info) || !info.regular)
+	{
+		*error = QStringLiteral("module is not a regular file");
+		return false;
+	}
 	*canonicalPath = canonical;
+	identity->device = info.device;
+	identity->file = info.file;
+	identity->valid = true;
 	return true;
 }
 
 
 bool ScriptImport::readModule(const QString& root, const QString& canonicalPath,
-				QByteArray* source, QString* error)
+				const FileIdentity& identity, QByteArray* source, QString* error)
 {
 	QFile file(canonicalPath);
 	if (!file.open(QIODevice::ReadOnly))
@@ -216,16 +361,10 @@ bool ScriptImport::readModule(const QString& root, const QString& canonicalPath,
 		*error = QStringLiteral("cannot open module: %1").arg(file.errorString());
 		return false;
 	}
-	// Re-check after open: the path must still resolve to the same place, and
-	// (where the platform can say) to the very file we hold open.
-	bool unchanged = QFileInfo(canonicalPath).canonicalFilePath() == canonicalPath
-			&& underRoot(root, canonicalPath);
-#ifndef _WIN32
-	unchanged = unchanged && sameFile(file, canonicalPath);
-#endif
-	if (!unchanged)
+	// Re-check after open: the path remains under the root, and the handle has
+	// the same identity that resolution saved and reports only one link.
+	if (!validateOpenedModule(file, root, canonicalPath, identity, error))
 	{
-		*error = QStringLiteral("module changed while it was being opened; refused");
 		return false;
 	}
 	if (file.size() > MaxModuleBytes)
@@ -284,8 +423,9 @@ bool ScriptImport::prepare(const QByteArray& name, QString* canonical, QByteArra
 				QString* error)
 {
 	QStringList parts;
+	FileIdentity identity;
 	if (!parseModuleName(name, &parts, error)
-		|| !resolve(m_root, parts, canonical, error))
+		|| !resolve(m_root, parts, canonical, &identity, error))
 	{
 		return false;
 	}
@@ -305,7 +445,7 @@ bool ScriptImport::prepare(const QByteArray& name, QString* canonical, QByteArra
 		*error = QStringLiteral("more than %1 modules imported in one run").arg(MaxModules);
 		return false;
 	}
-	return readModule(m_root, *canonical, source, error);
+	return readModule(m_root, *canonical, identity, source, error);
 }
 
 

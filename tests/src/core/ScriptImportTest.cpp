@@ -22,6 +22,17 @@
  *
  */
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
+#include <string>
+
 #include <QtTest>
 
 #include <QDir>
@@ -34,6 +45,13 @@
 #include "ScriptEngine.h"
 #include "ScriptImport.h"
 #include "Song.h"
+
+extern "C"
+{
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
+}
 
 namespace
 {
@@ -53,6 +71,42 @@ bool writeFile(const QString& path, const QByteArray& bytes)
 	}
 	file.write(bytes);
 	return true;
+}
+
+bool createHardLink(const QString& target, const QString& linkPath)
+{
+#ifdef _WIN32
+	const std::wstring targetName = target.toStdWString();
+	const std::wstring linkName = linkPath.toStdWString();
+	return CreateHardLinkW(linkName.c_str(), targetName.c_str(), nullptr) != 0;
+#else
+	const QByteArray targetName = QFile::encodeName(target);
+	const QByteArray linkName = QFile::encodeName(linkPath);
+	return ::link(targetName.constData(), linkName.constData()) == 0;
+#endif
+}
+
+QByteArray dumpedLuaFunction()
+{
+	lua_State* L = luaL_newstate();
+	if (!L)
+	{
+		return {};
+	}
+	luaL_openlibs(L);
+	QByteArray bytes;
+	if (luaL_loadstring(L, "return string.dump(function() return true end)") == LUA_OK
+		&& lua_pcall(L, 0, 1, 0) == LUA_OK)
+	{
+		size_t length = 0;
+		const char* dumped = lua_tolstring(L, -1, &length);
+		if (dumped)
+		{
+			bytes = QByteArray(dumped, static_cast<int>(length));
+		}
+	}
+	lua_close(L);
+	return bytes;
 }
 
 //! Run \a entry (a script file with the version header added) in \a dir.
@@ -181,6 +235,33 @@ private slots:
 		QVERIFY(!lmms::ScriptImport::parseModuleName("..", &parts, &error));
 	}
 
+	void dottedLuaSuffixIsParsedAsModuleComponents()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QVERIFY(writeFile(dir.path() + "/probe/lua.lua", "return 'component path'"));
+		QString error;
+		const auto result = runEntry(dir.path(),
+			QStringLiteral("assert(require('probe.lua') == 'component path')\n"), &error);
+		QVERIFY2(result == lmms::ScriptEngine::RunResult::Ok, qPrintable(error));
+	}
+
+	void windowsDeviceNamesAreRefused()
+	{
+#ifdef _WIN32
+		for (const QByteArray& name : {QByteArray("CON"), QByteArray("nul"),
+				QByteArray("lib.LPT1"), QByteArray("COM9")})
+		{
+			QStringList parts;
+			QString error;
+			QVERIFY2(!lmms::ScriptImport::parseModuleName(name, &parts, &error), name.constData());
+			QVERIFY2(error.contains("reserved Windows device name"), qPrintable(error));
+		}
+#else
+		QSKIP("Windows device basenames are reserved only on Windows");
+#endif
+	}
+
 	void symlinkEscapesAreRefused()
 	{
 #ifdef _WIN32
@@ -205,28 +286,61 @@ private slots:
 #endif
 	}
 
-	void readModuleRefusesAFileSwappedForAnEscape()
+	void hardLinkedModulesAreRefused()
 	{
-#ifdef _WIN32
-		QSKIP("symlink creation needs privileges on Windows");
-#else
-		// The window between resolve() and the open: swap the checked file for
-		// a symlink to an outside file. readModule() must refuse the swap.
+		QTemporaryDir workspace;
+		QVERIFY(workspace.isValid());
+		const QString rootPath = workspace.path() + "/root";
+		const QString outsidePath = workspace.path() + "/outside";
+		QVERIFY(QDir().mkpath(rootPath));
+		QVERIFY(QDir().mkpath(outsidePath));
+		QVERIFY(writeFile(outsidePath + "/stolen.lua", "return 'stolen'"));
+		QVERIFY(createHardLink(outsidePath + "/stolen.lua", rootPath + "/stolen.lua"));
+		expectError(rootPath, "require('stolen')", "hard-linked modules are refused");
+	}
+
+	void readModuleRefusesAFileSwappedForAnOutsideHardLink()
+	{
+		// The window between resolve() and open: replace the resolved file with
+		// a hard link to an outside file. The saved identity and link count refuse it.
+		QTemporaryDir workspace;
+		QVERIFY(workspace.isValid());
+		const QString rootPath = workspace.path() + "/root";
+		const QString outsidePath = workspace.path() + "/outside";
+		QVERIFY(QDir().mkpath(rootPath));
+		QVERIFY(QDir().mkpath(outsidePath));
+		QVERIFY(writeFile(outsidePath + "/stolen.lua", "return 'stolen'"));
+		QVERIFY(writeFile(rootPath + "/m.lua", "return 'm'"));
+		const QString root = QFileInfo(rootPath).canonicalFilePath();
+		QString canonical;
+		lmms::ScriptImport::FileIdentity identity;
+		QString error;
+		QVERIFY(lmms::ScriptImport::resolve(root, {"m"}, &canonical, &identity, &error));
+		QVERIFY(QFile::remove(canonical));
+		QVERIFY(createHardLink(outsidePath + "/stolen.lua", canonical));
+		QByteArray source;
+		QVERIFY(!lmms::ScriptImport::readModule(root, canonical, identity, &source, &error));
+		QVERIFY2(error.contains("hard-linked modules are refused"), qPrintable(error));
+		QVERIFY(source.isEmpty());
+	}
+
+	void readModuleRefusesAFileSwappedForAnotherSingleLink()
+	{
 		QTemporaryDir dir;
-		QTemporaryDir outside;
-		QVERIFY(writeFile(outside.path() + "/stolen.lua", "return 'stolen'"));
-		QVERIFY(writeFile(dir.path() + "/m.lua", "return 'm'"));
+		QVERIFY(dir.isValid());
+		QVERIFY(writeFile(dir.path() + "/m.lua", "return 'resolved'"));
+		QVERIFY(writeFile(dir.path() + "/replacement.lua", "return 'replacement'"));
 		const QString root = QFileInfo(dir.path()).canonicalFilePath();
 		QString canonical;
+		lmms::ScriptImport::FileIdentity identity;
 		QString error;
-		QVERIFY(lmms::ScriptImport::resolve(root, {"m"}, &canonical, &error));
+		QVERIFY(lmms::ScriptImport::resolve(root, {"m"}, &canonical, &identity, &error));
 		QVERIFY(QFile::remove(canonical));
-		QVERIFY(QFile::link(outside.path() + "/stolen.lua", canonical));
+		QVERIFY(QFile::rename(dir.path() + "/replacement.lua", canonical));
 		QByteArray source;
-		QVERIFY(!lmms::ScriptImport::readModule(root, canonical, &source, &error));
-		QVERIFY2(error.contains("changed"), qPrintable(error));
+		QVERIFY(!lmms::ScriptImport::readModule(root, canonical, identity, &source, &error));
+		QVERIFY2(error.contains("changed while it was being opened"), qPrintable(error));
 		QVERIFY(source.isEmpty());
-#endif
 	}
 
 	void cyclesAreRefusedWithAClearError()
@@ -282,8 +396,23 @@ private slots:
 	void bytecodeModulesAreRefused()
 	{
 		QTemporaryDir dir;
-		QVERIFY(writeFile(dir.path() + "/bin.lua", QByteArray("\x1bLua\x54\x00garbage", 11)));
+		const QByteArray bytecode = dumpedLuaFunction();
+		QVERIFY(!bytecode.isEmpty());
+		QVERIFY(bytecode.startsWith("\x1bLua"));
+		QVERIFY(writeFile(dir.path() + "/bin.lua", bytecode));
 		expectError(dir.path(), "require('bin')", "binary chunk");
+		QVERIFY(writeFile(dir.path() + "/malformed.lua", QByteArray("\x1bLua\x54\x00garbage", 11)));
+		expectError(dir.path(), "require('malformed')", "binary chunk");
+	}
+
+	void failedModuleExecutionsCountTowardTheRunLimit()
+	{
+		QTemporaryDir dir;
+		QVERIFY(writeFile(dir.path() + "/boom.lua", "error('kaboom')"));
+		expectError(dir.path(), QStringLiteral(
+			"for i = 1, 64 do assert(not pcall(require, 'boom')) end\n"
+			"require('boom')\n"),
+			"more than 64 modules");
 	}
 
 	void moduleErrorsPropagateAndAreNotCached()

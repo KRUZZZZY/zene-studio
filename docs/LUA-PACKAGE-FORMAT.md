@@ -37,32 +37,42 @@ entry) gets a sandboxed `require`. Source: `include/ScriptImport.h`,
   loads `<root>/lib/util.lua`. Each dot-separated part is an identifier
   (`[A-Za-z_][A-Za-z0-9_]*`, at most 64 characters; 128 bytes in all). Refused
   with a clear error: `..`, `/` or `\` separators, absolute paths (`/x`, `\x`,
-  `C:x`, `\\server\share`), empty parts, NUL bytes, and file extensions.
-* **Symlinks and races.** The candidate's canonical path (symlinks resolved)
-  must lie under the canonical root, so a symlink inside the root that points
-  outside it is refused. The file is opened only after that check, then
-  re-checked: the path must still resolve to the same canonical file and, on
-  POSIX, the open descriptor must be the same device/inode as the path, so a
-  swap between check and open is refused.
+  `C:x`, `\\server\share`), empty parts, NUL bytes, and on Windows device names
+  (`CON`, `NUL`, `COM1`, `LPT1`, and their case variants). There is no special
+  `.lua` suffix handling: `require("probe.lua")` means the two components
+  `probe` and `lua`, and can load `<root>/probe/lua.lua`.
+* **Symlinks, hard links and races.** The candidate's canonical path (symlinks
+  resolved) must lie under the canonical root, so a symlink inside the root that
+  points outside it is refused. Resolution saves the file identity: device and
+  inode on POSIX, or volume and file index on Windows. After opening, the handle
+  must still have that identity and report exactly one link. Hard-linked modules
+  are refused even when their pathname is inside the root. The path is also
+  re-checked after open, so a swap between resolution and open is refused.
 * **Semantics like Lua's `require`.** The module chunk runs once per script run
   with the module name and its root-relative path as `...`; its return value
   (or `true`) is cached and returned by later `require` calls of that name. A
   fresh run starts with an empty cache. Module errors propagate to the caller
   and are not cached.
 * **Cycles and bounds.** An import cycle is refused (`import cycle: a -> b -> a`).
-  Limits: nesting depth 16, 64 distinct modules per run, 256 KiB per module.
-  Modules are loaded as text only; precompiled bytecode is refused.
+  Limits: nesting depth 16, 64 module executions per run, 256 KiB per module.
+  The execution limit counts failed module executions and retries; an uncaught
+  failure does not enter the cache. Modules are loaded as text only; precompiled
+  bytecode is refused. `string.dump` can produce bytecode strings, but the
+  sandbox has no loader that executes them.
 * **Sandbox unchanged.** Modules run in the same globals as the entry script:
   `os`, `io`, `package`, `dofile`, `loadfile`, `load`, `loadstring` and `module`
   stay absent, and the same instruction and memory budgets apply across modules.
+  The entry script and modules share globals, so scripts can replace `require`
+  for later calls in that run; this does not add a file-loading API.
   Imported modules do not need the `--! lmms-api` header; the entry script's
   header gates the whole run.
 * **`runString` has no `require`.** A script run from memory (the `script.run`
   source argument, livecode, the schedule clock) has no directory to confine
   imports to, so `require` is absent there.
 
-Tests: `ScriptImportTest` (every refusal above, the symlink and swap cases, the
-cache, packages and loose scripts, the sandbox inside modules).
+Tests: `ScriptImportTest` (the refusals above, symlink and hard-link cases,
+resolution/open swaps, the cache and limits, packages and loose scripts, and the
+sandbox inside modules).
 
 ## 2. Naming
 

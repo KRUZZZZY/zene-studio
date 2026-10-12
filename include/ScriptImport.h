@@ -27,6 +27,7 @@
 
 #include <QString>
 #include <QStringList>
+#include <QtGlobal>
 
 struct lua_State;
 
@@ -48,8 +49,16 @@ namespace lmms
 class ScriptImport
 {
 public:
+	//! Stable identity captured from the resolved file and checked after open.
+	struct FileIdentity
+	{
+		quint64 device{0};
+		quint64 file{0};
+		bool valid{false};
+	};
+
 	static constexpr int MaxDepth = 16;                 //!< nested imports
-	static constexpr int MaxModules = 64;               //!< distinct modules per run
+	static constexpr int MaxModules = 64;               //!< module executions per run
 	static constexpr qint64 MaxModuleBytes = 256 * 1024; //!< one module's source
 
 	//! \param root the import root; made canonical here. Empty/missing = refuse all.
@@ -65,12 +74,13 @@ public:
 
 	//! Resolve \p parts under the canonical \p root to a canonical file path.
 	//! Refuses a result outside the root (symlink escape) or a non-regular file.
+	//! Captures the device/file identity that readModule must see on its handle.
 	static bool resolve(const QString& root, const QStringList& parts,
-				QString* canonicalPath, QString* error);
+				QString* canonicalPath, FileIdentity* identity, QString* error);
 
 	//! Open \p canonicalPath, re-check it, and read it (bounded).
 	static bool readModule(const QString& root, const QString& canonicalPath,
-				QByteArray* source, QString* error);
+				const FileIdentity& identity, QByteArray* source, QString* error);
 
 	const QString& root() const { return m_root; }
 
@@ -83,7 +93,7 @@ private:
 
 	QString m_root;
 	QStringList m_stack; //!< module names being loaded, outermost first
-	int m_loaded{0};
+	int m_loaded{0}; //!< module executions, including failed executions
 };
 
 } // namespace lmms
