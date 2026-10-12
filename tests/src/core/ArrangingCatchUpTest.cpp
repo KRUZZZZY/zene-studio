@@ -228,12 +228,12 @@ private slots:
 		QDomDocument doc;
 		QDomElement parent = doc.createElement(QStringLiteral("track"));
 		QVERIFY(!clip->saveState(doc, parent).hasAttribute(QStringLiteral("lead")));  // an unedited clip writes nothing new
-		clip->setLeadFrames(123);
+		clip->setLeadFrames(1);
 		const QDomElement saved = clip->saveState(doc, parent);
-		QCOMPARE(saved.attribute(QStringLiteral("lead")), QStringLiteral("123"));
+		QCOMPARE(saved.attribute(QStringLiteral("lead")), QStringLiteral("1"));
 		auto* other = dynamic_cast<SampleClip*>(m_track->createClip(TimePos(0)));
 		other->restoreState(saved);
-		QCOMPARE(other->leadFrames(), f_cnt_t{123});
+		QCOMPARE(other->leadFrames(), f_cnt_t{1});
 		QDomElement without = saved.cloneNode(true).toElement();
 		without.removeAttribute(QStringLiteral("lead"));
 		other->restoreState(without);

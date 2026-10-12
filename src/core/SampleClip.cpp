@@ -407,6 +407,11 @@ void SampleClip::setWarpStretchMode(WarpStretchMode mode)
 void SampleClip::restoreState(const QDomElement& element)
 {
 	Clip::restoreState(element);
+	const double framesPerTick = clipFramesPerTick();
+	if (framesPerTick <= 0.0 || static_cast<double>(leadFrames()) >= framesPerTick)
+	{
+		setLeadFrames(0);
+	}
 	// A load, a paste or an undo can bring the RubberBand mode back; the voices
 	// have to exist before the next play handle looks for them, and building
 	// them is the one step the audio thread must never take.
@@ -636,7 +641,9 @@ void SampleClip::loadSettings( const QDomElement & _this )
 
 	setAutoResize(_this.attribute("autoresize", "1").toInt());
 	// ED-021: reset on absence, so a checkpoint taken before a clip's first frame-exact edit takes it back.
-	setLeadFrames(static_cast<f_cnt_t>(_this.attribute("lead", "0").toULongLong()));
+	bool leadOk = false;
+	const auto lead = _this.attribute("lead", "0").toULongLong(&leadOk);
+	setLeadFrames(leadOk ? static_cast<f_cnt_t>(lead) : f_cnt_t{0});
 
 	// The `<warp>` child moved to the base clip (Clip::loadWarp — SPEC-ARCH-4
 	// census row 5). It reads right AFTER this function returns, which keeps

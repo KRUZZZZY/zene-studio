@@ -167,6 +167,36 @@ private slots:
 		Engine::destroy();
 	}
 
+	//! A project may carry a lead only when it parsed as a frame count below one clip tick.
+	void projectLoadRejectsInvalidLeadValues()
+	{
+		const int rate = Engine::audioEngine()->outputSampleRate();
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeToneClip(track, rate);
+		QVERIFY(clip->clipFramesPerTick() > 1.0f);
+
+		QDomDocument document;
+		QDomElement element = document.createElement(QStringLiteral("sampleclip"));
+		document.appendChild(element);
+		element.setAttribute(QStringLiteral("pos"), 0);
+		element.setAttribute(QStringLiteral("len"), 384);
+		element.setAttribute(QStringLiteral("muted"), 0);
+		element.setAttribute(QStringLiteral("off"), 0);
+		element.setAttribute(QStringLiteral("autoresize"), 0);
+		const auto restoreLead = [&](const QString& value)
+		{
+			element.setAttribute(QStringLiteral("lead"), value);
+			clip->restoreState(element);
+			return clip->leadFrames();
+		};
+
+		QCOMPARE(restoreLead(QStringLiteral("1")), f_cnt_t{1});
+		QCOMPARE(restoreLead(QStringLiteral("18446744073709551615")), f_cnt_t{0});
+		const auto atTick = static_cast<qulonglong>(std::ceil(clip->clipFramesPerTick()));
+		QCOMPARE(restoreLead(QString::number(atTick)), f_cnt_t{0});
+		QCOMPARE(restoreLead(QStringLiteral("invalid")), f_cnt_t{0});
+	}
+
 	//! THE RED TEST. A window authored on the clip is authored state: a playback
 	//! pass must read it and leave it alone. Before Slice 0 the pass rewrote it
 	//! from the playback position, so a trim reverted on the next pass.
