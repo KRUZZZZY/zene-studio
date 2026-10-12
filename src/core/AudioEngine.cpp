@@ -195,6 +195,17 @@ struct AudioEngine::SampleVoicePool
 		return index < m_voiceSlots.size() && &m_voiceSlots[index].handle == handle;
 	}
 
+	SamplePlayHandle* find(PlayHandle* candidate) noexcept
+	{
+		for (Slot& slot : m_voiceSlots)
+		{
+			if (static_cast<PlayHandle*>(&slot.handle) == candidate) { return &slot.handle; }
+		}
+		return nullptr;
+	}
+
+	bool ownsBus(const AudioBusHandle* candidate) const noexcept { return &bus == candidate; }
+
 	void service() noexcept
 	{
 		std::uint16_t index = 0;
@@ -245,6 +256,13 @@ void AudioEngine::serviceSampleVoicePoolOnControlThread() noexcept
 
 
 
+bool AudioEngine::isSampleVoicePoolBus(const AudioBusHandle* handle) const noexcept
+{
+	return m_sampleVoicePool != nullptr && m_sampleVoicePool->ownsBus(handle);
+}
+
+
+
 void AudioEngine::shutdownSampleVoicePool() noexcept
 {
 	m_sampleVoicePool.reset();
@@ -254,12 +272,11 @@ void AudioEngine::shutdownSampleVoicePool() noexcept
 
 void AudioEngine::disposePlayHandle(PlayHandle* handle, bool realtime) noexcept
 {
-	if (handle->type() == PlayHandle::Type::SamplePlayHandle)
+	if (m_sampleVoicePool != nullptr)
 	{
-		auto* const sampleHandle = static_cast<SamplePlayHandle*>(handle);
-		if (sampleHandle->isPooledVoice())
+		if (SamplePlayHandle* const pooled = m_sampleVoicePool->find(handle))
 		{
-			recyclePooledSampleVoice(sampleHandle, realtime);
+			recyclePooledSampleVoice(pooled, realtime);
 			return;
 		}
 	}
@@ -1001,8 +1018,7 @@ void AudioEngine::clearNewPlayHandles()
 	for( LocklessListElement * e = m_newPlayHandles.popList(); e; )
 	{
 		PlayHandle* const handle = e->value;
-		if (handle->type() == PlayHandle::Type::SamplePlayHandle
-			&& static_cast<SamplePlayHandle*>(handle)->isPooledVoice())
+		if (m_sampleVoicePool != nullptr && m_sampleVoicePool->find(handle) != nullptr)
 		{
 			handle->audioBusHandle()->removePlayHandleUnderEngineChangeLock(handle);
 			disposePlayHandle(handle, false);

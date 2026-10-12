@@ -247,6 +247,8 @@ public:
 		int sourceIn, int sourceOut, float amplification, f_cnt_t offset, Track* track, bool metronome) noexcept;
 	//! Return a detached pool handle; realtime returns are retired for the main-thread recycler.
 	void recyclePooledSampleVoice(SamplePlayHandle* handle, bool realtime) noexcept;
+	//! Whether @a handle is the private bus used by the fixed sample-voice pool.
+	bool isSampleVoicePoolBus(const AudioBusHandle* handle) const noexcept;
 	void recordSampleVoiceOverflow() noexcept
 	{
 		m_sampleVoiceOverflowCount.fetch_add(1, std::memory_order_relaxed);
