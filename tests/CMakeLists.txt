@@ -789,6 +789,8 @@ set(LMMS_TESTS
 	src/gui/TempoMapPanelTest.cpp
 	# The file browser's Tags menu (browser.tag.add / browser.tag.remove), over a throwaway store.
 	src/gui/BrowserTagMenuTest.cpp
+	# File revealing uses xdg-open when the MIME query cannot find a directory handler.
+	src/gui/FileRevealerTest.cpp
 	# The song editor's Views menu: visibility sets applied, all tracks shown, saved, removed.
 	src/gui/VisibilitySetMenuTest.cpp
 	# Edit > Capture MIDI names what the retrospective capture window holds.
