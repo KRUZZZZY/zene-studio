@@ -65,6 +65,11 @@ private:
 	ogg_stream_state m_oss;
 	ogg_packet m_packet;
 	ogg_page m_page;
+	bool m_vorbisInfoInitialized{};
+	bool m_vorbisDspInitialized{};
+	bool m_vorbisCommentInitialized{};
+	bool m_vorbisBlockInitialized{};
+	bool m_oggStreamInitialized{};
 };
 
 } // namespace lmms

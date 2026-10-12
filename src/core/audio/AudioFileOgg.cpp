@@ -43,6 +43,7 @@ AudioFileOgg::AudioFileOgg(OutputSettings const& outputSettings, const ch_cnt_t 
 	: AudioFileDevice(outputSettings, channels, file, audioEngine)
 {
 	vorbis_info_init(&m_vi);
+	m_vorbisInfoInitialized = true;
 
 	const auto bitrate = outputSettings.bitrate();
 	static constexpr auto maxBitrate = 320;
@@ -53,15 +54,27 @@ AudioFileOgg::AudioFileOgg(OutputSettings const& outputSettings, const ch_cnt_t 
 		return;
 	}
 
-	vorbis_analysis_init(&m_vds, &m_vi);
+	if (vorbis_analysis_init(&m_vds, &m_vi) != 0)
+	{
+		successful = false;
+		return;
+	}
+	m_vorbisDspInitialized = true;
+
 	vorbis_comment_init(&m_vc);
+	m_vorbisCommentInitialized = true;
 	vorbis_comment_add_tag(&m_vc, "Cool", "This song has been made using Zene Studio");
 
 	auto headerPackets = std::array<ogg_packet, 3>{};
 	vorbis_analysis_headerout(&m_vds, &m_vc, &headerPackets[0], &headerPackets[1], &headerPackets[2]);
 
 	srand(time(nullptr));
-	ogg_stream_init(&m_oss, rand());
+	if (ogg_stream_init(&m_oss, rand()) != 0)
+	{
+		successful = false;
+		return;
+	}
+	m_oggStreamInitialized = true;
 
 	ogg_stream_packetin(&m_oss, &headerPackets[0]);
 	ogg_stream_packetin(&m_oss, &headerPackets[1]);
@@ -73,20 +86,28 @@ AudioFileOgg::AudioFileOgg(OutputSettings const& outputSettings, const ch_cnt_t 
 		writeData(m_page.body, m_page.body_len);
 	}
 
-	vorbis_block_init(&m_vds, &m_vb);
+	if (vorbis_block_init(&m_vds, &m_vb) != 0)
+	{
+		successful = false;
+		return;
+	}
+	m_vorbisBlockInitialized = true;
 	successful = true;
 }
 
 AudioFileOgg::~AudioFileOgg()
 {
 	// writing 0 frames is how we flush any remaining data to the file
-	writeBuffer(nullptr, 0);
+	if (m_vorbisDspInitialized && m_vorbisBlockInitialized && m_oggStreamInitialized)
+	{
+		writeBuffer(nullptr, 0);
+	}
 
-	ogg_stream_clear(&m_oss);
-	vorbis_block_clear(&m_vb);
-	vorbis_dsp_clear(&m_vds);
-	vorbis_comment_clear(&m_vc);
-	vorbis_info_clear(&m_vi);
+	if (m_oggStreamInitialized) { ogg_stream_clear(&m_oss); }
+	if (m_vorbisBlockInitialized) { vorbis_block_clear(&m_vb); }
+	if (m_vorbisDspInitialized) { vorbis_dsp_clear(&m_vds); }
+	if (m_vorbisCommentInitialized) { vorbis_comment_clear(&m_vc); }
+	if (m_vorbisInfoInitialized) { vorbis_info_clear(&m_vi); }
 }
 
 void AudioFileOgg::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
