@@ -381,6 +381,7 @@ ScriptEngine::RunResult ScriptEngine::runOnWorker(const QString& source, const Q
 		QMutexLocker locker(&m_stateMutex);
 		m_lastError.clear();
 		m_logMessages.clear();
+		m_logCapture.reset();
 	}
 
 	if (QThread::currentThread() == m_workerThread)
@@ -736,19 +737,6 @@ void ScriptEngine::flushCommandsForRead()
 		return;
 	}
 	applyCommands(ScriptCommandQueueCapacity);
-}
-
-
-void ScriptEngine::logMessage(const QString& message)
-{
-	{
-		QMutexLocker locker(&m_stateMutex);
-		m_logMessages.append(message);
-	}
-	emit logged(message);
-	// The console is the part a script author sees while debugging: without it
-	// a print() only lands in the capture buffer above, which nothing renders.
-	ScriptConsole::streamLine(message);
 }
 
 

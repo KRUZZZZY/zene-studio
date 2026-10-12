@@ -37,6 +37,7 @@
 #include <functional>
 
 #include "LocklessRingBuffer.h"
+#include "ScriptConsole.h"
 
 struct lua_State;
 class QThread;
@@ -339,6 +340,7 @@ private:
 	QString m_projectDir;
 	QString m_lastError;
 	QStringList m_logMessages;
+	ScriptConsole::CaptureBuffer m_logCapture;
 };
 
 } // namespace lmms
