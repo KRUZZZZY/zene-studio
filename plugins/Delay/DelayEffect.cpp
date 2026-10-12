@@ -89,7 +89,7 @@ ProcessStatus DelayEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 
 	SampleFrame peak;
 	float length = m_delayControls.m_delayTimeModel.value();
-	float amplitude = m_delayControls.m_lfoAmountModel.value() * sr;
+	float amplitude = m_delayControls.m_lfoAmountModel.value();
 	float lfoTime = 1.0 / m_delayControls.m_lfoTimeModel.value();
 	float feedback =  m_delayControls.m_feedbackModel.value();
 	ValueBuffer *lengthBuffer = m_delayControls.m_delayTimeModel.valueBuffer();
@@ -119,7 +119,7 @@ ProcessStatus DelayEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 		m_delay->setFeedback( *feedbackPtr );
 		m_lfo->setFrequency( *lfoTimePtr );
 		m_currentLength = static_cast<int>(*lengthPtr * Engine::audioEngine()->outputSampleRate());
-		m_delay->setLength( m_currentLength + ( *amplitudePtr * ( float )m_lfo->tick() ) );
+		m_delay->setLength( m_currentLength + ( *amplitudePtr * sr * ( float )m_lfo->tick() ) );
 
 		// Process the wet signal
 		m_delay->tick( currentFrame );
