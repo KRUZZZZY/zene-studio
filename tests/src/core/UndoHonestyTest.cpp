@@ -36,6 +36,7 @@
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "ControlDeviceSupport.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -59,6 +60,33 @@ using namespace lmms;
 
 namespace
 {
+
+//! A local effect lets the journal's load inverse run without any discovered plugin modules.
+class UndoHonestyEffect final : public Effect
+{
+public:
+	explicit UndoHonestyEffect(EffectChain* parent) : Effect{&s_descriptor, parent, nullptr} {}
+	EffectControls* controls() override { return nullptr; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, f_cnt_t) override { return ProcessStatus::Continue; }
+
+private:
+	static const Plugin::Descriptor s_descriptor;
+};
+
+const Plugin::Descriptor UndoHonestyEffect::s_descriptor
+{
+	"undohonestytest",
+	"Undo honesty test effect",
+	"Effect used by UndoHonestyTest",
+	"Zene Studio",
+	0x0100,
+	Plugin::Type::Effect,
+	nullptr,
+	nullptr,
+	nullptr
+};
 
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
@@ -202,6 +230,37 @@ private slots:
 		QVERIFY2(redo.errorMessage.contains(QStringLiteral("redo")), qPrintable(redo.errorMessage));
 		QCOMPARE(chain->effects().size(), before);
 		Engine::projectJournal()->undo();  // the test's own step off the stack again
+	}
+
+	//! An effect-load redo reports when its recorded plugin module is unavailable.
+	void redoReportsLoadedEffectItCannotInstantiate()
+	{
+		EffectChain* chain = &chainOf(4);
+		QVERIFY(chain->effects().empty());
+		Effect* loaded = new UndoHonestyEffect(chain);
+		chain->appendEffect(loaded);
+
+		ControlDeviceEntry unavailable;
+		unavailable.name = QStringLiteral("unavailable_effect_module");
+		unavailable.format = QStringLiteral("builtin");
+		unavailable.kind = QStringLiteral("effect");
+		unavailable.loadable = true;
+		control::journalEffectLoad(chain, loaded, unavailable, 0);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(chain->effects().empty());
+		const ControlResult redo = run(QStringLiteral("control.redo"));
+		const bool effectStillAbsent = chain->effects().empty();
+
+		// Move this action back off the undo stack, leaving older history alone.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(chain->effects().empty());
+
+		QVERIFY2(!redo.ok, "control.redo answered success when an effect-load callback could not instantiate its plugin");
+		QCOMPARE(redo.errorKind, ControlErrorKind::NotFound);
+		QVERIFY2(redo.errorMessage.contains(QStringLiteral("NOT restored")), qPrintable(redo.errorMessage));
+		QVERIFY2(redo.errorMessage.contains(QStringLiteral("redo")), qPrintable(redo.errorMessage));
+		QVERIFY(effectStillAbsent);
 	}
 
 	//! E19: a record whose inverse is the journal, from a call that pushed no step, is refused - the older edit stays.
