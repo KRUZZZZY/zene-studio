@@ -142,6 +142,48 @@ private slots:
 #endif
 	}
 
+	//! Re-listening must not orphan a hook: close() stops THIS listener, so the
+	//! hook that closes THIS listener's socket goes with it. A later listen()
+	//! registers a fresh hook and overwrites m_shutdownHookId; if close() had
+	//! left the old hook registered, the destructor (which removes only the
+	//! newest id) would leave the orphan behind - still capturing `this` - and
+	//! the forced-exit shutdown path would call close() on freed memory.
+	void aClosedListenerTakesItsHookWithItBeforeTheNextListen()
+	{
+#if !defined(Q_OS_UNIX)
+		QSKIP("the control socket is AF_UNIX only; listen() refuses on this platform");
+#else
+		ControlRegistry* registry = ControlRegistry::instance();
+		QTemporaryDir dir(QDir::tempPath() + QStringLiteral("/zene-hook-XXXXXX"));
+		QVERIFY2(dir.isValid(), "no temporary directory for the socket path");
+		const QString path = dir.filePath(QStringLiteral("relisten.sock"));
+
+		{
+			ControlServer server(registry);
+			QString error;
+
+			// First listen: exactly one hook.
+			QVERIFY2(server.listen(path, &error), qPrintable(error));
+			QVERIFY2(server.isListening(), "listen() succeeded without a listener");
+			QCOMPARE(registry->shutdownHookCount(), 1);
+
+			// Stop listening: the hook that closes THIS listener must go with it,
+			// not stay behind waiting for the next listen() to overwrite its id.
+			server.close();
+			QVERIFY2(!server.isListening(), "close() left the listener running");
+			QCOMPARE(registry->shutdownHookCount(), 0);
+
+			// Re-listen: a fresh hook, not a second one orphaned behind the old.
+			QVERIFY2(server.listen(path, &error), qPrintable(error));
+			QCOMPARE(registry->shutdownHookCount(), 1);
+		}
+
+		// The owner died: the newest hook is removed by the destructor; the old
+		// one must already be gone. A hook left behind captures freed `this`.
+		QCOMPARE(registry->shutdownHookCount(), 0);
+#endif
+	}
+
 	//! Removal is targeted, ids are never reused, and running twice runs once:
 	//! the store is the process's, so a second pass must not re-run what the
 	//! first already did.
