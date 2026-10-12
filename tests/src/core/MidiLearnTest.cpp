@@ -84,6 +84,16 @@ private slots:
 		MidiLearn::instance()->setEnabled(false);
 	}
 
+	void NegativeTickLengthReturnsZeroFrames()
+	{
+		QCOMPARE(TimePos(-1).frames(1.0f), f_cnt_t{0});
+	}
+
+	void NegativeFramesPerTickReturnsZeroFrames()
+	{
+		QCOMPARE(TimePos(1).frames(-1.0f), f_cnt_t{0});
+	}
+
 	// The positive case: arm learn, point it at a control, feed the same
 	// synthetic CC the MIDI client feeds, and a binding must appear on that
 	// control - with the channel and controller number that were transmitted.
