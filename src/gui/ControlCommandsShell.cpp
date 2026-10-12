@@ -36,6 +36,7 @@
 #include <QPixmap>
 #include <QPointer>
 #include <QJsonObject>
+#include <QStatusBar>
 #include <QUrl>
 
 #include "AboutDialog.h"
@@ -182,9 +183,10 @@ void registerOnlineHelp(ControlRegistry& registry)
 		{QStringLiteral("opened"), booleanProperty()}});
 	cmd.requiresDecl = QStringList{QStringLiteral("display"), QStringLiteral("human")};
 	cmd.handler = [](const QJsonObject&) {
-		if (mainWindow() == nullptr) { return noInterface(QStringLiteral("app.online_help")); }
+		gui::MainWindow* window = mainWindow();
+		if (window == nullptr) { return noInterface(QStringLiteral("app.online_help")); }
 		const QString url = QString::fromLatin1(kHelpUrl);
-		const bool opened = QDesktopServices::openUrl(QUrl(url));
+		const bool opened = openOnlineHelp(window);
 		return ControlResult::success(QJsonObject{{QStringLiteral("url"), url},
 			{QStringLiteral("opened"), opened}});
 	};
@@ -431,6 +433,22 @@ void registerShellCommands(ControlRegistry& registry)
 void dispatchShellCommand(const QString& id, const QJsonObject& args)
 {
 	ControlRegistry::instance()->invoke(id, args);
+}
+
+bool openOnlineHelp(gui::MainWindow* window)
+{
+	const QString url = QString::fromLatin1(kHelpUrl);
+	if (QDesktopServices::openUrl(QUrl(url))) { return true; }
+	// The desktop would not take it (no URL handler), and the menu throws the command's own
+	// `opened: false` away, so a user who clicked Help > Online Help would see nothing happen
+	// and be given no reason. The status bar says it where it can be read, with the URL to
+	// open by hand. Never a modal box: this code also runs in an unattended instance, where
+	// an exec() is a wait on a click that never comes (isUnattendedRun, task #625).
+	window->statusBar()->showMessage(
+		QCoreApplication::translate("ControlCommandsShell",
+			"Could not open %1 - no application on this system is registered to open it.")
+			.arg(url), 8000);
+	return false;
 }
 
 } // namespace lmms

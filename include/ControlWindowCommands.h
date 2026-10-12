@@ -72,6 +72,16 @@ LMMS_EXPORT void registerShellCommands(ControlRegistry& registry);
 //! so the action and the socket share one implementation (SPEC A11).
 LMMS_EXPORT void dispatchShellCommand(const QString& id, const QJsonObject& args = QJsonObject());
 
+//! Help > Online Help's implementation: hands the documentation URL to the desktop and,
+//! when the desktop will not take it (no URL handler), says so in the window's status bar -
+//! the menu discards the command's own `opened: false`, so nothing else would.
+//! app.online_help declares `requires: human`, which the registry refuses for EVERY
+//! caller (ControlRegistry::checkRequires), so the action calls this directly - the same
+//! arrangement as the Telemetry action and its openTelemetryConsentScreen (MainWindow.cpp).
+//! @a window is the window the menu belongs to; it must not be null. Returns whether the
+//! desktop took the URL.
+LMMS_EXPORT bool openOnlineHelp(gui::MainWindow* window);
+
 //! The `editor` values window.toggle accepts, in the menu's Ctrl+1..7 order.
 LMMS_EXPORT QStringList windowEditorNames();
 

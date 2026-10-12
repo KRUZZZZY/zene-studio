@@ -2620,6 +2620,7 @@ tests/src/gui/NoteEditorFlTest.cpp
 tests/src/gui/NoteEditorTest.cpp
 tests/src/gui/NoteGridTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
+tests/src/gui/OnlineHelpNoticeTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/RackMenuTest.cpp
