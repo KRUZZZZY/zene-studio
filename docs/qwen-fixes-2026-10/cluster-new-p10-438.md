@@ -2,71 +2,60 @@
 
 Verdict: **FIXED**
 
-## The bug
+## Finding and product fix
 
-`tests/src/core/VideoTestClip.h` makes the two-second test clip with libavcodec when the
-ffmpeg program is absent. Three allocation results were used without being checked:
+The allocation failures in `tests/src/core/VideoTestClip.h` were real. `allocateFrame` now
+returns false at line 100 when `av_frame_alloc()` returns null. `addStream` returns false at line
+116 if either `avformat_new_stream()` or `avcodec_alloc_context3()` returns null, before either
+pointer is dereferenced. These production checks landed in the preceding round 1 commit
+`2861e4e67`.
 
-- `allocateFrame` (VideoTestClip.h:99): `e.frame = av_frame_alloc();` then immediately
-  `e.frame->format = ...` — `av_frame_alloc()` returns null on OOM, so the null is
-  dereferenced and the test process crashes instead of reporting the clip could not be made.
-- `addStream` (VideoTestClip.h:113-114): `e.stream = avformat_new_stream(...)` and
-  `e.codec = avcodec_alloc_context3(codec)` are used (`setup(e.codec)`,
-  `e.stream->codecpar`) without checking either result.
+## Round 2 regression changes
 
-## The fix
+`tests/src/core/VideoTrackTest.cpp:53` now guards the POSIX dynamic symbol hooks and fork isolation
+to Linux and macOS; other platforms, including FFmpeg-enabled Windows, compile the test without
+those headers or APIs and skip only this allocation-injection case. The test interposes
+`av_frame_alloc` and `avcodec_alloc_context3`. Its `avformat_new_stream` hook arms codec failure
+only after the real call returns a non-null stream. The codec assertion at line 445 requires
+`addStream` to return false with `stream != nullptr` and `codec == nullptr`. Each fault case runs in
+a child so the reversed-check crash becomes a normal test failure.
 
-Null-check each allocation result and return failure before using it:
-
-- `tests/src/core/VideoTestClip.h:100` — `if (e.frame == nullptr) { return false; }` after
-  `av_frame_alloc()`.
-- `tests/src/core/VideoTestClip.h:116` — `if (e.stream == nullptr || e.codec == nullptr) { return false; }`
-  after `avformat_new_stream` / `avcodec_alloc_context3`.
-
-Behaviour-preserving otherwise: the success path is unchanged; only the failure path now
-returns false instead of dereferencing null.
-
-## The regression test
-
-`tests/src/core/VideoTrackTest.cpp` — new case `failedAllocationsAreReportedNotCrashed()`.
-It interposes libc's `posix_memalign` from the test executable (default visibility, exported
-via the `ENABLE_EXPORTS` line added to the `VideoTrackTest` target in `tests/CMakeLists.txt`),
-so libavutil's `av_mallocz` resolves through it and every libavutil allocation fails — the
-way an out-of-memory run would. The failing call runs in a forked child so a buggy null
-dereference shows up as a clean assertion failure rather than killing the test binary.
+`tests/CMakeLists.txt:3789` keeps `ENABLE_EXPORTS` on `VideoTrackTest` for the hooks. Its inherited
+file reason is recorded in `tests/upstream-modifications.txt:764`.
 
 ## Evidence
 
-| Step | Command (from worktree / build/tests) | EXIT |
-|---|---|---|
-| RED — fix reverted | `git diff -- tests/src/core/VideoTestClip.h > .../fix.patch && git apply -R .../fix.patch` | 0 |
-| rebuild | `cmake --build build --target VideoTrackTest > .../build-8.log 2>&1` | 0 |
-| run | `QT_QPA_PLATFORM=offscreen ctest -R '^VideoTrackTest$' --output-on-failure > .../test-8.log 2>&1` | **8** |
-| GREEN — fix re-applied | `git apply .../fix.patch` | 0 |
-| rebuild | `cmake --build build --target VideoTrackTest > .../build-9.log 2>&1` | 0 |
-| run | `QT_QPA_PLATFORM=offscreen ctest -R '^VideoTrackTest$' --output-on-failure > .../test-9.log 2>&1` | **0** |
+The fix patch was extracted from the already committed production change because the product file
+was not modified in round 2:
 
-RED log (test-8.log) failing assertion:
-`FAIL! : VideoTrackTest::failedAllocationsAreReportedNotCrashed() 'failedAllocationIsReported([&frameCase] { return videotest::allocateFrame(frameCase); })' returned FALSE. (allocateFrame dereferenced the failed av_frame_alloc)`
+| Command | Exit |
+|---|---:|
+| `git show HEAD -- tests/src/core/VideoTestClip.h > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-438.r2/logs/fix.patch` | 0 |
+| `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-438.r2/logs/fix.patch` | 0 |
+| `cmake --build build --target zene VideoTrackTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-438.r2/logs/build-9.log 2>&1; echo BUILD_EXIT=$?` | 0 |
+| From `build/tests`: `QT_QPA_PLATFORM=offscreen ctest -R '^VideoTrackTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-438.r2/logs/test-8.log 2>&1; echo EXIT=$?` | **8 (RED)** |
+| `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-438.r2/logs/fix.patch` | 0 |
+| `cmake --build build --target zene VideoTrackTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-438.r2/logs/build-10.log 2>&1; echo BUILD_EXIT=$?` | 0 |
+| From `build/tests`: `QT_QPA_PLATFORM=offscreen ctest -R '^VideoTrackTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-438.r2/logs/test-9.log 2>&1; echo EXIT=$?` | **0 (GREEN)** |
+| From `build/tests`: `QT_QPA_PLATFORM=offscreen ctest -R '^VideoTrackTest$' --output-on-failure -V > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-438.r2/logs/test-10.log 2>&1; echo EXIT=$?` | 0 |
+| `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-438.r2/logs/gate-3.log 2>&1; echo EXIT=$?` | 0 |
+| `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-438.r2/logs/gate-4.log 2>&1; echo EXIT=$?` | 0 |
 
-GREEN log (test-9.log): `100% tests passed, 0 tests failed out of 1`.
+With the product guards reversed, the codec-first regression crashed in the child and failed with
+the assertion “codec allocation failure was not reported after creating its stream.” After
+restoration, the verbose run reports 13 passed, 0 failed, 1 skipped inside the single registered
+`VideoTrackTest` ctest. The skip is the existing no-FFmpeg case; FFmpeg is enabled in this build.
 
-Affected-family count: `ctest -R '^VideoTrackTest$'` runs 1 ctest; the binary holds 14 cases
-(RED: 12 passed, 1 failed, 1 skipped; GREEN: 13 passed, 1 skipped — the skip is the
-no-FFmpeg-build case, which this build has FFmpeg so it skips).
+The early fail-all hook iteration was discarded because it also caused stream creation to fail;
+the final hook injects the codec failure only after stream creation succeeds. Intermediate logs
+remain in the same log directory. The `fff` grep tool was unavailable in this environment, so logs
+were searched with `rg`.
 
-Gates:
-- `bash tests/complexity-gate.sh --check` → EXIT=0
-- `bash tests/file-length-gate.sh --check` → EXIT=0
+## Files in the round 2 commit
 
-## Files committed
+- `tests/src/core/VideoTrackTest.cpp` — platform guard and independent FFmpeg allocation failures.
+- `tests/CMakeLists.txt` — accurate hook comment; retains `ENABLE_EXPORTS`.
+- `tests/upstream-modifications.txt` — updated reason for the inherited CMake file.
+- `docs/qwen-fixes-2026-10/cluster-new-p10-438.md` — this evidence report.
 
-- `tests/src/core/VideoTestClip.h` — the fix (null checks).
-- `tests/src/core/VideoTrackTest.cpp` — the regression test + interposition helper.
-- `tests/CMakeLists.txt` — `ENABLE_EXPORTS` on the `VideoTrackTest` target (test link flag only).
-- `tests/upstream-modifications.txt` — reason for the `tests/CMakeLists.txt` change.
-- `docs/qwen-fixes-2026-10/cluster-new-p10-438.md` — this report.
-
-`VideoTestClip.h` and `VideoTrackTest.cpp` were already registered in `tests/fork-sources.txt`
-(fork-new); `tests/CMakeLists.txt` is inherited and now carries the new reason in
-`tests/upstream-modifications.txt`.
+The production null checks remain in `tests/src/core/VideoTestClip.h`, already committed in round 1.

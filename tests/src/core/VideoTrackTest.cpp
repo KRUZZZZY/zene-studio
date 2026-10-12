@@ -50,11 +50,11 @@
 #include "VideoTestClip.h"
 #include "VideoWindow.h"
 
-#ifdef ZENE_HAVE_FFMPEG
+#if defined(ZENE_HAVE_FFMPEG) && (defined(Q_OS_LINUX) || defined(Q_OS_MACOS))
+#define ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
 #include <dlfcn.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <cerrno>
 #include <atomic>
 #include <functional>
 #endif
@@ -99,25 +99,23 @@ bool bluish(const QImage& image)
 
 } // namespace
 
-#ifdef ZENE_HAVE_FFMPEG
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
 namespace
 {
 
-//! Test-only libavutil allocator switch: with the flag set, every libavutil allocation fails,
-//! the way an out-of-memory run would; the clip's makers must report that, not crash.
-std::atomic_bool avMallocFails{false};
+std::atomic_bool failFrameAllocation{false};
+std::atomic_bool failCodecContextAllocation{false};
+std::atomic_bool failCodecAfterStream{false};
 
-//! Run @a make in a child process where every libavutil allocation fails; true only when the child
-//! exits normally reporting failure - a buggy dereference of the null result kills the child instead.
-bool failedAllocationIsReported(const std::function<bool()>& make)
+//! Run @a checkFailure with one FFmpeg allocation forced to fail; crashes stay inside the child.
+bool allocationFailureIsReported(const std::function<bool()>& checkFailure, std::atomic_bool& fail)
 {
 	const pid_t child = fork();
 	if (child < 0) { return false; }
 	if (child == 0)
 	{
-		avMallocFails.store(true, std::memory_order_relaxed);
-		const bool ok = make();
-		_exit(ok ? 1 : 0);
+		fail.store(true, std::memory_order_relaxed);
+		_exit(checkFailure() ? 0 : 1);
 	}
 	int status = 0;
 	if (waitpid(child, &status, 0) < 0) { return false; }
@@ -126,18 +124,34 @@ bool failedAllocationIsReported(const std::function<bool()>& make)
 
 } // namespace
 
-//! At file scope on purpose: the test executable must export this symbol (default visibility)
-//! so libavutil's av_mallocz resolves its posix_memalign call to it - see the ENABLE_EXPORTS line.
+//! At file scope so FFmpeg calls from VideoTestClip resolve to these test-only failure hooks.
 #pragma GCC visibility push(default)
-extern "C" int posix_memalign(void** p, std::size_t alignment, std::size_t size)
+extern "C" AVFrame* av_frame_alloc()
 {
-	if (avMallocFails.load(std::memory_order_relaxed)) { *p = nullptr; return ENOMEM; }
-	using PosixMemalign = int (*)(void**, std::size_t, std::size_t);
-	static const PosixMemalign real = reinterpret_cast<PosixMemalign>(dlsym(RTLD_NEXT, "posix_memalign"));
-	return real(p, alignment, size);
+	if (failFrameAllocation.load(std::memory_order_relaxed)) { return nullptr; }
+	static const auto real = reinterpret_cast<decltype(&av_frame_alloc)>(dlsym(RTLD_NEXT, "av_frame_alloc"));
+	return real == nullptr ? nullptr : real();
+}
+
+extern "C" AVCodecContext* avcodec_alloc_context3(const AVCodec* codec)
+{
+	if (failCodecContextAllocation.load(std::memory_order_relaxed)) { return nullptr; }
+	static const auto real = reinterpret_cast<decltype(&avcodec_alloc_context3)>(dlsym(RTLD_NEXT, "avcodec_alloc_context3"));
+	return real == nullptr ? nullptr : real(codec);
+}
+
+extern "C" AVStream* avformat_new_stream(AVFormatContext* context, const AVCodec* codec)
+{
+	static const auto real = reinterpret_cast<decltype(&avformat_new_stream)>(dlsym(RTLD_NEXT, "avformat_new_stream"));
+	AVStream* stream = real == nullptr ? nullptr : real(context, codec);
+	if (stream != nullptr && failCodecAfterStream.exchange(false, std::memory_order_relaxed))
+	{
+		failCodecContextAllocation.store(true, std::memory_order_relaxed);
+	}
+	return stream;
 }
 #pragma GCC visibility pop
-#endif // ZENE_HAVE_FFMPEG
+#endif // ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
 
 class VideoTrackTest : public QObject
 {
@@ -420,24 +434,28 @@ private slots:
 		song->clearProject();
 	}
 
-	//! Simulated OOM (VideoTestClip.h): a failed libavutil allocation is reported, not dereferenced.
+	//! A failed FFmpeg allocation is reported, not dereferenced.
 	void failedAllocationsAreReportedNotCrashed()
 	{
-#ifdef ZENE_HAVE_FFMPEG
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
 		if (!VideoDecoder::available()) { QSKIP("no FFmpeg in this build"); }
+		AVFormatContext* out = nullptr;
+		QVERIFY(avformat_alloc_output_context2(&out, nullptr, "matroska", "clip.mkv") >= 0);
+		videotest::Encoder streamCase;
+		QVERIFY2(allocationFailureIsReported([&out, &streamCase] {
+			const bool added = videotest::addStream(out, streamCase, AV_CODEC_ID_MPEG4, videotest::setupVideo);
+			return !added && streamCase.stream != nullptr && streamCase.codec == nullptr;
+		}, failCodecAfterStream), "codec allocation failure was not reported after creating its stream");
+		avformat_free_context(out);
 		videotest::Encoder frameCase;
 		frameCase.codec = avcodec_alloc_context3(avcodec_find_encoder(AV_CODEC_ID_MPEG4));
 		QVERIFY(frameCase.codec != nullptr);
 		videotest::setupVideo(frameCase.codec);
-		QVERIFY2(failedAllocationIsReported([&frameCase] { return videotest::allocateFrame(frameCase); }),
+		QVERIFY2(allocationFailureIsReported([&frameCase] { return !videotest::allocateFrame(frameCase); },
+			failFrameAllocation),
 			"allocateFrame dereferenced the failed av_frame_alloc");
-		AVFormatContext* out = nullptr;
-		QVERIFY(avformat_alloc_output_context2(&out, nullptr, "matroska", "clip.mkv") >= 0);
-		videotest::Encoder streamCase;
-		QVERIFY2(failedAllocationIsReported([&out, &streamCase] {
-			return videotest::addStream(out, streamCase, AV_CODEC_ID_MPEG4, videotest::setupVideo); }),
-			"addStream dereferenced a failed stream or codec allocation");
-		avformat_free_context(out);
+#elif defined(ZENE_HAVE_FFMPEG)
+		QSKIP("FFmpeg allocation failure hooks require Linux or macOS");
 #else
 		QSKIP("this build has no FFmpeg");
 #endif
