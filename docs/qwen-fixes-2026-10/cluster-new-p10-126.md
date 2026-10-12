@@ -14,6 +14,15 @@
 
 The affected CTest family is `AudioPluginTest`: **1 CTest test** per run. The two new QtTest slots both failed before the guard and both failed again after the reverse-patch check. Each failure reported that `add_cyclic_vector()` returned true for length zero.
 
+| Evidence | Exact command or result |
+| --- | --- |
+| RED | `ctest -R '^AudioPluginTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-126.r1/logs/test-1.log 2>&1; echo EXIT=$?` — `EXIT=8` |
+| GREEN | `ctest -R '^AudioPluginTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-126.r1/logs/test-10.log 2>&1; echo EXIT=$?` — `EXIT=0` |
+| Affected-family count | `AudioPluginTest`: 1 CTest test; 2 new QtTest slots |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-126.r1/logs/gate-5.log 2>&1; echo EXIT=$?` — `EXIT=0` |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-126.r1/logs/gate-6.log 2>&1; echo EXIT=$?` — `EXIT=0` |
+| Files committed | `plugins/Xpressive/ExprSynth.cpp`; `tests/src/plugins/AudioPluginTest.cpp`; `tests/exprtk.hpp`; `tests/fork-sources.txt`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p10-126.md` |
+
 ## RED and GREEN commands
 
 All CTest commands ran from `build/tests`. RED before the fix:
