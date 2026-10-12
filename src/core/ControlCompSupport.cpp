@@ -116,33 +116,6 @@ QJsonArray lanesState(const Track* track)
 }
 
 
-QJsonArray takeGroupsState(const Track* track)
-{
-	QJsonArray groups;
-	if (track == nullptr) { return groups; }
-	const TakeLaneModel& model = track->takeLanes();
-	for (const TakeGroupSelection& selection : model.takeGroups())
-	{
-		QJsonObject entry;
-		entry.insert(QStringLiteral("group"), selection.groupId);
-		entry.insert(QStringLiteral("active_lane"), selection.activeLane);
-		entry.insert(QStringLiteral("user_chosen"), selection.userChosen);
-		QJsonArray takes;
-		for (const Clip* clip : track->getClips())
-		{
-			if (clip == nullptr || clip->takeGroupId() != selection.groupId) { continue; }
-			QJsonObject take;
-			take.insert(QStringLiteral("clip"), takeClipId(clip));
-			take.insert(QStringLiteral("lane"), clip->laneIndex());
-			takes.append(take);
-		}
-		entry.insert(QStringLiteral("takes"), takes);
-		groups.append(entry);
-	}
-	return groups;
-}
-
-
 QJsonObject segmentState(const TakeLaneSegment& seg)
 {
 	QJsonObject out;

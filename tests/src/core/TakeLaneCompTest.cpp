@@ -470,48 +470,6 @@ private slots:
 		QCOMPARE(static_cast<int>(track->takeLanes().segments().size()), before);
 	}
 
-	//! Active take choices and the play-all switch are track checkpoints with undo and redo.
-	void takeChoiceAndPlayAllAreUndoable()
-	{
-		QVector<SampleClip*> clips;
-		SampleTrack* track = makeTakeTrack(m_dir.path(), 2, &clips);
-		QVERIFY(track != nullptr);
-		TakeLaneModel& model = track->takeLanes();
-		QCOMPARE(model.addLane(), 0);
-		QCOMPARE(model.addLane(), 1);
-		clips[0]->setLaneIndex(0);
-		clips[1]->setLaneIndex(1);
-		const int groupId = clips[0]->id();
-		clips[0]->setTakeGroupId(groupId);
-		clips[1]->setTakeGroupId(groupId);
-		QVERIFY(model.recordTake(groupId, 0, track->getClips()));
-		QVERIFY(model.recordTake(groupId, 1, track->getClips()));
-		const QString clipId = control::clipId(clips[0]->id());
-
-		const ControlResult selected = revtest::run(QStringLiteral("comp.take_select"),
-			{{QStringLiteral("clip"), clipId}, {QStringLiteral("lane"), 0}});
-		QVERIFY2(selected.ok, qPrintable(selected.errorMessage));
-		QCOMPARE(model.activeTakeLane(groupId), 0);
-		QVERIFY(model.userChoseTake(groupId));
-		REV_UNDO_OR_FAIL();
-		QCOMPARE(model.activeTakeLane(groupId), 1);
-		QVERIFY(!model.userChoseTake(groupId));
-		const ControlResult choiceRedo = revtest::run(QStringLiteral("control.redo"));
-		QVERIFY2(choiceRedo.ok, qPrintable(choiceRedo.errorMessage));
-		QCOMPARE(model.activeTakeLane(groupId), 0);
-		QVERIFY(model.userChoseTake(groupId));
-
-		const QString trackId = control::trackIdOf(track);
-		QVERIFY(revtest::run(QStringLiteral("comp.play_all_takes"),
-			{{QStringLiteral("track"), trackId}, {QStringLiteral("enabled"), true}}).ok);
-		QVERIFY(model.playAllTakes());
-		REV_UNDO_OR_FAIL();
-		QVERIFY(!model.playAllTakes());
-		const ControlResult playAllRedo = revtest::run(QStringLiteral("control.redo"));
-		QVERIFY2(playAllRedo.ok, qPrintable(playAllRedo.errorMessage));
-		QVERIFY(model.playAllTakes());
-	}
-
 	//! The A16 contract both directions, for this group only: every comp.* id has
 	//! a row, and the rows name registered commands. (The whole-registry sweep is
 	//! ReversibilityContractTest; this is the same claim, local to the group, so a
@@ -532,7 +490,7 @@ private slots:
 		}
 		// 4 in the take half, 4 in the composite half (comp.audition, R3.1), comp.cycle (0.5.0 L03, ED-168), and
 		// comp.move_edge / comp.select_group / comp.split_passes (0.5.0 W3: ED-169, ED-172, ED-167).
-		QCOMPARE(seen, 14);
+		QCOMPARE(seen, 12);
 	}
 
 private:

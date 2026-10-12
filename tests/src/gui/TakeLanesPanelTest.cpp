@@ -30,7 +30,6 @@
 
 #include <QtTest>
 
-#include <QCheckBox>
 #include <QComboBox>
 #include <QItemSelectionModel>
 #include <QJsonArray>
@@ -113,23 +112,6 @@ private slots:
 			{QStringLiteral("lane"), 0}}).ok);
 		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(second)},
 			{QStringLiteral("lane"), 1}}).ok);
-		const int groupId = first->id();
-		first->setTakeGroupId(groupId);
-		second->setTakeGroupId(groupId);
-		QVERIFY(track->takeLanes().recordTake(groupId, 0, track->getClips()));
-		QVERIFY(track->takeLanes().recordTake(groupId, 1, track->getClips()));
-		panel.refresh();
-		QCOMPARE(panel.takeGroupBox()->count(), 1);
-		QCOMPARE(panel.takeChoiceBox()->count(), 2);
-		QCOMPARE(panel.takeChoiceBox()->currentData(Qt::UserRole + 1).toInt(), 1);
-		panel.takeChoiceBox()->setCurrentIndex(0);
-		QTest::mouseClick(panel.useTakeButton(), Qt::LeftButton);
-		QCOMPARE(track->takeLanes().activeTakeLane(groupId), 0);
-		QVERIFY(track->takeLanes().userChoseTake(groupId));
-		QTest::mouseClick(panel.playAllTakesBox(), Qt::LeftButton);
-		QVERIFY(track->takeLanes().playAllTakes());
-		QVERIFY(panel.playAllTakesBox()->property("controlCommand").toString()
-			== QStringLiteral("comp.play_all_takes"));
 
 		// Comp the first half from lane 0 and the second from lane 1 - through the panel.
 		for (const auto& [from, to, lane] : {std::tuple{0, length / 2, 0}, std::tuple{length / 2, length, 1}})

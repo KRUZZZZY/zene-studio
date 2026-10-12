@@ -76,8 +76,6 @@ LMMS_EXPORT bool slipAccepted(const Track* track, int srcpos, ControlResult* err
 LMMS_EXPORT QJsonObject laneState(const Track* track, const TakeLane& lane);
 //! Every lane of \p track, in index order.
 LMMS_EXPORT QJsonArray lanesState(const Track* track);
-//! Recorded pass groups with active lane, explicit-choice flag and clip/lane members.
-LMMS_EXPORT QJsonArray takeGroupsState(const Track* track);
 //! One composite segment: begin, end, lane, srcpos (its slip, include/TakeLane.h) and the length it covers.
 LMMS_EXPORT QJsonObject segmentState(const TakeLaneSegment& seg);
 /*! What the composite resolves to, one entry per segment: the take clip that

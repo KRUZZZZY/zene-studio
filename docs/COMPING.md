@@ -18,30 +18,24 @@ decides (§2.2). Concretely:
 - the takes stay in the track's own clip list; a take is just a clip that carries a **lane tag**,
   `Clip::laneIndex()` (default 0), serialised as the `lane` attribute on the clip's own element
   (design §2.6);
-- the lane itself holds only `{id, index, name}` — no audio of its own and no mute flag. Loop
-  recording groups each pass by the armed source clip's stable id; the track model stores one
-  active lane and a `user_chosen` bit for that group. A later pass selects itself while the bit is
-  false; once the user chooses a take, later passes keep that choice. Pass creation never changes
-  any clip's mute flag. Ordinary playback reads the active lane from an atomic clip mirror, and
-  `comp.play_all_takes` bypasses that gate to mix every unmuted pass on the track;
+- the lane itself holds only `{id, index, name}` — no audio of its own, and **no mute flag**: per-lane
+  audibility is the take clip's own `muted`, which already exists, is already serialised and is
+  already what the engine reads. A second mute flag on the lane would be state nothing renders;
   **since ARCH-4 S7 the lane is a first-class ENTITY**: its `id` comes from the project's `lane-`
   id family the moment the lane is added (`ProjectIds`, SPEC-ARCH-4 1.5 R4 — the family S3
   declared and named "entity lands with S7"), and the document carries it in the top-level
   `<z:lanes>` section (§3 below). The `index` stays what it always was: the per-track slot the
   take clips and composite segments reference, stable across save/load (I7);
-- **lane indices are stable** (design I7): a removal never renumbers the survivors, and a
-  removed index is never recycled. Clips retain their lane tag after removal, so reusing that
-  number could make an earlier pass alias a later pass. The model persists its next index even
-  when the last lane is removed. `removeLane` re-points every
+- **lane indices are stable** (design I7): a removal never renumbers the survivors, and the next
+  lane added takes the lowest index the track is not using. `removeLane` re-points every
   composite segment that named the removed lane to the track's **base lane** (the lowest index it
   still has) rather than leaving a hole, because a composite is total over its span (§2 below);
   removing the last lane clears the composite entirely.
 
-`comp.assign` tags an existing clip as a take; loop recording also creates one take-lane clip per
-pass and gives the passes of that armed source clip one persistent group id. The lane tag rides
-`Clip::saveClipEdits` on the clip's own element. GUI clip paste and `range.paste` create an
-independent ordinary clip: they clear the copied take-group and lane tags to lane 0. The source
-clip remains in its original group and lane.
+`comp.assign` is the one way a clip becomes a take. It refuses a **MIDI** clip with a typed error:
+this release's take lanes carry audio takes (the design's own scope line, §3: the container is
+type-agnostic, the comp path built here is the audio one), and the lane tag rides
+`Clip::saveClipEdits`, which only `SampleClip` calls today.
 
 ## 2. What the COMPOSITE is, and what makes it non-destructive
 
@@ -101,14 +95,13 @@ always did — section, `z:` binding and all):
   <song>
     <trackcontainer>
       <track type="2" name="gtr" id="3">
-        <sampleclip pos="0" len="384" src="take1.wav" lane="1" takegroup="3"/>
+        <sampleclip pos="0" len="384" src="take1.wav" lane="1"/>  <!-- the take tag, unchanged -->
       </track>
     </trackcontainer>
     <z:lanes v="1">
-      <z:tracklanes track="3" playall="1">            <!-- the track's lane list, by track id -->
+      <z:tracklanes track="3">                        <!-- the track's lane list, by track id -->
         <z:lane id="12" index="0" name="take 1"/>     <!-- the lane ENTITY (lane- id family) -->
         <z:lane id="13" index="1"/>
-        <z:takegroup group="3" active="1" user="1"/> <!-- remembered user choice for loop passes -->
         <z:segment begin="0"   end="192" lane="1" slip="24"/>  <!-- slip only when non-zero -->
         <z:segment begin="192" end="384" lane="0"/>
       </z:tracklanes>
@@ -147,12 +140,6 @@ two on `Song::isSavingProject()`.
   attribute is absent (`CLIP_RESTORE_SCHEMA`, `"lane"` → `"0"`). A journal checkpoint restores by
   re-loading, so state that survived its own absence could never be undone — the trap the
   `zene-control-command-group` skill records, and the test covers both halves.
-- **Active loop takes use the same persisted model.** Recorded pass clips carry a `takegroup`
-  attribute; the track's `<z:tracklanes>` or journal `<takelanes>` carries one
-  `<z:takegroup group active user>` per group and an optional `playall="1"`. The group id is the
-  armed source clip's stable clip id. Loading republishes the active lane to atomic clip mirrors
-  before playback. Absence of `takegroup`, the group entry or `playall` resets each value to its
-  default.
 - **Lane ids follow the clip-id rule** (SPEC-stable-ids R4/R3): allocated when the lane is added,
   taken from the file's `id` on load, or counted as a load assignment when absent; the file's
   `next-id` is floored by what the section carries.
@@ -181,11 +168,9 @@ addressable from `comp.` and every id has exactly one A16 row to review. The div
 | `comp.lane_remove` | `track`, `lane` | `true_inverse` (Track checkpoint) | removes a lane; segments that named it fall back to the base lane; the last lane clears the composite |
 | `comp.lane_list` | `track`? | `not_mutating` | every track's lanes (or one track's) with the clips assigned to each |
 | `comp.assign` | `clip`, `lane` | `true_inverse` (Clip checkpoint) | tags an audio clip as a take of that lane; the recorded inverse op is the real command `comp.assign` with the previous lane |
-| `comp.take_select` | `clip`, `lane` | `true_inverse` (Track checkpoint) | chooses a pass in the clip's recorded group and remembers that choice through later loop passes |
-| `comp.play_all_takes` | `track`, `enabled` | `true_inverse` (Track checkpoint) | mixes every unmuted take on the track, or returns to active-take selection |
 | `comp.select` | `track`, `begin`, `end`, `lane`, `srcpos`? | `true_inverse` (Track checkpoint) | per-segment selection: paints `[begin,end)` with that lane |
 | `comp.rebuild` | `track`, `begin`?, `end`? | `true_inverse` (Track checkpoint) | sorts, merges continuous same-lane neighbours, and — given a span — clamps the composite to exactly `[begin,end)` and fills every gap with the base lane |
-| `comp.get_state` | `track` | `not_mutating` | lanes + take groups and active/user-choice state + play-all mode + composite resolution |
+| `comp.get_state` | `track` | `not_mutating` | lanes + composite + what each segment resolves to (take clip and source frame, `bound` or `unresolved`) |
 
 Refusals are typed and happen **before** the journal checkpoint, so a refused call writes nothing
 and leaves no undo step behind: an empty or reversed range (`invalid_args`), a lane the track does
@@ -194,18 +179,19 @@ not have (`not_found`, naming the lanes it does have), a MIDI clip (`refused`), 
 
 ## 5. What is NOT built here (read this before assuming)
 
-- **Playback priority.** When a composite exists it decides which take lanes sound, with the
-  existing 64-frame lane-switch ramp. Without a composite, exactly the active pass in each recorded
-  group sounds. `comp.play_all_takes` bypasses active-pass selection and sums all unmuted takes on
-  the track. Audition temporarily replaces the composite and remains monitoring state; it is not
-  saved or journalled. Slipped spans read their takes slipped (§2.3).
-- **The Take lanes panel is wired.** It exposes lane audition, the active pass selector, the
-  track-wide Play all takes checkbox, range comping and consolidation. The panel reads
-  `comp.get_state` and runs registered `comp.*` commands, so the GUI and control surface share one
-  state model.
-- **Scope.** The active-take group is created by loop recording on sample clips. MIDI clips retain
-  their note-level comp behavior; they do not participate in this sample recording group's
-  `takegroup` selection. The existing comp consolidation remains available from the panel.
+- **The composite PLAYS (R3.1, 2026-09-29).** Each take's play handle snapshots the spans the
+  composite selects for ITS lane (`SamplePlayHandle::snapshotComp`, fixed-size, no allocation) and
+  sounds only there, with a 64-frame ramp at every lane switch, so a switch is a short crossfade and
+  not a click. A track with no composite has no gate and renders byte-for-byte as before. **Audition**
+  is built too: `comp.audition {track, lane}` plays that lane's takes whole and silences the others,
+  as monitoring state that is not saved or journalled. `TakeLaneCompPlaybackTest` holds both. Since 0.5.0 E2
+  a slipped span reads its take slipped (§2.3).
+- **No interface at all.** No lane geometry, no lane header, no lane handle, no comping gesture,
+  and no waveform drawing of the composite: `src/gui/` is untouched, and the release notes and
+  `docs/KNOWN-LIMITATIONS.md` carry the one-line absence.
+- **No MIDI comping** (design §3: note-level merging across takes is a different edit) and **no
+  flatten** (the destructive bounce a
+  comp can end in; deliberately absent while nothing renders).
 - **The slip is audio-only and linear-rate-only** (§2.3): a warped or pitch-preserving take plays a
   slipped span unslipped, and at most 4 distinct slips per take are read (a fifth plays unslipped).
 - **Divergence from the design's `CompClip`**: the design sketches the composite as a new clip
@@ -229,7 +215,7 @@ both offscreen Qt and both built on the shared fixtures in `tests/src/core/TakeL
 plus, since ARCH-4 S7, `tests/src/core/LanesUpconvertTest.cpp` (registered ctest
 `LanesUpconvertTest`; the document layer - claim 11 below):
 
-1. lane indices are stable and a removed index is not reused, including after serialized restore;
+1. lane indices are stable and the lowest free index is reused;
 2. an invalid selection is refused and writes nothing;
 3. a selection splits what it overwrites, and the composite stays ordered and gapless;
 4. removing a lane re-points its segments to the base lane; removing the last lane clears the comp;
@@ -240,9 +226,8 @@ plus, since ARCH-4 S7, `tests/src/core/LanesUpconvertTest.cpp` (registered ctest
 8. a track that never comped writes no element, and a clip with no lane writes no attribute
    (reset-on-absence at both levels);
 9. the group driven through the registry, including every typed refusal;
-10. `control.undo` takes a `comp.select` / `comp.rebuild` / `comp.lane_remove` / `comp.take_select` /
-    `comp.play_all_takes` back through the Track checkpoint, and every `comp.*` id has an A16 row
-    with a non-empty reason and mechanism.
+10. `control.undo` takes a `comp.select` / `comp.rebuild` / `comp.lane_remove` back through the
+    Track checkpoint, and every `comp.*` id has an A16 row with a non-empty reason and mechanism.
 11. **the S7 document layer** (`LanesUpconvertTest`): lane state lands in the top-level
     `<z:lanes v="1">` section — entities with `lane-` ids, the track's list keyed by track id,
     composite beside them — and never as a child of `<track>`; the section round-trips (ids,
@@ -251,9 +236,8 @@ plus, since ARCH-4 S7, `tests/src/core/LanesUpconvertTest.cpp` (registered ctest
     `xmlns:z`; and the RISK 1 control names any new-model element a writer puts under `<track>`
     (its RED run with the plant is `docs/s7-logs/negative-control.md`).
 
-`RecordingRealtimeTest` additionally proves that the newest of three loop passes is active, a user
-choice survives another pass, Play all takes sums the passes, and a real render observes those
-states. `TakeLaneTest` covers a project save/reopen that restores both the active lane and the
-user-choice flag. The project-level lane section and compatibility claims remain covered by
-`LanesUpconvertTest`; nothing here says anything about the seven-platform CI matrix, which is
-CI-only.
+What the test does **not** prove, stated rather than implied: it does not render audio, so it
+cannot show a comp's waveform; `TakeLaneTest`/`TakeLaneCompTest` themselves still round-trip the
+Track element (the journal-checkpoint shape), while the ON-DISK `.mmp` save/load of lane state is
+`LanesUpconvertTest`'s claim 11; and nothing here says anything about the seven-platform CI
+matrix, which is CI-only.

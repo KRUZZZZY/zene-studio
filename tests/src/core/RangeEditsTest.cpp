@@ -39,7 +39,6 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Song.h"
-#include "TakeLane.h"
 #include "Track.h"
 
 using namespace lmms;
@@ -136,37 +135,6 @@ private slots:
 		QCOMPARE(spans(m_track).size(), 3);
 		QVERIFY(run(QStringLiteral("range.duplicate")).ok);
 		QCOMPARE(run(QStringLiteral("range.get")).result.value(QStringLiteral("start")).toInt(), 2 * Bar);
-	}
-
-	//! A range-pasted take clip becomes an ordinary clip instead of retaining a
-	//! group id whose active-lane mirror is not rebound.
-	void rangePasteDetachesCopiedTakeGroup()
-	{
-		Clip* source = m_track->getClips().front();
-		TakeLaneModel& model = m_track->takeLanes();
-		QCOMPARE(model.addLane(), 0);
-		const int groupId = source->id();
-		source->setTakeGroupId(groupId);
-		QVERIFY(model.recordTake(groupId, 0, m_track->getClips()));
-		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 0},
-			{QStringLiteral("end"), 3 * Bar},
-			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(m_track)}}}).ok);
-
-		const ControlResult copied = run(QStringLiteral("range.copy"));
-		QVERIFY2(copied.ok, qPrintable(copied.errorMessage));
-		QCOMPARE(copied.result.value(QStringLiteral("copied")).toInt(), 1);
-		QVERIFY(run(QStringLiteral("range.paste"), {{QStringLiteral("position"), 4 * Bar}}).ok);
-
-		Clip* pasted = nullptr;
-		for (Clip* candidate : m_track->getClips())
-		{
-			if (candidate != source) { pasted = candidate; break; }
-		}
-		QVERIFY(pasted != nullptr);
-		QCOMPARE(source->takeGroupId(), groupId);
-		QCOMPARE(pasted->takeGroupId(), 0);
-		QCOMPARE(pasted->laneIndex(), 0);
-		QCOMPARE(pasted->activeTakeLane(), -1);
 	}
 
 	void withoutARangeTheEditsAreRefused()

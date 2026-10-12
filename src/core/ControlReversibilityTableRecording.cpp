@@ -93,20 +93,6 @@ const ReversibilityRow kRecordingRows[] = {
 		"the config file itself (audioinput/device, audioinput/channels, "
 		"audioinput/left, audioinput/right): edit them back by hand if a client has "
 		"lost the transaction record"),
-	// 2026-10-09 owner decision R3: loop passes stay as takes; selection state,
-	// rather than muting the preceding pass, determines ordinary playback.
-	R("comp.take_select", RC::TrueInverse, true,
-		"the active lane and user-choice flag are entries in the Track's serialized "
-		"take-lane model; each pass clip also carries its stable group id",
-		"ProjectJournal (Track checkpoint): one control.undo restores the active "
-		"lane, the user-choice flag and the lock-free playback mirrors",
-		""),
-	R("comp.play_all_takes", RC::TrueInverse, true,
-		"the track-wide play-all flag is serialized with its take-lane model and "
-		"read by sample renders through an atomic scalar",
-		"ProjectJournal (Track checkpoint): one control.undo restores the previous "
-		"track-wide playback mode",
-		""),
 
 	// =====================================================================
 	// irreversible - these stop live captures and retire take journals, but
