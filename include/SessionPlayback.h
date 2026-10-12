@@ -28,6 +28,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 
 #include "LmmsTypes.h"
 
@@ -35,6 +36,16 @@ namespace lmms
 {
 
 class SampleBuffer;
+
+/*! How an AUDIO cell's clip is played (Q050-013): the cell's gain, and its loop region as frames of the clip
+ *  that is published (which is already warped and transposed, on the model thread: SessionAudioBake.h). A
+ *  plain value, so the audio thread reads it without a lock. */
+struct SessionAudioShape
+{
+	float gain = 1.0f;  //!< linear
+	std::int64_t loopStartFrames = 0;
+	std::int64_t loopLengthFrames = 0;  //!< 0: the loop is the whole clip
+};
 
 /*! One cell's content, as the audio thread sees it. */
 struct SessionSlotContent
@@ -55,6 +66,7 @@ struct SessionSlotContent
 	/*! WF-055: an AUDIO cell's clip at the engine's rate, or nullptr. Owned on the model thread by
 	 *  include/SessionAudioCells.h, which keeps it alive while the scheduler can name it. */
 	const SampleBuffer* clip = nullptr;
+	SessionAudioShape audio;  //!< Q050-013: the audio cell's gain and loop region
 };
 
 
@@ -80,7 +92,7 @@ public:
 	 *  Audio thread (applied from the scheduler's queue). No allocation, no lock.
 	 *  False when the table has no free entry - the caller counts it. */
 	bool install( int track, int scene, int patternId, tick_t loopLengthTicks, bool legato = false, tick_t startTicks = 0,
-		const SampleBuffer* clip = nullptr ) noexcept;
+		const SampleBuffer* clip = nullptr, const SessionAudioShape& audio = {} ) noexcept;
 
 	/*! The content stored for a cell, or nullptr. AUDIO THREAD: a bounded walk
 	 *  over fixed storage, so it allocates nothing and locks nothing. */
@@ -119,6 +131,7 @@ struct SessionSlotPlayback
 	//! WF-055: the audio cell's clip (nullptr for a MIDI or empty cell), and which launch is playing - the
 	//! scene and the line it started on - so a renderer can tell a new launch from the same one going on.
 	const SampleBuffer* clip = nullptr;
+	SessionAudioShape audio;  //!< Q050-013: the clip's gain and loop region
 	int scene = -1;
 	tick_t startedTick = -1;
 };

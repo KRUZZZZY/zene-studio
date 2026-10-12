@@ -873,6 +873,7 @@ include/ScriptLuaQtTypes.h
 include/ScriptMemoryBudget.h
 include/ScriptPackage.h
 include/SessionArrangementRecorder.h
+include/SessionAudioBake.h
 include/SessionAudioCells.h
 include/SessionAudioRecorder.h
 include/SessionFollow.h
@@ -1631,6 +1632,7 @@ src/core/ScriptDawEdit.cpp
 src/core/ScriptDawEffects.cpp
 src/core/ScriptEngine.cpp
 src/core/ScriptPackage.cpp
+src/core/SessionAudioBake.cpp
 src/core/SessionAudioCells.cpp
 src/core/SessionAudioRecorder.cpp
 src/core/SessionClip.cpp
