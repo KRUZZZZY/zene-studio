@@ -231,6 +231,20 @@ private slots:
 		QCOMPARE( int( scheduler.playbackForColumn( 0 ).positionTicks ), 148 );  // not 48: it went on
 	}
 
+	//! A loop is measured from the cell's loop start, so wrapping must preserve that start.
+	void aLoopWrapsBackToItsStart()
+	{
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 0, 0, 7, 96, false, 48 ) );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		scheduler.processAudio( clock( 48 ), kFramesPerPeriod );
+		QCOMPARE( int( scheduler.playbackForColumn( 0 ).positionTicks ), 96 );
+		scheduler.processAudio( clock( 96 ), kFramesPerPeriod );
+		QCOMPARE( int( scheduler.playbackForColumn( 0 ).positionTicks ), 48 );
+	}
+
 	//! 0.5.0 WF-070: a playing cell jumps inside its clip at once; a cell that is not playing ignores it.
 	void aPlayingCellJumps()
 	{
