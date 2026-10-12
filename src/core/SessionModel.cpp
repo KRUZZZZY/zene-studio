@@ -314,10 +314,21 @@ bool SessionModel::restoreState( const QDomElement& element )
 		return false;
 	}
 
-	m_hadSessionBlock = true;
+	bool ok = false;
+	const int tracks = element.attribute( QStringLiteral( "tracks" ),
+		QStringLiteral( "0" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( tracks ) > static_cast<unsigned>( MaxTracks ) )
+	{
+		return false;
+	}
+	const int scenes = element.attribute( QStringLiteral( "scenes" ),
+		QStringLiteral( "0" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( scenes ) > static_cast<unsigned>( MaxScenes ) )
+	{
+		return false;
+	}
 
-	const int tracks = element.attribute( QStringLiteral( "tracks" ), QStringLiteral( "0" ) ).toInt();
-	const int scenes = element.attribute( QStringLiteral( "scenes" ), QStringLiteral( "0" ) ).toInt();
+	m_hadSessionBlock = true;
 	resize( tracks, scenes );
 
 	m_globalLaunchQuantisation = launchQuantisationFromInt(

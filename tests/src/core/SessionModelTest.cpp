@@ -313,6 +313,48 @@ private slots:
 		QCOMPARE( output.count( QStringLiteral( "must-survive" ) ), 1 );
 	}
 
+	void malformedLegacySessionDimensionsArePreserved()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		Song* song = Engine::getSong();
+		song->clearProject();
+		const QString source = dir.filePath( QStringLiteral( "legacy.mmp" ) );
+		QVERIFY( song->saveProjectFile( source ) );
+		const QString baseProject = readFile( source );
+		const QStringList sessions = {
+			QStringLiteral( "<session version=\"1\" tracks=\"bad\" scenes=\"1\" marker=\"bad-tracks\"><scenes/><clips/></session>" ),
+			QStringLiteral( "<session version=\"1\" tracks=\"257\" scenes=\"1\" marker=\"large-tracks\"><scenes/><clips/></session>" ),
+			QStringLiteral( "<session version=\"1\" tracks=\"1\" scenes=\"513\" marker=\"large-scenes\"><scenes/><clips/></session>" )
+		};
+		const QStringList markers = {
+			QStringLiteral( "bad-tracks" ), QStringLiteral( "large-tracks" ), QStringLiteral( "large-scenes" )
+		};
+
+		int index = 0;
+		for( const QString& session : sessions )
+		{
+			song->clearProject();
+			QString project = baseProject;
+			const int insertion = project.indexOf( QStringLiteral( "</song>" ) );
+			QVERIFY( insertion >= 0 );
+			project.insert( insertion, session );
+			QVERIFY( QFile::remove( source ) );
+			QFile file( source );
+			QVERIFY( file.open( QIODevice::WriteOnly ) );
+			QVERIFY( file.write( project.toUtf8() ) == project.toUtf8().size() );
+			file.close();
+
+			song->loadProject( source );
+			const QString saved = dir.filePath( QStringLiteral( "saved.mmp" ) );
+			QVERIFY( song->saveProjectFile( saved ) );
+			const QString output = readFile( saved );
+			QCOMPARE( output.count( markers.at( index ) ), 1 );
+			QVERIFY( !output.contains( QStringLiteral( "<z:scenes" ) ) );
+			++index;
+		}
+	}
+
 	//! A slot references either a pattern or an audio clip, never both
 	//! (SPEC-zene-studio A1 mutual exclusivity).
 	void slotReferenceIsMutuallyExclusive()
