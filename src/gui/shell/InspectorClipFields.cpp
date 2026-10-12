@@ -49,6 +49,7 @@
 #include "MusicalTime.h"
 #include "NoteGrid.h"
 #include "NoteTransformActions.h"
+#include "Song.h"
 #include "TransportReadouts.h"
 
 namespace lmms::gui
@@ -173,8 +174,15 @@ bool setSelectedStart(const QPointer<MidiClip>& clip, const QString& id, const Q
 	int ticks = 0;
 	const Note* first = firstSelected(clip);
 	if (first == nullptr || !musicaltime::positionFromText(typed, &ticks, clipStart(clip.data()))) { return false; }
-	const int delta = ticks - first->pos().getTicks();
-	return editSelected(clip, id, QStringLiteral("position"), [delta](const Note* n) { return std::max(0, n->pos().getTicks() + delta); });
+	const qint64 delta = static_cast<qint64>(ticks) - first->pos().getTicks();
+	// note.edit accepts positions only through MaxSongLength; validate wide sums before narrowing them to int.
+	for (const Note* note : selectedNotes(clip))
+	{
+		if (static_cast<qint64>(note->pos().getTicks()) + delta > MaxSongLength) { return false; }
+	}
+	return editSelected(clip, id, QStringLiteral("position"), [delta](const Note* n) {
+		return static_cast<int>(std::max<qint64>(0, static_cast<qint64>(n->pos().getTicks()) + delta));
+	});
 }
 
 //! The typed length (any time format), for every selected note.
