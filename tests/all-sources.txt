@@ -1738,6 +1738,8 @@ src/core/DawProjectReadTracks.cpp
 src/core/DawProjectSession.cpp
 src/core/DawProjectWrite.cpp
 src/core/DawProjectZip.cpp
+src/core/DawProjectZipRead.cpp
+src/core/DawProjectZipShared.h
 src/core/DeltaTap.cpp
 src/core/DeviceOptions.cpp
 src/core/DocumentIndex.cpp
@@ -2489,6 +2491,7 @@ tests/src/core/CrashReporterTest.cpp
 tests/src/core/CustomAccessTest.cpp
 tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
+tests/src/core/DawProjectDeflateImportTest.cpp
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp
 tests/src/core/DeviceAbUndoTest.cpp
 tests/src/core/DeviceCopyTest.cpp

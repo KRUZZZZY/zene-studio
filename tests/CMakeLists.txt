@@ -801,6 +801,10 @@ set(LMMS_TESTS
 	# the file or its hash. A separate executable so the file stays inside the
 	# new-file cap; it builds a real Engine and drives the dawproject.* commands.
 	src/core/DawProjectInterchangeRoundTripTest.cpp
+	# 0.5.0 Q050-001: the DAWproject container reads DEFLATE (bounded) and lists every deviation
+	# (corrupt, CRC-failing, unsupported, oversized entries; missing referenced files); builds a real
+	# Engine and drives dawproject.import / dawproject.read on containers it assembles byte by byte.
+	src/core/DawProjectDeflateImportTest.cpp
 	# 0.5.0 F4 (WF-038): AAF import through LibAAF; the fixture cases skip without the library
 	src/core/AafImportTest.cpp
 	# 0.5.0 F5 (ED-054): the video track; the FFmpeg cases skip without the library
@@ -4357,7 +4361,7 @@ set_tests_properties(SmfInterchangeTest SmfInterchangeRoundTripTest PROPERTIES
 # The DAWproject round-trip test constructs a full Engine, drives tracks/clips/
 # notes through the registry and writes/reads real files, so it needs a Qt
 # platform plugin even though nothing opens a window.
-set_tests_properties(DawProjectInterchangeRoundTripTest PROPERTIES
+set_tests_properties(DawProjectInterchangeRoundTripTest DawProjectDeflateImportTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # 0.5.0 wave 2: AAF import, the video track and hardware I/O build a real Engine and drive the
 # registry (the video window and lane are widgets), so they need a Qt platform plugin.

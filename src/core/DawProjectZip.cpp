@@ -1,28 +1,29 @@
 /*
- * DawProjectZip.cpp - the DAWproject container: a ZIP with STORE entries.
+ * DawProjectZip.cpp - the DAWproject container's WRITER: a ZIP with STORE entries.
  *
  * The container half of feature row 37 (docs/FEATURE-LIST-0.3.0.md section 7).
  * README.md, "Format Specification": "Container: ZIP", "Format: XML
  * (project.xml, metadata.xml)", "Text encoding: UTF-8".
  *
- * THE METHOD IS STORE, AND WHY. The format constrains the ENTRIES (their names
- * and their encoding), not the compression method; a stored entry is a valid
- * entry in every ZIP reader, and storing keeps the container free of a
- * compression dependency this tree does not otherwise carry (DataFile.cpp's
- * mmpz path uses Qt's qCompress/qUncompress, which is zlib's own framed format
- * and is NOT a raw DEFLATE stream, so it cannot be reused here). What the
- * format needs from the container is that another DAW can open it, and every
- * ZIP reader opens a stored entry.
+ * THE WRITER'S METHOD IS STORE, AND WHY. The format constrains the ENTRIES
+ * (their names and their encoding), not the compression method; a stored entry
+ * is a valid entry in every ZIP reader, and storing keeps the writer simple and
+ * its output byte-for-byte reproducible. What the format needs from the
+ * container is that another DAW can open it, and every ZIP reader opens a
+ * stored entry. (DataFile.cpp's mmpz path uses Qt's qCompress/qUncompress,
+ * which is zlib's own framed format and is NOT a raw DEFLATE stream, so it is
+ * not reused for the container.)
  *
- * THIS IS A WRITER AND A READER, NOT A ZIP LIBRARY. It emits the three records
- * a ZIP needs - a local file header per entry, one central directory, one
- * end-of-central-directory record - and reads them back with every offset and
- * size bounds-checked against the file's own length, because the input is a
- * file a foreign program wrote. It deliberately does NOT support the features
- * an archive tool has: no directory entries, no data descriptors, no spanning
- * (the end record's disk numbers must both be zero), no encryption, and no
- * compression. An entry that uses any of them is refused with a message naming
- * it rather than decoded wrongly.
+ * THE READER IS DawProjectZipRead.cpp, and it reads STORE and raw DEFLATE
+ * (method 8, the method Bitwig, Studio One and Cubase write) under a per-entry
+ * and a total size bound, reporting every deviation instead of stopping at the
+ * first. This file keeps the writer and the CRC-32 both halves share.
+ *
+ * THIS IS A WRITER, NOT A ZIP LIBRARY. It emits the three records a ZIP needs -
+ * a local file header per entry, one central directory, one end-of-central-
+ * directory record. It deliberately does NOT write the features an archive tool
+ * has: no directory entries, no data descriptors, no spanning, no encryption,
+ * no compression and no ZIP64.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -57,11 +58,45 @@
 #include <vector>
 
 #include "DawProjectInterchange.h"
+#include "DawProjectZipShared.h"
 
 namespace lmms
 {
 namespace interchange
 {
+
+namespace zipdetail
+{
+
+quint32 crc32Update(quint32 state, const char* data, qsizetype size)
+{
+	static const std::vector<quint32> table = [] {
+		std::vector<quint32> values(256);
+		for (quint32 index = 0; index < 256; index++)
+		{
+			quint32 value = index;
+			for (int bit = 0; bit < 8; bit++)
+			{
+				value = (value & 1u) ? (0xEDB88320u ^ (value >> 1)) : (value >> 1);
+			}
+			values[index] = value;
+		}
+		return values;
+	}();
+	for (qsizetype at = 0; at < size; at++)
+	{
+		state = table[(state ^ static_cast<quint32>(static_cast<unsigned char>(data[at]))) & 0xFFu]
+			^ (state >> 8);
+	}
+	return state;
+}
+
+quint32 crc32Of(const QByteArray& bytes)
+{
+	return crc32Update(CrcInitial, bytes.constData(), bytes.size()) ^ CrcInitial;
+}
+
+} // namespace zipdetail
 
 QString dawProjectSha256(const QByteArray& bytes)
 {
@@ -85,32 +120,6 @@ constexpr quint16 VersionNeeded = 20;
 constexpr quint16 Utf8NameFlag = 0x0800;
 //! The one method this module writes.
 constexpr quint16 MethodStore = 0;
-constexpr quint16 MethodDeflate = 8;
-
-//! The CRC-32 every ZIP entry carries (reflected, polynomial 0xEDB88320).
-quint32 crc32Of(const QByteArray& bytes)
-{
-	static const std::vector<quint32> table = [] {
-		std::vector<quint32> values(256);
-		for (quint32 index = 0; index < 256; index++)
-		{
-			quint32 value = index;
-			for (int bit = 0; bit < 8; bit++)
-			{
-				value = (value & 1u) ? (0xEDB88320u ^ (value >> 1)) : (value >> 1);
-			}
-			values[index] = value;
-		}
-		return values;
-	}();
-	quint32 crc = 0xFFFFFFFFu;
-	for (char byte : bytes)
-	{
-		crc = table[(crc ^ static_cast<quint32>(static_cast<unsigned char>(byte))) & 0xFFu]
-			^ (crc >> 8);
-	}
-	return crc ^ 0xFFFFFFFFu;
-}
 
 void appendU16(QByteArray& out, quint16 value)
 {
@@ -121,20 +130,6 @@ void appendU16(QByteArray& out, quint16 value)
 void appendU32(QByteArray& out, quint32 value)
 {
 	for (int shift : {0, 8, 16, 24}) { out.append(static_cast<char>((value >> shift) & 0xFFu)); }
-}
-
-quint16 readU16(const QByteArray& bytes, int offset)
-{
-	return static_cast<quint16>(static_cast<unsigned char>(bytes[offset]))
-		| static_cast<quint16>(static_cast<unsigned char>(bytes[offset + 1]) << 8);
-}
-
-quint32 readU32(const QByteArray& bytes, int offset)
-{
-	return static_cast<quint32>(static_cast<unsigned char>(bytes[offset]))
-		| (static_cast<quint32>(static_cast<unsigned char>(bytes[offset + 1])) << 8)
-		| (static_cast<quint32>(static_cast<unsigned char>(bytes[offset + 2])) << 16)
-		| (static_cast<quint32>(static_cast<unsigned char>(bytes[offset + 3])) << 24);
 }
 
 //! A DOS date/time for the entry records. The format carries no timestamp, so
@@ -232,51 +227,6 @@ bool writeWhole(const QString& path, const QByteArray& file, QString* error)
 	return true;
 }
 
-//! Reads the whole of \a path into \a bytes. Every offset the reader uses is an int, so a
-//! file past INT_MAX bytes is refused before it is read: its offsets would not fit, and it
-//! would be read whole into memory.
-bool readWhole(const QString& path, QByteArray* bytes, QString* error)
-{
-	QFile source(path);
-	if (!source.open(QIODevice::ReadOnly))
-	{
-		if (error)
-		{
-			*error = QStringLiteral("cannot read %1: %2").arg(path, source.errorString());
-		}
-		return false;
-	}
-	if (source.size() > std::numeric_limits<int>::max())
-	{
-		if (error) { *error = QStringLiteral("%1 is too large for this reader (over 2 GiB)").arg(path); }
-		return false;
-	}
-	*bytes = source.readAll();
-	return true;
-}
-
-//! Returns the offset of the end-of-central-directory record in \a bytes, or -1.
-//! It is searched for from the back, because an archive comment may follow it -
-//! this module writes none, but a foreign container may have one. A candidate is
-//! only the end record when (a) its OWN comment length carries it to the end of
-//! the file, and (b) the central directory it declares ends exactly where the
-//! record itself starts. A comment can hold bytes that look like an empty end
-//! record; (a) rejects one that declares a comment of its own, and (b) separates
-//! the rest, because such a record names no directory at all.
-int findEndOfCentralDirectory(const QByteArray& bytes)
-{
-	for (int offset = bytes.size() - EndOfCentralSize; offset >= 0; offset--)
-	{
-		if (readU32(bytes, offset) != EndOfCentralSignature) { continue; }
-		if (offset + EndOfCentralSize + readU16(bytes, offset + 20) != bytes.size()) { continue; }
-		const qint64 directoryEnd = static_cast<qint64>(readU32(bytes, offset + 12))
-			+ static_cast<qint64>(readU32(bytes, offset + 16));
-		if (directoryEnd != offset) { continue; }
-		return offset;
-	}
-	return -1;
-}
-
 } // namespace
 
 bool dawProjectZipWrite(const QString& path, const std::vector<DawProjectEntry>& entries,
@@ -317,7 +267,7 @@ bool dawProjectZipWrite(const QString& path, const std::vector<DawProjectEntry>&
 	{
 		const QByteArray name = entry.first.toUtf8();
 		const QByteArray& body = entry.second;
-		const quint32 crc = crc32Of(body);
+		const quint32 crc = zipdetail::crc32Of(body);
 		offsets.append(static_cast<quint32>(file.size()));
 
 		appendU32(file, LocalHeaderSignature);
@@ -349,7 +299,7 @@ bool dawProjectZipWrite(const QString& path, const std::vector<DawProjectEntry>&
 		appendU16(file, MethodStore);
 		appendU16(file, DosTime);
 		appendU16(file, DosDate);
-		appendU32(file, crc32Of(body));
+		appendU32(file, zipdetail::crc32Of(body));
 		appendU32(file, static_cast<quint32>(body.size()));
 		appendU32(file, static_cast<quint32>(body.size()));
 		appendU16(file, static_cast<quint16>(name.size()));
@@ -373,173 +323,6 @@ bool dawProjectZipWrite(const QString& path, const std::vector<DawProjectEntry>&
 	appendU16(file, 0);  // no archive comment
 
 	return writeWhole(path, file, error);
-}
-
-bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entries,
-	QString* error)
-{
-	QByteArray bytes;
-	if (!readWhole(path, &bytes, error)) { return false; }
-
-	if (bytes.size() < EndOfCentralSize)
-	{
-		if (error) { *error = QStringLiteral("%1 is too short to be a ZIP container").arg(path); }
-		return false;
-	}
-	// The end record is found from the back, because an archive comment may
-	// follow it - this module writes none, but a foreign container may have one.
-	const int endOffset = findEndOfCentralDirectory(bytes);
-	if (endOffset < 0)
-	{
-		if (error)
-		{
-			*error = QStringLiteral("%1 has no end-of-central-directory record, so it is not a "
-				"ZIP container").arg(path);
-		}
-		return false;
-	}
-	const quint16 thisDisk = readU16(bytes, endOffset + 4);
-	const quint16 centralDisk = readU16(bytes, endOffset + 6);
-	const quint16 entryCount = readU16(bytes, endOffset + 10);
-	const quint32 centralSize = readU32(bytes, endOffset + 12);
-	const quint32 centralOffset = readU32(bytes, endOffset + 16);
-	if (thisDisk != 0 || centralDisk != 0)
-	{
-		if (error)
-		{
-			*error = QStringLiteral("%1 is a SPANNED ZIP (the end record names disk %2), which this "
-				"reader does not support").arg(path).arg(thisDisk);
-		}
-		return false;
-	}
-	if (static_cast<qint64>(centralOffset) + static_cast<qint64>(centralSize) > bytes.size())
-	{
-		if (error)
-		{
-			*error = QStringLiteral("%1 declares a central directory of %2 bytes at offset %3, "
-				"past the end of the file").arg(path).arg(centralSize).arg(centralOffset);
-		}
-		return false;
-	}
-
-	entries->clear();
-	int cursor = static_cast<int>(centralOffset);
-	for (int index = 0; index < entryCount; index++)
-	{
-		if (cursor + CentralHeaderSize > bytes.size()
-			|| readU32(bytes, cursor) != CentralHeaderSignature)
-		{
-			if (error)
-			{
-				*error = QStringLiteral("%1's central directory ends after %2 of the %3 entries it "
-					"declares").arg(path).arg(index).arg(entryCount);
-			}
-			return false;
-		}
-		const quint16 flags = readU16(bytes, cursor + 8);
-		const quint16 method = readU16(bytes, cursor + 10);
-		const quint32 crc = readU32(bytes, cursor + 16);
-		const quint32 compressed = readU32(bytes, cursor + 20);
-		const quint32 uncompressed = readU32(bytes, cursor + 24);
-		const quint16 nameLength = readU16(bytes, cursor + 28);
-		const quint16 extraLength = readU16(bytes, cursor + 30);
-		const quint16 commentLength = readU16(bytes, cursor + 32);
-		const quint32 localOffset = readU32(bytes, cursor + 42);
-		const int nameAt = cursor + CentralHeaderSize;
-		if (nameAt + nameLength > bytes.size())
-		{
-			if (error)
-			{
-				*error = QStringLiteral("%1's entry name runs past the end of the file").arg(path);
-			}
-			return false;
-		}
-		const QByteArray name = bytes.mid(nameAt, nameLength);
-		cursor = nameAt + nameLength + extraLength + commentLength;
-
-		if ((flags & 0x0001) != 0)
-		{
-			if (error)
-			{
-				*error = QStringLiteral("%1's entry '%2' is ENCRYPTED, which this reader does not "
-					"support").arg(path, QString::fromUtf8(name));
-			}
-			return false;
-		}
-		// In 64 bits: a quint32 sum wraps for an offset near 4 GiB and would pass.
-		if (static_cast<qint64>(localOffset) + LocalHeaderSize > bytes.size())
-		{
-			if (error)
-			{
-				*error = QStringLiteral("%1's entry '%2' names a local header past the end of the "
-					"file").arg(path, QString::fromUtf8(name));
-			}
-			return false;
-		}
-		if (readU32(bytes, static_cast<int>(localOffset)) != LocalHeaderSignature)
-		{
-			if (error)
-			{
-				*error = QStringLiteral("%1's entry '%2' has no local file header")
-					.arg(path, QString::fromUtf8(name));
-			}
-			return false;
-		}
-		const quint16 localNameLength = readU16(bytes, static_cast<int>(localOffset) + 26);
-		const quint16 localExtraLength = readU16(bytes, static_cast<int>(localOffset) + 28);
-		const quint32 bodyAt = localOffset + LocalHeaderSize + localNameLength + localExtraLength;
-		if (static_cast<qint64>(bodyAt) + compressed > bytes.size())
-		{
-			if (error)
-			{
-				*error = QStringLiteral("%1's entry '%2' declares %3 bytes at offset %4, past the "
-					"end of the file").arg(path, QString::fromUtf8(name)).arg(compressed)
-					.arg(bodyAt);
-			}
-			return false;
-		}
-		if (method == MethodDeflate)
-		{
-			if (error)
-			{
-				*error = QStringLiteral("%1's entry '%2' is DEFLATE-compressed; this build's reader "
-					"handles STORE containers only").arg(path, QString::fromUtf8(name));
-			}
-			return false;
-		}
-		if (method != MethodStore)
-		{
-			if (error)
-			{
-				*error = QStringLiteral("%1's entry '%2' uses compression method %3, which this "
-					"reader does not support").arg(path, QString::fromUtf8(name)).arg(method);
-			}
-			return false;
-		}
-		if (compressed != uncompressed)
-		{
-			if (error)
-			{
-				*error = QStringLiteral("%1's entry '%2' stores %3 bytes but declares %4")
-					.arg(path, QString::fromUtf8(name)).arg(compressed).arg(uncompressed);
-			}
-			return false;
-		}
-		const QByteArray body = bytes.mid(static_cast<int>(bodyAt), static_cast<int>(compressed));
-		const quint32 actual = crc32Of(body);
-		if (actual != crc)
-		{
-			if (error)
-			{
-				*error = QStringLiteral("%1's entry '%2' fails its own CRC (declared %3, measured "
-					"%4)").arg(path, QString::fromUtf8(name))
-					.arg(crc, 8, 16, QLatin1Char('0')).arg(actual, 8, 16, QLatin1Char('0'));
-			}
-			return false;
-		}
-		entries->push_back({QString::fromUtf8(name), body});
-	}
-	return true;
 }
 
 } // namespace interchange

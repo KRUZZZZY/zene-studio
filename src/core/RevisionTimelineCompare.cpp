@@ -166,8 +166,8 @@ QByteArray projectDocumentText(const QByteArray& raw)
 	if (raw.isEmpty()) { return QByteArray(); }
 	// A `.mmpz` v2 container must be refused BEFORE the `<?xml` probe below, and
 	// that order is the whole of this guard rather than a precaution. The
-	// container STORES its entries - DawProjectZip.cpp:8-15 records why it cannot
-	// compress them - so its bytes contain a LITERAL `<?xml` and the probe below
+	// container STORES its entries - DawProjectZip.cpp's header records that it
+	// stores them - so its bytes contain a LITERAL `<?xml` and the probe below
 	// matches them. Without this, the ZIP was returned as if it were the document
 	// text, the tag counter read the archive's own headers, and a comparison
 	// reported `readable: true` with counts that mean nothing (measured

@@ -25,10 +25,13 @@
  *
  * THE CONTAINER is a ZIP with a `project.xml` entry and an optional
  * `metadata.xml` entry, XML, UTF-8 (README.md, "Format Specification"). This
- * module writes both entries and reads either; the ZIP is written with the
- * STORE method so the container needs no compression dependency: a stored entry
- * is a valid entry in every ZIP reader, and the spec constrains the entries, not
- * the compression method.
+ * module writes both entries and reads either; the ZIP is WRITTEN with the
+ * STORE method (a stored entry is a valid entry in every ZIP reader, and the
+ * spec constrains the entries, not the compression method) and READ in STORE or
+ * raw DEFLATE (method 8, what the other DAWs write). Reading is bounded - every
+ * entry's decompressed size, and the total - and TOLERANT: a corrupt, oversized
+ * or unsupported entry never stops the entries around it, and every deviation
+ * is listed in DawProjectReadReport::deviations.
  *
  * LOSSY MAPPINGS. Every one is recorded here, in one line each, and in full -
  * with the reasoning - in docs/DAWPROJECT-INTERCHANGE.md, which is the document
@@ -86,8 +89,10 @@
 #define LMMS_DAWPROJECT_INTERCHANGE_H
 
 #include <QByteArray>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 #include <utility>
@@ -387,6 +392,64 @@ struct DawProjectWriteReport
 	DawProjectLossReport loss;
 };
 
+// ---------------------------------------------------------------------------
+// Deviations: what a container did that this reader could not take as written
+// ---------------------------------------------------------------------------
+
+//! The `kind` of a DawProjectDeviation. A fixed vocabulary, because a client
+//! (and a test) switches on it.
+constexpr const char* DeviationCorruptEntry = "corrupt_entry";          //!< bytes that do not decode
+constexpr const char* DeviationCrcMismatch = "crc_mismatch";            //!< decoded, but not what the CRC says
+constexpr const char* DeviationUnsupportedMethod = "unsupported_method"; //!< a compression method not read
+constexpr const char* DeviationUnsupportedFeature = "unsupported_feature"; //!< encryption, ZIP64
+constexpr const char* DeviationOversized = "oversized_entry";           //!< past the per-entry bound
+constexpr const char* DeviationTotalOversized = "total_oversized";      //!< past the whole-container bound
+constexpr const char* DeviationTruncatedDirectory = "truncated_directory"; //!< the central directory ends early
+constexpr const char* DeviationMissingProject = "missing_project_entry"; //!< no project.xml to import
+constexpr const char* DeviationMissingReferenced = "missing_referenced_file"; //!< a <File path> the container lacks
+constexpr const char* DeviationDuplicateEntry = "duplicate_entry";      //!< one name twice; the last one is used
+
+//! One deviation. `entry` is the ZIP entry (or the referenced path) it concerns,
+//! empty when it concerns the container as a whole.
+struct DawProjectDeviation
+{
+	QString entry;
+	QString kind;
+	QString detail;
+
+	QJsonObject toJson() const;
+};
+
+//! The bounds the reader holds every entry to. The decompressed size is what is
+//! bounded, not the file's: a few kilobytes of DEFLATE can claim gigabytes.
+struct DawProjectZipLimits
+{
+	//! The most one entry may inflate to; a larger entry is skipped and reported.
+	qint64 maxEntryBytes = 512LL * 1024 * 1024;
+	//! The most all entries may inflate to together; the entry that would pass it
+	//! is skipped and reported.
+	qint64 maxTotalBytes = 1024LL * 1024 * 1024;
+	//! False reads STORE only (an entry using DEFLATE is a deviation): the
+	//! `.mmpz` v2 container is written STORE by this program and keeps that contract.
+	bool allowDeflate = true;
+};
+
+//! What a container read saw, entry by entry.
+struct DawProjectZipReport
+{
+	//! Every entry name the central directory lists, readable or not.
+	QStringList entryNames;
+	int entriesRead = 0;       //!< entries whose bytes were decoded and CRC-checked
+	int entriesDeflated = 0;   //!< of those, the ones that were DEFLATE-compressed
+	qint64 inflatedBytes = 0;  //!< every byte decoded, good entry or not: what the total bound counts
+	std::vector<DawProjectDeviation> deviations;
+};
+
+//! \a deviations as the JSON array both `dawproject.*` replies carry.
+LMMS_EXPORT QJsonArray dawProjectDeviationsJson(const std::vector<DawProjectDeviation>& deviations);
+//! \a deviations as one sentence-per-deviation text, for a refusal message or a dialog.
+LMMS_EXPORT QString dawProjectDeviationText(const std::vector<DawProjectDeviation>& deviations);
+
 //! What one successful read produced.
 struct DawProjectReadReport
 {
@@ -405,6 +468,12 @@ struct DawProjectReadReport
 	int meterPointCount = 0;
 	//! Entries the container carried that this module does not use.
 	QStringList unusedEntries;
+	int entryCount = 0;            //!< entries the central directory lists
+	int deflatedEntryCount = 0;    //!< entries read from DEFLATE
+	int referencedFileCount = 0;   //!< distinct internal <File path> references in project.xml
+	//! Everything the container did that was not taken as written, in the order
+	//! met. Filled on a refusal too, so a refusal can list all of it.
+	std::vector<DawProjectDeviation> deviations;
 	DawProjectLossReport loss;
 };
 
@@ -491,11 +560,28 @@ using DawProjectEntry = std::pair<QString, QByteArray>;
 LMMS_EXPORT bool dawProjectZipWrite(const QString& path,
 	const std::vector<DawProjectEntry>& entries, QString* error);
 
-/*! Read every entry of the ZIP at \\a path, in central-directory order.
- *  Bounds-checked against the file's own sizes: a truncated or hostile
- *  container is refused with \\a error rather than read past its end. */
+/*! Read every entry of the ZIP at \\a path, in central-directory order, STRICTLY:
+ *  STORE entries only, and the first deviation of any kind refuses the whole
+ *  container with \\a error. Bounds-checked against the file's own sizes: a
+ *  truncated or hostile container is refused rather than read past its end.
+ *  This is the `.mmpz` v2 container's reader. */
 LMMS_EXPORT bool dawProjectZipRead(const QString& path,
 	std::vector<DawProjectEntry>* entries, QString* error);
+
+/*! Read the ZIP at \\a path TOLERANTLY: STORE and raw DEFLATE entries, each held
+ *  to \\a limits, and an entry that is corrupt, fails its CRC, uses an unsupported
+ *  method or is oversized is skipped and LISTED in \\a report rather than ending
+ *  the read - the entries around it are still returned. \\a entries receives the
+ *  entries that decoded cleanly, in central-directory order; when \\a retain is
+ *  non-empty only those names are kept (the others are still decoded and
+ *  CRC-checked, so a damaged one is still reported, but their bytes are dropped).
+ *  False - with \\a error set - only when there is no usable directory at all:
+ *  the file is unreadable, is not a ZIP, is spanned, or declares a directory
+ *  past its own end. */
+LMMS_EXPORT bool dawProjectZipReadTolerant(const QString& path,
+	std::vector<DawProjectEntry>* entries, DawProjectZipReport* report, QString* error,
+	const DawProjectZipLimits& limits = DawProjectZipLimits(),
+	const QStringList& retain = QStringList());
 
 //! The SHA-256 of \\a bytes, lowercase hex - the writer's own file identity.
 LMMS_EXPORT QString dawProjectSha256(const QByteArray& bytes);

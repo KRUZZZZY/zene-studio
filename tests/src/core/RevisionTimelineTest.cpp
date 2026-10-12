@@ -288,7 +288,7 @@ private slots:
 	//! A `.mmpz` v2 CONTAINER is refused rather than counted. This slot is the
 	//! other half of the one above, and the two are the reason the guard has to
 	//! come BEFORE the `<?xml` probe rather than after it: a v2 container is a
-	//! STORE ZIP - DawProjectZip.cpp:8-15 records why it cannot compress - so its
+	//! STORE ZIP - DawProjectZip.cpp's header records that it does not compress - so its
 	//! bytes contain a LITERAL `<?xml` and the probe matches them. Until the guard
 	//! landed, the archive was handed to the tag counter as if it were a document
 	//! and the comparison reported `readable: true` over the ZIP's own headers:

@@ -34,7 +34,6 @@ lmms::GigInstrument::getDimensions@plugins/GigPlayer/GigPlayer.cpp	36
 lmms::InstrumentFunctionArpeggio::processNote@src/core/InstrumentFunctions.cpp	36
 lmms::AudioEngine::tryAudioDevices@src/core/AudioEngine.cpp	36
 lmms::Song::processNextBuffer@src/core/Song.cpp	36
-lmms::interchange::dawProjectZipRead@src/core/DawProjectZip.cpp	36
 lmms::AudioBusHandle::doProcessing@src/core/AudioBusHandle.cpp	35
 lmms::GigInstrument::playImpl@plugins/GigPlayer/GigPlayer.cpp	35
 lmms::gui::PianoRoll::dragNotes@src/gui/editors/PianoRoll.cpp	35
@@ -270,7 +269,6 @@ lmms::gui::MainWindow::mayChangeProject@src/gui/MainWindow.cpp	12
 lmms::gui::PianoRoll::drawDetuningInfo@src/gui/editors/PianoRoll.cpp	12
 lmms::gui::PianoRoll::keyReleaseEvent@src/gui/editors/PianoRoll.cpp	12
 lmms::gui::PianoRoll::selectAll@src/gui/editors/PianoRoll.cpp	12
-lmms::interchange::readDawProject@src/core/DawProjectRead.cpp	12
 lmms::interchange::dawProjectZipWrite@src/core/DawProjectZip.cpp	12
 lmms::detection::refinedPeriodHops@src/core/ImportDetectionDsp.cpp	12
 lmms::pickFollowIndex@include/SessionFollow.h	12

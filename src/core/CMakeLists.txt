@@ -1002,13 +1002,15 @@ set(LMMS_SRCS
 	# DAWproject import / export (feature row 37 of docs/FEATURE-LIST-0.3.0.md,
 	# docs/DAWPROJECT-INTERCHANGE.md): the published format's container, the model,
 	# and the four conversions a round trip is made of. The ZIP container is
-	# hand-written (STORE entries, no compression dependency) because DataFile's
-	# qUncompress is zlib's framed format and cannot make a raw DEFLATE stream;
+	# hand-written: the writer stores its entries, the reader (DawProjectZipRead.cpp)
+	# also inflates raw DEFLATE through zlib under a size bound (DataFile's
+	# qUncompress is zlib's framed format and cannot read a raw DEFLATE stream);
 	# the XML writer and reader are one translation unit each, the session
 	# coupling is its own (a reader has to survive whatever a foreign program
 	# meant, which is not the writer's job - the same split SmfInterchange.cpp /
 	# SmfInterchangeReader.cpp uses), and every file stays inside gate 7's cap.
 	core/DawProjectZip.cpp
+	core/DawProjectZipRead.cpp
 	core/DawProjectModel.cpp
 	core/DawProjectWrite.cpp
 	core/DawProjectRead.cpp
