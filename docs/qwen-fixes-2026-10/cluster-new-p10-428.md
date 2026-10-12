@@ -1,70 +1,50 @@
 # Cluster new-p10-428 — Invalid time signatures can cause division by zero
 
-Verdict: **FALSE-POSITIVE**
+Verdict: **FIXED**
 
-## Finding
-`include/TimePos.h:128` — `TimePos::ticksPerBar(const TimeSig&)` divides by
-`sig.denominator()`, and `TimePos::ticksPerBeat` (line 99) divides by
-`sig.numerator()`. The claim: `TimeSig` accepts any numerator/denominator, so
-`TimeSig(4,0)` or `TimeSig(0,4)` would cause division by zero.
+## Finding and fix
 
-## Why this is a false positive
-The division-by-zero path is unreachable in this fork: every `TimeSig` that
-reaches these helpers is built from `MeterModel`, whose numerator and
-denominator are `IntModel`s clamped to `[1, 32]` on every mutation path
-(construction, GUI set, XML load, automation clips, controller connections).
-The unvalidated `TimeSig(int,int)` constructor is never called anywhere in
-product code.
+`include/TimePos.h:54-55` exposes `TimeSig(int,int)`. Its values feed unchecked
+integer divisions in `TimePos::ticksPerBar(const TimeSig&)` (`include/TimePos.h:128`)
+and `TimePos::ticksPerBeat` (`include/TimePos.h:99`). The constructor in
+`src/core/TimePos.cpp:35-43` now throws `std::invalid_argument` if either value is
+nonpositive, so invalid values cannot be used to construct a `TimeSig`.
 
-### Evidence (file:line)
-1. `include/TimePos.h:128` — `ticksPerBar(sig) = DefaultTicksPerBar * sig.numerator() / sig.denominator()`;
-   `include/TimePos.h:99` — `ticksPerBeat(sig) = ticksPerBar(sig) / sig.numerator()`.
-2. `src/core/TimePos.cpp:33` — `TimeSig(int,int)` stores values unvalidated;
-   `src/core/TimePos.cpp:39` — `TimeSig(const MeterModel&)` copies model values.
-3. Only call sites of the sig-taking helpers build `TimeSig` from the song's
-   `MeterModel` (`m_timeSigModel`):
-   - `include/Song.h:195` — `TimePos::ticksPerBar(m_timeSigModel)`
-   - `include/Song.h:201` — `getPlayPos().getBeatWithinBar(m_timeSigModel)`
-   - `include/Song.h:206` — `getPlayPos().getTickWithinBeat(m_timeSigModel)`
-   - `src/core/ScriptClock.cpp:353` — `const TimeSig timeSig(song->getTimeSigModel());`
-4. `src/core/MeterModel.cpp:35-36` — `m_numeratorModel( 4, 1, 32, ... )`,
-   `m_denominatorModel( 4, 1, 32, ... )`; ctor arg order confirmed at
-   `include/AutomatableModel.h:667` — `IntModel( int val, int min, int max, ... )`.
-5. Clamping chain: `src/core/AutomatableModel.cpp:340` — `setValueInternal` does
-   `m_value = fittedValue(value)`; `src/core/AutomatableModel.cpp:427,437` —
-   `fittedValue` does `std::clamp(value, m_minValue, m_maxValue)` twice;
-   ctor clamps at `src/core/AutomatableModel.cpp:68`.
-6. XML load path clamps too: `src/core/AutomatableModel.cpp:275` —
-   `setValue(...)` from the saved element, and `:296` — `setInitValue(...)`
-   (which calls `setValue` at `:711`). `MeterModel::loadSettings`
-   (`src/core/MeterModel.cpp:70-71`) delegates to these.
-7. `TimeSig(int,int)` has no callers: `rg -n "TimeSig\(" src include tests`
-   returns only the declarations (`include/TimePos.h:54-55`) and the
-   definitions (`src/core/TimePos.cpp:33,39`).
+`tests/src/core/SessionSchedulerTest.cpp:194-202` adds separate regressions for
+`TimeSig(4,0)` and `TimeSig(0,4)`. Both assert that the constructor throws. The
+`TimeSig(const MeterModel&)` overload is unchanged.
 
-Since numerator and denominator are always in `[1, 32]`, neither
-`/ sig.denominator()` nor `/ sig.numerator()` can divide by zero, and
-`ticksPerBar(sig) >= 192*1/32 = 6 > 0`, so the `%` in `getTickWithinBar`
-(line 102) is safe as well.
+## Regression evidence
 
-## Commands run (exact, with observed exit codes)
-```
-$ bash tests/complexity-gate.sh --check > $LOGS/gates-1.log 2>&1; echo EXIT=$?
-COMPLEXITY_EXIT=0
-$ bash tests/file-length-gate.sh --check > $LOGS/gates-2.log 2>&1; echo EXIT=$?
-LENGTH_EXIT=0
-$ rg -n "TimeSig\(" src include tests --type cpp -g '!plugins/**'                      # -> search-1.log
-EXIT=0
-$ rg -n "TimeSig timeSig|ticksPerBar\(m_timeSigModel\)|getBeatWithinBar\(m_timeSigModel\)|getTickWithinBeat\(m_timeSigModel\)" src include --type cpp -g '!plugins/**'
-EXIT=0
-$ rg -n "m_numeratorModel|m_denominatorModel" src/core/MeterModel.cpp
-EXIT=0
-$ rg -n "fittedValue|std::clamp" src/core/AutomatableModel.cpp
-EXIT=0
-```
-No build or ctest runs were performed: no product code or test was changed, so
-there is no regression to demonstrate (the claimed crash path does not exist).
+The initial test-only run failed before the product change. Both new QtTest slots
+reported that `std::invalid_argument` was not thrown. I then removed only the
+`src/core/TimePos.cpp` diff using the required `fix.patch` procedure, rebuilt,
+and reproduced both failures. Reapplying that same patch, rebuilding, and
+rerunning ctest passed.
 
-## Changes
-None. No product files touched, no tests touched, no new files to register.
-Only this report was added and committed.
+The affected ctest family ran **1 test** (`SessionSchedulerTest`, CTest test
+#306). In the red runs it failed; in the green run it passed (1/1).
+
+| Evidence | Exact command | Exit |
+| --- | --- | ---: |
+| Initial red build | `cmake --build build --target zene SessionSchedulerTest -- -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r2/logs/build-1-red.log 2>&1; echo EXIT=$?` | 0 |
+| Initial red test, from `build/tests` | `QT_QPA_PLATFORM=offscreen ctest -R '^SessionSchedulerTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r2/logs/test-1-red.log 2>&1; echo EXIT=$?` | 8 |
+| Remove product diff | `git diff -- src/core/TimePos.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r2/logs/fix.patch; echo EXIT=$?` | 0 |
+| Reverted red build | `cmake --build build --target zene SessionSchedulerTest -- -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r2/logs/build-2-revert.log 2>&1; echo EXIT=$?` | 0 |
+| Reverted red test, from `build/tests` | `QT_QPA_PLATFORM=offscreen ctest -R '^SessionSchedulerTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r2/logs/test-2-revert-red.log 2>&1; echo EXIT=$?` | 8 |
+| Restore product diff | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r2/logs/fix.patch; echo EXIT=$?` | 0 |
+| Green build | `cmake --build build --target zene SessionSchedulerTest -- -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r2/logs/build-3-green.log 2>&1; echo EXIT=$?` | 0 |
+| Green test, from `build/tests` | `QT_QPA_PLATFORM=offscreen ctest -R '^SessionSchedulerTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r2/logs/test-3-green.log 2>&1; echo EXIT=$?` | 0 |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r2/logs/gate-1-complexity.log 2>&1; echo EXIT=$?` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-428.r2/logs/gate-2-file-length.log 2>&1; echo EXIT=$?` | 0 |
+
+The `fff grep` tool was not exposed in this session, so captured logs were
+filtered with `rg` for `error`, `FAILED`, and `Assertion`, and ctest summaries
+were checked for the executed test count.
+
+## Files committed
+
+- `src/core/TimePos.cpp`
+- `tests/src/core/SessionSchedulerTest.cpp`
+- `tests/upstream-modifications.txt`
+- `docs/qwen-fixes-2026-10/cluster-new-p10-428.md`
