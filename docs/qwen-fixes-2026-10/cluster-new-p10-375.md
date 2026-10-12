@@ -46,3 +46,36 @@ Initial build setup retries were also recorded: `cmake --build build --target ze
 - `tests/src/plugins/SlicerTWaveformTest.cpp`
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p10-375.md`
+
+## Round 2: source registration repair
+
+Registered `tests/src/plugins/SlicerTWaveformTest.cpp` in [fork-sources.txt](../../tests/fork-sources.txt):2068 and [all-sources.txt](../../tests/all-sources.txt):2663. The fork manifest's regenerate and verify recipes both name the new plugin test. The all-sources entry list was regenerated from its documented `git ls-files` recipe and reproduces exactly.
+
+The complete fork-manifest `Verify it` recipe still exits 1 on older entries outside this test. The same mismatch is present when comparing the generated list against the pre-repair `HEAD` manifest; the new SlicerT test is emitted by the added pathspec. The required `bash tests/fork-sources-gate.sh` passes.
+
+| Evidence | Exact command | EXIT | Log |
+| --- | --- | ---: | --- |
+| Test target build | `cmake --build build/tests --target SlicerTWaveformTest -j2 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-375.r2/logs/build-1.log 2>&1` | 0 | `build-1.log` |
+| Targeted regression | `ctest -R '^SlicerTWaveformTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-375.r2/logs/test-1.log 2>&1` (from `build/tests`) | 0 | `test-1.log` |
+| Fork source gate | `bash tests/fork-sources-gate.sh > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-375.r2/logs/gate-1-fork-sources.log 2>&1` | 0 | `gate-1-fork-sources.log` |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-375.r2/logs/gate-2-complexity.log 2>&1` | 0 | `gate-2-complexity.log` |
+| File length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-375.r2/logs/gate-3-file-length.log 2>&1` | 0 | `gate-3-file-length.log` |
+| All-sources recipe verification | `diff <(grep -vE '^[[:space:]]*(#|$)' tests/all-sources.txt) <({ git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' ; git ls-files tests/control-detect-commands.py tests/control_detect_fixtures.py ; } | LC_ALL=C sort -u) && echo REPRODUCES` | 0 | stdout: `REPRODUCES` |
+| Full fork recipe verification | `sed -n '/^#   diff <(/,/^#        } | LC_ALL=C sort -u) && echo REPRODUCES/p' tests/fork-sources.txt | sed 's/^#//' | bash` | 1 | reports older entries not produced by that recipe |
+
+The targeted run executed 1/1 registered CTest test; the test contains five behavior slots. Build, test, and gate logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-375.r2/logs`.
+
+All-sources regeneration command (EXIT 0):
+
+```sh
+manifest_tmp=$(mktemp)
+sed -n '1,69p' tests/all-sources.txt > "$manifest_tmp"
+{ git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' ; git ls-files tests/control-detect-commands.py tests/control_detect_fixtures.py ; } | LC_ALL=C sort -u >> "$manifest_tmp"
+mv "$manifest_tmp" tests/all-sources.txt
+```
+
+The registration repair commit contains:
+
+- `tests/fork-sources.txt`
+- `tests/all-sources.txt`
+- `docs/qwen-fixes-2026-10/cluster-new-p10-375.md`
