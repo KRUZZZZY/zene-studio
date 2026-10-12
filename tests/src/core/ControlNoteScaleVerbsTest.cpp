@@ -656,6 +656,29 @@ private slots:
 		QCOMPARE(noteKey(fixture.clip, 2), 62);
 	}
 
+	//! W9b: the empty-clip refusal of scale.snap_notes (Luna cluster new-p11-48). An
+	//! empty clip with the DEFAULT scope 'clip' was blamed on the selection scope -
+	//! "none is selected, so scope 'selection' would edit nothing" - which names a
+	//! reason that was never asked for. note.transform already distinguishes the two
+	//! empties (ControlCommandsNoteTransform.cpp:105-110); the snap must too.
+	void snapOnAnEmptyClipNamesTheEmptyClipAsTheReason()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		// Set the scale first, so the refusal below is about the clip, not about a
+		// missing scale context.
+		QVERIFY2(run(QStringLiteral("scale.set"),
+			QJsonObject{{QStringLiteral("scale"), QStringLiteral("Major")}}).ok,
+			"could not set the scale context");
+		const ControlResult emptyClip = run(QStringLiteral("scale.snap_notes"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
+		QCOMPARE(emptyClip.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(emptyClip.errorMessage.contains(QStringLiteral("no notes")),
+			"the refusal must say the clip has no notes");
+		QVERIFY2(!emptyClip.errorMessage.contains(QStringLiteral("none is selected")),
+			"an empty clip must not be blamed on the selection scope");
+	}
+
 	//! W10: the device group's MPE verb - the switch flips, the read-back is honest
 	//! about which axes reach playback, and the undo restores the flag.
 	void theMpeSwitchFlipsAndUndoRestoresIt()

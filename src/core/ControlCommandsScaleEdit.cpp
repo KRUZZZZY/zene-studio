@@ -86,6 +86,15 @@ ControlResult snapNotes(const QJsonObject& args)
 	const NoteVector notes = scopeNotes(*clip, scope, clipId(ref.id));
 	if (notes.empty())
 	{
+		// "I edited nothing" and "there was nothing to edit" are different answers, and
+		// an empty clip must not be blamed on a selection scope that was never asked
+		// for - the same distinction note.transform already makes
+		// (ControlCommandsNoteTransform.cpp:105-110).
+		if (clip->notes().empty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1 has no notes: there is nothing to snap").arg(clipId(ref.id)));
+		}
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1 has %2 notes and none is selected, so scope 'selection' would edit "
 				"nothing").arg(clipId(ref.id)).arg(clip->notes().size()));
