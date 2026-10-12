@@ -14,7 +14,7 @@
 
 Commands below ran from the worktree unless noted. CTest commands ran from `build/tests`. The initial RED assertion was `VideoTrackTest::invalidSavedDurationIsReprobed`: `qAbs(loaded.duration - 2.0) < 0.1` returned false for `-1`.
 
-| Phase | Exact command | Exit |
+| Phase / evidence | Exact command or files | Exit / result |
 |---|---|---:|
 | Initial RED build | `cmake --build build --target VideoTrackTest -j2 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-450.r1/logs/red-build-1.log 2>&1; echo EXIT=$?` | 0 |
 | Initial RED test | `ctest -R '^VideoTrackTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-450.r1/logs/red-test-1.log 2>&1; echo EXIT=$?` | 8 |
@@ -28,6 +28,8 @@ Commands below ran from the worktree unless noted. CTest commands ran from `buil
 | Final family test | `ctest -R '^VideoTrackTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-450.r1/logs/final-test-1.log 2>&1; echo EXIT=$?` | 0 |
 | Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-450.r1/logs/complexity-gate-1.log 2>&1; echo EXIT=$?` | 0 |
 | File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-450.r1/logs/file-length-gate-1.log 2>&1; echo EXIT=$?` | 0 |
+| Affected-family count | `ctest -R '^VideoTrackTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-450.r1/logs/final-test-1.log 2>&1; echo EXIT=$?` | 1 registered CTest test; 1/1 passed |
+| Files committed | `include/VideoReference.h`; `src/core/VideoReference.cpp`; `tests/src/core/VideoTrackTest.cpp`; `docs/qwen-fixes-2026-10/cluster-new-p10-450.md` | 4 |
 
 **Affected-family count:** `VideoTrackTest` is one registered CTest test; the final run executed 1/1 and passed. The regression slot failed both before the fix and with the production patch reversed, and passed after restoring it.
 
