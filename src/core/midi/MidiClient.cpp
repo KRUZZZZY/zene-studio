@@ -373,6 +373,22 @@ void MidiClientRaw::processOutEvent(const MidiEvent& event, const TimePos&, cons
 			sendByte(event.controllerValue());
 			break;
 
+		case MidiProgramChange:
+			sendByte(MidiProgramChange | event.channel());
+			sendByte(event.program());
+			break;
+
+		case MidiChannelPressure:
+			sendByte(MidiChannelPressure | event.channel());
+			sendByte(event.channelPressure());
+			break;
+
+		case MidiPitchBend:
+			sendByte(MidiPitchBend | event.channel());
+			sendByte(static_cast<unsigned char>(event.pitchBend() & 0x7F));
+			sendByte(static_cast<unsigned char>((event.pitchBend() >> 7) & 0x7F));
+			break;
+
 		/* The MIDI-clock family (0.3.0, the `clock.*` group's master half).
 		 * These are the same raw byte path a note takes - sendByte() - because
 		 * that IS this client's output: a raw client writes to its one device.
