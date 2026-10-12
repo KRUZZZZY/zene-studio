@@ -486,6 +486,41 @@ private slots:
 		QCOMPARE(restored.tracks[0].name, QStringLiteral("Before"));
 	}
 
+	void importWithoutMixerChannelsResetsTheMaster()
+	{
+		Mixer* mixer = Engine::mixer();
+		MixerChannel* master = mixer->mixerChannel(0);
+		master->m_name = QStringLiteral("Previous Master");
+		master->m_volumeModel.setValue(0.25f);
+		master->m_muteModel.setValue(true);
+		master->m_soloModel.setValue(true);
+
+		DawProjectModel withoutMixerChannels;
+		withoutMixerChannels.applicationName = QStringLiteral("Zene Studio");
+		withoutMixerChannels.applicationVersion = QStringLiteral("0.3.0-alpha");
+		const QString file = path(m_directory, QStringLiteral("empty-mixer.dawproject"));
+		DawProjectWriteReport writeReport;
+		QString writeError;
+		QVERIFY2(writeDawProject(file, withoutMixerChannels, &writeReport, &writeError),
+			qPrintable(writeError));
+		QCOMPARE(writeReport.mixerChannelCount, 0);
+		DawProjectModel readBack;
+		DawProjectReadReport readReport;
+		QString readError;
+		QVERIFY2(readDawProject(file, &readBack, &readReport, &readError),
+			qPrintable(readError));
+		QCOMPARE(readReport.mixerChannelCount, 0);
+
+		const ControlResult imported = run(QStringLiteral("dawproject.import"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(imported.ok, qPrintable(imported.errorMessage));
+		QCOMPARE(static_cast<int>(mixer->numChannels()), 1);
+		QCOMPARE(master->m_name, QStringLiteral("Master"));
+		QCOMPARE(master->m_volumeModel.value(), 1.0f);
+		QVERIFY(!master->m_muteModel.value());
+		QVERIFY(!master->m_soloModel.value());
+	}
+
 	void overCapacityTempoImportIsRefusedBeforeMutation()
 	{
 		verifyOverCapacityRefusalPreservesSession(false);
