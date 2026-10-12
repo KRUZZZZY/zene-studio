@@ -237,7 +237,7 @@ MainWindow::MainWindow() :
 	connect(Engine::getSong(), SIGNAL(projectFileNameChanged()), SLOT(onProjectFileNameChanged()));
 	// 0.5.0 Q050-018: ONE non-modal notice for the devices an opened project named and this session could not load.
 	connect(Engine::getSong(), &Song::projectLoaded, this, [this] {
-		if (isUnattendedRun()) { return; }
+		if (isAgentInstance()) { return; }
 		showMissingDevicesNotice(this, missingdevices::collect(Engine::getSong()));
 	});
 

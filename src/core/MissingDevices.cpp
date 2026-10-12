@@ -39,7 +39,9 @@
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
+#include "MixerPostInserts.h"
 #include "PluginVendors.h"
+#include "Rack.h"
 #include "SampleTrack.h"
 #include "Song.h"
 #include "Track.h"
@@ -227,7 +229,15 @@ QList<MissingDevice> collect(Song* song)
 	{
 		for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
 		{
-			collectChain(&mixer->mixerChannel(i)->m_fxChain, QStringLiteral("mixer channel %1").arg(i), out);
+			MixerChannel* channel = mixer->mixerChannel(i);
+			const QString where = QStringLiteral("mixer channel %1").arg(i);
+			collectChain(&channel->m_fxChain, where, out);
+			// The rack's parallel chains (chain 0 is m_fxChain itself, collected above).
+			for (int index = 1; index < channel->m_rack.chainCount(); ++index)
+			{
+				collectChain(channel->m_rack.chain(index), where + QStringLiteral(" rack chain %1").arg(index), out);
+			}
+			collectChain(&channel->m_postInserts.chain(), where + QStringLiteral(" post-fader inserts"), out);
 		}
 	}
 	return out;

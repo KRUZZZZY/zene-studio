@@ -130,8 +130,23 @@ private:
 
 	static QStringList moduleNames()
 	{
-		return {"libkicker.so", "libamplifier.so", "libvst3instrument.so", "libclapinstrument.so",
-			"liblv2instrument.so", "libvst3effect.so", "libclapeffect.so"};
+		QStringList names{QStringLiteral(LMMS_TEST_MODULE_KICKER), QStringLiteral(LMMS_TEST_MODULE_AMPLIFIER)};
+#ifdef LMMS_TEST_MODULE_VST3INSTRUMENT
+		names << QStringLiteral(LMMS_TEST_MODULE_VST3INSTRUMENT);
+#endif
+#ifdef LMMS_TEST_MODULE_CLAPINSTRUMENT
+		names << QStringLiteral(LMMS_TEST_MODULE_CLAPINSTRUMENT);
+#endif
+#ifdef LMMS_TEST_MODULE_LV2INSTRUMENT
+		names << QStringLiteral(LMMS_TEST_MODULE_LV2INSTRUMENT);
+#endif
+#ifdef LMMS_TEST_MODULE_VST3EFFECT
+		names << QStringLiteral(LMMS_TEST_MODULE_VST3EFFECT);
+#endif
+#ifdef LMMS_TEST_MODULE_CLAPEFFECT
+		names << QStringLiteral(LMMS_TEST_MODULE_CLAPEFFECT);
+#endif
+		return names;
 	}
 
 	//! Replaces the project's first <instrument> element with one built from @a inner and writes it to @a path.
@@ -151,6 +166,7 @@ private slots:
 	void initTestCase()
 	{
 		QVERIFY(m_dir.isValid() && m_full.isValid() && m_without.isValid());
+		qputenv("LMMS_PLUGIN_SCAN_CACHE", m_dir.filePath(QStringLiteral("plugin-scan-cache.json")).toLocal8Bit());
 		Engine::init(true);
 		ControlRegistry::setReady(true);
 		const QString src = QStringLiteral(LMMS_TEST_PLUGIN_DIR);
@@ -159,7 +175,8 @@ private slots:
 		{
 			if (QFile::exists(src + "/" + name) && QFile::copy(src + "/" + name, m_full.filePath(name))) { ++copied; }
 		}
-		QVERIFY2(QFile::exists(m_full.filePath("libkicker.so")) && QFile::exists(m_full.filePath("libamplifier.so")),
+		QVERIFY2(QFile::exists(m_full.filePath(QStringLiteral(LMMS_TEST_MODULE_KICKER)))
+			&& QFile::exists(m_full.filePath(QStringLiteral(LMMS_TEST_MODULE_AMPLIFIER))),
 			"the real kicker/amplifier modules must be built and copied");
 		qInfo() << "modules copied into the full fixture:" << copied;
 
@@ -300,10 +317,6 @@ private slots:
 		QTest::newRow("lv2") << QString(
 			"<instrument name=\"lv2instrument\"><lv2instrument><key><attribute name=\"uri\" value=\"http://ghost.example.org/plugins/ghostsynth\"/></key>"
 			"</lv2instrument></instrument>") << "lv2" << "ghostsynth" << "ghost.example.org";
-		// the VeSTige module is not built here: its absence is the module-missing path, the XML says "vst"
-		QTest::newRow("vst") << QString(
-			"<instrument name=\"vestige\"><vestige plugin=\"/nonexistent/Ghost.dll\" chunk=\"QUJD\"/></instrument>")
-			<< "vst" << "Ghost" << "unknown";
 	}
 
 	void hostedFormatsWithAMissingBinaryKeepTheirXml()
@@ -325,6 +338,11 @@ private slots:
 		QVERIFY(track != nullptr);
 		QVERIFY2(!track->preservedInstrument().isNull(), "a missing hosted binary must leave a placeholder");
 		QVERIFY(!track->instrument()->unavailableReason().isEmpty());
+		if (format != QLatin1String("lv2"))
+		{
+			QVERIFY2(dynamic_cast<DummyInstrument*>(track->instrument()) == nullptr,
+				"the host module itself must be present for a missing-binary test row");
+		}
 
 		const QJsonArray list = opened.result.value("missing_devices").toArray();
 		QVERIFY2(!list.isEmpty(), "the open reply lists the placeholder");

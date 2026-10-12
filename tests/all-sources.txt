@@ -567,6 +567,7 @@ include/PluginFactory.h
 include/PluginHostChunking.h
 include/PluginHostNotes.h
 include/PluginIssue.h
+include/PluginLoadPolicy.h
 include/PluginNativeEditor.h
 include/PluginOrganiser.h
 include/PluginPaths.h
@@ -2547,6 +2548,7 @@ tests/src/core/MidiProbabilityPersistenceTest.cpp
 tests/src/core/MidiReconnectTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MissingDevicesPreserveTest.cpp
+tests/src/core/MissingDevicesRound2Test.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerChannelPanTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
@@ -2831,6 +2833,7 @@ tests/src/plugins/ClapHostTest.cpp
 tests/src/plugins/ClapLoaderErrorTest.cpp
 tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/FakeRemotePluginClient.cpp
+tests/src/plugins/MissingDevicesNoEntryModule.cpp
 tests/src/plugins/MpeTestConsumer.cpp
 tests/src/plugins/PluginPortsHarness.h
 tests/src/plugins/PluginPortsMigrationReference.cpp

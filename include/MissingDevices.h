@@ -70,8 +70,8 @@ LMMS_EXPORT MissingDevice describe(const QDomElement& original, const QString& k
 //! A copy of @a element in a document of its own, so it outlives the project file's DOM.
 LMMS_EXPORT QDomElement detachedCopy(const QDomElement& element);
 
-//! Every placeholder the session holds now: instrument tracks' instruments and the effect chains of tracks and
-//! mixer channels, in track then channel order. A placeholder the user replaced is no longer listed.
+//! Every placeholder the session holds now: instrument tracks' instruments, the effect chains of tracks, and each
+//! mixer channel's own chain, parallel rack chains and post-fader inserts, in track then channel order. A placeholder the user replaced is no longer listed.
 LMMS_EXPORT QList<MissingDevice> collect(Song* song);
 
 //! The text of the one project-open notice (empty when @a devices is empty).
