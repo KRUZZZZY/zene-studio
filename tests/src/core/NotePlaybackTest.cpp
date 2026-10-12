@@ -165,6 +165,21 @@ private slots:
 		QCOMPARE(playback.pass(), 0);
 	}
 
+	void malformedRecurrenceMaskLeavesNoteOnEveryPass()
+	{
+		QDomDocument document;
+		QDomElement note = document.createElement(QStringLiteral("note"));
+		note.setAttribute(QStringLiteral("recl"), QStringLiteral("2"));
+		note.setAttribute(QStringLiteral("recm"), QStringLiteral("broken"));
+
+		NoteConditions conditions;
+		conditions.load(note);
+		QCOMPARE(conditions.recurLength, 0);
+		QCOMPARE(conditions.recurMask, 0);
+		QVERIFY(conditions.recursOnPass(0));
+		QVERIFY(conditions.recursOnPass(1));
+	}
+
 	//! 0.5.0 W2: the song counts the loop wraps its render plays, and a seek back while playing is no wrap
 	//! and no pass (the pass used to count every jump back).
 	void aLoopWrapIsAPassAndASeekBackIsNot()
