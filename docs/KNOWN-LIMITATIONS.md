@@ -902,11 +902,27 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   no command that imports an audio file onto a track as a clip, so restore resolves the offer and hands back the
   material untouched (`audio_untouched: true`), which its result says in `next_step`. The bound is stated rather
   than implied: **guaranteed recoverable is `min(frames the journal recorded, frames the take's file holds)**;
-  NOT recoverable is the audio written after the journal's last update (the journal lags by at most one second
-  of audio) and up to **65536 frames** that were still in the recorder's ring buffer when the process died —
-  audio that never reached a file. `include/RecordingJournal.h` states it, `record.recovery_get_state` reports
+  NOT recoverable is the audio written after the journal's last update and up to **65536 frames** that were
+  still in the recorder's ring buffer when the process died — audio that never reached a file. *(Superseded by
+  Q050-045, 2026-10-09: the journal now lags by a tenth of a second, not one second; see the next bullet.)* `include/RecordingJournal.h` states it, `record.recovery_get_state` reports
   it per take, and `docs/RELEASE-NOTES-v0.3.0-alpha.md` records the test that measures it. Drivable through the
   socket, not from the interface.
+- *(Updated 2026-10-09, Q050-045.)* **The recording crash-loss window is now at most 0.185 s at 48 kHz, down from
+  more than a second.** The disk-writer thread (never the audio thread) commits the take every
+  `recordingjournal::updateIntervalFrames()` = a tenth of a second of audio: it rewrites the WAV header's data size
+  (libsndfile only wrote it on close, so a SIGKILLed take used to claim zero frames however much was on disk), syncs
+  the file, then rewrites the journal. **The stated bound is `lossBoundFrames()` = one commit interval + one
+  4096-frame writer batch = 8896 frames = 0.185 s at 48 kHz** (`record.recovery_get_state` carries it in `bound`
+  and `journal_lag_bound_frames`). `RecordingCrashLossTest` measured it with a real SIGKILL of a recording child at
+  ten controlled points: the worst recovered take was 4096 frames (0.085 s) short of what the ring had accepted, the
+  best 512. **What it does not cover:** a *stalled* writer (a disk that stops answering) can still leave up to
+  65536 ring frames (1.37 s) unwritten, and the first 0.1 s of a take has no commit yet, so a crash inside it
+  recovers nothing; the tail of a take is only committed once a full interval has accumulated, so a pause in the
+  signal does not shorten the window. **I/O cost, measured:** about 10 commits per second per armed track, mean
+  3.7 ms each (header rewrite + fsync + journal temp-file rename), i.e. about 4 % of one disk-writer thread, none of
+  it on the audio thread; the audio-thread capture path still makes zero allocations
+  (`captureStaysAllocationFreeWhileTheWriterCommits`, the AllocationProbe pattern). The old window was not
+  re-measured on the new test; its figure is the one-second interval the code carried.
 - *(Updated 2026-09-30.)* **Edit ▸ MIDI Clock** switches the master (**Send Clock**, `clock.master_set`) and
   the slave (**Follow External Clock**, and **Follow Its Tempo** while it follows, `clock.slave_set`), and a
   line under them re-reads `clock.get_state` each time the submenu opens - not sending/sending, not

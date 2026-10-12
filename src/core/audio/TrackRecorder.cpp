@@ -40,6 +40,9 @@
 namespace lmms
 {
 
+static_assert(TrackRecorder::WriteBatchFrames == recordingjournal::WriterBatchFrames,
+	"the journal's loss bound names the writer batch");
+
 
 TrackRecorder::TrackRecorder() :
 	m_ring(std::make_unique<RecordRingBuffer>(RingCapacityFrames)),
@@ -163,6 +166,8 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 	m_journalSampleRate = sampleRate;
 	m_journalIntervalFrames = recordingjournal::updateIntervalFrames(sampleRate);
 	writeJournal();
+	m_commitCount.store(0, std::memory_order_relaxed);
+	m_commitNanos.store(0, std::memory_order_relaxed);
 	if (!QFileInfo::exists(QString::fromStdString(m_journalPath)))
 	{
 		// The journal is the recovery AID, not the recording: a take written into
@@ -176,6 +181,24 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 	// reset and the channel change it must not race.
 	m_capturing.store(true, std::memory_order_release);
 	return true;
+}
+
+
+void TrackRecorder::commitTake()
+{
+	const auto started = std::chrono::steady_clock::now();
+	// libsndfile writes the WAV header's data size on close or on request only, so
+	// after SIGKILL a take would claim zero frames however much was written.
+	// Rewriting it here is what makes the frames already written readable; the
+	// sync makes them survive an OS crash as well as a process crash.
+	sf_command(m_sf, SFC_UPDATE_HEADER_NOW, nullptr, 0);
+	sf_write_sync(m_sf);
+	m_journalFrames = m_framesRecorded.load(std::memory_order_relaxed);
+	writeJournal();
+	m_commitCount.fetch_add(1, std::memory_order_relaxed);
+	m_commitNanos.fetch_add(static_cast<std::uint64_t>(
+		std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now() - started).count()), std::memory_order_relaxed);
 }
 
 
@@ -319,15 +342,14 @@ void TrackRecorder::writerLoop()
 				std::memory_order_relaxed);
 		}
 
-		// Keep the take journal current (0.3.0). Once per second of audio, on the
-		// disk-writer thread - the one thread that knows what has actually
-		// reached the file - so the recovery offer's guaranteed count lags real
-		// disk state by at most one update interval.
+		// Commit the take every journal interval (Q050-045: a tenth of a second of
+		// audio; it was a second). On the disk-writer thread - the one thread that
+		// knows what has actually reached the file - so a crash loses at most one
+		// interval plus the batch in flight (recordingjournal::lossBoundFrames).
 		if (m_framesRecorded.load(std::memory_order_relaxed) - m_journalFrames
 			>= m_journalIntervalFrames)
 		{
-			m_journalFrames = m_framesRecorded.load(std::memory_order_relaxed);
-			writeJournal();
+			commitTake();
 		}
 	}
 

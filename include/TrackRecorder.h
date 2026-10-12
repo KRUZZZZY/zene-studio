@@ -140,8 +140,16 @@ public:
 	//! file - see include/RecordingJournal.h.
 	std::uint64_t journalledFrames() const noexcept { return m_journalFrames.load(std::memory_order_relaxed); }
 
+	//! Commits made by the disk-writer (header rewrite + sync + journal) since arm(),
+	//! and the nanoseconds it spent in them: the honest I/O cost of the short
+	//! journal interval (Q050-045). Reset by arm().
+	std::uint64_t commitCount() const noexcept { return m_commitCount.load(std::memory_order_relaxed); }
+	std::uint64_t commitNanoseconds() const noexcept { return m_commitNanos.load(std::memory_order_relaxed); }
+
 private:
 	void writerLoop();
+	//! Header rewrite + sync + journal write; disk-writer thread only.
+	void commitTake();
 
 	//! Writes the take journal with the frames recorded so far (0.3.0). Called
 	//! from arm() and from writerLoop() - never from the audio thread.
@@ -177,6 +185,8 @@ private:
 	// written by arm() (before the thread exists) and by that thread only, and
 	// is atomic because journalledFrames() reads it from the control thread
 	// while that thread runs.
+	std::atomic<std::uint64_t> m_commitCount{0};
+	std::atomic<std::uint64_t> m_commitNanos{0};
 	std::string m_journalPath;
 	std::atomic<std::uint64_t> m_journalFrames{0};
 	std::uint64_t m_journalIntervalFrames = 0;

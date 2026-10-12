@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T06:08:42Z",
+  "captured_at": "2026-10-09T15:39:31Z",
   "commands": [
     {
       "args_schema": {
@@ -22611,7 +22611,7 @@
         ],
         "type": "object"
       },
-      "description": "Record how much of the take had reached disk at the last flush ('frames_on_disk'), which is the count the recovery offer reports as guaranteed. It must not move backwards: the journal only ever records that MORE of the take reached disk. The recorder's own disk-writer does this once per second of audio (RecordingJournal::UpdateIntervalFrames), which is the whole of the lag bound. Reversible (paired command).",
+      "description": "Record how much of the take had reached disk at the last flush ('frames_on_disk'), which is the count the recovery offer reports as guaranteed. It must not move backwards: the journal only ever records that MORE of the take reached disk. The recorder's own disk-writer does this every tenth of a second of audio (recordingjournal::updateIntervalFrames), which is the whole of the lag bound. Reversible (paired command).",
       "group": "record",
       "id": "record.journal_update",
       "mutating": true,
@@ -22733,7 +22733,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every capture an abnormal exit left behind in `dir` (default: this instance's working directory): one entry per in-progress take journal whose WAV still exists. Each entry reports frames_journalled (what the journal recorded at its last update), frames_in_file (measured from the take's RIFF header, falling back to the file's real length when a crashed header was never updated) and frames_recoverable (the SMALLER of the two - the guaranteed count). The bound travels with every entry: the journal lags by up to one second of audio, and up to 65536 frames still in the recorder's ring at the crash are gone for good. Writes nothing.",
+      "description": "Every capture an abnormal exit left behind in `dir` (default: this instance's working directory): one entry per in-progress take journal whose WAV still exists. Each entry reports frames_journalled (what the journal recorded at its last update), frames_in_file (measured from the take's RIFF header, falling back to the file's real length when a crashed header was never updated) and frames_recoverable (the SMALLER of the two - the guaranteed count). The bound travels with every entry: a crash loses at most journal_lag_bound_frames plus one 4096-frame writer batch (0.185 s at 48 kHz, Q050-045) while the disk-writer is healthy; only a STALLED writer can lose up to 65536 frames still in the recorder's ring. Writes nothing.",
       "group": "record",
       "id": "record.recovery_get_state",
       "mutating": false,
@@ -34764,11 +34764,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-core/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-p1xw5a_7/zene.sock",
-    "version": "0.4.0-alpha.1364+a0295ab"
+    "source_socket": "/tmp/zctl-run-340_wg3k/zene.sock",
+    "version": "0.4.0-alpha.1389+1902429"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
