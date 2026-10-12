@@ -265,6 +265,20 @@ private slots:
 		QCOMPARE(run(QStringLiteral("transport.groove"), {{QStringLiteral("swing"), 0.9}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	void clipControllerUsesTheTrackOutputChannel()
+	{
+		oneNote();
+		m_clip->setControllerPoints(ControllerKind::ControlChange, 7, {{0, 64}});
+		MidiPort* port = m_track->midiPort();
+		port->setOutputChannel(6);
+		port->setMode(MidiPort::Mode::Output);
+		const quint64 written = port->outputEventsWritten();
+
+		m_track->playClipControllers(m_clip, 0, 0);
+
+		QCOMPARE(port->outputEventsWritten(), written + 1);
+	}
+
 	void lyricsAndGroups()
 	{
 		oneNote();
