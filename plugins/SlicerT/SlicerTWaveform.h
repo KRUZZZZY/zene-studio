@@ -89,6 +89,8 @@ private:
 
 	UIObjects m_closestObject;
 	int m_closestSlice = -1;
+	int m_draggedSlice = -1;
+	float m_dragStartSlicePosition = 0.0f;
 
 	float m_seekerStart = 0;
 	float m_seekerEnd = 1;

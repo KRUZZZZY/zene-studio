@@ -362,6 +362,7 @@ void SlicerTWaveform::updateCursor()
 void SlicerTWaveform::mousePressEvent(QMouseEvent* me)
 {
 	const auto pos = position(me);
+	m_draggedSlice = -1;
 
 	switch (me->button())
 	{
@@ -380,17 +381,28 @@ void SlicerTWaveform::mousePressEvent(QMouseEvent* me)
 		if (m_slicerTParent->m_slicePoints.size() > 2 && m_closestObject == UIObjects::SlicePoint)
 		{
 			m_slicerTParent->m_slicePoints.erase(m_slicerTParent->m_slicePoints.begin() + m_closestSlice);
+			emit m_slicerTParent->dataChanged();
 		}
 		break;
 	default:;
 	}
 	updateClosest(me);
+	if (me->button() == Qt::MouseButton::LeftButton && m_closestObject == UIObjects::SlicePoint && m_closestSlice >= 0)
+	{
+		m_draggedSlice = m_closestSlice;
+		m_dragStartSlicePosition = m_slicerTParent->m_slicePoints.at(m_closestSlice);
+	}
 }
 
 // sort slices after moving and remove draggable object
 void SlicerTWaveform::mouseReleaseEvent(QMouseEvent* me)
 {
+	const bool slicePointChanged = m_draggedSlice >= 0
+		&& static_cast<std::size_t>(m_draggedSlice) < m_slicerTParent->m_slicePoints.size()
+		&& m_slicerTParent->m_slicePoints.at(m_draggedSlice) != m_dragStartSlicePosition;
 	std::sort(m_slicerTParent->m_slicePoints.begin(), m_slicerTParent->m_slicePoints.end());
+	m_draggedSlice = -1;
+	if (slicePointChanged) { emit m_slicerTParent->dataChanged(); }
 	updateClosest(me);
 }
 
@@ -467,6 +479,7 @@ void SlicerTWaveform::mouseDoubleClickEvent(QMouseEvent* me)
 
 	m_slicerTParent->m_slicePoints.insert(m_slicerTParent->m_slicePoints.begin(), slicePosition);
 	std::sort(m_slicerTParent->m_slicePoints.begin(), m_slicerTParent->m_slicePoints.end());
+	emit m_slicerTParent->dataChanged();
 }
 
 void SlicerTWaveform::wheelEvent(QWheelEvent* we)
