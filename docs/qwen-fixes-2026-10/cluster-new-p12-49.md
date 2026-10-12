@@ -10,6 +10,15 @@ The regression at `tests/src/core/ControlEditCommandsTest.cpp:318-354` creates t
 
 The original production code failed the targeted assertion (`restored` incorrectly contained `clips`). The same test failed again with the production patch reversed, then passed after it was reapplied. The final affected test family ran 10 QtTest cases: 10 passed, 0 failed. CTest reported 1/1 family target passed.
 
+| Evidence | Exact command or result |
+|---|---|
+| RED | CWD `build/tests`: `ctest -R '^ControlEditCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-49.r1/logs/test-red-1.log 2>&1; echo EXIT=$?` — **EXIT=8** |
+| GREEN | CWD `build/tests`: `ctest -R '^ControlEditCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-49.r1/logs/test-green-1.log 2>&1; echo EXIT=$?` — **EXIT=0** |
+| Affected-family count | CWD `build/tests`: `ctest -R '^ControlEditCommandsTest$' --output-on-failure --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-49.r1/logs/test-family-verbose-1.log 2>&1; echo EXIT=$?` — **EXIT=0**, 1/1 CTest target and 10 QtTest cases passed. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-49.r1/logs/gate-complexity-2.log 2>&1; echo EXIT=$?` — **EXIT=0** |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-49.r1/logs/gate-file-length-2.log 2>&1; echo EXIT=$?` — **EXIT=0** |
+| Files committed | `src/gui/ControlCommandsViewMemory.cpp`; `tests/src/core/ControlEditCommandsTest.cpp`; `docs/qwen-fixes-2026-10/cluster-new-p12-49.md`. |
+
 Commands below were run from the stated working directories; each line includes the exact shell command and its observed exit code. Build and test logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-49.r1/logs`.
 
 ### Initial RED and GREEN
