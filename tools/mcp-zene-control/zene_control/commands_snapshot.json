@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-09T06:08:42Z",
+  "captured_at": "2026-10-09T11:10:58Z",
   "commands": [
     {
       "args_schema": {
@@ -281,7 +281,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every track with its clips, addressed by the stable trk-<n> and clip-<n> ids. The trk-<n> number is assigned at creation and persists in the project file. Addressing is scoped to the SONG container: a track inside a nested container (the <trackcontainer> a pattern track carries) is not reachable by id, exactly as it is not addressable by index.",
+      "description": "Every track with its clips, addressed by the stable trk-<n> and clip-<n> ids. The trk-<n> number is assigned at creation and persists in the project file. Addressing is scoped to the SONG container: a track inside a nested container (the <trackcontainer> a pattern track carries) is not reachable by id, exactly as it is not addressable by index. `playhead_ticks` reports the arranger's Song-timeline position, also used by the video window.",
       "group": "arrangement",
       "id": "arrangement.get_state",
       "mutating": false,
@@ -296,6 +296,11 @@
           },
           "clips": {
             "type": "array"
+          },
+          "playhead_ticks": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
           },
           "selected_clip": {
             "type": "string"
@@ -34764,11 +34769,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-m0-train2/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-bunny-plugins/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-p1xw5a_7/zene.sock",
-    "version": "0.4.0-alpha.1364+a0295ab"
+    "source_socket": "/tmp/zctl-run-gu2c4b8s/zene.sock",
+    "version": "0.4.0-alpha.1366+888934e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

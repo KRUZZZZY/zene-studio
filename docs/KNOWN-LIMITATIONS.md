@@ -2402,11 +2402,6 @@ Fleshed out, because both halves of that sentence hide something real:
 - Cue mixes, listen and the recorder carry L/R.
 - The pan acts on the extra channels at its block value.
 
-**Found while integrating.** `transport.seek` while the transport is stopped moves the stopped
-mode's timeline, not the song's, and `transport.play` starts from the song's. The video window
-follows the song's timeline, as the arranger's ruler does. Logged for 0.5.x.
-
-
 ## 0.5.0 catch-up wave 3 — the redesign themes 8-24, and what they leave out (2026-10-04)
 
 **Workspace and layouts (themes 8, 22).**

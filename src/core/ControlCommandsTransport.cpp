@@ -44,6 +44,17 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 namespace
 {
 
+void setTransportPosition(Song* song, tick_t ticks)
+{
+	song->setPlayPos(ticks);
+	if (song->playMode() == Song::PlayMode::None)
+	{
+		// The stopped timeline is the transport readout, while the Song timeline
+		// drives the arranger and the video window. A stopped seek moves both.
+		song->setPlayPos(ticks, Song::PlayMode::Song);
+	}
+}
+
 QString trackTypeName(Track::Type type)
 {
 	switch (type)
@@ -209,16 +220,29 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) {
 			Song* song = Engine::getSong();
+			const Song::PlayMode previousMode = song->playMode();
 			const qint64 previous = static_cast<qint64>(song->getPlayPos().getTicks());
+			const qint64 previousSong = static_cast<qint64>(song->getPlayPos(Song::PlayMode::Song).getTicks());
+			const qint64 previousStopped = static_cast<qint64>(song->getPlayPos(Song::PlayMode::None).getTicks());
 			const tick_t ticks = static_cast<tick_t>(args.value(QStringLiteral("ticks")).toDouble());
 			// SPEC A16: the play head is engine state and not a JournallingObject,
 			// so there is no object checkpoint to restore - but the inverse is a
 			// bounded scalar, so it becomes ONE action step on the engine's own
 			// undo stack (the same stack Ctrl+Z unwinds).
 			control::addUndoStep(
-				[song, previous]() { song->setPlayPos(static_cast<tick_t>(previous)); },
-				[song, ticks]() { song->setPlayPos(ticks); });
-			song->setPlayPos(ticks);
+				[song, previousMode, previous, previousSong, previousStopped]() {
+					if (previousMode == Song::PlayMode::None)
+					{
+						song->setPlayPos(static_cast<tick_t>(previousStopped), Song::PlayMode::None);
+						song->setPlayPos(static_cast<tick_t>(previousSong), Song::PlayMode::Song);
+					}
+					else
+					{
+						song->setPlayPos(static_cast<tick_t>(previous), previousMode);
+					}
+				},
+				[song, ticks]() { setTransportPosition(song, ticks); });
+			setTransportPosition(song, ticks);
 
 			QJsonObject result;
 			result.insert(QStringLiteral("position_ticks"), static_cast<qint64>(song->getPlayPos().getTicks()));

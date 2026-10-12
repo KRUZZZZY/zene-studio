@@ -803,6 +803,8 @@ set(LMMS_TESTS
 	src/core/AafImportTest.cpp
 	# 0.5.0 F5 (ED-054): the video track; the FFmpeg cases skip without the library
 	src/core/VideoTrackTest.cpp
+	# 0.5.0 L12 (Q050-042): old-version patterns keep their note and pattern lengths after upgrade and save/reopen.
+	src/core/LegacyPatternUpgradeTest.cpp
 	src/core/VideoTestClipTest.cpp
 	src/core/StableTrackIdsTest.cpp
 	# ARCH-4 slice S3: the id-family registry (clip/lane/note/scene/warp over
@@ -3671,6 +3673,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# Q050-021: the stopped-seek regression runs alone so unrelated import, export and render
+	# plug-ins are not prerequisites for its control-socket check.
+	add_test(NAME ControlStoppedSeek
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-success-paths.py
+			$<TARGET_FILE:zene> --stopped-seek-only
+	)
+	set_tests_properties(ControlStoppedSeek PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# midi.retro_capture_* (0.3.0, retrospective MIDI capture - owner's-31 item
 	# 14): PLAY real MIDI into the running engine from the host's ALSA sequencer
 	# (`aplaymidi` is an external client, exactly like a keyboard) and recover it
@@ -4346,7 +4359,7 @@ set_tests_properties(DawProjectInterchangeRoundTripTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # 0.5.0 wave 2: AAF import, the video track and hardware I/O build a real Engine and drive the
 # registry (the video window and lane are widgets), so they need a Qt platform plugin.
-set_tests_properties(AafImportTest VideoTrackTest HardwareIoTest SurroundTest SurroundExportTest PROPERTIES
+set_tests_properties(AafImportTest VideoTrackTest LegacyPatternUpgradeTest HardwareIoTest SurroundTest SurroundExportTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The retrospective MIDI capture surface (owner item 14) builds a real Engine,
 # a MIDI client and MidiClips and drives the registry commands, so it needs a

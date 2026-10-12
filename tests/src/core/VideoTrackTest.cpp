@@ -290,6 +290,47 @@ private slots:
 		Engine::getSong()->clearProject();
 	}
 
+	//! Q050-021: a stopped seek must set the same position the arranger reads.
+	void aStoppedSeekSynchronizesTransportAndArranger()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		constexpr int target = 777;
+		const ControlResult seek = run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), target}});
+		QVERIFY2(seek.ok, qPrintable(seek.errorMessage));
+		const ControlResult state = run(QStringLiteral("transport.get_state"));
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		QCOMPARE(state.result.value(QStringLiteral("position_ticks")).toInt(), target);
+		QCOMPARE(song->getPlayPos(Song::PlayMode::Song).getTicks(), target);
+	}
+
+	//! Q050-021: the first frame requested after playback begins is the sought video frame.
+	void theFirstFrameAfterPlaybackUsesTheStoppedSeek()
+	{
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(run(QStringLiteral("video.attach"), {{QStringLiteral("path"), m_clip}}).ok);
+		const tick_t target = VideoReference::instance().tickAt(1.5);
+		const ControlResult seek = run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), target}});
+		QVERIFY2(seek.ok, qPrintable(seek.errorMessage));
+
+		gui::VideoWindow window(nullptr);
+		window.resize(320, 202);
+		song->playSong();
+		song->togglePause();  // Hold the first playing position while its frame decodes.
+		QCOMPARE(song->playMode(), Song::PlayMode::Song);
+		QVERIFY(qAbs(song->getPlayPos(Song::PlayMode::Song).getTicks() - target) < 8);
+		window.show();
+		window.follow();
+		QTRY_VERIFY_WITH_TIMEOUT(window.frameSeconds() >= 0.0, 10000);
+		QVERIFY(qAbs(window.frameSeconds() - 1.5) < 0.05);
+		QVERIFY2(bluish(window.grab().toImage()), "the first frame after playback was not the sought blue frame");
+
+		song->stop();
+		song->clearProject();
+	}
+
 	void extractAudioLandsTheSoundOnANewTrackInOneStep()
 	{
 		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
