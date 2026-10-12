@@ -41,13 +41,19 @@ entry) gets a sandboxed `require`. Source: `include/ScriptImport.h`,
   (`CON`, `NUL`, `COM1`, `LPT1`, and their case variants). There is no special
   `.lua` suffix handling: `require("probe.lua")` means the two components
   `probe` and `lua`, and can load `<root>/probe/lua.lua`.
-* **Symlinks, hard links and races.** The candidate's canonical path (symlinks
-  resolved) must lie under the canonical root, so a symlink inside the root that
-  points outside it is refused. Resolution saves the file identity: device and
-  inode on POSIX, or volume and file index on Windows. After opening, the handle
-  must still have that identity and report exactly one link. Hard-linked modules
-  are refused even when their pathname is inside the root. The path is also
-  re-checked after open, so a swap between resolution and open is refused.
+* **Symlinks, junctions, hard links and races.** The candidate's canonical path
+  (symlinks resolved) must lie under the canonical root, so a symlink inside the
+  root that points outside it is refused. On Windows, the final path reported by
+  the opened module handle is also compared with the final path of an opened root
+  directory handle. Junctions and other reparse points that leave the root are
+  refused even when Qt's canonical path text stays under the root. Resolution
+  saves the file identity: device and inode on POSIX, or volume and file index on
+  Windows. After opening, the handle must still have that identity and report
+  exactly one link. Hard-linked modules are refused even when their pathname is
+  inside the root. The path is also re-checked after open, so a swap between
+  resolution and open is refused. A symlink used as the script root is resolved
+  to its target when the importer is created. POSIX bind mounts are not detected
+  as mount-boundary escapes by these path and identity checks.
 * **Semantics like Lua's `require`.** The module chunk runs once per script run
   with the module name and its root-relative path as `...`; its return value
   (or `true`) is cached and returned by later `require` calls of that name. A

@@ -29,6 +29,7 @@
 #endif // _WIN32
 
 #include "ScriptImport.h"
+#include "ScriptImportWindows.h"
 
 #include <QDir>
 #include <QFile>
@@ -37,9 +38,6 @@
 
 #ifndef _WIN32
 #include <sys/stat.h>
-#else
-#include <io.h>
-#include <windows.h>
 #endif
 
 extern "C"
@@ -178,6 +176,7 @@ bool openFileInfo(const QFile& file, OpenFileInfo* result)
 			&& (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
 	return true;
 }
+
 #endif
 
 bool pathStillResolvesInsideRoot(const QString& root, const QString& canonicalPath)
@@ -196,6 +195,12 @@ bool matchesResolvedIdentity(const OpenFileInfo& opened,
 bool validateOpenedModule(QFile& file, const QString& root, const QString& canonicalPath,
 				const ScriptImport::FileIdentity& identity, QString* error)
 {
+#ifdef _WIN32
+	if (!scriptimportwindows::openedModuleIsUnderRoot(file, root, error))
+	{
+		return false;
+	}
+#endif
 	OpenFileInfo opened;
 	const bool haveOpenInfo = openFileInfo(file, &opened);
 	if (haveOpenInfo && opened.links > 1)
@@ -344,6 +349,12 @@ bool ScriptImport::resolve(const QString& root, const QStringList& parts,
 		*error = QStringLiteral("module is not a regular file");
 		return false;
 	}
+#ifdef _WIN32
+	if (!scriptimportwindows::openedModuleIsUnderRoot(file, root, error))
+	{
+		return false;
+	}
+#endif
 	*canonicalPath = canonical;
 	identity->device = info.device;
 	identity->file = info.file;

@@ -775,7 +775,7 @@ set(LMMS_TESTS
 	src/core/ScriptDawRemovalUndoTest.cpp
 	src/core/ScriptEngineTest.cpp
 	# Q050-051: the sandboxed Lua `require` - traversal, absolute and Windows paths,
-	# symlink escapes, cycles, bounds, and the sandbox staying closed in modules.
+	# symlink and junction escapes, cycles, bounds, and the sandbox staying closed in modules.
 	src/core/ScriptImportTest.cpp
 	# board card #708: the schedule clock's PURE half - the boundary grid, the
 	# registry's typed refusals and the livecode.* A16 rows, no audio device.

@@ -37,6 +37,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QProcess>
 #include <QTemporaryDir>
 
 #include "Engine.h"
@@ -283,6 +284,34 @@ private slots:
 		QString error;
 		const auto result = runEntry(dir.path(), "assert(require('alias') == 'real')", &error);
 		QVERIFY2(result == lmms::ScriptEngine::RunResult::Ok, qPrintable(error));
+#endif
+	}
+
+	void junctionEscapesAreRefused()
+	{
+#ifndef _WIN32
+		QSKIP("NTFS junctions are Windows-only");
+#else
+		QTemporaryDir dir;
+		QTemporaryDir outside;
+		QVERIFY(dir.isValid());
+		QVERIFY(outside.isValid());
+		QVERIFY(writeFile(outside.path() + "/evil.lua", "return 'outside'"));
+
+		const QString junction = QDir::toNativeSeparators(dir.path() + "/escape");
+		const QString target = QDir::toNativeSeparators(outside.path());
+		const QString command = QStringLiteral("mklink /J \"%1\" \"%2\"")
+				.arg(junction, target);
+		QProcess process;
+		process.start(QStringLiteral("cmd.exe"), {QStringLiteral("/d"), QStringLiteral("/c"), command});
+		QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
+		QVERIFY2(process.waitForFinished(30000), qPrintable(process.errorString()));
+		const QByteArray output = process.readAllStandardOutput() + process.readAllStandardError();
+		QVERIFY2(process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0,
+				qPrintable(QString::fromLocal8Bit(output)));
+		QVERIFY(QFileInfo(junction).isDir());
+
+		expectError(dir.path(), "require('escape.evil')", "outside the import root");
 #endif
 	}
 

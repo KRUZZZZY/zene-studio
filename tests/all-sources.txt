@@ -1940,6 +1940,7 @@ src/core/ScriptDawEdit.cpp
 src/core/ScriptDawEffects.cpp
 src/core/ScriptEngine.cpp
 src/core/ScriptImport.cpp
+src/core/ScriptImportWindows.h
 src/core/ScriptPackage.cpp
 src/core/SerializingObject.cpp
 src/core/SessionAudioCells.cpp
