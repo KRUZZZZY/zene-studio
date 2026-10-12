@@ -76,6 +76,7 @@ ControlResult safeStartNoModule(const QString& command);
 QJsonObject safeStartBeforeState(const std::string& marker, const std::string& acknowledged);
 
 // --- the edit half's handlers, DEFINED in ControlCommandsSafeStartEdit.cpp ----
+ControlResult safeStartHandleGetState();
 ControlResult safeStartHandleAcknowledge();
 ControlResult safeStartHandleClear();
 ControlResult safeStartHandleSetSkip(const QJsonObject& args);

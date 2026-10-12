@@ -73,6 +73,7 @@
 #include "Hardware.h"
 #include "ImportFilter.h"
 #include "MainWindow.h"
+#include "PluginQuarantineMenu.h"
 #include "MainWindowGeometry.h"
 #include "MixHelpers.h"
 #include "OutputSettings.h"
@@ -362,6 +363,29 @@ void announceSafeStart()
 		fprintf( stderr, "Safe-start mode: the project that was open was %s\n",
 			previous.projectPath.c_str() );
 	}
+}
+
+
+// Q050-049: the safe-start marker names the plug-in the previous session died inside.
+// A human gets ONE prompt; an unattended run (nobody can answer a modal before
+// app->exec()) gets the offer on stderr and in safestart.get_state's crash_suspect.
+void offerCrashQuarantineIfNamed( bool mayPrompt )
+{
+	const lmms::safestart::ActivePlugin suspect = lmms::safestart::crashSuspect();
+	if( !suspect.present )
+	{
+		return;
+	}
+	if( !mayPrompt || lmms::isUnattendedRun() )
+	{
+		fprintf( stderr, "Safe-start mode: the previous session died while %s the plug-in %s. "
+			"Quarantine it with plugin.scan_cache_quarantine_add (safestart.get_state carries "
+			"crash_suspect).\n", suspect.phase == "scan" ? "scanning" : "instantiating",
+			suspect.file.c_str() );
+		fflush( stderr );
+		return;
+	}
+	lmms::gui::offerCrashQuarantine();
 }
 
 
@@ -1211,6 +1235,8 @@ int main( int argc, char * * argv )
 	safestart::install( ConfigManager::inst()->workingDir().toStdString() );
 	safestart::beginSession();
 	announceSafeStart();
+	// Headless/early path: never a modal here, the offer is the stderr line.
+	offerCrashQuarantineIfNamed( false );
 	if( coreOnly && crashreporter::hasPendingReport() )
 	{
 		// A headless run (render / --run-script) cannot show a dialog; offer
@@ -1472,6 +1498,10 @@ int main( int argc, char * * argv )
 		// offerPendingCrashReport above, which is also where the unattended
 		// offer goes). The offer is made once (acknowledging keeps the file).
 		offerPendingCrashReport();
+		// Q050-049: the marker may name the plug-in that killed the last run;
+		// offer to quarantine exactly that file (a prompt for a human, one
+		// stderr line plus safestart.get_state for an unattended run).
+		offerCrashQuarantineIfNamed( true );
 
 		// re-intialize RNG - shared libraries might have srand() or
 		// srandom() calls in their init procedure

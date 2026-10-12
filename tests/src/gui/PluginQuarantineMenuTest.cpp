@@ -41,6 +41,7 @@
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "PluginQuarantineMenu.h"
+#include "SafeStart.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -130,6 +131,51 @@ private slots:
 		release->trigger();
 		QVERIFY(!quarantined().contains(plugin));
 		QVERIFY(item(menu, QStringLiteral("Release libcrashy.so (file gone)")) == nullptr);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+	}
+
+	// Q050-049: a marker that names the plug-in the last run died inside produces ONE offer; yes
+	// quarantines exactly that file through plugin.scan_cache_quarantine_add, and the ordinary
+	// Release item still frees it.
+	void aCrashQuarantinedPluginIsOfferedOnceAndReleasable()
+	{
+		QTemporaryDir work;
+		QVERIFY(work.isValid());
+		const QString plugin = work.filePath(QStringLiteral("libcrashed.so"));
+		{
+			QFile marker(work.filePath(QString::fromLatin1(safestart::kMarkerName)));
+			QVERIFY(marker.open(QIODevice::WriteOnly));
+			marker.write(("Zene Studio safe-start marker v1\npid=4242\ntime_unix=1\nsafe_start_runs=0\n"
+				"active_phase=scan\nactive_format=lmms-module\nactive_plugin=\nactive_file="
+				+ plugin + "\n").toUtf8());
+		}
+		QVERIFY(safestart::install(work.path().toStdString()));
+		safestart::beginSession();
+		QVERIFY(safestart::crashSuspect().present);
+
+		int asked = 0;
+		QString prompt;
+		setCrashQuarantineAsker([&](const QString& text) { ++asked; prompt = text; return false; });
+		QVERIFY2(!offerCrashQuarantine(), "answering no must quarantine nothing");
+		QCOMPARE(asked, 1);
+		QVERIFY(prompt.contains(plugin));
+		QVERIFY(!quarantined().contains(plugin));
+
+		setCrashQuarantineAsker([&](const QString&) { ++asked; return true; });
+		QVERIFY(offerCrashQuarantine());
+		QVERIFY(quarantined().contains(plugin));
+
+		QMenu parent;
+		QMenu* menu = addPluginQuarantineMenu(&parent);
+		emit menu->aboutToShow();
+		QAction* release = item(menu, QStringLiteral("Release libcrashed.so (file gone)"));
+		QVERIFY(release != nullptr);
+		QVERIFY(release->toolTip().contains(QStringLiteral("scanned")));
+		release->trigger();
+		QVERIFY2(!quarantined().contains(plugin), "the crash-quarantined entry must be releasable");
+
+		setCrashQuarantineAsker({});
+		safestart::endSession();
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 	}
 

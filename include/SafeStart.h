@@ -125,6 +125,19 @@ constexpr const char* kAcknowledgedName = "zene-safe-start.acknowledged";
 constexpr unsigned long kMaxMarkerBytes = 1024;
 constexpr unsigned long kMaxProjectPathBytes = 512;
 
+//! The plugin a session was working with when it was last seen alive: the
+//! module the factory was scanning, or the plugin Plugin::instantiate() was
+//! creating. Written into the marker BEFORE the risky call, so a death inside
+//! it names its cause (Q050-049).
+struct ActivePlugin
+{
+	bool present = false;
+	std::string name;   //!< plugin name when known ("" while scanning a file)
+	std::string file;   //!< absolute module path; the scan cache's quarantine key
+	std::string format; //!< "lmms-module", "ladspa", ...
+	std::string phase;  //!< "scan" or "instantiate"
+};
+
 //! The session a marker describes. Trivially copyable; the strings are bounded
 //! when they are read as well as when they are written.
 struct SessionRecord
@@ -137,6 +150,9 @@ struct SessionRecord
 	unsigned long long safeStartRuns = 0;
 	//! The project that was open, when the crashed session had got that far.
 	std::string projectPath;
+	//! The plugin that was active when the session died (present=false when
+	//! the marker names none: the crash was not inside a third-party load).
+	ActivePlugin activePlugin;
 };
 
 //! One plugin instance this session did NOT create because of safe-start mode.
@@ -208,6 +224,37 @@ unsigned long long safeStartRunCount();
 void setProjectPath(const std::string& path);
 //! The project hint THIS session's marker carries ("" when none is set).
 std::string projectPath();
+
+//! Mark \a file as the plugin this session is about to scan or instantiate, by
+//! rewriting the marker (one small atomic write, GUI/loader thread only - never
+//! the audio thread). Only THIRD-PARTY files are recorded (isThirdPartyPluginFile),
+//! so the engine's own modules cost nothing. Calls nest: endActivePlugin() restores
+//! the enclosing one. A no-op when no marker is on disk.
+void beginActivePlugin(const std::string& phase, const std::string& name,
+	const std::string& file, const std::string& format);
+//! Leave the plugin entered by the matching beginActivePlugin().
+void endActivePlugin();
+//! The plugin the CURRENT session is inside right now (present=false when none).
+ActivePlugin currentActivePlugin();
+
+//! RAII pair for the two calls above.
+class ActivePluginScope
+{
+public:
+	ActivePluginScope(const std::string& phase, const std::string& name,
+		const std::string& file, const std::string& format)
+	{
+		beginActivePlugin(phase, name, file, format);
+	}
+	~ActivePluginScope() { endActivePlugin(); }
+	ActivePluginScope(const ActivePluginScope&) = delete;
+	ActivePluginScope& operator=(const ActivePluginScope&) = delete;
+};
+
+//! The plugin the PREVIOUS session died inside, when that run did not exit
+//! cleanly and its marker named one (present=false otherwise). This is what the
+//! quarantine offer is made about.
+ActivePlugin crashSuspect();
 
 //! Accept the offer of a normal start: write the acknowledgement, so the NEXT
 //! launch loads with third-party plugins enabled. Keeps the marker (the crash is

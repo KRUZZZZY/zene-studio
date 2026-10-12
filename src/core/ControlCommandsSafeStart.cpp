@@ -169,6 +169,30 @@ ControlResult safeStartHandleGetState()
 			"them in THIS session.")
 		: QStringLiteral("Nothing is offered: this session did not start safe."));
 
+	// Q050-049: the plug-in the previous session died inside, when its marker
+	// named one. The offer to quarantine exactly that file goes through the
+	// registered plugin.scan_cache_quarantine_add (the same command the GUI
+	// prompt and Edit > Plugin Quarantine use).
+	const ActivePlugin suspect = crashSuspect();
+	QJsonObject suspectJson;
+	suspectJson.insert(QStringLiteral("present"), suspect.present);
+	suspectJson.insert(QStringLiteral("plugin"), safeStartWire(suspect.name));
+	suspectJson.insert(QStringLiteral("file"), safeStartWire(suspect.file));
+	suspectJson.insert(QStringLiteral("format"), safeStartWire(suspect.format));
+	suspectJson.insert(QStringLiteral("phase"), safeStartWire(suspect.phase));
+	QJsonObject quarantineOffer;
+	quarantineOffer.insert(QStringLiteral("made"), suspect.present);
+	quarantineOffer.insert(QStringLiteral("accept_with"), QStringLiteral("plugin.scan_cache_quarantine_add"));
+	if (suspect.present)
+	{
+		QJsonObject acceptArgs;
+		acceptArgs.insert(QStringLiteral("path"), safeStartWire(suspect.file));
+		acceptArgs.insert(QStringLiteral("reason"), QStringLiteral("crashed the previous session while it was "
+			"being %1").arg(suspect.phase == "scan" ? QStringLiteral("scanned") : QStringLiteral("instantiated")));
+		quarantineOffer.insert(QStringLiteral("accept_args"), acceptArgs);
+	}
+	offer.insert(QStringLiteral("quarantine"), quarantineOffer);
+
 	QJsonObject bounds;
 	bounds.insert(QStringLiteral("max_marker_bytes"), qint64(kMaxMarkerBytes));
 	bounds.insert(QStringLiteral("max_project_path_bytes"), qint64(kMaxProjectPathBytes));
@@ -193,6 +217,7 @@ ControlResult safeStartHandleGetState()
 	result.insert(QStringLiteral("session"), session);
 	result.insert(QStringLiteral("project_path"), safeStartWire(projectPath()));
 	result.insert(QStringLiteral("offer"), offer);
+	result.insert(QStringLiteral("crash_suspect"), suspectJson);
 	result.insert(QStringLiteral("bounds"), bounds);
 	result.insert(QStringLiteral("note"),
 		QStringLiteral("safe-start mode is a MARKER plus a load-time predicate. The marker is written "
@@ -245,6 +270,8 @@ void registerSafeStartCommands(ControlRegistry& registry)
 			{QStringLiteral("project_path"), control::stringProperty()},
 			// {made, accepted, restart_required, accept_with, decline_with, text}
 			{QStringLiteral("offer"), control::objectProperty()},
+			// {present, plugin, file, format, phase}: the plug-in the previous session died inside
+			{QStringLiteral("crash_suspect"), control::objectProperty()},
 			// {max_marker_bytes, max_project_path_bytes}
 			{QStringLiteral("bounds"), control::objectProperty()},
 			{QStringLiteral("note"), control::stringProperty()},

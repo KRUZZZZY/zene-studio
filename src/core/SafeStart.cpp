@@ -58,6 +58,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include <mutex>
 
 #ifndef Q_OS_WIN
 #include <unistd.h>
@@ -96,6 +97,9 @@ struct State
 	//! THIS session's own project, recorded in the marker this session writes.
 	std::string projectPath;
 	std::vector<SkippedInstance> skipped;
+	//! Plugins this session is inside (innermost last); the marker names the last.
+	std::vector<ActivePlugin> active;
+	std::mutex activeMutex;
 };
 
 State& state()
@@ -153,8 +157,48 @@ std::string markerText()
 	out += "pid=" + std::to_string(processIdNow()) + "\n";
 	out += "time_unix=" + std::to_string(unixTimeNow()) + "\n";
 	out += "safe_start_runs=" + std::to_string(s.safeStartRuns) + "\n";
+	if (!s.active.empty())
+	{
+		const ActivePlugin& a = s.active.back();
+		out += "active_phase=" + bounded(a.phase, 32) + "\n";
+		out += "active_format=" + bounded(a.format, 32) + "\n";
+		out += "active_plugin=" + bounded(a.name, 128) + "\n";
+				out += "active_file=" + bounded(a.file, 400) + "\n";
+	}
+	// Last, so the 1 KiB cap trims the project hint (a diagnostic) before it
+	// can trim the field that identifies a crashing plug-in.
 	out += "project=" + bounded(s.projectPath, kMaxProjectPathBytes) + "\n";
 	return out;
+}
+
+//! Apply one key=value line to the record. A field that does not parse stays at
+//! its default; the marker as a whole is still "the previous run did not exit
+//! cleanly". Bounded HERE, not only when the marker is written: the file on disk
+//! is not necessarily one this build wrote (an older build, a packager's wrapper,
+//! a hand-edited marker), and SessionRecord promises strings bounded on read as
+//! well as on write (include/SafeStart.h). Measured by
+//! SafeStartTest::boundsTheMarkerCannotExceedItsCap, which plants an 8 KiB
+//! project= line.
+void applyMarkerField(SessionRecord& record, const std::string& key, const std::string& value)
+{
+	try
+	{
+		if (key == "pid") { record.processId = std::stoull(value); }
+		else if (key == "time_unix") { record.unixTime = std::stoull(value); }
+		else if (key == "safe_start_runs") { record.safeStartRuns = std::stoull(value); }
+		else if (key == "active_phase") { record.activePlugin.phase = bounded(value, 32); }
+		else if (key == "active_format") { record.activePlugin.format = bounded(value, 32); }
+		else if (key == "active_plugin") { record.activePlugin.name = bounded(value, 128); }
+		else if (key == "active_file")
+		{
+			record.activePlugin.file = bounded(value, 400);
+			record.activePlugin.present = !record.activePlugin.file.empty();
+		}
+		else if (key == "project") { record.projectPath = bounded(value, kMaxProjectPathBytes); }
+	}
+	catch (const std::exception&)
+	{
+	}
 }
 
 //! Parse a marker. Tolerant by contract: a line that is not understood is
@@ -171,31 +215,7 @@ SessionRecord parseMarker(const std::string& text)
 		const std::size_t end = text.find('\n', start);
 		const std::string line = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
 		const std::size_t eq = line.find('=');
-		if (eq != std::string::npos)
-		{
-			const std::string key = line.substr(0, eq);
-			const std::string value = line.substr(eq + 1);
-			try
-			{
-				if (key == "pid") { record.processId = std::stoull(value); }
-				else if (key == "time_unix") { record.unixTime = std::stoull(value); }
-				else if (key == "safe_start_runs") { record.safeStartRuns = std::stoull(value); }
-				// Bounded HERE, not only when the marker is written: the file
-				// on disk is not necessarily one this build wrote (an older
-				// build, a packager's wrapper, a hand-edited marker), and
-				// SessionRecord promises strings bounded on read as well as on
-				// write (include/SafeStart.h). Measured by
-				// SafeStartTest::boundsTheMarkerCannotExceedItsCap, which
-				// plants an 8 KiB project= line: readMarker()'s byte cap alone
-				// still admitted a hint larger than kMaxProjectPathBytes.
-				else if (key == "project") { record.projectPath = bounded(value, kMaxProjectPathBytes); }
-			}
-			catch (const std::exception&)
-			{
-				// A field that does not parse stays at its default; the marker
-				// as a whole is still "the previous run did not exit cleanly".
-			}
-		}
+		if (eq != std::string::npos) { applyMarkerField(record, line.substr(0, eq), line.substr(eq + 1)); }
 		if (end == std::string::npos) { break; }
 		start = end + 1;
 	}
@@ -286,6 +306,10 @@ void beginSession()
 {
 	State& s = state();
 	s.skipped.clear();
+	{
+		const std::lock_guard<std::mutex> lock(s.activeMutex);
+		s.active.clear();
+	}
 	s.safeStartRuns = 0;
 	s.safeStart = false;
 	s.markerWasPresent = false;
@@ -384,6 +408,47 @@ void setProjectPath(const std::string& path)
 	// must never create crash state by itself.
 	if (path.empty() || !markerExists()) { return; }
 	writeMarker(markerPath(), markerText());
+}
+
+void beginActivePlugin(const std::string& phase, const std::string& name,
+	const std::string& file, const std::string& format)
+{
+	State& s = state();
+	if (!s.installed || file.empty() || !isThirdPartyPluginFile(file)) { return; }
+	const std::lock_guard<std::mutex> lock(s.activeMutex);
+	ActivePlugin entry;
+	entry.present = true;
+	entry.phase = phase;
+	entry.name = name;
+	entry.file = file;
+	entry.format = format;
+	s.active.push_back(entry);
+	// Only an existing marker is rewritten: this must never create crash state.
+	if (markerExists()) { writeMarker(markerPath(), markerText()); }
+}
+
+void endActivePlugin()
+{
+	State& s = state();
+	if (!s.installed) { return; }
+	const std::lock_guard<std::mutex> lock(s.activeMutex);
+	if (s.active.empty()) { return; }
+	s.active.pop_back();
+	if (markerExists()) { writeMarker(markerPath(), markerText()); }
+}
+
+ActivePlugin currentActivePlugin()
+{
+	State& s = state();
+	const std::lock_guard<std::mutex> lock(s.activeMutex);
+	return s.active.empty() ? ActivePlugin() : s.active.back();
+}
+
+ActivePlugin crashSuspect()
+{
+	const State& s = state();
+	if (!s.previousRunMarkerFound) { return ActivePlugin(); }
+	return s.previous.activePlugin;
 }
 
 void acknowledge()
