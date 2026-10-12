@@ -264,6 +264,8 @@ public:
 	static bool decodePacket(const QByteArray& payload, link::LinkPeerPacket* packet);
 
 private:
+	friend struct LinkSyncEngineTestAccess;
+
 	/*! One peer in the fixed table: its last announcement verbatim, plus when
 	 *  this process read it. Keeping the packet rather than unpacking it is
 	 *  what lets the retry path below re-adopt a timeline with exactly the
