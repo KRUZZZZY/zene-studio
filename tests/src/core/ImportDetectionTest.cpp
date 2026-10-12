@@ -52,6 +52,7 @@
 #include <QtTest>
 
 #include <cmath>
+#include <memory>
 #include <numbers>
 #include <vector>
 
@@ -64,6 +65,7 @@
 
 #include "ImportDetection.h"
 #include "ImportDetectionDsp.h"
+#include "DrumSynth.h"
 #include "ProjectKey.h"
 
 using namespace lmms;
@@ -198,6 +200,31 @@ private slots:
 		QVERIFY(writeWave(m_clickB, clickTrack(kClickBpmB, 10.0)));
 		QVERIFY(writeWave(m_major, majorFixture()));
 		QVERIFY(writeWave(m_tone, steadyTone()));
+	}
+
+	//! A corrupt DS distortion bit count is refused before quantization divides by zero.
+	void distortionRejectsUnderflowingDrumSynthBits()
+	{
+		const QString fixturePath = QDir(QStringLiteral(LMMS_TEST_DATA_DIR)).filePath(
+			QStringLiteral("../../data/samples/drumsynth/misc_fx/click.ds"));
+		QFile fixture(fixturePath);
+		QVERIFY(fixture.open(QIODevice::ReadOnly));
+		QByteArray preset = fixture.readAll();
+		QVERIFY(preset.contains("Bits=6"));
+		preset.replace("Bits=6", "Bits=-100");
+
+		const QString corruptedPath = QDir(m_dir.path()).filePath(
+			QStringLiteral("drumsynth-negative-bits.ds"));
+		QFile corrupted(corruptedPath);
+		QVERIFY(corrupted.open(QIODevice::WriteOnly));
+		QCOMPARE(corrupted.write(preset), static_cast<qint64>(preset.size()));
+		corrupted.close();
+
+		int16_t* generatedData = nullptr;
+		const int frames = DrumSynth{}.GetDSFileSamples(corruptedPath, generatedData, 2, kSampleRate);
+		const std::unique_ptr<int16_t[]> data{generatedData};
+		QVERIFY2(frames == 0 && !data,
+			qPrintable(QStringLiteral("negative distortion bits returned %1 frames").arg(frames)));
 	}
 
 	/*! Two known tempos, through the decoder. The engine reports the method it
