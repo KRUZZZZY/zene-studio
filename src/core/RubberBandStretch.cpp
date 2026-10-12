@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -202,7 +203,8 @@ f_cnt_t RubberBandVoice::render(const SampleFrame* src, f_cnt_t srcFrames, Sampl
 {
 #ifdef LMMS_HAVE_RUBBERBAND
 	if (!m_stretcher) { return 0; }
-	const double timeRatio = speed > 0.0 ? 1.0 / speed : 1.0;
+	const double validSpeed = std::isfinite(speed) && speed > 0.0 ? speed : 1.0;
+	const double timeRatio = 1.0 / validSpeed;
 	if (!m_started) { start(timeRatio); }
 	else if (timeRatio != m_timeRatio)
 	{
@@ -226,7 +228,7 @@ f_cnt_t RubberBandVoice::render(const SampleFrame* src, f_cnt_t srcFrames, Sampl
 		feed(src, srcFrames, static_cast<int>(std::clamp<size_t>(required, 64, MaxBlock)));
 		++feeds;
 	}
-	m_sourcePos += static_cast<double>(produced) * speed;
+	m_sourcePos += static_cast<double>(produced) * validSpeed;
 	return produced;
 #else
 	(void) src; (void) srcFrames; (void) dst; (void) dstFrames; (void) speed;

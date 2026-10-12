@@ -47,6 +47,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -244,6 +245,25 @@ private slots:
 		evidence("half-rate source: 440 / 220", low, octaveDown);
 		QVERIFY2(std::fabs(low - 0.5) < 0.05, qPrintable(QStringLiteral("440 Hz came out at %1").arg(low)));
 		QVERIFY2(octaveDown < 0.05, "the half-rate source came out an octave low");
+	}
+
+	void aNaNSpeedKeepsSourcePositionFinite()
+	{
+		std::vector<SampleFrame> source(static_cast<std::size_t>(m_rate));
+		for (std::size_t i = 0; i < source.size(); ++i)
+		{
+			const auto value = static_cast<sample_t>(std::sin(kTwoPi * kLowTone * i / m_rate));
+			source[i] = SampleFrame(value, value);
+		}
+		std::vector<SampleFrame> output(1024);
+		RubberBandVoice voice(m_rate);
+		voice.begin(1.0);
+		const auto produced = voice.render(source.data(), static_cast<f_cnt_t>(source.size()), output.data(),
+			static_cast<f_cnt_t>(output.size()), std::numeric_limits<double>::quiet_NaN());
+
+		QVERIFY(produced > 0);
+		QVERIFY(std::isfinite(voice.sourcePosition()));
+		QCOMPARE(voice.sourcePosition(), static_cast<double>(produced));
 	}
 
 	void theAudioThreadHalfAllocatesNothing()
