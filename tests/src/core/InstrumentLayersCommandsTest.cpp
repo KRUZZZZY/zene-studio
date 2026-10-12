@@ -295,6 +295,18 @@ private slots:
 		QCOMPARE(model->routeOf(1), -1);
 		ControlResult gone;
 		QVERIFY2(control::resolveMixerChannel(madeChannel, &gone) == nullptr, "the created channel survived its undo");
+
+		// If a later bus refuses activation, the command reports it and rolls back the earlier route/channel.
+		model->setLayout({{QStringLiteral("Out"), 2, 0}, {QStringLiteral("Aux"), 2, 2},
+			{QStringLiteral("Unavailable"), 2, -1}});
+		const ControlResult refused = run(QStringLiteral("plugin.output_buses_create_channels"),
+			{{QStringLiteral("target"), target}});
+		QVERIFY(!refused.ok);
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("bus 2")));
+		QCOMPARE(mixer->numChannels(), channelsBefore);
+		QCOMPARE(model->routeOf(1), -1);
+		QCOMPARE(model->routedCount(), 0);
 	}
 
 	//! MX-120: a per-voice modulator needs a track to follow; bound to the track's instrument it reports
