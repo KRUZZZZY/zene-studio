@@ -256,7 +256,10 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 		// An agent instance (--control-socket) cannot answer a modal, and a
 		// project that references a missing plugin loads with it (task #625):
 		// the reason goes to stderr, where a headless operator reads it.
-		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+		// 0.5.0 Q050-018: while a project loads the box is NOT raised per plug-in - one non-modal notice lists
+		// every placeholder when the load ends (MainWindow), and project.open's reply carries the same list.
+		const bool loadingProject = Engine::getSong() != nullptr && Engine::getSong()->isLoadingProject();
+		if (gui::getGUI() != nullptr && !lmms::isUnattendedRun() && !loadingProject)
 		{
 			QMessageBox::information( nullptr,
 				tr( "Plugin not found" ),

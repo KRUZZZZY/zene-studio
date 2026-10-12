@@ -213,6 +213,11 @@ public:
 
 	virtual bool isFromTrack( const Track * _track ) const;
 
+	//! 0.5.0 Q050-018: empty when the instrument is what the project asked for; otherwise why it is only a
+	//! placeholder (its module, or the plug-in binary a VST/VST3/CLAP wrapper hosts, is not available).
+	//! The track then keeps the file's original instrument XML and writes it back on save.
+	virtual QString unavailableReason() const { return {}; }
+
 	inline InstrumentTrack * instrumentTrack() const
 	{
 		return m_instrumentTrack;

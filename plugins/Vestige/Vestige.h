@@ -85,6 +85,12 @@ class VestigeInstrument
 public:
 	VestigeInstrument( InstrumentTrack * _instrument_track );
 	~VestigeInstrument() override;
+	QString unavailableReason() const override
+	{
+		QMutexLocker locker(&m_pluginMutex);
+		return (m_plugin == nullptr && !m_pluginDLL.isEmpty())
+			? QStringLiteral("the VST plug-in binary was not found or could not be loaded") : QString();
+	}
 
 	void saveSettings(QDomDocument& _doc, QDomElement& _parent) override;
 	void loadSettings(const QDomElement& _this) override;
@@ -112,7 +118,7 @@ private:
 
 
 	VstPlugin * m_plugin;
-	QMutex m_pluginMutex;
+	mutable QMutex m_pluginMutex;
 
 	//! MIDI from any thread (processInEvent() runs on the GUI, the MIDI input and the audio thread), waiting
 	//! for the next processed period. handleMidiEvent() only pushes here; processImpl() forwards it under

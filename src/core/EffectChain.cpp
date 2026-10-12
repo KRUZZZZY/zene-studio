@@ -35,6 +35,8 @@
 #include "AudioEngine.h"
 #include "Effect.h"
 #include "DummyEffect.h"
+#include "MissingDevices.h"
+#include "PluginVendors.h"
 #include "Engine.h"
 #include "LatencyCompensation.h"
 #include "RoutingChainNodes.h"
@@ -130,11 +132,21 @@ void EffectChain::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	for( Effect* effect : m_effects)
 	{
 		if (auto dummy = dynamic_cast<DummyEffect*>(effect)) { _this.appendChild(dummy->originalPluginData()); }
+		else if (!effect->preservedPluginData().isNull() && !effect->unavailableReason().isEmpty())
+		{
+			// 0.5.0 Q050-018: a wrapper whose plug-in binary is missing writes back what the file had.
+			_this.appendChild(_doc.importNode(effect->preservedPluginData(), true));
+		}
 		else
 		{
 			QDomElement ef = effect->saveState( _doc, _this );
 			ef.setAttribute( "name", QString::fromUtf8( effect->descriptor()->name ) );
 			ef.appendChild( effect->key().saveXML( _doc ) );
+			// 0.5.0 Q050-018: the maker is not in the key; keep it beside the name for a later open without the plug-in.
+			const auto& attrs = effect->key().attributes;
+			QString vendor = pluginvendors::vendorOf(attrs.value("file"), attrs.value("class"));
+			if (vendor.isEmpty()) { vendor = pluginvendors::vendorOf(attrs.value("file"), attrs.value("id")); }
+			if (!vendor.isEmpty()) { ef.setAttribute("vendor", vendor); }
 		}
 	}
 }
@@ -168,6 +180,11 @@ void EffectChain::loadSettings( const QDomElement & _this )
 			if( e != nullptr && e->isOkay() && e->nodeName() == node.nodeName() )
 			{
 				e->restoreState( effectData );
+				// 0.5.0 Q050-018: a hosted plug-in binary that is missing leaves a placeholder; keep the file's XML.
+				if (!e->unavailableReason().isEmpty())
+				{
+					e->setPreservedPluginData(missingdevices::detachedCopy(effectData));
+				}
 			}
 			else
 			{

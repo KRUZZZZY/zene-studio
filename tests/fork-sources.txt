@@ -2262,3 +2262,10 @@ tests/src/core/ControlRenderJobTest.cpp
 
 # 2026-10-09 (M0 automation cluster 2647 round 2): new full-mixer baseline and worker-teardown guard proof.
 tests/src/core/AutomationPrepassProofTest.cpp
+
+# 2026-10-12 (Q050-018, missing-instrument data preserved and placeholders reported).
+include/MissingDevices.h
+include/MissingDevicesNotice.h
+src/core/MissingDevices.cpp
+src/gui/MissingDevicesNotice.cpp
+tests/src/core/MissingDevicesPreserveTest.cpp

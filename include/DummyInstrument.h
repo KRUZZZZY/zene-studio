@@ -67,6 +67,12 @@ public:
 		return "dummyinstrument";
 	}
 
+	//! 0.5.0 Q050-018: this instrument stands in for one whose module could not be created.
+	QString unavailableReason() const override
+	{
+		return QStringLiteral("the instrument plug-in module was not found or could not be created");
+	}
+
 	gui::PluginView * instantiateView( QWidget * _parent ) override
 	{
 		return new gui::InstrumentViewFixedSize( this, _parent );

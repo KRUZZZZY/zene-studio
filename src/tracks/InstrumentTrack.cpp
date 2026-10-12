@@ -43,6 +43,8 @@
 #include "PianoRoll.h"
 #include "Pitch.h"
 #include "Song.h"
+#include "MissingDevices.h"
+#include "PluginVendors.h"
 
 namespace lmms
 {
@@ -990,13 +992,24 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 		m_midiCCModel[i]->saveSettings(doc, midiCC, "cc" + QString::number(i));
 	}
 
-	if( m_instrument != nullptr )
+	if (m_instrument != nullptr && !m_preservedInstrument.isNull() && !m_instrument->unavailableReason().isEmpty())
+	{
+		// 0.5.0 Q050-018: a placeholder writes back what the file had, so nothing of the device is lost.
+		thisElement.appendChild(doc.importNode(m_preservedInstrument, true));
+	}
+	else if( m_instrument != nullptr )
 	{
 		QDomElement i = doc.createElement( "instrument" );
 		i.setAttribute( "name", m_instrument->descriptor()->name );
 		QDomElement ins = m_instrument->saveState( doc, i );
 		if(m_instrument->key().isValid()) {
 			ins.appendChild( m_instrument->key().saveXML( doc ) );
+			// 0.5.0 Q050-018: the maker is not in the key (it is the device's identity), so a project that is
+			// later opened without the plug-in can still say whose it was.
+			const auto& attrs = m_instrument->key().attributes;
+			QString vendor = pluginvendors::vendorOf(attrs.value("file"), attrs.value("class"));
+			if (vendor.isEmpty()) { vendor = pluginvendors::vendorOf(attrs.value("file"), attrs.value("id")); }
+			if (!vendor.isEmpty()) { i.setAttribute("vendor", vendor); }
 		}
 		thisElement.appendChild( i );
 	}
@@ -1107,6 +1120,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 					m_instrument = Instrument::instantiate(
 						node.toElement().attribute("name"), this, &key);
 					m_instrument->restoreState(node.firstChildElement());
+					capturePlaceholder(node.toElement());
 					emit instrumentChanged();
 				}
 			}
@@ -1133,6 +1147,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 				{
 					m_instrument->restoreState(node.toElement());
 				}
+				capturePlaceholder(node.toElement());
 				emit instrumentChanged();
 			}
 		}
@@ -1146,6 +1161,19 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 	unlock();
 
 	loadZeneInstrumentSettings(thisElement);
+}
+
+
+
+
+void InstrumentTrack::capturePlaceholder(const QDomElement& instrumentNode)
+{
+	// 0.5.0 Q050-018: an instrument the file named but this session could not load keeps its original XML.
+	m_preservedInstrument = QDomElement();
+	if (m_instrument != nullptr && !m_instrument->unavailableReason().isEmpty())
+	{
+		m_preservedInstrument = missingdevices::detachedCopy(instrumentNode);
+	}
 }
 
 
@@ -1211,6 +1239,7 @@ Instrument * InstrumentTrack::loadInstrument(const QString & _plugin_name,
 	Engine::audioEngine()->requestChangeInModel();
 	delete m_instrument;
 	m_instrument = nullptr;
+	m_preservedInstrument = QDomElement();  // 0.5.0 Q050-018: the user chose a new instrument; no placeholder remains
 	Engine::audioEngine()->doneChangeInModel();
 	m_instrument = Instrument::instantiate(_plugin_name, this,
 					key, keyFromDnd);

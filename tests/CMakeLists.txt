@@ -473,6 +473,8 @@ set(LMMS_TESTS
 	src/core/PluginLogoResourceTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
+	# 0.5.0 Q050-018: a project with unavailable instruments/effects keeps their XML and reports placeholders
+	src/core/MissingDevicesPreserveTest.cpp
 	# The reader half of ARCH-4 S2b, integration rather than unit: a project opened
 	# with sections named to SKIP. Pinned here: the content element name DERIVED from
 	# the root's type attribute (the "pattern" -> midiclip compat mapping is what
@@ -1371,6 +1373,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ArrangingCatchUpTest"
 		OR LMMS_TEST_NAME STREQUAL "ArrangingSpacerReferenceTest"
 		# WF-033: the restored history must bring back a real instrument's own state.
+		OR LMMS_TEST_NAME STREQUAL "MissingDevicesPreserveTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHistoryPersistenceTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
@@ -1380,6 +1383,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# W3EngineTest loads the build's amplifier (post-fader inserts) and receiver (chain.receive) modules.
 	# Without these dependencies a targeted build (cmake --build build --target W3EngineTest) never builds
 	# them, and both cases skip with "this build loads no ... module" instead of running.
+	if(LMMS_TEST_NAME STREQUAL "MissingDevicesPreserveTest")
+		# The real in-tree modules the test copies into its own plug-in directory fixtures.
+		add_dependencies(${LMMS_TEST_NAME} kicker amplifier)
+		foreach(_q050018_module vst3instrument clapinstrument lv2instrument vst3effect clapeffect)
+			if(TARGET ${_q050018_module})
+				add_dependencies(${LMMS_TEST_NAME} ${_q050018_module})
+			endif()
+		endforeach()
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "W3EngineTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier receiver)
 	endif()

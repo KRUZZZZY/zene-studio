@@ -471,6 +471,8 @@ include/MidiSetupWidget.h
 include/MidiSndio.h
 include/MidiSurfaceInput.h
 include/MidiWinMM.h
+include/MissingDevices.h
+include/MissingDevicesNotice.h
 include/MixHelpers.h
 include/Mixer.h
 include/MixerChannelLcdSpinBox.h
@@ -1812,6 +1814,7 @@ src/core/MidiClockTracker.cpp
 src/core/MidiInputTransform.cpp
 src/core/MidiLearn.cpp
 src/core/MidiPlayback.cpp
+src/core/MissingDevices.cpp
 src/core/MixHelpers.cpp
 src/core/Mixer.cpp
 src/core/MixerGroups.cpp
@@ -2145,6 +2148,7 @@ src/gui/MidiControllerMenu.cpp
 src/gui/MidiLearnGui.cpp
 src/gui/MidiReconnectAction.cpp
 src/gui/MidiSetupWidget.cpp
+src/gui/MissingDevicesNotice.cpp
 src/gui/MixerChannelView.cpp
 src/gui/MixerHardwareMenu.cpp
 src/gui/MixerModeBar.cpp
@@ -2542,6 +2546,7 @@ tests/src/core/MidiOutQueueTest.cpp
 tests/src/core/MidiProbabilityPersistenceTest.cpp
 tests/src/core/MidiReconnectTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp
+tests/src/core/MissingDevicesPreserveTest.cpp
 tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerChannelPanTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp

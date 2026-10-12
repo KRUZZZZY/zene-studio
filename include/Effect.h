@@ -108,6 +108,13 @@ public:
 		m_okay = _state;
 	}
 
+	//! 0.5.0 Q050-018: empty when the effect is what the project asked for; otherwise why it is only a
+	//! placeholder (a VST/VST3/CLAP wrapper whose plug-in binary is not available). The chain then keeps
+	//! the file's original effect XML (preservedPluginData) and writes it back on save.
+	virtual QString unavailableReason() const { return {}; }
+	const QDomElement& preservedPluginData() const { return m_preservedPluginData; }
+	void setPreservedPluginData(const QDomElement& data) { m_preservedPluginData = data; }
+
 	//! @returns true if the processing outputted corrupted audio (infs/nans).
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
 	//! 0.5.0 W3 (WF-104): the share of a period this device took, in percent, smoothed (DspLoadProbe.h);
@@ -305,6 +312,7 @@ private:
 	int m_id;
 
 	bool m_okay;
+	QDomElement m_preservedPluginData;
 	bool m_noRun;
 	std::atomic<bool> m_awake;  //!< written on the audio thread, read by the device card's activity light
 	std::atomic<bool> m_corrupted = false;
