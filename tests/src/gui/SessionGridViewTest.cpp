@@ -279,6 +279,9 @@ private slots:
 		QCOMPARE(sessiongrid::sceneState(0, 2, names, {0, -1}, {QStringLiteral("playing"), QString()}), SceneState::Playing);
 		QCOMPARE(sessiongrid::sceneState(0, 2, names, {0, 0}, {QStringLiteral("playing"), QStringLiteral("launching")}),
 			SceneState::Queued);
+		QCOMPARE(sessiongrid::sceneState(2, 2, names, {-1, -1}, idle), SceneState::Empty);
+		QCOMPARE(sessiongrid::sceneState(-1, 2, names, {-1, -1}, {QStringLiteral("playing"), QString()}), SceneState::Empty);
+		QCOMPARE(sessiongrid::sceneState(0, 0, names, {0, -1}, {QStringLiteral("playing"), QString()}), SceneState::Empty);
 		QVERIFY(sessiongrid::cellMark(QString(), false).isEmpty());  // an empty cell has nothing to launch
 		QVERIFY(sessiongrid::cellMark(QString(), true) != sessiongrid::cellMark(QStringLiteral("playing"), true));
 		QVERIFY(sessiongrid::cellMark(QStringLiteral("launching"), true) != sessiongrid::cellMark(QStringLiteral("playing"), true));

@@ -54,20 +54,33 @@ const QString& playingMark()
 	return mark;
 }
 
+bool sceneIsInGrid(int scene, int scenes)
+{
+	return scenes > 0 && scene >= 0 && scene < scenes;
+}
+
+SceneState trackSceneState(int scene, int playingScene, const QString& phase)
+{
+	if (playingScene != scene) { return SceneState::Empty; }
+	if (phase == QLatin1String("launching")) { return SceneState::Queued; }
+	return phase == QLatin1String("playing") ? SceneState::Playing : SceneState::Empty;
+}
+
 } // namespace
 
 SceneState sceneState(int scene, int scenes, const std::vector<QString>& names,
 	const std::vector<int>& playingScene, const std::vector<QString>& phases)
 {
+	if (!sceneIsInGrid(scene, scenes)) { return SceneState::Empty; }
 	bool filled = false;
 	bool playing = false;
 	for (std::size_t track = 0; track < playingScene.size() && track < phases.size(); ++track)
 	{
 		const std::size_t cell = track * static_cast<std::size_t>(scenes) + static_cast<std::size_t>(scene);
 		filled = filled || (cell < names.size() && !names[cell].isEmpty());
-		if (playingScene[track] != scene) { continue; }
-		if (phases[track] == QLatin1String("launching")) { return SceneState::Queued; }
-		playing = playing || phases[track] == QLatin1String("playing");
+		const SceneState trackState = trackSceneState(scene, playingScene[track], phases[track]);
+		if (trackState == SceneState::Queued) { return SceneState::Queued; }
+		playing = playing || trackState == SceneState::Playing;
 	}
 	if (playing) { return SceneState::Playing; }
 	return filled ? SceneState::Stopped : SceneState::Empty;
