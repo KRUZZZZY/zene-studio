@@ -185,6 +185,22 @@ private slots:
 		QVERIFY(run(QStringLiteral("chord.clear")).ok);
 	}
 
+	void followingChordsRefusesAnEmptySelection()
+	{
+		MidiClip* clip = clipWith({{61, 0}});
+		QVERIFY(run(QStringLiteral("chord.set"), {{QStringLiteral("pos"), 0},
+			{QStringLiteral("chord"), QStringLiteral("Major")}, {QStringLiteral("root"), 0}}).ok);
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+		QVERIFY(!clip->notes().front()->selected());
+
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("scope"), QStringLiteral("selection"));
+		const ControlResult refused = run(QStringLiteral("note.follow_chords"), args);
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(clip->notes().front()->key(), 61);
+		QVERIFY(run(QStringLiteral("chord.clear")).ok);
+	}
+
 	void clipPositionsAndOwnScales()
 	{
 		auto* clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(200)));
