@@ -2401,6 +2401,7 @@ if(WANT_WASM)
 	target_compile_features(WasmWorkerPoolTest PRIVATE cxx_std_20)
 	target_compile_definitions(WasmWorkerPoolTest PRIVATE
 		LMMS_TESTING
+		WASM_TEST_DISABLE_PARALLEL_COMPILATION
 		WASM_MODULE_DIR="${CMAKE_BINARY_DIR}/wasm-modules"
 	)
 	add_dependencies(WasmWorkerPoolTest wasm-modules)
@@ -2895,6 +2896,33 @@ set_tests_properties(AudioPluginTest PROPERTIES
 )
 lmms_add_coverage(synthetic_audio_plugin)
 lmms_add_coverage(AudioPluginTest)
+
+# Q050-005: exercise the granular effect's sample-rate buffer handoff while a
+# live render loop runs under the allocation and realtime probes.
+add_executable(GranularPitchShifterRealtimeTest src/core/GranularPitchShifterRealtimeTest.cpp)
+add_test(NAME GranularPitchShifterRealtimeTest COMMAND GranularPitchShifterRealtimeTest)
+target_include_directories(GranularPitchShifterRealtimeTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/GranularPitchShifter
+)
+target_static_libraries(GranularPitchShifterRealtimeTest PRIVATE lmmsobjs)
+target_link_libraries(GranularPitchShifterRealtimeTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(GranularPitchShifterRealtimeTest PRIVATE cxx_std_20)
+target_compile_definitions(GranularPitchShifterRealtimeTest PRIVATE
+	LMMS_TESTING
+	GRANULAR_PLUGIN_PATH="$<TARGET_FILE:granularpitchshifter>"
+)
+set_target_properties(GranularPitchShifterRealtimeTest PROPERTIES ENABLE_EXPORTS ON)
+add_dependencies(GranularPitchShifterRealtimeTest granularpitchshifter)
+lmms_link_allocation_probe(GranularPitchShifterRealtimeTest
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/core/GranularPitchShifterRealtimeTest.cpp")
+set_tests_properties(GranularPitchShifterRealtimeTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+lmms_add_coverage(GranularPitchShifterRealtimeTest)
 
 # Native VST3 instrument fixture and its probe.
 #

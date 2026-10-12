@@ -57,9 +57,11 @@ struct CallResult
 
 //! Owns one wasmtime engine/store/instance and the host import surface.
 //!
-//! The sandbox is deliberately single-threaded: it must only be used by the
-//! thread that owns it (the WasmWorker thread). The audio thread never touches
-//! it; it communicates through WasmWorker's lock-free queues.
+//! The sandbox's Wasmtime operations are deliberately single-threaded: they
+//! must only be used by the thread that owns it (the WasmWorker thread). The
+//! bounded takeLog() snapshot is the exception and may run concurrently with
+//! host_log. The audio thread never touches the sandbox; it communicates
+//! through WasmWorker's lock-free queues.
 // Exported from the host: the WasmEffect plugin (a separate .so) resolves
 // these symbols at load time, exactly like Effect/PluginFactory.
 class LMMS_EXPORT WasmSandbox
@@ -101,7 +103,8 @@ public:
 	float param(std::uint32_t index) const;
 	void setTransportState(std::int32_t state);
 
-	//! Text passed to host_log() by the most recent call ("" if none).
+	//! Bounded snapshot of the latest host_log() text (empty if none or contended).
+	//! Concurrent host_log() never waits; it drops a log while this snapshot is copied.
 	std::string takeLog();
 
 	int declaredChannels() const;

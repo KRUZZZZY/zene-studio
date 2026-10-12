@@ -25,6 +25,8 @@
 #include "GranularPitchShifterEffect.h"
 
 #include <cmath>
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "embed.h"
 #include "lmms_math.h"
 #include "plugin_export.h"
@@ -49,6 +51,13 @@ Plugin::Descriptor PLUGIN_EXPORT granularpitchshifter_plugin_descriptor =
 } ;
 }
 
+namespace
+{
+
+//! Grains alive at once: reserved off the audio thread; a grain past this cap is not spawned.
+constexpr std::size_t MaxGrains = 512;
+
+} // namespace
 
 GranularPitchShifterEffect::GranularPitchShifterEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key) :
 	AudioPlugin(&granularpitchshifter_plugin_descriptor, parent, key),
@@ -56,17 +65,22 @@ GranularPitchShifterEffect::GranularPitchShifterEffect(Model* parent, const Desc
 	m_prefilter({PrefilterLowpass(), PrefilterLowpass()})
 {
 	autoQuitModel()->setValue(autoQuitModel()->maxValue());
-	
-	changeSampleRate();
+	m_grains.reserve(MaxGrains);
+	sampleRateNeedsUpdate();
+	QObject::connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this,
+		[this] { sampleRateNeedsUpdate(); }, Qt::QueuedConnection);
+}
+
+
+GranularPitchShifterEffect::~GranularPitchShifterEffect()
+{
+	delete m_preparedBuffers.exchange(nullptr, std::memory_order_acq_rel);
+	reclaimRetiredBuffers();
 }
 
 
 namespace
 {
-
-//! Grains alive at once: reserved off the audio thread (changeSampleRate), and a grain past it is not
-//! spawned, so processImpl() never reallocates (round 6). Density 16 with full twitch keeps about 65 alive.
-constexpr std::size_t MaxGrains = 512;
 
 //! Audio thread: start a grain when a reserved slot is free.
 template<class Grain>
@@ -81,6 +95,8 @@ void spawnGrain(std::vector<Grain>& grains, int& grainCount, const Grain& grain)
 
 ProcessStatus GranularPitchShifterEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 {
+	applyPreparedBuffers();
+
 	const float d = dryLevel();
 	const float w = wetLevel();
 	
@@ -254,48 +270,78 @@ ProcessStatus GranularPitchShifterEffect::processImpl(InterleavedBufferView<floa
 		frame[1] = d * frame[1] + w * s[1];
 	}
 	
-	if (m_sampleRateNeedsUpdate)
-	{
-		m_sampleRateNeedsUpdate = false;
-		changeSampleRate();
-	}
-
 	return ProcessStatus::ContinueIfNotQuiet;
 }
 
-void GranularPitchShifterEffect::changeSampleRate()
+void GranularPitchShifterEffect::sampleRateNeedsUpdate()
 {
+	reclaimRetiredBuffers();
+
+	auto prepared = std::make_unique<PreparedBuffers>();
 	const int range = m_granularpitchshifterControls.m_rangeModel.value();
 	const float ringBufLength = RangeSeconds[range];
-	
-	m_sampleRate = Engine::audioEngine()->outputSampleRate();
-	m_nyquist = m_sampleRate / 2;
-	
-	m_ringBufLength = m_sampleRate * ringBufLength;
-	m_ringBuf.resize(m_ringBufLength);
-	for (size_t i = 0; i < static_cast<std::size_t>(m_ringBufLength); ++i)
+	prepared->sampleRate = Engine::audioEngine()->outputSampleRate();
+	prepared->nyquist = prepared->sampleRate / 2;
+	prepared->ringBufferLength = static_cast<int>(prepared->sampleRate * ringBufLength);
+	prepared->ringBuffer.resize(static_cast<std::size_t>(prepared->ringBufferLength));
+	for (auto& frame : prepared->ringBuffer)
 	{
-		m_ringBuf[i][0] = 0;
-		m_ringBuf[i][1] = 0;
+		frame = {0, 0};
 	}
-	m_writePoint = 0;
-	
-	m_oldGlide = -1;
-	
-	m_updatePitches = true;
-	
-	m_grains.clear();
-	m_grainCount = 0;
-	m_grains.reserve(MaxGrains);
-	
-	m_dcCoeff = std::exp(-2 * std::numbers::pi_v<float> * DcRemovalHz / m_sampleRate);
+	prepared->dcCoeff = std::exp(-2 * std::numbers::pi_v<float> * DcRemovalHz / prepared->sampleRate);
 
 	const double pitch = m_granularpitchshifterControls.m_pitchModel.value() * (1. / 12.);
 	const double pitchSpread = m_granularpitchshifterControls.m_pitchSpreadModel.value() * (1. / 24.);
-	m_truePitch[0] = pitch - pitchSpread;
-	m_truePitch[1] = pitch + pitchSpread;
-	m_speed[0] = std::exp2(m_truePitch[0]);
-	m_speed[1] = std::exp2(m_truePitch[1]);
+	prepared->truePitch[0] = pitch - pitchSpread;
+	prepared->truePitch[1] = pitch + pitchSpread;
+	prepared->speed[0] = std::exp2(prepared->truePitch[0]);
+	prepared->speed[1] = std::exp2(prepared->truePitch[1]);
+
+	delete m_preparedBuffers.exchange(prepared.release(), std::memory_order_acq_rel);
+}
+
+
+void GranularPitchShifterEffect::applyPreparedBuffers() noexcept
+{
+	std::atomic<PreparedBuffers*>* retiredSlot = nullptr;
+	for (auto& slot : m_retiredBuffers)
+	{
+		if (slot.load(std::memory_order_acquire) == nullptr)
+		{
+			retiredSlot = &slot;
+			break;
+		}
+	}
+	if (retiredSlot == nullptr) { return; }
+
+	PreparedBuffers* prepared = m_preparedBuffers.exchange(nullptr, std::memory_order_acq_rel);
+	if (prepared == nullptr) { return; }
+
+	m_ringBuf.swap(prepared->ringBuffer);
+	m_sampleRate = prepared->sampleRate;
+	m_nyquist = prepared->nyquist;
+	m_ringBufLength = prepared->ringBufferLength;
+	m_dcCoeff = prepared->dcCoeff;
+	m_truePitch = prepared->truePitch;
+	m_speed = prepared->speed;
+	m_writePoint = 0;
+	m_oldGlide = -1;
+	m_updatePitches = true;
+	m_grains.clear();
+	m_grainCount = 0;
+
+	// The prepared object now owns the old ring buffer. Only the control thread
+	// reclaims it, so destroying its vector can never run on the audio thread.
+	retiredSlot->store(prepared, std::memory_order_release);
+}
+
+
+void GranularPitchShifterEffect::reclaimRetiredBuffers() noexcept
+{
+	for (auto& slot : m_retiredBuffers)
+	{
+		delete slot.exchange(nullptr, std::memory_order_acq_rel);
+	}
 }
 
 

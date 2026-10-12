@@ -25,7 +25,10 @@
 #ifndef LMMS_GRANULAR_PITCH_SHIFTER_EFFECT_H
 #define LMMS_GRANULAR_PITCH_SHIFTER_EFFECT_H
 
+#include <array>
+#include <atomic>
 #include <numbers>
+#include <vector>
 
 #include "AudioPlugin.h"
 #include "GranularPitchShifterControls.h"
@@ -47,7 +50,7 @@ class GranularPitchShifterEffect : public DefaultEffect
 {
 public:
 	GranularPitchShifterEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
-	~GranularPitchShifterEffect() override = default;
+	~GranularPitchShifterEffect() override;
 
 	EffectControls* controls() override
 	{
@@ -104,9 +107,8 @@ public:
 			std::copysign((absInput - SatuSafeVol) / (1 + (absInput - SatuSafeVol) * SatuStrength) + SatuSafeVol, input);
 	}
 	
-	void sampleRateNeedsUpdate() { m_sampleRateNeedsUpdate = true; }
-	
-	void changeSampleRate();
+	//! Prepare a replacement ring buffer off the audio thread.
+	void sampleRateNeedsUpdate();
 
 private:
 	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
@@ -151,11 +153,27 @@ private:
 		std::array<double, 2> grainSpeed;
 		double phase;
 	};
+
+	struct PreparedBuffers
+	{
+		std::vector<std::array<float, 2>> ringBuffer;
+		std::array<double, 2> speed{};
+		std::array<double, 2> truePitch{};
+		float sampleRate = 0;
+		float nyquist = 0;
+		float dcCoeff = 0;
+		int ringBufferLength = 0;
+	};
+
+	void applyPreparedBuffers() noexcept;
+	void reclaimRetiredBuffers() noexcept;
 	
 	GranularPitchShifterControls m_granularpitchshifterControls;
 	
 	std::vector<std::array<float, 2>> m_ringBuf;
 	std::vector<Grain> m_grains;
+	std::atomic<PreparedBuffers*> m_preparedBuffers{nullptr};
+	std::array<std::atomic<PreparedBuffers*>, 2> m_retiredBuffers{};
 
 	std::array<PrefilterLowpass, 2> m_prefilter;
 	std::array<double, 2> m_speed = {1, 1};
@@ -175,7 +193,6 @@ private:
 	double m_oldGlide = -1;
 	double m_glideCoef = 0;
 
-	bool m_sampleRateNeedsUpdate = false;
 	bool m_updatePitches = true;
 
 	friend class GranularPitchShifterControls;

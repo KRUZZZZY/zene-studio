@@ -23,6 +23,7 @@
 #include "WasmSandbox.h"
 
 #include "WasmAbi.h"
+#include "WasmLogBuffer.h"
 
 #include <wasmtime.h>
 
@@ -95,13 +96,17 @@ struct WasmSandbox::Impl
 	std::uint64_t fuelBudget = abi::defaultFuelBudget;
 	std::array<float, abi::maxParams> params{};
 	std::atomic<std::int32_t> transportState{abi::transportStopped};
-	std::array<char, abi::maxLogBytes> log{};
-	std::size_t logSize = 0;
+	WasmLogBuffer log;
 
 	Impl()
 	{
 		wasm_config_t* config = wasm_config_new();
 		wasmtime_config_consume_fuel_set(config, true);
+#if defined(WASM_TEST_DISABLE_PARALLEL_COMPILATION) && defined(WASMTIME_FEATURE_PARALLEL_COMPILATION)
+		// Keep ThreadSanitizer focused on the host/worker boundary: this vendored
+		// Wasmtime build reports races inside its parallel Cranelift compiler.
+		wasmtime_config_parallel_compilation_set(config, false);
+#endif
 		engine = wasm_engine_new_with_config(config);
 		resetStore();
 		linker = wasmtime_linker_new(engine);
@@ -223,11 +228,7 @@ struct WasmSandbox::Impl
 		{
 			return nullptr;
 		}
-		const std::size_t copyLength = std::min<std::size_t>(
-			static_cast<std::size_t>(length), self->log.size() - 1);
-		std::memcpy(self->log.data(), data + offset, copyLength);
-		self->log[copyLength] = '\0';
-		self->logSize = copyLength;
+		self->log.append(data + offset, static_cast<std::size_t>(length));
 		return nullptr;
 	}
 
@@ -560,13 +561,7 @@ void WasmSandbox::setTransportState(std::int32_t state)
 
 std::string WasmSandbox::takeLog()
 {
-	if (m_impl->logSize == 0)
-	{
-		return {};
-	}
-	std::string result(m_impl->log.data(), m_impl->logSize);
-	m_impl->logSize = 0;
-	return result;
+	return m_impl->log.take();
 }
 
 int WasmSandbox::declaredChannels() const
