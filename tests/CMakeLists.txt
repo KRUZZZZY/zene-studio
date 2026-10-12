@@ -320,6 +320,9 @@ set(LMMS_TESTS
 	# detected-key field's XML round trip. Headless: no Engine, no window, no audio
 	# device. Real-world accuracy is NOT measured here - see
 	# docs/IMPORT-DETECTION.md.
+	# DrumSynth level parsing and rendering (the high-level fixture catches integer
+	# overflow before the renderer converts a level product to floating point).
+	src/core/DrumSynthLevelTest.cpp
 	src/core/ImportDetectionTest.cpp
 	src/core/MathTest.cpp
 	# The LIVE loudness tap (feature row 24 of docs/FEATURE-LIST-0.3.0.md, the
