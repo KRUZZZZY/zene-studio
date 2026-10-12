@@ -246,6 +246,12 @@ bool ScriptClock::setSchedule(const QString& id, const QString& source, const QS
 		syncTimer();
 		return true;
 	}
+	if (m_schedules.size() >= static_cast<std::size_t>(MaxScheduleCount))
+	{
+		*error = QStringLiteral("the maximum number of scheduled scripts (%1) has been reached")
+			.arg(MaxScheduleCount);
+		return false;
+	}
 	ScriptSchedule entry;
 	entry.id = id;
 	entry.source = source;

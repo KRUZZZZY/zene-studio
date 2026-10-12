@@ -154,6 +154,8 @@ public:
 	//! (before + inverse both carry it) and its compile check stay inside
 	//! control::MaxTransactionBytes with room to spare.
 	static constexpr int SourceByteCap = 65536;
+	//! Bound retained sources and the registry scan performed on each poll.
+	static constexpr int MaxScheduleCount = 64;
 
 	//! Never destroyed (the MidiClock singleton's argument): command handlers,
 	//! the timer and tests reach it for the process's life.
