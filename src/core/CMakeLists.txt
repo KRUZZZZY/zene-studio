@@ -915,6 +915,8 @@ set(LMMS_SRCS
 	core/PluginScanCache.cpp
 	# The vendor each VST3 / CLAP class's own factory reports, recorded by the hosts' discovery.
 	core/PluginVendors.cpp
+	# 0.5.0 Q050-018: the placeholders a project open could not load (name, format, vendor)
+	core/MissingDevices.cpp
 	core/PresetPreviewPlayHandle.cpp
 	core/ProjectJournal.cpp
 	# The undo stack's two-sided bound and its coalescing primitive, in their own

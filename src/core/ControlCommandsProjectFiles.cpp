@@ -32,6 +32,7 @@
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "MissingDevices.h"
 #include "ProjectIds.h"
 #include "ProjectRevisions.h"
 #include "Song.h"
@@ -44,6 +45,15 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 
 namespace
 {
+
+//! 0.5.0 Q050-018: the placeholders the session holds, as `missing_device_count` / `missing_devices`.
+void insertMissingDevices(QJsonObject& result, Song* song)
+{
+	QJsonArray devices;
+	for (const MissingDevice& device : missingdevices::collect(song)) { devices.append(device.toJson()); }
+	result.insert(QStringLiteral("missing_device_count"), devices.size());
+	result.insert(QStringLiteral("missing_devices"), devices);
+}
 
 //! The file hash of a saved/restored revision, reported to the caller.
 QString sha256OfFile(const QString& path)
@@ -359,6 +369,9 @@ void registerProjectGetState(ControlRegistry& registry)
 		{QStringLiteral("revisions"), QJsonObject{{QStringLiteral("type"), QStringLiteral("object")}}},
 		{QStringLiteral("playing"), booleanProperty()},
 		{QStringLiteral("tracks"), arrayProperty()},
+		// 0.5.0 Q050-018: the placeholders the session holds now (same shape as project.open's list)
+		{QStringLiteral("missing_device_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+		{QStringLiteral("missing_devices"), arrayProperty()},
 	});
 	cmd.handler = [](const QJsonObject&) {
 		Song* song = Engine::getSong();
@@ -374,6 +387,7 @@ void registerProjectGetState(ControlRegistry& registry)
 			trackIds.append(control::trackIdOf(song->tracks()[i]));
 		}
 		result.insert(QStringLiteral("tracks"), trackIds);
+		insertMissingDevices(result, song);
 		// SPEC A16 deliverable 4: the recoverable revision set is REPORTED here
 		// rather than assumed, so an agent can see what project.save kept.
 		result.insert(QStringLiteral("revisions"),
@@ -453,6 +467,11 @@ void registerProjectOpen(ControlRegistry& registry)
 		{QStringLiteral("not_loaded"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
 			{QStringLiteral("items"), stringProperty()}}},
 		{QStringLiteral("partial"), QJsonObject{{QStringLiteral("type"), QStringLiteral("boolean")}}},
+		// 0.5.0 Q050-018: the instruments and effects the file names that this session could not load. Each keeps
+		// its original XML (saved back unchanged); {kind, name, format, vendor, track, reason, identity}. Never
+		// blocks the open and is not a load error.
+		{QStringLiteral("missing_device_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+		{QStringLiteral("missing_devices"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -534,6 +553,7 @@ void registerProjectOpen(ControlRegistry& registry)
 		result.insert(QStringLiteral("not_loaded"), notLoadedNames);
 		result.insert(QStringLiteral("not_loaded_count"), notLoadedNames.size());
 		result.insert(QStringLiteral("partial"), song->isPartialLoad());
+		insertMissingDevices(result, song);
 		QJsonObject transaction;
 		transaction.insert(QStringLiteral("before"),
 			QJsonObject{{QStringLiteral("previous_file"), previousFile},

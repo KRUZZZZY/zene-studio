@@ -150,6 +150,9 @@ public:
 	void playNote( NotePlayHandle * _n, std::span<SampleFrame> workingBuffer );
 
 	QString instrumentName() const;
+	//! 0.5.0 Q050-018: the original `<instrument>` XML the file carried, kept while the instrument is a placeholder
+	//! (its module or hosted plug-in binary is missing) and written back unchanged on save; null otherwise.
+	const QDomElement& preservedInstrument() const { return m_preservedInstrument; }
 	const Instrument *instrument() const
 	{
 		return m_instrument;
@@ -354,6 +357,7 @@ protected:
 
 	// get the name of the instrument in the saved data
 	QString getSavedInstrumentName(const QDomElement & thisElement) const;
+	void capturePlaceholder(const QDomElement& instrumentNode);
 
 
 protected slots:
@@ -431,6 +435,8 @@ private:
 	BoolModel m_useMasterPitchModel;
 
 	Instrument * m_instrument;
+	//! 0.5.0 Q050-018: the file's original instrument element while the instrument is only a placeholder (null otherwise)
+	QDomElement m_preservedInstrument;
 	InstrumentSoundShaping m_soundShaping;
 	InstrumentFunctionArpeggio m_arpeggio;
 	InstrumentFunctionNoteStacking m_noteStacking;

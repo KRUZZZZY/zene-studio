@@ -475,6 +475,10 @@ set(LMMS_TESTS
 	src/core/PluginLogoResourceTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
+	# 0.5.0 Q050-018: a project with unavailable instruments/effects keeps their XML and reports placeholders
+	src/core/MissingDevicesPreserveTest.cpp
+	# Q050-018 review round 2: every mixer chain, save/reopen and the real GUI project-loaded notice.
+	src/core/MissingDevicesRound2Test.cpp
 	# The reader half of ARCH-4 S2b, integration rather than unit: a project opened
 	# with sections named to SKIP. Pinned here: the content element name DERIVED from
 	# the root's type attribute (the "pattern" -> midiclip compat mapping is what
@@ -1206,6 +1210,11 @@ function(lmms_link_allocation_probe TARGET SOURCE)
 	endif()
 endfunction()
 
+# A loadable but deliberately non-plug-in module used to exercise the cached-descriptor
+# path where a module is found during scan and lacks lmms_plugin_main when instantiated.
+add_library(q050018_no_entry MODULE src/plugins/MissingDevicesNoEntryModule.cpp)
+set_target_properties(q050018_no_entry PROPERTIES OUTPUT_NAME "q050018-no-entry")
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -1388,6 +1397,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ArrangingCatchUpTest"
 		OR LMMS_TEST_NAME STREQUAL "ArrangingSpacerReferenceTest"
 		# WF-033: the restored history must bring back a real instrument's own state.
+		OR LMMS_TEST_NAME STREQUAL "MissingDevicesPreserveTest"
+		OR LMMS_TEST_NAME STREQUAL "MissingDevicesRound2Test"
 		OR LMMS_TEST_NAME STREQUAL "UndoHistoryPersistenceTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
@@ -1403,6 +1414,21 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# W3EngineTest loads the build's amplifier (post-fader inserts) and receiver (chain.receive) modules.
 	# Without these dependencies a targeted build (cmake --build build --target W3EngineTest) never builds
 	# them, and both cases skip with "this build loads no ... module" instead of running.
+	if(LMMS_TEST_NAME STREQUAL "MissingDevicesPreserveTest" OR LMMS_TEST_NAME STREQUAL "MissingDevicesRound2Test")
+		# The test copies target-named modules into isolated plug-in directories; target names preserve
+		# each platform's prefix and suffix (e.g. lib*.so, *.dll).
+		add_dependencies(${LMMS_TEST_NAME} q050018_no_entry)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			LMMS_TEST_NO_ENTRY_MODULE="$<TARGET_FILE:q050018_no_entry>")
+		foreach(_q050018_module kicker amplifier vst3instrument clapinstrument lv2instrument vst3effect clapeffect)
+			if(TARGET ${_q050018_module})
+				add_dependencies(${LMMS_TEST_NAME} ${_q050018_module})
+				string(TOUPPER "${_q050018_module}" _q050018_module_upper)
+				target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+					"LMMS_TEST_MODULE_${_q050018_module_upper}=\"$<TARGET_FILE_NAME:${_q050018_module}>\"")
+			endif()
+		endforeach()
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "W3EngineTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier receiver)
 	endif()

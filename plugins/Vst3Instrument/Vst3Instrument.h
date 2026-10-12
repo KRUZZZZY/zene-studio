@@ -88,6 +88,7 @@ class Vst3Instrument : public AudioPluginExt<Instrument, Vst3InstrumentAudioPort
 public:
 	Vst3Instrument(InstrumentTrack* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~Vst3Instrument() override;
+	QString unavailableReason() const override { return m_plugin.isLoaded() ? QString() : QStringLiteral("the VST3 module or class was not found or could not be loaded"); }
 
 	auto vst3Plugin() -> vst3::HostedPlugin* { return &m_plugin; }
 

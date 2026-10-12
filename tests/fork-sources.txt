@@ -2293,3 +2293,13 @@ tests/src/core/GranularPitchShifterRealtimeTest.cpp
 # Q050-042: the product-new test loads the 16-bar legacy fixture through the version upgrader, then checks
 # the upgraded and saved pattern lengths after reopen. The fixture itself is test data, not a source-scope entry.
 tests/src/core/LegacyPatternUpgradeTest.cpp
+
+# 2026-10-12 (Q050-018, missing-instrument data preserved and placeholders reported).
+include/MissingDevices.h
+include/MissingDevicesNotice.h
+src/core/MissingDevices.cpp
+src/gui/MissingDevicesNotice.cpp
+tests/src/core/MissingDevicesPreserveTest.cpp
+include/PluginLoadPolicy.h
+tests/src/core/MissingDevicesRound2Test.cpp
+tests/src/plugins/MissingDevicesNoEntryModule.cpp

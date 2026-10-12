@@ -51,6 +51,7 @@ class Vst3Effect : public AudioPluginExt<Effect, Vst3EffectAudioPortsSettings>
 public:
 	Vst3Effect(Model* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~Vst3Effect() override;
+	QString unavailableReason() const override { return m_plugin.isLoaded() ? QString() : QStringLiteral("the VST3 module or class was not found or could not be loaded"); }
 
 	auto controls() -> EffectControls* override;
 

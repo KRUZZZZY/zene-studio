@@ -89,6 +89,7 @@ class ClapInstrument : public AudioPluginExt<Instrument, ClapInstrumentAudioPort
 public:
 	ClapInstrument(InstrumentTrack* parent, const Descriptor::SubPluginFeatures::Key* key);
 	~ClapInstrument() override;
+	QString unavailableReason() const override { return m_plugin.isLoaded() ? QString() : QStringLiteral("the CLAP module or plug-in was not found or could not be loaded"); }
 
 	auto clapPlugin() -> clap::HostedPlugin* { return &m_plugin; }
 
