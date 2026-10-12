@@ -87,6 +87,11 @@ float varying(int f)
 //! One mixer period (channel 1 constant 0.25, channel 2 varying), then the bus flipped so it can be read.
 std::vector<SampleFrame> period(Mixer* mixer)
 {
+	// Serial model prepass, as AudioEngine runs it once per period before mixing (consumes setter ramps).
+	{
+		auto changeGuard = Engine::audioEngine()->requestChangesGuard();
+		Engine::audioEngine()->prepareAutomatableModelBuffers();
+	}
 	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
 	std::vector<SampleFrame> out(fpp);
 	std::vector<SampleFrame> one(fpp, SampleFrame(0.25f, 0.25f));

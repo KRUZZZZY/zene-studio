@@ -57,6 +57,12 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 //! One period: channel 1 fed a varying signal, channel 2 a constant, the master output returned.
 std::vector<SampleFrame> period(Mixer* mixer, int index)
 {
+	// AudioEngine runs the serial model prepass once per period, before mixing. A setter's pending
+	// old/new ramp is consumed there; skipping it would replay the ramp into the measured period.
+	{
+		auto changeGuard = Engine::audioEngine()->requestChangesGuard();
+		Engine::audioEngine()->prepareAutomatableModelBuffers();
+	}
 	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
 	std::vector<SampleFrame> out(fpp);
 	std::vector<SampleFrame> varying(fpp);

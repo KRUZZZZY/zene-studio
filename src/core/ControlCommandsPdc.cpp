@@ -105,6 +105,7 @@ QJsonArray trackInputReport()
 	Mixer* mixer = Engine::mixer();
 	for (const AudioBusHandle* handle : engine->audioBusHandles())
 	{
+		if (engine->isSampleVoicePoolBus(handle)) { continue; }
 		QJsonObject entry;
 		entry.insert(QStringLiteral("name"), handle->name());
 		// The channel's PERSISTENT id (SPEC-stable-ids.md slice 2), read off the
