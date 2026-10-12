@@ -439,6 +439,18 @@ private slots:
 	//! Design theme 18: the shared list finds, sorts by a column (numbers by value, a third click back to the list's
 	//! order), runs its primary action on Enter - on the row chosen, wherever the sort put it - offers every action
 	//! from the Menu key or Shift+F10, and keeps each outcome in its Results log.
+	void sortsScientificNotationByNumericValue()
+	{
+		ListTable table;
+		const QList<ListRow> rows{
+			{QStringList{QStringLiteral("1e3 ms")}, {}, QString()},
+			{QStringList{QStringLiteral("20 ms")}, {}, QString()}
+		};
+		table.setRows({QStringLiteral("value")}, rows);
+		table.sortRows(0);
+		QCOMPARE(table.item(0, 0)->text(), QStringLiteral("20 ms"));
+	}
+
 	void theListFindsSortsAndActsFromTheKeyboard()
 	{
 		ListSpec spec;
