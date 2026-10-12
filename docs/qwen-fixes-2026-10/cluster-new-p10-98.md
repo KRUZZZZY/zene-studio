@@ -18,6 +18,15 @@ The DAWproject test family has one CTest entry. Its QtTest run contains 36 cases
 
 Commands below were run from the worktree root except the `ctest` commands, which were run from `build/tests`. Build and test output was redirected to the named log files.
 
+| Evidence | Exact command or result | EXIT |
+| --- | --- | --- |
+| RED regression | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-98.r1/logs/test-7.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"` — both new cases fail with the production patch reversed. | 8 |
+| GREEN regression | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-98.r1/logs/test-8.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"` — all 36 QtTest cases pass. | 0 |
+| Affected family | `ctest -V -R DawProjectInterchangeRoundTripTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-98.r1/logs/test-9.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"` — 36 QtTest cases; 1/1 CTest entry. | 0 |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-98.r1/logs/gate-5.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-98.r1/logs/gate-6.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"` | 0 |
+| Files committed | `src/core/DawProjectRead.cpp`; `src/core/DawProjectReadTracks.cpp`; `tests/src/core/DawProjectInterchangeRoundTripTest.cpp`; `docs/qwen-fixes-2026-10/cluster-new-p10-98.md` | — |
+
 **Reverse the product patch — EXIT=0:**
 
 ```sh
@@ -67,13 +76,13 @@ The verbose log reports `36 passed, 0 failed`; CTest reports `1/1` passed.
 **Required gates:**
 
 ```sh
-bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-98.r1/logs/gate-3.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"
+bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-98.r1/logs/gate-5.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"
 ```
 
 EXIT=0.
 
 ```sh
-bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-98.r1/logs/gate-4.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"
+bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-98.r1/logs/gate-6.log 2>&1; status=$?; printf 'EXIT=%s\n' "$status"; exit "$status"
 ```
 
 EXIT=0.
