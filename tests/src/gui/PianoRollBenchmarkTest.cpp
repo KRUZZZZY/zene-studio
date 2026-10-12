@@ -54,6 +54,7 @@
 #include "MidiClip.h"
 #include "Note.h"
 #include "NoteEditor.h"
+#include "Piano.h"
 #include "PianoRoll.h"
 #include "Song.h"
 
@@ -113,6 +114,19 @@ private slots:
 		ControlRegistry::setReady(true);  // the note editor reads the scale context through scale.get_state
 	}
 	void cleanupTestCase() { Engine::destroy(); }
+
+	void invalidKeysAreNotPressed()
+	{
+		struct GuardedPiano
+		{
+			Piano piano{nullptr};
+			bool guard = true;
+		};
+		GuardedPiano guarded;
+
+		QVERIFY(!guarded.piano.isKeyPressed(-1));
+		QVERIFY(!guarded.piano.isKeyPressed(NumKeys));
+	}
 
 	void frameTimeAtFourSizes()
 	{
