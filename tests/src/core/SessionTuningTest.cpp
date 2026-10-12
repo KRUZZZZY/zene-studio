@@ -33,8 +33,10 @@
 
 #include <cmath>
 #include <cstdio>
+#include <limits>
 
 #include <QDir>
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -902,6 +904,42 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		QVERIFY2(sameTable(before, after, &mismatch),
 			qPrintable(QStringLiteral("the refused keymap still changed the table at key %1")
 				.arg(mismatch)));
+	}
+
+	//! Project keymap XML used to retain arbitrary integer key fields, so a
+	//! minimum middle_key overflowed key - middle_key during pitch mapping. The
+	//! XML loader applies the same MIDI bounds as the .kbm loader, and Keymap's
+	//! public constructor still gets overflow-safe offset arithmetic.
+	void aKeymapWithOutOfRangeLoadedMiddleKeyIsClampedBeforeMapping()
+	{
+		QDomDocument document(QStringLiteral("keymap-test"));
+		QDomElement element = document.createElement(QStringLiteral("keymap"));
+		document.appendChild(element);
+		element.setAttribute(QStringLiteral("first_key"), 0);
+		element.setAttribute(QStringLiteral("last_key"), 127);
+		element.setAttribute(QStringLiteral("middle_key"),
+			std::numeric_limits<int>::min());
+		element.setAttribute(QStringLiteral("base_key"), 0);
+		element.setAttribute(QStringLiteral("base_freq"), 440.0);
+		std::vector<int> degrees;
+		for (int degree = 0; degree < 12; ++degree)
+		{
+			degrees.push_back(degree);
+			QDomElement degreeElement = document.createElement(QStringLiteral("degree"));
+			degreeElement.setAttribute(QStringLiteral("value"), degree);
+			element.appendChild(degreeElement);
+		}
+
+		Keymap loaded;
+		loaded.loadSettings(element);
+		QCOMPARE(loaded.getMiddleKey(), 0);
+		QCOMPARE(loaded.getDegree(60), 0);
+		QCOMPARE(loaded.getOctave(60), 5);
+
+		Keymap directlyConstructed(QStringLiteral("extreme"), std::move(degrees),
+			0, 127, std::numeric_limits<int>::min(), 0, 440.0f);
+		QCOMPARE(directlyConstructed.getDegree(60), 8);
+		QCOMPARE(directlyConstructed.getOctave(60), 178956975);
 	}
 
 	//! The recorded undo step restores the Scale/Keymap the table was BUILT from,
