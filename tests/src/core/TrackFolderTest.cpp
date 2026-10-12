@@ -100,6 +100,28 @@ QString projectVersion()
 	return fresh.documentElement().attribute(QStringLiteral("version"));
 }
 
+//! A current project whose visibility set names tracks with a token that is
+//! NOT a number ("bogus") beside two parseable IDs. The shape a corrupted or
+//! hand-edited project file carries.
+QString projectWithUnparseableSetId(const QString& version)
+{
+	return QString(
+		"<?xml version=\"1.0\"?>\n"
+		"<lmms-project version=\"%1\" type=\"song\" creator=\"LMMS\">\n"
+		"  <head/>\n"
+		"  <song>\n"
+		"    <trackcontainer type=\"song\">\n"
+		"      <track type=\"0\" name=\"One\" muted=\"0\">\n"
+		"        <instrumenttrack/>\n"
+		"      </track>\n"
+		"    </trackcontainer>\n"
+		"    <visibilitysets>\n"
+		"      <set name=\"Mixed\" tracks=\"1,bogus,0\"/>\n"
+		"    </visibilitysets>\n"
+		"  </song>\n"
+		"</lmms-project>\n").arg(version);
+}
+
 } // namespace
 
 
@@ -340,6 +362,26 @@ private slots:
 		QVERIFY(song->findTrackById(firstId)->isVisible());
 		QVERIFY(!song->findTrackById(thirdId)->isVisible());
 		removeAll(name);
+	}
+
+	//! (f2) An unparseable track ID in a saved visibility set must NOT silently
+	//! become track ID 0 - 0 is a real, valid track ID, so a bogus token would
+	//! make the set claim a track the file never named. Only parseable IDs
+	//! survive the load, in file order.
+	void invalidVisibilitySetIdsAreDroppedOnLoad()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("bad-ids.mmp"));
+		writeFile(path, projectWithUnparseableSetId(projectVersion()));
+		loadProject(path);
+
+		Song* song = Engine::getSong();
+		const TrackContainer::VisibilitySet* set = song->findVisibilitySet(QStringLiteral("Mixed"));
+		QVERIFY(set != nullptr);
+		// "bogus" must not join the set as a second 0: the set carries exactly the
+		// two parseable IDs, in file order.
+		QCOMPARE(static_cast<int>(set->trackIds.size()), 2);
+		QCOMPARE(set->trackIds.at(0), 1);
+		QCOMPARE(set->trackIds.at(1), 0);
 	}
 
 	//! (g) A project that predates the feature loads with NO folder state and
