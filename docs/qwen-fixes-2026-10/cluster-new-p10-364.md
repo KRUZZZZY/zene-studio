@@ -15,6 +15,15 @@ The regression was RED on the original behavior (`registryCountIsBounded`: `!acc
 
 The build commands ran from the worktree root. The ctest commands ran from `build/tests`. Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-364.r1/logs`. The fff grep tool was not exposed in this session, so matching log lines were inspected with `rg -n`.
 
+| Evidence | Exact command or committed files | Result |
+| --- | --- | --- |
+| RED, original code | `ctest -R '^ScriptClockTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-364.r1/logs/test-1.log 2>&1; test_status=$?; printf 'EXIT=%s\n' "$test_status"; exit "$test_status"` | EXIT=8; `registryCountIsBounded` failed because the 65th ID was accepted. |
+| GREEN, restored fix | `ctest -R '^ScriptClockTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-364.r1/logs/test-4.log 2>&1; test_status=$?; printf 'EXIT=%s\n' "$test_status"; exit "$test_status"` | EXIT=0; 1/1 passed. |
+| Affected-family count | `ctest -R '^ScriptClockTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-364.r1/logs/test-4.log 2>&1; test_status=$?; printf 'EXIT=%s\n' "$test_status"; exit "$test_status"` | 1/1 registered ctest test executed. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-364.r1/logs/gate-1.log 2>&1; gate_status=$?; printf 'EXIT=%s\n' "$gate_status"; exit "$gate_status"` | EXIT=0. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-364.r1/logs/gate-2.log 2>&1; gate_status=$?; printf 'EXIT=%s\n' "$gate_status"; exit "$gate_status"` | EXIT=0. |
+| Files committed | `include/ScriptClock.h`; `src/core/ScriptClock.cpp`; `tests/src/core/ScriptClockTest.cpp`; `tests/fork-sources.txt`; `docs/qwen-fixes-2026-10/cluster-new-p10-364.md` | Five paths. |
+
 ### Initial regression (RED)
 
 ```sh
