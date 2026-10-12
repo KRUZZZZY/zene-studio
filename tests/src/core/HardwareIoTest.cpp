@@ -204,6 +204,23 @@ private slots:
 			{QStringLiteral("pre_fader"), true}, {QStringLiteral("pan"), 0.0}}));
 	}
 
+	void invalidCueNumbersUseClampedDefaultNames()
+	{
+		const int lastCue = hardwareio::MaxCues - 1;
+		const hardwareio::CueMaster firstMaster = hardwareio::cueMaster(0);
+		const hardwareio::CueMaster lastMaster = hardwareio::cueMaster(lastCue);
+		hardwareio::setCueMaster(0, hardwareio::CueMaster{});
+		hardwareio::setCueMaster(lastCue, hardwareio::CueMaster{});
+
+		const QString belowRange = hardwareio::cueName(-1);
+		const QString aboveRange = hardwareio::cueName(hardwareio::MaxCues);
+
+		hardwareio::setCueMaster(0, firstMaster);
+		hardwareio::setCueMaster(lastCue, lastMaster);
+		QCOMPARE(belowRange, QStringLiteral("Cue A"));
+		QCOMPARE(aboveRange, QStringLiteral("Cue D"));
+	}
+
 	void aCueFollowsSoloAndListen()
 	{
 		Mixer* mixer = Engine::mixer();
