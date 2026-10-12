@@ -96,6 +96,7 @@ std::atomic<int> s_projectSlot{0};
 alignas(16) char s_altStack[32 * 1024];
 
 bool s_installed = false;
+constexpr int kCrashSignalCount = 5;
 
 // The directory the public, main-thread API uses.  The handler does not read
 // this; it only uses s_dirFd.
@@ -205,8 +206,8 @@ std::string reportFileInDir(const std::string& dir, const char* name)
  */
 const int* handlerSignals(int& count)
 {
-	static const int kSignals[] = { SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGFPE };
-	count = 5;
+	static const int kSignals[kCrashSignalCount] = { SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGFPE };
+	count = kCrashSignalCount;
 #ifdef LMMS_DEBUG_FPE
 	count = 4;
 #endif
@@ -262,9 +263,18 @@ bool install(const std::string& workingDirectory)
 
 	int count = 0;
 	const int* signals = handlerSignals(count);
+	struct sigaction previous[kCrashSignalCount];
 	for (int i = 0; i < count; ++i)
 	{
-		sigaction(signals[i], &sa, nullptr);
+		if (sigaction(signals[i], &sa, &previous[i]) != 0)
+		{
+			for (int rollback = i; rollback > 0; --rollback)
+			{
+				sigaction(signals[rollback - 1], &previous[rollback - 1], nullptr);
+			}
+			if (const int fd = s_dirFd.exchange(-1); fd >= 0) { ::close(fd); }
+			return false;
+		}
 	}
 
 	s_installed = true;
