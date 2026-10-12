@@ -32,6 +32,10 @@
 #include "InstrumentTrack.h"
 #include "LocaleHelper.h"
 #include "PatternTrack.h"
+#include "Engine.h"
+#include "MidiPort.h"
+#include "Song.h"
+#include "SmfInterchange.h"
 
 #include "plugin_export.h"
 
@@ -78,16 +82,28 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 	QDomElement element;
 
 
-	int nTracks = 0;
-	auto buffer = std::array<uint8_t, BUFFER_SIZE>{};
+	int nTracks = 1; // the conductor track
+	// One growable chunk buffer for every MTrk and the header; each is written whole, never capped.
+	std::vector<uint8_t> chunk;
+	const auto writeChunk = [&](const auto &writable)
+	{
+		chunk.clear();
+		writable.writeToBuffer(chunk);
+		midiout.writeRawData(reinterpret_cast<const char *>(chunk.data()), int(chunk.size()));
+	};
 
 	for (const Track* track : tracks) if (track->type() == Track::Type::Instrument) nTracks++;
 	for (const Track* track : patternStoreTracks) if (track->type() == Track::Type::Instrument) nTracks++;
 
 	// midi header
 	MidiFile::MIDIHeader header(nTracks);
-	uint32_t size = header.writeToBuffer(buffer.data());
-	midiout.writeRawData((char *)buffer.data(), size);
+	writeChunk(header);
+
+	{
+		MTrack conductor;
+		writeConductor(conductor, tempo);
+		writeChunk(conductor);
+	}
 
 	std::vector<std::vector<std::pair<int,int>>> plists;
 
@@ -100,11 +116,8 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 		if (track->type() == Track::Type::Instrument)
 		{
 
-			mtrack.addName(track->name().toStdString(), 0);
-			//mtrack.addProgramChange(0, 0);
-			mtrack.addTempo(tempo, 0);
-
 			auto instTrack = dynamic_cast<InstrumentTrack *>(track);
+			beginInstrumentTrack(mtrack, instTrack);
 			element = instTrack->saveState(dataFile, dataFile.content());
 
 			int base_pitch = 0;
@@ -136,8 +149,7 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 			}
 			processPatternNotes(midiClip, INT_MAX);
 			writeMidiClipToTrack(mtrack, midiClip);
-			size = mtrack.writeToBuffer(buffer.data());
-			midiout.writeRawData((char *)buffer.data(), size);
+			writeChunk(mtrack);
 		}
 
 		if (track->type() == Track::Type::Pattern)
@@ -176,11 +188,8 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 
 		if (track->type() != Track::Type::Instrument) continue;
 
-		mtrack.addName(track->name().toStdString(), 0);
-		//mtrack.addProgramChange(0, 0);
-		mtrack.addTempo(tempo, 0);
-
 		auto instTrack = dynamic_cast<InstrumentTrack *>(track);
+		beginInstrumentTrack(mtrack, instTrack);
 		element = instTrack->saveState(dataFile, dataFile.content());
 
 		int base_pitch = 0;
@@ -251,8 +260,7 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 				++itr;
 			}
 		}
-		size = mtrack.writeToBuffer(buffer.data());
-		midiout.writeRawData((char *)buffer.data(), size);
+		writeChunk(mtrack);
 	}
 
 	return true;
@@ -283,11 +291,45 @@ void MidiExport::writeMidiClip(MidiNoteVector &midiClip, const QDomNode& n,
 
 
 
+void MidiExport::beginInstrumentTrack(MTrack &mtrack, InstrumentTrack *track)
+{
+	// Channel: the track's MIDI output channel, 1..16 -> 0..15. "--" (0) is what the engine itself
+	// plays on channel 1 (MidiPort::realOutputChannel), so the file says the same.
+	// Program: the track's output program (1..128 -> 0..127); the default 1 is written as program 0
+	// (Acoustic Grand Piano), the instrument a General MIDI player assumes anyway.
+	mtrack.channel = static_cast<uint8_t>(track->midiPort()->realOutputChannel());
+	mtrack.addName(track->name().toStdString(), 0);
+	mtrack.addProgramChange(static_cast<uint8_t>(qBound(1, track->midiPort()->outputProgram(), 128) - 1), 0);
+}
+
+
+
+void MidiExport::writeConductor(MTrack &mtrack, int globalTempo)
+{
+	Song* song = Engine::getSong();
+	const TempoMapTimeSignature signature{
+		song->getTimeSigModel().numeratorModel().value(),
+		song->getTimeSigModel().denominatorModel().value()};
+	mtrack.addName("Zene Studio tempo map", 0);
+	const auto events = interchange::exportEvents(song->tempoMap().map(), globalTempo, signature, nullptr);
+	for (const auto& event : events)
+	{
+		const uint32_t tick = uint32_t(event.tick) * interchange::SmfTicksPerLmmsTick;
+		if (event.hasTimeSignature) { mtrack.addTimeSignature(event.numerator, event.denominator, tick); }
+		if (event.hasTempo) { mtrack.addTempo(event.tempo, tick); }
+	}
+}
+
+
+
 void MidiExport::writeMidiClipToTrack(MTrack &mtrack, MidiNoteVector &nv)
 {
 	for (const auto& note : nv)
 	{
-		mtrack.addNote(note.pitch, note.volume, note.time / 48.0, note.duration / 48.0);
+		// LMMS ticks are 1/48 beat, the file's are 1/480: exact integer scaling, no rounding.
+		constexpr uint32_t scale = interchange::SmfTicksPerLmmsTick;
+		mtrack.addNoteTicks(note.pitch, note.volume, uint32_t(note.time) * scale,
+			uint32_t(note.time + note.duration) * scale);
 	}
 }
 

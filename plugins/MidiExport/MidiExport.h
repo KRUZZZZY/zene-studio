@@ -33,12 +33,13 @@
 
 class QDomNode;
 
+namespace lmms { class InstrumentTrack; }
+
 namespace lmms
 {
 
 
-const int BUFFER_SIZE = 50*1024;
-using MTrack = MidiFile::MIDITrack<BUFFER_SIZE>;
+using MTrack = MidiFile::MIDITrack;
 
 struct MidiNote
 {
@@ -90,6 +91,11 @@ private:
 	void writePatternClip(MidiNoteVector &src, MidiNoteVector &dst,
 				int len, int base, int start, int end);
 	void processPatternNotes(MidiNoteVector &nv, int cutPos);
+
+	//! Name, program change and channel of one instrument track (see docs/050-features/Q050-020.md).
+	static void beginInstrumentTrack(MTrack &mtrack, InstrumentTrack *track);
+	//! Track 0: the session's tempo map, written by the same code as interchange.smf_export.
+	static void writeConductor(MTrack &mtrack, int globalTempo);
 
 	void error();
 
