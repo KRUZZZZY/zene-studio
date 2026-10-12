@@ -61,6 +61,7 @@
 
 #include "AudioEngine.h"
 #include "AudioFileDevice.h"
+#include "AudioFileFlac.h"
 #include "AudioFileWave.h"
 #include "Engine.h"
 #include "ExportDither.h"
@@ -119,6 +120,19 @@ private slots:
 		Engine::init(true);
 		QVERIFY(Engine::audioEngine() != nullptr);
 		QVERIFY(m_dir.isValid());
+	}
+
+	void aFlacOpenFailureIsReported()
+	{
+		OutputSettings settings(44100, 160, OutputSettings::BitDepth::Depth16Bit,
+			OutputSettings::StereoMode::Stereo);
+		const QString path = QDir(m_dir.path()).filePath("unsupported-channels.flac");
+		bool successful = false;
+		std::unique_ptr<AudioFileDevice> device(AudioFileFlac::getInst(path, settings, 9,
+			Engine::audioEngine(), successful));
+
+		QVERIFY(device != nullptr);
+		QVERIFY(!successful);
 	}
 
 	void cleanupTestCase()
