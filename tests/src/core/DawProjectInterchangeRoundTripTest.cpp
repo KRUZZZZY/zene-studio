@@ -959,6 +959,48 @@ private slots:
 			"a malformed note key was read as the default 60");
 	}
 
+	//! The reader implements beat timelines only; an unknown unit must not be
+	//! silently treated as beats on either notes or automation.
+	void unknownNoteLaneTimeUnitsAreRefused()
+	{
+		const QByteArray notesInMilliseconds =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"/></Track></Structure>"
+			"<Arrangement><Lanes timeUnit=\"milliseconds\"><Lanes track=\"t1\"><Clips>"
+			"<Clip time=\"0\" duration=\"4\"><Notes>"
+			"<Note time=\"1500\" duration=\"250\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement></Project>";
+		DawProjectModel notesModel;
+		DawProjectReadReport notesReport;
+		QString notesError;
+		QVERIFY2(!dawProjectModelFromXml(notesInMilliseconds, &notesModel, &notesReport, &notesError),
+			"a note lane with an unknown time unit was imported as beats");
+		QVERIFY2(notesError.contains(QStringLiteral("milliseconds")),
+			"the note-lane refusal does not identify its unknown time unit");
+	}
+
+	void unknownAutomationTimeUnitsAreRefused()
+	{
+		const QByteArray automationInMilliseconds =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Arrangement><TempoAutomation timeUnit=\"milliseconds\">"
+			"<RealPoint time=\"1500\" value=\"120\"/>"
+			"</TempoAutomation></Arrangement></Project>";
+		DawProjectModel automationModel;
+		DawProjectReadReport automationReport;
+		QString automationError;
+		QVERIFY2(!dawProjectModelFromXml(automationInMilliseconds, &automationModel,
+			&automationReport, &automationError),
+			"a tempo automation with an unknown time unit was imported as beats");
+		QVERIFY2(automationError.contains(QStringLiteral("milliseconds")),
+			"the automation refusal does not identify its unknown time unit");
+	}
+
 	//! Luna cluster 5064: an automation point's time is a beat like any other, so
 	//! it goes through the same bounded tick conversion - and is counted in
 	//! `rounded_times` when it is not on the 48-tick grid - instead of being kept

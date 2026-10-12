@@ -71,13 +71,21 @@ void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip
 {
 	// The unit that matters is the one in force where the NOTES are, which the
 	// format's own example leaves to the enclosing lanes.
-	if (state.timeUnit == QLatin1String("seconds"))
+	if (state.timeUnit != QLatin1String(DawProjectTimeUnit))
 	{
 		if (state.error.isEmpty())
 		{
-			state.error = QStringLiteral("a <Notes> timeline declares timeUnit=\"seconds\"; this "
-				"module places notes on a beat grid and will not guess the tempo curve that would "
-				"convert them");
+			if (state.timeUnit == QLatin1String("seconds"))
+			{
+				state.error = QStringLiteral("a <Notes> timeline declares timeUnit=\"seconds\"; this "
+					"module places notes on a beat grid and will not guess the tempo curve that would "
+					"convert them");
+			}
+			else
+			{
+				state.error = QStringLiteral("a <Notes> timeline declares unsupported timeUnit=\"%1\"; "
+					"this module supports only timeUnit=\"beats\"").arg(state.timeUnit);
+			}
 		}
 		skipElement(reader);
 		return;
