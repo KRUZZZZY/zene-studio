@@ -1849,6 +1849,37 @@ add_dependencies(PluginPortsMigrationTest
 	${PART_C_LADSPA_TARGETS}
 )
 
+# Regression for cluster new-p10-377: SlicerT waveform zoom clamped only at
+# zero (waveform disappears) and unbounded above. The plugin is built as a
+# module, so its sources are compiled into the test binary like WasmSandboxTest.
+add_executable(SlicerTZoomTest
+	src/plugins/SlicerTZoomTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerT.cpp
+	${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerT.h
+	${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerTView.cpp
+	${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerTView.h
+	${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerTWaveform.cpp
+	${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerTWaveform.h
+)
+add_test(NAME SlicerTZoomTest COMMAND SlicerTZoomTest)
+target_include_directories(SlicerTZoomTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/SlicerT
+	${CMAKE_BINARY_DIR}/plugins/SlicerT
+)
+target_static_libraries(SlicerTZoomTest PRIVATE lmmsobjs)
+target_link_libraries(SlicerTZoomTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+	${FFTW3F_LIBRARIES}
+)
+target_compile_features(SlicerTZoomTest PRIVATE cxx_std_20)
+target_compile_definitions(SlicerTZoomTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=slicert
+)
+set_tests_properties(SlicerTZoomTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 if(WANT_WASM)
 	# Gate tests for the WASM DSP sandbox. Kept out of LMMS_TESTS so the
 	# pre-existing suite is byte-for-byte unchanged when WANT_WASM=OFF.

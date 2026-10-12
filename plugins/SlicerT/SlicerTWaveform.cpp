@@ -472,7 +472,7 @@ void SlicerTWaveform::mouseDoubleClickEvent(QMouseEvent* me)
 void SlicerTWaveform::wheelEvent(QWheelEvent* we)
 {
 	m_zoomLevel += we->angleDelta().y() / 360.0f * s_zoomSensitivity;
-	m_zoomLevel = std::max(0.0f, m_zoomLevel);
+	m_zoomLevel = std::clamp(m_zoomLevel, s_minZoom, s_maxZoom);
 
 	updateUI();
 }
