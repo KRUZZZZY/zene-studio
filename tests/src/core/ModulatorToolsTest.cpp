@@ -161,6 +161,42 @@ private slots:
 		QVERIFY(first().formula.isEmpty());
 	}
 
+	//! BUG 11 (new-p11-33): an edit that leaves the modulator exactly as it was records NO undo
+	//! step and does not dirty the project - a no-op step would sit on top of the real one, so the
+	//! first Ctrl+Z would undo nothing and an unchanged repeat would make a saved project dirty.
+	void repeatingAnUnchangedEditRecordsNoUndoStep()
+	{
+		const QString id = created();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		const int beforeFormula = Engine::projectJournal()->undoDepth();
+		QVERIFY(run(QStringLiteral("modulator.formula_set"), {{QStringLiteral("modulator"), id},
+			{QStringLiteral("formula"), QStringLiteral("saw(t)")}}).ok);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), beforeFormula + 1);  // a real change: one step
+		Engine::getSong()->noteProjectSaved(QString());                       // the project as if saved
+		QVERIFY(!Engine::getSong()->isModified());
+		QVERIFY(run(QStringLiteral("modulator.formula_set"), {{QStringLiteral("modulator"), id},
+			{QStringLiteral("formula"), QStringLiteral("saw(t)")}}).ok);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), beforeFormula + 1);  // the same formula: no step
+		QVERIFY2(!Engine::getSong()->isModified(), "repeating the same formula dirtied the project");
+
+		const int beforeTrigger = Engine::projectJournal()->undoDepth();
+		QVERIFY(run(QStringLiteral("modulator.trigger_set"), {{QStringLiteral("modulator"), id},
+			{QStringLiteral("track"), control::trackIdOf(track)}}).ok);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), beforeTrigger + 1);
+		Engine::getSong()->noteProjectSaved(QString());
+		QVERIFY(run(QStringLiteral("modulator.trigger_set"), {{QStringLiteral("modulator"), id},
+			{QStringLiteral("track"), control::trackIdOf(track)}}).ok);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), beforeTrigger + 1);  // the same track: no step
+		QVERIFY2(!Engine::getSong()->isModified(), "repeating the same trigger dirtied the project");
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(first().source.triggerTrack, -1);  // the first undo reaches the real trigger edit
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(first().source.shape, ModulationShape::Sine);  // and the next the formula
+		QVERIFY(first().formula.isEmpty());
+	}
+
 	//! MX-121: trigger_set follows an instrument track; before its first note the modulator waits at
 	//! the start of its cycle, and a note restarts it; a track with no notes is refused; undo frees it.
 	void aNoteRestartsAFollowingModulator()
