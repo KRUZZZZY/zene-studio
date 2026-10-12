@@ -284,7 +284,7 @@ public:
 
 	inline BasicFilters( const sample_rate_t _sample_rate ) :
 		m_doubleFilter( false ),
-		m_sampleRate( (float) _sample_rate ),
+		m_sampleRate( (float)( _sample_rate > 0 ? _sample_rate : 1 ) ),
 		m_sampleRatio( 1.0f / m_sampleRate ),
 		m_subFilter( nullptr )
 	{
@@ -329,6 +329,12 @@ public:
 
 	inline void setSampleRate(const sample_rate_t sampleRate)
 	{
+		// a zero rate has no reciprocal: reject it and keep the current rate,
+		// otherwise m_sampleRatio becomes infinity and poisons the coefficients
+		if( sampleRate == 0 )
+		{
+			return;
+		}
 		m_sampleRate = sampleRate;
 		m_sampleRatio = 1.f / m_sampleRate;
 		if (m_subFilter != nullptr)
