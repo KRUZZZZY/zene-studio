@@ -553,6 +553,11 @@ set(LMMS_TESTS
 	# round trip through the control surface, checking every undo against the
 	# document before the edit (ids, automation links, plug-in data, sample refs).
 	src/core/UndoHistoryPersistenceTest.cpp
+	# Q050-044: project.open over an unsaved session and script.run each leave ONE
+	# undo step that restores the whole project, and refuse when it would not fit the budget.
+	src/core/SessionCheckpointTest.cpp
+	# Q050-044 round 2: both retained checkpoint snapshots count toward the byte cap.
+	src/core/SessionCheckpointBudgetTest.cpp
 	src/core/TakeLaneCompTest.cpp
 	# The take lanes' own half of the comping tests (the composite half stays
 	# in TakeLaneCompTest.cpp); the fixtures both halves use are in
@@ -1693,6 +1698,14 @@ set_tests_properties(UndoBoundsTest PROPERTIES
 # UndoHistoryPersistenceTest (WF-033) builds a full Engine with a real
 # instrument and drives project.save / project.open / control.undo.
 set_tests_properties(UndoHistoryPersistenceTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+	TIMEOUT 300)
+# SessionCheckpointTest (Q050-044) builds a full Engine and drives script.run,
+# project.open and control.undo / control.redo.
+set_tests_properties(SessionCheckpointTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+	TIMEOUT 300)
+set_tests_properties(SessionCheckpointBudgetTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 	TIMEOUT 300)
 # TakeLaneCompTest (comping: the composite and the comp.* command surface, task

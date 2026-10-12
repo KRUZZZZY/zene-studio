@@ -990,6 +990,7 @@ set(LMMS_SRCS
 	core/SerializingObject.cpp
 	core/Song.cpp
 	core/SongSections.cpp
+	core/SessionCheckpoint.cpp
 	core/SongUndoSnapshot.cpp
 	core/TempoMap.cpp
 	# The Standard MIDI File conductor track (feature row 33): the encoder and

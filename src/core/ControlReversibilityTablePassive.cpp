@@ -76,23 +76,6 @@ const ReversibilityRow kPassiveRows[] = {
 	// command. An undo attempt must FAIL with the typed 'irreversible' error
 	// and name the fallback. Nothing here pretends.
 	// =====================================================================
-	R("project.open", RC::Irreversible, false,
-		"loading a project replaces the whole session, and the engine keeps no "
-		"pre-load snapshot: the previous document, including any UNSAVED "
-		"edits, is gone",
-		"none. The transaction records the previous file path and its sha256 so "
-		"the caller can see what was displaced",
-		"reopen the file named in before.previous_file; unsaved changes to the "
-		"displaced session are LOST - save first (project.save keeps a "
-		"revision) if they matter"),
-	R("script.run", RC::Irreversible, false,
-		"a Lua script mutates the engine through its own bindings; the "
-		"registry sees one command and cannot know what the script wrote",
-		"none. A script that wants to be undoable must take its own checkpoint "
-		"(Lua addCheckPoint()), which ProjectJournal::undo DOES replay - so "
-		"the record is honest about what it can and cannot cover",
-		"run a script that takes its own checkpoint (Lua addCheckPoint()) "
-		"before it edits; the journal's own Undo (Ctrl+Z) then replays it"),
 	R("record.recovery_discard", RC::Irreversible, false,
 		"refusing the offer REMOVES the journal file, and the offer is the "
 		"journal: no engine record holds the bytes it carried, and the project "

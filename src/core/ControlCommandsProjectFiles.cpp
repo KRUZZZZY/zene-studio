@@ -30,6 +30,7 @@
 #include "ControlRegistry.h"
 
 #include "ControlReversibility.h"
+#include "SessionCheckpoint.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "MissingDevices.h"
@@ -401,6 +402,42 @@ void registerProjectGetState(ControlRegistry& registry)
 // project.open
 // ---------------------------------------------------------------------------
 
+//! The transaction record of one project.open: what it displaced, and - when the displaced session was
+//! checkpointed (Q050-044) - the one undo step that restores it.
+QJsonObject projectOpenTransaction(const QString& previousFile, const QString& previousSha,
+	const control::SessionCheckpoint& checkpoint)
+{
+	QJsonObject transaction;
+	transaction.insert(QStringLiteral("before"),
+		QJsonObject{{QStringLiteral("previous_file"), previousFile},
+			{QStringLiteral("previous_sha256"), previousSha}});
+	if (checkpoint.pushed)
+	{
+		transaction.insert(QStringLiteral("inverse"),
+			QJsonObject{{QStringLiteral("op"), QStringLiteral("restore the displaced session")},
+				{QStringLiteral("applies"), QStringLiteral("journal")}});
+		transaction.insert(QStringLiteral("reversible"), true);
+		transaction.insert(QStringLiteral("mechanism"),
+			QStringLiteral("snapshot: the session this open displaced, with its unsaved changes, "
+				"and the opened result are captured whole (%1 bytes compressed in total, audio files by reference) "
+				"and one undo "
+				"step puts it back, file name included; redo restores the project as it was loaded, "
+				"including any skipped sections")
+				.arg(checkpoint.retainedBytes));
+		return transaction;
+	}
+	transaction.insert(QStringLiteral("inverse"),
+		QJsonObject{{QStringLiteral("op"), QStringLiteral("project.open")},
+			{QStringLiteral("args"), QJsonObject{{QStringLiteral("path"), previousFile}}}});
+	transaction.insert(QStringLiteral("reversible"), false);
+	transaction.insert(QStringLiteral("mechanism"),
+		QStringLiteral("none: %1; only the file path and its hash are recorded, so the caller can see "
+			"what it replaced")
+			.arg(checkpoint.note.isEmpty() ? QStringLiteral("the open did not complete") : checkpoint.note));
+	return transaction;
+}
+
+
 void registerProjectOpen(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -472,6 +509,8 @@ void registerProjectOpen(ControlRegistry& registry)
 		// blocks the open and is not a load error.
 		{QStringLiteral("missing_device_count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		{QStringLiteral("missing_devices"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
+		// Q050-044: what became of the displaced session - captured for one undo, or why not.
+		{QStringLiteral("checkpoint"), objectProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -482,8 +521,10 @@ void registerProjectOpen(ControlRegistry& registry)
 				QStringLiteral("no such project file: %1").arg(path));
 		}
 		Song* song = Engine::getSong();
-		// SPEC A16: the displaced session is NOT snapshotted, so the record says
-		// what was replaced instead of pretending an inverse exists.
+		// Q050-044: a session with unsaved changes is checkpointed first (bounded by the undo
+		// stack's byte budget) and the load leaves ONE undo step that puts it back; a checkpoint
+		// over the budget refuses the open before either project is touched. The record still
+		// names what was displaced (file and hash) for a session that was saved.
 		const QString previousFile = song->projectFileName();
 		const QString previousSha = previousFile.isEmpty() ? QString() : sha256OfFile(previousFile);
 		// SPEC-ARCH-4 1.4 (ARCH-4 S2b): the sections to skip, as the caller named
@@ -496,7 +537,12 @@ void registerProjectOpen(ControlRegistry& registry)
 		{
 			skipSections.append(value.toString());
 		}
-		song->loadProject(path, skipSections);
+		control::SessionCheckpoint checkpoint;
+		QString checkpointRefusal;
+		if (!control::loadProjectWithCheckpoint(path, skipSections, &checkpoint, &checkpointRefusal))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused, checkpointRefusal);
+		}
 
 		// A refused file (unparseable, or carrying local plugin paths) leaves
 		// the session as it was; the reason is a typed refusal, not a modal.
@@ -554,21 +600,8 @@ void registerProjectOpen(ControlRegistry& registry)
 		result.insert(QStringLiteral("not_loaded_count"), notLoadedNames.size());
 		result.insert(QStringLiteral("partial"), song->isPartialLoad());
 		insertMissingDevices(result, song);
-		QJsonObject transaction;
-		transaction.insert(QStringLiteral("before"),
-			QJsonObject{{QStringLiteral("previous_file"), previousFile},
-				{QStringLiteral("previous_sha256"), previousSha}});
-		transaction.insert(QStringLiteral("inverse"),
-			QJsonObject{{QStringLiteral("op"), QStringLiteral("project.open")},
-				{QStringLiteral("args"), QJsonObject{{QStringLiteral("path"), previousFile}}}});
-		// Loading a project replaces the whole session; the engine keeps no
-		// pre-load snapshot, so this transaction is documented, not reversible -
-		// and control.undo says exactly that instead of undoing an older step.
-		transaction.insert(QStringLiteral("reversible"), false);
-		transaction.insert(QStringLiteral("mechanism"),
-			QStringLiteral("none: the displaced session is not snapshotted; only the file path "
-				"and its hash are recorded, so the caller can see what it replaced. UNSAVED "
-				"changes to the previous session are lost"));
+		result.insert(QStringLiteral("checkpoint"), checkpoint.toJson());
+		const QJsonObject transaction = projectOpenTransaction(previousFile, previousSha, checkpoint);
 		result.insert(QStringLiteral("__transaction"), transaction);
 		return ControlResult::success(result);
 	};

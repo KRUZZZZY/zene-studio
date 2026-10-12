@@ -307,6 +307,9 @@ bool changedNothing(bool journalled, quint64 step, const QString& commandId, con
 bool bracketsEdit(const ProjectJournal* journal, bool mutating, const QString& commandId)
 {
 	if (journal == nullptr || !mutating) { return false; }
+	// script.run is a snapshot-class row whose one step also carries the bracket's capture (Q050-044), so a
+	// project that persists its undo history keeps the step instead of losing the history behind it.
+	if (commandId == QLatin1String("script.run")) { return true; }
 	const control::ReversibilityEntry* row = control::ReversibilityTable::instance().lookup(commandId);
 	return row == nullptr || row->cls == control::ReversibilityClass::TrueInverse;
 }
@@ -355,6 +358,13 @@ bool foldsIntoEnclosingStep(bool mutating, bool changed, bool enclosedByMutating
 	return mutating && changed && enclosedByMutating && result.contains(QStringLiteral("__transaction"));
 }
 
+//! A script can return an error after it has changed the project and kept its whole-session undo step.
+bool countsAsChangedResult(const ControlResult& result, const QString& commandId, quint64 step)
+{
+	return result.ok || (commandId == QLatin1String("script.run") && step != 0
+		&& result.result.contains(QStringLiteral("__transaction")));
+}
+
 /*! The record an outer mutating call writes for a step that also holds nested
  *  changes whose own inverse was not kept (the nested record was folded into this
  *  step): when the outer handler supplied no descriptor, it must not claim the
@@ -365,6 +375,8 @@ void markFoldedNestedChanges(ControlResult* result, int folded, int foldedBefore
 	// The outer record keeps its own descriptor (before, inverse) but may not claim more than
 	// the step covers: a nested change folded into it is not reversed by that descriptor.
 	QJsonObject descriptor = result->result.value(QStringLiteral("__transaction")).toObject();
+	// A whole-session checkpoint (script.run, Q050-044) restores everything its nested commands did.
+	if (descriptor.value(QStringLiteral("covers_nested")).toBool(false)) { return; }
 	const QString prior = descriptor.value(QStringLiteral("mechanism")).toString();
 	descriptor.insert(QStringLiteral("reversible"), false);
 	descriptor.insert(QStringLiteral("mechanism"), QStringLiteral("a command this call ran inside itself changed the "
@@ -435,7 +447,8 @@ ControlResult ControlRegistry::runHandler(
 	// handlers share the one `dry_run: true` result field, so the seam is here.
 	const bool dryRunPreview = result.result.value(QStringLiteral("dry_run")).toBool(false);
 	// Review W3-batchA #8: a call that changed nothing (a report-only call, a value already set) records nothing.
-	const bool changed = result.ok && !dryRunPreview && !changedNothing(journal != nullptr, step, commandId, result);
+	const bool changed = countsAsChangedResult(result, commandId, step) && !dryRunPreview
+		&& !changedNothing(journal != nullptr, step, commandId, result);
 	recordCall(commandId, args, &result, coalesced, step, mutating, changed, enclosedByMutating, enclosedByWrapper, foldedBefore);
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
 	notifyObserver(commandId, args, mutating, changed);

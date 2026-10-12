@@ -84,6 +84,32 @@ const ReversibilityRow kSnapshotRows[] = {
 		"registers NO inverse and reports reversible:false rather than naming a "
 		"revision 0 that cannot exist (BUG-CTL-6)",
 		""),
+	R("project.open", RC::Snapshot, true,
+		"loading a project replaces the whole session. A session with UNSAVED changes is "
+		"captured whole first (Q050-044), so the open is one undo step; a session with none "
+		"is already held by its file",
+		"snapshot: the displaced session is captured as the document a save would build "
+		"(audio files by reference, never copied) before anything loads, bounded by the undo "
+		"stack's byte budget (control.set_undo_depth). Over the budget the open is REFUSED "
+		"before either project changes. One undo step restores the displaced session and its "
+		"file name; redo opens the project again. Recorded PER CALL: a session with no unsaved "
+		"changes, or a partial load, registers no step and reports reversible:false with the "
+		"reason, and the record still names the displaced file and its hash",
+		"when reversible is false: reopen the file named in before.previous_file. The "
+		"displaced session's own earlier undo steps are not carried back"),
+	R("script.run", RC::Snapshot, true,
+		"a Lua script mutates the engine through its own bindings, so the registry cannot know "
+		"what it wrote. The project is therefore captured whole before the run (Q050-044)",
+		"snapshot: the project as it was before the script (audio files by reference), bounded "
+		"by the undo stack's byte budget (control.set_undo_depth); over the budget the run is "
+		"REFUSED before the script executes. Everything the script changed is ONE undo step that "
+		"restores the exact pre-script project; redo reapplies the run's result. The finer steps "
+		"the script pushed (Lua addCheckPoint) are replaced by it. Recorded PER CALL: a script "
+		"that changed nothing, or ran where no snapshot can be taken (a partial load), registers "
+		"no step and reports reversible:false with the reason",
+		"when reversible is false: nothing changed, or the project is a partial load - save the "
+		"project first. A script's effects OUTSIDE the project (files it writes, the console) are "
+		"not undone"),
 	R("plugin.load", RC::Snapshot, false,
 		"two branches: appending an EFFECT has an exact inverse (the instance "
 		"is new and carries only defaults), but REPLACING an instrument does "

@@ -2281,10 +2281,12 @@ tests/src/core/VstMidiEventBatchTest.cpp
 include/MidiHandoffQueue.h
 tests/src/core/MidiHandoffQueueTest.cpp
 include/RenderPeriodClock.h
+include/SessionCheckpoint.h
 tests/src/core/SystemSemaphoreTest.cpp
 # cluster 917, 2026-10-09: asynchronous render jobs and lifecycle regression.
 src/core/ControlCommandsRenderBounce.cpp
 src/core/RenderQueueBounce.cpp
+src/core/SessionCheckpoint.cpp
 tests/src/core/ControlRenderJobTest.cpp
 
 # 2026-10-09 (M0 automation cluster 2647 round 2): new full-mixer baseline and worker-teardown guard proof.
@@ -2304,3 +2306,5 @@ tests/src/core/MissingDevicesPreserveTest.cpp
 include/PluginLoadPolicy.h
 tests/src/core/MissingDevicesRound2Test.cpp
 tests/src/plugins/MissingDevicesNoEntryModule.cpp
+tests/src/core/SessionCheckpointTest.cpp
+tests/src/core/SessionCheckpointBudgetTest.cpp

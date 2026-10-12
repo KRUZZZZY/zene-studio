@@ -61,9 +61,10 @@
 namespace lmms
 {
 
-std::shared_ptr<const QByteArray> Song::captureUndoSnapshot()
+std::shared_ptr<const QByteArray> Song::captureUndoSnapshot(QStringList* skippedSections)
 {
-	if( isPartialLoad() || m_loadingProject ) { return {}; }
+	if( (isPartialLoad() && skippedSections == nullptr) || m_loadingProject ) { return {}; }
+	if( skippedSections != nullptr ) { *skippedSections = m_notLoadedSections; }
 	const ProjectIds::PureSaveScope pure;
 	DataFile dataFile( DataFile::Type::SongProject );
 	// Every model writes its journal id, exactly, while this is set (ProjectJournal::idToWrite): a save
@@ -84,6 +85,15 @@ std::shared_ptr<const QByteArray> Song::captureUndoSnapshot()
 
 bool Song::restoreUndoSnapshot( const QByteArray & compressed )
 {
+	return restoreUndoSnapshot( compressed, m_fileName );
+}
+
+
+
+
+bool Song::restoreUndoSnapshot( const QByteArray & compressed, const QString & restoredFileName,
+	const QStringList& skippedSections )
+{
 	const QByteArray document = qUncompress( compressed );
 	QTemporaryDir dir;
 	if( document.isEmpty() || !dir.isValid() ) { return false; }
@@ -100,7 +110,7 @@ bool Song::restoreUndoSnapshot( const QByteArray & compressed )
 	ProjectJournal * journal = Engine::projectJournal();
 	ProjectJournal::DetachedHistory history = journal->detachHistory();
 	const UndoHistory::ProjectState persistence = UndoHistory::instance().projectState();
-	const QString fileName = m_fileName;
+	const QString fileName = restoredFileName;
 	const QString oldFileName = m_oldFileName;
 	const int nextId = ProjectIds::next();
 
@@ -108,6 +118,7 @@ bool Song::restoreUndoSnapshot( const QByteArray & compressed )
 	loadProject( path );
 	m_restoringSnapshot = false;
 	const bool restored = m_loadRefusal.isEmpty();
+	if( restored ) { m_notLoadedSections = skippedSections; }
 
 	setProjectFileName( fileName );
 	m_oldFileName = oldFileName;

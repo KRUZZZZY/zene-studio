@@ -19,9 +19,12 @@ see exactly what the engine answered. The three commands are one of each class:
                            with NO inverse, and control.undo must refuse it
                            typed (`irreversible`) instead of chasing a
                            revision 0 that cannot exist
-  C. `script.run`          irreversible - control.undo must FAIL, typed, naming
+  C. `oop.reset_crashes`   irreversible - control.undo must FAIL, typed, naming
                            the command and its documented fallback, and must NOT
                            silently undo the reversible step underneath it
+                           (script.run was this control until Q050-044)
+  C2. `script.run`         snapshot - the whole project is captured before the
+                           run and one control.undo restores it exactly (Q050-044)
 
 and D, the TWO windows of the coalescing rule (BUG-CTL-4): a `plugin.param_set`
 run inside the window is ONE undo step, and `control.undo` has to SAY how many
@@ -191,11 +194,11 @@ def main(argv):
                          "the previous file revision was NOT recovered (sha256 differs)")
 
         # ------------------------------------------------------------------
-        # C. irreversible: script.run refuses, typed, and does not pretend
+        # C. irreversible: oop.reset_crashes refuses, typed, and does not pretend
         # ------------------------------------------------------------------
         print("")
         print("=" * 74)
-        print("C. irreversible: script.run (no inverse; typed refusal)")
+        print("C. irreversible: oop.reset_crashes (no inverse; typed refusal)")
         print("=" * 74)
         tempo_before = H.ok_result(call(client, 301, "transport.get_state"), 301)["tempo"]
         wanted = tempo_before + 5
@@ -203,9 +206,8 @@ def main(argv):
         tempo_set = H.ok_result(call(client, 303, "transport.get_state"), 303)["tempo"]
         report("reversible step underneath", "tempo %d -> %d" % (tempo_before, tempo_set))
 
-        H.ok_result(call(client, 304, "script.run",
-                         {"source": "lmms.log():info('a16 transcript')\n"}), 304)
-        script_record = last_transaction(client, call, 305, "script.run")
+        H.ok_result(call(client, 304, "oop.reset_crashes", {"client": "a16-transcript"}), 304)
+        script_record = last_transaction(client, call, 305, "oop.reset_crashes")
         report("transaction", "class=%s reversible=%s" % (script_record.get("class"), script_record.get("reversible")))
 
         refused = call(client, 306, "control.undo")
@@ -216,13 +218,35 @@ def main(argv):
         report("tempo read back", "%d (expected %d: the reversible step was NOT undone)"
                % (tempo_after, tempo_set))
         problems.require(script_record.get("class") == "irreversible",
-                         "script.run is not classed irreversible")
-        problems.require("script.run" in (error.get("message") or ""),
+                         "oop.reset_crashes is not classed irreversible")
+        problems.require("oop.reset_crashes" in (error.get("message") or ""),
                          "the refusal does not name the command")
-        problems.require("addCheckPoint" in (error.get("message") or ""),
-                         "the refusal does not name the documented fallback")
+        problems.require("crashes really happened" in (error.get("message") or ""),
+                         "the refusal does not name the engine's reason")
         problems.require(tempo_after == tempo_set,
                          "control.undo quietly undid an OLDER step after an irreversible command")
+
+        # ------------------------------------------------------------------
+        # C2. script.run is a whole-project snapshot: one control.undo restores it
+        # ------------------------------------------------------------------
+        print("")
+        print("=" * 74)
+        print("C2. snapshot: script.run (one undo restores the exact pre-script project)")
+        print("=" * 74)
+        scripted_tempo = tempo_set + 7
+        H.ok_result(call(client, 308, "script.run", {"source":
+            "zene.command('transport.set_tempo', {bpm = %d})\n" % scripted_tempo}), 308)
+        run_record = last_transaction(client, call, 309, "script.run")
+        report("transaction", "class=%s reversible=%s" % (run_record.get("class"), run_record.get("reversible")))
+        tempo_ran = H.ok_result(call(client, 310, "transport.get_state"), 310)["tempo"]
+        undone_run = H.ok_result(call(client, 311, "control.undo"), 311)
+        tempo_back = H.ok_result(call(client, 312, "transport.get_state"), 312)["tempo"]
+        report("tempo", "%d -> script -> %d -> control.undo -> %d" % (tempo_set, tempo_ran, tempo_back))
+        problems.require(run_record.get("class") == "snapshot" and run_record.get("reversible") is True,
+                         "script.run is not a reversible snapshot row")
+        problems.require(tempo_ran == scripted_tempo, "the script did not set the tempo")
+        problems.require(undone_run.get("undone") is True, "control.undo did not undo the script")
+        problems.require(tempo_back == tempo_set, "control.undo did not restore the pre-script tempo")
 
         # ------------------------------------------------------------------
         # D. one coalesced span: control.undo says how many commands it covered

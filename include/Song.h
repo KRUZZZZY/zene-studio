@@ -393,19 +393,26 @@ public:
 
 	/*! WF-033 (docs/UNDO-HISTORY-PERSISTENCE.md): the project as ONE document,
 	 *  built exactly as saveProjectFile() builds it - the same writers, plug-in
-	 *  state and sample references included - without writing a file. Assumes
-	 *  the caller has checked isPartialLoad(). */
+	 *  state and sample references included - without writing a file. Save
+	 *  callers check isPartialLoad(); an undo snapshot may retain a partial
+	 *  session's skipped-section list out of band. */
 	void buildProjectDocument( DataFile & dataFile );
 	/*! WF-033: the state an undo step returns to, compressed - the document
 	 *  above with the journal ids kept (so a restore gives every object back
 	 *  the id later steps name) and without the append-only <z:provenance> log,
-	 *  which an undo never rewinds. Null for a session that cannot be saved. */
-	std::shared_ptr<const QByteArray> captureUndoSnapshot();
+	 *  which an undo never rewinds. Null for a session that cannot be saved.
+	 *  When \a skippedSections is supplied, a partial load can be captured too;
+	 *  that list is needed to restore its read-only state. */
+	std::shared_ptr<const QByteArray> captureUndoSnapshot(QStringList* skippedSections = nullptr);
 	/*! WF-033: replaces the project with \a compressed IN PLACE - the undo of a
 	 *  step loaded from a file. Keeps what a restore must not touch: the file
 	 *  name, the undo journal around the step, the provenance log, the project's
 	 *  undo-history setting and the id counter (never handed out twice). */
 	bool restoreUndoSnapshot( const QByteArray & compressed );
+	/*! Q050-044: the same restore, putting \a fileName back as the project's file name instead of
+	 *  keeping the current one - undo of project.open and script.run restores the prior file. */
+	bool restoreUndoSnapshot( const QByteArray & compressed, const QString & fileName,
+		const QStringList& skippedSections = QStringList() );
 	bool isRestoringUndoSnapshot() const { return m_restoringSnapshot; }
 
 	/*! The session state a SUCCESSFUL save records: the file that was written,

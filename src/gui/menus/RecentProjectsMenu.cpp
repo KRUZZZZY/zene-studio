@@ -75,9 +75,7 @@ void RecentProjectsMenu::openProject(QAction * _action )
 	if (mainWindow->mayChangeProject(true))
 	{
 		const QString f = _action->text().replace("&&", "&");
-		mainWindow->setCursor( Qt::WaitCursor );
-		Engine::getSong()->loadProject( f );
-		mainWindow->setCursor( Qt::ArrowCursor );
+		mainWindow->openProjectFile( f );
 	}
 }
 

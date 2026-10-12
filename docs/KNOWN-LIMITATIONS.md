@@ -2738,3 +2738,33 @@ in a project file as its own `<z:subscenes>` section (`docs/SCENES-NATIVE.md` §
 - What an older build does with a new project was checked by reading its loader (`Song::restoreNamedSection` has no
   branch for `<z:subscenes>`, and its `<z:scenes>` claim, unchanged here, still claims the section this build writes -
   asserted in `SessionSubSceneTest`), not by running an older binary on the file.
+
+## Undo checkpoints for project.open and script.run (Q050-044, 2026-10-09)
+
+`project.open` over a session with unsaved changes, and a `script.run` that changes the project, leave one undo step
+that restores the whole project (`docs/A16-REVERSIBILITY.md` §1.2; `SessionCheckpointTest`). What they do not do:
+- The checkpoint is the document a save would build, not a copy of the machine's state. Audio files are referenced
+  by path, so a file deleted or edited on disk between the run and the undo is not brought back. Samples that live
+  only in memory (no file) are inside the document and count toward the size.
+- It is bounded by the undo stack's byte budget (`control.undo_depth` `cap_bytes`, default 16 MiB, set with
+  `control.set_undo_depth`), measured as the sum of the compressed pre-state and redo-state snapshots. A pre-state over
+  the limit is REFUSED before the open or script runs. If the post-state makes the pair too large, the old project is
+  restored and the action is REFUSED; the message names the sizes and budget. There is no "do it anyway": save the
+  project, or raise the budget.
+- Only a session with unsaved changes is checkpointed by `project.open`. A saved one is held by its file, so the open
+  records no step (`reversible: false`, the displaced file and hash are named) and `control.undo` refuses it typed.
+- When a checkpoint is held, partial loads retain their skipped-section list in its metadata. Undo and redo preserve
+  the partial state and filename for a partial `project.open` result or a script run that leaves a partial result.
+- Undoing an open brings back the displaced session and its file name, but not its earlier undo steps: the stack
+  holds the steps of the project that was opened. A project that persists its undo history (WF-033) and is opened
+  over a dirty session has a step with no stored snapshot on top of its loaded history, so a save from there writes
+  no history until newer steps replace it (`project.save`'s `undo_history` says so).
+- `script.run` replaces the finer undo steps the script pushed (Lua `addCheckPoint()`, edits through the bindings)
+  with its one step; the order of its edits is not separately undoable. Effects outside the project (files the script
+  wrote, the console) are not undone.
+- `control.undo` after a `control.redo` of the same step refuses typed, as for every command (a redo gives the step a
+  fresh serial, so the first run's record no longer names it); the interface's Ctrl+Z, which has no record, undoes it.
+- `project.new`, `project.switch`, `project.new_document` and `session.setlist_go` keep their `irreversible` class and
+  `project.new` and `project.new_document` take no checkpoint. `project.switch` and `session.setlist_go` run `project.open`, so a dirty session they displace is
+  checkpointed and the interface's Ctrl+Z restores it (`project.switch` saves the current project first, so there is
+  usually nothing to displace), but their own records still refuse `control.undo`.

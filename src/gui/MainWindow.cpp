@@ -99,6 +99,7 @@
 #include "RecentProjectsMenu.h"
 #include "RemotePluginBase.h"
 #include "ScriptEngine.h"
+#include "SessionCheckpoint.h"
 #include "SetupDialog.h"
 #include "Shell.h"
 #include "ShellChrome.h"
@@ -954,6 +955,21 @@ void MainWindow::createNewProject()
 
 
 
+void MainWindow::openProjectFile(const QString& path)
+{
+	setCursor( Qt::WaitCursor );
+	QString refusal;
+	const bool opened = control::loadProjectWithCheckpoint( path, QStringList(), nullptr, &refusal );
+	setCursor( Qt::ArrowCursor );
+	if( !opened )
+	{
+		QMessageBox::warning( this, tr( "Project not opened" ), refusal );
+	}
+}
+
+
+
+
 void MainWindow::openProject()
 {
 	if( mayChangeProject(false) )
@@ -968,9 +984,7 @@ void MainWindow::openProject()
 			Song *song = Engine::getSong();
 
 			song->stop();
-			setCursor( Qt::WaitCursor );
-			song->loadProject( ofd.selectedFiles()[0] );
-			setCursor( Qt::ArrowCursor );
+			openProjectFile( ofd.selectedFiles()[0] );
 		}
 	}
 }
@@ -989,16 +1003,16 @@ void MainWindow::runScript()
 		return;
 	}
 
-	QString error;
-	// The engine streams script output onto the DAW's log itself (ScriptConsole),
-	// so this action does not print the captured lines a second time.
-	const auto result = ScriptEngine::instance()->runFile(path, &error);
+	// The menu and the socket share script.run (Q050-044): the project is captured first, the run is
+	// bounded by the undo budget, and everything the script changed is one undo step.
+	const ControlResult result = ControlRegistry::instance()->invoke(
+		QStringLiteral("script.run"), QJsonObject{{QStringLiteral("path"), path}});
 
-	if (result != ScriptEngine::RunResult::Ok)
+	if (!result.ok)
 	{
 		QMessageBox::warning(this, tr("Script failed"),
 			tr("Running \"%1\" failed:\n\n%2")
-				.arg(QFileInfo(path).fileName(), error));
+				.arg(QFileInfo(path).fileName(), result.errorMessage));
 	}
 	else
 	{

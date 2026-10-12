@@ -970,7 +970,7 @@ void FileBrowserTreeWidget::handleFile(FileItem * f, InstrumentTrack * it)
 		case FileItem::FileHandling::LoadAsProject:
 			if( getGUI()->mainWindow()->mayChangeProject(true) )
 			{
-				Engine::getSong()->loadProject( f->fullName() );
+				getGUI()->mainWindow()->openProjectFile( f->fullName() );
 			}
 			break;
 
