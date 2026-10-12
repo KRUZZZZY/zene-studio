@@ -36,13 +36,20 @@ the unpiped shell exit status was appended to each log.
 | Reapply the production fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-150.r1/logs/fix.patch` (`proof-restore-1.log`) | 0 |
 | Rebuild with fix restored | `cmake --build build --target zene DeviceDspTest kicker lb302 stereoenhancer bassbooster partc_ref_kicker partc_ref_lb302 partc_ref_stereoenhancer partc_ref_bassbooster` (`build-proof-green-1.log`) | 0 |
 | Regression with fix restored | `ctest -R '^DeviceDspTest$' --output-on-failure` from `build/tests` (`test-proof-green-1.log`) | 0 |
-| Complexity gate | `bash tests/complexity-gate.sh --check` (`gate-complexity-2.log`) | 0 |
-| File-length gate | `bash tests/file-length-gate.sh --check` (`gate-file-length-2.log`) | 0 |
+| Complexity gate | `bash tests/complexity-gate.sh --check` (`gate-complexity-3.log`) | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check` (`gate-file-length-3.log`) | 0 |
 
 The affected CTest family ran **1 test** (`DeviceDspTest`): 1/1 passed on each
 fixed-code run. Both original-code runs failed at
 `zeroThresholdFoldbackDistortionBypassesSafely()` on
 `QVERIFY(std::isfinite(output))`.
+
+Files committed for this fix:
+
+- `include/DspEffectLibrary.h`
+- `tests/src/core/DeviceDspTest.cpp`
+- `tests/upstream-modifications.txt`
+- `docs/qwen-fixes-2026-10/cluster-new-p10-150.md`
 
 The `fff` grep tool was unavailable in this session; the log folder was
 searched with `rg` for `error`, `FAILED`, and `Assertion`.
