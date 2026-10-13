@@ -28,7 +28,6 @@
 #include "Graph.h"
 #include "DeprecationHelper.h"
 #include "FileDialog.h"
-#include "StringPairDrag.h"
 #include "Oscillator.h"
 
 namespace lmms
@@ -414,24 +413,12 @@ void Graph::paintEvent( QPaintEvent * )
 
 void Graph::dropEvent( QDropEvent * _de )
 {
-	QString type = StringPairDrag::decodeKey( _de );
-	QString value = StringPairDrag::decodeValue( _de );
-
-	if( type == "samplefile" )
-	{
-		// TODO: call setWaveToUser
-		// loadSampleFromFile( value );
-		_de->accept();
-	}
+	_de->ignore();
 }
 
 void Graph::dragEnterEvent( QDragEnterEvent * _dee )
 {
-	if( StringPairDrag::processDragEnterEvent( _dee,
-		QString( "samplefile" ) ) == false )
-	{
-		_dee->ignore();
-	}
+	_dee->ignore();
 }
 
 
