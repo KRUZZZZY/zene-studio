@@ -268,9 +268,11 @@ bool GrooveTemplate::loadXml(const QDomElement& element)
 		bool slotRead = false;
 		const int slot = child.attribute(QStringLiteral("slot"), QStringLiteral("-1")).toInt(&slotRead);
 		if (!slotRead) { continue; }
+		bool timingRead = false;
+		const int timing = child.attribute(QStringLiteral("timing"), QStringLiteral("0")).toInt(&timingRead);
+		if (!timingRead) { continue; }
 		GrooveStep value;
-		value.timing = loadedTiming(
-			child.attribute(QStringLiteral("timing"), QStringLiteral("0")).toInt(), m_stepTicks);
+		value.timing = loadedTiming(timing, m_stepTicks);
 		bool velocityRead = false;
 		const int velocity = child.attribute(QStringLiteral("velocity")).toInt(&velocityRead);
 		// A missing or unreadable velocity says nothing about velocity; 0 would silence the slot.

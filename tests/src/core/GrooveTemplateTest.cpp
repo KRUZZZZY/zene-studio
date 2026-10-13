@@ -413,6 +413,29 @@ private slots:
 		QVERIFY2(loaded.neutral(), "a malformed slot text was applied to some slot");
 	}
 
+	//! A step with unreadable timing is skipped whole, not loaded as zero timing.
+	void aMalformedTimingDoesNotLoadTheRestOfTheStep()
+	{
+		QDomDocument doc;
+		QDomElement groove = doc.createElement(QStringLiteral("groove"));
+		groove.setAttribute(QStringLiteral("name"), QStringLiteral("feel"));
+		groove.setAttribute(QStringLiteral("length"), 48);
+		groove.setAttribute(QStringLiteral("step"), 12);
+		groove.setAttribute(QStringLiteral("slots"), 4);
+		QDomElement malformed = doc.createElement(QStringLiteral("step"));
+		malformed.setAttribute(QStringLiteral("slot"), 0);
+		malformed.setAttribute(QStringLiteral("timing"), QStringLiteral("bad"));
+		malformed.setAttribute(QStringLiteral("velocity"), 100);
+		groove.appendChild(malformed);
+		doc.appendChild(groove);
+
+		GrooveTemplate loaded;
+		QVERIFY(loaded.loadXml(groove));          // the geometry is still readable
+		QCOMPARE(loaded.slotCount(), 4);
+		QVERIFY2(loaded.step(0).neutral(), "unreadable timing loaded the step's velocity");
+		QVERIFY(loaded.neutral());
+	}
+
 	/*! The RANDOM timing amount is pinned to the grid SLOT, not to the note's
 	 *  current position - the same rule the humanise draw follows
 	 *  (NoteTransform.cpp). So at full strength a repeat of the same call rolls
