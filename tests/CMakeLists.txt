@@ -1782,7 +1782,10 @@ set_tests_properties(PianoRollRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM
 # none: QColor loads no platform plugin.
 set_tests_properties(AccessibilityHelperTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AccessibilityWalkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(KnobKeyboardTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The whole-executable run also reaches accessibleTargetSurvivesKnobSizingReset, which needs
+# accessible mode; ctest never set ZENE_TEST_ACCESSIBLE, so that slot failed here (train-4 prep).
+set_tests_properties(KnobKeyboardTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ZENE_TEST_ACCESSIBLE=1")
 add_test(NAME KnobAccessibleTargetSizingTest COMMAND KnobKeyboardTest accessibleTargetSurvivesKnobSizingReset)
 set_tests_properties(KnobAccessibleTargetSizingTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ZENE_TEST_ACCESSIBLE=1")
