@@ -32,6 +32,7 @@
 
 #include <QtTest>
 
+#include <QKeyEvent>
 #include <QLayout>
 #include <QMenu>
 #include <QScrollArea>
@@ -205,6 +206,19 @@ private slots:
 		QCOMPARE(rows->itemAt(index)->widget(), view);
 		QVERIFY(!strip->pinnedViews().contains(view));
 		QVERIFY(view->isVisible());
+	}
+
+	void autoRepeatSpaceDoesNotRetogglePlayback()
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.stop"), QJsonObject{});
+		SongEditorWindow* editor = getGUI()->songEditor();
+		QVERIFY(editor != nullptr);
+		editor->togglePlayStop();
+		QVERIFY(Engine::getSong()->isPlaying());
+		QKeyEvent repeat(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier, QString(), true, 1);
+		QApplication::sendEvent(getGUI()->mainWindow(), &repeat);
+		QVERIFY2(Engine::getSong()->isPlaying(), "an auto-repeat Space press toggled playback off");
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.stop"), QJsonObject{});
 	}
 
 private:
