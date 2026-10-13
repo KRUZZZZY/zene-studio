@@ -51,7 +51,7 @@ public:
 	{
 		return new gui::GranularPitchShifterControlDialog(this);
 	}
-	int controlCount() override { return 4; }
+	int controlCount() override { return 15; }
 	
 public slots:
 	void updateRange();

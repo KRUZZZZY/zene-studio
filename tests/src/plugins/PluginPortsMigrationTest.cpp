@@ -185,6 +185,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void granularPitchShifterAdvertisesAllControls();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +215,26 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::granularPitchShifterAdvertisesAllControls()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary lib{QString::fromUtf8(PART_C_MIGRATED_granularpitchshifter)};
+	lib.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib.load(), qPrintable(lib.errorString()));
+
+	auto entry = reinterpret_cast<MainFn>(lib.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	std::unique_ptr<lmms::Effect> fx{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+	QVERIFY(fx != nullptr);
+	QVERIFY(fx->controls() != nullptr);
+	QCOMPARE(fx->controls()->controlCount(), 15);
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
