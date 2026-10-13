@@ -124,7 +124,7 @@ void NoteKeyboardView::mouseMoveEvent(QMouseEvent* event)
 	if (m_zoomY < 0) { return; }
 	NoteGrid& g = m_state.grid;
 	g.setRowHeight(m_zoomRows + (m_zoomY - event->pos().y()) / 8);
-	if (const int row = g.rowOfKey(m_zoomKey); row >= 0) { g.setScrollY(row * g.rowHeight() + g.rowHeight() / 2 - m_zoomY); }
+	if (const int row = g.rowOfKey(m_zoomKey); row >= 0) { g.setScrollY(row * g.rowHeight() + g.rowHeight() / 2 - event->pos().y()); }
 	emit m_editor->stateChanged();
 }
 
