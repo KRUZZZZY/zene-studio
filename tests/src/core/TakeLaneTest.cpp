@@ -154,6 +154,27 @@ private slots:
 		QCOMPARE(restored->takeLanes().addLane(), 3);
 	}
 
+	//! Removing every lane leaves the model empty (no lane UI), yet the retired identities still survive a
+	//! save and load: a clip may carry the tag of a removed lane, so the next lane must not reuse it.
+	void aRetiredLaneIdentitySurvivesRemovingEveryLaneAndReloading()
+	{
+		QVector<SampleClip*> clips;
+		SampleTrack* track = makeTakeTrack(m_dir.path(), 1, &clips);
+		QVERIFY(track != nullptr);
+		TakeLaneModel& model = track->takeLanes();
+		QCOMPARE(model.addLane(), 0);
+		QCOMPARE(model.addLane(), 1);
+		QVERIFY(model.removeLane(1));
+		QVERIFY(model.removeLane(0));
+		QVERIFY(model.isEmpty());
+		QVERIFY(model.hasPersistentState());
+
+		Track* restored = reloadTrack(track);
+		QVERIFY(restored != nullptr);
+		QVERIFY(restored->takeLanes().isEmpty());
+		QCOMPARE(restored->takeLanes().addLane(), 2);
+	}
+
 	// ------------------------------------------------------------------ the takes
 
 	//! THE NON-DESTRUCTIVE PROPERTY. The composite resolves onto the take clip
