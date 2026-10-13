@@ -374,6 +374,27 @@ private slots:
 		QCOMPARE(readBytes(m_project), documentWith(3)); // the replaced live file
 	}
 
+	//! A stale slot that cannot be removed is reported, rather than a successful
+	//! rotation silently leaving a revision outside the keep-3 set.
+	void rotationReportsFailureToRemoveStaleRevision()
+	{
+		const QString project = path(QStringLiteral("unprunable.mmp"));
+		const QString stale = projectRevisionPath(project, ProjectRevisionPolicy::Keep);
+		QVERIFY(writeBytes(project, documentWith(2)));
+		QVERIFY(QDir().mkpath(stale));
+		QVERIFY(writeBytes(stale + QStringLiteral("/locked"), QByteArray("keep")));
+
+		bool refused = false;
+		QString reason;
+		const int kept = rotateProjectRevision(project, &refused, &reason);
+
+		QVERIFY(QFileInfo::exists(stale));
+		QVERIFY2(refused, qPrintable(QStringLiteral("rotation did not report the failed removal: %1")
+			.arg(reason)));
+		QVERIFY(reason.contains(stale));
+		QCOMPARE(kept, 1); // revision 0 was still retained for undo
+	}
+
 	//! A refusal writes NOTHING: an unknown id, an id whose artefact is gone,
 	//! and a restore into a session with no project file at all.
 	void refusalsAreTypedAndWriteNothing()
