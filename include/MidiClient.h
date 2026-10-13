@@ -232,16 +232,28 @@ private:
 	// data being used for parsing
 	struct midiParserData
 	{
-		uint8_t m_status;		// identifies the type of event, that
+		/* Initialised HERE, and not only for the three system-common fields
+		 * below: this struct has no constructor, MidiClientRaw's is defaulted
+		 * and nothing else zeroes this parser state, so a field left without
+		 * an initialiser kept whatever the client's memory held. A raw device
+		 * that is opened in the middle of another device's message delivers a
+		 * DATA byte first, and parseData() then reads m_status to decide
+		 * whether that byte belongs to an event: with m_status left over it
+		 * assembled an event out of the leftover channel, byte counter and
+		 * payload instead of discarding the byte. Zero is the parser's own
+		 * "no event in progress" state (parseData() tests it, and every status
+		 * byte it stores is non-zero). Held by
+		 * tests/src/core/MidiClockTest.cpp::aFreshParserDiscardsALeadingDataByte. */
+		uint8_t m_status = 0;	// identifies the type of event, that
 					// is currently received ('Noteon',
 					// 'Pitch Bend' etc).
-		uint8_t m_channel;	// The channel of the event that is
+		uint8_t m_channel = 0;	// The channel of the event that is
 					// received (in case of a channel event)
-		uint32_t m_bytes;		// How many bytes have been read for
+		uint32_t m_bytes = 0;		// How many bytes have been read for
 					// the current event?
-		uint32_t m_bytesTotal;	// How many bytes does the current
+		uint32_t m_bytesTotal = 0;	// How many bytes does the current
 					// event type include?
-		uint32_t m_buffer[RAW_MIDI_PARSE_BUF_SIZE];
+		uint32_t m_buffer[RAW_MIDI_PARSE_BUF_SIZE] = {};
 					// buffer for incoming data
 		MidiEvent m_midiEvent;	// midi-event
 		/* System-common assembly (0.3.0, the `clock.*` group's slave half).
