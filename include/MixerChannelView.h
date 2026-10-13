@@ -63,6 +63,7 @@ public:
 	MixerChannelView(QWidget* parent, MixerView* mixerView, int channelIndex);
 	void paintEvent(QPaintEvent* event) override;
 	void contextMenuEvent(QContextMenuEvent*) override;
+	bool eventFilter(QObject* watched, QEvent* event) override;
 	void mousePressEvent(QMouseEvent*) override;
 	void mouseDoubleClickEvent(QMouseEvent*) override;
 	void keyPressEvent(QKeyEvent* ke) override;
