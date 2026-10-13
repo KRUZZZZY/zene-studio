@@ -1486,6 +1486,52 @@ void aCommentThatLooksLikeAnEndRecordIsNotOne()
 	QCOMPARE(readBack[1].first, QStringLiteral("metadata.xml"));
 }
 
+	//! Luna cluster new-p12-75: the entry count is written into 16-bit fields, and
+	//! 0xFFFF in them is the ZIP64 SENTINEL - a reader that follows it looks for the
+	//! ZIP64 end-of-central-directory records this writer does not write, so the
+	//! container it wrote is one no reader can agree on. The preflight refused only
+	//! counts ABOVE 0xFFFF, so exactly 65,535 entries was written with the sentinel.
+	void theZip64EntryCountSentinelIsRefused()
+	{
+		const QString sentinelCount = path(m_directory, QStringLiteral("sentinel-count.zip"));
+		std::vector<DawProjectEntry> many;
+		many.reserve(65535);
+		for (int index = 0; index < 65535; index++)
+		{
+			many.emplace_back(QStringLiteral("e%1").arg(index), QByteArray("x"));
+		}
+		QCOMPARE(many.size(), static_cast<std::size_t>(0xFFFF));
+
+		QString error;
+		QVERIFY2(!dawProjectZipWrite(sentinelCount, many, &error),
+			"65535 entries were written with 0xFFFF - the ZIP64 sentinel - in the count "
+			"fields of an archive that carries no ZIP64 record");
+		QVERIFY2(error.contains(QStringLiteral("classic ZIP")),
+			"the refusal does not say which limit was exceeded");
+		QVERIFY2(!QFile::exists(sentinelCount),
+			"a refused archive left a file at the destination");
+
+		// The positive half: one entry below the sentinel still writes, and the count
+		// the end record carries is the real one, not 0xFFFF.
+		const QString largest = path(m_directory, QStringLiteral("largest-classic-count.zip"));
+		many.pop_back();
+		QCOMPARE(many.size(), static_cast<std::size_t>(0xFFFE));
+		QVERIFY2(dawProjectZipWrite(largest, many, &error), qPrintable(error));
+
+		QFile written(largest);
+		QVERIFY(written.open(QIODevice::ReadOnly));
+		QVERIFY(written.seek(written.size() - 22));
+		const QByteArray end = written.read(22);
+		QCOMPARE(end.size(), 22);
+		const auto count = [&end](int offset)
+		{
+			return static_cast<int>(static_cast<quint8>(end[offset]))
+				| (static_cast<int>(static_cast<quint8>(end[offset + 1])) << 8);
+		};
+		QCOMPARE(count(8), 0xFFFE);  // entries on this disk
+		QCOMPARE(count(10), 0xFFFE);  // entries in total
+	}
+
 private:
 	QTemporaryDir m_directory;
 };

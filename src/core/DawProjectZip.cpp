@@ -150,6 +150,15 @@ constexpr quint16 DosDate = 0x0021;
 constexpr qint64 MaxU16 = 0xFFFF;
 constexpr qint64 MaxU32 = 0xFFFFFFFFLL;
 
+/*! The largest ENTRY COUNT a classic ZIP (this writer emits no ZIP64) can
+ *  state: one below the 16-bit field's range, because 0xFFFF in the end
+ *  record's count fields is the ZIP64 SENTINEL. A reader that follows the
+ *  format reads it as "the real counts are in the ZIP64 end-of-central-
+ *  directory record", and this writer writes no such record - the archive it
+ *  produced could be rejected or misread by exactly the readers that follow
+ *  the format, so that one count is refused rather than written. */
+constexpr qint64 MaxEntryCount = 0xFFFE;
+
 //! Why one entry cannot be written, or an empty string when it can.
 QString entryRefusal(const DawProjectEntry& entry)
 {
@@ -173,10 +182,10 @@ QString entryRefusal(const DawProjectEntry& entry)
 //! Why the archive as a whole cannot be written, or an empty string when it can.
 QString containerRefusal(const std::vector<DawProjectEntry>& entries)
 {
-	if (entries.size() > static_cast<std::size_t>(MaxU16))
+	if (entries.size() > static_cast<std::size_t>(MaxEntryCount))
 	{
 		return QStringLiteral("%1 container entries exceed the %2 a classic ZIP can hold")
-			.arg(entries.size()).arg(MaxU16);
+			.arg(entries.size()).arg(MaxEntryCount);
 	}
 	return {};
 }
