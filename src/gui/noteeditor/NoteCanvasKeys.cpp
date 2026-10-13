@@ -98,9 +98,14 @@ void NoteCanvas::deleteSelection()
 	commitErase();
 }
 
-bool NoteCanvas::nudgeForKey(int key, bool shift)
+bool NoteCanvas::nudgeForKey(int key, Qt::KeyboardModifiers modifiers)
 {
+	modifiers &= ~Qt::KeypadModifier;
+	const bool ctrlAlt = modifiers == (Qt::ControlModifier | Qt::AltModifier)
+		|| modifiers == (Qt::ControlModifier | Qt::AltModifier | Qt::ShiftModifier);
+	if (modifiers != Qt::NoModifier && modifiers != Qt::ShiftModifier && !ctrlAlt) { return false; }
 	const int step = std::max(1, m_state.gridTicks);
+	const bool shift = modifiers.testFlag(Qt::ShiftModifier);
 	const int octave = shift ? 12 : 1;
 	switch (key)
 	{
@@ -150,7 +155,7 @@ void NoteCanvas::keyPressEvent(QKeyEvent* event)
 {
 	// Theme 10's keys (NoteCanvasAccess.cpp) come before the nudge, which takes the arrows with Shift or nothing.
 	const bool handled = m_state.clip != nullptr && (clipboardKey(event) || selectionKey(event) || editKey(event)
-		|| nudgeForKey(event->key(), event->modifiers().testFlag(Qt::ShiftModifier)));
+		|| nudgeForKey(event->key(), event->modifiers()));
 	if (!handled)
 	{
 		event->ignore();  // the tool letters go on to the editor
