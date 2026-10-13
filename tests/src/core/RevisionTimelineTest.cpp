@@ -479,6 +479,43 @@ private slots:
 		QVERIFY2(restoreProjectRevision(project, 0, &error), qPrintable(error));
 		QCOMPARE(readBytes(project), documentWith(5));
 	}
+
+	//! project.save must not advertise restore_revision when its stale slot makes
+	//! that inverse fail before it can replace the saved file.
+	void saveDoesNotAdvertiseAnInverseAfterStaleCleanupRefusal()
+	{
+		const QString project = path(QStringLiteral("unprunable-save.mmp"));
+		const QString stale = projectRevisionPath(project, ProjectRevisionPolicy::Keep);
+		QVERIFY(writeBytes(project, documentWith(2)));
+		QVERIFY(QDir().mkpath(stale));
+		QVERIFY(writeBytes(stale + QStringLiteral("/locked"), QByteArray("keep")));
+
+		const ControlResult saved = ControlRegistry::instance()->invoke(
+			QStringLiteral("project.save"), QJsonObject{{QStringLiteral("path"), project}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		QVERIFY(saved.result.value(QStringLiteral("revision_kept")).toBool());
+		QVERIFY(saved.result.value(QStringLiteral("revision_skipped")).toString().contains(stale));
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult history = registry->invoke(QStringLiteral("control.transactions"));
+		QVERIFY2(history.ok, qPrintable(history.errorMessage));
+		const QJsonArray transactions = history.result.value(QStringLiteral("transactions")).toArray();
+		QVERIFY(!transactions.isEmpty());
+		const QJsonObject transaction = transactions.last().toObject();
+		QCOMPARE(transaction.value(QStringLiteral("command")).toString(), QStringLiteral("project.save"));
+		QCOMPARE(transaction.value(QStringLiteral("before")).toObject()
+			.value(QStringLiteral("file")).toString(), project);
+		QVERIFY(!transaction.value(QStringLiteral("reversible")).toBool());
+		QVERIFY(transaction.value(QStringLiteral("inverse")).toObject().isEmpty());
+		QCOMPARE(transaction.value(QStringLiteral("before")).toObject()
+			.value(QStringLiteral("previous_revision_replaced")).toInt(), 0);
+
+		const QByteArray savedBytes = readBytes(project);
+		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"));
+		QVERIFY(!undo.ok);
+		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
+		QCOMPARE(readBytes(project), savedBytes);
+	}
 };
 
 QTEST_GUILESS_MAIN(RevisionTimelineTest)

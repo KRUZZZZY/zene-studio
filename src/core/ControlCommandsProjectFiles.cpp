@@ -55,23 +55,20 @@ QString sha256OfFile(const QString& path)
 }
 
 //! The `__transaction` project.save records, honest PER CALL (BUG-CTL-6).
-//! `revisionKept` is true only when the rotation actually retained a revision,
-//! so the `project.restore_revision {revision: 0}` inverse is recorded ONLY
-//! then: a first save has no file to replace, so advertising that inverse
-//! would name an undo the engine cannot perform - `control.undo` would answer
-//! restoreProjectRevision's typed `not_found`, the same class of lie BUG-CTL-1
-//! fixed. Recording `reversible: false` there is the honest shape and is exactly
-//! what the contract permits a handler to do (ControlRegistry::stampContract:
-//! "A handler may still record LESS than its class allows ... never more"); the
-//! table ROW stays snapshot/reversible because a save OVER an existing file
-//! does keep a revision and does offer the inverse.
+//! `revisionKept` is true only when the rotation actually retained a revision.
+//! An inverse is recorded only when that rotation also completed policy cleanup:
+//! a stale cleanup refusal makes the same rotation refuse during restore.
+//! Recording `reversible: false` is the honest shape and is permitted by the
+//! contract (ControlRegistry::stampContract lets a handler record less than its
+//! class allows, never more).
 QJsonObject saveTransaction(const QString& target, bool refused, bool revisionKept)
 {
 	QJsonObject transaction;
 	transaction.insert(QStringLiteral("before"),
 		QJsonObject{{QStringLiteral("file"), target},
 			{QStringLiteral("previous_revision_replaced"), revisionKept ? 0 : -1}});
-	if (revisionKept)
+	const bool inverseAvailable = revisionKept && !refused;
+	if (inverseAvailable)
 	{
 		// The inverse is a COMMAND, not a live object: the file is not project
 		// state and has no JournallingObject, so control.undo dispatches this
@@ -85,7 +82,7 @@ QJsonObject saveTransaction(const QString& target, bool refused, bool revisionKe
 					QJsonObject{{QStringLiteral("path"), target},
 						{QStringLiteral("revision"), 0}}}});
 	}
-	transaction.insert(QStringLiteral("reversible"), revisionKept);
+	transaction.insert(QStringLiteral("reversible"), inverseAvailable);
 	QString mechanism;
 	if (!revisionKept)
 	{
@@ -94,6 +91,11 @@ QJsonObject saveTransaction(const QString& target, bool refused, bool revisionKe
 				"cap, so no revision was kept and no inverse is offered")
 			: QStringLiteral("snapshot only: this is the file's first save - there was no "
 				"previous revision to keep, so no revision 0 exists and no inverse is offered");
+	}
+	else if (refused)
+	{
+		mechanism = QStringLiteral("revision 0 was retained, but stale revision cleanup failed; "
+			"project.restore_revision would be refused by the same rotation failure, so no inverse is offered");
 	}
 	else
 	{
