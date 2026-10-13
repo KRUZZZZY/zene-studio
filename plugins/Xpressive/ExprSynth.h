@@ -46,6 +46,8 @@ public:
 	using ff1data_functor = float (*)(void*, float);
 	ExprFront(const char* expr, int last_func_samples);
 	~ExprFront();
+	ExprFront(const ExprFront&) = delete;
+	ExprFront& operator=(const ExprFront&) = delete;
 	bool compile();
 	inline bool isValid() { return m_valid; }
 	float evaluate();

@@ -31,11 +31,13 @@
 
 #include <array>
 #include <cstdint>
+#include <type_traits>
 #include <vector>
 
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "SampleFrame.h"
+#include "../../../plugins/Xpressive/ExprSynth.h"
 
 using namespace lmms;
 
@@ -171,6 +173,12 @@ private slots:
 	void cleanupTestCase()
 	{
 		Engine::destroy();
+	}
+
+	void exprFrontDoesNotShareOwnedData()
+	{
+		QVERIFY(!std::is_copy_constructible_v<ExprFront>);
+		QVERIFY(!std::is_copy_assignable_v<ExprFront>);
 	}
 
 	void interleavedBufferLifecycle()
