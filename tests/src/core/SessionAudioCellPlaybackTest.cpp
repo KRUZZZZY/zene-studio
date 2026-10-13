@@ -201,7 +201,7 @@ private slots:
 	//! gain_db scales the rendered level on both track types: -6.0206 dB is exactly half amplitude.
 	void gainScalesTheRenderedLevelOnBothTrackTypes()
 	{
-		for (const QString type : {QStringLiteral("sample"), QStringLiteral("instrument")})
+		for (const QString& type : {QStringLiteral("sample"), QStringLiteral("instrument")})
 		{
 			useTrack(type);
 			const std::vector<SampleFrame> clip = rampClip(1500);
@@ -215,7 +215,7 @@ private slots:
 	//! loop_start / loop_length: the cell starts at its loop start and wraps at its loop end, on both track types.
 	void theLoopRegionBoundsThePlayedFrames()
 	{
-		for (const QString type : {QStringLiteral("sample"), QStringLiteral("instrument")})
+		for (const QString& type : {QStringLiteral("sample"), QStringLiteral("instrument")})
 		{
 			useTrack(type);
 			const std::vector<SampleFrame> clip = rampClip(1500);
@@ -313,7 +313,7 @@ private slots:
 	//! The realtime rule on BOTH track types, with gain, loop region and a pitch/warp-baked clip in play.
 	void theInstrumentCellRendererDoesNotAllocateEither()
 	{
-		for (const QString type : {QStringLiteral("sample"), QStringLiteral("instrument")})
+		for (const QString& type : {QStringLiteral("sample"), QStringLiteral("instrument")})
 		{
 			useTrack(type);
 			const auto rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
