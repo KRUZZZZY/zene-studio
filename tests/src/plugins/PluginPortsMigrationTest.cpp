@@ -31,9 +31,11 @@
 #include <QStringList>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <type_traits>
 
 #include "Engine.h"
 #include "Plugin.h"
+#include "../../../plugins/Xpressive/ExprSynth.h"
 
 namespace
 {
@@ -185,6 +187,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void xpressiveSynthIsNotCopyable();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -214,6 +217,14 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::xpressiveSynthIsNotCopyable()
+{
+	QVERIFY2(!std::is_copy_constructible_v<lmms::ExprSynth>,
+		"Assertion: ExprSynth must not be copy-constructible because it owns its expressions");
+	QVERIFY2(!std::is_copy_assignable_v<lmms::ExprSynth>,
+		"Assertion: ExprSynth must not be copy-assignable because it owns its expressions");
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()

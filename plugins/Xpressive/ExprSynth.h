@@ -98,6 +98,8 @@ public:
 	ExprSynth(const WaveSample* gW1, const WaveSample* gW2, const WaveSample* gW3, ExprFront* exprO1, ExprFront* exprO2, NotePlayHandle* nph,
 			const sample_rate_t sample_rate, const FloatModel* pan1, const FloatModel* pan2, float rel_trans);
 	virtual ~ExprSynth();
+	ExprSynth(const ExprSynth&) = delete;
+	ExprSynth& operator=(const ExprSynth&) = delete;
 
 	void renderOutput(f_cnt_t frames, SampleFrame* buf );
 
