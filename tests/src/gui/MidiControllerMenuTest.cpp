@@ -29,6 +29,8 @@
 
 #include <QtTest>
 
+#include <memory>
+
 #include <QMenu>
 
 #include "ControlRegistry.h"
@@ -37,6 +39,7 @@
 #include "InstrumentTrack.h"
 #include "Knob.h"
 #include "MidiController.h"
+#include "MidiSetupWidget.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -44,6 +47,13 @@ using namespace lmms::gui;
 
 namespace
 {
+
+struct TestMidiClient
+{
+	static QString name() { return QStringLiteral("Test MIDI"); }
+	static QString configSection() { return QStringLiteral("test-midi"); }
+	static QString probeDevice() { return QString(); }
+};
 
 QAction* find(QMenu& menu, const QString& text)
 {
@@ -68,6 +78,15 @@ class MidiControllerMenuTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void showingParentlessSetupWidgetIsSafe()
+	{
+		std::unique_ptr<MidiSetupWidget> setup(MidiSetupWidget::create<TestMidiClient>(nullptr));
+
+		setup->show();
+
+		QVERIFY(setup->isVisible());
+	}
+
 	void initTestCase()
 	{
 		Engine::init(true);
