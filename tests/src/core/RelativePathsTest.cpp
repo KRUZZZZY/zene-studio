@@ -22,6 +22,7 @@
  *
  */
 
+#include <QDir>
 #include <QObject>
 #include <QtTest>
 
@@ -63,6 +64,18 @@ private slots:
 		QCOMPARE(PathUtil::cleanName(""), empty);
 		QCOMPARE(PathUtil::toAbsolute(""), empty);
 		QCOMPARE(PathUtil::toShortestRelative(""), empty);
+	}
+
+	void pathsStartingWithTwoDotsStayRelative()
+	{
+		using namespace lmms;
+
+		const QString filename = QStringLiteral("..ambience.wav");
+		const QString absolutePath = QDir(ConfigManager::inst()->factorySamplesDir()).filePath(filename);
+
+		QCOMPARE(PathUtil::relativeOrAbsolute(absolutePath, PathUtil::Base::FactorySample), filename);
+		QCOMPARE(PathUtil::toShortestRelative(absolutePath),
+			PathUtil::basePrefix(PathUtil::Base::FactorySample) + filename);
 	}
 };
 

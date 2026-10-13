@@ -193,9 +193,9 @@ namespace lmms::PathUtil
 		if (base == Base::Absolute) { return absolutePath; }
 		bool error;
 		QString relativePath = baseQDir(base, &error).relativeFilePath(absolutePath);
-		// Return the relative path if it didn't result in a path starting with ..
-		// and the baseQDir was resolved properly
-		return (relativePath.startsWith("..") || error)
+		// Return relative paths that don't escape the base, and only when the base
+		// directory was resolved properly
+		return (relativePath == ".." || relativePath.startsWith("../") || error)
 			? absolutePath
 			: relativePath;
 	}
