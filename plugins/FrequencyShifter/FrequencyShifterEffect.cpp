@@ -99,6 +99,7 @@ ProcessStatus FrequencyShifterEffect::processImpl(InterleavedBufferView<float, 2
 	const float invRing = 1.f - ring;
 	const bool parallelFB = (routeMode >= 1);
 	const bool routeAdd = (routeMode == 1);
+	const bool routeMute = (routeMode == 2);
 
 	const bool doHarm = (harmonics > 0.f);
 	const float harmFactor = harmonics * 20.f + 1.f;
@@ -250,7 +251,7 @@ ProcessStatus FrequencyShifterEffect::processImpl(InterleavedBufferView<float, 2
 		}
 		else
 		{
-			const float dry = 1.f - mix;
+			const float dry = routeMute ? 0.f : 1.f - mix;
 			inOut[i][0] = dry * inL + mix * outL;
 			inOut[i][1] = dry * inR + mix * outR;
 		}

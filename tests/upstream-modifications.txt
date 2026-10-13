@@ -628,7 +628,7 @@ plugins/DualFilter/DualFilter.cpp	rename layer 1: built-in plugin logo resource 
 plugins/DynamicsProcessor/DynamicsProcessor.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Eq/EqEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Flanger/FlangerEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
-plugins/FrequencyShifter/FrequencyShifterEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/FrequencyShifter/FrequencyShifterEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change); new-p12-86: Mute route suppresses the dry mix term so only the shifter/delay path reaches output
 plugins/GranularPitchShifter/GranularPitchShifterEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change); 0.5.0 r6: at most 512 grains, reserved up front (no audio-thread allocation)
 plugins/HydrogenImport/HydrogenImport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
 plugins/LOMM/LOMM.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
