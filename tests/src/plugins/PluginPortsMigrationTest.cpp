@@ -34,6 +34,9 @@
 
 #include "Engine.h"
 #include "Plugin.h"
+#include "AudioDevice.h"
+#include "AudioEngine.h"
+#include "../../../plugins/FrequencyShifter/FrequencyShifterEffect.h"
 
 namespace
 {
@@ -170,6 +173,52 @@ constexpr const char* PluginModuleHostSkipMessage =
 
 } // namespace
 
+namespace lmms
+{
+	class FrequencyShifterEffectTestAccess
+	{
+		static auto concrete(const Effect& effect) -> const FrequencyShifterEffect&
+		{
+			return static_cast<const FrequencyShifterEffect&>(effect);
+		}
+
+		static auto concrete(Effect& effect) -> FrequencyShifterEffect&
+		{
+			return static_cast<FrequencyShifterEffect&>(effect);
+		}
+
+	public:
+		static auto ringBufferSize(const Effect& effect) -> int
+		{
+			return concrete(effect).m_ringBufSize;
+		}
+
+		static auto writeIndex(const Effect& effect) -> int
+		{
+			return concrete(effect).m_writeIndex;
+		}
+
+		static auto trueDelay(const Effect& effect) -> float
+		{
+			return concrete(effect).m_trueDelay;
+		}
+
+		static auto ringBufferSizeForRate(const Effect& effect, sample_rate_t rate) -> int
+		{
+			const auto& controls = concrete(effect).m_controls;
+			const float maxDelay = controls.m_delayLengthLong.maxValue() + controls.m_delayLengthShort.maxValue();
+			return maxDelay * 0.001f * rate + 6.f;
+		}
+
+		static void setMaximumDelay(Effect& effect)
+		{
+			auto& controls = concrete(effect).m_controls;
+			controls.m_delayLengthLong.setValue(controls.m_delayLengthLong.maxValue());
+			controls.m_delayLengthShort.setValue(controls.m_delayLengthShort.maxValue());
+		}
+	};
+}
+
 class PluginPortsMigrationTest : public QObject
 {
 	Q_OBJECT
@@ -191,6 +240,7 @@ private slots:
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
+	void frequencyShifterSampleRateDropKeepsDelayIndicesInRange();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -725,6 +775,71 @@ void PluginPortsMigrationTest::slice8PluginsAreLiveAndExact()
 			QVERIFY2(worst > 1e-6f, "slice 8 comparison not sensitive");
 		}
 	}
+}
+
+void PluginPortsMigrationTest::frequencyShifterSampleRateDropKeepsDelayIndicesInRange()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto library = std::make_unique<QLibrary>(QString::fromUtf8(PART_C_MIGRATED_frequencyshifter));
+	library->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library->load(), qPrintable(library->errorString()));
+	m_libraries.push_back(library.release());
+	auto entry = reinterpret_cast<MainFn>(m_libraries.back()->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto shifter = std::unique_ptr<lmms::Effect>{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+	QVERIFY(shifter != nullptr);
+
+	auto* engine = lmms::Engine::audioEngine();
+	auto* device = engine->audioDev();
+	QVERIFY(device != nullptr);
+	const auto originalRate = engine->outputSampleRate();
+	struct RestoreRate
+	{
+		lmms::AudioEngine* engine;
+		lmms::AudioDevice* device;
+		lmms::sample_rate_t sampleRate;
+		~RestoreRate()
+		{
+			device->setSampleRateForTesting(sampleRate);
+			engine->sampleRateChanged();
+		}
+	} restore{engine, device, originalRate};
+
+	constexpr lmms::sample_rate_t HighRate = 192000;
+	constexpr lmms::sample_rate_t LowRate = 44100;
+	lmms::FrequencyShifterEffectTestAccess::setMaximumDelay(*shifter);
+	device->setSampleRateForTesting(HighRate);
+	engine->sampleRateChanged();
+	const int highBufferSize = lmms::FrequencyShifterEffectTestAccess::ringBufferSize(*shifter);
+	const int lowBufferSize = lmms::FrequencyShifterEffectTestAccess::ringBufferSizeForRate(*shifter, LowRate);
+	QVERIFY(highBufferSize > lowBufferSize + 1);
+
+	const auto frames = static_cast<lmms::f_cnt_t>(lowBufferSize + 1);
+	std::vector<lmms::SampleFrame> input(static_cast<std::size_t>(frames), lmms::SampleFrame{0.25f, -0.25f});
+	lmms::SampleFrame* inputChannels[1] = {input.data()};
+	lmms::AudioBus inputBus{inputChannels, 1, frames};
+	shifter->processAudioBuffer(inputBus);
+	QCOMPARE(lmms::FrequencyShifterEffectTestAccess::writeIndex(*shifter), static_cast<int>(frames));
+
+	device->setSampleRateForTesting(LowRate);
+	engine->sampleRateChanged();
+	const int newBufferSize = lmms::FrequencyShifterEffectTestAccess::ringBufferSize(*shifter);
+	QCOMPARE(newBufferSize, lowBufferSize);
+	const int writeIndex = lmms::FrequencyShifterEffectTestAccess::writeIndex(*shifter);
+	QVERIFY2(writeIndex >= 0 && writeIndex < newBufferSize,
+		"write index must be inside the resized delay ring");
+	const float trueDelay = lmms::FrequencyShifterEffectTestAccess::trueDelay(*shifter);
+	QVERIFY2(trueDelay >= 1.f && trueDelay < newBufferSize,
+		"delay length in samples must be inside the resized delay ring");
+
+	lmms::SampleFrame next{};
+	lmms::SampleFrame* nextChannels[1] = {&next};
+	lmms::AudioBus nextBus{nextChannels, 1, 1};
+	shifter->processAudioBuffer(nextBus);
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)

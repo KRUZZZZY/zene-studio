@@ -272,6 +272,12 @@ void FrequencyShifterEffect::updateSampleRate()
 	// +6 provides space for interpolation
 	m_ringBufSize = (m_controls.m_delayLengthLong.maxValue() + m_controls.m_delayLengthShort.maxValue()) * 0.001f * m_sampleRate + 6.f;
 	m_ringBuf.resize(m_ringBufSize);
+	std::fill(m_ringBuf.begin(), m_ringBuf.end(), std::array<float, 2>{});
+	m_writeIndex = 0;
+	m_dampState = {};
+	const float delayLen = (m_controls.m_delayLengthLong.value() + m_controls.m_delayLengthShort.value())
+		* 0.001f * m_sampleRate;
+	m_trueDelay = std::max(delayLen, 1.f);
 }
 
 } // namespace lmms
