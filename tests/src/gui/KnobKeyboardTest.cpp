@@ -40,6 +40,7 @@
 #include <QHBoxLayout>
 #include <QHelpEvent>
 #include <QLineEdit>
+#include <QProcess>
 #include <QToolTip>
 #include <QVBoxLayout>
 
@@ -413,6 +414,23 @@ private slots:
 	//! A knob's own fixed-size reset must keep the larger hit target applied at polish time.
 	void accessibleTargetSurvivesKnobSizingReset()
 	{
+		if (!qEnvironmentVariableIsSet("ZENE_TEST_ACCESSIBLE"))
+		{
+			// Accessible mode is fixed for the whole process at startup, and every other slot here assumes the
+			// normal mode, so the whole-executable run cannot set it. Run this slot for real in a fresh process
+			// that has it (the KnobAccessibleTargetSizingTest registration does the same directly).
+			QProcess child;
+			QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+			environment.insert(QStringLiteral("ZENE_TEST_ACCESSIBLE"), QStringLiteral("1"));
+			child.setProcessEnvironment(environment);
+			child.setProcessChannelMode(QProcess::MergedChannels);
+			child.start(QCoreApplication::applicationFilePath(), {QStringLiteral("accessibleTargetSurvivesKnobSizingReset")});
+			QVERIFY2(child.waitForStarted(), qPrintable(child.errorString()));
+			QVERIFY2(child.waitForFinished(120000), "the accessible-mode child did not finish");
+			QVERIFY2(child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0,
+				qPrintable(QString::fromLocal8Bit(child.readAll())));
+			return;
+		}
 		QVERIFY(qEnvironmentVariableIsSet("ZENE_TEST_ACCESSIBLE"));
 		QVERIFY(tokens::accessibleMode());
 		const int target = tokens::targetSize();
