@@ -4256,3 +4256,12 @@ if(PYTHON3_EXECUTABLE AND ZENE_HAVE_COLLAB)
 		SKIP_RETURN_CODE 77
 	)
 endif()
+
+# The WAV-run diagnostic must compare the model rate with the WAV's own rate.
+if(TARGET nam_harness AND PYTHON3_EXECUTABLE)
+	add_test(NAME NeuralAmpWavRunSampleRateWarning
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/neuralamp-wav-run-sample-rate-warning.py
+			$<TARGET_FILE:nam_harness>)
+	set_tests_properties(NeuralAmpWavRunSampleRateWarning PROPERTIES TIMEOUT 30)
+endif()

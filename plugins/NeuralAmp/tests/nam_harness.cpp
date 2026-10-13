@@ -377,7 +377,8 @@ int main(int argc, char** argv)
 	            "trained sample rate: %.0f Hz\n",
 		spec.arrays.size(), spec.weightCount, spec.receptiveField, spec.sampleRate);
 	std::printf("head_scale: %.6g\n", static_cast<double>(spec.headScale));
-	if (spec.sampleRate > 0.0 && std::fabs(spec.sampleRate - opt.sampleRate) > 0.5)
+	if (opt.wavRun.empty() && spec.sampleRate > 0.0 &&
+		std::fabs(spec.sampleRate - opt.sampleRate) > 0.5)
 	{
 		std::printf("WARNING: model trained at %.0f Hz, harness running at %.0f Hz "
 		            "(rate adaptation is not implemented)\n",
@@ -396,6 +397,12 @@ int main(int argc, char** argv)
 			std::fprintf(stderr, "error: could not read WAV %s (mono PCM16/24/32 or float32)\n",
 				opt.wavRun.c_str());
 			return 2;
+		}
+		if (spec.sampleRate > 0.0 && std::fabs(spec.sampleRate - wavRate) > 0.5)
+		{
+			std::printf("WARNING: model trained at %.0f Hz, harness running at %.0f Hz "
+			            "(rate adaptation is not implemented)\n",
+				spec.sampleRate, wavRate);
 		}
 		std::printf("wav-run: %s  %zu samples  %.0f Hz  block %d\n", opt.wavRun.c_str(),
 			wavIn.size(), wavRate, opt.blockSize);
