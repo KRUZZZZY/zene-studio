@@ -137,16 +137,43 @@ private slots:
 
 	//! A crossfade is as long as the clips' SHARED span: when the later clip is wholly inside the
 	//! earlier one, the overlap stops at the later clip's end, not at the earlier one's.
+	//! Owner ruling 2026-10-09 (docs/m0-design/decisions-r3-clips.md section 2): the default crossfade
+	//! only clamps to the edge fades - the outer clip gets no offset fade and no V.
 	void aCrossfadeIntoAContainedClipStopsAtItsEnd()
 	{
 		Clip* earlier = clipAt(m_track, 0, 100);          // [0, 100)
 		Clip* later = clipAt(m_track, 20, 20);            // [20, 40), wholly inside it
 		QCOMPARE(arrangement::applyOverlap(later, arrangement::Overlap::Crossfade), 1);
-		// The shared span is [20, 40) - 20 ticks, not the earlier clip's remaining 80 - and since the later clip
-		// lies inside the earlier one it is crossfaded at both ends (owner decision 2026-10-08, round 2): the
-		// earlier clip ducks under it over the first 10 ticks and comes back over the last 10.
+		// The shared span is [20, 40) - 20 ticks, not the earlier clip's remaining 80.
+		QCOMPARE(earlier->clipEdits().fadeOutTicks, 20);
+		QCOMPARE(later->clipEdits().fadeInTicks, 20);
+		// Clamped edge fades only: nothing is written at the outer clip's start or at an offset, and the
+		// inner clip keeps no fade-out.
+		QCOMPARE(earlier->clipEdits().fadeInTicks, 0);
+		QCOMPARE(earlier->clipEdits().fadeInOffsetTicks, 0);
+		QCOMPARE(earlier->clipEdits().fadeOutOffsetTicks, 0);
+		QVERIFY(!earlier->clipEdits().fadeOffsetGap);
+		QCOMPARE(later->clipEdits().fadeOutTicks, 0);
+	}
+
+	//! The V shape on a contained pair is still available, but only explicitly (Alt at drop, or mode "container"):
+	//! the outer clip ducks under the inner one over its authored fade-in and comes back over its fade-out.
+	void anExplicitContainerCrossfadeStillMakesTheV()
+	{
+		Clip* earlier = clipAt(m_track, 0, 100);          // [0, 100)
+		Clip* later = clipAt(m_track, 20, 20);            // [20, 40), wholly inside it
+		ClipEdits authored = later->clipEdits();
+		authored.fadeInTicks = 10;
+		authored.fadeOutTicks = 10;
+		later->setClipEdits(authored);
+		QString why;
+		QCOMPARE(arrangement::applyOverlap(later, arrangement::Overlap::Crossfade, &why, true), 1);
+		QVERIFY2(why.isEmpty(), qPrintable(why));
 		QCOMPARE(earlier->clipEdits().fadeOutTicks, 10);
 		QCOMPARE(earlier->clipEdits().fadeInTicks, 10);
+		// The offsets place the ramps at the inner clip's edges: down over [20, 30), up over [30, 40).
+		QCOMPARE(earlier->clipEdits().fadeOutOffsetTicks, 100 - (20 + 10));
+		QCOMPARE(earlier->clipEdits().fadeInOffsetTicks, 40 - 10 - 0);
 		QCOMPARE(later->clipEdits().fadeInTicks, 10);
 		QCOMPARE(later->clipEdits().fadeOutTicks, 10);
 	}
