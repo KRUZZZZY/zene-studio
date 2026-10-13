@@ -11,6 +11,16 @@ Verdict: **FIXED**
 | `tests/src/core/DeviceDspTest.cpp:223-234` | Regression loads the real frequency shifter, selects Mute, sets Mix to 0.5, and checks both channels remain silent when the delay path has no signal. |
 | `tests/upstream-modifications.txt:631` | The inherited production file has the new-p12-86 behavior reason. `DeviceDspTest.cpp` was already registered in `tests/fork-sources.txt:1942`. |
 
+| Evidence item | Exact command or committed paths | Result |
+| --- | --- | --- |
+| RED | `QT_QPA_PLATFORM=offscreen ctest -R '^DeviceDspTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-86.r1/logs/test-1.log 2>&1; echo EXIT=$?` (run from `build/tests`) | EXIT=8; dry output was 0.4. |
+| GREEN | `QT_QPA_PLATFORM=offscreen ctest -R '^DeviceDspTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-86.r1/logs/test-4.log 2>&1; echo EXIT=$?` (run from `build/tests`) | EXIT=0; 1/1 ctest passed. |
+| Inverse-patch RED | `QT_QPA_PLATFORM=offscreen ctest -R '^DeviceDspTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-86.r1/logs/test-3.log 2>&1; echo EXIT=$?` (run from `build/tests`) | EXIT=8; the same assertion again measured 0.4. |
+| Affected-family test count | `ctest -R '^DeviceDspTest$' --output-on-failure` (from `build/tests`) | One registered ctest executed; final result 1/1 passed. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-86.r1/logs/gate-1.log 2>&1; echo EXIT=$?` | EXIT=0. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-86.r1/logs/gate-2.log 2>&1; echo EXIT=$?` | EXIT=0. |
+| Files committed | `plugins/FrequencyShifter/FrequencyShifterEffect.cpp`; `tests/src/core/DeviceDspTest.cpp`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p12-86.md` | Commit `b1eab6c4a`; the report is updated in a follow-up commit. |
+
 On the original code, the regression failed with left output `0.4` from input `0.8`. Removing the production patch after the first green run reproduced the same failure. Reapplying it made the test pass.
 
 The affected ctest family is `DeviceDspTest`: one registered ctest was selected and executed. The final run passed 1/1. The red runs reported the regression assertion failure; eight unrelated optional-module cases were skipped by that test build.
