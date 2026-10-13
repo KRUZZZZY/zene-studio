@@ -249,38 +249,74 @@ private slots:
 			QStringLiteral("rack version=2 selected=1 macro+1 target+1 zone+2, all children of "
 				"<rack>"));
 
-		// Reload the mixer from XML. The fixture's chains carry no effects on
-		// purpose - instantiating one from XML starts the plugin loader, the
-		// teardown race docs/RACKS.md section 6 records - so the macro's target
-		// is asserted as DATA here, and as a live write by RackMacrosTest.
-		QDomDocument loadDoc;
-		loadDoc.setContent(QString::fromUtf8(reloadFixtureXml()));
-		Engine::mixer()->loadSettings(loadDoc.documentElement());
+		// THE ROUND TRIP: reload the document THIS test just wrote and assert
+		// that what comes back out of it is what went into it - the
+		// "Persisted" macro with its target, and the two zones at the indexes
+		// they were saved at. Reloading a hand-written fixture (further down)
+		// only proves the READER; reloading doc proves the writer and the
+		// reader agree, which is the only thing a save/load proof can be: a
+		// writer that drops the macro value or a zone's chain reads back as a
+		// document that happens to load.
+		//
+		// The fixture's own effect is named in doc, so this load instantiates
+		// effects from XML. That is safe and is why the macro's target is
+		// asserted as DATA here: the test effect is local to this binary
+		// (RackTestSupport.h), the plugin factory does not know its
+		// descriptor, and an effect it cannot instantiate becomes a
+		// DummyEffect rather than a plugin module load. A live write is
+		// asserted through the fixture the tests build themselves.
+		Engine::mixer()->loadSettings(doc.documentElement());
 
 		Rack& reloaded = rackUnderTest();
+		// One parallel chain saved, and the channel's own chain beside it.
 		QCOMPARE(reloaded.chainCount(), 2);
 		QCOMPARE(reloaded.selectedChain(), 1);
-		QCOMPARE(reloaded.macros().macroCount(), 1);
-		QCOMPARE(reloaded.macros().macro(0)->name, QStringLiteral("Loaded"));
-		QCOMPARE(reloaded.macros().macro(0)->value, 0.25f);
-		QCOMPARE(static_cast<int>(reloaded.macros().macro(0)->targets.size()), 1);
-		QCOMPARE(reloaded.macros().macro(0)->targets[0].parameter, QString::fromLatin1(kGainName));
-		QCOMPARE(reloaded.macros().macro(0)->targets[0].low, 0.5f);
-		QCOMPARE(reloaded.macros().macro(0)->targets[0].high, 1.0f);
-		QCOMPARE(reloaded.zones().zoneCount(), 2);
-		QCOMPARE(reloaded.zones().resolve(40, 150), 0);
-		QCOMPARE(reloaded.zones().resolve(55, 150), 1);
-		QCOMPARE(reloaded.zones().resolve(55, 20), -1);
-		QCOMPARE(reloaded.zones().zone(0)->sample, QStringLiteral("kick.wav"));
+		QCOMPARE(reloaded.macros().macroCount(), macrosBefore + 1);
+		const RackMacro* persisted = reloaded.macros().macro(macrosBefore);
+		QVERIFY(persisted != nullptr);
+		QCOMPARE(persisted->name, QStringLiteral("Persisted"));
+		QCOMPARE(persisted->value, 0.5f);
+		QCOMPARE(static_cast<int>(persisted->targets.size()), 1);
+		const RackMacroTarget& target = persisted->targets[0];
+		QCOMPARE(target.chain, kDrivenChain);
+		QCOMPARE(target.effect, 0);
+		QCOMPARE(target.parameter, QString::fromLatin1(kGainName));
+		QCOMPARE(target.low, 0.25f);
+		QCOMPARE(target.high, 0.75f);
+		QCOMPARE(reloaded.zones().zoneCount(), zonesBefore + 2);
+		const RackZone* lowZone = reloaded.zones().zone(zonesBefore);
+		const RackZone* highZone = reloaded.zones().zone(zonesBefore + 1);
+		QVERIFY(lowZone != nullptr && highZone != nullptr);
+		QCOMPARE(lowZone->lowKey, 0);
+		QCOMPARE(lowZone->highKey, 47);
+		QCOMPARE(lowZone->chain, kDrivenChain);
+		QCOMPARE(lowZone->sample, QStringLiteral("bass.wav"));
+		QCOMPARE(highZone->lowKey, 48);
+		QCOMPARE(highZone->highKey, 127);
+		QCOMPARE(highZone->chain, 0);
+		QVERIFY(highZone->sample.isEmpty());
+		// Both velocity ranges ride the whole space (0..200): a zone that
+		// states only keys is a zone the writer states as keys only, and the
+		// reader gives it back the full range rather than a zero-width one.
+		QCOMPARE(lowZone->lowVelocity, 0);
+		QCOMPARE(lowZone->highVelocity, 200);
+		// The two zones come back in the order they were saved, so the
+		// first-match-wins lookup reads the same ladder. Keys 10 and 100 are
+		// outside every zone the earlier cases left in the fixture, so these
+		// answers are the two zones this test saved.
+		QCOMPARE(reloaded.zones().resolve(10, 150), zonesBefore);
+		QCOMPARE(reloaded.zones().resolve(100, 150), zonesBefore + 1);
+		QCOMPARE(reloaded.zones().resolve(128, 150), -1);
+		QCOMPARE(reloaded.zones().resolve(100, 201), -1);
+		printEvidence("persistence-round-trip",
+			QStringLiteral("reloaded the document this test saved: macro=%1 name=Persisted "
+				"value=0.5 target=1 zone=%2 resolve(10,150)=%3 resolve(100,150)=%4 "
+				"resolve(128,150)=-1")
+				.arg(macrosBefore + 1).arg(zonesBefore + 2).arg(zonesBefore).arg(zonesBefore + 1));
 
-		// The reloaded macro's target names a device the fixture does not build,
-		// so applying it writes nothing and says so.
-		QCOMPARE(static_cast<int>(reloaded.macros().apply(0, reloaded).size()), 0);
-		printEvidence("persistence-reloaded",
-			QStringLiteral("macro=1 value=0.25 target=1 zone=2 resolve(40,150)=0 resolve(55,20)=-1 "
-				"apply_writes=0 (the fixture's chain has no devices)"));
-
-		// Save again: the reloaded configuration writes the same children.
+		// Save again: the configuration that came back out of doc writes the
+		// same children back out, so the trip closes on the bytes as well as
+		// on the values.
 		QDomDocument again;
 		QDomElement rootAgain = again.createElement(QStringLiteral("mixer"));
 		again.appendChild(rootAgain);
@@ -288,12 +324,42 @@ private slots:
 		const QDomElement rackAgain = savedRackElement(rootAgain);
 		QVERIFY(!rackAgain.isNull());
 		QCOMPARE(rackAgain.attribute(QStringLiteral("version")), QStringLiteral("2"));
-		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("macro")).size(), 1);
+		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("macro")).size(), macrosBefore + 1);
 		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("target")).size(), 1);
-		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("zone")).size(), 2);
+		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("zone")).size(), zonesBefore + 2);
 		QCOMPARE(rackAgain.elementsByTagName(QStringLiteral("chain")).size(), 1);
-		printEvidence("persistence-round-trip",
-			QStringLiteral("saved=macro1/target1/zone2 loaded=same re-saved=same"));
+		printEvidence("persistence-re-saved",
+			QStringLiteral("re-saved from the reloaded document: same macro/target/zone/chain counts"));
+
+		// The reader also takes a document this build did not write. Same
+		// reader, different writer: a fixture whose macro is not the one this
+		// test saved and whose zones name other ranges and a sample.
+		QDomDocument loadDoc;
+		loadDoc.setContent(QString::fromUtf8(reloadFixtureXml()));
+		Engine::mixer()->loadSettings(loadDoc.documentElement());
+
+		Rack& fromFixture = rackUnderTest();
+		QCOMPARE(fromFixture.chainCount(), 2);
+		QCOMPARE(fromFixture.selectedChain(), 1);
+		QCOMPARE(fromFixture.macros().macroCount(), 1);
+		QCOMPARE(fromFixture.macros().macro(0)->name, QStringLiteral("Loaded"));
+		QCOMPARE(fromFixture.macros().macro(0)->value, 0.25f);
+		QCOMPARE(static_cast<int>(fromFixture.macros().macro(0)->targets.size()), 1);
+		QCOMPARE(fromFixture.macros().macro(0)->targets[0].parameter, QString::fromLatin1(kGainName));
+		QCOMPARE(fromFixture.macros().macro(0)->targets[0].low, 0.5f);
+		QCOMPARE(fromFixture.macros().macro(0)->targets[0].high, 1.0f);
+		QCOMPARE(fromFixture.zones().zoneCount(), 2);
+		QCOMPARE(fromFixture.zones().resolve(40, 150), 0);
+		QCOMPARE(fromFixture.zones().resolve(55, 150), 1);
+		QCOMPARE(fromFixture.zones().resolve(55, 20), -1);
+		QCOMPARE(fromFixture.zones().zone(0)->sample, QStringLiteral("kick.wav"));
+
+		// The reloaded macro's target names a device the fixture does not build,
+		// so applying it writes nothing and says so.
+		QCOMPARE(static_cast<int>(fromFixture.macros().apply(0, fromFixture).size()), 0);
+		printEvidence("persistence-reloaded",
+			QStringLiteral("macro=1 value=0.25 target=1 zone=2 resolve(40,150)=0 resolve(55,20)=-1 "
+				"apply_writes=0 (the fixture's chain has no devices)"));
 	}
 };
 

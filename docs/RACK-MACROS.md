@@ -237,8 +237,9 @@ The numbers, as measured at this commit:
 | `zone-refusals` | bad chain/key → `invalid_args`, unknown zone → `not_found`, a note outside every zone → `matched=false` |
 | `surface-zone-undo` | `zone_remove` → `control.undo` → the zone is back at its index |
 | `persistence-saved` | `<rack version="2" selected="1">` + 1 `<macro>` (1 `<target>`) + 2 `<zone>`, all children of the channel's own `<rack>` |
-| `persistence-reloaded` | macro 1 (value 0.25, target 1), zones 2, resolve(40,150)=0, resolve(55,20)=−1, `apply` writes 0 (the fixture's chain has no devices) |
-| `persistence-round-trip` | saved = loaded = re-saved |
+| `persistence-reloaded` | the hand-written fixture loads: macro 1 (value 0.25, target 1), zones 2, resolve(40,150)=0, resolve(55,20)=−1, `apply` writes 0 (the fixture's chain has no devices) |
+| `persistence-round-trip` | **the document this test saved is the one reloaded**: macro 1 (`Persisted`, value 0.5, target 1) and zones 5 come back out of it, resolve(10,150)=3, resolve(100,150)=4, resolve(128,150)=−1 |
+| `persistence-re-saved` | re-saving the reloaded configuration writes the same macro/target/zone/chain counts back out |
 
 ### 5.3 Gates
 
