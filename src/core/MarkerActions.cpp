@@ -135,7 +135,8 @@ void follow(const Song& song, Moved moved, tick_t now, bool paused)
 
 //! One look of the timer. Only the arrangement's playback crosses markers (a pattern or a clip played
 //! alone has its own ticks). A resume from pause is not a fresh start. Stopped, the counters are taken
-//! as they stand, so a wrap whose jump went unannounced (the transport stopped under it) is forgotten.
+//! as they stand, so a wrap whose jump went unannounced (the transport stopped under it) is forgotten;
+//! paused, the current position stays as the mark from which resumed playback is checked.
 void watch(Song& song)
 {
 	static bool paused = false;
@@ -148,7 +149,8 @@ void watch(Song& song)
 	{
 		paused = song.isPaused();
 		seen() = after;
-		advance(now, false);
+		if (paused) { lastSeen() = now; }
+		else { advance(now, false); }
 		return;
 	}
 	const Moved moved = settle(after);
