@@ -84,6 +84,11 @@ QString MidiSndio::probeDevice()
 
 void MidiSndio::sendByte( const unsigned char c )
 {
+	if ( m_hdl == nullptr )
+	{
+		return;
+	}
+
 	mio_write( m_hdl, &c, 1 );
 }
 
