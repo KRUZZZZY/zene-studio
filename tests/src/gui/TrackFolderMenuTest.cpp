@@ -218,6 +218,9 @@ private slots:
 		QKeyEvent repeat(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier, QString(), true, 1);
 		QApplication::sendEvent(getGUI()->mainWindow(), &repeat);
 		QVERIFY2(Engine::getSong()->isPlaying(), "an auto-repeat Space press toggled playback off");
+		QKeyEvent editorRepeat(QEvent::KeyPress, Qt::Key_Space, Qt::NoModifier, QString(), true, 1);
+		QApplication::sendEvent(editor, &editorRepeat);
+		QVERIFY2(Engine::getSong()->isPlaying(), "an auto-repeat Space press sent to the song editor toggled playback off");
 		ControlRegistry::instance()->invoke(QStringLiteral("transport.stop"), QJsonObject{});
 	}
 

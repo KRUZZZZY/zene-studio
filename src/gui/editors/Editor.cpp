@@ -143,6 +143,7 @@ void Editor::keyPressEvent(QKeyEvent* ke)
 {
 	if (ke->key() == Qt::Key_Space)
 	{
+		if (ke->isAutoRepeat()) { return; }
 		if (ke->modifiers() & Qt::ShiftModifier)
 		{
 			togglePause();

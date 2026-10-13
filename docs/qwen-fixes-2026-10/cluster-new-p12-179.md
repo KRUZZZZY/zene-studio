@@ -2,45 +2,50 @@
 
 Verdict: **FIXED**
 
-The historical `src/gui/PerformView.cpp` path is absent on this branch. The same behavior is present in the current UI paths: [MainWindow.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-179/src/gui/MainWindow.cpp:1635) toggles transport on Space keydowns, and [SessionGridView.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-179/src/gui/SessionGridView.cpp:411) clicks launch buttons on Enter keydowns. Both now ignore auto-repeat for these non-repeatable actions. Arrow navigation remains repeatable and has a regression assertion.
+The round 2 review was valid. In this branch the historical `PerformView.cpp` path is absent, but `SongEditorWindow` inherits `Editor`, whose Space handler still toggled transport on auto-repeat. `Editor::keyPressEvent` now returns for auto-repeat Space before either `togglePause()` or `togglePlayStop()`.
 
-## Evidence
+## File and test evidence
 
-`ctest` was run from `build/tests`. The affected family consists of two CTest targets: `SessionGridViewTest` and `TrackFolderMenuTest`.
+- `src/gui/editors/Editor.cpp:142-155`: Space key handling; line 146 now suppresses auto-repeat before the transport actions.
+- `tests/src/gui/TrackFolderMenuTest.cpp:211-224`: while playback is active, sends auto-repeat Space to both `MainWindow` and `SongEditorWindow`, and asserts playback stays active after each event.
+- Existing coverage remains: `src/gui/MainWindow.cpp:1635` suppresses repeat toggles at the main window; `src/gui/SessionGridView.cpp:411` suppresses repeated Enter launches. `tests/src/gui/SessionGridViewTest.cpp:152-180` still verifies arrow-key auto-repeat moves selection.
 
-| Check | Exact command | Exit | Result |
+The affected CTest family contains two targets: `SessionGridViewTest` and `TrackFolderMenuTest`. On each RED run, `TrackFolderMenuTest::autoRepeatSpaceDoesNotRetogglePlayback` fails at the new SongEditor assertion (4 other QtTest cases pass); the family reports 1 failed target out of 2. Each GREEN run reports 2/2 targets passing.
+
+## Build and regression commands
+
+Commands below were run from the worktree root, except CTest commands, which were run from `build/tests`. Each command's output was redirected to the named log, and the observed exit code was appended to that log.
+
+| Phase | Exact command | Exit | Log / result |
 |---|---|---:|---|
-| RED build | `cmake --build build --target SessionGridViewTest TrackFolderMenuTest` | 0 | Built both regression targets before the fix. |
-| RED | <code>ctest -R 'SessionGridViewTest&#124;TrackFolderMenuTest' --output-on-failure</code> | 8 | Both repeat regressions failed before the fix. Log: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-179.r1/logs/test-4.log`. |
-| GREEN build | `cmake --build build --target zene SessionGridViewTest TrackFolderMenuTest` | 0 | Rebuilt the app and both test targets with the fix. |
-| GREEN | <code>ctest -R 'SessionGridViewTest&#124;TrackFolderMenuTest' --output-on-failure</code> | 0 | 2/2 CTest targets passed. Log: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-179.r1/logs/test-5.log`. |
+| Initial build before fix | `cmake --build build --target zene SessionGridViewTest TrackFolderMenuTest` | 0 | `build-1.log` |
+| Initial RED | <code>ctest -R 'SessionGridViewTest&#124;TrackFolderMenuTest' --output-on-failure</code> | 8 | `test-1.log`; Editor repeat assertion failed |
+| Fixed build | `cmake --build build --target zene SessionGridViewTest TrackFolderMenuTest` | 0 | `build-2.log` |
+| GREEN | <code>ctest -R 'SessionGridViewTest&#124;TrackFolderMenuTest' --output-on-failure</code> | 0 | `test-2.log`; 2/2 targets passed |
 
-The reverse-patch check reproduced the same failure, then passed after restoring the product patch:
+## Reversal proof
 
-| Check | Exact command | Exit |
-|---|---|---:|
-| Save product patch | `git diff -- src/gui/MainWindow.cpp src/gui/SessionGridView.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-179.r1/logs/fix.patch` | 0 |
-| Reverse product patch | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-179.r1/logs/fix.patch` | 0 |
-| Rebuild without fix | `cmake --build build --target zene SessionGridViewTest TrackFolderMenuTest` | 0 |
-| RED without fix | <code>ctest -R 'SessionGridViewTest&#124;TrackFolderMenuTest' --output-on-failure</code> | 8 |
-| Reapply product patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-179.r1/logs/fix.patch` | 0 |
-| Rebuild with fix restored | `cmake --build build --target zene SessionGridViewTest TrackFolderMenuTest` | 0 |
-| GREEN with fix restored | <code>ctest -R 'SessionGridViewTest&#124;TrackFolderMenuTest' --output-on-failure</code> | 0 |
+| Check | Exact command | Exit | Log / result |
+|---|---|---:|---|
+| Save and reverse product patch | `git diff -- src/gui/editors/Editor.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-179.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-179.r2/logs/fix.patch` | 0 | Guard removed |
+| Rebuild without fix | `cmake --build build --target zene SessionGridViewTest TrackFolderMenuTest` | 0 | `build-3.log` |
+| RED without fix | <code>ctest -R 'SessionGridViewTest&#124;TrackFolderMenuTest' --output-on-failure</code> | 8 | `test-3.log`; same Editor repeat assertion failed |
+| Restore product patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-179.r2/logs/fix.patch` | 0 | Guard restored |
+| Rebuild with fix restored | `cmake --build build --target zene SessionGridViewTest TrackFolderMenuTest` | 0 | `build-4.log` |
+| GREEN after restoration | <code>ctest -R 'SessionGridViewTest&#124;TrackFolderMenuTest' --output-on-failure</code> | 0 | `test-4.log`; 2/2 targets passed |
 
-Reverse-check logs are `build-7.log`, `test-6.log`, `build-8.log`, and `test-7.log` in the same log folder. `test-6.log` records both repeat assertions failing without the patch; `test-7.log` records 2/2 CTest targets passing after reapplication.
+## Gates
 
-| Gate | Exact command | Exit |
-|---|---|---:|
-| Complexity | `bash tests/complexity-gate.sh --check` | 0 |
-| File length | `bash tests/file-length-gate.sh --check` | 0 |
+| Exact command | Exit | Log |
+|---|---:|---|
+| `bash tests/complexity-gate.sh --check` | 0 | `gate-3.log` |
+| `bash tests/file-length-gate.sh --check` | 0 | `gate-4.log` |
 
-Gate logs: `gate-3.log` and `gate-4.log` in the log folder. The session exposed no fff grep tool, so log searches used single-term `rg` searches rather than printing whole logs.
+The fff grep tool was not available in this session (`command -v fff` returned no path); logs were checked with single-term `rg` searches.
 
 ## Files committed
 
-- `src/gui/MainWindow.cpp`
-- `src/gui/SessionGridView.cpp`
-- `tests/src/gui/SessionGridViewTest.cpp`
+- `src/gui/editors/Editor.cpp`
 - `tests/src/gui/TrackFolderMenuTest.cpp`
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p12-179.md`
