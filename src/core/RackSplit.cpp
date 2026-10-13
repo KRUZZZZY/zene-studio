@@ -71,9 +71,10 @@ void RackSplit::save(QDomElement& rack) const
 {
 	if (!active()) { return; }
 	rack.setAttribute(QStringLiteral("split"), modeName(mode));
-	if (crossoverCount == 0) { return; }
+	const int count = std::clamp(crossoverCount, 0, MaxBands - 1);
+	if (count == 0) { return; }
 	QStringList values;
-	for (int k = 0; k < crossoverCount; ++k) { values << QString::number(crossovers[static_cast<std::size_t>(k)], 'g', 7); }
+	for (int k = 0; k < count; ++k) { values << QString::number(crossovers[static_cast<std::size_t>(k)], 'g', 7); }
 	rack.setAttribute(QStringLiteral("crossovers"), values.join(QLatin1Char(',')));
 }
 

@@ -280,6 +280,32 @@ private slots:
 		QVERIFY(!plain.firstChildElement(QStringLiteral("rack")).hasAttribute(QStringLiteral("split")));
 	}
 
+	//! new-p12-195: a split whose count exceeds the five frequencies the array holds is clamped where
+	//! it is stored, and saving such a split reads nothing past the end of crossovers.
+	void anOverlongCrossoverCountIsClampedAndSavedSafely()
+	{
+		RackSplit split;
+		split.mode = RackSplitMode::Bands;
+		for (int k = 0; k < RackSplit::MaxBands - 1; ++k) { split.crossovers[static_cast<std::size_t>(k)] = 100.f * (k + 1); }
+		split.crossoverCount = RackSplit::MaxBands;  // one more than the array holds: no sixth frequency
+		const int index = Engine::mixer()->createChannel();
+		Rack& rack = channel(index)->m_rack;
+		QVERIFY(rack.addChain() >= 0);
+		rack.setSplit(split);
+		QVERIFY(rack.split().crossoverCount <= RackSplit::MaxBands - 1);
+		// Saving a raw split of that shape writes no more than the array holds either.
+		QDomDocument raw;
+		QDomElement rawRack = raw.createElement(QStringLiteral("rack"));
+		split.save(rawRack);
+		QVERIFY(rawRack.attribute(QStringLiteral("crossovers")).split(QLatin1Char(',')).size() <= RackSplit::MaxBands - 1);
+		// The rack's own save carries the stored count's frequencies, nothing past them.
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("mixerchannel"));
+		rack.saveSettings(doc, element);
+		QCOMPARE(element.firstChildElement(QStringLiteral("rack")).attribute(QStringLiteral("crossovers")).split(QLatin1Char(',')).size(),
+			rack.split().crossoverCount);
+	}
+
 	//! MX-089 / MX-097: a parameter is found by its name, renamed, found by its alias, keeps its own name
 	//! as its address, saves the alias only when set, and the rename undoes.
 	void aParameterIsFoundAndRenamed()
