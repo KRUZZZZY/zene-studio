@@ -158,7 +158,8 @@ public:
 	 *
 	 * Takes a journal checkpoint of every model it writes when @a journalWrites
 	 * is true, so the command registry can merge the call into one undo step.
-	 * Pair commands pass false and record their net action as one undo step.
+	 * Pair commands pass false and record their net action as one undo step;
+	 * changed targets still update AutomatableModel::lastTouched().
 	 * Control thread only; allocates.
 	 */
 	auto apply(int index, Rack& rack, bool journalWrites = true) -> std::vector<RackMacroWrite>;

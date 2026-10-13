@@ -48,6 +48,7 @@
 #include <vector>
 
 #include "AllocationProbe.h"
+#include "AutomatableModel.h"
 #include "ControlRegistry.h"
 #include "ControlRackSupport.h"
 #include "ControlReversibility.h"
@@ -471,7 +472,43 @@ private slots:
 		QVERIFY(macros.removeMacro(macro));
 	}
 
-	//! Repeating a pair that shares a parameter must leave the first pair edit on top.
+	//! Repeating an unchanged XY pair must leave the first pair edit on top.
+	void aNoOpMacroPairDoesNotConsumeUndo()
+	{
+		QVERIFY(revtest::run(QStringLiteral("control.set_undo_coalescing"),
+			{{QStringLiteral("window_ms"), 0}}).ok);
+		RackMacros& macros = rackUnderTest().macros();
+		const int xMacro = macros.addMacro(QStringLiteral("Undo no-op X"), 0.0f);
+		const int yMacro = macros.addMacro(QStringLiteral("Undo no-op Y"), 0.0f);
+		QVERIFY(xMacro >= 0 && yMacro >= 0);
+		QCOMPARE(macros.addTarget(xMacro, targetOf(kGainName, 0.0f, 1.0f)), 0);
+		QCOMPARE(macros.addTarget(yMacro, targetOf(kPanName, 0.0f, 1.0f)), 0);
+		FloatModel* const gain = gainModel();
+		FloatModel* const pan = panModel();
+		QVERIFY(gain != nullptr && pan != nullptr);
+		gain->setValue(10.0f);
+		pan->setValue(20.0f);
+		gain->setValue(gain->value() == 10.0f ? 11.0f : 10.0f);
+		gain->setValue(10.0f);
+		const QJsonObject args{{QStringLiteral("channel"), underTestChannel()},
+			{QStringLiteral("x_macro"), macroId(xMacro)}, {QStringLiteral("x_value"), 0.25},
+			{QStringLiteral("y_macro"), macroId(yMacro)}, {QStringLiteral("y_value"), 0.75}};
+		QVERIFY2(revtest::run(QStringLiteral("rack.macro_set_pair"), args).ok,
+			"the macro pair change failed");
+		QCOMPARE(AutomatableModel::lastTouched(), pan->id());
+		QVERIFY2(revtest::run(QStringLiteral("rack.macro_set_pair"), args).ok,
+			"the repeated macro pair failed");
+
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(macros.macro(xMacro)->value, 0.0f);
+		QCOMPARE(macros.macro(yMacro)->value, 0.0f);
+		QCOMPARE(gain->value(), 10.0f);
+		QCOMPARE(pan->value(), 20.0f);
+		QVERIFY(macros.removeMacro(yMacro));
+		QVERIFY(macros.removeMacro(xMacro));
+	}
+
+	//! One undo restores a parameter shared by both axes to its pre-pair value.
 	void aNoOpSharedParameterMacroPairDoesNotConsumeUndo()
 	{
 		QVERIFY(revtest::run(QStringLiteral("control.set_undo_coalescing"),
@@ -483,14 +520,19 @@ private slots:
 		QCOMPARE(macros.addTarget(xMacro, targetOf(kGainName, 0.0f, 1.0f)), 0);
 		QCOMPARE(macros.addTarget(yMacro, targetOf(kGainName, 0.0f, 1.0f)), 0);
 		FloatModel* const gain = gainModel();
-		QVERIFY(gain != nullptr);
+		FloatModel* const pan = panModel();
+		QVERIFY(gain != nullptr && pan != nullptr);
+		gain->setValue(gain->value() == 10.0f ? 11.0f : 10.0f);
 		gain->setValue(10.0f);
+		pan->setValue(pan->value() == 20.0f ? 21.0f : 20.0f);
+		pan->setValue(20.0f);
 		const QJsonObject args{{QStringLiteral("channel"), underTestChannel()},
 			{QStringLiteral("x_macro"), macroId(xMacro)}, {QStringLiteral("x_value"), 0.25},
 			{QStringLiteral("y_macro"), macroId(yMacro)}, {QStringLiteral("y_value"), 0.75}};
 		QVERIFY2(revtest::run(QStringLiteral("rack.macro_set_pair"), args).ok,
 			"the macro pair change failed");
 		QCOMPARE(gain->value(), 75.0f);
+		QCOMPARE(AutomatableModel::lastTouched(), gain->id());
 		QVERIFY2(revtest::run(QStringLiteral("rack.macro_set_pair"), args).ok,
 			"the repeated macro pair failed");
 

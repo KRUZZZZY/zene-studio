@@ -243,7 +243,7 @@ public:
 
 	void setInitValue( const float value );
 
-	void setValue(const float value, const bool isAutomated = false);
+	void setValue(const float value, const bool isAutomated = false, const bool journal = true);
 
 	void incValue( int steps )
 	{
