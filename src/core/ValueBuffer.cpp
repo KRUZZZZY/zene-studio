@@ -33,7 +33,10 @@ void ValueBuffer::fill(float value)
 
 float ValueBuffer::value(int offset) const
 {
-	return at(offset % length());
+	const int bufferLength = length();
+	if (bufferLength == 0) { return 0.0f; }
+	const int index = offset % bufferLength;
+	return at(index < 0 ? index + bufferLength : index);
 }
 
 const float *ValueBuffer::values() const
