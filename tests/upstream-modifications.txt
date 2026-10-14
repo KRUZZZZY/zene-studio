@@ -2258,3 +2258,4 @@ src/core/InstrumentFunctions.cpp	new-p10-172: skip the up/down modulo cycle when
 src/core/LfoController.cpp	new-p10-186: initialize the held WhiteNoise sample to prevent first-buffer reads before a phase wrap; regression UndoHonestyTest::whiteNoiseStartsWithAValidHeldSample.
 plugins/Lb302/Lb302.cpp	cluster new-p10-185: recalculate the envelope decay coefficient on sampleRateChanged because envdecay uses outputSampleRate; regression PluginPortsMigrationTest::lb302DecayTracksSampleRateChanges
 plugins/LadspaBrowser/LadspaPortDialog.cpp	new-p10-195: sample-rate-dependent bounds and defaults derived from them use the same displayed scale; fixed defaults retain their declared units, verified through the Ports table.
+src/core/Keymap.cpp	cluster new-p10-201: clamp persisted first/last/middle/base key values to the MIDI range and compute degree/octave offsets in int64_t; regression SessionTuningTest::aKeymapWithOutOfRangeLoadedMiddleKeyIsClampedBeforeMapping.

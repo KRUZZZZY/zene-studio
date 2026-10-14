@@ -24,6 +24,10 @@
 
 #include "Keymap.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+
 #include <QDomElement>
 
 #include "Note.h"
@@ -74,10 +78,11 @@ int Keymap::getDegree(int key) const
 	if (key < m_firstKey || key > m_lastKey) {return -1;}
 	if (m_map.empty()) {return key;}	// exception: empty mapping table means linear (1:1) mapping
 
-	const int keyOffset = key - m_middleKey;								// -127..127
-	const int key_rem = keyOffset % static_cast<int>(m_map.size());			// remainder
-	const int key_mod = key_rem >= 0 ? key_rem : key_rem + m_map.size();	// true modulo
-	return m_map[key_mod];
+	const std::int64_t keyOffset = static_cast<std::int64_t>(key) - m_middleKey;
+	const std::int64_t mapSize = static_cast<std::int64_t>(m_map.size());
+	const std::int64_t remainder = keyOffset % mapSize;
+	const std::int64_t mapIndex = remainder >= 0 ? remainder : remainder + mapSize;
+	return m_map[static_cast<std::size_t>(mapIndex)];
 }
 
 
@@ -91,15 +96,20 @@ int Keymap::getOctave(int key) const
 	// The keymap wraparound cannot cause an octave transition if a key isn't mapped or the map is empty → return 0
 	if (m_map.empty() || getDegree(key) == -1) {return 0;}
 
-	const int keyOffset = key - m_middleKey;
+	const std::int64_t keyOffset = static_cast<std::int64_t>(key) - m_middleKey;
+	const std::int64_t mapSize = static_cast<std::int64_t>(m_map.size());
+	std::int64_t octave;
 	if (keyOffset >= 0)
 	{
-		return keyOffset / static_cast<int>(m_map.size());
+		octave = keyOffset / mapSize;
 	}
 	else
 	{
-		return (keyOffset + 1) / static_cast<int>(m_map.size()) - 1;
+		octave = (keyOffset + 1) / mapSize - 1;
 	}
+	return static_cast<int>(std::clamp(octave,
+		static_cast<std::int64_t>(std::numeric_limits<int>::min()),
+		static_cast<std::int64_t>(std::numeric_limits<int>::max())));
 }
 
 
@@ -138,10 +148,10 @@ void Keymap::loadSettings(const QDomElement &element)
 {
 	m_description = element.attribute("description");
 
-	m_firstKey	= element.attribute("first_key").toInt();
-	m_lastKey	= element.attribute("last_key").toInt();
-	m_middleKey	= element.attribute("middle_key").toInt();
-	m_baseKey	= element.attribute("base_key").toInt();
+	m_firstKey	= std::clamp(element.attribute("first_key").toInt(), 0, NumKeys - 1);
+	m_lastKey	= std::clamp(element.attribute("last_key").toInt(), 0, NumKeys - 1);
+	m_middleKey	= std::clamp(element.attribute("middle_key").toInt(), 0, NumKeys - 1);
+	m_baseKey	= std::clamp(element.attribute("base_key").toInt(), 0, NumKeys - 1);
 	m_baseFreq	= element.attribute("base_freq").toDouble();
 
 	QDomNode node = element.firstChild();
