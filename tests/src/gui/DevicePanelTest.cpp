@@ -46,6 +46,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -763,6 +764,55 @@ private slots:
 		QCOMPARE(valueLabels().at(1)->text(), QStringLiteral("2"));
 		ShellSelection::instance()->setTrack(nullptr);
 		delete track;
+	}
+
+	//! ED-016: a typed start outside the note range is refused before note.edit can see an overflowed position.
+	void theInspectorRejectsAnOverflowingSelectedNoteStart()
+	{
+		ShellSelection::instance()->setTrack(nullptr);
+		std::unique_ptr<Track> trackOwner(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* track = dynamic_cast<InstrumentTrack*>(trackOwner.get());
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		Note* first = clip->addNote(Note(TimePos(48), TimePos(100), 60, 100), false);
+		Note* second = clip->addNote(Note(TimePos(48), TimePos(200), 64, 100), false);
+		QVERIFY(first != nullptr);
+		QVERIFY(second != nullptr);
+		first->setSelected(true);
+		second->setSelected(true);
+
+		InspectorPanel inspector;
+		inspector.show();
+		ShellSelection::instance()->setClip(clip);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		ReadoutField* start = nullptr;
+		for (ReadoutField* candidate : inspector.findChildren<ReadoutField*>())
+		{
+			if (candidate->caption() == QStringLiteral("Start") && candidate->isVisibleTo(&inspector)) { start = candidate; }
+		}
+		QVERIFY(start != nullptr);
+		QTest::mouseDClick(start, Qt::LeftButton);
+		auto* editor = start->findChild<QLineEdit*>();
+		QVERIFY(editor != nullptr);
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlCommand* registered = registry->command(QStringLiteral("note.edit"));
+		QVERIFY(registered != nullptr);
+		// The command's handler copy lets this UI test observe a dispatch that the real handler rejects anyway.
+		ControlCommand* mutableCommand = const_cast<ControlCommand*>(registered);
+		const auto originalHandler = mutableCommand->handler;
+		bool dispatched = false;
+		mutableCommand->handler = [&dispatched](const QJsonObject&) {
+			dispatched = true;
+			return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("observed by test"));
+		};
+		editor->setText(QStringLiteral("2147483647 ticks"));
+		emit editor->editingFinished();
+		mutableCommand->handler = originalHandler;
+		QVERIFY2(!dispatched, "an out-of-range selected-note start reached note.edit");
+		ShellSelection::instance()->setTrack(nullptr);
 	}
 
 	//! Theme 13: a channel's name is a field in the Inspector, and Enter renames it through mixer.rename_channel.
