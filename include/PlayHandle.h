@@ -165,7 +165,7 @@ private:
 	std::vector<SampleFrame> m_playHandleBuffer;
 	bool m_bufferReleased;
 	bool m_usesBuffer;
-	AudioBusHandle* m_audioBusHandle;
+	AudioBusHandle* m_audioBusHandle{nullptr};
 } ;
 
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
