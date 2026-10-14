@@ -32,6 +32,8 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QDomDocument>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QTemporaryDir>
@@ -369,6 +371,46 @@ private slots:
 		QVERIFY(!EditLocks::refuses(QStringLiteral("project.subproject_refresh"), {{QStringLiteral("track"), trackId}}, &why));
 		QCOMPARE(run(QStringLiteral("project.subproject_refresh"), {{QStringLiteral("track"), trackId}}).errorKind,
 			ControlErrorKind::NotFound);
+	}
+
+	void duplicateAlternativesAreIgnoredWhenLoading()
+	{
+		const QString projectPath = QDir(m_dir.path()).filePath(QStringLiteral("duplicates.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(projectPath));
+
+		QFile file(projectPath);
+		QVERIFY(file.open(QIODevice::ReadOnly));
+		QDomDocument document;
+		QVERIFY(document.setContent(file.readAll()));
+		file.close();
+
+		QDomElement song = document.documentElement().firstChildElement(QStringLiteral("song"));
+		QVERIFY(!song.isNull());
+		const QDomElement oldList = song.firstChildElement(QStringLiteral("alternatives"));
+		if (!oldList.isNull()) { song.removeChild(oldList); }
+		QDomElement list = document.createElement(QStringLiteral("alternatives"));
+		list.setAttribute(QStringLiteral("main"), projectPath);
+		for (int i = 0; i < 64; ++i)
+		{
+			QDomElement alternative = document.createElement(QStringLiteral("alternative"));
+			alternative.setAttribute(QStringLiteral("name"), QStringLiteral("mix"));
+			list.appendChild(alternative);
+		}
+		QDomElement next = document.createElement(QStringLiteral("alternative"));
+		next.setAttribute(QStringLiteral("name"), QStringLiteral("radio"));
+		list.appendChild(next);
+		song.appendChild(list);
+
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QVERIFY(file.write(document.toByteArray(2)) > 0);
+		file.close();
+
+		const ControlResult opened = run(QStringLiteral("project.open"), {{QStringLiteral("path"), projectPath}});
+		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+		const QJsonArray alternatives = run(QStringLiteral("project.alternatives")).result.value(QStringLiteral("alternatives")).toArray();
+		QCOMPARE(alternatives.size(), 2);
+		QCOMPARE(alternatives.at(0).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("mix"));
+		QCOMPARE(alternatives.at(1).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("radio"));
 	}
 
 private:

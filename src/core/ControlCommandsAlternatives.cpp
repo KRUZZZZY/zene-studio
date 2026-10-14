@@ -100,7 +100,8 @@ public:
 		{
 			// A name is a file beside the project: one from the file (not saveAlternative) is checked as one is
 			// there, so "../x" cannot reach outside <project>-alternatives.
-			if (plainName(child.attribute(QStringLiteral("name")))) { state.names << child.attribute(QStringLiteral("name")); }
+			const QString name = child.attribute(QStringLiteral("name"));
+			if (plainName(name) && !state.names.contains(name)) { state.names << name; }
 		}
 		if (!state.names.contains(state.active)) { state.active.clear(); }
 	}
