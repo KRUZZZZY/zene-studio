@@ -43,6 +43,7 @@
 
 #include "ControlProjectAssets.h"
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -77,6 +78,23 @@ QByteArray documentWith(const int notes)
 		xml += "\t\t\t<note key=\"" + QByteArray::number(60 + i) + "\" pos=\"0\"/>\n";
 	}
 	xml += "\t\t</clip>\n\t</track>\n</song>\n";
+	return xml;
+}
+
+QByteArray documentWithTagCounts(const int tags, const int countPerTag)
+{
+	QByteArray xml = "<?xml version=\"1.0\"?>\n<song>\n";
+	for (int i = 0; i < tags; ++i)
+	{
+		const QByteArray tag = "tag" + QByteArray::number(i).rightJustified(3, '0');
+		for (int count = 0; count < countPerTag; ++count)
+		{
+			xml += '<';
+			xml += tag;
+			xml += "/>\n";
+		}
+	}
+	xml += "</song>\n";
 	return xml;
 }
 
@@ -283,6 +301,44 @@ private slots:
 		QVERIFY(compressed.value(QStringLiteral("readable")).toBool());
 		QCOMPARE(compressed.value(QStringLiteral("differing_tag_count")).toInt(), 0);
 		QVERIFY(!compressed.value(QStringLiteral("identical")).toBool());
+	}
+
+	//! The result stays capped while the total counts every difference, and the
+	//! helper constructs JSON entries only after it knows they fit the cap.
+	void comparisonBoundsDifferenceConstruction()
+	{
+		const QJsonObject comparison = compareRevisionDocuments(
+			documentWithTagCounts(32, 1), documentWithTagCounts(32, 2));
+		QVERIFY(comparison.value(QStringLiteral("readable")).toBool());
+		QCOMPARE(comparison.value(QStringLiteral("differing_tag_count")).toInt(), 32);
+		const QJsonArray reported = comparison.value(QStringLiteral("differing_tags")).toArray();
+		QCOMPARE(reported.size(), RevisionTimelineBounds::MaxComparedTags);
+		QCOMPARE(reported.first().toObject().value(QStringLiteral("tag")).toString(),
+			QStringLiteral("tag000"));
+		QCOMPARE(reported.last().toObject().value(QStringLiteral("tag")).toString(),
+			QStringLiteral("tag023"));
+
+		const QString sourcePath = QDir(QCoreApplication::applicationDirPath()).filePath(
+			QStringLiteral("../../src/core/RevisionTimelineCompare.cpp"));
+		const QByteArray sourceBytes = readBytes(sourcePath);
+		QVERIFY2(!sourceBytes.isEmpty(), qPrintable(sourcePath));
+		const QString source = QString::fromUtf8(sourceBytes);
+		const int helperStart = source.indexOf(QStringLiteral("QJsonArray differingTags("));
+		QVERIFY(helperStart >= 0);
+		const int bodyStart = source.indexOf(QLatin1Char('{'), helperStart);
+		const int bodyEnd = source.indexOf(QStringLiteral("\n}"), bodyStart);
+		QVERIFY(bodyStart >= 0 && bodyEnd > bodyStart);
+		const QString helper = source.mid(bodyStart, bodyEnd - bodyStart);
+		const int bound = helper.indexOf(
+			QStringLiteral("reported.size() < Bounds::MaxComparedTags"));
+		const int entry = helper.indexOf(QStringLiteral("QJsonObject"));
+		const int append = helper.indexOf(QStringLiteral("reported.append"));
+		const int guardEnd = helper.indexOf(QStringLiteral("\n\t\t}"), bound);
+		QVERIFY(bound >= 0);
+		QVERIFY(guardEnd > bound);
+		QVERIFY(entry > bound && entry < guardEnd);
+		QVERIFY(append > bound && append < guardEnd);
+		QVERIFY(!helper.contains(QStringLiteral("differing.append")));
 	}
 
 	//! A `.mmpz` v2 CONTAINER is refused rather than counted. This slot is the
