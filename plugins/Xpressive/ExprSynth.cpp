@@ -639,6 +639,11 @@ bool ExprFront::add_constant(const char* name, float ref)
 
 bool ExprFront::add_cyclic_vector(const char* name, const float* data, size_t length, bool interp)
 {
+	if (length == 0)
+	{
+		return false;
+	}
+
 	try
 	{
 		if (interp)

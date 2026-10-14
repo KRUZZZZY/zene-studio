@@ -99,6 +99,18 @@
 #include "TapTempo.h"
 #undef private
 
+// ExprFront lives in the Xpressive plugin module rather than lmmsobjs. Compile
+// its implementation into this test host so the regression exercises the
+// production API without adding a separate test target.
+#define exprtk_disable_sc_andor
+#define exprtk_disable_return_statement
+#define exprtk_disable_break_continue
+#define exprtk_disable_comments
+#define exprtk_disable_string_capabilities
+#define exprtk_disable_rtl_io_file
+#define exprtk_disable_rtl_vecops
+#include "../../../plugins/Xpressive/ExprSynth.cpp"
+
 using namespace lmms;
 
 namespace
@@ -201,6 +213,8 @@ private slots:
 	void clearingPatmanPatchReleasesItsSampleBank();
 	void subMillisecondTapIntervalDoesNotProduceInfiniteTempo();
 	void namHarnessRejectsNegativeWarmup();
+	void emptyNonInterpolatedCyclicVectorIsRejected();
+	void emptyInterpolatedCyclicVectorIsRejected();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -659,6 +673,20 @@ void AudioPluginTest::namHarnessRejectsNegativeWarmup()
 	QVERIFY2(standardError.contains("error: --warmup must be >= 0"),
 		qPrintable(QString::fromLocal8Bit(standardError)));
 	QVERIFY(!standardError.contains("LOAD FAILED"));
+}
+
+void AudioPluginTest::emptyNonInterpolatedCyclicVectorIsRejected()
+{
+	const float samples[] = {0.0f};
+	ExprFront expr("empty(0)", 1);
+	QVERIFY(!expr.add_cyclic_vector("empty", samples, 0, false));
+}
+
+void AudioPluginTest::emptyInterpolatedCyclicVectorIsRejected()
+{
+	const float samples[] = {0.0f};
+	ExprFront expr("empty(0)", 1);
+	QVERIFY(!expr.add_cyclic_vector("empty", samples, 0, true));
 }
 
 QTEST_MAIN(AudioPluginTest)
