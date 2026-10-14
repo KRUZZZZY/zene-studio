@@ -831,9 +831,14 @@ float *AutomationClip::valuesAfter( const TimePos & _time ) const
 	QMutexLocker m(&m_clipMutex);
 
 	timeMap::const_iterator v = m_timeMap.lowerBound(_time);
+	if (v == m_timeMap.end())
+	{
+		return nullptr;
+	}
+
 	auto const nv = std::next(v);
 
-	if (v == m_timeMap.end() || nv == m_timeMap.end())
+	if (nv == m_timeMap.end())
 	{
 		return nullptr;
 	}
