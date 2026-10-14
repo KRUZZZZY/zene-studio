@@ -28,6 +28,9 @@
 
 #include <QtTest>
 
+#include <QFile>
+#include <QImage>
+#include <QPainter>
 #include <QPushButton>
 #include <QSignalSpy>
 
@@ -38,9 +41,11 @@
 #include "Editor.h"
 #include "Engine.h"
 #include "Graph.h"
+#include "Sample.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleEditorDialog.h"
+#include "SampleThumbnail.h"
 #include "SampleTrack.h"
 #include "Song.h"
 
@@ -181,6 +186,33 @@ private slots:
 		QTest::mouseRelease(&graph, Qt::LeftButton, Qt::NoModifier, QPoint(3, 2));
 
 		QVERIFY(std::isfinite(graph.model()->samples()[0]));
+	}
+
+	void zoomingPastCachedThumbnailStillDrawsTheWaveform()
+	{
+		std::vector<SampleFrame> frames(100);
+		std::fill(frames.begin() + 10, frames.end(), SampleFrame(0.5f, 0.5f));
+		const Sample sample{std::make_shared<SampleBuffer>(frames.data(), frames.size(), Rate)};
+		const SampleThumbnail thumbnail{sample};
+		QImage image(21, 20, QImage::Format_ARGB32_Premultiplied);
+		image.fill(Qt::transparent);
+		QPainter painter(&image);
+		painter.setPen(Qt::white);
+		thumbnail.visualize({.sampleRect = image.rect()}, painter);
+		painter.end();
+
+		QCOMPARE(image.pixelColor(10, 4), QColor(Qt::white));
+
+		// The invalid reverse-iterator read can appear to work in a release build; pin its bound to the selected source.
+		QFile implementation(QStringLiteral("../../src/gui/SampleThumbnail.cpp"));
+		QVERIFY(implementation.open(QIODevice::ReadOnly));
+		const QByteArray source = implementation.readAll();
+		const auto boundsStart = source.indexOf("const auto beginIndex");
+		const auto aggregationStart = source.indexOf("auto minPeak", boundsStart);
+		QVERIFY(boundsStart >= 0 && aggregationStart > boundsStart);
+		const auto bounds = source.mid(boundsStart, aggregationStart - boundsStart);
+		QVERIFY(bounds.contains("finerThumbnailWidth - 1"));
+		QVERIFY(!bounds.contains("finerThumbnail->"));
 	}
 
 	void textReadsAndTypesInEachUnit()
