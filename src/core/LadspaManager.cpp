@@ -32,6 +32,7 @@
 #include <QRegularExpression>
 
 #include <cmath>
+#include <limits>
 
 #include "ConfigManager.h"
 #include "LadspaManager.h"
@@ -148,8 +149,21 @@ void LadspaManager::addPlugins(
 {
 	for (long pluginIndex = 0; const auto descriptor = _descriptor_func(pluginIndex); ++pluginIndex)
 	{
+		if (descriptor->PortCount > std::numeric_limits<uint32_t>::max())
+		{
+			continue;
+		}
+
 		ladspa_key_t key( _file, QString( descriptor->Label ) );
 		if( m_ladspaManagerMap.contains( key ) )
+		{
+			continue;
+		}
+
+		const uint32_t inputChannels = getPluginInputs( descriptor );
+		const uint32_t outputChannels = getPluginOutputs( descriptor );
+		if (inputChannels > std::numeric_limits<uint16_t>::max() ||
+			outputChannels > std::numeric_limits<uint16_t>::max())
 		{
 			continue;
 		}
@@ -157,8 +171,8 @@ void LadspaManager::addPlugins(
 		auto plugIn = new LadspaManagerDescription;
 		plugIn->descriptorFunction = _descriptor_func;
 		plugIn->index = pluginIndex;
-		plugIn->inputChannels = getPluginInputs( descriptor );
-		plugIn->outputChannels = getPluginOutputs( descriptor );
+		plugIn->inputChannels = static_cast<uint16_t>(inputChannels);
+		plugIn->outputChannels = static_cast<uint16_t>(outputChannels);
 
 		if( plugIn->inputChannels == 0 && plugIn->outputChannels > 0 )
 		{
@@ -186,12 +200,12 @@ void LadspaManager::addPlugins(
 
 
 
-uint16_t LadspaManager::getPluginInputs(
+uint32_t LadspaManager::getPluginInputs(
 		const LADSPA_Descriptor * _descriptor )
 {
-	uint16_t inputs = 0;
+	uint32_t inputs = 0;
 	
-	for( uint16_t port = 0; port < _descriptor->PortCount; port++ )
+	for( decltype(_descriptor->PortCount) port = 0; port < _descriptor->PortCount; port++ )
 	{
 		if( LADSPA_IS_PORT_INPUT( 
 				_descriptor->PortDescriptors[port] ) &&
@@ -207,12 +221,12 @@ uint16_t LadspaManager::getPluginInputs(
 
 
 
-uint16_t LadspaManager::getPluginOutputs(
+uint32_t LadspaManager::getPluginOutputs(
 		const LADSPA_Descriptor * _descriptor )
 {
-	uint16_t outputs = 0;
+	uint32_t outputs = 0;
 	
-	for( uint16_t port = 0; port < _descriptor->PortCount; port++ )
+	for( decltype(_descriptor->PortCount) port = 0; port < _descriptor->PortCount; port++ )
 	{
 		if( LADSPA_IS_PORT_OUTPUT( 
 				_descriptor->PortDescriptors[port] ) &&
@@ -327,7 +341,7 @@ QString LadspaManager::getCopyright( const ladspa_key_t & _plugin )
 uint32_t LadspaManager::getPortCount( const ladspa_key_t & _plugin )
 {
 	const LADSPA_Descriptor * descriptor = getDescriptor( _plugin );
-	return( descriptor ? descriptor->PortCount : 0 );
+	return descriptor ? static_cast<uint32_t>(descriptor->PortCount) : 0;
 }
 
 

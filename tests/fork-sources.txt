@@ -2188,6 +2188,8 @@ tests/src/core/InstrumentLatencyPdcTest.cpp
 tests/src/core/ImportFilterTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
 tests/src/core/InstrumentRoutingTest.cpp
+tests/src/core/LadspaManagerTest.cpp
+tests/src/core/LadspaPortCountFixture.cpp
 tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
 tests/src/core/LinkPhaseLockTest.cpp

@@ -332,8 +332,8 @@ public:
 private:
 	void  addPlugins( LADSPA_Descriptor_Function _descriptor_func,
 						const QString & _file );
-	uint16_t  getPluginInputs( const LADSPA_Descriptor * _descriptor );
-	uint16_t  getPluginOutputs( const LADSPA_Descriptor * _descriptor );
+	uint32_t  getPluginInputs( const LADSPA_Descriptor * _descriptor );
+	uint32_t  getPluginOutputs( const LADSPA_Descriptor * _descriptor );
 
 	const LADSPA_PortDescriptor* getPortDescriptor( const ladspa_key_t& _plugin,
 													uint32_t _port );
