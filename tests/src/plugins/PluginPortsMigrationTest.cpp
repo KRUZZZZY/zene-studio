@@ -220,6 +220,87 @@ bool sameObjectRepresentation(const unsigned char* actual, const unsigned char* 
 	return true;
 }
 
+struct MonstroRenderResult
+{
+	std::vector<float> samples;
+	QString error;
+};
+
+auto renderMonstroLfoCase(bool modulationEnabled) -> MonstroRenderResult
+{
+	QLibrary lib{QString::fromUtf8(PART_C_MIGRATED_monstro)};
+	lib.setLoadHints(QLibrary::PreventUnloadHint);
+	if (!lib.load()) { return {{}, lib.errorString()}; }
+
+	auto entry = reinterpret_cast<MainFn>(lib.resolve("lmms_plugin_main"));
+	if (entry == nullptr) { return {{}, QStringLiteral("Monstro entry point not found")}; }
+
+	partc::prepareInstrumentEnvironment("monstro");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* inst = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	if (inst == nullptr) { return {{}, QStringLiteral("Monstro instrument creation failed")}; }
+
+	QDomDocument doc;
+	QDomElement root = doc.createElement("instrument");
+	QDomElement saved = inst->saveState(doc, root);
+	saved.setAttribute(QStringLiteral("l1wav"), QStringLiteral("4"));
+	saved.setAttribute(QStringLiteral("l1att"), QStringLiteral("20"));
+	saved.setAttribute(QStringLiteral("l1rat"), QStringLiteral("10000"));
+	saved.setAttribute(QStringLiteral("l1phs"), QStringLiteral("0"));
+	saved.setAttribute(QStringLiteral("v1l1"), modulationEnabled ? QStringLiteral("1") : QStringLiteral("0"));
+	inst->restoreState(saved);
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	auto samples = partc::renderInstrumentBuffers(*inst, frames, lmms::DefaultKey);
+	delete inst;
+	return {std::move(samples), {}};
+}
+
+auto maxAbsDiffInRange(const std::vector<float>& a, const std::vector<float>& b,
+						std::size_t begin, std::size_t end) -> float
+{
+	float worst = 0.0f;
+	for (std::size_t i = begin; i < end; ++i)
+	{
+		worst = std::max(worst, std::fabs(a[i] - b[i]));
+	}
+	return worst;
+}
+
+struct MonstroParityEvidence
+{
+	float attackDifference;
+	float outsideAttackDifference;
+	std::size_t firstOutsideDifferenceIndex;
+};
+
+auto compareMonstroAttackWindows(const std::vector<float>& migrated,
+									const std::vector<float>& reference,
+									std::size_t framesPerPeriod,
+									std::size_t attackFrames) -> MonstroParityEvidence
+{
+	const std::size_t samplesPerPeriod = framesPerPeriod * 2;
+	const std::size_t attackValues = std::min(attackFrames * 2, samplesPerPeriod);
+	MonstroParityEvidence evidence{0.0f, 0.0f, migrated.size()};
+	for (std::size_t periodStart = 0; periodStart < migrated.size(); periodStart += samplesPerPeriod)
+	{
+		const std::size_t periodEnd = periodStart + samplesPerPeriod;
+		const std::size_t attackEnd = periodStart + attackValues;
+		evidence.attackDifference = std::max(evidence.attackDifference,
+			maxAbsDiffInRange(migrated, reference, periodStart, attackEnd));
+		evidence.outsideAttackDifference = std::max(evidence.outsideAttackDifference,
+			maxAbsDiffInRange(migrated, reference, attackEnd, periodEnd));
+		for (std::size_t i = attackEnd; i < periodEnd; ++i)
+		{
+			if (migrated[i] != reference[i])
+			{
+				evidence.firstOutsideDifferenceIndex = std::min(evidence.firstOutsideDifferenceIndex, i);
+			}
+		}
+	}
+	return evidence;
+}
+
 } // namespace
 
 class PluginPortsMigrationTest : public QObject
@@ -241,6 +322,7 @@ private slots:
 	void gigPlayerAcceptsMidiNoteZero();
 	void lfoStartsFromInitializedState();
 	void migratedPluginsPreserveBehaviour();
+	void monstroLfoAttackRampsWithinPeriod();
 	void comparisonIsSensitive();
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -269,6 +351,7 @@ void PluginPortsMigrationTest::initTestCase()
 	lmms::Engine::audioEngine()->audioDev()->stopProcessing();
 
 	const lmms::f_cnt_t frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	lmms::NotePlayHandleManager::init();
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
@@ -565,11 +648,32 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 				   .arg(migrated.checksum, referenceRender.checksum)
 				   .arg(worst, 0, 'g', 3);
 
-		QVERIFY2(migrated.checksum == referenceRender.checksum,
-			qPrintable(QString{"%1: migrated render differs from the pre-migration reference "
+		if (migrated.name == QLatin1String("monstro"))
+		{
+			// The test settings give LFO 1 a 0.1 ms attack and LFO 2 a 0.2 ms
+			// attack; both contribute to oscillator volume modulation.
+			const auto attackFrames = static_cast<std::size_t>(
+				std::ceil(0.2f * lmms::Engine::audioEngine()->outputSampleRate() / 1000.0f));
+			const auto evidence = compareMonstroAttackWindows(migrated.samples,
+				referenceRender.samples,
+				static_cast<std::size_t>(lmms::Engine::audioEngine()->framesPerPeriod()), attackFrames);
+			QVERIFY(attackFrames > 0);
+			QVERIFY2(evidence.attackDifference > 1e-5f,
+				"Monstro's corrected LFO attack did not change samples within its attack window");
+			QVERIFY2(evidence.outsideAttackDifference == 0.0f,
+				qPrintable(QString{"Monstro differs outside attack windows: attackFrames=%1 firstMismatch=%2 max|delta|=%3"}
+					.arg(attackFrames)
+					.arg(evidence.firstOutsideDifferenceIndex)
+					.arg(evidence.outsideAttackDifference, 0, 'g', 3)));
+		}
+		else
+		{
+			QVERIFY2(migrated.checksum == referenceRender.checksum,
+				qPrintable(QString{"%1: migrated render differs from the pre-migration reference "
 							   "(max|delta|=%2)"}
-						   .arg(migrated.name)
-						   .arg(worst, 0, 'g', 3)));
+							   .arg(migrated.name)
+							   .arg(worst, 0, 'g', 3)));
+		}
 	}
 
 	// 4. Migrated but not provable in this build: report each gap explicitly
@@ -579,6 +683,40 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 		qWarning().noquote() << QString{"UNPROVEN %1: %2"}
 			.arg(QString::fromUtf8(gap.plugin), QString::fromUtf8(gap.reason));
 	}
+}
+
+void PluginPortsMigrationTest::monstroLfoAttackRampsWithinPeriod()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	const auto withoutModulation = renderMonstroLfoCase(false);
+	QVERIFY2(withoutModulation.error.isEmpty(), qPrintable(withoutModulation.error));
+	const auto withAttack = renderMonstroLfoCase(true);
+	QVERIFY2(withAttack.error.isEmpty(), qPrintable(withAttack.error));
+
+	const auto firstPeriodSampleCount = static_cast<std::size_t>(
+		lmms::Engine::audioEngine()->framesPerPeriod()) * 2;
+	QVERIFY(withoutModulation.samples.size() >= firstPeriodSampleCount);
+	QVERIFY(withAttack.samples.size() >= firstPeriodSampleCount);
+
+	const std::vector<float> baselineFirstPeriod{withoutModulation.samples.begin(),
+		withoutModulation.samples.begin() + static_cast<std::ptrdiff_t>(firstPeriodSampleCount)};
+	const std::vector<float> attackedFirstPeriod{withAttack.samples.begin(),
+		withAttack.samples.begin() + static_cast<std::ptrdiff_t>(firstPeriodSampleCount)};
+	float baselinePeak = 0.0f;
+	for (const float sample : baselineFirstPeriod)
+	{
+		baselinePeak = std::max(baselinePeak, std::fabs(sample));
+	}
+	QVERIFY2(baselinePeak > 1e-4f, "Monstro baseline rendered silence");
+
+	const float firstPeriodDifference = partc::maxAbsDiff(attackedFirstPeriod, baselineFirstPeriod);
+	QVERIFY2(firstPeriodDifference > 1e-5f,
+		qPrintable(QString{"Monstro LFO attack did not ramp within the first period (max|delta|=%1)"}
+			.arg(firstPeriodDifference, 0, 'g', 3)));
 }
 
 /*!

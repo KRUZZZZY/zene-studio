@@ -643,6 +643,7 @@ plugins/Lv2Effect/Lv2Effect.cpp	rename layer 1: user-visible plugin/module descr
 plugins/Lv2Instrument/Lv2Instrument.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo; 0.5.0 F2 (MX-114): extra outputs delivered to routed buses; MX-157 (BUGS 11.34): the latency port polled off the audio thread and reported to the track's PDC
 plugins/MidiExport/MidiExport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
 plugins/MidiImport/MidiImport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo; #625 headless load: the 'Setup incomplete' boxes are not opened in an unattended run (the import path is reachable from --import at startup)
+plugins/Monstro/Monstro.cpp	BUG new-p10-264: advance the LFO attack multiplier by the sample offset within each audio period
 plugins/MultitapEcho/MultitapEcho.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Oscilloscope/Oscilloscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)

@@ -787,7 +787,7 @@ inline void MonstroSynth::updateModulators(float * env1, float * env2, float * l
 		// attack
 		for( f_cnt_t f = 0; f < frames; ++f )
 		{
-			if (tfp + f < static_cast<f_cnt_t>(m_lfoatt[i])) { lfo[i][f] *= static_cast<sample_t>(tfp) / m_lfoatt[i]; }
+			if (tfp + f < static_cast<f_cnt_t>(m_lfoatt[i])) { lfo[i][f] *= static_cast<sample_t>(tfp + f) / m_lfoatt[i]; }
 		}
 
 
