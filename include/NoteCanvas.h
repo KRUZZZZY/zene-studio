@@ -191,7 +191,7 @@ private:
 
 	// keys, wheel, clipboard, middle button (NoteCanvasKeys.cpp)
 	void nudgeSelection(int ticks, int keys);
-	bool nudgeForKey(int key, bool shift);
+	bool nudgeForKey(int key, Qt::KeyboardModifiers modifiers);
 	bool selectionKey(const QKeyEvent* event);
 	bool clipboardKey(const QKeyEvent* event);
 	void deleteSelection();

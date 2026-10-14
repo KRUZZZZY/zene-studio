@@ -212,6 +212,18 @@ private slots:
 		QCOMPARE(static_cast<int>(noteAt(m_clip, 192, 62)->getVolume()), 104);
 	}
 
+	void unsupportedModifiersDoNotNudgeTheSelection()
+	{
+		QVERIFY(invoke(QStringLiteral("note.select"), {{QStringLiteral("clip"), m_editor->clipId()},
+			{QStringLiteral("notes"), QJsonArray{control::noteIdOf(noteAt(m_clip, 192, 62))}}}).ok);
+		QTest::keyClick(m_editor->canvas(), Qt::Key_Up, Qt::MetaModifier);
+		QVERIFY(noteAt(m_clip, 192, 62) != nullptr);
+		QVERIFY(noteAt(m_clip, 192, 63) == nullptr);
+		QTest::keyClick(m_editor->canvas(), Qt::Key_Up, Qt::ControlModifier | Qt::AltModifier);
+		QVERIFY(noteAt(m_clip, 192, 62) == nullptr);
+		QVERIFY(noteAt(m_clip, 192, 63) != nullptr);
+	}
+
 	void insertAddsANoteAfterTheCursor()
 	{
 		QWidget* canvas = m_editor->canvas();
