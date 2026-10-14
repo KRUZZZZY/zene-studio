@@ -2310,3 +2310,4 @@ plugins/SlicerT/SlicerTWaveform.cpp	cluster new-p10-377 (2026-10): wheelEvent() 
 plugins/SlicerT/SlicerTWaveform.h	cluster new-p10-377 (2026-10): s_minZoom/s_maxZoom constants backing the wheelEvent clamp; regression SlicerTZoomTest.
 plugins/SlicerT/SlicerTWaveform.cpp	cluster new-p10-375: reject deletion and dragging when the selected slice index is the first or last endpoint; interior slice editing is unchanged.
 tests/CMakeLists.txt	cluster new-p10-375: register SlicerTWaveformTest and compile the SlicerT implementation into that test target for direct waveform interaction coverage.
+tests/src/core/SessionTuningTest.cpp	new-p10-396: regression cases for over-cap GUI-fed scale and keymap descriptions; refusal preserves the table state and built-from model.

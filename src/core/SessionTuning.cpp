@@ -391,6 +391,11 @@ void SessionTuning::feedScale(std::shared_ptr<const Scale> scale, const QString&
 {
 	Table next;
 	QString buildError;
+	if (!sourceFitsCap(source, &buildError))
+	{
+		qWarning("SessionTuning: refusing the fed scale: %s", qPrintable(buildError));
+		return;
+	}
 	if (!buildTable(scale.get(), *m_keymap, &next, &buildError))
 	{
 		// The dialog already validated what it applied; a table that cannot be
@@ -407,6 +412,11 @@ void SessionTuning::feedKeymap(std::shared_ptr<const Keymap> keymap, const QStri
 {
 	Table next;
 	QString buildError;
+	if (!sourceFitsCap(source, &buildError))
+	{
+		qWarning("SessionTuning: refusing the fed keymap: %s", qPrintable(buildError));
+		return;
+	}
 	if (!buildTable(m_scale.get(), *keymap, &next, &buildError))
 	{
 		qWarning("SessionTuning: refusing the fed keymap: %s", qPrintable(buildError));

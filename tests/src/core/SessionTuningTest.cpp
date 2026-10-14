@@ -652,6 +652,62 @@ private slots:
 		tuning->reset();
 	}
 
+	//! GUI-fed scales use their description as the table source. An over-cap
+	//! description must leave both the current table and its built-from scale.
+	void anOverCapScaleFeedLeavesTheSessionTuningUnchanged()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = writeJiScl(dir);
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), path}}).ok, "the JI fixture did not load");
+
+		const QJsonObject before = tuning->stateJson();
+		const std::shared_ptr<const Scale> beforeScale = tuning->scale();
+		const QString longDescription(SessionTuning::MaxSourceLength + 1, QLatin1Char('s'));
+		auto overCapScale = std::make_shared<Scale>(longDescription,
+			beforeScale->getIntervals());
+		tuning->feedScale(overCapScale, longDescription);
+
+		const bool tableUnchanged = tuning->stateJson() == before;
+		const bool scaleUnchanged = tuning->scale() == beforeScale;
+		QVERIFY2(tableUnchanged && scaleUnchanged,
+			"an over-cap GUI scale feed changed the table or its built-from scale");
+		tuning->reset();
+	}
+
+	//! GUI-fed keymaps use their description as the table source. An over-cap
+	//! description must leave both the current table and its built-from keymap.
+	void anOverCapKeymapFeedLeavesTheSessionTuningUnchanged()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = writeJiScl(dir);
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), path}}).ok, "the JI fixture did not load");
+
+		const QJsonObject before = tuning->stateJson();
+		const std::shared_ptr<const Keymap> beforeKeymap = tuning->keymap();
+		const QString longDescription(SessionTuning::MaxSourceLength + 1, QLatin1Char('k'));
+		auto overCapKeymap = copyOfKeymap(beforeKeymap);
+		overCapKeymap->setDescription(longDescription);
+		tuning->feedKeymap(overCapKeymap, longDescription);
+
+		const bool tableUnchanged = tuning->stateJson() == before;
+		const bool keymapUnchanged = tuning->keymap() == beforeKeymap;
+		QVERIFY2(tableUnchanged && keymapUnchanged,
+			"an over-cap GUI keymap feed changed the table or its built-from keymap");
+		tuning->reset();
+	}
+
 	//! The anti-reimplementation anchor: same Scale, same Keymap, 128 keys.
 	void sessionTableMatchesTheMicrotunerOverAll128Keys()
 	{
