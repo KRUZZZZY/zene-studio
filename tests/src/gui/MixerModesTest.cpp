@@ -206,6 +206,17 @@ private slots:
 		QCOMPARE(mixerviewoptions::options().filter, QStringLiteral("all"));
 	}
 
+	void ctrlRightClickDoesNotSelectAnotherStrip()
+	{
+		MixerView* mixerView = getGUI()->mixerView();
+		mixerView->setCurrentMixerChannel(m_sender);
+		MixerChannelView* target = strip(m_return);
+
+		QTest::mousePress(target, Qt::RightButton, Qt::ControlModifier, target->rect().center());
+
+		QCOMPARE(mixerView->currentMixerChannel()->channelIndex(), m_sender);
+	}
+
 	void listeningShowsOnTheStripAndTheBar()
 	{
 		QVERIFY(run(QStringLiteral("mixer.listen"), {{QStringLiteral("channel"), ch(m_sender)}}).ok);

@@ -393,6 +393,7 @@ void MixerChannelView::paintEvent(QPaintEvent*)
 
 void MixerChannelView::mousePressEvent(QMouseEvent* event)
 {
+	if (event->button() != Qt::LeftButton) { return; }
 	if (m_mixerView->currentMixerChannel() != this) { m_mixerView->setCurrentMixerChannel(this); }
 	// 0.5.0 L08 (MX-005): Ctrl+click puts the channel in the Selected filter's set, or takes it out.
 	if (event->modifiers() & Qt::ControlModifier) { mixerviewoptions::toggleSelected(this, m_channelIndex); }
