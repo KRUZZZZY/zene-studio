@@ -703,6 +703,20 @@ private slots:
 		ShellSelection::instance()->setClip(nullptr);
 	}
 
+	void theNavigatorRangeIncludesSongsNearTheTickLimit()
+	{
+		installArrangerNavigator(getGUI()->songEditor());
+		auto* bar = getGUI()->songEditor()->findChild<QToolBar*>(QStringLiteral("arrangerNavigator"));
+		QVERIFY(bar != nullptr);
+		auto* navigator = bar->findChild<QAbstractSlider*>();
+		QVERIFY(navigator != nullptr);
+
+		const tick_t maxTick = std::numeric_limits<tick_t>::max();
+		clipAt(m_track, maxTick - Bar, Bar);
+		QCOMPARE(Engine::getSong()->length(), maxTick / Bar);
+		QTRY_VERIFY(navigator->maximum() > 1'000'000'000);
+	}
+
 private:
 	QTemporaryDir m_home;
 	SongEditor* m_editor = nullptr;

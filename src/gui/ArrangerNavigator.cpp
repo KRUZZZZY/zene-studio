@@ -24,7 +24,9 @@
 #include "ArrangerNavigator.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
+#include <limits>
 
 #include <QAbstractSlider>
 #include <QHelpEvent>
@@ -362,8 +364,10 @@ private:
 	//! The song's length with a bar to spare, or the end of what the arranger shows when that is further.
 	tick_t spanTicks() const
 	{
-		const tick_t song = (Engine::getSong()->length() + 1) * TimePos::ticksPerBar();
-		return std::max<tick_t>(song, m_editor->currentPosition().getTicks() + arrangerzoom::visibleTicks(m_editor));
+		const std::int64_t song = (static_cast<std::int64_t>(Engine::getSong()->length()) + 1) * TimePos::ticksPerBar();
+		const std::int64_t viewEnd = static_cast<std::int64_t>(m_editor->currentPosition().getTicks()) + arrangerzoom::visibleTicks(m_editor);
+		return static_cast<tick_t>(std::clamp(std::max(song, viewEnd), std::int64_t{0},
+			static_cast<std::int64_t>(std::numeric_limits<tick_t>::max())));
 	}
 
 	//! Centre the arranger on the tick under @a x.

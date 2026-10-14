@@ -2337,6 +2337,7 @@ tests/src/plugins/ExprSynthAllocationTest.cpp
 tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp
 tests/src/plugins/PatmanLoadTest.cpp
 tests/src/core/SerializingObjectHookTest.cpp
+tests/src/gui/ArrangerTimelineTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api boundary's
