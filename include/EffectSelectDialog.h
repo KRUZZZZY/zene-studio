@@ -73,6 +73,10 @@ protected:
 
 		QString name = sourceModel()->data(nameIndex, Qt::DisplayRole).toString();
 		QString type = sourceModel()->data(typeIndex, Qt::DisplayRole).toString();
+		if (nameIndex.data(pickerorganiser::FavouriteRole).toBool() && name.startsWith(QStringLiteral("★ ")))
+		{
+			name.remove(0, 2);
+		}
 
 		QRegularExpression nameRegularExpression(filterRegularExpression());
 		nameRegularExpression.setPatternOptions(QRegularExpression::CaseInsensitiveOption);

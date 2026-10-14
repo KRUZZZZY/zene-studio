@@ -1067,6 +1067,8 @@ set(LMMS_TESTS
 	src/gui/ScriptBudgetActionTest.cpp
 	# An effect's Hosting submenu (oop.set_mode / oop.restart), against one real effect.
 	src/gui/EffectHostingMenuTest.cpp
+	# Anchored effect searches continue to match favourite names with their display star.
+	src/gui/EffectSelectDialogFilterTest.cpp
 	# A mixer channel menu's Allow feedback sends (feedback.enable / disable).
 	src/gui/FeedbackModeActionTest.cpp
 	# Edit > Session Tuning (mts.load_scale / load_keymap / reset / master_set).
