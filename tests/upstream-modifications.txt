@@ -2150,3 +2150,5 @@ plugins/Vibed/NineButtonSelector.cpp	new-p9-320: clamp the constructor default t
 plugins/NeuralAmp/tests/nam_harness.cpp	new-p9-316: check short WAV writes and fclose results; propagate legacy --wav output failure.
 tests/CMakeLists.txt	new-p9-316: register each NAM WAV write failure CLI regression as a separate Linux CTest.
 tests/CMakeLists.txt	2026-10-11 new-p9-317: register the NeuralAmp WAV sample-rate regression with CTest when Python and nam_harness are available.
+plugins/Nes/Nes.cpp	cluster new-p9-321: held NES voices recalculate channel wavelengths when coarse-detune multipliers change; regression PluginPortsMigrationTest::nesCoarseDetuneRetunesHeldNote.
+plugins/Nes/Nes.h	cluster new-p9-321: store each active NES voice's last coarse-detune multipliers for held-note retuning; regression PluginPortsMigrationTest::nesCoarseDetuneRetunesHeldNote.

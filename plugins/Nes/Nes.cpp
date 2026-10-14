@@ -94,6 +94,9 @@ NesObject::NesObject( NesInstrument * nes, const sample_rate_t samplerate, NoteP
 	m_nsf = NES_SIMPLE_FILTER * ( m_samplerate / 44100.0 );
 	
 	m_lastNoteFreq = 0;
+	m_lastFreq1 = 0.0f;
+	m_lastFreq2 = 0.0f;
+	m_lastFreq3 = 0.0f;
 	m_lastNoiseFreq = -1.0f; // value that is always different than noisefreq so it gets updated at start
 	m_lastNoiseFreqMode = m_parent->m_ch4NoiseFreqMode.value();
 	m_lastNoiseQuantize = m_parent->m_ch4NoiseQuantize.value();
@@ -452,12 +455,16 @@ void NesObject::updatePitch()
 	{
 		updateVibrato( &freq );
 	}
-	// check if frequency has changed, if so, update wavelengths of ch1-3
-	if( freq != m_lastNoteFreq )
+	// update wavelengths when the note frequency or a channel detune changes
+	if( freq != m_lastNoteFreq || m_parent->m_freq1 != m_lastFreq1 ||
+		m_parent->m_freq2 != m_lastFreq2 || m_parent->m_freq3 != m_lastFreq3 )
 	{
 		m_wlen1 = wavelength( freq * m_parent->m_freq1 );
 		m_wlen2 = wavelength( freq * m_parent->m_freq2 );
 		m_wlen3 = wavelength( freq * m_parent->m_freq3 );
+		m_lastFreq1 = m_parent->m_freq1;
+		m_lastFreq2 = m_parent->m_freq2;
+		m_lastFreq3 = m_parent->m_freq3;
 	}
 	// noise channel can use either note freq or preset freqs
 	const bool noiseFreqMode = m_parent->m_ch4NoiseFreqMode.value();

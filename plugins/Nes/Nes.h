@@ -179,6 +179,9 @@ private:
 	float m_34Last;
 
 	float m_lastNoteFreq;
+	float m_lastFreq1;
+	float m_lastFreq2;
+	float m_lastFreq3;
 	float m_lastNoiseFreq;
 	bool m_lastNoiseFreqMode;
 	bool m_lastNoiseQuantize;
