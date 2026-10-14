@@ -2137,3 +2137,4 @@ src/core/midi/MidiSndio.cpp	sndio MIDI resource lifetime: join the worker after 
 include/LocklessList.h	BUG cluster new-p9-235 (2026-10-11): construct Element values in allocator slots, destroy them on free, and destroy linked elements during list teardown; covered by AudioEngineTeardownTest.
 tests/src/core/AudioEngineTeardownTest.cpp	BUG cluster new-p9-235 (2026-10-11): regress nontrivial LocklessList value construction, free-time destruction, and linked-value teardown.
 plugins/NeuralAmp/nam/NamModel.cpp	BUG new-p9-310: zero the aliased prewarm input before each chunk so later chunks continue to process silence; regression NamModelPrewarmTest.
+plugins/Vibed/NineButtonSelector.cpp	new-p9-320: clamp the constructor default to the selector's 0-8 button range before initializing the model and indexing the button array.

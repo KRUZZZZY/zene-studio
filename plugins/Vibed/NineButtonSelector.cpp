@@ -28,13 +28,25 @@
 #include "CaptionMenu.h"
 #include "PixmapButton.h"
 
+#include <algorithm>
+
 namespace lmms::gui
 {
+
+namespace
+{
+
+int clampButtonIndex(int button)
+{
+	return std::clamp(button, 0, 8);
+}
+
+} // namespace
 
 
 NineButtonSelector::NineButtonSelector(const std::array<QPixmap, 18>& onOffIcons, int defaultButton, int x, int y, QWidget* parent) :
 	QWidget{parent},
-	IntModelView{new NineButtonSelectorModel{defaultButton, 0, 8, nullptr, QString{}, true}, this}
+	IntModelView{new NineButtonSelectorModel{clampButtonIndex(defaultButton), 0, 8, nullptr, QString{}, true}, this}
 {
 	setFixedSize(50, 50);
 	move(x, y);
@@ -51,7 +63,7 @@ NineButtonSelector::NineButtonSelector(const std::array<QPixmap, 18>& onOffIcons
 		connect(m_buttons[i], &PixmapButton::clicked, this, [=, this](){ buttonClicked(i); });
 	}
 
-	m_lastBtn = m_buttons[defaultButton];
+	m_lastBtn = m_buttons[clampButtonIndex(defaultButton)];
 	m_lastBtn->setChecked(true);
 }
 
