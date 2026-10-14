@@ -22,6 +22,7 @@
 
 #include <cstddef>
 #include <cmath>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -39,6 +40,7 @@
 
 #include "Engine.h"
 #include "Ladspa2LMMS.h"
+#include "DspEffectLibrary.h"
 #include "Plugin.h"
 #include "plugins/Xpressive/ExprSynth.h"
 
@@ -245,6 +247,7 @@ private slots:
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
+	void fastBassBoostFrequencySetterHonoursFloor();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -375,6 +378,21 @@ void PluginPortsMigrationTest::lfoStartsFromInitializedState()
 
 	QVERIFY(std::isfinite(firstOutput));
 	QCOMPARE(firstOutput, 0.0f);
+}
+
+void PluginPortsMigrationTest::fastBassBoostFrequencySetterHonoursFloor()
+{
+	lmms::DspEffectLibrary::FastBassBoost updated{80.0f, 1.0f, 2.8f};
+	lmms::DspEffectLibrary::FastBassBoost floor{10.0f, 1.0f, 2.8f};
+	updated.setFrequency(-1.0f);
+
+	for (const float input : {0.25f, -0.5f, 0.125f})
+	{
+		const float actual = updated.nextSample(input);
+		const float expected = floor.nextSample(input);
+		QVERIFY(std::isfinite(actual));
+		QCOMPARE(actual, expected);
+	}
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()

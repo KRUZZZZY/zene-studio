@@ -227,7 +227,7 @@ namespace lmms::DspEffectLibrary
 
 		void setFrequency( const sample_t _frequency )
 		{
-			m_frequency = _frequency;
+			m_frequency = std::max<sample_t>(_frequency, 10.0);
 			m_gain1 = 1.0 / ( m_frequency + 1.0 );
 		}
 
