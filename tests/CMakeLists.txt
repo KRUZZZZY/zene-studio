@@ -489,6 +489,8 @@ set(LMMS_TESTS
 	src/core/MissingDevicesPreserveTest.cpp
 	# Q050-018 review round 2: every mixer chain, save/reopen and the real GUI project-loaded notice.
 	src/core/MissingDevicesRound2Test.cpp
+	# ReverbSC's C allocation API: invalid channel counts and allocation failures.
+	src/plugins/ReverbSCCreateTest.cpp
 	# The reader half of ARCH-4 S2b, integration rather than unit: a project opened
 	# with sections named to SKIP. Pinned here: the content element name DERIVED from
 	# the root's type attribute (the "pattern" -> midiclip compat mapping is what
@@ -1257,6 +1259,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/HydrogenImport/LocalFileMng.cpp)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/HydrogenImport)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "ReverbSCCreateTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE src/plugins/ReverbSCCreateTestAllocator.c)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
 	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
