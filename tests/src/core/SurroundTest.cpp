@@ -198,6 +198,14 @@ private slots:
 		QVERIFY(!surround::formatFromName(QStringLiteral("5.1"), nullptr));
 	}
 
+	void negativeHardwareChannelReadsAsSilence()
+	{
+		HardwareOutputBus outputs;
+		outputs.init(2);
+		const SampleFrame master(0.f, 0.f);
+		QVERIFY(outputs.sample(-1, 0, master) == 0.f);
+	}
+
 	void aStereoProjectIsUnchanged()
 	{
 		Mixer* mixer = Engine::mixer();
