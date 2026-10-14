@@ -28,6 +28,7 @@
 #include <QJsonArray>
 
 #include "ControlCommandDef.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
@@ -89,6 +90,27 @@ QJsonObject channelJson(const MixerChannelState& state)
 		{QStringLiteral("muted"), state.muted}, {QStringLiteral("soloed"), state.soloed}, {QStringLiteral("sends"), sends}};
 }
 
+QJsonObject snapshotJson(const MixerSnapshot& snapshot)
+{
+	QJsonArray channels;
+	for (const MixerChannelState& state : snapshot.channels) { channels.append(channelJson(state)); }
+	return {{QStringLiteral("name"), snapshot.name}, {QStringLiteral("channels"), channels}};
+}
+
+QJsonObject snapshotBefore(const QString& name, const std::vector<MixerSnapshot>& existing)
+{
+	QJsonValue previous = QJsonValue::Null;
+	for (const MixerSnapshot& snapshot : existing)
+	{
+		if (snapshot.name == name)
+		{
+			previous = snapshotJson(snapshot);
+			break;
+		}
+	}
+	return {{QStringLiteral("name"), name}, {QStringLiteral("previous"), previous}};
+}
+
 QJsonArray listJson()
 {
 	QJsonArray out;
@@ -119,8 +141,11 @@ ControlResult storeSnapshot(const QJsonObject& args)
 			.arg(MixerSnapshots::MaxSnapshots));
 	}
 	recordList(before);
-	return ControlResult::success({{QStringLiteral("name"), name}, {QStringLiteral("channels"), static_cast<int>(made.channels.size())},
-		{QStringLiteral("replaced"), before.size() == snapshots().snapshots().size()}, {QStringLiteral("snapshots"), listJson()}});
+	QJsonObject result{{QStringLiteral("name"), name}, {QStringLiteral("channels"), static_cast<int>(made.channels.size())},
+		{QStringLiteral("replaced"), before.size() == snapshots().snapshots().size()}, {QStringLiteral("snapshots"), listJson()}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload(snapshotBefore(name, before), QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("action checkpoint: the recorded undo step restores the previous snapshot list")));
+	return ControlResult::success(result);
 }
 
 ControlResult recallSnapshot(const QJsonObject& args)
@@ -137,8 +162,11 @@ ControlResult recallSnapshot(const QJsonObject& args)
 	addUndoStep([before]() { MixerSnapshots::apply(before, MixerSnapshots::Parts{}); },
 		[target, parts]() { MixerSnapshots::apply(target, parts); });
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("name"), name}, {QStringLiteral("channels"), applied.channels},
-		{QStringLiteral("missing_channels"), applied.missingChannels}, {QStringLiteral("missing_sends"), applied.missingSends}});
+	QJsonObject result{{QStringLiteral("name"), name}, {QStringLiteral("channels"), applied.channels},
+		{QStringLiteral("missing_channels"), applied.missingChannels}, {QStringLiteral("missing_sends"), applied.missingSends}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload(snapshotJson(before), QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("action checkpoint: the recorded undo step restores the mixer state captured before recall")));
+	return ControlResult::success(result);
 }
 
 ControlResult listSnapshots(const QJsonObject& args)
@@ -160,7 +188,10 @@ ControlResult removeSnapshot(const QJsonObject& args)
 	const std::vector<MixerSnapshot> before = snapshots().snapshots();
 	if (!snapshots().remove(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no mixer snapshot '%1'").arg(name)); }
 	recordList(before);
-	return ControlResult::success({{QStringLiteral("removed"), name}, {QStringLiteral("snapshots"), listJson()}});
+	QJsonObject result{{QStringLiteral("removed"), name}, {QStringLiteral("snapshots"), listJson()}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload(snapshotBefore(name, before), QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("action checkpoint: the recorded undo step restores the removed snapshot")));
+	return ControlResult::success(result);
 }
 
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, const QStringList& required,

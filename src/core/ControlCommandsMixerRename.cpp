@@ -27,6 +27,7 @@
  *  that one path: the strip, the Inspector, a script and MCP all take it, and one undo puts the old name back. */
 
 #include "ControlCommandDef.h"
+#include "ControlEdit.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -71,11 +72,14 @@ ControlResult renameChannel(const QJsonObject& args)
 	}
 	const QString id = channelIdOf(channel);
 	const QString before = channel->m_name;
-	const QJsonObject result{{QStringLiteral("channel"), id}, {QStringLiteral("name"), name}, {QStringLiteral("previous"), before}};
+	QJsonObject result{{QStringLiteral("channel"), id}, {QStringLiteral("name"), name}, {QStringLiteral("previous"), before}};
 	if (before == name) { return ControlResult::success(result); }  // the name it has: nothing changed, no step
 	addUndoStep([id, before]() { nameChannel(id, before); }, [id, name]() { nameChannel(id, name); });
 	nameChannel(id, name);
 	Engine::getSong()->setModified();
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("channel"), id},
+		{QStringLiteral("name"), before}}, QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("action checkpoint: the recorded undo step puts the previous channel name back")));
 	return ControlResult::success(result);
 }
 

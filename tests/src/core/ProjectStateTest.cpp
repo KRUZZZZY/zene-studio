@@ -58,6 +58,18 @@ MixerChannel* channel(int index) { return Engine::mixer()->mixerChannel(index); 
 
 QString ch(int index) { return control::channelIdOf(channel(index)); }
 
+void verifyLastUndoTransaction(const QString& command)
+{
+	const QJsonArray records = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray();
+	QVERIFY(!records.isEmpty());
+	if (records.isEmpty()) { return; }
+	const QJsonObject record = records.last().toObject();
+	QCOMPARE(record.value(QStringLiteral("command")).toString(), command);
+	QVERIFY(!record.value(QStringLiteral("before")).toObject().isEmpty());
+	QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+	QVERIFY(record.value(QStringLiteral("reversible")).toBool());
+}
+
 //! The send from channel 1 to channel 2 (channel 1 also sends to the master).
 FloatModel* sendLevel() { return control::findMixerRoute(1, 2)->amount(); }
 
@@ -90,6 +102,7 @@ private slots:
 			{QStringLiteral("amount"), 0.25}}).ok);
 		const ControlResult stored = run(QStringLiteral("mixer.snapshot_store"), {{QStringLiteral("name"), QStringLiteral("Verse")}});
 		QVERIFY2(stored.ok, qPrintable(stored.errorMessage));
+		verifyLastUndoTransaction(QStringLiteral("mixer.snapshot_store"));
 		QVERIFY(MixerSnapshots::instance().shouldPersist());
 
 		channel(1)->m_volumeModel.setValue(1.f);
@@ -98,6 +111,7 @@ private slots:
 		const ControlResult faders = run(QStringLiteral("mixer.snapshot_recall"), {{QStringLiteral("name"), QStringLiteral("Verse")},
 			{QStringLiteral("parts"), QJsonArray{QStringLiteral("volume")}}});
 		QVERIFY2(faders.ok, qPrintable(faders.errorMessage));
+		verifyLastUndoTransaction(QStringLiteral("mixer.snapshot_recall"));
 		QCOMPARE(channel(1)->m_volumeModel.value(), 0.5f);
 		QVERIFY(channel(1)->m_muteModel.value());  // not a part this recall wrote
 		QCOMPARE(sendLevel()->value(), 1.f);
@@ -153,6 +167,7 @@ private slots:
 		QCOMPARE(back->channels.at(1).sends.size(), std::size_t{2});  // to the master and to channel 2
 
 		QVERIFY(run(QStringLiteral("mixer.snapshot_remove"), {{QStringLiteral("name"), QStringLiteral("Verse")}}).ok);
+		verifyLastUndoTransaction(QStringLiteral("mixer.snapshot_remove"));
 		QVERIFY(!MixerSnapshots::instance().shouldPersist());
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(MixerSnapshots::instance().find(QStringLiteral("Verse")) != nullptr);
