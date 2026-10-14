@@ -2647,7 +2647,7 @@ add_executable(ExprSynthAllocationTest
 	src/plugins/ExprSynthAllocationTest.cpp
 	${CMAKE_SOURCE_DIR}/plugins/Xpressive/ExprSynth.cpp
 )
-add_test(NAME ExprSynth COMMAND ExprSynthAllocationTest)
+add_test(NAME ExprSynthAllocation COMMAND ExprSynthAllocationTest)
 target_include_directories(ExprSynthAllocationTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 	${CMAKE_SOURCE_DIR}/plugins/Xpressive
