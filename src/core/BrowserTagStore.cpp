@@ -248,14 +248,21 @@ int BrowserTagStore::filesWithTag(const QString& tag) const
 
 bool BrowserTagStore::add(const QString& file, const QString& tag, QString* error)
 {
+	const QString normalizedTag = tag.trimmed();
+	if (normalizedTag.isEmpty())
+	{
+		if (error != nullptr) { *error = QStringLiteral("a tag cannot be empty"); }
+		return false;
+	}
+
 	const QString key = browserCanonicalKey(file);
 	const QStringList before = m_tags.value(key);
 	QStringList after = before;
-	if (!insertTag(&after, tag))
+	if (!insertTag(&after, normalizedTag))
 	{
 		if (error != nullptr)
 		{
-			*error = QStringLiteral("%1 already carries the tag '%2'").arg(key, tag);
+			*error = QStringLiteral("%1 already carries the tag '%2'").arg(key, normalizedTag);
 		}
 		return false;
 	}
