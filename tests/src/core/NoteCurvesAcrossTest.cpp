@@ -30,18 +30,28 @@
 #include <QtTest>
 
 #include <limits>
+#include <algorithm>
 
 #include <QDomDocument>
 #include <QJsonArray>
 
+#include "BasicFilters.h"
+#include "Note.h"
+#include "PlayHandle.h"
+#include "Track.h"
+#define private public
+#include "NotePlayHandle.h"
+#undef private
+
 #include "AutomationClip.h"
+#include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DetuningHelper.h"
 #include "Engine.h"
+#include "InstrumentFunctions.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
-#include "Note.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -83,6 +93,8 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		NotePlayHandleManager::init();
 		ControlRegistry::setReady(true);
 	}
 
@@ -240,6 +252,43 @@ private slots:
 			{QStringLiteral("command"), QStringLiteral("note.transpose")}, {QStringLiteral("args"), QJsonObject{}}}).errorKind,
 			ControlErrorKind::InvalidArgs);  // 'semitones' is required
 		QCOMPARE(keysOf(a), (QList<int>{60}));
+	}
+
+	void chordStackingRejectsTheFirstKeyPastTheRange()
+	{
+		const auto& chords = InstrumentFunctionNoteStacking::ChordTable::getInstance().chords();
+		const auto chromatic = std::find_if(chords.begin(), chords.end(), [](const auto& chord)
+		{
+			return chord.getName() == QStringLiteral("Chromatic");
+		});
+		QVERIFY(chromatic != chords.end());
+		const int chromaticIndex = static_cast<int>(chromatic - chords.begin());
+
+		InstrumentFunctionNoteStacking stacking(nullptr);
+		QDomDocument document;
+		QDomElement settings = document.createElement(QStringLiteral("chordcreator"));
+		settings.setAttribute(QStringLiteral("chord-enabled"), 1);
+		settings.setAttribute(QStringLiteral("chord"), chromaticIndex);
+		settings.setAttribute(QStringLiteral("chordrange"), 1);
+		stacking.loadSettings(settings);
+
+		NotePlayHandle* source = NotePlayHandleManager::acquire(m_track, 0,
+			Engine::audioEngine()->framesPerPeriod(), Note(TimePos(96), TimePos(0), NumKeys - 1));
+		stacking.processNote(source);
+
+		QList<int> stackedKeys;
+		const NotePlayHandleList children = source->m_subNotes;
+		for (const NotePlayHandle* child : children) { stackedKeys << child->key(); }
+
+		for (NotePlayHandle* child : children)
+		{
+			child->audioBusHandle()->removePlayHandle(child);
+			NotePlayHandleManager::release(child);
+		}
+		Engine::audioEngine()->clearNewPlayHandles();
+		NotePlayHandleManager::release(source);
+
+		QCOMPARE(stackedKeys, (QList<int>{NumKeys - 1}));
 	}
 };
 
