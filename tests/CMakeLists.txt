@@ -1328,6 +1328,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		${QT_LIBRARIES}
 		${QT_QTTEST_LIBRARY}
 	)
+	# OversamplingHelpers.h coverage in this DSP test needs hiir's include path.
+	if(LMMS_TEST_NAME STREQUAL "AudioResamplerRatioTest")
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE hiir)
+	endif()
 
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	if(LMMS_TEST_NAME STREQUAL "PatmanLoadTest")
