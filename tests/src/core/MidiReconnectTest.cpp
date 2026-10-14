@@ -29,6 +29,8 @@
 
 #include <cstddef>
 
+#include <QDir>
+#include <QFile>
 #include <QString>
 #include <QStringList>
 
@@ -442,6 +444,25 @@ private slots:
 		QVERIFY(!MidiReconnect::clientNoticesPortChanges(&plain));
 		QVERIFY(MidiReconnect::clientNoticesPortChanges(&polling));
 		QVERIFY(!MidiReconnect::clientNoticesPortChanges(nullptr));
+	}
+
+	//! CoreMIDI add/remove notifications format their endpoint name into malloc-owned memory.
+	//! Keep the Apple-only callback's ownership visible in the portable MIDI test suite.
+	void notificationCallbackOwnsEveryFormattedName()
+	{
+		const QString sourcePath = QDir::current().absoluteFilePath(
+			QStringLiteral("../../src/core/midi/MidiApple.cpp"));
+		QFile source(sourcePath);
+		QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(sourcePath));
+		const QString text = QString::fromUtf8(source.readAll());
+		const int callbackStart = text.indexOf(QStringLiteral("void MidiApple::NotifyCallback("));
+		QVERIFY(callbackStart >= 0);
+		const int callbackEnd = text.indexOf(QStringLiteral("char * MidiApple::getFullName"), callbackStart);
+		QVERIFY(callbackEnd > callbackStart);
+		const QString callback = text.mid(callbackStart, callbackEnd - callbackStart);
+
+		QCOMPARE(callback.count(QStringLiteral("midiApple->getFullName(endpoint_ref)")), 2);
+		QCOMPARE(callback.count(QStringLiteral("std::unique_ptr<char, decltype(&std::free)> fullName")), 2);
 	}
 
 	//! The written direction keeps its own assignment: the same identity
