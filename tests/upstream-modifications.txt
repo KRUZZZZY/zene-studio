@@ -2126,3 +2126,4 @@ src/core/LadspaManager.cpp	BUG new-p9-216: count LADSPA audio ports by direction
 src/core/LmmsSemaphore.cpp	BUG new-p9-219: store CreateSemaphore's returned handle in m_sem before checking failure; regression AudioEngineTeardownTest::windowsSemaphoreUsesCreatedHandle.
 tests/src/core/MathTest.cpp	new-p9-229: regression for fastRandInc with reversed unsigned inclusive bounds.
 src/gui/LinkedModelGroupViews.cpp	new-p9-226: removeControl deletes the QLayoutItem detached by removeItem after deleting its widget; LinkedModelGroupViewLifetimeTest verifies that exact item is freed.
+src/core/midi/MidiSndio.cpp	sndio MIDI resource lifetime: join the worker after shutdown (including the termination fallback) before closing an opened mio handle; tested by MidiReconnectTest::sndioHandleIsClosedWhenClientIsDestroyed.
