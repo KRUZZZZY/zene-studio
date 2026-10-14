@@ -79,6 +79,10 @@ SampleEditorDialog::SampleEditorDialog(SampleClip* clip, QWidget* parent) :
 	connect(musicaltime::formatSignal(), &musicaltime::FormatSignal::changed, this,
 		[this] { setUnit(samplerange::unitFor(musicaltime::currentFormat())); });
 	m_view->setClip(clip);
+	if (m_view->hasUnsupportedFrameCount())
+	{
+		report(tr("This sample is too long for the sample editor; its range cannot be selected or edited."), true);
+	}
 }
 
 SampleClip* SampleEditorDialog::clip() const
@@ -234,6 +238,7 @@ void SampleEditorDialog::syncFields()
 
 QString SampleEditorDialog::rangeText() const
 {
+	if (m_view->hasUnsupportedFrameCount()) { return tr("This sample is too long for the sample editor."); }
 	const int from = m_view->from();
 	const int to = m_view->to();
 	if (to <= from) { return tr("Nothing selected"); }

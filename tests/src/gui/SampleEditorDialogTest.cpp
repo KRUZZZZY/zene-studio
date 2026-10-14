@@ -40,6 +40,7 @@
 #include <QTimer>
 
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include "ControlRegistry.h"
@@ -316,6 +317,15 @@ private slots:
 		QCOMPARE(state.value(QStringLiteral("from")).toInt(), 4410);
 		QCOMPARE(state.value(QStringLiteral("length")).toInt(), 22050 - 4410);
 		QCOMPARE(state.value(QStringLiteral("unit")).toString(), QStringLiteral("samples"));
+	}
+
+	void sampleFrameCountsBeyondIntAreRejected()
+	{
+		const auto maxFrames = static_cast<std::size_t>(std::numeric_limits<int>::max());
+		const auto representable = sampleeditor::detail::representableFrameCount(maxFrames);
+		QVERIFY(representable.has_value());
+		QCOMPARE(*representable, std::numeric_limits<int>::max());
+		QVERIFY(!sampleeditor::detail::representableFrameCount(maxFrames + 1).has_value());
 	}
 
 	void typedValuesSetTheRange()
