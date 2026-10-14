@@ -100,6 +100,11 @@ void StepRecorderWidget::showHint()
 
 void StepRecorderWidget::setStepsLength(TimePos stepsLength)
 {
+	if (stepsLength.getTicks() <= 0)
+	{
+		return;
+	}
+
 	m_stepsLength = stepsLength;
 }
 
@@ -116,13 +121,16 @@ void StepRecorderWidget::paintEvent(QPaintEvent * pe)
 
 	TimePos curPos = m_curStepEndPos;
 	int x = xCoordOfTick(curPos);
-	while(x <= m_right)
+	if (m_stepsLength.getTicks() > 0)
 	{
-		const int w = 2;
-		const int h = 4;
-		painter.drawRect(x - 1, m_top, w, h);
-		curPos += m_stepsLength;
-		x = xCoordOfTick(curPos);
+		while(x <= m_right)
+		{
+			const int w = 2;
+			const int h = 4;
+			painter.drawRect(x - 1, m_top, w, h);
+			curPos += m_stepsLength;
+			x = xCoordOfTick(curPos);
+		}
 	}
 
 	//draw current step start/end position lines

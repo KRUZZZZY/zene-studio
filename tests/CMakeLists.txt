@@ -1138,6 +1138,8 @@ set(LMMS_TESTS
 	src/gui/PianoRollRecordTest.cpp
 	# The piano view's focus handler must tolerate its model not being assigned yet.
 	src/gui/PianoViewFocusTest.cpp
+	# BUG new-p10-399: painting the step recorder with a zero tick length completes.
+	src/gui/StepRecorderWidgetTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	# Hydrogen's TinyXML byte-escape compatibility path, including incomplete input.
 	src/plugins/HydrogenImportLocalFileMngTest.cpp
@@ -2176,6 +2178,7 @@ endif()
 set_tests_properties(WorkspaceAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PianoRollBenchmarkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PianoRollRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(StepRecorderWidgetTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # AccessibilityHelperTest constructs the shell, so it takes the same
 # platform registration (040/ui-precond). WcagContrastTest is guiless and needs
 # none: QColor loads no platform plugin.
