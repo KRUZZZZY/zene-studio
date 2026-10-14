@@ -935,6 +935,8 @@ set(LMMS_TESTS
 	src/gui/SampleEditorDialogTest.cpp
 	# 0.5.0 ED-176: the crossfade editor, offered where clips overlap and driven through its fields.
 	src/gui/CrossfadeEditorTest.cpp
+	# LADSPA Ports renders sample-rate-dependent ranges and their displayed defaults.
+	src/gui/LadspaPortDialogTest.cpp
 	# 0.5.0 theme 1: the note editor follows FL Studio's piano roll.
 	src/gui/NoteEditorFlTest.cpp
 	# 0.5.0 lane 3: the shell selection, the Inspector and the Device panel's cards and
@@ -1261,6 +1263,14 @@ set(LMMS_COVERAGE_FLAGS "")
 if(WANT_COVERAGE)
 	set(LMMS_COVERAGE_FLAGS "--coverage")
 endif()
+
+add_library(SampleRateDependentLadspa MODULE
+	src/plugins/SampleRateDependentLadspa.cpp)
+target_include_directories(SampleRateDependentLadspa PRIVATE
+	${CMAKE_SOURCE_DIR}/include)
+target_compile_features(SampleRateDependentLadspa PRIVATE cxx_std_20)
+set_target_properties(SampleRateDependentLadspa PROPERTIES PREFIX "")
+
 function(lmms_add_coverage TARGET)
 	if(LMMS_COVERAGE_FLAGS)
 		target_compile_options(${TARGET} PRIVATE ${LMMS_COVERAGE_FLAGS})
@@ -1316,6 +1326,17 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/Eq")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=Eq)
 	endif()
+	if(LMMS_TEST_NAME STREQUAL "LadspaPortDialogTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/LadspaBrowser/LadspaPortDialog.cpp
+			${CMAKE_SOURCE_DIR}/plugins/LadspaBrowser/LadspaPortDialog.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/LadspaBrowser)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			"LADSPA_PORT_DIALOG_FIXTURE_DIR=\"$<TARGET_FILE_DIR:SampleRateDependentLadspa>\""
+			"LADSPA_PORT_DIALOG_FIXTURE_FILE=\"$<TARGET_FILE_NAME:SampleRateDependentLadspa>\"")
+		add_dependencies(${LMMS_TEST_NAME} SampleRateDependentLadspa)
+	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
 	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
 	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
@@ -1327,6 +1348,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/VstEffect)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES TIMEOUT 10)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "LadspaPortDialogTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 	# BUGS_FOUND 11.23: on the hosted msvc-x64 runner the 300+ test executables' linker PDBs filled the
 	# build drive (run 36802800273: LNK1201 writing SessionSceneFollowTest.pdb). Tests link without a

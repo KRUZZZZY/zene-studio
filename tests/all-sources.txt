@@ -2795,6 +2795,7 @@ tests/src/gui/InstrumentSetupUiTest.cpp
 tests/src/gui/ItemListButtonsTest.cpp
 tests/src/gui/ItemListPanelTest.cpp
 tests/src/gui/KnobKeyboardTest.cpp
+tests/src/gui/LadspaPortDialogTest.cpp
 tests/src/gui/LaneReadoutTest.cpp
 tests/src/gui/LibraryMenusTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
@@ -2887,6 +2888,7 @@ tests/src/plugins/ReverbSCRawProcessingTest.cpp
 tests/src/plugins/ReverbSCCreateTest.cpp
 tests/src/plugins/ReverbSCCreateTestAllocator.c
 tests/src/plugins/ReverbScAllocationTest.cpp
+tests/src/plugins/SampleRateDependentLadspa.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
 tests/src/plugins/Vst3ChunkProbeTest.cpp
