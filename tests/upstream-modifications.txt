@@ -1945,3 +1945,5 @@ tests/src/core/AutomatableModelTest.cpp	cluster new-p9-12 (2026-10-10): regressi
 tests/src/core/SampleBufferResampleTest.cpp	cluster new-p9-101 regression: add a bounded subprocess proof that a DrumSynth distortion Rate of -1 completes rendering.
 src/core/DrumSynth.cpp	cluster new-p9-101: clamp DrumSynth distortion Rate to its supported 0–7 range so invalid values cannot make the downsampling step non-positive or exceed the block.
 src/core/fft_helpers.cpp	cluster new-p9-177: precomputeWindow rejects zero- and one-sample Blackman-Harris, Hamming and Hanning windows before using the length-minus-one denominator; rectangular-window behavior is unchanged. Held by tests/src/core/AudioAnalysisTest.cpp::rejectsShortCosineSumWindows.
+plugins/Xpressive/ExprSynth.h	new-p9-138: initialize WaveSample interpolation to false in both constructor paths; the ExprSynth regression poisons the prior member representation and checks the default.
+tests/src/plugins/PluginPortsMigrationTest.cpp	new-p9-138: add a regression slot proving WaveSample defaults interpolation to disabled; existing migration assertions are unchanged.
