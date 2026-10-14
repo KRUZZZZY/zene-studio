@@ -62,13 +62,17 @@
 #include <QRgb>
 #include <QCoreApplication>
 #include <QDir>
+#include <QCoreApplication>
+#include <QDir>
 #include <QDomDocument>
 #include <QDomElement>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileInfo>
 #include <QLibrary>
 #include <QTemporaryDir>
+#include <QProcess>
 #include <QTextStream>
 #include <QtTest>
 
@@ -196,6 +200,7 @@ private slots:
 	void neuralAmpRejectsModelsTrainedAtAnotherSampleRate();
 	void clearingPatmanPatchReleasesItsSampleBank();
 	void subMillisecondTapIntervalDoesNotProduceInfiniteTempo();
+	void namHarnessRejectsNegativeWarmup();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -627,6 +632,33 @@ void AudioPluginTest::subMillisecondTapIntervalDoesNotProduceInfiniteTempo()
 	QCOMPARE(tapTempo.m_intervals[1], intervalsBeforeShortInterval[1]);
 	QCOMPARE(tapTempo.m_intervals[2], intervalsBeforeShortInterval[2]);
 	QCOMPARE(tapTempo.m_lastTap.time_since_epoch().count(), lastTapBeforeShortInterval.time_since_epoch().count());
+}
+
+//! Negative warmup counts must be rejected before the harness loads a model.
+void AudioPluginTest::namHarnessRejectsNegativeWarmup()
+{
+	QString harness = QDir::cleanPath(QCoreApplication::applicationDirPath() +
+		QStringLiteral("/../plugins/nam_harness"));
+#ifdef Q_OS_WIN
+	harness += QStringLiteral(".exe");
+#endif
+	QVERIFY2(QFileInfo::exists(harness), qPrintable(harness));
+
+	QProcess process;
+	process.start(harness, {
+		QStringLiteral("--warmup"), QStringLiteral("-1"),
+		QStringLiteral("--blocks"), QStringLiteral("1"),
+		QStringLiteral("missing-negative-warmup-test.nam")
+	});
+	QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
+	QVERIFY2(process.waitForFinished(5000), qPrintable(process.errorString()));
+	QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+	QCOMPARE(process.exitCode(), 2);
+
+	const QByteArray standardError = process.readAllStandardError();
+	QVERIFY2(standardError.contains("error: --warmup must be >= 0"),
+		qPrintable(QString::fromLocal8Bit(standardError)));
+	QVERIFY(!standardError.contains("LOAD FAILED"));
 }
 
 QTEST_MAIN(AudioPluginTest)
