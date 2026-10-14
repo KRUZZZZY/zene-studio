@@ -375,6 +375,7 @@ set(LMMS_TESTS
 	src/core/ImportDetectionTest.cpp
 	# ImportFilter must restore the ProjectJournal after a plugin throws.
 	src/core/ImportFilterTest.cpp
+	src/core/HydrogenImportTest.cpp
 	src/core/MathTest.cpp
 	# The LIVE loudness tap (feature row 24 of docs/FEATURE-LIST-0.3.0.md, the
 	# `meter.*` group's live half): what an armed tap reads, the three negative
@@ -1238,6 +1239,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
 
 	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
+	if(LMMS_TEST_NAME STREQUAL "HydrogenImportTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/HydrogenImport/LocalFileMng.cpp)
+	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
 	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
 	# BUGS_FOUND 11.23: on the hosted msvc-x64 runner the 300+ test executables' linker PDBs filled the
