@@ -274,6 +274,15 @@ private slots:
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before);
 		QCOMPARE(run(QStringLiteral("project.import_tracks"), {{QStringLiteral("path"), other}, {QStringLiteral("tracks"), QJsonArray{999}}})
 			.errorKind, ControlErrorKind::NotFound);
+		// A fractional index names no track: QJsonValue::toInt answers its default for a
+		// non-integral double, so [1.9] is refused instead of importing the track it
+		// would truncate to.
+		const int held = static_cast<int>(Engine::getSong()->tracks().size());
+		const ControlResult fractional = run(QStringLiteral("project.import_tracks"), {{QStringLiteral("path"), other},
+			{QStringLiteral("tracks"), QJsonArray{1.9}}});
+		QVERIFY(!fractional.ok);
+		QCOMPARE(fractional.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), held);
 	}
 
 	void aHandOffFolderCarriesItsManifest()
