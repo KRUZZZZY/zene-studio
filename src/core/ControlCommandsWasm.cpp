@@ -253,9 +253,17 @@ QJsonObject processJson(const wasm::HostProcessOutcome& outcome, std::uint32_t f
 {
 	QJsonArray output;
 	float peak = 0.0f;
+	bool hasNonFiniteOutput = false;
 	for (const float sample : outcome.output)
 	{
-		peak = std::max(peak, std::fabs(sample));
+		if (std::isfinite(sample))
+		{
+			peak = std::max(peak, std::fabs(sample));
+		}
+		else
+		{
+			hasNonFiniteOutput = true;
+		}
 		output.append(static_cast<double>(sample));
 	}
 
@@ -272,7 +280,9 @@ QJsonObject processJson(const wasm::HostProcessOutcome& outcome, std::uint32_t f
 	result.insert(QStringLiteral("sample_rate"), static_cast<double>(sampleRate));
 	result.insert(QStringLiteral("stimulus"), stimulus);
 	result.insert(QStringLiteral("output"), output);
-	result.insert(QStringLiteral("output_peak"), static_cast<double>(peak));
+	result.insert(QStringLiteral("output_has_non_finite"), hasNonFiniteOutput);
+	result.insert(QStringLiteral("output_peak"), hasNonFiniteOutput
+		? QJsonValue(QJsonValue::Null) : QJsonValue(static_cast<double>(peak)));
 	result.insert(QStringLiteral("log"), wasmText(outcome.log));
 	return result;
 }
@@ -382,7 +392,8 @@ void registerWasmProcessCommand(ControlRegistry& registry)
 			{QStringLiteral("sample_rate"), numberProperty()},
 			{QStringLiteral("stimulus"), stringProperty()},
 			{QStringLiteral("output"), arrayProperty()},
-			{QStringLiteral("output_peak"), numberProperty()},
+			{QStringLiteral("output_has_non_finite"), booleanProperty()},
+			{QStringLiteral("output_peak"), nullable(numberProperty())},
 			{QStringLiteral("log"), stringProperty()}},
 		false, [](const QJsonObject& args) { return handleProcess(args); }));
 }

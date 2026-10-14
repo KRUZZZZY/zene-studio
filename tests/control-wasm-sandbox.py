@@ -31,6 +31,7 @@ import itertools
 import json
 import os
 import sys
+import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -61,6 +62,28 @@ FRAMES = 8
 PROCESS_INPUT = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
 #: The rate the second process() call uses, to show the argument arrives per call.
 SECOND_RATE = 44100.0
+NAN_OUTPUT_MODULE = """(module
+    (memory (export "memory") 3)
+    (global (export "channels") i32 (i32.const 1))
+    (global (export "latency") i32 (i32.const 0))
+    (func (export "process")
+        (param $in_offset i32)
+        (param $out_offset i32)
+        (param $frames i32)
+        (param $sample_rate f32)
+        (result i32)
+        (local $i i32)
+        (block $done
+            (loop $frame
+                (br_if $done (i32.ge_u (local.get $i) (local.get $frames)))
+                (f32.store
+                    (i32.add (local.get $out_offset)
+                        (i32.mul (local.get $i) (i32.const 4)))
+                    (f32.reinterpret_i32 (i32.const -4194304)))
+                (local.set $i (i32.add (local.get $i) (i32.const 1)))
+                (br $frame)))
+        (i32.const 0)))
+"""
 
 REQUEST_IDS = itertools.count(1)
 
@@ -318,6 +341,24 @@ def check_process_arguments(session, recorder):
                    "frames=%r sample_rate=%r" % (later.get("frames"), later.get("sample_rate")))
 
 
+def check_non_finite_output(session, recorder):
+    """A non-finite output sample must invalidate and identify the reported peak."""
+    with tempfile.TemporaryDirectory(prefix="zene-wasm-nan-") as directory:
+        module_path = os.path.join(directory, "nan-output.wat")
+        with open(module_path, "w", encoding="utf-8") as module_file:
+            module_file.write(NAN_OUTPUT_MODULE)
+        session.result("wasm.load", {"path": module_path})
+        ran = session.result("wasm.process", {"frames": 2})
+
+    recorder.check("NaN samples serialize as null in wasm.process output",
+                   ran.get("output") == [None, None],
+                   "output=%s status=%r" % (json.dumps(ran.get("output")), ran.get("status")))
+    recorder.check("wasm.process marks the output peak as non-finite",
+                   ran.get("output_has_non_finite") is True and ran.get("output_peak") is None,
+                   "output_has_non_finite=%r output_peak=%r"
+                   % (ran.get("output_has_non_finite"), ran.get("output_peak")))
+
+
 def check_probes(session, recorder):
     """What the document derived from the source, executed."""
     loaded = session.result("wasm.load",
@@ -471,7 +512,8 @@ def main(argv):
         print("instance: %s\nsocket:   %s\nexample:  %s" % (argv[1], instance.socket_path, EXAMPLE))
         for check in (check_registered, check_no_module, check_listing, check_list_refusals,
                       check_load_example, check_param, check_process_block,
-                      check_process_arguments, check_probes, check_growth_and_mutable_globals,
+                      check_process_arguments, check_non_finite_output, check_probes,
+                      check_growth_and_mutable_globals,
                       check_undo_of_param, check_unload, check_rehost_undo, check_transactions):
             check(session, recorder)
         check_quit(session, instance, recorder)
