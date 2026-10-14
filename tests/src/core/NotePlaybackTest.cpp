@@ -370,6 +370,27 @@ private slots:
 		QCOMPARE(playback.swing(), 0.f);
 	}
 
+	void swingRejectsValuesJustAboveMaximum()
+	{
+		MidiPlayback& playback = MidiPlayback::instance();
+		playback.setSwing(0.f, MidiPlayback::DefaultSwingGrid);
+		const ControlResult result = run(QStringLiteral("transport.groove"), {{QStringLiteral("swing"), 0.75000001}});
+		if (result.ok) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(playback.swing(), 0.f);
+		QCOMPARE(playback.swingGrid(), MidiPlayback::DefaultSwingGrid);
+	}
+
+	void swingRejectsTinyNegativeValues()
+	{
+		MidiPlayback& playback = MidiPlayback::instance();
+		playback.setSwing(0.f, MidiPlayback::DefaultSwingGrid);
+		const ControlResult result = run(QStringLiteral("transport.groove"), {{QStringLiteral("swing"), -1e-50}});
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(playback.swing(), 0.f);
+		QCOMPARE(playback.swingGrid(), MidiPlayback::DefaultSwingGrid);
+	}
+
 	void lyricsAndGroups()
 	{
 		oneNote();
