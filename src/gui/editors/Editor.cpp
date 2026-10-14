@@ -83,6 +83,14 @@ void Editor::togglePause()
 	Engine::getSong()->togglePause();
 }
 
+Editor::~Editor()
+{
+	if (s_lastPlayedEditor == this)
+	{
+		s_lastPlayedEditor = nullptr;
+	}
+}
+
 void Editor::toggleMaximize()
 {
 	isMaximized() ? showNormal() : showMaximized();

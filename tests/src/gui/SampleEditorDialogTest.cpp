@@ -34,6 +34,7 @@
 #include <vector>
 
 #include "ControlRegistry.h"
+#include "Editor.h"
 #include "Engine.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -48,6 +49,15 @@ namespace
 {
 
 constexpr int Rate = 44100;
+
+class TestEditor final : public Editor
+{
+public:
+	TestEditor() : Editor() {}
+
+protected:
+	void play() override {}
+};
 
 //! A clip of one second of a quiet tone at 44.1 kHz.
 SampleClip* toneClip(Track* track)
@@ -129,6 +139,16 @@ private slots:
 		m_dialog = nullptr;
 		delete m_clip;
 		m_clip = nullptr;
+	}
+
+	void lastPlayedEditorClearsWhenDestroyed()
+	{
+		auto* editor = new TestEditor;
+		editor->togglePlayStop();
+		QCOMPARE(Editor::lastPlayedEditor(), static_cast<Editor*>(editor));
+
+		delete editor;
+		QVERIFY(Editor::lastPlayedEditor() == nullptr);
 	}
 
 	void textReadsAndTypesInEachUnit()

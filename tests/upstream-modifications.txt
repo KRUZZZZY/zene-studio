@@ -2082,3 +2082,5 @@ plugins/Eq/EqCurve.cpp	new-p9-121: start the response curve dirty so the first p
 include/EnvelopeAndLfoParameters.h	BUG new-p9-116: initialize the random LFO sample state and track whether the first random value has been generated before rendering.
 src/core/EnvelopeAndLfoParameters.cpp	BUG new-p9-116: generate the initial random LFO sample on first Random render, including blocks starting at a nonzero phase.
 plugins/Xpressive/ExprSynth.h	new-p9-139 (2026-10-11): WaveSample copy construction and assignment are deleted because the class owns m_samples; this prevents shallow copies from double-deleting the buffer. Regression: PluginAudioPortsTest::waveSampleCannotBeCopied.
+include/Editor.h	new-p9-131: declare the editor destructor out of line so it clears the last-played editor pointer; regression tests/src/gui/SampleEditorDialogTest.cpp::lastPlayedEditorClearsWhenDestroyed.
+src/gui/editors/Editor.cpp	new-p9-131: clear s_lastPlayedEditor when its editor is destroyed; regression tests/src/gui/SampleEditorDialogTest.cpp::lastPlayedEditorClearsWhenDestroyed.
