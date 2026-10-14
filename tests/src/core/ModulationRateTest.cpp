@@ -37,11 +37,13 @@
 
 #include <cmath>
 #include <stdexcept>
+#include <vector>
 
 #include "AllocationProbe.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AutomatableModel.h"
+#include "EnvelopeAndLfoParameters.h"
 #include "Engine.h"
 #include "ModulationLayer.h"
 #include "ValueBuffer.h"
@@ -210,6 +212,41 @@ private slots:
 		QCOMPARE(loaded.modulator(0)->routes.size(), std::size_t{2});
 		QVERIFY(!loaded.modulator(0)->routes[0].perSample);
 		QVERIFY(loaded.modulator(0)->routes[1].perSample);
+	}
+
+	void aZeroPredelayStartsTheLfoInTheFirstBlock()
+	{
+		EnvelopeAndLfoParameters parameters(0.0f, nullptr);
+		parameters.getLfoAmountModel().setValue(1.0f);
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		std::vector<float> levels(static_cast<std::size_t>(frames));
+
+		parameters.fillLevel(levels.data(), 0, frames + 1, frames);
+
+		QVERIFY(levels[1] > 0.0f);
+	}
+
+	void aBlockCrossingThePredelayStartsAtTheBoundary()
+	{
+		EnvelopeAndLfoParameters parameters(0.0f, nullptr);
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		const auto sampleRate = Engine::audioEngine()->outputSampleRate();
+		const float predelay = std::sqrt(static_cast<float>(frames / 2) /
+					(20.0f * static_cast<float>(sampleRate)));
+		QDomDocument document;
+		QDomElement settings = document.createElement(QStringLiteral("el"));
+		settings.setAttribute(QStringLiteral("lpdel"), predelay);
+		parameters.loadSettings(settings);
+		parameters.getLfoAmountModel().setValue(1.0f);
+		const f_cnt_t predelayFrames = parameters.getLfoPredelayFrames();
+		std::vector<float> levels(static_cast<std::size_t>(frames));
+
+		QVERIFY(predelayFrames > 0);
+		QVERIFY(predelayFrames < frames);
+		parameters.fillLevel(levels.data(), 0, frames + 1, frames);
+
+		QCOMPARE(levels[static_cast<std::size_t>(predelayFrames - 1)], 0.0f);
+		QVERIFY(levels[static_cast<std::size_t>(predelayFrames)] > 0.0f);
 	}
 };
 

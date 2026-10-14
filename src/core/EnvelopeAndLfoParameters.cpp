@@ -262,12 +262,22 @@ inline void EnvelopeAndLfoParameters::fillLfoLevel( float * _buf,
 							f_cnt_t _frame,
 							const f_cnt_t _frames )
 {
-	if( m_lfoAmountIsZero || _frame <= m_lfoPredelayFrames )
+	if( m_lfoAmountIsZero )
 	{
 		for( f_cnt_t offset = 0; offset < _frames; ++offset )
 		{
 			*_buf++ = 0.0f;
 		}
+		return;
+	}
+	f_cnt_t offset = 0;
+	for( ; offset < _frames && _frame < m_lfoPredelayFrames;
+								++offset, ++_frame )
+	{
+		*_buf++ = 0.0f;
+	}
+	if( offset == _frames )
+	{
 		return;
 	}
 	_frame -= m_lfoPredelayFrames;
@@ -277,7 +287,6 @@ inline void EnvelopeAndLfoParameters::fillLfoLevel( float * _buf,
 		updateLfoShapeData();
 	}
 
-	f_cnt_t offset = 0;
 	const float lafI = 1.0f / std::max(minimumFrames, m_lfoAttackFrames);
 	for( ; offset < _frames && _frame < m_lfoAttackFrames; ++offset,
 								++_frame )
