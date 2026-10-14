@@ -62,7 +62,17 @@ void NoteConditions::load(const QDomElement& note)
 	};
 	repeats = number("rep", MaxRepeats);
 	recurLength = number("recl", MaxRecurLength);
-	recurMask = recurLength > 0 ? number("recm", (1 << recurLength) - 1) : 0;
+	bool validRecurMask = false;
+	const int recurMaskValue = note.attribute(QStringLiteral("recm")).toInt(&validRecurMask);
+	if (recurLength > 0 && validRecurMask)
+	{
+		recurMask = std::clamp(recurMaskValue, 0, (1 << recurLength) - 1);
+	}
+	else
+	{
+		recurLength = 0;
+		recurMask = 0;
+	}
 	articulation = number("art", MaxArticulations);
 	group = number("grp", 1 << 30);
 	lyric = internLyric(note.attribute(QStringLiteral("lyr")));
