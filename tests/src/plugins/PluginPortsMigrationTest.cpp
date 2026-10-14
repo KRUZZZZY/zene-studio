@@ -27,6 +27,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cmath>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -40,6 +41,8 @@
 
 #include <QByteArray>
 #include <QFile>
+#include <QDomDocument>
+#include <QDir>
 #include <QDomDocument>
 #include <QLibrary>
 #include <memory>
@@ -347,6 +350,8 @@ private slots:
 	void positiveFractionPreservesOrdinaryValues();
 	void migratedPluginsPreserveBehaviour();
 	void monstroLfoAttackRampsWithinPeriod();
+	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
+	void gigplayerSingleFrameLoopRepeatsFrame();
 	void comparisonIsSensitive();
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void slice5InstrumentsAreLiveAndDistinct();
@@ -375,6 +380,7 @@ void PluginPortsMigrationTest::initTestCase()
 	lmms::NotePlayHandleManager::init();
 	QVERIFY2(lmms::Engine::audioEngine() != nullptr, "engine failed to initialise");
 	lmms::Engine::audioEngine()->audioDev()->stopProcessing();
+	lmms::NotePlayHandleManager::init();
 
 	const lmms::f_cnt_t frames = lmms::Engine::audioEngine()->framesPerPeriod();
 	lmms::NotePlayHandleManager::init();
@@ -918,6 +924,118 @@ void PluginPortsMigrationTest::monstroLfoAttackRampsWithinPeriod()
 	QVERIFY2(firstPeriodDifference > 1e-5f,
 		qPrintable(QString{"Monstro LFO attack did not ramp within the first period (max|delta|=%1)"}
 			.arg(firstPeriodDifference, 0, 'g', 3)));
+}
+
+void PluginPortsMigrationTest::gigplayerBidirectionalLoopReflectsAtExclusiveEnd()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	const QString fixture = QDir{QString{QT_TESTCASE_SOURCEDIR}}
+		.filePath(QStringLiteral("data/gigproof/pingpong.gig"));
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	QDomDocument doc;
+	QDomElement root = doc.createElement(QStringLiteral("instrument"));
+	QDomElement saved = instrument->saveState(doc, root);
+	saved.setAttribute(QStringLiteral("src"), fixture);
+	saved.setAttribute(QStringLiteral("patch"), QStringLiteral("0"));
+	saved.setAttribute(QStringLiteral("bank"), QStringLiteral("0"));
+	instrument->restoreState(saved);
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	const auto rendered = partc::renderInstrumentInFreshThread(*instrument, frames, lmms::DefaultKey);
+	delete instrument;
+
+	constexpr int LoopEnd = 128;
+	constexpr int FramesAfterEnd = 8;
+	constexpr double FixtureRate = 44100.0;
+	const double outputRate = lmms::Engine::audioEngine()->outputSampleRate();
+	const auto afterEnd = static_cast<std::size_t>(std::lround(
+		(LoopEnd + FramesAfterEnd) * outputRate / FixtureRate));
+	const auto atEnd = static_cast<std::size_t>(std::lround((LoopEnd + 2) * outputRate / FixtureRate));
+	const auto firstPass = static_cast<std::size_t>(std::lround(
+		(LoopEnd - 2 - FramesAfterEnd) * outputRate / FixtureRate));
+	QVERIFY(rendered.size() > 2 * std::max(afterEnd, firstPass));
+
+	const float endSample = rendered[2 * atEnd];
+	const float reflected = rendered[2 * afterEnd];
+	const float firstPassSample = rendered[2 * firstPass];
+	QVERIFY2(endSample > 1e-4f,
+		qPrintable(QString{"exclusive loop end should reflect to end - 2, got %1"}
+			.arg(endSample, 0, 'g', 6)));
+	QVERIFY(std::fabs(firstPassSample) > 1e-4f);
+	QVERIFY2(std::fabs(reflected - firstPassSample) < 0.02f,
+		qPrintable(QString{"bidirectional loop sample %1 should reflect from exclusive end; first pass %2"}
+			.arg(reflected, 0, 'g', 6).arg(firstPassSample, 0, 'g', 6)));
+#endif
+}
+
+void PluginPortsMigrationTest::gigplayerSingleFrameLoopRepeatsFrame()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	const QString fixture = QDir{QString{QT_TESTCASE_SOURCEDIR}}
+		.filePath(QStringLiteral("data/gigproof/single-frame-loop.gig"));
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	QDomDocument doc;
+	QDomElement root = doc.createElement(QStringLiteral("instrument"));
+	QDomElement saved = instrument->saveState(doc, root);
+	saved.setAttribute(QStringLiteral("src"), fixture);
+	saved.setAttribute(QStringLiteral("patch"), QStringLiteral("0"));
+	saved.setAttribute(QStringLiteral("bank"), QStringLiteral("0"));
+	instrument->restoreState(saved);
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	const auto rendered = partc::renderInstrumentInFreshThread(*instrument, frames, lmms::DefaultKey);
+	delete instrument;
+
+	constexpr int LoopEnd = 65;
+	constexpr int FirstRepeat = LoopEnd + 5;
+	constexpr int LaterRepeat = LoopEnd + 25;
+	constexpr double FixtureRate = 44100.0;
+	const double outputRate = lmms::Engine::audioEngine()->outputSampleRate();
+	const auto first = static_cast<std::size_t>(std::lround(FirstRepeat * outputRate / FixtureRate));
+	const auto later = static_cast<std::size_t>(std::lround(LaterRepeat * outputRate / FixtureRate));
+	QVERIFY(rendered.size() > 2 * later);
+
+	const float firstRepeat = rendered[2 * first];
+	const float laterRepeat = rendered[2 * later];
+	QVERIFY(std::fabs(firstRepeat) > 1e-4f);
+	QVERIFY2(std::fabs(laterRepeat - firstRepeat) < 0.001f,
+		qPrintable(QString{"one-frame loop should repeat frame 64, got %1 then %2"}
+			.arg(firstRepeat, 0, 'g', 6).arg(laterRepeat, 0, 'g', 6)));
+#endif
 }
 
 /*!

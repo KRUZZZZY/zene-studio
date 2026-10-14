@@ -27,6 +27,8 @@
 #ifndef GIG_PLAYER_H
 #define GIG_PLAYER_H
 
+#include <cstdint>
+
 #include <QList>
 #include <QMutex>
 #include <QMutexLocker>
@@ -308,6 +310,8 @@ private:
 
 	// Load sample data from the Gig file, looping the sample where needed
 	void loadSample( GigSample& sample, SampleFrame* sampleData, f_cnt_t samples );
+	void loadBidirectionalSample( gig::Sample& sample, std::int8_t* buffer, f_cnt_t position,
+		f_cnt_t samples, f_cnt_t loopStart, f_cnt_t loopEnd );
 	f_cnt_t getLoopedIndex( f_cnt_t index, f_cnt_t startf, f_cnt_t endf ) const;
 	f_cnt_t getPingPongIndex( f_cnt_t index, f_cnt_t startf, f_cnt_t endf ) const;
 

@@ -1,9 +1,12 @@
 /*
  * make_gig.cpp - create a minimal but valid .gig instrument file with libgig.
  *
- * One instrument ("Sine440", bank 0 / program 0), one sample (440 Hz sine,
- * 2 s, 16-bit mono 44100 Hz), one region spanning the whole keyboard, one
- * dimension region pointing at the sample.  Built with:
+ * By default, create one instrument ("Sine440", bank 0 / program 0), one
+ * sample (440 Hz sine, 2 s, 16-bit mono 44100 Hz), one region spanning the
+ * whole keyboard, and one dimension region pointing at the sample. Passing
+ * --pingpong or --single-frame-loop creates directional loop fixtures used by
+ * the regression tests.
+ * Built with:
  *   g++ -std=c++17 make_gig.cpp -o make_gig $(pkg-config --cflags --libs gig)
  *
  * Save order follows the libgig docs for File::AddSample():
@@ -24,17 +27,25 @@ static const double   FREQ    = 440.0;
 
 int main(int argc, char** argv)
 {
-    const std::string out = (argc > 1) ? argv[1] : "sine440.gig";
-    const uint32_t N = SR * SECONDS;
+    const bool singleFrameLoop = argc > 1 && std::string(argv[1]) == "--single-frame-loop";
+    const bool pingPong = (argc > 1 && std::string(argv[1]) == "--pingpong") || singleFrameLoop;
+    const std::string out = pingPong
+        ? ((argc > 2) ? argv[2] : "pingpong.gig")
+        : ((argc > 1) ? argv[1] : "sine440.gig");
+    constexpr uint32_t LoopStart = 64;
+    const uint32_t loopLength = singleFrameLoop ? 1 : 64;
+    const uint32_t N = pingPong ? SR / 4 : SR * SECONDS;
 
     try
     {
         gig::File* f = new gig::File();
         f->SetFileName(out);
-        f->pInfo->Name      = "GigProof Sine440";
+        f->pInfo->Name      = pingPong ? "GigProof PingPong" : "GigProof Sine440";
         f->pInfo->Artists   = "gigproof";
         f->pInfo->Software  = std::string("libgig ") + gig::libraryVersion();
-        f->pInfo->Comments  = "Minimal one-instrument one-sample .gig for LMMS GigPlayer verification";
+        f->pInfo->Comments  = pingPong
+            ? "Bidirectional loop fixture for LMMS GigPlayer verification"
+            : "Minimal one-instrument one-sample .gig for LMMS GigPlayer verification";
         f->pInfo->Copyright = "public domain test tone";
 
         // ---------------------------------------------------------------- sample
@@ -52,23 +63,54 @@ int main(int argc, char** argv)
         s->MIDIUnityNote         = 60;
         s->FineTune              = 0;
         s->Loops                 = 0;
-        s->pInfo->Name           = "sine440_2s";
+        s->pInfo->Name           = pingPong ? "pingpong_loop" : "sine440_2s";
 
         std::vector<int16_t> pcm(N);
-        const uint32_t fadeIn  = SR / 200;  // 5 ms
-        const uint32_t fadeOut = SR / 20;   // 50 ms
-        for (uint32_t i = 0; i < N; ++i)
+        if (pingPong)
         {
-            double env = 1.0;
-            if (i < fadeIn)                 env = double(i) / fadeIn;
-            else if (i >= N - fadeOut)      env = double(N - 1 - i) / fadeOut;
-            pcm[i] = int16_t(std::lround(
-                0.5 * 32767.0 * env * std::sin(2.0 * M_PI * FREQ * double(i) / SR)));
+            for (uint32_t i = 0; i < loopLength; ++i)
+            {
+                if (singleFrameLoop)
+                {
+                    pcm[LoopStart + i] = -20000;
+                }
+                else
+                {
+                    const int16_t ramp = static_cast<int16_t>(4000 + 300 * i);
+                    pcm[LoopStart + i] = i < loopLength / 2 || i == loopLength - 1
+                        ? static_cast<int16_t>(-ramp)
+                        : ramp;
+                }
+            }
+            if (singleFrameLoop)
+            {
+                for (uint32_t i = LoopStart + loopLength; i < N; ++i)
+                {
+                    pcm[i] = static_cast<int16_t>(3000 + (i % 100) * 100);
+                }
+            }
+            else
+            {
+                pcm[LoopStart + loopLength] = -25000;
+            }
+        }
+        else
+        {
+            const uint32_t fadeIn  = SR / 200;  // 5 ms
+            const uint32_t fadeOut = SR / 20;   // 50 ms
+            for (uint32_t i = 0; i < N; ++i)
+            {
+                double env = 1.0;
+                if (i < fadeIn)                 env = double(i) / fadeIn;
+                else if (i >= N - fadeOut)      env = double(N - 1 - i) / fadeOut;
+                pcm[i] = int16_t(std::lround(
+                    0.5 * 32767.0 * env * std::sin(2.0 * M_PI * FREQ * double(i) / SR)));
+            }
         }
 
         // ------------------------------------------------------------ instrument
         gig::Instrument* instr = f->AddInstrument();
-        instr->pInfo->Name    = "Sine440";
+        instr->pInfo->Name    = pingPong ? "PingPong" : "Sine440";
         instr->MIDIProgram    = 0;
         instr->MIDIBankCoarse = 0;
         instr->MIDIBankFine   = 0;
@@ -83,8 +125,18 @@ int main(int argc, char** argv)
         dr->pSample     = s;
         dr->UnityNote   = 60;
         dr->FineTune    = 0;
-        dr->PitchTrack  = true;
+        dr->PitchTrack  = !pingPong;
         dr->SampleLoops = 0;
+        if (pingPong)
+        {
+            dr->EG1Sustain = 1000;
+            DLS::sample_loop_t loop{};
+            loop.Size = sizeof(loop);
+            loop.LoopType = gig::loop_type_bidirectional;
+            loop.LoopStart = LoopStart;
+            loop.LoopLength = loopLength;
+            dr->AddSampleLoop(&loop);
+        }
 
         // ------------------------------------------------------------- save 1
         s->Resize(N);   // create/allocate the 'data' chunk
