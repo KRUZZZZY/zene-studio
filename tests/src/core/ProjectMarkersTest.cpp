@@ -278,6 +278,30 @@ private slots:
 		QCOMPARE(markers.find(loaded.at(0).id)->tick, 0);   // -192 clamped as add() clamps
 	}
 
+	//! A malformed tick must be reported and dropped, while a valid negative
+	//! tick keeps the existing clamp-to-zero behavior.
+	void malformedTicksAreRejectedInsteadOfBecomingZero()
+	{
+		ProjectMarkers& markers = ProjectMarkers::instance();
+		markers.clear();
+		WarningCapture capture;
+		markers.load(markersElement({QStringLiteral("1|96|Keep"), QStringLiteral("2|oops|Bad"),
+			QStringLiteral("3|999999999999999999999999999|Too big"), QStringLiteral("4|-192|Negative")}));
+
+		QCOMPARE(markers.markers().size(), 2);
+		QCOMPARE(markers.find(1)->tick, 96);
+		QCOMPARE(markers.find(4)->tick, 0);
+		QVERIFY(markers.find(2) == nullptr);
+		QVERIFY(markers.find(3) == nullptr);
+
+		int malformedWarnings = 0;
+		for (const QString& warning : capturedWarnings())
+		{
+			if (warning.contains(QStringLiteral("invalid marker tick"))) { ++malformedWarnings; }
+		}
+		QCOMPARE(malformedWarnings, 2);
+	}
+
 	//! Luna 3364: a file with more markers than ProjectMarkers can hold is
 	//! still a file that can be loaded - but the ones that do not fit are gone
 	//! from the next save, so the loader has to say so rather than let a project
