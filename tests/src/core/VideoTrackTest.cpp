@@ -32,6 +32,7 @@
 
 #include <QtTest>
 
+#include <QApplication>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
@@ -91,6 +92,14 @@ bool bluish(const QImage& image)
 }
 
 } // namespace
+
+class VideoTrackTestApplication : public QApplication
+{
+public:
+	using QApplication::QApplication;
+
+	int aboutToQuitReceivers() const { return receivers(SIGNAL(aboutToQuit())); }
+};
 
 class VideoTrackTest : public QObject
 {
@@ -452,6 +461,30 @@ private slots:
 		song->clearProject();
 	}
 
+	//! A completed background decode releases its application shutdown callback.
+	void completedBackgroundExtractionDisconnectsItsShutdownHook()
+	{
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		auto* app = static_cast<VideoTrackTestApplication*>(QCoreApplication::instance());
+		const int receiversBefore = app->aboutToQuitReceivers();
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(run(QStringLiteral("video.attach"), {{QStringLiteral("path"), m_clip}}).ok);
+		const QString out = m_dir.filePath(QStringLiteral("quit-hook.wav"));
+		const ControlResult started = run(QStringLiteral("video.extract_audio"), {{QStringLiteral("out"), out},
+			{QStringLiteral("background"), true}});
+		QVERIFY2(started.ok, qPrintable(started.errorMessage));
+		const int task = started.result.value(QStringLiteral("task")).toInt(-1);
+		QVERIFY(task > 0);
+		const auto stateOf = [task] { return taskState(task); };
+		QTRY_VERIFY_WITH_TIMEOUT(stateOf() != TaskState::Running, 20000);
+		QCOMPARE(stateOf(), TaskState::Done);
+		const int receiversAfter = app->aboutToQuitReceivers();
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		song->clearProject();
+		QCOMPARE(receiversAfter, receiversBefore);
+	}
+
 	//! A background extraction cancelled from the task area adds nothing and leaves no WAV behind.
 	void aCancelledBackgroundExtractionAddsNothing()
 	{
@@ -478,5 +511,12 @@ private slots:
 	}
 };
 
-QTEST_MAIN(VideoTrackTest)
+int main(int argc, char** argv)
+{
+	QApplication::setAttribute(Qt::AA_Use96Dpi, true);
+	VideoTrackTestApplication app(argc, argv);
+	VideoTrackTest test;
+	return QTest::qExec(&test, argc, argv);
+}
+
 #include "VideoTrackTest.moc"
