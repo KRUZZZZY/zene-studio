@@ -78,7 +78,14 @@ ControlResult followChords(const QJsonObject& args)
 	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 	if (clip == nullptr) { return error; }
 	if (Engine::getSong()->chordTrack().empty()) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the chord track is empty")); }
-	const QVector<Note*> notes = scoped(clip, args.value(QStringLiteral("scope")).toString());
+	const QString scope = args.value(QStringLiteral("scope")).toString();
+	const QVector<Note*> notes = scoped(clip, scope);
+	if (scope == QLatin1String("selection") && notes.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 has %2 notes and none is selected, so scope 'selection' would edit "
+				"nothing").arg(clipId(ref.id)).arg(clip->notes().size()));
+	}
 	const bool scale = args.value(QStringLiteral("mode")).toString() == QLatin1String("scale");
 	// Where the clip sounds: a clip trimmed from the left starts its notes earlier than its position.
 	const tick_t start = clip->startPosition().getTicks() + clip->startTimeOffset().getTicks();
