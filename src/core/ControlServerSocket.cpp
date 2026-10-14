@@ -457,6 +457,16 @@ bool ControlServer::adoptListener(int fd, const QString& path, const QByteArray&
 
 void ControlServer::close()
 {
+	// CODE-8 (re-listen leak): close() is the STOP-LISTENING path, so the hook
+	// that closes THIS listener's socket must go back out here, not only when the
+	// owner dies. If it stayed registered, a later listen() would overwrite
+	// m_shutdownHookId and orphan the old hook - still capturing `this` - and the
+	// destructor (which removes only the newest id) would leave that orphan behind
+	// to call close() on freed memory on the forced-exit shutdown path. Hooks
+	// outlive registry instances, so removal is static and never calls through
+	// m_registry, which may point at a destroyed instance. Id 0 is a safe no-op.
+	ControlRegistry::removeShutdownHook(m_shutdownHookId);
+	m_shutdownHookId = 0;
 #if !defined(Q_OS_UNIX)
 	// Windows: stop the transport - acceptor, then every client thread.
 	closeWin32();
