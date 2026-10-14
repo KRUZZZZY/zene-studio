@@ -2174,3 +2174,5 @@ include/QuadratureLfo.h	new-p9-381: clamp retained LFO frequency to the updated 
 include/RackZones.h	2026-10-11 cluster new-p9-376: describe the matching-chain mask used by instrument layers
 src/core/RackZones.cpp	2026-10-11 cluster new-p9-376: accumulate matching chain bits across the full zone list
 src/core/InstrumentLayers.cpp	2026-10-11 cluster new-p9-376: route note paths from matching chain bits beyond zone index 63
+include/RingBuffer.h	cluster new-p9-389: make documented frame offsets signed in movePosition()/read() and add signed millisecond-offset conversion; regression RecordRingBufferTest::RingBuffer_NegativeOffsetsMoveBackward.
+src/core/RingBuffer.cpp	cluster new-p9-389: normalize signed frame offsets before ring wrap and route negative millisecond movement/reads through signed conversion; regression RecordRingBufferTest::RingBuffer_NegativeOffsetsMoveBackward.
