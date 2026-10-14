@@ -435,6 +435,32 @@ private slots:
 		}
 		run(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("to"), ch(4)}});
 	}
+
+	void movingAChannelRefreshesRouteModelNames()
+	{
+		Mixer* mixer = Engine::mixer();
+		MixerRoute* outgoing = mixer->createChannelSend(1, 3, 0.5f);
+		MixerRoute* incoming = mixer->createChannelSend(4, 1, 0.5f);
+		MixerSidechainRoute* sidechain = mixer->createSidechainSend(1, 2, 0.5f);
+		QVERIFY(outgoing != nullptr);
+		QVERIFY(incoming != nullptr);
+		QVERIFY(sidechain != nullptr);
+
+		mixer->moveChannelLeft(2);
+
+		QCOMPARE(outgoing->senderIndex(), static_cast<mix_ch_t>(2));
+		QVERIFY(outgoing->amount()->displayName().contains(QStringLiteral("channel 2 to channel 3")));
+		QVERIFY(outgoing->pan()->displayName().contains(QStringLiteral("channel 2 to channel 3")));
+		QCOMPARE(incoming->receiverIndex(), static_cast<mix_ch_t>(2));
+		QVERIFY(incoming->amount()->displayName().contains(QStringLiteral("channel 4 to channel 2")));
+		QVERIFY(incoming->pan()->displayName().contains(QStringLiteral("channel 4 to channel 2")));
+		QVERIFY(sidechain->amount()->displayName().contains(QStringLiteral("channel 2 to channel 1")));
+
+		mixer->moveChannelLeft(2);
+		mixer->deleteChannelSend(outgoing);
+		mixer->deleteChannelSend(incoming);
+		mixer->deleteSidechainSend(sidechain);
+	}
 };
 
 QTEST_MAIN(MixingRoutingTest)
