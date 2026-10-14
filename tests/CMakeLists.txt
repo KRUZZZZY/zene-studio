@@ -2797,6 +2797,39 @@ target_compile_definitions(SlicerTZoomTest PRIVATE
 )
 set_tests_properties(SlicerTZoomTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# Cluster new-p11-82: the Delay plugin's delay-time parameter is read by its
+# displayed name (device cards and plugin.param_get), and its value is in
+# seconds - the effect multiplies it by the sample rate. The label must name
+# seconds. The plugin sources are compiled into this test binary (the WasmSandboxTest
+# pattern) so controlEffectParameters - the same enumeration the device card uses -
+# can read the model list without loading a .so.
+add_executable(DelayControlsTest
+	src/plugins/DelayControlsTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayEffect.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayControlsDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/Lfo.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/StereoDelay.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Eq/EqFader.h
+)
+add_test(NAME DelayControlsTest COMMAND DelayControlsTest)
+set_tests_properties(DelayControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(DelayControlsTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Delay
+	${CMAKE_BINARY_DIR}/plugins/Delay
+)
+target_static_libraries(DelayControlsTest PRIVATE lmmsobjs)
+target_link_libraries(DelayControlsTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(DelayControlsTest PRIVATE cxx_std_20)
+target_compile_definitions(DelayControlsTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=delay
+)
+
 if(WANT_WASM)
 	# Gate tests for the WASM DSP sandbox. Kept out of LMMS_TESTS so the
 	# pre-existing suite is byte-for-byte unchanged when WANT_WASM=OFF.
