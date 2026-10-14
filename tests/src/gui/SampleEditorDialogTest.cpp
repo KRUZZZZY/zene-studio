@@ -29,6 +29,7 @@
 #include <QtTest>
 
 #include <QPushButton>
+#include <QSignalSpy>
 
 #include <cmath>
 #include <vector>
@@ -219,6 +220,31 @@ private slots:
 		{
 			if (i != clickedSample) { QCOMPARE(graph.model()->samples()[i], 0.0f); }
 		}
+	}
+
+	void graphModelRejectsLengthsBelowTwoSamples()
+	{
+		graphModel model(-1.0f, 1.0f, 4, nullptr);
+		QSignalSpy lengthChanges(&model, &graphModel::lengthChanged);
+		QVERIFY(lengthChanges.isValid());
+
+		for (const int invalidLength : {-1, 0, 1})
+		{
+			model.setLength(invalidLength);
+			QCOMPARE(model.length(), 4);
+		}
+		QCOMPARE(lengthChanges.count(), 0);
+
+		model.setLength(2);
+		QCOMPARE(model.length(), 2);
+		QCOMPARE(lengthChanges.count(), 1);
+		model.smooth();
+		model.normalize();
+
+		graphModel oneSampleModel(-1.0f, 1.0f, 1, nullptr);
+		QCOMPARE(oneSampleModel.length(), 2);
+		oneSampleModel.smooth();
+		oneSampleModel.normalize();
 	}
 
 	void theFieldsShowTheSelection()

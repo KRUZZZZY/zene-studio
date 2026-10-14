@@ -2093,3 +2093,5 @@ plugins/Xpressive/ExprSynth.cpp	cluster new-p9-143: return zero for random-vecto
 plugins/Xpressive/ExprSynth.h	new ExprFront instances start with null m_data, so a caught ExprFrontData allocation failure leaves destruction safe; covered by ExprSynth.
 src/gui/widgets/Graph.cpp	new-p9-160: refuse Graph edits at heights with no usable plot range, preventing division by zero in click and line-draw coordinate conversion
 src/gui/widgets/Graph.cpp	Initialize cursor history and make a first Shift-click edit only its clicked sample before line drawing can continue.
+src/gui/widgets/Graph.cpp	cluster new-p9-161: clamp constructor lengths to the two-sample minimum and reject shorter setLength requests, because smooth requires two samples and other operations divide or index by length.
+tests/src/gui/SampleEditorDialogTest.cpp	cluster new-p9-161: regression for graphModel refusing lengths below two and remaining safe for smoothing and normalization at the minimum.
