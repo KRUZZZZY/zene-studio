@@ -26,6 +26,7 @@
 #ifndef LMMS_NOTE_PLAY_HANDLE_H
 #define LMMS_NOTE_PLAY_HANDLE_H
 
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <memory>
@@ -365,6 +366,7 @@ private:
 	volatile bool m_released;				// indicates whether note is released
 	bool m_releaseStarted;
 	bool m_hasMidiNote;
+	std::atomic_bool m_baseInstrumentNoteAccepted{true};
 	bool m_hasParent;						// indicates whether note has parent
 	NotePlayHandle * m_parent;			// parent note
 	bool m_hadChildren;

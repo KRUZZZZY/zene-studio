@@ -235,10 +235,11 @@ TimePos InstrumentTrack::loopedPosition(const MidiClip* clip, const TimePos& pos
 // 0.5.0 MX-112 (layers), MX-114 (MIDI parts, output buses), MX-120 (per-voice modulation)
 // ---------------------------------------------------------------------------
 
-void InstrumentTrack::sendNoteOn(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset)
+void InstrumentTrack::sendNoteOn(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset,
+	std::atomic_bool* baseInstrumentAccepted)
 {
 	// MX-112: a layer rack whose zones leave the track's own instrument out of this note.
-	if (!m_layers.baseTakesNoteOn(event.key(), event.velocity())) { return; }
+	if (!m_layers.baseTakesNoteOn(event.key(), event.velocity(), baseInstrumentAccepted)) { return; }
 	m_midiNotesMutex.lock();
 	m_piano.setKeyState(event.key(), true);  // event.key() = original key
 	if (key >= 0 && key < NumKeys)
@@ -258,9 +259,10 @@ void InstrumentTrack::sendNoteOn(const MidiEvent& event, int key, int fallbackCh
 	emit newNote();
 }
 
-void InstrumentTrack::sendNoteOff(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset)
+void InstrumentTrack::sendNoteOff(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset,
+	std::atomic_bool* baseInstrumentAccepted)
 {
-	if (!m_layers.baseTakesNoteOff(event.key())) { return; }  // MX-112: its note-on was not sent either
+	if (!m_layers.baseTakesNoteOff(event.key(), baseInstrumentAccepted)) { return; }  // MX-112: its note-on was not sent either
 	m_midiNotesMutex.lock();
 	m_piano.setKeyState(event.key(), false);  // event.key() = original key
 	if (key >= 0 && key < NumKeys && m_runningMidiNotes[key] > 0 && --m_runningMidiNotes[key] == 0)

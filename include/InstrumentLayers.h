@@ -146,9 +146,9 @@ public:
 
 	//! Whether the track's own instrument plays a note of @a key at note volume @a volume.
 	auto basePlays(int key, int volume) const -> bool;
-	//! processOutEvent's note-on gate for the track's instrument (MIDI velocity); remembered for the note-off.
-	auto baseTakesNoteOn(int key, int velocity) -> bool;
-	auto baseTakesNoteOff(int key) -> bool;
+	//! processOutEvent's note-on gate; @a noteAccepted carries a clip handle's decision to its own note-off.
+	auto baseTakesNoteOn(int key, int velocity, std::atomic_bool* noteAccepted = nullptr) -> bool;
+	auto baseTakesNoteOff(int key, const std::atomic_bool* noteAccepted = nullptr) -> bool;
 	//! Render thread: starts @a note (the track's own, decorated) on every layer it falls into, in
 	//! @a patternTrack's pattern when it plays in one.
 	void playNote(const NotePlayHandle& note, f_cnt_t offset, f_cnt_t frames, Track* patternTrack);
@@ -187,9 +187,9 @@ private:
 	std::array<Mix, MaxLayers + 1> m_mix{};
 	//! Per key: the layers a live note-on was passed to (bit k = layer k), for its note-off.
 	std::array<std::atomic<std::uint32_t>, NumKeys> m_liveLayers{};
-	//! Per key: whether the track's own instrument declined the note-on (processOutEvent), so its note-off is
-	//! declined too.
-	std::array<std::atomic<bool>, NumKeys> m_baseSkipped{};
+	//! Per key: accepted and skipped base-instrument note-ons, so overlapping notes keep their note-offs paired.
+	std::array<std::atomic<std::uint32_t>, NumKeys> m_baseAccepted{};
+	std::array<std::atomic<std::uint32_t>, NumKeys> m_baseSkipped{};
 };
 
 } // namespace lmms

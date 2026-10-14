@@ -69,6 +69,16 @@ public:
 
 bool validKey(int key) { return key >= 0 && key < NumKeys; }
 
+bool consumePending(std::atomic<std::uint32_t>& count)
+{
+	auto pending = count.load(std::memory_order_relaxed);
+	while (pending != 0)
+	{
+		if (count.compare_exchange_weak(pending, pending - 1, std::memory_order_relaxed)) { return true; }
+	}
+	return false;
+}
+
 //! A MIDI velocity in the zones' velocity space (velocity 64 is note volume 100).
 int volumeOfVelocity(int velocity) { return velocity * DefaultVolume / MidiDefaultVelocity; }
 
@@ -256,7 +266,8 @@ void InstrumentLayers::clear()
 	m_zones.clear();
 	m_mix.fill(Mix{});  // not published: the owner may be going away (loadSettings publishes)
 	for (auto& live : m_liveLayers) { live.store(0, std::memory_order_relaxed); }
-	for (auto& skipped : m_baseSkipped) { skipped.store(false, std::memory_order_relaxed); }
+	for (auto& accepted : m_baseAccepted) { accepted.store(0, std::memory_order_relaxed); }
+	for (auto& skipped : m_baseSkipped) { skipped.store(0, std::memory_order_relaxed); }
 }
 
 auto InstrumentLayers::zonesWithout(int index) const -> std::vector<RackZone>
@@ -392,17 +403,32 @@ auto InstrumentLayers::basePlays(int key, int volume) const -> bool
 	return !zoned || (layerMask(key, volume) & 1u) != 0;
 }
 
-auto InstrumentLayers::baseTakesNoteOn(int key, int velocity) -> bool
+auto InstrumentLayers::baseTakesNoteOn(int key, int velocity, std::atomic_bool* noteAccepted) -> bool
 {
-	if (!validKey(key)) { return true; }
+	if (!validKey(key))
+	{
+		if (noteAccepted != nullptr) { noteAccepted->store(true, std::memory_order_release); }
+		return true;
+	}
 	const bool plays = basePlays(key, volumeOfVelocity(velocity));
-	m_baseSkipped[static_cast<std::size_t>(key)].store(!plays, std::memory_order_relaxed);
+	if (noteAccepted != nullptr)
+	{
+		noteAccepted->store(plays, std::memory_order_release);
+		return plays;
+	}
+	auto& pending = plays ? m_baseAccepted[static_cast<std::size_t>(key)] : m_baseSkipped[static_cast<std::size_t>(key)];
+	pending.fetch_add(1, std::memory_order_relaxed);
 	return plays;
 }
 
-auto InstrumentLayers::baseTakesNoteOff(int key) -> bool
+auto InstrumentLayers::baseTakesNoteOff(int key, const std::atomic_bool* noteAccepted) -> bool
 {
-	return !validKey(key) || !m_baseSkipped[static_cast<std::size_t>(key)].exchange(false, std::memory_order_relaxed);
+	if (!validKey(key)) { return true; }
+	if (noteAccepted != nullptr) { return noteAccepted->load(std::memory_order_acquire); }
+	const auto at = static_cast<std::size_t>(key);
+	// Direct MIDI note-offs identify only the key: release accepted notes first, then suppress skipped-note offs.
+	if (consumePending(m_baseAccepted[at])) { return true; }
+	return !consumePending(m_baseSkipped[at]);
 }
 
 void InstrumentLayers::playNote(const NotePlayHandle& note, f_cnt_t offset, f_cnt_t frames, Track* patternTrack)
