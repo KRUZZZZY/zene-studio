@@ -227,9 +227,10 @@ inline sample_t EnvelopeAndLfoParameters::lfoShapeSample( f_cnt_t _frame_offset 
 			shape_sample = Oscillator::userWaveSample(m_userWave.get(), phase);
 			break;
 		case LfoShape::RandomWave:
-			if( frame == 0 )
+			if( frame == 0 || !m_randomInitialized )
 			{
 				m_random = Oscillator::noiseSample( 0.0f );
+				m_randomInitialized = true;
 			}
 			shape_sample = m_random;
 			break;

@@ -198,7 +198,8 @@ private:
 	float m_lfoAmount;
 	bool m_lfoAmountIsZero;
 	sample_t * m_lfoShapeData;
-	sample_t m_random;
+	sample_t m_random {};
+	bool m_randomInitialized { false };
 	bool m_bad_lfoShapeData;
 	std::shared_ptr<const SampleBuffer> m_userWave = SampleBuffer::emptyBuffer();
 

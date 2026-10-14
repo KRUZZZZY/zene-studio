@@ -39,9 +39,15 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <limits>
+#include <memory>
+#include <new>
 
 #include "AllocationProbe.h"
+#include "AudioEngine.h"
 #include "ControlRegistry.h"
+#include "EnvelopeAndLfoParameters.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "ModulationLayer.h"
@@ -469,6 +475,39 @@ private slots:
 		QCOMPARE(ModulationLayer::outputAt(back, 0.0f), ModulationLayer::outputAt(authored, 0.0f));
 	}
 
+
+	//! A shape change during playback must render a defined random value even
+	//! when the current block does not cross phase zero.
+	void randomLfoIsDefinedWhenSelectedAtANonzeroPhase()
+	{
+		struct DestroyLfo
+		{
+			void operator()(EnvelopeAndLfoParameters* lfo) const
+			{
+				lfo->~EnvelopeAndLfoParameters();
+			}
+		};
+		alignas(EnvelopeAndLfoParameters) unsigned char storage[sizeof(EnvelopeAndLfoParameters)];
+		std::memset(storage, 0xFF, sizeof(storage));
+		std::unique_ptr<EnvelopeAndLfoParameters, DestroyLfo> lfo(
+			new (storage) EnvelopeAndLfoParameters(0.0f, nullptr));
+		lfo->getLfoAmountModel().setValue(1.0f);
+		QVERIFY(lfo->getLfoOscillationFrames() > 2 * Engine::audioEngine()->framesPerPeriod());
+		EnvelopeAndLfoParameters::instances()->trigger();
+
+		QDomDocument settings;
+		QDomElement element = settings.createElement(QStringLiteral("el"));
+		element.setAttribute(QStringLiteral("lshp"),
+			static_cast<int>(EnvelopeAndLfoParameters::LfoShape::RandomWave));
+		element.setAttribute(QStringLiteral("lamt"), 1.0);
+		lfo->loadSettings(element);
+		QCOMPARE(lfo->getLfoWaveModel().value(),
+			static_cast<int>(EnvelopeAndLfoParameters::LfoShape::RandomWave));
+
+		float output = 0.0f;
+		lfo->fillLevel(&output, 1, std::numeric_limits<f_cnt_t>::max(), 1);
+		QVERIFY2(std::isfinite(output), "random LFO rendered an uninitialized sample");
+	}
 };
 
 QTEST_GUILESS_MAIN(ModulationLayerTest)
