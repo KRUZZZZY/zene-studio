@@ -27,6 +27,9 @@
 #ifndef ANALYZER_H
 #define ANALYZER_H
 
+#ifdef SA_DEBUG
+	#include <chrono>
+#endif
 
 #include "AudioPlugin.h"
 #include "DataprocLauncher.h"
@@ -60,6 +63,14 @@ public:
 private:
 	ProcessStatus processImpl(InterleavedBufferView<float, 2> in) override;
 
+	#ifdef SA_DEBUG
+	static bool isStatsIntervalElapsed(std::chrono::steady_clock::time_point now,
+		std::chrono::steady_clock::time_point last)
+	{
+		return now - last > std::chrono::seconds{5};
+	}
+	#endif
+
 	SaProcessor m_processor;
 	SaControls m_controls;
 
@@ -75,7 +86,7 @@ private:
 	LocklessRingBuffer<SampleFrame> m_inputBuffer;
 
 	#ifdef SA_DEBUG
-		int m_last_dump_time;
+		std::chrono::steady_clock::time_point m_last_dump_time;
 		int m_dump_count;
 		float m_sum_execution;
 		float m_max_execution;

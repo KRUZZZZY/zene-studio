@@ -58,8 +58,10 @@
 #include <cstring>
 #include <cmath>
 #include <limits>
+#include <chrono>
 #include <memory>
 #include <new>
+#include <type_traits>
 #include <vector>
 
 #include <fftw3.h>
@@ -117,6 +119,18 @@
 #define exprtk_disable_rtl_vecops
 #include "../../../plugins/Xpressive/ExprSynth.cpp"
 
+// Inspect Analyzer's SA_DEBUG-only timer declaration without linking the
+// Spectrum Analyzer plugin into this generic AudioPlugin test executable.
+#include "../../../plugins/SpectrumAnalyzer/DataprocLauncher.h"
+#include "LocklessRingBuffer.h"
+#include "../../../plugins/SpectrumAnalyzer/SaControls.h"
+#include "../../../plugins/SpectrumAnalyzer/SaProcessor.h"
+#define SA_DEBUG
+#define private public
+#include "../../../plugins/SpectrumAnalyzer/Analyzer.h"
+#undef private
+#undef SA_DEBUG
+
 using namespace lmms;
 
 namespace
@@ -162,6 +176,18 @@ auto makeSingleSamplePatch() -> QByteArray
 	patch[PatchHeaderSize + PatchSampleHeaderSize + 2] = 64;
 	patch[PatchHeaderSize + PatchSampleHeaderSize + 3] = -64;
 	return patch;
+}
+
+template<typename AnalyzerType>
+auto analyzerDebugTimerReportsAfter(std::chrono::seconds elapsed) -> bool
+{
+	using Clock = std::chrono::steady_clock;
+	if constexpr (requires(Clock::time_point now) { AnalyzerType::isStatsIntervalElapsed(now, now); })
+	{
+		const auto last = Clock::time_point{};
+		return AnalyzerType::isStatsIntervalElapsed(last + elapsed, last);
+	}
+	return false;
 }
 
 //! 0 = Continue, 1 = ContinueIfNotQuiet, 2 = Sleep
@@ -222,6 +248,7 @@ private slots:
 	void emptyNonInterpolatedCyclicVectorIsRejected();
 	void emptyInterpolatedCyclicVectorIsRejected();
 	void gateRecoversAfterNanInput();
+	void analyzerDebugTimerUsesMonotonicTimePoint();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -732,6 +759,13 @@ void AudioPluginTest::gateRecoversAfterNanInput()
 	QVERIFY2(data.back()[0] > 0.4f && data.back()[1] > 0.4f,
 		qPrintable(QStringLiteral("the Gate did not reopen after NaN: L=%1 R=%2")
 			.arg(data.back()[0]).arg(data.back()[1])));
+}
+
+void AudioPluginTest::analyzerDebugTimerUsesMonotonicTimePoint()
+{
+	QVERIFY(!analyzerDebugTimerReportsAfter<Analyzer>(std::chrono::seconds{4}));
+	QVERIFY(analyzerDebugTimerReportsAfter<Analyzer>(std::chrono::seconds{6}));
+	QVERIFY((std::is_same_v<decltype(Analyzer::m_last_dump_time), std::chrono::steady_clock::time_point>));
 }
 
 QTEST_MAIN(AudioPluginTest)

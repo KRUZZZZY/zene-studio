@@ -715,7 +715,8 @@ plugins/ReverbSC/ReverbSC.cpp	rename layer 1: built-in plugin logo resource key 
 plugins/Sfxr/Sfxr.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo; 0.5.0 r6: per-period allocation replaced by a stack block (identical output)
 plugins/SlewDistortion/SlewDistortion.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/SlewDistortion/SlewDistortionControlDialog.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
-plugins/SpectrumAnalyzer/Analyzer.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/SpectrumAnalyzer/Analyzer.cpp	fix SA_DEBUG timer to compare steady-clock durations and measure execution time in milliseconds; logo resource key is zene-plugin-logo
+plugins/SpectrumAnalyzer/Analyzer.h	fix SA_DEBUG timestamp storage to use a steady-clock time point
 plugins/StereoEnhancer/StereoEnhancer.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/StereoMatrix/StereoMatrix.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Vectorscope/Vectorscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
