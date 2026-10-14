@@ -327,7 +327,7 @@ int pasteAt(const QVector<Track*>& tracks, tick_t position)
 		// A range-pasted clip is an independent ordinary clip, not another
 		// member of the source take group.
 		clip->setTakeGroupId(0);
-		clip->setLaneIndex(0);
+		control::assignTakeLane(clip, 0);  // the lane tag's one writer (ControlCommandsComp.cpp)
 		clip->movePosition(TimePos(position + copied.offset));
 		++pasted;
 	}

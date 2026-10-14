@@ -351,8 +351,10 @@ namespace control
 {
 
 /*! The take-lane tag's one writer outside the loader (WriteRefusalGateTest names THIS file
- *  as its owner): comp.assign above, and clip.consolidate's replacement clip, which goes on
- *  the base lane. The caller checks the lane exists and takes the checkpoint. */
+ *  as its owner): comp.assign above, clip.consolidate's replacement clip, which goes on
+ *  the base lane, and pasted clips (range.paste and the arranger's paste), which leave their
+ *  take group for the base lane.
+ *  The caller checks the lane exists and takes the checkpoint. */
 void assignTakeLane(Clip* clip, int lane)
 {
 	clip->setLaneIndex(lane);

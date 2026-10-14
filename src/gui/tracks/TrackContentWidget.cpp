@@ -32,6 +32,7 @@
 #include "ArrangerFileDrop.h"
 #include "AutomationClip.h"
 #include "Clipboard.h"
+#include "ControlEdit.h"
 #include "DataFile.h"
 #include "DeprecationHelper.h"
 #include "EditLocks.h"
@@ -531,7 +532,7 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, 
 		// copied group/lane would leave it with no active-lane mirror when
 		// pasted onto another track (or make it share a take choice by accident).
 		clip->setTakeGroupId(0);
-		clip->setLaneIndex(0);
+		control::assignTakeLane(clip, 0);  // the lane tag's one writer (ControlCommandsComp.cpp)
 		clip->movePosition(pos); // Because we restored the state, we need to move the Clip again.
 		if( wasSelection )
 		{
