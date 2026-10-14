@@ -38,6 +38,8 @@
 #include <thread>
 #include <memory>
 #include <vector>
+#include <utility>
+#include <vector>
 
 #include <QDir>
 #include <QDomDocument>
@@ -202,6 +204,20 @@ std::shared_ptr<Keymap> copyOfKeymap(const std::shared_ptr<const Keymap>& source
 	return std::make_shared<Keymap>(source->getDescription(), source->getMap(),
 		source->getFirstKey(), source->getLastKey(), source->getMiddleKey(),
 		source->getBaseKey(), source->getBaseFreq());
+}
+
+void installNegativeDegreeFixture(Song* song, const std::vector<int>& degrees)
+{
+	std::vector<Interval> intervals;
+	intervals.reserve(13);
+	for (int degree = 0; degree <= 12; ++degree)
+	{
+		intervals.emplace_back(degree * 100.0f);
+	}
+	song->setScale(0, std::make_shared<Scale>(QStringLiteral("12-tone equal temperament"),
+		std::move(intervals)));
+	song->setKeymap(0, std::make_shared<Keymap>(QStringLiteral("negative degree fixture"), degrees,
+		0, 127, 69, 69, 440.0f));
 }
 
 struct RefusalCase
@@ -388,6 +404,42 @@ private slots:
 				"pre-#712 branch says %2").arg(seen).arg(expected)));
 
 		track->processInEvent(MidiEvent(MidiNoteOff, 1, 69));
+	}
+
+	void negativeNoteDegreeUsesFloorOctaveDivision()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		installNegativeDegreeFixture(song, {0, -2});
+		float actual = 0.0f;
+		{
+			Microtuner microtuner;
+			actual = microtuner.keyToFreq(70, 69);
+		}
+		song->clearProject();
+
+		const double expected = 440.0 * std::exp2(-2.0 / 12.0);
+		QVERIFY2(closeTo(actual, expected),
+			qPrintable(QStringLiteral("degree -2 should be two scale steps below the base note: got %1 Hz, expected %2 Hz")
+				.arg(actual).arg(expected)));
+	}
+
+	void negativeBaseDegreeUsesFloorOctaveDivision()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		installNegativeDegreeFixture(song, {-2, 0});
+		float actual = 0.0f;
+		{
+			Microtuner microtuner;
+			actual = microtuner.keyToFreq(70, 69);
+		}
+		song->clearProject();
+
+		const double expected = 440.0 * std::exp2(2.0 / 12.0);
+		QVERIFY2(closeTo(actual, expected),
+			qPrintable(QStringLiteral("base degree -2 should shift the reference up to its equivalent octave: got %1 Hz, expected %2 Hz")
+				.arg(actual).arg(expected)));
 	}
 
 	//! THE PROOF: transport playing, two sounding notes, one .scl, both tracks

@@ -84,7 +84,9 @@ float Microtuner::keyToFreq(int key, int userBaseNote) const
 	if (octaveDegree == 0) {								// octave interval is 1/1, i.e. constant base frequency
 		return keymap->getBaseFreq();						// → return the baseFreq directly
 	}
-	const int scaleOctave = keymapDegree / octaveDegree;
+	// Bias negative values by one so C++ truncation toward zero yields floor division.
+	const int scaleOctave = keymapDegree >= 0 ? keymapDegree / octaveDegree
+		: (keymapDegree + 1) / octaveDegree - 1;
 
 	// which interval should be used according to the scale and keymap together
 	const int degree_rem = keymapDegree % octaveDegree;
@@ -95,7 +97,8 @@ float Microtuner::keyToFreq(int key, int userBaseNote) const
 	const int baseKeymapDegree = keymap->getDegree(baseNote);
 	if (baseKeymapDegree == -1) {return 0;}					// base key is not mapped, umm...
 	const int baseKeymapOctave = keymap->getOctave(baseNote);
-	const int baseScaleOctave = baseKeymapDegree / octaveDegree;
+	const int baseScaleOctave = baseKeymapDegree >= 0 ? baseKeymapDegree / octaveDegree
+		: (baseKeymapDegree + 1) / octaveDegree - 1;
 
 	const int baseDegree_rem = baseKeymapDegree % octaveDegree;
 	const int baseScaleDegree = baseDegree_rem >= 0 ? baseDegree_rem : baseDegree_rem + octaveDegree;
