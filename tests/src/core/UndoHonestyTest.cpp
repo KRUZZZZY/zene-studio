@@ -30,7 +30,12 @@
 
 #include <QtTest>
 
+#include <cmath>
+#include <cstring>
+#include <new>
+
 #include <QFile>
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -53,6 +58,7 @@
 #include "MidiController.h"
 #include "Mixer.h"
 #include "Note.h"
+#include "Oscillator.h"
 #include "ProjectJournal.h"
 #include "Rack.h"
 #include "ReversibilityTestSupport.h"
@@ -433,6 +439,24 @@ private slots:
 		QCOMPARE(restored->midiPort().inputController(), 21);
 		QVERIFY2(restored->softTakeoverEnabled(), "undoing the remap must restore the flag, not only the address");
 		QCOMPARE(restored->softTakeoverTarget(), 0.75f);
+	}
+
+	//! The first WhiteNoise buffer has a fresh, finite sample instead of reading the uninitialized hold.
+	void whiteNoiseLfoStartsWithASampledValue()
+	{
+		alignas(LfoController) unsigned char storage[sizeof(LfoController)];
+		std::memset(storage, 0xFF, sizeof(storage));
+		auto* lfo = new (storage) LfoController(nullptr);
+		QDomDocument document;
+		QDomElement settings = document.createElement(QStringLiteral("lfocontroller"));
+		settings.setAttribute(QStringLiteral("type"), static_cast<int>(Controller::ControllerType::Lfo));
+		settings.setAttribute(QStringLiteral("wave"), static_cast<int>(Oscillator::WaveShape::WhiteNoise));
+		lfo->loadSettings(settings);
+		Controller::triggerFrameCounter();
+		const float firstValue = lfo->valueBuffer()->values()[0];
+		lfo->~LfoController();
+		QVERIFY(std::isfinite(firstValue));
+		QVERIFY(firstValue != 0.5f);
 	}
 
 	//! note.pitch_curve_set over several notes: the before-state names each note's curve, not only the first one's.
