@@ -37,6 +37,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include "ControlRegistry.h"
@@ -156,6 +157,19 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 		run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("pan_mode"), QStringLiteral("balance")},
 			{QStringLiteral("width"), 1.0}, {QStringLiteral("pan"), 0.0}, {QStringLiteral("pan_right"), 0.0}});
+	}
+
+	void rejectsNonFiniteStripSettings()
+	{
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		QCOMPARE(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("trim_db"), nan}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("pan"), nan}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("pan_right"), nan}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("mixer.set_strip"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("width"), nan}}).errorKind,
+			ControlErrorKind::InvalidArgs);
 	}
 
 	void theMetersAndTheClipLight()
