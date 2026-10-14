@@ -185,6 +185,34 @@ private slots:
 		McuSurface::disconnect();
 		qDeleteAll(made);
 	}
+
+	void invalidFaderTouchDoesNotCorruptTheBank()
+	{
+		McuSurface* surface = McuSurface::connect(QString(), QString());
+		surface->apply({mcu::Kind::FaderTouch, -1, 0, true});
+		const int bank = surface->bank();
+		McuSurface::disconnect();
+		QCOMPARE(bank, 0);
+	}
+
+	void invalidFaderTouchDoesNotCorruptFeedbackState()
+	{
+		Song* song = Engine::getSong();
+		Track* track = Track::create(Track::Type::Instrument, song);
+		McuSurface* surface = McuSurface::connect(QString(), QString());
+		FloatModel* volume = trackVolumeModel(track);
+		volume->setValue(volume->maxValue());
+		QTRY_VERIFY(surface->state().value(QStringLiteral("events_out")).toInt() > 0);
+		QTest::qWait(80);
+		const int sent = surface->state().value(QStringLiteral("events_out")).toInt();
+
+		surface->apply({mcu::Kind::FaderTouch, 12, 0, true});
+		QTest::qWait(80);
+		const int afterInvalidInput = surface->state().value(QStringLiteral("events_out")).toInt();
+		McuSurface::disconnect();
+		qDeleteAll(QList<Track*>{track});
+		QCOMPARE(afterInvalidInput, sent);
+	}
 };
 
 QTEST_MAIN(McuSurfaceTest)

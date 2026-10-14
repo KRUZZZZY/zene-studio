@@ -194,7 +194,12 @@ bool McuSurface::applyMix(const mcu::Input& input)
 			volume->setValue(volume->minValue() + mcu::faderLevel(input.value) * (volume->maxValue() - volume->minValue()));
 		}
 		return true;
-	case mcu::Kind::FaderTouch: m_touched[static_cast<std::size_t>(input.strip)] = input.pressed; return true;
+	case mcu::Kind::FaderTouch:
+		if (input.strip >= 0 && input.strip <= mcu::MasterStrip)
+		{
+			m_touched[static_cast<std::size_t>(input.strip)] = input.pressed;
+		}
+		return true;
 	case mcu::Kind::VPot:
 		if (FloatModel* pan = trackPanningModel(track)) { pan->setValue(pan->value() + input.value * PanStep); }
 		return true;
