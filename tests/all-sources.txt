@@ -2882,6 +2882,7 @@ tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/EqFilterTest.cpp
 tests/src/plugins/ExprSynthAllocationTest.cpp
 tests/src/plugins/DelayControlsTest.cpp
+tests/src/plugins/DelayLfoAutomationTest.cpp
 tests/src/plugins/FakeRemotePluginClient.cpp
 tests/src/plugins/MissingDevicesNoEntryModule.cpp
 tests/src/plugins/MpeTestConsumer.cpp

@@ -2830,6 +2830,52 @@ target_compile_definitions(DelayControlsTest PRIVATE
 	PLUGIN_NAME=delay
 )
 
+# Regression test for cluster new-p11-80 (automated LFO amount treated as
+# samples vs seconds). The Delay plugin sources are compiled into the test
+# binary - the WasmSandboxTest pattern - so the static and automated LFO-amount
+# paths of DelayEffect::processImpl both run in-process without loading a
+# plugin module, and the fix is what the comparison measures.
+add_executable(DelayLfoAutomationTest
+	src/plugins/DelayLfoAutomationTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayEffect.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayEffect.h
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayControls.h
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayControlsDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayControlsDialog.h
+	${CMAKE_SOURCE_DIR}/plugins/Delay/Lfo.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/Lfo.h
+	${CMAKE_SOURCE_DIR}/plugins/Delay/StereoDelay.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/StereoDelay.h
+	# EqFader is header-only; AUTOMOC needs the header to emit its metaobject,
+	# which DelayControlsDialog.cpp references (same as partc_ref_delay).
+	${CMAKE_SOURCE_DIR}/plugins/Eq/EqFader.h
+)
+add_test(NAME DelayLfoAutomationTest COMMAND DelayLfoAutomationTest)
+# Engine construction needs a Qt platform plugin on a headless machine.
+set_tests_properties(DelayLfoAutomationTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(DelayLfoAutomationTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Delay
+	${CMAKE_SOURCE_DIR}/plugins/Eq
+	${CMAKE_BINARY_DIR}/plugins/Delay
+)
+target_static_libraries(DelayLfoAutomationTest PRIVATE lmmsobjs)
+target_link_libraries(DelayLfoAutomationTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(DelayLfoAutomationTest PRIVATE cxx_std_20)
+target_compile_definitions(DelayLfoAutomationTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=delay
+	# Compile-in, not a module: keep the generated export macros empty so the
+	# sources link into the test binary on every platform.
+	PLUGIN_STATIC_DEFINE
+)
+add_dependencies(DelayLfoAutomationTest delay)
+
 if(WANT_WASM)
 	# Gate tests for the WASM DSP sandbox. Kept out of LMMS_TESTS so the
 	# pre-existing suite is byte-for-byte unchanged when WANT_WASM=OFF.
