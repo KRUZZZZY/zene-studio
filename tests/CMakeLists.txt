@@ -1163,6 +1163,11 @@ set(LMMS_TESTS
 	src/tracks/SampleClipWindowTest.cpp
 )
 
+# Ogg is optional; this regression compiles against the concrete Ogg writer.
+if(LMMS_HAVE_OGGVORBIS)
+	list(APPEND LMMS_TESTS src/core/AudioFileOggInitTest.cpp)
+endif()
+
 # Offline stem separation tests (opt-in, see doc/STEM-SPLIT.md).
 IF(LMMS_HAVE_STEM_SPLIT)
 	LIST(APPEND LMMS_TESTS
@@ -2273,6 +2278,10 @@ set_tests_properties(ExportDitherTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportWavDitherTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+if(LMMS_HAVE_OGGVORBIS)
+	set_tests_properties(AudioFileOggInitTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
 set_tests_properties(AudioResamplerRatioTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
