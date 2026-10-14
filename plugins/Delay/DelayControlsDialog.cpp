@@ -117,7 +117,10 @@ void XyPad::paintEvent(QPaintEvent *event)
 
 void XyPad::mousePressEvent(QMouseEvent *event)
 {
-	m_acceptInput = true;
+	if (event->button() == Qt::LeftButton)
+	{
+		m_acceptInput = true;
+	}
 }
 
 
@@ -125,7 +128,10 @@ void XyPad::mousePressEvent(QMouseEvent *event)
 
 void XyPad::mouseReleaseEvent(QMouseEvent *event)
 {
-	m_acceptInput = false;
+	if (event->button() == Qt::LeftButton)
+	{
+		m_acceptInput = false;
+	}
 }
 
 

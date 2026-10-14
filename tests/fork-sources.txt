@@ -52,6 +52,7 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/core/AutomationPrepassProofTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/ModulatorPanelTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/CarlaParamFloatModelTest.cpp ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/DelayControlsDialog.h tests/src/gui/EqFader.h tests/src/gui/XyPadPairTest.cpp ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
@@ -93,7 +94,10 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/core/AutomationPrepassProofTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/ModulatorPanelTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/CarlaParamFloatModelTest.cpp ; \
+#        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/DelayControlsDialog.h tests/src/gui/EqFader.h tests/src/gui/XyPadPairTest.cpp ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
+# 2026-10-10 (new-p10-108): XyPadPairTest now exercises the Delay plug-in's XyPad directly. Its two test-local headers
+#   provide AUTOMOC inputs for the already-configured target without changing the CMake build graph.
 # 2026-09-16 (the 0.3.0 fix-up pass, lane 030/fixup-hygiene): three fork-NEW modules enter this
 # scope, each named in the pathspec lines above so the recipe derives them and each registered
 # here so the fork ratchets measure it instead of leaving a new file invisible:
@@ -2235,6 +2239,9 @@ tests/src/core/WriteRefusalGateTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
 tests/src/gui/ModulatorPanelTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
+tests/src/gui/DelayControlsDialog.h
+tests/src/gui/EqFader.h
+tests/src/gui/XyPadPairTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api boundary's

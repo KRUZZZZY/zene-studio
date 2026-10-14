@@ -40,6 +40,13 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "XyPad.h"
+#include "../../../plugins/Delay/DelayControlsDialog.h"
+
+#define PLUGIN_NAME delay
+#include "../../../plugins/Delay/DelayControlsDialog.cpp"
+#undef PLUGIN_NAME
+#include "moc_DelayControlsDialog.cpp"
+#include "moc_EqFader.cpp"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -120,6 +127,20 @@ QLabel* statusOf(XyPadDialog& dialog)
 	return nullptr;
 }
 
+struct DelayXyPadFixture
+{
+	FloatModel xModel{0.2f, 0.f, 1.f, 0.001f};
+	FloatModel yModel{0.3f, 0.f, 1.f, 0.001f};
+	XyPad pad{nullptr, &xModel, &yModel};
+
+	DelayXyPadFixture()
+	{
+		pad.resize(100, 100);
+		pad.show();
+		QCoreApplication::processEvents();
+	}
+};
+
 } // namespace
 
 class XyPadPairTest : public QObject
@@ -138,6 +159,48 @@ private slots:
 	{
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	void delayXyPadIgnoresRightDrag()
+	{
+		DelayXyPadFixture fixture;
+		QTest::mousePress(&fixture.pad, Qt::RightButton, Qt::NoModifier, QPoint(10, 10));
+		QTest::mouseMove(&fixture.pad, QPoint(80, 70));
+		QTest::mouseRelease(&fixture.pad, Qt::RightButton, Qt::NoModifier, QPoint(80, 70));
+		QCOMPARE(fixture.xModel.value(), 0.2f);
+		QCOMPARE(fixture.yModel.value(), 0.3f);
+	}
+
+	void delayXyPadIgnoresMiddleDrag()
+	{
+		DelayXyPadFixture fixture;
+		QTest::mousePress(&fixture.pad, Qt::MiddleButton, Qt::NoModifier, QPoint(10, 10));
+		QTest::mouseMove(&fixture.pad, QPoint(80, 70));
+		QTest::mouseRelease(&fixture.pad, Qt::MiddleButton, Qt::NoModifier, QPoint(80, 70));
+		QCOMPARE(fixture.xModel.value(), 0.2f);
+		QCOMPARE(fixture.yModel.value(), 0.3f);
+	}
+
+	void delayXyPadLeftDragUpdatesBothModels()
+	{
+		DelayXyPadFixture fixture;
+		QTest::mousePress(&fixture.pad, Qt::LeftButton, Qt::NoModifier, QPoint(10, 10));
+		QTest::mouseMove(&fixture.pad, QPoint(80, 70));
+		QCOMPARE(fixture.xModel.value(), 0.8f);
+		QCOMPARE(fixture.yModel.value(), 0.7f);
+		QTest::mouseRelease(&fixture.pad, Qt::LeftButton, Qt::NoModifier, QPoint(80, 70));
+	}
+
+	void delayXyPadIgnoresOtherButtonReleaseDuringLeftDrag()
+	{
+		DelayXyPadFixture fixture;
+		QTest::mousePress(&fixture.pad, Qt::LeftButton, Qt::NoModifier, QPoint(10, 10));
+		QTest::mousePress(&fixture.pad, Qt::RightButton, Qt::NoModifier, QPoint(10, 10));
+		QTest::mouseRelease(&fixture.pad, Qt::RightButton, Qt::NoModifier, QPoint(10, 10));
+		QTest::mouseMove(&fixture.pad, QPoint(80, 70));
+		QCOMPARE(fixture.xModel.value(), 0.8f);
+		QCOMPARE(fixture.yModel.value(), 0.7f);
+		QTest::mouseRelease(&fixture.pad, Qt::LeftButton, Qt::NoModifier, QPoint(80, 70));
 	}
 
 	void aDragIsOneStepAndARefusalIsShown()
