@@ -43,6 +43,7 @@
 #include "InstrumentTrack.h"
 #include "ItemList.h"
 #include "MidiClip.h"
+#include "MusicalTime.h"
 #include "Note.h"
 #include "NoteCanvas.h"
 #include "NoteEditor.h"
@@ -309,6 +310,66 @@ private slots:
 		QVERIFY(m_clip->controllers().lane(ControllerKind::ControlChange, 7) == nullptr);  // no points: no lane
 		QVERIFY(undo());
 		QVERIFY(m_clip->controllers().lane(ControllerKind::ControlChange, 7) != nullptr);
+	}
+
+	void aControllerPositionCollisionDoesNotDiscardEitherPoint()
+	{
+		m_editor->setControllerLane(QStringLiteral("cc:7"));
+		const QJsonArray initial{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 10}},
+			QJsonObject{{QStringLiteral("tick"), 12}, {QStringLiteral("value"), 100}}};
+		QVERIFY(invoke(QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), m_editor->clipId()},
+			{QStringLiteral("lane"), QStringLiteral("cc:7")}, {QStringLiteral("points"), initial}}).ok);
+		ItemListPanel* points = ItemListPanel::open(m_editor, QStringLiteral("controller"),
+			[this](QObject* parent) { return itemlists::controllerPoints(m_editor, parent); });
+		QCOMPARE(points->table()->model()->rowCount(), 2);
+		tick_t collisionTick = -1;
+		QVERIFY(musicaltime::positionFromText(QStringLiteral("12 ticks"), &collisionTick));
+		QCOMPARE(collisionTick, tick_t{12});
+		edit(points, 0, 0, QStringLiteral("12 ticks"));
+
+		const ControllerLane* lane = m_clip->controllers().lane(ControllerKind::ControlChange, 7);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(lane->points.size(), std::size_t{2});
+		QVERIFY(lane->points[0].tick != lane->points[1].tick);
+		bool keptTen = false;
+		bool keptHundred = false;
+		for (const ControllerPoint& point : lane->points)
+		{
+			keptTen = keptTen || point.value == 10;
+			keptHundred = keptHundred || point.value == 100;
+		}
+		QVERIFY(keptTen);
+		QVERIFY(keptHundred);
+	}
+
+	void insertingAfterAControllerPointDoesNotDiscardTheInsertion()
+	{
+		m_editor->setControllerLane(QStringLiteral("cc:7"));
+		const QJsonArray initial{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 10}},
+			QJsonObject{{QStringLiteral("tick"), 12}, {QStringLiteral("value"), 100}}};
+		QVERIFY(invoke(QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), m_editor->clipId()},
+			{QStringLiteral("lane"), QStringLiteral("cc:7")}, {QStringLiteral("points"), initial}}).ok);
+		ItemListPanel* points = ItemListPanel::open(m_editor, QStringLiteral("controller"),
+			[this](QObject* parent) { return itemlists::controllerPoints(m_editor, parent); });
+		points->table()->setCurrentIndex(points->table()->model()->index(0, 0));
+		const bool inserted = points->insertItem();
+
+		const ControllerLane* lane = m_clip->controllers().lane(ControllerKind::ControlChange, 7);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(lane->points.size(), inserted ? std::size_t{3} : std::size_t{2});
+		for (std::size_t i = 0; i < lane->points.size(); ++i)
+		{
+			for (std::size_t j = i + 1; j < lane->points.size(); ++j) { QVERIFY(lane->points[i].tick != lane->points[j].tick); }
+		}
+		bool keptTen = false;
+		bool keptHundred = false;
+		for (const ControllerPoint& point : lane->points)
+		{
+			keptTen = keptTen || point.value == 10;
+			keptHundred = keptHundred || point.value == 100;
+		}
+		QVERIFY(keptTen);
+		QVERIFY(keptHundred);
 	}
 
 	void theCommandOpensAndClosesTheList()
