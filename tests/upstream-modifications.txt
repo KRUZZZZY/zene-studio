@@ -2350,3 +2350,5 @@ tests/src/core/PluginAudioPortsTest.cpp	ExprFront copy-ownership regression: add
 plugins/Xpressive/ExprSynth.h	new-p12-82: delete copy construction and assignment because ExprSynth owns and deletes m_exprO1 and m_exprO2; covered by PluginPortsMigrationTest::xpressiveSynthIsNotCopyable.
 src/gui/widgets/Graph.cpp	BUG new-p12-101: reject drag-enter and drop events while sample-file loading is unimplemented; regression tests/src/gui/SampleEditorDialogTest.cpp::graphRejectsSampleFileDropsUntilSupported.
 src/gui/MidiSetupWidget.cpp	cluster new-p12-130: show() checks for a parent before setting its visibility; a parentless widget remains safe and still sets its own visibility. Regression: MidiControllerMenuTest::showingParentlessSetupWidgetIsSafe.
+src/core/PathUtil.cpp	new-p12-174: treat only parent-directory paths as outside a base, preserving valid names beginning with two dots; covered by RelativePathsTest.
+tests/src/core/RelativePathsTest.cpp	new-p12-174: regress a valid factory-sample filename beginning with two dots through relativeOrAbsolute and toShortestRelative.
