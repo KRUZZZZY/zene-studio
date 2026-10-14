@@ -218,7 +218,7 @@ void PatchesDialog::setup ( fluid_synth_t * pSynth, int iChan,
 	if (pPreset) {
 		m_iBank = fluid_preset_get_banknum(pPreset);
 #ifdef CONFIG_FLUID_BANK_OFFSET
-		m_iBank += ::fluid_synth_get_bank_offset(m_pSynth, fluid_sfont_get_id(fluid_preset_get_sfont(sfont)));
+		m_iBank += ::fluid_synth_get_bank_offset(m_pSynth, fluid_sfont_get_id(fluid_preset_get_sfont(pPreset)));
 #endif
 	}
 
