@@ -2275,3 +2275,4 @@ src/core/LadspaManager.cpp	new-p10-194: scan with the descriptor PortCount type 
 tests/all-sources.txt	new-p10-194: register the new LADSPA scan regression and its synthetic descriptor fixture in the whole-tree C/C++ source manifest
 tests/src/gui/CommandFormTest.cpp	new-p10-218: regression test for sorting scientific notation by numeric value (1e3 ms after 20 ms).
 src/core/lv2/Lv2Evbuf.cpp	new-p10-232: validate the complete padded event size with 64-bit capacity arithmetic so an event cannot consume more bytes than remain; regression Lv2StateTest::rejectsAnEventWhosePaddingDoesNotFit.
+src/core/MicroTimer.cpp	cluster new-p10-240: MicroTimer::elapsed retains its int API and saturates at INT_MAX after roughly 35.8 minutes; ScriptClockTest proves a 37-minute interval.

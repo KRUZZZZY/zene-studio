@@ -38,8 +38,13 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include <chrono>
+#include <limits>
+#include <type_traits>
+
 #include "ControlReversibility.h"
 #include "Engine.h"
+#include "MicroTimer.h"
 #include "ScriptClock.h"
 #include "Song.h"
 
@@ -97,6 +102,9 @@ private slots:
 		using namespace lmms;
 		Engine::destroy();
 	}
+
+	//! Elapsed microseconds must saturate before int overflows after about 36 minutes.
+	void elapsedMicrosecondsSaturateAtIntMax();
 
 	//! A transport hook's half: the EDGE is detected from the flag, from a
 	//! parked grid and from a playing one, with no bar or beat crossing
@@ -160,6 +168,17 @@ private slots:
 	//! nothing. Read out of the table itself, not restated from this file.
 	void a16RowsCarryTheGroup();
 };
+
+void ScriptClockTest::elapsedMicrosecondsSaturateAtIntMax()
+{
+	static_assert(std::is_standard_layout_v<MicroTimer>);
+	MicroTimer timer;
+	using TimePoint = std::chrono::steady_clock::time_point;
+	// The standard-layout timer's first member is its start time.
+	const auto start = std::chrono::steady_clock::now() - std::chrono::minutes{37};
+	*reinterpret_cast<TimePoint*>(&timer) = start;
+	QCOMPARE(timer.elapsed(), std::numeric_limits<int>::max());
+}
 
 void ScriptClockTest::playAndStopEdges()
 {

@@ -1,5 +1,7 @@
 #include "MicroTimer.h"
 
+#include <limits>
+
 namespace lmms
 {
 
@@ -22,7 +24,10 @@ void MicroTimer::reset()
 int MicroTimer::elapsed() const
 {
 	auto now = steady_clock::now();
-	return std::chrono::duration_cast<std::chrono::duration<int, std::micro>>(now - begin).count();
+	const auto elapsedMicroseconds = duration_cast<microseconds>(now - begin).count();
+	return elapsedMicroseconds > numeric_limits<int>::max()
+		? numeric_limits<int>::max()
+		: static_cast<int>(elapsedMicroseconds);
 }
 
 } // namespace lmms
