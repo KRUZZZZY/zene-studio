@@ -32,11 +32,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
+#include <vector>
 
 #include <QDomDocument>
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
+#include <QMouseEvent>
+#include <QSignalSpy>
 
 #include "../../../plugins/SlicerT/SlicerTWaveform.h"
 
@@ -46,8 +50,10 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "ImportDetectionDsp.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "PluginView.h"
 #include "ProjectMarkers.h"
 #include "SampleClipOverlays.h"
 #include "SamplePlayHandle.h"
@@ -307,6 +313,96 @@ private slots:
 		QVERIFY2(declarations.contains("float m_noteCurrent = 0.0f;"), "current playhead position must start at zero");
 		QVERIFY2(declarations.contains("float m_noteStart = 0.0f;"), "playhead start must start at zero");
 		QVERIFY2(declarations.contains("float m_noteEnd = 0.0f;"), "playhead end must start at zero");
+	}
+
+	void slicerWaveformEditsPublishChanges()
+	{
+		SampleClip* audio = test::sampleClipOf(test::burstAudio(200, {10, 58, 106, 154}));
+		const ControlResult sliced = run(QStringLiteral("clip.slice_to_instrument"), {{QStringLiteral("clip"), control::clipIdOf(audio)}});
+		if (sliced.errorKind == ControlErrorKind::Requires) { QSKIP("this build's plug-in folder has no SlicerT"); }
+		QVERIFY2(sliced.ok, qPrintable(sliced.errorMessage));
+
+		auto* track = dynamic_cast<InstrumentTrack*>(Engine::getSong()->tracks().back());
+		QVERIFY(track != nullptr);
+		Instrument* instrument = track->instrument();
+		QVERIFY(instrument != nullptr);
+		QSignalSpy changedSpy(instrument, &Model::dataChanged);
+		QVERIFY(changedSpy.isValid());
+
+		QWidget viewParent;
+		std::unique_ptr<gui::PluginView> view(instrument->createView(&viewParent));
+		QVERIFY(view != nullptr);
+		view->resize(640, 480);
+		QApplication::processEvents();
+		QWidget* waveform = nullptr;
+		for (QWidget* child : view->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+		{
+			if (child->pos() == QPoint(0, 50))
+			{
+				waveform = child;
+				break;
+			}
+		}
+		QVERIFY(waveform != nullptr);
+		waveform->resize(640, 128);
+		QVERIFY(waveform->width() > 0);
+		QVERIFY(waveform->height() > 50);
+
+		auto saveSliceState = [instrument]()
+		{
+			QDomDocument document;
+			QDomElement parent = document.createElement(QStringLiteral("state"));
+			document.appendChild(parent);
+			return instrument->saveState(document, parent);
+		};
+		auto slicePoints = [&saveSliceState]()
+		{
+			const QDomElement state = saveSliceState();
+			const int count = state.attribute(QStringLiteral("totalSlices")).toInt();
+			std::vector<float> points;
+			points.reserve(static_cast<std::size_t>(count));
+			for (int index = 0; index < count; ++index)
+			{
+				points.push_back(state.attribute(QStringLiteral("slice_%1").arg(index)).toFloat());
+			}
+			return points;
+		};
+		const int initialSliceCount = saveSliceState().attribute(QStringLiteral("totalSlices")).toInt();
+		QVERIFY(initialSliceCount > 3);
+
+		const QPoint addPoint(static_cast<int>(waveform->width() * 0.9f), 60);
+		QTest::mouseDClick(waveform, Qt::LeftButton, Qt::NoModifier, addPoint);
+		QCOMPARE(changedSpy.count(), 1);
+		QCOMPARE(saveSliceState().attribute(QStringLiteral("totalSlices")).toInt(), initialSliceCount + 1);
+		changedSpy.clear();
+
+		const auto pointsBeforeMove = slicePoints();
+		const float originalPosition = pointsBeforeMove.at(2);
+		const int sourceX = static_cast<int>(originalPosition * waveform->width());
+		const int targetX = sourceX + static_cast<int>(waveform->width() * 0.03f);
+		const int editorY = waveform->height() / 2;
+		auto sendMouse = [waveform](QEvent::Type type, int x, int y, Qt::MouseButton button, Qt::MouseButtons buttons)
+		{
+			const QPoint local(x, y);
+			QMouseEvent event(type, QPointF(local), QPointF(waveform->mapToGlobal(local)), button, buttons, Qt::NoModifier);
+			QApplication::sendEvent(waveform, &event);
+		};
+		sendMouse(QEvent::MouseMove, sourceX, editorY, Qt::NoButton, Qt::NoButton);
+		sendMouse(QEvent::MouseButtonPress, sourceX, editorY, Qt::LeftButton, Qt::LeftButton);
+		sendMouse(QEvent::MouseMove, targetX, editorY, Qt::NoButton, Qt::LeftButton);
+		sendMouse(QEvent::MouseButtonRelease, targetX, editorY, Qt::LeftButton, Qt::NoButton);
+		QCOMPARE(changedSpy.count(), 1);
+		QVERIFY(slicePoints() != pointsBeforeMove);
+		changedSpy.clear();
+
+		const int sliceCountBeforeDelete = saveSliceState().attribute(QStringLiteral("totalSlices")).toInt();
+		QTest::mouseMove(waveform, addPoint);
+		QTest::mouseClick(waveform, Qt::RightButton, Qt::NoModifier, addPoint);
+		QCOMPARE(changedSpy.count(), 1);
+		QCOMPARE(saveSliceState().attribute(QStringLiteral("totalSlices")).toInt(), sliceCountBeforeDelete - 1);
+
+		view.reset();
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
 	}
 
 	void aTempoMapFromAFreePerformance()
