@@ -24,7 +24,12 @@
 
 #include <QtTest>
 
+#include "lmmsconfig.h"
 #include "ControlRegistry.h"
+#ifdef ZENE_TELEMETRY_ENABLED
+#include "ConfigManager.h"
+#include <QJsonDocument>
+#endif
 #include "Engine.h"
 using namespace lmms;
 
@@ -586,6 +591,35 @@ private slots:
 		QVERIFY2(!refused.ok, "an automated caller reached the consent screen");
 		QCOMPARE(refused.errorKind, ControlErrorKind::Requires);
 		QCOMPARE(controlErrorKindName(refused.errorKind), QStringLiteral("requires"));
+	}
+
+	//! The read-only command may report the configured origin, but never any
+	//! credential-bearing URL component.
+	void telemetryStatusRedactsConfiguredEndpointCredentials()
+	{
+		ConfigManager* config = ConfigManager::inst();
+		const QString originalEndpoint = config->value(QStringLiteral("telemetry"),
+			QStringLiteral("endpoint"), QString());
+		const QString configuredEndpoint = QStringLiteral(
+			"https://alice:password-secret@ingest.example.org:8443/internal/path-secret"
+			"?token=query-secret#fragment-secret");
+		config->setValue(QStringLiteral("telemetry"), QStringLiteral("endpoint"), configuredEndpoint);
+
+		const ControlResult report = ControlRegistry::instance()->invoke(
+			QStringLiteral("telemetry.status"));
+		config->setValue(QStringLiteral("telemetry"), QStringLiteral("endpoint"), originalEndpoint);
+
+		QVERIFY2(report.ok, qPrintable(report.errorMessage));
+		const QString response = QString::fromUtf8(
+			QJsonDocument(report.result).toJson(QJsonDocument::Compact));
+		QVERIFY2(!response.contains(QStringLiteral("alice")) &&
+			!response.contains(QStringLiteral("password-secret")) &&
+			!response.contains(QStringLiteral("path-secret")) &&
+			!response.contains(QStringLiteral("query-secret")) &&
+			!response.contains(QStringLiteral("fragment-secret")),
+			"telemetry.status exposed a credential-bearing endpoint");
+		QCOMPARE(report.result.value(QStringLiteral("transport_endpoint")).toString(),
+			QStringLiteral("https://ingest.example.org:8443"));
 	}
 
 #else

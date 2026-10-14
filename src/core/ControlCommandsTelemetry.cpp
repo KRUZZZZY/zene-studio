@@ -178,7 +178,8 @@ ControlResult telemetryStatus()
 	QString endpointReason;
 	const bool endpointAllowed =
 		TelemetryNetworkTransport::isAllowedEndpoint(QUrl(endpoint), &endpointReason);
-	result.insert(QStringLiteral("transport_endpoint"), endpoint);
+	result.insert(QStringLiteral("transport_endpoint"),
+		TelemetryNetworkTransport::redactedEndpoint(endpoint));
 	result.insert(QStringLiteral("transport_endpoint_allowed"), endpointAllowed);
 	result.insert(QStringLiteral("transport_endpoint_reason"), endpointReason);
 	result.insert(QStringLiteral("transport_policy"), TelemetryNetworkTransport::endpointPolicy());
