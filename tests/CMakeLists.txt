@@ -70,6 +70,9 @@ set(LMMS_TESTS
 	# the streaming/I8/parameter contract the render path depends on.
 	src/core/AudioStretcherTest.cpp
 	src/core/AudioResamplerRatioTest.cpp
+	# cluster new-p10-520: zero sample rate must not poison BasicFilters'
+	# m_sampleRatio (constructor) or survive setSampleRate.
+	src/core/BasicFiltersSampleRateTest.cpp
 	src/core/AutomatableModelTest.cpp
 	src/core/AutomationModesTest.cpp
 	# Sample-accurate automation (feature-list row 9, board task #646): renders
