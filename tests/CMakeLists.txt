@@ -738,6 +738,8 @@ set(LMMS_TESTS
 	src/core/TrackKeyNamesLoadTest.cpp
 	# 0.5.0 L07: note.edit's range validation - a note may not end past MaxSongLength.
 	src/core/NoteEditRangeTest.cpp
+	# Malformed and overflowing note keys must survive the extended note-range upgrade unchanged.
+	src/core/UpgradeExtendedNoteRangeTest.cpp
 	# 0.5.0 L07: what the note-shape verbs refuse - a past-the-limit note, a malformed filter field, an unholdable amount.
 	src/core/NoteShapeValidationTest.cpp
 	# 0.5.0 L07 ED-145/113: a track's MIDI input transform - rules, commands, file, live input.

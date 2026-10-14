@@ -26,8 +26,9 @@
 
 #include <QDomElement>
 
-#include <set>
 #include <cassert>
+#include <limits>
+#include <set>
 
 
 namespace lmms
@@ -91,8 +92,12 @@ static void fixNotePatterns(QDomNodeList & patterns)
 			QDomElement note = notes.item(j).toElement();
 			if (note.hasAttribute("key"))
 			{
-				int const currentKey = note.attribute("key").toInt();
-				note.setAttribute("key", currentKey + 12);
+				bool converted = false;
+				int const currentKey = note.attribute("key").toInt(&converted);
+				if (converted && currentKey <= std::numeric_limits<int>::max() - 12)
+				{
+					note.setAttribute("key", currentKey + 12);
+				}
 			}
 		}
 	}
