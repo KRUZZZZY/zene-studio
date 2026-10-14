@@ -559,7 +559,7 @@ void XpressiveView::expressionChanged() {
 		ExprFront expr(text.constData(),sample_rate);
 		float t=0;
 		const float f=10,key=5,v=0.5;
-		unsigned int frame_counter = 0;
+		f_cnt_t frame_counter = 0;
 		expr.add_variable("t", t);
 
 		if (m_output_expr)

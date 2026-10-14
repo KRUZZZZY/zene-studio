@@ -52,7 +52,7 @@ public:
 	bool add_variable(const char* name, float & ref);
 	bool add_constant(const char* name, float  ref);
 	bool add_cyclic_vector(const char* name, const float* data, size_t length, bool interp = false);
-	void setIntegrate(const unsigned int* frameCounter, unsigned int sample_rate);
+	void setIntegrate(const f_cnt_t* frameCounter, unsigned int sample_rate);
 	ExprFrontData* getData() { return m_data; }
 private:
 	ExprFrontData *m_data = nullptr;
@@ -107,8 +107,8 @@ public:
 private:
 	ExprFront *m_exprO1, *m_exprO2;
 	const WaveSample *m_W1, *m_W2, *m_W3;
-	unsigned int m_note_sample;
-	unsigned int m_note_rel_sample;
+	f_cnt_t m_note_sample;
+	f_cnt_t m_note_rel_sample;
 	float m_note_sample_sec;
 	float m_note_rel_sec;
 	float m_frequency;

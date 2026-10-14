@@ -2233,3 +2233,7 @@ include/Delay.h	new-p10-105 (2026-10-12): reject invalid CombFeedback delays bef
 src/gui/widgets/Draggable.cpp	BUG new-p10-112: zero-width model ranges keep the handle stationary and coincident pixel endpoints cannot alter the model; regressions KnobKeyboardTest::aDraggableWithAConstantModelStaysPut and aDraggableWithCoincidentEndpointsDoesNotChangeTheModel.
 tests/src/gui/EffectHostingMenuTest.cpp	new-p10-115 regression: an unfiled effect’s Move to Folder dialog accepts Return without assigning the first existing folder.
 src/core/EnvelopeAndLfoParameters.cpp	BUG new-p10-117 (2026-10-12): zero only samples before the LFO pre-delay boundary and process the rest of the block; regression tests/src/core/ModulationRateTest.cpp.
+plugins/Xpressive/ExprSynth.cpp	new-p10-129: widen note-time and integrate frame counters to f_cnt_t so expression time and integration state stay continuous beyond 2^32 frames; explicit float conversion preserves the expression variable type.
+plugins/Xpressive/ExprSynth.h	new-p10-129: widen ExprSynth frame-counter members and ExprFront::setIntegrate declaration to f_cnt_t, matching the implementation.
+plugins/Xpressive/Xpressive.cpp	new-p10-129: use f_cnt_t for the graph-preview integrate frame counter to match ExprFront's widened API.
+tests/CMakeLists.txt	new-p10-129: register the ExprSynth long-note regression target with the existing Qt test setup; its source includes the production ExprSynth implementation in the same translation unit to seed private frame state without changing the plugin API.

@@ -1737,6 +1737,45 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen;UBSAN_OPTIONS=halt_on_error=1")
 endif()
 
+# The expression clock crosses the 32-bit frame boundary in one rendered
+# sample, so the regression exercises the real ExprSynth implementation without
+# simulating a day of playback.
+add_executable(ExprSynth
+	src/plugins/ExprSynthTest.cpp
+)
+add_test(NAME ExprSynth COMMAND ExprSynth)
+target_include_directories(ExprSynth PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Xpressive
+)
+target_static_libraries(ExprSynth PRIVATE lmmsobjs)
+target_link_libraries(ExprSynth PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+	exprtk
+)
+target_compile_features(ExprSynth PRIVATE cxx_std_20)
+target_compile_definitions(ExprSynth PRIVATE
+	LMMS_TESTING
+	exprtk_disable_sc_andor
+	exprtk_disable_return_statement
+	exprtk_disable_break_continue
+	exprtk_disable_comments
+	exprtk_disable_string_capabilities
+	exprtk_disable_rtl_io_file
+	exprtk_disable_rtl_vecops
+)
+if(MSVC)
+	target_compile_options(ExprSynth PRIVATE /bigobj)
+elseif(LMMS_BUILD_WIN32 OR LMMS_BUILD_CYGWIN)
+	target_compile_options(ExprSynth PRIVATE -Wa,-mbig-obj)
+else()
+	target_compile_options(ExprSynth PRIVATE -fexceptions)
+endif()
+lmms_add_coverage(ExprSynth)
+set_tests_properties(ExprSynth PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # ---------------------------------------------------------------------------
 # The subject of the MPE playback proof (0.3.0 feature-list row 8, task #649).
 #
