@@ -24,6 +24,9 @@
 
 #include <QtTest>
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
 
 #include <cmath>
@@ -162,6 +165,7 @@ private slots:
 	void testComponentHandlerAnswersInterfaceQueries();
 	void testNonFiniteParameterValuesAreRefused();
 	void testReprepareGateQuiescesAllActiveAudioCalls();
+	void testDroppedOutputCounterUsesAtomicAccess();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -546,6 +550,27 @@ void Vst3HostTest::testReprepareGateQuiescesAllActiveAudioCalls()
 	lmms::test::tlCountAllocations = false;
 	QVERIFY(admitted);
 	QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
+}
+
+void Vst3HostTest::testDroppedOutputCounterUsesAtomicAccess()
+{
+	const auto sourceRoot = QDir{QCoreApplication::applicationDirPath()};
+	const auto readSource = [&sourceRoot](const QString& relativePath) -> QByteArray
+	{
+		QFile file{sourceRoot.absoluteFilePath(relativePath)};
+		if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) { return {}; }
+		return file.readAll();
+	};
+	const auto internals = readSource(QStringLiteral("../../plugins/Vst3Effect/Vst3HostInternals.h"));
+	const auto host = readSource(QStringLiteral("../../plugins/Vst3Effect/Vst3Host.cpp"));
+	const auto reports = readSource(QStringLiteral("../../plugins/Vst3Effect/Vst3HostReports.cpp"));
+	QVERIFY(!internals.isEmpty());
+	QVERIFY(!host.isEmpty());
+	QVERIFY(!reports.isEmpty());
+	QVERIFY(internals.contains("std::atomic<std::uint64_t> droppedOutput{0};"));
+	QVERIFY(host.contains("d.droppedOutput.store(0, std::memory_order_relaxed);"));
+	QVERIFY(host.contains("droppedOutput.fetch_add(1, std::memory_order_relaxed);"));
+	QVERIFY(reports.contains("m_impl->droppedOutput.load(std::memory_order_relaxed)"));
 }
 
 } // namespace lmms::vst3

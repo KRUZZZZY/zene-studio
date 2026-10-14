@@ -100,8 +100,8 @@ struct HostedPlugin::Impl
 	EventList outputEvents{kMaxMidiEventsPerBlock};
 	std::array<MidiEventIn, kMaxMidiEventsPerBlock> blockOutput{};
 	int blockOutputCount = 0;
-	//! Output notes that did not fit blockOutput (audio thread; diagnostics, as droppedMidi is for input)
-	std::uint64_t droppedOutput = 0;
+	//! Output notes that did not fit blockOutput; atomic because diagnostics reads it off the audio thread.
+	std::atomic<std::uint64_t> droppedOutput{0};
 	//! Audio thread scratch for ordering the drained events by sample offset
 	std::vector<MidiEventIn> midiEvents;
 

@@ -525,7 +525,7 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	// (midiEnabled) until the end of this function.
 	const bool midiEnabled = d.eventInputBusIndex >= 0;
 	d.droppedMidi = 0;
-	d.droppedOutput = 0;
+	d.droppedOutput.store(0, std::memory_order_relaxed);
 	d.midiEvents.assign(static_cast<std::size_t>(kMaxMidiEventsPerBlock), MidiEventIn{});
 
 	d.processData = ProcessData{};
@@ -781,7 +781,7 @@ void HostedPlugin::Impl::collectOutputEvents(int offset)
 		const bool room = blockOutputCount < kMaxMidiEventsPerBlock;
 		MidiEventIn* out = room ? &blockOutput[static_cast<std::size_t>(blockOutputCount)] : &spare;
 		if (outputEvents.getEvent(i, event) != kResultOk || !vst3EventToMidi(event, offset, out)) { continue; }
-		if (room) { ++blockOutputCount; } else { ++droppedOutput; }
+		if (room) { ++blockOutputCount; } else { droppedOutput.fetch_add(1, std::memory_order_relaxed); }
 	}
 }
 
