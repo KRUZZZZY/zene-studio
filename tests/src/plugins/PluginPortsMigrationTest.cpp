@@ -82,6 +82,7 @@
 #include "InstrumentTrack.h"
 #include "Ladspa2LMMS.h"
 #include "AudioDevice.h"
+#include "PixmapButton.h"
 #include "Plugin.h"
 #include "plugins/Xpressive/ExprSynth.h"
 
@@ -133,6 +134,7 @@ void operator delete[](void* allocation, std::size_t) noexcept
 #include "PluginView.h"
 #include "PluginView.h"
 #include "RmsHelper.h"
+#include "PluginView.h"
 
 namespace
 {
@@ -652,6 +654,7 @@ private slots:
 	void sf2DialogRejectsAFilteredOutProgram();
 	void gigPatchDialogPreviewsSelectedProgram();
 	void rmsHelperCopiesHaveIndependentBuffers();
+	void sf2FailedLoadPreservesCurrentFontAndSource();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -2184,6 +2187,65 @@ void PluginPortsMigrationTest::rmsHelperCopiesHaveIndependentBuffers()
 
 	QVERIFY(qFuzzyIsNull(constructedRms));
 	QVERIFY(qFuzzyIsNull(assignedRms));
+}
+
+void PluginPortsMigrationTest::sf2FailedLoadPreservesCurrentFontAndSource()
+{
+#ifndef PART_C_MIGRATED_sf2player
+	QSKIP("Sf2Player is not built in this configuration");
+#else
+	const auto [entry, descriptor] = partc::loadPluginModule(PART_C_MIGRATED_sf2player,
+		QStringLiteral("sf2player"));
+	QVERIFY(entry != nullptr && descriptor != nullptr);
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	const QString validPath = QString::fromUtf8(PART_C_SF2_FILE);
+	QVERIFY(QMetaObject::invokeMethod(instrument, "openFile", Qt::DirectConnection,
+		Q_ARG(QString, validPath), Q_ARG(bool, false)));
+	QDomDocument validDocument;
+	QDomElement validRoot = validDocument.createElement("instrument");
+	const QString validSource = instrument->saveState(validDocument, validRoot).attribute("src");
+	QVERIFY(!validSource.isEmpty());
+	QWidget viewRoot;
+	QWidget viewParent(&viewRoot);
+	auto view = std::unique_ptr<lmms::gui::PluginView>(instrument->createView(&viewParent));
+	QVERIFY(view != nullptr);
+	lmms::gui::PixmapButton* patchButton = nullptr;
+	for (auto* button : view->findChildren<lmms::gui::PixmapButton*>())
+	{
+		if (button->toolTip() == QStringLiteral("Choose patch"))
+		{
+			patchButton = button;
+			break;
+		}
+	}
+	QVERIFY(patchButton != nullptr);
+	QVERIFY(patchButton->isEnabled());
+
+	const QString invalidPath = QStringLiteral("/missing/soundfonts/corrupt.sf2");
+	QVERIFY(QMetaObject::invokeMethod(instrument, "openFile", Qt::DirectConnection,
+		Q_ARG(QString, invalidPath), Q_ARG(bool, false)));
+	QVERIFY(patchButton->isEnabled());
+
+	QDomDocument failedDocument;
+	QDomElement failedRoot = failedDocument.createElement("instrument");
+	const QString failedSource = instrument->saveState(failedDocument, failedRoot).attribute("src");
+	lmms::NotePlayHandleManager::init();
+	const auto samples = partc::renderInstrumentBuffers(*instrument,
+		lmms::Engine::audioEngine()->framesPerPeriod(), lmms::DefaultKey);
+	const std::vector<float> silence(samples.size(), 0.0f);
+	const float peak = partc::maxAbsDiff(samples, silence);
+	view.reset();
+	delete instrument;
+
+	const bool sourcePreserved = failedSource == validSource;
+	QVERIFY2(sourcePreserved && peak > 1e-4f,
+		qPrintable(QString("source preserved: %1; retained-font peak: %2")
+			.arg(sourcePreserved ? "yes" : "no").arg(peak, 0, 'g', 4)));
+#endif
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)

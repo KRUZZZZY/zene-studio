@@ -2188,3 +2188,5 @@ plugins/SlicerT/SlicerTWaveform.h	cluster new-p9-432: initialize all three playb
 tests/src/core/AudioEditingTest.cpp	cluster new-p9-432: add a deterministic header contract check for the three initial playhead values, which updateUI draws before the first isPlaying signal.
 src/core/SerializingObject.cpp	new-p9-418: detach a hook from its previous SerializingObject before updating the hook backlink, preserving single-owner lifetime safety.
 tests/CMakeLists.txt	new-p9-418: registers SerializingObjectHookTest beside the serialisation tests, without changing existing test behaviour.
+plugins/Sf2Player/Sf2Player.cpp	cluster new-p9-452 (2026-10-11): load and validate a candidate SoundFont before unloading the selected font; preserve the current font, serialized source, and live patch dialog after a failed selection. Regression: PluginPortsMigrationTest::sf2FailedLoadPreservesCurrentFontAndSource.
+tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p9-452 (2026-10-11): extend the failed SoundFont replacement regression through a live Sf2Player view and verify its patch dialog remains enabled.
