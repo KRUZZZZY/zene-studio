@@ -986,6 +986,7 @@ set(LMMS_SRCS
 	core/ScriptDawEdit.cpp
 	core/ScriptDawEffects.cpp
 	core/ScriptEngine.cpp
+	core/ScriptImport.cpp
 	core/ScriptPackage.cpp
 	core/LmmsSemaphore.cpp
 	core/SerializingObject.cpp

@@ -12,7 +12,8 @@ layout is prescribed:
 
 ```
 <scripts root>/<name>/package.lua     the entry point (required)
-<scripts root>/<name>/...             any sibling files the entry script uses
+<scripts root>/<name>/<module>.lua    sibling modules, loaded with require (section 1a)
+<scripts root>/<name>/<dir>/<m>.lua   modules in sub-directories (require("dir.m"))
 ```
 
 `package.lua` is an ordinary v0 script: it needs the
@@ -20,6 +21,64 @@ layout is prescribed:
 command queue as a loose script, and is run with
 `ScriptEngine::runFile(entryPath)` — the package adds *discovery*, not a second
 execution path.
+
+## 1a. Importing sibling modules (`require`)
+
+A script **file** run with `ScriptEngine::runFile` (a loose script or a package
+entry) gets a sandboxed `require`. Source: `include/ScriptImport.h`,
+`src/core/ScriptImport.cpp`.
+
+* **Root.** The directory that holds the entry script: the package directory for
+  `package.lua`, the script's own directory for a loose script. Nothing outside
+  that directory's canonical path can be imported. A package cannot import from
+  a sibling package; a loose script sitting in the scripts root can name the
+  packages beneath it (`require("arp.package")`), since they are inside its root.
+* **Names.** `require("util")` loads `<root>/util.lua`; `require("lib.util")`
+  loads `<root>/lib/util.lua`. Each dot-separated part is an identifier
+  (`[A-Za-z_][A-Za-z0-9_]*`, at most 64 characters; 128 bytes in all). Refused
+  with a clear error: `..`, `/` or `\` separators, absolute paths (`/x`, `\x`,
+  `C:x`, `\\server\share`), empty parts, NUL bytes, and on Windows device names
+  (`CON`, `NUL`, `COM1`, `LPT1`, and their case variants). There is no special
+  `.lua` suffix handling: `require("probe.lua")` means the two components
+  `probe` and `lua`, and can load `<root>/probe/lua.lua`.
+* **Symlinks, junctions, hard links and races.** The candidate's canonical path
+  (symlinks resolved) must lie under the canonical root, so a symlink inside the
+  root that points outside it is refused. On Windows, the final path reported by
+  the opened module handle is also compared with the final path of an opened root
+  directory handle. Junctions and other reparse points that leave the root are
+  refused even when Qt's canonical path text stays under the root. Resolution
+  saves the file identity: device and inode on POSIX, or volume and file index on
+  Windows. After opening, the handle must still have that identity and report
+  exactly one link. Hard-linked modules are refused even when their pathname is
+  inside the root. The path is also re-checked after open, so a swap between
+  resolution and open is refused. A symlink used as the script root is resolved
+  to its target when the importer is created. POSIX bind mounts are not detected
+  as mount-boundary escapes by these path and identity checks.
+* **Semantics like Lua's `require`.** The module chunk runs once per script run
+  with the module name and its root-relative path as `...`; its return value
+  (or `true`) is cached and returned by later `require` calls of that name. A
+  fresh run starts with an empty cache. Module errors propagate to the caller
+  and are not cached.
+* **Cycles and bounds.** An import cycle is refused (`import cycle: a -> b -> a`).
+  Limits: nesting depth 16, 64 module executions per run, 256 KiB per module.
+  The execution limit counts failed module executions and retries; an uncaught
+  failure does not enter the cache. Modules are loaded as text only; precompiled
+  bytecode is refused. `string.dump` can produce bytecode strings, but the
+  sandbox has no loader that executes them.
+* **Sandbox unchanged.** Modules run in the same globals as the entry script:
+  `os`, `io`, `package`, `dofile`, `loadfile`, `load`, `loadstring` and `module`
+  stay absent, and the same instruction and memory budgets apply across modules.
+  The entry script and modules share globals, so scripts can replace `require`
+  for later calls in that run; this does not add a file-loading API.
+  Imported modules do not need the `--! lmms-api` header; the entry script's
+  header gates the whole run.
+* **`runString` has no `require`.** A script run from memory (the `script.run`
+  source argument, livecode, the schedule clock) has no directory to confine
+  imports to, so `require` is absent there.
+
+Tests: `ScriptImportTest` (the refusals above, symlink and hard-link cases,
+resolution/open swaps, the cache and limits, packages and loose scripts, and the
+sandbox inside modules).
 
 ## 2. Naming
 
@@ -83,8 +142,9 @@ directory (`data/scripts/`, installed by `data/scripts/CMakeLists.txt`). There i
    dependency declaration.
 4. **No engine-side package awareness at run time.** A package's entry is run by
    path; the engine does not know or care that it came from a package, which is
-   deliberate for v0 (one execution path, one sandbox).
+   deliberate for v0 (one execution path, one sandbox). The import root is simply
+   the entry script's directory (section 1a).
 
 Tests: `ScriptStabilisationTest::packageNamesAreValidated`,
 `packagesAreDiscoveredAndTheirEntryScriptsRun` (including the proof that a
-package entry cannot bypass the version gate), `manifestParsingIsStrict`.
+package entry cannot bypass the version gate), `manifestParsingIsStrict`; imports: `ScriptImportTest`.

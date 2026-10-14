@@ -838,6 +838,9 @@ set(LMMS_TESTS
 	# ScriptDawBindingTest so that file stays under the file-length gate.
 	src/core/ScriptDawRemovalUndoTest.cpp
 	src/core/ScriptEngineTest.cpp
+	# Q050-051: the sandboxed Lua `require` - traversal, absolute and Windows paths,
+	# symlink and junction escapes, cycles, bounds, and the sandbox staying closed in modules.
+	src/core/ScriptImportTest.cpp
 	# board card #708: the schedule clock's PURE half - the boundary grid, the
 	# registry's typed refusals and the livecode.* A16 rows, no audio device.
 	src/core/ScriptClockTest.cpp
