@@ -78,6 +78,7 @@
 #include <QTimer>
 #include <QTreeWidget>
 #include <QtTest>
+#include <type_traits>
 
 #include "BasicFilters.h"
 #include "../../../plugins/Xpressive/Xpressive.h"
@@ -146,6 +147,7 @@ void operator delete[](void* allocation, std::size_t) noexcept
 #include "PluginView.h"
 #include "../../../plugins/Sf2Player/PatchPresetIteration.h"
 #include "../../../plugins/Xpressive/Xpressive.h"
+#include "../../../plugins/Xpressive/ExprSynth.h"
 
 namespace
 {
@@ -648,6 +650,7 @@ private slots:
 	void xpressiveSelectionRejectsUnavailableGraphs();
 	void xpressiveExpressionEditsMarkSongModified_data();
 	void xpressiveExpressionEditsMarkSongModified();
+	void xpressiveSynthIsNotCopyable();
 	void migratedPluginsPreserveBehaviour();
 	void monstroLfoAttackRampsWithinPeriod();
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
@@ -1303,6 +1306,14 @@ void PluginPortsMigrationTest::xpressiveSelectionRejectsUnavailableGraphs()
 	}
 
 	delete instrument;
+}
+
+void PluginPortsMigrationTest::xpressiveSynthIsNotCopyable()
+{
+	QVERIFY2(!std::is_copy_constructible_v<lmms::ExprSynth>,
+		"Assertion: ExprSynth must not be copy-constructible because it owns its expressions");
+	QVERIFY2(!std::is_copy_assignable_v<lmms::ExprSynth>,
+		"Assertion: ExprSynth must not be copy-assignable because it owns its expressions");
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
