@@ -155,9 +155,12 @@ int precomputeWindow(float *window, unsigned int length, FFTWindow type, bool no
 		gain += window[i];
 	}
 
-	// apply amplitude correction
-	gain /= (float) length;
-	for (unsigned int i = 0; i < length; i++) {window[i] /= gain;}
+	if (normalized)
+	{
+		// apply amplitude correction
+		gain /= (float) length;
+		for (unsigned int i = 0; i < length; i++) {window[i] /= gain;}
+	}
 
 	return 0;
 }
