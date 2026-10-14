@@ -206,6 +206,25 @@ private slots:
 		QCOMPARE(loaded.routedCount(), 0);
 	}
 
+	void malformedOutputBusChannelIsIgnored()
+	{
+		QDomDocument doc;
+		QDomElement parent = doc.createElement(QStringLiteral("instrumenttrack"));
+		doc.appendChild(parent);
+		QDomElement outputBuses = doc.createElement(QStringLiteral("outputbuses"));
+		parent.appendChild(outputBuses);
+		QDomElement route = doc.createElement(QStringLiteral("route"));
+		route.setAttribute(QStringLiteral("bus"), 1);
+		route.setAttribute(QStringLiteral("channel"), QStringLiteral("bad"));
+		outputBuses.appendChild(route);
+
+		InstrumentOutputBuses loaded;
+		loaded.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Out 2"), 2, 2}});
+		loaded.loadSettings(parent);
+		QCOMPARE(loaded.routeOf(1), -1);
+		QCOMPARE(loaded.routedCount(), 0);
+	}
+
 	//! MX-114: without parts every note keeps its channel; with parts, first match wins, the note-off
 	//! follows its note-on, and channel-wide messages reach every part's channel.
 	void midiPartsPickChannels()

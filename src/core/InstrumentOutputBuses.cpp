@@ -200,8 +200,9 @@ void InstrumentOutputBuses::loadSettings(const QDomElement& parent)
 		entry = entry.nextSiblingElement(QStringLiteral("route")))
 	{
 		const int bus = entry.attribute(QStringLiteral("bus")).toInt();
-		const int channel = entry.attribute(QStringLiteral("channel"), QStringLiteral("-1")).toInt();
-		if (bus < 1 || bus >= MaxBuses || channel < 0) { continue; }
+		bool channelValid = false;
+		const int channel = entry.attribute(QStringLiteral("channel"), QStringLiteral("-1")).toInt(&channelValid);
+		if (bus < 1 || bus >= MaxBuses || !channelValid || channel < 0) { continue; }
 		// Through route() when the layout already has the bus (it may need enabling); kept otherwise.
 		if (!route(bus, channel)) { storeRoute(bus, channel); }
 	}
