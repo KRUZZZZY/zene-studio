@@ -77,33 +77,41 @@ public:
 		other.clear();
 	}
 
-	ArrayVector(size_type count, const T& value) noexcept(std::is_nothrow_copy_constructible_v<T>) :
+	ArrayVector(size_type count, const T& value) :
 		m_size{count}
 	{
-		assert(count <= N);
+		checkSize(count);
 		std::uninitialized_fill_n(begin(), count, value);
 	}
 
-	explicit ArrayVector(size_type count) noexcept(std::is_nothrow_default_constructible_v<T>) :
+	explicit ArrayVector(size_type count) :
 		m_size{count}
 	{
-		assert(count <= N);
+		checkSize(count);
 		std::uninitialized_value_construct_n(begin(), count);
 	}
 
 	template<std::input_iterator It>
 	ArrayVector(It first, It last)
 	{
-		// Can't check the size first as the iterator may not be multipass
-		const auto end = std::uninitialized_copy(first, last, begin());
-		m_size = end - begin();
-		assert(m_size <= N);
+		size_type constructed = 0;
+		try {
+			for (; first != last; ++first) {
+				if (constructed == N) { throwLengthError(); }
+				std::construct_at(begin() + constructed, *first);
+				++constructed;
+			}
+		} catch (...) {
+			std::destroy(begin(), begin() + constructed);
+			throw;
+		}
+		m_size = constructed;
 	}
 
-	ArrayVector(std::initializer_list<T> il) noexcept(std::is_nothrow_copy_constructible_v<T>) :
+	ArrayVector(std::initializer_list<T> il) :
 		m_size{il.size()}
 	{
-		assert(il.size() <= N);
+		checkSize(il.size());
 		std::uninitialized_copy(il.begin(), il.end(), begin());
 	}
 
@@ -139,9 +147,8 @@ public:
 	}
 
 	ArrayVector& operator=(std::initializer_list<T> il)
-		noexcept(std::is_nothrow_copy_assignable_v<T> && std::is_nothrow_copy_constructible_v<T>)
 	{
-		assert(il.size() <= N);
+		checkSize(il.size());
 		const auto toAssign = std::min(il.size(), size());
 		const auto assignedFromEnd = il.begin() + toAssign;
 		const auto assignedToEnd = std::copy(il.begin(), assignedFromEnd, begin());
@@ -152,9 +159,8 @@ public:
 	}
 
 	void assign(size_type count, const T& value)
-		noexcept(std::is_nothrow_copy_assignable_v<T> && std::is_nothrow_copy_constructible_v<T>)
 	{
-		assert(count <= N);
+		checkSize(count);
 		const auto temp = value;
 		const auto toAssign = std::min(count, size());
 		const auto toConstruct = count - toAssign;
@@ -167,15 +173,26 @@ public:
 	template<std::input_iterator It>
 	void assign(It first, It last)
 	{
-		// Can't check the size first as the iterator may not be multipass
-		auto pos = begin();
-		for (; first != last && pos != end(); ++pos, ++first) {
-			*pos = *first;
+		const auto originalSize = m_size;
+		size_type assigned = 0;
+		try {
+			for (; first != last; ++first) {
+				if (assigned == N) { throwLengthError(); }
+				if (assigned < originalSize) {
+					begin()[assigned] = *first;
+				} else {
+					std::construct_at(begin() + assigned, *first);
+				}
+				++assigned;
+			}
+		} catch (...) {
+			if (assigned > originalSize) {
+				std::destroy(begin() + originalSize, begin() + assigned);
+			}
+			throw;
 		}
-		std::destroy(pos, end());
-		pos = std::uninitialized_copy(first, last, pos);
-		m_size = pos - begin();
-		assert(m_size <= N);
+		if (assigned < originalSize) { std::destroy(begin() + assigned, begin() + originalSize); }
+		m_size = assigned;
 	}
 
 	reference at(size_type index)
@@ -244,7 +261,7 @@ public:
 
 	iterator insert(const_iterator pos, size_type count, const T& value)
 	{
-		assert(m_size + count <= N);
+		checkAdditionalSize(count);
 		assert(cbegin() <= pos && pos <= cend());
 		const auto mutPos = begin() + (pos - cbegin());
 		const auto newEnd = std::uninitialized_fill_n(end(), count, value);
@@ -256,13 +273,22 @@ public:
 	template<std::input_iterator It>
 	iterator insert(const_iterator pos, It first, It last)
 	{
-		// Can't check the size first as the iterator may not be multipass
 		assert(cbegin() <= pos && pos <= cend());
 		const auto mutPos = begin() + (pos - cbegin());
-		const auto newEnd = std::uninitialized_copy(first, last, end());
+		size_type inserted = 0;
+		try {
+			for (; first != last; ++first) {
+				if (inserted == N - m_size) { throwLengthError(); }
+				std::construct_at(end() + inserted, *first);
+				++inserted;
+			}
+		} catch (...) {
+			std::destroy(end(), end() + inserted);
+			throw;
+		}
+		const auto newEnd = end() + inserted;
 		std::rotate(mutPos, end(), newEnd);
-		m_size = newEnd - begin();
-		assert(m_size <= N);
+		m_size += inserted;
 		return mutPos;
 	}
 
@@ -297,7 +323,7 @@ public:
 	template<typename... Args>
 	reference emplace_back(Args&&... args)
 	{
-		assert(!full());
+		checkAdditionalSize(1);
 		const auto result = std::construct_at(end(), std::forward<Args>(args)...);
 		++m_size;
 		return *result;
@@ -364,6 +390,13 @@ public:
 	}
 
 private:
+	[[noreturn]] static void throwLengthError() { throw std::length_error{"size exceeds maximum size"}; }
+	static void checkSize(size_type size) { if (size > N) { throwLengthError(); } }
+	void checkAdditionalSize(size_type count) const
+	{
+		if (count > N - m_size) { throwLengthError(); }
+	}
+
 	alignas(T) std::byte m_data[std::max(N * sizeof(T), std::size_t{1})]; // Intentionally a raw array
 	size_type m_size = 0;
 };

@@ -2205,3 +2205,5 @@ tests/src/core/AutomatableModelTest.cpp	2026-10-11 new-p9-485: add a regression 
 src/core/ValueBuffer.cpp	BUG new-p9-497: define reads from empty buffers as 0.0f and normalize negative offsets before bounds checked access; regression ModulationRateTest::negativeOffsetsWrapToTheBufferEnd and emptyBufferValueIsZero.
 src/gui/modals/VersionedSaveDialog.cpp	2026-10-11 (cluster new-p9-499): restrict extension insertion lookup to QFileInfo's basename so dotted parent directories never receive the version suffix; covered by VersionedSaveDialogTest.
 tests/CMakeLists.txt	2026-10-11 (cluster new-p9-499): register the new VersionedSaveDialogTest in LMMS_TESTS; registration only, no existing test behavior changes.
+include/ArrayVector.h	cluster new-p9-553: reject capacity overflow with std::length_error across growth operations and clean up partially constructed input ranges.
+tests/src/core/ArrayVectorTest.cpp	cluster new-p9-553: add regressions for oversized construction, assignment, insertion, and emplacement.
