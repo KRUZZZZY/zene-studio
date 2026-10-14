@@ -291,6 +291,39 @@ private slots:
 		QVERIFY(rightQuiet);
 	}
 
+	void theSurroundPannerExplainsWhichSourcesItAffects()
+	{
+		Mixer* mixer = Engine::mixer();
+		route51Bus(*mixer);
+		const ControlResult stereoSendReply = run(QStringLiteral("mixer.surround_pan"),
+			{{QStringLiteral("channel"), ch(1)}, {QStringLiteral("x"), -0.25}, {QStringLiteral("y"), 0.25}});
+		QVERIFY(format(1, "5.1"));
+		const ControlResult surroundSendReply = run(QStringLiteral("mixer.surround_pan"),
+			{{QStringLiteral("channel"), ch(1)}, {QStringLiteral("x"), 0.5}, {QStringLiteral("y"), -0.5}});
+		const ControlResult surroundNoSendReply = run(QStringLiteral("mixer.surround_pan"),
+			{{QStringLiteral("channel"), ch(3)}, {QStringLiteral("x"), -0.25}, {QStringLiteral("y"), 0.25}});
+		const ControlResult stereoNoSendReply = run(QStringLiteral("mixer.surround_pan"),
+			{{QStringLiteral("channel"), ch(2)}, {QStringLiteral("x"), -0.25}, {QStringLiteral("y"), 0.25}});
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(stereoSendReply.ok);
+		QCOMPARE(stereoSendReply.result.value(QStringLiteral("surround_sends")).toArray().size(), 1);
+		QVERIFY2(!stereoSendReply.result.contains(QStringLiteral("note")), "a stereo source with a surround send was warned");
+		QVERIFY(surroundSendReply.ok);
+		QCOMPARE(surroundSendReply.result.value(QStringLiteral("surround_sends")).toArray().size(), 1);
+		QVERIFY(surroundSendReply.result.value(QStringLiteral("note")).toString().contains(
+			QStringLiteral("does not pan sends from a surround-format channel")));
+		QVERIFY(surroundNoSendReply.ok);
+		QVERIFY(surroundNoSendReply.result.value(QStringLiteral("surround_sends")).toArray().isEmpty());
+		QVERIFY(surroundNoSendReply.result.value(QStringLiteral("note")).toString().contains(
+			QStringLiteral("does not pan sends from a surround-format channel")));
+		QVERIFY(stereoNoSendReply.ok);
+		QVERIFY(stereoNoSendReply.result.value(QStringLiteral("note")).toString().contains(QStringLiteral("this channel has none")));
+	}
+
 	void theDownmixFollowsBs775()
 	{
 		using surround::Format;
