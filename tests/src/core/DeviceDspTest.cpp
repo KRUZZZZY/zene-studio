@@ -614,6 +614,20 @@ private slots:
 		QVERIFY2(std::abs(low[0] - 0.5f) < 0.03f, qPrintable(QString::number(low[0])));
 	}
 
+	//! Mute routing must not let the dry mix term reach the output.
+	void theFrequencyShifterMuteRouteDoesNotPassDryInput()
+	{
+		const QString shifter = loadByName(ch(1), QStringLiteral("frequencyshifter"));
+		QVERIFY2(!shifter.isEmpty(), "the frequency shifter module is available");
+		set(ch(1), shifter, "Route Mode", 2.0);
+		set(ch(1), shifter, "Mix", 0.5);
+
+		long at = 0;
+		const SampleFrame output = runBlocks(chainOf(1), [](long) { return SampleFrame(0.8f, -0.4f); }, 1, &at);
+		QVERIFY2(output[0] < 1.0e-6f, qPrintable(QString::number(output[0])));
+		QVERIFY2(output[1] < 1.0e-6f, qPrintable(QString::number(output[1])));
+	}
+
 	//! MX-148: +100 % attack lifts the start of a burst; -100 % softens it; neither moves the steady level.
 	void theTransientShaperShapesAnAttack()
 	{
