@@ -1954,3 +1954,4 @@ src/core/Keymap.cpp	new-p9-209: Ignore non-degree child nodes and malformed inte
 tests/src/core/SessionTuningTest.cpp	new-p9-209: Regression for comment and metadata children plus malformed degree values in Keymap::loadSettings.
 include/Delay.h	BUG new-p9-107: initialise the declared gain and both delay/fraction pairs in the four delay templates; DeviceDspTest explicitly instantiates each template.
 src/gui/instrument/LfoGraph.cpp	new-p9-251: measure the LFO info backing rectangle with the adjusted painter font so it covers the rendered label; regression tests/src/gui/LfoGraphTest.cpp::labelBackingUsesAdjustedFontMetrics.
+src/core/Ladspa2LMMS.cpp	BUG 9 (cluster new-p9-210): transfer effects enter the valid LADSPA category only when their channel layout is supported and their descriptor is hard-real-time capable; covered by PluginPortsMigrationTest::nonRealtimeLadspaEffectsAreInvalid.
