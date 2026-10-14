@@ -213,6 +213,29 @@ private slots:
 		qDeleteAll(QList<Track*>{track});
 		QCOMPARE(afterInvalidInput, sent);
 	}
+
+	void bankButtonsStayOnEightTrackPageBoundaries()
+	{
+		Song* song = Engine::getSong();
+		QList<Track*> made;
+		for (int i = 0; i < 10; ++i) { made.append(Track::create(Track::Type::Instrument, song)); }
+		McuSurface* surface = McuSurface::connect(QString(), QString());
+		for (int i = 0; i < mcu::Strips; ++i) { surface->apply({mcu::Kind::ChannelRight, -1, 0, true}); }
+		const int beforeBankRight = surface->bank();
+		surface->apply({mcu::Kind::BankRight, -1, 0, true});
+		const int afterBankRight = surface->bank();
+		surface->apply({mcu::Kind::BankLeft, -1, 0, true});
+		const int afterBankLeft = surface->bank();
+		for (int i = 0; i < 9; ++i) { surface->apply({mcu::Kind::ChannelRight, -1, 0, true}); }
+		const int afterChannelRight = surface->bank();
+		McuSurface::disconnect();
+		qDeleteAll(made);
+
+		QCOMPARE(beforeBankRight, mcu::Strips);
+		QCOMPARE(afterBankRight, mcu::Strips);
+		QCOMPARE(afterBankLeft, 0);
+		QCOMPARE(afterChannelRight, 9);
+	}
 };
 
 QTEST_MAIN(McuSurfaceTest)
