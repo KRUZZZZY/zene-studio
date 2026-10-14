@@ -79,6 +79,10 @@ bool AudioFileFlac::startEncoding()
 		SFM_WRITE,
 		&m_sfinfo
 	);
+	if (m_sf == nullptr)
+	{
+		return false;
+	}
 
 	sf_command(m_sf, SFC_SET_CLIPPING, nullptr, SF_TRUE);
 
