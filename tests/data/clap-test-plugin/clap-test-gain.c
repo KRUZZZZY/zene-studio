@@ -88,6 +88,7 @@ typedef struct gain_plugin
 	uint64_t gui_parent;
 	uint32_t gui_width;
 	uint32_t gui_height;
+	bool gui_scale_finite;
 } gain_plugin_t;
 
 static const clap_plugin_descriptor_t s_descriptor = {
@@ -453,7 +454,12 @@ static void gui_destroy(const clap_plugin_t* plugin)
 	self->gui_parent = 0;
 }
 
-static bool gui_set_scale(const clap_plugin_t* plugin, double scale) { (void)plugin; (void)scale; return true; }
+static bool gui_set_scale(const clap_plugin_t* plugin, double scale)
+{
+	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	self->gui_scale_finite = isfinite(scale);
+	return true;
+}
 
 static bool gui_get_size(const clap_plugin_t* plugin, uint32_t* width, uint32_t* height)
 {
@@ -495,7 +501,8 @@ static bool gui_set_size(const clap_plugin_t* plugin, uint32_t width, uint32_t h
 static bool gui_set_parent(const clap_plugin_t* plugin, const clap_window_t* window)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
-	if (!self->gui_created || window == NULL || strcmp(window->api, CLAP_WINDOW_API_X11) != 0) { return false; }
+	if (!self->gui_created || !self->gui_scale_finite || window == NULL ||
+		strcmp(window->api, CLAP_WINDOW_API_X11) != 0) { return false; }
 	self->gui_parent = (uint64_t)window->x11;
 	return self->gui_parent != 0;
 }
