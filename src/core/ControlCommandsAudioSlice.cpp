@@ -174,7 +174,7 @@ ControlResult splitAt(const QJsonObject& args)
 }
 
 //! SlicerT's state for @a sample cut at @a frames (source frames, ascending): points normalised to
-//! the whole sample, 0 first and 1 last, synced off so the slices play at their own speed.
+//! the source sample, from 0 through the clip window's end, synced off so slices play at their own speed.
 QDomElement slicerState(QDomDocument& doc, SampleClip& clip, const std::vector<f_cnt_t>& frames)
 {
 	QDomElement state = doc.createElement(QStringLiteral("slicert"));
@@ -183,9 +183,10 @@ QDomElement slicerState(QDomDocument& doc, SampleClip& clip, const std::vector<f
 	state.setAttribute(QStringLiteral("src"), sample.sampleFile());
 	if (sample.sampleFile().isEmpty()) { state.setAttribute(QStringLiteral("sampledata"), sample.toBase64()); }
 	const double size = static_cast<double>(std::max<std::size_t>(1, sample.sampleSize()));
+	const SampleWindow window = clip.sampleWindow();
 	std::vector<double> points{0.0};
 	for (const f_cnt_t frame : frames) { points.push_back(frame / size); }
-	points.push_back(1.0);
+	points.push_back(static_cast<double>(window.sourceOut) / size);
 	state.setAttribute(QStringLiteral("totalSlices"), static_cast<int>(points.size()));
 	for (std::size_t i = 0; i < points.size(); ++i) { state.setAttribute(QStringLiteral("slice_%1").arg(i), points[i]); }
 	state.setAttribute(QStringLiteral("syncEnable"), 0);
