@@ -1332,6 +1332,34 @@ private slots:
 	}
 
 
+	//! A note duration must not enter the model negative, even when the value
+	//! would round to zero on the engine's tick grid.
+	void negativeNoteDurationsAreRefused()
+	{
+		const QString xml =
+			QStringLiteral("<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
+			"<Channel id=\"c1\"/></Track></Structure>"
+			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip time=\"0\" duration=\"4\"><Notes>"
+			"<Note time=\"0\" duration=\"%1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement></Project>");
+		for (const QString& duration : {QStringLiteral("-1"), QStringLiteral("-0.001")})
+		{
+			DawProjectModel model;
+			DawProjectReadReport report;
+			QString error;
+			QVERIFY2(!dawProjectModelFromXml(xml.arg(duration).toLatin1(),
+				&model, &report, &error),
+				qPrintable(QStringLiteral("negative note duration %1 was accepted")
+					.arg(duration)));
+			QVERIFY2(error.contains(QStringLiteral("duration")),
+				"the refusal does not identify the invalid note duration");
+		}
+	}
+
 	//! Luna cluster 5064: an automation point's time is a beat like any other, so
 	//! it goes through the same bounded tick conversion - and is counted in
 	//! `rounded_times` when it is not on the 48-tick grid - instead of being kept
