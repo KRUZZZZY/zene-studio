@@ -43,6 +43,7 @@
 #include <QProcess>
 #include <QToolTip>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 #include "AutomatableModel.h"
 #include "ComboBox.h"
@@ -53,6 +54,7 @@
 #include "Engine.h"
 #include "Fader.h"
 #include "Knob.h"
+#include "LcdFloatSpinBox.h"
 #include "LcdSpinBox.h"
 #include "LedCheckBox.h"
 
@@ -218,6 +220,30 @@ private slots:
 		QCOMPARE(model.value(), 0);
 		QTest::keyClick(&lcd, Qt::Key_Space);
 		QCOMPARE(parent.keys, QList<int>{Qt::Key_Space});
+	}
+
+	void horizontalWheelEventIsIgnoredByIntegerLcdSpinBox()
+	{
+		IntModel integerModel(50, 0, 100);
+		LcdSpinBox integerLcd(3, nullptr);
+		integerLcd.setModel(&integerModel);
+		QWheelEvent integerWheel(QPointF(0, 0), QPointF(0, 0), QPoint(120, 0), QPoint(120, 0),
+			Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+		QCoreApplication::sendEvent(&integerLcd, &integerWheel);
+		QCOMPARE(integerModel.value(), 50);
+		QVERIFY(!integerWheel.isAccepted());
+	}
+
+	void horizontalWheelEventIsIgnoredByFloatLcdSpinBox()
+	{
+		FloatModel floatModel(50.f, 0.f, 100.f, 1.f);
+		LcdFloatSpinBox floatLcd(3, 2);
+		floatLcd.setModel(&floatModel);
+		QWheelEvent floatWheel(QPointF(0, 0), QPointF(0, 0), QPoint(120, 0), QPoint(120, 0),
+			Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+		QCoreApplication::sendEvent(&floatLcd, &floatWheel);
+		QCOMPARE(floatModel.value(), 50.f);
+		QVERIFY(!floatWheel.isAccepted());
 	}
 
 	void aComboBoxStepsLikeAList()
