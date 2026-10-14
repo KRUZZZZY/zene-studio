@@ -57,6 +57,8 @@ public:
 	static constexpr float s_distanceForClick = 0.02f;
 	static constexpr float s_minSeekerDistance = 0.13f;
 	static constexpr float s_zoomSensitivity = 0.5f;
+	static constexpr float s_minZoom = 0.1f;
+	static constexpr float s_maxZoom = 10.f;
 	static constexpr int s_minMilisPassed = 10;
 
 	enum class UIObjects
