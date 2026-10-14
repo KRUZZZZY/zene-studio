@@ -2891,6 +2891,7 @@ tests/src/plugins/ReverbSCCreateTest.cpp
 tests/src/plugins/ReverbSCCreateTestAllocator.c
 tests/src/plugins/ReverbScAllocationTest.cpp
 tests/src/plugins/SampleRateDependentLadspa.cpp
+tests/src/plugins/SlicerTWaveformTest.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
 tests/src/plugins/Vst3ChunkProbeTest.cpp

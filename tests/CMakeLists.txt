@@ -1143,6 +1143,8 @@ set(LMMS_TESTS
 	src/plugins/HydrogenImportLocalFileMngTest.cpp
 	# Saved EQ bands must be drawn on the first curve paint.
 	src/gui/EqCurveTest.cpp
+	# The SlicerT waveform keeps its first and last slice points fixed.
+	src/plugins/SlicerTWaveformTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
@@ -1457,6 +1459,19 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "NamespaceRegistryTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			ZENE_ARCH4_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "SlicerTWaveformTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerT.cpp
+			${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerT.h
+			${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerTView.cpp
+			${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerTView.h
+			${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerTWaveform.cpp
+			${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerTWaveform.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SlicerT ${CMAKE_BINARY_DIR}/plugins/SlicerT ${FFTW3F_INCLUDE_DIRS})
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=slicert slicert_EXPORTS)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE ${FFTW3F_LIBRARIES} SampleRate::samplerate)
 	endif()
 	IF(LMMS_HAVE_STEM_SPLIT)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE

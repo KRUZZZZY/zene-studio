@@ -2308,3 +2308,5 @@ tests/src/gui/ArrangerTimelineTest.cpp	2026-10-12 (BUG new-p10-310): offscreen r
 tests/src/core/RackTest.cpp	Unsupported rack format regression: assert future-version racks are not interpreted or downgraded and their unknown attributes and children survive mixer save/load.
 plugins/SlicerT/SlicerTWaveform.cpp	cluster new-p10-377 (2026-10): wheelEvent() clamped zoom only at zero (std::max(0.0f, m_zoomLevel)), so drawEditorWaveform's sample rect collapsed to zero height and the waveform vanished, and zoom had no upper bound (out-of-range geometry); now std::clamp to [s_minZoom, s_maxZoom]; regression SlicerTZoomTest.
 plugins/SlicerT/SlicerTWaveform.h	cluster new-p10-377 (2026-10): s_minZoom/s_maxZoom constants backing the wheelEvent clamp; regression SlicerTZoomTest.
+plugins/SlicerT/SlicerTWaveform.cpp	cluster new-p10-375: reject deletion and dragging when the selected slice index is the first or last endpoint; interior slice editing is unchanged.
+tests/CMakeLists.txt	cluster new-p10-375: register SlicerTWaveformTest and compile the SlicerT implementation into that test target for direct waveform interaction coverage.

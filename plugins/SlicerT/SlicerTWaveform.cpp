@@ -378,7 +378,9 @@ void SlicerTWaveform::mousePressEvent(QMouseEvent* me)
 		m_seekerMiddle = static_cast<float>(pos.x() - s_seekerHorMargin) / m_seekerWidth;
 		break;
 	case Qt::MouseButton::RightButton:
-		if (m_slicerTParent->m_slicePoints.size() > 2 && m_closestObject == UIObjects::SlicePoint)
+		if (m_slicerTParent->m_slicePoints.size() > 2 && m_closestObject == UIObjects::SlicePoint
+			&& m_closestSlice > 0
+			&& static_cast<std::size_t>(m_closestSlice) < m_slicerTParent->m_slicePoints.size() - 1)
 		{
 			m_slicerTParent->m_slicePoints.erase(m_slicerTParent->m_slicePoints.begin() + m_closestSlice);
 			emit m_slicerTParent->dataChanged();
@@ -451,7 +453,8 @@ void SlicerTWaveform::mouseMoveEvent(QMouseEvent* me)
 		break;
 
 	case UIObjects::SlicePoint:
-		if (m_closestSlice == -1) { break; }
+		if (m_slicerTParent->m_slicePoints.size() <= 2 || m_closestSlice <= 0
+			|| static_cast<std::size_t>(m_closestSlice) >= m_slicerTParent->m_slicePoints.size() - 1) { break; }
 		m_slicerTParent->m_slicePoints.at(m_closestSlice)
 			= startFrame + normalizedClickEditor * (endFrame - startFrame);
 		m_slicerTParent->m_slicePoints.at(m_closestSlice)
