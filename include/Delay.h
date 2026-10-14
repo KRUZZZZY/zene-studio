@@ -135,6 +135,7 @@ private:
 template<ch_cnt_t CHANNELS>
 class CombFeedfwd
 {
+public:
 	using frame = std::array<double, CHANNELS>;
 
 	CombFeedfwd( int maxDelay ) :
@@ -206,6 +207,7 @@ private:
 template<ch_cnt_t CHANNELS>
 class CombFeedbackDualtap
 {
+public:
 	using frame = std::array<double, CHANNELS>;
 
 	CombFeedbackDualtap( int maxDelay ) :
