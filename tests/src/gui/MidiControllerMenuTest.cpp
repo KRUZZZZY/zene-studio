@@ -30,6 +30,8 @@
 #include <QtTest>
 
 #include <QDomDocument>
+#include <memory>
+
 #include <QMenu>
 
 #include <cstring>
@@ -42,6 +44,7 @@
 #include "Knob.h"
 #include "LfoController.h"
 #include "MidiController.h"
+#include "MidiSetupWidget.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -73,6 +76,13 @@ private:
 
 int LifetimeProbeLfoController::connectionCountAtDeallocation = -1;
 
+struct TestMidiClient
+{
+	static QString name() { return QStringLiteral("Test MIDI"); }
+	static QString configSection() { return QStringLiteral("test-midi"); }
+	static QString probeDevice() { return QString(); }
+};
+
 QAction* find(QMenu& menu, const QString& text)
 {
 	for (QAction* action : menu.actions())
@@ -96,6 +106,15 @@ class MidiControllerMenuTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void showingParentlessSetupWidgetIsSafe()
+	{
+		std::unique_ptr<MidiSetupWidget> setup(MidiSetupWidget::create<TestMidiClient>(nullptr));
+
+		setup->show();
+
+		QVERIFY(setup->isVisible());
+	}
+
 	void initTestCase()
 	{
 		Engine::init(true);
