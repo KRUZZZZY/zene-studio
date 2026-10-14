@@ -640,7 +640,7 @@ plugins/Delay/DelayEffect.cpp	rename layer 1: built-in plugin logo resource key 
 plugins/Dispersion/Dispersion.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/DualFilter/DualFilter.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/DynamicsProcessor/DynamicsProcessor.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
-plugins/Eq/EqEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Eq/EqEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change); 2026-10-11 bug cluster new-p9-124: define frame progress for zero/one-frame blocks before division; AudioPluginTest covers finite nonzero output with an active high-pass filter
 plugins/Flanger/FlangerEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Flanger/MonoDelay.cpp	cluster new-p9-293: pair both buffer releases with new[]; covered by MonoDelayTest.
 plugins/FrequencyShifter/FrequencyShifterEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
