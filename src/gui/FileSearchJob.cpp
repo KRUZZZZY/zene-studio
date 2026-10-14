@@ -44,7 +44,7 @@ FileSearchJob::~FileSearchJob()
 	}
 }
 
-void FileSearchJob::search(Task task)
+void FileSearchJob::search(Task task, quint64 generation)
 {
 	if (m_task.valid())
 	{
@@ -53,11 +53,11 @@ void FileSearchJob::search(Task task)
 		m_stop.clear(std::memory_order_release);
 	}
 
-	const auto fn = [this, task = std::move(task)] { runSearch(std::move(task)); };
+	const auto fn = [this, task = std::move(task), generation] { runSearch(std::move(task), generation); };
 	m_task = ThreadPool::instance().enqueue(std::move(fn));
 }
 
-void FileSearchJob::runSearch(Task task)
+void FileSearchJob::runSearch(Task task, quint64 generation)
 {
 	// RE expression that matches regular tokens, and tokens with double quotes around them
 	static auto s_tokenRe = QRegularExpression{R"(\"([^"]+)\"|(\S+))"};
@@ -93,7 +93,7 @@ void FileSearchJob::runSearch(Task task)
 			const auto validFile = fileInfo.isFile() && containsToken
 				&& task.extensions.contains(QString{"*.%1"}.arg(fileInfo.completeSuffix()), Qt::CaseInsensitive);
 
-			if (validDir || validFile) { emit foundMatch(fileInfo.filePath()); }
+			if (validDir || validFile) { emit foundMatch(generation, fileInfo.filePath()); }
 		}
 	}
 
