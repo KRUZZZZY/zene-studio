@@ -652,6 +652,7 @@ plugins/MidiExport/MidiExport.cpp	rename layer 1: user-visible plugin/module des
 plugins/MidiImport/MidiImport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo; #625 headless load: the 'Setup incomplete' boxes are not opened in an unattended run (the import path is reachable from --import at startup)
 plugins/Monstro/Monstro.cpp	BUG new-p10-264: advance the LFO attack multiplier by the sample offset within each audio period
 plugins/MultitapEcho/MultitapEcho.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Organic/Organic.cpp	Organic distortion and volume now process only the current note's frames beginning at noteOffset, preserving earlier samples in the same period
 plugins/Oscilloscope/Oscilloscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 plugins/Patman/Patman.cpp	cluster new-p9-350 (2026-10-10): clearing the selected patch releases its sample bank; AudioPluginTest observes the loaded sample through a weak reference.

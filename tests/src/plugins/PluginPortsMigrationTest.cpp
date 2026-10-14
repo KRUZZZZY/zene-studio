@@ -334,6 +334,7 @@ private slots:
 	void comparisonIsSensitive();
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void slice5InstrumentsAreLiveAndDistinct();
+	void organicDistortionLeavesPreOffsetFramesUnchanged();
 	void slice6PluginsAreLiveAndExact();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
@@ -854,6 +855,55 @@ void PluginPortsMigrationTest::slice5InstrumentsAreLiveAndDistinct()
 				qPrintable(QString{"%1 vs %2: comparison not sensitive"}
 					.arg(QString::fromUtf8(slice5[i]), QString::fromUtf8(slice5[j]))));
 		}
+	}
+}
+
+void PluginPortsMigrationTest::organicDistortionLeavesPreOffsetFramesUnchanged()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{PART_C_MIGRATED_organic};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("organic");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	std::unique_ptr<lmms::Instrument> instrument{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+
+	QDomDocument doc;
+	QDomElement root = doc.createElement("instrument");
+	QDomElement state = instrument->saveState(doc, root);
+	state.setAttribute(QStringLiteral("foldback"), QStringLiteral("0.5"));
+	instrument->restoreState(state);
+
+	const lmms::f_cnt_t frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	const lmms::f_cnt_t offset = frames / 2;
+	QVERIFY(offset > 0);
+	constexpr float previousSample = 0.75f;
+	std::vector<lmms::SampleFrame> output(static_cast<std::size_t>(frames),
+		lmms::SampleFrame{previousSample, previousSample});
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 2)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+
+	lmms::NotePlayHandleManager::init();
+	auto* handle = lmms::NotePlayHandleManager::acquire(track.get(), offset, frames * 2, note);
+	instrument->playNote(handle, std::span<lmms::SampleFrame>{output});
+	instrument->deleteNotePluginData(handle);
+	handle->m_pluginData = nullptr;
+	lmms::NotePlayHandleManager::release(handle);
+	lmms::NotePlayHandleManager::free();
+
+	for (lmms::f_cnt_t frame = 0; frame < offset; ++frame)
+	{
+		QCOMPARE(output[static_cast<std::size_t>(frame)].left(), previousSample);
+		QCOMPARE(output[static_cast<std::size_t>(frame)].right(), previousSample);
 	}
 }
 
