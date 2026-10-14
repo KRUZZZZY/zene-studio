@@ -26,6 +26,7 @@
 #define LMMS_SCRIPT_CONSOLE_H
 
 #include <QString>
+#include <QStringList>
 
 namespace lmms
 {
@@ -48,6 +49,21 @@ namespace lmms
  */
 namespace ScriptConsole
 {
+
+/*! Per-run output capture with limits on retained characters and lines. */
+class CaptureBuffer
+{
+public:
+	void reset();
+	//! Append a line or the truncation notice; true only for the first dropped line.
+	bool append(QStringList& messages, const QString& line);
+	static const QString& truncationNotice();
+
+private:
+	qsizetype m_characters{0};
+	qsizetype m_lines{0};
+	bool m_limitReached{false};
+};
 
 //! Turn streaming on or off. On by default; only a host that already prints the
 //! captured lines itself (the headless `--run-script` path, which owns stdout)

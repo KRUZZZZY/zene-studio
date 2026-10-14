@@ -40,6 +40,7 @@
 #include "ProjectJournal.h"
 #include "ScriptEngine.h"
 #include "ScriptApiVersion.h"
+#include "ScriptConsole.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -223,6 +224,34 @@ private slots:
 				.arg(QString::fromLatin1(ZENE_LUA_API_MAJOR_MINOR_STRING))).size() == 1,
 			qPrintable(log.join('|')));
 		QVERIFY2(log.contains("hello.lua finished"), qPrintable(log.join('|')));
+	}
+
+	void testLogCaptureIsBoundedPerRun()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		QString error;
+
+		// Keep the regression's large lines out of Qt's test output. The capture
+		// API under test remains enabled.
+		ScriptConsole::setEnabled(false);
+		const auto result = engine->runString(QStringLiteral(
+			"local line = string.rep('x', 600000)\n"
+			"print(line)\n"
+			"print(line)\n"
+			"print('after limit')"), &error);
+		ScriptConsole::setEnabled(true);
+
+		QVERIFY2(result == ScriptEngine::RunResult::Ok, qPrintable(error));
+		const QStringList captured = engine->takeLogMessages();
+		QCOMPARE(captured.size(), 2);
+		QCOMPARE(captured.at(0).size(), qsizetype(600000));
+		QCOMPARE(captured.at(1),
+			QStringLiteral("[script output truncated: further lines dropped]"));
+
+		QVERIFY2(engine->runString(QStringLiteral("print('fresh run')"), &error)
+			== ScriptEngine::RunResult::Ok, qPrintable(error));
+		QCOMPARE(engine->takeLogMessages(), QStringList{QStringLiteral("fresh run")});
 	}
 
 	// The scripting namespace and API header were renamed `zene`; both
