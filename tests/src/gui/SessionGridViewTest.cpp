@@ -33,11 +33,13 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFile>
+#include <QKeyEvent>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
 #include <QMimeData>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QToolButton>
 #include <QUrl>
@@ -154,9 +156,28 @@ private slots:
 		QVERIFY(QTest::qWaitForWindowExposed(&view));
 		view.cellButton(0, 0)->setFocus();
 		QTest::keyClick(view.cellButton(0, 0), Qt::Key_Down);
-		QTRY_VERIFY(view.cellButton(0, 1)->hasFocus());
+		QTRY_VERIFY2(view.cellButton(0, 1)->hasFocus(), "a normal Down press should move to the next scene");
 		QTest::keyClick(view.cellButton(0, 1), Qt::Key_Right);
 		QTRY_VERIFY(view.cellButton(1, 1)->hasFocus());
+		view.cellButton(0, 0)->setFocus(Qt::OtherFocusReason);
+		QTRY_VERIFY(view.cellButton(0, 0)->hasFocus());
+		QKeyEvent repeat(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier, QString(), true, 1);
+		QApplication::sendEvent(view.cellButton(0, 0), &repeat);
+		QTRY_VERIFY2(view.cellButton(0, 1)->hasFocus(), "an auto-repeat Down press should still move to the next scene");
+	}
+
+	void autoRepeatEnterLaunchesOnlyOnce()
+	{
+		SessionGridView view;
+		view.refresh();
+		QSignalSpy clicks(view.sceneButton(0), &QToolButton::clicked);
+		QKeyEvent press(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+		QApplication::sendEvent(view.sceneButton(0), &press);
+		QCOMPARE(clicks.count(), 1);
+		QKeyEvent repeat(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier, QString(), true, 1);
+		QApplication::sendEvent(view.sceneButton(0), &repeat);
+		QCOMPARE(clicks.count(), 1);
+		run(QStringLiteral("session.stop_all"));
 	}
 
 	void theGridLaunchesAndStopsWhatTheSocketReports()
@@ -368,6 +389,7 @@ private slots:
 		QCOMPARE(slotState(0, 0).value(QStringLiteral("source")).toString(), QStringLiteral("kick.wav"));
 		QVERIFY(view.undoReplaceButton()->isHidden());
 	}
+
 };
 
 QTEST_MAIN(SessionGridViewTest)

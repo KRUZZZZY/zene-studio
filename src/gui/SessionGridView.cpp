@@ -418,10 +418,11 @@ bool SessionGridView::eventFilter(QObject* watched, QEvent* event)
 	auto* button = qobject_cast<QToolButton*>(watched);
 	if (button != nullptr && (dropOnCell(button, event) || selectOnCell(button, event))) { return true; }
 	if (event->type() != QEvent::KeyPress || button == nullptr) { return QWidget::eventFilter(watched, event); }
-	const auto key = static_cast<QKeyEvent*>(event)->key();
+	auto* keyEvent = static_cast<QKeyEvent*>(event);
+	const auto key = keyEvent->key();
 	if (key == Qt::Key_Return || key == Qt::Key_Enter)
 	{
-		button->click();
+		if (!keyEvent->isAutoRepeat()) { button->click(); }
 		return true;
 	}
 	QWidget* next = neighbour(button, key);

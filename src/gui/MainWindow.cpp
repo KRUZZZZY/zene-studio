@@ -1735,6 +1735,7 @@ void MainWindow::keyPressEvent( QKeyEvent * _ke )
 		case Qt::Key_Alt: m_keyMods.m_alt = true; break;
 		case Qt::Key_Space:
 		{
+			if (_ke->isAutoRepeat()) { break; }
 			if (Editor::lastPlayedEditor() != nullptr)
 			{
 				if (m_keyMods.m_shift) { Editor::lastPlayedEditor()->togglePause(); }
