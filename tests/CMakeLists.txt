@@ -500,6 +500,7 @@ set(LMMS_TESTS
 	src/core/MissingDevicesRound2Test.cpp
 	# ReverbSC's C allocation API: invalid channel counts and allocation failures.
 	src/plugins/ReverbSCCreateTest.cpp
+	src/core/VstSubPluginFeaturesTest.cpp
 	# The reader half of ARCH-4 S2b, integration rather than unit: a project opened
 	# with sections named to SKIP. Pinned here: the content element name DERIVED from
 	# the root's type attribute (the "pattern" -> midiclip compat mapping is what
@@ -1308,6 +1309,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
 	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "VstSubPluginFeaturesTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect/VstSubPluginFeatures.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES TIMEOUT 10)
 	endif()
 	# BUGS_FOUND 11.23: on the hosted msvc-x64 runner the 300+ test executables' linker PDBs filled the
 	# build drive (run 36802800273: LNK1201 writing SessionSceneFollowTest.pdb). Tests link without a

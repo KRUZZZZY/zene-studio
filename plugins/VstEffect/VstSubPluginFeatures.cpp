@@ -74,7 +74,7 @@ void VstSubPluginFeatures::addPluginsFromDir( QStringList* filenames, QString pa
 {
 	QStringList dirs = QDir ( ConfigManager::inst()->vstDir() + path ).
 				entryList( QStringList() << "*" ,
-						   QDir::Dirs, QDir::Name );
+						   QDir::Dirs | QDir::NoSymLinks, QDir::Name );
 	for( int i = 0; i < dirs.size(); i++ )
 	{
 		if( dirs.at( i )[0] != '.' )
