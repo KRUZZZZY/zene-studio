@@ -144,7 +144,16 @@ auto InstrumentLayers::newLayerTrack(const QDomElement* element) -> InstrumentTr
 	Track* created = element != nullptr ? Track::create(*element, ensureContainer())
 		: Track::create(Track::Type::Instrument, ensureContainer());
 	auto* track = dynamic_cast<InstrumentTrack*>(created);
-	if (track == nullptr) { return nullptr; }
+	if (track == nullptr)
+	{
+		ChangeGuard guard;
+		delete created;
+		if (previous != nullptr && InstrumentTrack::autoAssignedTrack() != previous)
+		{
+			previous->autoAssignMidiDevice(true);
+		}
+		return nullptr;
+	}
 	// A hidden layer must not become the track a keyboard plays (InstrumentTrack's constructor assigns it).
 	track->autoAssignMidiDevice(false);
 	if (previous != nullptr && previous != track) { previous->autoAssignMidiDevice(true); }

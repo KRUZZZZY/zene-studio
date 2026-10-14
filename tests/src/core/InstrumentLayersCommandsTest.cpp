@@ -47,6 +47,7 @@
 #include "Song.h"
 #include "RackTestSupport.h"
 #include "ReversibilityTestSupport.h"
+#include "TrackContainer.h"
 
 //! The directory holding the in-tree CLAP instrument fixture, whose factory carries the multi-output
 //! class the plugin.output_* case loads (tests/data/clap-test-plugin/clap-test-instrument.c). Set by
@@ -118,6 +119,32 @@ class InstrumentLayersCommandsTest : public QObject
 	Q_OBJECT
 
 private slots:
+	//! A non-instrument track in layer XML is rejected and removed from the private container.
+	void malformedLayerTrackIsRemoved()
+	{
+		auto* owner = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(owner != nullptr);
+		const auto previousAutoAssigned = InstrumentTrack::autoAssignedTrack();
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("trackcontainer"));
+		doc.appendChild(root);
+		QDomElement layers = doc.createElement(QStringLiteral("layers"));
+		QDomElement layer = doc.createElement(QStringLiteral("layer"));
+		QDomElement sample = doc.createElement(QStringLiteral("track"));
+		sample.setAttribute(QStringLiteral("type"), static_cast<int>(Track::Type::Sample));
+		layer.appendChild(sample);
+		layers.appendChild(layer);
+		root.appendChild(layers);
+
+		owner->layers().loadSettings(root);
+
+		QCOMPARE(owner->layers().layerCount(), 0);
+		QVERIFY(owner->layers().m_container != nullptr);
+		QCOMPARE(owner->layers().m_container->tracks().size(), std::size_t(0));
+		QCOMPARE(InstrumentTrack::autoAssignedTrack(), previousAutoAssigned);
+	}
+
 	void initTestCase()
 	{
 #ifdef LMMS_TEST_PLUGIN_DIR
