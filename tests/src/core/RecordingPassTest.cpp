@@ -50,6 +50,7 @@
 #include "RetroMidiCapture.h"
 #include "ReversibilityTestSupport.h"
 #include "SessionModel.h"
+#include "SessionScheduler.h"
 #include "Song.h"
 #include "TakeLane.h"
 #include "Track.h"
@@ -303,6 +304,41 @@ private slots:
 		QVERIFY(run(QStringLiteral("session.unbind"), {{QStringLiteral("key"), 48}, {QStringLiteral("channel"), 3}}).ok);
 		QVERIFY(LaunchBindings::bindings().isEmpty());
 		LaunchBindings::disconnect();
+	}
+
+	//! A note consumed by learning must not release a Gate cell that was already playing.
+	void learningANoteDoesNotReleaseAPlayingGateCell()
+	{
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(Track::create(Track::Type::Instrument, song) != nullptr);
+		QVERIFY(Track::create(Track::Type::Pattern, song) != nullptr);
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 1}}).ok);
+		QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("type"), QStringLiteral("midi")}, {QStringLiteral("pattern"), 0},
+			{QStringLiteral("mode"), QStringLiteral("gate")}, {QStringLiteral("quantisation"), QStringLiteral("none")}}).ok);
+
+		LaunchBindings* bindings = LaunchBindings::connect(QString(), QString());
+		SessionScheduler& scheduler = song->sessionScheduler();
+		QVERIFY(run(QStringLiteral("session.launch_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0}}).ok);
+		SessionClockContext clock;
+		clock.ticksPerBar = song->ticksPerBar();
+		clock.framesPerTick = 4.0f;
+		clock.transportRunning = true;
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 0), SlotPhase::Playing);
+
+		QVERIFY(run(QStringLiteral("session.bind_learn"), {{QStringLiteral("action"), QStringLiteral("slot")},
+			{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0}}).ok);
+		bindings->applyNote(LaunchNote{0, 60, true});
+		QVERIFY(bindings->learning().isEmpty());
+		bindings->applyNote(LaunchNote{0, 60, false});
+		scheduler.processAudio(clock, 16);
+		const SlotPhase afterLearnedRelease = scheduler.slotPhase(0, 0);
+		LaunchBindings::disconnect();
+		LaunchBindings::setBindings({});
+		QCOMPARE(afterLearnedRelease, SlotPhase::Playing);
 	}
 };
 

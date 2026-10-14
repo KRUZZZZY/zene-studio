@@ -28,6 +28,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
+#include <QSet>
 
 #include "MidiSurfaceInput.h"
 #include "lmms_export.h"
@@ -78,6 +79,7 @@ protected:
 private:
 	QJsonObject m_learning;
 	QHash<int, QJsonObject> m_held;  //!< channel * 128 + key -> the binding its press launched
+	QSet<int> m_learnedNotesAwaitingRelease;  //!< channel * 128 + key -> ignore the consumed press's release
 };
 
 } // namespace lmms

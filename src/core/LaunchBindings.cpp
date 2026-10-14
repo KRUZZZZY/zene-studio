@@ -147,14 +147,16 @@ bool LaunchBindings::decode(const MidiEvent& event, LaunchNote* out)
 
 void LaunchBindings::applyNote(const LaunchNote& note)
 {
+	const int held = note.channel * 128 + note.key;
 	if (!m_learning.isEmpty() && note.on)
 	{
 		learnNote(m_learning, note);
 		m_learning = {};
+		m_learnedNotesAwaitingRelease.insert(held);
 		return;
 	}
+	if (!note.on && m_learnedNotesAwaitingRelease.remove(held)) { return; }
 	// A release goes to the binding its press launched, even when the bindings changed while the key was held.
-	const int held = note.channel * 128 + note.key;
 	const QJsonObject binding = !note.on && m_held.contains(held) ? m_held.take(held) : bindingFor(note);
 	if (note.on)
 	{
