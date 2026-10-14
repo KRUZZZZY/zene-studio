@@ -2239,3 +2239,5 @@ plugins/Xpressive/ExprSynth.cpp	new-p10-129: widen note-time and integrate frame
 plugins/Xpressive/ExprSynth.h	new-p10-129: widen ExprSynth frame-counter members and ExprFront::setIntegrate declaration to f_cnt_t, matching the implementation.
 plugins/Xpressive/Xpressive.cpp	new-p10-129: use f_cnt_t for the graph-preview integrate frame counter to match ExprFront's widened API.
 tests/CMakeLists.txt	new-p10-129: register the ExprSynth long-note regression target with the existing Qt test setup; its source includes the production ExprSynth implementation in the same translation unit to seed private frame state without changing the plugin API.
+tests/src/core/ArrayVectorTest.cpp	BUG new-p10-134 (2026-10-12): includes FifoBuffer capacity validation in an existing core container test target, since the configured build tree must not be reconfigured; verifies zero and negative sizes throw std::invalid_argument.
+include/FifoBuffer.h	BUG new-p10-134 (2026-10-12): validate positive capacity in the first member initializer so zero/negative sizes throw before either semaphore or the array is initialized.

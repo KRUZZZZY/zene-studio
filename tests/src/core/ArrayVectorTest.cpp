@@ -23,6 +23,7 @@
  */
 
 #include "ArrayVector.h"
+#include "FifoBuffer.h"
 
 #include <QObject>
 #include <QtTest>
@@ -129,6 +130,12 @@ class ArrayVectorTest : public QObject
 {
 	Q_OBJECT
 private slots:
+	void fifoBufferRejectsNonPositiveCapacity()
+	{
+		QVERIFY_EXCEPTION_THROWN((lmms::FifoBuffer<int>(0)), std::invalid_argument);
+		QVERIFY_EXCEPTION_THROWN((lmms::FifoBuffer<int>(-1)), std::invalid_argument);
+	}
+
 	void defaultConstructorTest()
 	{
 		// Ensure no elements are constructed
