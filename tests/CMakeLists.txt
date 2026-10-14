@@ -967,6 +967,8 @@ set(LMMS_TESTS
 	src/gui/FolderSummaryLaneTest.cpp
 	# 0.5.0 theme 22: the main window opens where, and as large as, it was left (ui/main.geometry).
 	src/gui/MainWindowGeometryTest.cpp
+	# BUG new-p11-96: clicking the envelope graph turns a negative amount off.
+	src/gui/EnvelopeGraphTest.cpp
 	# Edit > Undo History: lists the record, undoes and redoes through the registry.
 	src/gui/UndoHistoryPanelTest.cpp
 	# The export dialog's dither and resampling choices, through export.set_*.

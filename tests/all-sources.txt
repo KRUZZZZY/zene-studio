@@ -2771,6 +2771,7 @@ tests/src/gui/CrossfadeEditorTest.cpp
 tests/src/gui/DesignTokensTest.cpp
 tests/src/gui/DevicePanelTest.cpp
 tests/src/gui/EffectDeviceMenuTest.cpp
+tests/src/gui/EnvelopeGraphTest.cpp
 tests/src/gui/EffectHostingMenuTest.cpp
 tests/src/gui/EffectPickerOrganiserTest.cpp
 tests/src/gui/EffectRackAddTest.cpp
