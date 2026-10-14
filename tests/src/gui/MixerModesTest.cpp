@@ -45,6 +45,7 @@
 #include <QToolButton>
 
 #include "AutomatableButton.h"
+#include "ColorChooser.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -452,6 +453,30 @@ private slots:
 		QVERIFY(outputPinInitiallyEnabled);
 		QVERIFY(connectorClosed);
 		QVERIFY(pinsUnchanged);
+	}
+
+	void defaultPaletteRestoresAfterTrackPalette()
+	{
+		QVector<QColor> original (48);
+		for (int i = 0; i < original.size(); ++i)
+		{
+			original[i] = QColorDialog::standardColor(i);
+		}
+
+		ColorChooser chooser;
+		chooser.setPalette(ColorChooser::Palette::Track);
+		chooser.setPalette(ColorChooser::Palette::Default);
+		QVector<QColor> restored (48);
+		for (int i = 0; i < restored.size(); ++i)
+		{
+			restored[i] = QColorDialog::standardColor(i);
+		}
+
+		for (int i = 0; i < original.size(); ++i)
+		{
+			QColorDialog::setStandardColor(i, original[i]);
+		}
+		QCOMPARE(restored, original);
 	}
 
 private:
