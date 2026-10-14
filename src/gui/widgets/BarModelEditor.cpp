@@ -13,6 +13,7 @@ BarModelEditor::BarModelEditor(QString text, FloatModel * floatModel, QWidget * 
 	m_barBrush(palette().button()),
 	m_textColor(palette().text().color())
 {
+	setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
 	setModel(floatModel);
 }
 

@@ -2034,3 +2034,4 @@ plugins/ReverbSC/base.c	cluster new-p10-534: zero-length sp_process_raw preserve
 src/core/EnvelopeAndLfoParameters.cpp	new-p11-95: clear the prior user LFO waveform when settings omit or empty userwavefile; regression EnvelopeAndLfoParametersTest.
 src/core/midi/MidiEventToByteSeq.cpp	BUG new-p12-136: reject key-pressure keys outside 0..MidiMaxKey before byte serialization; covered by MidiEventToByteSeqTest.
 tests/CMakeLists.txt	BUG new-p12-136: register MidiEventToByteSeqTest in the core test suite.
+src/gui/widgets/BarModelEditor.cpp	new-p12-329: set QWidget's stored size policy to Preferred/Fixed in the constructor so layouts honor the fixed vertical size; regression KnobKeyboardTest::barModelEditorStoresItsFixedVerticalPolicy.

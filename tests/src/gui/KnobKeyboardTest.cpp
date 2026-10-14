@@ -45,8 +45,10 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWheelEvent>
+#include <QWidget>
 
 #include "AutomatableModel.h"
+#include "BarModelEditor.h"
 #include "ComboBox.h"
 #include "ComboBoxModel.h"
 #include "ConfigManager.h"
@@ -124,6 +126,16 @@ private slots:
 	{
 		Knob knob(KnobType::Bright26);
 		QCOMPARE(knob.focusPolicy(), Qt::StrongFocus);
+	}
+
+	void barModelEditorStoresItsFixedVerticalPolicy()
+	{
+		FloatModel model(0.5f, 0.f, 1.f, 0.01f, nullptr, QStringLiteral("Level"));
+		BarModelEditor editor(QStringLiteral("Level"), &model);
+
+		auto const storedPolicy = static_cast<QWidget const &>(editor).sizePolicy();
+		QVERIFY(storedPolicy.horizontalPolicy() == QSizePolicy::Preferred);
+		QVERIFY(storedPolicy.verticalPolicy() == QSizePolicy::Fixed);
 	}
 
 	void theKeysStepAndJumpLikeASlider()
