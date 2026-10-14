@@ -365,26 +365,31 @@ void registerRackSetSelected(ControlRegistry& registry)
 
 		const int previous = rack.selectedChain();
 		const QString channelIdText = channelIdOf(channel);
-		addSelectorUndoStep(channelIdText, previous, index);
 		rack.setSelectedChain(index);
+		const int selected = rack.selectedChain();
+		const bool changed = previous != selected;
+		if (changed) { addSelectorUndoStep(channelIdText, previous, selected); }
 
 		QJsonArray routed;
 		for (const int routedIndex : rack.routedChains()) { routed.append(routedIndex); }
 		QJsonObject result;
 		result.insert(QStringLiteral("channel"), channelIdText);
-		result.insert(QStringLiteral("selected"), rack.selectedChain());
+		result.insert(QStringLiteral("selected"), selected);
 		result.insert(QStringLiteral("previous"), previous);
 		result.insert(QStringLiteral("routed"), routed);
-		QJsonObject beforeState;
-		beforeState.insert(QStringLiteral("selected"), previous);
-		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(beforeState, QStringLiteral("rack.set_selected"),
-				QJsonObject{{QStringLiteral("channel"), channelIdText},
-					{QStringLiteral("chain"), previous}},
-				true,
-				QStringLiteral("action checkpoint: the recorded undo step restores the "
-					"previous selection on the rack (the selection is a scalar the rack owns, "
-					"not a JournallingObject, so the inverse is the operation)")));
+		if (changed)
+		{
+			QJsonObject beforeState;
+			beforeState.insert(QStringLiteral("selected"), previous);
+			result.insert(QStringLiteral("__transaction"),
+				transactionPayload(beforeState, QStringLiteral("rack.set_selected"),
+					QJsonObject{{QStringLiteral("channel"), channelIdText},
+						{QStringLiteral("chain"), previous}},
+					true,
+					QStringLiteral("action checkpoint: the recorded undo step restores the "
+						"previous selection on the rack (the selection is a scalar the rack owns, "
+						"not a JournallingObject, so the inverse is the operation)")));
+		}
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

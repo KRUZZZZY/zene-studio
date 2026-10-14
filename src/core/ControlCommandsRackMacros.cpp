@@ -466,11 +466,15 @@ void registerMacroSet(ControlRegistry& registry)
 		const QString channelIdText = channelIdOf(channel);
 		const MacroApplied applied = applyMacroValue(rack, channelIdText, macro,
 			static_cast<float>(args.value(QStringLiteral("value")).toDouble()));
+		const bool changed = macroAppliedChanged(applied);
 		// ONE undo step for the macro's own scalar AND every parameter it
 		// wrote: the step re-resolves each target at undo time, so it carries no
 		// raw model pointer.
-		addUndoStep([undo = applied.undo]() { writeMacroAssignments(undo); },
-			[redo = applied.redo]() { writeMacroAssignments(redo); });
+		if (changed)
+		{
+			addUndoStep([undo = applied.undo]() { writeMacroAssignments(undo); },
+				[redo = applied.redo]() { writeMacroAssignments(redo); });
+		}
 
 		QJsonObject result;
 		result.insert(QStringLiteral("channel"), channelIdText);
@@ -480,17 +484,20 @@ void registerMacroSet(ControlRegistry& registry)
 		result.insert(QStringLiteral("skipped"), applied.skipped);
 		result.insert(QStringLiteral("writes"), applied.writes);
 		result.insert(QStringLiteral("macro_state"), macroJson(*rack.macros().macro(macro), macro));
-		QJsonObject beforeState = macroJson(*rack.macros().macro(macro), macro);
-		beforeState.insert(QStringLiteral("value"), static_cast<double>(previousValue));
-		result.insert(QStringLiteral("__transaction"),
-			transactionPayload(beforeState, QStringLiteral("rack.macro_set"),
-				QJsonObject{{QStringLiteral("channel"), channelIdText},
-					{QStringLiteral("macro"), macroId(macro)},
-					{QStringLiteral("value"), static_cast<double>(previousValue)}},
-				true,
-				QStringLiteral("action checkpoint: the recorded undo step puts the macro's own "
-					"value back and writes every parameter the call changed back to the value it "
-					"had, re-resolved by chain/effect/parameter name at undo time")));
+		if (changed)
+		{
+			QJsonObject beforeState = macroJson(*rack.macros().macro(macro), macro);
+			beforeState.insert(QStringLiteral("value"), static_cast<double>(previousValue));
+			result.insert(QStringLiteral("__transaction"),
+				transactionPayload(beforeState, QStringLiteral("rack.macro_set"),
+					QJsonObject{{QStringLiteral("channel"), channelIdText},
+						{QStringLiteral("macro"), macroId(macro)},
+						{QStringLiteral("value"), static_cast<double>(previousValue)}},
+					true,
+					QStringLiteral("action checkpoint: the recorded undo step puts the macro's own "
+						"value back and writes every parameter the call changed back to the value it "
+						"had, re-resolved by chain/effect/parameter name at undo time")));
+		}
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

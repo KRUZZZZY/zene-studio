@@ -382,7 +382,7 @@ jo_id_t AutomatableModel::lastTouched()
 	return s_lastTouched.load(std::memory_order_relaxed);
 }
 
-void AutomatableModel::setValue(const float value, const bool isAutomated)
+void AutomatableModel::setValue(const float value, const bool isAutomated, const bool journal)
 {
 	auto changeGuard = modelChangeGuard();
 	if (fittedValue(value) == m_value)
@@ -392,7 +392,11 @@ void AutomatableModel::setValue(const float value, const bool isAutomated)
 		return;
 	}
 
-	if (!isAutomated) { addJournalCheckPoint(); s_lastTouched.store(id(), std::memory_order_relaxed); }
+	if (!isAutomated)
+	{
+		if (journal) { addJournalCheckPoint(); }
+		s_lastTouched.store(id(), std::memory_order_relaxed);
+	}
 
 	// set value for this and the other linked models
 	setValueInternal(value);

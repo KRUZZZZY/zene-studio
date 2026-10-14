@@ -201,7 +201,7 @@ auto RackMacros::removeTarget(int index, int targetIndex) -> bool
 	return true;
 }
 
-auto RackMacros::apply(int index, Rack& rack) -> std::vector<RackMacroWrite>
+auto RackMacros::apply(int index, Rack& rack, bool journalWrites) -> std::vector<RackMacroWrite>
 {
 	std::vector<RackMacroWrite> writes;
 	const RackMacro* entry = macro(index);
@@ -227,11 +227,14 @@ auto RackMacros::apply(int index, Rack& rack) -> std::vector<RackMacroWrite>
 		write.previous = model->value<float>();
 		write.written = written;
 
-		// The model is a JournallingObject, so this checkpoint is the
-		// parameter half of the inverse for the engine's own undo stack
-		// (SPEC A16) - the same mechanism plugin.param_set uses.
-		model->addJournalCheckPoint();
-		model->setValue(written);
+		// Pair commands record their net inverse themselves, so they suppress
+		// this model's journal checkpoint while keeping the normal non-automated
+		// write behavior (including lastTouched). Equal writes are not edits.
+		if (write.previous != write.written)
+		{
+			if (journalWrites) { model->addJournalCheckPoint(); }
+			model->setValue(written, false, journalWrites);
+		}
 		writes.push_back(write);
 	}
 	return writes;
