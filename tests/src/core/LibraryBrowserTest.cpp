@@ -35,8 +35,12 @@
 #include <limits>
 
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QImage>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 
 #include "BrowserIndex.h"
@@ -455,6 +459,41 @@ private slots:
 			QStringLiteral("Samples"));
 		QCOMPARE(run(QStringLiteral("browser.remember_source"), {{QStringLiteral("context"), QStringLiteral("kitchen")},
 			{QStringLiteral("source"), QStringLiteral("Samples")}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	void partialFeatureRecordsAreNotRetainedAsValid()
+	{
+		const QFileInfo audio(tones(QStringLiteral("tone-440.wav")));
+		const QJsonObject partialFeatures{{QStringLiteral("db"), -20.0}};
+		const QJsonObject entry{{QStringLiteral("p"), audio.canonicalFilePath()}, {QStringLiteral("k"), QStringLiteral("audio")},
+			{QStringLiteral("s"), static_cast<double>(audio.size())},
+			{QStringLiteral("m"), static_cast<double>(audio.lastModified().toMSecsSinceEpoch())},
+			{QStringLiteral("f"), partialFeatures}};
+		const QByteArray bytes = QJsonDocument(QJsonObject{{QStringLiteral("entries"), QJsonArray{entry}}})
+			.toJson(QJsonDocument::Compact);
+		QFile store(BrowserIndex::instance().storePath());
+		QVERIFY(store.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QCOMPARE(store.write(bytes), static_cast<qint64>(bytes.size()));
+		store.close();
+
+		BrowserIndex::instance().reload();
+		const std::vector<BrowserIndexEntry> loaded = BrowserIndex::instance().entries();
+		QCOMPARE(loaded.size(), std::size_t{1});
+		const bool validOnLoad = loaded.front().features.valid;
+		QVERIFY(BrowserIndex::instance().scanNow({tones(QString())}, false, 0));
+		bool retainedAsValid = false;
+		bool foundAudio = false;
+		for (const BrowserIndexEntry& scanned : BrowserIndex::instance().entries())
+		{
+			if (scanned.path != audio.canonicalFilePath()) { continue; }
+			foundAudio = true;
+			retainedAsValid = scanned.features.valid;
+			break;
+		}
+		QVERIFY(foundAudio);
+		QVERIFY2(!validOnLoad && !retainedAsValid,
+			qPrintable(QStringLiteral("partial features: valid on load=%1, retained after unchanged scan=%2")
+				.arg(validOnLoad).arg(retainedAsValid)));
 	}
 
 private:
