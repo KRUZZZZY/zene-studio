@@ -228,7 +228,13 @@ bool importedColors(const QJsonObject& args, QJsonObject* out, ControlResult* er
 			? QStringLiteral("the file is not a theme (theme.export writes one)") : reason);
 		return false;
 	}
-	*out = doc.value(QStringLiteral("colors")).toObject();
+	const QJsonValue colors = doc.value(QStringLiteral("colors"));
+	if (!colors.isObject())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("theme file must contain an object-valued 'colors' field"));
+		return false;
+	}
+	*out = colors.toObject();
 	return true;
 }
 
