@@ -33,6 +33,8 @@
 #include <array>
 #include <cmath>
 #include <span>
+#include <cstdlib>
+#include <new>
 #include <vector>
 
 #include "AudioEngine.h"
@@ -69,6 +71,27 @@ float EqHandle::freqToXPixel(float, int) { return 0.0f; }
 } // namespace lmms::gui
 
 using namespace lmms;
+
+namespace
+{
+
+thread_local bool g_trackLargestAllocation = false;
+thread_local std::size_t g_largestAllocation = 0;
+
+} // namespace
+
+void* operator new(std::size_t size)
+{
+	if (g_trackLargestAllocation && size > g_largestAllocation) { g_largestAllocation = size; }
+	if (void* ptr = std::malloc(size != 0 ? size : 1)) { return ptr; }
+	throw std::bad_alloc();
+}
+
+void* operator new[](std::size_t size) { return ::operator new(size); }
+void operator delete(void* ptr) noexcept { std::free(ptr); }
+void operator delete[](void* ptr) noexcept { std::free(ptr); }
+void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
+void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
 
 namespace
 {
@@ -282,6 +305,26 @@ private slots:
 		std::vector<float> normalized{42.0f};
 		QCOMPARE(normalize(spectrum, normalized, 1), -1);
 		QCOMPARE(normalized.front(), 42.0f);
+	}
+
+	void theSpectrogramDoesNotAllocateTheWholeClip()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		SampleClip* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		{
+			const std::size_t frameCount = static_cast<std::size_t>(rate) * 60;
+			std::vector<SampleFrame> frames(frameCount, SampleFrame(0.f));
+			clip->setSampleBuffer(std::make_shared<SampleBuffer>(frames.data(), frames.size(), rate));
+		}
+
+		g_largestAllocation = 0;
+		g_trackLargestAllocation = true;
+		const ControlResult got = run(QStringLiteral("sample.spectrogram"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("rows"), 2}, {QStringLiteral("bands"), 4}});
+		g_trackLargestAllocation = false;
+		QVERIFY2(got.ok, qPrintable(got.errorMessage));
+		QVERIFY2(g_largestAllocation < 1024 * 1024, qPrintable(QStringLiteral("largest allocation was %1 bytes").arg(g_largestAllocation)));
 	}
 
 	void aRangeIsEdited()

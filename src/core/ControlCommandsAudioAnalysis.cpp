@@ -131,12 +131,16 @@ std::pair<int, int> bandBins(int band, int bands, int size, int rate)
 	return {binOf(low), std::max(binOf(low) + 1, binOf(high))};
 }
 
-QJsonArray spectrumRow(const std::vector<float>& mono, std::size_t at, const std::vector<float>& hann, int bands, int rate)
+QJsonArray spectrumRow(const SampleFrame* frames, std::size_t at, const std::vector<float>& hann, int bands, int rate)
 {
 	const int size = static_cast<int>(hann.size());
 	std::vector<float> re(static_cast<std::size_t>(size));
 	std::vector<float> im(static_cast<std::size_t>(size), 0.f);
-	for (int i = 0; i < size; ++i) { re[static_cast<std::size_t>(i)] = mono[at + static_cast<std::size_t>(i)] * hann[static_cast<std::size_t>(i)]; }
+	for (int i = 0; i < size; ++i)
+	{
+		const SampleFrame& frame = frames[at + static_cast<std::size_t>(i)];
+		re[static_cast<std::size_t>(i)] = static_cast<float>(0.5 * (frame.left() + frame.right())) * hann[static_cast<std::size_t>(i)];
+	}
 	detection::detail::fftRadix2(re, im);
 	QJsonArray row;
 	for (int band = 0; band < bands; ++band)
@@ -155,16 +159,19 @@ ControlResult spectrogram(const QJsonObject& args)
 	ControlResult error;
 	SampleClip* clip = audioClipOf(args, &ref, &error);
 	if (clip == nullptr) { return error; }
-	const std::vector<float> mono = windowMono(*clip);
 	const int rows = std::clamp(args.value(QStringLiteral("rows")).toInt(128), 1, 1024);
 	const int bands = std::clamp(args.value(QStringLiteral("bands")).toInt(64), 4, 256);
 	const std::vector<float> hann = detection::detail::hannWindow(2048);
-	if (mono.size() < hann.size()) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip is shorter than one analysis window")); }
-	const std::size_t span = mono.size() - hann.size();
+	const SampleWindow window = clip->sampleWindow();
+	const std::size_t frameCount = static_cast<std::size_t>(window.sourceOut - window.sourceIn);
+	if (frameCount < hann.size()) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip is shorter than one analysis window")); }
+	const SampleFrame* frames = clip->sample().data() + window.sourceIn;
+	const std::size_t span = frameCount - hann.size();
 	QJsonArray out;
 	for (int r = 0; r < rows; ++r)
 	{
-		out.append(spectrumRow(mono, span * static_cast<std::size_t>(r) / static_cast<std::size_t>(std::max(1, rows - 1)), hann, bands, clip->sample().sampleRate()));
+		out.append(spectrumRow(frames, span * static_cast<std::size_t>(r) / static_cast<std::size_t>(std::max(1, rows - 1)), hann, bands,
+			clip->sample().sampleRate()));
 	}
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("rows"), out}, {QStringLiteral("bands"), bands},
 		{QStringLiteral("low_hz"), 30}, {QStringLiteral("high_hz"), clip->sample().sampleRate() / 2}});

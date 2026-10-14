@@ -2223,3 +2223,4 @@ include/AudioBufferView.h	new-p9-550: InterleavedFrameIterator subtraction retur
 plugins/VstEffect/VstEffectControls.cpp	2026-10-11 new-p9-542: preserve the loadSettings path while exposing a test-only dump provider and deleting replaced parameter models; VstEffectControlsTest invokes loadSettings twice and checks QObject child count.
 tests/CMakeLists.txt	2026-10-11 new-p9-542: compile VstEffectControls and its dialog into VstEffectControlsTest so the test exercises the real loadSettings implementation with its test-only dump provider.
 include/BasicFilters.h	cluster new-p9-590: use second-formant band-pass history for its first-stage resonance feedback; covered by formantSecondStageUsesItsOwnHistory.
+src/core/ControlCommandsAudioAnalysis.cpp	Qwen cluster new-p10-41: sample.spectrogram reads only requested 2048-frame windows from the clip, avoiding a full-window mono allocation; AudioAnalysisTest checks the allocation bound.
