@@ -44,6 +44,7 @@
 #include "Song.h"
 #include "TaskCenter.h"
 #include "Track.h"
+#include "VideoAudioExtract.h"
 #include "VideoDecoder.h"
 #include "VideoFramePump.h"
 #include "VideoReference.h"
@@ -380,6 +381,35 @@ private slots:
 		QCOMPARE(song->tracks().size(), tracksBefore);
 		QVERIFY2(QFileInfo::exists(out), "the undo removed the WAV, which it documents it keeps");
 		song->clearProject();
+	}
+
+	void cancelledDirectExtractionPreservesExistingDestination()
+	{
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		const QString out = m_dir.filePath(QStringLiteral("existing.wav"));
+		const QByteArray original = "keep this existing file";
+		QFile existing(out);
+		QVERIFY(existing.open(QIODevice::WriteOnly));
+		QCOMPARE(existing.write(original), qint64(original.size()));
+		existing.close();
+
+		VideoAudio audio;
+		QString error;
+		VideoExtractControl control;
+		control.cancel.store(true);
+		QVERIFY(!extractVideoAudio(m_clip, out, &audio, &error, &control));
+		QVERIFY(error.contains(QStringLiteral("cancelled")));
+
+		QFile preserved(out);
+		QVERIFY(preserved.open(QIODevice::ReadOnly));
+		QCOMPARE(preserved.readAll(), original);
+
+		QVERIFY2(extractVideoAudio(m_clip, out, &audio, &error), qPrintable(error));
+		QCOMPARE(audio.path, out);
+		QVERIFY(audio.frames > 0);
+		QFile completed(out);
+		QVERIFY(completed.open(QIODevice::ReadOnly));
+		QCOMPARE(completed.read(4), QByteArray("RIFF", 4));
 	}
 
 	//! 0.5.0 theme 24: with 'background' the decode runs on a worker listed in the task area and the reply comes at once;
