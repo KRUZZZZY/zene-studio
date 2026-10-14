@@ -40,6 +40,8 @@
 #include <QSslSocket>
 #include <QTcpServer>
 #include <QTemporaryDir>
+#include <QSslSocket>
+#include <QTcpServer>
 #include <QTcpSocket>
 
 #include "CollabClient.h"
@@ -439,6 +441,28 @@ private slots:
 		QTest::qWait(350);  // Let the journal watch observe it while the request is throttled.
 		QCOMPARE(snapshotsSent, 2);
 		QTRY_COMPARE_WITH_TIMEOUT(snapshotsSent, 3, 2500);
+	}
+
+	//! A complete line over the configured cap closes the link before it reaches the receiver.
+	void completeOversizedLineIsRejected()
+	{
+		QTcpServer server;
+		QVERIFY(server.listen(QHostAddress::LocalHost, 0));
+		auto socket = std::make_unique<QSslSocket>();
+		socket->connectToHost(QHostAddress::LocalHost, server.serverPort());
+		QVERIFY(socket->waitForConnected(5000));
+		QTRY_VERIFY_WITH_TIMEOUT(server.hasPendingConnections(), 5000);
+		auto peer = std::unique_ptr<QTcpSocket>(server.nextPendingConnection());
+		CollabLink link(socket.release(), 4);
+		QSignalSpy received(&link, &CollabLink::received);
+		QSignalSpy closed(&link, &CollabLink::closed);
+
+		QCOMPARE(peer->write(QByteArrayLiteral("12345\n")), qint64(6));
+		QVERIFY(peer->waitForBytesWritten(5000));
+		QTRY_VERIFY_WITH_TIMEOUT(!received.isEmpty() || !closed.isEmpty(), 5000);
+		QCOMPARE(closed.size(), 1);
+		QVERIFY(received.isEmpty());
+		QCOMPARE(closed.first().first().toString(), QStringLiteral("a message was over the size limit"));
 	}
 
 	//! A host that cannot write its project turns the joiner away with the reason instead of a broken copy.
