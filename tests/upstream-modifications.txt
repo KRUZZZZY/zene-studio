@@ -680,6 +680,7 @@ plugins/VstBase/RemoteVstPlugin.cpp	#589 planar-ports migration: remote VST host
 plugins/VstBase/VstPlugin.cpp	#589 planar-ports migration: setSplittedChannels() gone; ports channel counts round-trip in load/saveSettings
 plugins/VstBase/VstPlugin.h	#589 planar-ports migration: VstPlugin takes the ports controller instead of configuring split channels
 plugins/VstBase/vst_base.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
+plugins/Xpressive/ExprSynth.h	BUG new-p9-142: compute positive wave fractions with std::fmod so finite values outside int range never undergo undefined conversion; keep negative wrapping in [0,1) and non-finite inputs at zero; covered by PluginPortsMigrationTest.
 plugins/VstEffect/VstEffect.cpp	#589 planar-ports migration: no-arg process(), planar wet/dry mixing, lock moved to processLock/processUnlock; rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
 plugins/VstEffect/VstEffect.h	#589 planar-ports migration: VstEffect is an AudioPlugin with dynamic planar ports; 0.5.0 Q050-018: unavailableReason() (plug-in binary missing).
 plugins/VstEffect/VstEffectControlDialog.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo

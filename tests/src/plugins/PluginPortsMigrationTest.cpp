@@ -33,6 +33,8 @@
 #include <new>
 #include <algorithm>
 #include <limits>
+#include <cmath>
+#include <limits>
 #include <vector>
 #include <memory>
 
@@ -62,6 +64,7 @@
 // here to exercise the constructor directly without adding a new test target.
 #include "../../../plugins/Delay/Lfo.cpp"
 #include "TempoSyncKnobModel.h"
+#include "../../../plugins/Xpressive/ExprSynth.h"
 
 namespace
 {
@@ -339,6 +342,9 @@ private slots:
 	void delayLfoControlDescribesItsPeriod();
 	void doubleFilterClearHistoryClearsSubfilter();
 	void xpressiveLoadedWaveSamplesAreFinite();
+	void positiveFractionHandlesVeryLargePositiveValues();
+	void positiveFractionHandlesVeryLargeNegativeValues();
+	void positiveFractionPreservesOrdinaryValues();
 	void migratedPluginsPreserveBehaviour();
 	void monstroLfoAttackRampsWithinPeriod();
 	void comparisonIsSensitive();
@@ -648,6 +654,29 @@ void PluginPortsMigrationTest::xpressiveRandomVectorRejectsOutOfRangeFloatInputs
 			.arg(indexFallsBackToZero).arg(peak(outOfRangeIndex)).arg(zeroExpressionIsZero)
 			.arg(seedFallsBackToZero).arg(peak(zeroSeed)).arg(peak(outOfRangeSeed))
 			.arg(partc::maxAbsDiff(zeroSeed, outOfRangeSeed))));
+}
+
+void PluginPortsMigrationTest::positiveFractionHandlesVeryLargePositiveValues()
+{
+	const float result = lmms::positiveFraction(std::numeric_limits<float>::max());
+	QVERIFY(std::isfinite(result));
+	QVERIFY(result >= 0.0f);
+	QVERIFY(result < 1.0f);
+}
+
+void PluginPortsMigrationTest::positiveFractionHandlesVeryLargeNegativeValues()
+{
+	const float result = lmms::positiveFraction(-std::numeric_limits<float>::max());
+	QVERIFY(std::isfinite(result));
+	QVERIFY(result >= 0.0f);
+	QVERIFY(result < 1.0f);
+}
+
+void PluginPortsMigrationTest::positiveFractionPreservesOrdinaryValues()
+{
+	QCOMPARE(lmms::positiveFraction(1.25f), 0.25f);
+	QCOMPARE(lmms::positiveFraction(-0.25f), 0.75f);
+	QCOMPARE(lmms::positiveFraction(-2.0f), 0.0f);
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
