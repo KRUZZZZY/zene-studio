@@ -65,7 +65,7 @@ float maximum(const std::vector<float> &abs_spectrum)
 int normalize(const float *abs_spectrum, float *norm_spectrum, unsigned int bin_count, unsigned int block_size)
 {
 	if (abs_spectrum == nullptr || norm_spectrum == nullptr) {return -1;}
-	if (bin_count == 0 || block_size == 0) {return -1;}
+	if (bin_count == 0 || block_size < 2) {return -1;}
 
 	block_size /= 2;
 	for (unsigned int i = 0; i < bin_count; i++)

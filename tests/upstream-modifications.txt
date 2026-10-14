@@ -2095,3 +2095,4 @@ src/gui/widgets/Graph.cpp	new-p9-160: refuse Graph edits at heights with no usab
 src/gui/widgets/Graph.cpp	Initialize cursor history and make a first Shift-click edit only its clicked sample before line drawing can continue.
 src/gui/widgets/Graph.cpp	cluster new-p9-161: clamp constructor lengths to the two-sample minimum and reject shorter setLength requests, because smooth requires two samples and other operations divide or index by length.
 tests/src/gui/SampleEditorDialogTest.cpp	cluster new-p9-161: regression for graphModel refusing lengths below two and remaining safe for smoothing and normalization at the minimum.
+src/core/fft_helpers.cpp	new-p9-176 (2026-10-11): reject a one-sample FFT block before halving its size, preventing a zero divisor; regression AudioAnalysisTest::normalizationRejectsAOneSampleBlock.

@@ -41,6 +41,7 @@
 #include "Engine.h"
 #include "FolderSummary.h"
 #include "fft_helpers.h"
+#include "fft_helpers.h"
 #include "PitchTrack.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -208,6 +209,14 @@ private slots:
 		analyser.analyze(InterleavedBufferView<const float, 2>{input.data(), frameCount});
 		QVERIFY(std::isfinite(analyser.getEnergy()));
 		QCOMPARE(analyser.getEnergy(), 0.0f);
+	}
+
+	void normalizationRejectsAOneSampleBlock()
+	{
+		const std::vector<float> spectrum{1.0f};
+		std::vector<float> normalized{42.0f};
+		QCOMPARE(normalize(spectrum, normalized, 1), -1);
+		QCOMPARE(normalized.front(), 42.0f);
 	}
 
 	void aRangeIsEdited()
