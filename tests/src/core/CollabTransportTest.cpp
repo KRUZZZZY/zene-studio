@@ -37,6 +37,8 @@
 
 #include <QFile>
 #include <QJsonDocument>
+#include <QSslSocket>
+#include <QTcpServer>
 #include <QTcpSocket>
 
 #include "CollabClient.h"
@@ -57,6 +59,17 @@ struct Received
 	QList<QByteArray> snapshots;
 	QList<QByteArray> requests;
 	QList<CollabRole> requestRoles;
+};
+
+class QueueReportingSslSocket final : public QSslSocket
+{
+public:
+	explicit QueueReportingSslSocket(qint64 queuedBytes) : m_queuedBytes(queuedBytes) {}
+
+	qint64 bytesToWrite() const override { return m_queuedBytes; }
+
+private:
+	qint64 m_queuedBytes;
 };
 
 } // namespace
@@ -115,6 +128,22 @@ private slots:
 	}
 
 	void cleanup() { m_host.reset(); }
+
+	//! A payload at the queue limit is refused because its framing newline would exceed the limit.
+	void sendLineCountsItsFramingNewline()
+	{
+		QTcpServer server;
+		QVERIFY(server.listen(QHostAddress(QHostAddress::LocalHost), 0));
+		auto* socket = new QueueReportingSslSocket(MaxQueuedBytes - 1);
+		socket->connectToHost(QHostAddress(QHostAddress::LocalHost), server.serverPort());
+		QVERIFY(socket->waitForConnected(5000));
+
+		CollabLink link(socket, MaxPeerLineBytes);
+		QSignalSpy closed(&link, &CollabLink::closed);
+		link.sendLine(QByteArrayLiteral("x"));
+		QCOMPARE(closed.size(), 1);
+		QCOMPARE(closed.first().first().toString(), QStringLiteral("the other side stopped reading"));
+	}
 
 	//! The right key: the handshake completes, the peer is listed, and the FIRST thing it receives is the project.
 	void rightKeyJoinsAndGetsTheSnapshotFirst()
