@@ -44,6 +44,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <new>
+#include <vector>
 
 #include <QtTest>
 
@@ -59,6 +62,7 @@
 #include "Engine.h"
 #include "MidiClient.h"
 #include "MidiClock.h"
+#include "RetroMidiCapture.h"
 #include "Song.h"
 #include "TimePos.h"
 
@@ -148,6 +152,42 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
 }
+
+//! The same client, built over POISONED storage: every byte of the object is
+//! set to kPoison before its constructor runs, so a parser field that the
+//! constructor does not write keeps kPoison instead of whatever the allocator
+//! happened to hand out. midiParserData has no constructor of its own and
+//! MidiClientRaw's is defaulted, so which of its fields the constructor is
+//! obliged to initialise is exactly what this harness measures; the poison is
+//! 0x90 (a note-on status byte), the value that turns a leftover counter into
+//! a completed event rather than a silent drop.
+class PoisonedParsingRawClient
+{
+public:
+	PoisonedParsingRawClient()
+	{
+		std::memset(m_storage, kPoison, sizeof(m_storage));
+		// DEFAULT-initialisation, and that is the whole point of the harness:
+		// `new (p) ParsingRawClient()` with empty parentheses would VALUE-
+		// initialise, and the compiler's zero-fill would hide exactly the
+		// fields under test.
+		m_client = new (static_cast<void*>(m_storage)) ParsingRawClient;
+	}
+
+	~PoisonedParsingRawClient() { m_client->~ParsingRawClient(); }
+
+	PoisonedParsingRawClient(const PoisonedParsingRawClient&) = delete;
+	PoisonedParsingRawClient& operator=(const PoisonedParsingRawClient&) = delete;
+
+	ParsingRawClient& operator*() { return *m_client; }
+	ParsingRawClient* operator->() { return m_client; }
+
+private:
+	static constexpr unsigned char kPoison = 0x90;
+
+	alignas(ParsingRawClient) unsigned char m_storage[sizeof(ParsingRawClient)];
+	ParsingRawClient* m_client = nullptr;
+};
 
 } // namespace
 
@@ -688,6 +728,44 @@ private slots:
 
 		client.send(MidiEvent(MidiProgramChange, 9, 0x2A));
 		QCOMPARE(client.bytes, QByteArray::fromHex("c92a"));
+	}
+
+	//! THE PARSER'S INITIAL STATE. A raw device that is opened while another
+	//! device is mid-message delivers a DATA byte before it has sent a status
+	//! byte of its own; that byte belongs to no event this parser is
+	//! assembling, so it must be dropped and must leave the parser where it
+	//! was. midiParserData has no constructor and MidiClientRaw's is defaulted,
+	//! so before this fix m_status / m_channel / m_bytes / m_bytesTotal and
+	//! the payload slots were whatever the client's memory happened to hold,
+	//! and the stray byte was assembled into an event out of them - over the
+	//! storage poisoned to a note-on status, one leading data byte dispatched a
+	//! phantom note built from the leftover channel, byte counter and payload,
+	//! and a later status byte started counting from that leftover counter
+	//! instead of from zero. Both bytes are fed through the real parser.
+	void aFreshParserDiscardsALeadingDataByte()
+	{
+		PoisonedParsingRawClient client;
+		client->retroCapture().arm(true);
+
+		// The first byte off this wire is data, not status: nothing of it.
+		client->feed(0x40);
+		QCOMPARE(static_cast<qulonglong>(client->retroCapture().ring().bufferedCount()),
+			static_cast<qulonglong>(0));
+
+		// The parser is therefore still at the start of a message, so the next
+		// real message is the first event, with its own key and velocity.
+		client->feed(0x90);
+		client->feed(0x3C);
+		client->feed(0x64);
+		QCOMPARE(static_cast<qulonglong>(client->retroCapture().ring().bufferedCount()),
+			static_cast<qulonglong>(1));
+
+		std::vector<RetroMidiEvent> window(1);
+		QCOMPARE(static_cast<qulonglong>(client->retroCapture().ring().copyOut(window.data(), window.size())),
+			static_cast<qulonglong>(1));
+		QCOMPARE(static_cast<unsigned>(window[0].type), static_cast<unsigned>(lmms::MidiNoteOn));
+		QCOMPARE(static_cast<unsigned>(window[0].param1), 0x3Cu);
+		QCOMPARE(static_cast<unsigned>(window[0].param2), 0x64u);
 	}
 
 	// ------------------------------------------------------------------- A16
