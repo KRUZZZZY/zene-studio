@@ -261,6 +261,36 @@ private slots:
 		period(mixer);
 	}
 
+	void aSurroundPannedSendWakesOnlyItsNonzeroStereoChannel()
+	{
+		Mixer* mixer = Engine::mixer();
+		route51Bus(*mixer);
+		QVERIFY(pan(1, -1.0, 1.0));
+
+		MixerRoute* route = nullptr;
+		for (MixerRoute* candidate : mixer->mixerChannel(1)->m_sends)
+		{
+			if (candidate->receiverIndex() == 3) { route = candidate; }
+		}
+		QVERIFY(route != nullptr);
+
+		std::bitset<MaxTrackChannels>& quiet = mixer->mixerChannel(3)->m_bus.quietChannels();
+		quiet.set(0);
+		quiet.set(1);
+		const SampleFrame src(0.25f, 0.25f);
+		surround::panSend(*route, &src, 1);
+
+		const float left = mixer->mixerChannel(3)->m_buffer[0][0];
+		const float right = mixer->mixerChannel(3)->m_buffer[0][1];
+		const bool leftAwake = !quiet[0];
+		const bool rightQuiet = quiet[1];
+		period(mixer);  // clear the direct probe before the following test uses the mixer
+		QVERIFY(left > 0.f);
+		QCOMPARE(right, 0.f);
+		QVERIFY(leftAwake);
+		QVERIFY(rightQuiet);
+	}
+
 	void theDownmixFollowsBs775()
 	{
 		using surround::Format;
