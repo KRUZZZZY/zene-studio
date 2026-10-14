@@ -25,7 +25,9 @@
 #include "AudioBuffer.h"
 
 #include <QtTest>
+#include <limits>
 #include <numeric>
+#include <stdexcept>
 
 #include "MixHelpers.h"
 #include "SharedMemory.h"
@@ -187,6 +189,29 @@ private slots:
 		QVERIFY_EXCEPTION_THROWN(attached.attach(owner.key()), std::runtime_error);
 	}
 #endif
+
+	//! Verifies array allocations without a key reject element counts whose byte size would overflow
+	void CreateArrayWithoutKey_RejectsOverflow()
+	{
+		using Array = lmms::SharedMemory<unsigned long long[]>;
+		constexpr auto overflowingElementCount =
+			std::numeric_limits<std::size_t>::max() / sizeof(unsigned long long) + 1;
+
+		Array unnamed;
+		QVERIFY_EXCEPTION_THROWN(unnamed.create(overflowingElementCount), std::length_error);
+	}
+
+	//! Verifies array allocations with a key reject element counts whose byte size would overflow
+	void CreateArrayWithKey_RejectsOverflow()
+	{
+		using Array = lmms::SharedMemory<unsigned long long[]>;
+		constexpr auto overflowingElementCount =
+			std::numeric_limits<std::size_t>::max() / sizeof(unsigned long long) + 1;
+
+		Array named;
+		QVERIFY_EXCEPTION_THROWN(
+			named.create("shared-memory-array-overflow-test", overflowingElementCount), std::length_error);
+	}
 
 	//! Verifies that the `allocateInterleavedBuffer` method allocates the interleaved buffer
 	void AllocateInterleavedBuffer()

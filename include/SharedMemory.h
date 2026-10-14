@@ -26,9 +26,11 @@
 #ifndef LMMS_SHARED_MEMORY_H
 #define LMMS_SHARED_MEMORY_H
 
+#include <limits>
 #include <memory>
 #include <memory_resource>
 #include <new>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 
@@ -212,13 +214,13 @@ public:
 
 	void create(std::string key, std::size_t size)
 	{
-		m_data = detail::SharedMemoryData{std::move(key), size * sizeof(T), std::is_const_v<T>, true};
+		m_data = detail::SharedMemoryData{std::move(key), checkedSizeBytes(size), std::is_const_v<T>, true};
 		m_resource.reset(m_data.get(), size_bytes());
 	}
 
 	void create(std::size_t size)
 	{
-		m_data = detail::SharedMemoryData{size * sizeof(T), std::is_const_v<T>, true};
+		m_data = detail::SharedMemoryData{checkedSizeBytes(size), std::is_const_v<T>, true};
 		m_resource.reset(m_data.get(), size_bytes());
 	}
 
@@ -240,6 +242,15 @@ public:
 	SharedMemoryResource* resource() noexcept { return &m_resource; }
 
 private:
+	static std::size_t checkedSizeBytes(std::size_t size)
+	{
+		if (size > std::numeric_limits<std::size_t>::max() / sizeof(T))
+		{
+			throw std::length_error{"shared memory array size overflows"};
+		}
+		return size * sizeof(T);
+	}
+
 	detail::SharedMemoryData m_data;
 	SharedMemoryResource m_resource;
 };
