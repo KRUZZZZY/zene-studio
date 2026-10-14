@@ -329,9 +329,17 @@ DocumentIndex parseDocumentIndex( const QDomElement & root )
 		if( section.name.isEmpty() ) { continue; }
 
 		section.entry = entry.attribute( QStringLiteral( "entry" ) );
-		section.version = entry.attribute( QStringLiteral( "v" ),
-			QStringLiteral( "0" ) ).toInt();
+		bool versionIsValid = false;
+		section.version = entry.attribute( QStringLiteral( "v" ) ).toInt( &versionIsValid );
 		section.digest = entry.attribute( QStringLiteral( "digest" ) );
+
+		// A named row must carry every field the writer emits. Reject the whole
+		// index so no reader can mistake the surviving rows for a complete map.
+		if( section.entry.isEmpty() || section.digest.isEmpty() || !versionIsValid )
+		{
+			return DocumentIndex();
+		}
+
 		index.sections.append( section );
 	}
 
