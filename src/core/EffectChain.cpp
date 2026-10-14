@@ -192,6 +192,7 @@ void EffectChain::loadSettings( const QDomElement & _this )
 				e = new DummyEffect( parentModel(), effectData );
 			}
 
+			e->setEffectChain( this );
 			m_effects.push_back( e );
 			++fx_loaded;
 		}
