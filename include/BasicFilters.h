@@ -750,8 +750,8 @@ public:
 			m_vfq = _q * 0.25f;
 
 			// frequency in lmms ranges from 1Hz to 14000Hz
-			const float vowelf = _freq * freqRatio;
-			const int vowel = static_cast<int>( vowelf );
+			const float vowelf = std::min(_freq * freqRatio, 5.0f);
+			const int vowel = std::min(static_cast<int>( vowelf ), 4);
 			const float fract = vowelf - vowel;
 
 			// interpolate between formant frequencies
