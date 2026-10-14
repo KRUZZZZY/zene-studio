@@ -24,6 +24,8 @@
 
 #include "Monstro.h"
 
+#include <algorithm>
+#include <memory>
 
 #include "ComboBox.h"
 #include "Engine.h"
@@ -100,10 +102,10 @@ MonstroSynth::MonstroSynth( MonstroInstrument * _i, NotePlayHandle * _nph ) :
 	m_counter3l = 0;
 	m_counter3r = 0;
 
-	m_lfo[0].resize( m_parent->m_fpp );
-	m_lfo[1].resize( m_parent->m_fpp );
-	m_env[0].resize( m_parent->m_fpp );
-	m_env[1].resize( m_parent->m_fpp );
+	m_lfo[0] = nullptr;
+	m_lfo[1] = nullptr;
+	m_env[0] = nullptr;
+	m_env[1] = nullptr;
 }
 
 
@@ -340,7 +342,7 @@ void MonstroSynth::renderOutput( f_cnt_t _frames, SampleFrame* _buf  )
 	float sub;
 
 	// render modulators: envelopes, lfos
-	updateModulators( m_env[0].data(), m_env[1].data(), m_lfo[0].data(), m_lfo[1].data(), _frames );
+	updateModulators( m_env[0], m_env[1], m_lfo[0], m_lfo[1], _frames );
 
 	// begin for loop
 	for( f_cnt_t f = 0; f < _frames; ++f )
@@ -1042,6 +1044,14 @@ MonstroInstrument::MonstroInstrument( InstrumentTrack * _instrument_track ) :
 	connect( Engine::audioEngine(), SIGNAL( sampleRateChanged() ), this, SLOT( updateSamplerate() ) );
 
 	m_fpp = Engine::audioEngine()->framesPerPeriod();
+	m_modulationScratchCount = static_cast<std::size_t>(
+		std::max(1, Engine::audioEngine()->renderThreadCount()));
+	m_modulationScratch = std::make_unique<ModulationScratch[]>(m_modulationScratchCount);
+	for (std::size_t slot = 0; slot < m_modulationScratchCount; ++slot)
+	{
+		for (auto& buffer : m_modulationScratch[slot].lfo) { buffer.resize(m_fpp); }
+		for (auto& buffer : m_modulationScratch[slot].env) { buffer.resize(m_fpp); }
+	}
 
 	updateSamplerate();
 	updateVolume1();
@@ -1062,22 +1072,45 @@ void MonstroInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 {
 	const f_cnt_t frames = nph->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = nph->noteOffset();
+	ModulationScratch* scratch = nullptr;
+	for (std::size_t slot = 0; slot < m_modulationScratchCount; ++slot)
+	{
+		auto& candidate = m_modulationScratch[slot];
+		if (!candidate.inUse.test_and_set(std::memory_order_acquire))
+		{
+			scratch = &candidate;
+			break;
+		}
+	}
+	if (scratch == nullptr) { return; }
 
 	if (!nph->m_pluginData)
 	{
-		nph->m_pluginData = new MonstroSynth(this, nph);
+		static_assert(sizeof(MonstroSynth) <= NotePlayHandle::PluginDataStorageSize);
+		static_assert(alignof(MonstroSynth) <= alignof(std::max_align_t));
+		nph->m_pluginData = std::construct_at(
+			static_cast<MonstroSynth*>(nph->pluginDataStorage()), this, nph);
 	}
 
 	auto ms = static_cast<MonstroSynth*>(nph->m_pluginData);
+	ms->m_lfo[0] = scratch->lfo[0].data();
+	ms->m_lfo[1] = scratch->lfo[1].data();
+	ms->m_env[0] = scratch->env[0].data();
+	ms->m_env[1] = scratch->env[1].data();
 
 	ms->renderOutput(frames, out.data() + offset);
+	ms->m_lfo[0] = nullptr;
+	ms->m_lfo[1] = nullptr;
+	ms->m_env[0] = nullptr;
+	ms->m_env[1] = nullptr;
+	scratch->inUse.clear(std::memory_order_release);
 
 	//applyRelease(out.data(), nph); // we have our own release
 }
 
 void MonstroInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<MonstroSynth *>( _n->m_pluginData );
+	std::destroy_at(static_cast<MonstroSynth*>(_n->m_pluginData));
 }
 
 
