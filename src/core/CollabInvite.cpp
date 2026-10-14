@@ -152,6 +152,7 @@ bool base32Decode(const QString& text, QByteArray* out)
 			bits -= 8;
 		}
 	}
+	if (bits > 0 && (buffer & ((1U << bits) - 1U)) != 0U) { return false; }
 	return true;
 }
 
