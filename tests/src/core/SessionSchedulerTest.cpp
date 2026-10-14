@@ -41,12 +41,14 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
 #include "AllocationProbe.h"
 #include "SessionModel.h"
 #include "SessionScheduler.h"
+#include "TimePos.h"
 
 using namespace lmms;
 
@@ -187,6 +189,16 @@ private slots:
 		// A degenerate signature must not divide by zero.
 		QCOMPARE( quantisationTicks( LaunchQuantisation::Bar, 0 ), tick_t( 0 ) );
 		QCOMPARE( launchTickAt( LaunchQuantisation::Bar, clock( 50, 0 ) ), tick_t( 50 ) );
+	}
+
+	void timeSigRejectsZeroDenominator()
+	{
+		QVERIFY_EXCEPTION_THROWN( TimeSig( 4, 0 ), std::invalid_argument );
+	}
+
+	void timeSigRejectsZeroNumerator()
+	{
+		QVERIFY_EXCEPTION_THROWN( TimeSig( 0, 4 ), std::invalid_argument );
 	}
 
 	// ---- LaunchMode semantics (pure) -----------------------------------

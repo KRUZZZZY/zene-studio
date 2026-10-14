@@ -2314,3 +2314,4 @@ tests/CMakeLists.txt	cluster new-p10-375: register SlicerTWaveformTest and compi
 tests/src/core/SessionTuningTest.cpp	new-p10-396: regression cases for over-cap GUI-fed scale and keymap descriptions; refusal preserves the table state and built-from model.
 src/gui/editors/StepRecorderWidget.cpp	cluster new-p10-399: reject nonpositive step lengths and guard the ruler paint loop so an unset or invalid interval cannot stall the GUI thread.
 include/TimePos.h	2026-10-12 new-p10-426: reject negative ticks and invalid frame rates before converting to unsigned frame counts
+src/core/TimePos.cpp	new-p10-428: reject nonpositive values in TimeSig(int,int) to protect time-position divisions.

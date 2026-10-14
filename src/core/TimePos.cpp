@@ -25,6 +25,8 @@
 
 #include "TimePos.h"
 
+#include <stdexcept>
+
 #include "MeterModel.h"
 
 namespace lmms
@@ -34,6 +36,10 @@ TimeSig::TimeSig( int num, int denom ) :
 	m_num(num),
 	m_denom(denom)
 {
+	if ( num <= 0 || denom <= 0 )
+	{
+		throw std::invalid_argument( "Time signature numerator and denominator must be positive" );
+	}
 }
 
 TimeSig::TimeSig( const MeterModel &model ) :
