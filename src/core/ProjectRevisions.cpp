@@ -120,14 +120,20 @@ bool copyRevision(const QString& from, const QString& to, bool* refused)
 }
 
 //! Drops the revisions past the policy's \c Keep slots.
-void trimRevisionSet(const QString& projectPath)
+bool trimRevisionSet(const QString& projectPath, QString* failedPath)
 {
+	bool removedAll = true;
 	for (int revision = ProjectRevisionPolicy::Keep; ; ++revision)
 	{
 		const QString stale = projectRevisionPath(projectPath, revision);
 		if (!QFileInfo::exists(stale)) { break; }
-		QFile::remove(stale);
+		if (!QFile::remove(stale))
+		{
+			if (removedAll) { *failedPath = stale; }
+			removedAll = false;
+		}
 	}
+	return removedAll;
 }
 
 } // namespace
@@ -198,7 +204,14 @@ int rotateProjectRevision(const QString& projectPath, bool* refused, QString* re
 			"revision of the file about to be replaced was kept").arg(projectPath);
 		return 0;
 	}
-	trimRevisionSet(projectPath);
+	QString failedStalePath;
+	if (!trimRevisionSet(projectPath, &failedStalePath))
+	{
+		*refused = true;
+		*refusedReason = QStringLiteral("could not remove stale revision %1 while enforcing policy '%2'")
+			.arg(failedStalePath, QStringLiteral("keep-")
+				+ QString::number(ProjectRevisionPolicy::Keep));
+	}
 
 	int kept = 0;
 	for (int revision = 0; revision < ProjectRevisionPolicy::Keep; ++revision)

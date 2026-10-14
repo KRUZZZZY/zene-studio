@@ -600,6 +600,27 @@ private slots:
 		QCOMPARE(readBytes(m_project), documentWith(3)); // the replaced live file
 	}
 
+	//! A stale slot that cannot be removed is reported, rather than a successful
+	//! rotation silently leaving a revision outside the keep-3 set.
+	void rotationReportsFailureToRemoveStaleRevision()
+	{
+		const QString project = path(QStringLiteral("unprunable.mmp"));
+		const QString stale = projectRevisionPath(project, ProjectRevisionPolicy::Keep);
+		QVERIFY(writeBytes(project, documentWith(2)));
+		QVERIFY(QDir().mkpath(stale));
+		QVERIFY(writeBytes(stale + QStringLiteral("/locked"), QByteArray("keep")));
+
+		bool refused = false;
+		QString reason;
+		const int kept = rotateProjectRevision(project, &refused, &reason);
+
+		QVERIFY(QFileInfo::exists(stale));
+		QVERIFY2(refused, qPrintable(QStringLiteral("rotation did not report the failed removal: %1")
+			.arg(reason)));
+		QVERIFY(reason.contains(stale));
+		QCOMPARE(kept, 1); // revision 0 was still retained for undo
+	}
+
 	//! A refusal writes NOTHING: an unknown id, an id whose artefact is gone,
 	//! and a restore into a session with no project file at all.
 	void refusalsAreTypedAndWriteNothing()
@@ -833,6 +854,43 @@ private slots:
 		QVERIFY2(run(inverse.value(QStringLiteral("op")).toString(), args).ok,
 			"the advertised inverse of revisions.restore was refused when replayed");
 		QCOMPARE(readBytes(project), documentWith(3));
+	}
+
+	//! project.save must not advertise restore_revision when its stale slot makes
+	//! that inverse fail before it can replace the saved file.
+	void saveDoesNotAdvertiseAnInverseAfterStaleCleanupRefusal()
+	{
+		const QString project = path(QStringLiteral("unprunable-save.mmp"));
+		const QString stale = projectRevisionPath(project, ProjectRevisionPolicy::Keep);
+		QVERIFY(writeBytes(project, documentWith(2)));
+		QVERIFY(QDir().mkpath(stale));
+		QVERIFY(writeBytes(stale + QStringLiteral("/locked"), QByteArray("keep")));
+
+		const ControlResult saved = ControlRegistry::instance()->invoke(
+			QStringLiteral("project.save"), QJsonObject{{QStringLiteral("path"), project}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+		QVERIFY(saved.result.value(QStringLiteral("revision_kept")).toBool());
+		QVERIFY(saved.result.value(QStringLiteral("revision_skipped")).toString().contains(stale));
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult history = registry->invoke(QStringLiteral("control.transactions"));
+		QVERIFY2(history.ok, qPrintable(history.errorMessage));
+		const QJsonArray transactions = history.result.value(QStringLiteral("transactions")).toArray();
+		QVERIFY(!transactions.isEmpty());
+		const QJsonObject transaction = transactions.last().toObject();
+		QCOMPARE(transaction.value(QStringLiteral("command")).toString(), QStringLiteral("project.save"));
+		QCOMPARE(transaction.value(QStringLiteral("before")).toObject()
+			.value(QStringLiteral("file")).toString(), project);
+		QVERIFY(!transaction.value(QStringLiteral("reversible")).toBool());
+		QVERIFY(transaction.value(QStringLiteral("inverse")).toObject().isEmpty());
+		QCOMPARE(transaction.value(QStringLiteral("before")).toObject()
+			.value(QStringLiteral("previous_revision_replaced")).toInt(), 0);
+
+		const QByteArray savedBytes = readBytes(project);
+		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"));
+		QVERIFY(!undo.ok);
+		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
+		QCOMPARE(readBytes(project), savedBytes);
 	}
 };
 
