@@ -386,8 +386,8 @@ bool requiredTick(const QDomElement& child, const QString& key, tick_t* out)
  *  malformed and is refused rather than read as the fallback. */
 bool optionalTick(const QDomElement& child, const QString& key, tick_t fallback, tick_t* out)
 {
+	if (!child.hasAttribute(key)) { *out = fallback; return true; }
 	const QString text = child.attribute(key);
-	if (text.isEmpty()) { *out = fallback; return true; }
 	bool ok = false;
 	const qint64 value = text.toLongLong(&ok);
 	if (!ok || !fitsTick(value)) { return false; }
@@ -398,8 +398,8 @@ bool optionalTick(const QDomElement& child, const QString& key, tick_t fallback,
 //! An OPTIONAL int attribute: absent keeps \a fallback, malformed is refused.
 bool optionalInt(const QDomElement& child, const QString& key, int fallback, int* out)
 {
+	if (!child.hasAttribute(key)) { *out = fallback; return true; }
 	const QString text = child.attribute(key);
-	if (text.isEmpty()) { *out = fallback; return true; }
 	bool ok = false;
 	*out = text.toInt(&ok);
 	return ok;
