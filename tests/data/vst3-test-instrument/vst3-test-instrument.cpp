@@ -72,7 +72,15 @@ namespace ZeneTestInstrument {
 //------------------------------------------------------------------------
 // A stable, documented class UID. Generated once for this fixture and never
 // reused: a host that stores it must resolve the same class across versions.
+#if defined(ZENE_TEST_INSTRUMENT_MONO)
+static const FUID kTestInstrumentUID (0x5A1E57B1, 0x9C4D42E7, 0xB0C3F81A, 0x6D2E4A90);
+constexpr SpeakerArrangement kOutputArrangement = SpeakerArr::kMono;
+#define ZENE_TEST_INSTRUMENT_CLASS_NAME "Zene VST3 Mono Test Instrument"
+#else
 static const FUID kTestInstrumentUID (0x5A1E57B0, 0x9C4D42E7, 0xB0C3F81A, 0x6D2E4A90);
+constexpr SpeakerArrangement kOutputArrangement = SpeakerArr::kStereo;
+#define ZENE_TEST_INSTRUMENT_CLASS_NAME "Zene VST3 Test Instrument"
+#endif
 
 // One automatable parameter, so the fixture exercises the parameter surface a
 // real instrument has, plus one READ-ONLY parameter (a meter): a host must not
@@ -247,10 +255,10 @@ tresult PLUGIN_API TestInstrument::initialize (FUnknown* context)
 		return result;
 	}
 
-	// An instrument: NO audio input, one stereo audio output, one event input.
+	// An instrument: NO audio input, one audio output, one event input.
 	// An effect would add an audio input here; this asymmetry is exactly what
 	// the host has to handle and what the probe asserts.
-	addAudioOutput (STR16 ("Audio Output"), SpeakerArr::kStereo);
+	addAudioOutput (STR16 ("Audio Output"), kOutputArrangement);
 	addEventInput (STR16 ("Event Input"), 1);
 
 	parameters.addParameter (STR16 ("Level"), nullptr, /*flags*/ 0, kDefaultLevel,
@@ -299,9 +307,8 @@ tresult PLUGIN_API TestInstrument::setParamNormalized (ParamID tag, ParamValue v
 tresult PLUGIN_API TestInstrument::setBusArrangements (SpeakerArrangement* inputs, int32 numIns,
                                                        SpeakerArrangement* outputs, int32 numOuts)
 {
-	// Only the one arrangement the fixture declares: no audio input, one
-	// stereo output.
-	if (numIns == 0 && numOuts == 1 && outputs[0] == SpeakerArr::kStereo)
+	// Only the one arrangement this fixture variant declares.
+	if (numIns == 0 && numOuts == 1 && outputs[0] == kOutputArrangement)
 	{
 		return SingleComponentEffect::setBusArrangements (inputs, numIns, outputs, numOuts);
 	}
@@ -664,7 +671,7 @@ BEGIN_FACTORY_DEF ("Zene Studio test fixture", "https://github.com/KRUZZZZY/zene
 DEF_CLASS2 (INLINE_UID_FROM_FUID (Steinberg::Vst::ZeneTestInstrument::kTestInstrumentUID),
             PClassInfo::kManyInstances,
             kVstAudioEffectClass,
-            "Zene VST3 Test Instrument",
+            ZENE_TEST_INSTRUMENT_CLASS_NAME,
             Steinberg::Vst::kDistributable,
             Steinberg::Vst::PlugType::kInstrumentSynth,
             "1.0.0",

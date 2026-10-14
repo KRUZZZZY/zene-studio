@@ -400,6 +400,10 @@ auto Vst3Instrument::processImpl(PlanarBufferView<const float, DynamicChannelCou
 		// Either the plug-in failed to load or the sample rate changed. The
 		// actual re-configuration happens on the GUI thread; this path only
 		// records the request.
+		for (ch_cnt_t channel = 0; channel < out.channels(); ++channel)
+		{
+			std::fill_n(out.bufferPtr(channel), out.frames(), 0.0f);
+		}
 		m_needsReprepare.store(true, std::memory_order_relaxed);
 		m_processGate.leaveAudioProcess();
 		return lmms::ProcessStatus::Continue;
