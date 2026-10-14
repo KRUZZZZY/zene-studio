@@ -81,7 +81,18 @@ void StereoDelay::setSampleRate( int sampleRate )
 		delete[] m_buffer;
 	}
 
-	int bufferSize = ( int )( sampleRate * m_maxTime );
+	const int bufferSize = static_cast<int>(sampleRate * m_maxTime);
+	if (m_maxLength > 0)
+	{
+		m_length *= static_cast<float>(bufferSize) / static_cast<float>(m_maxLength);
+	}
+	m_maxLength = bufferSize;
+	if (m_length > static_cast<float>(m_maxLength))
+	{
+		m_length = static_cast<float>(m_maxLength);
+	}
+	m_writeIndex = 0;
+
 	m_buffer = new SampleFrame[bufferSize];
 	for( int i = 0 ; i < bufferSize ; i++)
 	{
