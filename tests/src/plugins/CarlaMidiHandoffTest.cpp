@@ -155,13 +155,17 @@ struct ConcurrentStressRun
 		lmms::test::tlCountAllocations = true;
 		std::uint64_t refusedCount = 0;
 		std::uint32_t greatestAttemptCount = 0;
+		const auto noQueueInterference = [](std::uint32_t) noexcept {};
+		const auto noStampInterference = [](std::atomic<std::uint64_t>&, std::uint64_t, std::uint64_t,
+			std::uint32_t) noexcept {};
 		for (std::uint32_t index = 0; index < EventsPerProducer; ++index)
 		{
 			const auto key = static_cast<std::int16_t>(index & 0x7f);
 			const auto velocity = static_cast<std::int16_t>(1 + (index >> 7));
 			std::uint32_t attempts = 0;
-			if (handoff.enqueue(lmms::MidiEvent(lmms::MidiNoteOn,
-				static_cast<std::int8_t>(producer), key, velocity), 0, &attempts))
+			if (handoff.enqueueWithTestHooks(lmms::MidiEvent(lmms::MidiNoteOn,
+				static_cast<std::int8_t>(producer), key, velocity), 0, &attempts, nullptr,
+				noQueueInterference, noStampInterference))
 			{
 				accepted[producer].fetch_add(1, std::memory_order_relaxed);
 			}
@@ -326,6 +330,44 @@ private slots:
 			QCOMPARE(outputLeft[frame], expected);
 			QCOMPARE(outputRight[frame], expected);
 		}
+	}
+
+	void retryExhaustionThroughEnqueueBoundsOverflowAccounting()
+	{
+		constexpr std::size_t Capacity = 8;
+		lmms::CarlaMidiHandoff<Capacity> handoff;
+		std::uint32_t competingReservations = 0;
+		std::uint32_t injectedStampConflicts = 0;
+		const auto reserveBeforeCompareExchange = [&](std::uint32_t)
+		{
+			if (handoff.enqueue(lmms::MidiEvent(lmms::MidiNoteOn, 5, 60, 90), 0)) { ++competingReservations; }
+		};
+		const auto contendDuringStampUpdate = [&](std::atomic<std::uint64_t>& stamp, std::uint64_t expected,
+			std::uint64_t requestedStamp, std::uint32_t attempt)
+		{
+			if (attempt <= lmms::MidiChannelOverflow::MaxStampUpdateAttempts && expected + 1 < requestedStamp)
+			{
+				// Simulate another recorder advancing the stamp while keeping it below this refused event.
+				if (stamp.compare_exchange_strong(expected, expected + 1, std::memory_order_relaxed))
+				{
+					++injectedStampConflicts;
+				}
+			}
+		};
+		std::uint32_t pushAttempts = 0;
+		std::uint32_t stampAttempts = 0;
+		const bool accepted = handoff.enqueueWithTestHooks(
+			lmms::MidiEvent(lmms::MidiControlChange, 5, 123, 0), 0, &pushAttempts, &stampAttempts,
+			reserveBeforeCompareExchange, contendDuringStampUpdate);
+
+		QVERIFY(!accepted);
+		QCOMPARE(competingReservations, static_cast<std::uint32_t>(Capacity));
+		QCOMPARE(pushAttempts, lmms::MidiHandoffQueue<Capacity>::MaxPushAttempts);
+		QCOMPARE(stampAttempts, lmms::MidiChannelOverflow::MaxStampUpdateAttempts);
+		QCOMPARE(injectedStampConflicts, lmms::MidiChannelOverflow::MaxStampUpdateAttempts);
+		QCOMPARE(handoff.droppedEvents(), std::uint64_t{1});
+		QCOMPARE(handoff.recordedOverflows(), std::uint64_t{1});
+		QCOMPARE(handoff.failedOverflowStampUpdates(), std::uint64_t{1});
 	}
 
 	void overflowCutReachesNativeProcessAfterAcceptedEvents()

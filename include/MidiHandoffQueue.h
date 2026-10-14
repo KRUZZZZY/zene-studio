@@ -88,16 +88,25 @@ public:
 	MidiHandoffQueue& operator=(const MidiHandoffQueue&) = delete;
 
 	//! Queues \a event. @return false when the queue was full or contention exhausted the retry budget
-	auto push(const HandoffMidiEvent& event, std::uint64_t* refusedAt = nullptr,
-		std::uint32_t* attemptsUsed = nullptr) noexcept -> bool
+	auto push(const HandoffMidiEvent& event, std::uint64_t* refusedAt = nullptr) noexcept -> bool
 	{
-		return pushWithTestHook(event, refusedAt, attemptsUsed, [](std::uint32_t) noexcept {});
+		return pushImpl(event, refusedAt, nullptr, [](std::uint32_t) noexcept {});
 	}
 
+#ifdef LMMS_TESTING
 	//! Test seam that lets a queue test schedule a competing reservation before a producer's compare-exchange.
 	template<typename BeforeCompareExchange>
 	auto pushWithTestHook(const HandoffMidiEvent& event, std::uint64_t* refusedAt,
 		std::uint32_t* attemptsUsed, BeforeCompareExchange&& beforeCompareExchange) noexcept -> bool
+	{
+		return pushImpl(event, refusedAt, attemptsUsed, static_cast<BeforeCompareExchange&&>(beforeCompareExchange));
+	}
+	#endif
+
+private:
+	template<typename BeforeCompareExchange>
+	auto pushImpl(const HandoffMidiEvent& event, std::uint64_t* refusedAt, std::uint32_t* attemptsUsed,
+		BeforeCompareExchange&& beforeCompareExchange) noexcept -> bool
 	{
 		std::size_t position = m_enqueue.load(std::memory_order_relaxed);
 		for (std::uint32_t attempt = 1; attempt <= MaxPushAttempts; ++attempt)
@@ -138,6 +147,7 @@ public:
 		return false;
 	}
 
+public:
 	//! Takes the oldest queued event into \a event. @return false when the queue is empty
 	auto pop(HandoffMidiEvent& event) noexcept -> bool
 	{
@@ -211,29 +221,35 @@ private:
  * events, so it lands exactly where the refused event would have been: after the events queued before it,
  * and before any queued after it. A later refusal on the same channel moves the cut later, never earlier.
  *
- * All operations are lock-free and allocate nothing. Producers record; the single consumer takes the due cuts
- * with drainMidi().
+ * All operations are lock-free and allocate nothing. Each cut-stamp update makes at most
+ * MaxStampUpdateAttempts compare-exchange attempts; a refusal is still counted if contention prevents its stamp
+ * from being advanced. Producers record; the single consumer takes the due cuts with drainMidi().
  */
 class MidiChannelOverflow
 {
 public:
 	//! Bit 16 stands for "no channel" (an event with a negative channel): all channels are affected.
 	static constexpr std::uint32_t AllChannels = 1u << 16;
+	//! Maximum compare-exchange attempts used to advance one channel's cut stamp.
+	static constexpr std::uint32_t MaxStampUpdateAttempts = 8;
 
 	//! Records a refused event on \a channel. \a queuedBefore is the queue's enqueued() count at the refusal.
 	void record(int channel, std::uint64_t queuedBefore) noexcept
 	{
-		const std::uint64_t stamp = queuedBefore + 1; // 0 is "nothing pending"
-		if (channel >= 0 && channel < 16)
-		{
-			raise(m_cutAt[static_cast<std::size_t>(channel)], stamp);
-		}
-		else
-		{
-			for (auto& cut : m_cutAt) { raise(cut, stamp); }
-		}
-		m_recorded.fetch_add(1, std::memory_order_relaxed);
+		recordImpl(channel, queuedBefore, nullptr,
+			[](std::atomic<std::uint64_t>&, std::uint64_t, std::uint64_t, std::uint32_t) noexcept {});
 	}
+
+#ifdef LMMS_TESTING
+	//! Test seam that creates deterministic stamp contention while using the normal refusal accounting path.
+	template<typename BeforeCompareExchange>
+	void recordWithTestHook(int channel, std::uint64_t queuedBefore, std::uint32_t* attemptsUsed,
+		BeforeCompareExchange&& beforeCompareExchange) noexcept
+	{
+		recordImpl(channel, queuedBefore, attemptsUsed,
+			static_cast<BeforeCompareExchange&&>(beforeCompareExchange));
+	}
+	#endif
 
 	//! The stamp of the channel's pending cut, or 0. A cut is due when consumed() reaches stamp - 1.
 	auto stamp(int channel) const noexcept -> std::uint64_t
@@ -262,27 +278,83 @@ public:
 		return m_recorded.load(std::memory_order_relaxed);
 	}
 
+#ifdef LMMS_TESTING
+	//! Refused events for which stamp contention exhausted the bounded update budget.
+	auto failedStampUpdates() const noexcept -> std::uint64_t
+	{
+		return m_failedStampUpdates.load(std::memory_order_relaxed);
+	}
+#endif
+
 private:
-	static void raise(std::atomic<std::uint64_t>& cut, std::uint64_t stamp) noexcept
+	template<typename BeforeCompareExchange>
+	void recordImpl(int channel, std::uint64_t queuedBefore, std::uint32_t* attemptsUsed,
+		BeforeCompareExchange&& beforeCompareExchange) noexcept
+	{
+		const std::uint64_t stamp = queuedBefore + 1; // 0 is "nothing pending"
+		bool updated = true;
+		if (channel >= 0 && channel < 16)
+		{
+			updated = raise(m_cutAt[static_cast<std::size_t>(channel)], stamp, attemptsUsed,
+				static_cast<BeforeCompareExchange&&>(beforeCompareExchange));
+		}
+		else
+		{
+			for (auto& cut : m_cutAt)
+			{
+				if (!raise(cut, stamp, attemptsUsed, beforeCompareExchange)) { updated = false; }
+			}
+		}
+		if (!updated) { m_failedStampUpdates.fetch_add(1, std::memory_order_relaxed); }
+		m_recorded.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	template<typename BeforeCompareExchange>
+	static auto raise(std::atomic<std::uint64_t>& cut, std::uint64_t stamp, std::uint32_t* attemptsUsed,
+		BeforeCompareExchange&& beforeCompareExchange) noexcept -> bool
 	{
 		auto current = cut.load(std::memory_order_relaxed);
-		while (current < stamp && !cut.compare_exchange_weak(current, stamp, std::memory_order_acq_rel)) {}
+		for (std::uint32_t attempt = 1; current < stamp && attempt <= MaxStampUpdateAttempts; ++attempt)
+		{
+			if (attemptsUsed) { *attemptsUsed = attempt; }
+			beforeCompareExchange(cut, current, stamp, attempt);
+			if (cut.compare_exchange_weak(current, stamp, std::memory_order_acq_rel)) { return true; }
+		}
+		return current >= stamp;
 	}
 
 	std::array<std::atomic<std::uint64_t>, 16> m_cutAt{};
 	std::atomic<std::uint64_t> m_recorded{0};
+	std::atomic<std::uint64_t> m_failedStampUpdates{0};
 };
 
 //! Pushes \a event, or records its channel (with the queue's position) when push() refuses it. Never blocks.
 template<std::size_t Capacity>
 auto pushOrRecord(MidiHandoffQueue<Capacity>& queue, MidiChannelOverflow& overflow,
-	const HandoffMidiEvent& event, std::uint32_t* attemptsUsed = nullptr) noexcept -> bool
+	const HandoffMidiEvent& event) noexcept -> bool
 {
 	std::uint64_t queuedBefore = 0;
-	if (queue.push(event, &queuedBefore, attemptsUsed)) { return true; }
+	if (queue.push(event, &queuedBefore)) { return true; }
 	overflow.record(event.channel, queuedBefore);
 	return false;
 }
+
+#ifdef LMMS_TESTING
+//! Exercises queue exhaustion and overflow recording while injecting deterministic contention in both stages.
+template<std::size_t Capacity, typename BeforeQueueCompareExchange, typename BeforeStampCompareExchange>
+auto pushOrRecordWithTestHooks(MidiHandoffQueue<Capacity>& queue, MidiChannelOverflow& overflow,
+	const HandoffMidiEvent& event, std::uint32_t* pushAttempts, std::uint32_t* stampAttempts,
+	BeforeQueueCompareExchange&& beforeQueueCompareExchange,
+	BeforeStampCompareExchange&& beforeStampCompareExchange) noexcept -> bool
+{
+	std::uint64_t queuedBefore = 0;
+	if (queue.pushWithTestHook(event, &queuedBefore, pushAttempts,
+		static_cast<BeforeQueueCompareExchange&&>(beforeQueueCompareExchange))) { return true; }
+	overflow.recordWithTestHook(event.channel, queuedBefore, stampAttempts,
+		static_cast<BeforeStampCompareExchange&&>(beforeStampCompareExchange));
+	return false;
+}
+#endif
 
 //! Drains the queue in order, for the single consumer. At most \a maxEvents events are taken per call; the rest
 //! stay queued, so the work per period is bounded.

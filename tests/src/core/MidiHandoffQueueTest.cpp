@@ -134,10 +134,9 @@ private slots:
 		QCOMPARE(allocations, std::uint64_t{0});
 	}
 
-	void contentionRetriesAreBoundedAndEveryDropIsRecorded()
+	void pushRetriesAreBoundedWhenContended()
 	{
 		lmms::MidiHandoffQueue<64> queue;
-		lmms::MidiChannelOverflow overflow;
 		std::uint32_t competingReservations = 0;
 		bool competitorsAccepted = true;
 		const auto scheduleCompetingReservation = [&](std::uint32_t)
@@ -158,8 +157,6 @@ private slots:
 		QCOMPARE(attemptsUsed, lmms::MidiHandoffQueue<64>::MaxPushAttempts);
 		QVERIFY(attemptsUsed <= lmms::MidiHandoffQueue<64>::MaxPushAttempts);
 		QCOMPARE(queue.dropped(), std::uint64_t{1});
-		overflow.record(refusedEvent.channel, refusedAt);
-		QCOMPARE(overflow.recorded(), std::uint64_t{1});
 
 		for (std::uint32_t offset = 0; offset < competingReservations; ++offset)
 		{

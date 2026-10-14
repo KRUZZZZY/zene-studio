@@ -44,22 +44,34 @@ template<std::size_t Capacity>
 class CarlaMidiHandoff
 {
 public:
-	auto enqueue(const MidiEvent& event, std::uint32_t offset, std::uint32_t* pushAttempts = nullptr) noexcept -> bool
+	auto enqueue(const MidiEvent& event, std::uint32_t offset) noexcept -> bool
 	{
-		HandoffMidiEvent queued;
-		queued.type = static_cast<std::uint8_t>(event.type());
-		queued.channel = event.channel();
-		queued.param1 = event.param(0);
-		queued.param2 = event.param(1);
-		queued.offset = offset;
-		return pushOrRecord(m_queue, m_overflow, queued, pushAttempts);
+		return pushOrRecord(m_queue, m_overflow, makeQueuedEvent(event, offset));
 	}
+
+#ifdef LMMS_TESTING
+	//! Deterministic contention seam for the producer and refusal path tests.
+	template<typename BeforeQueueCompareExchange, typename BeforeStampCompareExchange>
+	auto enqueueWithTestHooks(const MidiEvent& event, std::uint32_t offset, std::uint32_t* pushAttempts,
+		std::uint32_t* stampAttempts, BeforeQueueCompareExchange&& beforeQueueCompareExchange,
+		BeforeStampCompareExchange&& beforeStampCompareExchange) noexcept -> bool
+	{
+		return pushOrRecordWithTestHooks(m_queue, m_overflow, makeQueuedEvent(event, offset), pushAttempts,
+			stampAttempts, static_cast<BeforeQueueCompareExchange&&>(beforeQueueCompareExchange),
+			static_cast<BeforeStampCompareExchange&&>(beforeStampCompareExchange));
+	}
+	#endif
 
 	//! Events refused by the fixed queue, including those refused after the bounded contention retry budget.
 	auto droppedEvents() const noexcept -> std::uint64_t { return m_queue.dropped(); }
 
 	//! Refused events recorded for channel all-notes-off recovery.
 	auto recordedOverflows() const noexcept -> std::uint64_t { return m_overflow.recorded(); }
+
+#ifdef LMMS_TESTING
+	//! Refusals whose channel cut could not be advanced within its bounded contention budget.
+	auto failedOverflowStampUpdates() const noexcept -> std::uint64_t { return m_overflow.failedStampUpdates(); }
+#endif
 
 	template<typename Process>
 	void processPeriod(Process&& process)
@@ -88,6 +100,17 @@ public:
 	}
 
 private:
+	static auto makeQueuedEvent(const MidiEvent& event, std::uint32_t offset) noexcept -> HandoffMidiEvent
+	{
+		HandoffMidiEvent queued;
+		queued.type = static_cast<std::uint8_t>(event.type());
+		queued.channel = event.channel();
+		queued.param1 = event.param(0);
+		queued.param2 = event.param(1);
+		queued.offset = offset;
+		return queued;
+	}
+
 	static auto stageMidiEvent(const HandoffMidiEvent& queued, NativeMidiEvent& native) -> bool
 	{
 		const MidiEvent event(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2);
