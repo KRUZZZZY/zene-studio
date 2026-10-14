@@ -186,6 +186,7 @@ bool CollabSession::applySnapshot(const QByteArray& project, QString* error)
 	}
 	m_graceUntilMs = nowMs() + SnapshotGraceMs;
 	recordFingerprint();
+	m_autoResyncPending = false;
 	if (!opened.ok) { *error = opened.errorMessage; }
 	return opened.ok;
 }
@@ -219,20 +220,32 @@ void CollabSession::recordFingerprint()
 	m_fingerprint = journalFingerprint();
 }
 
-void CollabSession::pollJournal()
+bool CollabSession::trackUntrackedEdit(const QByteArray& fingerprint)
 {
-	const QByteArray now = journalFingerprint();
-	if (now == m_fingerprint) { return; }
-	m_fingerprint = now;
-	if (nowMs() < m_graceUntilMs) { return; }
+	m_fingerprint = fingerprint;
+	if (nowMs() < m_graceUntilMs) { return false; }
 	if (m_mode == Mode::Hosting)
 	{
 		scheduleResync(QStringLiteral("an edit made outside the command surface"), UntrackedResyncMs);
-		return;
+		return false;
 	}
 	const bool joined = m_mode == Mode::Joined && m_client->hasSnapshot();
-	if (!joined || nowMs() - m_lastAutoResyncMs < AutoResyncIntervalMs) { return; }
-	m_lastAutoResyncMs = nowMs();
+	if (!joined) { return false; }
+	m_autoResyncPending = true;
+	return true;
+}
+
+void CollabSession::pollJournal()
+{
+	const QByteArray now = journalFingerprint();
+	const bool changed = now != m_fingerprint;
+	if (!changed && !m_autoResyncPending) { return; }
+	if (changed && !trackUntrackedEdit(now)) { return; }
+	if (m_mode != Mode::Joined || !m_client->hasSnapshot()) { return; }
+	const qint64 nowTime = nowMs();
+	if (nowTime - m_lastAutoResyncMs < AutoResyncIntervalMs) { return; }
+	m_autoResyncPending = false;
+	m_lastAutoResyncMs = nowTime;
 	m_client->requestResync(QStringLiteral("a local edit outside the command surface"));
 	setNotice(QStringLiteral("That edit was made with a tool that does not go through commands yet, so it cannot be shared; "
 		"your copy is being re-synced from the host."));
