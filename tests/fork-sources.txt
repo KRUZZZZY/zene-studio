@@ -2318,3 +2318,4 @@ tests/src/core/SessionCheckpointTest.cpp
 tests/src/core/SessionCheckpointBudgetTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p9-101.md
 docs/qwen-fixes-2026-10/cluster-new-p9-209.md	new-p9-209 fix and verification report.
+tests/src/gui/LfoGraphTest.cpp

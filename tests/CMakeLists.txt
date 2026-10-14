@@ -923,6 +923,8 @@ set(LMMS_TESTS
 	src/gui/AccessibilityWalkTest.cpp
 	# R8.5: a knob takes Tab focus, answers the arrow/page/Home/End keys and is named.
 	src/gui/KnobKeyboardTest.cpp
+	# LFO info text's backing rectangle follows the font rendered by the graph.
+	src/gui/LfoGraphTest.cpp
 	# Every control's context menu sets its automation mode (automation.mode_set).
 	src/gui/AutomationModeMenuTest.cpp
 	# ED-194: the automation editor's keys and item list move points through automation.move_point.

@@ -1953,3 +1953,4 @@ plugins/GigPlayer/GigPlayer.cpp	BUG new-p9-153: accept valid MIDI note 0 in the 
 src/core/Keymap.cpp	new-p9-209: Ignore non-degree child nodes and malformed integer degree values while loading keymaps.
 tests/src/core/SessionTuningTest.cpp	new-p9-209: Regression for comment and metadata children plus malformed degree values in Keymap::loadSettings.
 include/Delay.h	BUG new-p9-107: initialise the declared gain and both delay/fraction pairs in the four delay templates; DeviceDspTest explicitly instantiates each template.
+src/gui/instrument/LfoGraph.cpp	new-p9-251: measure the LFO info backing rectangle with the adjusted painter font so it covers the rendered label; regression tests/src/gui/LfoGraphTest.cpp::labelBackingUsesAdjustedFontMetrics.
