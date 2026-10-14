@@ -94,6 +94,7 @@ QStringList unsupportedMediaWarningsForTest(int mediaCount)
 #endif
 
 const QString Fixture = QStringLiteral(LMMS_TEST_DATA_DIR "/aaf/PR_WAV_Internal.aaf");
+const QString HotTrackGainFixture = QStringLiteral(LMMS_TEST_DATA_DIR "/aaf/PR_WAV_Internal_TrackGain_250pct.aaf");
 
 ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
 {
@@ -104,6 +105,22 @@ SampleClip* onlyClipOf(Track* track)
 {
 	return track != nullptr && track->getClips().size() == 1 ? dynamic_cast<SampleClip*>(track->getClips().front())
 		: nullptr;
+}
+
+template<typename Report>
+int reportedTrackGainClamps(const Report& report)
+{
+	if constexpr (requires { report.trackGainClamps; }) { return report.trackGainClamps; }
+	else { return -1; }
+}
+
+template<typename Model, typename Loss>
+void populateDryRunGainLoss(const Model& model, Loss& loss)
+{
+	if constexpr (requires { aafPopulateTrackGainClampLoss(model, loss); })
+	{
+		aafPopulateTrackGainClampLoss(model, loss);
+	}
 }
 
 //! Two tracks: one with a fully-edited clip, one with a clip whose media is missing and one past the song.
@@ -261,6 +278,38 @@ private slots:
 		QCOMPARE(markers[0].color, QStringLiteral("#ff0000"));
 	}
 
+	void theBuilderReportsTrackGainClamps()
+	{
+		AafTrack source;
+		source.number = 1;
+		source.name = QStringLiteral("Hot track");
+		source.gain = 2.5;
+		AafModel model;
+		model.sampleRate = 48000;
+		model.tracks = {source};
+		std::vector<int> made;
+		const AafBuildReport report = buildAafSession(Engine::getSong(), model, AafBuildOptions{}, &made);
+
+		QCOMPARE(report.tracks, 1);
+		QCOMPARE(reportedTrackGainClamps(report), 1);
+		auto* imported = dynamic_cast<SampleTrack*>(control::trackWithId(made.at(0)));
+		QVERIFY(imported != nullptr);
+		QCOMPARE(imported->volumeModel()->value(), 200.f);
+		AafLossReport importedLoss;
+		importedLoss.trackGainClamps = reportedTrackGainClamps(report);
+		QCOMPARE(importedLoss.toJson().value(QStringLiteral("track_gain_clamps")).toInt(), 1);
+
+		AafTrack inRange = source;
+		inRange.gain = 1.0;
+		AafModel inRangeModel;
+		inRangeModel.tracks = {inRange};
+		std::vector<int> inRangeIds;
+		const AafBuildReport inRangeReport = buildAafSession(Engine::getSong(), inRangeModel, AafBuildOptions{}, &inRangeIds);
+		AafLossReport inRangeLoss;
+		inRangeLoss.trackGainClamps = reportedTrackGainClamps(inRangeReport);
+		QCOMPARE(inRangeLoss.toJson().value(QStringLiteral("track_gain_clamps")).toInt(), 0);
+	}
+
 	void theShiftStartsTheFirstClipAtZero()
 	{
 		AafModel model = authoredModel(m_wave);
@@ -347,6 +396,21 @@ private slots:
 		QCOMPARE(Engine::projectJournal()->undoDepth(), 0);  // a refusal records nothing
 	}
 
+	void theDryRunLossSerializesTrackGainClamps()
+	{
+		AafTrack hot;
+		hot.gain = 2.5;
+		AafModel model;
+		model.tracks = {hot};
+		AafLossReport loss;
+		populateDryRunGainLoss(model, loss);
+		QCOMPARE(loss.toJson().value(QStringLiteral("track_gain_clamps")).toInt(), 1);
+
+		model.tracks[0].gain = 1.0;
+		populateDryRunGainLoss(model, loss);
+		QCOMPARE(loss.toJson().value(QStringLiteral("track_gain_clamps")).toInt(), 0);
+	}
+
 	//! LibAAF on the real fixture: the dry run reads it and writes nothing.
 	void theDryRunReadsTheFixture()
 	{
@@ -362,6 +426,7 @@ private slots:
 		QCOMPARE(reply.value(QStringLiteral("embedded_media")).toInt(), 1);
 		QVERIFY(reply.value(QStringLiteral("missing_media")).toArray().isEmpty());
 		QCOMPARE(reply.value(QStringLiteral("loss")).toObject().value(QStringLiteral("video_tracks")).toInt(), 1);
+		QCOMPARE(reply.value(QStringLiteral("loss")).toObject().value(QStringLiteral("track_gain_clamps")).toInt(), 0);
 		const QJsonObject clip = reply.value(QStringLiteral("model")).toObject().value(QStringLiteral("tracks"))
 			.toArray().at(0).toObject().value(QStringLiteral("clips")).toArray().at(0).toObject();
 		QCOMPARE(clip.value(QStringLiteral("length_frames")).toInteger(), qint64{48048});
@@ -388,6 +453,21 @@ private slots:
 		QVERIFY(second == first);
 	}
 
+	//! A track fader above LMMS' 200% ceiling is reported by the actual dry-run command.
+	void theDryRunReportsOverRangeTrackGain()
+	{
+		if (!aafImportAvailable()) { QSKIP("this build has no LibAAF (ZENE_HAVE_LIBAAF not defined)"); }
+		const ControlResult result = run(QStringLiteral("interchange.aaf_read"),
+			{{QStringLiteral("path"), HotTrackGainFixture}});
+		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		const QJsonObject reply = result.result;
+		const QJsonArray tracks = reply.value(QStringLiteral("model")).toObject().value(QStringLiteral("tracks")).toArray();
+		QCOMPARE(tracks.size(), 1);
+		const QJsonObject track = tracks.at(0).toObject();
+		QVERIFY(track.value(QStringLiteral("gain_db")).toDouble() > 6.0206);  // 250%, above 200%
+		QCOMPARE(reply.value(QStringLiteral("loss")).toObject().value(QStringLiteral("track_gain_clamps")).toInt(), 1);
+	}
+
 	//! The import extracts the embedded WAV, builds the track and its clip, and is ONE undo step.
 	void theImportIsOneUndoStep()
 	{
@@ -399,6 +479,8 @@ private slots:
 		QVERIFY2(result.ok, qPrintable(result.errorMessage));
 		QCOMPARE(result.result.value(QStringLiteral("built_tracks")).toInt(), 1);
 		QCOMPARE(result.result.value(QStringLiteral("built_clips")).toInt(), 1);
+		QCOMPARE(result.result.value(QStringLiteral("loss")).toObject()
+			.value(QStringLiteral("track_gain_clamps")).toInt(), 0);
 		QVERIFY(QFileInfo::exists(QDir(media).filePath(QStringLiteral("1000hz-18dbs16b44.1k.wav"))));
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore + 1);
 

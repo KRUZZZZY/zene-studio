@@ -207,6 +207,7 @@ ControlResult readOnly(const QJsonObject& args)
 	aaf::AafModel model;
 	aaf::AafLossReport loss;
 	if (!readFile(path, options, &model, &loss, &error)) { return error; }
+	aaf::aafPopulateTrackGainClampLoss(model, loss);
 	QJsonObject result = summary(path, model, loss);
 	result.insert(QStringLiteral("media_dir"), mediaDirFor(args, path));
 	result.insert(QStringLiteral("model"), aaf::aafModelJson(model));
@@ -277,6 +278,7 @@ ControlResult importFile(const QJsonObject& args)
 	aaf::AafBuildReport report;
 	const std::vector<int> made = buildAsOneStep(model, build, &report);
 	loss.beyondSongLength = report.beyondSongLength;
+	loss.trackGainClamps = report.trackGainClamps;
 	Engine::getSong()->setModified();
 	QJsonObject result = summary(path, model, loss);
 	const QJsonObject built = buildJson(report, made);

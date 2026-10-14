@@ -32,7 +32,8 @@
  * path and a file that cannot be found is LISTED, never guessed.
  *
  * WHAT IS NOT (AafLossReport counts each): video tracks and clips, track gain
- * and pan automation, solo flags (soloing would rewrite the mute of tracks the
+ * above the sample track's fader range, track gain and pan automation, solo
+ * flags (soloing would rewrite the mute of tracks the
  * import did not create), the channels after the first of a clip made of
  * several mono essences, the channel selection inside a multichannel file, a
  * marker's length and comment, gain-envelope points past the envelope's 32,
@@ -226,10 +227,14 @@ struct AafLossReport
 	int envelopePointsDropped = 0;
 	int missingMediaClips = 0;     //!< clips whose source file is missing (not built)
 	int beyondSongLength = 0;      //!< clips past MaxSongLength (filled in by the builder)
+	int trackGainClamps = 0;      //!< track gains clipped to the sample fader range (read-only report or builder)
 	QStringList warnings;          //!< LibAAF's own warnings and errors, at most AafMaxWarnings
 
 	QJsonObject toJson() const;
 };
+
+//! Fill the loss caused by track gains outside a SampleTrack's fader range.
+LMMS_EXPORT void aafPopulateTrackGainClampLoss(const AafModel& model, AafLossReport& loss);
 
 //! How readAaf() treats the media.
 struct AafReadOptions
@@ -257,6 +262,7 @@ struct AafBuildReport
 	int markers = 0;
 	int missingMediaClips = 0;
 	int beyondSongLength = 0;
+	int trackGainClamps = 0;
 };
 
 //! True when this build reads AAF (it was compiled with LibAAF).
