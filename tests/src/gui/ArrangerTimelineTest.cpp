@@ -38,6 +38,7 @@
 #include <QtTest>
 
 #include <cstdlib>
+#include <limits>
 
 #include <QAbstractSlider>
 #include <QRegularExpression>
@@ -203,6 +204,16 @@ private slots:
 		QVERIFY(m_editor->pixelsPerBar() > 40);
 		QVERIFY2(std::abs(m_editor->timeLine()->markerX(TimePos(6 * Bar)) - before) <= 2,
 			qPrintable(QStringLiteral("the playhead moved on screen from x=%1 to x=%2").arg(before).arg(m_editor->timeLine()->markerX(TimePos(6 * Bar)))));
+	}
+
+	void anOversizedZoomStepClampsToMaximum()
+	{
+		IntModel* model = m_editor->zoomingModel();
+		const ControlResult zoomed = run(QStringLiteral("arrangement.zoom"),
+			{{QStringLiteral("step"), std::numeric_limits<int>::max()}});
+		QVERIFY2(zoomed.ok, qPrintable(zoomed.errorMessage));
+		QCOMPARE(zoomed.result.value(QStringLiteral("zoom")).toInt(), model->maxValue());
+		QCOMPARE(model->value(), model->maxValue());
 	}
 
 	void theDragPreviewShowsWhatTheDropWillDo()
