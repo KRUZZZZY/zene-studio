@@ -23,6 +23,7 @@
  */
 
 #include "AccessibleWidgets.h"
+#include "ValueAnnouncementState.h"
 
 #include <QAccessibleWidget>
 #include <QEvent>
@@ -88,13 +89,8 @@ protected:
 private:
 	void noteChange()
 	{
-		if (valueText(m_control) == m_said) { return; }
-		if (m_settle.isActive())
-		{
-			m_pending = true;
-			return;
-		}
-		announce();
+		if (detail::valueChangeAction(valueText(m_control), m_said, m_settle.isActive(), m_pending)
+			== detail::ValueChangeAction::Announce) { announce(); }
 	}
 
 	void announce()
