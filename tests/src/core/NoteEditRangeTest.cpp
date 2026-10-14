@@ -153,6 +153,24 @@ private slots:
 		QCOMPARE(m_clip->notes()[0]->pos().getTicks() + m_clip->notes()[0]->length().getTicks(),
 			static_cast<int>(MaxSongLength));
 	}
+
+	void duplicateEditsMustFitTheirCombinedFinalShape()
+	{
+		freshClip();
+		Note* note = m_clip->notes()[0];
+		note->setLength(TimePos(1));
+		const QString id = control::noteIdOf(note);
+		const int halfLimit = static_cast<int>(MaxSongLength / 2);
+		const QJsonArray edits{
+			QJsonObject{{QStringLiteral("note"), id}, {QStringLiteral("length"), halfLimit}},
+			QJsonObject{{QStringLiteral("note"), id}, {QStringLiteral("position"), halfLimit + 1}}};
+
+		const ControlResult result = run(QStringLiteral("note.edit"),
+			{{QStringLiteral("clip"), clip()}, {QStringLiteral("edits"), edits}});
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(note->pos().getTicks(), 0);
+		QCOMPARE(note->length().getTicks(), 1);
+	}
 };
 
 QTEST_MAIN(NoteEditRangeTest)
