@@ -163,7 +163,7 @@ void TempoSyncKnobModel::setSyncMode( SyncMode _new_mode )
 		{
 			connect( &m_custom, SIGNAL(dataChanged()),
 					this, SLOT(updateCustom()),
-					Qt::DirectConnection );
+					static_cast<Qt::ConnectionType>(Qt::DirectConnection | Qt::UniqueConnection) );
 		}
 	}
 	calculateTempoSyncTime( Engine::getSong()->getTempo() );

@@ -2198,3 +2198,5 @@ tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p9-452 (2026-10-11): 
 include/SharedMemory.h	new-p9-459: reject overflowing SharedMemory<T[]> element-to-byte multiplication with std::length_error; covered by AudioBufferTest keyed and unkeyed regressions.
 tests/src/core/AudioBufferTest.cpp	new-p9-459: cover overflow rejection in both keyed and unkeyed SharedMemory<T[]>::create overloads.
 src/core/ThreadPool.cpp	cluster new-p9-478: workers drain queued tasks before exiting after shutdown; covered by ThreadPoolTest::destructionDrainsQueuedTasks
+src/core/TempoSyncKnobModel.cpp	2026-10-11 new-p9-485: guard the custom meter update connection against duplicate registrations when re-entering Custom sync mode.
+tests/src/core/AutomatableModelTest.cpp	2026-10-11 new-p9-485: add a regression proving one custom-meter edit emits one sync update after leaving and re-entering Custom mode.
