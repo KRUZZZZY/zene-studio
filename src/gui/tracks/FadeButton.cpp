@@ -56,7 +56,7 @@ FadeButton::FadeButton(QWidget* parent)
 		  QApplication::palette().color(QPalette::Active, QPalette::BrightText),
 		  QColor::fromHsv(0, 255, QApplication::palette().color(QPalette::Active, QPalette::BrightText).value()),
 		  QApplication::palette().color(QPalette::Active, QPalette::Highlight),
-		  QApplication::palette().color(QPalette::Active, QPalette::BrightText).darker())
+		  QApplication::palette().color(QPalette::Active, QPalette::BrightText).darker(), parent)
 {
 }
 

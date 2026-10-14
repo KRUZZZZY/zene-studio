@@ -34,6 +34,7 @@
 
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "FadeButton.h"
 #include "Fader.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
@@ -96,6 +97,14 @@ private slots:
 		delete model;
 		QVERIFY(fader.model() == nullptr);
 		fader.grab();  // must not read through the null
+	}
+
+	void aFadeButtonKeepsItsSuppliedParentWithoutALayout()
+	{
+		QWidget parent;
+		FadeButton button(&parent);
+
+		QCOMPARE(button.parentWidget(), &parent);
 	}
 
 private:
