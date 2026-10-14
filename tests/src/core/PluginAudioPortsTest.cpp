@@ -181,6 +181,12 @@ private slots:
 		QVERIFY(!std::is_copy_assignable_v<WaveSample>);
 	}
 
+	void exprFrontDoesNotShareOwnedData()
+	{
+		QVERIFY(!std::is_copy_constructible_v<ExprFront>);
+		QVERIFY(!std::is_copy_assignable_v<ExprFront>);
+	}
+
 	void interleavedBufferLifecycle()
 	{
 		InterleavedStereoPorts ports{false};
