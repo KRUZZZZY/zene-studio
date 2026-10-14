@@ -313,7 +313,17 @@ ControlResult rotate(const QJsonObject& args)
 	for (Note* note : notes)
 	{
 		const tick_t relative = note->pos().getTicks() - offset;
-		note->setPos(TimePos(offset + ((relative + amount) % length + length) % length));
+		const tick_t rotated = offset + ((relative + amount) % length + length) % length;
+		const tick_t duration = note->length().getTicks();
+		const tick_t beforeWrap = offset + length - rotated;
+		note->setPos(TimePos(rotated));
+		if (duration <= beforeWrap) { continue; }
+		Note wrapped = *note;
+		note->setLength(TimePos(beforeWrap));
+		wrapped.forgetTiming();
+		wrapped.setPos(TimePos(offset));
+		wrapped.setLength(TimePos(duration - beforeWrap));
+		clip->addNote(wrapped, false);
 	}
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.rotate"), {{QStringLiteral("rotated"), notes.size()}}));
 }
