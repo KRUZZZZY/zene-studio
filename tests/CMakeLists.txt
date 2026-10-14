@@ -51,6 +51,7 @@ set(LMMS_TESTS
 	# the test's own file; this test failed on that probe and passes on the fixed one.
 	src/core/AllocationProbeTest.cpp
 	src/plugins/LadspaChannelCountsTest.cpp
+	src/plugins/VstEffectControlsTest.cpp
 	src/core/ArrayVectorTest.cpp
 	src/core/AudioBufferTest.cpp
 	src/core/AudioBusHandleTest.cpp
@@ -1350,6 +1351,18 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# OversamplingHelpers.h coverage in this DSP test needs hiir's include path.
 	if(LMMS_TEST_NAME STREQUAL "AudioResamplerRatioTest")
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE hiir)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "VstEffectControlsTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect/VstEffectControls.cpp
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect/VstEffectControlDialog.cpp
+			${CMAKE_BINARY_DIR}/plugins/VstEffect/qrc_vsteffect.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			$<TARGET_PROPERTY:vsteffect,INCLUDE_DIRECTORIES>)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			$<TARGET_PROPERTY:vsteffect,COMPILE_DEFINITIONS>)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE vstbase)
+		add_dependencies(${LMMS_TEST_NAME} vsteffect)
 	endif()
 
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
