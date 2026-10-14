@@ -127,6 +127,7 @@ signals:
 	void finished(const lmms::portmap::MappingResult& result);
 
 private:
+	friend struct UpnpMapperTestAccess;
 	void onSsdpReadyRead();
 	void onSearchTimeout();
 	void fetchDescription(const QUrl& location);
