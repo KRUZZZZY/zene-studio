@@ -27,6 +27,8 @@
 #ifdef ZENE_HAVE_FFMPEG
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 #include <QFile>
 
@@ -105,7 +107,14 @@ bool MediaStream::feed(AVPacket* packet)
 
 void MediaStream::seek(double seconds)
 {
-	const auto target = startPts() + static_cast<int64_t>(std::max(0.0, seconds) / timeBase());
+	const double base = timeBase();
+	if (!std::isfinite(seconds) || !std::isfinite(base) || base <= 0.0) { return; }
+	const double offsetPts = std::max(0.0, seconds) / base;
+	if (!std::isfinite(offsetPts) || offsetPts >= 0x1p63) { return; }
+	const int64_t offset = static_cast<int64_t>(offsetPts);
+	const int64_t start = startPts();
+	if (start > 0 && offset > std::numeric_limits<int64_t>::max() - start) { return; }
+	const int64_t target = start + offset;
 	av_seek_frame(format, index, target, AVSEEK_FLAG_BACKWARD);
 	avcodec_flush_buffers(codec);
 	draining = false;
