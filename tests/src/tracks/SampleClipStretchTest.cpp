@@ -461,6 +461,31 @@ private slots:
 		QCOMPARE(stretchOf(clip), QStringLiteral("resample"));
 	}
 
+	//! Repeating the current mode is a no-op and must not hide the preceding edit from undo.
+	void settingTheCurrentStretchModeDoesNotConsumeAnUndoStep()
+	{
+		const QString clip = makeCommandClip();
+		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
+		QVERIFY(run(QStringLiteral("warp.set"),
+			{{QStringLiteral("clip"), clip},
+				{QStringLiteral("markers"), QJsonArray{
+					QJsonObject{{QStringLiteral("source_frame"), 0}, {QStringLiteral("offset_ticks"), 0}},
+					QJsonObject{{QStringLiteral("source_frame"), 44100}, {QStringLiteral("offset_ticks"), 48}}}}}).ok);
+
+		const QJsonObject args{{QStringLiteral("clip"), clip},
+			{QStringLiteral("mode"), QStringLiteral("preserve_pitch")}};
+		QVERIFY2(run(QStringLiteral("warp.stretch"), args).ok, "the initial mode change failed");
+		const ControlResult unchanged = run(QStringLiteral("warp.stretch"), args);
+		QVERIFY2(unchanged.ok, qPrintable(unchanged.errorMessage));
+		QCOMPARE(unchanged.result.value(QStringLiteral("changed")).toBool(), false);
+
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(undone.result.value(QStringLiteral("undone_command")).toString(),
+			QStringLiteral("warp.stretch"));
+		QCOMPARE(stretchOf(clip), QStringLiteral("resample"));
+	}
+
 	/*! I8 on the new path: a stretch handle renders a period without
 	 *  allocating. The stretcher is a fixed-size member of the handle and
 	 *  `prepare()` is the only call that fills anything. */

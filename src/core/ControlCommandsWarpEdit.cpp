@@ -376,27 +376,35 @@ ControlResult warpStretch(const QJsonObject& args)
 	}
 
 	const WarpStretchMode previous = clip->warpStretchMode();
+	const bool changed = previous != wanted;
+	QJsonObject before;
 
-	const QJsonObject before = warpBefore(ref, *clip);
-	// The same one-checkpoint shape warp.set uses: the mode lives in the clip's
-	// own <warp> element, so the clip's checkpoint is the exact inverse.
-	clip->addJournalCheckPoint();
-	clip->setWarpStretchMode(wanted);
+	if (changed)
+	{
+		before = warpBefore(ref, *clip);
+		// The same one-checkpoint shape warp.set uses: the mode lives in the clip's
+		// own <warp> element, so the clip's checkpoint is the exact inverse.
+		clip->addJournalCheckPoint();
+		clip->setWarpStretchMode(wanted);
+	}
 
 	QJsonObject result = warpState(ref, *clip);
 	result.insert(QStringLiteral("previous_mode"), stretchModeName(previous));
-	result.insert(QStringLiteral("changed"), previous != wanted);
+	result.insert(QStringLiteral("changed"), changed);
 
-	// The inverse is this command with the previous mode, and it travels as
-	// the same "warp.stretch" id the caller would re-issue by hand.
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
-	inverseArgs.insert(QStringLiteral("mode"), stretchModeName(previous));
-	result.insert(QStringLiteral("__transaction"), transactionPayload(before,
-		QStringLiteral("warp.stretch"), inverseArgs, true,
-		QStringLiteral("ProjectJournal (Clip checkpoint: the stretch mode is the 'stretch' "
-			"attribute of the clip's own <warp> element, which SampleClip::saveSettings writes "
-			"and SampleClip::loadSettings re-reads, so one undo restores the previous mode)")));
+	if (changed)
+	{
+		// The inverse is this command with the previous mode, and it travels as the
+		// same "warp.stretch" id the caller would re-issue by hand.
+		QJsonObject inverseArgs;
+		inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
+		inverseArgs.insert(QStringLiteral("mode"), stretchModeName(previous));
+		result.insert(QStringLiteral("__transaction"), transactionPayload(before,
+			QStringLiteral("warp.stretch"), inverseArgs, true,
+			QStringLiteral("ProjectJournal (Clip checkpoint: the stretch mode is the 'stretch' "
+				"attribute of the clip's own <warp> element, which SampleClip::saveSettings writes "
+				"and SampleClip::loadSettings re-reads, so one undo restores the previous mode)")));
+	}
 	return ControlResult::success(result);
 }
 
