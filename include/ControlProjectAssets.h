@@ -70,9 +70,8 @@ struct ProjectAssetReference
 	//! be placed on this filesystem.
 	QString path;
 	//! How the path was arrived at: "absolute" | "local:" | "project-dir" |
-	//! "empty". Reported because `local:` and a legacy relative path resolve
-	//! against different bases and a caller comparing two projects needs to
-	//! know which rule was used.
+	//! "empty" | "unresolved-prefix". The latter means PathUtil recognized a
+	//! prefix but could not produce an absolute path for it.
 	QString resolvedVia;
 	bool resolved = false;
 	//! The element also carries its media inline (SampleClip's `data`,
