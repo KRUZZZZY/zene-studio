@@ -2293,3 +2293,4 @@ include/Piano.h	new-p10-315: guard Piano::isKeyPressed against keys outside [0, 
 plugins/Sf2Player/PatchesDialog.cpp	2026-10-12: bankChanged keeps scanning later soundfonts after adding a preset; the existing findProgItem duplicate filter preserves earlier-soundfont precedence.
 include/QuadratureLfo.h	new-p10-326: reject non-finite frequency and non-positive sample rates to preserve finite flanger LFO phase; regression in tests/src/core/DeviceDspTest.cpp.
 tests/src/gui/ArrangerTimelineTest.cpp	2026-10-12 (BUG new-p10-310): offscreen regression renders a PatternClipView at 4 px/bar and checks the combined note + clip-offset pixel before rasterization.
+tests/src/core/RackTest.cpp	Unsupported rack format regression: assert future-version racks are not interpreted or downgraded and their unknown attributes and children survive mixer save/load.

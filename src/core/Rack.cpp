@@ -46,10 +46,8 @@ namespace
 
 //! The element a rack is saved as inside a <mixerchannel>
 constexpr auto RACK_ELEMENT = "rack";
-//! 2 since macros and key/velocity zones became children of this element
-//! (0.3.0). The format is ADDITIVE: a reader of version 1 ignores the <macro>
-//! and <zone> children exactly as this reader ignores a version it does not
-//! know, and a channel with no rack still writes no element at all.
+//! Version 2 adds macros and key/velocity zones as children of this element
+//! (0.3.0). Version 1 remains readable; unknown versions are retained opaque.
 constexpr auto RACK_VERSION = 2;
 
 //! Whether a rack of @a chains chains and @a zones zones is on the signal path: two chains, or any zone.
@@ -227,6 +225,7 @@ void Rack::clear()
 	if (engine != nullptr) { engine->requestChangeInModel(); }
 
 	m_parallelChains.clear();
+	m_unsupportedSettings = QDomElement{};
 	m_selectedChain = Parallel;
 	m_split = RackSplit{};
 	// A macro is persisted, so a cleared rack cannot keep one: loadSettings()
@@ -351,6 +350,12 @@ auto Rack::routingGraph() const -> const RoutingGraph&
 
 void Rack::saveSettings(QDomDocument& doc, QDomElement& parent) const
 {
+	if (!m_unsupportedSettings.isNull())
+	{
+		parent.appendChild(doc.importNode(m_unsupportedSettings, true));
+		return;
+	}
+
 	// A channel with no rack writes no element, so an unracked project is
 	// byte-for-byte the project this build would have written without racks.
 	// "No rack" now includes no macros and no zones: either one alone is a
@@ -391,6 +396,15 @@ void Rack::loadSettings(const QDomElement& element)
 	// An old project has no <rack> element, and neither has a project whose
 	// channel has none: both leave an empty rack, which is not on the path.
 	if (rack.isNull()) { return; }
+
+	bool versionOk = false;
+	const int version = rack.attribute(QStringLiteral("version"), QStringLiteral("1")).toInt(&versionOk);
+	if (!versionOk || version < 1 || version > RACK_VERSION)
+	{
+		m_macros.clear();
+		m_unsupportedSettings = rack;
+		return;
+	}
 
 	for (QDomElement chainElement = rack.firstChildElement(QStringLiteral("chain"));
 		!chainElement.isNull(); chainElement = chainElement.nextSiblingElement(QStringLiteral("chain")))

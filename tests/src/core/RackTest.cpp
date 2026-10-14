@@ -634,6 +634,43 @@ private slots:
 		printEvidence("clear-drops-macros", QStringLiteral("before=1 after=0"));
 	}
 
+	//! An unsupported rack version is kept opaque so saving cannot downgrade it.
+	void anUnsupportedRackVersionSurvivesSave()
+	{
+		static const char* xml =
+			"<mixer>\n"
+			"  <mixerchannel num=\"0\" muted=\"0\" volume=\"1\" name=\"Master\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Future rack\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"    <rack version=\"3\" future=\"keep\">\n"
+			"      <chain index=\"1\"><fxchain numofeffects=\"0\" enabled=\"0\"/></chain>\n"
+			"      <futureRackData token=\"preserve-me\"/>\n"
+			"    </rack>\n"
+			"    <send channel=\"0\" amount=\"1\"/>\n"
+			"  </mixerchannel>\n"
+			"</mixer>\n";
+
+		QDomDocument doc;
+		doc.setContent(QString::fromUtf8(xml));
+		Engine::mixer()->loadSettings(doc.documentElement());
+
+		QDomDocument saved;
+		QDomElement savedRoot = saved.createElement(QStringLiteral("mixer"));
+		saved.appendChild(savedRoot);
+		Engine::mixer()->saveSettings(saved, savedRoot);
+
+		const QDomElement savedRack =
+			mixerChannelElement(savedRoot).firstChildElement(QStringLiteral("rack"));
+		QVERIFY2(!savedRack.isNull(), "the unsupported rack was dropped on save");
+		QCOMPARE(savedRack.attribute(QStringLiteral("version")), QStringLiteral("3"));
+		QCOMPARE(savedRack.attribute(QStringLiteral("future")), QStringLiteral("keep"));
+		QCOMPARE(savedRack.firstChildElement(QStringLiteral("futureRackData"))
+			.attribute(QStringLiteral("token")), QStringLiteral("preserve-me"));
+		QCOMPARE(rackUnderTest().chainCount(), 1);
+	}
+
 private:
 	auto rackUnderTest() -> Rack&
 	{
