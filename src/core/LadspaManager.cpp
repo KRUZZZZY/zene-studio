@@ -198,12 +198,7 @@ uint16_t LadspaManager::getPluginInputs(
 			LADSPA_IS_PORT_AUDIO( 
 				_descriptor->PortDescriptors[port] ) )
 		{
-			QString name = QString( 
-					_descriptor->PortNames[port] );
-			if( name.toUpper().contains( "IN" ) )
-			{
-				inputs++;
-			}
+			inputs++;
 		}
 	}
 	return inputs;
@@ -224,12 +219,7 @@ uint16_t LadspaManager::getPluginOutputs(
 			LADSPA_IS_PORT_AUDIO( 
 				_descriptor->PortDescriptors[port] ) )
 		{
-			QString name = QString( 
-					_descriptor->PortNames[port] );
-			if( name.toUpper().contains( "OUT" ) )
-			{
-				outputs++;
-			}
+			outputs++;
 		}
 	}
 	return outputs;
