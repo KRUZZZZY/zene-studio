@@ -194,6 +194,12 @@ private slots:
 		QVERIFY2(!bus().active(), "two undos put the master back on 1/2");
 	}
 
+	void cueMasterFieldsRequireACue()
+	{
+		const ControlResult result = run(QStringLiteral("mixer.cue_master"), {{QStringLiteral("name"), QStringLiteral("Phones")}});
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
 	void aCueMixSumsItsSendsAtItsLevel()
 	{
 		Mixer* mixer = Engine::mixer();
