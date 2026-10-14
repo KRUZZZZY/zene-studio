@@ -53,6 +53,8 @@
 
 #include <vector>
 
+#include <limits>
+
 #include "CollabClient.h"
 #include "CollabHost.h"
 #include "CollabInvite.h"
@@ -65,6 +67,25 @@
 
 using namespace lmms;
 using namespace lmms::collab;
+
+namespace lmms::collab
+{
+
+struct CollabClientTestAccess
+{
+	static void prepareRequestIdWrap(CollabClient& client)
+	{
+		client.m_nextRequest = std::numeric_limits<int>::max();
+		client.m_inflight.insert(1, QStringLiteral("still pending"));
+	}
+
+	static bool hasInflight(const CollabClient& client, int id)
+	{
+		return client.m_inflight.contains(id);
+	}
+};
+
+} // namespace lmms::collab
 
 namespace
 {
@@ -487,6 +508,26 @@ private slots:
 		QCOMPARE(m_got.requestRoles.first(), CollabRole::Editor);
 		const QJsonObject sent = QJsonDocument::fromJson(m_got.requests.first()).object();
 		QCOMPARE(sent.value(QStringLiteral("cmd")).toString(), QStringLiteral("note.add"));
+	}
+
+	//! Request IDs wrap to a positive value and skip an ID that is still in flight.
+	void requestIdsWrapWithoutReusingInflightIds()
+	{
+		CollabClient client;
+		wire(client);
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Carol"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
+		CollabClientTestAccess::prepareRequestIdWrap(client);
+
+		QSignalSpy replies(&client, &CollabClient::replied);
+		const int id = client.request(QStringLiteral("note.add"), {{QStringLiteral("clip"), QStringLiteral("clip-2")}});
+		QCOMPARE(id, 2);
+		QTRY_COMPARE(replies.size(), 1);
+		QCOMPARE(replies.first().at(0).toInt(), id);
+		QCOMPARE(m_got.requests.size(), 1);
+		const QJsonObject sent = QJsonDocument::fromJson(m_got.requests.first()).object();
+		QCOMPARE(sent.value(QStringLiteral("id")).toInt(), id);
+		QVERIFY(CollabClientTestAccess::hasInflight(client, 1));
 	}
 
 	//! A later joiner gets the CURRENT project, and a re-sync reaches everyone who holds one.

@@ -51,6 +51,7 @@ class CollabLink;
 class LMMS_EXPORT CollabClient : public QObject
 {
 	Q_OBJECT
+	friend struct CollabClientTestAccess;
 public:
 	//! Replaces the local project with the host's bytes; false with \a error when it could not.
 	using SnapshotSink = std::function<bool(const QByteArray& project, QString* error)>;
