@@ -54,7 +54,8 @@ struct VideoAttachment
  *  first). Saved as <video> only while one is attached (a project that never had one re-saves byte for byte; a
  *  project without the element loads with none). The path is kept absolute, as given to video.attach. UI-thread
  *  state, written only through the video.* commands, each one undo step; the decoder, the video window and the
- *  arranger's video lane read it. The file itself is never read here: VideoDecoder does that, on its own thread. */
+ *  arranger's video lane read it. VideoDecoder probes the file on attach and when project loading finds invalid
+ *  timing metadata; the frame pump reads it on its worker thread. */
 class LMMS_EXPORT VideoReference : public QObject, public ProjectSection
 {
 	Q_OBJECT

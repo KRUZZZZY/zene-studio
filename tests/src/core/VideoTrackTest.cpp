@@ -33,6 +33,7 @@
 #include <QtTest>
 
 #include <QApplication>
+#include <QDomDocument>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
@@ -147,6 +148,25 @@ private slots:
 		QCOMPARE(VideoReference::timecode(-2.5, 30.0), QStringLiteral("-00:00:02:15"));
 		QCOMPARE(VideoReference::timecode(0.5, 0.0), QStringLiteral("00:00:00:12"));  // unknown rate: 25
 		QCOMPARE(VideoReference::timecode(59.999, 29.97), QStringLiteral("00:00:59:29"));
+	}
+
+	void invalidSavedDurationIsReprobed()
+	{
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		for (const QString& duration : {QStringLiteral("-1"), QStringLiteral("nan"), QStringLiteral("inf")})
+		{
+			QDomDocument document;
+			QDomElement element = document.createElement(QStringLiteral("video"));
+			element.setAttribute(QStringLiteral("path"), m_clip);
+			element.setAttribute(QStringLiteral("offset"), 192);
+			element.setAttribute(QStringLiteral("duration"), duration);
+			VideoReference::instance().load(element);
+			const VideoAttachment loaded = VideoReference::instance().attachment();
+			const tick_t end = VideoReference::instance().endTick();
+			VideoReference::instance().clear();
+			QVERIFY2(qAbs(loaded.duration - 2.0) < 0.1, qPrintable(duration));
+			QVERIFY2(end > loaded.offset, qPrintable(duration));
+		}
 	}
 
 	void withoutFfmpegEveryCommandIsUnavailable()
