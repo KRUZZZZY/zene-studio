@@ -263,7 +263,7 @@ void InstrumentTrack::sendNoteOff(const MidiEvent& event, int key, int fallbackC
 	if (!m_layers.baseTakesNoteOff(event.key())) { return; }  // MX-112: its note-on was not sent either
 	m_midiNotesMutex.lock();
 	m_piano.setKeyState(event.key(), false);  // event.key() = original key
-	if (key >= 0 && key < NumKeys && --m_runningMidiNotes[key] <= 0)
+	if (key >= 0 && key < NumKeys && m_runningMidiNotes[key] > 0 && --m_runningMidiNotes[key] == 0)
 	{
 		const int channel = m_midiParts.noteOffChannel(event.key(), fallbackChannel);  // MX-114
 		// The note-off velocity (0 unless the note has a release velocity, 0.5.0 L07).
