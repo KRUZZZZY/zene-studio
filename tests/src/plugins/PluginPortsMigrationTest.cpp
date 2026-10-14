@@ -41,6 +41,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 
+#include "BasicFilters.h"
 #include "Engine.h"
 #include "Ladspa2LMMS.h"
 #include "DspEffectLibrary.h"
@@ -327,6 +328,7 @@ private slots:
 	void gigPlayerAcceptsMidiNoteZero();
 	void lfoStartsFromInitializedState();
 	void delayLfoControlDescribesItsPeriod();
+	void doubleFilterClearHistoryClearsSubfilter();
 	void migratedPluginsPreserveBehaviour();
 	void monstroLfoAttackRampsWithinPeriod();
 	void comparisonIsSensitive();
@@ -515,6 +517,17 @@ void PluginPortsMigrationTest::delayLfoControlDescribesItsPeriod()
 	const auto dialogCode = dialogSource.readAll();
 	QVERIFY(dialogCode.contains("tr(\"TIME\")"));
 	QVERIFY(dialogCode.contains("setHintText(tr(\"LFO period:\"), \" s\")"));
+}
+
+void PluginPortsMigrationTest::doubleFilterClearHistoryClearsSubfilter()
+{
+	lmms::BasicFilters<1> filter{static_cast<lmms::sample_rate_t>(48000)};
+	filter.setFilterType(lmms::BasicFilters<1>::FilterType::DoubleLowPass);
+	filter.calcFilterCoeffs(1000.0f, 0.7f);
+	QVERIFY(filter.update(1.0f, 0) != 0.0f);
+
+	filter.clearHistory();
+	QCOMPARE(filter.update(0.0f, 0), 0.0f);
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
