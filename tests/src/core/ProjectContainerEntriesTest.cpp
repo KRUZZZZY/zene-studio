@@ -324,6 +324,34 @@ private slots:
 		QCOMPARE( document, QByteArray( "untouched" ) );
 	}
 
+	/*! The end of a start tag is the '>' OUTSIDE any quoted attribute. An
+	 *  indexed section cannot be placed inside a self-closing <song>, so that
+	 *  skeleton must be refused with the caller's destination untouched. */
+	void reassemblingRefusesSelfClosingContentWithGreaterThanInAttribute()
+	{
+		const QByteArray skeleton =
+			"<?xml version=\"1.0\"?>\n"
+			"<lmms-project version=\"31\" type=\"song\">\n"
+			"  <z:index xmlns:z=\"urn:zene:core:1\">\n"
+			"    <z:section name=\"trackcontainer\" entry=\"trackcontainer.xml\" "
+			"v=\"31\" digest=\"sha256:x0\"/>\n"
+			"  </z:index>\n"
+			"  <song marker=\"left>right\"/>\n"
+			"</lmms-project>\n";
+		const std::vector<std::pair<QString, QByteArray>> entries{
+			{ projectcontainer::skeletonEntryName(), skeleton },
+			{ QStringLiteral( "sections/0000-trackcontainer" ),
+				QByteArray( "<trackcontainer/>\n" ) }
+		};
+
+		QByteArray document( "untouched" );
+		QString error;
+		QVERIFY( !projectcontainer::reassembleContainerDocument( entries,
+			QString::fromLatin1( kContent ), &document, &error ) );
+		QVERIFY( error.contains( QStringLiteral( "element is empty" ) ) );
+		QCOMPARE( document, QByteArray( "untouched" ) );
+	}
+
 	/*! Two entries sharing a name is one body for two index rows - a section
 	 *  silently lost. Refused rather than de-duplicated, the write side's own
 	 *  rule, and the destination stays untouched. */

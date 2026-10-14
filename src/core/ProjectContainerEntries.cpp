@@ -208,6 +208,31 @@ bool indexMatchesRanges( const SectionRanges& found, const DocumentIndex& index,
 	}
 	return true;
 }
+/*! Return the byte offset of the first '>' outside a quoted attribute value,
+ *  or -1 if the tag start is invalid or no end is found. */
+qint64 findStartTagEnd( const QByteArray& bytes, qint64 tagStart )
+{
+	if( tagStart < 0 ) { return -1; }
+
+	char quote = 0;
+	for( qint64 offset = tagStart + 1; offset < bytes.size(); ++offset )
+	{
+		const char byte = bytes.at( offset );
+		if( quote != 0 )
+		{
+			if( byte == quote ) { quote = 0; }
+			continue;
+		}
+		if( byte == '\'' || byte == '"' )
+		{
+			quote = byte;
+			continue;
+		}
+		if( byte == '>' ) { return offset; }
+	}
+	return -1;
+}
+
 
 /*! Walk \a xml - already open over \a bytes - to the start tag of the FIRST
  *  element named \a contentElementName, and answer the offset just past that
@@ -220,10 +245,10 @@ bool indexMatchesRanges( const SectionRanges& found, const DocumentIndex& index,
  *  reduceDocumentSections: characterOffset() at a StartElement sits just PAST
  *  the start tag (property 1), and a literal '<' cannot occur inside a start
  *  tag, so the tag's own '<' is recovered with lastIndexOf (property 2's
- *  measurement). The tag's '>' is found by scanning from that '<' - the same
- *  technique tests/src/core/DocumentSectionsTest.cpp's sliceOf() uses - rather
- *  than by trusting where the token boundary falls on a SELF-CLOSED tag, which
- *  nothing in this tree has measured. The byte before the '>' then settles
+ *  measurement). The tag's '>' is found by scanning from that '<' while
+ *  tracking quoted attribute values, so a '>' inside one cannot end the tag.
+ *  This avoids trusting where the token boundary falls on a SELF-CLOSED tag,
+ *  which nothing in this tree has measured. The byte before the '>' then settles
  *  emptiness directly: a self-closed content element has no interior to splice
  *  sections into, and answering with the bytes after it would file them
  *  OUTSIDE the element they belong to - so it is refused by that statement.
@@ -245,7 +270,7 @@ bool walkToContentStart( QXmlStreamReader& xml, const QByteArray& bytes,
 
 		const qint64 afterTag = xml.characterOffset();
 		const qint64 tagStart = bytes.lastIndexOf( '<', afterTag - 1 );
-		const qint64 tagEnd = tagStart < 0 ? -1 : bytes.indexOf( '>', tagStart );
+		const qint64 tagEnd = findStartTagEnd( bytes, tagStart );
 		if( tagEnd <= 0 || bytes.at( tagEnd - 1 ) == '/' )
 		{
 			setError( error, QStringLiteral( "the <%1> element is empty, so there "
