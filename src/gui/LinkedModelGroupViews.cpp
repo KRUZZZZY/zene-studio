@@ -135,6 +135,8 @@ void LinkedModelGroupView::removeControl(const QString& key)
 		m_layout->removeItem(item);
 		// the widget still exists and is visible - remove it now
 		delete wdg;
+		// removeItem detached the layout item; deleting the widget does not own it
+		delete item;
 		// erase widget pointer from dictionary
 		m_widgets.erase(itr);
 		// repaint immediately, so we don't have dangling model views
