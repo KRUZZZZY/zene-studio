@@ -38,6 +38,7 @@
 #include <QTemporaryDir>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -45,6 +46,7 @@
 #include <limits>
 #include <new>
 #include <stdexcept>
+#include <limits>
 #include <vector>
 
 #include <fftw3.h>
@@ -382,6 +384,28 @@ private slots:
 		filter.update(0.0f, 0);
 		const float output = filter.update(0.25f, 0);
 		QVERIFY2(std::abs(output - 0.02071115f) < 1.0e-5f, qPrintable(QString::number(output, 'g', 9)));
+	}
+
+	void rejectedCombFeedbackDelaysPreserveThePreviousDelay()
+	{
+		CombFeedback<1> delay{4};
+		const double intOverflow = static_cast<double>(std::numeric_limits<int>::max()) + 1.0;
+		const std::array<double, 5> invalidDelays{
+			-1.0,
+			-0.25,
+			std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity(),
+			intOverflow
+		};
+
+		for (const double invalidDelay : invalidDelays)
+		{
+			delay.clearHistory();
+			delay.setDelay(1.0);
+			delay.setDelay(invalidDelay);
+			QCOMPARE(delay.update(1.0, 0), 0.0);
+			QCOMPARE(delay.update(0.0, 0), 1.0);
+		}
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.

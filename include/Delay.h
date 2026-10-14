@@ -27,6 +27,7 @@
 #define LMMS_DELAY_H
 
 #include <cmath>
+#include <limits>
 
 #include "LmmsTypes.h"
 
@@ -100,6 +101,11 @@ public:
 	
 	inline void setDelay( double delay )
 	{
+		if( !std::isfinite( delay ) || delay < 0.0 || delay > static_cast<double>( std::numeric_limits<int>::max() ) )
+		{
+			return;
+		}
+
 		m_delay = static_cast<int>( ceil( delay ) );
 		m_fraction = 1.0 - ( delay - floor( delay ) );
 	}
