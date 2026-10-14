@@ -650,7 +650,7 @@ EqCurve::EqCurve( QList<EqHandle*> *handle, int x, int y ) :
 	m_width( x ),
 	m_heigth( y ),
 	m_alpha( 0 ),
-	m_modelChanged( false )
+	m_modelChanged( true )
 {
 }
 

@@ -1112,6 +1112,8 @@ set(LMMS_TESTS
 	src/gui/MidiLearnGuiTest.cpp
 	# Hydrogen's TinyXML byte-escape compatibility path, including incomplete input.
 	src/plugins/HydrogenImportLocalFileMngTest.cpp
+	# Saved EQ bands must be drawn on the first curve paint.
+	src/gui/EqCurveTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
@@ -1283,8 +1285,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "ReverbSCCreateTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE src/plugins/ReverbSCCreateTestAllocator.c)
 	endif()
+	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/Eq/EqCurve.cpp")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/Eq")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=Eq)
+	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
 	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
+	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
 	# BUGS_FOUND 11.23: on the hosted msvc-x64 runner the 300+ test executables' linker PDBs filled the
 	# build drive (run 36802800273: LNK1201 writing SessionSceneFollowTest.pdb). Tests link without a
 	# PDB under MSVC; zene.exe and the plugins keep theirs, so packages and crash symbols are unchanged.

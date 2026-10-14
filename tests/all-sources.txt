@@ -2778,6 +2778,7 @@ tests/src/gui/EffectHostingMenuTest.cpp
 tests/src/gui/EffectPickerOrganiserTest.cpp
 tests/src/gui/EffectRackAddTest.cpp
 tests/src/gui/ExportChannelsTest.cpp
+tests/src/gui/EqCurveTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
 tests/src/gui/FeedbackModeActionTest.cpp
 tests/src/gui/FolderSummaryLaneTest.cpp
