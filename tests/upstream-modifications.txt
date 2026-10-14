@@ -2119,3 +2119,4 @@ tests/src/plugins/PluginPortsMigrationTest.cpp	new-p9-174: fail the FreeBoy migr
 include/interpolation.h	new-p9-193: replace the amplitude-dependent cubic polynomial with the standard four-point Catmull-Rom polynomial so constant signals retain their level; covered by AudioResamplerRatioTest::cubicInterpolationPreservesConstantSignal.
 src/core/LadspaManager.cpp	BUG new-p9-216: count LADSPA audio ports by direction; LadspaChannelCountsTest covers positional names and asymmetric layouts, while Ladspa2LMMS retains its invalid-effects handling for unsupported transfers.
 src/core/LmmsSemaphore.cpp	BUG new-p9-219: store CreateSemaphore's returned handle in m_sem before checking failure; regression AudioEngineTeardownTest::windowsSemaphoreUsesCreatedHandle.
+tests/src/core/MathTest.cpp	new-p9-229: regression for fastRandInc with reversed unsigned inclusive bounds.
