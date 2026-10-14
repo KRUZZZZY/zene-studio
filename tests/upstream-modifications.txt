@@ -2273,3 +2273,4 @@ include/LadspaManager.h	new-p10-194: widen the private port-channel count helper
 src/core/LadspaManager.cpp	new-p10-194: scan with the descriptor PortCount type and reject port totals or audio-channel counts that exceed the host storage widths
 tests/all-sources.txt	new-p10-194: register the new LADSPA scan regression and its synthetic descriptor fixture in the whole-tree C/C++ source manifest
 tests/src/gui/CommandFormTest.cpp	new-p10-218: regression test for sorting scientific notation by numeric value (1e3 ms after 20 ms).
+src/core/lv2/Lv2Evbuf.cpp	new-p10-232: validate the complete padded event size with 64-bit capacity arithmetic so an event cannot consume more bytes than remain; regression Lv2StateTest::rejectsAnEventWhosePaddingDoesNotFit.
