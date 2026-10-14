@@ -27,9 +27,12 @@
 #include <cstring>
 #include <new>
 #include <new>
+#include <algorithm>
 #include <vector>
+#include <memory>
 
 #include <QByteArray>
+#include <QFile>
 #include <QLibrary>
 #include <memory>
 #include <QProcess>
@@ -41,12 +44,14 @@
 #include "Engine.h"
 #include "Ladspa2LMMS.h"
 #include "DspEffectLibrary.h"
+#include "EffectControls.h"
 #include "Plugin.h"
 #include "plugins/Xpressive/ExprSynth.h"
 
 // Delay builds Lfo.cpp into a MODULE target, so include its implementation
 // here to exercise the constructor directly without adding a new test target.
 #include "../../../plugins/Delay/Lfo.cpp"
+#include "TempoSyncKnobModel.h"
 
 namespace
 {
@@ -321,6 +326,7 @@ private slots:
 	void waveSampleDefaultsInterpolationToDisabled();
 	void gigPlayerAcceptsMidiNoteZero();
 	void lfoStartsFromInitializedState();
+	void delayLfoControlDescribesItsPeriod();
 	void migratedPluginsPreserveBehaviour();
 	void monstroLfoAttackRampsWithinPeriod();
 	void comparisonIsSensitive();
@@ -476,6 +482,39 @@ void PluginPortsMigrationTest::fastBassBoostFrequencySetterHonoursFloor()
 		QVERIFY(std::isfinite(actual));
 		QCOMPARE(actual, expected);
 	}
+}
+
+void PluginPortsMigrationTest::delayLfoControlDescribesItsPeriod()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_delay)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	std::unique_ptr<lmms::Effect> effect{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+	QVERIFY(effect != nullptr);
+
+	const auto models = effect->controls()->findChildren<lmms::TempoSyncKnobModel*>();
+	const auto lfoModel = std::find_if(models.cbegin(), models.cend(), [](const auto* model)
+	{
+		return model->value() == 2.f;
+	});
+	QVERIFY(lfoModel != models.cend());
+	QCOMPARE((*lfoModel)->displayName(), QStringLiteral("LFO period"));
+
+	QFile dialogSource{QCoreApplication::applicationDirPath()
+		+ QStringLiteral("/../../plugins/Delay/DelayControlsDialog.cpp")};
+	QVERIFY2(dialogSource.open(QIODevice::ReadOnly), qPrintable(dialogSource.errorString()));
+	const auto dialogCode = dialogSource.readAll();
+	QVERIFY(dialogCode.contains("tr(\"TIME\")"));
+	QVERIFY(dialogCode.contains("setHintText(tr(\"LFO period:\"), \" s\")"));
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
