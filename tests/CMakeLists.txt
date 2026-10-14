@@ -1103,6 +1103,8 @@ set(LMMS_TESTS
 	src/gui/PianoRollBenchmarkTest.cpp
 	# The piano roll's live MIDI record pass: a stopped pass leaves no pending start behind.
 	src/gui/PianoRollRecordTest.cpp
+	# The piano view's focus handler must tolerate its model not being assigned yet.
+	src/gui/PianoViewFocusTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
 	# Hydrogen's TinyXML byte-escape compatibility path, including incomplete input.
 	src/plugins/HydrogenImportLocalFileMngTest.cpp
