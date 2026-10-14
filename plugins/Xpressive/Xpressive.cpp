@@ -532,24 +532,28 @@ XpressiveView::XpressiveView(Instrument * _instrument, QWidget * _parent) :
 void XpressiveView::expressionChanged() {
 	auto e = castModel<Xpressive>();
 	QByteArray text = m_expressionEditor->toPlainText().toLatin1();
+	QByteArray* stored_expression = nullptr;
 
 	switch (m_selectedGraphGroup->model()->value()) {
 		case W1_EXPR:
-			e->wavesExpression(0) = text;
+			stored_expression = &e->wavesExpression(0);
 			break;
 		case W2_EXPR:
-			e->wavesExpression(1) = text;
+			stored_expression = &e->wavesExpression(1);
 			break;
 		case W3_EXPR:
-			e->wavesExpression(2) = text;
+			stored_expression = &e->wavesExpression(2);
 			break;
 		case O1_EXPR:
-			e->outputExpression(0) = text;
+			stored_expression = &e->outputExpression(0);
 			break;
 		case O2_EXPR:
-			e->outputExpression(1) = text;
+			stored_expression = &e->outputExpression(1);
 			break;
 	}
+	const bool stored_expression_changed = stored_expression && *stored_expression != text;
+	if (stored_expression)
+		*stored_expression = text;
 	if (m_wave_expr)
 		m_graph->setEnabled(m_smoothKnob->model()->value() == 0 && text.size() == 0);
 
@@ -611,6 +615,8 @@ void XpressiveView::expressionChanged() {
 		else
 		{
 			e->exprValid().setValue(1);
+			if (stored_expression_changed)
+				Engine::getSong()->setModified();
 			if (m_output_expr)
 				m_raw_graph->clear();
 		}
@@ -618,6 +624,8 @@ void XpressiveView::expressionChanged() {
 	else
 	{
 		e->exprValid().setValue(0);
+		if (stored_expression_changed)
+			Engine::getSong()->setModified();
 		if (m_output_expr)
 			m_raw_graph->clear();
 	}
