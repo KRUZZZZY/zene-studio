@@ -181,13 +181,26 @@ bool importedOverrides(const QJsonObject& args, QJsonObject* out, ControlResult*
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is not a shortcut set (shortcuts.export writes one)").arg(path));
 		return false;
 	}
-	if (doc.value(QStringLiteral("version")).toInt(ExportVersion) > ExportVersion)  // a newer build's set may mean other things
+	const QJsonValue versionValue = doc.value(QStringLiteral("version"));
+	const int version = versionValue.toInt(-1);
+	if (!versionValue.isDouble() || version < 1 || versionValue.toDouble() != version)
 	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is a version %2 shortcut set; this build reads "
-			"version %3").arg(path).arg(doc.value(QStringLiteral("version")).toInt()).arg(ExportVersion));
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is not a shortcut set (shortcuts.export writes one)").arg(path));
 		return false;
 	}
-	*out = doc.value(QStringLiteral("overrides")).toObject();
+	if (version > ExportVersion)  // a newer build's set may mean other things
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is a version %2 shortcut set; this build reads "
+			"version %3").arg(path).arg(version).arg(ExportVersion));
+		return false;
+	}
+	const QJsonValue overrides = doc.value(QStringLiteral("overrides"));
+	if (!overrides.isObject())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is not a shortcut set (shortcuts.export writes one)").arg(path));
+		return false;
+	}
+	*out = overrides.toObject();
 	return true;
 }
 
