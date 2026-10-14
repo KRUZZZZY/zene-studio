@@ -2256,3 +2256,4 @@ include/DspEffectLibrary.h	cluster new-p10-150: FoldbackDistortion returns gain-
 tests/src/core/AudioBufferTest.cpp	cluster new-p10-168: exercise the real gain_clip process against nonfinite samples and gains in the existing native audio test.
 src/core/InstrumentFunctions.cpp	new-p10-172: skip the up/down modulo cycle when repeats account for the entire range, leaving the repeated single pitch at index zero; regression: NotePlaybackTest::upDownArpeggioHandlesRepeatedSinglePitch.
 src/core/LfoController.cpp	new-p10-186: initialize the held WhiteNoise sample to prevent first-buffer reads before a phase wrap; regression UndoHonestyTest::whiteNoiseStartsWithAValidHeldSample.
+plugins/Lb302/Lb302.cpp	cluster new-p10-185: recalculate the envelope decay coefficient on sampleRateChanged because envdecay uses outputSampleRate; regression PluginPortsMigrationTest::lb302DecayTracksSampleRateChanges

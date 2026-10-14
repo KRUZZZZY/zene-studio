@@ -87,6 +87,7 @@
 #include "Ladspa2LMMS.h"
 #include "AudioDevice.h"
 #include "PixmapButton.h"
+#include "AudioDevice.h"
 #include "Plugin.h"
 #include "plugins/Xpressive/ExprSynth.h"
 
@@ -652,6 +653,7 @@ private slots:
 	void organicDistortionLeavesPreOffsetFramesUnchanged();
 	void slice6PluginsAreLiveAndExact();
 	void partialInitializationCleansAcquiredResources();
+	void lb302DecayTracksSampleRateChanges();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
 	void fastBassBoostFrequencySetterHonoursFloor();
@@ -1919,6 +1921,108 @@ void PluginPortsMigrationTest::partialInitializationCleansAcquiredResources()
 	QVERIFY(!effect->isOkay());
 	effect.reset();
 	QCOMPARE(cleanups(), 1UL);
+}
+
+void PluginPortsMigrationTest::lb302DecayTracksSampleRateChanges()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	lmms::NotePlayHandleManager::init();
+	auto* engine = lmms::Engine::audioEngine();
+	QVERIFY(engine != nullptr);
+	QVERIFY(engine->audioDev() != nullptr);
+
+	struct RestoreSampleRate
+	{
+		lmms::AudioEngine* engine;
+		lmms::sample_rate_t sampleRate;
+		~RestoreSampleRate()
+		{
+			engine->audioDev()->setSampleRateForTesting(sampleRate);
+			emit engine->sampleRateChanged();
+		}
+	} restore{engine, engine->outputSampleRate()};
+
+	engine->audioDev()->setSampleRateForTesting(48000);
+	emit engine->sampleRateChanged();
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_lb302)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	const auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("lb302");
+	auto actualTrack = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto expectedTrack = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	std::unique_ptr<lmms::Instrument> actual{
+		static_cast<lmms::Instrument*>(entry(actualTrack.get(), nullptr))};
+	std::unique_ptr<lmms::Instrument> expected{
+		static_cast<lmms::Instrument*>(entry(expectedTrack.get(), nullptr))};
+	QVERIFY(actual != nullptr);
+	QVERIFY(expected != nullptr);
+	partc::applyInstrumentTestSettings(*actual, "lb302");
+	partc::applyInstrumentTestSettings(*expected, "lb302");
+
+	const auto frames = engine->framesPerPeriod();
+	const lmms::Note actualNote{lmms::TimePos{static_cast<lmms::tick_t>(frames * partc::Buffers)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	const lmms::Note expectedNote{lmms::TimePos{static_cast<lmms::tick_t>(frames * partc::Buffers)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle actualHandle{actualTrack.get(), 0, frames * partc::Buffers,
+		actualNote, nullptr, -1, lmms::NotePlayHandle::Origin::MidiClip};
+	lmms::NotePlayHandle expectedHandle{expectedTrack.get(), 0, frames * partc::Buffers,
+		expectedNote, nullptr, -1, lmms::NotePlayHandle::Origin::MidiClip};
+	actual->handleMidiEvent(lmms::MidiEvent{lmms::MidiNoteOn, 0,
+		static_cast<std::int16_t>(lmms::DefaultKey), 100}, lmms::TimePos{0}, 0);
+	expected->handleMidiEvent(lmms::MidiEvent{lmms::MidiNoteOn, 0,
+		static_cast<std::int16_t>(lmms::DefaultKey), 100}, lmms::TimePos{0}, 0);
+
+	std::vector<lmms::SampleFrame> actualData(frames);
+	std::vector<lmms::SampleFrame> expectedData(frames);
+	std::vector<float> actualSamples;
+	std::vector<float> expectedSamples;
+	const auto sampleCount = static_cast<std::size_t>(partc::Buffers) * frames * 2;
+	actualSamples.reserve(sampleCount);
+	expectedSamples.reserve(sampleCount);
+	auto renderBlock = [](lmms::Instrument& instrument, lmms::NotePlayHandle& handle,
+		std::vector<lmms::SampleFrame>& data, std::vector<float>& output)
+	{
+		std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+		const std::span<lmms::SampleFrame> buffer{data};
+		instrument.playNote(&handle, buffer);
+		if (instrument.isSingleStreamed()) { instrument.play(buffer); }
+		for (const auto& frame : data)
+		{
+			output.push_back(frame.left());
+			output.push_back(frame.right());
+		}
+	};
+
+	for (int block = 0; block < partc::Buffers; ++block)
+	{
+		renderBlock(*actual, actualHandle, actualData, actualSamples);
+		renderBlock(*expected, expectedHandle, expectedData, expectedSamples);
+		if (block == partc::Buffers / 2 - 1)
+		{
+			QVERIFY(actualHandle.m_pluginData != nullptr);
+			QVERIFY(expectedHandle.m_pluginData != nullptr);
+			engine->audioDev()->setSampleRateForTesting(24000);
+			emit engine->sampleRateChanged();
+			QVERIFY(QMetaObject::invokeMethod(expected.get(), "decayChanged", Qt::DirectConnection));
+		}
+	}
+	actual->deleteNotePluginData(&actualHandle);
+	expected->deleteNotePluginData(&expectedHandle);
+	actualHandle.m_pluginData = nullptr;
+	expectedHandle.m_pluginData = nullptr;
+	const auto difference = partc::maxAbsDiff(actualSamples, expectedSamples);
+	QVERIFY2(difference == 0.0f,
+		qPrintable(QString{"LB302 did not apply the new sample-rate decay coefficient (max delta %1)"}
+			.arg(difference, 0, 'g', 9)));
 }
 
 /*!
