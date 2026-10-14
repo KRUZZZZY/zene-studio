@@ -257,16 +257,14 @@ std::vector<double> spectralFlux(const float* mono, std::size_t frameCount)
 	for (std::size_t frame = 0; frame < frameCount; ++frame)
 	{
 		magnitudesAt(mono, frame * TempoHopSize, window, re, im, current);
-		if (frame > 0)
+		double sum = 0.0;
+		for (std::size_t k = 1; k < current.size(); ++k)
 		{
-			double sum = 0.0;
-			for (std::size_t k = 1; k < current.size(); ++k)
-			{
-				const double difference = static_cast<double>(current[k]) - previous[k];
-				if (difference > 0.0) { sum += difference; }
-			}
-			flux[frame] = sum / static_cast<double>(current.size());
+			const double before = frame == 0 ? 0.0 : previous[k];
+			const double difference = static_cast<double>(current[k]) - before;
+			if (difference > 0.0) { sum += difference; }
 		}
+		flux[frame] = sum / static_cast<double>(current.size());
 		previous = current;
 	}
 	return flux;
@@ -294,6 +292,11 @@ std::vector<double> noveltyOf(const std::vector<double>& flux, int sampleRate)
 //! floor derived from the signal's own RMS, so the numerical residue of a STATIONARY signal is not
 //! reported as a beat (a steady tone measured 112 "transients" without the floor). False when no
 //! value of the envelope clears the floor.
+bool hasIsolatedStartPeak(const std::vector<double>& novelty, double floor, double threshold)
+{
+	return novelty.size() > 1 && novelty[0] > floor && novelty[0] >= novelty[1] && novelty[1] <= threshold;
+}
+
 bool transientPeaks(const std::vector<double>& novelty, const float* mono, std::size_t limit, std::vector<std::size_t>* peaks)
 {
 	double rms = 0.0;
@@ -304,6 +307,12 @@ bool transientPeaks(const std::vector<double>& novelty, const float* mono, std::
 	for (const double value : novelty) { peak = std::max(peak, value); }
 	if (peak <= floor || peak <= 0.0) { return false; }
 	const double threshold = std::max(floor, 0.10 * peak);
+	// The first window can clip a hit at the file edge. Keep an isolated onset there even when later,
+	// better-centred hits set the relative threshold; a sustained opening tone stays below this test.
+	if (hasIsolatedStartPeak(novelty, floor, threshold))
+	{
+		peaks->push_back(0);
+	}
 	for (std::size_t i = 1; i + 1 < novelty.size(); ++i)
 	{
 		if (novelty[i] <= threshold || novelty[i] < novelty[i - 1] || novelty[i] < novelty[i + 1]) { continue; }
