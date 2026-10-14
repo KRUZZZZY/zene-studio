@@ -415,6 +415,7 @@ void ClipView::resetColor()
 void ClipView::setColor(const std::optional<QColor>& color)
 {
 	std::set<Track*> journaledTracks;
+	bool colorChanged = false;
 
 	auto selectedClips = getClickedClips();
 	// 0.5.0 theme 2 (Luna cluster 5578): recoloring edits the clip, so a locked one keeps its color.
@@ -422,6 +423,8 @@ void ClipView::setColor(const std::optional<QColor>& color)
 	for (auto clipv : selectedClips)
 	{
 		auto clip = clipv->getClip();
+		if (EditLocks::instance().locks(clip) || clip->color() == color) { continue; }
+
 		auto track = clip->getTrack();
 		if (EditLocks::instance().locks(clip)) { ++kept; continue; }
 
@@ -441,10 +444,11 @@ void ClipView::setColor(const std::optional<QColor>& color)
 
 		clip->setColor(color);
 		clipv->update();
+		colorChanged = true;
 	}
 	cliplocks::announceKept(kept);
 
-	Engine::getSong()->setModified();
+	if (colorChanged) { Engine::getSong()->setModified(); }
 }
 
 

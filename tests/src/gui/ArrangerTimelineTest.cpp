@@ -60,6 +60,7 @@
 #include "ShellSelection.h"
 #include "DesignTokens.h"
 #include "Engine.h"
+#include "EditLocks.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
@@ -410,6 +411,31 @@ private slots:
 		lockedView->toggleMute(QVector<ClipView*>{lockedView, freeView});
 		QCOMPARE(locked->isMuted(), false);
 		QCOMPARE(free_->isMuted(), true);
+	}
+
+	void recoloringOnlyLockedClipsKeepsTheSongClean()
+	{
+		Clip* clip = clipAt(m_track, 0, 2 * Bar);
+		QCoreApplication::processEvents();
+		ClipView* view = viewOf(clip);
+		QVERIFY(view != nullptr);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(clip)}}).ok);
+		QVERIFY(EditLocks::instance().locks(clip));
+
+		m_editor->selectAllClips(false);
+		QTest::mouseClick(view, Qt::LeftButton, Qt::NoModifier, QPoint(view->width() / 2, view->height() * 3 / 4));
+		QVERIFY(view->isSelected());
+
+		const QString projectPath = m_home.filePath(QStringLiteral("locked-color.mmp"));
+		Song* song = Engine::getSong();
+		QVERIFY(song->saveProjectFile(projectPath));
+		song->noteProjectSaved(projectPath);
+		QVERIFY(!song->isModified());
+
+		const auto colorBefore = clip->color();
+		view->randomizeColor();
+		QVERIFY2(!song->isModified(), "recoloring only locked clips marked the song modified");
+		QVERIFY(clip->color() == colorBefore);
 	}
 
 	//! 0.5.0 theme 9 (wave 3): a wheel turn zooms by its size - a touchpad's tenth-of-a-notch deltas add up to a
