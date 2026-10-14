@@ -29,9 +29,15 @@
 #include <QtTest>
 
 #include <QPushButton>
+#include <QLineEdit>
+#include <QScopeGuard>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 
+#include "CollabInvite.h"
 #include "CollabPanel.h"
+#include "CollabSession.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "GuiApplication.h"
@@ -107,6 +113,52 @@ private slots:
 		QVERIFY(host->isEnabled());   // idle: hosting is on offer
 		QVERIFY(!stop->isEnabled());  // and there is nothing to stop
 		panel->close();
+	}
+
+	void joinKeepsInviteWhenConnectionFails()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const bool headless = registry->isHeadless();
+		registry->setHeadless(false);
+		const ControlResult shown = registry->invoke(QStringLiteral("collab.show_panel"));
+		registry->setHeadless(headless);
+		QVERIFY2(shown.ok, qPrintable(shown.errorMessage));
+		CollabPanel* panel = getGUI()->mainWindow()->findChild<CollabPanel*>();
+		QVERIFY(panel != nullptr);
+		QLineEdit* inviteField = panel->findChild<QLineEdit*>();
+		QPushButton* join = buttonOf(panel, QStringLiteral("Join"));
+		QVERIFY(inviteField != nullptr && join != nullptr);
+
+		QTcpServer offlineHost;
+		QVERIFY(offlineHost.listen(QHostAddress::LocalHost, 0));
+		connect(&offlineHost, &QTcpServer::newConnection, &offlineHost, [&offlineHost] {
+			while (offlineHost.hasPendingConnections())
+			{
+				QTcpSocket* connection = offlineHost.nextPendingConnection();
+				connection->abort();
+				connection->deleteLater();
+			}
+		});
+		collab::Invite offlineInvite;
+		offlineInvite.address = QHostAddress::LocalHost;
+		offlineInvite.port = offlineHost.serverPort();
+		offlineInvite.key = QByteArray(collab::InviteKeyBytes, 'x');
+		const QString inviteText = offlineInvite.encode();
+		inviteField->setText(inviteText);
+
+		const auto cleanup = qScopeGuard([panel] {
+			if (collab::CollabSession::instance()->mode() == collab::CollabSession::Mode::Joined)
+			{
+				collab::CollabSession::instance()->leave();
+			}
+			panel->close();
+		});
+		join->click();
+		QCOMPARE(collab::CollabSession::instance()->state().value(QStringLiteral("peer")).toObject()
+			.value(QStringLiteral("state")).toString(), QStringLiteral("connecting"));
+		QTRY_COMPARE_WITH_TIMEOUT(collab::CollabSession::instance()->state().value(QStringLiteral("peer")).toObject()
+			.value(QStringLiteral("state")).toString(), QStringLiteral("failed"), 5000);
+		QCOMPARE(inviteField->text(), inviteText);
 	}
 
 private:

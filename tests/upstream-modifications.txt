@@ -2331,3 +2331,5 @@ plugins/Xpressive/Xpressive.cpp	new-p10-465: clamp selected graph to the five av
 tests/src/core/AudioBufferTest.cpp	new-p10-481: add regressions for overflow in allocation-size reporting, source buffer sizing, and interleaved buffer sizing
 include/BasicFilters.h	cluster new-p10-519: replace non-finite formant frequencies with minFreq before vowel interpolation, preventing invalid float-to-int conversion and formant-table indexing; covered by DeviceDspTest::nonFiniteFormantFrequenciesUseMinimumFrequency.
 include/BasicFilters.h	cluster new-p10-520 (2026-10-12): reject a zero sample rate before computing its reciprocal in setSampleRate and clamp it in the constructor - a zero rate set m_sampleRatio to infinity and poisoned every coefficient downstream; regression BasicFiltersSampleRateTest.
+src/gui/CollabPanel.cpp	2026-10-12 cluster new-p11-12: clear the invite only after CollabClient reports a completed join; retain it after an asynchronous connection failure.
+tests/src/gui/CollabPanelTest.cpp	2026-10-12 cluster new-p11-12: cover the visible Join button retaining a valid invite after the TLS connection to an offline host fails.
