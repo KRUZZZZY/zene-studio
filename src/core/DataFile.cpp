@@ -433,6 +433,7 @@ DataFile::DataFile( const QString & _fileName, const QStringList & skipSections,
 	m_fileName(_fileName),
 	m_content(),
 	m_head(),
+	m_type( Type::Unknown ),
 	m_fileVersion( UPGRADE_METHODS.size() )
 {
 	// ARCH-4 S5: adopt or discard a <file>.new an interrupted save left
@@ -501,6 +502,7 @@ DataFile::DataFile( const QByteArray & _data, const QStringList & skipSections,
 	m_fileName(""),
 	m_content(),
 	m_head(),
+	m_type( Type::Unknown ),
 	m_fileVersion( UPGRADE_METHODS.size() )
 {
 	loadData( _data, "<internal data>", skipSections, skippedNames );
