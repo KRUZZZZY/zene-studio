@@ -77,6 +77,18 @@ public:
 using namespace lmms;
 using namespace lmms::gui;
 
+//! ColorChooser has no Q_OBJECT, so findChildren<ColorChooser*> matched any QColorDialog (and Qt 6.12 refuses it):
+//! list the dialogs and keep only real ColorChoosers.
+static QList<ColorChooser*> colorChoosers(const QWidget& parent)
+{
+	QList<ColorChooser*> found;
+	for (auto* dialog : parent.findChildren<QColorDialog*>())
+	{
+		if (auto* chooser = dynamic_cast<ColorChooser*>(dialog)) { found.append(chooser); }
+	}
+	return found;
+}
+
 class VcaStripLifetimeTest : public QObject
 {
 	Q_OBJECT
@@ -149,13 +161,13 @@ private slots:
 			bool dialogOpened = false;
 			QTimer::singleShot(0, [&view, &dialogOpened]()
 			{
-				const auto dialogs = view.findChildren<ColorChooser*>();
+				const auto dialogs = colorChoosers(view);
 				dialogOpened = !dialogs.isEmpty();
 				if (dialogOpened) { dialogs.constFirst()->reject(); }
 			});
 			view.triggerDoubleClick();
 			QVERIFY(dialogOpened);
-			QVERIFY(view.findChildren<ColorChooser*>().isEmpty());
+			QVERIFY(colorChoosers(view).isEmpty());
 		}
 	}
 
