@@ -205,6 +205,22 @@ private slots:
 		QCOMPARE(samplerange::unitFor(musicaltime::Format::Ticks), Unit::Samples);
 	}
 
+	void firstShiftClickEditsOnlyTheClickedSample()
+	{
+		Graph graph(nullptr, Graph::Style::Bar, 104, 100);
+		std::vector<float> initial(graph.model()->length(), 0.0f);
+		graph.model()->setSamples(initial.data());
+
+		QTest::mouseClick(&graph, Qt::LeftButton, Qt::ShiftModifier, QPoint(52, 50));
+
+		const int clickedSample = static_cast<int>(50.0f * graph.model()->length() / (graph.width() - 4));
+		QVERIFY(graph.model()->samples()[clickedSample] != 0.0f);
+		for (int i = 0; i < graph.model()->length(); ++i)
+		{
+			if (i != clickedSample) { QCOMPARE(graph.model()->samples()[i], 0.0f); }
+		}
+	}
+
 	void theFieldsShowTheSelection()
 	{
 		m_dialog->setRange(4410, 22050);

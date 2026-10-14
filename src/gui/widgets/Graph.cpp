@@ -42,7 +42,8 @@ Graph::Graph( QWidget * _parent, Style _style, int _width,
 	QWidget( _parent ),
 	/* TODO: size, background? */
 	ModelView( new graphModel( -1.0, 1.0, 128, nullptr, true ), this ),
-	m_graphStyle( _style )
+	m_graphStyle( _style ),
+	m_lastCursorX( -1 )
 {
 	m_mouseDown = false;
 	m_graphColor = QColor( 0xFF, 0xAA, 0x00 );
@@ -130,7 +131,14 @@ void Graph::mouseMoveEvent ( QMouseEvent * _me )
 	y = qMax( 2, qMin( y, height()-3 ) );
 
 
-	drawLineAt( x, y, m_lastCursorX );
+	if ( m_lastCursorX >= 0 )
+	{
+		drawLineAt( x, y, m_lastCursorX );
+	}
+	else
+	{
+		changeSampleAt( x, y );
+	}
 
 	// update mouse
 	if( diff != 0 )
@@ -173,7 +181,14 @@ void Graph::mousePressEvent( QMouseEvent * _me )
 			int x = pos.x();
 			int y = pos.y();
 
-			drawLineAt( x, y, m_lastCursorX );
+			if ( m_lastCursorX >= 0 )
+			{
+				drawLineAt( x, y, m_lastCursorX );
+			}
+			else
+			{
+				changeSampleAt( x, y );
+			}
 
 			m_mouseDown = true;
 			setCursor( Qt::BlankCursor );
