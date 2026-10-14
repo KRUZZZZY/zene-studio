@@ -64,6 +64,7 @@
 #include "EffectControls.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "Ladspa2LMMS.h"
 #include "Plugin.h"
 #include "plugins/Xpressive/ExprSynth.h"
 
@@ -105,6 +106,7 @@ void operator delete[](void* allocation, std::size_t) noexcept
 {
 	::operator delete(allocation);
 }
+#include "../../../plugins/LadspaEffect/LadspaEffect.h"
 
 namespace
 {
@@ -361,6 +363,72 @@ auto compareMonstroAttackWindows(const std::vector<float>& migrated,
 
 } // namespace
 
+namespace lmms
+{
+
+class LadspaInstantiationFailure
+{
+public:
+	explicit LadspaInstantiationFailure(const ladspa_key_t& key)
+	{
+		auto* manager = Engine::getLADSPAManager();
+		m_description = manager->getDescription(key);
+		if (m_description == nullptr)
+		{
+			return;
+		}
+
+		const LADSPA_Descriptor* descriptor = manager->getDescriptor(key);
+		if (descriptor == nullptr)
+		{
+			return;
+		}
+
+		m_failureDescriptor = *descriptor;
+		m_failureDescriptor.instantiate = failInstantiation;
+		m_originalFunction = m_description->descriptorFunction;
+		s_active = this;
+		m_description->descriptorFunction = descriptorForIndex;
+	}
+
+	~LadspaInstantiationFailure()
+	{
+		if (m_description != nullptr && s_active == this)
+		{
+			m_description->descriptorFunction = m_originalFunction;
+			s_active = nullptr;
+		}
+	}
+
+	auto isValid() const -> bool
+	{
+		return m_description != nullptr && s_active == this;
+	}
+
+private:
+	static auto failInstantiation(const LADSPA_Descriptor*, unsigned long)
+		-> LADSPA_Handle
+	{
+		return nullptr;
+	}
+
+	static auto descriptorForIndex(unsigned long index) -> const LADSPA_Descriptor*
+	{
+		if (s_active == nullptr || index != s_active->m_description->index)
+		{
+			return nullptr;
+		}
+		return &s_active->m_failureDescriptor;
+	}
+
+	inline static LadspaInstantiationFailure* s_active = nullptr;
+	LadspaManagerDescription* m_description = nullptr;
+	LADSPA_Descriptor_Function m_originalFunction = nullptr;
+	LADSPA_Descriptor m_failureDescriptor{};
+};
+
+} // namespace lmms
+
 class PluginPortsMigrationTest : public QObject
 {
 	Q_OBJECT
@@ -385,6 +453,7 @@ private slots:
 	void positiveFractionHandlesVeryLargePositiveValues();
 	void positiveFractionHandlesVeryLargeNegativeValues();
 	void positiveFractionPreservesOrdinaryValues();
+	void ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange();
 	void migratedPluginsPreserveBehaviour();
 	void monstroLfoAttackRampsWithinPeriod();
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
@@ -724,6 +793,61 @@ void PluginPortsMigrationTest::positiveFractionPreservesOrdinaryValues()
 	QCOMPARE(lmms::positiveFraction(1.25f), 0.25f);
 	QCOMPARE(lmms::positiveFraction(-0.25f), 0.75f);
 	QCOMPARE(lmms::positiveFraction(-2.0f), 0.0f);
+}
+
+void PluginPortsMigrationTest::ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_ladspaeffect)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto* descriptor = reinterpret_cast<const lmms::Plugin::Descriptor*>(
+		lib->resolve("ladspaeffect_plugin_descriptor"));
+	QVERIFY(descriptor != nullptr);
+
+	const auto& spec = partc::ladspaSpecs().front();
+	auto key = partc::ladspaKeyFor(descriptor, spec);
+	const lmms::ladspa_key_t managerKey{
+		key.attributes.value(QStringLiteral("file")),
+		key.attributes.value(QStringLiteral("plugin"))};
+	{
+		lmms::LadspaInstantiationFailure failure{managerKey};
+		QVERIFY(failure.isValid());
+		auto effect = std::unique_ptr<lmms::LadspaEffect>{
+			static_cast<lmms::LadspaEffect*>(entry(nullptr, &key))};
+		QVERIFY(effect != nullptr);
+		QVERIFY(!effect->isOkay());
+		QVERIFY(effect->controls() == nullptr);
+
+		emit lmms::Engine::audioEngine()->sampleRateChanged();
+		QVERIFY(!effect->isOkay());
+	}
+
+	auto effect = std::unique_ptr<lmms::LadspaEffect>{
+		static_cast<lmms::LadspaEffect*>(entry(nullptr, &key))};
+	QVERIFY(effect != nullptr);
+	QVERIFY(effect->isOkay());
+	QVERIFY(effect->controls() != nullptr);
+	using CreateView = lmms::gui::EffectControlDialog* (lmms::EffectControls::*)();
+	const CreateView createView = &lmms::EffectControls::createView;
+	auto editor = std::unique_ptr<lmms::gui::EffectControlDialog>{
+		(effect->controls()->*createView)()};
+	QVERIFY(editor != nullptr);
+	{
+		lmms::LadspaInstantiationFailure failure{managerKey};
+		QVERIFY(failure.isValid());
+		emit lmms::Engine::audioEngine()->sampleRateChanged();
+		QVERIFY(effect->controls() == nullptr);
+	}
+	QVERIFY(!effect->isOkay());
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
