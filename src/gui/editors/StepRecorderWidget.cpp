@@ -166,7 +166,7 @@ void StepRecorderWidget::updateBoundaries()
 	setFixedSize(parentWidget()->size());
 
 	m_bottom = height() - m_marginBottom;
-	m_right = width() - m_marginTop;
+	m_right = width() - m_marginRight;
 
 	//(no need to change top and left as they are static)
 }

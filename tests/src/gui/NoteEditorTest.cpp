@@ -25,7 +25,9 @@
 #include <QtTest>
 
 #include <QComboBox>
+#include <QImage>
 #include <QJsonArray>
+#include <QPainter>
 #include <QToolButton>
 #include <QWheelEvent>
 
@@ -43,6 +45,7 @@
 #include "Piano.h"
 #include "MenuTestSupport.h"
 #include "Song.h"
+#include "StepRecorderWidget.h"
 #include "TrackKeyNames.h"
 
 using namespace lmms;
@@ -117,6 +120,22 @@ private slots:
 		m_editor = nullptr;
 		delete m_clip;
 		m_clip = nullptr;
+	}
+
+	void stepRecorderRulerUsesTheRightMargin()
+	{
+		QWidget parent;
+		parent.resize(220, 90);
+		StepRecorderWidget widget(&parent, 220, 10, 8, 12, 30);
+		widget.resize(parent.size());
+		widget.setStepsLength(TimePos(192));
+
+		QImage image(widget.size(), QImage::Format_ARGB32_Premultiplied);
+		QPainter painter(&image);
+		widget.render(&painter);
+		painter.end();
+
+		QCOMPARE(widget.margins().right(), 190);
 	}
 
 	//! 0.5.0 W2: the grid the canvas paints reads the song's time signature and the tempo map's metre changes.
