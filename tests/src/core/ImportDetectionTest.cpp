@@ -57,6 +57,7 @@
 #include <memory>
 #include <memory>
 #include <memory>
+#include <limits>
 #include <numbers>
 #include <vector>
 
@@ -74,6 +75,7 @@
 #include "ControlRegistry.h"
 #include "DrumSynth.h"
 #include "ProjectKey.h"
+#include "../../../src/core/SampleDecoderFrameLoop.h"
 
 using namespace lmms;
 
@@ -211,6 +213,23 @@ class ImportDetectionTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void sampleFrameIterationStartsForCountsBeyondIntMax()
+	{
+		const auto frameCount = static_cast<std::size_t>(std::numeric_limits<int>::max()) + 1;
+		auto visited = false;
+		auto visitedFrame = std::size_t{};
+		const auto completed = sample_decoder_detail::forEachSampleFrame(frameCount,
+			[&](std::size_t frame) {
+				visited = true;
+				visitedFrame = frame;
+				return false;
+			});
+
+		QVERIFY(visited);
+		QCOMPARE(visitedFrame, std::size_t{0});
+		QVERIFY(!completed);
+	}
+
 	void initTestCase()
 	{
 		QVERIFY2(m_dir.isValid(), "no temporary directory for the detection fixtures");

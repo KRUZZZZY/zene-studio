@@ -42,6 +42,7 @@
 #include "DrumSynth.h"
 #include "Engine.h"
 #include "LmmsTypes.h"
+#include "SampleDecoderFrameLoop.h"
 
 namespace lmms {
 
@@ -85,8 +86,7 @@ auto decodeSampleSF(const QString& audioFile) -> std::optional<SampleDecoder::Re
 	file.close();
 
 	auto result = std::vector<SampleFrame>(sfInfo.frames);
-	for (int i = 0; i < static_cast<int>(result.size()); ++i)
-	{
+	sample_decoder_detail::forEachSampleFrame(result.size(), [&](std::size_t i) {
 		if (sfInfo.channels == 1)
 		{
 			// Upmix from mono to stereo
@@ -97,9 +97,11 @@ auto decodeSampleSF(const QString& audioFile) -> std::optional<SampleDecoder::Re
 			// TODO: Add support for higher number of channels (i.e., 5.1 channel systems)
 			// The current behavior assumes stereo in all cases excluding mono.
 			// This may not be the expected behavior, given some audio files with a higher number of channels.
-			result[i] = {buf[i * sfInfo.channels], buf[i * sfInfo.channels + 1]};
+			const auto channelOffset = i * static_cast<std::size_t>(sfInfo.channels);
+			result[i] = {buf[channelOffset], buf[channelOffset + std::size_t{1}]};
 		}
-	}
+		return true;
+	});
 
 	return SampleDecoder::Result{std::move(result), static_cast<int>(sfInfo.samplerate)};
 }
