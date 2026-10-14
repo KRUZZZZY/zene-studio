@@ -1466,6 +1466,37 @@ private slots:
 			"the off-grid metre point time was not normalised through the tick grid");
 	}
 
+	//! Unknown children in automation are skipped; their missing attributes must
+	//! never turn them into default tempo or metre points.
+	void unknownAutomationChildrenAreSkipped()
+	{
+		const QByteArray xml =
+			"<Project version=\"1.0\">"
+			"<Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Arrangement><TempoAutomation timeUnit=\"beats\">"
+			"<Unknown/>"
+			"<RealPoint time=\"2\" value=\"140\"/>"
+			"</TempoAutomation><TimeSignatureAutomation timeUnit=\"beats\">"
+			"<Unknown/>"
+			"<TimeSignaturePoint time=\"4\" numerator=\"3\" denominator=\"8\"/>"
+			"</TimeSignatureAutomation></Arrangement></Project>";
+
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(xml, &model, &report, &error), qPrintable(error));
+		QCOMPARE(model.tempoPoints.size(), 1);
+		QCOMPARE(model.tempoPoints[0].time, 2.0);
+		QCOMPARE(model.tempoPoints[0].value, 140.0);
+		QCOMPARE(model.meterPoints.size(), 1);
+		QCOMPARE(model.meterPoints[0].time, 4.0);
+		QCOMPARE(model.meterPoints[0].numerator, 3);
+		QCOMPARE(model.meterPoints[0].denominator, 8);
+		QCOMPARE(report.tempoPointCount, 1);
+		QCOMPARE(report.meterPointCount, 1);
+	}
+
 	//! Luna cluster 2232: the Arrangement walk compared `reader.name()` before its
 	//! next readNext(), so a tempo automation following other content parses to
 	//! the end of the document. The case is kept as a guard on that walk, not as

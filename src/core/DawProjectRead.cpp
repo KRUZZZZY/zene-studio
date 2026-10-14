@@ -170,8 +170,9 @@ bool parseAutomationPoint(const QXmlStreamAttributes& attributes, ReadState& sta
 	return true;
 }
 
-//! The points of one <TempoAutomation> (or, @a isMeter, <TimeSignatureAutomation>). False - with
-//! state.error set - for a tempo point the engine will not accept, as for the global <Tempo>.
+//! The points of one <TempoAutomation> (or, @a isMeter, <TimeSignatureAutomation>). Only
+//! RealPoint / TimeSignaturePoint is read; other children are skipped. False - with state.error
+//! set - for a tempo point the engine will not accept, as for the global <Tempo>.
 bool parseAutomationPoints(QXmlStreamReader& reader, ReadState& state, bool isMeter)
 {
 	const QString element = isMeter ? QStringLiteral("TimeSignatureAutomation") : QStringLiteral("TempoAutomation");
@@ -181,7 +182,11 @@ bool parseAutomationPoints(QXmlStreamReader& reader, ReadState& state, bool isMe
 		reader.readNext();
 		if (reader.isEndElement() && reader.name() == element) { break; }
 		if (!reader.isStartElement()) { continue; }
-		if (reader.name() == QLatin1String("Target")) { skipElement(reader); continue; }
+		const QStringView child = reader.name();
+		const bool isPoint = isMeter
+			? child == QLatin1String("TimeSignaturePoint")
+			: child == QLatin1String("RealPoint");
+		if (!isPoint) { skipElement(reader); continue; }
 		if (!parseAutomationPoint(reader.attributes(), state, isMeter)) { return false; }
 		skipElement(reader);
 	}
