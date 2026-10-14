@@ -506,6 +506,70 @@ private slots:
 		QCOMPARE(model.in().channelCount(), MaxChannelsPerAudioBuffer);
 		QVERIFY(model.in().enabled(0, 0));
 	}
+
+	//! Regression: a rejected zero-port project must not erase the model's existing
+	//! connections. `setChannelCounts(0, 0)` refuses the counts ("At least one port
+	//! count must be non-zero"), but the loader used to fall through to both
+	//! matrices, and `Matrix::loadSettings` clears every pin before applying the
+	//! file's attributes - so an initialized processor silently lost its routing.
+	//! The pins must survive a rejected zero-port load, empty or missing matrices.
+	void rejectedZeroPortCountsKeepExistingPins()
+	{
+		TestAudioPortsModel model{2, 2, false};
+
+		// default diagonal connections exist before the load
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.in().enabled(1, 1));
+		QVERIFY(model.out().enabled(0, 0));
+		QVERIFY(model.out().enabled(1, 1));
+
+		// empty matrices
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"0\" outputs=\"0\">"
+			"<in_matrix/><out_matrix/></pins></audioengine>")));
+		model.loadSettings(doc.documentElement());
+
+		// the rejected counts left the channel counts alone
+		QCOMPARE(model.in().channelCount(), ch_cnt_t(2));
+		QCOMPARE(model.out().channelCount(), ch_cnt_t(2));
+
+		// and the existing connections were not erased
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.in().enabled(1, 1));
+		QVERIFY(!model.in().enabled(0, 1));
+		QVERIFY(model.out().enabled(0, 0));
+		QVERIFY(model.out().enabled(1, 1));
+		QVERIFY(model.directRouting().has_value());
+		QCOMPARE(model.directRouting().value(), ch_cnt_t(0));
+
+		// missing matrices erase the pins the same way before the fix
+		QDomDocument missing;
+		QVERIFY(missing.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"0\" outputs=\"0\"></pins></audioengine>")));
+		model.loadSettings(missing.documentElement());
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.out().enabled(1, 1));
+	}
+
+	//! A failed count parse can leave a zero default matching a valid zero-port side.
+	//! It must still prevent the associated matrix from clearing existing pins.
+	void outOfRangeCountsKeepExistingPins()
+	{
+		TestAudioPortsModel model{2, 0, false};
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.in().enabled(1, 1));
+
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"2\" outputs=\"134\">"
+			"<in_matrix/><out_matrix/></pins></audioengine>")));
+		model.loadSettings(doc.documentElement());
+
+		QVERIFY(model.in().enabled(0, 0));
+		QVERIFY(model.in().enabled(1, 1));
+		QVERIFY(!model.in().enabled(0, 1));
+	}
 };
 
 QTEST_GUILESS_MAIN(AudioPortsModelTest)
