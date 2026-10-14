@@ -719,6 +719,8 @@ set(LMMS_TESTS
 	src/core/AutomationLanesTest.cpp
 	# ED-201: automation.write_to_end holds a value from a tick to the song's end.
 	src/core/AutomationWriteToEndTest.cpp
+	# ED-187: thinning keeps custom-segment endpoints and preserves the evaluated curve.
+	src/core/AutomationThinTest.cpp
 	# 0.5.0 L07: the note editor's commands - scale, ratchet, add_many, list, find and change, swing, key names.
 	src/core/NoteEditingCommandsTest.cpp
 	# Luna cluster 5429: a <key-names> <key> element without a numeric key attribute is skipped, not key 0.

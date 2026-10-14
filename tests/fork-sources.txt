@@ -2063,6 +2063,7 @@ tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BounceInPlaceTest.cpp
 tests/src/core/BrowserCatalogQueryTest.cpp
+tests/src/core/AutomationThinTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserFeaturesWindowTest.cpp
 tests/src/core/BrowserTestSupport.h
