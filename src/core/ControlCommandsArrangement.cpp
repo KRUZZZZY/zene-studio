@@ -116,7 +116,8 @@ void registerTrackAdd(ControlRegistry& registry)
 	cmd.group = QStringLiteral("track");
 	cmd.verb = QStringLiteral("add");
 	cmd.description = QStringLiteral("Append a track of the given type (default instrument) and return "
-		"its stable trk-<n> id. Not reversible: see the transaction's mechanism.");
+		"its stable trk-<n> id. Undo removes the track; redo recreates it with a fresh stable "
+		"trk-<n> id.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("type"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 			{QStringLiteral("enum"), QJsonArray{QStringLiteral("instrument"), QStringLiteral("pattern"),
