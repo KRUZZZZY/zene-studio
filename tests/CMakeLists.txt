@@ -410,6 +410,7 @@ set(LMMS_TESTS
 	src/core/FrozenTakeRoundTwoTest.cpp
 	src/core/AudioBusPlayHandleQueueTest.cpp
 	src/core/SlicerTPlayheadTest.cpp
+	src/core/MidiEventToByteSeqTest.cpp
 	src/core/RetroMidiCaptureCommandsTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
 	# The engine half of MIDI controller auto-reconnection (0.3.0 feature-list
