@@ -493,6 +493,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	BQ = static_cast<float>(BFStep);
 	BQ = BQ * BQ / (10000.f - 6600.f * (std::sqrt(BF) - 0.19f));
 	BFStep = 1 + static_cast<int>((40.f - (BFStep / 2.5f)) / (BQ + 1.f + (1.f * BF)));
+	BFStep = std::max(BFStep, 1L);
 
 	std::strcpy(sec, "NoiseBand2");
 	chkOn[4] = GetPrivateProfileInt(sec, "On", 0, dsfile);
@@ -506,6 +507,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	BQ2 = static_cast<float>(BFStep2);
 	BQ2 = BQ2 * BQ2 / (10000.f - 6600.f * (std::sqrt(BF2) - 0.19f));
 	BFStep2 = 1 + static_cast<int>((40 - (BFStep2 / 2.5)) / (BQ2 + 1 + (1 * BF2)));
+	BFStep2 = std::max(BFStep2, 1L);
 
 	// read distortion parameters
 	std::strcpy(sec, "Distortion");

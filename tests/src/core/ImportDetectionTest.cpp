@@ -55,6 +55,7 @@
 #include <limits>
 #include <cstdint>
 #include <memory>
+#include <memory>
 #include <numbers>
 #include <vector>
 
@@ -221,6 +222,30 @@ private slots:
 		QVERIFY(writeWave(m_clickB, clickTrack(kClickBpmB, 10.0)));
 		QVERIFY(writeWave(m_major, majorFixture()));
 		QVERIFY(writeWave(m_tone, steadyTone()));
+	}
+
+	//! A high dF on an enabled noise band must still render at the default frequency.
+	void anEnabledNoiseBandWithDf110Renders()
+	{
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("noise-band-zero-step.ds"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+		const QByteArray fixture = QByteArrayLiteral(
+			"[General]\n"
+			"Version=DrumSynth v2.0\n"
+			"[NoiseBand]\n"
+			"On=1\n"
+			"dF=110\n"
+			"Envelope=0,100 100,100\n");
+		QCOMPARE(file.write(fixture), static_cast<qint64>(fixture.size()));
+		file.close();
+
+		auto drumSynth = DrumSynth{};
+		int16_t* samples = nullptr;
+		const int frames = drumSynth.GetDSFileSamples(path, samples, 1, sample_rate_t{44100});
+		const auto rendered = std::unique_ptr<int16_t[]>{samples};
+		QVERIFY(frames > 0);
+		QVERIFY(rendered);
 	}
 
 	/*! Two known tempos, through the decoder. The engine reports the method it
