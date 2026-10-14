@@ -288,6 +288,10 @@ namespace lmms::DspEffectLibrary
 
 		sample_t nextSample( sample_t in )
 		{
+			if( m_threshold == 0.f )
+			{
+				return in * m_gain;
+			}
 			if( in >= m_threshold || in < -m_threshold )
 			{
 				return (std::abs(std::abs(std::fmod(in - m_threshold, m_threshold * 4)) - m_threshold * 2) - m_threshold) * m_gain;

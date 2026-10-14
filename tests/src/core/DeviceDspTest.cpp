@@ -132,6 +132,7 @@ extern "C"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Delay.h"
+#include "DspEffectLibrary.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -406,6 +407,14 @@ private slots:
 			QCOMPARE(delay.update(1.0, 0), 0.0);
 			QCOMPARE(delay.update(0.0, 0), 1.0);
 		}
+	}
+
+	void zeroThresholdFoldbackDistortionBypassesSafely()
+	{
+		DspEffectLibrary::FoldbackDistortion foldback{0.0f, 1.5f};
+		const sample_t output = foldback.nextSample(0.5f);
+		QVERIFY(std::isfinite(output));
+		QCOMPARE(output, 0.75f);
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.
