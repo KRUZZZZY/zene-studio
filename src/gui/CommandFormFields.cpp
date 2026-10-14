@@ -41,6 +41,8 @@
 #include <QRegularExpression>
 #include <QToolButton>
 
+#include <cmath>
+
 #include "Clip.h"
 #include "CommandForm.h"
 #include "CommandMetadata.h"
@@ -308,28 +310,57 @@ bool parseJson(const QString& text, const QString& type, QJsonValue* value)
 	return false;
 }
 
-//! "a, b, c" as a list of the items' type; a list typed as JSON ("[...]") is read as JSON.
-bool parseList(const QString& text, const QJsonObject& spec, QJsonValue* value)
-{
-	if (text.startsWith(QLatin1Char('['))) { return parseJson(text, QStringLiteral("array"), value); }
-	QJsonArray items;
-	for (const QString& part : text.split(QLatin1Char(',')))
-	{
-		QJsonValue item;
-		if (part.trimmed().isEmpty()) { continue; }
-		if (!parseScalar(part.trimmed(), itemType(spec), &item)) { return false; }
-		items.append(item);
-	}
-	*value = items;
-	return true;
-}
-
 bool inRange(const QJsonValue& value, const QJsonObject& spec)
 {
 	const QJsonValue low = spec.value(QStringLiteral("minimum"));
 	const QJsonValue high = spec.value(QStringLiteral("maximum"));
 	if (!value.isDouble()) { return true; }
 	return !(low.isDouble() && value.toDouble() < low.toDouble()) && !(high.isDouble() && value.toDouble() > high.toDouble());
+}
+
+bool itemMatchesType(const QJsonValue& value, const QString& type)
+{
+	if (type == QStringLiteral("string")) { return value.isString(); }
+	if (type == QStringLiteral("number")) { return value.isDouble(); }
+	return type == QStringLiteral("integer") && value.isDouble() && std::floor(value.toDouble()) == value.toDouble();
+}
+
+bool listMatchesSchema(const QJsonArray& items, const QJsonObject& spec)
+{
+	const QJsonValue minimum = spec.value(QStringLiteral("minItems"));
+	const QJsonValue maximum = spec.value(QStringLiteral("maxItems"));
+	if (minimum.isDouble() && items.size() < minimum.toDouble()) { return false; }
+	if (maximum.isDouble() && items.size() > maximum.toDouble()) { return false; }
+	const QJsonObject itemSpec = spec.value(QStringLiteral("items")).toObject();
+	for (const QJsonValue& item : items)
+	{
+		if (!itemMatchesType(item, itemType(spec)) || !inRange(item, itemSpec)) { return false; }
+	}
+	return true;
+}
+
+//! "a, b, c" as a list of the items' type; a list typed as JSON ("[...]") is read as JSON.
+bool parseList(const QString& text, const QJsonObject& spec, QJsonValue* value)
+{
+	QJsonArray items;
+	if (text.startsWith(QLatin1Char('[')))
+	{
+		if (!parseJson(text, QStringLiteral("array"), value)) { return false; }
+		items = value->toArray();
+	}
+	else
+	{
+		for (const QString& part : text.split(QLatin1Char(',')))
+		{
+			QJsonValue item;
+			if (part.trimmed().isEmpty()) { continue; }
+			if (!parseScalar(part.trimmed(), itemType(spec), &item)) { return false; }
+			items.append(item);
+		}
+	}
+	if (!listMatchesSchema(items, spec)) { return false; }
+	*value = items;
+	return true;
 }
 
 QString typeError(const QString& text, const QString& type)
