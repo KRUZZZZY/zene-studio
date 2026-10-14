@@ -2015,3 +2015,5 @@ src/gui/SendButtonIndicator.cpp	2026-10-11 (BUG new-p10-367): mousePressEvent ig
 plugins/SpectrumAnalyzer/SaProcessor.h	cluster new-p10-358: initialize the waterfall history publication request to false before the analyzer thread can read it; regression AudioPluginTest::waterfallFlipRequestStartsClear.
 src/gui/editors/StepRecorderWidget.cpp	cluster new-p10-400: updateBoundaries uses m_marginRight when calculating the ruler's right boundary, so a different top margin cannot shorten or extend the ruler.
 tests/src/gui/NoteEditorTest.cpp	cluster new-p10-400: adds a rendered StepRecorderWidget regression with unequal top and right margins to prove updateBoundaries uses the right margin.
+src/core/TempoSyncKnobModel.cpp	new-p10-416: validate the serialized tempo-sync mode before storing it and fall back to None for unknown values; covered by TempoMapPersistenceTest::unknownStoredSyncModeFallsBackToNone.
+tests/src/core/TempoMapPersistenceTest.cpp	new-p10-416: add a direct XML load regression for negative and out-of-range tempo-sync modes, plus acceptance of the valid Custom boundary.
