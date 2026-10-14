@@ -50,6 +50,7 @@
 #include "Track.h"
 #include "TrackContainer.h"
 #include "TrackFolder.h"
+#include "TrackFolderNoChannelTestSupport.h"
 
 using namespace lmms;
 
@@ -715,6 +716,32 @@ private slots:
 		control::removeTrack(upper);
 		QCOMPARE(Engine::mixer()->numChannels(), baseline);
 		removeAll(name);
+	}
+
+	void aRoutingFolderWithoutAChannelDoesNotStealNewChildren()
+	{
+		const QString name = QStringLiteral("j-no-channel");
+		Mixer* mixer = Engine::mixer();
+		const int channel = mixer->createChannel();
+		QVERIFY(channel >= 0);
+
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		IntModel* model = child->mixerChannelModel();
+		QVERIFY(model != nullptr);
+		model->setRange(0, static_cast<float>(channel));
+		model->setValue(channel);
+		track_folder_test::linkToRoutingFolderWithoutChannel(folder, child);
+		QVERIFY(folder->isRouting());
+		QCOMPARE(folder->mixerChannel(), -1);
+		const int resultingChannel = static_cast<int>(model->value());
+		const int savedChannel = folder->savedChannelFor(child->id());
+
+		removeAll(name);
+		mixer->deleteChannel(channel);
+		QVERIFY2(resultingChannel == channel,
+			"a routing folder with no mixer channel must leave its child on its own channel");
+		QCOMPARE(savedChannel, -1);
 	}
 
 	//! Undoing a routing folder's delete must bring its channel back. The
