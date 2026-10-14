@@ -2127,3 +2127,5 @@ src/core/LmmsSemaphore.cpp	BUG new-p9-219: store CreateSemaphore's returned hand
 tests/src/core/MathTest.cpp	new-p9-229: regression for fastRandInc with reversed unsigned inclusive bounds.
 src/gui/LinkedModelGroupViews.cpp	new-p9-226: removeControl deletes the QLayoutItem detached by removeItem after deleting its widget; LinkedModelGroupViewLifetimeTest verifies that exact item is freed.
 src/core/midi/MidiSndio.cpp	sndio MIDI resource lifetime: join the worker after shutdown (including the termination fallback) before closing an opened mio handle; tested by MidiReconnectTest::sndioHandleIsClosedWhenClientIsDestroyed.
+include/LocklessList.h	BUG cluster new-p9-235 (2026-10-11): construct Element values in allocator slots, destroy them on free, and destroy linked elements during list teardown; covered by AudioEngineTeardownTest.
+tests/src/core/AudioEngineTeardownTest.cpp	BUG cluster new-p9-235 (2026-10-11): regress nontrivial LocklessList value construction, free-time destruction, and linked-value teardown.

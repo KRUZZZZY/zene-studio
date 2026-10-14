@@ -71,6 +71,7 @@
 #ifdef Q_OS_WIN
 #include "LmmsSemaphore.h"
 #endif
+#include "LocklessList.h"
 
 using namespace lmms;
 
@@ -94,6 +95,36 @@ constexpr int kWorkers = 8;
 #if defined(LMMS_HAVE_PULSEAUDIO) && defined(Q_OS_LINUX)
 std::atomic<unsigned> gPulseMainloopFreeCalls{0};
 #endif
+
+struct LifetimeProbe
+{
+	static inline int liveObjects = 0;
+	static inline int destructions = 0;
+	static inline int assignments = 0;
+
+	static void reset()
+	{
+		liveObjects = 0;
+		destructions = 0;
+		assignments = 0;
+	}
+
+	explicit LifetimeProbe(int value = 0) : value(value) { ++liveObjects; }
+	LifetimeProbe(const LifetimeProbe& other) : value(other.value) { ++liveObjects; }
+	LifetimeProbe& operator=(const LifetimeProbe& other)
+	{
+		value = other.value;
+		++assignments;
+		return *this;
+	}
+	~LifetimeProbe()
+	{
+		--liveObjects;
+		++destructions;
+	}
+
+	int value;
+};
 
 } // namespace
 
@@ -125,6 +156,42 @@ class AudioEngineTeardownTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void locklessListConstructsAndDestroysFreedValues()
+	{
+		LifetimeProbe::reset();
+		lmms::LocklessList<LifetimeProbe> list(1);
+		LifetimeProbe source{42};
+
+		const int liveBeforePush = LifetimeProbe::liveObjects;
+		list.push(source);
+		const int liveAfterPush = LifetimeProbe::liveObjects;
+		const int assignmentsAfterPush = LifetimeProbe::assignments;
+		auto* element = list.popList();
+		QVERIFY(element != nullptr);
+
+		const int destructionsBeforeFree = LifetimeProbe::destructions;
+		const int liveBeforeFree = LifetimeProbe::liveObjects;
+		list.free(element);
+		const int destructionsAfterFree = LifetimeProbe::destructions;
+		const int liveAfterFree = LifetimeProbe::liveObjects;
+		QCOMPARE(liveAfterPush, liveBeforePush + 1);
+		QCOMPARE(assignmentsAfterPush, 0);
+		QCOMPARE(destructionsAfterFree, destructionsBeforeFree + 1);
+		QCOMPARE(liveAfterFree, liveBeforeFree - 1);
+	}
+
+	void locklessListDestroysValuesStillLinkedAtTeardown()
+	{
+		LifetimeProbe::reset();
+		int destructionsBeforeListTeardown = 0;
+		{
+			lmms::LocklessList<LifetimeProbe> list(1);
+			list.push(LifetimeProbe{73});
+			destructionsBeforeListTeardown = LifetimeProbe::destructions;
+		}
+		QCOMPARE(LifetimeProbe::destructions, destructionsBeforeListTeardown + 1);
+	}
+
 	void initTestCase()
 	{
 		Engine::init(true);
