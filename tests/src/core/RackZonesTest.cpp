@@ -149,6 +149,7 @@ private slots:
 	void theZoneSurfaceAddsResolvesAndUndoes()
 	{
 		const QString channel = underTestChannel();  // the id the fixture's channel carries, not kChannel
+		const int zonesBefore = rackUnderTest().zones().zoneCount();
 
 		const ControlResult added = revtest::run(QStringLiteral("rack.zone_add"),
 			{{QStringLiteral("channel"), channel}, {QStringLiteral("low_key"), 24},
@@ -196,7 +197,7 @@ private slots:
 
 		QCOMPARE(revtest::run(QStringLiteral("rack.get_state"),
 			QJsonObject{{QStringLiteral("channel"), channel}})
-			.result.value(QStringLiteral("zone_count")).toInt(), 3);
+			.result.value(QStringLiteral("zone_count")).toInt(), zonesBefore + 1);
 
 		const ControlResult removed = revtest::run(QStringLiteral("rack.zone_remove"),
 			{{QStringLiteral("channel"), channel}, {QStringLiteral("zone"), zone}});
