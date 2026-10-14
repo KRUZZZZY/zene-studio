@@ -28,6 +28,7 @@
 
 #include <QtTest>
 
+#include <QComboBox>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
@@ -210,6 +211,8 @@ private slots:
 		{
 			QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QLatin1String(name)}}).ok);
 		}
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+			{QStringLiteral("macro"), QStringLiteral("macro-0")}, {QStringLiteral("value"), 0.4}}).ok);
 		const double x0 = macroValue(channel, QStringLiteral("macro-0"));
 		const double y0 = macroValue(channel, QStringLiteral("macro-1"));
 		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"), {{QStringLiteral("window_ms"), 60000}}).ok);
@@ -229,6 +232,16 @@ private slots:
 		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-0")) - x0) < 1e-4);
 		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-1")) - y0) < 1e-4);
 		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"), {{QStringLiteral("window_ms"), control::UndoCoalesceWindowMs}}).ok);
+
+		// When both axes select one macro, an Up key must not leave the dot away from that macro's value.
+		const auto axes = dialog.findChildren<QComboBox*>();
+		QCOMPARE(axes.size(), 2);
+		axes.at(1)->setCurrentIndex(0);
+		QCOMPARE(dialog.macroId(false), QStringLiteral("macro-0"));
+		QCOMPARE(dialog.macroId(true), QStringLiteral("macro-0"));
+		QTest::keyClick(area, Qt::Key_Up);
+		QVERIFY(std::abs(area->point().y() - macroValue(channel, QStringLiteral("macro-0"))) < 1e-4);
+		axes.at(1)->setCurrentIndex(1);
 
 		// Another client removes the Y macro while the pad is open: the next move is refused whole, and says so.
 		QVERIFY(run(QStringLiteral("rack.macro_remove"), {{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-1")}}).ok);
