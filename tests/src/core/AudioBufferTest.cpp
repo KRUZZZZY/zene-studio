@@ -35,6 +35,7 @@
 #include <QtTest>
 #include <limits>
 #include <array>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 
@@ -241,6 +242,36 @@ private slots:
 		QCOMPARE(ab.totalChannels(), 0);
 		QCOMPARE(ab.frames(), 10);
 		QCOMPARE(ab.hasInterleavedBuffer(), false);
+	}
+
+	//! Verifies allocation-size reporting rejects dimensions that overflow size_t
+	void AllocationSize_ThrowsOnOverflow()
+	{
+		const auto frames = std::numeric_limits<lmms::f_cnt_t>::max() / 2 + 1;
+		QVERIFY_EXCEPTION_THROWN(AudioBuffer::allocationSize(frames, 2), std::length_error);
+	}
+
+	//! Verifies allocation-size reporting rejects byte totals that overflow when added
+	void AllocationSize_ThrowsOnAdditionOverflow()
+	{
+		const auto frames = static_cast<lmms::f_cnt_t>(std::numeric_limits<std::size_t>::max() / 20 + 1);
+		QVERIFY_EXCEPTION_THROWN(AudioBuffer::allocationSize(frames, 3, true), std::length_error);
+	}
+
+	//! Verifies adding channels rejects a source-buffer element count that overflows size_t
+	void AddGroup_ThrowsOnOverflow()
+	{
+		const auto frames = std::numeric_limits<lmms::f_cnt_t>::max() / 2 + 1;
+		auto ab = AudioBuffer{frames, 0};
+		QVERIFY_EXCEPTION_THROWN(ab.addGroup(2), std::length_error);
+	}
+
+	//! Verifies interleaved allocation rejects an element count that overflows size_t
+	void AllocateInterleavedBuffer_ThrowsOnOverflow()
+	{
+		const auto frames = std::numeric_limits<lmms::f_cnt_t>::max() / 2 + 1;
+		auto ab = AudioBuffer{frames, 0};
+		QVERIFY_EXCEPTION_THROWN(ab.allocateInterleavedBuffer(), std::length_error);
 	}
 
 	//! Verifies constructor with `SharedMemoryResource` allocates correct number of bytes

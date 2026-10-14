@@ -28,11 +28,47 @@
 #include "MixHelpers.h"
 #include "SharedMemory.h"
 
+#include <limits>
+#include <stdexcept>
+
 namespace lmms
 {
 
 namespace
 {
+
+auto checkedFrameCount(f_cnt_t frames) -> std::size_t
+{
+	if constexpr (std::numeric_limits<f_cnt_t>::max() > std::numeric_limits<std::size_t>::max())
+	{
+		if (frames > static_cast<f_cnt_t>(std::numeric_limits<std::size_t>::max()))
+		{
+			throw std::length_error{"audio buffer frame count exceeds size_t"};
+		}
+	}
+
+	return static_cast<std::size_t>(frames);
+}
+
+auto checkedMultiply(std::size_t lhs, std::size_t rhs) -> std::size_t
+{
+	if (rhs != 0 && lhs > std::numeric_limits<std::size_t>::max() / rhs)
+	{
+		throw std::length_error{"audio buffer size overflows size_t"};
+	}
+
+	return lhs * rhs;
+}
+
+auto checkedAdd(std::size_t lhs, std::size_t rhs) -> std::size_t
+{
+	if (lhs > std::numeric_limits<std::size_t>::max() - rhs)
+	{
+		throw std::length_error{"audio buffer size overflows size_t"};
+	}
+
+	return lhs + rhs;
+}
 
 //! @returns Bitset with all bits at or above `pos` set to `value` and the rest set to `!value`
 template<bool value>
@@ -99,16 +135,18 @@ AudioBuffer::AudioBuffer(f_cnt_t frames, ch_cnt_t channels,
 
 void AudioBuffer::allocateInterleavedBuffer()
 {
-	m_interleavedBuffer.resize(2 * m_frames);
+	m_interleavedBuffer.resize(checkedMultiply(checkedFrameCount(m_frames), 2));
 }
 
 auto AudioBuffer::allocationSize(f_cnt_t frames, ch_cnt_t channels, bool withInterleavedBuffer) -> std::size_t
 {
-	auto bytes = frames * channels * sizeof(float); // for m_sourceBuffer
+	const auto frameCount = checkedFrameCount(frames);
+	auto bytes = checkedMultiply(checkedMultiply(frameCount, channels), sizeof(float)); // for m_sourceBuffer
 
 	if (withInterleavedBuffer)
 	{
-		bytes += frames * 2 * sizeof(float); // for m_interleavedBuffer
+		const auto interleavedSamples = checkedMultiply(frameCount, 2);
+		bytes = checkedAdd(bytes, checkedMultiply(interleavedSamples, sizeof(float)));
 	}
 
 	return bytes;
@@ -135,6 +173,7 @@ auto AudioBuffer::addGroup(ch_cnt_t channels) -> ChannelGroup*
 		// Not enough room for requested channels
 		return nullptr;
 	}
+	const auto sourceBufferSize = checkedMultiply(static_cast<std::size_t>(newTotalChannels), checkedFrameCount(m_frames));
 
 	// Check if using a shared memory resource since its semantics are
 	// more restrictive than the default memory resource
@@ -142,6 +181,7 @@ auto AudioBuffer::addGroup(ch_cnt_t channels) -> ChannelGroup*
 		m_sourceBuffer.get_allocator().resource()) != nullptr;
 
 	const auto usesInterleavedBuffer = hasInterleavedBuffer();
+	const auto interleavedBufferSize = usesInterleavedBuffer ? checkedMultiply(checkedFrameCount(m_frames), 2) : 0;
 
 	if (usesSharedMemory)
 	{
@@ -157,10 +197,10 @@ auto AudioBuffer::addGroup(ch_cnt_t channels) -> ChannelGroup*
 	// resource, and so every process mapping that shared memory lays out the audio
 	// data identically: m_sourceBuffer comes first, then m_interleavedBuffer.
 	m_accessBuffer.resize(newTotalChannels);
-	m_sourceBuffer.resize(newTotalChannels * m_frames);
+	m_sourceBuffer.resize(sourceBufferSize);
 	if (usesInterleavedBuffer)
 	{
-		m_interleavedBuffer.resize(2 * m_frames);
+		m_interleavedBuffer.resize(interleavedBufferSize);
 	}
 
 	// Fix channel buffers
