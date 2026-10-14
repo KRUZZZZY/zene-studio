@@ -30,6 +30,7 @@
 
 #include <cmath>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 #include "AudioBurstSupport.h"
@@ -158,6 +159,11 @@ private slots:
 		QCOMPARE(run(QStringLiteral("warp.quantize"), {{QStringLiteral("clip"), control::clipIdOf(clip)}}).errorKind,
 			ControlErrorKind::NotFound);
 		QVERIFY(clip->warpMarkers().empty());
+	}
+
+	void burstAudioRejectsNonpositiveTickCounts()
+	{
+		QVERIFY_EXCEPTION_THROWN(test::burstAudio(-1, {}), std::invalid_argument);
 	}
 };
 
