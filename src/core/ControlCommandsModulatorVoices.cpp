@@ -89,9 +89,16 @@ bool voiceSource(const QJsonObject& args, ModulatorSource* source, ControlResult
 	source->perVoice = args.value(QStringLiteral("per_voice")).toBool(false);
 	if (args.contains(QStringLiteral("trigger")))
 	{
-		InstrumentTrack* track = resolveInstrumentTarget(args.value(QStringLiteral("trigger")).toString(), error);
-		if (track == nullptr) { return false; }
-		source->triggerTrack = track->id();
+		if (args.value(QStringLiteral("trigger")).isNull())
+		{
+			source->triggerTrack = -1;
+		}
+		else
+		{
+			InstrumentTrack* track = resolveInstrumentTarget(args.value(QStringLiteral("trigger")).toString(), error);
+			if (track == nullptr) { return false; }
+			source->triggerTrack = track->id();
+		}
 	}
 	if (source->perVoice && source->triggerTrack < 0)
 	{
@@ -116,6 +123,7 @@ ControlResult setVoice(const QJsonObject& args)
 	addUndoStep(sourceWriter(index, previous), sourceWriter(index, wanted));
 	QJsonObject inverse{{QStringLiteral("modulator"), modulatorId(index)}, {QStringLiteral("per_voice"), previous.perVoice}};
 	if (previous.triggerTrack >= 0) { inverse.insert(QStringLiteral("trigger"), trackId(previous.triggerTrack)); }
+	else { inverse.insert(QStringLiteral("trigger"), QJsonValue(QJsonValue::Null)); }
 	QJsonObject result = layerResultFor(index);
 	result.insert(QStringLiteral("__transaction"), transactionPayload(before, QStringLiteral("modulator.voice_set"), inverse,
 		true, QStringLiteral("action checkpoint: the recorded undo step writes the previous source (its per-voice "
@@ -138,7 +146,7 @@ void registerVoiceSet(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("modulator"), stringProperty()},
 		{QStringLiteral("per_voice"), booleanProperty()},
-		{QStringLiteral("trigger"), stringProperty()},
+		{QStringLiteral("trigger"), nullable(stringProperty())},
 	}, {QStringLiteral("modulator"), QStringLiteral("per_voice")});
 	cmd.resultSchema = resultSchema();
 	cmd.mutating = true;

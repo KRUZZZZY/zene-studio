@@ -557,6 +557,36 @@ private slots:
 		QVERIFY2(control::resolveMixerChannel(madeChannel, &gone) == nullptr, "the created channel survived its undo");
 	}
 
+	//! Cluster new-p11-35: replaying voice_set's inverse clears a trigger that was absent before the edit.
+	void voiceSetInverseClearsTriggerForFreeRunningModulator()
+	{
+		const QString triggerTrack = m_track.isEmpty() ? revtest::addTrack() : m_track;
+		QVERIFY2(!triggerTrack.isEmpty(), "could not create an instrument track for the modulator trigger");
+		const ControlResult created = run(QStringLiteral("modulator.create"), {{QStringLiteral("name"), QStringLiteral("free-running")},
+			{QStringLiteral("rate"), 2.0}, {QStringLiteral("shape"), QStringLiteral("sine")}});
+		QVERIFY2(created.ok, qPrintable(created.errorMessage));
+		const QString modulator = created.result.value(QStringLiteral("modulator")).toString();
+
+		const ControlResult followed = run(QStringLiteral("modulator.voice_set"), {{QStringLiteral("modulator"), modulator},
+			{QStringLiteral("per_voice"), false}, {QStringLiteral("trigger"), triggerTrack}});
+		QVERIFY2(followed.ok, qPrintable(followed.errorMessage));
+		const ControlRegistry::Transaction* transaction = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(transaction != nullptr);
+		QCOMPARE(transaction->command, QStringLiteral("modulator.voice_set"));
+		const QJsonObject inverse = transaction->inverse;
+		const QString inverseOp = inverse.value(QStringLiteral("op")).toString();
+		const QJsonObject inverseArgs = inverse.value(QStringLiteral("args")).toObject();
+		const ControlResult replayed = run(inverseOp, inverseArgs);
+		QVERIFY2(replayed.ok, qPrintable(replayed.errorMessage));
+
+		const QJsonObject state = run(QStringLiteral("modulator.get_state")).result;
+		const QJsonObject modulatorState = state.value(QStringLiteral("modulators")).toArray().last().toObject();
+		QCOMPARE(modulatorState.value(QStringLiteral("id")).toString(), modulator);
+		const QJsonObject source = modulatorState.value(QStringLiteral("source")).toObject();
+		QVERIFY2(!source.contains(QStringLiteral("trigger")), "the replayed inverse left the trigger track assigned");
+		QVERIFY(!source.value(QStringLiteral("per_voice")).toBool());
+	}
+
 	//! MX-120: a per-voice modulator needs a track to follow; bound to the track's instrument it reports
 	//! which voice mode drives each target, and the bind is one undo step.
 	void perVoiceModulatorReportsItsMode()
