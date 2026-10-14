@@ -38,6 +38,7 @@
 #include "Engine.h"
 #include "FadeButton.h"
 #include "Fader.h"
+#include "FloatModelEditorBase.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
@@ -156,6 +157,19 @@ private slots:
 			QVERIFY(dialogOpened);
 			QVERIFY(view.findChildren<ColorChooser*>().isEmpty());
 		}
+	}
+
+	void aFloatModelEditorWhoseModelDiesPaintsNothing()
+	{
+		FloatModelEditorBase editor;
+		auto* model = new FloatModel(1.f, 0.f, 2.f, 0.01f);
+		editor.setModel(model);
+		QVERIFY(editor.isEnabled());
+		editor.grab();
+		delete model;
+		QVERIFY(editor.model() == nullptr);
+		QVERIFY(!editor.isEnabled());
+		editor.grab();  // must not read through the null
 	}
 
 private:

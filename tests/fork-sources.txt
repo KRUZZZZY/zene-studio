@@ -2418,3 +2418,4 @@ tests/src/gui/LfoGraphTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p9-344.md
 # new-p9-462: fix and verification report for the sub-millisecond Tap Tempo interval defect.
 docs/qwen-fixes-2026-10/cluster-new-p9-462.md
+tests/src/gui/VcaStripLifetimeTest.cpp	new-p9-172: regression covers a float editor after its bound model is destroyed, alongside the existing VCA strip lifetime check.

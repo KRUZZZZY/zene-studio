@@ -72,6 +72,22 @@ FloatModelEditorBase::FloatModelEditorBase(DirectionOfManipulation directionOfMa
 }
 
 
+void FloatModelEditorBase::setModel(Model* model, bool isOldModelValid)
+{
+	FloatModelView::setModel(model, isOldModelValid);
+	watchModelLifetime(this->model());
+}
+
+
+void FloatModelEditorBase::watchModelLifetime(Model* boundModel)
+{
+	if (boundModel == nullptr) { return; }
+	QObject::connect(boundModel, &QObject::destroyed, this, [this] {
+		if (model() == nullptr) { setEnabled(false); }
+	});
+}
+
+
 void FloatModelEditorBase::initUi(const QString & name)
 {
 	if (s_textFloat == nullptr)
@@ -306,11 +322,13 @@ void FloatModelEditorBase::mouseDoubleClickEvent(QMouseEvent *)
 
 void FloatModelEditorBase::paintEvent(QPaintEvent *)
 {
+	const auto* mod = model();
+	if (mod == nullptr) { return; }
+
 	QPainter p(this);
 
 	const QColor foreground = tokens::palette().accent;  // 0.5.0 theme 20: the theme's accent, not a fixed teal
 
-	const auto* mod = model();
 	const auto minValue = mod->minValue();
 	const auto maxValue = mod->maxValue();
 	const auto range = maxValue - minValue;
