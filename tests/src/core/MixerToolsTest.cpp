@@ -476,6 +476,29 @@ private slots:
 		QVERIFY(remainedClean);
 		QCOMPARE(adjusted.result.value(QStringLiteral("adjusted")).toInt(), 0);
 	}
+
+	//! MX-067 edge: colouring an empty group, or one whose members already wear that colour, changes
+	//! nothing - it must not dirty the project nor journal an undo step.
+	void colouringWhatIsAlreadyColoured()
+	{
+		VcaGroup* empty = Engine::mixer()->createVcaGroup(QStringLiteral("Empty"));
+		const ControlResult none = run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), empty->id()}, {QStringLiteral("color"), QStringLiteral("#112233")}});
+		QVERIFY2(none.ok, qPrintable(none.errorMessage));
+		QCOMPARE(none.result.value(QStringLiteral("colored")).toInt(), 0);
+		// A real change followed by a no-op: one undo must still reach the real change.
+		QVERIFY(run(QStringLiteral("mixer.channel_eq"), {{QStringLiteral("channel"), ch(4)}, {QStringLiteral("low"), 12.0}}).ok);
+		QVERIFY(run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), empty->id()}, {QStringLiteral("color"), QStringLiteral("#112233")}}).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(channel(4)->m_eqLowModel.value(), 0.f);  // the no-op did not swallow the undo
+		// A group whose members already wear the colour: colouring again changes nothing.
+		VcaGroup* painted = Engine::mixer()->createVcaGroup(QStringLiteral("Painted"));
+		QVERIFY(painted->addMember(3));  // channel 1 and 2 already belong to the Drums group
+		QVERIFY(run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), painted->id()}, {QStringLiteral("color"), QStringLiteral("#336699")}}).ok);
+		QCOMPARE(channel(3)->color().value_or(QColor()).name(), QStringLiteral("#336699"));
+		QVERIFY(run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), painted->id()}, {QStringLiteral("color"), QStringLiteral("#336699")}}).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!channel(3)->color().has_value());  // one undo reaches the first colouring
+	}
 };
 
 QTEST_MAIN(MixerToolsTest)
