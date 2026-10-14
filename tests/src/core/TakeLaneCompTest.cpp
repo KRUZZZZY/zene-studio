@@ -113,6 +113,56 @@ private slots:
 		QCOMPARE(model.laneCount(), lanesBefore);
 	}
 
+	//! Comp segment fields are a strict load shape: required range/lane values
+	//! and an optional slip must parse as non-negative integers.
+	void malformedCompAttributesAreDropped()
+	{
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("takelanes"));
+		QDomElement lane = doc.createElement(QStringLiteral("z:lane"));
+		lane.setAttribute(QStringLiteral("id"), 1);
+		lane.setAttribute(QStringLiteral("index"), 0);
+		element.appendChild(lane);
+		QDomElement segment = doc.createElement(QStringLiteral("z:segment"));
+		segment.setAttribute(QStringLiteral("begin"), 0);
+		segment.setAttribute(QStringLiteral("end"), 100);
+		segment.setAttribute(QStringLiteral("lane"), 0);
+		element.appendChild(segment);
+
+		TakeLaneModel model;
+		model.loadSettings(element);
+		QCOMPARE(static_cast<int>(model.segments().size()), 1);
+
+		const auto assertDropped = [&model, &element]() {
+			model.loadSettings(element);
+			QVERIFY(model.segments().empty());
+		};
+		segment.setAttribute(QStringLiteral("lane"), -1);
+		assertDropped();
+		segment.setAttribute(QStringLiteral("lane"), QStringLiteral("oops"));
+		assertDropped();
+		segment.removeAttribute(QStringLiteral("lane"));
+		assertDropped();
+		segment.setAttribute(QStringLiteral("lane"), 0);
+		segment.setAttribute(QStringLiteral("slip"), -1);
+		assertDropped();
+		segment.setAttribute(QStringLiteral("slip"), QStringLiteral("oops"));
+		assertDropped();
+		segment.removeAttribute(QStringLiteral("slip"));
+		segment.setAttribute(QStringLiteral("begin"), QStringLiteral("oops"));
+		assertDropped();
+		segment.setAttribute(QStringLiteral("begin"), -1);
+		assertDropped();
+		segment.setAttribute(QStringLiteral("begin"), 0);
+		segment.setAttribute(QStringLiteral("end"), QStringLiteral("oops"));
+		assertDropped();
+		segment.removeAttribute(QStringLiteral("end"));
+		assertDropped();
+		segment.setAttribute(QStringLiteral("end"), 100);
+		segment.removeAttribute(QStringLiteral("begin"));
+		assertDropped();
+	}
+
 	// ------------------------------------------------------------------ composite
 
 	//! A selection paints: the range is cut out of every existing segment, the

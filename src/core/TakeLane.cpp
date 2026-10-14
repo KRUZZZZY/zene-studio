@@ -114,16 +114,30 @@ TakeLane laneFromElement(const QDomElement& element)
 	return lane;
 }
 
-TakeLaneSegment segmentFromElement(const QDomElement& element)
+bool readNonNegativeInt(const QDomElement& element, const QString& name, int* value,
+	bool optional = false)
 {
-	TakeLaneSegment seg;
-	seg.beginTick = std::max(0, element.attribute(QStringLiteral("begin"), QStringLiteral("0")).toInt());
-	seg.endTick = std::max(0, element.attribute(QStringLiteral("end"), QStringLiteral("0")).toInt());
-	seg.laneIndex = std::max(0, element.attribute(QStringLiteral("lane"), QStringLiteral("0")).toInt());
+	if (!element.hasAttribute(name))
+	{
+		if (!optional) { return false; }
+		*value = 0;
+		return true;
+	}
+	bool ok = false;
+	const int parsed = element.attribute(name).toInt(&ok);
+	if (!ok || parsed < 0) { return false; }
+	*value = parsed;
+	return true;
+}
+
+bool segmentFromElement(const QDomElement& element, TakeLaneSegment* segment)
+{
 	// 0.5.0 E2: the slip is `slip`. A pre-0.5.0 `srcpos` is ignored on purpose - it held the old, contradictory
 	// reading and no playback path ever applied it, so dropping it keeps an old project sounding as it did.
-	seg.sourceOffset = std::max(0, element.attribute(QStringLiteral("slip"), QStringLiteral("0")).toInt());
-	return seg;
+	return readNonNegativeInt(element, QStringLiteral("begin"), &segment->beginTick)
+		&& readNonNegativeInt(element, QStringLiteral("end"), &segment->endTick)
+		&& readNonNegativeInt(element, QStringLiteral("lane"), &segment->laneIndex)
+		&& readNonNegativeInt(element, QStringLiteral("slip"), &segment->sourceOffset, true);
 }
 
 } // namespace
@@ -455,8 +469,9 @@ void TakeLaneModel::loadSettings(const QDomElement& element)
 		if (child.tagName() == QLatin1String("z:segment")
 			|| child.tagName() == QLatin1String("segment"))
 		{
-			const TakeLaneSegment seg = segmentFromElement(child);
-			if (seg.endTick > seg.beginTick && hasLane(seg.laneIndex)) { m_segments.push_back(seg); }
+			TakeLaneSegment seg;
+			if (segmentFromElement(child, &seg) && seg.endTick > seg.beginTick
+				&& hasLane(seg.laneIndex)) { m_segments.push_back(seg); }
 		}
 	}
 	sortSegments();
