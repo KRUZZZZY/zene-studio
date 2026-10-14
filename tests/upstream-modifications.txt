@@ -686,6 +686,7 @@ plugins/GranularPitchShifter/GranularPitchShifterEffect.cpp	rename layer 1: buil
 plugins/GigPlayer/PatchesDialog.cpp	cluster new-p9-346: patch selection previews through the bank/program models; Cancel restores the dialog's original selection
 plugins/GigPlayer/PatchesDialog.h	cluster new-p9-346: retain the dialog's original bank/program values so Cancel undoes preview model updates
 plugins/FrequencyShifter/FrequencyShifterEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change); new-p12-86: Mute route suppresses the dry mix term so only the shifter/delay path reaches output
+plugins/GranularPitchShifter/GranularPitchShifterControls.h	new-p12-89: return the count of all 15 parameter models; regression: PluginPortsMigrationTest::granularPitchShifterAdvertisesAllControls
 plugins/GranularPitchShifter/GranularPitchShifterEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change); 0.5.0 r6: at most 512 grains, reserved up front (no audio-thread allocation)
 plugins/HydrogenImport/HydrogenImport.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
 plugins/LOMM/LOMM.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)

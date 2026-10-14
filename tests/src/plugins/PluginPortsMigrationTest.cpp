@@ -651,6 +651,7 @@ private slots:
 	void xpressiveExpressionEditsMarkSongModified_data();
 	void xpressiveExpressionEditsMarkSongModified();
 	void xpressiveSynthIsNotCopyable();
+	void granularPitchShifterAdvertisesAllControls();
 	void migratedPluginsPreserveBehaviour();
 	void monstroLfoAttackRampsWithinPeriod();
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
@@ -1314,6 +1315,26 @@ void PluginPortsMigrationTest::xpressiveSynthIsNotCopyable()
 		"Assertion: ExprSynth must not be copy-constructible because it owns its expressions");
 	QVERIFY2(!std::is_copy_assignable_v<lmms::ExprSynth>,
 		"Assertion: ExprSynth must not be copy-assignable because it owns its expressions");
+}
+
+void PluginPortsMigrationTest::granularPitchShifterAdvertisesAllControls()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary lib{QString::fromUtf8(PART_C_MIGRATED_granularpitchshifter)};
+	lib.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib.load(), qPrintable(lib.errorString()));
+
+	auto entry = reinterpret_cast<MainFn>(lib.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	std::unique_ptr<lmms::Effect> fx{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+	QVERIFY(fx != nullptr);
+	QVERIFY(fx->controls() != nullptr);
+	QCOMPARE(fx->controls()->controlCount(), 15);
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
