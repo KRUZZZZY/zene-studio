@@ -103,15 +103,16 @@ QJsonArray selectedClips()
 	return ids;
 }
 
-void selectInArranger(const QJsonArray& ids)
+bool selectInArranger(const QJsonArray& ids)
 {
 	gui::SongEditor* editor = arranger();
-	if (editor == nullptr) { return; }
+	if (editor == nullptr) { return false; }
 	for (gui::selectableObject* object : editor->rubberBand()->selectableObjects())
 	{
 		auto* view = dynamic_cast<gui::ClipView*>(object);
 		if (view != nullptr) { view->setSelected(ids.contains(clipIdOf(view->getClip()))); }
 	}
+	return true;
 }
 
 //! The 'name' argument as it is stored: save, recall, apply and remove all trim it the same way.
@@ -353,12 +354,12 @@ ControlResult applySelection(const QJsonObject& args)
 		ControlResult missing;
 		if (resolveClip(id.toString(), &ref, &missing)) { live.append(id); }
 	}
-	selectInArranger(live);
+	const bool clipsRestored = !live.isEmpty() && selectInArranger(live);
 	if (!live.isEmpty()) { ControlRegistry::instance()->invoke(QStringLiteral("clip.select"), {{QStringLiteral("clip"), live.first()}}); }
 	else { selectClip(QString()); }  // the arranger's selection is empty now, so the surface's is too
 	return ControlResult::success(withOutcome({{QStringLiteral("name"), name}, {QStringLiteral("clips"), live},
 		{QStringLiteral("missing"), entry.value(QStringLiteral("clips")).toArray().size() - live.size()}, {QStringLiteral("range_restored"), range}},
-		entry, {{"range", range}, {"clips", !live.isEmpty()}}));
+		entry, {{"range", range}, {"clips", clipsRestored}}));
 }
 
 void add(ControlRegistry& registry, const char* group, const char* verb, const QString& description, const QJsonObject& args,
