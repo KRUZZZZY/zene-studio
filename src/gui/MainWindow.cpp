@@ -1825,8 +1825,12 @@ void MainWindow::showTool( QAction * _idx )
 
 void MainWindow::browseHelp()
 {
-	// M3.2: app.online_help opens the documentation (the menu is its human).
-	dispatchShellCommand(QStringLiteral("app.online_help"));
+	// M3.2: app.online_help opens the documentation (the menu is its human). It declares
+	// `requires: human`, which the registry refuses for EVERY caller, so dispatching it here
+	// meant the entry did nothing at all - not even the handler's own `opened: false` reached
+	// anyone. The action calls the command's implementation instead, the way the Telemetry
+	// action above calls openTelemetryConsentScreen, so the two still share one.
+	openOnlineHelp(this);
 }
 
 

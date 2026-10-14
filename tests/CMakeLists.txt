@@ -1139,6 +1139,9 @@ set(LMMS_TESTS
 	src/gui/HelpAccessTest.cpp
 	# Luna 4016: control.surface_report keeps the whole menu path of a nested action.
 	src/gui/AgentSurfaceReportTest.cpp
+	# Help > Online Help over the real main window: the desktop taking the URL is said in
+	# the status bar, and taking it is not.
+	src/gui/OnlineHelpNoticeTest.cpp
 	# R7.3: the piano roll's frame time at 1k/5k/10k/50k notes (an opt-in +20% gate).
 	src/gui/PianoRollBenchmarkTest.cpp
 	# The piano roll's live MIDI record pass: a stopped pass leaves no pending start behind.
@@ -2184,6 +2187,7 @@ set_tests_properties(ShortcutsCommandsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(HelpAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AgentSurfaceReportTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(OnlineHelpNoticeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(ZENE_HAVE_COLLAB)
 	set_tests_properties(CollabPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
