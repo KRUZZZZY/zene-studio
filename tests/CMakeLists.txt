@@ -1546,6 +1546,16 @@ add_dependencies(ImportFilterTest throwing_import_filter_test_plugin)
 set_tests_properties(ImportFilterTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# A source-contract check for the spectrum view's first-paint decay state. The
+# view needs GuiApplication to construct, so this test checks the initializer
+# directly without bringing up the full DAW GUI.
+add_executable(SaSpectrumViewTest src/core/SaSpectrumViewTest.cpp)
+add_test(NAME SaSpectrumView COMMAND SaSpectrumViewTest)
+target_link_libraries(SaSpectrumViewTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+target_compile_features(SaSpectrumViewTest PRIVATE cxx_std_20)
+target_compile_definitions(SaSpectrumViewTest PRIVATE
+	SA_SPECTRUM_VIEW_HEADER="${CMAKE_SOURCE_DIR}/plugins/SpectrumAnalyzer/SaSpectrumView.h")
+
 # ---------------------------------------------------------------------------
 # The subject of the MPE playback proof (0.3.0 feature-list row 8, task #649).
 #
