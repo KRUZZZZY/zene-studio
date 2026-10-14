@@ -3250,6 +3250,12 @@ if(TARGET lmms_vst3_sdk)
 		if(TARGET vst3instrument)
 			add_executable(Vst3InstrumentIntegrationTest
 				src/plugins/Vst3InstrumentIntegrationTest.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3HostReports.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3EditorSession.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiMapping.cpp
 			)
 			add_test(NAME Vst3InstrumentIntegrationTest
 				COMMAND Vst3InstrumentIntegrationTest)
@@ -3265,11 +3271,14 @@ if(TARGET lmms_vst3_sdk)
 			endif()
 			target_include_directories(Vst3InstrumentIntegrationTest PRIVATE
 				$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Instrument
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect
 			)
 			target_static_libraries(Vst3InstrumentIntegrationTest PRIVATE lmmsobjs)
 			target_link_libraries(Vst3InstrumentIntegrationTest PRIVATE
 				${QT_LIBRARIES}
 				${QT_QTTEST_LIBRARY}
+				lmms_vst3_sdk
 				${CMAKE_DL_LIBS}
 			)
 			target_compile_features(Vst3InstrumentIntegrationTest PRIVATE cxx_std_20)

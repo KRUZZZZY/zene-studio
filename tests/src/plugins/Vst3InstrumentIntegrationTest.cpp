@@ -84,6 +84,7 @@
 #include "PluginFactory.h"
 #include "PluginView.h"
 #include "Knob.h"
+#include "Vst3Instrument.h"
 #include "Song.h"
 #include "TimePos.h"
 
@@ -176,6 +177,7 @@ private slots:
 
 	void testTheInstalledInstrumentLoadsAndIsMidiBased();
 	void testAMidiClipDrivesAudioWithSampleAccuracy();
+	void testAnUnpreparedInstrumentClearsItsOutput();
 	void testDistinctInputGivesDistinctOutput();
 	void testTheLevelParameterReachesTheInstrument();
 	void testStateSurvivesTheProjectFile();
@@ -255,6 +257,7 @@ void Vst3InstrumentIntegrationTest::initTestCase()
 	Engine::init(true);
 	Engine::audioEngine()->audioDev()->stopProcessing();
 	BufferManager::init(BlockFrames);
+	NotePlayHandleManager::init();
 	qInfo("engine: sampleRate=%u framesPerPeriod=%d",
 		static_cast<unsigned>(Engine::audioEngine()->outputSampleRate()),
 		static_cast<int>(Engine::audioEngine()->framesPerPeriod()));
@@ -394,6 +397,31 @@ void Vst3InstrumentIntegrationTest::testAMidiClipDrivesAudioWithSampleAccuracy()
 		rms(rendered), int(Offset - 1), delayed[Offset - 1], int(Offset),
 		delayed[Offset]);
 
+}
+
+void Vst3InstrumentIntegrationTest::testAnUnpreparedInstrumentClearsItsOutput()
+{
+	auto track = makeTrack();
+	auto* instrument = static_cast<Vst3Instrument*>(makeInstrument(track.get()));
+	QVERIFY(instrument != nullptr);
+	QVERIFY(instrument->vst3Plugin()->isPrepared());
+
+	const Note held{TimePos::fromFrames(Blocks * BlockFrames, 1.0), TimePos(0), 60,
+		DefaultVolume};
+	const auto previousBlock = renderNote(track.get(), instrument, held, 0,
+		Blocks * BlockFrames);
+	QVERIFY(std::all_of(previousBlock.begin(), previousBlock.end(),
+		[](float value) { return value == FixtureLevel; }));
+
+	instrument->vst3Plugin()->release();
+	QVERIFY(!instrument->vst3Plugin()->isPrepared());
+
+	std::vector<SampleFrame> output(BlockFrames, SampleFrame{0.25f, -0.75f});
+	instrument->play(std::span<SampleFrame>{output});
+	QVERIFY(instrument->needsReprepare());
+	QVERIFY(std::all_of(output.begin(), output.end(), [](const SampleFrame& frame) {
+		return frame.left() == 0.0f && frame.right() == 0.0f;
+	}));
 }
 
 void Vst3InstrumentIntegrationTest::testDistinctInputGivesDistinctOutput()
