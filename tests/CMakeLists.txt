@@ -3480,6 +3480,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE AND TARGET nam_harn
 		set_tests_properties(NAMHarnessWavWriteFailure_${case} PROPERTIES TIMEOUT 60)
 	endforeach()
 endif()
+# The NeuralAmp harness regression starts the real headless harness and checks
+# that equal-length WAVs at different sample rates are rejected.
+if(PYTHON3_EXECUTABLE AND TARGET nam_harness)
+	add_test(NAME NeuralAmpCompareRateTest
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/tests/compare_rate_test.py
+			$<TARGET_FILE:nam_harness>)
+	set_tests_properties(NeuralAmpCompareRateTest PROPERTIES TIMEOUT 60)
+endif()
 # The control surface suite is POSIX-only: its clients are AF_UNIX clients, so there is no
 # socket for them to drive on Windows - where the transport is a NAMED PIPE behind the same
 # contract (CODE-9) and has its own Windows-only proof below. The tests were registered on

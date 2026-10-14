@@ -2141,3 +2141,4 @@ plugins/NeuralAmp/nam/NamModel.cpp	BUG new-p9-310: zero the aliased prewarm inpu
 plugins/Vibed/NineButtonSelector.cpp	new-p9-320: clamp the constructor default to the selector's 0-8 button range before initializing the model and indexing the button array.
 plugins/NeuralAmp/tests/nam_harness.cpp	new-p9-316: check short WAV writes and fclose results; propagate legacy --wav output failure.
 tests/CMakeLists.txt	new-p9-316: register each NAM WAV write failure CLI regression as a separate Linux CTest.
+tests/CMakeLists.txt	2026-10-11 new-p9-317: register the NeuralAmp WAV sample-rate regression with CTest when Python and nam_harness are available.
