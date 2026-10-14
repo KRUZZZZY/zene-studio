@@ -36,6 +36,7 @@
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QSet>
 
 #include "AutomationClip.h"
 #include "ClipLinks.h"
@@ -50,7 +51,6 @@
 #include "GuiApplication.h"
 #include "KeyboardShortcuts.h"
 #include "lmms_math.h"
-#include "LinkedClipEdits.h"
 #include "MidiClipView.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
@@ -111,67 +111,12 @@ int lockedAmong(const QVector<selectableObject*>& objects)
 }
 
 
-//! A linked clip's edge drag (either edge) is a trim of the whole group (docs/LINKED-CLIPS.md section 2): the press
-//! captures the peers into the drag's own undo step, the release moves their edges by what the dragged clip moved.
-struct LinkedTrimDrag
-{
-	const Clip* clip = nullptr;
-	tick_t start = 0;
-	tick_t end = 0;
-};
-LinkedTrimDrag s_linkedTrim;
-
-int undoDepthNow()
-{
-	const ProjectJournal* journal = Engine::projectJournal();
-	return journal != nullptr ? journal->undoDepth() : 0;
-}
-
 //! A drop whose crossfade could not be made (a clip too short for it) says so; nothing when \a skipped is empty.
 void announceSkippedOverlap(const QString& skipped)
 {
 	if (skipped.isEmpty()) { return; }
 	TextFloat::displayMessage(ClipView::tr("Crossfade not made"), ClipView::tr("The overlap was left as it was: %1").arg(skipped),
 		embed::getIconPixmap("hint"), 4000);
-}
-
-void beginLinkedTrim(Clip* clip, bool edgeDrag, int depthBefore)
-{
-	s_linkedTrim = {};
-	if (!edgeDrag || clip->linkId() <= 0) { return; }
-	ClipLinks::checkpointPeers(clip);
-	if (ProjectJournal* journal = Engine::projectJournal()) { journal->mergeCheckpointsFrom(depthBefore); }
-	s_linkedTrim = {clip, clip->startPosition().getTicks(), clip->endPosition().getTicks()};
-}
-
-void endLinkedTrim(Clip* clip)
-{
-	const LinkedTrimDrag drag = s_linkedTrim;
-	s_linkedTrim = {};
-	if (drag.clip != clip) { return; }
-	const tick_t startDelta = clip->startPosition().getTicks() - drag.start;
-	const tick_t endDelta = clip->endPosition().getTicks() - drag.end;
-	if (startDelta == 0 && endDelta == 0) { return; }
-	// The plan is made against the clip as it was before the drag, so put it back for a moment.
-	const TimePos finalStart = clip->startPosition();
-	const TimePos finalLength = clip->length();
-	const TimePos finalOffset = clip->startTimeOffset();
-	clip->setStartTimeOffset(TimePos(finalOffset.getTicks() + startDelta));
-	clip->movePosition(TimePos(drag.start));
-	clip->changeLength(TimePos(drag.end - drag.start));
-	const QString refusal = ClipLinks::planEdgeEdit(clip, startDelta, endDelta);
-	if (!refusal.isEmpty())
-	{
-		// A peer cannot take the trim: the whole group's trim is refused, so this clip stays back - and says so.
-		TextFloat::displayMessage(ClipView::tr("Linked clips"),
-			ClipView::tr("The edit went back: another clip linked to this one could not follow it.\n%1").arg(refusal),
-			embed::getIconPixmap("hint"), 4000);
-		return;
-	}
-	clip->movePosition(finalStart);
-	clip->changeLength(finalLength);
-	clip->setStartTimeOffset(finalOffset);
-	ClipLinks::applyEdgeEdit(clip, startDelta, endDelta, false);
 }
 
 } // namespace
@@ -418,34 +363,38 @@ void ClipView::resetColor()
  */
 void ClipView::setColor(const std::optional<QColor>& color)
 {
-	std::set<Track*> journaledTracks;
-	bool colorChanged = false;
-
 	auto selectedClips = getClickedClips();
 	// 0.5.0 theme 2 (Luna cluster 5578): recoloring edits the clip, so a locked one keeps its color.
 	int kept = 0;
+	// One checkpoint for every clip that will change, linked members included (r3-clips); a clip that
+	// already has the color is not an edit, so it is neither checkpointed nor marks the song modified.
+	QVector<JournallingObject*> toCheckpoint;
+	QSet<Clip*> checkpointed;
+	for (auto clipv : selectedClips)
+	{
+		Clip* clip = clipv->getClip();
+		if (EditLocks::instance().locks(clip) || clip->color() == color) { continue; }
+		const QVector<Clip*> members = clip->linkId() > 0 ? ClipLinks::groupOf(clip) : QVector<Clip*>{clip};
+		for (Clip* member : members)
+		{
+			if (!checkpointed.contains(member))
+			{
+				checkpointed.insert(member);
+				toCheckpoint.append(member);
+			}
+		}
+	}
+	if (ProjectJournal* journal = Engine::projectJournal(); journal != nullptr && !toCheckpoint.isEmpty())
+	{
+		journal->addJournalCheckPoint(toCheckpoint);
+	}
+
+	bool colorChanged = false;
 	for (auto clipv : selectedClips)
 	{
 		auto clip = clipv->getClip();
-		if (EditLocks::instance().locks(clip) || clip->color() == color) { continue; }
-
-		auto track = clip->getTrack();
 		if (EditLocks::instance().locks(clip)) { ++kept; continue; }
-
-		// TODO journal whole Song or group of clips instead of one journal entry for each track
-
-		// If only one clip changed, store that in the journal
-		if (selectedClips.length() == 1)
-		{
-			clip->addJournalCheckPoint();
-		}
-		// If multiple clips changed, store whole Track in the journal
-		// Check if track has been journaled already by trying to add it to the set
-		else if (journaledTracks.insert(track).second)
-		{
-			track->addJournalCheckPoint();
-		}
-
+		if (clip->color() == color) { continue; }
 		clip->setColor(color);
 		clipv->update();
 		colorChanged = true;
@@ -741,7 +690,6 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 			else
 			{
 				getGUI()->songEditor()->m_editor->selectAllClips( false );
-				const int depthBeforePress = undoDepthNow();
 				m_clip->addJournalCheckPoint();
 
 				// Action::Move, Action::Resize and Action::ResizeLeft
@@ -782,8 +730,6 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 					m_action = Action::Move;
 					setCursor( Qt::SizeAllCursor );
 				}
-
-				beginLinkedTrim(m_clip, m_action == Action::ResizeLeft || m_action == Action::Resize, depthBeforePress);
 
 				if( m_action == Action::Move )
 				{
@@ -1129,7 +1075,6 @@ void ClipView::mouseReleaseEvent( QMouseEvent * me )
 	{
 		// 0.5.0 ED-021: with zero-crossing snap on, the dragged edge of a sample clip lands on a crossing.
 		arrangement::snapEdgeToZeroCrossing(m_clip, m_action != Action::Move, m_action == Action::ResizeLeft);
-		endLinkedTrim(m_clip);
 		// TODO: Fix m_clip->setJournalling() consistency
 		m_clip->setJournalling( true );
 		// 0.5.0 ED-044: a clip dropped onto others trims or crossfades them, per the overlap mode;
@@ -1137,10 +1082,12 @@ void ClipView::mouseReleaseEvent( QMouseEvent * me )
 		if (m_action == Action::Move)
 		{
 			ArrangerEditPreview::endDrag(this);
+			const bool containerCrossfade = me->modifiers() & Qt::AltModifier;
 			const Clip* locked = arrangement::lockedUnder(m_clip, m_clip->startPosition().getTicks(),
-				m_clip->endPosition().getTicks(), arrangement::modes().overlap);
+				m_clip->endPosition().getTicks(), containerCrossfade ? arrangement::Overlap::Crossfade : arrangement::modes().overlap);
 			QString skipped;
-			if (!arrangement::afterUserMove(m_clip, m_initialClipPos.getTicks(), &skipped) && locked != nullptr) { cliplocks::refuseDropOnto(locked); }
+			if (!arrangement::afterUserMove(m_clip, m_initialClipPos.getTicks(), &skipped, containerCrossfade)
+				&& locked != nullptr) { cliplocks::refuseDropOnto(locked); }
 			announceSkippedOverlap(skipped);
 		}
 	}
@@ -1640,9 +1587,6 @@ bool ClipView::splitClip(const TimePos pos)
 	if (splitPos <= m_initialClipPos || splitPos >= m_initialClipEnd) { return false; }
 	// 0.5.0 ED-021: with zero-crossing snap on, a sample clip is cut frame-exact at the nearest zero crossing.
 	if (arrangement::splitAtZeroCrossing(m_clip, splitPos.getTicks())) { return true; }
-
-	// A linked clip's cut is the whole group's: the same clip-relative position on every member (one undo step).
-	if (m_clip->linkId() > 0) { return ClipLinks::splitGroupAt(m_clip, splitPos.getTicks()).right != nullptr; }
 
 	m_clip->getTrack()->addJournalCheckPoint();
 	m_clip->getTrack()->saveJournallingState(false);

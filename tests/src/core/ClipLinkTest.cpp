@@ -29,8 +29,8 @@
 // contract accepts: if the feature cannot be driven through the socket, it is
 // not in 0.3.0. The tests are therefore also this group's argument-schema tests.
 //
-//   1. the four ids exist with both schemas and an empty `requires` (SPEC A13),
-//      and the two writers are declared mutating: requiredCommandsAreRegistered()
+//   1. the five ids exist with both schemas and an empty `requires` (SPEC A13),
+//      and the writers are declared mutating: requiredCommandsAreRegistered()
 //   2. the relation is real: two clips that share one source, an edit to ONE of
 //      them seen by ALL of them, in both directions, for every content verb, and
 //      the placement edits that must NOT propagate:
@@ -40,8 +40,8 @@
 //   4. SPEC A16: one edit to one member is ONE undo step, and it takes the
 //      WHOLE group back: undoRestoresEveryMemberOfTheGroup()
 //   5. the table carries a row for each id: theA16ContractHasARowForEachId()
-//   6. the UI absence is written down (both docs say the same thing):
-//      theOneLineUiAbsenceIsWrittenDown()
+//   6. the UI marker and Make Unique are documented in both release docs:
+//      theLinkedClipUiAndRulesAreWrittenDown()
 //
 // The save/reload round trip - the acceptance criterion of this row - and the
 // typed refusals are ClipLinkPersistenceTest, and both binaries build their
@@ -59,8 +59,10 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ClipEdits.h"
 #include "Engine.h"
 #include "MidiClip.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -73,7 +75,7 @@ namespace
 //! The ids of the group this file proves.
 const QStringList kIds = {
 	QStringLiteral("clip.link_create"), QStringLiteral("clip.link_remove"),
-	QStringLiteral("clip.link_get_state"), QStringLiteral("clip.link_sync"),
+	QStringLiteral("clip.link_make_unique"), QStringLiteral("clip.link_get_state"), QStringLiteral("clip.link_sync"),
 };
 
 //! How many of the clip's notes carry an MPE expression, read through the surface
@@ -169,10 +171,10 @@ private slots:
 			QVERIFY2(!cmd->resultSchema.isEmpty(), qPrintable(id + " has no result schema"));
 			QVERIFY2(cmd->requiresDecl.isEmpty(), qPrintable(id + " declares a requirement"));
 		}
-		// The two writers are declared mutating (so A16 records a transaction) and
-		// the two reads are not.
+		// Every writer is declared mutating (so A16 records a transaction); the state read is not.
 		QVERIFY(registry->command(QStringLiteral("clip.link_create"))->mutating);
 		QVERIFY(registry->command(QStringLiteral("clip.link_remove"))->mutating);
+		QVERIFY(registry->command(QStringLiteral("clip.link_make_unique"))->mutating);
 		QVERIFY(registry->command(QStringLiteral("clip.link_sync"))->mutating);
 		QVERIFY(!registry->command(QStringLiteral("clip.link_get_state"))->mutating);
 
@@ -672,6 +674,98 @@ private slots:
 		QCOMPARE(noteCount(b), 1);
 	}
 
+	void sharedPresentationAndInPlaceNotesReachEveryMember()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("shared A"));
+		const QString b = addMidiClip(QStringLiteral("shared B"));
+		QVERIFY(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok);
+		QVERIFY(registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}}).ok);
+
+		MidiClip* source = midiClipOf(a);
+		MidiClip* peer = midiClipOf(b);
+		QVERIFY(source != nullptr && peer != nullptr);
+		source->setName(QStringLiteral("Shared phrase"));
+		source->setColor(QColor(QStringLiteral("#cc4477")));
+		QCOMPARE(peer->name(), QStringLiteral("Shared phrase"));
+		QCOMPARE(peer->color().value(), QColor(QStringLiteral("#cc4477")));
+
+		source->notes().front()->setKey(67);
+		source->notesChanged();
+		QCOMPARE(noteKeyAt(b, 0), 67);
+		QCOMPARE(divergentCount(a), 0);
+	}
+
+	void loopWindowEditsStayWithTheAddressedLinkedClip()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("loop A"));
+		const QString b = addMidiClip(QStringLiteral("loop B"));
+		QVERIFY(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok);
+
+		const ControlResult loop = registry->invoke(QStringLiteral("clip.set_loop"),
+			QJsonObject{{QStringLiteral("clip"), b}, {QStringLiteral("length"), 48}});
+		QVERIFY2(loop.ok, qPrintable(loop.errorMessage));
+		QCOMPARE(midiClipOf(b)->clipEdits().loopTicks, 48);
+		QCOMPARE(midiClipOf(a)->clipEdits().loopTicks, 0);
+	}
+
+	void makeUniqueDetachesOnlyTheSelectedInstance()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("unique A"));
+		const QString b = addMidiClip(QStringLiteral("unique B"));
+		const QString c = addMidiClip(QStringLiteral("unique C"));
+		QVERIFY(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b, c}}}).ok);
+		QVERIFY(registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("key"), 60},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24}}).ok);
+
+		const ControlResult unique = registry->invoke(QStringLiteral("clip.link_make_unique"),
+			QJsonObject{{QStringLiteral("clip"), b}});
+		QVERIFY2(unique.ok, qPrintable(unique.errorMessage));
+		QVERIFY(unique.result.value(QStringLiteral("made_unique")).toBool());
+		QCOMPARE(clipLinkId(b), 0);
+		QCOMPARE(clipLinkId(a), clipLinkId(c));
+		QCOMPARE(noteCount(a), 1);
+		QCOMPARE(noteCount(b), 1);
+		QCOMPARE(noteCount(c), 1);
+		midiClipOf(b)->setName(QStringLiteral("Unique phrase"));
+		QCOMPARE(midiClipOf(a)->name(), QStringLiteral("unique A"));
+		QCOMPARE(midiClipOf(c)->name(), QStringLiteral("unique A"));
+		const ControlResult edit = registry->invoke(QStringLiteral("note.add"),
+			QJsonObject{{QStringLiteral("clip"), b}, {QStringLiteral("key"), 65},
+				{QStringLiteral("position"), 48}, {QStringLiteral("length"), 24}});
+		QVERIFY2(edit.ok, qPrintable(edit.errorMessage));
+		QCOMPARE(noteCount(b), 2);
+		QCOMPARE(noteCount(a), 1);
+		QCOMPARE(noteCount(c), 1);
+	}
+
+	void makeUniqueIsOneUndoStep()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString a = addMidiClip(QStringLiteral("undo unique A"));
+		const QString b = addMidiClip(QStringLiteral("undo unique B"));
+		QVERIFY(registry->invoke(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), a}, {QStringLiteral("clips"), QJsonArray{b}}}).ok);
+		const int group = clipLinkId(a);
+		const ControlResult unique = registry->invoke(QStringLiteral("clip.link_make_unique"),
+			QJsonObject{{QStringLiteral("clip"), b}});
+		QVERIFY2(unique.ok, qPrintable(unique.errorMessage));
+		QCOMPARE(clipLinkId(b), 0);
+		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+		QVERIFY(undo.result.value(QStringLiteral("undone")).toBool());
+		QCOMPARE(clipLinkId(a), group);
+		QCOMPARE(clipLinkId(b), group);
+	}
+
 	// -----------------------------------------------------------------------
 	// 4. THE ROUND TRIP
 	// -----------------------------------------------------------------------
@@ -707,7 +801,6 @@ private slots:
 		QVERIFY2(added.ok, qPrintable(added.errorMessage));
 		QCOMPARE(noteCount(a), 1);
 		QCOMPARE(noteCount(b), 1);
-
 		const ControlResult undoEdit = registry->invoke(QStringLiteral("control.undo"));
 		QVERIFY2(undoEdit.ok, qPrintable(undoEdit.errorMessage));
 		QVERIFY(undoEdit.result.value(QStringLiteral("undone")).toBool());
@@ -781,6 +874,8 @@ private slots:
 		QVERIFY(create->reversible);
 		QCOMPARE(table.lookup(QStringLiteral("clip.link_remove"))->cls,
 			control::ReversibilityClass::TrueInverse);
+		QCOMPARE(table.lookup(QStringLiteral("clip.link_make_unique"))->cls,
+			control::ReversibilityClass::TrueInverse);
 		QCOMPARE(table.lookup(QStringLiteral("clip.link_sync"))->cls,
 			control::ReversibilityClass::TrueInverse);
 		QCOMPARE(table.lookup(QStringLiteral("clip.link_get_state"))->cls,
@@ -789,15 +884,13 @@ private slots:
 	}
 
 	// -----------------------------------------------------------------------
-	// 8. the UI absence
+	// 8. the UI marker and per-instance rules
 	// -----------------------------------------------------------------------
 
-	void theOneLineUiAbsenceIsWrittenDown()
+	void theLinkedClipUiAndRulesAreWrittenDown()
 	{
-		// The contract's fourth item: a feature whose UI absence is not written
-		// down is not in the release. Both files carry the SAME one line, and it
-		// names what propagates and what does not - so the claim cannot drift
-		// from the code without failing here.
+		// Both release docs describe the visible marker, Make Unique and the
+		// independent geometry rule so the implementation contract cannot drift.
 		const QString limitations = readDoc(QStringLiteral("KNOWN-LIMITATIONS.md"));
 		const QString releaseNotes = readDoc(QStringLiteral("RELEASE-NOTES-v0.3.0-alpha.md"));
 		if (limitations.isEmpty() || releaseNotes.isEmpty())
@@ -808,15 +901,12 @@ private slots:
 			"docs/KNOWN-LIMITATIONS.md carries no linked-clips line");
 		QVERIFY2(releaseNotes.contains(QStringLiteral("clip.link_create")),
 			"docs/RELEASE-NOTES-v0.3.0-alpha.md carries no linked-clips line");
-		// Both say the same thing about what propagates: the content verbs are
-		// named in the line, and the placement/level verbs are named as NOT
-		// propagating, so the two halves of the claim travel together.
+		QVERIFY(limitations.contains(QStringLiteral("clip.link_make_unique")));
+		QVERIFY(releaseNotes.contains(QStringLiteral("clip.link_make_unique")));
 		for (const QString& doc : {limitations, releaseNotes})
 		{
-			QVERIFY2(doc.contains(QStringLiteral("clip.link_sync")),
-				"the linked-clips line does not name the group's own verbs");
-			QVERIFY2(doc.contains(QStringLiteral("note.")),
-				"the linked-clips line does not name the content verbs that propagate");
+			QVERIFY(doc.contains(QStringLiteral("chain marker")) || doc.contains(QStringLiteral("chain-marker")));
+			QVERIFY(doc.contains(QStringLiteral("independent")));
 		}
 	}
 

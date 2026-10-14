@@ -127,7 +127,7 @@ void SamplePlayHandle::snapshotPreFades(const SampleClip* clip, const SampleWind
 	m_preFadeSpan = {static_cast<std::int64_t>(m_clipFrames), framesAt(prefades::leadTicks(*clip), m_outputFramesPerTick),
 		framesAt(tailTicks(*clip), m_outputFramesPerTick), static_cast<std::int64_t>(m_fadeInFrames),
 		static_cast<std::int64_t>(m_fadeOutFrames), static_cast<std::int64_t>(m_fadeInOffsetFrames),
-		static_cast<std::int64_t>(m_fadeOutOffsetFrames)};
+		static_cast<std::int64_t>(m_fadeOutOffsetFrames), m_edits.fadeOffsetGap};
 	const SampleWindow own = clip->sampleWindow();
 	const double ratio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / static_cast<double>(m_sample->sampleRate());
 	m_preRollFrames = window.sourceIn < own.sourceIn ? framesAt(static_cast<double>(own.sourceIn - window.sourceIn), ratio) : 0;

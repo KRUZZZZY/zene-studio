@@ -382,7 +382,8 @@ void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		float envelope = clipFadeGainAt(base + f, m_clipFrames, m_fadeInFrames, m_fadeOutFrames,
-			m_edits.fadeInShape, m_edits.fadeOutShape, m_fadeInOffsetFrames, m_fadeOutOffsetFrames);
+			m_edits.fadeInShape, m_edits.fadeOutShape, m_fadeInOffsetFrames, m_fadeOutOffsetFrames,
+			m_edits.fadeOffsetGap);
 		if (m_edgeFadeFrames > 0)
 		{
 			envelope *= clipFadeGainAt(base + f, m_clipFrames, m_edgeFadeFrames, m_edgeFadeFrames,
