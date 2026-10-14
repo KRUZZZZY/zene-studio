@@ -78,7 +78,9 @@ void MixerOptions::save(QDomDocument& doc, QDomElement& parent) const
 void MixerOptions::load(const QDomElement& element)
 {
 	setPanLaw(static_cast<PanLaw>(std::max(0, static_cast<int>(panLawNames().indexOf(element.attribute(QStringLiteral("panlaw")))))));
-	setCrossfader(element.attribute(QStringLiteral("crossfader"), QStringLiteral("0")).toFloat());
+	bool crossfaderParsed = false;
+	const float crossfader = element.attribute(QStringLiteral("crossfader"), QStringLiteral("0")).toFloat(&crossfaderParsed);
+	setCrossfader(crossfaderParsed && std::isfinite(crossfader) ? crossfader : 0.f);
 }
 
 } // namespace lmms
