@@ -90,9 +90,27 @@ void NoteCanvas::strokeAlong(const QPoint& from, const QPoint& to)
 {
 	// Qt coalesces a fast drag into sparse events: every note the stroke's path crosses counts, not
 	// only the one under each event (a 2-pixel step, finer than a note can be drawn).
+	if (m_state.clip == nullptr) { return; }
+	const NoteVector& notes = m_state.clip->notes();
+	const auto [first, last] = visibleRange();
 	const QPoint path = to - from;
 	const int steps = std::max(1, std::max(std::abs(path.x()), std::abs(path.y())) / 2);
-	for (int i = 1; i <= steps; ++i) { markStroke(noteAt(from + path * i / steps)); }
+	for (int i = 1; i <= steps; ++i)
+	{
+		const QPoint at = from + path * i / steps;
+		bool hitRectangle = false;
+		for (int index = last - 1; index >= first; --index)
+		{
+			const Note* note = notes[static_cast<std::size_t>(index)];
+			if (noteRect(*note).contains(at))
+			{
+				hitRectangle = true;
+				markStroke(note);
+			}
+		}
+		// Keep noteAt's wider target for narrow notes where the stroke misses every exact rectangle.
+		if (!hitRectangle) { markStroke(noteAt(at)); }
+	}
 }
 
 void NoteCanvas::commitPaint()
