@@ -131,6 +131,44 @@ private slots:
 		QCOMPARE(client.role(), CollabRole::Editor);
 	}
 
+	//! A transport close removes the cached peer list and notifies its observers.
+	void transportCloseClearsPeers()
+	{
+		CollabClient client;
+		wire(client);
+		QSignalSpy peersChanged(&client, &CollabClient::peersChanged);
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Frank"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
+		QCOMPARE(client.peers().size(), 1);
+		QVERIFY(client.peers().first().toObject().value(QStringLiteral("connected")).toBool());
+		peersChanged.clear();
+
+		const QList<CollabLink*> links = m_host->findChildren<CollabLink*>();
+		QCOMPARE(links.size(), 1);
+		links.first()->close(QStringLiteral("simulated host disconnect"));
+		QTRY_COMPARE_WITH_TIMEOUT(client.state(), CollabClient::State::Failed, 10000);
+		QVERIFY(client.peers().isEmpty());
+		QCOMPARE(peersChanged.size(), 1);
+	}
+
+	//! A host goodbye removes the cached peer list and notifies its observers.
+	void hostByeClearsPeers()
+	{
+		CollabClient client;
+		wire(client);
+		QSignalSpy peersChanged(&client, &CollabClient::peersChanged);
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Grace"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
+		QCOMPARE(client.peers().size(), 1);
+		QVERIFY(client.peers().first().toObject().value(QStringLiteral("connected")).toBool());
+		peersChanged.clear();
+
+		m_host->stop();
+		QTRY_COMPARE_WITH_TIMEOUT(client.state(), CollabClient::State::Failed, 10000);
+		QVERIFY(client.peers().isEmpty());
+		QCOMPARE(peersChanged.size(), 1);
+	}
+
 	//! A wrong key fails the TLS handshake: no peer, no snapshot, and the reason names the key.
 	void wrongKeyIsRefused()
 	{
