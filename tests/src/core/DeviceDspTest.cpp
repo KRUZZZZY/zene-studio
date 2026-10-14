@@ -48,6 +48,7 @@
 #include <stdexcept>
 #include <limits>
 #include <limits>
+#include <limits>
 #include <vector>
 
 #include <fftw3.h>
@@ -539,6 +540,29 @@ private slots:
 		lfo.tick(&left, &right);
 		QVERIFY(std::isfinite(left));
 		QVERIFY(std::isfinite(right));
+	}
+
+	void nonFiniteFormantFrequenciesUseMinimumFrequency()
+	{
+		using Filters = BasicFilters<2>;
+		const float nan = std::numeric_limits<float>::quiet_NaN();
+		for (const auto type : {Filters::FilterType::Formantfilter, Filters::FilterType::FastFormant})
+		{
+			Filters actual(48000);
+			Filters expected(48000);
+			actual.setFilterType(type);
+			expected.setFilterType(type);
+			actual.calcFilterCoeffs(nan, 0.5f);
+			expected.calcFilterCoeffs(Filters::minFreq(), 0.5f);
+
+			for (const float input : {0.1f, -0.2f, 0.45f})
+			{
+				const float output = actual.update(input, 0);
+				const float expectedOutput = expected.update(input, 0);
+				QVERIFY(std::isfinite(output));
+				QVERIFY(std::abs(output - expectedOutput) < 1e-6f);
+			}
+		}
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.

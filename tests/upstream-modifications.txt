@@ -2329,3 +2329,4 @@ include/TimePos.h	2026-10-12 new-p10-426: reject negative ticks and invalid fram
 src/core/TimePos.cpp	new-p10-428: reject nonpositive values in TimeSig(int,int) to protect time-position divisions.
 plugins/Xpressive/Xpressive.cpp	new-p10-465: clamp selected graph to the five available graphs and reset invalid values to W1 before view layout; regression PluginPortsMigrationTest::xpressiveSelectionRejectsUnavailableGraphs.
 tests/src/core/AudioBufferTest.cpp	new-p10-481: add regressions for overflow in allocation-size reporting, source buffer sizing, and interleaved buffer sizing
+include/BasicFilters.h	cluster new-p10-519: replace non-finite formant frequencies with minFreq before vowel interpolation, preventing invalid float-to-int conversion and formant-table indexing; covered by DeviceDspTest::nonFiniteFormantFrequenciesUseMinimumFrequency.

@@ -734,6 +734,7 @@ public:
 		if( m_type == FilterType::Formantfilter ||
 			m_type == FilterType::FastFormant )
 		{
+			if( !std::isfinite(_freq) ) { _freq = minFreq(); }
 			_freq = std::clamp(_freq, minFreq(), 20000.0f); // limit freq and q for not getting bad noise out of the filter...
 
 			// formats for a, e, i, o, u, a
