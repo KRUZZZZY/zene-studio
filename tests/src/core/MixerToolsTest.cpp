@@ -173,6 +173,36 @@ private slots:
 		QCOMPARE(channel(2)->m_volumeModel.value(), 0.5f);
 	}
 
+	void mixerAdjustRejectsNaNDecibels()
+	{
+		channel(1)->m_volumeModel.setValue(0.375f);
+		channel(1)->m_panModel.setValue(-0.25f);
+		const ControlResult result = run(QStringLiteral("mixer.adjust"), {{QStringLiteral("channels"), QJsonArray{ch(1)}},
+			{QStringLiteral("volume_db"), std::numeric_limits<double>::quiet_NaN()}, {QStringLiteral("pan"), 0.0}});
+		const bool unchanged = channel(1)->m_volumeModel.value() == 0.375f && channel(1)->m_panModel.value() == -0.25f;
+		if (result.ok) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		channel(1)->m_volumeModel.setValue(0.375f);
+		channel(1)->m_panModel.setValue(-0.25f);
+		QVERIFY2(!result.ok, "mixer.adjust must reject NaN volume_db");
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(unchanged);
+	}
+
+	void mixerAdjustRejectsNaNPan()
+	{
+		channel(1)->m_volumeModel.setValue(0.375f);
+		channel(1)->m_panModel.setValue(-0.25f);
+		const ControlResult result = run(QStringLiteral("mixer.adjust"), {{QStringLiteral("channels"), QJsonArray{ch(1)}},
+			{QStringLiteral("volume_db"), 0.0}, {QStringLiteral("pan"), std::numeric_limits<double>::quiet_NaN()}});
+		const bool unchanged = channel(1)->m_volumeModel.value() == 0.375f && channel(1)->m_panModel.value() == -0.25f;
+		if (result.ok) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
+		channel(1)->m_volumeModel.setValue(0.375f);
+		channel(1)->m_panModel.setValue(-0.25f);
+		QVERIFY2(!result.ok, "mixer.adjust must reject NaN pan");
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(unchanged);
+	}
+
 	void theMixerFollowsTheTracks()
 	{
 		Song* song = Engine::getSong();
