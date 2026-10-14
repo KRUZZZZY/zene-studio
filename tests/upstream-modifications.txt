@@ -1998,3 +1998,5 @@ tests/src/plugins/PluginPortsMigrationTest.cpp	2026-10-10 cluster new-p10-149: a
 plugins/Delay/DelayControlsDialog.cpp	2026-10-10 (new-p10-108): only left-button presses start XyPad input and only left-button releases clear it; direct mouse-event regression is in tests/src/gui/XyPadPairTest.cpp.
 include/Lv2Features.h	cluster new-p10-206: grants the LV2 reload regression test access to the stored pointer count; no runtime behaviour change.
 src/core/lv2/Lv2Features.cpp	cluster new-p10-206: clear() now discards prior feature pointers before clearing their storage, so reload rebuilds one terminated list without retaining stale lists.
+tests/CMakeLists.txt	cluster new-p10-224: register HydrogenImportLocalFileMngTest and compile the exact HydrogenImport LocalFileMng.cpp into its isolated test target; no other test target changes
+plugins/HydrogenImport/LocalFileMng.cpp	cluster new-p10-224: check the full TinyXML escape length before indexing and advance past malformed markers; regression HydrogenImportLocalFileMngTest

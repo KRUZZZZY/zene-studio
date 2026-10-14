@@ -44,6 +44,7 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- scripts/capabilities-dump.py \
 #     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py \
 #     tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/HydrogenImportLocalFileMngTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
@@ -85,6 +86,7 @@
 #   tests/src/core/ScriptDawBindingTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- scripts/capabilities-dump.py \
 #     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/HydrogenImportLocalFileMngTest.cpp ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
@@ -2243,6 +2245,7 @@ tests/src/plugins/CarlaParamFloatModelTest.cpp
 tests/src/gui/DelayControlsDialog.h
 tests/src/gui/EqFader.h
 tests/src/gui/XyPadPairTest.cpp
+tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api boundary's

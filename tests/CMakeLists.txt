@@ -1091,6 +1091,8 @@ set(LMMS_TESTS
 	# The piano roll's live MIDI record pass: a stopped pass leaves no pending start behind.
 	src/gui/PianoRollRecordTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
+	# Hydrogen's TinyXML byte-escape compatibility path, including incomplete input.
+	src/plugins/HydrogenImportLocalFileMngTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
@@ -1248,6 +1250,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "HydrogenImportTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/HydrogenImport/LocalFileMng.cpp)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "HydrogenImportLocalFileMngTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/HydrogenImport/LocalFileMng.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/HydrogenImport)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
 	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
