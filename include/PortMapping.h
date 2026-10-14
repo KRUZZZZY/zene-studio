@@ -42,6 +42,7 @@ class QNetworkAccessManager;
 class QNetworkReply;
 class QTimer;
 class QUdpSocket;
+class PortMappingCodecTest;
 
 namespace lmms::portmap
 {
@@ -194,6 +195,8 @@ signals:
 	void finished(const lmms::portmap::MappingResult& result);
 
 private:
+	friend class ::PortMappingCodecTest;
+
 	void onPmpFinished(const MappingResult& result);
 	void onUpnpFinished(const MappingResult& result);
 	void succeed(const MappingResult& result);
