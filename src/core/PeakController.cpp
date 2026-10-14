@@ -59,12 +59,12 @@ PeakController::PeakController( Model * _parent,
 	{
 		connect( m_peakEffect, SIGNAL(destroyed()),
 			this, SLOT(handleDestroyedEffect()));
+		connect( m_peakEffect->attackModel(), SIGNAL(dataChanged()),
+				this, SLOT(updateCoeffs()), Qt::DirectConnection );
+		connect( m_peakEffect->decayModel(), SIGNAL(dataChanged()),
+				this, SLOT(updateCoeffs()), Qt::DirectConnection );
 	}
 	connect( Engine::audioEngine(), SIGNAL(sampleRateChanged()), this, SLOT(updateCoeffs()));
-	connect( m_peakEffect->attackModel(), SIGNAL(dataChanged()),
-			this, SLOT(updateCoeffs()), Qt::DirectConnection );
-	connect( m_peakEffect->decayModel(), SIGNAL(dataChanged()),
-			this, SLOT(updateCoeffs()), Qt::DirectConnection );
 	m_coeffNeedsUpdate = true;
 }
 
@@ -82,7 +82,7 @@ PeakController::~PeakController()
 
 void PeakController::updateValueBuffer()
 {
-	if( m_coeffNeedsUpdate )
+	if( m_coeffNeedsUpdate && m_peakEffect )
 	{
 		const float ratio = 44100.0f / Engine::audioEngine()->outputSampleRate();
 		m_attackCoeff = 1.0f - powf( 2.0f, -0.3f * ( 1.0f - m_peakEffect->attackModel()->value() ) * ratio );
