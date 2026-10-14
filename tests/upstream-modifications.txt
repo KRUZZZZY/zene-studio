@@ -657,6 +657,7 @@ plugins/Delay/DelayControlsDialog.cpp	cluster new-p11-83: label the seconds-valu
 plugins/Delay/DelayEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Delay/StereoDelay.cpp	new-p9-443: rebuild sample-rate-dependent ring bounds, preserve the delay duration, and reset the write cursor on reallocation.
 plugins/Dispersion/Dispersion.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Dispersion/Dispersion.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change); cap processing frequency below Nyquist to keep the all-pass coefficients stable at lower sample rates (cluster new-p10-113)
 plugins/DualFilter/DualFilter.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/DynamicsProcessor/DynamicsProcessor.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Eq/EqEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change); 2026-10-11 bug cluster new-p9-124: define frame progress for zero/one-frame blocks before division; AudioPluginTest covers finite nonzero output with an active high-pass filter

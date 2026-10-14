@@ -24,6 +24,7 @@
 
 #include "Dispersion.h"
 
+#include <algorithm>
 #include <numbers>
 
 #include "embed.h"
@@ -66,7 +67,7 @@ ProcessStatus DispersionEffect::processImpl(InterleavedBufferView<float, 2> inOu
 	const float w = wetLevel();
 	
 	const int amount = m_dispersionControls.m_amountModel.value();
-	const float freq = m_dispersionControls.m_freqModel.value();
+	const float freq = std::min(m_dispersionControls.m_freqModel.value(), m_sampleRate * 0.499f);
 	const float reso = m_dispersionControls.m_resoModel.value();
 	float feedback = m_dispersionControls.m_feedbackModel.value();
 	const bool dc = m_dispersionControls.m_dcModel.value();
