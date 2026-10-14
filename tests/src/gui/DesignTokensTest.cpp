@@ -140,6 +140,12 @@ private slots:
 		}
 	}
 
+	void anInvalidTextRoleFallsBackToBody()
+	{
+		const QFont body = tokens::font(tokens::TextRole::Body);
+		QCOMPARE(tokens::font(static_cast<tokens::TextRole>(5)).pixelSize(), body.pixelSize());
+	}
+
 	void everyIconIsAnSvgThatPaints()
 	{
 		const QStringList ids = shellicons::ids();
