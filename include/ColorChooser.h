@@ -55,7 +55,10 @@ protected:
 	//! Forward key events to the parent to prevent stuck notes when the dialog gets focus
 	void keyReleaseEvent(QKeyEvent *event) override
 	{
-		QApplication::sendEvent(parentWidget(), event);
+		if (QWidget* parent = parentWidget())
+		{
+			QApplication::sendEvent(parent, event);
+		}
 	}
 private:
 	//! Copy the current QColorDialog palette into an array

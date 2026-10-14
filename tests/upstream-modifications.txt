@@ -2038,3 +2038,4 @@ tests/CMakeLists.txt	BUG new-p12-136: register MidiEventToByteSeqTest in the cor
 src/gui/widgets/BarModelEditor.cpp	new-p12-329: set QWidget's stored size policy to Preferred/Fixed in the constructor so layouts honor the fixed vertical size; regression KnobKeyboardTest::barModelEditorStoresItsFixedVerticalPolicy.
 src/gui/widgets/BarModelEditor.cpp	Luna patrol cluster new-p12-330: schedule repaint after background-brush, bar-brush, and text-color setters; regression KnobKeyboardTest::changingBarModelEditorColorsSchedulesRepaints.
 tests/src/gui/ArrangerTimelineTest.cpp	new-p12-349: regression verifies recoloring only a selected locked clip preserves its color and clean song state
+include/ColorChooser.h	cluster new-p9-14: forward key releases only when a parent widget exists, preventing a null receiver crash for a parentless chooser
