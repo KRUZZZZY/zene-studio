@@ -139,6 +139,7 @@ extern "C"
 #include "Mixer.h"
 #include "QuadratureLfo.h"
 #include "RmsHelper.h"
+#include "OversamplingHelpers.h"
 #include "SampleFrame.h"
 #include "Song.h"
 #include "../../../src/core/audio/OssSampleConversion.h"
@@ -415,6 +416,88 @@ private slots:
 		const sample_t output = foldback.nextSample(0.5f);
 		QVERIFY(std::isfinite(output));
 		QCOMPARE(output, 0.75f);
+	}
+
+	void upsamplerSetupRejectsNegativeStages()
+	{
+		Upsampler<4> sampler;
+		sampler.setup(2, 44100.f);
+		sampler.setup(-1, 48000.f);
+		QCOMPARE(sampler.getStages(), 2);
+		QCOMPARE(sampler.getSampleRate(), 44100.f);
+	}
+
+	void upsamplerSetStagesRejectsNegativeStages()
+	{
+		Upsampler<4> sampler;
+		sampler.setup(2, 44100.f);
+		sampler.setStages(-1);
+		QCOMPARE(sampler.getStages(), 2);
+	}
+
+	void downsamplerSetupRejectsNegativeStages()
+	{
+		Downsampler<4> sampler;
+		sampler.setup(2, 44100.f);
+		sampler.setup(-1, 48000.f);
+		QCOMPARE(sampler.getStages(), 2);
+		QCOMPARE(sampler.getSampleRate(), 44100.f);
+	}
+
+	void downsamplerSetStagesRejectsNegativeStages()
+	{
+		Downsampler<4> sampler;
+		sampler.setup(2, 44100.f);
+		sampler.setStages(-1);
+		QCOMPARE(sampler.getStages(), 2);
+	}
+
+	void upsamplerSetStagesRejectsStagesAboveMaximum()
+	{
+		Upsampler<4> sampler;
+		sampler.setup(2, 44100.f);
+		sampler.setStages(5);
+		QCOMPARE(sampler.getStages(), 2);
+	}
+
+	void upsamplerSetupRejectsStagesAboveMaximum()
+	{
+		Upsampler<4> sampler;
+		sampler.setup(2, 44100.f);
+		sampler.setup(5, 48000.f);
+		QCOMPARE(sampler.getStages(), 2);
+		QCOMPARE(sampler.getSampleRate(), 44100.f);
+	}
+
+	void downsamplerSetStagesRejectsStagesAboveMaximum()
+	{
+		Downsampler<4> sampler;
+		sampler.setup(2, 44100.f);
+		sampler.setStages(5);
+		QCOMPARE(sampler.getStages(), 2);
+	}
+
+	void downsamplerSetupRejectsStagesAboveMaximum()
+	{
+		Downsampler<4> sampler;
+		sampler.setup(2, 44100.f);
+		sampler.setup(5, 48000.f);
+		QCOMPARE(sampler.getStages(), 2);
+		QCOMPARE(sampler.getSampleRate(), 44100.f);
+	}
+
+	void oversamplerStageRangeEndpointsRemainValid()
+	{
+		Upsampler<4> upsampler;
+		Downsampler<4> downsampler;
+		upsampler.setup(0, 44100.f);
+		downsampler.setup(0, 44100.f);
+		QCOMPARE(upsampler.getStages(), 0);
+		QCOMPARE(downsampler.getStages(), 0);
+		upsampler.setStages(4);
+		downsampler.setStages(4);
+		QCOMPARE(upsampler.getStages(), 4);
+		QCOMPARE(downsampler.getStages(), 4);
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.
