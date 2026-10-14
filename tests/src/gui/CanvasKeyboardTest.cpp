@@ -28,6 +28,8 @@
 
 #include <QtTest>
 
+#include <algorithm>
+
 #include <QAccessible>
 #include <QJsonArray>
 #include <QTemporaryDir>
@@ -212,7 +214,10 @@ private slots:
 		QVERIFY2(face->text(QAccessible::Value).contains(QStringLiteral("3 notes, 0 selected")), qPrintable(face->text(QAccessible::Value)));
 		QTest::keyClick(canvas, Qt::Key_End);
 		QVERIFY(face->text(QAccessible::Value).startsWith(NoteGrid::keyName(62)));
-		QVERIFY(canvas->findChild<a11y::CanvasKeyCursor*>() != nullptr);
+		// CanvasKeyCursor has no Q_OBJECT, so findChild<CanvasKeyCursor*> matched any QFocusFrame (and Qt 6.12 refuses it).
+		const auto frames = canvas->findChildren<QFocusFrame*>();
+		QVERIFY(std::any_of(frames.begin(), frames.end(),
+			[](QFocusFrame* frame) { return dynamic_cast<a11y::CanvasKeyCursor*>(frame) != nullptr; }));
 		QVERIFY(!a11y::CanvasKeyCursor::of(canvas)->mark().isEmpty());  // the cursor note is marked
 	}
 

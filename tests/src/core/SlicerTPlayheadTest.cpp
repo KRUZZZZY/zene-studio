@@ -185,7 +185,12 @@ private slots:
 		QVERIFY(trackView != nullptr);
 		gui::InstrumentTrackWindow* window = trackView->getInstrumentTrackWindow();
 		QVERIFY(window != nullptr);
-		gui::PluginView* view = window->findChild<gui::PluginView*>();
+		// PluginView has no Q_OBJECT, so findChild<PluginView*> matched any QWidget (and Qt 6.12 refuses it): find the real one.
+		gui::PluginView* view = nullptr;
+		for (QWidget* child : window->findChildren<QWidget*>())
+		{
+			if ((view = dynamic_cast<gui::PluginView*>(child)) != nullptr) { break; }
+		}
 		QVERIFY(view != nullptr);
 		QCOMPARE(view->thread(), QThread::currentThread());
 		QTimer* pollTimer = window->findChild<QTimer*>(QStringLiteral("slicerTPlayheadPoll"));

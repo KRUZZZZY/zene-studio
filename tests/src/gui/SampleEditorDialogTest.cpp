@@ -65,9 +65,11 @@ SampleClip* toneClip(Track* track)
 
 SampleFrameField* field(QWidget* dialog, const QString& name)
 {
-	for (auto* candidate : dialog->findChildren<SampleFrameField*>())
+	// SampleFrameField has no Q_OBJECT, so findChildren<SampleFrameField*> matched any QSpinBox (and Qt 6.12 refuses it).
+	for (auto* spinBox : dialog->findChildren<QSpinBox*>())
 	{
-		if (candidate->accessibleName() == name) { return candidate; }
+		auto* candidate = dynamic_cast<SampleFrameField*>(spinBox);
+		if (candidate != nullptr && candidate->accessibleName() == name) { return candidate; }
 	}
 	return nullptr;
 }
