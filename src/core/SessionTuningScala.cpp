@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -232,9 +233,11 @@ double baseFreqOf(const QString& field, QString* error)
 {
 	bool ok = false;
 	const double baseFreq = field.toDouble(&ok);
-	if (!ok || !std::isfinite(baseFreq) || baseFreq <= 0.0)
+	if (!ok || !std::isfinite(baseFreq) || baseFreq <= 0.0
+		|| baseFreq > std::numeric_limits<float>::max()
+		|| static_cast<float>(baseFreq) == 0.0f)
 	{
-		*error = QStringLiteral("field 6 must be a positive base frequency");
+		*error = QStringLiteral("field 6 must be a positive base frequency the render path can use");
 		return 0.0;
 	}
 	return baseFreq;

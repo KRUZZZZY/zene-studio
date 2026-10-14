@@ -145,16 +145,16 @@ double frequencyForKey(int key, const Keymap& keymap, const std::vector<Interval
 		* std::pow(reference.octaveRatio, keymap.getOctave(key) + scaleOctave);
 }
 
-//! Every built entry must survive the float narrowing noteToFreq() does before
-//! the audio thread sees it: an entry outside that range reaches the render
-//! path as infinity. 0 is the unmapped marker and stays allowed.
+//! Every mapped entry must survive the float narrowing noteToFreq() does before
+//! the audio thread sees it. 0 is allowed only for an intentionally unmapped key.
 bool tableFrequenciesAreRenderable(const std::array<double, SessionTuning::TableSize>& table,
-	int* badKey, double* badValue)
+	const Keymap& keymap, int* badKey, double* badValue)
 {
 	for (int key = 0; key < SessionTuning::TableSize; ++key)
 	{
 		const double frequency = table[key];
-		if (!std::isfinite(frequency) || frequency < 0.0 || frequency > MaxTableFrequency)
+		if (!std::isfinite(frequency) || frequency < 0.0 || frequency > MaxTableFrequency
+			|| (keymap.getDegree(key) != -1 && static_cast<float>(frequency) == 0.0f))
 		{
 			*badKey = key;
 			*badValue = frequency;
@@ -224,13 +224,13 @@ bool SessionTuning::buildTable(const Scale* scale, const Keymap& keymap,
 	}
 	int badKey = 0;
 	double badValue = 0.0;
-	if (!tableFrequenciesAreRenderable(out->frequencies, &badKey, &badValue))
+	if (!tableFrequenciesAreRenderable(out->frequencies, keymap, &badKey, &badValue))
 	{
 		// Refused whole, so the table the session already had stays standing.
 		if (error != nullptr)
 		{
-			*error = QStringLiteral("key %1 would be %2 Hz, outside the range the render "
-				"path can use").arg(badKey).arg(badValue);
+			*error = QStringLiteral("key %1 would be %2 Hz, which the render path cannot use")
+				.arg(badKey).arg(badValue);
 		}
 		return false;
 	}
