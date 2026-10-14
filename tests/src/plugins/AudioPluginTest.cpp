@@ -45,12 +45,18 @@
  */
 
 #include <array>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <vector>
 
 #include <QDomDocument>
 #include <QDomElement>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QLibrary>
+#include <QTemporaryDir>
 #include <QTextStream>
 #include <QtTest>
 
@@ -63,6 +69,7 @@
 #include "Plugin.h"
 #include "SampleFrame.h"
 #include "../../../plugins/NeuralAmp/NeuralAmpEffect.h"
+#include "../../../plugins/Patman/Patman.h"
 
 using namespace lmms;
 
@@ -75,6 +82,41 @@ using VoidFn = void (*)();
 using GetCountsFn = void (*)(int*, int*, int*);
 
 constexpr f_cnt_t TestFrames = 64;
+constexpr qsizetype PatchHeaderSize = 239;
+constexpr qsizetype PatchSampleHeaderSize = 96;
+
+void writeLittleEndian16(QByteArray& data, qsizetype offset, std::uint16_t value)
+{
+	data[offset] = static_cast<char>(value & 0xff);
+	data[offset + 1] = static_cast<char>(value >> 8);
+}
+
+void writeLittleEndian32(QByteArray& data, qsizetype offset, std::uint32_t value)
+{
+	for (int byte = 0; byte < 4; ++byte)
+	{
+		data[offset + byte] = static_cast<char>((value >> (byte * 8)) & 0xff);
+	}
+}
+
+auto makeSingleSamplePatch() -> QByteArray
+{
+	constexpr qsizetype SampleFrames = 4;
+	auto patch = QByteArray(PatchHeaderSize + PatchSampleHeaderSize + SampleFrames, '\0');
+	std::memcpy(patch.data(), "GF1PATCH110\0ID#000002", 22);
+	patch[198] = 1;
+
+	const qsizetype sample = PatchHeaderSize;
+	writeLittleEndian32(patch, sample + 8, SampleFrames);
+	writeLittleEndian32(patch, sample + 16, SampleFrames);
+	writeLittleEndian16(patch, sample + 20, 22050);
+	writeLittleEndian32(patch, sample + 30, 440000);
+	patch[PatchHeaderSize + PatchSampleHeaderSize] = 32;
+	patch[PatchHeaderSize + PatchSampleHeaderSize + 1] = -32;
+	patch[PatchHeaderSize + PatchSampleHeaderSize + 2] = 64;
+	patch[PatchHeaderSize + PatchSampleHeaderSize + 3] = -64;
+	return patch;
+}
 
 //! 0 = Continue, 1 = ContinueIfNotQuiet, 2 = Sleep
 enum StatusCode
@@ -126,6 +168,7 @@ private slots:
 	void unknownProcessStatusIsIgnored();
 	void legacyAudioBufferPathRoutesInPlacePorts();
 	void neuralAmpRejectsModelsTrainedAtAnotherSampleRate();
+	void clearingPatmanPatchReleasesItsSampleBank();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -445,6 +488,43 @@ void AudioPluginTest::neuralAmpRejectsModelsTrainedAtAnotherSampleRate()
 	QVERIFY(sampleRateMatchesEngine(48000.5, 48000.0));
 	QVERIFY(!sampleRateMatchesEngine(44100.0, 48000.0));
 	QVERIFY(!sampleRateMatchesEngine(48000.0, 0.0));
+}
+
+//! Clearing a Patman patch must release the bank's last strong sample reference.
+void AudioPluginTest::clearingPatmanPatchReleasesItsSampleBank()
+{
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+
+	QFile patchFile(directory.filePath(QStringLiteral("single-sample.pat")));
+	QVERIFY(patchFile.open(QIODevice::WriteOnly));
+	const QByteArray patch = makeSingleSamplePatch();
+	QCOMPARE(patchFile.write(patch), static_cast<qint64>(patch.size()));
+	patchFile.close();
+
+	const QString pluginPath = QDir(QFileInfo(QStringLiteral(SYNTHETIC_PLUGIN_PATH)).absolutePath())
+		.absoluteFilePath(QStringLiteral("../plugins/patman"));
+	QLibrary patmanLibrary(pluginPath);
+	patmanLibrary.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(patmanLibrary.load(), qPrintable(patmanLibrary.errorString()));
+	const auto patmanMain = reinterpret_cast<MainFn>(patmanLibrary.resolve("lmms_plugin_main"));
+	QVERIFY2(patmanMain != nullptr, qPrintable(patmanLibrary.errorString()));
+	auto plugin = std::unique_ptr<Plugin>{patmanMain(nullptr, nullptr)};
+	QVERIFY(plugin != nullptr);
+	auto* instrument = static_cast<PatmanInstrument*>(plugin.get());
+
+	QVERIFY(QMetaObject::invokeMethod(instrument, "setFile", Qt::DirectConnection,
+		Q_ARG(QString, patchFile.fileName()), Q_ARG(bool, false)));
+	QCOMPARE(instrument->m_patchSamples.size(), 1);
+	const std::weak_ptr<Sample> loadedSample = instrument->m_patchSamples.constFirst();
+	QVERIFY(!loadedSample.expired());
+
+	QVERIFY(QMetaObject::invokeMethod(instrument, "setFile", Qt::DirectConnection,
+		Q_ARG(QString, QString{}), Q_ARG(bool, false)));
+
+	QVERIFY(instrument->m_patchFile.isEmpty());
+	QVERIFY(instrument->m_patchSamples.isEmpty());
+	QVERIFY(loadedSample.expired());
 }
 
 QTEST_MAIN(AudioPluginTest)

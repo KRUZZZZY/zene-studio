@@ -31,6 +31,10 @@
 #include "Sample.h"
 #include "AutomatableModel.h"
 
+#ifdef LMMS_TESTING
+class AudioPluginTest;
+#endif
+
 namespace lmms
 {
 
@@ -113,6 +117,9 @@ private:
 
 
 	friend class gui::PatmanView;
+#ifdef LMMS_TESTING
+	friend class ::AudioPluginTest;
+#endif
 
 signals:
 	void fileChanged();
