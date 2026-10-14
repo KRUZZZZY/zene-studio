@@ -152,6 +152,10 @@ ControlResult rackSplit(const QJsonObject& args)
 			QStringLiteral("a split divides the input between the rack's chains: %1 has one - add a parallel chain first").arg(id));
 	}
 	const RackSplit before = rack.split();
+	if (split.mode == before.mode && split.crossovers == before.crossovers && split.crossoverCount == before.crossoverCount)
+	{
+		return ControlResult::success(splitResult(id, rack));
+	}
 	rack.setSplit(split);
 	addUndoStep([id, before]() { applySplit(id, before); }, [id, split]() { applySplit(id, split); });
 	Engine::getSong()->setModified();
