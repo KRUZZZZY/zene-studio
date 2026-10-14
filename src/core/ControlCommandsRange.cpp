@@ -324,6 +324,10 @@ int pasteAt(const QVector<Track*>& tracks, tick_t position)
 		Track* track = tracks.at(copied.trackIndex);
 		Clip* clip = track->createClip(TimePos(position + copied.offset));
 		clip->restoreState(doc.documentElement().firstChildElement());
+		// A range-pasted clip is an independent ordinary clip, not another
+		// member of the source take group.
+		clip->setTakeGroupId(0);
+		clip->setLaneIndex(0);
 		clip->movePosition(TimePos(position + copied.offset));
 		++pasted;
 	}

@@ -223,9 +223,8 @@ void SampleClip::armRecordTake()
 			const auto guard = Engine::audioEngine()->requestChangesGuard();
 			setIsPlaying(false);
 		}
-		// A new arming starts with no pass to give way to. The track is checkpointed once here, so
-		// one undo step takes back the whole recording (its lanes and mutes).
-		m_lastPassTake = nullptr;
+		// The track is checkpointed once here, so one undo step takes back the
+		// recording's take lanes and active-take model state.
 		journalArmStep();
 		setJournalling(false);
 	}
@@ -328,15 +327,13 @@ void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take)
 		// Not journalled on its own: the arm's step covers the lane (one undo step).
 		take_clip->setJournalling(false);
 		control::assignTakeLane(take_clip, lane);
+		take_clip->setTakeGroupId(id());
 		take_clip->movePosition(startPosition());
 		take_clip->updateLength();
 	}
-	// The newest pass is the audible take; the earlier passes stay on their lanes, muted, until
-	// the user comps them.
-	// The previous pass gives way to this one, but only while it is still audible as recording left
-	// it: a take the user muted or unmuted since is theirs, and earlier passes are not touched again.
-	if (m_lastPassTake && !m_lastPassTake->isMuted()) { m_lastPassTake->setMutedUnjournalled(true); }
-	m_lastPassTake = take_clip;
+	// The model makes the newest pass active unless the user explicitly chose a
+	// take from this armed clip's group. No clip mute flag is changed here.
+	track->takeLanes().recordTake(id(), lane, track->getClips());
 	Engine::getSong()->setModified();
 }
 

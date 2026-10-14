@@ -25,6 +25,7 @@
 #ifndef LMMS_CLIP_H
 #define LMMS_CLIP_H
 
+#include <atomic>
 #include <optional>
 
 #include <QColor>
@@ -62,14 +63,6 @@ class LMMS_EXPORT Clip : public Model, public JournallingObject
 {
 	Q_OBJECT
 	mapPropertyFromModel(bool,isMuted,setMuted,m_mutedModel);
-	//! setMuted without a journal entry: the change belongs to a step the caller journals itself.
-	void setMutedUnjournalled(bool muted)
-	{
-		const bool journalling = m_mutedModel.isJournalling();
-		m_mutedModel.setJournalling(false);
-		setMuted(muted);
-		m_mutedModel.setJournalling(journalling);
-	}
 	mapPropertyFromModel(bool,isSolo,setSolo,m_soloModel);
 public:
 	Clip( Track * track );
@@ -201,6 +194,21 @@ public:
 	 *  always read (docs/COMPING.md section 3). */
 	int laneIndex() const { return m_laneIndex; }
 	void setLaneIndex(int laneIndex) { m_laneIndex = laneIndex < 0 ? 0 : laneIndex; }
+
+	/*! The group of loop-recorded passes this clip belongs to, keyed by the
+	 *  stable id of the clip that was armed. Zero means an ordinary clip. The
+	 *  group id is project state; the active lane mirror below is published by
+	 *  TakeLaneModel and is never serialized here. */
+	int takeGroupId() const noexcept { return m_takeGroupId; }
+	void setTakeGroupId(int groupId) noexcept
+	{
+		m_takeGroupId = groupId > 0 ? groupId : 0;
+		m_activeTakeLane.store(-1, std::memory_order_relaxed);
+	}
+	//! Lock-free render mirror of the take group's active lane (-1 until published).
+	int activeTakeLane() const noexcept { return m_activeTakeLane.load(std::memory_order_relaxed); }
+	void publishActiveTakeLane(int lane) noexcept { m_activeTakeLane.store(lane, std::memory_order_relaxed); }
+	const std::atomic<int>* activeTakeLaneState() const noexcept { return &m_activeTakeLane; }
 
 	/*! The link group this clip is a member of (linked / smart clips, row 6),
 	 *  0 when it is not linked.
@@ -360,6 +368,10 @@ private:
 	//! The take lane this clip is a take of: its per-track INDEX into the
 	//! track's `<z:lane id>` entities (comping; docs/COMPING.md section 3).
 	int m_laneIndex = 0;
+	//! Loop-pass group, keyed by the armed source clip's stable id; zero when ordinary.
+	int m_takeGroupId = 0;
+	//! Runtime mirror only: TakeLaneModel publishes its group's active lane here.
+	std::atomic<int> m_activeTakeLane{-1};
 
 	//! The link group this clip shares its content with (row 6; 0 = unlinked).
 	int m_linkId = 0;

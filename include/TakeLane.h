@@ -62,6 +62,7 @@
 #ifndef LMMS_TAKE_LANE_H
 #define LMMS_TAKE_LANE_H
 
+#include <atomic>
 #include <vector>
 
 #include <QString>
@@ -81,9 +82,9 @@ class Clip;
  *  the track, and a display name.
  *
  *  The lane carries NO audio of its own and no mute flag: the clips tagged with
- *  its index are the takes, and per-lane audibility is the take clip's own
- *  `muted` (which already exists, is already serialised, and is already what the
- *  engine reads). A second mute flag here would be state nothing renders.
+ *  its index are the takes, while active-pass selection lives in the track's
+ *  TakeLaneModel and is mirrored into clip atomics for lock-free rendering.
+ *  Each take keeps its independent user mute state; recording never toggles it.
  *
  *  Equality compares the SLOT (index + name), not the entity id: `id` is
  *  document identity across the whole project (SPEC-ARCH-4 1.5 R4), while
@@ -99,6 +100,16 @@ struct TakeLane
 	{
 		return index == other.index && name == other.name;
 	}
+};
+
+/*! Persistent active-take choice for one armed clip's group of recorded passes.
+ *  The runtime lane is mirrored into each member Clip's atomic scalar, so the
+ *  audio path never searches this main-thread vector. */
+struct TakeGroupSelection
+{
+	int groupId = 0;       //!< Stable id of the source clip that was armed.
+	int activeLane = -1;   //!< The active pass is identified by its take-lane index.
+	bool userChosen = false;
 };
 
 /*! One choice of the composite: over the timeline range `[beginTick, endTick)`
@@ -154,9 +165,11 @@ class LMMS_EXPORT TakeLaneModel
 {
 public:
 	// ---- lanes ----------------------------------------------------------
-	/*! Adds a lane and returns its index: the lowest index the track does not
-	 *  already use. An index is never reused while a lane still holds it, and a
-	 *  removal never renumbers the survivors (invariant I7). The new lane's
+	/*! Adds a lane and returns its next never-used index. Removed indices are
+	 *  not reused: clips can still carry their old lane tag, so recycling that
+	 *  number could make a later pass alias an earlier one. The high-water mark
+	 *  is serialized with the model, and a removal never renumbers survivors
+	 *  (invariant I7). The new lane's
 	 *  ENTITY id is allocated here too (the `lane-` family, exactly as the
 	 *  Track and Clip constructors allocate theirs - SPEC-ARCH-4 1.5 R4). */
 	int addLane(const QString& name = QString());
@@ -165,6 +178,26 @@ public:
 	bool hasLane(int index) const;
 	int laneCount() const { return static_cast<int>(m_lanes.size()); }
 	const std::vector<TakeLane>& lanes() const { return m_lanes; }
+
+	// ---- active takes ----------------------------------------------------
+	//! Main-thread recording update: newest lane becomes active unless the user chose one.
+	bool recordTake(int groupId, int laneIndex, const std::vector<Clip*>& clips);
+	//! Whether the named group still contains a clip on this lane.
+	bool canSelectTake(int groupId, int laneIndex, const std::vector<Clip*>& clips) const;
+	//! User choice: sets the group's active lane and remembers that choice through later passes.
+	bool selectTake(int groupId, int laneIndex, const std::vector<Clip*>& clips);
+	//! Reconciles a group after a take clip is removed; split fragments on the lane keep the take alive.
+	void removeTakeClip(int groupId, int laneIndex, const std::vector<Clip*>& clips);
+	//! After a project or journal load, republishes the persistent choices to clip runtime mirrors.
+	void synchronizeTakePlayback(const std::vector<Clip*>& clips) const;
+	const std::vector<TakeGroupSelection>& takeGroups() const { return m_takeGroups; }
+	int activeTakeLane(int groupId) const;
+	bool userChoseTake(int groupId) const;
+
+	//! Track-wide play-all switch. Render reads the atomic directly, without a model lock.
+	bool playAllTakes() const noexcept { return m_playAllTakes.load(std::memory_order_relaxed); }
+	void setPlayAllTakes(bool enabled);
+	const std::atomic<bool>* playAllTakesState() const noexcept { return &m_playAllTakes; }
 	//! The lowest lane index this track has, or -1 when it has none.
 	int baseLane() const;
 
@@ -215,7 +248,11 @@ public:
 	Clip* takeAt(const std::vector<Clip*>& clips, int tick, int* laneIndex = nullptr) const;
 
 	void clear();
-	bool isEmpty() const { return m_lanes.empty() && m_segments.empty(); }
+	bool isEmpty() const
+	{
+		return m_lanes.empty() && m_segments.empty() && m_takeGroups.empty()
+			&& !playAllTakes() && m_nextLaneIndex == 0;
+	}
 
 	/*! R3.1, audition: while a lane is auditioned its takes sound WHOLE and every
 	 *  other lane of the track is silent - the composite is set aside, not
@@ -249,13 +286,19 @@ private:
 	//! left of it to \p out.
 	static void subtractRange(const TakeLaneSegment& seg, int beginTick, int endTick,
 		std::vector<TakeLaneSegment>* out);
+	void loadTakeGroup(const QDomElement& element);
+	void loadSettingsChild(const QDomElement& child);
 	void sortSegments();
 	//! Merges neighbouring segments that are the same lane at the same slip.
 	void mergeSegments();
 	int fillGaps(int spanBegin, int spanEnd);
+	void publishTakeGroup(int groupId, int activeLane, const std::vector<Clip*>& clips) const;
 
 	std::vector<TakeLane> m_lanes;
 	std::vector<TakeLaneSegment> m_segments;
+	std::vector<TakeGroupSelection> m_takeGroups;
+	int m_nextLaneIndex = 0;
+	std::atomic<bool> m_playAllTakes{false};
 	int m_auditionLane = -1;
 };
 

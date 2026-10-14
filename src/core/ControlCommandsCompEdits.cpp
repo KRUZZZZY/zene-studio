@@ -274,6 +274,8 @@ void registerCompGetState(ControlRegistry& registry)
 		{QStringLiteral("lanes"), arrayProperty()},
 		{QStringLiteral("lane_count"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("take_count"), integerProperty(0, MaxSongLength)},
+		{QStringLiteral("take_groups"), arrayProperty()},
+		{QStringLiteral("play_all_takes"), booleanProperty()},
 		{QStringLiteral("composite"), objectProperty()},
 	});
 	cmd.mutating = false;
@@ -293,11 +295,14 @@ void registerCompGetState(ControlRegistry& registry)
 		result.insert(QStringLiteral("lanes"), lanes);
 		result.insert(QStringLiteral("lane_count"), lanes.size());
 		result.insert(QStringLiteral("take_count"), takes);
+		result.insert(QStringLiteral("take_groups"), takeGroupsState(track));
+		result.insert(QStringLiteral("play_all_takes"), track->takeLanes().playAllTakes());
 		result.insert(QStringLiteral("composite"), compositeState(track));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
 }
+
 
 } // namespace
 

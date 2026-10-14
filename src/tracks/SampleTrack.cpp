@@ -118,6 +118,13 @@ bool namedByComposite( const Track& track, const SampleClip& clip )
 	}
 	return false;
 }
+
+//! The active-pass predicate used by the audio-thread clip scheduler.
+bool activeTakeForPlayback(const SampleClip& clip, bool comped, bool playAllTakes)
+{
+	return clip.takeGroupId() == 0 || comped || playAllTakes
+		|| clip.activeTakeLane() == clip.laneIndex();
+}
 } // namespace
 
 std::uint64_t SampleTrack::deferredClipStarts() noexcept
@@ -186,6 +193,9 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	else
 	{
 		bool nowPlaying = false;
+		const TakeLaneModel& takeModel = takeLanes();
+		const bool comped = !takeModel.segments().empty() || takeModel.auditionLane() >= 0;
+		const bool playAllTakes = takeModel.playAllTakes();
 		for( int i = 0; i < numOfClips(); ++i )
 		{
 			Clip * clip = getClip( i );
@@ -212,7 +222,8 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					// scheduled and its playing latch stays clear, so it starts on the pass that
 					// records (BUGS P3: a latch set here blocked the take until the span was re-entered).
 					const bool startable = !sClip->isRecord() || Engine::getSong()->isRecording();
-					if( startable && ( windowStart < windowEnd || sClip->isRecord() ) )
+					const bool activeTake = activeTakeForPlayback(*sClip, comped, playAllTakes);
+					if( startable && activeTake && ( windowStart < windowEnd || sClip->isRecord() ) )
 					{
 						if( clipCount < clips.size() )
 						{
