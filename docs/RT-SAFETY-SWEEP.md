@@ -33,9 +33,9 @@ empty scope, a declared path that is not in the tree) — no verdict was reached
 
 | file | what it is |
 |---|---|
-| `tests/rt-safety-scope.txt` | the **declared** audio-thread path set: `<path><TAB><symbol><TAB><reason>`. 27 pairs today, each with a reason. A blank reason is refused (exit 2); a symbol that resolves to nothing is a failure (exit 1); a path that is not in the tree is a setup error (exit 2); an **empty scope is an error, never a pass**. |
+| `tests/rt-safety-scope.txt` | the **declared** audio-thread path set: `<path><TAB><symbol><TAB><reason>`, with an optional rules filter. 32 pairs today, each with a reason. A blank reason is refused (exit 2); a symbol that resolves to nothing is a failure (exit 1); a path that is not in the tree is a setup error (exit 2); an **empty scope is an error, never a pass**. |
 | `tests/rt-safety-allowlist.txt` | the **accepted** hits: `<path><TAB><symbol><TAB><rule><TAB><count><TAB><reason>`. Three lines today (4 hits). A blank reason or an unknown rule id is refused (exit 2). |
-| `tests/rt_safety_source.py` | the rules (allocation / locking / growth) and the source reader: comments and literals are blanked with the line structure preserved, and a declared symbol is resolved by brace-matching its body. |
+| `tests/rt_safety_source.py` | the rules (allocation / locking / growth / synchronous stdio output) and the source reader: comments and literals are blanked with the line structure preserved, and a declared symbol is resolved by brace-matching its body. |
 | `tests/rt_safety_lib.py` | the two ledgers, the judgement and the report — which prints the programme's **BOUND** on every run. |
 | `tests/rt_safety_selftest.py` | the controls (ctest `RtSafetySelfTest`). |
 | `tests/rt-safety-sweep.py` | the gate (ctest `RtSafetySweep`, Gate 12, CI `static-gates`). |
@@ -113,19 +113,20 @@ CLEAN_TREE_EXIT=0
 
 The permanent form of that control is `tests/rt_safety_selftest.py` (ctest
 `RtSafetySelfTest`, no build, no engine, no compiler — it synthesises its fixture
-sources in a temp directory), **18 checks, exit 0**:
+sources in a temp directory), **19 checks, exit 0**:
 
 ```
   PASS POSITIVE CONTROL: a deliberate `new` on an audio-thread path FAILS
   PASS POSITIVE CONTROL: a deliberate QMutexLocker on an audio-thread path FAILS
   PASS POSITIVE CONTROL: a deliberate container growth on an audio-thread path FAILS
+  PASS POSITIVE CONTROL: synchronous printf on an audio-thread path FAILS
   PASS POSITIVE CONTROL: a hit that grows past its allowlist count FAILS
   PASS ... and the CLI's OWN exit code is 1 (the number a gate records)
   PASS NEGATIVE CONTROL: a declared path with no forbidden construct PASSES
   PASS NEGATIVE CONTROL: the same allocation WITH an allowlist line PASSES
   PASS the in-class definition form resolves (declared Class::method, written unqualified)
   PASS BOUND: the same allocation OUTSIDE the declared scope is NOT seen
-  PASS BOUND: `new` in a comment and in a string literal is not a hit
+  PASS BOUND: `new` and `printf` in comments and literals are not hits
   PASS an EMPTY scope is exit 2 (0 entries is an error, never a pass)
   PASS an allowlist line with a BLANK reason is exit 2
   PASS an allowlist line naming an unknown rule id is exit 2
@@ -133,7 +134,7 @@ sources in a temp directory), **18 checks, exit 0**:
   PASS a scope entry whose FILE is not in the tree is exit 2
   PASS an allowlist line that no longer covers anything is exit 1
   PASS an allowlist line for a symbol the scope does not declare is exit 1
-  PASS the rule set covers the AGENTS.md rule's three words
+  PASS the rule set covers allocation, locking, growth and blocking I/O
 RESULT: PASS
 ```
 
@@ -154,15 +155,15 @@ the audio thread is real-time safe:
   audio-thread path that nobody declares is measured by **nothing here** — the
   self-test asserts exactly that silence (`BOUND: the same allocation OUTSIDE the
   declared scope is NOT seen`). Widening the frontier is a deliberate act: add a
-  line with a reason (the 27 pairs today are the render callback, its four stages,
+  line with a reason (the 32 pairs today are the render callback, its four stages,
   the per-period drains, and the fork's own realtime entries).
 * **NO VIRTUAL DISPATCH, FUNCTION POINTERS, MACROS OR INCLUDES.** An
   implementation reached through an interface is checked only if the scope names
   it too; a macro that expands to an allocation is invisible.
-* **NO COST, NO SYSCALL AND NO I/O CHECK.** Only the three words of the
-  `AGENTS.md` rule. Lock-free *correctness* (memory ordering, ABA, torn reads) is
-  not measured; the mixer-concurrency TSAN job and the per-feature probes are
-  where that lives.
+* **LIMITED I/O CHECK.** Synchronous stdio output is rejected on declared
+  paths. Other system calls and I/O mechanisms are not measured. Lock-free
+  *correctness* (memory ordering, ABA, torn reads) is not measured; the
+  mixer-concurrency TSAN job and the per-feature probes are where that lives.
 * **NO ALIASING ANALYSIS.** A hit is a *mention* of a construct, not proof that
   it runs on the audio thread — a `std::make_unique` member in a constructor
   initialiser list is the shape of a mention that is not a hit, and an

@@ -27,7 +27,6 @@
 
 
 #include <cmath>
-#include <cstdio>
 
 #include "SidInstrument.h"
 #include "AudioEngine.h"
@@ -405,10 +404,7 @@ void SidInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 
 	sidreg[24] = data8&0x00FF;
 
-	const auto num = static_cast<f_cnt_t>(sid_fillbuffer(sidreg.data(), sid, delta_t, buf, frames));
-	if (num != frames) {
-		printf("!!!Not enough samples\n");
-	}
+	sid_fillbuffer(sidreg.data(), sid, delta_t, buf, frames);
 
 	// loop backwards to avoid overwriting data in the short-to-float conversion
 	for (auto frame = std::size_t{0}; frame < frames; ++frame)

@@ -4,7 +4,8 @@
 Row 52 of docs/FEATURE-LIST-0.3.0.md / board card #678. This is the SWEEPING
 check, not another per-feature probe: it walks every audio-thread path the tree
 declares (tests/rt-safety-scope.txt), scans the bodies of the functions named
-there for allocation, locking and container growth, and judges what it finds
+there for allocation, locking, container growth and synchronous stdio output,
+and judges what it finds
 against an explicit allowlist with reasons (tests/rt-safety-allowlist.txt) whose
 counts are a ratchet that may only fall.
 

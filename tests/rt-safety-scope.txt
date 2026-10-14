@@ -3,7 +3,7 @@
 #
 # Format, TAB separated, one path:symbol pair per line:
 #
-#   <path><TAB><symbol><TAB><reason>
+#   <path><TAB><symbol><TAB><reason>[<TAB>rules=<rule-id>[,<rule-id>...]]
 #
 # * <symbol> is a function definition in <path>: `Class::method`, a free
 #   function, or `*` for "every line of this file" (used only for a small
@@ -11,6 +11,9 @@
 # * The reason states WHY this is an audio-thread path. A blank reason is
 #   refused by the sweep (exit 2): a declared path is a claim, and a claim
 #   without a reason is a claim nobody can check.
+# * The optional rules field narrows a region to named checks; without it, all
+#   checks apply. This lets a regression cover one hazard in a callback that
+#   already contains unrelated behavior outside the finding.
 # * The scope is DECLARED, not discovered: the sweep never follows a call.
 #   A path is measured because it is written here, so ADDING A LINE IS THE
 #   ACT that widens the programme - and a new audio-thread path that nobody
@@ -89,3 +92,4 @@ src/core/RoutingGraph.cpp	RoutingGraph::process	the scheduler's node-execution p
 src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::run	the worker run loop: every pool thread waits here and drains the shared job queue from inside this loop, so the scheduler's jobs and any node-level work they carry executes on this declared body (SPEC §3.2 item 1)
 src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::JobQueue::run	the queue's run loop and the ready-list POP: each slot is taken with an atomic exchange and the job runs inline here, both on a worker thread and on the render thread via startAndWaitForJobs (SPEC §3.2 item 1)
 src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::JobQueue::addJob	the ready-list PUSH: Mixer.cpp:255 and :1729 call it from the audio thread, and this body holds the queue-full refusal branch, which Slice 0 made a counted, allocation-free refusal instead of a qWarning (SPEC §3.2 item 3)
+plugins/Sid/SidInstrument.cpp	SidInstrument::playNoteImpl	called for active SID notes on the render thread; its audio callback must not write synchronously to stdout	rules=stdio-output
