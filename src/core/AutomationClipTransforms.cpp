@@ -324,12 +324,19 @@ bool destinationsAreDistinct(const AutomationClip::timeMap& kept, const std::vec
  *  span to be a slope over: two such points are refused as a collision (see
  *  destinationsAreDistinct), and a lone point keeps the tangents it had rather than the infinity
  *  the quotient would give. */
-void carryTangents(AutomationNode& point, const AutomationNode& source, double timeScale, double valueScale)
+bool carryTangents(AutomationNode& point, const AutomationNode& source, double timeScale, double valueScale)
 {
 	const bool reversed = timeScale < 0.0;
-	const float tangentScale = timeScale == 0.0 ? 1.f : static_cast<float>(valueScale / timeScale);
-	point.setInTangent((reversed ? source.getOutTangent() : source.getInTangent()) * tangentScale);
-	point.setOutTangent((reversed ? source.getInTangent() : source.getOutTangent()) * tangentScale);
+	const double tangentScale = timeScale == 0.0 ? 1.0 : valueScale / timeScale;
+	if (!std::isfinite(tangentScale)) { return false; }
+	const double inTangent = (reversed ? source.getOutTangent() : source.getInTangent()) * tangentScale;
+	const double outTangent = (reversed ? source.getInTangent() : source.getOutTangent()) * tangentScale;
+	const double maxTangent = std::numeric_limits<float>::max();
+	if (!std::isfinite(inTangent) || !std::isfinite(outTangent)
+		|| std::abs(inTangent) > maxTangent || std::abs(outTangent) > maxTangent) { return false; }
+	point.setInTangent(static_cast<float>(inTangent));
+	point.setOutTangent(static_cast<float>(outTangent));
+	return true;
 }
 
 } // namespace
@@ -367,7 +374,7 @@ int AutomationClip::transformRange(int start, int end, double timeScale, int tim
 		point.setLockedTangents(moved[i].second.lockedTangents());
 		if (moved[i].second.lockedTangents())
 		{
-			carryTangents(point, moved[i].second, timeScale, valueScale);
+			if (!carryTangents(point, moved[i].second, timeScale, valueScale)) { return 0; }
 		}
 		kept[tick] = point;
 	}
