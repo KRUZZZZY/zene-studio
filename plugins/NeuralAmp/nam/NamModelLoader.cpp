@@ -304,6 +304,10 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 		{
 			throw ParseError("model input_size must be 1 (mono) for this effect");
 		}
+		if (spec.arrays.back().headSize != 1)
+		{
+			throw ParseError("final array head_size must be 1 (mono output) for this effect");
+		}
 
 		// A1 arrays are chained: array a consumes array a-1's residual output
 		// (inputSize == previous channels) and seeds its head accumulator from

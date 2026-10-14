@@ -1818,6 +1818,25 @@ set_tests_properties(LadspaManagerTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen;LADSPA_PATH=$<TARGET_FILE_DIR:LadspaPortCountFixture>"
 	TIMEOUT 20)
 
+# The NeuralAmp engine is mono at its output. Exercise the loader's rejection of
+# a final array with more than one head channel using its standalone sources.
+add_executable(NamModelMonoOutputTest
+	"${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/tests/NamModelMonoOutputTest.cpp"
+	"${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModel.cpp"
+	"${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModelLoader.cpp"
+)
+target_include_directories(NamModelMonoOutputTest PRIVATE
+	"${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/Eigen"
+	"${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/json"
+)
+target_compile_features(NamModelMonoOutputTest PRIVATE cxx_std_20)
+target_compile_options(NamModelMonoOutputTest PRIVATE $<$<CONFIG:Debug>:-O2>)
+target_link_libraries(NamModelMonoOutputTest PRIVATE ${CMAKE_DL_LIBS})
+if(NOT MSVC)
+	target_link_libraries(NamModelMonoOutputTest PRIVATE m)
+endif()
+add_test(NAME NamModelMonoOutputTest COMMAND NamModelMonoOutputTest)
+
 # ---------------------------------------------------------------------------
 # The subject of the MPE playback proof (0.3.0 feature-list row 8, task #649).
 #
