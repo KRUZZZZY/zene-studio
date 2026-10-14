@@ -38,6 +38,7 @@
 #include <thread>
 
 #include <QDir>
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -293,6 +294,38 @@ private slots:
 		ControlRegistry::setReady(false);
 		Engine::getSong()->clearProject();
 		Engine::destroy();
+	}
+
+	//! Metadata children and malformed degree values must not enter the map.
+	void keymapLoadingIgnoresNonDegreeChildrenAndInvalidValues()
+	{
+		QDomDocument document;
+		QDomElement element = document.createElement(QStringLiteral("keymap"));
+		document.appendChild(element);
+		element.appendChild(document.createComment(QStringLiteral("annotation")));
+
+		QDomElement metadata = document.createElement(QStringLiteral("metadata"));
+		metadata.setAttribute(QStringLiteral("value"), 91);
+		element.appendChild(metadata);
+
+		QDomElement firstDegree = document.createElement(QStringLiteral("degree"));
+		firstDegree.setAttribute(QStringLiteral("value"), 3);
+		element.appendChild(firstDegree);
+
+		QDomElement invalidDegree = document.createElement(QStringLiteral("degree"));
+		invalidDegree.setAttribute(QStringLiteral("value"), QStringLiteral("not-an-integer"));
+		element.appendChild(invalidDegree);
+
+		QDomElement lastDegree = document.createElement(QStringLiteral("degree"));
+		lastDegree.setAttribute(QStringLiteral("value"), 8);
+		element.appendChild(lastDegree);
+
+		Keymap keymap;
+		keymap.loadSettings(element);
+
+		QCOMPARE(keymap.getSize(), std::size_t{2});
+		QCOMPARE(keymap.getMap().at(0), 3);
+		QCOMPARE(keymap.getMap().at(1), 8);
 	}
 
 	//! INACTIVE table -> the pre-#712 branch, computed from the models.
