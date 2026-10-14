@@ -43,6 +43,8 @@
 #include <QAbstractSlider>
 #include <QRegularExpression>
 #include <QMouseEvent>
+#include <QImage>
+#include <QPainter>
 #include <QToolBar>
 #include <QWheelEvent>
 
@@ -65,7 +67,14 @@
 #include "EditLocks.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
+#include "InstrumentTrack.h"
 #include "MainWindow.h"
+#include "MidiClip.h"
+#include "Note.h"
+#include "PatternClip.h"
+#include "PatternClipView.h"
+#include "PatternStore.h"
+#include "PatternTrack.h"
 #include "ProjectMarkers.h"
 #include "Song.h"
 #include "SongEditor.h"
@@ -229,6 +238,62 @@ private slots:
 		QVERIFY2(zoomed.ok, qPrintable(zoomed.errorMessage));
 		QCOMPARE(zoomed.result.value(QStringLiteral("zoom")).toInt(), model->maxValue());
 		QCOMPARE(model->value(), model->maxValue());
+	}
+
+	void aPatternPreviewCombinesOffsetAndNoteBeforeRasterizing()
+	{
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 4},
+			{QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
+		auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::patternStore()));
+		QVERIFY(instrumentTrack != nullptr);
+		QCoreApplication::processEvents();
+
+		PatternTrack* patternTrack = nullptr;
+		for (Track* track : Engine::getSong()->tracks())
+		{
+			patternTrack = dynamic_cast<PatternTrack*>(track);
+			if (patternTrack != nullptr) { break; }
+		}
+		QVERIFY(patternTrack != nullptr);
+
+		auto* midiClip = dynamic_cast<MidiClip*>(instrumentTrack->getClip(patternTrack->patternIndex()));
+		QVERIFY(midiClip != nullptr);
+		midiClip->addNote(Note(TimePos(48), TimePos(36), 60, 100), false);
+		midiClip->rearrangeAllNotes();
+		QVERIFY(!midiClip->notes().empty());
+
+		auto* patternClip = dynamic_cast<PatternClip*>(patternTrack->createClip(TimePos(0)));
+		QVERIFY(patternClip != nullptr);
+		patternClip->setStartTimeOffset(TimePos(36));
+		QCoreApplication::processEvents();
+
+		PatternClipView* view = nullptr;
+		for (PatternClipView* candidate : m_editor->findChildren<PatternClipView*>())
+		{
+			if (candidate->getClip() == patternClip) { view = candidate; break; }
+		}
+		QVERIFY(view != nullptr);
+		view->setGradient(false);
+		view->setProperty("noteColor", QColor(255, 0, 255));
+		view->setFixedWidth(40); // Show later repetitions past the clip's left border.
+		view->setFixedHeight(40);
+		view->setNeedsUpdate(true);
+
+		QImage image(view->size(), QImage::Format_ARGB32_Premultiplied);
+		image.fill(Qt::transparent);
+		QPainter painter(&image);
+		view->render(&painter);
+		painter.end();
+
+		int notePixelX = -1;
+		for (int y = 3; y < image.height() - 3 && notePixelX < 0; ++y)
+		{
+			for (int x = 0; x < image.width(); ++x)
+			{
+				if (image.pixelColor(x, y) == QColor(255, 0, 255)) { notePixelX = x; break; }
+			}
+		}
+		QCOMPARE(notePixelX - 4, 1); // x=1 repeats at x=5; x=1 itself lies under the clip border.
 	}
 
 	void theDragPreviewShowsWhatTheDropWillDo()
