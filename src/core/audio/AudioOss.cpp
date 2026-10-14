@@ -33,6 +33,7 @@
 #include "endian_handling.h"
 #include "LcdSpinBox.h"
 #include "AudioEngine.h"
+#include "OssSampleConversion.h"
 
 #ifdef LMMS_HAVE_UNISTD_H
 #include <unistd.h>
@@ -231,7 +232,7 @@ void AudioOss::run()
 
 		for (auto i = std::size_t{0}; i < buf.size(); ++i)
 		{
-			pcmBuf[i] = static_cast<int16_t>(buf[i] * OUTPUT_SAMPLE_MULTIPLIER);
+			pcmBuf[i] = audio::oss::toPcmSample(buf[i]);
 		}
 
 		if (write(m_audioFD, pcmBuf.data(), bytesToWrite) != bytesToWrite) { break; }

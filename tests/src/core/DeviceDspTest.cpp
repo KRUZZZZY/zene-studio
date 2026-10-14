@@ -41,6 +41,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -56,6 +57,7 @@
 #include "Mixer.h"
 #include "SampleFrame.h"
 #include "Song.h"
+#include "../../../src/core/audio/OssSampleConversion.h"
 
 using namespace lmms;
 
@@ -221,6 +223,15 @@ private slots:
 		allpass.setDelay(1.0);
 		allpass.setGain(0.5);
 		QCOMPARE(allpass.update(0.0, 0), 0.0);
+	}
+
+	//! OSS PCM output must saturate samples before converting them to signed 16-bit values.
+	void ossConversionClipsOverrangeSamples()
+	{
+		QCOMPARE(audio::oss::toPcmSample(1.25f), std::int16_t{32767});
+		QCOMPARE(audio::oss::toPcmSample(-1.25f), std::int16_t{-32767});
+		QCOMPARE(audio::oss::toPcmSample(0.5f), std::int16_t{16383});
+		QCOMPARE(audio::oss::toPcmSample(std::numeric_limits<float>::quiet_NaN()), std::int16_t{0});
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.
