@@ -1947,3 +1947,4 @@ src/core/DrumSynth.cpp	cluster new-p9-101: clamp DrumSynth distortion Rate to it
 src/core/fft_helpers.cpp	cluster new-p9-177: precomputeWindow rejects zero- and one-sample Blackman-Harris, Hamming and Hanning windows before using the length-minus-one denominator; rectangular-window behavior is unchanged. Held by tests/src/core/AudioAnalysisTest.cpp::rejectsShortCosineSumWindows.
 plugins/Xpressive/ExprSynth.h	new-p9-138: initialize WaveSample interpolation to false in both constructor paths; the ExprSynth regression poisons the prior member representation and checks the default.
 tests/src/plugins/PluginPortsMigrationTest.cpp	new-p9-138: add a regression slot proving WaveSample defaults interpolation to disabled; existing migration assertions are unchanged.
+plugins/GigPlayer/GigPlayer.cpp	BUG new-p9-153: accept valid MIDI note 0 in the GIG range check; covered by PluginPortsMigrationTest::gigPlayerAcceptsMidiNoteZero.

@@ -294,7 +294,7 @@ void GigInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
 	int midiNote = (int) floor( 12.0 * ( log2( _n->unpitchedFrequency() ) - LOG440 ) - 4.0 );
 
 	// out of range?
-	if( midiNote <= 0 || midiNote >= 128 )
+	if( midiNote < 0 || midiNote >= 128 )
 	{
 		return;
 	}
