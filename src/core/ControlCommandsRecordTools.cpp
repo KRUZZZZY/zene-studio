@@ -71,11 +71,12 @@ ControlResult metronomeOptions(const QJsonObject& args)
 {
 	const metronomeoptions::Options before = metronomeoptions::options();
 	metronomeoptions::Options next = before;
-	next.level = static_cast<float>(args.value(QStringLiteral("level")).toDouble(before.level));
+	const double requestedLevel = args.value(QStringLiteral("level")).toDouble(before.level);
+	if (requestedLevel < 0.0 || requestedLevel > 2.0) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'level' is 0..2")); }
+	next.level = static_cast<float>(requestedLevel);
 	next.accent = args.value(QStringLiteral("accent")).toBool(before.accent);
 	next.recordOnly = args.value(QStringLiteral("record_only")).toBool(before.recordOnly);
 	if (args.contains(QStringLiteral("sound"))) { next.sound = static_cast<int>(metronomeoptions::soundNames().indexOf(args.value(QStringLiteral("sound")).toString())); }
-	if (next.level < 0.f || next.level > 2.f) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'level' is 0..2")); }
 	const bool changed = next.level != before.level || next.accent != before.accent || next.recordOnly != before.recordOnly || next.sound != before.sound;
 	if (changed)
 	{
