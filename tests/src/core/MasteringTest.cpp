@@ -454,6 +454,29 @@ private slots:
 		QVERIFY(parsed.isObject());
 		QCOMPARE(parsed.object(), document);
 
+		// Replacing a report must leave its previous contents intact if a new
+		// report cannot be created beside it.
+		const QString failureDirectory = m_dir.filePath(QStringLiteral("report-write-failure"));
+		QVERIFY(QDir().mkdir(failureDirectory));
+		const QString previousReport = QStringLiteral("previous report contents");
+		const QString protectedPath = QDir(failureDirectory).filePath(QStringLiteral("run.json"));
+		QFile protectedFile(protectedPath);
+		QVERIFY(protectedFile.open(QIODevice::WriteOnly));
+		QCOMPARE(protectedFile.write(previousReport.toUtf8()),
+			static_cast<qint64>(previousReport.toUtf8().size()));
+		protectedFile.close();
+		const QFileDevice::Permissions directoryPermissions = QFile::permissions(failureDirectory);
+		QVERIFY(QFile::setPermissions(failureDirectory,
+			QFileDevice::ReadOwner | QFileDevice::ExeOwner));
+		const bool replacementSucceeded = writeMasteringReport(job, protectedPath, &error);
+		const QString replacementError = error;
+		const bool restoredPermissions = QFile::setPermissions(failureDirectory,
+			directoryPermissions);
+		QVERIFY2(restoredPermissions, "could not restore the test directory permissions");
+		QVERIFY2(!replacementSucceeded, qPrintable(replacementError));
+		QVERIFY(protectedFile.open(QIODevice::ReadOnly));
+		QCOMPARE(protectedFile.readAll(), previousReport.toUtf8());
+
 		// A reading the meter could not make is NULL in the document, never a
 		// fabricated number: silence has no gated loudness and no measured peak.
 		const std::vector<SampleFrame> silence(static_cast<std::size_t>(44100),

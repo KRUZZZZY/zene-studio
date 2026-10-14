@@ -25,10 +25,10 @@
 
 #include "MasteringReport.h"
 
-#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonValue>
+#include <QSaveFile>
 #include <QStringList>
 
 #include <cmath>
@@ -170,8 +170,8 @@ bool writeMasteringReport(const MasteringJob& job, const QString& path, QString*
 	{
 		error = &sink;
 	}
-	QFile file(path);
-	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+	QSaveFile file(path);
+	if (!file.open(QIODevice::WriteOnly))
 	{
 		*error = QStringLiteral("cannot write the mastering report to %1").arg(path);
 		return false;
@@ -181,6 +181,11 @@ bool writeMasteringReport(const MasteringJob& job, const QString& path, QString*
 	if (file.write(bytes) != bytes.size())
 	{
 		*error = QStringLiteral("writing the mastering report to %1 failed").arg(path);
+		return false;
+	}
+	if (!file.commit())
+	{
+		*error = QStringLiteral("committing the mastering report to %1 failed").arg(path);
 		return false;
 	}
 	return true;
