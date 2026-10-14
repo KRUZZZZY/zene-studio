@@ -192,7 +192,8 @@ inline auto fastRandInc(T from, T to) noexcept
 
 
 //! @brief Returns true one in @p chance times at random.
-inline bool oneIn(unsigned chance) noexcept { return 0 == (fastRand() % chance); }
+//! @p chance must be positive; zero is treated as an impossible chance and returns false.
+inline bool oneIn(unsigned chance) noexcept { return chance != 0 && 0 == (fastRand() % chance); }
 
 
 //! Round `value` to `where` depending on step size
