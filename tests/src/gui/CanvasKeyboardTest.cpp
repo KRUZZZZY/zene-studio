@@ -148,6 +148,27 @@ private slots:
 		m_clip = nullptr;
 	}
 
+	void middleDragKeepsTheStartingKeyUnderThePointer()
+	{
+		auto* keyboard = m_editor->findChild<NoteKeyboardView*>(QStringLiteral("noteKeyboard"));
+		QVERIFY(keyboard != nullptr);
+		QVERIFY(keyboard->height() > 200);
+		NoteGrid& grid = m_editor->state().grid;
+		grid.setRowHeight(14);
+		grid.setScrollY(0);
+		const QPoint start(30, 200);
+		const QPoint moved(30, 192);
+		const int key = grid.keyAtY(start.y());
+		QVERIFY(key >= 0);
+
+		QTest::mousePress(keyboard, Qt::MiddleButton, Qt::NoModifier, start);
+		QTest::mouseMove(keyboard, moved);
+
+		QCOMPARE(grid.rowHeight(), 15);
+		QCOMPARE(grid.keyAtY(moved.y()), key);
+		QTest::mouseRelease(keyboard, Qt::MiddleButton, Qt::NoModifier, moved);
+	}
+
 	void altArrowsWalkTheNotesInTimeThenPitch()
 	{
 		QWidget* canvas = m_editor->canvas();
