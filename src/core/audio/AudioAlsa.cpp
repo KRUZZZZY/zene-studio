@@ -29,6 +29,7 @@
 
 #include "endian_handling.h"
 #include "AudioEngine.h"
+#include "AudioAlsaWrite.h"
 #include "AudioInputPath.h"
 #include "AudioIoSetup.h"
 #include "ConfigManager.h"
@@ -289,9 +290,13 @@ void AudioAlsa::run()
 	{
 		audioEngine()->renderNextBuffer({buf.data(), channels(), framesPerAudioBuffer});
 
-		if (const auto framesWritten = snd_pcm_writei(m_handle, buf.data(), framesPerAudioBuffer); framesWritten < 0)
+		if (const auto framesWritten = alsa::detail::writeAllFrames(buf.data(), framesPerAudioBuffer,
+			static_cast<std::size_t>(channels()), [this](const float* data, snd_pcm_uframes_t frames)
+			{
+				return snd_pcm_writei(m_handle, data, frames);
+			}); framesWritten < 0)
 		{
-			handleError(framesWritten);
+			handleError(static_cast<int>(framesWritten));
 			continue;
 		}
 	}

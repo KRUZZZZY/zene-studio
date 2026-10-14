@@ -626,6 +626,7 @@ include/ArrangerOverlays.h
 include/ArrangerRulerLanes.h
 include/ArrangerZoom.h
 include/ArticulationMap.h
+include/AudioAlsaWrite.h
 include/AudioBus.h
 include/AudioInputPath.h
 include/AudioIoSetup.h
@@ -2117,6 +2118,7 @@ tests/src/core/ArrangementModesTest.cpp
 tests/src/core/ArrangingCatchUpTest.cpp
 tests/src/core/ArrangingSpacerReferenceTest.cpp
 tests/src/core/AudioAlsaPollDescriptorTest.cpp
+tests/src/core/AudioAlsaWriteTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
 tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBusHandleTest.cpp
