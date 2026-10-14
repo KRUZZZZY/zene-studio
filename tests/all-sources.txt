@@ -2857,6 +2857,7 @@ tests/src/gui/TrackViewDeferredLifetimeTest.cpp
 tests/src/gui/UndoHistoryPanelTest.cpp
 tests/src/gui/VcaStripLifetimeTest.cpp
 tests/src/gui/VcaStripViewTest.cpp
+tests/src/gui/VersionedSaveDialogTest.cpp
 tests/src/gui/VisibilitySetMenuTest.cpp
 tests/src/gui/WcagContrastTest.cpp
 tests/src/gui/WorkflowFeedbackTest.cpp
