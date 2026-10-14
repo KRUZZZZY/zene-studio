@@ -26,13 +26,43 @@
 #include <QDomElement>
 
 #include <cmath>
+#include <limits>
 
 #include "Note.h"
 #include "DetuningHelper.h"
 #include "ProjectIds.h"
+#include "Song.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+qint64 readNoteInteger( const QDomElement& element, const char* name )
+{
+	bool ok = false;
+	const qint64 value = element.attribute( QString::fromLatin1( name ) ).toLongLong( &ok );
+	return ok ? value : 0;
+}
+
+
+qint64 legacyNoteKey( const QDomElement& element )
+{
+	const qint64 tone = readNoteInteger( element, "tone" );
+	const qint64 octave = readNoteInteger( element, "oct" );
+	constexpr qint64 scale = KeysPerOctave;
+	constexpr qint64 maximum = std::numeric_limits<qint64>::max();
+	constexpr qint64 minimum = std::numeric_limits<qint64>::min();
+	if( octave > maximum / scale ) { return maximum; }
+	if( octave < minimum / scale ) { return minimum; }
+	const qint64 octaveKey = octave * scale;
+	if( tone > 0 && octaveKey > maximum - tone ) { return maximum; }
+	if( tone < 0 && octaveKey < minimum - tone ) { return minimum; }
+	return octaveKey + tone;
+}
+
+} // namespace
 
 
 namespace
@@ -461,12 +491,15 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 
 void Note::loadSettings( const QDomElement & _this )
 {
-	const int oldKey = _this.attribute( "tone" ).toInt() + _this.attribute( "oct" ).toInt() * KeysPerOctave;
-	m_key = std::max(oldKey, _this.attribute("key").toInt());
+	const qint64 loadedKey = std::max( legacyNoteKey( _this ), readNoteInteger( _this, "key" ) );
+	setKey( static_cast<int>( std::clamp( loadedKey, qint64{ 0 }, qint64{ NumKeys - 1 } ) ) );
 	m_volume = _this.attribute( "vol" ).toInt();
 	m_panning = _this.attribute( "pan" ).toInt();
-	m_length = _this.attribute( "len" ).toInt();
-	m_pos = _this.attribute( "pos" ).toInt();
+	const qint64 position = std::clamp( readNoteInteger( _this, "pos" ), qint64{ 0 },
+		static_cast<qint64>( MaxSongLength - 1 ) );
+	const qint64 maximumLength = static_cast<qint64>( MaxSongLength ) - position;
+	m_length = TimePos( static_cast<tick_t>( std::clamp( readNoteInteger( _this, "len" ), qint64{ 1 }, maximumLength ) ) );
+	m_pos = TimePos( static_cast<tick_t>( position ) );
 	// Default m_type value is 0, which corresponds to RegularNote
 	static_assert(0 == static_cast<int>(Type::Regular));
 	m_type = static_cast<Type>(_this.attribute("type", "0").toInt());
