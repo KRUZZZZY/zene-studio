@@ -464,6 +464,12 @@ void PinConnector::MatrixView::mouseMoveEvent(QMouseEvent* me)
 
 void PinConnector::MatrixView::mousePressEvent(QMouseEvent* me)
 {
+	if (me->button() != Qt::LeftButton)
+	{
+		me->ignore();
+		return;
+	}
+
 	auto pin = getPin(me->pos());
 	if (!pin)
 	{
