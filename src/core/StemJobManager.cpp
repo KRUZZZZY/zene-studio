@@ -191,6 +191,7 @@ void StemJobManager::cancel(int jobId)
 					break;
 				}
 			}
+			job->mix.reset();
 			job->state.store(State::Cancelled);
 			cancelledImmediately = true;
 		}
