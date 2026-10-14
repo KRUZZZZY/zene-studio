@@ -66,13 +66,11 @@ bool isRelease(const RetroMidiEvent& event)
 		|| (event.type == MidiNoteOn && event.param2 == 0);
 }
 
-//! The newest tick among the window's NOTE events - the instant an unmatched
-//! note-on is closed at. Derived from the note events rather than from the last
-//! event of any kind, so a trailing control change or SysEx placeholder cannot
-//! stretch the last note.
-tick_t windowEndOf(const RetroMidiEvent* events, std::size_t count, tick_t fallback)
+//! The capture edge or a later NOTE event. A trailing control change or SysEx
+//! placeholder cannot stretch the last note.
+tick_t windowEndOf(const RetroMidiEvent* events, std::size_t count, tick_t captureEnd)
 {
-	tick_t end = fallback;
+	tick_t end = captureEnd;
 	for (std::size_t i = 0; i < count; ++i)
 	{
 		if (!isNoteEvent(events[i])) { continue; }
@@ -133,14 +131,14 @@ void closeOpenNotes(MidiClip* clip, const std::vector<OpenNote>& open, tick_t wi
 
 
 RetroMidiClipWrite writeWindowToClip(MidiClip* clip, const RetroMidiEvent* events,
-	std::size_t count, tick_t windowStartTick)
+	std::size_t count, tick_t windowStartTick, tick_t windowEndTick)
 {
 	RetroMidiClipWrite result;
 	result.windowStart = windowStartTick;
 	result.windowEnd = windowStartTick;
 	if (clip == nullptr || events == nullptr || count == 0) { return result; }
 
-	result.windowEnd = windowEndOf(events, count, windowStartTick);
+	result.windowEnd = windowEndOf(events, count, std::max(windowStartTick, windowEndTick));
 
 	// Open notes, oldest first. Matching is per (source, channel, key) and FIFO,
 	// so two strikes of one key (a repeated note whose first release is late)

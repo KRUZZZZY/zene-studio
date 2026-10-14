@@ -648,7 +648,7 @@ private slots:
 	//! note played from tick 0 and released at tick 192 (one 192-tick bar)
 	//! produced a clip twice as long as the playing it holds.
 	//!
-	//! Last in the class, and it empties the ring first: the ring is drop-OLDEST,
+	//! Each window empties the ring first: the ring is drop-OLDEST,
 	//! so a full capacity of controller events (which the note matcher skips)
 	//! leaves a window holding nothing but this case's own, at a tick it picks.
 	void theDefaultLengthIsTheWindowRoundedUpToWholeBars()
@@ -706,6 +706,51 @@ private slots:
 
 		registry->invoke(QStringLiteral("midi.retro_capture_arm"),
 			QJsonObject{{QStringLiteral("armed"), false}});
+	}
+
+	//! An unmatched note remains held through the capture edge, even when no
+	//! later MIDI event arrives to carry that tick.
+	void heldNoteClosesAtCaptureEdge()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		RetroMidiCapture& capture = Engine::audioEngine()->midiClient()->retroCapture();
+		QVERIFY(registry->invoke(QStringLiteral("midi.retro_capture_arm"),
+			QJsonObject{{QStringLiteral("armed"), true}}).ok);
+
+		QString trackId;
+		QString unusedClipId;
+		makeInstrumentClip(&trackId, &unusedClipId);
+
+		// Remove earlier events from the retained window, then leave only an
+		// unmatched note-on at the first captured tick.
+		for (std::size_t i = 0; i < capture.ring().capacity(); ++i)
+		{
+			capture.capture(MidiEvent(MidiControlChange, 0, 7, 100), 100);
+		}
+		capture.capture(noteOn(0, 65, 100), 100);
+
+		const tick_t previousPublishedTick = RetroMidiCapture::publishedTick();
+		constexpr tick_t captureEnd = 2000;
+		RetroMidiCapture::publishTick(captureEnd);
+		const ControlResult captured = registry->invoke(
+			QStringLiteral("midi.retro_capture_to_clip"),
+			QJsonObject{{QStringLiteral("track"), trackId}});
+		QVERIFY2(captured.ok, qPrintable(captured.errorMessage));
+		QCOMPARE(captured.result.value(QStringLiteral("unmatched_ons")).toInt(), 1);
+
+		MidiClip* clip = resolvedClip(captured.result.value(QStringLiteral("clip")).toString());
+		QVERIFY(clip != nullptr);
+		const std::vector<WrittenNote> notes = notesOf(clip);
+		QCOMPARE(static_cast<int>(notes.size()), 1);
+		QCOMPARE(notes[0].key, 65);
+		QCOMPARE(notes[0].length, captureEnd - 100);
+		QCOMPARE(captured.result.value(QStringLiteral("window_end")).toInt(),
+			static_cast<int>(captureEnd));
+
+		QVERIFY(registry->invoke(QStringLiteral("control.undo")).ok);
+		registry->invoke(QStringLiteral("midi.retro_capture_arm"),
+			QJsonObject{{QStringLiteral("armed"), false}});
+		RetroMidiCapture::publishTick(previousPublishedTick);
 	}
 };
 

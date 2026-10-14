@@ -57,7 +57,7 @@ struct RetroMidiClipWrite
 	int skipped = 0;         //!< events deliberately not turned into notes (CC, bend, SysEx, ...)
 	int consumed = 0;        //!< events examined
 	tick_t windowStart = 0;  //!< the tick the caller passed
-	tick_t windowEnd = 0;    //!< newest tick among the window's note events
+	tick_t windowEnd = 0;    //!< the capture edge, or the newest later note event
 };
 
 
@@ -65,8 +65,11 @@ struct RetroMidiClipWrite
 /*!
  * \a events is the ring's window in arrival order, oldest first, and
  * \a windowStartTick is the tick its first event is placed at (position 0 in
- * the clip). \a clip must be a MIDI clip of an instrument track - the notes go
- * through MidiClip::addNote(), the same entry the piano roll and the note.*
+ * the clip), and \a windowEndTick is the capture edge. If omitted, the latest
+ * note event supplies the edge. A later note event is still respected if its
+ * timestamp falls beyond that edge. \a clip must be a MIDI clip of an
+ * instrument track - the notes go through MidiClip::addNote(), the same entry
+ * the piano roll and the note.*
  * commands use, with quant_pos = false so the captured ticks are taken as given
  * rather than snapped to a quantisation grid (SPEC A11: one implementation).
  *
@@ -89,7 +92,7 @@ struct RetroMidiClipWrite
  * returns zeroed counters.
  */
 LMMS_EXPORT RetroMidiClipWrite writeWindowToClip(MidiClip* clip, const RetroMidiEvent* events,
-	std::size_t count, tick_t windowStartTick);
+	std::size_t count, tick_t windowStartTick, tick_t windowEndTick = -1);
 
 /*! 0.5.0 L02 (WF-055): the capture window as midi.retro_capture_to_clip reads it - the live
  *  capture's events, oldest first, and the first and last tick (from 0 on). False with @a error
