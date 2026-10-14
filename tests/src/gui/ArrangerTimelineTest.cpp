@@ -45,6 +45,7 @@
 #include <QMouseEvent>
 #include <QImage>
 #include <QPainter>
+#include <QScrollBar>
 #include <QToolBar>
 #include <QWheelEvent>
 
@@ -842,6 +843,17 @@ private slots:
 		clipAt(m_track, maxTick - Bar, Bar);
 		QCOMPARE(Engine::getSong()->length(), maxTick / Bar);
 		QTRY_VERIFY(navigator->maximum() > 1'000'000'000);
+	}
+
+	void oversizedScrollPositionsReachTheEndOfTheArranger()
+	{
+		clipAt(m_track, 40 * Bar, Bar);
+		auto* scrollbar = m_editor->horizontalScroll();
+		QVERIFY(scrollbar->maximum() > 0);
+
+		const ControlResult result = run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 2147483648LL}});
+		QVERIFY(result.ok);
+		QCOMPARE(scrollbar->value(), scrollbar->maximum());
 	}
 
 private:

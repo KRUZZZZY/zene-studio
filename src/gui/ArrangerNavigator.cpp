@@ -402,7 +402,10 @@ ControlResult scroll(const QJsonObject& args)
 {
 	SongEditor* editor = arrangerEditor();
 	if (editor == nullptr) { return noInterface(QStringLiteral("arrangement.scroll")); }
-	editor->horizontalScroll()->setValue(std::max(0, args.value(QStringLiteral("position")).toInt()));
+	QScrollBar* scrollbar = editor->horizontalScroll();
+	const double position = std::clamp(args.value(QStringLiteral("position")).toDouble(), 0.0,
+		static_cast<double>(scrollbar->maximum()));
+	scrollbar->setValue(static_cast<int>(position));
 	return ControlResult::success({{QStringLiteral("position"), static_cast<int>(editor->currentPosition().getTicks())},
 		{QStringLiteral("visible_ticks"), static_cast<int>(arrangerzoom::visibleTicks(editor))}});
 }
