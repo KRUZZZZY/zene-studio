@@ -492,30 +492,35 @@ QByteArray ControlServer::dispatchLine(const QByteArray& line)
 {
 	const QByteArray trimmed = line.trimmed();
 	if (trimmed.isEmpty()) { return QByteArray(); }
+	const auto finishExchange = [this, &trimmed](const QByteArray& response)
+	{
+		emit exchanged(trimmed, response);
+		return response;
+	};
 
 	QJsonParseError parseError;
 	const QJsonDocument document = QJsonDocument::fromJson(trimmed, &parseError);
 	if (parseError.error != QJsonParseError::NoError || !document.isObject())
 	{
-		return errorLine(-1, ControlErrorKind::InvalidArgs,
-			QStringLiteral("malformed JSON request: %1").arg(parseError.errorString()));
+		return finishExchange(errorLine(-1, ControlErrorKind::InvalidArgs,
+			QStringLiteral("malformed JSON request: %1").arg(parseError.errorString())));
 	}
 
 	const QJsonObject request = document.object();
 	QByteArray reply;
 	int id = -1;
-	if (!readRequestId(request, &id, &reply)) { return reply; }
-	if (!protoMatches(request, id, &reply)) { return reply; }
+	if (!readRequestId(request, &id, &reply)) { return finishExchange(reply); }
+	if (!protoMatches(request, id, &reply)) { return finishExchange(reply); }
 
 	const QJsonValue cmdValue = request.value(QStringLiteral("cmd"));
 	if (!cmdValue.isString() || cmdValue.toString().isEmpty())
 	{
-		return errorLine(id, ControlErrorKind::InvalidArgs,
-			QStringLiteral("request 'cmd' must be a non-empty command id"));
+		return finishExchange(errorLine(id, ControlErrorKind::InvalidArgs,
+			QStringLiteral("request 'cmd' must be a non-empty command id")));
 	}
 
 	QJsonObject args;
-	if (!readArgs(request, &args, id, &reply)) { return reply; }
+	if (!readArgs(request, &args, id, &reply)) { return finishExchange(reply); }
 
 	// Every control-socket client is an agent session (SPEC-ARCH-4 1.9): while
 	// this dispatch runs, the provenance it may record says actor="agent" - a
@@ -524,8 +529,7 @@ QByteArray ControlServer::dispatchLine(const QByteArray& line)
 	const provenance::AgentScope agentSession;
 	const ControlResult result = m_registry->invoke(cmdValue.toString(), args);
 	reply = responseLine(id, result);
-	emit exchanged(trimmed, reply);
-	return reply;
+	return finishExchange(reply);
 }
 
 } // namespace lmms
