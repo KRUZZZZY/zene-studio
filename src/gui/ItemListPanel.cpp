@@ -87,9 +87,10 @@ bool keyFromText(const QString& text, int* value)
 	return false;
 }
 
-bool numberFromText(QString text, int* value)
+bool numberFromText(QString text, int* value, bool allowPercent = false)
 {
-	text.remove(QLatin1Char('%'));
+	text = text.trimmed();
+	if (allowPercent && text.endsWith(QLatin1Char('%'))) { text.chop(1); }
 	bool ok = false;
 	const int number = text.trimmed().toInt(&ok);
 	if (ok) { *value = number; }
@@ -112,6 +113,7 @@ bool ItemListSource::parse(ItemColumn::Kind kind, const QString& text, int* valu
 			*value = static_cast<int>(ticks);
 			return true;
 		case ItemColumn::Kind::Key: return numberFromText(text, value) || keyFromText(text.trimmed(), value);
+		case ItemColumn::Kind::Percent: return numberFromText(text, value, true);
 		case ItemColumn::Kind::Text: return false;
 		default: return numberFromText(text, value);
 	}
