@@ -56,6 +56,8 @@ private slots:
 	void updateSampleRate();
 
 private:
+	friend class FrequencyShifterEffectTestAccess;
+
 	std::array<float, 2> getHermiteSample(int indexFloor, float fraction)
 	{
 		const int size = m_ringBufSize;
