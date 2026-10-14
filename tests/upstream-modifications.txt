@@ -2091,3 +2091,4 @@ include/Editor.h	new-p9-131: declare the editor destructor out of line so it cle
 src/gui/editors/Editor.cpp	new-p9-131: clear s_lastPlayedEditor when its editor is destroyed; regression tests/src/gui/SampleEditorDialogTest.cpp::lastPlayedEditorClearsWhenDestroyed.
 plugins/Xpressive/ExprSynth.cpp	cluster new-p9-143: return zero for random-vector indexes above UINT_MAX and use seed zero for seeds above INT_MAX, checking finite float bounds before integer conversion.
 plugins/Xpressive/ExprSynth.h	new ExprFront instances start with null m_data, so a caught ExprFrontData allocation failure leaves destruction safe; covered by ExprSynth.
+src/gui/widgets/Graph.cpp	new-p9-160: refuse Graph edits at heights with no usable plot range, preventing division by zero in click and line-draw coordinate conversion

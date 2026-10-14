@@ -36,6 +36,7 @@
 #include "ControlRegistry.h"
 #include "Editor.h"
 #include "Engine.h"
+#include "Graph.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleEditorDialog.h"
@@ -149,6 +150,36 @@ private slots:
 
 		delete editor;
 		QVERIFY(Editor::lastPlayedEditor() == nullptr);
+	}
+
+	void graphClickAtFivePixelHeightKeepsSamplesFinite()
+	{
+		Graph graph(nullptr, Graph::Style::Linear, 16, 5);
+		graph.setFixedSize(16, 5);
+		graph.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&graph));
+		QCOMPARE(graph.height(), 5);
+
+		QTest::mouseClick(&graph, Qt::LeftButton, Qt::NoModifier, QPoint(2, 2));
+
+		QVERIFY(std::isfinite(graph.model()->samples()[0]));
+	}
+
+	void graphDrawAtFivePixelHeightKeepsSamplesFinite()
+	{
+		Graph graph(nullptr, Graph::Style::Linear, 16, 5);
+		graph.setFixedSize(16, 5);
+		graph.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&graph));
+		QCOMPARE(graph.height(), 5);
+
+		QTest::mousePress(&graph, Qt::LeftButton, Qt::NoModifier, QPoint(2, 3));
+		std::vector<float> samples(static_cast<std::size_t>(graph.model()->length()), 0.25f);
+		graph.model()->setSamples(samples.data());
+		QTest::mouseMove(&graph, QPoint(3, 2));
+		QTest::mouseRelease(&graph, Qt::LeftButton, Qt::NoModifier, QPoint(3, 2));
+
+		QVERIFY(std::isfinite(graph.model()->samples()[0]));
 	}
 
 	void textReadsAndTypesInEachUnit()
