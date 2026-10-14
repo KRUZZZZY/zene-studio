@@ -92,6 +92,13 @@ NeuralAmpEffect::NeuralAmpEffect(Model* parent,
 
 NeuralAmpEffect::~NeuralAmpEffect()
 {
+	// Drop any request still waiting and let the worker leave; a parse already under way cannot be
+	// interrupted, so this waits for that one file at most. Nothing is published after this point.
+	{
+		std::lock_guard<std::mutex> lock(m_loadMutex);
+		m_shuttingDown = true;
+		m_hasPending = false;
+	}
 	if (m_loadThread.joinable())
 	{
 		m_loadThread.join();
@@ -110,29 +117,48 @@ QString NeuralAmpEffect::modelPath() const
 
 void NeuralAmpEffect::setModelPath(const QString& path)
 {
-	// A previous load must be finished before starting another one, otherwise
-	// two workers could race on the published pointer.
+	// Record the request and return: the caller (the GUI thread) never waits for a load. A request made
+	// while the worker is busy replaces the one still waiting, so the last request is the one that wins.
+	std::lock_guard<std::mutex> lock(m_loadMutex);
+	if (m_shuttingDown) { return; }
+	m_pendingPath = path;
+	m_hasPending = true;
+	if (m_workerRunning) { return; }
+	// The previous worker has cleared m_workerRunning as its last locked act, so this join is only
+	// the thread's final return.
 	if (m_loadThread.joinable())
 	{
 		m_loadThread.join();
 	}
-	m_loadThread = std::thread(&NeuralAmpEffect::loadWorker, this, path);
+	m_workerRunning = true;
+	m_loadThread = std::thread(&NeuralAmpEffect::workerLoop, this);
 }
 
 
-void NeuralAmpEffect::loadWorker(QString path)
+void NeuralAmpEffect::workerLoop()
 {
-	const std::string nativePath = path.toStdString();
-	std::string error;
-	std::unique_ptr<nam::NamModel> model = nam::NamModel::loadFromFile(nativePath, &error);
-
-	if (model == nullptr)
+	for (;;)
 	{
-		setStatus("load failed: " + error);
-		return;
+		QString path;
+		{
+			std::lock_guard<std::mutex> lock(m_loadMutex);
+			if (!m_hasPending || m_shuttingDown)
+			{
+				m_hasPending = false;
+				m_workerRunning = false;
+				return;
+			}
+			path = std::move(m_pendingPath);
+			m_hasPending = false;
+		}
+		loadOne(path);
 	}
+}
 
-	const nam::ModelSpec& spec = model->spec();
+
+//! The status line for a model that parsed: its name, architecture and size.
+static std::string describeLoadedModel(const nam::ModelSpec& spec, const std::string& nativePath)
+{
 	std::ostringstream status;
 	status << "loaded " << (spec.name.empty() ? nativePath : spec.name)
 	       << " [" << spec.architecture;
@@ -147,7 +173,34 @@ void NeuralAmpEffect::loadWorker(QString path)
 	{
 		status << " trained@" << static_cast<long>(spec.sampleRate) << " Hz";
 	}
-	const std::string loadedStatus = status.str();
+	return status.str();
+}
+
+
+void NeuralAmpEffect::loadOne(const QString& path)
+{
+	setStatus("loading " + path.toStdString());
+#ifdef ZENE_NAM_TEST_SEAM
+	if (s_testBeforeLoad != nullptr) { s_testBeforeLoad(path); }
+#endif
+	const std::string nativePath = path.toStdString();
+	std::string error;
+	std::unique_ptr<nam::NamModel> model = nam::NamModel::loadFromFile(nativePath, &error);
+
+	{
+		// A newer request, or the destructor, made this result stale: never publish it.
+		std::lock_guard<std::mutex> lock(m_loadMutex);
+		if (m_hasPending || m_shuttingDown) { return; }
+	}
+
+	if (model == nullptr)
+	{
+		setStatus("load failed: " + error);
+		return;
+	}
+
+	const nam::ModelSpec& spec = model->spec();
+	const std::string loadedStatus = describeLoadedModel(spec, nativePath);
 	{
 		std::lock_guard<std::mutex> lock(m_rateMutex);
 		if (auto* engine = Engine::audioEngine())
