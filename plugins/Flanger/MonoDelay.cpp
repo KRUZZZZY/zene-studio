@@ -74,9 +74,20 @@ void MonoDelay::setSampleRate( int sampleRate )
 		delete[] m_buffer;
 	}
 
+	const int newMaxLength = static_cast<int>(sampleRate * m_maxTime);
+	if (m_maxLength > 0)
+	{
+		m_length = static_cast<float>(static_cast<double>(m_length) * newMaxLength / m_maxLength);
+	}
+	else
+	{
+		m_length = static_cast<float>(newMaxLength);
+	}
+	m_maxLength = newMaxLength;
+	m_writeIndex = 0;
 
-	m_buffer = new sample_t[( int )( sampleRate * m_maxTime ) ];
-	memset( m_buffer, 0, sizeof(float) * ( int )( sampleRate * m_maxTime ) );
+	m_buffer = new sample_t[m_maxLength];
+	memset(m_buffer, 0, sizeof(sample_t) * m_maxLength);
 }
 
 
