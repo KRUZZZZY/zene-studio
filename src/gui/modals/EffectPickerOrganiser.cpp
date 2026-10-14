@@ -52,6 +52,26 @@ void organise(QWidget* parent, const QString& key, const QJsonObject& change)
 	runCommand(parent, CommandCall{QStringLiteral("plugin.organise"), args, {}, QString(), false});
 }
 
+void moveToFolder(QWidget* parent, const QString& key, const QString& folder, const std::function<void()>& changed)
+{
+	bool ok = false;
+	const QStringList folders = pluginorganiser::folders();
+	// The explicit choice keeps Return a no-op for unfiled effects.
+	QString noFolder = QObject::tr("No folder");
+	while (folders.contains(noFolder)) { noFolder += QLatin1Char(' '); }
+	QStringList choices{noFolder};
+	choices.append(folders);
+	const int current = folder.isEmpty() ? 0 : std::max(1, static_cast<int>(folders.indexOf(folder)) + 1);
+	const QString chosen = QInputDialog::getItem(parent, QObject::tr("Move to Folder"), QObject::tr("Folder:"),
+		choices, current, true, &ok);
+	if (!ok) { return; }
+	const QString selectedFolder = chosen == noFolder ? QString() : chosen.trimmed();
+	if (chosen != noFolder && selectedFolder.isEmpty()) { return; }
+	if (chosen == noFolder && folder.isEmpty()) { return; }
+	organise(parent, key, {{QStringLiteral("folder"), selectedFolder}});
+	changed();
+}
+
 } // namespace
 
 QString keyOf(const EffectKey& key)
@@ -143,14 +163,7 @@ void fillKeyMenu(QMenu* menu, const QString& key, QWidget* parent, const std::fu
 	act(hidden ? QObject::tr("Show in the List") : QObject::tr("Hide"), {{QStringLiteral("hidden"), !hidden}});
 	QAction* move = menu->addAction(QObject::tr("Move to Folder..."));
 	move->setProperty("controlCommand", QStringLiteral("plugin.organise"));
-	QObject::connect(move, &QAction::triggered, menu, [key, folder, parent, changed] {
-		bool ok = false;
-		const QStringList folders = pluginorganiser::folders();
-		// The plug-in's own folder is the one offered first, so Return alone moves nothing.
-		const QString chosen = QInputDialog::getItem(parent, QObject::tr("Move to Folder"), QObject::tr("Folder:"),
-			folders, std::max(0, static_cast<int>(folders.indexOf(folder))), true, &ok);
-		if (ok && !chosen.trimmed().isEmpty()) { organise(parent, key, {{QStringLiteral("folder"), chosen.trimmed()}}); changed(); }
-	});
+	QObject::connect(move, &QAction::triggered, menu, [key, folder, parent, changed] { moveToFolder(parent, key, folder, changed); });
 	if (!folder.isEmpty()) { act(QObject::tr("Remove from Folder"), {{QStringLiteral("folder"), QString()}}); }
 }
 
