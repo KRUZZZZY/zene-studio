@@ -99,6 +99,12 @@ signals:
 	void replied(int id, bool ok, const QJsonObject& reply);
 
 private:
+	struct BacklogEntry
+	{
+		QJsonObject message;
+		qint64 bytes;
+	};
+
 	void onEncrypted();
 	void onSocketError();
 	void onMessage(const QJsonObject& message, const QByteArray& line);
@@ -131,7 +137,8 @@ private:
 	QString m_notice;
 	//! Frames that arrived while a nested event loop was running (a modal dialog, or a handler that waits):
 	//! applying a command inside another one would merge its undo step into that one's, so they wait, in order.
-	QList<QJsonObject> m_backlog;
+	QList<BacklogEntry> m_backlog;
+	qint64 m_backlogBytes = 0;
 	QTimer* m_drain;
 	SnapshotSink m_snapshotSink;
 	CommandSink m_commandSink;

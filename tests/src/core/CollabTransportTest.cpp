@@ -36,6 +36,7 @@
 #ifdef ZENE_HAVE_COLLAB
 
 #include <QFile>
+#include <QEventLoop>
 #include <QJsonDocument>
 #include <QSslSocket>
 #include <QTcpServer>
@@ -43,6 +44,8 @@
 #include <QSslSocket>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QThread>
+#include <QTimer>
 
 #include "CollabClient.h"
 #include "CollabHost.h"
@@ -353,6 +356,46 @@ private slots:
 		const QString oversized(static_cast<int>(MaxQueuedBytes + 1), QLatin1Char('x'));
 		m_host->broadcastCommand(oversized, {}, QStringLiteral("host"));
 		QTRY_COMPARE_WITH_TIMEOUT(m_host->peerCount(), 0, 5000);
+	}
+
+	//! A client that cannot apply streamed commands during a nested event loop is disconnected at the backlog cap.
+	void backlogOverflowDisconnectsBusyClient()
+	{
+		CollabClient client;
+		wire(client);
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Slow reader"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
+
+		QEventLoop outerLoop;
+		QEventLoop busyLoop;
+		QTimer flood;
+		flood.setInterval(1);
+		int sent = 0;
+		int busyLoopLevel = 0;
+		connect(&flood, &QTimer::timeout, this, [&] {
+			if (sent == 0) { busyLoopLevel = QThread::currentThread()->loopLevel(); }
+			m_host->broadcastCommand(QStringLiteral("backlog.test"), QJsonObject(), QStringLiteral("host"));
+			if (++sent == 1100)
+			{
+				flood.stop();
+				QTimer::singleShot(1000, &busyLoop, &QEventLoop::quit);
+			}
+		});
+		connect(&client, &CollabClient::stateChanged, &busyLoop, [&] {
+			if (client.state() == CollabClient::State::Failed) { flood.stop(); busyLoop.quit(); }
+		});
+		QTimer::singleShot(0, &outerLoop, [&] {
+			QTimer::singleShot(10000, &busyLoop, [&] { flood.stop(); busyLoop.quit(); });
+			flood.start();
+			busyLoop.exec();
+			outerLoop.quit();
+		});
+		outerLoop.exec();
+
+		QVERIFY(sent >= 1024);
+		QVERIFY(busyLoopLevel > 1);
+		QCOMPARE(client.state(), CollabClient::State::Failed);
+		QVERIFY2(client.lastNotice().contains(QStringLiteral("backlog")), qPrintable(client.lastNotice()));
 	}
 
 	//! A peer's request reaches the host's handler with the peer's role, and the reply comes back to it.
