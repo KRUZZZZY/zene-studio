@@ -40,6 +40,7 @@
 #include <limits>
 #include <cstdlib>
 #include <new>
+#include <cstdint>
 #include <vector>
 #include <memory>
 
@@ -632,6 +633,7 @@ private slots:
 	void positiveFractionHandlesVeryLargeNegativeValues();
 	void positiveFractionPreservesOrdinaryValues();
 	void ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange();
+	void typedDecodeRejectsIncompleteElement();
 	void migratedPluginsPreserveBehaviour();
 	void monstroLfoAttackRampsWithinPeriod();
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
@@ -1132,6 +1134,16 @@ void PluginPortsMigrationTest::sf2DialogRejectsAFilteredOutProgram()
 #else
 	QSKIP("SF2Player is not built in this configuration");
 #endif
+}
+
+void PluginPortsMigrationTest::typedDecodeRejectsIncompleteElement()
+{
+	std::uint32_t* decoded = nullptr;
+	int size = -1;
+	lmms::base64::decode(QStringLiteral("AQID"), &decoded, &size);
+	const bool rejected = decoded == nullptr && size == 0;
+	delete[] decoded;
+	QVERIFY2(rejected, "three decoded bytes cannot form a uint32_t element");
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()

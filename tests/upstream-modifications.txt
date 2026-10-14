@@ -34,6 +34,7 @@ plugins/Sid/SidInstrument.cpp	cluster new-p9-429: remove synchronous printf from
 # regression coverage: tests/src/core/MidiOutQueueTest.cpp and RetroMidiRingTest.cpp.
 include/ArrayVector.h	new-p9-554: return immediately for empty erase ranges to avoid self-move assignment; covered by ArrayVectorTest::eraseRangeTest.
 include/BasicFilters.h	BUG new-p9-589: clamp formant interpolation to the final valid vowel pair; regression in DeviceDspTest.
+include/base64.h	new-p9-580: reject base64 payloads whose byte count is not a whole number of T elements; regression in tests/src/plugins/PluginPortsMigrationTest.cpp.
 include/ImportFilter.h	040/m3-registry-actions (2026-09-29, M3.2): declares static bool tryImportFile(file, tc), the dialog-free half of import(); nothing else moves
 include/InlineAutomation.h	BUG new-p9-182: copy inline automation safely when the source has no clip; covered by AutomationTrackTest.
 include/MidiAlsaSeq.h	BUG-MIDI-003: queue outbound events off the audio thread and expose overflow count; covered by MidiOutQueueTest and RetroMidiCaptureCommandsTest.
