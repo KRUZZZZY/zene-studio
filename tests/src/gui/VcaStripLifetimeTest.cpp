@@ -31,6 +31,8 @@
  *  it - the reason VcaStripViewTest skips its strip slot). */
 
 #include <QtTest>
+#include <QMouseEvent>
+#include <QTimer>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -40,7 +42,36 @@
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
 #include "MixerView.h"
+#include "LocklessRingBuffer.h"
+#include "SampleFrame.h"
 #include "VcaStripView.h"
+#include "ColorChooser.h"
+#include "FontHelper.h"
+#include "../../../plugins/Vectorscope/VecControls.h"
+
+// Reuse the product implementation in this preconfigured GUI test target. Its MOC data is not
+// needed for the direct double-click call below, so keep VectorView's meta-object macros out.
+#pragma push_macro("Q_OBJECT")
+#pragma push_macro("slots")
+#undef Q_OBJECT
+#define Q_OBJECT
+#undef slots
+#define slots
+#include "../../../plugins/Vectorscope/VectorView.cpp"
+#pragma pop_macro("slots")
+#pragma pop_macro("Q_OBJECT")
+
+class TestVectorView : public lmms::gui::VectorView
+{
+public:
+	using lmms::gui::VectorView::VectorView;
+	void triggerDoubleClick()
+	{
+		QMouseEvent event{QEvent::MouseButtonDblClick, QPointF{}, QPointF{}, QPointF{},
+			Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+		mouseDoubleClickEvent(&event);
+	}
+};
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -105,6 +136,26 @@ private slots:
 		FadeButton button(&parent);
 
 		QCOMPARE(button.parentWidget(), &parent);
+	}
+
+	void repeatedDoubleClicksReleaseColorDialogs()
+	{
+		LocklessRingBuffer<SampleFrame> inputBuffer{8};
+		TestVectorView view{nullptr, &inputBuffer};
+
+		for (int i = 0; i < 3; ++i)
+		{
+			bool dialogOpened = false;
+			QTimer::singleShot(0, [&view, &dialogOpened]()
+			{
+				const auto dialogs = view.findChildren<ColorChooser*>();
+				dialogOpened = !dialogs.isEmpty();
+				if (dialogOpened) { dialogs.constFirst()->reject(); }
+			});
+			view.triggerDoubleClick();
+			QVERIFY(dialogOpened);
+			QVERIFY(view.findChildren<ColorChooser*>().isEmpty());
+		}
 	}
 
 private:

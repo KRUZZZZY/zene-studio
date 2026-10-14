@@ -656,6 +656,7 @@ plugins/SpectrumAnalyzer/Analyzer.cpp	rename layer 1: built-in plugin logo resou
 plugins/StereoEnhancer/StereoEnhancer.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/StereoMatrix/StereoMatrix.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Vectorscope/Vectorscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Vectorscope/VectorView.cpp	cluster new-p9-498: double-click color chooser now lives on the stack, so it is destroyed when the modal exec() returns; regression in tests/src/gui/VcaStripLifetimeTest.cpp
 plugins/Vestige/Vestige.cpp	#589 planar-ports migration: play() replaced by processImpl()/processLock(); ports controller passed to VstPlugin; rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
 plugins/Vestige/Vestige.h	#589 planar-ports migration: VestigeInstrument is an AudioPlugin with dynamic planar ports; 0.5.0 Q050-018: unavailableReason() (plug-in binary missing) and the plug-in mutex made mutable for it.
 plugins/VstBase/RemoteVstPlugin.cpp	#589 planar-ports migration: remote VST host reads/writes planar planes at i * bufferSize()
