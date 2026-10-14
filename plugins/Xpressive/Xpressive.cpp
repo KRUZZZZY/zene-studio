@@ -24,6 +24,8 @@
 
 #include "Xpressive.h"
 
+#include <cmath>
+
 #include <QDomElement>
 #include <QPlainTextEdit>
 
@@ -168,18 +170,23 @@ void Xpressive::loadSettings(const QDomElement & _this) {
 
 	int size = 0;
 	char * dst = 0;
-	base64::decode( _this.attribute( "W1sample"), &dst, &size );
-
-	m_rawgraphW1.setSamples( (float*) dst );
-	delete[] dst;
-	base64::decode( _this.attribute( "W2sample"), &dst, &size );
-
-	m_rawgraphW2.setSamples( (float*) dst );
-	delete[] dst;
-	base64::decode( _this.attribute( "W3sample"), &dst, &size );
-
-	m_rawgraphW3.setSamples( (float*) dst );
-	delete[] dst;
+	const auto loadSamples = [&dst, &size](const QString& encoded, graphModel& graph) {
+		base64::decode(encoded, &dst, &size);
+		auto* samples = reinterpret_cast<float*>(dst);
+		for (int i = 0; i < graph.length(); ++i)
+		{
+			if (!std::isfinite(samples[i]))
+			{
+				samples[i] = 0.0f;
+			}
+		}
+		graph.setSamples(samples);
+		delete[] dst;
+		dst = nullptr;
+	};
+	loadSamples(_this.attribute("W1sample"), m_rawgraphW1);
+	loadSamples(_this.attribute("W2sample"), m_rawgraphW2);
+	loadSamples(_this.attribute("W3sample"), m_rawgraphW3);
 
 	smooth(m_smoothW1.value(),&m_rawgraphW1,&m_graphW1);
 	smooth(m_smoothW2.value(),&m_rawgraphW2,&m_graphW2);

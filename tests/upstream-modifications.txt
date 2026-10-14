@@ -2053,3 +2053,4 @@ tests/src/gui/ArrangerTimelineTest.cpp	new-p12-349: regression verifies recolori
 include/ColorChooser.h	cluster new-p9-14: forward key releases only when a parent widget exists, preventing a null receiver crash for a parentless chooser
 include/BasicFilters.h	cluster new-p12-338: clear both stages' history in BasicFilters::clearHistory for double filters; covered by PluginPortsMigrationTest::doubleFilterClearHistoryClearsSubfilter.
 tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p12-338: assert an impulse-fed double lowpass produces exact silence after clearHistory.
+plugins/Xpressive/Xpressive.cpp	new-p10-464: replace non-finite decoded waveform samples with zero before copying them into graphModel and WaveSample; regression PluginPortsMigrationTest::xpressiveLoadedWaveSamplesAreFinite.
