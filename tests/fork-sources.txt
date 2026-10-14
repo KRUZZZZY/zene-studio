@@ -18,6 +18,7 @@
 # (its second awk line ends in a stray continuation: bash reports a syntax error at its line 5, already at HEAD), so
 # this list cannot be re-derived mechanically until that is fixed; tests/all-sources.txt IS re-derived and reproduces.
 # 2026-10-11 (new-p9-121): include the first-paint EQ regression test in this manifest and its recipe.
+# 2026-10-11 (new-p9-115): add the ReverbSC allocation-failure regression source to both recipe copies.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -49,6 +50,8 @@
 #     tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/HydrogenImportLocalFileMngTest.cpp ; \
 #     tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp tests/src/gui/PianoViewFocusTest.cpp ; \
+#     tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp \
+#     tests/src/plugins/ReverbScAllocationTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
@@ -97,6 +100,8 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- scripts/capabilities-dump.py \
 #     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/HydrogenImportLocalFileMngTest.cpp ; \
+#     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py \
+#     tests/src/plugins/ReverbScAllocationTest.cpp ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
@@ -2308,6 +2313,7 @@ tests/src/gui/TaskIndicatorTest.cpp
 tests/src/gui/EqCurveTest.cpp
 tests/src/plugins/EqFilterTest.cpp
 tests/src/core/PluginAudioPortsTest.cpp
+tests/src/plugins/ReverbScAllocationTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api boundary's

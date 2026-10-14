@@ -1640,6 +1640,25 @@ if(NOT MSVC)
 endif()
 add_test(NAME NeuralAmpWavInputTest COMMAND NeuralAmpWavInputTest)
 
+# ReverbSC's DC blocker allocator contract. The test build replaces malloc
+# only for dcblock.c, so the allocation failure is deterministic.
+add_executable(ReverbScAllocationTest
+	src/plugins/ReverbScAllocationTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/dcblock.c
+)
+add_test(NAME ReverbScAllocationTest COMMAND ReverbScAllocationTest)
+target_include_directories(ReverbScAllocationTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC
+)
+target_link_libraries(ReverbScAllocationTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(ReverbScAllocationTest PRIVATE cxx_std_20)
+target_compile_definitions(ReverbScAllocationTest PRIVATE
+	$<$<COMPILE_LANGUAGE:C>:malloc=sp_dcblock_test_malloc>
+)
+
 # ---------------------------------------------------------------------------
 # The subject of the MPE playback proof (0.3.0 feature-list row 8, task #649).
 #
