@@ -366,6 +366,60 @@ private slots:
 		QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Idle));
 	}
 
+	void changingReturnRouteDropsQueuedFrames()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		const f_cnt_t fpp = engine->framesPerPeriod();
+		QVERIFY(fpp > 0);
+		const f_cnt_t capturedFrames = 2 * fpp;
+		MixerChannel* channel = Engine::mixer()->mixerChannel(1);
+		HardwareInsert& insert = channel->m_hardwareIo.insert;
+		insert.setSettings(HardwareInsert::Settings{}, fpp);
+
+		std::vector<SampleFrame> captured(static_cast<std::size_t>(capturedFrames), SampleFrame(0.25f, 0.5f));
+		engine->pushInputFrames(captured.data(), capturedFrames);
+		engine->renderNextPeriod();
+		QCOMPARE(engine->inputBufferFrames(), capturedFrames);
+
+		HardwareInsert::Settings settings;
+		settings.enabled = true;
+		settings.ret = {0, 2};
+		settings.mix = 1.f;
+		settings.latencyOverride = 0;
+		insert.setSettings(settings, fpp);
+
+		std::vector<SampleFrame> first(static_cast<std::size_t>(fpp), SampleFrame{});
+		insert.process(first.data(), fpp, *engine);
+		bool firstMatches = true;
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			firstMatches = firstMatches && first[static_cast<std::size_t>(f)][0] == 0.25f
+				&& first[static_cast<std::size_t>(f)][1] == 0.5f;
+		}
+
+		std::vector<SampleFrame> newCapture(static_cast<std::size_t>(capturedFrames), SampleFrame(-0.75f, 0.125f));
+		settings.ret = {1, 1};
+		insert.setSettings(settings, fpp);
+		channel->m_muteModel.setValue(true);
+		engine->pushInputFrames(newCapture.data(), capturedFrames);
+		engine->renderNextPeriod();
+		channel->m_muteModel.setValue(false);
+		const bool newCaptureReady = engine->inputBufferFrames() == capturedFrames;
+
+		std::vector<SampleFrame> afterRouteChange(static_cast<std::size_t>(fpp), SampleFrame{});
+		insert.process(afterRouteChange.data(), fpp, *engine);
+		bool newRouteMatches = true;
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			newRouteMatches = newRouteMatches && afterRouteChange[static_cast<std::size_t>(f)][0] == 0.125f
+				&& afterRouteChange[static_cast<std::size_t>(f)][1] == 0.125f;
+		}
+		insert.setSettings(HardwareInsert::Settings{}, fpp);
+		QVERIFY(newCaptureReady);
+		QVERIFY(firstMatches);
+		QVERIFY(newRouteMatches);
+	}
+
 	void destinationsParse()
 	{
 		audioio::Side outputs;
