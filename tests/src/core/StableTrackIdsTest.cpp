@@ -36,6 +36,8 @@
 
 #include "ControlRegistry.h"
 #include "DataFile.h"
+#include "DummyEffect.h"
+#include "EffectChain.h"
 #include "Engine.h"
 #include "MidiClip.h"
 #include "Note.h"
@@ -553,6 +555,34 @@ private slots:
 		QVERIFY2(reopened.ok, qPrintable(reopened.errorMessage));
 		QCOMPARE(reopened.result.value(QStringLiteral("ids_assigned")).toInt(), 0);
 		QVERIFY(!reopened.result.value(QStringLiteral("format_upgraded")).toBool());
+	}
+
+	//! An unavailable effect is still addressable by the stable id in its
+	//! project element, even though its original XML is what gets saved back.
+	void missingEffectKeepsItsStableId()
+	{
+		QDomDocument source;
+		QDomElement chainData = source.createElement(QStringLiteral("fxchain"));
+		chainData.setAttribute(QStringLiteral("numofeffects"), 1);
+		QDomElement effectData = source.createElement(QStringLiteral("effect"));
+		effectData.setAttribute(QStringLiteral("name"), QStringLiteral("missing-test-effect"));
+		effectData.setAttribute(QStringLiteral("id"), 4242);
+		effectData.appendChild(source.createElement(QStringLiteral("key")));
+		chainData.appendChild(effectData);
+
+		EffectChain chain(Engine::getSong());
+		chain.loadSettings(chainData);
+		QCOMPARE(chain.effects().size(), std::size_t{1});
+		auto* dummy = dynamic_cast<DummyEffect*>(chain.effects().front());
+		QVERIFY(dummy != nullptr);
+		QCOMPARE(dummy->id(), 4242);
+		QVERIFY(ProjectIds::next() > 4242);
+
+		QDomDocument saved;
+		QDomElement savedChain = saved.createElement(QStringLiteral("fxchain"));
+		chain.saveSettings(saved, savedChain);
+		QCOMPARE(savedChain.firstChildElement(QStringLiteral("effect"))
+			.attribute(QStringLiteral("id")).toInt(), 4242);
 	}
 };
 
