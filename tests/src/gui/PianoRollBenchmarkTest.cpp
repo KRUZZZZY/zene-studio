@@ -127,6 +127,19 @@ private slots:
 		}
 	}
 
+	void invalidKeysAreNotPressed()
+	{
+		struct GuardedPiano
+		{
+			Piano piano{nullptr};
+			bool guard = true;
+		};
+		GuardedPiano guarded;
+
+		QVERIFY(!guarded.piano.isKeyPressed(-1));
+		QVERIFY(!guarded.piano.isKeyPressed(NumKeys));
+	}
+
 	void frameTimeAtFourSizes()
 	{
 		QMap<QString, double> measured;

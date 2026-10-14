@@ -2285,3 +2285,4 @@ src/core/lv2/Lv2Evbuf.cpp	new-p10-232: validate the complete padded event size w
 src/core/MicroTimer.cpp	cluster new-p10-240: MicroTimer::elapsed retains its int API and saturates at INT_MAX after roughly 35.8 minutes; ScriptClockTest proves a 37-minute interval.
 tests/src/core/SlideNotesTest.cpp	new-p10-266: reject out-of-range project note key, timing, and overflowing legacy octave values with a load-path regression
 include/OversamplingHelpers.h	BUG new-p10-282 (2026-10-12): reject invalid oversampling stage counts in setup() and setStages() for both filter helpers; regression in tests/src/core/DeviceDspTest.cpp.
+include/Piano.h	new-p10-315: guard Piano::isKeyPressed against keys outside [0, NumKeys); invalid keys return false, covered by PianoRollBenchmarkTest::invalidKeysAreNotPressed.
