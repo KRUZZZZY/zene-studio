@@ -26,6 +26,8 @@
 #define LMMS_CONVOLUTION_KERNEL_H
 
 #include <complex>
+#include <memory>
+#include <type_traits>
 #include <vector>
 
 #include <fftw3.h>
@@ -64,6 +66,19 @@ public:
 
 private:
 	using Complex = std::complex<float>;
+	struct FftwFree
+	{
+		void operator()(void* allocation) const noexcept { fftwf_free(allocation); }
+	};
+	struct FftwPlanFree
+	{
+		void operator()(std::remove_pointer_t<fftwf_plan>* plan) const noexcept
+		{
+			if (plan != nullptr) { fftwf_destroy_plan(plan); }
+		}
+	};
+	using FftwBuffer = std::unique_ptr<void, FftwFree>;
+	using FftwPlanHandle = std::unique_ptr<std::remove_pointer_t<fftwf_plan>, FftwPlanFree>;
 
 	void transformPartitions(const std::vector<float>& impulse, std::vector<Complex>* spectra);
 	void convolveChannel(int channel, const float* input, float* output) noexcept;
@@ -74,12 +89,12 @@ private:
 	std::vector<Complex> m_spectra[2];   //!< m_partitions x Bins per channel
 	std::vector<Complex> m_history[2];   //!< the delay line of input spectra, the same size
 	std::vector<float> m_previous[2];    //!< the last input block per channel (the overlap)
-	float* m_timeIn = nullptr;           //!< FftSize, fftwf_malloc'd
-	fftwf_complex* m_spectrum = nullptr; //!< Bins
-	fftwf_complex* m_sum = nullptr;      //!< Bins
-	float* m_timeOut = nullptr;          //!< FftSize
-	fftwf_plan m_forward = nullptr;
-	fftwf_plan m_inverse = nullptr;
+	FftwBuffer m_timeIn;                 //!< FftSize
+	FftwBuffer m_spectrum;               //!< Bins
+	FftwBuffer m_sum;                    //!< Bins
+	FftwBuffer m_timeOut;                //!< FftSize
+	FftwPlanHandle m_forward;
+	FftwPlanHandle m_inverse;
 };
 
 } // namespace lmms
