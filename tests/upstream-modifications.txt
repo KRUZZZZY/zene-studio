@@ -1988,3 +1988,5 @@ plugins/TapTempo/TapTempo.cpp	cluster new-p9-463: TapTempo::sync ignores the son
 plugins/TapTempo/TapTempo.cpp	new-p9-462: ignore tap intervals that truncate to zero milliseconds before storing the interval or dividing for BPM; extract the interval update to accept a controlled steady-clock timestamp for deterministic coverage.
 plugins/TapTempo/TapTempo.h	new-p9-462: declare the controlled-time interval update helper implemented in TapTempo.cpp.
 tests/src/plugins/AudioPluginTest.cpp	new-p9-462: supply two steady-clock timestamps 999 microseconds apart and require the tempo, tap count, last-tap time, and stored intervals to remain unchanged.
+src/core/LadspaControl.cpp	new-p10-196: treat only positive LADSPA toggle values as on; zero and negative inputs switch the control off, covered by AutomatableModelTest.
+tests/src/core/AutomatableModelTest.cpp	new-p10-196: add a regression for the live LadspaControl toggle conversion, including a negative input after turning the toggle on.
