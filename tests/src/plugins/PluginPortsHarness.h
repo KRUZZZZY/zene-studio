@@ -66,6 +66,40 @@ namespace partc
 
 using namespace lmms; // SampleFrame, AudioBus, Effect, f_cnt_t, ch_cnt_t
 
+struct RealtimeAllocationCounts
+{
+	std::size_t allocations = 0;
+	std::size_t deallocations = 0;
+};
+
+struct RealtimeAllocationWatch
+{
+	inline static thread_local bool active = false;
+	inline static thread_local RealtimeAllocationCounts counts;
+
+	static void begin() noexcept
+	{
+		counts = {};
+		active = true;
+	}
+
+	static auto end() noexcept -> RealtimeAllocationCounts
+	{
+		active = false;
+		return counts;
+	}
+
+	static void allocation() noexcept
+	{
+		if (active) { ++counts.allocations; }
+	}
+
+	static void deallocation() noexcept
+	{
+		if (active) { ++counts.deallocations; }
+	}
+};
+
 //! Canonical plugin order shared by the reference renderer and the test.
 //! peakcontrollereffect is migrated but not rendered here: src/core/PeakController.cpp
 //! includes the migrated plugin header, so a pre-migration reference object of the
@@ -971,7 +1005,8 @@ inline auto unprovenGaps() -> const std::vector<UnprovenPlugin>&
  * sees the same held note; the per-period buffer is cleared first, matching
  * the mixer's zeroed working buffer.
  */
-inline auto renderInstrumentBuffers(Instrument& inst, f_cnt_t frames, int key) -> std::vector<float>
+inline auto renderInstrumentBuffers(Instrument& inst, f_cnt_t frames, int key,
+	RealtimeAllocationCounts* realtimeCounts = nullptr) -> std::vector<float>
 {
 	InstrumentTrack* track = inst.instrumentTrack();
 	std::vector<SampleFrame> data(static_cast<std::size_t>(frames));
@@ -994,7 +1029,14 @@ inline auto renderInstrumentBuffers(Instrument& inst, f_cnt_t frames, int key) -
 		const std::span<SampleFrame> span{data};
 
 		// InstrumentTrack::playNote() first, then InstrumentPlayHandle::play().
+		if (realtimeCounts) { RealtimeAllocationWatch::begin(); }
 		inst.playNote(&nph, span);
+		if (realtimeCounts)
+		{
+			const auto periodCounts = RealtimeAllocationWatch::end();
+			realtimeCounts->allocations += periodCounts.allocations;
+			realtimeCounts->deallocations += periodCounts.deallocations;
+		}
 		if (inst.isSingleStreamed())
 		{
 			inst.play(span);
@@ -1010,17 +1052,25 @@ inline auto renderInstrumentBuffers(Instrument& inst, f_cnt_t frames, int key) -
 	// Hand plugin-owned note data back while the note handle is still alive.
 	if (nph.m_pluginData != nullptr)
 	{
+		if (realtimeCounts) { RealtimeAllocationWatch::begin(); }
 		inst.deleteNotePluginData(&nph);
+		if (realtimeCounts)
+		{
+			const auto cleanupCounts = RealtimeAllocationWatch::end();
+			realtimeCounts->allocations += cleanupCounts.allocations;
+			realtimeCounts->deallocations += cleanupCounts.deallocations;
+		}
 		nph.m_pluginData = nullptr;
 	}
 	return out;
 }
 
 //! Fresh-thread wrapper, for the same RNG-state reason as renderInFreshThread().
-inline auto renderInstrumentInFreshThread(Instrument& inst, f_cnt_t frames, int key) -> std::vector<float>
+inline auto renderInstrumentInFreshThread(Instrument& inst, f_cnt_t frames, int key,
+	RealtimeAllocationCounts* realtimeCounts = nullptr) -> std::vector<float>
 {
 	std::vector<float> out;
-	std::thread worker{[&] { out = renderInstrumentBuffers(inst, frames, key); }};
+	std::thread worker{[&] { out = renderInstrumentBuffers(inst, frames, key, realtimeCounts); }};
 	worker.join();
 	return out;
 }
