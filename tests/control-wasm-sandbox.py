@@ -184,6 +184,13 @@ def a_replayable_inverse_exists(records):
                for inverse in inverses_of(records))
 
 
+def overflow_write_was_refused_without_mutation(reply, params):
+    error = reply.get("error") or {}
+    return (reply.get("ok") is not True and error.get("kind") == "invalid_args"
+            and len(params) > 0 and isinstance(params[0], (int, float))
+            and close_enough(params[0], 0.25))
+
+
 def check_registered(session, recorder):
     """The group is in the surface an agent sees, not only in the source."""
     registered = [entry.get("id") for entry in
@@ -266,6 +273,11 @@ def check_param(session, recorder):
     recorder.check("the second write reports the first value as previous",
                    close_enough(second.get("previous", -1), GAIN),
                    "previous=%r" % second.get("previous"))
+    oversized = session.call("wasm.set_param", {"index": 0, "value": 1e300})
+    params = (session.result("wasm.get_state").get("state") or {}).get("params") or []
+    recorder.check("a finite value outside f32 range is invalid_args and leaves its slot alone",
+                   overflow_write_was_refused_without_mutation(oversized, params),
+                   "reply=%r params=%r" % (oversized, params))
     out_of_range = session.error_kind("wasm.set_param", {"index": 99, "value": 1.0})
     recorder.check("an index past the 16 slots is invalid_args",
                    out_of_range == "invalid_args", "kind=%s" % out_of_range)
