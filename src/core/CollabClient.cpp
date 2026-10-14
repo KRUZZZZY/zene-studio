@@ -241,15 +241,17 @@ void CollabClient::onCommand(const QJsonObject& message)
 	// A command that arrives before the first snapshot has nothing to apply to; the snapshot that follows
 	// carries its effect.
 	if (!m_haveSnapshot) { return; }
-	m_seq = static_cast<quint64>(message.value(QStringLiteral("seq")).toDouble());
+	const quint64 sequence = static_cast<quint64>(message.value(QStringLiteral("seq")).toDouble());
 	QString error;
 	const QString command = message.value(QStringLiteral("cmd")).toString();
 	if (m_commandSink && !m_commandSink(command, message.value(QStringLiteral("args")).toObject(), &error))
 	{
+		m_haveSnapshot = false;
 		setState(m_state, QStringLiteral("'%1' from the host failed here (%2); re-syncing").arg(command, error));
 		requestResync(QStringLiteral("a streamed command failed"));
 		return;
 	}
+	m_seq = sequence;
 	emit commandApplied(m_seq);
 }
 

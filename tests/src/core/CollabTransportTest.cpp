@@ -244,6 +244,44 @@ private slots:
 		QCOMPARE(m_host->peerCount(), 0);
 	}
 
+	//! A failed streamed command invalidates this copy until the resync snapshot arrives.
+	void failedCommandWaitsForReplacementSnapshot()
+	{
+		CollabClient client;
+		QList<QString> attemptedCommands;
+		quint64 sequenceDuringFailedCommand = 0;
+		client.setSnapshotSink([this](const QByteArray& project, QString*) {
+			m_got.snapshots.append(project);
+			return true;
+		});
+		client.setCommandSink([&](const QString& command, const QJsonObject& args, QString* error) {
+			Q_UNUSED(args);
+			attemptedCommands.append(command);
+			if (command == QStringLiteral("track.reject"))
+			{
+				sequenceDuringFailedCommand = client.sequence();
+				m_host->broadcastCommand(QStringLiteral("track.wait"), {}, QStringLiteral("host"));
+				*error = QStringLiteral("could not apply");
+				return false;
+			}
+			return true;
+		});
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Erin"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
+		const quint64 initialSequence = client.sequence();
+
+		m_host->broadcastCommand(QStringLiteral("track.reject"), {}, QStringLiteral("host"));
+		QTRY_VERIFY_WITH_TIMEOUT(m_got.snapshots.size() == 2 && client.hasSnapshot(), 10000);
+
+		const bool failedSequenceWasNotCommitted = sequenceDuringFailedCommand == initialSequence;
+		const bool laterCommandWasIgnored = attemptedCommands == QList<QString>{QStringLiteral("track.reject")};
+		QVERIFY2(failedSequenceWasNotCommitted && laterCommandWasIgnored,
+			qPrintable(QStringLiteral("failed command sequence was %1 (expected %2); attempted commands: %3")
+				.arg(static_cast<qulonglong>(sequenceDuringFailedCommand))
+				.arg(static_cast<qulonglong>(initialSequence)).arg(attemptedCommands.join(QStringLiteral(", ")))));
+		QCOMPARE(client.sequence(), m_host->sequence());
+	}
+
 	//! A plaintext client that writes a request before (instead of) the handshake reaches nothing.
 	void plaintextReachesNothing()
 	{
