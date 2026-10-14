@@ -158,10 +158,11 @@ public:
 	{
 		if (row < 0 || row >= rowCount()) { refuse(tr("choose the segment to split")); return false; }
 		const CompSwipeStrip::Segment s = segment(row);
+		if (s.end - s.begin < 2) { refuse(tr("the segment has no interior tick boundary to split at")); return false; }
 		const std::vector<int>& lanes = m_strip->lanes();
 		const auto at = std::find(lanes.begin(), lanes.end(), s.lane);
 		const int next = at == lanes.end() || at + 1 == lanes.end() ? lanes.front() : *(at + 1);
-		return comp((s.begin + s.end) / 2, s.end, next);
+		return comp(s.begin + (s.end - s.begin) / 2, s.end, next);
 	}
 
 	bool remove(const QList<int>& rows) override
