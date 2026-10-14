@@ -190,11 +190,11 @@ SessionSlotPlayback SessionScheduler::playbackForColumn( int track ) const noexc
 		{
 			position = 0;
 		}
-		position += start;
-		if( view.loopLengthTicks > 0 && position >= view.loopLengthTicks )
+		if( view.loopLengthTicks > 0 )
 		{
 			position %= view.loopLengthTicks;
 		}
+		position += start;
 		view.positionTicks = position;
 		return view;   // the column's first active slot is the one playing
 	}
