@@ -223,6 +223,32 @@ private slots:
 		QCOMPARE(keysOf(b), (QList<int>{48}));
 	}
 
+	//! note.across checked the raw 'clips' length against its 64-clip limit before dropping
+	//! duplicates, so naming one clip 65 times was refused even though it edits one clip.
+	void theClipLimitCountsUniqueClips()
+	{
+		MidiClip* a = clipWith(0, {60});
+		const QString id = control::clipIdOf(a);
+		QJsonArray clips;
+		for (int i = 0; i < 65; ++i) { clips.append(id); }  // one clip named 65 times
+		const ControlResult done = run(QStringLiteral("note.across"), {{QStringLiteral("clips"), clips},
+			{QStringLiteral("command"), QStringLiteral("note.transpose")}, {QStringLiteral("args"), QJsonObject{{QStringLiteral("semitones"), 12}}}});
+		QVERIFY2(done.ok, qPrintable(done.errorMessage));
+		QCOMPARE(done.result.value(QStringLiteral("edited")).toInt(), 1);
+		QCOMPARE(keysOf(a), (QList<int>{72}));
+
+		// The limit still applies to unique clips: 65 distinct clips are refused.
+		QJsonArray unique;
+		for (int i = 0; i < 65; ++i)
+		{
+			MidiClip* c = clipWith((i + 1) * 192, {60});
+			unique.append(control::clipIdOf(c));
+		}
+		QCOMPARE(run(QStringLiteral("note.across"), {{QStringLiteral("clips"), unique},
+			{QStringLiteral("command"), QStringLiteral("note.transpose")}, {QStringLiteral("args"), QJsonObject{{QStringLiteral("semitones"), 1}}}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+	}
+
 	//! note.across counted every successful handler as an edit, so a handler that succeeded while
 	//! changing nothing made the batch report clips as edited and hand back a control.undo
 	//! transaction no undo step backs - replaying it would undo an unrelated prior action.
