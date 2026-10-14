@@ -264,6 +264,29 @@ private slots:
 		QVERIFY(got.isNull());
 	}
 
+	void thePumpRetriesAPathAfterItsFirstOpenFails()
+	{
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		const QString lateClip = m_dir.filePath(QStringLiteral("late-clip.mkv"));
+		VideoFramePump pump;
+		QImage got;
+		int tag = -1;
+		QObject receiver;
+		connect(&pump, &VideoFramePump::frameReady, &receiver, [&](const QImage& image, double, int t) {
+			got = image;
+			tag = t;
+		});
+
+		pump.request(lateClip, 0.5, QSize(32, 18), 1);
+		QTRY_COMPARE_WITH_TIMEOUT(tag, 1, 10000);
+		QVERIFY(got.isNull());
+		QVERIFY(videotest::makeClip(lateClip));
+
+		pump.request(lateClip, 0.5, QSize(32, 18), 2);
+		QTRY_COMPARE_WITH_TIMEOUT(tag, 2, 10000);
+		QVERIFY2(!got.isNull() && reddish(got), "same-path request should retry after the file becomes readable");
+	}
+
 	void theWindowFollowsTheTransport()
 	{
 		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
