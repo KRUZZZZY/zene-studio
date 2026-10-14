@@ -56,6 +56,19 @@
 
 using namespace lmms;
 
+namespace lmms
+{
+
+struct LinkSyncEngineTestAccess
+{
+	static double signedPhaseDifference(double a, double b, double period)
+	{
+		return LinkSyncEngine::signedPhaseDifference(a, b, period);
+	}
+};
+
+} // namespace lmms
+
 namespace
 {
 
@@ -311,6 +324,12 @@ private slots:
 		// different quantity - and the error between them is reported, wrapped.
 		const double error = report.value(QStringLiteral("phase_error_beats")).toDouble();
 		QVERIFY(error > -2.0 && error <= 2.0);
+	}
+
+	void exactHalfQuantumErrorsUseThePositiveBoundary()
+	{
+		QCOMPARE(LinkSyncEngineTestAccess::signedPhaseDifference(2.0, 0.0, 4.0), 2.0);
+		QCOMPARE(LinkSyncEngineTestAccess::signedPhaseDifference(-2.0, 0.0, 4.0), 2.0);
 	}
 
 	//! The peer table is bounded and quiet peers leave: a session cannot grow

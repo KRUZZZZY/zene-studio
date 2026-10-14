@@ -98,9 +98,9 @@ double LinkSyncEngine::signedPhaseDifference(double a, double b, double period)
 	{
 		return a - b;
 	}
-	// difference - period * round(difference / period), which is the signed
-	// distance in (-period/2, period/2] without a branch per sign.
-	return a - b - period * std::floor((a - b) / period + 0.5);
+	// difference - period * ceil(difference / period - 0.5), which preserves
+	// the positive half-period tie in (-period/2, period/2].
+	return a - b - period * std::ceil((a - b) / period - 0.5);
 }
 
 LinkSyncEngine* LinkSyncEngine::s_instance = nullptr;
