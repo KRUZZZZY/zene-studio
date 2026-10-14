@@ -343,6 +343,10 @@ void Note::clearMpeExpression()
 
 TimePos Note::quantized( const TimePos & m, const int qGrid )
 {
+	if( qGrid <= 0 )
+	{
+		return m;
+	}
 	float p = ( (float) m / qGrid );
 	if( p - floorf( p ) < 0.5f )
 	{
@@ -356,6 +360,10 @@ TimePos Note::quantized( const TimePos & m, const int qGrid )
 
 void Note::quantizeLength( const int qGrid )
 {
+	if( qGrid <= 0 )
+	{
+		return;
+	}
 	setLength( quantized( length(), qGrid ) );
 	if( length() == 0 )
 	{
@@ -368,6 +376,10 @@ void Note::quantizeLength( const int qGrid )
 
 void Note::quantizePos( const int qGrid )
 {
+	if( qGrid <= 0 )
+	{
+		return;
+	}
 	setPos( quantized( pos(), qGrid ) );
 }
 

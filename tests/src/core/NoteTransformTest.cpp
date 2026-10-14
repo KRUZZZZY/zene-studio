@@ -370,6 +370,22 @@ private slots:
 		QCOMPARE( dump( positionsOf( t.vector() ) ), QString( "48,96,144" ) );
 	}
 
+	void nonPositiveNoteQuantizeGridIsANoop()
+	{
+		QCOMPARE( Note::quantized( TimePos( 123 ), 0 ).getTicks(), 123 );
+		QCOMPARE( Note::quantized( TimePos( 123 ), -8 ).getTicks(), 123 );
+
+		Note note( TimePos( 48 ), TimePos( 123 ), 60 );
+		note.quantizePos( 0 );
+		note.quantizeLength( 0 );
+		QCOMPARE( note.pos().getTicks(), 123 );
+		QCOMPARE( note.length().getTicks(), 48 );
+
+		Note empty( TimePos( 0 ), TimePos( 123 ), 60 );
+		empty.quantizeLength( -8 );
+		QCOMPARE( empty.length().getTicks(), 0 );
+	}
+
 	//! quantizeNotes() - the options form the groove menu and groove.quantize use - by every mode,
 	//! and its velocity humanise: bounded, clamped, reproducible from the seed (gate 2, hosted run
 	//! 36747963198: the Floor/Ceil targets and the velocity draw entered uncovered).
