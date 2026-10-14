@@ -35,6 +35,7 @@
 #include <cstring>
 
 #include "ControlRegistry.h"
+#include "Controller.h"
 #include "ControllerConnection.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -176,6 +177,15 @@ private slots:
 
 		QCOMPARE(LifetimeProbeLfoController::connectionCountAtDeallocation, 1);
 		QCOMPARE(ControllerConnection::connections().size(), connectionsBefore);
+	}
+
+	void settingNullControllerRestoresDummy()
+	{
+		ControllerConnection connection(new MidiController(Engine::getSong()));
+		connection.setController(nullptr);
+
+		QVERIFY(connection.getController() != nullptr);
+		QCOMPARE(connection.getController()->type(), Controller::ControllerType::Dummy);
 	}
 };
 

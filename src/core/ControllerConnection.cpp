@@ -139,20 +139,20 @@ void ControllerConnection::setController( Controller * _controller )
 	}
 	m_controllerId = -1;
 
-	if( _controller->type() != Controller::ControllerType::Dummy )
+	if( m_controller->type() != Controller::ControllerType::Dummy )
 	{
-		_controller->addConnection( this );
-		QObject::connect( _controller, SIGNAL(valueChanged()),
+		m_controller->addConnection( this );
+		QObject::connect( m_controller, SIGNAL(valueChanged()),
 				this, SIGNAL(valueChanged()), Qt::DirectConnection );
 	}
 
 	m_ownsController =
-		(_controller->type() == Controller::ControllerType::Midi);
+		(m_controller->type() == Controller::ControllerType::Midi);
 
 	// If we don't own the controller, allow deletion of controller
 	// to delete the connection
 	if( !m_ownsController ) {
-		QObject::connect( _controller, SIGNAL(destroyed()),
+		QObject::connect( m_controller, SIGNAL(destroyed()),
 				this, SLOT(deleteConnection()));
 	}
 }

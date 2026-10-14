@@ -2069,3 +2069,4 @@ tests/CMakeLists.txt	new-p8-264 regression: compile VST3 host sources into Vst3I
 tests/src/gui/CommandFormTest.cpp	cluster new-p8-295: adds direct CommandFormFields regressions proving string and path editor values retain leading and trailing whitespace
 include/CollabHost.h	new-p8-304: track accepted pending handshake sockets so stop can invalidate callbacks and reset the pending count; regression CollabTransportTest::stoppingHostAbortsPendingHandshakes
 src/core/CollabHost.cpp	new-p8-304: abort tracked pending handshakes during stop and admit only sockets still pending in this host session; regression CollabTransportTest::stoppingHostAbortsPendingHandshakes
+src/core/ControllerConnection.cpp	new-p9-83 (2026-10-11): use the resolved shared Dummy controller for post-fallback bookkeeping; covered by MidiControllerMenuTest::settingNullControllerRestoresDummy.
