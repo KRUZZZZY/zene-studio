@@ -1994,3 +1994,5 @@ tests/src/core/AutomatableModelTest.cpp	new-p10-196: add a regression for the li
 include/DspEffectLibrary.h	2026-10-10 cluster new-p10-149: FastBassBoost::setFrequency applies the constructor's 10 Hz minimum, preventing a zero feedback denominator for negative frequencies.
 tests/src/plugins/PluginPortsMigrationTest.cpp	2026-10-10 cluster new-p10-149: add regression proving FastBassBoost::setFrequency(-1) remains finite and matches the 10 Hz floor.
 plugins/Delay/DelayControlsDialog.cpp	2026-10-10 (new-p10-108): only left-button presses start XyPad input and only left-button releases clear it; direct mouse-event regression is in tests/src/gui/XyPadPairTest.cpp.
+include/Lv2Features.h	cluster new-p10-206: grants the LV2 reload regression test access to the stored pointer count; no runtime behaviour change.
+src/core/lv2/Lv2Features.cpp	cluster new-p10-206: clear() now discards prior feature pointers before clearing their storage, so reload rebuilds one terminated list without retaining stale lists.

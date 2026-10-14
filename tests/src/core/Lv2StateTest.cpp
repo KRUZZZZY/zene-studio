@@ -40,6 +40,8 @@
 
 #ifdef LMMS_HAVE_LV2
 #include "Lv2ControlBase.h"
+#include "Lv2Features.h"
+#include "Lv2Manager.h"
 #include "Lv2Proc.h"
 #include <lilv/lilv.h>
 #endif
@@ -47,6 +49,17 @@
 using namespace lmms;
 
 #ifdef LMMS_HAVE_LV2
+namespace lmms
+{
+
+class Lv2FeaturesTestAccess
+{
+public:
+	static auto pointerCount(const Lv2Features& features) { return features.m_featurePointers.size(); }
+};
+
+} // namespace lmms
+
 namespace
 {
 
@@ -102,6 +115,24 @@ private slots:
 	}
 
 	void cleanupTestCase() { Engine::destroy(); }
+
+	void featurePointersResetOnReload()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		Lv2Features features;
+		features.initCommon();
+		features.createFeatureVectors();
+		const auto expectedPointerCount = Engine::getLv2Manager()->supportedFeatureURIs().size() + 1;
+		QCOMPARE(Lv2FeaturesTestAccess::pointerCount(features), expectedPointerCount);
+
+		features.clear();
+		features.initCommon();
+		features.createFeatureVectors();
+		QCOMPARE(Lv2FeaturesTestAccess::pointerCount(features), expectedPointerCount);
+#endif
+	}
 
 	void aPluginsOwnStateRoundTrips()
 	{
