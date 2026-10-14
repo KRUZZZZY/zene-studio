@@ -254,6 +254,18 @@ private slots:
 		QVERIFY(!Invite::decode(QStringLiteral("https://example.org/join"), &out, &error));
 		QVERIFY(!Invite::decode(QStringLiteral("ZENE1-0189"), &out, &error));
 	}
+
+	void inviteRejectsZeroPort()
+	{
+		Invite invite;
+		invite.address = QHostAddress(QStringLiteral("192.168.1.20"));
+		invite.port = 0;
+		invite.key = QByteArray(InviteKeyBytes, 'k');
+
+		Invite out;
+		QString error;
+		QVERIFY2(!Invite::decode(invite.encode(), &out, &error), qPrintable(error));
+	}
 #endif
 };
 
