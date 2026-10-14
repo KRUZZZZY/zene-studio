@@ -2479,3 +2479,4 @@ tests/src/gui/VcaStripLifetimeTest.cpp	new-p9-172: regression covers a float edi
 docs/qwen-fixes-2026-10/cluster-new-p9-241.md
 # BUG new-p9-542: VST parameter-model replacement lifetime regression.
 tests/src/plugins/VstEffectControlsTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p10-141.md

@@ -2247,3 +2247,4 @@ include/FifoBuffer.h	BUG new-p10-134 (2026-10-12): validate positive capacity in
 src/core/DrumSynth.cpp	BUG new-p10-137: malformed DrumSynth integer and float settings use their declared defaults when sscanf parses no value; regression ImportDetectionTest::malformedDrumSynthNumbersUseDefaults.
 src/gui/FileRevealer.cpp	BUG 16 (new-p10-136): use xdg-open when Linux directory-handler discovery yields an empty command, so openDir has a launchable fallback. Regression: tests/src/gui/FileRevealerTest.cpp.
 src/core/DrumSynth.cpp	new-p10-140: clamp both derived noise-band steps to at least one before their modulo use; covered by ImportDetectionTest::anEnabledNoiseBandWithDf110Renders.
+src/core/DrumSynth.cpp	cluster new-p10-141: reject distortion Bits outside the bundled 0..7 range and zero or nonfinite attenuation before quantization; regression ImportDetectionTest::distortionRejectsUnderflowingDrumSynthBits.
