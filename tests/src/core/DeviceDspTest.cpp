@@ -49,6 +49,7 @@
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "Delay.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -176,6 +177,11 @@ int consolesOn(int index)
 
 } // namespace
 
+template class lmms::CombFeedback<2>;
+template class lmms::CombFeedfwd<2>;
+template class lmms::CombFeedbackDualtap<2>;
+template class lmms::AllpassDelay<2>;
+
 class DeviceDspTest : public QObject
 {
 	Q_OBJECT
@@ -202,6 +208,19 @@ private slots:
 	void init()
 	{
 		for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { chainOf(i).clear(); }
+	}
+
+	void delayLineTemplatesInstantiate()
+	{
+		lmms::CombFeedback<2> feedback{4};
+		feedback.setDelay(1.0);
+		feedback.setGain(0.5);
+		QCOMPARE(feedback.update(0.0, 0), 0.0);
+
+		lmms::AllpassDelay<2> allpass{4};
+		allpass.setDelay(1.0);
+		allpass.setGain(0.5);
+		QCOMPARE(allpass.update(0.0, 0), 0.0);
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.

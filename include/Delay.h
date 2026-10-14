@@ -69,7 +69,7 @@ public:
 	CombFeedback( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{
@@ -140,7 +140,7 @@ class CombFeedfwd
 	CombFeedfwd( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{
@@ -211,9 +211,11 @@ class CombFeedbackDualtap
 	CombFeedbackDualtap( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
-		m_delay( 0 ),
-		m_fraction( 0.0 )
+		m_gain( 0.0 ),
+		m_delay1( 0 ),
+		m_delay2( 0 ),
+		m_fraction1( 0.0 ),
+		m_fraction2( 0.0 )
 	{
 		m_buffer = new frame[maxDelay];
 		memset( m_buffer, 0, sizeof( frame ) * maxDelay );
@@ -292,7 +294,7 @@ public:
 	AllpassDelay( int maxDelay ) :
 		m_size( maxDelay ),
 		m_position( 0 ),
-		m_feedBack( 0.0 ),
+		m_gain( 0.0 ),
 		m_delay( 0 ),
 		m_fraction( 0.0 )
 	{

@@ -1952,3 +1952,4 @@ tests/src/plugins/PluginPortsMigrationTest.cpp	new-p9-138: add a regression slot
 plugins/GigPlayer/GigPlayer.cpp	BUG new-p9-153: accept valid MIDI note 0 in the GIG range check; covered by PluginPortsMigrationTest::gigPlayerAcceptsMidiNoteZero.
 src/core/Keymap.cpp	new-p9-209: Ignore non-degree child nodes and malformed integer degree values while loading keymaps.
 tests/src/core/SessionTuningTest.cpp	new-p9-209: Regression for comment and metadata children plus malformed degree values in Keymap::loadSettings.
+include/Delay.h	BUG new-p9-107: initialise the declared gain and both delay/fraction pairs in the four delay templates; DeviceDspTest explicitly instantiates each template.
