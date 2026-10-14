@@ -184,6 +184,7 @@ private slots:
 	void testParameters();
 	void testParameterSetGet();
 	void testStateRoundTrip();
+	void testFrameCountValidation();
 	void testAudioGain();
 	void testAudioSilenceWhenGainIsZero();
 	void testBypass();
@@ -368,6 +369,12 @@ void ClapHostTest::testAudioGain()
 	qInfo("MEASURED input RMS %.6f -> gain 1.0 output RMS %.6f",
 		rms(inputs[0]), rms(outputs[0]));
 	QVERIFY2(std::abs(rms(outputs[0]) - 0.5) < 1e-6, qPrintable(QString::number(rms(outputs[0]))));
+}
+
+void ClapHostTest::testFrameCountValidation()
+{
+	QVERIFY(!m_plugin.process(nullptr, nullptr, 0, 0, -1));
+	QVERIFY(m_plugin.process(nullptr, nullptr, 0, 0, 0));
 }
 
 void ClapHostTest::testAudioSilenceWhenGainIsZero()

@@ -358,7 +358,8 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 {
 	auto& impl = *m_impl;
 	if (!impl.prepared || !impl.plugin) { return false; }
-	if (frames <= 0) { return true; }
+	if (frames < 0) { return false; }
+	if (frames == 0) { return true; }
 	t_isAudioThread = true;
 	// A process call is the flush CLAP lets a host answer request_flush with (review L01-1 #9).
 	impl.flushRequested.store(false, std::memory_order_relaxed);
