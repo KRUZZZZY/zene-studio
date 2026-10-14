@@ -28,6 +28,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cmath>
+#include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -65,6 +67,7 @@
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Ladspa2LMMS.h"
+#include "AudioDevice.h"
 #include "Plugin.h"
 #include "plugins/Xpressive/ExprSynth.h"
 
@@ -367,6 +370,45 @@ auto compareMonstroAttackWindows(const std::vector<float>& migrated,
 	return evidence;
 }
 
+auto createConfiguredMultitapEcho(MainFn entry) -> std::unique_ptr<lmms::Effect>
+{
+	auto effect = std::unique_ptr<lmms::Effect>{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+	QDomDocument doc;
+	QDomElement root = doc.createElement("effect");
+	root.setAttribute("on", 1);
+	root.setAttribute("wet", 1);
+	root.setAttribute("autoquit", 0);
+	QDomElement controls = effect->controls()->saveState(doc, root);
+	controls.setAttribute("steps", 32);
+	controls.setAttribute("steplength", 1);
+	controls.setAttribute("stages", 1);
+
+	std::array<float, 32> amplitudes{};
+	std::array<float, 32> lowpass{};
+	lowpass.fill(std::log10(1000.0f / 20.0f));
+	QString encoded;
+	lmms::base64::encode(reinterpret_cast<const char*>(amplitudes.data()),
+		static_cast<int>(sizeof(amplitudes)), encoded);
+	controls.setAttribute("ampsteps", encoded);
+	lmms::base64::encode(reinterpret_cast<const char*>(lowpass.data()),
+		static_cast<int>(sizeof(lowpass)), encoded);
+	controls.setAttribute("lpsteps", encoded);
+	effect->loadSettings(root);
+	return effect;
+}
+
+struct SampleRateRestore
+{
+	lmms::AudioEngine* engine;
+	lmms::sample_rate_t rate;
+
+	~SampleRateRestore()
+	{
+		engine->audioDev()->setSampleRateForTesting(rate);
+		emit engine->sampleRateChanged();
+	}
+};
+
 } // namespace
 
 namespace lmms
@@ -475,6 +517,7 @@ private slots:
 	void slice8PluginsAreLiveAndExact();
 	void fastBassBoostFrequencySetterHonoursFloor();
 	void xpressiveRandomVectorRejectsOutOfRangeFloatInputs();
+	void multitapEchoRetunesAllTapsAfterSampleRateChange();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -1652,6 +1695,35 @@ void PluginPortsMigrationTest::slice8PluginsAreLiveAndExact()
 			QVERIFY2(worst > 1e-6f, "slice 8 comparison not sensitive");
 		}
 	}
+}
+
+void PluginPortsMigrationTest::multitapEchoRetunesAllTapsAfterSampleRateChange()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_multitapecho)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	auto* engine = lmms::Engine::audioEngine();
+	const auto originalRate = engine->outputSampleRate();
+	SampleRateRestore restore{engine, originalRate};
+	auto outdated = createConfiguredMultitapEcho(entry);
+	const auto changedRate = originalRate == 48000 ? 44100 : 48000;
+	engine->audioDev()->setSampleRateForTesting(changedRate);
+	emit engine->sampleRateChanged();
+	auto current = createConfiguredMultitapEcho(entry);
+
+	const auto frames = engine->framesPerPeriod();
+	const auto outdatedSamples = partc::renderInFreshThread(*outdated, frames);
+	const auto currentSamples = partc::renderInFreshThread(*current, frames);
+	QVERIFY2(outdatedSamples == currentSamples,
+		"tap filters differ after a sample-rate change with 32 steps");
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)

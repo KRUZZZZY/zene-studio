@@ -663,6 +663,7 @@ plugins/MidiImport/MidiImport.cpp	rename layer 1: user-visible plugin/module des
 plugins/Monstro/Monstro.cpp	BUG new-p10-264: advance the LFO attack multiplier by the sample offset within each audio period
 plugins/MultitapEcho/MultitapEcho.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Organic/Organic.cpp	Organic distortion and volume now process only the current note's frames beginning at noteOffset, preserving earlier samples in the same period
+plugins/MultitapEcho/MultitapEchoControls.cpp	new-p9-299: recalculate filters for every active tap after an output sample-rate change; covered by PluginPortsMigrationTest::multitapEchoRetunesAllTapsAfterSampleRateChange.
 plugins/Oscilloscope/Oscilloscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 plugins/Patman/Patman.cpp	cluster new-p9-350 (2026-10-10): clearing the selected patch releases its sample bank; AudioPluginTest observes the loaded sample through a weak reference.

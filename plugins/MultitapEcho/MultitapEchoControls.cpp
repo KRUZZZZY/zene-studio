@@ -174,7 +174,7 @@ void MultitapEchoControls::sampleRateChanged()
 {
 	m_effect->m_sampleRate = Engine::audioEngine()->outputSampleRate();
 	m_effect->m_sampleRatio = 1.0f / m_effect->m_sampleRate;
-	m_effect->updateFilters( 0, 19 );
+	m_effect->updateFilters( 0, m_steps.value() - 1 );
 }
 
 
