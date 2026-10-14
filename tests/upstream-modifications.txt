@@ -2252,3 +2252,4 @@ src/core/DrumSynth.cpp	new-p10-140: clamp both derived noise-band steps to at le
 src/core/DrumSynth.cpp	cluster new-p10-141: reject distortion Bits outside the bundled 0..7 range and zero or nonfinite attenuation before quantization; regression ImportDetectionTest::distortionRejectsUnderflowingDrumSynthBits.
 include/DummyEffect.h	new-p10-146: missing-effect fallback restores the stable id from the original project effect element and observes it through Effect::setId, while preserving snapshot ids in copy payloads.
 include/DspEffectLibrary.h	cluster new-p10-150: FoldbackDistortion returns gain-scaled input at exactly zero threshold, avoiding fmod with a zero divisor while preserving nonzero-threshold processing.
+tests/src/core/AudioBufferTest.cpp	cluster new-p10-168: exercise the real gain_clip process against nonfinite samples and gains in the existing native audio test.
