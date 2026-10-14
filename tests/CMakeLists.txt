@@ -784,6 +784,8 @@ set(LMMS_TESTS
 	src/core/DeviceToolsChainTest.cpp
 	# 0.5.0 L10 (W3): the de-esser, transient shaper, vocoder and console devices.
 	src/core/DeviceDspTest.cpp
+	# DrumSynth rejects envelope tokens longer than its fixed parser capacity.
+	src/core/DrumSynthTest.cpp
 	# catch-up W3: atomic snapshots for device options, the compressor key filter, LV2 latency; reduction meters on bypass.
 	src/core/RealtimeSnapshotTest.cpp
 	# catch-up W1: undo honesty - redo failures, list copies, the macro pair, arm many, no journal step refused.
