@@ -26,6 +26,7 @@
 #include "DrumSynth.h"
 
 #include <QFile>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -502,7 +503,8 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	std::strcpy(sec, "Distortion");
 	chkOn[5] = GetPrivateProfileInt(sec, "On", 0, dsfile);
 	DiON = chkOn[5];
-	DStep = 1 + GetPrivateProfileInt(sec, "Rate", 0, dsfile);
+	const int distortionRate = std::clamp(GetPrivateProfileInt(sec, "Rate", 0, dsfile), 0, 7);
+	DStep = 1 + distortionRate;
 	if (DStep == 7) { DStep = 20; }
 	if (DStep == 6) { DStep = 10; }
 	if (DStep == 5) { DStep = 8; }

@@ -2315,3 +2315,4 @@ tests/src/core/MissingDevicesRound2Test.cpp
 tests/src/plugins/MissingDevicesNoEntryModule.cpp
 tests/src/core/SessionCheckpointTest.cpp
 tests/src/core/SessionCheckpointBudgetTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p9-101.md

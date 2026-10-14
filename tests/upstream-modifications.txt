@@ -1940,3 +1940,5 @@ src/core/CMakeLists.txt	0.5.0 L02 Q050-013: lists core/SessionAudioBake.cpp (the
 tests/src/core/SmfInterchangeTest.cpp	cluster new-p8-231: covers an absolute file tick beyond the SMF reader limit with an in-range readback control and a writer refusal assertion
 include/ComboBoxModel.h	cluster new-p9-12 (2026-10-10): currentData() returns nullptr for an empty model instead of indexing an empty vector; covered by AutomatableModelTest::ComboBoxCurrentDataHandlesEmptyModel.
 tests/src/core/AutomatableModelTest.cpp	cluster new-p9-12 (2026-10-10): regression for currentData() on a new and cleared ComboBoxModel.
+tests/src/core/SampleBufferResampleTest.cpp	cluster new-p9-101 regression: add a bounded subprocess proof that a DrumSynth distortion Rate of -1 completes rendering.
+src/core/DrumSynth.cpp	cluster new-p9-101: clamp DrumSynth distortion Rate to its supported 0–7 range so invalid values cannot make the downsampling step non-positive or exceed the block.
