@@ -221,7 +221,7 @@ void Controller::resetFrameCounter()
 	auto changeGuard = controllerChangeGuard();
 	for (Controller * controller : s_controllers)
 	{
-		controller->m_bufferLastUpdated = 0;
+		controller->m_bufferLastUpdated = -1;
 	}
 	s_periods = 0;
 }
