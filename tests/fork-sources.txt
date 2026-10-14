@@ -2307,6 +2307,7 @@ tests/src/gui/PianoViewFocusTest.cpp
 tests/src/gui/TaskIndicatorTest.cpp
 tests/src/gui/EqCurveTest.cpp
 tests/src/plugins/EqFilterTest.cpp
+tests/src/core/PluginAudioPortsTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api boundary's
