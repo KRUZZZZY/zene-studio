@@ -129,6 +129,18 @@ private slots:
 		QCOMPARE(clip->notes()[3]->key(), 60);  // the run wraps
 	}
 
+	void arpeggiateRefusesExcessiveAggregateOutputBeforeChangingTheClip()
+	{
+		MidiClip* clip = clipWith({{60, 0}, {64, 5001}}, 5001);
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("rate"), 1);
+		const ControlResult refused = run(QStringLiteral("note.arpeggiate"), args);
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clip->notes().size(), std::size_t{2});
+		QCOMPARE(clip->notes().front()->length().getTicks(), tick_t{5001});
+		QCOMPARE(clip->notes().back()->pos().getTicks(), tick_t{5001});
+	}
+
 	void flamsRepeatsAndKeyedTransposition()
 	{
 		MidiClip* clip = clipWith({{60, 24}, {62, 48}});
