@@ -29,6 +29,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <sstream>
 
@@ -391,7 +392,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	NT = GetPrivateProfileInt(sec, "Slope", 0, dsfile);
 	GetEnv(2, sec, "Envelope", dsfile);
 	NON = chkOn[1];
-	NL = static_cast<float>(sliLev[1] * sliLev[1]) * mem_n;
+	NL = static_cast<float>(static_cast<std::int64_t>(sliLev[1]) * sliLev[1]) * mem_n;
 	if (NT < 0)
 	{
 		a = 1.f + (NT / 105.f);
@@ -411,7 +412,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	chkOn[0] = GetPrivateProfileInt(sec, "On", 0, dsfile);
 	TON = chkOn[0];
 	sliLev[0] = GetPrivateProfileInt(sec, "Level", 128, dsfile);
-	TL = static_cast<float>(sliLev[0] * sliLev[0]) * mem_t;
+	TL = static_cast<float>(static_cast<std::int64_t>(sliLev[0]) * sliLev[0]) * mem_t;
 	GetEnv(1, sec, "Envelope", dsfile);
 	F1 = MasterTune * 2 * pi_v<float> * GetPrivateProfileFloat(sec, "F1", 200.0, dsfile) / Fs;
 	if (std::abs(F1) < 0.001f)
@@ -440,7 +441,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	chkOn[2] = GetPrivateProfileInt(sec, "On", 0, dsfile);
 	OON = chkOn[2];
 	sliLev[2] = GetPrivateProfileInt(sec, "Level", 128, dsfile);
-	OL = static_cast<float>(sliLev[2] * sliLev[2]) * mem_o;
+	OL = static_cast<float>(static_cast<std::int64_t>(sliLev[2]) * sliLev[2]) * mem_o;
 	GetEnv(3, sec, "Envelope1", dsfile);
 	GetEnv(4, sec, "Envelope2", dsfile);
 	OMode = GetPrivateProfileInt(sec, "Method", 2, dsfile);
@@ -485,7 +486,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	chkOn[3] = GetPrivateProfileInt(sec, "On", 0, dsfile);
 	BON = chkOn[3];
 	sliLev[3] = GetPrivateProfileInt(sec, "Level", 128, dsfile);
-	BL = static_cast<float>(sliLev[3] * sliLev[3]) * mem_b;
+	BL = static_cast<float>(static_cast<std::int64_t>(sliLev[3]) * sliLev[3]) * mem_b;
 	BF = MasterTune * 2 * pi_v<float> * GetPrivateProfileFloat(sec, "F", 1000.0, dsfile) / Fs;
 	BPhi = pi_v<float> / 4.f;
 	GetEnv(5, sec, "Envelope", dsfile);
@@ -499,7 +500,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	chkOn[4] = GetPrivateProfileInt(sec, "On", 0, dsfile);
 	BON2 = chkOn[4];
 	sliLev[4] = GetPrivateProfileInt(sec, "Level", 128, dsfile);
-	BL2 = static_cast<float>(sliLev[4] * sliLev[4]) * mem_b;
+	BL2 = static_cast<float>(static_cast<std::int64_t>(sliLev[4]) * sliLev[4]) * mem_b;
 	BF2 = MasterTune * 2 * pi_v<float> * GetPrivateProfileFloat(sec, "F", 1000.0, dsfile) / Fs;
 	BPhi2 = pi_v<float> / 4.f;
 	GetEnv(6, sec, "Envelope", dsfile);
