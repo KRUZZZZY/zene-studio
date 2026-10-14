@@ -209,6 +209,16 @@ QString roleForMixerChannel(MixerChannel* channel)
 	return QStringLiteral("regular");
 }
 
+void resetMasterForEmptyMixerModel(Mixer* mixer, const DawProjectModel& model)
+{
+	if (!model.mixerChannels.isEmpty()) { return; }
+	MixerChannel* master = mixer->mixerChannel(0);
+	master->m_soloModel.setValue(false);
+	master->m_muteModel.setValue(false);
+	master->m_volumeModel.setValue(1.0f);
+	master->m_name = Mixer::tr("Master");
+}
+
 } // namespace
 
 //! How many parent-child relations this track's export loses: every track of a
@@ -502,6 +512,7 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 		channel->m_muteModel.setValue(entry.mute);
 		channel->m_soloModel.setValue(entry.solo);
 	}
+	resetMasterForEmptyMixerModel(mixer, model);
 	removeMixerChannelsPast(mixer, qMax(1, model.mixerChannels.size()));
 
 	for (const DawProjectTrack& entry : model.tracks)
