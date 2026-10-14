@@ -48,6 +48,7 @@
 #include "EffectDeviceMenu.h"
 #include "EffectHostingMenu.h"
 #include "EffectPickerOrganiser.h"
+#include "EffectSelectDialog.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "PluginOrganiser.h"
@@ -123,6 +124,21 @@ private slots:
 		QVERIFY(effect != nullptr);
 		QCOMPARE(effect->effectChain(), &channel->m_fxChain);
 		QVERIFY(!deviceAddress(effect).isEmpty());
+	}
+
+	void anchoredSearchIncludesFavouriteRows()
+	{
+		QStandardItemModel source;
+		source.setColumnCount(2);
+		source.appendRow({new QStandardItem(QStringLiteral("Foo")), new QStandardItem(QStringLiteral("Zene Studio"))});
+		source.appendRow({new QStandardItem(QStringLiteral("★ Foo")), new QStandardItem(QStringLiteral("Zene Studio"))});
+		source.item(1, 0)->setData(true, pickerorganiser::FavouriteRole);
+
+		DualColumnFilterProxyModel filter;
+		filter.setSourceModel(&source);
+		filter.setFilterRegularExpression(QRegularExpression(QStringLiteral("^Foo$"), QRegularExpression::CaseInsensitiveOption));
+
+		QCOMPARE(filter.rowCount(), 2);
 	}
 
 	void theSubmenuFollowsTheDevicesEntry()
