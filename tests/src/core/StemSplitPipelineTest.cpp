@@ -37,6 +37,7 @@
 #include <QMessageBox>
 #include <QSignalSpy>
 #include <QTimer>
+#include <QTemporaryDir>
 
 #include "Engine.h"
 #include "SampleBuffer.h"
@@ -192,6 +193,58 @@ private slots:
 			QVERIFY2(stems[static_cast<std::size_t>(s)] != nullptr, stemName(static_cast<Stem>(s)));
 			QCOMPARE(stems[static_cast<std::size_t>(s)]->size(), mix->size());
 		}
+	}
+
+	void testSeparatorRejectsStemWhenReportedSizeDoesNotMatchFrames()
+	{
+#ifndef Q_OS_UNIX
+		QSKIP("named-pipe size behavior is exercised on Unix platforms");
+#else
+		QTemporaryDir cliDir;
+		QVERIFY(cliDir.isValid());
+		QFile cli(cliDir.filePath(QStringLiteral("fifo-stem-cli.py")));
+		QVERIFY(cli.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		const QByteArray script = R"PY(
+import argparse
+import os
+import subprocess
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--input", required=True)
+parser.add_argument("--out-dir", required=True)
+args, _ = parser.parse_known_args()
+with open(args.input, "rb") as mix:
+    payload = mix.read()
+for name in ("bass", "other", "vocals"):
+    with open(os.path.join(args.out_dir, name + ".f32"), "wb") as stem:
+        stem.write(payload)
+fifo_path = os.path.join(args.out_dir, "drums.f32")
+os.mkfifo(fifo_path)
+writer = "import sys\nwith open(sys.argv[1], 'wb') as stem:\n    stem.write(bytes(8))\n"
+subprocess.Popen(
+    [sys.executable, "-c", writer, fifo_path],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+    start_new_session=True,
+    close_fds=True,
+)
+)PY";
+		QCOMPARE(cli.write(script), static_cast<qint64>(script.size()));
+		cli.close();
+
+		ExternalProcessStemSeparator separator(
+			ExternalProcessStemSeparator::locatePython(), cli.fileName(), stubModelPath());
+		SampleBuffer mix(std::vector<SampleFrame>{ SampleFrame(0.25f, -0.25f) }, StemModelSampleRate);
+		StemSet stems;
+		QString error;
+		const auto status = separator.separate(mix, StemModelSampleRate, 1,
+			[](float) { return true; }, stems, error);
+
+		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
+		QVERIFY2(error.contains(QStringLiteral("exit 0")), qPrintable(error));
+#endif
 	}
 
 	/*! Owner decision 14: the public HTDemucs exports put all four stems in ONE

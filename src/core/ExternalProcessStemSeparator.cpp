@@ -24,7 +24,9 @@
 #include "StemSeparation/ExternalProcessStemSeparator.h"
 
 #include <chrono>
+#include <cstdint>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include <QCoreApplication>
@@ -76,15 +78,27 @@ bool writeMixFile(const QString& path, const SampleBuffer& mix)
 	return file.write(reinterpret_cast<const char*>(interleaved.data()), bytes) == bytes;
 }
 
-std::shared_ptr<const SampleBuffer> readStemFile(const QString& path, int sampleRate)
+std::shared_ptr<const SampleBuffer> readStemFile(
+	const QString& path, int sampleRate, std::size_t expectedFrames)
 {
 	QFile file(path);
 	if (!file.open(QIODevice::ReadOnly))
 	{
 		return nullptr;
 	}
-	const QByteArray raw = file.readAll();
-	if (raw.isEmpty() || raw.size() % (2 * static_cast<int>(sizeof(float))) != 0)
+	constexpr qint64 BytesPerFrame = 2 * static_cast<qint64>(sizeof(float));
+	const auto maxFrames = static_cast<std::uintmax_t>(std::numeric_limits<qint64>::max() / BytesPerFrame);
+	if (static_cast<std::uintmax_t>(expectedFrames) > maxFrames)
+	{
+		return nullptr;
+	}
+	const auto expectedBytes = static_cast<qint64>(expectedFrames) * BytesPerFrame;
+	if (file.size() != expectedBytes)
+	{
+		return nullptr;
+	}
+	const QByteArray raw = file.read(expectedBytes);
+	if (raw.isEmpty() || raw.size() != expectedBytes || raw.size() % BytesPerFrame != 0)
 	{
 		return nullptr;
 	}
@@ -108,7 +122,7 @@ bool readStems(const QString& outDir, int sampleRate, std::size_t frames, StemSe
 	{
 		const auto path = QDir(outDir).filePath(
 			QString::fromLatin1(stemName(static_cast<Stem>(i))) + QStringLiteral(".f32"));
-		auto buffer = readStemFile(path, sampleRate);
+		auto buffer = readStemFile(path, sampleRate, frames);
 		if (buffer == nullptr || buffer->size() != frames)
 		{
 			haveAll = false;
