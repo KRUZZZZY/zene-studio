@@ -97,6 +97,15 @@ bool claimedBy(QWidget* widget, Qt::Key key, Qt::KeyboardModifiers mods)
 	return event.isAccepted();
 }
 
+//! A key press sent to the widget, as the widget answered it (an unhandled one is not accepted).
+bool handledBy(QWidget* widget, Qt::Key key, Qt::KeyboardModifiers mods)
+{
+	QKeyEvent event(QEvent::KeyPress, key, mods);
+	event.ignore();
+	QApplication::sendEvent(widget, &event);
+	return event.isAccepted();
+}
+
 } // namespace
 
 class CanvasKeyboardTest : public QObject
@@ -192,6 +201,28 @@ private slots:
 		QVERIFY(claimedBy(canvas, Qt::Key_Up, Qt::ControlModifier));
 		QVERIFY(claimedBy(canvas, Qt::Key_Insert, Qt::NoModifier));
 		QVERIFY(!claimedBy(canvas, Qt::Key_Right, Qt::ControlModifier | Qt::AltModifier));
+	}
+
+	//! BUG 8 (cluster new-p12-154): with no clip the area keeps the focus and paints its no-clip line,
+	//! so the cursor keys must find no clip to walk instead of reading through one.
+	void theCursorKeysAreRefusedWhenNoClipIsOpen()
+	{
+		QWidget* canvas = m_editor->canvas();
+		m_editor->setClip(nullptr);
+		QCOMPARE(a11y::canvasValue(canvas), QStringLiteral("No clip open"));
+		QTest::keyClick(canvas, Qt::Key_Right, Qt::AltModifier);
+		QTest::keyClick(canvas, Qt::Key_Left, Qt::AltModifier);
+		QTest::keyClick(canvas, Qt::Key_Up, Qt::AltModifier);
+		QTest::keyClick(canvas, Qt::Key_Down, Qt::AltModifier | Qt::ShiftModifier);
+		QTest::keyClick(canvas, Qt::Key_Home);
+		QTest::keyClick(canvas, Qt::Key_End);
+		QTest::keyClick(canvas, Qt::Key_Right, Qt::ControlModifier);
+		QTest::keyClick(canvas, Qt::Key_Insert);
+		QTest::keyClick(canvas, Qt::Key_Delete);
+		QVERIFY(m_editor->clip() == nullptr);  // and the area still reads no clip
+		QCOMPARE(a11y::canvasValue(canvas), QStringLiteral("No clip open"));
+		QVERIFY(!handledBy(canvas, Qt::Key_Right, Qt::AltModifier));  // the cursor key was not taken
+		QVERIFY(!handledBy(canvas, Qt::Key_Home, Qt::NoModifier));
 	}
 
 	void ctrlArrowsResizeAndChangeVelocityOneStepEach()
