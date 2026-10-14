@@ -2224,3 +2224,4 @@ plugins/VstEffect/VstEffectControls.cpp	2026-10-11 new-p9-542: preserve the load
 tests/CMakeLists.txt	2026-10-11 new-p9-542: compile VstEffectControls and its dialog into VstEffectControlsTest so the test exercises the real loadSettings implementation with its test-only dump provider.
 include/BasicFilters.h	cluster new-p9-590: use second-formant band-pass history for its first-stage resonance feedback; covered by formantSecondStageUsesItsOwnHistory.
 src/core/ControlCommandsAudioAnalysis.cpp	Qwen cluster new-p10-41: sample.spectrogram reads only requested 2048-frame windows from the clip, avoiding a full-window mono allocation; AudioAnalysisTest checks the allocation bound.
+docs/qwen-fixes-2026-10/cluster-new-p10-104.md	2026-10-12 qwen new-p10-104: fork-NEW finding record, not a change to inherited code; documents the unbuildable, currently unused Delay.h path and the resulting NEEDS-CONTEXT verdict.
