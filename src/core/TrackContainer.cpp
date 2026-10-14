@@ -144,6 +144,11 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 	bool journalRestore = _this.parentNode().nodeName() == "journaldata";
 	if( journalRestore )
 	{
+		// These definitions live beside the track container in the project file,
+		// so a track-only journal checkpoint cannot restore them. Preserve them
+		// across the clear; a project load still resets them on absence.
+		const QVector<VisibilitySet> visibilitySets = m_visibilitySets;
+		const QString activeVisibilitySet = m_activeVisibilitySet;
 		// The container's views first, then its tracks. A TrackView is deleted
 		// from a DEFERRED event once its track dies (Qt::WA_DeleteOnClose,
 		// closed from the track's destroyedTrack() signal), so deleting the
@@ -157,6 +162,8 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 		// TrackContainer::aboutToClearTracks() and docs/UNDO-RELEASE-CONFIG.md.
 		emit aboutToClearTracks();
 		clearAllTracks();
+		m_visibilitySets = visibilitySets;
+		m_activeVisibilitySet = activeVisibilitySet;
 	}
 
 	static QProgressDialog * pd = nullptr;
