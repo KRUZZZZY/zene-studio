@@ -56,6 +56,9 @@
 #include <QApplication>
 #include <QDialog>
 #include <QLineEdit>
+#include <QAbstractButton>
+#include <QApplication>
+#include <QDialog>
 #include <QLibrary>
 #include <memory>
 #include <QPushButton>
@@ -63,8 +66,10 @@
 #include <QString>
 #include <QStringList>
 #include <QTableView>
+#include <QTimer>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QTreeWidget>
 #include <QtTest>
 
 #include "BasicFilters.h"
@@ -125,6 +130,7 @@ void operator delete[](void* allocation, std::size_t) noexcept
 #include "../../../plugins/Flanger/MonoDelay.h"
 #undef private
 #include "../../../plugins/Flanger/MonoDelay.cpp"
+#include "PluginView.h"
 #include "PluginView.h"
 
 namespace
@@ -643,6 +649,7 @@ private slots:
 	void nesCoarseDetuneRetunesHeldNote();
 	void opulenzUpdatePatchLocksEmulatorForWholeUpdate();
 	void sf2DialogRejectsAFilteredOutProgram();
+	void gigPatchDialogPreviewsSelectedProgram();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -2074,6 +2081,86 @@ void PluginPortsMigrationTest::opulenzUpdatePatchLocksEmulatorForWholeUpdate()
 	QVERIFY2(!loaderBody.isEmpty(), "locked patch writer helper was not found");
 	QVERIFY(!loaderBody.contains("emulatorMutex.lock()"));
 	QVERIFY(!loaderBody.contains("QMutexLocker"));
+}
+
+void PluginPortsMigrationTest::gigPatchDialogPreviewsSelectedProgram()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this build");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* library = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	library->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library->load(), qPrintable(library->errorString()));
+	m_libraries.push_back(library);
+	auto entry = reinterpret_cast<MainFn>(library->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("gigplayer");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+	partc::applyInstrumentTestSettings(*instrument, "gigplayer");
+	auto* bankModel = instrument->childModel("bank");
+	auto* patchModel = instrument->childModel("patch");
+	QVERIFY(bankModel != nullptr);
+	QVERIFY(patchModel != nullptr);
+	const int originalBank = bankModel->value<int>();
+	const int originalPatch = patchModel->value<int>();
+	const int previewPatch = originalPatch == 127 ? 126 : originalPatch + 1;
+
+	QWidget viewWindow;
+	QWidget viewContainer{&viewWindow};
+	std::unique_ptr<lmms::gui::PluginView> view{instrument->createView(&viewContainer)};
+	QVERIFY(view != nullptr);
+	QAbstractButton* patchButton = nullptr;
+	for (auto* button : view->findChildren<QAbstractButton*>())
+	{
+		if (button->toolTip().contains("Choose patch", Qt::CaseInsensitive))
+		{
+			patchButton = button;
+			break;
+		}
+	}
+	QVERIFY(patchButton != nullptr);
+	QVERIFY(patchButton->isEnabled());
+
+	bool dialogHandled = false;
+	bool previewApplied = false;
+	QTimer::singleShot(0, view.get(), [&] {
+		auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+		if (dialog == nullptr)
+		{
+			return;
+		}
+		auto* programList = dialog->findChild<QTreeWidget*>("m_progListView");
+		if (programList != nullptr)
+		{
+			auto* item = new QTreeWidgetItem{programList};
+			item->setText(0, QString::number(previewPatch));
+			item->setText(1, QStringLiteral("Preview probe"));
+			programList->setCurrentItem(item);
+			previewApplied = patchModel->value<int>() == previewPatch;
+		}
+		dialogHandled = true;
+		dialog->reject();
+	});
+	viewWindow.show();
+	viewContainer.show();
+	view->show();
+	QTest::mouseClick(patchButton, Qt::LeftButton);
+	QVERIFY(dialogHandled);
+	QVERIFY2(previewApplied, "selecting a GIG program did not preview it through the instrument models");
+	QCOMPARE(bankModel->value<int>(), originalBank);
+	QCOMPARE(patchModel->value<int>(), originalPatch);
+
+	view.reset();
+	delete instrument;
+#endif
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)
