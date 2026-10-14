@@ -15,6 +15,8 @@
 #                (Linux only: interposes malloc/calloc/realloc/free with ld
 #                --wrap and replaces global operator new/delete).
 
+include(CTest)
+
 SET(NEURALAMP_ENGINE_SOURCES
 	"${CMAKE_CURRENT_SOURCE_DIR}/../nam/NamModel.cpp"
 	"${CMAKE_CURRENT_SOURCE_DIR}/../nam/NamModelLoader.cpp"
@@ -45,6 +47,24 @@ TARGET_INCLUDE_DIRECTORIES(nam_harness PRIVATE ${NEURALAMP_TEST_INCLUDES})
 TARGET_COMPILE_FEATURES(nam_harness PRIVATE cxx_std_20)
 TARGET_COMPILE_OPTIONS(nam_harness PRIVATE ${NEURALAMP_ENGINE_OPTIONS})
 TARGET_LINK_LIBRARIES(nam_harness PRIVATE ${NEURALAMP_M_LIB} ${CMAKE_DL_LIBS})
+
+# Keep the cases beside their harness and mirror them into the main test tree,
+# which is where the project's targeted CTest command runs.
+SET(NAM_LOADER_TEST_CASES
+	valid
+	dilation-zero
+	dilation-negative
+	dilation-overflow
+	receptive-total-overflow
+	channels-zero
+	bottleneck-zero
+	head-size-zero
+)
+SET_PROPERTY(GLOBAL PROPERTY ZENE_NAM_LOADER_TEST_CASES "${NAM_LOADER_TEST_CASES}")
+FOREACH(NAM_LOADER_TEST_CASE IN LISTS NAM_LOADER_TEST_CASES)
+	ADD_TEST(NAME "NamLoaderTest_${NAM_LOADER_TEST_CASE}"
+		COMMAND nam_harness --test-loader-config "${NAM_LOADER_TEST_CASE}")
+ENDFOREACH()
 
 # Stage-level CPU profile of the engine. NAM_PROFILE_LAYERS is defined for this
 # target only: it turns the NAM_PROF_* hooks in NamModel.cpp into per-stage

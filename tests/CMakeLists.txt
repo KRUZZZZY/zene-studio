@@ -5263,3 +5263,13 @@ target_compile_definitions(LadspaChannelCountsTest PRIVATE
 	LADSPA_CHANNEL_FIXTURE_PATH="$<TARGET_FILE:ladspa_channel_count_fixture>"
 )
 add_dependencies(LadspaChannelCountsTest ladspa_channel_count_fixture)
+
+# The NAM engine's local CTest registrations live with its headless harness.
+# Mirror those cases here so ctest launched from build/tests discovers them.
+get_property(NAM_LOADER_TEST_CASES GLOBAL PROPERTY ZENE_NAM_LOADER_TEST_CASES)
+if(TARGET nam_harness AND NAM_LOADER_TEST_CASES)
+	foreach(NAM_LOADER_TEST_CASE IN LISTS NAM_LOADER_TEST_CASES)
+		add_test(NAME "NamLoaderTest_${NAM_LOADER_TEST_CASE}"
+			COMMAND $<TARGET_FILE:nam_harness> --test-loader-config "${NAM_LOADER_TEST_CASE}")
+	endforeach()
+endif()

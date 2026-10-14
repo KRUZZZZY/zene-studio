@@ -39,7 +39,9 @@
 #include <json.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 
 #include "NamTanh.h"
@@ -164,6 +166,7 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 			throw ParseError("config has no layers");
 		}
 
+		std::int64_t parsedReceptiveField = 0;
 		for (const json& arrayConfig : config["layers"])
 		{
 			if (!arrayConfig.is_object())
@@ -263,13 +266,35 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 				{
 					throw ParseError("invalid kernel size");
 				}
+				const int dilation = dilations[i].get<int>();
+				if (dilation <= 0)
+				{
+					throw ParseError("invalid dilation");
+				}
+				const std::int64_t receptiveField =
+					static_cast<std::int64_t>(kernelSizes[i] - 1) * dilation;
+				if (receptiveField > std::numeric_limits<int>::max() - NamModel::kMaxBlock)
+				{
+					throw ParseError("layer receptive field exceeds supported range");
+				}
+				const std::int64_t maxTotalReceptiveField =
+					std::numeric_limits<int>::max() - 1;
+				if (receptiveField > maxTotalReceptiveField - parsedReceptiveField)
+				{
+					throw ParseError("model receptive field exceeds supported range");
+				}
+				parsedReceptiveField += receptiveField;
 				LayerSpec layer;
 				layer.channels = channels;
 				layer.bottleneck = bottleneck;
 				layer.kernelSize = kernelSizes[i];
-				layer.dilation = dilations[i].get<int>();
+				layer.dilation = dilation;
 				layer.hasOneByOne = layer1x1Active;
 				array.layers.push_back(layer);
+			}
+			if (array.inputSize <= 0 || array.headSize <= 0 || channels <= 0 || bottleneck <= 0)
+			{
+				throw ParseError("layer dimensions must be positive");
 			}
 
 			spec.arrays.push_back(std::move(array));

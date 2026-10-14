@@ -23,6 +23,7 @@
 #include "nam/NamModel.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -30,6 +31,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
+#include <fstream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -301,11 +305,117 @@ bool readWav(const std::string& path, std::vector<float>& out, double* sampleRat
 	return false;
 }
 
+struct LoaderTestConfig
+{
+	const char* name;
+	int channels;
+	int bottleneck;
+	int headSize;
+	int dilation;
+	int kernelSize;
+	int layerCount;
+	bool expectRejection;
+};
+
+const LoaderTestConfig* loaderTestConfigFor(const std::string& name)
+{
+	static const std::array<LoaderTestConfig, 8> configs{{
+		{"valid", 1, 1, 1, 1, 3, 1, false},
+		{"dilation-zero", 1, 1, 1, 0, 3, 1, true},
+		{"dilation-negative", 1, 1, 1, -1, 3, 1, true},
+		{"dilation-overflow", 1, 1, 1, std::numeric_limits<int>::max(), 3, 1, true},
+		{"receptive-total-overflow", 0, 0, 1,
+			std::numeric_limits<int>::max() / 2 + 1, 2, 2, true},
+		{"channels-zero", 0, 1, 1, 1, 3, 1, true},
+		{"bottleneck-zero", 1, 0, 1, 1, 3, 1, true},
+		{"head-size-zero", 1, 1, 0, 1, 3, 1, true},
+	}};
+	for (const LoaderTestConfig& config : configs)
+	{
+		if (name == config.name) { return &config; }
+	}
+	return nullptr;
+}
+
+std::size_t loaderTestWeightCount(const LoaderTestConfig& config)
+{
+	const std::size_t c = static_cast<std::size_t>(config.channels);
+	const std::size_t b = static_cast<std::size_t>(config.bottleneck);
+	const std::size_t h = static_cast<std::size_t>(config.headSize);
+	const std::size_t k = static_cast<std::size_t>(config.kernelSize);
+	const std::size_t layers = static_cast<std::size_t>(config.layerCount);
+	const std::size_t layerWeights = k * c * b + 2 * b + c * b + c;
+	return c + layers * layerWeights + h * b + 1;
+}
+
+bool writeLoaderTestModel(const std::filesystem::path& path, const LoaderTestConfig& config)
+{
+	std::ofstream file(path);
+	if (!file) { return false; }
+	file << "{\"architecture\":\"WaveNet\",\"config\":{\"layers\":[{"
+		"\"input_size\":1,\"condition_size\":1,\"head_size\":" << config.headSize <<
+		",\"head_bias\":false,\"channels\":" << config.channels <<
+		",\"bottleneck\":" << config.bottleneck << ",\"kernel_size\":" << config.kernelSize <<
+		",\"dilations\":[";
+	for (int i = 0; i < config.layerCount; ++i)
+	{
+		if (i != 0) { file << ','; }
+		file << config.dilation;
+	}
+	file << "]}]},\"weights\":[";
+	for (std::size_t i = 0; i < loaderTestWeightCount(config); ++i)
+	{
+		if (i != 0) { file << ','; }
+		file << "0.1";
+	}
+	file << "]}";
+	return static_cast<bool>(file);
+}
+
+int testLoaderConfig(const std::string& testCase)
+{
+	const LoaderTestConfig* config = loaderTestConfigFor(testCase);
+	if (config == nullptr)
+	{
+		std::fprintf(stderr, "FAIL: unknown loader test case %s\n", testCase.c_str());
+		return 2;
+	}
+	const std::string suffix = std::to_string(
+		std::chrono::steady_clock::now().time_since_epoch().count());
+	const std::filesystem::path path = std::filesystem::temp_directory_path() /
+		("zene-nam-loader-" + suffix + ".nam");
+	if (!writeLoaderTestModel(path, *config))
+	{
+		std::fprintf(stderr, "FAIL: could not write loader test model\n");
+		return 2;
+	}
+
+	std::string error;
+	auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+	std::error_code removeError;
+	std::filesystem::remove(path, removeError);
+	const bool unexpected = config->expectRejection ? (model || error.empty()) :
+		(!model || !error.empty());
+	if (unexpected)
+	{
+		std::fprintf(stderr, "FAIL: unexpected loader result for config %s\n", testCase.c_str());
+		return 1;
+	}
+	std::printf("PASS: loader %s %s config\n", config->expectRejection ? "rejects" : "accepts",
+		testCase.c_str());
+	return 0;
+}
+
 }  // namespace
 
 
 int main(int argc, char** argv)
 {
+	if (argc == 3 && std::strcmp(argv[1], "--test-loader-config") == 0)
+	{
+		return testLoaderConfig(argv[2]);
+	}
+
 	Options opt;
 	std::vector<std::string> positional;
 
