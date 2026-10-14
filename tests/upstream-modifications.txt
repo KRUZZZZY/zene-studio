@@ -2155,3 +2155,5 @@ plugins/Nes/Nes.cpp	cluster new-p9-321: held NES voices recalculate channel wave
 plugins/Nes/Nes.h	cluster new-p9-321: store each active NES voice's last coarse-detune multipliers for held-note retuning; regression PluginPortsMigrationTest::nesCoarseDetuneRetunesHeldNote.
 plugins/OpulenZ/OpulenZ.cpp	new-p9-327: serialize the full model-driven emulator patch update with MIDI and render register access; regression PluginPortsMigrationTest::opulenzUpdatePatchLocksEmulatorForWholeUpdate.
 plugins/OpulenZ/OpulenZ.h	new-p9-327: declare the mutex-free patch writer used inside updatePatch's single lock; regression PluginPortsMigrationTest::opulenzUpdatePatchLocksEmulatorForWholeUpdate.
+include/Piano.h	cluster new-p9-339: isKeyPressed() returns false for keys outside the MIDI range; regression PianoRollBenchmarkTest::invalidKeysAreSafe.
+src/core/Piano.cpp	cluster new-p9-339: isBlackKey() and isWhiteKey() safely reject keys outside the MIDI range; regression PianoRollBenchmarkTest::invalidKeysAreSafe.
