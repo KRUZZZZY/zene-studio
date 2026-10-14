@@ -2162,3 +2162,4 @@ plugins/OpulenZ/OpulenZ.h	new-p9-327: declare the mutex-free patch writer used i
 include/Piano.h	cluster new-p9-339: isKeyPressed() returns false for keys outside the MIDI range; regression PianoRollBenchmarkTest::invalidKeysAreSafe.
 src/core/Piano.cpp	cluster new-p9-339: isBlackKey() and isWhiteKey() safely reject keys outside the MIDI range; regression PianoRollBenchmarkTest::invalidKeysAreSafe.
 plugins/Sf2Player/PatchesDialog.cpp	new-p9-345: require a selected visible program and clear program state when filtering removes the row; covered by PluginPortsMigrationTest::sf2DialogRejectsAFilteredOutProgram.
+plugins/Patman/Patman.cpp	cluster new-p9-352: parse a GF1 patch into temporary samples and replace the active patch only after the full file succeeds; regression ControlDeviceCatalogueTest::aTruncatedPatchKeepsThePreviouslyLoadedSound.

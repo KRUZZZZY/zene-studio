@@ -27,10 +27,15 @@
 
 #include <algorithm>
 #include <memory>
+#include <cmath>
+#include <span>
+#include <vector>
 
 #include <QFileInfo>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QTemporaryDir>
 
 #include "ConfigManager.h"
 #include "ControlDeviceSupport.h"
@@ -42,6 +47,8 @@
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "lmmsconfig.h"
+#include "Note.h"
+#include "NotePlayHandle.h"
 #include "Plugin.h"
 #include "PluginFactory.h"
 #include "Song.h"
@@ -100,6 +107,56 @@ QJsonObject listedDevice(const QString& format, const QString& name)
 
 } // namespace
 
+namespace
+{
+
+void writeLittleEndian32(QByteArray& data, int offset, quint32 value)
+{
+	for (int byte = 0; byte < 4; ++byte)
+	{
+		data[offset + byte] = static_cast<char>(value >> (byte * 8));
+	}
+}
+
+void appendSample(QByteArray& patch, quint32 declaredSize, const QByteArray& payload,
+	quint32 rootFrequency, char mode)
+{
+	QByteArray header(96, '\0');
+	writeLittleEndian32(header, 8, declaredSize);
+	writeLittleEndian32(header, 12, 0);
+	writeLittleEndian32(header, 16, 2);
+	header[20] = static_cast<char>(0x22);
+	header[21] = static_cast<char>(0x56);
+	writeLittleEndian32(header, 30, rootFrequency);
+	header[55] = mode;
+	patch.append(header);
+	patch.append(payload);
+}
+
+QByteArray makePatmanPatch(bool truncateSecondSample, char firstSampleValue)
+{
+	QByteArray patch(239, '\0');
+	patch.replace(0, 22, QByteArray("GF1PATCH110\0ID#000002", 22));
+	patch[82] = 1;
+	patch[151] = 1;
+	patch[198] = 2;
+	appendSample(patch, 2, QByteArray(2, firstSampleValue), 440000, 4);
+	appendSample(patch, 2, truncateSecondSample ? QByteArray("c", 1) : QByteArray("cd", 2), 880000, 4);
+	return patch;
+}
+
+std::vector<SampleFrame> renderPatmanNote(InstrumentTrack& track)
+{
+	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+	Note note(TimePos::fromFrames(frames * 8, Engine::framesPerTick()), TimePos(0), DefaultKey);
+	NotePlayHandle handle(&track, 0, frames * 8, note, nullptr, -1, NotePlayHandle::Origin::MidiClip);
+	std::vector<SampleFrame> output(frames, SampleFrame(0.f, 0.f));
+	track.instrument()->playNote(&handle, std::span<SampleFrame>(output));
+	return output;
+}
+
+} // namespace
+
 //! The catalogue is what plugin.list returns and what every dev-<n> id indexes
 //! into, so its shape and its order are part of the agent surface's contract.
 //!
@@ -112,6 +169,38 @@ class ControlDeviceCatalogueTest : public QObject
 	Q_OBJECT
 
 private slots:
+
+	//! A truncated later sample must not replace the active patch with samples parsed before the error.
+	void aTruncatedPatchKeepsThePreviouslyLoadedSound()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		QFile validFile(directory.filePath(QStringLiteral("valid.pat")));
+		QVERIFY(validFile.open(QIODevice::WriteOnly));
+		const QByteArray validPatch = makePatmanPatch(false, 64);
+		QCOMPARE(validFile.write(validPatch), static_cast<qint64>(validPatch.size()));
+		validFile.close();
+		QFile truncatedFile(directory.filePath(QStringLiteral("truncated.pat")));
+		QVERIFY(truncatedFile.open(QIODevice::WriteOnly));
+		const QByteArray truncatedPatch = makePatmanPatch(true, -64);
+		QCOMPARE(truncatedFile.write(truncatedPatch), static_cast<qint64>(truncatedPatch.size()));
+		truncatedFile.close();
+
+		QVERIFY2(!getPluginFactory()->pluginInfo("patman").isNull(), "Patman plugin is unavailable");
+		auto* track = new InstrumentTrack(Engine::getSong());
+		Instrument* baseInstrument = track->loadInstrument(QStringLiteral("patman"));
+		QVERIFY(baseInstrument != nullptr);
+		QVERIFY(QMetaObject::invokeMethod(baseInstrument, "setFile", Qt::DirectConnection,
+			Q_ARG(QString, validFile.fileName()), Q_ARG(bool, false)));
+		NotePlayHandleManager::init();
+		const std::vector<SampleFrame> previousSound = renderPatmanNote(*track);
+		QVERIFY(previousSound[4][0] > 0.1f);
+		QVERIFY(QMetaObject::invokeMethod(baseInstrument, "setFile", Qt::DirectConnection,
+			Q_ARG(QString, truncatedFile.fileName()), Q_ARG(bool, false)));
+		const std::vector<SampleFrame> currentSound = renderPatmanNote(*track);
+		QVERIFY2(std::abs(currentSound[4][0] - previousSound[4][0]) < 1e-6f,
+			"the truncated patch replaced the previously loaded sample");
+	}
 
 	void initTestCase()
 	{
