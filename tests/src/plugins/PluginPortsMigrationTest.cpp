@@ -64,6 +64,7 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QDialog>
+#include <QDomDocument>
 #include <QLibrary>
 #include <memory>
 #include <QPushButton>
@@ -142,6 +143,7 @@ void operator delete[](void* allocation, std::size_t) noexcept
 #include "RmsHelper.h"
 #include "PluginView.h"
 #include "../../../plugins/Sf2Player/PatchPresetIteration.h"
+#include "../../../plugins/Xpressive/Xpressive.h"
 
 namespace
 {
@@ -641,6 +643,7 @@ private slots:
 	void ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange();
 	void typedDecodeRejectsIncompleteElement();
 	void basicFiltersCannotBeCopied();
+	void xpressiveSelectionRejectsUnavailableGraphs();
 	void migratedPluginsPreserveBehaviour();
 	void monstroLfoAttackRampsWithinPeriod();
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
@@ -1198,6 +1201,43 @@ void PluginPortsMigrationTest::sf2PatchListKeepsEarlierDuplicateAndLaterUniquePr
 	QCOMPARE(programs.size(), std::size_t{2});
 	QCOMPARE(programs.at(5), QStringLiteral("first soundfont"));
 	QVERIFY(programs.contains(7));
+}
+
+void PluginPortsMigrationTest::xpressiveSelectionRejectsUnavailableGraphs()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_xpressive)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("xpressive");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+	auto* xpressive = static_cast<lmms::Xpressive*>(instrument);
+
+	for (const int selection : {5, 6})
+	{
+		xpressive->selectedGraph().setValue(selection);
+		QCOMPARE(xpressive->selectedGraph().value(), 4);
+		QDomDocument document;
+		auto settings = document.createElement("xpressive");
+		settings.setAttribute("selectedGraph", selection);
+		settings.setAttribute("id", QString::number(xpressive->selectedGraph().id()));
+		document.appendChild(settings);
+		xpressive->selectedGraph().loadSettings(settings, "selectedGraph");
+		QCOMPARE(xpressive->selectedGraph().value(), 4);
+	}
+
+	delete instrument;
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
