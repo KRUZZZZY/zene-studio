@@ -248,11 +248,12 @@ public:
 	Clip* takeAt(const std::vector<Clip*>& clips, int tick, int* laneIndex = nullptr) const;
 
 	void clear();
-	bool isEmpty() const
-	{
-		return m_lanes.empty() && m_segments.empty() && m_takeGroups.empty()
-			&& !playAllTakes() && m_nextLaneIndex == 0;
-	}
+	//! No lanes, no segments, no take groups and no play-all flag. Retired lane identities do not count: a
+	//! track whose lanes were all removed shows no take-lane UI.
+	bool isEmpty() const { return m_lanes.empty() && m_segments.empty() && m_takeGroups.empty() && !playAllTakes(); }
+	//! True when saveSettings() has something to write: any state, or the high-water mark of retired lane
+	//! identities (clips may still carry the tag of a removed lane, so the mark must survive save/load).
+	bool hasPersistentState() const { return !isEmpty() || m_nextLaneIndex > 0; }
 
 	/*! R3.1, audition: while a lane is auditioned its takes sound WHOLE and every
 	 *  other lane of the track is silent - the composite is set aside, not

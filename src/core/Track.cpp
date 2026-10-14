@@ -593,7 +593,7 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	//    disk through this branch at all (measured, 2026-09-13).
 	const Song* song = Engine::getSong();
 	const bool savingProjectFile = song != nullptr && song->isSavingProject();
-	if (!m_takeLanes.isEmpty() && !savingProjectFile)
+	if (m_takeLanes.hasPersistentState() && !savingProjectFile)
 	{
 		QDomElement lanesElement = doc.createElement(QStringLiteral("takelanes"));
 		m_takeLanes.saveSettings(doc, lanesElement);

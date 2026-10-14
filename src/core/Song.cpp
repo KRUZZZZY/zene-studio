@@ -1997,7 +1997,7 @@ static void writeLanesSection( DataFile & dataFile, const TrackContainer::TrackL
 	bool any = false;
 	for( const Track * track : tracks )
 	{
-		if( ! track->takeLanes().isEmpty() ) { any = true; break; }
+		if( track->takeLanes().hasPersistentState() ) { any = true; break; }
 	}
 	if( ! any ) { return; }
 
@@ -2014,7 +2014,7 @@ static void writeLanesSection( DataFile & dataFile, const TrackContainer::TrackL
 	section.setAttribute( QStringLiteral( "v" ), QStringLiteral( "1" ) );
 	for( Track * track : tracks )
 	{
-		if( track->takeLanes().isEmpty() ) { continue; }
+		if( ! track->takeLanes().hasPersistentState() ) { continue; }
 		QDomElement group = document.createElement( QStringLiteral( "z:tracklanes" ) );
 		group.setAttribute( QStringLiteral( "track" ), track->id() );
 		track->takeLanes().saveSettings( document, group );
