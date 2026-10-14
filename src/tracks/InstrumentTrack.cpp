@@ -787,7 +787,7 @@ int InstrumentTrack::masterKey( int _midi_key ) const
 {
 
 	int key = baseNote();
-	return std::clamp(_midi_key - (key - DefaultKey), 0, NumKeys);
+	return std::clamp(_midi_key - (key - DefaultKey), 0, NumKeys - 1);
 }
 
 
