@@ -510,6 +510,7 @@ set(LMMS_TESTS
 	# and the read-only policy: a partial session refuses to save unless every writer
 	# is told, and a REFUSED load is not a partial one.
 	src/core/PartialLoadTest.cpp
+	src/plugins/PatmanLoadTest.cpp
 	src/core/ProjectOpenIntegrityTest.cpp
 	src/core/ProjectRecoveryTest.cpp
 	src/core/ProjectVersionTest.cpp
@@ -1329,6 +1330,20 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	)
 
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
+	if(LMMS_TEST_NAME STREQUAL "PatmanLoadTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Patman/Patman.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Patman/Patman.h
+		)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Patman
+			${CMAKE_BINARY_DIR}/plugins/Patman
+		)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=patman)
+		add_dependencies(${LMMS_TEST_NAME} patman)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
 	if(LMMS_TEST_NAME STREQUAL "ControlRenderOutputPathTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
