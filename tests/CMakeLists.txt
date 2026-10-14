@@ -899,6 +899,7 @@ set(LMMS_TESTS
 	# 0.5.0 themes 10/17: the List button on every canvas with an item list, and View > Screen Reader
 	# Announcements, in the real application
 	src/gui/ItemListButtonsTest.cpp
+	src/gui/RowTableViewTest.cpp
 	# 0.5.0 wave 3 theme 11/15: lane scales and readouts; the Sample Editor's range fields
 	src/gui/LaneReadoutTest.cpp
 	src/gui/SampleEditorDialogTest.cpp
