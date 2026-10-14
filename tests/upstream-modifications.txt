@@ -2214,3 +2214,4 @@ tests/src/core/ArrayVectorTest.cpp	cluster new-p9-553: add regressions for overs
 include/AudioBufferView.h	new-p9-550: InterleavedFrameIterator subtraction returns frame distance by dividing sample-pointer distance by channel count, preserving signed distances and handling zero-channel iterators; covered by AudioResamplerRatioTest
 plugins/VstEffect/VstEffectControls.cpp	2026-10-11 new-p9-542: preserve the loadSettings path while exposing a test-only dump provider and deleting replaced parameter models; VstEffectControlsTest invokes loadSettings twice and checks QObject child count.
 tests/CMakeLists.txt	2026-10-11 new-p9-542: compile VstEffectControls and its dialog into VstEffectControlsTest so the test exercises the real loadSettings implementation with its test-only dump provider.
+include/BasicFilters.h	cluster new-p9-590: use second-formant band-pass history for its first-stage resonance feedback; covered by formantSecondStageUsesItsOwnHistory.
