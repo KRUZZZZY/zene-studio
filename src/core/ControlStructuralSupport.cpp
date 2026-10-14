@@ -572,9 +572,11 @@ void journalEffectLoad(EffectChain* chain, Effect* effect, const ControlDeviceEn
 		[chainOf, made, slot, plugin]() { removeRecordedEffect(chainOf(), *made, slot, plugin); },
 		[chainOf, made, entry, slot]() {
 			EffectChain* live = chainOf();
-			ControlResult ignored;
-			*made = live != nullptr ? controlInstantiateDevice(entry, live, &ignored) : nullptr;
-			if (!made->isNull()) { placeEffect(live, made->data(), slot); }
+			ControlResult error;
+			Effect* restored = live != nullptr ? controlInstantiateDevice(entry, live, &error) : nullptr;
+			*made = restored;
+			if (live != nullptr && restored == nullptr) { restoreFailed(error.errorKind, error.errorMessage); }
+			if (restored != nullptr) { placeEffect(live, restored, slot); }
 		});
 }
 
