@@ -53,6 +53,7 @@
 #include <cmath>
 #include <cfenv>
 
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
@@ -66,6 +67,7 @@
 #include "ProjectJournal.h"
 #include "ProjectKey.h"
 #include "ReversibilityTestSupport.h"
+#include "Scale.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -191,6 +193,41 @@ private slots:
 	{
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	void scaleLoadIgnoresUnexpectedChildrenAndMalformedIntervals()
+	{
+		QDomDocument document;
+		QDomElement scaleElement = document.createElement(QStringLiteral("scale"));
+		document.appendChild(scaleElement);
+
+		QDomElement interval = document.createElement(QStringLiteral("interval"));
+		interval.setAttribute(QStringLiteral("num"), QStringLiteral("3"));
+		interval.setAttribute(QStringLiteral("den"), QStringLiteral("2"));
+		scaleElement.appendChild(interval);
+		QDomElement centsInterval = document.createElement(QStringLiteral("interval"));
+		centsInterval.setAttribute(QStringLiteral("cents"), QStringLiteral("100"));
+		scaleElement.appendChild(centsInterval);
+		scaleElement.appendChild(document.createComment(QStringLiteral("ignored")));
+		scaleElement.appendChild(document.createTextNode(QStringLiteral("ignored")));
+		scaleElement.appendChild(document.createElement(QStringLiteral("metadata")));
+		scaleElement.appendChild(document.createElement(QStringLiteral("interval")));
+		QDomElement incompleteInterval = document.createElement(QStringLiteral("interval"));
+		incompleteInterval.setAttribute(QStringLiteral("num"), QStringLiteral("3"));
+		scaleElement.appendChild(incompleteInterval);
+		QDomElement invalidCentsInterval = document.createElement(QStringLiteral("interval"));
+		invalidCentsInterval.setAttribute(QStringLiteral("cents"), QStringLiteral("invalid"));
+		scaleElement.appendChild(invalidCentsInterval);
+		QDomElement nonFiniteCentsInterval = document.createElement(QStringLiteral("interval"));
+		nonFiniteCentsInterval.setAttribute(QStringLiteral("cents"), QStringLiteral("nan"));
+		scaleElement.appendChild(nonFiniteCentsInterval);
+
+		Scale scale;
+		scale.loadSettings(scaleElement);
+
+		QCOMPARE(static_cast<int>(scale.getIntervals().size()), 2);
+		QCOMPARE(scale.getIntervals().front().getRatio(), 1.5f);
+		QCOMPARE(scale.getIntervals().at(1).getRatio(), Interval(100.0f).getRatio());
 	}
 
 	//! W1: every id is declared, typed, and classified - and the classes are the ones
