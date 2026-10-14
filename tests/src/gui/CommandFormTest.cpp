@@ -47,6 +47,7 @@
 #include <QToolButton>
 
 #include "CommandForm.h"
+#include "CommandFormFields.h"
 #include "CommandMetadata.h"
 #include "CommandListDialog.h"
 #include "ControlRegistry.h"
@@ -211,6 +212,37 @@ private slots:
 		QVERIFY2(form.collect(&args, &error), qPrintable(error));
 		QCOMPARE(args.value(QStringLiteral("count")).toInt(), 3);
 		QVERIFY(!args.contains(QStringLiteral("ratio")));
+	}
+
+	void stringFieldsPreserveEdgeWhitespace()
+	{
+		QWidget parent;
+		const QJsonObject spec = prop("string");
+		const auto editor = formfield::makeEditor(&parent, QStringLiteral("formtest.echo"), QStringLiteral("name"), spec, false);
+		auto* line = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(line != nullptr);
+		line->setText(QStringLiteral("  take name  "));
+
+		QJsonValue value;
+		QString error;
+		QVERIFY2(formfield::readValue(line, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toString(), QStringLiteral("  take name  "));
+	}
+
+	void pathFieldsPreserveEdgeWhitespace()
+	{
+		QWidget parent;
+		QJsonObject spec = prop("string");
+		spec.insert(QStringLiteral("path"), QStringLiteral("input"));
+		const auto editor = formfield::makeEditor(&parent, QStringLiteral("formtest.editors"), QStringLiteral("file"), spec, false);
+		auto* line = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(line != nullptr);
+		line->setText(QStringLiteral(" /tmp/ take name .wav "));
+
+		QJsonValue value;
+		QString error;
+		QVERIFY2(formfield::readValue(line, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toString(), QStringLiteral(" /tmp/ take name .wav "));
 	}
 
 	void aMissingRequiredOrMistypedFieldIsRefusedBeforeRunning()

@@ -349,14 +349,15 @@ bool readTyped(const QString& text, const QJsonObject& spec, QJsonValue* value, 
 	return false;
 }
 
-QString editorText(const QWidget* editor)
+QString editorText(const QWidget* editor, const QJsonObject& spec)
 {
 	if (const auto* box = qobject_cast<const QComboBox*>(editor)) { return box->currentText().trimmed(); }
 	if (const auto* keys = qobject_cast<const QKeySequenceEdit*>(editor))
 	{
 		return keys->keySequence().toString(QKeySequence::PortableText);
 	}
-	return static_cast<const QLineEdit*>(editor)->text().trimmed();
+	const QString text = static_cast<const QLineEdit*>(editor)->text();
+	return schemaType(spec) == QStringLiteral("string") ? text : text.trimmed();
 }
 
 //! A picked reference: the chosen entry's id, or the text as typed (an id the list does not hold).
@@ -455,7 +456,7 @@ bool readValue(const QWidget* editor, const QJsonObject& spec, QJsonValue* value
 		if (data.isValid()) { *value = data.toJsonValue(); }
 		return true;
 	}
-	const QString text = editorText(editor);
+	const QString text = editorText(editor, spec);
 	return text.isEmpty() || readText(editor, text, spec, value, error);
 }
 
