@@ -56,6 +56,7 @@
 
 #include "ControlProjectAssets.h"
 
+#include <QByteArrayView>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -503,14 +504,16 @@ QString digestOf(const ProjectAssetScan& scan)
 		QCryptographicHash::Sha256).toHex());
 }
 
-//! Hashes one present reference. An over-cap or unreadable file is a REPORTED
+} // namespace
+
+//! Hashes a scanned reference. An over-cap or unreadable file is a REPORTED
 //! state, not a failed command: the caller sees hashed=false and the reason.
-void hashOneReference(ProjectAssetReference* ref)
+void projectassets::hashReference(ProjectAssetReference* ref, qint64 byteCap)
 {
-	if (ref->bytes > MaxProjectAssetHashBytes)
+	if (ref->bytes > byteCap)
 	{
 		ref->error = QStringLiteral("not hashed: %1 bytes is over the %2-byte cap")
-			.arg(ref->bytes).arg(MaxProjectAssetHashBytes);
+			.arg(ref->bytes).arg(byteCap);
 		return;
 	}
 	QFile file(ref->path);
@@ -520,16 +523,32 @@ void hashOneReference(ProjectAssetReference* ref)
 		return;
 	}
 	QCryptographicHash hasher(QCryptographicHash::Sha256);
-	if (!hasher.addData(&file))
+	char buffer[64 * 1024];
+	qint64 bytesRead = 0;
+	const qint64 bufferSize = static_cast<qint64>(sizeof(buffer));
+	for (;;)
 	{
-		ref->error = QStringLiteral("could not hash %1").arg(ref->path);
-		return;
+		const qint64 remaining = byteCap - bytesRead;
+		const qint64 request = remaining >= bufferSize ? bufferSize : remaining + 1;
+		const qint64 count = file.read(buffer, request);
+		if (count < 0)
+		{
+			ref->error = QStringLiteral("could not hash %1").arg(ref->path);
+			return;
+		}
+		if (count == 0) { break; }
+		if (count > remaining)
+		{
+			ref->error = QStringLiteral("not hashed: at least %1 bytes exceeds the %2-byte cap")
+				.arg(byteCap + 1).arg(byteCap);
+			return;
+		}
+		bytesRead += count;
+		hasher.addData(QByteArrayView(buffer, static_cast<qsizetype>(count)));
 	}
 	ref->sha256 = QString::fromLatin1(hasher.result().toHex());
 	ref->hashed = true;
 }
-
-} // namespace
 
 int ProjectAssetScan::missingCount() const
 {
@@ -601,7 +620,10 @@ bool controlHashProjectAssets(const QString& projectPath, ProjectAssetScan* out,
 	if (!controlScanProjectAssets(projectPath, out, error)) { return false; }
 	for (ProjectAssetReference& ref : out->references)
 	{
-		if (!ref.hashed && ref.exists) { hashOneReference(&ref); }
+		if (!ref.hashed && ref.exists)
+		{
+			projectassets::hashReference(&ref, MaxProjectAssetHashBytes);
+		}
 	}
 	out->digest = digestOf(*out);
 	return true;

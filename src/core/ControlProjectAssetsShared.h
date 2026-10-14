@@ -98,6 +98,9 @@ Resolution resolveAssetPath(const QString& projectDir, const QString& raw);
 void fillReference(const QDomElement& element, const AssetElement& spec, int index,
 	const QString& projectDir, ProjectAssetReference* ref);
 
+//! Hashes a scanned reference, refusing files whose observed size exceeds \a byteCap.
+void hashReference(ProjectAssetReference* ref, qint64 byteCap);
+
 //! Reads .mmp (XML) or .mmpz (qCompress'd XML) into \a document. False with a
 //! typed error for a missing, unreadable, mis-inflated or unparseable file.
 bool readProjectDocument(const QString& projectPath, QDomDocument* document, QString* format,
