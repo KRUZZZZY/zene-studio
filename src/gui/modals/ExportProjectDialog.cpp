@@ -242,12 +242,12 @@ void ExportProjectDialog::onFileFormatChanged(int index)
 		m_path = fileInfo.path() + QDir::separator() + fileInfo.completeBaseName() + extension;
 	}
 
-	// Remove and detach all rows after the file format row
+	// Remove all rows after the file format row and release the returned layout items.
 	while (m_fileFormatSettingsLayout->rowCount() > 1)
 	{
-		const auto& [label, field] = m_fileFormatSettingsLayout->takeRow(1);
-		label->widget()->setParent(nullptr);
-		field->widget()->setParent(nullptr);
+		const auto row = m_fileFormatSettingsLayout->takeRow(1);
+		delete row.labelItem;
+		delete row.fieldItem;
 	}
 
 	switch (static_cast<ProjectRenderer::ExportFileFormat>(index))

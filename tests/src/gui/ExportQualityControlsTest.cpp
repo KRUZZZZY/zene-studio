@@ -30,12 +30,16 @@
 #include <QtTest>
 
 #include <QComboBox>
+#include <QFormLayout>
+#include <QLabel>
+#include <QPointer>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ExportProjectDialog.h"
 #include "ExportRenderSettings.h"
 #include "OutputSettings.h"
+#include "ProjectRenderer.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -98,6 +102,49 @@ private slots:
 		// A second dialog opens on the selection, not on the defaults.
 		ExportProjectDialog again(QStringLiteral("/tmp/unused.wav"), ExportProjectDialog::Mode::ExportProject);
 		QCOMPARE(comboNamed(again, QStringLiteral("Resampling"))->currentData().toString(), QStringLiteral("sinc_best"));
+	}
+
+	void changingFormatKeepsDetachedWidgetsOwnedByDialog()
+	{
+		QPointer<QComboBox> compressionLevel;
+		{
+			ExportProjectDialog dialog(QStringLiteral("/tmp/unused.wav"), ExportProjectDialog::Mode::ExportProject);
+			QFormLayout* settingsLayout = nullptr;
+			for (QFormLayout* candidate : dialog.findChildren<QFormLayout*>())
+			{
+				const auto* label = qobject_cast<QLabel*>(candidate->itemAt(0, QFormLayout::LabelRole)->widget());
+				if (label != nullptr && label->text() == QStringLiteral("File format:"))
+				{
+					settingsLayout = candidate;
+					break;
+				}
+			}
+			QVERIFY(settingsLayout != nullptr);
+
+			auto* formatCombo = qobject_cast<QComboBox*>(settingsLayout->itemAt(0, QFormLayout::FieldRole)->widget());
+			QVERIFY(formatCombo != nullptr);
+			const auto flacIndex = formatCombo->findData(static_cast<int>(ProjectRenderer::ExportFileFormat::Flac));
+			QVERIFY(flacIndex >= 0);
+			formatCombo->setCurrentIndex(flacIndex);
+
+			for (auto row = 1; row < settingsLayout->rowCount(); ++row)
+			{
+				const auto* label = qobject_cast<QLabel*>(settingsLayout->itemAt(row, QFormLayout::LabelRole)->widget());
+				if (label != nullptr && label->text() == QStringLiteral("Compression level:"))
+				{
+					compressionLevel = qobject_cast<QComboBox*>(settingsLayout->itemAt(row, QFormLayout::FieldRole)->widget());
+					break;
+				}
+			}
+			QVERIFY(compressionLevel != nullptr);
+
+			const auto waveIndex = formatCombo->findData(static_cast<int>(ProjectRenderer::ExportFileFormat::Wave));
+			QVERIFY(waveIndex >= 0);
+			formatCombo->setCurrentIndex(waveIndex);
+			QVERIFY(compressionLevel != nullptr);
+		}
+
+		QVERIFY(compressionLevel.isNull());
 	}
 };
 
