@@ -3048,6 +3048,31 @@ set_tests_properties(GranularPitchShifterRealtimeTest PROPERTIES
 )
 lmms_add_coverage(GranularPitchShifterRealtimeTest)
 
+if(TARGET carlabase)
+	add_executable(CarlaParamFloatModelTest src/plugins/CarlaParamFloatModelTest.cpp)
+	add_test(NAME CarlaParamFloatModelTest COMMAND CarlaParamFloatModelTest)
+	set_tests_properties(CarlaParamFloatModelTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	target_include_directories(CarlaParamFloatModelTest PRIVATE
+		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source/includes
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source/utils
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source/backend
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase/CarlaConfig
+		${CMAKE_BINARY_DIR}/plugins/CarlaBase)
+	target_static_libraries(CarlaParamFloatModelTest PRIVATE lmmsobjs)
+	target_link_libraries(CarlaParamFloatModelTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY})
+	target_compile_features(CarlaParamFloatModelTest PRIVATE cxx_std_20)
+	target_compile_definitions(CarlaParamFloatModelTest PRIVATE
+		LMMS_TESTING
+		CARLA_HEADER_PATH="${CMAKE_SOURCE_DIR}/plugins/CarlaBase/Carla.h")
+	set_target_properties(CarlaParamFloatModelTest PROPERTIES ENABLE_EXPORTS ON)
+endif()
+
 # Native VST3 instrument fixture and its probe.
 #
 # Opt-in on purpose: cmake/modules/Vst3Sdk.cmake builds lmms_vst3_sdk whenever

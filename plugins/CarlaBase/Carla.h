@@ -160,7 +160,7 @@ public:
 private:
 	bool m_isOutput;
 	bool m_isEnabled;
-	uint8_t m_groupId;
+	uint8_t m_groupId{};
 	QString m_groupName;
 };
 
