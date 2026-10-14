@@ -86,16 +86,16 @@ void InstrumentTrack::decorateNoteHandle(NotePlayHandle* handle, const MidiClip*
 namespace
 {
 
-MidiEvent controllerEvent(const ControllerLane& lane, int value)
+MidiEvent controllerEvent(const ControllerLane& lane, int value, int channel)
 {
 	switch (lane.kind)
 	{
-	case ControllerKind::PitchBend: return MidiEvent(MidiPitchBend, 0, static_cast<int16_t>(value));
-	case ControllerKind::ChannelPressure: return MidiEvent(MidiChannelPressure, 0, static_cast<int16_t>(value));
-	case ControllerKind::ProgramChange: return MidiEvent(MidiProgramChange, 0, static_cast<int16_t>(value));
+	case ControllerKind::PitchBend: return MidiEvent(MidiPitchBend, static_cast<int8_t>(channel), static_cast<int16_t>(value));
+	case ControllerKind::ChannelPressure: return MidiEvent(MidiChannelPressure, static_cast<int8_t>(channel), static_cast<int16_t>(value));
+	case ControllerKind::ProgramChange: return MidiEvent(MidiProgramChange, static_cast<int8_t>(channel), static_cast<int16_t>(value));
 	case ControllerKind::ControlChange: break;
 	}
-	return MidiEvent(MidiControlChange, 0, static_cast<int16_t>(lane.controller), static_cast<int16_t>(value));
+	return MidiEvent(MidiControlChange, static_cast<int8_t>(channel), static_cast<int16_t>(lane.controller), static_cast<int16_t>(value));
 }
 
 } // namespace
@@ -127,7 +127,7 @@ void InstrumentTrack::playClipControllers(const MidiClip* clip, tick_t tick, f_c
 		lane.lastTick = tick;
 		if (!jumped && value == lane.lastSent) { continue; }
 		lane.lastSent = value;
-		processOutEvent(controllerEvent(lane, value), TimePos(tick), offset);
+		processOutEvent(controllerEvent(lane, value, midiPort()->realOutputChannel()), TimePos(tick), offset);
 	}
 }
 
