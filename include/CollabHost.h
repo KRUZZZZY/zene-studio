@@ -38,6 +38,7 @@
 #include <QList>
 #include <QObject>
 #include <QPair>
+#include <QSet>
 #include <QString>
 
 #include "CollabPolicy.h"
@@ -158,6 +159,7 @@ private:
 	std::unique_ptr<QTcpServer> m_server;
 	QHash<int, QByteArray> m_keys;
 	QHash<int, Peer> m_peers;
+	QSet<QSslSocket*> m_pendingSockets;
 	int m_pending = 0;
 	int m_nextPeerId = 0;
 	quint64 m_seq = 0;

@@ -33,6 +33,8 @@
 
 #include <QtTest>
 
+#include <array>
+
 #ifdef ZENE_HAVE_COLLAB
 
 #include <QFile>
@@ -341,6 +343,33 @@ private slots:
 		QTRY_COMPARE_WITH_TIMEOUT(raw.state(), QAbstractSocket::UnconnectedState, 15000);
 		QVERIFY(m_got.requests.isEmpty());
 		QCOMPARE(m_host->peerCount(), 0);
+	}
+
+	//! Stopping closes every pending handshake and leaves the restarted host able to admit a fresh peer.
+	void stoppingHostAbortsPendingHandshakes()
+	{
+		std::array<QTcpSocket, MaxPendingHandshakes + 1> sockets;
+		for (int i = 0; i < MaxPendingHandshakes; ++i)
+		{
+			sockets[static_cast<size_t>(i)].connectToHost(QHostAddress(QHostAddress::LocalHost), m_host->port());
+			QVERIFY(sockets[static_cast<size_t>(i)].waitForConnected(5000));
+		}
+		sockets[MaxPendingHandshakes].connectToHost(QHostAddress(QHostAddress::LocalHost), m_host->port());
+		QTRY_COMPARE_WITH_TIMEOUT(sockets[MaxPendingHandshakes].state(), QAbstractSocket::UnconnectedState, 5000);
+
+		m_host->stop();
+		for (int i = 0; i < MaxPendingHandshakes; ++i)
+		{
+			QTRY_COMPARE_WITH_TIMEOUT(sockets[static_cast<size_t>(i)].state(), QAbstractSocket::UnconnectedState, 5000);
+		}
+
+		QString error;
+		QVERIFY2(m_host->start(QHostAddress(QHostAddress::LocalHost), 0, &error), qPrintable(error));
+		CollabClient client;
+		wire(client);
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Restarted"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
+		QCOMPARE(m_host->peerCount(), 1);
 	}
 
 	//! The host's broadcast reaches the peer in order, with its arguments, after the snapshot.

@@ -2066,3 +2066,5 @@ src/core/Scale.cpp	Scale::loadSettings accepts only interval elements with compl
 tests/src/core/ControlNoteScaleVerbsTest.cpp	Regression loads valid ratio and cents intervals beside non-interval nodes and malformed interval elements, then checks that only valid intervals remain.
 tests/CMakeLists.txt	new-p8-264 regression: compile VST3 host sources into Vst3InstrumentIntegrationTest so it can release the loaded host through Vst3Instrument::vst3Plugin() and verify the unprepared output path.
 tests/src/gui/CommandFormTest.cpp	cluster new-p8-295: adds direct CommandFormFields regressions proving string and path editor values retain leading and trailing whitespace
+include/CollabHost.h	new-p8-304: track accepted pending handshake sockets so stop can invalidate callbacks and reset the pending count; regression CollabTransportTest::stoppingHostAbortsPendingHandshakes
+src/core/CollabHost.cpp	new-p8-304: abort tracked pending handshakes during stop and admit only sockets still pending in this host session; regression CollabTransportTest::stoppingHostAbortsPendingHandshakes

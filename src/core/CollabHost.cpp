@@ -145,6 +145,16 @@ void CollabHost::stop()
 	if (m_server) { m_server->close(); }
 	m_server.reset();
 	m_backlog.clear();
+	const QSet<QSslSocket*> pendingSockets = m_pendingSockets;
+	m_pendingSockets.clear();
+	m_pending = 0;
+	for (QSslSocket* socket : pendingSockets)
+	{
+		socket->setProperty(DoneProperty, true);
+		socket->disconnect(this);
+		socket->abort();
+		socket->deleteLater();
+	}
 	const QHash<int, Peer> peers = m_peers;
 	m_peers.clear();
 	for (const Peer& peer : peers)
@@ -185,6 +195,7 @@ void CollabHost::acceptDescriptor(qintptr descriptor)
 		return;
 	}
 	++m_pending;
+	m_pendingSockets.insert(socket);
 	socket->setSslConfiguration(pskConfiguration());
 	connect(socket, &QSslSocket::preSharedKeyAuthenticationRequired, this,
 		[this, socket](QSslPreSharedKeyAuthenticator* authenticator) { onPsk(socket, authenticator); });
@@ -210,7 +221,7 @@ void CollabHost::onHandshakeFailed(QSslSocket* socket)
 {
 	// Reached from errorOccurred and from the handshake timer; a socket that already became a peer, or was
 	// already counted, is left alone (its CollabLink reports its own close).
-	if (socket->isEncrypted() || socket->property(DoneProperty).toBool()) { return; }
+	if (socket->isEncrypted() || socket->property(DoneProperty).toBool() || !m_pendingSockets.remove(socket)) { return; }
 	socket->setProperty(DoneProperty, true);
 	--m_pending;
 	m_limiter.recordFailure(socket->peerAddress().toString(), nowMs());
@@ -221,6 +232,13 @@ void CollabHost::onHandshakeFailed(QSslSocket* socket)
 
 void CollabHost::onEncrypted(QSslSocket* socket)
 {
+	if (socket->property(DoneProperty).toBool() || !m_pendingSockets.remove(socket))
+	{
+		socket->disconnect(this);
+		socket->abort();
+		socket->deleteLater();
+		return;
+	}
 	socket->setProperty(DoneProperty, true);
 	--m_pending;
 	socket->disconnect(this);
