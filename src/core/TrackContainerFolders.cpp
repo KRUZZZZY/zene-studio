@@ -163,7 +163,13 @@ void TrackContainer::loadVisibilitySetState(const QDomElement& element)
 		for (const QString& id : setElement.attribute(QStringLiteral("tracks"))
 			.split(QLatin1Char(','), Qt::SkipEmptyParts))
 		{
-			set.trackIds.push_back(id.toInt());
+			// An unparseable token must NOT join the set as 0 - 0 is a valid track
+			// ID, so a silent toInt() would make the set claim a track the file
+			// never named (and applying it would show that track and hide others).
+			bool parsed = false;
+			const int trackId = id.toInt(&parsed);
+			if (!parsed) { continue; }
+			set.trackIds.push_back(trackId);
 		}
 		m_visibilitySets.append(set);
 	}
