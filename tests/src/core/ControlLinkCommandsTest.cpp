@@ -352,6 +352,11 @@ private slots:
 		QVERIFY(!LinkSyncEngine::decodePacket(QByteArray("not json at all"), &decoded));
 		QVERIFY(!LinkSyncEngine::decodePacket(QByteArray(), &decoded));
 		QVERIFY(!LinkSyncEngine::decodePacket(ours, nullptr));
+		QJsonObject outsideSignedClock = QJsonDocument::fromJson(ours).object();
+		outsideSignedClock.insert(QStringLiteral("sent_us"), 9223372036854775808.0);
+		QVERIFY2(!LinkSyncEngine::decodePacket(
+			QJsonDocument(outsideSignedClock).toJson(QJsonDocument::Compact), &decoded),
+			"a timestamp outside signed transit arithmetic was accepted");
 		QJsonObject foreign = QJsonDocument::fromJson(ours).object();
 		foreign.insert(QStringLiteral("model"), QStringLiteral("ableton-link"));
 		QVERIFY2(!LinkSyncEngine::decodePacket(QJsonDocument(foreign).toJson(QJsonDocument::Compact),
