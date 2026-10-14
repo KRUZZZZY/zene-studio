@@ -132,6 +132,7 @@ extern "C"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "QuadratureLfo.h"
 #include "SampleFrame.h"
 #include "Song.h"
 #include "../../../src/core/audio/OssSampleConversion.h"
@@ -323,6 +324,20 @@ private slots:
 		QCOMPARE(audio::oss::toPcmSample(-1.25f), std::int16_t{-32767});
 		QCOMPARE(audio::oss::toPcmSample(0.5f), std::int16_t{16383});
 		QCOMPARE(audio::oss::toPcmSample(std::numeric_limits<float>::quiet_NaN()), std::int16_t{0});
+	}
+
+	//! A sample-rate drop must keep an existing LFO frequency at or below the new Nyquist limit.
+	void quadratureLfoDoesNotExceedNyquistAfterSampleRateDrop()
+	{
+		QuadratureLfo lfo(48000);
+		lfo.setFrequency(20000.0);
+		lfo.setSampleRate(32000);
+		lfo.restart();
+		float left;
+		float right;
+		lfo.tick(&left, &right);
+		lfo.tick(&left, &right);
+		QVERIFY2(std::abs(left) < 1.0e-5f, qPrintable(QString::number(left)));
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.
