@@ -2874,6 +2874,7 @@ tests/src/plugins/FakeRemotePluginClient.cpp
 tests/src/plugins/MissingDevicesNoEntryModule.cpp
 tests/src/plugins/MpeTestConsumer.cpp
 tests/src/plugins/PartialInitFailureLadspa.cpp
+tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp
 tests/src/plugins/PluginPortsHarness.h
 tests/src/plugins/PluginPortsMigrationReference.cpp
 tests/src/plugins/PluginPortsMigrationTest.cpp
