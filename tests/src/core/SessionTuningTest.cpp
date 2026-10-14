@@ -724,11 +724,13 @@ private slots:
 			QStringLiteral("1/1"), QStringLiteral("3/nope"), QStringLiteral("3/2")};
 		const QStringList badZeroDen{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
 			QStringLiteral("1/1"), QStringLiteral("3/0"), QStringLiteral("3/2")};
+		const QStringList badExtraSlash{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
+			QStringLiteral("1/1"), QStringLiteral("3/2/7"), QStringLiteral("3/2")};
 		const QStringList badZeroNum{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
 			QStringLiteral("1/1"), QStringLiteral("0/2"), QStringLiteral("3/2")};
 		const QStringList badInMiddle{QStringLiteral("bad ratio fixture"), QStringLiteral("3"),
 			QStringLiteral("1/1"), QStringLiteral("3/nope"), QStringLiteral("3/2")};
-		const QVector<QStringList> badBodies{badOne, badZeroDen, badZeroNum, badInMiddle};
+		const QVector<QStringList> badBodies{badOne, badZeroDen, badExtraSlash, badZeroNum, badInMiddle};
 		for (const QStringList& body : badBodies)
 		{
 			const QString path = writeScl(dir, QStringLiteral("bad-%1.scl").arg(qHash(body)), body);
@@ -736,7 +738,7 @@ private slots:
 			const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
 				QJsonObject{{QStringLiteral("path"), path}});
 			QVERIFY2(!loaded.ok, qPrintable(QStringLiteral("'%1' was accepted: the bad ratio "
-				"line became a different, valid interval").arg(body.last())));
+				"line became a different, valid interval").arg(body.at(3))));
 			QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
 
 			int mismatch = 0;
@@ -745,6 +747,19 @@ private slots:
 				qPrintable(QStringLiteral("the refused scale still changed the table at key %1")
 					.arg(mismatch)));
 		}
+
+		// Scala ignores description text after the interval value, including
+		// slashes inside that text.
+		const QStringList describedRatio{QStringLiteral("ratio with description"),
+			QStringLiteral("3"), QStringLiteral("1/1"),
+			QStringLiteral("3/2 description/variant"), QStringLiteral("3/2")};
+		const QString describedPath = writeScl(dir, QStringLiteral("described-ratio.scl"),
+			describedRatio);
+		QVERIFY2(!describedPath.isEmpty(), "the described-ratio .scl could not be written");
+		const ControlResult describedLoad = run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), describedPath}});
+		QVERIFY2(describedLoad.ok, qPrintable(QStringLiteral("valid trailing description was refused: %1")
+			.arg(describedLoad.errorMessage)));
 	}
 
 	//! A .kbm with the standard 12-TET shape but \a baseFrequency in field 5 -
