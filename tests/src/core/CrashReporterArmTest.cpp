@@ -59,12 +59,41 @@
 #include <QTemporaryDir>
 
 #ifndef Q_OS_WIN
+#include <cerrno>
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <dlfcn.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+namespace
+{
+
+int s_failSigactionForTest = 0;
+int s_injectedSigactionFailures = 0;
+
+} // namespace
+
+extern "C" int sigaction(int signum, const struct sigaction* action,
+	struct sigaction* oldAction) noexcept
+{
+	if (action != nullptr && signum == s_failSigactionForTest)
+	{
+		s_failSigactionForTest = 0;
+		++s_injectedSigactionFailures;
+		errno = EINVAL;
+		return -1;
+	}
+
+	using SigactionFunction = decltype(&::sigaction);
+	static const auto nextSigaction = reinterpret_cast<SigactionFunction>(
+		::dlsym(RTLD_NEXT, "sigaction"));
+	return nextSigaction(signum, action, oldAction);
+}
 #endif
 
 namespace
@@ -149,7 +178,56 @@ private slots:
 #else
 
 	// -----------------------------------------------------------------------
-	// 1. The arm state itself: install arms, uninstall disarms, and the
+	// 1. A failed sigaction must roll back earlier handlers and report failure.
+	// -----------------------------------------------------------------------
+	void install_failure_rolls_back_partial_handlers()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+
+		if (isInstalled()) { QVERIFY(uninstall()); }
+
+		struct sigaction originalSegv;
+		struct sigaction originalBus;
+		QVERIFY(::sigaction(SIGSEGV, nullptr, &originalSegv) == 0);
+		QVERIFY(::sigaction(SIGBUS, nullptr, &originalBus) == 0);
+
+		struct sigaction ignored;
+		std::memset(&ignored, 0, sizeof(ignored));
+		ignored.sa_handler = SIG_IGN;
+		QVERIFY(::sigemptyset(&ignored.sa_mask) == 0);
+		QVERIFY(::sigaction(SIGSEGV, &ignored, nullptr) == 0);
+
+		s_injectedSigactionFailures = 0;
+		s_failSigactionForTest = SIGBUS;
+		const bool installed = install(dir.path().toStdString());
+		s_failSigactionForTest = 0;
+
+		struct sigaction afterSegv;
+		struct sigaction afterBus;
+		const bool queriedSegv = ::sigaction(SIGSEGV, nullptr, &afterSegv) == 0;
+		const bool queriedBus = ::sigaction(SIGBUS, nullptr, &afterBus) == 0;
+		const bool wasInstalled = isInstalled();
+		const bool wereHandlersArmed = handlersArmed();
+
+		if (isInstalled()) { uninstall(); }
+		::sigaction(SIGSEGV, &originalSegv, nullptr);
+		::sigaction(SIGBUS, &originalBus, nullptr);
+
+		QCOMPARE(s_injectedSigactionFailures, 1);
+		QVERIFY2(!installed, "install() must fail when one signal handler cannot be installed");
+		QVERIFY2(!wasInstalled, "a partial installation must not set the installed flag");
+		QVERIFY2(!wereHandlersArmed, "partial handlers must be rolled back before returning");
+		QVERIFY(queriedSegv);
+		QVERIFY(queriedBus);
+		QVERIFY2(afterSegv.sa_handler == SIG_IGN,
+			"rollback must restore the earlier SIGSEGV disposition");
+		QVERIFY2(afterBus.sa_handler == originalBus.sa_handler,
+			"the signal whose installation failed must keep its prior disposition");
+	}
+
+	// -----------------------------------------------------------------------
+	// 2. The arm state itself: install arms, uninstall disarms, and the
 	//    predicate that asks the kernel agrees with both.
 	// -----------------------------------------------------------------------
 	void install_arms_and_uninstall_disarms()
