@@ -45,6 +45,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -520,6 +521,45 @@ private slots:
 
 		printEvidence("malformed-rack-ids",
 			QStringLiteral("macro-x / macro0 / zone-x -> invalid_args; macro-99 -> not_found"));
+	}
+
+	//! Integer index fields must reject values that cannot be represented by
+	//! the handlers' int indices before any floating-point narrowing occurs.
+	void integerIndexArgumentsAreBoundedToInt()
+	{
+		const QString channel = underTestChannel();
+		const int macroIndex = rackUnderTest().macros().addMacro(QStringLiteral("Range guard"), 0.0f);
+		const QString macro = QStringLiteral("macro-%1").arg(macroIndex);
+		const double aboveInt = static_cast<double>(std::numeric_limits<int>::max()) + 1.0;
+		const ControlResult rejected = revtest::run(QStringLiteral("rack.macro_target_remove"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), macro},
+				{QStringLiteral("target"), aboveInt}});
+		QVERIFY(rackUnderTest().macros().removeMacro(macroIndex));
+		QVERIFY(!rejected.ok);
+		QCOMPARE(rejected.errorKind, ControlErrorKind::InvalidArgs);
+
+		const struct
+		{
+			QString command;
+			QString argument;
+		} indices[] = {
+			{QStringLiteral("rack.remove_chain"), QStringLiteral("chain")},
+			{QStringLiteral("rack.set_selected"), QStringLiteral("chain")},
+			{QStringLiteral("rack.macro_target_add"), QStringLiteral("chain")},
+			{QStringLiteral("rack.macro_target_add"), QStringLiteral("effect")},
+			{QStringLiteral("rack.macro_target_remove"), QStringLiteral("target")},
+		};
+		for (const auto& index : indices)
+		{
+			const ControlCommand* command = ControlRegistry::instance()->command(index.command);
+			QVERIFY(command != nullptr);
+			const QJsonObject property = command->argsSchema.value(QStringLiteral("properties"))
+				.toObject().value(index.argument).toObject();
+			QCOMPARE(property.value(QStringLiteral("minimum")).toDouble(),
+				static_cast<double>(std::numeric_limits<int>::min()));
+			QCOMPARE(property.value(QStringLiteral("maximum")).toDouble(),
+				static_cast<double>(std::numeric_limits<int>::max()));
+		}
 	}
 };
 

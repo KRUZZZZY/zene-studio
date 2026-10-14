@@ -49,6 +49,9 @@
 #include "Rack.h"
 #include "RackMacros.h"
 
+#include <cmath>
+#include <limits>
+
 namespace lmms
 {
 
@@ -67,12 +70,28 @@ QJsonObject unitProperty()
 		{QStringLiteral("maximum"), 1.0}};
 }
 
+//! Read an integer index without narrowing an out-of-range JSON number.
+bool intArg(const QJsonObject& args, const QString& name, int& result)
+{
+	const QJsonValue value = args.value(name);
+	if (!value.isDouble()) { return false; }
+	const double number = value.toDouble();
+	if (!std::isfinite(number) || std::floor(number) != number ||
+		number < static_cast<double>(std::numeric_limits<int>::lowest()) ||
+		number > static_cast<double>(std::numeric_limits<int>::max()))
+	{
+		return false;
+	}
+	result = static_cast<int>(number);
+	return true;
+}
+
 //! The target described by a macro_target_add call.
-RackMacroTarget targetFromArgs(const QJsonObject& args)
+RackMacroTarget targetFromArgs(const QJsonObject& args, int chain, int effect)
 {
 	RackMacroTarget target;
-	target.chain = static_cast<int>(args.value(QStringLiteral("chain")).toDouble());
-	target.effect = static_cast<int>(args.value(QStringLiteral("effect")).toDouble());
+	target.chain = chain;
+	target.effect = effect;
 	target.parameter = args.value(QStringLiteral("parameter")).toString();
 	target.low = static_cast<float>(args.value(QStringLiteral("low")).toDouble(0.0));
 	target.high = static_cast<float>(args.value(QStringLiteral("high")).toDouble(1.0));
@@ -229,8 +248,10 @@ void registerMacroTargetAdd(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
 		{QStringLiteral("macro"), stringProperty()},
-		{QStringLiteral("chain"), integerProperty()},
-		{QStringLiteral("effect"), integerProperty()},
+		{QStringLiteral("chain"), integerProperty(std::numeric_limits<int>::lowest(),
+			std::numeric_limits<int>::max())},
+		{QStringLiteral("effect"), integerProperty(std::numeric_limits<int>::lowest(),
+			std::numeric_limits<int>::max())},
 		{QStringLiteral("parameter"), stringProperty()},
 		{QStringLiteral("low"), unitProperty()},
 		{QStringLiteral("high"), unitProperty()},
@@ -255,7 +276,15 @@ void registerMacroTargetAdd(ControlRegistry& registry)
 			&error);
 		if (macro < 0) { return error; }
 
-		const RackMacroTarget target = targetFromArgs(args);
+		int chain = 0;
+		int effect = 0;
+		if (!intArg(args, QStringLiteral("chain"), chain) ||
+			!intArg(args, QStringLiteral("effect"), effect))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'chain' and 'effect' must fit the supported integer range"));
+		}
+		const RackMacroTarget target = targetFromArgs(args, chain, effect);
 		if (!isValidMacroTarget(target))
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
@@ -321,7 +350,8 @@ void registerMacroTargetRemove(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
 		{QStringLiteral("macro"), stringProperty()},
-		{QStringLiteral("target"), integerProperty()},
+		{QStringLiteral("target"), integerProperty(std::numeric_limits<int>::lowest(),
+			std::numeric_limits<int>::max())},
 	}, {QStringLiteral("channel"), QStringLiteral("macro"), QStringLiteral("target")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("channel"), stringProperty()},
@@ -341,7 +371,12 @@ void registerMacroTargetRemove(ControlRegistry& registry)
 		if (macro < 0) { return error; }
 
 		const RackMacro* entry = rack.macros().macro(macro);
-		const int index = static_cast<int>(args.value(QStringLiteral("target")).toDouble());
+		int index = 0;
+		if (!intArg(args, QStringLiteral("target"), index))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'target' must fit the supported integer range"));
+		}
 		if (index < 0 || index >= static_cast<int>(entry->targets.size()))
 		{
 			return ControlResult::failure(ControlErrorKind::NotFound,
