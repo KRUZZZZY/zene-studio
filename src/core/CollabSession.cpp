@@ -61,9 +61,9 @@ QString lanInviteAddress(const portmap::PortMapping& mapping)
 	return lan.isNull() ? QStringLiteral("127.0.0.1") : lan.toString();
 }
 
-/*! The router's external address. \a strict (scope "public") refuses, with the reason, when there is none;
- *  otherwise (scope "auto") an address the internet cannot reach is passed over for the LAN one. */
-QString mappedInviteAddress(const portmap::PortMapping& mapping, bool strict, QString* warning, ControlResult* refusal)
+/*! The router's external address. \a strict (scope "public") refuses, with the reason, when there is none or it is
+ *  not publicly reachable; otherwise (scope "auto") an address the internet cannot reach is passed over for the LAN one. */
+QString mappedInviteAddress(const portmap::PortMapping& mapping, bool strict, ControlResult* refusal)
 {
 	const portmap::MappingResult& mapped = mapping.result();
 	if (strict && mapping.busy())
@@ -78,8 +78,16 @@ QString mappedInviteAddress(const portmap::PortMapping& mapping, bool strict, QS
 		return QString();
 	}
 	const bool reachable = portmap::isPublicIPv4(mapped.externalAddress);
-	if (!reachable && !strict) { return QString(); }
-	if (!reachable) { *warning = mapped.message; }
+	if (!reachable)
+	{
+		if (strict)
+		{
+			const QString reason = mapped.message.isEmpty()
+				? QStringLiteral("the router reported an external address that is not publicly reachable") : mapped.message;
+			*refusal = refused(QStringLiteral("%1; use scope 'lan' or resolve the upstream NAT").arg(reason));
+		}
+		return QString();
+	}
 	return mapped.externalAddress.toString();
 }
 
@@ -189,7 +197,7 @@ QString CollabSession::inviteAddress(const QString& scope, QString* warning, Con
 {
 	if (scope == QLatin1String("local")) { return QStringLiteral("127.0.0.1"); }
 	if (scope == QLatin1String("lan")) { return lanInviteAddress(*m_mapping); }
-	const QString mapped = mappedInviteAddress(*m_mapping, scope == QLatin1String("public"), warning, refusal);
+	const QString mapped = mappedInviteAddress(*m_mapping, scope == QLatin1String("public"), refusal);
 	if (!mapped.isEmpty() || scope == QLatin1String("public")) { return mapped; }
 	*warning = QStringLiteral("a LAN invite: only machines on this network can use it");
 	return lanInviteAddress(*m_mapping);
