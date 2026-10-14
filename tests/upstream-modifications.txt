@@ -2176,3 +2176,4 @@ src/core/RackZones.cpp	2026-10-11 cluster new-p9-376: accumulate matching chain 
 src/core/InstrumentLayers.cpp	2026-10-11 cluster new-p9-376: route note paths from matching chain bits beyond zone index 63
 include/RingBuffer.h	cluster new-p9-389: make documented frame offsets signed in movePosition()/read() and add signed millisecond-offset conversion; regression RecordRingBufferTest::RingBuffer_NegativeOffsetsMoveBackward.
 src/core/RingBuffer.cpp	cluster new-p9-389: normalize signed frame offsets before ring wrap and route negative millisecond movement/reads through signed conversion; regression RecordRingBufferTest::RingBuffer_NegativeOffsetsMoveBackward.
+include/RmsHelper.h	BUG 3 (cluster new-p9-391): copy construction and assignment preserve RMS state in independent buffers; regression PluginPortsMigrationTest::rmsHelperCopiesHaveIndependentBuffers.

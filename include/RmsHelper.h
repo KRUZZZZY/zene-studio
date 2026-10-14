@@ -28,6 +28,8 @@
 
 #include "lmms_math.h"
 
+#include <cstring>
+
 
 namespace lmms
 {
@@ -40,6 +42,30 @@ public:
 		m_buffer( nullptr )
 	{
 		setSize( size );
+	}
+	RmsHelper(const RmsHelper& other) :
+		m_buffer( new float[ other.m_size ] ),
+		m_sum( other.m_sum ),
+		m_pos( other.m_pos ),
+		m_size( other.m_size ),
+		m_sizef( other.m_sizef )
+	{
+		std::memcpy( m_buffer, other.m_buffer, m_size * sizeof( float ) );
+	}
+	RmsHelper& operator=(const RmsHelper& other)
+	{
+		if( this != &other )
+		{
+			auto* buffer = new float[ other.m_size ];
+			std::memcpy( buffer, other.m_buffer, other.m_size * sizeof( float ) );
+			delete[] m_buffer;
+			m_buffer = buffer;
+			m_sum = other.m_sum;
+			m_pos = other.m_pos;
+			m_size = other.m_size;
+			m_sizef = other.m_sizef;
+		}
+		return *this;
 	}
 	virtual ~RmsHelper() 
 	{
