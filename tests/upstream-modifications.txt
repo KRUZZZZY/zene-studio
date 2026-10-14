@@ -2152,3 +2152,5 @@ tests/CMakeLists.txt	new-p9-316: register each NAM WAV write failure CLI regress
 tests/CMakeLists.txt	2026-10-11 new-p9-317: register the NeuralAmp WAV sample-rate regression with CTest when Python and nam_harness are available.
 plugins/Nes/Nes.cpp	cluster new-p9-321: held NES voices recalculate channel wavelengths when coarse-detune multipliers change; regression PluginPortsMigrationTest::nesCoarseDetuneRetunesHeldNote.
 plugins/Nes/Nes.h	cluster new-p9-321: store each active NES voice's last coarse-detune multipliers for held-note retuning; regression PluginPortsMigrationTest::nesCoarseDetuneRetunesHeldNote.
+plugins/OpulenZ/OpulenZ.cpp	new-p9-327: serialize the full model-driven emulator patch update with MIDI and render register access; regression PluginPortsMigrationTest::opulenzUpdatePatchLocksEmulatorForWholeUpdate.
+plugins/OpulenZ/OpulenZ.h	new-p9-327: declare the mutex-free patch writer used inside updatePatch's single lock; regression PluginPortsMigrationTest::opulenzUpdatePatchLocksEmulatorForWholeUpdate.

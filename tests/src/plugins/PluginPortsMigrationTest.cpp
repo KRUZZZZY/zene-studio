@@ -50,6 +50,9 @@
 #include <QDomDocument>
 #include <QDir>
 #include <QFileInfo>
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 #include <QLibrary>
 #include <memory>
 #include <QProcess>
@@ -493,6 +496,33 @@ struct SampleRateRestore
 	}
 };
 
+auto functionBody(const QByteArray& source, const QByteArray& signature) -> QByteArray
+{
+	const auto start = source.indexOf(signature);
+	if (start < 0)
+	{
+		return {};
+	}
+	const auto openBrace = source.indexOf('{', start);
+	if (openBrace < 0)
+	{
+		return {};
+	}
+	int depth = 1;
+	for (auto index = openBrace + 1; index < source.size(); ++index)
+	{
+		if (source[index] == '{')
+		{
+			++depth;
+		}
+		else if (source[index] == '}' && --depth == 0)
+		{
+			return source.mid(openBrace + 1, index - openBrace - 1);
+		}
+	}
+	return {};
+}
+
 } // namespace
 
 namespace lmms
@@ -604,6 +634,7 @@ private slots:
 	void xpressiveRandomVectorRejectsOutOfRangeFloatInputs();
 	void multitapEchoRetunesAllTapsAfterSampleRateChange();
 	void nesCoarseDetuneRetunesHeldNote();
+	void opulenzUpdatePatchLocksEmulatorForWholeUpdate();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -1940,6 +1971,30 @@ void PluginPortsMigrationTest::nesCoarseDetuneRetunesHeldNote()
 	qInfo("NES held-note oscillator periods: before=%d after=%d", beforePeriod, afterPeriod);
 	QVERIFY2(std::abs(afterPeriod * 2 - beforePeriod) <= 3,
 		"changing NES channel 1 coarse detune did not halve the held note's oscillator period");
+}
+
+void PluginPortsMigrationTest::opulenzUpdatePatchLocksEmulatorForWholeUpdate()
+{
+	const auto sourcePath = QDir{QCoreApplication::applicationDirPath()}
+		.filePath(QStringLiteral("../../plugins/OpulenZ/OpulenZ.cpp"));
+	QFile source{sourcePath};
+	QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(sourcePath));
+	const auto contents = source.readAll();
+	const auto updateBody = functionBody(contents, "void OpulenzInstrument::updatePatch()");
+	QVERIFY2(!updateBody.isEmpty(), "OpulenzInstrument::updatePatch() source was not found");
+
+	const auto lockPosition = updateBody.indexOf("QMutexLocker locker(&emulatorMutex);");
+	QVERIFY2(lockPosition >= 0, "updatePatch must hold emulatorMutex with one scoped lock");
+	QVERIFY(updateBody.indexOf("theEmulator->write(0xBD,") > lockPosition);
+	QVERIFY(updateBody.indexOf("setVoiceVelocity(") > lockPosition);
+	QVERIFY(updateBody.indexOf("loadPatchLocked(inst.data())") > lockPosition);
+	QVERIFY(!updateBody.contains("loadPatch(inst.data())"));
+
+	const auto loaderBody = functionBody(contents,
+		"void OpulenzInstrument::loadPatchLocked(const unsigned char inst[14])");
+	QVERIFY2(!loaderBody.isEmpty(), "locked patch writer helper was not found");
+	QVERIFY(!loaderBody.contains("emulatorMutex.lock()"));
+	QVERIFY(!loaderBody.contains("QMutexLocker"));
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)

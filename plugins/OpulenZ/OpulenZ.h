@@ -142,6 +142,7 @@ private:
 
 	int Hz2fnum(float Hz);
 	static QMutex emulatorMutex;
+	void loadPatchLocked(const unsigned char inst[14]);
 	void setVoiceVelocity(int voice, int vel);
 
 	// Pitch bend range comes through RPNs.

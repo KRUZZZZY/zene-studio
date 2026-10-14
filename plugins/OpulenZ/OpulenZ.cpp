@@ -44,6 +44,7 @@
 #include <QFileInfo>
 #include <QByteArray>
 #include <QDomElement>
+#include <QMutexLocker>
 #include <cassert>
 #include <cmath>
 
@@ -489,7 +490,11 @@ void OpulenzInstrument::loadSettings( const QDomElement & _this )
 
 // Load a patch into the emulator
 void OpulenzInstrument::loadPatch(const unsigned char inst[14]) {
-	emulatorMutex.lock();
+	QMutexLocker locker(&emulatorMutex);
+	loadPatchLocked(inst);
+}
+
+void OpulenzInstrument::loadPatchLocked(const unsigned char inst[14]) {
 	for(int v=0; v<OPL2_VOICES; ++v) {
 		theEmulator->write(0x20+adlib_opadd[v],inst[0]); // op1 AM/VIB/EG/KSR/Multiplier
 		theEmulator->write(0x23+adlib_opadd[v],inst[1]); // op2
@@ -503,7 +508,6 @@ void OpulenzInstrument::loadPatch(const unsigned char inst[14]) {
 		theEmulator->write(0xe3+adlib_opadd[v],inst[9]); // op2
 		theEmulator->write(0xc0+v,inst[10]);             // feedback/algorithm
 	}
-	emulatorMutex.unlock();
 }
 
 void OpulenzInstrument::tuneEqual(int center, float Hz) {
@@ -532,6 +536,7 @@ void OpulenzInstrument::loadGMPatch() {
 
 // Update patch from the models to the chip emulation
 void OpulenzInstrument::updatePatch() {
+	QMutexLocker locker(&emulatorMutex);
 	auto inst = std::array<unsigned char, 14>{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 	inst[0] = ( op1_trem_mdl.value() ?  128 : 0  ) +
 		( op1_vib_mdl.value() ?  64 : 0 ) +
@@ -581,7 +586,7 @@ void OpulenzInstrument::updatePatch() {
 #endif
 
 
-	loadPatch(inst.data());
+	loadPatchLocked(inst.data());
 }
 
 // Load an SBI file into the knob models
