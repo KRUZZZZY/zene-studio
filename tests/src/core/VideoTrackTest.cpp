@@ -60,6 +60,15 @@
 #include "VideoTestClip.h"
 #include "VideoWindow.h"
 
+#if defined(ZENE_HAVE_FFMPEG) && (defined(Q_OS_LINUX) || defined(Q_OS_MACOS))
+#define ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+#include <dlfcn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <atomic>
+#include <functional>
+#endif
+
 using namespace lmms;
 
 namespace
@@ -107,6 +116,62 @@ public:
 
 	int aboutToQuitReceivers() const { return receivers(SIGNAL(aboutToQuit())); }
 };
+
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+namespace
+{
+
+std::atomic_bool failFrameAllocation{false};
+std::atomic_bool failCodecContextAllocation{false};
+std::atomic_bool failCodecAfterStream{false};
+std::atomic_bool failStreamAllocation{false};
+
+//! Run @a checkFailure with one FFmpeg allocation forced to fail; crashes stay inside the child.
+bool allocationFailureIsReported(const std::function<bool()>& checkFailure, std::atomic_bool& fail)
+{
+	const pid_t child = fork();
+	if (child < 0) { return false; }
+	if (child == 0)
+	{
+		fail.store(true, std::memory_order_relaxed);
+		_exit(checkFailure() ? 0 : 1);
+	}
+	int status = 0;
+	if (waitpid(child, &status, 0) < 0) { return false; }
+	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+} // namespace
+
+//! At file scope so FFmpeg calls from VideoTestClip resolve to these test-only failure hooks.
+#pragma GCC visibility push(default)
+extern "C" AVFrame* av_frame_alloc()
+{
+	if (failFrameAllocation.load(std::memory_order_relaxed)) { return nullptr; }
+	static const auto real = reinterpret_cast<decltype(&av_frame_alloc)>(dlsym(RTLD_NEXT, "av_frame_alloc"));
+	return real == nullptr ? nullptr : real();
+}
+
+extern "C" AVCodecContext* avcodec_alloc_context3(const AVCodec* codec)
+{
+	if (failCodecContextAllocation.load(std::memory_order_relaxed)) { return nullptr; }
+	static const auto real = reinterpret_cast<decltype(&avcodec_alloc_context3)>(dlsym(RTLD_NEXT, "avcodec_alloc_context3"));
+	return real == nullptr ? nullptr : real(codec);
+}
+
+extern "C" AVStream* avformat_new_stream(AVFormatContext* context, const AVCodec* codec)
+{
+	if (failStreamAllocation.exchange(false, std::memory_order_relaxed)) { return nullptr; }
+	static const auto real = reinterpret_cast<decltype(&avformat_new_stream)>(dlsym(RTLD_NEXT, "avformat_new_stream"));
+	AVStream* stream = real == nullptr ? nullptr : real(context, codec);
+	if (stream != nullptr && failCodecAfterStream.exchange(false, std::memory_order_relaxed))
+	{
+		failCodecContextAllocation.store(true, std::memory_order_relaxed);
+	}
+	return stream;
+}
+#pragma GCC visibility pop
+#endif // ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
 
 class VideoTrackTest : public QObject
 {
@@ -591,6 +656,38 @@ private slots:
 		QCOMPARE(song->tracks().size(), tracksBefore + (done ? 1 : 0));
 		if (!done) { QVERIFY2(!QFileInfo::exists(out), "a cancelled extraction left its WAV"); }
 		song->clearProject();
+	}
+
+	//! A failed FFmpeg allocation is reported, not dereferenced.
+	void failedAllocationsAreReportedNotCrashed()
+	{
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+		if (!VideoDecoder::available()) { QSKIP("no FFmpeg in this build"); }
+		AVFormatContext* out = nullptr;
+		QVERIFY(avformat_alloc_output_context2(&out, nullptr, "matroska", "clip.mkv") >= 0);
+		videotest::Encoder failedStream;
+		QVERIFY2(allocationFailureIsReported([&out, &failedStream] {
+			const bool added = videotest::addStream(out, failedStream, AV_CODEC_ID_MPEG4, videotest::setupVideo);
+			return !added && failedStream.stream == nullptr && failedStream.codec != nullptr;
+		}, failStreamAllocation), "avformat_new_stream failure was not reported independently");
+		videotest::Encoder streamCase;
+		QVERIFY2(allocationFailureIsReported([&out, &streamCase] {
+			const bool added = videotest::addStream(out, streamCase, AV_CODEC_ID_MPEG4, videotest::setupVideo);
+			return !added && streamCase.stream != nullptr && streamCase.codec == nullptr;
+		}, failCodecAfterStream), "codec allocation failure was not reported after creating its stream");
+		avformat_free_context(out);
+		videotest::Encoder frameCase;
+		frameCase.codec = avcodec_alloc_context3(avcodec_find_encoder(AV_CODEC_ID_MPEG4));
+		QVERIFY(frameCase.codec != nullptr);
+		videotest::setupVideo(frameCase.codec);
+		QVERIFY2(allocationFailureIsReported([&frameCase] { return !videotest::allocateFrame(frameCase); },
+			failFrameAllocation),
+			"allocateFrame dereferenced the failed av_frame_alloc");
+#elif defined(ZENE_HAVE_FFMPEG)
+		QSKIP("FFmpeg allocation failure hooks require Linux or macOS");
+#else
+		QSKIP("this build has no FFmpeg");
+#endif
 	}
 };
 

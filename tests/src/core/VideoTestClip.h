@@ -97,6 +97,7 @@ inline void setupAudio(AVCodecContext* c)
 inline bool allocateFrame(Encoder& e)
 {
 	e.frame = av_frame_alloc();
+	if (e.frame == nullptr) { return false; }
 	e.frame->format = e.codec->codec_type == AVMEDIA_TYPE_VIDEO ? static_cast<int>(e.codec->pix_fmt) : static_cast<int>(e.codec->sample_fmt);
 	e.frame->width = e.codec->width;
 	e.frame->height = e.codec->height;
@@ -112,6 +113,7 @@ inline bool addStream(AVFormatContext* out, Encoder& e, AVCodecID id, void (*set
 	if (codec == nullptr) { return false; }
 	e.stream = avformat_new_stream(out, nullptr);
 	e.codec = avcodec_alloc_context3(codec);
+	if (e.stream == nullptr || e.codec == nullptr) { return false; }
 	setup(e.codec);
 	if (out->oformat->flags & AVFMT_GLOBALHEADER) { e.codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER; }
 	if (avcodec_open2(e.codec, codec, nullptr) < 0) { return false; }

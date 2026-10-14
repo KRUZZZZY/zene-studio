@@ -5020,6 +5020,9 @@ set_tests_properties(DawProjectInterchangeRoundTripTest DawProjectDeflateImportT
 # registry (the video window and lane are widgets), so they need a Qt platform plugin.
 set_tests_properties(AafImportTest VideoTrackTest LegacyPatternUpgradeTest HardwareIoTest SurroundTest SurroundExportTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# VideoTrackTest's Linux/macOS allocation-failure case interposes FFmpeg entry points from
+# the test executable, so its symbols must be exported - same reason plugin-loading tests carry ENABLE_EXPORTS.
+set_target_properties(VideoTrackTest PROPERTIES ENABLE_EXPORTS ON)
 # The retrospective MIDI capture surface (owner item 14) builds a real Engine,
 # a MIDI client and MidiClips and drives the registry commands, so it needs a
 # Qt platform plugin even though nothing opens a window.
