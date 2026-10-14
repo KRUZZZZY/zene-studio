@@ -2028,3 +2028,4 @@ src/core/ValueBuffer.cpp	new-p10-447: reject negative buffer lengths before vect
 tests/src/gui/ItemListPanelTest.cpp	2026-10-11 accessibility regression: cover the pending-value state when a control returns to its already announced value during the settle window.
 include/ThreadableJob.h	2026-10-11 new-p10-417: public virtual destructor ensures derived jobs are destroyed correctly through ThreadableJob pointers; regression RenderJobQueueTest::deletingThroughBasePointerRunsDerivedDestructor.
 plugins/ReverbSC/base.c	cluster new-p10-534: zero-length sp_process_raw preserves the streaming sentinel and advances pos once per frame; covered by tests/src/plugins/ReverbSCRawProcessingTest.cpp
+src/core/EnvelopeAndLfoParameters.cpp	new-p11-95: clear the prior user LFO waveform when settings omit or empty userwavefile; regression EnvelopeAndLfoParametersTest.

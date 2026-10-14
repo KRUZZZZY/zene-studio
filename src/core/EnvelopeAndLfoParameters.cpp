@@ -384,6 +384,7 @@ void EnvelopeAndLfoParameters::loadSettings( const QDomElement & _this )
 		m_sustainModel.setValue( 1.0 - m_sustainModel.value() );
 	}
 
+	m_userWave = SampleBuffer::emptyBuffer();
 	if (const auto userWaveFile = _this.attribute("userwavefile"); !userWaveFile.isEmpty())
 	{
 		if (QFileInfo(PathUtil::toAbsolute(userWaveFile)).exists())

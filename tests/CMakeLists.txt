@@ -692,6 +692,8 @@ set(LMMS_TESTS
 	src/core/MidiJackOutScheduleTest.cpp
 	# 0.5.0 engine wiring E27: stem separation resamples instead of refusing.
 	src/core/SampleBufferResampleTest.cpp
+	# Loading an envelope must clear the previous custom LFO waveform when no file is saved.
+	src/core/EnvelopeAndLfoParametersTest.cpp
 	# 0.5.0 L13 WF-126: the Mackie Control protocol and a surface driving real tracks.
 	src/core/McuSurfaceTest.cpp
 	src/core/McuSurfaceFeedbackTest.cpp
