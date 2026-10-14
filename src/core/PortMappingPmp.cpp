@@ -63,7 +63,40 @@ void PmpMapper::setServer(const QHostAddress& gateway, quint16 port)
 
 void PmpMapper::map(quint16 internalPort, quint16 externalPort, quint32 lifetime)
 {
-	if (m_socket->state() != QAbstractSocket::BoundState) { m_socket->bind(QHostAddress(QHostAddress::AnyIPv4), 0); }
+	// A restart invalidates a pending attempt. NAT-PMP replies have no transaction id, so keep the old
+	// endpoint bound until the replacement has a different local port; otherwise an in-flight reply
+	// could be routed to the new attempt if the OS reuses the just-released port.
+	if (m_step != Step::Idle)
+	{
+		m_timer->stop();
+		const quint16 previousPort = m_socket->localPort();
+		auto* replacement = new QUdpSocket(this);
+		const bool bound = replacement->bind(QHostAddress(QHostAddress::AnyIPv4), 0);
+		if (!bound || replacement->localPort() == previousPort)
+		{
+			const QString error = bound ? QStringLiteral("replacement reused local port %1").arg(previousPort)
+				: replacement->errorString();
+			delete replacement;
+			m_socket->close();
+			m_result = MappingResult();
+			m_pcpFailure.clear();
+			finish(false, QStringLiteral("could not bind a replacement UDP socket: %1").arg(error));
+			return;
+		}
+		connect(replacement, &QUdpSocket::readyRead, this, &PmpMapper::onReadyRead);
+		auto* previous = m_socket;
+		m_socket = replacement;
+		delete previous;
+	}
+	else if (m_socket->state() != QAbstractSocket::BoundState
+		&& !m_socket->bind(QHostAddress(QHostAddress::AnyIPv4), 0))
+	{
+		const QString error = m_socket->errorString();
+		m_result = MappingResult();
+		m_pcpFailure.clear();
+		finish(false, QStringLiteral("could not bind a UDP socket: %1").arg(error));
+		return;
+	}
 	m_internal = internalPort;
 	m_external = externalPort;
 	m_lifetime = lifetime;
