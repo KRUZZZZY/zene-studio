@@ -571,7 +571,9 @@ private slots:
 		QCOMPARE(MidiClock::songPositionOf(DefaultTicksPerBar), 16u);   // one 4/4 bar
 		QCOMPARE(MidiClock::songPositionOf(DefaultTicksPerBar - 1), 15u); // truncated
 		QCOMPARE(MidiClock::songPositionOf(-5), 0u);
-		QVERIFY(MidiClock::songPositionOf(9999 * DefaultTicksPerBar) <= 0x3FFFu);
+		const qint64 lastRepresentableTick = static_cast<qint64>(TicksPerMidiBeat) * 0x3FFF;
+		QCOMPARE(MidiClock::songPositionOf(lastRepresentableTick), 0x3FFFu);
+		QCOMPARE(MidiClock::songPositionOf(lastRepresentableTick + TicksPerMidiBeat), 0x3FFFu);
 	}
 
 	//! The state a caller reads back reports the grid, the mode and - the part
