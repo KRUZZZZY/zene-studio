@@ -21,8 +21,10 @@
 #include "PluginPortsHarness.h"
 
 #include <cstddef>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <new>
 #include <new>
 #include <vector>
 
@@ -39,6 +41,10 @@
 #include "Ladspa2LMMS.h"
 #include "Plugin.h"
 #include "plugins/Xpressive/ExprSynth.h"
+
+// Delay builds Lfo.cpp into a MODULE target, so include its implementation
+// here to exercise the constructor directly without adding a new test target.
+#include "../../../plugins/Delay/Lfo.cpp"
 
 namespace
 {
@@ -231,6 +237,7 @@ private slots:
 	void initTestCase();
 	void waveSampleDefaultsInterpolationToDisabled();
 	void gigPlayerAcceptsMidiNoteZero();
+	void lfoStartsFromInitializedState();
 	void migratedPluginsPreserveBehaviour();
 	void comparisonIsSensitive();
 	void nonRealtimeLadspaEffectsAreInvalid();
@@ -349,6 +356,25 @@ void PluginPortsMigrationTest::nonRealtimeLadspaEffectsAreInvalid()
 		"non-real-time LADSPA plugin was classified as a valid effect");
 	QVERIFY2(manager->getInvalidEffects().contains(entry),
 		"non-real-time LADSPA plugin was not classified as invalid");
+}
+
+void PluginPortsMigrationTest::lfoStartsFromInitializedState()
+{
+	const auto alignment = std::align_val_t{alignof(lmms::Lfo)};
+	void* storage = ::operator new(sizeof(lmms::Lfo), alignment);
+	auto* poisonedStorage = static_cast<volatile unsigned char*>(storage);
+	for (std::size_t byte = 0; byte < sizeof(lmms::Lfo); ++byte)
+	{
+		poisonedStorage[byte] = 0xFF;
+	}
+	auto* lfo = new (storage) lmms::Lfo{44100};
+	lfo->setFrequency(2.0);
+	const float firstOutput = lfo->tick();
+	lfo->~Lfo();
+	::operator delete(storage, alignment);
+
+	QVERIFY(std::isfinite(firstOutput));
+	QCOMPARE(firstOutput, 0.0f);
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()

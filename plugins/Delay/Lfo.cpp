@@ -31,10 +31,13 @@ namespace lmms
 {
 
 
-Lfo::Lfo( int samplerate )
+Lfo::Lfo( int samplerate ) :
+	m_frequency(0.0),
+	m_phase(0.0),
+	m_increment(0.0),
+	m_twoPiOverSr(2 * std::numbers::pi_v<float> / samplerate),
+	m_samplerate(samplerate)
 {
-	m_samplerate = samplerate;
-	m_twoPiOverSr = 2 * std::numbers::pi_v<float> / samplerate;
 }
 
 
