@@ -77,6 +77,16 @@ void HostedPlugin::setNoteOn(std::uint8_t channel, std::int16_t key, double velo
 {
 	// Audio thread. The clamp is CLAP's own 0..1 velocity scale, not MIDI's
 	// 0..127: clap_event_note_t::velocity is a double in [0, 1].
+	// A NaN velocity is not a note: std::clamp passes NaN through and
+	// converting it to the queue's int16 velocity is undefined, so the
+	// event is refused and counted - like every event with nowhere to go -
+	// instead of queueing a malformed note that would start a voice.
+	if (std::isnan(velocity))
+	{
+		m_impl->notesDropped.fetch_add(1, std::memory_order_relaxed);
+		control::clapHostNoteCounters().recordDrop();
+		return;
+	}
 	NoteEventIn event;
 	event.type = CLAP_EVENT_NOTE_ON;
 	event.channel = static_cast<std::uint8_t>(std::min<int>(channel, 15));
