@@ -2020,3 +2020,4 @@ src/core/TempoSyncKnobModel.cpp	new-p10-416: validate the serialized tempo-sync 
 tests/src/core/TempoMapPersistenceTest.cpp	new-p10-416: add a direct XML load regression for negative and out-of-range tempo-sync modes, plus acceptance of the valid Custom boundary.
 src/core/ValueBuffer.cpp	new-p10-447: reject negative buffer lengths before vector size conversion; covered by ModulationRateTest.
 tests/src/gui/ItemListPanelTest.cpp	2026-10-11 accessibility regression: cover the pending-value state when a control returns to its already announced value during the settle window.
+include/ThreadableJob.h	2026-10-11 new-p10-417: public virtual destructor ensures derived jobs are destroyed correctly through ThreadableJob pointers; regression RenderJobQueueTest::deletingThroughBasePointerRunsDerivedDestructor.

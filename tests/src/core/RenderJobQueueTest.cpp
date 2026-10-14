@@ -137,6 +137,21 @@ private:
 	bool m_done = false;
 };
 
+class DestructionTrackingJob : public ThreadableJob
+{
+public:
+	explicit DestructionTrackingJob(bool& destroyed) : m_destroyed(destroyed) {}
+	~DestructionTrackingJob() { m_destroyed = true; }
+
+	bool requiresProcessing() const override { return false; }
+
+protected:
+	void doProcessing() override {}
+
+private:
+	bool& m_destroyed;
+};
+
 //! Stop a test worker the way AudioEngine's own shutdown does (src/core/AudioEngine.cpp:
 //! quit(), then one startAndWaitForJobs() to wake the condition, then join()).
 //!
@@ -191,6 +206,16 @@ class RenderJobQueueTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void deletingThroughBasePointerRunsDerivedDestructor()
+	{
+		bool destroyed = false;
+		std::unique_ptr<ThreadableJob> job = std::make_unique<DestructionTrackingJob>(destroyed);
+
+		job.reset();
+
+		QVERIFY2(destroyed, "deleting a ThreadableJob must run the derived destructor");
+	}
+
 	void initTestCase()
 	{
 		// One pool worker for the whole run: it is the thread that steals a job from a
