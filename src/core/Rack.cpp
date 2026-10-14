@@ -245,6 +245,7 @@ void Rack::setSplit(const RackSplit& split)
 	if (engine != nullptr) { engine->requestChangeInModel(); }
 
 	m_split = split;
+	m_split.crossoverCount = std::clamp(m_split.crossoverCount, 0, RackSplit::MaxBands - 1);
 	rebuildRoutingGraph();
 
 	if (engine != nullptr) { engine->doneChangeInModel(); }
