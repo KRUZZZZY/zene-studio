@@ -33,6 +33,7 @@
 #include <limits>
 #include <cstring>
 #include <utility>
+#include <limits>
 #include <vector>
 
 #include <algorithm>
@@ -190,6 +191,7 @@ private slots:
 	void testChunkedProcessing();
 	void testEffectRefusesNotes();
 	void testInstrumentNotePath();
+	void testInstrumentRejectsNonFiniteParamMods();
 	void testTimerSupportRunsThePluginsTimer();
 	void testTheEditorEmbedsResizesAndCloses();
 	void testMainThreadRequestsAreServiced();
@@ -714,6 +716,39 @@ void ClapHostTest::testInstrumentNotePath()
 	qInfo("MEASURED %d-frame request into a 64-frame block: %u plug-in calls, %u note(s) "
 		  "delivered, audio level %f",
 		ChunkedFrames, chunkedState.blocks, chunkedState.noteOnCount, rms(chunkedOutputs[0]));
+}
+
+void ClapHostTest::testInstrumentRejectsNonFiniteParamMods()
+{
+	const QString path = QStringLiteral(CLAP_TEST_INSTRUMENT_PATH);
+	if (path.isEmpty() || !QFileInfo::exists(path))
+	{
+		QSKIP("no CLAP instrument fixture in this build");
+	}
+
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(path, QString::fromLatin1(TestInstrumentId), &error), qPrintable(error));
+	QString prepareError;
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &prepareError), qPrintable(prepareError));
+	const auto before = plugin.noteCounters();
+	plugin.setNoteParamMod(0, 60, InstrumentGainParamId, std::numeric_limits<double>::quiet_NaN());
+	plugin.setNoteParamMod(0, 60, InstrumentGainParamId, std::numeric_limits<double>::infinity());
+	plugin.setNoteParamMod(0, 60, InstrumentGainParamId, -std::numeric_limits<double>::infinity());
+
+	const std::vector<std::vector<float>> noInputs;
+	std::vector<std::vector<float>> outputs(2, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, noInputs, outputs, TestFrames);
+	InstrumentState state{};
+	QVERIFY2(readInstrumentState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.eventCount, std::uint32_t{0});
+	QCOMPARE(plugin.noteCounters().pushed, before.pushed);
+
+	plugin.setNoteParamMod(0, 60, InstrumentGainParamId, 0.25);
+	process(plugin, noInputs, outputs, TestFrames);
+	QVERIFY2(readInstrumentState(plugin, &state), "the fixture saved an unexpected state layout");
+	QCOMPARE(state.eventCount, std::uint32_t{1});
+	QCOMPARE(state.ignoredEventCount, std::uint32_t{1});
 }
 
 void ClapHostTest::process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,

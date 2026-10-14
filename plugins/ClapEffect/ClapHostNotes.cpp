@@ -36,6 +36,7 @@
 #include "PluginHostNotes.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 #include <clap/clap.h>
@@ -270,6 +271,8 @@ void HostedPlugin::setNoteExpression(std::uint8_t channel, std::int16_t key, std
 void HostedPlugin::setNoteParamMod(std::uint8_t channel, std::int16_t key, std::uint32_t paramId, double amount,
 	std::int32_t frameOffset)
 {
+	if (!std::isfinite(amount)) { return; }
+
 	NoteEventIn event;
 	event.type = CLAP_EVENT_PARAM_MOD;
 	event.channel = static_cast<std::uint8_t>(std::min<int>(channel, 15));
