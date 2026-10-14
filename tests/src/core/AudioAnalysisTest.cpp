@@ -85,6 +85,13 @@ std::vector<float> tone(double hz, int rate, double seconds)
 	return out;
 }
 
+std::vector<float> toneWithSilence(int rate, std::size_t start, std::size_t end)
+{
+	std::vector<float> out(static_cast<std::size_t>(rate), 0.f);
+	for (std::size_t i = start; i < end; ++i) { out[i] = 0.5f * static_cast<float>(std::sin(2.0 * M_PI * 220.0 * static_cast<double>(i) / rate)); }
+	return out;
+}
+
 SampleClip* toneClip(Track* track, double hz, tick_t at)
 {
 	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
@@ -158,6 +165,53 @@ private slots:
 			QCOMPARE(precomputeWindow(&sample, 0, window), -1);
 			QCOMPARE(precomputeWindow(&sample, 1, window), -1);
 		}
+	}
+
+	void aNoteStartsNearItsAudioOnset()
+	{
+		constexpr int rate = 44100;
+		constexpr std::size_t onset = rate * 3 / 40;
+		const std::vector<float> audio = toneWithSilence(rate, onset, rate * 3 / 4);
+		const std::vector<pitchtrack::PitchNote> notes = pitchtrack::detectNotes(audio.data(), audio.size(), rate);
+		QCOMPARE(notes.size(), std::size_t{1});
+		const f_cnt_t tolerance = static_cast<f_cnt_t>(rate / 50);
+		QVERIFY2(notes.front().start >= onset - tolerance && notes.front().start <= onset + tolerance,
+			qPrintable(QStringLiteral("detected onset %1, expected %2").arg(static_cast<qulonglong>(notes.front().start))
+				.arg(static_cast<qulonglong>(onset))));
+	}
+
+	void aLegatoPitchChangeStartsNearItsTransition()
+	{
+		constexpr int rate = 44100;
+		constexpr std::size_t transition = rate * 11 / 20;
+		std::vector<float> audio(static_cast<std::size_t>(rate));
+		for (std::size_t i = 0; i < audio.size(); ++i)
+		{
+			const double phase = i < transition
+				? 2.0 * M_PI * 220.0 * static_cast<double>(i) / rate
+				: 2.0 * M_PI * (220.0 * static_cast<double>(transition) + 330.0 * static_cast<double>(i - transition)) / rate;
+			audio[i] = 0.5f * static_cast<float>(std::sin(phase));
+		}
+		const std::vector<pitchtrack::PitchNote> notes = pitchtrack::detectNotes(audio.data(), audio.size(), rate);
+		QCOMPARE(notes.size(), std::size_t{2});
+		QCOMPARE(notes.back().key, 64);
+		const f_cnt_t tolerance = static_cast<f_cnt_t>(rate / 200);
+		QVERIFY2(notes.back().start >= transition - tolerance && notes.back().start <= transition + tolerance,
+			qPrintable(QStringLiteral("detected transition %1, expected %2").arg(static_cast<qulonglong>(notes.back().start))
+				.arg(static_cast<qulonglong>(transition))));
+	}
+
+	void aNoteEndsNearItsAudioOffset()
+	{
+		constexpr int rate = 44100;
+		constexpr std::size_t offset = rate * 3 / 4;
+		const std::vector<float> audio = toneWithSilence(rate, rate / 4, offset);
+		const std::vector<pitchtrack::PitchNote> notes = pitchtrack::detectNotes(audio.data(), audio.size(), rate);
+		QCOMPARE(notes.size(), std::size_t{1});
+		const f_cnt_t tolerance = static_cast<f_cnt_t>(rate / 50);
+		QVERIFY2(notes.front().end >= offset - tolerance && notes.front().end <= offset + tolerance,
+			qPrintable(QStringLiteral("detected offset %1, expected %2").arg(static_cast<qulonglong>(notes.front().end))
+				.arg(static_cast<qulonglong>(offset))));
 	}
 
 	void audioBecomesATrackOfNotes()
