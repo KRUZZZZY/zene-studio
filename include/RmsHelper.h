@@ -26,6 +26,8 @@
 #ifndef LMMS_RMS_HELPER_H
 #define LMMS_RMS_HELPER_H
 
+#include <stdexcept>
+
 #include "lmms_math.h"
 
 #include <cstring>
@@ -74,6 +76,11 @@ public:
 
 	void setSize(std::size_t size)
 	{
+		if( size == 0 )
+		{
+			throw std::invalid_argument( "RmsHelper size must be greater than zero" );
+		}
+
 		if( m_buffer )
 		{
 			if( m_size < size )

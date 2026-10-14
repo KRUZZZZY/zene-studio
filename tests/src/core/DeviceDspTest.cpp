@@ -44,6 +44,7 @@
 #include <functional>
 #include <limits>
 #include <new>
+#include <stdexcept>
 #include <vector>
 
 #include <fftw3.h>
@@ -133,6 +134,7 @@ extern "C"
 #include "Engine.h"
 #include "Mixer.h"
 #include "QuadratureLfo.h"
+#include "RmsHelper.h"
 #include "SampleFrame.h"
 #include "Song.h"
 #include "../../../src/core/audio/OssSampleConversion.h"
@@ -338,6 +340,18 @@ private slots:
 		lfo.tick(&left, &right);
 		lfo.tick(&left, &right);
 		QVERIFY2(std::abs(left) < 1.0e-5f, qPrintable(QString::number(left)));
+	}
+
+	void rmsHelperRejectsZeroAtConstruction()
+	{
+		QVERIFY_EXCEPTION_THROWN(RmsHelper(0), std::invalid_argument);
+	}
+
+	void rmsHelperRejectsZeroResize()
+	{
+		RmsHelper rms{1};
+		QVERIFY_EXCEPTION_THROWN(rms.setSize(0), std::invalid_argument);
+		QCOMPARE(rms.update(2.0f), 2.0f);
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.
