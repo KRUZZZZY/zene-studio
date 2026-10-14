@@ -244,15 +244,19 @@ void LocalZynAddSubFx::processMidiEvent( const MidiEvent& event )
 				break;
 			}
 		case MidiNoteOff:
+		{
 			if( event.key() < 0 || event.key() > MidiMaxKey )
 			{
 				break;
 			}
-			if( --m_runningNotes[event.key()] <= 0 )
+			const auto runningNotes = m_runningNotes[event.key()];
+			if( runningNotes == 1 )
 			{
 				m_master->noteOff( event.channel(), event.key() );
 			}
+			m_runningNotes[event.key()] = std::max( 0, runningNotes - 1 );
 			break;
+		}
 		case MidiPitchBend:
 			m_master->setController( event.channel(), C_pitchwheel, event.pitchBend()-8192 );
 			break;

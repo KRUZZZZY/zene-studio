@@ -2246,6 +2246,7 @@ tests/src/gui/DelayControlsDialog.h
 tests/src/gui/EqFader.h
 tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
+tests/src/plugins/ZynNoteOffTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api boundary's

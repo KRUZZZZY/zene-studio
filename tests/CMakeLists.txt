@@ -2979,6 +2979,25 @@ if(TARGET zynaddsubfx AND TARGET RemoteZynAddSubFx)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
+# The local Zyn core's MIDI note counter must not underflow on an unmatched
+# note-off; exercise processMidiEvent directly without starting the audio engine.
+if(TARGET ZynAddSubFxCore)
+	add_executable(ZynNoteOffTest src/plugins/ZynNoteOffTest.cpp)
+	target_include_directories(ZynNoteOffTest PRIVATE
+		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+		${CMAKE_SOURCE_DIR}/plugins/ZynAddSubFx
+	)
+	target_static_libraries(ZynNoteOffTest PRIVATE ZynAddSubFxCore lmmsobjs)
+	target_link_libraries(ZynNoteOffTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+	)
+	target_compile_features(ZynNoteOffTest PRIVATE cxx_std_20)
+	add_test(NAME ZynNoteOffTest COMMAND ZynNoteOffTest)
+	set_tests_properties(ZynNoteOffTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 # Synthetic plug-in host test (ported from the standards fork): builds a MODULE
 # plug-in from src/plugins/SyntheticAudioPlugin.cpp and drives it through the
 # AudioPlugin host path, so the host code is exercised for real.
