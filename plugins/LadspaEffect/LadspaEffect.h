@@ -85,6 +85,7 @@ private:
 	ladspa_key_t m_key;
 	int m_portCount;
 	bool m_inPlaceBroken;
+	bool m_processorsActivated = false;
 
 	const LADSPA_Descriptor * m_descriptor;
 	QVector<LADSPA_Handle> m_handles;

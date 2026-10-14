@@ -2466,6 +2466,17 @@ if(TARGET amp_1181 AND TARGET dj_eq_1901)
 	list(APPEND PART_C_MIGRATED_DEFINITIONS
 		"PART_C_LADSPA_DIR=\"$<TARGET_FILE_DIR:amp_1181>\"")
 	list(APPEND PART_C_LADSPA_TARGETS amp_1181 dj_eq_1901)
+	add_library(partial_init_failure_ladspa MODULE
+		src/plugins/PartialInitFailureLadspa.cpp)
+	target_include_directories(partial_init_failure_ladspa PRIVATE
+		${CMAKE_SOURCE_DIR}/include)
+	target_compile_features(partial_init_failure_ladspa PRIVATE cxx_std_20)
+	set_target_properties(partial_init_failure_ladspa PROPERTIES
+		PREFIX ""
+		OUTPUT_NAME "partial_init_failure"
+		LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ladspa-fixtures"
+		RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ladspa-fixtures")
+	list(APPEND PART_C_LADSPA_TARGETS partial_init_failure_ladspa)
 endif()
 
 # Slice 8 (task #589): runtime assets. The STK rawwaves are vendored in the
@@ -2526,6 +2537,10 @@ target_compile_definitions(PluginPortsMigrationTest PRIVATE
 	PART_C_REFERENCE_EXE="$<TARGET_FILE:PluginPortsMigrationReference>"
 	${PART_C_MIGRATED_DEFINITIONS}
 )
+if(TARGET partial_init_failure_ladspa)
+	target_compile_definitions(PluginPortsMigrationTest PRIVATE
+		"PART_C_FAILURE_LADSPA_MODULE=\"$<TARGET_FILE:partial_init_failure_ladspa>\"")
+endif()
 set_target_properties(PluginPortsMigrationTest PROPERTIES ENABLE_EXPORTS ON)
 add_dependencies(PluginPortsMigrationTest
 	PluginPortsMigrationReference

@@ -543,6 +543,7 @@ void LadspaEffect::pluginInstantiation()
 	{
 		manager->activate( m_key, m_handles[proc] );
 	}
+	m_processorsActivated = true;
 	m_controls = new LadspaControls( this );
 }
 
@@ -551,31 +552,36 @@ void LadspaEffect::pluginInstantiation()
 
 void LadspaEffect::pluginDestruction()
 {
-	if( !isOkay() )
-	{
-		return;
-	}
-
 	delete m_controls;
+	m_controls = nullptr;
 
-	for( ch_cnt_t proc = 0; proc < processorCount(); proc++ )
+	Ladspa2LMMS * manager = Engine::getLADSPAManager();
+	for( const LADSPA_Handle handle : m_handles )
 	{
-		Ladspa2LMMS * manager = Engine::getLADSPAManager();
-		manager->deactivate( m_key, m_handles[proc] );
-		manager->cleanup( m_key, m_handles[proc] );
-		for( int port = 0; port < m_portCount; port++ )
+		if( m_processorsActivated )
 		{
-			port_desc_t * pp = m_ports.at( proc ).at( port );
-			if( m_inPlaceBroken || pp->rate != BufferRate::ChannelOut )
-			{
-				if( pp->buffer) delete[] pp->buffer;
-			}
-			delete pp;
+			manager->deactivate( m_key, handle );
 		}
-		m_ports[proc].clear();
+		manager->cleanup( m_key, handle );
+	}
+	m_handles.clear();
+	m_processorsActivated = false;
+
+	for( const auto& processorPorts : m_ports )
+	{
+		for( port_desc_t* port : processorPorts )
+		{
+			if( m_inPlaceBroken || port->rate != BufferRate::ChannelOut )
+			{
+				if( port->buffer )
+				{
+					delete[] port->buffer;
+				}
+			}
+			delete port;
+		}
 	}
 	m_ports.clear();
-	m_handles.clear();
 	m_portControls.clear();
 }
 
