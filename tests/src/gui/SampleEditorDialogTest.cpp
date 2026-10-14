@@ -31,6 +31,7 @@
 #include <QFile>
 #include <QImage>
 #include <QPainter>
+#include <QFile>
 #include <QPushButton>
 #include <QSignalSpy>
 
@@ -277,6 +278,24 @@ private slots:
 		QCOMPARE(oneSampleModel.length(), 2);
 		oneSampleModel.smooth();
 		oneSampleModel.normalize();
+	}
+
+	void playbackCursorChecksVisibleRangeBeforeUnsignedSubtraction()
+	{
+		// The product view is a separately built plugin, so enforce its range-check contract here.
+		QFile file(QStringLiteral("../../plugins/AudioFileProcessor/AudioFileProcessorWaveView.cpp"));
+		QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(file.errorString()));
+		const QByteArray source = file.readAll();
+		const auto paintEvent = source.indexOf("void AudioFileProcessorWaveView::paintEvent");
+		QVERIFY(paintEvent >= 0);
+		const auto rangeStartCheck = source.indexOf("m_framesPlayed >= static_cast<f_cnt_t>(m_from)", paintEvent);
+		const auto rangeEndCheck = source.indexOf("m_framesPlayed <= static_cast<f_cnt_t>(m_to)", paintEvent);
+		const auto frameOffset = source.indexOf("m_framesPlayed - static_cast<f_cnt_t>(m_from)", paintEvent);
+		QVERIFY(rangeStartCheck >= paintEvent);
+		QVERIFY(rangeEndCheck >= paintEvent);
+		QVERIFY(frameOffset >= paintEvent);
+		QVERIFY(rangeStartCheck < frameOffset);
+		QVERIFY(rangeEndCheck < frameOffset);
 	}
 
 	void theFieldsShowTheSelection()

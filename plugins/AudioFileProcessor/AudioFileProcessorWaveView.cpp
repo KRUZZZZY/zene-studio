@@ -216,8 +216,11 @@ void AudioFileProcessorWaveView::paintEvent(QPaintEvent * pe)
 						double(graph_rect.width()) / frames;
 	m_loopFrameX = graph_rect.x() + (m_sample->loopStartFrame() - m_from) *
 						double(graph_rect.width()) / frames;
-	const int played_width_px = (m_framesPlayed - m_from) *
-						double(graph_rect.width()) / frames;
+	const bool played_frame_visible = m_framesPlayed >= static_cast<f_cnt_t>(m_from)
+		&& m_framesPlayed <= static_cast<f_cnt_t>(m_to);
+	const int played_width_px = played_frame_visible
+		? (m_framesPlayed - static_cast<f_cnt_t>(m_from)) * double(graph_rect.width()) / frames
+		: 0;
 
 	// loop point line
 	p.setPen(QColor(0x7F, 0xFF, 0xFF)); //TODO: put into a qproperty
@@ -253,7 +256,7 @@ void AudioFileProcessorWaveView::paintEvent(QPaintEvent * pe)
 				QColor(95, 205, 255, 65) //TODO: put into a qproperty
 		);
 
-		if (m_framesPlayed && m_animation)
+		if (m_framesPlayed && m_animation && played_frame_visible)
 		{
 			QLinearGradient g(m_startFrameX, 0, played_width_px, 0);
 			const QColor c(0, 120, 255, 180); //TODO: put into a qproperty
