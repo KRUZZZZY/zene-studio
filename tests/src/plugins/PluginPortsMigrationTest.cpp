@@ -44,6 +44,7 @@
 #include <new>
 #include <cstdint>
 #include <type_traits>
+#include <map>
 #include <vector>
 #include <memory>
 
@@ -140,6 +141,7 @@ void operator delete[](void* allocation, std::size_t) noexcept
 #include "PluginView.h"
 #include "RmsHelper.h"
 #include "PluginView.h"
+#include "../../../plugins/Sf2Player/PatchPresetIteration.h"
 
 namespace
 {
@@ -665,6 +667,7 @@ private slots:
 	void gigPatchDialogPreviewsSelectedProgram();
 	void rmsHelperCopiesHaveIndependentBuffers();
 	void sf2FailedLoadPreservesCurrentFontAndSource();
+	void sf2PatchListKeepsEarlierDuplicateAndLaterUniqueProgram();
 
 private:
 	std::vector<QLibrary*> m_libraries;
@@ -1159,6 +1162,42 @@ void PluginPortsMigrationTest::basicFiltersCannotBeCopied()
 	using Filter = lmms::BasicFilters<2>;
 	QVERIFY2(!std::is_copy_constructible_v<Filter>, "BasicFilters must not shallow-copy its owned double-filter subfilter");
 	QVERIFY2(!std::is_copy_assignable_v<Filter>, "BasicFilters must not copy-assign its owned double-filter subfilter");
+}
+
+void PluginPortsMigrationTest::sf2PatchListKeepsEarlierDuplicateAndLaterUniqueProgram()
+{
+	struct Preset
+	{
+		int bank;
+		int program;
+		QString name;
+	};
+	using SoundFont = std::vector<Preset>;
+	const std::vector<SoundFont> soundFonts{
+		{{0, 5, QStringLiteral("first soundfont")}, {1, 90, QStringLiteral("other bank")}},
+		{{0, 5, QStringLiteral("duplicate")}, {0, 7, QStringLiteral("later unique")}},
+	};
+	std::map<int, QString> programs;
+
+	lmms::sf2::forEachUniquePresetForBank(
+		static_cast<int>(soundFonts.size()), 0,
+		[&soundFonts](int index) { return &soundFonts[static_cast<std::size_t>(index)]; },
+		[](const SoundFont* soundFont, auto&& visitPreset) {
+			for (const auto& preset : *soundFont)
+			{
+				visitPreset(preset);
+			}
+		},
+		[](const SoundFont*, const Preset& preset) { return preset.bank; },
+		[](const Preset& preset) { return preset.program; },
+		[&programs](int program) { return programs.contains(program); },
+		[&programs](const SoundFont*, const Preset& preset, int program) {
+			programs.emplace(program, preset.name);
+		});
+
+	QCOMPARE(programs.size(), std::size_t{2});
+	QCOMPARE(programs.at(5), QStringLiteral("first soundfont"));
+	QVERIFY(programs.contains(7));
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()

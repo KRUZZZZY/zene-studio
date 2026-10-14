@@ -2286,3 +2286,4 @@ src/core/MicroTimer.cpp	cluster new-p10-240: MicroTimer::elapsed retains its int
 tests/src/core/SlideNotesTest.cpp	new-p10-266: reject out-of-range project note key, timing, and overflowing legacy octave values with a load-path regression
 include/OversamplingHelpers.h	BUG new-p10-282 (2026-10-12): reject invalid oversampling stage counts in setup() and setStages() for both filter helpers; regression in tests/src/core/DeviceDspTest.cpp.
 include/Piano.h	new-p10-315: guard Piano::isKeyPressed against keys outside [0, NumKeys); invalid keys return false, covered by PianoRollBenchmarkTest::invalidKeysAreNotPressed.
+plugins/Sf2Player/PatchesDialog.cpp	2026-10-12: bankChanged keeps scanning later soundfonts after adding a preset; the existing findProgItem duplicate filter preserves earlier-soundfont precedence.
