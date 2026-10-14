@@ -151,6 +151,10 @@ private slots:
 	//! byte count in the message), and one inside the byte cap is accepted.
 	void byteCapCountsBytes();
 
+	//! Unique schedules stop at the registry limit, while a live edit still
+	//! replaces an existing entry at the limit.
+	void registryCountIsBounded();
+
 	//! Re-scheduling the same id REPLACES the definition in place (the live
 	//! edit) and keeps the id's place; unscheduling takes it off and the
 	//! counters reset with the slot.
@@ -497,6 +501,47 @@ void ScriptClockTest::aLogLineCannotMasqueradeAsABudgetFailure()
 
 	song->stop();
 	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-masq"), &error), qPrintable(error));
+}
+
+void ScriptClockTest::registryCountIsBounded()
+{
+	constexpr int ExpectedMaxSchedules = 64;
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+	QCOMPARE(clock.scheduleCount(), 0);
+
+	for (int index = 0; index < ExpectedMaxSchedules; ++index)
+	{
+		error.clear();
+		QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-cap-%1").arg(index),
+			QStringLiteral("return 1"), QStringLiteral("bar"), 0, &error), qPrintable(error));
+	}
+
+	// Replacing a live id does not consume another slot.
+	error.clear();
+	QVERIFY2(clock.setSchedule(QStringLiteral("lc-t-cap-0"), QStringLiteral("return 2"),
+		QStringLiteral("beat"), 0, &error), qPrintable(error));
+	QCOMPARE(clock.scheduleCount(), ExpectedMaxSchedules);
+
+	error.clear();
+	const QString overflowId = QStringLiteral("lc-t-cap-overflow");
+	const bool accepted = clock.setSchedule(overflowId, QStringLiteral("return 1"),
+		QStringLiteral("bar"), 0, &error);
+	const QString overflowError = error;
+	if (accepted)
+	{
+		error.clear();
+		QVERIFY2(clock.removeSchedule(overflowId, &error), qPrintable(error));
+	}
+	for (int index = 0; index < ExpectedMaxSchedules; ++index)
+	{
+		error.clear();
+		QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-cap-%1").arg(index), &error), qPrintable(error));
+	}
+
+	QVERIFY2(!accepted, qPrintable(overflowError));
+	QVERIFY(overflowError.contains(QStringLiteral("maximum number of scheduled scripts")));
+	QCOMPARE(clock.scheduleCount(), 0);
 }
 
 void ScriptClockTest::a16RowsCarryTheGroup()
