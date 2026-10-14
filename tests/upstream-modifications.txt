@@ -1935,3 +1935,4 @@ src/core/AudioEngine.cpp	M0 blocker fix 2026-10-12 (bar5 regressions): disposePl
 src/tracks/InstrumentTrack.cpp	M0 blocker fix 2026-10-12 (bar5 regressions): InstrumentTrack::play() does not create a missing MidiClip on the render thread; a pattern clip this track does not hold has no notes and is skipped.
 src/tracks/InstrumentTrack.cpp	0.5.0 L02 Q050-013: the destructor also removes the SessionCellHandle an audio cell on the track's column gave it (SessionAudioCells.h), under requestChangeInModel/doneChangeInModel; nothing else changes
 src/core/CMakeLists.txt	0.5.0 L02 Q050-013: lists core/SessionAudioBake.cpp (the warp/repitch bake of an audio cell); one added source path
+tests/src/core/SmfInterchangeTest.cpp	cluster new-p8-231: covers an absolute file tick beyond the SMF reader limit with an in-range readback control and a writer refusal assertion

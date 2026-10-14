@@ -390,6 +390,50 @@ private slots:
 			static_cast<quint32>(widestGap * interchange::SmfTicksPerLmmsTick));
 	}
 
+	//! Each delta can fit a four-byte VLQ while their absolute position exceeds
+	//! the reader's 32-bit file-tick range. The last event must be refused by the
+	//! writer rather than producing a file its own reader cannot accept.
+	void anAbsoluteFileTickBeyondTheReaderRangeIsRefused()
+	{
+		TempoMap map;
+		map.setActive(true);
+		for (tick_t tick = 0; tick <= 430'000'000; tick += 20'000'000)
+		{
+			TempoMapEvent event;
+			event.tick = tick;
+			event.hasTempo = true;
+			event.tempo = 120 + static_cast<int>((tick / 20'000'000) % 2);
+			QVERIFY(map.addEvent(event));
+		}
+
+		// 4.3 billion file ticks is still inside SmfMaxFileTicks.
+		QString error;
+		const QString withinRange = path(m_directory, QStringLiteral("absolute-tick-within.mid"));
+		QVERIFY2(interchange::writeConductorTrack(withinRange, map, 120,
+			TempoMapTimeSignature{4, 4}, nullptr, &error), qPrintable(error));
+		QVERIFY2(interchange::readConductorTrack(withinRange).ok,
+			"the largest in-range event sequence must read back");
+
+		// The same 200-million-file-tick deltas now reach 4.4 billion.
+		TempoMapEvent beyondRange;
+		beyondRange.tick = 440'000'000;
+		beyondRange.hasTempo = true;
+		beyondRange.tempo = 120;
+		QVERIFY(map.addEvent(beyondRange));
+		const QString beyond = path(m_directory, QStringLiteral("absolute-tick-beyond.mid"));
+		const bool wroteBeyondRange = interchange::writeConductorTrack(beyond, map, 120,
+			TempoMapTimeSignature{4, 4}, nullptr, &error);
+		if (wroteBeyondRange)
+		{
+			const interchange::SmfReadReport refused = interchange::readConductorTrack(beyond);
+			QVERIFY2(!refused.ok, "the baseline writer's over-limit output must trigger the reader limit");
+		}
+		QVERIFY2(!wroteBeyondRange,
+			"a writer output beyond the reader's absolute tick range is not readable");
+		QVERIFY2(error.contains(QStringLiteral("reader can hold")), qPrintable(error));
+		QVERIFY(!QFile::exists(beyond));
+	}
+
 	//! A global tempo outside the engine's own bounds never reaches the file's
 	//! microseconds-per-quarter arithmetic. An EMPTY map answers the caller's
 	//! global tempo at every tick, so the tick-0 seed carries whatever the caller
