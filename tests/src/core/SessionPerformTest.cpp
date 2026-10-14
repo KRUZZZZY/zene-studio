@@ -172,6 +172,7 @@ private slots:
 		QCOMPARE(markeractions::advance(300, true), 1);  // crossed again after the loop
 		QCOMPARE(markeractions::advance(400, false), 0);
 		QCOMPARE(ProjectMarkers::instance().markers().front().action, QStringLiteral("session.set_quantisation"));
+		QVERIFY(run(QStringLiteral("marker.remove"), {{QStringLiteral("marker"), marker}}).ok);
 	}
 
 	void invalidMarkerActionArgumentsAreReported()
@@ -284,6 +285,37 @@ private slots:
 		QCOMPARE(run(QStringLiteral("session.setlist")).result.value(QStringLiteral("index")).toInt(), 0);
 		QCOMPARE(run(QStringLiteral("session.setlist_go"), {{QStringLiteral("to"), QStringLiteral("4")}}).errorKind, ControlErrorKind::InvalidArgs);
 		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{}}}).ok);  // leave the preference empty
+	}
+
+	void aMarkerCrossedImmediatelyAfterResumeRunsItsAction()
+	{
+		Song* song = Engine::getSong();
+		song->stop();
+		song->setPlayPos(0, Song::PlayMode::Song);
+		QTest::qWait(30);  // let the stopped watcher clear its previous pass
+		song->playSong();
+		QTest::qWait(30);  // the watcher has seen the initial playing position
+		song->togglePause();
+		QVERIFY(song->isPaused());
+		QTest::qWait(30);  // the watcher has seen the paused position
+		const tick_t markerTick = song->getPlayPos(Song::PlayMode::Song).getTicks() + 1;
+		QVERIFY(run(QStringLiteral("session.set_quantisation"), {{QStringLiteral("quantisation"), QStringLiteral("none")}}).ok);
+		const ControlResult added = run(QStringLiteral("marker.add"), {{QStringLiteral("tick"), static_cast<int>(markerTick)}});
+		QVERIFY(added.ok);
+		const QString marker = added.result.value(QStringLiteral("marker")).toString();
+		QVERIFY(run(QStringLiteral("marker.set"), {{QStringLiteral("marker"), marker},
+			{QStringLiteral("action"), QStringLiteral("session.set_quantisation")},
+			{QStringLiteral("args"), QJsonObject{{QStringLiteral("quantisation"), QStringLiteral("bar")}}}}).ok);
+
+		song->togglePause();
+		for (int period = 0; period < 64 && song->getPlayPos(Song::PlayMode::Song).getTicks() < markerTick; ++period)
+		{
+			song->processNextBuffer();
+		}
+		QVERIFY(song->getPlayPos(Song::PlayMode::Song).getTicks() >= markerTick);
+		QTRY_COMPARE_WITH_TIMEOUT(song->sessionModel().globalLaunchQuantisation(), LaunchQuantisation::Bar, 1000);
+		song->stop();
+		QVERIFY(run(QStringLiteral("marker.remove"), {{QStringLiteral("marker"), marker}}).ok);
 	}
 };
 
