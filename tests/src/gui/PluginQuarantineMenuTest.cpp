@@ -41,6 +41,7 @@
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "PluginQuarantineMenu.h"
+#include "SafeStart.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -79,13 +80,15 @@ private slots:
 		qputenv("LMMS_PLUGIN_SCAN_CACHE", m_home.filePath(QStringLiteral("plugin-scan-cache.json")).toLocal8Bit());
 		ConfigManager::inst()->loadConfigFile(m_home.filePath(QStringLiteral("zene.xml")));
 		Engine::init(true);
-		ControlRegistry::setReady(true);
+		QVERIFY2(!ControlRegistry::startupComplete(),
+			"the GUI prompt runs before the registry startup-ready flag is set");
 	}
 
 	void cleanupTestCase()
 	{
 		setPluginQuarantinePicker({});
-		ControlRegistry::setReady(false);
+		setCrashQuarantineAsker({});
+		setCrashQuarantineFailureReporter({});
 		Engine::destroy();
 	}
 
@@ -130,6 +133,68 @@ private slots:
 		release->trigger();
 		QVERIFY(!quarantined().contains(plugin));
 		QVERIFY(item(menu, QStringLiteral("Release libcrashy.so (file gone)")) == nullptr);
+		QAction* rescan = item(menu, QStringLiteral("Rescan Plugins"));
+		QVERIFY(rescan != nullptr);
+		rescan->trigger();
+		QVERIFY2(!menu->actions().first()->text().startsWith(QStringLiteral("Refused:")),
+			"the release menu's rescan command must work before registry startup readiness");
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+	}
+
+	// Q050-049: a marker that names the plug-in the last run died inside produces ONE offer; yes
+	// quarantines exactly that file through plugin.scan_cache_quarantine_add, and the ordinary
+	// Release item still frees it.
+	void aCrashQuarantinedPluginIsOfferedOnceAndReleasable()
+	{
+		QTemporaryDir work;
+		QVERIFY(work.isValid());
+		const QString plugin = work.filePath(QStringLiteral("libcrashed.so"));
+		{
+			QFile marker(work.filePath(QString::fromLatin1(safestart::kMarkerName)));
+			QVERIFY(marker.open(QIODevice::WriteOnly));
+			marker.write(("Zene Studio safe-start marker v1\npid=4242\ntime_unix=1\nsafe_start_runs=0\n"
+				"active_phase=scan\nactive_format=lmms-module\nactive_plugin=\nactive_file="
+				+ plugin + "\n").toUtf8());
+		}
+		QVERIFY(safestart::install(work.path().toStdString()));
+		safestart::beginSession(); // initial safe-start setup before GuiApplication
+		QVERIFY(safestart::install(work.path().toStdString()));
+		safestart::beginSession(); // GUI setup repeats it after GuiApplication
+		QVERIFY(safestart::crashSuspect().present);
+		QVERIFY(!ControlRegistry::startupComplete());
+
+		int asked = 0;
+		QString prompt;
+		setCrashQuarantineAsker([&](const QString& text) { ++asked; prompt = text; return false; });
+		QVERIFY2(!offerCrashQuarantine(), "answering no must quarantine nothing");
+		QCOMPARE(asked, 1);
+		QVERIFY(prompt.contains(plugin));
+		QVERIFY(!quarantined().contains(plugin));
+
+		setCrashQuarantineAsker([&](const QString&) { ++asked; return true; });
+		QVERIFY(offerCrashQuarantine());
+		QVERIFY(quarantined().contains(plugin));
+
+		int failures = 0;
+		QString failure;
+		setCrashQuarantineFailureReporter([&](const QString& text) { ++failures; failure = text; });
+		QVERIFY(!offerCrashQuarantine());
+		QCOMPARE(asked, 3);
+		QCOMPARE(failures, 1);
+		QVERIFY(failure.contains(QStringLiteral("already quarantined")));
+
+		QMenu parent;
+		QMenu* menu = addPluginQuarantineMenu(&parent);
+		emit menu->aboutToShow();
+		QAction* release = item(menu, QStringLiteral("Release libcrashed.so (file gone)"));
+		QVERIFY(release != nullptr);
+		QVERIFY(release->toolTip().contains(QStringLiteral("scanned")));
+		release->trigger();
+		QVERIFY2(!quarantined().contains(plugin), "the crash-quarantined entry must be releasable");
+
+		setCrashQuarantineAsker({});
+		setCrashQuarantineFailureReporter({});
+		safestart::endSession();
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 	}
 

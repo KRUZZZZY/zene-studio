@@ -53,6 +53,21 @@ LMMS_EXPORT QString pluginQuarantineStatusText(const QJsonObject& state);
 //! empty function restores the default.
 LMMS_EXPORT void setPluginQuarantinePicker(std::function<QString()> picker);
 
+/*! Q050-049: when the previous session died while scanning or instantiating a third-party plug-in
+ *  (the safe-start marker names it, safestart::crashSuspect()), ask ONCE whether to quarantine
+ *  exactly that file. Yes goes through plugin.scan_cache_quarantine_add, the command Edit >
+ *  Plugin Quarantine uses. Returns true when the file was quarantined; false when there was no
+ *  suspect, the answer was no, or the command refused. Tests replace the question with
+ *  setCrashQuarantineAsker(); the default is a message box. */
+LMMS_EXPORT bool offerCrashQuarantine();
+
+//! Tests replace the yes/no question (argument: the prompt text). An empty function restores the box.
+LMMS_EXPORT void setCrashQuarantineAsker(std::function<bool(const QString&)> asker);
+
+//! Tests replace the failure notice (default: a warning box) to prove that a
+//! refused quarantine is reported to the user.
+LMMS_EXPORT void setCrashQuarantineFailureReporter(std::function<void(const QString&)> reporter);
+
 } // namespace lmms::gui
 
 #endif // LMMS_GUI_PLUGIN_QUARANTINE_MENU_H

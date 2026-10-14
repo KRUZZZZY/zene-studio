@@ -280,6 +280,10 @@ Plugin * Plugin::instantiate(const QString& pluginName, Model * parent,
 		auto instantiationHook = reinterpret_cast<InstantiationHook>(pi.library->resolve("lmms_plugin_main"));
 		if (instantiationHook)
 		{
+			// Named in the safe-start marker while the plugin's own code runs
+			// (Q050-049); a death in here is attributed to this module.
+			const lmms::safestart::ActivePluginScope activePlugin("instantiate",
+				pluginName.toStdString(), pluginFile.toStdString(), "lmms-module");
 			inst = instantiationHook(parent, data);
 			if(!inst) {
 				inst = new DummyPlugin();

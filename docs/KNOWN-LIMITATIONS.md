@@ -1179,6 +1179,22 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
  `tests/src/core/SafeStartTest.cpp`, which raises a real signal in a forked child before asserting the next
  launch, and `tests/src/core/SafeStartLoadPathTest.cpp`, which drives the real `Plugin::instantiate()`
  against a third-party module copy — and the surface half is the `safestart.*` group in the first of them.
+- *(Updated 2026-10-12, Q050-049.)* **The crash marker now names the plug-in that was active, and the next start
+  offers to quarantine exactly that file.** Before this, the marker recorded only the pid, time and project, so
+  nothing could say which third-party plug-in killed the run. While `PluginFactory` dlopens a module (phase
+  `scan`) or `Plugin::instantiate()` runs a plug-in's own entry point (phase `instantiate`), the marker carries
+  `active_phase` / `active_format` / `active_plugin` / `active_file` through bounded atomic writes on the loading
+  thread, never the audio thread. The I/O cost has not been benchmarked; a scope for an engine-owned module does
+  not write the marker, and nested scopes restore their enclosing entry. When those writes succeed, the next
+  start reads the suspect back (`safestart::crashSuspect()`): the GUI asks **once**
+  ("quarantine this plug-in?", `gui::offerCrashQuarantine`), and an unattended run prints one stderr line;
+  `safestart.get_state` reports `crash_suspect` and `offer.quarantine` (the registered
+  `plugin.scan_cache_quarantine_add` call with its arguments). Yes goes through that command, so **Edit ▸ Plugin
+  Quarantine ▸ Release** frees the entry like any other (`PluginQuarantineMenuTest`; the crash and the marker are
+  proven by a forked child in `SafeStartTest`). Limits: only the in-process `lmms-module` load paths are
+  instrumented (LADSPA's constructor-time scan, the out-of-process hosts and VST3/CLAP editors are not), a crash
+  outside those windows still yields "the previous run did not exit cleanly" with no suspect, and the suspect is
+  read at launch, so a session that exits cleanly afterwards drops it.
 
 ## Telemetry and privacy
 

@@ -343,6 +343,9 @@ void registerPluginScanEditCommands(ControlRegistry& registry)
 			"device catalogue on the next scan (plugin.rescan applies it). ONE entry per path: adding a path "
 			"that is already listed is refused rather than silently ignored. Reversible - control.undo "
 			"dispatches the recorded plugin.scan_cache_quarantine_remove.");
+		// This edit writes only the persistent scan-cache quarantine list and is
+		// used by the startup crash offer before project-edit readiness.
+		cmd.requiresEngine = false;
 		cmd.mutating = true;
 		cmd.argsSchema = objectSchema({
 			{QStringLiteral("path"), stringProperty()},
@@ -371,6 +374,9 @@ void registerPluginScanEditCommands(ControlRegistry& registry)
 			"list, write the cache file, and report the reason the entry carried. The next scan loads the "
 			"file again. Reversible - control.undo dispatches the recorded plugin.scan_cache_quarantine_add "
 			"WITH the reason captured before the removal (a path-only re-add would lose it).");
+		// Release edits the same file-backed list, so the release menu can operate
+		// even when this GUI has no control socket to advance registry readiness.
+		cmd.requiresEngine = false;
 		cmd.mutating = true;
 		cmd.argsSchema = objectSchema({
 			{QStringLiteral("path"), stringProperty()},
@@ -400,6 +406,9 @@ void registerPluginScanEditCommands(ControlRegistry& registry)
 			"the cache. This is what APPLIES a quarantine edit. Reports the scan's own numbers before and "
 			"after. Not reversible: the previous fingerprint record of a file the scan replaced is not "
 			"restorable by any command.");
+		// Rescanning only accesses PluginFactory and its derived cache; it is a
+		// valid menu operation before project-edit readiness as well.
+		cmd.requiresEngine = false;
 		cmd.mutating = true;
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({

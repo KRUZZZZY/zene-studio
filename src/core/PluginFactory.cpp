@@ -30,6 +30,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QLibrary>
+#include "SafeStart.h"
 #include <QRegularExpression>
 #include <memory>
 #include "lmmsconfig.h"
@@ -172,6 +173,11 @@ struct PluginLoadOutcome
 PluginLoadOutcome loadPluginDescriptor(const QFileInfo& file)
 {
 	PluginLoadOutcome outcome;
+	// Name this file in the safe-start marker for the length of the dlopen: a
+	// module whose static initialiser kills the process is then identified by
+	// the next launch (Q050-049). Cheap, and only third-party files are written.
+	const lmms::safestart::ActivePluginScope activePlugin("scan", std::string(),
+		file.absoluteFilePath().toStdString(), "lmms-module");
 	outcome.library = std::make_shared<QLibrary>(file.absoluteFilePath());
 	if (!outcome.library->load())
 	{
