@@ -643,6 +643,7 @@ private slots:
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
 	void gigplayerSingleFrameLoopRepeatsFrame();
 	void dispersionRemainsStableAboveNyquist();
+	void dynamicsProcessorRejectsShortWaveShape();
 	void comparisonIsSensitive();
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
@@ -1588,6 +1589,51 @@ void PluginPortsMigrationTest::dispersionRemainsStableAboveNyquist()
 	}
 	qInfo("Dispersion high-frequency render peak=%g", peak);
 	QVERIFY(peak < 1000.0f);
+}
+
+void PluginPortsMigrationTest::dynamicsProcessorRejectsShortWaveShape()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	const auto module = std::find_if(migratedModules().begin(), migratedModules().end(),
+		[](const MigratedModule& candidate) { return std::string{candidate.plugin} == "dynamicsprocessor"; });
+	QVERIFY(module != migratedModules().end());
+
+	QLibrary library{QString::fromUtf8(module->path)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	std::unique_ptr<lmms::Effect> effect{
+		static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+	QVERIFY(effect != nullptr);
+
+	QDomDocument inputDoc;
+	QDomElement inputRoot = inputDoc.createElement("effect");
+	auto controls = effect->controls()->saveState(inputDoc, inputRoot);
+	const std::array<float, 1> shortShape{0.9f};
+	QString encodedShortShape;
+	lmms::base64::encode(reinterpret_cast<const char*>(shortShape.data()),
+		static_cast<int>(sizeof(shortShape)), encodedShortShape);
+	controls.setAttribute(QStringLiteral("waveShape"), encodedShortShape);
+	effect->loadSettings(inputRoot);
+
+	std::array<float, 200> defaultShape{};
+	for (int i = 0; i < static_cast<int>(defaultShape.size()); ++i)
+	{
+		defaultShape[i] = (static_cast<float>(i) + 1.0f) / 200.0f;
+	}
+	QString expectedWaveShape;
+	lmms::base64::encode(reinterpret_cast<const char*>(defaultShape.data()),
+		static_cast<int>(sizeof(defaultShape)), expectedWaveShape);
+
+	QDomDocument outputDoc;
+	QDomElement outputRoot = outputDoc.createElement("effect");
+	const auto savedControls = effect->controls()->saveState(outputDoc, outputRoot);
+	QCOMPARE(savedControls.attribute(QStringLiteral("waveShape")), expectedWaveShape);
 }
 
 /*!
