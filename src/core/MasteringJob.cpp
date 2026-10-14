@@ -370,6 +370,8 @@ MasteringCandidateReport MasteringJob::measureCandidate(const MasteringCandidate
 
 bool MasteringJob::run(QString* error)
 {
+	m_renderCount = 0;
+
 	QString sink;
 	if (error == nullptr)
 	{

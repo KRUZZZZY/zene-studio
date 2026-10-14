@@ -2099,6 +2099,7 @@ tests/src/core/LinkedClipGroupEditsTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp
+tests/src/core/MasteringTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiExportTest.cpp
