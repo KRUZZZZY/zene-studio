@@ -2113,3 +2113,4 @@ plugins/FreeBoy/GbApuWrapper.cpp	new-p9-174: reset reusable APU state and size i
 plugins/FreeBoy/GbApuWrapper.h	new-p9-174: declare reusable APU reset and configurable buffer setup.
 tests/src/plugins/PluginPortsHarness.h	new-p9-174: count C++ allocations and frees during instrument render and note-state cleanup.
 tests/src/plugins/PluginPortsMigrationTest.cpp	new-p9-174: fail the FreeBoy migration-family test when render or cleanup allocates/deallocates.
+include/interpolation.h	new-p9-193: replace the amplitude-dependent cubic polynomial with the standard four-point Catmull-Rom polynomial so constant signals retain their level; covered by AudioResamplerRatioTest::cubicInterpolationPreservesConstantSignal.

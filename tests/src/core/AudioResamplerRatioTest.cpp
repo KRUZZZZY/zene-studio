@@ -68,6 +68,7 @@
 #include "Delay.h"
 #include "Engine.h"
 #include "ExportRenderSettings.h"
+#include "interpolation.h"
 #include "Sample.h"
 #include "SampleFrame.h"
 #include "SrcQuality.h"
@@ -128,6 +129,18 @@ private slots:
 	{
 		ExportRenderSettings::reset();
 		Engine::destroy();
+	}
+
+	void cubicInterpolationPreservesConstantSignal()
+	{
+		constexpr float level = 1.0f;
+		for (const float position : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f})
+		{
+			const float output = cubicInterpolate(level, level, level, level, position);
+			QVERIFY2(std::fabs(output - level) < 1.0e-6f,
+				qPrintable(QStringLiteral("constant input changed to %1 at x=%2")
+					.arg(output).arg(position)));
+		}
 	}
 
 	// -----------------------------------------------------------------------
