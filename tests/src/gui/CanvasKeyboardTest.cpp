@@ -359,6 +359,35 @@ private slots:
 		QCOMPARE(ran.size(), before + 1);
 	}
 
+	void enterAtExclusiveTakeSpanEndDoesNotExtendTheComp()
+	{
+		const QString trackId = control::trackIdOf(m_track);
+		const ControlResult lane = invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), trackId}});
+		QVERIFY2(lane.ok, qPrintable(lane.errorMessage));
+		QCOMPARE(lane.result.value(QStringLiteral("lane")).toInt(), 0);
+
+		const ControlResult before = invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), trackId}});
+		QVERIFY2(before.ok, qPrintable(before.errorMessage));
+		QVERIFY(before.result.value(QStringLiteral("composite")).toObject()
+			.value(QStringLiteral("segments")).toArray().isEmpty());
+
+		QWidget host;
+		CompSwipeStrip strip(trackId, &host);
+		strip.resize(400, 60);
+		strip.setState(before.result);
+		const int spanEnd = m_clip->endPosition().getTicks();
+		QVERIFY(spanEnd > 0);
+		QTest::keyClick(&strip, Qt::Key_End);
+		QCOMPARE(strip.keyTick(), spanEnd);
+		QTest::keyClick(&strip, Qt::Key_Return);
+
+		const ControlResult after = invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), trackId}});
+		QVERIFY2(after.ok, qPrintable(after.errorMessage));
+		QVERIFY2(after.result.value(QStringLiteral("composite")).toObject()
+			.value(QStringLiteral("segments")).toArray().isEmpty(),
+			"Enter at the exclusive take-span end must not create a segment past the takes");
+	}
+
 	void theArrangerAddsItsOwnClipKeys()
 	{
 		QKeyEvent across(QEvent::KeyPress, Qt::Key_Down, Qt::ShiftModifier | Qt::AltModifier);
