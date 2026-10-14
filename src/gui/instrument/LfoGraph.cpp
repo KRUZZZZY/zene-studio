@@ -187,6 +187,7 @@ void LfoGraph::drawInfoText(const EnvelopeAndLfoParameters& params)
 void LfoGraph::toggleAmountModel()
 {
 	auto* params = castModel<EnvelopeAndLfoParameters>();
+	if (!params) { return; }
 	auto& lfoAmountModel = params->getLfoAmountModel();
 
 	lfoAmountModel.setValue(lfoAmountModel.value() < 1.0 ? 1.0 : 0.0);

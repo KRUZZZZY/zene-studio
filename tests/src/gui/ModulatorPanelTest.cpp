@@ -39,6 +39,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "LfoGraph.h"
 #include "Mixer.h"
 #include "ModulatorPanel.h"
 
@@ -78,6 +79,15 @@ private slots:
 	{
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	void clickingAnUnboundLfoGraphIsSafe()
+	{
+		LfoGraph graph{nullptr};
+		QVERIFY(graph.model() == nullptr);
+		graph.show();
+		QTest::mouseClick(&graph, Qt::LeftButton);
+		QVERIFY(graph.model() == nullptr);
 	}
 
 	void theLayerIsEditedFromThePanel()
