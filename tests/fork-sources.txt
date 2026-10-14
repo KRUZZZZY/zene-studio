@@ -61,6 +61,7 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/core/NeuralAmpWavInputTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ReverbSCRawProcessingTest.cpp ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/EqCurveTest.cpp ; \
+# git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/EqFilterTest.cpp ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
@@ -113,6 +114,10 @@
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
 # 2026-10-10 (new-p10-108): XyPadPairTest now exercises the Delay plug-in's XyPad directly. Its two test-local headers
 #   provide AUTOMOC inputs for the already-configured target without changing the CMake build graph.
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/EqFilterTest.cpp ; \
+#        } | LC_ALL=C sort -u) && echo REPRODUCES
+# 2026-10-11 (new-p9-120): the peak EQ Nyquist regression source is named in both pathspec
+# blocks above and registered here, keeping this fork-specific source list reproducible.
 # 2026-09-16 (the 0.3.0 fix-up pass, lane 030/fixup-hygiene): three fork-NEW modules enter this
 # scope, each named in the pathspec lines above so the recipe derives them and each registered
 # here so the fork ratchets measure it instead of leaving a new file invisible:
@@ -2301,6 +2306,7 @@ tests/src/plugins/ReverbSCCreateTestAllocator.c
 tests/src/gui/PianoViewFocusTest.cpp
 tests/src/gui/TaskIndicatorTest.cpp
 tests/src/gui/EqCurveTest.cpp
+tests/src/plugins/EqFilterTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/stem_commands_lib.py
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api boundary's

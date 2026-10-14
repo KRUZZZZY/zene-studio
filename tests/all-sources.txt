@@ -2866,6 +2866,7 @@ tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
 tests/src/plugins/ClapLoaderErrorTest.cpp
 tests/src/plugins/FakeHostModule.cpp
+tests/src/plugins/EqFilterTest.cpp
 tests/src/plugins/FakeRemotePluginClient.cpp
 tests/src/plugins/MissingDevicesNoEntryModule.cpp
 tests/src/plugins/MpeTestConsumer.cpp

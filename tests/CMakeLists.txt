@@ -385,6 +385,7 @@ set(LMMS_TESTS
 	src/core/ImportFilterTest.cpp
 	src/core/HydrogenImportTest.cpp
 	src/core/MathTest.cpp
+	src/plugins/EqFilterTest.cpp
 	# The LIVE loudness tap (feature row 24 of docs/FEATURE-LIST-0.3.0.md, the
 	# `meter.*` group's live half): what an armed tap reads, the three negative
 	# controls that keep it honest - silence reads the sentinel, 10 dB more input
