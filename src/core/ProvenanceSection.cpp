@@ -216,8 +216,9 @@ bool parseChange(const QDomNode& node, provenance::Change& change, quint64& high
 	const QDomElement element = node.toElement();
 	if (!hasRequiredAttributes(element) || !hasOnlySupportedAttributes(element)) { return false; }
 	bool seqOk = false;
-	const quint64 seq = element.attribute(QStringLiteral("seq")).toULongLong(&seqOk);
-	if (!seqOk || seq == 0) { return false; }
+	const QString seqText = element.attribute(QStringLiteral("seq"));
+	const quint64 seq = seqText.toULongLong(&seqOk);
+	if (!seqOk || seq == 0 || seqText != QString::number(seq)) { return false; }
 	change.seq = seq;
 	change.at = element.attribute(QStringLiteral("at"));
 	change.actor = element.attribute(QStringLiteral("actor"));
