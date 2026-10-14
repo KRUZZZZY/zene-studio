@@ -201,8 +201,9 @@ void setCueMaster(int cue, const CueMaster& master)
 
 QString cueName(int cue)
 {
-	const QString& name = cueMaster(cue).name;
-	return name.isEmpty() ? QStringLiteral("Cue %1").arg(QChar('A' + cue)) : name;
+	const int index = std::clamp(cue, 0, MaxCues - 1);
+	const CueMaster& master = s_cueMasters[static_cast<std::size_t>(index)];
+	return master.name.isEmpty() ? QStringLiteral("Cue %1").arg(QChar('A' + index)) : master.name;
 }
 
 bool listenToCue() { return s_listenToCue; }
