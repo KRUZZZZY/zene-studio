@@ -30,6 +30,7 @@
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
 #include "DetuningHelper.h"
+#include "InlineAutomation.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "PatternClip.h"
@@ -203,6 +204,19 @@ private slots:
 		QCOMPARE(clip->valueAt(TimePos(1, 0)), 0.25f);
 		QCOMPARE(clip->valueAt(TimePos(2, 0)), 0.5f);
 		QCOMPARE(clip->valueAt(TimePos(4, 0)), 1.0f);
+	}
+
+	void testCopyUnautomatedInlineAutomation()
+	{
+		using namespace lmms;
+
+		DetuningHelper original;
+		original.setValue(0.75f);
+
+		DetuningHelper copied(original);
+
+		QCOMPARE(copied.value(), original.value());
+		QVERIFY(!copied.hasAutomation());
 	}
 
 	void testPatternTrack()
