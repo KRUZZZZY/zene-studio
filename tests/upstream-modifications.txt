@@ -1936,3 +1936,5 @@ src/tracks/InstrumentTrack.cpp	M0 blocker fix 2026-10-12 (bar5 regressions): Ins
 src/tracks/InstrumentTrack.cpp	0.5.0 L02 Q050-013: the destructor also removes the SessionCellHandle an audio cell on the track's column gave it (SessionAudioCells.h), under requestChangeInModel/doneChangeInModel; nothing else changes
 src/core/CMakeLists.txt	0.5.0 L02 Q050-013: lists core/SessionAudioBake.cpp (the warp/repitch bake of an audio cell); one added source path
 tests/src/core/SmfInterchangeTest.cpp	cluster new-p8-231: covers an absolute file tick beyond the SMF reader limit with an in-range readback control and a writer refusal assertion
+include/ComboBoxModel.h	cluster new-p9-12 (2026-10-10): currentData() returns nullptr for an empty model instead of indexing an empty vector; covered by AutomatableModelTest::ComboBoxCurrentDataHandlesEmptyModel.
+tests/src/core/AutomatableModelTest.cpp	cluster new-p9-12 (2026-10-10): regression for currentData() on a new and cleared ComboBoxModel.
