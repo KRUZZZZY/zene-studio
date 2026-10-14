@@ -25,6 +25,7 @@
 #include "SharedMemory.h"
 
 #include <random>
+#include <stdexcept>
 #include <system_error>
 #include <utility>
 
@@ -109,8 +110,20 @@ public:
 
 		if (isArray)
 		{
+			if (m_size < sizeof(Header)) {
+				munmap(m_mapping, m_size);
+				m_mapping = nullptr;
+				throw std::runtime_error{"SharedMemoryImpl: array header exceeds mapped shared memory"};
+			}
+
 			// Array size is stored in-band
-			m_arraySize = static_cast<Header*>(m_mapping)->size;
+			const auto arraySize = static_cast<Header*>(m_mapping)->size;
+			if (arraySize > m_size - sizeof(Header)) {
+				munmap(m_mapping, m_size);
+				m_mapping = nullptr;
+				throw std::runtime_error{"SharedMemoryImpl: array size exceeds mapped shared memory"};
+			}
+			m_arraySize = static_cast<std::size_t>(arraySize);
 		}
 	}
 
@@ -207,8 +220,20 @@ public:
 
 		if (isArray)
 		{
+			MEMORY_BASIC_INFORMATION mappingInfo{};
+			if (VirtualQuery(m_view.get(), &mappingInfo, sizeof(mappingInfo)) == 0) {
+				throwLastError("SharedMemoryImpl: VirtualQuery() failed");
+			}
+			if (mappingInfo.RegionSize < sizeof(Header)) {
+				throw std::runtime_error{"SharedMemoryImpl: array header exceeds mapped shared memory"};
+			}
+
 			// Array size is stored in-band
-			m_arraySize = static_cast<Header*>(static_cast<void*>(m_view.get()))->size;
+			const auto arraySize = static_cast<Header*>(m_view.get())->size;
+			if (arraySize > mappingInfo.RegionSize - sizeof(Header)) {
+				throw std::runtime_error{"SharedMemoryImpl: array size exceeds mapped shared memory"};
+			}
+			m_arraySize = static_cast<std::size_t>(arraySize);
 		}
 	}
 
