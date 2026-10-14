@@ -34,6 +34,9 @@
 #include <QFile>
 #include <QApplication>
 #include <QFileDialog>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -45,10 +48,12 @@
 
 #include "ControlRegistry.h"
 #include "Editor.h"
+#include "Clipboard.h"
 #include "Engine.h"
 #include "Graph.h"
 #include "Sample.h"
 #include "FileDialog.h"
+#include "Graph.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleEditorDialog.h"
@@ -114,6 +119,15 @@ void type(SampleFrameField* into, const QString& text)
 	QTest::keyClicks(into, text);
 	QTest::keyClick(into, Qt::Key_Enter);
 }
+
+class TestGraph final : public Graph
+{
+public:
+	using Graph::Graph;
+
+	void deliverDrop(QDropEvent* event) { dropEvent(event); }
+	void deliverDragEnter(QDragEnterEvent* event) { dragEnterEvent(event); }
+};
 
 } // namespace
 
@@ -423,6 +437,24 @@ private slots:
 		FileDialog::openAudioFile(directory.filePath(QStringLiteral("selected.wav")));
 		QVERIFY(dialogFound);
 		QCOMPARE(fileMode, QFileDialog::ExistingFile);
+	}
+
+	void graphRejectsSampleFileDropsUntilSupported()
+	{
+		TestGraph graph(nullptr);
+		QMimeData mimeData;
+		mimeData.setData(Clipboard::mimeType(Clipboard::MimeType::StringPair),
+			QByteArrayLiteral("samplefile:/tmp/dropped.wav"));
+
+		QDropEvent drop(QPointF(10, 10), Qt::CopyAction, &mimeData,
+			Qt::LeftButton, Qt::NoModifier);
+		graph.deliverDrop(&drop);
+		QVERIFY2(!drop.isAccepted(), "Graph accepted a sample file it does not load");
+
+		QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, &mimeData,
+			Qt::LeftButton, Qt::NoModifier);
+		graph.deliverDragEnter(&enter);
+		QVERIFY(!enter.isAccepted());
 	}
 
 private:
