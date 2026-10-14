@@ -2017,3 +2017,4 @@ src/gui/editors/StepRecorderWidget.cpp	cluster new-p10-400: updateBoundaries use
 tests/src/gui/NoteEditorTest.cpp	cluster new-p10-400: adds a rendered StepRecorderWidget regression with unequal top and right margins to prove updateBoundaries uses the right margin.
 src/core/TempoSyncKnobModel.cpp	new-p10-416: validate the serialized tempo-sync mode before storing it and fall back to None for unknown values; covered by TempoMapPersistenceTest::unknownStoredSyncModeFallsBackToNone.
 tests/src/core/TempoMapPersistenceTest.cpp	new-p10-416: add a direct XML load regression for negative and out-of-range tempo-sync modes, plus acceptance of the valid Custom boundary.
+src/core/ValueBuffer.cpp	new-p10-447: reject negative buffer lengths before vector size conversion; covered by ModulationRateTest.

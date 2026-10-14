@@ -36,6 +36,7 @@
 #include <QDomDocument>
 
 #include <cmath>
+#include <stdexcept>
 
 #include "AllocationProbe.h"
 #include "AudioDevice.h"
@@ -120,6 +121,11 @@ private slots:
 	}
 
 	void cleanupTestCase() { Engine::destroy(); }
+
+	void negativeLengthIsRejectedAsInvalidArgument()
+	{
+		QVERIFY_EXCEPTION_THROWN(ValueBuffer(-1), std::invalid_argument);
+	}
 
 	void theZipperIsMeasuredAndThePerSampleRouteRemovesIt()
 	{
