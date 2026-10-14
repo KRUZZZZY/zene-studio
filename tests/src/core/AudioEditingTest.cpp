@@ -34,7 +34,11 @@
 #include <cmath>
 
 #include <QDomDocument>
+#include <QDir>
+#include <QFile>
 #include <QJsonArray>
+
+#include "../../../plugins/SlicerT/SlicerTWaveform.h"
 
 #include "ArrangementEdits.h"
 #include "AudioBurstSupport.h"
@@ -72,7 +76,7 @@ private slots:
 	void initTestCase()
 	{
 #ifdef LMMS_TEST_PLUGIN_DIR
-		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+		QDir::addSearchPath("plugins", LMMS_TEST_PLUGIN_DIR);
 #endif
 		Engine::init(true);
 		ControlRegistry::setReady(true);
@@ -290,6 +294,19 @@ private slots:
 			qPrintable(QStringLiteral("last slicer boundary %1 should be the trimmed source end %2")
 				.arg(actualEnd).arg(expectedEnd)));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
+	}
+
+	void slicerWaveformPlayheadDefaultsAreExplicit()
+	{
+		QFile header{QDir(QStringLiteral(LMMS_TEST_DATA_DIR)).absoluteFilePath(
+			QStringLiteral("../../plugins/SlicerT/SlicerTWaveform.h"))};
+		QVERIFY2(header.open(QIODevice::ReadOnly), qPrintable(header.fileName()));
+		const QByteArray declarations = header.readAll();
+
+		// updateUI draws these playhead positions when sample data changes, before isPlaying can set them.
+		QVERIFY2(declarations.contains("float m_noteCurrent = 0.0f;"), "current playhead position must start at zero");
+		QVERIFY2(declarations.contains("float m_noteStart = 0.0f;"), "playhead start must start at zero");
+		QVERIFY2(declarations.contains("float m_noteEnd = 0.0f;"), "playhead end must start at zero");
 	}
 
 	void aTempoMapFromAFreePerformance()

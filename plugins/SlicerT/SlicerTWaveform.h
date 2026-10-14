@@ -94,9 +94,9 @@ private:
 	float m_seekerEnd = 1;
 	float m_seekerMiddle = 0.5f;
 
-	float m_noteCurrent;
-	float m_noteStart;
-	float m_noteEnd;
+	float m_noteCurrent = 0.0f;
+	float m_noteStart = 0.0f;
+	float m_noteEnd = 0.0f;
 
 	float m_zoomLevel = 1.0f;
 
