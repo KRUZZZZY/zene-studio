@@ -193,6 +193,11 @@ set(LMMS_TESTS
 	# compare the whole file with the bytes that were there before. It needs a
 	# real Engine (the recorded action checkpoint goes on the project journal).
 	src/core/ControlProjectArchiveTest.cpp
+	# render.render accepts an absolute output path according to this host's
+	# filesystem rules; its source guard catches the POSIX-only regression on
+	# non-Windows builders, while the runtime call exercises a Windows drive path
+	# on Windows before the empty-session refusal.
+	src/core/ControlRenderOutputPathTest.cpp
 	src/core/ControlRegistryTest.cpp
 	# The undo-record bookkeeping for nested and wrapped commands (one record per journal step).
 	src/core/ControlRegistryNestingTest.cpp
@@ -1299,6 +1304,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
+	if(LMMS_TEST_NAME STREQUAL "ControlRenderOutputPathTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+	endif()
 	lmms_add_coverage(${LMMS_TEST_NAME})
 	# Lua scripting examples live in the source tree; tests run from build/tests.
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE

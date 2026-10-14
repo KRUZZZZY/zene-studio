@@ -2316,6 +2316,8 @@ tools/local-ci.sh
 # BUG-A4-1/A4-2: shared iterative XML depth guard used by DataFile and container parsing.
 # 2026-10-10 (qwen new-p9-252): register the existing fork-new ModulatorPanelTest source, now
 # also covering a click on an LFO graph with no attached parameter model.
+# BUG-RENDER-PATH: host-native absolute output path validation for render.render.
+tests/src/core/ControlRenderOutputPathTest.cpp
 tools/ncpu-shim.c
 tests/src/core/InputChannelRingTest.cpp
 tests/src/core/MidiClipControllersLoadTest.cpp
