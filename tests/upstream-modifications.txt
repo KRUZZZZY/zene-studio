@@ -2012,3 +2012,4 @@ src/core/lv2/Lv2Features.cpp	cluster new-p10-206: clear() now discards prior fea
 tests/CMakeLists.txt	cluster new-p10-224: register HydrogenImportLocalFileMngTest and compile the exact HydrogenImport LocalFileMng.cpp into its isolated test target; no other test target changes
 plugins/HydrogenImport/LocalFileMng.cpp	cluster new-p10-224: check the full TinyXML escape length before indexing and advance past malformed markers; regression HydrogenImportLocalFileMngTest
 src/gui/SendButtonIndicator.cpp	2026-10-11 (BUG new-p10-367): mousePressEvent ignores non-left presses, so right and middle clicks preserve mixer routing while left click keeps its toggle behavior. Regression: tests/src/gui/MixerModesTest.cpp::sendIndicatorOnlyTogglesOnLeftPress.
+plugins/SpectrumAnalyzer/SaProcessor.h	cluster new-p10-358: initialize the waterfall history publication request to false before the analyzer thread can read it; regression AudioPluginTest::waterfallFlipRequestStartsClear.

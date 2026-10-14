@@ -142,7 +142,7 @@ private:
 	// spectrum history for waterfall: new normSpectrum lines are added on top
 	std::vector<uchar> m_history_work;		//!< local history buffer for render
 	std::vector<uchar> m_history;			//!< public buffer for reading
-	bool m_flipRequest;						//!< update public buffer only when requested
+	bool m_flipRequest = false;					//!< update public buffer only when requested
 	std::atomic<unsigned int> m_waterfallHeight;	//!< number of stored lines in history buffer
 											// Note: high values may make it harder to see transients.
 	const unsigned int m_waterfallMaxWidth = 3840;
