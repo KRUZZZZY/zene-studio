@@ -2722,6 +2722,7 @@ tests/src/core/TakeLaneCompTest.cpp
 tests/src/core/TakeLaneTest.cpp
 tests/src/core/TakeLaneTestSupport.h
 tests/src/core/TaskCenterTest.cpp
+tests/src/core/ThreadPoolTest.cpp
 tests/src/core/TelemetryTest.cpp
 tests/src/core/TelemetryTransportTest.cpp
 tests/src/core/TempoMapPersistenceTest.cpp

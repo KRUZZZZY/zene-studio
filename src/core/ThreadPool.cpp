@@ -59,14 +59,14 @@ auto ThreadPool::numWorkers() const -> size_t
 
 void ThreadPool::run()
 {
-	while (!m_done)
+	while (true)
 	{
 		std::function<void()> task;
 		{
 			auto lock = std::unique_lock{m_runMutex};
 			m_runCond.wait(lock, [this] { return !m_queue.empty() || m_done; });
 
-			if (m_done) { break; }
+			if (m_queue.empty()) { break; }
 			task = m_queue.front();
 			m_queue.pop();
 		}
