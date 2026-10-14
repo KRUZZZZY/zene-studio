@@ -65,6 +65,11 @@ using link::LinkSessionReport;
 namespace
 {
 
+QString revisionOwnerFor(const LinkPeerPacket& packet)
+{
+	return packet.revisionOwner.isEmpty() ? packet.id : packet.revisionOwner;
+}
+
 //! Fractional part in [0, period): the phase inside one quantum.
 double wrapPhase(double beats, double period)
 {
@@ -328,7 +333,7 @@ bool LinkSyncEngine::adoptionIsNewer(const LinkPeerPacket& packet) const
 	// Same revision number: two declarations made without having seen each
 	// other. The owner id is the tiebreak, and it is a TOTAL order, so both
 	// instances pick the same winner (file header, point 4).
-	return packet.revisionOwner > m_revisionOwner;
+	return revisionOwnerFor(packet) > m_revisionOwner;
 }
 
 void LinkSyncEngine::adopt(const LinkPeerPacket& packet, quint64 receivedUs)
@@ -341,7 +346,7 @@ void LinkSyncEngine::adopt(const LinkPeerPacket& packet, quint64 receivedUs)
 	m_anchorBeat = packet.beat + transitBeats;
 	m_tempo = packet.tempo;
 	m_revision = packet.revision;
-	m_revisionOwner = packet.revisionOwner.isEmpty() ? packet.id : packet.revisionOwner;
+	m_revisionOwner = revisionOwnerFor(packet);
 	m_tempoIsLocal = false;
 	// The QUANTUM is not adopted: it is this instance's own launch preference
 	// (as it is in Link), not session state.

@@ -294,6 +294,30 @@ private slots:
 		QCOMPARE(engineTempo(), 111);
 	}
 
+	//! An omitted revision owner means the announcing peer owns the declaration,
+	//! so the same-revision tiebreak must compare that peer id.
+	void emptyRevisionOwnerUsesPeerIdForTieBreak()
+	{
+		setEnabledForTest(false);
+		setEnabledForTest(true);
+		const ControlResult local = run(QStringLiteral("link.set_session_tempo"),
+			{{QStringLiteral("bpm"), 122.0}});
+		QVERIFY2(local.ok, qPrintable(local.errorMessage));
+		const QJsonObject before = state();
+		const QString currentOwner = before.value(QStringLiteral("session_revision_owner")).toString();
+		QVERIFY(!currentOwner.isEmpty());
+
+		const QString peerId = currentOwner + QStringLiteral("z");
+		link::LinkPeerPacket packet = packetFrom(peerId, revisionOf(before), 134.0);
+		packet.revisionOwner.clear();
+		observe(packet);
+
+		const QJsonObject after = state();
+		QCOMPARE(after.value(QStringLiteral("session_tempo")).toDouble(), 134.0);
+		QCOMPARE(after.value(QStringLiteral("session_revision_owner")).toString(), peerId);
+		QCOMPARE(engineTempo(), 134);
+	}
+
 	/*! THE PHASE CLAIM, computed independently. A peer announces beat 0 at a
 	 *  send time one second in the past at 150 BPM, so the beat it is playing at
 	 *  the moment this instance reads the datagram is 1.0 * 150 / 60 = 2.5 beats
