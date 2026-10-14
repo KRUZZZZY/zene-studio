@@ -54,6 +54,8 @@ src/core/ControlCommandsMidi.cpp	BUG-MIDI-003: report outbound queue overflow co
 
 # (2026-09-12) post-alpha/saveload-integrity: three persistence integrity defects from the grade-C audit.
 
+tests/CMakeLists.txt	new-p10-272: register NeuralAmpWavInputTest to cover zero-rate WAV rejection in the NAM harness.
+
 # --- rename layer 1: user-visible strings and client identity ---
 
 # --- wave R rename divergence (declared retroactively; Gate 6 was red on this branch) ---

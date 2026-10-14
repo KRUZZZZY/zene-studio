@@ -1582,6 +1582,25 @@ target_compile_definitions(TapTempoTest PRIVATE PLUGIN_NAME=taptempo)
 set_tests_properties(TapTempoTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# The NAM harness WAV reader is private to its CLI translation unit. Include
+# that source with its main renamed so this test exercises the reader directly.
+add_executable(NeuralAmpWavInputTest
+	src/core/NeuralAmpWavInputTest.cpp
+	 "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModel.cpp"
+	 "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModelLoader.cpp"
+)
+target_include_directories(NeuralAmpWavInputTest PRIVATE
+	 "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp"
+	 "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/Eigen"
+	 "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/json"
+)
+target_compile_features(NeuralAmpWavInputTest PRIVATE cxx_std_20)
+target_link_libraries(NeuralAmpWavInputTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY} ${CMAKE_DL_LIBS})
+if(NOT MSVC)
+	target_link_libraries(NeuralAmpWavInputTest PRIVATE m)
+endif()
+add_test(NAME NeuralAmpWavInputTest COMMAND NeuralAmpWavInputTest)
+
 # ---------------------------------------------------------------------------
 # The subject of the MPE playback proof (0.3.0 feature-list row 8, task #649).
 #
