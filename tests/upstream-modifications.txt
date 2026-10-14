@@ -50,6 +50,7 @@ include/RetroMidiRing.h	BUG-MIDI-004: snapshot writer quiescence prevents non-at
 plugins/Eq/EqFilter.h	new-p9-120: clamp peak EQ coefficient calculation below Nyquist and bypass unsafe sine/hyperbolic cases so audio coefficients stay finite at the rate boundary; the regression is tests/src/plugins/EqFilterTest.cpp
 src/core/midi/MidiAlsaSeq.cpp	BUG-MIDI-003: drain ALSA output only on sequencer thread; covered by MidiOutQueueTest.
 src/core/ControlCommandsMidi.cpp	BUG-MIDI-003: report outbound queue overflow counter through midi.retro_capture_status; covered by RetroMidiCaptureCommandsTest. new-p8-201: pass the published capture tick to close unmatched notes at the capture edge; covered by RetroMidiCaptureCommandsTest.
+src/core/midi/MidiAlsaRaw.cpp	cluster new-p10-239: close ALSA handles and free poll descriptors after the worker exits; covered by MidiOutQueueTest::AlsaRaw_ClosesHandlesAfterWorkerExitsOnPollError.
 src/core/ControlCommandsMidi.cpp	BUG-MIDI-003: report outbound queue overflow counter through midi.retro_capture_status; covered by RetroMidiCaptureCommandsTest.
 src/common/SharedMemory.cpp	BUG new-p9-457: reject attached array headers whose declared byte count exceeds the mapped region; covered by AudioBufferTest.
 tests/src/core/AudioBufferTest.cpp	BUG new-p9-457: cover rejection of a corrupted shared-memory array length exceeding the mapped object.
