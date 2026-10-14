@@ -54,6 +54,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <limits>
 
 #include "Clip.h"
 #include "ControlCompSupport.h"   // takeClipId(), the comp.* helpers
@@ -170,6 +171,69 @@ private slots:
 		QCOMPARE(fileDigest(clips[1]->sample().sampleFile()), fileBefore1);
 		QCOMPARE(takeDigest(clips[0]), bufferBefore0);
 		QCOMPARE(takeDigest(clips[1]), bufferBefore1);
+	}
+
+	void canSelectRejectsSlipsOutsideTheTickRange()
+	{
+		TakeLaneModel model;
+		QCOMPARE(model.addLane(QStringLiteral("base")), 0);
+		const int maxTick = std::numeric_limits<tick_t>::max();
+
+		QVERIFY(model.canSelect(1, 2, 0, maxTick - 1));
+		QVERIFY(!model.canSelect(1, 2, 0, maxTick));
+		QVERIFY(!model.selectSegment(1, 2, 0, maxTick));
+		QVERIFY(model.segments().empty());
+	}
+
+	void takeAtRejectsOverflowingSlipLoadedFromProject()
+	{
+		QVector<SampleClip*> clips;
+		SampleTrack* track = makeTakeTrack(m_dir.path(), 1, &clips);
+		QVERIFY(track != nullptr);
+		TakeLaneModel& model = track->takeLanes();
+		clips[0]->setLaneIndex(0);
+
+		QDomDocument doc;
+		QDomElement lanes = doc.createElement(QStringLiteral("takelanes"));
+		QDomElement lane = doc.createElement(QStringLiteral("lane"));
+		lane.setAttribute(QStringLiteral("index"), 0);
+		lanes.appendChild(lane);
+		QDomElement segment = doc.createElement(QStringLiteral("segment"));
+		segment.setAttribute(QStringLiteral("begin"), 1);
+		segment.setAttribute(QStringLiteral("end"), 2);
+		segment.setAttribute(QStringLiteral("lane"), 0);
+		segment.setAttribute(QStringLiteral("slip"), std::numeric_limits<tick_t>::max());
+		lanes.appendChild(segment);
+		model.loadSettings(lanes);
+		QCOMPARE(model.segments().size(), std::size_t{1});
+
+		QVERIFY(model.takeAt(track->getClips(), 1) == nullptr);
+	}
+
+	void resolveSourceRejectsOverflowingSlipLoadedFromProject()
+	{
+		QVector<SampleClip*> clips;
+		SampleTrack* track = makeTakeTrack(m_dir.path(), 1, &clips);
+		QVERIFY(track != nullptr);
+		TakeLaneModel& model = track->takeLanes();
+		clips[0]->setLaneIndex(0);
+
+		QDomDocument doc;
+		QDomElement lanes = doc.createElement(QStringLiteral("takelanes"));
+		QDomElement lane = doc.createElement(QStringLiteral("lane"));
+		lane.setAttribute(QStringLiteral("index"), 0);
+		lanes.appendChild(lane);
+		QDomElement segment = doc.createElement(QStringLiteral("segment"));
+		segment.setAttribute(QStringLiteral("begin"), 1);
+		segment.setAttribute(QStringLiteral("end"), 2);
+		segment.setAttribute(QStringLiteral("lane"), 0);
+		segment.setAttribute(QStringLiteral("slip"), std::numeric_limits<tick_t>::max());
+		lanes.appendChild(segment);
+		model.loadSettings(lanes);
+		QCOMPARE(model.segments().size(), std::size_t{1});
+
+		f_cnt_t sourceFrame = 0;
+		QVERIFY(!model.resolveSource(track->getClips(), 1, &sourceFrame, nullptr));
 	}
 
 	// ------------------------------------------------------------------ the file

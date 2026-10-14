@@ -2201,6 +2201,7 @@ tests/src/core/StemJobManagerTest.cpp
 tests/src/core/SurroundExportTest.cpp
 tests/src/core/SurroundExportTestSupport.h
 tests/src/core/SurroundTest.cpp
+tests/src/core/TakeLaneTest.cpp
 tests/src/core/TaskCenterTest.cpp
 tests/src/core/ThrowingImportFilterPlugin.cpp
 # 2026-09-22 (040/arch4-s4, ARCH-4 slice S4): tests/src/core/WriteRefusalGateTest.cpp

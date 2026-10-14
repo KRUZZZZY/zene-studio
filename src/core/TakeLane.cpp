@@ -29,6 +29,8 @@
 #include "TakeLane.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -78,6 +80,15 @@ bool continuesTake(const TakeLaneSegment& previous, const TakeLaneSegment& seg)
 	if (previous.endTick != seg.beginTick) { return false; }
 	if (previous.laneIndex != seg.laneIndex) { return false; }
 	return seg.sourceOffset == previous.sourceOffset;
+}
+
+bool addSlipToTick(int tick, int slip, tick_t* sourceTick)
+{
+	const std::int64_t slipped = static_cast<std::int64_t>(tick) + slip;
+	if (slipped < std::numeric_limits<tick_t>::min()
+		|| slipped > std::numeric_limits<tick_t>::max()) { return false; }
+	if (sourceTick != nullptr) { *sourceTick = static_cast<tick_t>(slipped); }
+	return true;
 }
 
 TakeLane laneFromElement(const QDomElement& element)
@@ -216,6 +227,7 @@ void TakeLaneModel::subtractRange(const TakeLaneSegment& seg, int beginTick, int
 bool TakeLaneModel::canSelect(int beginTick, int endTick, int laneIndex, int sourceOffset) const
 {
 	if (beginTick < 0 || endTick <= beginTick || sourceOffset < 0) { return false; }
+	if (!addSlipToTick(endTick - 1, sourceOffset, nullptr)) { return false; }
 	return hasLane(laneIndex);
 }
 
@@ -354,9 +366,12 @@ bool TakeLaneModel::resolveSource(const std::vector<Clip*>& clips, int tick,
 	f_cnt_t* sourceFrame, int* laneIndex) const
 {
 	int slip = 0;
-	Clip* clip = resolve(tick, nullptr, &slip) ? takeAt(clips, tick, laneIndex) : nullptr;
+	if (!resolve(tick, nullptr, &slip)) { return false; }
+	tick_t sourceTick = 0;
+	if (!addSlipToTick(tick, slip, &sourceTick)) { return false; }
+	Clip* clip = takeAt(clips, tick, laneIndex);
 	if (clip == nullptr) { return false; }
-	if (sourceFrame != nullptr) { *sourceFrame = clip->sourceFrameAt(TimePos(tick + slip)); }
+	if (sourceFrame != nullptr) { *sourceFrame = clip->sourceFrameAt(TimePos(sourceTick)); }
 	return true;
 }
 
@@ -366,12 +381,14 @@ Clip* TakeLaneModel::takeAt(const std::vector<Clip*>& clips, int tick, int* lane
 	int lane = 0;
 	int slip = 0;
 	if (!resolve(tick, &lane, &slip)) { return nullptr; }
+	tick_t sourceTick = 0;
+	if (!addSlipToTick(tick, slip, &sourceTick)) { return nullptr; }
 	for (Clip* clip : clips)
 	{
 		if (clip == nullptr || clip->laneIndex() != lane) { continue; }
 		// The take's handle plays where the clip is (tick), and reads it slip ticks later (E2).
 		if (tick < clip->startPosition().getTicks()) { continue; }
-		if (tick + slip >= clip->endPosition().getTicks()) { continue; }
+		if (sourceTick >= clip->endPosition().getTicks()) { continue; }
 		if (laneIndex != nullptr) { *laneIndex = lane; }
 		return clip;
 	}
