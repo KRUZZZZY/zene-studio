@@ -206,15 +206,17 @@ bool hasOnlySupportedAttributes(const QDomElement& element)
 	return true;
 }
 
-//! One <z:change> child as the loader accepts it: an element named exactly
-//! `z:change`, carrying a positive decimal seq, carrying every attribute the
-//! writer always writes and nothing it does not. Anything else is a refusal,
-//! not a guess. Returns false for a child this writer could not have written.
+//! One <z:change> child as the loader accepts it: an empty element named
+//! exactly `z:change`, carrying a positive decimal seq, carrying every
+//! attribute the writer always writes and nothing it does not. Anything else
+//! is a refusal, not a guess. Returns false for a child this writer could not
+//! have written.
 bool parseChange(const QDomNode& node, provenance::Change& change, quint64& highest)
 {
 	if (!node.isElement() || node.nodeName() != QLatin1String("z:change")) { return false; }
 	const QDomElement element = node.toElement();
-	if (!hasRequiredAttributes(element) || !hasOnlySupportedAttributes(element)) { return false; }
+	if (element.hasChildNodes() || !hasRequiredAttributes(element)
+		|| !hasOnlySupportedAttributes(element)) { return false; }
 	bool seqOk = false;
 	const QString seqText = element.attribute(QStringLiteral("seq"));
 	const quint64 seq = seqText.toULongLong(&seqOk);
