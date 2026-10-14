@@ -30,6 +30,8 @@
 #include <cmath>
 #include <array>
 #include <cmath>
+#include "BasicFilters.h"
+
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -41,6 +43,7 @@
 #include <cstdlib>
 #include <new>
 #include <cstdint>
+#include <type_traits>
 #include <vector>
 #include <memory>
 
@@ -634,6 +637,7 @@ private slots:
 	void positiveFractionPreservesOrdinaryValues();
 	void ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange();
 	void typedDecodeRejectsIncompleteElement();
+	void basicFiltersCannotBeCopied();
 	void migratedPluginsPreserveBehaviour();
 	void monstroLfoAttackRampsWithinPeriod();
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
@@ -1144,6 +1148,13 @@ void PluginPortsMigrationTest::typedDecodeRejectsIncompleteElement()
 	const bool rejected = decoded == nullptr && size == 0;
 	delete[] decoded;
 	QVERIFY2(rejected, "three decoded bytes cannot form a uint32_t element");
+}
+
+void PluginPortsMigrationTest::basicFiltersCannotBeCopied()
+{
+	using Filter = lmms::BasicFilters<2>;
+	QVERIFY2(!std::is_copy_constructible_v<Filter>, "BasicFilters must not shallow-copy its owned double-filter subfilter");
+	QVERIFY2(!std::is_copy_assignable_v<Filter>, "BasicFilters must not copy-assign its owned double-filter subfilter");
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()

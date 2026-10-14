@@ -30,6 +30,9 @@ plugins/Sid/SidInstrument.cpp	cluster new-p9-429: remove synchronous printf from
 
 
 
+# BUG new-p9-591: own the double-filter subfilter with unique_ptr and forbid shallow copies; regression PluginPortsMigrationTest::basicFiltersCannotBeCopied.
+include/BasicFilters.h	BUG new-p9-591: unique ownership of m_subFilter deletes BasicFilters copy operations, preventing double-delete and dangling-pointer copies.
+
 # BUG-MIDI-003/004 (2026-09-24): realtime MIDI output queue and defined retro snapshot publication;
 # regression coverage: tests/src/core/MidiOutQueueTest.cpp and RetroMidiRingTest.cpp.
 include/ArrayVector.h	new-p9-554: return immediately for empty erase ranges to avoid self-move assignment; covered by ArrayVectorTest::eraseRangeTest.
