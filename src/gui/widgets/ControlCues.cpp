@@ -200,7 +200,9 @@ void prepare(QWidget* widget)
 void install()
 {
 	QCoreApplication* app = QCoreApplication::instance();
-	if (app == nullptr || app->findChild<CueFilter*>(QLatin1String(FilterName), Qt::FindDirectChildrenOnly) != nullptr) { return; }
+	// Looked up by name: CueFilter has no Q_OBJECT, so findChild<CueFilter*> only ever matched on QObject's meta-object
+	// (and Qt 6.12 refuses it at compile time).
+	if (app == nullptr || app->findChild<QObject*>(QLatin1String(FilterName), Qt::FindDirectChildrenOnly) != nullptr) { return; }
 	app->installEventFilter(new CueFilter(app));
 }
 
