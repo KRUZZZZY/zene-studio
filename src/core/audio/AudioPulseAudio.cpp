@@ -127,6 +127,13 @@ static void context_state_callback(pa_context *c, void *userdata)
 		{
 			qDebug( "Connection established.\n" );
 			_this->m_s = pa_stream_new( c, "Zene Studio", &_this->m_sampleSpec,  nullptr);
+			if ( _this->m_s == nullptr )
+			{
+				qCritical( "pa_stream_new() failed." );
+				_this->signalConnected( false );
+				break;
+			}
+
 			pa_stream_set_state_callback( _this->m_s, stream_state_callback, _this );
 			pa_stream_set_write_callback( _this->m_s, stream_write_callback, _this );
 
