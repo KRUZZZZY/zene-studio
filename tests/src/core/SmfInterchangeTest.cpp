@@ -461,6 +461,50 @@ private slots:
 		QVERIFY(QFile::exists(file));
 	}
 
+	//! A required tick-zero seed cannot make a full tempo map unreadable.
+	void aTickZeroSeedDoesNotExceedTempoMapCapacity()
+	{
+		TempoMap map;
+		map.setActive(true);
+		for (int index = 0; index < TempoMap::MaxEvents; ++index)
+		{
+			TempoMapEvent event;
+			event.tick = index + 1;
+			event.hasTempo = true;
+			event.tempo = 120;
+			QVERIFY(map.addEvent(event));
+		}
+		QCOMPARE(map.size(), TempoMap::MaxEvents);
+
+		const QString file = path(m_directory, QStringLiteral("full-map-seed.mid"));
+		QString error;
+		QVERIFY2(!interchange::writeConductorTrack(file, map, 120,
+			TempoMapTimeSignature{4, 4}, nullptr, &error),
+			"a full map plus its required tick-zero seed cannot be imported");
+		QVERIFY(!error.isEmpty());
+		QVERIFY(!QFile::exists(file));
+
+		// A tick-zero event absorbs the seed, so a full map remains exportable.
+		TempoMap mapWithTickZero;
+		mapWithTickZero.setActive(true);
+		for (int index = 0; index < TempoMap::MaxEvents; ++index)
+		{
+			TempoMapEvent event;
+			event.tick = index;
+			event.hasTempo = true;
+			event.tempo = 120;
+			QVERIFY(mapWithTickZero.addEvent(event));
+		}
+		const QString boundary = path(m_directory, QStringLiteral("full-map-tick-zero.mid"));
+		QVERIFY2(interchange::writeConductorTrack(boundary, mapWithTickZero, 120,
+			TempoMapTimeSignature{4, 4}, nullptr, &error), qPrintable(error));
+		const interchange::SmfReadReport read = interchange::readConductorTrack(boundary);
+		QVERIFY2(read.ok, qPrintable(read.error));
+		TempoMap restored;
+		QVERIFY2(interchange::mapFromEvents(read.events, &restored, &error), qPrintable(error));
+		QCOMPARE(restored.size(), TempoMap::MaxEvents);
+	}
+
 	//! A map switched off is never consulted by the timeline: every tick answers
 	//! the global tempo and metre. Its stored events were still written into the
 	//! file, so a file another DAW read changed tempo at tick 200 in a session
