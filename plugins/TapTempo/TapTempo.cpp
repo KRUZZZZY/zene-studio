@@ -53,8 +53,6 @@ TapTempo::TapTempo()
 
 void TapTempo::tap(bool play)
 {
-	using namespace std::literals;
-
 	if (play)
 	{
 		const auto metronomeFile = m_beat == 0 ? "misc/metronome02.ogg" : "misc/metronome01.ogg";
@@ -62,22 +60,33 @@ void TapTempo::tap(bool play)
 	}
 
 	m_beat = (m_beat + 1) % Engine::getSong()->getTimeSigModel().getNumerator();
+	updateTempo(clock::now());
+}
+
+void TapTempo::updateTempo(clock::time_point now)
+{
+	using namespace std::literals;
 
 	if (m_lastTap.time_since_epoch() == 0ms)
 	{
-		m_lastTap = clock::now();
+		m_lastTap = now;
 		return;
 	}
 
-	const auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now() - m_lastTap);
+	const auto delta = std::chrono::duration_cast<std::chrono::milliseconds>(now - m_lastTap);
 	constexpr auto resetTime = 2000ms;
+
+	if (delta == 0ms)
+	{
+		return;
+	}
 
 	if (delta >= resetTime)
 	{
 		m_bpm = 0;
 		m_taps = 0;
 		m_beat = 0;
-		m_lastTap = clock::now();
+		m_lastTap = now;
 		return;
 	}
 
@@ -101,7 +110,7 @@ void TapTempo::tap(bool play)
 		m_bpm = millisecondsPerMinute / delta.count();
 	}
 
-	m_lastTap = clock::now();
+	m_lastTap = now;
 }
 
 void TapTempo::sync()

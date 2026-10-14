@@ -47,6 +47,8 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <chrono>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -70,6 +72,11 @@
 #include "SampleFrame.h"
 #include "../../../plugins/NeuralAmp/NeuralAmpEffect.h"
 #include "../../../plugins/Patman/Patman.h"
+#include "ToolPlugin.h"
+#include "TapTempoView.h"
+#define private public
+#include "TapTempo.h"
+#undef private
 
 using namespace lmms;
 
@@ -169,6 +176,7 @@ private slots:
 	void legacyAudioBufferPathRoutesInPlacePorts();
 	void neuralAmpRejectsModelsTrainedAtAnotherSampleRate();
 	void clearingPatmanPatchReleasesItsSampleBank();
+	void subMillisecondTapIntervalDoesNotProduceInfiniteTempo();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -525,6 +533,32 @@ void AudioPluginTest::clearingPatmanPatchReleasesItsSampleBank()
 	QVERIFY(instrument->m_patchFile.isEmpty());
 	QVERIFY(instrument->m_patchSamples.isEmpty());
 	QVERIFY(loadedSample.expired());
+}
+
+//! TapTempo must reject intervals that truncate to zero milliseconds.
+void AudioPluginTest::subMillisecondTapIntervalDoesNotProduceInfiniteTempo()
+{
+	using namespace std::chrono_literals;
+
+	TapTempo tapTempo;
+	const auto firstTap = TapTempo::clock::time_point{} + 10s;
+	const auto secondTap = firstTap + 999us;
+	tapTempo.m_intervals = {500ms, 600ms, 700ms};
+	tapTempo.m_bpm = 90.0;
+
+	tapTempo.updateTempo(firstTap);
+	const auto bpmBeforeShortInterval = tapTempo.m_bpm;
+	const auto tapsBeforeShortInterval = tapTempo.m_taps;
+	const auto intervalsBeforeShortInterval = tapTempo.m_intervals;
+	const auto lastTapBeforeShortInterval = tapTempo.m_lastTap;
+	tapTempo.updateTempo(secondTap);
+
+	QCOMPARE(tapTempo.m_bpm, bpmBeforeShortInterval);
+	QCOMPARE(tapTempo.m_taps, tapsBeforeShortInterval);
+	QCOMPARE(tapTempo.m_intervals[0], intervalsBeforeShortInterval[0]);
+	QCOMPARE(tapTempo.m_intervals[1], intervalsBeforeShortInterval[1]);
+	QCOMPARE(tapTempo.m_intervals[2], intervalsBeforeShortInterval[2]);
+	QCOMPARE(tapTempo.m_lastTap.time_since_epoch().count(), lastTapBeforeShortInterval.time_since_epoch().count());
 }
 
 QTEST_MAIN(AudioPluginTest)
