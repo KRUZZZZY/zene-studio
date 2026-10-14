@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <stdexcept>
 
 #include "lmmsconfig.h"
 
@@ -54,6 +55,8 @@ static size_t align( size_t size, size_t alignment )
 
 LocklessAllocator::LocklessAllocator( size_t nmemb, size_t size )
 {
+	if ( size == 0 ) { throw std::invalid_argument{"element size must be greater than zero"}; }
+
 	m_capacity = align( nmemb, SIZEOF_SET );
 	m_elementSize = align( size, sizeof( void * ) );
 	m_pool = new char[m_capacity * m_elementSize];

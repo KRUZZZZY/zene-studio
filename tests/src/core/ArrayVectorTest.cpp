@@ -24,6 +24,7 @@
 
 #include "ArrayVector.h"
 #include "FifoBuffer.h"
+#include "LocklessAllocator.h"
 
 #include <QObject>
 #include <QtTest>
@@ -134,6 +135,11 @@ private slots:
 	{
 		QVERIFY_EXCEPTION_THROWN((lmms::FifoBuffer<int>(0)), std::invalid_argument);
 		QVERIFY_EXCEPTION_THROWN((lmms::FifoBuffer<int>(-1)), std::invalid_argument);
+	}
+
+	void zeroElementSizeConstructorTest()
+	{
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(1, 0)), std::invalid_argument);
 	}
 
 	void defaultConstructorTest()
