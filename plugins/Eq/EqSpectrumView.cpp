@@ -119,7 +119,9 @@ void EqAnalyser::analyze(InterleavedBufferView<const float, 2> buf)
 					   MAX_BANDS,
 					   ( int )( LOWEST_FREQ * ( FFT_BUFFER_SIZE + 1 ) / ( float )( m_sampleRate / 2 ) ),
 					   ( int )( HIGHEST_FREQ * ( FFT_BUFFER_SIZE +  1) / ( float )( m_sampleRate / 2 ) ) );
-		m_energy = maximum( m_bands, MAX_BANDS ) / maximum( m_buffer, FFT_BUFFER_SIZE );
+		const float mergedBufferMaximum = maximum( m_buffer, FFT_BUFFER_SIZE );
+		m_energy = mergedBufferMaximum == 0.0f ? 0.0f
+			: maximum( m_bands, MAX_BANDS ) / mergedBufferMaximum;
 
 		m_framesFilledUp = 0;
 		m_inProgress = false;
