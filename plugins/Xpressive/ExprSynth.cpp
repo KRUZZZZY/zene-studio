@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <limits>
 #include <random>
 #include <numbers>
 
@@ -318,7 +319,8 @@ struct RandomVectorSeedFunction : public exprtk::ifunction<float>
 
 	static inline float randv(const float& index,int irseed)
 	{
-		if (index < 0 || std::isnan(index) || std::isinf(index))
+		if (index < 0 || std::isnan(index) || std::isinf(index)
+			|| static_cast<double>(index) > std::numeric_limits<unsigned int>::max())
 		{
 			return 0;
 		}
@@ -332,7 +334,10 @@ struct RandomVectorSeedFunction : public exprtk::ifunction<float>
 
 	inline float operator()(const float& index,const float& seed) override
 	{
-		const int irseed = seed < 0 || std::isnan(seed) || std::isinf(seed) ? 0 : static_cast<int>(seed);
+		const int irseed = seed < 0 || std::isnan(seed) || std::isinf(seed)
+			|| static_cast<double>(seed) > std::numeric_limits<int>::max()
+			? 0
+			: static_cast<int>(seed);
 		return randv(index, irseed);
 	}
 

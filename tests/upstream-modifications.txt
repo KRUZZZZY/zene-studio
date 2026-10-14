@@ -2088,3 +2088,4 @@ src/core/EnvelopeAndLfoParameters.cpp	BUG new-p9-116: generate the initial rando
 plugins/Xpressive/ExprSynth.h	new-p9-139 (2026-10-11): WaveSample copy construction and assignment are deleted because the class owns m_samples; this prevents shallow copies from double-deleting the buffer. Regression: PluginAudioPortsTest::waveSampleCannotBeCopied.
 include/Editor.h	new-p9-131: declare the editor destructor out of line so it clears the last-played editor pointer; regression tests/src/gui/SampleEditorDialogTest.cpp::lastPlayedEditorClearsWhenDestroyed.
 src/gui/editors/Editor.cpp	new-p9-131: clear s_lastPlayedEditor when its editor is destroyed; regression tests/src/gui/SampleEditorDialogTest.cpp::lastPlayedEditorClearsWhenDestroyed.
+plugins/Xpressive/ExprSynth.cpp	cluster new-p9-143: return zero for random-vector indexes above UINT_MAX and use seed zero for seeds above INT_MAX, checking finite float bounds before integer conversion.
