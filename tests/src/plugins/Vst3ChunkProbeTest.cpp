@@ -109,6 +109,8 @@ class Vst3ChunkProbeTest : public QObject
 private slots:
 	void initTestCase();
 	void testIdentity();
+	void testFailedOutputBusActivationRefreshesLayout();
+	void testOutOfRangeOutputBusActivationDoesNotMutate();
 	void testChunkedProcessing();
 	void testChannelWithoutACallerBufferOverAFullRequest();
 	void testZeroFramesIsANoOp();
@@ -152,6 +154,38 @@ void Vst3ChunkProbeTest::testIdentity()
 	ProbeState state{};
 	QVERIFY2(readProbeState(m_plugin, &state), "the fixture saved an unexpected state layout");
 	QCOMPARE(state.declaredMaxBlock, static_cast<std::int32_t>(TestBlockSize));
+}
+
+void Vst3ChunkProbeTest::testFailedOutputBusActivationRefreshesLayout()
+{
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(VST3_CHUNK_PROBE_PATH),
+		QString::fromLatin1(TestPluginClass), &error), qPrintable(error));
+	QCOMPARE(plugin.outputBusDescriptors().size(), std::size_t{3});
+	QCOMPARE(plugin.busLayout().outputs, 2);
+
+	QVERIFY(!plugin.activateOutputBuses(2));
+	QVERIFY(plugin.outputBusDescriptors()[1].active);
+	QVERIFY(!plugin.outputBusDescriptors()[2].active);
+	QCOMPARE(plugin.busLayout().outputs, 3);
+	QCOMPARE(plugin.busLayout().outputBusChannels, (std::vector<int>{2, 1}));
+}
+
+void Vst3ChunkProbeTest::testOutOfRangeOutputBusActivationDoesNotMutate()
+{
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(VST3_CHUNK_PROBE_PATH),
+		QString::fromLatin1(TestPluginClass), &error), qPrintable(error));
+	QCOMPARE(plugin.outputBusDescriptors().size(), std::size_t{3});
+	QCOMPARE(plugin.busLayout().outputs, 2);
+
+	QVERIFY(!plugin.activateOutputBuses(3));
+	QVERIFY(!plugin.outputBusDescriptors()[1].active);
+	QVERIFY(!plugin.outputBusDescriptors()[2].active);
+	QCOMPARE(plugin.busLayout().outputs, 2);
+	QCOMPARE(plugin.busLayout().outputBusChannels, (std::vector<int>{2}));
 }
 
 /*!
