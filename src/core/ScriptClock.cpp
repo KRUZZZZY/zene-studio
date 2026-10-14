@@ -31,6 +31,7 @@
 #include "ScriptClock.h"
 
 #include <algorithm>
+#include <limits>
 
 #include <QJsonArray>
 #include <QTimer>
@@ -88,6 +89,20 @@ QString errorKindFor(const QString& error)
 		: QStringLiteral("script");
 }
 
+//! Store the first boundary strictly after a pos, or saturate at qint64's
+//! maximum and report that no later position can be represented.
+bool nextBoundaryAfter(qint64 pos, qint64 stride, qint64* next)
+{
+	const qint64 quotient = pos / stride;
+	if (quotient >= std::numeric_limits<qint64>::max() / stride)
+	{
+		*next = std::numeric_limits<qint64>::max();
+		return false;
+	}
+	*next = (quotient + 1) * stride;
+	return true;
+}
+
 } // namespace
 
 
@@ -95,26 +110,41 @@ QString errorKindFor(const QString& error)
 // ScriptClockGrid - the pure detector
 // ---------------------------------------------------------------------------
 
-int ScriptClockGrid::consume(qint64 pos, qint64 stride, qint64* next, int* coalesced)
+int ScriptClockGrid::consume(qint64 pos, qint64 stride, qint64* next, bool* hasNext,
+	int* coalesced)
 {
-	if (stride <= 0 || pos < *next) { return 0; }
-	const qint64 crossed = (pos - *next) / stride + 1;
-	if (crossed > CrossCap)
+	if (stride <= 0 || !*hasNext || pos < *next) { return 0; }
+	const quint64 distance = static_cast<quint64>(pos) - static_cast<quint64>(*next);
+	const quint64 intervals = distance / static_cast<quint64>(stride);
+	if (intervals >= CrossCap)
 	{
-		*coalesced += static_cast<int>(crossed - CrossCap);
-		*next = ((pos / stride) + 1) * stride;
+		const quint64 excess = intervals - (CrossCap - 1);
+		const quint64 remaining = static_cast<quint64>(std::numeric_limits<int>::max() - *coalesced);
+		*coalesced += static_cast<int>(std::min(excess, remaining));
+		*hasNext = nextBoundaryAfter(pos, stride, next);
 		return CrossCap;
 	}
-	*next += crossed * stride;
-	return static_cast<int>(crossed);
+
+	const int crossed = static_cast<int>(intervals) + 1;
+	const qint64 maxStride = std::numeric_limits<qint64>::max() / crossed;
+	if (stride > maxStride || *next > std::numeric_limits<qint64>::max() - stride * crossed)
+	{
+		*next = std::numeric_limits<qint64>::max();
+		*hasNext = false;
+	}
+	else
+	{
+		*next += stride * crossed;
+	}
+	return crossed;
 }
 
 void ScriptClockGrid::regrid(qint64 pos, qint64 ticksPerBar, qint64 ticksPerBeat)
 {
 	m_ticksPerBar = ticksPerBar;
 	m_ticksPerBeat = ticksPerBeat;
-	m_nextBar = ((pos / ticksPerBar) + 1) * ticksPerBar;
-	m_nextBeat = ((pos / ticksPerBeat) + 1) * ticksPerBeat;
+	m_hasNextBar = nextBoundaryAfter(pos, ticksPerBar, &m_nextBar);
+	m_hasNextBeat = nextBoundaryAfter(pos, ticksPerBeat, &m_nextBeat);
 }
 
 void ScriptClockGrid::prime(bool playing, qint64 pos, qint64 ticksPerBar, qint64 ticksPerBeat)
@@ -143,6 +173,8 @@ ScriptTickEvents ScriptClockGrid::advance(bool playing, qint64 pos, qint64 ticks
 		m_pos = pos;
 		m_nextBar = 0;
 		m_nextBeat = 0;
+		m_hasNextBar = false;
+		m_hasNextBeat = false;
 		return events;
 	}
 	// First observation, a seek backwards, or a meter change: re-anchor where
@@ -156,8 +188,8 @@ ScriptTickEvents ScriptClockGrid::advance(bool playing, qint64 pos, qint64 ticks
 		m_pos = pos;
 		return events;
 	}
-	events.bars = consume(pos, ticksPerBar, &m_nextBar, &events.coalesced);
-	events.beats = consume(pos, ticksPerBeat, &m_nextBeat, &events.coalesced);
+	events.bars = consume(pos, ticksPerBar, &m_nextBar, &m_hasNextBar, &events.coalesced);
+	events.beats = consume(pos, ticksPerBeat, &m_nextBeat, &m_hasNextBeat, &events.coalesced);
 	m_pos = pos;
 	return events;
 }
