@@ -1,5 +1,7 @@
 #include "SendButtonIndicator.h"
 
+#include <QMouseEvent>
+
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
@@ -21,6 +23,8 @@ SendButtonIndicator:: SendButtonIndicator(QWidget* parent, MixerChannelView* own
 
 void SendButtonIndicator::mousePressEvent(QMouseEvent* e)
 {
+	if (e->button() != Qt::LeftButton) { return; }
+
 	Mixer* mix = Engine::mixer();
 	int from = m_mv->currentMixerChannel()->channelIndex();
 	int to = m_parent->channelIndex();
