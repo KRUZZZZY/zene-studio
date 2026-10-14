@@ -2736,6 +2736,23 @@ if(WANT_WASM)
 		WASM_MODULE_DIR="${CMAKE_BINARY_DIR}/wasm-modules"
 	)
 	add_dependencies(WasmWorkerPoolTest wasm-modules)
+
+	# Drive the public command and inspect its JSON result with a module that emits NaN.
+	add_executable(ControlWasmRenderTest
+		src/core/ControlWasmRenderTest.cpp
+	)
+	add_test(NAME ControlWasmRenderTest COMMAND ControlWasmRenderTest)
+	target_include_directories(ControlWasmRenderTest PRIVATE
+		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+		${CMAKE_SOURCE_DIR}/src/wasm
+	)
+	target_static_libraries(ControlWasmRenderTest PRIVATE lmmsobjs)
+	target_link_libraries(ControlWasmRenderTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+	)
+	target_compile_features(ControlWasmRenderTest PRIVATE cxx_std_20)
+	target_compile_definitions(ControlWasmRenderTest PRIVATE LMMS_TESTING)
 endif()
 
 if(TARGET nam_profile)

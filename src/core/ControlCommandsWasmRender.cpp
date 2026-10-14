@@ -104,8 +104,10 @@ QJsonObject renderJson(const wasm::OfflineRender& render)
 {
 	double peak = 0.0;
 	double sumOfSquares = 0.0;
+	std::uint64_t nonFiniteSamples = 0;
 	for (const float sample : render.output)
 	{
+		if (!std::isfinite(sample)) { ++nonFiniteSamples; }
 		peak = std::max(peak, std::fabs(static_cast<double>(sample)));
 		sumOfSquares += static_cast<double>(sample) * static_cast<double>(sample);
 	}
@@ -120,6 +122,7 @@ QJsonObject renderJson(const wasm::OfflineRender& render)
 	out.insert(QStringLiteral("dropped_blocks"), static_cast<double>(render.droppedBlocks));
 	out.insert(QStringLiteral("trapped_blocks"), static_cast<double>(render.trappedBlocks));
 	out.insert(QStringLiteral("frames"), static_cast<int>(render.output.size()));
+	out.insert(QStringLiteral("non_finite_samples"), static_cast<double>(nonFiniteSamples));
 	out.insert(QStringLiteral("peak"), peak);
 	out.insert(QStringLiteral("rms"), rms);
 	out.insert(QStringLiteral("sha256"), digestOf(render.output));
@@ -308,7 +311,8 @@ void registerWasmRenderOfflineCommand(ControlRegistry& registry)
 			"and reports that the comparator finds it, so 'identical' is a measurement and not a "
 			"constant. 'module' defaults to the hosted module; 'frames' (default 4096), "
 			"'block_frames' (default 256), 'sample_rate' (default 48000) and 'input' (plane 0; a "
-			"ramp by default) describe the render. Writes nothing."),
+			"ramp by default) describe the render. Each run reports its `non_finite_samples` count. "
+			"Writes nothing."),
 		{{QStringLiteral("module"), stringProperty()},
 			{QStringLiteral("frames"), integerProperty(1, 4194304)},
 			{QStringLiteral("block_frames"), integerProperty(1, 8192)},
