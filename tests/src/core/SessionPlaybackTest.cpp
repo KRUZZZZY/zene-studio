@@ -86,6 +86,49 @@ private slots:
 		QVERIFY( !scheduler.playbackForColumn( 3 ).playing );
 	}
 
+	void aTriggerRetriggerKeepsTakingOverItsColumnUntilTheGridLine()
+	{
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 0, 0, 7, 0 ) );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger,
+			LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QVERIFY( scheduler.trackIsSessionActive( 0 ) );
+		QCOMPARE( scheduler.playbackForColumn( 0 ).patternId, 7 );
+
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger,
+			LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( 100 ), kFramesPerPeriod );
+
+		QCOMPARE( scheduler.slotPhase( 0, 0 ), SlotPhase::LaunchPending );
+		QVERIFY2( scheduler.trackIsSessionActive( 0 ),
+			"a pending retrigger released arrangement takeover before its grid line" );
+		SessionSlotPlayback waiting = scheduler.playbackForColumn( 0 );
+		QVERIFY2( waiting.playing, "a pending retrigger stopped rendering the current clip" );
+		QCOMPARE( waiting.patternId, 7 );
+		QCOMPARE( int( waiting.positionTicks ), 100 );
+
+		scheduler.processAudio( clock( 120 ), kFramesPerPeriod );
+		QVERIFY( scheduler.trackIsSessionActive( 0 ) );
+		waiting = scheduler.playbackForColumn( 0 );
+		QVERIFY( waiting.playing );
+		QCOMPARE( waiting.patternId, 7 );
+		QCOMPARE( int( waiting.positionTicks ), 120 );
+	}
+
+	void aFirstPendingLaunchDoesNotTakeOverItsColumn()
+	{
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 0, 0, 7, 0 ) );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger,
+			LaunchQuantisation::Bar ) );
+		scheduler.processAudio( clock( 100 ), kFramesPerPeriod );
+
+		QCOMPARE( scheduler.slotPhase( 0, 0 ), SlotPhase::LaunchPending );
+		QVERIFY( !scheduler.trackIsSessionActive( 0 ) );
+		QVERIFY( !scheduler.playbackForColumn( 0 ).playing );
+	}
+
 	//! The control: an EMPTY cell takes its column over and holds nothing.
 	void anEmptyCellStillTakesItsColumnOverAndHoldsNothing()
 	{
