@@ -31,6 +31,7 @@
 #include <functional>
 #include <memory>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <QDomDocument>
@@ -254,7 +255,7 @@ private slots:
 		QVERIFY(!loaded.active());
 	}
 
-	//! MX-112: a layer rack stacks - matchMask reports every zone a note falls into, resolve() still the first.
+	//! MX-112: a layer rack stacks - matchMask reports every matching chain, resolve() still the first zone.
 	void zonesReportEveryMatch()
 	{
 		RackZones zones;
@@ -268,6 +269,15 @@ private slots:
 		zones.assign({zoneOf(0, 10, 0, 200, 3)});
 		QCOMPARE(zones.zoneCount(), 1);
 		QCOMPARE(zones.matchMask(60, 150), std::uint64_t{0});
+
+		std::vector<RackZone> manyZones;
+		manyZones.reserve(65);
+		for (int i = 0; i < 64; ++i) { manyZones.push_back(zoneOf(0, 0, 0, 200, 1)); }
+		manyZones.push_back(zoneOf(80, 80, 0, 200, 8));
+		zones.assign(std::move(manyZones));
+		QCOMPARE(zones.zoneCount(), 65);
+		QCOMPARE(zones.resolve(80, 100), 64);
+		QCOMPARE(zones.matchMask(80, 100), std::uint64_t{1} << 8);
 	}
 
 	//! MX-120: one voice per (track, channel, key); a retrigger restarts it; the fixed pool drops, never grows.

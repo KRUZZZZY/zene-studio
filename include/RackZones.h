@@ -143,10 +143,10 @@ public:
 	 */
 	auto resolve(int key, int velocity) const -> int;
 
-	/*! 0.5.0 MX-112: EVERY zone - not the first - whose key range and velocity range both contain the
-	 *  note, one bit per zone index (zones past 63 are not reported). An instrument layer rack sounds
-	 *  each layer a matching zone names, so it needs all of them; the routing racks keep resolve().
-	 *  A read: no allocation, no lock. */
+	/*! 0.5.0 MX-112: every matching instrument layer chain, one bit per chain index, accumulated over
+	 *  all zones whose key range and velocity range contain the note. Layer racks have at most nine
+	 *  chains, so this stays complete regardless of how many zones are stored. The routing racks keep
+	 *  resolve(). A read: no allocation, no lock. */
 	auto matchMask(int key, int velocity) const -> std::uint64_t;
 
 	//! Drops every zone.

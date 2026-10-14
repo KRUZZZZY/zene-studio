@@ -2170,3 +2170,6 @@ plugins/Patman/Patman.cpp	cluster new-p9-352: parse a GF1 patch into temporary s
 tests/CMakeLists.txt	new-p9-351 regression registration: adds PatmanLoadTest to LMMS_TESTS, compiles the Patman implementation into that test target, and gives it the offscreen Qt environment; no existing test registration or property changes.
 plugins/Patman/Patman.cpp	new-p9-351: validate each declared sample payload against the remaining file and cap cumulative patch audio at 128 MiB of retained stereo PCM before allocating, preventing malformed lengths from causing unbounded allocations.
 include/QuadratureLfo.h	new-p9-381: clamp retained LFO frequency to the updated Nyquist limit on sample-rate changes; covered by DeviceDspTest::quadratureLfoDoesNotExceedNyquistAfterSampleRateDrop.
+include/RackZones.h	2026-10-11 cluster new-p9-376: describe the matching-chain mask used by instrument layers
+src/core/RackZones.cpp	2026-10-11 cluster new-p9-376: accumulate matching chain bits across the full zone list
+src/core/InstrumentLayers.cpp	2026-10-11 cluster new-p9-376: route note paths from matching chain bits beyond zone index 63
