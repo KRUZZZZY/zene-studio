@@ -1217,6 +1217,10 @@ ENDIF()
 		src/core/SessionCommandArgsTest.cpp
 	)
 
+if(LMMS_HAVE_ALSA)
+	list(APPEND LMMS_TESTS src/core/AudioAlsaPollDescriptorTest.cpp)
+endif()
+
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level
 # CMakeLists.txt). Applied to the unit-test executables only; the Part C
 # reference/migration targets below keep the plain debug build so behaviour
