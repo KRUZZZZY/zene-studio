@@ -137,6 +137,20 @@ private slots:
 		QCoreApplication::processEvents();
 	}
 
+	//! A canceled pinch that has already zoomed still leaves its starting zoom for arrangement.zoom_back.
+	void aCanceledPinchKeepsItsStartingZoomInHistory()
+	{
+		const int start = m_editor->zoomingModel()->value();
+		const int changed = start + 2;
+		arrangerzoom::remember(start + 1);  // make the history result unambiguous if cancellation is ignored
+		arrangerzoom::zoomAround(m_editor, changed, 0);
+		QCOMPARE(m_editor->zoomingModel()->value(), changed);
+		arrangerzoom::finishPinch(start, changed, Qt::GestureCanceled);
+		const ControlResult back = run(QStringLiteral("arrangement.zoom_back"));
+		QVERIFY2(back.ok, qPrintable(back.errorMessage));
+		QCOMPARE(m_editor->zoomingModel()->value(), start);
+	}
+
 	void theRulerHasALaneEachUnderTheBarRuler()
 	{
 		auto* lanes = m_editor->findChild<ArrangerRulerLanes*>();
