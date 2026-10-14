@@ -228,17 +228,27 @@ inline int intAttribute(const QXmlStreamAttributes& attributes, ReadState& state
 }
 
 
-//! A time value in beats as LMMS ticks, counting a value that was NOT on
+//! A non-negative time in beats as LMMS ticks, counting a value that was NOT on
 //! LMMS' 48-ticks-per-beat grid (`rounded_times`): the count is reported rather
 //! than hidden, the rule the SMF reader follows for a foreign division.
-//! A time past the engine's signed 32-bit tick (or NaN / infinity, which toDouble() accepts) is
-//! clamped into it - 0 for a non-finite one - and counted the same way: converting it as it
-//! stands would be undefined, and an in-range qint64 past the tick domain overflows later.
+//! Negative values set state.error because the writer cannot carry them back.
+//! A time past the engine's signed 32-bit tick is clamped into it and counted
+//! the same way: an in-range qint64 past the tick domain overflows later.
 inline qint64 ticksFromBeats(ReadState& state, double beats)
 {
+	if (beats < 0.0)
+	{
+		if (state.error.isEmpty())
+		{
+			state.error = QStringLiteral("the document contains a negative timeline value %1, which "
+				"this engine cannot read back").arg(beats, 0, 'g', 17);
+		}
+		return 0;
+	}
+
 	constexpr double TickLimit = std::numeric_limits<std::int32_t>::max();
 	const double exact = beats * DawProjectTicksPerQuarterNote;
-	const double held = std::isfinite(exact) ? std::clamp(exact, -TickLimit, TickLimit) : 0.0;
+	const double held = std::isfinite(exact) ? std::min(exact, TickLimit) : 0.0;
 	const double rounded = std::floor(held + 0.5);
 	if (!(std::fabs(exact - rounded) <= 1e-6)) { state.report->loss.roundedTimes++; }
 	return static_cast<qint64>(std::min(rounded, TickLimit));
