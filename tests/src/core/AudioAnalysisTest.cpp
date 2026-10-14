@@ -49,6 +49,7 @@
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
+#include "SampleWindow.h"
 #include "Song.h"
 #include "TrackFolder.h"
 
@@ -407,6 +408,28 @@ private slots:
 		QCOMPARE(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
 			{QStringLiteral("from"), 0}, {QStringLiteral("to"), size / 4}, {QStringLiteral("op"), QStringLiteral("gain")},
 			{QStringLiteral("gain_db"), 30.0}}).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! A delete covering the clip's whole window is refused; one that leaves frames of it keeps the window over them.
+	void aDeleteOverTheWholeWindowIsRefused()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		SampleClip* clip = toneClip(track, 440.0, 7680);
+		clip->setSampleWindow(SampleWindow(10, 20));
+		QCOMPARE(clip->sampleWindow().sourceIn, f_cnt_t{10});
+		QCOMPARE(clip->sampleWindow().sourceOut, f_cnt_t{20});
+		const auto size = static_cast<int>(clip->sample().sampleSize());
+		const ControlResult whole = run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("from"), 5}, {QStringLiteral("to"), 25}, {QStringLiteral("op"), QStringLiteral("delete")}});
+		QCOMPARE(whole.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(static_cast<int>(clip->sample().sampleSize()), size);
+		QCOMPARE(clip->sampleWindow().sourceIn, f_cnt_t{10});
+		QCOMPARE(clip->sampleWindow().sourceOut, f_cnt_t{20});
+		QVERIFY(run(QStringLiteral("sample.edit_range"), {{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("from"), 12},
+			{QStringLiteral("to"), 18}, {QStringLiteral("op"), QStringLiteral("delete")}}).ok);
+		QCOMPARE(static_cast<int>(clip->sample().sampleSize()), size - 6);
+		QCOMPARE(clip->sampleWindow().sourceIn, f_cnt_t{10});
+		QCOMPARE(clip->sampleWindow().sourceOut, f_cnt_t{14});
 	}
 
 	void aFolderMovesAsOne()
