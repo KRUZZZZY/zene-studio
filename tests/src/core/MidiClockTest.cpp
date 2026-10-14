@@ -47,6 +47,7 @@
 
 #include <QtTest>
 
+#include <QByteArray>
 #include <QStringList>
 #include <QVector>
 
@@ -59,6 +60,7 @@
 #include "MidiClient.h"
 #include "MidiClock.h"
 #include "Song.h"
+#include "TimePos.h"
 
 using namespace lmms;
 
@@ -127,18 +129,18 @@ QStringList transportMessages(const QStringList& sequence)
 	return out;
 }
 
-//! A raw MIDI client with no device behind it: it exists only to drive
-//! MidiClientRaw::parseData(), the byte-at-a-time assembler the MIDI reader
-//! threads feed, so a claim about which byte of a system-common message the
-//! engine keeps can be made without hardware. sendByte() is the client half of
-//! the interface and output is not what this harness is for.
+//! A raw MIDI client with no device behind it: it captures the bytes emitted by
+//! the real raw encoder and can also drive parseData(), the byte-at-a-time
+//! assembler the MIDI reader threads feed.
 class ParsingRawClient : public MidiClientRaw
 {
 public:
 	void feed(unsigned char byte) { parseData(byte); }
+	void send(const MidiEvent& event) { processOutEvent(event, TimePos{}, nullptr); }
+	QByteArray bytes;
 
 protected:
-	void sendByte(const unsigned char) override { }
+	void sendByte(const unsigned char byte) override { bytes.append(static_cast<char>(byte)); }
 };
 
 
@@ -668,6 +670,24 @@ private slots:
 		// And enabling it again without naming the flag follows again.
 		QVERIFY(run(QStringLiteral("clock.slave_set"), {{QStringLiteral("enabled"), true}}).ok);
 		QVERIFY(clock->slaveFollowTempo());
+	}
+
+	//! Channel pressure and program change carry one data byte; pitch bend is
+	//! the 14-bit value in LSB/MSB order.
+	void rawOutputEncodesPitchBendPressureAndProgramChange()
+	{
+		ParsingRawClient client;
+
+		client.send(MidiEvent(MidiPitchBend, 5, 0x2345));
+		QCOMPARE(client.bytes, QByteArray::fromHex("e54546"));
+		client.bytes.clear();
+
+		client.send(MidiEvent(MidiChannelPressure, 3, 0x64));
+		QCOMPARE(client.bytes, QByteArray::fromHex("d364"));
+		client.bytes.clear();
+
+		client.send(MidiEvent(MidiProgramChange, 9, 0x2A));
+		QCOMPARE(client.bytes, QByteArray::fromHex("c92a"));
 	}
 
 	// ------------------------------------------------------------------- A16
