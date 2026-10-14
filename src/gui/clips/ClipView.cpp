@@ -28,6 +28,8 @@
 #include "ArrangerEditPreview.h"
 #include "ArrangerOverlays.h"
 
+#include <cstdint>
+#include <limits>
 #include <set>
 #include <cassert>
 
@@ -90,9 +92,11 @@ tick_t gridLineOf(tick_t start, const Clip* clip, float snapBars)
 {
 	const auto step = std::max<tick_t>(1, static_cast<tick_t>(std::lround(snapBars * TimePos::ticksPerBar())));
 	const tick_t snapPoint = std::max(0, clip->clipEdits().snapTicks);
-	for (const tick_t candidate : {start + snapPoint, start, start + clip->length().getTicks()})
+	const std::int64_t wideStart = start;
+	for (const std::int64_t candidate : {wideStart + snapPoint, wideStart, wideStart + clip->length().getTicks()})
 	{
-		if (candidate % step == 0) { return candidate; }
+		if (candidate < std::numeric_limits<tick_t>::min() || candidate > std::numeric_limits<tick_t>::max()) { continue; }
+		if (candidate % step == 0) { return static_cast<tick_t>(candidate); }
 	}
 	return start;
 }
