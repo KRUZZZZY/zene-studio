@@ -177,7 +177,7 @@ void CollabHost::acceptDescriptor(qintptr descriptor)
 	auto* socket = new QSslSocket(this);
 	if (!socket->setSocketDescriptor(descriptor)) { socket->deleteLater(); return; }
 	const QString from = socket->peerAddress().toString();
-	const bool full = m_pending >= MaxPendingHandshakes || m_peers.size() >= MaxPeers;
+	const bool full = m_pending >= MaxPendingHandshakes || static_cast<int>(m_peers.size()) + m_pending >= MaxPeers;
 	if (full || !m_limiter.admit(from, nowMs()))
 	{
 		socket->abort();
@@ -226,6 +226,7 @@ void CollabHost::onEncrypted(QSslSocket* socket)
 	socket->disconnect(this);
 	const auto role = static_cast<CollabRole>(socket->property(RoleProperty).toInt());
 	auto* link = new CollabLink(socket, MaxPeerLineBytes, this);
+	if (m_peers.size() >= MaxPeers) { turnAway(link, QStringLiteral("the host is full")); return; }
 	QString error;
 	const QByteArray snapshot = role != CollabRole::Remote ? snapshotFrame(&error) : QByteArray();
 	if (role != CollabRole::Remote && snapshot.isEmpty()) { turnAway(link, error); return; }
