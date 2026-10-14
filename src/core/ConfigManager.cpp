@@ -34,6 +34,7 @@
 #include <QDir>
 #include <QDomElement>
 #include <QMessageBox>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTextStream>
 
@@ -686,15 +687,18 @@ void ConfigManager::saveConfigFile()
 
 	QString xml = "<?xml version=\"1.0\"?>\n" + doc.toString(2);
 
-	QFile outfile(m_configFile);
-	if(!outfile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+	QSaveFile outfile(m_configFile);
+	outfile.setDirectWriteFallback(false);
+	const QByteArray xmlBytes = xml.toUtf8();
+	if (!outfile.open(QIODevice::WriteOnly | QIODevice::Unbuffered) ||
+		outfile.write(xmlBytes) != xmlBytes.size() || !outfile.commit())
 	{
+		outfile.cancelWriting();
 		using gui::MainWindow;
 
 		QString title, message;
-		title = MainWindow::tr("Could not open file");
-		message = MainWindow::tr("Could not open file %1 "
-					"for writing.\nPlease make "
+		title = MainWindow::tr("Could not save file");
+		message = MainWindow::tr("Could not save file %1.\nPlease make "
 					"sure you have write "
 					"permission to the file and "
 					"the directory containing the "
@@ -715,9 +719,6 @@ void ConfigManager::saveConfigFile()
 		}
 		return;
 	}
-
-	outfile.write(xml.toUtf8());
-	outfile.close();
 }
 
 void ConfigManager::initPortableWorkingDir()
