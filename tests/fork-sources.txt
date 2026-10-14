@@ -2369,6 +2369,8 @@ tests/src/plugins/PatmanLoadTest.cpp
 tests/src/core/SerializingObjectHookTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
 tests/src/plugins/ExprSynthTest.cpp
+# BUG 16 (new-p10-136): file manager discovery falls back when the MIME query returns nothing.
+tests/src/gui/FileRevealerTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 # cluster new-p10-116: the anchored-name regression for favourite effects in the picker.
 tests/src/gui/EffectSelectDialogFilterTest.cpp

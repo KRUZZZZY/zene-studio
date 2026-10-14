@@ -1037,6 +1037,8 @@ set(LMMS_TESTS
 	src/gui/BrowserTagMenuTest.cpp
 	# File search results queued for an older query are ignored by the current browser search.
 	src/gui/FileSearchJobTest.cpp
+	# File revealing uses xdg-open when the MIME query cannot find a directory handler.
+	src/gui/FileRevealerTest.cpp
 	# The song editor's Views menu: visibility sets applied, all tracks shown, saved, removed.
 	src/gui/VisibilitySetMenuTest.cpp
 	# Edit > Capture MIDI names what the retrospective capture window holds.
