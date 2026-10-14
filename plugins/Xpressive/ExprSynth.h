@@ -55,7 +55,7 @@ public:
 	void setIntegrate(const unsigned int* frameCounter, unsigned int sample_rate);
 	ExprFrontData* getData() { return m_data; }
 private:
-	ExprFrontData *m_data;
+	ExprFrontData *m_data = nullptr;
 	bool m_valid;
 	
 	static const int max_float_integer_mask=(1<<(std::numeric_limits<float>::digits))-1;
