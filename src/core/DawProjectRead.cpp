@@ -127,17 +127,24 @@ bool pointTime(const QXmlStreamAttributes& attributes, ReadState& state, double*
 
 //! The unit in force for a WHOLE <TempoAutomation> element: its own `timeUnit`
 //! when it declares one, else the one the enclosing lanes left in state. False -
-//! with state.error set - for a seconds timeline, refused the way a seconds
-//! <Notes> lane is: converting it needs the tempo curve, which this module will
-//! not guess.
+//! with state.error set - for any effective unit besides beats. Seconds require
+//! a tempo-curve conversion this module will not guess; other units are unsupported.
 bool automationUnitAccepted(QXmlStreamReader& reader, ReadState& state, const QString& element)
 {
 	QString unit = attribute(reader.attributes(), QStringLiteral("timeUnit"));
 	if (unit.isEmpty()) { unit = state.timeUnit; }
-	if (unit != QLatin1String("seconds")) { return true; }
-	state.error = QStringLiteral("a <%1> timeline declares timeUnit=\"seconds\"; this module "
-		"places its points on a beat grid and will not guess the tempo curve that would "
-		"convert them").arg(element);
+	if (unit == QLatin1String(DawProjectTimeUnit)) { return true; }
+	if (unit == QLatin1String("seconds"))
+	{
+		state.error = QStringLiteral("a <%1> timeline declares timeUnit=\"seconds\"; this module "
+			"places its points on a beat grid and will not guess the tempo curve that would "
+			"convert them").arg(element);
+	}
+	else
+	{
+		state.error = QStringLiteral("a <%1> timeline declares unsupported timeUnit=\"%2\"; this "
+			"module supports only timeUnit=\"beats\"").arg(element, unit);
+	}
 	return false;
 }
 
