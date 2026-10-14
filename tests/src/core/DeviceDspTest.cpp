@@ -47,6 +47,7 @@
 #include <new>
 #include <stdexcept>
 #include <limits>
+#include <limits>
 #include <vector>
 
 #include <fftw3.h>
@@ -140,6 +141,7 @@ extern "C"
 #include "QuadratureLfo.h"
 #include "RmsHelper.h"
 #include "OversamplingHelpers.h"
+#include "QuadratureLfo.h"
 #include "SampleFrame.h"
 #include "Song.h"
 #include "../../../src/core/audio/OssSampleConversion.h"
@@ -498,6 +500,45 @@ private slots:
 		downsampler.setStages(4);
 		QCOMPARE(upsampler.getStages(), 4);
 		QCOMPARE(downsampler.getStages(), 4);
+	}
+
+	void quadratureLfoRejectsNaNFrequency()
+	{
+		QuadratureLfo lfo(48000);
+		lfo.setFrequency(1.0);
+		lfo.setFrequency(std::numeric_limits<double>::quiet_NaN());
+		lfo.restart();
+
+		float left = 0.0f;
+		float right = 0.0f;
+		lfo.tick(&left, &right);
+		lfo.tick(&left, &right);
+		QVERIFY(std::isfinite(left));
+		QVERIFY(std::isfinite(right));
+	}
+
+	void quadratureLfoRejectsZeroSampleRate()
+	{
+		QuadratureLfo lfo(0);
+		float left = 0.0f;
+		float right = 0.0f;
+		lfo.tick(&left, &right);
+		lfo.tick(&left, &right);
+		QVERIFY(std::isfinite(left));
+		QVERIFY(std::isfinite(right));
+	}
+
+	void quadratureLfoIgnoresZeroSampleRateUpdate()
+	{
+		QuadratureLfo lfo(48000);
+		lfo.setFrequency(1.0);
+		lfo.setSampleRate(0);
+		float left = 0.0f;
+		float right = 0.0f;
+		lfo.tick(&left, &right);
+		lfo.tick(&left, &right);
+		QVERIFY(std::isfinite(left));
+		QVERIFY(std::isfinite(right));
 	}
 
 	//! MX-147: a loud 9 kHz tone is turned down and reported as reduction; a 200 Hz tone passes.
