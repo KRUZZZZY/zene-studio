@@ -670,6 +670,8 @@ plugins/Monstro/Monstro.h	2026-10-11 cluster new-p9-295: define the bounded inst
 plugins/MultitapEcho/MultitapEcho.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Organic/Organic.cpp	Organic distortion and volume now process only the current note's frames beginning at noteOffset, preserving earlier samples in the same period
 plugins/MultitapEcho/MultitapEchoControls.cpp	new-p9-299: recalculate filters for every active tap after an output sample-rate change; covered by PluginPortsMigrationTest::multitapEchoRetunesAllTapsAfterSampleRateChange.
+plugins/Nes/Nes.cpp	new-p9-322: recalculate channel 4 noise wavelength when held-note frequency mode or quantization changes; regression: PluginPortsMigrationTest::nesNoiseFrequencyControlsRetuneHeldNotes
+plugins/Nes/Nes.h	new-p9-322: cache channel 4 noise frequency mode and quantization per note for held-note retuning; regression: PluginPortsMigrationTest::nesNoiseFrequencyControlsRetuneHeldNotes
 plugins/Oscilloscope/Oscilloscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 plugins/Patman/Patman.cpp	cluster new-p9-350 (2026-10-10): clearing the selected patch releases its sample bank; AudioPluginTest observes the loaded sample through a weak reference.

@@ -219,6 +219,90 @@ auto findRender(const std::vector<partc::PluginRender>& renders, const char* nam
 	return nullptr;
 }
 
+struct NesNoiseRender
+{
+	QString error;
+	std::vector<float> samples;
+};
+
+void renderInstrumentPeriods(lmms::Instrument& instrument, lmms::NotePlayHandle& note,
+	lmms::f_cnt_t frames, int periods, std::vector<float>* output)
+{
+	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
+	for (int period = 0; period < periods; ++period)
+	{
+		std::fill(buffer.begin(), buffer.end(), lmms::SampleFrame{0.0f, 0.0f});
+		instrument.playNote(&note, std::span<lmms::SampleFrame>{buffer});
+		if (output == nullptr) { continue; }
+		for (const auto& sample : buffer)
+		{
+			output->push_back(sample.left());
+			output->push_back(sample.right());
+		}
+	}
+}
+
+NesNoiseRender renderNesNoiseTail(bool noteFrequencyMode, bool quantized,
+	bool toggleNoteFrequencyMode, bool toggleQuantization)
+{
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_nes)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	if (!library.load()) { return {library.errorString(), {}}; }
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	if (entry == nullptr) { return {library.errorString(), {}}; }
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	std::unique_ptr<lmms::Instrument> instrument{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	if (!instrument) { return {QStringLiteral("NES instrument creation failed"), {}}; }
+
+	QDomDocument settingsDocument;
+	QDomElement settingsRoot = settingsDocument.createElement(QStringLiteral("instrument"));
+	QDomElement settings = instrument->saveState(settingsDocument, settingsRoot);
+	const auto applySettings = [&](bool useNoteFrequency, bool useQuantization)
+	{
+		settings.setAttribute(QStringLiteral("on1"), 0);
+		settings.setAttribute(QStringLiteral("on2"), 0);
+		settings.setAttribute(QStringLiteral("on3"), 0);
+		settings.setAttribute(QStringLiteral("on4"), 1);
+		settings.setAttribute(QStringLiteral("vol4"), 15);
+		settings.setAttribute(QStringLiteral("envon4"), 0);
+		settings.setAttribute(QStringLiteral("nmode4"), 0);
+		settings.setAttribute(QStringLiteral("nfrqmode4"), useNoteFrequency ? 1 : 0);
+		settings.setAttribute(QStringLiteral("nfreq4"), 0);
+		settings.setAttribute(QStringLiteral("nq4"), useQuantization ? 1 : 0);
+		settings.setAttribute(QStringLiteral("nswp4"), 0);
+		settings.setAttribute(QStringLiteral("vol"), 100);
+		settings.setAttribute(QStringLiteral("vibr"), 0);
+		instrument->restoreState(settings);
+	};
+	applySettings(noteFrequencyMode, quantized);
+
+	constexpr int PrefixPeriods = 8;
+	constexpr int TailPeriods = 24;
+	const lmms::f_cnt_t frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	const int totalPeriods = PrefixPeriods + TailPeriods;
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * totalPeriods)},
+		lmms::TimePos{0}, 60};
+	lmms::NotePlayHandle noteHandle{track.get(), 0, frames * totalPeriods, note, nullptr,
+		-1, lmms::NotePlayHandle::Origin::MidiClip};
+	renderInstrumentPeriods(*instrument, noteHandle, frames, PrefixPeriods, nullptr);
+	if (toggleNoteFrequencyMode || toggleQuantization)
+	{
+		applySettings(noteFrequencyMode || toggleNoteFrequencyMode, quantized || toggleQuantization);
+	}
+
+	NesNoiseRender result;
+	result.samples.reserve(static_cast<std::size_t>(TailPeriods) * frames * 2);
+	renderInstrumentPeriods(*instrument, noteHandle, frames, TailPeriods, &result.samples);
+	if (noteHandle.m_pluginData != nullptr)
+	{
+		instrument->deleteNotePluginData(&noteHandle);
+		noteHandle.m_pluginData = nullptr;
+	}
+	return result;
+}
+
 /*!
  * Windows: a test host cannot load a plugin MODULE library at runtime.
  *
@@ -509,6 +593,7 @@ private slots:
 	void comparisonIsSensitive();
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
+	void nesNoiseFrequencyControlsRetuneHeldNotes();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void organicDistortionLeavesPreOffsetFramesUnchanged();
 	void slice6PluginsAreLiveAndExact();
@@ -898,6 +983,32 @@ void PluginPortsMigrationTest::ladspaEffectSurvivesFailedInstantiationsDuringSam
 		QVERIFY(effect->controls() == nullptr);
 	}
 	QVERIFY(!effect->isOkay());
+}
+
+void PluginPortsMigrationTest::nesNoiseFrequencyControlsRetuneHeldNotes()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	const auto presetNoise = renderNesNoiseTail(false, false, false, false);
+	const auto noteNoise = renderNesNoiseTail(false, false, true, false);
+	QVERIFY2(presetNoise.error.isEmpty(), qPrintable(presetNoise.error));
+	QVERIFY2(noteNoise.error.isEmpty(), qPrintable(noteNoise.error));
+	const float modeChange = partc::maxAbsDiff(presetNoise.samples, noteNoise.samples);
+	qInfo().noquote() << QString{"NES note-frequency mode toggle max|delta|=%1"}
+		.arg(modeChange, 0, 'g', 4);
+	QVERIFY2(modeChange > 0.05f, "switching a held note to note-frequency noise did not retune it");
+
+	const auto unquantizedNoise = renderNesNoiseTail(true, false, false, false);
+	const auto quantizedNoise = renderNesNoiseTail(true, false, false, true);
+	QVERIFY2(unquantizedNoise.error.isEmpty(), qPrintable(unquantizedNoise.error));
+	QVERIFY2(quantizedNoise.error.isEmpty(), qPrintable(quantizedNoise.error));
+	const float quantizeChange = partc::maxAbsDiff(unquantizedNoise.samples, quantizedNoise.samples);
+	qInfo().noquote() << QString{"NES held-note quantization toggle max|delta|=%1"}
+		.arg(quantizeChange, 0, 'g', 4);
+	QVERIFY2(quantizeChange > 0.05f, "switching quantization on did not retune held-note noise");
 }
 
 void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()

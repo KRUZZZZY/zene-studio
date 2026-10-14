@@ -180,6 +180,8 @@ private:
 
 	float m_lastNoteFreq;
 	float m_lastNoiseFreq;
+	bool m_lastNoiseFreqMode;
+	bool m_lastNoiseQuantize;
 	
 	int m_maxWlen;
 	
