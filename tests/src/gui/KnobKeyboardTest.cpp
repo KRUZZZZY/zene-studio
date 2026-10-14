@@ -43,6 +43,7 @@
 #include <QLineEdit>
 #include <QProcess>
 #include <QStringList>
+#include <QPixmap>
 #include <QToolTip>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -57,6 +58,7 @@
 #include "ConfigManager.h"
 #include "ControlCues.h"
 #include "DesignTokens.h"
+#include "Draggable.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "Knob.h"
@@ -188,6 +190,34 @@ private slots:
 		paintCount = editor.paintCount();
 		editor.setTextColor(Qt::blue);
 		QTRY_VERIFY(editor.paintCount() > paintCount);
+	}
+
+	void aDraggableWithAConstantModelStaysPut()
+	{
+		FloatModel model(5.f, 0.f, 10.f, 0.1f);
+		QWidget parent;
+		Draggable draggable(FloatModelEditorBase::DirectionOfManipulation::Vertical,
+			&model, QPixmap(8, 8), 20, 80, &parent);
+		const QPoint expectedPosition(23, 29);
+
+		model.setRange(5.f, 5.f, 0.1f);
+		draggable.move(expectedPosition);
+		QVERIFY(QMetaObject::invokeMethod(&draggable, "handleMovement", Qt::DirectConnection));
+		QCOMPARE(draggable.pos(), expectedPosition);
+	}
+
+	void aDraggableWithCoincidentEndpointsDoesNotChangeTheModel()
+	{
+		FloatModel model(50.f, 0.f, 100.f, 1.f);
+		QWidget parent;
+		Draggable draggable(FloatModelEditorBase::DirectionOfManipulation::Vertical,
+			&model, QPixmap(10, 10), 50, 50, &parent);
+		parent.show();
+
+		QTest::mousePress(&draggable, Qt::LeftButton, Qt::NoModifier, QPoint(4, 4));
+		QTest::mouseMove(&draggable, QPoint(6, 6));
+		QTest::mouseRelease(&draggable, Qt::LeftButton, Qt::NoModifier, QPoint(6, 6));
+		QCOMPARE(model.value(), 50.f);
 	}
 
 	void theKeysStepAndJumpLikeASlider()
