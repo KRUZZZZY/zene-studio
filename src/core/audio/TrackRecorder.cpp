@@ -57,7 +57,7 @@ sample_t prepareSampleForPcmWrite(sample_t sample) noexcept
 	return std::clamp(sample, sample_t{-1}, sample_t{1});
 }
 
-}
+} // namespace recorder_detail
 
 
 TrackRecorder::TrackRecorder() :
