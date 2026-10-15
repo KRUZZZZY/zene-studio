@@ -215,13 +215,17 @@ void ClapInstrument::reprepare()
 			qWarning() << "CLAP: re-prepare failed:" << error;
 		}
 		// prepare() re-read a changed port layout: the transport follows it, as the effect host's does.
+		bool layoutChanged = false;
 		if (m_plugin.layoutRevision() != revision)
 		{
 			const auto counts = channelCountsOf(m_plugin.busLayout());
 			audioPorts().setAllChannelCounts(counts.total, counts.inputs, counts.outputs);
 			m_outputBuses.setLayout(clap::outputBusesOf(m_plugin.ports()));  // MX-114
+			layoutChanged = true;
 		}
 		engine->doneChangeInModel();
+		// BUG 6: the audio-output configuration on the surface follows the new layout instead of going stale.
+		if (layoutChanged) { emit outputLayoutChanged(); }
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
 	cacheLatency();  // MX-157

@@ -132,6 +132,10 @@ signals:
 	//! W6: the plug-in rescanned its parameters and the models were rebuilt; the view redraws its knobs.
 	void parametersChanged();
 
+	//! BUG 6: the plug-in changed its clap.audio-ports layout while running and reprepare() re-read
+	//! it; the view refreshes the audio-output channel count it shows.
+	void outputLayoutChanged();
+
 protected:
 	auto processImpl(PlanarBufferView<const float, DynamicChannelCount> in,
 		PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus override;
