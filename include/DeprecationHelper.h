@@ -27,6 +27,7 @@
 #ifndef LMMS_DEPRECATIONHELPER_H
 #define LMMS_DEPRECATIONHELPER_H
 
+#include <cmath>
 #include <type_traits>
 
 #include <QDomDocument>
@@ -100,14 +101,21 @@ inline QPoint globalPosition(const QMouseEvent* me)
 #endif
 }
 
-//! Backwards-compatible adapter for QJsonValue::toInteger (Qt 6 only). On Qt 5 a JSON number is
-//! always a double, exact for integers up to 2^53, which covers every tick/frame/byte count here.
+//! Backwards-compatible adapter for QJsonValue::toInteger (Qt 6 only). Qt 6 returns the default for anything
+//! that is not a whole number representable as qint64; so does the Qt 5 branch (a Qt 5 number is a double).
 inline qint64 jsonInteger(const QJsonValue& value, qint64 defaultValue = 0)
 {
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
 	return value.toInteger(defaultValue);
 #else
-	return value.isDouble() ? static_cast<qint64>(value.toDouble()) : defaultValue;
+	if (!value.isDouble()) { return defaultValue; }
+	const double number = value.toDouble();
+	// NaN fails the first test, infinities and out-of-range values the others; 2^63 itself is out of range.
+	if (!(number == std::floor(number)) || number < -9223372036854775808.0 || number >= 9223372036854775808.0)
+	{
+		return defaultValue;
+	}
+	return static_cast<qint64>(number);
 #endif
 }
 
