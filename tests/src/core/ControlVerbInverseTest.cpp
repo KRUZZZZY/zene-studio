@@ -56,6 +56,7 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
+#include "MidiClip.h"
 #include "ReversibilityTestSupport.h"
 #include "Song.h"                  // Track::create takes a TrackContainer: the base must be complete
 #include "TakeLaneTestSupport.h"   // the shared WAV fixture (ONE definition)
@@ -216,6 +217,29 @@ private slots:
 		QCOMPARE(clipOffset(fixture.clip), offsetBefore);
 		QVERIFY2(clipAutoResize(fixture.clip),
 			"the undo must restore the auto-resize flag the trim cleared, not just the edges");
+	}
+
+	//! Frame-exact trim options are supported only for sample clips. An instrument
+	//! track's MIDI clip must reject them instead of silently applying the tick.
+	void clipTrimRefusesFrameOptionsOnMidiClips()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture, false), "could not build an instrument track + MIDI clip fixture");
+		control::ClipRef ref;
+		ControlResult resolveError;
+		QVERIFY2(control::resolveMidiClip(fixture.clip, &ref, &resolveError) != nullptr,
+			qPrintable(resolveError.errorMessage));
+		const int posBefore = clipPosition(fixture.clip);
+		const int lenBefore = clipLength(fixture.clip);
+		const int start = posBefore + 24;
+
+		const ControlResult trimmed = run(QStringLiteral("clip.trim"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("start"), start},
+				{QStringLiteral("start_frames"), 12}});
+		QVERIFY(!trimmed.ok);
+		QCOMPARE(trimmed.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clipPosition(fixture.clip), posBefore);
+		QCOMPARE(clipLength(fixture.clip), lenBefore);
 	}
 
 	//! clip.slip: the clip's rectangle does not move and the source does, and the
