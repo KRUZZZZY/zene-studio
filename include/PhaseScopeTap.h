@@ -48,7 +48,8 @@ class SampleFrame;
  *  on several workers at once, but only the chosen channel's push writes; a second push that finds one in
  *  flight - possible only in the period the choice changes - is dropped at once, never waited for.
  *  GUI / CONTROL THREAD: setChannel(), channel(), written() and latest(), which copies the newest frames and
- *  refuses a copy the producer overran while it was taken (the caller reads again on its next refresh). */
+ *  refuses a copy the producer overran - or one a concurrent setChannel() or a fresh push rebased - while it
+ *  was taken (the caller reads again on its next refresh). */
 class LMMS_EXPORT PhaseScopeTap
 {
 public:
@@ -81,8 +82,13 @@ public:
 	}
 
 	//! A request the audio thread takes at its next push, so a push in flight cannot overwrite it; until then
-	//! latest() reports nothing.
-	void reset() noexcept { m_resetPending.store(true, std::memory_order_release); }
+	//! latest() reports nothing. The generation moves too, so a copy latest() already started is refused
+	//! rather than returned (setChannel() and latest() may run on the control and GUI threads respectively).
+	void reset() noexcept
+	{
+		m_resetPending.store(true, std::memory_order_release);
+		m_generation.fetch_add(2, std::memory_order_release);  // even: only a fresh push may make it odd
+	}
 
 private:
 	std::array<std::atomic<float>, Capacity> m_left{};
@@ -94,6 +100,9 @@ private:
 	std::atomic<bool> m_resetPending{false};
 	std::atomic<bool> m_writing{false};  //!< a push is in flight: a second producer drops its block
 	std::atomic<int> m_channel{Off};
+	//! Even while the ring is stable, odd while a fresh (post-reset) push rebases it: latest() samples it
+	//! before and after its copy and refuses a window a channel change or rebase stole half of.
+	std::atomic<std::uint64_t> m_generation{0};
 };
 
 } // namespace lmms
