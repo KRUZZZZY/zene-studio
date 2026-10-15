@@ -92,7 +92,8 @@ public:
 	void fixIncorrectPositions();
 	void createClipsForPattern(int pattern);
 
-	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum) const override;
+	void fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+		TimePos time, int clipNum) const override;
 
 public slots:
 	void play();

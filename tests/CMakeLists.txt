@@ -426,6 +426,7 @@ set(LMMS_TESTS
 	src/core/FrozenTakeHandoffTest.cpp
 	src/core/FrozenTakeRoundTwoTest.cpp
 	src/core/AudioBusPlayHandleQueueTest.cpp
+	src/core/AutomationRenderAllocationTest.cpp
 	src/core/SlicerTPlayheadTest.cpp
 	src/core/MidiEventToByteSeqTest.cpp
 	src/core/RetroMidiCaptureCommandsTest.cpp

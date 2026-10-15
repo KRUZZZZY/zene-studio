@@ -138,6 +138,7 @@ include/AutomationModeMenu.h
 include/AutomationNode.h
 include/AutomationPointEdit.h
 include/AutomationRamp.h
+include/AutomationRenderScratch.h
 include/AutomationSwitches.h
 include/AutomationTrack.h
 include/AutomationTrackView.h
@@ -2454,6 +2455,7 @@ tests/src/core/AutomationClipTransformTangentTestSupport.h
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/AutomationPrepassProofTest.cpp
+tests/src/core/AutomationRenderAllocationTest.cpp
 tests/src/core/AutomationThinTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BasicFiltersSampleRateTest.cpp

@@ -25,6 +25,7 @@
 
 #include "PatternStore.h"
 
+#include "AutomationRenderScratch.h"
 #include "Clip.h"
 #include "Engine.h"
 #include "PatternTrack.h"
@@ -230,7 +231,8 @@ void PatternStore::createClipsForPattern(int pattern)
 	}
 }
 
-AutomatedValueMap PatternStore::automatedValuesAt(TimePos time, int clipNum) const
+void PatternStore::fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+	TimePos time, int clipNum) const
 {
 	Q_ASSERT(clipNum >= 0);
 	Q_ASSERT(time.getTicks() >= 0);
@@ -242,7 +244,7 @@ AutomatedValueMap PatternStore::automatedValuesAt(TimePos time, int clipNum) con
 		time = lengthTicks;
 	}
 
-	return TrackContainer::automatedValuesAt(time + (TimePos::ticksPerBar() * clipNum), clipNum);
+	TrackContainer::fillAutomatedValues(level, inner, time + (TimePos::ticksPerBar() * clipNum), clipNum);
 }
 
 

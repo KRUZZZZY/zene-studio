@@ -705,6 +705,7 @@ include/AutomationLatency.h
 include/AutomationModeMenu.h
 include/AutomationPointEdit.h
 include/AutomationRamp.h
+include/AutomationRenderScratch.h
 include/AutomationSwitches.h
 include/BiquadDesign.h
 include/BounceInPlace.h
@@ -2210,6 +2211,7 @@ tests/src/core/AudioFileOggInitTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AutomationClipTransformTangentTestSupport.h
 tests/src/core/AutomationLanesTest.cpp
+tests/src/core/AutomationRenderAllocationTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BounceInPlaceTest.cpp
 tests/src/core/BrowserCatalogQueryTest.cpp

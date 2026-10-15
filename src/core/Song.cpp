@@ -32,6 +32,7 @@
 #include <QThread>
 
 #include <algorithm>
+#include <functional>
 #include <cmath>
 
 #include "ControlRoom.h"
@@ -133,6 +134,9 @@ Song::Song() :
 	m_loopRenderRemaining(1),
 	m_oldAutomatedValues()
 {
+	// Reserved here, on the constructing thread, so processAutomations never has to grow them.
+	m_oldAutomatedValues.reserve(AutomationRenderScratch::RenderCapacity);
+	m_recordedModels.reserve(AutomationRenderScratch::RenderCapacity);
 	// A model being destroyed reports itself here, before anything in this
 	// object is torn down (see Song::forgetAutomatedModel and
 	// s_automationCacheSong): the automation cache holds the models automated on
@@ -261,7 +265,9 @@ void Song::forgetAutomatedModel( AutomatableModel* model )
 {
 	if( s_automationCacheSong != nullptr )
 	{
-		s_automationCacheSong->m_oldAutomatedValues.remove( model );
+		auto& cache = s_automationCacheSong->m_oldAutomatedValues;
+		cache.erase( std::remove_if( cache.begin(), cache.end(),
+			[model]( const auto& entry ) { return entry.first == model; } ), cache.end() );
 	}
 }
 
@@ -604,10 +610,6 @@ bool Song::enforceLoop(const TimePos& begin, const TimePos& end, bool wrapping)
 
 void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_cnt_t)
 {
-	AutomatedValueMap values;
-
-	QSet<const AutomatableModel*> recordedModels;
-
 	TrackContainer* container = this;
 	int clipNum = -1;
 
@@ -628,16 +630,21 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		return;
 	}
 
-	values = container->automatedValuesAt(timeStart, clipNum);
+	// Everything this tick builds lives in the Song's scratch, reserved in the constructor: the read runs on
+	// the audio thread, where RealtimeSanitizer reported the vector and map it used to allocate.
+	AutomationRenderScratch& values = m_automationLevel;
+	container->fillAutomatedValues(values, &m_automationInner, timeStart, clipNum);
 	const TrackList& tracks = container->tracks();
 
-	Track::clipVector clips;
+	AutomationRenderScratch& clips = m_automationRecordClips;
+	clips.clear();
 	for (Track* track : tracks)
 	{
 		if (track->type() == Track::Type::Automation) {
-			track->getClipsInRange(clips, 0, timeStart);
+			clips.insertClipsInRange(*track, 0, timeStart);
 		}
 	}
+	m_recordedModels.clear();
 
 	// Process recording
 	//
@@ -651,7 +658,7 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	const quint64 automationRun = AutomatableModel::automationTransportRun();
 	qint64 automationNowNs = 0;
 	bool automationClockRead = false;
-	for (Clip* clip : clips)
+	for (Clip* clip : clips.clips())
 	{
 		auto p = dynamic_cast<AutomationClip *>(clip);
 		TimePos relTime = timeStart - p->startPosition();
@@ -679,7 +686,7 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 				// and store that so that when playing it back, it scales the value correctly.
 				p->recordValue(relTime, recordedModel->inverseScaledValue(recordedModel->value<float>()));
 
-				recordedModels << recordedModel;
+				noteRecordedModel(recordedModel);
 			}
 		}
 	}
@@ -689,9 +696,9 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	// destroyed while it was cached has already dropped itself out of this map
 	// (AutomatableModel's destructor calls Song::forgetAutomatedModel), so no key
 	// here is a stale pointer.
-	for (auto it = m_oldAutomatedValues.begin(); it != m_oldAutomatedValues.end(); it++)
+	for (const auto& entry : m_oldAutomatedValues)
 	{
-		AutomatableModel * am = it.key();
+		AutomatableModel * am = entry.first;
 		// A guarded key can be null here: the model was destroyed between the frame
 		// that automated it and this restore (see the member's comment). There is
 		// nothing to move back to a controller for a model that no longer exists.
@@ -701,16 +708,21 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		}
 	}
 	m_oldAutomatedValues.clear();
-	for (auto it = values.begin(); it != values.end(); ++it)
+	for (const AutomationRenderScratch::Entry& entry : values.entries())
 	{
-		m_oldAutomatedValues.insert(it.key(), it.value());
+		if (m_oldAutomatedValues.size() < m_oldAutomatedValues.capacity())
+		{
+			m_oldAutomatedValues.emplace_back(entry.model, entry.value);
+		}
+		else { m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed); }
 	}
 
 	// Apply values
-	for (auto it = values.begin(); it != values.end(); it++)
+	for (const AutomationRenderScratch::Entry& entry : values.entries())
 	{
-		AutomatableModel* model = it.key();
-		bool isRecording = recordedModels.contains(model);
+		AutomatableModel* model = entry.model;
+		bool isRecording = std::binary_search(m_recordedModels.begin(), m_recordedModels.end(),
+			static_cast<const AutomatableModel*>(model), std::less<const AutomatableModel*>{});
 		model->setUseControllerValue(isRecording);
 
 		// Automation modes: a control in Off IGNORES its written automation -
@@ -729,9 +741,26 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 			// applied here, where the written automation is read out to the
 			// control, and is never written back into the clip - which is what
 			// makes it non-destructive.
-			model->setValue(model->effectiveAutomationValue(model->scaledValue(it.value())), true);
+			model->setValue(model->effectiveAutomationValue(model->scaledValue(entry.value)), true);
 		}
 	}
+
+	const std::size_t dropped = values.takeOverflows() + m_automationInner.takeOverflows() + clips.takeOverflows();
+	if (dropped != 0) { m_automationScratchOverflows.fetch_add(dropped, std::memory_order_relaxed); }
+}
+
+//! Remembers \a model as written to this tick (kept sorted for the lookup in the apply pass). A full list drops it.
+void Song::noteRecordedModel(const AutomatableModel* model)
+{
+	const auto at = std::lower_bound(m_recordedModels.begin(), m_recordedModels.end(), model,
+		std::less<const AutomatableModel*>{});
+	if (at != m_recordedModels.end() && *at == model) { return; }
+	if (m_recordedModels.size() >= m_recordedModels.capacity())
+	{
+		m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+	m_recordedModels.insert(at, model);
 }
 
 void Song::processMetronome(size_t bufferOffset)
@@ -1037,9 +1066,9 @@ void Song::stop()
 	// that is destroyed while it is cached removes itself from it (the model's
 	// destructor calls Song::forgetAutomatedModel), so nothing here can be a
 	// stale pointer.
-	for (auto it = m_oldAutomatedValues.begin(); it != m_oldAutomatedValues.end(); it++)
+	for (const auto& entry : m_oldAutomatedValues)
 	{
-		AutomatableModel * am = it.key();
+		AutomatableModel * am = entry.first;
 		// Null when the model was destroyed while the transport was playing (the
 		// member's comment has the mechanism); skipping it is the whole point of
 		// guarding the keys - this loop has no other way to tell.
@@ -1348,11 +1377,15 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 }
 
 
-AutomatedValueMap Song::automatedValuesAt(TimePos time, int clipNum) const
+void Song::fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+	TimePos time, int clipNum) const
 {
-	auto trackList = TrackList{m_globalAutomationTrack};
-	trackList.insert(trackList.end(), tracks().begin(), tracks().end());
-	return TrackContainer::automatedValuesFromTracks(trackList, time, clipNum);
+	// The global automation track first, then the song's own tracks: the same order the clips were always
+	// gathered in, and with no track list built on the way (that vector was an audio-thread allocation).
+	level.clear();
+	gatherAutomationClips(level, m_globalAutomationTrack, time, clipNum);
+	for (Track* track : tracks()) { gatherAutomationClips(level, track, time, clipNum); }
+	collectAutomatedValues(level, inner, time);
 }
 
 

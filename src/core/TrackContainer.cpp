@@ -31,6 +31,7 @@
 
 #include "AutomationClip.h"
 #include "AutomationLatency.h"
+#include "AutomationRenderScratch.h"
 #include "embed.h"
 #include "Engine.h"
 #include "TrackContainer.h"
@@ -395,7 +396,7 @@ namespace
 
 //! 0.5.0 ED-199: each relative clip's distance from the middle of its range, added to what the
 //! absolute clips set (or the parameter's own value for the run), clamped to the parameter.
-void applyRelativeClips(const Track::clipVector& clips, TimePos time, AutomatedValueMap& valueMap)
+void applyRelativeClips(const std::vector<Clip*>& clips, TimePos time, AutomationRenderScratch& values)
 {
 	const quint64 run = AutomatableModel::automationTransportRun();
 	for (Clip* clip : clips)
@@ -411,9 +412,10 @@ void applyRelativeClips(const Track::clipVector& clips, TimePos time, AutomatedV
 		{
 			if (model == nullptr) { continue; }
 			// The map holds inverse-scaled values (Song applies scaledValue); so must the base and the bounds.
-			const float base = valueMap.contains(model) ? valueMap[model] : model->inverseScaledValue(model->trimBase(run));
-			valueMap[model] = std::clamp(base + offset, model->inverseScaledValue(model->minValue<float>()),
-				model->inverseScaledValue(model->maxValue<float>()));
+			const float* known = values.find(model);
+			const float base = known != nullptr ? *known : model->inverseScaledValue(model->trimBase(run));
+			values.set(model, std::clamp(base + offset, model->inverseScaledValue(model->minValue<float>()),
+				model->inverseScaledValue(model->maxValue<float>())));
 		}
 	}
 }
@@ -422,37 +424,49 @@ void applyRelativeClips(const Track::clipVector& clips, TimePos time, AutomatedV
 
 AutomatedValueMap TrackContainer::automatedValuesAt(TimePos time, int clipNum) const
 {
-	return automatedValuesFromTracks(tracks(), time, clipNum);
+	// The control thread's read: unbounded scratch, the same code the audio thread runs on its own.
+	AutomationRenderScratch level;
+	AutomationRenderScratch inner;
+	fillAutomatedValues(level, &inner, time, clipNum);
+	AutomatedValueMap valueMap;
+	for (const AutomationRenderScratch::Entry& entry : level.entries()) { valueMap.insert(entry.model, entry.value); }
+	return valueMap;
 }
 
 
-AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tracks, TimePos time, int clipNum)
+void TrackContainer::fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+	TimePos time, int clipNum) const
 {
-	Track::clipVector clips;
+	level.clear();
+	for (Track* track : tracks()) { gatherAutomationClips(level, track, time, clipNum); }
+	collectAutomatedValues(level, inner, time);
+}
 
-	for (Track* track: tracks)
+
+void TrackContainer::gatherAutomationClips(AutomationRenderScratch& level, Track* track, TimePos time, int clipNum)
+{
+	if (track == nullptr || track->isMuted()) { return; }
+
+	switch(track->type())
 	{
-		if (track->isMuted()) {
-			continue;
+	case Track::Type::Automation:
+	case Track::Type::HiddenAutomation:
+	case Track::Type::Pattern:
+		if (clipNum < 0) {
+			level.insertClipsInRange(*track, 0, time);
+		} else {
+			Q_ASSERT(track->numOfClips() > clipNum);
+			level.appendClip(track->getClip(clipNum));
 		}
-
-		switch(track->type())
-		{
-		case Track::Type::Automation:
-		case Track::Type::HiddenAutomation:
-		case Track::Type::Pattern:
-			if (clipNum < 0) {
-				track->getClipsInRange(clips, 0, time);
-			} else {
-				Q_ASSERT(track->numOfClips() > clipNum);
-				clips.push_back(track->getClip(clipNum));
-			}
-		default:
-			break;
-		}
+	default:
+		break;
 	}
+}
 
-	AutomatedValueMap valueMap;
+
+void TrackContainer::collectAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner, TimePos time)
+{
+	const std::vector<Clip*>& clips = level.clips();
 
 	Q_ASSERT(std::is_sorted(clips.begin(), clips.end(), Clip::comparePosition));
 
@@ -479,11 +493,14 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 
 			for (AutomatableModel* model : p->objects())
 			{
-				valueMap[model] = value;
+				level.set(model, value);
 			}
 		}
 		else if (auto* pattern = dynamic_cast<PatternClip*>(clip))
 		{
+			// The pattern store holds no pattern clips of its own, so its read gets no scratch to nest in.
+			if (inner == nullptr) { continue; }
+
 			auto patIndex = dynamic_cast<class PatternTrack*>(pattern->getTrack())->patternIndex();
 			auto patStore = Engine::patternStore();
 
@@ -491,11 +508,11 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 			patTime = std::min(patTime, clip->length());
 			patTime = patTime % (patStore->lengthOfPattern(patIndex) * TimePos::ticksPerBar());
 
-			auto patValues = patStore->automatedValuesAt(patTime, patIndex);
-			for (auto it=patValues.begin(); it != patValues.end(); it++)
+			patStore->fillAutomatedValues(*inner, nullptr, patTime, patIndex);
+			for (const AutomationRenderScratch::Entry& entry : inner->entries())
 			{
 				// override old values, pattern track with the highest index takes precedence
-				valueMap[it.key()] = it.value();
+				level.set(entry.model, entry.value);
 			}
 		}
 		else
@@ -504,9 +521,8 @@ AutomatedValueMap TrackContainer::automatedValuesFromTracks(const TrackList &tra
 		}
 	}
 
-	applyRelativeClips(clips, time, valueMap);
-	return valueMap;
-};
+	applyRelativeClips(clips, time, level);
+}
 
 
 } // namespace lmms

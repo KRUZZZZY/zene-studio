@@ -29,6 +29,8 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <QString>
 #include <QHash>  // IWYU pragma: keep
@@ -36,6 +38,7 @@
 #include <QStringList>
 
 #include "AudioEngine.h"
+#include "AutomationRenderScratch.h"
 #include "Controller.h"
 #include "Metronome.h"
 #include "lmms_constants.h"
@@ -394,8 +397,16 @@ public:
 		return m_globalAutomationTrack;
 	}
 
-	//TODO: Add Q_DECL_OVERRIDE when Qt4 is dropped
-	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum = -1) const override;
+	//! How many clips or values the audio thread's automation scratch had no room for since the song was
+	//! made (their automation is skipped, never allocated for). Zero unless a project has thousands of clips.
+	std::uint64_t automationScratchOverflows() const noexcept
+	{
+		return m_automationScratchOverflows.load(std::memory_order_relaxed);
+	}
+
+	//! Adds the song's global automation track to the read (see TrackContainer::fillAutomatedValues).
+	void fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+		TimePos time, int clipNum = -1) const override;
 
 	/*! Forgets @p model in the automated-value cache of the live song, if there
 	 *  is one (see `m_oldAutomatedValues`). The cache holds the RAW pointers of
@@ -753,6 +764,7 @@ private:
 	bool restoreGuiSection(const QDomElement & element);
 
 	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames);
+	void noteRecordedModel(const AutomatableModel* model);
 	void processMetronome(size_t bufferOffset);
 	//! Recompute every frozen track's overlap allowance on the control thread after loop changes.
 	void updateFrozenTakeVoiceCapacities();
@@ -904,7 +916,20 @@ private:
 	//! `AutomationModesTest` aborting with signal 11 at Song.cpp:778, dereferencing a
 	//! key whose model the test had already destroyed. QPointer nulls itself when the
 	//! model goes, so the restore skips exactly the models that are gone.
-	QMap<QPointer<AutomatableModel>, float> m_oldAutomatedValues;
+	//! A flat list, reserved once in the constructor, and not a QMap: processAutomations rewrites it on
+	//! every tick of the audio thread and a QMap allocates a node per entry (RealtimeSanitizer, hosted
+	//! run 38707621703). Each model is in it at most once.
+	std::vector<std::pair<QPointer<AutomatableModel>, float>> m_oldAutomatedValues;
+
+	//! The audio thread's scratch for processAutomations, reserved in the constructor so a tick never
+	//! allocates: the clips and values of the song's read, those of a pattern clip's nested read, the
+	//! clips the recording pass looks at, and the models it wrote to. Past their capacity extra entries
+	//! are dropped and counted in m_automationScratchOverflows.
+	AutomationRenderScratch m_automationLevel{AutomationRenderScratch::RenderCapacity};
+	AutomationRenderScratch m_automationInner{AutomationRenderScratch::RenderCapacity};
+	AutomationRenderScratch m_automationRecordClips{AutomationRenderScratch::RenderCapacity};
+	std::vector<const AutomatableModel*> m_recordedModels;
+	std::atomic<std::uint64_t> m_automationScratchOverflows{0};
 
 	//! The song that `Song::forgetAutomatedModel()` reports into, or nullptr.
 	//! Set by `Song::Song()`, cleared at the top of `Song::~Song()`.
