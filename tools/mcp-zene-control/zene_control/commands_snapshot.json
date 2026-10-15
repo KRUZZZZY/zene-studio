@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-14T23:52:22Z",
+  "captured_at": "2026-10-15T08:30:27Z",
   "commands": [
     {
       "args_schema": {
@@ -35149,6 +35149,7 @@
   ],
   "count": 828,
   "instance": {
+    "proto": 1,
     "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/cff463a0-1326-44da-8393-bec3a1847916/scratchpad/train5/commands-release.json"
   },
   "kind": "zene-control-command-list",

@@ -88,7 +88,8 @@ def main(argv: list[str] | None = None) -> int:
             data = json.load(handle)
         commands = data.get("commands") if isinstance(data, dict) else data
         result = {"commands": commands, "count": len(commands or []), "proto": args.proto}
-        provenance = {"source_file": os.path.abspath(args.from_file)}
+        # proto too: a reader (and test_committed_snapshot_lists_the_daws_commands) checks instance.proto.
+        provenance = {"source_file": os.path.abspath(args.from_file), "proto": args.proto}
     elif args.socket:
         config = Config(socket_path=os.path.abspath(args.socket), workdir=os.getcwd(),
                         state_dir=str(HERE / ".state"), proto=args.proto)

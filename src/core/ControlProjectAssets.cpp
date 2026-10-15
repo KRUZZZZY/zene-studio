@@ -56,7 +56,6 @@
 
 #include "ControlProjectAssets.h"
 
-#include <QByteArrayView>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -64,6 +63,10 @@
 #include <QStringList>
 #include <QTextStream>
 #include <QtEndian>
+#include <QtGlobal>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QByteArrayView>
+#endif
 
 #include <algorithm>
 
@@ -544,7 +547,11 @@ void projectassets::hashReference(ProjectAssetReference* ref, qint64 byteCap)
 			return;
 		}
 		bytesRead += count;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 		hasher.addData(QByteArrayView(buffer, static_cast<qsizetype>(count)));
+#else
+		hasher.addData(buffer, static_cast<int>(count));   // Qt 5 (hosted CI); count <= the read buffer's size
+#endif
 	}
 	ref->sha256 = QString::fromLatin1(hasher.result().toHex());
 	ref->hashed = true;

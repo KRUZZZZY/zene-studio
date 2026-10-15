@@ -1335,6 +1335,12 @@ endfunction()
 add_library(q050018_no_entry MODULE src/plugins/MissingDevicesNoEntryModule.cpp)
 set_target_properties(q050018_no_entry PROPERTIES OUTPUT_NAME "q050018-no-entry")
 
+# VstEffectControlsTest compiles the VstEffect plug-in's sources against its target's include
+# paths and definitions; where that plug-in is not built (macOS: no VST2 host) there is nothing to test.
+if(NOT TARGET vsteffect)
+	list(REMOVE_ITEM LMMS_TESTS src/plugins/VstEffectControlsTest.cpp)
+endif()
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)

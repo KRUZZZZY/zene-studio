@@ -229,7 +229,7 @@ public:
 			}
 
 			// Array size is stored in-band
-			const auto arraySize = static_cast<Header*>(m_view.get())->size;
+			const auto arraySize = static_cast<Header*>(static_cast<void*>(m_view.get()))->size;
 			if (arraySize > mappingInfo.RegionSize - sizeof(Header)) {
 				throw std::runtime_error{"SharedMemoryImpl: array size exceeds mapped shared memory"};
 			}
