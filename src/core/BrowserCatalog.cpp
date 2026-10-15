@@ -368,7 +368,11 @@ bool browserKindFromName(const QString& name, BrowserKind* kind)
 
 BrowserKind browserKindForPath(const QString& path)
 {
-	const QString suffix = QFileInfo(path).suffix().toLower();
+	const QFileInfo info(path);
+	// QFileInfo::suffix() is only the last dot-part, so "x.cs.xml" would read as "xml".
+	// The browser's Presets filter lists *.cs.xml as a compound preset extension.
+	if (info.fileName().toLower().endsWith(QLatin1String(".cs.xml"))) { return BrowserKind::Preset; }
+	const QString suffix = info.suffix().toLower();
 	for (const KindRow& row : kKinds)
 	{
 		if (suffix == QLatin1String(row.extension)) { return row.kind; }
