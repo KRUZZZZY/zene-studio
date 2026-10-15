@@ -28,7 +28,10 @@
 #define ANALYZER_H
 
 #ifdef SA_DEBUG
+	#include <atomic>
 	#include <chrono>
+	#include <cstdint>
+	#include <QTimer>
 #endif
 
 #include "AudioPlugin.h"
@@ -69,6 +72,9 @@ private:
 	{
 		return now - last > std::chrono::seconds{5};
 	}
+
+	// Runs on the GUI thread (see m_reportTimer), never from processImpl().
+	void reportAudioTiming();
 	#endif
 
 	SaProcessor m_processor;
@@ -86,10 +92,16 @@ private:
 	LocklessRingBuffer<SampleFrame> m_inputBuffer;
 
 	#ifdef SA_DEBUG
+		// processImpl() updates the counters with lock-free atomics only; reportAudioTiming()
+		// reads and resets them, so std::cout never runs on the audio thread.
 		std::chrono::steady_clock::time_point m_last_dump_time;
-		int m_dump_count;
-		float m_sum_execution;
-		float m_max_execution;
+		std::atomic<int> m_dump_count{0};
+		std::atomic<std::uint64_t> m_sum_execution_ns{0};
+		std::atomic<std::uint64_t> m_max_execution_ns{0};
+		static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+			"audio-thread timing counters must be lock-free");
+		// Declared last so it is destroyed before the counters it reads.
+		QTimer m_reportTimer;
 	#endif
 };
 
