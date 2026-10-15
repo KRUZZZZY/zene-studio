@@ -118,8 +118,8 @@ public:
 	void broadcastCommand(const QString& command, const QJsonObject& args, const QString& origin);
 	//! Sends a fresh snapshot to every project-holding peer (after an undo, a load, an untracked edit).
 	void broadcastSnapshot(const QString& reason);
-	//! False when \a peerId is not connected.
-	bool setPeerRole(int peerId, CollabRole role);
+	//! True when changed. On failure, \a error is empty if \a peerId is absent, or holds the snapshot error if promotion failed.
+	bool setPeerRole(int peerId, CollabRole role, QString* error = nullptr);
 	QJsonArray peersJson() const;
 	int peerCount() const { return static_cast<int>(m_peers.size()); }
 	quint64 sequence() const { return m_seq; }

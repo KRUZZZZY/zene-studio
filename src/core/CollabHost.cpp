@@ -408,18 +408,27 @@ void CollabHost::broadcastPeers()
 	emit peersChanged();
 }
 
-bool CollabHost::setPeerRole(int peerId, CollabRole role)
+bool CollabHost::setPeerRole(int peerId, CollabRole role, QString* error)
 {
+	if (error != nullptr) { error->clear(); }
 	const auto it = m_peers.find(peerId);
 	if (it == m_peers.end()) { return false; }
 	const bool gainsProject = !holdsProject(*it) && role != CollabRole::Remote;
-	it->role = role;
-	it->link->send({{QStringLiteral("type"), QStringLiteral("role")}, {QStringLiteral("role"), roleName(role)}});
+	QByteArray snapshot;
 	if (gainsProject)
 	{
-		QString error;
-		if (!sendSnapshot(*it, snapshotFrame(&error))) { emit notice(error); }
+		QString snapshotError;
+		snapshot = snapshotFrame(&snapshotError);
+		if (snapshot.isEmpty())
+		{
+			if (error != nullptr) { *error = snapshotError; }
+			emit notice(snapshotError);
+			return false;
+		}
 	}
+	it->role = role;
+	it->link->send({{QStringLiteral("type"), QStringLiteral("role")}, {QStringLiteral("role"), roleName(role)}});
+	if (gainsProject) { sendSnapshot(*it, snapshot); }
 	broadcastPeers();
 	return true;
 }

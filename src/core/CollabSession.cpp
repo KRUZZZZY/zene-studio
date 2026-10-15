@@ -257,7 +257,12 @@ ControlResult CollabSession::leave()
 ControlResult CollabSession::setRole(int peerId, CollabRole role)
 {
 	if (m_mode != Mode::Hosting) { return refused(QStringLiteral("only the host sets roles")); }
-	if (!m_host->setPeerRole(peerId, role)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no peer %1").arg(peerId)); }
+	QString error;
+	if (!m_host->setPeerRole(peerId, role, &error))
+	{
+		return error.isEmpty() ? ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no peer %1").arg(peerId))
+			: ControlResult::failure(ControlErrorKind::Refused, error);
+	}
 	return ControlResult::success(state());
 }
 
