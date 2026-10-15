@@ -27,6 +27,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <memory>
+#include <vector>
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -164,30 +166,32 @@ BrowserIndexEntry entryOf(const QFileInfo& info, const QString& path, Walk* walk
 
 //! Count the file @a info and add it to the walk - once, however many roots hold it - unless the walk
 //! is full: then it is truncated (a file past the limit, so exactly MaxEntries files is not truncated).
-void admit(const QFileInfo& info, Walk* walk)
+//! Returns true when it counted the file, so the walk's progress moved.
+bool admit(const QFileInfo& info, Walk* walk)
 {
 	// Keyed as the tag store keys a file (its canonical path), so an indexed file's tags are found.
 	const QString canonical = info.canonicalFilePath();
 	const QString path = canonical.isEmpty() ? info.absoluteFilePath() : canonical;
 	const bool known = walk->seen.contains(path);
-	if (!known && static_cast<int>(walk->found.size()) >= BrowserIndex::MaxEntries) { walk->status.truncated = true; return; }
+	if (!known && static_cast<int>(walk->found.size()) >= BrowserIndex::MaxEntries) { walk->status.truncated = true; return false; }
 	++walk->status.scanned;
-	if (known) { return; }
+	if (known) { return true; }
 	walk->seen.insert(path);
 	walk->found.push_back(entryOf(info, path, walk));
+	return true;
 }
 
-//! Admits \a info, or queues it for the walk when it is an ordinary directory. An LV2
-//! bundle is a directory the library holds as one item, so it is admitted, not queued;
-//! a symlinked directory is never followed (a loop would never end).
-void visitEntry(const QFileInfo& info, QStringList* pending, Walk* walk)
+//! A directory the walk handles itself rather than admitting: an ordinary one, which it enters (a
+//! symlinked one it skips). An LV2 bundle is a directory the library holds as one item: admitted here.
+bool isWalkedDirectory(const QFileInfo& info)
 {
-	if (info.isDir() && !browserIsLv2Bundle(info))
-	{
-		if (!info.isSymLink()) { pending->append(info.absoluteFilePath()); }
-		return;
-	}
-	admit(info, walk);
+	return info.isDir() && !browserIsLv2Bundle(info);
+}
+
+//! The listing of \a dir: its files and subdirectories, never a hidden or unreadable entry.
+std::unique_ptr<QDirIterator> openListing(const QString& dir)
+{
+	return std::make_unique<QDirIterator>(dir, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable);
 }
 
 void reportProgress(const Walk& walk, QMutex* mutex, BrowserIndex::Status* status)
@@ -198,21 +202,27 @@ void reportProgress(const Walk& walk, QMutex* mutex, BrowserIndex::Status* statu
 	status->analysed = walk.status.analysed;
 }
 
-//! Walks \a root depth-first, one directory listing at a time, so the walk never
-//! enters an LV2 bundle: the bundle is a single item, whatever is inside it.
+//! Walks \a root depth-first, in the order QDirIterator's Subdirectories walk takes: an ordinary
+//! directory is entered the moment it is met, and its parent's listing resumes when it is done.
+//! One open listing is held per level of descent, so a wide directory is streamed, not buffered.
+//! A symlinked directory is never followed (a loop would never end); an LV2 bundle is one item.
 void walkDirectory(const QString& root, Walk* walk, std::atomic<bool>& cancel,
 	QMutex* mutex, BrowserIndex::Status* status)
 {
-	QStringList pending{root};
-	while (!pending.isEmpty() && !cancel.load() && !walk->status.truncated)
+	std::vector<std::unique_ptr<QDirIterator>> open;
+	open.push_back(openListing(root));
+	while (!open.empty() && !cancel.load() && !walk->status.truncated)
 	{
-		QDirIterator it(pending.takeLast(), QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable);
-		while (it.hasNext() && !cancel.load() && !walk->status.truncated)
+		QDirIterator* listing = open.back().get();
+		if (!listing->hasNext()) { open.pop_back(); continue; }
+		listing->next();
+		const QFileInfo info = listing->fileInfo();
+		if (isWalkedDirectory(info))
 		{
-			it.next();
-			visitEntry(it.fileInfo(), &pending, walk);
-			reportProgress(*walk, mutex, status);
+			if (!info.isSymLink()) { open.push_back(openListing(info.absoluteFilePath())); }
+			continue;
 		}
+		if (admit(info, walk)) { reportProgress(*walk, mutex, status); }
 	}
 }
 
