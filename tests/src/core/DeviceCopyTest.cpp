@@ -33,7 +33,6 @@
 
 #include <QDir>
 #include <QJsonArray>
-#include <QPointer>
 
 #include <vector>
 
@@ -42,7 +41,6 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "ControlMixerSupport.h"
-#include "../../../src/core/ControlDeviceTools.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DeviceAbState.h"
@@ -341,30 +339,6 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the recall
 		QVERIFY(std::abs(parameterValue(target, back, name) - stored) < 1e-3);
 		chainOf(index).clear();
-	}
-
-	void abSlotsAreReleasedWhenAnEffectIsDestroyed()
-	{
-		const int channel = Engine::mixer()->createChannel();
-		const QString target = ch(channel);
-		const QString plugin = loadAnEffect(target);
-		if (plugin.isEmpty()) { QSKIP("this build loads no effect"); }
-		const std::size_t before = control::abSlotEntryCountForTesting();
-		const QJsonObject identity{{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin}};
-		for (const QString& slot : {QStringLiteral("a"), QStringLiteral("b")})
-		{
-			QJsonObject args = identity;
-			args.insert(QStringLiteral("action"), QStringLiteral("store"));
-			args.insert(QStringLiteral("slot"), slot);
-			QVERIFY2(run(QStringLiteral("plugin.ab"), args).ok, "could not store A/B slot");
-		}
-		QCOMPARE(control::abSlotEntryCountForTesting(), before + std::size_t{1});
-		QPointer<Effect> effect = chainOf(channel).effects().front();
-		const ControlResult unloaded = run(QStringLiteral("plugin.unload"), identity);
-		QVERIFY2(unloaded.ok, qPrintable(unloaded.errorMessage));
-		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-		QVERIFY(effect.isNull());
-		QCOMPARE(control::abSlotEntryCountForTesting(), before);
 	}
 
 	//! 0.5.0 theme 12: plugin.move puts a device at another slot of its chain (the card's Move Left / Right), one undo

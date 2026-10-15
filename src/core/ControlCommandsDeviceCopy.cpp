@@ -264,6 +264,30 @@ std::map<int, AbSlots>& abSlots()
 	return pairs;
 }
 
+//! Release the record of the device with @a id once the device @a gone is destroyed. A record another device has
+//! claimed under the same id (ids restart with each document) is its own and stays.
+void forgetDestroyedAbSlots(int id, const QObject* gone)
+{
+	auto& pairs = abSlots();
+	const auto found = pairs.find(id);
+	if (found != pairs.end() && (found->second.owner.isNull() || found->second.owner.data() == gone)) { pairs.erase(found); }
+}
+
+//! The record of @a effect's id, owned by @a effect: a record another device owned is replaced by an empty one. The
+//! first claim connects the device's destruction to releasing the record, so a destroyed device keeps no settings.
+AbSlots& claimAbSlots(Effect* effect)
+{
+	const int id = effect->id();
+	AbSlots& pair = abSlots()[id];
+	if (pair.owner != effect)
+	{
+		pair = AbSlots{};
+		pair.owner = effect;
+		QObject::connect(effect, &QObject::destroyed, [id](QObject* gone) { forgetDestroyedAbSlots(id, gone); });
+	}
+	return pair;
+}
+
 //! The device an A/B step acted on, recorded so the step finds it again when it runs.
 struct AbRecorded
 {
@@ -309,9 +333,9 @@ void restoreSlots(const AbRecorded& recorded, const AbSlots& kept)
 {
 	Effect* effect = findRecorded(recorded);
 	if (effect == nullptr) { return; }
-	AbSlots restored = kept;
-	restored.owner = effect;
-	abSlots()[effect->id()] = restored;
+	AbSlots& pair = claimAbSlots(effect);
+	pair = kept;
+	pair.owner = effect;
 }
 
 //! Put a recorded A/B state back on the device @a recorded names: its settings and its slots (which one is
@@ -321,9 +345,9 @@ void restoreAb(const AbRecorded& recorded, const QString& state, const AbSlots& 
 	Effect* effect = findRecorded(recorded);
 	if (effect == nullptr) { return; }
 	controlRestoreEffectState(effect, state.toUtf8());
-	AbSlots restored = held;
-	restored.owner = effect;  // a rebuilt device is a new object: the slots now belong to the one found
-	abSlots()[effect->id()] = restored;
+	AbSlots& pair = claimAbSlots(effect);  // a rebuilt device is a new object: the slots now belong to the one found
+	pair = held;
+	pair.owner = effect;
 }
 
 //! Put @a state on @a effect as one undo step: the previous settings and slots (@a slotsBefore) come
@@ -378,8 +402,7 @@ ControlResult pluginAb(const QJsonObject& args)
 	if (!resolveChainTarget(args, &target, &error)) { return error; }
 	Effect* effect = resolveControlEffect(target, args.value(QStringLiteral("plugin")).toString(), &error);
 	if (effect == nullptr) { return error; }
-	AbSlots& pair = abSlots()[effect->id()];
-	if (pair.owner != effect) { pair = AbSlots{}; pair.owner = effect; }
+	AbSlots& pair = claimAbSlots(effect);
 	const QString action = args.value(QStringLiteral("action")).toString();
 	const bool toB = args.value(QStringLiteral("slot")).toString() == QLatin1String("b");
 	const AbRecorded recorded = recordAb(target, effect);
