@@ -38,10 +38,12 @@ required reading. The release's own promise, in one sentence: **everything is op
 
 **The DAW core inherited from LMMS**: the Piano Roll, Song Editor and Beat/Bassline editor; a mixer
 with a multi-channel port model, sidechain sends and no fixed channel limit; 15+ built-in
-synthesizers; SoundFont2; VST2 (Vestige); LADSPA; LV2; GUS patches; full MIDI import/export; Lua 5.4
-scripting; slide notes; HiDPI scaling; and self-contained, XML-based `.mmp`/`.mmpz` project files that
-travel with your version control (the format is **not yet stable** — a file saved by this build may not
-open in a later or older build, so keep backups).
+synthesizers; SoundFont2; VST2 (Vestige); LADSPA; LV2; GUS patches — this inherited format list is the
+**Linux** build's, and availability varies by platform (see the *plug-in formats vs. tested
+compatibility* paragraph below, which keeps loading apart from tested third-party support); full MIDI
+import/export; Lua 5.4 scripting; slide notes; HiDPI scaling; and self-contained, XML-based
+`.mmp`/`.mmpz` project files that travel with your version control (the format is **not yet stable** —
+a file saved by this build may not open in a later or older build, so keep backups).
 
 **The agent control surface** — launch with `--control-socket <path>` and another program, not a
 person, can drive the open session over a local UNIX socket. It is opt-in and off by default: an
@@ -75,19 +77,19 @@ than `dlopen`. A CLAP generator can also be loaded onto an instrument track
 (`plugins/ClapInstrument`), drivable through the socket: like the VST3 instrument it has no editor
 window of its own, and the notes a user plays reach it through the track's MIDI path.
 
-**Plug-in formats vs. tested compatibility — two different claims.** On **Linux** — the platform these
-release builds target — this build **loads** the formats it is built with: VST3 effects and
-instruments, CLAP effects and instruments, VST2 through Vestige, LV2, LADSPA, SoundFont2 and GUS
-patches, plus the built-in instruments. **Format availability varies by platform**: each platform's
-build enables its own set, so that list is the Linux one — CMake disables VST hosting on Apple builds,
-so a macOS build has no VST2/Vestige path. **Loading a format is not the same as having tested a
-particular maker's product.** Apart from the MIT fixtures in the source tree, **no third-party plug-in of any kind has
-been tested by us**, there is **no verified Wine/yabridge path** for plug-ins built for Windows, and
-there is **no Kontakt runtime**: a **Kontakt** library needs Native Instruments' own installer and
-authorization, which are external to this project, and no Kontakt library or Kontakt-format runtime
-has been verified. SoundFont2 is the sampled-instrument format this build supports and that a user can
-rely on. Which files the scan found, with their per-file status and quarantine controls, is in
-**Project tools ▸ Plug-in Modules...** (see the limitations page).
+**Plug-in formats vs. tested compatibility — two different claims.** On **Linux** — one of the
+platforms these release builds target — this build **loads** the formats it is built with: VST3
+effects and instruments, CLAP effects and instruments, VST2 through Vestige, LV2, LADSPA, SoundFont2
+and GUS patches, plus the built-in instruments. **Format availability varies by platform**: each
+platform's build enables its own set, so that list is the Linux one — CMake disables VST hosting on
+Apple builds, so a macOS build has no VST2/Vestige path. **Loading a format is not the same as having
+tested a particular maker's product.** Apart from the MIT fixtures in the source tree, **no third-party
+plug-in of any kind has been tested by us**, there is **no verified Wine/yabridge path** for plug-ins
+built for Windows, and there is **no Kontakt runtime**: a **Kontakt** library needs Native Instruments'
+own installer and authorization, which are external to this project, and no Kontakt library or
+Kontakt-format runtime has been verified. SoundFont2 is the sampled-instrument format this build
+supports and that a user can rely on. Which files the scan found, with their per-file status and
+quarantine controls, is in **Project tools ▸ Plug-in Modules...** (see the limitations page).
 
 **AI DSP** — RNNoise noise suppression and NAM neural amp modelling are in the release.
 
