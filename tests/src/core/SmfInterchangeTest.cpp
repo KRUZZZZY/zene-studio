@@ -461,6 +461,34 @@ private slots:
 		QVERIFY(QFile::exists(file));
 	}
 
+	//! A global metre becomes the tick-0 seed when the map has no signature there.
+	//! Refuse values the engine cannot hold instead of silently changing them in
+	//! the SMF payload; ordinary signatures such as 3/4 remain valid.
+	void aGlobalTimeSignatureTheEngineDoesNotHoldIsRefused()
+	{
+		const QString file = path(m_directory, QStringLiteral("bad-global-signature.mid"));
+		for (const TempoMapTimeSignature signature : {TempoMapTimeSignature{0, 4},
+				TempoMapTimeSignature{33, 4}, TempoMapTimeSignature{3, 3},
+				TempoMapTimeSignature{3, 64}})
+		{
+			QString error;
+			QVERIFY2(!interchange::writeConductorTrack(file, TempoMap{}, 120, signature,
+				nullptr, &error), qPrintable(QStringLiteral("global signature %1/%2 was accepted")
+					.arg(signature.numerator).arg(signature.denominator)));
+			QVERIFY(!error.isEmpty());
+			QVERIFY(!QFile::exists(file));
+		}
+
+		QString error;
+		QVERIFY2(interchange::writeConductorTrack(file, TempoMap{}, 120,
+			TempoMapTimeSignature{3, 4}, nullptr, &error), qPrintable(error));
+		const interchange::SmfReadReport read = interchange::readConductorTrack(file);
+		QVERIFY2(read.ok, qPrintable(read.error));
+		QCOMPARE(read.events.size(), static_cast<std::size_t>(1));
+		QCOMPARE(read.events.front().numerator, 3);
+		QCOMPARE(read.events.front().denominator, 4);
+	}
+
 	//! A required tick-zero seed cannot make a full tempo map unreadable.
 	void aTickZeroSeedDoesNotExceedTempoMapCapacity()
 	{
