@@ -86,8 +86,8 @@ void NoteCanvas::extendPaint(const QPoint& pos)
 void NoteCanvas::paintAlong(const QPoint& from, const QPoint& to)
 {
 	// Qt delivers a fast drag sparsely, and a cell narrower than a pixel can lie between two pixel samples:
-	// every grid cell the path crosses is painted, on the row where the path enters it, and the release
-	// point closes the last segment.
+	// every time column the path crosses is painted, on the row where the path enters it; every key row it
+	// crosses is painted too, in the column under it; and the release point closes the last segment.
 	const int cellTicks = std::max(1, m_state.gridTicks);
 	const double fromTick = m_state.grid.tickAtX(from.x());
 	const double toTick = m_state.grid.tickAtX(to.x());
@@ -102,6 +102,16 @@ void NoteCanvas::paintAlong(const QPoint& from, const QPoint& to)
 		const double progress = (boundary - fromTick) / (toTick - fromTick);
 		const int y = static_cast<int>(std::lround(from.y() + (to.y() - from.y()) * progress));
 		appendPaintCell(m_painted, scaleKey(m_state.grid.keyAtY(y)), cell);
+	}
+	// Pitch: every pixel row strictly between the two points is sampled, in the column the path is in there, so a
+	// stroke that stays in one column (a sparse vertical one) still paints each key row it crosses.
+	const int rowSpan = std::abs(to.y() - from.y());
+	const int rowDir = to.y() > from.y() ? 1 : -1;
+	for (int i = 1; i < rowSpan; ++i)
+	{
+		const double tick = fromTick + (toTick - fromTick) * i / rowSpan;
+		const int cell = std::max(0, NoteGrid::snapDown(static_cast<int>(tick), cellTicks));
+		appendPaintCell(m_painted, scaleKey(m_state.grid.keyAtY(from.y() + rowDir * i)), cell);
 	}
 	extendPaint(to);
 }

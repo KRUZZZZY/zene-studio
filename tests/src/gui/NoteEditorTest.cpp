@@ -486,6 +486,25 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{2});
 	}
 
+	void aSparseVerticalPaintStrokeInOneColumnPaintsEveryKeyRowItCrosses()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		// One time column (tick 300), keys 60 to 66: the press and one sparse move land on the first and last
+		// rows, and the path between them crosses the five rows in between, which no event lands on.
+		const QPoint top = point(300, 60);
+		const QPoint bottom = point(300, 66);
+		QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, top);
+		QTest::mouseMove(m_editor->canvas(), bottom);
+		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, bottom);
+		for (int key = 60; key <= 66; ++key)
+		{
+			QVERIFY2(noteAt(m_clip, 300, key) != nullptr, qPrintable(QStringLiteral("no painted note on key %1").arg(key)));
+		}
+		QCOMPARE(m_clip->notes().size(), std::size_t{9});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
 	void altWheelChangesTheSelectionsVelocityAsOneEdit()
 	{
 		// The FL model (2026-10-03): Alt+wheel over a note sets the velocity (Alt alone no longer drags it).

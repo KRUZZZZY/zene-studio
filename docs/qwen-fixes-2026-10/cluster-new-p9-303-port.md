@@ -1,75 +1,80 @@
 # Cluster new-p9-303-port
 
-Verdict: **FIXED** (port of the accepted `bugs/qwen-new-p9-303` fix onto `050/m0-train-5`; the newest line only had a partial fix)
+Verdict: **FIXED** (round 2, after Luna's REWORK of round 1). The gates are red, but they are red on the base tree too; see "Gates".
 
 Finding: fast paint strokes skip the grid cells between mouse events.
 
-## Evidence before the fix
+## Round 2: what Luna's REWORK asked for
 
-- The newest line already had a pixel-stepped `NoteCanvas::paintAlong` (from `2c9a61050`), but it steps 2 px at a time, so a cell narrower than 2 px can lie between two samples and is skipped. At 0.02 px/tick a 12-tick cell is 0.24 px wide.
-- `NoteCanvas::mouseReleaseEvent` (`src/gui/noteeditor/NoteCanvasInput.cpp:257`) did not paint the segment from the last move to the release point, so a stroke whose only move is sparse lost its final segment.
-- The regression `aSparsePaintStrokeAtNarrowZoomPaintsEveryCellThroughTheRelease` (`tests/src/gui/NoteEditorTest.cpp:466`) fails on the unfixed code at tick 312 (`no painted note at 312`, `NoteEditorTest.cpp:482`).
+Luna (`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/new-p9-303-port.r1.md`): `paintAlong` walked time columns only. When `fromCell == toCell` its loop ran zero times, so a sparse vertical stroke within one time column painted only its two endpoint rows. The rework asked for every crossed grid cell in both directions, a deterministic vertical regression that fails without the change and passes with it, and a rebuild and rerun.
 
 ## The change
 
-- `src/gui/noteeditor/NoteCanvasGestures.cpp`
-  - `appendPaintCell` (`:54`): the once-per-cell rule as a free helper, shared by `extendPaint` (`:78`) and `paintAlong`.
-  - `paintAlong` (`:86`): walks the cells between `from` and `to` in tick space, one step per grid cell (`:98-105`). Each crossed cell is painted on the row where the path enters it; `from` and `to` are painted as before (`:96`, `:106`).
-- `src/gui/noteeditor/NoteCanvasInput.cpp:262`: release calls `paintAlong(from, m_currentPos)` for `Drag::Paint` before `commitDrag`.
-- `include/NoteCanvas.h`: comment on `paintAlong` updated to match (comment only).
-- `tests/src/gui/NoteEditorTest.cpp:466`: new regression test. No new files, so `tests/fork-sources.txt` and `tests/upstream-modifications.txt` are unchanged.
+- `src/gui/noteeditor/NoteCanvasGestures.cpp:86-116` (`NoteCanvas::paintAlong`):
+  - `:91-105` - the time-column walk, unchanged from round 1: one cell per grid column between `from` and `to`, each on the row the path has at the column's boundary.
+  - `:106-115` - new pitch walk: for each pixel row strictly between `from.y()` and `to.y()`, the cell is the column the path is in at that row (`tick = fromTick + (toTick - fromTick) * i / rowSpan`), and the row is `keyAtY(from.y() + rowDir * i)`. Both go through `appendPaintCell`, so each cell is still painted once per stroke.
+  - `:116` - `extendPaint(to)` still closes the last segment at release.
+  - Why per pixel row: `NoteGrid::keyAtY` is integer division of an integer `y` (`src/gui/noteeditor/NoteGrid.cpp:221-226`), so a row boundary is always at an integer pixel. Sampling every integer `y` strictly between the endpoints hits every row the path enters, and the endpoints are covered by `extendPaint(from)` / `extendPaint(to)`.
+- Diagonal paths run through both walks, so they are covered by construction. Only the vertical case has a regression test, because that is the regression Luna specified.
+- No header change (`include/NoteCanvas.h:182` declaration and comment are unchanged from round 1). No new files, so `tests/fork-sources.txt` and `tests/upstream-modifications.txt` are unchanged. No control commands added. Paint runs on the GUI thread, not an audio path.
+- Regression: `tests/src/gui/NoteEditorTest.cpp:489` `aSparseVerticalPaintStrokeInOneColumnPaintsEveryKeyRowItCrosses`. Press on key 60 at tick 300, one sparse move to key 66, release. It expects a note on each of keys 60-66 at tick 300, 9 notes in total (2 existing + 7), and 2 after one undo.
 
-Deliberate difference from the accepted commit `31076ea56`: that commit also made `extendPaint`'s dedup key-agnostic (one note per column per stroke). I did not port that. The current dedup is per key and per start, so a slow vertical stroke paints one note per row it crosses; the key-agnostic version would collapse it to one note per column. That is a behaviour change outside this bug, and no test covers it. If the owner wants one note per column, that is a separate decision.
+## Evidence
 
-Other notes:
-- A fast move across many cells with the grid off (1-tick cells) at a very narrow zoom can create many notes in one event. The dedup is linear per cell, so the cost is quadratic in the cells crossed. The accepted commit has the same property. Not measured.
-- The first build attempt failed with `EXIT=2` because ccache's temp directory under `/run/user/1000` is denied in this sandbox. Re-running with `CCACHE_TEMPDIR=/tmp/ccache-tmp-new-p9-303` fixed it (`build-1-red.log` vs `build-2-red.log`). No code change.
+- RED (the round-1 product code, with the new test): `test-1-red.log` shows `FAIL! : NoteEditorTest::aSparseVerticalPaintStrokeInOneColumnPaintsEveryKeyRowItCrosses() 'noteAt(m_clip, 300, key) != nullptr' returned FALSE. (no painted note on key 61)` at `NoteEditorTest.cpp(501)`. `Totals: 34 passed, 1 failed`.
+- GREEN: `test-3-green-verbose.log` and `test-5-reapplied-green.log`: `Totals: 35 passed, 0 failed`.
+- Reverse-apply proof: with only the product hunk reversed (`test-4-reverted-red.log`), the same assertion fails again at key 61, `Totals: 34 passed, 1 failed`.
 
 ## Commands and exit codes
 
-Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-303-port.r1/logs/`.
+Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-303-port.r2/logs/`. Commands are run from the worktree, and ctest from `build/tests`.
 
-| Step | Exact command (run from the worktree / `build/tests`) | Exit |
+| Step | Command | Exit |
 |---|---|---:|
-| Build, first try (ccache temp denied) | `cmake --build build --target zene NoteEditorTest -j2 > LOGS/build-1-red.log 2>&1; echo EXIT=$?` | 2 |
-| Build for RED | `CCACHE_TEMPDIR=/tmp/ccache-tmp-new-p9-303 cmake --build build --target zene NoteEditorTest -j2 > LOGS/build-2-red.log 2>&1; echo EXIT=$?` | 0 |
-| RED (fix not applied) | `ctest -R '^NoteEditorTest$' --output-on-failure > LOGS/test-1-red.log 2>&1; echo EXIT=$?` | **8** |
-| Build with fix | `CCACHE_TEMPDIR=... cmake --build build --target zene NoteEditorTest -j2 > LOGS/build-3-green.log 2>&1; echo EXIT=$?` | 0 |
+| Build, first try (ccache temp dir under `/run/user/1000` denied in this sandbox) | `cmake --build build --target zene NoteEditorTest -j2 > LOGS/build-1-red.log 2>&1; echo EXIT=$?` | 2 |
+| Build with ccache temp under /tmp (no code change) | `CCACHE_TEMPDIR=/tmp/ccache-tmp-qwen-p9 cmake --build build --target zene NoteEditorTest -j2 > LOGS/build-2-red.log 2>&1; echo EXIT=$?` | 0 |
+| RED, round-1 product code | `ctest -R '^NoteEditorTest$' --output-on-failure > LOGS/test-1-red.log 2>&1; echo EXIT=$?` | **8** |
+| Build with fix | `CCACHE_TEMPDIR=/tmp/ccache-tmp-qwen-p9 cmake --build build --target zene NoteEditorTest -j2 > LOGS/build-3-green.log 2>&1; echo EXIT=$?` | 0 |
 | GREEN | `ctest -R '^NoteEditorTest$' --output-on-failure > LOGS/test-2-green.log 2>&1; echo EXIT=$?` | 0 |
-| GREEN, verbose count | `ctest -R '^NoteEditorTest$' -V > LOGS/test-3-green-verbose.log 2>&1; echo EXIT=$?` | 0 |
-| Save product patch | `git diff -- include/NoteCanvas.h src/gui/noteeditor/NoteCanvasGestures.cpp src/gui/noteeditor/NoteCanvasInput.cpp > LOGS/fix.patch; echo EXIT=$?` | 0 |
-| Reverse product patch | `git apply -R LOGS/fix.patch; echo EXIT=$?` | 0 |
-| Build without fix | `CCACHE_TEMPDIR=... cmake --build build --target zene NoteEditorTest -j2 > LOGS/build-4-unfixed.log 2>&1; echo EXIT=$?` | 0 |
-| RED after reversal | `ctest -R '^NoteEditorTest$' --output-on-failure > LOGS/test-4-unfixed.log 2>&1; echo EXIT=$?` | **8** (`no painted note at 312`) |
-| Re-apply product patch | `git apply LOGS/fix.patch; echo EXIT=$?` | 0 |
-| Build with fix again | `CCACHE_TEMPDIR=... cmake --build build --target zene NoteEditorTest -j2 > LOGS/build-5-refixed.log 2>&1; echo EXIT=$?` | 0 |
-| GREEN after re-apply | `ctest -R '^NoteEditorTest$' -V > LOGS/test-5-refixed-verbose.log 2>&1; echo EXIT=$?` | 0 |
-| Header comment shortened, rebuild | `CCACHE_TEMPDIR=... cmake --build build --target zene NoteEditorTest -j2 > LOGS/build-6-final.log 2>&1; echo EXIT=$?` | 0 |
-| Final GREEN | `ctest -R '^NoteEditorTest$' -V > LOGS/test-6-final-verbose.log 2>&1; echo EXIT=$?` | 0 |
-| Complexity gate (worktree) | `bash tests/complexity-gate.sh --check > LOGS/gate-complexity-2.log 2>&1; echo EXIT=$?` | **1** |
-| File-length gate (worktree) | `bash tests/file-length-gate.sh --check > LOGS/gate-filelength-2.log 2>&1; echo EXIT=$?` | **1** |
-| Complexity gate (clean `git archive HEAD` export) | `bash tests/complexity-gate.sh --check > LOGS/gate-complexity-base.log 2>&1; echo EXIT=$?` | **1** |
-| File-length gate (clean `git archive HEAD` export) | `bash tests/file-length-gate.sh --check > LOGS/gate-filelength-base.log 2>&1; echo EXIT=$?` | **1** |
+| GREEN, verbose for QTest totals | `ctest -R '^NoteEditorTest$' -V > LOGS/test-3-green-verbose.log 2>&1; echo EXIT=$?` | 0 |
+| Save product patch and reverse it | `git diff -- src/gui/noteeditor/NoteCanvasGestures.cpp > LOGS/fix.patch && git apply -R LOGS/fix.patch` | 0 |
+| Build without fix | `CCACHE_TEMPDIR=/tmp/ccache-tmp-qwen-p9 cmake --build build --target zene NoteEditorTest -j2 > LOGS/build-4-reverted.log 2>&1; echo EXIT=$?` | 0 |
+| RED after reversal | `ctest -R '^NoteEditorTest$' --output-on-failure > LOGS/test-4-reverted-red.log 2>&1; echo EXIT=$?` | **8** |
+| Re-apply product patch | `git apply LOGS/fix.patch` | 0 |
+| Build with fix again | `CCACHE_TEMPDIR=/tmp/ccache-tmp-qwen-p9 cmake --build build --target zene NoteEditorTest -j2 > LOGS/build-5-reapplied.log 2>&1; echo EXIT=$?` | 0 |
+| GREEN after re-apply | `ctest -R '^NoteEditorTest$' -V > LOGS/test-5-reapplied-green.log 2>&1; echo EXIT=$?` | 0 |
+| Family: build the family's other targets | `CCACHE_TEMPDIR=/tmp/ccache-tmp-qwen-p9 cmake --build build --target NoteEditorFlTest ControlNoteEditor -j2 > LOGS/build-6-family.log 2>&1; echo EXIT=$?` | 2 |
+| Family run | `ctest -R "NoteEditor" -V > LOGS/test-6-family.log 2>&1; echo EXIT=$?` | 0 |
+| Whitespace check | `git diff --check` | 0 |
 
-Test counts: `ctest -R '^NoteEditorTest$'` registers 1 test; it executes 34 QTest functions. Final run: `Totals: 34 passed, 0 failed, 0 skipped` (`test-6-final-verbose.log`). RED run: `Totals: 33 passed, 1 failed`.
+Exit 2 on the family build is because `ControlNoteEditor` is a ctest entry that runs `tests/control-note-editor.py`, not a build target, so `make` stopped with `No rule to make target 'ControlNoteEditor'`. `build-6-family.log` shows `NoteEditorFlTest` linked fresh before that error. The family run passed.
 
-The RED/GREEN proof used `fix.patch` before the final header-comment edit. That edit changed one comment line only; the final build and GREEN run (`build-6-final.log`, `test-6-final-verbose.log`) were run after it.
+Test counts: `ctest -R '^NoteEditorTest$'` registers 1 test that executes 35 QTest functions (`Totals: 35 passed, 0 failed` in `test-3-green-verbose.log`). The family run passed 3 of 3: `NoteEditorTest` 35/35, `NoteEditorFlTest` 16/16, `ControlNoteEditor` (python) passed.
 
-## Gates: failing before and after this change
+## Gates
 
-Both gates exit 1, but not because of this change. On a clean `git archive HEAD` export (the base commit, with no edits) they exit 1 with the same findings:
+Both gates exit 1 with the change. They also exit 1 on the base tree, and the REGRESSION sets are identical.
 
-- Complexity: 6 `REGRESSION` lines, identical sets with and without the change. They are in `XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsMixerStrip.cpp`, `ProjectRevisions.cpp`, `ControlCommandsShortcuts.cpp`. None of the touched functions (`paintAlong`, `appendPaintCell`, `extendPaint`, `mouseReleaseEvent`) is listed.
-- File length: 14 `REGRESSION` lines, identical sets with and without the change. None of the touched files is listed. `NoteEditorTest.cpp` (725 physical lines, grew by 23) is not listed by the gate. I did not measure its code-line count myself.
+| Step | Command | Exit |
+|---|---|---:|
+| Complexity gate, with the change | `bash tests/complexity-gate.sh --check > LOGS/gate-complexity-1.log 2>&1; echo EXIT=$?` | **1** |
+| File-length gate, with the change | `bash tests/file-length-gate.sh --check > LOGS/gate-filelength-1.log 2>&1; echo EXIT=$?` | **1** |
+| Save both changed files and reverse them to the base tree | `git diff -- src/gui/noteeditor/NoteCanvasGestures.cpp tests/src/gui/NoteEditorTest.cpp > LOGS/all-changes.patch && git apply -R LOGS/all-changes.patch` | 0 |
+| Complexity gate, base tree | `bash tests/complexity-gate.sh --check > LOGS/gate-complexity-base.log 2>&1; echo EXIT=$?` | **1** |
+| File-length gate, base tree | `bash tests/file-length-gate.sh --check > LOGS/gate-filelength-base.log 2>&1; echo EXIT=$?` | **1** |
+| Restore the changes | `git apply LOGS/all-changes.patch` | 0 |
 
-I did not re-anchor or edit either baseline, as the rules require. Clearing these 20 findings is outside this bug. They need a separate cleanup or a deliberate re-anchor by the owner.
+- Complexity: 6 `REGRESSION` lines in both logs, identical (`diff` of the REGRESSION lines is empty). They are in `XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsMixerStrip.cpp`, `ProjectRevisions.cpp` and `ControlCommandsShortcuts.cpp`. None is `paintAlong` or any function this change touches, and `paintAlong` does not appear in the over-CCN-10 list.
+- File length: 14 `REGRESSION` lines in both logs, identical. None is `NoteCanvasGestures.cpp` or `NoteEditorTest.cpp`.
+
+I did not edit the gate scripts, their baselines, or any file they list. Clearing those 20 findings is outside this bug and needs its own change or a deliberate re-anchor by the owner.
+
+## Carried over from round 1 (not re-checked in round 2)
+
+Deliberate difference from the accepted commit `31076ea56` (`Fix narrow-zoom paint strokes (cluster new-p9-303)`, which exists in this repository but is not an ancestor of `HEAD`): round 1 did not port its key-agnostic `extendPaint` dedupe. The current dedupe is per key and per start cell, so a slow vertical stroke paints one note per row it crosses. A key-agnostic dedupe would collapse that to one note per column. That is a behaviour change outside this bug, and no test covers it. It is the owner's decision.
 
 ## Files committed
 
 - `src/gui/noteeditor/NoteCanvasGestures.cpp`
-- `src/gui/noteeditor/NoteCanvasInput.cpp`
-- `include/NoteCanvas.h`
 - `tests/src/gui/NoteEditorTest.cpp`
 - `docs/qwen-fixes-2026-10/cluster-new-p9-303-port.md`
-
-No new source or test files, so nothing to register in `tests/fork-sources.txt` or `tests/upstream-modifications.txt`. No control commands added.
