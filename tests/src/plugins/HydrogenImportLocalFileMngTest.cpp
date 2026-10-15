@@ -24,20 +24,37 @@ private slots:
 			QByteArray("&#x"), QByteArray("&#xA"), QByteArray("&#xAB")};
 		for (const QByteArray& escape : incompleteEscapes)
 		{
-			QProcess process;
-			process.start(QCoreApplication::applicationFilePath(),
-				QStringList{QStringLiteral("--probe-truncated-escape"),
-					QString::fromLatin1(escape)});
-			QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
-			if (!process.waitForFinished(2000))
-			{
-				process.kill();
-				process.waitForFinished();
-				QFAIL("conversion did not return for an incomplete escape");
-			}
-			QCOMPARE(process.exitStatus(), QProcess::NormalExit);
-			QCOMPARE(process.exitCode(), 0);
+			requireConversionReturns(escape);
 		}
+	}
+
+	//! Standard-width references are left for the XML parser; they must not loop.
+	void standardWidthEscapesReturnAndRemainUnchanged()
+	{
+		const QList<QByteArray> standardWidthEscapes{
+			QByteArray("&#xA;"), QByteArray("&#x444;")};
+		for (const QByteArray& escape : standardWidthEscapes)
+		{
+			requireConversionReturns(escape);
+		}
+	}
+
+private:
+	static void requireConversionReturns(const QByteArray& escape)
+	{
+		QProcess process;
+		process.start(QCoreApplication::applicationFilePath(),
+			QStringList{QStringLiteral("--probe-truncated-escape"),
+				QString::fromLatin1(escape)});
+		QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
+		if (!process.waitForFinished(2000))
+		{
+			process.kill();
+			process.waitForFinished();
+			QFAIL("conversion did not return for an escape");
+		}
+		QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+		QCOMPARE(process.exitCode(), 0);
 	}
 };
 
