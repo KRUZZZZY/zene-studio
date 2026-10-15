@@ -19,6 +19,7 @@
  */
 
 #include "PluginPortsHarness.h"
+#include "plugins/Sid/SidPlaybackScheduler.h"
 
 #include <cstddef>
 #include <cmath>
@@ -708,6 +709,7 @@ private slots:
 	void dispersionRemainsStableAboveNyquist();
 	void dynamicsProcessorRejectsShortWaveShape();
 	void comparisonIsSensitive();
+	void sidShortSegmentsKeepRegisterWritesOrdered();
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void nesNoiseFrequencyControlsRetuneHeldNotes();
@@ -1892,6 +1894,70 @@ void PluginPortsMigrationTest::comparisonIsSensitive()
 
 	QVERIFY2(a.checksum != b.checksum, "distinct plugins rendered identically");
 	QVERIFY2(worst > 1e-6f, "comparison is not sensitive to real differences");
+}
+
+/*!
+ * Bounded fake SID clock for the short-segment regression: it emits one sample
+ * after 22 cycles and models a one-cycle pending register write that a later
+ * write would overwrite if the scheduler spent more cycles than it was given.
+ */
+struct SidClockProbe
+{
+	int cyclesToSample = 22;
+	int clockedCycles = 0;
+	int lastWriteAddress = -1;
+	int overwrittenPendingWrites = 0;
+	bool writePending = false;
+
+	void write(unsigned char address, unsigned char)
+	{
+		if (writePending) { ++overwrittenPendingWrites; }
+		lastWriteAddress = address;
+		writePending = true;
+	}
+
+	int clock(int& cycles, short* buffer, int samples)
+	{
+		if (cycles <= 0 || samples <= 0) { return 0; }
+
+		const int used = std::min(cycles, cyclesToSample);
+		if (used > 0) { writePending = false; }
+		cycles -= used;
+		cyclesToSample -= used;
+		clockedCycles += used;
+		if (cyclesToSample > 0) { return 0; }
+
+		buffer[0] = 0;
+		cyclesToSample = 22;
+		return 1;
+	}
+};
+
+void PluginPortsMigrationTest::sidShortSegmentsKeepRegisterWritesOrdered()
+{
+	lmms::sidplayback::RegisterWriteProgress progress;
+	SidClockProbe sid;
+	std::array<unsigned char, lmms::sidplayback::NumSidRegisters> registers{};
+	std::array<short, 1> output{};
+
+	const int samples = lmms::sidplayback::fillBuffer(registers.data(), &sid,
+		lmms::sidplayback::RegisterWriteOrder, 26, output.data(), 1, progress);
+
+	QCOMPARE(samples, 1);
+	QVERIFY(sid.clockedCycles <= 26);
+	QCOMPARE(sid.overwrittenPendingWrites, 0);
+	QVERIFY(!sid.writePending);
+	QVERIFY(sid.lastWriteAddress != lmms::sidplayback::RegisterWriteOrder.back());
+	QCOMPARE(progress.registerIndex, std::size_t{2});
+	QVERIFY(progress.cyclesRemaining > 0);
+
+	const int cyclesBeforeNextSegment = sid.clockedCycles;
+	const int nextSamples = lmms::sidplayback::fillBuffer(registers.data(), &sid,
+		lmms::sidplayback::RegisterWriteOrder, 26, output.data(), 1, progress);
+	QCOMPARE(nextSamples, 1);
+	QVERIFY(sid.clockedCycles - cyclesBeforeNextSegment <= 26);
+	QCOMPARE(sid.overwrittenPendingWrites, 0);
+	QVERIFY(progress.registerIndex > 2);
 }
 
 void PluginPortsMigrationTest::monoDelayUpdatesItsDelayAcrossSampleRateChanges()

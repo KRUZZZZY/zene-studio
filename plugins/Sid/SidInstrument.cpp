@@ -29,6 +29,7 @@
 #include <cmath>
 
 #include "SidInstrument.h"
+#include "SidPlaybackScheduler.h"
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -43,18 +44,19 @@ namespace
 {
 inline constexpr auto C64_PAL_CYCLES_PER_SEC = 985248;
 inline constexpr auto NUMSIDREGS = 0x19;
-inline constexpr auto SIDWRITEDELAY = 9; // lda $xxxx,x 4 cycles, sta $d400,x 5 cycles
-inline constexpr auto SIDWAVEDELAY = 4; // and $xxxx,x 4 cycles extra
 }
 
 namespace lmms
 {
 
-auto sidorder = std::array<unsigned char, 25>
-  {0x15,0x16,0x18,0x17,
-   0x05,0x06,0x02,0x03,0x00,0x01,0x04,
-   0x0c,0x0d,0x09,0x0a,0x07,0x08,0x0b,
-   0x13,0x14,0x10,0x11,0x0e,0x0f,0x12};
+namespace
+{
+struct SidNoteState
+{
+	reSID::SID sid;
+	sidplayback::RegisterWriteProgress registerWriteProgress;
+};
+}
 
 static auto attackTime = std::array<const char*, 16>{ "2 ms", "8 ms", "16 ms", "24 ms",
 									"38 ms", "56 ms", "68 ms", "80 ms",
@@ -235,48 +237,12 @@ float SidInstrument::desiredReleaseTimeMs() const
 }
 
 
-static int sid_fillbuffer(unsigned char* sidreg, reSID::SID *sid, int tdelta, short *ptr, int samples)
+static int sid_fillbuffer(const unsigned char* sidreg, SidNoteState* state, int tdelta,
+	short* ptr, int samples)
 {
-	int total = 0;
-	int badline = fastRand(NUMSIDREGS);
-	int residdelay = 0; // customly added
-
-	for (int c = 0; c < NUMSIDREGS; ++c)
-	{
-		unsigned char o = sidorder[c];
-
-		// Extra delay for loading the waveform (and mt_chngate,x)
-		if (o == 4 || o == 11 || o == 18)
-		{
-			auto dt = SIDWAVEDELAY;
-			const int result = sid->clock(dt, ptr, samples);
-			total += result;
-			ptr += result;
-			samples -= result;
-			tdelta -= SIDWAVEDELAY;
-		}
-
-		// Possible random badline delay once per writing
-		if (badline == c && residdelay)
-		{
-			auto dt = residdelay;
-			const int result = sid->clock(dt, ptr, samples);
-			total += result;
-			ptr += result;
-			samples -= result;
-			tdelta -= residdelay;
-		}
-
-		sid->write(o, sidreg[o]);
-
-		auto dt = SIDWRITEDELAY;
-		const int result = sid->clock(dt, ptr, samples);
-		total += result;
-		ptr += result;
-		samples -= result;
-		tdelta -= SIDWRITEDELAY;
-	}
-	return total + sid->clock(tdelta, ptr, samples);
+	[[maybe_unused]] const int badline = fastRand(NUMSIDREGS);
+	return sidplayback::fillBuffer(sidreg, &state->sid, sidplayback::RegisterWriteOrder,
+		tdelta, ptr, samples, state->registerWriteProgress);
 }
 
 // TODO: The real sample type is `short` and there is only one output channel
@@ -287,17 +253,18 @@ void SidInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 
 	if (!_n->m_pluginData)
 	{
-		auto sid = new reSID::SID();
-		sid->set_sampling_parameters(clockrate, reSID::SAMPLE_FAST, samplerate);
-		sid->set_chip_model(reSID::MOS8580);
-		sid->enable_filter( true );
-		sid->reset();
-		_n->m_pluginData = sid;
+		auto state = new SidNoteState{};
+		state->sid.set_sampling_parameters(clockrate, reSID::SAMPLE_FAST, samplerate);
+		state->sid.set_chip_model(reSID::MOS8580);
+		state->sid.enable_filter( true );
+		state->sid.reset();
+		_n->m_pluginData = state;
 	}
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = _n->noteOffset();
 
-	auto sid = static_cast<reSID::SID*>(_n->m_pluginData);
+	auto state = static_cast<SidNoteState*>(_n->m_pluginData);
+	auto sid = &state->sid;
 	int delta_t = clockrate * frames / samplerate + 4;
 #ifndef _MSC_VER
 	short buf[frames];
@@ -404,7 +371,7 @@ void SidInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 
 	sidreg[24] = data8&0x00FF;
 
-	sid_fillbuffer(sidreg.data(), sid, delta_t, buf, frames);
+	sid_fillbuffer(sidreg.data(), state, delta_t, buf, frames);
 
 	// loop backwards to avoid overwriting data in the short-to-float conversion
 	for (auto frame = std::size_t{0}; frame < frames; ++frame)
@@ -422,7 +389,7 @@ void SidInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 
 void SidInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<reSID::SID*>(_n->m_pluginData);
+	delete static_cast<SidNoteState*>(_n->m_pluginData);
 }
 
 

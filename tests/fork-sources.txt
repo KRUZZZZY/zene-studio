@@ -1203,6 +1203,7 @@ plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.h
 plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp
 plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h
 plugins/RnnoiseDenoiser/testdata/rnn_harness.c
+plugins/Sid/SidPlaybackScheduler.h
 plugins/TransientShaper/TransientShaper.cpp
 plugins/TransientShaper/TransientShaper.h
 plugins/Vocoder/Vocoder.cpp
