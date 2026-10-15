@@ -40,9 +40,9 @@ MidiController::MidiController( Model * _parent ) :
 	Controller( ControllerType::Midi, _parent, tr( "MIDI Controller" ) ),
 	MidiEventProcessor(),
 	m_midiPort( tr( "unnamed_midi_controller" ), Engine::audioEngine()->midiClient(), this, this, MidiPort::Mode::Input ),
-	m_lastValue( 0.0f ),
-	m_previousValue( 0.0f )
+	m_values( pack( ValuePair{ 0.0f, 0.0f } ) )
 {
+	static_assert( std::atomic<std::uint64_t>::is_always_lock_free, "the render thread must never take a lock for this" );
 	setSampleExact( true );
 	connect( &m_midiPort, SIGNAL(modeChanged()),
 			this, SLOT(updateName()));
@@ -52,14 +52,19 @@ MidiController::MidiController( Model * _parent ) :
 
 void MidiController::updateValueBuffer()
 {
-	if( m_previousValue != m_lastValue )
+	std::uint64_t bits = m_values.load( std::memory_order_acquire );
+	const ValuePair values = unpack( bits );
+	if( values.previous != values.last )
 	{
-		m_valueBuffer.interpolate( m_previousValue, m_lastValue );
-		m_previousValue = m_lastValue;
+		m_valueBuffer.interpolate( values.previous, values.last );
+		// Settle on the value just rendered, unless an event moved it meanwhile: that newer pair is
+		// rendered by the next block.
+		m_values.compare_exchange_strong( bits, pack( ValuePair{ values.last, values.last } ),
+			std::memory_order_acq_rel, std::memory_order_acquire );
 	}
 	else
 	{
-		m_valueBuffer.fill( m_lastValue );
+		m_valueBuffer.fill( values.last );
 	}
 	m_bufferLastUpdated = s_periods;
 }
@@ -95,8 +100,9 @@ void MidiController::processInEvent(const MidiEvent& event, const TimePos& time,
 					break;
 				}
 
-				m_previousValue = m_lastValue;
-				m_lastValue = incoming;
+				std::uint64_t bits = m_values.load( std::memory_order_acquire );
+				while( !m_values.compare_exchange_weak( bits, pack( ValuePair{ unpack( bits ).last, incoming } ),
+					std::memory_order_acq_rel, std::memory_order_acquire ) ) {}
 				emit valueChanged();
 
 				if (m_feedbackEnabled)
@@ -127,7 +133,7 @@ bool MidiController::softTakeoverCapturedBy(float value)
 
 	// Crossing: the hardware has been SEEN to pass the target. m_haveRawSample
 	// is false for the first value after arming, which can be at the target but
-	// has not crossed it - so m_lastValue (the last value the MODEL accepted,
+	// has not crossed it - so the last value (the one the MODEL accepted,
 	// stale until capture) is not what this compares against.
 	const bool crossed = m_haveRawSample &&
 		((m_previousRawValue <= m_softTakeoverTarget && value >= m_softTakeoverTarget) ||
@@ -212,7 +218,7 @@ void MidiController::setFeedbackEnabled(bool enabled)
 
 int MidiController::feedbackByte() const
 {
-	return static_cast<int>(std::lround(std::clamp(m_lastValue, 0.0f, 1.0f) * 127.0f));
+	return static_cast<int>(std::lround(std::clamp(unpack(m_values.load(std::memory_order_acquire)).last, 0.0f, 1.0f) * 127.0f));
 }
 
 bool MidiController::sendFeedback()
