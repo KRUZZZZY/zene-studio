@@ -158,6 +158,7 @@ private slots:
 	// ---- ABI / loader robustness ----
 	void loaderRejectsGarbageWithoutCrashing();
 	void dspModuleMustExportLinearMemory();
+	void loaderRunsStartFunctionWithinFuelBudget();
 
 	// ---- G2: 48-frame block through the frozen audio ABI ----
 	void g2_sandboxProcesses48FrameBlock();
@@ -301,6 +302,42 @@ void WasmSandboxTest::dspModuleMustExportLinearMemory()
 	QVERIFY(!sandbox.loadModuleBytes(bytes.data(), bytes.size(), error));
 	QVERIFY(error.find("memory") != std::string::npos);
 	qInfo("loader rejected process() without memory: %s", error.c_str());
+}
+
+void WasmSandboxTest::loaderRunsStartFunctionWithinFuelBudget()
+{
+	// Fuel consumption is enabled in the engine. If the store carries no fuel
+	// budget at instantiation, the module's start function traps out of fuel
+	// and a perfectly valid module is rejected during loading.
+	const std::string wat =
+		"(module"
+		" (memory (export \"memory\") 1)"
+		" (global (export \"channels\") i32 (i32.const 1))"
+		" (global (export \"latency\") i32 (i32.const 0))"
+		" (func $init"
+		"   (local i32)"
+		"   (local.set 0 (i32.const 0))"
+		"   (block (loop"
+		"     (br_if 1 (i32.ge_u (local.get 0) (i32.const 32)))"
+		"     (local.set 0 (i32.add (local.get 0) (i32.const 1)))"
+		"     (br 0))))"
+		" (start $init)"
+		" (func (export \"process\") (param i32 i32 i32 f32) (result i32)"
+		"   (i32.const 0)))";
+	WasmSandbox sandbox;
+	std::string error;
+	std::vector<std::uint8_t> bytes;
+	QVERIFY2(WasmSandbox::assembleWat(wat, bytes, error),
+		qPrintable(QString::fromStdString("assembleWat: " + error)));
+	QVERIFY2(sandbox.loadModuleBytes(bytes.data(), bytes.size(), error),
+		qPrintable(QString::fromStdString(
+			"loadModuleBytes with start function: " + error)));
+	QVERIFY(sandbox.hasProcess());
+
+	auto result = sandbox.callProcess(0, 0, 48, 44100.0f);
+	QVERIFY2(result.ok(),
+		qPrintable(QString::fromStdString("process trapped: " + result.message)));
+	qInfo("loader ran a module start function within the configured fuel budget");
 }
 
 // ---------------------------------------------------------------------------
