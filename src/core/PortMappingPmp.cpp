@@ -156,8 +156,10 @@ void PmpMapper::onReadyRead()
 	while (m_socket->hasPendingDatagrams())
 	{
 		const QNetworkDatagram datagram = m_socket->receiveDatagram(1100);
-		// Only the gateway's answers count: any other host on the LAN could send to this port.
-		if (m_step != Step::Idle && datagram.senderAddress().isEqual(m_gateway, QHostAddress::TolerantConversion))
+		// Only answers from the gateway's configured service count: any other host on the LAN, or another port
+		// on the gateway, could send to this port.
+		if (m_step != Step::Idle && datagram.senderAddress().isEqual(m_gateway, QHostAddress::TolerantConversion)
+			&& datagram.senderPort() == m_serverPort)
 		{
 			handle(datagram.data());
 		}
