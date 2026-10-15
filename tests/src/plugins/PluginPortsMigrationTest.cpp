@@ -1584,6 +1584,21 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 					.arg(evidence.firstOutsideDifferenceIndex)
 					.arg(evidence.outsideAttackDifference, 0, 'g', 3)));
 		}
+		else if (migrated.name == QLatin1String("gigplayer"))
+		{
+			// The frozen reference has the old half-amplitude 16-bit conversion.
+			QVERIFY(migrated.samples.size() == referenceRender.samples.size());
+			float scaledWorst = 0.0f;
+			for (std::size_t sample = 0; sample < migrated.samples.size(); ++sample)
+			{
+				scaledWorst = std::max(scaledWorst, std::fabs(
+					migrated.samples[sample] - 2.0f * referenceRender.samples[sample]));
+			}
+			QVERIFY2(scaledWorst <= 1e-6f,
+				qPrintable(QString{"gigplayer render is not twice the pre-fix reference "
+							   "(scaled max|delta|=%1)"}
+						   .arg(scaledWorst, 0, 'g', 3)));
+		}
 		else
 		{
 			QVERIFY2(migrated.checksum == referenceRender.checksum,
@@ -2379,6 +2394,10 @@ void PluginPortsMigrationTest::slice8PluginsAreLiveAndExact()
 		qInfo().noquote() << QString{"slice 8 negative control: %1 peak=%2"}
 			.arg(name).arg(peak, 0, 'g', 4);
 		QVERIFY2(peak > 1e-4f, qPrintable(QString{"%1 rendered silence"}.arg(name)));
+		if (name == QLatin1String("gigplayer"))
+		{
+			QVERIFY2(peak > 0.35f, "16-bit GIG sample peak was not normalized to full scale");
+		}
 	}
 
 	for (std::size_t i = 0; i < names.size(); ++i)

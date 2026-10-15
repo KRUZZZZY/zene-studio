@@ -723,7 +723,7 @@ void GigInstrument::loadSample( GigSample& sample, SampleFrame* sampleData, f_cn
 
 		for( f_cnt_t i = 0; i < samples; ++i )
 		{
-			sampleData[i][0] = 1.0 / 0x10000 *
+			sampleData[i][0] = 1.0 / 0x8000 *
 				pInt[ sample.sample->Channels * i ] * sample.attenuation;
 
 			if( sample.sample->Channels == 1 )
@@ -732,7 +732,7 @@ void GigInstrument::loadSample( GigSample& sample, SampleFrame* sampleData, f_cn
 			}
 			else
 			{
-				sampleData[i][1] = 1.0 / 0x10000 *
+				sampleData[i][1] = 1.0 / 0x8000 *
 					pInt[ sample.sample->Channels * i + 1 ] * sample.attenuation;
 			}
 		}
