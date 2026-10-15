@@ -82,10 +82,8 @@ public:
 	}
 	WaveSample(const WaveSample&) = delete;
 	WaveSample& operator=(const WaveSample&) = delete;
-	inline void copyFrom(const graphModel * graph)
-	{
-		memcpy(m_samples, graph->samples(), m_length * sizeof(float));
-	}
+	// Waits for any render period in progress: playing notes read m_samples directly.
+	void copyFrom(const graphModel * graph);
 	~WaveSample()
 	{
 		delete [] m_samples;

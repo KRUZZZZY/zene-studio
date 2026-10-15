@@ -32,6 +32,8 @@
 #include <random>
 #include <numbers>
 
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "lmms_math.h"
 #include "NotePlayHandle.h"
 #include "SampleFrame.h"
@@ -702,6 +704,15 @@ void ExprFront::setIntegrate(const f_cnt_t* const frameCounter, const unsigned i
 			}
 		}
 	}
+}
+
+void WaveSample::copyFrom(const graphModel* graph)
+{
+	// The render period holds the audio change lock for its whole length, so this copy
+	// runs either before a period starts or after it ends, never while notes read m_samples.
+	AudioEngine* const engine = Engine::audioEngine();
+	const auto changes = engine ? engine->requestChangesGuard() : AudioEngine::RequestChangesGuard{};
+	memcpy(m_samples, graph->samples(), m_length * sizeof(float));
 }
 
 ExprSynth::ExprSynth(const WaveSample *gW1, const WaveSample *gW2, const WaveSample *gW3,
