@@ -690,6 +690,7 @@ private slots:
 	void delayLfoControlDescribesItsPeriod();
 	void doubleFilterClearHistoryClearsSubfilter();
 	void xpressiveLoadedWaveSamplesAreFinite();
+	void xpressiveTruncatedWaveSamplesAreRejected();
 	void positiveFractionHandlesVeryLargePositiveValues();
 	void positiveFractionHandlesVeryLargeNegativeValues();
 	void positiveFractionPreservesOrdinaryValues();
@@ -1031,6 +1032,60 @@ void PluginPortsMigrationTest::xpressiveLoadedWaveSamplesAreFinite()
 	QVERIFY2(waveIsFinite(xpressive->W1()), "W1 waveform retained a saved NaN sample");
 	QVERIFY2(waveIsFinite(xpressive->W2()), "W2 waveform retained a saved infinite sample");
 	QVERIFY2(waveIsFinite(xpressive->W3()), "W3 waveform retained a saved infinite sample");
+}
+
+void PluginPortsMigrationTest::xpressiveTruncatedWaveSamplesAreRejected()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_xpressive)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	std::unique_ptr<lmms::Instrument> instrument{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+
+	QDomDocument document;
+	QDomElement root = document.createElement("instrument");
+	QDomElement settings = instrument->saveState(document, root);
+
+	// One float is 4 bytes; a graph holds GRAPH_LENGTH floats, so this payload is truncated.
+	const float truncatedSample = 0.75f;
+	const QByteArray truncatedBytes{reinterpret_cast<const char*>(&truncatedSample),
+		static_cast<int>(sizeof(truncatedSample))};
+	const QString truncatedData = QString::fromLatin1(truncatedBytes.toBase64());
+
+	const auto savedSample = [&instrument](const QString& attribute) {
+		QDomDocument resultDocument;
+		QDomElement resultRoot = resultDocument.createElement("instrument");
+		return instrument->saveState(resultDocument, resultRoot).attribute(attribute);
+	};
+
+	const QStringList sampleAttributes{"W1sample", "W2sample", "W3sample"};
+	for (const auto& attribute : sampleAttributes)
+	{
+		QVERIFY(!settings.attribute(attribute).isEmpty());
+
+		auto truncatedSettings = settings.cloneNode(true).toElement();
+		truncatedSettings.setAttribute(attribute, truncatedData);
+		instrument->restoreState(truncatedSettings);
+		QCOMPARE(savedSample(attribute), settings.attribute(attribute));
+
+		auto missingSettings = settings.cloneNode(true).toElement();
+		missingSettings.removeAttribute(attribute);
+		instrument->restoreState(missingSettings);
+		QCOMPARE(savedSample(attribute), settings.attribute(attribute));
+
+		instrument->restoreState(settings);
+	}
 }
 
 void PluginPortsMigrationTest::xpressiveRandomVectorRejectsOutOfRangeFloatInputs()

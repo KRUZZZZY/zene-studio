@@ -168,25 +168,29 @@ void Xpressive::loadSettings(const QDomElement & _this) {
 	m_panning2.loadSettings(_this,"PAN2");
 	m_relTransition.loadSettings(_this,"RELTRANS");
 
-	int size = 0;
-	char * dst = 0;
-	const auto loadSamples = [&dst, &size](const QString& encoded, graphModel& graph) {
-		base64::decode(encoded, &dst, &size);
-		auto* samples = reinterpret_cast<float*>(dst);
-		for (int i = 0; i < graph.length(); ++i)
+	// A waveform is only replaced when the decoded payload is exactly one float per graph
+	// point; a missing or truncated attribute keeps the graph's current samples.
+	const auto loadSamples = [&_this](const char* attribute, graphModel& graph) {
+		int size = 0;
+		char* dst = nullptr;
+		base64::decode(_this.attribute(attribute), &dst, &size);
+		if (size == graph.length() * static_cast<int>(sizeof(float)))
 		{
-			if (!std::isfinite(samples[i]))
+			auto* samples = reinterpret_cast<float*>(dst);
+			for (int i = 0; i < graph.length(); ++i)
 			{
-				samples[i] = 0.0f;
+				if (!std::isfinite(samples[i]))
+				{
+					samples[i] = 0.0f;
+				}
 			}
+			graph.setSamples(samples);
 		}
-		graph.setSamples(samples);
 		delete[] dst;
-		dst = nullptr;
 	};
-	loadSamples(_this.attribute("W1sample"), m_rawgraphW1);
-	loadSamples(_this.attribute("W2sample"), m_rawgraphW2);
-	loadSamples(_this.attribute("W3sample"), m_rawgraphW3);
+	loadSamples("W1sample", m_rawgraphW1);
+	loadSamples("W2sample", m_rawgraphW2);
+	loadSamples("W3sample", m_rawgraphW3);
 
 	smooth(m_smoothW1.value(),&m_rawgraphW1,&m_graphW1);
 	smooth(m_smoothW2.value(),&m_rawgraphW2,&m_graphW2);
