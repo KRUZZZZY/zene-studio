@@ -1458,6 +1458,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE hiir)
 	endif()
 
+	# ThreadPoolTest interposes pthread_create to inject a deterministic startup
+	# failure after one worker has started; the symbol must be exported to bind.
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LMMS_TEST_NAME STREQUAL "ThreadPoolTest")
+		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE ${CMAKE_DL_LIBS})
+	endif()
+
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)
 	if(LMMS_TEST_NAME STREQUAL "PatmanLoadTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE
