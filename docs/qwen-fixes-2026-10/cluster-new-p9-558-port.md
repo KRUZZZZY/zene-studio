@@ -9,7 +9,7 @@
 - Regression test (ported, `tests/src/core/ClipJoinRippleTest.cpp`, `edgeSnapKeepsDistancesWithinTickRange`): a marker at tick 0 (so candidate `0` exists), `length = 1`, `tolerance = 4`. It checks `proposed = INT32_MAX` (the finding's input) and `proposed = INT32_MIN`.
 - Observable failure: with the fix reverted, `proposed = INT32_MIN` snaps to `0` (distance wraps). The test fails with `Actual (nearMinimum.start): 0`, `Expected (minimum): -2147483648`.
 - The finding's exact inputs (`INT32_MAX`, edge 0) give the same output before and after the fix: the pre-fix `abs(INT32_MIN)` on candidate `-1` is undefined behaviour, but the `candidate >= 0` check discards that candidate either way. I did not check this with a sanitizer. The observable bug is the minimum-tick case above.
-- Existing coverage: `ArrangementModesTest::aMaximumToleranceStillSnaps` (`tests/src/core/ArrangementModesTest.cpp:221`) covers the tolerance-overflow path from `07895d855`.
+- Existing coverage: `ArrangementModesTest::aMaximumToleranceStillSnaps` (`tests/src/core/ArrangementModesTest.cpp:216`) covers the tolerance-overflow path from `07895d855`.
 
 ## Commands and exit codes
 
