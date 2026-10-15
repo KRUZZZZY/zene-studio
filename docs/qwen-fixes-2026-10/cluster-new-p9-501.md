@@ -1,121 +1,171 @@
 # Cluster new-p9-501 — Vibed allocates while starting a note
 
-**Verdict: NEEDS-CONTEXT.** The defect is real. The fix changes audible behaviour and
-needs an owner decision (pool size, oversize-note policy, sample-rate changes), so no
-production code was changed and no RED/GREEN regression was produced.
+**Verdict: NEEDS-CONTEXT.** The defect is real: `Vibed::playNoteImpl` allocates on the
+realtime render path at every note start. A behaviour-preserving, realtime-safe fix is
+blocked by four owner decisions (D1–D4 below). The code cannot answer them: the buffers
+scale with `oversample × sampleRate / pitch`, and the reachable pitch has no code-enforced
+floor. No product code was changed in this round.
+
+## Revision after QA round 1 (Luna DISPUTE)
+
+- The disposition now states the defect is real, with file:line evidence below.
+- Reachable pitch, string-length and simultaneous-note bounds are determined from the code
+  (section "Bounds"). Simultaneous notes have no code-enforced cap.
+- The blocking owner decisions are named with the numbers that bear on them (section
+  "Owner decisions").
+- No registered allocation regression was added. Section "Regression status" gives the
+  reason and the exact test to add once D1–D3 are decided.
 
 ## Finding
 
 Luna's patrol reported that `Vibed::playNoteImpl` allocates heap memory on the audio path
-when a note starts (`plugins/Vibed/Vibed.cpp:204-230`). Each enabled string then allocates
-its delay lines and impulse buffer.
+when a note starts (`plugins/Vibed/Vibed.cpp:204`). Each enabled string then allocates its
+delay lines and impulse buffer.
 
-## Evidence (file:line, this branch `bugs/qwen-new-p9-501` at `ded355440`)
+## The path is realtime
+
+- `src/core/AudioEngine.cpp:918` opens `const RealtimeScope realtime;`. Everything under it
+  is realtime code.
+- `src/core/NotePlayHandle.cpp:307` calls `m_instrumentTrack->playNote( this, buffer );`.
+- `src/tracks/InstrumentTrack.cpp:700` calls `m_instrument->playNote( n, workingBuffer );`.
+- `include/Instrument.h:106-110` forwards `playNote` to `playNoteImpl`.
+- Worker-thread entry (`src/core/AudioEngineWorkerThread.cpp:156`) was cited by Luna and is
+  consistent with this; it was not re-traced here.
+
+## Allocation sites (one note start, one active string)
 
 | Allocation | Location |
 | --- | --- |
-| `new StringContainer{...}` per note, on the audio path | `plugins/Vibed/Vibed.cpp:208-209` (guard `if (!n->m_pluginData)` at `:206`) |
-| `std::array<VibratingString, s_stringCount>` built inside the container | `plugins/Vibed/Vibed.cpp:95` |
-| Per-string `m_outsamp` | `plugins/Vibed/VibratingString.cpp:44` |
-| Per-string impulse buffer, length `stringLength` | `plugins/Vibed/VibratingString.cpp:53` (and `:58` for state=true) |
-| Two delay lines per string, each with `make_unique` DelayLine and data | `plugins/Vibed/VibratingString.cpp:71-77`, called from `:60-61` |
-| `stringLength = m_oversample * sampleRate / pitch + 1`, scaled by detune | `plugins/Vibed/VibratingString.cpp:46-48` |
+| `new StringContainer{...}` on first call (guard, then new) | `plugins/Vibed/Vibed.cpp:206`, `:208` |
+| `m_outsamp` (`oversample` samples) | `plugins/Vibed/VibratingString.cpp:44` |
+| `m_impulse` (`stringLength` floats, or `len` when `state`) | `plugins/Vibed/VibratingString.cpp:53` / `:58` |
+| Two `DelayLine` objects via `initDelayLine` | `plugins/Vibed/VibratingString.cpp:62-63`, `:71-75` |
+| Two delay-line data buffers, `stringLength` samples each | `plugins/Vibed/VibratingString.cpp:77` |
+| Per-string temporary `VibratingString{...}` move-assigned into the array | `plugins/Vibed/Vibed.cpp:81` |
 
-The audio-thread context is confirmed:
+Derived from code, **not measured**: 1 + 6 operator-new calls per active string. For the
+default preset (only string 1 active) that is 7 allocations per note start.
 
-- `AudioEngine::renderNextPeriod()` opens `const RealtimeScope realtime;` at
-  `src/core/AudioEngine.cpp:918`. Everything under it is "realtime code" for RTSan.
-- `NotePlayHandle::play` calls `m_instrumentTrack->playNote(this, buffer)` at
-  `src/core/NotePlayHandle.cpp:307`.
-- `InstrumentTrack::playNote` calls `m_instrument->playNote(n, workingBuffer)` at
-  `src/tracks/InstrumentTrack.cpp:700`.
+## Bounds (determined from the code)
 
-So `Vibed::playNoteImpl` runs inside that realtime scope.
+| Quantity | Bound | Source |
+| --- | --- | --- |
+| Key | clamped to 0..127 | `src/core/Note.cpp:124`, `include/Note.h:92` |
+| Default key / base frequency | key 57 (A4), 440 Hz | `include/Note.h:90`, `:96` |
+| 12-TET frequency | `440 · 2^((key + slide − baseNote + masterPitch + detune)/12 + instrumentPitch/1200)` | `src/core/NotePlayHandle.cpp:644-645` |
+| Instrument pitch | ±100 cents | `include/Pitch.h:36-37`, `src/tracks/InstrumentTrack.cpp:68` |
+| Master pitch (only when the track uses it) | ±12 semitones | `src/core/Song.cpp:110`, `src/tracks/InstrumentTrack.cpp:179` |
+| MPE per-note pitch | ±4800 cents, applied as a ratio, not gated by `IsNotBendable` | `include/MpeExpression.h:53`, `src/core/midi/MpeExpression.cpp:54-57`, `src/core/NotePlayHandle.cpp:656` |
+| Note detune | value read from the automation clip at 0 (`BaseDetuning`); **range not traced** | `src/core/NotePlayHandle.cpp:41-43` |
+| Microtuner / session tuning | data-driven (keymap base frequency, scale intervals); no output clamp found in `keyToFreq`; **session-tuning path not traced** | `src/core/Microtuner.cpp:65-100`, `src/core/NotePlayHandle.cpp:609-634` |
+| Vibed oversample | 1..16 | `plugins/Vibed/Vibed.cpp:118-119` |
+| Vibed detune | ±0.1 | `plugins/Vibed/Vibed.cpp:114-115` |
+| Harmonic octave factor | 0.25..7.0 | `plugins/Vibed/Vibed.cpp:78` |
+| `m_oversample` | `2·oversample / int(sampleRate/baseSampleRate)`; 2..32 when the ratio is 1 | `plugins/Vibed/VibratingString.cpp:39` |
+| `stringLength` | `m_oversample · sampleRate / pitch + 1`, then `× (1 − detune)` | `plugins/Vibed/VibratingString.cpp:46-47` |
 
-The size of the allocations depends on the note's pitch and the sample rate, so a
-fixed-size pool cannot cover them as written.
+**Derived pitch floor.** The lowest 12-TET note these ranges reach is 7.72 Hz (key 0,
+master −12, instrument −100 cents). With harmonic factor 0.25 the string is 1.93 Hz. With an
+additional MPE −4800 cents the note is 0.48 Hz and the string 0.12 Hz. These are the code's
+limits, not audible limits. The Microtuner and session-tuning paths are not closed by these
+ranges, so the true floor is not established by the code.
 
-## Precedent found
+**Simultaneous notes.** No per-instrument or global cap was found. `NotePlayHandleManager::acquire`
+extends its pool when empty (`src/core/NotePlayHandle.cpp:744`, `extend` at `:762`). Chord and
+arpeggio sub-notes are their own `NotePlayHandle`s (`src/core/NotePlayHandle.cpp:96-98`). Whether
+`acquire` runs on the audio thread was not traced; if it does, it is a second allocation on that
+path.
 
-`include/NotePlayHandle.h:74-80` provides in-handle storage for plugin note state
-(`PluginDataStorageSize = 512`, `pluginDataStorage()`). `plugins/Monstro/Monstro.cpp:1088-1093`
-uses it with `std::construct_at` and a `static_assert` on size. Monstro's note state fits
-that storage. Vibed's `StringContainer` holds nine `VibratingString` objects. I estimate
-that is near or over 512 bytes, but I did not measure it. The in-handle storage would
-remove only the container allocation. The delay-line and impulse buffers would still be
-heap-allocated, and those are the bulk of the cost.
+## Derived buffer sizes (computed, not measured)
 
-## Why this is NEEDS-CONTEXT and not a fix
+Assumptions: output 48 kHz, base 44.1 kHz (ratio 1, so `m_oversample = 2·oversample`), detune 0,
+three buffers per string (impulse plus two delay lines). Detune ±10% scales the sample counts by
+1.1 or 0.9. Nine active strings multiply the per-string column by nine.
 
-A behaviour-preserving fix needs all of the following, and the contract for them is not in
-the repository:
+| Case | String Hz | Samples per buffer | Per buffer | Per string |
+| --- | --- | --- | --- | --- |
+| C4 (261.6 Hz), harm 1.0, oversample 1 | 261.6 | 366 | 1.5 KB | 4.4 KB |
+| C2 (65.4 Hz), harm 1.0, oversample 16 | 65.4 | 23,484 | 94 KB | 0.28 MB |
+| Key 0 (16.35 Hz), harm 0.25, oversample 16 | 4.09 | 375,743 | 1.5 MB | 4.5 MB |
+| 12-TET floor, harm 0.25, oversample 16 | 1.93 | 796,171 | 3.2 MB | 9.6 MB |
+| MPE floor, harm 0.25, oversample 16 | 0.121 | 12,738,750 | 51 MB | 153 MB |
 
-1. **Bounded capacity.** The buffer size is `oversample * sampleRate / pitch`. For very low
-   notes, that is unbounded. A preallocated arena needs a maximum frequency or length.
-2. **Oversize-note policy.** When a note exceeds the arena, the options are silence, a
-   clamped pitch, or a dropped string. Each one changes audible output. The owner has to
-   choose.
-3. **Sample-rate changes.** Buffers sized at one sample rate would need reallocating when
-   the device rate changes. That must happen off the audio thread.
-4. **Pool exhaustion.** More simultaneous notes than the pool holds need a defined outcome.
+## Why a pool cannot be sized without a decision
 
-The finding's own suggested fix, "prepare note state outside the audio callback", has no
-hook here. Note creation is on the audio thread too, because MIDI events are processed
-there.
+- The buffer size grows with `oversample × sampleRate / pitch`. At the MPE floor one string
+  needs about 153 MB, and nine strings and any polyphony multiply that. No fixed pool covers
+  the reachable domain.
+- So any realtime-safe design must bound the largest string (D1), bound simultaneous string
+  states (D2), and choose what happens beyond those bounds (D3).
+- A pool alone is not sufficient. The per-note initialisation is also O(string length) and runs on
+  the audio thread: the fill loop in `initDelayLine` (`plugins/Vibed/VibratingString.cpp:78-79`),
+  `setDelayLine` (`plugins/Vibed/VibratingString.h:105`), and `resample`
+  (`plugins/Vibed/VibratingString.cpp:94`). Moving the allocation off the thread does not remove
+  this work (D4).
+
+## Owner decisions (blocking)
+
+- **D1 — Largest supported string length** (equivalently the lowest supported string
+  frequency). Example: a 2^17-sample cap at oversample 16 and 48 kHz gives a floor of about
+  11.7 Hz (32 × 48000 / 131072), a 512 KB buffer and 1.5 MB per string. Strings below the cap are
+  the behaviour change.
+- **D2 — Polyphony.** How many simultaneous string states an instrument (or the process) may
+  hold, and what a new note does when the pool is full.
+- **D3 — Policy beyond D1/D2.** Silence, clamp the pitch, drop the string, or keep allocating as a
+  documented realtime exception. Each changes audible output or keeps the defect.
+- **D4 — Initialisation cost.** Whether the O(length) initialisation may stay on the audio thread
+  up to the D1 cap. If not, a note-ahead hook is needed, and none was found. Note creation on the
+  audio thread was not traced in this pass.
+
+My recommendation, for the owner to accept or reject: a fixed per-instrument pool sized by D1 and D2,
+notes beyond the cap silent (D3), and initialisation kept on the audio thread (D4), with the cap set
+where the owner judges sub-audible strings begin. This is a recommendation only; the owner picks the
+numbers.
+
+## Related observed defect (separate; not fixed here)
+
+A zero frequency reaches Vibed. With the Microtuner enabled and an unmapped key, or the session
+table unmapped, `m_frequency` is set to 0 (`src/core/NotePlayHandle.cpp:622`, `:638`). The play path
+checks only the key range (around `src/core/NotePlayHandle.cpp:241-250`), then calls `playNote`
+(`:307`, `src/tracks/InstrumentTrack.cpp:700`) with no frequency check. Vibed then divides by the
+pitch (`plugins/Vibed/VibratingString.cpp:46`), which gives infinity converted to `int` (undefined
+behaviour), and the result feeds `std::make_unique<float[]>` (`:53`, `:58`).
+
+This is from reading the code; it was **not run**. It should be filed as its own cluster.
+
+Also unverified: `plugins/Vibed/VibratingString.cpp:39` divides by `int(sampleRate/baseSampleRate)`,
+which is zero if the output rate is below the base rate. Whether that is reachable was not checked.
 
 ## Regression status
 
-- **No RED/GREEN run.** No product code was changed, so there is no fix to prove. Writing
-  an allocation-probe test would mean building a plugin-level harness; it was not done in
-  this pass.
-- The finding's cited test, `tests/reference/Vibed/Vibed.cpp` (`ctest -R '^Vibed$'`), does
-  not map to a ctest entry. `tests/reference/` is frozen reference source, not a registered
-  test. Vibed has no ctest entry (`ctest -N` lists 593 tests; none match "vibed").
-- Existing coverage that touches Vibed's plugin surface is `PluginPortsMigrationTest` and
-  `PluginLogoResourceTest`. Neither asserts zero allocations during `playNote`.
-- The allocation probe (`tests/src/core/AllocationProbe.h`) is available, and its users are
-  listed in the test tree. It would be the right tool for a RED allocation count on
-  `playNoteImpl` once the contract is decided.
+- **No product change, so no RED/GREEN run.** Luna asked for a registered allocation regression.
+  That test would assert zero operator-new calls in `Vibed::playNoteImpl` on note start (pattern:
+  `tests/src/core/InstrumentLatencyPdcTest.cpp:396-400`, `test::tlCountAllocations`). It fails on the
+  current tree, and it can only pass after D1–D3 are decided and implemented. Committing it red would
+  fail `ctest`; committing it green would enshrine the defect. It should be added with the fix.
+- **Probe limit.** The probe counts `operator new` only; `malloc` and Qt implicit sharing are not
+  counted (`docs/KNOWN-LIMITATIONS.md`, "The allocation probe").
+- **Existing coverage.** `ctest -N -R '[Vv]ibed'` lists 0 tests. The cited
+  `tests/reference/Vibed/Vibed.cpp` is frozen reference code, built only as `partc_ref_vibedstrings`
+  (`tests/CMakeLists.txt:2566-2584`), not a ctest entry.
+- **No measurement.** The product `vibedstrings` module is not built in this tree
+  (`build/plugins/Vibed` holds no `.so`), so the derived numbers above have not been checked against
+  a probe run.
 
 ## Commands run (exact, with EXIT codes)
 
-Commands are run from the worktree root unless noted. Logs are in
-`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-501.r1/logs/`.
+Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-501.r2/logs/`.
 
-| Command | EXIT |
-| --- | --- |
-| `git status --short` / `git branch --show-current` | 0 (clean; `bugs/qwen-new-p9-501`) |
-| `cd build/tests && ctest -N > .../ctest-N-1.log 2>&1` | 0 (Total Tests: 593) |
-| `bash tests/complexity-gate.sh --check > .../gate-complexity-1.log 2>&1` | **1** |
-| `bash tests/file-length-gate.sh --check > .../gate-filelength-1.log 2>&1` | **1** |
+| Command | EXIT | Log / result |
+| --- | --- | --- |
+| `bash tests/complexity-gate.sh --check` | 1 | `gate-complexity-1.log`, line 108: "FAIL: complexity ratchet regressed" |
+| `bash tests/file-length-gate.sh --check` | 1 | `gate-filelength-1.log`, line 38: "FAIL: file-length ratchet regressed" |
+| `cd build/tests && ctest -N -R '[Vv]ibed'` | 0 | `ctest-N-vibed-1.log`: "Total Tests: 0" |
+| fff grep "FAIL" and "Vibed" over the log folder | — | Only the two FAIL lines above; no Vibed entry in either gate log |
 
-### Gate failures (pre-existing on the base commit; not caused by this report)
+Both gates fail on ratchet regressions in files this cluster does not touch. The same two gates
+failed on the base commit in round 1. No limit or baseline was changed.
 
-No product file was changed, so both failures are present on `ded355440` and are not
-caused by this work. I did not edit any baseline or limit.
+## Files changed by this round
 
-- **Complexity** (`gate-complexity-1.log`): "FAIL: complexity ratchet regressed". The
-  regressions are `dotCentreAlong` (CCN 16, `tests/src/gui/XyPadPairTest.cpp:76`),
-  `parseNotes` (CCN 13, `src/core/DawProjectReadTracks.cpp:94`), `adjust` (CCN 12,
-  `src/core/ControlCommandsMixerTools.cpp:215`), `setStrip` (CCN 11,
-  `src/core/ControlCommandsMixerStrip.cpp:250`), `rotateProjectRevision` (CCN 11,
-  `src/core/ProjectRevisions.cpp:151`), and `importedOverrides` (CCN 11,
-  `src/gui/ControlCommandsShortcuts.cpp:168`).
-- **File length** (`gate-filelength-1.log`): "FAIL: file-length ratchet regressed". The
-  regressions include `src/core/SmfInterchangeReader.cpp` (504), `src/core/TakeLane.cpp`
-  (520), and several `tests/src/core/*Test.cpp` files at 511-752 lines.
-
-Neither gate touches `plugins/Vibed/`. Both need an owner or base-branch decision, not a
-change from this cluster.
-
-## What the owner needs to decide
-
-1. Whether Vibed should keep its per-note allocation or move to bounded in-handle storage.
-   If bounded, choose the maximum frequency or buffer length.
-2. What an oversize or over-pool note should do: silence, a clamped pitch, or a dropped
-   string.
-3. Whether a sample-rate change should rebuild the arena off the audio thread, and where
-   that hook lives.
-
-Once those are chosen, the next step is an allocation-probe RED on `playNoteImpl` in a new
-test, then the fix, GREEN, and the gates.
+- `docs/qwen-fixes-2026-10/cluster-new-p9-501.md` only.
