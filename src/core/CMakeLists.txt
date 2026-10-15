@@ -7,8 +7,8 @@ IF(NOT LMMS_HAVE_ABLETON_LINK)
 	SET(LMMS_ABLETON_LINK_STUB_SRCS core/AbletonLinkSessionStub.cpp)
 ENDIF()
 
-# Offline stem separation (opt-in, see doc/STEM-SPLIT.md). The job manager and
-# track builder are pure Qt and always available when the feature is enabled;
+# Offline stem separation (on by default, owner decision 14; see doc/STEM-SPLIT.md). The job
+# manager and track builder are pure Qt and always available when the feature is enabled;
 # the C++ ONNX Runtime backend is compiled only when the runtime was found.
 IF(LMMS_HAVE_STEM_SPLIT)
 	SET(LMMS_STEM_SRCS

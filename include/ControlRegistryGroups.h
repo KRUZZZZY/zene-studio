@@ -75,12 +75,13 @@ LMMS_EXPORT void registerWasmEditCommands(ControlRegistry& registry);
  *  and was already in the tree with five registered tests; the only route to it
  *  was tools/stem_split_cli.py, outside the socket, plus a GUI-only clip action.
  *
- *  The feature is opt-in at configure time: WANT_STEM_SPLIT defaults to OFF
- *  (CMakeLists.txt:120) and a default build compiles none of the engine, so the
- *  registry must not carry ids whose handler could not exist - the rule the
- *  telemetry.*, session.* and wasm.* groups follow. Its call site is guarded by
- *  the same #ifdef, and so are its seven A16 rows, so the registry and the
- *  contract table stay consistent in both directions. */
+ *  WANT_STEM_SPLIT defaults to ON (CMakeLists.txt:130, owner decision 14), so
+ *  the group is in the default build; a build that deliberately configures it
+ *  OFF compiles none of the engine, so the registry must not carry ids whose
+ *  handler could not exist - the rule the telemetry.*, session.* and wasm.*
+ *  groups follow. Its call site is guarded by the same #ifdef, and so are its
+ *  seven A16 rows, so the registry and the contract table stay consistent in
+ *  both directions. */
 LMMS_EXPORT void registerStemCommands(ControlRegistry& registry);
 //! stem.model_get_state / stem.model_download - the model-store half, in its
 //! own translation unit (the folder-track, session, warp, rack, comp and

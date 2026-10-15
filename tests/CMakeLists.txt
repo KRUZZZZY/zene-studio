@@ -1182,7 +1182,7 @@ if(LMMS_HAVE_OGGVORBIS)
 	list(APPEND LMMS_TESTS src/core/AudioFileOggInitTest.cpp)
 endif()
 
-# Offline stem separation tests (opt-in, see doc/STEM-SPLIT.md).
+# Offline stem separation tests (on by default, owner decision 14; see doc/STEM-SPLIT.md).
 IF(LMMS_HAVE_STEM_SPLIT)
 	LIST(APPEND LMMS_TESTS
 		src/core/StemJobManagerTest.cpp
