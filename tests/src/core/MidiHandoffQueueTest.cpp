@@ -149,6 +149,53 @@ private slots:
 		QCOMPARE(overflow.recorded(), std::uint64_t{1});
 	}
 
+	//! Round 6: a producer raises the shared stamp during the cut's emit. A value covered by the cut (<= its
+	//! position) must not cause a second cut; a value beyond it keeps its own later cut.
+	void stampRaisedDuringTheCutEmitIsCoveredOrKept()
+	{
+		for (const bool beyond : {false, true})
+		{
+			lmms::MidiHandoffQueue<8> queue;
+			lmms::MidiChannelOverflow overflow;
+			lmms::HandoffMidiEvent e;
+			e.channel = 3;
+			for (std::uint32_t id = 1; id <= 8; ++id) { e.offset = id; QVERIFY(queue.push(e)); }
+			std::uint32_t pushAttempts = 0;
+			std::uint32_t stampAttempts = 0;
+			e.offset = 99;
+			QVERIFY(!lmms::pushOrRecordWithTestHooks(queue, overflow, e, &pushAttempts, &stampAttempts,
+				[](std::uint32_t) {},
+				[](std::atomic<std::uint64_t>& stamp, std::uint64_t expected, std::uint64_t requested, std::uint32_t)
+				{
+					if (expected + 1 < requested) { stamp.compare_exchange_strong(expected, expected + 1); }
+				}));
+			// shared stamp is 8, deferred stamp will be 9: the cut is placed at 9.
+			std::vector<std::string> sent;
+			bool raised = false;
+			auto emitEvent = [&sent](const lmms::HandoffMidiEvent& ev) { sent.push_back("E" + std::to_string(ev.offset)); return true; };
+			auto emitCut = [&](int channel)
+			{
+				sent.push_back("CUT" + std::to_string(channel));
+				if (!raised)
+				{
+					raised = true;
+					overflow.record(channel, beyond ? 9 : 8); // stamp 10 (beyond the cut at 9) or 9 (covered)
+				}
+				return true;
+			};
+			lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut);
+			e.offset = 100;
+			QVERIFY(queue.push(e));
+			lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut);
+			std::vector<std::string> expected{"E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "CUT3"};
+			if (beyond) { expected.push_back("E100"); expected.push_back("CUT3"); }
+			else { expected.push_back("E100"); }
+			QCOMPARE(sent, expected);
+			QCOMPARE(overflow.stamp(3), std::uint64_t{0});
+			QCOMPARE(overflow.unclearedCoveredStamps(), std::uint64_t{0});
+		}
+	}
+
 	void keepsOrderAndDropsWhenFull()
 	{
 		lmms::MidiHandoffQueue<8> queue;

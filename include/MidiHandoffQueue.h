@@ -261,6 +261,7 @@ public:
 	struct DueCut
 	{
 		std::uint64_t shared = 0; //!< the shared stamp that was read (0 if none), to be cleared by compare-exchange
+		std::uint64_t effective = 0; //!< max(shared, deferred): where the cut was placed
 		bool deferred = false;    //!< whether a deferred stamp contributed
 		bool due = false;
 		explicit operator bool() const noexcept { return due; }
@@ -293,16 +294,29 @@ public:
 		const auto deferredStamp = m_deferredStamp[static_cast<std::size_t>(channel)];
 		result.deferred = deferredStamp != 0;
 		const auto effective = deferredStamp > result.shared ? deferredStamp : result.shared;
+		result.effective = effective;
 		result.due = effective != 0 && effective - 1 <= consumed;
 		return result;
 	}
 
-	//! Consumer only. Clears a cut that was sent: the deferred stamp, and the shared stamp by one bounded
-	//! compare-exchange against the value that was read (a value a producer raised since is kept).
+	//! Consumer only. Clears a cut that was sent at sent.effective: the deferred stamp, and the shared stamp while its
+	//! CURRENT value is covered by that cut (<= effective), in at most MaxStampUpdateAttempts compare-exchanges. A
+	//! value above effective is a later refusal and keeps its own cut. If the attempts run out under contention the
+	//! covered stamp stays pending and one redundant cut at the same point may follow (counted in testing builds).
 	void clear(int channel, const DueCut& sent) noexcept
 	{
-		if (sent.shared != 0) { clear(channel, sent.shared); }
 		if (sent.deferred) { m_deferredStamp[static_cast<std::size_t>(channel)] = 0; }
+		auto& cut = m_cutAt[static_cast<std::size_t>(channel)];
+		auto current = cut.load(std::memory_order_acquire);
+		for (std::uint32_t attempt = 1; current != 0 && current <= sent.effective; ++attempt)
+		{
+			if (attempt > MaxStampUpdateAttempts)
+			{
+				m_unclearedCoveredStamps.fetch_add(1, std::memory_order_relaxed);
+				return;
+			}
+			if (cut.compare_exchange_weak(current, 0, std::memory_order_acq_rel)) { return; }
+		}
 	}
 
 	//! Clears a cut once it has been sent. A later refusal that moved the cut is kept.
@@ -320,6 +334,12 @@ public:
 	}
 
 #ifdef LMMS_TESTING
+	//! Cuts after which a covered shared stamp could not be cleared within the bounded budget (a redundant cut may follow).
+	auto unclearedCoveredStamps() const noexcept -> std::uint64_t
+	{
+		return m_unclearedCoveredStamps.load(std::memory_order_relaxed);
+	}
+
 	//! Refused events for which stamp contention exhausted the bounded update budget.
 	auto failedStampUpdates() const noexcept -> std::uint64_t
 	{
@@ -379,6 +399,7 @@ private:
 	std::array<std::atomic<std::uint64_t>, 16> m_cutAt{};
 	std::atomic<std::uint64_t> m_recorded{0};
 	std::atomic<std::uint64_t> m_failedStampUpdates{0};
+	std::atomic<std::uint64_t> m_unclearedCoveredStamps{0};
 	std::atomic<std::uint32_t> m_deferredFlags{0};
 	std::array<std::uint64_t, 16> m_deferredStamp{}; //!< consumer-private; never touched by producers
 };
