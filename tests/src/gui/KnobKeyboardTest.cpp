@@ -65,6 +65,8 @@
 #include "LcdFloatSpinBox.h"
 #include "LcdSpinBox.h"
 #include "LedCheckBox.h"
+#include "TempoSyncKnob.h"
+#include "TempoSyncKnobModel.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -159,6 +161,27 @@ private slots:
 	{
 		Knob knob(KnobType::Bright26);
 		QCOMPARE(knob.focusPolicy(), Qt::StrongFocus);
+	}
+
+	//! A TempoSyncKnob whose model is detached has no TempoSyncKnobModel to show, so
+	//! modelChanged() warns and stops. It used to warn and then dereference the null
+	//! model in updateDescAndIcon(), crashing on the detach.
+	void aTempoSyncKnobStopsAfterWarningAboutADetachedModel()
+	{
+		TempoSyncKnobModel model(1.f, 0.f, 100.f, 1.f, 1.f, nullptr, QStringLiteral("Time"));
+		TempoSyncKnob knob(KnobType::Bright26);
+		knob.setModel(&model);
+		QCOMPARE(knob.model(), &model);
+
+		qtWarnings.clear();
+		const auto oldHandler = qInstallMessageHandler(collectQtWarning);
+		knob.setModel(nullptr);  // detach: modelChanged() runs with no TempoSyncKnobModel
+		qInstallMessageHandler(oldHandler);
+
+		QVERIFY(knob.model() == nullptr);
+		QVERIFY2(qtWarnings.contains(QStringLiteral("no TempoSyncKnobModel has been set!")),
+			qPrintable(qtWarnings.join(QLatin1Char('\n'))));
+		QCOMPARE(knob.syncDescription(), QStringLiteral("Tempo Sync"));
 	}
 
 	void barModelEditorStoresItsFixedVerticalPolicy()

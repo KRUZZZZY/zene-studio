@@ -87,6 +87,7 @@ void TempoSyncKnob::modelChanged()
 	if( model() == nullptr )
 	{
 		qWarning( "no TempoSyncKnobModel has been set!" );
+		return;
 	}
 	if( m_custom != nullptr )
 	{
