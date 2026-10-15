@@ -95,3 +95,19 @@ src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::JobQueue::addJob	t
 plugins/Sid/SidInstrument.cpp	SidInstrument::playNoteImpl	called for active SID notes on the render thread; its audio callback must not write synchronously to stdout	rules=stdio-output
 src/core/SamplePlayHandle.cpp	SamplePlayHandle::applyActiveTakeGate	the loop-take render gate: it reads the clip's active-lane mirror and the track's play-all switch through relaxed atomics, then either leaves the block or zeroes it; no model-vector access, allocation or lock
 src/tracks/SampleTrack.cpp	activeTakeForPlayback	the clip scheduler's active-take predicate: scalar clip fields and the atomic lane mirror only; no allocation or lock
+
+# Carla's audio callback and any-thread MIDI producer share only this bounded hand-off; these paths stay free of a shared lock.
+plugins/CarlaBase/Carla.cpp	CarlaInstrument::playImpl	Carla's per-period audio callback stages queued events and calls the native process function
+plugins/CarlaBase/Carla.cpp	CarlaInstrument::handleMidiEvent	MIDI may arrive on the audio thread, GUI or input thread; this producer only publishes a fixed-size event
+plugins/CarlaBase/CarlaMidiHandoff.h	*	all helper methods run on the render path or MIDI producer path and must stay allocation-free and lock-free
+include/MidiHandoffQueue.h	MidiHandoffQueue::push	Carla's any-thread MIDI producers publish fixed-size events through this bounded queue
+include/MidiHandoffQueue.h	MidiHandoffQueue::pop	Carla's audio callback takes the oldest queued event through this bounded queue
+include/MidiHandoffQueue.h	MidiHandoffQueue::consumed	Carla's audio callback checks the queue position when placing overflow cuts
+include/MidiHandoffQueue.h	MidiChannelOverflow::record	Carla's any-thread MIDI producer records a queue refusal without blocking
+include/MidiHandoffQueue.h	MidiChannelOverflow::stamp	Carla's audio callback reads the pending overflow cut position
+include/MidiHandoffQueue.h	MidiChannelOverflow::due	Carla's audio callback checks when a refused event's channel cut is due
+include/MidiHandoffQueue.h	MidiChannelOverflow::clear	Carla's audio callback clears a channel cut after staging its all-notes-off
+include/MidiHandoffQueue.h	MidiChannelOverflow::raise	Carla's any-thread MIDI producer advances the refused event's cut position
+include/MidiHandoffQueue.h	pushOrRecord	Carla's any-thread MIDI producer publishes an event or records the refusal
+include/MidiHandoffQueue.h	drainMidi	Carla's audio callback stages queued events and all-notes-off cuts in order
+src/core/midi/MidiEventToByteSeq.cpp	writeToByteSeq	Carla's audio callback encodes each queued event into Carla's native MIDI format

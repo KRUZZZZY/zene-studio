@@ -26,6 +26,8 @@
 #include <QtTest>
 
 #include <atomic>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <cstdint>
 #include <thread>
@@ -86,6 +88,114 @@ class MidiHandoffQueueTest : public QObject
 	Q_OBJECT
 
 private slots:
+	//! Round 4: pop() is single-consumer and wait-free. Its body must have no loop, no retry and no compare-exchange.
+	void popHasNoRetryLoop()
+	{
+		std::ifstream file(MIDI_HANDOFF_QUEUE_HEADER);
+		QVERIFY2(file.good(), "could not read include/MidiHandoffQueue.h");
+		std::stringstream buffer;
+		buffer << file.rdbuf();
+		const std::string text = buffer.str();
+		const auto start = text.find("auto pop(HandoffMidiEvent& event) noexcept -> bool");
+		QVERIFY(start != std::string::npos);
+		const auto open = text.find('{', start);
+		QVERIFY(open != std::string::npos);
+		std::size_t depth = 0;
+		std::size_t end = open;
+		for (; end < text.size(); ++end)
+		{
+			if (text[end] == '{') { ++depth; }
+			if (text[end] == '}' && --depth == 0) { break; }
+		}
+		const std::string body = text.substr(open, end - open + 1);
+		for (const char* forbidden : {"for (", "for(", "while", "do {", "goto", "compare_exchange", "fetch_", "exchange("})
+		{
+			QVERIFY2(body.find(forbidden) == std::string::npos, forbidden);
+		}
+	}
+
+	//! Round 4: a refusal whose stamp update exhausted its budget is deferred to the consumer, and the cut
+	//! comes after every event that was queued before the refusal.
+	void exhaustedStampUpdateDefersTheCutBehindQueuedEvents()
+	{
+		lmms::MidiHandoffQueue<8> queue;
+		lmms::MidiChannelOverflow overflow;
+		auto event = [](int channel, std::uint32_t id) {
+			lmms::HandoffMidiEvent e;
+			e.channel = static_cast<std::int8_t>(channel);
+			e.offset = id;
+			return e;
+		};
+		for (std::uint32_t id : {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u}) { QVERIFY(queue.push(event(3, id))); }
+		std::uint32_t pushAttempts = 0;
+		std::uint32_t attempts = 0;
+		QVERIFY(!lmms::pushOrRecordWithTestHooks(queue, overflow, event(3, 99), &pushAttempts, &attempts,
+			[](std::uint32_t) {},
+			[](std::atomic<std::uint64_t>& stamp, std::uint64_t expected, std::uint64_t requested, std::uint32_t)
+			{
+				if (expected + 1 < requested) { stamp.compare_exchange_strong(expected, expected + 1); }
+			}));
+		QCOMPARE(attempts, lmms::MidiChannelOverflow::MaxStampUpdateAttempts);
+		QCOMPARE(overflow.failedStampUpdates(), std::uint64_t{1});
+
+		std::vector<std::string> sent;
+		auto emitEvent = [&sent](const lmms::HandoffMidiEvent& e) { sent.push_back("E" + std::to_string(e.offset)); return true; };
+		auto emitCut = [&sent](int channel) { sent.push_back("CUT" + std::to_string(channel)); return true; };
+		lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut);
+		// One cut per channel, at the later (deferred) stamp: after the last queued event, never before it.
+		const std::vector<std::string> expected{"E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "CUT3"};
+		QCOMPARE(sent, expected);
+		QCOMPARE(overflow.stamp(3), std::uint64_t{0});
+		QCOMPARE(overflow.recorded(), std::uint64_t{1});
+	}
+
+	//! Round 6: a producer raises the shared stamp during the cut's emit. A value covered by the cut (<= its
+	//! position) must not cause a second cut; a value beyond it keeps its own later cut.
+	void stampRaisedDuringTheCutEmitIsCoveredOrKept()
+	{
+		for (const bool beyond : {false, true})
+		{
+			lmms::MidiHandoffQueue<8> queue;
+			lmms::MidiChannelOverflow overflow;
+			lmms::HandoffMidiEvent e;
+			e.channel = 3;
+			for (std::uint32_t id = 1; id <= 8; ++id) { e.offset = id; QVERIFY(queue.push(e)); }
+			std::uint32_t pushAttempts = 0;
+			std::uint32_t stampAttempts = 0;
+			e.offset = 99;
+			QVERIFY(!lmms::pushOrRecordWithTestHooks(queue, overflow, e, &pushAttempts, &stampAttempts,
+				[](std::uint32_t) {},
+				[](std::atomic<std::uint64_t>& stamp, std::uint64_t expected, std::uint64_t requested, std::uint32_t)
+				{
+					if (expected + 1 < requested) { stamp.compare_exchange_strong(expected, expected + 1); }
+				}));
+			// shared stamp is 8, deferred stamp will be 9: the cut is placed at 9.
+			std::vector<std::string> sent;
+			bool raised = false;
+			auto emitEvent = [&sent](const lmms::HandoffMidiEvent& ev) { sent.push_back("E" + std::to_string(ev.offset)); return true; };
+			auto emitCut = [&](int channel)
+			{
+				sent.push_back("CUT" + std::to_string(channel));
+				if (!raised)
+				{
+					raised = true;
+					overflow.record(channel, beyond ? 9 : 8); // stamp 10 (beyond the cut at 9) or 9 (covered)
+				}
+				return true;
+			};
+			lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut);
+			e.offset = 100;
+			QVERIFY(queue.push(e));
+			lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut);
+			std::vector<std::string> expected{"E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "CUT3"};
+			if (beyond) { expected.push_back("E100"); expected.push_back("CUT3"); }
+			else { expected.push_back("E100"); }
+			QCOMPARE(sent, expected);
+			QCOMPARE(overflow.stamp(3), std::uint64_t{0});
+			QCOMPARE(overflow.unclearedCoveredStamps(), std::uint64_t{0});
+		}
+	}
+
 	void keepsOrderAndDropsWhenFull()
 	{
 		lmms::MidiHandoffQueue<8> queue;
@@ -132,6 +242,40 @@ private slots:
 			}
 		});
 		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
+	void pushRetriesAreBoundedWhenContended()
+	{
+		lmms::MidiHandoffQueue<64> queue;
+		std::uint32_t competingReservations = 0;
+		bool competitorsAccepted = true;
+		const auto scheduleCompetingReservation = [&](std::uint32_t)
+		{
+			if (!queue.push(eventWithOffset(competingReservations))) { competitorsAccepted = false; }
+			else { ++competingReservations; }
+		};
+		auto refusedEvent = eventWithOffset(999);
+		refusedEvent.channel = 5;
+		std::uint64_t refusedAt = 0;
+		std::uint32_t attemptsUsed = 0;
+		const bool accepted = queue.pushWithTestHook(refusedEvent, &refusedAt, &attemptsUsed,
+			scheduleCompetingReservation);
+
+		QVERIFY(!accepted);
+		QVERIFY(competitorsAccepted);
+		QCOMPARE(competingReservations, lmms::MidiHandoffQueue<64>::MaxPushAttempts);
+		QCOMPARE(attemptsUsed, lmms::MidiHandoffQueue<64>::MaxPushAttempts);
+		QVERIFY(attemptsUsed <= lmms::MidiHandoffQueue<64>::MaxPushAttempts);
+		QCOMPARE(queue.dropped(), std::uint64_t{1});
+
+		for (std::uint32_t offset = 0; offset < competingReservations; ++offset)
+		{
+			lmms::HandoffMidiEvent event;
+			QVERIFY(queue.pop(event));
+			QCOMPARE(event.offset, offset);
+		}
+		lmms::HandoffMidiEvent empty;
+		QVERIFY(!queue.pop(empty));
 	}
 
 	//! A refused event is never silently lost: its channel is recorded, with the queue position it was refused at.
@@ -204,6 +348,42 @@ private slots:
 			[](int) { return true; });
 		QCOMPARE(emitted, std::size_t{3});
 		QCOMPARE(queue.consumed(), std::uint64_t{3});  // the rest stays queued
+	}
+
+	//! Overflow cuts share the fixed native event budget with queue events; a limited drain leaves the rest queued.
+	void drainCapsEmittedEventsIncludingCuts()
+	{
+		lmms::MidiHandoffQueue<2> queue;
+		lmms::MidiChannelOverflow overflow;
+		auto event = [](std::uint32_t id)
+		{
+			lmms::HandoffMidiEvent queued;
+			queued.offset = id;
+			queued.channel = 3;
+			return queued;
+		};
+		QVERIFY(lmms::pushOrRecord(queue, overflow, event(1)));
+		QVERIFY(lmms::pushOrRecord(queue, overflow, event(2)));
+		QVERIFY(!lmms::pushOrRecord(queue, overflow, event(99)));
+		lmms::HandoffMidiEvent removed;
+		QVERIFY(queue.pop(removed));
+		QVERIFY(queue.pop(removed));
+		QVERIFY(lmms::pushOrRecord(queue, overflow, event(3)));
+		QVERIFY(lmms::pushOrRecord(queue, overflow, event(4)));
+
+		std::vector<std::uint32_t> delivered;
+		std::vector<int> cuts;
+		lmms::drainMidi(queue, overflow, 2,
+			[&](const lmms::HandoffMidiEvent& queued) { delivered.push_back(queued.offset); return true; },
+			[&](int channel) { cuts.push_back(channel); return true; }, 2);
+
+		QCOMPARE(cuts, std::vector<int>{3});
+		QCOMPARE(delivered, std::vector<std::uint32_t>{3});
+		QCOMPARE(queue.consumed(), std::uint64_t{3});
+		QCOMPARE(overflow.stamp(3), std::uint64_t{0});
+		lmms::HandoffMidiEvent pending;
+		QVERIFY(queue.pop(pending));
+		QCOMPARE(pending.offset, std::uint32_t{4});
 	}
 
 	//! When a cut cannot be sent, the drain stops and the cut stays due for the next call.
