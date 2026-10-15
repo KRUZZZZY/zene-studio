@@ -97,6 +97,36 @@ private slots:
 		resetSkippedInstances();
 	}
 
+	void failedReinstallStopsSkippingThirdPartyPlugins()
+	{
+		QTemporaryDir workingDirectory;
+		QTemporaryDir pluginDirectory;
+		QVERIFY(workingDirectory.isValid());
+		QVERIFY(pluginDirectory.isValid());
+		QVERIFY(install(workingDirectory.path().toStdString()));
+
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4245\n");
+		}
+		beginSession();
+		QVERIFY(safeStartActive());
+
+		const std::string pluginPath = pluginDirectory.filePath(QStringLiteral("plugin.so"))
+			.toStdString();
+		QVERIFY(isThirdPartyPluginFile(pluginPath));
+		QVERIFY(shouldSkipPluginInstance("thirdparty", pluginPath));
+
+		const std::string missingDirectory = workingDirectory.filePath(QStringLiteral("missing"))
+			.toStdString();
+		QVERIFY(!install(missingDirectory));
+		QVERIFY(!isInstalled());
+		QVERIFY2(!shouldSkipPluginInstance("thirdparty", pluginPath),
+			"a failed reinstall must not leave the safe-start plugin skip active");
+		QVERIFY(!safeStartActive());
+	}
+
 	void theLoadPathReallySkipsAThirdPartyInstance()
 	{
 #ifdef Q_OS_WIN
