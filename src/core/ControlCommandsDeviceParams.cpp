@@ -34,8 +34,10 @@
  *  Options are carried by the device (include/DeviceOptions.h); every write is one undo step. */
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <random>
 #include <utility>
 
@@ -301,6 +303,20 @@ double amountOf(const QJsonObject& args, double fallback)
 	return std::clamp(args.value(QStringLiteral("amount")).toDouble(fallback), 0.0, 1.0);
 }
 
+//! The 'seed' of a randomise is an unsigned 32-bit integer. One outside that range is refused, not truncated:
+//! a truncated seed would be a different roll reported as the one that was asked for.
+bool seedOf(const QJsonObject& args, std::uint32_t* seed, ControlResult* error)
+{
+	const double number = args.value(QStringLiteral("seed")).toDouble(-1.0);
+	if (number < 0.0 || number > static_cast<double>(std::numeric_limits<std::uint32_t>::max()))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'seed' must be an unsigned 32-bit integer"));
+		return false;
+	}
+	*seed = static_cast<std::uint32_t>(number);
+	return true;
+}
+
 ControlResult randomise(const QJsonObject& args)
 {
 	ControlTarget target;
@@ -313,8 +329,14 @@ ControlResult randomise(const QJsonObject& args)
 	std::copy_if(all.begin(), all.end(), std::back_inserter(models), isSetting);
 	if (models.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the device has no settings to randomise")); }
 	const double amount = amountOf(args, 0.5);
-	std::mt19937 random(args.contains(QStringLiteral("seed")) ? static_cast<std::uint32_t>(args.value(QStringLiteral("seed")).toInt())
-		: std::random_device{}());
+	std::mt19937 random;
+	if (args.contains(QStringLiteral("seed")))
+	{
+		std::uint32_t seed = 0;
+		if (!seedOf(args, &seed, &error)) { return error; }
+		random.seed(seed);
+	}
+	else { random.seed(std::random_device{}()); }
 	std::vector<float> values;
 	for (const AutomatableModel* model : models)
 	{
