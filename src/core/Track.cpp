@@ -86,6 +86,7 @@ struct TrackRestoreRule
 constexpr TrackRestoreRule TRACK_RESTORE_SCHEMA[] = {
 	{ "folder", "-1" }, // absent => the track is in no folder (-1 = no id)
 	{ "visible", "1" },  // absent => visible
+	{ "autolanes", "0" }, // absent => this track's automation lanes are shown
 };
 
 //! Test seam for FrozenTakeHandoffTest; null in product use.
@@ -409,6 +410,32 @@ void Track::setParentFolder( TrackFolder* folder )
 
 
 
+/*! The automation lanes that FOLLOW this track: every AutomationTrack of this
+ *  track's container whose followsTrack() is this track's stable id, in
+ *  container (document) order. The relation is DERIVED from that one field,
+ *  never stored twice - the same shape a folder's child list has (and indeed a
+ *  lane is often a member of the same flat track list as everything else).
+ */
+std::vector<Track*> Track::automationLaneChildren() const
+{
+	std::vector<Track*> lanes;
+	if (m_trackContainer == nullptr) { return lanes; }
+	for (Track* each : m_trackContainer->tracks())
+	{
+		auto* lane = dynamic_cast<AutomationTrack*>(each);
+		if (lane != nullptr && lane != this && lane->followsTrack() == m_id) { lanes.push_back(each); }
+	}
+	return lanes;
+}
+
+bool Track::hasAutomationLaneChildren() const
+{
+	return !automationLaneChildren().empty();
+}
+
+
+
+
 /*! \brief Create a track based on the given track type and container.
  *
  *  \param tt The type of track to create
@@ -556,6 +583,13 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	if (!presetMode && !m_visible)
 	{
 		element.setAttribute("visible", 0);
+	}
+	// 0.5.0 Q050-022: the owner-side fold flag for following automation lanes.
+	// Written only when folded (default is shown), so a track that never folded
+	// its lanes re-saves the bytes it always had.
+	if (!presetMode && m_automationLanesCollapsed)
+	{
+		element.setAttribute("autolanes", 1);
 	}
 	
 	QDomElement tsDe = doc.createElement( nodeName() );
@@ -832,6 +866,8 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		trackRestoreDefault( "folder" ) ).toInt();
 	m_visible = element.attribute( "visible",
 		trackRestoreDefault( "visible" ) ).toInt() != 0;
+	m_automationLanesCollapsed = element.attribute( "autolanes",
+		trackRestoreDefault( "autolanes" ) ).toInt() != 0;
 	{
 		TrackFolder* resolved = m_pendingFolderId >= 0
 			? m_trackContainer->findTrackFolderById( m_pendingFolderId ) : nullptr;

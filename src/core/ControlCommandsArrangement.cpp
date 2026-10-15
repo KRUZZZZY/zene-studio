@@ -221,6 +221,7 @@ void registerTrackRemove(ControlRegistry& registry)
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("soloed"), control::booleanProperty()},
 		{QStringLiteral("type"), control::stringProperty()},
+		{QStringLiteral("lanes_removed"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("visible"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
@@ -259,13 +260,24 @@ void registerTrackRemove(ControlRegistry& registry)
 		// Bounded: a track whose XML is over the cap refuses the inverse rather
 		// than keeping a truncated (corrupt) one, and the transaction then says
 		// so instead of claiming a reversibility that does not exist.
-		const bool captured = control::journalTrackRemoval(track);
+		//
+		// 0.5.0 Q050-022: an owner's child automation lanes go WITH it. A lane is
+		// an AutomationTrack following this track by id; leaving it behind would
+		// keep a row whose owner is gone. journalTrackRemovalWithLanes captures
+		// the owner AND every lane as ONE structural step, so a single Ctrl+Z
+		// brings the whole group back with each lane still following its owner.
+		const std::vector<Track*> lanes = track->automationLaneChildren();
+		const bool captured = lanes.empty()
+			? control::journalTrackRemoval(track)
+			: control::journalTrackRemovalWithLanes(track);
 		const int removedIndex = index;
+		for (Track* lane : lanes) { removeTrack(lane); }
 		removeTrack(track);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("removed"), id);
-		result.insert(QStringLiteral("track_count"), before - 1);
+		result.insert(QStringLiteral("track_count"), before - 1 - static_cast<int>(lanes.size()));
+		result.insert(QStringLiteral("lanes_removed"), static_cast<int>(lanes.size()));
 		result.insert(QStringLiteral("dry_run"), false);
 		// The index it was removed from: the one number an undo cannot read back
 		// off the song afterwards (the restored track would be appended), so the

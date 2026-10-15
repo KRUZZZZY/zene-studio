@@ -2452,6 +2452,7 @@ tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AudioStretcherTest.cpp
 tests/src/core/AutomatableModelTest.cpp
 tests/src/core/AutomationClipTransformTangentTestSupport.h
+tests/src/core/AutomationLaneChildrenTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationModesTest.cpp
 tests/src/core/AutomationPrepassProofTest.cpp
@@ -2796,6 +2797,7 @@ tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
 tests/src/gui/AutomationEditorEditingTest.cpp
+tests/src/gui/AutomationLaneChildGuiTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/BrowserTagMenuTest.cpp
 tests/src/gui/CanvasKeyboardTest.cpp

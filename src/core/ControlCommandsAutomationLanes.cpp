@@ -234,6 +234,37 @@ ControlResult lastTouched(const QJsonObject&)
 		{QStringLiteral("name"), model->fullDisplayName()}});
 }
 
+/*! 0.5.0 Q050-022: fold or unfold a track's child automation lanes in the arranger -
+ *  the flag the owner's own row reads. The lane rows (AutomationTracks whose
+ *  followsTrack() is this track) are hidden by the view when it is set; nothing
+ *  about the audio path changes. The flag lives on the owner's own <track>
+ *  element (`autolanes`), so a Track checkpoint is a genuine inverse. */
+ControlResult setLanesCollapsed(const QJsonObject& args)
+{
+	ControlResult error;
+	Track* track = resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
+	if (track == nullptr) { return error; }
+	const bool value = args.value(QStringLiteral("collapsed")).toBool();
+	const bool previous = track->automationLanesCollapsed();
+	track->addJournalCheckPoint();
+	track->setAutomationLanesCollapsed(value);
+
+	QJsonObject result;
+	result.insert(QStringLiteral("track"), trackIdOf(track));
+	result.insert(QStringLiteral("collapsed"), track->automationLanesCollapsed());
+	result.insert(QStringLiteral("collapsed_before"), previous);
+	result.insert(QStringLiteral("lane_count"), static_cast<int>(track->automationLaneChildren().size()));
+	result.insert(QStringLiteral("__transaction"),
+		transactionPayload(
+			QJsonObject{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("collapsed"), previous}},
+			QStringLiteral("automation.lanes_set_collapsed"),
+			QJsonObject{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("collapsed"), previous}},
+			true,
+			QStringLiteral("ProjectJournal (Track checkpoint: the owner's own <track> element "
+				"carries `autolanes`, and loadTrack resets it on absence)")));
+	return ControlResult::success(result);
+}
+
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,
 	bool mutating, std::function<ControlResult(const QJsonObject&)> handler)
 {
@@ -284,6 +315,12 @@ void registerAutomationLaneCommands(ControlRegistry& registry)
 			{QStringLiteral("bend"), numberProperty()}}, {QStringLiteral("ticks"), QStringLiteral("curve")}), true, setCurve);
 	add(registry, "last_touched", QStringLiteral("The parameter a person or a command last changed (not the automation): "
 		"its track and parameter ids, ready for automation.lane_add."), objectSchema({}), false, lastTouched);
+	add(registry, "lanes_set_collapsed", QStringLiteral("Fold or unfold a track's child automation lanes in the arranger: "
+		"with 'collapsed' true every lane following the track (an AutomationTrack whose followsTrack is this track) is "
+		"hidden under its owner's row, exactly as a collapsed folder hides its children. A live Track checkpoint, so one "
+		"control.undo takes the fold back off; automation.get_state reports each owner's flag and each lane's owner.") + step,
+		objectSchema({{QStringLiteral("track"), stringProperty()}, {QStringLiteral("collapsed"), booleanProperty()}},
+			{QStringLiteral("track"), QStringLiteral("collapsed")}), true, setLanesCollapsed);
 }
 
 } // namespace lmms

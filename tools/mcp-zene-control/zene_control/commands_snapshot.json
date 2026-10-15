@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-15T08:30:27Z",
+  "captured_at": "2026-10-15T23:16:05Z",
   "commands": [
     {
       "args_schema": {
@@ -1138,6 +1138,32 @@
       "description": "A lane for one of a track's parameters (automation.get_state names them): an automation track placed right under the track, following it (its points move with the track's clips when arrangement.modes says so), with a clip across the song starting at the parameter's value. One undo step.",
       "group": "automation",
       "id": "automation.lane_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "collapsed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "collapsed"
+        ],
+        "type": "object"
+      },
+      "description": "Fold or unfold a track's child automation lanes in the arranger: with 'collapsed' true every lane following the track (an AutomationTrack whose followsTrack is this track) is hidden under its owner's row, exactly as a collapsed folder hides its children. A live Track checkpoint, so one control.undo takes the fold back off; automation.get_state reports each owner's flag and each lane's owner. One undo step.",
+      "group": "automation",
+      "id": "automation.lanes_set_collapsed",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -29420,6 +29446,11 @@
           "index": {
             "type": "integer"
           },
+          "lanes_removed": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
           "muted": {
             "type": "boolean"
           },
@@ -35147,17 +35178,23 @@
       }
     }
   ],
-  "count": 828,
+  "count": 829,
   "instance": {
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-022/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/cff463a0-1326-44da-8393-bec3a1847916/scratchpad/train5/commands-release.json"
+    "source_socket": "/tmp/zctl-run-z00fomm8/zene.sock",
+    "version": "0.4.0-alpha.2723+de5a85a"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 828,
-    "ids_sha256": "8e2d5b9a0774e7005e5832777c552b2d4f09efbc56e71322c5fd72e5f3385c6a"
+    "id_count": 829,
+    "ids_sha256": "8061696ae7c673c521ba4af9b94ee49a15c603e4b65344be2c2ff0de48e8e52c"
   }
 }

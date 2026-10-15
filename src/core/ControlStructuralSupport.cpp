@@ -64,6 +64,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -254,6 +255,79 @@ bool journalTrackRemoval(Track* track)
 			*id = -1;
 		},
 		xml.size());
+	return true;
+}
+
+namespace
+{
+
+//! One member of a deleted group: its container index, its stable id, and its own XML.
+struct GroupCapture
+{
+	int index;
+	int id;
+	QString xml;
+};
+
+//! Captures every member of \a group, or nothing: a member that cannot be captured
+//! refuses the whole inverse rather than recording a step that restores only part.
+bool captureGroup(Song* song, const std::vector<Track*>& group, std::vector<GroupCapture>* captures)
+{
+	for (Track* each : group)
+	{
+		const int index = trackIndexIn(song, each);
+		if (index < 0) { return false; }
+		const QString xml = captureTrack(each);
+		if (xml.isEmpty()) { return false; }
+		captures->push_back({index, each->id(), xml});
+	}
+	return true;
+}
+
+//! Undo: recreate every member, in list order, each at the index it came from.
+void restoreGroup(Song* song, const std::vector<GroupCapture>& captures)
+{
+	for (const GroupCapture& capture : captures)
+	{
+		if (Track* restored = restoreTrackFromXml(capture.xml, song))
+		{
+			moveTrackToIndex(restored, capture.index);
+		}
+	}
+}
+
+//! Redo: remove every member by stable id (a removed track and its recreate share one id).
+void removeGroup(const std::vector<GroupCapture>& captures)
+{
+	for (const GroupCapture& capture : captures)
+	{
+		if (Track* live = trackWithId(capture.id)) { removeTrack(live); }
+	}
+}
+
+} // namespace
+
+bool journalTrackRemovalWithLanes(Track* owner)
+{
+	Song* song = Engine::getSong();
+	if (song == nullptr || owner == nullptr) { return false; }
+
+	std::vector<Track*> group{owner};
+	for (Track* lane : owner->automationLaneChildren()) { group.push_back(lane); }
+	if (group.size() == 1) { return journalTrackRemoval(owner); }
+
+	std::vector<GroupCapture> captures;
+	if (!captureGroup(song, group, &captures)) { return false; }
+	// Ascending index: the undo recreates in list order, exactly as the loader rebuilds a song.
+	std::sort(captures.begin(), captures.end(),
+		[](const GroupCapture& a, const GroupCapture& b) { return a.index < b.index; });
+
+	int bytes = 0;
+	for (const GroupCapture& capture : captures) { bytes += capture.xml.size(); }
+	addStructuralUndoStep(
+		[song, captures]() { restoreGroup(song, captures); },
+		[captures]() { removeGroup(captures); },
+		bytes);
 	return true;
 }
 

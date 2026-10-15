@@ -31,10 +31,12 @@
 #include <QLayout>
 #include <QPointer>
 #include <QScrollBar>
+#include <QSet>
 #include <QWheelEvent>
 
 #include "TrackContainer.h"
 #include "AudioEngine.h"
+#include "AutomationTrack.h"
 #include "DataFile.h"
 #include "DpiHelper.h"
 #include "MainWindow.h"
@@ -312,14 +314,66 @@ static bool hiddenByFolder(const Track* track)
 	return false;
 }
 
+/*! 0.5.0 Q050-022: true when @a track is an automation lane that follows an
+ *  owner which is itself hidden or has its lanes folded away. The lane's own
+ *  visibility flag is not consulted: folding the OWNER hides its children, the
+ *  same way collapsing a folder hides its own - which is the whole promise of
+ *  rendering lanes as the owner's children (research R-workflow-197). A lane
+ *  whose owner is gone (an orphan) is NOT hidden here: there is no owner to
+ *  fold, so the row stays reachable so a person or an agent can remove it. */
+static bool hiddenUnderOwner(const Track* track)
+{
+	const auto* lane = dynamic_cast<const AutomationTrack*>(track);
+	if (lane == nullptr || lane->followsTrack() < 0) { return false; }
+	const TrackContainer* container = track->trackContainer();
+	const Track* owner = container != nullptr ? container->findTrackById(lane->followsTrack()) : nullptr;
+	if (owner == nullptr) { return false; }
+	return !owner->isVisible() || owner->automationLanesCollapsed() || hiddenByFolder(owner);
+}
+
+/*! The rows reordered so every owning track is IMMEDIATELY followed by its child
+ *  automation lanes - the arranger's "child" order - while every other row keeps
+ *  its relative order. The relation is derived from followsTrack(), so a
+ *  reordered owner's lanes come with it however the flat track list moved. */
+static QList<TrackView*> groupedWithLaneChildren(const QList<TrackView*>& views)
+{
+	QList<TrackView*> ordered;
+	QSet<TrackView*> placed;
+	for (TrackView* view : views)
+	{
+		if (placed.contains(view)) { continue; }
+		ordered.append(view);
+		placed.insert(view);
+		const Track* owner = view->getTrack();
+		if (owner == nullptr) { continue; }
+		for (TrackView* candidate : views)
+		{
+			if (placed.contains(candidate)) { continue; }
+			const auto* lane = dynamic_cast<const AutomationTrack*>(candidate->getTrack());
+			if (lane != nullptr && lane->followsTrack() == owner->id())
+			{
+				ordered.append(candidate);
+				placed.insert(candidate);
+			}
+		}
+	}
+	return ordered;
+}
+
 void TrackContainerView::realignTracks()
 {
+	// Children first: a lane row sits directly under its owner anyway, but a
+	// reorder (track.move, a drag) moves only the owner in the flat list, so the
+	// display order is derived here rather than left wherever the reorder landed.
+	m_trackViews = groupedWithLaneChildren(m_trackViews);
 	for (const auto& trackView : m_trackViews)
 	{
 		// A collapsed folder's children leave the list (M3: the folder's collapse flag had no
 		// affordance reading it); the folder's own row stays.
-		// Hidden by a visibility set (the track's own view flag) or by a collapsed folder.
-		trackView->setVisible(trackView->getTrack()->isVisible() && !hiddenByFolder(trackView->getTrack()));
+		// Hidden by a visibility set (the track's own view flag), by a collapsed folder, or by
+		// an owner whose automation lanes are folded away (Q050-022).
+		trackView->setVisible(trackView->getTrack()->isVisible() && !hiddenByFolder(trackView->getTrack())
+			&& !hiddenUnderOwner(trackView->getTrack()));
 		trackView->updateFolderIndent();
 		trackView->applySpacer();
 		trackView->update();
