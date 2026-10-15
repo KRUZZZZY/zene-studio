@@ -132,7 +132,7 @@ private:
 	void onSsdpReadyRead();
 	void onSearchTimeout();
 	void fetchDescription(const QUrl& location);
-	void onDescription(QNetworkReply* reply);
+	void onDescription(QNetworkReply* reply, const QUrl& location);
 	void addMapping(quint32 lease);
 	void onAdded(QNetworkReply* reply, quint32 lease);
 	void onExternalAddress(QNetworkReply* reply);
