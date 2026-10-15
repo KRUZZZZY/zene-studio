@@ -62,9 +62,9 @@ void cycleEntry(QMenu* menu, const QString& label, const QString& direction)
 	});
 }
 
-//! WF-074: arm (or disarm) every audio track - W1: ONE track.set_arm_many naming them all, so one undo step takes the arm
-//! back. A track already in that state is not a failure; the others' refusals are shown together, the last one's reason
-//! with them.
+//! WF-074: arm (or disarm) every audio track - W1: ONE track.set_arm_many naming them all. Undo refuses the arming (its take
+//! files outlive the captures), so disarming through this menu is the way back. A track already in that state is not a
+//! failure; the others' refusals are shown together, the last one's reason with them.
 void armAllEntry(QMenu* menu, const QString& label, bool armed)
 {
 	QAction* action = menu->addAction(label);
