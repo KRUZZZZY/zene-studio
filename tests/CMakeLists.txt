@@ -5659,10 +5659,16 @@ endif()
 # third-party compatibility (a Kontakt library is the external, unverified case) and must name the
 # Plug-in Modules list as the GUI location for per-file scan status and quarantine controls. The gate
 # reads the docs, the GUI code that defines that list and the committed command snapshot; file reads
-# only, so it needs no binary.
+# only, so it needs no binary. It scopes each advertised Linux format to the README plug-in-formats
+# paragraph and the KNOWN-LIMITATIONS Linux section (not a document-wide substring) and checks that
+# the mapped loader source registers the format. PluginFormatsDocsGateSelfTest is the gate's own
+# red/green control: a format dropped from a scoped list, other mentions intact, must fail the gate.
 if(PYTHON3_EXECUTABLE)
 	add_test(NAME PluginFormatsDocsGate
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/plugin-formats-docs-gate.py)
+	add_test(NAME PluginFormatsDocsGateSelfTest
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/plugin-formats-docs-gate.py
+			--self-test)
 endif()
 
 # 0.5.0 F1 (MX-040/041/036/061): hardware outputs, interface channels, cue mixes and the hardware
