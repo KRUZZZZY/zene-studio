@@ -63,6 +63,24 @@ static FILE *open_stats(const char *path)
 	return fs;
 }
 
+/* Writes the `count` samples at `samples` to `path`. A short write, a stream error, or a failed
+ * close is a failure: buffered data may reach the file only at close, so checking fwrite alone
+ * can report success for output that was never stored. */
+static int write_output(const char *path, const float *samples, size_t count)
+{
+	FILE *fo = fopen(path, "wb");
+	if (!fo) { perror("out"); return 2; }
+	const size_t written = fwrite(samples, sizeof(float), count, fo);
+	int write_failed = written != count || ferror(fo);
+	if (fclose(fo) != 0) { write_failed = 1; }
+	if (write_failed)
+	{
+		fprintf(stderr, "output write failed\n");
+		return 2;
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	const float scale = argc < 4 ? 0.0f : parse_scale(argv[3]);
@@ -102,10 +120,7 @@ int main(int argc, char **argv)
 	if (fs) fclose(fs);
 	rnnoise_destroy(st);
 
-	FILE *fo = fopen(argv[2], "wb");
-	if (!fo) { perror("out"); return 2; }
-	fwrite(out, sizeof(float), (size_t)n, fo);
-	fclose(fo);
+	if (write_output(argv[2], out, (size_t)n) != 0) { return 2; }
 
 	printf("frames=%d mean_vad_prob=%.4f\n", nf, vsum / (nf ? nf : 1));
 	free(in);
