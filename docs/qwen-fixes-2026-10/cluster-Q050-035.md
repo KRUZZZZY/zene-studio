@@ -2,27 +2,27 @@ IMPLEMENTED
 
 # Cluster Q050-035 — Correct stem separation availability docs
 
-Docs-only unit (R-platform-26, area L05). The docs claimed offline HTDemucs stem separation was
-"compiled out of these builds" and reported `WANT_STEM_SPLIT='OFF'`, while owner decision 14 had made
-the option default ON and the release-honesty manifest require ON. Corrected the current-facing docs to
-say the feature is built in, local and on by default, and added a hermetic docs-truth gate.
+Docs unit (R-platform-26, area L05) that grew, on review, into the "both surfaces, one command, one
+undo step" work the feature bar requires. The docs claimed offline HTDemucs stem separation was
+"compiled out of these builds" and reported `WANT_STEM_SPLIT='OFF'`, while owner decision 14 had made the
+option default ON and the release-honesty manifest require ON. Corrected the current-facing docs to say
+the feature is built in, local and on by default, added a hermetic docs-truth gate, and made the GUI's
+"Split to stems" action drive the same registered `stem.*` commands the agent surface uses, with the four
+tracks as ONE undo step.
 
-Round-2 rework (review `Q050-035.r1.code.md`): rewrote `docs/FEATURE-LIST-0.3.0.md` row 26 so its status
-is **in the tree** (the stale audit status no longer sits in the row with a contradicting correction),
-extended the gate to verify that row and the corrected inline comments, fixed the four active
-opt-in/OFF comments (`include/ControlRegistryGroups.h`, `src/core/ControlRegistryRegistrations.cpp`,
-`src/core/CMakeLists.txt`, `src/gui/CMakeLists.txt`) plus the `tests/CMakeLists.txt` test comment, and
-declared the inherited-file changes in `tests/upstream-modifications.txt`. The gate went from 10 to
-**21 checks**.
+Round-2 rework (`Q050-035.r1.code.md`): rewrote `docs/FEATURE-LIST-0.3.0.md` row 26, extended the gate,
+fixed four active opt-in/OFF comments plus the `tests/CMakeLists.txt` comment, declared the inherited
+changes. Round-3 rework (`Q050-035.r2.code.md`): Table B row 1 (drivable / superseded) and Reconciliation
+5 (only `lufs`/`scan` still absent). Gate 21 → 29 checks.
 
-Round-3 rework (review `Q050-035.r2.code.md`): the feature list still carried two stale stem statements
-outside the gate's scope. Table B row 1 (`docs/FEATURE-LIST-0.3.0.md:400`, "In the tree but not drivable")
-said there was no `stem.*` group and the CLI was the only route; it now reports the feature as
-**drivable** through the seven-id `stem.*` group and labels the audit-era entry **superseded**
-(corrected 2026-10-15, Q050-035). Reconciliation 5 (`:476`) still said "the remaining six prefixes still
-return nothing"; re-measured on the release tree on 2026-10-15 it now names only `lufs` and `scan` as
-still absent and accounts for the `stem`/`mastering` (and `record`/`freeze`/`vca`/`meter`) groups. The
-gate was extended to check both claims, **21 → 29 checks**.
+Round-4 rework (`Q050-035.r3.feature.md`, verdict REWORK): (1) the default-OFF block comment in
+`src/core/ControlCommandsStems.cpp` and the header of `include/ControlStemSupport.h` are corrected and the
+gate now catches them; (2) `docs/KNOWN-LIMITATIONS.md` describes the **44.1 kHz output with other input
+rates resampled** (the "44100 Hz only" claim was wrong — 0.5.0 E27 added resampling); (3) the GUI's split
+action routes through the registered `stem.job_start`/`stem.job_status`/`stem.job_cancel` and the new
+`stem.tracks_create`; (4) all four tracks are ONE undo step; (5) a QtTest and the socket transcript prove
+both the shared command path and the single undo step. Gate 29 → 48 checks; snapshot 828 → 829 ids;
+A16 histogram +1 `true_inverse` row.
 
 ## Acceptance table
 
@@ -31,54 +31,70 @@ gate was extended to check both claims, **21 → 29 checks**.
 | Verify the default `WANT_STEM_SPLIT` configuration | `grep -n WANT_STEM_SPLIT CMakeLists.txt` | `130:OPTION(WANT_STEM_SPLIT "..." ON)` — default ON; **EXIT=0** |
 | Verify the supported build reports it ON | `./build/zene --version` | `WANT_STEM_SPLIT='ON'`, `WANT_WASM='OFF'`, `LMMS_HAVE_ONNXRUNTIME='1'`; **EXIT=0** |
 | Release-honesty text matches the build | `bash tests/release-honesty-gate.sh --header build/lmmsversion.h` | `[PASS] stem-separation ON matches ON`; `RESULT: PASS — all 5 documented feature(s) match this build on linux`; **EXIT=0** |
-| Docs describe local/offline processing; no stale "compiled out"/"OFF by default" claim | `ctest -R '^(StemAvailabilityDocsGate\|StemSplitPipelineTest)$' --output-on-failure` (from `build/tests`) | `100% tests passed out of 2`; `StemAvailabilityDocsGate ... Passed`, `StemSplitPipelineTest ... Passed`; **EXIT=0** |
-| Same, direct script run | `python3 tests/stem-availability-docs-gate.py` | all **29 checks PASS**, `RESULT: PASS`; **EXIT=0** |
-| Gate is not tautological (red proof, Known Limitations hunk) | appended `WANT_STEM_SPLIT='OFF'` to `docs/KNOWN-LIMITATIONS.md`, ran the gate | **EXIT=1**; restored file → **EXIT=0** |
-| Gate is not tautological (red proof, feature-list row + inline comment) | reverted row 26 and the `ControlRegistryGroups.h` comment in a throwaway root, ran the gate with `--root` | `RESULT: FAIL - 4 ... stale`; **EXIT=1**; throwaway root removed |
-| Gate is not tautological (round 3, red proof: reverse the revised documentation hunks) | restored the committed (pre-fix) `docs/FEATURE-LIST-0.3.0.md`, ran the gate | `RESULT: FAIL - 6 stem-availability doc claim(s) are stale`; **EXIT=1**; corrected file put back → **EXIT=0** |
+| Docs describe local/offline processing; no stale "compiled out"/"OFF by default"/"44100 Hz only" claim | `python3 tests/stem-availability-docs-gate.py` | all **48 checks PASS**, `RESULT: PASS`; **EXIT=0** |
+| Same, through ctest | `ctest -R '^(StemAvailabilityDocsGate\|StemSplitPipelineTest\|ControlStemCommands\|ReversibilityContractTest\|ControlCommandsSnapshot\|DocFiguresGate)$' --output-on-failure` (from `build/tests`) | `100% tests passed out of 6`; **EXIT=0** |
+| Build the changed C++ | `cmake --build build --target zene StemSplitPipelineTest -- -j4` | **EXIT=0** |
+| GUI and agent share the registered command; four tracks are ONE undo step | `StemSplitPipelineTest::testGuiSplitSharesTheRegisteredCommandAndIsOneUndoStep` + socket transcript `ControlStemCommands` | QtTest `Totals: 0 failed`; transcript `stem.tracks_create materialises the four stems as four tracks`, `stem.tracks_create records exactly one project transaction`, `ONE control.undo removes all four stem tracks together` — **58 checks OK**; **EXIT=0** |
+| Agent surface does not regress | `ctest -R '^agent_surface$' --output-on-failure` | `agent_surface ... Passed`; **EXIT=0** |
+| Gate is not tautological (new round-4 check) | injected `THE FEATURE IS OFF IN THE DEFAULT RELEASE CONFIGURATION` into the `ControlCommandsStems.cpp` block comment, ran the gate | **EXIT=1** (1 FAIL); restored file → **EXIT=0** (`29-redproof-comment.log`, `30-restored-comment.log`) |
+| Ratio gates are pre-existing red only | `bash tests/complexity-gate.sh --check` / `bash tests/file-length-gate.sh --check` and the same in `../zene-cachyos` | both **EXIT=1**; the `REGRESSION` line sets diff **empty** against `zene-cachyos`; no file of mine newly listed |
 
-The gate asserts: `CMakeLists.txt` declares `WANT_STEM_SPLIT` default ON; the `stem-separation` row of
-`tests/advertised-features.tsv` requires the same value and claims presence; `README.md` says "in the
-build by default"; `docs/KNOWN-LIMITATIONS.md` says "built in and on by default" and "local and offline"
-and contains neither `WANT_STEM_SPLIT='OFF'` nor "Two features are compiled out of these builds";
+The gate asserts: `CMakeLists.txt` declares `WANT_STEM_SPLIT` default ON; `tests/advertised-features.tsv`'s
+`stem-separation` row requires ON and claims presence; `README.md` says "in the build by default";
+`docs/KNOWN-LIMITATIONS.md` says "built in and on by default", "local and offline", "resampled to it
+offline", names `stem.tracks_create` and "ONE undo step", and carries none of `WANT_STEM_SPLIT='OFF'`,
+"Two features are compiled out of these builds", "44100 Hz only", "there is no resampler";
 `docs/RELEASE-NOTES-v0.3.0-alpha.md` no longer says "The feature is OFF in the default release
-configuration"; the `tests/CMakeLists.txt` stem registration comment no longer says OFF by default;
-`docs/FEATURE-LIST-0.3.0.md` row 26 is **in the tree**, names the seven `stem.*` ids, says "local and
-offline", and carries neither the stale `WANT_STEM_SPLIT OFF` nor "no `stem.*` group" text; and the
-active inline comments in `include/ControlRegistryGroups.h`, `src/core/ControlRegistryRegistrations.cpp`,
-`src/core/CMakeLists.txt`, `src/gui/CMakeLists.txt` and `tests/CMakeLists.txt` no longer call the
-feature opt-in/OFF. Round 3 adds: `docs/FEATURE-LIST-0.3.0.md` Table B row 1 no longer says there is no
-`stem.*` group, labels the audit-era absence **superseded** and names the seven `stem.*` ids; and
-Reconciliation 5 no longer says "the remaining six prefixes still return nothing", names `lufs`/`scan` as
-the still-absent prefixes and accounts for the `stem`/`mastering` groups.
+configuration"; `tests/CMakeLists.txt`'s stem registration comment no longer says OFF; the active inline
+comments in `ControlRegistryGroups.h`, `ControlRegistryRegistrations.cpp`, `src/core/CMakeLists.txt`,
+`src/gui/CMakeLists.txt`, `tests/CMakeLists.txt`, `src/core/ControlCommandsStems.cpp`,
+`include/ControlStemSupport.h` and `include/StemSeparation/StemTypes.h` no longer call the feature
+opt-in/OFF or claim resampling is unimplemented; `docs/FEATURE-LIST-0.3.0.md` row 26 is **in the tree**,
+names the eight `stem.*` ids (including `stem.tracks_create`) and "local and offline"; Table B row 1 is
+**drivable**/**superseded** and names `stem.tracks_create`; Reconciliation 5 names `lufs`/`scan` and
+accounts for `stem`/`mastering`; and `src/gui/StemSplitController.cpp` invokes
+`stem.job_start`/`stem.job_status`/`stem.job_cancel`/`stem.tracks_create`.
 
 ## Files changed
 
-- `docs/KNOWN-LIMITATIONS.md` — the stale "Two features are compiled out" bullet (now one feature, WASM)
-  and the `stem.*` section heading/lead.
-- `docs/RELEASE-NOTES-v0.3.0-alpha.md` — the "OFF in the default release configuration" bullet.
-- `docs/STATUS.md` — the "defaults OFF, absent from every release build" line.
-- `docs/FEATURE-LIST-0.3.0.md` — row 26 is rewritten: status **in the tree**, the seven `stem.*` ids,
-  and the local/offline statement, replacing the stale "no `stem.*` group … `WANT_STEM_SPLIT OFF`";
-  round 3 also updates Table B row 1 (drivable / superseded) and Reconciliation 5 (only `lufs`/`scan`
-  still absent).
-- `include/ControlRegistryGroups.h` — the `registerStemCommands` comment (was "opt-in … defaults to OFF").
-- `src/core/ControlRegistryRegistrations.cpp` — the call-site comment (was "WANT_STEM_SPLIT=OFF").
-- `src/core/CMakeLists.txt`, `src/gui/CMakeLists.txt` — the stem source-list comments (were "opt-in").
-- `tests/CMakeLists.txt` — stale registration/test comment + `StemAvailabilityDocsGate` ctest.
-- `tests/stem-availability-docs-gate.py` — the hermetic docs-truth gate, now 29 checks.
-- `tests/fork-sources.txt` — registers the new gate script (fork-NEW).
-- `tests/upstream-modifications.txt` — declares the four inherited files changed above.
-- `docs/050-features/Q050-035.md`, `docs/qwen-fixes-2026-10/cluster-Q050-035.md` — these reports.
+- `docs/KNOWN-LIMITATIONS.md` — the "compiled out" bullet (now one feature, WASM), the `stem.*` section
+  lead and the corrected 44.1 kHz-output / resampling bullet; names `stem.tracks_create` and the one undo
+  step.
+- `docs/RELEASE-NOTES-v0.3.0-alpha.md` — the "OFF in the default release configuration" bullet; the
+  A16-HISTOGRAM block (`838 rows … 418 true_inverse`; `stem.get_state rows=8 true_inverse=1`).
+- `docs/STATUS.md`, `docs/FEATURE-LIST-0.3.0.md` — the availability lines; row 26 (eight ids), Table B
+  row 1 and Reconciliation 5.
+- `README.md` — canary `828 → 829 ids / 76 groups`.
+- `include/ControlRegistryGroups.h`, `src/core/ControlRegistryRegistrations.cpp`, `src/core/CMakeLists.txt`,
+  `src/gui/CMakeLists.txt`, `tests/CMakeLists.txt` — the stem comments (were opt-in/OFF).
+- `src/core/ControlCommandsStems.cpp` — the default-OFF block comment corrected; the new
+  `stem.tracks_create` command (one undo step, `mutating`).
+- `include/ControlStemSupport.h`, `src/core/ControlStemSupport.cpp` — the header's default-OFF /
+  "resampling is not implemented" claims corrected; `stemTakeResult` exposes a completed job's buffers.
+- `include/StemSeparation/StemTypes.h` — the model-rate comment now says inputs are resampled.
+- `include/ControlReversibility.h`, `src/core/ControlReversibilityTableStems.cpp` — the `stem.*` A16 rows
+  (seven `not_mutating` + one `true_inverse`).
+- `src/gui/StemSplitController.cpp`, `include/StemSplitController.h` — the controller is now a client of
+  `ControlRegistry` (no private `StemJobManager`); a temp WAV carries in-memory clips through
+  `stem.job_start`.
+- `tests/stem-availability-docs-gate.py` — the docs-truth gate, now 48 checks.
+- `tests/src/core/StemSplitPipelineTest.cpp` — `ControlRegistry::setReady(true)` and the shared-command /
+  single-undo-step case.
+- `tests/control-stem-commands.py`, `tests/stem_commands_lib.py` — the transcript's `stem.tracks_create`
+  checks.
+- `tools/mcp-zene-control/zene_control/commands_snapshot.json` — regenerated from a live no-`wasm`
+  instance (829 ids / 76 groups).
+- `tests/upstream-modifications.txt` — the `StemSplitPipelineTest.cpp` reason extended for this change.
 
-New commands: none. Reversibility: unchanged. Project format: unchanged.
+New command: `stem.tracks_create` (`stem.*`), reversibility **`true_inverse`** (recorded action; ONE undo
+removes the four tracks). Project format: unchanged.
 
 ## Gates
 
 | Gate | EXIT |
 | --- | ---: |
-| `bash tests/complexity-gate.sh --check` | 1 (pre-existing train-5 red; no file of mine newly listed) |
-| `bash tests/file-length-gate.sh --check` | 1 (pre-existing train-5 red; no file of mine newly listed) |
+| `bash tests/complexity-gate.sh --check` | 1 (pre-existing train-5 red; `REGRESSION` diff vs `zene-cachyos` empty) |
+| `bash tests/file-length-gate.sh --check` | 1 (pre-existing train-5 red; `REGRESSION` diff vs `zene-cachyos` empty) |
 | `bash tests/fork-sources-gate.sh` | 0 |
 | `bash tests/all-sources-reproduce.sh` | 0 |
 | `bash tests/no-upstream-regression-gate.sh` | 0 |
@@ -86,6 +102,7 @@ New commands: none. Reversibility: unchanged. Project format: unchanged.
 | `bash tests/no-tautology-gate.sh` | 0 |
 | `python3 tests/doc-figures-gate.py` | 0 |
 | `bash tests/release-honesty-gate.sh --header build/lmmsversion.h` | 0 |
-| `ctest -R '^StemAvailabilityDocsGate$'` (from `build/tests`) | 0 |
+| `ctest -R '^(StemSplitPipelineTest\|ControlStemCommands\|StemAvailabilityDocsGate\|ReversibilityContractTest\|ControlRegistryTest\|ScriptCommandBridgeTest\|ControlCommandsSnapshot\|DocFiguresGate)$'` | 0 (8/8) |
+| `ctest -R '^agent_surface$'` | 0 |
 
-Logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-035.r3/logs/`.
+Logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-035.r4/logs/`.

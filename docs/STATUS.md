@@ -250,7 +250,7 @@ not rounded up.
 - **Offline HTDemucs stem separation** — at `5565b4b1b` the option defaulted **OFF** (`CMakeLists.txt:120`) and
   was absent from every release build. **Superseded at this tip (owner decision 14, 2026-09-29; corrected
   2026-10-15, Q050-035):** `WANT_STEM_SPLIT` now **defaults ON** (`CMakeLists.txt:130`) and the
-  `stem-separation` row of `tests/advertised-features.tsv` requires it, so the engine and the seven `stem.*`
+  `stem-separation` row of `tests/advertised-features.tsv` requires it, so the engine and the eight `stem.*`
   ids are in the default build. It is **local and offline** (nothing is uploaded; the pinned model is fetched
   on first use unless `LMMS_STEM_OFFLINE` is set). This is still **not** the `HAVE` stem *export* above.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON but **degrades to OFF** when the wasmtime C API is absent

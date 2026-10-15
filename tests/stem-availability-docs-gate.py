@@ -16,23 +16,30 @@ WHAT IT CHECKS (all file reads, no network, no instance):
      single list `tests/release-honesty-gate.sh` reads, so this ties the doc claim to the build claim.
   3. `README.md` describes the feature as "in the build by default", not as absent.
   4. `docs/KNOWN-LIMITATIONS.md` states the feature is built in and on by default, says the processing
-     is **local and offline**, and does NOT carry the known stale strings (`WANT_STEM_SPLIT='OFF'`,
+     is **local and offline**, describes the 44.1 kHz **output** with other input rates resampled (no
+     stale "44100 Hz only" / "there is no resampler"), names `stem.tracks_create` as the four-track verb
+     whose tracks are ONE undo step, and does NOT carry the known stale strings (`WANT_STEM_SPLIT='OFF'`,
      "Two features are compiled out of these builds").
   5. `docs/RELEASE-NOTES-v0.3.0-alpha.md` no longer says the feature is OFF in the default release
      configuration.
   6. `tests/CMakeLists.txt`'s registration comment no longer says the feature is OFF by default.
   7. `docs/FEATURE-LIST-0.3.0.md` row 26 is rewritten, not left with the stale audit status ("no
      `stem.*` group", `WANT_STEM_SPLIT OFF`) plus a contradicting correction: it is **in the tree**,
-     names the seven `stem.*` ids and calls the processing **local and offline**.
+     names the eight `stem.*` ids and calls the processing **local and offline**.
   8. The active inline comments in `include/ControlRegistryGroups.h`,
      `src/core/ControlRegistryRegistrations.cpp`, `src/core/CMakeLists.txt`,
-     `src/gui/CMakeLists.txt` and `tests/CMakeLists.txt` no longer call the feature opt-in or OFF.
+     `src/gui/CMakeLists.txt`, `tests/CMakeLists.txt`, `src/core/ControlCommandsStems.cpp`,
+     `include/ControlStemSupport.h` and `include/StemSeparation/StemTypes.h` no longer call the feature
+     opt-in/OFF, and the two headers no longer claim resampling is unimplemented.
   9. `docs/FEATURE-LIST-0.3.0.md` Table B row 1 ("In the tree but not drivable") no longer says stem
-     separation has no `stem.*` group; the audit-era absence is labelled **superseded** and the seven
-     `stem.*` ids that made it drivable are named (so row 26 and Table B agree).
+     separation has no `stem.*` group; the audit-era absence is labelled **superseded** and the `stem.*`
+     ids that made it drivable are named (so row 26 and Table B agree).
  10. `docs/FEATURE-LIST-0.3.0.md` Reconciliation 5 no longer claims "the remaining six prefixes still
      return nothing": it accounts for the `stem.*` and `mastering.*` groups and names only `lufs.`
      and `scan.` as the prefixes still absent.
+ 11. The GUI's split action (src/gui/StemSplitController.cpp) drives the SAME registered commands the
+     agent surface uses (`stem.job_start`, `stem.job_status`, `stem.job_cancel`, `stem.tracks_create`),
+     and `stem.tracks_create` is a registered mutating command.
 
 Usage:  python3 tests/stem-availability-docs-gate.py [--root DIR]
 Exit:   0 every check holds; 1 a mismatch; 2 usage/setup error.
@@ -90,7 +97,7 @@ def check_readme(read, path, check):
 
 
 def check_known_limitations(read, path, check):
-    """(4) KNOWN-LIMITATIONS.md: correct, local/offline, no stale strings."""
+    """(4) KNOWN-LIMITATIONS.md: correct, local/offline, resampling accurate, no stale strings."""
     kl = read(path("docs/KNOWN-LIMITATIONS.md"))
     check("built in and on by default" in kl,
           "docs/KNOWN-LIMITATIONS.md: states stem separation is built in and on by default")
@@ -100,6 +107,17 @@ def check_known_limitations(read, path, check):
           "docs/KNOWN-LIMITATIONS.md: no stale WANT_STEM_SPLIT='OFF' claim")
     check("Two features are compiled out of these builds" not in kl,
           "docs/KNOWN-LIMITATIONS.md: no stale 'compiled out' claim for stem separation")
+    # The rate limit is an OUTPUT rate, not an input one: other input rates are resampled.
+    check("44100 Hz only" not in kl,
+          "docs/KNOWN-LIMITATIONS.md: no stale '44100 Hz only' input claim")
+    check("there is no resampler" not in kl,
+          "docs/KNOWN-LIMITATIONS.md: no stale 'there is no resampler' claim")
+    check("resampled to it offline" in kl,
+          "docs/KNOWN-LIMITATIONS.md: states other input rates are resampled offline")
+    check("stem.tracks_create" in kl,
+          "docs/KNOWN-LIMITATIONS.md: names stem.tracks_create as the four-track verb")
+    check("ONE undo step" in kl or "one undo step" in kl,
+          "docs/KNOWN-LIMITATIONS.md: states the four tracks are one undo step")
 
 
 def check_release_notes(read, path, check):
@@ -131,7 +149,9 @@ def check_feature_list(read, path, check):
     check("no `stem.*` group" not in frow,
           "docs/FEATURE-LIST-0.3.0.md row 26: no stale 'no stem.* group' claim")
     check("stem.get_state" in frow,
-          "docs/FEATURE-LIST-0.3.0.md row 26: names the seven stem.* ids")
+          "docs/FEATURE-LIST-0.3.0.md row 26: names the eight stem.* ids")
+    check("stem.tracks_create" in frow,
+          "docs/FEATURE-LIST-0.3.0.md row 26: names stem.tracks_create")
     check("**in the tree**" in frow,
           "docs/FEATURE-LIST-0.3.0.md row 26: status is in the tree")
     check("local and offline" in frow,
@@ -152,6 +172,37 @@ def check_inline_comments(read, path, check):
           "src/gui/CMakeLists.txt: stem GUI comment no longer says opt-in")
     check("Offline stem separation tests (opt-in" not in read(path("tests/CMakeLists.txt")),
           "tests/CMakeLists.txt: stem tests comment no longer says opt-in")
+    # The `stem.*` group's own source comments (round-4 review): the block comment in
+    # ControlCommandsStems.cpp still claimed the feature was OFF by default, and
+    # ControlStemSupport.h's header did too.
+    commands = read(path("src/core/ControlCommandsStems.cpp"))
+    check("THE FEATURE IS OFF IN THE DEFAULT RELEASE CONFIGURATION" not in commands,
+          "src/core/ControlCommandsStems.cpp: no stale 'feature is OFF in the default' comment")
+    check("defaults to OFF" not in commands,
+          "src/core/ControlCommandsStems.cpp: no stale 'defaults to OFF' comment")
+    check("THE FEATURE IS OFF IN THE RELEASE CONFIGURATION" not in
+          read(path("include/ControlStemSupport.h")),
+          "include/ControlStemSupport.h: no stale 'feature is OFF in the release' comment")
+    check("resampling is not implemented" not in read(path("include/ControlStemSupport.h")),
+          "include/ControlStemSupport.h: no stale 'resampling is not implemented' claim")
+    check("Inputs at other rates are rejected" not in
+          read(path("include/StemSeparation/StemTypes.h")),
+          "include/StemSeparation/StemTypes.h: no stale 'inputs at other rates are rejected' claim")
+
+
+def check_shared_command(read, path, check):
+    """(11) The GUI's split action goes through the SAME registered commands the agent surface uses."""
+    gui = read(path("src/gui/StemSplitController.cpp"))
+    check("ControlRegistry::instance()" in gui,
+          "src/gui/StemSplitController.cpp: the GUI drives commands through ControlRegistry")
+    for command in ("stem.job_start", "stem.job_status", "stem.job_cancel", "stem.tracks_create"):
+        check(command in gui,
+              "src/gui/StemSplitController.cpp: the GUI invokes %s" % command)
+    commands = read(path("src/core/ControlCommandsStems.cpp"))
+    check("stem.tracks_create" in commands,
+          "src/core/ControlCommandsStems.cpp: stem.tracks_create is registered")
+    check("cmd.mutating = true" in commands,
+          "src/core/ControlCommandsStems.cpp: stem.tracks_create declares itself mutating")
 
 
 def check_table_b_row(read, path, check):
@@ -169,7 +220,9 @@ def check_table_b_row(read, path, check):
     check("superseded" in row,
           "docs/FEATURE-LIST-0.3.0.md Table B row 1: labels the audit-era absence as superseded")
     check("stem.job_start" in row,
-          "docs/FEATURE-LIST-0.3.0.md Table B row 1: names the seven stem.* ids that made it drivable")
+          "docs/FEATURE-LIST-0.3.0.md Table B row 1: names the stem.* ids that made it drivable")
+    check("stem.tracks_create" in row,
+          "docs/FEATURE-LIST-0.3.0.md Table B row 1: names stem.tracks_create")
 
 
 def check_reconciliation(read, path, check):
@@ -225,6 +278,7 @@ def main():
     check_tests_comment(read, path, check)
     check_feature_list(read, path, check)
     check_inline_comments(read, path, check)
+    check_shared_command(read, path, check)
     check_table_b_row(read, path, check)
     check_reconciliation(read, path, check)
 

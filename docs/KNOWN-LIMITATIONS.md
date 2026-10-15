@@ -425,8 +425,8 @@ that is this page's fault — report it and it gets added.
   access is the one-time fetch of the pinned ~166 MB model on first use, which `LMMS_STEM_OFFLINE` (or an
   explicit `LMMS_STEM_MODEL` path) turns off. Text on this page and in the 0.3.0 release notes used to say
   stem separation was compiled out and reported `OFF`; that described the pre-owner-decision-14 configuration
-  and is **not** true of the default build. The detailed limits of the feature (44100 Hz only, offline job
-  only, socket-only UI) are in the `stem.*` section below, not here.
+  and is **not** true of the default build. The detailed limits of the feature (44.1 kHz OUTPUT, the
+  offline job, socket-only UI) are in the `stem.*` section below, not here.
   **What enforces "everything the release notes document as present is in this build"
   is `tests/release-honesty-gate.sh`, and on this configuration it passes every row.** The guard's
   mechanism is the checkable half: it fails a documented-present feature when the build under test does not
@@ -1458,19 +1458,21 @@ line each, because the scope contract asks for one each:
 ## Offline stem separation (`stem.*`, feature row 26) — built in, local, socket-only, and it needs the model
 
 The engine (HTDemucs over ONNX Runtime, one job at a time) was already in the tree with five registered
-tests; what was missing was any way to drive it. Seven ids now do — `stem.get_state`, `stem.job_start`,
-`stem.job_status`, `stem.job_result`, `stem.job_cancel`, `stem.model_get_state`, `stem.model_download` —
-and this is the honest half. **It is local and offline: the separation runs on this machine and nothing is
-uploaded.** The only network access is the one-time model fetch described below; with the model already in
-the model store — or with `LMMS_STEM_OFFLINE` / an explicit `LMMS_STEM_MODEL` path — the feature works with
-no network at all.
+tests; what was missing was any way to drive it. Eight ids now do — `stem.get_state`, `stem.job_start`,
+`stem.job_status`, `stem.job_result`, `stem.job_cancel`, `stem.model_get_state`, `stem.model_download` and
+`stem.tracks_create` — and this is the honest half. **It is local and offline: the separation runs on this
+machine and nothing is uploaded.** The only network access is the one-time model fetch described below; with
+the model already in the model store — or with `LMMS_STEM_OFFLINE` / an explicit `LMMS_STEM_MODEL` path — the
+feature works with no network at all.
 
-- **UI absence — one line: the whole `stem.*` group is drivable through the socket, not from the
-  interface.** The only user-visible gesture that reaches this engine is the sample clip's **"Split to
-  stems"** context action, a *different, pre-existing* path (`src/gui/clips/SampleClipView.cpp:124` →
-  `StemSplitController::splitClipToStems`): it takes its mix from the clip a human selected and exists
-  only when a display does. Nothing in the interface shows an agent's job, its progress or its error,
-  nothing lists or fetches models, and no menu item, toolbar button or keybinding reaches a `stem.*` id.
+- **The UI and the agent surface are the SAME registered commands.** The sample clip's **"Split to
+  stems"** context action (`src/gui/clips/SampleClipView.cpp` → `StemSplitController::splitClipToStems`)
+  now starts its job through `stem.job_start`, polls `stem.job_status`, cancels through `stem.job_cancel`
+  and materialises the four tracks through `stem.tracks_create` — the identical `ControlRegistry`
+  commands an agent calls (a click and a command take one path, the whole point of SPEC A11). The action
+  still exists only when a display does, and what remains absent from the interface is narrower: nothing
+  shows an *agent's* job, its progress or its error, nothing lists or fetches models, and no menu item,
+  toolbar button or keybinding reaches a `stem.*` id — the only route is the clip context menu.
 - **The feature is ON by default since owner decision 14.** `WANT_STEM_SPLIT` defaults to ON. A
   build configured with it OFF compiles none of this engine and registers none of these ids. The A16
   rows are guarded by the same macro, so the contract table and the registry cannot disagree. Without
@@ -1487,17 +1489,27 @@ no network at all.
   7.8 s segment (343980 frames at 44100 Hz) as context, so no chunk size fits an audio buffer: this is an
   **offline job only**. `stem.get_state` reports `realtime: false` and the lookahead; the group offers no
   monitoring, no streaming and no realtime variant.
-- **44100 Hz only.** The input must already be at the model's own rate — there is no resampler
-  (SPEC-stem-split.md OQ-1) — and the refusal names the rate it got. A file `render.render` wrote is
-  already in that format, which is why "bounce the session, then split the bounce" is the composable flow.
-- **The source is a file, not a clip or a bus.** The socket has no way to hand the engine a clip's audio
-  buffer; `stem.job_start` names an absolute path, and the mix is decoded from it.
-- **`stem.job_result` writes files, not tracks.** It produces `<stem>.wav` (drums, bass, other, vocals)
-  as float32 RIFF/WAVE with a sha256 per file, and it does **not** materialise `SampleTrack`s: the GUI's
-  `StemTrackBuilder` gesture is not reachable from the socket in 0.3.0.
+- **44.1 kHz output; other input rates are resampled.** The stems always come back at the model's
+  own 44.1 kHz, but a source at another rate (48 kHz, 96 kHz, ...) is **resampled to it offline**
+  before separation (the engine's best sinc converter, 0.5.0 E27) instead of being refused — the
+  rejection-by-rate behaviour SPEC-stem-split.md OQ-1 left open was closed in 0.5.0. The job reports
+  the model's `sample_rate`, so a caller sees 44100 regardless of its source's rate. A file
+  `render.render` wrote is already in that format, which is why "bounce the session, then split the
+  bounce" is the direct flow (a resample is then a no-op).
+- **The source the socket names is a file.** `stem.job_start` names an absolute path and the mix is
+  decoded from it; the socket has no way to hand the engine a live clip or a bus. The GUI action spans the
+  gap for in-memory clips (recorded, pasted, generated) by writing the clip's own audio to a temporary WAV
+  and passing that path to the same command, so an unsaved clip still splits.
+- **`stem.job_result` writes files; `stem.tracks_create` builds tracks.** `stem.job_result` produces
+  `<stem>.wav` (drums, bass, other, vocals) as float32 RIFF/WAVE with a sha256 per file and touches no
+  project state. `stem.tracks_create` takes a completed job's four stems and adds them to the song as four
+  `SampleTrack`s (one clip each, at the caller's position) — the user-facing result, and the same command
+  the GUI's "Split to stems" action runs. It is the group's one editing verb and is ONE undo step: a single
+  `control.undo` (or Ctrl+Z) removes all four tracks together.
 - **Jobs are not project state.** They live in the instance's memory: a reload or a restart loses the id,
-  its progress and its stems, and `control.transactions` shows no record because the whole group is
-  `not_mutating` — a job is not a document and a written stem is an output.
+  its progress and its stems. The job, model and write verbs are `not_mutating` and leave no transaction;
+  the one editing verb, `stem.tracks_create`, records a `true_inverse` transaction whose inverse removes
+  all four tracks — a job itself is still not a document, and a written stem is an output.
 - **`stem.model_download` carries a DECLARED BOUND.** A performing transfer (an explicitly pinned spec)
   runs on the control surface's own thread, so the surface does not answer — `control.ping` included —
   until it finishes or fails. This is the **same** defect `docs/RENDER-CHILD-WAIT.md:120-126` records for
