@@ -96,6 +96,11 @@ public:
 	{
 		return m_capacityDeferredPlayHandleEditCountTotal.load(std::memory_order_relaxed);
 	}
+	//! How many times a producer drained the edit queue itself (nothing was consuming it). Zero while a render drains.
+	std::uint64_t producerDrainedPlayHandleEdits() const noexcept
+	{
+		return m_producerDrainedPlayHandleEdits.load(std::memory_order_relaxed);
+	}
 
 	//! @returns a span over the mixed buffer of this audio bus handle
 	std::span<SampleFrame> buffer() { return m_buffer; }
@@ -156,8 +161,14 @@ private:
 	//! Routes one edit: owner-stage direct, worker-stage buffered, other off-stage queued.
 	void postPlayHandleEdit(PlayHandleEdit edit);
 	void applyPlayHandleEdit(const PlayHandleEdit& edit);
-	//! Applies every queued edit in the order it was posted. Called by doProcessing() only.
+	//! Applies every queued edit in the order it was posted. The queue has ONE consumer at a time: the render
+	//! owner in doProcessing(), or - only when no render is draining the queue - a producer that holds the
+	//! engine change lock, which keeps the render out. Never a producer racing a live consumer.
 	void applyPlayHandleEdits();
+	//! Pushes \a edit, waiting while the consumer is making progress. False when it is not (nothing is
+	//! rendering, or the render is blocked behind this thread's own change lock): then the caller drains the
+	//! queue itself under that lock instead of racing a consumer that is not there.
+	bool pushPlayHandleEditWhileConsumerDrains(const PlayHandleEdit& edit);
 	//! Grow only from a control thread, after the render lock makes the QList quiescent.
 	void topUpPlayHandleCapacityOnControlThread();
 	void topUpPlayHandleCapacityUnderEngineChangeLock();
@@ -183,6 +194,10 @@ private:
 	std::atomic<bool> m_playHandleCapacityLow{false};
 	std::atomic<std::uint64_t> m_capacityDeferredPlayHandleEditCountTotal{0};
 	std::atomic<std::uint64_t> m_droppedPlayHandleEdits{0};
+	//! Edits the consumer has popped so far: a producer watches it move to tell a draining consumer from a stopped one.
+	std::atomic<std::uint64_t> m_playHandleEditsConsumed{0};
+	//! Edits a producer drained itself, under the change lock, because no consumer was making progress.
+	std::atomic<std::uint64_t> m_producerDrainedPlayHandleEdits{0};
 
 	FloatModel* m_volumeModel;
 	FloatModel* m_panningModel;

@@ -736,6 +736,53 @@ private slots:
 		handle.removePlayHandle(&playHandle);
 		partd::evidence("MIXCONC_D6 rounds=%d do_processing_iterations=%d", kRounds, iterations);
 	}
+
+	//! The edit queue is multi-producer, SINGLE consumer. While a render is draining it (here: this thread
+	//! calling doProcessing), a producer that finds the queue full waits for the drain; it must not pop the
+	//! queue itself, or two threads consume at once (ThreadSanitizer: MpscQueue::pop from both).
+	void aFullEditQueueIsDrainedByTheConsumerAndNeverByItsProducer()
+	{
+		AudioBusHandle handle{QStringLiteral("MixerConcurrencyTest"), false};
+		SilentPlayHandle playHandle;
+
+		// Several queue capacities of edits, so the producer meets a full queue however fast the consumer is.
+		constexpr int kRounds = static_cast<int>(PlayHandle::MaxNumber) * 8;
+		std::atomic<bool> producerDone{false};
+		std::thread producer([&handle, &playHandle, &producerDone]
+		{
+			for (int i = 0; i < kRounds; ++i)
+			{
+				handle.addPlayHandle(&playHandle);
+				handle.removePlayHandle(&playHandle);
+			}
+			producerDone.store(true, std::memory_order_release);
+		});
+		while (!producerDone.load(std::memory_order_acquire)) { handle.doProcessing(); }
+		producer.join();
+		handle.doProcessing();
+
+		QCOMPARE(handle.producerDrainedPlayHandleEdits(), quint64(0));
+		QCOMPARE(handle.droppedPlayHandleEdits(), quint64(0));
+	}
+
+	//! With nothing consuming, the full queue is not a deadlock and no edit is lost: after the consumer
+	//! made no progress for a while the producer drains the queue itself, holding the engine change lock.
+	void aFullEditQueueWithNoConsumerIsDrainedByTheProducerUnderTheLock()
+	{
+		AudioBusHandle handle{QStringLiteral("MixerConcurrencyTest"), false};
+		SilentPlayHandle playHandle;
+
+		constexpr int kRounds = static_cast<int>(PlayHandle::MaxNumber) * 2;
+		for (int i = 0; i < kRounds; ++i)
+		{
+			handle.addPlayHandle(&playHandle);
+			handle.removePlayHandle(&playHandle);
+		}
+
+		QVERIFY2(handle.producerDrainedPlayHandleEdits() > 0, "a queue nobody drains must be drained by its producer");
+		QCOMPARE(handle.droppedPlayHandleEdits(), quint64(0));
+		handle.doProcessing();
+	}
 };
 
 QTEST_GUILESS_MAIN(MixerConcurrencyTest)

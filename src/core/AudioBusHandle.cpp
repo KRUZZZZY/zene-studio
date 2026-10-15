@@ -27,6 +27,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
+#include <thread>
 #include <QThread>
 
 #include "AudioBus.h"
@@ -48,6 +50,10 @@ namespace
 {
 
 constexpr qsizetype PlayHandleListLowWater = static_cast<qsizetype>(PlayHandle::MaxNumber / 4);
+
+//! A producer that finds the edit queue full waits this long for the consumer to make progress before it
+//! concludes there is none. A render drains the queue every period (a few ms), so a live one is never judged dead.
+constexpr std::chrono::milliseconds PlayHandleConsumerProgressTimeout{50};
 
 } // namespace
 
@@ -294,6 +300,7 @@ void AudioBusHandle::postPlayHandleEdit(PlayHandleEdit edit)
 		return;
 	}
 	if (m_playHandleEdits.push(edit)) { return; }
+	if (!RealtimeScope::isActive() && pushPlayHandleEditWhileConsumerDrains(edit)) { return; }
 	if (RealtimeScope::isActive())
 	{
 		// An unexpected realtime producer has no safe list-ownership handoff here.
@@ -304,10 +311,12 @@ void AudioBusHandle::postPlayHandleEdit(PlayHandleEdit edit)
 		return;
 	}
 
-	// A control producer can wait for the existing engine change lock and apply the
-	// edit with rendering stopped. It never spins waiting for the audio consumer.
+	// Nothing has drained the queue for a while (no render is running, or it is blocked behind a change lock
+	// this thread holds). A control producer can wait for the existing engine change lock and apply the edit
+	// with rendering stopped: the lock makes it the queue's only consumer.
 	AudioEngine* engine = Engine::audioEngine();
 	engine->requestChangeInModel();
+	m_producerDrainedPlayHandleEdits.fetch_add(1, std::memory_order_relaxed);
 	applyPlayHandleEdits();
 	applyPlayHandleEdit(edit);
 	engine->doneChangeInModel();
@@ -327,7 +336,30 @@ void AudioBusHandle::applyPlayHandleEdits()
 	m_capacityDeferredPlayHandleEditCount = remaining;
 
 	PlayHandleEdit edit{};
-	while (m_playHandleEdits.pop(&edit)) { applyPlayHandleEdit(edit); }
+	while (m_playHandleEdits.pop(&edit))
+	{
+		applyPlayHandleEdit(edit);
+		m_playHandleEditsConsumed.fetch_add(1, std::memory_order_release);
+	}
+}
+
+bool AudioBusHandle::pushPlayHandleEditWhileConsumerDrains(const PlayHandleEdit& edit)
+{
+	using Clock = std::chrono::steady_clock;
+	auto seen = m_playHandleEditsConsumed.load(std::memory_order_acquire);
+	auto deadline = Clock::now() + PlayHandleConsumerProgressTimeout;
+	while (Clock::now() < deadline)
+	{
+		if (m_playHandleEdits.push(edit)) { return true; }
+		std::this_thread::yield();
+		const auto now = m_playHandleEditsConsumed.load(std::memory_order_acquire);
+		if (now != seen)
+		{
+			seen = now;
+			deadline = Clock::now() + PlayHandleConsumerProgressTimeout;
+		}
+	}
+	return false;
 }
 
 void AudioBusHandle::applyPlayHandleEdit(const PlayHandleEdit& edit)
