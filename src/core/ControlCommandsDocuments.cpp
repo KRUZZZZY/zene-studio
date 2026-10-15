@@ -35,6 +35,8 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QStandardPaths>
+#include <QTemporaryDir>
+#include <QTemporaryFile>
 
 #include "ConfigManager.h"
 #include "ControlArrangingCommands.h"
@@ -55,6 +57,8 @@ namespace lmms
 {
 
 using namespace control;
+
+bool loadProjectSnapshotWithoutRecent(Song& song, const QString& path, QString* refusal);
 
 namespace
 {
@@ -151,19 +155,76 @@ QString recipeTemplatePath(const Recipe& recipe)
 	return QDir(dir).filePath(QLatin1String(recipe.type) + QStringLiteral(".mpt"));
 }
 
-//! A new document from @a recipe: built on a new project, written as a template, opened as one.
+//! Check the cache destination before project.new can discard the current session.
+bool recipeTemplateWritable(const QString& path)
+{
+	const QFileInfo destination(path);
+	if (destination.exists() && (!destination.isFile() || !destination.isWritable())) { return false; }
+	const QString dir = destination.absolutePath();
+	if (!QDir().mkpath(dir)) { return false; }
+	QTemporaryFile probe(QDir(dir).filePath(QStringLiteral(".zene-template-XXXXXX")));
+	if (!probe.open()) { return false; }
+	const bool written = probe.write("zene") == 4 && probe.flush();
+	probe.close();
+	return written && probe.remove();
+}
+
+//! Reload the session saved before a built-in recipe was tried: its file, modified flag and document type.
+ControlResult restoreSession(const QString& snapshotPath, const QString& projectFile, bool modified,
+	const QString& documentType)
+{
+	Song* const song = Engine::getSong();
+	QString refusal;
+	if (!loadProjectSnapshotWithoutRecent(*song, snapshotPath, &refusal))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, refusal);
+	}
+	song->noteProjectSaved(projectFile);
+	if (modified) { song->setModified(); }
+	ProjectInfo::instance().setDocumentType(documentType);
+	return ControlResult::success();
+}
+
+//! @a failed as it stands once the original session is back; otherwise @a failed with the restore failure added.
+ControlResult restoredOr(const ControlResult& failed, const ControlResult& restored)
+{
+	if (restored.ok) { return failed; }
+	return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1; the original session could not be restored: %2")
+		.arg(failed.errorMessage, restored.errorMessage));
+}
+
+//! A new document from @a recipe: built on a new project, written as a template, opened as one. The session it
+//! replaces is saved first and reloaded if any step fails, so a failed creation leaves that session as it was.
 ControlResult newFromRecipe(const Recipe& recipe, QStringList* missing)
 {
-	ControlResult made = run(QStringLiteral("project.new"));
-	if (!made.ok) { return made; }
-	*missing = buildRecipe(recipe);
 	const QString path = recipeTemplatePath(recipe);
-	if (!Engine::getSong()->saveProjectFile(path))
+	const ControlResult writeFailed = ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("the %1 template could not be written to %2").arg(QLatin1String(recipe.type), path));
+	if (!recipeTemplateWritable(path)) { return writeFailed; }
+
+	Song* const song = Engine::getSong();
+	const QString previousFile = song->projectFileName();
+	const bool previousModified = song->isModified();
+	const QString previousType = ProjectInfo::instance().documentType();
+	QTemporaryDir snapshotDirectory;
+	const QString snapshotPath = snapshotDirectory.filePath(QStringLiteral("session.mmp"));
+	if (!snapshotDirectory.isValid() || !song->saveProjectFile(snapshotPath))
 	{
-		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the %1 template could not be written to %2")
-			.arg(QLatin1String(recipe.type), path));
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the current session could not be preserved before creating a %1 document")
+				.arg(QLatin1String(recipe.type)));
 	}
-	return run(QStringLiteral("project.new"), {{QStringLiteral("template"), path}});
+	const auto restorePrevious = [&]()
+	{
+		return restoreSession(snapshotPath, previousFile, previousModified, previousType);
+	};
+
+	ControlResult made = run(QStringLiteral("project.new"));
+	if (!made.ok) { return restoredOr(made, restorePrevious()); }
+	*missing = buildRecipe(recipe);
+	if (!song->saveProjectFile(path)) { return restoredOr(writeFailed, restorePrevious()); }
+	const ControlResult opened = run(QStringLiteral("project.new"), {{QStringLiteral("template"), path}});
+	return opened.ok ? opened : restoredOr(opened, restorePrevious());
 }
 
 ControlResult newDocument(const QJsonObject& args)

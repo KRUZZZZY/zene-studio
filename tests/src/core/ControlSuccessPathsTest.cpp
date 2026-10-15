@@ -43,14 +43,18 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QTemporaryFile>
 #include <QTextStream>
 
+#include "ConfigManager.h"
 #include "ControlProjectAssets.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -58,8 +62,10 @@
 #include "MidiLearn.h"
 #include "Mixer.h"
 #include "ModulationTestSupport.h"
+#include "ProjectInfo.h"
 #include "RackTestSupport.h"
 #include "Song.h"
+#include "Track.h"
 
 using namespace lmms;
 using modtest::run;
@@ -108,6 +114,7 @@ class ControlSuccessPathsTest : public QObject
 private slots:
 	void initTestCase()
 	{
+		QStandardPaths::setTestModeEnabled(true);
 		QString why;
 		QVERIFY2(initRackFixture(&why), qPrintable(why));
 		QVERIFY(m_dir.isValid());
@@ -421,6 +428,100 @@ private slots:
 
 		if (hadTool) { qputenv("MMPZ_GIT_TOOL", saved); }
 		else { qunsetenv("MMPZ_GIT_TOOL"); }
+	}
+
+	void failedBuiltInDocumentKeepsCurrentSession()
+	{
+		ConfigManager::inst()->setWorkingDir(m_dir.filePath(QStringLiteral("workspace")));
+		const QString cacheLocation = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+		QVERIFY(QDir().mkpath(cacheLocation));
+		const QString templateDir = QDir(cacheLocation).filePath(QStringLiteral("document-templates"));
+		if (QDir(templateDir).exists()) { QVERIFY(QDir(templateDir).removeRecursively()); }
+		else if (QFile::exists(templateDir)) { QVERIFY(QFile::remove(templateDir)); }
+		QFile blocker(templateDir);
+		QVERIFY(blocker.open(QIODevice::WriteOnly));
+		QVERIFY(blocker.write("blocked") == 7);
+		blocker.close();
+
+		Song* const song = Engine::getSong();
+		Track* const preserved = Track::create(Track::Type::Sample, song);
+		QVERIFY(preserved != nullptr);
+		preserved->setName(QStringLiteral("Session that must survive"));
+		const auto hasPreservedTrack = [song]
+		{
+			return std::any_of(song->tracks().begin(), song->tracks().end(), [](const Track* track)
+			{
+				return track->name() == QStringLiteral("Session that must survive");
+			});
+		};
+		QVERIFY(hasPreservedTrack());
+
+		const ControlResult failed = run(QStringLiteral("project.new_document"),
+			{{QStringLiteral("type"), QStringLiteral("mastering")}});
+		QVERIFY(!failed.ok);
+		const bool preservedAfterFailure = hasPreservedTrack();
+		QVERIFY(blocker.remove());
+		QVERIFY2(preservedAfterFailure, "a failed built-in document creation replaced the current session");
+	}
+
+	void failedBuiltInDocumentSaveKeepsCurrentSession()
+	{
+		ConfigManager::inst()->setWorkingDir(m_dir.filePath(QStringLiteral("workspace")));
+		const QString cacheLocation = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+		const QString templateDir = QDir(cacheLocation).filePath(QStringLiteral("document-templates"));
+		if (QDir(templateDir).exists()) { QVERIFY(QDir(templateDir).removeRecursively()); }
+		else if (QFile::exists(templateDir)) { QVERIFY(QFile::remove(templateDir)); }
+		QVERIFY(QDir().mkpath(templateDir));
+		const QString templatePath = QDir(templateDir).filePath(QStringLiteral("mastering.mpt"));
+		const QString partialPath = templatePath + QStringLiteral(".new");
+		QVERIFY(!QFile::exists(templatePath) || QFile::remove(templatePath));
+		QVERIFY(QDir().mkpath(partialPath));
+
+		QTemporaryFile probe(QDir(templateDir).filePath(QStringLiteral(".save-failure-probe-XXXXXX")));
+		QVERIFY(probe.open());
+		QVERIFY(probe.write("writable") == 8);
+		QVERIFY(probe.flush());
+		probe.close();
+		QVERIFY(probe.remove());
+
+		Song* const song = Engine::getSong();
+		const QString previousFile = song->projectFileName();
+		const bool previousModified = song->isModified();
+		const QString previousType = ProjectInfo::instance().documentType();
+		const QStringList previousRecentProjects = ConfigManager::inst()->recentlyOpenedProjects();
+		Track* const preserved = Track::create(Track::Type::Sample, song);
+		QVERIFY(preserved != nullptr);
+		preserved->setName(QStringLiteral("Session that must survive save failure"));
+		const auto hasPreservedTrack = [song]
+		{
+			return std::any_of(song->tracks().begin(), song->tracks().end(), [](const Track* track)
+			{
+				return track->name() == QStringLiteral("Session that must survive save failure");
+			});
+		};
+		QVERIFY(hasPreservedTrack());
+
+		const ControlResult failed = run(QStringLiteral("project.new_document"),
+			{{QStringLiteral("type"), QStringLiteral("mastering")}});
+
+		QVERIFY(!failed.ok);
+		QVERIFY(QDir(partialPath).exists());
+		const bool preservedAfterFailure = hasPreservedTrack();
+		const QString fileAfterFailure = song->projectFileName();
+		const bool modifiedAfterFailure = song->isModified();
+		const QString typeAfterFailure = ProjectInfo::instance().documentType();
+		const QStringList recentProjectsAfterFailure = ConfigManager::inst()->recentlyOpenedProjects();
+		const bool newRecentPathsExist = std::all_of(recentProjectsAfterFailure.begin(), recentProjectsAfterFailure.end(),
+			[&previousRecentProjects](const QString& recent)
+			{
+				return previousRecentProjects.contains(recent) || QFile::exists(recent);
+			});
+		QVERIFY(QDir(partialPath).removeRecursively());
+		QVERIFY2(preservedAfterFailure, "a save-time failure replaced the current session");
+		QCOMPARE(fileAfterFailure, previousFile);
+		QCOMPARE(modifiedAfterFailure, previousModified);
+		QCOMPARE(typeAfterFailure, previousType);
+		QVERIFY2(newRecentPathsExist, "restoring the original session left a dead recent-project entry");
 	}
 
 private:
