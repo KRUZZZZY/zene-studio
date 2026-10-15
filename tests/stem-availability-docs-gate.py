@@ -27,6 +27,12 @@ WHAT IT CHECKS (all file reads, no network, no instance):
   8. The active inline comments in `include/ControlRegistryGroups.h`,
      `src/core/ControlRegistryRegistrations.cpp`, `src/core/CMakeLists.txt`,
      `src/gui/CMakeLists.txt` and `tests/CMakeLists.txt` no longer call the feature opt-in or OFF.
+  9. `docs/FEATURE-LIST-0.3.0.md` Table B row 1 ("In the tree but not drivable") no longer says stem
+     separation has no `stem.*` group; the audit-era absence is labelled **superseded** and the seven
+     `stem.*` ids that made it drivable are named (so row 26 and Table B agree).
+ 10. `docs/FEATURE-LIST-0.3.0.md` Reconciliation 5 no longer claims "the remaining six prefixes still
+     return nothing": it accounts for the `stem.*` and `mastering.*` groups and names only `lufs.`
+     and `scan.` as the prefixes still absent.
 
 Usage:  python3 tests/stem-availability-docs-gate.py [--root DIR]
 Exit:   0 every check holds; 1 a mismatch; 2 usage/setup error.
@@ -148,6 +154,51 @@ def check_inline_comments(read, path, check):
           "tests/CMakeLists.txt: stem tests comment no longer says opt-in")
 
 
+def check_table_b_row(read, path, check):
+    """(9) Table B row 1 no longer claims stem separation is not drivable."""
+    featlist = read(path("docs/FEATURE-LIST-0.3.0.md"))
+    rows = [ln for ln in featlist.splitlines() if ln.startswith("| 1 | Stem separation ")]
+    check(len(rows) == 1,
+          "docs/FEATURE-LIST-0.3.0.md: exactly one Table B row 1 for stem separation (found %d)"
+          % len(rows))
+    if len(rows) != 1:
+        return
+    row = rows[0]
+    check("no `stem.*` group" not in row,
+          "docs/FEATURE-LIST-0.3.0.md Table B row 1: no stale 'no stem.* group' claim")
+    check("superseded" in row,
+          "docs/FEATURE-LIST-0.3.0.md Table B row 1: labels the audit-era absence as superseded")
+    check("stem.job_start" in row,
+          "docs/FEATURE-LIST-0.3.0.md Table B row 1: names the seven stem.* ids that made it drivable")
+
+
+def check_reconciliation(read, path, check):
+    """(10) Reconciliation 5 accounts for stem.* and mastering.*, not the stale six."""
+    featlist = read(path("docs/FEATURE-LIST-0.3.0.md"))
+    lines = featlist.splitlines()
+    start = None
+    for i, ln in enumerate(lines):
+        if ln.startswith("5. **`stem.`"):
+            start = i
+            break
+    check(start is not None,
+          "docs/FEATURE-LIST-0.3.0.md: reconciliation 5 on the stem./mastering. class claim exists")
+    if start is None:
+        return
+    para = [lines[start]]
+    j = start + 1
+    while j < len(lines) and lines[j].strip() and not re.match(r"^\d+\. ", lines[j]):
+        para.append(lines[j])
+        j += 1
+    text = "\n".join(para)
+    check("the remaining six prefixes still return nothing" not in text,
+          "docs/FEATURE-LIST-0.3.0.md reconciliation 5: no stale 'remaining six prefixes' claim")
+    check("`lufs`" in text and "`scan`" in text,
+          "docs/FEATURE-LIST-0.3.0.md reconciliation 5: names lufs. and scan. as the still-absent prefixes")
+    check("`stem`" in text and "`mastering`" in text,
+          "docs/FEATURE-LIST-0.3.0.md reconciliation 5: accounts for the stem.* and mastering.* groups")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default=os.path.dirname(HERE))
@@ -174,6 +225,8 @@ def main():
     check_tests_comment(read, path, check)
     check_feature_list(read, path, check)
     check_inline_comments(read, path, check)
+    check_table_b_row(read, path, check)
+    check_reconciliation(read, path, check)
 
     print()
     if failures:

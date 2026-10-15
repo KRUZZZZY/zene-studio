@@ -397,7 +397,7 @@ them; the status column gives where each one stands on the feature table above.
 
 | # | Feature (tree anchor) | Its tests | Why it is not drivable | Row above |
 |---|---|---|---|---|
-| 1 | Stem separation — offline HTDemucs via ONNX Runtime | `OnnxRuntimeStemSeparatorTest`, `StemExportTest`, `StemJobManagerTest`, `StemModelStoreTest`, `StemSplitPipelineTest` | no `stem.*` group; the only route is `stem_split_cli.py`, outside the socket | 26 |
+| 1 | Stem separation — offline HTDemucs via ONNX Runtime | `OnnxRuntimeStemSeparatorTest`, `StemExportTest`, `StemJobManagerTest`, `StemModelStoreTest`, `StemSplitPipelineTest` | **drivable** through `--control-socket` with the seven-id `stem.*` group (`stem.get_state`, `stem.job_start`, `stem.job_status`, `stem.job_result`, `stem.job_cancel`, `stem.model_get_state`, `stem.model_download`) — `tests/control-stem-commands.py` (ctest `ControlStemCommands`). The audit-era entry — stem separation listed as not drivable because the only route was `stem_split_cli.py`, outside the socket — is **superseded** (corrected 2026-10-15, Q050-035). What is absent is the INTERFACE: the group is socket-only, and the interface's one gesture is the sample clip's pre-existing "Split to stems" action | 26 |
 | 2 | Mastering chain / auto-mastering | `MasteringTest` | no `mastering.*` group | 25 |
 | 3 | LUFS / loudness metering | `LufsMeterTest`, `LoudnessReportTest`, `MasteringTest` | no `lufs.` or `meter.` group; `export.get_settings` does not expose it | 24 |
 | 4 | VCA / edit groups | `VcaGroupTest` | drivable through `--control-socket` with the `vca.*` group (14 ids, `vca.edit_move` included); what is absent is the INTERFACE - no strip, no group menu, no member list, no lock toggle, no Lua binding - `tests/control-vca-commands.py` | 4 |
@@ -473,11 +473,13 @@ two recorded exclusions and the out-of-scope sections above are the only places 
    line 300), `142` (`ReversibilityContractTest.cpp:87`) or `127` (the same test's docstring) is the figure
    the notes should quote; the `150` the test reduces to is the number two independent tree sources
    corroborate. Unchanged here — it needs a build, and this lane does not build.
-5. **`stem.` `mastering.` etc. are absent as a class, not per feature.** Table B's grep is
+5. **`stem.` `mastering.` etc.: the audit's class measurement, superseded per prefix.** Table B's grep is
    `QStringLiteral\("(stem|mastering|lufs|record|meter|vca|freeze|scan)\.` over the registry — it returned
-   nothing at the audit tip. `record` and `freeze` now have groups (rows 13, 20), so that grep no longer
-   holds as written; the remaining six prefixes still return nothing. That is a change in the tree, not a
-   contradiction in the audit.
+   nothing at the audit tip. Re-measured on the release tree on 2026-10-15 (Q050-035), that class claim no
+   longer holds as written: `record` and `freeze` now have groups (rows 13, 20), as do `vca` (row 4),
+   `meter` (the live master loudness tap), `mastering` (row 25) and `stem` (row 26, seven ids) — only
+   `lufs` and `scan` still return nothing. This records the grep and each row carries its own status; that
+   is a change in the tree, not a contradiction in the audit.
 6. **The surface figures are counted on two bases.** `V0.3-SCOPE-CORRECTIONS.md` and this file quoted the
    release tree as **31 groups / 170 ids** while the audit tip is **28 groups / 150 ids**. Re-measured by
    counting the registry source on 2026-09-13: at `334790219` and again at `01b99753a` on `release/0.3.0`,

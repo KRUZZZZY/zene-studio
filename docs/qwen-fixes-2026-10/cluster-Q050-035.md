@@ -13,7 +13,16 @@ extended the gate to verify that row and the corrected inline comments, fixed th
 opt-in/OFF comments (`include/ControlRegistryGroups.h`, `src/core/ControlRegistryRegistrations.cpp`,
 `src/core/CMakeLists.txt`, `src/gui/CMakeLists.txt`) plus the `tests/CMakeLists.txt` test comment, and
 declared the inherited-file changes in `tests/upstream-modifications.txt`. The gate went from 10 to
-**21 checks**; the report below is updated to match.
+**21 checks**.
+
+Round-3 rework (review `Q050-035.r2.code.md`): the feature list still carried two stale stem statements
+outside the gate's scope. Table B row 1 (`docs/FEATURE-LIST-0.3.0.md:400`, "In the tree but not drivable")
+said there was no `stem.*` group and the CLI was the only route; it now reports the feature as
+**drivable** through the seven-id `stem.*` group and labels the audit-era entry **superseded**
+(corrected 2026-10-15, Q050-035). Reconciliation 5 (`:476`) still said "the remaining six prefixes still
+return nothing"; re-measured on the release tree on 2026-10-15 it now names only `lufs` and `scan` as
+still absent and accounts for the `stem`/`mastering` (and `record`/`freeze`/`vca`/`meter`) groups. The
+gate was extended to check both claims, **21 → 29 checks**.
 
 ## Acceptance table
 
@@ -23,9 +32,10 @@ declared the inherited-file changes in `tests/upstream-modifications.txt`. The g
 | Verify the supported build reports it ON | `./build/zene --version` | `WANT_STEM_SPLIT='ON'`, `WANT_WASM='OFF'`, `LMMS_HAVE_ONNXRUNTIME='1'`; **EXIT=0** |
 | Release-honesty text matches the build | `bash tests/release-honesty-gate.sh --header build/lmmsversion.h` | `[PASS] stem-separation ON matches ON`; `RESULT: PASS — all 5 documented feature(s) match this build on linux`; **EXIT=0** |
 | Docs describe local/offline processing; no stale "compiled out"/"OFF by default" claim | `ctest -R '^(StemAvailabilityDocsGate\|StemSplitPipelineTest)$' --output-on-failure` (from `build/tests`) | `100% tests passed out of 2`; `StemAvailabilityDocsGate ... Passed`, `StemSplitPipelineTest ... Passed`; **EXIT=0** |
-| Same, direct script run | `python3 tests/stem-availability-docs-gate.py` | all **21 checks PASS**, `RESULT: PASS`; **EXIT=0** |
+| Same, direct script run | `python3 tests/stem-availability-docs-gate.py` | all **29 checks PASS**, `RESULT: PASS`; **EXIT=0** |
 | Gate is not tautological (red proof, Known Limitations hunk) | appended `WANT_STEM_SPLIT='OFF'` to `docs/KNOWN-LIMITATIONS.md`, ran the gate | **EXIT=1**; restored file → **EXIT=0** |
 | Gate is not tautological (red proof, feature-list row + inline comment) | reverted row 26 and the `ControlRegistryGroups.h` comment in a throwaway root, ran the gate with `--root` | `RESULT: FAIL - 4 ... stale`; **EXIT=1**; throwaway root removed |
+| Gate is not tautological (round 3, red proof: reverse the revised documentation hunks) | restored the committed (pre-fix) `docs/FEATURE-LIST-0.3.0.md`, ran the gate | `RESULT: FAIL - 6 stem-availability doc claim(s) are stale`; **EXIT=1**; corrected file put back → **EXIT=0** |
 
 The gate asserts: `CMakeLists.txt` declares `WANT_STEM_SPLIT` default ON; the `stem-separation` row of
 `tests/advertised-features.tsv` requires the same value and claims presence; `README.md` says "in the
@@ -37,7 +47,10 @@ configuration"; the `tests/CMakeLists.txt` stem registration comment no longer s
 offline", and carries neither the stale `WANT_STEM_SPLIT OFF` nor "no `stem.*` group" text; and the
 active inline comments in `include/ControlRegistryGroups.h`, `src/core/ControlRegistryRegistrations.cpp`,
 `src/core/CMakeLists.txt`, `src/gui/CMakeLists.txt` and `tests/CMakeLists.txt` no longer call the
-feature opt-in/OFF.
+feature opt-in/OFF. Round 3 adds: `docs/FEATURE-LIST-0.3.0.md` Table B row 1 no longer says there is no
+`stem.*` group, labels the audit-era absence **superseded** and names the seven `stem.*` ids; and
+Reconciliation 5 no longer says "the remaining six prefixes still return nothing", names `lufs`/`scan` as
+the still-absent prefixes and accounts for the `stem`/`mastering` groups.
 
 ## Files changed
 
@@ -46,12 +59,14 @@ feature opt-in/OFF.
 - `docs/RELEASE-NOTES-v0.3.0-alpha.md` — the "OFF in the default release configuration" bullet.
 - `docs/STATUS.md` — the "defaults OFF, absent from every release build" line.
 - `docs/FEATURE-LIST-0.3.0.md` — row 26 is rewritten: status **in the tree**, the seven `stem.*` ids,
-  and the local/offline statement, replacing the stale "no `stem.*` group … `WANT_STEM_SPLIT OFF`".
+  and the local/offline statement, replacing the stale "no `stem.*` group … `WANT_STEM_SPLIT OFF`";
+  round 3 also updates Table B row 1 (drivable / superseded) and Reconciliation 5 (only `lufs`/`scan`
+  still absent).
 - `include/ControlRegistryGroups.h` — the `registerStemCommands` comment (was "opt-in … defaults to OFF").
 - `src/core/ControlRegistryRegistrations.cpp` — the call-site comment (was "WANT_STEM_SPLIT=OFF").
 - `src/core/CMakeLists.txt`, `src/gui/CMakeLists.txt` — the stem source-list comments (were "opt-in").
 - `tests/CMakeLists.txt` — stale registration/test comment + `StemAvailabilityDocsGate` ctest.
-- `tests/stem-availability-docs-gate.py` — the hermetic docs-truth gate, now 21 checks.
+- `tests/stem-availability-docs-gate.py` — the hermetic docs-truth gate, now 29 checks.
 - `tests/fork-sources.txt` — registers the new gate script (fork-NEW).
 - `tests/upstream-modifications.txt` — declares the four inherited files changed above.
 - `docs/050-features/Q050-035.md`, `docs/qwen-fixes-2026-10/cluster-Q050-035.md` — these reports.
@@ -73,4 +88,4 @@ New commands: none. Reversibility: unchanged. Project format: unchanged.
 | `bash tests/release-honesty-gate.sh --header build/lmmsversion.h` | 0 |
 | `ctest -R '^StemAvailabilityDocsGate$'` (from `build/tests`) | 0 |
 
-Logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-035.r2/logs/`.
+Logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-035.r3/logs/`.
