@@ -256,11 +256,26 @@ that is this page's fault — report it and it gets added.
   not offered); and the rack's macros - one item per macro showing its value, which sets it
   (`rack.macro_set`), Add macro... and Remove macro (`rack.macro_add` / `rack.macro_remove`) (`RackMenuTest`).
   *Since the same day each macro also has Bind <name> to (effect > parameter of the channel's own chain, full
-  range; `rack.macro_target_add`) and Unbind <name> (`rack.macro_target_remove`).* Still socket-only: putting
-  effects into a parallel chain, a binding narrower than the full range, the key/velocity zones, and a Lua
-  binding. The two bullets below are the
+  range; `rack.macro_target_add`) and Unbind <name> (`rack.macro_target_remove`).* *Corrected 2026-10-09 (Q050-047),
+  against the tree:* putting effects into a parallel chain is **not** socket-only any more. The Device panel
+  draws each parallel chain under a "Parallel chain N" heading with its devices as cards and its modulators
+  (`src/gui/shell/DevicePanel.cpp:390-409`); a card's menu has **Insert Effect Before... / After...**, which name
+  the card's own chain (`src/gui/EffectDeviceMenu.cpp:247-252`, `insertBeside`); **Wrap the Chain into a Rack Chain**
+  (`rack.wrap`) moves the channel's devices into a new chain; and the Inspector's **Add Insert...** opens the
+  `plugin.load` form, which has a `chain` field. **The first device of an EMPTY parallel chain**
+  has no card to carry a menu, so its heading in the Device panel carries an **Add device...** button
+  (`DevicePanel::addChannel`, `src/gui/shell/DevicePanel.cpp:392-408`), and the panel's own **Add device** button now
+  loads into the channel's selected parallel chain (`rack.set_selected`; parallel or chain 0 selected means the
+  channel's own chain; `addTargetChain`, `:171-179`). Both run `plugin.load` with a `chain` field - the call the
+  socket takes, one undo step (`RackMenuTest::anEmptyParallelChainHasItsOwnAddDeviceButton`,
+  `::addDeviceLoadsIntoTheSelectedChain`, `::anEmptyParallelChainTakesItsFirstDeviceFromTheInsertForm`, which
+  keeps the Inspector's Add Insert... form route proven too). A track's Add device (a track has no rack) still loads
+  into the track's own chain. Still socket-only: a binding
+  narrower than the full range, a visual key map for the zones, and a Lua binding. The two bullets below are the
   pre-menu record.
-- **No racks in the interface, and no scripting access.** Parallel chains and a chain selector exist and are
+- *(Superseded 2026-09-30 and 2026-10-09: a channel's Rack submenu creates chains, routes and removes them, and the
+  Device panel shows and fills them; see the bullet above.)* **No racks in the interface, and no scripting access.**
+  Parallel chains and a chain selector exist and are
   saved with the project, but a user can only load a project that already contains a `<rack>`; there is no UI
   and no binding. Switching chains is not crossfaded, so it can click.
   Verified in the tree: a rack is saved as the `rack` element inside a `<mixerchannel>`
@@ -271,6 +286,13 @@ that is this page's fault — report it and it gets added.
   group (`rack.get_state`, `rack.add_chain`, `rack.remove_chain`, `rack.set_selected`) makes the whole rack
   drivable through `--control-socket` and the MCP bridge, which is `docs/RACK-MACROS.md` §1. There is still no
   Lua binding for it.*
+- *(Corrected 2026-10-09, Q050-047.)* **Macros and zones in the interface.** Macros have a menu (Add macro..., set
+  value, Bind to a parameter, Remove) and knobs on the Device panel (`MacroKnobs`, `DevicePanel.cpp:386`); zones have
+  **Rack > Zones...** (a list over `rack.get_state` with Remove, `CommandLists::rackZones`,
+  `src/gui/CommandLists.cpp:91-103`) and **Rack > Add Zone...** (the `rack.zone_add` form), both in a mixer
+  channel's menu (`ShellCommandMenus::populateChannel`, `src/gui/shell/ShellCommandMenus.cpp:438-440`) and both over
+  registered commands (`RackMenuTest::theZonesEntriesRunRegisteredCommands`). What is still absent is a zone
+  editor that draws a key map: zones are rows and a form. The bullet below is the 2026-09-13 record.
 - **Macros and key/velocity zones are socket-only, and the zones do not route yet — added 2026-09-13.** A rack
   macro is a named, persisted scalar that drives existing parameters through range windows
   (`rack.macro_add` / `rack.macro_target_add` / `rack.macro_set`, `docs/RACK-MACROS.md` §2) and a key/velocity
