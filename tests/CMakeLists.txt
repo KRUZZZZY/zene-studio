@@ -4655,8 +4655,9 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# length, checks the argument and state refusals, cancels a slowed job
 	# (LMMS_STEM_CHUNK_DELAY_MS, the separator's own test hook) and reads the
 	# model store's policy - the unpinned default spec refuses to download.
-	# Registered only when the feature is compiled in (WANT_STEM_SPLIT=ON,
-	# OFF by default: in a default build the ids do not exist at all);
+	# Registered only when the feature is compiled in (WANT_STEM_SPLIT, ON by
+	# default since owner decision 14: a build that configures it OFF has none
+	# of the ids at all);
 	# SKIP_RETURN_CODE 77 is for a host with no python onnxruntime, which would
 	# make the backend unavailable rather than the group wrong. The test itself
 	# passes the user-site onnxruntime directory through PYTHONPATH, because the
@@ -5653,6 +5654,16 @@ endif()
 if(PYTHON3_EXECUTABLE)
 	add_test(NAME DocFiguresGate
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/doc-figures-gate.py)
+endif()
+
+# Q050-035 (R-platform-26): the docs must agree with the build that offline HTDemucs stem
+# separation is built in, local and ON by default. tests/KNOWN-LIMITATIONS.md used to say the
+# feature was compiled out; this reads the CMake default, the release-honesty manifest row and
+# the user-facing docs and fails on any stale "compiled out"/"OFF" claim. File reads only.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME StemAvailabilityDocsGate
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/stem-availability-docs-gate.py)
 endif()
 
 # 0.5.0 F1 (MX-040/041/036/061): hardware outputs, interface channels, cue mixes and the hardware

@@ -770,13 +770,18 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
   spec, whether it is pinned enough to fetch, and a download that **refuses an unpinned spec** — the
   default spec is deliberately unpinned in v1, so the default call is a typed refusal naming the model
   card, which is the "never bundled, always verified" policy working rather than a gap.
-- **The feature is OFF in the default release configuration, and the group is honest about it.**
-  `WANT_STEM_SPLIT` defaults to OFF (`CMakeLists.txt:120`), so a default build compiles none of the
-  engine and registers none of these ids — the same rule the `telemetry.*`, `session.*` and `wasm.*`
-  groups follow, and the A16 rows are guarded by the same macro so the registry and the contract table
-  cannot disagree. Even a build with the option ON needs **the model present** before a job can start:
-  models are never bundled with the product, and the refusal names the path it looked in and the model
-  card to fetch from.
+- **The feature is ON in the default release configuration, and the group is honest about it.**
+  *Corrected 2026-10-15 (Q050-035): this bullet said the feature was OFF in the default configuration; owner
+  decision 14 (2026-09-29) turned `WANT_STEM_SPLIT` ON by default before the 0.3.0 cut, so that text was
+  wrong for this release and the `stem.*` group belongs to the release configuration (see the A16 section
+  below, where the seven `not_mutating` rows are counted).*
+  `WANT_STEM_SPLIT` defaults to ON (`CMakeLists.txt:130`), the release-honesty manifest row requires ON
+  (`tests/advertised-features.tsv`), and the build reports `WANT_STEM_SPLIT='ON'`. It is **local and offline**
+  — the separation runs on this machine and nothing is uploaded; the only network access is the one-time fetch
+  of the pinned model on first use, which `LMMS_STEM_OFFLINE` turns off. A build that configures the option
+  OFF compiles none of the engine and registers none of these ids, and even with the option ON a job needs
+  **the model present** before it can start: models are never bundled with the product, and the refusal names
+  the path it looked in and the model card to fetch from.
 - **Proof.** ctest `ControlStemCommands` (`tests/control-stem-commands.py`), registered only when the
   feature is compiled in. It drives the REAL pipeline over `--control-socket` on the committed
   458-byte stub ONNX graph (`tests/data/stub-4stem-linear.onnx`) through the shipped CLI — no 166 MB

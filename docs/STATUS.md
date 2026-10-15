@@ -247,8 +247,12 @@ not rounded up.
   `SessionScheduler.cpp`, wired into `Song::processNextBuffer` under `#ifdef LMMS_HAVE_SESSION_VIEW`; its tests
   register only inside `IF(LMMS_HAVE_SESSION_VIEW)` (`tests/CMakeLists.txt`). Even a flag-ON build has **no clip
   launcher and no grid**.
-- **Offline HTDemucs stem separation** — `WANT_STEM_SPLIT` defaults **OFF** (`CMakeLists.txt:120`), absent from
-  every release build. This is **not** the `HAVE` stem *export* above.
+- **Offline HTDemucs stem separation** — at `5565b4b1b` the option defaulted **OFF** (`CMakeLists.txt:120`) and
+  was absent from every release build. **Superseded at this tip (owner decision 14, 2026-09-29; corrected
+  2026-10-15, Q050-035):** `WANT_STEM_SPLIT` now **defaults ON** (`CMakeLists.txt:130`) and the
+  `stem-separation` row of `tests/advertised-features.tsv` requires it, so the engine and the seven `stem.*`
+  ids are in the default build. It is **local and offline** (nothing is uploaded; the pinned model is fetched
+  on first use unless `LMMS_STEM_OFFLINE` is set). This is still **not** the `HAVE` stem *export* above.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON but **degrades to OFF** when the wasmtime C API is absent
   (`CMakeLists.txt`), and CI provisions none, so it is compiled out in practice. The `advertised-features.tsv`
   "required OFF" row holds by dependency absence, not by choice; `docs/INDEPENDENT-NOTES-READ.md` B5 raises this and
