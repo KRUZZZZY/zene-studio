@@ -148,9 +148,11 @@ claims, and this page keeps them apart. What this build does is load the formats
 what it has *tested* is a much smaller set. Read this before you expect a particular plug-in or sample
 library to work.
 
-- **Formats the build loads** — from the interface and the agent surface alike: **VST3** effects and
+- **Formats this Linux build loads** — from the interface and the agent surface alike: **VST3** effects and
   instruments, **CLAP** effects and instruments, **VST2** through Vestige, **LV2**, **LADSPA**,
-  **SoundFont2** and GUS patches, plus the built-in instruments. Discovery is Linux-native: plug-ins
+  **SoundFont2** and GUS patches, plus the built-in instruments. Format availability varies by platform:
+  this list is the Linux build's, and each platform's build enables its own set — CMake disables VST
+  hosting on Apple builds, so a macOS build has no VST2/Vestige path. Discovery is Linux-native: plug-ins
   are found in each format's standard folders and in your own (`plugin.paths_get` /
   `plugin.paths_set`), and a scan records every candidate file.
 - **The GUI location for per-file scan status and quarantine controls is Project tools ▸ Plug-in

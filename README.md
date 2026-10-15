@@ -75,11 +75,13 @@ than `dlopen`. A CLAP generator can also be loaded onto an instrument track
 (`plugins/ClapInstrument`), drivable through the socket: like the VST3 instrument it has no editor
 window of its own, and the notes a user plays reach it through the track's MIDI path.
 
-**Plug-in formats vs. tested compatibility — two different claims.** This build **loads** the
-formats it is built with, on Linux and the other platforms alike: VST3 effects and instruments, CLAP
-effects and instruments, VST2 through Vestige, LV2, LADSPA, SoundFont2 and GUS patches, plus the
-built-in instruments. **Loading a format is not the same as having tested a particular maker's
-product.** Apart from the MIT fixtures in the source tree, **no third-party plug-in of any kind has
+**Plug-in formats vs. tested compatibility — two different claims.** On **Linux** — the platform these
+release builds target — this build **loads** the formats it is built with: VST3 effects and
+instruments, CLAP effects and instruments, VST2 through Vestige, LV2, LADSPA, SoundFont2 and GUS
+patches, plus the built-in instruments. **Format availability varies by platform**: each platform's
+build enables its own set, so that list is the Linux one — CMake disables VST hosting on Apple builds,
+so a macOS build has no VST2/Vestige path. **Loading a format is not the same as having tested a
+particular maker's product.** Apart from the MIT fixtures in the source tree, **no third-party plug-in of any kind has
 been tested by us**, there is **no verified Wine/yabridge path** for plug-ins built for Windows, and
 there is **no Kontakt runtime**: a **Kontakt** library needs Native Instruments' own installer and
 authorization, which are external to this project, and no Kontakt library or Kontakt-format runtime

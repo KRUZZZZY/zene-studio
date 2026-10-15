@@ -22,11 +22,17 @@ WHAT IT CHECKS (all file reads; no network, no instance, no build):
   2. The named commands are on the agent surface: the committed command snapshot carries all four ids.
   3. README.md names **Project tools > Plug-in Modules...**, states that format loading and tested
      third-party compatibility are different claims, names **Kontakt** as an external, unverified
-     library case, and no longer carries the stale "not a GUI" / hand-edited-JSON claim.
+     library case, and no longer carries the stale "not a GUI" / hand-edited-JSON claim. It also
+     advertises the **Linux** format list (each named format has a loader in the tree - see
+     LINUX_FORMATS), scopes that list to Linux, and states that format availability varies by platform
+     instead of implying VST2 hosting on macOS.
   4. docs/KNOWN-LIMITATIONS.md has the **Linux** plug-in formats section, names **Plug-in Modules** as
      the per-file scan-status and quarantine location, keeps a format-loading vs third-party-tested
-     separation, names **Kontakt**, and no longer says the per-file records are only on the socket.
-  5. data/manual/index.html names the same list.
+     separation, names **Kontakt**, scopes the advertised format list to Linux (availability varies by
+     platform), and no longer says the per-file records are only on the socket.
+  5. The platform qualification is real: our own `CMakeLists.txt` disables VST hosting in the Apple
+     build, so the README may not claim VST2/Vestige there.
+  6. data/manual/index.html names the same list.
 
 Usage:  python3 tests/plugin-formats-docs-gate.py [--root DIR]
 Exit:   0 every check holds; 1 a mismatch or a stale claim; 2 usage/setup error.
@@ -43,6 +49,19 @@ REQUIRED_COMMANDS = (
     "plugin.scan_cache_quarantine_add",
     "plugin.scan_cache_quarantine_remove",
     "plugin.rescan",
+)
+
+# The Linux format list the docs advertise, each paired with a tree artifact that provides it. The gate
+# reads the artifact, so the advertised list is verified against the build rather than only asserted,
+# and a format that no longer has a loader is caught. (VST2 is LMMS's Vestige host.)
+LINUX_FORMATS = (
+    ("VST3", "plugins/Vst3Effect/CMakeLists.txt"),
+    ("CLAP", "plugins/ClapEffect/CMakeLists.txt"),
+    ("VST2", "plugins/VstEffect/CMakeLists.txt"),
+    ("LV2", "plugins/Lv2Effect/CMakeLists.txt"),
+    ("LADSPA", "plugins/LadspaEffect/CMakeLists.txt"),
+    ("SoundFont2", "plugins/Sf2Player/CMakeLists.txt"),
+    ("GUS", "plugins/Patman/Patman.cpp"),
 )
 
 
@@ -107,6 +126,18 @@ def main():
           "README.md: no stale 'not a GUI' claim about the scan cache")
     check("hand-writing an entry in the cache file" not in freadme,
           "README.md: no stale hand-edited-cache claim")
+    # The advertised format list is grounded in the build, scoped to Linux, and does not overstate.
+    for name, artifact in LINUX_FORMATS:
+        check(name in readme and os.path.isfile(path(artifact)),
+              "README.md: advertises %s (loader %s exists)" % (name, artifact))
+    check("On **Linux**" in freadme,
+          "README.md: scopes the advertised format list to Linux")
+    check("availability varies by platform" in freadme,
+          "README.md: states format availability varies by platform")
+    check("the other platforms alike" not in freadme,
+          "README.md: no 'on Linux and the other platforms alike' overstatement")
+    check("VST2" in readme and "macOS build has no VST2" in freadme,
+          "README.md: says a macOS build has no VST2/Vestige path")
 
     # 4. KNOWN-LIMITATIONS.md: the Linux formats section, the GUI location, the separation, Kontakt,
     #    no stale socket-only claim.
@@ -126,8 +157,22 @@ def main():
           "docs/KNOWN-LIMITATIONS.md: no stale 'per-file records still only on the socket' claim")
     check("no GUI for it yet" not in fkl,
           "docs/KNOWN-LIMITATIONS.md: no stale 'no GUI for it yet' claim")
+    # The advertised Linux format list and its platform scope.
+    for name, _artifact in LINUX_FORMATS:
+        check(name in kl,
+              "docs/KNOWN-LIMITATIONS.md: advertises %s" % name)
+    check("Linux build loads" in fkl,
+          "docs/KNOWN-LIMITATIONS.md: scopes the advertised format list to the Linux build")
+    check("availability varies by platform" in fkl,
+          "docs/KNOWN-LIMITATIONS.md: states format availability varies by platform")
 
-    # 5. The manual names the same location.
+    # 5. The platform qualification is grounded in our own build: VST hosting off in the Apple build.
+    cmake = read(path("CMakeLists.txt"))
+    apple = re.search(r"IF\(LMMS_BUILD_APPLE\)(.*?)ELSE\(LMMS_BUILD_APPLE\)", cmake, re.S)
+    check(apple is not None and "SET(WANT_VST OFF)" in apple.group(1),
+          "CMakeLists.txt: VST hosting is disabled in the Apple build, so the docs must not promise it")
+
+    # 6. The manual names the same location.
     manual = read(path("data/manual/index.html"))
     check("Plug-in Modules" in manual,
           "data/manual/index.html: names the Plug-in Modules list")
