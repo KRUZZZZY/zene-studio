@@ -765,6 +765,26 @@ private slots:
 		QCOMPARE(handle.droppedPlayHandleEdits(), quint64(0));
 	}
 
+	//! The hand-off itself: a producer meets a full queue, stalls, and resumes the moment the consumer
+	//! drains it - well inside the 50 ms after which it would conclude nobody is draining.
+	void aProducerStalledOnAFullQueueResumesWhenTheConsumerDrains()
+	{
+		AudioBusHandle handle{QStringLiteral("MixerConcurrencyTest"), false};
+		SilentPlayHandle playHandle;
+		for (std::size_t i = 0; i < PlayHandle::MaxNumber; ++i) { handle.addPlayHandle(&playHandle); }  // queue now full
+
+		std::atomic<bool> pushed{false};
+		std::thread producer([&] { handle.addPlayHandle(&playHandle); pushed.store(true, std::memory_order_release); });
+		QTest::qSleep(10);
+		QVERIFY2(!pushed.load(std::memory_order_acquire), "the producer did not wait on a full queue");
+		handle.doProcessing();  // the consumer drains; the stalled push now fits
+		producer.join();
+		QVERIFY(pushed.load(std::memory_order_acquire));
+		QCOMPARE(handle.producerDrainedPlayHandleEdits(), quint64(0));
+		handle.doProcessing();
+		QCOMPARE(handle.droppedPlayHandleEdits(), quint64(0));
+	}
+
 	//! With nothing consuming, the full queue is not a deadlock and no edit is lost: after the consumer
 	//! made no progress for a while the producer drains the queue itself, holding the engine change lock.
 	void aFullEditQueueWithNoConsumerIsDrainedByTheProducerUnderTheLock()

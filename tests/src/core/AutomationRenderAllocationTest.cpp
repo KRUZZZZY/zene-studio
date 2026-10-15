@@ -31,6 +31,10 @@
 
 #include <QtTest>
 
+#include <cmath>
+#include <memory>
+#include <vector>
+
 #include "AllocationProbe.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
@@ -39,10 +43,61 @@
 #include "AutomationRenderScratch.h"
 #include "AutomationTrack.h"
 #include "Engine.h"
+#include "RealtimeScope.h"
 #include "Song.h"
 #include "TimePos.h"
 
 using namespace lmms;
+
+namespace
+{
+
+//! One automation track with a flat clip per model: model i is automated to i % 100 (a whole number, so setValue sees no rounding change).
+class Fixture
+{
+public:
+	Fixture(Song* song, int clips) : m_track(song)
+	{
+		for (int i = 0; i < clips; ++i)
+		{
+			m_models.push_back(std::make_unique<FloatModel>(0.0f, 0.0f, 100.0f, 1.0f));
+			auto clip = std::make_unique<AutomationClip>(&m_track);
+			clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
+			clip->putValue(0, expected(i), false);
+			clip->putValue(4000, expected(i), false);
+			clip->movePosition(0);
+			clip->addObject(m_models.back().get());
+			m_clips.push_back(std::move(clip));
+		}
+	}
+
+	~Fixture() { m_clips.clear(); }  // before the models they point at and the track that owns their list
+
+	void resetModels()
+	{
+		for (auto& model : m_models) { model->setValue(0.0f); }
+	}
+
+	void verifyApplied() const
+	{
+		int wrong = 0;
+		for (std::size_t i = 0; i < m_models.size(); ++i)
+		{
+			if (std::fabs(m_models[i]->value() - expected(static_cast<int>(i))) > 0.5f) { ++wrong; }
+		}
+		QVERIFY2(wrong == 0, qPrintable(QStringLiteral("%1 of %2 models did not get their automation value")
+			.arg(wrong).arg(m_models.size())));
+	}
+
+private:
+	static float expected(int i) { return static_cast<float>(i % 100); }
+
+	AutomationTrack m_track;
+	std::vector<std::unique_ptr<FloatModel>> m_models;
+	std::vector<std::unique_ptr<AutomationClip>> m_clips;
+};
+
+} // namespace
 
 class AutomationRenderAllocationTest : public QObject
 {
@@ -66,34 +121,47 @@ private slots:
 		song->stop();
 	}
 
-	//! An absolute clip drives a model, a relative clip trims another: the values are set, and no period allocates.
-	void aPeriodWithAbsoluteAndRelativeAutomationAllocatesNothing()
+	//! An absolute clip drives a model: the value is set, and no period allocates. The clip is flat on purpose:
+	//! AutomatableModel::setValue allocates once per CHANGED value (upstream, outside this read), so a moving
+	//! value would count that and not the read.
+	void aPeriodWithAbsoluteAutomationAllocatesNothing()
 	{
 		Song* song = Engine::getSong();
-		FloatModel absolute{0.0f, 0.0f, 1.0f, 0.001f};
-		FloatModel relative{0.5f, 0.0f, 1.0f, 0.001f};
+		FloatModel absolute{0.0f, 0.0f, 100.0f, 1.0f};
 
 		AutomationTrack track(song);
-		AutomationClip absoluteClip(&track);
-		absoluteClip.setProgressionType(AutomationClip::ProgressionType::Linear);
-		absoluteClip.putValue(0, 0.0, false);
-		absoluteClip.putValue(4000, 1.0, false);
-		absoluteClip.movePosition(0);
-		absoluteClip.addObject(&absolute);
-
-		AutomationClip relativeClip(&track);
-		relativeClip.setProgressionType(AutomationClip::ProgressionType::Linear);
-		relativeClip.putValue(0, 0.5, false);
-		relativeClip.putValue(4000, 0.5, false);
-		relativeClip.movePosition(0);
-		relativeClip.setRelative(true);
-		relativeClip.addObject(&relative);
+		AutomationClip clip(&track);
+		clip.setProgressionType(AutomationClip::ProgressionType::Linear);
+		clip.putValue(0, 40.0, false);
+		clip.putValue(4000, 40.0, false);
+		clip.movePosition(0);
+		clip.addObject(&absolute);
 
 		song->playSong();
 		QCOMPARE(allocationsOverPeriods(song, 8), 0ull);
+		QVERIFY2(std::fabs(absolute.value() - 40.0f) < 0.5f, qPrintable(QString::number(absolute.value())));
+		song->stop();
+	}
 
-		// The clips were read: the absolute model left its starting value.
-		QVERIFY2(absolute.value() > 0.0f, "the automation clip was never applied");
+	//! A relative clip 25 above the middle of the model's 0..100 range lifts the model's own 50 to 75.
+	void aRelativeClipOffsetsItsModel()
+	{
+		Song* song = Engine::getSong();
+		FloatModel relative{50.0f, 0.0f, 100.0f, 1.0f};
+
+		AutomationTrack track(song);
+		AutomationClip clip(&track);
+		clip.setProgressionType(AutomationClip::ProgressionType::Linear);
+		clip.putValue(0, 75.0, false);
+		clip.putValue(4000, 75.0, false);
+		clip.movePosition(0);
+		clip.setRelative(true);
+		clip.addObject(&relative);
+
+		song->playSong();
+		song->processNextBuffer();
+		QVERIFY2(std::fabs(relative.value() - 75.0f) < 0.5f, qPrintable(QString::number(relative.value())));
+		QCOMPARE(song->automatedValuesAt(TimePos(10)).value(&relative), 75.0f);
 		song->stop();
 	}
 
@@ -119,6 +187,50 @@ private slots:
 		QCOMPARE(*level.find(&model), 0.5f);
 		QCOMPARE(song->automatedValuesAt(TimePos(50)).value(&model), 0.5f);
 		QCOMPARE(static_cast<qulonglong>(level.overflows()), 0ull);
+	}
+
+	//! More automation clips than the scratch has room for: the values applied are still every clip's, first
+	//! through the allocating redo, then - once the scratch is sized for the project - with no allocation.
+	void aProjectLargerThanTheScratchStillAppliesEveryClip()
+	{
+		Song* song = Engine::getSong();
+		constexpr int Clips = 200;
+		Fixture project(song, Clips);
+		song->playSong();
+		song->resizeAutomationScratchForTest(8);  // last: building the fixture and starting the song size the scratch
+		const auto overflowsBefore = song->automationScratchOverflows();
+		for (int i = 0; i < 4; ++i) { song->processNextBuffer(); }
+		QVERIFY2(song->automationScratchOverflows() > overflowsBefore, "the test never overflowed the scratch");
+		project.verifyApplied();
+
+		// Sizing the scratch (what every engine change does) ends the redo, and then nothing allocates.
+		project.resetModels();
+		song->ensureAutomationScratchCapacity();
+		const auto overflowsSized = song->automationScratchOverflows();
+		QCOMPARE(allocationsOverPeriods(song, 8), 0ull);
+		QCOMPARE(static_cast<qulonglong>(song->automationScratchOverflows()), static_cast<qulonglong>(overflowsSized));
+		project.verifyApplied();
+		song->stop();
+	}
+
+	//! The same at the size that used to be the hard cap (16384 clips): every model still gets its value.
+	void aProjectPastTheOldClipCapStillAppliesEveryClip()
+	{
+		Song* song = Engine::getSong();
+		constexpr int Clips = 16384 + 300;
+		Fixture project(song, Clips);
+		song->playSong();
+		song->resizeAutomationScratchForTest(AutomationRenderScratch::RenderCapacity);
+		for (int i = 0; i < 4; ++i) { song->processNextBuffer(); }
+		project.verifyApplied();
+
+		song->ensureAutomationScratchCapacity();
+		const auto overflows = song->automationScratchOverflows();
+		project.resetModels();
+		QCOMPARE(allocationsOverPeriods(song, 4), 0ull);
+		QCOMPARE(static_cast<qulonglong>(song->automationScratchOverflows()), static_cast<qulonglong>(overflows));
+		project.verifyApplied();
+		song->stop();
 	}
 
 	//! A scratch with no room drops what does not fit and says so, instead of growing on the audio thread.
@@ -149,7 +261,12 @@ private:
 		for (int i = 0; i < 4; ++i) { song->processNextBuffer(); }
 		test::resetAllocationCount();
 		test::tlCountAllocations = true;
-		for (int i = 0; i < periods; ++i) { song->processNextBuffer(); }
+		{
+			// As in AudioEngine::renderNextPeriod: inside the scope a model change takes no lock and runs no
+			// control-thread bookkeeping (AutomatableModel's change guard checks RealtimeScope::isActive()).
+			const RealtimeScope realtime;
+			for (int i = 0; i < periods; ++i) { song->processNextBuffer(); }
+		}
 		test::tlCountAllocations = false;
 		return test::tlAllocationCount;
 	}

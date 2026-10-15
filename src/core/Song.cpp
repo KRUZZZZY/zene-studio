@@ -632,18 +632,43 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 
 	// Everything this tick builds lives in the Song's scratch, reserved in the constructor: the read runs on
 	// the audio thread, where RealtimeSanitizer reported the vector and map it used to allocate.
-	AutomationRenderScratch& values = m_automationLevel;
-	container->fillAutomatedValues(values, &m_automationInner, timeStart, clipNum);
+	// A read that overflowed the reserved scratch is incomplete. It is redone on an unbounded one (these
+	// stay empty, and allocate nothing, unless that happens): late, but never wrong.
+	AutomationRenderScratch spillValues;
+	AutomationRenderScratch spillInner;
+	AutomationRenderScratch spillClips;
+	AutomationRenderScratch* valuesIn = &m_automationLevel;
+	container->fillAutomatedValues(*valuesIn, &m_automationInner, timeStart, clipNum);
+	if (valuesIn->overflows() != 0 || m_automationInner.overflows() != 0)
+	{
+		m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+		valuesIn->takeOverflows();
+		m_automationInner.takeOverflows();
+		container->fillAutomatedValues(spillValues, &spillInner, timeStart, clipNum);
+		valuesIn = &spillValues;
+	}
+	AutomationRenderScratch& values = *valuesIn;
 	const TrackList& tracks = container->tracks();
 
-	AutomationRenderScratch& clips = m_automationRecordClips;
-	clips.clear();
+	AutomationRenderScratch* clipsIn = &m_automationRecordClips;
+	clipsIn->clear();
 	for (Track* track : tracks)
 	{
 		if (track->type() == Track::Type::Automation) {
-			clips.insertClipsInRange(*track, 0, timeStart);
+			clipsIn->insertClipsInRange(*track, 0, timeStart);
 		}
 	}
+	if (clipsIn->overflows() != 0)
+	{
+		m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
+		clipsIn->takeOverflows();
+		for (Track* track : tracks)
+		{
+			if (track->type() == Track::Type::Automation) { spillClips.insertClipsInRange(*track, 0, timeStart); }
+		}
+		clipsIn = &spillClips;
+	}
+	AutomationRenderScratch& clips = *clipsIn;
 	m_recordedModels.clear();
 
 	// Process recording
@@ -710,11 +735,13 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	m_oldAutomatedValues.clear();
 	for (const AutomationRenderScratch::Entry& entry : values.entries())
 	{
-		if (m_oldAutomatedValues.size() < m_oldAutomatedValues.capacity())
+		// Past the reserved capacity this grows (an allocation, counted): dropping an entry would leave
+		// a model on the automation's control with nothing to hand it back.
+		if (m_oldAutomatedValues.size() >= m_oldAutomatedValues.capacity())
 		{
-			m_oldAutomatedValues.emplace_back(entry.model, entry.value);
+			m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
 		}
-		else { m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed); }
+		m_oldAutomatedValues.emplace_back(entry.model, entry.value);
 	}
 
 	// Apply values
@@ -745,8 +772,6 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		}
 	}
 
-	const std::size_t dropped = values.takeOverflows() + m_automationInner.takeOverflows() + clips.takeOverflows();
-	if (dropped != 0) { m_automationScratchOverflows.fetch_add(dropped, std::memory_order_relaxed); }
 }
 
 //! Remembers \a model as written to this tick (kept sorted for the lookup in the apply pass). A full list drops it.
@@ -755,12 +780,70 @@ void Song::noteRecordedModel(const AutomatableModel* model)
 	const auto at = std::lower_bound(m_recordedModels.begin(), m_recordedModels.end(), model,
 		std::less<const AutomatableModel*>{});
 	if (at != m_recordedModels.end() && *at == model) { return; }
+	// Past the reserved capacity this grows (counted); a recorded model must never be forgotten.
 	if (m_recordedModels.size() >= m_recordedModels.capacity())
 	{
 		m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
-		return;
 	}
 	m_recordedModels.insert(at, model);
+}
+
+void Song::ensureAutomationScratchCapacity()
+{
+	// Runs on every engine change, so the common case is O(tracks): a clip count against the reserve.
+	std::size_t clips = 0;
+	const auto countClips = [&clips](const std::vector<Track*>& tracks) {
+		for (const Track* track : tracks) { clips += track->getClips().size(); }
+	};
+	countClips(tracks());
+	if (m_globalAutomationTrack != nullptr) { clips += m_globalAutomationTrack->getClips().size(); }
+	if (PatternStore* patterns = Engine::patternStore()) { countClips(patterns->tracks()); }
+
+	const std::size_t need = clips + 64;
+	if (need <= m_automationLevel.capacity() && need <= m_oldAutomatedValues.capacity()
+		&& need <= m_recordedModels.capacity())
+	{
+		return;
+	}
+
+	// Past the reserve (rare): count the models the automation clips reference too, since one clip may drive several.
+	std::size_t models = 0;
+	const auto countTrackModels = [&models](Track* track) {
+		if (track->type() != Track::Type::Automation && track->type() != Track::Type::HiddenAutomation) { return; }
+		for (Clip* clip : track->getClips())
+		{
+			if (auto* automation = dynamic_cast<AutomationClip*>(clip)) { models += automation->objects().size(); }
+		}
+	};
+	const auto countModels = [&countTrackModels](const std::vector<Track*>& tracks) {
+		for (Track* track : tracks) { countTrackModels(track); }
+	};
+	countModels(tracks());
+	if (m_globalAutomationTrack != nullptr) { countTrackModels(m_globalAutomationTrack); }
+	if (PatternStore* patterns = Engine::patternStore()) { countModels(patterns->tracks()); }
+
+	// Headroom, so a steady trickle of new clips does not re-reserve each time. A project that later gives
+	// existing clips more models than this can still outgrow it; that read is redone, never wrong (see
+	// processAutomations), and the next engine change that crosses the reserve re-counts.
+	const std::size_t target = 2 * std::max(need, models + 64);
+	m_automationLevel.reserve(target);
+	m_automationInner.reserve(target);
+	m_automationRecordClips.reserve(target);
+	m_oldAutomatedValues.reserve(target);
+	m_recordedModels.reserve(target);
+}
+
+void Song::resizeAutomationScratchForTest(std::size_t capacity)
+{
+	m_automationLevel = AutomationRenderScratch(capacity);
+	m_automationInner = AutomationRenderScratch(capacity);
+	m_automationRecordClips = AutomationRenderScratch(capacity);
+	m_oldAutomatedValues.clear();
+	m_oldAutomatedValues.shrink_to_fit();
+	m_oldAutomatedValues.reserve(capacity);
+	m_recordedModels.clear();
+	m_recordedModels.shrink_to_fit();
+	m_recordedModels.reserve(capacity);
 }
 
 void Song::processMetronome(size_t bufferOffset)

@@ -47,7 +47,10 @@ class AutomatableModel;
  *  whose capacity is reserved once, on the control thread:
  *
  *   - `bounded` (the song's render scratch): nothing is ever added past the reserved capacity - the
- *     extra clip or value is counted in overflows() and dropped, so the audio thread cannot allocate;
+ *     extra clip or value is counted in overflows() and dropped, so the audio thread cannot allocate.
+ *     The caller MUST treat a non-zero overflows() as "this read is incomplete" and redo it on an
+ *     unbounded scratch (Song::processAutomations does); Song::ensureAutomationScratchCapacity keeps the
+ *     capacity above the project's clip and automated-model counts so that redo does not happen;
  *   - not bounded (the control thread's automatedValuesAt, which the tests and the editors call): the
  *     vectors grow as they like.
  *
@@ -73,6 +76,15 @@ public:
 		m_clips.reserve(capacity);
 		m_entries.reserve(capacity);
 	}
+
+	//! Grows the reserved capacity (control thread, with the render locked out). Never shrinks.
+	void reserve(std::size_t capacity)
+	{
+		if (capacity > m_clips.capacity()) { m_clips.reserve(capacity); }
+		if (capacity > m_entries.capacity()) { m_entries.reserve(capacity); }
+	}
+
+	std::size_t capacity() const noexcept { return std::min(m_clips.capacity(), m_entries.capacity()); }
 
 	void clear() noexcept
 	{

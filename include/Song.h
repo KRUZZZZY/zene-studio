@@ -397,8 +397,14 @@ public:
 		return m_globalAutomationTrack;
 	}
 
-	//! How many clips or values the audio thread's automation scratch had no room for since the song was
-	//! made (their automation is skipped, never allocated for). Zero unless a project has thousands of clips.
+	//! Reserves the audio thread's automation scratch for the project's clip and automated-model counts.
+	//! Called with the render locked out (AudioEngine::doneChangeInModel); a no-op while it already fits.
+	void ensureAutomationScratchCapacity();
+	//! Test seam: replaces the scratch with one of \a capacity (call with the render locked out).
+	void resizeAutomationScratchForTest(std::size_t capacity);
+	//! How many ticks read more clips or values than the scratch had room for since the song was made.
+	//! Each was redone on an allocating scratch, so the automation applied was still complete; a non-zero
+	//! count means ensureAutomationScratchCapacity had not run for a change (e.g. a load) before it played.
 	std::uint64_t automationScratchOverflows() const noexcept
 	{
 		return m_automationScratchOverflows.load(std::memory_order_relaxed);
