@@ -26,6 +26,8 @@
 #include <QtTest>
 
 #include <atomic>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <cstdint>
 #include <thread>
@@ -86,6 +88,67 @@ class MidiHandoffQueueTest : public QObject
 	Q_OBJECT
 
 private slots:
+	//! Round 4: pop() is single-consumer and wait-free. Its body must have no loop, no retry and no compare-exchange.
+	void popHasNoRetryLoop()
+	{
+		std::ifstream file(MIDI_HANDOFF_QUEUE_HEADER);
+		QVERIFY2(file.good(), "could not read include/MidiHandoffQueue.h");
+		std::stringstream buffer;
+		buffer << file.rdbuf();
+		const std::string text = buffer.str();
+		const auto start = text.find("auto pop(HandoffMidiEvent& event) noexcept -> bool");
+		QVERIFY(start != std::string::npos);
+		const auto open = text.find('{', start);
+		QVERIFY(open != std::string::npos);
+		std::size_t depth = 0;
+		std::size_t end = open;
+		for (; end < text.size(); ++end)
+		{
+			if (text[end] == '{') { ++depth; }
+			if (text[end] == '}' && --depth == 0) { break; }
+		}
+		const std::string body = text.substr(open, end - open + 1);
+		for (const char* forbidden : {"for (", "for(", "while", "do {", "goto", "compare_exchange", "fetch_", "exchange("})
+		{
+			QVERIFY2(body.find(forbidden) == std::string::npos, forbidden);
+		}
+	}
+
+	//! Round 4: a refusal whose stamp update exhausted its budget is deferred to the consumer, and the cut
+	//! comes after every event that was queued before the refusal.
+	void exhaustedStampUpdateDefersTheCutBehindQueuedEvents()
+	{
+		lmms::MidiHandoffQueue<8> queue;
+		lmms::MidiChannelOverflow overflow;
+		auto event = [](int channel, std::uint32_t id) {
+			lmms::HandoffMidiEvent e;
+			e.channel = static_cast<std::int8_t>(channel);
+			e.offset = id;
+			return e;
+		};
+		for (std::uint32_t id : {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u}) { QVERIFY(queue.push(event(3, id))); }
+		std::uint64_t queuedBefore = 0;
+		QVERIFY(!queue.push(event(3, 99), &queuedBefore));
+		std::uint32_t attempts = 0;
+		overflow.recordWithTestHook(3, queuedBefore, &attempts,
+			[](std::atomic<std::uint64_t>& stamp, std::uint64_t expected, std::uint64_t requested, std::uint32_t)
+			{
+				if (expected + 1 < requested) { stamp.compare_exchange_strong(expected, expected + 1); }
+			});
+		QCOMPARE(attempts, lmms::MidiChannelOverflow::MaxStampUpdateAttempts);
+		QCOMPARE(overflow.failedStampUpdates(), std::uint64_t{1});
+
+		std::vector<std::string> sent;
+		auto emitEvent = [&sent](const lmms::HandoffMidiEvent& e) { sent.push_back("E" + std::to_string(e.offset)); return true; };
+		auto emitCut = [&sent](int channel) { sent.push_back("CUT" + std::to_string(channel)); return true; };
+		lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut);
+		// The stale lower stamp may fire a cut early, but the deferred cut follows the last queued event.
+		QVERIFY(sent.size() >= 9);
+		QCOMPARE(sent.back(), std::string("CUT3"));
+		QCOMPARE(sent[sent.size() - 2], std::string("E8"));
+		QCOMPARE(overflow.recorded(), std::uint64_t{1});
+	}
+
 	void keepsOrderAndDropsWhenFull()
 	{
 		lmms::MidiHandoffQueue<8> queue;

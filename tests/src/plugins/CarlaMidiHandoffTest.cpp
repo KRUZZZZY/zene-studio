@@ -77,6 +77,17 @@ struct FakeCarlaPlugin
 	}
 };
 
+//! Index of the last event with this status byte and first data byte, or -1.
+int lastIndexOf(const std::vector<NativeMidiEvent>& stream, std::uint8_t status, std::uint8_t data1)
+{
+	int found = -1;
+	for (std::size_t i = 0; i < stream.size(); ++i)
+	{
+		if (stream[i].data[0] == status && stream[i].data[1] == data1) { found = static_cast<int>(i); }
+	}
+	return found;
+}
+
 struct StressProbe
 {
 	std::array<std::uint32_t, 4> lastIndex{};
@@ -406,6 +417,64 @@ private slots:
 		QCOMPARE(plugin.seen[0].data[0], std::uint8_t{0xb3});
 		QCOMPARE(plugin.seen[0].data[1], std::uint8_t{123});
 		QCOMPARE(plugin.seen[0].data[2], std::uint8_t{0});
+	}
+
+	//! Round 4: when stamp contention exhausts its budget the cut must not land before an event queued ahead of the
+	//! refusal. The refusal goes through the production enqueue path; the stream is then actually processed.
+	void exhaustedStampUpdateNeverCutsBeforeAcceptedEvents()
+	{
+		constexpr std::size_t Capacity = 8;
+		lmms::CarlaMidiHandoff<Capacity> handoff;
+		FakeCarlaPlugin plugin;
+		NativePluginDescriptor descriptor{};
+		descriptor.process = &FakeCarlaPlugin::process;
+		std::array<float, RenderFrames> inputLeft{};
+		std::array<float, RenderFrames> inputRight{};
+		std::array<float, RenderFrames> outputLeft{};
+		std::array<float, RenderFrames> outputRight{};
+#if CARLA_VERSION_HEX >= 0x030000
+		const float* input[] = {inputLeft.data(), inputRight.data()};
+#else
+		float* input[] = {inputLeft.data(), inputRight.data()};
+#endif
+		float* output[] = {outputLeft.data(), outputRight.data()};
+
+		// Seven filler events, then the note-on on channel 5 is the LAST event accepted before the refusal.
+		for (std::uint32_t i = 0; i < Capacity - 1; ++i)
+		{
+			QVERIFY(handoff.enqueue(lmms::MidiEvent(lmms::MidiControlChange, 1, 7, 10), i));
+		}
+		QVERIFY(handoff.enqueue(lmms::MidiEvent(lmms::MidiNoteOn, 5, 60, 90), 20));
+
+		const auto noQueueContention = [](std::uint32_t) {};
+		const auto contendDuringStampUpdate = [](std::atomic<std::uint64_t>& stamp, std::uint64_t expected,
+			std::uint64_t requestedStamp, std::uint32_t)
+		{
+			// Another recorder keeps advancing the stamp, but always stays below this refusal's stamp.
+			if (expected + 1 < requestedStamp) { stamp.compare_exchange_strong(expected, expected + 1); }
+		};
+		std::uint32_t pushAttempts = 0;
+		std::uint32_t stampAttempts = 0;
+		QVERIFY(!handoff.enqueueWithTestHooks(lmms::MidiEvent(lmms::MidiNoteOff, 5, 60, 0), 25, &pushAttempts,
+			&stampAttempts, noQueueContention, contendDuringStampUpdate));
+		QCOMPARE(handoff.failedOverflowStampUpdates(), std::uint64_t{1});
+
+		// Process until everything is delivered, recording the stream in order.
+		std::vector<NativeMidiEvent> stream;
+		for (int period = 0; period < 6; ++period)
+		{
+			handoff.processPeriod([&](const NativeMidiEvent* events, std::uint32_t eventCount)
+			{
+				descriptor.process(&plugin, input, output, RenderFrames, events, eventCount);
+				for (std::uint32_t i = 0; i < eventCount; ++i) { stream.push_back(events[i]); }
+			});
+		}
+
+		const int noteOnIndex = lastIndexOf(stream, 0x95, 60);
+		const int lastCutIndex = lastIndexOf(stream, 0xb5, 123);
+		QVERIFY2(noteOnIndex >= 0, "the accepted note-on never reached the process callback");
+		QVERIFY2(lastCutIndex > noteOnIndex,
+			"the recovery cut for channel 5 is placed before the last accepted note-on: the note would hang");
 	}
 
 	void concurrentMidiStressIsOrderedAndAllocationFree()

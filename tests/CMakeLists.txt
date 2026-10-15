@@ -1409,6 +1409,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			"${CMAKE_SOURCE_DIR}/plugins/CarlaBase/CarlaConfig"
 		)
 	endif()
+	if(LMMS_TEST_NAME STREQUAL "MidiHandoffQueueTest")
+		# The structural test of pop() reads the header text.
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			MIDI_HANDOFF_QUEUE_HEADER="${CMAKE_SOURCE_DIR}/include/MidiHandoffQueue.h")
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "MidiReconnectTest")
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/src/core")
 	endif()
