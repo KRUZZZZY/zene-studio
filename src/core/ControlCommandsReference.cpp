@@ -225,8 +225,12 @@ ControlResult copyDevices(const QJsonObject& args)
 	addUndoStep([id, before]() { restoreChain(id, before); }, [id, after]() { restoreChain(id, after); });
 	controlRestoreChainXml(target.chain, after);
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("target"), id}, {QStringLiteral("copied"), effects.size()},
-		{QStringLiteral("device_count"), static_cast<int>(target.chain->effects().size())}});
+	QJsonObject result{{QStringLiteral("target"), id}, {QStringLiteral("copied"), effects.size()},
+		{QStringLiteral("device_count"), static_cast<int>(target.chain->effects().size())}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("target"), id}}, QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("action checkpoint: the recorded undo step restores the target chain from its <fxchain> document captured before the copy; "
+			"its redo restores the copied chain")));
+	return ControlResult::success(result);
 }
 
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args, const QStringList& required,
