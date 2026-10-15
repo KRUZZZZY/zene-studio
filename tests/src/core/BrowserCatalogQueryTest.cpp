@@ -43,6 +43,7 @@
 #endif
 
 #include "BrowserCatalog.h"
+#include "BrowserIndex.h"
 #include "BrowserPeakCache.h"
 #include "BrowserTestSupport.h"
 
@@ -57,6 +58,16 @@ QString writeFixture(const QString& directory, const QString& name, const WaveSp
 	const QString path = QDir(directory).filePath(name);
 	writeWave(path, spec);
 	return path;
+}
+
+//! An LV2 preset: a directory bundle holding a manifest, as an installed plugin does.
+QString writeLv2Bundle(const QString& directory)
+{
+	const QString bundle = QDir(directory).filePath(QStringLiteral("MySynth.lv2"));
+	QDir().mkpath(bundle);
+	writeText(QDir(bundle).filePath(QStringLiteral("manifest.ttl")),
+		QStringLiteral("@prefix lv2: <http://lv2plug.in/ns/lv2core#> ."));
+	return bundle;
 }
 
 } // namespace
@@ -346,6 +357,62 @@ private slots:
 		const BrowserQueryResult result = runBrowserQuery(query);
 		QVERIFY2(result.truncated, "the walk visited more entries than the limit and did not say so");
 		QVERIFY(result.scanned <= BrowserMaxScanEntries);
+	}
+
+	//! An LV2 preset is the bundle directory itself: the walk returns it as one
+	//! preset and does not descend into it. Without a kind filter the bundle must
+	//! be the only item - a walk that entered it would return manifest.ttl instead.
+	void lv2BundleIsOnePresetAndItsContentsAreNotWalked()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString bundle = writeLv2Bundle(dir.path());
+		QVERIFY2(QFileInfo(bundle).isDir(), "the LV2 fixture bundle was not written");
+
+		BrowserQuery everything;
+		everything.path = dir.path();
+		const BrowserQueryResult all = runBrowserQuery(everything);
+		QCOMPARE(all.matched, 1);
+		QCOMPARE(all.items.first().path, QFileInfo(bundle).absoluteFilePath());
+		QCOMPARE(all.items.first().kind, BrowserKind::Preset);
+
+		BrowserQuery presets = everything;
+		presets.kind = QStringLiteral("preset");
+		const BrowserQueryResult preset = runBrowserQuery(presets);
+		QCOMPARE(preset.matched, 1);
+		QCOMPARE(preset.items.first().path, QFileInfo(bundle).absoluteFilePath());
+	}
+
+	//! The persistent index records a bundle as one preset and does not index the
+	//! files inside it. The store is a file of its own, outside the scanned tree.
+	void indexRecordsLv2BundleAsOnePreset()
+	{
+		QTemporaryDir dir;
+		QTemporaryDir store;
+		QVERIFY(dir.isValid());
+		QVERIFY(store.isValid());
+		const QString bundle = writeLv2Bundle(dir.path());
+		const QString manifest = QDir(bundle).filePath(QStringLiteral("manifest.ttl"));
+		QVERIFY(QFileInfo(manifest).isFile());
+		qputenv("ZENE_BROWSER_INDEX", QDir(store.path()).filePath(QStringLiteral("index.json")).toUtf8());
+
+		BrowserIndex& index = BrowserIndex::instance();
+		index.reload();
+		QVERIFY(index.scanNow(QStringList{dir.path()}, false, 0));
+		bool bundleIndexed = false;
+		bool manifestIndexed = false;
+		for (const BrowserIndexEntry& entry : index.entries())
+		{
+			bundleIndexed = bundleIndexed || entry.path == QFileInfo(bundle).canonicalFilePath();
+			manifestIndexed = manifestIndexed || entry.path == QFileInfo(manifest).canonicalFilePath();
+			if (entry.path == QFileInfo(bundle).canonicalFilePath())
+			{
+				QCOMPARE(entry.kind, BrowserKind::Preset);
+			}
+		}
+		qunsetenv("ZENE_BROWSER_INDEX");
+		QVERIFY2(bundleIndexed, "the LV2 bundle was not indexed");
+		QVERIFY2(!manifestIndexed, "the bundle contents were indexed separately");
 	}
 
 private:

@@ -257,6 +257,7 @@ bool skippedForDepth(const QFileInfo& entry, int depth)
 
 /*! Streams every entry of \a dirPath one at a time into \a out (files) and \a
  *  queue (directories to visit), spending one unit of \a remaining per entry.
+ *  An LV2 preset bundle is a file to the walk: it goes into \a out and is not queued.
  *
  *  Entries are read ONE AT A TIME: entryInfoList() would materialise a whole
  *  directory before the limit could apply to any of it. Directories count against
@@ -279,6 +280,11 @@ bool readDirectory(const QString& dirPath, int depth, int* remaining,
 		--(*remaining);
 		entries.next();  // next() + fileInfo(), not nextFileInfo(): that one is Qt 6.3+, and CI builds Qt 5
 		const QFileInfo entry = entries.fileInfo();
+		if (browserIsLv2Bundle(entry))
+		{
+			out->append(entry.absoluteFilePath());
+			continue;
+		}
 		if (entry.isDir())
 		{
 			if (walkMayDescend(entry, depth))
@@ -374,6 +380,12 @@ BrowserKind browserKindForPath(const QString& path)
 		if (suffix == QLatin1String(row.extension)) { return row.kind; }
 	}
 	return BrowserKind::Other;
+}
+
+bool browserIsLv2Bundle(const QFileInfo& info)
+{
+	return info.isDir() && !info.isSymLink()
+		&& info.suffix().compare(QLatin1String("lv2"), Qt::CaseInsensitive) == 0;
 }
 
 QList<BrowserRoot> browserRoots()

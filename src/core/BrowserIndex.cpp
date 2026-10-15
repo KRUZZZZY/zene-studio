@@ -177,6 +177,45 @@ void admit(const QFileInfo& info, Walk* walk)
 	walk->found.push_back(entryOf(info, path, walk));
 }
 
+//! Admits \a info, or queues it for the walk when it is an ordinary directory. An LV2
+//! bundle is a directory the library holds as one item, so it is admitted, not queued;
+//! a symlinked directory is never followed (a loop would never end).
+void visitEntry(const QFileInfo& info, QStringList* pending, Walk* walk)
+{
+	if (info.isDir() && !browserIsLv2Bundle(info))
+	{
+		if (!info.isSymLink()) { pending->append(info.absoluteFilePath()); }
+		return;
+	}
+	admit(info, walk);
+}
+
+void reportProgress(const Walk& walk, QMutex* mutex, BrowserIndex::Status* status)
+{
+	if (walk.status.scanned % ProgressEvery != 0) { return; }
+	QMutexLocker lock(mutex);
+	status->scanned = walk.status.scanned;
+	status->analysed = walk.status.analysed;
+}
+
+//! Walks \a root depth-first, one directory listing at a time, so the walk never
+//! enters an LV2 bundle: the bundle is a single item, whatever is inside it.
+void walkDirectory(const QString& root, Walk* walk, std::atomic<bool>& cancel,
+	QMutex* mutex, BrowserIndex::Status* status)
+{
+	QStringList pending{root};
+	while (!pending.isEmpty() && !cancel.load() && !walk->status.truncated)
+	{
+		QDirIterator it(pending.takeLast(), QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable);
+		while (it.hasNext() && !cancel.load() && !walk->status.truncated)
+		{
+			it.next();
+			visitEntry(it.fileInfo(), &pending, walk);
+			reportProgress(*walk, mutex, status);
+		}
+	}
+}
+
 } // namespace
 
 BrowserIndex& BrowserIndex::instance()
@@ -242,16 +281,7 @@ void BrowserIndex::scan(const QStringList& dirs, bool features, int maxAnalysed)
 	}
 	for (const QString& dir : dirs)
 	{
-		QDirIterator it(dir, QDir::Files | QDir::Readable, QDirIterator::Subdirectories);
-		while (it.hasNext() && !m_cancel.load() && !walk.status.truncated)
-		{
-			it.next();
-			admit(it.fileInfo(), &walk);
-			if (walk.status.scanned % ProgressEvery != 0) { continue; }
-			QMutexLocker lock(&m_mutex);
-			m_status.scanned = walk.status.scanned;
-			m_status.analysed = walk.status.analysed;
-		}
+		walkDirectory(dir, &walk, m_cancel, &m_mutex, &m_status);
 	}
 	std::sort(walk.found.begin(), walk.found.end(), [](const BrowserIndexEntry& a, const BrowserIndexEntry& b) { return a.path < b.path; });
 	walk.status.running = false;
