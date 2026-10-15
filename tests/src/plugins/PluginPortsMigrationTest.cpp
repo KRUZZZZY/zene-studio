@@ -723,6 +723,7 @@ private slots:
 	void multitapEchoRetunesAllTapsAfterSampleRateChange();
 	void nesCoarseDetuneRetunesHeldNote();
 	void opulenzUpdatePatchLocksEmulatorForWholeUpdate();
+	void opulenzReloadEmulatorReplacesEmulatorUnderMutex();
 	void sf2DialogRejectsAFilteredOutProgram();
 	void gigPatchDialogPreviewsSelectedProgram();
 	void rmsHelperCopiesHaveIndependentBuffers();
@@ -2556,6 +2557,34 @@ void PluginPortsMigrationTest::opulenzUpdatePatchLocksEmulatorForWholeUpdate()
 	QVERIFY2(!loaderBody.isEmpty(), "locked patch writer helper was not found");
 	QVERIFY(!loaderBody.contains("emulatorMutex.lock()"));
 	QVERIFY(!loaderBody.contains("QMutexLocker"));
+}
+
+void PluginPortsMigrationTest::opulenzReloadEmulatorReplacesEmulatorUnderMutex()
+{
+	const auto sourcePath = QDir{QCoreApplication::applicationDirPath()}
+		.filePath(QStringLiteral("../../plugins/OpulenZ/OpulenZ.cpp"));
+	QFile source{sourcePath};
+	QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(sourcePath));
+	const auto contents = source.readAll();
+	const auto reloadBody = functionBody(contents, "void OpulenzInstrument::reloadEmulator()");
+	QVERIFY2(!reloadBody.isEmpty(), "OpulenzInstrument::reloadEmulator() source was not found");
+
+	// The audio callbacks read theEmulator, voiceNote and voiceLRU only under emulatorMutex, so the
+	// old emulator must be deleted and the voice state reset inside the same critical section.
+	const auto lock = reloadBody.indexOf("emulatorMutex.lock();");
+	const auto deletion = reloadBody.indexOf("delete theEmulator;");
+	const auto replacement = reloadBody.indexOf("theEmulator = new CTemuopl");
+	const auto noteReset = reloadBody.indexOf("voiceNote[i] = OPL2_VOICE_FREE;");
+	const auto lruReset = reloadBody.indexOf("voiceLRU[i] = i;");
+	const auto patchUpdate = reloadBody.indexOf("updatePatch();");
+	const auto unlock = reloadBody.indexOf("emulatorMutex.unlock();");
+	QVERIFY2(lock >= 0 && lock < deletion && deletion < replacement && replacement < noteReset
+		&& noteReset < lruReset && lruReset < patchUpdate && patchUpdate < unlock,
+		"reload must delete, replace, reset voices and patch the emulator within one emulatorMutex section");
+
+	// updatePatch() takes the same mutex again, so the mutex must be re-entrant for that nested call.
+	QVERIFY2(contents.contains("QRecursiveMutex OpulenzInstrument::emulatorMutex;"),
+		"emulatorMutex must be recursive because reloadEmulator calls updatePatch() while holding it");
 }
 
 void PluginPortsMigrationTest::gigPatchDialogPreviewsSelectedProgram()
