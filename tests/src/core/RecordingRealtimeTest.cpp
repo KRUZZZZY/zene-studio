@@ -712,6 +712,45 @@ private slots:
 		delete track;
 	}
 
+	//! The pass count belongs to the arming it counted: a clip armed again after a loop pass
+	//! records its first take as the clip's own content, not as one more take on a lane
+	//! (BUG 11, new-p12-206 - the old arming's count was carried into the new arming).
+	void reArmingAfterALoopPassTakesItsFirstPassOverTheClip()
+	{
+		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(lmms::Engine::getSong()->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+
+		// A loop wrap ended a pass while the transport still recorded: it became a lane take,
+		// and the clip stayed armed for the next pass.
+		std::vector<lmms::SampleFrame> pass(64, lmms::SampleFrame(0.25f, 0.25f));
+		clip->acceptRecordedTake(
+			std::make_shared<lmms::SampleBuffer>(pass.data(), pass.size(),
+				static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())),
+			0, true, clip->armGeneration());
+		QVERIFY2(clip->isRecord(), "a loop pass disarmed the clip");
+		QCOMPARE(track->takeLanes().laneCount(), 1);
+
+		// The user disarms after the loop pass and arms again.
+		clip->setRecord(false);
+		clip->setRecord(true);
+
+		// The first take of this arming ends the recording (the transport stopped).
+		std::vector<lmms::SampleFrame> first(96, lmms::SampleFrame(0.5f, 0.5f));
+		clip->acceptRecordedTake(
+			std::make_shared<lmms::SampleBuffer>(first.data(), first.size(),
+				static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())),
+			0, false, clip->armGeneration());
+
+		QVERIFY2(!clip->isRecord(), "the recording pass did not disarm the clip");
+		QCOMPARE(clip->sample().sampleSize(), static_cast<std::size_t>(96));
+		QCOMPARE(track->takeLanes().laneCount(), 1);  // only the loop pass' lane
+		delete track;
+	}
+
 	//! Three loop passes make three takes; the newest lane is active, and Play all takes sums them.
 	void onlyTheNewestLoopPassIsAudible()
 	{
