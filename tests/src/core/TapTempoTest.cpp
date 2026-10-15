@@ -42,6 +42,18 @@ private slots:
 		Engine::destroy();
 	}
 
+	void aPendingRecordPressDoesNotCarryIntoTheNextProject()
+	{
+		Song* song = Engine::getSong();
+		song->record();
+		QVERIFY(song->isRecording());
+		song->clearProject();
+		QVERIFY(!song->isRecording());
+		song->playSong();
+		QVERIFY(!song->isRecording());
+		song->stop();
+	}
+
 	void syncWithoutMeasuredTempoLeavesSongTempoUnchanged()
 	{
 		Song* song = Engine::getSong();

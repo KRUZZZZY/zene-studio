@@ -1372,6 +1372,12 @@ void Song::clearProject()
 		stop();
 	}
 
+	// A pending Record press (or an active recording pass) belongs to the
+	// project being cleared - the latch must not survive into the next one
+	// (BUGS new-p12-257 BUG 8).
+	m_recordLatched = false;
+	m_recording = false;
+
 	for (auto i = std::size_t{0}; i < PlayModeCount; i++)
 	{
 		setPlayPos( 0, ( PlayMode )i );
