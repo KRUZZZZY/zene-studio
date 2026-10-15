@@ -463,6 +463,29 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{2});
 	}
 
+	void aSparsePaintStrokeAtNarrowZoomPaintsEveryCellThroughTheRelease()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		m_editor->setZoom(0.02);  // a 12-tick cell is narrower than one screen pixel
+		const int y = point(300, 62).y();
+		const QPoint from(6, y);     // tick 300
+		const QPoint move(8, y);     // tick 400
+		const QPoint release(10, y); // tick 500
+		QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(m_editor->canvas(), move);  // one sparse move event across several grid cells
+		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, release);
+
+		// Cells 300..492 (17 of them): the press's, the cells between the move and the press, and those
+		// between the move and the release, which no event lands on.
+		for (int tick = 300; tick <= 492; tick += 12)
+		{
+			QVERIFY2(noteAt(m_clip, tick, 62) != nullptr, qPrintable(QStringLiteral("no painted note at %1").arg(tick)));
+		}
+		QCOMPARE(m_clip->notes().size(), std::size_t{19});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
 	void altWheelChangesTheSelectionsVelocityAsOneEdit()
 	{
 		// The FL model (2026-10-03): Alt+wheel over a note sets the velocity (Alt alone no longer drags it).
