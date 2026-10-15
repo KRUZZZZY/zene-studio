@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-15T08:30:27Z",
+  "captured_at": "2026-10-15T21:38:10Z",
   "commands": [
     {
       "args_schema": {
@@ -30600,7 +30600,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "How notes are played back: 'chase' sounds a note playback starts, jumps or loops into the middle of (off by default), and 'offset_ms' (0..500) starts every note that much later, to line up a slow instrument. Preferences, kept in the config file. With no arguments it reports them. One undo step.",
+      "description": "How notes are played back: 'chase' sounds a note playback starts, jumps or loops into the middle of - or that is already under the playhead when its track or clip is unmuted (off by default) - and 'offset_ms' (0..500) starts every note that much later, to line up a slow instrument. Preferences, kept in the config file. With no arguments it reports them. One undo step.",
       "group": "transport",
       "id": "transport.midi_options",
       "mutating": true,
@@ -35149,8 +35149,14 @@
   ],
   "count": 828,
   "instance": {
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-040/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/cff463a0-1326-44da-8393-bec3a1847916/scratchpad/train5/commands-release.json"
+    "source_socket": "/tmp/zctl-run-x66qumx3/zene.sock",
+    "version": "0.4.0-alpha.2723+de5a85a"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

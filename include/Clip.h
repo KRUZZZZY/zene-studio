@@ -306,6 +306,13 @@ public:
 	*/
 	virtual Clip* clone() = 0;
 
+	/*! 0.5.0 Q050-040 (L07): whether the render thread saw this clip muted on its last play pass.
+	 *  Written and read on the audio thread only - Song::processNextBuffer is the one thread that
+	 *  schedules notes - so a plain bool, no atomic. It is what lets an unmute during playback
+	 *  chase the notes already under the playhead exactly once (InstrumentTrack::play). */
+	bool playbackWasMuted() const { return m_playbackWasMuted; }
+	void setPlaybackWasMuted(bool muted) { m_playbackWasMuted = muted; }
+
 public slots:
 	void toggleMute();
 
@@ -375,6 +382,9 @@ private:
 
 	//! The link group this clip shares its content with (row 6; 0 = unlinked).
 	int m_linkId = 0;
+
+	//! 0.5.0 Q050-040: the render thread's own memory of this clip's mute, one pass back.
+	bool m_playbackWasMuted = false;
 
 	friend class ClipView;
 

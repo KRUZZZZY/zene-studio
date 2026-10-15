@@ -286,8 +286,9 @@ void registerNotePlaybackCommands(ControlRegistry& registry)
 		{{QStringLiteral("swing"), numberProperty()}, {QStringLiteral("grid"), enumProperty({QStringLiteral("16th"), QStringLiteral("8th")})}},
 		{}, true, groove);
 	add(registry, "transport.midi_options", QStringLiteral("How notes are played back: 'chase' sounds a note playback starts, "
-		"jumps or loops into the middle of (off by default), and 'offset_ms' (0..500) starts every note that much later, to line "
-		"up a slow instrument. Preferences, kept in the config file. With no arguments it reports them. One undo step."),
+		"jumps or loops into the middle of - or that is already under the playhead when its track or clip is unmuted (off by "
+		"default) - and 'offset_ms' (0..500) starts every note that much later, to line up a slow instrument. Preferences, kept "
+		"in the config file. With no arguments it reports them. One undo step."),
 		{{QStringLiteral("chase"), booleanProperty()}, {QStringLiteral("offset_ms"), integerProperty(0, MidiPlayback::MaxOffsetMs)}},
 		{}, true, midiOptions);
 }

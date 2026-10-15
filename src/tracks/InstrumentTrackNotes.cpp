@@ -131,14 +131,35 @@ void InstrumentTrack::playClipControllers(const MidiClip* clip, tick_t tick, f_c
 	}
 }
 
-bool InstrumentTrack::noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip) const
+bool InstrumentTrack::noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip, bool chaseNow) const
 {
-	if (note.pos() == curStart) { return true; }
-	if (!(note.pos() < curStart && note.endPos() > curStart)) { return false; }
+	const bool atStart = note.pos() == curStart;
+	if (!atStart && !(note.pos() < curStart && note.endPos() > curStart)) { return false; }
 	// A note under the clip's own start (a clip trimmed from the left) always sounds from there; one
-	// under a start, a jump or a loop does when chase is on (0.5.0 ED-075, MidiPlayback.h).
-	const MidiPlayback& playback = MidiPlayback::instance();
-	return curStart == -clip->startTimeOffset() || (playback.chase() && playback.chasingNow());
+	// under a start, a jump, a loop or an unmute (0.5.0 ED-075, Q050-040) only when chased.
+	if (!atStart && curStart == -clip->startTimeOffset()) { return true; }
+	if (!atStart && !chaseNow) { return false; }
+	// A chase must not sound a note twice: an under-playhead note a seek or loop left ringing already
+	// has a live handle, and starting another would double it (Q050-040, InstrumentTrack::play).
+	return !chaseNow || !noteIsAlreadySounding(note, clip);
+}
+
+bool InstrumentTrack::noteIsAlreadySounding(const Note& note, const MidiClip* clip) const
+{
+	// The clip's transpose, as decorateNoteHandle applies it, so the keys compare (ChordFollow's
+	// re-keying is not mirrored: on such a track a chase may start a note that is already ringing).
+	const int transpose = clip->clipEdits().transpose;
+	const int key = std::clamp(note.key() + transpose, 0, NumKeys - 1);
+	for (PlayHandle* handle : Engine::audioEngine()->playHandles())
+	{
+		auto* noteHandle = dynamic_cast<NotePlayHandle*>(handle);
+		if (noteHandle == nullptr || noteHandle->instrumentTrack() != this) { continue; }
+		if (noteHandle->pos() != note.pos() || noteHandle->key() != key) { continue; }
+		// A released handle is a release tail, not the note: a loop may sound the note again over it.
+		if (noteHandle->isReleased()) { continue; }
+		return true;
+	}
+	return false;
 }
 
 bool InstrumentTrack::notePlaysNow(const Note& note, uint32_t midiSeed) const

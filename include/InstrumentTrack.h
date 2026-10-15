@@ -212,8 +212,13 @@ public:
 		class PatternTrack* patternTrack;
 		tick_t songTick;  //!< the song position playing now: a looped clip's pass included (swing's phase)
 	};
-	//! Whether a note starts at @a curStart: on it, under the clip's own start, or chased (InstrumentTrackNotes.cpp).
-	bool noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip) const;
+	//! Whether a note starts at @a curStart: on it, under the clip's own start, or chased
+	//! (InstrumentTrackNotes.cpp). @a chaseNow is a start, a jump, a loop or an unmute this
+	//! pass (Q050-040); a note an already-sounding handle covers is not started again.
+	bool noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip, bool chaseNow) const;
+	//! Whether a live (not released) note play handle of this track already plays @a note:
+	//! the chase must not double a note that a seek or loop left sounding (Q050-040).
+	bool noteIsAlreadySounding(const Note& note, const MidiClip* clip) const;
 	//! Whether the note plays this time: not muted, on this pass, past its chance roll (InstrumentTrackNotes.cpp).
 	bool notePlaysNow(const Note& note, uint32_t midiSeed) const;
 	//! Start the note: its articulation, its handle and its repeats, delayed by swing and the MIDI offset.
@@ -419,6 +424,10 @@ private:
 	bool m_sustainPedalPressed;
 
 	bool m_silentBuffersProcessed;
+
+	//! 0.5.0 Q050-040: this track's mute as the render thread saw it one play() pass back.
+	//! Render thread's own (Song::processNextBuffer is the one scheduler), so a plain bool.
+	bool m_mutedLastPlay = false;
 
 	bool m_previewMode;
 
