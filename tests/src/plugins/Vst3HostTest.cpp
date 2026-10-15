@@ -166,6 +166,7 @@ private slots:
 	void testNonFiniteParameterValuesAreRefused();
 	void testReprepareGateQuiescesAllActiveAudioCalls();
 	void testDroppedOutputCounterUsesAtomicAccess();
+	void testRetriggerGetsANewNoteId();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -571,6 +572,55 @@ void Vst3HostTest::testDroppedOutputCounterUsesAtomicAccess()
 	QVERIFY(host.contains("d.droppedOutput.store(0, std::memory_order_relaxed);"));
 	QVERIFY(host.contains("droppedOutput.fetch_add(1, std::memory_order_relaxed);"));
 	QVERIFY(reports.contains("m_impl->droppedOutput.load(std::memory_order_relaxed)"));
+}
+
+/*! 0.5.0 MX-120 round 2 (Luna DISPUTE, new-p9-509): a retrigger of a key whose first voice is still in its
+ *  release tail starts a NEW VST3 note id. The first note-off and the expression sent in its tail name the
+ *  first note; the retrigger's note-on and the expression after it name the new one, so the two voices never
+ *  share an id. */
+void Vst3HostTest::testRetriggerGetsANewNoteId()
+{
+	constexpr int Frames = 1024;
+	const auto noteAt = [](int type, int frame, int velocity) {
+		return MidiEventIn{static_cast<std::uint8_t>(type), 3, 60, static_cast<std::uint8_t>(velocity), frame, true};
+	};
+	const auto expressionAt = [](int frame, double value) {
+		return MidiEventIn{kNoteExpressionMidiType, 3, 60, 0, frame, true, 7, value};
+	};
+	auto queue = std::make_unique<MidiQueue>();
+	QVERIFY(queue->push(noteAt(MidiNoteOn, 0, 100)));          // voice A starts
+	QVERIFY(queue->push(noteAt(MidiNoteOff, 100, 0)));         // voice A is released; its tail still answers to its id
+	QVERIFY(queue->push(expressionAt(150, 0.25)));             // in the tail: names voice A
+	QVERIFY(queue->push(noteAt(MidiNoteOn, 200, 100)));        // the retrigger: voice B while A is still releasing
+	QVERIFY(queue->push(expressionAt(300, 0.75)));             // after the retrigger: names voice B
+	std::vector<MidiEventIn> scratch(kMaxMidiEventsPerBlock);
+	Steinberg::Vst::EventList events{kMaxMidiEventsPerBlock};
+	QCOMPARE(drainMidiIntoEventList(*queue, scratch, events, 0, Frames), 5);
+	QCOMPARE(events.getEventCount(), 5);
+
+	Steinberg::Vst::Event firstOn{};
+	Steinberg::Vst::Event release{};
+	Steinberg::Vst::Event tail{};
+	Steinberg::Vst::Event retrigger{};
+	Steinberg::Vst::Event after{};
+	QCOMPARE(events.getEvent(0, firstOn), Steinberg::kResultOk);
+	QCOMPARE(events.getEvent(1, release), Steinberg::kResultOk);
+	QCOMPARE(events.getEvent(2, tail), Steinberg::kResultOk);
+	QCOMPARE(events.getEvent(3, retrigger), Steinberg::kResultOk);
+	QCOMPARE(events.getEvent(4, after), Steinberg::kResultOk);
+	QCOMPARE(firstOn.type, Steinberg::Vst::Event::kNoteOnEvent);
+	QCOMPARE(release.type, Steinberg::Vst::Event::kNoteOffEvent);
+	QCOMPARE(tail.type, Steinberg::Vst::Event::kNoteExpressionValueEvent);
+	QCOMPARE(retrigger.type, Steinberg::Vst::Event::kNoteOnEvent);
+	QCOMPARE(after.type, Steinberg::Vst::Event::kNoteExpressionValueEvent);
+
+	const auto voiceA = firstOn.noteOn.noteId;
+	const auto voiceB = retrigger.noteOn.noteId;
+	QVERIFY2(voiceA >= 0 && voiceB >= 0, "a plug-in with note expressions must get a note id on every note");
+	QVERIFY2(voiceA != voiceB, "the retrigger reused the released voice's note id");
+	QCOMPARE(release.noteOff.noteId, voiceA);
+	QCOMPARE(tail.noteExpressionValue.noteId, voiceA);
+	QCOMPARE(after.noteExpressionValue.noteId, voiceB);
 }
 
 } // namespace lmms::vst3

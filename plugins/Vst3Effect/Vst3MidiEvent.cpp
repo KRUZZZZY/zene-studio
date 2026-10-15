@@ -61,19 +61,28 @@ auto resolveEventInputBus(IComponent* component) -> int32
 	return chosen;
 }
 
-namespace
+auto NoteIds::resolve(const MidiEventIn& midi) -> int32
 {
-
-//! 0.5.0 MX-120: the note id a note event carries - its channel and key when the plug-in takes note
-//! expressions (so an expression can name the voice), the SDK samples' -1 otherwise.
-int32 noteIdOf(const MidiEventIn& midi)
-{
-	return midi.withNoteId ? static_cast<int32>(midi.channel) * 128 + midi.data0 : -1;
+	if (!midi.withNoteId) { return -1; }
+	auto& id = m_ids[static_cast<std::size_t>((midi.channel & 0x0f) * 128 + (midi.data0 & 0x7f))];
+	switch (midi.type)
+	{
+		case MidiNoteOn:
+			// Velocity 0 is the MIDI idiom for a note-off: it names the note that is ending.
+			if (midi.data1 == 0) { return id; }
+			id = m_next;
+			m_next = m_next == kLastId ? 0 : m_next + 1;
+			return id;
+		case MidiNoteOff:
+		case MidiKeyPressure:
+		case kNoteExpressionMidiType:
+			return id;
+		default:
+			return -1;
+	}
 }
 
-} // namespace
-
-auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> bool
+auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, int32 noteId, Event* event) -> bool
 {
 	*event = Event{};
 	event->busIndex = busIndex;
@@ -93,7 +102,7 @@ auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> b
 				event->noteOff.channel = channel;
 				event->noteOff.pitch = key;
 				event->noteOff.velocity = 0.f;
-				event->noteOff.noteId = noteIdOf(midi);
+				event->noteOff.noteId = noteId;
 				event->noteOff.tuning = 0.f;
 				return true;
 			}
@@ -105,7 +114,7 @@ auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> b
 			// No length: the host does not guess a note duration, the matching
 			// note-off always follows (SDK ivstevents.h:50).
 			event->noteOn.length = 0;
-			event->noteOn.noteId = noteIdOf(midi);
+			event->noteOn.noteId = noteId;
 			return true;
 
 		case MidiNoteOff:
@@ -113,7 +122,7 @@ auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> b
 			event->noteOff.channel = channel;
 			event->noteOff.pitch = key;
 			event->noteOff.velocity = value;
-			event->noteOff.noteId = noteIdOf(midi);
+			event->noteOff.noteId = noteId;
 			event->noteOff.tuning = 0.f;
 			return true;
 
@@ -122,13 +131,15 @@ auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, Event* event) -> b
 			event->polyPressure.channel = channel;
 			event->polyPressure.pitch = key;
 			event->polyPressure.pressure = value;
-			event->polyPressure.noteId = noteIdOf(midi);
+			event->polyPressure.noteId = noteId;
 			return true;
 
 		case kNoteExpressionMidiType:
+			// An expression names its voice: with no note id there is no voice to address.
+			if (noteId < 0) { return false; }
 			event->type = Event::kNoteExpressionValueEvent;
 			event->noteExpressionValue.typeId = midi.expressionType;
-			event->noteExpressionValue.noteId = static_cast<int32>(midi.channel) * 128 + midi.data0;
+			event->noteExpressionValue.noteId = noteId;
 			event->noteExpressionValue.value = std::clamp(midi.expressionValue, 0.0, 1.0);
 			return true;
 
@@ -179,7 +190,8 @@ auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
 			continue;
 		}
 		Event event{};
-		if (!midiToVst3Event(scratch[i], busIndex, &event)) { continue; }
+		// MX-120 round 2: the note id is resolved here, in the order the plug-in receives the events.
+		if (!midiToVst3Event(scratch[i], busIndex, queue.noteIds().resolve(scratch[i]), &event)) { continue; }
 		event.sampleOffset = std::clamp(scratch[i].frameOffset, 0, frames);
 		events.addEvent(event);
 	}
