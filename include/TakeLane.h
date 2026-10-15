@@ -164,6 +164,10 @@ struct TakeLaneSegment
 class LMMS_EXPORT TakeLaneModel
 {
 public:
+	//! Each play handle snapshots at most this many disjoint spans of one lane (SamplePlayHandle's fixed render
+	//! array). Authoring paths refuse a composite that would exceed it, so a rendered comp is never silently cut.
+	static constexpr int MaxCompositeSpansPerLane = 256;
+
 	// ---- lanes ----------------------------------------------------------
 	/*! Adds a lane and returns its next never-used index. Removed indices are
 	 *  not reused: clips can still carry their old lane tag, so recycling that
@@ -173,8 +177,11 @@ public:
 	 *  ENTITY id is allocated here too (the `lane-` family, exactly as the
 	 *  Track and Clip constructors allocate theirs - SPEC-ARCH-4 1.5 R4). */
 	int addLane(const QString& name = QString());
-	//! Removes the lane; every segment naming it falls back to the base lane.
+	/*! Removes the lane; every segment naming it falls back to the base lane. Refused (nothing
+	 *  removed) when the lane is unknown or the result would exceed the playback span budget. */
 	bool removeLane(int index);
+	//! Whether removeLane(\p index) would succeed, without writing.
+	bool canRemoveLane(int index) const;
 	bool hasLane(int index) const;
 	int laneCount() const { return static_cast<int>(m_lanes.size()); }
 	const std::vector<TakeLane>& lanes() const { return m_lanes; }
@@ -207,7 +214,8 @@ public:
 	 *  overwritten (a selection paints over what was there), so this is the one
 	 *  operation that changes the composite. False = rejected, nothing written:
 	 *  an empty or reversed range, a negative offset, or a lane the track does
-	 *  not have (a refusal, never a silent clamp - the design's I4 rule). */
+	 *  not have, or a result that would put more than MaxCompositeSpansPerLane
+	 *  spans on one lane (a refusal, never a silent clamp - the design's I4 rule). */
 	bool selectSegment(int beginTick, int endTick, int laneIndex, int sourceOffset = 0);
 
 	/*! Whether `selectSegment()` would accept these arguments, without writing.
@@ -220,8 +228,11 @@ public:
 	 *  in the same lane at the same slip, and - when a span is given
 	 *  (`spanEnd > spanBegin >= 0`) - clamps the composite to exactly that span,
 	 *  filling every gap with the base lane. Returns the number of segments the
-	 *  composite now has; 0 with an empty lane set. */
+	 *  composite now has; 0 with an empty lane set, or -1 when the result would
+	 *  exceed the per-lane playback span budget (the composite is left unchanged). */
 	int rebuild(int spanBegin = -1, int spanEnd = -1);
+	//! Whether rebuild(\p spanBegin, \p spanEnd) would stay within the playback span budget, without writing.
+	bool canRebuild(int spanBegin = -1, int spanEnd = -1) const;
 
 	//! The composite, ordered over its span and gapless inside it (I6).
 	const std::vector<TakeLaneSegment>& segments() const { return m_segments; }

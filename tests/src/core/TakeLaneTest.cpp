@@ -74,6 +74,34 @@
 using namespace lmms;
 using namespace taketest;
 
+namespace
+{
+
+void appendLegacyOverBudgetSegments(QDomDocument& doc, QDomElement& lanes)
+{
+	for (int index = 0; index < 513; ++index)
+	{
+		QDomElement segment = doc.createElement(QStringLiteral("z:segment"));
+		segment.setAttribute(QStringLiteral("begin"), index);
+		segment.setAttribute(QStringLiteral("end"), index + 1);
+		segment.setAttribute(QStringLiteral("lane"), index % 2);
+		lanes.appendChild(segment);
+	}
+}
+
+void verifyLegacyOverBudgetSegments(const TakeLaneModel& model)
+{
+	QCOMPARE(model.segments().size(), std::size_t{513});
+	for (std::size_t i = 0; i < model.segments().size(); ++i)
+	{
+		QCOMPARE(model.segments()[i].beginTick, static_cast<int>(i));
+		QCOMPARE(model.segments()[i].endTick, static_cast<int>(i + 1));
+		QCOMPARE(model.segments()[i].laneIndex, static_cast<int>(i % 2));
+	}
+}
+
+} // namespace
+
 class TakeLaneTest : public QObject
 {
 	Q_OBJECT
@@ -232,6 +260,39 @@ private slots:
 		QCOMPARE(fileDigest(clips[1]->sample().sampleFile()), fileBefore1);
 		QCOMPARE(takeDigest(clips[0]), bufferBefore0);
 		QCOMPARE(takeDigest(clips[1]), bufferBefore1);
+	}
+
+	//! An over-budget legacy checkpoint remains intact through restore and a later save/load.
+	void legacyOverBudgetCompositeSurvivesJournalAndFileRoundTrips()
+	{
+		QVector<SampleClip*> clips;
+		SampleTrack* track = makeTakeTrack(m_dir.path(), 1, &clips);
+		QVERIFY(track != nullptr);
+		track->takeLanes().addLane(QStringLiteral("base"));
+		track->takeLanes().addLane(QStringLiteral("alternate"));
+
+		QDomDocument checkpointDoc;
+		QDomElement checkpointRoot = checkpointDoc.createElement(QStringLiteral("root"));
+		checkpointDoc.appendChild(checkpointRoot);
+		QDomElement checkpoint = track->saveState(checkpointDoc, checkpointRoot);
+		QDomElement savedLanes = checkpoint.firstChildElement(QStringLiteral("takelanes"));
+		QVERIFY(!savedLanes.isNull());
+		appendLegacyOverBudgetSegments(checkpointDoc, savedLanes);
+
+		QDomDocument serializedCheckpoint;
+		QVERIFY(serializedCheckpoint.setContent(checkpointDoc.toByteArray()));
+		track->restoreState(serializedCheckpoint.documentElement().firstChildElement());
+		verifyLegacyOverBudgetSegments(track->takeLanes());
+
+		QDomDocument savedDoc;
+		QDomElement savedRoot = savedDoc.createElement(QStringLiteral("root"));
+		savedDoc.appendChild(savedRoot);
+		track->saveState(savedDoc, savedRoot);
+		QDomDocument reloadedDoc;
+		QVERIFY(reloadedDoc.setContent(savedDoc.toByteArray()));
+		Track* reloaded = Track::create(reloadedDoc.documentElement().firstChildElement(), Engine::getSong());
+		QVERIFY(reloaded != nullptr);
+		verifyLegacyOverBudgetSegments(reloaded->takeLanes());
 	}
 
 	void canSelectRejectsSlipsOutsideTheTickRange()

@@ -309,6 +309,53 @@ private slots:
 		QCOMPARE(levelIn(4 * 39 + 1), 0.0);
 	}
 
+	//! Comp authoring must refuse a lane span the fixed render snapshot cannot hold.
+	void refusesSelectionsBeyondThePlaybackSpanBudget()
+	{
+		SampleTrack track(Engine::getSong());
+		TakeLaneModel& comp = track.takeLanes();
+		comp.addLane();
+		comp.addLane();
+		for (int i = 0; i < 256; ++i)
+		{
+			QVERIFY(comp.selectSegment(2 * i, 2 * i + 1, 0));
+		}
+
+		QVERIFY2(!comp.canSelect(512, 513, 0), "the 257th span cannot be rendered by a play handle");
+		QVERIFY(!comp.selectSegment(512, 513, 0));
+		QCOMPARE(comp.segments().size(), std::size_t{256});
+	}
+
+	//! Rebuild and lane removal are authoring paths too: a result over the budget is refused and the composite is kept.
+	void refusesRebuildAndLaneRemovalBeyondThePlaybackSpanBudget()
+	{
+		SampleTrack rebuilt(Engine::getSong());
+		TakeLaneModel& rebuildComp = rebuilt.takeLanes();
+		rebuildComp.addLane();
+		rebuildComp.addLane();
+		for (int i = 0; i < 256; ++i)
+		{
+			QVERIFY(rebuildComp.selectSegment(2 * i + 1, 2 * i + 2, 1));
+		}
+		// Gap-filling a [0, 513) span puts 257 base-lane spans around the 256 alternate spans.
+		QCOMPARE(rebuildComp.rebuild(0, 513), -1);
+		QCOMPARE(rebuildComp.segments().size(), std::size_t{256});
+
+		SampleTrack removed(Engine::getSong());
+		TakeLaneModel& removeComp = removed.takeLanes();
+		removeComp.addLane();
+		removeComp.addLane();
+		QVERIFY(removeComp.selectSegment(0, 1, 0));
+		for (int i = 0; i < 256; ++i)
+		{
+			QVERIFY(removeComp.selectSegment(2 * i + 2, 2 * i + 3, 1));
+		}
+		// Folding the alternate lane into the base leaves 257 separate base spans.
+		QVERIFY(!removeComp.removeLane(1));
+		QVERIFY(removeComp.hasLane(1));
+		QCOMPARE(removeComp.segments().size(), std::size_t{257});
+	}
+
 	//! R3.3: a MIDI take is comped by note - the gate InstrumentTrack::play asks per note.
 	void midiNotesPlayWhereTheirLaneIsSelected()
 	{

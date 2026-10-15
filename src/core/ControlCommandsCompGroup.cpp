@@ -167,9 +167,15 @@ ControlResult moveEdge(const QJsonObject& args)
 	QJsonObject result{{QStringLiteral("track"), id}, {QStringLiteral("edge"), to}};
 	if (to == left.endTick) { return ControlResult::success(result); }  // nothing moved: no record
 	const TakeLaneSegment move = edgeMove(left, right, to);
-	if (!takeReaches(*track, move) || !model.canSelect(move.beginTick, move.endTick, move.laneIndex, move.sourceOffset))
+	if (!takeReaches(*track, move))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the take on that side does not reach %1").arg(to));
+	}
+	if (!model.canSelect(move.beginTick, move.endTick, move.laneIndex, move.sourceOffset))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the take-lane model refuses this edge move (each lane supports at most %1 spans)")
+				.arg(TakeLaneModel::MaxCompositeSpansPerLane));
 	}
 	const QJsonObject before{{QStringLiteral("track"), id}, {QStringLiteral("composite"), compositeState(track)}};
 	track->addJournalCheckPoint();
@@ -216,8 +222,10 @@ ControlResult selectGroup(const QJsonObject& args)
 		if (!slipAccepted(track, srcpos, &error)) { return error; }
 		if (!track->takeLanes().hasLane(lane) || !track->takeLanes().canSelect(begin, end, lane, srcpos))
 		{
-			return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 cannot take lane %2 over [%3, %4)")
-				.arg(trackIdOf(track)).arg(lane).arg(begin).arg(end));
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1 cannot take lane %2 over [%3, %4); a lane supports at most %5 spans")
+					.arg(trackIdOf(track)).arg(lane).arg(begin).arg(end)
+					.arg(TakeLaneModel::MaxCompositeSpansPerLane));
 		}
 	}
 	QJsonArray done;
