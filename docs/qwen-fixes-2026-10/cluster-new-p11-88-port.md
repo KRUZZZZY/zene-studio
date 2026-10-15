@@ -77,6 +77,44 @@ The gate logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ne
 (`gate-1.log`, `gate-2.log`, `gate-3-baseline-tree.log`, `gate-4-baseline-tree.log`).
 Build and test logs are `build-1..7.log` and `test-1..6.log` in the same folder.
 
+## Round 2: documentation correction (Luna REWORK)
+
+Luna's round-1 review (`new-p11-88-port.r1.md`) passed the code fix and its regression, and
+returned REWORK because `docs/DAWPROJECT-INTERCHANGE.md` still described `mixerSharingLost`
+as counting tracks without a mixer model, and listed it as an active loss. This round corrects
+the docs only; product code, tests, gates and baselines are unchanged.
+
+- `docs/DAWPROJECT-INTERCHANGE.md:220-224` (was 221-222): a track without a mixer model, such as
+  a folder, writes no destination IDREF and is **not** counted as lost sharing; `mixerSharingLost`
+  stays serialized for compatibility and no code path increments it. Matches the header comment
+  at `include/DawProjectInterchange.h:359-362`.
+- `docs/DAWPROJECT-INTERCHANGE.md:305` (was 303, loss row 7): "counted in" is now `routingLost`
+  only, with the same note.
+- The fix itself is commit `d6ba9d052`. History was not rewritten, so this correction is a
+  follow-up commit on top of it, not an amend.
+
+Round-2 evidence (logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-88-port.r2/logs/`):
+
+| Step | Command (from the worktree / `build/tests`) | Result |
+| --- | --- | --- |
+| Build, GREEN state | `CCACHE_TEMPDIR=/tmp/ccache-tmp-new-p11-88 cmake --build build --target zene DawProjectInterchangeRoundTripTest -j2 > build-1.log 2>&1` | EXIT=0 |
+| **GREEN** | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R DawProjectInterchangeRoundTripTest --output-on-failure > test-1.log 2>&1` | **EXIT=0**, 1/1 |
+| RED: save product diff | `git diff d6ba9d052^ d6ba9d052 -- src/core/DawProjectSession.cpp include/DawProjectInterchange.h > fix.patch` | EXIT=0 |
+| RED: revert | `git apply -R fix.patch` | EXIT=0 |
+| RED: build | same build command, `> build-2.log` | EXIT=0 |
+| **RED** (unfixed code) | `ctest -R DawProjectInterchangeRoundTripTest --output-on-failure > test-2.log` | **EXIT=8**. `FAIL! : DawProjectInterchangeRoundTripTest::aFolderDoesNotCountAsMixerSharing() ... Actual (loss.mixerSharingLost): 1`. Totals 54 passed, 1 failed. |
+| RED: re-apply | `git apply fix.patch` | EXIT=0 (`git diff --quiet HEAD -- <product files>` then EXIT=0: product files match HEAD) |
+| GREEN: build | same build command, `> build-3.log` | EXIT=0 |
+| Dependents: build | `cmake --build build --target DawProjectDeflateImportTest ProjectContainerTest ProjectContainerEntriesTest ProjectContainerSaveTest ProjectContainerSaveAsGuiTest -j2 > build-4.log` | EXIT=0 |
+| **GREEN** (verbose) | `ctest -R DawProjectInterchangeRoundTripTest -V > test-5.log` | **EXIT=0**. 55 `PASS` lines, including `aFolderDoesNotCountAsMixerSharing()` |
+| **Affected family** | `ctest -R 'DawProject\|ProjectContainer' --output-on-failure > test-4.log` | **EXIT=0, 6 of 6 tests passed** |
+| Complexity gate | `bash tests/complexity-gate.sh --check > gate-1.log 2>&1` | **EXIT=1** (pre-existing; same REGRESSION set as the round-1 baseline-tree run, 6 lines). `dawProjectModelFromSong` (touched) is grandfathered at CCN 23 in `tests/complexity-baseline.tsv:17` and measures 21 now, so it is not a regression. |
+| File-length gate | `bash tests/file-length-gate.sh --check > gate-2.log 2>&1` | **EXIT=1** (pre-existing; same REGRESSION set as the round-1 baseline-tree run, 14 lines, none of them a file this change touches) |
+
+Both gates were run in `--check` mode, so no baseline file was written. Their failures are the
+same as on the parent tree and were not fixed here; re-anchoring them is out of scope for this
+bug.
+
 ## Notes
 
 - The `fff` search tools were not used for code search in this task; `Grep`/`rg` was used
