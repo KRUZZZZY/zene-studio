@@ -351,6 +351,52 @@ private slots:
 		QCOMPARE( zero.patternId(), 0 );
 	}
 
+	/*! A <session> launchquantisation that is not an integer restores as the
+	 *  default grid (Bar), the fallback a non-grid integer already gets.
+	 *  QString::toInt() returns 0 when the conversion fails, and 0 is the None
+	 *  grid, so a project with launchquantisation="bar" launched at once instead
+	 *  of on the bar line. A real "0" must still restore as None.
+	 */
+	void anUnreadableSessionLaunchQuantisationFallsBackToBar()
+	{
+		const QString block = QStringLiteral(
+			"<session version=\"1\" tracks=\"1\" scenes=\"1\" launchquantisation=\"%1\"><scenes/><clips/></session>" );
+		QDomDocument doc;
+		doc.setContent( block.arg( QStringLiteral( "bar" ) ) );
+		SessionModel text;
+		QVERIFY( text.restoreState( doc.documentElement() ) );
+		QCOMPARE( static_cast<int>( text.globalLaunchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::Bar ) );
+
+		doc.setContent( block.arg( QStringLiteral( "0" ) ) );
+		SessionModel none;
+		QVERIFY( none.restoreState( doc.documentElement() ) );
+		QCOMPARE( static_cast<int>( none.globalLaunchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::None ) );
+	}
+
+	//! The native <z:scenes> section persists the same attribute through the
+	//! same conversion, so a spoiled value there must fall back the same way.
+	void anUnreadableSceneSectionLaunchQuantisationFallsBackToBar()
+	{
+		QDomDocument legacy;
+		legacy.setContent( QStringLiteral( "<session version=\"1\" tracks=\"1\" scenes=\"1\" launchquantisation=\"4\"><scenes/><clips/></session>" ) );
+		SessionModel source;
+		QVERIFY( source.restoreState( legacy.documentElement() ) );
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement( QStringLiteral( "song" ) );
+		doc.appendChild( root );
+		QDomElement section = source.saveScenesSection( doc, root );
+		QVERIFY( !section.isNull() );
+		section.setAttribute( QStringLiteral( "launchquantisation" ), QStringLiteral( "bar" ) );
+
+		SessionModel scenes;
+		QVERIFY( scenes.restoreScenesSection( section ) );
+		QCOMPARE( static_cast<int>( scenes.globalLaunchQuantisation() ),
+			static_cast<int>( LaunchQuantisation::Bar ) );
+	}
+
 	void malformedLegacySessionDimensionsArePreserved()
 	{
 		QTemporaryDir dir;
