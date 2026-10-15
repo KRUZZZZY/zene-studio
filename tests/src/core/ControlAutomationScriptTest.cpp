@@ -31,6 +31,8 @@
 
 #include <QtTest>
 
+#include <QByteArrayView>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -549,6 +551,47 @@ private slots:
 			qPrintable(QStringLiteral("an unreadable script reported the hash '%1' (the hash of empty bytes)")
 				.arg(unreadable.value(QStringLiteral("sha256")).toString())));
 #endif
+	}
+
+	void scriptListHashesScriptsLargerThanControlDataLimit()
+	{
+		constexpr qint64 largeScriptSize = 64LL * 1024 * 1024 + 1;
+		QTemporaryDir temporaryDir;
+		QVERIFY(temporaryDir.isValid());
+		const QString scriptsDir = QDir(temporaryDir.path()).filePath(QStringLiteral("scripts"));
+		QVERIFY(QDir().mkpath(scriptsDir));
+		const QString scriptPath = QDir(scriptsDir).filePath(QStringLiteral("large.lua"));
+		QFile scriptFile(scriptPath);
+		QVERIFY(scriptFile.open(QIODevice::WriteOnly));
+		QVERIFY(scriptFile.resize(largeScriptSize));
+		scriptFile.close();
+
+		QCryptographicHash expectedHash(QCryptographicHash::Sha256);
+		const QByteArray zeroes(64 * 1024, '\0');
+		for (qint64 remaining = largeScriptSize; remaining > 0;)
+		{
+			const qsizetype chunkSize = static_cast<qsizetype>(qMin<qint64>(zeroes.size(), remaining));
+			expectedHash.addData(QByteArrayView(zeroes.constData(), chunkSize));
+			remaining -= chunkSize;
+		}
+
+		const QStringList originalDataSearchPaths = QDir::searchPaths(QStringLiteral("data"));
+		QDir::setSearchPaths(QStringLiteral("data"), {temporaryDir.path()});
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("script.list"));
+		QDir::setSearchPaths(QStringLiteral("data"), originalDataSearchPaths);
+
+		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		bool foundLargeScript = false;
+		for (const QJsonValue& value : result.result.value(QStringLiteral("scripts")).toArray())
+		{
+			const QJsonObject entry = value.toObject();
+			if (entry.value(QStringLiteral("name")).toString() != QStringLiteral("large.lua")) { continue; }
+			foundLargeScript = true;
+			QCOMPARE(entry.value(QStringLiteral("bytes")).toInteger(), largeScriptSize);
+			QCOMPARE(entry.value(QStringLiteral("sha256")).toString(),
+				QString::fromLatin1(expectedHash.result().toHex()));
+		}
+		QVERIFY(foundLargeScript);
 	}
 
 	//! script.run drives the embedded engine on its own worker thread; the log

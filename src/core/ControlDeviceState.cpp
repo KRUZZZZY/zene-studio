@@ -24,6 +24,8 @@
 
 #include "ControlDeviceSupport.h"
 
+#include <utility>
+
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
@@ -39,6 +41,66 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+//! State/preset files use the original control-data cap; project documents
+//! match DataFile's existing recovery bound.
+constexpr qint64 ControlDataReadLimit = 64LL * 1024 * 1024;
+constexpr qint64 ProjectDocumentReadLimit = 256LL * 1024 * 1024;
+constexpr qint64 ControlFileReadChunkSize = 64LL * 1024;
+
+qint64 controlFileReadLimit(ControlFileReadPurpose purpose)
+{
+	return purpose == ControlFileReadPurpose::ProjectDocument
+		? ProjectDocumentReadLimit : ControlDataReadLimit;
+}
+
+bool controlReadBoundedFile(QFile& file, const QString& path, QByteArray* bytes,
+	ControlResult* error, qint64 limit)
+{
+	const qint64 fileSize = file.size();
+	if (fileSize > limit)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 exceeds the %2-byte control file limit")
+				.arg(path).arg(limit));
+		return false;
+	}
+	QByteArray contents;
+	if (fileSize > 0) { contents.reserve(static_cast<qsizetype>(fileSize)); }
+	while (!file.atEnd())
+	{
+		const qint64 remaining = limit - contents.size();
+		const QByteArray chunk = file.read(qMin(ControlFileReadChunkSize, remaining + 1));
+		if (chunk.size() > remaining)
+		{
+			*error = ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1 exceeds the %2-byte control file limit")
+					.arg(path).arg(limit));
+			return false;
+		}
+		if (chunk.isEmpty())
+		{
+			if (file.atEnd() && file.error() == QFileDevice::NoError) { break; }
+			*error = ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("cannot read %1 (%2)").arg(path, file.errorString()));
+			return false;
+		}
+		contents.append(chunk);
+	}
+	if (file.error() != QFileDevice::NoError)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("cannot read %1 (%2)").arg(path, file.errorString()));
+		return false;
+	}
+	*bytes = std::move(contents);
+	return true;
+}
+
+} // namespace
 
 bool resolveControlDevice(const ControlTarget& target, const QString& pluginId,
 	ControlDeviceHandle* handle, ControlResult* error)
@@ -150,7 +212,8 @@ QString controlFactoryPresetDir(const ControlDeviceHandle& handle)
 	return ConfigManager::inst()->factoryPresetsDir() + handle.folder + QLatin1Char('/');
 }
 
-bool controlReadFileBytes(const QString& path, QByteArray* bytes, ControlResult* error)
+bool controlReadFileBytes(const QString& path, QByteArray* bytes, ControlResult* error,
+	ControlFileReadPurpose purpose)
 {
 	QFile file(path);
 	if (!file.exists())
@@ -165,8 +228,7 @@ bool controlReadFileBytes(const QString& path, QByteArray* bytes, ControlResult*
 			QStringLiteral("cannot read %1 (%2)").arg(path, file.errorString()));
 		return false;
 	}
-	*bytes = file.readAll();
-	return true;
+	return controlReadBoundedFile(file, path, bytes, error, controlFileReadLimit(purpose));
 }
 
 bool controlWriteFileBytes(const QString& path, const QByteArray& bytes, bool overwrite,

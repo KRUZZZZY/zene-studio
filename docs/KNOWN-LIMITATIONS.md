@@ -880,6 +880,10 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   the same project can hold different presets. A preset carries effects only: the track's instrument and
   the rack's parallel chains (`rack.*`) are not part of it, and a preset naming a device this build
   cannot load is refused, typed, with the target's chain left untouched.
+- **Control-file read size limits (cluster new-p9-81).** Device-state and preset inputs are limited
+  to 64 MiB per file. `project.relink` and `project.collect_media` accept project documents up to
+  256 MiB, matching the existing `DataFile` document-recovery bound; a larger project document is
+  refused before either command rewrites it.
 - *(Corrected 2026-09-30.)* **The song editor's transport has Punch in/out (the loop range)**
   (`src/gui/editors/SongEditor.cpp`, `transport.punch_set` / `punch_clear`), and the capture path DOES consult
   the gate since R2.4 (`AudioEngine::renderNextPeriod`'s punch window, `PunchWindowTest`). Still missing: a punch
