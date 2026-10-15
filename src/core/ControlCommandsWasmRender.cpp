@@ -36,7 +36,10 @@
  */
 
 #include <QCryptographicHash>
+#include <QtGlobal>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QByteArrayView>
+#endif
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -82,8 +85,13 @@ QString digestOf(const std::vector<float>& samples)
 		// QByteArrayView overload, and this tree builds with
 		// -Werror=deprecated-declarations. The bytes hashed are the same, so
 		// every digest this function returns is unchanged.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 		hash.addData(QByteArrayView(reinterpret_cast<const char*>(samples.data()),
 			static_cast<qsizetype>(samples.size() * sizeof(float))));
+#else
+		// Qt 5 (hosted CI) has no QByteArrayView; its (const char*, int) overload hashes the same bytes.
+		hash.addData(reinterpret_cast<const char*>(samples.data()), static_cast<int>(samples.size() * sizeof(float)));
+#endif
 	}
 	return QString::fromLatin1(hash.result().toHex());
 }

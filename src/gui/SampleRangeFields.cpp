@@ -118,11 +118,11 @@ bool timeFrom(const QString& text, const Context& context, qint64* frame)
 	static const QRegularExpression clock(QStringLiteral("^(?:(\\d+):)?(?:(\\d+):)?(\\d+(?:\\.\\d*)?)$"));
 	const QRegularExpressionMatch match = clock.match(text);
 	if (!match.hasMatch()) { return false; }
-	const bool hours = match.hasCaptured(2);
+	const bool hours = (match.capturedStart(2) >= 0);
 	const double h = hours ? match.captured(1).toDouble() : 0.0;
 	const double m = hours ? match.captured(2).toDouble() : match.captured(1).toDouble();
 	const double s = match.captured(3).toDouble();
-	if ((match.hasCaptured(1) && s >= 60.0) || (hours && m >= 60.0)) { return false; }
+	if (((match.capturedStart(1) >= 0) && s >= 60.0) || (hours && m >= 60.0)) { return false; }
 	*frame = frameOfSeconds(h * 3600.0 + m * 60.0 + s, context);
 	return true;
 }

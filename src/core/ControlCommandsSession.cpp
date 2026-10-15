@@ -53,6 +53,7 @@
 #include "SessionModel.h"
 #include "SessionScheduler.h"
 #include "Song.h"
+#include "DeprecationHelper.h"
 
 namespace lmms
 {
@@ -368,7 +369,7 @@ void registerSessionSetQuantisation(ControlRegistry& registry)
 bool sceneColorValid(const QJsonObject& args, ControlResult* error)
 {
 	const QString color = args.value(QStringLiteral("color")).toString();
-	if (color.isEmpty() || QColor::isValidColorName(color)) { return true; }
+	if (color.isEmpty() || isValidColorName(color)) { return true; }
 	*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' is not a colour (\"#rrggbb\")").arg(color));
 	return false;
 }

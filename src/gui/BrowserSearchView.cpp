@@ -173,8 +173,8 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	});
 	connect(m_live, &QTimer::timeout, this, &BrowserSearchView::runLiveSearch);
 	connect(m_search, &QLineEdit::returnPressed, this, [this] { search(m_liveEntry); });  // typed: refreshed in place
-	connect(m_kind, &QComboBox::currentIndexChanged, this, &BrowserSearchView::runSearch);
-	connect(m_root, &QComboBox::currentIndexChanged, this, &BrowserSearchView::runSearch);
+	connect(m_kind, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
+	connect(m_root, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, m_root, &QWidget::setDisabled);  // the index has no roots to filter by
 	connectLists();

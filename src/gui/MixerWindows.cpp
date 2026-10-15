@@ -213,8 +213,8 @@ public:
 		layout->addLayout(row);
 		layout->addWidget(m_curves, 1);
 		layout->addWidget(m_summary);
-		connect(m_a, &QComboBox::currentIndexChanged, this, [this] { compare(); });
-		connect(m_b, &QComboBox::currentIndexChanged, this, [this] { compare(); });
+		connect(m_a, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { compare(); });
+		connect(m_b, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { compare(); });
 		resize(520, 320);
 		compare();
 	}

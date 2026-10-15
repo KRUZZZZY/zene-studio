@@ -61,6 +61,7 @@
 #include "SampleClip.h"
 #include "Song.h"
 #include "Track.h"
+#include "DeprecationHelper.h"
 
 using namespace lmms;
 
@@ -238,7 +239,7 @@ private slots:
 		const WavFacts facts = wavFacts(wav);
 		QCOMPARE(facts.frames, static_cast<qint64>(FakeRate) * FakeSeconds);
 		QVERIFY2(std::fabs(facts.peak - 0.1f) < 0.01f, qPrintable(QStringLiteral("peak %1").arg(facts.peak)));
-		QCOMPARE(landed.result.value(QStringLiteral("frames")).toInteger(), facts.frames);
+		QCOMPARE(jsonInteger(landed.result.value(QStringLiteral("frames"))), facts.frames);
 
 		// A NEW audio track named after the source holds the file; the source is muted.
 		QCOMPARE(trackCount(), before + 1);
@@ -272,7 +273,7 @@ private slots:
 		// 96 ticks of the project's tempo, not the render's whole length.
 		const qint64 frames = wavFacts(wav).frames;
 		QVERIFY2(frames > 0 && frames < static_cast<qint64>(FakeRate) * FakeSeconds / 2, qPrintable(QString::number(frames)));
-		QCOMPARE(landed.result.value(QStringLiteral("frames")).toInteger(), frames);
+		QCOMPARE(jsonInteger(landed.result.value(QStringLiteral("frames"))), frames);
 		Track* landedTrack = resolved(landed.result.value(QStringLiteral("landed_track")).toString());
 		QVERIFY(landedTrack != nullptr);
 		QCOMPARE(static_cast<int>(landedTrack->getClips().front()->startPosition().getTicks()), 48);

@@ -70,7 +70,7 @@ MixerSendsBanner::MixerSendsBanner(QWidget* parent) :
 	m_exit->setToolTip(tr("Every fader back on its channel's volume (window.mixer_view)"));
 	m_exit->setProperty("controlCommand", QStringLiteral("window.mixer_view"));
 	layout->addWidget(m_exit);
-	connect(m_picker, &QComboBox::activated, this, [this](int row) { choose(m_picker->itemData(row).toString()); });
+	connect(m_picker, QOverload<int>::of(&QComboBox::activated), this, [this](int row) { choose(m_picker->itemData(row).toString()); });
 	connect(m_exit, &QPushButton::clicked, this, [this] { choose(QString()); });
 	hide();
 }

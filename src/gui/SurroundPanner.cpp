@@ -40,6 +40,7 @@
 #include <QSlider>
 #include <QVBoxLayout>
 
+#include "DeprecationHelper.h"
 #include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
@@ -106,11 +107,11 @@ protected:
 		if (released) { released(); }
 	}
 
-	void mousePressEvent(QMouseEvent* event) override { moveTo(event->position()); }
-	void mouseMoveEvent(QMouseEvent* event) override { moveTo(event->position()); }
+	void mousePressEvent(QMouseEvent* event) override { moveTo(positionF(event)); }
+	void mouseMoveEvent(QMouseEvent* event) override { moveTo(positionF(event)); }
 	void mouseReleaseEvent(QMouseEvent* event) override
 	{
-		moveTo(event->position());
+		moveTo(positionF(event));
 		if (released) { released(); }
 	}
 

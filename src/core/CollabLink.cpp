@@ -25,6 +25,7 @@
 
 #include "CollabLink.h"
 
+#include <QHostAddress>
 #include <QJsonDocument>
 #include <QSslCipher>
 #include <QSslSocket>

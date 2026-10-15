@@ -63,6 +63,7 @@
 #define aafLibraryVersion aafLibraryVersionForWarningTest
 #define readAaf readAafForWarningTest
 #include "../../../src/core/AafImportRead.cpp"
+#include "DeprecationHelper.h"
 #undef readAaf
 #undef aafLibraryVersion
 #undef aafImportAvailable
@@ -429,8 +430,8 @@ private slots:
 		QCOMPARE(reply.value(QStringLiteral("loss")).toObject().value(QStringLiteral("track_gain_clamps")).toInt(), 0);
 		const QJsonObject clip = reply.value(QStringLiteral("model")).toObject().value(QStringLiteral("tracks"))
 			.toArray().at(0).toObject().value(QStringLiteral("clips")).toArray().at(0).toObject();
-		QCOMPARE(clip.value(QStringLiteral("length_frames")).toInteger(), qint64{48048});
-		QCOMPARE(clip.value(QStringLiteral("source_offset_frames")).toInteger(), qint64{1602});
+		QCOMPARE(jsonInteger(clip.value(QStringLiteral("length_frames"))), qint64{48048});
+		QCOMPARE(jsonInteger(clip.value(QStringLiteral("source_offset_frames"))), qint64{1602});
 		QVERIFY(!QFileInfo::exists(reply.value(QStringLiteral("media_dir")).toString()));  // nothing extracted
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracksBefore);
 	}

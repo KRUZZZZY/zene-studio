@@ -36,6 +36,7 @@
 
 #include "BrowserSearchView.h"
 #include "ControlRegistry.h"
+#include "DeprecationHelper.h"
 #include "embed.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
@@ -100,8 +101,8 @@ QTreeWidgetItem* rowOf(const QJsonObject& item)
 	auto* row = new QTreeWidgetItem;
 	row->setText(Name, item.value(QStringLiteral("name")).toString());
 	row->setText(Kind, item.value(QStringLiteral("kind")).toString());
-	const auto sizeBytes = item.value(QStringLiteral("size_bytes")).toInteger();
-	const auto modifiedMs = item.value(QStringLiteral("modified_ms")).toInteger();
+	const auto sizeBytes = jsonInteger(item.value(QStringLiteral("size_bytes")));
+	const auto modifiedMs = jsonInteger(item.value(QStringLiteral("modified_ms")));
 	// A missing file has no metadata: show a placeholder rather than a real-looking 0 KB / 1970-01-01.
 	if (sizeBytes < 0) { row->setText(Size, QStringLiteral("-")); }
 	else { row->setData(Size, Qt::DisplayRole, sizeBytes / 1024); }

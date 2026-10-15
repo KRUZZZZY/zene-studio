@@ -60,6 +60,7 @@
 #include "ModulationTestSupport.h"
 #include "RackTestSupport.h"
 #include "Song.h"
+#include "DeprecationHelper.h"
 
 using namespace lmms;
 using modtest::run;
@@ -283,7 +284,7 @@ private slots:
 
 		// The defect: the handler saw the file it was pointed at and called the
 		// pre-existing bytes a successful export of this call.
-		QVERIFY2(!result.ok || result.result.value(QStringLiteral("bytes")).toInteger()
+		QVERIFY2(!result.ok || jsonInteger(result.result.value(QStringLiteral("bytes")))
 			!= static_cast<qint64>(stale.size()),
 			"project.export_midi reported success for the pre-existing file");
 		if (result.ok)

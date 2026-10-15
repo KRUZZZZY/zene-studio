@@ -40,6 +40,7 @@
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
+#include "DeprecationHelper.h"
 #include "Engine.h"
 #include "MetronomeOptions.h"
 #include "MultiTrackRecorder.h"
@@ -101,7 +102,7 @@ ControlResult punchHere(const QJsonObject& args)
 	{
 		// Out: the region ends here; with no region armed there is nothing to close.
 		if (!state.value(QStringLiteral("punch_armed")).toBool()) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no punch region is armed")); }
-		const qint64 begin = state.value(QStringLiteral("punch_begin")).toInteger();
+		const qint64 begin = jsonInteger(state.value(QStringLiteral("punch_begin")));
 		if (here <= begin) { return handlerOf(QStringLiteral("transport.punch_clear"), {}); }
 		return handlerOf(QStringLiteral("transport.punch_set"), {{QStringLiteral("start"), static_cast<double>(begin)},
 			{QStringLiteral("end"), static_cast<double>(here)}, {QStringLiteral("enabled"), true}});

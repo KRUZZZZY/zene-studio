@@ -138,7 +138,7 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 	{
 		m_format->addItem(musicaltime::formatLabel(static_cast<musicaltime::Format>(i)), musicaltime::formatNames().at(i));
 	}
-	connect(m_format, &QComboBox::activated, this, [this](int index) {
+	connect(m_format, QOverload<int>::of(&QComboBox::activated), this, [this](int index) {
 		run("transport.time_format", {{QStringLiteral("format"), m_format->itemData(index).toString()}});
 	});
 	// Queued: the change is announced from inside transport.time_format, and refresh() runs commands of its own.

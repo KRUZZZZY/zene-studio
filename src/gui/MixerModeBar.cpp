@@ -113,7 +113,7 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 	m_filter->setObjectName(QStringLiteral("mixerModeFilter"));
 	m_filter->setAccessibleName(tr("Show channels"));
 	m_filter->setProperty("controlCommand", kViewCommand);
-	connect(m_filter, &QComboBox::activated, this, [this](int row) { setOption(QStringLiteral("filter"), m_filter->itemData(row).toString()); });
+	connect(m_filter, QOverload<int>::of(&QComboBox::activated), this, [this](int row) { setOption(QStringLiteral("filter"), m_filter->itemData(row).toString()); });
 	layout->addWidget(m_filter);
 	auto* pick = new QPushButton(tr("Pick..."), this);  // MX-005: the channels the Selected filter shows
 	pick->setObjectName(QStringLiteral("mixerModePickSelected"));

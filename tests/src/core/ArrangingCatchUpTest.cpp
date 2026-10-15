@@ -63,6 +63,7 @@
 #include "Song.h"
 #include "TrackSpacers.h"
 #include "TakeLaneTestSupport.h"
+#include "DeprecationHelper.h"
 
 using namespace lmms;
 
@@ -139,7 +140,7 @@ private slots:
 		const ControlResult split = run(QStringLiteral("clip.split"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
 			{QStringLiteral("position"), 20}, {QStringLiteral("frames"), 100}, {QStringLiteral("zero_crossing"), false}});
 		QVERIFY2(split.ok, qPrintable(split.errorMessage));
-		const auto frame = static_cast<f_cnt_t>(split.result.value(QStringLiteral("frame")).toInteger());
+		const auto frame = static_cast<f_cnt_t>(jsonInteger(split.result.value(QStringLiteral("frame"))));
 		const double expected = (20.0 + 100.0 / outputPerTick) * framesPerTick;
 		QVERIFY(std::abs(static_cast<double>(frame) - expected) <= 1.0);
 		SampleClip* right = sampleClip(split.result.value(QStringLiteral("right")).toString());
@@ -168,7 +169,7 @@ private slots:
 			{QStringLiteral("position"), 30}, {QStringLiteral("frames"), 37}, {QStringLiteral("zero_crossing"), true}});
 		QVERIFY2(split.ok, qPrintable(split.errorMessage));
 		QVERIFY(split.result.value(QStringLiteral("zero_crossing")).toBool());
-		const auto frame = static_cast<f_cnt_t>(split.result.value(QStringLiteral("frame")).toInteger());
+		const auto frame = static_cast<f_cnt_t>(jsonInteger(split.result.value(QStringLiteral("frame"))));
 		SampleClip* right = sampleClip(split.result.value(QStringLiteral("right")).toString());
 		QVERIFY(right != nullptr);
 		const bool crossesBefore = (summed(right, frame - 1) < 0.0f) != (summed(right, frame) < 0.0f);
@@ -200,7 +201,7 @@ private slots:
 		const ControlResult trimmed = run(QStringLiteral("clip.trim"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
 			{QStringLiteral("start"), 10}, {QStringLiteral("start_frames"), 50}, {QStringLiteral("zero_crossing"), false}});
 		QVERIFY2(trimmed.ok, qPrintable(trimmed.errorMessage));
-		QVERIFY(trimmed.result.value(QStringLiteral("source_in")).toInteger() > 0);
+		QVERIFY(jsonInteger(trimmed.result.value(QStringLiteral("source_in"))) > 0);
 		QCOMPARE(trimmed.result.value(QStringLiteral("position")).toInt(), 10);
 		QVERIFY(clip->leadFrames() > 0);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);

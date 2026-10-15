@@ -215,7 +215,12 @@ const std::vector<int>& SampleClipView::transientTicks()
 		m_transientKey.clear();
 	}
 	std::size_t warp = 0;
-	for (const WarpMarker& marker : m_clip->warpMarkers().all()) { warp = qHashMulti(warp, marker.sourceFrame, marker.offsetTicks); }
+	// A cache key only, so any mix will do; qHashMulti is Qt 6 and the hosted Qt 5 job lacks it.
+	const auto mix = [](std::size_t seed, std::size_t value) { return seed ^ (value + static_cast<std::size_t>(0x9e3779b9u) + (seed << 6) + (seed >> 2)); };
+	for (const WarpMarker& marker : m_clip->warpMarkers().all())
+	{
+		warp = mix(mix(warp, static_cast<std::size_t>(marker.sourceFrame)), static_cast<std::size_t>(marker.offsetTicks));
+	}
 	const QString key = QStringLiteral("%1:%2:%3:%4:%5").arg(m_clip->length().getTicks()).arg(Engine::getSong()->getTempo())
 		.arg(m_clip->clipFramesPerTick()).arg(warp).arg(m_clip->sample().reversed() ? 1 : 0);
 	if (key != m_transientKey)

@@ -41,6 +41,7 @@
 #include <QToolTip>
 #include <QWheelEvent>
 
+#include "DeprecationHelper.h"
 #include "ArrangementSections.h"
 #include "ArrangerLandmarks.h"
 #include "ArrangerZoom.h"
@@ -176,16 +177,16 @@ protected:
 	void mousePressEvent(QMouseEvent* event) override
 	{
 		if (event->button() != Qt::LeftButton) { return; }
-		if (event->modifiers() & Qt::AltModifier) { zoomToLandmark(event->position().x()); }
-		else { scrollTo(event->position().x()); }
+		if (event->modifiers() & Qt::AltModifier) { zoomToLandmark(positionF(event).x()); }
+		else { scrollTo(positionF(event).x()); }
 	}
 	void mouseDoubleClickEvent(QMouseEvent* event) override
 	{
-		if (event->button() == Qt::LeftButton) { zoomToLandmark(event->position().x()); }
+		if (event->button() == Qt::LeftButton) { zoomToLandmark(positionF(event).x()); }
 	}
 	void mouseMoveEvent(QMouseEvent* event) override
 	{
-		if ((event->buttons() & Qt::LeftButton) && !(event->modifiers() & Qt::AltModifier)) { scrollTo(event->position().x()); }
+		if ((event->buttons() & Qt::LeftButton) && !(event->modifiers() & Qt::AltModifier)) { scrollTo(positionF(event).x()); }
 	}
 	void wheelEvent(QWheelEvent* event) override
 	{

@@ -31,6 +31,8 @@
 
 #include <QDomDocument>
 #include <QFontMetrics>
+#include <QColor>
+#include <QJsonValue>
 #include <QKeySequence>
 #include <QVariant>
 #include <QWheelEvent>
@@ -95,6 +97,27 @@ inline QPoint globalPosition(const QMouseEvent* me)
 	return me->globalPosition().toPoint();
 #else
 	return me->globalPos();
+#endif
+}
+
+//! Backwards-compatible adapter for QJsonValue::toInteger (Qt 6 only). On Qt 5 a JSON number is
+//! always a double, exact for integers up to 2^53, which covers every tick/frame/byte count here.
+inline qint64 jsonInteger(const QJsonValue& value, qint64 defaultValue = 0)
+{
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+	return value.toInteger(defaultValue);
+#else
+	return value.isDouble() ? static_cast<qint64>(value.toDouble()) : defaultValue;
+#endif
+}
+
+//! Backwards-compatible adapter for QColor::isValidColorName (Qt 6.4); Qt 5 spells it isValidColor.
+inline bool isValidColorName(const QString& name)
+{
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 4, 0))
+	return QColor::isValidColorName(name);
+#else
+	return QColor::isValidColor(name);
 #endif
 }
 

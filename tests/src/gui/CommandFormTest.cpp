@@ -592,7 +592,7 @@ private slots:
 		spec.listId = QStringLiteral("formtest.list");
 		spec.arrayKey = QStringLiteral("rows");
 		spec.columns = {QStringLiteral("id"), QStringLiteral("n")};
-		spec.summaryKeys = {QStringLiteral("total")};
+		spec.summaryKeys = QStringList{QStringLiteral("total")};
 		RowAction take;
 		take.label = QStringLiteral("Take");
 		take.id = QStringLiteral("formtest.take");
@@ -607,8 +607,8 @@ private slots:
 		QCOMPARE(dialog.runAction(5, 0).errorKind, ControlErrorKind::InvalidArgs);
 
 		spec.arrayKey = QStringLiteral("groups");
-		spec.nestedKeys = {QStringLiteral("items")};
-		spec.parentFields = {QStringLiteral("id")};
+		spec.nestedKeys = QStringList{QStringLiteral("items")};
+		spec.parentFields = QStringList{QStringLiteral("id")};
 		const QJsonArray rows = listRows(spec, dialog.listResult());
 		QCOMPARE(rows.size(), 2);
 		QCOMPARE(rows.at(1).toObject().value(QStringLiteral("k")).toInt(), 2);

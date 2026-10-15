@@ -158,7 +158,7 @@ OnnxRuntimeStemSeparator::OnnxRuntimeStemSeparator(QString modelPath) :
 
 QString OnnxRuntimeStemSeparator::runtimeVersion()
 {
-	return QString::fromLatin1(Ort::GetVersionString());
+	return QString::fromStdString(Ort::GetVersionString());
 }
 
 

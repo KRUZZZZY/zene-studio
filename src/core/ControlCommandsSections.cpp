@@ -36,6 +36,7 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Song.h"
+#include "DeprecationHelper.h"
 
 namespace lmms
 {
@@ -86,7 +87,7 @@ ControlResult recorded(const std::function<ControlResult()>& edit)
 QString colourOf(const QJsonObject& args, bool* ok)
 {
 	const QString color = args.value(QStringLiteral("color")).toString();
-	*ok = color.isEmpty() || QColor::isValidColorName(color);
+	*ok = color.isEmpty() || isValidColorName(color);
 	return color.isEmpty() ? color : QColor(color).name();
 }
 
