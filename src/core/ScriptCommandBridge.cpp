@@ -275,6 +275,11 @@ int luaCommand(lua_State* L)
 	size_t idLength = 0;
 	const char* idBytes = luaL_checklstring(L, 1, &idLength);
 	const QString id = QString::fromUtf8(idBytes, static_cast<qsizetype>(idLength));
+	if (lua_gettop(L) >= 2 && !lua_isnil(L, 2) && !lua_istable(L, 2))
+	{
+		return pushFailure(L, QStringLiteral("'%1' expects a table of arguments (or none), got %2")
+			.arg(id, luaL_typename(L, 2)), QStringLiteral("invalid_args"));
+	}
 	QJsonObject args = lua_istable(L, 2) ? luaToJson(L, 2, 0).toObject() : QJsonObject();
 	if (const QString why = refusalFor(id); !why.isEmpty()) { return pushFailure(L, why, QStringLiteral("refused")); }
 	emptyTablesAsArrays(id, args);
