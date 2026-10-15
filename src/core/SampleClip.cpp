@@ -515,11 +515,17 @@ TimePos SampleClip::sampleLength() const
 
 int SampleClip::windowTicksFor(const SampleWindow& window) const
 {
+	const auto framesPerTick = clipFramesPerTick();
+	// BUG 6 (cluster new-p12-204): a nonpositive divisor - a source that still
+	// carries a zero rate from somewhere other than a project load - maps to no
+	// length instead of an infinity narrowed to int, which is undefined
+	// behaviour. The same rule leadOutputFramesAt() and restoreState() already
+	// apply to this value.
+	if (framesPerTick <= 0.0f) { return 0; }
 	if (m_warp.empty())
 	{
-		return static_cast<int>(window.length() / clipFramesPerTick());
+		return static_cast<int>(window.length() / framesPerTick);
 	}
-	const auto framesPerTick = clipFramesPerTick();
 	return m_warp.timelineOffsetAt(window.sourceOut, window.sourceIn, framesPerTick)
 		- m_warp.timelineOffsetAt(window.sourceIn, window.sourceIn, framesPerTick);
 }
@@ -823,8 +829,15 @@ void SampleClip::loadSettings( const QDomElement & _this )
 
 	if( sampleFile().isEmpty() && _this.hasAttribute( "data" ) )
 	{
-		auto sampleRate = _this.hasAttribute("sample_rate") ? _this.attribute("sample_rate").toInt() :
-			Engine::audioEngine()->outputSampleRate();
+		// BUG 6 (cluster new-p12-204): a stated rate that is not positive - "0",
+		// a negative one, or any text QString::toInt() reads back as 0 - would
+		// build a zero-rate buffer, whose clipFramesPerTick() is exactly the
+		// zero windowTicksFor() divides by. An invalid rate loads the way an
+		// absent one already does: the engine's own output rate.
+		const auto statedRate = _this.hasAttribute("sample_rate")
+			? _this.attribute("sample_rate").toInt() : 0;
+		const auto sampleRate = statedRate > 0
+			? statedRate : Engine::audioEngine()->outputSampleRate();
 
 		auto buffer = SampleBuffer::fromBase64(_this.attribute("data"), sampleRate);
 		m_sample = Sample(std::move(buffer));

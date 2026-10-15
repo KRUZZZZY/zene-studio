@@ -46,6 +46,8 @@
 #include <QtTest>
 
 
+#include <QDomDocument>
+
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -580,6 +582,67 @@ private slots:
 		test::tlCountAllocations = false;
 
 		QCOMPARE(N(test::tlAllocationCount), N(0));
+	}
+
+	//! BUG 6 (cluster new-p12-204). A project that carries an embedded sample
+	//! with `sample_rate="0"` - and QString::toInt() hands back 0 for a value
+	//! that does not parse, too - used to build a zero-rate buffer on load:
+	//! `clipFramesPerTick()` is then exactly `0.0f`, and the next auto-resize
+	//! update or tempo change runs `sampleLength()` -> `windowTicksFor()` ->
+	//! `window.length() / 0.0`, whose infinity is then narrowed to `int` -
+	//! undefined behaviour, and a garbage clip length at best.
+	//!
+	//! The load treats an invalid rate as an absent one (the engine's own
+	//! output rate), so the mapping stays finite and positive and the clip
+	//! keeps the length its window really has - through sampleLength() and
+	//! through the updateLength() path the finding names.
+	void zeroSampleRateIsRejectedOnProjectLoad()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeClip(track, m_rate);
+
+		QDomDocument document;
+		QDomElement parent = document.createElement(QStringLiteral("track"));
+		document.appendChild(parent);
+		QDomElement saved = clip->saveState(document, parent);
+		QVERIFY(saved.hasAttribute(QStringLiteral("sample_rate")));
+		saved.setAttribute(QStringLiteral("sample_rate"), QStringLiteral("0"));
+
+		SampleTrack loadedTrack(Engine::getSong());
+		auto* loaded = makeClip(loadedTrack, m_rate);
+		loaded->restoreState(saved);
+
+		// the invalid rate never reaches the buffer...
+		QCOMPARE(static_cast<int>(loaded->sample().sampleRate()), m_rate);
+		// ...so the mapping is finite and positive...
+		QVERIFY(std::isfinite(loaded->clipFramesPerTick()));
+		QVERIFY(loaded->clipFramesPerTick() > 0.0f);
+
+		// ...and the window's tick length is the real one, not an infinity
+		// narrowed to int. The same expression windowTicksFor() evaluates.
+		const auto framesPerTick = Engine::framesPerTick(m_rate);
+		const auto bufferFrames = static_cast<f_cnt_t>(loaded->sample().sampleSize());
+		const auto expected = static_cast<int>(bufferFrames / framesPerTick);
+		QVERIFY(expected > 0);
+		QCOMPARE(static_cast<int>(loaded->sampleLength().getTicks()), expected);
+
+		loaded->setAutoResize(true);
+		loaded->updateLength();
+		QCOMPARE(static_cast<int>(loaded->length().getTicks()), expected);
+	}
+
+	//! The mapping's own guard, the second half of the fix: a buffer that
+	//! somehow still carries a nonpositive rate maps to no length - a defined
+	//! zero - instead of an infinity narrowed to int.
+	void nonpositiveRateMapsToNoLength()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeClip(track, m_rate);
+		auto data = makeTone(m_rate);
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), 0));
+
+		QCOMPARE(static_cast<int>(clip->sample().sampleRate()), 0);
+		QCOMPARE(static_cast<int>(clip->sampleLength().getTicks()), 0);
 	}
 
 private:
