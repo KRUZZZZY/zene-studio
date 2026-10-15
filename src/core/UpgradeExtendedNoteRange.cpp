@@ -171,6 +171,23 @@ static void fixAutomationPattern(QDomElement & automationPattern)
 	};
 }
 
+static void fixBaseNoteOnlyAutomationPatterns(QDomElement const & track, std::set<unsigned int> const & automatedBaseNoteIds)
+{
+	QDomElement automationPattern = track.firstChildElement("automationpattern");
+	while (!automationPattern.isNull())
+	{
+		// Only patterns that actually target a base note are corrected. Patterns without
+		// any target are left alone because no base note value was changed for them.
+		auto const analysis = analyzeAutomationPattern(automationPattern, automatedBaseNoteIds);
+		if (analysis.hasBaseNoteAutomations)
+		{
+			fixAutomationPattern(automationPattern);
+		}
+
+		automationPattern = automationPattern.nextSiblingElement("automationpattern");
+	}
+}
+
 static bool affected(QDomElement & instrument)
 {
 	assert(instrument.hasAttribute("name"));
@@ -268,13 +285,7 @@ static void fixAutomationTracks(QDomElement & song, std::set<unsigned int> const
 			if (!containsPatternsWithNonBaseNoteTargets)
 			{
 				// Only base note targets. This means we can simply keep the track and fix it.
-				automationPattern = currentTrack.firstChildElement("automationpattern");
-				while (!automationPattern.isNull())
-				{
-					fixAutomationPattern(automationPattern);
-
-					automationPattern = automationPattern.nextSiblingElement("automationpattern");
-				}
+				fixBaseNoteOnlyAutomationPatterns(currentTrack, automatedBaseNoteIds);
 			}
 			else
 			{
