@@ -70,21 +70,27 @@ bool expectLoad(const std::string& path, int headSize, bool expected)
 	return true;
 }
 
+// Not std::filesystem: it is unavailable below the macOS 10.15 deployment target of the hosted macos-x86_64 job.
+std::string temporaryDirectory()
+{
+	for (const char* name : {"TMPDIR", "TEMP", "TMP"})
+	{
+		const char* value = std::getenv(name);
+		if (value != nullptr && value[0] != '\0') { return value; }
+	}
+#if defined(_WIN32)
+	return ".";
+#else
+	return "/tmp";
+#endif
+}
+
 }  // namespace
 
 int main()
 {
 	const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-	// Not std::filesystem: it is unavailable below the macOS 10.15 deployment target of the hosted macos-x86_64 job.
-	const char* tmp = std::getenv("TMPDIR");
-	if (tmp == nullptr || tmp[0] == '\0') { tmp = std::getenv("TEMP"); }
-	if (tmp == nullptr || tmp[0] == '\0') { tmp = std::getenv("TMP"); }
-#if defined(_WIN32)
-	const std::string directory = (tmp != nullptr && tmp[0] != '\0') ? tmp : ".";
-#else
-	const std::string directory = (tmp != nullptr && tmp[0] != '\0') ? tmp : "/tmp";
-#endif
-	const std::string path = directory + "/zene-nam-mono-output-" + std::to_string(stamp) + ".nam";
+	const std::string path = temporaryDirectory() + "/zene-nam-mono-output-" + std::to_string(stamp) + ".nam";
 	if (!expectLoad(path, 1, true) || !expectLoad(path, 2, false))
 	{
 		std::remove(path.c_str());
