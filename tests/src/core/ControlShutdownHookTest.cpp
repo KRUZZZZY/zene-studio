@@ -46,8 +46,15 @@
  */
 
 #include "ControlRegistry.h"
-#include "ControlServer.h"
 
+// The monotonic-deadline case reads the accepted client's stored deadline, which
+// is private state. The same `#define private public` seam the collab invite
+// tests use, undone right after this header.
+#define private public
+#include "ControlServer.h"
+#undef private
+
+#include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -67,6 +74,8 @@
 #include <unistd.h>
 #endif
 
+#include <chrono>
+#include <cstdlib>
 #include <type_traits>
 
 using namespace lmms;
@@ -495,6 +504,58 @@ private slots:
 		// now must be safe (the hook it would remove is already gone).
 		QVERIFY(!server.isListening());
 		QVERIFY2(!registry->removeShutdownHook(0), "0 removed something");
+#endif
+	}
+
+	//! BUG 8: a POSIX client's idle deadline is anchored to the MONOTONIC clock,
+	//! not the adjustable wall clock. `QDateTime::currentMSecsSinceEpoch()` moves
+	//! when the system clock is stepped (NTP, a user change), so a forward step
+	//! dropped an active client early and a backward step let an idle one outlive
+	//! its timeout. The deadline a fresh connection stores must be measured from
+	//! steady_clock: the values the two clocks report are days apart, so the
+	//! elapsed-from-steady assertion below is deterministic and fails on the
+	//! wall-clock behaviour.
+	void aClientDeadlineIsAnchoredToTheMonotonicClock()
+	{
+#if !defined(Q_OS_UNIX)
+		QSKIP("the control socket is AF_UNIX only; listen() refuses on this platform");
+#else
+		ControlRegistry* registry = ControlRegistry::instance();
+		QTemporaryDir dir(QDir::tempPath() + QStringLiteral("/zene-deadline-XXXXXX"));
+		QVERIFY2(dir.isValid(), "no temporary directory for the socket path");
+		const QString path = dir.filePath(QStringLiteral("deadline.sock"));
+
+		ControlServer server(registry);
+		QString error;
+		QVERIFY2(server.listen(path, &error), qPrintable(error));
+
+		TestSocket client;
+		client.fd = ::socket(AF_UNIX, SOCK_STREAM, 0);
+		QVERIFY(client.fd >= 0);
+		sockaddr_un address{};
+		address.sun_family = AF_UNIX;
+		const QByteArray nativePath = QFile::encodeName(path);
+		QVERIFY(nativePath.size() < static_cast<qsizetype>(sizeof(address.sun_path)));
+		std::memcpy(address.sun_path, nativePath.constData(), static_cast<size_t>(nativePath.size() + 1));
+		QVERIFY(::connect(client.fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0);
+
+		// The reference the deadline must be measured from, and the wall clock it
+		// must NOT be measured from.
+		const qint64 monotonicBase = std::chrono::duration_cast<std::chrono::milliseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count();
+		const qint64 wallBase = QDateTime::currentMSecsSinceEpoch();
+
+		server.onNewConnection();
+		QCOMPARE(server.m_clients.size(), 1);
+		const qint64 deadline = server.m_clients.constBegin()->deadlineMs;
+
+		const qint64 fromMonotonic = deadline - monotonicBase;
+		QVERIFY2(fromMonotonic >= ControlServer::ClientIdleTimeoutMs - 1000,
+			"the stored deadline is shorter than the idle timeout");
+		QVERIFY2(fromMonotonic <= ControlServer::ClientIdleTimeoutMs + 1000,
+			"the stored deadline is not anchored to the monotonic clock");
+		QVERIFY2(std::llabs(deadline - wallBase) > 1000000000LL,
+			"the stored deadline is anchored to the adjustable wall clock");
 #endif
 	}
 };
