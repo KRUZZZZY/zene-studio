@@ -36,6 +36,7 @@
 
 #include <QtTest>
 
+#include <QScopeGuard>
 #include <QStringList>
 
 #include "ControlDeviceSupport.h"
@@ -137,6 +138,48 @@ print("removed=" .. tostring(removal.removed == id)
     .. " gain-view-valid=" .. tostring(gain:isValid())
     .. " chain-view-valid=" .. tostring(chain:isValid()))
 )LUA";
+
+//! Remove the first device of a channel's chain and report what the binding returned.
+const char* const RemoveFirstEffectScript = R"LUA(
+local ok = zene.mixer():channel(%1):chain():removeEffect(0)
+print("removeEffect returned " .. tostring(ok))
+)LUA";
+
+//! A chain effect the test owns. Removing it needs no plugin module, so the
+//! removal runs in any build: its state document is what the journal records.
+class UndoProbeEffect : public Effect
+{
+public:
+	UndoProbeEffect(Model* parent) :
+		Effect{&descriptor(), parent, nullptr}
+	{
+	}
+
+	EffectControls* controls() override { return nullptr; }
+
+	void saveSettings(QDomDocument& doc, QDomElement& element) override
+	{
+		Q_UNUSED(doc);
+		element.setAttribute(QStringLiteral("probe"), QStringLiteral("1"));
+	}
+
+protected:
+	ProcessStatus processImpl(SampleFrame* buf, const f_cnt_t frames) override
+	{
+		Q_UNUSED(buf);
+		Q_UNUSED(frames);
+		return ProcessStatus::Continue;
+	}
+
+private:
+	static const Plugin::Descriptor& descriptor()
+	{
+		static const Plugin::Descriptor d{
+			"undoprobe", "Undo probe", "Deterministic probe effect for undo tests",
+			"LMMS", 0x0100, Plugin::Type::Effect, nullptr, nullptr, nullptr};
+		return d;
+	}
+};
 
 } // namespace
 
@@ -404,6 +447,56 @@ private slots:
 		mixer->deleteChannel(index);
 		journal->undo();  // its channel is gone: nothing to take out, and nothing freed is touched
 		QCOMPARE(static_cast<int>(mixer->numChannels()), index);
+		engine->takeLogMessages();
+	}
+
+	/*! Luna 5332: the script's removal is journalled before the device comes off,
+	 *  and a device whose state cannot be captured is NOT taken off (owner
+	 *  decision 2026-10-08). Journalless, removeEffect took the device away with
+	 *  no undo step behind it. This runs on a probe device, so it needs no plugin
+	 *  module; the restoration by undo needs one and is proved by the load test above.
+	 */
+	void aScriptsRemovalOfAProbeDeviceIsJournalledOrRefused()
+	{
+		Mixer* mixer = Engine::mixer();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		// Pin the count cap: a slot that fails before it restores its own tight cap
+		// would otherwise hold this stack at that many steps and drop the removal's.
+		const int oldCap = journal->maxUndoStates();
+		QVERIFY(journal->setMaxUndoStates(ProjectJournal::MaxUndoStateLimit));
+		const auto restoreCap = qScopeGuard([journal, oldCap] { journal->setMaxUndoStates(oldCap); });
+		ScriptEngine* engine = ScriptEngine::instance();
+		const int index = mixer->createChannel();
+		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
+		chain->appendEffect(new UndoProbeEffect(chain));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		const QString script = qstr(RemoveFirstEffectScript).arg(index);
+		const int depth = journal->undoDepth();
+		QString error;
+
+		// Capture refused: the device stays, the script is told, no undo step is pushed.
+		control::setRemovalCaptureFailsForTest(true);
+		const auto restore = qScopeGuard([] { control::setRemovalCaptureFailsForTest(false); });
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+		QCOMPARE(journal->undoDepth(), depth);
+		const QStringList refused = engine->takeLogMessages();
+		QVERIFY2(refused.join(QLatin1Char('|')).contains(QStringLiteral("removeEffect returned false")),
+			qPrintable(refused.join(QLatin1Char('|'))));
+
+		// Capture working: the device is removed, and the removal is one journalled step.
+		control::setRemovalCaptureFailsForTest(false);
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(chain->effects().empty());
+		QCOMPARE(journal->undoDepth(), depth + 1);
+		const QStringList removed = engine->takeLogMessages();
+		QVERIFY2(removed.join(QLatin1Char('|')).contains(QStringLiteral("removeEffect returned true")),
+			qPrintable(removed.join(QLatin1Char('|'))));
+
+		mixer->deleteChannel(index);
 		engine->takeLogMessages();
 	}
 
