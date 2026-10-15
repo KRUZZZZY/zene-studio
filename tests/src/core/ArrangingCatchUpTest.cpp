@@ -222,6 +222,22 @@ private slots:
 		QCOMPARE(clip->length().getTicks(), length);
 	}
 
+	void aTailTrimPastTheSourceEndsWhereTheSourceEnds()
+	{
+		SampleClip* clip = freshClip();
+		const auto size = static_cast<f_cnt_t>(clip->sample().sampleSize());
+		QString why;
+		QVERIFY2(arrangement::trimTailToFrame(clip, size, &why), qPrintable(why));  // the reference: trimmed to the last frame
+		const auto endAtSource = clip->endPosition().getTicks();
+		QCOMPARE(clip->sampleWindow().sourceOut, size);
+
+		SampleClip* beyond = freshClip();
+		const f_cnt_t past = size + static_cast<f_cnt_t>(beyond->clipFramesPerTick() * 100);
+		QVERIFY2(arrangement::trimTailToFrame(beyond, past, &why), qPrintable(why));
+		QCOMPARE(beyond->sampleWindow().sourceOut, size);  // the window stops at the source...
+		QCOMPARE(beyond->endPosition().getTicks(), endAtSource);  // ...and the timeline stops with it
+	}
+
 	void theLeadSavesLoadsAndIsResetWhenAbsent()
 	{
 		SampleClip* clip = freshClip();
