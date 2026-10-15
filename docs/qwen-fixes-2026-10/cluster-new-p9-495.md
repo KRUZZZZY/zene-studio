@@ -109,9 +109,9 @@ Every line below was run in this worktree. Logs are in
 | 8 | Re-apply fix | `git apply fix.patch` | 0 | |
 | 9 | Rebuild with fix | `cmake --build build --target zene PluginPortsMigrationTest -j2` | 0 | `build-5-regreen.log` |
 | 10 | Run with fix | `cd build/tests && ctest -R '^PluginPortsMigrationTest$' --output-on-failure > test-4-regreen.log 2>&1` | **8** | `Totals: 44 passed, 1 failed, 2 skipped` (same as GREEN) |
-| 11 | Complexity ratchet | `bash tests/complexity-gate.sh --check` | see below | 6 `REGRESSION` lines, all in files this fix does not touch |
-| 12 | File-length ratchet | `bash tests/file-length-gate.sh --check` | see below | 14 `REGRESSION` lines, all in files this fix does not touch |
-| 13 | Upstream ledger gate | `bash tests/no-upstream-regression-gate.sh` | see below | Run after commit |
+| 11 | Complexity ratchet | `bash tests/complexity-gate.sh --check > gate-3-complexity-final.log 2>&1` | 1 | 6 `REGRESSION` lines, all in files this fix does not touch |
+| 12 | File-length ratchet | `bash tests/file-length-gate.sh --check > gate-4-filelength-final.log 2>&1` | 1 | 14 `REGRESSION` lines, all in files this fix does not touch |
+| 13 | Upstream ledger gate (run after the fix commit `bede58057`) | `bash tests/no-upstream-regression-gate.sh > gate-5-upstream-ledger.log 2>&1` | 0 | `PASS: every change to upstream-inherited code since 01148947ea4d... is declared` |
 
 Exit 8 is the same before and after the fix, because the unrelated LADSPA-fixture failure keeps the
 binary's exit at 8. The RED/GREEN signal is the `FAIL!` line and the `Totals` line.
@@ -124,7 +124,8 @@ Family count: `ctest -R '^PluginPortsMigrationTest$'` runs one ctest entry with 
 - `bash tests/complexity-gate.sh --check` -> EXIT=1. Regressions reported in `XyPadPairTest.cpp`,
   `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsMixerStrip.cpp`,
   `ProjectRevisions.cpp`, `ControlCommandsShortcuts.cpp`. None are in the files changed here.
-  `playNoteImpl` and `deleteNotePluginData` are below CCN 10 and are not in the report.
+  `TripleOscillator.cpp` has no `REGRESSION` line and no entry in `complexity-baseline.tsv`, so its
+  functions are within the CCN target (the CCN values themselves were not printed).
 - `bash tests/file-length-gate.sh --check` -> EXIT=1. Regressions reported in 14 test and source
   files not touched here (for example `CollabTransportTest.cpp`, `TakeLane.cpp`). None are in the
   files changed here.
