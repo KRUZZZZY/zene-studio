@@ -228,6 +228,14 @@ const ReversibilityRow kActionRows[] = {
 		"action checkpoint: the recorded undo step calls "
 		"LinkSyncEngine::setStartStopSync with the value in before",
 		""),
+	// --- Link audio stream (Q050-024): process state, not Link sync ---------
+	R("link.audio_set_enabled", RC::TrueInverse, true,
+		"the PCM stream (include/LinkAudioStream.h) is process state the engine does not journal: "
+		"one configuration struct (enabled, send, receive, addresses, ports, latency) whose previous "
+		"value is captured before the write, and a refused configuration changes and records nothing",
+		"action checkpoint: the recorded undo step calls LinkAudioStream::configure with the previous "
+		"configuration (a stopped stream stays stopped; counters restart, they are a report)",
+		""),
 	R("link.set_session_tempo", RC::TrueInverse, true,
 		"the session tempo lives on the sync model's timeline (a double on the "
 		"wire, applied to the Song's integer tempo model), so the previous value "

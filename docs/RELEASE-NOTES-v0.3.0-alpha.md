@@ -996,10 +996,11 @@ new-p8-51's `record.arm_track` (`snapshot` -> `irreversible`: its take stays aft
 **M0 merge train 5** (`050/m0-train-5`, 2026-10-15: the accepted fixes on the CachyOS toolchain, then the r3 clips and
 takes lanes reapplied after their train-3 reverts) adds three `true_inverse` rows - `clip.link_make_unique`,
 `comp.play_all_takes` and `comp.take_select` - measured off the tree with `tools/dawproject-proof.sh` part 2:
-`rows=837 true_inverse=417 snapshot=42 irreversible=22 not_mutating=356` (`DECLARED rows=837 entries=837 duplicates=0`).
+`rows=839 true_inverse=418 snapshot=42 irreversible=22 not_mutating=357` (`DECLARED rows=839 entries=839 duplicates=0`).
+Q050-024 adds `link.audio_set_enabled` (`true_inverse`) and `link.audio_get_state` (`not_mutating`): rows=839 true_inverse=418 snapshot=42 irreversible=22 not_mutating=357.
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=837 true_inverse=417 snapshot=42 irreversible=22 not_mutating=356
+     measured: rows=839 true_inverse=418 snapshot=42 irreversible=22 not_mutating=357
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

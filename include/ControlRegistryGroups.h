@@ -125,6 +125,11 @@ LMMS_EXPORT void registerNoteExpressionCommands(ControlRegistry& registry);
  *  link.set_enabled; everything else is driven through this group. */
 LMMS_EXPORT void registerLinkCommands(ControlRegistry& registry);
 
+/*! link.audio_get_state / link.audio_set_enabled - the PCM stream between two Zene
+ *  instances (Q050-024, docs/LINK-AUDIO.md). Not Link transport sync and not Ableton's
+ *  LinkAudio: it shares no state with registerLinkCommands' group. */
+LMMS_EXPORT void registerLinkAudioCommands(ControlRegistry& registry);
+
 /*! bounce.in_place / freeze.track / freeze.region / freeze.unfreeze - freeze /
  *  bounce-in-place. The engine half is include/BounceInPlace.h (the offline
  *  render of one track's own output, in a child process) and Track's own frozen

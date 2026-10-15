@@ -388,6 +388,7 @@ include/LfoController.h
 include/LfoGraph.h
 include/LibraryCommandMenus.h
 include/LinkAudioFollower.h
+include/LinkAudioStream.h
 include/LinkPeerTransport.h
 include/LinkPhaseLock.h
 include/LinkSync.h
@@ -1483,6 +1484,7 @@ src/core/ControlCommandsKeyNames.cpp
 src/core/ControlCommandsLaunchBindings.cpp
 src/core/ControlCommandsLibraryClips.cpp
 src/core/ControlCommandsLink.cpp
+src/core/ControlCommandsLinkAudio.cpp
 src/core/ControlCommandsLivecode.cpp
 src/core/ControlCommandsLowLatency.cpp
 src/core/ControlCommandsMarkers.cpp
@@ -1800,7 +1802,9 @@ src/core/LadspaManager.cpp
 src/core/LatencyCompensation.cpp
 src/core/LaunchBindings.cpp
 src/core/LfoController.cpp
+src/core/LinkAudioCodec.cpp
 src/core/LinkAudioFollower.cpp
+src/core/LinkAudioStream.cpp
 src/core/LinkPhaseLock.cpp
 src/core/LinkSync.cpp
 src/core/LinkSyncWire.cpp
@@ -2571,6 +2575,7 @@ tests/src/core/LanesUpconvertTest.cpp
 tests/src/core/LegacyPatternUpgradeTest.cpp
 tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
+tests/src/core/LinkAudioStreamTest.cpp
 tests/src/core/LinkPhaseLockTest.cpp
 tests/src/core/LinkRealtimeProbe.h
 tests/src/core/LinkedClipEditsTest.cpp
