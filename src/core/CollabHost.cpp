@@ -145,6 +145,7 @@ void CollabHost::stop()
 	if (m_server) { m_server->close(); }
 	m_server.reset();
 	m_backlog.clear();
+	m_backlogBytes = 0;
 	const QSet<QSslSocket*> pendingSockets = m_pendingSockets;
 	m_pendingSockets.clear();
 	m_pending = 0;
@@ -304,8 +305,14 @@ void CollabHost::onMessage(int peerId, const QJsonObject& message, const QByteAr
 	// Everything else is a request in the control-socket shape; the handler answers malformed ones itself.
 	// Requests wait while a nested event loop runs (a dialog, a handler that waits), so a peer's command never
 	// runs inside another command; the per-peer order is kept because one queue holds them all.
-	if (m_backlog.size() >= MaxBacklog) { it->link->close(QStringLiteral("too many requests waiting")); return; }
+	// The count and the byte total are both capped: a count alone lets 512 maximum-size lines retain about 512 MiB.
+	if (m_backlog.size() >= MaxBacklog || line.size() > MaxBacklogBytes - m_backlogBytes)
+	{
+		it->link->close(QStringLiteral("too many requests waiting"));
+		return;
+	}
 	m_backlog.append({peerId, line});
+	m_backlogBytes += line.size();
 	drainRequests();
 }
 
@@ -314,6 +321,7 @@ void CollabHost::drainRequests()
 	while (!m_backlog.isEmpty() && QThread::currentThread()->loopLevel() <= 1)
 	{
 		const auto [peerId, line] = m_backlog.takeFirst();
+		m_backlogBytes -= line.size();
 		auto it = m_peers.find(peerId);
 		if (it == m_peers.end()) { continue; }
 		const QByteArray reply = m_requests ? m_requests(line, it->role, it->name)
