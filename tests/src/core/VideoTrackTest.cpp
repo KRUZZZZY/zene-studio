@@ -43,6 +43,11 @@
 
 #include <limits>
 
+#if defined(Q_OS_UNIX)
+#include <csignal>
+#include <sys/resource.h>
+#endif
+
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "SampleClip.h"
@@ -73,6 +78,40 @@ using namespace lmms;
 
 namespace
 {
+
+#if defined(Q_OS_UNIX)
+//! Limit the next extraction's output size, restoring both process settings when it leaves scope.
+class ScopedFileSizeLimit
+{
+	struct rlimit m_originalLimit{};
+	using SignalHandler = void (*)(int);
+	SignalHandler m_originalHandler = SIG_DFL;
+	bool m_active = false;
+
+public:
+	explicit ScopedFileSizeLimit(rlim_t bytes)
+	{
+		if (getrlimit(RLIMIT_FSIZE, &m_originalLimit) != 0 || bytes >= m_originalLimit.rlim_cur) { return; }
+		m_originalHandler = std::signal(SIGXFSZ, SIG_IGN);
+		if (m_originalHandler == SIG_ERR) { return; }
+		rlimit limited = m_originalLimit;
+		limited.rlim_cur = bytes;
+		m_active = setrlimit(RLIMIT_FSIZE, &limited) == 0;
+		if (!m_active) { std::signal(SIGXFSZ, m_originalHandler); }
+	}
+
+	~ScopedFileSizeLimit()
+	{
+		if (m_active)
+		{
+			setrlimit(RLIMIT_FSIZE, &m_originalLimit);
+			std::signal(SIGXFSZ, m_originalHandler);
+		}
+	}
+
+	bool active() const { return m_active; }
+};
+#endif
 
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
@@ -550,6 +589,32 @@ private slots:
 		QCOMPARE(song->tracks().size(), tracksBefore);
 		QVERIFY2(QFileInfo::exists(out), "the undo removed the WAV, which it documents it keeps");
 		song->clearProject();
+	}
+
+	void aPartialWavWriteFailsAndRemovesTheFile()
+	{
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+#if defined(Q_OS_UNIX)
+		const QString out = m_dir.filePath(QStringLiteral("partial.wav"));
+		VideoAudio audio;
+		QString error;
+		bool extracted = false;
+		{
+			ScopedFileSizeLimit limit(4096);
+			if (!limit.active()) { QSKIP("could not set a temporary file-size limit"); }
+			extracted = extractVideoAudio(m_clip, out, &audio, &error);
+		}
+		if (extracted)
+		{
+			QVERIFY(QFileInfo(out).size() > 44);
+			QVERIFY(QFileInfo(out).size() <= 4096);
+		}
+		QVERIFY2(!extracted, "a short WAV write was reported as a successful extraction");
+		QVERIFY(!error.isEmpty());
+		QVERIFY(!QFileInfo::exists(out));
+#else
+		QSKIP("file-size limits are unavailable on this platform");
+#endif
 	}
 
 	void cancelledDirectExtractionPreservesExistingDestination()
