@@ -31,6 +31,8 @@
 #include <QPushButton>
 #include <QRegularExpression>
 
+#include <limits>
+
 #include "DeprecationHelper.h"
 #include "VersionedSaveDialog.h"
 #include "LedCheckBox.h"
@@ -38,6 +40,15 @@
 
 namespace lmms::gui
 {
+
+
+// An unparseable number, or an increment past the widest value, must refuse before the name is touched
+static bool parseIncrementableVersion( const QString &number, bool increment, qulonglong &version )
+{
+	bool ok = false;
+	version = number.toULongLong( &ok );
+	return ok && !( increment && version == std::numeric_limits<qulonglong>::max() );
+}
 
 
 VersionedSaveDialog::VersionedSaveDialog( QWidget *parent,
@@ -112,9 +123,9 @@ bool VersionedSaveDialog::changeFileNameVersion(QString &fileName, bool incremen
 	{
 		// Find current version number
 		QString number = fileName.mid( idx+1, insertIndex - idx - 1 );
-		bool ok;
-		ushort version = number.toUShort( &ok );
-		Q_ASSERT( ok );
+		qulonglong version = 0;
+		if ( !parseIncrementableVersion( number, increment, version ) )
+			return false;
 
 		// Can't decrement 0
 		if ( !increment && version == 0 )

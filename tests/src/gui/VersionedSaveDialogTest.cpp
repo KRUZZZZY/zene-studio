@@ -38,6 +38,34 @@ private slots:
 		QVERIFY(VersionedSaveDialog::changeFileNameVersion(path, true));
 		QCOMPARE(path, QStringLiteral("/home/stems.take/Idea-01"));
 	}
+
+	void incrementsPastUshortMaximum()
+	{
+		QString fileName = QStringLiteral("Mix-65535.wav");
+		QVERIFY(VersionedSaveDialog::changeFileNameVersion(fileName, true));
+		QCOMPARE(fileName, QStringLiteral("Mix-65536.wav"));
+	}
+
+	void incrementsPastPreviouslyUnparseableValue()
+	{
+		QString fileName = QStringLiteral("Mix-65536.wav");
+		QVERIFY(VersionedSaveDialog::changeFileNameVersion(fileName, true));
+		QCOMPARE(fileName, QStringLiteral("Mix-65537.wav"));
+	}
+
+	void refusesIncrementOverflowWithoutChangingName()
+	{
+		QString fileName = QStringLiteral("Mix-18446744073709551615.wav");
+		QVERIFY(!VersionedSaveDialog::changeFileNameVersion(fileName, true));
+		QCOMPARE(fileName, QStringLiteral("Mix-18446744073709551615.wav"));
+	}
+
+	void refusesUnparseableNumberWithoutChangingName()
+	{
+		QString fileName = QStringLiteral("Mix-18446744073709551616.wav");
+		QVERIFY(!VersionedSaveDialog::changeFileNameVersion(fileName, true));
+		QCOMPARE(fileName, QStringLiteral("Mix-18446744073709551616.wav"));
+	}
 };
 
 QTEST_APPLESS_MAIN(VersionedSaveDialogTest)
