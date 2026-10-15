@@ -118,6 +118,11 @@ jobs:
         run: |
           echo "[free-disk-space] df -h / before:"; df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          # Hosted run 38707621703 (2026-10-15) still ran out of space in the link phase, so the
+          # preinstalled toolsets this build never touches go too (Swift, PowerShell, Azure CLI, Edge).
+          sudo rm -rf /usr/share/swift /usr/local/share/powershell /opt/az /opt/microsoft || true
+          sudo rm -rf /usr/local/share/chromium || true
+          sudo apt-get clean || true
           if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
           echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies (Qt6, mirrors the locally verified build)
@@ -144,7 +149,13 @@ jobs:
       - name: Runner CPU (BUGS_FOUND 11.15)
         run: lscpu | grep -E 'Model name|Flags' | cut -c1-400
       - name: Configure (Debug, Qt6)
-        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
+        # Debug keeps its -O0 and its asserts. Hosted run 38707621703 died with "No space left on device" while
+        # linking ~560 test executables, so the debug info is cut where nothing reads it: -g1 (line tables
+        # only, about half the object size) and --strip-debug at link time (the executables carry none).
+        # No gate here needs DWARF - ctest reads exit codes and gcov reads the .gcno files the compiler wrote.
+        run: >-
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
+          -DCMAKE_CXX_FLAGS_DEBUG=-g1 -DCMAKE_C_FLAGS_DEBUG=-g1 -DCMAKE_EXE_LINKER_FLAGS=-Wl,--strip-debug
       - name: Build
         run: cmake --build build -j4
       - name: Gate 1 - ctest (must run from build/tests)
@@ -195,6 +206,11 @@ jobs:
         run: |
           echo "[free-disk-space] df -h / before:"; df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          # Hosted run 38707621703 (2026-10-15) still ran out of space in the link phase, so the
+          # preinstalled toolsets this build never touches go too (Swift, PowerShell, Azure CLI, Edge).
+          sudo rm -rf /usr/share/swift /usr/local/share/powershell /opt/az /opt/microsoft || true
+          sudo rm -rf /usr/local/share/chromium || true
+          sudo apt-get clean || true
           if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
           echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies (Qt6, mirrors the locally verified build)
@@ -248,6 +264,11 @@ jobs:
         run: |
           echo "[free-disk-space] df -h / before:"; df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          # Hosted run 38707621703 (2026-10-15) still ran out of space in the link phase, so the
+          # preinstalled toolsets this build never touches go too (Swift, PowerShell, Azure CLI, Edge).
+          sudo rm -rf /usr/share/swift /usr/local/share/powershell /opt/az /opt/microsoft || true
+          sudo rm -rf /usr/local/share/chromium || true
+          sudo apt-get clean || true
           if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
           echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies and clang 20 (RTSan needs clang >= 20)
@@ -313,6 +334,11 @@ jobs:
         run: |
           echo "[free-disk-space] df -h / before:"; df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          # Hosted run 38707621703 (2026-10-15) still ran out of space in the link phase, so the
+          # preinstalled toolsets this build never touches go too (Swift, PowerShell, Azure CLI, Edge).
+          sudo rm -rf /usr/share/swift /usr/local/share/powershell /opt/az /opt/microsoft || true
+          sudo rm -rf /usr/local/share/chromium || true
+          sudo apt-get clean || true
           if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
           echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build and coverage dependencies
@@ -344,7 +370,10 @@ jobs:
       - name: Gate 2 - coverage ratchet, CI mode (baseline never written)
         if: ${{ !inputs.capture_baseline }}
         run: |
-          bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
+          bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON \
+            -DCMAKE_CXX_FLAGS_DEBUG=-g1 \
+            -DCMAKE_C_FLAGS_DEBUG=-g1 \
+            -DCMAKE_EXE_LINKER_FLAGS=-Wl,--strip-debug
           bash tests/coverage-gate.sh build-coverage/coverage/coverage-fork.info --check
       - name: Keep the golden-audio renders (on failure)
         if: failure()
@@ -364,7 +393,10 @@ jobs:
       - name: Gate 2 - capture the baseline on the runner (write mode)
         if: ${{ inputs.capture_baseline }}
         run: |
-          bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON
+          bash tests/run-coverage.sh build-coverage -DWANT_QT6=ON \
+            -DCMAKE_CXX_FLAGS_DEBUG=-g1 \
+            -DCMAKE_C_FLAGS_DEBUG=-g1 \
+            -DCMAKE_EXE_LINKER_FLAGS=-Wl,--strip-debug
           # Drop the committed baseline first: with no baseline every file counts
           # as an addition, so write mode records this run's numbers instead of
           # refusing to write because the old baseline looks "regressed".
@@ -469,6 +501,11 @@ jobs:
         run: |
           echo "[free-disk-space] df -h / before:"; df -h /
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          # Hosted run 38707621703 (2026-10-15) still ran out of space in the link phase, so the
+          # preinstalled toolsets this build never touches go too (Swift, PowerShell, Azure CLI, Edge).
+          sudo rm -rf /usr/share/swift /usr/local/share/powershell /opt/az /opt/microsoft || true
+          sudo rm -rf /usr/local/share/chromium || true
+          sudo apt-get clean || true
           if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
           echo "[free-disk-space] df -h / after:"; df -h /
       - name: Install build dependencies (Qt6, mirrors the locally verified build)
@@ -483,7 +520,13 @@ jobs:
       - name: Install the MCP SDK the bridge imports
         run: pip install "mcp==2.0.0"
       - name: Configure (Debug, Qt6)
-        run: cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
+        # Debug keeps its -O0 and its asserts. Hosted run 38707621703 died with "No space left on device" while
+        # linking ~560 test executables, so the debug info is cut where nothing reads it: -g1 (line tables
+        # only, about half the object size) and --strip-debug at link time (the executables carry none).
+        # No gate here needs DWARF - ctest reads exit codes and gcov reads the .gcno files the compiler wrote.
+        run: >-
+          cmake -B build -S . -DCMAKE_BUILD_TYPE=Debug -DWANT_QT6=ON
+          -DCMAKE_CXX_FLAGS_DEBUG=-g1 -DCMAKE_C_FLAGS_DEBUG=-g1 -DCMAKE_EXE_LINKER_FLAGS=-Wl,--strip-debug
       - name: Build
         run: cmake --build build -j4
       - name: Run all four bridge suites against the built binary
