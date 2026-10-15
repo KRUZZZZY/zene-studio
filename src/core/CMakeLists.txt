@@ -1020,6 +1020,7 @@ set(LMMS_SRCS
 	core/DawProjectZipRead.cpp
 	core/DawProjectModel.cpp
 	core/DawProjectWrite.cpp
+	core/DawProjectWriteRefusal.cpp
 	core/DawProjectRead.cpp
 	core/DawProjectReadTracks.cpp
 	core/DawProjectSession.cpp
