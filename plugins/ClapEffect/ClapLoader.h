@@ -76,6 +76,7 @@ enum class Code
 	PluginInitFailed,    //!< clap_plugin.init() returned false
 	ExtensionMissing,    //!< the plug-in does not implement an extension the host requires
 	NoAudioPorts,        //!< the plug-in's audio-ports description is empty or unusable
+	EntryInvalid,        //!< `clap_entry` exists but a required callback in it is null
 	Count,               //!< not a failure: the number of codes above (the tests walk them)
 };
 
@@ -186,6 +187,7 @@ struct Library
  *
  *   open the file  -> LibraryUnavailable
  *   find clap_entry -> SymbolMissing
+ *   validate the callbacks -> EntryInvalid
  *   check the version -> VersionUnsupported
  *   entry->init()  -> EntryInitFailed
  *   get the factory -> FactoryMissing

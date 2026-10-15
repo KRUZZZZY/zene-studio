@@ -188,10 +188,11 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 	unload();
 	auto& impl = *m_impl;
 
-	// The module ladder (open -> clap_entry -> version -> init -> factory) is
-	// ClapLoader.cpp's job now, and every step of it leaves a TYPED answer in
-	// impl.status: LibraryUnavailable / SymbolMissing / VersionUnsupported /
-	// EntryInitFailed / FactoryMissing. The sentence it carries is unchanged.
+	// The module ladder (open -> clap_entry -> callbacks -> version -> init ->
+	// factory) is ClapLoader.cpp's job now, and every step of it leaves a TYPED
+	// answer in impl.status: LibraryUnavailable / SymbolMissing / EntryInvalid /
+	// VersionUnsupported / EntryInitFailed / FactoryMissing. The sentence it
+	// carries is unchanged.
 	if (!loader::load(modulePath, impl.loaded, impl.status))
 	{
 		setError(error, impl.status.message());
