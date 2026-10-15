@@ -134,6 +134,40 @@ private slots:
 		QCOMPARE(allocations, std::uint64_t{0});
 	}
 
+	void pushRetriesAreBoundedWhenContended()
+	{
+		lmms::MidiHandoffQueue<64> queue;
+		std::uint32_t competingReservations = 0;
+		bool competitorsAccepted = true;
+		const auto scheduleCompetingReservation = [&](std::uint32_t)
+		{
+			if (!queue.push(eventWithOffset(competingReservations))) { competitorsAccepted = false; }
+			else { ++competingReservations; }
+		};
+		auto refusedEvent = eventWithOffset(999);
+		refusedEvent.channel = 5;
+		std::uint64_t refusedAt = 0;
+		std::uint32_t attemptsUsed = 0;
+		const bool accepted = queue.pushWithTestHook(refusedEvent, &refusedAt, &attemptsUsed,
+			scheduleCompetingReservation);
+
+		QVERIFY(!accepted);
+		QVERIFY(competitorsAccepted);
+		QCOMPARE(competingReservations, lmms::MidiHandoffQueue<64>::MaxPushAttempts);
+		QCOMPARE(attemptsUsed, lmms::MidiHandoffQueue<64>::MaxPushAttempts);
+		QVERIFY(attemptsUsed <= lmms::MidiHandoffQueue<64>::MaxPushAttempts);
+		QCOMPARE(queue.dropped(), std::uint64_t{1});
+
+		for (std::uint32_t offset = 0; offset < competingReservations; ++offset)
+		{
+			lmms::HandoffMidiEvent event;
+			QVERIFY(queue.pop(event));
+			QCOMPARE(event.offset, offset);
+		}
+		lmms::HandoffMidiEvent empty;
+		QVERIFY(!queue.pop(empty));
+	}
+
 	//! A refused event is never silently lost: its channel is recorded, with the queue position it was refused at.
 	void refusedEventsLeaveTheirChannelRecorded()
 	{
@@ -204,6 +238,42 @@ private slots:
 			[](int) { return true; });
 		QCOMPARE(emitted, std::size_t{3});
 		QCOMPARE(queue.consumed(), std::uint64_t{3});  // the rest stays queued
+	}
+
+	//! Overflow cuts share the fixed native event budget with queue events; a limited drain leaves the rest queued.
+	void drainCapsEmittedEventsIncludingCuts()
+	{
+		lmms::MidiHandoffQueue<2> queue;
+		lmms::MidiChannelOverflow overflow;
+		auto event = [](std::uint32_t id)
+		{
+			lmms::HandoffMidiEvent queued;
+			queued.offset = id;
+			queued.channel = 3;
+			return queued;
+		};
+		QVERIFY(lmms::pushOrRecord(queue, overflow, event(1)));
+		QVERIFY(lmms::pushOrRecord(queue, overflow, event(2)));
+		QVERIFY(!lmms::pushOrRecord(queue, overflow, event(99)));
+		lmms::HandoffMidiEvent removed;
+		QVERIFY(queue.pop(removed));
+		QVERIFY(queue.pop(removed));
+		QVERIFY(lmms::pushOrRecord(queue, overflow, event(3)));
+		QVERIFY(lmms::pushOrRecord(queue, overflow, event(4)));
+
+		std::vector<std::uint32_t> delivered;
+		std::vector<int> cuts;
+		lmms::drainMidi(queue, overflow, 2,
+			[&](const lmms::HandoffMidiEvent& queued) { delivered.push_back(queued.offset); return true; },
+			[&](int channel) { cuts.push_back(channel); return true; }, 2);
+
+		QCOMPARE(cuts, std::vector<int>{3});
+		QCOMPARE(delivered, std::vector<std::uint32_t>{3});
+		QCOMPARE(queue.consumed(), std::uint64_t{3});
+		QCOMPARE(overflow.stamp(3), std::uint64_t{0});
+		lmms::HandoffMidiEvent pending;
+		QVERIFY(queue.pop(pending));
+		QCOMPARE(pending.offset, std::uint32_t{4});
 	}
 
 	//! When a cut cannot be sent, the drain stops and the cut stays due for the next call.

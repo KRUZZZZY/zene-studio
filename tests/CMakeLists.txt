@@ -547,6 +547,8 @@ set(LMMS_TESTS
 	# The bounded lock-free MIDI hand-off the instrument hosts use to get events off their audio paths
 	# (include/MidiHandoffQueue.h): FIFO, drop-and-count when full, no allocation, no lost accepted event.
 	src/core/MidiHandoffQueueTest.cpp
+	# Carla's plugin boundary uses the production MIDI encoder and fixed-capacity drain with a native API stand-in.
+	src/plugins/CarlaMidiHandoffTest.cpp
 	# The system semaphore's timed acquire (the shared-memory transport's audio-thread waits use it).
 	src/core/SystemSemaphoreTest.cpp
 	src/core/RecordingRealtimeTest.cpp
@@ -1400,6 +1402,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	# TODO CMake 3.12: Propagate usage requirements by linking to lmmsobjs
 	target_include_directories(${LMMS_TEST_NAME} PRIVATE $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+	if(LMMS_TEST_NAME STREQUAL "CarlaMidiHandoffTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			"${CMAKE_SOURCE_DIR}/plugins/CarlaBase"
+			"${CMAKE_SOURCE_DIR}/plugins/CarlaBase/carla/source/includes"
+			"${CMAKE_SOURCE_DIR}/plugins/CarlaBase/CarlaConfig"
+		)
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "MidiReconnectTest")
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/src/core")
 	endif()

@@ -1125,6 +1125,7 @@ include/WorkspaceWindows.h
 include/XmlDepthGuard.h
 include/XyPad.h
 include/zene/api/ControlApi.h
+plugins/CarlaBase/CarlaMidiHandoff.h
 plugins/ClapEffect/ClapBusMap.cpp
 plugins/ClapEffect/ClapBusMap.h
 plugins/ClapEffect/ClapEffect.cpp
@@ -2546,6 +2547,7 @@ tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/NoteBackgroundAudioTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
+tests/src/plugins/CarlaMidiHandoffTest.cpp
 tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/NeuralAmpModelLoadTest.cpp
 plugins/VstBase/VstMidiEventBatch.h
