@@ -293,6 +293,43 @@ private slots:
 		}
 	}
 
+	//! Regression: SlicerT fade timing when playback speed differs from 1 (bug new-p12-251).
+	//! At a frame ~1000 output frames before the end of a 0.5-speed slice, the corrected fade has not
+	//! begun (remaining output frames > fadeOutFrames), so the output is still (near) full amplitude.
+	//! The buggy formula instead treats that frame as deep inside the fade window.
+	void fadeTimingStaysCorrectWhenSpeedDiffers()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		InstrumentTrack* track = nullptr;
+		const QString error = prepareSlicerTrack(scratch, &track);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		AudioEngine* const audio = Engine::audioEngine();
+		audio->setOverloadSheddingEnabled(false);
+		track->pitchModel()->setValue(1200.0f);   // pitchRatio = 0.5
+		const Note note(TimePos(1), TimePos(0), track->baseNote());
+		auto* const handle = NotePlayHandleManager::acquire(track, 0,
+			audio->framesPerPeriod() * 2000, note);
+		QVERIFY(audio->addPlayHandle(handle));
+
+		std::vector<SampleFrame> all;
+		for (int i = 0; i < 1600; ++i)
+		{
+			const auto period = audio->renderNextPeriod();
+			all.insert(all.end(), period.begin(), period.end());
+		}
+
+		int lastActive = static_cast<int>(all.size()) - 1;
+		while (lastActive >= 0 && std::fabs(all[lastActive][0]) <= 1e-4f) { --lastActive; }
+		QVERIFY(lastActive > 2000);
+		const int target = lastActive - 1000;
+		QVERIFY(target >= 0);
+		const float amplitude = std::fabs(all[target][0]);
+
+		QVERIFY2(amplitude > 0.3f,
+			qPrintable(QStringLiteral("fade attenuation started too early: amplitude=%1").arg(amplitude)));
+	}
+
 	//! Cluster 4467 round 2: removing a track with a live SlicerT state destroys the note before the instrument.
 	void deletingSlicerTrackCancelsActivePlaybackState()
 	{

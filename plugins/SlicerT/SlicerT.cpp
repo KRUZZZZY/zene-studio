@@ -155,7 +155,7 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 			* Engine::audioEngine()->outputSampleRate()));
 		for (auto i = std::size_t{0}; i < frames; i++)
 		{
-			float fadeValue = static_cast<float>(framesLeft * speedRatio - static_cast<int>(i)) / fadeOutFrames;
+			float fadeValue = static_cast<float>(framesLeft / speedRatio - static_cast<int>(i)) / fadeOutFrames;
 			fadeValue = std::clamp(fadeValue, 0.0f, 1.0f);
 			fadeValue = cosinusInterpolate(0, 1, fadeValue);
 
