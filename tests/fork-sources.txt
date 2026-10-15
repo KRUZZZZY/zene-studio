@@ -2218,6 +2218,7 @@ tests/src/core/BasicFiltersSampleRateTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserFeaturesWindowTest.cpp
 tests/src/core/BrowserTestSupport.h
+tests/src/core/ClipEditsTest.cpp
 tests/src/core/ClipGainEnvelopeTest.cpp
 tests/src/core/ClipImportFileTest.cpp
 tests/src/core/ClipJoinRippleTest.cpp
