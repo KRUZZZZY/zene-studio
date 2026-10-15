@@ -136,6 +136,37 @@ private:
 	int m_steps;
 };
 
+// Test double for a backend stuck inside one inference call: it blocks until
+// released, then reports progress, so a cancel can only take effect after it.
+class BlockingInferenceSeparator : public StemSeparator
+{
+public:
+	BlockingInferenceSeparator(std::atomic<bool>& entered, std::atomic<bool>& release,
+		std::atomic<bool>& destroyed) :
+		m_entered(entered),
+		m_release(release),
+		m_destroyed(destroyed)
+	{
+	}
+
+	~BlockingInferenceSeparator() override { m_destroyed.store(true); }
+
+	Status separate(const SampleBuffer&, int, int, const ProgressFn& progress,
+		StemSet&, QString&) override
+	{
+		m_entered.store(true);
+		while (!m_release.load()) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+		return progress(0.5f) ? Status::Success : Status::Cancelled;
+	}
+
+	QString backendName() const override { return QStringLiteral("blocking-inference"); }
+
+private:
+	std::atomic<bool>& m_entered;
+	std::atomic<bool>& m_release;
+	std::atomic<bool>& m_destroyed;
+};
+
 } // namespace
 
 class StemJobManagerTest : public QObject
@@ -522,6 +553,31 @@ private slots:
 		QVERIFY(manager.error(12345).isEmpty());
 		QVERIFY(manager.result(12345)[0] == nullptr);
 		manager.cancel(12345); // must not crash
+	}
+
+	void testDestructionDoesNotWaitForAnInferenceCall()
+	{
+		std::atomic<bool> entered{false};
+		std::atomic<bool> release{false};
+		std::atomic<bool> backendDestroyed{false};
+		auto manager = std::make_unique<StemJobManager>();
+		manager->setSeparator(std::make_unique<BlockingInferenceSeparator>(entered, release, backendDestroyed));
+		manager->submit(makeMix(), StemModelSampleRate, 1024);
+		QTRY_VERIFY_WITH_TIMEOUT(entered.load(), 5000);
+
+		std::atomic<bool> destructionStarted{false};
+		std::thread releaser([&]
+		{
+			while (!destructionStarted.load()) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+			std::this_thread::sleep_for(std::chrono::milliseconds(250));
+			release.store(true);
+		});
+		destructionStarted.store(true);
+		manager.reset();
+		const bool returnedBeforeRelease = !release.load();
+		releaser.join();
+		while (!backendDestroyed.load()) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+		QVERIFY(returnedBeforeRelease);
 	}
 };
 

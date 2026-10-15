@@ -25,12 +25,15 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <functional>
+#include <thread>
 
 #include <QHash>
+#include <QMutex>
 #include <QMutexLocker>
 #include <QPointer>
-#include <QThread>
+#include <QWaitCondition>
 
 #include "SampleBuffer.h"
 #include "TaskCenter.h"
@@ -38,23 +41,24 @@
 namespace lmms
 {
 
+struct StemJobManager::SharedState
+{
+	mutable QMutex mutex;
+	//! Serialises signal forwarding with the manager's destructor: once
+	//! signalTarget is null, no worker signal reaches the manager.
+	QMutex signalMutex;
+	QWaitCondition jobAvailable;
+	std::deque<std::shared_ptr<Job>> queue;
+	QHash<int, std::shared_ptr<Job>> jobs;
+	std::unique_ptr<StemSeparator> separator;
+	ModelProvisioner provisioner;
+	int nextJobId = 1;
+	bool quit = false;
+	StemJobManager* signalTarget = nullptr;
+};
+
 namespace
 {
-
-/*! QThread::create is compiled out of Qt5 where the toolchain has no std::future (MinGW's
- *  win32-threads builds; hosted run 36713559404, mingw64) - the same gap
- *  plugins/SpectrumAnalyzer/DataprocLauncher.h works around. A thread that runs one callable. */
-class CallableThread : public QThread
-{
-public:
-	explicit CallableThread(std::function<void()> body) : m_body(std::move(body)) {}
-
-protected:
-	void run() override { m_body(); }
-
-private:
-	std::function<void()> m_body;
-};
 
 /*! A backend's (or a download's) fraction as a value a listener can use.
  *  std::clamp does NOT do this on its own: every comparison against a NaN is
@@ -74,11 +78,11 @@ float usableFraction(float fraction)
 } // namespace
 
 StemJobManager::StemJobManager(QObject* parent) :
-	QObject(parent)
+	QObject(parent),
+	m_state(std::make_shared<SharedState>())
 {
-	m_thread = new CallableThread([this] { workerLoop(); });
-	m_thread->setObjectName(QStringLiteral("StemJobManager"));
-	m_thread->start();
+	m_state->signalTarget = this;
+	std::thread([state = m_state] { workerLoop(state); }).detach();
 	reportToTaskArea();
 }
 
@@ -104,19 +108,23 @@ void StemJobManager::reportToTaskArea()
 
 StemJobManager::~StemJobManager()
 {
+	// Stop signals before QObject teardown. The detached worker owns state and
+	// the backend independently, so cancelling here never joins inference.
+	auto state = m_state;
+	{
+		QMutexLocker locker(&state->signalMutex);
+		state->signalTarget = nullptr;
+	}
 	TaskCenter::instance().forget(this);
 	{
-		QMutexLocker locker(&m_mutex);
-		m_quit = true;
-		for (auto& job : m_jobs)
+		QMutexLocker locker(&state->mutex);
+		state->quit = true;
+		for (auto& job : state->jobs)
 		{
 			job->cancelRequested.store(true);
 		}
 	}
-	m_jobAvailable.wakeAll();
-	m_thread->wait();
-	delete m_thread;
-	m_thread = nullptr;
+	state->jobAvailable.wakeAll();
 }
 
 
@@ -124,7 +132,7 @@ StemJobManager::~StemJobManager()
 
 void StemJobManager::setSeparator(std::unique_ptr<StemSeparator> separator)
 {
-	m_separator = std::move(separator);
+	m_state->separator = std::move(separator);
 }
 
 
@@ -132,7 +140,7 @@ void StemJobManager::setSeparator(std::unique_ptr<StemSeparator> separator)
 
 QString StemJobManager::backendName() const
 {
-	return m_separator ? m_separator->backendName() : QString();
+	return m_state->separator ? m_state->separator->backendName() : QString();
 }
 
 
@@ -149,18 +157,18 @@ int StemJobManager::submit(std::shared_ptr<const SampleBuffer> mix,
 
 	auto job = std::make_shared<Job>();
 	{
-		QMutexLocker locker(&m_mutex);
-		job->id = m_nextJobId++;
+		QMutexLocker locker(&m_state->mutex);
+		job->id = m_state->nextJobId++;
 		job->mix = std::move(mix);
 		job->sampleRate = sampleRate;
 		job->segmentFrames = segmentFrames;
-		m_jobs.insert(job->id, job);
-		m_queue.push_back(job);
+		m_state->jobs.insert(job->id, job);
+		m_state->queue.push_back(job);
 	}
 	// Listed before the worker can start it, so the job's first signal finds its task.
 	TaskCenter::instance().begin(this, job->id, {QStringLiteral("stem_split"), tr("Split stems"),
 		[manager = QPointer<StemJobManager>(this), id = job->id] { if (manager != nullptr) { manager->cancel(id); } }, {}, true});
-	m_jobAvailable.wakeOne();
+	m_state->jobAvailable.wakeOne();
 	return job->id;
 }
 
@@ -171,9 +179,9 @@ void StemJobManager::cancel(int jobId)
 {
 	bool cancelledImmediately = false;
 	{
-		QMutexLocker locker(&m_mutex);
-		auto it = m_jobs.find(jobId);
-		if (it == m_jobs.end())
+		QMutexLocker locker(&m_state->mutex);
+		auto it = m_state->jobs.find(jobId);
+		if (it == m_state->jobs.end())
 		{
 			return;
 		}
@@ -183,11 +191,11 @@ void StemJobManager::cancel(int jobId)
 		{
 			// Still in the queue: drop it here instead of waiting for the
 			// worker to reach it (the worker may be busy with another job).
-			for (auto qit = m_queue.begin(); qit != m_queue.end(); ++qit)
+			for (auto qit = m_state->queue.begin(); qit != m_state->queue.end(); ++qit)
 			{
 				if (*qit == job)
 				{
-					m_queue.erase(qit);
+					m_state->queue.erase(qit);
 					break;
 				}
 			}
@@ -213,8 +221,8 @@ void StemJobManager::cancelAll()
 {
 	QList<int> ids;
 	{
-		QMutexLocker locker(&m_mutex);
-		ids = m_jobs.keys();
+		QMutexLocker locker(&m_state->mutex);
+		ids = m_state->jobs.keys();
 	}
 	for (const int id : ids)
 	{
@@ -227,11 +235,11 @@ void StemJobManager::cancelAll()
 
 StemJobManager::State StemJobManager::state(int jobId) const
 {
-	QMutexLocker locker(&m_mutex);
-	auto it = m_jobs.find(jobId);
+	QMutexLocker locker(&m_state->mutex);
+	auto it = m_state->jobs.find(jobId);
 	// Unknown ids read as Queued: "not started" is the least misleading answer
 	// and keeps GUI polling of a just-submitted id race-free.
-	return it == m_jobs.end() ? State::Queued : (*it)->state.load();
+	return it == m_state->jobs.end() ? State::Queued : (*it)->state.load();
 }
 
 
@@ -239,9 +247,9 @@ StemJobManager::State StemJobManager::state(int jobId) const
 
 float StemJobManager::progress(int jobId) const
 {
-	QMutexLocker locker(&m_mutex);
-	auto it = m_jobs.find(jobId);
-	return it == m_jobs.end() ? 0.0f : (*it)->progress.load();
+	QMutexLocker locker(&m_state->mutex);
+	auto it = m_state->jobs.find(jobId);
+	return it == m_state->jobs.end() ? 0.0f : (*it)->progress.load();
 }
 
 
@@ -249,9 +257,9 @@ float StemJobManager::progress(int jobId) const
 
 StemSet StemJobManager::result(int jobId) const
 {
-	QMutexLocker locker(&m_mutex);
-	auto it = m_jobs.find(jobId);
-	return it == m_jobs.end() ? StemSet{} : (*it)->stems;
+	QMutexLocker locker(&m_state->mutex);
+	auto it = m_state->jobs.find(jobId);
+	return it == m_state->jobs.end() ? StemSet{} : (*it)->stems;
 }
 
 
@@ -259,9 +267,9 @@ StemSet StemJobManager::result(int jobId) const
 
 QString StemJobManager::error(int jobId) const
 {
-	QMutexLocker locker(&m_mutex);
-	auto it = m_jobs.find(jobId);
-	return it == m_jobs.end() ? QString() : (*it)->error;
+	QMutexLocker locker(&m_state->mutex);
+	auto it = m_state->jobs.find(jobId);
+	return it == m_state->jobs.end() ? QString() : (*it)->error;
 }
 
 
@@ -269,9 +277,9 @@ QString StemJobManager::error(int jobId) const
 
 int StemJobManager::runningJobCount() const
 {
-	QMutexLocker locker(&m_mutex);
+	QMutexLocker locker(&m_state->mutex);
 	int count = 0;
-	for (auto it = m_jobs.cbegin(); it != m_jobs.cend(); ++it)
+	for (auto it = m_state->jobs.cbegin(); it != m_state->jobs.cend(); ++it)
 	{
 		const auto s = (*it)->state.load();
 		if (s == State::Running || s == State::CancelRequested)
@@ -287,8 +295,8 @@ int StemJobManager::runningJobCount() const
 
 void StemJobManager::setModelProvisioner(ModelProvisioner provisioner)
 {
-	QMutexLocker locker(&m_mutex);
-	m_provisioner = std::move(provisioner);
+	QMutexLocker locker(&m_state->mutex);
+	m_state->provisioner = std::move(provisioner);
 }
 
 
@@ -296,9 +304,9 @@ void StemJobManager::setModelProvisioner(ModelProvisioner provisioner)
 
 bool StemJobManager::fetchingModel(int jobId) const
 {
-	QMutexLocker locker(&m_mutex);
-	auto it = m_jobs.find(jobId);
-	return it != m_jobs.end() && (*it)->fetchingModel.load();
+	QMutexLocker locker(&m_state->mutex);
+	auto it = m_state->jobs.find(jobId);
+	return it != m_state->jobs.end() && (*it)->fetchingModel.load();
 }
 
 
@@ -306,9 +314,9 @@ bool StemJobManager::fetchingModel(int jobId) const
 
 float StemJobManager::downloadProgress(int jobId) const
 {
-	QMutexLocker locker(&m_mutex);
-	auto it = m_jobs.find(jobId);
-	return it == m_jobs.end() ? 0.0f : (*it)->downloadProgress.load();
+	QMutexLocker locker(&m_state->mutex);
+	auto it = m_state->jobs.find(jobId);
+	return it == m_state->jobs.end() ? 0.0f : (*it)->downloadProgress.load();
 }
 
 
@@ -316,32 +324,95 @@ float StemJobManager::downloadProgress(int jobId) const
 
 std::shared_ptr<StemJobManager::Job> StemJobManager::findJob(int jobId) const
 {
-	QMutexLocker locker(&m_mutex);
-	auto it = m_jobs.find(jobId);
-	return it == m_jobs.end() ? nullptr : *it;
+	QMutexLocker locker(&m_state->mutex);
+	auto it = m_state->jobs.find(jobId);
+	return it == m_state->jobs.end() ? nullptr : *it;
 }
 
 
 
 
-void StemJobManager::workerLoop()
+void StemJobManager::emitJobStarted(const std::shared_ptr<SharedState>& state, int jobId)
+{
+	QMutexLocker locker(&state->signalMutex);
+	if (auto* target = state->signalTarget)
+	{
+		QMetaObject::invokeMethod(target, [target, jobId] { emit target->jobStarted(jobId); }, Qt::QueuedConnection);
+	}
+}
+
+
+
+
+void StemJobManager::emitJobProgress(const std::shared_ptr<SharedState>& state, int jobId, float fraction)
+{
+	QMutexLocker locker(&state->signalMutex);
+	if (auto* target = state->signalTarget)
+	{
+		QMetaObject::invokeMethod(target, [target, jobId, fraction] { emit target->jobProgress(jobId, fraction); },
+			Qt::QueuedConnection);
+	}
+}
+
+
+
+
+void StemJobManager::emitJobFinished(const std::shared_ptr<SharedState>& state, int jobId, double elapsedSeconds)
+{
+	QMutexLocker locker(&state->signalMutex);
+	if (auto* target = state->signalTarget)
+	{
+		QMetaObject::invokeMethod(target, [target, jobId, elapsedSeconds]
+			{ emit target->jobFinished(jobId, elapsedSeconds); }, Qt::QueuedConnection);
+	}
+}
+
+
+
+
+void StemJobManager::emitJobCancelled(const std::shared_ptr<SharedState>& state, int jobId)
+{
+	QMutexLocker locker(&state->signalMutex);
+	if (auto* target = state->signalTarget)
+	{
+		QMetaObject::invokeMethod(target, [target, jobId] { emit target->jobCancelled(jobId); }, Qt::QueuedConnection);
+	}
+}
+
+
+
+
+void StemJobManager::emitJobFailed(const std::shared_ptr<SharedState>& state, int jobId, const QString& error)
+{
+	QMutexLocker locker(&state->signalMutex);
+	if (auto* target = state->signalTarget)
+	{
+		QMetaObject::invokeMethod(target, [target, jobId, error] { emit target->jobFailed(jobId, error); },
+			Qt::QueuedConnection);
+	}
+}
+
+
+
+
+void StemJobManager::workerLoop(const std::shared_ptr<SharedState>& state)
 {
 	for (;;)
 	{
 		std::shared_ptr<Job> job;
 		{
-			QMutexLocker locker(&m_mutex);
-			while (m_queue.empty() && !m_quit)
+			QMutexLocker locker(&state->mutex);
+			while (state->queue.empty() && !state->quit)
 			{
-				m_jobAvailable.wait(&m_mutex);
+				state->jobAvailable.wait(&state->mutex);
 			}
-			if (m_queue.empty())
+			if (state->queue.empty())
 			{
-				// m_quit and nothing left to do
+				// quit and nothing left to do
 				return;
 			}
-			job = m_queue.front();
-			m_queue.pop_front();
+			job = state->queue.front();
+			state->queue.pop_front();
 			// Dequeue claims ownership of the queued-to-running transition while
 			// holding the same mutex cancel() uses. A concurrent cancel therefore
 			// sees Running and leaves terminal emission to this worker only.
@@ -354,15 +425,15 @@ void StemJobManager::workerLoop()
 		if (job->cancelRequested.load())
 		{
 			job->state.store(State::Cancelled);
-			emit jobCancelled(job->id);
+			emitJobCancelled(state, job->id);
 		}
 		else
 		{
-			runJob(job);
+			runJob(state, job);
 		}
 		// The input is read by this worker only and is spent once the job has ended, so a
 		// finished job keeps only its result rather than its whole source mix as well.
-		QMutexLocker locker(&m_mutex);
+		QMutexLocker locker(&state->mutex);
 		job->mix.reset();
 	}
 }
@@ -370,14 +441,14 @@ void StemJobManager::workerLoop()
 
 
 
-bool StemJobManager::provisionModel(const std::shared_ptr<Job>& job)
+bool StemJobManager::provisionModel(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job)
 {
 	// Owner decision 14: the model a first job needs is fetched HERE, on the
 	// worker, so neither the GUI nor the control surface waits for 166 MB.
 	ModelProvisioner provisioner;
 	{
-		QMutexLocker locker(&m_mutex);
-		provisioner = m_provisioner;
+		QMutexLocker locker(&state->mutex);
+		provisioner = state->provisioner;
 	}
 	if (!provisioner) { return true; }
 
@@ -390,17 +461,17 @@ bool StemJobManager::provisionModel(const std::shared_ptr<Job>& job)
 	if (job->cancelRequested.load())
 	{
 		job->state.store(State::Cancelled);
-		emit jobCancelled(job->id);
+		emitJobCancelled(state, job->id);
 		return false;
 	}
 	if (!provisioned)
 	{
 		{
-			QMutexLocker locker(&m_mutex);
+			QMutexLocker locker(&state->mutex);
 			job->error = provisionError;
 			job->state.store(State::Failed);
 		}
-		emit jobFailed(job->id, provisionError);
+		emitJobFailed(state, job->id, provisionError);
 		return false;
 	}
 	return true;
@@ -409,30 +480,30 @@ bool StemJobManager::provisionModel(const std::shared_ptr<Job>& job)
 
 
 
-void StemJobManager::runJob(const std::shared_ptr<Job>& job)
+void StemJobManager::runJob(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job)
 {
-	emit jobStarted(job->id);
+	emitJobStarted(state, job->id);
 
-	if (m_separator == nullptr)
+	if (state->separator == nullptr)
 	{
 		const auto error = QStringLiteral("No stem-separation backend configured");
 		{
-			QMutexLocker locker(&m_mutex);
+			QMutexLocker locker(&state->mutex);
 			job->error = error;
 			job->state.store(State::Failed);
 		}
-		emit jobFailed(job->id, error);
+		emitJobFailed(state, job->id, error);
 		return;
 	}
 
 	const auto startTime = std::chrono::steady_clock::now();
 
-	if (!provisionModel(job)) { return; }
+	if (!provisionModel(state, job)) { return; }
 
 	StemSet stems;
 	QString error;
-	const auto status = m_separator->separate(*job->mix, job->sampleRate, job->segmentFrames,
-		[this, job](float fraction)
+	const auto status = state->separator->separate(*job->mix, job->sampleRate, job->segmentFrames,
+		[state, job](float fraction)
 		{
 			if (job->cancelRequested.load())
 			{
@@ -446,7 +517,7 @@ void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 			if (fraction - job->lastEmittedProgress >= 0.01f || fraction >= 1.0f)
 			{
 				job->lastEmittedProgress = fraction;
-				emit jobProgress(job->id, fraction);
+				emitJobProgress(state, job->id, fraction);
 			}
 			return true;
 		},
@@ -460,7 +531,7 @@ void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 	{
 	case StemSeparator::Status::Success:
 		{
-			QMutexLocker locker(&m_mutex);
+			QMutexLocker locker(&state->mutex);
 			job->stems = stems;
 			job->progress.store(1.0f);
 			job->state.store(State::Completed);
@@ -472,27 +543,27 @@ void StemJobManager::runJob(const std::shared_ptr<Job>& job)
 		}
 		if (!alreadyEmittedCompletion)
 		{
-			emit jobProgress(job->id, 1.0f);
+			emitJobProgress(state, job->id, 1.0f);
 		}
-		emit jobFinished(job->id, job->elapsedSeconds);
+		emitJobFinished(state, job->id, job->elapsedSeconds);
 		break;
 	case StemSeparator::Status::Cancelled:
 		// Partial stems are kept when the backend produced them.
 		{
-			QMutexLocker locker(&m_mutex);
+			QMutexLocker locker(&state->mutex);
 			job->stems = stems;
 			job->state.store(State::Cancelled);
 		}
-		emit jobCancelled(job->id);
+		emitJobCancelled(state, job->id);
 		break;
 	case StemSeparator::Status::Failed:
 	default:
 		{
-			QMutexLocker locker(&m_mutex);
+			QMutexLocker locker(&state->mutex);
 			job->error = error;
 			job->state.store(State::Failed);
 		}
-		emit jobFailed(job->id, error);
+		emitJobFailed(state, job->id, error);
 		break;
 	}
 }
