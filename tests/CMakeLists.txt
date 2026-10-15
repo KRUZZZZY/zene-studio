@@ -1302,6 +1302,10 @@ target_include_directories(SampleRateDependentLadspa PRIVATE
 	${CMAKE_SOURCE_DIR}/include)
 target_compile_features(SampleRateDependentLadspa PRIVATE cxx_std_20)
 set_target_properties(SampleRateDependentLadspa PROPERTIES PREFIX "")
+if(MSVC)
+	# ladspa.h's prototype has no dllexport, which MSVC refuses to see added on the definition (C2375).
+	target_link_options(SampleRateDependentLadspa PRIVATE /EXPORT:ladspa_descriptor)
+endif()
 
 function(lmms_add_coverage TARGET)
 	if(LMMS_COVERAGE_FLAGS)
@@ -1340,6 +1344,11 @@ set_target_properties(q050018_no_entry PROPERTIES OUTPUT_NAME "q050018-no-entry"
 if(NOT TARGET vsteffect)
 	list(REMOVE_ITEM LMMS_TESTS src/plugins/VstEffectControlsTest.cpp)
 endif()
+
+# Targets that compile plugins/NeuralAmp/nam/*.cpp pull in vendored Eigen, whose NEON kernels trip
+# -Wdeprecated-enum-enum-conversion on aarch64; -DUSE_WERROR must not make that an error (the plugin
+# target does the same, plugins/NeuralAmp/CMakeLists.txt).
+set(ZENE_NAM_EIGEN_OPTIONS "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-Wno-error=deprecated-enum-enum-conversion>")
 
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
@@ -1661,6 +1670,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} neuralamp)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${NAM_DIR} "${CMAKE_BINARY_DIR}/plugins/NeuralAmp"
 			${NAM_DIR}/rtneural/modules/Eigen ${NAM_DIR}/rtneural/modules/json)
+		target_compile_options(${LMMS_TEST_NAME} PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_NAM_TEST_SEAM PLUGIN_NAME=neuralamp)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
@@ -1811,6 +1821,7 @@ target_include_directories(NeuralAmpWavInputTest PRIVATE
 	 "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/json"
 )
 target_compile_features(NeuralAmpWavInputTest PRIVATE cxx_std_20)
+target_compile_options(NeuralAmpWavInputTest PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
 target_link_libraries(NeuralAmpWavInputTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY} ${CMAKE_DL_LIBS})
 if(NOT MSVC)
 	target_link_libraries(NeuralAmpWavInputTest PRIVATE m)
@@ -1915,7 +1926,7 @@ target_include_directories(NamModelMonoOutputTest PRIVATE
 	"${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/json"
 )
 target_compile_features(NamModelMonoOutputTest PRIVATE cxx_std_20)
-target_compile_options(NamModelMonoOutputTest PRIVATE $<$<CONFIG:Debug>:-O2>)
+target_compile_options(NamModelMonoOutputTest PRIVATE $<$<CONFIG:Debug>:-O2> ${ZENE_NAM_EIGEN_OPTIONS})
 target_link_libraries(NamModelMonoOutputTest PRIVATE ${CMAKE_DL_LIBS})
 if(NOT MSVC)
 	target_link_libraries(NamModelMonoOutputTest PRIVATE m)
@@ -2739,6 +2750,11 @@ if(TARGET amp_1181 AND TARGET dj_eq_1901)
 	target_include_directories(partial_init_failure_ladspa PRIVATE
 		${CMAKE_SOURCE_DIR}/include)
 	target_compile_features(partial_init_failure_ladspa PRIVATE cxx_std_20)
+	if(MSVC)
+		target_link_options(partial_init_failure_ladspa PRIVATE /EXPORT:ladspa_descriptor
+			/EXPORT:partial_init_failure_reset /EXPORT:partial_init_failure_instantiations
+			/EXPORT:partial_init_failure_cleanups)
+	endif()
 	set_target_properties(partial_init_failure_ladspa PROPERTIES
 		PREFIX ""
 		OUTPUT_NAME "partial_init_failure"
@@ -3681,6 +3697,7 @@ if(NOT MSVC)
 	target_link_libraries(NamModelPrewarmTest PRIVATE m)
 endif()
 target_compile_features(NamModelPrewarmTest PRIVATE cxx_std_20)
+target_compile_options(NamModelPrewarmTest PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
 set_tests_properties(NamModelPrewarmTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
@@ -5675,6 +5692,9 @@ set(LADSPA_CHANNEL_FIXTURE_DIR "${CMAKE_CURRENT_BINARY_DIR}/ladspa-channel-fixtu
 add_library(ladspa_channel_count_fixture MODULE src/plugins/LadspaChannelCountFixture.cpp)
 target_include_directories(ladspa_channel_count_fixture PRIVATE "${CMAKE_SOURCE_DIR}/include")
 target_compile_features(ladspa_channel_count_fixture PRIVATE cxx_std_20)
+if(MSVC)
+	target_link_options(ladspa_channel_count_fixture PRIVATE /EXPORT:ladspa_descriptor)
+endif()
 set_target_properties(ladspa_channel_count_fixture PROPERTIES
 	LIBRARY_OUTPUT_DIRECTORY "${LADSPA_CHANNEL_FIXTURE_DIR}"
 	RUNTIME_OUTPUT_DIRECTORY "${LADSPA_CHANNEL_FIXTURE_DIR}"
