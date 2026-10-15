@@ -124,12 +124,15 @@ public:
 	auto zone(int index) const -> const RackZone*;
 
 	//! Appends a zone and returns its index (the zone-<n> id).
-	auto addZone(const RackZone& zone) -> int;
+	//! @a alongside runs inside the same edit, after the list changes and before the changed hook: a caller
+	//! whose own state must publish with the list (a layer slot) passes it here rather than as a second edit.
+	auto addZone(const RackZone& zone, const std::function<void()>& alongside = {}) -> int;
 	//! Inserts a zone at @a index, for the inverse of a removal.
 	auto insertZone(int index, const RackZone& zone) -> bool;
 	auto removeZone(int index) -> bool;
 	//! 0.5.0 MX-112: replaces the whole list in one edit (a layer removed renumbers the zones it leaves).
-	void assign(std::vector<RackZone> zones);
+	//! @a alongside runs in that edit, as addZone's does.
+	void assign(std::vector<RackZone> zones, const std::function<void()>& alongside = {});
 
 	/**
 	 * The index of the first zone - in the order the zones were added - whose

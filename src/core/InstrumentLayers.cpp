@@ -201,12 +201,15 @@ auto InstrumentLayers::addLayer(const QString& plugin, const Plugin::Descriptor:
 		return -1;
 	}
 	track->setName(QStringLiteral("%1 layer %2").arg(m_owner->name()).arg(index));
-	adopt(track, index);
-	m_mix[static_cast<std::size_t>(index)] = Mix{};
-	publishMix();
 	RackZone wholeKeyboard;
 	wholeKeyboard.chain = index;
-	m_zones.addZone(wholeKeyboard);
+	// The zone and the layer slot it routes to are one published edit (the audio thread never sees one without the other).
+	m_zones.addZone(wholeKeyboard, [this, track, index]
+	{
+		adopt(track, index);
+		m_mix[static_cast<std::size_t>(index)] = Mix{};
+		publishMix();
+	});
 	return index;
 }
 
@@ -218,10 +221,13 @@ auto InstrumentLayers::insertLayer(int index, const QString& xml) -> int
 	const QDomElement element = doc.documentElement();
 	InstrumentTrack* track = newLayerTrack(&element);
 	if (track == nullptr) { return -1; }
-	m_zones.assign(zonesWithRoomAt(index));
-	makeRoomForMix(index, readMix(element));
-	adopt(track, index);
-	publishMix();
+	const Mix mix = readMix(element);
+	m_zones.assign(zonesWithRoomAt(index), [this, track, index, mix]
+	{
+		makeRoomForMix(index, mix);
+		adopt(track, index);
+		publishMix();
+	});
 	return index;
 }
 
@@ -229,18 +235,20 @@ auto InstrumentLayers::removeLayer(int index) -> bool
 {
 	InstrumentTrack* track = layer(index);
 	if (track == nullptr) { return false; }
-	m_zones.assign(zonesWithout(index));
-	ChangeGuard guard;
-	for (int slot = index - 1; slot < MaxLayers; ++slot)
+	m_zones.assign(zonesWithout(index), [this, track, index]
 	{
-		const auto at = static_cast<std::size_t>(slot);
-		m_slots[at].store(slot + 1 < MaxLayers ? m_slots[at + 1].load(std::memory_order_relaxed) : nullptr,
-			std::memory_order_release);
-	}
-	for (auto& live : m_liveLayers) { live.store(dropBit(live.load(std::memory_order_relaxed), index), std::memory_order_relaxed); }
-	dropMix(index);
-	delete track;
-	publishMix();
+		ChangeGuard guard;
+		for (int slot = index - 1; slot < MaxLayers; ++slot)
+		{
+			const auto at = static_cast<std::size_t>(slot);
+			m_slots[at].store(slot + 1 < MaxLayers ? m_slots[at + 1].load(std::memory_order_relaxed) : nullptr,
+				std::memory_order_release);
+		}
+		for (auto& live : m_liveLayers) { live.store(dropBit(live.load(std::memory_order_relaxed), index), std::memory_order_relaxed); }
+		dropMix(index);
+		delete track;
+		publishMix();
+	});
 	return true;
 }
 
