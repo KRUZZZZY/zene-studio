@@ -63,6 +63,7 @@
 #include "LinkAudioFollower.h"
 #include "PatternEditor.h"
 #include "PatternStore.h"
+#include "RealtimeScope.h"
 #include "PatternTrack.h"
 #include "PianoRoll.h"
 #include "ProjectJournal.h"
@@ -788,49 +789,59 @@ void Song::noteRecordedModel(const AutomatableModel* model)
 	m_recordedModels.insert(at, model);
 }
 
-void Song::ensureAutomationScratchCapacity()
+void Song::countAutomationForTest(std::size_t* clips, std::size_t* targets) const
 {
-	// Runs on every engine change, so the common case is O(tracks): a clip count against the reserve.
-	std::size_t clips = 0;
-	const auto countClips = [&clips](const std::vector<Track*>& tracks) {
-		for (const Track* track : tracks) { clips += track->getClips().size(); }
-	};
-	countClips(tracks());
-	if (m_globalAutomationTrack != nullptr) { clips += m_globalAutomationTrack->getClips().size(); }
-	if (PatternStore* patterns = Engine::patternStore()) { countClips(patterns->tracks()); }
-
-	const std::size_t need = clips + 64;
-	if (need <= m_automationLevel.capacity() && need <= m_oldAutomatedValues.capacity()
-		&& need <= m_recordedModels.capacity())
-	{
-		return;
-	}
-
-	// Past the reserve (rare): count the models the automation clips reference too, since one clip may drive several.
-	std::size_t models = 0;
-	const auto countTrackModels = [&models](Track* track) {
+	*clips = 0;
+	*targets = 0;
+	const auto countTrack = [clips, targets](Track* track) {
+		*clips += track->getClips().size();
 		if (track->type() != Track::Type::Automation && track->type() != Track::Type::HiddenAutomation) { return; }
 		for (Clip* clip : track->getClips())
 		{
-			if (auto* automation = dynamic_cast<AutomationClip*>(clip)) { models += automation->objects().size(); }
+			if (auto* automation = dynamic_cast<AutomationClip*>(clip)) { *targets += automation->objects().size(); }
 		}
 	};
-	const auto countModels = [&countTrackModels](const std::vector<Track*>& tracks) {
-		for (Track* track : tracks) { countTrackModels(track); }
-	};
-	countModels(tracks());
-	if (m_globalAutomationTrack != nullptr) { countTrackModels(m_globalAutomationTrack); }
-	if (PatternStore* patterns = Engine::patternStore()) { countModels(patterns->tracks()); }
+	for (Track* track : tracks()) { countTrack(track); }
+	if (m_globalAutomationTrack != nullptr) { countTrack(m_globalAutomationTrack); }
+	if (PatternStore* patterns = Engine::patternStore())
+	{
+		for (Track* track : patterns->tracks()) { countTrack(track); }
+	}
+}
 
-	// Headroom, so a steady trickle of new clips does not re-reserve each time. A project that later gives
-	// existing clips more models than this can still outgrow it; that read is redone, never wrong (see
-	// processAutomations), and the next engine change that crosses the reserve re-counts.
-	const std::size_t target = 2 * std::max(need, models + 64);
+void Song::noteAutomationGrowth(std::size_t clips, std::size_t targets) noexcept
+{
+	const auto clipBound = m_automationClipBound.fetch_add(clips, std::memory_order_relaxed) + clips;
+	const auto targetBound = m_automationTargetBound.fetch_add(targets, std::memory_order_relaxed) + targets;
+	if (std::max(clipBound, targetBound) + 64 <= m_automationReserved.load(std::memory_order_relaxed)) { return; }
+	if (RealtimeScope::isActive() || Engine::audioEngine() == nullptr || Engine::audioEngine()->isRenderThread()) { return; }
+	try { ensureAutomationScratchCapacity(); }
+	catch (...) { /* out of memory: the read's overflow redo keeps the automation right */ }
+}
+
+void Song::ensureAutomationScratchCapacity()
+{
+	if (RealtimeScope::isActive()) { return; }
+	// With the render locked out nothing reads or rewrites the lists being resized.
+	const auto changes = Engine::audioEngine()->requestChangesGuard();
+	std::size_t clips = 0;
+	std::size_t targets = 0;
+	countAutomationForTest(&clips, &targets);
+	m_automationClipBound.store(clips, std::memory_order_relaxed);
+	m_automationTargetBound.store(targets, std::memory_order_relaxed);
+
+	const std::size_t need = std::max(clips, targets) + 64;
+	if (need <= m_automationReserved.load(std::memory_order_relaxed)) { return; }
+	// Headroom, so a project that keeps growing re-counts once per doubling, not once per edit.
+	const std::size_t target = 2 * need;
 	m_automationLevel.reserve(target);
 	m_automationInner.reserve(target);
 	m_automationRecordClips.reserve(target);
 	m_oldAutomatedValues.reserve(target);
 	m_recordedModels.reserve(target);
+	m_automationReserved.store(std::min({m_automationLevel.capacity(), m_automationInner.capacity(),
+		m_automationRecordClips.capacity(), m_oldAutomatedValues.capacity(), m_recordedModels.capacity()}),
+		std::memory_order_relaxed);
 }
 
 void Song::resizeAutomationScratchForTest(std::size_t capacity)
@@ -844,6 +855,7 @@ void Song::resizeAutomationScratchForTest(std::size_t capacity)
 	m_recordedModels.clear();
 	m_recordedModels.shrink_to_fit();
 	m_recordedModels.reserve(capacity);
+	m_automationReserved.store(capacity, std::memory_order_relaxed);
 }
 
 void Song::processMetronome(size_t bufferOffset)

@@ -397,9 +397,25 @@ public:
 		return m_globalAutomationTrack;
 	}
 
-	//! Reserves the audio thread's automation scratch for the project's clip and automated-model counts.
-	//! Called with the render locked out (AudioEngine::doneChangeInModel); a no-op while it already fits.
+	/*! Every place that adds automation work for the audio thread calls this AFTER it has added it:
+	 *  Track::addClip (\a clips = 1, plus the clip's targets when it already has some),
+	 *  AutomationClip::addObject and the AutomationClip copy constructor (\a targets). Load, undo and redo,
+	 *  paste, duplicate and track add all reach the scratch through those three, and recording only writes
+	 *  nodes into existing clips. The two bounds only ever grow here (removals are not subtracted), so they
+	 *  are an upper bound of the true counts; when the larger passes the reserve, ensureAutomationScratch-
+	 *  Capacity recounts exactly and reserves 2x under the engine change lock. That is O(1) per call and
+	 *  O(project) once per doubling. On the render thread (or inside a RealtimeScope) only the bounds move:
+	 *  nothing there may allocate, and the read's overflow redo covers it. */
+	void noteAutomationGrowth(std::size_t clips, std::size_t targets) noexcept;
+	//! Recounts the clips and automation targets of the song, the global track and the pattern store exactly
+	//! and reserves the scratch for them (control thread; takes the engine change lock itself).
 	void ensureAutomationScratchCapacity();
+	//! Exact counts, for the tests that pin the bounds above.
+	void countAutomationForTest(std::size_t* clips, std::size_t* targets) const;
+	std::size_t automationBoundForTest() const noexcept
+	{
+		return std::max(m_automationClipBound.load(), m_automationTargetBound.load());
+	}
 	//! Test seam: replaces the scratch with one of \a capacity (call with the render locked out).
 	void resizeAutomationScratchForTest(std::size_t capacity);
 	//! How many ticks read more clips or values than the scratch had room for since the song was made.
@@ -936,6 +952,10 @@ private:
 	AutomationRenderScratch m_automationRecordClips{AutomationRenderScratch::RenderCapacity};
 	std::vector<const AutomatableModel*> m_recordedModels;
 	std::atomic<std::uint64_t> m_automationScratchOverflows{0};
+	std::atomic<std::size_t> m_automationClipBound{0};
+	std::atomic<std::size_t> m_automationTargetBound{0};
+	//! The smallest capacity of the lists above, as of the last reserve.
+	std::atomic<std::size_t> m_automationReserved{AutomationRenderScratch::RenderCapacity};
 
 	//! The song that `Song::forgetAutomatedModel()` reports into, or nullptr.
 	//! Set by `Song::Song()`, cleared at the top of `Song::~Song()`.

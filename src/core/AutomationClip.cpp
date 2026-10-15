@@ -81,20 +81,32 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 {
 	// Locks the mutex of the copied AutomationClip to make sure it
 	// doesn't change while it's being copied
-	QMutexLocker m(&_clip_to_copy.m_clipMutex);
-
-	for( timeMap::const_iterator it = _clip_to_copy.m_timeMap.begin();
-				it != _clip_to_copy.m_timeMap.end(); ++it )
 	{
-		// Copies the automation node (in/out values and in/out tangents)
-		m_timeMap[POS(it)] = it.value();
-		// Sets the node's clip to this one
-		m_timeMap[POS(it)].setClip(this);
+		QMutexLocker m(&_clip_to_copy.m_clipMutex);
+
+		for( timeMap::const_iterator it = _clip_to_copy.m_timeMap.begin();
+					it != _clip_to_copy.m_timeMap.end(); ++it )
+		{
+			// Copies the automation node (in/out values and in/out tangents)
+			m_timeMap[POS(it)] = it.value();
+			// Sets the node's clip to this one
+			m_timeMap[POS(it)].setClip(this);
+		}
 	}
+	// The copy carries the original's targets. Told with no clip mutex held: growing the audio thread's
+	// scratch takes the engine change lock, which the render holds while it takes this mutex.
+	if( Song* song = Engine::getSong() ) { song->noteAutomationGrowth( 0, m_objects.size() ); }
 }
 
 bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
 {
+	// Declared before the lock so it runs after the lock is released (see the copy constructor).
+	bool added = false;
+	struct TellSong
+	{
+		const bool& added;
+		~TellSong() { if( added ) { if( Song* song = Engine::getSong() ) { song->noteAutomationGrowth( 0, 1 ); } } }
+	} tellSong{ added };
 	QMutexLocker m(&m_clipMutex);
 
 	if (_search_dup && std::find(m_objects.begin(), m_objects.end(), _obj) != m_objects.end())
@@ -114,6 +126,7 @@ bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
 	connect( _obj, SIGNAL(destroyed(lmms::jo_id_t)),
 			this, SLOT(objectDestroyed(lmms::jo_id_t)),
 						Qt::DirectConnection );
+	added = true;
 
 	emit dataChanged();
 

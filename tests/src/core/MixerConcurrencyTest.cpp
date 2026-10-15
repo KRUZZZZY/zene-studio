@@ -87,6 +87,14 @@ public:
 	bool isFromTrack(const Track*) const override { return false; }
 };
 
+//! One render period's worth of the bus as production runs it: AudioEngine::renderNextPeriod holds the change
+//! mutex around every doProcessing, and that lock is what makes a producer's drain under it exclusive.
+void renderPeriod(AudioBusHandle& handle)
+{
+	const auto lock = Engine::audioEngine()->requestChangesGuard();
+	handle.doProcessing();
+}
+
 //! Holds AudioEngine's change mutex for as long as it lives: the contract
 //! AudioEngine::renderNextPeriod() implements for a whole render period.
 //! The mutex is recursive, so the nested requestChangeInModel() calls inside
@@ -727,7 +735,7 @@ private slots:
 		constexpr int kMaxIterations = 2000000;
 		while (!mutationDone.load(std::memory_order_acquire) && iterations < kMaxIterations)
 		{
-			handle.doProcessing();
+			renderPeriod(handle);
 			++iterations;
 		}
 		mutation.join();
@@ -757,7 +765,7 @@ private slots:
 			}
 			producerDone.store(true, std::memory_order_release);
 		});
-		while (!producerDone.load(std::memory_order_acquire)) { handle.doProcessing(); }
+		while (!producerDone.load(std::memory_order_acquire)) { renderPeriod(handle); }
 		producer.join();
 		handle.doProcessing();
 
@@ -777,7 +785,7 @@ private slots:
 		std::thread producer([&] { handle.addPlayHandle(&playHandle); pushed.store(true, std::memory_order_release); });
 		QTest::qSleep(10);
 		QVERIFY2(!pushed.load(std::memory_order_acquire), "the producer did not wait on a full queue");
-		handle.doProcessing();  // the consumer drains; the stalled push now fits
+		renderPeriod(handle);  // the consumer drains; the stalled push now fits
 		producer.join();
 		QVERIFY(pushed.load(std::memory_order_acquire));
 		QCOMPARE(handle.producerDrainedPlayHandleEdits(), quint64(0));

@@ -1387,9 +1387,6 @@ void AudioEngine::requestChangeInModel()
 void AudioEngine::doneChangeInModel()
 {
 	if (s_renderingThread) { return; }
-	// Still holding the lock, so no render is reading the song's automation scratch: size it for the
-	// clips and automated models the change may have added (Song::ensureAutomationScratchCapacity).
-	if (Song* song = Engine::getSong()) { song->ensureAutomationScratchCapacity(); }
 	m_changeMutex.unlock();
 }
 

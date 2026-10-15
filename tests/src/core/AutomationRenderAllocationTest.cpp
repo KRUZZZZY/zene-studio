@@ -30,7 +30,9 @@
 // thread uses and the QMap Song::automatedValuesAt hands the control thread come from the same code.
 
 #include <QtTest>
+#include <QDomDocument>
 
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <vector>
@@ -71,7 +73,18 @@ public:
 		}
 	}
 
-	~Fixture() { m_clips.clear(); }  // before the models they point at and the track that owns their list
+	~Fixture() { m_second.clear(); m_clips.clear(); }  // before the models they point at and the track that owns their list
+
+	//! Gives every model a second clip that points at it too: two targets per model.
+	void addSecondTargets()
+	{
+		for (std::size_t i = 0; i < m_models.size(); ++i)
+		{
+			auto clip = std::make_unique<AutomationClip>(&m_track);
+			clip->addObject(m_models[i].get());
+			m_second.push_back(std::move(clip));
+		}
+	}
 
 	void resetModels()
 	{
@@ -95,6 +108,72 @@ private:
 	AutomationTrack m_track;
 	std::vector<std::unique_ptr<FloatModel>> m_models;
 	std::vector<std::unique_ptr<AutomationClip>> m_clips;
+	std::vector<std::unique_ptr<AutomationClip>> m_second;
+};
+
+//! ONE flat clip (value 40) whose targets are added one by one, past the scratch's reserve.
+class ManyTargets
+{
+public:
+	ManyTargets(Song* song, int targets) : m_song(song), m_track(song)
+	{
+		makeClip();
+		for (int i = 0; i < targets; ++i)
+		{
+			m_models.push_back(std::make_unique<FloatModel>(0.0f, 0.0f, 100.0f, 1.0f));
+			m_clip->addObject(m_models.back().get(), false);  // distinct models: skip the O(n) duplicate search
+		}
+	}
+
+	~ManyTargets() { m_copy.reset(); m_clip.reset(); }
+
+	AutomationClip& clip() { return *m_clip; }
+
+	//! What undo, redo and project load do: save the clip's state, drop it, build a fresh one from the state.
+	void restoreClipFromSavedState()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("clip"));
+		doc.appendChild(root);
+		m_clip->saveSettings(doc, root);
+		m_clip.reset();
+		m_clip = std::make_unique<AutomationClip>(&m_track);
+		m_clip->loadSettings(root);
+		AutomationClip::resolveAllIDs();  // the second half of every load and undo: ids -> targets
+	}
+
+	void addCopyOfClip() { m_copy.reset(m_clip->clone()); }
+
+	void verifyApplied() const
+	{
+		int wrong = 0;
+		for (const auto& model : m_models) { if (std::fabs(model->value() - 40.0f) > 0.5f) { ++wrong; } }
+		QVERIFY2(wrong == 0, qPrintable(QStringLiteral("%1 of %2 targets were not applied").arg(wrong).arg(m_models.size())));
+	}
+
+	void verifyAllEqual() const
+	{
+		const float first = m_models.front()->value();
+		int different = 0;
+		for (const auto& model : m_models) { if (model->value() != first) { ++different; } }
+		QVERIFY2(different == 0, qPrintable(QStringLiteral("%1 targets differ from the first").arg(different)));
+	}
+
+private:
+	void makeClip()
+	{
+		m_clip = std::make_unique<AutomationClip>(&m_track);
+		m_clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
+		m_clip->putValue(0, 40.0, false);
+		m_clip->putValue(4000, 40.0, false);
+		m_clip->movePosition(0);
+	}
+
+	Song* m_song;
+	AutomationTrack m_track;
+	std::vector<std::unique_ptr<FloatModel>> m_models;
+	std::unique_ptr<AutomationClip> m_clip;
+	std::unique_ptr<AutomationClip> m_copy;
 };
 
 } // namespace
@@ -189,48 +268,107 @@ private slots:
 		QCOMPARE(static_cast<qulonglong>(level.overflows()), 0ull);
 	}
 
-	//! More automation clips than the scratch has room for: the values applied are still every clip's, first
-	//! through the allocating redo, then - once the scratch is sized for the project - with no allocation.
-	void aProjectLargerThanTheScratchStillAppliesEveryClip()
+	//! Last resort only: a read that does overflow (forced here) is redone and still applies every clip.
+	void anOverflowingReadIsRedoneAndStillAppliesEveryClip()
 	{
 		Song* song = Engine::getSong();
-		constexpr int Clips = 200;
-		Fixture project(song, Clips);
+		Fixture project(song, 200);
 		song->playSong();
-		song->resizeAutomationScratchForTest(8);  // last: building the fixture and starting the song size the scratch
+		song->resizeAutomationScratchForTest(8);
 		const auto overflowsBefore = song->automationScratchOverflows();
 		for (int i = 0; i < 4; ++i) { song->processNextBuffer(); }
 		QVERIFY2(song->automationScratchOverflows() > overflowsBefore, "the test never overflowed the scratch");
 		project.verifyApplied();
+		song->stop();
+		song->resizeAutomationScratchForTest(AutomationRenderScratch::RenderCapacity);
+	}
 
-		// Sizing the scratch (what every engine change does) ends the redo, and then nothing allocates.
-		project.resetModels();
-		song->ensureAutomationScratchCapacity();
-		const auto overflowsSized = song->automationScratchOverflows();
-		QCOMPARE(allocationsOverPeriods(song, 8), 0ull);
-		QCOMPARE(static_cast<qulonglong>(song->automationScratchOverflows()), static_cast<qulonglong>(overflowsSized));
+	//! Targets added to an EXISTING clip past the scratch's capacity: the real edit path, no manual resize. The
+	//! next periods apply every target, allocate nothing inside the RealtimeScope, and never take the redo.
+	void targetsAddedToAnExistingClipPastTheCapacityAreAllApplied()
+	{
+		Song* song = Engine::getSong();
+		const auto overflowsBefore = song->automationScratchOverflows();
+		ManyTargets project(song, AutomationRenderScratch::RenderCapacity + 700);
+		song->playSong();
+		QCOMPARE(allocationsOverPeriods(song, 6), 0ull);
 		project.verifyApplied();
+		QCOMPARE(static_cast<qulonglong>(song->automationScratchOverflows()), static_cast<qulonglong>(overflowsBefore));
 		song->stop();
 	}
 
-	//! The same at the size that used to be the hard cap (16384 clips): every model still gets its value.
-	void aProjectPastTheOldClipCapStillAppliesEveryClip()
+	//! The restore path undo, redo and project load run (a clip rebuilt from its saved state) grows it the same way.
+	void aClipRestoredFromItsSavedStateIsAppliedInFull()
 	{
 		Song* song = Engine::getSong();
-		constexpr int Clips = 16384 + 300;
-		Fixture project(song, Clips);
+		const auto overflowsBefore = song->automationScratchOverflows();
+		ManyTargets project(song, AutomationRenderScratch::RenderCapacity + 1200);
+		project.restoreClipFromSavedState();
 		song->playSong();
-		song->resizeAutomationScratchForTest(AutomationRenderScratch::RenderCapacity);
-		for (int i = 0; i < 4; ++i) { song->processNextBuffer(); }
+		QCOMPARE(allocationsOverPeriods(song, 6), 0ull);
 		project.verifyApplied();
-
-		song->ensureAutomationScratchCapacity();
-		const auto overflows = song->automationScratchOverflows();
-		project.resetModels();
-		QCOMPARE(allocationsOverPeriods(song, 4), 0ull);
-		QCOMPARE(static_cast<qulonglong>(song->automationScratchOverflows()), static_cast<qulonglong>(overflows));
-		project.verifyApplied();
+		QCOMPARE(static_cast<qulonglong>(song->automationScratchOverflows()), static_cast<qulonglong>(overflowsBefore));
 		song->stop();
+	}
+
+	//! A copy of a clip carries its targets: copying a big clip must size the scratch for both.
+	void aCopiedClipDoublesItsTargetsAndStillFits()
+	{
+		Song* song = Engine::getSong();
+		const auto overflowsBefore = song->automationScratchOverflows();
+		ManyTargets project(song, AutomationRenderScratch::RenderCapacity / 2 + 200);
+		project.addCopyOfClip();
+		song->playSong();
+		QCOMPARE(allocationsOverPeriods(song, 6), 0ull);
+		project.verifyApplied();
+		QCOMPARE(static_cast<qulonglong>(song->automationScratchOverflows()), static_cast<qulonglong>(overflowsBefore));
+		song->stop();
+	}
+
+	//! After automation recording ran over a project with this many targets, the following periods still apply
+	//! every target without allocating. (The recording pass itself writes nodes into the clip, which is outside
+	//! this read and is not counted.)
+	void afterAutomationRecordingThePeriodsStillFit()
+	{
+		Song* song = Engine::getSong();
+		const auto overflowsBefore = song->automationScratchOverflows();
+		ManyTargets project(song, AutomationRenderScratch::RenderCapacity + 300);
+		song->playSong();
+		project.clip().setRecording(true);
+		for (int i = 0; i < 4; ++i) { song->processNextBuffer(); }
+		project.clip().setRecording(false);
+		QCOMPARE(allocationsOverPeriods(song, 6), 0ull);
+		project.verifyAllEqual();
+		QCOMPARE(static_cast<qulonglong>(song->automationScratchOverflows()), static_cast<qulonglong>(overflowsBefore));
+		song->stop();
+	}
+
+	//! Cost of the bookkeeping on a project of ~10k clips / ~20k targets: the per-edit fast path, and the one
+	//! exact recount that runs once per doubling. Printed; the bounds only catch a return to O(project) per edit.
+	void theBookkeepingCostsMicrosecondsPerEdit()
+	{
+		Song* song = Engine::getSong();
+		Fixture base(song, 10000);
+		base.addSecondTargets();  // ~20k targets in total
+		using Clock = std::chrono::steady_clock;
+
+		song->ensureAutomationScratchCapacity();  // settle: reserve for the project as it is
+		const auto fastStart = Clock::now();
+		constexpr int Calls = 200000;
+		for (int i = 0; i < Calls; ++i) { song->noteAutomationGrowth(i & 1, (i >> 1) & 1); }
+		const double fastNs = std::chrono::duration<double, std::nano>(Clock::now() - fastStart).count() / Calls;
+
+		const auto recountStart = Clock::now();
+		song->ensureAutomationScratchCapacity();
+		const double recountMs = std::chrono::duration<double, std::milli>(Clock::now() - recountStart).count();
+
+		std::size_t clips = 0;
+		std::size_t targets = 0;
+		song->countAutomationForTest(&clips, &targets);
+		qInfo("HOOK_TIMING project=%zu clips / %zu targets: noteAutomationGrowth %.1f ns per edit (fast path), "
+			"exact recount %.3f ms (once per doubling)", clips, targets, fastNs, recountMs);
+		QVERIFY2(fastNs < 5000.0, qPrintable(QString::number(fastNs)));
+		QVERIFY2(recountMs < 200.0, qPrintable(QString::number(recountMs)));
 	}
 
 	//! A scratch with no room drops what does not fit and says so, instead of growing on the audio thread.

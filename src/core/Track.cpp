@@ -874,6 +874,12 @@ void Track::loadSettings(const QDomElement& element)
 Clip * Track::addClip( Clip * clip )
 {
 	m_clips.push_back( clip );
+	if( Song* song = Engine::getSong() )
+	{
+		// A clip that arrives already holding targets (moved from another track) brings them along.
+		const auto* automation = dynamic_cast<const AutomationClip*>( clip );
+		song->noteAutomationGrowth( 1, automation != nullptr ? automation->objects().size() : 0 );
+	}
 
 	emit clipAdded( clip );
 
