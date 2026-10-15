@@ -58,7 +58,8 @@ Oscillator::Oscillator(const IntModel *wave_shape_model,
 			const float &detuning_div_samplerate,
 			const float &phase_offset,
 			const float &volume,
-			Oscillator *sub_osc) :
+			Oscillator *sub_osc,
+			bool ownsSubOsc) :
 	m_waveShapeModel(wave_shape_model),
 	m_modulationAlgoModel(mod_algo_model),
 	m_freq(freq),
@@ -70,7 +71,8 @@ Oscillator::Oscillator(const IntModel *wave_shape_model,
 	m_phase(phase_offset),
 	m_userWave(nullptr),
 	m_useWaveTable(false),
-	m_isModulator(false)
+	m_isModulator(false),
+	m_ownsSubOsc(ownsSubOsc)
 {
 }
 
