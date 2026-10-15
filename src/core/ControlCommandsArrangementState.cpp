@@ -329,6 +329,21 @@ struct ArmBatch
 	QString lastReason;
 };
 
+//! The 'tracks' argument: an array whose every entry is a track ID string.
+QJsonObject trackIdsProperty()
+{
+	QJsonObject property = control::arrayProperty();
+	property.insert(QStringLiteral("items"), control::stringProperty());
+	return property;
+}
+
+//! True when every entry of @a ids is a string - checked before any track is armed, so a malformed entry
+//! cannot leave earlier valid entries armed while the batch reports a refusal.
+bool allTrackIdsAreStrings(const QJsonArray& ids)
+{
+	return std::all_of(ids.begin(), ids.end(), [](const QJsonValue& id) { return id.isString(); });
+}
+
 //! Each track @a ids names, through track.set_arm's own handler. A track already in that state is skipped, not
 //! refused; every other refusal is collected and the rest still go ahead. A repeated id names ONE track, so it is
 //! acted on and reported once.
@@ -367,6 +382,10 @@ ControlResult setArmMany(const QJsonObject& args)
 {
 	const QJsonArray ids = args.value(QStringLiteral("tracks")).toArray();
 	if (ids.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'tracks' names no track")); }
+	if (!allTrackIdsAreStrings(ids))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'tracks' entries must be strings"));
+	}
 	const bool armed = args.value(QStringLiteral("armed")).toBool();
 	const ArmBatch batch = armEach(ids, armed);
 	if (batch.changed.isEmpty())
@@ -400,7 +419,7 @@ void registerTrackSetArmMany(ControlRegistry& registry)
 		"each one's route reply. Arming is ONE undo step: control.undo disarms exactly the tracks this call armed (their "
 		"takes stay on disk). Disarming records no inverse, as track.set_arm's does not.");
 	cmd.argsSchema = control::objectSchema({
-		{QStringLiteral("tracks"), control::arrayProperty()},
+		{QStringLiteral("tracks"), trackIdsProperty()},
 		{QStringLiteral("armed"), control::booleanProperty()},
 	}, {QStringLiteral("tracks"), QStringLiteral("armed")});
 	cmd.resultSchema = control::objectSchema({
