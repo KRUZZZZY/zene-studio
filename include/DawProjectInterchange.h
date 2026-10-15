@@ -356,8 +356,9 @@ struct DawProjectLossReport
 	int panNotWritten = 0;
 	//! Mixer routes other than "everything to master", not carried.
 	int routingLost = 0;
-	//! Tracks whose type has no mixer channel model, so no destination IDREF
-	//! can be written for them.
+	//! Not counted: a folder has no mixer channel by design, and tracks that
+	//! share a strip are written as shared IDREFs. No code path increments it
+	//! now; the key stays in the report so its shape does not change.
 	int mixerSharingLost = 0;
 	//! Notes or clips whose time was not on LMMS' grid and was rounded.
 	int roundedTimes = 0;
