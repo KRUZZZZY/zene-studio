@@ -2081,7 +2081,7 @@ src/core/ControlCommandsBounceLand.cpp	cluster 917, 2026-10-09: document the syn
 src/core/ControlCommandsFreeze.cpp	cluster 917, 2026-10-09: document the synchronous compatibility verbs and async queue path.
 src/core/ControlCommandsRangeBounce.cpp	cluster 917, 2026-10-09: document the synchronous compatibility verb and async queue path.
 src/core/ControlCommandsRenderQueue.cpp	cluster 917, 2026-10-09: report bounce state/phase/targets, task progress, and register the queue command.
-src/core/ControlCommandsTrackFlatten.cpp	cluster 917, 2026-10-09: document the synchronous compatibility verb and async queue path.
+src/core/ControlCommandsTrackFlatten.cpp	cluster 917, 2026-10-09: document the synchronous compatibility verb and async queue path; cluster new-p10-63-port, 2026-10-15: the replacement track rejoins the source's folder (setParentFolder) on the initial edit and on redo.
 src/core/ControlReversibilityTableW3Library.cpp	cluster 917, 2026-10-09: classify completed async bounce edits as one journal-backed undo step.
 src/core/ControlTransactions.cpp	cluster 917, 2026-10-09: record completed async edits in bounded transaction history and provenance.
 src/core/RenderQueue.cpp	cluster 917, 2026-10-09: queue renders and conversions asynchronously with worker finalization, cancellation, and reports.
