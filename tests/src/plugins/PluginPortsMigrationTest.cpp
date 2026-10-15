@@ -718,6 +718,7 @@ private slots:
 	void lb302DecayTracksSampleRateChanges();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
+	void waterfallHistoryIsCopiedUnderProcessorLocks();
 	void fastBassBoostFrequencySetterHonoursFloor();
 	void xpressiveRandomVectorRejectsOutOfRangeFloatInputs();
 	void multitapEchoRetunesAllTapsAfterSampleRateChange();
@@ -2781,6 +2782,34 @@ void PluginPortsMigrationTest::frequencyShifterSampleRateDropKeepsDelayIndicesIn
 	lmms::SampleFrame* nextChannels[1] = {&next};
 	lmms::AudioBus nextBus{nextChannels, 1, 1};
 	shifter->processAudioBuffer(nextBus);
+}
+
+void PluginPortsMigrationTest::waterfallHistoryIsCopiedUnderProcessorLocks()
+{
+	const QDir sourceDir = QFileInfo(QStringLiteral(__FILE__)).absoluteDir();
+	QFile viewFile(sourceDir.filePath(QStringLiteral("../../../plugins/SpectrumAnalyzer/SaWaterfallView.cpp")));
+	QVERIFY2(viewFile.open(QIODevice::ReadOnly), qPrintable(viewFile.fileName()));
+	const QByteArray viewSource = viewFile.readAll();
+	const auto snapshotUse = viewSource.indexOf("m_processor->historySnapshot()");
+	const auto scaledUse = viewSource.indexOf("history.scaled(", snapshotUse);
+	QVERIFY2(snapshotUse >= 0 && scaledUse > snapshotUse,
+		"waterfall painting must scale the owned history snapshot");
+	QVERIFY(!viewSource.contains("QImage(m_processor->getHistory()"));
+
+	QFile processorFile(sourceDir.filePath(QStringLiteral("../../../plugins/SpectrumAnalyzer/SaProcessor.cpp")));
+	QVERIFY2(processorFile.open(QIODevice::ReadOnly), qPrintable(processorFile.fileName()));
+	const QByteArray processorSource = processorFile.readAll();
+	const auto snapshotStart = processorSource.indexOf("QImage SaProcessor::historySnapshot()");
+	QVERIFY(snapshotStart >= 0);
+	const auto snapshotEnd = processorSource.indexOf("\n}\n", snapshotStart);
+	QVERIFY(snapshotEnd > snapshotStart);
+	const QByteArray snapshot = processorSource.mid(snapshotStart, snapshotEnd - snapshotStart);
+	const auto reallocationLock = snapshot.indexOf("QMutexLocker reloc_lock(&m_reallocationAccess)");
+	const auto dataLock = snapshot.indexOf("QMutexLocker data_lock(&m_dataAccess)");
+	const auto deepCopy = snapshot.indexOf(".copy()");
+	QVERIFY2(reallocationLock >= 0 && dataLock > reallocationLock && deepCopy > dataLock,
+		"history must be copied while holding reallocation and data locks");
+	QVERIFY(processorSource.contains("m_flipRequest.exchange(false, std::memory_order_relaxed)"));
 }
 
 QTEST_MAIN(PluginPortsMigrationTest)

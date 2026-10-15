@@ -29,6 +29,7 @@
 
 #include <atomic>
 #include <fftw3.h>
+#include <QImage>
 #include <QMutex>
 #include <QRgb>
 #include <vector>
@@ -59,7 +60,7 @@ public:
 	// inform processor if any processing is actually required
 	void setSpectrumActive(bool active);
 	void setWaterfallActive(bool active);
-	void flipRequest() {m_flipRequest = true;}	// request refresh of history buffer
+	void flipRequest() {m_flipRequest.store(true, std::memory_order_relaxed);}	// request refresh of history buffer
 
 	// configuration is taken from models in SaControls; some changes require
 	// an exlicit update request (reallocation and window rebuild)
@@ -71,6 +72,7 @@ public:
 	const float *getSpectrumL() const {return m_normSpectrumL.data();}
 	const float *getSpectrumR() const {return m_normSpectrumR.data();}
 	const uchar *getHistory() const {return m_history.data();}
+	QImage historySnapshot();
 
 	// information about results and unit conversion helpers
 	unsigned int inBlockSize() const {return m_inBlockSize;}
@@ -142,7 +144,7 @@ private:
 	// spectrum history for waterfall: new normSpectrum lines are added on top
 	std::vector<uchar> m_history_work;		//!< local history buffer for render
 	std::vector<uchar> m_history;			//!< public buffer for reading
-	bool m_flipRequest = false;					//!< update public buffer only when requested
+	std::atomic<bool> m_flipRequest{false};		//!< update public buffer only when requested
 	std::atomic<unsigned int> m_waterfallHeight;	//!< number of stored lines in history buffer
 											// Note: high values may make it harder to see transients.
 	const unsigned int m_waterfallMaxWidth = 3840;
