@@ -1418,6 +1418,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE hiir)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "VstEffectControlsTest")
+		# vsteffect's resource source is generated in the plug-in's build directory; without
+		# CMP0118 the GENERATED mark is per-directory, so a fresh configure of THIS directory
+		# would refuse a file that does not exist yet. add_dependencies below orders its build.
+		set_source_files_properties("${CMAKE_BINARY_DIR}/plugins/VstEffect/qrc_vsteffect.cpp"
+			PROPERTIES GENERATED TRUE)
 		target_sources(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/VstEffect/VstEffectControls.cpp
 			${CMAKE_SOURCE_DIR}/plugins/VstEffect/VstEffectControlDialog.cpp
