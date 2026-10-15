@@ -348,8 +348,13 @@ private slots:
 	void theBookkeepingCostsMicrosecondsPerEdit()
 	{
 		Song* song = Engine::getSong();
-		Fixture base(song, 10000);
-		base.addSecondTargets();  // ~20k targets in total
+#ifdef LMMS_RTSAN
+		constexpr int Clips = 1500;   // an -O0 sanitizer build cannot build 20k clips inside QtTest's 5 minute bound
+#else
+		constexpr int Clips = 10000;
+#endif
+		Fixture base(song, Clips);
+		base.addSecondTargets();  // 2 clips and 2 targets per model
 		using Clock = std::chrono::steady_clock;
 
 		song->ensureAutomationScratchCapacity();  // settle: reserve for the project as it is
