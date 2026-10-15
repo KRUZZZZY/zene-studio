@@ -200,7 +200,8 @@ bool frameFromText(const QString& text, const Context& context, Unit unit, qint6
 	{
 		return barsFrom(body, context, length, at, frame);
 	}
-	if (body.contains(QLatin1Char(':')) || stripWord(&body, secondWords)) { return timeFrom(body, context, frame); }
+	// The word off first: a clock keeps its colon and its "s" word, and one names the unit just as well.
+	if (stripWord(&body, secondWords) || body.contains(QLatin1Char(':'))) { return timeFrom(body, context, frame); }
 	switch (unit)
 	{
 	case Unit::Samples: return framesFrom(body, frame);
