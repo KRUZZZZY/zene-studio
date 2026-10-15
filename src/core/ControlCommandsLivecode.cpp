@@ -195,7 +195,7 @@ ControlResult livecodeSchedule(const QJsonObject& args)
 	out.insert(QStringLiteral("id"), id);
 	out.insert(QStringLiteral("hook"), hook);
 	out.insert(QStringLiteral("budget"), budget);
-	out.insert(QStringLiteral("source_bytes"), static_cast<qint64>(source.size()));
+	out.insert(QStringLiteral("source_bytes"), static_cast<qint64>(source.toUtf8().size()));
 	out.insert(QStringLiteral("replaced"), replacing);
 	out.insert(QStringLiteral("scheduled"), true);
 	out.insert(QStringLiteral("__transaction"),

@@ -151,6 +151,10 @@ private slots:
 	//! byte count in the message), and one inside the byte cap is accepted.
 	void byteCapCountsBytes();
 
+	//! The state reports `source_bytes` as the stored source's UTF-8 size, the
+	//! same unit the cap is measured in, both per id and in stateJson.
+	void scheduleStateReportsUtf8Bytes();
+
 	//! Unique schedules stop at the registry limit, while a live edit still
 	//! replaces an existing entry at the limit.
 	void registryCountIsBounded();
@@ -384,6 +388,37 @@ void ScriptClockTest::byteCapCountsBytes()
 		QStringLiteral("bar"), 0, &error), qPrintable(error));
 	QVERIFY(clock.hasSchedule(QStringLiteral("lc-t-bytes-ok")));
 	QVERIFY2(clock.removeSchedule(QStringLiteral("lc-t-bytes-ok"), &error), qPrintable(error));
+}
+
+void ScriptClockTest::scheduleStateReportsUtf8Bytes()
+{
+	ScriptClock& clock = ScriptClock::instance();
+	QString error;
+
+	// U+00E9 is one UTF-16 unit but two UTF-8 bytes, so the source is 13 units
+	// and 14 bytes: a state that counts units reports the wrong size.
+	const QString source = QStringLiteral("-- ") + QChar(0x00E9) + QStringLiteral("\nreturn 1");
+	const qint64 expected = source.toUtf8().size();
+	QVERIFY(expected != source.size());
+	const QString id = QStringLiteral("lc-t-state-bytes");
+	QVERIFY2(clock.setSchedule(id, source, QStringLiteral("bar"), 0, &error), qPrintable(error));
+
+	// Read everything first and unschedule before any assertion, so a failure
+	// here cannot leave the id registered for the tests that follow.
+	const qint64 perId = clock.scheduleState(id).value(QStringLiteral("source_bytes")).toInteger(-1);
+	qint64 inState = -1;
+	const QJsonArray schedules = clock.stateJson().value(QStringLiteral("schedules")).toArray();
+	for (const QJsonValue& value : schedules)
+	{
+		const QJsonObject one = value.toObject();
+		if (one.value(QStringLiteral("id")).toString() != id) { continue; }
+		inState = one.value(QStringLiteral("source_bytes")).toInteger(-1);
+	}
+	QVERIFY2(clock.removeSchedule(id, &error), qPrintable(error));
+
+	QCOMPARE(perId, expected);
+	QVERIFY2(inState != -1, "stateJson must list the scheduled id");
+	QCOMPARE(inState, expected);
 }
 
 void ScriptClockTest::registryReplaceAndRemove()

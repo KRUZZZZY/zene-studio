@@ -245,11 +245,16 @@ def collect_volume_flips(session, recorder, timeout_s=4.0):
 
 def check_bar_edits_without_retrigger(session, recorder):
     """THE CARD: scheduled ONCE each, then a mixer edit on every bar, only reads."""
-    source = ("local channel = zene.mixer():channel(0)\n"
+    source = ("-- byte count: é\n"
+              "local channel = zene.mixer():channel(0)\n"
               "if channel:gain() > 0.9 then channel:setGain(0.5) else channel:setGain(1.0) end\n")
     scheduled = session.result("livecode.schedule",
                                {"id": "lc-bar", "hook": "bar", "source": source})
     check_schedule_reported(scheduled, recorder)
+    expected_bytes = len(source.encode("utf-8"))
+    recorder.check("livecode.schedule reports UTF-8 source bytes",
+                   scheduled.get("source_bytes") == expected_bytes,
+                   "source_bytes=%r expected=%r" % (scheduled.get("source_bytes"), expected_bytes))
     # The transport hook is armed BEFORE the play, so the edge it must catch is
     # the one this call raises.
     session.result("livecode.schedule",
