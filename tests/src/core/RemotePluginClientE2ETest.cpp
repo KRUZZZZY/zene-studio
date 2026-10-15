@@ -1014,6 +1014,32 @@ private slots:
 	}
 
 	/*!
+	 * A visibility answer with no argument in it is refused, not read.
+	 *
+	 * The "emptyquery" client answers the visibility query with a complete message that carries no argument. The
+	 * reply is the awaited one, so it never reaches processMessage(): the host must check it before reading it. The
+	 * query returns -1, the cached visibility stays unknown, and the plugin is failed.
+	 */
+	void emptyQueryAnswerIsRefusedNotRead()
+	{
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the empty answer is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("emptyquery")}), "could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		QCOMPARE(plugin.isUIVisible(), -1);
+		QCOMPARE(plugin.cachedUIVisible(), -1);
+		QVERIFY(plugin.failed());
+	}
+
+	/*!
 	 * A period before any shared block exists cannot be held by a client stuck mid-message.
 	 *
 	 * The "halfhandshake" client stops half-way through its first message for two seconds. The plugin is started

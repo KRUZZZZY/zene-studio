@@ -141,6 +141,10 @@ constexpr int LateQueryDelayMs = 300;
 //! "dropquery" mode: the first IdIsUIVisible is never answered (the reply is lost); the later ones are answered "1".
 bool g_dropQuery = false;
 
+//! "emptyquery" mode: every IdIsUIVisible is answered with no argument at all - a complete message the host must
+//! refuse rather than read an answer out of.
+bool g_emptyQuery = false;
+
 //! "garbage" mode: the reply to the first period is a frame whose argument count is negative, which is not a
 //! message at all: the connection is lost on the host.
 bool g_garbage = false;
@@ -164,6 +168,13 @@ int g_capperLastPeriod = 0;
 
 //! Host's IdIsUIVisible (RemoteMessageIDs), answered by every mode with "1".
 constexpr int IdIsUIVisibleWire = 18;
+
+//! The arguments of the visibility answer for the current query: none in "emptyquery" mode.
+std::vector<std::string> visibilityAnswer()
+{
+	if (g_emptyQuery) { return {}; }
+	return {g_lateQuery && g_queriesSeen > 1 ? "0" : "1"};
+}
 
 //! "midi" mode: the client counts the IdMidiEvent messages it receives, and in each period asks for
 //! (count + 1) outputs before its reply, so the host can see how many events arrived before the period.
@@ -396,7 +407,7 @@ auto handleMessage(const Message& message) -> bool
 		++g_queriesSeen;
 		if (g_lateQuery && g_queriesSeen == 1) { ::usleep(LateQueryDelayMs * 1000); }
 		if (g_dropQuery && g_queriesSeen == 1) { break; }
-		if (!sendMessage(IdIsUIVisibleWire, {g_lateQuery && g_queriesSeen > 1 ? "0" : "1"})) { return false; }
+		if (!sendMessage(IdIsUIVisibleWire, visibilityAnswer())) { return false; }
 		break;
 	case IdMidiEvent:
 		if (g_midi) { ++g_midiEvents; }
@@ -598,7 +609,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake|latequery|garbage|dropquery]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake|latequery|garbage|dropquery|emptyquery]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -615,10 +626,12 @@ int main(int argc, char** argv)
 	g_deafQuery = mode == "deafquery";
 	g_lateQuery = mode == "latequery";
 	g_dropQuery = mode == "dropquery";
+	g_emptyQuery = mode == "emptyquery";
 	g_garbage = mode == "garbage";
 	g_halfHandshake = mode == "halfhandshake";
 	static const char* const knownModes[] = {"modern", "stale", "stall", "recount", "midi", "late", "midframe",
-		"silencer", "bigdebug", "orderer", "capper", "deafquery", "halfhandshake", "latequery", "garbage", "dropquery"};
+		"silencer", "bigdebug", "orderer", "capper", "deafquery", "halfhandshake", "latequery", "garbage", "dropquery",
+		"emptyquery"};
 	if (std::find_if(std::begin(knownModes), std::end(knownModes),
 			[&mode](const char* known) { return mode == known; }) == std::end(knownModes))
 	{

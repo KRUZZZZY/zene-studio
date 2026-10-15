@@ -867,6 +867,55 @@ private slots:
 		QCOMPARE(ports.buffers()->input().bufferPtr(0), inBefore.bufferPtr(0));
 		QCOMPARE(ports.buffers()->output().bufferPtr(0), outBefore.bufferPtr(0));
 	}
+
+	//! A complete IdDebugMessage with no text in it. The host's handler indexed argument 0 of an empty message.
+	void zeroArgumentDebugMessageIsRefused()
+	{
+		refusesMessageWithoutArguments(RemotePlugin::message(IdDebugMessage));
+	}
+
+	//! A complete IdIsUIVisible with no answer in it. The host's handler indexed argument 0 of an empty message.
+	void zeroArgumentIsUIVisibleMessageIsRefused()
+	{
+		refusesMessageWithoutArguments(RemotePlugin::message(IdIsUIVisible));
+	}
+
+private:
+	//! A message that is complete on the wire but carries fewer arguments than its handler reads is refused before
+	//! anything is read: the refusal is reported once (here, on the main thread) and the plugin is failed.
+	void refusesMessageWithoutArguments(const RemotePlugin::message& _m)
+	{
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("silent")}) == false,
+			"the host started a client that connects");
+		if (!plugin.isRunning())
+		{
+			QSKIP("the client stand-in did not start");
+		}
+		QVERIFY(!plugin.failed());
+
+		g_criticalsSeen = 0;
+		const QtMessageHandler previous = qInstallMessageHandler(countCriticals);
+		plugin.processMessage(_m);
+		qInstallMessageHandler(previous);
+
+		QCOMPARE(g_criticalsSeen, 1);
+		QVERIFY(plugin.failed());
+	}
 #endif // SYNC_WITH_SHM_FIFO
 };
 

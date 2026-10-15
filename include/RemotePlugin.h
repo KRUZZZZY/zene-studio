@@ -214,8 +214,13 @@ public:
 		lock();
 		sendMessage( IdIsUIVisible );
 		const message m = waitForReplyWithin( message( IdIsUIVisible ) );
+		// The awaited reply is read here, not in processMessage(), so it is checked here too. Refused under the
+		// lock, as processMessage() refuses its messages.
+		const bool incomplete = m.id == IdIsUIVisible
+			&& static_cast<int>( m.size() ) < requiredArgumentCount( IdIsUIVisible );
+		if( incomplete ) { refuseIncompleteMessage( m ); }
 		unlock();
-		if( m.id != IdIsUIVisible ) { return -1; }
+		if( m.id != IdIsUIVisible || incomplete ) { return -1; }
 		m_uiVisible = m.getInt() ? 1 : 0;
 		return m_uiVisible;
 	}
@@ -296,9 +301,10 @@ private:
 	int m_pendingOutCount = 0;
 	//! Retired message id a client sent during a period (0 = none); reported and failed on the main thread.
 	int m_pendingRetiredId = 0;
-	//! Argument count of an incomplete IdChangeInputOutputCount sent during a period (-1 = none);
-	//! the arity refusal is reported and failed on the main thread.
-	int m_pendingArityCount = -1;
+	//! Id and argument count of an incomplete message a client sent during a period (id 0 = none); the arity
+	//! refusal is reported and failed on the main thread.
+	int m_pendingArityId = 0;
+	int m_pendingArityCount = 0;
 	//! Debug text a client sent during a period, copied at its first 255 bytes; empty when none is pending.
 	bool m_pendingDebug = false;
 	std::array<char, 256> m_pendingDebugText{};
@@ -370,11 +376,25 @@ private:
 	//! Non-reply messages go through processMessage(), which defers their main-thread work.
 	ReplyWait collectProcessingReplies(std::chrono::steady_clock::time_point deadline);
 
-	//! Refuses an IdChangeInputOutputCount that arrived without both count arguments: nothing is applied
-	//! (reading them would index past the end of the message - undefined behaviour), the plugin is failed
-	//! like any other protocol mismatch, and the diagnostic is logged on the main thread or recorded for
-	//! reportDeferredClientRequests() when this runs on the audio thread (a log allocates and locks).
-	void refuseIncompleteCountMessage(int argumentCount);
+	//! The number of arguments a message with \a _id must carry before its handler may read them. The handlers
+	//! index the message without a bounds check, and the wire format carries the count with the message, so a
+	//! complete message can still be short. An id that reads no argument needs none.
+	static constexpr int requiredArgumentCount( int _id )
+	{
+		switch( _id )
+		{
+			case IdChangeInputOutputCount: return 2;
+			case IdDebugMessage:
+			case IdIsUIVisible: return 1;
+			default: return 0;
+		}
+	}
+
+	//! Refuses a message that arrived with fewer arguments than its id requires: nothing is applied (reading them
+	//! would index past the end of the message - undefined behaviour), the plugin is failed like any other protocol
+	//! mismatch, and the diagnostic is logged on the main thread or recorded for reportDeferredClientRequests() when
+	//! this runs on the audio thread (a log allocates and locks).
+	void refuseIncompleteMessage( const message & _m );
 
 	//! Logs the deferred retired-message and debug-text requests. Main thread only, under m_commMutex.
 	void reportDeferredClientRequests();
