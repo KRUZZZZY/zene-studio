@@ -311,6 +311,37 @@ private slots:
 		QCOMPARE(before + 1, tracks);
 	}
 
+	/*! A bounce whose output path IS the open project file must refuse. The render
+	 *  is staged and then installed over the output path, so without the guard the
+	 *  session file is replaced by WAV bytes. The session is saved for real first,
+	 *  so it is the open project; the refusal must leave those bytes identical and
+	 *  add no track.
+	 */
+	void bounceRefusesToOverwriteTheOpenProjectFile()
+	{
+		Track* source = trackWithClip(QStringLiteral("Lead"));
+		const QString project = out(QStringLiteral("session.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(project));
+		Engine::getSong()->noteProjectSaved(project);  // what save-as does once the file is written
+		QCOMPARE(Engine::getSong()->projectFileName(), project);
+		QFile saved(project);
+		QVERIFY(saved.open(QIODevice::ReadOnly));
+		const QByteArray session = saved.readAll();
+		saved.close();
+		QVERIFY(!session.isEmpty());
+		const int tracks = trackCount();
+
+		const ControlResult refused = run(QStringLiteral("bounce.land"), {{QStringLiteral("track"), control::trackIdOf(source)}, {QStringLiteral("out"), project}});
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(refused.errorMessage.contains(QStringLiteral("open project file")), qPrintable(refused.errorMessage));
+		QCOMPARE(trackCount(), tracks);
+		QVERIFY(!source->isMuted());
+
+		QFile after(project);
+		QVERIFY(after.open(QIODevice::ReadOnly));
+		QCOMPARE(after.readAll(), session);
+	}
+
 	void flattenReplacesTheTrackWithItsRenderAndUndoRestoresIt()
 	{
 		trackWithClip(QStringLiteral("First"));
