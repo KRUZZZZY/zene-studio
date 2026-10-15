@@ -2147,6 +2147,10 @@ tests/midi_reconnect_flows.py
 tests/midi_reconnect_probe.py
 tests/mmpz-v2-container-refusal.py
 tests/neuralamp-wav-run-sample-rate-warning.py
+# Q050-014 (R-instruments-11 / -26 / R-ui-19): the docs-truth gate that keeps format loading apart
+# from tested third-party compatibility and names the Plug-in Modules GUI location. Reads the docs,
+# the GUI list definition and the committed command snapshot.
+tests/plugin-formats-docs-gate.py
 tests/render-software-tag.py
 tests/rt-safety-sweep.py
 tests/rt_safety_lib.py

@@ -75,6 +75,18 @@ than `dlopen`. A CLAP generator can also be loaded onto an instrument track
 (`plugins/ClapInstrument`), drivable through the socket: like the VST3 instrument it has no editor
 window of its own, and the notes a user plays reach it through the track's MIDI path.
 
+**Plug-in formats vs. tested compatibility — two different claims.** This build **loads** the
+formats it is built with, on Linux and the other platforms alike: VST3 effects and instruments, CLAP
+effects and instruments, VST2 through Vestige, LV2, LADSPA, SoundFont2 and GUS patches, plus the
+built-in instruments. **Loading a format is not the same as having tested a particular maker's
+product.** Apart from the MIT fixtures in the source tree, **no third-party plug-in of any kind has
+been tested by us**, there is **no verified Wine/yabridge path** for plug-ins built for Windows, and
+there is **no Kontakt runtime**: a **Kontakt** library needs Native Instruments' own installer and
+authorization, which are external to this project, and no Kontakt library or Kontakt-format runtime
+has been verified. SoundFont2 is the sampled-instrument format this build supports and that a user can
+rely on. Which files the scan found, with their per-file status and quarantine controls, is in
+**Project tools ▸ Plug-in Modules...** (see the limitations page).
+
 **AI DSP** — RNNoise noise suppression and NAM neural amp modelling are in the release.
 
 **Crash reporter** — offline and local: a crash writes a small report you can attach to a bug report.
@@ -86,8 +98,13 @@ than it, so a stale recovery file no longer strands you at a prompt before autos
 **Also in this alpha**, each with its own limits (the dated detail is in
 [`docs/STATUS.md`](docs/STATUS.md)):
 
-- a plugin scan cache with a quarantine list — a JSON data layer, **not a GUI** (quarantining a
-  plugin means hand-writing an entry in the cache file);
+- a plugin scan cache with a quarantine list — the JSON data layer the socket drives **and a GUI**:
+  **Project tools ▸ Plug-in Modules...** lists every file the scan found with its per-file status (and
+  its name, or the error it failed with) and offers **Quarantine...** (with a reason), **Release** and
+  **Rescan**; **Edit ▸ Plugin Quarantine** adds and releases entries too. The same actions are the
+  commands `plugin.scan_cache_list` / `plugin.scan_cache_quarantine_add` /
+  `plugin.scan_cache_quarantine_remove` / `plugin.rescan`, so the interface and the agent surface are
+  one implementation;
 - an offline BS.1770-4 / EBU R128 loudness meter and a `.loudness.txt` report written on render and
   export, plus a live master meter drivable through the socket (`meter.arm`, `meter.get_state`) —
   **no meter appears in the interface**;

@@ -141,6 +141,36 @@ that is this page's fault — report it and it gets added.
 - The project file is now `<zene-project creator="Zene Studio">`. The reader still accepts the old root, so
   older files open — but the writer only emits the new one.
 
+## Plug-in formats and libraries on Linux — what loads, and what we have tested
+
+*(Added 2026-10-15, Q050-014.)* Format **loading** and third-party **compatibility** are different
+claims, and this page keeps them apart. What this build does is load the formats it is compiled with;
+what it has *tested* is a much smaller set. Read this before you expect a particular plug-in or sample
+library to work.
+
+- **Formats the build loads** — from the interface and the agent surface alike: **VST3** effects and
+  instruments, **CLAP** effects and instruments, **VST2** through Vestige, **LV2**, **LADSPA**,
+  **SoundFont2** and GUS patches, plus the built-in instruments. Discovery is Linux-native: plug-ins
+  are found in each format's standard folders and in your own (`plugin.paths_get` /
+  `plugin.paths_set`), and a scan records every candidate file.
+- **The GUI location for per-file scan status and quarantine controls is Project tools ▸ Plug-in
+  Modules...** It lists every record the scan holds — its path, its per-file status, its name and the
+  error it failed with — and each row offers **Quarantine...** (with a reason), **Release** and
+  **Rescan**; **Edit ▸ Plugin Quarantine** adds and releases entries too. These are the *same*
+  registrations an agent drives: `plugin.scan_cache_list`, `plugin.scan_cache_quarantine_add`,
+  `plugin.scan_cache_quarantine_remove` and `plugin.rescan`.
+- **Third-party compatibility is unverified.** The only VST3 and CLAP plug-ins this release has been
+  proven against are the MIT fixtures in the source tree (`tests/data/vst3-test-instrument/` and the
+  CLAP test modules); **no third-party plug-in of any kind has been tested by us**. A file the scan
+  finds and loads may still behave differently from those fixtures — that is untested, not claimed.
+- **No verified bridge for Windows plug-ins.** There is no tested Wine/`yabridge` path: a Windows-only
+  VST that needs a bridge has not been run here and is not supported.
+- **Kontakt-scale libraries are external.** **SoundFont2** is a supported sampled-instrument format and
+  is what a Linux user can rely on from this build; a **Kontakt** library is not. Kontakt needs Native
+  Instruments' own installer and authorization, which live outside this project, and this build ships
+  **no Kontakt runtime and has verified no Kontakt library**. A hosted plug-in that happens to load a
+  library is the same unverified third-party case as above.
+
 ## What this alpha cannot do at all
 
 - **CLAP hosting is in the release on every platform — this bullet said the opposite and is corrected.**
@@ -409,10 +439,13 @@ that is this page's fault — report it and it gets added.
   task `#601` already put on a `Note` (`mpepitch` / `mpepressure` / `mpetimbre`), so `docs/MPE.md` §4's limit
   is now lifted — **all three axes reach playback**: pitch as a frequency ratio, pressure and timbre as MIDI
   events on the note's own member channel (task #649). There is still no per-note expression editor.
-- **No plugin-scanning interface worth the name.** A scan cache and a quarantine list exist; the user-facing
-  surface is thin or absent. Verified against this tree: the cache is JSON on disk and the documented way to
-  quarantine a plugin is a `{"path": …, "reason": …}` entry in that file; `docs/PLUGIN-SCAN-CACHE.md` §5
-  records that there is **no GUI for it yet**.
+- *(Corrected 2026-10-15, Q050-014.)* **The plugin scan cache and the quarantine list now have an
+  interface, and this bullet's "no interface" claim is corrected.** **Project tools ▸ Plug-in
+  Modules...** lists every file the scan found with its per-file status (path, status, name, error) and
+  offers **Quarantine...** (with a reason), **Release** and **Rescan** (`CommandLists::pluginModules`,
+  over `plugin.scan_cache_list`); **Edit ▸ Plugin Quarantine** adds and releases entries as well. The
+  documented way to quarantine a plugin is no longer hand-editing the JSON file. The pre-menu record
+  that this replaced is kept in the "plugin scan cache" bullet further down this page.
 - **Two features are compiled out of these builds**: the **WASM DSP sandbox** (needs the wasmtime C API) and
   **offline HTDemucs stem separation** (opt-in at configure time - *since owner decision 14 it is on by default;
   the release-honesty manifest row requires ON, 2026-09-30*). Both report `OFF` in the binary's own build
@@ -1109,8 +1142,11 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   time it opens: a line with the cache's file and quarantine counts, one **Release** item per quarantined
   file (its tooltip is the path and the reason; a file that is gone says so), **Quarantine a Plugin
   File...** (a picker, then `plugin.scan_cache_quarantine_add`) and **Rescan Plugins** (`plugin.rescan`),
-  which applies an edit (`PluginQuarantineMenuTest`). The cache's per-file records are still only on the
-  socket (`plugin.scan_cache_list` / `_lookup`). The bullet below is the pre-menu record.
+  which applies an edit (`PluginQuarantineMenuTest`). *Corrected 2026-10-15 (Q050-014):* the cache's
+  per-file records are no longer socket-only — **Project tools ▸ Plug-in Modules...** shows each record's
+  path, status, name and error and offers **Quarantine...** / **Release** / **Rescan**
+  (`CommandLists::pluginModules`, over `plugin.scan_cache_list`), while `plugin.scan_cache_list` /
+  `_lookup` remain the agent route. The bullet below is the pre-menu record.
 - **The plugin scan cache and its quarantine list are drivable, and there is no interface for either —
   added 2026-09-14.** The cache the plugin scan fills (one record per candidate file: its path, the size and
   mtime it had, its status and, for a plugin, the descriptor metadata the scan resolved) and the quarantine

@@ -5655,6 +5655,16 @@ if(PYTHON3_EXECUTABLE)
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/doc-figures-gate.py)
 endif()
 
+# Q050-014 (R-instruments-11 / -26 / R-ui-19): the docs must keep format LOADING apart from tested
+# third-party compatibility (a Kontakt library is the external, unverified case) and must name the
+# Plug-in Modules list as the GUI location for per-file scan status and quarantine controls. The gate
+# reads the docs, the GUI code that defines that list and the committed command snapshot; file reads
+# only, so it needs no binary.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME PluginFormatsDocsGate
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/plugin-formats-docs-gate.py)
+endif()
+
 # 0.5.0 F1 (MX-040/041/036/061): hardware outputs, interface channels, cue mixes and the hardware
 # insert ping driven end to end on a 4-output Dummy whose loopback carries outputs 3/4.
 if(PYTHON3_EXECUTABLE)
