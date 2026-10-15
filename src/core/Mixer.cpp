@@ -2679,7 +2679,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 			QDomElement chDataItem = chData.at(i).toElement();
 			if( chDataItem.nodeName() == QString( "send" ) )
 			{
-				int sendTo = chDataItem.attribute( "channel" ).toInt();
+				bool sendToOk = false;
+				int sendTo = chDataItem.attribute( "channel" ).toInt( &sendToOk );
+				// A `channel` that does not parse as a number is not routed
+				// anywhere: toInt() without the flag would make it 0, the master.
+				if( !sendToOk ) { continue; }
 				// A `channel` that is not a channel index is not routed
 				// anywhere: createChannelSend() indexes m_mixerChannels with
 				// it. Zero (the master) is the one valid low number, so a
@@ -2710,7 +2714,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 			}
 			else if( chDataItem.nodeName() == QString( "sidechain-send" ) )
 			{
-				int sendTo = chDataItem.attribute( "channel" ).toInt();
+				bool sendToOk = false;
+				int sendTo = chDataItem.attribute( "channel" ).toInt( &sendToOk );
+				// Same rule as a <send>: a target that does not parse is skipped
+				// rather than read as channel 0, the master.
+				if( !sendToOk ) { continue; }
 				// Same rule as a <send>: a negative target is not a channel and
 				// createSidechainSend() converts it to an unsigned index.
 				if( sendTo < 0 ) { continue; }
