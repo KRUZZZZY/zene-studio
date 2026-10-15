@@ -289,6 +289,33 @@ private slots:
 		QCOMPARE(extra.state(), CollabClient::State::Failed);
 	}
 
+	//! A peer without a snapshot sink must not be told that the host's project was applied.
+	void missingSnapshotSinkIsReportedAsAnApplicationFailure()
+	{
+		CollabClient client;
+		client.setCommandSink([](const QString&, const QJsonObject&, QString*) { return true; });
+		QSignalSpy applied(&client, &CollabClient::snapshotApplied);
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("No snapshot sink"));
+		QTRY_VERIFY_WITH_TIMEOUT(applied.size() == 1 || client.lastNotice().contains(QStringLiteral("snapshot sink")), 10000);
+		QCOMPARE(applied.size(), 0);
+		QVERIFY(!client.hasSnapshot());
+		QVERIFY(client.lastNotice().contains(QStringLiteral("snapshot sink")));
+	}
+
+	//! A peer without a command sink must not be told that a streamed command was applied.
+	void missingCommandSinkIsReportedAsAnApplicationFailure()
+	{
+		CollabClient client;
+		client.setSnapshotSink([](const QByteArray&, QString*) { return true; });
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("No command sink"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
+		QSignalSpy applied(&client, &CollabClient::commandApplied);
+		m_host->broadcastCommand(QStringLiteral("track.add"), {}, QStringLiteral("host"));
+		QTRY_VERIFY_WITH_TIMEOUT(applied.size() == 1 || client.lastNotice().contains(QStringLiteral("command sink")), 10000);
+		QCOMPARE(applied.size(), 0);
+		QVERIFY(client.lastNotice().contains(QStringLiteral("command sink")));
+	}
+
 	//! A wrong key fails the TLS handshake: no peer, no snapshot, and the reason names the key.
 	void wrongKeyIsRefused()
 	{
