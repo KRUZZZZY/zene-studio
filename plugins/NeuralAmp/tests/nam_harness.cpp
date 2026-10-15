@@ -31,7 +31,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <string>
@@ -348,7 +347,23 @@ std::size_t loaderTestWeightCount(const LoaderTestConfig& config)
 	return c + layers * layerWeights + h * b + 1;
 }
 
-bool writeLoaderTestModel(const std::filesystem::path& path, const LoaderTestConfig& config)
+// Not std::filesystem: its path/temp_directory_path need the macOS 10.15 deployment target, and
+// the hosted macos-x86_64 job builds for older ones.
+std::string temporaryDirectory()
+{
+	for (const char* name : {"TMPDIR", "TEMP", "TMP"})
+	{
+		const char* value = std::getenv(name);
+		if (value != nullptr && value[0] != '\0') { return value; }
+	}
+#if defined(_WIN32)
+	return ".";
+#else
+	return "/tmp";
+#endif
+}
+
+bool writeLoaderTestModel(const std::string& path, const LoaderTestConfig& config)
 {
 	std::ofstream file(path);
 	if (!file) { return false; }
@@ -382,8 +397,9 @@ int testLoaderConfig(const std::string& testCase)
 	}
 	const std::string suffix = std::to_string(
 		std::chrono::steady_clock::now().time_since_epoch().count());
-	const std::filesystem::path path = std::filesystem::temp_directory_path() /
-		("zene-nam-loader-" + suffix + ".nam");
+	std::string path = temporaryDirectory();
+	if (path.back() != '/' && path.back() != '\\') { path += '/'; }
+	path += "zene-nam-loader-" + suffix + ".nam";
 	if (!writeLoaderTestModel(path, *config))
 	{
 		std::fprintf(stderr, "FAIL: could not write loader test model\n");
@@ -391,9 +407,8 @@ int testLoaderConfig(const std::string& testCase)
 	}
 
 	std::string error;
-	auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
-	std::error_code removeError;
-	std::filesystem::remove(path, removeError);
+	auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+	std::remove(path.c_str());
 	const bool unexpected = config->expectRejection ? (model || error.empty()) :
 		(!model || !error.empty());
 	if (unexpected)

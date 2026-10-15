@@ -14,7 +14,8 @@
 #include "../nam/NamModel.h"
 
 #include <chrono>
-#include <filesystem>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -22,7 +23,7 @@
 namespace
 {
 
-bool writeModel(const std::filesystem::path& path, int headSize)
+bool writeModel(const std::string& path, int headSize)
 {
 	std::ofstream file(path);
 	if (!file)
@@ -44,7 +45,7 @@ bool writeModel(const std::filesystem::path& path, int headSize)
 	return static_cast<bool>(file);
 }
 
-bool expectLoad(const std::filesystem::path& path, int headSize, bool expected)
+bool expectLoad(const std::string& path, int headSize, bool expected)
 {
 	if (!writeModel(path, headSize))
 	{
@@ -53,7 +54,7 @@ bool expectLoad(const std::filesystem::path& path, int headSize, bool expected)
 	}
 
 	std::string error;
-	auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+	auto model = lmms::nam::NamModel::loadFromFile(path, &error);
 	if (static_cast<bool>(model) != expected)
 	{
 		std::cerr << "final head_size " << headSize << " load result was "
@@ -74,13 +75,21 @@ bool expectLoad(const std::filesystem::path& path, int headSize, bool expected)
 int main()
 {
 	const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-	const auto path = std::filesystem::temp_directory_path() /
-		("zene-nam-mono-output-" + std::to_string(stamp) + ".nam");
+	// Not std::filesystem: it is unavailable below the macOS 10.15 deployment target of the hosted macos-x86_64 job.
+	const char* tmp = std::getenv("TMPDIR");
+	if (tmp == nullptr || tmp[0] == '\0') { tmp = std::getenv("TEMP"); }
+	if (tmp == nullptr || tmp[0] == '\0') { tmp = std::getenv("TMP"); }
+#if defined(_WIN32)
+	const std::string directory = (tmp != nullptr && tmp[0] != '\0') ? tmp : ".";
+#else
+	const std::string directory = (tmp != nullptr && tmp[0] != '\0') ? tmp : "/tmp";
+#endif
+	const std::string path = directory + "/zene-nam-mono-output-" + std::to_string(stamp) + ".nam";
 	if (!expectLoad(path, 1, true) || !expectLoad(path, 2, false))
 	{
-		std::filesystem::remove(path);
+		std::remove(path.c_str());
 		return 1;
 	}
-	std::filesystem::remove(path);
+	std::remove(path.c_str());
 	return 0;
 }

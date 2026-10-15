@@ -25,6 +25,7 @@
 #include "ProjectRevisions.h"
 
 #include <atomic>
+#include <cstdio>
 #include <filesystem>
 #include <system_error>
 
@@ -62,9 +63,15 @@ std::atomic<bool> g_failReplacementForTest{false};
 bool replaceWithStaged(const QString& staged, const QString& to)
 {
 	if (g_failReplacementForTest.load()) { return false; }
+#ifdef Q_OS_WIN
 	std::error_code ec;
 	std::filesystem::rename(staged.toLocal8Bit().constData(), to.toLocal8Bit().constData(), ec);
 	return !ec;
+#else
+	// rename(2) itself, which is what std::filesystem::rename is on POSIX: std::filesystem is unavailable
+	// below macOS 10.15, the deployment target of the hosted macos-x86_64 job.
+	return std::rename(QFile::encodeName(staged).constData(), QFile::encodeName(to).constData()) == 0;
+#endif
 }
 
 //! Writes a copy of \a from into a new sibling named by \a pattern (its trailing XXXXXX becomes a unique

@@ -18,8 +18,12 @@
 #include <QFile>
 #include <QTemporaryDir>
 
+#ifdef _WIN32
 #include <filesystem>
 #include <system_error>
+#else
+#include <unistd.h>
+#endif
 
 #include "ConfigManager.h"
 #include "Plugin.h"
@@ -50,9 +54,15 @@ private slots:
 		plugin.close();
 
 		const QString loopPath = QDir(vstRoot).filePath(QStringLiteral("ancestor"));
+#ifdef _WIN32
 		std::error_code error;
 		std::filesystem::create_directory_symlink(vstRoot.toStdString(), loopPath.toStdString(), error);
 		QVERIFY2(!error, qPrintable(QString::fromLocal8Bit(error.message().c_str())));
+#else
+		// symlink(2): std::filesystem is unavailable below the macOS 10.15 deployment target of the hosted macos-x86_64 job.
+		QVERIFY2(::symlink(QFile::encodeName(vstRoot).constData(), QFile::encodeName(loopPath).constData()) == 0,
+			"could not create the directory symlink");
+#endif
 
 		ConfigManager::inst()->setVSTDir(vstRoot);
 		VstSubPluginFeatures features(Plugin::Type::Effect);

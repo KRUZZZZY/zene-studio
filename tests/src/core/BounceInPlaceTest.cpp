@@ -31,10 +31,15 @@
 
 #include <QtTest>
 
+#ifdef _WIN32
 #include <filesystem>
 #include <system_error>
+#else
+#include <unistd.h>
+#endif
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
 
@@ -157,9 +162,15 @@ private slots:
 		QVERIFY(!before.isEmpty());
 
 		const QString link = QDir(dir.path()).filePath(QStringLiteral("hardlink.wav"));
+#ifdef _WIN32
 		std::error_code ec;
 		std::filesystem::create_hard_link(source.toLocal8Bit().constData(), link.toLocal8Bit().constData(), ec);
-		if (ec) { QSKIP("this filesystem cannot make a hard link, so the case cannot be exercised here"); }
+		const bool linked = !ec;
+#else
+		// link(2): std::filesystem is unavailable below the macOS 10.15 deployment target of the hosted macos-x86_64 job.
+		const bool linked = ::link(QFile::encodeName(source).constData(), QFile::encodeName(link).constData()) == 0;
+#endif
+		if (!linked) { QSKIP("this filesystem cannot make a hard link, so the case cannot be exercised here"); }
 
 		qint64 written = -1;
 		QString error;
