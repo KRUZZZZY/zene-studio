@@ -475,6 +475,12 @@ private slots:
 		QVERIFY2(noteOnIndex >= 0, "the accepted note-on never reached the process callback");
 		QVERIFY2(lastCutIndex > noteOnIndex,
 			"the recovery cut for channel 5 is placed before the last accepted note-on: the note would hang");
+		int cutCount = 0;
+		for (const auto& native : stream)
+		{
+			if (native.data[0] == 0xb5 && native.data[1] == 123) { ++cutCount; }
+		}
+		QCOMPARE(cutCount, 1);
 	}
 
 	void concurrentMidiStressIsOrderedAndAllocationFree()

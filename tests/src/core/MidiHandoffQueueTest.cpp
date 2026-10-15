@@ -127,14 +127,14 @@ private slots:
 			return e;
 		};
 		for (std::uint32_t id : {1u, 2u, 3u, 4u, 5u, 6u, 7u, 8u}) { QVERIFY(queue.push(event(3, id))); }
-		std::uint64_t queuedBefore = 0;
-		QVERIFY(!queue.push(event(3, 99), &queuedBefore));
+		std::uint32_t pushAttempts = 0;
 		std::uint32_t attempts = 0;
-		overflow.recordWithTestHook(3, queuedBefore, &attempts,
+		QVERIFY(!lmms::pushOrRecordWithTestHooks(queue, overflow, event(3, 99), &pushAttempts, &attempts,
+			[](std::uint32_t) {},
 			[](std::atomic<std::uint64_t>& stamp, std::uint64_t expected, std::uint64_t requested, std::uint32_t)
 			{
 				if (expected + 1 < requested) { stamp.compare_exchange_strong(expected, expected + 1); }
-			});
+			}));
 		QCOMPARE(attempts, lmms::MidiChannelOverflow::MaxStampUpdateAttempts);
 		QCOMPARE(overflow.failedStampUpdates(), std::uint64_t{1});
 
@@ -142,10 +142,10 @@ private slots:
 		auto emitEvent = [&sent](const lmms::HandoffMidiEvent& e) { sent.push_back("E" + std::to_string(e.offset)); return true; };
 		auto emitCut = [&sent](int channel) { sent.push_back("CUT" + std::to_string(channel)); return true; };
 		lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut);
-		// The stale lower stamp may fire a cut early, but the deferred cut follows the last queued event.
-		QVERIFY(sent.size() >= 9);
-		QCOMPARE(sent.back(), std::string("CUT3"));
-		QCOMPARE(sent[sent.size() - 2], std::string("E8"));
+		// One cut per channel, at the later (deferred) stamp: after the last queued event, never before it.
+		const std::vector<std::string> expected{"E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "CUT3"};
+		QCOMPARE(sent, expected);
+		QCOMPARE(overflow.stamp(3), std::uint64_t{0});
 		QCOMPARE(overflow.recorded(), std::uint64_t{1});
 	}
 

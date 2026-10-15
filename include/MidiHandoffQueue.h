@@ -214,8 +214,8 @@ private:
  * consumer (drainMidi) clears the flags (acquire) and keeps a consumer-private deferred stamp = enqueued() read after
  * the flag + 1. enqueued() only grows, so that stamp is never earlier than the refused event's position: the cut
  * for a refusal is never placed before the events queued ahead of it. It may land later (after events queued
- * after the refusal), which can end a newer note early but never leaves a note stuck. A cut is due when the shared
- * stamp or the deferred stamp is due. Producers record; the single consumer takes the due cuts with drainMidi().
+ * after the refusal), which can end a newer note early but never leaves a note stuck. A channel has one cut, at the later of
+ * the shared and the deferred stamp, so a refusal moves the cut later, never earlier, and one cut is sent. Producers record; the single consumer takes the due cuts with drainMidi().
  */
 class MidiChannelOverflow
 {
@@ -256,12 +256,14 @@ public:
 		return value != 0 && value - 1 <= consumed;
 	}
 
-	//! The cuts of a channel that are due, as seen by the consumer. Convertible to bool: whether any cut is due.
+	//! A channel's pending cut as seen by the consumer: ONE cut at the effective stamp, which is the later of the
+	//! shared stamp and the consumer-private deferred stamp. Convertible to bool: whether the cut is due.
 	struct DueCut
 	{
-		std::uint64_t shared = 0; //!< the shared stamp, when it is due (else 0)
-		bool deferred = false;    //!< whether the consumer-private deferred stamp is due
-		explicit operator bool() const noexcept { return shared != 0 || deferred; }
+		std::uint64_t shared = 0; //!< the shared stamp that was read (0 if none), to be cleared by compare-exchange
+		bool deferred = false;    //!< whether a deferred stamp contributed
+		bool due = false;
+		explicit operator bool() const noexcept { return due; }
 	};
 
 	//! Consumer only. Picks up channels whose stamp update was refused by contention (see class comment).
@@ -282,18 +284,21 @@ public:
 		}
 	}
 
-	//! Consumer only. The cuts due on \a channel once \a consumed events have been taken.
+	//! Consumer only. The channel's single cut: effective stamp = max(shared, deferred), due when consumed() reaches
+	//! effective - 1. A shared stamp below a pending deferred stamp never fires on its own.
 	auto dueCut(int channel, std::uint64_t consumed) const noexcept -> DueCut
 	{
 		DueCut result;
-		const auto shared = stamp(channel);
-		if (shared != 0 && shared - 1 <= consumed) { result.shared = shared; }
+		result.shared = stamp(channel);
 		const auto deferredStamp = m_deferredStamp[static_cast<std::size_t>(channel)];
-		result.deferred = deferredStamp != 0 && deferredStamp - 1 <= consumed;
+		result.deferred = deferredStamp != 0;
+		const auto effective = deferredStamp > result.shared ? deferredStamp : result.shared;
+		result.due = effective != 0 && effective - 1 <= consumed;
 		return result;
 	}
 
-	//! Consumer only. Clears the cuts that were due and have been sent; cuts that were not due stay pending.
+	//! Consumer only. Clears a cut that was sent: the deferred stamp, and the shared stamp by one bounded
+	//! compare-exchange against the value that was read (a value a producer raised since is kept).
 	void clear(int channel, const DueCut& sent) noexcept
 	{
 		if (sent.shared != 0) { clear(channel, sent.shared); }
