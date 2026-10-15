@@ -296,6 +296,9 @@ private:
 	int m_pendingOutCount = 0;
 	//! Retired message id a client sent during a period (0 = none); reported and failed on the main thread.
 	int m_pendingRetiredId = 0;
+	//! Argument count of an incomplete IdChangeInputOutputCount sent during a period (-1 = none);
+	//! the arity refusal is reported and failed on the main thread.
+	int m_pendingArityCount = -1;
 	//! Debug text a client sent during a period, copied at its first 255 bytes; empty when none is pending.
 	bool m_pendingDebug = false;
 	std::array<char, 256> m_pendingDebugText{};
@@ -366,6 +369,12 @@ private:
 	//! Consumes client messages until every owed IdProcessingDone has arrived, or \a deadline passes.
 	//! Non-reply messages go through processMessage(), which defers their main-thread work.
 	ReplyWait collectProcessingReplies(std::chrono::steady_clock::time_point deadline);
+
+	//! Refuses an IdChangeInputOutputCount that arrived without both count arguments: nothing is applied
+	//! (reading them would index past the end of the message - undefined behaviour), the plugin is failed
+	//! like any other protocol mismatch, and the diagnostic is logged on the main thread or recorded for
+	//! reportDeferredClientRequests() when this runs on the audio thread (a log allocates and locks).
+	void refuseIncompleteCountMessage(int argumentCount);
 
 	//! Logs the deferred retired-message and debug-text requests. Main thread only, under m_commMutex.
 	void reportDeferredClientRequests();

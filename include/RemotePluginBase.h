@@ -482,6 +482,15 @@ public:
 			return (float) atof( data[_p].c_str() );
 		}
 
+		//! Number of arguments this message carries. The wire format writes the count with
+		//! the message, so a structurally valid (complete) message may still carry fewer
+		//! arguments than a handler reads: dispatch must check this before indexing, since
+		//! getString()/getInt() do not bounds-check.
+		inline std::size_t size() const
+		{
+			return data.size();
+		}
+
 		inline bool operator==( const message & _m ) const
 		{
 			return( id == _m.id );

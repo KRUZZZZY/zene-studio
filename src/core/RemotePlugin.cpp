@@ -704,6 +704,13 @@ void RemotePlugin::reportDeferredClientRequests()
 			<< "(pre-#589 interleaved protocol); refusing the request and marking the plugin as failed";
 		m_pendingRetiredId = 0;
 	}
+	if (m_pendingArityCount >= 0)
+	{
+		qCritical() << "RemotePlugin: remote client sent IdChangeInputOutputCount with"
+			<< m_pendingArityCount << "argument(s), expected 2 - host and remote plugin client are from"
+			<< "different builds; refusing the request and marking the plugin as failed";
+		m_pendingArityCount = -1;
+	}
 	if (m_pendingDebug)
 	{
 		fprintf( stderr, "RemotePlugin::DebugMessage: %.*s",
@@ -969,6 +976,26 @@ bool RemotePlugin::reportRefusedChannelCounts()
 	return true;
 }
 
+
+
+
+void RemotePlugin::refuseIncompleteCountMessage(int argumentCount)
+{
+	if (m_inProcessPeriod)
+	{
+		// On the audio thread the log is deferred: it allocates and locks.
+		m_pendingArityCount = argumentCount;
+		m_deferredWork = true;
+	}
+	else
+	{
+		qCritical() << "RemotePlugin: remote client sent IdChangeInputOutputCount with"
+			<< argumentCount << "argument(s), expected 2 - host and remote plugin client are from"
+			<< "different builds; refusing the request and marking the plugin as failed";
+	}
+	m_failed = true;
+}
+
 bool RemotePlugin::processMessage( const message & _m )
 {
 	lock();
@@ -1034,6 +1061,17 @@ bool RemotePlugin::processMessage( const message & _m )
 			// negative count wrapped it (-1 -> 65535) and no upper bound stopped
 			// an oversized one, and the shared block is sized from these counts.
 			// Refuse anything outside the range a buffer can hold instead.
+			// The wire format carries the argument count with the message, so a complete
+			// message can still arrive with fewer arguments than this handler reads, and
+			// getInt() does not bounds-check: indexing past the end of the message would
+			// be undefined behaviour. An argument count the protocol does not have means
+			// the two builds disagree about the protocol, exactly like the retired ids
+			// above - refuse before indexing anything and fail the plugin.
+			if (_m.size() < 2)
+			{
+				refuseIncompleteCountMessage(static_cast<int>(_m.size()));
+				break;
+			}
 			const auto inCount = _m.getInt(0);
 			const auto outCount = _m.getInt(1);
 			const auto outOfRange = [](int count)
