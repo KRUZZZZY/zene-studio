@@ -32,6 +32,9 @@
 #include <QElapsedTimer>
 #include <QApplication>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QPointer>
 #include <QProgressDialog>
 #include <QMessageBox>
@@ -40,6 +43,7 @@
 #include <QTemporaryDir>
 
 #include "Engine.h"
+#include "ControlRegistry.h"
 #include "SampleBuffer.h"
 #include "SampleFrame.h"
 #include "SampleClip.h"
@@ -95,6 +99,23 @@ std::shared_ptr<const SampleBuffer> makeSineMix(int seconds)
 	return std::make_shared<const SampleBuffer>(std::move(data), sampleRate);
 }
 
+//! How many `stem.tracks_create` transactions the registry has recorded.
+int stemTracksCreateRecords()
+{
+	const QJsonObject records = ControlRegistry::instance()
+		->invoke(QStringLiteral("control.transactions")).result;
+	int count = 0;
+	for (const QJsonValue& value : records.value(QStringLiteral("transactions")).toArray())
+	{
+		if (value.toObject().value(QStringLiteral("command")).toString()
+			== QLatin1String("stem.tracks_create"))
+		{
+			++count;
+		}
+	}
+	return count;
+}
+
 } // namespace
 
 class StemSplitPipelineTest : public QObject
@@ -104,6 +125,13 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+
+		// The GUI controller drives the SAME registered `stem.*` commands the
+		// agent surface does, and the registry refuses engine commands until it
+		// is told startup finished (main.cpp's control-server path does this in
+		// a real instance). Without it every invoke would return the typed
+		// engine_starting refusal.
+		ControlRegistry::setReady(true);
 
 		qputenv("LMMS_STEM_MODEL", QFile::encodeName(stubModelPath()));
 		qputenv("LMMS_STEM_CLI", QFile::encodeName(cliPath()));
@@ -122,6 +150,7 @@ private slots:
 
 	void cleanupTestCase()
 	{
+		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
 
@@ -387,6 +416,52 @@ subprocess.Popen(
 			QVERIFY(song->tracks().end() !=
 				std::find(song->tracks().begin(), song->tracks().end(), track));
 		}
+	}
+
+	/* The GUI action and the agent surface take the SAME registered command,
+	 * materialise the four stems as ONE undo step, and one control.undo removes
+	 * all four together. This is the "shared command + one undo step" contract
+	 * of SPEC A11/A16 for the user-facing half of stem separation. */
+	void testGuiSplitSharesTheRegisteredCommandAndIsOneUndoStep()
+	{
+		auto* song = Engine::getSong();
+		const auto before = song->tracks().size();
+		auto* sourceTrack = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		QVERIFY(sourceTrack != nullptr);
+		auto* source = dynamic_cast<SampleClip*>(sourceTrack->createClip(TimePos(0)));
+		QVERIFY(source != nullptr);
+		source->setName(QStringLiteral("Mix"));
+		source->setSampleBuffer(makeSineMix(1));
+
+		// The command the GUI action calls is a registered agent command.
+		QVERIFY(ControlRegistry::instance()->hasCommand(QStringLiteral("stem.job_start")));
+		QVERIFY(ControlRegistry::instance()->hasCommand(QStringLiteral("stem.tracks_create")));
+		const int recordsBefore = stemTracksCreateRecords();
+
+		gui::StemSplitController controller;
+		controller.splitClipToStems(source);
+
+		QPointer<QProgressDialog> progress;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			if (auto* dialog = qobject_cast<QProgressDialog*>(widget)) { progress = dialog; }
+		}
+		QVERIFY(!progress.isNull());
+		QTimer closeMessageBox;
+		closeMessageBox.setInterval(10);
+		connect(&closeMessageBox, &QTimer::timeout, &closeMessageBoxes);
+		closeMessageBox.start();
+		QTRY_VERIFY_WITH_TIMEOUT(progress.isNull(), 180000);
+		closeMessageBox.stop();
+
+		QCOMPARE(song->tracks().size(), before + 5);   // the source + four stems
+		// The controller did NOT build the tracks itself: it went through the
+		// registered command, which is what recorded the transaction.
+		QCOMPARE(stemTracksCreateRecords(), recordsBefore + 1);
+
+		const ControlResult undone = ControlRegistry::instance()->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(song->tracks().size(), before + 1);   // ONE undo removed all four
 	}
 
 	void controllerUsesClipSnapshotAfterSourceClipIsDeleted()

@@ -70,9 +70,16 @@ What it drives, in order:
                                            say so: CI has no pinned artefact to
                                            fetch, and a real transfer would
                                            block the surface for its duration;
-  9. `control.transactions`                the A16 record: the whole group is
-                                           `not_mutating`, so a separation
-                                           leaves NO project transaction.
+  9. `control.transactions`                the A16 record: the job and
+                                           model-store verbs are `not_mutating`,
+                                           so a separation leaves NO project
+                                           transaction;
+ 10. `stem.tracks_create`                  the USER-FACING half: the four stems
+                                           become four SampleTracks in one
+                                           command - the SAME one the GUI's
+                                           "Split to stems" action calls - and
+                                           ONE `control.undo` removes all four
+                                           together.
 
 Started through the shared harness (tests/control_socket_harness.py), so this
 file adds no second launch path.
@@ -93,8 +100,8 @@ import control_socket_harness as H
 from stem_commands_lib import (CHUNK_DELAY_MS, CLI_PATH, SAMPLE_RATE, SOURCE_SECONDS, STUB_MODEL,
                              Recorder, Session, check_a_job_does_not_hold_the_surface, check_cancel,
                              check_get_state, check_model_store, check_refusals, check_result,
-                             check_transactions, job_state, onnxruntime_site_dir, poll_until,
-                             python_with_onnxruntime, start_job, write_source_wav)
+                             check_tracks_create, check_transactions, job_state, onnxruntime_site_dir,
+                             poll_until, python_with_onnxruntime, start_job, write_source_wav)
 
 def check_quit(session, instance, recorder):
     reply = session.call("control.quit")
@@ -123,6 +130,7 @@ def run_checks(session, instance, recorder, outdir):
     source = os.path.join(outdir, "mix.wav")
     frames = write_source_wav(source)
     job_id = start_job(session, recorder, source, "the happy path")
+    completed = False
     if job_id is not None:
         check_a_job_does_not_hold_the_surface(session, recorder, job_id)
         state, seen, seconds = poll_until(session, job_id, ("completed", "failed", "cancelled"))
@@ -131,11 +139,17 @@ def run_checks(session, instance, recorder, outdir):
         recorder.check("the poll saw the job in a non-terminal state first",
                        bool([s for s in seen if s in ("queued", "running")]),
                        "seen=%r" % (seen,))
-        if state == "completed":
+        completed = state == "completed"
+        if completed:
             check_result(session, recorder, job_id, os.path.join(outdir, "stems"), frames)
     check_cancel(session, recorder, source, os.path.join(outdir, "cancelled"))
     check_model_store(session, recorder, instance.extra_env["LMMS_STEM_MODEL_DIR"])
     check_transactions(session, recorder)
+    # The user-facing half: the GUI action and the agent surface share
+    # stem.tracks_create, and the four tracks are ONE undo step. Last, because
+    # it is the one mutating verb in the group.
+    if completed:
+        check_tracks_create(session, recorder, job_id)
 
 
 def main(argv):

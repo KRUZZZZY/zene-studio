@@ -484,7 +484,52 @@ def check_transactions(session, recorder):
     records = session.result("control.transactions")
     entries = records.get("transactions") or []
     named = [entry for entry in entries if str(entry.get("command", "")).startswith("stem.")]
-    recorder.check("the whole stem.* group leaves no project transaction",
+    recorder.check("the job and model-store verbs leave no project transaction",
                    not named, "records=%r" % (named[:2],))
+
+
+def check_tracks_create(session, recorder, job_id):
+    """The user-facing half of the feature: the four stems as four SampleTracks.
+
+    This is the SAME registered command the GUI's "Split to stems" clip action
+    calls (src/gui/StemSplitController.cpp), so this transcript proves the
+    command the click shares, and that ONE control.undo removes all four tracks
+    together (the one-undo-step contract).
+    """
+    def tracks():
+        return session.result("arrangement.get_state").get("tracks") or []
+
+    # Refusals first, before anything is created.
+    missing = session.result("stem.tracks_create")
+    recorder.check("stem.tracks_create without job_id is refused typed",
+                   error_kind(missing) == "invalid_args", repr(missing)[:200])
+    unknown = session.result("stem.tracks_create", {"job_id": 999999})
+    recorder.check("stem.tracks_create on an id this instance never issued is not_found",
+                   error_kind(unknown) == "not_found", repr(unknown)[:200])
+
+    before = tracks()
+    created = session.result("stem.tracks_create",
+                             {"job_id": job_id, "position": 0, "name": "Mix"})
+    recorder.check("stem.tracks_create materialises the four stems as four tracks",
+                   created.get("track_count") == 4 and len(created.get("tracks") or []) == 4,
+                   repr(created)[:240])
+    after = tracks()
+    recorder.check("the four stem tracks are in the song",
+                   len(after) == len(before) + 4,
+                   "before=%d after=%d" % (len(before), len(after)))
+    names = [t.get("name") for t in after[len(before):]]
+    recorder.check("the tracks are named '<name> - <stem>' in the model's order",
+                   names == ["Mix - %s" % stem for stem in STEM_ORDER], "names=%r" % (names,))
+
+    records = session.result("control.transactions")
+    named = [entry for entry in records.get("transactions") or []
+             if entry.get("command") == "stem.tracks_create"]
+    recorder.check("stem.tracks_create records exactly one project transaction",
+                   len(named) == 1, "records=%r" % (named[:2],))
+
+    session.result("control.undo")
+    recorder.check("ONE control.undo removes all four stem tracks together",
+                   len(tracks()) == len(before),
+                   "after=%d before=%d" % (len(tracks()), len(before)))
 
 

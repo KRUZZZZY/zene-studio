@@ -35,17 +35,21 @@
  * reports `realtime: false` and the lookahead; no verb here offers a streaming
  * or monitoring variant.
  *
- * THE FEATURE IS OFF IN THE DEFAULT RELEASE CONFIGURATION. WANT_STEM_SPLIT
- * defaults to OFF (CMakeLists.txt:120, "Include offline stem separation
- * (HTDemucs via ONNX Runtime, opt-in)"), so this group - and the job manager,
- * the backends and the model store behind it - is not compiled into a default
- * build at all, and the registry carries no `stem.*` id whose handler could not
+ * THE FEATURE IS ON IN THE DEFAULT RELEASE CONFIGURATION. WANT_STEM_SPLIT
+ * defaults to ON (CMakeLists.txt:130, "Include offline stem separation (HTDemucs
+ * via ONNX Runtime; the model is fetched on first use)"; owner decision 14), so
+ * this group - and the job manager, the backends and the model store behind it -
+ * is compiled into a default build. It used to default OFF and this comment said
+ * so; owner decision 14 (2026-09-29) flipped the default and the release-honesty
+ * manifest row now requires ON. A build configured with the option OFF compiles
+ * none of it and the registry carries no `stem.*` id whose handler could not
  * exist (the rule the telemetry.*, session.* and wasm.* groups follow;
  * src/core/ControlRegistryRegistrations.cpp). The A16 rows are guarded by the
  * same macro, so the table and the registry stay consistent in both directions
  * (tests/src/core/ReversibilityContractTest.cpp asserts exactly that). A build
  * WITH the feature still needs the model present before a job can start: models
- * are never bundled.
+ * are never bundled. See docs/KNOWN-LIMITATIONS.md and the StemAvailabilityDocsGate
+ * that keeps this comment honest.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -67,14 +71,26 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <memory>
+
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <QVector>
 
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "ControlStemSupport.h"
+#include "ControlTrackCreation.h"
 #include "ControlVocabulary.h"
+#include "Engine.h"
+#include "SampleTrack.h"
+#include "Song.h"
+#include "StemSeparation/StemTrackBuilder.h"
+#include "TimePos.h"
+#include "Track.h"
 
 namespace lmms
 {
@@ -118,8 +134,8 @@ ControlResult stemJobStart(const QJsonObject& args)
 	if (!stemStartJob(source, segmentFrames, &jobId, &job, &error))
 	{
 		// Every refusal here is the engine's own: a missing file, a file the
-		// decoders cannot read, an input rate that is not the model's (no
-		// resampler - SPEC-stem-split.md OQ-1), or the backend not being able
+		// decoders cannot read, a source too long or too short to split at the
+		// model's rate, or the backend not being able
 		// to run at all (no model file / no interpreter with onnxruntime).
 		return ControlResult::failure(ControlErrorKind::Refused, error);
 	}
@@ -194,6 +210,83 @@ ControlResult stemJobCancel(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::Refused, error);
 	}
 	return ControlResult::success(job);
+}
+
+
+/*! `stem.tracks_create`: the job's four stems as four SampleTracks in the song.
+ *
+ *  This is the USER-FACING half of the feature (the four stem tracks a musician
+ *  gets), and it is the SAME registered command the GUI's "Split to stems" clip
+ *  action calls (src/gui/StemSplitController.cpp), so an agent and a click take
+ *  one path. `stem.job_result` writes files instead; this edits the project, so
+ *  it is the group's one MUTATING verb and records ONE undo step for all four
+ *  tracks. The redo rebuilds the tracks from the job's own shared buffers rather
+ *  than from a captured XML snapshot: a stem clip's XML would carry its whole
+ *  waveform as base64 (a 3-minute song is hundreds of MB per stem).
+ */
+ControlResult stemTracksCreate(const QJsonObject& args)
+{
+	const int jobId = args.value(QStringLiteral("job_id")).toInt();
+	if (!stemHasJob(jobId))
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no stem job with id %1 was issued by this instance").arg(jobId));
+	}
+	StemSet stems;
+	QString error;
+	if (!stemTakeResult(jobId, &stems, &error))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, error);
+	}
+
+	Song* song = Engine::getSong();
+	const auto position = TimePos(static_cast<tick_t>(
+		args.value(QStringLiteral("position")).toDouble(0.0)));
+	const QString name = args.value(QStringLiteral("name")).toString();
+	const int trackCountBefore = static_cast<int>(song->tracks().size());
+
+	const auto tracks = StemTrackBuilder::createStemTracks(song, stems, position, name, &error);
+	if (tracks.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			error.isEmpty() ? QStringLiteral("could not create the stem tracks") : error);
+	}
+
+	// ONE undo step for all four tracks (SPEC A16 deliverable 5): the inverse is
+	// the OPERATION, so one control.undo - and one Ctrl+Z - removes them again.
+	auto ids = std::make_shared<QVector<int>>();
+	for (Track* track : tracks) { ids->append(track->id()); }
+	control::addUndoStep(
+		[ids]() {
+			for (const int id : *ids)
+			{
+				if (Track* live = control::trackWithId(id)) { control::removeTrack(live); }
+			}
+			ids->clear();
+		},
+		[song, stems, position, name, ids]() {
+			const auto rebuilt = StemTrackBuilder::createStemTracks(song, stems, position, name);
+			ids->clear();
+			for (Track* track : rebuilt) { ids->append(track->id()); }
+		});
+
+	QJsonObject before;
+	before.insert(QStringLiteral("track_count"), trackCountBefore);
+	QJsonObject result;
+	result.insert(QStringLiteral("job_id"), jobId);
+	result.insert(QStringLiteral("track_count"), tracks.size());
+	result.insert(QStringLiteral("position"), static_cast<double>(position.getTicks()));
+	result.insert(QStringLiteral("name"), name);
+	QJsonArray created;
+	for (Track* track : tracks) { created.append(control::trackIdOf(track)); }
+	result.insert(QStringLiteral("tracks"), created);
+	result.insert(QStringLiteral("__transaction"),
+		control::transactionPayload(before, QStringLiteral("remove the created tracks"),
+			QJsonObject(), true,
+			QStringLiteral("action checkpoint: the recorded undo step removes all four created "
+				"stem tracks through the product's own TrackContainerView::deleteTrackView path, "
+				"and the redo rebuilds them from the job's shared, immutable stem buffers")));
+	return ControlResult::success(result);
 }
 
 
@@ -372,6 +465,38 @@ void registerStemJobCancel(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerStemTracksCreate(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("stem.tracks_create");
+	cmd.group = QStringLiteral("stem");
+	cmd.verb = QStringLiteral("tracks_create");
+	cmd.description = QStringLiteral("Materialise the four stems of a COMPLETED job (drums, "
+		"bass, other, vocals - the model contract's fixed order) as four SampleTracks, each "
+		"carrying a clip of its stem at `position` (ticks, default 0) and named "
+		"`name - <stem>`. This is the user-facing 'Split to stems' result and the SAME command "
+		"the GUI action calls; the four tracks are ONE undo step, so one `control.undo` removes "
+		"them all. This edits the project, unlike `stem.job_result`, which writes output WAVs and "
+		"touches no project state. Refuses a job that is not completed, naming its state, and "
+		"refuses an id this instance never issued. The stems are the job's shared, immutable "
+		"buffers, so the redo rebuilds the tracks without copying audio.");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("job_id"), integerProperty(1, 1 << 30)},
+		{QStringLiteral("position"), integerProperty(0, MaxSongLength)},
+		{QStringLiteral("name"), stringProperty()},
+	}, {QStringLiteral("job_id")});
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("job_id"), integerProperty()},
+		{QStringLiteral("track_count"), integerProperty()},
+		{QStringLiteral("position"), numberProperty()},
+		{QStringLiteral("name"), stringProperty()},
+		{QStringLiteral("tracks"), arrayProperty()},
+	});
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) { return stemTracksCreate(args); };
+	registry.registerCommand(cmd);
+}
+
 
 } // namespace
 
@@ -382,6 +507,7 @@ void registerStemCommands(ControlRegistry& registry)
 	registerStemJobStatus(registry);
 	registerStemJobResult(registry);
 	registerStemJobCancel(registry);
+	registerStemTracksCreate(registry);
 	// The model-store half lives in ControlCommandsStemModel.cpp (the group's
 	// own read/edit split, for the file-length ratchet).
 	registerStemModelCommands(registry);

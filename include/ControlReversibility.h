@@ -317,15 +317,18 @@ LMMS_EXPORT const ReversibilityRow* reversibilityClapInstrumentRowTable(int* row
 LMMS_EXPORT const ReversibilityRow* reversibilityDawProjectRowTable(int* rowCount);
 //! The third block: the irreversible and the not_mutating rows.
 LMMS_EXPORT const ReversibilityRow* reversibilityPassiveRowTable(int* rowCount);
-/*! The `stem.*` group's seven not_mutating rows (feature row 26, board task
- *  #653): the offline stem-separation engine's read verb, its four job verbs and
- *  its two model-store verbs. A GROUP file on the same seam as the folder, vca,
- *  routing, scan/crash and mastering files - and, like the passive block itself,
- *  a file split off a block because the file-length ratchet reads a file as a
- *  unit. Joined into the passive block's rows by ReversibilityTable's
- *  constructor. The array is EMPTY without LMMS_HAVE_STEM_SPLIT: the ids do not
- *  exist in that configuration, and a row naming an unregistered command is a
- *  failure in the other direction (ReversibilityContractTest).
+/*! The `stem.*` group's eight rows (feature row 26, board task #653): the
+ *  offline stem-separation engine's read verb, its four job verbs, its two
+ *  model-store verbs and `stem.tracks_create`. Seven are not_mutating; the
+ *  eighth, `stem.tracks_create`, edits the project (four SampleTracks, one undo
+ *  step) and is a recorded-action true_inverse. A GROUP file on the same seam
+ *  as the folder, vca, routing, scan/crash and mastering files - and, like the
+ *  passive block itself, a file split off a block because the file-length
+ *  ratchet reads a file as a unit. Joined into the passive block's rows by
+ *  ReversibilityTable's constructor. The array is EMPTY without
+ *  LMMS_HAVE_STEM_SPLIT: the ids do not exist in that configuration, and a row
+ *  naming an unregistered command is a failure in the other direction
+ *  (ReversibilityContractTest).
  */
 LMMS_EXPORT const ReversibilityRow* reversibilityStemRowTable(int* rowCount);
 /*! The Session View completion halves' six rows (board task #641, the #596

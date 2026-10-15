@@ -30,26 +30,36 @@
 
 #include <memory>
 
-#include "StemSeparation/StemJobManager.h"
 #include "TimePos.h"
 
+class QJsonObject;
 class QProgressDialog;
+class QTemporaryFile;
+class QTimer;
 class QWidget;
 
 namespace lmms
 {
 
-class SampleClip;
 class SampleBuffer;
+class SampleClip;
 class Song;
 
 namespace gui
 {
 
-// Owns the job manager and the progress dialog for the "Split to stems" clip
-// action. The controller never touches audio: the heavy work happens on
-// StemJobManager's worker thread, results are materialised as tracks on the GUI
-// thread once the job has finished.
+/*! The "Split to stems" clip action, driven through the SAME registered
+ *  `stem.*` commands the agent surface calls - `stem.job_start` to queue the
+ *  offline job, `stem.job_status` to poll it, `stem.job_cancel` for the
+ *  dialog's Cancel, and `stem.tracks_create` to materialise the four tracks as
+ *  ONE undo step. This class owns no engine: it is a thin client of
+ *  ControlRegistry, so a click and an agent command take the identical path
+ *  (SPEC A11, "every user-facing action is one registered command").
+ *
+ *  It never touches audio: the separation runs on StemJobManager's worker
+ *  thread inside the control surface, progress is read by polling, and the
+ *  tracks are created on the GUI thread by the command.
+ */
 class LMMS_EXPORT StemSplitController : public QObject
 {
 	Q_OBJECT
@@ -69,10 +79,7 @@ public:
 	void splitClipToStems(SampleClip* clip);
 
 private slots:
-	void handleProgress(int jobId, float fraction);
-	void handleFinished(int jobId, double elapsedSeconds);
-	void handleCancelled(int jobId);
-	void handleFailed(int jobId, const QString& error);
+	void pollJob();
 
 private:
 	struct ClipSnapshot
@@ -84,20 +91,29 @@ private:
 		std::shared_ptr<const SampleBuffer> source;
 	};
 
-	/*! Owner decision 14: true when a job may be submitted - the backend is
+	/*! Owner decision 14: true when a job may be submitted - the engine is
 	 *  ready, or only the model is missing and the user agreed to fetch it
 	 *  (\a fetching set). False after telling the user why not. */
 	bool ensureBackendReady(bool* fetching);
 	bool captureClipSnapshot(SampleClip* clip, ClipSnapshot* snapshot) const;
 	bool targetStillAvailable(const ClipSnapshot& snapshot) const;
-	void startJob(const ClipSnapshot& snapshot, bool fetching);
+	//! The absolute file the engine should decode: the clip's own audio file
+	//! when there is one, else a temporary WAV of the clip's buffer.
+	bool resolveSourceFile(const ClipSnapshot& snapshot, QString* path, QString* error);
+	bool startJob(const ClipSnapshot& snapshot, const QString& source);
+	void completeJob(const QJsonObject& job);
+	void failJob(const QString& error);
 
+	void stopPolling();
 	void closeDialog();
 	void clearTarget();
+	void resetJob();
+	void releaseTemp();
 
 	QWidget* m_parent = nullptr;
-	StemJobManager m_manager;
 	QProgressDialog* m_dialog = nullptr;
+	QTimer* m_poll = nullptr;
+	QTemporaryFile* m_temp = nullptr;
 	QPointer<Song> m_song;
 	int m_trackId = -1;
 	TimePos m_clipPosition;
