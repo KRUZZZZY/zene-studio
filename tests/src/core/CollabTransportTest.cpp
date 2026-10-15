@@ -91,6 +91,7 @@ namespace
 {
 
 const QByteArray ProjectBytes = QByteArrayLiteral("<?xml version=\"1.0\"?><lmms-project/>");
+constexpr int InflightRequestLimit = 256;
 
 struct Received
 {
@@ -528,6 +529,40 @@ private slots:
 		const QJsonObject sent = QJsonDocument::fromJson(m_got.requests.first()).object();
 		QCOMPARE(sent.value(QStringLiteral("id")).toInt(), id);
 		QVERIFY(CollabClientTestAccess::hasInflight(client, 1));
+	}
+
+	//! Requests arriving at the limit keep their original command association until the host replies.
+	void reachingInflightLimitPreservesPendingRequestCommands()
+	{
+		CollabClient client;
+		wire(client);
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Limit"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
+		m_host->setRequestHandler([](const QByteArray& line, CollabRole, const QString&) {
+			const QJsonObject request = QJsonDocument::fromJson(line).object();
+			return QJsonDocument(QJsonObject{{QStringLiteral("id"), request.value(QStringLiteral("id"))},
+				{QStringLiteral("ok"), false}, {QStringLiteral("error"),
+					QJsonObject{{QStringLiteral("message"), QStringLiteral("delayed rejection")}}}})
+				.toJson(QJsonDocument::Compact);
+		});
+		QSignalSpy replies(&client, &CollabClient::replied);
+		QSignalSpy notices(&client, &CollabClient::notice);
+		const QString firstCommand = QStringLiteral("test.command.first");
+		const int firstId = client.request(firstCommand, {});
+		QVERIFY(firstId > 0);
+		for (int i = 1; i < InflightRequestLimit; ++i)
+		{
+			QVERIFY(client.request(QStringLiteral("test.command.pending"), {}) > 0);
+		}
+		const int overflowId = client.request(QStringLiteral("test.command.overflow"), {});
+
+		QTRY_VERIFY_WITH_TIMEOUT(!replies.isEmpty(), 10000);
+		QCOMPARE(replies.first().at(0).toInt(), firstId);
+		QVERIFY(!replies.first().at(1).toBool());
+		QTRY_VERIFY_WITH_TIMEOUT(!notices.isEmpty(), 10000);
+		QVERIFY2(notices.first().at(0).toString().contains(firstCommand),
+			qPrintable(notices.first().at(0).toString()));
+		QCOMPARE(overflowId, 0);
 	}
 
 	//! A later joiner gets the CURRENT project, and a re-sync reaches everyone who holds one.
