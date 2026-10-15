@@ -461,6 +461,11 @@ bool control::abSlotValues(Effect* effect, std::vector<float>* a, std::vector<fl
 	return true;
 }
 
+std::size_t control::abSlotEntryCountForTesting()
+{
+	return abSlots().size();
+}
+
 namespace
 {
 
