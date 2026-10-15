@@ -1723,6 +1723,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "DevicePanelTest")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator amplifier)
 	endif()
+	# Q050-047: RackMenuTest's zones and empty-parallel-chain cases load a real effect module, so a targeted
+	# build (cmake --build build --target RackMenuTest) must build amplifier too; otherwise plugin.list has no
+	# loadable effect and both cases skip with "this host loads no effect module".
+	if(LMMS_TEST_NAME STREQUAL "RackMenuTest")
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
 	# OutOfProcessHostTest drives the whole out-of-process loop on a REAL client
 	# when this build has both halves of it: the ZynAddSubFx module (the only
 	# family in this tree with an in-process AND a client implementation) and the

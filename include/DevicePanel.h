@@ -200,6 +200,11 @@ private:
 	//! The channel's heading, level, macros, inserts and parallel chains, with the modulators driving them.
 	void addChannel(MixerChannel* channel);
 	QWidget* buildAddButton();
+	//! The parallel chain Add device fills: the channel's selected rack chain (rack.set_selected) when it is one of
+	//! the parallel ones, else 0 (the channel's own chain, and a track's). Only a channel has a rack.
+	int addTargetChain() const;
+	//! Pick a device, then plugin.load it onto @a target (onto parallel chain @a chain of a channel when it is >= 1).
+	void addDevice(const QString& target, int chain);
 	QString signature() const;
 	void poll();
 

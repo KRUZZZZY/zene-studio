@@ -26,7 +26,10 @@
  *  Add parallel chain grows the rack, Route to moves the selector (and Parallel is -1), Remove
  *  chain drops the added chain, Add macro... adds one (an empty name adds nothing), the macro's own
  *  item sets its value (a cancelled prompt changes nothing), Remove macro drops it, and one
- *  control.undo takes the last change back. The line's text is pinned. */
+ *  control.undo takes the last change back. The line's text is pinned. Q050-047: the channel menu's Rack submenu
+ *  offers Zones... and Add Zone... over registered commands, and an empty parallel chain takes its first device
+ *  from its own "Add device..." button on the Device panel's heading, and the panel's Add device fills the
+ *  channel's selected parallel chain; both are plugin.load, one undo step each. */
 
 #include <QtTest>
 
@@ -34,12 +37,19 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
+#include <QToolButton>
 
+#include "CommandForm.h"
+#include "CommandLists.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DevicePanel.h"
+#include "DevicePicker.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "RackMenu.h"
+#include "ShellCommandMenus.h"
+#include "ShellSelection.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -61,6 +71,53 @@ QMenu* submenu(QMenu* menu, const QString& text)
 	QAction* action = item(menu, text);
 	return action != nullptr ? action->menu() : nullptr;
 }
+
+
+//! A fresh channel with two empty parallel chains, shown by a Device panel whose picker always answers with the
+//! first loadable effect. `ready` is false when this host loads no effect module.
+struct PanelFixture
+{
+	QString id;
+	QString device;
+	bool ready = false;
+	DevicePanel panel;
+
+	PanelFixture()
+	{
+		const int index = Engine::mixer()->createChannel();
+		id = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+		const QJsonArray devices = invoke("plugin.list", {{QStringLiteral("kind"), QStringLiteral("effect")},
+			{QStringLiteral("loadable_only"), true}}).result.value(QStringLiteral("devices")).toArray();
+		if (devices.isEmpty()) { return; }
+		device = devices.first().toObject().value(QStringLiteral("id")).toString();
+		ready = true;
+		DevicePicker::setChooser([d = device](DevicePicker::Kind, const QString&) { return d; });
+		invoke("rack.add_chain", {{QStringLiteral("channel"), id}});
+		invoke("rack.add_chain", {{QStringLiteral("channel"), id}});
+		panel.resize(1200, 300);
+		panel.show();
+		ShellSelection::instance()->setChannel(id);
+		panel.rebuild();
+		QCoreApplication::processEvents();
+	}
+
+	~PanelFixture()
+	{
+		DevicePicker::setChooser({});
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	static ControlResult invoke(const char* command, const QJsonObject& args)
+	{
+		return ControlRegistry::instance()->invoke(QLatin1String(command), args);
+	}
+
+	int count(int chain) const
+	{
+		return invoke("rack.get_state", {{QStringLiteral("channel"), id}}).result.value(QStringLiteral("chains"))
+			.toArray().at(chain).toObject().value(QStringLiteral("devices")).toInt();
+	}
+};
 
 } // namespace
 
@@ -157,6 +214,100 @@ private slots:
 		QCOMPARE(state().value(QStringLiteral("macro_count")).toInt(), 0);
 		item(submenu(menu, QStringLiteral("Remove chain")), QStringLiteral("Chain 1"))->trigger();
 		QCOMPARE(state().value(QStringLiteral("chain_count")).toInt(), 1);
+	}
+
+	//! Q050-047: the mixer channel menu's Rack submenu shows Zones... and Add Zone..., and both run commands the
+	//! registry has (rack.get_state lists the zones, rack.zone_add adds one, rack.zone_remove removes one).
+	void theZonesEntriesRunRegisteredCommands()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString id = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+		QMenu menu;
+		ShellCommandMenus::populateChannel(&menu, id);
+		QMenu* rack = submenu(&menu, QStringLiteral("Rack"));
+		QVERIFY(rack != nullptr);
+		QVERIFY(item(rack, QStringLiteral("Zones...")) != nullptr);
+		QAction* add = item(rack, QStringLiteral("Add Zone..."));
+		QVERIFY(add != nullptr);
+		QCOMPARE(add->property("controlCommand").toString(), QStringLiteral("rack.zone_add"));
+		for (const char* command : {"rack.zone_add", "rack.zone_remove", "rack.get_state"})
+		{
+			QVERIFY2(ControlRegistry::instance()->hasCommand(QLatin1String(command)), command);
+		}
+		const ListSpec zones = CommandLists::rackZones(id);
+		QCOMPARE(zones.listId, QStringLiteral("rack.get_state"));
+		QCOMPARE(zones.extras.first().call.id, QStringLiteral("rack.zone_add"));
+		QCOMPARE(zones.actions.first().id, QStringLiteral("rack.zone_remove"));
+	}
+
+	//! Q050-047: the Inspector's "Add Insert..." form (plugin.load with its `chain` field) also fills an empty
+	//! parallel chain; the Device panel's own buttons are the cases below.
+	void anEmptyParallelChainTakesItsFirstDeviceFromTheInsertForm()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString id = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+		const auto invoke = [](const char* command, const QJsonObject& args) {
+			return ControlRegistry::instance()->invoke(QLatin1String(command), args);
+		};
+		QVERIFY(invoke("rack.add_chain", {{QStringLiteral("channel"), id}}).ok);
+		const QJsonArray devices = invoke("plugin.list", {{QStringLiteral("kind"), QStringLiteral("effect")},
+			{QStringLiteral("loadable_only"), true}}).result.value(QStringLiteral("devices")).toArray();
+		if (devices.isEmpty()) { QSKIP("this host loads no effect module"); }
+
+		CommandForm form(CommandCall{QStringLiteral("plugin.load"), {{QStringLiteral("target"), id}}, {}, QStringLiteral("Add an insert"), true});
+		QVERIFY(form.fields().contains(QStringLiteral("chain")));
+		QVERIFY(form.fields().contains(QStringLiteral("device")));
+		QVERIFY(form.setField(QStringLiteral("device"), devices.first().toObject().value(QStringLiteral("id")).toString()));
+		QVERIFY(form.setField(QStringLiteral("chain"), 1));
+		form.accept();
+		QVERIFY2(form.result().ok, qPrintable(form.errorText()));
+		const QJsonArray chains = invoke("rack.get_state", {{QStringLiteral("channel"), id}}).result.value(QStringLiteral("chains")).toArray();
+		QCOMPARE(chains.at(1).toObject().value(QStringLiteral("devices")).toInt(), 1);
+		QCOMPARE(chains.at(0).toObject().value(QStringLiteral("devices")).toInt(), 0);
+	}
+
+	//! Q050-047: an empty parallel chain has an "Add device..." button of its own on the Device panel; it is the
+	//! socket's plugin.load with a chain field, one undo step.
+	void anEmptyParallelChainHasItsOwnAddDeviceButton()
+	{
+		PanelFixture f;
+		if (!f.ready) { QSKIP("this host loads no effect module"); }
+		// Both chains are empty, so each heading has its own button; clicking chain 2's fills chain 2 alone.
+		const QList<QToolButton*> own = f.panel.findChildren<QToolButton*>(QStringLiteral("deviceAddToChain"));
+		QCOMPARE(own.size(), 2);
+		QToolButton* second = nullptr;
+		for (QToolButton* button : own) { if (button->property("chain").toInt() == 2) { second = button; } }
+		QVERIFY(second != nullptr);
+		second->click();
+		QCOMPARE(f.count(2), 1);
+		QCOMPARE(f.count(1), 0);
+		QCOMPARE(f.count(0), 0);
+		QVERIFY(f.invoke("control.undo", {}).ok);  // one step
+		QCOMPARE(f.count(2), 0);
+		QCoreApplication::processEvents();
+		QCOMPARE(f.panel.findChildren<QToolButton*>(QStringLiteral("deviceAddToChain")).size(), 2);
+	}
+
+	//! Q050-047: the Device panel's Add device loads into the channel's selected parallel chain (rack.set_selected),
+	//! and into the channel's own chain while parallel is selected; one undo step each.
+	void addDeviceLoadsIntoTheSelectedChain()
+	{
+		PanelFixture f;
+		if (!f.ready) { QSKIP("this host loads no effect module"); }
+		auto* add = f.panel.findChild<QToolButton*>(QStringLiteral("deviceAdd"));
+		QVERIFY(add != nullptr);
+		add->click();  // a fresh rack's selector is -1, parallel: the channel's own chain
+		QCOMPARE(f.count(0), 1);
+		QVERIFY(f.invoke("control.undo", {}).ok);
+		QCOMPARE(f.count(0), 0);
+		QVERIFY(f.invoke("rack.set_selected", {{QStringLiteral("channel"), f.id}, {QStringLiteral("chain"), 1}}).ok);
+		f.panel.rebuild();
+		add->click();
+		QCOMPARE(f.count(1), 1);
+		QCOMPARE(f.count(0), 0);
+		QVERIFY(f.invoke("control.undo", {}).ok);
+		QCOMPARE(f.count(1), 0);
+		QCOMPARE(f.invoke("rack.get_state", {{QStringLiteral("channel"), f.id}}).result.value(QStringLiteral("selected")).toInt(), 1);
 	}
 
 	//! A macro is bound to, and unbound from, a parameter of a real effect on the channel's own chain.
