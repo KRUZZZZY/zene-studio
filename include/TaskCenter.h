@@ -26,6 +26,8 @@
 #define LMMS_TASK_CENTER_H
 
 #include <functional>
+#include <mutex>
+#include <unordered_map>
 #include <vector>
 
 #include <QJsonObject>
@@ -75,17 +77,33 @@ struct TaskSpec
 	bool queued = false;  //!< waiting its turn: shown "Queued" until its first progress
 };
 
+//! Opaque identity for one task generation; copy it into every asynchronous report from that task.
+class LMMS_EXPORT TaskToken
+{
+public:
+	TaskToken() = default;
+
+private:
+	friend class TaskCenter;
+	TaskToken(const void* owner, int localId, quint64 generation) :
+		m_owner(owner), m_localId(localId), m_generation(generation) {}
+	const void* m_owner = nullptr;
+	int m_localId = 0;
+	quint64 m_generation = 0;
+};
+
 /*! 0.5.0 UX decision (theme 24): the one place the interface's long jobs report to - renders and conversions in the
  *  render queue, stem splits, mastering runs, library indexing, video audio extraction - so a person sees them in one
  *  non-modal list (the status bar's Tasks indicator, TaskIndicator.h) with their progress and, where the job supports
  *  it, Cancel. Short operations do not report: they stay synchronous.
  *
- *  The reporting API is four calls naming a job by its owner and the owner's own id for it, so a job never keeps a task
- *  id of its own. They may be called from any thread except the audio thread: off the main thread a call is posted to
- *  it (one posted event, the cost of the queued signal a job already emits), and the list has no lock of its own -
- *  only the main thread ever touches it. A job with a hot loop reports nothing from it: it keeps its progress in an
- *  atomic the task area reads through TaskSpec::probe. The list,
- *  cancel() and clearFinished() belong to the main thread. Session state only; at most MaxFinished ended tasks are kept. */
+ *  Each begin() returns a token for its generation; progress and finish require that token, so an old worker cannot
+ *  target a later job reusing the local id even when its report arrives after the replacement starts. Calls may come
+ *  from any thread except the audio thread: off the main thread a call is posted to it (one posted
+ *  event, the cost of the queued signal a job already emits), and the task list itself is only touched on the main
+ *  thread. A job with a hot loop reports nothing from it: it keeps its progress in an
+ *  atomic the task area reads through TaskSpec::probe. The list, cancel() and clearFinished() belong to the main thread.
+ *  Session state only; at most MaxFinished ended tasks are kept. */
 class LMMS_EXPORT TaskCenter : public QObject
 {
 	Q_OBJECT
@@ -96,12 +114,12 @@ public:
 	static QString stateName(TaskState state);
 	static QJsonObject toJson(const TaskInfo& task);
 
-	//! A job of @a owner, known to it as @a localId, started (or was queued).
-	void begin(const void* owner, int localId, TaskSpec spec);
+	//! Start @a owner/@a localId (or queue it) and return the token required for reports from this generation.
+	TaskToken begin(const void* owner, int localId, TaskSpec spec);
 	//! It is @a fraction done (0..1, or -1 when it cannot say), with an optional status line; a queued job is running now.
-	void progress(const void* owner, int localId, double fraction, const QString& status = QString());
+	void progress(const TaskToken& token, double fraction, const QString& status = QString());
 	//! It ended in @a state (Done, Failed or Cancelled), with @a status - a failure's reason - when there is one.
-	void finish(const void* owner, int localId, TaskState state, const QString& status = QString());
+	void finish(const TaskToken& token, TaskState state, const QString& status = QString());
 	//! @a owner is going away: its open tasks end as cancelled and its cancel functions are dropped.
 	void forget(const void* owner);
 
@@ -125,6 +143,7 @@ private:
 		TaskInfo info;
 		const void* owner = nullptr;
 		int localId = 0;
+		quint64 generation = 0;
 		std::function<void()> cancel;
 		std::function<double()> probe;
 	};
@@ -133,12 +152,18 @@ private:
 	//! @a work here, now, on the main thread; posted to it from any other.
 	void onMainThread(std::function<void()> work);
 	Entry* findActive(const void* owner, int localId);
-	void doBegin(const void* owner, int localId, TaskSpec spec);
-	void doFinish(const void* owner, int localId, TaskState state, const QString& status);
+	Entry* findActive(const void* owner, int localId, quint64 generation);
+	quint64 currentGeneration(const void* owner, int localId) const;
+	void clearGeneration(const void* owner, int localId, quint64 generation);
+	void doBegin(const void* owner, int localId, quint64 generation, TaskSpec spec);
+	void doFinish(const void* owner, int localId, quint64 generation, TaskState state, const QString& status);
 	void trimFinished();
 
 	std::vector<Entry> m_entries;
 	int m_nextId = 1;
+	mutable std::mutex m_generationMutex;
+	std::unordered_map<const void*, std::unordered_map<int, quint64>> m_generations;
+	quint64 m_nextGeneration = 1;
 };
 
 } // namespace lmms

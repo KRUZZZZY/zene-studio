@@ -37,6 +37,7 @@
 
 #include "StemSeparation/StemSeparator.h"
 #include "StemSeparation/StemTypes.h"
+#include "TaskCenter.h"
 #include "lmms_export.h"
 
 class QThread;
@@ -80,6 +81,7 @@ public:
 	struct Job
 	{
 		int id = -1;
+		TaskToken taskToken;
 		std::shared_ptr<const SampleBuffer> mix;
 		int sampleRate = StemModelSampleRate;
 		int segmentFrames = HTDemucsSegmentFrames;
@@ -154,6 +156,7 @@ private:
 	//! terminal state and its signal are already published).
 	bool provisionModel(const std::shared_ptr<Job>& job);
 	std::shared_ptr<Job> findJob(int jobId) const;
+	TaskToken taskTokenFor(int jobId) const;
 
 	QThread* m_thread = nullptr;
 	mutable QMutex m_mutex;

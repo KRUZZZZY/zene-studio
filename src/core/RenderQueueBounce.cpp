@@ -137,7 +137,7 @@ void RenderQueue::bounceStarted(int id)
 	RenderJob* job = find(id);
 	if (job == nullptr || job->state != RenderJob::State::Running || job->phase != QLatin1String("starting")) { return; }
 	job->phase = QStringLiteral("rendering");
-	TaskCenter::instance().progress(this, id, -1.0, tr("Rendering track audio"));
+	TaskCenter::instance().progress(job->taskToken, -1.0, tr("Rendering track audio"));
 	if (m_bounceTimer != nullptr) { m_bounceTimer->start(600000); }
 }
 
@@ -203,7 +203,7 @@ void RenderQueue::beginBounceFinalization(int id)
 	if (job == nullptr || id != m_current) { return; }
 	job->phase = QStringLiteral("finalizing");
 	job->progress = -1.0;
-	TaskCenter::instance().progress(this, id, -1.0, tr("Finalising rendered audio"));
+	TaskCenter::instance().progress(job->taskToken, -1.0, tr("Finalising rendered audio"));
 	const BounceInPlace::PreparedRender prepared = job->bounce;
 	QThreadPool::globalInstance()->start([this, id, prepared] {
 		QString errorText;
@@ -254,7 +254,7 @@ bool RenderQueue::applyFinishedBounce(RenderJob& job, BounceInPlace::PreparedRen
 {
 	if (!validateBounceTarget(job, error)) { return false; }
 	job.phase = QStringLiteral("applying");
-	TaskCenter::instance().progress(this, job.id, -1.0, tr("Applying rendered audio"));
+	TaskCenter::instance().progress(job.taskToken, -1.0, tr("Applying rendered audio"));
 	if (!BounceInPlace::installPreparedOutput(prepared, error)) { return false; }
 	ProjectJournal* journal = Engine::projectJournal();
 	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
@@ -288,7 +288,7 @@ void RenderQueue::finishBounceJob(RenderJob& job, RenderJob::State state, const 
 		: state == RenderJob::State::Cancelled ? QStringLiteral("cancelled") : QStringLiteral("failed");
 	job.validateBounce = {};
 	job.applyBounce = {};
-	TaskCenter::instance().finish(this, job.id, taskState(state), error);
+	TaskCenter::instance().finish(job.taskToken, taskState(state), error);
 }
 
 void RenderQueue::releaseCurrent(int id)

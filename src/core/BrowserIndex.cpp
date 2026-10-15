@@ -213,11 +213,11 @@ bool BrowserIndex::start(const QStringList& dirs, bool features)
 		&& QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, [] { BrowserIndex::instance().cancel(); });
 	Q_UNUSED(stopsOnQuit)
 	// 0.5.0 theme 24: a background scan is listed in the task area, with this scan's own cancel.
-	TaskCenter::instance().begin(this, 0, {QStringLiteral("index"), QObject::tr("Index the library"), [] { BrowserIndex::instance().cancel(); },
-		{}, false});
-	QThreadPool::globalInstance()->start([this, dirs, features] {
+	const TaskToken taskToken = TaskCenter::instance().begin(this, 0, {QStringLiteral("index"), QObject::tr("Index the library"),
+		[] { BrowserIndex::instance().cancel(); }, {}, false});
+	QThreadPool::globalInstance()->start([this, dirs, features, taskToken] {
 		scan(dirs, features, MaxAnalysed);
-		reportScanEnd();
+		reportScanEnd(taskToken);
 	});
 	return true;
 }
@@ -271,11 +271,11 @@ void BrowserIndex::scan(const QStringList& dirs, bool features, int maxAnalysed)
 	m_status = walk.status;
 }
 
-void BrowserIndex::reportScanEnd()
+void BrowserIndex::reportScanEnd(const TaskToken& token)
 {
 	const Status ended = status();
 	const TaskState state = m_cancel.load() ? TaskState::Cancelled : ended.error.isEmpty() ? TaskState::Done : TaskState::Failed;
-	TaskCenter::instance().finish(this, 0, state, state == TaskState::Done ? QObject::tr("%n file(s)", "", ended.entries) : ended.error);
+	TaskCenter::instance().finish(token, state, state == TaskState::Done ? QObject::tr("%n file(s)", "", ended.entries) : ended.error);
 }
 
 BrowserIndex::Status BrowserIndex::status() const

@@ -180,22 +180,22 @@ Track* landAudio(const VideoAttachment& video, const QString& wav)
 /*! A background extraction's end, back on the main thread (0.5.0 theme 24): the track lands as ONE undo step - the
  *  same step the synchronous run records - when the project still has the video it started from; otherwise nothing is
  *  added and the task says where the WAV is. */
-void landExtracted(const VideoAttachment& video, const QString& wav, int local, const QString& why, bool cancelled)
+void landExtracted(const VideoAttachment& video, const QString& wav, const TaskToken& taskToken,
+	const QString& why, bool cancelled)
 {
-	const void* key = &ExtractionOwner;
 	if (!why.isEmpty())
 	{
-		TaskCenter::instance().finish(key, local, cancelled ? TaskState::Cancelled : TaskState::Failed, why);
+		TaskCenter::instance().finish(taskToken, cancelled ? TaskState::Cancelled : TaskState::Failed, why);
 		return;
 	}
 	if (!(VideoReference::instance().attachment() == video))
 	{
-		TaskCenter::instance().finish(key, local, TaskState::Failed,
+		TaskCenter::instance().finish(taskToken, TaskState::Failed,
 			QObject::tr("the project's video changed while its audio was extracted; the WAV is kept at %1").arg(wav));
 		return;
 	}
 	const Track* track = landAudio(video, wav);
-	TaskCenter::instance().finish(key, local, TaskState::Done, track->name());
+	TaskCenter::instance().finish(taskToken, TaskState::Done, track->name());
 }
 
 //! Decode on a worker, listed in the task area with its progress and Cancel; the reply is an acknowledgement.
@@ -204,7 +204,7 @@ ControlResult extractInBackground(const VideoAttachment& video, const QString& w
 	auto control = std::make_shared<VideoExtractControl>();
 	const int local = nextExtraction++;
 	TaskCenter& tasks = TaskCenter::instance();
-	tasks.begin(&ExtractionOwner, local, {QStringLiteral("video_audio"), QObject::tr("Extract audio from %1")
+	const TaskToken taskToken = tasks.begin(&ExtractionOwner, local, {QStringLiteral("video_audio"), QObject::tr("Extract audio from %1")
 		.arg(QFileInfo(video.path).fileName()), [control] { control->cancel.store(true); },
 		[control] { return static_cast<double>(control->progress.load()); }, false});
 	QMetaObject::Connection shutdownConnection;
@@ -213,14 +213,14 @@ ControlResult extractInBackground(const VideoAttachment& video, const QString& w
 		shutdownConnection = QObject::connect(QCoreApplication::instance(), &QCoreApplication::aboutToQuit, &tasks,
 			[weak = std::weak_ptr<VideoExtractControl>(control)] { if (auto live = weak.lock()) { live->cancel.store(true); } });
 	}
-	QThreadPool::globalInstance()->start([control, video, wav, local, shutdownConnection] {
+	QThreadPool::globalInstance()->start([control, video, wav, taskToken, shutdownConnection] {
 		VideoAudio audio;
 		QString why;
 		extractVideoAudio(video.path, wav, &audio, &why, control.get());
-		QMetaObject::invokeMethod(&TaskCenter::instance(), [video, wav, local, why, shutdownConnection,
+		QMetaObject::invokeMethod(&TaskCenter::instance(), [video, wav, taskToken, why, shutdownConnection,
 			cancelled = control->cancel.load()] {
 			QObject::disconnect(shutdownConnection);
-			landExtracted(video, wav, local, why, cancelled);
+			landExtracted(video, wav, taskToken, why, cancelled);
 		}, Qt::QueuedConnection);
 	});
 	return ControlResult::success({{QStringLiteral("background"), true}, {QStringLiteral("task"), tasks.idOf(&ExtractionOwner, local)},

@@ -87,16 +87,24 @@ StemJobManager::StemJobManager(QObject* parent) :
 
 void StemJobManager::reportToTaskArea()
 {
-	// 0.5.0 theme 24: the job signals the worker already emits, queued to the task area on the main thread. The
-	// lambdas carry this manager's address only as the jobs' owner key and never dereference it.
-	const void* key = this;
+	// 0.5.0 theme 24: the job signals the worker already emits, queued to the task area on the main thread. A live
+	// manager resolves the job's stored token, so each report stays bound to the generation submitted for that job.
+	const QPointer<StemJobManager> manager(this);
 	TaskCenter* tasks = &TaskCenter::instance();
-	connect(this, &StemJobManager::jobStarted, tasks, [key](int id) { TaskCenter::instance().progress(key, id, 0.0); });
-	connect(this, &StemJobManager::jobProgress, tasks, [key](int id, float fraction) { TaskCenter::instance().progress(key, id, fraction); });
-	connect(this, &StemJobManager::jobFinished, tasks, [key](int id, double) { TaskCenter::instance().finish(key, id, TaskState::Done); });
-	connect(this, &StemJobManager::jobCancelled, tasks, [key](int id) { TaskCenter::instance().finish(key, id, TaskState::Cancelled); });
+	const auto reportProgress = [manager](int id, double fraction) {
+		if (manager != nullptr) { TaskCenter::instance().progress(manager->taskTokenFor(id), fraction); }
+	};
+	const auto reportFinish = [manager](int id, TaskState state, const QString& status) {
+		if (manager != nullptr) { TaskCenter::instance().finish(manager->taskTokenFor(id), state, status); }
+	};
+	connect(this, &StemJobManager::jobStarted, tasks, [reportProgress](int id) { reportProgress(id, 0.0); });
+	connect(this, &StemJobManager::jobProgress, tasks, [reportProgress](int id, float fraction) { reportProgress(id, fraction); });
+	connect(this, &StemJobManager::jobFinished, tasks,
+		[reportFinish](int id, double) { reportFinish(id, TaskState::Done, QString()); });
+	connect(this, &StemJobManager::jobCancelled, tasks,
+		[reportFinish](int id) { reportFinish(id, TaskState::Cancelled, QString()); });
 	connect(this, &StemJobManager::jobFailed, tasks,
-		[key](int id, const QString& error) { TaskCenter::instance().finish(key, id, TaskState::Failed, error); });
+		[reportFinish](int id, const QString& error) { reportFinish(id, TaskState::Failed, error); });
 }
 
 
@@ -158,7 +166,7 @@ int StemJobManager::submit(std::shared_ptr<const SampleBuffer> mix,
 		m_queue.push_back(job);
 	}
 	// Listed before the worker can start it, so the job's first signal finds its task.
-	TaskCenter::instance().begin(this, job->id, {QStringLiteral("stem_split"), tr("Split stems"),
+	job->taskToken = TaskCenter::instance().begin(this, job->id, {QStringLiteral("stem_split"), tr("Split stems"),
 		[manager = QPointer<StemJobManager>(this), id = job->id] { if (manager != nullptr) { manager->cancel(id); } }, {}, true});
 	m_jobAvailable.wakeOne();
 	return job->id;
@@ -319,6 +327,12 @@ std::shared_ptr<StemJobManager::Job> StemJobManager::findJob(int jobId) const
 	QMutexLocker locker(&m_mutex);
 	auto it = m_jobs.find(jobId);
 	return it == m_jobs.end() ? nullptr : *it;
+}
+
+TaskToken StemJobManager::taskTokenFor(int jobId) const
+{
+	const auto job = findJob(jobId);
+	return job != nullptr ? job->taskToken : TaskToken();
 }
 
 
