@@ -167,6 +167,13 @@ CrossfadeEditorDialog::CrossfadeEditorDialog(SampleClip* out, SampleClip* in, QW
 	m_status->setAccessibleName(tr("Crossfade editor status"));
 	m_status->setWordWrap(true);
 	layout->addWidget(m_status);
+	const auto watchClip = [this](SampleClip* clip) {
+		connect(clip, &Clip::positionChanged, this, [this] { reload(); });
+		connect(clip, &Clip::lengthChanged, this, [this] { reload(); });
+		connect(clip, &Model::dataChanged, this, [this] { reload(); });
+	};
+	watchClip(out);
+	watchClip(in);
 	reload();
 }
 
