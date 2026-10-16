@@ -451,6 +451,35 @@ private slots:
 		QCOMPARE(tx.report().txOverruns, std::uint64_t{0});
 	}
 
+	//! A sender that never stops must not keep the socket thread from being joined (bounded drain).
+	void disablingWhileFloodedJoinsPromptly()
+	{
+		LinkAudioStream rx, tx;
+		std::string why;
+		QVERIFY2(rx.configure(receiver(10), &why), why.c_str());
+		QVERIFY2(tx.configure(senderTo(rx.report().boundPort), &why), why.c_str());
+		std::vector<SampleFrame> first(128);
+		rx.process(first.data(), 128, Rate);   // the receiver learns the engine rate (packets at another rate are dropped)
+		std::atomic<bool> flood{true};
+		std::thread sender([&] {
+			std::vector<SampleFrame> buf(128);
+			fillRamp(buf, 1);
+			while (flood.load()) { tx.process(buf.data(), 128, Rate); }
+		});
+		QElapsedTimer clock;
+		while (rx.report().packetsReceived <= 100 && clock.elapsed() < 5000) { QTest::qWait(5); }
+		const std::uint64_t received = rx.report().packetsReceived;
+		clock.restart();
+		const bool disabled = rx.configure(AudioStreamConfig{}, &why);   // disable: joins the socket thread
+		const qint64 joinMs = clock.elapsed();
+		flood = false;
+		sender.join();
+		QVERIFY2(received > 100, "the flood never arrived");
+		QVERIFY2(disabled, why.c_str());
+		QVERIFY2(joinMs < 1000, qPrintable(QStringLiteral("join took %1 ms under flood").arg(joinMs)));
+		QVERIFY(!rx.report().running);
+	}
+
 	void packetsFromAStrangerOrAtAnotherRateAreCounted()
 	{
 		LinkAudioStream rx;

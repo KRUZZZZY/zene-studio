@@ -62,6 +62,8 @@ constexpr std::uint32_t MaxGapPackets = 8;
 constexpr std::int32_t ResyncDistance = 64;
 constexpr std::size_t ScratchFrames = 2048;
 constexpr int IoPollMs = 2;
+//! Datagrams read per wake: under a sustained flood the loop must come back to check the stop flag.
+constexpr int MaxPacketsPerWake = 256;
 
 void raiseMax(std::atomic<std::size_t>& slot, std::size_t value)
 {
@@ -338,7 +340,7 @@ bool LinkAudioStream::openSocket(const AudioStreamConfig& cfg, std::string* erro
 
 void LinkAudioStream::receiveDatagrams()
 {
-	for (;;)
+	for (int packets = 0; packets < MaxPacketsPerWake && !m_stop.load(std::memory_order_acquire); ++packets)
 	{
 		sockaddr_in from{};
 		SockLen fromLength = sizeof(from);
@@ -367,7 +369,7 @@ void LinkAudioStream::sendPending()
 	to.sin_family = AF_INET;
 	to.sin_addr.s_addr = htonl(m_peerAddress);
 	to.sin_port = htons(static_cast<std::uint16_t>(m_peerPort));
-	for (;;)
+	for (int packets = 0; packets < MaxPacketsPerWake && !m_stop.load(std::memory_order_acquire); ++packets)
 	{
 		const std::size_t available = m_tx.fill();
 		if (available == 0) { return; }

@@ -5726,3 +5726,7 @@ if(TARGET nam_harness AND PYTHON3_EXECUTABLE)
 			$<TARGET_FILE:nam_harness>)
 	set_tests_properties(NeuralAmpWavRunSampleRateWarning PROPERTIES TIMEOUT 30)
 endif()
+
+# Q050-024: LinkAudioStreamTest runs Ableton Link (confined to loopback, but it still binds the
+# group port 20808 on lo), so it must not overlap a test that multicasts on 224.76.78.75:20808.
+set_tests_properties(LinkAudioStreamTest PROPERTIES RUN_SERIAL TRUE)
