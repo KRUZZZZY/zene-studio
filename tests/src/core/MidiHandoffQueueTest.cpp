@@ -336,7 +336,7 @@ private slots:
 		QCOMPARE(overflow.stamp(3), std::uint64_t{0});
 	}
 
-	//! A later refusal must not postpone the recovery cut for an earlier refused note-off.
+	//! Later refusals must not replace an intermediate recovery cut that has not been served.
 	void repeatedOverflowKeepsEarlierRecoveryCut()
 	{
 		lmms::MidiHandoffQueue<2> queue;
@@ -358,19 +358,25 @@ private slots:
 			sent.push_back("E" + std::to_string(e.offset));
 			return true;
 		};
-		auto emitCut = [&sent](int channel) {
-			sent.push_back("CUT" + std::to_string(channel));
+		auto emitCut = [&sent, &overflow](int channel) {
+			sent.push_back("CUT" + std::to_string(channel) + "@" + std::to_string(overflow.stamp(channel)));
 			return true;
 		};
 		lmms::drainMidi(queue, overflow, 1, emitEvent, emitCut); // consume only event 1, before the first cut is due
 
 		QVERIFY(queue.push(event(3, 3, 0x90))); // note-on after the first refusal
-		QVERIFY(!lmms::pushOrRecord(queue, overflow, event(3, 91, 0x80))); // later refusal at stamp 4
+		QVERIFY(!lmms::pushOrRecord(queue, overflow, event(3, 91, 0x80))); // refusal at stamp 4
+		lmms::drainMidi(queue, overflow, 1, emitEvent, emitCut, 1); // consume event 2 but leave CUT3 pending
+		QVERIFY(queue.push(event(3, 4, 0x90)));
+		QVERIFY(!lmms::pushOrRecord(queue, overflow, event(3, 92, 0x80))); // refusal at stamp 5
+
+		lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut, 1); // CUT3, without taking the next queued event
+		QCOMPARE(overflow.stamp(3), std::uint64_t{4});
 		lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut);
 
-		const std::vector<std::string> expected{"E1", "E2", "CUT3", "E3", "CUT3"};
+		const std::vector<std::string> expected{"E1", "E2", "CUT3@3", "E3", "CUT3@4", "E4", "CUT3@5"};
 		QCOMPARE(sent, expected);
-		QCOMPARE(overflow.recorded(), std::uint64_t{2});
+		QCOMPARE(overflow.recorded(), std::uint64_t{3});
 		QCOMPARE(overflow.stamp(3), std::uint64_t{0});
 	}
 

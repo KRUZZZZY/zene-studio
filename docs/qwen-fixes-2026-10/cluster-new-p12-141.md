@@ -1,45 +1,59 @@
-# Cluster new-p12-141
+# Cluster new-p12-141 — FIXED
 
-Verdict: **BLOCKED**
+## Finding
 
-The MIDI recovery behavior is fixed and the regression is proven red without the product patch and green with it. The required complexity and file-length ratchets still exit 1 because of unrelated branch-wide entries. Both gates were rerun with the product patch reversed and produced the same failures. No gate or baseline was changed.
+Repeated refusals could replace an unserved intermediate MIDI recovery cut. The queue retained the earliest and latest stamps, so refusals at stamps 3, 4, and 5 left stamp 5 after CUT3 cleared.
 
-## Finding and evidence
+`MidiChannelOverflow` now retains each distinct pending stamp in fixed per-channel atomic slots. The consumer selects the earliest stamp and refreshes its cached head after clearing a cut. Storage is bounded to 257 positions per channel, requires no allocation or mutex, and includes the production queue's 256 positions plus the next cut boundary.
 
-- `include/MidiHandoffQueue.h:204-218` documents overflow cut positions. `MidiChannelOverflow::stamp()` at line 246, `dueCut()` at line 290, `clear()` at line 316, and `recordImpl()` at line 362 now retain the earliest pending stamp while tracking a later stamp separately. `lower()` at line 409 keeps the earlier stamp from being advanced by a later refusal.
-- `tests/src/core/MidiHandoffQueueTest.cpp:340` adds `repeatedOverflowKeepsEarlierRecoveryCut()`. It refuses a note-off at stamp 3, drains one event, accepts a channel 3 note-on, and refuses another note-off at stamp 4. With the original product code, the output was `E1, E2, E3, CUT3`; with the fix, it is `E1, E2, CUT3, E3, CUT3`.
+Evidence: `include/MidiHandoffQueue.h:290` selects the earliest due cut; `:350`, `:432`, and `:507` define and store bounded per-channel cut slots; `:358` and `:368` record stamps; `:396` and `:409` select the effective stamp; `:446` finds the earliest slot; and `:467` refreshes the cached head after clearing. The regression in `tests/src/core/MidiHandoffQueueTest.cpp:340` records refusals at stamps 3, 4, and 5 (`:354`, `:368`, `:371`), checks stamp 4 after CUT3 (`:374`), and checks CUT4 before E4 (`:377`).
 
-## Build and regression evidence
+## Verification
 
-Commands ran from the stated directories. Build and test output is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r1/logs/`.
+The affected CTest family contains two binaries: `MidiHandoffQueueTest` and `CarlaMidiHandoffTest`. In the RED run, `MidiHandoffQueueTest` failed at the stamp-4 assertion (actual stamp 5; 14 internal Qt checks passed and one failed), while `CarlaMidiHandoffTest` passed. The same failure was reproduced after reversing the product patch. With the product change restored, both binaries passed.
 
-| Purpose | Command | Log | Exit / result |
-|---|---|---|---|
-| Initial build | `cmake --build build --target zene MidiHandoffQueueTest` (worktree root) | `build-1.log` | 0 |
-| RED on original product code | `ctest -R '^MidiHandoffQueueTest$' --output-on-failure` (`build/tests`) | `test-1.log` | 8; regression expected `CUT3` before `E3`, actual had `E3` first |
-| Reversion proof build | `cmake --build build --target zene MidiHandoffQueueTest` (after applying `git apply -R .../fix.patch`) | `build-5.log` | 0 |
-| Reversion proof RED | `ctest -R '^MidiHandoffQueueTest$' --output-on-failure` (`build/tests`) | `test-4.log` | 8; same regression assertion failed |
-| Restored final build | `cmake --build build --target zene MidiHandoffQueueTest` | `build-6.log` | 0 |
-| GREEN with product patch restored | `ctest -R '^MidiHandoffQueueTest$' --output-on-failure` (`build/tests`) | `test-5.log` | 0; affected CTest family count: 1 |
+| Check | Command log | Exit | Result |
+|---|---|---:|---|
+| Initial RED on original header | `test-1.log` | 8 | `MidiHandoffQueueTest` failed; `CarlaMidiHandoffTest` passed |
+| RED with final patch reversed | `test-5.log` | 8 | `MidiHandoffQueueTest` failed (actual 5, expected 4); `CarlaMidiHandoffTest` passed |
+| GREEN with final patch restored | `test-6.log` | 0 | 2/2 CTest binaries passed |
+| Affected-family test count | `test-6.log` | 0 | 2 CTest binaries |
+| Complexity ratchet | `gate-4.log` | 1 | Unrelated over-target entries remain |
+| File-length ratchet | `gate-5.log` | 1 | Unrelated overlength entries remain |
 
-Patch proof commands both exited 0:
+The exact RED, GREEN, build, reversal, and gate commands follow.
 
-- `git diff -- include/MidiHandoffQueue.h > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r1/logs/fix.patch`
-- `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r1/logs/fix.patch`
+The product-only reversal and restoration commands both exited 0:
 
-## Required ratchets
+```sh
+git diff -- include/MidiHandoffQueue.h > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/fix.patch' && git apply -R '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/fix.patch'
+git apply '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/fix.patch'
+```
 
-| Command | Final log / exit | Same check with product patch reversed |
-|---|---|---|
-| `bash tests/complexity-gate.sh --check` | `gate-1.log`, exit 1 | `gate-3.log`, exit 1 |
-| `bash tests/file-length-gate.sh --check` | `gate-2.log`, exit 1 | `gate-4.log`, exit 1 |
+The initial RED run used the original header before any product edit. The exact initial RED, final reversal proof, and final green commands were (CTest ran from `build/tests`):
 
-The complexity log names six unrelated functions, including `dotCentreAlong` in `tests/src/gui/XyPadPairTest.cpp` and `parseNotes` in `src/core/DawProjectReadTracks.cpp`. The file-length log names 19 unrelated sources, including `tests/src/gui/ArrangerTimelineTest.cpp` and `src/core/SmfInterchangeReader.cpp`. Neither gate identifies the changed MIDI header or test. The existing baselines were left untouched.
+```sh
+ctest -R '^(MidiHandoffQueueTest|CarlaMidiHandoffTest)$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/test-1.log' 2>&1; rc=$?; printf 'EXIT=%d\n' "$rc" >> '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/test-1.log'; echo EXIT=$rc; exit $rc
+cmake --build build --target zene MidiHandoffQueueTest CarlaMidiHandoffTest RemotePluginAudioPortsTest RemotePluginClientE2ETest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/build-5.log' 2>&1; rc=$?; printf 'EXIT=%d\n' "$rc" >> '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/build-5.log'; echo EXIT=$rc; exit $rc
+ctest -R '^(MidiHandoffQueueTest|CarlaMidiHandoffTest)$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/test-5.log' 2>&1; rc=$?; printf 'EXIT=%d\n' "$rc" >> '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/test-5.log'; echo EXIT=$rc; exit $rc
+cmake --build build --target zene MidiHandoffQueueTest CarlaMidiHandoffTest RemotePluginAudioPortsTest RemotePluginClientE2ETest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/build-6.log' 2>&1; rc=$?; printf 'EXIT=%d\n' "$rc" >> '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/build-6.log'; echo EXIT=$rc; exit $rc
+ctest -R '^(MidiHandoffQueueTest|CarlaMidiHandoffTest)$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/test-6.log' 2>&1; rc=$?; printf 'EXIT=%d\n' "$rc" >> '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/test-6.log'; echo EXIT=$rc; exit $rc
+```
 
-`fff grep` was not available in the provided tool set, so log matches were inspected with `rg`.
+The final focused tests therefore have an exact RED command with exit 8 and an exact GREEN command with exit 0. The final build rebuilt `zene` and every test target directly including the changed header.
 
-## Files committed
+Both required ratchet gates were rerun in check mode. They still report unrelated worktree entries; neither lists `MidiHandoffQueue.h` or `MidiHandoffQueueTest.cpp`:
+
+```sh
+bash tests/complexity-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/gate-4.log' 2>&1; rc=$?; printf 'EXIT=%d\n' "$rc" >> '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/gate-4.log'; echo EXIT=$rc; exit $rc
+bash tests/file-length-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/gate-5.log' 2>&1; rc=$?; printf 'EXIT=%d\n' "$rc" >> '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-141.r2/logs/gate-5.log'; echo EXIT=$rc; exit $rc
+```
+
+Log searches used `rg` because the requested `fff` tool was unavailable in this session.
+
+## Files in the commit
 
 - `include/MidiHandoffQueue.h`
 - `tests/src/core/MidiHandoffQueueTest.cpp`
+- `tests/fork-sources.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p12-141.md`
