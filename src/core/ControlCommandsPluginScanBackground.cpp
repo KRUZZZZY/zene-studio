@@ -159,11 +159,12 @@ ControlResult handleScanStart(const QJsonObject& args)
 	result.insert(QStringLiteral("pace_ms"), paceMs);
 	result.insert(QStringLiteral("catalogue_count"), status.catalogueCount);
 	result.insert(QStringLiteral("note"),
-		QStringLiteral("the scan runs one file per event-loop turn: plugin.list keeps serving "
-			"the previous catalogue (catalogue_count files it holds) until the run commits, "
-			"plugin.scan_status follows the progress and the per-file outcomes, plugin.scan_cancel "
-			"stops the run and keeps the previous catalogue, and the task list (task.list) shows "
-			"the run with its progress and Cancel"));
+		QStringLiteral("the run is active before any directory or library is touched: the first turn plans "
+			"the files (total_files 0 here, planned then), each following turn pre-loads one library or "
+			"scans one file, so plugin.list keeps serving the previous catalogue (catalogue_count files it "
+			"holds) until the run commits, plugin.scan_status follows the progress and the per-file outcomes, "
+			"plugin.scan_cancel stops the run and keeps the previous catalogue, and the task list (task.list) "
+			"shows the run with its progress and Cancel"));
 	QJsonObject before;
 	before.insert(QStringLiteral("outcome"), QStringLiteral("never"));
 	result.insert(QStringLiteral("__transaction"),
@@ -277,7 +278,7 @@ void registerPluginScanBackgroundCommands(ControlRegistry& registry)
 			"is active, its outcome (never, running, done, cancelled), done/total files and the "
 			"0..1 progress, the file being scanned, one entry per finished file (path, status, "
 			"name, error) in scan order, the run's task.list row and the catalogue_count plugin.list "
-			"still serves. Read-only.");
+			"still serves. total_files is 0 until the run's first turn plans the files. Read-only.");
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("active"), booleanProperty()},

@@ -1,14 +1,17 @@
 /*
  * PluginFactoryBackgroundScan.cpp - the background plug-in rescan (Q050-090).
  *
- * plugin.scan_start snapshots the candidate files and then scans ONE file per
- * event-loop turn, so the window stays usable while the scan runs: plugin.list
- * keeps serving the PREVIOUS catalogue until the run commits, the same promise
- * the library index scan (BrowserIndex) keeps. plugin.scan_status reads the
- * progress and the per-file outcomes so far; plugin.scan_cancel stops the run
- * at its next file boundary and keeps the previous catalogue. The task area
- * (TaskCenter, task.list) shows the run with its progress and Cancel, like
- * every other long job.
+ * plugin.scan_start marks the run active, shows it in the task area and
+ * returns BEFORE touching a directory or a library. The planning (candidate
+ * files, the quarantine list, the per-file plan) and the dependency pre-load
+ * then run as scheduled cancellable chunks: the first turn plans, each
+ * following pre-load turn loads ONE library, and each scan turn scans ONE
+ * file - so the window stays usable throughout, plugin.list keeps serving the
+ * PREVIOUS catalogue until the run commits (the same promise the library
+ * index scan (BrowserIndex) keeps), and plugin.scan_cancel stops the run at
+ * its next turn boundary. plugin.scan_status reads the progress and the
+ * per-file outcomes so far. The task area (TaskCenter, task.list) shows the
+ * run with its progress and Cancel, like every other long job.
  *
  * Main-thread confinement is the whole threading argument: control handlers
  * run on the UI thread (ControlRegistry::runOnUiThread) and the chunks are
@@ -21,8 +24,9 @@
  * header both translation units include, through the ScanSink the run stages
  * into), so the two runs cannot churn the cache against each other. Three
  * things differ on purpose, each documented where it happens:
- * - the quarantine list is snapshotted at the start: an edit made mid-run
- *   takes effect on the NEXT run (a synchronous scan re-reads the file);
+ * - the quarantine list is snapshotted when the run PLANS (its first turn):
+ *   an edit made before that takes effect, one made later waits for the NEXT
+ *   run (a synchronous scan re-reads the file);
  * - records are stored live as they are taken, so the Modules list shows them
  *   mid-run; a cancelled run's measurements stay cached for the next run;
  * - plugin.rescan is refused while a run is active: both would commit a
@@ -93,54 +97,25 @@ bool PluginFactory::startBackgroundScan(int paceMs, QString* error)
 		return false;
 	}
 
-	// The candidates, minus the quarantine list - WITHOUT touching the live
-	// stats: they still describe the last COMPLETED run until this one
-	// commits (dropQuarantinedPlugins counts into m_scanStats, so it cannot
-	// be reused here).
-	QSet<QFileInfo> files = candidatePluginFiles();
-	m_backgroundStats = ScanStats();
-	m_backgroundStats.candidateFiles = files.size();
-	QList<QFileInfo> remaining;
-	for (const QFileInfo& file : files)
-	{
-		const QString path = file.absoluteFilePath();
-		if (m_scanCache.isQuarantined(path))
-		{
-			m_backgroundStats.quarantined++;
-			m_backgroundStats.quarantinedPaths.append(path);
-			m_backgroundStats.quarantinedReasons.append(m_scanCache.quarantineReason(path));
-			continue;
-		}
-		remaining.append(file);
-	}
-	std::sort(remaining.begin(), remaining.end(),
-		[](const QFileInfo& left, const QFileInfo& right) {
-			return left.absoluteFilePath() < right.absoluteFilePath();
-		});
-
-	// The plan and the dependency pre-load, exactly as the synchronous run
-	// does them: the counts land in the staging stats and the known-bad
-	// errors in the staging errors, and zynaddsubfx's helper is loaded
-	// before any resolve needs it. This is the run's only blocking step
-	// (dlopen, no UI), and it is what keeps per-file chunks cheap.
-	QHash<QString, ScanPlan> plans;
-	QSet<QFileInfo> toLoad;
-	m_backgroundErrors.clear();
-	planPluginScan(QSet<QFileInfo>(remaining.begin(), remaining.end()), m_scanCache,
-		plans, toLoad, m_backgroundStats, m_backgroundErrors);
-	preloadPluginLibraries(toLoad);
-
+	// Active FIRST, work LATER: nothing below touches a directory or a
+	// library - the planning and every load run as scheduled chunks AFTER
+	// this returns (see prepareBackgroundScan), so the task, the active
+	// status and plugin.scan_cancel exist before the first potentially
+	// slow plug-in load. total_files is 0 until the first turn plans the
+	// run; the last COMPLETED run's stats stand until this one commits.
 	m_backgroundInfos.clear();
 	m_backgroundDescriptors.clear();
 	m_backgroundByExt.clear();
-	m_backgroundRemaining = remaining;
+	m_backgroundErrors.clear();
+	m_backgroundRemaining.clear();
+	m_backgroundPreloadRemaining.clear();
 	m_backgroundStore = std::make_unique<CachedDescriptorStore>();
 	m_backgroundPaceMs = clampPaceMs(paceMs);
+	m_backgroundPrepared = false;
 
 	m_background = BackgroundScanStatus{};
 	m_background.active = true;
 	m_background.outcome = QStringLiteral("running");
-	m_background.totalFiles = remaining.size();
 	// What plugin.list serves: the catalogue built from the PREVIOUS run's
 	// descriptors, which this run does not touch until it commits.
 	m_background.catalogueCount = controlDeviceCatalogue().size();
@@ -154,8 +129,7 @@ bool PluginFactory::startBackgroundScan(int paceMs, QString* error)
 			false});
 	m_background.taskId = TaskCenter::instance().idOf(this, m_backgroundTaskLocal);
 
-	QTimer::singleShot(m_backgroundPaceMs, &TaskCenter::instance(),
-		[this] { stepBackgroundScan(); });
+	scheduleBackgroundScanStep();
 	return true;
 }
 
@@ -181,12 +155,95 @@ void PluginFactory::stepBackgroundScan()
 		endBackgroundScan(true);
 		return;
 	}
-	if (m_backgroundRemaining.isEmpty())
+	if (!m_backgroundPrepared)
+	{
+		prepareBackgroundScan();
+	}
+	else if (!m_backgroundPreloadRemaining.isEmpty())
+	{
+		preloadBackgroundLibrary();
+	}
+	else if (!m_backgroundRemaining.isEmpty())
+	{
+		scanNextBackgroundFile();
+	}
+	else
 	{
 		endBackgroundScan(false);
 		return;
 	}
+	// A finished run deactivates itself (see scanNextBackgroundFile); only a
+	// run that still has turns left schedules the next one.
+	if (m_background.active) { scheduleBackgroundScanStep(); }
+}
 
+
+//! The run's first turn: list the candidates, drop the quarantine list and
+//! count the per-file plan exactly as the synchronous run does them - the
+//! counts land in the staging stats and the known-bad errors in the staging
+//! errors - queuing the libraries to pre-load and the files to scan. No
+//! dlopen: every load waits for its own turn (see preloadBackgroundLibrary),
+//! so this turn stays cheap and a cancel requested before it still stops the
+//! run with nothing done. The live stats still describe the last COMPLETED
+//! run until this one commits.
+void PluginFactory::prepareBackgroundScan()
+{
+	QSet<QFileInfo> files = candidatePluginFiles();
+	m_backgroundStats = ScanStats();
+	m_backgroundStats.candidateFiles = files.size();
+	QList<QFileInfo> remaining;
+	for (const QFileInfo& file : files)
+	{
+		const QString path = file.absoluteFilePath();
+		if (m_scanCache.isQuarantined(path))
+		{
+			m_backgroundStats.quarantined++;
+			m_backgroundStats.quarantinedPaths.append(path);
+			m_backgroundStats.quarantinedReasons.append(m_scanCache.quarantineReason(path));
+			continue;
+		}
+		remaining.append(file);
+	}
+	std::sort(remaining.begin(), remaining.end(),
+		[](const QFileInfo& left, const QFileInfo& right) {
+			return left.absoluteFilePath() < right.absoluteFilePath();
+		});
+
+	QHash<QString, ScanPlan> plans;
+	QSet<QFileInfo> toLoad;
+	m_backgroundErrors.clear();
+	planPluginScan(QSet<QFileInfo>(remaining.begin(), remaining.end()), m_scanCache,
+		plans, toLoad, m_backgroundStats, m_backgroundErrors);
+	m_backgroundPreloadRemaining = QList<QFileInfo>(toLoad.begin(), toLoad.end());
+	std::sort(m_backgroundPreloadRemaining.begin(), m_backgroundPreloadRemaining.end(),
+		[](const QFileInfo& left, const QFileInfo& right) {
+			return left.absoluteFilePath() < right.absoluteFilePath();
+		});
+	m_backgroundRemaining = remaining;
+	m_background.totalFiles = remaining.size();
+	m_backgroundPrepared = true;
+}
+
+
+//! One library of the dependency pre-load: exactly one dlopen (see
+//! preloadPluginLibraries - zynaddsubfx's helper is loaded before any
+//! resolve needs it), then the next turn. One load bounds the turn, so a
+//! cancel between two loads stops the run before the next one.
+void PluginFactory::preloadBackgroundLibrary()
+{
+	const QFileInfo file = m_backgroundPreloadRemaining.takeFirst();
+	QLibrary(file.absoluteFilePath()).load();
+	m_background.currentFile = file.absoluteFilePath();
+	TaskCenter::instance().progress(this, m_backgroundTaskLocal,
+		backgroundScanFraction(m_background.doneFiles, m_background.totalFiles),
+		file.fileName());
+}
+
+
+//! One file of the active run, then the next turn - or the commit when the
+//! queue is empty.
+void PluginFactory::scanNextBackgroundFile()
+{
 	const QFileInfo file = m_backgroundRemaining.takeFirst();
 	scanBackgroundFile(file);
 	m_background.doneFiles++;
@@ -197,8 +254,14 @@ void PluginFactory::stepBackgroundScan()
 	if (m_backgroundRemaining.isEmpty())
 	{
 		endBackgroundScan(false);
-		return;
 	}
+}
+
+
+//! The run's next turn after @a paceMs, through the TaskCenter (a QObject
+//! that outlives the factory) so no timer of its own is needed.
+void PluginFactory::scheduleBackgroundScanStep()
+{
 	QTimer::singleShot(m_backgroundPaceMs, &TaskCenter::instance(),
 		[this] { stepBackgroundScan(); });
 }
@@ -259,6 +322,8 @@ void PluginFactory::discardBackgroundStaging()
 	m_backgroundByExt.clear();
 	m_backgroundErrors.clear();
 	m_backgroundRemaining.clear();
+	m_backgroundPreloadRemaining.clear();
+	m_backgroundPrepared = false;
 	m_backgroundStore = std::make_unique<CachedDescriptorStore>();
 }
 

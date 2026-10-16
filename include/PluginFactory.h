@@ -124,12 +124,16 @@ public:
 	QString scanReport() const;
 
 	// --- background rescan (Q050-090) ------------------------------------
-	// A rescan that does not block the window: startBackgroundScan() snapshots
-	// the candidate files and then scans ONE file per event-loop turn, so the
-	// interface - and plugin.list, which keeps serving the PREVIOUS catalogue
-	// until the run commits - stays usable. plugin.scan_status reads the
-	// progress, plugin.scan_cancel stops the run and keeps the previous
-	// catalogue and cache untouched. Everything here is main-thread confined:
+	// A rescan that does not block the window: startBackgroundScan() marks the
+	// run active, shows it in the task area and returns BEFORE touching a
+	// directory or a library, and the planning (candidate files, quarantine,
+	// the per-file plan) plus the dependency pre-load then run as scheduled
+	// cancellable chunks - one event-loop turn each, one library load per
+	// pre-load turn, ONE file per scan turn. The interface - and plugin.list,
+	// which keeps serving the PREVIOUS catalogue until the run commits - stays
+	// usable throughout, including while the libraries load. plugin.scan_status
+	// reads the progress, plugin.scan_cancel stops the run and keeps the
+	// previous catalogue and cache. Everything here is main-thread confined:
 	// control handlers run on the UI thread (ControlRegistry::runOnUiThread)
 	// and the chunks are QTimer turns on the same thread, so no member here
 	// needs a lock. Nothing here touches the audio thread.
@@ -165,10 +169,16 @@ public:
 	bool backgroundScanActive() const { return m_background.active; }
 	BackgroundScanStatus backgroundScanStatus() const { return m_background; }
 
-	//! Begin a background run over the current candidate files. @a paceMs is
-	//! the delay between files (0 = the next event-loop turn): the pacing a
-	//! progress display - and a cancel test - observes. False and *error set
-	//! when a run is already active.
+	//! Begin a background run over the current candidate files. Marks the run
+	//! active, shows it in the task area and returns: the planning (candidate
+	//! files, the per-file plan) and every library load run as scheduled
+	//! cancellable chunks AFTER this returns, so the task, the active status
+	//! and plugin.scan_cancel exist before the first potentially slow load.
+	//! @a paceMs is the delay between turns (0 = the next event-loop turn):
+	//! the pacing a progress display - and a cancel test - observes. The
+	//! scan_start reply carries total_files 0: the count is planned on the
+	//! run's first turn and read through plugin.scan_status. False and *error
+	//! set when a run is already active.
 	bool startBackgroundScan(int paceMs, QString* error);
 	//! Ask the active run to stop at its next file boundary; the previous
 	//! catalogue and cache are kept. False and *error set when no run is active.
@@ -195,8 +205,17 @@ private:
 	PluginScanCache m_scanCache;
 	ScanStats m_scanStats;
 
-	//! The active background run (see startBackgroundScan): main-thread only.
+	//! The active run's state (see startBackgroundScan): main-thread only.
 	BackgroundScanStatus m_background;
+	//! Whether the active run has planned yet (see prepareBackgroundScan):
+	//! scan_start returns before any directory or library work, so the task
+	//! and the active status exist before the first potentially slow load.
+	bool m_backgroundPrepared = false;
+	//! Files the active run still has to pre-load, in scan order, one library
+	//! per turn (see preloadPluginLibraries): the zynaddsubfx dependency
+	//! lands before any resolve needs it, and a cancel between two loads
+	//! stops the run before the next one.
+	QList<QFileInfo> m_backgroundPreloadRemaining;
 	//! Files the active run still has to look at, in scan order.
 	QList<QFileInfo> m_backgroundRemaining;
 	//! What the active run has built so far; committed to m_pluginInfos /
@@ -216,6 +235,21 @@ private:
 	//! queue is empty. Main thread only; re-scheduled through the TaskCenter
 	//! (a QObject that outlives the factory) so no timer of its own is needed.
 	void stepBackgroundScan();
+	//! The run's first turn: list the candidates, drop the quarantine list and
+	//! count the per-file plan into the staging stats, queuing the libraries
+	//! to pre-load and the files to scan. No dlopen: every load waits for its
+	//! own turn (see preloadBackgroundLibrary), so this turn stays cheap and
+	//! a cancel requested before it still stops the run with nothing done.
+	void prepareBackgroundScan();
+	//! One library of the active run's dependency pre-load (see
+	//! preloadPluginLibraries): exactly one dlopen, then the next turn.
+	void preloadBackgroundLibrary();
+	//! One file of the active run, decided and scanned exactly as the
+	//! synchronous loop does (see discoverPlugins), into the staging above -
+	//! then the next turn, or the commit when the queue is empty.
+	void scanNextBackgroundFile();
+	//! Schedule the run's next turn after @a paceMs. Main thread only.
+	void scheduleBackgroundScanStep();
 	//! One file of the active run, decided and scanned exactly as the
 	//! synchronous loop does (see discoverPlugins), into the staging above.
 	void scanBackgroundFile(const QFileInfo& file);

@@ -12,11 +12,13 @@ REAL binary (QT_QPA_PLATFORM=offscreen, the shared control_socket_harness):
     author, the VST3/CLAP factory's vendor; empty when the format reports
     none). This is the same string the device picker shows, minus its
     "Not reported" words.
-  * BACKGROUND SCAN: plugin.scan_start begins a run (one file per event-loop
-    turn), plugin.scan_status reports active/progress/per-file outcomes while
-    plugin.list keeps serving the PREVIOUS catalogue, plugin.scan_cancel stops
-    the run and keeps that catalogue, and the run appears in task.list with
-    its progress. A paced run (pace_ms) makes progress observable and a
+  * BACKGROUND SCAN: plugin.scan_start marks a run active, shows it in the
+    task area and returns BEFORE touching a directory or a library - the first
+    turn plans the files, each following turn pre-loads one library or scans
+    one file. plugin.scan_status reports active/progress/per-file outcomes
+    while plugin.list keeps serving the PREVIOUS catalogue, plugin.scan_cancel
+    stops the run and keeps that catalogue, and the run appears in task.list
+    with its progress. A paced run (pace_ms) makes progress observable and a
     cancel deterministic however many plugin files this build has - even zero.
 
 WHAT IT ASSERTS, in numbers:
@@ -25,16 +27,22 @@ WHAT IT ASSERTS, in numbers:
   * plugin.list entries all carry a string `vendor`; the built-in amplifier's
     vendor is "Zene Studio";
   * pace_ms outside 0..1000 (and a non-number) is typed invalid_args;
-  * scan_start answers task_id, total_files and the catalogue_count it keeps
-    serving; a second start while running is typed busy; plugin.rescan while
-    running is typed busy and scans nothing;
-  * DURING the run, plugin.list still answers the exact pre-run catalogue
+  * scan_start answers task_id and the catalogue_count it keeps serving, with
+    total_files 0 (the count is planned on the run's first turn, read through
+    scan_status); a second start while running is typed busy; plugin.rescan
+    while running is typed busy and scans nothing;
+  * the first turn plans the files (polled scan_status shows total_files > 0);
+    DURING the run, plugin.list still answers the exact pre-run catalogue
     (names compared), and scan_status shows active with 0 <= progress <= 1;
-  * scan_cancel answers cancelling=true; polled scan_status reaches outcome
-    "cancelled" (bounded wait), with done_files <= total_files;
+  * after the first file completes, progress is NONZERO while the run is still
+    active (the proof the window watched real work, not a 0 file count);
+  * scan_cancel then answers cancelling=true (cancel AFTER at least one
+    completed file) and polled scan_status reaches outcome "cancelled"
+    (bounded wait), with 1 <= done_files <= total_files;
   * after the cancel, plugin.list is STILL the pre-run catalogue (the proof
-    the window kept working on cached results), and scan_cache_list answers
-    with sorted entries (cache read-back);
+    the window kept working on cached results), scan_cache_list answers with
+    sorted entries (cache read-back), and EVERY completed file's path is in
+    the cache (the run's newly scanned records remain cached);
   * a follow-up unpaced run reaches outcome "done" with progress 1.0,
     len(files) == total_files and every file status in the run vocabulary;
   * task.list holds plugin_scan rows (the cancelled and the done run);
@@ -118,6 +126,20 @@ def wait_until(session, wanted, problems, what):
     return seen or {}
 
 
+def wait_while(session, predicate, problems, what):
+    """Poll scan_status until `predicate(status)` holds, or record a failure."""
+    deadline = time.time() + POLL_BOUND
+    seen = None
+    while time.time() < deadline:
+        seen = session.result("plugin.scan_status")
+        if predicate(seen):
+            return seen
+        time.sleep(0.05)
+    problems.add("timed out waiting for the scan status to %s (last saw %r)"
+                 % (what, seen))
+    return seen or {}
+
+
 # ---------------------------------------------------------------------------
 # the checks
 # ---------------------------------------------------------------------------
@@ -159,12 +181,17 @@ def check_pace_bounds(session, problems):
 
 
 def check_start_and_busy(session, problems, catalogue_count):
-    """The run starts, and neither a second run nor a sync rescan may disturb it."""
+    """The run starts active before any file work, and neither a second run
+    nor a sync rescan may disturb it."""
     started = session.result("plugin.scan_start", {"pace_ms": 150})
     problems.require(isinstance(started.get("task_id"), int) and started.get("task_id") >= 0,
                      "scan_start must answer a task id: %r" % (started,))
-    problems.require(started.get("total_files", -1) >= 0,
-                     "scan_start must answer total_files: %r" % (started,))
+    # The count is planned on the run's first turn (scan_start returns before
+    # any directory or library work), so the reply carries 0 and the status
+    # carries the planned count.
+    problems.require(started.get("total_files") == 0,
+                     "scan_start must answer total_files 0 before the first turn plans: %r"
+                     % (started,))
     problems.require(started.get("catalogue_count") == catalogue_count,
                      "the run must keep serving the pre-run catalogue (%r), not %r"
                      % (catalogue_count, started.get("catalogue_count")))
@@ -174,12 +201,26 @@ def check_start_and_busy(session, problems, catalogue_count):
     rescan = session.typed_error("plugin.rescan")
     problems.require(rescan.get("kind") == "busy",
                      "plugin.rescan while a background run is active is busy: %r" % (rescan,))
+    # The first turn plans the files: the status names a positive count while
+    # the run is still on (a build with no plugin files plans 0 and ends done).
+    planned = wait_while(session,
+                         lambda status: status.get("total_files", 0) > 0
+                         or status.get("outcome") != "running",
+                         problems, "plan the files")
+    problems.require(planned.get("active") is True or planned.get("outcome") == "done",
+                     "after planning the run must still be active (or done with no files): %r"
+                     % (planned,))
     return started
 
 
 def check_cached_catalogue_during_run(session, problems, names):
-    """While the run is on, plugin.list still serves the cached catalogue."""
+    """While the run is on, plugin.list still serves the cached catalogue,
+    and after the first file completes the progress is nonzero."""
     status = session.result("plugin.scan_status")
+    if status.get("outcome") == "done":
+        # A build with no scannable files ends on its planning turn; the done
+        # run below still proves the commit, and there is nothing to cancel.
+        return status
     problems.require(status.get("active") is True,
                      "the run must be active right after scan_start: %r" % (status,))
     progress = status.get("progress", -1)
@@ -189,16 +230,34 @@ def check_cached_catalogue_during_run(session, problems, names):
                      "plugin.list must keep serving the pre-run catalogue during the run")
     problems.require(status.get("catalogue_count") == len(names),
                      "scan_status catalogue_count must be the served catalogue: %r" % (status,))
+    # The window watched real work: a completed file with progress still
+    # strictly between 0 and 1 while the run is on.
+    status = wait_while(session,
+                        lambda seen: seen.get("done_files", 0) >= 1
+                        or seen.get("outcome") != "running",
+                        problems, "complete its first file")
+    if status.get("outcome") == "running":
+        problems.require(status.get("done_files", 0) >= 1,
+                         "a file must have completed before the cancel: %r" % (status,))
+        problems.require(status.get("progress", 0) > 0,
+                         "progress must be nonzero after a completed file: %r" % (status,))
+        problems.require(device_names(session.result("plugin.list")) == names,
+                         "plugin.list must STILL serve the pre-run catalogue after a file: %r"
+                         % (device_names(session.result("plugin.list")),))
+    return status
 
 
-def check_cancel(session, problems, names):
-    """Cancelling stops the run and keeps the cached catalogue and cache."""
+def check_cancel(session, problems, names, pre_cache_paths, pre_cache_count):
+    """Cancelling stops the run after real work and keeps the cached catalogue
+    and the newly scanned records."""
     cancelled = session.result("plugin.scan_cancel")
     problems.require(cancelled.get("cancelling") is True,
                      "scan_cancel must answer cancelling=true: %r" % (cancelled,))
     status = wait_until(session, ("cancelled",), problems, "cancel")
     problems.require(status.get("active") is False,
                      "after the cancel the run must be inactive: %r" % (status,))
+    problems.require(status.get("done_files", 0) >= 1,
+                     "the cancel must land after at least one completed file: %r" % (status,))
     problems.require(status.get("done_files", -1) <= status.get("total_files", -2),
                      "done_files cannot pass total_files: %r" % (status,))
     problems.require(device_names(session.result("plugin.list")) == names,
@@ -210,10 +269,25 @@ def check_cancel(session, problems, names):
     paths = [entry.get("path") for entry in entries]
     problems.require(paths == sorted(paths),
                      "the cache entries must stay in path order: %r" % (paths[:5],))
+    cache_paths = set(paths)
+    # Every completed file stored its record live as it was taken (scanned,
+    # served, not-a-plugin or load-failed), so the cancelled run's
+    # measurements remain in the cache for the next run to serve.
+    files = status.get("files") or []
+    problems.require(len(files) >= 1,
+                     "the cancelled run must report its completed files: %r" % (status,))
+    missing = [entry.get("path") for entry in files if entry.get("path") not in cache_paths]
+    problems.require(not missing,
+                     "every completed file must stay cached after the cancel: missing %r" % (missing[:3],))
+    problems.require(listing.get("count", -1) >= pre_cache_count,
+                     "the cancel must not lose cache records (%r before, %r after)"
+                     % (pre_cache_count, listing.get("count")))
+    problems.require(pre_cache_paths <= cache_paths,
+                     "the cancel must keep the pre-run cache records")
     return status
 
 
-def check_done_run(session, problems):
+def check_done_run(session, problems, expect_cancelled):
     """An unpaced run finishes, reports every file, and lands in the task list."""
     session.result("plugin.scan_start")
     status = wait_until(session, ("done",), problems, "finish")
@@ -230,8 +304,11 @@ def check_done_run(session, problems):
     tasks = session.result("task.list").get("tasks") or []
     scans = [task for task in tasks if task.get("kind") == "plugin_scan"]
     states = sorted(task.get("state") for task in scans)
-    problems.require("cancelled" in states and "done" in states,
-                     "task.list must hold the cancelled and the done run: %r" % (states,))
+    problems.require("done" in states,
+                     "task.list must hold the done run: %r" % (states,))
+    if expect_cancelled:
+        problems.require("cancelled" in states,
+                         "task.list must hold the cancelled and the done run: %r" % (states,))
     ended = session.typed_error("plugin.scan_cancel")
     problems.require(ended.get("kind") == "refused",
                      "scan_cancel after the run ended is refused: %r" % (ended,))
@@ -292,11 +369,19 @@ def main(argv):
             check_never_run(session, problems)
             catalogue = check_vendor(session, problems)
             names = device_names(catalogue)
+            pre_cache = session.result("plugin.scan_cache_list")
+            pre_cache_paths = set(entry.get("path") for entry in pre_cache.get("entries") or [])
+            pre_cache_count = pre_cache.get("count", 0)
             check_pace_bounds(session, problems)
             check_start_and_busy(session, problems, catalogue.get("total", len(names)))
-            check_cached_catalogue_during_run(session, problems, names)
-            check_cancel(session, problems, names)
-            check_done_run(session, problems)
+            planned = check_cached_catalogue_during_run(session, problems, names)
+            # A build with no scannable files ends on its planning turn, before
+            # any cancel: the done run below still proves the commit.
+            cancelled = False
+            if planned.get("outcome") == "running":
+                check_cancel(session, problems, names, pre_cache_paths, pre_cache_count)
+                cancelled = True
+            check_done_run(session, problems, cancelled)
             check_transactions(session, problems)
             check_quit(session, instance, problems)
         finally:
