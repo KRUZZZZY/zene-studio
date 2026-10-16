@@ -170,7 +170,7 @@ CrossfadeEditorDialog::CrossfadeEditorDialog(SampleClip* out, SampleClip* in, QW
 	const auto watchClip = [this](SampleClip* clip) {
 		connect(clip, &Clip::positionChanged, this, [this] { reload(); });
 		connect(clip, &Clip::lengthChanged, this, [this] { reload(); });
-		connect(clip, &Model::dataChanged, this, [this] { reload(); });
+		connect(clip, &Clip::clipEditsChanged, this, [this] { reload(); });
 	};
 	watchClip(out);
 	watchClip(in);

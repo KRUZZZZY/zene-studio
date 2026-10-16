@@ -196,6 +196,20 @@ private slots:
 		QVERIFY(curves->accessibleDescription().contains(QStringLiteral("over 1 ticks")));
 	}
 
+	void unrelatedClipChangesPreservePendingControls()
+	{
+		CrossfadeEditorDialog dialog(m_first, m_second);
+		const QString originalName = m_first->name();
+		const auto restoreName = qScopeGuard([&] { m_first->setName(originalName); });
+		const CrossfadeSide pending{12, FadeShape::Exponential};
+		dialog.setOutSide(pending);
+
+		m_first->setName(QStringLiteral("Crossfade editor test rename"));
+
+		QCOMPARE(dialog.outSide().ticks, pending.ticks);
+		QVERIFY(dialog.outSide().shape == pending.shape);
+	}
+
 	void applyingAfterAnExternalFadeEditKeepsThatEdit()
 	{
 		CrossfadeEditorDialog dialog(m_first, m_second);
@@ -209,6 +223,8 @@ private slots:
 		external.fadeOutTicks = 18;
 		external.fadeOutShape = FadeShape::Exponential;
 		m_first->setClipEdits(external);
+		QCOMPARE(dialog.outSide().ticks, 18);
+		QVERIFY(dialog.outSide().shape == FadeShape::Exponential);
 
 		QVERIFY(dialog.apply());
 		QCOMPARE(m_first->clipEdits().fadeOutTicks, 18);

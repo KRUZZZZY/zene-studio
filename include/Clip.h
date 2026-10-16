@@ -315,6 +315,7 @@ signals:
 	void positionChanged();
 	void destroyedClip();
 	void colorChanged();
+	void clipEditsChanged();
 
 protected:
 	Clip(const Clip& other);
