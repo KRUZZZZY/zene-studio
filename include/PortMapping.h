@@ -31,6 +31,7 @@
 #include <QHostAddress>
 #include <QJsonObject>
 #include <QList>
+#include <QMetaType>
 #include <QObject>
 #include <QString>
 #include <QUrl>
@@ -217,5 +218,8 @@ private:
 };
 
 } // namespace lmms::portmap
+
+//! MappingResult travels through QSignalSpy and QVariant in the port-mapping tests.
+Q_DECLARE_METATYPE(lmms::portmap::MappingResult)
 
 #endif // LMMS_PORT_MAPPING_H

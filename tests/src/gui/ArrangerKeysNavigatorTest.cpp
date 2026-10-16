@@ -314,15 +314,15 @@ private slots:
 		scrollTo(0);
 		const int view = visibleNow();
 		const QPointF at(nav->width() / 2.0, 10.0);
-		QWheelEvent in(at, nav->mapToGlobal(at), QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+		QWheelEvent in(at, nav->mapToGlobal(at.toPoint()), QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
 		QApplication::sendEvent(nav, &in);
 		QVERIFY(in.isAccepted());
 		QVERIFY2(visibleNow() < view, "the wheel up did not zoom in");
-		QWheelEvent sideways(at, nav->mapToGlobal(at), QPoint(), QPoint(240, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+		QWheelEvent sideways(at, nav->mapToGlobal(at.toPoint()), QPoint(), QPoint(240, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
 		sideways.setAccepted(true);
 		QApplication::sendEvent(nav, &sideways);
 		QVERIFY(!sideways.isAccepted());
-		QWheelEvent none(at, nav->mapToGlobal(at), QPoint(), QPoint(0, 0), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+		QWheelEvent none(at, nav->mapToGlobal(at.toPoint()), QPoint(), QPoint(0, 0), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
 		none.setAccepted(true);
 		QApplication::sendEvent(nav, &none);
 		QVERIFY(!none.isAccepted());

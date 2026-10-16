@@ -50,6 +50,7 @@
 #include "BrowserTestSupport.h"
 #include "ControlRegistry.h"
 #include "ControlTrackCreation.h"
+#include "DeprecationHelper.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "ProjectMarkers.h"
@@ -63,7 +64,6 @@
 #define aafLibraryVersion aafLibraryVersionForWarningTest
 #define readAaf readAafForWarningTest
 #include "../../../src/core/AafImportRead.cpp"
-#include "DeprecationHelper.h"
 #undef readAaf
 #undef aafLibraryVersion
 #undef aafImportAvailable
