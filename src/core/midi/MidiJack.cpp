@@ -146,7 +146,7 @@ MidiJack::~MidiJack()
 	}
 	if( isRunning() )
 	{
-		m_quit = true;
+		m_quit.store(true, std::memory_order_relaxed);
 		wait( 1000 );
 		terminate();
 	}
@@ -265,7 +265,7 @@ void MidiJack::JackMidiWrite(jack_nframes_t nframes)
 
 void MidiJack::run()
 {
-	while( m_quit == false )
+	while( !m_quit.load(std::memory_order_relaxed) )
 	{
 		// we sleep the thread to keep it alive
 		// midi processing is handled by jack server callbacks

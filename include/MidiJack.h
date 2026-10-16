@@ -116,7 +116,7 @@ private:
 
 	void getPortInfo( const QString& sPortName, int& nClient, int& nPort );
 
-	volatile bool m_quit;
+	std::atomic<bool> m_quit;
 
 };
 

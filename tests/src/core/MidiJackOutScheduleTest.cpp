@@ -32,9 +32,30 @@
 
 #include <array>
 #include <cstdint>
+#include <type_traits>
 
+#include "lmmsconfig.h"
+#ifdef LMMS_HAVE_JACK
+#ifndef LMMS_HAVE_WEAKJACK
+#include <jack/jack.h>
+#include <jack/midiport.h>
+#else
+#include <weak_libjack.h>
+#endif
+
+#include <QThread>
+
+#include <atomic>
+
+#include "MidiClient.h"
 #include "MidiJackOutSchedule.h"
 #include "MpscQueue.h"
+
+// Keep the JACK and MIDI dependencies out of the private-access shim below.
+#define private public
+#include "MidiJack.h"
+#undef private
+#endif
 
 using namespace lmms;
 using midijack::OutMessage;
@@ -54,6 +75,16 @@ class MidiJackOutScheduleTest : public QObject
 	Q_OBJECT
 
 private slots:
+	//! The shutdown signal shared between the destructor and worker loop must be atomic.
+	void quitFlagIsAtomic()
+	{
+#ifdef LMMS_HAVE_JACK
+		QVERIFY((std::is_same_v<decltype(MidiJack::m_quit), std::atomic<bool>>));
+#else
+		QSKIP("JACK support is disabled");
+#endif
+	}
+
 	//! Queued out of time order (two senders), drained in time order; equal frames keep their order.
 	void messagesAreOrderedByFrameStably()
 	{
