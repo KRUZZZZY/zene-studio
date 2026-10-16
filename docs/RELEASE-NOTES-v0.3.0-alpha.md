@@ -998,8 +998,12 @@ takes lanes reapplied after their train-3 reverts) adds three `true_inverse` row
 `comp.play_all_takes` and `comp.take_select` - measured off the tree with `tools/dawproject-proof.sh` part 2:
 `rows=837 true_inverse=417 snapshot=42 irreversible=22 not_mutating=356` (`DECLARED rows=837 entries=837 duplicates=0`).
 
+**Q050-016** (MPE expression event streams) adds two `note.expression_stream_*` rows - one
+`true_inverse` (`note.expression_stream_set`, a MidiClip checkpoint) and one `not_mutating`
+(`note.expression_stream_get`) - so the figure below moved by two:
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=837 true_inverse=417 snapshot=42 irreversible=22 not_mutating=356
+     measured: rows=839 true_inverse=418 snapshot=42 irreversible=22 not_mutating=357
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

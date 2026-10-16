@@ -187,20 +187,34 @@ void NotePlayHandle::sendMpeExpressionMidi( const TimePos& time, f_cnt_t offset 
 	{
 		// Nothing was captured on this note: the instrument is left exactly as
 		// it was before this feature existed (no event, and no reset of
-		// whatever the instrument's own channel state already is).
+		// whatever the instrument's own channel state already is). A stream is
+		// sent by scheduleMpeExpressionStream(), not here.
 		return;
 	}
 
 	// The note's own channel is the channel its note-on took: for a note
 	// captured from an MPE controller that is the note's member channel, so
 	// the instrument can tell this note's expression from any other note's.
-	m_instrumentTrack->processOutEvent(
-		MidiEvent( MidiChannelPressure, midiChannel(), mpePressure() ), time, offset );
+	//
+	// Q050-016: an axis the note carries a stream for is scheduled by
+	// scheduleMpeExpressionStream() at each point's own offset, so this
+	// scalar send skips it to avoid sending the snapshot first.
+	const bool streamPressure = hasMpeStream() && mpeStream().hasPressure();
+	const bool streamTimbre = hasMpeStream() && mpeStream().hasTimbre();
+
+	if( !streamPressure )
+	{
+		m_instrumentTrack->processOutEvent(
+			MidiEvent( MidiChannelPressure, midiChannel(), mpePressure() ), time, offset );
+	}
 
 	// CC74 is MPE's timbre ("Y") axis, the same controller number the capture
 	// path consumes (MpeTimbreController, include/MpeExpression.h).
-	m_instrumentTrack->processOutEvent(
-		MidiEvent( MidiControlChange, midiChannel(), MpeTimbreController, mpeTimbre() ), time, offset );
+	if( !streamTimbre )
+	{
+		m_instrumentTrack->processOutEvent(
+			MidiEvent( MidiControlChange, midiChannel(), MpeTimbreController, mpeTimbre() ), time, offset );
+	}
 }
 
 
@@ -287,6 +301,11 @@ void NotePlayHandle::play( std::span<SampleFrame> buffer )
 	f_cnt_t framesThisPeriod = m_totalFramesPlayed == 0
 		? Engine::audioEngine()->framesPerPeriod() - offset()
 		: Engine::audioEngine()->framesPerPeriod();
+
+	// Q050-016: the note's MPE expression event stream, if it carries one, at
+	// each point's own offset inside this period. A note with no stream does
+	// nothing here (the scalar path above is unchanged).
+	scheduleMpeExpressionStream( framesThisPeriod );
 
 	// check if we start release during this period
 	if( m_released == false &&
@@ -646,14 +665,16 @@ void NotePlayHandle::updateFrequency()
 		m_unpitchedFrequency = DefaultBaseFreq * std::exp2(pitch);
 	}
 
-	// MPE per-note pitch (task #601). The note's own bend offset, applied as a
+	// MPE per-note pitch (task #601) and its event stream (Q050-016). The
+	// note's own bend offset at the current play position, applied as a
 	// frequency ratio like the per-note detuning above, but *not* folded into
 	// m_unpitchedFrequency - that one is documented as pitch-wheel-free.
 	// Nothing runs when the note carries no expression (every note of every
 	// project saved before this feature), so such a render stays bit-identical.
-	if (mpePitchCents() != 0)
+	const int bendCents = effectiveMpePitchCents();
+	if (bendCents != 0)
 	{
-		m_frequency *= mpePitchRatio(mpePitchCents());
+		m_frequency *= mpePitchRatio(bendCents);
 	}
 
 	for (auto it : m_subNotes)

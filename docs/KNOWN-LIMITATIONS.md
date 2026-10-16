@@ -651,8 +651,12 @@ that is this page's fault — report it and it gets added.
   all. Warp marker editing is drivable through the socket, not from the interface.
 - **MPE: all three axes reach playback.** Per-note expression is captured from MPE input, stored on the note
   and editable; **pitch, pressure and timbre are all applied on playback** — pitch as a frequency ratio,
-  pressure and timbre as MIDI events on the note's own member channel (task #649). There is still no per-note
-  expression editor.
+  pressure   and timbre as MIDI events on the note's own member channel (task #649). Since Q050-016 each axis can also
+  carry a **time-varying event stream** (ordered `(tick, value)` points per note, saved as the optional
+  `mpepitchpts` / `mpepressurepts` / `mpetimbrepts` attributes and played at each point's own offset through
+  `note.expression_stream_set` / `note.expression_stream_get`); there is still no per-note expression
+  *editor* — drawing and dragging the streams in a curve view is the dependent unit Q050-137, and the streams
+  are drivable through the socket only.
   Verified in the tree: `docs/MPE.md` §0 is the implementing lane's verdict — expression is captured from
   MPE-style input, stored backwards-compatibly on the note as `mpepitch` / `mpepressure` / `mpetimbre`, readable
   and editable through a headless API, with all three axes reaching the instrument through the playback path

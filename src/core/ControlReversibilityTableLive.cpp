@@ -398,6 +398,18 @@ const ReversibilityRow kRows[] = {
 		"the note list, attributes included - a cleared expression comes back "
 		"with its presence flag and all three axes)",
 		""),
+	// Q050-016: the time-varying half of the same per-note fields. The stream
+	// lives in the Note's own serialized state (the optional mpepitchpts /
+	// mpepressurepts / mpetimbrepts attributes), so the same MidiClip
+	// checkpoint that reverses note.expression_set reverses it.
+	R("note.expression_stream_set", RC::TrueInverse, true,
+		"the expression stream lives in the Note's own serialized state (three "
+		"optional point-list attributes on the note element), and the MidiClip "
+		"that owns the note list is a JournallingObject",
+		"ProjectJournal (MidiClip checkpoint: MidiClip::loadSettings clears and "
+		"re-loads the clip's note list, point lists included, which is the "
+		"mechanism note.expression_set reverses with)",
+		""),
 	// ---- freeze / bounce-in-place ----
 	// All three freeze verbs write ONE thing: the take, as four ATTRIBUTES on
 	// the track's OWN element - frozenAudio / frozenStart / frozenEnd /

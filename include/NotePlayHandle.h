@@ -326,7 +326,40 @@ public:
 		return std::exp2( pitchCents / ( 100.f * 12.f ) );
 	}
 
+	/*! Q050-016: the note's MPE pitch bend at the current play position - the
+	 *  stream's value at this tick when the note carries a pitch stream, else
+	 *  the scalar snapshot (#601). updateFrequency() reads this, so streamed
+	 *  pitch curves retune a built-in synthesiser from period to period while
+	 *  the pitch bend events the stream schedules reach a MIDI consumer
+	 *  sample-accurately. */
+	int effectiveMpePitchCents() const;
+
+	/*! Q050-016: send the expression events whose point falls in this period,
+	 *  each at its own frame offset inside the period, so the stream's pitch,
+	 *  pressure and timbre reach the instrument where the points name them.
+	 *  A note with no stream does nothing at all (the scalar path is
+	 *  unchanged). Realtime contract: reads only the note's own vectors, no
+	 *  allocation and no lock, the same path the note-on events use. */
+	void scheduleMpeExpressionStream( f_cnt_t framesThisPeriod );
+
 private:
+	//! Q050-016: send one streamed axis value to the instrument (pitch bend,
+	//! channel pressure or CC74) at \a offset frames into the period.
+	void sendMpeExpressionAxisEvent( int axis, int value, f_cnt_t offset );
+
+	//! Q050-016: the tick, from the note's own start, a frame within it sits at.
+	tick_t mpeStreamTick( f_cnt_t frameWithinNote ) const;
+
+	//! Q050-016: the period offset of a stream point's frame, or kNoStreamOffset
+	//! when it falls outside the period. Extracted so the axis scheduler stays
+	//! under the repo's complexity target.
+	f_cnt_t mpeStreamPointOffset( tick_t tick, f_cnt_t startFrame, f_cnt_t framesThisPeriod,
+		f_cnt_t periodStart, float framesPerTick ) const;
+
+	//! Q050-016: schedule the points of one axis that fall in this period.
+	void scheduleMpeStreamAxis( const std::vector<MpeExpressionPoint>* points, int axis, int base,
+		bool firstPeriod, f_cnt_t startFrame, tick_t startTick, tick_t endTick,
+		f_cnt_t framesThisPeriod, f_cnt_t periodStart, float framesPerTick );
 	class BaseDetuning
 	{
 	public:

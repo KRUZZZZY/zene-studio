@@ -27,6 +27,9 @@
 
 #include <array>
 #include <atomic>
+#include <vector>
+
+#include "LmmsTypes.h"
 
 namespace lmms
 {
@@ -67,6 +70,74 @@ struct MpeNoteExpression
 	bool isNeutral() const;
 	bool operator==( const MpeNoteExpression& other ) const;
 	bool operator!=( const MpeNoteExpression& other ) const { return !( *this == other ); }
+};
+
+/*! One point of a per-note MPE expression stream (Q050-016): the axis value
+ *  effective from \a tick (a tick offset from the note's own start) until the
+ *  next point. Pitch is a bend offset in 1/100 semitone, pressure and timbre
+ *  are 0..127. */
+struct MpeExpressionPoint
+{
+	tick_t tick = 0;
+	int value = 0;
+
+	bool operator==( const MpeExpressionPoint& other ) const
+	{
+		return tick == other.tick && value == other.value;
+	}
+	bool operator!=( const MpeExpressionPoint& other ) const { return !( *this == other ); }
+};
+
+/*! A note's time-varying MPE expression (Q050-016): the three MPE axes as
+ *  ordered point streams, instead of the single scalar snapshot
+ *  MpeNoteExpression carries.
+ *
+ *  Points are sorted by tick, and each holds until the next one. An axis with
+ *  no points is not in the stream at all - that is the default for every note
+ *  saved before this feature, and such a note serializes exactly as it did
+ *  before. A note that carries a stream is played through the scheduled path
+ *  (NotePlayHandle), which sends pitch/pressure/timbre at each point's own
+ *  offset; a note without one keeps the scalar playback path unchanged.
+ *
+ *  Realtime contract: the playback path only READS these vectors (no
+ *  allocation, no lock); writes go through the setters on the UI/control
+ *  thread.
+ */
+class MpeExpressionStream
+{
+public:
+	//! Match notes.expression_set's own cap on the per-curve point count
+	//! (ControlCommandsNoteCurves.cpp), so both editors bound the same way.
+	static constexpr int MaxPoints = 256;
+
+	bool empty() const { return m_pitch.empty() && m_pressure.empty() && m_timbre.empty(); }
+	bool hasPitch() const { return !m_pitch.empty(); }
+	bool hasPressure() const { return !m_pressure.empty(); }
+	bool hasTimbre() const { return !m_timbre.empty(); }
+
+	const std::vector<MpeExpressionPoint>& pitch() const { return m_pitch; }
+	const std::vector<MpeExpressionPoint>& pressure() const { return m_pressure; }
+	const std::vector<MpeExpressionPoint>& timbre() const { return m_timbre; }
+
+	//! Replace one axis. Points are clamped to the axis's range and sorted by
+	//! tick (a stable sort: two points sharing a tick keep their given order).
+	void setPitch( std::vector<MpeExpressionPoint> points );
+	void setPressure( std::vector<MpeExpressionPoint> points );
+	void setTimbre( std::vector<MpeExpressionPoint> points );
+	void clear();
+
+	/*! The value effective at \a tick: the last point at or before it, or
+	 *  \a fallback when no point is that early (the scalar snapshot, so a
+	 *  stream composes with a capture instead of erasing it). */
+	static int valueAt( const std::vector<MpeExpressionPoint>& points, tick_t tick, int fallback );
+	int pitchCentsAt( tick_t tick, int fallback ) const { return valueAt( m_pitch, tick, fallback ); }
+	int pressureAt( tick_t tick, int fallback ) const { return valueAt( m_pressure, tick, fallback ); }
+	int timbreAt( tick_t tick, int fallback ) const { return valueAt( m_timbre, tick, fallback ); }
+
+private:
+	std::vector<MpeExpressionPoint> m_pitch;
+	std::vector<MpeExpressionPoint> m_pressure;
+	std::vector<MpeExpressionPoint> m_timbre;
 };
 
 /*! Per-channel MPE state for one MIDI input stream (task #601).
@@ -136,6 +207,12 @@ public:
 
 	//! Raw 14-bit bend (0..16383, 8192 = centre) as a note's pitch offset.
 	static int pitchCentsForBend( int bend14, int bendRangeSemitones );
+	//! The inverse of pitchCentsForBend(): the 14-bit bend that carries
+	//! \a cents for a member channel with \a bendRangeSemitones. Q050-016 uses
+	//! it to turn a streamed pitch point into the MIDI bend event at the
+	//! point's offset, so a hosted instrument hears the same bend the built-in
+	//! frequency path applies.
+	static int bendForPitchCents( int cents, int bendRangeSemitones );
 
 private:
 	struct ChannelState

@@ -34,6 +34,9 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <cmath>
+#include <vector>
+
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -42,9 +45,11 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
+#include "Engine.h"
 #include "MidiClip.h"
 #include "MpeExpression.h"
 #include "Note.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -132,6 +137,221 @@ QJsonObject noteExpressionResultSchema()
 		{QStringLiteral("expression_count"), integerProperty()},
 		{QStringLiteral("max_pitch_cents"), integerProperty()},
 	});
+}
+
+// ---------------------------------------------------------------------------
+// Q050-016: the per-note expression EVENT STREAMS - pitch, pressure and timbre
+// as ordered (tick, value) points, the time-varying half of #601's scalar
+// snapshot. The two commands read and write the three optional attributes
+// Note stores (mpepitchpts/mpepressurepts/mpetimbrepts), so the data is the
+// same the playback path schedules and the project file round-trips.
+// ---------------------------------------------------------------------------
+
+QJsonArray streamPointsJson(const std::vector<MpeExpressionPoint>& points)
+{
+	QJsonArray out;
+	for (const MpeExpressionPoint& point : points)
+	{
+		out.append(QJsonObject{{QStringLiteral("tick"), point.tick},
+			{QStringLiteral("value"), point.value}});
+	}
+	return out;
+}
+
+//! The three axes of a note's stream (empty arrays when it carries none) plus
+//! the presence flag, so an empty stream is never mistaken for a neutral one.
+QJsonObject streamJson(const MpeExpressionStream* stream)
+{
+	QJsonObject out;
+	out.insert(QStringLiteral("has_stream"), stream != nullptr);
+	out.insert(QStringLiteral("pitch"),
+		streamPointsJson(stream != nullptr ? stream->pitch() : std::vector<MpeExpressionPoint>{}));
+	out.insert(QStringLiteral("pressure"),
+		streamPointsJson(stream != nullptr ? stream->pressure() : std::vector<MpeExpressionPoint>{}));
+	out.insert(QStringLiteral("timbre"),
+		streamPointsJson(stream != nullptr ? stream->timbre() : std::vector<MpeExpressionPoint>{}));
+	return out;
+}
+
+const MpeExpressionStream* streamOf(const Note* note)
+{
+	return note->hasMpeStream() ? &note->mpeStream() : nullptr;
+}
+
+QJsonObject streamResultSchema()
+{
+	return objectSchema({
+		{QStringLiteral("clip"), stringProperty()},
+		{QStringLiteral("note"), stringProperty()},
+		{QStringLiteral("has_stream"), booleanProperty()},
+		{QStringLiteral("pitch"), arrayProperty()},
+		{QStringLiteral("pressure"), arrayProperty()},
+		{QStringLiteral("timbre"), arrayProperty()},
+		{QStringLiteral("max_pitch_cents"), integerProperty()},
+	});
+}
+
+/*! Read one axis's points. Every point needs a finite tick in 0..MaxSongLength
+ *  from the note's start and a value inside the axis's range (pitch +-4800
+ *  cents, pressure/timbre 0..127); a malformed point is a typed refusal, not a
+ *  point at zero (QJsonValue holds a NaN, and QString/json toInt report a
+ *  failed conversion with 0 - neither may be read as data). */
+//! The axis a replaceStreamAxis() call names.
+enum class StreamAxisKind
+{
+	Pitch,
+	Pressure,
+	Timbre
+};
+
+//! One point, refuted rather than read as zero when its text is malformed.
+bool readStreamPoint(const QJsonObject& point, double low, double high,
+	MpeExpressionPoint* out, ControlResult* error, const QString& axis)
+{
+	const double tick = point.value(QStringLiteral("tick")).toDouble(-1.0);
+	const double value = point.value(QStringLiteral("value")).toDouble(1e9);
+	const bool finite = std::isfinite(tick) && std::isfinite(value);
+	if (!finite || tick < 0.0 || tick > static_cast<double>(MaxSongLength)
+		|| value < low || value > high)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("a %1 point needs tick 0..%2 from the note's start and value %3..%4")
+				.arg(axis).arg(MaxSongLength).arg(low).arg(high));
+		return false;
+	}
+	out->tick = static_cast<tick_t>(std::lround(tick));
+	out->value = static_cast<int>(std::lround(value));
+	return true;
+}
+
+bool readStreamPoints(const QJsonArray& json, bool pitch, std::vector<MpeExpressionPoint>* out,
+	ControlResult* error, const QString& axis)
+{
+	if (json.size() > MpeExpressionStream::MaxPoints)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("at most %1 points per axis (%2 carried %3)")
+				.arg(MpeExpressionStream::MaxPoints).arg(axis).arg(json.size()));
+		return false;
+	}
+	const double low = pitch ? -MpeNoteExpression::MaxPitchCents : 0.0;
+	const double high = pitch ? MpeNoteExpression::MaxPitchCents : 127.0;
+	for (const QJsonValue& value : json)
+	{
+		MpeExpressionPoint point;
+		if (!readStreamPoint(value.toObject(), low, high, &point, error, axis)) { return false; }
+		out->push_back(point);
+	}
+	return true;
+}
+
+//! Replace one axis's points when the call names it, leaving the others alone.
+bool replaceStreamAxis(const QJsonObject& args, const QString& key, StreamAxisKind kind,
+	MpeExpressionStream* stream, ControlResult* error)
+{
+	if (!args.contains(key)) { return true; }
+	std::vector<MpeExpressionPoint> points;
+	if (!readStreamPoints(args.value(key).toArray(), kind == StreamAxisKind::Pitch,
+		&points, error, key))
+	{
+		return false;
+	}
+	switch (kind)
+	{
+		case StreamAxisKind::Pitch: stream->setPitch(std::move(points)); break;
+		case StreamAxisKind::Pressure: stream->setPressure(std::move(points)); break;
+		case StreamAxisKind::Timbre: stream->setTimbre(std::move(points)); break;
+	}
+	return true;
+}
+
+void registerStreamGet(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("note.expression_stream_get");
+	cmd.group = kGroup;
+	cmd.verb = QStringLiteral("expression_stream_get");
+	cmd.description = QStringLiteral("A note's time-varying MPE expression (Q050-016): the three "
+		"axes as ordered [{tick from the note's start, value}] points - pitch in 1/100 semitone "
+		"(+-4800), pressure and timbre 0..127. 'has_stream' tells an empty stream from a note that "
+		"carries none; a point holds until the next one.");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("clip"), stringProperty()},
+		{QStringLiteral("note"), stringProperty()},
+	}, {QStringLiteral("clip"), QStringLiteral("note")});
+	cmd.resultSchema = streamResultSchema();
+	cmd.mutating = false;
+	cmd.handler = [](const QJsonObject& args) {
+		ControlResult error;
+		ExpressionTarget target;
+		if (!resolveExpressionTarget(args, true, &target, &error)) { return error; }
+		QJsonObject result = streamJson(streamOf(target.note));
+		result.insert(QStringLiteral("clip"), target.clipId);
+		result.insert(QStringLiteral("note"), target.noteId);
+		result.insert(QStringLiteral("max_pitch_cents"), MpeNoteExpression::MaxPitchCents);
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
+}
+
+void registerStreamSet(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("note.expression_stream_set");
+	cmd.group = kGroup;
+	cmd.verb = QStringLiteral("expression_stream_set");
+	cmd.description = QStringLiteral("Replace a note's time-varying MPE expression stream "
+		"(Q050-016). Each of 'pitch', 'pressure' and 'timbre' is an optional array of "
+		"[{tick from the note's start, value}] points (pitch +-4800 cents, pressure/timbre "
+		"0..127); an axis the call names replaces that axis's points (an empty array clears "
+		"it), an axis it omits keeps its points. All three empty removes the stream. Points are "
+		"sorted by tick on write. Reversible through the ProjectJournal (a MidiClip checkpoint).");
+	cmd.argsSchema = objectSchema({
+		{QStringLiteral("clip"), stringProperty()},
+		{QStringLiteral("note"), stringProperty()},
+		{QStringLiteral("pitch"), arrayProperty()},
+		{QStringLiteral("pressure"), arrayProperty()},
+		{QStringLiteral("timbre"), arrayProperty()},
+	}, {QStringLiteral("clip"), QStringLiteral("note")});
+	cmd.resultSchema = streamResultSchema();
+	cmd.mutating = true;
+	cmd.handler = [](const QJsonObject& args) {
+		ControlResult error;
+		ExpressionTarget target;
+		if (!resolveExpressionTarget(args, true, &target, &error)) { return error; }
+
+		MpeExpressionStream stream = target.note->hasMpeStream()
+			? target.note->mpeStream() : MpeExpressionStream{};
+		if (!replaceStreamAxis(args, QStringLiteral("pitch"), StreamAxisKind::Pitch, &stream, &error)
+			|| !replaceStreamAxis(args, QStringLiteral("pressure"), StreamAxisKind::Pressure, &stream, &error)
+			|| !replaceStreamAxis(args, QStringLiteral("timbre"), StreamAxisKind::Timbre, &stream, &error))
+		{
+			return error;
+		}
+
+		const QJsonObject before = streamJson(streamOf(target.note));
+		target.clip->addJournalCheckPoint();
+		if (stream.empty()) { target.note->clearMpeStream(); }
+		else { target.note->setMpeStream(stream); }
+		target.clip->dataChanged();
+		if (target.clip->linkId() > 0) { ClipLinks::mirrorContent(target.clip); }
+		Engine::getSong()->setModified();
+
+		QJsonObject result = streamJson(streamOf(target.note));
+		result.insert(QStringLiteral("clip"), target.clipId);
+		result.insert(QStringLiteral("note"), target.noteId);
+		result.insert(QStringLiteral("max_pitch_cents"), MpeNoteExpression::MaxPitchCents);
+		result.insert(QStringLiteral("__transaction"),
+			transactionPayload(before, QStringLiteral("note.expression_stream_set"),
+				QJsonObject{{QStringLiteral("clip"), target.clipId},
+					{QStringLiteral("note"), target.noteId},
+					{QStringLiteral("pitch"), before.value(QStringLiteral("pitch"))},
+					{QStringLiteral("pressure"), before.value(QStringLiteral("pressure"))},
+					{QStringLiteral("timbre"), before.value(QStringLiteral("timbre"))}},
+				true, kMechanism));
+		return ControlResult::success(result);
+	};
+	registry.registerCommand(cmd);
 }
 
 void registerExpressionSet(ControlRegistry& registry)
@@ -300,6 +520,8 @@ void registerNoteExpressionCommands(ControlRegistry& registry)
 	registerExpressionSet(registry);
 	registerExpressionGet(registry);
 	registerExpressionClear(registry);
+	registerStreamSet(registry);
+	registerStreamGet(registry);
 }
 
 } // namespace lmms

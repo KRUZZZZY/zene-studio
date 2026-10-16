@@ -1714,6 +1714,7 @@ src/core/ModulationFormula.cpp
 src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
 src/core/ModulationVoices.cpp
+src/core/MpeExpressionStreamPlayback.cpp
 src/core/MusicalTime.cpp
 src/core/NamespaceRegistry.cpp
 src/core/NoteConditions.cpp

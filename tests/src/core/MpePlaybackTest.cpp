@@ -75,6 +75,7 @@
 #include <span>
 #include <vector>
 
+#include "../plugins/MpeConsumerProbe.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "BufferManager.h"
@@ -286,6 +287,88 @@ private slots:
 
 		m_track->processInEvent( MidiEvent( MidiNoteOff, 1, kKey ) );
 		MpeExpression::setEnabled( false );
+	}
+
+	//! Q050-016 (the acceptance's MIDI-output half): a note carrying an
+	//! expression STREAM reaches the instrument with each axis's change at the
+	//! frame offset the point's tick schedules. The consumer probe records the
+	//! offset each event arrived with, so the assertion is the offset itself,
+	//! not a block the change can be inferred to have happened in.
+	void scheduledExpressionStreamReachesTheInstrumentAtItsOffsets()
+	{
+		auto* probe = dynamic_cast<lmms::testmpe::ConsumerProbe*>( m_track->instrument() );
+		QVERIFY2( probe != nullptr, "the MPE test consumer does not implement the probe" );
+
+		// Several tick offsets must fall inside one period for the scheduled
+		// frame offset to be observable: raise the tempo so frames-per-tick is
+		// small next to the period.
+		Engine::getSong()->tempoModel().setValue( 999 );
+		Engine::updateFramesPerTick();
+		const float framesPerTick = Engine::framesPerTick();
+		QVERIFY( framesPerTick > 0.f );
+		const int ticksPerPeriod = static_cast<int>( m_frames / framesPerTick );
+		QVERIFY2( ticksPerPeriod >= 4,
+			qPrintable( QStringLiteral( "only %1 tick(s) per period - the offsets cannot be told "
+				"apart" ).arg( ticksPerPeriod ) ) );
+
+		const f_cnt_t frames = m_frames * 8;
+		const int pitchTick = 1;
+		const int pressureTick = 2;
+		const int timbreTick = 3;
+
+		// A reference note with no expression in the same block, so the base
+		// level is measured rather than hard-coded.
+		Note plain( TimePos::fromFrames( frames, framesPerTick ), TimePos( 0 ), kKey );
+		NotePlayHandle plainHandle( m_track, 0, frames, plain, nullptr, -1,
+			NotePlayHandle::Origin::MidiClip );
+		const float plainLevel = renderBlock( &plainHandle );
+
+		Note note( TimePos::fromFrames( frames, framesPerTick ), TimePos( 0 ), kKey );
+		MpeExpressionStream& stream = note.mpeStreamForEdit();
+		stream.setPitch( { { static_cast<tick_t>( pitchTick ), 1200 } } );
+		stream.setPressure( { { static_cast<tick_t>( pressureTick ), 64 } } );
+		stream.setTimbre( { { static_cast<tick_t>( timbreTick ), 32 } } );
+		QVERIFY( note.hasMpeStream() );
+
+		NotePlayHandle handle( m_track, 0, frames, note, nullptr, -1,
+			NotePlayHandle::Origin::MidiClip );
+		// One period is enough: every point sits inside it.
+		const float level = renderBlock( &handle );
+
+		const int channel = handle.midiChannel();
+		std::fprintf( stdout, "MPE_EVIDENCE stream offsets channel=%d level=%.6f "
+			"pitch=%d@%llu pressure=%d@%llu timbre=%d@%llu fpt=%.3f\n", channel, level,
+			probe->value( lmms::testmpe::Axis::Pitch, channel ),
+			static_cast<unsigned long long>( probe->lastOffset( lmms::testmpe::Axis::Pitch, channel ) ),
+			probe->value( lmms::testmpe::Axis::Pressure, channel ),
+			static_cast<unsigned long long>( probe->lastOffset( lmms::testmpe::Axis::Pressure, channel ) ),
+			probe->value( lmms::testmpe::Axis::Timbre, channel ),
+			static_cast<unsigned long long>( probe->lastOffset( lmms::testmpe::Axis::Timbre, channel ) ),
+			framesPerTick );
+		std::fflush( stdout );
+
+		QVERIFY2( plainLevel > 0.05f && level > 0.05f, "a note rendered nothing" );
+		QCOMPARE( probe->value( lmms::testmpe::Axis::Pitch, channel ), 1200 );
+		QCOMPARE( probe->value( lmms::testmpe::Axis::Pressure, channel ), 64 );
+		QCOMPARE( probe->value( lmms::testmpe::Axis::Timbre, channel ), 32 );
+		// Each event arrived at the frame its tick names: frame = tick * fpt.
+		QCOMPARE( static_cast<long long>(
+			probe->lastOffset( lmms::testmpe::Axis::Pitch, channel ) ),
+			static_cast<long long>( std::lround( pitchTick * framesPerTick ) ) );
+		QCOMPARE( static_cast<long long>(
+			probe->lastOffset( lmms::testmpe::Axis::Pressure, channel ) ),
+			static_cast<long long>( std::lround( pressureTick * framesPerTick ) ) );
+		QCOMPARE( static_cast<long long>(
+			probe->lastOffset( lmms::testmpe::Axis::Timbre, channel ) ),
+			static_cast<long long>( std::lround( timbreTick * framesPerTick ) ) );
+
+		// ... and the audio carries all three axes, by the ratios they ask for.
+		const float wanted = ( 1.0f + 64.0f / 127.0f ) * ( 1.0f + 32.0f / 127.0f )
+			* ( 1.0f + 1200.0f / 4800.0f );
+		QVERIFY2( std::fabs( level / plainLevel - wanted ) < 0.01f,
+			qPrintable( QStringLiteral( "the streamed block is %1x the plain one; the three "
+				"scheduled axes ask for %2x" ).arg( level / plainLevel, 0, 'f', 4 )
+					.arg( wanted, 0, 'f', 4 ) ) );
 	}
 
 private:

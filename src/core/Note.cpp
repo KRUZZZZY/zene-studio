@@ -24,6 +24,7 @@
 
 
 #include <QDomElement>
+#include <QStringList>
 
 #include <cmath>
 #include <limits>
@@ -101,6 +102,48 @@ void loadUnquantisedTiming( const QDomElement& element, tick_t& pos, tick_t& len
 	length = storedLength;
 }
 
+
+//! Q050-016: one stream axis as the optional attribute text
+//! "tick:value,tick:value,..." in the order the points are stored (sorted by
+//! tick). Empty when the axis carries no points, so the attribute is not
+//! written at all.
+QString streamAttributeText( const std::vector<MpeExpressionPoint>& points )
+{
+	QStringList parts;
+	parts.reserve( static_cast<int>( points.size() ) );
+	for( const MpeExpressionPoint& point : points )
+	{
+		parts << QStringLiteral( "%1:%2" ).arg( point.tick ).arg( point.value );
+	}
+	return parts.join( QLatin1Char( ',' ) );
+}
+
+
+//! The points an optional stream attribute spells. A token the file cannot
+//! spell - no colon, text that is not a number, a point past the count cap -
+//! is skipped rather than read as a point at zero: QString::toInt() reports
+//! failure by yielding 0, so a malformed token would otherwise become a real
+//! point at tick 0. Clamping and ordering are the setter's own job, so this
+//! stays a pure parser.
+std::vector<MpeExpressionPoint> parseStreamAttribute( const QString& text )
+{
+	std::vector<MpeExpressionPoint> points;
+	const QStringList tokens = text.split( QLatin1Char( ',' ), Qt::SkipEmptyParts );
+	for( const QString& token : tokens )
+	{
+		if( points.size() >= static_cast<std::size_t>( MpeExpressionStream::MaxPoints ) ) { break; }
+		const int colon = token.indexOf( QLatin1Char( ':' ) );
+		if( colon <= 0 ) { continue; }
+		bool tickOk = false;
+		bool valueOk = false;
+		const int tick = token.left( colon ).toInt( &tickOk );
+		const int value = token.mid( colon + 1 ).toInt( &valueOk );
+		if( !tickOk || !valueOk ) { continue; }
+		points.push_back( { static_cast<tick_t>( tick ), value } );
+	}
+	return points;
+}
+
 } // namespace
 
 
@@ -160,6 +203,8 @@ Note::Note( const Note & note ) :
 	m_mpePitchCents(note.m_mpePitchCents),
 	m_mpePressure(note.m_mpePressure),
 	m_mpeTimbre(note.m_mpeTimbre),
+	m_mpeStream(note.m_mpeStream != nullptr
+		? std::make_unique<MpeExpressionStream>(*note.m_mpeStream) : nullptr),
 	m_muted(note.m_muted),
 	m_releaseVelocity(note.m_releaseVelocity),
 	m_unquantisedPos(note.m_unquantisedPos),
@@ -194,6 +239,8 @@ Note& Note::operator=(const Note& note)
 	m_unquantisedPos = note.m_unquantisedPos;
 	m_unquantisedLength = note.m_unquantisedLength;
 	m_conditions = note.m_conditions;
+	m_mpeStream = note.m_mpeStream != nullptr
+		? std::make_unique<MpeExpressionStream>(*note.m_mpeStream) : nullptr;
 
 	return *this;
 }
@@ -371,6 +418,31 @@ void Note::clearMpeExpression()
 
 
 
+MpeExpressionStream& Note::mpeStreamForEdit()
+{
+	if( m_mpeStream == nullptr )
+	{
+		m_mpeStream = std::make_unique<MpeExpressionStream>();
+	}
+	return *m_mpeStream;
+}
+
+
+
+
+void Note::setMpeStream( const MpeExpressionStream& stream )
+{
+	if( stream.empty() )
+	{
+		clearMpeStream();
+		return;
+	}
+	m_mpeStream = std::make_unique<MpeExpressionStream>( stream );
+}
+
+
+
+
 TimePos Note::quantized( const TimePos & m, const int qGrid )
 {
 	if( qGrid <= 0 )
@@ -480,6 +552,29 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 		parent.setAttribute( "mpetimbre", m_mpeTimbre );
 	}
 
+	// Q050-016: the per-note expression event streams, three optional
+	// attributes written only when their axis carries points. A note with no
+	// stream - and a whole project without one - serializes exactly as before
+	// this feature existed, and an older build ignores the attributes it does
+	// not know. Attributes, not child elements: Note::loadSettings treats ANY
+	// child of a note element as detuning, so a stream child would make every
+	// expressive note grow a detuning curve on load.
+	if( m_mpeStream != nullptr )
+	{
+		if( !m_mpeStream->pitch().empty() )
+		{
+			parent.setAttribute( "mpepitchpts", streamAttributeText( m_mpeStream->pitch() ) );
+		}
+		if( !m_mpeStream->pressure().empty() )
+		{
+			parent.setAttribute( "mpepressurepts", streamAttributeText( m_mpeStream->pressure() ) );
+		}
+		if( !m_mpeStream->timbre().empty() )
+		{
+			parent.setAttribute( "mpetimbrepts", streamAttributeText( m_mpeStream->timbre() ) );
+		}
+	}
+
 	if( m_detuning && m_length )
 	{
 		m_detuning->saveSettings( doc, parent );
@@ -571,6 +666,34 @@ void Note::loadSettings( const QDomElement & _this )
 		m_mpePitchCents = MpeNoteExpression::clampPitchCents( _this.attribute( "mpepitch" ).toInt() );
 		m_mpePressure = MpeNoteExpression::clamp7Bit( _this.attribute( "mpepressure" ).toInt() );
 		m_mpeTimbre = MpeNoteExpression::clamp7Bit( _this.attribute( "mpetimbre" ).toInt() );
+	}
+
+	// Q050-016: the per-note expression streams, optional like the scalar
+	// attributes above. A file with none leaves the note with no stream (the
+	// default), and each axis's points are clamped and re-sorted by the setter
+	// so a hostile file cannot carry an out-of-range value or unsorted points
+	// into playback.
+	m_mpeStream.reset();
+	if( _this.hasAttribute( "mpepitchpts" ) || _this.hasAttribute( "mpepressurepts" )
+		|| _this.hasAttribute( "mpetimbrepts" ) )
+	{
+		MpeExpressionStream& stream = mpeStreamForEdit();
+		if( _this.hasAttribute( "mpepitchpts" ) )
+		{
+			stream.setPitch( parseStreamAttribute( _this.attribute( "mpepitchpts" ) ) );
+		}
+		if( _this.hasAttribute( "mpepressurepts" ) )
+		{
+			stream.setPressure( parseStreamAttribute( _this.attribute( "mpepressurepts" ) ) );
+		}
+		if( _this.hasAttribute( "mpetimbrepts" ) )
+		{
+			stream.setTimbre( parseStreamAttribute( _this.attribute( "mpetimbrepts" ) ) );
+		}
+		// An attribute that parsed to no points (empty text, or all tokens
+		// malformed) leaves the stream empty; drop the whole object so
+		// hasMpeStream() is false and a re-save writes no attribute.
+		if( m_mpeStream->empty() ) { m_mpeStream.reset(); }
 	}
 
 	if( _this.hasChildNodes() )

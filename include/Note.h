@@ -230,6 +230,23 @@ public:
 	//! Drops the expression entirely (and the serialized attributes with it).
 	void clearMpeExpression();
 
+	/*! Q050-016: the note's time-varying MPE expression stream (pitch,
+	 *  pressure, timbre points at tick offsets from the note's start), the
+	 *  per-note curves the scalar expression above is a single sample of.
+	 *
+	 *  A note that carries no stream - every note saved before this feature,
+	 *  and a note whose stream was cleared - has `hasMpeStream() == false` and
+	 *  serializes exactly as before: the stream is three optional attributes,
+	 *  written only when non-empty. Playback reads the stream to schedule the
+	 *  axes at their own offsets; a note without one keeps the scalar path. */
+	bool hasMpeStream() const { return m_mpeStream != nullptr && !m_mpeStream->empty(); }
+	const MpeExpressionStream& mpeStream() const { return *m_mpeStream; }
+	//! The editable stream, created empty on first use.
+	MpeExpressionStream& mpeStreamForEdit();
+	void setMpeStream( const MpeExpressionStream& stream );
+	//! Drops the whole stream (and its serialized attributes with it).
+	void clearMpeStream() { m_mpeStream.reset(); }
+
 	//! Types of per-note automation. Currently only detuning/pitch bending is supported.
 	enum class ParameterType
 	{
@@ -405,6 +422,12 @@ private:
 	int m_mpePitchCents = 0;
 	int m_mpePressure = 0;
 	int m_mpeTimbre = 0;
+
+	// Q050-016: the optional per-note expression streams. A unique_ptr keeps a
+	// note with no stream exactly as cheap as before (8 null bytes), and the
+	// copy constructor/assignment deep-copy it so two notes never share an
+	// editable stream.
+	std::unique_ptr<MpeExpressionStream> m_mpeStream;
 
 	// 0.5.0 L07: mute, release velocity, the pre-quantise timing (-1 = none).
 	bool m_muted = false;
