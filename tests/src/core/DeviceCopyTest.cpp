@@ -34,6 +34,7 @@
 #include <QDir>
 #include <QJsonArray>
 
+#include <limits>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -143,23 +144,30 @@ double parameterValue(const QString& target, const QString& plugin, const QStrin
 	return read.ok ? read.result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble() : -1e9;
 }
 
-//! The minimal controls needed for Effect::saveSettings() on the unregistered test device.
+//! The minimal controls needed for Effect::saveSettings() on the unregistered test device; with
+//! @a parameters synthetic float controls when a test needs a device with more than one knob page.
 class UnregisteredCopyTestControls final : public EffectControls
 {
 public:
-	explicit UnregisteredCopyTestControls(Effect* effect) : EffectControls{effect} {}
-	int controlCount() override { return 0; }
+	explicit UnregisteredCopyTestControls(Effect* effect, int parameters = 0) : EffectControls{effect}
+	{
+		for (int i = 0; i < parameters; ++i) { m_models.append(new FloatModel(0.f, 0.f, 1.f, 0.01f, effect, QStringLiteral("param %1").arg(i))); }
+	}
+	int controlCount() override { return static_cast<int>(m_models.size()); }
 	void saveSettings(QDomDocument&, QDomElement&) override {}
 	void loadSettings(const QDomElement&) override {}
 	QString nodeName() const override { return QStringLiteral("UnregisteredCopyTestControls"); }
 	gui::EffectControlDialog* createView() override { return nullptr; }
+
+private:
+	QList<FloatModel*> m_models;
 };
 
 //! A serializable source device whose private test descriptor is not in PluginFactory, so a copy stops at it.
 class UnregisteredCopyTestEffect final : public Effect
 {
 public:
-	explicit UnregisteredCopyTestEffect(Model* parent) : Effect{&s_descriptor, parent, nullptr}, m_controls{this} {}
+	explicit UnregisteredCopyTestEffect(Model* parent, int parameters = 0) : Effect{&s_descriptor, parent, nullptr}, m_controls{this, parameters} {}
 
 	EffectControls* controls() override { return &m_controls; }
 
@@ -456,34 +464,49 @@ private slots:
 		QCOMPARE(rack.chain(chain)->effects().size(), std::size_t{1});  // back on its own chain
 	}
 
-	//! MX-106: the remote knobs drive the target device's parameters eight at a time.
+	//! MX-106: the remote knobs drive the target device's parameters eight at a time. A knob
+	//! outside 0..7 is refused before the page offset is added, so a malformed index - including
+	//! one whose 32-bit page offset would overflow - cannot reach the model list.
 	void remoteKnobsDriveAPageOfParameters()
 	{
-		if (chainOf(1).effects().empty()) { QSKIP("this build loads no effect"); }
 		QCOMPARE(run(QStringLiteral("remote.page")).errorKind, ControlErrorKind::Refused);  // nothing connected
 		QVERIFY(run(QStringLiteral("remote.connect"), {{QStringLiteral("first_cc"), 20}}).ok);
-		const QString plugin = control::effectIdOf(chainOf(1).effects().front());
+		// A deterministic device with more than one knob page: a later page makes the index a real
+		// page offset, so the overflow the old arithmetic had is exercised without a system plugin.
+		auto* device = new UnregisteredCopyTestEffect{&chainOf(1), 3 * RemoteControls::Knobs};
+		chainOf(1).appendEffect(device);
+		const QString plugin = control::effectIdOf(device);
 		const ControlResult targeted = run(QStringLiteral("remote.target"), {{QStringLiteral("target"), ch(1)},
 			{QStringLiteral("plugin"), plugin}, {QStringLiteral("follow"), false}});
 		QVERIFY2(targeted.ok, qPrintable(targeted.errorMessage));
-		const QJsonArray page = targeted.result.value(QStringLiteral("parameters")).toArray();
-		QVERIFY(!page.isEmpty());
-		const QString first = page.first().toObject().value(QStringLiteral("name")).toString();
-		QVERIFY(RemoteControls::instance()->applyKnob(0, 127));  // all the way up
-		const QJsonObject params = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), ch(1)},
-			{QStringLiteral("plugin"), plugin}}).result;
-		for (const QJsonValue& value : params.value(QStringLiteral("parameters")).toArray())
+		auto value = [&](int index) {
+			return run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), plugin},
+				{QStringLiteral("index"), index}}).result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble();
+		};
+		// Negative, first-invalid and extreme knob indices are refused; no control changes.
+		for (int index = 0; index < 3 * RemoteControls::Knobs; ++index)
 		{
-			const QJsonObject p = value.toObject();
-			if (p.value(QStringLiteral("name")).toString() != first) { continue; }
-			QVERIFY(std::abs(p.value(QStringLiteral("value")).toDouble() - p.value(QStringLiteral("max")).toDouble()) < 1e-3);
-			break;
+			const double was = value(index);
+			QVERIFY(!RemoteControls::instance()->applyKnob(-1, 64));
+			QVERIFY(!RemoteControls::instance()->applyKnob(RemoteControls::Knobs, 64));
+			QVERIFY(!RemoteControls::instance()->applyKnob(std::numeric_limits<int>::max(), 64));
+			QCOMPARE(value(index), was);
 		}
-		QVERIFY(!RemoteControls::instance()->applyKnob(8, 64));  // there are eight knobs
+		// The last valid knob (7) drives its own parameter, and no other control moves.
+		const double untouched = value(0);
+		QVERIFY(RemoteControls::instance()->applyKnob(RemoteControls::Knobs - 1, 127));
+		QCOMPARE(value(RemoteControls::Knobs - 1), 1.0);
+		QCOMPARE(value(0), untouched);
+		// On a later page the page offset is real; an extreme knob index must still be refused.
+		QCOMPARE(run(QStringLiteral("remote.page"), {{QStringLiteral("page"), 1}}).result.value(QStringLiteral("page")).toInt(), 1);
+		QVERIFY2(!RemoteControls::instance()->applyKnob(std::numeric_limits<int>::max(), 64), "the old 32-bit page offset overflows here");
+		QCOMPARE(value(RemoteControls::Knobs), 0.0);  // and nothing on the page moved
 		QCOMPARE(run(QStringLiteral("remote.page"), {{QStringLiteral("page"), 999}}).result.value(QStringLiteral("page")).toInt(),
 			targeted.result.value(QStringLiteral("pages")).toInt() - 1);  // clamped
 		QVERIFY(run(QStringLiteral("remote.disconnect")).ok);
 		QVERIFY(RemoteControls::instance() == nullptr);
+		chainOf(1).removeEffect(device);
+		delete device;
 	}
 
 	//! MX-111: a drum rack is a folder of sampler pads, each with its own channel sending to one bus;
