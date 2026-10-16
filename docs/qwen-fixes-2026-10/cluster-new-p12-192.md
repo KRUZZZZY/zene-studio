@@ -1,129 +1,75 @@
-# Cluster new-p12-192
+# Cluster new-p12-192 — Reused note handles can resume an old sample voice (rework, round 2)
 
-## Verdict: FIXED
+**Verdict:** FIXED
 
-**BUG 2 — "Reused note handles can resume an old sample voice"** (Luna's patrol,
-`src/core/RackZoneInputs.cpp`, reported at the historical line 113).
+## Finding
+Luna's round-1 fix detected note reuse from `framesPlayed` alone. That heuristic
+restarts a voice whenever a note's frame count is `<= m_frames` or drops below the
+voice's last count. A continuing note is indistinguishable from a reused handle:
+`Song::setTempo()` → `NotePlayHandle::resize()` (NotePlayHandle.cpp:700) rescales and
+truncates `m_totalFramesPlayed`, so a one-frame note can report one frame on the next
+period and spuriously restart its voice at the sample start.
 
-The finding is **real**. `RackZoneInputs::voiceFor` matches a voice to a note by the play
-handle pointer alone (`RackZoneVoice::owner == RackZoneNote::id`). When a pooled
-`NotePlayHandle` is released and reacquired for a new note, the pointer is the same. The
-only reuse guard was `note.framesPlayed < voice.lastFramesPlayed`. A late-starting note
-plays fewer frames in its first period than a full period, so a handle that played 112
-frames (offset 400 of 512) and is then reused by a note that plays the full 512 frames
-satisfies `512 >= 112`: the guard does not fire, and the new note's sample resumes at the
-old voice's position (~frame 112), with the old fade/`ended` state still in place.
+The fix assigns a stable per-note **generation** to every `NotePlayHandle` on
+construction and on every pooled reuse, propagates it through `RackZoneNote`, and
+restarts a `RackZoneVoice` only when the generation changes. A continuing note keeps
+its generation and resumes where it left off; a reused handle carries a new generation
+and restarts.
 
-### Evidence
+## Evidence (file:line)
+- `include/NotePlayHandle.h:202` — `generation()` accessor; `m_generation` member at
+  `include/NotePlayHandle.h:357`; `s_generationCounter` static at
+  `include/NotePlayHandle.h:398`.
+- `src/core/NotePlayHandle.cpp:88` — constructor bumps `m_generation = ++s_generationCounter`
+  (runs on every construction, including pool reuse via the placement new at
+  `src/core/NotePlayHandle.cpp:748`).
+- `src/core/NotePlayHandle.cpp:716` — `std::atomic<std::uint64_t> NotePlayHandle::s_generationCounter{0};`.
+- `include/RackZoneInputs.h:50` — `RackZoneNote::generation`.
+- `include/RackZoneInputs.h:67` — `RackZoneVoice::lastGeneration`.
+- `src/core/RackZoneInputs.cpp:109` — `voiceFor` restarts only when
+  `note.generation != voice.lastGeneration` (both the owner-match and the claim paths
+  record the generation).
+- `src/core/RackZoneFeed.cpp:94` — `noteOf` copies `nph->generation()` into the note.
+- Regression: `tests/src/core/RackZoneRoutingTest.cpp` —
+  `aReusedHandleRestartsTheVoice` (reuse with equal/greater frame counts, now keyed on
+  generation) and `aContinuingNoteSurvivesTempoResizeReset` (continuing note after a
+  tempo-resize frame reset must resume, not restart).
 
-Original code, `src/core/RackZoneInputs.cpp:113-116`:
+## Commands and EXIT codes
+All logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-192.r2/logs`.
 
-```cpp
-if (voice.owner.load(std::memory_order_acquire) != note.id) { continue; }
-// A pooled play handle reused for a new note has played fewer frames than its voice last saw.
-if (note.framesPlayed < voice.lastFramesPlayed) { voice.restart(); }
-return &voice;
-```
+Build (GREEN tree):
+`cmake --build build --target zene RackZoneRoutingTest -j12` → **EXIT=0** (build-2.log)
 
-The RED assertion the new test prints (`test-red-1.log`):
+GREEN test (fix applied):
+`cd build/tests && QT_QPA_PLATFORM=offscreen /usr/bin/ctest -R '^RackZoneRoutingTest$' --output-on-failure` → **EXIT=0** (test-green.log); 1 test executable, all slots passed.
 
-```
-FAIL!  : RackZoneRoutingTest::aReusedHandleRestartsTheVoice() 'second[0][0] == ramp[0][0]' returned FALSE. (reused handle resumed at 113, expected the sample start 1)
-Loc: [../../tests/src/core/RackZoneRoutingTest.cpp(358)]
-```
+RED proof (only `src/core/RackZoneInputs.cpp` reverted to the round-1 framesPlayed
+heuristic, generation plumbing kept so the test compiles):
+`git diff -- src/core/RackZoneInputs.cpp > fix.patch && git apply -R fix.patch` → reverted.
+Build → **EXIT=0** (build-red.log); test → **EXIT=8** (test-red.log).
+Failing assertion (test-red.log): `continuing note restarted at 1, expected resume 257`.
+Restored with `git apply fix.patch`, rebuilt → **EXIT=0** (build-green.log), test → **EXIT=0**.
 
-`second[0][0] == 113` is the ramp sample at source frame 112 — the new note resumed the old
-voice instead of starting the sample over.
+Gates:
+`bash tests/complexity-gate.sh --check` → **EXIT=1** (pre-existing baseline regressions
+in ControlCommandsSession*.cpp, Vst3Host.cpp — not in any file changed here).
+`bash tests/file-length-gate.sh --check` → **EXIT=1** (pre-existing: RackMacrosTest.cpp,
+RevisionTimelineTest.cpp, VideoTrackTest.cpp, ArrangerTimelineTest.cpp — none changed here).
+Neither gate lists `RackZoneInputs`, `NotePlayHandle`, or `RackZoneRoutingTest`; my
+functions (`voiceFor`, `generation`) stay within CCN ≤ 10 and file-length limits.
 
-### The fix
+## Summary
+The bug (reused pooled handle resuming an old voice, plus the round-1 regression where a
+continuing note restarted after a tempo-resize frame reset) is fixed by a generation
+identifier instead of frame-count inference. The new regression fails on the prior
+heuristic (EXIT=8) and passes with the fix (EXIT=0).
 
-`src/core/RackZoneInputs.cpp:113-120` (product, 4 lines changed). A voice is restarted when
-the incoming note is in its **first period**, which a continuing note can never be:
-
-```cpp
-if (note.framesPlayed <= m_frames || note.framesPlayed < voice.lastFramesPlayed) { voice.restart(); }
-```
-
-`RackZoneFeed::noteOf` reads `framesPlayed` from `NotePlayHandle::totalFramesPlayed()` after
-`NotePlayHandle::play`, and that count is `fpp - offset` on the first period and at least
-`2*fpp - offset` afterwards (`NotePlayHandle.cpp:287-289,366` with `offset < fpp`). So
-`framesPlayed <= m_frames` (the prepared period length, `Rack.cpp:106,169`) is exactly "this
-is the first period", i.e. a new note instance. The existing decreasing-count check is kept
-for a handle whose old voice saw a later period. This is the generation check the finding
-asks for, keyed on the frame counter the engine already exposes, so no upstream
-`NotePlayHandle` file is touched and the audio path stays a single integer compare.
-
-The concern that a legitimate continuation could be restarted is disproved by the same
-arithmetic: after a first sounding period a note has played `>= 1` frame, and its next
-period adds `fpp` frames, so `framesPlayed > m_frames` from then on. The new test's case 2
-asserts that a continuation still works (a second period renders from the old position).
-
-Regression proof (step 4b): `git diff -- src/core/RackZoneInputs.cpp` was saved to
-`logs/fix.patch`; `git apply -R` removed the product fix, the test was rebuilt and **failed
-(EXIT 8)**; `git apply` restored it, the test was rebuilt and **passed (EXIT 0)**.
-
-### Evidence table
-
-| what | command (worktree root / `build/tests` for ctest) | log | EXIT |
-| --- | --- | --- | --- |
-| build the regression target | `cmake --build build --target RackZoneRoutingTest` | `build-2.log` | `0` |
-| **new test + original product — RED** | `ctest -R '^RackZoneRoutingTest$' --output-on-failure` | `test-red-1.log` | `8` |
-| build with the fix | `cmake --build build --target RackZoneRoutingTest` | `build-3.log` | `0` |
-| **new test + fix — GREEN** | `ctest -R '^RackZoneRoutingTest$' --output-on-failure` | `test-green-1.log` | `0` |
-| reverse the product patch | `git apply -R logs/fix.patch` | — | `0` |
-| build reverted | `cmake --build build --target RackZoneRoutingTest` | `build-4-reverted.log` | `0` |
-| **reverted — RED again** | `ctest -R '^RackZoneRoutingTest$' --output-on-failure` | `test-reverted.log` | `8` |
-| restore the product patch | `git apply logs/fix.patch` | — | `0` |
-| build restored | `cmake --build build --target RackZoneRoutingTest` | `build-5-refixed.log` | `0` |
-| **restored — GREEN again** | `ctest -R '^RackZoneRoutingTest$' --output-on-failure` | `test-refixed.log` | `0` |
-| affected family, 4 tests | `ctest -R 'RackZone\|RackMacros' --output-on-failure` | `test-family.log` | `0` — 4/4 passed |
-
-RED (`test-red-1.log`) totals: `9 passed, 1 failed, 0 skipped` (10 QtTest slots). GREEN
-(`test-green-1.log`): `100% tests passed out of 1`. Family (`test-family.log`):
-`RackZoneFeedRunTest`, `RackMacrosTest`, `RackZonesTest`, `RackZoneRoutingTest` — all
-`Passed`, 4/4. The family executables were rebuilt first
-(`cmake --build build --target RackZoneFeedRunTest RackZonesTest RackMacrosTest
-RackZoneRoutingTest`, `build-family.log`, EXIT `0`); the core library was rebuilt with each
-`RackZoneRoutingTest` build, and the other family binaries are dynamic against it.
-
-### Gates (unpiped, `--check`)
-
-| gate | log | EXIT |
-| --- | --- | --- |
-| `bash tests/complexity-gate.sh --check` | `gate-complexity.log` | `1` |
-| `bash tests/file-length-gate.sh --check` | `gate-filelength.log` | `1` |
-
-**Both gate failures are pre-existing on this branch and unrelated to this change.** The
-violations reported are all in files this diff does not touch:
-
-* file-length: `19 exceed 500 code lines`; the 14 not in `tests/file-length-baseline.tsv`
-  are `src/core/SmfInterchangeReader.cpp`, `src/core/TakeLane.cpp`,
-  `tests/src/core/CollabTransportTest.cpp`, `ControlAutomationScriptTest.cpp`,
-  `ControlDeviceCatalogueTest.cpp`, `ControlEditCommandsTest.cpp`, `CustomAccessTest.cpp`,
-  `DeviceDspTest.cpp`, `HardwareIoTest.cpp`, `NotePlaybackTest.cpp`, `RackMacrosTest.cpp`,
-  `RevisionTimelineTest.cpp`, `VideoTrackTest.cpp`, `tests/src/gui/ArrangerTimelineTest.cpp`.
-* complexity: `68 exceed CCN 10`, of which the 6 not in `tests/complexity-baseline.tsv` are
-  `dotCentreAlong@tests/src/gui/XyPadPairTest.cpp`, `parseNotes@src/core/DawProjectReadTracks.cpp`,
-  `adjust@src/core/ControlCommandsMixerTools.cpp`, `setStrip@src/core/ControlCommandsMixerStrip.cpp`,
-  `rotateProjectRevision@src/core/ProjectRevisions.cpp`, `importedOverrides@src/gui/ControlCommandsShortcuts.cpp`.
-
-`git diff HEAD` for the two changed files touches neither list (the new test slot
-`aReusedHandleRestartsTheVoice` is ~40 lines in a sub-500 file and its CCN is 1), and
-`git status` is otherwise clean, so the gates report the same at HEAD. No limit was changed
-and neither baseline was re-anchored.
-
-### Registries
-
-No registry change was needed: `src/core/RackZoneInputs.cpp` and
-`tests/src/core/RackZoneRoutingTest.cpp` are fork-NEW and already listed in
-`tests/fork-sources.txt:1760` and `:2366`. No inherited file was changed, so
-`tests/upstream-modifications.txt` is untouched.
-
-### Files committed
-
-* `src/core/RackZoneInputs.cpp`
-* `tests/src/core/RackZoneRoutingTest.cpp`
-* `docs/qwen-fixes-2026-10/cluster-new-p12-192.md`
-
-Logs (not committed): `logs/build-*.log`, `logs/test-*.log`, `logs/gate-*.log`,
-`logs/fix.patch`.
+## Files committed
+- include/NotePlayHandle.h
+- include/RackZoneInputs.h
+- src/core/NotePlayHandle.cpp
+- src/core/RackZoneFeed.cpp
+- src/core/RackZoneInputs.cpp
+- tests/src/core/RackZoneRoutingTest.cpp
+- tests/upstream-modifications.txt

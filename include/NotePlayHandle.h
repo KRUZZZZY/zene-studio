@@ -29,6 +29,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 #include "BasicFilters.h"
@@ -199,6 +200,14 @@ public:
 		return m_totalFramesPlayed;
 	}
 
+	/*! A per-note instance identifier: bumped every time a NotePlayHandle is constructed or pooled-reused,
+	 *  so a handle reused for a new note carries a different generation than the note it last voiced. A voice
+	 *  follows a note by its handle pointer; the generation tells a continuing note from a reused handle. */
+	std::uint64_t generation() const
+	{
+		return m_generation;
+	}
+
 	/*! Returns volume level at given frame (envelope/LFO) */
 	float volumeLevel( const f_cnt_t frame );
 
@@ -356,6 +365,7 @@ private:
 	f_cnt_t m_totalFramesPlayed;			// total frame-counter - used for
 											// figuring out whether a whole note
 											// has been played
+	std::uint64_t m_generation = 0;			// bumped per construction/reuse (see generation())
 	f_cnt_t m_framesBeforeRelease;			// number of frames after which note
 											// is released
 	f_cnt_t m_releaseFramesToDo;			// total numbers of frames to be
@@ -391,6 +401,8 @@ private:
 	bool m_frequencyNeedsUpdate;				// used to update pitch
 	int m_slideSourceKey;					// key a slide note glides from, -1 = none
 	alignas(std::max_align_t) std::byte m_pluginDataStorage[PluginDataStorageSize];
+
+	static std::atomic<std::uint64_t> s_generationCounter;  // source of generation()
 } ;
 
 
