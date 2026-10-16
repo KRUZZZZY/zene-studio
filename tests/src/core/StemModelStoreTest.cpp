@@ -21,6 +21,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QCoreApplication>
 #include <QtTest>
 
 #include <atomic>
@@ -32,6 +33,12 @@
 #include <QFile>
 #include <QHostAddress>
 #include <QNetworkProxy>
+#include <QSslCertificate>
+#include <QSslConfiguration>
+#include <QSslError>
+#include <QSslKey>
+#include <QSslSocket>
+#include <QTimer>
 #include <QTcpServer>
 #include <QTemporaryDir>
 
@@ -65,6 +72,27 @@ QStringList partialFiles(const QString& dirPath, const QString& name)
 {
 	return QDir(dirPath).entryList({name + QStringLiteral(".onnx.part*")}, QDir::Files);
 }
+
+class SslServer : public QTcpServer
+{
+public:
+	SslServer(const QByteArray& certPem, const QByteArray& keyPem, QObject* parent = nullptr)
+		: QTcpServer(parent), m_certPem(certPem), m_keyPem(keyPem) {}
+protected:
+	void incomingConnection(qintptr handle) override
+	{
+		QSslSocket* socket = new QSslSocket(this);
+		socket->setSocketDescriptor(handle);
+		socket->setLocalCertificate(QSslCertificate(m_certPem));
+		socket->setPrivateKey(QSslKey(m_keyPem, QSsl::Rsa));
+		addPendingConnection(socket);
+		connect(socket, &QSslSocket::sslErrors, socket, [socket](const QList<QSslError>&){ socket->ignoreSslErrors(); });
+		socket->startServerEncryption();
+	}
+private:
+	QByteArray m_certPem;
+	QByteArray m_keyPem;
+};
 
 } // namespace
 
@@ -109,10 +137,11 @@ private slots:
 		return seen.size() == 1 ? m_dir.filePath(seen.front()) : QString();
 	}
 
-	//! True the moment the in-flight partial's bytes are gone: the second
-	//! download clobbered them. False once it has a staging file of its own
-	//! (it can no longer clobber), or the watch runs out.
-	bool clobbersThePartialInFlight(const QString& partialA, const QByteArray& streamed)
+	//! Returns 1 the moment the in-flight partial's bytes are gone: the second
+	//! download clobbered them. Returns 0 once it has a staging file of its own
+	//! (it can no longer clobber). Returns -1 if the watch runs out without
+	//! observing either outcome, which is a test failure, not a pass.
+	int clobbersThePartialInFlight(const QString& partialA, const QByteArray& streamed)
 	{
 		QElapsedTimer timer;
 		timer.start();
@@ -120,12 +149,12 @@ private slots:
 		{
 			{
 				QFile file(partialA);
-				if (!file.open(QIODevice::ReadOnly) || file.readAll() != streamed) { return true; }
+				if (!file.open(QIODevice::ReadOnly) || file.readAll() != streamed) { return 1; }
 			}
-			if (partialFiles(m_dir.path(), m_spec.name).size() >= 2) { return false; }
+			if (partialFiles(m_dir.path(), m_spec.name).size() >= 2) { return 0; }
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
-		return false;
+		return -1;
 	}
 
 	void testDefaultModelDirHonoursEnvironment()
@@ -441,7 +470,7 @@ private slots:
 
 		// ...and let a second download of the same model run across it.
 		m_threadB = std::thread(download, false);
-		const bool clobbered = clobbersThePartialInFlight(partialA, streamed);
+		const int outcome = clobbersThePartialInFlight(partialA, streamed);
 
 		m_cancelA.store(true);
 		m_cancelB.store(true);
@@ -451,10 +480,122 @@ private slots:
 		m_threadA.join();
 		m_threadB.join();
 
-		QVERIFY2(!clobbered,
+		QVERIFY2(outcome != -1,
+			"timed out without observing either truncation or a second staging file");
+		QVERIFY2(outcome != 1,
 			"a concurrent download truncated the partial file of a download still in flight");
 		QVERIFY2(!m_okA && !m_okB, "a download reported success without ever fetching anything");
+		// Neither attempt leaves its staging file behind once it has failed.
+		QVERIFY2(partialFiles(m_dir.path(), m_spec.name).isEmpty(),
+			"a failed download left its staging file behind");
 	}
+
+	//! A download that loses the final rename to a concurrent installer still
+	//! reports success (the pinned bytes are in place), and must not leave its
+	//! own staging file behind as a full-size duplicate model.
+	void testConcurrentSuccessfulDownloadsLeaveNoStagingFile()
+	{
+		QTemporaryDir certDir;
+		QVERIFY(certDir.isValid());
+
+		QProcess proc;
+		proc.start(QStringLiteral("openssl"),
+			{QStringLiteral("req"), QStringLiteral("-x509"), QStringLiteral("-newkey"),
+			 QStringLiteral("rsa:2048"), QStringLiteral("-keyout"),
+			 certDir.filePath(QStringLiteral("key.pem")), QStringLiteral("-out"),
+			 certDir.filePath(QStringLiteral("cert.pem")), QStringLiteral("-days"),
+			 QStringLiteral("1"), QStringLiteral("-nodes"), QStringLiteral("-subj"),
+			 QStringLiteral("/CN=127.0.0.1")});
+		QVERIFY(proc.waitForFinished(10000));
+		QCOMPARE(proc.exitCode(), 0);
+
+		QFile certFile(certDir.filePath(QStringLiteral("cert.pem")));
+		QVERIFY(certFile.open(QIODevice::ReadOnly));
+		const QByteArray certPem = certFile.readAll();
+		certFile.close();
+		QFile keyFile(certDir.filePath(QStringLiteral("key.pem")));
+		QVERIFY(keyFile.open(QIODevice::ReadOnly));
+		const QByteArray keyPem = keyFile.readAll();
+		keyFile.close();
+
+		const QSslConfiguration previous = QSslConfiguration::defaultConfiguration();
+		QSslConfiguration cfg = previous;
+		cfg.setPeerVerifyMode(QSslSocket::VerifyNone);
+		QSslConfiguration::setDefaultConfiguration(cfg);
+
+		QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+
+		for (int iter = 0; iter < 10; ++iter)
+		{
+			QTemporaryDir dir;
+			QVERIFY(dir.isValid());
+
+			SslServer server(certPem, keyPem);
+			QVERIFY(server.listen(QHostAddress::LocalHost));
+
+			QObject::connect(&server, &QTcpServer::newConnection, [&]() {
+				while (server.hasPendingConnections())
+				{
+					QSslSocket* sock = qobject_cast<QSslSocket*>(server.nextPendingConnection());
+					connect(sock, &QSslSocket::sslErrors, sock, [sock](const QList<QSslError>&){ sock->ignoreSslErrors(); });
+					auto respond = [sock]() {
+						std::this_thread::sleep_for(std::chrono::milliseconds(200));
+						sock->readAll();
+						const QByteArray body("abc");
+						QByteArray resp = QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\n");
+						resp.append(body);
+						sock->write(resp);
+						sock->flush();
+						QTimer::singleShot(100, sock, [sock](){ sock->disconnectFromHost(); });
+					};
+					connect(sock, &QSslSocket::encrypted, sock, respond);
+					if (sock->isEncrypted()) { respond(); }
+				}
+			});
+
+			StemModelSpec spec;
+			spec.name = QStringLiteral("concurrent-ok");
+			spec.url = QStringLiteral("https://127.0.0.1:%1/x").arg(server.serverPort());
+			spec.sha256 = QString::fromLatin1(Sha256OfAbc);
+			spec.sizeBytes = 3;
+
+			std::atomic<bool> cancelA{false};
+			std::atomic<bool> cancelB{false};
+			std::atomic<bool> doneA{false};
+			std::atomic<bool> doneB{false};
+			std::atomic<bool> startFlag{false};
+			bool okA = true;
+			bool okB = true;
+			QString errA;
+			QString errB;
+			std::thread tA([&]() { while (!startFlag.load()) { std::this_thread::yield(); } okA = StemModelStore::download(spec, dir.path(), {}, &errA, &cancelA); doneA.store(true); });
+			std::thread tB([&]() { while (!startFlag.load()) { std::this_thread::yield(); } okB = StemModelStore::download(spec, dir.path(), {}, &errB, &cancelB); doneB.store(true); });
+			startFlag.store(true);
+
+			QElapsedTimer guard;
+			guard.start();
+			while ((!doneA.load() || !doneB.load()) && guard.elapsed() < 30000)
+			{
+				QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			}
+			if (tA.joinable()) { tA.join(); }
+			if (tB.joinable()) { tB.join(); }
+			server.close();
+
+			QVERIFY2(okA, qPrintable(errA));
+			QVERIFY2(okB, qPrintable(errB));
+			QVERIFY(StemModelStore::verify(dir.filePath(spec.name + QStringLiteral(".onnx")),
+				spec.sha256, spec.sizeBytes));
+
+
+			QVERIFY2(partialFiles(dir.path(), spec.name).isEmpty(),
+				qPrintable(QStringLiteral("leftover staging files: ") + partialFiles(dir.path(), spec.name).join(QStringLiteral(", "))));
+		}
+
+		QSslConfiguration::setDefaultConfiguration(previous);
+	}
+
 };
 
 QTEST_GUILESS_MAIN(StemModelStoreTest)

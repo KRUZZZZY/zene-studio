@@ -449,6 +449,9 @@ bool StemModelStore::download(const StemModelSpec& spec,
 		// between our remove and our rename; that file IS this download, done.
 		if (verifiedInPlace(spec, destDir))
 		{
+			// The concurrent installer that won the rename took our bytes' place;
+			// our own staging file is now a duplicate and must not be left behind.
+			QFile::remove(partPath);
 			return true;
 		}
 		setError(error, QStringLiteral("Cannot move %1 into place").arg(finalPath));
