@@ -111,8 +111,12 @@ auto RackZoneInputs::voiceFor(const RackZoneNote& note) -> RackZoneVoice*
 	for (RackZoneVoice& voice : m_voices)
 	{
 		if (voice.owner.load(std::memory_order_acquire) != note.id) { continue; }
-		// A pooled play handle reused for a new note has played fewer frames than its voice last saw.
-		if (note.framesPlayed < voice.lastFramesPlayed) { voice.restart(); }
+		// A pooled play handle reused for a new note must not resume the old note's voice: its frame count
+		// can be equal to or above what the old voice last saw (a late-starting note plays fewer frames than
+		// the full period the reused handle plays next), so any note in its first period - at most the
+		// period's frames - is a new note and restarts. A decreasing count covers a handle whose voice saw a
+		// later period before the reuse.
+		if (note.framesPlayed <= m_frames || note.framesPlayed < voice.lastFramesPlayed) { voice.restart(); }
 		return &voice;
 	}
 	for (RackZoneVoice& voice : m_voices)

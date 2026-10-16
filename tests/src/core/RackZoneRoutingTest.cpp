@@ -323,6 +323,58 @@ private slots:
 		rack.zoneInputs().endPeriod();
 		dropZonesFrom(before);
 	}
+
+	//! E38: a pooled note handle reused for a NEW note restarts the voice, even when the new note's frame
+	//! count has not fallen below what the old note's voice last saw. A note that starts late in a period can
+	//! play fewer frames (say 112 of 512) than the full first period a reused handle plays next (512), so the
+	//! frame count alone cannot tell the two apart - the new note's first period does.
+	void aReusedHandleRestartsTheVoice()
+	{
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		const sample_rate_t rate = Engine::audioEngine()->outputSampleRate();
+		std::vector<SampleFrame> ramp(4096);
+		for (std::size_t i = 0; i < ramp.size(); ++i)
+		{
+			ramp[i] = SampleFrame{static_cast<float>(i) + 1.0f, -static_cast<float>(i) - 1.0f};
+		}
+		const SampleBuffer sample(ramp, rate);
+		const int marker = 0;
+
+		// Case 1: a note that started late (112 of the period's frames) leaves its voice at frame 112; the
+		// reused handle's next note plays a full period and must start the sample over.
+		{
+			RackZoneInputs inputs;
+			inputs.prepare({kDrivenChain}, kDrivenChain + 1, fpp, rate);
+			std::vector<SampleFrame> first(static_cast<std::size_t>(fpp), SampleFrame{});
+			RackZoneNote late = noteAt(&marker, 110, 100);
+			late.framesPlayed = 112;
+			late.startOffset = fpp - 112;
+			QVERIFY(inputs.playVoice(late, sample, first.data()));
+			QCOMPARE(first[static_cast<std::size_t>(fpp) - 112][0], ramp[0][0]);
+
+			std::vector<SampleFrame> second(static_cast<std::size_t>(fpp), SampleFrame{});
+			RackZoneNote reused = noteAt(&marker, 110, 100);  // fpp frames: a full first period, above the 112
+			QVERIFY(inputs.playVoice(reused, sample, second.data()));
+			QVERIFY2(second[0][0] == ramp[0][0],
+				qPrintable(QStringLiteral("reused handle resumed at %1, expected the sample start %2")
+					.arg(second[0][0]).arg(ramp[0][0])));
+			QCOMPARE(second[1][0], ramp[1][0]);
+		}
+
+		// Case 2: the same frame count on the reused handle (an offset-zero note twice) restarts too.
+		{
+			RackZoneInputs inputs;
+			inputs.prepare({kDrivenChain}, kDrivenChain + 1, fpp, rate);
+			std::vector<SampleFrame> first(static_cast<std::size_t>(fpp), SampleFrame{});
+			QVERIFY(inputs.playVoice(noteAt(&marker, 110, 100), sample, first.data()));
+
+			std::vector<SampleFrame> second(static_cast<std::size_t>(fpp), SampleFrame{});
+			QVERIFY(inputs.playVoice(noteAt(&marker, 110, 100), sample, second.data()));
+			QCOMPARE(second[0][0], ramp[0][0]);
+		}
+
+		printEvidence("zone-voice-reuse", QStringLiteral("a reused handle restarts its voice at the sample start"));
+	}
 };
 
 QTEST_GUILESS_MAIN(RackZoneRoutingTest)
