@@ -479,6 +479,26 @@ private slots:
 		QCOMPARE(total.load(), 0);
 	}
 
+	//! Queue overflow must still process every job before reporting completion.
+	void queueOverflowRunsEveryJob()
+	{
+		AudioEngineWorkerThread::setDeterministicProcessing(true);
+
+		constexpr int kJobs = static_cast<int>(AudioEngineWorkerThread::JobQueue::JOB_QUEUE_SIZE + 1);
+		std::atomic<int> total{0};
+		std::vector<ThreadableJob*> pointers;
+		const auto jobs = makeJobs(total, kJobs, std::chrono::milliseconds{0}, &pointers);
+
+		AudioEngineWorkerThread::fillJobQueue(pointers);
+		AudioEngineWorkerThread::startAndWaitForJobs();
+
+		for (const auto& job : jobs)
+		{
+			QCOMPARE(job->runs, 1);
+		}
+		QCOMPARE(total.load(), kJobs);
+	}
+
 private:
 	std::unique_ptr<AudioEngineWorkerThread> m_poolWorker;
 };

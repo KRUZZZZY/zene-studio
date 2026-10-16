@@ -75,9 +75,8 @@
 namespace lmms
 {
 
-//! Defined in src/core/AudioEngineWorkerThread.cpp: the queue-full refusal
-//! counter, with external linkage so this test can read it without a header
-//! change (multicore Slice 0).
+//! Defined in src/core/AudioEngineWorkerThread.cpp: the queue-full fallback
+//! counter, with external linkage so this test can read it without a header change.
 extern std::atomic<std::uint64_t> queueFullRefusals;
 
 namespace
@@ -430,9 +429,8 @@ private slots:
 		std::fflush(stdout);
 	}
 
-	//! Slice 0 runtime half: the queue-full branch refuses exactly one job and
-	//! counts it instead of formatting on the audio thread's side of the call.
-	void queueFullRefusalIsCounted()
+	//! Queue overflow takes the synchronous fallback and records one occurrence.
+	void queueFullFallbackIsCounted()
 	{
 		static QueueFillerJob filler;
 
@@ -446,7 +444,7 @@ private slots:
 		QCOMPARE(after - before, std::uint64_t{1});
 		AudioEngineWorkerThread::resetJobQueue();
 
-		std::fprintf(stdout, "MC_SLICE0_QUEUE_FULL refused=%llu\n",
+		std::fprintf(stdout, "MC_SLICE0_QUEUE_FULL fallbacks=%llu\n",
 			static_cast<unsigned long long>(after - before));
 		std::fflush(stdout);
 	}
