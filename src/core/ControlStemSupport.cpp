@@ -496,11 +496,12 @@ StemSurface* surface()
 
 /*! Whether \a value is a Windows absolute path, whatever this host is: a drive
  *  path (`C:\…` or `C:/…`, but NOT `C:…`, which is drive-relative) or a UNC
- *  share (`\\server\share…` / `//server/share…`). `QDir::isAbsolutePath`
- *  already answers this on Windows; spelling the rule out keeps the same
- *  validator accepting a Windows path on a Unix host - where the GUI that
- *  hands it over cannot be run to prove it - and a path a project saved on
- *  another platform references.
+ *  share (`\\server\share…` / `//server/share…`). `stemRequireAbsolutePath`
+ *  consults this for every drive-prefixed value BEFORE `QDir::isAbsolutePath`,
+ *  which on Qt 5 Windows answers any `X:` prefix as absolute and would let the
+ *  drive-relative `C:relative.wav` through; for every other form QDir answers
+ *  on Windows, and this helper's UNC arm accepts a Windows share on a Unix host
+ *  where the GUI that hands it over cannot be run to prove it.
  */
 static bool isWindowsAbsolutePath(const QString& value)
 {
@@ -521,7 +522,18 @@ QString stemRequireAbsolutePath(const QString& value, const QString& name)
 	{
 		return QStringLiteral("'%1' is required").arg(name);
 	}
-	if (QDir::isAbsolutePath(value) || isWindowsAbsolutePath(value))
+	/* A drive-prefixed path is decided here, before the generic QDir check:
+	 * Qt 5's `QDir::isAbsolutePath` answers any `X:` prefix as absolute on
+	 * Windows, which would let the drive-relative `C:relative.wav` through.
+	 * Only `X:\…` or `X:/…` is drive-absolute; `X:…` is drive-relative and
+	 * refused. Every other form keeps QDir's answer, plus the strict Windows
+	 * forms a Unix host would otherwise miss. */
+	const bool hasDrive = value.size() >= 2
+		&& value.at(0).isLetter() && value.at(1) == QLatin1Char(':');
+	const bool absolute = hasDrive
+		? isWindowsAbsolutePath(value)
+		: (isWindowsAbsolutePath(value) || QDir::isAbsolutePath(value));
+	if (absolute)
 	{
 		return QString();
 	}

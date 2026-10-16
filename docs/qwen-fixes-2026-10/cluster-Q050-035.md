@@ -33,6 +33,20 @@ still refuses relative paths. Added coverage for Windows drive and UNC paths, bo
 the registered command the GUI calls (`StemSplitPipelineTest` slot + four new `ControlStemCommands`
 transcript checks, 58 → 62).
 
+Round-6 rework (`Q050-035.r5.code.md`, verdict REWORK): the round-5 `QDir::isAbsolutePath()` arm let
+Qt 5 Windows' own drive handling decide first, and Qt 5 answers any `X:` prefix as absolute — so
+`C:relative.wav` was accepted before the strict helper could refuse it, contradicting the regression
+assertion (`StemSplitPipelineTest.cpp:437`) on a Windows Qt 5.15 build. `stemRequireAbsolutePath` now
+decides every drive-prefixed value BEFORE `QDir`: only `X:\…`/`X:/…` is drive-absolute; `X:…`
+(including a bare `C:`) is drive-relative and refused, on every host and Qt version. UNC forms keep the
+strict helper's UNC arm plus QDir. The `C:relative.wav` assertion is kept and a bare-`C:` refusal is
+added. Verified on this Linux host (Qt 6.12): build EXIT=0, focused ctest 9/9 EXIT=0, pipeline
+`Totals: 14 passed, 0 failed`, transcript 62 checks OK / 0 FAILED, all doc/source gates EXIT=0. A
+Windows Qt 5.15 build cannot be run here (no mingw toolchain on the box); the drive-prefixed decision
+no longer calls `QDir` at all, so its result is host-independent by construction — the validator
+assertions and the transcript's engine-refusal assertions hold on Windows Qt 5.15 for the same reason
+they hold here.
+
 ## Acceptance table
 
 | Criterion | Command actually run | Result / EXIT |
@@ -46,6 +60,7 @@ transcript checks, 58 → 62).
 | GUI and agent share the registered command; four tracks are ONE undo step | `StemSplitPipelineTest::testGuiSplitSharesTheRegisteredCommandAndIsOneUndoStep` + socket transcript `ControlStemCommands` | QtTest `Totals: 0 failed`; transcript `stem.tracks_create materialises the four stems as four tracks`, `stem.tracks_create records exactly one project transaction`, `ONE control.undo removes all four stem tracks together` — **58 checks OK**; **EXIT=0** |
 | Agent surface does not regress | `ctest -R '^agent_surface$' --output-on-failure` | `agent_surface ... Passed`; **EXIT=0** |
 | Validator accepts platform-native absolute paths; Windows drive/UNC reach the engine's refusal | `StemSplitPipelineTest::testValidatorAcceptsWindowsAbsolutePathsThroughJobStart`; `ControlStemCommands` transcript | Unix accepted; `mix.wav`/`C:foo` refused; `C:\…`/`C:/…`/`\\server\share\…`/`//server/share/…` accepted; `stem.job_start` on a Windows path is `refused` (`no source file`), not `invalid_args`; transcript `stem.job_start accepts a Windows drive path (the GUI route)` / `… UNC path …` / `… backslashes` / `a drive-relative path (C:foo) is still refused typed`; **62 checks OK**; **EXIT=0** |
+| Round 6: drive-prefixed paths decided before `QDir::isAbsolutePath` (Qt 5 Windows accepted `C:relative.wav`) | `cmake --build build --target zene StemSplitPipelineTest -- -j4`; focused ctest 9 tests | build **EXIT=0**; `100% tests passed out of 9` **EXIT=0**; direct pipeline run `Totals: 14 passed, 0 failed` (kept `C:relative.wav` refusal + new bare-`C:` refusal); transcript **62 checks OK**, 0 FAILED. Windows Qt 5.15 not runnable on this Linux host (no mingw); drive-prefixed decision never calls `QDir`, so it is host-independent by construction |
 | Gate is not tautological (new round-4 check) | injected `THE FEATURE IS OFF IN THE DEFAULT RELEASE CONFIGURATION` into the `ControlCommandsStems.cpp` block comment, ran the gate | **EXIT=1** (1 FAIL); restored file → **EXIT=0** (`29-redproof-comment.log`, `30-restored-comment.log`) |
 | Ratio gates are pre-existing red only | `bash tests/complexity-gate.sh --check` / `bash tests/file-length-gate.sh --check` and the same in `../zene-cachyos` | both **EXIT=1**; the `REGRESSION` line sets diff **empty** against `zene-cachyos`; no file of mine newly listed |
 
@@ -81,7 +96,9 @@ accounts for `stem`/`mastering`; and `src/gui/StemSplitController.cpp` invokes
   `stem.tracks_create` command (one undo step, `mutating`).
 - `include/ControlStemSupport.h`, `src/core/ControlStemSupport.cpp` — the header's default-OFF /
   "resampling is not implemented" claims corrected; `stemTakeResult` exposes a completed job's buffers;
-  `stemRequireAbsolutePath` now accepts `QDir::isAbsolutePath()` or a Windows drive/UNC form (round 5).
+  `stemRequireAbsolutePath` accepts Windows drive/UNC forms and — round 6 — decides every
+  drive-prefixed value before `QDir::isAbsolutePath`, so only `X:\…`/`X:/…` is drive-absolute and
+  `C:relative.wav`/bare `C:` is refused on every host.
 - `include/StemSeparation/StemTypes.h` — the model-rate comment now says inputs are resampled.
 - `include/ControlReversibility.h`, `src/core/ControlReversibilityTableStems.cpp` — the `stem.*` A16 rows
   (seven `not_mutating` + one `true_inverse`).
@@ -116,4 +133,4 @@ removes the four tracks). Project format: unchanged.
 | `ctest -R '^(StemSplitPipelineTest\|ControlStemCommands\|StemAvailabilityDocsGate\|ReversibilityContractTest\|ControlRegistryTest\|ScriptCommandBridgeTest\|ControlCommandsSnapshot\|DocFiguresGate\|agent_surface)$'` | 0 (9/9) |
 | `ctest -R '^agent_surface$'` | 0 |
 
-Logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-035.r5/logs/`.
+Logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-035.r6/logs/`.

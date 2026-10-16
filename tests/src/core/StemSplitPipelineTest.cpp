@@ -436,6 +436,8 @@ subprocess.Popen(
 			"a relative path is refused");
 		QVERIFY2(!control::stemRequireAbsolutePath(QStringLiteral("C:relative.wav"), source).isEmpty(),
 			"a drive-relative path is refused");
+		QVERIFY2(!control::stemRequireAbsolutePath(QStringLiteral("C:"), source).isEmpty(),
+			"a bare drive letter is refused");
 
 		const QString windows[] = {
 			QStringLiteral("C:\\music\\mix.wav"),
