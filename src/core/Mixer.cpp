@@ -224,7 +224,6 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_volumeModel(1.f, 0.f, 2.f, 0.001f, _parent),
 	m_panModel(0.f, -1.f, 1.f, 0.001f, _parent),
 	m_name(),
-	m_lock(),
 	m_queued( false ),
 	// D1 (mixer concurrency audit): initialise the mute latch explicitly. It
 	// used to be left indeterminate until the first masterMix().
@@ -1842,13 +1841,18 @@ void Mixer::mixToChannel(const AudioBus& bus, mix_ch_t channel)
 	}
 	if (mixerChannel->m_muteModel.value() == false)
 	{
-		mixerChannel->m_lock.lock();
+		// Several play handles may feed this channel in one period, each from an
+		// AudioEngine worker, so the accumulation needs mutual exclusion. It is
+		// held for one block add and nothing else: the realtime-safe spin flag,
+		// never a kernel-sleeping mutex on the render path (AGENTS.md rule 4,
+		// cluster new-p10-249).
+		while (mixerChannel->m_lock.test_and_set(std::memory_order_acquire)) {}
 
 		MixHelpers::add(mixerChannel->m_bus.bus()[0], bus.bus()[0], bus.frames());
 		mixerChannel->m_bus.quietChannels() &= bus.quietChannels(); // mix silence status
 		mixerChannel->m_hasInput = true;
 
-		mixerChannel->m_lock.unlock();
+		mixerChannel->m_lock.clear(std::memory_order_release);
 	}
 }
 

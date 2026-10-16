@@ -37,6 +37,7 @@ src/core/Song.cpp	Song::processNextBuffer	the song's per-period scheduling, call
 src/core/LinkAudioFollower.cpp	LinkAudioFollower::instance	the follower singleton is read by followLinkSession from Song::processNextBuffer once per rendered period; setup constructs it before the audio device starts
 src/core/Mixer.cpp	Mixer::prepareMasterMix	called from STAGE 0: clears the mixer's per-period buffers before the render
 src/core/Mixer.cpp	Mixer::masterMix	called from STAGE 3: sums every channel into the master buffer on the audio thread
+src/core/Mixer.cpp	Mixer::mixToChannel	called from every AudioBusHandle::audioCallback in STAGE 1, on the audio thread and on the AudioEngine worker threads: adds one play handle's block into the target channel's input
 src/core/Mixer.cpp	MixerChannel::sumSidechainInputs	called from the receiver channel's own processing on the audio thread once per period: sums each sidechain route's tap using the amount model's prepared cache
 src/core/AudioEngine.cpp	AudioEngine::prepareAutomatableModelBuffers	the serial per-period walk of the published model registry, after Song::processNextBuffer and before worker jobs; fixed iteration and prepared model caches only
 src/core/AutomatableModel.cpp	AutomatableModel::prepareValueBufferForRender	the serial evaluator for one registered model, its linked controller source and fixed period buffer; called by the registry pass, a serial render-owner read or a guarded control-side query

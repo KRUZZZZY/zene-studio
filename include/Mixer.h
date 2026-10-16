@@ -154,7 +154,12 @@ public:
 	MeterValue m_liveBakedPeakRight;
 	std::atomic<bool> m_livePostInsertsBaked{false};  //!< Whether this period's live baked peaks are valid.
 	QString m_name;
-	QMutex m_lock;
+	/*! Guards the channel's input accumulation (Mixer::mixToChannel): several play handles may feed
+	 *  one channel in one period, each from an AudioEngine worker. Held for the length of one block
+	 *  add and nothing else, so a realtime-safe spin flag and NOT a mutex - a worker that waits here
+	 *  waits for a bounded handful of float adds and is never handed to the OS (AGENTS.md rule 4;
+	 *  cluster new-p10-249). The same shape as RackZoneInputs::m_lock. */
+	std::atomic_flag m_lock = ATOMIC_FLAG_INIT;
 	bool m_queued; // are we queued up for rendering yet?
 	//! Are we muted? Updated per period by Mixer::masterMix so the render
 	//! thread and the workers do not call m_muteModel.value() repeatedly.
