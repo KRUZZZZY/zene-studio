@@ -36,6 +36,9 @@
 #include <cstring>
 #include <new>
 #include <new>
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <algorithm>
 #include <limits>
 #include <cmath>
@@ -95,6 +98,12 @@
 #include "PluginView.h"
 #include "Plugin.h"
 #include "plugins/Xpressive/ExprSynth.h"
+#include "Hardware.h"
+#include "InstrumentView.h"
+#include "NotePlayHandle.h"
+#define private public
+#include "../../../plugins/Lb302/Lb302.h"
+#undef private
 
 // Delay builds Lfo.cpp into a MODULE target, so include its implementation
 // here to exercise the constructor directly without adding a new test target.
@@ -715,6 +724,7 @@ private slots:
 	void organicDistortionLeavesPreOffsetFramesUnchanged();
 	void slice6PluginsAreLiveAndExact();
 	void partialInitializationCleansAcquiredResources();
+	void lb302ProducerDoesNotWaitForEarlierClaim();
 	void lb302DecayTracksSampleRateChanges();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
@@ -2147,6 +2157,76 @@ void PluginPortsMigrationTest::partialInitializationCleansAcquiredResources()
 	QVERIFY(!effect->isOkay());
 	effect.reset();
 	QCOMPARE(cleanups(), 1UL);
+}
+
+void PluginPortsMigrationTest::lb302ProducerDoesNotWaitForEarlierClaim()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	lmms::NotePlayHandleManager::init();
+	auto* engine = lmms::Engine::audioEngine();
+	QVERIFY(engine != nullptr);
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_lb302)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	const auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("lb302");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	std::unique_ptr<lmms::Instrument> instrument{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+	auto* synth = static_cast<lmms::Lb302Synth*>(instrument.get());
+
+	const auto frames = engine->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames)}, lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle handle{track.get(), 0, frames, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+
+	// Model producer 0 paused immediately after claiming sequence 0.
+	synth->m_notesWriteClaimed.store(1, std::memory_order_relaxed);
+	std::atomic<bool> returned{false};
+	std::thread producer{[&]
+	{
+		synth->playNoteImpl(&handle, std::span<lmms::SampleFrame>{});
+		returned.store(true, std::memory_order_release);
+	}};
+
+	const auto claimDeadline = std::chrono::steady_clock::now() + std::chrono::seconds{1};
+	while (synth->m_notesWriteClaimed.load(std::memory_order_acquire) < 2
+		&& std::chrono::steady_clock::now() < claimDeadline)
+	{
+		std::this_thread::yield();
+	}
+	const bool claimed = synth->m_notesWriteClaimed.load(std::memory_order_acquire) == 2;
+	const auto returnDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{500};
+	while (!returned.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < returnDeadline)
+	{
+		std::this_thread::yield();
+	}
+	const bool returnedBeforeGapRelease = returned.load(std::memory_order_acquire);
+	if (!returnedBeforeGapRelease)
+	{
+		// Release the legacy contiguous-commit wait so the red test can join cleanly.
+		const auto releaseLegacyGap = []<typename Synth>(Synth& state)
+		{
+			if constexpr (requires { state.m_notesWriteCommitted.store(std::size_t{}, std::memory_order_release); })
+			{
+				state.m_notesWriteCommitted.store(1, std::memory_order_release);
+			}
+		};
+		releaseLegacyGap(*synth);
+	}
+	producer.join();
+
+	QVERIFY2(claimed, "second producer did not claim the next note slot");
+	QVERIFY2(returnedBeforeGapRelease,
+		"note producer waited for an earlier claimed slot to commit");
 }
 
 void PluginPortsMigrationTest::lb302DecayTracksSampleRateChanges()

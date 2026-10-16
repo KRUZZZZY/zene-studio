@@ -2593,5 +2593,6 @@ docs/qwen-fixes-2026-10/cluster-new-p9-241.md
 # BUG new-p9-542: VST parameter-model replacement lifetime regression.
 tests/src/plugins/VstEffectControlsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-141.md
+docs/qwen-fixes-2026-10/cluster-new-p10-184.md
 # cluster new-p10-377 (2026-10): SlicerT waveform zoom clamp regression test (fork-NEW).
 tests/src/plugins/SlicerTZoomTest.cpp

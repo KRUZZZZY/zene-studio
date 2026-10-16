@@ -2425,3 +2425,6 @@ include/AudioBusHandle.h	ci2-train-5: a producer no longer pops the play-handle 
 src/core/AudioBusHandle.cpp	ci2-train-5: postPlayHandleEdit waits for a draining consumer and drains under the engine change lock only when none makes progress (TSan); held by tests/src/core/MixerConcurrencyTest.cpp.
 src/core/Track.cpp	ci2-train-5 rework: Track::addClip tells the song a clip (and any targets it carries) arrived, so the audio thread's automation scratch is sized before the next render; held by tests/src/core/AutomationRenderAllocationTest.cpp.
 src/core/AutomationClip.cpp	ci2-train-5 rework: addObject and the copy constructor tell the song (after releasing the clip mutex) that targets arrived, for the audio thread's automation scratch; held by tests/src/core/AutomationRenderAllocationTest.cpp.
+plugins/Lb302/Lb302.cpp	cluster new-p10-184: publish claimed notes through per-slot readiness so later producers do not wait for an earlier producer.
+plugins/Lb302/Lb302.h	cluster new-p10-184: add per-slot readiness sequence counters to the LB302 note queue.
+tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p10-184: regress a producer paused after claiming an unpublished LB302 note slot.
