@@ -210,8 +210,8 @@ private:
  * earliest one, so a later refusal cannot replace an unserved intermediate cut. Repeated refusals at the same
  * position share one cut.
  *
- * All operations are lock-free and allocate nothing. The per-channel slots cover the production queue's 256
- * positions plus the next cut boundary. Slot scans have a fixed bound, and each cut-stamp update makes at most
+ * All operations are lock-free and allocate nothing. The per-channel slots cover the largest queue in use (512)
+ * positions plus one cut boundary. Slot scans have a fixed bound, and each cut-stamp update makes at most
  * MaxStampUpdateAttempts compare-exchange attempts. When contention exhausts that budget or the slots are full,
  * the refusal is counted and the channel is flagged "deferred" with one wait-free fetch_or (release), after
  * queuedBefore was read. The single consumer (drainMidi) clears the flags (acquire) and keeps a consumer-private
@@ -347,7 +347,7 @@ public:
 #endif
 
 private:
-	static constexpr std::size_t MaxPendingCuts = 257;
+	static constexpr std::size_t MaxPendingCuts = 513;
 	struct SharedStamp
 	{
 		std::uint64_t stamp = 0;
