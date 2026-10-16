@@ -448,11 +448,14 @@ private:
 	 *  QString on the way in from a device. Written only by publishSource()
 	 *  (control thread) and read only by acceptsSource() (a MIDI reader thread).
 	 *  Each unit is its OWN std::atomic, so the two threads never race on the
-	 *  buffer - a sequence counter over a plain array would still be a data race
-	 *  by the C++ memory model. m_sourceVersion is the odd-is-writing sequence
-	 *  counter that keeps a reader's snapshot CONSISTENT: it re-reads on any
-	 *  change, so it sees the old name or the new one and never a half-written
-	 *  mixture. m_sourceLength is the snapshot's length, also atomic. */
+	 *  buffer. m_sourceVersion is the ODD-WHILE-WRITING sequence counter, and the
+	 *  payload accesses around it are ordered by RELEASE/ACQUIRE FENCES
+	 *  (std::atomic_thread_fence), which is what makes a reader's snapshot one
+	 *  published name under the C++ memory model: a bare counter with a relaxed
+	 *  payload does NOT guarantee that - a reader could pair an even version read
+	 *  with a code unit from the following write. The fences close exactly that
+	 *  gap; a reader whose two version reads still disagree drops the message.
+	 *  m_sourceLength is the snapshot's length, also atomic. */
 	std::array<std::atomic<quint16>, SourceNameCapacity> m_sourceChars{};
 	std::atomic<int> m_sourceLength{0};
 	std::atomic<quint32> m_sourceVersion{0};

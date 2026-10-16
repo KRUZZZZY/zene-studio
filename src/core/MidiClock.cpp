@@ -331,26 +331,47 @@ bool MidiClock::setSlaveSourcePort(const QString& port, QString* error)
 
 void MidiClock::publishSource(const QString& port) noexcept
 {
-	// Odd version = a write is in flight. Each code unit is stored into its OWN
-	// atomic, so a reader that overlaps the write never races on the buffer; the
-	// release on the closing version publishes every one of those stores, and the
-	// reader's acquire sees them all, so the snapshot it accepts is consistent.
-	m_sourceVersion.fetch_add(1, std::memory_order_acq_rel);
+	// THE WRITER HALF OF A SEQUENCE LOCK, with the snapshot consistency the C++
+	// memory model guarantees. The payload accesses are RELAXED; the order that
+	// matters is carried by the two release fences around them (this is the
+	// canonical std::atomic_thread_fence seqlock, not a bare odd/even counter).
+	//
+	// m_sourceVersion is ODD while a write is in flight. The first release fence
+	// orders the odd marker BEFORE the payload stores, so a reader can never
+	// observe a new code unit while the version still reads as the PREVIOUS even
+	// value - the case a plain counter with a relaxed payload left open. The
+	// second release fence orders the payload stores BEFORE the closing even
+	// marker, so they all become visible together with the value the reader
+	// closes on. A reader that still straddles the two markers fails its closing
+	// re-check in acceptsSource() and drops that one message.
+	m_sourceVersion.fetch_add(1, std::memory_order_relaxed); // odd: writing
+	std::atomic_thread_fence(std::memory_order_release);
 	for (int i = 0; i < port.size(); ++i)
 	{
 		m_sourceChars[static_cast<std::size_t>(i)].store(
 			static_cast<quint16>(port.at(i).unicode()), std::memory_order_relaxed);
 	}
 	m_sourceLength.store(port.size(), std::memory_order_relaxed);
-	m_sourceVersion.fetch_add(1, std::memory_order_acq_rel);
+	std::atomic_thread_fence(std::memory_order_release);
+	m_sourceVersion.fetch_add(1, std::memory_order_relaxed); // even: published
 }
 
 bool MidiClock::acceptsSource(const QString& source) const noexcept
 {
+	// THE READER HALF. The first acquire fence orders the payload loads AFTER the
+	// version read, so a version read that saw an even value cannot be paired
+	// with code units from the write that followed it; the second acquire fence
+	// orders the closing version read AFTER the payload loads, so the closing
+	// read cannot slip in front of the units it validates. When the two even
+	// version reads agree, no write was in flight across the payload loads, so
+	// every unit read belongs to the one generation the version names: the old
+	// name or the new one, never a half-written mixture. Relaxed loads plus the
+	// fences keep the comparison alloc- and lock-free on the MIDI reader thread.
 	for (int attempt = 0; attempt < SourceReadAttempts; ++attempt)
 	{
-		const quint32 before = m_sourceVersion.load(std::memory_order_acquire);
+		const quint32 before = m_sourceVersion.load(std::memory_order_relaxed);
 		if ((before & 1u) != 0u) { continue; }
+		std::atomic_thread_fence(std::memory_order_acquire);
 		const int length = m_sourceLength.load(std::memory_order_relaxed);
 		bool matches;
 		if (length == 0)
@@ -376,7 +397,8 @@ bool MidiClock::acceptsSource(const QString& source) const noexcept
 				}
 			}
 		}
-		if (m_sourceVersion.load(std::memory_order_acquire) == before) { return matches; }
+		std::atomic_thread_fence(std::memory_order_acquire);
+		if (m_sourceVersion.load(std::memory_order_relaxed) == before) { return matches; }
 	}
 	// Reconfigured under the reader four times over: this ONE message is dropped
 	// rather than measured against a name that was being rewritten.
