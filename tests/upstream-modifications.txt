@@ -2429,3 +2429,5 @@ src/core/AudioEngine.cpp	Q050-024 (link audio stream): renderStageMix() calls li
 src/core/CMakeLists.txt	Q050-024: lists core/ControlCommandsLinkAudio.cpp, core/LinkAudioStream.cpp and core/LinkAudioCodec.cpp. Regression: LinkAudioStreamTest.
 src/core/ControlRegistryRegistrations.cpp	Q050-024: registers the link.audio_* group beside link.*. Regression: LinkAudioStreamTest (commandsAreRegisteredAndUndoable).
 include/ControlRegistryGroups.h	Q050-024: declares registerLinkAudioCommands. Regression: LinkAudioStreamTest.
+src/CMakeLists.txt	Q050-024: links ws2_32 into lmmsobjs on Windows for the Link audio stream's winsock2 sockets (src/core/LinkAudioStream.cpp). Regression: LinkAudioStreamTest.
+tests/CMakeLists.txt	Q050-024: registers LinkAudioStreamTest beside LinkPhaseLockTest. Regression: LinkAudioStreamTest.

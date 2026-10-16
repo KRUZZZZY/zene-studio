@@ -392,6 +392,7 @@ include/LinkAudioStream.h
 include/LinkPeerTransport.h
 include/LinkPhaseLock.h
 include/LinkSync.h
+include/LinkVendored.h
 include/LinkedClipEdits.h
 include/LinkedModelGroupViews.h
 include/LinkedModelGroups.h

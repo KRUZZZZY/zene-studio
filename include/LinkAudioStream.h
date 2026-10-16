@@ -224,7 +224,7 @@ private:
 
 	std::thread m_thread;
 	std::atomic<bool> m_stop{false};
-	std::intptr_t m_socket = -1;         //!< the datagram socket (a SOCKET on Windows), -1 = none
+	std::uintptr_t m_socket = ~std::uintptr_t{0};   //!< the datagram socket (a SOCKET on Windows; an fd on POSIX), all-ones = none
 	std::uint32_t m_peerAddress = 0;     //!< host order, 0 = none
 	int m_peerPort = 0;
 

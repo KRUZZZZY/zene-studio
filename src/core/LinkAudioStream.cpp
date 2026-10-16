@@ -245,12 +245,15 @@ using IoLen = int;
 constexpr Handle NoSocket = INVALID_SOCKET;
 std::string lastErrorText() { return "WSA error " + std::to_string(WSAGetLastError()); }
 
+//! Every successful networkReady() is paired with one networkRelease() (WSAStartup / WSACleanup are counted by winsock).
 bool networkReady(std::string* error)
 {
-	static const int started = [] { WSADATA data; return WSAStartup(MAKEWORD(2, 2), &data); }();
+	WSADATA data;
+	const int started = WSAStartup(MAKEWORD(2, 2), &data);
 	if (started != 0 && error != nullptr) { *error = "WSAStartup failed: " + std::to_string(started); }
 	return started == 0;
 }
+void networkRelease() { WSACleanup(); }
 bool setNonBlocking(Handle h) { u_long on = 1; return ::ioctlsocket(h, FIONBIO, &on) == 0; }
 void closeSocket(Handle h) { ::closesocket(h); }
 void waitReadable(Handle h, int ms)
@@ -270,6 +273,7 @@ constexpr Handle NoSocket = -1;
 std::string lastErrorText() { return std::strerror(errno); }
 
 bool networkReady(std::string*) { return true; }
+void networkRelease() {}
 bool setNonBlocking(Handle h)
 {
 	const int flags = ::fcntl(h, F_GETFL, 0);
@@ -283,7 +287,9 @@ void waitReadable(Handle h, int ms)
 }
 #endif
 
-Handle handleOf(std::intptr_t stored) { return static_cast<Handle>(stored); }
+constexpr std::uintptr_t NoStoredSocket = ~std::uintptr_t{0};   // INVALID_SOCKET on Windows, (uintptr_t)-1 for a POSIX fd
+
+Handle handleOf(std::uintptr_t stored) { return static_cast<Handle>(stored); }
 
 bool failWith(std::string* error, const std::string& what)
 {
@@ -300,7 +306,12 @@ bool LinkAudioStream::openSocket(const AudioStreamConfig& cfg, std::string* erro
 	parseIpv4(cfg.bindAddress, bindAddress);   // configure() validated both literals
 	if (!cfg.peerAddress.empty()) { parseIpv4(cfg.peerAddress, m_peerAddress); }
 	const Handle fd = ::socket(AF_INET, SOCK_DGRAM, 0);
-	if (fd == NoSocket) { return failWith(error, "socket()"); }
+	if (fd == NoSocket)
+	{
+		const bool ok = failWith(error, "socket()");
+		networkRelease();
+		return ok;
+	}
 	sockaddr_in local{};
 	local.sin_family = AF_INET;
 	local.sin_addr.s_addr = htonl(bindAddress);
@@ -311,6 +322,7 @@ bool LinkAudioStream::openSocket(const AudioStreamConfig& cfg, std::string* erro
 		const std::string what = !nonBlocking ? "non-blocking mode" : "bind " + cfg.bindAddress + ":" + std::to_string(cfg.listenPort);
 		const std::string reason = lastErrorText();
 		closeSocket(fd);
+		networkRelease();
 		m_peerAddress = 0;
 		if (error != nullptr) { *error = what + ": " + reason; }
 		return false;
@@ -319,7 +331,7 @@ bool LinkAudioStream::openSocket(const AudioStreamConfig& cfg, std::string* erro
 	::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &length);
 	m_boundAddress = cfg.bindAddress;
 	m_boundPort = ntohs(local.sin_port);
-	m_socket = static_cast<std::intptr_t>(fd);
+	m_socket = static_cast<std::uintptr_t>(fd);
 	m_peerPort = cfg.peerPort;
 	return true;
 }
@@ -399,8 +411,12 @@ void LinkAudioStream::stopLocked()
 	m_receiveOn.store(false, std::memory_order_relaxed);
 	m_stop.store(true, std::memory_order_release);
 	if (m_thread.joinable()) { m_thread.join(); }
-	if (m_socket != -1) { closeSocket(handleOf(m_socket)); }
-	m_socket = -1;
+	if (m_socket != NoStoredSocket)
+	{
+		closeSocket(handleOf(m_socket));
+		networkRelease();
+	}
+	m_socket = NoStoredSocket;
 	m_peerAddress = 0;
 }
 

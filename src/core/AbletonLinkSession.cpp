@@ -33,19 +33,17 @@
 #include <cstdlib>
 
 #ifndef _WIN32
-#include <ifaddrs.h>
 #include <net/if.h>
 #endif
+
+#include "LinkVendored.h"
 
 namespace lmms::linkseam
 {
 
-/*! Test/diagnostic seam (Q050-024): confine Link's interface scan to loopback, so its
- *  discovery sockets exist only on 127.0.0.1 and no packet can leave the host. The vendored
- *  headers are byte-identical to upstream, so the seam is the one libc call their scanner
- *  makes (ableton/platforms/posix/ScanIpIfAddrs.hpp: getifaddrs) - re-pointed, below, only
- *  for the include of Link.hpp in THIS translation unit. */
-inline std::atomic<bool>& loopbackOnly()
+/*! Test/diagnostic seam (Q050-024): confine Link's interface scan to loopback, so its discovery
+ *  sockets exist only on 127.0.0.1 and no packet can leave the host (include/LinkVendored.h). */
+std::atomic<bool>& loopbackOnly()
 {
 	static std::atomic<bool> flag{[] {
 		const char* env = std::getenv("ZENE_LINK_LOOPBACK_ONLY");
@@ -55,8 +53,7 @@ inline std::atomic<bool>& loopbackOnly()
 }
 
 #ifndef _WIN32
-//! getifaddrs, with every non-loopback entry marked not running when confined (the scanner skips those).
-inline int scan(struct ifaddrs** out)
+int scan(struct ifaddrs** out)
 {
 	const int result = ::getifaddrs(out);
 	if (result == 0 && loopbackOnly().load(std::memory_order_relaxed))
@@ -72,13 +69,6 @@ inline int scan(struct ifaddrs** out)
 
 } // namespace lmms::linkseam
 
-#ifndef _WIN32
-#define getifaddrs(out) ::lmms::linkseam::scan(out)
-#endif
-#include <ableton/Link.hpp>
-#ifndef _WIN32
-#undef getifaddrs
-#endif
 #include <ableton/link/HostTimeFilter.hpp>
 
 namespace lmms

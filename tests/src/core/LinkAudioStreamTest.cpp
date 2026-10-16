@@ -4,8 +4,8 @@
  *
  * HERMETIC: every socket here is bound to 127.0.0.1 and every peer is 127.0.0.1. The one test that
  * runs Ableton Link confines its discovery to the loopback interface first (see pcmStreamsWhileLinkSyncIsActive).
- * Nothing is multicast or broadcast, Ableton Link is never switched on (so no
- * discovery runs), there is no name lookup, UPnP or internet.
+ * Nothing is multicast or broadcast beyond the loopback interface (the Link test confines Link's discovery
+ * to it), there is no name lookup, UPnP or internet.
  *
  * Proof of the acceptance criteria: the codec, the ring and the refusals pin the
  * building blocks; loopbackExchangeIsSampleExact moves a counting ramp from one
@@ -45,6 +45,7 @@
 #include <QJsonObject>
 
 #include <fstream>
+#include <optional>
 #include <sstream>
 
 #include "AbletonLinkSession.h"
@@ -151,13 +152,14 @@ public:
 		return QStringLiteral("Link stage %1 did not complete (A sees %2 peers, B %3)")
 			.arg(m_stage).arg(m_a.numPeers()).arg(m_b.numPeers());
 	}
-	bool confinedToLoopback() const
+	//! Whether Link's multicast group is joined on lo alone; nothing where the platform cannot be inspected (only Linux can).
+	static std::optional<bool> confinedToLoopback()
 	{
 #ifdef __linux__
 		const std::vector<std::string> devices = interfacesInLinkGroup();
 		return !devices.empty() && std::all_of(devices.begin(), devices.end(), [](const std::string& d) { return d == "lo"; });
 #else
-		return true;
+		return std::nullopt;
 #endif
 	}
 	double phaseError()
@@ -515,7 +517,14 @@ private slots:
 			QVERIFY2(link.advance(i), qPrintable(link.describeStall(i)));
 		}
 		QVERIFY(link.done());
-		QVERIFY2(link.confinedToLoopback(), "Link joined its multicast group on an interface other than lo");
+		if (const std::optional<bool> confined = link.confinedToLoopback())
+		{
+			QVERIFY2(*confined, "Link joined its multicast group on an interface other than lo");
+		}
+		else
+		{
+			qInfo("multicast membership is not inspectable on this platform: confinement check skipped");
+		}
 		QVERIFY2(std::fabs(link.phaseError()) < 0.01, qPrintable(QString::number(link.phaseError())));
 		QVERIFY(link.temposAgree());
 		QVERIFY2(isOrdered(heard, 5000), "audio was lost or out of order while Link was active");

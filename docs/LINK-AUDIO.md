@@ -91,7 +91,10 @@ step (the previous configuration is restored; reversibility class true_inverse);
 Link's own discovery multicasts on every interface. To run Link beside the stream in a test with no
 packet leaving the host, `AbletonLinkSession::setLoopbackOnly(true)` (or `ZENE_LINK_LOOPBACK_ONLY=1`)
 confines Link's interface scan to `lo`: the vendored scanner (`ableton/platforms/posix/ScanIpIfAddrs.hpp`)
-calls `getifaddrs`, and `src/core/AbletonLinkSession.cpp` re-points that one call, for its own include of
-`Link.hpp` only, to a wrapper that marks non-loopback interfaces not running. The vendored headers stay
-byte-identical. `LinkAudioStreamTest::pcmStreamsWhileLinkSyncIsActive` uses it and reads `/proc/net/igmp`
-to show the group is joined on `lo` alone. The seam is POSIX only; on Windows that test skips.
+calls `getifaddrs`, and `include/LinkVendored.h` routes that one call to `lmms::linkseam::scan`, one
+non-inline function defined in `src/core/AbletonLinkSession.cpp`. Every translation unit that includes the
+vendored Link does so through `LinkVendored.h` (the session wrapper and `AbletonLinkInteropTest`), so all
+of them see the same tokens - no ODR split - and the vendored headers stay byte-identical.
+`LinkAudioStreamTest::pcmStreamsWhileLinkSyncIsActive` uses it and, on Linux, reads `/proc/net/igmp` to show
+the group is joined on `lo` alone (skipped with a message elsewhere). The seam is POSIX only; on Windows the
+test skips.
