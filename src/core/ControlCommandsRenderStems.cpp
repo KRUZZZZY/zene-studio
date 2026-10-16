@@ -64,6 +64,7 @@
 #include <QStringList>
 
 #include "ControlEdit.h"
+#include "ControlExportPresetSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ProjectRenderer.h"
@@ -76,11 +77,6 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 
 namespace
 {
-
-//! The stem sample rate this surface renders at. One number, named once, and
-//! reported in the result so a caller never has to assume it - the same choice
-//! `render.render` makes (ControlCommandsProject.cpp:357).
-constexpr int kStemSampleRate = 44100;
 
 //! The stem export's own bound, in milliseconds: the child's start (30 s, the
 //! whole engine construction) plus the render itself. Named here rather than inlined
@@ -104,6 +100,11 @@ struct StemRequest
 	QString formatName;
 	ProjectRenderer::ExportFileFormat format = ProjectRenderer::ExportFileFormat::Wave;
 	int tailBars = 1;
+	//! 0.5.0 L12 (Q050-009): the export settings in force - the applied render
+	//! preset's rate, bit depth and stereo mode, or the render path's own
+	//! defaults. Read like render.render reads them, so a stem export follows
+	//! the same selected export rate and bit depth.
+	ControlExportPreset settings;
 };
 
 /*! Validates the stem args; an empty string means they are usable.
@@ -140,21 +141,27 @@ QString parseStemArgs(const QJsonObject& args, StemRequest* request)
 		}
 		request->tailBars = static_cast<int>(bars);
 	}
+	// The settings the next render uses: the preset applied through
+	// export.preset_apply, or the render path's own defaults. Read HERE, like
+	// render.render, so a selected export preset's rate and bit depth reach the
+	// stems instead of the fixed 44.1 kHz this verb used to pass.
+	request->settings = ControlExportPresetSettings::effective();
 	return QString();
 }
 
 //! Runs the shipped `exportstems` CLI path as a child process.
 bool runCliStemExport(const QString& projectPath, const StemRequest& request, int* exitCode)
 {
+	QStringList arguments{QStringLiteral("exportstems"), projectPath,
+		QStringLiteral("-o"), request.directory,
+		QStringLiteral("-f"), request.formatName};
+	arguments += controlExportPresetRenderArgs(request.settings);
+	arguments << QStringLiteral("--tail-bars") << QString::number(request.tailBars);
+
 	QProcess renderer;
 	renderer.setStandardOutputFile(QProcess::nullDevice());
 	renderer.setStandardErrorFile(QProcess::nullDevice());
-	renderer.start(QCoreApplication::applicationFilePath(),
-		{QStringLiteral("exportstems"), projectPath,
-			QStringLiteral("-o"), request.directory,
-			QStringLiteral("-f"), request.formatName,
-			QStringLiteral("-s"), QString::number(kStemSampleRate),
-			QStringLiteral("--tail-bars"), QString::number(request.tailBars)});
+	renderer.start(QCoreApplication::applicationFilePath(), arguments);
 	const bool finished = renderer.waitForStarted(kStemChildStartMs)
 		&& renderer.waitForFinished(kStemChildRenderMs);
 	if (!finished) { renderer.kill(); }
@@ -244,7 +251,12 @@ ControlResult stemExportSession(const QJsonObject& args)
 	QJsonObject result;
 	result.insert(QStringLiteral("directory"), request.directory);
 	result.insert(QStringLiteral("format"), request.formatName);
-	result.insert(QStringLiteral("sample_rate"), kStemSampleRate);
+	result.insert(QStringLiteral("sample_rate"), static_cast<int>(request.settings.sampleRate));
+	result.insert(QStringLiteral("bit_depth"),
+		QString::fromLatin1(controlExportPresetBitDepthName(request.settings.bitDepth)));
+	result.insert(QStringLiteral("stereo_mode"),
+		QString::fromLatin1(controlExportPresetStereoModeName(request.settings.stereoMode)));
+	result.insert(QStringLiteral("applied_preset"), ControlExportPresetSettings::activeName());
 	result.insert(QStringLiteral("tail_bars"), request.tailBars);
 	result.insert(QStringLiteral("count"), stems.size());
 	result.insert(QStringLiteral("stems"), stems);
@@ -260,7 +272,10 @@ void registerRenderStems(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Export every unmuted track to its own file in an absolute "
 		"directory: one stem per track, post-fader and post-effects, including that track's own "
 		"sends and their tails, each rendered to the project's length plus 'tail_bars' bars (default "
-		"1, the whole-project render's own convention). Returns the new file names. NOTE the "
+		"1, the whole-project render's own convention). The stems are written with the export "
+		"settings in force - the sample rate, bit depth and stereo mode of the preset applied "
+		"through export.preset_apply, or the render path's own defaults (44100 Hz, 16-bit, joint "
+		"stereo) when none is applied; the reply names them. Returns the new file names. NOTE the "
 		"declared bound: the render runs in a child process and this surface does not answer - not "
 		"even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).");
 	// The declared bound, in the description above and in the argument contract here:
@@ -276,6 +291,9 @@ void registerRenderStems(ControlRegistry& registry)
 		{QStringLiteral("directory"), stringProperty()},
 		{QStringLiteral("format"), stringProperty()},
 		{QStringLiteral("sample_rate"), integerProperty()},
+		{QStringLiteral("bit_depth"), stringProperty()},
+		{QStringLiteral("stereo_mode"), stringProperty()},
+		{QStringLiteral("applied_preset"), stringProperty()},
 		{QStringLiteral("tail_bars"), integerProperty(0, 64)},
 		{QStringLiteral("count"), integerProperty()},
 		{QStringLiteral("stems"), arrayProperty()},

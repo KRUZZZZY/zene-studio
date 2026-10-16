@@ -30,14 +30,20 @@
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
+#include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QLabel>
+#include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QLineEdit>
-#include <QMessageBox>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QVBoxLayout>
 
+#include "ControlExportPresetSupport.h"
+#include "ControlRegistry.h"
 #include "Engine.h"
 #include "ExportQualityControls.h"
 #include "ProjectRenderer.h"
@@ -53,12 +59,24 @@ constexpr auto defaultBitRate = SUPPORTED_BITRATES[2];
 constexpr auto defaultBitDepth = OutputSettings::BitDepth::Depth24Bit;
 constexpr auto defaultStereoMode = OutputSettings::StereoMode::Stereo;
 constexpr auto maxLoopRepeat = std::numeric_limits<int>::max();
+
+//! 0.5.0 L12 (Q050-009): the name "Save Preset..." asks for. A test replaces it, so a preset can be
+//! created from the dialog without a modal; empty means the default QInputDialog.
+std::function<QString(const QString& suggested)> s_namePrompt;
 } // namespace
+
+void setExportPresetNamePrompt(std::function<QString(const QString& suggested)> prompt)
+{
+	s_namePrompt = std::move(prompt);
+}
 
 ExportProjectDialog::ExportProjectDialog(const QString& path, Mode mode, QWidget* parent)
 	: QDialog(parent)
 	, m_fileFormatLabel(new QLabel(tr("File format:")))
 	, m_fileFormatComboBox(new QComboBox())
+	, m_presetLabel(new QLabel(tr("Render preset:")))
+	, m_presetComboBox(new QComboBox())
+	, m_savePresetButton(new QPushButton(tr("Save Preset...")))
 	, m_sampleRateLabel(new QLabel(tr("Sampling rate:")))
 	, m_sampleRateComboBox(new QComboBox())
 	, m_bitRateLabel(new QLabel(tr("Bit rate:")))
@@ -171,7 +189,8 @@ ExportProjectDialog::ExportProjectDialog(const QString& path, Mode mode, QWidget
 	// from the blocks that are written, so the render itself is unchanged, and
 	// the report is the one thing a user cannot get from the file afterwards.
 	m_loudnessReportBox = new QCheckBox(tr("Loudness report (EBU R128)"));
-	m_loudnessReportBox->setToolTip(tr("Measure the render and write the EBU R128 report - integrated LUFS, "
+	m_loudnessReportBox->setObjectName(QStringLiteral("exportLoudnessReport"));
+	m_loudnessReportBox->setToolTip(tr("Measure the render and write the EBU R128 report - integrated LUFS "
 									   "short-term maximum and true peak - beside the output as "
 									   "\"<file>.loudness.txt\". Measure-only: the exported audio is identical "
 									   "either way."));
@@ -197,6 +216,18 @@ ExportProjectDialog::ExportProjectDialog(const QString& path, Mode mode, QWidget
 	startCancelButtonsLayout->addWidget(m_cancelButton);
 
 	auto mainLayout = new QVBoxLayout(this);
+	// 0.5.0 L12 (Q050-009): the render-preset picker leads the dialog, so choosing "the 24/96
+	// master" is the first thing in reach; choosing one applies it (export.preset_apply) and moves
+	// the settings rows below, and the next render is started with those settings.
+	auto presetLayout = new QHBoxLayout{};
+	m_presetComboBox->setObjectName(QStringLiteral("exportPresetCombo"));
+	m_savePresetButton->setObjectName(QStringLiteral("exportSavePresetButton"));
+	m_presetComboBox->setAccessibleName(tr("Render preset"));
+	m_presetLabel->setBuddy(m_presetComboBox);
+	presetLayout->addWidget(m_presetLabel);
+	presetLayout->addWidget(m_presetComboBox, 1);
+	presetLayout->addWidget(m_savePresetButton);
+	mainLayout->addLayout(presetLayout);
 	mainLayout->addWidget(exportSettingsGroupBox);
 	mainLayout->addWidget(m_fileFormatSettingsGroupBox);
 	// Dither and resampling, through export.set_dither / export.set_src_quality.
@@ -227,6 +258,21 @@ ExportProjectDialog::ExportProjectDialog(const QString& path, Mode mode, QWidget
 	m_stereoModeComboBox->setCurrentIndex(
 		std::max(0, m_stereoModeComboBox->findData(static_cast<int>(defaultStereoMode))));
 	m_compressionLevelComboBox->setCurrentIndex(defaultCompressionLevel);
+
+	// Object names for the settings a preset drives, so a test can address them and a screen
+	// reader (and the UI test) can find them by name rather than by position.
+	m_fileFormatComboBox->setObjectName(QStringLiteral("exportFileFormatCombo"));
+	m_sampleRateComboBox->setObjectName(QStringLiteral("exportSampleRateCombo"));
+	m_bitDepthComboBox->setObjectName(QStringLiteral("exportBitDepthCombo"));
+	m_stereoModeComboBox->setObjectName(QStringLiteral("exportStereoModeCombo"));
+	m_channelModeComboBox->setObjectName(QStringLiteral("exportChannelsCombo"));
+
+	// 0.5.0 L12 (Q050-009): the preset picker follows export.preset_list, applies a choice with
+	// export.preset_apply and saves the dialog's own settings with export.preset_add.
+	rebuildPresetList();
+	connect(m_presetComboBox, qOverload<int>(&QComboBox::currentIndexChanged), this,
+		&ExportProjectDialog::onPresetChanged);
+	connect(m_savePresetButton, &QPushButton::clicked, this, &ExportProjectDialog::onSavePresetClicked);
 
 	connect(m_startButton, &QPushButton::clicked, this, &ExportProjectDialog::onStartButtonClicked);
 	connect(m_cancelButton, &QPushButton::clicked, this, &ExportProjectDialog::reject);
@@ -300,24 +346,134 @@ void ExportProjectDialog::onChannelModeChanged(int index)
 	m_loudnessReportBox->setEnabled(!surround);
 }
 
-void ExportProjectDialog::onStartButtonClicked()
+ProjectRenderer::ExportFileFormat ExportProjectDialog::exportFormat() const
+{
+	return static_cast<ProjectRenderer::ExportFileFormat>(m_fileFormatComboBox->currentData().toInt());
+}
+
+OutputSettings ExportProjectDialog::exportSettings() const
 {
 	const auto sampleRate = static_cast<sample_rate_t>(m_sampleRateComboBox->currentData().toInt());
 	const auto bitRate = static_cast<bitrate_t>(m_bitRateComboBox->currentData().toInt());
 	const auto bitDepth = static_cast<OutputSettings::BitDepth>(m_bitDepthComboBox->currentData().toInt());
 	const auto stereoMode = static_cast<OutputSettings::StereoMode>(m_stereoModeComboBox->currentData().toInt());
-	auto outputSettings = OutputSettings{sampleRate, bitRate, bitDepth, stereoMode};
-
-	const auto compressionLevel = m_compressionLevelComboBox->currentData().toDouble();
-	outputSettings.setCompressionLevel(compressionLevel);
+	OutputSettings outputSettings{sampleRate, bitRate, bitDepth, stereoMode};
+	outputSettings.setCompressionLevel(m_compressionLevelComboBox->currentData().toDouble());
 	outputSettings.setLoudnessReport(m_loudnessReportBox->isChecked());
-
-	const auto format = static_cast<ProjectRenderer::ExportFileFormat>(m_fileFormatComboBox->currentData().toInt());
 	// The channels row is only on the WAV page; every other format exports stereo, as before.
-	if (format == ProjectRenderer::ExportFileFormat::Wave)
+	if (exportFormat() == ProjectRenderer::ExportFileFormat::Wave)
 	{
-		outputSettings.setChannelMode(static_cast<OutputSettings::ChannelMode>(m_channelModeComboBox->currentData().toInt()));
+		outputSettings.setChannelMode(
+			static_cast<OutputSettings::ChannelMode>(m_channelModeComboBox->currentData().toInt()));
 	}
+	return outputSettings;
+}
+
+QString ExportProjectDialog::currentBitDepthName() const
+{
+	return QString::fromLatin1(controlExportPresetBitDepthName(
+		static_cast<OutputSettings::BitDepth>(m_bitDepthComboBox->currentData().toInt())));
+}
+
+QString ExportProjectDialog::currentStereoModeName() const
+{
+	return QString::fromLatin1(controlExportPresetStereoModeName(
+		static_cast<OutputSettings::StereoMode>(m_stereoModeComboBox->currentData().toInt())));
+}
+
+void ExportProjectDialog::rebuildPresetList()
+{
+	const ControlResult listed = ControlRegistry::instance()->invoke(QStringLiteral("export.preset_list"));
+	const QSignalBlocker blocker(m_presetComboBox);
+	m_presetComboBox->clear();
+	m_presetComboBox->addItem(tr("Default Settings (44100 Hz, 16-bit, joint stereo)"), QString());
+	if (listed.ok)
+	{
+		for (const QJsonValue& value : listed.result.value(QStringLiteral("presets")).toArray())
+		{
+			const QString name = value.toObject().value(QStringLiteral("name")).toString();
+			m_presetComboBox->addItem(name, name);
+		}
+		const QString applied = listed.result.value(QStringLiteral("applied_preset")).toString();
+		const int index = applied.isEmpty() ? 0 : m_presetComboBox->findData(applied);
+		m_presetComboBox->setCurrentIndex(index >= 0 ? index : 0);
+		// Opening the dialog shows the settings the render path is on, so a user (and a test)
+		// reads the applied preset's rate/depth/mode without having to re-select it.
+		showPresetSettings(listed.result.value(QStringLiteral("settings")).toObject());
+	}
+	m_savePresetButton->setEnabled(ControlRegistry::instance()->hasCommand(QStringLiteral("export.preset_add")));
+}
+
+void ExportProjectDialog::showPresetSettings(const QJsonObject& settings)
+{
+	const int rateIndex = m_sampleRateComboBox->findData(settings.value(QStringLiteral("sample_rate")).toInt());
+	if (rateIndex >= 0) { m_sampleRateComboBox->setCurrentIndex(rateIndex); }
+
+	OutputSettings::BitDepth depth = OutputSettings::BitDepth::Depth16Bit;
+	if (controlExportPresetBitDepthFromName(settings.value(QStringLiteral("bit_depth")).toString(), &depth))
+	{
+		const int depthIndex = m_bitDepthComboBox->findData(static_cast<int>(depth));
+		if (depthIndex >= 0) { m_bitDepthComboBox->setCurrentIndex(depthIndex); }
+	}
+
+	OutputSettings::StereoMode mode = OutputSettings::StereoMode::JointStereo;
+	if (controlExportPresetStereoModeFromName(settings.value(QStringLiteral("stereo_mode")).toString(), &mode))
+	{
+		const int modeIndex = m_stereoModeComboBox->findData(static_cast<int>(mode));
+		if (modeIndex >= 0) { m_stereoModeComboBox->setCurrentIndex(modeIndex); }
+	}
+}
+
+void ExportProjectDialog::onPresetChanged(int index)
+{
+	const QString name = m_presetComboBox->itemData(index).toString();
+	const ControlResult applied = name.isEmpty()
+		? ControlRegistry::instance()->invoke(QStringLiteral("export.preset_apply"))
+		: ControlRegistry::instance()->invoke(QStringLiteral("export.preset_apply"),
+			{{QStringLiteral("name"), name}});
+	if (!applied.ok) { return; }
+	showPresetSettings(applied.result);
+}
+
+void ExportProjectDialog::onSavePresetClicked()
+{
+	QString name = s_namePrompt ? s_namePrompt(m_presetComboBox->currentText())
+		: QInputDialog::getText(this, tr("Save Render Preset"), tr("Preset name:"));
+	name = name.trimmed();
+	if (name.isEmpty()) { return; }
+
+	bool exists = false;
+	const ControlResult listed = ControlRegistry::instance()->invoke(QStringLiteral("export.preset_list"),
+		{{QStringLiteral("name"), name}});
+	if (listed.ok && !listed.result.value(QStringLiteral("presets")).toArray().isEmpty()) { exists = true; }
+	if (exists)
+	{
+		const auto answer = QMessageBox::question(this, tr("Save Render Preset"),
+			tr("A render preset named \"%1\" exists. Replace it?").arg(name),
+			QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+		if (answer != QMessageBox::Yes) { return; }
+	}
+
+	const ControlResult added = ControlRegistry::instance()->invoke(QStringLiteral("export.preset_add"),
+		{{QStringLiteral("name"), name},
+			{QStringLiteral("sample_rate"), m_sampleRateComboBox->currentData().toInt()},
+			{QStringLiteral("bit_depth"), currentBitDepthName()},
+			{QStringLiteral("stereo_mode"), currentStereoModeName()},
+			{QStringLiteral("overwrite"), exists}});
+	if (!added.ok)
+	{
+		QMessageBox::warning(this, tr("Save Render Preset"), added.errorMessage);
+		return;
+	}
+	rebuildPresetList();
+	const int index = m_presetComboBox->findData(name);
+	if (index >= 0) { m_presetComboBox->setCurrentIndex(index); }
+}
+
+void ExportProjectDialog::onStartButtonClicked()
+{
+	const auto outputSettings = exportSettings();
+	const auto format = exportFormat();
 	const QString refused = surroundexport::refusal(outputSettings, format == ProjectRenderer::ExportFileFormat::Wave);
 	if (!refused.isEmpty())
 	{

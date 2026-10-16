@@ -242,6 +242,7 @@ SET(LMMS_SRCS
 	gui/RackMenu.cpp
 	gui/RecordingRecoveryMenu.cpp
 	gui/RenderPresetMenu.cpp
+	gui/RenderRangeMenu.cpp
 	gui/ScriptBudgetAction.cpp
 	gui/SessionTuningMenu.cpp
 	gui/MidiSetupWidget.cpp

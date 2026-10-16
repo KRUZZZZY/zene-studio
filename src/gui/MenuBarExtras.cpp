@@ -32,6 +32,7 @@
 #include "AccessibleWidgets.h"
 #include "CommandForm.h"
 #include "CommandLists.h"
+#include "RenderRangeMenu.h"
 
 namespace lmms::gui
 {
@@ -134,6 +135,9 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	onRange(QObject::tr("Duplicate"), QStringLiteral("range.duplicate"), {});
 	onRange(QObject::tr("Consolidate"), QStringLiteral("range.consolidate"), {});
 	onRange(QObject::tr("Bounce to a New Track"), QStringLiteral("range.bounce"), {});  // the manual's "bounce it from Navigate > Range"
+	// 0.5.0 L12 (Q050-009): render the selection to a file, and export the song's named sections.
+	range->addSeparator();
+	addRenderRangeActions(range);
 	// range.clear only drops the selection (interface state); "Clear Range" read as erasing its contents.
 	onRange(QObject::tr("Deselect Range"), QStringLiteral("range.clear"), {});
 	run(QObject::tr("Tool Menu at Pointer"), QStringLiteral("window.tool_menu"), {});

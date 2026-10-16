@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-15T08:30:27Z",
+  "captured_at": "2026-10-16T12:24:32Z",
   "commands": [
     {
       "args_schema": {
@@ -24052,6 +24052,65 @@
           "out": {
             "type": "string"
           },
+          "sections": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "out"
+        ],
+        "type": "object"
+      },
+      "description": "Export the song's named sections (section.add/set/list) as separate files: one file per section, named after the section, each rendered to exactly the section's own start..end ticks (no tail bar). 'out' is an absolute directory the files are written into; 'sections' picks specific sec-<n> ids (default: every section, in time order); 'format' is one of the build's renderable formats (default wav). Each file is rendered through render.render, so the export settings in force - the preset applied through export.preset_apply - set its rate and bit depth; the reply names them and one entry per written file. NOTE the declared bound: each render runs in a child process and this surface does not answer until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "group": "render",
+      "id": "render.sections",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "applied_preset": {
+            "type": "string"
+          },
+          "bit_depth": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "directory": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array"
+          },
+          "format": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "enum": [
+              "wav",
+              "flac",
+              "ogg",
+              "mp3"
+            ],
+            "type": "string"
+          },
+          "out": {
+            "type": "string"
+          },
           "tail_bars": {
             "maximum": 64,
             "minimum": 0,
@@ -24063,7 +24122,7 @@
         ],
         "type": "object"
       },
-      "description": "Export every unmuted track to its own file in an absolute directory: one stem per track, post-fader and post-effects, including that track's own sends and their tails, each rendered to the project's length plus 'tail_bars' bars (default 1, the whole-project render's own convention). Returns the new file names. NOTE the declared bound: the render runs in a child process and this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Export every unmuted track to its own file in an absolute directory: one stem per track, post-fader and post-effects, including that track's own sends and their tails, each rendered to the project's length plus 'tail_bars' bars (default 1, the whole-project render's own convention). The stems are written with the export settings in force - the sample rate, bit depth and stereo mode of the preset applied through export.preset_apply, or the render path's own defaults (44100 Hz, 16-bit, joint stereo) when none is applied; the reply names them. Returns the new file names. NOTE the declared bound: the render runs in a child process and this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
       "group": "render",
       "id": "render.stems",
       "mutating": false,
@@ -24071,6 +24130,12 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "applied_preset": {
+            "type": "string"
+          },
+          "bit_depth": {
+            "type": "string"
+          },
           "count": {
             "type": "integer"
           },
@@ -24085,6 +24150,9 @@
           },
           "stems": {
             "type": "array"
+          },
+          "stereo_mode": {
+            "type": "string"
           },
           "tail_bars": {
             "maximum": 64,
@@ -35147,17 +35215,23 @@
       }
     }
   ],
-  "count": 828,
+  "count": 829,
   "instance": {
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-009/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/cff463a0-1326-44da-8393-bec3a1847916/scratchpad/train5/commands-release.json"
+    "source_socket": "/tmp/zctl-run-behf5d8c/zene.sock",
+    "version": "0.4.0-alpha.2723+de5a85a"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 828,
-    "ids_sha256": "8e2d5b9a0774e7005e5832777c552b2d4f09efbc56e71322c5fd72e5f3385c6a"
+    "id_count": 829,
+    "ids_sha256": "6e6ea2c6cede0bc1cd5a7037acfbb83505585399e2023d0f316365071f2f4f60"
   }
 }

@@ -2595,3 +2595,11 @@ tests/src/plugins/VstEffectControlsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-141.md
 # cluster new-p10-377 (2026-10): SlicerT waveform zoom clamp regression test (fork-NEW).
 tests/src/plugins/SlicerTZoomTest.cpp
+
+# Q050-009 (2026-10): the export wave's preset picker in the export dialog, the range menu's Render
+# Selection / Export Sections, and the render.sections batch verb (fork-NEW sources).
+include/RenderRangeMenu.h
+src/gui/RenderRangeMenu.cpp
+src/core/ControlCommandsRenderSections.cpp
+tests/src/gui/RenderRangeMenuTest.cpp
+tests/src/gui/ExportProjectDialogPresetTest.cpp

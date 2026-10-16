@@ -218,6 +218,20 @@ const ReversibilityRow kPassiveRows[] = {
 		"not answer until the export finishes (docs/RENDER-CHILD-WAIT.md:120-126, "
 		"docs/KNOWN-LIMITATIONS.md)",
 		""),
+	R("render.sections", RC::NotMutating, false,
+		"it writes OUTPUT ARTEFACTS - one bounded file per named section - and "
+		"nothing else: each section is rendered through render.render in a child "
+		"process against a serialised copy of the session, so no project state, "
+		"clip, section list or model in this instance is touched and there is "
+		"nothing for a checkpoint to capture",
+		"the project and its sections are unchanged; the files are outputs, not "
+		"project state, and overwriting them is the caller's decision. Its "
+		"DECLARED BOUND is the one every render-running command carries, repeated "
+		"once per section: each child blocks the dispatch thread for up to "
+		"waitForFinished(600000), so the control surface does not answer until "
+		"the export finishes (docs/RENDER-CHILD-WAIT.md:120-126, "
+		"docs/KNOWN-LIMITATIONS.md)",
+		""),
 	R("bounce.in_place", RC::NotMutating, false,
 		"it writes an OUTPUT ARTEFACT and nothing else: the render runs in a "
 		"child process against a serialised copy of the session with every other "

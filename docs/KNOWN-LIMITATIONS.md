@@ -835,9 +835,15 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   Default Settings and one item per stored preset with the applied one checked (`export.preset_apply`), Save
   Preset... (name, sample rate, bit depth, stereo mode; `export.preset_add`, asking before a name is replaced),
   a Delete submenu (`export.preset_remove`, after a confirmation), and Render Song with Preset... - the
-  interface's first route to `render.render`, which is what a preset governs (`RenderPresetMenuTest`). The
-  export dialog still keeps its own settings and ignores the applied preset, and a ranged render is still
-  socket-only. The bullet below is the pre-menu record.
+  interface's first route to `render.render`, which is what a preset governs (`RenderPresetMenuTest`).
+  *(Updated 2026-10-16, Q050-009.)* The **export dialog now carries a Render preset picker**: Default
+  Settings and one item per stored preset with the applied one selected; choosing one applies it
+  (`export.preset_apply`) and moves the rate/bit-depth/stereo rows, and Save Preset... stores the rows
+  the dialog holds (`export.preset_add`) (`ExportProjectDialogPresetTest`). **Navigate ▸ Range** gains
+  Render Selection... (`render.render` with the range's exact start/end ticks) and Export Sections...
+  (`render.sections`, one correctly named, bounded file per named section) (`RenderRangeMenuTest`,
+  `ControlRenderSections`). An applied preset now also governs **`render.stems`**, which renders at the
+  selected rate and bit depth instead of a fixed 44100 Hz. The bullet below is the pre-menu record.
 - **Render/export presets have no interface, and a ranged render is socket-only — added 2026-09-15.**
   A named render preset (a sample rate, a bit depth and a stereo mode) can be saved, listed, applied
   and removed, drivable through `--control-socket` (`export.preset_add`, `export.preset_list`,

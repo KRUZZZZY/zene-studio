@@ -203,6 +203,10 @@ void registerControlCommands(ControlRegistry& registry)
 	registerCollectMediaCommand(registry);
 	registerBounceLandCommand(registry);
 	registerRenderStemsCommands(registry);
+	// render.sections - the song's named sections exported one file each
+	// (0.5.0 L12, Q050-009). Registered beside render.stems: it renders through
+	// render.render, so it belongs to the same render group.
+	registerRenderSectionsCommands(registry);
 	registerPluginCommands(registry);
 	registerDspCommands(registry);
 	registerSettingsCommands(registry);
