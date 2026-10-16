@@ -2,6 +2,17 @@
 
 Verdict: **BLOCKED** — the behavior fix and regression are verified, but both mandatory ratchet gates fail on unchanged files in this branch.
 
+## Evidence summary
+
+| Check | Evidence |
+| --- | --- |
+| RED | `ctest -R '^ArrangerOverlaysVideoLaneTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-9.r1/logs/test-red-proof-2.log 2>&1; echo EXIT=$?` — exit 8; the existing clip lost selection. |
+| GREEN | `ctest -R '^ArrangerOverlaysVideoLaneTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-9.r1/logs/test-green-proof-2.log 2>&1; echo EXIT=$?` — exit 0. |
+| Affected family | 1/1 CTest target passed after the fix; the RED QtTest run had 9 pass and the regression fail. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-9.r1/logs/gate-complexity-3.log 2>&1; echo EXIT=$?` — exit 1. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-9.r1/logs/gate-file-length-3.log 2>&1; echo EXIT=$?` — exit 1. |
+| Files in fix commit `662fb5ba7` | `src/gui/clips/ClipView.cpp`; `tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp`; `tests/upstream-modifications.txt`; `docs/qwen-fixes-2026-10/cluster-new-p11-9.md`. |
+
 ## Evidence
 
 `src/gui/clips/ClipView.cpp:1466` contains `ClipView::pressLocked()`. Before the fix, pressing any unselected locked clip without `KBD_COPY_MODIFIER` cleared all selected clips. It now skips that clear when `Qt::ShiftModifier` is held and selects the locked clip, preserving Shift-add behavior.
