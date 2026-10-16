@@ -96,7 +96,7 @@ void LfoController::updateValueBuffer()
 	m_bufferLastUpdated++;
 	if( m_bufferLastUpdated < s_periods )
 	{
-		int diff = s_periods - m_bufferLastUpdated;
+		f_cnt_t diff = s_periods - m_bufferLastUpdated;
 		phase += static_cast<float>( Engine::audioEngine()->framesPerPeriod() * diff ) / m_duration;
 		m_bufferLastUpdated += diff;
 	}
