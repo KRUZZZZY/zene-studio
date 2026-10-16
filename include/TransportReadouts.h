@@ -123,6 +123,12 @@ public:
 	//! main window's periodic update; the budget once a second, the disk's free space does not move faster).
 	void tick();
 
+	//! WF-085 test seam: while @a source is set, the Rec left readout takes its ControlResult instead of
+	//! asking ControlRegistry for record.remaining, so a test can present a value that changed since the
+	//! bind. A null function restores the live command (the default; UI thread only, like the readout).
+	using RemainingTestSource = std::function<ControlResult()>;
+	static void setRemainingTestSource(RemainingTestSource source);
+
 	ReadoutField* tempo() const { return m_tempo; }
 	ReadoutField* loudness() const { return m_loudness; }
 	ReadoutField* recordRemaining() const { return m_recordRemaining; }

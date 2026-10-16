@@ -25,10 +25,14 @@
 /*! 0.5.0 Q050-179 (WF-085): the header's readouts show record.remaining's estimate next to the record
  *  mode, so the recording budget is visible in the GUI while a route is armed and while a pass runs.
  *  Zero, finite and unavailable estimates each get their words ("0m", "2h 3m", "-"); the readout
- *  refreshes through the readouts' tick (the main window's periodic update), and record.remaining's
- *  socket reply keeps the keys its transcript tests measure (the handler is untouched). */
+ *  refreshes through the readouts' tick (the main window's periodic update) - the tick test presents
+ *  a budget that changed since the bind through the test seam and follows it at the due tick - and
+ *  record.remaining's socket reply keeps the keys its transcript tests measure (the handler is
+ *  untouched). */
 
 #include <QtTest>
+
+#include <memory>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -100,15 +104,27 @@ private slots:
 
 	void theTickKeepsTheEstimateRunningWithTheBudget()
 	{
+		// The injectable source (the live record.remaining command is proven above) presents a
+		// deterministic budget that CHANGES between the initial bind and a due refresh: the
+		// constructor's bind takes the first answer, then the "free space" halves. The readout
+		// may only pick the news up when the readouts' tick (one per header frame) reaches the
+		// budget's once-a-second refresh - tick 60 - so a refresh dropped from tick() keeps the
+		// old words and this test fails.
+		auto answer = std::make_shared<ControlResult>(remaining(7380.0));  // "2h 3m"
+		TransportReadouts::setRemainingTestSource([answer]() { return *answer; });
+
 		TransportReadouts readouts;
 		ReadoutField* field = readouts.recordRemaining();
+		QCOMPARE(field->valueText(), QStringLiteral("2h 3m"));  // the bind re-asked the command
 
-		// The readouts' tick is one per header frame (the main window's 60 Hz update; the
-		// recording budget gets its news once a second). Two seconds of ticking re-ask
-		// record.remaining; the text keeps naming the command's answer.
-		for (int i = 0; i < 121; ++i) { readouts.tick(); }
-		const ControlResult live = ControlRegistry::instance()->invoke(QStringLiteral("record.remaining"));
-		QCOMPARE(field->valueText(), recordRemainingLabel(live));
+		*answer = remaining(119.0);  // the budget changed; the readout is not due yet
+		for (int tick = 1; tick < 60; ++tick) { readouts.tick(); }
+		QCOMPARE(field->valueText(), QStringLiteral("2h 3m"));  // 59 ticks in: still the bind's words
+
+		readouts.tick();  // tick 60: the once-a-second refresh of record.remaining
+		QCOMPARE(field->valueText(), QStringLiteral("1m"));  // the changed budget is shown
+
+		TransportReadouts::setRemainingTestSource({});  // back to the live command
 	}
 };
 

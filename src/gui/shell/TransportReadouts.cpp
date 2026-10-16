@@ -59,6 +59,10 @@ constexpr int kCaptionHeight = 13;
 
 QString signedValue(int v) { return v > 0 ? QStringLiteral("+%1").arg(v) : QString::number(v); }
 
+//! WF-085: the Rec left readout's source, the live record.remaining command unless a test set
+//! its own (setRemainingTestSource); read and written on the UI thread only, like the readout.
+TransportReadouts::RemainingTestSource g_remainingTestSource;
+
 } // namespace
 
 ReadoutField::ReadoutField(const QString& caption, QWidget* parent)
@@ -406,7 +410,8 @@ void TransportReadouts::bindToSong(Song* song)
 	// so the recording budget is visible while a route is armed and while a pass runs - and the
 	// GUI answers record.remaining through the same registered command the agent surface has.
 	m_recordRemaining->bindText([]() { return recordRemainingLabel(
-		ControlRegistry::instance()->invoke(QStringLiteral("record.remaining"))); });
+		g_remainingTestSource ? g_remainingTestSource()
+			: ControlRegistry::instance()->invoke(QStringLiteral("record.remaining"))); });
 	m_recordRemaining->setToolTip(tr("Rec left: the recording time the disk's free space still allows "
 		"(record.remaining); '-' when a volume cannot be measured"));
 	m_volume->bind(&song->masterVolumeModel(), [](int v) { return QStringLiteral("%1%").arg(v); }, 2);
@@ -432,6 +437,11 @@ void TransportReadouts::syncRecordMode()
 	m_recordMode->setToolTip(tr("%1\nRight-click to choose; double-click and type overdub or replace.")
 		.arg(recordoptions::modeScope(static_cast<recordoptions::Mode>(mode))));
 	checkChoice(m_recordModes, mode);
+}
+
+void TransportReadouts::setRemainingTestSource(RemainingTestSource source)
+{
+	g_remainingTestSource = std::move(source);
 }
 
 void TransportReadouts::tick()

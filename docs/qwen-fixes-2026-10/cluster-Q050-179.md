@@ -11,15 +11,22 @@ The shell header's transport readouts (the recording controls/status strip next 
 a **Rec left** readout that displays the existing `record.remaining` command through the same
 registered registry command the agent surface answers, and refreshes with the readouts' tick:
 
-- `src/gui/shell/TransportReadouts.cpp:357,362,408-411` - the field, bound to
+- `src/gui/shell/TransportReadouts.cpp:361,365,412-414` - the field, bound to
   `ControlRegistry::invoke("record.remaining")`;
-- `src/gui/shell/TransportReadouts.cpp:275-289` / `include/TransportReadouts.h:110` -
+- `src/gui/shell/TransportReadouts.cpp:279-293` / `include/TransportReadouts.h:114` -
   `recordRemainingLabel()`: "0m" (zero estimate), "2h 3m" (finite, minutes floor),
   "-" (unavailable: the command refused - it can never render as a time);
-- `src/gui/shell/TransportReadouts.cpp:448-457` - the tick refreshes it once per second
+- `src/gui/shell/TransportReadouts.cpp:458-467` - the tick refreshes it once per second
   (`RecordRemainingEvery = 60` at the 60 Hz header update), so an armed route or the consumed free
   space moves the readout;
 - `include/TransportReadouts.h:128,140` - the accessor the test uses;
+- `include/TransportReadouts.h:126-130` / `src/gui/shell/TransportReadouts.cpp:62-64,412-414,442-445` -
+  the review-rework-1 test seam: `TransportReadouts::setRemainingTestSource()` lets the tick test present
+  a deterministic value that CHANGED since the bind instead of asking for the disk's real free space
+  (the estimate follows the disk, which no test can move); a null restores the live command, the default;
+- `tests/src/gui/RecordRemainingTest.cpp:104-127` - the tick test, reworked to the seam: the bind takes
+  "2h 3m", then the answer becomes "1m", 59 ticks keep the old words, tick 60 (the once-a-second refresh)
+  shows the change - and with the periodic refresh removed from `tick()` the test FAILS (logs `test-2-reversal.log`, EXIT 8);
 - `data/manual/index.html` - the recording section now names the header readout, not just
   `record.remaining` for scripts and agents;
 - no new command ids, no reversibility-table rows, no project-format change; the
@@ -29,14 +36,15 @@ registered registry command the agent surface answers, and refreshes with the re
 
 | Criterion | Test run and result | Command | EXIT |
 |---|---|---|---|
-| The recording controls/status area display record.remaining and update as the budget changes | `RecordRemainingTest::theReadoutShowsTheCommandTheAgentsAreShown` and `::theTickKeepsTheEstimateRunningWithTheBudget` - the readout's text equals a fresh `record.remaining` answer from the real engine, and 121 ticks of the readouts' periodic update keep it live | `ctest -R RecordRemainingTest --output-on-failure` (from `build/tests`) | 0 |
+| The recording controls/status area display record.remaining and update as the budget changes | `RecordRemainingTest::theReadoutShowsTheCommandTheAgentsAreShown` (the bound readout equals a fresh `record.remaining` answer from the real engine) and `::theTickKeepsTheEstimateRunningWithTheBudget` (review rework r1: through the test seam the estimate deterministically CHANGES between the bind and the due refresh; ticks 1-59 keep "2h 3m", tick 60 shows "1m"; with the periodic refresh removed in `tick()` the same test fails, `logs/test-2-reversal.log` EXIT 8) | `ctest -R RecordRemainingTest --output-on-failure` (from `build/tests`) | 0 |
 | A Qt GUI test covers zero, finite, and unavailable estimates | `aZeroEstimateSaysTheBudgetIsSpent` ("0m"), `aFiniteEstimateIsMinutesAndHours` ("1m", "2h 3m"), `anUnavailableEstimateSaysSoRatherThanZero` ("-") | same ctest run | 0 |
 | The command's existing socket response remains unchanged | `tests/control-record-inputs.py` against the real binary over the socket: the reply keeps exactly the keys `seconds, armed_routes, free_bytes, directory` with their original types | `python3 tests/control-record-inputs.py build/zene` | 0 |
 
-Full run tails (`logs/ctest-2.log`, `logs/transcript-1.log`):
+Full run tails (`logs/test-3.log`, `logs/socket-3.log`; the reversal of the rework-1 round is
+`logs/test-2-reversal.log`, EXIT 8):
 
 ```
-1/1 Test #421: RecordRemainingTest ..............   Passed    1.34 sec
+1/1 Test #421: RecordRemainingTest ..............   Passed    1.18 sec
 100% tests passed out of 1
 ...
   record.remaining replies with the keys it has always shown       ok
@@ -46,7 +54,7 @@ PASS: recording engine surface control-surface transcript (every check held)
 
 Regression-adjacent tests (shell tests that own the readouts this unit extends) rebuilt and rerun:
 `ctest -R "TaskIndicatorTest|ShellHomesTest|DevicePanelTest|WorkflowFeedbackTest"` exit 0, 4/4
-(`logs/ctest-4.log`).
+(`build-4-neighbours.log`, `test-4-neighbours.log`).
 
 ## Registration
 
