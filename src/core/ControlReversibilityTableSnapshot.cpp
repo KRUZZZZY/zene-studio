@@ -319,7 +319,9 @@ const ReversibilityRow kSnapshotRows[] = {
 		"stops the follower's poll. The tempo a following slave wrote is NOT part "
 		"of the inverse; what it was before the command is in the transaction's "
 		"before-state (`tempo`), because a follower cannot un-follow the music "
-		"that already played",
+		"that already played. A SOURCE SWITCH also forgets the measurement rather "
+		"than moving it with the source (Q050-026), so an undone switch restores "
+		"the port and waits for that port's own clock again",
 		"the tempo itself: transport.set_tempo with the value the transaction's "
 		"before-state reports (`tempo`), AFTER the follow flag is off, or the "
 		"slave immediately overwrites it from the next measurement "
