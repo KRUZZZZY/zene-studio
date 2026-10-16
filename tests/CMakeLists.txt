@@ -74,6 +74,9 @@ set(LMMS_TESTS
 	# m_sampleRatio (constructor) or survive setSampleRate.
 	src/core/BasicFiltersSampleRateTest.cpp
 	src/core/AutomatableModelTest.cpp
+	# cluster new-p12-279: EffectControls::m_viewVisible must be atomic because
+	# processImpl() reads it on the audio thread while the GUI writes it.
+	src/core/EffectControlsVisibilityTest.cpp
 	src/core/AutomationModesTest.cpp
 	# Sample-accurate automation (feature-list row 9, board task #646): renders
 	# real blocks through Song::processNextBuffer() and measures the per-sample
