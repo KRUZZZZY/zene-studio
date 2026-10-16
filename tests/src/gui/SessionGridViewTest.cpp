@@ -228,6 +228,9 @@ private slots:
 
 		QMenu cell;
 		view.populateMenu(&cell, view.cellButton(0, 0));
+		QAction* chain = menuAction(&cell, {QStringLiteral("Follow Action Chain...")});
+		QVERIFY2(chain, "the cell menu should offer the per-cell Follow Action Chain... editor (WF-061)");
+		QCOMPARE(chain->property("controlCommand").toString(), QStringLiteral("session.set_slot"));
 		menuAction(&cell, {QStringLiteral("Launch Mode"), QStringLiteral("gate")})->trigger();
 		QCOMPARE(slotState(0, 0).value(QStringLiteral("mode")).toString(), QStringLiteral("gate"));
 		menuAction(&cell, {QStringLiteral("Launch Mode"), QStringLiteral("trigger")})->trigger();
@@ -239,6 +242,9 @@ private slots:
 
 		QMenu scene;
 		view.populateMenu(&scene, view.sceneButton(1));
+		QAction* sceneChain = menuAction(&scene, {QStringLiteral("Follow Action Chain...")});
+		QVERIFY2(sceneChain, "the scene menu should offer the scene Follow Action Chain... editor (WF-061)");
+		QCOMPARE(sceneChain->property("controlCommand").toString(), QStringLiteral("session.set_scene"));
 		QVERIFY(!menuAction(&scene, {QStringLiteral("Tempo Override Off")})->isEnabled());
 		QVERIFY(run(QStringLiteral("session.set_scene"), {{QStringLiteral("scene"), 1}, {QStringLiteral("tempo"), 150}}).ok);
 		view.refresh();

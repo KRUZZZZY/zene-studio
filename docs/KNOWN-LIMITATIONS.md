@@ -115,18 +115,21 @@ that is this page's fault — report it and it gets added.
   `session.set_scene` `follow_actions`. That is separate from the session-wide switch in the grid's own menu
   (the **Follow Actions** row above, `session.set_follow_actions`), which only arms or clears evaluation for
   every cell. The bullet below is the earlier record.
-- **Follow Actions, Arrangement Record and the Back-to-Arrangement switch are drivable through the
-  socket, not from the interface.** The chain a slot has carried since #594 is now EVALUATED (all ten
-  action types, chance weighting, linked/unlinked timing) and the performance can be recorded into the
-  arrangement ring and landed as timeline clips — through `session.follow_set` /
+- **Arrangement Record and the Back-to-Arrangement switch are drivable through the socket and through
+  nothing else; Follow Actions themselves are NOT socket-only — the session-wide switch and per-cell
+  chain editing are in the GUI (bullet above).** The chain a slot has carried since #594 is now EVALUATED
+  (all ten action types, chance weighting, linked/unlinked timing) and the performance can be recorded
+  into the arrangement ring and landed as timeline clips — through `session.follow_set` /
   `session.follow_get_state` / `session.arrangement_record_arm` / `_status` / `_land` /
   `session.back_to_arrangement` (2026-09-29, R5.2: and SCENE chains - `session.set_scene follow_actions`
   persists one, `session.scene_follow_set` arms it, and a launched row's chain moves the whole row and
   overrides its cells' chains; `session.set_slot follow_actions` is now how a cell's chain is persisted,
-  which no socket path could do before), and through nothing else: per-cell (and per-scene) chains are now edited in the interface via the
-  **Follow Action Chain...** entry in the cell/scene context menu (above), **Arrangement Record** and
+  which no socket path could do before): in the interface, the grid's **Follow Actions** row (the
+  session-wide switch, `SessionTransportBar`) and every cell's/scene's **Follow Action Chain...** entry
+  (`SessionGridMenus`, above) edit what these commands write, while **Arrangement Record** and
   **Back-to-Arrangement** stay socket-only (no Arrangement Record button, no take lane and no
-  Back-to-Arrangement light), and the clip-launch grid (#598) is **out of 0.3.0**. A landed clip carries the recorded **position, length and copyable content**:
+  Back-to-Arrangement light), and the clip-launch grid (#598) is **out of 0.3.0**. A landed clip carries
+  the recorded **position, length and copyable content**:
   MIDI notes are copied to instrument clips and audio cells to sample clips. Incompatible destinations and
   unreadable audio sources are refused without consuming the recorded performance. The release notes state
   the same bounds.
