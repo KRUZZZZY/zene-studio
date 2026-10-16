@@ -529,14 +529,19 @@ private slots:
 		{
 			std::this_thread::yield();
 		}
-		QVERIFY(state.paused.load(std::memory_order_acquire));
 
-		// Release the snapshot while the producer is paused past its pending check.
+		// Release the snapshot, signal the producer to resume, and join it on
+		// EVERY path - including a timed-out pause wait - so the test can never
+		// leak a spinning producer thread or leave the ring mid-snapshot (Luna
+		// r3 rework). The hook is cleared here too, before any assertion.
 		capture.ring().endSnapshot();
 		state.release.store(true, std::memory_order_release);
 		producer.join();
-
 		RetroAudioCapture::setPushPauseTestHook(nullptr, nullptr);
+
+		// NOW assert the pause was reached; the producer and snapshot are
+		// already clean, so a failure here can only terminate the test cleanly.
+		QVERIFY(state.paused.load(std::memory_order_acquire));
 
 		const RetroAudioCapture::Window window = capture.takeWindow();
 		QCOMPARE(window.sampleRate, OldRate);
