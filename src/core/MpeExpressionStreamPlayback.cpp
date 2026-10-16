@@ -48,11 +48,14 @@
  *  work is a handful of integer/fp comparisons and the MidiEvent sends that the
  *  note-on already uses. TSan does not run on this box (runtime crash at thread
  *  creation), so the race argument is by design: the stream is written on the
- *  UI/control thread only, and a playing handle owns its own deep copy (Note's
- *  copy constructor), so the audio thread never observes a half-written vector.
+ *  UI/control thread only, and a playing handle shares the note's immutable
+ *  snapshot (Note's copy constructor shares it with one lock-free reference
+ *  count, and every edit detaches on the writer's thread), so the audio
+ *  thread never observes a half-written vector.
  */
 
 #include <cmath>
+#include <cstdint>
 
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -141,20 +144,13 @@ void NotePlayHandle::sendMpeExpressionAxisEvent( int axis, int value, f_cnt_t of
 
 
 
-namespace
-{
-
-//! The "this point is not in the period" answer of mpeStreamPointOffset().
-constexpr f_cnt_t kNoStreamOffset = static_cast<f_cnt_t>( -1 );
-
-} // namespace
-
-
 f_cnt_t NotePlayHandle::mpeStreamPointOffset( tick_t tick, f_cnt_t startFrame,
-	f_cnt_t framesThisPeriod, f_cnt_t periodStart, float framesPerTick ) const
+	f_cnt_t framesThisPeriod, f_cnt_t periodStart, double framesPerTick )
 {
-	long delta = std::lround( static_cast<double>( tick ) * framesPerTick )
-		- static_cast<long>( startFrame );
+	// 64-bit throughout (see the header): on LLP64 `long` is 32 bits, so the
+	// old std::lround/`long` spelling truncated frame positions past 2^31.
+	const std::int64_t frame = std::llround( static_cast<double>( tick ) * framesPerTick );
+	std::int64_t delta = frame - static_cast<std::int64_t>( startFrame );
 	// A tick is assigned to a period by the integer tick window, but the frame
 	// it rounds to can sit a hair before the period's first frame; clamp it to
 	// the period start so a point on a boundary is emitted here, not dropped
@@ -163,9 +159,9 @@ f_cnt_t NotePlayHandle::mpeStreamPointOffset( tick_t tick, f_cnt_t startFrame,
 	{
 		delta = 0;
 	}
-	if( delta >= static_cast<long>( framesThisPeriod ) )
+	if( delta >= static_cast<std::int64_t>( framesThisPeriod ) )
 	{
-		return kNoStreamOffset;
+		return kNoMpeStreamOffset;
 	}
 	return periodStart + static_cast<f_cnt_t>( delta );
 }
@@ -202,7 +198,7 @@ void NotePlayHandle::scheduleMpeStreamAxis( const std::vector<MpeExpressionPoint
 		}
 		const f_cnt_t at = mpeStreamPointOffset( point.tick, startFrame, framesThisPeriod,
 			periodStart, framesPerTick );
-		if( at == kNoStreamOffset )
+		if( at == kNoMpeStreamOffset )
 		{
 			continue;
 		}

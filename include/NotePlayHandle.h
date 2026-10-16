@@ -342,6 +342,20 @@ public:
 	 *  allocation and no lock, the same path the note-on events use. */
 	void scheduleMpeExpressionStream( f_cnt_t framesThisPeriod );
 
+	/*! Q050-016: the period offset of a stream point's frame, or
+	 *  kNoMpeStreamOffset when it falls outside the period. Pure math, so
+	 *  static (unit-tested in MpeNoteStorageTest, like slidePitchOffset in
+	 *  SlideNotesTest): the scheduler passes everything it needs.
+	 *
+	 *  64-bit throughout: frame positions past 2^31 are real (f_cnt_t is
+	 *  64-bit), and on LLP64 (Windows) `long` is 32 bits, so std::lround and
+	 *  `long` deltas truncate them. std::llround and std::int64_t keep them. */
+	static f_cnt_t mpeStreamPointOffset( tick_t tick, f_cnt_t startFrame,
+		f_cnt_t framesThisPeriod, f_cnt_t periodStart, double framesPerTick );
+
+	//! The "this point is not in the period" answer of mpeStreamPointOffset().
+	static constexpr f_cnt_t kNoMpeStreamOffset = static_cast<f_cnt_t>( -1 );
+
 private:
 	//! Q050-016: send one streamed axis value to the instrument (pitch bend,
 	//! channel pressure or CC74) at \a offset frames into the period.
@@ -349,12 +363,6 @@ private:
 
 	//! Q050-016: the tick, from the note's own start, a frame within it sits at.
 	tick_t mpeStreamTick( f_cnt_t frameWithinNote ) const;
-
-	//! Q050-016: the period offset of a stream point's frame, or kNoStreamOffset
-	//! when it falls outside the period. Extracted so the axis scheduler stays
-	//! under the repo's complexity target.
-	f_cnt_t mpeStreamPointOffset( tick_t tick, f_cnt_t startFrame, f_cnt_t framesThisPeriod,
-		f_cnt_t periodStart, float framesPerTick ) const;
 
 	//! Q050-016: schedule the points of one axis that fall in this period.
 	void scheduleMpeStreamAxis( const std::vector<MpeExpressionPoint>* points, int axis, int base,

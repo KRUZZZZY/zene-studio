@@ -203,8 +203,7 @@ Note::Note( const Note & note ) :
 	m_mpePitchCents(note.m_mpePitchCents),
 	m_mpePressure(note.m_mpePressure),
 	m_mpeTimbre(note.m_mpeTimbre),
-	m_mpeStream(note.m_mpeStream != nullptr
-		? std::make_unique<MpeExpressionStream>(*note.m_mpeStream) : nullptr),
+	m_mpeStream(note.m_mpeStream),
 	m_muted(note.m_muted),
 	m_releaseVelocity(note.m_releaseVelocity),
 	m_unquantisedPos(note.m_unquantisedPos),
@@ -239,8 +238,7 @@ Note& Note::operator=(const Note& note)
 	m_unquantisedPos = note.m_unquantisedPos;
 	m_unquantisedLength = note.m_unquantisedLength;
 	m_conditions = note.m_conditions;
-	m_mpeStream = note.m_mpeStream != nullptr
-		? std::make_unique<MpeExpressionStream>(*note.m_mpeStream) : nullptr;
+	m_mpeStream = note.m_mpeStream;
 
 	return *this;
 }
@@ -420,9 +418,17 @@ void Note::clearMpeExpression()
 
 MpeExpressionStream& Note::mpeStreamForEdit()
 {
+	// Copy-on-write: the caller gets the only reference, so in-place edits
+	// through it can never touch a snapshot the audio thread is reading (a
+	// playing handle holds its own shared reference to the old one). The
+	// allocation happens here, on the UI/control thread - never on audio.
 	if( m_mpeStream == nullptr )
 	{
-		m_mpeStream = std::make_unique<MpeExpressionStream>();
+		m_mpeStream = std::make_shared<MpeExpressionStream>();
+	}
+	else if( m_mpeStream.use_count() > 1 )
+	{
+		m_mpeStream = std::make_shared<MpeExpressionStream>( *m_mpeStream );
 	}
 	return *m_mpeStream;
 }
@@ -437,7 +443,7 @@ void Note::setMpeStream( const MpeExpressionStream& stream )
 		clearMpeStream();
 		return;
 	}
-	m_mpeStream = std::make_unique<MpeExpressionStream>( stream );
+	m_mpeStream = std::make_shared<MpeExpressionStream>( stream );
 }
 
 

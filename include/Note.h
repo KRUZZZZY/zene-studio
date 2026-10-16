@@ -423,11 +423,15 @@ private:
 	int m_mpePressure = 0;
 	int m_mpeTimbre = 0;
 
-	// Q050-016: the optional per-note expression streams. A unique_ptr keeps a
-	// note with no stream exactly as cheap as before (8 null bytes), and the
-	// copy constructor/assignment deep-copy it so two notes never share an
-	// editable stream.
-	std::unique_ptr<MpeExpressionStream> m_mpeStream;
+	// Q050-016: the optional per-note expression streams. Shared, never
+	// mutated in place: copies (including the NotePlayHandle the audio thread
+	// builds by copying the note) share the same immutable snapshot, so
+	// starting a streamed note allocates nothing on the audio thread - the
+	// copy is one lock-free reference count. Every mutation goes through
+	// mpeStreamForEdit()/setMpeStream(), which detach (copy-on-write) on the
+	// calling - UI/control - thread, so the audio thread never observes a
+	// half-written vector. The same sharing shape as m_detuning above.
+	std::shared_ptr<MpeExpressionStream> m_mpeStream;
 
 	// 0.5.0 L07: mute, release velocity, the pre-quantise timing (-1 = none).
 	bool m_muted = false;
