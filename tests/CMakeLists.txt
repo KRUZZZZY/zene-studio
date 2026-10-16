@@ -1503,6 +1503,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Test fixtures (stub ONNX model) and the reference CLI path.
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 		LMMS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+	# Qt's QT_TESTCASE_SOURCEDIR is only supplied by Qt's own test build system (and is
+	# nullptr on Qt 6 otherwise). Tests that read source-tree files (Lv2StateTest,
+	# PluginPortsMigrationTest) need it; tests/ lets ../plugins and data/ resolve.
+	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+		QT_TESTCASE_SOURCEDIR="${CMAKE_CURRENT_SOURCE_DIR}")
 	# The A16 contract table's histogram is a SELF-CHECKING derivation (board card
 	# #677): ReversibilityContractTest::theTableHistogramIsTheDocumentedOne() reads
 	# the ONE published figure straight out of the release notes and fails when the
@@ -1907,6 +1912,10 @@ set_tests_properties(ExprSynth PROPERTIES
 add_library(LadspaPortCountFixture MODULE src/core/LadspaPortCountFixture.cpp)
 target_include_directories(LadspaPortCountFixture PRIVATE "${CMAKE_SOURCE_DIR}/include")
 target_compile_features(LadspaPortCountFixture PRIVATE cxx_std_20)
+if(MSVC)
+	# ladspa.h's prototype has no dllexport, which MSVC refuses to see added on the definition (C2375).
+	target_link_options(LadspaPortCountFixture PRIVATE /EXPORT:ladspa_descriptor)
+endif()
 set_target_properties(LadspaPortCountFixture PROPERTIES
 	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ladspa-fixtures"
 	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ladspa-fixtures")
@@ -2820,6 +2829,7 @@ target_compile_features(PluginPortsMigrationTest PRIVATE cxx_std_20)
 target_compile_definitions(PluginPortsMigrationTest PRIVATE
 	LMMS_TESTING
 	PART_C_REFERENCE_EXE="$<TARGET_FILE:PluginPortsMigrationReference>"
+	QT_TESTCASE_SOURCEDIR="${CMAKE_CURRENT_SOURCE_DIR}"
 	${PART_C_MIGRATED_DEFINITIONS}
 )
 if(TARGET partial_init_failure_ladspa)
