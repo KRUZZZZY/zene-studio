@@ -9,6 +9,11 @@
 default. A crop, a trim, a head/tail frame edit or a chain print therefore made a
 reversed, pitched or gained clip play forward at base pitch and unity gain.
 
+The round 1 fix preserved the settings in `replaceSample`, but destructive edits
+handled by `ControlCommandsSampleEdit.cpp::commitBake` (sample.amplify, sample.normalize,
+sample.reverse, sample.fade) still called `setSampleBuffer` and reset the clip playback
+settings.
+
 ## Evidence (file:line)
 
 - `src/core/SampleClip.cpp:356` — `SampleClip::replaceSample`, the one seam the sample
@@ -19,6 +24,10 @@ reversed, pitched or gained clip play forward at base pitch and unity gain.
   in-class defaults of `include/Sample.h:135-137`.
 - `src/core/SampleClip.cpp:362` (before the fix) — `m_sample = Sample(std::move(sb));`
   was the reset: a default-constructed `Sample` took over the clip's settings.
+- `src/core/ControlCommandsSampleEdit.cpp:135` (before the fix round 2) —
+  `target.clip->setSampleBuffer(...)` was the reset: the four bakers (amplify, normalize,
+  reverse, fade) all flow through `commitBake`, which called `setSampleBuffer` and lost
+  the three playback settings.
 - User-visible paths that reach it: `src/core/ControlCommandsSampleTools.cpp:75`
   (`swapIn` → `sample.crop`, `sample.make_unique`), `src/core/SampleFrameEdits.cpp:85`
   (`authorWindow` — the head/tail frame edits, which pass the clip's OWN buffer), and
@@ -30,13 +39,19 @@ reversed, pitched or gained clip play forward at base pitch and unity gain.
 
 ## The fix
 
-`src/core/SampleClip.cpp:358-374` — `replaceSample` reads `amplification`,
+Round 1: `src/core/SampleClip.cpp:358-374` — `replaceSample` reads `amplification`,
 `frequency` and `reversed` off the old sample and stores them on the new one, inside
 the existing `requestChangesGuard()` block, so the swap and the settings still change
 under one guard (no audio period sees a half-updated clip) and nothing new is
 allocated, locked or logged on the audio thread. Only `replaceSample` changes:
 `SampleClip::setSampleBuffer` (the recording-take path) and `Sample::setBuffer` (the
 pooled play-handle voice) keep their historical behaviour.
+
+Round 2: `src/core/ControlCommandsSampleEdit.cpp:130-147` — `commitBake` now calls
+`replaceSample` instead of `setSampleBuffer`, passing `SampleWindow::full(newFrames)`
+so the window is reset to the full buffer (same behavior as before, just with settings
+preserved). The four bakers (amplify, normalize, reverse, fade) all flow through
+`commitBake`, so they all preserve the clip's playback settings now.
 
 Note for the record: `clip.process` bakes the clip's RAW source frames
 (`ControlCommandsClipProcess.cpp:124`, `prepared()` reads `sample().data()` forward and
@@ -47,14 +62,23 @@ not a change made here.
 
 ## Regression
 
-`tests/src/core/ControlSampleOperatorTest.cpp` —
-`aSourceEditKeepsTheClipPlaybackSettings()`: a generated clip gets an authored window
-and the three playback settings a user would set, `sample.crop` replaces the source,
-the frames are asserted to be cropped to exactly the window (`after.frames.size() ==
-to - from`, first and last frame equal to the window's edges) so the edit provably ran,
-and then `reversed`, `amplification` and `frequency` must be unchanged.
+`tests/src/core/ControlSampleOperatorTest.cpp` — two tests:
+
+1. `aSourceEditKeepsTheClipPlaybackSettings()`: a generated clip gets an authored window
+   and the three playback settings a user would set, `sample.crop` replaces the source,
+   the frames are asserted to be cropped to exactly the window (`after.frames.size() ==
+   to - from`, first and last frame equal to the window's edges) so the edit provably ran,
+   and then `reversed`, `amplification` and `frequency` must be unchanged.
+
+2. `aBakeKeepsTheClipPlaybackSettings()`: a generated clip gets the three playback
+   settings a user would set, `sample.amplify` bakes a gain change through `commitBake`,
+   the frames are asserted to have changed (the gain was applied) so the edit provably ran,
+   and then `reversed`, `amplification` and `frequency` must be unchanged. This test
+   catches the round 2 bug (commitBake calling setSampleBuffer instead of replaceSample).
 
 ## Commands and exit codes
+
+Round 1:
 
 | # | Command (from the worktree root unless noted) | EXIT |
 |---|---|---|
@@ -64,35 +88,46 @@ and then `reversed`, `amplification` and `frequency` must be unchanged.
 | GREEN | `ctest -R '^ControlSampleOperatorTest$' --output-on-failure` in `build/tests` (log `test-5-green.log`) | **0** — `1/1 Test #68: ControlSampleOperatorTest … Passed` |
 | family | `ctest -R '^(SampleClipWindowTest\|SampleClipRubberBandTest\|SampleClipStretchTest\|SampleClipWarpTest\|DeviceToolsChainTest\|AudioAutomationToolsTest\|ClipSerialisationTest\|TakeLaneCompTest\|ControlSampleOperatorTest)$' --output-on-failure` in `build/tests` (log `test-6-family.log`) | **0** — `100% tests passed out of 9` |
 
+Round 2:
+
+| # | Command (from the worktree root unless noted) | EXIT |
+|---|---|---|
+| RED (fix absent, new test present) | `cmake --build build --target ControlSampleOperatorTest` (log `build-5-green.log`) | 0 |
+| RED | `ctest -R '^ControlSampleOperatorTest$' --output-on-failure` in `build/tests` (log `test-1-red.log`) | **8** — `FAIL! … 'sampleClip->sample().reversed()' returned FALSE (the bake reset the clip's reversed flag)` |
+| fix applied | `cmake --build build --target zene ControlSampleOperatorTest` (log `build-4-green.log`) | 0 |
+| GREEN | `ctest -R '^ControlSampleOperatorTest$' --output-on-failure` in `build/tests` (log `test-2-green.log`) | **0** |
+| family | `ctest -R '^(SampleClipWindowTest\|SampleClipRubberBandTest\|SampleClipStretchTest\|SampleClipWarpTest\|DeviceToolsChainTest\|AudioAutomationToolsTest\|ClipSerialisationTest\|TakeLaneCompTest\|ControlSampleOperatorTest)$' --output-on-failure` in `build/tests` (log `test-5-family.log`) | **0** — `100% tests passed out of 9` |
+
 Proof the test catches the bug (step 4b):
 
-- `git diff -- src/core/SampleClip.cpp > <LOGS>/fix.patch && git apply -R <LOGS>/fix.patch`
-  → `git apply -R` EXIT **0**; `cmake --build build --target zene ControlSampleOperatorTest`
-  (log `build-4-without-fix.log`) EXIT **0**; `ctest -R '^ControlSampleOperatorTest$'`
-  (log `test-4-without-fix.log`) EXIT **8**, same assertion — RED without the fix.
+- `git diff -- src/core/ControlCommandsSampleEdit.cpp > <LOGS>/fix.patch && git apply -R <LOGS>/fix.patch`
+  → `git apply -R` EXIT **0**; `cmake --build build --target ControlSampleOperatorTest`
+  (log `build-6-red.log`) EXIT **0**; `ctest -R '^ControlSampleOperatorTest$'`
+  (log `test-3-red.log`) EXIT **8**, same assertion — RED without the fix.
 - `git apply <LOGS>/fix.patch` EXIT **0**; rebuild EXIT **0**; `ctest -R '^ControlSampleOperatorTest$'`
-  (log `test-5-green.log`) EXIT **0** — GREEN with the fix.
+  (log `test-4-green.log`) EXIT **0** — GREEN with the fix.
 
 ## Gates
 
 | Gate | Before this change (HEAD tree, my files reverted) | After this change |
 |---|---|---|
-| `bash tests/complexity-gate.sh --check` | EXIT **1** (`gate-complexity-baseline.log`) | EXIT **1** (`gate-complexity-2.log`) |
-| `bash tests/file-length-gate.sh --check` | EXIT **1** (`gate-file-length-baseline.log`) | EXIT **1** (`gate-file-length-2.log`) |
+| `bash tests/complexity-gate.sh --check` | EXIT **1** (`gate-complexity-baseline.log`) | EXIT **1** (`gate-complexity-1.log`) |
+| `bash tests/file-length-gate.sh --check` | EXIT **1** (`gate-file-length-baseline.log`) | EXIT **1** (`gate-file-length-1.log`) |
 
 Both gates already fail on this branch, before this change, and the REGRESSION lists are
 byte-identical before and after (`diff` of the two lists is empty, logged as "unchanged").
 Every entry names a file this cluster did not touch — e.g. `tests/src/gui/XyPadPairTest.cpp`
 (CCN 16), `src/core/DawProjectReadTracks.cpp` (CCN 13),
 `src/core/ControlCommandsMixerTools.cpp` (CCN 12) and thirteen test files over the 500-line
-limit. No baseline or limit was re-anchored, and neither `src/core/SampleClip.cpp` nor
-`tests/src/core/ControlSampleOperatorTest.cpp` appears in either REGRESSION list, so this
-change adds no new gate entry.
+limit. No baseline or limit was re-anchored, and neither `src/core/SampleClip.cpp`,
+`src/core/ControlCommandsSampleEdit.cpp` nor `tests/src/core/ControlSampleOperatorTest.cpp`
+appears in either REGRESSION list, so this change adds no new gate entry.
 
 ## Files
 
-- `src/core/SampleClip.cpp` — the fix (product, inherited → `tests/upstream-modifications.txt`)
-- `tests/src/core/ControlSampleOperatorTest.cpp` — the regression (fork-owned, already in
+- `src/core/SampleClip.cpp` — the round 1 fix (product, inherited → `tests/upstream-modifications.txt`)
+- `src/core/ControlCommandsSampleEdit.cpp` — the round 2 fix (product, inherited → `tests/upstream-modifications.txt`)
+- `tests/src/core/ControlSampleOperatorTest.cpp` — the two regressions (fork-owned, already in
   `tests/fork-sources.txt:2255`)
-- `tests/upstream-modifications.txt` — the declared reason for the inherited file
+- `tests/upstream-modifications.txt` — the declared reasons for the inherited files
 - `docs/qwen-fixes-2026-10/cluster-new-p12-205.md` — this report
