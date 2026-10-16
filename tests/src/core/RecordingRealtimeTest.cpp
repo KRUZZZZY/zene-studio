@@ -428,18 +428,16 @@ private slots:
 		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
 		clip->setAutoResize(false);
 
-		song->playAndRecord();
-		// Warm the render path with no take prepared: the counted period then adds the recorder's
-		// start, not the one-time state the first passes create.
-		for (int i = 0; i < 4; ++i) { song->processNextBuffer(); }
-
-		// Arming on the main thread: the accumulator (with its ring) and its drain thread are built
-		// here, before any callback can claim the take.
+		// Arming on the main thread, before any playback: the accumulator (with its ring) and its
+		// drain thread are built here, and both takes are ready before the transport ever rolls.
 		clip->setRecord(true);
 		QCOMPARE(clip->recordTakesReady(), 2);
 
-		// The callback path starts the pass here (SampleTrack::play claims the prepared take and
-		// schedules the handle). It must allocate nothing.
+		// Playback starts only now, so the setup above provably precedes it. The first probed
+		// period starts the pass (SampleTrack::play claims the prepared take and schedules the
+		// handle): the callback path must allocate nothing.
+		song->playAndRecord();
+
 		lmms::test::resetAllocationCount();
 		lmms::test::tlCountAllocations = true;
 		{

@@ -16,6 +16,13 @@ the `SampleRecordAccumulator` with its ring and `std::thread` (`include/SampleRe
 prepared handle. The stale R2.2 comment in `src/core/SampleRecordHandle.cpp:105` that said the
 constructor runs on the audio thread was corrected.
 
+Round 2 rework (review `Q050-002.r1.code.md`): the r1 regression armed its clip only after
+`playAndRecord()` had started the transport and rendered four buffers, so it proved preparation
+before the recording callback but not before *playback*. The regression now arms the clip and
+asserts `recordTakesReady() == 2` **before** calling `playAndRecord()`, then probes the callback
+path (the first probed period is the one that starts the pass), and retains the expected-take
+assertion.
+
 ## Acceptance table (exact commands and observed exit codes)
 
 All builds from the worktree root, all ctest from `build/tests`. Environment:
@@ -25,7 +32,7 @@ CCACHE_BASEDIR=... CCACHE_NOHASHDIR=true PKG_CONFIG_PATH=... LD_LIBRARY_PATH=...
 | Criterion | Test | How it proves it | Exact command | EXIT |
 |---|---|---|---|---|
 | The fixed AllocationProbe counts an allocation injected from a non-test translation unit | `AllocationProbeTest::countsAnAllocationMadeInLibraryCode` | `RoutingGraph::createNode()` is a non-test TU in `lmmsobjs`; the probe counts its `make_unique` (`counted > 0`). `doesNotCountWhileDisarmed` is the negative control | `ctest -R '^AllocationProbeTest$' --output-on-failure` | 0 (1/1) |
-| A recorder-start regression exercises the callback path and proves accumulator and drain-thread setup happen before playback; recording still produces the expected take | `RecordingRealtimeTest::recorderStartIsPreparedBeforeTheCallbackPath` (new, `tests/src/core/RecordingRealtimeTest.cpp:421`) | arm -> `recordTakesReady() == 2` (accumulator + drain thread exist before playback); `Song::processNextBuffer()` x8 under `lmms::RealtimeScope` with the probe armed -> `tlAllocationCount == 0`; `driveRecordPeriods(20)` + stop -> non-empty take | `ctest -R '^RecordingRealtimeTest$' --output-on-failure` and `./RecordingRealtimeTest recorderStartIsPreparedBeforeTheCallbackPath` | 0 (1/1); 0 (case PASS) |
+| A recorder-start regression exercises the callback path and proves accumulator and drain-thread setup happen before playback; recording still produces the expected take | `RecordingRealtimeTest::recorderStartIsPreparedBeforeTheCallbackPath` (`tests/src/core/RecordingRealtimeTest.cpp:421`) | arm -> `recordTakesReady() == 2` asserted **before** `playAndRecord()` (accumulator + drain thread exist before playback starts); the first probed period then starts the pass: `Song::processNextBuffer()` x8 under `lmms::RealtimeScope` with the probe armed -> `tlAllocationCount == 0`; `driveRecordPeriods(20)` + stop -> non-empty take | `ctest -R '^RecordingRealtimeTest$' --output-on-failure` and `./RecordingRealtimeTest recorderStartIsPreparedBeforeTheCallbackPath` | 0 (1/1); 0 (case PASS) |
 | (supporting) the audio-thread claim allocates nothing | `RecordingRealtimeTest::armedClipClaimsItsPreparedTakeWithoutAllocation` | probe around `claimRecordHandle()` (what `SampleTrack::play` calls) -> 0 allocations | same ctest run | 0 |
 | (supporting) recording still produces the expected take | `RecordingRealtimeTest::claimedTakeRecordsItsInput` | 40 engine periods record >= 10 x 256 frames onto the clip | same ctest run | 0 |
 | (supporting) both takes exist before playback | `RecordingRealtimeTest::disarmReleasesThePreparedTakes` | after `setRecord(true)`, `recordTakesReady() == 2` | same ctest run | 0 |
@@ -34,6 +41,8 @@ First line of this file is `IMPLEMENTED` because every acceptance criterion is m
 the tests run below.
 
 ## Command log
+
+Round 1 (r1 review's own log, in `runs/Q050-002.r1/logs/`):
 
 ```text
 cmake --build build --target AllocationProbeTest RecordingRealtimeTest -- -j4 > .../logs/build-1.log 2>&1; echo EXIT=$?   # EXIT=0
@@ -45,7 +54,19 @@ ctest -R '^RecordingRealtimeTest$' --output-on-failure > .../logs/test-3-recordi
 ./RecordingRealtimeTest recorderStartIsPreparedBeforeTheCallbackPath > .../logs/test-5-newcase.log 2>&1; echo EXIT=$?  # EXIT=0, "PASS", 3 passed 0 failed
 ```
 
+Round 2 (the rework: arm and assert both takes ready before `playAndRecord()`, then probe the
+callback path; logs in `runs/Q050-002.r2/logs/`):
+
+```text
+cmake --build build --target zene AllocationProbeTest RecordingRealtimeTest -- -j4 > .../logs/build-1.log 2>&1; echo EXIT=$?   # EXIT=0
+./RecordingRealtimeTest recorderStartIsPreparedBeforeTheCallbackPath > .../logs/test-1-newcase-standalone.log 2>&1; echo EXIT=$? # EXIT=0, "PASS", 3 passed 0 failed
+ctest -R '^AllocationProbeTest$' --output-on-failure > .../logs/test-2-allocationprobe.log 2>&1; echo EXIT=$?                  # EXIT=0, 1/1
+ctest -R '^RecordingRealtimeTest$' --output-on-failure > .../logs/test-3-recordingrealtime.log 2>&1; echo EXIT=$?              # EXIT=0, 1/1
+```
+
 ## Gates (from the worktree root)
+
+Round 1 (`runs/Q050-002.r1/logs/`):
 
 ```text
 bash tests/complexity-gate.sh --check   > .../logs/gate-complexity.log 2>&1; echo EXIT=$?   # EXIT=1  (pre-existing, by design)
@@ -57,9 +78,12 @@ tests/scripted/check-namespace          > .../logs/gate-namespace.log 2>&1; echo
 bash tests/no-tautology-gate.sh         > .../logs/gate-notautology.log 2>&1; echo EXIT=$?  # EXIT=0
 ```
 
-Gates 4 (complexity) and 7 (file length) are red on train 5 on purpose. Their REGRESSION lists are
-byte-identical to the reference worktree `../zene-cachyos`, and neither lists
-`tests/src/core/RecordingRealtimeTest.cpp`, so no file of this lane is newly listed.
+Round 2 (`runs/Q050-002.r2/logs/`): identical exits - complexity `gate-4-complexity.log` EXIT=1,
+file length `gate-7-filelength.log` EXIT=1 (both pre-existing by design; the REGRESSION lists
+re-diffed byte-identical against `../zene-cachyos`, neither lists
+`tests/src/core/RecordingRealtimeTest.cpp`), fork sources `gate-3-forksources.log` EXIT=0,
+all sources `gate-5-allsources.log` EXIT=0, no upstream regression `gate-6-noupstream.log`
+EXIT=0, namespace `gate-8-namespace.log` EXIT=0, no tautology `gate-9-notautology.log` EXIT=0.
 
 ## New commands and reversibility
 
@@ -81,8 +105,13 @@ None.
 
 ## Files committed
 
+Round 1:
+
 - `tests/src/core/RecordingRealtimeTest.cpp`
 - `src/core/SampleRecordHandle.cpp`
 - `tests/upstream-modifications.txt`
 - `docs/050-features/Q050-002.md`
 - `docs/qwen-fixes-2026-10/cluster-Q050-002.md`
+
+Round 2 (the rework): `tests/src/core/RecordingRealtimeTest.cpp` (the reorder) and the two docs
+files, updated to the reordered regression and the r2 exits.
