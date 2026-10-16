@@ -33,7 +33,9 @@
 #include "Graph.h"
 #include "PixmapButton.h"
 
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <memory>
 
 namespace lmms
@@ -71,6 +73,51 @@ private:
 	static constexpr int s_sampleLength = 128;
 	static constexpr int s_stringCount = 9;
 
+	/*! The waveform the audio thread is allowed to read.
+	 *
+	 * graphModel is GUI-thread storage: a waveform drag, the smooth and normalize
+	 * buttons, the wave buttons and a project load all rewrite it in place. A
+	 * note that starts while such a write is in flight must not read it -
+	 * VibratingString copies the whole waveform, so reading the model there is a
+	 * data race that hands the string a half-applied waveform.
+	 *
+	 * Three slots, one writer (the GUI thread), no lock and no allocation on
+	 * either side. publish() fills the one slot that is neither the published
+	 * one nor the one a reader may still be copying, then flips the index;
+	 * samples() only ever reads the published slot, and no publication touches
+	 * that slot again until the one after next, so a reader always sees one
+	 * waveform in full.
+	 */
+	class WaveformSnapshot
+	{
+	public:
+		//! Hand off `s_sampleLength` samples as the current waveform.
+		void publish(const float* samples)
+		{
+			// m_front and m_stale are always two different slots, so this is the
+			// third one.
+			const int front = m_front.load(std::memory_order_acquire);
+			const int back = 3 - front - m_stale;
+			std::copy_n(samples, s_sampleLength, m_slots[back].begin());
+			m_stale = front;  // a reader may still be copying that slot
+			m_front.store(back, std::memory_order_release);
+		}
+
+		//! The published waveform, stable until the next publication.
+		const float* samples() const
+		{
+			return m_slots[m_front.load(std::memory_order_acquire)].data();
+		}
+
+	private:
+		std::array<std::array<float, s_sampleLength>, 3> m_slots{};
+		std::atomic<int> m_front{0};
+		int m_stale{1};  //!< GUI thread only: the slot a reader may still be copying
+	};
+
+	//! Re-read one string's graph model and hand the waveform off.
+	void publishWaveform(int str);
+
 	std::array<std::unique_ptr<FloatModel>, s_stringCount> m_pickModels;
 	std::array<std::unique_ptr<FloatModel>, s_stringCount> m_pickupModels;
 	std::array<std::unique_ptr<FloatModel>, s_stringCount> m_stiffnessModels;
@@ -83,6 +130,8 @@ private:
 	std::array<std::unique_ptr<graphModel>, s_stringCount> m_graphModels;
 	std::array<std::unique_ptr<BoolModel>, s_stringCount> m_impulseModels;
 	std::array<std::unique_ptr<NineButtonSelectorModel>, s_stringCount> m_harmonicModels;
+	//! What the audio thread reads: one immutable waveform per string.
+	std::array<WaveformSnapshot, s_stringCount> m_waveforms;
 
 	friend class gui::VibedView;
 };

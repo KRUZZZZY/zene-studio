@@ -52,6 +52,10 @@ set(LMMS_TESTS
 	src/core/AllocationProbeTest.cpp
 	src/plugins/LadspaChannelCountsTest.cpp
 	src/plugins/VstEffectControlsTest.cpp
+	# cluster new-p12-278: the Vibed waveform handoff proof - a note's render must
+	# depend on the waveform the GUI thread handed off, never on the wave graph model
+	# being edited underneath the audio thread.
+	src/plugins/VibedWaveformHandoffTest.cpp
 	src/core/ArrayVectorTest.cpp
 	# Short ALSA writes must advance through every remaining frame in a period.
 	src/core/AudioAlsaWriteTest.cpp
@@ -1368,6 +1372,22 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "ReverbSCCreateTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE src/plugins/ReverbSCCreateTestAllocator.c)
+	endif()
+	# cluster new-p12-278: VibedWaveformHandoffTest compiles the plug-in's own
+	# sources into the test (the SlicerT plug-in tests' shape), so the audio path it
+	# drives is the shipping one and the wave graph models are reachable.
+	if(LMMS_TEST_NAME STREQUAL "VibedWaveformHandoffTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/Vibed.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/Vibed.h
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/NineButtonSelector.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/NineButtonSelector.h
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed ${CMAKE_BINARY_DIR}/plugins/Vibed)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_NAME=vibedstrings vibedstrings_EXPORTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/Eq/EqCurve.cpp")
