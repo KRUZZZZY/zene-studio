@@ -5655,6 +5655,16 @@ if(PYTHON3_EXECUTABLE)
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/doc-figures-gate.py)
 endif()
 
+# Q050-145: the README's no-tier / no-activation statement stays verifiable - the gate
+# repeats the wording checks the section claims (GPL cited as the licence that permits
+# charging, the no-tier claim grounded in the search of the product-owned sources and
+# the distribution facts, no --version policy promise, announcement channel named) and
+# reruns the narrow product-licensing source search with the documented exclusions.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME DocPricingModelGate
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/doc-pricing-model-gate.py)
+endif()
+
 # 0.5.0 F1 (MX-040/041/036/061): hardware outputs, interface channels, cue mixes and the hardware
 # insert ping driven end to end on a 4-output Dummy whose loopback carries outputs 3/4.
 if(PYTHON3_EXECUTABLE)
