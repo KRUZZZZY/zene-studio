@@ -153,6 +153,7 @@ struct Clips
 	std::map<QString, std::shared_ptr<const SampleBuffer>> held;
 	std::vector<std::shared_ptr<const SampleBuffer>> retired;
 	std::vector<QPointer<Track>> handled;  //!< tracks that have a SessionCellPlayHandle
+	int cachedRate = 0;  //!< the engine rate held clips were resampled for; 0 before first load
 };
 
 Clips& clips()
@@ -178,6 +179,13 @@ std::shared_ptr<const SampleBuffer> atEngineRate(std::shared_ptr<const SampleBuf
 const SampleBuffer* load(const QString& source)
 {
 	Clips& all = clips();
+	const auto rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+	if (all.cachedRate != 0 && all.cachedRate != rate)
+	{
+		for (auto& entry : all.held) { all.retired.push_back(std::move(entry.second)); }
+		all.held.clear();
+	}
+	all.cachedRate = rate;
 	const auto found = all.held.find(source);
 	if (found != all.held.end()) { return found->second.get(); }
 	if (!QFileInfo::exists(PathUtil::toAbsolute(source))) { return nullptr; }  // no warning box at a launch
@@ -257,6 +265,7 @@ void retire() noexcept
 	all.retired.clear();
 	for (auto& entry : all.held) { all.retired.push_back(std::move(entry.second)); }
 	all.held.clear();
+	all.cachedRate = 0;
 }
 
 int heldClips() noexcept
