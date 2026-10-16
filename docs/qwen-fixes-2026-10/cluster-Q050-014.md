@@ -37,6 +37,14 @@ varies by platform" stays elsewhere in the document, and the formats paragraph s
 (`git apply -R`) now fails `ctest PluginFormatsDocsGate` with exit 8 and 21 named FAIL lines,
 including both new claims; restoring it passes again (logs 17–19).
 
+Round 5 (Luna REWORK r3 / this unit's open point): the gate's `--self-test` built its throwaway root
+with unconditional `os.symlink`, which can fail on the Windows ARM CTest runner when symlink creation
+needs Developer Mode or the `SeCreateSymbolicLink` privilege. `mirror_inputs` now uses
+`shutil.copy2` (copies, never symlinks), so the self-test is privilege-free on every CTest runner.
+The direct self-test and both `PluginFormatsDocsGate` CTests were re-run green on this box
+(logs 53–55). The Windows ARM / MSVC confirmations are the hosted-CI runs of the same tests; their
+outcome is observed in CI, and the code path now has no symlink dependency to fail on.
+
 ## Acceptance table
 
 | Criterion | Command actually run | Result / EXIT |
@@ -47,7 +55,8 @@ including both new claims; restoring it passes again (logs 17–19).
 | The README does not imply VST2 hosting on macOS, and Linux is one target among several | same `ctest` | gate asserts README says "a macOS build has no VST2/Vestige path" in the scoped paragraph, rejects "on Linux and the other platforms alike", finds `SET(WANT_VST OFF)` inside `IF(LMMS_BUILD_APPLE)` in `CMakeLists.txt`, requires "one of the platforms these release builds target" **inside the formats paragraph** and rejects "the platform these release builds target" document-wide; **EXIT=0** |
 | The DAW-core inventory's inherited format list is qualified in place (round 4) | same `ctest` | gate extracts the bounded inventory region (`**The DAW core inherited from LMMS**` … `**The agent control surface**`) and requires "this inherited format list is the **Linux** build's" and "availability varies by platform" **inside it** — a mention in the formats paragraph does not satisfy the claim; **EXIT=0** |
 | Name the Plug-in Modules list as the GUI location for per-file scan status and quarantine controls | `ctest -R '^PluginFormatsDocsGate$' --output-on-failure` (from `build/tests`) | gate asserts both docs and the manual name **Plug-in Modules**, that `docs/KNOWN-LIMITATIONS.md` says "per-file scan status and quarantine", and that the list is defined in `src/gui/CommandLists.cpp`, registered in `src/gui/shell/ShellCommandMenus.cpp` and backed by commands in `tools/mcp-zene-control/zene_control/commands_snapshot.json`; **EXIT=0** |
-| Red proof, scoped-list removal, direct run | `python3 tests/plugin-formats-docs-gate.py --self-test` | 4 cases PASS: `LADSPA` removed from each bounded region (other mentions intact), the inventory losing its Linux qualification, and the formats paragraph saying "the platform" (singular); each runs the gate on a mirrored throwaway root and asserts exit 1 + the named claim; `RESULT: PASS`, **EXIT=0** |
+| Red proof, scoped-list removal, direct run | `python3 tests/plugin-formats-docs-gate.py --self-test` | 4 cases PASS: `LADSPA` removed from each bounded region (other mentions intact), the inventory losing its Linux qualification, and the formats paragraph saying "the platform" (singular); each runs the gate on a throwaway root built by **copying** every input (`shutil.copy2`, no symlinks) and asserts exit 1 + the named claim; `RESULT: PASS`, **EXIT=0** |
+| Self-test is privilege-free (Windows ARM/MSVC portability, round 5) | `python3 tests/plugin-formats-docs-gate.py --self-test` and `ctest -R '^PluginFormatsDocsGate(SelfTest)?$' --output-on-failure` | `mirror_inputs` uses `shutil.copy2`, so the self-test creates no symlink and needs no `SeCreateSymbolicLink`/Developer Mode; self-test `RESULT: PASS` **EXIT=0**, both CTests `100% tests passed` **EXIT=0** (logs 53–55); Windows ARM and MSVC run the same CTests in hosted CI |
 | Red proof, reversing the README product hunks (round 4, the reviewer's demand) | `git apply -R` on the `de5a85a96..HEAD -- README.md` diff, then `ctest -R '^PluginFormatsDocsGate$' --output-on-failure` | `1/1 Test #584: PluginFormatsDocsGate ...***Failed`, **21 named FAIL lines** including "DAW-core inventory: the inherited format list is the Linux build's" and "plug-in formats paragraph: calls Linux one of the platforms the release builds target"; ctest **EXIT=8**; after `git checkout -- README.md` the same ctest is green again (**EXIT=0**, log 19) |
 | Red proof, scoped-list removal, through ctest | `ctest -R '^PluginFormatsDocsGateSelfTest$' --output-on-failure` (from `build/tests`) | `1/1 Test #585: PluginFormatsDocsGateSelfTest ... Passed`; ctest **EXIT=0** |
 | Green gate through ctest | `ctest -R '^PluginFormatsDocsGate$' --output-on-failure` (from `build/tests`) | `1/1 Test #584: PluginFormatsDocsGate ... Passed`; ctest **EXIT=0** |
@@ -73,7 +82,8 @@ would have passed).
 - `tests/plugin-formats-docs-gate.py` — hermetic docs-truth gate; round 3 scopes every format claim to
   the bounded README/KNOWN-LIMITATIONS regions and verifies each loader source's registration symbol;
   round 4 asserts the two README qualifications in their own bounded regions (the DAW-core inventory
-  and "one of the platforms") and extends the `--self-test` red proof to 4 cases (58 checks).
+  and "one of the platforms") and extends the `--self-test` red proof to 4 cases (58 checks); round 5
+  makes the self-test's throwaway root with `shutil.copy2` copies instead of `os.symlink`.
 - `tests/fork-sources.txt` — registers the new gate script (fork-NEW, `:2153`).
 - `docs/050-features/Q050-014.md`, `docs/qwen-fixes-2026-10/cluster-Q050-014.md` — these reports.
 
@@ -98,4 +108,6 @@ A16 histogram: unchanged (`python3 tests/doc-figures-gate.py` exits 0).
 Logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-014.r2/logs/`
 (files 01–19: gate green, self-test, lizard, complexity + cachyos compare, file-length + cachyos
 compare, the six gates, doc-figures, build, both ctests, the reversed-README red proof and the
-restored green).
+restored green). Round 5 logs are under
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-014.r3/logs/` (53 self-test, 54 gate,
+55 both CTests, 56–63 the six gates + doc-figures).

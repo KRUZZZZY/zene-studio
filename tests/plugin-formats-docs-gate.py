@@ -41,7 +41,7 @@ WHAT IT CHECKS (all file reads; no network, no instance, no build):
      build, so the README may not claim VST2/Vestige there.
   8. data/manual/index.html names the same list.
 
-`--self-test` is the gate's own red/green control: it builds a throwaway root (symlinks to every real
+`--self-test` is the gate's own red/green control: it builds a throwaway root (copies of every real
 input, with README.md / KNOWN-LIMITATIONS.md mutated) and asserts the gate fails when a format is
 removed from a *scoped* list while its other mentions stay intact, when the DAW-core inventory loses
 its Linux qualification, and when the formats paragraph calls Linux "the platform" rather than "one
@@ -94,7 +94,7 @@ KL_FORMATS_END = "## What this alpha cannot do at all"
 README_INVENTORY_START = "**The DAW core inherited from LMMS**"
 README_INVENTORY_END = "**The agent control surface**"
 
-# Every path the gate reads, for the self-test to mirror into a throwaway root.
+# Every path the gate reads, for the self-test to copy into a throwaway root.
 FIXED_INPUTS = (
     "src/gui/CommandLists.cpp",
     "src/gui/shell/ShellCommandMenus.cpp",
@@ -260,7 +260,12 @@ def run_checks(root, report):
 
 
 def mirror_inputs(root, dest):
-    """Symlink every input the gate reads from `root` into `dest`, so only the docs are mutated."""
+    """Copy every input the gate reads from `root` into `dest`, so only the docs are mutated.
+
+    Copies, never symlinks: creating a symlink on Windows needs Developer Mode or the
+    SeCreateSymbolicLink privilege, which the Windows ARM CTest runner cannot be assumed to
+    have, so the gate's own self-test must not depend on it.
+    """
     rels = list(FIXED_INPUTS) + [artifact for _n, artifact, _r in LINUX_FORMATS]
     for rel in rels:
         src = os.path.join(root, rel)
@@ -268,7 +273,7 @@ def mirror_inputs(root, dest):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         if os.path.lexists(dst):
             os.remove(dst)
-        os.symlink(src, dst)
+        shutil.copy2(src, dst)
 
 
 def rewrite(dest, rel, text):
