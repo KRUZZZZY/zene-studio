@@ -36,6 +36,7 @@
 #include "CommandForm.h"
 #include "CommandLists.h"
 #include "ControlVocabulary.h"
+#include "DeprecationHelper.h"
 #include "DesignTokens.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
@@ -156,7 +157,7 @@ void fillEditMenu(QMenu* menu, const QJsonObject& scoped, const QJsonArray& sele
 	addCommandAction(menu, label("Copy", QKeySequence::Copy), QStringLiteral("note.copy"), now("note.copy", scoped));
 	addCommandAction(menu, label("Cut", QKeySequence::Cut), QStringLiteral("note.cut"), now("note.cut", scoped));
 	addCommandAction(menu, label("Paste", QKeySequence::Paste), QStringLiteral("note.paste"), now("note.paste", where));
-	addCommandAction(menu, label("Duplicate", QKeySequence(Qt::CTRL | Qt::Key_B)), QStringLiteral("note.duplicate"),
+	addCommandAction(menu, label("Duplicate", keySequence(Qt::CTRL, Qt::Key_B)), QStringLiteral("note.duplicate"),
 		now("note.duplicate", merged(scoped, {{QStringLiteral("grid"), std::max(1, grid)}})));
 	addCommandAction(menu, label("Delete", QKeySequence(Qt::Key_Delete)), QStringLiteral("note.remove_many"),
 		now("note.remove_many", merged(where, {{QStringLiteral("notes"), selected}})))->setEnabled(!selected.isEmpty());

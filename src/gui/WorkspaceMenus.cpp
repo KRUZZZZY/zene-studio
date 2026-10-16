@@ -35,6 +35,7 @@
 #include "CommandForm.h"
 #include "CommandLists.h"
 #include "ControlRegistry.h"
+#include "DeprecationHelper.h"
 #include "GuiApplication.h"
 #include "LayoutMenu.h"
 #include "MenuBarExtras.h"
@@ -143,7 +144,7 @@ void fillWindowMenu(QMenu* menu)
 	run(menu, QObject::tr("Focus Next Panel"), QStringLiteral("window.focus_panel"), {{QStringLiteral("panel"), QStringLiteral("next")}})
 		->setShortcut(QKeySequence(Qt::Key_F6));
 	run(menu, QObject::tr("Focus Previous Panel"), QStringLiteral("window.focus_panel"), {{QStringLiteral("panel"), QStringLiteral("previous")}})
-		->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F6));
+		->setShortcut(keySequence(Qt::SHIFT, Qt::Key_F6));
 	menu->addSeparator();
 	choices(menu, QObject::tr("Cross-Hair Cursor"), QStringLiteral("view.crosshair"), QStringLiteral("enabled"));
 	choices(menu, QObject::tr("Keep on Top"), QStringLiteral("window.stay_on_top"), QStringLiteral("enabled"));

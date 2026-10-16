@@ -32,6 +32,7 @@
 #include "AccessibleWidgets.h"
 #include "CommandForm.h"
 #include "CommandLists.h"
+#include "DeprecationHelper.h"
 
 namespace lmms::gui
 {
@@ -79,13 +80,13 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	menu->addSeparator();
 	// ED-024: bound to keys by default (rebindable with shortcuts.set, like every menu action).
 	run(QObject::tr("Nudge Clip Left"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("left")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Left));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Left));
 	run(QObject::tr("Nudge Clip Right"), QStringLiteral("arrangement.nudge"), {{QStringLiteral("direction"), QStringLiteral("right")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Right));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Right));
 	run(QObject::tr("Next Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("next")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Down));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Down));
 	run(QObject::tr("Previous Clip"), QStringLiteral("arrangement.select_clip"), {{QStringLiteral("direction"), QStringLiteral("previous")}})
-		->setShortcut(QKeySequence(Qt::ALT | Qt::Key_Up));
+		->setShortcut(keySequence(Qt::ALT, Qt::Key_Up));
 	menu->addSeparator();
 	run(QObject::tr("Add Marker at Play Position"), QStringLiteral("marker.add"), {});
 	run(QObject::tr("Next Marker"), QStringLiteral("marker.jump"), {{QStringLiteral("direction"), QStringLiteral("next")}});
