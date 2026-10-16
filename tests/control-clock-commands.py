@@ -30,11 +30,11 @@ The checks, in order:
                                     polls, so "nothing" is not "not yet");
   3. the slave's own settings       the drift bound and the source port come back;
   4. the configured source         Q050-026: the source `clock.slave_set` was given
-                                    comes back from `clock.get_state` beside the
-                                    rest of the follower state, a switch is ONE
-                                    recorded undo step, and a name the engine
-                                    cannot hold is refused invalid_args and
-                                    changes nothing;
+                                    comes back from `clock.get_state` beside the rest of
+                                    the follower state, an empty source_port clears the
+                                    choice and omitting it keeps it, a switch is ONE
+                                    undo step, and an unholdable name is refused
+                                    invalid_args and changes nothing;
   5. `clock.master_set` on, stopped a stopped transport emits NOTHING: the clock
                                     is not free-running (a counter that only
                                     grew would fail here);
@@ -246,6 +246,15 @@ def check_the_configured_source_is_read_back(session, recorder):
     recorder.check("the source vocabulary is midi.device_list's readable ports",
                    isinstance(readable, list),
                    "readable=%r" % (readable if not isinstance(readable, list) else len(readable)))
+
+    # "Any input" is a SELECTABLE state, not the absence of a choice: an empty
+    # source_port clears the source, while omitting the property keeps it.
+    cleared = session.result("clock.slave_set", {"enabled": True, "source_port": ""})
+    kept = session.result("clock.slave_set", {"enabled": True})
+    recorder.check("an empty source_port CLEARS the choice and omitting it keeps one",
+                   cleared.get("source_port") == "" and kept.get("source_port") == "",
+                   "cleared=%r kept=%r" % (cleared, kept))
+    session.result("clock.slave_set", {"enabled": True, "source_port": wanted})
 
     session.result("clock.slave_set",
                    {"enabled": True, "source_port": "129:0 Sequencer:Launchkey"})

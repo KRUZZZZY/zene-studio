@@ -200,9 +200,24 @@ private slots:
 		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("clock.slave_set"),
 			{{QStringLiteral("enabled"), true}}).ok);
 		any->trigger();
-		const QJsonObject slave = clockPart("slave");
+		QJsonObject slave = clockPart("slave");
 		QVERIFY2(slave.value(QStringLiteral("enabled")).toBool(), "choosing a source must not stop following");
 		QCOMPARE(slave.value(QStringLiteral("source_port")).toString(), QString());
+
+		// AND "Any Input" CLEARS a source that was configured, which is the whole
+		// reason an empty string is a selectable state rather than "no opinion":
+		// with no client port to pick (this run has no MIDI backend) the entry is
+		// proved against the engine's own vocabulary instead of a device list.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), true},
+				{QStringLiteral("source_port"), QStringLiteral("128:0 Sequencer:Ableton Push")}}).ok);
+		QCOMPARE(clockPart("slave").value(QStringLiteral("source_port")).toString(),
+			QStringLiteral("128:0 Sequencer:Ableton Push"));
+		any->trigger();
+		slave = clockPart("slave");
+		QCOMPARE(slave.value(QStringLiteral("source_port")).toString(), QString());
+		QVERIFY2(slave.value(QStringLiteral("enabled")).toBool(), "clearing the source must not stop following");
+
 		// The state line is still the LAST item: the submenu was inserted above it.
 		QVERIFY(clock->actions().last()->text().startsWith(QStringLiteral("Clock ")));
 	}

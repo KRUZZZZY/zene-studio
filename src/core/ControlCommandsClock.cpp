@@ -166,7 +166,13 @@ ControlResult slaveSet(const QJsonObject& args)
 	const QString wasSource = clock->slaveSourcePort();
 	const double wasBound = clock->slaveDriftBoundMs();
 
-	const QString wantedSource = source.isEmpty() ? wasSource : source;
+	/* Q050-026: "no source chosen" is a SELECTABLE state (any input), not the
+	 * absence of a choice, so the PRESENCE of the property decides and an explicit
+	 * empty string clears the source. Omitting it keeps the current one, as
+	 * clock.master_set's `port` does. Read this way, Edit > MIDI Clock > Clock
+	 * Source > Any Input is a real choice rather than a no-op. */
+	const QString wantedSource =
+		args.contains(QStringLiteral("source_port")) ? source : wasSource;
 	// Q050-026: a source name the follower cannot hold is refused BEFORE anything is
 	// applied, so a rejected call leaves the whole configuration as it was - and the
 	// reason is MidiClock's own, which is where the storage is.
@@ -300,9 +306,11 @@ void registerClockCommands(ControlRegistry& registry)
 			"(Edit > MIDI Clock > Clock Source offers the same list): clock messages from any "
 			"OTHER port are ignored and counted in `ignored`, and choosing a different source "
 			"forgets the measurement so the device moved off cannot keep writing its tempo. An "
-			"empty source_port follows a clock from wherever it arrives, and is the only value a "
-			"client with one unnamed input (ALSA Raw-MIDI, JACK, OSS, sndio, the dummy) can "
-			"follow, because those cannot say which of their ports a byte came from. A name "
+			"empty source_port follows a clock from wherever it arrives - that is how the "
+			"choice is CLEARED, while OMITTING the property keeps the current one - and it is "
+			"the only value a client with one unnamed input (ALSA Raw-MIDI, JACK, OSS, sndio, "
+			"the dummy) can follow, because those cannot say which of their ports a byte came "
+			"from. A name "
 			"longer than the follower can hold is refused (invalid_args), never truncated. "
 			"`drift_bound_ms` is how far one pulse interval may stray from the window's mean and "
 			"still count as locked. Reversible for the CONFIGURATION: the tempo a following "
