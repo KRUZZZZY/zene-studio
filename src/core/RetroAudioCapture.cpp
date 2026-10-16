@@ -60,7 +60,7 @@ RetroAudioCapture::RetroAudioCapture() :
 }
 
 
-void RetroAudioCapture::push(const SampleFrame* frames, f_cnt_t count) noexcept
+void RetroAudioCapture::push(const SampleFrame* frames, f_cnt_t count, int sampleRate) noexcept
 {
 	// The whole cost of a DISARMED engine, once per rendered period.
 	if (!m_armed.load(std::memory_order_relaxed))
@@ -71,6 +71,23 @@ void RetroAudioCapture::push(const SampleFrame* frames, f_cnt_t count) noexcept
 	{
 		return;
 	}
+	// A frame cannot be labelled with a non-positive rate; skip rather than
+	// poison the window's rate bookkeeping.
+	if (sampleRate <= 0)
+	{
+		return;
+	}
+	// The window must hold frames recorded at ONE sample rate. If the engine's
+	// rate changed while armed (Luna cluster new-p12-200, BUG 5), the frames
+	// already retained were captured at a different rate: dropping them keeps
+	// the window rate-homogeneous so a take is never labelled with a rate that
+	// mis-scales part of it. reset() only stores atomics - realtime-safe.
+	const int held = m_captureRate.load(std::memory_order_relaxed);
+	if (held != 0 && held != sampleRate)
+	{
+		m_ring.reset();
+	}
+	m_captureRate.store(sampleRate, std::memory_order_relaxed);
 	m_ring.push(frames, static_cast<std::size_t>(count));
 }
 
@@ -98,6 +115,10 @@ RetroAudioCapture::Window RetroAudioCapture::takeWindow() const
 	// the write also counts frames this window never contained (Luna cluster 4901).
 	window.overwritten = static_cast<std::size_t>(ring.overwrittenCount());
 	const std::size_t copied = ring.copyOut(window.frames.data(), window.frames.size());
+	// The producer is idle until endSnapshot(), so every retained frame was
+	// recorded at this one rate: the window is rate-homogeneous (Luna cluster
+	// new-p12-200), and the take can be labelled with it without mis-scaling.
+	window.sampleRate = m_captureRate.load(std::memory_order_relaxed);
 	ring.endSnapshot();
 
 	window.frames.resize(copied);

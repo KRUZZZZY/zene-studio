@@ -172,7 +172,10 @@ ControlResult retroToTake(const QJsonObject& args)
 		: file;
 
 	const RetroAudioCapture::Window window = capture->takeWindow();
-	const int rate = engineSampleRate();
+	// Label the take with the rate the retained frames were actually recorded
+	// at (Luna cluster new-p12-200): the window is rate-homogeneous, and using
+	// the live engine rate would mis-scale a window captured before a rate change.
+	const int rate = window.sampleRate > 0 ? window.sampleRate : engineSampleRate();
 
 	std::uint64_t written = 0;
 	QString error;

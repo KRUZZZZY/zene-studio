@@ -104,10 +104,16 @@ public:
 	//! True while frames are being recorded. False on construction.
 	bool isArmed() const noexcept { return m_armed.load(std::memory_order_relaxed); }
 
-	//! Audio thread: record one rendered period of the engine's input.
-	//! Realtime-safe (see the class comment). While disarmed this is one
-	//! relaxed atomic load and nothing else.
-	void push(const SampleFrame* frames, f_cnt_t count) noexcept;
+	//! Audio thread: record one rendered period of the engine's input at
+	//! \a sampleRate. Realtime-safe (see the class comment). While disarmed
+	//! this is one relaxed atomic load and nothing else.
+	//!
+	//! The retained window must hold frames recorded at ONE sample rate, or a
+	//! take would label frames from several rates with a single rate (Luna
+	//! cluster new-p12-200, BUG 5). When a period arrives at a rate different
+	//! from the frames already retained, the stale frames are dropped so the
+	//! window stays rate-homogeneous; \a sampleRate must be a positive rate.
+	void push(const SampleFrame* frames, f_cnt_t count, int sampleRate) noexcept;
 
 	//! The ring behind this capture (the consumer side, the UI/control thread).
 	RetroAudioRing& ring() noexcept { return m_ring; }
@@ -124,6 +130,11 @@ public:
 		//! is written: read afterwards it also counts frames the window's frames
 		//! never contained.
 		std::size_t overwritten = 0;
+		//! The single sample rate the retained frames were recorded at. The
+		//! window is rate-homogeneous (Luna cluster new-p12-200), so a take can
+		//! be labelled with this rate without mis-scaling any frame. 0 until a
+		//! frame has been retained.
+		int sampleRate = 0;
 	};
 
 	//! Consumer side. Never blocks the audio thread: the producer is asked to
@@ -134,6 +145,10 @@ public:
 private:
 	RetroAudioRing m_ring;
 	std::atomic<bool> m_armed{false};
+	//! Rate of the frames currently retained. 0 until the first period is
+	//! pushed. The producer (audio thread) is the only writer; the consumer
+	//! reads it inside the snapshot handshake.
+	std::atomic<int> m_captureRate{0};
 } ;
 
 

@@ -975,7 +975,8 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	// counterpart of the MIDI capture in include/RetroMidiCapture.h). It records
 	// the ENGINE'S STEREO INPUT BUS - the same frames STAGE 1's play handles
 	// read - and while it is disarmed this is one relaxed atomic load. Realtime-safe.
-	m_retroCapture.push(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
+	m_retroCapture.push(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead],
+		static_cast<int>(inputSampleRate()));
 	inputmeter::measure(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);  // 0.5.0 L08 (MX-134)
 	// 0.5.0 L09 (MX-038): the control room on what is heard - skipped while exporting and while neutral.
 	controlroom::apply(m_outputBufferRead.get(), m_framesPerPeriod);
