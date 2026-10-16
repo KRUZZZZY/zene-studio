@@ -20,7 +20,16 @@
  *     the one- and three-byte forms through sendByte().
  *   * src/core/midi/MidiAlsaSeq.cpp - processOutEvent() sends the same family
  *     as ALSA-sequencer events, DIRECT (not on the tick queue the note path
- *     uses), because a clock must not be scheduled behind a queue.
+ *     uses), because a clock must not be scheduled behind a queue; and run()
+ *     names the SENDER of an incoming clock-family event to handleInputMessage()
+ *     (Q050-026), which is what the follower's source is matched against.
+ *
+ * WHICH CLOCK, stated (Q050-026). The follower follows the source its caller
+ * names, and nothing else: handleInputMessage() drops a message from any other
+ * source before it reaches the tracker and counts it in slaveIgnoredCount(). An
+ * empty source is "any source", which is what this file did before the source
+ * became load-bearing and what a client with ONE unnamed input (every raw
+ * client) can express at all.
  *
  * MTC, stated rather than implied: this file sends and receives the MIDI CLOCK
  * family (0xF8/0xFA/0xFB/0xFC/0xF2) and counts MTC quarter-frames (0xF1) on the
@@ -289,9 +298,90 @@ QString MidiClock::slaveSourcePort() const
 	return m_slavePort;
 }
 
-void MidiClock::setSlaveSourcePort(const QString& port)
+QString MidiClock::sourcePortProblem(const QString& port)
 {
+	if (port.size() <= SourceNameCapacity) { return QString(); }
+	return QStringLiteral("a MIDI clock source name may hold %1 characters at most and this one "
+		"has %2. The name is stored whole rather than truncated, because a source that "
+		"silently became a different name would follow no clock at all while reporting "
+		"that it was following one. midi.device_list lists the names that fit.")
+		.arg(SourceNameCapacity).arg(port.size());
+}
+
+bool MidiClock::setSlaveSourcePort(const QString& port, QString* error)
+{
+	QString problem = sourcePortProblem(port);
+	if (!problem.isEmpty())
+	{
+		if (error != nullptr) { *error = problem; }
+		return false;
+	}
+	// Re-naming the current source is not a change: the lock the live source gave
+	// must survive being named twice (the same reason setMasterEnabled keeps the
+	// tracked transport across a repeat of the same call).
+	if (port == m_slavePort) { return true; }
 	m_slavePort = port;
+	publishSource(port);
+	// A SWITCH forgets the measurement, for the reason leaving slave mode does: a
+	// follower that moved off a device must not still be holding - and writing -
+	// a tempo measured from the device it left.
+	m_tracker.reset();
+	return true;
+}
+
+void MidiClock::publishSource(const QString& port) noexcept
+{
+	// Odd version = a write is in flight. The reader re-reads on any change of
+	// either the version or the length, so it never reads a half-written name.
+	m_sourceVersion.fetch_add(1, std::memory_order_acq_rel);
+	for (int i = 0; i < port.size(); ++i)
+	{
+		m_sourceChars[static_cast<std::size_t>(i)] = port.at(i).unicode();
+	}
+	m_sourceLength.store(port.size(), std::memory_order_relaxed);
+	m_sourceVersion.fetch_add(1, std::memory_order_acq_rel);
+}
+
+bool MidiClock::acceptsSource(const QString& source) const noexcept
+{
+	for (int attempt = 0; attempt < SourceReadAttempts; ++attempt)
+	{
+		const quint32 before = m_sourceVersion.load(std::memory_order_acquire);
+		if ((before & 1u) != 0u) { continue; }
+		const int length = m_sourceLength.load(std::memory_order_relaxed);
+		bool matches;
+		if (length == 0)
+		{
+			// No port chosen: a clock from wherever it arrives is followed, which
+			// is what this release did before the source became load-bearing.
+			matches = true;
+		}
+		else if (length != source.size())
+		{
+			matches = false;
+		}
+		else
+		{
+			matches = true;
+			for (int i = 0; i < length; ++i)
+			{
+				if (source.at(i).unicode() != m_sourceChars[static_cast<std::size_t>(i)])
+				{
+					matches = false;
+					break;
+				}
+			}
+		}
+		if (m_sourceVersion.load(std::memory_order_acquire) == before) { return matches; }
+	}
+	// Reconfigured under the reader four times over: this ONE message is dropped
+	// rather than measured against a name that was being rewritten.
+	return false;
+}
+
+quint32 MidiClock::slaveIgnoredCount() const noexcept
+{
+	return m_ignoredTotal.load(std::memory_order_relaxed);
 }
 
 void MidiClock::setSlaveDriftBoundMs(double ms) noexcept
@@ -465,8 +555,16 @@ void MidiClock::processAudioPeriod(int frames, bool transportRunning, qint64 pla
 }
 
 void MidiClock::handleInputMessage(MidiClockMessage message, quint32 value,
-	quint64 timestampNs) noexcept
+	quint64 timestampNs, const QString& sourcePort) noexcept
 {
+	// Q050-026: the source is checked BEFORE the tracker sees anything, so a device
+	// the user did not choose cannot move this session's tempo at all - not by
+	// locking the tracker and not by writing a Song tempo from it.
+	if (!acceptsSource(sourcePort))
+	{
+		m_ignoredTotal.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
 	m_tracker.received(message, value, timestampNs);
 }
 

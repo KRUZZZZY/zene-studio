@@ -420,6 +420,15 @@ set(LMMS_TESTS
 	# into a running instance from outside; the socket half of the proof is the
 	# ControlClockCommands ctest below, which drives the real binary.
 	src/core/MidiClockTest.cpp
+	# Q050-026: WHICH clock the follower listens to. The source `clock.slave_set`
+	# stores used to be reported and never read, and every client delivered clock
+	# bytes with no sender, so any connected device could drive the tempo. Two
+	# ports are configured here and both halves are held: the unchosen one cannot
+	# move the follower's state (no pulses, no lock, no Song tempo) while the
+	# chosen one updates it, a switch forgets the old device's measurement, an
+	# unnamed raw-client stream is still followed while no source is chosen, and a
+	# name the follower cannot hold is refused invalid_args.
+	src/core/MidiClockSourceTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/MidiOutQueueTest.cpp

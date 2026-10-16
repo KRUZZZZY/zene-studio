@@ -94,14 +94,16 @@ quint64 feedPulses(MidiClockTracker& tracker, int bpm, int pulses, quint64 times
 
 //! Feed clock pulses through the ENGINE's own input entry point - the one the
 //! MIDI client's reader thread calls - rather than into a tracker directly, so
-//! the follower test measures the path a real incoming clock takes.
+//! the follower test measures the path a real incoming clock takes. The source
+//! is empty (Q050-026): this file proves the RATE arithmetic and which source may
+//! drive the follower is MidiClockSourceTest's subject.
 quint64 feedClockInput(MidiClock* clock, int bpm, int pulses, quint64 timestampNs)
 {
 	const quint64 interval = pulseIntervalNs(bpm);
 	for (int i = 0; i < pulses; ++i)
 	{
 		timestampNs += interval;
-		clock->handleInputMessage(MidiClockMessage::Clock, 0, timestampNs);
+		clock->handleInputMessage(MidiClockMessage::Clock, 0, timestampNs, QString());
 	}
 	return timestampNs;
 }
