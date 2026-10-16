@@ -1443,6 +1443,7 @@ src/core/ControlCommandsPluginParts.cpp
 src/core/ControlCommandsPluginPaths.cpp
 src/core/ControlCommandsPluginPreset.cpp
 src/core/ControlCommandsPluginScan.cpp
+src/core/ControlCommandsPluginScanBackground.cpp
 src/core/ControlCommandsPluginScanEdit.cpp
 src/core/ControlCommandsPluginScanShared.h
 src/core/ControlCommandsPluginState.cpp
@@ -1727,6 +1728,8 @@ src/core/PatchWiring.cpp
 src/core/PhaseScopeTap.cpp
 src/core/PitchTrack.cpp
 src/core/PluginEditorHost.cpp
+src/core/PluginFactoryBackgroundScan.cpp
+src/core/PluginFactoryScanDetail.h
 src/core/PluginHostChunking.cpp
 src/core/PluginHostNotes.cpp
 src/core/PluginOrganiser.cpp

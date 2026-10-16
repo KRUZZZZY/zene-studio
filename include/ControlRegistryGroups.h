@@ -333,6 +333,10 @@ LMMS_EXPORT void registerPluginScanCommands(ControlRegistry& registry);
 //! plugin.rescan - the mutating half of the scan-cache group, in its own
 //! translation unit (the automation and warp groups' split).
 LMMS_EXPORT void registerPluginScanEditCommands(ControlRegistry& registry);
+//! plugin.scan_start / plugin.scan_status / plugin.scan_cancel (Q050-090) -
+//! the background rescan: the same scan without blocking the window, in its
+//! own translation unit for the reason the read and edit halves have theirs.
+LMMS_EXPORT void registerPluginScanBackgroundCommands(ControlRegistry& registry);
 /*! plugin.host_chunking (feature row 82, CODE-4): the chunking contract both
  * plugin host paths keep - "a request larger than the prepared block is split
  * into chunks of at most that block" - together with the counters the audio

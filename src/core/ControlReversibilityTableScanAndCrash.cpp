@@ -132,6 +132,35 @@ const ReversibilityRow kScanAndCrashRows[] = {
 		"anew. Nothing in the project is touched, and the cache is derived state "
 		"by its own contract - discovery never depends on this file, it only "
 		"decides how much work a scan repeats (include/PluginScanCache.h)"),
+	// =====================================================================
+	// Q050-090: the background rescan - the same scan without blocking the
+	// window (plugin.scan_start / scan_status / scan_cancel).
+	// =====================================================================
+	R("plugin.scan_start", RC::Irreversible, false,
+		"a run that finishes re-MEASURES the files on disk (one file per "
+		"event-loop turn, committed at the end) and refreshes the cache; once "
+		"the run has replaced a file's fingerprint record, no command puts the "
+		"previous one back - the same reason plugin.rescan is irreversible",
+		"none. The transaction records that no run had produced anything yet, "
+		"so a caller can see the run started from rest rather than being told "
+		"nothing",
+		"restore the library file and scan again: its fingerprint is recorded "
+		"anew. Nothing in the project is touched, and the cache is derived "
+		"state by its own contract"),
+	R("plugin.scan_status", RC::NotMutating, false,
+		"reads the background run's progress: whether one is active, its "
+		"outcome, the done/total files and the 0..1 progress, the file being "
+		"scanned, one entry per finished file and the catalogue_count "
+		"plugin.list still serves",
+		"no write",
+		""),
+	R("plugin.scan_cancel", RC::NotMutating, false,
+		"it stops the background run at its next file boundary, as "
+		"task.cancel stops a background job: session state - the project is "
+		"not touched, the previous catalogue is kept, and the records the run "
+		"measured stay cached for the next run",
+		"no write",
+		""),
 
 	// =====================================================================
 	// The crash.* group (feature row 54) - the local, offline crash reporter.

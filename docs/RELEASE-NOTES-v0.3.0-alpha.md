@@ -998,8 +998,13 @@ takes lanes reapplied after their train-3 reverts) adds three `true_inverse` row
 `comp.play_all_takes` and `comp.take_select` - measured off the tree with `tools/dawproject-proof.sh` part 2:
 `rows=837 true_inverse=417 snapshot=42 irreversible=22 not_mutating=356` (`DECLARED rows=837 entries=837 duplicates=0`).
 
+**Q050-090** (plug-in manager vendor and background scan, 2026-10-16) adds three rows - `plugin.scan_start`
+(`irreversible`: a finished run re-measures the files, like `plugin.rescan`), `plugin.scan_status` and
+`plugin.scan_cancel` (both `not_mutating`: progress reads and a session-state stop) - measured off the tree
+with the contract test: `rows=840 true_inverse=417 snapshot=42 irreversible=23 not_mutating=358`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=837 true_inverse=417 snapshot=42 irreversible=22 not_mutating=356
+     measured: rows=840 true_inverse=417 snapshot=42 irreversible=23 not_mutating=358
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

@@ -387,6 +387,10 @@ set(LMMS_SRCS
 	core/ControlCommandsCrashControl.cpp
 	core/ControlCommandsPluginScan.cpp
 	core/ControlCommandsPluginScanEdit.cpp
+	# Q050-090: the background rescan's three commands (scan_start /
+	# scan_status / scan_cancel) - their own TU for the reason the read and
+	# edit halves have theirs (gate 7 measures a file, not a group).
+	core/ControlCommandsPluginScanBackground.cpp
 	# Safe-start mode's surface (feature row 77, board task #666): the marker, the
 	# acknowledgement and the session-scoped half of the load-time predicate. Its
 	# own translation unit for the reason the crash and scan groups have theirs -
@@ -913,6 +917,9 @@ set(LMMS_SRCS
 	core/PluginIssue.cpp
 	core/PluginEditorHost.cpp
 	core/PluginFactory.cpp
+	# Q050-090: the background rescan's engine (one file per event-loop
+	# turn) and the per-file steps both runs share with the synchronous one.
+	core/PluginFactoryBackgroundScan.cpp
 	core/PluginOrganiser.cpp
 	core/PluginPaths.cpp
 	core/PluginScanCache.cpp

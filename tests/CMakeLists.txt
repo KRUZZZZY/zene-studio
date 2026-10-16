@@ -4413,6 +4413,23 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# plugin.scan_start / scan_status / scan_cancel + plugin.list's vendor
+	# (Q050-090 "Plug-in manager vendor and background scan"): the background
+	# rescan driven over --control-socket - a paced run is followed (progress,
+	# per-file outcomes, the cached catalogue still served), cancelled (the
+	# previous catalogue kept, the cache still answered) and re-run to done,
+	# with the task.list rows and the scan_start irreversible transaction to
+	# prove it; every plugin.list entry's vendor is asserted with the
+	# built-in amplifier naming "Zene Studio". No compile-time switch; a
+	# paced start/cancel needs no plugin files, so nothing is SKIPPED.
+	add_test(NAME ControlPluginScanBackground
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-plugin-scan-background.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlPluginScanBackground PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
 	# crash.* (0.3.0, feature row 54 "Crash reporter"): the reporter's state and
 	# its two real operations over --control-socket, with the `offered` sentinel
 	# and the report file checked ON DISK, both writers' typed `irreversible`
