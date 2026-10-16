@@ -139,6 +139,8 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	m_activityIndicator = new FadeButton(getTrackSettingsWidget());
 	m_activityIndicator->setFixedSize(8, 28);
 	m_activityIndicator->show();
+	const InstrumentTrack::NoteActivitySnapshot initialActivity = _it->noteActivitySnapshot();
+	m_activityIndicator->syncNoteActivity(initialActivity.activeNotes, initialActivity.noteOnGeneration);
 
 	auto masterLayout = new QVBoxLayout(getTrackSettingsWidget());
 	masterLayout->setContentsMargins(0, 1, 0, 0);
@@ -160,10 +162,6 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 				this, SLOT(activityIndicatorPressed()));
 	connect( m_activityIndicator, SIGNAL(released()),
 				this, SLOT(activityIndicatorReleased()));
-	connect( _it, SIGNAL(newNote()),
-			 m_activityIndicator, SLOT(activate()));
-	connect( _it, SIGNAL(endNote()),
-	 		m_activityIndicator, SLOT(noteEnd()));
 	connect(getGUI()->mainWindow(), &MainWindow::periodicUpdate, this, &InstrumentTrackView::corruptStateUpdate);
 
 	setModel( _it );
@@ -437,6 +435,8 @@ void InstrumentTrackView::corruptStateUpdate()
 	// A closed view waits for its deferred deletion after its track has died, and the periodic tick can land
 	// in that window: the model is gone then, so there is no state to read (m0 blocker, trackview-uaf).
 	if (model() == nullptr) { return; }
+	const InstrumentTrack::NoteActivitySnapshot activity = model()->noteActivitySnapshot();
+	m_activityIndicator->syncNoteActivity(activity.activeNotes, activity.noteOnGeneration);
 	if (model()->audioBusHandle()->isCorrupted())
 	{
 		m_activityIndicator->setState(FadeButton::State::Corrupted);

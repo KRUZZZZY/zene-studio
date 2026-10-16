@@ -47,6 +47,27 @@
 namespace lmms
 {
 
+static_assert(std::atomic<int>::is_always_lock_free);
+static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
+
+void InstrumentTrack::recordNoteOnActivity()
+{
+	m_noteOnGeneration.fetch_add(1, std::memory_order_relaxed);
+	m_activeUiNotes.fetch_add(1, std::memory_order_relaxed);
+}
+
+void InstrumentTrack::recordNoteOffActivity()
+{
+	int activeNotes = m_activeUiNotes.load(std::memory_order_relaxed);
+	while (activeNotes > 0 && !m_activeUiNotes.compare_exchange_weak(activeNotes, activeNotes - 1,
+		std::memory_order_relaxed, std::memory_order_relaxed)) {}
+}
+
+InstrumentTrack::NoteActivitySnapshot InstrumentTrack::noteActivitySnapshot() const
+{
+	return {m_activeUiNotes.load(std::memory_order_relaxed), m_noteOnGeneration.load(std::memory_order_relaxed)};
+}
+
 void InstrumentTrack::decorateNoteHandle(NotePlayHandle* handle, const MidiClip* clip, NoteVector::const_iterator note,
 	NoteVector::const_iterator first, bool songGlobal, const TimePos& songOffset, uint32_t midiSeed) const
 {
@@ -255,8 +276,8 @@ void InstrumentTrack::sendNoteOn(const MidiEvent& event, int key, int fallbackCh
 		m_instrument->handleMidiEvent(MidiEvent(MidiNoteOn, channel, key, event.velocity()), time, offset);
 		noteVoiceChanged(true, channel, key, offset);  // MX-120: a per-voice modulator's voice
 	}
+	recordNoteOnActivity();	// polled by InstrumentTrackView; no queued Qt signal on the event path
 	m_midiNotesMutex.unlock();
-	emit newNote();
 }
 
 void InstrumentTrack::sendNoteOff(const MidiEvent& event, int key, int fallbackChannel, const TimePos& time, f_cnt_t offset,
@@ -272,8 +293,8 @@ void InstrumentTrack::sendNoteOff(const MidiEvent& event, int key, int fallbackC
 		m_instrument->handleMidiEvent(MidiEvent(MidiNoteOff, channel, key, event.velocity()), time, offset);
 		noteVoiceChanged(false, channel, key, offset);
 	}
+	recordNoteOffActivity();	// polled by InstrumentTrackView; no queued Qt signal on the event path
 	m_midiNotesMutex.unlock();
-	emit endNote();
 }
 
 void InstrumentTrack::sendChannelEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
