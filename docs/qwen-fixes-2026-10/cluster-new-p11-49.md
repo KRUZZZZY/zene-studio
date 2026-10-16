@@ -1,6 +1,6 @@
 # Cluster new-p11-49
 
-**Verdict: BLOCKED** — the defect is real and the production guard is implemented. The strengthened regression reproduced the unjournaled mutation with the guard removed. A green build/test run for that exact final test source remains unverified because the shared bunny build runner kept both build slots occupied; the final queued build was cancelled after 18 minutes. The earlier green run below used the same production guard and the initial form of the regression, before its failure diagnostic was strengthened.
+**Verdict: BLOCKED** — the defect is real and the production guard is implemented. The strengthened regression reproduced the unjournaled mutation with the guard removed. A green build/test run for that exact final test source remains unverified because the shared bunny build runner kept both build slots occupied. The first final build was cancelled after about 18 minutes, and a post-commit retry was cancelled after another minute of the same wait. The earlier green run below used the same production guard and the initial form of the regression, before its failure diagnostic was strengthened.
 
 ## Finding and fix
 
@@ -24,6 +24,7 @@ All build/test logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/r
 | Earlier GREEN build | `cmake --build build --target zene SessionCheckpointTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/build-3.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0. This built `zene` and `SessionCheckpointTest` with the guard and initial regression form. |
 | Earlier GREEN test | From `build/tests`: `ctest -R SessionCheckpointTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/test-3.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0; 1/1 CTest target passed. |
 | Final-form build attempt | `cmake --build build --target zene SessionCheckpointTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/build-5.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=130 after cancellation; the bunny guard logged repeated `all 2 build slots busy, waiting...` messages and did not start compilation. |
+| Post-commit retry | `cmake --build build --target zene SessionCheckpointTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/build-6.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=130 after cancellation; the same guard wait continued for another minute without starting compilation. |
 | Final-form GREEN test | Not run: the final-form build could not acquire a shared build slot. |
 
 The affected CTest family was `SessionCheckpointTest` (1 CTest target). The final-form regression was run RED with the product patch reversed; only the earlier form has a GREEN result.
