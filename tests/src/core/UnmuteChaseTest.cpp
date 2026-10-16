@@ -35,12 +35,14 @@
 
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MidiPlayback.h"
 #include "Note.h"
 #include "NotePlayHandle.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -250,6 +252,45 @@ private slots:
 		timeline.setLoopEnabled(false);
 
 		// Leave the preference off for the tests that follow (the mute edits above own the undo top).
+		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("chase"), false}}).ok);
+		QVERIFY(!MidiPlayback::instance().chase());
+	}
+
+	//! 0.5.0 Q050-040 r4 (L07): the clip mute is a REGISTERED command (clip.set_mute), so the
+	//! unmute-chase scenario is drivable through ControlRegistry exactly as an agent drives it -
+	//! and the song editor's own mute dispatches the same command, one implementation both ways.
+	void clipUnmuteThroughControlRegistryChasesTheNoteOnce()
+	{
+		oneNote();  // note at 0, length 384
+		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("chase"), true}}).ok);
+		Song* song = Engine::getSong();
+		const QString clip = control::clipIdOf(m_clip);
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+
+		// Mute through the command. An idempotent repeat of it changes nothing, so it
+		// must not spend an undo step: the checkpoint only fires when the value moves.
+		const int depthBefore = journal->undoDepth();
+		QVERIFY(run(QStringLiteral("clip.set_mute"), {{QStringLiteral("clip"), clip},
+			{QStringLiteral("muted"), true}}).ok);
+		QVERIFY(m_clip->isMuted());
+		QVERIFY(run(QStringLiteral("clip.set_mute"), {{QStringLiteral("clip"), clip},
+			{QStringLiteral("muted"), true}}).ok);
+		QCOMPARE(journal->undoDepth(), depthBefore + 1);
+
+		song->setPlayPos(96, Song::PlayMode::Song);
+		song->playSong();
+		renderPeriods(3);
+		QVERIFY2(handleKeys(m_track).isEmpty(), "a clip muted through clip.set_mute must schedule no note");
+
+		// Unmute through the same command: the note under the playhead starts, once.
+		QVERIFY(run(QStringLiteral("clip.set_mute"), {{QStringLiteral("clip"), clip},
+			{QStringLiteral("muted"), false}}).ok);
+		QVERIFY(!m_clip->isMuted());
+		renderPeriods(3);
+		QCOMPARE(handleKeys(m_track), (QList<int>{60}));
+		QVERIFY(renderUntilSilent(m_track));  // stopped: nothing stuck
+
 		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("chase"), false}}).ok);
 		QVERIFY(!MidiPlayback::instance().chase());
 	}

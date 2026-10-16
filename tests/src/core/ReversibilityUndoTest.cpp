@@ -242,6 +242,16 @@ private slots:
 			{{QStringLiteral("clip"), clipId}, {QStringLiteral("length"), 384}}).ok);
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(clipLength(clipId), 192);
+
+		// clip.set_mute (0.5.0 Q050-040): the mute BoolModel checkpoint, the same
+		// class the track's mute rides - set, read back, undo, read back.
+		QVERIFY(run(QStringLiteral("clip.set_mute"),
+			{{QStringLiteral("clip"), clipId}, {QStringLiteral("muted"), true}}).ok);
+		QVERIFY(clipMuted(clipId));
+		QCOMPARE(stateOf(QStringLiteral("clip.set_mute")).value(QStringLiteral("class")).toString(),
+			QStringLiteral("true_inverse"));
+		REV_UNDO_OR_FAIL();
+		QVERIFY(!clipMuted(clipId));
 	}
 
 
