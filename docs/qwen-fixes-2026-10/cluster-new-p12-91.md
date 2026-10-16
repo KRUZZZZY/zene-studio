@@ -2,36 +2,41 @@
 
 Verdict: **BLOCKED**
 
-## Finding and evidence
+## Finding and fix
 
-The finding is real. Before the attempted fix, `src/gui/HelpCenter.cpp:326-329` refreshed the tour only for a resize event on the parent window. `GuidedTour::place()` derives the hole from the target's current mapped position, so moving the target without resizing the window left the stored hole and bubble stale.
+The finding is real. `GuidedTour::eventFilter()` in `src/gui/HelpCenter.cpp:344-355` used to reposition only for a resize of the parent window. The updated filter also reacts to target and ancestor move, resize, show, hide, layout and scroll events. `GuidedTour::place()` at `src/gui/HelpCenter.cpp:387-407` installs filters on the target chain and connects any ancestor scroll area's scrollbars, then recomputes the hole and bubble position. The declaration comment and private slot are in `include/HelpCenter.h:113-117`.
 
-A temporary regression in `tests/src/gui/HelpAccessTest.cpp` moved the tour target and expected the bubble x coordinate to change to 311. The original code failed with actual 121 and expected 311. A candidate fix observed the target and its ancestors and connected scroll-area scrollbar changes to `place()`. It passed the test; reversing only the production patch made the same assertion fail again. The candidate patch is preserved outside the worktree at `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/fix.patch`.
+The regression `HelpAccessTest::aTourTracksTargetMovementAndScrollingWithoutResizingWindow()` in `tests/src/gui/HelpAccessTest.cpp:176-210` moves the target and scrolls its containing area while asserting the main window remains 800×600. Against the original code it failed at line 202: actual bubble position `(141, 30)`, expected `(161, 110)`. The test passed with the fix. Removing only the production patch reproduced the same failure; restoring it passed again.
 
-The candidate cannot be committed under the required pre-commit gates. The final complexity check still reports six unrelated functions above CCN 10; it does not report `GuidedTour::eventFilter`. The file-length check reports 14 unrelated new files above 500 code lines. These files are outside this bug's scope, and the gate baselines and limits were left unchanged. The attempted product and regression changes were removed from the worktree; this report is the only file committed.
+The report remains **BLOCKED** because both required ratchet gates fail on unrelated regressions already present in the branch. The gate thresholds and baselines were not changed.
 
 ## Verification evidence
 
-All ctest commands below ran from `build/tests`; build and gate commands ran from the worktree root. The affected family executed one ctest (`HelpAccessTest`) per run.
+Build commands ran from the worktree root. Every ctest command ran from `build/tests`. The affected ctest family executed one test, `HelpAccessTest`, per run.
 
 | Check | Exact command | Exit |
 |---|---|---:|
-| Original-code RED build | `cmake --build build --target HelpAccessTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/build-1-red.log' 2>&1; rc=$?; echo EXIT=$rc` | 0 |
-| Original-code RED test | `ctest -R '^HelpAccessTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/test-2-red.log' 2>&1; rc=$?; echo EXIT=$rc` | 8 |
-| Final candidate build | `cmake --build build --target zene HelpAccessTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/build-13-final.log' 2>&1; rc=$?; echo EXIT=$rc` | 0 |
-| Candidate GREEN test | `ctest -R '^HelpAccessTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/test-14-final-green.log' 2>&1; rc=$?; echo EXIT=$rc` | 0 |
-| Save production patch | `git diff -- include/HelpCenter.h src/gui/HelpCenter.cpp > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/fix.patch'; rc=$?; echo EXIT=$rc` | 0 |
-| Remove patch for proof | `git apply -R '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/fix.patch'; rc=$?; echo EXIT=$rc` | 0 |
-| Rebuild without fix | `cmake --build build --target zene HelpAccessTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/build-15-proof-red-final.log' 2>&1; rc=$?; echo EXIT=$rc` | 0 |
-| Removal-proof RED test | `ctest -R '^HelpAccessTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/test-16-proof-red-final.log' 2>&1; rc=$?; echo EXIT=$rc` | 8 |
-| Restore patch | `git apply '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/fix.patch'; rc=$?; echo EXIT=$rc` | 0 |
-| Rebuild with fix | `cmake --build build --target zene HelpAccessTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/build-17-proof-green-final.log' 2>&1; rc=$?; echo EXIT=$rc` | 0 |
-| Removal-proof GREEN test | `ctest -R '^HelpAccessTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/test-18-proof-green-final.log' 2>&1; rc=$?; echo EXIT=$rc` | 0 |
-| Complexity gate | `bash tests/complexity-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/gate-11-complexity-final.log' 2>&1; rc=$?; echo EXIT=$rc` | 1 |
-| File-length gate | `bash tests/file-length-gate.sh --check > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r1/logs/gate-12-file-length-final.log' 2>&1; rc=$?; echo EXIT=$rc` | 1 |
+| Original-code RED build | `cmake --build build --target zene HelpAccessTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/build-1-red.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
+| Original-code RED test | `ctest -R '^HelpAccessTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/test-2-red.log 2>&1; rc=$?; echo EXIT=$rc` | 8 |
+| Fixed GREEN build | `cmake --build build --target zene HelpAccessTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/build-3-green.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
+| Fixed GREEN test | `ctest -R '^HelpAccessTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/test-4-green.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
+| Save product patch | `git diff -- include/HelpCenter.h src/gui/HelpCenter.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/fix.patch; rc=$?; echo EXIT=$rc` | 0 |
+| Reverse product patch | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/fix.patch; rc=$?; echo EXIT=$rc` | 0 |
+| Rebuild without fix | `cmake --build build --target zene HelpAccessTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/build-5-proof-red.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
+| Removal-proof RED test | `ctest -R '^HelpAccessTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/test-6-proof-red.log 2>&1; rc=$?; echo EXIT=$rc` | 8 |
+| Restore product patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/fix.patch; rc=$?; echo EXIT=$rc` | 0 |
+| Rebuild with fix restored | `cmake --build build --target zene HelpAccessTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/build-7-proof-green.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
+| Removal-proof GREEN test | `ctest -R '^HelpAccessTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/test-8-proof-green.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/gate-13-complexity-final.log 2>&1; rc=$?; echo EXIT=$rc` | 1 |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-91.r2/logs/gate-14-file-length-final.log 2>&1; rc=$?; echo EXIT=$rc` | 1 |
 
-The complexity gate's six new regressions are `dotCentreAlong` (CCN 16), `readdetail::parseNotes` (13), `adjust` (12), `setStrip` (11), `rotateProjectRevision` (11), and `importedOverrides` (11). The file-length gate's 14 new-file regressions are `src/core/SmfInterchangeReader.cpp` (504 lines), `src/core/TakeLane.cpp` (520), `tests/src/core/CollabTransportTest.cpp` (541), `ControlAutomationScriptTest.cpp` (521), `ControlDeviceCatalogueTest.cpp` (567), `ControlEditCommandsTest.cpp` (511), `CustomAccessTest.cpp` (556), `DeviceDspTest.cpp` (752), `HardwareIoTest.cpp` (556), `NotePlaybackTest.cpp` (624), `RackMacrosTest.cpp` (535), `RevisionTimelineTest.cpp` (600), `VideoTrackTest.cpp` (589), and `tests/src/gui/ArrangerTimelineTest.cpp` (689). The test files without a directory prefix in that list are under `tests/src/core/`.
+The complexity gate reports six unrelated new functions above CCN 10: `dotCentreAlong` (16), `readdetail::parseNotes` (13), `adjust` (12), `setStrip` (11), `rotateProjectRevision` (11), and `importedOverrides` (11). It does not report the tour functions. The file-length gate reports 14 unrelated new files over 500 code lines: `src/core/SmfInterchangeReader.cpp`, `src/core/TakeLane.cpp`, `tests/src/core/CollabTransportTest.cpp`, `ControlAutomationScriptTest.cpp`, `ControlDeviceCatalogueTest.cpp`, `ControlEditCommandsTest.cpp`, `CustomAccessTest.cpp`, `DeviceDspTest.cpp`, `HardwareIoTest.cpp`, `NotePlaybackTest.cpp`, `RackMacrosTest.cpp`, `RevisionTimelineTest.cpp`, `VideoTrackTest.cpp`, and `tests/src/gui/ArrangerTimelineTest.cpp`. The core test paths in the list are under `tests/src/core/`.
 
-## Commit
+The session did not expose the requested `fff grep` tool or a shell `fff` executable. Build, test and gate logs were searched with `rg -n` for `error`, `FAILED`, `Assertion`, and the relevant summaries.
 
-Explicit files committed: `docs/qwen-fixes-2026-10/cluster-new-p12-91.md` only. The product fix was not committed because both mandatory gates exit 1 for unrelated worktree violations. No gate threshold or baseline was changed.
+## Explicit files committed
+
+- `include/HelpCenter.h`
+- `src/gui/HelpCenter.cpp`
+- `tests/src/gui/HelpAccessTest.cpp`
+- `docs/qwen-fixes-2026-10/cluster-new-p12-91.md`

@@ -35,7 +35,10 @@
 #include <QtTest>
 
 #include <QFile>
+#include <QFrame>
 #include <QJsonArray>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QTemporaryDir>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -168,6 +171,43 @@ private slots:
 		tour->showStep(1);
 		QCOMPARE(tour->step(), 1);
 		QVERIFY(GuidedTour::start(QStringLiteral("no-such-tour"), &window, &error) == nullptr);
+	}
+
+	void aTourTracksTargetMovementAndScrollingWithoutResizingWindow()
+	{
+		QWidget window;
+		window.resize(800, 600);
+		auto* scrollArea = new QScrollArea(&window);
+		scrollArea->setGeometry(10, 10, 300, 200);
+		auto* content = new QWidget;
+		content->resize(360, 800);
+		auto* target = new QWidget(content);
+		target->setObjectName(QStringLiteral("shellPanel_browser"));
+		target->setGeometry(20, 20, 100, 40);
+		scrollArea->setWidget(content);
+		window.show();
+		QString error;
+		GuidedTour* tour = GuidedTour::start(QStringLiteral("first-beat"), &window, &error);
+		QVERIFY2(tour != nullptr, qPrintable(error));
+		auto* bubble = tour->findChild<QFrame*>(QStringLiteral("guidedTourStep"));
+		QVERIFY(bubble != nullptr);
+		const auto expectedBubblePosition = [&] {
+			const QPoint targetPosition = target->mapTo(&window, QPoint());
+			return QPoint(targetPosition.x() + target->width() - 1 + 12, targetPosition.y());
+		};
+		QCOMPARE(bubble->pos(), expectedBubblePosition());
+
+		target->move(40, 100);
+		QCOMPARE(window.size(), QSize(800, 600));
+		QCOMPARE(bubble->pos(), expectedBubblePosition());
+
+		const int targetYBeforeScroll = target->mapTo(&window, QPoint()).y();
+		QVERIFY(scrollArea->verticalScrollBar()->maximum() > 0);
+		scrollArea->verticalScrollBar()->setValue(60);
+		QVERIFY(target->mapTo(&window, QPoint()).y() < targetYBeforeScroll);
+		QCOMPARE(bubble->pos(), expectedBubblePosition());
+		QCOMPARE(window.size(), QSize(800, 600));
+		delete tour;
 	}
 
 	void theHelpAndATourOpenFromTheirCommands()
