@@ -22,7 +22,11 @@ WHAT IT CHECKS (all file reads; no network, no instance, no build):
   2. The named commands are on the agent surface: the committed command snapshot carries all four ids.
   3. README.md names **Project tools > Plug-in Modules...**, states that format loading and tested
      third-party compatibility are different claims, names **Kontakt** as an external, unverified
-     library case, and no longer carries the stale "not a GUI" / hand-edited-JSON claim.
+     library case, and no longer carries the stale "not a GUI" / hand-edited-JSON claim. The earlier
+     "DAW core inherited from LMMS" inventory is qualified *in place* (inside its own bounded region:
+     the inherited format list is the Linux build's, availability varies by platform), and the formats
+     paragraph calls Linux **one of** the platforms these release builds target - the unqualified
+     "the platform these release builds target" is rejected document-wide.
   4. docs/KNOWN-LIMITATIONS.md has the **Linux** plug-in formats section, names **Plug-in Modules** as
      the per-file scan-status and quarantine location, keeps a format-loading vs third-party-tested
      separation, names **Kontakt**, and no longer says the per-file records are only on the socket.
@@ -39,8 +43,9 @@ WHAT IT CHECKS (all file reads; no network, no instance, no build):
 
 `--self-test` is the gate's own red/green control: it builds a throwaway root (symlinks to every real
 input, with README.md / KNOWN-LIMITATIONS.md mutated) and asserts the gate fails when a format is
-removed from a *scoped* list while its other mentions stay intact - the failure mode checks 5 exists
-to catch.
+removed from a *scoped* list while its other mentions stay intact, when the DAW-core inventory loses
+its Linux qualification, and when the formats paragraph calls Linux "the platform" rather than "one
+of the platforms" - the failure modes checks 3 and 5 exist to catch.
 
 Usage:  python3 tests/plugin-formats-docs-gate.py [--root DIR] [--self-test]
 Exit:   0 every check holds; 1 a mismatch or a stale claim; 2 usage/setup error.
@@ -82,6 +87,12 @@ README_FORMATS_START = "**Plug-in formats vs. tested compatibility"
 README_FORMATS_END = "**AI DSP**"
 KL_FORMATS_START = "## Plug-in formats and libraries on Linux"
 KL_FORMATS_END = "## What this alpha cannot do at all"
+
+# The bounded region of README's earlier "DAW core inherited from LMMS" inventory, whose inherited
+# format list must be qualified in place as the Linux build's (with platform variation) - a claim
+# made outside the formats paragraph, so it needs its own region and its own scoped checks.
+README_INVENTORY_START = "**The DAW core inherited from LMMS**"
+README_INVENTORY_END = "**The agent control surface**"
 
 # Every path the gate reads, for the self-test to mirror into a throwaway root.
 FIXED_INPUTS = (
@@ -184,6 +195,20 @@ def run_checks(root, report):
           "README.md: no 'on Linux and the other platforms alike' overstatement")
     check("VST2" in readme_formats and "macOS build has no VST2" in readme_formats,
           "README.md plug-in formats paragraph: says a macOS build has no VST2/Vestige path")
+    # The earlier DAW-core inventory's inherited format list is qualified in place - inside its own
+    # bounded region, so the claim cannot pass on the formats paragraph's mention.
+    readme_inventory = flat(section(freadme, README_INVENTORY_START, README_INVENTORY_END))
+    check(readme_inventory != "", "README.md: has the DAW-core inherited-formats inventory region")
+    check("this inherited format list is the **Linux** build's" in readme_inventory,
+          "README.md DAW-core inventory: the inherited format list is the Linux build's")
+    check("availability varies by platform" in readme_inventory,
+          "README.md DAW-core inventory: says availability varies by platform")
+    # Linux is one of the release-build platforms, not the only one.
+    check("one of the platforms these release builds target" in readme_formats,
+          "README.md plug-in formats paragraph: calls Linux one of the platforms the release"
+          " builds target")
+    check("the platform these release builds target" not in freadme,
+          "README.md: no 'the platform these release builds target' singular overstatement")
 
     # 4. KNOWN-LIMITATIONS.md: the Linux formats section, the GUI location, the separation, Kontakt,
     #    no stale socket-only claim.
@@ -254,12 +279,11 @@ def rewrite(dest, rel, text):
         fh.write(text)
 
 
-def _selftest_case(root, rel, doc, region):
-    """Drop LADSPA from one scoped region, keep its other mentions, and run the gate in a mirrored
-    root. Return (ok, detail): ok is True only when the gate exits 1 AND names the missing format."""
-    mutated = doc.replace(region, region.replace("LADSPA", "", 1), 1)
-    if mutated == doc or "LADSPA" not in mutated:
-        return False, "the other document mentions did not stay intact"
+def _selftest_case(root, rel, doc, mutated, expect):
+    """Mutate one document into `mutated` and run the gate in a mirrored root. Return (ok,
+    detail): ok is True only when the gate exits 1 AND names the `expect` claim it lost."""
+    if mutated == doc:
+        return False, "the mutation did not change the document"
     tmp = tempfile.mkdtemp(prefix="plugin-formats-selftest-")
     try:
         mirror_inputs(root, tmp)
@@ -267,42 +291,68 @@ def _selftest_case(root, rel, doc, region):
         proc = subprocess.run([sys.executable, os.path.abspath(__file__), "--root", tmp],
                               capture_output=True, text=True)
         out = proc.stdout + proc.stderr
-        named = any(line.startswith("FAIL") and "advertises LADSPA" in line
+        named = any(line.startswith("FAIL") and expect in line
                     for line in out.splitlines())
-        return proc.returncode == 1 and named, "gate exit %d, names LADSPA=%s" % (proc.returncode, named)
+        return proc.returncode == 1 and named, "gate exit %d, names %r=%s" % (proc.returncode, expect, named)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def self_test():
-    """Prove checks 5 are not tautological: a format dropped from a scoped list fails the gate.
+def _drop_format(doc, region):
+    """Drop LADSPA from one scoped region while its other document mentions stay intact."""
+    mutated = doc.replace(region, region.replace("LADSPA", "", 1), 1)
+    if mutated == doc or "LADSPA" not in mutated:
+        return doc
+    return mutated
 
-    Each case removes the scoped mention of one format, while its other document mentions stay put.
-    A document-wide substring check would pass; the scoped check must not.
+
+def self_test():
+    """Prove checks 3 and 5 are not tautological: a claim dropped from its scoped region fails.
+
+    Cases: a format removed from a scoped list while its other mentions stay put; the DAW-core
+    inventory losing its Linux qualification; and the formats paragraph calling Linux "the
+    platform" instead of "one of the platforms". A document-wide substring check would pass
+    each; the scoped check must not.
     """
     root = os.path.dirname(HERE)
-    print("SELF-TEST: removing a format from a scoped list while its other mentions stay intact")
+    print("SELF-TEST: a claim dropped from its scoped README region must fail the gate")
 
     readme = read(os.path.join(root, "README.md"))
     kl = read(os.path.join(root, "docs/KNOWN-LIMITATIONS.md"))
+    rm_region = section(readme, README_FORMATS_START, README_FORMATS_END)
+    kl_region = section(kl, KL_FORMATS_START, KL_FORMATS_END)
     cases = (
-        ("README.md", readme, section(readme, README_FORMATS_START, README_FORMATS_END)),
-        ("docs/KNOWN-LIMITATIONS.md", kl, section(kl, KL_FORMATS_START, KL_FORMATS_END)),
+        ("README.md scoped-list LADSPA removal", "README.md",
+         _drop_format(readme, rm_region), "advertises LADSPA"),
+        ("docs/KNOWN-LIMITATIONS.md scoped-list LADSPA removal", "docs/KNOWN-LIMITATIONS.md",
+         _drop_format(kl, kl_region), "advertises LADSPA"),
+        # The inventory loses its Linux qualification; the formats paragraph still carries
+        # "availability varies by platform", so a document-wide check would still pass.
+        ("README.md DAW-core inventory loses its Linux qualification", "README.md",
+         re.sub(r"this inherited format list is the\s+\*\*Linux\*\* build's",
+                "this inherited format list is this build's", readme, count=1),
+         "README.md DAW-core inventory: the inherited format list is the Linux build's"),
+        # The formats paragraph says "the platform" instead of "one of the platforms"; the rest
+        # of the claim ("these release builds target") stays intact.
+        ("README.md formats paragraph says 'the platform' (singular)", "README.md",
+         readme.replace("one of the\nplatforms these release builds target",
+                        "the platform these release builds target", 1),
+         "one of the platforms the release"),
     )
 
     failures = 0
-    for rel, doc, region in cases:
-        ok, detail = _selftest_case(root, rel, doc, region)
-        print(("PASS " if ok else "FAIL ")
-              + "self-test: %s scoped-list LADSPA removal -> %s" % (rel, detail))
+    for label, rel, mutated, expect in cases:
+        ok, detail = _selftest_case(root, rel, readme if rel == "README.md" else kl,
+                                    mutated, expect)
+        print(("PASS " if ok else "FAIL ") + "self-test: %s -> %s" % (label, detail))
         if not ok:
             failures += 1
 
     print()
     if failures:
-        print("RESULT: FAIL - the scoped format check let a missing format through")
+        print("RESULT: FAIL - the scoped checks let a dropped claim through")
         return 1
-    print("RESULT: PASS - a format removed from a scoped list fails the gate even when other"
+    print("RESULT: PASS - a claim dropped from its scoped region fails the gate even when other"
           " mentions remain")
     return 0
 

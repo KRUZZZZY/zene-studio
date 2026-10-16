@@ -24,18 +24,33 @@ of the platforms these release builds target". A `--self-test` red proof (ctest
 `PluginFormatsDocsGateSelfTest`) drops `LADSPA` from a scoped list while its other mentions stay
 intact and asserts the gate exits 1 naming the omission.
 
+Round 4 (Luna REWORK r3): reversing the README product hunks still left the gate green — the two
+README qualifications (the DAW-core inventory's Linux scoping at line 41, and "one of the platforms"
+at line 80) were made but **not asserted**. The gate now checks both in their bounded regions: the
+DAW-core inventory (`**The DAW core inherited from LMMS**` … `**The agent control surface**`) must say
+the inherited format list is the Linux build's and that availability varies by platform, the formats
+paragraph must call Linux "one of the platforms these release builds target", and the singular "the
+platform these release builds target" is rejected document-wide (58 checks, up from 53). The
+`--self-test` gained two red controls: the inventory losing its Linux qualification while "availability
+varies by platform" stays elsewhere in the document, and the formats paragraph saying "the platform"
+(singular); both must fail the gate (4 cases, up from 2). Reversing the whole README product diff
+(`git apply -R`) now fails `ctest PluginFormatsDocsGate` with exit 8 and 21 named FAIL lines,
+including both new claims; restoring it passes again (logs 17–19).
+
 ## Acceptance table
 
 | Criterion | Command actually run | Result / EXIT |
 | --- | --- | --- |
-| Update the Linux plug-in and Kontakt sections to separate format loading from tested third-party compatibility | `python3 tests/plugin-formats-docs-gate.py` (worktree root) | 53 checks PASS, `RESULT: PASS` — asserts `docs/KNOWN-LIMITATIONS.md` has the "Plug-in formats and libraries on Linux" section with "Third-party compatibility is unverified" and "no Kontakt runtime and has verified no Kontakt library" **inside it**, and `README.md` has "formats it is built with" / "no third-party plug-in of any kind has" **inside the plug-in-formats paragraph**; both scoped regions advertise VST3 / CLAP / VST2 / LV2 / LADSPA / SoundFont2 / GUS, scope the list to Linux and say availability varies by platform; **EXIT=0** |
+| Update the Linux plug-in and Kontakt sections to separate format loading from tested third-party compatibility | `python3 tests/plugin-formats-docs-gate.py` (worktree root) | 58 checks PASS, `RESULT: PASS` — asserts `docs/KNOWN-LIMITATIONS.md` has the "Plug-in formats and libraries on Linux" section with "Third-party compatibility is unverified" and "no Kontakt runtime and has verified no Kontakt library" **inside it**, and `README.md` has "formats it is built with" / "no third-party plug-in of any kind has" **inside the plug-in-formats paragraph**; both scoped regions advertise VST3 / CLAP / VST2 / LV2 / LADSPA / SoundFont2 / GUS, scope the list to Linux and say availability varies by platform; **EXIT=0** |
 | Format claims are scoped, not document-wide | `python3 tests/plugin-formats-docs-gate.py --self-test` and `python3 tests/plugin-formats-docs-gate.py` | the green run requires each format in the bounded README paragraph **and** the bounded KNOWN-LIMITATIONS section; the self-test removes `LADSPA` from each bounded region (its other mentions intact) and the gate exits **1** naming `advertises LADSPA`; self-test `RESULT: PASS`, **EXIT=0** |
 | Mapped loader artifacts register the format, not merely exist | `python3 tests/plugin-formats-docs-gate.py` | for each format the gate reads the loader source and requires its `Plugin::Descriptor` symbol (`vst3effect_plugin_descriptor`, `clapeffect_plugin_descriptor`, `vsteffect_plugin_descriptor`, `lv2effect_plugin_descriptor`, `ladspaeffect_plugin_descriptor`, `sf2player_plugin_descriptor`, `patman_plugin_descriptor`); 7 such checks PASS; **EXIT=0** |
-| The README does not imply VST2 hosting on macOS, and Linux is one target among several | same `ctest` | gate asserts README says "a macOS build has no VST2/Vestige path" in the scoped paragraph, rejects "on Linux and the other platforms alike", and finds `SET(WANT_VST OFF)` inside `IF(LMMS_BUILD_APPLE)` in `CMakeLists.txt`; README now reads "one of the platforms these release builds target"; **EXIT=0** |
+| The README does not imply VST2 hosting on macOS, and Linux is one target among several | same `ctest` | gate asserts README says "a macOS build has no VST2/Vestige path" in the scoped paragraph, rejects "on Linux and the other platforms alike", finds `SET(WANT_VST OFF)` inside `IF(LMMS_BUILD_APPLE)` in `CMakeLists.txt`, requires "one of the platforms these release builds target" **inside the formats paragraph** and rejects "the platform these release builds target" document-wide; **EXIT=0** |
+| The DAW-core inventory's inherited format list is qualified in place (round 4) | same `ctest` | gate extracts the bounded inventory region (`**The DAW core inherited from LMMS**` … `**The agent control surface**`) and requires "this inherited format list is the **Linux** build's" and "availability varies by platform" **inside it** — a mention in the formats paragraph does not satisfy the claim; **EXIT=0** |
 | Name the Plug-in Modules list as the GUI location for per-file scan status and quarantine controls | `ctest -R '^PluginFormatsDocsGate$' --output-on-failure` (from `build/tests`) | gate asserts both docs and the manual name **Plug-in Modules**, that `docs/KNOWN-LIMITATIONS.md` says "per-file scan status and quarantine", and that the list is defined in `src/gui/CommandLists.cpp`, registered in `src/gui/shell/ShellCommandMenus.cpp` and backed by commands in `tools/mcp-zene-control/zene_control/commands_snapshot.json`; **EXIT=0** |
-| Red proof, scoped-list removal, direct run | `python3 tests/plugin-formats-docs-gate.py --self-test` | 2 cases PASS (`README.md` and `docs/KNOWN-LIMITATIONS.md`); each runs the gate on a mirrored throwaway root and asserts exit 1 + `advertises LADSPA`; `RESULT: PASS`, **EXIT=0** |
-| Red proof, scoped-list removal, through ctest | `ctest -R '^PluginFormatsDocsGateSelfTest$' --output-on-failure` (from `build/tests`) | `1/1 Test #...: PluginFormatsDocsGateSelfTest ... Passed`; ctest **EXIT=0** |
-| Green gate through ctest | `ctest -R '^PluginFormatsDocsGate$' --output-on-failure` (from `build/tests`) | `1/1 Test #...: PluginFormatsDocsGate ... Passed`; ctest **EXIT=0** |
+| Red proof, scoped-list removal, direct run | `python3 tests/plugin-formats-docs-gate.py --self-test` | 4 cases PASS: `LADSPA` removed from each bounded region (other mentions intact), the inventory losing its Linux qualification, and the formats paragraph saying "the platform" (singular); each runs the gate on a mirrored throwaway root and asserts exit 1 + the named claim; `RESULT: PASS`, **EXIT=0** |
+| Red proof, reversing the README product hunks (round 4, the reviewer's demand) | `git apply -R` on the `de5a85a96..HEAD -- README.md` diff, then `ctest -R '^PluginFormatsDocsGate$' --output-on-failure` | `1/1 Test #584: PluginFormatsDocsGate ...***Failed`, **21 named FAIL lines** including "DAW-core inventory: the inherited format list is the Linux build's" and "plug-in formats paragraph: calls Linux one of the platforms the release builds target"; ctest **EXIT=8**; after `git checkout -- README.md` the same ctest is green again (**EXIT=0**, log 19) |
+| Red proof, scoped-list removal, through ctest | `ctest -R '^PluginFormatsDocsGateSelfTest$' --output-on-failure` (from `build/tests`) | `1/1 Test #585: PluginFormatsDocsGateSelfTest ... Passed`; ctest **EXIT=0** |
+| Green gate through ctest | `ctest -R '^PluginFormatsDocsGate$' --output-on-failure` (from `build/tests`) | `1/1 Test #584: PluginFormatsDocsGate ... Passed`; ctest **EXIT=0** |
 
 The red proof refuses a claim that would otherwise slip through: when a format is deleted from the
 scoped list but its other document mentions remain, the gate fails (a document-wide substring check
@@ -56,8 +71,9 @@ would have passed).
 - `tests/CMakeLists.txt` — registers `PluginFormatsDocsGate` and `PluginFormatsDocsGateSelfTest`
   (`:5667`, `:5669`).
 - `tests/plugin-formats-docs-gate.py` — hermetic docs-truth gate; round 3 scopes every format claim to
-  the bounded README/KNOWN-LIMITATIONS regions, verifies each loader source's registration symbol, and
-  adds the `--self-test` red proof (53 checks).
+  the bounded README/KNOWN-LIMITATIONS regions and verifies each loader source's registration symbol;
+  round 4 asserts the two README qualifications in their own bounded regions (the DAW-core inventory
+  and "one of the platforms") and extends the `--self-test` red proof to 4 cases (58 checks).
 - `tests/fork-sources.txt` — registers the new gate script (fork-NEW, `:2153`).
 - `docs/050-features/Q050-014.md`, `docs/qwen-fixes-2026-10/cluster-Q050-014.md` — these reports.
 
@@ -79,4 +95,7 @@ A16 histogram: unchanged (`python3 tests/doc-figures-gate.py` exits 0).
 | `ctest -R '^PluginFormatsDocsGate$'` (from `build/tests`) | 0 |
 | `ctest -R '^PluginFormatsDocsGateSelfTest$'` (from `build/tests`) | 0 |
 
-Logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-014.r3/logs/`.
+Logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-014.r2/logs/`
+(files 01–19: gate green, self-test, lizard, complexity + cachyos compare, file-length + cachyos
+compare, the six gates, doc-figures, build, both ctests, the reversed-README red proof and the
+restored green).
