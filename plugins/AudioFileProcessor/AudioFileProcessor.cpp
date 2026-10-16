@@ -161,17 +161,17 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 						DefaultBaseFreq / nph->frequency()))
 		{
 			applyRelease(out.data(), nph);
-			emit isPlaying(static_cast<Sample::PlaybackState*>(nph->m_pluginData)->frameIndex());
+			publishPlayhead(static_cast<Sample::PlaybackState*>(nph->m_pluginData)->frameIndex());
 		}
 		else
 		{
 			zeroSampleFrames(out.data(), frames + offset);
-			emit isPlaying( 0 );
+			publishPlayhead( 0 );
 		}
 	}
 	else
 	{
-		emit isPlaying( 0 );
+		publishPlayhead( 0 );
 	}
 	if( m_stutterModel.value() == true )
 	{
@@ -181,6 +181,20 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 }
 
 
+
+
+void AudioFileProcessor::publishPlayhead( f_cnt_t _current_frame ) noexcept
+{
+	m_playheadFrame.store( _current_frame, std::memory_order_relaxed );
+}
+
+void AudioFileProcessor::pollPlayhead()
+{
+	const f_cnt_t current = m_playheadFrame.load( std::memory_order_relaxed );
+	if( current == m_playheadShown ) { return; }
+	m_playheadShown = current;
+	emit isPlaying( current );
+}
 
 
 void AudioFileProcessor::deleteNotePluginData( NotePlayHandle * _n )
