@@ -31,6 +31,7 @@
 
 #include <lilv/lilv.h>
 #include <memory>
+#include <vector>
 
 #include "LinkedModelGroups.h"
 #include "lmms_export.h"

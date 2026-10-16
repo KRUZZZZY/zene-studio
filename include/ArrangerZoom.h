@@ -26,6 +26,7 @@
 #define LMMS_GUI_ARRANGER_ZOOM_H
 
 #include <QPoint>
+#include <QtCore/qnamespace.h>
 
 #include "LmmsTypes.h"
 #include "lmms_export.h"

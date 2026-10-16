@@ -27,6 +27,7 @@
 #define LMMS_CONTROLLER_H
 
 #include <atomic>
+#include <vector>
 #include "lmms_export.h"
 #include "Engine.h"
 #include "Model.h"

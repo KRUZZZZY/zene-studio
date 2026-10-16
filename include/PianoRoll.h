@@ -27,6 +27,8 @@
 #ifndef LMMS_GUI_PIANO_ROLL_H
 #define LMMS_GUI_PIANO_ROLL_H
 
+#include <array>
+#include <optional>
 #include <QWidget>
 
 #include <vector>

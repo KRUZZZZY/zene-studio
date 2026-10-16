@@ -27,6 +27,7 @@
 #define LMMS_INSTRUMENT_TRACK_H
 
 
+#include <memory>
 #include "ArticulationMap.h"
 #include "AudioBusHandle.h"
 #include "InstrumentFunctions.h"

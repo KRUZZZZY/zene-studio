@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_INSTRUMENT_TRACK_VIEW_H
 #define LMMS_GUI_INSTRUMENT_TRACK_VIEW_H
 
+#include <memory>
 #include "TrackView.h"
 
 #include "InstrumentTrack.h"

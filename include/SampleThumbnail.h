@@ -29,6 +29,7 @@
 #include <QDateTime>
 #include <QRect>
 #include <memory>
+#include <vector>
 
 #include "lmms_export.h"
 #include "SampleBuffer.h"

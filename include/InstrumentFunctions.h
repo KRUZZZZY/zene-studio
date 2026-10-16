@@ -26,6 +26,7 @@
 #define LMMS_INSTRUMENT_FUNCTIONS_H
 
 #include <array>
+#include <vector>
 
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"

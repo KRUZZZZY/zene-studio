@@ -30,6 +30,7 @@
 #include <QDomElement>
 #include <QString>
 #include <QTextStream>
+#include <vector>
 
 #include "SessionModel.h"
 

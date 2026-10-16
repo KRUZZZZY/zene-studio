@@ -25,6 +25,7 @@
 #ifndef LMMS_INLINE_AUTOMATION_H
 #define LMMS_INLINE_AUTOMATION_H
 
+#include <memory>
 #include "AutomationNode.h"
 #include "AutomationClip.h"
 

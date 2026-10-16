@@ -65,6 +65,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <algorithm>
+#include <vector>
 
 #include <QString>
 

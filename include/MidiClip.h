@@ -26,6 +26,7 @@
 #ifndef LMMS_MIDI_CLIP_H
 #define LMMS_MIDI_CLIP_H
 
+#include <vector>
 #include "Clip.h"
 #include "MidiClipControllers.h"
 #include "Note.h"

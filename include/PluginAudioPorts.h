@@ -26,6 +26,8 @@
 #ifndef LMMS_PLUGIN_AUDIO_PORTS_H
 #define LMMS_PLUGIN_AUDIO_PORTS_H
 
+#include <array>
+#include <vector>
 #include "AudioPorts.h"
 
 namespace lmms

@@ -28,6 +28,7 @@
 
 #include <QReadWriteLock>
 #include <QVector>
+#include <vector>
 
 #include "Track.h"
 #include "JournallingObject.h"

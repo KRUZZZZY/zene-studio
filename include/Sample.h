@@ -25,6 +25,7 @@
 #ifndef LMMS_SAMPLE_H
 #define LMMS_SAMPLE_H
 
+#include <array>
 #include <memory>
 #include <utility>
 
