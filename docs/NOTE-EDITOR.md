@@ -145,8 +145,8 @@ project-format field and a change to the render path. That was not done; it is l
 ## 5a. Articulations
 
 An instrument track has an **articulation map**: named entries, each saying what to send just before a
-note that asks for it - a **keyswitch** key (a sample library's key, played for one tick), a **program
-change**, and/or a **control change** (controller and value). A note names its articulation by the entry's
+note that asks for it - a **keyswitch** key (a sample library's key, held briefly and then let go), a
+**program change**, and/or a **control change** (controller and value). A note names its articulation by the entry's
 1-based number (`note.edit` `articulation`; the note editor's right-click Articulation menu).
 
 - **Editor:** Track menu ▸ Articulations..., or the note editor's Articulation ▸ Edit Articulations....
