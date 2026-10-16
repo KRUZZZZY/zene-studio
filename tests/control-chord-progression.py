@@ -151,15 +151,8 @@ def check_suggestions(session, recorder):
                    % ("suggestions" in plain))
 
 
-def check_write_and_undo(session, instance, transcript, recorder):
-    """Selecting a progression, writing its notes, and one undo taking them back."""
-    clip = make_clip(session, instance, transcript, "Progression Target")
-    session.result("note.add", {"clip": clip, "key": 40, "position": 0, "length": 96,
-                                "velocity": 60})
-    before = notes_of(session, clip)
-    recorder.check("the fixture clip holds exactly one note",
-                   before == ((40, 0, 96, 60),), "before=%s" % (before,))
-
+def _check_written_notes(session, recorder, clip):
+    """The write lands the progression's notes on the chords the listing named."""
     written = session.result("chord.progression_generate",
                              {"clip": clip, "progression": PROGRESSION, "scale": SCALE,
                               "root": 0, "octave": 4, "pattern": "block"})
@@ -170,25 +163,39 @@ def check_write_and_undo(session, instance, transcript, recorder):
                    and written.get("note_count") == 12 and len(after) == 12,
                    "notes_written=%r notes_replaced=%r notes=%s"
                    % (written.get("notes_written"), written.get("notes_replaced"), after))
+    first_step = {note[0] for note in after if note[1] == 0}
+    named = bool(chords) and chords[0].get("key") == 60
     recorder.check("the written notes start on the chords the listing named",
-                   bool(chords) and chords[0].get("key") == 60
-                   and {note[0] for note in after if note[1] == 0} == {60, 64, 67},
-                   "chords=%r first-step keys=%s"
-                   % (chords[0:1], sorted({note[0] for note in after if note[1] == 0})))
+                   named and first_step == {60, 64, 67},
+                   "chords=%r first-step keys=%s" % (chords[0:1], sorted(first_step)))
 
-    # The A16 record, read BEFORE the undo: true_inverse on the clip checkpoint.
+
+def _check_write_is_one_undo(session, recorder, clip, before):
+    """The A16 record, and the ONE undo that restores the clip exactly."""
     records = [record for record in session.result("control.transactions").get("transactions") or []
                if record.get("command") == "chord.progression_generate"]
+    top = records[-1] if records else {}
     recorder.check("the A16 record classes the write true_inverse on the clip checkpoint",
-                   bool(records) and records[-1].get("class") == "true_inverse"
-                   and records[-1].get("reversible") is True
-                   and "checkpoint" in str(records[-1].get("mechanism")),
+                   bool(records) and top.get("class") == "true_inverse"
+                   and top.get("reversible") is True
+                   and "checkpoint" in str(top.get("mechanism")),
                    "records=%s" % (records[-1:] or [],))
-
     undone = session.result("control.undo")
     recorder.check("one control.undo restores the clip exactly",
                    undone.get("undone") is True and notes_of(session, clip) == before,
                    "undone=%r after undo=%s" % (undone.get("undone"), notes_of(session, clip)))
+
+
+def check_write_and_undo(session, instance, transcript, recorder):
+    """Selecting a progression, writing its notes, and one undo taking them back."""
+    clip = make_clip(session, instance, transcript, "Progression Target")
+    session.result("note.add", {"clip": clip, "key": 40, "position": 0, "length": 96,
+                                "velocity": 60})
+    before = notes_of(session, clip)
+    recorder.check("the fixture clip holds exactly one note",
+                   before == ((40, 0, 96, 60),), "before=%s" % (before,))
+    _check_written_notes(session, recorder, clip)
+    _check_write_is_one_undo(session, recorder, clip, before)
     return clip
 
 
