@@ -117,6 +117,15 @@ float expectedReleaseGain( int releaseVelocity )
 	return 1.0f + releaseVelocity / kFullScale;
 }
 
+//! Q050-039 (review r1): the fixture's release block is 1 + velocity/127x the
+//! sustained one, so the measured ratio NAMES the velocity the instrument
+//! received - the exact integer behind the level, not a tolerance around it.
+int namedReleaseVelocity( float released, float sustained )
+{
+	constexpr float kFullScale = 127.f;
+	return static_cast<int>( std::lround( ( released / sustained - 1.0f ) * kFullScale ) );
+}
+
 /*!
  * Windows: a test host cannot load a plugin MODULE library at runtime - the
  * module's import descriptor names zene.exe (ERROR_MOD_NOT_FOUND, 126) and the
@@ -333,6 +342,55 @@ private slots:
 				"fixture asks for %2x from the note-off velocity - the velocity did not "
 				"reach the instrument" ).arg( released / sustained, 0, 'f', 4 )
 				.arg( wanted, 0, 'f', 4 ) ) );
+
+		// (review r1) the tolerance above cannot tell velocity 95 from 96 (the
+		// ratios are 0.008 apart): the measured ratio also has to NAME the
+		// exact velocity the note carries.
+		QCOMPARE( namedReleaseVelocity( released, sustained ), kReleaseVelocity );
+
+		// The shared track's port is left at the base velocity it was born
+		// with, the way this suite found it.
+		m_track->midiPort()->setBaseVelocity( MidiMaxVelocity / 2 );
+	}
+
+	//! (review r1) Q050-039: the same playback at the port's DEFAULT base
+	//! velocity (63), with nothing set to 100 to make the scales agree, and
+	//! the EXACT velocity checked: the release block must be 1 + 96/127x the
+	//! sustained one, which names the velocity the instrument received.
+	void noteOffVelocityIsExactAtTheDefaultBaseVelocity()
+	{
+		// The premise of this slot, named: the port sits at the base velocity
+		// MidiPort's model is born with.
+		QCOMPARE( m_track->midiPort()->baseVelocity(), MidiMaxVelocity / 2 );
+
+		// What the capture stores for a note-off velocity of 96 at base
+		// velocity 63 (InstrumentTrack::captureMpeReleaseVelocity ->
+		// Note::releaseVelocityFromMidi): 96 * 100 / 63 = 152.38, rounded.
+		constexpr int kReleaseVelocity = 96;
+		constexpr int kStored = 152;
+
+		Note note( TimePos::fromFrames( m_frames * 8, Engine::framesPerTick() ),
+			TimePos( 0 ), kKey );
+		note.setReleaseVelocity( kStored );
+
+		NotePlayHandle handle( m_track, 0, m_frames * 8, note, nullptr, -1,
+			NotePlayHandle::Origin::MidiClip );
+
+		const float sustained = renderBlock( &handle );
+		QVERIFY2( sustained > 0.05f, "the note rendered nothing before its note-off" );
+
+		// The note-off sends midiReleaseVelocity() to the instrument.
+		handle.noteOff( 0 );
+		const float released = renderBlock( &handle );
+
+		const int named = namedReleaseVelocity( released, sustained );
+		std::fprintf( stdout,
+			"MPE_EVIDENCE default base velocity: stored=%d sustained=%.6f released=%.6f "
+			"ratio=%.6f named velocity=%d\n",
+			kStored, sustained, released, released / sustained, named );
+		std::fflush( stdout );
+
+		QCOMPARE( named, kReleaseVelocity );
 	}
 
 private:

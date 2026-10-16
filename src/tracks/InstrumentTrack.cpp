@@ -402,10 +402,11 @@ void InstrumentTrack::captureMpeReleaseVelocity( const MidiEvent& event )
 	}
 
 	// The velocity is stored on the note's own volume scale (0..200, 100 =
-	// default) exactly as a note-on's velocity is stored, so it comes back
-	// out of Note::midiReleaseVelocity() uncoloured (Q050-039).
+	// default) through the conversion that is the exact inverse of the
+	// playback emission (Note::midiReleaseVelocity), so the velocity the
+	// note-off carried is the velocity playback sends (Q050-039).
 	note->setReleaseVelocity(
-		static_cast<int>( event.volume( midiPort()->baseVelocity() ) ) );
+		Note::releaseVelocityFromMidi( velocity, midiPort()->baseVelocity() ) );
 }
 
 

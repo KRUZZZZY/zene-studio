@@ -187,6 +187,15 @@ public:
 	int releaseVelocity() const { return m_releaseVelocity; }
 	void setReleaseVelocity( int velocity );
 	int midiReleaseVelocity( int midiBaseVelocity ) const;
+	/*! 0.5.0 Q050-039: the velocity an incoming MIDI note-off carries, as this
+	 *  note's volume scale (0..200, 100 = the base velocity) stores it. The
+	 *  exact inverse of midiReleaseVelocity() at the same base velocity, so
+	 *  the velocity that arrived is the velocity playback emits: both convert
+	 *  with rounding, because at the default base velocity (63) one velocity
+	 *  step is 1.587 volume units and truncation handed back 95 for an
+	 *  incoming 96. The scale names velocities up to twice the base velocity,
+	 *  so MIDI velocity 127 saturates to it at base velocities below 64. */
+	static int releaseVelocityFromMidi( int midiVelocity, int midiBaseVelocity );
 
 	/*! The timing the note had before its first quantise, kept until it is
 	 *  restored or frozen (note.restore_timing) - Cubase's "undo quantize" that
