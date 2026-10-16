@@ -45,6 +45,7 @@
 #include <QPushButton>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QtEndian>
 
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
