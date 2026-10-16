@@ -159,7 +159,11 @@ TrackView::TrackView( Track * track, TrackContainerView * tcv ) :
 
 	m_trackContainerView->addTrackView( this );
 	// WF-107: the subclasses set their own height after this constructor; the spacer goes on after them.
-	QTimer::singleShot(0, this, &TrackView::applySpacer);
+	QTimer::singleShot(0, this, [this]
+	{
+		updateFolderIndent();
+		applySpacer();
+	});
 }
 
 
@@ -179,7 +183,22 @@ void TrackView::updateFolderIndent()
 		++depth;
 		path = path.isEmpty() ? folder->name() : folder->name() + QStringLiteral(" / ") + path;
 	}
-	m_trackSettingsWidget.setContentsMargins(depth * IndentPerLevel, 0, 0, 0);
+	const int indent = depth * IndentPerLevel;
+	m_trackSettingsWidget.setContentsMargins(indent, 0, 0, 0);
+	if (m_trackSettingsWidget.layout() == nullptr)
+	{
+		constexpr auto BaseXProperty = "_zeneFolderIndentBaseX";
+		for (QWidget* child : m_trackSettingsWidget.findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+		{
+			QVariant baseX = child->property(BaseXProperty);
+			if (!baseX.isValid())
+			{
+				baseX = child->x();
+				child->setProperty(BaseXProperty, baseX);
+			}
+			child->move(baseX.toInt() + indent, child->y());
+		}
+	}
 	m_trackSettingsWidget.setAccessibleDescription(depth == 0 ? QString() : tr("In folder %1").arg(path));
 }
 
