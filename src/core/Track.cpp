@@ -416,11 +416,15 @@ void Track::setParentFolder( TrackFolder* folder )
  *  never stored twice - the same shape a folder's child list has (and indeed a
  *  lane is often a member of the same flat track list as everything else).
  *
- *  The walk is under the container's read lock, so a concurrent
- *  add/remove/move of tracks cannot detach the list while it is read. The
- *  callers are control-command and GUI-thread code (the arranger, the agent
- *  surface); nothing on the audio thread calls this, and by the realtime rule
- *  nothing may, since the lock can wait.
+ *  The walk takes the container's read lock. That excludes the writers that also
+ *  take the lock - TrackContainer::addTrack and ::removeTrack - but NOT every
+ *  writer of the list: TrackContainer::moveTrack and ::clearAllTracks mutate
+ *  m_tracks without it. So the lock is not a complete barrier against a
+ *  concurrent reorder; what actually serializes this walk against a move is that
+ *  every caller and every mutator runs on the GUI/control thread (control
+ *  commands are marshalled to the UI thread by ControlRegistry::runOnUiThread),
+ *  and nothing on the audio thread calls this - by the realtime rule nothing may,
+ *  since the lock can wait.
  */
 std::vector<Track*> Track::automationLaneChildren() const
 {

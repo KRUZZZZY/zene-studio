@@ -271,10 +271,13 @@ private slots:
 		// landing directly below the peer.
 		getGUI()->songEditor()->m_editor->moveTrackView(m_ownerView, 2);
 		QCoreApplication::processEvents();
-		QCOMPARE(rows.indexOf(peerView), 0);
-		QCOMPARE(rows.indexOf(m_ownerView), 1);
+		// The lane-adjacency check comes FIRST: it is the assertion this test
+		// pins (the deferral in groupedWithLaneChildren), so a reverted deferral
+		// fails HERE, naming the real defect, before the peer-row positions.
 		QVERIFY2(rows.indexOf(m_laneView) == rows.indexOf(m_ownerView) + 1,
 			"the redraw after a downward owner move detached its lane");
+		QCOMPARE(rows.indexOf(peerView), 0);
+		QCOMPARE(rows.indexOf(m_ownerView), 1);
 		QVERIFY(m_laneView->isVisible());
 	}
 

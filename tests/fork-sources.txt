@@ -2596,3 +2596,10 @@ tests/src/plugins/VstEffectControlsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-141.md
 # cluster new-p10-377 (2026-10): SlicerT waveform zoom clamp regression test (fork-NEW).
 tests/src/plugins/SlicerTZoomTest.cpp
+# 2026-10-16 (Q050-022, R-workflow-197): the GUI half of the automation-lane-as-child
+# feature. This fork-NEW product test lives under tests/src/gui, which the recipe's
+# pathspec (tests/src/core, tests/src/tracks) does not cover, so it is named here by hand
+# like the other GUI tests above; its core sibling tests/src/core/AutomationLaneChildrenTest.cpp
+# is derived by the recipe. Held by the arranger's lane-child rendering, fold/hide,
+# deletion and the agent surface.
+tests/src/gui/AutomationLaneChildGuiTest.cpp
