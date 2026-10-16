@@ -30,7 +30,11 @@
  *   7. `clock.get_state` reports the configured source and the ignored count, so
  *      "nothing is arriving" is distinguishable from "everything arriving is the
  *      wrong device";
- *   8. one control.undo puts the previous source back.
+ *   8. one control.undo puts the previous source back;
+ *   9. a real writer thread rewriting the source while a real reader is reading
+ *      it (with a handshake that proves the two overlapped) never admits the
+ *      port the messages arrive on, even when the two published names are chosen
+ *      so a torn read would spell that port exactly.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -78,9 +82,16 @@ namespace
 //! the way `midi.device_list` lists them under `readable`.
 QString portA() { return QStringLiteral("128:0 Sequencer:Ableton Push"); }
 QString portB() { return QStringLiteral("129:0 Sequencer:Launchkey"); }
-//! A third port the concurrency slot's writer switches to; neither it nor portA
-//! is portB, whose pulses must never be admitted.
-QString portC() { return QStringLiteral("130:0 Sequencer:minilab"); }
+/*! The two names the concurrency slot's writer alternates between, chosen so a
+ *  TORN read of the first -> second write would spell portB() itself - the
+ *  sender every message in that slot arrives on. `old` is exactly as long as
+ *  portB() but a different name, and `new` is longer and STARTS WITH portB(), so
+ *  the old length (25) over the new name's first 25 units is "129:0
+ *  Sequencer:Launchkey" = portB() exactly. Neither name equals portB(), so no
+ *  message there is ever legitimately admitted; a protocol that could tear would
+ *  admit one and break the exact pulse count. */
+QString portTearOld() { return QStringLiteral("131:0 Sequencer:Launchkey"); }
+QString portTearNew() { return QStringLiteral("129:0 Sequencer:Launchkey MK3"); }
 
 //! The interval between two clock pulses at \a bpm, in nanoseconds: 24 pulses to
 //! the quarter note, from the grid alone.
@@ -388,16 +399,18 @@ private slots:
 			"the undone switch restores the port, not the tempo that port had measured");
 	}
 
-	//! CONCURRENCY (rework). The source name is published to the MIDI reader
+	//! CONCURRENCY (rework r4). The source name is published to the MIDI reader
 	//! thread while the control thread may rewrite it, so this slot runs a REAL
-	//! writer thread against a REAL reader: the writer alternates between two
-	//! names, NEITHER of which is the port every message here arrives on, so
-	//! EVERY message must be dropped whichever name the reader's snapshot catches.
-	//! A torn read - a half-written name that happened to equal the sender, or a
-	//! snapshot that read the length as zero and matched everything - would admit
-	//! one and break the exact count; a data race on the buffer is what a hosted
-	//! TSan build of this file reports. The count is the assertion, the writer is
-	//! the coverage (ThreadSanitizer cannot run on the authoring box, so this is
+	//! writer thread against a REAL reader with a HANDSHAKE that proves the two
+	//! overlapped: the writer counts every publishSource() it makes (odd while one
+	//! is in flight), and the reader only counts a message once its own read of
+	//! that counter straddled a publish - the counter moved during the read, or
+	//! was odd at both ends of it. The writer alternates between portTearOld() and
+	//! portTearNew(), the pair whose torn read spells portB() (see the two
+	//! helpers): a protocol that could tear would admit a portB() pulse and break
+	//! the exact count; the fenced sequence lock cannot tear, so the count stays
+	//! exact. A data race on the buffer is what a hosted TSan build of this file
+	//! reports (ThreadSanitizer cannot run on the authoring box, so this is
 	//! registered in the hosted TSan job too).
 	void concurrentReconfigurationNeverAdmitsAnotherPort()
 	{
@@ -406,29 +419,59 @@ private slots:
 		QVERIFY2(clock->setSlaveSourcePort(portA(), &error), qPrintable(error));
 		clock->setSlaveEnabled(true);
 
+		// The writer's publish sequence: +1 before each publishSource(), +1 after,
+		// so the counter is ODD exactly while a write is in flight.
+		std::atomic<quint32> publishSeq{0};
 		std::atomic<bool> stop{false};
-		std::thread writer([clock, &stop]() {
+		std::thread writer([clock, &stop, &publishSeq]() {
 			bool flip = false;
 			while (!stop.load(std::memory_order_relaxed))
 			{
-				QString error;
-				clock->setSlaveSourcePort(flip ? portC() : portA(), &error);
+				publishSeq.fetch_add(1, std::memory_order_acq_rel);
+				QString ignore;
+				clock->setSlaveSourcePort(flip ? portTearNew() : portTearOld(), &ignore);
+				publishSeq.fetch_add(1, std::memory_order_acq_rel);
 				flip = !flip;
 			}
 		});
 
 		const quint32 before = clock->slaveIgnoredCount();
 		const int messages = 20000;
-		for (int i = 0; i < messages; ++i)
+		// Wait (bounded) for the writer to be mid-publish before reading, so the
+		// handshake measures the race and not the writer's own thread startup.
+		for (int spin = 0; spin < 1000000
+			&& (publishSeq.load(std::memory_order_acquire) & 1u) == 0u; ++spin)
 		{
-			clock->handleInputMessage(MidiClockMessage::Clock, 0, 1000000ULL + i, portB());
+			std::this_thread::yield();
+		}
+		int overlappedReads = 0;
+		int reads = 0;
+		// A bound on the total feeds, so a reader that (impossibly) never straddled
+		// a publish fails the assertion below instead of spinning forever.
+		const int maxReads = messages * 100;
+		while (overlappedReads < messages && reads < maxReads)
+		{
+			// The handshake: read the counter, take the message in, read it
+			// again. The read overlapped a publish iff the counter moved during
+			// it or was odd at both ends - a publish was in flight across the
+			// whole read. A read that did not overlap is fed again, so the slot
+			// keeps taking messages until `messages` of them have each provably
+			// overlapped a write; a re-feed is harmless while nothing is
+			// admitted, which is what is being proved.
+			const quint32 first = publishSeq.load(std::memory_order_acquire);
+			clock->handleInputMessage(MidiClockMessage::Clock, 0, 1000000ULL + reads, portB());
+			const quint32 second = publishSeq.load(std::memory_order_acquire);
+			++reads;
+			if (first != second || (first & 1u) != 0u) { ++overlappedReads; }
 		}
 		stop.store(true, std::memory_order_relaxed);
 		writer.join();
 
 		// Every portB message was dropped, so none reached the tracker: the
 		// writer's switches reset it and the reader adds nothing to it.
-		QCOMPARE(clock->slaveIgnoredCount(), before + static_cast<quint32>(messages));
+		QVERIFY2(overlappedReads == messages,
+			"every counted read overlapped a publish, so the race was really exercised");
+		QCOMPARE(clock->slaveIgnoredCount(), before + static_cast<quint32>(reads));
 		QCOMPARE(clock->tracker().pulseCount(), 0);
 		QVERIFY2(!clock->tracker().locked(), "no portB message may lock the follower");
 	}
