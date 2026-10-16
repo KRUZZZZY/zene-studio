@@ -2,9 +2,11 @@
 
 **Verdict: BLOCKED (platform constraint — not a FALSE-POSITIVE, not ALREADY-FIXED)**
 
-This revision corrects the round-1 evidence per QA review `new-p9-277.r1.md`. The
+This revision corrects the evidence per QA review `new-p9-277.r2.md`. The
 `BLOCKED` disposition is retained; the unsupported archive-symbol claim from round 1
-is **retracted** (no such archive exists on this build).
+is **retracted** (no such archive exists on this build), and the no-archive exit
+code in the evidence table is corrected to match what `bash` reports on this
+worktree (EXIT 2 for `ls`, EXIT 0 for the empty `find`).
 
 ## The finding is present in the source
 
@@ -71,7 +73,8 @@ where `LMMS_HAVE_WINMM` is defined and the callback thread can be driven.
 | CMake platform guard | `grep -n "LMMS_HAVE_WINMM" CMakeLists.txt` | only `279:\tSET(LMMS_HAVE_WINMM TRUE)`, under `IF(LMMS_BUILD_WIN32 OR LMMS_BUILD_CYGWIN)` at `:271` — **EXIT 0** |
 | Impl guard coverage | `grep -n "LMMS_HAVE_WINMM" src/core/midi/MidiWinMM.cpp` | `27:#ifdef`, `308:#endif` — **EXIT 0** |
 | Header guard coverage | `grep -n "LMMS_HAVE_WINMM" include/MidiWinMM.h` | `30:#ifdef`, `151:#endif` — **EXIT 0** |
-| No core archive (retraction) | `ls build/src/core/*.a` | no match — **EXIT 1**; the core sources are an OBJECT library, not an archive |
+| No core archive (retraction) | `ls build/src/core/*.a` | `No such file or directory` — **EXIT 2**; the core sources are an OBJECT library, not an archive |
+| No core archive (explicit) | `find build -name '*.a' -path '*core*'` | no matches printed — **EXIT 0**; confirms no static archive under `build/.../core` |
 | Core target | `grep -n "ADD_LIBRARY(lmmsobjs" src/CMakeLists.txt` | `137:ADD_LIBRARY(lmmsobjs OBJECT` — **EXIT 0** |
 | RED command | — | **Cannot run** — no `MidiWinMM` symbol exists to link a test against on Linux |
 | GREEN command | — | **Cannot run** — same reason |
@@ -80,11 +83,17 @@ where `LMMS_HAVE_WINMM` is defined and the callback thread can be driven.
 | Complexity gate | `bash tests/complexity-gate.sh --check` | **EXIT 1** — pre-existing, unrelated (see below) |
 | File-length gate | `bash tests/file-length-gate.sh --check` | **EXIT 1** — pre-existing, unrelated (see below) |
 
-Round-1 retraction: the previous report claimed
+Round-1 retraction: the original report claimed
 `nm build/src/core/libzene-core.a | grep -i MidiWinMM` was empty. That archive does
 not exist (the core is the `lmmsobjs` OBJECT library at `src/CMakeLists.txt:137`;
 `find build -name '*.a' -path '*core*'` matches nothing). The piped `nm|grep` result
-therefore proved nothing, and the claim is removed.
+therefore proved nothing, and the claim was removed.
+
+Round-3 correction: the round-2 evidence table recorded `ls build/src/core/*.a`
+as EXIT 1; under bash the same command exits 2 (`No such file or directory`). The
+evidence table now shows the bash exit codes (EXIT 2 for `ls`, EXIT 0 with no
+matches for `find`) and the OBJECT-library row is retained as the underlying
+explanation. No source/config evidence changed.
 
 ## Gate failures are unrelated to this cluster
 
@@ -100,8 +109,10 @@ work, not by this report (this commit is documentation-only):
   `src/gui/ControlCommandsShortcuts.cpp`.
 
 Fixing these would be out-of-scope edits to other clusters' files; the gate limits
-and baselines are not touched. Logs: `logs/evidence-1.log`, `logs/gate-1.log`,
-`logs/gate-2.log`.
+and baselines are not touched. Round-3 logs (re-captured to confirm the EXIT
+codes are stable on this worktree):
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-277.r3/logs/evidence-1.log`,
+`.../gate-1.log`, `.../gate-2.log`.
 
 ## Conclusion
 
