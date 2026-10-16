@@ -205,6 +205,13 @@ TrackView * TrackContainerView::addTrackView( TrackView * _tv )
 	{
 		connect(folder, &TrackFolder::stateChanged, this, &TrackContainerView::realignTracks, Qt::QueuedConnection);
 	}
+	// 0.5.0 Q050-022: a track's automation-lane fold flag can change from the
+	// agent surface (automation.lanes_set_collapsed) or from an undo/redo of that
+	// command's Track checkpoint, not only from this view's own button. Listening
+	// to the track's signal makes either path re-lay the rows, so no caller has to
+	// call realignTracks() itself.
+	connect(_tv->getTrack(), &Track::automationLanesCollapsedChanged,
+		this, &TrackContainerView::realignTracks, Qt::QueuedConnection);
 	m_scrollLayout->addWidget( _tv );
 	connect(this, &TrackContainerView::positionChanged,
 		_tv->getTrackContentWidget(), &TrackContentWidget::changePosition);

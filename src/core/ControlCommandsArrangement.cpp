@@ -95,6 +95,57 @@ QJsonObject trackSnapshot(const QJsonObject& before, const QString& inverseOp,
 	return control::transactionPayload(before, inverseOp, QJsonObject(), reversible, mechanism);
 }
 
+/*! 0.5.0 Q050-022: the track.remove transaction. The inverse is recorded over the
+ *  owner AND its child automation lanes as ONE step, so \a laneCount says how big
+ *  the group was and \a captured whether the all-or-nothing capture succeeded. Kept
+ *  out of the command lambda so the remove handler's own branch count stays low. */
+QJsonObject trackRemovalTransaction(const QJsonObject& before, bool captured, int laneCount)
+{
+	if (captured && laneCount > 0)
+	{
+		return trackSnapshot(before,
+			QStringLiteral("recreate the track and its %1 child automation lanes from their captured XML").arg(laneCount),
+			QStringLiteral("action checkpoint (structural step): the track's own XML (Track::saveState - "
+				"its clips and their notes included) AND the XML of each of its %1 child automation lanes "
+				"(every AutomationTrack following this track by id) are captured together BEFORE the delete, "
+				"and the recorded undo step recreates the whole group at its original indices with "
+				"Track::create(element, song), the same call the project loader makes. THE CLIPS AND THE "
+				"LANES COME BACK with it, because each is IN its captured document; a checkpoint taken after "
+				"the delete could not, since ~Track destroys them first").arg(laneCount),
+			true);
+	}
+	if (captured)
+	{
+		return trackSnapshot(before, QStringLiteral("recreate the track from its captured XML"),
+			QStringLiteral("action checkpoint (structural step): the track's own XML "
+				"(Track::saveState - its clips and their notes included) is captured "
+				"before the delete and the recorded undo step recreates it with "
+				"Track::create(element, song), the same call the project loader makes, "
+				"at the index it was removed from. THE CLIPS COME BACK with it, "
+				"because they are IN the captured document; a checkpoint taken after "
+				"the delete could not, since ~Track destroys them first"),
+			true);
+	}
+	if (laneCount > 0)
+	{
+		return trackSnapshot(before,
+			QStringLiteral("none: the track and its lanes could not all be captured"),
+			QStringLiteral("snapshot only: the inverse is all-or-nothing, and this track OR at least one "
+				"of its %1 child automation lanes could not be captured - a member's serialized state is "
+				"larger than the %2-character cap, or a member's container index could not be read. A "
+				"truncated or partial group is a corrupt one, so NO inverse was recorded and a lane that "
+				"fails takes the whole step with it; the before-state names what was removed")
+				.arg(laneCount).arg(MaxTrackSnapshotChars),
+			false);
+	}
+	return trackSnapshot(before, QStringLiteral("none: this track was too large to capture"),
+		QStringLiteral("snapshot only: this track's serialized state is larger than the "
+			"%1-character cap, and a truncated track is a corrupt track, so no inverse "
+			"was recorded - the before-state names what was removed")
+			.arg(MaxTrackSnapshotChars),
+		false);
+}
+
 //! The new track is the last one the container holds (TrackContainer::addTrack
 //! pushes back, and the Track constructor adds itself).
 QJsonObject trackAddResult(Track* track, Song* song)
@@ -284,22 +335,7 @@ void registerTrackRemove(ControlRegistry& registry)
 		// reply states it and the proof checks the track really comes back there.
 		result.insert(QStringLiteral("index"), removedIndex);
 		result.insert(QStringLiteral("__transaction"),
-			captured
-				? trackSnapshot(snapshot, QStringLiteral("recreate the track from its captured XML"),
-					QStringLiteral("action checkpoint (structural step): the track's own XML "
-						"(Track::saveState - its clips and their notes included) is captured "
-						"before the delete and the recorded undo step recreates it with "
-						"Track::create(element, song), the same call the project loader makes, "
-						"at the index it was removed from. THE CLIPS COME BACK with it, "
-						"because they are IN the captured document; a checkpoint taken after "
-						"the delete could not, since ~Track destroys them first"),
-					true)
-				: trackSnapshot(snapshot, QStringLiteral("none: this track was too large to capture"),
-					QStringLiteral("snapshot only: this track's serialized state is larger than the "
-						"%1-character cap, and a truncated track is a corrupt track, so no inverse "
-						"was recorded - the before-state names what was removed")
-						.arg(MaxTrackSnapshotChars),
-					false));
+			trackRemovalTransaction(snapshot, captured, static_cast<int>(lanes.size())));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

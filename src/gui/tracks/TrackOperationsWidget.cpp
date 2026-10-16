@@ -171,7 +171,9 @@ TrackOperationsWidget::TrackOperationsWidget( TrackView * parent ) :
 			{{QStringLiteral("track"), control::trackIdOf(track)},
 				{QStringLiteral("collapsed"), !track->automationLanesCollapsed()}});
 		if (!result.ok) { m_lanesBtn->setToolTip(result.errorMessage); }
-		m_trackView->trackContainerView()->realignTracks();
+		// No realignTracks() here: the command changes the track's fold flag, whose
+		// signal the container listens to (Q050-022), so the agent, the menu and this
+		// button all refresh the rows through the same path.
 		m_trackView->update();
 	});
 	operationsLayout->addWidget(m_lanesBtn);
@@ -413,7 +415,8 @@ void TrackOperationsWidget::updateMenu()
 			ControlRegistry::instance()->invoke(QStringLiteral("automation.lanes_set_collapsed"),
 				{{QStringLiteral("track"), control::trackIdOf(track)},
 					{QStringLiteral("collapsed"), !track->automationLanesCollapsed()}});
-			m_trackView->trackContainerView()->realignTracks();
+			// The command's fold flag reaches the container through the track's
+			// signal (Q050-022): no manual realignTracks() here either.
 			m_trackView->update();
 		});
 	}

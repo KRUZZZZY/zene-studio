@@ -866,8 +866,17 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		trackRestoreDefault( "folder" ) ).toInt();
 	m_visible = element.attribute( "visible",
 		trackRestoreDefault( "visible" ) ).toInt() != 0;
+	// 0.5.0 Q050-022: a checkpoint restore re-reads this track's own XML (an
+	// undo/redo of automation.lanes_set_collapsed lands here), so the fold flag
+	// is announced when it actually changes - the same signal the setter emits -
+	// and the arranger follows the undo/redo without the caller realigning it.
+	const bool lanesCollapsedBefore = m_automationLanesCollapsed;
 	m_automationLanesCollapsed = element.attribute( "autolanes",
 		trackRestoreDefault( "autolanes" ) ).toInt() != 0;
+	if( lanesCollapsedBefore != m_automationLanesCollapsed )
+	{
+		emit automationLanesCollapsedChanged();
+	}
 	{
 		TrackFolder* resolved = m_pendingFolderId >= 0
 			? m_trackContainer->findTrackFolderById( m_pendingFolderId ) : nullptr;

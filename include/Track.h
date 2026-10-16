@@ -349,7 +349,14 @@ public:
 	}
 	void setAutomationLanesCollapsed( bool collapsed )
 	{
+		if( m_automationLanesCollapsed == collapsed ) { return; }
 		m_automationLanesCollapsed = collapsed;
+		// 0.5.0 Q050-022: announce the fold so the arranger can re-lay its rows
+		// whichever path set the flag - the view's own button/menu, the agent
+		// surface's command, or an undo/redo of that command (which restores
+		// through loadTrack below). Emitted on the control/GUI thread, never the
+		// render thread.
+		emit automationLanesCollapsedChanged();
 	}
 
 	/*! The automation lanes that FOLLOW this track (its id), in container order -
@@ -564,6 +571,10 @@ signals:
 	void nameChanged();
 	void clipAdded( lmms::Clip * );
 	void colorChanged();
+	//! 0.5.0 Q050-022: this track's automation-lane fold flag changed. The
+	//! arranger listens so a fold from the agent surface, the menu, or an
+	//! undo/redo redraws without the caller touching the view.
+	void automationLanesCollapsedChanged();
 } ;
 
 

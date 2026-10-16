@@ -76,6 +76,19 @@ QJsonObject stateOf(const QString& track)
 		.result.value(QStringLiteral("tracks")).toArray().first().toObject();
 }
 
+//! The registry's most recent recorded transaction for @a command (the
+//! `__transaction` payload is a side channel the result does not expose).
+QJsonObject lastTransaction(const QString& command)
+{
+	const QJsonArray records = ControlRegistry::instance()->transactions();
+	for (int i = records.size() - 1; i >= 0; --i)
+	{
+		const QJsonObject record = records.at(i).toObject();
+		if (record.value(QStringLiteral("command")).toString() == command) { return record; }
+	}
+	return {};
+}
+
 } // namespace
 
 class AutomationLaneChildrenTest : public QObject
@@ -175,6 +188,16 @@ private slots:
 		QCOMPARE(removed.result.value(QStringLiteral("lanes_removed")).toInt(), 1);
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before - 2);
 
+		// The transaction must say what the inverse captures: the owner AND its
+		// child lanes, as one all-or-nothing group.
+		const QJsonObject tx = lastTransaction(QStringLiteral("track.remove"));
+		QCOMPARE(tx.value(QStringLiteral("reversible")).toBool(), true);
+		QVERIFY2(tx.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString()
+			.contains(QStringLiteral("child automation lanes")),
+			"track.remove's inverse does not name the lanes it captures");
+		QVERIFY2(tx.value(QStringLiteral("mechanism")).toString().contains(QStringLiteral("automation lanes")),
+			"track.remove's mechanism does not describe capturing the lanes");
+
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // ONE step brings both back
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before);
 		auto* restoredLane = dynamic_cast<AutomationTrack*>(Engine::getSong()->findTrackById(laneId.mid(4).toInt()));
@@ -187,6 +210,44 @@ private slots:
 
 		QVERIFY(run(QStringLiteral("control.redo")).ok);
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before - 2);
+	}
+
+	/*! The inverse is all-or-nothing: when a child lane cannot be captured (its own
+	 *  XML is over the structural cap) NO inverse is recorded, and track.remove's
+	 *  transaction says so - naming the lanes, not pretending the owner alone was
+	 *  captured. The delete itself still happens. */
+	void anUncapturableLaneRefusesTheInverseHonestly()
+	{
+		const QString owner = control::trackIdOf(m_track);
+		const ControlResult added = run(QStringLiteral("automation.lane_add"),
+			{{QStringLiteral("track"), owner}, {QStringLiteral("parameter"), firstParameter(owner)}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const QString laneId = added.result.value(QStringLiteral("lane")).toString();
+		auto* lane = dynamic_cast<AutomationTrack*>(Engine::getSong()->findTrackById(laneId.mid(4).toInt()));
+		QVERIFY(lane != nullptr);
+		auto* clip = dynamic_cast<AutomationClip*>(lane->getClips().front());
+		QVERIFY(clip != nullptr);
+		// Only the LANE is over the cap; the owner alone would fit. 5000 nodes
+		// serialize to well over the 64 KB StructuralSnapshotLimit.
+		for (int tick = 0; tick < 5000; ++tick)
+		{
+			clip->getTimeMap()[tick] = AutomationNode(clip, 0.5f, tick);
+		}
+
+		const int before = static_cast<int>(Engine::getSong()->tracks().size());
+		const ControlResult removed = run(QStringLiteral("track.remove"), {{QStringLiteral("track"), owner}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		// The delete still happens with its lanes; only the undo is refused.
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), before - 2);
+		QCOMPARE(removed.result.value(QStringLiteral("lanes_removed")).toInt(), 1);
+
+		const QJsonObject tx = lastTransaction(QStringLiteral("track.remove"));
+		QCOMPARE(tx.value(QStringLiteral("reversible")).toBool(), false);
+		QVERIFY2(tx.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString()
+			.contains(QStringLiteral("could not all be captured")),
+			"the refused inverse does not say the group could not all be captured");
+		QVERIFY2(tx.value(QStringLiteral("mechanism")).toString().contains(QStringLiteral("child automation lanes")),
+			"the refused inverse's mechanism does not name a failed child lane capture");
 	}
 
 	//! a reorder keeps every lane pointing at its owner.

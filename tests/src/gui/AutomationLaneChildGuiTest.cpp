@@ -25,9 +25,12 @@
 /*! 0.5.0 L06, Q050-022 (R-workflow-197), in the real application: a lane created
  *  by automation.lane_add is DRAWN as a child of its owning track in the arranger
  *  - the row sits directly beneath the owner and is indented - and folding or
- *  hiding the owner hides it. The child lane's clip is selectable and editable
- *  where it is drawn, and the agent surface (automation.get_state,
- *  automation.lanes_set_collapsed) reports the same owner and lane state. */
+ *  hiding the owner hides it. The fold the AGENT command performs - and the undo
+ *  and redo of it - move the rows on their own, with no realignTracks() call in
+ *  the test. The child lane's clip is selectable where it is drawn, a point is
+ *  edited through the lane's own UI (a double-click opens its automation editor),
+ *  and the agent surface (automation.get_state, automation.lanes_set_collapsed)
+ *  reports the same owner and lane state. */
 
 #include <QtTest>
 
@@ -36,6 +39,7 @@
 
 #include "AutomationClip.h"
 #include "AutomationClipView.h"
+#include "AutomationEditor.h"
 #include "AutomationTrack.h"
 #include "ClipView.h"
 #include "ControlRegistry.h"
@@ -154,8 +158,9 @@ private slots:
 			"the lane row is not indented under its owner");
 	}
 
-	//! the child lane's clip is selectable and editable where the row is drawn,
-	//! and the edit shows up in the agent's state.
+	//! the child lane's clip is selectable where the row is drawn, and a POINT EDIT
+	//! made through the lane's own UI (the automation editor it opens) shows up in
+	//! the agent's state - no automation.add_point anywhere.
 	void theChildLaneIsSelectableAndEditable()
 	{
 		QVERIFY(!m_lane->getClips().empty());
@@ -166,64 +171,86 @@ private slots:
 		getGUI()->songEditor()->m_editor->selectAllClips(false);
 		// A plain arranger click starts a MOVE (ClipView::mousePressEvent); selection
 		// on a click is the copy-modifier's toggle, the same gesture the product uses.
-		QTest::mousePress(clipView, Qt::LeftButton, KBD_COPY_MODIFIER,
-			QPoint(clipView->width() / 2, clipView->height() / 2));
-		QTest::mouseRelease(clipView, Qt::LeftButton, KBD_COPY_MODIFIER,
-			QPoint(clipView->width() / 2, clipView->height() / 2));
+		const QPoint centre(clipView->width() / 2, clipView->height() / 2);
+		QTest::mousePress(clipView, Qt::LeftButton, KBD_COPY_MODIFIER, centre);
+		QTest::mouseRelease(clipView, Qt::LeftButton, KBD_COPY_MODIFIER, centre);
 		QVERIFY2(clipView->isSelected(), "a click on the child lane's clip did not select it");
 
-		// An edit through the surface on that same lane's clip is visible in state.
 		const QString owner = control::trackIdOf(m_track);
 		const QString parameter = firstParameter(owner);
-		const ControlResult moved = run(QStringLiteral("automation.add_point"),
-			{{QStringLiteral("track"), owner}, {QStringLiteral("parameter"), parameter},
-				{QStringLiteral("ticks"), 48}, {QStringLiteral("value"), 42.0}});
-		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QVERIFY2(!parameter.isEmpty(), "the owner has no parameter to automate");
+
+		// A GUI gesture on the lane: double-clicking the child lane's clip opens it
+		// in the automation editor (AutomationClipView::mouseDoubleClickEvent).
+		QTest::mouseDClick(clipView, Qt::LeftButton, Qt::NoModifier, centre);
+		QCoreApplication::processEvents();
+		AutomationEditor* editor = getGUI()->automationEditor()->m_editor;
+		QVERIFY2(editor->validClip() && editor->currentClip() == clip,
+			"double-clicking the child lane's clip did not open it for editing");
+		editor->setFocus();
+
+		// A real point edit through that UI: Ctrl+Right chooses the point lane_add
+		// seeded at tick 0, Right moves it one grid step (AutomationPointEdit - the
+		// same keyboard gesture AutomationEditorEditingTest drives), one undo step.
+		const int step = AutomationClip::quantization();
+		QVERIFY(step > 0);
+		QTest::keyClick(editor, Qt::Key_Right, Qt::ControlModifier);
+		QTest::keyClick(editor, Qt::Key_Right);
+		QCoreApplication::processEvents();
+
+		// The edit the GUI made is what the agent surface now reports for that lane.
 		const QJsonArray points = stateOf(owner).value(QStringLiteral("parameters")).toArray()
 			.first().toObject().value(QStringLiteral("automation")).toObject()
 			.value(QStringLiteral("points")).toArray();
-		bool found = false;
-		for (const QJsonValue& point : points) { found = found || point.toObject().value(QStringLiteral("ticks")).toInt() == 48; }
-		QVERIFY2(found, "the child lane's edit is not in automation.get_state");
+		bool moved = false;
+		for (const QJsonValue& point : points)
+		{
+			moved = moved || point.toObject().value(QStringLiteral("ticks")).toInt() == step;
+		}
+		QVERIFY2(moved, "the point edited through the lane's UI is not in automation.get_state");
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one GUI edit, one step
 	}
 
-	//! folding the owner hides its lane row; unfolding brings it back.
+	//! folding the owner hides its lane row; unfolding brings it back. The command
+	//! alone must move the view: no realignTracks() is called here.
 	void foldingTheOwnerHidesItsChildLane()
 	{
 		const QString owner = control::trackIdOf(m_track);
 		QVERIFY(run(QStringLiteral("automation.lanes_set_collapsed"),
 			{{QStringLiteral("track"), owner}, {QStringLiteral("collapsed"), true}}).ok);
-		getGUI()->songEditor()->m_editor->realignTracks();
-		QCoreApplication::processEvents();
+		QCoreApplication::processEvents();  // the fold signal reaches the arranger
 		QVERIFY(m_ownerView->isVisible());
 		QVERIFY2(!m_laneView->isVisible(), "a folded owner left its child lane row shown");
 		QCOMPARE(stateOf(owner).value(QStringLiteral("lanes_collapsed")).toBool(), true);
 
 		QVERIFY(run(QStringLiteral("automation.lanes_set_collapsed"),
 			{{QStringLiteral("track"), owner}, {QStringLiteral("collapsed"), false}}).ok);
-		getGUI()->songEditor()->m_editor->realignTracks();
 		QCoreApplication::processEvents();
 		QVERIFY2(m_laneView->isVisible(), "the lane row did not come back after unfolding");
 	}
 
-	//! hiding the owner hides its child lane row (the visibility-set flag, not the fold).
+	//! hiding the owner through the command hides its child lane row. The command
+	//! alone must move the view: no realignTracks() is called here.
 	void hidingTheOwnerHidesItsChildLane()
 	{
-		m_track->setVisible(false);
-		getGUI()->songEditor()->m_editor->realignTracks();
+		const QString owner = control::trackIdOf(m_track);
+		QVERIFY(run(QStringLiteral("track.set_visible"),
+			{{QStringLiteral("track"), owner}, {QStringLiteral("visible"), false}}).ok);
 		QCoreApplication::processEvents();
 		QVERIFY(!m_ownerView->isVisible());
 		QVERIFY2(!m_laneView->isVisible(), "a hidden owner left its child lane row shown");
 		// trackViewAt skips both hidden rows: the hit test agrees with what is drawn.
 		QVERIFY(getGUI()->songEditor()->m_editor->trackViewAt(0) != m_laneView);
 
-		m_track->setVisible(true);
-		getGUI()->songEditor()->m_editor->realignTracks();
+		QVERIFY(run(QStringLiteral("track.set_visible"),
+			{{QStringLiteral("track"), owner}, {QStringLiteral("visible"), true}}).ok);
 		QCoreApplication::processEvents();
 		QVERIFY(m_laneView->isVisible());
 	}
 
-	//! the agent read and the drawn state are the SAME state.
+	//! the agent read and the drawn state are the SAME state - on the command, and
+	//! on the undo and redo of it, with no realignTracks() anywhere.
 	void theAgentReportsTheDrawnOwnerAndLaneState()
 	{
 		const QString owner = control::trackIdOf(m_track);
@@ -232,13 +259,21 @@ private slots:
 
 		QVERIFY(run(QStringLiteral("automation.lanes_set_collapsed"),
 			{{QStringLiteral("track"), owner}, {QStringLiteral("collapsed"), true}}).ok);
-		getGUI()->songEditor()->m_editor->realignTracks();
 		QCoreApplication::processEvents();
 		QCOMPARE(stateOf(owner).value(QStringLiteral("lanes_collapsed")).toBool(), true);
 		QVERIFY2(!m_laneView->isVisible(), "the agent folded the lanes but the arranger still draws them");
 
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		getGUI()->songEditor()->m_editor->realignTracks();
+		QCoreApplication::processEvents();
+		QCOMPARE(stateOf(owner).value(QStringLiteral("lanes_collapsed")).toBool(), false);
+		QVERIFY2(m_laneView->isVisible(), "undoing the fold left the lane hidden");
+
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCoreApplication::processEvents();
+		QCOMPARE(stateOf(owner).value(QStringLiteral("lanes_collapsed")).toBool(), true);
+		QVERIFY2(!m_laneView->isVisible(), "redoing the fold left the lane drawn");
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCoreApplication::processEvents();
 		QVERIFY(m_laneView->isVisible());
 	}
