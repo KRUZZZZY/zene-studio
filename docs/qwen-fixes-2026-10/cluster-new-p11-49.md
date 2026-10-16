@@ -1,28 +1,43 @@
 # Cluster new-p11-49
 
-**Verdict: BLOCKED** — the reported behavior is already fixed on this branch, but the required ratchet gates fail on unrelated existing files, so the normal completion gates cannot be met without broadening this one-bug task.
+**Verdict: BLOCKED** — the defect is real and the production guard is implemented. The strengthened regression reproduced the unjournaled mutation with the guard removed. A green build/test run for that exact final test source remains unverified because the shared bunny build runner kept both build slots occupied; the final queued build was cancelled after 18 minutes. The earlier green run below used the same production guard and the initial form of the regression, before its failure diagnostic was strengthened.
 
-## Finding evidence
+## Finding and fix
 
-- [ControlCommandsScript.cpp](../../src/core/ControlCommandsScript.cpp:286) takes a session checkpoint before running Lua and calls `finishScriptCheckpoint` after queued commands are applied ([line 304](../../src/core/ControlCommandsScript.cpp:304)). The transaction reports the checkpoint result at lines 316–328.
-- [SessionCheckpoint.cpp](../../src/core/SessionCheckpoint.cpp:212) captures the post-script project state. On a change that fits the undo budget, it discards the script's finer nested steps, pushes one whole-session restore step, and marks the checkpoint pushed ([lines 243–246](../../src/core/SessionCheckpoint.cpp:243)).
-- [SessionCheckpointTest.cpp](../../tests/src/core/SessionCheckpointTest.cpp:244) already covers a mutating script without Lua `addCheckPoint()` calls. It asserts exactly one new journal step, then verifies undo restores and redo reapplies the full project ([lines 264–288](../../tests/src/core/SessionCheckpointTest.cpp:264)).
+- [ControlCommandsScript.cpp](../../src/core/ControlCommandsScript.cpp:291) now refuses `script.run` when `takeSessionCheckpoint()` returns a skipped checkpoint. The check is before `runWithBudget()`, so Lua cannot edit the session without a valid pre-script snapshot.
+- [SessionCheckpointTest.cpp](../../tests/src/core/SessionCheckpointTest.cpp:292) disables project journalling, invokes a channel-mutating script, and checks refusal, unchanged project state, and unchanged undo depth. The final regression diagnostic records `script.run ok=true, project_changed=true, undo_depth_delta=0` without the guard.
+- The existing ordinary one-step undo/redo test remains at [SessionCheckpointTest.cpp](../../tests/src/core/SessionCheckpointTest.cpp:245).
+- `tests/src/core/SessionCheckpointTest.cpp` is registered in `tests/fork-sources.txt`; its inherited-file change is recorded in `tests/upstream-modifications.txt`.
 
-No production or test source was changed. The finding is already addressed by the current implementation and existing regression, so a new RED test and reverse-patch proof do not apply.
+## Build and test evidence
 
-## Evidence
+All build/test logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs`. The `fff` grep tool was unavailable in this tool set; logs were searched with `rg` for `error`, `FAILED`, and `Assertion`.
 
-| Check | Exact command / result |
+| Check | Exact command and result |
 |---|---|
-| RED | N/A — finding already fixed; no production patch to reverse. |
-| Build | `cmake --build build --target SessionCheckpointTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r1/logs/build-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` — EXIT=0 |
-| GREEN | From `build/tests`: `ctest -R SessionCheckpointTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r1/logs/test-1.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0; 1/1 CTest target passed. |
-| Affected family | `SessionCheckpointTest`: 1 CTest target executed; includes the script undo/redo regression above. |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r1/logs/complexity-1.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=1. It reports six new CCN regressions in unrelated files: `XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsMixerStrip.cpp`, `ProjectRevisions.cpp`, and `ControlCommandsShortcuts.cpp`. |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r1/logs/file-length-1.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=1. It reports 14 existing files over 500 lines, including `ControlAutomationScriptTest.cpp`; none were changed for this finding. |
+| Initial RED build | `cmake --build build --target SessionCheckpointTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/build-1.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0. |
+| Initial RED test | From `build/tests`: `ctest -R SessionCheckpointTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/test-1.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=8; the new assertion failed because `ran.ok` was true (12 passed, 1 failed). |
+| Reverse-patch command | `git diff -- src/core/ControlCommandsScript.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/fix.patch` — EXIT=0. |
+| Final-form RED build | `cmake --build build --target SessionCheckpointTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/build-4.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0. |
+| Final-form RED test | From `build/tests`: `ctest -R SessionCheckpointTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/test-4.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=8; the diagnostic confirmed `ok=true`, `project_changed=true`, and `undo_depth_delta=0` (12 passed, 1 failed). |
+| Restore fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/fix.patch` — EXIT=0. |
+| Earlier GREEN build | `cmake --build build --target zene SessionCheckpointTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/build-3.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0. This built `zene` and `SessionCheckpointTest` with the guard and initial regression form. |
+| Earlier GREEN test | From `build/tests`: `ctest -R SessionCheckpointTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/test-3.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0; 1/1 CTest target passed. |
+| Final-form build attempt | `cmake --build build --target zene SessionCheckpointTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/build-5.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=130 after cancellation; the bunny guard logged repeated `all 2 build slots busy, waiting...` messages and did not start compilation. |
+| Final-form GREEN test | Not run: the final-form build could not acquire a shared build slot. |
 
-The `fff grep` tool was not available in the current tool set, and `fff` was not installed as a shell command. The required log terms were checked with `rg`; `error`, `FAILED`, and `Assertion` had no matches in the build, test, or gate logs. The test log records `1/1 Test #177: SessionCheckpointTest ... Passed`.
+The affected CTest family was `SessionCheckpointTest` (1 CTest target). The final-form regression was run RED with the product patch reversed; only the earlier form has a GREEN result.
+
+## Ratchets (separate from the defect verdict)
+
+Both required gates were run after the final source/test edits and failed on unrelated files that are not part of this change.
+
+- `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/complexity-2.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=1. Six reported CCN regressions: `tests/src/gui/XyPadPairTest.cpp` (`dotCentreAlong`, 16), `src/core/DawProjectReadTracks.cpp` (`parseNotes`, 13), `src/core/ControlCommandsMixerTools.cpp` (`adjust`, 12), `src/core/ControlCommandsMixerStrip.cpp` (`setStrip`, 11), `src/core/ProjectRevisions.cpp` (`rotateProjectRevision`, 11), and `src/gui/ControlCommandsShortcuts.cpp` (`importedOverrides`, 11).
+- `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-49.r2/logs/file-length-2.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=1. Fourteen reported overlength files: `src/core/SmfInterchangeReader.cpp`, `src/core/TakeLane.cpp`, `tests/src/core/CollabTransportTest.cpp`, `tests/src/core/ControlAutomationScriptTest.cpp`, `tests/src/core/ControlDeviceCatalogueTest.cpp`, `tests/src/core/ControlEditCommandsTest.cpp`, `tests/src/core/CustomAccessTest.cpp`, `tests/src/core/DeviceDspTest.cpp`, `tests/src/core/HardwareIoTest.cpp`, `tests/src/core/NotePlaybackTest.cpp`, `tests/src/core/RackMacrosTest.cpp`, `tests/src/core/RevisionTimelineTest.cpp`, `tests/src/core/VideoTrackTest.cpp`, and `tests/src/gui/ArrangerTimelineTest.cpp`.
 
 ## Files committed
 
-- `docs/qwen-fixes-2026-10/cluster-new-p11-49.md` — this blocked outcome report only.
+- `src/core/ControlCommandsScript.cpp`
+- `tests/src/core/SessionCheckpointTest.cpp`
+- `tests/upstream-modifications.txt`
+- `docs/qwen-fixes-2026-10/cluster-new-p11-49.md`

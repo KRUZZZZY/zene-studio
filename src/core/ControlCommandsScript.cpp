@@ -288,6 +288,10 @@ ControlResult scriptRun(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, checkpoint.note);
 	}
+	if (!checkpoint.taken())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, checkpoint.note);
+	}
 	ProjectJournal* journal = Engine::projectJournal();
 	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
 
