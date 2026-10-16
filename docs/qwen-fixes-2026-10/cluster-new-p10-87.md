@@ -2,21 +2,42 @@
 
 ## Verdict: BLOCKED
 
-The finding is real. `include/ControlServer.h:93` already defines the 30-second `ClientIdleTimeoutMs`, but the Windows client path does not use it. `src/core/ControlServerWin32.cpp:139-149` waits on the pipe operation and server quit event with `WaitForMultipleObjects(..., INFINITE)`. The pending read at `src/core/ControlServerWin32.cpp:201-212` uses that wait, and `win32ClientLoop()` calls `readChunk()` at line 375 without tracking an idle deadline. A connected peer that sends nothing therefore remains in the read wait until server shutdown.
+The finding is real. Windows overlapped client reads and writes now use a per-client absolute idle deadline based on `ControlServer::ClientIdleTimeoutMs`. Successful byte transfers refresh that deadline. When a pending operation reaches it, `waitForIo()` calls `CancelIoEx()` and waits with `GetOverlappedResult(..., TRUE)` before returning, so the client loop can disconnect and release its operation state safely.
 
-I did not change production code. The required regression must exercise the Windows named-pipe path and fail before the fix, then pass after it and after reverting/reapplying the product patch. This host is Linux, the configured build uses `/usr/bin/c++`, and `x86_64-w64-mingw32-g++` is unavailable. The Linux test binary does not compile the `Q_OS_WIN` transport. Wine is present, but there is no Windows build to run. A POSIX test or source-pattern assertion would not prove the reported Windows behavior, so the regression, RED/GREEN run, and revert proof are not claimed.
+A Windows-only named-pipe regression was added to `ControlShutdownHookTest`: it connects, leaves a read pending, and requires the server to disconnect the idle peer. The host is Linux and has no Windows SDK, so this slot is compiled out here. I cannot claim the required native RED/GREEN/reversed-patch proof, and the verdict remains BLOCKED pending a Windows-capable run.
 
-The two required ratchet gates also fail on this initially clean worktree, on unrelated existing regressions. The complexity gate reports six new over-target functions in other files; the file-length gate reports fourteen new over-limit files. I did not change either baseline or those unrelated files.
+### File evidence
 
-| Evidence | Command/result |
-| --- | --- |
-| Source path | `include/ControlServer.h:93`; `src/core/ControlServerWin32.cpp:139-149, 201-212, 356-375` |
-| Windows toolchain | `command -v x86_64-w64-mingw32-g++` — exit 1 (not installed); `uname -s` — exit 0 (`Linux`) |
-| RED regression | Not run; no Windows named-pipe test binary/toolchain. |
-| GREEN regression and revert proof | Not run; no Windows named-pipe test binary/toolchain. |
-| Affected-family test count | 0 executed. No `ctest` command was run. |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r1/logs/gate-1.log 2>&1; echo EXIT=$?` — gate exit 1. |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r1/logs/gate-2.log 2>&1; echo EXIT=$?` — gate exit 1. |
-| Files in this report-only commit | `docs/qwen-fixes-2026-10/cluster-new-p10-87.md` |
+- `include/ControlServer.h:223` passes the client deadline through the Windows response path; `:93` defines the 30-second timeout.
+- `src/core/ControlServerWin32.cpp:141-174` bounds overlapped waits and computes remaining deadline time; `:178-240` applies it to writes and reads; `:384-463` owns and propagates one deadline per client and disconnects on expiry.
+- `tests/src/core/ControlShutdownHookTest.cpp:132-150,188-239` connects to a named pipe and asserts that a pending client read completes with a disconnect after the idle timeout.
 
-The gate logs are `gate-1.log` and `gate-2.log` in the run log folder above. The available `fff grep` tool was not exposed in this session; targeted `rg` searches found the gate regression lines recorded here.
+### Evidence
+
+| Check | Exact command | Result |
+| --- | --- | --- |
+| Pre-fix test-target build (Linux; Windows slot excluded) | `cmake --build build --target ControlShutdownHookTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/build-2.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 0 |
+| Pre-fix focused ctest (Linux; not a Windows RED result) | `ctest -R '^ControlShutdownHookTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/test-1.log 2>&1; status=$?; echo EXIT=$status; exit $status` (cwd: `build/tests`) | EXIT 0; 1/1 ctest executable |
+| Post-fix affected-target build (before final Windows-only test timing assertion edit) | `cmake --build build --target zene ControlShutdownHookTest -- -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/build-3.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 0; both targets built |
+| Post-fix focused ctest (Linux; Windows slot excluded) | `ctest -R '^ControlShutdownHookTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/test-2.log 2>&1; status=$?; echo EXIT=$status; exit $status` (cwd: `build/tests`) | EXIT 0; 1/1 ctest executable |
+| Rebuild after the final Windows-only test timing assertion edit | `cmake --build build --target zene ControlShutdownHookTest -- -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/build-4.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 143; canceled after 8 minutes queued behind the shared build-slot guard; no compilation started |
+| Native named-pipe RED on original product code | Not run | No Windows-capable build on this host |
+| Native named-pipe GREEN after fix | Not run | No Windows-capable build on this host |
+| Reversed product-patch RED proof | Not run | No Windows-capable build on this host |
+| Complexity ratchet | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/gate-3.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 1; six unrelated new CCN regressions, none in changed files |
+| File-length ratchet | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/gate-4.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 1; fourteen unrelated over-limit files, none in changed files |
+| Windows SDK probe | `printf '#include <windows.h>\n' > build/windows-sdk-probe.cpp; clang-cl /nologo /c /TP /Fo:build/windows-sdk-probe.obj build/windows-sdk-probe.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/windows-sdk-probe-1.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 1; `windows.h` not found |
+| MinGW availability | `command -v x86_64-w64-mingw32-g++ > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/toolchain-1.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 1; compiler absent |
+| Host platform | `uname -s > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/platform-1.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 0; `Linux` |
+| `fff` availability | `command -v fff > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/toolchain-2.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 1; unavailable in this session; logs were searched with `rg` |
+
+An initial queued duplicate pre-fix build ran `cmake --build build --target ControlShutdownHookTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r2/logs/build-1.log 2>&1; echo EXIT=$?` and wrote `Built target ControlShutdownHookTest`, but the wrapper did not surface its shell exit code. I reran it as `build-2.log` and rely on the captured EXIT 0 above.
+
+### Files in this commit
+
+- `include/ControlServer.h`
+- `src/core/ControlServerWin32.cpp`
+- `tests/src/core/ControlShutdownHookTest.cpp`
+- `docs/qwen-fixes-2026-10/cluster-new-p10-87.md`
+
+The changed source and test files were already registered in `tests/fork-sources.txt`; no new source file was added.

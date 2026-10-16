@@ -66,6 +66,11 @@
 #include <sys/un.h>
 #include <unistd.h>
 #endif
+#if defined(Q_OS_WIN)
+#include <windows.h>
+
+#include <string>
+#endif
 
 #include <type_traits>
 
@@ -114,6 +119,35 @@ ReplyDrain drainReplyUntilClosedOrComplete(int fd, qint64 expectedBytes)
 }
 #endif
 
+#if defined(Q_OS_WIN)
+struct TestWinHandle
+{
+	HANDLE handle = INVALID_HANDLE_VALUE;
+	~TestWinHandle()
+	{
+		if (handle != nullptr && handle != INVALID_HANDLE_VALUE) { CloseHandle(handle); }
+	}
+};
+
+HANDLE connectToNamedPipe(const QString& path)
+{
+	const std::wstring nativePath = path.toStdWString();
+	QElapsedTimer timeout;
+	timeout.start();
+	while (timeout.elapsed() < 5000)
+	{
+		const HANDLE pipe = CreateFileW(nativePath.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
+			nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+		if (pipe != INVALID_HANDLE_VALUE) { return pipe; }
+		const DWORD error = GetLastError();
+		if (error == ERROR_PIPE_BUSY) { WaitNamedPipeW(nativePath.c_str(), 100); }
+		else if (error == ERROR_FILE_NOT_FOUND) { Sleep(10); }
+		else { return INVALID_HANDLE_VALUE; }
+	}
+	return INVALID_HANDLE_VALUE;
+}
+#endif
+
 } // namespace
 
 class ControlShutdownHookTest : public QObject
@@ -149,6 +183,61 @@ private slots:
 		QCOMPARE(exchanged.at(1).at(0).toByteArray(), missingIdRequest);
 		QCOMPARE(exchanged.at(1).at(1).toByteArray(), missingIdResponse);
 	}
+
+#if defined(Q_OS_WIN)
+	void anIdleNamedPipePeerIsDisconnected()
+	{
+		ControlServer server(ControlRegistry::instance());
+		const QString path = QStringLiteral("\\\\.\\pipe\\zene-control-idle-%1-%2")
+			.arg(GetCurrentProcessId()).arg(GetTickCount64());
+		QString error;
+		QVERIFY2(server.listen(path, &error), qPrintable(error));
+
+		TestWinHandle pipe;
+		pipe.handle = connectToNamedPipe(path);
+		QVERIFY2(pipe.handle != INVALID_HANDLE_VALUE, "could not connect to the test named pipe");
+		QElapsedTimer idleWait;
+		idleWait.start();
+		TestWinHandle event;
+		event.handle = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		QVERIFY(event.handle != nullptr);
+
+		char byte = 0;
+		DWORD bytesRead = 0;
+		OVERLAPPED operation{};
+		operation.hEvent = event.handle;
+		if (ReadFile(pipe.handle, &byte, sizeof(byte), &bytesRead, &operation))
+		{
+			QCOMPARE(bytesRead, DWORD{0});
+			QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+			return;
+		}
+		const DWORD startError = GetLastError();
+		if (startError == ERROR_BROKEN_PIPE || startError == ERROR_PIPE_NOT_CONNECTED)
+		{
+			QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+			return;
+		}
+		QVERIFY2(startError == ERROR_IO_PENDING, "the named-pipe read did not pend");
+
+		const DWORD wait = WaitForSingleObject(event.handle,
+			static_cast<DWORD>(ClientIdleTimeoutMs + 5000));
+		if (wait != WAIT_OBJECT_0)
+		{
+			CancelIoEx(pipe.handle, &operation);
+			GetOverlappedResult(pipe.handle, &operation, &bytesRead, TRUE);
+			QVERIFY2(false, "the idle named-pipe client was not disconnected before the deadline");
+		}
+
+		QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+		const BOOL completed = GetOverlappedResult(pipe.handle, &operation, &bytesRead, FALSE);
+		const DWORD completionError = completed ? ERROR_SUCCESS : GetLastError();
+		const bool disconnected = (completed && bytesRead == 0)
+			|| (!completed && (completionError == ERROR_BROKEN_PIPE
+				|| completionError == ERROR_PIPE_NOT_CONNECTED));
+		QVERIFY2(disconnected, "the idle named-pipe read completed without a disconnect");
+	}
+#endif
 
 	//! The first half: the hook survives a registry instance it was not
 	//! registered on. destroy() then instance() is exactly the sequence that

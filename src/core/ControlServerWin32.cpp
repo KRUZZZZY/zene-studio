@@ -45,6 +45,7 @@
 //     OVERLAPPED, so closeWin32() can stop any thread without closing a handle
 //     that thread is inside (a blocking ConnectNamedPipe or ReadFile cannot be
 //     stopped that way, and closing the handle underneath it is undefined);
+//     pending client operations also wait only to that client's idle deadline;
 //   * dispatchLine() ALWAYS runs on the server's thread (the object's own
 //     thread), through a queued call - the control surface, the engine and the
 //     journal are not thread-safe and the POSIX path dispatches from the event
@@ -133,17 +134,21 @@ struct Win32Dispatch
 	QSemaphore answered;
 };
 
-//! Wait for ONE overlapped pipe operation to complete, or for the listener to go
-//! away.  Returns true when it completed, false when the instance is closing (the
-//! operation is cancelled; the handle stays usable, the caller drops it).
-bool waitForIo(HANDLE pipe, OVERLAPPED* operation, HANDLE quitEvent, DWORD* transferred)
+//! Wait for ONE overlapped pipe operation, bounded by its client idle deadline
+//! (or the infinite accept wait), or for the listener to go away.  On either
+//! timeout or shutdown, cancel and complete it before its caller releases the
+//! stack OVERLAPPED and buffer.
+bool waitForIo(HANDLE pipe, OVERLAPPED* operation, HANDLE quitEvent, DWORD timeoutMs,
+	DWORD* transferred)
 {
 	*transferred = 0;
 	const HANDLE waits[2] = { operation->hEvent, quitEvent };
-	if (WaitForMultipleObjects(2, waits, FALSE, INFINITE) != WAIT_OBJECT_0)
+	if (WaitForMultipleObjects(2, waits, FALSE, timeoutMs) != WAIT_OBJECT_0)
 	{
 		// CancelIoEx only REQUESTS the cancel: until the operation completes the kernel
 		// may still write the OVERLAPPED and the buffer, both in the caller's frame.
+		// GetOverlappedResult(TRUE) joins that completion, including the race where
+		// the I/O finished as its deadline expired and CancelIoEx found no operation.
 		CancelIoEx(pipe, operation);
 		GetOverlappedResult(pipe, operation, transferred, TRUE);
 		return false;
@@ -151,10 +156,27 @@ bool waitForIo(HANDLE pipe, OVERLAPPED* operation, HANDLE quitEvent, DWORD* tran
 	return GetOverlappedResult(pipe, operation, transferred, TRUE) != FALSE;
 }
 
+//! Remaining wait for this client's absolute idle deadline.  A fresh deadline
+//! is published only after bytes move on its pipe, so pending reads and writes
+//! cannot hold an otherwise idle connection forever.
+DWORD clientIdleWaitMs(quint64 deadlineMs)
+{
+	const ULONGLONG now = GetTickCount64();
+	const ULONGLONG deadline = static_cast<ULONGLONG>(deadlineMs);
+	return deadline <= now ? 0 : static_cast<DWORD>(deadline - now);
+}
+
+quint64 nextClientIdleDeadlineMs()
+{
+	return static_cast<quint64>(GetTickCount64())
+		+ static_cast<quint64>(ControlServer::ClientIdleTimeoutMs);
+}
+
 //! Write every byte of \p bytes to \p pipe, or return false when the peer is
 //! gone or the instance is closing.  Chunked: a byte-mode pipe completes a write
 //! when its buffer takes what it can, so the tail is written by the next call.
-bool writeAll(HANDLE pipe, HANDLE ioEvent, HANDLE quitEvent, const QByteArray& bytes)
+bool writeAll(HANDLE pipe, HANDLE ioEvent, HANDLE quitEvent, const QByteArray& bytes,
+	quint64* idleDeadlineMs)
 {
 	int sent = 0;
 	while (sent < bytes.size())
@@ -169,9 +191,11 @@ bool writeAll(HANDLE pipe, HANDLE ioEvent, HANDLE quitEvent, const QByteArray& b
 		{
 			const DWORD error = GetLastError();
 			if (error != ERROR_IO_PENDING) { return false; }
-			if (!waitForIo(pipe, &operation, quitEvent, &written)) { return false; }
+			if (!waitForIo(pipe, &operation, quitEvent,
+				clientIdleWaitMs(*idleDeadlineMs), &written)) { return false; }
 		}
 		sent += static_cast<int>(written);
+		if (written > 0) { *idleDeadlineMs = nextClientIdleDeadlineMs(); }
 	}
 	return true;
 }
@@ -198,7 +222,8 @@ QByteArray overCapRefusalLine()
 //! One overlapped read: whatever the peer has sent is appended to \p buffer.
 //! Returns false when this connection is over - the peer closed its end, the pipe
 //! failed, or the instance is closing (the quit event cancels the pending read).
-bool readChunk(HANDLE pipe, HANDLE ioEvent, HANDLE quitEvent, QByteArray* buffer)
+bool readChunk(HANDLE pipe, HANDLE ioEvent, HANDLE quitEvent, QByteArray* buffer,
+	quint64* idleDeadlineMs)
 {
 	char chunk[kReadChunkBytes];
 	OVERLAPPED operation;
@@ -209,10 +234,12 @@ bool readChunk(HANDLE pipe, HANDLE ioEvent, HANDLE quitEvent, QByteArray* buffer
 	if (!ReadFile(pipe, chunk, sizeof(chunk), &got, &operation))
 	{
 		if (GetLastError() != ERROR_IO_PENDING) { return false; } // the peer is gone
-		if (!waitForIo(pipe, &operation, quitEvent, &got)) { return false; }
+		if (!waitForIo(pipe, &operation, quitEvent,
+			clientIdleWaitMs(*idleDeadlineMs), &got)) { return false; }
 	}
 	if (got == 0) { return false; } // a clean EOF: the peer closed its end
 	buffer->append(chunk, static_cast<int>(got));
+	*idleDeadlineMs = nextClientIdleDeadlineMs();
 	return true;
 }
 
@@ -335,7 +362,8 @@ void ControlServer::win32AcceptLoop()
 				// Connected, or closeWin32() cancelled the pending connect: waitForIo
 				// waits the cancel out, and the quit check below closes the instance.
 				DWORD transferred = 0;
-				connected = waitForIo(pipe, &operation, asHandle(m_win32QuitEvent), &transferred);
+				connected = waitForIo(pipe, &operation, asHandle(m_win32QuitEvent),
+					INFINITE, &transferred);
 			}
 		}
 
@@ -370,9 +398,10 @@ void ControlServer::win32ClientLoop(void* hPipe)
 
 	QByteArray buffer;
 	bool draining = false;
+	quint64 idleDeadlineMs = nextClientIdleDeadlineMs();
 	while (!m_win32Quit.load())
 	{
-		if (!readChunk(pipe, ioEvent, quitEvent, &buffer)) { break; }
+		if (!readChunk(pipe, ioEvent, quitEvent, &buffer, &idleDeadlineMs)) { break; }
 		if (draining)
 		{
 			// The over-cap line was refused: the rest of what this peer sends is
@@ -381,7 +410,8 @@ void ControlServer::win32ClientLoop(void* hPipe)
 			buffer.clear();
 			continue;
 		}
-		if (!win32ServeBuffer(hPipe, ioEvent, quitEvent, buffer, &draining)) { break; }
+		if (!win32ServeBuffer(hPipe, ioEvent, quitEvent, buffer, &draining,
+			&idleDeadlineMs)) { break; }
 	}
 
 	DisconnectNamedPipe(pipe);
@@ -390,7 +420,7 @@ void ControlServer::win32ClientLoop(void* hPipe)
 }
 
 bool ControlServer::win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEvent,
-	QByteArray& buffer, bool* overCap)
+	QByteArray& buffer, bool* overCap, quint64* idleDeadlineMs)
 {
 	const HANDLE pipe = asHandle(hPipe);
 	const HANDLE ioEvent = asHandle(hIoEvent);
@@ -411,7 +441,8 @@ bool ControlServer::win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEve
 		// never-ended case below.
 		if (line.size() > MaxRequestLineBytes)
 		{
-			if (!writeAll(pipe, ioEvent, quitEvent, overCapRefusalLine() + '\n')) { return false; }
+			if (!writeAll(pipe, ioEvent, quitEvent, overCapRefusalLine() + '\n',
+				idleDeadlineMs)) { return false; }
 			buffer.clear();
 			buffer.squeeze();
 			*overCap = true;
@@ -419,7 +450,8 @@ bool ControlServer::win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEve
 		}
 		const QByteArray reply = win32Dispatch(line);
 		if (m_win32Quit.load()) { return false; }
-		if (!reply.isEmpty() && !writeAll(pipe, ioEvent, quitEvent, reply + '\n')) { return false; }
+		if (!reply.isEmpty() && !writeAll(pipe, ioEvent, quitEvent, reply + '\n',
+			idleDeadlineMs)) { return false; }
 		newline = buffer.indexOf('\n');
 	}
 
@@ -428,7 +460,8 @@ bool ControlServer::win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEve
 	// rule, and the same sentence).
 	if (buffer.size() > MaxRequestLineBytes)
 	{
-		if (!writeAll(pipe, ioEvent, quitEvent, overCapRefusalLine() + '\n')) { return false; }
+		if (!writeAll(pipe, ioEvent, quitEvent, overCapRefusalLine() + '\n',
+			idleDeadlineMs)) { return false; }
 		buffer.clear();
 		buffer.squeeze();
 		*overCap = true;
