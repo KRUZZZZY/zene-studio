@@ -638,7 +638,7 @@ private slots:
 	}
 
 	//! The gap table keeps every lost frame once it overflows the bounded track: 600 losses into
-	//! 256 primary + 256 overflow records merge only the remainder, so positions stay exact.
+	//! 256 primary + 256 overflow records merge only the remainder into the newest record.
 	void gapTableKeepsEveryLostFrameWhenItOverflows()
 	{
 		SampleRecordGaps gaps;  // default 256 primary + 256 overflow records
@@ -650,7 +650,7 @@ private slots:
 		std::uint64_t lastLength = 0;
 		while (const auto gap = gaps.takeDue(1000, true))
 		{
-			QCOMPARE(gap->position, records < 512 ? records : std::uint64_t{511});  // timing kept
+			QCOMPARE(gap->position, records);  // stored position (merged extras stay at the newest record's position)
 			lost += gap->length;
 			lastLength = gap->length;
 			++records;
@@ -689,6 +689,46 @@ private slots:
 		QCOMPARE(static_cast<qulonglong>(got[2].second), static_cast<qulonglong>(2));
 		QCOMPARE(static_cast<qulonglong>(got[3].first), static_cast<qulonglong>(20));
 		QCOMPARE(static_cast<qulonglong>(got[3].second), static_cast<qulonglong>(5));  // 4 + 1 merged
+	}
+
+	//! A recording whose gap table keeps each separated loss on its own record preserves the
+	//! exact nonzero/silence ordering end to end, instead of shifting a later accepted block.
+	void accumulatorPreservesSampleOrderAcrossSeparatedLosses()
+	{
+		constexpr std::size_t ringFrames = 8;
+		constexpr std::size_t gapSlots = 1;  // 1 primary + 1 preallocated overflow record
+		SampleRecordAccumulator accum{48000, ringFrames, gapSlots};
+
+		std::vector<SampleFrame> expected;
+		std::uint64_t nextValue = 1;
+		auto pushBurst = [&]() {
+			constexpr std::size_t burstFrames = ringFrames + 1;  // one frame past the ring's capacity
+			std::vector<SampleFrame> block(burstFrames);
+			for (std::size_t i = 0; i < burstFrames; ++i)
+			{
+				block[i] = SampleFrame(static_cast<sample_t>(nextValue + i),
+					static_cast<sample_t>(nextValue + i));
+			}
+			nextValue += burstFrames;
+			for (std::size_t i = 0; i < ringFrames; ++i) { expected.push_back(block[i]); }
+			expected.emplace_back();  // the single dropped frame is padded as silence
+			accum.append(block.data(), static_cast<f_cnt_t>(burstFrames));
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		};
+
+		// Two losses exceed the primary track (1 slot) but fit the combined table (2 slots).
+		for (int i = 0; i < 2; ++i) { pushBurst(); }
+
+		QVERIFY2(accum.framesDropped() == 2, "each burst should have dropped exactly one frame");
+
+		auto take = accum.finish();
+		QVERIFY2(take != nullptr, "the accumulator produced no take");
+		QCOMPARE(static_cast<qulonglong>(take->size()), static_cast<qulonglong>(expected.size()));
+		for (std::size_t i = 0; i < expected.size(); ++i)
+		{
+			QVERIFY2(take->data()[i].left() == expected[i].left() && take->data()[i].right() == expected[i].right(),
+				qPrintable(QString("frame %1 of the take does not match the expected sequence").arg(i)));
+		}
 	}
 
 	//! A take whose gap table overflows still has its full length, and every dropped frame is
