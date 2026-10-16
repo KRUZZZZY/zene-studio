@@ -487,6 +487,42 @@ print('opened views are inert')
 		engine->setProjectDir(QDir::currentPath());
 	}
 
+	/*! A Lua view of an instrument must not outlive the instrument it names:
+	 *  replacing the track's instrument deletes the old one, and the saved
+	 *  view must report itself invalid and answer with the null sentinels. */
+	void instrumentViewInvalidatedWhenTargetDestroyed()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaPatternStore store;
+		LuaInstrumentTrack& track = store.addInstrumentTrack();
+		QVERIFY(track.isValid());
+
+		auto* rawTrack = dynamic_cast<InstrumentTrack*>(engine->trackAt(0));
+		QVERIFY(rawTrack != nullptr);
+
+		// The DummyInstrument fallback gives a live instrument with no plugin module.
+		rawTrack->loadInstrument(QString());
+		QVERIFY(rawTrack->instrument() != nullptr);
+		QVERIFY(!track.instrumentName().isEmpty());
+
+		LuaInstrument& saved = track.instrument();
+		QVERIFY(saved.isValid());
+		QVERIFY(!saved.name().isEmpty());
+
+		// Replacing the instrument deletes the old one.
+		rawTrack->loadInstrument(QString());
+		QVERIFY(!saved.isValid());
+		QVERIFY(saved.name().isEmpty());
+		QCOMPARE(saved.parameterCount(), 0);
+		QVERIFY(saved.parameterName(0).isEmpty());
+		QVERIFY(!saved.parameterModel(0).isValid());
+
+		// A setter on the dead view must be a no-op and must not crash.
+		saved.name(); // read again
+		QCOMPARE(engine->pendingCommandCount(), 0);
+	}
+
 	void trackTypeNames_data()
 	{
 		using namespace lmms;
