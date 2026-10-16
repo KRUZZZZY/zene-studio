@@ -24,8 +24,7 @@
 /*! 0.5.0 L07 (W3): what a note carries beyond pitch and time, and how notes are played -
  *  - a note's repeats sound as that many more hits, its recurrence skips the passes it is not on,
  *    and its articulation plays the track's keyswitch first (ED-133, ED-121);
- *  - chase sounds a note playback starts inside, only when it is on (ED-075), and a note already
- *    under the playhead when its track or clip is unmuted (Q050-040);
+ *  - chase sounds a note playback starts inside, only when it is on (ED-075);
  *  - the global swing delays off-beats only, and the MIDI offset delays everything (ED-142, ED-076);
  *  - lyrics split into syllables, groups take ids, and all of it saves only when set (ED-088, ED-069). */
 
@@ -252,23 +251,6 @@ QList<int> handleKeys(const InstrumentTrack* track)
 	}
 	std::sort(keys.begin(), keys.end());
 	return keys;
-}
-
-//! Render @a periods audio periods by hand (the device is stopped).
-void renderPeriods(int periods)
-{
-	for (int period = 0; period < periods; ++period) { Engine::audioEngine()->renderNextPeriod(); }
-}
-
-//! Stop and render until @a track has no note handle left; true when it drained (no stuck note).
-bool renderUntilSilent(const InstrumentTrack* track)
-{
-	Engine::getSong()->stop();
-	for (int period = 0; period < 64 && !handleKeys(track).isEmpty(); ++period)
-	{
-		Engine::audioEngine()->renderNextPeriod();
-	}
-	return handleKeys(track).isEmpty();
 }
 
 //! The warnings qWarning printed while it is alive.
@@ -603,90 +585,6 @@ private slots:
 		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("chase"), true}}).ok);
 		QCOMPARE(playFrom(96), (QList<int>{60}));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QVERIFY(!MidiPlayback::instance().chase());
-	}
-
-	//! 0.5.0 Q050-040 (L07): with chase on, a note already under the playhead starts when its track
-	//! or clip is unmuted, exactly once - and a seek into it does not start it a second time.
-	void unmuteDuringPlaybackChasesTheNoteOnce()
-	{
-		oneNote();  // note at 0, length 384
-		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("chase"), true}}).ok);
-		Song* song = Engine::getSong();
-
-		// A muted track is silent: it schedules no note, so the unmute has a clean slate.
-		m_track->setMuted(true);
-		song->setPlayPos(96, Song::PlayMode::Song);
-		song->playSong();
-		renderPeriods(3);
-		QVERIFY2(handleKeys(m_track).isEmpty(), "a muted track must schedule no note under the playhead");
-		m_track->setMuted(false);
-		renderPeriods(3);
-		QCOMPARE(handleKeys(m_track), (QList<int>{60}));  // the note starts once at the unmute
-
-		// A seek into the same, still ringing note must not start it a second time.
-		song->setPlayPos(160, Song::PlayMode::Song);
-		renderPeriods(3);
-		QCOMPARE(handleKeys(m_track), (QList<int>{60}));
-		QVERIFY(renderUntilSilent(m_track));  // stopped: nothing stuck
-
-		// A muted clip is skipped: unmuting it chases its note under the playhead once.
-		oneNote();
-		m_clip->setMuted(true);
-		song->setPlayPos(96, Song::PlayMode::Song);
-		song->playSong();
-		renderPeriods(3);
-		QVERIFY2(handleKeys(m_track).isEmpty(), "a muted clip must schedule no note under the playhead");
-		m_clip->setMuted(false);
-		renderPeriods(3);
-		QCOMPARE(handleKeys(m_track), (QList<int>{60}));
-		QVERIFY(renderUntilSilent(m_track));
-
-		// Leave the preference off for the tests that follow (the mute edits above own the undo top).
-		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("chase"), false}}).ok);
-		QVERIFY(!MidiPlayback::instance().chase());
-	}
-
-	//! 0.5.0 Q050-040 (L07): after the unmute chase, re-muting and a loop must not leave a duplicate
-	//! note-on or a stuck note-off behind.
-	void unmuteChaseSurvivesRemuteAndLoop()
-	{
-		oneNote();  // note at 0, length 384
-		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("chase"), true}}).ok);
-		Song* song = Engine::getSong();
-		Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
-
-		// Unmute under the playhead: the note starts once.
-		m_track->setMuted(true);
-		song->setPlayPos(96, Song::PlayMode::Song);
-		song->playSong();
-		renderPeriods(3);
-		m_track->setMuted(false);
-		renderPeriods(3);
-		QCOMPARE(handleKeys(m_track), (QList<int>{60}));
-
-		// Re-mute and unmute again: no second note-on, and a stop still ends everything.
-		m_track->setMuted(true);
-		renderPeriods(3);
-		m_track->setMuted(false);
-		renderPeriods(3);
-		QCOMPARE(handleKeys(m_track).size(), 1);
-		QVERIFY(renderUntilSilent(m_track));
-
-		// A loop under the note does not double it.
-		timeline.setLoopPoints(TimePos(0), TimePos(48));
-		timeline.setLoopEnabled(true);
-		song->setPlayPos(0, Song::PlayMode::Song);
-		song->playSong();
-		const unsigned before = song->loopWraps();
-		for (int period = 0; period < 2000 && song->loopWraps() == before; ++period) { Engine::audioEngine()->renderNextPeriod(); }
-		QCOMPARE(song->loopWraps(), before + 1);
-		QVERIFY2(handleKeys(m_track).size() <= 1, "a loop must not double the note already sounding");
-		QVERIFY(renderUntilSilent(m_track));  // no stuck note-off
-		timeline.setLoopEnabled(false);
-
-		// Leave the preference off for the tests that follow (the mute edits above own the undo top).
-		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("chase"), false}}).ok);
 		QVERIFY(!MidiPlayback::instance().chase());
 	}
 

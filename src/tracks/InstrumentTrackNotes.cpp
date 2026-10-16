@@ -146,6 +146,8 @@ bool InstrumentTrack::noteStartsNow(const Note& note, const TimePos& curStart, c
 
 bool InstrumentTrack::noteIsAlreadySounding(const Note& note, const MidiClip* clip) const
 {
+	// The originating clip first: a note handle carries its clip-relative position (NotePlayHandle
+	// IS a Note), so a same-key note in another overlapping clip is NOT this note (Q050-040 r2).
 	// The clip's transpose, as decorateNoteHandle applies it, so the keys compare (ChordFollow's
 	// re-keying is not mirrored: on such a track a chase may start a note that is already ringing).
 	const int transpose = clip->clipEdits().transpose;
@@ -154,6 +156,7 @@ bool InstrumentTrack::noteIsAlreadySounding(const Note& note, const MidiClip* cl
 	{
 		auto* noteHandle = dynamic_cast<NotePlayHandle*>(handle);
 		if (noteHandle == nullptr || noteHandle->instrumentTrack() != this) { continue; }
+		if (noteHandle->clip() != clip) { continue; }
 		if (noteHandle->pos() != note.pos() || noteHandle->key() != key) { continue; }
 		// A released handle is a release tail, not the note: a loop may sound the note again over it.
 		if (noteHandle->isReleased()) { continue; }
@@ -228,6 +231,7 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 		// The last hit takes what the even split leaves over, so the note still ends where it ends.
 		const f_cnt_t length = hit + 1 < hits ? each : frames - hit * each;
 		NotePlayHandle* handle = NotePlayHandleManager::acquire(this, offset + hit * each, length, note);
+		handle->setClip(trigger.clip);  // Q050-040: the chase check must tell this clip's note from another's
 		handle->setPatternTrack(trigger.patternTrack);
 		// Velocity jitter, the slide source, the song-global offset and the clip's transpose.
 		decorateNoteHandle(handle, trigger.clip, trigger.note, trigger.first, trigger.songGlobal, songOffset, trigger.midiSeed);

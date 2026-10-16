@@ -217,7 +217,9 @@ public:
 	//! pass (Q050-040); a note an already-sounding handle covers is not started again.
 	bool noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip, bool chaseNow) const;
 	//! Whether a live (not released) note play handle of this track already plays @a note:
-	//! the chase must not double a note that a seek or loop left sounding (Q050-040).
+	//! the chase must not double a note that a seek or loop left sounding (Q050-040). The handle's
+	//! originating clip must be @a clip itself: a same-key note in another overlapping clip is a
+	//! different note (Q050-040 r2).
 	bool noteIsAlreadySounding(const Note& note, const MidiClip* clip) const;
 	//! Whether the note plays this time: not muted, on this pass, past its chance roll (InstrumentTrackNotes.cpp).
 	bool notePlaysNow(const Note& note, uint32_t midiSeed) const;

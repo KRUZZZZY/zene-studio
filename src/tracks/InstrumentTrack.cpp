@@ -837,22 +837,25 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	const bool muted = isMuted();
 	const bool chase = MidiPlayback::instance().chase();
 	const bool trackUnmutedNow = chase && !muted && m_mutedLastPlay;
-	m_mutedLastPlay = muted;
 
 	// The frozen take (freeze / bounce-in-place): the render IS this track's
 	// output, so a pass inside the take's window plays the take and never
 	// reaches the instrument - which is what "the source is disabled" means in
 	// the engine. A single-clip playback (_clip_num >= 0: the piano roll's and
 	// the beat/bassline editor's own play mode) is NOT the arrangement and keeps
-	// playing the source.
+	// playing the source. The take's pass locks nothing of this track, so it still records the mute.
 	if (isFrozen() && _clip_num < 0)
 	{
+		m_mutedLastPlay = muted;
 		return playFrozenTake(_start, _frames, _offset);
 	}
 	if( ! m_instrument || ! tryLock() )
 	{
+		// No pass happened - there is no instrument, or another thread holds the processing
+		// lock - so the edge is kept for the pass that does take the lock (Q050-040 r2).
 		return false;
 	}
+	m_mutedLastPlay = muted;
 	// With chase on a muted track schedules nothing: a silent handle left under the playhead would
 	// block the unmute chase below (and double the note on a seek into it) instead of starting once.
 	if (chase && muted)

@@ -42,6 +42,7 @@ namespace lmms
 {
 
 class InstrumentTrack;
+class MidiClip;
 class NotePlayHandle;
 
 using NotePlayHandleList = QList<NotePlayHandle*>;
@@ -226,6 +227,19 @@ public:
 		return m_origin;
 	}
 
+	/*! 0.5.0 Q050-040 (L07): the clip this note was triggered from, so the chase check can tell a
+	 *  same-key note at the same clip-relative position in another overlapping clip apart from this
+	 *  one. Null for live-input, keyswitch and arpeggio/stacking handles, which come from no clip. */
+	const MidiClip* clip() const
+	{
+		return m_clip;
+	}
+
+	void setClip(const MidiClip* clip)
+	{
+		m_clip = clip;
+	}
+
 	/*! Returns whether note has children */
 	bool isMasterNote() const
 	{
@@ -387,6 +401,9 @@ private:
 
 	int m_midiChannel;
 	Origin m_origin;
+
+	//! 0.5.0 Q050-040: the originating clip instance (see clip()); null outside clip playback.
+	const MidiClip* m_clip = nullptr;
 
 	bool m_frequencyNeedsUpdate;				// used to update pitch
 	int m_slideSourceKey;					// key a slide note glides from, -1 = none
