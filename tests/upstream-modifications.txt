@@ -2189,6 +2189,7 @@ src/gui/instrument/LfoGraph.cpp	qwen new-p9-252: return from toggleAmountModel w
 plugins/Sf2Player/PatchesDialog.cpp	cluster new-p9-344: read the selected preset's soundfont when applying FluidSynth bank offsets; forced CONFIG_FLUID_BANK_OFFSET compile regression.
 plugins/SpectrumAnalyzer/SaSpectrumView.h	new-p9-412 (2026-10-10): initialize the decay accumulator before drawSpectrum reads it on first paint; regression: SaSpectrumView.
 plugins/SpectrumAnalyzer/SaSpectrumView.cpp	cluster new-p10-359: hold m_dataAccess while the GUI reads both FFT spectra into display buffers; regression: SaSpectrumView::spectrumReadsUseDataAccessLock.
+plugins/SpectrumAnalyzer/SaProcessor.cpp	cluster new-p10-359 r2: hold m_dataAccess after m_reallocationAccess while spectrumNotEmpty scans both FFT channels; regression: SaSpectrumView::spectrumNotEmptyUsesDataAccessLock.
 plugins/TapTempo/TapTempo.cpp	cluster new-p9-463: TapTempo::sync ignores the song until its measured BPM is positive and finite; TapTempoTest covers the no-taps path.
 plugins/TapTempo/TapTempo.cpp	new-p9-462: ignore tap intervals that truncate to zero milliseconds before storing the interval or dividing for BPM; extract the interval update to accept a controlled steady-clock timestamp for deterministic coverage.
 plugins/TapTempo/TapTempo.h	new-p9-462: declare the controlled-time interval update helper implemented in TapTempo.cpp.

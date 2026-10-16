@@ -43,6 +43,25 @@ private slots:
 		QVERIFY2(lockedReads.match(refresh).hasMatch(),
 			"both spectrum channels must be read while m_dataAccess is held");
 	}
+
+	void spectrumNotEmptyUsesDataAccessLock()
+	{
+		QFile header(QString::fromUtf8(SA_SPECTRUM_VIEW_HEADER));
+		QVERIFY2(header.open(QIODevice::ReadOnly | QIODevice::Text),
+			qPrintable(header.errorString()));
+
+		const auto sourcePath = QFileInfo(header.fileName()).absolutePath() + "/SaProcessor.cpp";
+		QFile source(sourcePath);
+		QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text),
+			qPrintable(source.errorString()));
+
+		const QString sourceText = QString::fromUtf8(source.readAll());
+		const QRegularExpression synchronizedScan(
+			R"(bool\s+SaProcessor::spectrumNotEmpty\(\)\s*\{\s*QMutexLocker\s+\w+\(&m_reallocationAccess\);\s*QMutexLocker\s+\w+\(&m_dataAccess\);\s*return\s+notEmpty\(m_normSpectrumL\)\s*\|\|\s*notEmpty\(m_normSpectrumR\);\s*\})",
+			QRegularExpression::DotMatchesEverythingOption);
+		QVERIFY2(synchronizedScan.match(sourceText).hasMatch(),
+			"spectrumNotEmpty must scan both channels under reallocationAccess then m_dataAccess");
+	}
 };
 
 QTEST_APPLESS_MAIN(SaSpectrumViewTest)

@@ -1,40 +1,39 @@
 # cluster new-p10-359
 
-Verdict: **BLOCKED**
+Verdict: FIXED
 
-The finding is real. `SaProcessor::analyze()` writes the normalized FFT spectra while holding `m_dataAccess` (`plugins/SpectrumAnalyzer/SaProcessor.cpp:127`). `SaSpectrumView::refreshPaths()` previously held only `m_reallocationAccess` (`plugins/SpectrumAnalyzer/SaSpectrumView.cpp:235`) while reading both channels at lines 255-256. It now holds `m_dataAccess` around both `updateBuffers()` calls (`SaSpectrumView.cpp:255-259`) and releases it before path construction. The lock order remains reallocation access, then data access.
+The finding was real. SaSpectrumView::drawSpectrum() calls SaProcessor::spectrumNotEmpty() at plugins/SpectrumAnalyzer/SaSpectrumView.cpp:182. analyze() writes the normalized spectra under m_dataAccess at plugins/SpectrumAnalyzer/SaProcessor.cpp:127 and :181. spectrumNotEmpty() previously held only m_reallocationAccess while scanning those arrays. It now takes m_dataAccess second (SaProcessor.cpp:481-485), preserving the required reallocation-before-data lock order. The existing refreshPaths() reads remain protected by m_dataAccess (SaSpectrumView.cpp:256-258).
 
-`SaSpectrumViewTest::spectrumReadsUseDataAccessLock` (`tests/src/core/SaSpectrumViewTest.cpp:22-45`) checks that both spectrum reads are inside that lock scope. It failed before the production change and failed again after applying the reverse patch; it passed after restoring the fix.
+Added SaSpectrumViewTest::spectrumNotEmptyUsesDataAccessLock at tests/src/core/SaSpectrumViewTest.cpp:47-64. It verifies the reallocation lock is taken before the data lock and both spectrum scans occur under both locks. The test fails without the SaProcessor.cpp change and passes with it.
 
-The code and regression are verified, but the required gates block a clean completion. `complexity-gate.sh --check` reports six unrelated over-CCN functions in `XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsMixerStrip.cpp`, `ProjectRevisions.cpp`, and `ControlCommandsShortcuts.cpp`. `file-length-gate.sh --check` reports fourteen unrelated files over 500 lines as new-file regressions. Neither gate reports a regression in this change. The baselines were not changed.
+The affected CTest family ran 1 test: SaSpectrumView (#470). The focused RED run failed on the new assertion; the final GREEN run passed 1/1.
+
+The fff grep tool was not available in this session, so I searched the logs with one-term rg -n matches.
 
 ## Evidence
 
-The affected ctest family contains one test (`SaSpectrumView`, ctest #470).
+ctest commands below ran from /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-359/build/tests. Build, patch, and gate commands ran from the worktree root.
 
 | Proof | Exact command | Exit |
 |---|---|---:|
-| Initial RED | `ctest -R '^SaSpectrumView$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/test-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 8 |
-| Initial GREEN | `ctest -R '^SaSpectrumView$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/test-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 |
-| Reverse patch | `git diff -- plugins/SpectrumAnalyzer/SaSpectrumView.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/fix.patch; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 |
-| Rebuilt without fix | `cmake --build build --target zene analyzer SaSpectrumViewTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/build-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 |
-| Reverse-patch RED | `ctest -R '^SaSpectrumView$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/test-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 8 |
-| Restore fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/fix.patch; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 |
-| Rebuilt with fix | `cmake --build build --target zene analyzer SaSpectrumViewTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/build-5.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 |
-| Reverse-proof GREEN | `ctest -R '^SaSpectrumView$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/test-5.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/gate-3.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 1 |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/gate-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 1 |
+| Build test before product change | cmake --build build --target SaSpectrumViewTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/build-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 0 |
+| Initial RED | ctest -R '^SaSpectrumView$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/test-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 8 |
+| Build with fix | cmake --build build --target zene analyzer SaSpectrumViewTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/build-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 0 |
+| Initial GREEN | ctest -R '^SaSpectrumView$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/test-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 0 |
+| Reverse product patch | git diff -- plugins/SpectrumAnalyzer/SaProcessor.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/fix.patch; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 0 |
+| Rebuild without fix | cmake --build build --target zene analyzer SaSpectrumViewTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/build-3.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 0 |
+| Reverse-patch RED | ctest -R '^SaSpectrumView$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/test-3.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 8 |
+| Restore product patch | git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/fix.patch; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 0 |
+| Rebuild with fix restored | cmake --build build --target zene analyzer SaSpectrumViewTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/build-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 0 |
+| Final GREEN | ctest -R '^SaSpectrumView$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/test-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 0 |
+| Complexity gate | bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/gate-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 1 |
+| File-length gate | bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r2/logs/gate-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit 0 | 1 |
 
-Build commands before the reverse-patch proof also completed successfully:
+The gates remain red on unrelated existing findings: the complexity gate reports six over-CCN functions in XyPadPairTest.cpp, DawProjectReadTracks.cpp, ControlCommandsMixerTools.cpp, ControlCommandsMixerStrip.cpp, ProjectRevisions.cpp, and ControlCommandsShortcuts.cpp. The file-length gate reports fourteen unrelated files over 500 lines. Neither gate identified a regression in this change; no baselines were changed.
 
-- `cmake --build build --target SaSpectrumViewTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/build-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` — exit 0.
-- `cmake --build build --target zene SaSpectrumViewTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/build-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` — exit 0.
-- `cmake --build build --target zene analyzer SaSpectrumViewTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/build-3.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` — exit 0.
-- `ctest -R '^SaSpectrumView$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-359.r1/logs/test-3.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` — exit 0.
+## Files committed
 
-## Files in this change
-
-- `plugins/SpectrumAnalyzer/SaSpectrumView.cpp`
-- `tests/src/core/SaSpectrumViewTest.cpp`
-- `tests/upstream-modifications.txt`
-- `docs/qwen-fixes-2026-10/cluster-new-p10-359.md`
+- plugins/SpectrumAnalyzer/SaProcessor.cpp
+- tests/src/core/SaSpectrumViewTest.cpp
+- tests/upstream-modifications.txt
+- docs/qwen-fixes-2026-10/cluster-new-p10-359.md

@@ -481,6 +481,7 @@ void SaProcessor::clearHistory()
 bool SaProcessor::spectrumNotEmpty()
 {
 	QMutexLocker lock(&m_reallocationAccess);
+	QMutexLocker data_lock(&m_dataAccess);
 	return notEmpty(m_normSpectrumL) || notEmpty(m_normSpectrumR);
 }
 
