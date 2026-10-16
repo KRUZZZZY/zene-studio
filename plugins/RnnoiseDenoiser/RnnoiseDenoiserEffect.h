@@ -48,12 +48,8 @@ public:
 		return &m_controls;
 	}
 
-	//! A sample's denoised value comes out once its 480-sample frame is complete: 479 frames later. The
-	//! dry path is delayed to match, so the chain can compensate the whole effect (round 6).
-	int latencyFrames() const override
-	{
-		return RNNOISE_FRAME_SIZE - 1;
-	}
+	//! RNNoise is active only when the engine processes audio at its required 48 kHz rate.
+	int latencyFrames() const override;
 
 private:
 	RnnoiseDenoiserControls m_controls;
@@ -61,7 +57,8 @@ private:
 	// Opaque RNNoise denoise state pointer
 	struct DenoiseState* m_rnnoiseState;
 
-	// RNNoise processes exactly 480-sample frames (10 ms at 48 kHz)
+	// RNNoise expects exactly 480 samples for each 10 ms frame at 48 kHz.
+	static constexpr int RNNOISE_SAMPLE_RATE = 48000;
 	static constexpr int RNNOISE_FRAME_SIZE = 480;
 
 	// Input accumulation buffer (mono)

@@ -2595,3 +2595,6 @@ tests/src/plugins/VstEffectControlsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-141.md
 # cluster new-p10-377 (2026-10): SlicerT waveform zoom clamp regression test (fork-NEW).
 tests/src/plugins/SlicerTZoomTest.cpp
+# cluster new-p10-337 (2026-10): RNNoise processing-rate restriction regression and verification report.
+tests/src/plugins/RnnoiseDenoiserEffectTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p10-337.md

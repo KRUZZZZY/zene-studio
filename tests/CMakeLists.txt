@@ -51,6 +51,7 @@ set(LMMS_TESTS
 	# the test's own file; this test failed on that probe and passes on the fixed one.
 	src/core/AllocationProbeTest.cpp
 	src/plugins/LadspaChannelCountsTest.cpp
+	src/plugins/RnnoiseDenoiserEffectTest.cpp
 	src/plugins/VstEffectControlsTest.cpp
 	src/core/ArrayVectorTest.cpp
 	# Short ALSA writes must advance through every remaining frame in a period.
@@ -1356,6 +1357,24 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
 
 	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
+	if(LMMS_TEST_NAME STREQUAL "RnnoiseDenoiserEffectTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp
+			${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.cpp
+			${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.cpp
+			${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.h
+			${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/RnnoiseDenoiserControls.h
+			${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/RnnoiseDenoiserControlDialog.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser
+			${CMAKE_BINARY_DIR}/plugins/RnnoiseDenoiser)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=rnnoisedenoiser)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE rnnoise_vendored)
+		add_dependencies(${LMMS_TEST_NAME} rnnoise_vendored)
+		if(NOT MSVC)
+			target_link_libraries(${LMMS_TEST_NAME} PRIVATE m)
+		endif()
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "HydrogenImportTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/HydrogenImport/LocalFileMng.cpp)
@@ -1388,6 +1407,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
 	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
 	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "RnnoiseDenoiserEffectTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "VstSubPluginFeaturesTest")
