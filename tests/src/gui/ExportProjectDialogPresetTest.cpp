@@ -24,13 +24,18 @@
 
 /*! The export dialog now lists the saved render presets and can SAVE the settings it holds:
  *
- *  1. Save from the dialog: the rate/depth/stereo the combos hold become a stored preset and the
- *     picker selects it;
- *  2. reopen the dialog, select the preset: the settings rows move to the stored values and
- *     export.preset_apply reports the preset applied (so render.render is started with it);
+ *  1. Save from the dialog: the rate/depth/stereo the combos hold become a stored preset. Saving
+ *     writes ONE document and does NOT apply it, so the click is one undoable action;
+ *  2. clear the applied selection, reopen the dialog, switch the picker from Default Settings to
+ *     the saved preset: the settings rows move to the stored values and export.preset_apply
+ *     reports the preset applied (so render.render is started with it);
  *  3. render through the dialog's own Start button and parse the WAV the render wrote: its own
  *     header carries the preset's rate and bit depth, the chosen format's extension and stereo
  *     channels.
+ *
+ *  aSavedPresetIsOneUndoStep is the regression for (1): one control.undo reverses the whole Save
+ *  Preset action, which it could not if saving also applied the preset (that would be a second
+ *  checkpoint, and the first undo would leave the document behind).
  *
  *  Over a throwaway preset store (the working directory); the render path is RenderManager's own,
  *  the same one the dialog always used. */
@@ -59,6 +64,7 @@ namespace
 {
 
 const QString kPreset = QStringLiteral("Dialog 48k stereo");
+const QString kUndoPreset = QStringLiteral("Dialog one-undo preset");
 
 QComboBox* combo(QWidget* dialog, const char* name)
 {
@@ -71,12 +77,19 @@ QPushButton* button(QWidget* dialog, const QString& objectName)
 }
 
 //! The preset store's view of one preset, or an empty object.
-QJsonObject listed()
+QJsonObject listed(const QString& name = kPreset)
 {
 	const ControlResult listed = ControlRegistry::instance()->invoke(QStringLiteral("export.preset_list"),
-		{{QStringLiteral("name"), kPreset}});
+		{{QStringLiteral("name"), name}});
 	const QJsonArray presets = listed.result.value(QStringLiteral("presets")).toArray();
 	return presets.isEmpty() ? QJsonObject{} : presets.first().toObject();
+}
+
+//! What the render path is on right now, as the wire names it (empty = defaults).
+QString appliedPreset()
+{
+	return ControlRegistry::instance()->invoke(QStringLiteral("export.preset_list"), QJsonObject{})
+		.result.value(QStringLiteral("applied_preset")).toString();
 }
 
 //! What a RIFF/WAVE header says about the file: rate, bits and channels, or defaults on a miss.
@@ -149,9 +162,45 @@ private slots:
 		ControlRegistry::instance()->invoke(QStringLiteral("export.preset_apply"), QJsonObject{});
 		ControlRegistry::instance()->invoke(QStringLiteral("export.preset_remove"),
 			{{QStringLiteral("name"), kPreset}});
+		ControlRegistry::instance()->invoke(QStringLiteral("export.preset_remove"),
+			{{QStringLiteral("name"), kUndoPreset}});
 		setExportPresetNamePrompt({});
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	//! REWORK r2: one Save Preset click is ONE undoable action. Saving writes a document and does
+	//! not apply it, so one control.undo removes the document AND leaves the applied selection
+	//! where it was. Before the fix, saving also selected (applied) the new preset, so the top
+	//! checkpoint was that apply and one undo left the document behind.
+	void aSavedPresetIsOneUndoStep()
+	{
+		const QString before = appliedPreset();
+
+		setExportPresetNamePrompt([](const QString&) { return kUndoPreset; });
+		{
+			ExportProjectDialog dialog(m_world.path() + QStringLiteral("/dialog-undo.wav"),
+				ExportProjectDialog::Mode::ExportProject);
+			QComboBox* rate = combo(&dialog, "exportSampleRateCombo");
+			QComboBox* depth = combo(&dialog, "exportBitDepthCombo");
+			QVERIFY(rate != nullptr && depth != nullptr);
+			rate->setCurrentIndex(rate->findData(48000));
+			depth->setCurrentIndex(depth->findData(static_cast<int>(OutputSettings::BitDepth::Depth24Bit)));
+			button(&dialog, QStringLiteral("exportSavePresetButton"))->click();
+		}
+
+		QVERIFY2(!listed(kUndoPreset).isEmpty(), "the dialog's Save Preset did not store the preset");
+		QCOMPARE(appliedPreset(), before); // saving did not move the applied selection
+
+		// ONE undo reverses the COMPLETE Save Preset action.
+		const ControlResult undone = ControlRegistry::instance()->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(undone.result.value(QStringLiteral("undone_command")).toString(),
+			QStringLiteral("export.preset_add"));
+		QVERIFY2(listed(kUndoPreset).isEmpty(),
+			"one undo did not remove the preset, so Save Preset left more than one checkpoint");
+		QCOMPARE(appliedPreset(), before); // and no apply was left to unwind either
+		setExportPresetNamePrompt({});
 	}
 
 	void aPresetSavedFromTheDialogReopensSelectsAndRendersAtItsSettings()
@@ -183,11 +232,19 @@ private slots:
 		QCOMPARE(stored.value(QStringLiteral("sample_rate")).toInt(), 48000);
 		QCOMPARE(stored.value(QStringLiteral("bit_depth")).toString(), QStringLiteral("24"));
 		QCOMPARE(stored.value(QStringLiteral("stereo_mode")).toString(), QStringLiteral("stereo"));
+		// Saving stored the preset and did NOT apply it (aSavedPresetIsOneUndoStep covers the
+		// undo consequence); the render path is still on its own defaults.
+		QCOMPARE(appliedPreset(), QString());
 
-		// 2. Reopen, select the preset: the settings rows move and the preset is applied.
+		// 2. Clear the applied selection, then reopen and switch the picker from Default Settings
+		//    to the saved preset: the settings rows move and the preset is applied.
+		ControlRegistry::instance()->invoke(QStringLiteral("export.preset_apply"), QJsonObject{});
+		QCOMPARE(appliedPreset(), QString());
 		ExportProjectDialog dialog(outPath, ExportProjectDialog::Mode::ExportProject);
 		QComboBox* presets = combo(&dialog, "exportPresetCombo");
 		QVERIFY(presets != nullptr);
+		QVERIFY2(presets->currentData().toString().isEmpty(),
+			"the reopened dialog did not open on Default Settings");
 		const int index = presets->findData(kPreset);
 		QVERIFY2(index >= 0, "the reopened dialog does not list the saved preset");
 		presets->setCurrentIndex(index);
@@ -200,8 +257,7 @@ private slots:
 		QCOMPARE(settings.getBitDepth(), OutputSettings::BitDepth::Depth24Bit);
 		QCOMPARE(settings.getStereoMode(), OutputSettings::StereoMode::Stereo);
 		QCOMPARE(settings.channelMode(), OutputSettings::ChannelMode::Stereo);
-		QVERIFY2(ControlRegistry::instance()->invoke(QStringLiteral("export.preset_list"), QJsonObject{})
-				.result.value(QStringLiteral("applied_preset")).toString() == kPreset,
+		QVERIFY2(appliedPreset() == kPreset,
 			"selecting the preset did not apply it, so render.render would not be started with it");
 
 		// 3. Render through the dialog's own Start button and read the file's own header.

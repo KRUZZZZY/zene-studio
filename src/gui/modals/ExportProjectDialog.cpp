@@ -465,9 +465,14 @@ void ExportProjectDialog::onSavePresetClicked()
 		QMessageBox::warning(this, tr("Save Render Preset"), added.errorMessage);
 		return;
 	}
-	rebuildPresetList();
-	const int index = m_presetComboBox->findData(name);
-	if (index >= 0) { m_presetComboBox->setCurrentIndex(index); }
+	// Saving writes ONE document and does NOT put the render path on the new
+	// preset: the applied selection, and the settings rows below, stay where the
+	// user left them. The picker gains the name so it can be selected (which is
+	// what applies it), but selecting it here would dispatch export.preset_apply
+	// as a SECOND command, i.e. two undo checkpoints for one click. Adding the
+	// item leaves the current index untouched (the list is never empty), so no
+	// currentIndexChanged fires and no apply is recorded.
+	if (m_presetComboBox->findData(name) < 0) { m_presetComboBox->addItem(name, name); }
 }
 
 void ExportProjectDialog::onStartButtonClicked()
