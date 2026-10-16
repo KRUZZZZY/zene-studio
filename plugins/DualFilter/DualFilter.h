@@ -60,10 +60,10 @@ private:
 	bool m_filter1changed;
 	bool m_filter2changed;
 
-	float m_currentCut1;
-	float m_currentRes1;
-	float m_currentCut2;
-	float m_currentRes2;
+	float m_currentCut1 = 0.0f;
+	float m_currentRes1 = 0.0f;
+	float m_currentCut2 = 0.0f;
+	float m_currentRes2 = 0.0f;
 
 	friend class DualFilterControls;
 

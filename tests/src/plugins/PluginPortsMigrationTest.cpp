@@ -21,6 +21,7 @@
 #include "PluginPortsHarness.h"
 
 #include <cstddef>
+#include <atomic>
 #include <cmath>
 #include <cmath>
 #include <algorithm>
@@ -102,10 +103,26 @@
 #include "TempoSyncKnobModel.h"
 #include "../../../plugins/Xpressive/ExprSynth.h"
 
+namespace
+{
+
+std::atomic<std::size_t> allocationSizeToPoison{0};
+
+}
+
 void* operator new(std::size_t size)
 {
 	partc::RealtimeAllocationWatch::allocation();
-	if (void* allocation = std::malloc(size == 0 ? 1 : size)) { return allocation; }
+	if (void* allocation = std::malloc(size == 0 ? 1 : size))
+	{
+		auto expectedSize = size;
+		if (allocationSizeToPoison.compare_exchange_strong(expectedSize, 0,
+			std::memory_order_relaxed))
+		{
+			std::memset(allocation, 0xa5, size);
+		}
+		return allocation;
+	}
 	throw std::bad_alloc{};
 }
 
@@ -151,6 +168,11 @@ void operator delete[](void* allocation, std::size_t) noexcept
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "../../../plugins/FrequencyShifter/FrequencyShifterEffect.h"
+#include "AudioPlugin.h"
+#include "../../../plugins/DualFilter/DualFilterControls.h"
+#define private public
+#include "../../../plugins/DualFilter/DualFilter.h"
+#undef private
 
 namespace
 {
@@ -689,6 +711,7 @@ private slots:
 	void lfoStartsFromInitializedState();
 	void delayLfoControlDescribesItsPeriod();
 	void doubleFilterClearHistoryClearsSubfilter();
+	void dualFilterCutoffCachesStartInitialized();
 	void xpressiveLoadedWaveSamplesAreFinite();
 	void positiveFractionHandlesVeryLargePositiveValues();
 	void positiveFractionHandlesVeryLargeNegativeValues();
@@ -984,6 +1007,37 @@ void PluginPortsMigrationTest::doubleFilterClearHistoryClearsSubfilter()
 
 	filter.clearHistory();
 	QCOMPARE(filter.update(0.0f, 0), 0.0f);
+}
+
+void PluginPortsMigrationTest::dualFilterCutoffCachesStartInitialized()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_dualfilter)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	const auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	allocationSizeToPoison.store(sizeof(lmms::DualFilterEffect), std::memory_order_relaxed);
+	auto* rawEffect = static_cast<lmms::DualFilterEffect*>(entry(nullptr, nullptr));
+	std::unique_ptr<lmms::DualFilterEffect> effect{rawEffect};
+	QVERIFY(effect != nullptr);
+	QCOMPARE(allocationSizeToPoison.load(std::memory_order_relaxed), std::size_t{0});
+
+	const float zero = 0.0f;
+	const auto* zeroBytes = reinterpret_cast<const unsigned char*>(&zero);
+	QVERIFY(sameObjectRepresentation(
+		reinterpret_cast<const unsigned char*>(&effect->m_currentCut1), zeroBytes, sizeof(zero)));
+	QVERIFY(sameObjectRepresentation(
+		reinterpret_cast<const unsigned char*>(&effect->m_currentRes1), zeroBytes, sizeof(zero)));
+	QVERIFY(sameObjectRepresentation(
+		reinterpret_cast<const unsigned char*>(&effect->m_currentCut2), zeroBytes, sizeof(zero)));
+	QVERIFY(sameObjectRepresentation(
+		reinterpret_cast<const unsigned char*>(&effect->m_currentRes2), zeroBytes, sizeof(zero)));
 }
 
 void PluginPortsMigrationTest::xpressiveLoadedWaveSamplesAreFinite()
