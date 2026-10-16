@@ -120,6 +120,18 @@ public:
 	//! \a sampleRate must be a positive rate.
 	void push(const SampleFrame* frames, f_cnt_t count, int sampleRate) noexcept;
 
+#ifdef LMMS_TESTING
+	//! Test hook: invoked inside push() after the snapshot-pending state has
+	//! been observed for the rate decision and before the period is admitted
+	//! (or dropped). Used by RetroAudioCaptureTest to reproduce the race where
+	//! a snapshot releases between the pending check and ring admission.
+	using PushPauseTestHook = void (*)(void*);
+	static void setPushPauseTestHook(PushPauseTestHook hook, void* context) noexcept
+	{
+		s_pushPauseTestContext.store(context, std::memory_order_relaxed);
+		s_pushPauseTestHook.store(hook, std::memory_order_release);
+	}
+#endif
 	//! The ring behind this capture (the consumer side, the UI/control thread).
 	RetroAudioRing& ring() noexcept { return m_ring; }
 	const RetroAudioRing& ring() const noexcept { return m_ring; }
@@ -163,6 +175,23 @@ private:
 	//! from one validated snapshot - also on the quiesce-timeout path (Luna
 	//! cluster new-p12-200 rework). 0 until the first period is pushed.
 	std::atomic<std::uint64_t> m_rateTag{0};
+
+#ifdef LMMS_TESTING
+	static std::atomic<PushPauseTestHook> s_pushPauseTestHook;
+	static std::atomic<void*> s_pushPauseTestContext;
+	static void notifyPushPauseTestHook() noexcept
+	{
+		if (const auto hook = s_pushPauseTestHook.load(std::memory_order_acquire))
+		{
+			hook(s_pushPauseTestContext.load(std::memory_order_relaxed));
+		}
+	}
+#endif
+
+	//! Apply (or defer) a rate transition for this period. Returns true when
+	//! the period was deferred because a snapshot was in flight (caller drops
+	//! it without admitting to the ring).
+	bool transitionRateIfNeeded(int sampleRate, bool pending, std::uint64_t tag) noexcept;
 } ;
 
 

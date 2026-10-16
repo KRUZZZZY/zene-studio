@@ -107,6 +107,11 @@ bool copyTagValidated(const std::atomic<std::uint64_t>& rateTag, RetroAudioRing&
 } // namespace
 
 
+#ifdef LMMS_TESTING
+std::atomic<RetroAudioCapture::PushPauseTestHook> RetroAudioCapture::s_pushPauseTestHook{nullptr};
+std::atomic<void*> RetroAudioCapture::s_pushPauseTestContext{nullptr};
+#endif
+
 RetroAudioCapture::RetroAudioCapture() :
 	m_ring(DefaultCapacityFrames)
 {
@@ -142,17 +147,43 @@ void RetroAudioCapture::push(const SampleFrame* frames, f_cnt_t count, int sampl
 	// quiesce wait timed out can be reading the window right now, and the
 	// frames and rate it reads must be one snapshot (new-p12-200 rework).
 	const std::uint64_t tag = m_rateTag.load(std::memory_order_relaxed);
+	// Observe the snapshot state ONCE for this period's decision. A transition
+	// that finds a snapshot in flight is deferred; the period is then dropped
+	// (never admitted to the old-rate ring) even if the snapshot releases
+	// before admission (Luna new-p12-200 r3).
+	const bool pending = m_ring.snapshotInFlight();
+
+	if (transitionRateIfNeeded(sampleRate, pending, tag))
+	{
+#ifdef LMMS_TESTING
+		notifyPushPauseTestHook();
+#endif
+		m_ring.dropPeriod(static_cast<std::size_t>(count));
+		return;
+	}
+	m_ring.push(frames, static_cast<std::size_t>(count));
+}
+
+bool RetroAudioCapture::transitionRateIfNeeded(int sampleRate, bool pending, std::uint64_t tag) noexcept
+{
 	const int held = rateOfTag(tag);
 	if (held == 0)
 	{
 		m_rateTag.store(packTag(generationOfTag(tag), sampleRate), std::memory_order_release);
+		return false;
 	}
-	else if (held != sampleRate && !m_ring.snapshotInFlight())
+	if (held == sampleRate)
 	{
-		m_ring.discardRetained();
-		m_rateTag.store(packTag(generationOfTag(tag) + 1, sampleRate), std::memory_order_release);
+		return false;
 	}
-	m_ring.push(frames, static_cast<std::size_t>(count));
+	if (pending)
+	{
+		// Deferred: the transition waits for the snapshot to release.
+		return true;
+	}
+	m_ring.discardRetained();
+	m_rateTag.store(packTag(generationOfTag(tag) + 1, sampleRate), std::memory_order_release);
+	return false;
 }
 
 

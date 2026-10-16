@@ -194,6 +194,21 @@ public:
 		m_snapshotPending.store(false, std::memory_order_release);
 	}
 
+	//! Producer: drop a period that was deferred because a snapshot was in
+	//! flight, WITHOUT admitting its frames to the ring. If a snapshot is
+	//! still pending the period is counted as paused and the snapshot is
+	//! acknowledged; if the snapshot has since been released the period is
+	//! simply discarded. Realtime-safe: no allocation, no lock, O(1).
+	void dropPeriod(std::size_t count) noexcept
+	{
+		if (count == 0) { return; }
+		if (m_snapshotPending.load(std::memory_order_acquire))
+		{
+			m_pausedDrops.fetch_add(static_cast<std::uint64_t>(count), std::memory_order_relaxed);
+			m_writerAck.store(m_snapshotEpoch.load(std::memory_order_acquire), std::memory_order_release);
+		}
+	}
+
 	//! Producer: drop the retained frames. Unlike reset() this runs ON the
 	//! producer thread while a consumer may be mid-snapshot: it moves the head
 	//! through the same publication sequence push() writes under, so a

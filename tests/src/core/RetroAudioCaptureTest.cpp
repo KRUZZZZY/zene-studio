@@ -484,6 +484,70 @@ private slots:
 		QCOMPARE(static_cast<std::uint64_t>(window.overwritten), lost);
 	}
 
+	//! Luna cluster new-p12-200 (r3): a period that observes a pending snapshot
+	//! must not be admitted to the old-rate ring even if the snapshot releases
+	//! before ring admission. Pauses the producer after the pending check,
+	//! releases the snapshot, then resumes; a subsequent take must hold only
+	//! the old-rate frames.
+	void aDeferredTransitionPeriodIsNotAdmittedAfterTheSnapshotReleases()
+	{
+		constexpr int OldRate = 48000;
+		constexpr int NewRate = 96000;
+
+		RetroAudioCapture capture;
+		capture.arm(true);
+		const auto oldFrames = makeFrames(300);
+		capture.push(oldFrames.data(), static_cast<lmms::f_cnt_t>(oldFrames.size()), OldRate);
+
+		struct State
+		{
+			std::atomic<bool> paused{false};
+			std::atomic<bool> release{false};
+		} state;
+
+		RetroAudioCapture::setPushPauseTestHook([](void* ctx)
+		{
+			auto* s = static_cast<State*>(ctx);
+			s->paused.store(true, std::memory_order_release);
+			while (!s->release.load(std::memory_order_acquire))
+			{
+				std::this_thread::yield();
+			}
+		}, &state);
+
+		capture.ring().beginSnapshot();
+		const auto newFrames = makeFrames(100, 300);
+
+		std::thread producer([&]()
+		{
+			capture.push(newFrames.data(), static_cast<lmms::f_cnt_t>(newFrames.size()), NewRate);
+		});
+
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+		while (!state.paused.load(std::memory_order_acquire)
+			&& std::chrono::steady_clock::now() < deadline)
+		{
+			std::this_thread::yield();
+		}
+		QVERIFY(state.paused.load(std::memory_order_acquire));
+
+		// Release the snapshot while the producer is paused past its pending check.
+		capture.ring().endSnapshot();
+		state.release.store(true, std::memory_order_release);
+		producer.join();
+
+		RetroAudioCapture::setPushPauseTestHook(nullptr, nullptr);
+
+		const RetroAudioCapture::Window window = capture.takeWindow();
+		QCOMPARE(window.sampleRate, OldRate);
+		QCOMPARE(window.frames.size(), std::size_t{300});
+		for (std::size_t i = 0; i < window.frames.size(); ++i)
+		{
+			QCOMPARE(window.frames[i].left(), oldFrames[i].left());
+			QCOMPARE(window.frames[i].right(), oldFrames[i].right());
+		}
+	}
+
 private:
 	//! The writer, called once through a named helper so the failure message of
 	//! the QVERIFY2 above carries the writer's own text.
