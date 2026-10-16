@@ -287,7 +287,7 @@ void SessionScheduler::applySceneFire( const FollowFire& fire, tick_t firedAt,
 			slot.state = SlotLaunchState{};
 			slot.state.phase = SlotPhase::Playing;
 			slot.state.startCount = 1;
-			m_recorder.recordStart( slot.track, fire.targetScene, firedAt );
+			recordArrangementStart( slot.track, fire.targetScene, firedAt );
 		}
 		else
 		{

@@ -506,6 +506,8 @@ private:
 	void takeColumnOver( const ActiveSlot& slot ) noexcept;
 	void afterLaunchEvents( ActiveSlot& slot, const SessionClockContext& ctx,
 		LaunchEvent event ) noexcept;
+	//! Records the launched cell's immutable content identity with Arrangement Record.
+	void recordArrangementStart( int track, int scene, tick_t tick ) noexcept;
 	//! Publishes a fire for the model thread. Audio thread; body in SessionFollow.cpp.
 	void publishFollowFire( const FollowFire& fire, tick_t tick ) noexcept;
 	//! Audio thread: how many installed cells have an ENABLED plan.

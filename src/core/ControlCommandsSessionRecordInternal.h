@@ -73,6 +73,10 @@ struct LandPair
 	int scene = -1;
 	tick_t startTick = 0;
 	tick_t stopTick = 0;
+	int patternId = -1;
+	const SampleBuffer* audioClip = nullptr;
+	SessionArrangementRecorder::Event::ContentKind contentKind =
+		SessionArrangementRecorder::Event::ContentKind::Unspecified;
 };
 
 //! One start event still waiting for its stop.
@@ -82,6 +86,10 @@ struct OpenStart
 	int scene = -1;
 	tick_t tick = 0;
 	bool matched = false;
+	int patternId = -1;
+	const SampleBuffer* audioClip = nullptr;
+	SessionArrangementRecorder::Event::ContentKind contentKind =
+		SessionArrangementRecorder::Event::ContentKind::Unspecified;
 };
 
 /*! Pairs the snapshot's events. Returns the number of complete pairs written to
@@ -105,7 +113,8 @@ inline int landPairEvents( const SessionArrangementRecorder::Event* events, std:
 		if( event.started )
 		{
 			if( *openCount >= maxOpen ) { continue; }
-			open[*openCount] = OpenStart{ event.track, event.scene, event.tick, false };
+			open[*openCount] = OpenStart{ event.track, event.scene, event.tick, false,
+				event.patternId, event.audioClip, event.contentKind };
 			++( *openCount );
 			continue;
 		}
@@ -130,6 +139,9 @@ inline int landPairEvents( const SessionArrangementRecorder::Event* events, std:
 		pairs[pairCount].scene = event.scene;
 		pairs[pairCount].startTick = open[match].tick;
 		pairs[pairCount].stopTick = event.tick;
+		pairs[pairCount].patternId = open[match].patternId;
+		pairs[pairCount].audioClip = open[match].audioClip;
+		pairs[pairCount].contentKind = open[match].contentKind;
 		++pairCount;
 	}
 	// Compact the open list: only an unmatched start is one.

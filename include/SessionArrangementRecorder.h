@@ -79,6 +79,8 @@
 namespace lmms
 {
 
+class SampleBuffer;
+
 /*! The session performance's event ring. Trivially copyable, fixed storage. */
 class LMMS_EXPORT SessionArrangementRecorder
 {
@@ -91,6 +93,10 @@ public:
 		int scene = -1;
 		tick_t tick = 0;
 		bool started = false;
+		enum class ContentKind : std::uint8_t { Unspecified, Empty, Midi, Audio };
+		int patternId = -1;
+		const SampleBuffer* audioClip = nullptr;
+		ContentKind contentKind = ContentKind::Unspecified;
 	};
 
 	//! Transitions between two command calls. Sized for ONE WHOLE worst-case
@@ -115,6 +121,13 @@ public:
 	bool recordStart( int track, int scene, tick_t tick ) noexcept
 	{
 		return push( Event{ track, scene, tick, true } );
+	}
+	bool recordStart( int track, int scene, tick_t tick, int patternId,
+		const SampleBuffer* audioClip ) noexcept
+	{
+		const Event::ContentKind kind = patternId >= 0 ? Event::ContentKind::Midi
+			: audioClip != nullptr ? Event::ContentKind::Audio : Event::ContentKind::Empty;
+		return push( Event{ track, scene, tick, true, patternId, audioClip, kind } );
 	}
 	bool recordStop( int track, int scene, tick_t tick ) noexcept
 	{
