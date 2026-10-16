@@ -136,6 +136,23 @@ bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
 
 
 
+bool AutomationClip::removeObject( AutomatableModel * _obj )
+{
+	AudioEngine* const engine = Engine::audioEngine();
+	const auto changes = engine == nullptr ? AudioEngine::RequestChangesGuard{} : engine->requestChangesGuard();
+	QMutexLocker m(&m_clipMutex);
+
+	auto it = std::find(m_objects.begin(), m_objects.end(), _obj);
+	if (it == m_objects.end()) { return false; }
+
+	m_objects.erase(it);
+	emit dataChanged();
+	return true;
+}
+
+
+
+
 void AutomationClip::setProgressionType(
 					ProgressionType _new_progression_type )
 {
@@ -188,6 +205,15 @@ const AutomationClip::objectVector& AutomationClip::objects() const
 	QMutexLocker m(&m_clipMutex);
 
 	return m_objects;
+}
+
+
+
+
+bool AutomationClip::hasObjects() const
+{
+	QMutexLocker m(&m_clipMutex);
+	return !m_objects.empty();
 }
 
 

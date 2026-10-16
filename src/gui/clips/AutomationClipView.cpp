@@ -105,14 +105,12 @@ void AutomationClipView::disconnectObject( QAction * _a )
 {
 	JournallingObject * j = Engine::projectJournal()->
 				journallingObject( _a->data().toInt() );
-	if( j && dynamic_cast<AutomatableModel *>( j ) )
+	if( auto* model = dynamic_cast<AutomatableModel *>( j ) )
 	{
 		float oldMin = m_clip->getMin();
 		float oldMax = m_clip->getMax();
 
-		m_clip->m_objects.erase( std::find( m_clip->m_objects.begin(),
-					m_clip->m_objects.end(),
-				dynamic_cast<AutomatableModel *>( j ) ) );
+		if (!m_clip->removeObject(model)) { return; }
 		update();
 
 		//If automation editor is opened, update its display after disconnection
@@ -122,7 +120,7 @@ void AutomationClipView::disconnectObject( QAction * _a )
 		}
 
 		//if there is no more connection connected to the AutomationClip
-		if( m_clip->m_objects.size() == 0 )
+		if( !m_clip->hasObjects() )
 		{
 			//scale the points to fit the new min. and max. value
 			this->scaleTimemapToFit( oldMin, oldMax );

@@ -985,6 +985,8 @@ set(LMMS_TESTS
 	src/gui/AutomationModeMenuTest.cpp
 	# ED-194: the automation editor's keys and item list move points through automation.move_point.
 	src/gui/AutomationEditorEditingTest.cpp
+	# The arranger disconnect path waits until render has finished traversing automation targets.
+	src/gui/AutomationClipDisconnectTest.cpp
 	# BUGS_FOUND 11.12: a removed VCA group's strip never paints its freed fader model.
 	src/gui/VcaStripLifetimeTest.cpp
 	# m0 blocker (trackview-uaf): a track or clip removed before its queued view is built gets no view.
@@ -2268,6 +2270,7 @@ set_tests_properties(KnobAccessibleTargetSizingTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ZENE_TEST_ACCESSIBLE=1")
 set_tests_properties(AutomationModeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationEditorEditingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AutomationClipDisconnectTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackViewDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

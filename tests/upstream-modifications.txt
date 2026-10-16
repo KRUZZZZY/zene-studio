@@ -2425,3 +2425,7 @@ include/AudioBusHandle.h	ci2-train-5: a producer no longer pops the play-handle 
 src/core/AudioBusHandle.cpp	ci2-train-5: postPlayHandleEdit waits for a draining consumer and drains under the engine change lock only when none makes progress (TSan); held by tests/src/core/MixerConcurrencyTest.cpp.
 src/core/Track.cpp	ci2-train-5 rework: Track::addClip tells the song a clip (and any targets it carries) arrived, so the audio thread's automation scratch is sized before the next render; held by tests/src/core/AutomationRenderAllocationTest.cpp.
 src/core/AutomationClip.cpp	ci2-train-5 rework: addObject and the copy constructor tell the song (after releasing the clip mutex) that targets arrived, for the audio thread's automation scratch; held by tests/src/core/AutomationRenderAllocationTest.cpp.
+include/AutomationClip.h	cluster new-p10-506: declares target removal and an object-presence query used by the GUI disconnect path.
+src/core/AutomationClip.cpp	cluster new-p10-506: removes automation targets under the engine render-exclusion guard followed by the clip mutex; regression AutomationClipDisconnectTest.
+src/gui/clips/AutomationClipView.cpp	cluster new-p10-506: routes arranger disconnection through synchronized AutomationClip target removal; regression AutomationClipDisconnectTest.
+tests/CMakeLists.txt	cluster new-p10-506: registers the isolated automation disconnect concurrency regression.

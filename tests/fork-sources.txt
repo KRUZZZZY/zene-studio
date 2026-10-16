@@ -2567,6 +2567,10 @@ tests/src/core/ControlRenderJobTest.cpp
 
 # 2026-10-09 (M0 automation cluster 2647 round 2): new full-mixer baseline and worker-teardown guard proof.
 tests/src/core/AutomationPrepassProofTest.cpp
+# cluster new-p10-506: the arranger disconnect slot waits for an in-flight render guard before removing a target.
+tests/src/gui/AutomationClipDisconnectTest.cpp
+# cluster new-p10-506: evidence and BLOCKED status report for the automation target disconnect fix.
+docs/qwen-fixes-2026-10/cluster-new-p10-506.md
 # Q050-005: realtime sample-rate buffer handoff regression test.
 tests/src/core/GranularPitchShifterRealtimeTest.cpp
 # Q050-042: the product-new test loads the 16-bar legacy fixture through the version upgrader, then checks
