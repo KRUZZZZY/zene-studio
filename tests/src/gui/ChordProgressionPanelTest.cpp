@@ -40,6 +40,9 @@
 #include "ControlRegistry.h"
 #include "Engine.h"
 
+#include "ControlEdit.h"
+#include "ShellSelection.h"
+
 using namespace lmms;
 using namespace lmms::gui;
 using namespace chordtest;
@@ -93,6 +96,45 @@ private slots:
 		QVERIFY(write != nullptr);
 		QCOMPARE(write->property("controlCommand").toString(),
 			QStringLiteral("chord.progression_generate"));
+	}
+
+	/*! Clicking the actual Write button, with a real fixture clip selected, writes
+	 *  the progression through the registered command the button routes to - and
+	 *  one control.undo puts the original clip back. This is the UI action the
+	 *  same headless workflow performs over the socket. */
+	void clickingTheWriteButtonWritesAndOneUndoRestores()
+	{
+		const QString clip = makeClip();
+		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
+		QVERIFY(addNote(clip, 40, 0, 60));
+		const QVector<NoteAt> before = notesOf(clip);
+		QCOMPARE(before.size(), 1);
+
+		// The way the panel learns its target: the shell selection holds the
+		// selected clip (what window.select and a clip click both set).
+		control::ClipRef ref;
+		ControlResult error;
+		QVERIFY2(control::resolveClip(clip, &ref, &error),
+			qPrintable(error.errorMessage));
+		ShellSelection::instance()->setClip(ref.clip);
+
+		ChordProgressionPanel panel;
+		panel.setScale(QStringLiteral("Major"), 0);
+		QVERIFY(panel.selectProgression(QStringLiteral("I-V-vi-IV")));
+		auto* write = panel.findChild<QPushButton*>(QStringLiteral("progressionWrite"));
+		QVERIFY2(write != nullptr, "the Write button is not in the panel");
+		write->click(); // the real activation path: clicked -> writeSelected -> registry
+
+		const QVector<NoteAt> after = notesOf(clip);
+		QCOMPARE(after.size(), 12);
+
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QVERIFY2((notesOf(clip) == before),
+			qPrintable(QStringLiteral("one undo did not restore the clip: %1 vs %2")
+				.arg(describe(notesOf(clip)), describe(before))));
+
+		ShellSelection::instance()->setClip(nullptr);
 	}
 
 	/*! A write through the panel replaces the clip's notes (the generator's own
