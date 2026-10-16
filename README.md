@@ -215,6 +215,24 @@ the public issue tracker. Release publishing is documented in [docs/RELEASING.md
 Zene Studio is licensed under the **GNU General Public License, version 2 or later**
 (GPL-2.0-or-later). See [LICENSE.txt](LICENSE.txt).
 
+## Free and activation model (current build)
+
+The build from this repository is distributed only under the license above: it has **no paid tier**, **no
+registration**, and **no activation**. There is no separate free/pro/enterprise edition, no account or licence-key
+step, and no online activation or periodic validation, anywhere in the application or in its build. This is verified
+by `LICENSE.txt:21-36` (the clause allowing copies to be distributed "gratis or for a fee" while keeping all rights)
+and by a search of `src/`, `include/` and `plugins/` (outside the vendored third-party libraries under them) for
+activation, licence-key, subscription, registration, premium and serial-number handling; the only matches are
+unrelated technical uses (port and event subscription, MIDI port subscription, and plugin host / driver
+"activation" of a module), not product licensing.
+
+Nothing here commits the project to a future pricing or availability policy. Whether a future official build keeps the
+same terms, adds a commercial tier, or changes licensing is undecided and is not promised by this document. If any
+such change is ever made it will be announced in the release notes of a tagged release published on the GitHub
+Releases page for `KRUZZZZY/zene-studio` (the channel through which releases are published; see
+`docs/RELEASING.md`), not silently, and the build will report it through `--version`.
+
+
 Zene Studio is built on LMMS (https://github.com/LMMS/lmms), licensed GNU GPL v2. All upstream notices
 retained. Zene Studio is not affiliated with or endorsed by the LMMS project.
 
