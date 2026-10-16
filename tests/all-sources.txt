@@ -2774,6 +2774,7 @@ tests/src/core/UndoBoundsTest.cpp
 tests/src/core/UndoHistoryPersistenceTest.cpp
 tests/src/core/UndoHonestyStateTest.cpp
 tests/src/core/UndoHonestyTest.cpp
+tests/src/core/UnmuteChaseTest.cpp
 tests/src/core/UpgradeExtendedNoteRangeTest.cpp
 tests/src/core/UpnpMapperFakeRouterTest.cpp
 tests/src/core/VcaGroupTest.cpp
