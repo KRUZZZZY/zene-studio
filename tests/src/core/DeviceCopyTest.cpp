@@ -492,15 +492,13 @@ private slots:
 			QVERIFY(!RemoteControls::instance()->applyKnob(std::numeric_limits<int>::max(), 64));
 			QCOMPARE(value(index), was);
 		}
-		// The last valid knob (7) drives its own parameter, and no other control moves.
-		const double untouched = value(0);
+		QVector<double> beforeKnob; for (int i = 0; i < 3 * RemoteControls::Knobs; ++i) { beforeKnob.append(value(i)); }
 		QVERIFY(RemoteControls::instance()->applyKnob(RemoteControls::Knobs - 1, 127));
 		QCOMPARE(value(RemoteControls::Knobs - 1), 1.0);
-		QCOMPARE(value(0), untouched);
-		// On a later page the page offset is real; an extreme knob index must still be refused.
+		for (int i = 0; i < 3 * RemoteControls::Knobs; ++i) { if (i == RemoteControls::Knobs - 1) { continue; } QCOMPARE(value(i), beforeKnob.at(i)); }
 		QCOMPARE(run(QStringLiteral("remote.page"), {{QStringLiteral("page"), 1}}).result.value(QStringLiteral("page")).toInt(), 1);
 		QVERIFY2(!RemoteControls::instance()->applyKnob(std::numeric_limits<int>::max(), 64), "the old 32-bit page offset overflows here");
-		QCOMPARE(value(RemoteControls::Knobs), 0.0);  // and nothing on the page moved
+		for (int knob = 0; knob < RemoteControls::Knobs; ++knob) { QCOMPARE(value(RemoteControls::Knobs + knob), 0.0); }
 		QCOMPARE(run(QStringLiteral("remote.page"), {{QStringLiteral("page"), 999}}).result.value(QStringLiteral("page")).toInt(),
 			targeted.result.value(QStringLiteral("pages")).toInt() - 1);  // clamped
 		QVERIFY(run(QStringLiteral("remote.disconnect")).ok);
