@@ -24,9 +24,15 @@
 #include <QtTest>
 
 #include <atomic>
+#include <chrono>
+#include <thread>
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
+#include <QHostAddress>
+#include <QNetworkProxy>
+#include <QTcpServer>
 #include <QTemporaryDir>
 
 #include "StemSeparation/StemModelStore.h"
@@ -53,12 +59,75 @@ QString writeFile(const QString& path, const QByteArray& contents)
 	return path;
 }
 
+//! The partial files download() leaves beside `dirPath>/<name>.onnx` while a
+//! transfer is in flight - its per-attempt staging files, whatever they are named.
+QStringList partialFiles(const QString& dirPath, const QString& name)
+{
+	return QDir(dirPath).entryList({name + QStringLiteral(".onnx.part*")}, QDir::Files);
+}
+
 } // namespace
 
 class StemModelStoreTest : public QObject
 {
 	Q_OBJECT
+private:
+	// The in-flight-download fixture. A failed QVERIFY returns from the slot
+	// while the download threads still run, so everything they touch lives
+	// here and cleanup() cancels and joins them.
+	StemModelSpec m_spec;
+	QTemporaryDir m_dir;
+	std::atomic<bool> m_cancelA{false};
+	std::atomic<bool> m_cancelB{false};
+	std::thread m_threadA;
+	std::thread m_threadB;
+	bool m_okA = true;
+	bool m_okB = true;
+	QString m_errorA;
+	QString m_errorB;
+
 private slots:
+	void cleanup()
+	{
+		m_cancelA.store(true);
+		m_cancelB.store(true);
+		if (m_threadA.joinable()) { m_threadA.join(); }
+		if (m_threadB.joinable()) { m_threadB.join(); }
+	}
+
+	//! The one partial file the first download has in flight, or empty if none appeared.
+	QString waitForTheFirstPartial()
+	{
+		QElapsedTimer timer;
+		timer.start();
+		QStringList seen;
+		while (seen.isEmpty() && timer.elapsed() < 5000)
+		{
+			seen = partialFiles(m_dir.path(), m_spec.name);
+			if (seen.isEmpty()) { std::this_thread::sleep_for(std::chrono::milliseconds(10)); }
+		}
+		return seen.size() == 1 ? m_dir.filePath(seen.front()) : QString();
+	}
+
+	//! True the moment the in-flight partial's bytes are gone: the second
+	//! download clobbered them. False once it has a staging file of its own
+	//! (it can no longer clobber), or the watch runs out.
+	bool clobbersThePartialInFlight(const QString& partialA, const QByteArray& streamed)
+	{
+		QElapsedTimer timer;
+		timer.start();
+		while (timer.elapsed() < 5000)
+		{
+			{
+				QFile file(partialA);
+				if (!file.open(QIODevice::ReadOnly) || file.readAll() != streamed) { return true; }
+			}
+			if (partialFiles(m_dir.path(), m_spec.name).size() >= 2) { return false; }
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+		return false;
+	}
+
 	void testDefaultModelDirHonoursEnvironment()
 	{
 		const auto previous = qgetenv("LMMS_STEM_MODEL_DIR");
@@ -321,6 +390,70 @@ private slots:
 
 		if (previous.isEmpty()) { qunsetenv("LMMS_STEM_MODEL"); }
 		else { qputenv("LMMS_STEM_MODEL", previous); }
+	}
+
+	/*! Luna cluster new-p12-255: two downloads of one model into one directory
+	 *  must not share one partial file. The second caller used to open
+	 *  `<name>.onnx.part` with truncation while the first was still streaming
+	 *  into it: the bytes already on disk vanished and both attempts interleaved
+	 *  writes into one file, so a clobbered install could pass or fail
+	 *  verification by luck. The socket here accepts and never answers, so a
+	 *  download stays in flight until cancelled; the bytes a transfer has
+	 *  already streamed are stood in for by writing them into the partial file. */
+	void testConcurrentDownloadsDoNotClobberAPartialFileInFlight()
+	{
+		QVERIFY(m_dir.isValid());
+		// Nothing may reroute the loopback URL below away from this socket.
+		QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+		QTcpServer server;
+		QVERIFY(server.listen(QHostAddress::LocalHost));
+
+		m_spec.name = QStringLiteral("concurrent");
+		m_spec.url = QStringLiteral("https://127.0.0.1:%1/concurrent.onnx").arg(server.serverPort());
+		m_spec.sha256 = QString::fromLatin1(Sha256OfAbc);
+		m_spec.sizeBytes = 3;
+		m_cancelA.store(false);
+		m_cancelB.store(false);
+		m_okA = m_okB = true;
+		m_errorA.clear();
+		m_errorB.clear();
+
+		const auto download = [this](bool first)
+			{
+				bool* ok = first ? &m_okA : &m_okB;
+				QString* error = first ? &m_errorA : &m_errorB;
+				const std::atomic<bool>* cancel = first ? &m_cancelA : &m_cancelB;
+				*ok = StemModelStore::download(m_spec, m_dir.path(), {}, error, cancel);
+			};
+		m_threadA = std::thread(download, true);
+
+		// The first download hangs in its transfer with its partial file open.
+		const QString partialA = waitForTheFirstPartial();
+		QVERIFY2(!partialA.isEmpty(), "the first download never created its partial file");
+
+		// Stand in for the bytes the first transfer has already streamed...
+		const QByteArray streamed("already-streamed-bytes");
+		{
+			QFile file(partialA);
+			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Append));
+			QCOMPARE(file.write(streamed), qint64(streamed.size()));
+		}
+
+		// ...and let a second download of the same model run across it.
+		m_threadB = std::thread(download, false);
+		const bool clobbered = clobbersThePartialInFlight(partialA, streamed);
+
+		m_cancelA.store(true);
+		m_cancelB.store(true);
+		// Ending the fake server ends both transfers at once, whatever the
+		// cancel flags do: the pending handshakes die with the listening socket.
+		server.close();
+		m_threadA.join();
+		m_threadB.join();
+
+		QVERIFY2(!clobbered,
+			"a concurrent download truncated the partial file of a download still in flight");
+		QVERIFY2(!m_okA && !m_okB, "a download reported success without ever fetching anything");
 	}
 };
 

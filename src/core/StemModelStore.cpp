@@ -34,6 +34,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>
+#include <QUuid>
 
 namespace lmms
 {
@@ -411,7 +412,14 @@ bool StemModelStore::download(const StemModelSpec& spec,
 		return false;
 	}
 	const auto finalPath = dir.filePath(spec.name + QStringLiteral(".onnx"));
-	const auto partPath = finalPath + QStringLiteral(".part");
+	// A staging file of this attempt's own (RenderQueue's stagedPath convention):
+	// two downloads of one model into one directory - two job managers, two app
+	// instances - must never share one "<name>.onnx.part" opened with truncation,
+	// or the later open wipes the bytes the earlier attempt is still streaming
+	// and both interleave into one file (Luna new-p12-255). Every failure path
+	// below removes this attempt's own partial again.
+	const auto partPath = finalPath + QStringLiteral(".part.")
+		+ QUuid::createUuid().toString(QUuid::WithoutBraces).left(12);
 
 	QFile partFile(partPath);
 	if (!partFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
@@ -437,6 +445,12 @@ bool StemModelStore::download(const StemModelSpec& spec,
 	QFile::remove(finalPath);
 	if (!QFile::rename(partPath, finalPath))
 	{
+		// A concurrent installer may have moved the same pinned bytes into place
+		// between our remove and our rename; that file IS this download, done.
+		if (verifiedInPlace(spec, destDir))
+		{
+			return true;
+		}
 		setError(error, QStringLiteral("Cannot move %1 into place").arg(finalPath));
 		QFile::remove(partPath);
 		return false;

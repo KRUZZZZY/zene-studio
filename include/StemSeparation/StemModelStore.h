@@ -99,8 +99,9 @@ public:
 	// HTTPS only. http://, file:// and relative URLs are rejected.
 	static bool isDownloadUrlAllowed(const QString& url);
 
-	// Downloads to `<destDir>/<spec.name>.onnx.part`, verifies size and
-	// SHA-256, then atomically renames into place. Returns false and sets
+	// Downloads to a per-attempt `<destDir>/<spec.name>.onnx.part.<unique>` of the
+	// caller's own - concurrent downloads of one model never share a partial file -
+	// verifies size and SHA-256, then renames into place. Returns false and sets
 	// `error` on any failure; a partial file never replaces a good one.
 	// A non-null `cancel` that becomes true aborts the transfer (reported as
 	// "cancelled"); the partial file is removed as on any other failure.
