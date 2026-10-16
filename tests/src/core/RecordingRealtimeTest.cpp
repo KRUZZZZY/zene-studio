@@ -45,6 +45,7 @@
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ProjectJournal.h"
+#include "RealtimeScope.h"
 #include "Engine.h"
 #include "SampleClip.h"
 #include "SampleFrame.h"
@@ -411,6 +412,50 @@ private slots:
 
 		delete handle;
 		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 2000);
+		delete track;
+	}
+
+	//! Starting an armed recording: the arming builds the take's accumulator and drain thread on the
+	//! main thread, so the render callback that starts the pass only claims the prepared take and
+	//! allocates nothing. The take still records the input the pass is given.
+	void recorderStartIsPreparedBeforeTheCallbackPath()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+
+		song->playAndRecord();
+		// Warm the render path with no take prepared: the counted period then adds the recorder's
+		// start, not the one-time state the first passes create.
+		for (int i = 0; i < 4; ++i) { song->processNextBuffer(); }
+
+		// Arming on the main thread: the accumulator (with its ring) and its drain thread are built
+		// here, before any callback can claim the take.
+		clip->setRecord(true);
+		QCOMPARE(clip->recordTakesReady(), 2);
+
+		// The callback path starts the pass here (SampleTrack::play claims the prepared take and
+		// schedules the handle). It must allocate nothing.
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		{
+			const lmms::RealtimeScope realtime;
+			for (int i = 0; i < 8; ++i) { song->processNextBuffer(); }
+		}
+		const auto counted = lmms::test::tlAllocationCount;
+		lmms::test::tlCountAllocations = false;
+		QCOMPARE(asNumber(counted), asNumber(0));
+
+		// And the take still records: drive real periods and stop.
+		driveRecordPeriods(20);
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		QVERIFY2(clip->sample().sampleSize() > 0,
+			qPrintable(QStringLiteral("the prepared take recorded nothing")));
 		delete track;
 	}
 

@@ -103,8 +103,9 @@ SampleRecordHandle::SampleRecordHandle( SampleClip* clip ) :
 	m_patternTrack( nullptr ),
 	m_clip( clip ),
 	// R2.2: the round trip this take lags the playback by - dropped from its head, so the
-	// take lines up with what was playing when it was performed. A cached atomic: this
-	// constructor runs on the audio thread (SampleTrack::play).
+	// take lines up with what was playing when it was performed. A cached atomic: it is read
+	// here on the main thread, where SampleClip::prepareRecordTake builds the handle (the
+	// audio thread only claims it - see SampleTrack::play).
 	m_compensationFrames( Engine::audioEngine() != nullptr ? Engine::audioEngine()->recordingLatencyFrames() : 0 ),
 	m_offsetApplied( false )
 {

@@ -2016,6 +2016,7 @@ include/SampleTrack.h	docs/m0-blocker-fixes-2026-10-08 round 2: deferredClipStar
 src/tracks/SampleTrack.cpp	docs/m0-blocker-fixes-2026-10-08 round 2: record-armed clips are scheduled only while the song records (P3 latch); deferred starts counted; cap comment corrected to starts per pass
 include/SampleRecordHandle.h	docs/m0-blocker-fixes-2026-10-08 round 2: markClaimed(), pumpTakes(), watchArmedClip(), padded/queue-overflow counters
 src/core/SampleRecordHandle.cpp	docs/m0-blocker-fixes-2026-10-08 round 2: reaper routes loop-pass takes to lanes (continues while the transport records), pads and counts dropped frames, counts queue overflows, pumps armed clips every 10 ms, discards unclaimed takes
+src/core/SampleRecordHandle.cpp	Q050-002 (2026-10-16): the R2.2 comment said this constructor runs on the audio thread; it has run on the main thread since the cluster-5308 lane (SampleClip::prepareRecordTake), and the comment now says so (comment only, no code change)
 include/Song.h	docs/m0-blocker-fixes-2026-10-08 round 2: m_recordLatched: a Record press is taken by the next Play (P2)
 src/core/Song.cpp	docs/m0-blocker-fixes-2026-10-08 round 2: startSongPlayback takes the record latch; stop() ends it (P2)
 src/core/ControlCommandsRecordingRoutes.cpp	docs/m0-blocker-fixes-2026-10-08 round 2: record.get_state reports clip_takes (dropped/padded frames, unprepared takes, queue overflows, deferred starts)
