@@ -999,7 +999,7 @@ takes lanes reapplied after their train-3 reverts) adds three `true_inverse` row
 `rows=837 true_inverse=417 snapshot=42 irreversible=22 not_mutating=356` (`DECLARED rows=837 entries=837 duplicates=0`).
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=837 true_inverse=417 snapshot=42 irreversible=22 not_mutating=356
+     measured: rows=838 true_inverse=417 snapshot=42 irreversible=22 not_mutating=357
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

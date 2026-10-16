@@ -109,6 +109,11 @@ const ReversibilityRow kShellRows[] = {
 		"commands, each with its own row",
 		"nothing to reverse: the panel is closed like any window",
 		""),
+	R("window.progression", RC::NotMutating, false,
+		"opens the progression panel: interface state; its Write button runs "
+		"chord.progression_generate, which has its own row",
+		"nothing to reverse: the panel is closed like any window",
+		""),
 	R("window.undo_history", RC::NotMutating, false,
 		"opens the undo history panel: interface state; its Undo/Redo buttons run control.undo and "
 		"control.redo, each with its own row",
