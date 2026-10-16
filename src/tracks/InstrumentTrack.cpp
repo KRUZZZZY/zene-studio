@@ -350,6 +350,11 @@ bool InstrumentTrack::trackMpeInputEvent( const MidiEvent& event )
 			return false;
 
 		case MidiNoteOff:
+			// 0.5.0 Q050-039: the note-off's velocity is release velocity. The
+			// note model can store it (Note::setReleaseVelocity) and playback
+			// already sends it back (NotePlayHandle::noteOff), but live MPE
+			// input dropped it here.
+			captureMpeReleaseVelocity( event );
 			m_mpeExpression.noteOff( event.channel(), event.key() );
 			return false;
 
@@ -364,6 +369,43 @@ bool InstrumentTrack::trackMpeInputEvent( const MidiEvent& event )
 
 	loadMpeExpressionOntoChannelNotes( event.channel() );
 	return true;
+}
+
+
+
+
+void InstrumentTrack::captureMpeReleaseVelocity( const MidiEvent& event )
+{
+	if( !m_mpeExpression.isMemberChannel( event.channel() ) )
+	{
+		return;
+	}
+	if( event.key() < 0 || event.key() >= NumKeys )
+	{
+		return;
+	}
+	// Velocity 0 is what an MPE controller sends when it has no release
+	// velocity to report, so the note keeps its "unset" release and playback
+	// sends velocity 0 exactly as it did before this capture existed.
+	const int velocity = event.velocity();
+	if( velocity <= 0 )
+	{
+		return;
+	}
+
+	NotePlayHandle* note = m_notes[event.key()];
+	if( note == nullptr || note->midiChannel() != event.channel() )
+	{
+		// Released, never started, or another channel's note holding this key
+		// - the same window loadMpeExpressionOntoChannelNotes() lives with.
+		return;
+	}
+
+	// The velocity is stored on the note's own volume scale (0..200, 100 =
+	// default) exactly as a note-on's velocity is stored, so it comes back
+	// out of Note::midiReleaseVelocity() uncoloured (Q050-039).
+	note->setReleaseVelocity(
+		static_cast<int>( event.volume( midiPort()->baseVelocity() ) ) );
 }
 
 

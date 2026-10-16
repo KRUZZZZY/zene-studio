@@ -46,18 +46,21 @@
  *   - it keeps, per MIDI channel, the channel pressure and the CC74 (MPE
  *     timbre) that reached it through `Instrument::handleMidiEvent`, which is
  *     the track's own instrument-facing path
- *     (InstrumentTrack::processOutEvent -> m_instrument->handleMidiEvent);
- *   - a note-on resets that channel's two axes, so a block is never coloured
- *     by the note before it;
+ *     (InstrumentTrack::processOutEvent -> m_instrument->handleMidiEvent), and
+ *     the release velocity a `MidiNoteOff` carried (Q050-039);
+ *   - a note-on resets that channel's axes and its release velocity, so a
+ *     block is never coloured by the note before it; a note-off clears the
+ *     two axes and sets the release velocity;
  *   - `playNoteImpl` renders a CONSTANT level for the note:
  *
  *         level = kBaseLevel * (1 + pressure/127) * (1 + timbre/127)
+ *                            * (1 + releaseVelocity/127)
  *
- *     i.e. +100% for a fully pressed axis, exactly 1.0 when no expression
- *     reached it. A constant is deliberate: it makes the measurement exact
- *     (no DSP coincidence can pass for the axis being applied) and it is the
- *     same technique tests/data/vst3-test-instrument uses for its own
- *     MIDI-to-audio proof.
+ *     i.e. +100% for a fully pressed axis or a full-scale release velocity,
+ *     exactly 1.0 when nothing reached it. A constant is deliberate: it makes
+ *     the measurement exact (no DSP coincidence can pass for the axis being
+ *     applied) and it is the same technique tests/data/vst3-test-instrument
+ *     uses for its own MIDI-to-audio proof.
  *
  *  Realtime contract: the audio path allocates nothing, locks nothing and
  *  grows nothing - fixed arrays, plain int writes, and a loop over the frames
@@ -132,6 +135,13 @@ float expressionGain( int pressure, int timbre )
 		* ( 1.0f + static_cast<float>( timbre ) / MidiMaxControllerValue );
 }
 
+//! The multiplier a MIDI note-off velocity asks for (Q050-039): +100% at full
+//! scale, exactly 1.0 when the note has no release velocity of its own.
+float releaseGain( int releaseVelocity )
+{
+	return 1.0f + static_cast<float>( releaseVelocity ) / MidiMaxControllerValue;
+}
+
 class MpeTestConsumer final : public Instrument
 {
 public:
@@ -139,6 +149,12 @@ public:
 		Instrument( instrumentTrack, &mpe_test_consumer_plugin_descriptor )
 	{
 	}
+
+	//! Q050-039: a release phase long enough for the test to render a block of
+	//! it after the note-off, so the release velocity can be measured. The
+	//! sustained blocks the other assertions use are unaffected (their note has
+	//! not been released, so no release frames are consumed).
+	float desiredReleaseTimeMs() const override { return 20.f; }
 
 	//! Called by the track for every MIDI event aimed at the instrument -
 	//! from a playing note (InstrumentTrack::processOutEvent) and from live
@@ -155,6 +171,16 @@ public:
 				// previous note left behind must not colour this block.
 				m_pressure[channel] = 0;
 				m_timbre[channel] = 0;
+				m_release[channel] = 0;
+				return true;
+
+			case MidiNoteOff:
+				// Q050-039: the note-off's velocity is release velocity. The
+				// release phase is no longer expressive, so the two axes are
+				// cleared and the block is coloured by this value instead.
+				m_pressure[channel] = 0;
+				m_timbre[channel] = 0;
+				m_release[channel] = std::clamp<int>( event.velocity(), 0, MidiMaxControllerValue );
 				return true;
 
 			case MidiChannelPressure:
@@ -189,7 +215,8 @@ protected:
 	void playNoteImpl( NotePlayHandle* nph, std::span<SampleFrame> out ) override
 	{
 		const int channel = std::clamp<int>( nph->midiChannel(), 0, kChannelCount - 1 );
-		const float level = kBaseLevel * expressionGain( m_pressure[channel], m_timbre[channel] );
+		const float level = kBaseLevel * expressionGain( m_pressure[channel], m_timbre[channel] )
+			* releaseGain( m_release[channel] );
 
 		const f_cnt_t frames = nph->framesLeftForCurrentPeriod();
 		const f_cnt_t offset = nph->noteOffset();
@@ -216,6 +243,8 @@ protected:
 private:
 	int m_pressure[kChannelCount] = {};
 	int m_timbre[kChannelCount] = {};
+	//! The release velocity the last note-off on each channel carried (Q050-039).
+	int m_release[kChannelCount] = {};
 };
 
 } // namespace

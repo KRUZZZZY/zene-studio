@@ -155,6 +155,81 @@ private slots:
 		song->clearProject();
 	}
 
+	//! (j) Q050-039: an MPE note-off carries release velocity. The real input
+	//! path stores it on the released note, the note keeps it through
+	//! save -> load, and a zero-velocity or non-MPE note-off captures nothing.
+	void noteOffVelocityIsCapturedOnTheReleasedNote()
+	{
+		using namespace lmms;
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create( Track::Type::Instrument, song ) );
+		QVERIFY( track != nullptr );
+
+		// Set the port's base velocity to the note-volume default (100) so the
+		// note's volume scale (0..200, 100 = default) and the MIDI velocity
+		// scale agree: the captured value is the velocity itself.
+		track->midiPort()->setBaseVelocity( DefaultVolume );
+
+		MpeExpression::setEnabled( true );
+
+		constexpr int kMemberChannel = 3;
+		constexpr int kVelocity = 96;   // non-default (0 means "no release velocity")
+
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, 60, 100 ) );
+		NotePlayHandle* note = track->playingNote( 60 );
+		QVERIFY( note != nullptr );
+		// Nothing captured before the note-off: the note has no release velocity.
+		QCOMPARE( note->releaseVelocity(), -1 );
+
+		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, 60, kVelocity ) );
+
+		// (criterion 1) The released note carries the velocity the note-off sent.
+		QCOMPARE( note->releaseVelocity(), kVelocity );
+		QCOMPARE( note->midiReleaseVelocity( track->midiPort()->baseVelocity() ), kVelocity );
+
+		// ... and that is what a SAVED note reads back: save -> load keeps it.
+		QDomDocument doc;
+		QDomElement parent = doc.createElement( "notes" );
+		QDomElement element = note->saveState( doc, parent );
+		QVERIFY( element.hasAttribute( "relvel" ) );
+		QCOMPARE( element.attribute( "relvel" ).toInt(), kVelocity );
+		Note saved;
+		saved.restoreState( element );
+		QCOMPARE( saved.releaseVelocity(), kVelocity );
+		QCOMPARE( saved.midiReleaseVelocity( track->midiPort()->baseVelocity() ), kVelocity );
+
+		// (criterion 3) A note-off carrying velocity 0 captures nothing: the
+		// note keeps playing back a release velocity of 0, as before.
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, 64, 100 ) );
+		NotePlayHandle* zero = track->playingNote( 64 );
+		QVERIFY( zero != nullptr );
+		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, 64, 0 ) );
+		QCOMPARE( zero->releaseVelocity(), -1 );
+		QCOMPARE( zero->midiReleaseVelocity( track->midiPort()->baseVelocity() ), 0 );
+
+		// A note-off delivered as note-on velocity 0 (MidiClientRaw's spelling)
+		// is the same zero-velocity case.
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, 65, 100 ) );
+		NotePlayHandle* zeroOn = track->playingNote( 65 );
+		QVERIFY( zeroOn != nullptr );
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, 65, 0 ) );
+		QCOMPARE( zeroOn->releaseVelocity(), -1 );
+
+		// (criterion 3) With MPE disabled the same stream captures nothing.
+		MpeExpression::setEnabled( false );
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, 67, 100 ) );
+		NotePlayHandle* nonMpe = track->playingNote( 67 );
+		QVERIFY( nonMpe != nullptr );
+		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, 67, kVelocity ) );
+		QCOMPARE( nonMpe->releaseVelocity(), -1 );
+		QCOMPARE( nonMpe->midiReleaseVelocity( track->midiPort()->baseVelocity() ), 0 );
+
+		song->clearProject();
+	}
+
 };
 
 QTEST_GUILESS_MAIN(MpeInputPathTest)

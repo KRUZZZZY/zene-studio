@@ -109,6 +109,14 @@ float expectedGain( int pressure, int timbre )
 	return ( 1.0f + pressure / kFullScale ) * ( 1.0f + timbre / kFullScale );
 }
 
+//! What the fixture's mapping promises for a note-off velocity (Q050-039):
+//! +100% at full scale (tests/src/plugins/MpeTestConsumer.cpp, releaseGain()).
+float expectedReleaseGain( int releaseVelocity )
+{
+	constexpr float kFullScale = 127.f;
+	return 1.0f + releaseVelocity / kFullScale;
+}
+
 /*!
  * Windows: a test host cannot load a plugin MODULE library at runtime - the
  * module's import descriptor names zene.exe (ERROR_MOD_NOT_FOUND, 126) and the
@@ -286,6 +294,45 @@ private slots:
 
 		m_track->processInEvent( MidiEvent( MidiNoteOff, 1, kKey ) );
 		MpeExpression::setEnabled( false );
+	}
+
+	//! Q050-039: a note's release velocity reaches the instrument as the
+	//! MidiNoteOff velocity and colours its release block. The fixture asks for
+	//! +velocity/127 on that block, so the measured ratio names the velocity it
+	//! received.
+	void noteOffVelocityReachesTheInstrumentOnPlayback()
+	{
+		// Align the note-volume scale (100 = default) with MIDI velocity, so the
+		// note's stored release velocity IS the velocity the note-off emits.
+		m_track->midiPort()->setBaseVelocity( DefaultVolume );
+
+		constexpr int kReleaseVelocity = 96;
+
+		Note note( TimePos::fromFrames( m_frames * 8, Engine::framesPerTick() ),
+			TimePos( 0 ), kKey );
+		note.setReleaseVelocity( kReleaseVelocity );
+
+		NotePlayHandle handle( m_track, 0, m_frames * 8, note, nullptr, -1,
+			NotePlayHandle::Origin::MidiClip );
+
+		const float sustained = renderBlock( &handle );
+		QVERIFY2( sustained > 0.05f, "the note rendered nothing before its note-off" );
+
+		// The note-off sends midiReleaseVelocity() to the instrument.
+		handle.noteOff( 0 );
+		const float released = renderBlock( &handle );
+
+		const float wanted = expectedReleaseGain( kReleaseVelocity );
+		std::fprintf( stdout,
+			"MPE_EVIDENCE release velocity %d: sustained=%.6f released=%.6f ratio=%.6f\n",
+			kReleaseVelocity, sustained, released, released / sustained );
+		std::fflush( stdout );
+
+		QVERIFY2( std::fabs( released / sustained - wanted ) < 0.01f,
+			qPrintable( QStringLiteral( "the release block is %1x the sustained block; the "
+				"fixture asks for %2x from the note-off velocity - the velocity did not "
+				"reach the instrument" ).arg( released / sustained, 0, 'f', 4 )
+				.arg( wanted, 0, 'f', 4 ) ) );
 	}
 
 private:

@@ -4566,6 +4566,14 @@ void PianoRoll::finishRecordNote(const Note & n )
 						n1.setMpeExpression( n.mpeExpression() );
 					}
 
+					// 0.5.0 Q050-039: n is the live note handle, and an MPE
+					// note-off stamped its release velocity on it
+					// (InstrumentTrack::trackMpeInputEvent), so record that too.
+					if( n.releaseVelocity() >= 0 )
+					{
+						n1.setReleaseVelocity( n.releaseVelocity() );
+					}
+
 					if (m_doAutoQuantization)
 					{
 						n1.quantizeLength(quantization());
