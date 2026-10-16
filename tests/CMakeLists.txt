@@ -59,6 +59,7 @@ set(LMMS_TESTS
 	src/core/AudioBusHandleTest.cpp
 	src/core/AudioBusTest.cpp
 	src/core/AudioEngineTeardownTest.cpp
+	src/core/AudioEngineProfilerTest.cpp
 	# The flanger delay buffer is allocated as an array, so both release sites
 	# must use array delete.
 	src/core/MonoDelayTest.cpp

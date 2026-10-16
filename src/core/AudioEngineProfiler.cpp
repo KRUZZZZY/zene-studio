@@ -25,6 +25,7 @@
 #include "AudioEngineProfiler.h"
 
 #include <cstdint>
+#include <thread>
 
 namespace lmms
 {
@@ -36,7 +37,11 @@ AudioEngineProfiler::AudioEngineProfiler() :
 {
 }
 
-
+AudioEngineProfiler::~AudioEngineProfiler()
+{
+	stopWriter();
+	m_outputFile.close();
+}
 
 void AudioEngineProfiler::finishPeriod( sample_rate_t sampleRate, f_cnt_t framesPerPeriod )
 {
@@ -59,19 +64,77 @@ void AudioEngineProfiler::finishPeriod( sample_rate_t sampleRate, f_cnt_t frames
 		m_detailLoad[i].store(newLoad * 0.05f + oldLoad * 0.95f, std::memory_order_relaxed);
 	}
 
-	if( m_outputFile.isOpen() )
+	// Hand the measurement to a bounded buffer; a non-audio thread drains it.
+	const std::uint64_t writeIndex = m_writeIndex.load(std::memory_order_relaxed);
+	const std::uint64_t readIndex = m_readIndex.load(std::memory_order_acquire);
+	if (writeIndex - readIndex < BufferCapacity)
 	{
-		m_outputFile.write( QString( "%1\n" ).arg( periodElapsed ).toLatin1() );
+		m_buffer[writeIndex % BufferCapacity] = periodElapsed;
+		m_writeIndex.store(writeIndex + 1, std::memory_order_release);
 	}
 }
 
+void AudioEngineProfiler::writerLoop()
+{
+	while (true)
+	{
+		bool wrote = false;
+		const std::uint64_t readIndex = m_readIndex.load(std::memory_order_relaxed);
+		const std::uint64_t writeIndex = m_writeIndex.load(std::memory_order_acquire);
+		std::uint64_t current = readIndex;
+		while (current < writeIndex)
+		{
+			if (m_outputFile.isOpen())
+			{
+				m_outputFile.write(QString("%1\n").arg(m_buffer[current % BufferCapacity]).toLatin1());
+			}
+			current++;
+			m_readIndex.store(current, std::memory_order_release);
+			wrote = true;
+		}
+		if (!m_running.load(std::memory_order_relaxed) &&
+			m_readIndex.load(std::memory_order_acquire) == m_writeIndex.load(std::memory_order_acquire))
+		{
+			break;
+		}
+		if (!wrote)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+	}
+}
 
+void AudioEngineProfiler::stopWriter()
+{
+	m_running.store(false, std::memory_order_relaxed);
+	if (m_writerThread.joinable())
+	{
+		m_writerThread.join();
+	}
+	// Drain anything the writer did not reach.
+	std::uint64_t current = m_readIndex.load(std::memory_order_relaxed);
+	const std::uint64_t writeIndex = m_writeIndex.load(std::memory_order_acquire);
+	while (current < writeIndex)
+	{
+		if (m_outputFile.isOpen())
+		{
+			m_outputFile.write(QString("%1\n").arg(m_buffer[current % BufferCapacity]).toLatin1());
+		}
+		current++;
+	}
+	m_readIndex.store(writeIndex, std::memory_order_relaxed);
+}
 
 void AudioEngineProfiler::setOutputFile( const QString& outputFile )
 {
+	stopWriter();
 	m_outputFile.close();
 	m_outputFile.setFileName( outputFile );
-	m_outputFile.open( QFile::WriteOnly | QFile::Truncate );
+	if (m_outputFile.open( QFile::WriteOnly | QFile::Truncate ))
+	{
+		m_running.store(true, std::memory_order_relaxed);
+		m_writerThread = std::thread(&AudioEngineProfiler::writerLoop, this);
+	}
 }
 
 } // namespace lmms

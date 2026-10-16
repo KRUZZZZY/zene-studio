@@ -27,6 +27,10 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <thread>
 #include <QFile>
 
 #include "LmmsTypes.h"
@@ -39,7 +43,7 @@ class AudioEngineProfiler
 {
 public:
 	AudioEngineProfiler();
-	~AudioEngineProfiler() = default;
+	~AudioEngineProfiler();
 
 	void startPeriod()
 	{
@@ -96,9 +100,19 @@ private:
 		m_detailTime[static_cast<std::size_t>(type)] = m_detailTimer[static_cast<std::size_t>(type)].elapsed();
 	}
 
+	void writerLoop();
+	void stopWriter();
+
 	MicroTimer m_periodTimer;
 	std::atomic<float> m_cpuLoad;
 	QFile m_outputFile;
+
+	static constexpr std::size_t BufferCapacity = 4096;
+	std::array<std::uint32_t, BufferCapacity> m_buffer{};
+	std::atomic<std::uint64_t> m_writeIndex{0};
+	std::atomic<std::uint64_t> m_readIndex{0};
+	std::thread m_writerThread;
+	std::atomic<bool> m_running{false};
 
 	// Use arrays to avoid dynamic allocations in realtime code
 	std::array<MicroTimer, DetailCount> m_detailTimer;
