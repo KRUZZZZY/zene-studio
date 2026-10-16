@@ -33,7 +33,7 @@ RackMenuTest direct run: **11 passed, 0 failed, 0 skipped, 0 blacklisted** (QSKI
 
 ## Logs
 
-`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-047.r1/logs/`: `build-1.log` (EXIT=0),
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-047.r3/logs/`: `build-1.log` (EXIT=0),
 `build-2.log` (EXIT=0), `test-RackMenuTest-1.log` (EXIT=0), `test-RackMenuTest-direct-1.log` (EXIT=0),
 `test-DevicePanelTest-1.log` (EXIT=0), `test-picker-neighbours-2.log` (EXIT=0), plus the gate logs
 `gate-complexity-1.log`, `gate-file-length-1.log`, `gate-fork-sources-1.log`,
