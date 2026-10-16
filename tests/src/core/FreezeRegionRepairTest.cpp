@@ -113,6 +113,14 @@ double loudestBetween(tick_t from, tick_t to, tick_t stopTick)
 	return loudest;
 }
 
+TempoMapPublisher* s_probePublisher = nullptr;
+
+//! The pin probe: publishes an unchanged map, so the live slot flips between a reader's pin and its re-check.
+void publishOnce()
+{
+	s_probePublisher->edit([](TempoMap&) { return true; });
+}
+
 } // namespace
 
 class FreezeRegionRepairTest : public QObject
@@ -212,7 +220,8 @@ private slots:
 		constexpr tick_t regionStart = 24;
 		constexpr tick_t regionEnd = 120;
 		QString why;
-		QVERIFY2(track->freezeTo(wav, regionStart, 190, {}, &why, true), qPrintable(why));
+		// the take ends where the rendered range ends
+		QVERIFY2(track->freezeTo(wav, regionStart, regionEnd, {}, &why, true), qPrintable(why));
 
 		Song* const song = Engine::getSong();
 		QVERIFY(song->tempoMap().edit([](TempoMap& map) {
@@ -260,8 +269,96 @@ private slots:
 			return frame;
 		};
 		QCOMPARE(playbackFrame(regionStart), qint64{0});
-		QCOMPARE(playbackFrame(regionEnd), renderLength);
+		// The end is exclusive: the pass AT the take's end tick is not the take's, the last tick before it
+		// starts inside the rendered length, and the end tick itself maps to exactly the rendered length.
+		QCOMPARE(playbackFrame(regionEnd), qint64{-1});
+		const qint64 lastFrame = playbackFrame(regionEnd - 1);
+		QVERIFY2(lastFrame >= 0 && lastFrame < renderLength, qPrintable(QString::number(lastFrame)));
+		QCOMPARE(Track::frozenTakeSourceFrame(map, globalTempo, regionStart, regionEnd, rate,
+			Engine::framesPerTick(rate)), renderLength);
 		song->tempoMap().edit([](TempoMap& m) { m.clear(); return true; });
+	}
+
+	//! Publication: the active/empty state comes from the pinned slot itself, through every transition.
+	void pinnedMapFollowsPublicationTransitions()
+	{
+		TempoMapPublisher publisher;
+		const auto state = [&]() {
+			int seen = -1;
+			publisher.withRealtimeMap([&](const TempoMap& map) { seen = (map.active() ? 2 : 0) + (map.empty() ? 0 : 1); });
+			return seen;
+		};
+		QCOMPARE(state(), 0);  // inactive, empty
+		TempoMapEvent event;
+		event.tick = 48;
+		event.hasTempo = true;
+		event.tempo = 70;
+		QVERIFY(publisher.edit([&](TempoMap& map) { return map.addEvent(event); }));
+		QCOMPARE(state(), 1);  // an event, not active
+		QVERIFY(publisher.edit([](TempoMap& map) { map.setActive(true); return true; }));
+		QCOMPARE(state(), 3);
+		QVERIFY(publisher.edit([](TempoMap& map) { map.setActive(false); return true; }));
+		QCOMPARE(state(), 1);
+		QVERIFY(publisher.edit([](TempoMap& map) { map.clear(); return true; }));
+		QCOMPARE(state(), 0);
+	}
+
+	//! Exhausted pins: a publication lands between every pin and its re-check, so all three attempts lose.
+	void exhaustedPinsKeepTheLastGoodMapForTheTake()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		SampleTrack* track = trackWithOneClip(scratch.path());
+		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("t.wav")), 330.0);
+		constexpr tick_t takeStart = 24;
+		constexpr tick_t position = 96;
+		QString why;
+		QVERIFY2(track->freezeTo(wav, takeStart, 190, {}, &why, true), qPrintable(why));
+		Song* const song = Engine::getSong();
+		TempoMapPublisher& publisher = song->tempoMap();
+		QVERIFY(publisher.edit([](TempoMap& map) {
+			map.setActive(true);
+			TempoMapEvent event;
+			event.tick = 48;
+			event.hasTempo = true;
+			event.tempo = 70;
+			return map.addEvent(event);
+		}));
+
+		// With nothing ever read pinned, a read that cannot pin refuses the pass rather than guess a frame.
+		s_probePublisher = &publisher;
+		publisher.setPinProbeForTest(&publishOnce);
+		bool called = false;
+		QVERIFY(!publisher.withRealtimeMap([&](const TempoMap&) { called = true; }));
+		QVERIFY(!called);
+		AudioEngine* const audio = Engine::audioEngine();
+		QVERIFY(!track->play(TimePos(position), audio->framesPerPeriod(), 0, -1));
+		publisher.setPinProbeForTest(nullptr);
+
+		// One good pass reads the map; then exhaustion keeps its frame: the tempo map's, not a constant rate's.
+		QVERIFY(track->play(TimePos(position), audio->framesPerPeriod(), 0, -1));
+		audio->renderNextPeriod();
+		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
+		QTest::qWait(130);
+		QMetaObject::invokeMethod(song, "playbackPositionJumped", Qt::DirectConnection);
+		publisher.setPinProbeForTest(&publishOnce);
+		QVERIFY(track->play(TimePos(position), audio->framesPerPeriod(), 0, -1));
+		publisher.setPinProbeForTest(nullptr);
+		audio->renderNextPeriod();
+		qint64 frame = -1;
+		for (PlayHandle* handle : audio->playHandles())
+		{
+			auto* voice = handle->type() == PlayHandle::Type::SamplePlayHandle ? static_cast<SamplePlayHandle*>(handle) : nullptr;
+			if (voice != nullptr && voice->isFrozenTakePoolVoice()) { frame = static_cast<qint64>(SampleBuffer::fromFile(wav)->size()) - voice->totalFrames(); }
+		}
+		const double mapped = publisher.map().framesAtTick(position, 44100, static_cast<int>(song->getTempo()))
+			- publisher.map().framesAtTick(takeStart, 44100, static_cast<int>(song->getTempo()));
+		const double constant = (position - takeStart) * Engine::framesPerTick(44100);
+		QVERIFY(std::abs(mapped - constant) > 1000.0);
+		QCOMPARE(frame, static_cast<qint64>(std::llround(mapped)));
+		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
+		QTest::qWait(130);
+		publisher.edit([](TempoMap& m) { m.clear(); return true; });
 	}
 
 	//! A3: a take whose file is gone is reported with its ways out, the source plays on, unfreeze

@@ -38,6 +38,7 @@
 #include "LmmsTypes.h"
 #include <optional>
 #include "TakeLane.h"
+#include "TempoMap.h"
 #include "UnclaimedElements.h"
 
 
@@ -513,6 +514,13 @@ private:
 	FrozenTake m_frozen;
 	std::shared_ptr<const SampleBuffer> m_frozenBuffer;
 	std::atomic<bool> m_frozenTakePlaying{false};
+	//! The last tempo map the audio thread read pinned while it started a take pass, and whether it was in
+	//! force (active and non-empty). Written only by the audio thread (and reset under the render lock), it
+	//! is what a pass uses when every pin attempt loses to a publication, so the take's frame stays on the
+	//! tempo map instead of falling back to a wrong constant-rate frame.
+	TempoMap m_frozenLastMap{};
+	bool m_frozenLastMapInForce = false;
+	bool m_frozenLastMapKnown = false;  //!< a pinned read has succeeded since the take was installed
 	std::atomic<std::uint16_t> m_frozenActiveVoiceCount{0};
 	//! The control thread grows this logical pool limit from the take/loop overlap bound.
 	std::atomic<std::uint16_t> m_frozenVoiceCapacity{8};

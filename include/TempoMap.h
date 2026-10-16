@@ -341,14 +341,11 @@ public:
 		return copy;
 	}
 
-	/*! The audio thread's view (Q050-008): true when the published map is active and holds an event, i.e.
-	 *  when the timeline is NOT the one-rate arithmetic. One atomic load; nothing is copied when it is false. */
-	bool inForceForRealtime() const noexcept { return m_rtInForce.load(std::memory_order_acquire); }
-
-	/*! Runs \a fn(const TempoMap&) on the last published map, pinned in place for the call. Bounded (three
-	 *  attempts, no waiting, no allocation, no lock) and free of data races: a slot is only ever written by
-	 *  the control thread while no reader holds it and it is not the live one. False when the attempts lost
-	 *  to a publication (the caller then uses the one-rate path). */
+	/*! Runs \a fn(const TempoMap&) on the last published map, pinned in place for the call. Whether the map is
+	 *  active or empty is read from the pinned map itself, so there is no separate flag that could disagree
+	 *  with the slot. Bounded (three attempts, no waiting, no allocation, no lock) and free of data races: a slot
+	 *  is only ever written by the control thread while no reader holds it and it is not the live one. False when
+	 *  every attempt lost to a publication; the caller keeps what it last read (Track::playFrozenTake, Song). */
 	template <typename Fn>
 	bool withRealtimeMap(Fn&& fn) const noexcept
 	{
@@ -356,6 +353,7 @@ public:
 		{
 			const int slot = m_rtLive.load(std::memory_order_seq_cst);
 			m_rtReaders[static_cast<std::size_t>(slot)].fetch_add(1, std::memory_order_seq_cst);
+			if (m_rtPinProbe != nullptr) { m_rtPinProbe(); }
 			if (m_rtLive.load(std::memory_order_seq_cst) == slot)
 			{
 				fn(m_rtSlots[static_cast<std::size_t>(slot)]);
@@ -367,6 +365,9 @@ public:
 		return false;
 	}
 
+	//! Test seam: called between a reader's pin and its re-check, to force a publication there. Null in product use.
+	void setPinProbeForTest(void (*probe)()) { m_rtPinProbe = probe; }
+
 private:
 	//! Control thread, after an edit: write the idle slot (waiting for any reader still pinned to it) and flip.
 	void publishRealtime()
@@ -377,7 +378,6 @@ private:
 			std::this_thread::yield();
 		}
 		m_rtSlots[static_cast<std::size_t>(next)] = m_map;
-		m_rtInForce.store(m_map.active() && !m_map.empty(), std::memory_order_release);
 		m_rtLive.store(next, std::memory_order_seq_cst);
 	}
 
@@ -386,7 +386,7 @@ private:
 	std::array<TempoMap, 2> m_rtSlots{};
 	mutable std::array<std::atomic<int>, 2> m_rtReaders{};
 	std::atomic<int> m_rtLive{0};
-	std::atomic<bool> m_rtInForce{false};
+	void (*m_rtPinProbe)() = nullptr;
 };
 
 } // namespace lmms

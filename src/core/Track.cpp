@@ -1236,6 +1236,8 @@ void Track::clearFrozenTake()
 	m_frozenBuffer.reset();
 	m_frozenTakePlaying.store(false, std::memory_order_relaxed);
 	m_frozenVoiceCapacity.store(8, std::memory_order_relaxed);
+	m_frozenLastMapInForce = false;
+	m_frozenLastMapKnown = false;
 }
 
 
@@ -1331,21 +1333,30 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 	// the active-voice count are separate state.
 	if (m_frozenTakePlaying.exchange(true)) { return false; }
 
-	// The same tick-to-frame mapping the render used to cut the take (tempo map aware). With no map in force
-	// this is the one-rate arithmetic and nothing is copied; with one, the published map is read pinned
-	// (bounded, race-free: TempoMapPublisher::withRealtimeMap).
+	// The same tick-to-frame mapping the render used to cut the take (tempo map aware). The map is read
+	// pinned (bounded, race-free: TempoMapPublisher::withRealtimeMap) and whether it is in force comes from
+	// the pinned map itself; the last good read is kept, so a read that loses every attempt to a publication
+	// still maps frames on the tempo map (or on the one rate, if that is what it last saw) - never on a guess.
 	Song* const song = Engine::getSong();
 	const sample_rate_t bufferRate = m_frozenBuffer->sampleRate();
 	const float oneRate = Engine::framesPerTick(bufferRate);
 	const int globalTempo = static_cast<int>(song->getTempo());
-	qint64 sourceIn = static_cast<qint64>(std::llround((position - m_frozen.startTicks) * oneRate));
-	if (song->tempoMap().inForceForRealtime())
+	const bool pinned = song->tempoMap().withRealtimeMap([&](const TempoMap& map) {
+		m_frozenLastMapInForce = map.active() && !map.empty();
+		if (m_frozenLastMapInForce) { m_frozenLastMap = map; }
+	});
+	if (pinned) { m_frozenLastMapKnown = true; }
+	else if (!m_frozenLastMapKnown)
 	{
-		song->tempoMap().withRealtimeMap([&](const TempoMap& map) {
-			sourceIn = frozenTakeSourceFrame(map, globalTempo, m_frozen.startTicks, position,
-				static_cast<int>(bufferRate), oneRate);
-		});
+		// Nothing was ever read: a pass cannot be placed on the take without guessing, so it is skipped and
+		// the next pass retries (the source stays suppressed only for that one pass).
+		m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+		return false;
 	}
+	const qint64 sourceIn = m_frozenLastMapInForce
+		? frozenTakeSourceFrame(m_frozenLastMap, globalTempo, m_frozen.startTicks, position,
+			static_cast<int>(bufferRate), oneRate)
+		: static_cast<qint64>(std::llround((position - m_frozen.startTicks) * oneRate));
 	const qint64 sourceOut = static_cast<qint64>(m_frozenBuffer->size());
 	if (sourceIn >= sourceOut)
 	{
