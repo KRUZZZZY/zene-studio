@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-16T21:04:19Z",
+  "captured_at": "2026-10-16T23:47:52Z",
   "commands": [
     {
       "args_schema": {
@@ -19479,7 +19479,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The background plug-in rescan's progress: whether a run is active, its outcome (never, running, done, cancelled), done/total files and the 0..1 progress, the file being scanned, one entry per finished file (path, status, name, error) in scan order, the run's task.list row and the catalogue_count plugin.list still serves. Read-only.",
+      "description": "The background plug-in rescan's progress: whether a run is active, its outcome (never, running, done, cancelled), done/total files and the 0..1 progress, the file being scanned, one entry per finished file (path, status, name, error) in scan order, the run's task.list row and the catalogue_count plugin.list still serves. total_files is 0 until the run's first turn plans the files. Read-only.",
       "group": "plugin",
       "id": "plugin.scan_status",
       "mutating": false,
@@ -35285,8 +35285,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-090/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-qs5zifna/zene.sock",
-    "version": "0.4.0-alpha.2723+de5a85a"
+    "source_socket": "/tmp/zctl-run-n2s1eubk/zene.sock",
+    "version": "0.4.0-alpha.2726+13936ee"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
