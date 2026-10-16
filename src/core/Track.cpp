@@ -415,16 +415,24 @@ void Track::setParentFolder( TrackFolder* folder )
  *  container (document) order. The relation is DERIVED from that one field,
  *  never stored twice - the same shape a folder's child list has (and indeed a
  *  lane is often a member of the same flat track list as everything else).
+ *
+ *  The walk is under the container's read lock, so a concurrent
+ *  add/remove/move of tracks cannot detach the list while it is read. The
+ *  callers are control-command and GUI-thread code (the arranger, the agent
+ *  surface); nothing on the audio thread calls this, and by the realtime rule
+ *  nothing may, since the lock can wait.
  */
 std::vector<Track*> Track::automationLaneChildren() const
 {
 	std::vector<Track*> lanes;
 	if (m_trackContainer == nullptr) { return lanes; }
-	for (Track* each : m_trackContainer->tracks())
+	m_trackContainer->m_tracksMutex.lockForRead();
+	for (Track* each : m_trackContainer->m_tracks)
 	{
 		auto* lane = dynamic_cast<AutomationTrack*>(each);
 		if (lane != nullptr && lane != this && lane->followsTrack() == m_id) { lanes.push_back(each); }
 	}
+	m_trackContainer->m_tracksMutex.unlock();
 	return lanes;
 }
 

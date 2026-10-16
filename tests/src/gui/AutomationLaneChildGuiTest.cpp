@@ -27,7 +27,8 @@
  *  - the row sits directly beneath the owner and is indented - and folding or
  *  hiding the owner hides it. The fold the AGENT command performs - and the undo
  *  and redo of it - move the rows on their own, with no realignTracks() call in
- *  the test. The child lane's clip is selectable where it is drawn, a point is
+ *  the test. A downward MOVE of the owner past a peer re-draws the lane directly
+ *  beneath it on its own, too. The child lane's clip is selectable where it is drawn, a point is
  *  edited through the lane's own UI (a double-click opens its automation editor),
  *  and the agent surface (automation.get_state, automation.lanes_set_collapsed)
  *  reports the same owner and lane state. */
@@ -246,6 +247,34 @@ private slots:
 		QVERIFY(run(QStringLiteral("track.set_visible"),
 			{{QStringLiteral("track"), owner}, {QStringLiteral("visible"), true}}).ok);
 		QCoreApplication::processEvents();
+		QVERIFY(m_laneView->isVisible());
+	}
+
+	//! A DOWNWARD owner move (the acceptance case the round-5 review exposed):
+	//! the flat list ends up with the lane BEFORE its owner, and only the
+	//! regrouping inside realignTracks() - which moveTrackView() runs on its own
+	//! - puts the lane back directly beneath the moved owner while the peer keeps
+	//! its row. The test calls neither realignTracks() nor any fold command.
+	void movingTheOwnerDownKeepsItsLaneBeneathIt()
+	{
+		Track* peer = Track::create(Track::Type::Sample, Engine::getSong());
+		QCoreApplication::processEvents();  // the peer's row is queued
+		TrackView* peerView = viewOf(peer);
+		QVERIFY2(peerView != nullptr, "the peer's row is missing from the arranger");
+
+		const QList<TrackView*>& rows = getGUI()->songEditor()->m_editor->trackViews();
+		QCOMPARE(rows.indexOf(m_ownerView), 0);
+		QCOMPARE(rows.indexOf(m_laneView), 1);
+		QCOMPARE(rows.indexOf(peerView), 2);
+
+		// The owner crosses both its own lane's drawn row and the peer's,
+		// landing directly below the peer.
+		getGUI()->songEditor()->m_editor->moveTrackView(m_ownerView, 2);
+		QCoreApplication::processEvents();
+		QCOMPARE(rows.indexOf(peerView), 0);
+		QCOMPARE(rows.indexOf(m_ownerView), 1);
+		QVERIFY2(rows.indexOf(m_laneView) == rows.indexOf(m_ownerView) + 1,
+			"the redraw after a downward owner move detached its lane");
 		QVERIFY(m_laneView->isVisible());
 	}
 

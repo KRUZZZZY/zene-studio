@@ -344,24 +344,63 @@ static bool hiddenUnderOwner(const Track* track)
  *  reordered owner's lanes come with it however the flat track list moved. */
 static QList<TrackView*> groupedWithLaneChildren(const QList<TrackView*>& views)
 {
+	// Which owners THIS list holds: only a lane whose owner is still ahead in
+	// the list may wait for it. A lane whose owner is not in the list at all (a
+	// view of another container, or an orphan) is emitted where it stands below,
+	// so its row stays reachable for a person or an agent to select and remove.
+	QSet<int> ownersHere;
+	for (TrackView* view : views)
+	{
+		const Track* track = view->getTrack();
+		if (track != nullptr) { ownersHere.insert(track->id()); }
+	}
+
 	QList<TrackView*> ordered;
 	QSet<TrackView*> placed;
 	for (TrackView* view : views)
 	{
 		if (placed.contains(view)) { continue; }
+		const auto* lane = dynamic_cast<const AutomationTrack*>(view->getTrack());
+		// A lane met BEFORE its owner is DEFERRED, not placed: emit the owner
+		// first and the lane follows right after it. Before the deferral a
+		// downward move of the owner (which leaves the lane earlier in the flat
+		// list) stranded the lane above it - moveTrackView() realigns and the
+		// regrouping re-detaches the lane again (Q050-022 round-5 review).
+		if (lane != nullptr && lane->followsTrack() >= 0 && ownersHere.contains(lane->followsTrack()))
+		{
+			continue;
+		}
 		ordered.append(view);
 		placed.insert(view);
-		const Track* owner = view->getTrack();
-		if (owner == nullptr) { continue; }
-		for (TrackView* candidate : views)
+		// The owner's own walk, then every placed child too, so a lane that
+		// follows a lane nests under its lane in the same sweep.
+		QList<TrackView*> family{view};
+		for (int parentRow = 0; parentRow < family.size(); ++parentRow)
 		{
-			if (placed.contains(candidate)) { continue; }
-			const auto* lane = dynamic_cast<const AutomationTrack*>(candidate->getTrack());
-			if (lane != nullptr && lane->followsTrack() == owner->id())
+			const Track* owner = family.at(parentRow)->getTrack();
+			if (owner == nullptr) { continue; }
+			for (TrackView* candidate : views)
 			{
-				ordered.append(candidate);
-				placed.insert(candidate);
+				if (placed.contains(candidate)) { continue; }
+				const auto* child = dynamic_cast<const AutomationTrack*>(candidate->getTrack());
+				if (child != nullptr && child->followsTrack() >= 0 && child->followsTrack() == owner->id())
+				{
+					ordered.append(candidate);
+					placed.insert(candidate);
+					family.append(candidate);
+				}
 			}
+		}
+	}
+	// Defensive tail: a deferred lane whose owner was never reached (a hand-made
+	// follows cycle between lanes) keeps its row too, in its original order -
+	// the regrouping must never delete views from the display list.
+	for (TrackView* view : views)
+	{
+		if (!placed.contains(view))
+		{
+			ordered.append(view);
+			placed.insert(view);
 		}
 	}
 	return ordered;
