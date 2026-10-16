@@ -238,6 +238,9 @@ public:
 	 *  take's audio is not loaded (the source then plays: a missing take never silences a track)
 	 *  and, for a region take, outside its window. Audio-thread safe: no allocation, lock or I/O. */
 	bool frozenTakeSilencesSource(tick_t position) const noexcept;
+	/*! Hands the committed tempo map to a frozen take's cache (control thread, with the render period held),
+	 *  so a pass whose pinned read loses to a publication still places the take on the current map. */
+	void adoptTempoMapForFrozenTake(const TempoMap& map);
 	/*! Source frame of the take (at \a bufferRate) for timeline tick \a position, \a takeStart being the take's
 	 *  first tick. Follows the tempo map exactly as BounceInPlace's range-to-frames mapping does. */
 	static qint64 frozenTakeSourceFrame(const class TempoMap& map, int globalTempo, tick_t takeStart,

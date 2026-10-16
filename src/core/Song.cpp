@@ -135,6 +135,17 @@ Song::Song() :
 	m_loopRenderRemaining(1),
 	m_oldAutomatedValues()
 {
+	// Frozen takes keep the committed tempo map in step with every publication (control thread, render period
+	// held), so a pass whose pinned read loses to a publication still places the take on the current map.
+	m_tempoMap.setPublishHook( []( void* owner, const TempoMap& map )
+	{
+		auto* song = static_cast<Song*>( owner );
+		AudioEngine* audio = Engine::audioEngine();
+		if( audio == nullptr ) { return; }
+		const auto renderLock = audio->requestChangesGuard();
+		for( Track* track : song->tracks() ) { track->adoptTempoMapForFrozenTake( map ); }
+	}, this );
+
 	// Reserved here, on the constructing thread, so processAutomations never has to grow them.
 	m_oldAutomatedValues.reserve(AutomationRenderScratch::RenderCapacity);
 	m_recordedModels.reserve(AutomationRenderScratch::RenderCapacity);

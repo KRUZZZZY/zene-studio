@@ -365,6 +365,10 @@ public:
 		return false;
 	}
 
+	/*! Called on the control thread after every publication with the committed map (Song installs the hook that
+	 *  hands it to the tracks holding a frozen take). Null by default. */
+	void setPublishHook(void (*hook)(void*, const TempoMap&), void* owner) { m_publishHook = hook; m_publishOwner = owner; }
+
 	//! Test seam: called between a reader's pin and its re-check, to force a publication there. Null in product use.
 	void setPinProbeForTest(void (*probe)()) { m_rtPinProbe = probe; }
 
@@ -379,6 +383,7 @@ private:
 		}
 		m_rtSlots[static_cast<std::size_t>(next)] = m_map;
 		m_rtLive.store(next, std::memory_order_seq_cst);
+		if (m_publishHook != nullptr) { m_publishHook(m_publishOwner, m_map); }
 	}
 
 	TempoMap m_map{};
@@ -387,6 +392,8 @@ private:
 	mutable std::array<std::atomic<int>, 2> m_rtReaders{};
 	std::atomic<int> m_rtLive{0};
 	void (*m_rtPinProbe)() = nullptr;
+	void (*m_publishHook)(void*, const TempoMap&) = nullptr;
+	void* m_publishOwner = nullptr;
 };
 
 } // namespace lmms

@@ -1201,6 +1201,7 @@ bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 	m_frozen.region = region;
 	m_frozenBuffer = buffer;
 	m_frozenTakePlaying.store(false, std::memory_order_relaxed);
+	adoptTempoMapForFrozenTake(Engine::getSong()->tempoMap().map());
 	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
 	updateFrozenVoiceCapacity(timeline.loopEnabled(), timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
 	return true;
@@ -1267,6 +1268,10 @@ void Track::loadFrozenTake(const QDomElement& element)
 	// clips it is still reading.
 	subscribeFrozenTakeSignals();
 	m_frozenBuffer = SampleBuffer::fromFile(m_frozen.path);
+	{
+		const auto renderLock = Engine::audioEngine()->requestChangesGuard();
+		adoptTempoMapForFrozenTake(Engine::getSong()->tempoMap().map());
+	}
 	if (m_frozenBuffer == nullptr || m_frozenBuffer->empty())
 	{
 		// The take's file moved or cannot be decoded: the track stays frozen (state is kept so project.relink
@@ -1277,6 +1282,15 @@ void Track::loadFrozenTake(const QDomElement& element)
 	}
 	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
 	updateFrozenVoiceCapacity(timeline.loopEnabled(), timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
+}
+
+
+void Track::adoptTempoMapForFrozenTake(const TempoMap& map)
+{
+	if (!m_frozen.isFrozen()) { return; }
+	m_frozenLastMapInForce = map.active() && !map.empty();
+	if (m_frozenLastMapInForce) { m_frozenLastMap = map; }
+	m_frozenLastMapKnown = true;
 }
 
 
