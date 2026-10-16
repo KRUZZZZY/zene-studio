@@ -6,6 +6,10 @@ Unit: P0, M, L07. Goal: browse named progressions, see suggestions for the curre
 them, and write a chosen progression from the interface. Every acceptance criterion is met and
 proven by a test run on this worktree; the exact commands and exit codes are below.
 
+Round 2 (rework of r1 reviews): the GUI test now CLICKS the actual Write button - with a real
+fixture clip on the shell selection - and one `control.undo` restores it, so the button's own
+callback (`clicked` -> `writeSelected` -> the registry) is exercised, not `writeTo` in isolation.
+
 ## What was built
 
 - The read that feeds the panel: `chord.progression_list` gained optional `scale`/`root`/`octave`
@@ -32,10 +36,31 @@ proven by a test run on this worktree; the exact commands and exit codes are bel
 | The Edit view opens a progression panel | the panel is opened by the registered `window.progression` command (Edit menu `MainWindow.cpp:404`); its `agent_surface` sweep reports `window.progression = {"status":"ok"}` | `ctest -R '^agent_surface$' --output-on-failure` | 0 |
 | ... and shows suggestions for the selected scale | `ChordProgressionPanelTest::thePanelShowsSuggestionsForTheSelectedScale` (`setScale("Major",0)` -> >=8 rows; `chordsFor("I-V-vi-IV") == "Major, Major, minor, Major"`), and `ControlChordWriteTest::suggestionsSpellTheCatalogueInTheSelectedScale` (the wire `suggestions[]`) | `ctest -R '^(ChordProgressionPanelTest|ControlChordWriteTest)$' --output-on-failure` | 0 |
 | A control-socket test selects a progression, writes its notes, and verifies one undo restores the clip | `ControlChordProgression`: over `--control-socket`, spells the catalogue, writes 12 notes (`notes_replaced 1`, first step exactly {60,64,67}), reads them back through `roll.get_state`, and one `control.undo` restores the clip to its one note; the A16 record is `true_inverse` on the clip checkpoint | `ctest -R '^ControlChordProgression$' --output-on-failure` | 0 |
-| The UI calls the same registered command as the headless workflow | `ChordProgressionPanelTest::theWriteButtonRunsTheRegisteredCommand` (button property `chord.progression_generate`) and `writingThroughThePanelIsOneUndoStep` (write + ONE undo) | `ctest -R '^ChordProgressionPanelTest$' --output-on-failure` | 0 |
+| The UI calls the same registered command as the headless workflow | `ChordProgressionPanelTest::theWriteButtonRunsTheRegisteredCommand` (button property `chord.progression_generate`) and `clickingTheWriteButtonWritesAndOneUndoRestores` (the clicked button writes 12 notes into the selected fixture clip - the same path `writingThroughThePanelIsOneUndoStep` re-proves via `writeTo` - and ONE `control.undo` restores the clip) | `ctest -R '^ChordProgressionPanelTest$' --output-on-failure` | 0 |
 | Documents the remaining bounds | `docs/CHORD-TRACK.md` §6b, `docs/KNOWN-LIMITATIONS.md` (text preview not an audition; target is the shell's selected clip; the panel leaves the chord track untouched; pattern/velocity/seed/variation not exposed) | `git grep -n "progression panel" docs/CHORD-TRACK.md` (review) | - |
 | No regression in the chord group or the A16 table | `ctest -R 'Chord\|ReversibilityUndo'` (9/9) | `ctest -R 'Chord\|ReversibilityUndo' --output-on-failure` | 0 |
 | Snapshot and histogram stay true | `ControlCommandsSnapshot` (829 ids / 76 groups, no `wasm.*`) and `ReversibilityContractTest` | `ctest -R '^(ReversibilityContractTest\|ControlCommandsSnapshot)$' --output-on-failure` | 0 |
+
+Round 2 (the rework: clicking the Write button) - commands and exit codes;
+
+```
+cmake --build build --target zene ChordProgressionPanelTest -- -j4     EXIT=0   (build-1.log)
+ctest -R '^(ChordProgressionPanelTest)$'                               EXIT=0   (test-1.log; the new
+  clickingTheWriteButtonWritesAndOneUndoRestores slot passes)
+ctest -R '^(ChordProgressionPanelTest|ControlChordWriteTest|ControlChordProgression|agent_surface|
+  ControlCommandsSnapshot|ReversibilityContractTest|ReversibilityUndoTest|ControlChordCommandsTest|
+  ChordTrackTest|ChordDetectTest|ChordProgressionTest)$'               EXIT=0   (test-2.log; 11/11)
+bash tests/complexity-gate.sh --check                                  EXIT=1   (train-5 red; grep of
+  the log shows no file of this lane newly listed)
+bash tests/file-length-gate.sh --check                                 EXIT=1   (same)
+bash tests/fork-sources-gate.sh                                        EXIT=0
+bash tests/all-sources-reproduce.sh                                    EXIT=0
+bash tests/no-upstream-regression-gate.sh                              EXIT=0
+tests/scripted/check-namespace                                         EXIT=0
+bash tests/no-tautology-gate.sh                                        EXIT=0
+```
+
+Round 1 (as run then):
 
 ## Commands run and exit codes (all on this worktree)
 
