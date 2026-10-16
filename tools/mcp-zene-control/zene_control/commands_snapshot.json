@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-16T10:11:14Z",
+  "captured_at": "2026-10-16T14:25:33Z",
   "commands": [
     {
       "args_schema": {
@@ -5551,6 +5551,42 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clip",
+          "muted"
+        ],
+        "type": "object"
+      },
+      "description": "Mute or unmute a clip. The song editor's own clip mute (Ctrl+middle-click and the clip context menu) dispatches this command. A clip of the song arrangement or of the pattern editor is addressed by its stable clip-<n> id. With the chase preference on, unmuting a clip under the playhead starts the notes it was holding. Reversible through the ProjectJournal (the clip's mute BoolModel checkpoint).",
+      "group": "clip",
+      "id": "clip.set_mute",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -35147,7 +35183,7 @@
       }
     }
   ],
-  "count": 828,
+  "count": 829,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -35155,15 +35191,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-040/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-50jdt9zb/zene.sock",
-    "version": "0.4.0-alpha.2723+de5a85a"
+    "source_socket": "/tmp/zctl-run-o9ktsx97/zene.sock",
+    "version": "0.4.0-alpha.2729+08b19ea"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 828,
-    "ids_sha256": "8e2d5b9a0774e7005e5832777c552b2d4f09efbc56e71322c5fd72e5f3385c6a"
+    "id_count": 829,
+    "ids_sha256": "0ec4195f35bafd42abe6eb4b828aba0148aad6c727f3513d9736940da6461086"
   }
 }

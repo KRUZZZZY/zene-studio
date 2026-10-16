@@ -203,6 +203,8 @@ set(LMMS_SRCS
 	core/ControlCommandsArrangement.cpp
 	core/ControlCommandsAudioSlice.cpp
 	core/ControlCommandsClip.cpp
+	# clip.set_mute (0.5.0 Q050-040): the clip mute the song editor dispatches too.
+	core/ControlCommandsClipMute.cpp
 	core/ControlCommandsConsolidate.cpp
 	core/ControlCommandsMonitor.cpp
 	core/ControlCommandsPluginEditor.cpp

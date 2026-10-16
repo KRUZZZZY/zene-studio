@@ -921,6 +921,10 @@ LMMS_EXPORT void registerClipProcessCommand(ControlRegistry& registry);
 //! 0.5.0 W3 engine (MX-160, MX-082, MX-063, ED-179): automation.latency_compensation, mixer.post_inserts, chain.receive,
 //! clip.pre_fade (ControlCommandsW3Engine.cpp).
 LMMS_EXPORT void registerW3EngineCommands(ControlRegistry& registry);
+//! 0.5.0 Q050-040 (L07): clip.set_mute - the song editor's own clip mute dispatches this
+//! command too, so GUI and agents share one implementation (ControlCommandsClipMute.cpp;
+//! its own unit because the clip group's file ratchet is not moved for a new feature).
+LMMS_EXPORT void registerClipMuteCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

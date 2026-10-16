@@ -184,6 +184,8 @@ void registerControlCommands(ControlRegistry& registry)
 
 	registerArrangementCommands(registry);
 	registerClipCommands(registry);
+	// 0.5.0 Q050-040: the song editor's clip mute and the agents' share one command.
+	registerClipMuteCommands(registry);
 	registerClipEditsCommands(registry);
 	registerClipConsolidateCommands(registry);
 	registerTrackMonitorCommands(registry);
