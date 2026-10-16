@@ -20,6 +20,16 @@
 
 #include "PluginPortsHarness.h"
 
+#include "AudioPlugin.h"
+#include "BasicFilters.h"
+#include "EffectControls.h"
+#include "Graph.h"
+#include "RingBuffer.h"
+#include "../../../plugins/MultitapEcho/MultitapEchoControlDialog.h"
+#define private public
+#include "../../../plugins/MultitapEcho/MultitapEcho.h"
+#undef private
+
 #include <cstddef>
 #include <cmath>
 #include <cmath>
@@ -625,6 +635,30 @@ private:
 
 namespace lmms
 {
+	class MultitapEchoEffectTestAccess
+	{
+	public:
+		static float amp(const Effect& effect, int index)
+		{
+			return static_cast<const MultitapEchoEffect&>(effect).m_amp[index];
+		}
+
+		static float lpFreq(const Effect& effect, int index)
+		{
+			return static_cast<const MultitapEchoEffect&>(effect).m_lpFreq[index];
+		}
+
+		static void setAmpGraphSample(Effect& effect, int index, float value)
+		{
+			static_cast<MultitapEchoEffect&>(effect).m_controls.m_ampGraph.setSampleAt(index, value);
+		}
+
+		static void setLpGraphSample(Effect& effect, int index, float value)
+		{
+			static_cast<MultitapEchoEffect&>(effect).m_controls.m_lpGraph.setSampleAt(index, value);
+		}
+	};
+
 	class FrequencyShifterEffectTestAccess
 	{
 		static auto concrete(const Effect& effect) -> const FrequencyShifterEffect&
@@ -721,6 +755,7 @@ private slots:
 	void fastBassBoostFrequencySetterHonoursFloor();
 	void xpressiveRandomVectorRejectsOutOfRangeFloatInputs();
 	void multitapEchoRetunesAllTapsAfterSampleRateChange();
+	void multitapEchoGraphEditsAreDeferredToAudioThread();
 	void nesCoarseDetuneRetunesHeldNote();
 	void opulenzUpdatePatchLocksEmulatorForWholeUpdate();
 	void sf2DialogRejectsAFilteredOutProgram();
@@ -2428,6 +2463,37 @@ void PluginPortsMigrationTest::multitapEchoRetunesAllTapsAfterSampleRateChange()
 	const auto currentSamples = partc::renderInFreshThread(*current, frames);
 	QVERIFY2(outdatedSamples == currentSamples,
 		"tap filters differ after a sample-rate change with 32 steps");
+}
+
+void PluginPortsMigrationTest::multitapEchoGraphEditsAreDeferredToAudioThread()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_multitapecho)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	const auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto effect = createConfiguredMultitapEcho(entry);
+	constexpr int tap = 31;
+	const float ampBeforeEdit = lmms::MultitapEchoEffectTestAccess::amp(*effect, tap);
+	const float lpFreqBeforeEdit = lmms::MultitapEchoEffectTestAccess::lpFreq(*effect, tap);
+	const float graphLpValue = std::log10(2000.0f / 20.0f);
+
+	lmms::MultitapEchoEffectTestAccess::setAmpGraphSample(*effect, tap, -6.0f);
+	lmms::MultitapEchoEffectTestAccess::setLpGraphSample(*effect, tap, graphLpValue);
+	QCOMPARE(lmms::MultitapEchoEffectTestAccess::amp(*effect, tap), ampBeforeEdit);
+	QCOMPARE(lmms::MultitapEchoEffectTestAccess::lpFreq(*effect, tap), lpFreqBeforeEdit);
+
+	std::array<lmms::SampleFrame, 64> buffer{};
+	lmms::SampleFrame* busPointers[] = {buffer.data()};
+	lmms::AudioBus bus{busPointers, 1, static_cast<lmms::f_cnt_t>(buffer.size())};
+	effect->processAudioBuffer(bus);
+	QCOMPARE(lmms::MultitapEchoEffectTestAccess::amp(*effect, tap), lmms::dbfsToAmp(-6.0f));
+	QVERIFY(std::abs(lmms::MultitapEchoEffectTestAccess::lpFreq(*effect, tap) - 2000.0f) < 0.01f);
 }
 
 void PluginPortsMigrationTest::nesCoarseDetuneRetunesHeldNote()

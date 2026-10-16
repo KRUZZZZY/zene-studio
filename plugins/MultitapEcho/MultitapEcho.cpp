@@ -32,6 +32,9 @@
 namespace lmms
 {
 
+static_assert(std::atomic<float>::is_always_lock_free,
+	"Multitap Echo control publication must be lock-free on the audio thread");
+
 
 extern "C"
 {
@@ -57,13 +60,12 @@ MultitapEchoEffect::MultitapEchoEffect( Model* parent, const Descriptor::SubPlug
 	m_stages( 1 ),
 	m_controls( this ),
 	m_buffer( 16100.0f ),
-	m_sampleRate( Engine::audioEngine()->outputSampleRate() ),
-	m_sampleRatio( 1.0f / m_sampleRate )
+	m_sampleRatio( 1.0f / Engine::audioEngine()->outputSampleRate() )
 {
 	m_work = new SampleFrame[Engine::audioEngine()->framesPerPeriod()];
 	m_buffer.reset();
 	m_stages = static_cast<int>( m_controls.m_stages.value() );
-	updateFilters( 0, 19 );
+	applyPendingControls( m_controls.m_steps.value() );
 }
 
 
@@ -75,13 +77,35 @@ MultitapEchoEffect::~MultitapEchoEffect()
 
 void MultitapEchoEffect::updateFilters( int begin, int end )
 {
+	const float sampleRatio = m_sampleRatio.load(std::memory_order_relaxed);
 	for( int i = begin; i <= end; ++i )
 	{
 		for( int s = 0; s < m_stages; ++s )
 		{
-			setFilterFreq( m_lpFreq[i] * m_sampleRatio, m_filter[i][s] );
+			setFilterFreq( m_lpFreq[i] * sampleRatio, m_filter[i][s] );
 		}
 	}
+}
+
+
+void MultitapEchoEffect::applyPendingControls( int steps )
+{
+	const float sampleRatio = m_sampleRatio.load(std::memory_order_relaxed);
+	const bool sampleRatioChanged = sampleRatio != m_appliedSampleRatio;
+	for( int i = 0; i < steps; ++i )
+	{
+		m_amp[i] = m_pendingAmp[static_cast<std::size_t>(i)].load(std::memory_order_relaxed);
+		const float lpFreq = m_pendingLpFreq[static_cast<std::size_t>(i)].load(std::memory_order_relaxed);
+		if( lpFreq != m_lpFreq[i] || sampleRatioChanged )
+		{
+			m_lpFreq[i] = lpFreq;
+			for( int s = 0; s < m_stages; ++s )
+			{
+				setFilterFreq( lpFreq * sampleRatio, m_filter[i][s] );
+			}
+		}
+	}
+	m_appliedSampleRatio = sampleRatio;
 }
 
 
@@ -106,10 +130,15 @@ ProcessStatus MultitapEchoEffect::processImpl(InterleavedBufferView<float, 2> in
 	const float dryGain = dbfsToAmp( m_controls.m_dryGain.value() );
 	const bool swapInputs = m_controls.m_swapInputs.value();
 	
-	// check if number of stages has changed
-	if( m_controls.m_stages.isValueChanged() )
+	// Check for stage changes and apply graph controls on the audio thread.
+	const bool stagesChanged = m_controls.m_stages.isValueChanged();
+	if( stagesChanged )
 	{
 		m_stages = static_cast<int>( m_controls.m_stages.value() );
+	}
+	applyPendingControls( steps );
+	if( stagesChanged )
+	{
 		updateFilters( 0, steps - 1 );
 	}
 	
