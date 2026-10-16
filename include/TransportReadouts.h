@@ -31,6 +31,7 @@
 #include <QWidget>
 
 #include "AutomatableModel.h"
+#include "ControlRegistry.h"
 #include "lmms_export.h"
 
 class QActionGroup;
@@ -102,8 +103,15 @@ LMMS_EXPORT bool ticksFromBarBeat(const QString& text, int* ticks);
 //! the one in use checked. For every field that shows a musical position or length.
 LMMS_EXPORT void addTimeFormatChoices(QWidget* widget);
 
-//! The header's readouts, laid out in the strip: tempo, meter, position (in the time format, theme 7) and
-//! time, the record mode with its scope (theme 7), master level and transposition, and the engine load.
+//! WF-085: the words the header's Rec left readout shows for @a state - the transcription of
+//! record.remaining's seconds: "2h 3m" (rounded down to the minute), "0m" when the budget is
+//! spent (a zero estimate), "-" when the command refused (a volume it could not measure).
+//! Exported for the readout's tests; not a JSON value, whatever the estimate is:
+QString recordRemainingLabel(const ControlResult& state);
+
+//! The header's transport readouts, laid out in the strip: tempo, meter, position (in the time format, theme 7) and
+//! time, the record mode with its scope (theme 7), the recording budget (record.remaining, WF-085), master level and
+//! transposition, and the engine load.
 //! Replaces the song editor's LCD boxes, sliders and scope (docs/UI-SHELL.md §1).
 class LMMS_EXPORT TransportReadouts : public QWidget
 {
@@ -111,12 +119,13 @@ class LMMS_EXPORT TransportReadouts : public QWidget
 
 public:
 	explicit TransportReadouts(QWidget* parent = nullptr);
-	//! Re-read what moves on its own: the position, the time and the load (60 Hz from the
-	//! main window's periodic update).
+	//! Re-read what moves on its own: the position, the time, the load and the recording budget (60 Hz from the
+	//! main window's periodic update; the budget once a second, the disk's free space does not move faster).
 	void tick();
 
 	ReadoutField* tempo() const { return m_tempo; }
 	ReadoutField* loudness() const { return m_loudness; }
+	ReadoutField* recordRemaining() const { return m_recordRemaining; }
 
 private:
 	void bindToSong(Song* song);
@@ -128,6 +137,7 @@ private:
 	ReadoutField* m_position;
 	ReadoutField* m_time;
 	ReadoutField* m_recordMode;
+	ReadoutField* m_recordRemaining;
 	QActionGroup* m_recordModes = nullptr;
 	int m_shownRecordMode = -1;
 	ReadoutField* m_volume;

@@ -272,6 +272,20 @@ bool setMeterTyped(MeterModel* meter, const QString& typed)
 
 } // namespace
 
+//! WF-085: the Rec left readout's words. The estimate comes straight from record.remaining,
+//! so the header and the agent surface show the same number whatever the budget.
+QString recordRemainingLabel(const ControlResult& state)
+{
+	const double seconds = state.ok ? state.result.value(QStringLiteral("seconds")).toDouble(-1.0) : -1.0;
+	if (seconds < 0.0) { return QObject::tr("-"); }  // the command refused: a volume it could not measure
+	const qint64 minutes = static_cast<qint64>(seconds / 60.0);  // the floor: the readout keeps its minute until the next is there
+	if (minutes >= 60)
+	{
+		return QObject::tr("%1h %2m").arg(minutes / 60).arg(minutes % 60);
+	}
+	return QObject::tr("%1m").arg(minutes);  // "0m" is the spent budget (a zero estimate)
+}
+
 QString barBeatText(int ticks)
 {
 	return musicaltime::barBeatText(ticks);
@@ -340,11 +354,13 @@ TransportReadouts::TransportReadouts(QWidget* parent)
 	m_position = new ReadoutField(tr("Position"), this);
 	m_time = new ReadoutField(tr("Time"), this);
 	m_recordMode = new ReadoutField(tr("Rec mode"), this);
+	m_recordRemaining = new ReadoutField(tr("Rec left"), this);  // WF-085
 	m_volume = new ReadoutField(tr("Master"), this);
 	m_pitch = new ReadoutField(tr("Transpose"), this);
 	m_load = new ReadoutField(tr("CPU"), this);
 	m_loudness = new ReadoutField(tr("LUFS"), this);
-	for (ReadoutField* f : {m_tempo, m_meter, m_position, m_time, m_recordMode, m_volume, m_pitch, m_load, m_loudness}) { row->addWidget(f); }
+	for (ReadoutField* f : {m_tempo, m_meter, m_position, m_time, m_recordMode, m_recordRemaining, m_volume,
+		m_pitch, m_load, m_loudness}) { row->addWidget(f); }
 	// A shell built without an engine (a widget test) shows the readouts inert.
 	if (song != nullptr) { bindToSong(song); }
 }
@@ -386,6 +402,13 @@ void TransportReadouts::bindToSong(Song* song)
 		recordoptions::modeNames(), {recordoptions::modeChoice(recordoptions::Mode::Overdub),
 			recordoptions::modeChoice(recordoptions::Mode::Replace)});
 	syncRecordMode();
+	// WF-085 (Q050-179): the header shows record.remaining's estimate next to the record mode,
+	// so the recording budget is visible while a route is armed and while a pass runs - and the
+	// GUI answers record.remaining through the same registered command the agent surface has.
+	m_recordRemaining->bindText([]() { return recordRemainingLabel(
+		ControlRegistry::instance()->invoke(QStringLiteral("record.remaining"))); });
+	m_recordRemaining->setToolTip(tr("Rec left: the recording time the disk's free space still allows "
+		"(record.remaining); '-' when a volume cannot be measured"));
 	m_volume->bind(&song->masterVolumeModel(), [](int v) { return QStringLiteral("%1%").arg(v); }, 2);
 	m_pitch->bind(&song->masterPitchModel(), [](int v) { return signedValue(v); }, 8);
 	m_load->bindText([]() { return QStringLiteral("%1%").arg(Engine::audioEngine()->cpuLoad()); });
@@ -420,10 +443,17 @@ void TransportReadouts::tick()
 	// The loudness reading changes at the meter's own 100 ms block rate; 60 Hz would only
 	// re-ask the registry for the same numbers.
 	constexpr int LoudnessEvery = 15;
+	// The recording budget follows the disk's free space and the armed routes (record.remaining);
+	// a second's resolution is enough - the free space does not move at 60 Hz.
+	constexpr int RecordRemainingEvery = 60;  // WF-085
 	if (++m_ticks % LoudnessEvery == 0)
 	{
 		m_loudness->refresh();
 		syncRecordMode();  // a mode set from the Record menu, a script or an undo
+	}
+	if (m_recordRemaining != nullptr && m_ticks % RecordRemainingEvery == 0)
+	{
+		m_recordRemaining->refresh();  // the budget as it changes: a route armed, space consumed
 	}
 }
 

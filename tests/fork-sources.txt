@@ -2466,6 +2466,9 @@ tests/src/plugins/ReverbSCCreateTestAllocator.c
 # Its exact path is an explicit input to both recipe copies above because the current
 # core-test keep-list does not cover tests/src/gui.
 tests/src/gui/PianoViewFocusTest.cpp
+# 2026-10-16 (cluster Q050-179): the Rec left readout's regression test is a fork-new GUI test,
+# named by hand as its neighbour above (the current core-test keep-list does not cover tests/src/gui).
+tests/src/gui/RecordRemainingTest.cpp
 tests/src/gui/TaskIndicatorTest.cpp
 tests/src/gui/EqCurveTest.cpp
 tests/src/plugins/EqFilterTest.cpp

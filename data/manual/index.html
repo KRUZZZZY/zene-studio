@@ -140,7 +140,10 @@ along a lane in the take-lanes view to comp that range, double-click to cycle th
 played without recording - save it as a clip or a take afterwards. Record &gt; Punch In Here and Punch Out Here set
 the punch region at the play position while you record; Metronome Sound and Level chooses the click, its level, the
 accent and whether it clicks only while recording. Track &gt; Takes and Comping moves the edge between two takes, or comps
-several tracks (a kit) at once. Scripts and agents can ask how much recording time the disk has left (record.remaining). A recording route can take the master or a channel
+several tracks (a kit) at once. The header's Rec left readout shows how much recording time the
+disk's free space still allows at what the armed routes write (record.remaining - "-" when a volume
+cannot be measured, "0m" when the budget is spent); scripts and agents ask the same command. A
+recording route can take the master or a channel
 instead of the input (record.route_source), before or after the channel's devices or fader - if you also monitor what
 you record, lower the level first: a signal recorded from what it feeds can howl. Track &gt; MIDI Out sends an
 instrument track's notes to a hardware synth; record its audio back on an audio track that monitors the input.</p>
