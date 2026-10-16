@@ -1,80 +1,51 @@
-# Cluster new-p10-3 — the CLAP instrument view keeps stale output-channel information
+# Cluster new-p10-3 — the CLAP instrument view follows output layout changes
 
 **Verdict: FIXED**
 
-## Finding
-`plugins/ClapInstrument/ClapInstrumentView.cpp:75` built the audio-output channel-count
-label once, from `plugin->busLayout().outputs`. `ClapInstrument::reprepare()`
-(`plugins/ClapInstrument/ClapInstrument.cpp:203`) already re-reads a changed `clap.audio-ports`
-layout and rebuilds the transport, but nothing told the view, so the label kept the old count.
+## Finding and change
 
-Real: a CLAP plug-in may rescan its audio ports and ask `clap_host.request_restart` while it
-runs; the host's poll answers with `reprepare()`, which re-reads the layout and increments
-`HostedPlugin::layoutRevision()` (`plugins/ClapEffect/ClapHost.cpp:107-138`,
-`ClapHostInternals.h:399-404`). Audio routing followed the new layout; the surface did not.
+`plugins/ClapInstrument/ClapInstrumentView.cpp:77-88` refreshes the audio-output label on
+`ClapInstrument::outputLayoutChanged()`. `plugins/ClapInstrument/ClapInstrument.cpp:218-228`
+emits that signal after `reprepare()` applies a changed layout. The signal is declared at
+`plugins/ClapInstrument/ClapInstrument.h:137`. This preserves the view-refresh behavior from the
+first commit.
 
-## Fix (behaviour-preserving otherwise)
-- `plugins/ClapInstrument/ClapInstrument.h:135-137` — new signal `outputLayoutChanged()`.
-- `plugins/ClapInstrument/ClapInstrument.cpp:218-228` — `reprepare()` emits it after
-  `engine->doneChangeInModel()` exactly when the layout revision changed.
-- `plugins/ClapInstrument/ClapInstrumentView.cpp:75-88` — the label text moved into
-  `updateOutputs`, called once at construction and again on the signal (re-`setFixedSize` so a
-  wrapped label resizes). No other behaviour changes.
-
-## Regression test
-New `tests/src/plugins/ClapInstrumentViewTest.cpp` (target `ClapInstrumentViewTest`, registered
-in `tests/CMakeLists.txt` and `tests/all-sources.txt`). It compiles the real instrument module
-(the same shape as `ClapEffectIntegrationTest`), builds the real view, and drives the runtime
-layout change through the in-tree fixture. The fixture gained a runtime layout mode
-(`tests/data/clap-test-plugin/clap-test-instrument.c`): with `CLAP_TEST_INSTRUMENT_LAYOUT` set,
-the single-output class reports a second stereo output port and announces it from `activate()`
-with `clap_host_audio_ports.rescan` + `request_restart`, the CLAP way. Unset, the fixture is
-unchanged (all other CLAP/instrument tests stay green).
+The review found that the fixture announced its added port with `rescan(..., 0)`, while the host
+did not set `is_rescan_flag_supported`. `plugins/ClapEffect/ClapHostInternals.h:406-421,535` now
+advertises the six CLAP audio-port rescan flags handled by its deferred inactive scan. At
+`tests/data/clap-test-plugin/clap-test-instrument.c:464-475,665`, the fixture checks support for
+`CLAP_AUDIO_PORTS_RESCAN_LIST` and requests that flag when the new port appears in `activate()`
+(`!active_state`), then requests a restart. The test in
+`tests/src/plugins/ClapInstrumentViewTest.cpp:102-137` checks that the real instrument layout and
+displayed count both change from 2 to 4.
 
 ## Evidence
 
+The product-only proof used the prior commit's three view-refresh files as `fix.patch`; host rescan
+support and fixture changes stayed present in both runs. The test failed without those product
+hunks on the stale-label assertion, then passed after they were restored.
+
 | step | command | result |
 |---|---|---|
-| RED (unfixed product) | `cmake --build build --target ClapInstrumentViewTest` then `ctest -R ClapInstrumentViewTest --output-on-failure` | `FAIL! ... 'label->text().contains("4 channel")' returned FALSE (the audio-output label went stale: Audio output: 2 channel(s)...)`, ctest EXIT=8 |
-| GREEN (fixed) | rebuild + same ctest | `1/1 Test #486: ClapInstrumentViewTest ... Passed`, ctest EXIT=0 |
-| proof (revert product patch) | `git diff -- plugins/ClapInstrument/... > fix.patch; git apply -R fix.patch`; rebuild; `ctest -R ClapInstrumentViewTest` | BUILD EXIT=0, ctest EXIT=8 (FAIL, same stale label) |
-| proof (reapply) | `git apply fix.patch`; rebuild; `ctest -R ClapInstrumentViewTest` | BUILD EXIT=0, ctest EXIT=0 (Passed) |
-| family | `ctest -R "Clap\|InstrumentSetupUiTest\|InstrumentLatencyPdcTest\|ControlDeviceCatalogueTest\|InstrumentLayersCommandsTest" --output-on-failure` | 9/9 passed, EXIT=0 (`ClapBusMapTest`, `ClapHostTest`, `ClapLoaderErrorTest`, `ClapEffectIntegrationTest`, `ClapInstrumentViewTest`, `InstrumentSetupUiTest`, `InstrumentLatencyPdcTest`, `ControlDeviceCatalogueTest`, `InstrumentLayersCommandsTest`) |
+| Save product-only patch | `git diff HEAD^ HEAD -- plugins/ClapInstrument/ClapInstrument.cpp plugins/ClapInstrument/ClapInstrument.h plugins/ClapInstrument/ClapInstrumentView.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-3.r2/logs/fix.patch` | EXIT 0 |
+| Product-only RED setup | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-3.r2/logs/fix.patch` | EXIT 0 |
+| RED build | `cmake --build build --target ClapInstrumentViewTest -j12` | EXIT 0 (`build-1.log`) |
+| RED test | `cd build/tests && ctest -R '^ClapInstrumentViewTest$' --output-on-failure` | EXIT 8; label stayed at `2 channel(s)` (`test-1-red.log`) |
+| Restore product-only patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-3.r2/logs/fix.patch` | EXIT 0 |
+| Targeted GREEN build | `cmake --build build --target zene ClapInstrumentViewTest -j12` | EXIT 0 (`build-2-green.log`) |
+| Targeted GREEN test | `cd build/tests && ctest -R '^ClapInstrumentViewTest$' --output-on-failure` | EXIT 0; 1/1 passed (`test-2-green.log`) |
+| CLAP family build | `cmake --build build --target ClapBusMapTest ClapHostTest ClapLoaderErrorTest ClapEffectIntegrationTest ClapInstrumentViewTest -j12` | EXIT 0 (`build-3-family.log`) |
+| CLAP family tests | `cd build/tests && ctest -R '^Clap.*Test$' --output-on-failure` | EXIT 0; 5/5 passed (`test-3-family.log`) |
+| Complexity ratchet | `bash tests/complexity-gate.sh --check` | EXIT 1; six unrelated new over-target functions; no changed file from this fix is listed (`gate-1-complexity.log`) |
+| File-length ratchet | `bash tests/file-length-gate.sh --check` | EXIT 1; fourteen unrelated new over-limit files; no changed file from this fix is listed (`gate-2-file-length.log`) |
 
-Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-3.r1/logs/`
-(`test-1-red.log`, `test-2-green.log`, `test-6-reverted.log`, `test-7-reapplied.log`,
-`test-5-family-all.log`, `build-*.log`).
+Both ratchet failures are existing baseline drift on this branch. The checks did not list the new
+host callback or any file changed for this fix; no gate limit or baseline was changed.
 
-Note: `ControlDeviceCatalogueTest` and `InstrumentLayersCommandsTest` first failed because the
-`patman`/`tripleoscillator` modules were not built in this worktree; after
-`cmake --build build --target patman tripleoscillator` they pass (EXIT=0). They are unrelated to
-this change.
+## Files in this follow-up commit
 
-## Gates (unpiped exit codes)
-
-| gate | command | exit |
-|---|---|---|
-| complexity (ratchet) | `bash tests/complexity-gate.sh --check` | **1** |
-| file-length (ratchet) | `bash tests/file-length-gate.sh --check` | **1** |
-| fork-sources | `bash tests/fork-sources-gate.sh` | 0 |
-| unregistered-tests | `bash tests/unregistered-tests-gate.sh` | 0 |
-| upstream regression | `bash tests/no-upstream-regression-gate.sh` | 0 |
-
-Both required ratchet gates are RED **before this change too**: they were re-run on the pristine
-tree (all working-tree changes reverse-applied with `git apply -R /tmp/opencode/all-changes.patch`),
-and they fail with the identical verdicts (`complexity` EXIT=1, 6 regressions; `file-length`
-EXIT=1, 14 regressions; logs `gate-1b-complexity-pristine.log`, `gate-2b-filelength-pristine.log`).
-Every reported regression is in a file this change does not touch (e.g.
-`src/core/TakeLane.cpp`, `src/core/SmfInterchangeReader.cpp`, `tests/src/gui/XyPadPairTest.cpp`);
-none is a `plugins/ClapInstrument/*` file. This is pre-existing baseline drift on the branch,
-not a result of this fix. No gate limit or baseline was re-anchored.
-
-## Files committed
-- `plugins/ClapInstrument/ClapInstrument.h`
-- `plugins/ClapInstrument/ClapInstrument.cpp`
-- `plugins/ClapInstrument/ClapInstrumentView.cpp`
+- `plugins/ClapEffect/ClapHostInternals.h`
 - `tests/data/clap-test-plugin/clap-test-instrument.c`
-- `tests/src/plugins/ClapInstrumentViewTest.cpp` (new)
-- `tests/CMakeLists.txt`
-- `tests/all-sources.txt`
-- `docs/qwen-fixes-2026-10/cluster-new-p10-3.md` (this file)
+- `tests/src/plugins/ClapInstrumentViewTest.cpp`
+- `tests/upstream-modifications.txt`
+- `docs/qwen-fixes-2026-10/cluster-new-p10-3.md`

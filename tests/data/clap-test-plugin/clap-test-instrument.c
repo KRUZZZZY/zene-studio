@@ -69,10 +69,10 @@
 #define TEST_INSTRUMENT_MAX_LATENCY 16384u
 #define TEST_INSTRUMENT_LATENCY_ENV "CLAP_TEST_INSTRUMENT_LATENCY"
 /* CLAP_TEST_INSTRUMENT_LAYOUT: set (to any value) and the single-output class reports a
-   SECOND stereo output port, i.e. its audio-port layout changes while the host runs. An
-   active instance notices the change at activate() and asks for a restart and a port rescan
-   (clap_host_audio_ports.rescan), the way a real plug-in announces a new routing layout - the
-   subject of the instrument view's stale-channel-count case. Unset, the class is unchanged. */
+   SECOND stereo output port, i.e. its audio-port layout changes while the host runs. During
+   activate() (the !active_state callback), the instance checks that the host supports a list
+   rescan, requests CLAP_AUDIO_PORTS_RESCAN_LIST, and asks for a restart - the subject of the
+   instrument view's stale-channel-count case. Unset, the class is unchanged. */
 #define TEST_INSTRUMENT_LAYOUT_ENV "CLAP_TEST_INSTRUMENT_LAYOUT"
 
 enum
@@ -466,10 +466,12 @@ static void instrument_follow_layout(instrument_plugin_t* self)
 	if (self->multiout) { return; }
 	const uint32_t ports = instrument_output_ports();
 	if (ports == self->layout_ports) { return; }
-	self->layout_ports = ports;
 	const clap_host_audio_ports_t* host_ports =
 		(const clap_host_audio_ports_t*)self->host->get_extension(self->host, CLAP_EXT_AUDIO_PORTS);
-	if (host_ports && host_ports->rescan) { host_ports->rescan(self->host, 0); }
+	if (!host_ports || !host_ports->is_rescan_flag_supported || !host_ports->rescan ||
+		!host_ports->is_rescan_flag_supported(self->host, CLAP_AUDIO_PORTS_RESCAN_LIST)) { return; }
+	self->layout_ports = ports;
+	host_ports->rescan(self->host, CLAP_AUDIO_PORTS_RESCAN_LIST);
 	self->host->request_restart(self->host);
 }
 

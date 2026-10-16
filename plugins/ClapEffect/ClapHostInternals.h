@@ -403,6 +403,22 @@ struct HostedPlugin::Impl
 		self->needsReprepare.store(true, std::memory_order_relaxed);
 	}
 
+	static bool CLAP_ABI audioPortsIsRescanFlagSupported(const clap_host_t*, std::uint32_t flag)
+	{
+		switch (flag)
+		{
+		case CLAP_AUDIO_PORTS_RESCAN_NAMES:
+		case CLAP_AUDIO_PORTS_RESCAN_FLAGS:
+		case CLAP_AUDIO_PORTS_RESCAN_CHANNEL_COUNT:
+		case CLAP_AUDIO_PORTS_RESCAN_PORT_TYPE:
+		case CLAP_AUDIO_PORTS_RESCAN_IN_PLACE_PAIR:
+		case CLAP_AUDIO_PORTS_RESCAN_LIST:
+			return true;
+		default:
+			return false;
+		}
+	}
+
 	//! Re-read clap.audio-ports (main thread, deactivated).
 	void scanAudioPorts();
 
@@ -516,6 +532,7 @@ struct HostedPlugin::Impl
 		hostParams.clear = &Impl::paramsClear;
 		hostParams.request_flush = &Impl::paramsRequestFlush;
 
+		hostAudioPorts.is_rescan_flag_supported = &Impl::audioPortsIsRescanFlagSupported;
 		hostAudioPorts.rescan = &Impl::audioPortsRescan;
 
 		hostState.mark_dirty = &Impl::stateMarkDirty;

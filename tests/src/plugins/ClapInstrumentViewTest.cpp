@@ -124,9 +124,9 @@ private slots:
 		QVERIFY2(label != nullptr, "the instrument view shows no audio-output channel count");
 		QVERIFY2(label->text().contains(QStringLiteral("2 channel")), qPrintable(label->text()));
 
-		// The plug-in changes its layout while running: it names the new layout at activate() and asks
-		// for the restart/rescan. The host's poll answers it with re-prepare; the first re-prepare takes
-		// the announcement, the second re-reads the layout, exactly as two poll ticks would.
+		// The plug-in changes its layout while running. In activate()'s !active_state callback, the
+		// fixture verifies LIST rescan support, announces the added port, and requests a restart. The
+		// next re-prepare re-reads the layout, as the host does after servicing that restart.
 		qputenv("CLAP_TEST_INSTRUMENT_LAYOUT", "aux");
 		instrument->reprepare();
 		instrument->reprepare();
