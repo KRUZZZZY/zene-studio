@@ -35,6 +35,7 @@
 #include <QJsonArray>
 #include <QRegularExpression>
 
+#include <algorithm>
 #include <cmath>
 
 #include "ArticulationMap.h"
@@ -166,16 +167,21 @@ InstrumentTrack* instrumentTrack(const QString& id, ControlResult* error)
 	return track;
 }
 
-//! Replace the map of the track @a id names (under its lock, as the audio thread reads it).
-void writeArticulations(const QString& id, const std::vector<Articulation>& entries)
+//! The clips @a clipIds of the track @a id announce their change. Called after applyArticulationEdit
+//! returns: the track is unlocked by then, so a listener that reads the track is handed the committed
+//! map and note indices, never a half-applied edit. The ids are re-resolved so a clip the edit removed
+//! is not touched.
+void announceArticulationEdits(const QString& id, const std::vector<int>& clipIds)
 {
+	if (clipIds.empty()) { return; }
 	ControlResult ignored;
 	InstrumentTrack* track = instrumentTrack(id, &ignored);
 	if (track == nullptr) { return; }
-	track->lock();
-	track->articulations().set(entries);
-	track->unlock();
-	Engine::getSong()->setModified();
+	for (Clip* clip : track->getClips())
+	{
+		if (std::find(clipIds.begin(), clipIds.end(), clip->id()) == clipIds.end()) { continue; }
+		if (auto* midi = dynamic_cast<MidiClip*>(clip)) { emit midi->dataChanged(); }
+	}
 }
 
 ControlResult articulationsSet(const QJsonObject& args)
@@ -205,10 +211,11 @@ ControlResult articulationsSet(const QJsonObject& args)
 		moved = planArticulationRemap(*track, from, static_cast<int>(before.size()));
 	}
 	const QString id = trackIdOf(track);
-	writeArticulations(id, entries);
-	applyArticulationChanges(id, moved, true);
-	addUndoStep([id, before, moved]() { applyArticulationChanges(id, moved, false); writeArticulations(id, before); },
-		[id, entries, moved]() { writeArticulations(id, entries); applyArticulationChanges(id, moved, true); });
+	// The map and the notes it indexes change in one lock (applyArticulationEdit); the clips announce the
+	// committed edit only after that lock is released.
+	announceArticulationEdits(id, applyArticulationEdit(id, entries, moved, true));
+	addUndoStep([id, before, moved]() { announceArticulationEdits(id, applyArticulationEdit(id, before, moved, false)); },
+		[id, entries, moved]() { announceArticulationEdits(id, applyArticulationEdit(id, entries, moved, true)); });
 	return ControlResult::success({{QStringLiteral("track"), id}, {QStringLiteral("articulations"), track->articulations().toJson()},
 		{QStringLiteral("notes_remapped"), static_cast<int>(moved.size())}});
 }

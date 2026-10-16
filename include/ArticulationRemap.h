@@ -28,6 +28,7 @@
 
 #include <QString>
 
+#include "ArticulationMap.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -55,9 +56,14 @@ LMMS_EXPORT bool validateArticulationOrigins(const std::vector<int>& from, int o
 //! The notes of @a track's MIDI clips that change when the map becomes @a from (validated): where each goes.
 LMMS_EXPORT std::vector<ArticulationNoteChange> planArticulationRemap(const InstrumentTrack& track, const std::vector<int>& from, int oldCount);
 
-//! Writes every change's 'after' (@a forward) or 'before' to the notes of the track with the id @a trackId; a clip
-//! or note that is gone is skipped. Written with the track locked, as the audio thread reads them.
-LMMS_EXPORT void applyArticulationChanges(const QString& trackId, const std::vector<ArticulationNoteChange>& changes, bool forward);
+//! Replaces @a trackId's articulation map with @a entries and moves its notes in ONE lock, so a playback
+//! that reads the map and the note indices under this lock (InstrumentTrack::play's tryLock) sees either
+//! the old pair or the new one, never the new map with the old indices. Each change's 'after' (@a forward)
+//! or 'before' is written to its note; a clip or note that is gone is skipped. Returns the ids of the clips
+//! whose notes changed, for the caller to emit dataChanged() on AFTER this returns (the track is unlocked
+//! by then, the map and the notes already committed). UI thread.
+LMMS_EXPORT std::vector<int> applyArticulationEdit(const QString& trackId, std::vector<Articulation> entries,
+	const std::vector<ArticulationNoteChange>& changes, bool forward);
 
 } // namespace lmms
 

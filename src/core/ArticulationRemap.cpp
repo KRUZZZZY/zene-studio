@@ -83,20 +83,25 @@ std::vector<ArticulationNoteChange> planArticulationRemap(const InstrumentTrack&
 	return changes;
 }
 
-void applyArticulationChanges(const QString& trackId, const std::vector<ArticulationNoteChange>& changes, bool forward)
+std::vector<int> applyArticulationEdit(const QString& trackId, std::vector<Articulation> entries,
+	const std::vector<ArticulationNoteChange>& changes, bool forward)
 {
 	ControlResult ignored;
 	auto* track = dynamic_cast<InstrumentTrack*>(control::resolveTrack(trackId, &ignored));
-	if (track == nullptr || changes.empty()) { return; }
+	if (track == nullptr) { return {}; }
 	std::unordered_map<std::uint64_t, const ArticulationNoteChange*> byNote;
 	const auto key = [](int clip, int note) { return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(clip)) << 32) | static_cast<std::uint32_t>(note); };
 	for (const ArticulationNoteChange& change : changes) { byNote[key(change.clip, change.note)] = &change; }
+	std::vector<int> touched;
+	// ONE lock over the map and the notes: a playback that reads them under this lock sees the old map with
+	// the old indices, or the new map with the new ones, never the new map with the old indices.
 	track->lock();
+	track->articulations().set(std::move(entries));
 	for (Clip* clip : track->getClips())
 	{
 		auto* midi = dynamic_cast<MidiClip*>(clip);
 		if (midi == nullptr) { continue; }
-		bool touched = false;
+		bool clipTouched = false;
 		for (Note* note : midi->notes())
 		{
 			const auto hit = byNote.find(key(clip->id(), note->id()));
@@ -104,12 +109,14 @@ void applyArticulationChanges(const QString& trackId, const std::vector<Articula
 			NoteConditions conditions = note->conditions();
 			conditions.articulation = forward ? hit->second->after : hit->second->before;
 			note->setConditions(conditions);
-			touched = true;
+			clipTouched = true;
 		}
-		if (touched) { emit midi->dataChanged(); }
+		if (clipTouched) { touched.push_back(clip->id()); }
 	}
 	track->unlock();
+	// The announcement is outside the lock: a listener is handed the committed pair, not a half-applied edit.
 	Engine::getSong()->setModified();
+	return touched;
 }
 
 } // namespace lmms
