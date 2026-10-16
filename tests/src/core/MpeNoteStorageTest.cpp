@@ -40,6 +40,11 @@
 #include "DataFile.h"
 #include "MpeExpression.h"
 #include "Note.h"
+#include "NotePlayHandle.h"
+
+#include "AllocationProbe.h"
+
+#include <cstdint>
 
 namespace
 {
@@ -580,6 +585,66 @@ private slots:
 				QVERIFY( !serialized.contains( QStringLiteral( "mpetimbre" ) ) );
 			}
 		}
+	}
+	//! Q050-016 round 2 (realtime): copying a note that carries a stream
+	//! allocates nothing - the copy shares the snapshot (copy-on-write), so
+	//! the NotePlayHandle the audio thread builds by copying the note
+	//! allocates nothing for the stream either. A plain note copies
+	//! allocation-free too, which is the control that the probe is armed.
+	void streamedNoteCopiesAllocateNothing()
+	{
+		using namespace lmms;
+
+		Note streamed( TimePos( 384 ), TimePos( 0 ), 60 );
+		streamed.mpeStreamForEdit().setPitch( { { 0, 0 }, { 96, 1200 } } );
+		streamed.mpeStreamForEdit().setPressure( { { 0, 64 } } );
+		streamed.mpeStreamForEdit().setTimbre( { { 48, 32 } } );
+		QVERIFY( streamed.hasMpeStream() );
+		Note plain( TimePos( 384 ), TimePos( 0 ), 60 );
+
+		lmms::test::tlCountAllocations = true;
+		lmms::test::resetAllocationCount();
+		Note copy( streamed );
+		Note assigned;
+		assigned = streamed;
+		Note plainCopy( plain );
+		const std::uint64_t allocations = lmms::test::tlAllocationCount;
+		lmms::test::tlCountAllocations = false;
+
+		QCOMPARE( allocations, 0ull );
+		QVERIFY( copy.hasMpeStream() );
+		QVERIFY( copy.mpeStream().pitch() == streamed.mpeStream().pitch() );
+		QVERIFY( assigned.mpeStream().pressure() == streamed.mpeStream().pressure() );
+		// ... and the copies still detach: editing one leaves the other alone.
+		copy.mpeStreamForEdit().setPressure( { { 0, 11 } } );
+		QCOMPARE( streamed.mpeStream().pressure()[0].value, 64 );
+	}
+
+	//! Q050-016 round 2 (LLP64): stream-point frame offsets stay exact past
+	//! 2^31 frames, where a 32-bit `long` (Windows) truncates them.
+	void streamPointOffsetsStay64BitPast2ToThe31Frames()
+	{
+		using namespace lmms;
+
+		// tick * framesPerTick overflows 32 bits: 100000 * 24000 = 2.4e9.
+		const f_cnt_t at = NotePlayHandle::mpeStreamPointOffset(
+			100000, 0, static_cast<f_cnt_t>( 3000000000ULL ), 0, 24000.0 );
+		QCOMPARE( at, static_cast<f_cnt_t>( 2400000000ULL ) );
+		QVERIFY( at > static_cast<f_cnt_t>( 2147483647ULL ) );
+
+		// ... and so does a period that STARTS past 2^31: the point at tick
+		// 208334 names frame 208334 * 24000 = 5000016000, 100 into the period.
+		const f_cnt_t late = NotePlayHandle::mpeStreamPointOffset(
+			208334, static_cast<f_cnt_t>( 5000015900ULL ), 4096, 7, 24000.0 );
+		QCOMPARE( late, static_cast<f_cnt_t>( 107 ) );
+
+		// A point before the period clamps to its start; one past its end is
+		// not in it.
+		QCOMPARE( NotePlayHandle::mpeStreamPointOffset( 0,
+				static_cast<f_cnt_t>( 5000015900ULL ), 4096, 7, 24000.0 ),
+			static_cast<f_cnt_t>( 7 ) );
+		QCOMPARE( NotePlayHandle::mpeStreamPointOffset( 10, 0, 100, 0, 24000.0 ),
+			NotePlayHandle::kNoMpeStreamOffset );
 	}
 };
 

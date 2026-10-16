@@ -71,11 +71,13 @@
 #include <QTemporaryDir>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <span>
 #include <vector>
 
 #include "../plugins/MpeConsumerProbe.h"
+#include "AllocationProbe.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "BufferManager.h"
@@ -369,6 +371,52 @@ private slots:
 			qPrintable( QStringLiteral( "the streamed block is %1x the plain one; the three "
 				"scheduled axes ask for %2x" ).arg( level / plainLevel, 0, 'f', 4 )
 					.arg( wanted, 0, 'f', 4 ) ) );
+	}
+
+	//! Q050-016 round 2 (realtime): acquiring a handle for a streamed note -
+	//! the audio thread's own path (InstrumentTrack::play ->
+	//! NotePlayHandleManager::acquire -> the Note copy) - allocates nothing the
+	//! plain note does not. An absolute zero is not the claim: the handle
+	//! always builds its detuning object; the claim is the stream adds none.
+	void streamedHandleAcquisitionAllocatesNothingExtra()
+	{
+		// Warm up: the pool, the track's handle list and one-shot caches
+		// allocate on first use, and that is not the stream's bill.
+		Note warmNote( TimePos( 384 ), TimePos( 0 ), kKey );
+		for( int i = 0; i < 2; ++i )
+		{
+			NotePlayHandle* warm = NotePlayHandleManager::acquire(
+				m_track, 0, m_frames * 8, warmNote );
+			NotePlayHandleManager::release( warm );
+		}
+
+		Note plain( TimePos( 384 ), TimePos( 0 ), kKey );
+		Note streamed( TimePos( 384 ), TimePos( 0 ), kKey );
+		streamed.mpeStreamForEdit().setPitch( { { 0, 0 }, { 96, 1200 } } );
+		streamed.mpeStreamForEdit().setPressure( { { 0, 64 } } );
+		streamed.mpeStreamForEdit().setTimbre( { { 48, 32 } } );
+		QVERIFY( streamed.hasMpeStream() );
+
+		lmms::test::tlCountAllocations = true;
+		lmms::test::resetAllocationCount();
+		NotePlayHandle* plainHandle = NotePlayHandleManager::acquire(
+			m_track, 0, m_frames * 8, plain );
+		const std::uint64_t plainAllocations = lmms::test::tlAllocationCount;
+		lmms::test::resetAllocationCount();
+		NotePlayHandle* streamedHandle = NotePlayHandleManager::acquire(
+			m_track, 0, m_frames * 8, streamed );
+		const std::uint64_t streamedAllocations = lmms::test::tlAllocationCount;
+		lmms::test::tlCountAllocations = false;
+
+		std::fprintf( stdout, "MPE_EVIDENCE handle allocations plain=%llu streamed=%llu\n",
+			static_cast<unsigned long long>( plainAllocations ),
+			static_cast<unsigned long long>( streamedAllocations ) );
+		std::fflush( stdout );
+
+		NotePlayHandleManager::release( plainHandle );
+		NotePlayHandleManager::release( streamedHandle );
+
+		QCOMPARE( streamedAllocations, plainAllocations );
 	}
 
 private:

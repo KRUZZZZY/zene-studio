@@ -32,6 +32,7 @@
 
 #include <QAction>
 #include <QJsonArray>
+#include <QJsonObject>
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -62,6 +63,14 @@ std::vector<std::pair<int, int>> positionsAndVelocities(const MidiClip* clip)
 	std::vector<std::pair<int, int>> out;
 	for (const Note* note : clip->notes()) { out.emplace_back(note->pos().getTicks(), static_cast<int>(note->getVolume())); }
 	return out;
+}
+
+//! One expression-stream point, the same {tick, value} shape the
+//! note.expression_stream_set command reads. Built in a helper (not nested
+//! inside the invoke call): moc misparses triply-nested closing braces here.
+QJsonObject streamPoint(int tick, int value)
+{
+	return QJsonObject{{QStringLiteral("tick"), tick}, {QStringLiteral("value"), value}};
 }
 
 } // namespace
@@ -168,6 +177,107 @@ private slots:
 	void noClipHandsOverNothing()
 	{
 		QVERIFY(!handOverNoteSelection(nullptr));
+	}
+
+// Q050-016: the piano roll's GUI path to the expression streams. The ramp item asks for the
+//	bend at the note's end and writes a {0:0, len:value} pitch stream through the SHARED
+//	note.expression_stream_set command (one undo step per note), keeping the other axes; the
+//	clear item empties every axis of the notes that carry a stream. The value prompt is
+//	replaced by a fixed answer (setNoteTransformPrompt), like the transform items above.
+	void mpePitchRampWritesStreamsThroughTheRegistry()
+	{
+		QObject owner;
+		const QList<QAction*> actions = makeNoteTransformActions([this] { return m_clip; }, &owner);
+		// Fresh pointers every time: control.undo restores the clip by
+		// re-loading its note list, which deletes and recreates every Note -
+		// a pointer held across an undo (or any checkpointed command) dangles.
+		auto noteAt = [this](int i) { return m_clip->notes().at(i); };
+		noteAt(0)->setSelected(true);
+		const int end = noteAt(0)->length().getTicks();
+		const QString firstId = control::noteIdOf(noteAt(0));
+		const QString lastId = control::noteIdOf(noteAt(7));
+
+		// A pressure stream the ramp must keep (the set call omits that axis).
+		const QJsonArray keptPressure{streamPoint(0, 64)};
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("note.expression_stream_set"),
+			{{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+				{QStringLiteral("note"), firstId},
+				{QStringLiteral("pressure"), keptPressure}}).ok);
+
+		setNoteTransformPrompt([](const QString&, const QString&, double, double, double, int) { return 1200.0; });
+		item(actions, QObject::tr("MPE pitch ramp..."))->trigger();
+
+		QVERIFY(noteAt(0)->hasMpeStream());
+		const auto pitch = noteAt(0)->mpeStream().pitch();
+		QCOMPARE(static_cast<int>(pitch.size()), 2);
+		QCOMPARE(pitch[0].tick, tick_t(0));
+		QCOMPARE(pitch[0].value, 0);
+		QCOMPARE(pitch[1].tick, tick_t(end));
+		QCOMPARE(pitch[1].value, 1200);
+		QCOMPARE(noteAt(0)->mpeStream().pressure()[0].value, 64);
+		// The unselected note carries nothing.
+		QVERIFY(!noteAt(7)->hasMpeStream());
+		QCOMPARE(control::noteIdOf(noteAt(7)), lastId);
+
+		for (Note* note : m_clip->notes()) { note->setSelected(false); }
+		setNoteTransformPrompt({});
+		// Two writes happened (the fixture set, the ramp): one undo takes the ramp back.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), QJsonObject{}).ok);
+		QCOMPARE(static_cast<int>(noteAt(0)->mpeStream().pitch().size()), 0);
+		QCOMPARE(noteAt(0)->mpeStream().pressure()[0].value, 64);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), QJsonObject{}).ok);
+		QVERIFY(!noteAt(0)->hasMpeStream());
+	}
+
+	void clearMpeStreamsRemovesStreamsThroughTheRegistry()
+	{
+		QObject owner;
+		const QList<QAction*> actions = makeNoteTransformActions([this] { return m_clip; }, &owner);
+		// Fresh pointers every time (see the ramp slot above): an undo
+		// recreates every Note, so a held pointer dangles.
+		auto noteAt = [this](int i) { return m_clip->notes().at(i); };
+		const QJsonArray onePitch{streamPoint(0, 100)};
+		// Two explicit calls (no loop over them): moc misparses the nested
+		// invoke calls inside a loop body in this file, and unrolled calls
+		// read the same.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("note.expression_stream_set"),
+			{{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+				{QStringLiteral("note"), control::noteIdOf(noteAt(0))},
+				{QStringLiteral("pitch"), onePitch}}).ok);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("note.expression_stream_set"),
+			{{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+				{QStringLiteral("note"), control::noteIdOf(noteAt(1))},
+				{QStringLiteral("pitch"), onePitch}}).ok);
+
+		// No selection: every note is in scope, but only streamed notes change.
+		item(actions, QObject::tr("Clear MPE expression streams"))->trigger();
+		QVERIFY(!noteAt(0)->hasMpeStream());
+		QVERIFY(!noteAt(1)->hasMpeStream());
+		QCOMPARE(ControlRegistry::instance()->lastTransaction()->command,
+			QStringLiteral("note.expression_stream_set"));
+
+		// One undo step per note: the last clear comes back first.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), QJsonObject{}).ok);
+		QVERIFY(!noteAt(0)->hasMpeStream());
+		QVERIFY(noteAt(1)->hasMpeStream());
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), QJsonObject{}).ok);
+		QVERIFY(noteAt(0)->hasMpeStream());
+		QVERIFY(noteAt(1)->hasMpeStream());
+
+		// A clear over notes that carry no stream invokes nothing, so it
+		// pushes no undo step: the last transaction is unchanged.
+		noteAt(2)->setSelected(true);
+		const QString before = ControlRegistry::instance()->lastTransaction()->command;
+		item(actions, QObject::tr("Clear MPE expression streams"))->trigger();
+		QCOMPARE(ControlRegistry::instance()->lastTransaction()->command, before);
+		noteAt(2)->setSelected(false);
+
+		// Leave the journal as found: the two fixture sets above are still on
+		// it, so take them back too.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), QJsonObject{}).ok);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), QJsonObject{}).ok);
+		QVERIFY(!noteAt(0)->hasMpeStream());
+		QVERIFY(!noteAt(1)->hasMpeStream());
 	}
 
 private:
