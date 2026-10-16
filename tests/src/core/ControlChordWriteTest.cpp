@@ -384,6 +384,57 @@ private slots:
 				{QStringLiteral("progression"), QStringLiteral("nope")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
 	}
+
+	/*! The progression panel's READ (Q050-019): chord.progression_list with a
+	 *  scale reports the whole catalogue SPELLED OUT in that key - each named
+	 *  progression's own chords, named by the same vocabulary the generator
+	 *  writes with. That is the "suggestions for the selected scale" the panel
+	 *  renders; the write half is chord.progression_generate, proved above. */
+	void suggestionsSpellTheCatalogueInTheSelectedScale()
+	{
+		const ControlResult listed = run(QStringLiteral("chord.progression_list"),
+			{{QStringLiteral("scale"), QStringLiteral("Major")},
+				{QStringLiteral("root"), 0}, {QStringLiteral("octave"), 4}});
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		QCOMPARE(listed.result.value(QStringLiteral("suggest_scale")).toString(),
+			QStringLiteral("Major"));
+		const QJsonArray suggestions = listed.result.value(QStringLiteral("suggestions")).toArray();
+		QCOMPARE(suggestions.size(),
+			listed.result.value(QStringLiteral("progressions")).toArray().size());
+
+		// I-V-vi-IV in C major spells C, G, Am, F: the vocabulary's own names.
+		QJsonObject four;
+		for (const QJsonValue& value : suggestions)
+		{
+			if (value.toObject().value(QStringLiteral("name")).toString()
+				== QLatin1String("I-V-vi-IV")) { four = value.toObject(); }
+		}
+		QVERIFY(!four.isEmpty());
+		const QJsonArray chords = four.value(QStringLiteral("chords")).toArray();
+		QCOMPARE(chords.size(), 4);
+		QCOMPARE(chords.at(0).toObject().value(QStringLiteral("chord")).toString(),
+			QStringLiteral("Major"));
+		QCOMPARE(chords.at(2).toObject().value(QStringLiteral("chord")).toString(),
+			QStringLiteral("minor"));
+		QCOMPARE(chords.at(0).toObject().value(QStringLiteral("key")).toInt(), 60);
+
+		// The root transposes the whole walk: ii-V-I in D starts on E (4).
+		const ControlResult inD = run(QStringLiteral("chord.progression_list"),
+			{{QStringLiteral("scale"), QStringLiteral("Major")}, {QStringLiteral("root"), 2}});
+		QVERIFY2(inD.ok, qPrintable(inD.errorMessage));
+		for (const QJsonValue& value : inD.result.value(QStringLiteral("suggestions")).toArray())
+		{
+			if (value.toObject().value(QStringLiteral("name")).toString() == QLatin1String("ii-V-I"))
+			{
+				QCOMPARE(value.toObject().value(QStringLiteral("chords")).toArray().at(0).toObject()
+					.value(QStringLiteral("root")).toInt(), 4);
+			}
+		}
+
+		// ... and with no scale the command is the plain catalogue: no suggestions.
+		QVERIFY(!run(QStringLiteral("chord.progression_list")).result
+			.contains(QStringLiteral("suggestions")));
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlChordWriteTest)
