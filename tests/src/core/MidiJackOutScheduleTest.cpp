@@ -42,9 +42,27 @@ using midijack::OutMessage;
 namespace
 {
 
-auto message(std::uint8_t status, std::uint8_t key, std::uint32_t frame) -> OutMessage
+template <typename Message>
+void setCycleIfSupported(Message& message, std::uint64_t cycle)
 {
-	return OutMessage{{status, key, 100}, 3, frame};
+	if constexpr (requires { message.cycle = cycle; }) { message.cycle = cycle; }
+}
+
+template <typename Message>
+auto scheduledFrame(const Message& message, std::uint64_t cycle, std::uint32_t nframes) -> std::uint32_t
+{
+	if constexpr (requires { midijack::cycleFrame(message, cycle, nframes); })
+	{
+		return midijack::cycleFrame(message, cycle, nframes);
+	}
+	return midijack::cycleFrame(message.frame, nframes);
+}
+
+auto message(std::uint8_t status, std::uint8_t key, std::uint32_t frame, std::uint64_t cycle = 0) -> OutMessage
+{
+	OutMessage result{{status, key, 100}, 3, frame};
+	setCycleIfSupported(result, cycle);
+	return result;
 }
 
 } // namespace
@@ -85,6 +103,24 @@ private slots:
 		QCOMPARE(list[0].frame, std::uint32_t{0});
 		QCOMPARE(list[1].frame, std::uint32_t{10});
 		QCOMPARE(midijack::drainByFrame(queue, list.data(), list.size()), std::size_t{0});
+	}
+
+	//! An overdue event stays before the next cycle, and is moved to that cycle's first frame.
+	void deferredMessagesKeepTheirCycleOrder()
+	{
+		MpscQueue<OutMessage, 16> queue;
+		QVERIFY(queue.push(message(0x90, 60, 300, 4)));
+		QVERIFY(queue.push(message(0x90, 61, 310, 4)));
+		QVERIFY(queue.push(message(0x90, 62, 320, 4)));
+		std::array<OutMessage, 2> list{};
+		QCOMPARE(midijack::drainByFrame(queue, list.data(), list.size()), std::size_t{2});
+
+		QVERIFY(queue.push(message(0x90, 63, 0, 5)));
+		QCOMPARE(midijack::drainByFrame(queue, list.data(), list.size()), std::size_t{2});
+		QCOMPARE(list[0].bytes[1], std::uint8_t{62});
+		QCOMPARE(list[1].bytes[1], std::uint8_t{63});
+		QCOMPARE(scheduledFrame(list[0], 5, 256), std::uint32_t{0});
+		QCOMPARE(scheduledFrame(list[1], 5, 256), std::uint32_t{0});
 	}
 
 	//! A message is written at its own frame - not frame 0 - and one past the cycle at its last frame.

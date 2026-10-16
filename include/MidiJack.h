@@ -104,10 +104,12 @@ private:
 	uint8_t m_jack_buffer[JACK_MIDI_BUFFER_MAX * 4];
 
 	//! Senders (the audio thread, the GUI) -> the JACK process callback. Bounded, lock-free
-	//! (0.5.0 engine audit E25); each message carries its frame (W4, MidiJackOutSchedule.h).
+	//! (0.5.0 engine audit E25); each message carries its source cycle and frame (W4).
 	MpscQueue<midijack::OutMessage, 1024> m_outQueue;
 	std::atomic<std::uint64_t> m_outDropped{0};
-	//! The JACK process callback's own list of this cycle's messages, ordered by frame.
+	//! Current engine/JACK callback period, stamped on producer messages for deferred ordering.
+	std::atomic<std::uint64_t> m_outCycleId{0};
+	//! The JACK process callback's bounded list, ordered by source cycle then frame.
 	std::array<midijack::OutMessage, midijack::MaxOutPerCycle> m_outCycle{};
 
 	void JackMidiOutEvent(uint8_t *buf, uint8_t len);

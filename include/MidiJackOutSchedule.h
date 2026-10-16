@@ -30,12 +30,12 @@
 #include <cstdint>
 
 /*! 0.5.0 W4: the part of MidiJack's output path that does not need a JACK server, so a test can
- *  hold it to its contract. MidiJack queues each message with the frame it was produced at (its
- *  offset into the engine period, see MidiJack::processOutEventAt); the JACK process callback
- *  drains the queue into a per-cycle list ordered by that frame and writes each message at it,
- *  bounded to the cycle. jack_midi_event_write() refuses an event earlier than the one before it,
- *  which is why the list is ordered: senders on several threads can queue out of time order.
- *  Everything here is realtime safe: fixed storage, no allocation, no lock. */
+ *  hold it to its contract. MidiJack queues each message with its source cycle and frame offset
+ *  (see MidiJack::processOutEventAt); the JACK callback drains into a cycle-then-frame ordered
+ *  list. If an event is deferred past its cycle, it is written at frame 0 of the current cycle.
+ *  jack_midi_event_write() refuses an event earlier than the one before it, which is why this
+ *  ordering is needed when senders on several threads queue out of time order. Everything here is
+ *  realtime safe: fixed storage, no allocation, no lock. */
 
 namespace lmms::midijack
 {
@@ -46,6 +46,7 @@ struct OutMessage
 	std::uint8_t bytes[3];
 	std::uint8_t length;
 	std::uint32_t frame;  //!< frames from the start of the engine period it was produced in
+	std::uint64_t cycle = 0;  //!< source JACK callback cycle, used to keep deferred messages ordered
 };
 
 //! The messages one JACK cycle writes at most; the rest wait in the queue for the next cycle.
@@ -62,7 +63,9 @@ auto drainByFrame(Queue& queue, OutMessage* list, std::size_t capacity) -> std::
 	while (count < capacity && queue.pop(&message))
 	{
 		std::size_t position = count;
-		while (position > 0 && list[position - 1].frame > message.frame)
+		while (position > 0 &&
+			(list[position - 1].cycle > message.cycle ||
+				(list[position - 1].cycle == message.cycle && list[position - 1].frame > message.frame)))
 		{
 			list[position] = list[position - 1];
 			--position;
@@ -78,6 +81,12 @@ auto drainByFrame(Queue& queue, OutMessage* list, std::size_t capacity) -> std::
 inline auto cycleFrame(std::uint32_t frame, std::uint32_t nframes) -> std::uint32_t
 {
 	return nframes == 0 ? 0 : std::min(frame, nframes - 1);
+}
+
+//! An event from an earlier cycle is overdue; write it before this cycle's frame-timed events.
+inline auto cycleFrame(const OutMessage& message, std::uint64_t cycle, std::uint32_t nframes) -> std::uint32_t
+{
+	return message.cycle < cycle ? 0 : cycleFrame(message.frame, nframes);
 }
 
 } // namespace lmms::midijack
