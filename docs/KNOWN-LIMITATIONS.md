@@ -1639,10 +1639,14 @@ project file or `warp.stretch` are the only two ways to author it.
   with Ctrl+Z — but there is still **no undo-history panel**, nothing lists the structural steps, and there is no
   control that names or limits the capture bound.
 
-**The chord track, its detection and its generators are drivable, and nothing in the interface
-shows or plays them.** `chord.*` is the only way to reach any of it: there is no chord lane, no
-chord ruler, no chord-edit popover and no generator panel in 0.3.0, and `grep -rniI
-'ChordTrack\|chord-track' src/gui/` returns **0** hits. What IS there is the entity (a chord
+**The chord track, its detection and its generators are drivable; the chord track itself has no
+editor.** `chord.*` is the only way to write the track: there is no chord ruler, no chord-edit
+popover and no chord-track editor (the arranger draws the track as a ruler lane - docs/CHORD-TRACK.md
+§6a - but nothing edits it there). Since Q050-019 the Edit > Progression window
+(`window.progression`, `gui::ChordProgressionPanel`) browses the catalogue and writes a NAMED
+progression into a MIDI clip from the interface - but it writes NOTES into a clip through
+`chord.progression_generate`, exactly as the headless workflow does, and it leaves the chord track
+untouched (the panel's own bounds are in `docs/CHORD-TRACK.md` §6b). What IS there is the entity (a chord
 track persisted as one `<chord-track>` element inside `<song>`, written only when it holds a
 chord), the detection (what a clip's notes spell, against the vocabulary the piano roll's own
 chord and scale selectors read — no second scale table exists in this fork) and two generators
