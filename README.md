@@ -61,9 +61,11 @@ implemented in 0.3.0 — measured on the built binary, `automation.mode_set` cha
 
 **VST3 hosting — effects and instruments.** VST3 effects run, and a VST3 **instrument** can be
 loaded on a track: MIDI in, audio out, and its state saved in the project. Instrument hosting is
-narrow: one instrument per track. The plug-in's **own editor opens** in a window of its own (the
-instrument view's "Show plugin editor" button, or `plugin.editor_open`), next to the host's generated
-knob grid. **Output buses past the main one are supported**: the instrument's other buses are listed
+narrow: one instrument per track. When the plug-in's editor view supports **X11 embedding**
+(`X11EmbedWindowID`), its **own editor opens** in a window of its own (the instrument view's "Show
+plugin editor" button, or `plugin.editor_open`), next to the host's generated knob grid; a view that
+does not offer X11 embedding is refused with a reason, so this editor path is **X11-only**.
+**Output buses past the main one are supported**: the instrument's other buses are listed
 under Instrument Setup > Output Buses and each can be routed to a mixer channel
 (`plugin.output_*`); a bus count is the plug-in's own. The routing is proven against a stand-in
 instrument and the VST3 bus-map unit test: the in-tree VST3 fixture has a single output bus, so no
@@ -140,7 +142,7 @@ Not in this build, and not claimed by it:
   This is not the command-line stem *export* above.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON, but the build falls back to OFF when the wasmtime C
   API is absent, and CI provisions none, so it is compiled out in practice.
-- **No patcher GUI** (a hosted plug-in's own editor does open, see above) — and no third-party plug-in of any kind has
+- **No patcher GUI** (a hosted plug-in's own X11-embedded editor does open, see above; there is no editor path off X11) — and no third-party plug-in of any kind has
   been proven outside the MIT fixtures this tree ships. (Ableton Link IS in the build since WF-051:
   the arranger toolbar's **Ableton Link** toggle syncs tempo, beat phase and start/stop with Live,
   Bitwig and other Link apps - proven against the reference library and between two Zene instances,
