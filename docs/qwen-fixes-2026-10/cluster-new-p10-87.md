@@ -47,3 +47,24 @@ The final runs return EXIT 1 for both checks. Complexity reports six new CCN reg
 - `docs/qwen-fixes-2026-10/cluster-new-p10-87.md`
 
 The source and test files are already registered in `tests/fork-sources.txt`; no registration change is needed.
+
+## Round 4 QA rework
+
+Verdict remains **BLOCKED**. QA requires a Windows-capable build for the candidate, the reversed-product-hunk RED run, and the restored GREEN run. This worktree has only the existing native Linux build tree (`CMAKE_CXX_COMPILER=/usr/bin/c++`, `CMAKE_GENERATOR=Unix Makefiles`), and this host reports Linux. MinGW and MSVC are unavailable; `clang-cl` is installed but cannot find `windows.h`. Wine is installed, but it does not supply a Windows compiler or SDK. I did not run or count a Windows build or test, and did not reverse the product hunk because this host cannot execute the requested Windows verification.
+
+| Check | Exact command | Result |
+| --- | --- | --- |
+| Host | `uname -s > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r4/logs/platform-2.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 0; `Linux` |
+| MinGW compiler | `command -v x86_64-w64-mingw32-g++ > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r4/logs/toolchain-3.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 1; unavailable |
+| MSVC compiler | `command -v cl > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r4/logs/toolchain-4.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 1; unavailable |
+| `clang-cl` presence | `command -v clang-cl > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r4/logs/toolchain-5.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 0; `/usr/bin/clang-cl` |
+| Windows SDK header probe | `clang-cl /nologo /c /TP /Fo:build/windows-sdk-probe.obj build/windows-sdk-probe.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r4/logs/windows-sdk-probe-2.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 1; `windows.h` not found |
+| Wine runtime | `wine --version > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r4/logs/wine-1.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 0; Wine is present, but no Windows toolchain/SDK is available |
+| Windows candidate build (`zene ControlShutdownHookTest`) | Not run; the only configured `build` tree is native Linux | N/A; no Windows build result |
+| Windows focused ctest (`^ControlShutdownHookTest$`) | Not run; no Windows test executable can be built here | N/A; zero Windows tests executed; no Windows test count |
+| Reversed-hunk Windows build and RED test | Not run; no Windows-capable build/runtime toolchain | N/A; no RED result |
+| Restored-hunk Windows build and GREEN test | Not run; no Windows-capable build/runtime toolchain | N/A; no GREEN result |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r4/logs/gate-11.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 1; six new CCN regressions outside the changed files |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-87.r4/logs/gate-12.log 2>&1; status=$?; echo EXIT=$status; exit $status` | EXIT 1; fourteen over-limit files outside the changed files |
+
+The `fff` grep tool was not available in this session, so the new logs were searched with `rg` as a fallback. The Windows header failure is in `windows-sdk-probe-2.log`; the gate findings are in `gate-11.log` and `gate-12.log`. No product or test file was changed in this round. The report is the only file committed for this round: `docs/qwen-fixes-2026-10/cluster-new-p10-87.md`.
