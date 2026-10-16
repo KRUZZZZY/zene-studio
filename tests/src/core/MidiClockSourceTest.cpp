@@ -51,7 +51,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <atomic>
 #include <cmath>
+#include <thread>
 
 #include <QtTest>
 
@@ -76,6 +78,9 @@ namespace
 //! the way `midi.device_list` lists them under `readable`.
 QString portA() { return QStringLiteral("128:0 Sequencer:Ableton Push"); }
 QString portB() { return QStringLiteral("129:0 Sequencer:Launchkey"); }
+//! A third port the concurrency slot's writer switches to; neither it nor portA
+//! is portB, whose pulses must never be admitted.
+QString portC() { return QStringLiteral("130:0 Sequencer:minilab"); }
 
 //! The interval between two clock pulses at \a bpm, in nanoseconds: 24 pulses to
 //! the quarter note, from the grid alone.
@@ -381,6 +386,51 @@ private slots:
 		QCOMPARE(clock->slaveSourcePort(), portA());
 		QVERIFY2(!clock->tracker().locked(),
 			"the undone switch restores the port, not the tempo that port had measured");
+	}
+
+	//! CONCURRENCY (rework). The source name is published to the MIDI reader
+	//! thread while the control thread may rewrite it, so this slot runs a REAL
+	//! writer thread against a REAL reader: the writer alternates between two
+	//! names, NEITHER of which is the port every message here arrives on, so
+	//! EVERY message must be dropped whichever name the reader's snapshot catches.
+	//! A torn read - a half-written name that happened to equal the sender, or a
+	//! snapshot that read the length as zero and matched everything - would admit
+	//! one and break the exact count; a data race on the buffer is what a hosted
+	//! TSan build of this file reports. The count is the assertion, the writer is
+	//! the coverage (ThreadSanitizer cannot run on the authoring box, so this is
+	//! registered in the hosted TSan job too).
+	void concurrentReconfigurationNeverAdmitsAnotherPort()
+	{
+		MidiClock* clock = MidiClock::instance();
+		QString error;
+		QVERIFY2(clock->setSlaveSourcePort(portA(), &error), qPrintable(error));
+		clock->setSlaveEnabled(true);
+
+		std::atomic<bool> stop{false};
+		std::thread writer([clock, &stop]() {
+			bool flip = false;
+			while (!stop.load(std::memory_order_relaxed))
+			{
+				QString error;
+				clock->setSlaveSourcePort(flip ? portC() : portA(), &error);
+				flip = !flip;
+			}
+		});
+
+		const quint32 before = clock->slaveIgnoredCount();
+		const int messages = 20000;
+		for (int i = 0; i < messages; ++i)
+		{
+			clock->handleInputMessage(MidiClockMessage::Clock, 0, 1000000ULL + i, portB());
+		}
+		stop.store(true, std::memory_order_relaxed);
+		writer.join();
+
+		// Every portB message was dropped, so none reached the tracker: the
+		// writer's switches reset it and the reader adds nothing to it.
+		QCOMPARE(clock->slaveIgnoredCount(), before + static_cast<quint32>(messages));
+		QCOMPARE(clock->tracker().pulseCount(), 0);
+		QVERIFY2(!clock->tracker().locked(), "no portB message may lock the follower");
 	}
 };
 

@@ -331,12 +331,15 @@ bool MidiClock::setSlaveSourcePort(const QString& port, QString* error)
 
 void MidiClock::publishSource(const QString& port) noexcept
 {
-	// Odd version = a write is in flight. The reader re-reads on any change of
-	// either the version or the length, so it never reads a half-written name.
+	// Odd version = a write is in flight. Each code unit is stored into its OWN
+	// atomic, so a reader that overlaps the write never races on the buffer; the
+	// release on the closing version publishes every one of those stores, and the
+	// reader's acquire sees them all, so the snapshot it accepts is consistent.
 	m_sourceVersion.fetch_add(1, std::memory_order_acq_rel);
 	for (int i = 0; i < port.size(); ++i)
 	{
-		m_sourceChars[static_cast<std::size_t>(i)] = port.at(i).unicode();
+		m_sourceChars[static_cast<std::size_t>(i)].store(
+			static_cast<quint16>(port.at(i).unicode()), std::memory_order_relaxed);
 	}
 	m_sourceLength.store(port.size(), std::memory_order_relaxed);
 	m_sourceVersion.fetch_add(1, std::memory_order_acq_rel);
@@ -365,7 +368,8 @@ bool MidiClock::acceptsSource(const QString& source) const noexcept
 			matches = true;
 			for (int i = 0; i < length; ++i)
 			{
-				if (source.at(i).unicode() != m_sourceChars[static_cast<std::size_t>(i)])
+				if (source.at(i).unicode()
+					!= m_sourceChars[static_cast<std::size_t>(i)].load(std::memory_order_relaxed))
 				{
 					matches = false;
 					break;

@@ -443,14 +443,17 @@ private:
 	QString m_masterPort;
 	//! The configured source, on the CONTROL thread (stateJson reads it).
 	QString m_slavePort;
-	//! The same name, published for the MIDI reader thread (Q050-026): UTF-16 code
-	//! units in a fixed buffer, so a reader can compare a port name against it
-	//! without allocating a QString on the way in from a device. Written only by
-	//! publishSource() (control thread) and read only by acceptsSource() (a MIDI
-	//! reader thread); m_sourceVersion is the usual odd-is-writing sequence lock,
-	//! so a reader that arrives mid-write sees the old name or the new one and
-	//! never a half-written mixture.
-	std::array<quint16, SourceNameCapacity> m_sourceChars{};
+	/*! The same name, published for the MIDI reader thread (Q050-026): UTF-16
+	 *  code units the reader can compare a port name against without allocating a
+	 *  QString on the way in from a device. Written only by publishSource()
+	 *  (control thread) and read only by acceptsSource() (a MIDI reader thread).
+	 *  Each unit is its OWN std::atomic, so the two threads never race on the
+	 *  buffer - a sequence counter over a plain array would still be a data race
+	 *  by the C++ memory model. m_sourceVersion is the odd-is-writing sequence
+	 *  counter that keeps a reader's snapshot CONSISTENT: it re-reads on any
+	 *  change, so it sees the old name or the new one and never a half-written
+	 *  mixture. m_sourceLength is the snapshot's length, also atomic. */
+	std::array<std::atomic<quint16>, SourceNameCapacity> m_sourceChars{};
 	std::atomic<int> m_sourceLength{0};
 	std::atomic<quint32> m_sourceVersion{0};
 	//! Clock-family messages the source filter dropped (Q050-026).

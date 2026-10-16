@@ -187,6 +187,8 @@ jobs:
   # (BUGS_FOUND.md 10.9), so the job is green today and fails on any NEW race. Validated
   # locally with exactly these commands (six suites, 0 reports; a deliberately racy program
   # is still reported through the same suppressions) - NOT yet run on a hosted runner.
+  # MidiClockSourceTest was added by Q050-026: its source-name publication is the one new
+  # cross-thread buffer in this change, and the test now races a writer against a reader.
   # setarch -R: TSan aborts with "unexpected memory mapping" under high-entropy ASLR.
   tsan:
     name: ThreadSanitizer (concurrency suites)
@@ -229,7 +231,7 @@ jobs:
       - name: Build the concurrency suites
         run: |
           cmake --build build-tsan -j4 --target VcaRefreshAtomicityTest ModulationAudioViewTest \
-            MixerConcurrencyTest MidiLearnThreadTest TempoMapTest SessionSchedulerTest
+            MixerConcurrencyTest MidiLearnThreadTest MidiClockSourceTest TempoMapTest SessionSchedulerTest
       - name: Run them under TSan
         working-directory: build-tsan/tests
         env:
@@ -237,7 +239,7 @@ jobs:
         run: |
           fail=0
           for t in VcaRefreshAtomicityTest ModulationAudioViewTest MixerConcurrencyTest \
-                   MidiLearnThreadTest TempoMapTest SessionSchedulerTest; do
+                   MidiLearnThreadTest MidiClockSourceTest TempoMapTest SessionSchedulerTest; do
             TSAN_OPTIONS="suppressions=$GITHUB_WORKSPACE/tests/tsan-suppressions.txt halt_on_error=1 exitcode=66" \
               setarch "$(uname -m)" -R ./"$t" || { echo "::error::$t failed under TSan"; fail=1; }
           done
