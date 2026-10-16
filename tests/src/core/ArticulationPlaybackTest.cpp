@@ -38,6 +38,7 @@
 #include <QTemporaryDir>
 
 #include "AllocationProbe.h"
+#include "ArticulationMap.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "BufferManager.h"
@@ -50,6 +51,7 @@
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MidiPlayback.h"
+#include "Model.h"
 #include "Note.h"
 #include "NoteConditions.h"
 #include "NotePlayHandle.h"
@@ -421,6 +423,65 @@ private slots:
 		QCOMPARE(log(), QStringLiteral("p7 c11=90 k25 k60"));
 		QVERIFY2(withArticulation <= plain, qPrintable(QStringLiteral("the period allocated %1 times with the articulation, %2 without")
 			.arg(withArticulation).arg(plain)));
+	}
+
+	//! The edit transition is published as one unit: at every moment the project announces a change
+	//! during the reorder, each note still resolves to the articulation it named. While the map was
+	//! written under one lock and the notes remapped under a second, the announcement that fell between
+	//! them showed the new map with the old note indices, so a note switched to another entry.
+	void theEditNeverAnnouncesANewMapWithOldNoteIndices()
+	{
+		freshTrack({60, 62, 64}, {1, 2, 0});
+		const QString track = trackId();
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("Staccato"), 24), entry(QStringLiteral("Legato"), 25)}}}).ok);
+		const QStringList expected{QStringLiteral("Staccato"), QStringLiteral("Legato"), QString()};
+		QList<QStringList> announced;
+		const auto observe = [this, &announced] {
+			QStringList names;
+			const std::vector<Articulation>& map = m_track->articulations().entries();
+			for (const Note* note : m_clip->notes())
+			{
+				const int index = note->conditions().articulation;
+				names << (index > 0 && index <= static_cast<int>(map.size()) ? map[static_cast<std::size_t>(index) - 1].name : QString());
+			}
+			announced << names;
+		};
+		const QMetaObject::Connection connection = connect(Engine::getSong(), &Song::modified, this, observe);
+		// A clean project: the edit's own announcement is then the one the observer sees.
+		Engine::getSong()->noteProjectSaved(QString());
+		announced.clear();
+		const ControlResult swapped = run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track},
+			{QStringLiteral("articulations"), QJsonArray{entry(QStringLiteral("Legato"), 25), entry(QStringLiteral("Staccato"), 24)}},
+			{QStringLiteral("from"), QJsonArray{2, 1}}});
+		disconnect(connection);
+		QVERIFY2(swapped.ok, qPrintable(swapped.errorMessage));
+		QVERIFY2(!announced.isEmpty(), "the edit announced no project change for the observer to see");
+		for (const QStringList& names : announced) { QCOMPARE(names, expected); }
+	}
+
+	//! The remap announces its clips with the track unlocked, so a listener that reads the track (the
+	//! editor, the arranger, a dependent command) is handed the committed map and notes, never a
+	//! half-applied edit.
+	void theRemapAnnouncesItsClipsWithTheTrackUnlocked()
+	{
+		freshTrack({60, 62}, {1, 2});
+		const QString track = trackId();
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("A"), 20), entry(QStringLiteral("B"), 21)}}}).ok);
+		bool announced = false;
+		bool unlocked = false;
+		const QMetaObject::Connection connection = connect(m_clip, &Model::dataChanged, this, [this, &announced, &unlocked] {
+			announced = true;
+			unlocked = m_track->tryLock();
+			if (unlocked) { m_track->unlock(); }
+		});
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track},
+			{QStringLiteral("articulations"), QJsonArray{entry(QStringLiteral("B"), 21), entry(QStringLiteral("A"), 20)}},
+			{QStringLiteral("from"), QJsonArray{2, 1}}}).ok);
+		disconnect(connection);
+		QVERIFY2(announced, "the remap announced nothing");
+		QVERIFY2(unlocked, "the clip was announced while its track was still locked");
 	}
 
 	//! Through the real project file: author the map and a note's choice on the surface, project.save, clear the
