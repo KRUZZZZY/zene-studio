@@ -2425,3 +2425,29 @@ include/AudioBusHandle.h	ci2-train-5: a producer no longer pops the play-handle 
 src/core/AudioBusHandle.cpp	ci2-train-5: postPlayHandleEdit waits for a draining consumer and drains under the engine change lock only when none makes progress (TSan); held by tests/src/core/MixerConcurrencyTest.cpp.
 src/core/Track.cpp	ci2-train-5 rework: Track::addClip tells the song a clip (and any targets it carries) arrived, so the audio thread's automation scratch is sized before the next render; held by tests/src/core/AutomationRenderAllocationTest.cpp.
 src/core/AutomationClip.cpp	ci2-train-5 rework: addObject and the copy constructor tell the song (after releasing the clip mutex) that targets arrived, for the audio thread's automation scratch; held by tests/src/core/AutomationRenderAllocationTest.cpp.
+src/core/Song.cpp	ci4-train-5: std::atomic_load/std::atomic_store on the shared_ptr scale/keymap slots are deprecated (-Werror=deprecated-declarations); a GCC/Clang diagnostic push/pop, guarded by __GNUC__/__clang__, silences just those four calls so the lock-free mechanism is unchanged.
+include/ThreadPool.h	ci4-train-5: include <functional> for std::function in the member queue (windows-arm64 clang build break).
+include/AutomationClip.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+include/BandLimitedWave.h	ci4-train-5: include <array> for the std::array it uses, so windows-arm64 clang does not depend on a transitive include.
+include/Controller.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+include/Delay.h	ci4-train-5: include <array> for the std::array it uses, so windows-arm64 clang does not depend on a transitive include.
+include/ExportProjectDialog.h	ci4-train-5: include <memory> for the std::unique_ptr it uses, so windows-arm64 clang does not depend on a transitive include.
+include/InlineAutomation.h	ci4-train-5: include <memory> for the std::unique_ptr it uses, so windows-arm64 clang does not depend on a transitive include.
+include/InstrumentFunctions.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+include/InstrumentTrack.h	ci4-train-5: include <memory> for the std::unique_ptr it uses, so windows-arm64 clang does not depend on a transitive include.
+include/InstrumentTrackView.h	ci4-train-5: include <memory> for the std::unique_ptr it uses, so windows-arm64 clang does not depend on a transitive include.
+include/Lv2ControlBase.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+include/Lv2Proc.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+include/MidiClip.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+include/Oscillator.h	ci4-train-5: include <array> for the std::array it uses, so windows-arm64 clang does not depend on a transitive include.
+include/PeakController.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+include/PianoRoll.h	ci4-train-5: include <array> and <optional> for the std::array/std::optional it uses, so windows-arm64 clang does not depend on transitive includes.
+include/ProjectRenderer.h	ci4-train-5: include <array> for the std::array it uses, so windows-arm64 clang does not depend on a transitive include.
+include/RenderManager.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+include/Sample.h	ci4-train-5: include <array> for the std::array it uses, so windows-arm64 clang does not depend on a transitive include.
+include/SampleClipView.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+include/SampleThumbnail.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+include/StepRecorder.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+include/TrackContainer.h	ci4-train-5: include <vector> for the std::vector it uses, so windows-arm64 clang does not depend on a transitive include.
+plugins/GigPlayer/GigPlayer.cpp	ci4-train-5: libgig 4.6 marks the sequential instrument/region getters deprecated; a GCC/Clang diagnostic push/pop (the libgig calls are unchanged) keeps this plugin building with -Werror on a newer system libgig while behaviour is identical.
+plugins/GigPlayer/PatchesDialog.cpp	ci4-train-5: libgig 4.6 marks the sequential instrument getters deprecated; a GCC/Clang diagnostic push/pop (the libgig calls are unchanged) keeps this plugin building with -Werror on a newer system libgig while behaviour is identical.
