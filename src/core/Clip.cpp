@@ -555,13 +555,24 @@ void Clip::saveWarp(QDomDocument& doc, QDomElement& element) const
 		// Row 30 of the 0.3.0 list: how the rate change is rendered. Written
 		// only when it is not the historical resampling, so a clip that never
 		// chose the stretch serialises byte for byte as #597 left it.
-		if (m_stretchMode == WarpStretchMode::PreservePitch)
+		//
+		// The FILE vocabulary is the one the two older modes have always used:
+		// "wsola" (PreservePitch) and "rubberband" (Complex) keep every file
+		// this and older builds wrote mutually readable, so only the three
+		// genuinely new modes introduce new tokens (Q050-036). The wire and UI
+		// vocabulary is the canonical one (warpStretchModeName); both are read
+		// back by warpStretchModeFromName.
+		if (m_stretchMode != WarpStretchMode::Resample)
 		{
-			warp.setAttribute( "stretch", "wsola" );
-		}
-		else if (m_stretchMode == WarpStretchMode::RubberBand)
-		{
-			warp.setAttribute( "stretch", "rubberband" );
+			switch (m_stretchMode)
+			{
+			case WarpStretchMode::PreservePitch: warp.setAttribute("stretch", "wsola"); break;
+			case WarpStretchMode::Complex: warp.setAttribute("stretch", "rubberband"); break;
+			case WarpStretchMode::Beats: warp.setAttribute("stretch", "beats"); break;
+			case WarpStretchMode::Tones: warp.setAttribute("stretch", "tones"); break;
+			case WarpStretchMode::Texture: warp.setAttribute("stretch", "texture"); break;
+			case WarpStretchMode::Resample: break;
+			}
 		}
 		for (const auto& marker : m_warp.all())
 		{
@@ -753,13 +764,14 @@ void Clip::loadWarp(const QDomElement& element)
 		m_tempoMode = warpNode.attribute("mode", "follow") == "source"
 			? WarpTempoMode::SourceTempo : WarpTempoMode::FollowProject;
 		m_sourceTempo = warpNode.attribute("tempo", "0").toFloat();
-		// Row 30: absent means resampling, which is what every file written
-		// before this attribute existed asks for.
-		// Owner decision 12 adds "rubberband"; any other value is the default.
-		const QString stretch = warpNode.attribute("stretch", "resample");
-		m_stretchMode = stretch == "wsola" ? WarpStretchMode::PreservePitch
-			: stretch == "rubberband" ? WarpStretchMode::RubberBand
-			: WarpStretchMode::Resample;
+		// Row 30: absent means varispeed resampling, which is what every file
+		// written before this attribute existed asks for. The vocabulary is
+		// the FILE one ("wsola", "rubberband") plus the canonical mode names
+		// and the "resample" alias — all through one mapping, so a name the
+		// engine does not know is the default, not an error (owner decision 12).
+		WarpStretchMode mode = WarpStretchMode::Resample;
+		warpStretchModeFromName(warpNode.attribute("stretch", "resample"), &mode);
+		m_stretchMode = mode;
 
 		m_warp.clear();
 		if (count > 0 && !m_warp.set(std::span<const WarpMarker>(markers.data(), count)))

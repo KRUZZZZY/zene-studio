@@ -417,7 +417,7 @@ private slots:
 		const ControlResult refused = run(QStringLiteral("warp.stretch"),
 			{{QStringLiteral("clip"), clip}, {QStringLiteral("mode"), QStringLiteral("preserve_pitch")}});
 		QVERIFY2(!refused.ok, "warp.stretch accepted a clip that renders linearly");
-		QCOMPARE(stretchOf(clip), QStringLiteral("resample"));
+		QCOMPARE(stretchOf(clip), QStringLiteral("re_pitch"));
 
 		// A mode the engine does not know is invalid_args.
 		const ControlResult bogus = run(QStringLiteral("warp.stretch"),
@@ -436,7 +436,7 @@ private slots:
 		QCOMPARE(stretched.result.value(QStringLiteral("stretch")).toString(),
 			QStringLiteral("preserve_pitch"));
 		QCOMPARE(stretched.result.value(QStringLiteral("previous_mode")).toString(),
-			QStringLiteral("resample"));
+			QStringLiteral("re_pitch"));
 		QCOMPARE(stretched.result.value(QStringLiteral("changed")).toBool(), true);
 		QCOMPARE(stretched.result.value(QStringLiteral("stretch_algorithm")).toString(),
 			QStringLiteral("wsola"));
@@ -454,11 +454,11 @@ private slots:
 		QCOMPARE(transaction->inverse.value(QStringLiteral("op")).toString(),
 			QStringLiteral("warp.stretch"));
 		QCOMPARE(transaction->inverse.value(QStringLiteral("args")).toObject()
-			.value(QStringLiteral("mode")).toString(), QStringLiteral("resample"));
+			.value(QStringLiteral("mode")).toString(), QStringLiteral("re_pitch"));
 
 		// And the engine's own undo is the inverse.
 		QVERIFY2(run(QStringLiteral("control.undo")).ok, "control.undo refused the stretch edit");
-		QCOMPARE(stretchOf(clip), QStringLiteral("resample"));
+		QCOMPARE(stretchOf(clip), QStringLiteral("re_pitch"));
 	}
 
 	//! Repeating the current mode is a no-op and must not hide the preceding edit from undo.
@@ -483,7 +483,7 @@ private slots:
 		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
 		QCOMPARE(undone.result.value(QStringLiteral("undone_command")).toString(),
 			QStringLiteral("warp.stretch"));
-		QCOMPARE(stretchOf(clip), QStringLiteral("resample"));
+		QCOMPARE(stretchOf(clip), QStringLiteral("re_pitch"));
 	}
 
 	/*! I8 on the new path: a stretch handle renders a period without

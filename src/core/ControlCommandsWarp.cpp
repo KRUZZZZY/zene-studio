@@ -77,17 +77,6 @@ QString tempoModeName(WarpTempoMode mode)
 	return mode == WarpTempoMode::SourceTempo ? QStringLiteral("source") : QStringLiteral("follow");
 }
 
-QString stretchModeName(WarpStretchMode mode)
-{
-	switch (mode)
-	{
-	case WarpStretchMode::PreservePitch: return QStringLiteral("preserve_pitch");
-	case WarpStretchMode::RubberBand: return QStringLiteral("rubberband");
-	case WarpStretchMode::Resample: break;
-	}
-	return QStringLiteral("resample");
-}
-
 QJsonObject markerJson(const WarpMarker& marker, int index)
 {
 	QJsonObject entry;
@@ -119,13 +108,19 @@ QJsonObject warpState(const ClipRef& ref, const SampleClip& clip)
 	out.insert(QStringLiteral("tempo_mode"), tempoModeName(clip.warpTempoMode()));
 	out.insert(QStringLiteral("source_tempo"), static_cast<double>(clip.sourceTempo()));
 	// Row 30: how a rate change is rendered, and by which algorithm. Reported
-	// for EVERY clip, because "resample" is the answer that matters as much as
-	// "preserve_pitch" - it is the mode the pitch moves in.
-	out.insert(QStringLiteral("stretch"), stretchModeName(clip.warpStretchMode()));
-	// Owner decision 12: 'rubberband' names its algorithm only when this build
-	// links the library; without it the clip is rendered by WSOLA and says so.
+	// for EVERY clip, because "re_pitch" is the answer that matters as much as
+	// "beats" - it is the mode the pitch moves in.
+	out.insert(QStringLiteral("stretch"), warpStretchModeName(clip.warpStretchMode()));
+	// Which engine actually renders the rate change: the resampler itself for
+	// Re-Pitch; Rubber Band for the two modes backed by it when this build
+	// links the library (owner decision 12); WSOLA for everything else - the
+	// Tones and Texture parameters are the mode's own, not a fallback, and
+	// without the library the two Rubber Band modes fall back to WSOLA and
+	// say so.
+	const WarpStretchMode mode = clip.warpStretchMode();
 	out.insert(QStringLiteral("stretch_algorithm"),
-		clip.warpStretchMode() == WarpStretchMode::RubberBand && RubberBandPool::available()
+		mode == WarpStretchMode::Resample ? QStringLiteral("resampler")
+		: warpModeUsesRubberBand(mode) && RubberBandPool::available()
 			? QStringLiteral("rubberband") : QStringLiteral("wsola"));
 	out.insert(QStringLiteral("renders_linearly"), clip.rendersLinearly());
 	out.insert(QStringLiteral("marker_count"), clip.warpMarkers().size());
@@ -141,7 +136,7 @@ QJsonObject warpBefore(const ClipRef& ref, const SampleClip& clip)
 	before.insert(QStringLiteral("markers"), markerListJson(clip));
 	before.insert(QStringLiteral("tempo_mode"), tempoModeName(clip.warpTempoMode()));
 	before.insert(QStringLiteral("source_tempo"), static_cast<double>(clip.sourceTempo()));
-	before.insert(QStringLiteral("stretch"), stretchModeName(clip.warpStretchMode()));
+	before.insert(QStringLiteral("stretch"), warpStretchModeName(clip.warpStretchMode()));
 	return before;
 }
 
@@ -274,10 +269,15 @@ QJsonObject tempoModeProperty()
 
 QJsonObject stretchModeProperty()
 {
+	// The canonical names first (the five spec modes and the WSOLA engine),
+	// then the two legacy aliases the command and the file reader still accept
+	// (Q050-036): listing them is the contract, not an invitation to use them.
 	return QJsonObject{
 		{QStringLiteral("type"), QStringLiteral("string")},
-		{QStringLiteral("enum"), QJsonArray{QStringLiteral("resample"),
-			QStringLiteral("preserve_pitch"), QStringLiteral("rubberband")}}};
+		{QStringLiteral("enum"), QJsonArray{QStringLiteral("re_pitch"),
+			QStringLiteral("beats"), QStringLiteral("tones"), QStringLiteral("texture"),
+			QStringLiteral("complex"), QStringLiteral("preserve_pitch"),
+			QStringLiteral("resample"), QStringLiteral("rubberband")}}};
 }
 
 QJsonObject markerProperty()

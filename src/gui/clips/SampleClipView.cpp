@@ -121,6 +121,8 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 
 	// Clip gain, fade lengths and the fade shape (clip.set_gain / clip.set_fade).
 	addClipEditsMenu(cm, m_clip);
+	// The warp mode the clip renders its rate changes with (warp.stretch).
+	addClipWarpModeMenu(cm, m_clip);
 	// Arm the clip to take the input under Record while playing (clip.set_record).
 	addClipRecordAction(cm, m_clip);
 	// Trim to the playhead and slip the content by a beat (clip.trim / clip.slip).

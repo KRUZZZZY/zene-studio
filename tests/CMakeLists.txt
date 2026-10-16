@@ -1078,6 +1078,8 @@ set(LMMS_TESTS
 	# A mixer strip's tooltip names its delay compensation.
 	# A sample clip's Gain and fades (clip.set_gain / clip.set_fade), with one control.undo.
 	src/gui/ClipEditsMenuTest.cpp
+	# A sample clip's Warp mode submenu (warp.stretch), Q050-036's five spec modes.
+	src/gui/SampleClipWarpModeMenuTest.cpp
 	# A track menu's Effect chain presets (chain.save / apply / remove / list) against a real effect.
 	src/gui/ChainPresetMenuTest.cpp
 	# A mixer channel's Rack menu (rack.* chains, routing and macros).
@@ -1173,6 +1175,10 @@ set(LMMS_TESTS
 	src/tracks/TakeLaneCompPlaybackTest.cpp
 	# Owner decision 12: the optional Rubber Band stretch mode, through the same clip path.
 	src/tracks/SampleClipRubberBandTest.cpp
+	# Q050-036: the specified warp mode set (Beats, Tones, Texture, Re-Pitch,
+	# Complex) - selection through the command, one render per mode, and a
+	# project-file round trip with different modes on separate clips.
+	src/tracks/SampleClipWarpModesTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
 )
@@ -2305,7 +2311,7 @@ set_tests_properties(MidiControllerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(ControllerTemplateMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(ClipEditsMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ClipEditsMenuTest SampleClipWarpModeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PinConnectorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -5119,7 +5125,7 @@ set_tests_properties(ControlWarpCommandsTest PROPERTIES
 # opens a window. AudioStretcherTest needs no Engine (it is pure DSP), but it is
 # built from the same objects; it is listed here only to keep the pair together
 # in one place whose reason is written down.
-set_tests_properties(SampleClipStretchTest SampleClipRubberBandTest TakeLaneCompPlaybackTest AudioStretcherTest PROPERTIES
+set_tests_properties(SampleClipStretchTest SampleClipRubberBandTest SampleClipWarpModesTest TakeLaneCompPlaybackTest AudioStretcherTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The link.* group drives the process-wide session model (and the Song's tempo,
 # for an adopted one) and starts the UI-thread service timer, so it wants a real

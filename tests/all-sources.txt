@@ -2876,6 +2876,7 @@ tests/src/gui/RecordingRecoveryMenuTest.cpp
 tests/src/gui/ReferenceProjectPanelTest.cpp
 tests/src/gui/RenderPresetMenuTest.cpp
 tests/src/gui/RowTableViewTest.cpp
+tests/src/gui/SampleClipWarpModeMenuTest.cpp
 tests/src/gui/SampleEditorDialogTest.cpp
 tests/src/gui/ScriptBudgetActionTest.cpp
 tests/src/gui/SessionGridRecordTest.cpp
@@ -2958,6 +2959,7 @@ tests/src/tracks/AutomationTrackTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
 tests/src/tracks/SampleClipRubberBandTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
+tests/src/tracks/SampleClipWarpModesTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/src/tracks/TakeLaneCompPlaybackTest.cpp

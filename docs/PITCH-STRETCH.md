@@ -324,6 +324,46 @@ on a ratio change instead, which is why R3 is the engine). So:
 The test also checks that the Rubber Band render has the WSOLA render's length and differs from it:
 the voice really rendered, not the fallback.
 
-**Not done:** a GUI selector (no stretch mode has one yet: the modes live on the agent surface and in the
-file), per-clip formant or transient options, and a CPU figure for R3
-against WSOLA on the bench projects.
+**Not done:** per-clip formant or transient options, and a CPU figure for R3
+against WSOLA on the bench projects. (A GUI selector exists since Q050-036 §8.)
+
+## 8. The specified warp mode set (Q050-036, 0.5.0 L05)
+
+The spec §4.2 promises five warp modes — Beats, Tones, Texture, Re-Pitch, Complex — while the enum
+held only Resample / PreservePitch / RubberBand. The set is now complete, on three engines:
+
+| Mode | Wire / file | Engine |
+| --- | --- | --- |
+| Re-Pitch (the spec's Re-Pitch = varispeed) | `re_pitch` (legacy `resample` accepted) | `AudioResampler` — the pitch moves with the rate, as before |
+| Pitch-preserving (WSOLA) | `preserve_pitch` (`stretch="wsola"` in the file, unchanged) | `AudioStretcher` at its default parameters (1024 / 128) |
+| Tones | `tones` | the same WSOLA stretch with the alignment reach doubled (±256 frames ≈ 5.8 ms, periods down to ~172 Hz), for monophonic and tonal material |
+| Texture | `texture` | the same stretch with half the grain (512 frames ≈ 11.6 ms), which blurs inter-grain phase sooner — the diffuse render for polyphonic and ambient material |
+| Beats | `beats` | Rubber Band R3 restricted to its single short window (`OptionWindowShort`) — the crispest timing at some spectral cost |
+| Complex | `complex` (legacy `rubberband` accepted; the file still says `stretch="rubberband"`) | R3 at its full multi-resolution settings — exactly the render owner decision 12 introduced |
+
+Why Tones / Texture are WSOLA-backed: R3's remaining options (transients, phase, long window) are
+R2-only and render identically under the R3 engine this build uses (measured, not assumed), so
+parameterising the allocation-free WSOLA engine is the honest distinct behavior — five different
+waveforms for five modes, not five names for two renders. `Tones` and `Texture` therefore survive a
+build without librubberband; only `beats` / `complex` are refused there (the file still loads and
+renders through WSOLA, owner decision 12 unchanged).
+
+Selection lives in both surfaces through the same registered command: `warp.stretch` takes all six
+canonical names plus the two legacy aliases, reports `stretch` (canonical) and `stretch_algorithm`
+(`resampler` / `wsola` / `rubberband`), and stays one `control.undo` step (Clip checkpoint). The
+clip context menu has a "Warp mode" submenu (`addClipWarpModeMenu`, after the clip edits) driving
+that same command, with the current mode checked and nothing for a MIDI clip. Format: only the
+three genuinely new modes introduce new file tokens (`beats` / `tones` / `texture`); `wsola` and
+`rubberband` keep their bytes, absent still means varispeed, and an unknown name still means the
+default.
+
+**Proofs** (`tests/src/tracks/SampleClipWarpModesTest.cpp`, the §4 two-tone fixture at 2×, plus a
+burst-transient fixture; `tests/src/gui/SampleClipWarpModeMenuTest.cpp` for the menu):
+
+| Row | Measured |
+| --- | --- |
+| Duration | all six modes render exactly the mapping's frame count (2 s source → 1 s output) |
+| Pitch, 440 / 660 / 880 / 1320 Hz bins | Re-Pitch 0.0000 / 0.0000 / 0.5000 / 0.3000 (the octave); every pitch-keeping mode ≈0.50 / ≈0.30 / <0.001 / <0.001 |
+| Distinct renders | every pair of the five pitch-keeping waveforms differs (mean abs diff 0.026 – 0.42, smallest Texture vs PreservePitch) |
+| Transient onset (2× map puts it at 0.25 s out) | Re-Pitch +0.02 ms (sample-exact); Beats −9.6 ms with spectral pre-echo 0.06; Complex −1.7 ms with pre-echo 0.06; Tones / Texture / PreservePitch +3…+8 ms with no pre-onset leakage (WSOLA grains read forward only); all within ±20 ms |
+| Round trip | a project with Beats + Texture + Complex on separate clips saves and reloads with all three selections intact |

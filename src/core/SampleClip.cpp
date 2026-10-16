@@ -614,13 +614,23 @@ void SampleClip::restoreState(const QDomElement& element)
 }
 
 
+RubberBandPool* SampleClip::rubberBandPool() const
+{
+	const int slot = warpModeRubberBandSlot(m_stretchMode);
+	return slot < 0 ? nullptr : m_rubberBands[static_cast<std::size_t>(slot)].get();
+}
+
+
 void SampleClip::ensureRubberBandPool()
 {
-	if (m_stretchMode != WarpStretchMode::RubberBand || m_rubberBand || !RubberBandPool::available())
+	if (!RubberBandPool::available()) { return; }
+	const int slot = warpModeRubberBandSlot(m_stretchMode);
+	if (slot < 0 || m_rubberBands[static_cast<std::size_t>(slot)])
 	{
 		return;
 	}
-	m_rubberBand = std::make_unique<RubberBandPool>(m_sample.sampleRate());
+	m_rubberBands[static_cast<std::size_t>(slot)] =
+		std::make_unique<RubberBandPool>(m_sample.sampleRate(), m_stretchMode);
 }
 
 

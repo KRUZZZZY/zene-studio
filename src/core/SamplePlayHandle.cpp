@@ -33,6 +33,7 @@
 #include "CompSlip.h"
 #include "AudioEngine.h"
 #include "AudioBusHandle.h"
+#include "AudioStretcher.h"
 #include "Engine.h"
 #include "PatternTrack.h"
 #include "SampleClip.h"
@@ -40,6 +41,25 @@
 
 namespace lmms
 {
+
+//! The WSOLA grain and search reach a pitch-keeping mode renders with
+//! (Q050-036). `PreservePitch` is the default pair the row-30 lane measured
+//! (1024 / 128); `Tones` doubles the alignment reach, so periods down to
+//! ~172 Hz are aligned instead of dropped to plain overlap-add - the tonal
+//! material the mode is named for; `Texture` halves the grain, which blurs
+//! the phase relationships between grains sooner - the phasier render that
+//! suits polyphonic and ambient material. Both are fixed parameters of the
+//! same allocation-free engine; the mode name is what the user selects, the
+//! parameters are what it means.
+AudioStretcher::Parameters wsolaParametersFor(WarpStretchMode mode)
+{
+	switch (mode)
+	{
+	case WarpStretchMode::Tones: return { 1024, 256 };
+	case WarpStretchMode::Texture: return { 512, 128 };
+	default: return {};
+	}
+}
 
 SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle)
 	: PlayHandle(Type::SamplePlayHandle)
@@ -81,13 +101,14 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip ) :
 namespace
 {
 
-//! Whether a clip's audio goes through the pitch-keeping stretcher: a preserve-pitch or Rubber Band
-//! clip whose rate varies, or (ED-038) a transposed Rubber Band clip even at a linear rate - the
-//! pitch scale is the change it renders.
+//! Whether a clip's audio goes through the pitch-keeping stretcher: any
+//! pitch-preserving-mode clip whose rate varies, or (ED-038) a transposed
+//! Rubber Band-backed clip even at a linear rate - the pitch scale is the
+//! change it renders.
 bool rendersThroughStretcher(WarpStretchMode mode, bool rendersLinearly, int transpose)
 {
-	const bool keepsPitch = mode == WarpStretchMode::PreservePitch || mode == WarpStretchMode::RubberBand;
-	return (keepsPitch && !rendersLinearly) || (transpose != 0 && mode == WarpStretchMode::RubberBand);
+	return (warpModeKeepsPitch(mode) && !rendersLinearly)
+		|| (transpose != 0 && warpModeUsesRubberBand(mode));
 }
 
 } // namespace
@@ -139,14 +160,15 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 	const WarpStretchMode stretchMode = clip->warpStretchMode();
 	m_preservePitch = rendersThroughStretcher(stretchMode, m_rendersLinearly, clip->clipEdits().transpose);
 
-	/*! Owner decision 12: a RubberBand clip claims one of its pool's voices -
-	 *  a lock-free compare-and-swap, the voice already built and reset off this
+	/*! Owner decision 12: a Rubber Band-backed clip (Beats or Complex,
+	 *  Q050-036) claims one of its pool's voices - a
+	 *  lock-free compare-and-swap, the voice already built and reset off this
 	 *  thread. The pitch scale corrects the source rate to the output rate (the
 	 *  stretcher keeps a period in SAMPLES, so without it a 44.1 kHz source on a
 	 *  48 kHz engine would come out sharp). No voice - a build without the
 	 *  library, or both voices still in use or dirty - is the WSOLA render,
 	 *  which is the documented fallback and the pool counts it. */
-	if (m_preservePitch && stretchMode == WarpStretchMode::RubberBand && clip->rubberBandPool() != nullptr)
+	if (m_preservePitch && warpModeUsesRubberBand(stretchMode) && clip->rubberBandPool() != nullptr)
 	{
 		m_rubberBand = clip->rubberBandPool()->claim();
 		if (m_rubberBand != nullptr)
@@ -161,7 +183,11 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 	}
 	if (m_preservePitch && m_rubberBand == nullptr)
 	{
-		m_stretcher.prepare();
+		// Q050-036: the mode's own WSOLA parameters - which for Tones and
+		// Texture is not a fallback but the render itself. Prepared once here
+		// (a table fill, no allocation) and the analysis cursor starts at the
+		// head of the window, in window-relative frames.
+		m_stretcher.prepare(wsolaParametersFor(stretchMode));
 		m_stretcher.seek(0.0);
 	}
 
