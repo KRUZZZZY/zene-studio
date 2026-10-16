@@ -78,9 +78,18 @@ constexpr int WheelBurstMs = 400;
 LMMS_EXPORT void remember(int value);
 //! Record the starting zoom when a pinch ends or is canceled, if it changed.
 LMMS_EXPORT void finishPinch(int startValue, int currentValue, Qt::GestureState state);
-//! Swap @a current with the newest remembered value, into @a earlier; false when there is none.
+//! Step one back: take the newest remembered extent into @a earlier and queue @a current so
+//! arrangement.zoom_forward can return to it; false when there is nothing earlier (UI thread).
 LMMS_EXPORT bool takeEarlier(int current, int* earlier);
+//! Step one forward: take the newest queued extent into @a next and leave @a current to go back to; false when
+//! there is nothing forward (UI thread).
+LMMS_EXPORT bool takeNext(int current, int* next);
+//! The zoom toggle: return the extent the current one last left (a zoom or a back / forward step) into
+//! @a extent, with @a current the extent to return to next time; false after the very first zoom yet (UI thread).
+LMMS_EXPORT bool takeToggle(int current, int* extent);
 LMMS_EXPORT int historySize();
+//! The extents queued forward (a forward step can take); UI thread.
+LMMS_EXPORT int forwardSize();
 
 } // namespace arrangerzoom
 

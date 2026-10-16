@@ -162,6 +162,79 @@ private slots:
 		QCOMPARE(m_editor->zoomingModel()->value(), start);
 	}
 
+	//! 0.5.0 L13 (WF-094): back and forward step over the several prior extents, each restored exactly,
+	//! forward refused where nothing was walked past, and a new zoom cuts the forward walk off.
+	void backAndForwardWalkSeveralPriorZooms()
+	{
+		// The walk is a per-process static: drain it, so the assertions below are exact however many
+		// prior extents the cases before this one left in it.
+		while (run(QStringLiteral("arrangement.zoom_back")).ok) {}
+		const int first = m_editor->zoomingModel()->value();
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -6}}).ok);
+		const int second = m_editor->zoomingModel()->value();
+		QCOMPARE(second, first - 6);
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -6}}).ok);
+		const int third = m_editor->zoomingModel()->value();
+		QCOMPARE(third, first - 12);
+
+		// Back takes each prior extent in turn: the walk's last entry first, refused when it runs out.
+		QVERIFY(run(QStringLiteral("arrangement.zoom_back")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), second);
+		QVERIFY(run(QStringLiteral("arrangement.zoom_back")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), first);
+		const ControlResult noEarlier = run(QStringLiteral("arrangement.zoom_back"));
+		QVERIFY2(!noEarlier.ok, qPrintable(noEarlier.errorMessage));
+		QCOMPARE(m_editor->zoomingModel()->value(), first);
+
+		// Forward returns over them in order, one entry a step.
+		QVERIFY(run(QStringLiteral("arrangement.zoom_forward")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), second);
+		QVERIFY(run(QStringLiteral("arrangement.zoom_forward")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), third);
+		QVERIFY2(!run(QStringLiteral("arrangement.zoom_forward")).ok, "nothing further was walked past");
+		// ... and the walk back over the same two is exact again.
+		QVERIFY(run(QStringLiteral("arrangement.zoom_back")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), second);
+		QVERIFY(run(QStringLiteral("arrangement.zoom_back")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), first);
+		QVERIFY2(!run(QStringLiteral("arrangement.zoom_back")).ok, "the walk back is drained to its bottom");
+
+		// Sorry! A zoom resets the forward walk: what you walked past is unreachable now.
+		QVERIFY(run(QStringLiteral("arrangement.zoom_forward")).ok);  // to second, so back works below
+		QVERIFY(run(QStringLiteral("arrangement.zoom_back")).ok);  // and back to the bottom
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -3}}).ok);
+		QVERIFY2(!run(QStringLiteral("arrangement.zoom_forward")).ok, "a new zoom cut the forward walk off");
+	}
+
+	//! 0.5.0 L13 (WF-094): the toggle swaps the current extent with the one it last left, and swaps back.
+	void zoomToggleSwapsTheCurrentAndPriorExtent()
+	{
+		// The toggle is a per-process static: drain the walk, then re-remember the walk's bottom (the
+		// zoom the view is at), so the toggle has exactly nothing to swap with however the cases before
+		// this one left it.
+		while (run(QStringLiteral("arrangement.zoom_back")).ok) {}
+		const int first = m_editor->zoomingModel()->value();
+		arrangerzoom::remember(first);
+		QVERIFY2(!run(QStringLiteral("arrangement.zoom_toggle")).ok,
+			"before a zoom is left behind there is nothing to swap with");
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -6}}).ok);
+		const int after = m_editor->zoomingModel()->value();
+		QCOMPARE(m_editor->zoomingModel()->value(), first - 6);
+		// The zoom left the first extent behind: the toggle goes there, and back again.
+		QVERIFY(run(QStringLiteral("arrangement.zoom_toggle")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), first);
+		QVERIFY(run(QStringLiteral("arrangement.zoom_toggle")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), after);
+
+		// A back step leaves its extent behind too: from here the toggle swaps with it.
+		QVERIFY(run(QStringLiteral("arrangement.zoom_back")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), first);
+		QVERIFY(run(QStringLiteral("arrangement.zoom_toggle")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), after);
+		QVERIFY(run(QStringLiteral("arrangement.zoom_toggle")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), first);
+	}
+
 	void theRulerHasALaneEachUnderTheBarRuler()
 	{
 		auto* lanes = m_editor->findChild<ArrangerRulerLanes*>();
