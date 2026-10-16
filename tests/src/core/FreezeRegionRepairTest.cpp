@@ -23,6 +23,7 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -77,6 +78,39 @@ std::vector<Track::FrozenTake::MutedClip> asMuted(const std::vector<std::pair<ti
 	std::vector<Track::FrozenTake::MutedClip> muted;
 	for (const auto& piece : pieces) { muted.push_back({piece.first, piece.second}); }
 	return muted;
+}
+
+Track* trackById(int id)
+{
+	for (Track* candidate : Engine::getSong()->tracks())
+	{
+		if (candidate->id() == id) { return candidate; }
+	}
+	return nullptr;
+}
+
+bool noClipMuted(const Track* track)
+{
+	return std::none_of(track->getClips().begin(), track->getClips().end(),
+		[](const Clip* clip) { return clip->isMuted(); });
+}
+
+//! Plays the song from tick 0 to @a stopTick and returns the loudest period lying within [@a from, @a to].
+double loudestBetween(tick_t from, tick_t to, tick_t stopTick)
+{
+	Song* const song = Engine::getSong();
+	song->getTimeline(Song::PlayMode::Song).setLoopEnabled(false);
+	song->setPlayPos(0, Song::PlayMode::Song);
+	song->playSong();
+	double loudest = 0.0;
+	for (int period = 0; period < 1200 && song->getPlayPos().getTicks() < stopTick; ++period)
+	{
+		const tick_t begin = song->getPlayPos().getTicks();
+		const double level = rms(Engine::audioEngine()->renderNextPeriod());
+		if (begin >= from && song->getPlayPos().getTicks() <= to) { loudest = std::max(loudest, level); }
+	}
+	song->stop();
+	return loudest;
 }
 
 } // namespace
@@ -295,39 +329,24 @@ private slots:
 		const ControlResult opened = run(QStringLiteral("project.open"), {{QStringLiteral("path"), project}});
 		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
 		QVERIFY2(QJsonDocument(opened.result).toJson().contains("Frozen take not found"), "the load names the missing take");
-		Track* reopened = nullptr;
-		for (Track* candidate : Engine::getSong()->tracks())
-		{
-			if (candidate->id() == trackId) { reopened = candidate; }
-		}
+		Track* reopened = trackById(trackId);
 		QVERIFY(reopened != nullptr);
 		QVERIFY(reopened->isFrozen() && reopened->frozenTake().region);
 		QVERIFY(reopened->frozenTakeFileMissing() && !reopened->frozenAudioReady());
-		for (const Clip* clip : reopened->getClips()) { QVERIFY2(!clip->isMuted(), "a clip the freeze muted stays silent"); }
+		QVERIFY2(noClipMuted(reopened), "a clip the freeze muted stays silent");
 		const QString id = QStringLiteral("trk-%1").arg(trackId);
 		const ControlResult state = run(QStringLiteral("track.get_state"), {{QStringLiteral("track"), id}});
 		QVERIFY(state.ok && QJsonDocument(state.result).toJson().contains("frozen_audio_missing"));
 
-		// The source is audible inside the window (the take cannot cover it) as well as outside it.
-		Song* const song = Engine::getSong();
-		song->getTimeline(Song::PlayMode::Song).setLoopEnabled(false);
-		song->setPlayPos(0, Song::PlayMode::Song);
-		song->playSong();
-		double within = 0.0;
-		for (int period = 0; period < 1200 && song->getPlayPos().getTicks() < 118; ++period)
-		{
-			const tick_t from = song->getPlayPos().getTicks();
-			const double level = rms(Engine::audioEngine()->renderNextPeriod());
-			if (from >= 70 && song->getPlayPos().getTicks() <= 112) { within = std::max(within, level); }
-		}
-		song->stop();
+		// The source is audible inside the window: the take cannot cover it.
+		const double within = loudestBetween(70, 112, 118);
 		QVERIFY2(within > 0.01, qPrintable(QStringLiteral("the source is silent inside the missing region take: %1").arg(within)));
 
 		QVERIFY(run(QStringLiteral("freeze.unfreeze"), {{QStringLiteral("track"), id}}).ok);
 		QVERIFY(!reopened->isFrozen());
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(reopened->isFrozen());
-		for (const Clip* clip : reopened->getClips()) { QVERIFY(!clip->isMuted()); }
+		QVERIFY(noClipMuted(reopened));
 	}
 
 	//! A3b: the project-asset scan lists a moved take as missing and project.relink's engine repoints it.
