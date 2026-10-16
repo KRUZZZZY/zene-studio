@@ -37,6 +37,7 @@ therefore make the same call, leave the same transaction record and share one un
 | Select (click a note, Ctrl-click, Ctrl-drag, Ctrl+Shift to add, Ctrl+A, Escape) | `note.select` |
 | Velocity, pan or chance lane | `note.edit` (one batch per stroke) |
 | Timbre, pressure or micro-pitch lane | `note.expression_set` per note |
+| Note-tools menu: MPE pitch ramp... (asks the bend at the note's end, writes a `{0:0, len:value}` pitch stream, keeps the other axes), Clear MPE expression streams | `note.expression_stream_set` per note (one undo step each; the clear skips notes with no stream) |
 | Quantise | `groove.quantize` |
 | Scale and root | `scale.set`, `scale.root_set` (read back with `scale.get_state`) |
 | Drag the end of the loop region | `clip.resize` |

@@ -78,6 +78,7 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ExprSynthAllocationTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/SlicerTWaveformTest.cpp ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/MpeConsumerProbe.h tests/src/plugins/MpeTestConsumer.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- \
 #     tests/src/core/AafImportTest.cpp tests/src/core/ArrangeToolsTest.cpp tests/src/core/ArrangementModesTest.cpp \
 #     tests/src/core/ArrangingCatchUpTest.cpp tests/src/core/AudioAnalysisTest.cpp tests/src/core/AudioAutomationToolsTest.cpp \
@@ -159,6 +160,7 @@
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-tempo-map-persistence.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/SlicerTWaveformTest.cpp ; \
+# git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/MpeConsumerProbe.h tests/src/plugins/MpeTestConsumer.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- \
 #          tests/src/core/AafImportTest.cpp tests/src/core/ArrangeToolsTest.cpp tests/src/core/ArrangementModesTest.cpp \
 #          tests/src/core/ArrangingCatchUpTest.cpp tests/src/core/AudioAnalysisTest.cpp tests/src/core/AudioAutomationToolsTest.cpp \
@@ -2484,6 +2486,11 @@ tests/src/tracks/SampleClipRubberBandTest.cpp
 # 2026-10-12 (cluster new-p10-375): the SlicerT waveform endpoint regression test is fork-NEW.
 # It is named in both recipe copies above because tests/src/plugins is outside the core/tracks pathspec.
 tests/src/plugins/SlicerTWaveformTest.cpp
+# Q050-016 round 2: the MPE test consumer fixture and its probe interface are fork-NEW test
+# code (the playback test's readback surface). Named in both recipe copies above because
+# tests/src/plugins is outside the core/tracks pathspec.
+tests/src/plugins/MpeConsumerProbe.h
+tests/src/plugins/MpeTestConsumer.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 # cluster new-p10-116: the anchored-name regression for favourite effects in the picker.
 tests/src/gui/EffectSelectDialogFilterTest.cpp

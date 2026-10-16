@@ -1402,7 +1402,12 @@ line each, because the scope contract asks for one each:
 - *(Updated 2026-09-30.)* **The piano roll's note-tools menu now has Randomize velocities..., Humanize
   timing... and Scale velocities...** (`note.randomize` / `note.velocity_scale` on the selected notes, or
   the clip when none is selected; `NoteTransformActionsTest`), and slide notes have had a draw tool (Note
-  tools ▸ Slide notes, Shift+L) since the slide work. Still socket-only: the seed, velocity offset and
+  tools ▸ Slide notes, Shift+L) since the slide work. *(Updated 2026-10-16, Q050-016 round 2.)* The same
+  menu now has the MPE streams' GUI path beside them: **MPE pitch ramp...** (asks the bend at the note's
+  end in cents and writes a `{0:0, len:value}` pitch stream through the shared `note.expression_stream_set`
+  command, keeping the other axes) and **Clear MPE expression streams** (empties every axis of the notes
+  that carry a stream, skipping the rest so no empty undo step is pushed) — one undo step per note either
+  way (`NoteTransformActionsTest`: GUI trigger, registry effect, `control.undo`). Still socket-only: the seed, velocity offset and
   the typed transpose. The bullet below is the earlier record.
 - **Note randomisation, transforms and slide notes are drivable through the socket, not from the interface.**
   `note.randomize` (the seeded roll), `note.random_seed_get` / `note.random_seed_set` (the project's MIDI

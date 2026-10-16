@@ -18,8 +18,10 @@ each of pitch, pressure and timbre — read and written through `note.expression
 before), and **played at each point's own frame offset** (`src/core/MpeExpressionStreamPlayback.cpp`,
 driven from `NotePlayHandle::play()`): pitch as a MIDI bend on the note's channel plus a frequency
 ratio for the built-in synthesisers, pressure as channel pressure, timbre as CC74. §6.4's "no
-per-note expression curve" is closed for storage and playback. The GUI *editor* for these curves is
-still not built — it is the dependent unit Q050-137.
+per-note expression curve" is closed for storage and playback. The streams' GUI path is the piano
+roll's note-tools menu (MPE pitch ramp... and Clear MPE expression streams, both through the shared
+`note.expression_stream_set` command — round 2, 2026-10-16); the full curve *editor* (drawing and
+dragging the streams) is still not built — it is the dependent unit Q050-137.
 
 Work is on branch `post-alpha/mpe` (base `post-alpha/v0.2` = `0c23587d2`), worktree
 `projects/lmms-fl-research/zene-pa-mpe`. Nothing was pushed.
@@ -451,8 +453,10 @@ registered ctest with a purpose-built subject.
    `mpetimbrepts` attributes and played through `src/core/MpeExpressionStreamPlayback.cpp` at each
    point's frame offset (see the Q050-016 update above). The pitch axis composes with the existing
    per-note detuning curve (`Note::createDetuning()`), which remains the piano roll's detuning tool.
-   What is still missing is the **editor** (drawing/dragging the streams in the piano roll): that is
-   Q050-137, which depends on this unit.
+   The streams are editable from the piano roll's note-tools menu (MPE pitch ramp... writes a ramp,
+   Clear MPE expression streams removes them — both through `note.expression_stream_set`, one undo
+   step per note); what is still missing is the full curve **editor** (drawing/dragging the streams
+   in the piano roll): that is Q050-137, which depends on this unit.
 5. **Bend range is not negotiated from the input.** The member bend range is a configuration value
    defaulting to MPE's ±48 semitones; an RPN `0,0` message from the controller is not parsed, so a
    controller configured for ±12 will be captured 4× too wide until `setBendRangeSemitones()` is
