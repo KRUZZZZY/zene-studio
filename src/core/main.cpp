@@ -1404,10 +1404,14 @@ int main( int argc, char * * argv )
 				// directory the user asked for -- never a guess next to the project.
 				if ( !outputGiven )
 				{
+					crashreporter::endSession();
+					safestart::endSession();
 					return usageError( "exportstems needs an output directory (-o <dir>)" );
 				}
 				if ( !QDir().mkpath( renderOut ) )
 				{
+					crashreporter::endSession();
+					safestart::endSession();
 					return usageError( QString( "Could not create output directory %1" ).arg( renderOut ) );
 				}
 			}
