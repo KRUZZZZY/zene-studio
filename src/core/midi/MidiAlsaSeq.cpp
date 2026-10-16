@@ -762,10 +762,10 @@ void MidiAlsaSeq::run()
 {
 	// watch the pipe and sequencer input events
 	int pollfd_count = snd_seq_poll_descriptors_count( m_seqHandle,
- 								POLLIN );
+								POLLIN );
 	auto pollfd_set = new struct pollfd[pollfd_count + 1];
 	snd_seq_poll_descriptors( m_seqHandle, pollfd_set + 1, pollfd_count,
- 								POLLIN );
+								POLLIN );
 	pollfd_set[0].fd = m_pipe[0];
 	pollfd_set[0].events = POLLIN;
 	++pollfd_count;
