@@ -445,6 +445,45 @@ private slots:
 		QCOMPARE(kept.readAll(), QByteArray("previous"));
 	}
 
+	void savingQueuedBounceOutputAsProjectRefusesInstall()
+	{
+		Song* song = Engine::getSong();
+		Track* source = trackWithClip(QStringLiteral("Saved during bounce"));
+		const QString initialProject = out(QStringLiteral("initial-project.mmp"));
+		const ControlResult initialSave = run(QStringLiteral("project.save"), {{QStringLiteral("path"), initialProject}});
+		QVERIFY2(initialSave.ok, qPrintable(initialSave.errorMessage));
+		QCOMPARE(song->projectFileName(), initialProject);
+
+		const QString output = out(QStringLiteral("saved-over-bounce.mmp"));
+		const QString pidPath = out(QStringLiteral("save-during-bounce.pid"));
+		qputenv("ZENE_FAKE_RENDER_PID_PATH", pidPath.toLocal8Bit());
+		qputenv("ZENE_FAKE_RENDER_DELAY_MS", "3000");
+		const ControlResult accepted = queueBounce(QStringLiteral("bounce_land"), control::trackIdOf(source), output);
+		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
+		QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(pidPath), 3000);
+		QCOMPARE(song->projectFileName(), initialProject);
+
+		const ControlResult savedAs = run(QStringLiteral("project.save"), {{QStringLiteral("path"), output}});
+		QVERIFY2(savedAs.ok, qPrintable(savedAs.errorMessage));
+		QCOMPARE(song->projectFileName(), output);
+		QFile savedProject(output);
+		QVERIFY(savedProject.open(QIODevice::ReadOnly));
+		const QByteArray savedProjectBytes = savedProject.readAll();
+		savedProject.close();
+		QVERIFY(!savedProjectBytes.isEmpty());
+
+		const QJsonObject failed = waitForJob(jobId(accepted));
+		QCOMPARE(failed.value(QStringLiteral("state")).toString(), QStringLiteral("failed"));
+		QVERIFY(failed.value(QStringLiteral("error")).toString().contains(QStringLiteral("open project file")));
+		QCOMPARE(song->projectFileName(), output);
+		QVERIFY(!source->isMuted());
+		QCOMPARE(trackCount(), 1);
+
+		QFile preserved(output);
+		QVERIFY(preserved.open(QIODevice::ReadOnly));
+		QCOMPARE(preserved.readAll(), savedProjectBytes);
+	}
+
 	void outputOnlyTrackBounceUsesNotMutatingQueueCommand()
 	{
 		const auto* outputClass = control::ReversibilityTable::instance().lookup(QStringLiteral("render.queue_add"));

@@ -2076,7 +2076,7 @@ include/BounceInPlace.h	cluster 917, 2026-10-09: declare immutable async render 
 include/ControlRegistry.h	cluster 917, 2026-10-09: expose the control-registry completion hook for edits recorded after an async ACK.
 include/RenderQueue.h	cluster 917, 2026-10-09: carry bounce jobs, target ids, progress, and main-thread completion callbacks.
 include/TrackRenderMenu.h	cluster 917, 2026-10-09: route the track render menu through the asynchronous queue.
-src/core/BounceInPlace.cpp	cluster 917, 2026-10-09: split render preparation/finalization and preserve the synchronous compatibility path.; cluster bar4 (2026-10-09): retain the CLI-normalized WAV suffix in synchronous and queued staged renders; cluster new-p9-604 (2026-10-15): refuse an output path that names the open project file, so the render cannot replace the session
+src/core/BounceInPlace.cpp	cluster 917, 2026-10-09: split render preparation/finalization and preserve the synchronous compatibility path.; cluster bar4 (2026-10-09): retain the CLI-normalized WAV suffix in synchronous and queued staged renders; cluster new-p9-604 (2026-10-15): refuse an output path that names the open project file, so the render cannot replace the session; cluster new-p9-604 r2 (2026-10-16): recheck the live project path before installing a queued render, so a project saved to the output while rendering is preserved
 src/core/ControlCommandsBounceLand.cpp	cluster 917, 2026-10-09: document the synchronous compatibility verb and async queue path.
 src/core/ControlCommandsFreeze.cpp	cluster 917, 2026-10-09: document the synchronous compatibility verbs and async queue path.
 src/core/ControlCommandsRangeBounce.cpp	cluster 917, 2026-10-09: document the synchronous compatibility verb and async queue path.

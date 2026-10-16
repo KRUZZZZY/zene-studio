@@ -417,6 +417,11 @@ BounceInPlace::Result BounceInPlace::finishPreparedRender(const PreparedRender& 
 bool BounceInPlace::installPreparedOutput(PreparedRender* prepared, QString* error)
 {
 	if (prepared == nullptr || error == nullptr) { return false; }
+	if (Engine::getSong() != nullptr && namesOpenProject(prepared->outputPath))
+	{
+		*error = QStringLiteral("the output path is the open project file: a bounce would replace the session");
+		return false;
+	}
 	if (QFileInfo::exists(prepared->outputPath))
 	{
 		prepared->backupPath = prepared->outputPath + QStringLiteral(".backup.")
