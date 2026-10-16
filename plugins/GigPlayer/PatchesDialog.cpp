@@ -27,6 +27,13 @@
 
 #include <QHeaderView>
 
+// libgig 4.6 deprecates the sequential instrument getters in favour of the indexed API;
+// this dialog keeps using the iterators, whose behaviour is unchanged, so silence that one warning.
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 namespace lmms::gui
 {
 
@@ -413,3 +420,7 @@ void PatchesDialog::progChanged( QTreeWidgetItem * curr, QTreeWidgetItem * prev 
 
 
 } // namespace lmms::gui
+
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
