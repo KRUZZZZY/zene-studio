@@ -59,6 +59,13 @@ class OscillatorObject : public Model
 	Q_OBJECT
 public:
 	OscillatorObject( Model * _parent, int _idx );
+
+	//! Publishes a user waveform to the audio thread. The anti-alias table is
+	//! built here, on the calling (control) thread; the buffer and the table
+	//! are then swapped together under the engine's change lock, which
+	//! renderNextPeriod() holds for a whole render period - so playNoteImpl()
+	//! can never read a half-updated pair while it is creating oscillators.
+	void setUserWave( std::shared_ptr<const SampleBuffer> buffer );
 private:
 	FloatModel m_volumeModel;
 	FloatModel m_panModel;

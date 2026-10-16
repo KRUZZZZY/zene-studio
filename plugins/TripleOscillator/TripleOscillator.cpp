@@ -134,13 +134,31 @@ OscillatorObject::OscillatorObject( Model * _parent, int _idx ) :
 
 }
 
+void OscillatorObject::setUserWave( std::shared_ptr<const SampleBuffer> buffer )
+{
+	// The (potentially expensive) wavetable is built outside the lock, so the
+	// audio thread is only ever blocked for the two pointer swaps themselves.
+	auto table = Oscillator::generateAntiAliasUserWaveTable( buffer.get() );
+
+	// The buffer and its anti-alias table are one immutable pair. renderNextPeriod()
+	// holds this lock for a whole render period and playNoteImpl() reads both
+	// members inside it, so publishing them under the same lock is what keeps a
+	// note starting mid-load from seeing a half-updated pair.
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+
+	m_sampleBuffer = std::move( buffer );
+	m_userAntiAliasWaveTable = std::shared_ptr<const OscillatorConstants::waveform_t>( std::move( table ) );
+}
+
+
+
+
 void OscillatorObject::oscUserDefWaveDblClick()
 {
 	auto af = gui::FileDialog::openWaveformFile();
 	if( af != "" )
 	{
-		m_sampleBuffer = SampleBuffer::fromFile(af);
-		m_userAntiAliasWaveTable = Oscillator::generateAntiAliasUserWaveTable(m_sampleBuffer.get());
+		setUserWave( SampleBuffer::fromFile(af) );
 		// TODO:
 		//m_usrWaveBtn->setToolTip(m_sampleBuffer->audioFile());
 	}
@@ -284,8 +302,7 @@ void TripleOscillator::loadSettings( const QDomElement & _this )
 		{
 			if (QFileInfo(PathUtil::toAbsolute(userWaveFile)).exists())
 			{
-				m_osc[i]->m_sampleBuffer = SampleBuffer::fromFile(userWaveFile);
-				m_osc[i]->m_userAntiAliasWaveTable = Oscillator::generateAntiAliasUserWaveTable(m_osc[i]->m_sampleBuffer.get());
+				m_osc[i]->setUserWave(SampleBuffer::fromFile(userWaveFile));
 			}
 			else { Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile)); }
 		}
