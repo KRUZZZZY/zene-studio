@@ -2,39 +2,31 @@
 
 **Verdict: BLOCKED**
 
-## Finding evidence
+## Finding and change
 
-The finding is real in the source. [ControlServer.h](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-85/include/ControlServer.h:91) declares a 64-peer `MaxClients` limit. In [ControlServerWin32.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-85/src/core/ControlServerWin32.cpp:351), the connected-pipe path unconditionally appends a new client thread; the Windows accept loop has no cap check. The POSIX accept loop has its own check, so its existing live-socket test cannot prove this Windows behavior.
+The finding is real. `include/ControlServer.h:92` declares `MaxClients = 64`. The Windows accept loop in `src/core/ControlServerWin32.cpp:366-382` now reaps completed workers before checking that limit, closes a newly accepted pipe when all 64 client slots remain active, and starts a worker only when a slot is available. `include/ControlServer.h:241-248` stores a completion flag with each worker; `src/core/ControlServerWin32.cpp:275-289` joins and removes completed workers. The worker list therefore stays bounded instead of retaining every historical connection. `closeWin32()` still joins all remaining workers at `src/core/ControlServerWin32.cpp:515-519`.
 
-## Why blocked
-
-This worktree is configured and built for Linux (`uname` reports Linux and CMake uses `/usr/bin/c++`). `ControlNamedPipeSmoke` is registered only under `IF(WIN32 AND PYTHON3_EXECUTABLE)` in `tests/CMakeLists.txt:3941`, and no MinGW compiler is available. The only related CTest entry in this build is `ControlShutdownHookTest`, which tests shutdown-hook/socket lifecycle, not concurrent named-pipe clients.
-
-I did not add a source-text assertion or treat the POSIX socket cap as a regression: neither exercises the user-visible Windows pipe path. Without a Windows build and runner, I cannot produce the required behavioral RED/GREEN evidence or verify a Windows-only production change. No production or test code was changed.
+`tests/src/core/ControlShutdownHookTest.cpp:230-282` adds a Windows-only regression that holds 64 pipe clients open, expects an excess client's pipe to close, closes one allowed client, then retries until a replacement receives a reply. The case skips on POSIX because that build does not include the Windows named-pipe transport.
 
 ## Verification evidence
 
 | Evidence | Exact command | Exit | Result |
 |---|---|---:|---|
-| RED regression | Not run | N/A | No Windows pipe regression can execute in this Linux build. |
-| GREEN regression | Not run | N/A | No production fix was applied. |
-| Affected-family tests | Not run | N/A | No Windows test was run; `ControlNamedPipeSmoke` is not registered in this build. |
-| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r1/logs/gate-5.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 1 | 6 unrelated complexity regressions; baseline not written. |
-| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r1/logs/gate-6.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 1 | 14 unrelated new over-limit source entries; baseline not written. |
+| Pre-fix regression preflight | `ctest -R '^ControlShutdownHookTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/test-1.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/test-1.log; exit $rc` | 0 | Not RED: this Linux run skipped `windowsCapsActivePipeClientsAndReusesFreedSlot()`. |
+| Final build | `cmake --build build --target zene ControlShutdownHookTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/build-3.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/build-3.log; exit $rc` | 0 | `zene` and the affected test target built in the configured Linux tree. |
+| Final targeted CTest | `ctest -R '^ControlShutdownHookTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/test-3.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/test-3.log; exit $rc` | 0 | 1/1 CTest test passed. The Windows regression slot was skipped. |
+| QtTest case count | `./ControlShutdownHookTest -v1 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/test-4.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/test-4.log; exit $rc` (from `build/tests`) | 0 | 12 passed, 0 failed, 1 skipped; the skipped case is the Windows pipe regression. |
+| Reversal proof | Not run | N/A | Reversing the product patch here would leave the Windows-only case skipped in both states, so it could not provide the required failing assertion. |
+| Complexity gate | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/gate-3.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/gate-3.log; exit $rc` | 1 | Six unrelated functions are reported over CCN 10. No function from this change is reported. Baseline unchanged. |
+| File-length gate | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/gate-4.log 2>&1; rc=$?; echo EXIT=$rc >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-85.r2/logs/gate-4.log; exit $rc` | 1 | Fourteen unrelated files are reported over the existing 500-line limit. This test file is not listed. Baseline unchanged. |
 
-Inspection commands and observed exits:
+## Why blocked
 
-- `uname -a; rc=$?; printf 'EXIT=%s\n' "$rc"` — EXIT=0.
-- `rg -n 'CMAKE_SYSTEM_NAME|CMAKE_CXX_COMPILER:FILEPATH|CMAKE_GENERATOR:' build/CMakeCache.txt; rc=$?; printf 'EXIT=%s\n' "$rc"` — EXIT=0; the cache shows `/usr/bin/c++` and Unix Makefiles.
-- `rg -n -C 3 'MaxClients =|m_win32ClientThreads.emplace_back|void ControlServer::win32ClientLoop' include/ControlServer.h src/core/ControlServerWin32.cpp; rc=$?; printf 'EXIT=%s\n' "$rc"` — EXIT=0; evidence above.
-- `rg -n -C 2 'IF\(WIN32 AND PYTHON3_EXECUTABLE\)|add_test\(NAME ControlNamedPipeSmoke' tests/CMakeLists.txt; rc=$?; printf 'EXIT=%s\n' "$rc"` — EXIT=0; Windows-only registration at line 3941.
-- `rg -n 'ControlNamedPipeSmoke|ControlShutdownHookTest' build/tests/CTestTestfile.cmake; rc=$?; printf 'EXIT=%s\n' "$rc"` — EXIT=0; only `ControlShutdownHookTest` is present.
-- `command -v x86_64-w64-mingw32-g++; rc=$?; printf 'EXIT=%s\n' "$rc"` — EXIT=1; no MinGW compiler found.
-
-The required gates were run before any product or test-code change. The complexity log names regressions in `XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsMixerStrip.cpp`, `ProjectRevisions.cpp`, and `ControlCommandsShortcuts.cpp`. The file-length log names 14 committed source files missing from its current over-limit baseline. I did not alter unrelated code or re-anchor either gate.
-
-Build and CTest commands were not run because this host cannot build or execute the Windows named-pipe transport. No zero-test CTest invocation was made.
+This worktree is configured for Linux with `/usr/bin/c++`; its `Q_OS_WIN` implementation compiles out, and the Windows-only regression skips. There is no MinGW compiler or configured Windows Qt build in this environment. I therefore cannot honestly claim behavioral RED, GREEN, or the required retraction proof. The code and regression are present, but Windows validation remains required.
 
 ## Files committed
 
-- `docs/qwen-fixes-2026-10/cluster-new-p10-85.md` (this blocked report only)
+- `include/ControlServer.h`
+- `src/core/ControlServerWin32.cpp`
+- `tests/src/core/ControlShutdownHookTest.cpp`
+- `docs/qwen-fixes-2026-10/cluster-new-p10-85.md`

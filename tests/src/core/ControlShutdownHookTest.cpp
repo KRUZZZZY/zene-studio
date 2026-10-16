@@ -65,9 +65,13 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#elif defined(Q_OS_WIN)
+#include <windows.h>
 #endif
 
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 using namespace lmms;
 
@@ -114,6 +118,98 @@ ReplyDrain drainReplyUntilClosedOrComplete(int fd, qint64 expectedBytes)
 }
 #endif
 
+#if defined(Q_OS_WIN)
+struct TestPipe
+{
+	HANDLE handle = INVALID_HANDLE_VALUE;
+	TestPipe() = default;
+	explicit TestPipe(HANDLE value) : handle(value) {}
+	TestPipe(const TestPipe&) = delete;
+	TestPipe& operator=(const TestPipe&) = delete;
+	TestPipe(TestPipe&& other) noexcept : handle(other.handle) { other.handle = INVALID_HANDLE_VALUE; }
+	TestPipe& operator=(TestPipe&& other) noexcept
+	{
+		close();
+		handle = other.handle;
+		other.handle = INVALID_HANDLE_VALUE;
+		return *this;
+	}
+	~TestPipe() { close(); }
+	bool isValid() const { return handle != INVALID_HANDLE_VALUE; }
+	void close()
+	{
+		if (isValid()) { CloseHandle(handle); handle = INVALID_HANDLE_VALUE; }
+	}
+};
+
+TestPipe connectTestPipe(const QString& name, int timeoutMs)
+{
+	QElapsedTimer timer;
+	timer.start();
+	while (timer.elapsed() < timeoutMs)
+	{
+		HANDLE pipe = CreateFileW(reinterpret_cast<LPCWSTR>(name.utf16()),
+			GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+		if (pipe != INVALID_HANDLE_VALUE) { return TestPipe(pipe); }
+		const DWORD error = GetLastError();
+		if (error == ERROR_PIPE_BUSY) { WaitNamedPipeW(reinterpret_cast<LPCWSTR>(name.utf16()), 50); }
+		else if (error == ERROR_FILE_NOT_FOUND) { Sleep(10); }
+		else { break; }
+	}
+	return TestPipe();
+}
+
+enum class PipeExchange { Replied, Closed, TimedOut, Failed };
+
+bool isPipeClosedError(DWORD error)
+{
+	return error == ERROR_BROKEN_PIPE || error == ERROR_PIPE_NOT_CONNECTED;
+}
+
+PipeExchange pipeError(DWORD error)
+{
+	return isPipeClosedError(error) ? PipeExchange::Closed : PipeExchange::Failed;
+}
+
+PipeExchange readPipeResponse(TestPipe& pipe, QByteArray* response)
+{
+	QElapsedTimer timer;
+	timer.start();
+	while (timer.elapsed() < 5000)
+	{
+		QCoreApplication::processEvents(QEventLoop::AllEvents, 1);
+		DWORD available = 0;
+		if (!PeekNamedPipe(pipe.handle, nullptr, 0, nullptr, &available, nullptr))
+		{
+			return pipeError(GetLastError());
+		}
+		if (available == 0)
+		{
+			Sleep(1);
+			continue;
+		}
+		char bytes[4096];
+		DWORD count = 0;
+		if (!ReadFile(pipe.handle, bytes, sizeof(bytes), &count, nullptr)) { return pipeError(GetLastError()); }
+		response->append(bytes, static_cast<int>(count));
+		if (response->contains('\n')) { return PipeExchange::Replied; }
+	}
+	return PipeExchange::TimedOut;
+}
+
+PipeExchange sendMalformedRequest(TestPipe& pipe, QByteArray* response)
+{
+	const QByteArray request = QByteArrayLiteral("{\n");
+	DWORD written = 0;
+	if (!WriteFile(pipe.handle, request.constData(), static_cast<DWORD>(request.size()), &written, nullptr))
+	{
+		return pipeError(GetLastError());
+	}
+	if (written != static_cast<DWORD>(request.size())) { return PipeExchange::Failed; }
+	return readPipeResponse(pipe, response);
+}
+#endif
+
 } // namespace
 
 class ControlShutdownHookTest : public QObject
@@ -129,6 +225,58 @@ private slots:
 		ControlRegistry* registry = ControlRegistry::instance();
 		registry->runShutdownHooks();
 		QCOMPARE(registry->shutdownHookCount(), 0);
+	}
+
+	void windowsCapsActivePipeClientsAndReusesFreedSlot()
+	{
+#if !defined(Q_OS_WIN)
+		QSKIP("the named-pipe client limit is enforced by the Windows transport");
+#else
+		ControlServer server(ControlRegistry::instance());
+		const QString pipeName = QStringLiteral("\\\\.\\pipe\\zene-client-cap-%1-%2")
+			.arg(static_cast<qulonglong>(GetCurrentProcessId()))
+			.arg(static_cast<qulonglong>(GetTickCount64()));
+		QString error;
+		QVERIFY2(server.listen(pipeName, &error), qPrintable(error));
+
+		std::vector<TestPipe> clients;
+		clients.reserve(ControlServer::MaxClients);
+		for (int index = 0; index < ControlServer::MaxClients; ++index)
+		{
+			TestPipe client = connectTestPipe(pipeName, 5000);
+			QVERIFY2(client.isValid(), "could not connect one of the 64 allowed pipe clients");
+			clients.push_back(std::move(client));
+		}
+
+		TestPipe excess = connectTestPipe(pipeName, 5000);
+		QVERIFY2(excess.isValid(), "the listener stopped while refusing an excess pipe client");
+		QByteArray response;
+		QVERIFY2(sendMalformedRequest(excess, &response) == PipeExchange::Closed,
+			"an excess pipe client received a response instead of being disconnected");
+
+		clients.front().close();
+		QElapsedTimer reuseTimeout;
+		reuseTimeout.start();
+		bool reused = false;
+		while (!reused && reuseTimeout.elapsed() < 5000)
+		{
+			TestPipe replacement = connectTestPipe(pipeName, 1000);
+			if (!replacement.isValid()) { QTest::qWait(10); continue; }
+			response.clear();
+			const PipeExchange exchange = sendMalformedRequest(replacement, &response);
+			if (exchange == PipeExchange::Replied)
+			{
+				clients.push_back(std::move(replacement));
+				reused = true;
+			}
+			else if (exchange == PipeExchange::Failed || exchange == PipeExchange::TimedOut)
+			{
+				QFAIL("the freed client slot produced neither a reply nor a closed pipe");
+			}
+			QTest::qWait(10);
+		}
+		QVERIFY2(reused, "a freed pipe-client slot was not reusable");
+#endif
 	}
 
 	void everyNonblankRequestEmitsItsExchange()

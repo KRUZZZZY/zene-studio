@@ -37,6 +37,7 @@
 #if defined(Q_OS_WIN)
 #include <QMutex>
 #include <atomic>
+#include <memory>
 #include <thread>
 #include <vector>
 #endif
@@ -206,10 +207,13 @@ private:
 	void win32AcceptLoop();
 	//! Serve ONE accepted connection to its end: read lines, dispatch each
 	//! complete one on the server's thread (win32Dispatch) and write its reply
-	//! back.  Owns its pipe handle; does NOT remove its own entry from
-	//! m_win32ClientThreads (a thread cannot join itself) - that entry is joined
-	//! by closeWin32().
+	//! back. Owns its pipe handle. The acceptor marks its worker complete after
+	//! this returns, then reaps it on a later accept; closeWin32() joins workers
+	//! still present after stopping the acceptor.
 	void win32ClientLoop(void* hPipe);
+	//! Join and remove client workers that have completed, keeping the worker list
+	//! bounded by MaxClients instead of retaining every historical connection.
+	void reapWin32ClientThreads();
 	//! Run dispatchLine() for one request line on the SERVER's thread and wait
 	//! for the answer, bounded.  Empty when the instance started closing before
 	//! the request could be answered.
@@ -235,10 +239,15 @@ private:
 	void* m_win32QuitEvent = nullptr;    // HANDLE, manual-reset
 	void* m_win32ConnectEvent = nullptr; // HANDLE, manual-reset, the accept wait
 	std::thread m_acceptThread;
-	//! One entry per accepted connection, in connection order.  Joined by
-	//! closeWin32() (which runs after the acceptor has been joined, so nothing
-	//! appends while this is read) - the only reason the transport keeps them.
-	std::vector<std::thread> m_win32ClientThreads;
+	struct Win32ClientWorker
+	{
+		std::thread thread;
+		std::atomic<bool> finished{false};
+	};
+	//! Active workers plus finished workers awaiting accept-loop reaping. The
+	//! acceptor joins completed entries before counting toward MaxClients; after
+	//! it is joined, closeWin32() joins whatever remains here.
+	std::vector<std::unique_ptr<Win32ClientWorker>> m_win32ClientThreads;
 #else
 	int m_listenFd = -1;
 	QSocketNotifier* m_notifier = nullptr;
