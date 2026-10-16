@@ -1255,6 +1255,21 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		QCOMPARE(QByteArray(MTS_GetScaleName(client.get())), name);
 	}
 
+	void localMtsFrequencyToNoteMapsNanToFallback()
+	{
+		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);
+		QVERIFY(client != nullptr);
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		const char expected = MTS_FrequencyToNote(nullptr, nan, -1);
+		QCOMPARE(expected, static_cast<char>(60));
+
+		QCOMPARE(MTS_FrequencyToNote(client.get(), nan, -1), expected);
+
+		signed char channel = -1;
+		QCOMPARE(MTS_FrequencyToNoteAndChannel(client.get(), nan, &channel), expected);
+		QCOMPARE(channel, static_cast<signed char>(0));
+	}
+
 	void localMtsTuningDumpRequestPreservesMapMetadata()
 	{
 		MtsClientPtr client(MTS_RegisterClient(), &MTS_DeregisterClient);

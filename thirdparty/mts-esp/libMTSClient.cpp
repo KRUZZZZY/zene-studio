@@ -434,6 +434,9 @@ struct MTSClient
     
     inline char freqToNote(double freq, signed char midichannel)
     {
+        if (isnan(freq))
+            return static_cast<char>(60);
+
         bool online = global.isOnline();
         bool multiChannel = false;
         const double *freqs = online ? global.esp_retuning : localFreqs;
@@ -504,6 +507,13 @@ struct MTSClient
     
     inline char freqToNote(double freq, signed char *midichannel)
     {
+        if (isnan(freq))
+        {
+            if (midichannel)
+                *midichannel = static_cast<signed char>(0);
+            return static_cast<char>(60);
+        }
+
         if (!midichannel) 
             return freqToNote(freq, static_cast<signed char>(-1));
         
