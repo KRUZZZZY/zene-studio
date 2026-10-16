@@ -2221,6 +2221,7 @@ include/ColorChooser.h	cluster new-p9-14: forward key releases only when a paren
 include/BasicFilters.h	cluster new-p12-338: clear both stages' history in BasicFilters::clearHistory for double filters; covered by PluginPortsMigrationTest::doubleFilterClearHistoryClearsSubfilter.
 tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p12-338: assert an impulse-fed double lowpass produces exact silence after clearHistory.
 plugins/Xpressive/Xpressive.cpp	new-p10-464: replace non-finite decoded waveform samples with zero before copying them into graphModel and WaveSample; regression PluginPortsMigrationTest::xpressiveLoadedWaveSamplesAreFinite.
+src/gui/clips/ClipView.cpp	cluster new-p11-9: Shift-clicking an unselected locked clip adds it without clearing the existing selection; regression ArrangerOverlaysVideoLaneTest::shiftClickingALockedClipKeepsTheExistingSelection.
 tests/control-wasm-sandbox.py	new-p10-72: reject 1e300 in wasm.set_param and confirm invalid_args leaves the hosted module's parameter slot unchanged.
 src/core/Scale.cpp	Scale::loadSettings accepts only interval elements with complete, parseable ratio or cents fields so unexpected children cannot create default-like intervals.
 tests/src/core/ControlNoteScaleVerbsTest.cpp	Regression loads valid ratio and cents intervals beside non-interval nodes and malformed interval elements, then checks that only valid intervals remain.

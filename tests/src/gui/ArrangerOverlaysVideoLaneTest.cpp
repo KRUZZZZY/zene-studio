@@ -270,6 +270,30 @@ private slots:
 		QVERIFY(QWidget::mouseGrabber() != m_overlay);
 	}
 
+	void shiftClickingALockedClipKeepsTheExistingSelection()
+	{
+		Clip* selected = m_tracks.at(0)->createClip(TimePos(Bar));
+		Clip* locked = m_tracks.at(1)->createClip(TimePos(2 * Bar));
+		QCoreApplication::processEvents();
+		ClipView* selectedView = nullptr;
+		ClipView* lockedView = nullptr;
+		for (ClipView* candidate : m_editor->findChildren<ClipView*>())
+		{
+			if (candidate->getClip() == selected) { selectedView = candidate; }
+			if (candidate->getClip() == locked) { lockedView = candidate; }
+		}
+		QVERIFY(selectedView != nullptr && lockedView != nullptr);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(locked)}}).ok);
+
+		m_editor->selectAllClips(false);
+		selectedView->setSelected(true);
+		QTest::mouseClick(lockedView, Qt::LeftButton, Qt::ShiftModifier,
+			QPoint(lockedView->width() / 2, lockedView->height() * 3 / 4));
+
+		QVERIFY2(selectedView->isSelected(), "Shift-clicking a locked clip cleared the existing selection");
+		QVERIFY(lockedView->isSelected());
+	}
+
 	void theVideoLaneTakesRoomOnlyWhileAVideoIsAttached()
 	{
 		auto* lane = m_editor->findChild<VideoLane*>();
