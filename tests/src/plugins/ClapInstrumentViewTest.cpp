@@ -25,17 +25,17 @@
  * WHAT THIS PROVES
  * ----------------
  * The instrument view shows the plug-in's audio-output channel count ("Audio output: N channel(s)").
- * A CLAP plug-in may change its clap.audio-ports layout while the host runs - it asks for a restart
- * and rescans its ports, the host's main-thread poll re-prepares, re-reads the layout and rebuilds the
- * transport (ClapInstrument::reprepare). That label was captured once at construction, so it kept the
- * OLD count after such a change.
+ * When ClapInstrument::reprepare() consumes a pending CLAP audio-port list rescan and reads a changed
+ * layout, the view must refresh that count. This test directly drives the two reprepare phases; it does
+ * not verify that the host poll services a runtime restart request.
  *
  * The subject is the in-tree fixture tests/data/clap-test-plugin/clap-test-instrument.c in its runtime
  * layout mode (CLAP_TEST_INSTRUMENT_LAYOUT): set before a re-prepare, the single-output class reports a
- * second stereo output port and announces it from activate() the way a real plug-in announces a new
- * routing layout. The test builds the real ClapInstrument and its real view, checks the initial count,
- * drives the two re-prepares the host's poll would run (one for the plug-in's announcement, one that
- * re-reads the changed layout), and asserts the label shows the new count.
+ * second stereo output port and announces it from activate() using the CLAP list-rescan and restart
+ * callbacks. The test builds the real ClapInstrument and its real view, checks the initial count, calls
+ * reprepare() to make that announcement, then calls it again to consume the inactive rescan and assert
+ * that the label shows the new count. prepare() clears the restart flag raised during activation, so
+ * these direct calls are not presented as coverage of poll() servicing that request.
  */
 
 #include <QtTest>
@@ -99,7 +99,7 @@ private slots:
 		Engine::destroy();
 	}
 
-	void outputChannelLabelFollowsARuntimeLayoutChange()
+	void outputChannelLabelFollowsLayoutReadOnReprepare()
 	{
 		const QString module = QStringLiteral(CLAP_TEST_INSTRUMENT_PATH);
 		if (module.isEmpty() || !QFileInfo::exists(module)) { QSKIP("no CLAP instrument fixture available"); }
@@ -124,11 +124,15 @@ private slots:
 		QVERIFY2(label != nullptr, "the instrument view shows no audio-output channel count");
 		QVERIFY2(label->text().contains(QStringLiteral("2 channel")), qPrintable(label->text()));
 
-		// The plug-in changes its layout while running. In activate()'s !active_state callback, the
-		// fixture verifies LIST rescan support, announces the added port, and requests a restart. The
-		// next re-prepare re-reads the layout, as the host does after servicing that restart.
+		// The fixture announces its added port during activation. prepare() clears the restart request
+		// from that callback, so this test drives the subsequent reprepare directly and checks both
+		// phases: first the announcement, then the inactive rescan and changed layout read.
 		qputenv("CLAP_TEST_INSTRUMENT_LAYOUT", "aux");
 		instrument->reprepare();
+		QCOMPARE(instrument->clapPlugin()->busLayout().outputs, 2);
+		QVERIFY(!instrument->clapPlugin()->needsReprepare());
+		QVERIFY2(label->text().contains(QStringLiteral("2 channel")), qPrintable(label->text()));
+
 		instrument->reprepare();
 		QCOMPARE(instrument->clapPlugin()->busLayout().outputs, 4);
 		QVERIFY2(label->text().contains(QStringLiteral("4 channel")),
