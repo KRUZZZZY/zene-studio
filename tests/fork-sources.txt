@@ -690,7 +690,10 @@ include/ArrangerNavigator.h
 include/ArrangerOverlays.h
 include/ArrangerRulerLanes.h
 include/ArrangerZoom.h
+include/ArticulationEvents.h
 include/ArticulationMap.h
+include/ArticulationMapEditor.h
+include/ArticulationRemap.h
 include/AudioAlsaWrite.h
 include/AudioBus.h
 include/AudioInputPath.h
@@ -1255,6 +1258,7 @@ src/core/Appearance.cpp
 src/core/ArrangementEdits.cpp
 src/core/ArrangementSections.cpp
 src/core/ArticulationMap.cpp
+src/core/ArticulationRemap.cpp
 src/core/AudioBus.cpp
 src/core/AudioInputPath.cpp
 src/core/AudioIoSetup.cpp
@@ -1999,6 +2003,7 @@ src/gui/editors/AutomationEditorKeys.cpp
 src/gui/editors/AutomationPointEdit.cpp
 src/gui/editors/ItemListAutomationSource.cpp
 src/gui/modals/EffectPickerOrganiser.cpp
+src/gui/noteeditor/ArticulationMapEditor.cpp
 src/gui/noteeditor/ControllerLaneView.cpp
 src/gui/noteeditor/ItemListNoteSources.cpp
 src/gui/noteeditor/LaneScale.cpp
@@ -2196,6 +2201,7 @@ tests/src/core/ArrangeToolsTest.cpp
 tests/src/core/ArrangementModesTest.cpp
 tests/src/core/ArrangingCatchUpTest.cpp
 tests/src/core/ArrangingSpacerReferenceTest.cpp
+tests/src/core/ArticulationPlaybackTest.cpp
 tests/src/core/AudioAlsaPollDescriptorTest.cpp
 tests/src/core/AudioAlsaWriteTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
@@ -2476,6 +2482,7 @@ tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp
 tests/src/plugins/PatmanLoadTest.cpp
 tests/src/core/SerializingObjectHookTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
+tests/src/gui/ArticulationMapEditorTest.cpp
 tests/src/plugins/ExprSynthTest.cpp
 # BUG 16 (new-p10-136): file manager discovery falls back when the MIME query returns nothing.
 tests/src/gui/FileRevealerTest.cpp

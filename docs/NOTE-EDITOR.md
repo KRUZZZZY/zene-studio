@@ -142,6 +142,39 @@ The brief also names a **gain** lane, but this engine has no per-note gain separ
 velocity, which is the note's volume. Adding one would mean a new note attribute, a new
 project-format field and a change to the render path. That was not done; it is listed in §8.
 
+## 5a. Articulations
+
+An instrument track has an **articulation map**: named entries, each saying what to send just before a
+note that asks for it - a **keyswitch** key (a sample library's key, played for one tick), a **program
+change**, and/or a **control change** (controller and value). A note names its articulation by the entry's
+1-based number (`note.edit` `articulation`; the note editor's right-click Articulation menu).
+
+- **Editor:** Track menu ▸ Articulations..., or the note editor's Articulation ▸ Edit Articulations....
+  One row per entry: name, keyswitch, program, controller, value (0-127, blank for "not that"). New,
+  Duplicate, Move Up/Down and Remove edit the list; typing in a cell edits it. Names are unique
+  (not case-sensitive), at most 64 entries.
+- **Same command as the agent:** every edit is one `track.articulations_set` (undo is one step), so the
+  map the editor leaves is the map the command leaves (`ArticulationMapEditorTest`). Moving or removing an
+  entry passes `from` - the old position of each new entry, 0 for a new one - and the notes follow their
+  articulation: a note whose entry moved takes the new number, one whose entry was removed asks for none
+  (the reply's `notes_remapped` counts them; undo restores map and notes together). Without `from` the
+  notes keep their numbers.
+- **Saved with the project** as the `articulations` attribute of the track element, only when the map is
+  not empty; projects without a map are byte for byte as before.
+- **Playback:** the note carries what its articulation sends (copied out of the map when the note is
+  triggered, so the audio thread never reads the map), and its play handle sends it in the period the note
+  actually starts in, at the note's own frame offset and just before its note-on: program change, control
+  change, then the keyswitch key. A note that swing, the MIDI offset or the track's delay holds back brings
+  its articulation with it. The keyswitch is a plain MIDI key to the instrument and the MIDI output (no note
+  of its own, no play handle); it is let go a period later, or with the note if that ends first. Every layer
+  that plays the note gets the same events on its own instrument; an instrument a layer zone leaves out of
+  the note gets none. The path reuses the note's own handle: it adds no allocation, lock or Qt signal on the
+  audio thread (`ArticulationPlaybackTest` counts allocations and reads the events, frame offsets and held
+  keys an instrument is handed). Allocation the note's handle itself makes is outside this feature.
+- **Not done:** per-articulation timing (a lead time before the note), and an articulation's own colour or
+  note-head. A map is per track, not shared between tracks; copy it with `track.articulations` and
+  `track.articulations_set`.
+
 ## 6. Performance
 
 A frame draws only what is on screen:

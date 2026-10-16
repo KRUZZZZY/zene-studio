@@ -218,7 +218,12 @@ public:
 	bool notePlaysNow(const Note& note, uint32_t midiSeed) const;
 	//! Start the note: its articulation, its handle and its repeats, delayed by swing and the MIDI offset.
 	void triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_cnt_t frames, const TimePos& curStart);
-	void sendArticulation(int index, f_cnt_t offset);
+	//! Audio thread (Q050-015): an articulation's program change, control change and keyswitch press, at @a offset
+	//! in the period and @a time, for the note on @a key at @a volume; true when a keyswitch is down and
+	//! releaseKeyswitch() is owed. Nothing is sent when a layer rack leaves this track's instrument out of the note.
+	bool sendArticulationEvents(const ArticulationEvents& events, int channel, int key, int volume, const TimePos& time, f_cnt_t offset);
+	void releaseKeyswitch(int key, int channel, const TimePos& time, f_cnt_t offset);
+	static constexpr int KeyswitchVelocity = 100;
 	//! 0.5.0 ED-029: @a position (clip time) folded into the clip's loop, when it has one.
 	static TimePos loopedPosition(const MidiClip* clip, const TimePos& position);
 	//! Where a note starting in the pass at @a passBase (clip time) is cut: the clip's end, and on a

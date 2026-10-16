@@ -78,6 +78,9 @@
 
 #include "embed.h"
 
+#include <QDomDocument>
+#include <QDomElement>
+
 #include <algorithm>
 #include <cstddef>
 #include <span>
@@ -144,9 +147,10 @@ public:
 	//! from a playing note (InstrumentTrack::processOutEvent) and from live
 	//! MIDI input alike. Realtime-safe: fixed arrays and int writes.
 	bool handleMidiEvent( const MidiEvent& event, const TimePos& = TimePos(),
-						f_cnt_t = 0 ) override
+						f_cnt_t offset = 0 ) override
 	{
 		const int channel = std::clamp<int>( event.channel(), 0, kChannelCount - 1 );
+		logEvent( event, offset );
 
 		switch( event.type() )
 		{
@@ -182,8 +186,31 @@ public:
 	//! (Note::saveSettings writes mpepitch/mpepressure/mpetimbre), so these
 	//! are deliberately no-ops rather than a second store.
 	QString nodeName() const override { return QStringLiteral( "mpetestconsumer" ); }
-	void saveSettings( QDomDocument&, QDomElement& ) override {}
-	void loadSettings( const QDomElement& ) override {}
+	//! The one exception (Q050-015): the order the instrument was handed note-ons, program changes and
+	//! controllers in, as the 'events' attribute ("k60 p3 c32=127": a key, a program, a controller=value),
+	//! so ArticulationPlaybackTest can read what an articulation sent ahead of its note. Read it from the
+	//! test thread after the blocks are rendered; loadSettings() of an element with a 'clearlog' attribute starts a new log.
+	void saveSettings( QDomDocument&, QDomElement& element ) override
+	{
+		QStringList events;
+		for( int i = 0; i < m_loggedEvents; ++i )
+		{
+			const LoggedEvent& e = m_log[i];
+			events << ( e.type == MidiControlChange ? QStringLiteral( "c%1=%2" ).arg( e.first ).arg( e.second )
+				: e.type == MidiProgramChange ? QStringLiteral( "p%1" ).arg( e.first )
+				: QStringLiteral( "k%1" ).arg( e.first ) );
+		}
+		element.setAttribute( QStringLiteral( "events" ), events.join( QLatin1Char( ' ' ) ) );
+		// The frame offset in the period each logged event was handed in, and how many keys are down now.
+		QStringList offsets;
+		for( int i = 0; i < m_loggedEvents; ++i ) { offsets << QString::number( m_log[i].offset ); }
+		element.setAttribute( QStringLiteral( "offsets" ), offsets.join( QLatin1Char( ' ' ) ) );
+		element.setAttribute( QStringLiteral( "held" ), m_held );
+	}
+	void loadSettings( const QDomElement& element ) override
+	{
+		if( element.hasAttribute( QStringLiteral( "clearlog" ) ) ) { m_loggedEvents = 0; m_held = 0; }
+	}
 
 protected:
 	void playNoteImpl( NotePlayHandle* nph, std::span<SampleFrame> out ) override
@@ -214,6 +241,30 @@ protected:
 	}
 
 private:
+	struct LoggedEvent { int type; int first; int second; int offset; };
+	static constexpr int kLogCapacity = 64;
+
+	//! Fixed storage and plain int writes, so the audio thread that calls handleMidiEvent allocates nothing.
+	void logEvent( const MidiEvent& event, f_cnt_t offset )
+	{
+		if( event.type() == MidiNoteOn ) { ++m_held; }
+		else if( event.type() == MidiNoteOff ) { --m_held; }
+		if( m_loggedEvents >= kLogCapacity ) { return; }
+		const int at = static_cast<int>( offset );
+		switch( event.type() )
+		{
+			case MidiNoteOn: m_log[m_loggedEvents++] = { MidiNoteOn, event.key(), 0, at }; break;
+			case MidiProgramChange: m_log[m_loggedEvents++] = { MidiProgramChange, event.program(), 0, at }; break;
+			case MidiControlChange:
+				m_log[m_loggedEvents++] = { MidiControlChange, event.controllerNumber(), event.controllerValue(), at };
+				break;
+			default: break;
+		}
+	}
+
+	LoggedEvent m_log[kLogCapacity] = {};
+	int m_loggedEvents = 0;
+	int m_held = 0;  //!< note-ons minus note-offs
 	int m_pressure[kChannelCount] = {};
 	int m_timbre[kChannelCount] = {};
 };

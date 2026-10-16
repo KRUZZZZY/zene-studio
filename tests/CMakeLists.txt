@@ -760,6 +760,8 @@ set(LMMS_TESTS
 	src/core/NoteToolsTest.cpp
 	# 0.5.0 L07 (W3): repeats, recurrence, articulations, chase, swing, the MIDI offset, lyrics and groups.
 	src/core/NotePlaybackTest.cpp
+	# 0.5.0 L07 (Q050-015): what each articulation sends before its note, and the map's edits moving the notes with them.
+	src/core/ArticulationPlaybackTest.cpp
 	# 0.5.0 L08 (W3): pan law, swap, sends switched off, returns, find, gang, order, group colours.
 	src/core/MixerToolsTest.cpp
 	# 0.5.0 L02 (W3): capture a scene, playlists, setlists, marker actions, release and jump.
@@ -1054,6 +1056,8 @@ set(LMMS_TESTS
 	src/gui/MpeInputActionTest.cpp
 	# Edit > Tempo Map: every edit through a transport.tempo_map_* command.
 	src/gui/TempoMapPanelTest.cpp
+	# Track > Articulations: the editor leaves the map track.articulations_set leaves; one undo step per edit.
+	src/gui/ArticulationMapEditorTest.cpp
 	# The file browser's Tags menu (browser.tag.add / browser.tag.remove), over a throwaway store.
 	src/gui/BrowserTagMenuTest.cpp
 	# File search results queued for an older query are ignored by the current browser search.
@@ -2059,6 +2063,11 @@ target_compile_definitions(MpePlaybackTest PRIVATE
 	LMMS_MPE_CONSUMER_DIR="${CMAKE_CURRENT_BINARY_DIR}/mpe-test-consumer")
 add_dependencies(MpePlaybackTest mpe_test_consumer)
 set_target_properties(MpePlaybackTest PROPERTIES ENABLE_EXPORTS ON)
+# Q050-015: the same module also logs the events an articulation sends ahead of its note.
+target_compile_definitions(ArticulationPlaybackTest PRIVATE
+	LMMS_MPE_CONSUMER_DIR="${CMAKE_CURRENT_BINARY_DIR}/mpe-test-consumer")
+add_dependencies(ArticulationPlaybackTest mpe_test_consumer)
+set_target_properties(ArticulationPlaybackTest PROPERTIES ENABLE_EXPORTS ON)
 
 
 # RecordingRealtimeTest constructs a real Engine to measure the capture path
@@ -2296,6 +2305,7 @@ set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLeve
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ArticulationMapEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserTagMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FileSearchJobTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VisibilitySetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

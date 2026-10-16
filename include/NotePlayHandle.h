@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <memory>
 
+#include "ArticulationEvents.h"
 #include "BasicFilters.h"
 #include "Note.h"
 #include "PlayHandle.h"
@@ -105,6 +106,11 @@ public:
 	 *  lock, exactly like the note-on it is sent with.
 	 */
 	void sendMpeExpressionMidi( const TimePos& time = TimePos(), f_cnt_t offset = 0 );
+
+	//! Q050-015: what the note's articulation sends with its start - set by the track that triggers the note
+	//! (and copied to each layer that plays it); sent in play() just before the note-on, at its offset.
+	void setArticulation( const ArticulationEvents& events ) { m_articulation = events; }
+	const ArticulationEvents& articulation() const { return m_articulation; }
 
 	int midiKey() const;
 	int midiChannel() const
@@ -390,6 +396,8 @@ private:
 
 	bool m_frequencyNeedsUpdate;				// used to update pitch
 	int m_slideSourceKey;					// key a slide note glides from, -1 = none
+	ArticulationEvents m_articulation;		// Q050-015: sent ahead of the note-on
+	bool m_keyswitchDown = false;			// the articulation's keyswitch is pressed and not yet let go
 	alignas(std::max_align_t) std::byte m_pluginDataStorage[PluginDataStorageSize];
 } ;
 

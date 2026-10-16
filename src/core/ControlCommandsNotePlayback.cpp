@@ -38,6 +38,7 @@
 #include <cmath>
 
 #include "ArticulationMap.h"
+#include "ArticulationRemap.h"
 #include "ControlCommandsNoteShared.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
@@ -189,11 +190,27 @@ ControlResult articulationsSet(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, why.isEmpty() ? QStringLiteral("at most 64 articulations") : why);
 	}
-	const QString id = trackIdOf(track);
+	// 'from' (optional): where each new entry stood in the old map, so the notes follow their articulation.
+	std::vector<ArticulationNoteChange> moved;
 	const std::vector<Articulation> before = track->articulations().entries();
+	if (args.contains(QStringLiteral("from")))
+	{
+		std::vector<int> from;
+		for (const QJsonValue& origin : args.value(QStringLiteral("from")).toArray()) { from.push_back(origin.toInt(-1)); }
+		if (from.size() != entries.size() || !validateArticulationOrigins(from, static_cast<int>(before.size()), &why))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, why.isEmpty()
+				? QStringLiteral("'from' has one old position (0 for a new entry) per articulation") : why);
+		}
+		moved = planArticulationRemap(*track, from, static_cast<int>(before.size()));
+	}
+	const QString id = trackIdOf(track);
 	writeArticulations(id, entries);
-	addUndoStep([id, before]() { writeArticulations(id, before); }, [id, entries]() { writeArticulations(id, entries); });
-	return ControlResult::success({{QStringLiteral("track"), id}, {QStringLiteral("articulations"), track->articulations().toJson()}});
+	applyArticulationChanges(id, moved, true);
+	addUndoStep([id, before, moved]() { applyArticulationChanges(id, moved, false); writeArticulations(id, before); },
+		[id, entries, moved]() { writeArticulations(id, entries); applyArticulationChanges(id, moved, true); });
+	return ControlResult::success({{QStringLiteral("track"), id}, {QStringLiteral("articulations"), track->articulations().toJson()},
+		{QStringLiteral("notes_remapped"), static_cast<int>(moved.size())}});
 }
 
 ControlResult articulations(const QJsonObject& args)
@@ -275,8 +292,11 @@ void registerNotePlaybackCommands(ControlRegistry& registry)
 	add(registry, "track.articulations_set", QStringLiteral("Set an instrument track's articulations (its expression map): a list "
 		"of {name, keyswitch?, program?, controller?, value?} - what is sent, just before a note that asks for the articulation "
 		"(note.edit 'articulation', 1-based), to switch the instrument: a keyswitch key, a program change, a control change. An "
-		"empty list clears the map. One undo step."),
-		{{QStringLiteral("track"), stringProperty()}, {QStringLiteral("articulations"), arrayProperty()}},
+		"empty list clears the map. A note asks for an articulation by its position, so 'from' (optional) gives, per new entry, "
+		"its position in the old map (0 for a new one): the notes then follow their articulation when entries are moved, and "
+		"ask for none when theirs is removed (without it they keep their numbers). The reply's 'notes_remapped' counts the "
+		"notes changed. One undo step - the notes included."),
+		{{QStringLiteral("track"), stringProperty()}, {QStringLiteral("articulations"), arrayProperty()}, {QStringLiteral("from"), arrayProperty()}},
 		{QStringLiteral("track"), QStringLiteral("articulations")}, true, articulationsSet);
 	add(registry, "track.articulations", QStringLiteral("An instrument track's articulations, in order (a note's 'articulation' is "
 		"the 1-based index into this list)."), {{QStringLiteral("track"), stringProperty()}}, {QStringLiteral("track")}, false, articulations);

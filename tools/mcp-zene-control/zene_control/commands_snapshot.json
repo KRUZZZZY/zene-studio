@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-15T08:30:27Z",
+  "captured_at": "2026-10-16T10:37:31Z",
   "commands": [
     {
       "args_schema": {
@@ -28799,6 +28799,9 @@
           "articulations": {
             "type": "array"
           },
+          "from": {
+            "type": "array"
+          },
           "track": {
             "type": "string"
           }
@@ -28809,7 +28812,7 @@
         ],
         "type": "object"
       },
-      "description": "Set an instrument track's articulations (its expression map): a list of {name, keyswitch?, program?, controller?, value?} - what is sent, just before a note that asks for the articulation (note.edit 'articulation', 1-based), to switch the instrument: a keyswitch key, a program change, a control change. An empty list clears the map. One undo step.",
+      "description": "Set an instrument track's articulations (its expression map): a list of {name, keyswitch?, program?, controller?, value?} - what is sent, just before a note that asks for the articulation (note.edit 'articulation', 1-based), to switch the instrument: a keyswitch key, a program change, a control change. An empty list clears the map. A note asks for an articulation by its position, so 'from' (optional) gives, per new entry, its position in the old map (0 for a new one): the notes then follow their articulation when entries are moved, and ask for none when theirs is removed (without it they keep their numbers). The reply's 'notes_remapped' counts the notes changed. One undo step - the notes included.",
       "group": "track",
       "id": "track.articulations_set",
       "mutating": true,
@@ -35149,8 +35152,14 @@
   ],
   "count": 828,
   "instance": {
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-015/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/cff463a0-1326-44da-8393-bec3a1847916/scratchpad/train5/commands-release.json"
+    "source_socket": "/tmp/zctl-run-v_hfmde9/zene.sock",
+    "version": "0.4.0-alpha.2723+de5a85a"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

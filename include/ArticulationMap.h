@@ -30,6 +30,7 @@
 #include <QJsonArray>
 #include <QString>
 
+#include "ArticulationEvents.h"
 #include "lmms_export.h"
 
 class QDomElement;
@@ -45,6 +46,8 @@ struct Articulation
 	int program = -1;    //!< a program change
 	int controller = -1; //!< a control change: this CC ...
 	int value = 0;       //!< ... to this value
+
+	ArticulationEvents events() const { return {keyswitch, program, controller, value}; }
 };
 
 /*! 0.5.0 L07 (ED-121): an instrument track's expression map. A note names one of these by its

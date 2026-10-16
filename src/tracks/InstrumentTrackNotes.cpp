@@ -156,31 +156,34 @@ bool InstrumentTrack::notePlaysNow(const Note& note, uint32_t midiSeed) const
 		&& NoteRandom::passesProbability(note.probability(), midiSeed, note.key(), note.pos(), note.length());
 }
 
-void InstrumentTrack::sendArticulation(int index, f_cnt_t offset)
+bool InstrumentTrack::sendArticulationEvents(const ArticulationEvents& events, int channel, int key, int volume,
+	const TimePos& time, f_cnt_t offset)
 {
-	// 0.5.0 ED-121: what the note's articulation sends before it - read under play()'s lock, no allocation.
-	const Articulation* articulation = m_articulations.at(index);
-	if (articulation == nullptr) { return; }
-	// A program change or a controller goes out in this block (a MIDI event has no carry-over to a later
-	// one), so it reaches the instrument no later than the note it prepares, however far that is delayed.
-	const f_cnt_t now = std::min(offset, Engine::audioEngine()->framesPerPeriod() - 1);
-	const TimePos time = TimePos::fromFrames(now, Engine::framesPerTick());
-	if (articulation->program >= 0) { processOutEvent(MidiEvent(MidiProgramChange, 0, static_cast<int16_t>(articulation->program)), time, now); }
-	if (articulation->controller >= 0)
+	// 0.5.0 ED-121 / Q050-015: audio thread, from the note's play handle - POD events only, no allocation, no lock
+	// of its own, no Qt signal. A layer rack that leaves this track's instrument out of the note leaves its
+	// articulation out too.
+	if (!m_layers.basePlays(key, volume)) { return false; }
+	const auto channelByte = static_cast<int8_t>(channel);
+	if (events.program >= 0) { processOutEvent(MidiEvent(MidiProgramChange, channelByte, static_cast<int16_t>(events.program)), time, offset); }
+	if (events.controller >= 0)
 	{
-		processOutEvent(MidiEvent(MidiControlChange, 0, static_cast<int16_t>(articulation->controller),
-			static_cast<int16_t>(articulation->value)), time, now);
+		processOutEvent(MidiEvent(MidiControlChange, channelByte, static_cast<int16_t>(events.controller),
+			static_cast<int16_t>(events.value)), time, offset);
 	}
-	if (articulation->keyswitch >= 0)
-	{
-		// The keyswitch is a play handle, which waits out a delay itself.
-		// A note on the stack: no static (review W3-batchA #12) and no member - a Note member takes a project id
-		// for every track built, which shifted every track's id on load. Its id costs what every played note's
-		// handle copy already does (ProjectIds::allocate, no lock, no allocation).
-		const Note key(TimePos(1), TimePos(0), articulation->keyswitch);
-		Engine::audioEngine()->addPlayHandle(NotePlayHandleManager::acquire(this, offset,
-			static_cast<f_cnt_t>(Engine::framesPerTick()), key));
-	}
+	if (events.keyswitch < 0) { return false; }
+	// The key goes to the instrument and the MIDI output directly: it is no played note, so none of the note
+	// bookkeeping (keyboard state, running notes, voices, the newNote signal) applies.
+	const MidiEvent on(MidiNoteOn, channelByte, static_cast<int16_t>(events.keyswitch), KeyswitchVelocity);
+	if (m_instrument != nullptr) { m_instrument->handleMidiEvent(on, time, offset); }
+	m_midiPort.processOutEvent(on, time, offset);
+	return true;
+}
+
+void InstrumentTrack::releaseKeyswitch(int key, int channel, const TimePos& time, f_cnt_t offset)
+{
+	const MidiEvent off(MidiNoteOff, static_cast<int8_t>(channel), static_cast<int16_t>(key), 0);
+	if (m_instrument != nullptr) { m_instrument->handleMidiEvent(off, time, offset); }
+	m_midiPort.processOutEvent(off, time, offset);
 }
 
 void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_cnt_t frames, const TimePos& curStart)
@@ -196,7 +199,10 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 	}
 	// MX-035: the track's own delay, on top (a chased note too: the whole track sits later).
 	offset += static_cast<f_cnt_t>(std::lround(delayMs() * Engine::audioEngine()->outputSampleRate() / 1000.0));
-	sendArticulation(note.conditions().articulation, offset);
+	// Q050-015: what the note's articulation sends goes with the note's own handle (the first hit's), which sends it
+	// at the offset the note starts at - however far swing, the MIDI offset or the track's delay put that.
+	const Articulation* articulation = m_articulations.at(note.conditions().articulation);
+	const ArticulationEvents articulationEvents = articulation != nullptr ? articulation->events() : ArticulationEvents{};
 	// Where the clip's own time 0 lies in the song for the pass playing: the clip's start on its first pass.
 	const TimePos songOffset(trigger.songTick - curStart.getTicks());
 	// 0.5.0 ED-133: the note's repeats - that many more hits, evenly spaced inside it (not a step note's).
@@ -211,6 +217,7 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 		// Velocity jitter, the slide source, the song-global offset and the clip's transpose.
 		decorateNoteHandle(handle, trigger.clip, trigger.note, trigger.first, trigger.songGlobal, songOffset, trigger.midiSeed);
 		// 0.5.0 MX-112: the same note on each layer its zones name - before the hand-off, which owns the handle.
+		if (hit == 0) { handle->setArticulation(articulationEvents); }
 		m_layers.playNote(*handle, offset + hit * each, length, trigger.patternTrack);
 		Engine::audioEngine()->addPlayHandle(handle);
 	}
