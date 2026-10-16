@@ -30,6 +30,7 @@
 #include "Track.h"
 
 #include <QDomElement>
+#include <QFileInfo>
 #include <QVariant>
 
 #include "AutomationClip.h"
@@ -50,6 +51,8 @@
 #include "SamplePlayHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
+#include "BounceInPlace.h"
+#include "TempoMap.h"
 #include "TrackContainer.h"
 #include "TrackFolder.h"
 #include "UnclaimedElements.h"
@@ -624,6 +627,7 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 			QString::number(static_cast<qint64>(m_frozen.endTicks)));
 		element.setAttribute(QStringLiteral("frozenMuted"),
 			mutedClipsAttribute(m_frozen.mutedClips));
+		if (m_frozen.region) { element.setAttribute(QStringLiteral("frozenRegion"), 1); }
 	}
 
 	// now save settings of all Clip's
@@ -1146,7 +1150,7 @@ bar_t Track::length() const
  *  \param error Filled with a reason when this returns false
  */
 bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
-		const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error)
+		const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error, bool region)
 {
 	if (path.isEmpty())
 	{
@@ -1182,6 +1186,7 @@ bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 	m_frozen.startTicks = startTicks;
 	m_frozen.endTicks = endTicks;
 	m_frozen.mutedClips = mutedClips;
+	m_frozen.region = region;
 	m_frozenBuffer = buffer;
 	m_frozenTakePlaying.store(false, std::memory_order_relaxed);
 	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
@@ -1238,14 +1243,48 @@ void Track::loadFrozenTake(const QDomElement& element)
 		element.attribute(QStringLiteral("frozenEnd")).toLongLong());
 	m_frozen.mutedClips = parseMutedClipsAttribute(
 		element.attribute(QStringLiteral("frozenMuted")));
+	// A file written before the flag existed: a take that starts after tick 0 or muted clips is a region.
+	m_frozen.region = element.hasAttribute(QStringLiteral("frozenRegion"))
+		? element.attribute(QStringLiteral("frozenRegion")).toInt() != 0
+		: (m_frozen.startTicks > 0 || !m_frozen.mutedClips.empty());
 
 	// The clips the file carries are already muted (the freeze saved them that
 	// way), so the record is NOT replayed here: a load must not write to the
 	// clips it is still reading.
 	subscribeFrozenTakeSignals();
 	m_frozenBuffer = SampleBuffer::fromFile(m_frozen.path);
+	if (m_frozenBuffer == nullptr || m_frozenBuffer->empty())
+	{
+		// The take's file moved or cannot be decoded: the track stays frozen (state is kept so project.relink
+		// and freeze.unfreeze can repair it) but the source plays; the load report names both ways out.
+		m_frozenBuffer.reset();
+		Engine::getSong()->collectError(tr("Frozen take not found: %1 (project.relink points it at the moved file; "
+			"freeze.unfreeze, undoable, gives the track its own clips back)").arg(m_frozen.path));
+	}
 	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
 	updateFrozenVoiceCapacity(timeline.loopEnabled(), timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
+}
+
+
+bool Track::frozenTakeFileMissing() const
+{
+	return m_frozen.isFrozen() && !QFileInfo(m_frozen.path).isFile();
+}
+
+
+bool Track::frozenTakeSilencesSource(tick_t position) const noexcept
+{
+	if (!m_frozen.isFrozen() || m_frozenBuffer == nullptr) { return false; }
+	if (!m_frozen.region) { return true; }
+	return position >= m_frozen.startTicks && (m_frozen.endTicks <= m_frozen.startTicks || position < m_frozen.endTicks);
+}
+
+
+qint64 Track::frozenTakeSourceFrame(const TempoMap& map, int globalTempo, tick_t takeStart, tick_t position,
+		int bufferRate, float constantFramesPerTick) noexcept
+{
+	return static_cast<qint64>(std::llround(BounceInPlace::framesBetweenTicks(takeStart, position,
+		constantFramesPerTick, map, globalTempo, bufferRate)));
 }
 
 
@@ -1280,9 +1319,11 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 	// the active-voice count are separate state.
 	if (m_frozenTakePlaying.exchange(true)) { return false; }
 
-	const float framesPerTick = Engine::framesPerTick(m_frozenBuffer->sampleRate());
-	const qint64 sourceIn = static_cast<qint64>(
-		std::llround((position - m_frozen.startTicks) * framesPerTick));
+	// The same tick-to-frame mapping the render used to cut the take (tempo map aware).
+	Song* const song = Engine::getSong();
+	const qint64 sourceIn = frozenTakeSourceFrame(song->tempoMap().snapshot(), static_cast<int>(song->getTempo()),
+		m_frozen.startTicks, position, static_cast<int>(m_frozenBuffer->sampleRate()),
+		Engine::framesPerTick(m_frozenBuffer->sampleRate()));
 	const qint64 sourceOut = static_cast<qint64>(m_frozenBuffer->size());
 	if (sourceIn >= sourceOut)
 	{

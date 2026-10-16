@@ -104,6 +104,12 @@ QJsonObject trackState(Track* track, int index)
 		static_cast<qint64>(track->frozenTake().endTicks));
 	entry.insert(QStringLiteral("frozen_muted_clips"),
 		static_cast<int>(track->frozenTake().mutedClips.size()));
+	if (track->frozenTakeFileMissing())
+	{
+		entry.insert(QStringLiteral("frozen_audio_missing"), true);
+		entry.insert(QStringLiteral("frozen_recovery"), QStringLiteral("project.missing_assets then project.relink, "
+			"or freeze.unfreeze (undoable)"));
+	}
 	// The folder relation and the visibility flag (owner items 3+20+21): the
 	// parent folder's trk-<n>, empty at the container root, and whether this
 	// track is part of the visible set. A folder reports its own mode, child
@@ -377,6 +383,8 @@ void registerTransportCommands(ControlRegistry& registry)
 			{QStringLiteral("frozen_start_ticks"), integerProperty()},
 			{QStringLiteral("frozen_end_ticks"), integerProperty()},
 			{QStringLiteral("frozen_muted_clips"), integerProperty()},
+			{QStringLiteral("frozen_audio_missing"), booleanProperty()},
+			{QStringLiteral("frozen_recovery"), stringProperty()},
 			{QStringLiteral("child_count"), numberProperty()},
 			{QStringLiteral("collapsed"), booleanProperty()},
 			{QStringLiteral("folder"), stringProperty()},

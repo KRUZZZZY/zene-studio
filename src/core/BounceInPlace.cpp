@@ -207,16 +207,7 @@ bool tempoMapInForce(const TempoMap& map)
 	return map.active() && !map.empty();
 }
 
-//! Frames of the render from tick @a from to tick @a to: at the project's one rate, or on the tempo map's
-//! own timeline when it is in force - a range across a tempo change is not at one rate.
-double framesBetween(tick_t from, tick_t to, float framesPerTick, const TempoMap& map,
-		int globalTempo, int sampleRate)
-{
-	if (!tempoMapInForce(map)) { return (to - from) * framesPerTick; }
-	return (map.secondsAtTick(to, globalTempo) - map.secondsAtTick(from, globalTempo)) * sampleRate;
-}
-
-//! The tick @a frames of the render after tick @a start: framesBetween()'s inverse.
+//! The tick @a frames of the render after tick @a start: BounceInPlace::framesBetweenTicks()'s inverse.
 tick_t tickAfter(tick_t start, qint64 frames, float framesPerTick, const TempoMap& map,
 		int globalTempo, int sampleRate)
 {
@@ -282,6 +273,15 @@ QString prepareOutputDir(const QString& outPath)
 
 } // namespace
 
+//! Frames from tick @a from to tick @a to: at the project's one rate, or on the tempo map's own timeline when
+//! it is in force - a range across a tempo change is not at one rate. Render and frozen-take playback share it.
+double BounceInPlace::framesBetweenTicks(tick_t from, tick_t to, float framesPerTick, const TempoMap& map,
+		int globalTempo, int sampleRate)
+{
+	if (!tempoMapInForce(map)) { return (to - from) * framesPerTick; }
+	return (map.secondsAtTick(to, globalTempo) - map.secondsAtTick(from, globalTempo)) * sampleRate;
+}
+
 bool BounceInPlace::isAbsoluteOutputPath(const QString& outPath)
 {
 	return QDir::isAbsolutePath(outPath);
@@ -329,9 +329,9 @@ bool BounceInPlace::prepareRenderTracks(const std::vector<Track*>& tracks, const
 	if (next.trimmed)
 	{
 		next.startFrame = static_cast<qint64>(std::llround(
-			framesBetween(0, range.start, next.framesPerTick, next.tempoMap, next.globalTempo, sampleRate)));
+			BounceInPlace::framesBetweenTicks(0, range.start, next.framesPerTick, next.tempoMap, next.globalTempo, sampleRate)));
 		next.wantedFrames = static_cast<qint64>(std::llround(
-			framesBetween(range.start, range.end, next.framesPerTick, next.tempoMap, next.globalTempo, sampleRate)));
+			BounceInPlace::framesBetweenTicks(range.start, range.end, next.framesPerTick, next.tempoMap, next.globalTempo, sampleRate)));
 	}
 	*prepared = std::move(next);
 	return true;

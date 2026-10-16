@@ -45,6 +45,7 @@
 #include <QJsonObject>
 #include <QString>
 
+#include "ArrangementEdits.h"
 #include "BounceInPlace.h"
 #include "Clip.h"
 #include "ControlEdit.h"
@@ -71,6 +72,39 @@ const QString ClauseFrozenTake = QStringLiteral("ProjectJournal (Track checkpoin
 //! \a problem filled. `start` and `end` are both required for a region; a
 //! whole-track verb passes neither.
 
+} // namespace
+
+std::vector<Track::FrozenTake::MutedClip> control::isolateFreezeRegion(Track* track,
+		const BounceInPlace::Range& range, QJsonArray* cut)
+{
+	std::vector<std::pair<tick_t, tick_t>> split;
+	std::vector<Track::FrozenTake::MutedClip> muted;
+	for (const auto& piece : arrangement::isolateRegion(track, range.start, range.end, &split))
+	{
+		muted.push_back(Track::FrozenTake::MutedClip{piece.first, piece.second});
+	}
+	for (const auto& clip : split)
+	{
+		cut->append(QJsonObject{{QStringLiteral("start_ticks"), static_cast<qint64>(clip.first)},
+			{QStringLiteral("length_ticks"), static_cast<qint64>(clip.second)}});
+	}
+	return muted;
+}
+
+void control::insertFrozenRecovery(Track* track, QJsonObject* report)
+{
+	if (!track->frozenTakeFileMissing()) { return; }
+	report->insert(QStringLiteral("audio_missing"), true);
+	report->insert(QStringLiteral("recovery"), QJsonObject{
+		{QStringLiteral("relink"), QStringLiteral("project.missing_assets lists the take (track/frozenAudio); "
+			"project.relink points it at the moved file, then reopen the project")},
+		{QStringLiteral("unfreeze"), QStringLiteral("freeze.unfreeze gives the track its own clips back; "
+			"control.undo restores the take")}});
+}
+
+namespace
+{
+
 //! The take the track carries right now - which is what a caller needs to see
 //! after any freeze verb, and what `track.get_state` reports as well.
 QJsonObject frozenStateJson(Track* track)
@@ -90,37 +124,8 @@ QJsonObject frozenStateJson(Track* track)
 		static_cast<qint64>(track->frozenTake().endTicks));
 	result.insert(QStringLiteral("muted_clips"),
 		static_cast<int>(track->frozenTake().mutedClips.size()));
+	insertFrozenRecovery(track, &result);
 	return result;
-}
-
-//! Every clip of the track that starts inside [\a start, \a end) and is not
-//! already muted: the clips a region freeze can disable. A clip that merely
-//! crosses the region's start is NOT in here - it is reported as overlapping
-//! instead, because muting it would silence audio outside the region - and a clip
-//! the user had muted themselves is not recorded either, because unfreeze must
-//! unmute exactly what the freeze muted and nothing else.
-std::vector<Track::FrozenTake::MutedClip> clipsInside(Track* track, const BounceInPlace::Range& range,
-		QJsonArray* overlapping)
-{
-	std::vector<Track::FrozenTake::MutedClip> inside;
-	for (const Clip* clip : track->getClips())
-	{
-		if (clip == nullptr || clip->isMuted()) { continue; }
-		const tick_t start = clip->startPosition().getTicks();
-		const tick_t end = clip->endPosition();
-		if (start >= range.start && start < range.end)
-		{
-			inside.push_back(Track::FrozenTake::MutedClip{start, clip->length().getTicks()});
-		}
-		else if (start < range.start && end > range.start)
-		{
-			QJsonObject entry;
-			entry.insert(QStringLiteral("start_ticks"), static_cast<qint64>(start));
-			entry.insert(QStringLiteral("length_ticks"), static_cast<qint64>(clip->length().getTicks()));
-			overlapping->append(entry);
-		}
-	}
-	return inside;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,19 +195,20 @@ ControlResult freezeRange(const QJsonObject& args, bool regionRequired)
 	}
 
 	QJsonArray overlapping;
+	track->addJournalCheckPoint();
 	// A whole-track freeze mutes NOTHING: the play() substitution already
-	// silences the source for the whole take, and leaving the clips untouched is
-	// what keeps a whole-track freeze reversible by clearing one element.
+	// silences the source for the whole take. A region freeze first cuts the clips that cross
+	// the region's edges at those edges (one undo step with the freeze), so the pieces inside are
+	// muted and the pieces outside keep playing: the source is silent only inside the region.
 	std::vector<Track::FrozenTake::MutedClip> muted;
 	if (!wholeTrack)
 	{
-		muted = clipsInside(track, range, &overlapping);
+		muted = control::isolateFreezeRegion(track, range, &overlapping);
 	}
 
-	track->addJournalCheckPoint();
 	QString freezeError;
 	if (!track->freezeTo(rendered.path, wholeTrack ? 0 : range.start, rendered.range.end,
-			muted, &freezeError))
+			muted, &freezeError, !wholeTrack))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, freezeError);
 	}
@@ -332,6 +338,8 @@ void registerFreezeTrack(ControlRegistry& registry)
 		{QStringLiteral("sha256"), stringProperty()},
 		{QStringLiteral("bytes"), numberProperty()},
 		{QStringLiteral("muted_clips"), numberProperty()},
+		{QStringLiteral("audio_missing"), booleanProperty()},
+		{QStringLiteral("recovery"), objectProperty()},
 		{QStringLiteral("name"), stringProperty()},
 		{QStringLiteral("overlapping_clips"), arrayProperty()},
 		{QStringLiteral("sample_rate"), numberProperty()},
@@ -348,11 +356,12 @@ void registerFreezeRegion(ControlRegistry& registry)
 	cmd.group = QStringLiteral("freeze");
 	cmd.verb = QStringLiteral("region");
 	cmd.description = QStringLiteral("Freeze one tick range of a track: the region is rendered "
-		"and the take plays inside it, while the source keeps playing outside it. The clips that "
-		"START inside the region are muted (and recorded, so freeze.unfreeze unmutes exactly those "
-		"and nothing else); a clip that starts before the region and runs into it is left alone "
-		"and named in 'overlapping_clips', because muting it would silence audio outside the "
-		"region - that clip sounds twice inside the region (docs/KNOWN-LIMITATIONS.md). "
+		"and the take plays inside it, while the source keeps playing outside it. Clips that CROSS the "
+		"region's edges are first cut at those edges (listed in 'overlapping_clips', as they were), then "
+		"the pieces inside the region are muted (and recorded, so freeze.unfreeze unmutes exactly those "
+		"and nothing else): the source is silent only inside the region. A take whose file has moved "
+		"reports audio_missing and 'recovery' (project.missing_assets / project.relink, or "
+		"freeze.unfreeze); a missing take never silences the source. "
 		"Reversible through the ProjectJournal (Track checkpoint). This command keeps its synchronous "
 		"result contract for compatibility; use render.queue_bounce for a cancellable job.");
 	cmd.argsSchema = objectSchema({
@@ -368,6 +377,8 @@ void registerFreezeRegion(ControlRegistry& registry)
 		{QStringLiteral("start_ticks"), integerProperty()},
 		{QStringLiteral("end_ticks"), integerProperty()},
 		{QStringLiteral("muted_clips"), integerProperty()},
+		{QStringLiteral("audio_missing"), booleanProperty()},
+		{QStringLiteral("recovery"), objectProperty()},
 		{QStringLiteral("overlapping_clips"), arrayProperty()},
 		{QStringLiteral("path"), stringProperty()},
 		{QStringLiteral("frames"), integerProperty()},
@@ -400,6 +411,8 @@ void registerFreezeUnfreeze(ControlRegistry& registry)
 		{QStringLiteral("frozen"), booleanProperty()},
 		{QStringLiteral("audio"), stringProperty()},
 		{QStringLiteral("muted_clips"), integerProperty()},
+		{QStringLiteral("audio_missing"), booleanProperty()},
+		{QStringLiteral("recovery"), objectProperty()},
 		{QStringLiteral("audio_ready"), booleanProperty()},
 		{QStringLiteral("end_ticks"), numberProperty()},
 		{QStringLiteral("name"), stringProperty()},

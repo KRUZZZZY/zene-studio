@@ -219,6 +219,10 @@ public:
 			tick_t lengthTicks = 0;
 		};
 		std::vector<MutedClip> mutedClips;
+		//! True for a freeze.region take: the source keeps playing outside
+		//! [startTicks, endTicks) and is silent only inside it. A whole-track
+		//! take (false) replaces the source everywhere.
+		bool region = false;
 
 		bool isFrozen() const { return !path.isEmpty(); }
 	};
@@ -227,6 +231,16 @@ public:
 	const FrozenTake& frozenTake() const { return m_frozen; }
 	//! True when the take's audio is in memory, i.e. it will actually sound.
 	bool frozenAudioReady() const { return m_frozenBuffer != nullptr; }
+	//! True when the take's file is gone from disk (moved or removed). Control thread only: it stats the file.
+	bool frozenTakeFileMissing() const;
+	/*! Whether the take, not the source, owns the pass starting at \a position. False when the
+	 *  take's audio is not loaded (the source then plays: a missing take never silences a track)
+	 *  and, for a region take, outside its window. Audio-thread safe: no allocation, lock or I/O. */
+	bool frozenTakeSilencesSource(tick_t position) const noexcept;
+	/*! Source frame of the take (at \a bufferRate) for timeline tick \a position, \a takeStart being the take's
+	 *  first tick. Follows the tempo map exactly as BounceInPlace's range-to-frames mapping does. */
+	static qint64 frozenTakeSourceFrame(const class TempoMap& map, int globalTempo, tick_t takeStart,
+			tick_t position, int bufferRate, float constantFramesPerTick) noexcept;
 
 	/*! SPEC-ARCH-4 1.6.1: the children of this track's own <track> element that
 	 *  the last load did not claim - not this track type's own element, not
@@ -244,7 +258,7 @@ public:
 	 *  never on the audio thread. Returns false, with \a error filled, when the
 	 *  file cannot be opened - in which case nothing is changed. */
 	bool freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
-			const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error);
+			const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error, bool region = false);
 	//! Test seam called after any load work and immediately before the frozen-take render lock.
 #ifdef LMMS_TESTING
 	static void setFrozenTakeLockProbeForTest(void (*probe)());

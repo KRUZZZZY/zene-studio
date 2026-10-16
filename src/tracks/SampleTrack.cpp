@@ -141,7 +141,10 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	// (_clip_num >= 0) is not the arrangement and keeps playing the source.
 	if (isFrozen() && _clip_num < 0)
 	{
-		return playFrozenTake(_start, _frames, _offset);
+		// A whole-track take owns every pass; a region take only its window, and a take whose audio is
+		// missing none (frozenTakeSilencesSource): outside that the source plays on.
+		const bool played = playFrozenTake(_start, _frames, _offset);
+		if (frozenTakeSilencesSource(_start.getTicks())) { return played; }
 	}
 
 	bool played_a_note = false; // will be return variable

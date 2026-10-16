@@ -88,11 +88,12 @@ namespace projectassets
 //! Defined once, declared in the shared header: the elements a project file
 //! references a file from. See AssetElement's own comment for the four sites
 //! that write these attributes.
-const AssetElement kAssetElements[4] = {
+const AssetElement kAssetElements[5] = {
 	{"sampleclip", "src", "data", ""},
 	{"audiofileprocessor", "src", "sampledata", ""},
 	{"sf2player", "src", "", ""},
 	{"clip", "src", "", "session/clips"},
+	{"track", "frozenAudio", "", ""},  // Track::saveTrack: a frozen take's render
 };
 
 bool elementMatches(const AssetElement& spec, const QString& tag, const QString& parentChain)

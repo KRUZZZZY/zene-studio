@@ -25,6 +25,9 @@
 #ifndef LMMS_ARRANGEMENT_EDITS_H
 #define LMMS_ARRANGEMENT_EDITS_H
 
+#include <utility>
+#include <vector>
+
 #include <QObject>
 #include <QString>
 #include <QVector>
@@ -53,6 +56,12 @@ LMMS_EXPORT Clip* splitClipAt(Clip* clip, tick_t position);
 LMMS_EXPORT Clip* splitClipAlone(Clip* clip, tick_t position);
 //! clip.delete's recipe: detach @a clip from @a track, then delete it.
 LMMS_EXPORT void deleteClip(Track* track, Clip* clip);
+
+//! Region freeze preparation: split every unmuted clip of @a track that crosses @a start or @a end at that
+//! tick, then return the unmuted clips that now lie inside [@a start, @a end) (startTicks, lengthTicks) -
+//! the ones the freeze mutes. @a split receives one (start, length) entry per clip that was cut, as it was.
+LMMS_EXPORT std::vector<std::pair<tick_t, tick_t>> isolateRegion(Track* track, tick_t start, tick_t end,
+	std::vector<std::pair<tick_t, tick_t>>* split);
 
 //! Split every clip of @a track that crosses @a position; how many were split.
 LMMS_EXPORT int splitTrackAt(Track* track, tick_t position);

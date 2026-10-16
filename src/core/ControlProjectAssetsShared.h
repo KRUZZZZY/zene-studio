@@ -62,6 +62,7 @@ namespace projectassets
  *                        plugins/AudioFileProcessor/AudioFileProcessor.cpp:196
  *    sf2player           Sf2Instrument::saveSettings, plugins/Sf2Player/Sf2Player.cpp:244
  *    clip (session slot) ClipSlot::saveState, src/core/SessionClip.cpp:77
+ *    track (frozenAudio) Track::saveTrack, src/core/Track.cpp (a frozen take's render)
  *
  *  The first two are the elements DataFile::ELEMENTS_WITH_RESOURCES names for
  *  its own bundle walk (src/core/DataFile.cpp:68-71); the other two are the
@@ -76,7 +77,7 @@ struct AssetElement
 };
 
 //! The table itself, defined once in ControlProjectAssets.cpp.
-extern const AssetElement kAssetElements[4];
+extern const AssetElement kAssetElements[5];
 
 bool elementMatches(const AssetElement& spec, const QString& tag, const QString& parentChain);
 

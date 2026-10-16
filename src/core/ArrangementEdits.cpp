@@ -94,6 +94,38 @@ int splitTrackAt(Track* track, tick_t position)
 	return split;
 }
 
+namespace
+{
+
+//! Splits every unmuted clip of @a track that crosses @a edge there, noting each cut clip as it was.
+void splitUnmutedAt(Track* track, tick_t edge, std::vector<std::pair<tick_t, tick_t>>* split)
+{
+	const auto clips = track->getClips();  // a copy: splitting adds clips
+	for (Clip* clip : clips)
+	{
+		if (clip == nullptr || clip->isMuted()) { continue; }
+		const std::pair<tick_t, tick_t> before{clip->startPosition().getTicks(), clip->length().getTicks()};
+		if (splitClipAt(clip, edge) != nullptr && split != nullptr) { split->push_back(before); }
+	}
+}
+
+} // namespace
+
+std::vector<std::pair<tick_t, tick_t>> isolateRegion(Track* track, tick_t start, tick_t end,
+	std::vector<std::pair<tick_t, tick_t>>* split)
+{
+	splitUnmutedAt(track, start, split);
+	splitUnmutedAt(track, end, split);
+	std::vector<std::pair<tick_t, tick_t>> inside;
+	for (const Clip* clip : track->getClips())
+	{
+		if (clip == nullptr || clip->isMuted()) { continue; }
+		const tick_t from = clip->startPosition().getTicks();
+		if (from >= start && from < end) { inside.emplace_back(from, clip->length().getTicks()); }
+	}
+	return inside;
+}
+
 QVector<Clip*> clipsWithin(Track* track, tick_t start, tick_t end)
 {
 	QVector<Clip*> out;
