@@ -2258,17 +2258,16 @@ void Mixer::masterMix( SampleFrame* _buf )
 
 	if( volBuf )
 	{
-		for( int f = 0; f < fpp; f++ )
-		{
-			m_mixerChannels[0]->m_buffer[f][0] *= volBuf->values()[f];
-			m_mixerChannels[0]->m_buffer[f][1] *= volBuf->values()[f];
-		}
+		// Keep the master channel's source buffer pre-fader: the listen bus reads
+		// it after this mix, applying the master fader once for AFL and bypassing
+		// it for PFL.
+		MixHelpers::addMultipliedByBuffer( _buf, m_mixerChannels[0]->m_buffer, 1.0f, volBuf, fpp );
 	}
-
-	const float v = volBuf
-		? 1.0f
-		: postinserts::faderValue( *m_mixerChannels[0], nullptr );
-	MixHelpers::addMultiplied( _buf, m_mixerChannels[0]->m_buffer, v, fpp );
+	else
+	{
+		const float v = postinserts::faderValue( *m_mixerChannels[0], nullptr );
+		MixHelpers::addMultiplied( _buf, m_mixerChannels[0]->m_buffer, v, fpp );
+	}
 	// 0.5.0 F7 (MX-060): a surround master's other speakers - onto the outputs, or folded into the mix.
 	surround::masterOutput( *this, _buf, fpp );
 	recordertaps::master( _buf, fpp );  // 0.5.0 WF-072: a record route resampling the master

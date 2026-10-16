@@ -36,6 +36,7 @@
 #include "AudioBus.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AutomationRamp.h"
 #include "AutomatableModel.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -98,6 +99,26 @@ bool constantAt(const std::vector<SampleFrame>& out, float level)
 	for (const SampleFrame& frame : out)
 	{
 		if (std::abs(frame[0] - level) > 1e-6f || std::abs(frame[1] - level) > 1e-6f) { return false; }
+	}
+	return true;
+}
+
+void publishMasterFaderValue(MixerChannel& master, float value)
+{
+	master.m_volumeModel.setValue(value);
+	AutomationRamp ramp;
+	ramp.reset(Engine::audioEngine()->framesPerPeriod());
+	ramp.setBlockValue(value);
+	master.m_volumeModel.publishAutomationRamp(ramp);
+}
+
+bool scaledFrom(const std::vector<SampleFrame>& out, const std::vector<SampleFrame>& source, float scale)
+{
+	if (out.size() != source.size()) { return false; }
+	for (std::size_t i = 0; i < out.size(); ++i)
+	{
+		if (std::abs(out[i][0] - source[i][0] * scale) > 1e-6f
+			|| std::abs(out[i][1] - source[i][1] * scale) > 1e-6f) { return false; }
 	}
 	return true;
 }
@@ -165,6 +186,28 @@ private slots:
 		QVERIFY(mixerlisten::anyListening());
 		mixer->deleteChannel(added);
 		QVERIFY(!mixerlisten::anyListening());
+	}
+
+	void listeningToMasterAppliesItsFaderOnceOrBypassesIt()
+	{
+		Mixer* mixer = Engine::mixer();
+		MixerChannel* master = mixer->mixerChannel(0);
+		master->m_volumeModel.setValue(1.f);
+		for (int i = 0; i < 3; ++i) { period(mixer, 11); }
+		const std::vector<SampleFrame> mix = period(mixer, 11);
+
+		publishMasterFaderValue(*master, 0.5f);
+		mixerlisten::setListening(0, true);
+		mixerlisten::setMode(mixerlisten::Mode::AfterFader);
+		const std::vector<SampleFrame> afl = period(mixer, 11);
+		QVERIFY2(scaledFrom(afl, mix, 0.5f), "master AFL should apply the master fader once");
+
+		publishMasterFaderValue(*master, 0.5f);
+		mixerlisten::setMode(mixerlisten::Mode::PreFader);
+		const std::vector<SampleFrame> pfl = period(mixer, 11);
+		QVERIFY2(identical(pfl, mix), "master PFL should bypass the master fader");
+		mixerlisten::clear();
+		mixerlisten::setMode(mixerlisten::Mode::AfterFader);
 	}
 };
 
