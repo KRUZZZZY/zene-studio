@@ -28,6 +28,7 @@
 #include <atomic>
 #include <cmath>
 #include <span>
+#include <thread>
 
 #include "LmmsTypes.h"
 #include "TimePos.h"
@@ -305,12 +306,14 @@ public:
 		{
 			const bool changed = fn(m_map);
 			m_version.fetch_add(1, std::memory_order_acq_rel);
+			publishRealtime();
 			return changed;
 		}
 		catch (...)
 		{
 			m_map = previous;
 			m_version.fetch_add(1, std::memory_order_acq_rel);
+			publishRealtime();
 			throw;
 		}
 	}
@@ -338,9 +341,52 @@ public:
 		return copy;
 	}
 
+	/*! The audio thread's view (Q050-008): true when the published map is active and holds an event, i.e.
+	 *  when the timeline is NOT the one-rate arithmetic. One atomic load; nothing is copied when it is false. */
+	bool inForceForRealtime() const noexcept { return m_rtInForce.load(std::memory_order_acquire); }
+
+	/*! Runs \a fn(const TempoMap&) on the last published map, pinned in place for the call. Bounded (three
+	 *  attempts, no waiting, no allocation, no lock) and free of data races: a slot is only ever written by
+	 *  the control thread while no reader holds it and it is not the live one. False when the attempts lost
+	 *  to a publication (the caller then uses the one-rate path). */
+	template <typename Fn>
+	bool withRealtimeMap(Fn&& fn) const noexcept
+	{
+		for (int attempt = 0; attempt < 3; ++attempt)
+		{
+			const int slot = m_rtLive.load(std::memory_order_seq_cst);
+			m_rtReaders[static_cast<std::size_t>(slot)].fetch_add(1, std::memory_order_seq_cst);
+			if (m_rtLive.load(std::memory_order_seq_cst) == slot)
+			{
+				fn(m_rtSlots[static_cast<std::size_t>(slot)]);
+				m_rtReaders[static_cast<std::size_t>(slot)].fetch_sub(1, std::memory_order_seq_cst);
+				return true;
+			}
+			m_rtReaders[static_cast<std::size_t>(slot)].fetch_sub(1, std::memory_order_seq_cst);
+		}
+		return false;
+	}
+
 private:
+	//! Control thread, after an edit: write the idle slot (waiting for any reader still pinned to it) and flip.
+	void publishRealtime()
+	{
+		const int next = 1 - m_rtLive.load(std::memory_order_seq_cst);
+		while (m_rtReaders[static_cast<std::size_t>(next)].load(std::memory_order_seq_cst) != 0)
+		{
+			std::this_thread::yield();
+		}
+		m_rtSlots[static_cast<std::size_t>(next)] = m_map;
+		m_rtInForce.store(m_map.active() && !m_map.empty(), std::memory_order_release);
+		m_rtLive.store(next, std::memory_order_seq_cst);
+	}
+
 	TempoMap m_map{};
 	std::atomic<unsigned> m_version{0};
+	std::array<TempoMap, 2> m_rtSlots{};
+	mutable std::array<std::atomic<int>, 2> m_rtReaders{};
+	std::atomic<int> m_rtLive{0};
+	std::atomic<bool> m_rtInForce{false};
 };
 
 } // namespace lmms

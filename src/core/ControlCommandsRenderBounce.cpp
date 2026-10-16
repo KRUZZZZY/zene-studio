@@ -185,26 +185,19 @@ QJsonObject applyFreeze(const std::shared_ptr<BounceContext>& context,
 {
 	QJsonArray overlapping;
 	std::vector<Track::FrozenTake::MutedClip> muted;
-	if (!context->wholeTrack) { muted = control::isolateFreezeRegion(source, context->range, &overlapping); }
-	const int trackId = source->id();
 	const QString path = rendered.path;
 	const tick_t start = context->wholeTrack ? 0 : context->range.start;
 	const tick_t end = rendered.range.end;
+	// One Track checkpoint BEFORE the cuts and the freeze, exactly as freeze.region does: one control.undo
+	// puts back the pre-cut arrangement and takes the freeze off (a redo re-freezes), in a single journal step.
+	source->addJournalCheckPoint();
+	if (!context->wholeTrack) { muted = control::isolateFreezeRegion(source, context->range, &overlapping); }
 	QString freezeError;
 	if (!source->freezeTo(path, start, end, muted, &freezeError, !context->wholeTrack))
 	{
 		*error = freezeError;
 		return {};
 	}
-	control::addUndoStep(
-		[trackId] { if (Track* live = trackWithId(trackId)) { live->unfreeze(); } },
-		[trackId, path, start, end, muted, region = !context->wholeTrack] {
-			if (Track* live = trackWithId(trackId))
-			{
-				QString ignored;
-				live->freezeTo(path, start, end, muted, &ignored, region);
-			}
-		});
 	QJsonObject result = frozenState(source);
 	result.insert(QStringLiteral("overlapping_clips"), overlapping);
 	result.insert(QStringLiteral("undo"), QStringLiteral("control.undo"));

@@ -166,56 +166,68 @@ private slots:
 		QVERIFY(track->frozenTakeSilencesSource(500));
 	}
 
-	//! A2: with a tempo map in force the take starts at the frame the render's range mapping gives for
-	//! the same ticks (the render cut the take with BounceInPlace::framesBetweenTicks).
-	void takeStartFrameFollowsTheTempoMap()
+	//! A2: with a tempo map in force, the take's playback frames at the region's START and END equal the
+	//! frames the render actually cuts for those ticks (BounceInPlace::prepareRenderTracks' window) and the
+	//! timeline frames the tempo map gives; the one-rate arithmetic would be off by thousands of frames.
+	void takeFramesMatchTheRenderedRegionAtBothEnds()
 	{
 		QTemporaryDir scratch;
 		QVERIFY(scratch.isValid());
 		SampleTrack* track = trackWithOneClip(scratch.path());
 		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("t.wav")), 330.0);
-		constexpr tick_t takeStart = 24;
-		constexpr tick_t position = 96;
+		constexpr tick_t regionStart = 24;
+		constexpr tick_t regionEnd = 120;
 		QString why;
-		QVERIFY2(track->freezeTo(wav, takeStart, 190, {}, &why, true), qPrintable(why));
+		QVERIFY2(track->freezeTo(wav, regionStart, 190, {}, &why, true), qPrintable(why));
 
 		Song* const song = Engine::getSong();
-		const bool added = song->tempoMap().edit([](TempoMap& map) {
+		QVERIFY(song->tempoMap().edit([](TempoMap& map) {
 			map.setActive(true);
 			TempoMapEvent event;
 			event.tick = 48;
 			event.hasTempo = true;
 			event.tempo = 70;
 			return map.addEvent(event);
-		});
-		QVERIFY(added);
-		const TempoMap map = song->tempoMap().map();
+		}));
 		const int rate = 44100;
-		const double expected = BounceInPlace::framesBetweenTicks(takeStart, position,
-			Engine::framesPerTick(rate), map, static_cast<int>(song->getTempo()), rate);
-		const double constantTempo = (position - takeStart) * Engine::framesPerTick(rate);
-		QVERIFY2(std::abs(expected - constantTempo) > 1000.0, "the fixture tempo map must change the offset");
+		const int globalTempo = static_cast<int>(song->getTempo());
+		const TempoMap map = song->tempoMap().map();
 
+		// The render side: the window the bounce cuts out of the session's render.
+		BounceInPlace::PreparedRender prepared;
+		QString prepareError;
+		QVERIFY2(BounceInPlace::prepareRenderTracks({track}, scratch.filePath(QStringLiteral("out.wav")),
+			BounceInPlace::Range{regionStart, regionEnd}, rate, &prepared, &prepareError), qPrintable(prepareError));
+		const qint64 renderStart = prepared.startFrame;
+		const qint64 renderLength = prepared.wantedFrames;
+		BounceInPlace::discardPreparedRender(&prepared);
+		QCOMPARE(renderStart, static_cast<qint64>(std::llround(map.framesAtTick(regionStart, rate, globalTempo))));
+		const double oneRate = (regionEnd - regionStart) * static_cast<double>(Engine::framesPerTick(rate));
+		QVERIFY2(std::abs(renderLength - oneRate) > 1000.0, "the fixture tempo map must change the length");
+
+		// The playback side: where in the take the voice starts at the region's start and at its end.
 		AudioEngine* const audio = Engine::audioEngine();
-		QVERIFY(track->play(TimePos(position), audio->framesPerPeriod(), 0, -1));
-		audio->renderNextPeriod();  // the queued voice joins the engine's handle list
-		qint64 sourceIn = -1;
-		for (PlayHandle* handle : audio->playHandles())
-		{
-			if (handle->type() == PlayHandle::Type::SamplePlayHandle && handle->isFromTrack(track))
+		const auto playbackFrame = [&](tick_t position) -> qint64 {
+			if (!track->play(TimePos(position), audio->framesPerPeriod(), 0, -1)) { return -1; }
+			audio->renderNextPeriod();  // the queued voice joins the engine's handle list
+			qint64 frame = -1;
+			for (PlayHandle* handle : audio->playHandles())
 			{
-				auto* voice = static_cast<SamplePlayHandle*>(handle);
-				if (voice->isFrozenTakePoolVoice())
+				auto* voice = handle->type() == PlayHandle::Type::SamplePlayHandle
+					? static_cast<SamplePlayHandle*>(handle) : nullptr;
+				if (voice != nullptr && voice->isFromTrack(track) && voice->isFrozenTakePoolVoice())
 				{
-					sourceIn = static_cast<qint64>(SampleBuffer::fromFile(wav)->size()) - voice->totalFrames();
+					frame = static_cast<qint64>(SampleBuffer::fromFile(wav)->size()) - voice->totalFrames();
 				}
 			}
-		}
-		QVERIFY(sourceIn >= 0);
-		QCOMPARE(sourceIn, static_cast<qint64>(std::llround(expected)));
+			audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
+			QTest::qWait(130);
+			QMetaObject::invokeMethod(song, "playbackPositionJumped", Qt::DirectConnection);
+			return frame;
+		};
+		QCOMPARE(playbackFrame(regionStart), qint64{0});
+		QCOMPARE(playbackFrame(regionEnd), renderLength);
 		song->tempoMap().edit([](TempoMap& m) { m.clear(); return true; });
-		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
-		QTest::qWait(130);
 	}
 
 	//! A3: a take whose file is gone is reported with its ways out, the source plays on, unfreeze
@@ -261,6 +273,61 @@ private slots:
 		QVERIFY(!frozenTrack()->isFrozen());
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY2(frozenTrack()->isFrozen(), "one control.undo must put the unfrozen take back");
+	}
+
+	//! A3c: a REGION take saved, moved away, then reopened: the load error and the recovery fields are
+	//! there, the source (whose clips the freeze had muted) is audible again, and unfreeze plus undo work.
+	void missingRegionTakeIsAudibleAfterReopen()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		SampleTrack* track = trackWithOneClip(scratch.path());
+		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("region.wav")), 330.0);
+		std::vector<std::pair<tick_t, tick_t>> cut;
+		const auto inside = arrangement::isolateRegion(track, 60, 120, &cut);
+		QString why;
+		QVERIFY2(track->freezeTo(wav, 60, 120, asMuted(inside), &why, true), qPrintable(why));
+		const int trackId = track->id();
+		const QString project = scratch.filePath(QStringLiteral("p.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(project));
+		QVERIFY(QFile::remove(wav));
+
+		const ControlResult opened = run(QStringLiteral("project.open"), {{QStringLiteral("path"), project}});
+		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+		QVERIFY2(QJsonDocument(opened.result).toJson().contains("Frozen take not found"), "the load names the missing take");
+		Track* reopened = nullptr;
+		for (Track* candidate : Engine::getSong()->tracks())
+		{
+			if (candidate->id() == trackId) { reopened = candidate; }
+		}
+		QVERIFY(reopened != nullptr);
+		QVERIFY(reopened->isFrozen() && reopened->frozenTake().region);
+		QVERIFY(reopened->frozenTakeFileMissing() && !reopened->frozenAudioReady());
+		for (const Clip* clip : reopened->getClips()) { QVERIFY2(!clip->isMuted(), "a clip the freeze muted stays silent"); }
+		const QString id = QStringLiteral("trk-%1").arg(trackId);
+		const ControlResult state = run(QStringLiteral("track.get_state"), {{QStringLiteral("track"), id}});
+		QVERIFY(state.ok && QJsonDocument(state.result).toJson().contains("frozen_audio_missing"));
+
+		// The source is audible inside the window (the take cannot cover it) as well as outside it.
+		Song* const song = Engine::getSong();
+		song->getTimeline(Song::PlayMode::Song).setLoopEnabled(false);
+		song->setPlayPos(0, Song::PlayMode::Song);
+		song->playSong();
+		double within = 0.0;
+		for (int period = 0; period < 1200 && song->getPlayPos().getTicks() < 118; ++period)
+		{
+			const tick_t from = song->getPlayPos().getTicks();
+			const double level = rms(Engine::audioEngine()->renderNextPeriod());
+			if (from >= 70 && song->getPlayPos().getTicks() <= 112) { within = std::max(within, level); }
+		}
+		song->stop();
+		QVERIFY2(within > 0.01, qPrintable(QStringLiteral("the source is silent inside the missing region take: %1").arg(within)));
+
+		QVERIFY(run(QStringLiteral("freeze.unfreeze"), {{QStringLiteral("track"), id}}).ok);
+		QVERIFY(!reopened->isFrozen());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(reopened->isFrozen());
+		for (const Clip* clip : reopened->getClips()) { QVERIFY(!clip->isMuted()); }
 	}
 
 	//! A3b: the project-asset scan lists a moved take as missing and project.relink's engine repoints it.

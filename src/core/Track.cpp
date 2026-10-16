@@ -811,6 +811,18 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		node = node.nextSibling();
 	}
 
+	// A region take whose audio could not be loaded must not leave the clips the freeze muted silent: the file
+	// carries them muted, and with no take there is nothing to cover for them. Releasing the mute is safe
+	// while the take is there too, because a loaded take silences its window by itself
+	// (frozenTakeSilencesSource), so relinking it later changes nothing audible.
+	if (m_frozen.isFrozen() && m_frozenBuffer == nullptr)
+	{
+		for (const FrozenTake::MutedClip& muted : m_frozen.mutedClips)
+		{
+			if (Clip* clip = clipAt(m_clips, muted.startTicks, muted.lengthTicks)) { clip->setMuted(false); }
+		}
+	}
+
 	int storedHeight = element.attribute( "trackheight" ).toInt();
 	if( storedHeight >= MINIMAL_TRACK_HEIGHT )
 	{
@@ -1319,11 +1331,21 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 	// the active-voice count are separate state.
 	if (m_frozenTakePlaying.exchange(true)) { return false; }
 
-	// The same tick-to-frame mapping the render used to cut the take (tempo map aware).
+	// The same tick-to-frame mapping the render used to cut the take (tempo map aware). With no map in force
+	// this is the one-rate arithmetic and nothing is copied; with one, the published map is read pinned
+	// (bounded, race-free: TempoMapPublisher::withRealtimeMap).
 	Song* const song = Engine::getSong();
-	const qint64 sourceIn = frozenTakeSourceFrame(song->tempoMap().snapshot(), static_cast<int>(song->getTempo()),
-		m_frozen.startTicks, position, static_cast<int>(m_frozenBuffer->sampleRate()),
-		Engine::framesPerTick(m_frozenBuffer->sampleRate()));
+	const sample_rate_t bufferRate = m_frozenBuffer->sampleRate();
+	const float oneRate = Engine::framesPerTick(bufferRate);
+	const int globalTempo = static_cast<int>(song->getTempo());
+	qint64 sourceIn = static_cast<qint64>(std::llround((position - m_frozen.startTicks) * oneRate));
+	if (song->tempoMap().inForceForRealtime())
+	{
+		song->tempoMap().withRealtimeMap([&](const TempoMap& map) {
+			sourceIn = frozenTakeSourceFrame(map, globalTempo, m_frozen.startTicks, position,
+				static_cast<int>(bufferRate), oneRate);
+		});
+	}
 	const qint64 sourceOut = static_cast<qint64>(m_frozenBuffer->size());
 	if (sourceIn >= sourceOut)
 	{
