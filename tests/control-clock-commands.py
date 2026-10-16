@@ -221,6 +221,16 @@ def check_slave_with_no_clock_does_nothing(session, recorder):
     return before_tempo
 
 
+def source_read_back_is_consistent(state, wanted):
+    """The read-back predicate, split out so this check stays under the fork's
+    CCN ratchet: the configured source sits beside the follower's own state, and
+    `ignored` is a number (Q050-026)."""
+    return (state.get("source_port") == wanted and state.get("enabled") is True
+            and state.get("follow_tempo") is True and state.get("locked") is False
+            and state.get("pulses") == 0 and state.get("tempo_bpm") == 0
+            and isinstance(state.get("ignored"), int))
+
+
 def check_the_configured_source_is_read_back(session, recorder):
     """Q050-026: WHICH input drives the follower is configuration a caller can
     read back, a switch is one undo step, and a name the engine cannot hold is
@@ -234,10 +244,7 @@ def check_the_configured_source_is_read_back(session, recorder):
                    set_source.get("source_port") == wanted, "state=%r" % set_source)
     state = slave_state(session)
     recorder.check("clock.get_state reads the source back beside the follower state",
-                   state.get("source_port") == wanted and state.get("enabled") is True
-                   and state.get("follow_tempo") is True and state.get("locked") is False
-                   and state.get("pulses") == 0 and state.get("tempo_bpm") == 0
-                   and isinstance(state.get("ignored"), int),
+                   source_read_back_is_consistent(state, wanted),
                    "state=%r" % state)
     # The ports the source submenu offers are the ports midi.device_list lists -
     # the same vocabulary the source is spelled in, so the GUI cannot offer a
@@ -269,6 +276,12 @@ def check_the_configured_source_is_read_back(session, recorder):
                    and slave_state(session).get("source_port") == wanted,
                    "undone=%r state=%r" % (undone.get("undone"), slave_state(session)))
 
+    check_the_refused_source_changes_nothing(session, recorder)
+
+
+def check_the_refused_source_changes_nothing(session, recorder):
+    """A name the engine cannot hold whole is invalid_args, and the refusal
+    changes nothing (split out for the CCN ratchet)."""
     before = clock_state(session).get("slave")
     error = session.typed_error("clock.slave_set",
                                 {"enabled": True, "source_port": "x" * 200})
