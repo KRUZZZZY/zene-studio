@@ -747,6 +747,41 @@ private slots:
 		}
 		if (checked == 0) { QSKIP("this build has no in-tree VST3 or CLAP fixture"); }
 	}
+
+	//! Q050-090: plugin.list's `vendor` is the picker's vendor, minus the
+	//! window's "Not reported" words - the wire and the window cannot disagree.
+	void listedVendorIsThePickerVendor()
+	{
+		const ControlResult listed = ControlRegistry::instance()->invoke(QStringLiteral("plugin.list"));
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		const QJsonArray devices = listed.result.value(QStringLiteral("devices")).toArray();
+		QVERIFY(!devices.isEmpty());
+		for (const QJsonValue& value : devices)
+		{
+			const QJsonObject device = value.toObject();
+			const QString id = device.value(QStringLiteral("id")).toString();
+			QVERIFY2(device.contains(QStringLiteral("vendor")),
+				qPrintable(QStringLiteral("device %1 carries no vendor").arg(id)));
+			ControlDeviceEntry entry;
+			int index = -1;
+			ControlResult error;
+			QVERIFY(controlDeviceById(id, &entry, &index, &error));
+			const QString picker = gui::devicelabels::vendorOf(entry);
+			const QString wire = device.value(QStringLiteral("vendor")).toString();
+			if (wire.isEmpty())
+			{
+				QCOMPARE(picker, QStringLiteral("Not reported"));
+			}
+			else
+			{
+				QCOMPARE(wire, picker);
+			}
+		}
+		// A built-in names its maker.
+		const QJsonObject amplifier = listedDevice(QStringLiteral("builtin"), QStringLiteral("amplifier"));
+		QVERIFY(!amplifier.isEmpty());
+		QCOMPARE(amplifier.value(QStringLiteral("vendor")).toString(), QStringLiteral("Zene Studio"));
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlDeviceCatalogueTest)
