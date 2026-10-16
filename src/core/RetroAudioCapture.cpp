@@ -51,6 +51,59 @@ constexpr int QuiesceTimeoutMs = 5;
 //! sized to the earlier count would leave out the newest. 16384 frames is several periods.
 constexpr std::size_t SnapshotSlackFrames = 16384;
 
+//! The retained window and the single rate it was recorded at, published as
+//! ONE value: a discard generation (high half) and the sample rate (low half).
+//! The producer bumps the generation each time a rate transition drops a stale
+//! window, so the consumer can require the value to be unchanged around its
+//! copy - frames and label as one validated snapshot (Luna cluster
+//! new-p12-200 rework).
+constexpr int RateTagGenerationBits = 32;
+
+//! Reads of tag/copy/tag before the snapshot is declared unsettled. Each
+//! attempt is bounded work off the audio thread; a transition that keeps
+//! landing across the copy is rarer than one, and refusing after a few is
+//! honest where relabelling never would be.
+constexpr int RateTagValidationAttempts = 4;
+
+constexpr std::uint64_t packTag(std::uint32_t generation, int sampleRate)
+{
+	return (static_cast<std::uint64_t>(generation) << RateTagGenerationBits)
+		| static_cast<std::uint32_t>(sampleRate);
+}
+
+constexpr int rateOfTag(std::uint64_t tag)
+{
+	return static_cast<int>(static_cast<std::uint32_t>(tag));
+}
+
+constexpr std::uint32_t generationOfTag(std::uint64_t tag)
+{
+	return static_cast<std::uint32_t>(tag >> RateTagGenerationBits);
+}
+
+//! Copy the retained frames so that they and the rate tag labelling them are
+//! one validated snapshot (Luna cluster new-p12-200 rework): read the tag,
+//! copy under the ring's publication protocol, read the tag again. A tag that
+//! moved between the reads means the producer re-segmented the window across
+//! the copy - reachable exactly when the quiesce wait timed out and the engine
+//! is still live through the read - so retry, and let the caller refuse a read
+//! that never settles rather than pair copied old-rate frames with a rate they
+//! were not recorded at.
+bool copyTagValidated(const std::atomic<std::uint64_t>& rateTag, RetroAudioRing& ring,
+	std::vector<SampleFrame>& dst, std::size_t& copied, std::uint64_t& tag)
+{
+	for (int attempt = 0; attempt < RateTagValidationAttempts; ++attempt)
+	{
+		tag = rateTag.load(std::memory_order_acquire);
+		copied = ring.copyOut(dst.data(), dst.size());
+		if (rateTag.load(std::memory_order_acquire) == tag)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 } // namespace
 
 
@@ -77,17 +130,28 @@ void RetroAudioCapture::push(const SampleFrame* frames, f_cnt_t count, int sampl
 	{
 		return;
 	}
-	// The window must hold frames recorded at ONE sample rate. If the engine's
-	// rate changed while armed (Luna cluster new-p12-200, BUG 5), the frames
-	// already retained were captured at a different rate: dropping them keeps
-	// the window rate-homogeneous so a take is never labelled with a rate that
-	// mis-scales part of it. reset() only stores atomics - realtime-safe.
-	const int held = m_captureRate.load(std::memory_order_relaxed);
-	if (held != 0 && held != sampleRate)
+	// The window must hold frames recorded at ONE sample rate (Luna cluster
+	// new-p12-200, BUG 5). A transition drops the stale frames through the
+	// ring's producer-side discard - discardRetained() is realtime-safe and
+	// coordinated through the publication sequence; the consumer-only reset()
+	// must not run here - and publishes the new rate together with a fresh
+	// generation in ONE atomic tag, so takeWindow() can validate the frames it
+	// copies against the label it gives them. While a snapshot is in flight the
+	// transition is DEFERRED to the next period after the consumer releases the
+	// ring (push() still drops and acknowledges this period): a consumer whose
+	// quiesce wait timed out can be reading the window right now, and the
+	// frames and rate it reads must be one snapshot (new-p12-200 rework).
+	const std::uint64_t tag = m_rateTag.load(std::memory_order_relaxed);
+	const int held = rateOfTag(tag);
+	if (held == 0)
 	{
-		m_ring.reset();
+		m_rateTag.store(packTag(generationOfTag(tag), sampleRate), std::memory_order_release);
 	}
-	m_captureRate.store(sampleRate, std::memory_order_relaxed);
+	else if (held != sampleRate && !m_ring.snapshotInFlight())
+	{
+		m_ring.discardRetained();
+		m_rateTag.store(packTag(generationOfTag(tag) + 1, sampleRate), std::memory_order_release);
+	}
 	m_ring.push(frames, static_cast<std::size_t>(count));
 }
 
@@ -114,14 +178,27 @@ RetroAudioCapture::Window RetroAudioCapture::takeWindow() const
 	// a capture keeps running while the take is written, and a count read after
 	// the write also counts frames this window never contained (Luna cluster 4901).
 	window.overwritten = static_cast<std::size_t>(ring.overwrittenCount());
-	const std::size_t copied = ring.copyOut(window.frames.data(), window.frames.size());
-	// The producer is idle until endSnapshot(), so every retained frame was
-	// recorded at this one rate: the window is rate-homogeneous (Luna cluster
-	// new-p12-200), and the take can be labelled with it without mis-scaling.
-	window.sampleRate = m_captureRate.load(std::memory_order_relaxed);
+	std::size_t copied = 0;
+	std::uint64_t tag = 0;
+	const bool validated = copyTagValidated(m_rateTag, ring, window.frames, copied, tag);
 	ring.endSnapshot();
-
+	if (!validated)
+	{
+		// The rate tag moved across every read of the copy - a transition landed
+		// inside the snapshot, which is only possible once the quiesce wait timed
+		// out with the producer still live (Luna cluster new-p12-200 rework). The
+		// frames and the rate are then NOT one validated snapshot: refuse the
+		// read rather than label copied old-rate frames with a new rate.
+		window.frames.clear();
+		window.refused = ring.bufferedCount();
+		window.sampleRate = rateOfTag(m_rateTag.load(std::memory_order_relaxed));
+		return window;
+	}
+	// The tag read around the copy is unchanged: every frame this window holds
+	// was published under this generation, and the window is homogeneous at the
+	// tag's rate - frames and label as one validated snapshot (new-p12-200).
 	window.frames.resize(copied);
+	window.sampleRate = rateOfTag(tag);
 	if (copied == 0 && ring.bufferedCount() > 0)
 	{
 		// Frames retained that no consistent window could be read for. Reported

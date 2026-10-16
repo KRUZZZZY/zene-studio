@@ -438,6 +438,52 @@ private slots:
 		sf_close(file);
 	}
 
+	//! Luna cluster new-p12-200 (rework): a rate transition overlapping an
+	//! unacknowledged (timed-out) snapshot must not erase or relabel its window.
+	void aRateTransitionDuringAnInFlightSnapshotKeepsTheWindow()
+	{
+		constexpr int OldRate = 48000;
+		constexpr int NewRate = 96000;
+		RetroAudioCapture capture;
+		capture.arm(true);
+		const auto oldFrames = makeFrames(300);
+		capture.push(oldFrames.data(), static_cast<lmms::f_cnt_t>(oldFrames.size()), OldRate);
+
+		// Nothing acknowledges this snapshot: takeWindow()'s quiesce wait times out.
+		capture.ring().beginSnapshot();
+		const auto newFrames = makeFrames(100, 300);
+		capture.push(newFrames.data(), static_cast<lmms::f_cnt_t>(newFrames.size()), NewRate);
+
+		const RetroAudioCapture::Window window = capture.takeWindow();
+		QVERIFY(!window.quiesced);
+		QCOMPARE(window.sampleRate, OldRate);
+		QCOMPARE(window.frames.size(), std::size_t{300});
+		capture.push(newFrames.data(), static_cast<lmms::f_cnt_t>(newFrames.size()), NewRate);
+		const RetroAudioCapture::Window next = capture.takeWindow();
+		QCOMPARE(next.sampleRate, NewRate);
+		QCOMPARE(next.frames.size(), std::size_t{100});
+	}
+
+	//! Luna cluster new-p12-200 (rework): the producer drops the stale window
+	//! through the ring's publication protocol, not the consumer-only reset().
+	void aRateTransitionKeepsTheCumulativeCounters()
+	{
+		RetroAudioCapture capture;
+		capture.arm(true);
+		const auto chunk = makeFrames(1024);
+		// Overfill the ring in one push so the overwrite counter is non-zero.
+		const auto fill = makeFrames(capture.ring().capacity() + chunk.size());
+		capture.push(fill.data(), static_cast<lmms::f_cnt_t>(fill.size()), SampleRate);
+		const std::uint64_t lost = capture.ring().overwrittenCount();
+		QVERIFY(lost > 0);
+
+		capture.push(chunk.data(), static_cast<lmms::f_cnt_t>(chunk.size()), 96000);
+		const RetroAudioCapture::Window window = capture.takeWindow();
+		QCOMPARE(window.sampleRate, 96000);
+		QCOMPARE(window.frames.size(), std::size_t{1024});
+		QCOMPARE(static_cast<std::uint64_t>(window.overwritten), lost);
+	}
+
 private:
 	//! The writer, called once through a named helper so the failure message of
 	//! the QVERIFY2 above carries the writer's own text.
