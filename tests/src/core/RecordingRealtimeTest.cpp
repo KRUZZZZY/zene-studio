@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <thread>
 #include <vector>
+#include <utility>
 
 #include "AllocationProbe.h"
 
@@ -636,27 +637,58 @@ private slots:
 		delete track;
 	}
 
-	//! The gap table keeps every lost frame once it is full: 300 losses into 256 records
-	//! merge their overflow into the newest record, so nothing is counted without being padded.
+	//! The gap table keeps every lost frame once it overflows the bounded track: 600 losses into
+	//! 256 primary + 256 overflow records merge only the remainder, so positions stay exact.
 	void gapTableKeepsEveryLostFrameWhenItOverflows()
 	{
-		SampleRecordGaps gaps;  // the default 256 records
-		for (std::uint64_t i = 0; i < 300; ++i) { gaps.note(i, 1); }
-		QCOMPARE(gaps.merged(), static_cast<std::uint64_t>(44));
+		SampleRecordGaps gaps;  // default 256 primary + 256 overflow records
+		for (std::uint64_t i = 0; i < 600; ++i) { gaps.note(i, 1); }
+		QCOMPARE(gaps.merged(), static_cast<std::uint64_t>(88));
 
 		std::uint64_t records = 0;
 		std::uint64_t lost = 0;
 		std::uint64_t lastLength = 0;
 		while (const auto gap = gaps.takeDue(1000, true))
 		{
-			QCOMPARE(gap->position, records < 256 ? records : std::uint64_t{255});  // timing kept
+			QCOMPARE(gap->position, records < 512 ? records : std::uint64_t{511});  // timing kept
 			lost += gap->length;
 			lastLength = gap->length;
 			++records;
 		}
-		QCOMPARE(records, static_cast<std::uint64_t>(256));
-		QCOMPARE(lost, static_cast<std::uint64_t>(300));
-		QCOMPARE(lastLength, static_cast<std::uint64_t>(45));  // the newest record took 1 + 44
+		QCOMPARE(records, static_cast<std::uint64_t>(512));
+		QCOMPARE(lost, static_cast<std::uint64_t>(600));
+		QCOMPARE(lastLength, static_cast<std::uint64_t>(89));  // the newest overflow record took 1 + 88
+	}
+
+	//! Overflow into the preallocated track keeps each loss's position: a tiny table (2 primary +
+	//! 2 overflow) plus one merged loss stores the first four loss positions unchanged.
+	void gapOverflowPreservesLossPositions()
+	{
+		SampleRecordGaps gaps{2};
+		gaps.note(0, 5);
+		gaps.note(10, 3);
+		gaps.note(11, 2);  // overflows the primary track into the preallocated overflow track
+		gaps.note(20, 4);  // another overflow record, still bounded
+		gaps.note(30, 1);  // beyond the bound: merges into the newest record
+
+		QCOMPARE(gaps.merged(), static_cast<std::uint64_t>(1));
+
+		std::vector<std::pair<std::uint64_t, std::uint64_t>> got;
+		while (const auto gap = gaps.takeDue(1000, true))
+		{
+			got.emplace_back(gap->position, gap->length);
+		}
+		QCOMPARE(static_cast<qulonglong>(got.size()), static_cast<qulonglong>(4));
+		// Positions are preserved across the primary -> overflow handover instead of being
+		// pulled back to the first overflow's older position.
+		QCOMPARE(static_cast<qulonglong>(got[0].first), static_cast<qulonglong>(0));
+		QCOMPARE(static_cast<qulonglong>(got[0].second), static_cast<qulonglong>(5));
+		QCOMPARE(static_cast<qulonglong>(got[1].first), static_cast<qulonglong>(10));
+		QCOMPARE(static_cast<qulonglong>(got[1].second), static_cast<qulonglong>(3));
+		QCOMPARE(static_cast<qulonglong>(got[2].first), static_cast<qulonglong>(11));
+		QCOMPARE(static_cast<qulonglong>(got[2].second), static_cast<qulonglong>(2));
+		QCOMPARE(static_cast<qulonglong>(got[3].first), static_cast<qulonglong>(20));
+		QCOMPARE(static_cast<qulonglong>(got[3].second), static_cast<qulonglong>(5));  // 4 + 1 merged
 	}
 
 	//! A take whose gap table overflows still has its full length, and every dropped frame is
