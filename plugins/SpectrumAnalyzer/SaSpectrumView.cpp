@@ -252,8 +252,11 @@ void SaSpectrumView::refreshPaths()
 		int refresh_time = std::chrono::high_resolution_clock::now().time_since_epoch().count();
 	#endif
 	m_decaySum = 0;
-	updateBuffers(m_processor->getSpectrumL(), m_displayBufferL.data(), m_peakBufferL.data());
-	updateBuffers(m_processor->getSpectrumR(), m_displayBufferR.data(), m_peakBufferR.data());
+	{
+		QMutexLocker data_lock(&m_processor->m_dataAccess);
+		updateBuffers(m_processor->getSpectrumL(), m_displayBufferL.data(), m_peakBufferL.data());
+		updateBuffers(m_processor->getSpectrumR(), m_displayBufferR.data(), m_peakBufferR.data());
+	}
 	#ifdef SA_DEBUG
 		refresh_time = std::chrono::high_resolution_clock::now().time_since_epoch().count() - refresh_time;
 	#endif
@@ -299,9 +302,7 @@ void SaSpectrumView::refreshPaths()
 // Update display buffers: add new data, update average and peaks / reference.
 // Output the sum of all displayed values -- draw only if it is non-zero.
 // NOTE: The calling function is responsible for acquiring SaProcessor
-// reallocation access lock! Data access lock is not needed: the final result
-// buffer is updated very quickly and the worst case is that one frame will be
-// part new, part old. At reasonable frame rate, such difference is invisible..
+// reallocation access and data access locks while the spectrum is read.
 void SaSpectrumView::updateBuffers(const float *spectrum, float *displayBuffer, float *peakBuffer)
 {
 	for (auto n = std::size_t{0}; n < m_processor->binCount(); n++)
