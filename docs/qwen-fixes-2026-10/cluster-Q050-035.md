@@ -24,6 +24,15 @@ action routes through the registered `stem.job_start`/`stem.job_status`/`stem.jo
 both the shared command path and the single undo step. Gate 29 → 48 checks; snapshot 828 → 829 ids;
 A16 histogram +1 `true_inverse` row.
 
+Round-5 rework (`Q050-035.r4.code.md`, verdict REWORK): the shared GUI path handed
+`PathUtil::toAbsolute()`'s result to `stem.job_start`, so on Windows the source was a drive path (`C:/…`)
+or a UNC share (`//server/share/…`) — forms `stemRequireAbsolutePath` rejected because they do not
+begin with `/`, preventing the GUI split from ever starting on Windows. `stemRequireAbsolutePath` now
+accepts `QDir::isAbsolutePath()` (the platform's own rule) or an explicit Windows drive/UNC form, and
+still refuses relative paths. Added coverage for Windows drive and UNC paths, both directly and through
+the registered command the GUI calls (`StemSplitPipelineTest` slot + four new `ControlStemCommands`
+transcript checks, 58 → 62).
+
 ## Acceptance table
 
 | Criterion | Command actually run | Result / EXIT |
@@ -36,6 +45,7 @@ A16 histogram +1 `true_inverse` row.
 | Build the changed C++ | `cmake --build build --target zene StemSplitPipelineTest -- -j4` | **EXIT=0** |
 | GUI and agent share the registered command; four tracks are ONE undo step | `StemSplitPipelineTest::testGuiSplitSharesTheRegisteredCommandAndIsOneUndoStep` + socket transcript `ControlStemCommands` | QtTest `Totals: 0 failed`; transcript `stem.tracks_create materialises the four stems as four tracks`, `stem.tracks_create records exactly one project transaction`, `ONE control.undo removes all four stem tracks together` — **58 checks OK**; **EXIT=0** |
 | Agent surface does not regress | `ctest -R '^agent_surface$' --output-on-failure` | `agent_surface ... Passed`; **EXIT=0** |
+| Validator accepts platform-native absolute paths; Windows drive/UNC reach the engine's refusal | `StemSplitPipelineTest::testValidatorAcceptsWindowsAbsolutePathsThroughJobStart`; `ControlStemCommands` transcript | Unix accepted; `mix.wav`/`C:foo` refused; `C:\…`/`C:/…`/`\\server\share\…`/`//server/share/…` accepted; `stem.job_start` on a Windows path is `refused` (`no source file`), not `invalid_args`; transcript `stem.job_start accepts a Windows drive path (the GUI route)` / `… UNC path …` / `… backslashes` / `a drive-relative path (C:foo) is still refused typed`; **62 checks OK**; **EXIT=0** |
 | Gate is not tautological (new round-4 check) | injected `THE FEATURE IS OFF IN THE DEFAULT RELEASE CONFIGURATION` into the `ControlCommandsStems.cpp` block comment, ran the gate | **EXIT=1** (1 FAIL); restored file → **EXIT=0** (`29-redproof-comment.log`, `30-restored-comment.log`) |
 | Ratio gates are pre-existing red only | `bash tests/complexity-gate.sh --check` / `bash tests/file-length-gate.sh --check` and the same in `../zene-cachyos` | both **EXIT=1**; the `REGRESSION` line sets diff **empty** against `zene-cachyos`; no file of mine newly listed |
 
@@ -70,7 +80,8 @@ accounts for `stem`/`mastering`; and `src/gui/StemSplitController.cpp` invokes
 - `src/core/ControlCommandsStems.cpp` — the default-OFF block comment corrected; the new
   `stem.tracks_create` command (one undo step, `mutating`).
 - `include/ControlStemSupport.h`, `src/core/ControlStemSupport.cpp` — the header's default-OFF /
-  "resampling is not implemented" claims corrected; `stemTakeResult` exposes a completed job's buffers.
+  "resampling is not implemented" claims corrected; `stemTakeResult` exposes a completed job's buffers;
+  `stemRequireAbsolutePath` now accepts `QDir::isAbsolutePath()` or a Windows drive/UNC form (round 5).
 - `include/StemSeparation/StemTypes.h` — the model-rate comment now says inputs are resampled.
 - `include/ControlReversibility.h`, `src/core/ControlReversibilityTableStems.cpp` — the `stem.*` A16 rows
   (seven `not_mutating` + one `true_inverse`).
@@ -102,7 +113,7 @@ removes the four tracks). Project format: unchanged.
 | `bash tests/no-tautology-gate.sh` | 0 |
 | `python3 tests/doc-figures-gate.py` | 0 |
 | `bash tests/release-honesty-gate.sh --header build/lmmsversion.h` | 0 |
-| `ctest -R '^(StemSplitPipelineTest\|ControlStemCommands\|StemAvailabilityDocsGate\|ReversibilityContractTest\|ControlRegistryTest\|ScriptCommandBridgeTest\|ControlCommandsSnapshot\|DocFiguresGate)$'` | 0 (8/8) |
+| `ctest -R '^(StemSplitPipelineTest\|ControlStemCommands\|StemAvailabilityDocsGate\|ReversibilityContractTest\|ControlRegistryTest\|ScriptCommandBridgeTest\|ControlCommandsSnapshot\|DocFiguresGate\|agent_surface)$'` | 0 (9/9) |
 | `ctest -R '^agent_surface$'` | 0 |
 
-Logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-035.r4/logs/`.
+Logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-035.r5/logs/`.

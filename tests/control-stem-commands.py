@@ -100,8 +100,9 @@ import control_socket_harness as H
 from stem_commands_lib import (CHUNK_DELAY_MS, CLI_PATH, SAMPLE_RATE, SOURCE_SECONDS, STUB_MODEL,
                              Recorder, Session, check_a_job_does_not_hold_the_surface, check_cancel,
                              check_get_state, check_model_store, check_refusals, check_result,
-                             check_tracks_create, check_transactions, job_state, onnxruntime_site_dir,
-                             poll_until, python_with_onnxruntime, start_job, write_source_wav)
+                             check_tracks_create, check_transactions, check_windows_absolute_sources,
+                             job_state, onnxruntime_site_dir, poll_until, python_with_onnxruntime,
+                             start_job, write_source_wav)
 
 def check_quit(session, instance, recorder):
     reply = session.call("control.quit")
@@ -126,6 +127,10 @@ def report_results(recorder):
 def run_checks(session, instance, recorder, outdir):
     check_get_state(session, recorder)
     check_refusals(session, recorder, outdir)
+    # The GUI's "Split to stems" route hands this command a platform-native
+    # absolute path; on Windows that is a drive path or a UNC share, which the
+    # validator must accept rather than refuse as a relative path.
+    check_windows_absolute_sources(session, recorder)
 
     source = os.path.join(outdir, "mix.wav")
     frames = write_source_wav(source)

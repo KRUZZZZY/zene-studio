@@ -42,6 +42,7 @@
 #include <QTimer>
 #include <QTemporaryDir>
 
+#include "ControlStemSupport.h"
 #include "Engine.h"
 #include "ControlRegistry.h"
 #include "SampleBuffer.h"
@@ -416,6 +417,54 @@ subprocess.Popen(
 			QVERIFY(song->tracks().end() !=
 				std::find(song->tracks().begin(), song->tracks().end(), track));
 		}
+	}
+
+	/* Portability (Q050-035 rework): the GUI's "Split to stems" calls
+	 * `stem.job_start` with `PathUtil::toAbsolute()`'s result, which on Windows
+	 * is a drive path (`C:/…`) or a UNC share (`//server/share/…`). The validator
+	 * used to accept only a leading '/', so the GUI route could never start a job
+	 * on Windows. This proves the validator accepts those forms and still refuses
+	 * relative ones - and, through the registered command the GUI calls, that a
+	 * Windows path gets PAST the validator to the engine's own refusal (a missing
+	 * file), not the argument refusal. */
+	void testValidatorAcceptsWindowsAbsolutePathsThroughJobStart()
+	{
+		const QString source = QStringLiteral("source");
+		QVERIFY2(control::stemRequireAbsolutePath(QStringLiteral("/tmp/mix.wav"), source).isEmpty(),
+			"a Unix absolute path is accepted");
+		QVERIFY2(!control::stemRequireAbsolutePath(QStringLiteral("mix.wav"), source).isEmpty(),
+			"a relative path is refused");
+		QVERIFY2(!control::stemRequireAbsolutePath(QStringLiteral("C:relative.wav"), source).isEmpty(),
+			"a drive-relative path is refused");
+
+		const QString windows[] = {
+			QStringLiteral("C:\\music\\mix.wav"),
+			QStringLiteral("C:/music/mix.wav"),
+			QStringLiteral("\\\\server\\share\\mix.wav"),
+			QStringLiteral("//server/share/mix.wav") };
+		for (const QString& path : windows)
+		{
+			QVERIFY2(control::stemRequireAbsolutePath(path, source).isEmpty(),
+				qPrintable(QStringLiteral("Windows absolute path accepted: ") + path));
+		}
+
+		const QString missing[] = {
+			QStringLiteral("C:/definitely-not-here/mix.wav"),
+			QStringLiteral("\\\\server\\share\\definitely-not-here\\mix.wav") };
+		for (const QString& path : missing)
+		{
+			const ControlResult reply = ControlRegistry::instance()->invoke(
+				QStringLiteral("stem.job_start"), QJsonObject{{QStringLiteral("source"), path}});
+			QVERIFY2(!reply.ok && reply.errorKind == ControlErrorKind::Refused
+					&& reply.errorMessage.contains(QStringLiteral("no source file")),
+				qPrintable(QStringLiteral("Windows path reaches the engine's refusal: %1 -> %2")
+					.arg(path, reply.errorMessage)));
+		}
+		const ControlResult relative = ControlRegistry::instance()->invoke(
+			QStringLiteral("stem.job_start"),
+			QJsonObject{{QStringLiteral("source"), QStringLiteral("mix.wav")}});
+		QVERIFY2(!relative.ok && relative.errorKind == ControlErrorKind::InvalidArgs,
+			qPrintable(QStringLiteral("a relative path is still refused typed: ") + relative.errorMessage));
 	}
 
 	/* The GUI action and the agent surface take the SAME registered command,

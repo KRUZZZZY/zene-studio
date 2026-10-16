@@ -282,6 +282,35 @@ def check_refusals(session, recorder, outdir):
     return status
 
 
+def check_windows_absolute_sources(session, recorder):
+    """The GUI's "Split to stems" calls `stem.job_start` with `PathUtil::toAbsolute()`'s
+    result, which on Windows is a drive path (`C:/…`) or a UNC share
+    (`//server/share/…`). The validator once accepted only a leading '/', so the
+    GUI route could never start a job on Windows. These go through the SAME
+    registered command the GUI calls: a Windows path must get PAST the validator
+    to the engine's own refusal (a missing file), never the argument refusal.
+    """
+    drive = "C:/definitely-not-here/mix.wav"
+    accepted = session.result("stem.job_start", {"source": drive})
+    recorder.check("stem.job_start accepts a Windows drive path (the GUI route)",
+                   error_kind(accepted) == "refused" and "no source file" in error_message(accepted),
+                   "kind=%r message=%r" % (error_kind(accepted), error_message(accepted)))
+    unc = "//server/share/definitely-not-here/mix.wav"
+    accepted_unc = session.result("stem.job_start", {"source": unc})
+    recorder.check("stem.job_start accepts a Windows UNC path (the GUI route)",
+                   error_kind(accepted_unc) == "refused" and "no source file" in error_message(accepted_unc),
+                   "kind=%r message=%r" % (error_kind(accepted_unc), error_message(accepted_unc)))
+    drive_backslash = "C:\\definitely-not-here\\mix.wav"
+    accepted_backslash = session.result("stem.job_start", {"source": drive_backslash})
+    recorder.check("stem.job_start accepts a Windows drive path with backslashes",
+                   error_kind(accepted_backslash) == "refused"
+                   and "no source file" in error_message(accepted_backslash),
+                   "kind=%r message=%r" % (error_kind(accepted_backslash), error_message(accepted_backslash)))
+    relative = session.result("stem.job_start", {"source": "C:definitely-not-here.wav"})
+    recorder.check("a drive-relative path (C:foo) is still refused typed",
+                   error_kind(relative) == "invalid_args", repr(relative)[:200])
+
+
 def start_job(session, recorder, source, label):
     ok, started = session.ok_and_result("stem.job_start", {"source": source})
     accepted = ok and isinstance(started.get("job_id"), int)

@@ -1496,8 +1496,9 @@ feature works with no network at all.
   the model's `sample_rate`, so a caller sees 44100 regardless of its source's rate. A file
   `render.render` wrote is already in that format, which is why "bounce the session, then split the
   bounce" is the direct flow (a resample is then a no-op).
-- **The source the socket names is a file.** `stem.job_start` names an absolute path and the mix is
-  decoded from it; the socket has no way to hand the engine a live clip or a bus. The GUI action spans the
+- **The source the socket names is a file.** `stem.job_start` names a platform-native absolute path (a
+  drive or UNC path on Windows) and the mix is decoded from it; the socket has no way to hand the engine a
+  live clip or a bus. The GUI action spans the
   gap for in-memory clips (recorded, pasted, generated) by writing the clip's own audio to a temporary WAV
   and passing that path to the same command, so an unsaved clip still splits.
 - **`stem.job_result` writes files; `stem.tracks_create` builds tracks.** `stem.job_result` produces

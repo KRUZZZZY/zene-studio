@@ -494,17 +494,38 @@ StemSurface* surface()
 } // namespace
 
 
+/*! Whether \a value is a Windows absolute path, whatever this host is: a drive
+ *  path (`C:\…` or `C:/…`, but NOT `C:…`, which is drive-relative) or a UNC
+ *  share (`\\server\share…` / `//server/share…`). `QDir::isAbsolutePath`
+ *  already answers this on Windows; spelling the rule out keeps the same
+ *  validator accepting a Windows path on a Unix host - where the GUI that
+ *  hands it over cannot be run to prove it - and a path a project saved on
+ *  another platform references.
+ */
+static bool isWindowsAbsolutePath(const QString& value)
+{
+	if (value.size() < 3) { return false; }
+	const QChar first = value.at(0);
+	if (first == QLatin1Char('\\') || first == QLatin1Char('/'))
+	{
+		const QChar second = value.at(1);
+		return second == QLatin1Char('\\') || second == QLatin1Char('/');
+	}
+	return first.isLetter() && value.at(1) == QLatin1Char(':')
+		&& (value.at(2) == QLatin1Char('\\') || value.at(2) == QLatin1Char('/'));
+}
+
 QString stemRequireAbsolutePath(const QString& value, const QString& name)
 {
 	if (value.isEmpty())
 	{
 		return QStringLiteral("'%1' is required").arg(name);
 	}
-	if (!value.startsWith(QLatin1Char('/')))
+	if (QDir::isAbsolutePath(value) || isWindowsAbsolutePath(value))
 	{
-		return QStringLiteral("'%1' must be an absolute path, and '%2' is not").arg(name, value);
+		return QString();
 	}
-	return QString();
+	return QStringLiteral("'%1' must be an absolute path, and '%2' is not").arg(name, value);
 }
 
 
