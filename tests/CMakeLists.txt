@@ -783,6 +783,9 @@ set(LMMS_TESTS
 	# Waveform marker drags in the AudioFileProcessor view, including the
 	# signed frame-offset path used by leftward mouse movement.
 	src/core/AudioFileProcessorWaveViewTest.cpp
+	# Cluster new-p12-315: the playhead leaves the render thread - playback must
+	# not emit isPlaying synchronously, and the GUI poll delivers the coalesced value.
+	src/core/AudioFileProcessorPlayheadTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/WorkspaceAccessTest.cpp
 	src/core/CustomAccessTest.cpp
@@ -1630,6 +1633,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "RealtimeSnapshotTest"
 		# 0.5.0: the note-playback tests play a real instrument (tripleoscillator) on their tracks.
 		OR LMMS_TEST_NAME STREQUAL "NotePlaybackTest"
+		# Cluster new-p12-315: the playhead regression loads the audiofileprocessor module to render a note.
+		OR LMMS_TEST_NAME STREQUAL "AudioFileProcessorPlayheadTest"
 		OR LMMS_TEST_NAME STREQUAL "ClipTransposeTest"
 		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
 		OR LMMS_TEST_NAME STREQUAL "NoteEditRangeTest"

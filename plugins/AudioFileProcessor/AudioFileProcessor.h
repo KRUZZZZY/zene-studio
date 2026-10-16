@@ -105,7 +105,9 @@ private:
 	//! Audio-thread handoff for the playhead (cluster p12-315): the render thread
 	//! publishes here instead of emitting isPlaying; the GUI thread polls.
 	void publishPlayhead(f_cnt_t _current_frame) noexcept;
-	void pollPlayhead();
+	//! GUI-thread poll entry point (invoked by the view's timer, and by tests):
+	//! emits isPlaying only when the published frame changed since the last poll.
+	Q_INVOKABLE void pollPlayhead();
 	std::atomic<f_cnt_t> m_playheadFrame{0};
 	//! GUI-thread-only last emitted value (coalescing).
 	f_cnt_t m_playheadShown{0};

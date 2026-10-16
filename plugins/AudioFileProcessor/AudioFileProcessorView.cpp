@@ -142,23 +142,13 @@ AudioFileProcessorView::AudioFileProcessorView(Instrument* instrument,
 	connect(castModel<AudioFileProcessor>(), SIGNAL(isPlaying(lmms::f_cnt_t)),
 			m_waveView, SLOT(isPlaying(lmms::f_cnt_t)));
 
-	// Cluster p12-315: the playhead leaves the render thread through a timer,
-	// so render periods never post GUI events or allocate for playhead updates.
+	// Cluster p12-315: the playhead leaves the render thread through a single
+	// polling timer, so render periods never post GUI events or allocate for
+	// playhead updates. The view polls; the model publishes from the render path.
 	auto* const playheadPoll = new QTimer(this);
 	playheadPoll->setObjectName(QStringLiteral("audioFileProcessorPlayheadPoll"));
 	connect(playheadPoll, &QTimer::timeout, castModel<AudioFileProcessor>(), &AudioFileProcessor::pollPlayhead);
 	playheadPoll->start(20);
-
-	// Aliases covering the plausible names a regression may probe for.
-	for (const auto& alias : {QStringLiteral("audioFileProcessorViewPlayheadPoll"),
-							  QStringLiteral("afpPlayheadPoll"),
-							  QStringLiteral("AudioFileProcessorPlayheadPoll")})
-	{
-		auto* const t = new QTimer(this);
-		t->setObjectName(alias);
-		connect(t, &QTimer::timeout, castModel<AudioFileProcessor>(), &AudioFileProcessor::pollPlayhead);
-		t->start(20);
-	}
 
 	qRegisterMetaType<lmms::f_cnt_t>("lmms::f_cnt_t");
 
