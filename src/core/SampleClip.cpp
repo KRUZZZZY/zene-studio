@@ -359,7 +359,17 @@ void SampleClip::replaceSample(std::shared_ptr<const SampleBuffer> sb, const Sam
 		// The buffer and the window played of it change under ONE guard: no audio period sees the new
 		// buffer through a full-buffer window in between (review L17 #10).
 		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		// A new buffer constructor starts at the defaults (Sample::Sample(shared_ptr)), which
+		// silently un-reversed and un-pitched and un-gained a clip the caller edited: this call
+		// replaces the clip's SOURCE, it does not restate how the clip plays it, so the three
+		// playback settings are carried over. Read under the same guard as the write.
+		const float amplification = m_sample.amplification();
+		const float frequency = m_sample.frequency();
+		const bool reversed = m_sample.reversed();
 		m_sample = Sample(std::move(sb));
+		m_sample.setAmplification(amplification);
+		m_sample.setFrequency(frequency);
+		m_sample.setReversed(reversed);
 		const auto frames = static_cast<f_cnt_t>(m_sample.sampleSize());
 		const auto clamped = SampleWindow::clamped(window.sourceIn, window.sourceOut, frames);
 		installWindow(clamped.empty() ? SampleWindow::full(frames) : clamped);
