@@ -113,53 +113,91 @@ def product_sources():
     return [p for p in out if not EXCLUDE_RE.match(p)]
 
 
-def main():
-    if not os.path.isfile(README_PATH) or not os.path.isfile(LICENSE_PATH):
-        print("doc-pricing-model-gate: README.md / LICENSE.txt not found under %s" % REPO)
-        return 2
+# Phrases every check below asserts; kept as constants so each check
+# function holds one loop and stays under the complexity target.
+CURRENT_STATE_PHRASES = [
+    "no paid tier",
+    "no registration",
+    "no activation",
+    "the repository itself, not in the license",
+    "a search of the product-owned",
+]
+NO_PROMISE_PHRASES = [
+    "--version",
+    "will report",
+    "will be free",
+    "will remain free",
+    "promised by this document that",
+]
+CHANNEL_PHRASES = [
+    "docs/RELEASING.md",
+    "GitHub Releases page",
+    "announced",
+]
+GPL_CLAUSES = [
+    "speak of free software",
+    "freedom, not",
+    "gratis or for a fee",
+]
 
-    readme = open(README_PATH, encoding="utf-8").read()
-    free = section(readme, SECTION_HEAD)
-    lic = section(readme, LICENSE_HEAD)
-    if free is None:
-        fail("README.md", "no %r section" % SECTION_HEAD)
-        free = ""
 
+def have_inputs():
+    return os.path.isfile(README_PATH) and os.path.isfile(LICENSE_PATH)
+
+
+def require_all(text, phrases, label):
+    for phrase in phrases:
+        if phrase not in text:
+            fail(label, "free-and-activation section lost %r" % phrase)
+
+
+def forbid_all(text, phrases, label):
+    lowered = text.lower()
+    for bad in phrases:
+        if bad.lower() in lowered:
+            fail(label, "free-and-activation section holds the unsupported claim %r"
+                        % bad)
+
+
+def check_current_state(free):
     # 1a. The current-state statement, grounded in the repository, not the license.
-    for phrase in ["no paid tier", "no registration", "no activation",
-                   "the repository itself, not in the license",
-                   "a search of the product-owned"]:
-        if phrase not in free:
-            fail("README.md", "free-and-activation section lost %r" % phrase)
-    if "gratis or for a fee" not in free or "settles nothing" not in free:
+    require_all(free, CURRENT_STATE_PHRASES, "README.md")
+    if "gratis or for a fee" not in free:
         fail("README.md", "free-and-activation section no longer tells the reader that "
-                          "the GPL permits charging (\"gratis or for a fee\") and that "
-                          "the license settles nothing about tiers")
+                           "the GPL permits charging (\"gratis or for a fee\") and that "
+                           "the license settles nothing about tiers")
+    elif "settles nothing" not in free:
+        fail("README.md", "free-and-activation section no longer tells the reader that "
+                           "the GPL permits charging (\"gratis or for a fee\") and that "
+                           "the license settles nothing about tiers")
 
+
+def check_no_promise(free):
     # 1b. No --version policy promise; no promise of a future policy.
-    for bad in ["--version", "will report", "will be free", "will remain free",
-                "promised by this document that"]:
-        if bad.lower() in free.lower():
-            fail("README.md", "free-and-activation section holds the unsupported claim %r"
-                              % bad)
+    forbid_all(free, NO_PROMISE_PHRASES, "README.md")
 
+
+def check_channel(free):
     # 1c. The announcement channel is named, from docs/RELEASING.md, as release notes
     #     published on the GitHub Releases page.
-    for phrase in ["docs/RELEASING.md", "GitHub Releases page", "announced"]:
+    for phrase in CHANNEL_PHRASES:
         if phrase not in free:
             fail("README.md", "free-and-activation section lost the announcement "
-                              "channel %r" % phrase)
+                               "channel %r" % phrase)
 
+
+def check_license_section(lic):
     # 1d. The plain license statement beside it still says GPL-2.0-or-later.
-    if lic is None or "GPL-2.0-or-later" not in lic:
+    if lic is None:
+        fail("README.md", "license section lost the GPL-2.0-or-later statement")
+    elif "GPL-2.0-or-later" not in lic:
         fail("README.md", "license section lost the GPL-2.0-or-later statement")
 
+
+def check_gpl_text(gpl):
     # 2. LICENSE.txt: the GPL clauses the README may factually cite, and no product
     #    pricing / activation policy inside it.
-    gpl = open(LICENSE_PATH, encoding="utf-8").read()
-    for clause in ["speak of free software",
-                   "freedom, not",
-                   "gratis or for a fee"]:
+    for clause in GPL_CLAUSES:
         if clause not in gpl:
             fail("LICENSE.txt", "the GPL clause %r is gone from LICENSE.txt" % clause)
     at = NARROW_RE.search(gpl)
@@ -167,27 +205,68 @@ def main():
         fail("LICENSE.txt", 'product-licensing wording %r in the license text itself'
                             % at.group(0))
 
+
+def scan_file(path, licensing, tiered):
+    with open(os.path.join(REPO, path), encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if NARROW_RE.search(line):
+                licensing.append("%s: %s" % (path, line.rstrip()))
+            elif TIER_RE.search(line):
+                if path not in TIER_ALLOWLIST:
+                    tiered.append("%s: %s" % (path, line.rstrip()))
+
+
+def scan_sources(paths):
     # 3. The source search, the same scope the README section describes.
-    paths = product_sources()
     print("doc-pricing-model-gate: searching %d product-owned C/C++ sources" % len(paths))
     licensing = []
     tiered = []
     for path in paths:
-        with open(os.path.join(REPO, path), encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                if NARROW_RE.search(line):
-                    licensing.append("%s: %s" % (path, line.rstrip()))
-                elif TIER_RE.search(line) and path not in TIER_ALLOWLIST:
-                    tiered.append("%s: %s" % (path, line.rstrip()))
+        scan_file(path, licensing, tiered)
+    return licensing, tiered
+
+
+def report_source_hits(licensing, tiered):
     for hit in licensing:
         fail("sources", "product-licensing match: %s" % hit)
     for hit in tiered:
         fail("sources", "competitor word outside the allowlist %s: %s"
                         % (sorted(TIER_ALLOWLIST), hit))
 
+
+def read_free_section(readme):
+    free = section(readme, SECTION_HEAD)
+    if free is None:
+        fail("README.md", "no %r section" % SECTION_HEAD)
+        return ""
+    return free
+
+
+def main():
+    if not have_inputs():
+        print("doc-pricing-model-gate: README.md / LICENSE.txt not found under %s" % REPO)
+        return 2
+
+    readme = open(README_PATH, encoding="utf-8").read()
+    free = read_free_section(readme)
+    lic = section(readme, LICENSE_HEAD)
+
+    check_current_state(free)
+    check_no_promise(free)
+    check_channel(free)
+    check_license_section(lic)
+
+    gpl = open(LICENSE_PATH, encoding="utf-8").read()
+    check_gpl_text(gpl)
+
+    licensing, tiered = scan_sources(product_sources())
+    report_source_hits(licensing, tiered)
+
     print("doc-pricing-model-gate: RESULT: %s" % ("PASS" if not failures else "FAIL (%d)"
                                                   % failures))
-    return 1 if failures else 0
+    if failures:
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

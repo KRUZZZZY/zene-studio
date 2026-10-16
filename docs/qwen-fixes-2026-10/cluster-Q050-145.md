@@ -1,6 +1,18 @@
 IMPLEMENTED
 # Cluster Q050-145: Document Zene's current free and activation model
 
+Round 3 (review rework). The round-2 review (REWORK) required two things, both done on
+top of the round-2 commits:
+
+- `tests/doc-pricing-model-gate.py` is now registered in `tests/fork-sources.txt` as
+  product-new (entry in sorted place plus a recipe pathspec line), so the complexity
+  ratchet measures it;
+- its `main()` (CCN 26) is split into focused check functions with identical checks:
+  `have_inputs`, `require_all`, `forbid_all`, `check_current_state`, `check_no_promise`,
+  `check_channel`, `check_license_section`, `check_gpl_text`, `scan_file`, `scan_sources`,
+  `report_source_hits`, `read_free_section` - every function CCN <= 5, `main()` CCN 4
+  (`python3 -m lizard --csv`, logs/02-lizard-doc-pricing.txt).
+
 Round 2 (rework). The round-1 review points are all addressed on top of the round-1 commit:
 
 - the `--version` policy-reporting promise is removed from README.md (and the new gate
@@ -26,8 +38,33 @@ product-source search and the build/release repo facts, and names the GitHub Rel
 announcement location for any future policy change. No future pricing policy is promised.
 No code, command, undo step or project format changed.
 
-## Evidence table (commands run in this worktree; logs in
-/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-145.r2/logs)
+## Evidence table (round-3 commands run in this worktree; logs in
+/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-145.r3/logs)
+
+| Check | Exact command and result |
+| --- | --- |
+| Documentation assertion (green) | `python3 tests/doc-pricing-model-gate.py > .../01-gate-green.txt`; **EXIT=0** |
+| Lizard on the refactored gate | `python3 -m lizard --csv tests/doc-pricing-model-gate.py > .../02-lizard-doc-pricing.txt`; **EXIT=0**; max CCN 5 (`scan_file`), `main()` CCN 4 |
+| Documentation assertion (red control) | inject a `--version` promise into the README section, rerun, then restore; `> .../03-gate-red-control.txt`; **EXIT=1** (`FAIL README.md ... '--version'`); after restore **EXIT=0** |
+| Build | `cmake --build build --target zene -- -j4 > .../04-build-zene.log`; **EXIT=0** |
+| CTest | `ctest -R DocPricingModelGate --output-on-failure` from build/tests, `> .../05-ctest-docpricing.log`; **EXIT=0**, 1/1 passed (DocPricingModelGate #584) |
+| Complexity gate (gate 4, red on train 5 by design) | `bash tests/complexity-gate.sh --check > .../06-gate-complexity.log`; **EXIT=1**, inherited; the 6 REGRESSION lines are byte-identical to the `../zene-cachyos` run (`.../06-gate-complexity-baseline-cachyos.log`, diff **EXIT=0**); `doc-pricing` appears nowhere in the output |
+| File-length gate (gate 7, red on train 5 by design) | `bash tests/file-length-gate.sh --check > .../07-gate-file-length.log`; **EXIT=1**, inherited; REGRESSION list identical to the baseline run (diff **EXIT=0**); no file of this unit listed |
+| Fork-sources gate | `bash tests/fork-sources-gate.sh > .../08-gate-forksources.log 2>&1; rc=$?`; **EXIT=0** (1793 fork-NEW entries) |
+| All-sources reproduce | `bash tests/all-sources-reproduce.sh > .../09-gate-allsources.log 2>&1; rc=$?`; **EXIT=0** |
+| No-upstream-regression gate | `bash tests/no-upstream-regression-gate.sh > .../10-gate-nourg.log 2>&1; rc=$?`; **EXIT=0** |
+| Namespace check | `tests/scripted/check-namespace > .../11-gate-namespace.log 2>&1; rc=$?`; **EXIT=0** |
+| No-tautology gate | `bash tests/no-tautology-gate.sh > .../12-gate-tautology.log 2>&1; rc=$?`; **EXIT=0** |
+| Whitespace | `git diff --check`; **EXIT=0** |
+
+## Files committed (round 3, on top of rounds 1-2)
+
+- `tests/doc-pricing-model-gate.py` (refactored: `main()` CCN 26 -> every function CCN <= 5, checks unchanged)
+- `tests/fork-sources.txt` (product-new registration entry + recipe pathspec line)
+- `docs/050-features/Q050-145.md`
+- `docs/qwen-fixes-2026-10/cluster-Q050-145.md`
+
+## Round-2 evidence (kept; logs in .../runs/Q050-145.r2/logs)
 
 | Check | Exact command and result |
 | --- | --- |
