@@ -2944,6 +2944,7 @@ tests/src/plugins/SampleRateDependentLadspa.cpp
 tests/src/plugins/SlicerTWaveformTest.cpp
 tests/src/plugins/SlicerTZoomTest.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp
+tests/src/plugins/VibedWaveformHandoffTest.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
 tests/src/plugins/Vst3ChunkProbeTest.cpp
 tests/src/plugins/Vst3EffectIntegrationTest.cpp
