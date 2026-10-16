@@ -146,6 +146,34 @@ HANDLE connectToNamedPipe(const QString& path)
 	}
 	return INVALID_HANDLE_VALUE;
 }
+
+bool writeIncompletePipeByte(HANDLE pipe, HANDLE event, DWORD* error)
+{
+	const char byte = '{';
+	OVERLAPPED operation{};
+	ResetEvent(event);
+	operation.hEvent = event;
+	DWORD written = 0;
+	if (!WriteFile(pipe, &byte, 1, nullptr, &operation))
+	{
+		*error = GetLastError();
+		if (*error != ERROR_IO_PENDING) { return false; }
+		if (WaitForSingleObject(event, 5000) != WAIT_OBJECT_0)
+		{
+			*error = ERROR_TIMEOUT;
+			return false;
+		}
+	}
+	if (GetOverlappedResult(pipe, &operation, &written, FALSE)) { return written == 1; }
+	*error = GetLastError();
+	return false;
+}
+
+bool isNamedPipeDisconnect(DWORD error)
+{
+	return error == ERROR_BROKEN_PIPE || error == ERROR_PIPE_NOT_CONNECTED;
+}
+
 #endif
 
 } // namespace
@@ -236,6 +264,42 @@ private slots:
 			|| (!completed && (completionError == ERROR_BROKEN_PIPE
 				|| completionError == ERROR_PIPE_NOT_CONNECTED));
 		QVERIFY2(disconnected, "the idle named-pipe read completed without a disconnect");
+	}
+
+	void aTrickledIncompleteNamedPipeRequestDoesNotExtendTheDeadline()
+	{
+		ControlServer server(ControlRegistry::instance());
+		const QString path = QStringLiteral("\\\\.\\pipe\\zene-control-trickle-%1-%2")
+			.arg(GetCurrentProcessId()).arg(GetTickCount64());
+		QString error;
+		QVERIFY2(server.listen(path, &error), qPrintable(error));
+
+		TestWinHandle pipe;
+		pipe.handle = connectToNamedPipe(path);
+		QVERIFY2(pipe.handle != INVALID_HANDLE_VALUE, "could not connect to the test named pipe");
+		TestWinHandle writeEvent;
+		writeEvent.handle = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		QVERIFY(writeEvent.handle != nullptr);
+
+		QElapsedTimer trickleWait;
+		trickleWait.start();
+		bool disconnected = false;
+		while (trickleWait.elapsed() < ClientIdleTimeoutMs + 5000)
+		{
+			DWORD writeError = ERROR_SUCCESS;
+			if (!writeIncompletePipeByte(pipe.handle, writeEvent.handle, &writeError))
+			{
+				QVERIFY2(isNamedPipeDisconnect(writeError),
+					"the incomplete-request trickle write failed unexpectedly");
+				disconnected = true;
+				break;
+			}
+			Sleep(250);
+		}
+
+		QVERIFY(trickleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+		QVERIFY2(disconnected,
+			"trickling an incomplete request kept the named-pipe client alive past its deadline");
 	}
 #endif
 

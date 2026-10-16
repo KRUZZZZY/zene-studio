@@ -157,8 +157,8 @@ bool waitForIo(HANDLE pipe, OVERLAPPED* operation, HANDLE quitEvent, DWORD timeo
 }
 
 //! Remaining wait for this client's absolute idle deadline.  A fresh deadline
-//! is published only after bytes move on its pipe, so pending reads and writes
-//! cannot hold an otherwise idle connection forever.
+//! is published after an empty request buffer or reply bytes move, so pending
+//! I/O and incomplete request data cannot hold an otherwise idle connection forever.
 DWORD clientIdleWaitMs(quint64 deadlineMs)
 {
 	const ULONGLONG now = GetTickCount64();
@@ -239,7 +239,6 @@ bool readChunk(HANDLE pipe, HANDLE ioEvent, HANDLE quitEvent, QByteArray* buffer
 	}
 	if (got == 0) { return false; } // a clean EOF: the peer closed its end
 	buffer->append(chunk, static_cast<int>(got));
-	*idleDeadlineMs = nextClientIdleDeadlineMs();
 	return true;
 }
 
@@ -412,6 +411,7 @@ void ControlServer::win32ClientLoop(void* hPipe)
 		}
 		if (!win32ServeBuffer(hPipe, ioEvent, quitEvent, buffer, &draining,
 			&idleDeadlineMs)) { break; }
+		if (buffer.isEmpty()) { idleDeadlineMs = nextClientIdleDeadlineMs(); }
 	}
 
 	DisconnectNamedPipe(pipe);
