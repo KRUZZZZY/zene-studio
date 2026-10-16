@@ -23,6 +23,7 @@
 #ifndef LMMS_SCRIPT_BINDINGS_H
 #define LMMS_SCRIPT_BINDINGS_H
 
+#include <QPointer>
 #include <QString>
 #include <QStringList>
 
@@ -111,6 +112,14 @@ private:
 // ---------------------------------------------------------------------------
 // Tracks / instruments (spec section 3: Track, InstrumentTrack, FloatModel,
 // BoolModel)
+//
+// The wrappers below hold QPointers, not raw pointers: every project object a
+// view names is a Model, hence a QObject, and a script can have that object
+// deleted while the view is still on the Lua stack (zene.command() is applied
+// on the apply side inside the same run; so are project.new / project.open).
+// QPointer clears itself in the QObject destructor, so a view of a removed
+// object reports isValid() == false and every accessor falls back to the same
+// sentinel / no-op it already used for a wrapper that was never bound.
 // ---------------------------------------------------------------------------
 
 /*! Lua-facing wrapper for an automatable model (registered as `FloatModel`).
@@ -124,7 +133,7 @@ class LuaFloatModel
 {
 public:
 	LuaFloatModel() = default;
-	explicit LuaFloatModel(AutomatableModel* model) : m_model(model) {}
+	explicit LuaFloatModel(AutomatableModel* model);
 	explicit LuaFloatModel(QString mixerChannelId) : m_mixerChannelId(mixerChannelId) {}
 
 	bool isValid() const;
@@ -138,7 +147,7 @@ public:
 
 private:
 	AutomatableModel* resolve() const;
-	AutomatableModel* m_model{nullptr};
+	QPointer<AutomatableModel> m_model;
 	QString m_mixerChannelId;
 };
 
@@ -147,15 +156,15 @@ class LuaBoolModel
 {
 public:
 	LuaBoolModel() = default;
-	explicit LuaBoolModel(BoolModel* model) : m_model(model) {}
+	explicit LuaBoolModel(BoolModel* model);
 
-	bool isValid() const { return m_model != nullptr; }
+	bool isValid() const;
 	bool value() const;
 	void setValue(bool value);
 	QString name() const;
 
 private:
-	BoolModel* m_model{nullptr};
+	QPointer<BoolModel> m_model;
 };
 
 //! Lua-facing wrapper for an instrument plugin (registered as `Instrument`).
@@ -163,9 +172,9 @@ class LuaInstrument
 {
 public:
 	LuaInstrument() = default;
-	explicit LuaInstrument(Instrument* instrument) : m_instrument(instrument) {}
+	explicit LuaInstrument(Instrument* instrument);
 
-	bool isValid() const { return m_instrument != nullptr; }
+	bool isValid() const;
 	QString name() const;
 	int parameterCount() const;
 	QString parameterName(int index) const;
@@ -173,7 +182,7 @@ public:
 	LuaFloatModel& parameterModel(int index) const;
 
 private:
-	Instrument* m_instrument{nullptr};
+	QPointer<Instrument> m_instrument;
 };
 
 //! Lua-facing wrapper for an instrument track (registered as `InstrumentTrack`).
@@ -181,9 +190,9 @@ class LuaInstrumentTrack
 {
 public:
 	LuaInstrumentTrack() = default;
-	explicit LuaInstrumentTrack(InstrumentTrack* track) : m_track(track) {}
+	explicit LuaInstrumentTrack(InstrumentTrack* track);
 
-	bool isValid() const { return m_track != nullptr; }
+	bool isValid() const;
 	QString name() const;
 	void setName(const QString& name);
 	QString instrumentName() const;
@@ -196,7 +205,7 @@ public:
 	LuaFloatModel& panningModel() const;
 
 private:
-	InstrumentTrack* m_track{nullptr};
+	QPointer<InstrumentTrack> m_track;
 };
 
 //! Lua-facing wrapper for a track (registered as `Track`).
@@ -204,9 +213,9 @@ class LuaTrack
 {
 public:
 	LuaTrack() = default;
-	explicit LuaTrack(Track* track) : m_track(track) {}
+	explicit LuaTrack(Track* track);
 
-	bool isValid() const { return m_track != nullptr; }
+	bool isValid() const;
 	QString name() const;
 	void setName(const QString& name);
 	QString type() const;
@@ -219,7 +228,7 @@ public:
 	LuaBoolModel& muteModel() const;
 
 private:
-	Track* m_track{nullptr};
+	QPointer<Track> m_track;
 };
 
 // ---------------------------------------------------------------------------
@@ -236,10 +245,9 @@ class LuaPatternClip
 {
 public:
 	LuaPatternClip() = default;
-	LuaPatternClip(MidiClip* clip, int patternIndex, int trackIndex)
-		: m_clip(clip), m_patternIndex(patternIndex), m_trackIndex(trackIndex) {}
+	LuaPatternClip(MidiClip* clip, int patternIndex, int trackIndex);
 
-	bool isValid() const { return m_clip != nullptr; }
+	bool isValid() const;
 	int patternIndex() const { return m_patternIndex; }
 	int trackIndex() const { return m_trackIndex; }
 
@@ -262,7 +270,7 @@ public:
 	void addCheckPoint();
 
 private:
-	MidiClip* m_clip{nullptr};
+	QPointer<MidiClip> m_clip;
 	int m_patternIndex{-1};
 	int m_trackIndex{-1};
 };

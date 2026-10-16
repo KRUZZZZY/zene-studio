@@ -547,6 +547,10 @@ LuaNote& LuaNoteBuilder::build() const
 // LuaBoolModel
 // ---------------------------------------------------------------------------
 
+LuaBoolModel::LuaBoolModel(BoolModel* model) : m_model(model) {}
+
+bool LuaBoolModel::isValid() const { return m_model != nullptr; }
+
 bool LuaBoolModel::value() const
 {
 	if (!m_model) { return false; }
@@ -572,6 +576,10 @@ QString LuaBoolModel::name() const
 // ---------------------------------------------------------------------------
 // LuaInstrumentTrack
 // ---------------------------------------------------------------------------
+
+LuaInstrumentTrack::LuaInstrumentTrack(InstrumentTrack* track) : m_track(track) {}
+
+bool LuaInstrumentTrack::isValid() const { return m_track != nullptr; }
 
 QString LuaInstrumentTrack::name() const
 {
@@ -644,6 +652,10 @@ LuaFloatModel& LuaInstrumentTrack::panningModel() const
 // LuaInstrument
 // ---------------------------------------------------------------------------
 
+LuaInstrument::LuaInstrument(Instrument* instrument) : m_instrument(instrument) {}
+
+bool LuaInstrument::isValid() const { return m_instrument != nullptr; }
+
 QString LuaInstrument::name() const
 {
 	return m_instrument ? m_instrument->displayName() : QString();
@@ -667,6 +679,10 @@ LuaFloatModel& LuaInstrument::parameterModel(int index) const
 // ---------------------------------------------------------------------------
 // LuaTrack
 // ---------------------------------------------------------------------------
+
+LuaTrack::LuaTrack(Track* track) : m_track(track) {}
+
+bool LuaTrack::isValid() const { return m_track != nullptr; }
 
 QString LuaTrack::name() const
 {
@@ -704,7 +720,7 @@ int LuaTrack::index() const
 	const TrackContainer::TrackList& tracks = m_track->trackContainer()->tracks();
 	for (std::size_t i = 0; i < tracks.size(); ++i)
 	{
-		if (tracks[i] == m_track) { return static_cast<int>(i); }
+		if (tracks[i] == m_track.data()) { return static_cast<int>(i); }
 	}
 	return -1;
 }
@@ -721,12 +737,12 @@ QString LuaTrack::instrumentName() const
 
 LuaInstrumentTrack& LuaTrack::asInstrumentTrack() const
 {
-	return ScriptBindings::newInstrumentTrack(dynamic_cast<InstrumentTrack*>(m_track));
+	return ScriptBindings::newInstrumentTrack(dynamic_cast<InstrumentTrack*>(m_track.data()));
 }
 
 LuaFloatModel& LuaTrack::volumeModel() const
 {
-	auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(m_track);
+	auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(m_track.data());
 	return ScriptBindings::newFloatModel(instrumentTrack ? instrumentTrack->volumeModel() : nullptr);
 }
 
@@ -738,6 +754,11 @@ LuaBoolModel& LuaTrack::muteModel() const
 // ---------------------------------------------------------------------------
 // LuaPatternClip
 // ---------------------------------------------------------------------------
+
+LuaPatternClip::LuaPatternClip(MidiClip* clip, int patternIndex, int trackIndex)
+	: m_clip(clip), m_patternIndex(patternIndex), m_trackIndex(trackIndex) {}
+
+bool LuaPatternClip::isValid() const { return m_clip != nullptr; }
 
 QString LuaPatternClip::name() const
 {
@@ -830,7 +851,7 @@ void LuaPatternClip::addCheckPoint()
 {
 	if (!m_clip) { return; }
 	ScriptCommand command = makeCommand(ScriptCommand::Type::AddCheckPoint);
-	command.object0 = static_cast<JournallingObject*>(m_clip);
+	command.object0 = static_cast<JournallingObject*>(m_clip.data());
 	ScriptEngine::instance()->enqueue(command);
 }
 
