@@ -41,6 +41,8 @@ struct AbletonLinkSession::Impl
 };
 
 bool AbletonLinkSession::compiledIn() { return false; }
+void AbletonLinkSession::setLoopbackOnly(bool) {}
+bool AbletonLinkSession::loopbackOnly() { return false; }
 const char* AbletonLinkSession::libraryVersion() { return ""; }
 const char* AbletonLinkSession::libraryCommit() { return ""; }
 

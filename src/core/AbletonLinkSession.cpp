@@ -28,9 +28,57 @@
 
 #include "AbletonLinkSession.h"
 
+#include <atomic>
 #include <chrono>
+#include <cstdlib>
 
+#ifndef _WIN32
+#include <ifaddrs.h>
+#include <net/if.h>
+#endif
+
+namespace lmms::linkseam
+{
+
+/*! Test/diagnostic seam (Q050-024): confine Link's interface scan to loopback, so its
+ *  discovery sockets exist only on 127.0.0.1 and no packet can leave the host. The vendored
+ *  headers are byte-identical to upstream, so the seam is the one libc call their scanner
+ *  makes (ableton/platforms/posix/ScanIpIfAddrs.hpp: getifaddrs) - re-pointed, below, only
+ *  for the include of Link.hpp in THIS translation unit. */
+inline std::atomic<bool>& loopbackOnly()
+{
+	static std::atomic<bool> flag{[] {
+		const char* env = std::getenv("ZENE_LINK_LOOPBACK_ONLY");
+		return env != nullptr && env[0] == '1';
+	}()};
+	return flag;
+}
+
+#ifndef _WIN32
+//! getifaddrs, with every non-loopback entry marked not running when confined (the scanner skips those).
+inline int scan(struct ifaddrs** out)
+{
+	const int result = ::getifaddrs(out);
+	if (result == 0 && loopbackOnly().load(std::memory_order_relaxed))
+	{
+		for (struct ifaddrs* entry = *out; entry != nullptr; entry = entry->ifa_next)
+		{
+			if ((entry->ifa_flags & IFF_LOOPBACK) == 0) { entry->ifa_flags &= ~static_cast<unsigned>(IFF_RUNNING); }
+		}
+	}
+	return result;
+}
+#endif
+
+} // namespace lmms::linkseam
+
+#ifndef _WIN32
+#define getifaddrs(out) ::lmms::linkseam::scan(out)
+#endif
 #include <ableton/Link.hpp>
+#ifndef _WIN32
+#undef getifaddrs
+#endif
 #include <ableton/link/HostTimeFilter.hpp>
 
 namespace lmms
@@ -95,6 +143,8 @@ struct AbletonLinkSession::Impl
 };
 
 bool AbletonLinkSession::compiledIn() { return true; }
+void AbletonLinkSession::setLoopbackOnly(bool on) { linkseam::loopbackOnly().store(on, std::memory_order_relaxed); }
+bool AbletonLinkSession::loopbackOnly() { return linkseam::loopbackOnly().load(std::memory_order_relaxed); }
 const char* AbletonLinkSession::libraryVersion() { return PinnedVersion; }
 const char* AbletonLinkSession::libraryCommit() { return PinnedCommit; }
 

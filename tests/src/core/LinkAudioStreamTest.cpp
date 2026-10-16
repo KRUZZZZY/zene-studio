@@ -2,7 +2,8 @@
  * LinkAudioStreamTest.cpp - the PCM stream between instances (Q050-024,
  *                           include/LinkAudioStream.h, docs/LINK-AUDIO.md).
  *
- * HERMETIC: every socket here is bound to 127.0.0.1 and every peer is 127.0.0.1.
+ * HERMETIC: every socket here is bound to 127.0.0.1 and every peer is 127.0.0.1. The one test that
+ * runs Ableton Link confines its discovery to the loopback interface first (see pcmStreamsWhileLinkSyncIsActive).
  * Nothing is multicast or broadcast, Ableton Link is never switched on (so no
  * discovery runs), there is no name lookup, UPnP or internet.
  *
@@ -43,6 +44,10 @@
 
 #include <QJsonObject>
 
+#include <fstream>
+#include <sstream>
+
+#include "AbletonLinkSession.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
@@ -95,6 +100,121 @@ void fillRamp(std::vector<SampleFrame>& buffer, std::uint64_t first)
 ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
 {
 	return ControlRegistry::instance()->invoke(id, args);
+}
+
+
+//! Which interfaces joined Link's multicast group 224.76.78.75 (Linux: /proc/net/igmp; empty elsewhere).
+std::vector<std::string> interfacesInLinkGroup()
+{
+	std::vector<std::string> devices;
+	std::ifstream igmp("/proc/net/igmp");
+	std::string line, device;
+	while (std::getline(igmp, line))
+	{
+		if (!line.empty() && line[0] >= '0' && line[0] <= '9')
+		{
+			std::istringstream head(line);
+			std::string index;
+			head >> index >> device;
+		}
+		else if (line.find("4B4E4CE0") != std::string::npos)   // 224.76.78.75, network order read little-endian
+		{
+			devices.push_back(device);
+		}
+	}
+	return devices;
+}
+
+bool nearTempo(double a, double b) { return std::fabs(a - b) < 0.01; }
+
+//! Two Link participants stepped through tempo, start and stop, one transition per advance().
+class LinkScenario
+{
+public:
+	static constexpr double Quantum = 4.0;
+	LinkScenario() : m_a(120.0), m_b(90.0)
+	{
+		m_a.enable(true);
+		m_b.enable(true);
+		m_a.enableStartStopSync(true);
+		m_b.enableStartStopSync(true);
+	}
+	bool done() const { return m_stage == 4; }
+	//! Step the state machine; false when a stage has taken ~4.5 s.
+	bool advance(int period)
+	{
+		if (moveOn()) { m_stageStart = period; }
+		return period - m_stageStart < 3500;
+	}
+	QString describeStall(int) const
+	{
+		return QStringLiteral("Link stage %1 did not complete (A sees %2 peers, B %3)")
+			.arg(m_stage).arg(m_a.numPeers()).arg(m_b.numPeers());
+	}
+	bool confinedToLoopback() const
+	{
+#ifdef __linux__
+		const std::vector<std::string> devices = interfacesInLinkGroup();
+		return !devices.empty() && std::all_of(devices.begin(), devices.end(), [](const std::string& d) { return d == "lo"; });
+#else
+		return true;
+#endif
+	}
+	double phaseError()
+	{
+		const std::int64_t at = m_a.clockMicros() + 50000;
+		const LinkTimelinePoint a = m_a.audioPeriod(at, Quantum, LinkAudioChange{});
+		const LinkTimelinePoint b = m_b.audioPeriod(at, Quantum, LinkAudioChange{});
+		double error = a.phase - b.phase;
+		return error - Quantum * std::floor(error / Quantum + 0.5);
+	}
+	bool temposAgree() const { return nearTempo(m_a.appCapture(Quantum).tempo, m_b.appCapture(Quantum).tempo); }
+
+private:
+	//! True when this call completed a stage and began the next.
+	bool moveOn()
+	{
+		switch (m_stage)
+		{
+		case 0:
+			if (m_a.numPeers() < 1 || m_b.numPeers() < 1) { return false; }
+			m_a.appSetTempo(133.5);
+			break;
+		case 1:
+			if (!nearTempo(m_b.appCapture(Quantum).tempo, 133.5)) { return false; }
+			m_a.audioPeriod(m_a.clockMicros(), Quantum, change(1));
+			break;
+		case 2:
+			if (!m_b.appCapture(Quantum).playing) { return false; }
+			m_b.audioPeriod(m_b.clockMicros(), Quantum, change(0));
+			break;
+		default:
+			if (m_a.appCapture(Quantum).playing) { return false; }
+			break;
+		}
+		++m_stage;
+		return true;
+	}
+	static LinkAudioChange change(int playing) { LinkAudioChange c; c.playing = playing; return c; }
+
+	AbletonLinkSession m_a, m_b;
+	int m_stage = 0;      // 0 join, 1 tempo, 2 start, 3 stop, 4 done
+	int m_stageStart = 0;
+};
+
+//! Strictly increasing non-zero samples (the ramp), at least \a minimum of them.
+bool isOrdered(const std::vector<float>& heard, std::size_t minimum)
+{
+	float last = 0.f;
+	std::size_t audible = 0;
+	for (float v : heard)
+	{
+		if (v == 0.f) { continue; }
+		if (v <= last) { return false; }
+		last = v;
+		++audible;
+	}
+	return audible >= minimum;
 }
 
 } // namespace
@@ -360,6 +480,48 @@ private slots:
 		}
 		QCOMPARE(rx2.report().packetsReceived, std::uint64_t{0});
 		QVERIFY(rx2.report().rateMismatches > 0);
+	}
+
+	/*! Criterion 1, with Link ACTIVE: two in-process Ableton Link participants whose discovery is
+	 *  confined to the loopback interface (AbletonLinkSession::setLoopbackOnly - the scanner seam in
+	 *  src/core/AbletonLinkSession.cpp) share a session while PCM streams over 127.0.0.1. Tempo, start and
+	 *  stop travel through Link during the stream, the phase agrees, and the audio arrives intact. */
+	void pcmStreamsWhileLinkSyncIsActive()
+	{
+		if (!AbletonLinkSession::compiledIn()) { QSKIP("this build has no Ableton Link library"); }
+		if (!AbletonLinkSession::loopbackOnlySupported()) { QSKIP("the loopback discovery seam is POSIX only (unverified on Windows)"); }
+		AbletonLinkSession::setLoopbackOnly(true);   // BEFORE any session exists or is enabled
+		struct Restore { ~Restore() { AbletonLinkSession::setLoopbackOnly(false); } } restore;
+		LinkScenario link;
+		LinkAudioStream rx, tx;
+		std::string why;
+		QVERIFY2(rx.configure(receiver(10), &why), why.c_str());
+		QVERIFY2(tx.configure(senderTo(rx.report().boundPort), &why), why.c_str());
+
+		constexpr std::size_t Period = 64;
+		std::vector<SampleFrame> out(Period), mix(Period);
+		std::vector<float> heard;
+		std::uint64_t produced = 0;
+		for (int i = 0; i < 6000 && !link.done(); ++i)
+		{
+			fillRamp(out, produced + 1);
+			produced += Period;
+			tx.process(out.data(), Period, Rate);
+			std::fill(mix.begin(), mix.end(), SampleFrame(0.f, 0.f));
+			rx.process(mix.data(), Period, Rate);
+			for (const SampleFrame& f : mix) { heard.push_back(f.left()); }
+			std::this_thread::sleep_for(std::chrono::microseconds(1300));
+			QCoreApplication::processEvents();
+			QVERIFY2(link.advance(i), qPrintable(link.describeStall(i)));
+		}
+		QVERIFY(link.done());
+		QVERIFY2(link.confinedToLoopback(), "Link joined its multicast group on an interface other than lo");
+		QVERIFY2(std::fabs(link.phaseError()) < 0.01, qPrintable(QString::number(link.phaseError())));
+		QVERIFY(link.temposAgree());
+		QVERIFY2(isOrdered(heard, 5000), "audio was lost or out of order while Link was active");
+		const AudioStreamReport r = rx.report();
+		QVERIFY(r.packetsReceived > 50);
+		QCOMPARE(r.malformedPackets, std::uint64_t{0});
 	}
 
 	void commandsAreRegisteredAndUndoable()

@@ -68,8 +68,9 @@ so it only connects Zene instances, never Live or Bitwig.
   to the port can inject audio (datagrams from an address other than `peer` are ignored
   when a peer is set). Plan for wired or good Wi-Fi: Wi-Fi jitter shows up as underruns;
   raise `latency_ms`.
-* One peer per direction. Windows: the socket part is not implemented yet (the command
-  reports why); the codec, ring and jitter logic compile and are tested everywhere.
+* One peer per direction. Sockets are POSIX on Linux and macOS and winsock2 on Windows
+  (`WSAStartup`, non-blocking `ioctlsocket`, `select`, link `ws2_32`). **Unverified on Windows:** the
+  Windows path was written and reviewed, not built or run here; the POSIX path is what the tests ran.
 * Starting the stream resets its counters. The send/receive path is not recorded in saved
   projects (session state, like `link.set_enabled`).
 
@@ -84,3 +85,13 @@ Arguments not given keep their value. `send` defaults to "a peer is set"; `recei
 `listen_port: 0` lets the OS choose (reported as `bound_port`). `set_enabled` is one undo
 step (the previous configuration is restored; reversibility class true_inverse);
 `get_state` is read-only.
+
+## Testing with Link active, without touching the LAN
+
+Link's own discovery multicasts on every interface. To run Link beside the stream in a test with no
+packet leaving the host, `AbletonLinkSession::setLoopbackOnly(true)` (or `ZENE_LINK_LOOPBACK_ONLY=1`)
+confines Link's interface scan to `lo`: the vendored scanner (`ableton/platforms/posix/ScanIpIfAddrs.hpp`)
+calls `getifaddrs`, and `src/core/AbletonLinkSession.cpp` re-points that one call, for its own include of
+`Link.hpp` only, to a wrapper that marks non-loopback interfaces not running. The vendored headers stay
+byte-identical. `LinkAudioStreamTest::pcmStreamsWhileLinkSyncIsActive` uses it and reads `/proc/net/igmp`
+to show the group is joined on `lo` alone. The seam is POSIX only; on Windows that test skips.

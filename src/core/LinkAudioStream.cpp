@@ -30,7 +30,13 @@
 
 #include "SampleFrame.h"
 
-#ifndef _WIN32
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX  // windows.h must not define min/max over std::min/std::clamp
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <arpa/inet.h>
 #include <cerrno>
 #include <fcntl.h>
@@ -226,27 +232,62 @@ void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float*
 	m_framesReceived.fetch_add(written, std::memory_order_relaxed);
 }
 
-#ifdef _WIN32
-
-bool LinkAudioStream::openSocket(const AudioStreamConfig&, std::string* error)
-{
-	// Same stated gap as the zene-link-style fallback (docs/LINK-SYNC.md section 3.2): the
-	// stream's pure parts compile and are tested everywhere, the socket is POSIX for now.
-	if (error != nullptr) { *error = "the Link audio stream's socket is not implemented on Windows yet"; }
-	return false;
-}
-void LinkAudioStream::ioLoop() {}
-void LinkAudioStream::receiveDatagrams() {}
-void LinkAudioStream::sendPending() {}
-
-#else
+// ---- the socket layer: POSIX sockets, or winsock2 on Windows (unverified on Windows: not built here) ----
 
 namespace
 {
 
+#ifdef _WIN32
+using Handle = SOCKET;
+using SockLen = int;
+using IoSize = int;
+using IoLen = int;
+constexpr Handle NoSocket = INVALID_SOCKET;
+std::string lastErrorText() { return "WSA error " + std::to_string(WSAGetLastError()); }
+
+bool networkReady(std::string* error)
+{
+	static const int started = [] { WSADATA data; return WSAStartup(MAKEWORD(2, 2), &data); }();
+	if (started != 0 && error != nullptr) { *error = "WSAStartup failed: " + std::to_string(started); }
+	return started == 0;
+}
+bool setNonBlocking(Handle h) { u_long on = 1; return ::ioctlsocket(h, FIONBIO, &on) == 0; }
+void closeSocket(Handle h) { ::closesocket(h); }
+void waitReadable(Handle h, int ms)
+{
+	fd_set set;
+	FD_ZERO(&set);
+	FD_SET(h, &set);
+	timeval timeout{0, ms * 1000};
+	::select(0, &set, nullptr, nullptr, &timeout);
+}
+#else
+using Handle = int;
+using SockLen = socklen_t;
+using IoSize = ssize_t;
+using IoLen = std::size_t;
+constexpr Handle NoSocket = -1;
+std::string lastErrorText() { return std::strerror(errno); }
+
+bool networkReady(std::string*) { return true; }
+bool setNonBlocking(Handle h)
+{
+	const int flags = ::fcntl(h, F_GETFL, 0);
+	return flags >= 0 && ::fcntl(h, F_SETFL, flags | O_NONBLOCK) == 0;
+}
+void closeSocket(Handle h) { ::close(h); }
+void waitReadable(Handle h, int ms)
+{
+	pollfd wait{h, POLLIN, 0};
+	::poll(&wait, 1, ms);
+}
+#endif
+
+Handle handleOf(std::intptr_t stored) { return static_cast<Handle>(stored); }
+
 bool failWith(std::string* error, const std::string& what)
 {
-	if (error != nullptr) { *error = what + ": " + std::strerror(errno); }
+	if (error != nullptr) { *error = what + ": " + lastErrorText(); }
 	return false;
 }
 
@@ -254,29 +295,31 @@ bool failWith(std::string* error, const std::string& what)
 
 bool LinkAudioStream::openSocket(const AudioStreamConfig& cfg, std::string* error)
 {
+	if (!networkReady(error)) { return false; }
 	std::uint32_t bindAddress = 0;
 	parseIpv4(cfg.bindAddress, bindAddress);   // configure() validated both literals
 	if (!cfg.peerAddress.empty()) { parseIpv4(cfg.peerAddress, m_peerAddress); }
-	const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
-	if (fd < 0) { return failWith(error, "socket()"); }
-	const int flags = ::fcntl(fd, F_GETFL, 0);
+	const Handle fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+	if (fd == NoSocket) { return failWith(error, "socket()"); }
 	sockaddr_in local{};
 	local.sin_family = AF_INET;
 	local.sin_addr.s_addr = htonl(bindAddress);
 	local.sin_port = htons(static_cast<std::uint16_t>(cfg.receive ? cfg.listenPort : 0));
-	if (flags < 0 || ::fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0 ||
-		::bind(fd, reinterpret_cast<sockaddr*>(&local), sizeof(local)) != 0)
+	const bool nonBlocking = setNonBlocking(fd);
+	if (!nonBlocking || ::bind(fd, reinterpret_cast<sockaddr*>(&local), sizeof(local)) != 0)
 	{
-		const std::string what = flags < 0 ? "fcntl()" : "bind " + cfg.bindAddress + ":" + std::to_string(cfg.listenPort);
-		::close(fd);
+		const std::string what = !nonBlocking ? "non-blocking mode" : "bind " + cfg.bindAddress + ":" + std::to_string(cfg.listenPort);
+		const std::string reason = lastErrorText();
+		closeSocket(fd);
 		m_peerAddress = 0;
-		return failWith(error, what);
+		if (error != nullptr) { *error = what + ": " + reason; }
+		return false;
 	}
-	socklen_t length = sizeof(local);
+	SockLen length = sizeof(local);
 	::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &length);
 	m_boundAddress = cfg.bindAddress;
 	m_boundPort = ntohs(local.sin_port);
-	m_fd = fd;
+	m_socket = static_cast<std::intptr_t>(fd);
 	m_peerPort = cfg.peerPort;
 	return true;
 }
@@ -286,10 +329,10 @@ void LinkAudioStream::receiveDatagrams()
 	for (;;)
 	{
 		sockaddr_in from{};
-		socklen_t fromLength = sizeof(from);
-		const ssize_t got = ::recvfrom(m_fd, m_packet.data(), m_packet.size(), 0,
-			reinterpret_cast<sockaddr*>(&from), &fromLength);
-		if (got < 0) { return; }  // EAGAIN: drained (or a transient error: poll again)
+		SockLen fromLength = sizeof(from);
+		const IoSize got = ::recvfrom(handleOf(m_socket), reinterpret_cast<char*>(m_packet.data()),
+			static_cast<IoLen>(m_packet.size()), 0, reinterpret_cast<sockaddr*>(&from), &fromLength);
+		if (got < 0) { return; }  // would block: drained (or a transient error: wait again)
 		if (m_peerAddress != 0 && ntohl(from.sin_addr.s_addr) != m_peerAddress)
 		{
 			m_malformed.fetch_add(1, std::memory_order_relaxed);  // from a stranger
@@ -324,8 +367,9 @@ void LinkAudioStream::sendPending()
 		header.sampleRate = rate;
 		header.frames = static_cast<std::uint16_t>(n);
 		const std::size_t bytes = encodeAudioPacket(header, m_samples.data(), m_packet.data(), m_packet.size());
-		const ssize_t sent = bytes == 0 ? -1
-			: ::sendto(m_fd, m_packet.data(), bytes, 0, reinterpret_cast<sockaddr*>(&to), sizeof(to));
+		const IoSize sent = bytes == 0 ? -1
+			: ::sendto(handleOf(m_socket), reinterpret_cast<const char*>(m_packet.data()), static_cast<IoLen>(bytes), 0,
+				reinterpret_cast<sockaddr*>(&to), sizeof(to));
 		if (sent < 0)
 		{
 			m_sendErrors.fetch_add(1, std::memory_order_relaxed);
@@ -340,14 +384,11 @@ void LinkAudioStream::ioLoop()
 {
 	while (!m_stop.load(std::memory_order_acquire))
 	{
-		pollfd wait{m_fd, POLLIN, 0};
-		::poll(&wait, 1, IoPollMs);
+		waitReadable(handleOf(m_socket), IoPollMs);
 		receiveDatagrams();
 		sendPending();
 	}
 }
-
-#endif // _WIN32
 
 void LinkAudioStream::stopLocked()
 {
@@ -358,10 +399,8 @@ void LinkAudioStream::stopLocked()
 	m_receiveOn.store(false, std::memory_order_relaxed);
 	m_stop.store(true, std::memory_order_release);
 	if (m_thread.joinable()) { m_thread.join(); }
-#ifndef _WIN32
-	if (m_fd >= 0) { ::close(m_fd); }
-#endif
-	m_fd = -1;
+	if (m_socket != -1) { closeSocket(handleOf(m_socket)); }
+	m_socket = -1;
 	m_peerAddress = 0;
 }
 
@@ -434,9 +473,7 @@ void LinkAudioStream::publish(const AudioStreamConfig& cfg)
 	m_stop.store(false, std::memory_order_release);
 	m_sendOn.store(cfg.send, std::memory_order_relaxed);
 	m_receiveOn.store(cfg.receive, std::memory_order_relaxed);
-#ifndef _WIN32
 	m_thread = std::thread([this] { ioLoop(); });
-#endif
 	m_running.store(true, std::memory_order_relaxed);
 	// Only the process-wide instance is tapped into the engine's master mix; other instances
 	// (the tests') are driven by calling process() themselves.
