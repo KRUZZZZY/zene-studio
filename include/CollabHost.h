@@ -137,6 +137,7 @@ private:
 		CollabLink* link = nullptr;
 		qint64 joinedMs = 0;
 		qint64 lastResyncMs = 0;  //!< a peer's own re-sync requests are served at most every ResyncIntervalMs
+		bool resyncPending = false;  //!< one request received during the throttle window is served when it expires
 	};
 
 	void acceptDescriptor(qintptr descriptor);
