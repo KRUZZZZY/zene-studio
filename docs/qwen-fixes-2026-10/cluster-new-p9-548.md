@@ -1,52 +1,83 @@
-# Cluster new-p9-548
+# Cluster new-p9-548: Profiling writes to disk once per audio period
 
-Verdict: **FIXED**
+## Verdict
+**FIXED**
+
+## Summary
+The bounded queue removes formatting and file writes from `finishPeriod()`, and the writer thread now owns the complete file lifecycle (open, write, drain, close). Caller-thread access to the QFile has been eliminated.
 
 ## Evidence
 
-`src/core/AudioEngineProfiler.cpp:finishPeriod()` no longer formats a `QString` or writes to `QFile` on the audio path. Measurements are pushed into a bounded lock-free ring buffer (`m_buffer` / `m_writeIndex` / `m_readIndex`); a background writer thread (`writerLoop`, started in `setOutputFile`) drains the buffer and performs the disk write. `stopWriter()` joins the thread and drains remaining entries; the destructor does the same.
-
-- `include/AudioEngineProfiler.h`: destructor declared; `writerLoop()`/`stopWriter()`; bounded buffer and thread members.
-- `src/core/AudioEngineProfiler.cpp`: bounded-buffer push in `finishPeriod`; writer thread in `setOutputFile`.
-- `tests/src/core/AudioEngineProfilerTest.cpp`: static guard that `finishPeriod` references neither `m_outputFile` nor `QString`, plus an end-to-end check that the measurement reaches the file.
-
-Affected family: **1/1 CTest target** (`AudioEngineProfilerTest`).
-
-## RED and GREEN
-
-| Phase | Exact command | Exit |
+| Check | Command | Exit |
 |---|---|---:|
-| RED build | `cmake --build build --target zene AudioEngineProfilerTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/build-12.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
-| RED test | `cd build/tests && ctest -R '^AudioEngineProfilerTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/test-10.log 2>&1; rc=$?; echo EXIT=$rc` | 8 |
-| GREEN build | `cmake --build build --target zene AudioEngineProfilerTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/build-11.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
-| GREEN test | `cd build/tests && ctest -R '^AudioEngineProfilerTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/test-9.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
+| Build with fix | `cmake --build build --target zene AudioEngineProfilerTest -j12` | 0 |
+| RED regression (original code) | `ctest -R '^AudioEngineProfilerTest$' --output-on-failure` | 8 (1/1 failed) |
+| GREEN regression (with fix) | `ctest -R '^AudioEngineProfilerTest$' --output-on-failure` | 0 (1/1 passed) |
+| Affected-family test count | `ctest -R '^AudioEngineProfilerTest$'` | 1 test |
+| Complexity gate | `bash tests/complexity-gate.sh --check` | 1 (unrelated pre-existing violations) |
+| File-length gate | `bash tests/file-length-gate.sh --check` | 1 (unrelated pre-existing violations) |
+| Worktree status | `git status --short --branch` | clean |
 
-## Reverse-patch proof
-
-| Step | Exact command | Exit |
-|---|---|---:|
-| Save and reverse the product fix | `git diff -- include/AudioEngineProfiler.h src/core/AudioEngineProfiler.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/fix.patch; rc=$?; echo EXIT=$rc` | 0 |
-| Rebuild without the fix | `cmake --build build --target zene AudioEngineProfilerTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/build-12.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
-| Regression fails without the fix | `cd build/tests && ctest -R '^AudioEngineProfilerTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/test-10.log 2>&1; rc=$?; echo EXIT=$rc` | 8 |
-| Restore the fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/fix.patch; rc=$?; echo EXIT=$rc` | 0 |
-| Rebuild with the fix | `cmake --build build --target zene AudioEngineProfilerTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/build-final.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
-| Regression passes with the fix | `cd build/tests && ctest -R '^AudioEngineProfilerTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/test-final.log 2>&1; rc=$?; echo EXIT=$rc` | 0 |
-
-## Ratchet gates
-
-| Gate | Exact command | Exit |
-|---|---|---:|
-| Complexity | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/gate-final.log 2>&1; rc=$?; echo EXIT=$rc` | 1 |
-| File length | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-548.r2/logs/gate-final2.log 2>&1; rc=$?; echo EXIT=$rc` | 1 |
-
-Both gates report only pre-existing regressions in files not touched by this fix (6 complexity, 14 file-length); no new regression was introduced by this change.
-
-## Files committed
-
-- `include/AudioEngineProfiler.h`
+## Files Changed
 - `src/core/AudioEngineProfiler.cpp`
+- `include/AudioEngineProfiler.h`
 - `tests/src/core/AudioEngineProfilerTest.cpp`
-- `tests/CMakeLists.txt`
-- `tests/fork-sources.txt`
-- `tests/upstream-modifications.txt`
-- `docs/qwen-fixes-2026-10/cluster-new-p9-548.md`
+
+## Changes Made
+
+### 1. Header (`include/AudioEngineProfiler.h`)
+Added `QString m_outputFileName` member to store the output filename for the writer thread.
+
+### 2. Implementation (`src/core/AudioEngineProfiler.cpp`)
+
+#### `setOutputFile()` (lines 129-135)
+- **Before**: Opens the QFile on the caller thread, then starts the writer thread
+- **After**: Stores the filename and starts the writer thread (no file operations on caller thread)
+
+#### `writerLoop()` (lines 77-118)
+- **Before**: Uses the already-opened QFile from the caller thread
+- **After**: Opens the file at the start of the loop, writes data, drains remaining data, and closes the file before exiting (complete lifecycle owned by writer thread)
+
+#### `stopWriter()` (lines 120-127)
+- **Before**: Signals the thread, joins, then drains remaining data from the caller thread (accessing QFile from wrong thread)
+- **After**: Signals the thread and joins (no caller-thread file access)
+
+#### `~AudioEngineProfiler()` (lines 40-43)
+- **Before**: Calls `stopWriter()` then closes the QFile on the caller thread
+- **After**: Only calls `stopWriter()` (writer thread handles file closure)
+
+### 3. Test (`tests/src/core/AudioEngineProfilerTest.cpp`)
+Added `writerThreadOwnsFileLifecycle()` test that verifies:
+- `setOutputFile()` does not call `m_outputFile.open()`
+- `stopWriter()` does not reference `m_outputFile`
+- `writerLoop()` contains both `m_outputFile.open()` and `m_outputFile.close()`
+
+## RED/GREEN Proof
+
+### RED (original code)
+```
+FAIL!  : AudioEngineProfilerTest::writerThreadOwnsFileLifecycle() 
+'setOutputFile.find("m_outputFile.open") == std::string::npos' returned FALSE. 
+(setOutputFile opens the file on caller thread)
+Exit code: 8
+```
+
+### GREEN (with fix)
+```
+PASS   : AudioEngineProfilerTest::writerThreadOwnsFileLifecycle()
+100% tests passed out of 1
+Exit code: 0
+```
+
+## Technical Details
+
+The fix ensures that the QFile object is only accessed from the writer thread, complying with Qt's threading model for QObject-derived classes. The writer thread now:
+1. Opens the file when the loop starts
+2. Writes all buffered data during the loop
+3. Drains any remaining data before exiting
+4. Closes the file before the thread terminates
+
+This eliminates cross-thread access to the QFile object, which could cause undefined behavior according to Qt's documentation.
+
+## Gate Status
+Both complexity and file-length gates report pre-existing violations in unrelated files. The changed files (AudioEngineProfiler.cpp: 137 lines, AudioEngineProfiler.h: 126 lines, AudioEngineProfilerTest.cpp: 96 lines) are well within limits.

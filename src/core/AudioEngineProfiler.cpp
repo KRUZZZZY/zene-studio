@@ -40,7 +40,6 @@ AudioEngineProfiler::AudioEngineProfiler() :
 AudioEngineProfiler::~AudioEngineProfiler()
 {
 	stopWriter();
-	m_outputFile.close();
 }
 
 void AudioEngineProfiler::finishPeriod( sample_rate_t sampleRate, f_cnt_t framesPerPeriod )
@@ -76,6 +75,15 @@ void AudioEngineProfiler::finishPeriod( sample_rate_t sampleRate, f_cnt_t frames
 
 void AudioEngineProfiler::writerLoop()
 {
+	if (!m_outputFileName.isEmpty())
+	{
+		m_outputFile.setFileName(m_outputFileName);
+		if (!m_outputFile.open(QFile::WriteOnly | QFile::Truncate))
+		{
+			return;
+		}
+	}
+
 	while (true)
 	{
 		bool wrote = false;
@@ -102,6 +110,11 @@ void AudioEngineProfiler::writerLoop()
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 	}
+
+	if (m_outputFile.isOpen())
+	{
+		m_outputFile.close();
+	}
 }
 
 void AudioEngineProfiler::stopWriter()
@@ -111,30 +124,14 @@ void AudioEngineProfiler::stopWriter()
 	{
 		m_writerThread.join();
 	}
-	// Drain anything the writer did not reach.
-	std::uint64_t current = m_readIndex.load(std::memory_order_relaxed);
-	const std::uint64_t writeIndex = m_writeIndex.load(std::memory_order_acquire);
-	while (current < writeIndex)
-	{
-		if (m_outputFile.isOpen())
-		{
-			m_outputFile.write(QString("%1\n").arg(m_buffer[current % BufferCapacity]).toLatin1());
-		}
-		current++;
-	}
-	m_readIndex.store(writeIndex, std::memory_order_relaxed);
 }
 
 void AudioEngineProfiler::setOutputFile( const QString& outputFile )
 {
 	stopWriter();
-	m_outputFile.close();
-	m_outputFile.setFileName( outputFile );
-	if (m_outputFile.open( QFile::WriteOnly | QFile::Truncate ))
-	{
-		m_running.store(true, std::memory_order_relaxed);
-		m_writerThread = std::thread(&AudioEngineProfiler::writerLoop, this);
-	}
+	m_outputFileName = outputFile;
+	m_running.store(true, std::memory_order_relaxed);
+	m_writerThread = std::thread(&AudioEngineProfiler::writerLoop, this);
 }
 
 } // namespace lmms

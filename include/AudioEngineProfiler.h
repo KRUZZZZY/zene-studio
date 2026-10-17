@@ -105,6 +105,7 @@ private:
 
 	MicroTimer m_periodTimer;
 	std::atomic<float> m_cpuLoad;
+	QString m_outputFileName;
 	QFile m_outputFile;
 
 	static constexpr std::size_t BufferCapacity = 4096;
