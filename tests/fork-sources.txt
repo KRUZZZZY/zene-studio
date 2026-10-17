@@ -2595,3 +2595,5 @@ tests/src/plugins/VstEffectControlsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-141.md
 # cluster new-p10-377 (2026-10): SlicerT waveform zoom clamp regression test (fork-NEW).
 tests/src/plugins/SlicerTZoomTest.cpp
+# review-43592d093 (2026-10): ALREADY-FIXED report for the VCA advertised-inverse also:true finding.
+docs/qwen-fixes-2026-10/cluster-review-43592d093.md
