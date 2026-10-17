@@ -2595,3 +2595,5 @@ tests/src/plugins/VstEffectControlsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-141.md
 # cluster new-p10-377 (2026-10): SlicerT waveform zoom clamp regression test (fork-NEW).
 tests/src/plugins/SlicerTZoomTest.cpp
+# cluster review-4ec3067be: ALREADY-FIXED report for the Follow Action jump_to fraction/huge-number coercion (fixed earlier in 5784cb570).
+docs/qwen-fixes-2026-10/cluster-review-4ec3067be.md
