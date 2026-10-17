@@ -350,8 +350,25 @@ def check_arranger_view(session, recorder):
                    and back.get("forward") == 1 and forward.get("forward") == 0,
                    "first=%r second=%r third=%r back=%r forward=%r again=%r earlier=%r flip=%r back=%r"
                    % (first, second, third, back, forward, back_again, earlier, to_flip, flipped_back))
-    while kind(session.call("arrangement.zoom_back")) is None:  # drain the walk's prior extents
-        pass
+    drained = 0
+    while kind(session.call("arrangement.zoom_back")) is None and drained < 64:  # the walk's cap is 32
+        drained += 1
+    recorder.check("the back walk drains within its bound", drained < 64, "drained=%d" % drained)
+    settled = session.result("arrangement.zoom", {"pixels_per_bar": 160})
+    left_behind = settled.get("previous_zoom")  # what the fresh zoom left: the toggle's swap target
+    swapped = session.result("arrangement.zoom_toggle")
+    back_after = session.call("arrangement.zoom_back")
+    forward_after = session.result("arrangement.zoom_forward")
+    recorder.check("after the toggle, Back is refused where it would only repeat the zoom, and Forward "
+                   "walks the extent the swap left",
+                   swapped.get("zoom") == left_behind and kind(back_after) == "not_found"
+                   and forward_after.get("zoom") == settled.get("zoom"),
+                   "settled=%r swapped=%r back=%r forward=%r" % (settled, swapped, back_after, forward_after))
+    drained = 0
+    while kind(session.call("arrangement.zoom_back")) is None and drained < 64:  # what they left behind
+        drained += 1
+    recorder.check("the walk drains again after the swap and the forward step", drained < 64,
+                   "drained=%d" % drained)
     no_back = session.call("arrangement.zoom_back")
     fresh = session.call("arrangement.zoom", {"step": 3})
     no_forward = session.call("arrangement.zoom_forward")

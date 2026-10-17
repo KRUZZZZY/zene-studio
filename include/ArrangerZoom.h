@@ -86,6 +86,8 @@ LMMS_EXPORT bool takeEarlier(int current, int* earlier);
 LMMS_EXPORT bool takeNext(int current, int* next);
 //! The zoom toggle: return the extent the current one last left (a zoom or a back / forward step) into
 //! @a extent, with @a current the extent to return to next time; false after the very first zoom yet (UI thread).
+//! The swap reconciles the walk: the extent swapped to comes off the stack that holds it and the extent left
+//! behind queues in its place, so a back or forward step after the toggle never succeeds without a change.
 LMMS_EXPORT bool takeToggle(int current, int* extent);
 LMMS_EXPORT int historySize();
 //! The extents queued forward (a forward step can take); UI thread.

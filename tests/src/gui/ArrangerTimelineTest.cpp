@@ -96,6 +96,19 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
+//! Drains the per-process zoom walk (the review round 1: an unbounded drain spins against a walk that
+//! never runs dry). The walk's back stack holds at most its cap of 32 entries, so twice over is ample;
+//! false when it did not drain within the bound, so the case fails here instead of hanging.
+bool drainZoomWalk()
+{
+	constexpr int WalkBound = 64;  // twice the walk's 32-entry cap, plus change
+	for (int i = 0; i < WalkBound; ++i)
+	{
+		if (!run(QStringLiteral("arrangement.zoom_back")).ok) { return true; }
+	}
+	return false;
+}
+
 Clip* clipAt(Track* track, tick_t start, tick_t length)
 {
 	Clip* clip = track->createClip(TimePos(start));
@@ -168,7 +181,7 @@ private slots:
 	{
 		// The walk is a per-process static: drain it, so the assertions below are exact however many
 		// prior extents the cases before this one left in it.
-		while (run(QStringLiteral("arrangement.zoom_back")).ok) {}
+		QVERIFY2(drainZoomWalk(), "the back walk did not drain within its bound");
 		const int first = m_editor->zoomingModel()->value();
 		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -6}}).ok);
 		const int second = m_editor->zoomingModel()->value();
@@ -212,7 +225,7 @@ private slots:
 		// The toggle is a per-process static: drain the walk, then re-remember the walk's bottom (the
 		// zoom the view is at), so the toggle has exactly nothing to swap with however the cases before
 		// this one left it.
-		while (run(QStringLiteral("arrangement.zoom_back")).ok) {}
+		QVERIFY2(drainZoomWalk(), "the back walk did not drain within its bound");
 		const int first = m_editor->zoomingModel()->value();
 		arrangerzoom::remember(first);
 		QVERIFY2(!run(QStringLiteral("arrangement.zoom_toggle")).ok,
@@ -233,6 +246,40 @@ private slots:
 		QCOMPARE(m_editor->zoomingModel()->value(), after);
 		QVERIFY(run(QStringLiteral("arrangement.zoom_toggle")).ok);
 		QCOMPARE(m_editor->zoomingModel()->value(), first);
+	}
+
+	//! 0.5.0 L13 (WF-094, the round-1 review): the toggle's swap reconciles the walk, so Back or
+	//! Forward straight after it either is refused or really changes the zoom - never a successful no-op.
+	void backAndForwardAfterTheToggleNeverNoOp()
+	{
+		QVERIFY2(drainZoomWalk(), "the back walk did not drain within its bound");
+		const int bottom = m_editor->zoomingModel()->value();
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -6}}).ok);
+		const int middle = m_editor->zoomingModel()->value();
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -6}}).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), bottom - 12);
+
+		// The review's repro, one level along: toggle from the deep extent to the middle, then Back.
+		// The swap took the walk's entry for the middle (the view is at it now), so Back goes on to the
+		// bottom - with the unreconciled walk it succeeded and left the zoom where it was.
+		QVERIFY(run(QStringLiteral("arrangement.zoom_toggle")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), middle);
+		const int beforeBack = m_editor->zoomingModel()->value();
+		const ControlResult back = run(QStringLiteral("arrangement.zoom_back"));
+		QVERIFY2(!back.ok || m_editor->zoomingModel()->value() != beforeBack,
+			qPrintable(back.ok ? QStringLiteral("Back after the toggle succeeded without changing the zoom")
+							   : back.errorMessage));
+		const int beforeForward = m_editor->zoomingModel()->value();
+		const ControlResult forward = run(QStringLiteral("arrangement.zoom_forward"));
+		QVERIFY2(!forward.ok || m_editor->zoomingModel()->value() != beforeForward,
+			qPrintable(forward.ok ? QStringLiteral("Forward after the toggle succeeded without changing the zoom")
+								  : forward.errorMessage));
+
+		// Toggled all the way to the walk's bottom, Back has nothing earlier and must say so.
+		QVERIFY(run(QStringLiteral("arrangement.zoom_toggle")).ok);
+		QCOMPARE(m_editor->zoomingModel()->value(), bottom);
+		QVERIFY2(!run(QStringLiteral("arrangement.zoom_back")).ok,
+			"Back after the toggle to the walk's bottom succeeded, where it would repeat the zoom");
 	}
 
 	void theRulerHasALaneEachUnderTheBarRuler()

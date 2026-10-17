@@ -220,7 +220,24 @@ bool takeToggle(int current, int* extent)
 {
 	if (!s_toggleValid || s_toggleValue == current) { return false; }
 	*extent = s_toggleValue;
-	s_toggleValue = current;  // the extent this swap left behind: pressing it again swaps back
+	// The swap is a zoom like any other, so the walk must agree with where it lands (the round-1
+	// review: a stale entry made Back succeed without changing the zoom). The extent swapped to sits
+	// on top of one of the stacks - it is the extent the last zoom or walk step left - so it comes
+	// off there (the view is at it now), and the extent left behind queues in its place, so Back and
+	// Forward keep stepping over real changes only.
+	const int left = current;
+	if (!s_history.isEmpty() && s_history.last() == *extent)
+	{
+		s_history.removeLast();
+		s_rewalked.append(left);  // so arrangement.zoom_forward can return over the swap
+	}
+	else if (!s_rewalked.isEmpty() && s_rewalked.last() == *extent)
+	{
+		s_rewalked.removeLast();
+		pushPast(left);  // so arrangement.zoom_back can return over the swap
+	}
+	trim();
+	s_toggleValue = left;  // the extent this swap left behind: pressing it again swaps back
 	return true;
 }
 
