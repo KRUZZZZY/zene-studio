@@ -30,11 +30,11 @@
 #include "ControlServer.h"
 
 #include <cerrno>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <limits>
 
-#include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -138,6 +138,21 @@ bool readRequestId(const QJsonObject& request, int* id, QByteArray* reply)
 	return true;
 }
 
+#if defined(Q_OS_UNIX)
+//! BUG 8: client idle deadlines are measured on the MONOTONIC clock. The wall
+//! clock (QDateTime::currentMSecsSinceEpoch()) can be stepped by NTP or by the
+//! user, and a step moved every stored deadline with it: forward, an active
+//! peer was dropped early; backward, an idle one outlived its timeout. A
+//! monotonic clock never goes backwards, so a deadline set here elapses in
+//! exactly ClientIdleTimeoutMs of real time. Same source as SystemSemaphore's
+//! timed acquire (src/common/SystemSemaphore.cpp).
+qint64 monotonicNowMs()
+{
+	return std::chrono::duration_cast<std::chrono::milliseconds>(
+		std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+#endif
+
 } // namespace
 
 ControlServer::ControlServer(ControlRegistry* registry, QObject* parent) :
@@ -212,7 +227,7 @@ void ControlServer::onNewConnection()
 		::fcntl(fd, F_SETFL, O_NONBLOCK);
 		Client client;
 		client.fd = fd;
-		client.deadlineMs = QDateTime::currentMSecsSinceEpoch() + ClientIdleTimeoutMs;
+		client.deadlineMs = monotonicNowMs() + ClientIdleTimeoutMs;
 		client.notifier = new QSocketNotifier(fd, QSocketNotifier::Read, this);
 		connect(client.notifier, &QSocketNotifier::activated, this, [this, fd]() { onClientReadable(fd); });
 		// A reply larger than the peer's socket buffer cannot be written in one
@@ -306,7 +321,7 @@ WriteOutcome writeWhatFits(int fd, const char* data, int size, int* written)
 void ControlServer::retireIdleClients()
 {
 #if defined(Q_OS_UNIX)
-	const qint64 now = QDateTime::currentMSecsSinceEpoch();
+	const qint64 now = monotonicNowMs();
 	QVector<int> expired;
 	for (auto it = m_clients.constBegin(); it != m_clients.constEnd(); ++it)
 	{
@@ -341,7 +356,7 @@ void ControlServer::onClientReadable(int fd)
 	if (!dispatchPendingLines(fd, buffer)) { return; }
 	if (buffer.isEmpty())
 	{
-		it->deadlineMs = QDateTime::currentMSecsSinceEpoch() + ClientIdleTimeoutMs;
+		it->deadlineMs = monotonicNowMs() + ClientIdleTimeoutMs;
 	}
 
 	// Every complete line is gone, so a buffer still over the cap is ONE request
@@ -481,7 +496,7 @@ void ControlServer::onClientWritable(int fd)
 		return;
 	}
 	if (it->pending.isEmpty()) { it->writeNotifier->setEnabled(false); }
-	it->deadlineMs = QDateTime::currentMSecsSinceEpoch() + ClientIdleTimeoutMs;
+	it->deadlineMs = monotonicNowMs() + ClientIdleTimeoutMs;
 #endif
 }
 
