@@ -2638,3 +2638,6 @@ tests/src/plugins/ReverbSCInitTest.cpp
 # (zeroSampleRateIsRejectedOnProjectLoad, nonpositiveRateMapsToNoLength); fix + verification report.
 docs/qwen-fixes-2026-10/cluster-new-p12-204.md
 
+# cluster new-p10-337 (2026-10): RNNoise processing-rate restriction regression and verification report.
+tests/src/plugins/RnnoiseDenoiserEffectTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p10-337.md

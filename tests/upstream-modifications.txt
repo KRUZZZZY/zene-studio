@@ -2415,6 +2415,7 @@ src/common/SharedMemory.cpp	ci-train-5: cast the Windows FileView handle through
 plugins/ClapEffect/ClapHostInternals.h	cluster new-p10-3 (2026-10-16): advertise the host audio-port rescan flags that its deferred inactive scan handles, including CLAP_AUDIO_PORTS_RESCAN_LIST.
 tests/data/clap-test-plugin/clap-test-instrument.c	cluster new-p10-3 (2026-10-16): fixture checks LIST rescan support and announces the added output port with CLAP_AUDIO_PORTS_RESCAN_LIST during activate()'s !active_state callback.
 tests/CMakeLists.txt	ci-train-5: build VstEffectControlsTest only where the vsteffect target exists (macOS configure break).
+tests/CMakeLists.txt	cluster new-p10-337: registers the RNNoise processing-rate regression and compiles the plugin implementation into its test target; no existing test behavior changes.
 .github/workflows/quality-gates.yml	ci2-train-5: the full-Debug jobs (gate 1, gate 2, MCP e2e) compile with -g1 and link with --strip-debug and free more preinstalled toolsets, so ~560 test executables fit the hosted disk; no test, gate or ratchet changes.
 include/DeprecationHelper.h	ci2-train-5: jsonInteger (QJsonValue::toInteger is Qt 6 only) and isValidColorName (QColor::isValidColorName is Qt 6.4) adapters for the hosted Qt 5 jobs; Qt 6 behaviour unchanged.
 include/AudioBuffer.h	ci2-train-5: include <vector> for std::pmr::vector (windows-arm64 clang build break).

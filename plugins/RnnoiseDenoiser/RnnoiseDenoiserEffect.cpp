@@ -24,6 +24,8 @@
 
 #include "RnnoiseDenoiserEffect.h"
 
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "embed.h"
 #include "plugin_export.h"
 
@@ -52,7 +54,7 @@ Plugin::Descriptor PLUGIN_EXPORT rnnoisedenoiser_plugin_descriptor =
 	LMMS_STRINGIFY(PLUGIN_NAME),
 	"RNNoise Denoiser",
 	QT_TRANSLATE_NOOP("PluginBrowser",
-		"A real-time noise suppression plugin using the RNNoise neural network"),
+		"A real-time noise suppression plugin using the RNNoise neural network; requires 48 kHz processing"),
 	"Zene Studio contributors",
 	0x0100,
 	Plugin::Type::Effect,
@@ -88,9 +90,25 @@ RnnoiseDenoiserEffect::~RnnoiseDenoiserEffect()
 }
 
 
+int RnnoiseDenoiserEffect::latencyFrames() const
+{
+	const auto* engine = Engine::audioEngine();
+	return engine != nullptr && engine->baseSampleRate() == RNNOISE_SAMPLE_RATE
+		? RNNOISE_FRAME_SIZE - 1
+		: 0;
+}
+
+
 Effect::ProcessStatus RnnoiseDenoiserEffect::processImpl(
 	SampleFrame* buf, const f_cnt_t frames)
 {
+	// The embedded RNNoise model only accepts 48 kHz audio. At other engine rates the effect is a true bypass.
+	const auto* engine = Engine::audioEngine();
+	if (engine == nullptr || engine->baseSampleRate() != RNNOISE_SAMPLE_RATE)
+	{
+		return ProcessStatus::ContinueIfNotQuiet;
+	}
+
 	// rnnoise_create() only fails on OOM; if it did, pass audio through untouched.
 	if (!m_rnnoiseState)
 	{
