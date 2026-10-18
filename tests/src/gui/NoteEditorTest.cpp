@@ -505,6 +505,25 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{2});
 	}
 
+	void aSparseDiagonalPaintStrokePaintsEveryCellThePathCrosses()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		// The path from the middle of key 66 at tick 300 to the middle of key 61 at tick 402, delivered as a
+		// press, two moves and a release. It leaves key 66's row a hair after tick 310, so it crosses the cell
+		// at tick 312 on key 66 before it enters key 65's row, and no event lands in that cell: painting only
+		// the sampled events, or rounding the row at a cell's edge, misses it.
+		drag(point(300, 66), point(402, 61));
+		for (const auto& cell : {std::pair{312, 66}, std::pair{312, 65}, std::pair{324, 65}, std::pair{324, 64},
+			     std::pair{336, 64}, std::pair{372, 62}, std::pair{396, 61}})
+		{
+			QVERIFY2(noteAt(m_clip, cell.first, cell.second) != nullptr,
+				qPrintable(QStringLiteral("no painted note at %1, key %2").arg(cell.first).arg(cell.second)));
+		}
+		QCOMPARE(m_clip->notes().size(), std::size_t{16});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
 	void altWheelChangesTheSelectionsVelocityAsOneEdit()
 	{
 		// The FL model (2026-10-03): Alt+wheel over a note sets the velocity (Alt alone no longer drags it).

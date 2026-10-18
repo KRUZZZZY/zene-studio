@@ -59,6 +59,23 @@ void appendPaintCell(std::vector<std::pair<int, int>>& painted, int key, int sta
 	if (!taken) { painted.emplace_back(key, start); }
 }
 
+//! The parameter (0 < t <= 1) at which a path that moves by @a delta from @a from reaches the next
+//! multiple of @a step, or 2 when it moves nowhere or crosses none before its end.
+double boundaryParam(double from, double delta, int step)
+{
+	if (delta == 0.0) { return 2.0; }
+	const double first = delta > 0.0 ? (std::floor(from / step) + 1.0) * step : (std::ceil(from / step) - 1.0) * step;
+	const double t = (first - from) / delta;
+	return t > 0.0 && t <= 1.0 ? t : 2.0;
+}
+
+//! The key on the grid's row @a row, or -1 when there is no such row: NoteGrid finds a row by
+//! dividing the scrolled y, and a row index maps back the same way.
+int keyOfRow(const NoteGrid& grid, int row)
+{
+	return grid.keyAtY(row * grid.rowHeight() - grid.scrollY());
+}
+
 } // namespace
 
 int NoteCanvas::scaleKey(int key) const
@@ -85,33 +102,33 @@ void NoteCanvas::extendPaint(const QPoint& pos)
 
 void NoteCanvas::paintAlong(const QPoint& from, const QPoint& to)
 {
-	// Qt delivers a fast drag sparsely, and a cell narrower than a pixel can lie between two pixel samples:
-	// every time column the path crosses is painted, on the row where the path enters it; every key row it
-	// crosses is painted too, in the column under it; and the release point closes the last segment.
+	// Qt delivers a fast drag sparsely, and a grid cell can be narrower than a pixel, so the stroke is walked
+	// over the grid's own boundaries - cells start every gridTicks ticks, key rows every rowHeight pixels - and
+	// every cell the path enters is painted, on the row it is on where it enters that cell. The two end points
+	// are painted too, so the release closes the last segment.
+	const NoteGrid& grid = m_state.grid;
 	const int cellTicks = std::max(1, m_state.gridTicks);
-	const double fromTick = m_state.grid.tickAtX(from.x());
-	const double toTick = m_state.grid.tickAtX(to.x());
-	const int fromCell = std::max(0, NoteGrid::snapDown(static_cast<int>(fromTick), cellTicks));
-	const int toCell = std::max(0, NoteGrid::snapDown(static_cast<int>(toTick), cellTicks));
-	extendPaint(from);
-	const int step = toCell > fromCell ? cellTicks : -cellTicks;
-	for (int cell = fromCell + step; cell != toCell + step; cell += step)
+	const int rowHeight = grid.rowHeight();
+	const double fromTick = grid.tickAtX(from.x());
+	const double fromRow = static_cast<double>(from.y() + grid.scrollY());
+	const double tickDelta = grid.tickAtX(to.x()) - fromTick;
+	const double rowDelta = static_cast<double>(to.y() + grid.scrollY()) - fromRow;
+	const int cellStep = tickDelta > 0.0 ? cellTicks : -cellTicks;
+	const int rowStep = rowDelta > 0.0 ? 1 : -1;
+	int cell = std::max(0, NoteGrid::snapDown(static_cast<int>(fromTick), cellTicks));
+	int row = static_cast<int>(std::floor(fromRow / rowHeight));
+	appendPaintCell(m_painted, scaleKey(keyOfRow(grid, row)), cell);
+	// The path's parameter at the next boundary on each axis: whichever comes first is stepped, both of them
+	// on a corner, and the walk ends when neither axis has a boundary left inside the segment.
+	double cellParam = boundaryParam(fromTick, tickDelta, cellTicks);
+	double rowParam = boundaryParam(fromRow, rowDelta, rowHeight);
+	while (cellParam <= 1.0 || rowParam <= 1.0)
 	{
-		// The path enters a cell going right at its left edge, going left at its right edge.
-		const double boundary = step > 0 ? cell : cell + cellTicks;
-		const double progress = (boundary - fromTick) / (toTick - fromTick);
-		const int y = static_cast<int>(std::lround(from.y() + (to.y() - from.y()) * progress));
-		appendPaintCell(m_painted, scaleKey(m_state.grid.keyAtY(y)), cell);
-	}
-	// Pitch: every pixel row strictly between the two points is sampled, in the column the path is in there, so a
-	// stroke that stays in one column (a sparse vertical one) still paints each key row it crosses.
-	const int rowSpan = std::abs(to.y() - from.y());
-	const int rowDir = to.y() > from.y() ? 1 : -1;
-	for (int i = 1; i < rowSpan; ++i)
-	{
-		const double tick = fromTick + (toTick - fromTick) * i / rowSpan;
-		const int cell = std::max(0, NoteGrid::snapDown(static_cast<int>(tick), cellTicks));
-		appendPaintCell(m_painted, scaleKey(m_state.grid.keyAtY(from.y() + rowDir * i)), cell);
+		const bool cellFirst = cellParam <= rowParam;
+		const bool rowFirst = rowParam <= cellParam;
+		if (cellFirst) { cell += cellStep; cellParam = (cell + cellStep - fromTick) / tickDelta; }
+		if (rowFirst) { row += rowStep; rowParam = ((row + rowStep) * rowHeight - fromRow) / rowDelta; }
+		appendPaintCell(m_painted, scaleKey(keyOfRow(grid, row)), std::max(0, cell));
 	}
 	extendPaint(to);
 }

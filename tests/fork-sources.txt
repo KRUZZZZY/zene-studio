@@ -2588,6 +2588,8 @@ docs/qwen-fixes-2026-10/cluster-new-p9-344.md
 # new-p9-462: fix and verification report for the sub-millisecond Tap Tempo interval defect.
 docs/qwen-fixes-2026-10/cluster-new-p9-462.md
 docs/qwen-fixes-2026-10/cluster-new-p9-241.md
+# cluster new-p9-303-port: sparse paint strokes must paint every grid cell the path crosses.
+docs/qwen-fixes-2026-10/cluster-new-p9-303-port.md
 # BUG new-p9-542: VST parameter-model replacement lifetime regression.
 tests/src/plugins/VstEffectControlsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-141.md
