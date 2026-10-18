@@ -28,6 +28,7 @@
 #include <atomic>
 #include <cmath>
 #include <span>
+#include <thread>
 
 #include "LmmsTypes.h"
 #include "TimePos.h"
@@ -305,12 +306,14 @@ public:
 		{
 			const bool changed = fn(m_map);
 			m_version.fetch_add(1, std::memory_order_acq_rel);
+			publishRealtime();
 			return changed;
 		}
 		catch (...)
 		{
 			m_map = previous;
 			m_version.fetch_add(1, std::memory_order_acq_rel);
+			publishRealtime();
 			throw;
 		}
 	}
@@ -338,9 +341,59 @@ public:
 		return copy;
 	}
 
+	/*! Runs \a fn(const TempoMap&) on the last published map, pinned in place for the call. Whether the map is
+	 *  active or empty is read from the pinned map itself, so there is no separate flag that could disagree
+	 *  with the slot. Bounded (three attempts, no waiting, no allocation, no lock) and free of data races: a slot
+	 *  is only ever written by the control thread while no reader holds it and it is not the live one. False when
+	 *  every attempt lost to a publication; the caller keeps what it last read (Track::playFrozenTake, Song). */
+	template <typename Fn>
+	bool withRealtimeMap(Fn&& fn) const noexcept
+	{
+		for (int attempt = 0; attempt < 3; ++attempt)
+		{
+			const int slot = m_rtLive.load(std::memory_order_seq_cst);
+			m_rtReaders[static_cast<std::size_t>(slot)].fetch_add(1, std::memory_order_seq_cst);
+			if (m_rtPinProbe != nullptr) { m_rtPinProbe(); }
+			if (m_rtLive.load(std::memory_order_seq_cst) == slot)
+			{
+				fn(m_rtSlots[static_cast<std::size_t>(slot)]);
+				m_rtReaders[static_cast<std::size_t>(slot)].fetch_sub(1, std::memory_order_seq_cst);
+				return true;
+			}
+			m_rtReaders[static_cast<std::size_t>(slot)].fetch_sub(1, std::memory_order_seq_cst);
+		}
+		return false;
+	}
+
+	/*! Called on the control thread after every publication with the committed map (Song installs the hook that
+	 *  hands it to the tracks holding a frozen take). Null by default. */
+	void setPublishHook(void (*hook)(void*, const TempoMap&), void* owner) { m_publishHook = hook; m_publishOwner = owner; }
+
+	//! Test seam: called between a reader's pin and its re-check, to force a publication there. Null in product use.
+	void setPinProbeForTest(void (*probe)()) { m_rtPinProbe = probe; }
+
 private:
+	//! Control thread, after an edit: write the idle slot (waiting for any reader still pinned to it) and flip.
+	void publishRealtime()
+	{
+		const int next = 1 - m_rtLive.load(std::memory_order_seq_cst);
+		while (m_rtReaders[static_cast<std::size_t>(next)].load(std::memory_order_seq_cst) != 0)
+		{
+			std::this_thread::yield();
+		}
+		m_rtSlots[static_cast<std::size_t>(next)] = m_map;
+		m_rtLive.store(next, std::memory_order_seq_cst);
+		if (m_publishHook != nullptr) { m_publishHook(m_publishOwner, m_map); }
+	}
+
 	TempoMap m_map{};
 	std::atomic<unsigned> m_version{0};
+	std::array<TempoMap, 2> m_rtSlots{};
+	mutable std::array<std::atomic<int>, 2> m_rtReaders{};
+	std::atomic<int> m_rtLive{0};
+	void (*m_rtPinProbe)() = nullptr;
+	void (*m_publishHook)(void*, const TempoMap&) = nullptr;
+	void* m_publishOwner = nullptr;
 };
 
 } // namespace lmms

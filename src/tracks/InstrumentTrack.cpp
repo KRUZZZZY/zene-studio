@@ -838,7 +838,10 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	// playing the source.
 	if (isFrozen() && _clip_num < 0)
 	{
-		return playFrozenTake(_start, _frames, _offset);
+		// A whole-track take owns every pass; a region take only its window, and a take whose audio is
+		// missing none (frozenTakeSilencesSource): outside that the source plays on.
+		const bool played = playFrozenTake(_start, _frames, _offset);
+		if (frozenTakeSilencesSource(_start.getTicks())) { return played; }
 	}
 	if( ! m_instrument || ! tryLock() )
 	{

@@ -38,6 +38,7 @@
 #include "LmmsTypes.h"
 #include <optional>
 #include "TakeLane.h"
+#include "TempoMap.h"
 #include "UnclaimedElements.h"
 
 
@@ -219,6 +220,10 @@ public:
 			tick_t lengthTicks = 0;
 		};
 		std::vector<MutedClip> mutedClips;
+		//! True for a freeze.region take: the source keeps playing outside
+		//! [startTicks, endTicks) and is silent only inside it. A whole-track
+		//! take (false) replaces the source everywhere.
+		bool region = false;
 
 		bool isFrozen() const { return !path.isEmpty(); }
 	};
@@ -227,6 +232,19 @@ public:
 	const FrozenTake& frozenTake() const { return m_frozen; }
 	//! True when the take's audio is in memory, i.e. it will actually sound.
 	bool frozenAudioReady() const { return m_frozenBuffer != nullptr; }
+	//! True when the take's file is gone from disk (moved or removed). Control thread only: it stats the file.
+	bool frozenTakeFileMissing() const;
+	/*! Whether the take, not the source, owns the pass starting at \a position. False when the
+	 *  take's audio is not loaded (the source then plays: a missing take never silences a track)
+	 *  and, for a region take, outside its window. Audio-thread safe: no allocation, lock or I/O. */
+	bool frozenTakeSilencesSource(tick_t position) const noexcept;
+	/*! Hands the committed tempo map to a frozen take's cache (control thread, with the render period held),
+	 *  so a pass whose pinned read loses to a publication still places the take on the current map. */
+	void adoptTempoMapForFrozenTake(const TempoMap& map);
+	/*! Source frame of the take (at \a bufferRate) for timeline tick \a position, \a takeStart being the take's
+	 *  first tick. Follows the tempo map exactly as BounceInPlace's range-to-frames mapping does. */
+	static qint64 frozenTakeSourceFrame(const class TempoMap& map, int globalTempo, tick_t takeStart,
+			tick_t position, int bufferRate, float constantFramesPerTick) noexcept;
 
 	/*! SPEC-ARCH-4 1.6.1: the children of this track's own <track> element that
 	 *  the last load did not claim - not this track type's own element, not
@@ -244,7 +262,7 @@ public:
 	 *  never on the audio thread. Returns false, with \a error filled, when the
 	 *  file cannot be opened - in which case nothing is changed. */
 	bool freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
-			const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error);
+			const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error, bool region = false);
 	//! Test seam called after any load work and immediately before the frozen-take render lock.
 #ifdef LMMS_TESTING
 	static void setFrozenTakeLockProbeForTest(void (*probe)());
@@ -499,6 +517,13 @@ private:
 	FrozenTake m_frozen;
 	std::shared_ptr<const SampleBuffer> m_frozenBuffer;
 	std::atomic<bool> m_frozenTakePlaying{false};
+	//! The last tempo map the audio thread read pinned while it started a take pass, and whether it was in
+	//! force (active and non-empty). Written only by the audio thread (and reset under the render lock), it
+	//! is what a pass uses when every pin attempt loses to a publication, so the take's frame stays on the
+	//! tempo map instead of falling back to a wrong constant-rate frame.
+	TempoMap m_frozenLastMap{};
+	bool m_frozenLastMapInForce = false;
+	bool m_frozenLastMapKnown = false;  //!< a pinned read has succeeded since the take was installed
 	std::atomic<std::uint16_t> m_frozenActiveVoiceCount{0};
 	//! The control thread grows this logical pool limit from the take/loop overlap bound.
 	std::atomic<std::uint16_t> m_frozenVoiceCapacity{8};

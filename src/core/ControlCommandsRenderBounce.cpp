@@ -104,34 +104,14 @@ Track* currentTrack(int id)
 
 QJsonObject frozenState(Track* track)
 {
-	return {{QStringLiteral("track"), control::trackIdOf(track)}, {QStringLiteral("name"), track->name()},
+	QJsonObject report{{QStringLiteral("track"), control::trackIdOf(track)}, {QStringLiteral("name"), track->name()},
 		{QStringLiteral("frozen"), track->isFrozen()}, {QStringLiteral("audio"), track->frozenTake().path},
 		{QStringLiteral("audio_ready"), track->frozenAudioReady()},
 		{QStringLiteral("start_ticks"), static_cast<double>(track->frozenTake().startTicks)},
 		{QStringLiteral("end_ticks"), static_cast<double>(track->frozenTake().endTicks)},
 		{QStringLiteral("muted_clips"), static_cast<int>(track->frozenTake().mutedClips.size())}};
-}
-
-std::vector<Track::FrozenTake::MutedClip> clipsInside(Track* track, const BounceInPlace::Range& range,
-		QJsonArray* overlapping)
-{
-	std::vector<Track::FrozenTake::MutedClip> inside;
-	for (const Clip* clip : track->getClips())
-	{
-		if (clip == nullptr || clip->isMuted()) { continue; }
-		const tick_t start = clip->startPosition().getTicks();
-		const tick_t end = clip->endPosition();
-		if (start >= range.start && start < range.end)
-		{
-			inside.push_back({start, clip->length().getTicks()});
-		}
-		else if (start < range.start && end > range.start)
-		{
-			overlapping->append(QJsonObject{{QStringLiteral("start_ticks"), static_cast<double>(start)},
-				{QStringLiteral("length_ticks"), static_cast<double>(clip->length().getTicks())}});
-		}
-	}
-	return inside;
+	control::insertFrozenRecovery(track, &report);
+	return report;
 }
 
 QVector<int> currentRangeTrackIds(const QVector<Track*>& tracks)
@@ -205,26 +185,19 @@ QJsonObject applyFreeze(const std::shared_ptr<BounceContext>& context,
 {
 	QJsonArray overlapping;
 	std::vector<Track::FrozenTake::MutedClip> muted;
-	if (!context->wholeTrack) { muted = clipsInside(source, context->range, &overlapping); }
-	const int trackId = source->id();
 	const QString path = rendered.path;
 	const tick_t start = context->wholeTrack ? 0 : context->range.start;
 	const tick_t end = rendered.range.end;
+	// One Track checkpoint BEFORE the cuts and the freeze, exactly as freeze.region does: one control.undo
+	// puts back the pre-cut arrangement and takes the freeze off (a redo re-freezes), in a single journal step.
+	source->addJournalCheckPoint();
+	if (!context->wholeTrack) { muted = control::isolateFreezeRegion(source, context->range, &overlapping); }
 	QString freezeError;
-	if (!source->freezeTo(path, start, end, muted, &freezeError))
+	if (!source->freezeTo(path, start, end, muted, &freezeError, !context->wholeTrack))
 	{
 		*error = freezeError;
 		return {};
 	}
-	control::addUndoStep(
-		[trackId] { if (Track* live = trackWithId(trackId)) { live->unfreeze(); } },
-		[trackId, path, start, end, muted] {
-			if (Track* live = trackWithId(trackId))
-			{
-				QString ignored;
-				live->freezeTo(path, start, end, muted, &ignored);
-			}
-		});
 	QJsonObject result = frozenState(source);
 	result.insert(QStringLiteral("overlapping_clips"), overlapping);
 	result.insert(QStringLiteral("undo"), QStringLiteral("control.undo"));

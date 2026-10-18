@@ -2275,6 +2275,7 @@ tests/src/core/DrumSynthTest.cpp
 tests/src/core/DrumSynthLevelTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
+tests/src/core/FreezeRegionRepairTest.cpp
 tests/src/core/FrozenTakeHandoffTest.cpp
 tests/src/core/FrozenTakeRoundTwoTest.cpp
 tests/src/core/HardwareIoTest.cpp

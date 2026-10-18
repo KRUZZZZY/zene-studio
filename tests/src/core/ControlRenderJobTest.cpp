@@ -351,12 +351,14 @@ private slots:
 	{
 		Track* region = trackWithClip(QStringLiteral("Region"));
 		ControlResult accepted = queueBounce(QStringLiteral("freeze_region"), control::trackIdOf(region),
-			out(QStringLiteral("region.wav")), {{QStringLiteral("start"), 0}, {QStringLiteral("end"), 192}});
+			out(QStringLiteral("region.wav")), {{QStringLiteral("start"), 48}, {QStringLiteral("end"), 96}});
 		QVERIFY2(accepted.ok, qPrintable(accepted.errorMessage));
 		QCOMPARE(waitForJob(jobId(accepted)).value(QStringLiteral("state")).toString(), QStringLiteral("done"));
 		QVERIFY(region->isFrozen());
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(region->getClips().size(), 3);  // the bar-long clip was cut at both region edges
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // Q050-008: one step puts the uncut clip back too
 		QVERIFY(!region->isFrozen());
+		QCOMPARE(region->getClips().size(), 1);
 
 		Engine::getSong()->clearProject();
 		Track* source = trackWithClip(QStringLiteral("Landed"));

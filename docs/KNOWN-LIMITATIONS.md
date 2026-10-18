@@ -805,15 +805,15 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   drivable through `--control-socket` (`bounce.in_place`, `freeze.track`, `freeze.region`, `freeze.unfreeze`),
   and the frozen state is saved with the project and one `control.undo` takes it off — but **nothing in
   `src/gui/` renders a track, marks it frozen or plays a take**: drivable through the socket, not from the
-  interface. Stated limits: a **region** freeze mutes the clips that *start* inside the region, so a clip that
-  begins before the region and runs into it is left alone and sounds twice inside the region (the command names
-  it in `overlapping_clips`); the render is 44.1 kHz and the take is re-sampled to the session's device rate,
-  so a frozen render is not bit-identical to the same track unfrozen; a range's frame window is derived from
-  the project tempo, so a project that also uses a tempo map can have its region offset read from the wrong
-  tempo; a frozen track's take bypasses the
+  interface. Stated limits: a **region** freeze cuts a clip that crosses the region's edges at those
+  edges (named in `overlapping_clips`; fixed 2026-10-16, it used to sound twice) and mutes only the pieces inside - a
+  MIDI note held across an edge can still ring on; the render is 44.1 kHz and the take is re-sampled to the session's device rate,
+  so a frozen render is not bit-identical to the same track unfrozen; a tempo map is followed (fixed 2026-10-16); a frozen track's take bypasses the
   track's own device chain and fader (they are already baked into the render), so those controls are inert
-  until `freeze.unfreeze`; and a take whose WAV has moved since it was frozen still reports `frozen: true` but
-  has nothing to play, which `track.get_state` reports as `frozen_audio_ready: false`.
+  until `freeze.unfreeze`; and a take whose WAV has moved since it was frozen still reports `frozen: true`, is listed by
+  `project.missing_assets` (`track` / `frozenAudio`, repointed by `project.relink`), is reported with
+  `frozen_audio_ready: false` plus the ways out, lets the source play on, and can be taken off with `freeze.unfreeze`
+  (one `control.undo` puts it back).
 - *(Updated 2026-09-30.)* **The piano roll's note tools now have a Groove menu**: Extract groove from this clip...
   (at the roll's grid, `groove.extract`), Apply groove ▸ each pooled groove at a chosen strength (`groove.apply`),
   and Quantize with strength... (`groove.quantize`) - `GrooveMenuTest`. Renaming and removing grooves, and the

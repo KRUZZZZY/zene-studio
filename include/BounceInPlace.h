@@ -175,6 +175,10 @@ public:
 	//! `frames` a render reports, measured from the file rather than asserted.
 	static qint64 wavFrameCount(const QString& path);
 
+	//! Frames from tick @a from to @a to, following the tempo map when it is active and non-empty.
+	static double framesBetweenTicks(tick_t from, tick_t to, float framesPerTick, const TempoMap& map,
+			int globalTempo, int sampleRate);
+
 	//! sha256 of a file, empty when it cannot be read.
 	static QString sha256OfFile(const QString& path);
 };

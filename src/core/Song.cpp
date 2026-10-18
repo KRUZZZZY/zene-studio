@@ -135,6 +135,17 @@ Song::Song() :
 	m_loopRenderRemaining(1),
 	m_oldAutomatedValues()
 {
+	// Frozen takes keep the committed tempo map in step with every publication (control thread, render period
+	// held), so a pass whose pinned read loses to a publication still places the take on the current map.
+	m_tempoMap.setPublishHook( []( void* owner, const TempoMap& map )
+	{
+		auto* song = static_cast<Song*>( owner );
+		AudioEngine* audio = Engine::audioEngine();
+		if( audio == nullptr ) { return; }
+		const auto renderLock = audio->requestChangesGuard();
+		for( Track* track : song->tracks() ) { track->adoptTempoMapForFrozenTake( map ); }
+	}, this );
+
 	// Reserved here, on the constructing thread, so processAutomations never has to grow them.
 	m_oldAutomatedValues.reserve(AutomationRenderScratch::RenderCapacity);
 	m_recordedModels.reserve(AutomationRenderScratch::RenderCapacity);
@@ -1343,16 +1354,24 @@ void Song::followTempoMap()
 	// must pay nothing for it: no snapshot copy, no arithmetic, no write to the
 	// frame/tick scalar. This early return IS the byte-identity guarantee on the
 	// timing path, and TempoMapTest measures it.
-	if( !m_tempoMap.map().active() )
+	// The map is read pinned (include/TempoMap.h, TempoMapPublisher::withRealtimeMap): bounded, no lock, no
+	// allocation, no data race, and the active flag comes from the pinned map itself. A read that loses every
+	// attempt to a publication keeps the tempo already applied; the next block reads again.
+	bool active = false;
+	int bpm = -1;
+	const int globalTempo = static_cast<int>( m_tempoModel.value() );
+	const tick_t tick = currentTick();
+	const bool pinned = m_tempoMap.withRealtimeMap( [&]( const TempoMap& map )
+	{
+		active = map.active();
+		if( active ) { bpm = map.tempoAtTick( tick, globalTempo ); }
+	} );
+	if( !pinned ) { return; }
+	if( !active )
 	{
 		m_tempoMapAppliedTempo = -1;
 		return;
 	}
-
-	// The snapshot is a fixed-size value copy with a version re-check - no lock,
-	// no allocation, no growth (include/TempoMap.h, TempoMapPublisher).
-	const TempoMap map = m_tempoMap.snapshot();
-	const int bpm = map.tempoAtTick( currentTick(), static_cast<int>( m_tempoModel.value() ) );
 	if( bpm == m_tempoMapAppliedTempo ) { return; }
 
 	m_tempoMapAppliedTempo = bpm;
