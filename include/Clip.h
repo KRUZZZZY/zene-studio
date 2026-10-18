@@ -171,7 +171,7 @@ public:
 	 *  in the play handle, never in `Sample::render`, which the browser preview
 	 *  and the metronome share). */
 	const ClipEdits& clipEdits() const { return m_edits; }
-	void setClipEdits(const ClipEdits& edits) { m_edits = edits; }
+	void setClipEdits(const ClipEdits& edits);
 
 	/*! The take lane this clip belongs to (comping; docs/COMPING.md and
 	 *  docs/CLIP-CAPTURE-DESIGN.md §2.2), 0 by default.
@@ -315,6 +315,7 @@ signals:
 	void positionChanged();
 	void destroyedClip();
 	void colorChanged();
+	void clipEditsChanged();
 
 protected:
 	Clip(const Clip& other);

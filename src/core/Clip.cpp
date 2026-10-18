@@ -244,6 +244,14 @@ void Clip::setId( int id )
 	ProjectIds::observe( id );
 }
 
+void Clip::setClipEdits(const ClipEdits& edits)
+{
+	if (m_edits == edits) { return; }
+	m_edits = edits;
+	emit clipEditsChanged();
+	emit dataChanged();
+}
+
 /*! \brief Destroy a Clip
  *
  *  Destroys the given clip.

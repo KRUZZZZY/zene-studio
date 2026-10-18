@@ -2547,3 +2547,6 @@ src/gui/clips/AutomationClipView.cpp	cluster new-p10-506: routes arranger discon
 tests/CMakeLists.txt	cluster new-p10-506: registers the isolated automation disconnect concurrency regression.
 tests/src/core/SessionCheckpointTest.cpp	cluster new-p11-49: reject script.run when project journalling is disabled, with a regression proving the script leaves no edits or undo gap; retain the one-step undo/redo coverage.
 src/core/main.cpp	BUG new-p12-124: end crash-reporter and safe-start sessions before the missing-output and failed-directory-creation returns in exportstems; regression tests/control-stem-export-verb.py.
+include/Clip.h	cluster new-p11-70 rework: clipEditsChanged identifies clip-edit updates so the crossfade editor ignores unrelated model changes.
+src/core/Clip.cpp	cluster new-p11-70 rework: setClipEdits emits clipEditsChanged when edits change, allowing the crossfade editor to refresh selectively.
+tests/src/gui/CrossfadeEditorTest.cpp	cluster new-p11-70 rework: cover preserving pending values across clip rename and refreshing after external fade edits.

@@ -31,8 +31,10 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QLabel>
 #include <QMenu>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QSpinBox>
 
 #include <algorithm>
@@ -158,6 +160,75 @@ private slots:
 		QCOMPARE(open->outClip(), m_first);
 		QCOMPARE(open->inClip(), m_second);
 		open->close();
+	}
+
+	void theEditorTracksClipMovesAndResizes()
+	{
+		CrossfadeEditorDialog dialog(m_first, m_second);
+		dialog.setAttribute(Qt::WA_DeleteOnClose, false);
+		const TimePos originalStart = m_second->startPosition();
+		const TimePos originalLength = m_first->length();
+		const auto restoreClips = qScopeGuard([&] {
+			m_second->movePosition(originalStart);
+			m_first->changeLength(originalLength);
+		});
+		dialog.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&dialog));
+		QLabel* summary = nullptr;
+		for (QLabel* candidate : dialog.findChildren<QLabel*>())
+		{
+			if (candidate->text().contains(QStringLiteral("overlap by"))) { summary = candidate; }
+		}
+		QVERIFY(summary != nullptr);
+		QWidget* curves = named<QWidget>(&dialog, QStringLiteral("Crossfade curves"));
+		QVERIFY(curves != nullptr);
+
+		m_second->movePosition(TimePos(168));
+		QCOMPARE(dialog.overlap(), 24);
+		QVERIFY(summary->text().contains(QStringLiteral("24 ticks")));
+		QVERIFY(curves->accessibleDescription().contains(QStringLiteral("over 24 ticks")));
+		QCOMPARE(dialog.outSide().ticks, 24);
+		QCOMPARE(dialog.inSide().ticks, 24);
+
+		m_first->changeLength(TimePos(160));
+		QCOMPARE(dialog.overlap(), 0);
+		QVERIFY(summary->text().contains(QStringLiteral("0 ticks")));
+		QVERIFY(curves->accessibleDescription().contains(QStringLiteral("over 1 ticks")));
+	}
+
+	void unrelatedClipChangesPreservePendingControls()
+	{
+		CrossfadeEditorDialog dialog(m_first, m_second);
+		const QString originalName = m_first->name();
+		const auto restoreName = qScopeGuard([&] { m_first->setName(originalName); });
+		const CrossfadeSide pending{12, FadeShape::Exponential};
+		dialog.setOutSide(pending);
+
+		m_first->setName(QStringLiteral("Crossfade editor test rename"));
+
+		QCOMPARE(dialog.outSide().ticks, pending.ticks);
+		QVERIFY(dialog.outSide().shape == pending.shape);
+	}
+
+	void applyingAfterAnExternalFadeEditKeepsThatEdit()
+	{
+		CrossfadeEditorDialog dialog(m_first, m_second);
+		const ClipEdits originalOut = m_first->clipEdits();
+		const ClipEdits originalIn = m_second->clipEdits();
+		const auto restoreFades = qScopeGuard([&] {
+			m_first->setClipEdits(originalOut);
+			m_second->setClipEdits(originalIn);
+		});
+		ClipEdits external = m_first->clipEdits();
+		external.fadeOutTicks = 18;
+		external.fadeOutShape = FadeShape::Exponential;
+		m_first->setClipEdits(external);
+		QCOMPARE(dialog.outSide().ticks, 18);
+		QVERIFY(dialog.outSide().shape == FadeShape::Exponential);
+
+		QVERIFY(dialog.apply());
+		QCOMPARE(m_first->clipEdits().fadeOutTicks, 18);
+		QVERIFY(m_first->clipEdits().fadeOutShape == FadeShape::Exponential);
 	}
 
 	void theEditorShowsAndSetsBothSides()
