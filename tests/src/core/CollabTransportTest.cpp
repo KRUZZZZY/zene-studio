@@ -37,6 +37,7 @@
 
 #ifdef ZENE_HAVE_COLLAB
 
+#include <QElapsedTimer>
 #include <QFile>
 #include <QEventLoop>
 #include <QJsonDocument>
@@ -438,6 +439,34 @@ private slots:
 				.arg(static_cast<qulonglong>(sequenceDuringFailedCommand))
 				.arg(static_cast<qulonglong>(initialSequence)).arg(attemptedCommands.join(QStringLiteral(", ")))));
 		QCOMPARE(client.sequence(), m_host->sequence());
+	}
+
+	//! A second failed streamed command inside the host's resync interval still gets a replacement snapshot.
+	void throttledFailedCommandGetsReplacementSnapshot()
+	{
+		CollabClient client;
+		int failedCommands = 0;
+		client.setSnapshotSink([this](const QByteArray& project, QString*) {
+			m_got.snapshots.append(project);
+			return true;
+		});
+		client.setCommandSink([&](const QString&, const QJsonObject&, QString* error) {
+			++failedCommands;
+			*error = QStringLiteral("could not apply");
+			return false;
+		});
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Repeat sync"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
+
+		m_host->broadcastCommand(QStringLiteral("track.reject"), {}, QStringLiteral("host"));
+		QTRY_COMPARE_WITH_TIMEOUT(m_got.snapshots.size(), 2, 5000);
+		QVERIFY(client.hasSnapshot());
+		QElapsedTimer retryWindow;
+		retryWindow.start();
+		m_host->broadcastCommand(QStringLiteral("track.reject"), {}, QStringLiteral("host"));
+		QTRY_COMPARE_WITH_TIMEOUT(failedCommands, 2, 5000);
+		QVERIFY(retryWindow.elapsed() < ResyncIntervalMs);
+		QTRY_VERIFY_WITH_TIMEOUT(m_got.snapshots.size() == 3 && client.hasSnapshot(), ResyncIntervalMs + 1000);
 	}
 
 	//! A plaintext client that writes a request before (instead of) the handshake reaches nothing.

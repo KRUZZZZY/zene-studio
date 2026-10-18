@@ -2005,6 +2005,7 @@ tests/src/core/MidiReconnectTest.cpp	cluster 5704: verifies the binding inverse 
 tests/CMakeLists.txt	cluster 5704: exposes the private core shared header to MidiReconnectTest for the replacement-port regression.
 src/core/CollabHost.cpp	cluster new-p8-306: broadcasts from a copied peer-id list and looks each peer up again after sendLine can synchronously erase it.
 tests/src/core/CollabTransportTest.cpp	cluster new-p8-306: checks the ID-snapshot implementation and broadcasts an over-limit frame to exercise synchronous peer closure.
+tests/src/core/CollabTransportTest.cpp	cluster new-p11-13: proves a second streamed-command failure inside the host resync interval receives a replacement snapshot.
 tests/CMakeLists.txt	cluster new-p8-306: supplies CollabHost.cpp's source path to the transport test's iteration invariant check.
 plugins/Lv2Instrument/Lv2Instrument.cpp	bugs/m0-fix-lv2-null-key: validate the sub-plugin key and URI before the constructor resolves a plugin; reject malformed direct loads with a logged error.
 tests/CMakeLists.txt	bugs/m0-fix-lv2-null-key: build tripleoscillator for SessionTuningTest and LV2/CLAP host modules for the catalogue tests; register an isolated LV2 key regression ctest for the red/green proof.

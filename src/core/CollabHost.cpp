@@ -288,8 +288,27 @@ void CollabHost::rename(Peer& peer, const QJsonObject& hello)
 
 void CollabHost::resyncPeer(Peer& peer)
 {
-	if (!holdsProject(peer) || nowMs() - peer.lastResyncMs < ResyncIntervalMs) { return; }
-	peer.lastResyncMs = nowMs();
+	if (!holdsProject(peer)) { return; }
+	const qint64 now = nowMs();
+	const qint64 sinceLastResync = now - peer.lastResyncMs;
+	if (sinceLastResync < ResyncIntervalMs)
+	{
+		if (!peer.resyncPending)
+		{
+			peer.resyncPending = true;
+			const int delayMs = static_cast<int>(ResyncIntervalMs - sinceLastResync);
+			const int peerId = peer.id;
+			QTimer::singleShot(delayMs, this, [this, peerId] {
+				auto it = m_peers.find(peerId);
+				if (it == m_peers.end() || !it->resyncPending) { return; }
+				it->resyncPending = false;
+				resyncPeer(*it);
+			});
+		}
+		return;
+	}
+	peer.resyncPending = false;
+	peer.lastResyncMs = now;
 	QString error;
 	if (!sendSnapshot(peer, snapshotFrame(&error))) { emit notice(QStringLiteral("could not re-sync %1: %2").arg(peer.name, error)); }
 }
