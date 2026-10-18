@@ -67,11 +67,16 @@ Analyzer::Analyzer(Model *parent, const Plugin::Descriptor::SubPluginFeatures::K
 	#ifdef SA_DEBUG
 	, m_last_dump_time(std::chrono::steady_clock::now())
 	, m_dump_count(0)
-	, m_sum_execution(0.0f)
-	, m_max_execution(0.0f)
+	, m_sum_execution_ns(0)
+	, m_max_execution_ns(0)
 	#endif
 {
 	m_processorThread.start();
+	#ifdef SA_DEBUG
+		// The timer belongs to the GUI thread, so the report is printed off the audio thread.
+		QObject::connect(&m_reportTimer, &QTimer::timeout, this, [this] {reportAudioTiming();});
+		m_reportTimer.start(1000);	// checked once a second; a report is printed every 5 seconds
+	#endif
 }
 
 
@@ -88,16 +93,6 @@ ProcessStatus Analyzer::processImpl(InterleavedBufferView<float, 2> in)
 	// Measure time spent in audio thread; both average and peak should be well under 1 ms.
 	#ifdef SA_DEBUG
 		const auto audio_time = std::chrono::steady_clock::now();
-		if (isStatsIntervalElapsed(audio_time, m_last_dump_time))	// print every 5 seconds
-		{
-			if (m_dump_count > 0)
-			{
-				std::cout << "Analyzer audio thread: " << m_sum_execution / m_dump_count << " ms avg / "
-					<< m_max_execution << " ms peak." << std::endl;
-			}
-			m_last_dump_time = audio_time;
-			m_sum_execution = m_max_execution = m_dump_count = 0;
-		}
 	#endif
 
 	// Skip processing if the controls dialog isn't visible, it would only waste CPU cycles.
@@ -108,15 +103,38 @@ ProcessStatus Analyzer::processImpl(InterleavedBufferView<float, 2> in)
 		m_inputBuffer.write(reinterpret_cast<SampleFrame*>(in.data()), in.frames(), true);
 	}
 	#ifdef SA_DEBUG
-		const auto execution_time = std::chrono::duration<float, std::milli>(
-			std::chrono::steady_clock::now() - audio_time).count();
-		m_dump_count++;
-		m_sum_execution += execution_time;
-		if (execution_time > m_max_execution) {m_max_execution = execution_time;}
+		// Atomics only: reportAudioTiming() prints the totals on the GUI thread.
+		const auto execution_ns = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now() - audio_time).count());
+		m_dump_count.fetch_add(1, std::memory_order_relaxed);
+		m_sum_execution_ns.fetch_add(execution_ns, std::memory_order_relaxed);
+		auto peak = m_max_execution_ns.load(std::memory_order_relaxed);
+		while (execution_ns > peak
+			&& !m_max_execution_ns.compare_exchange_weak(peak, execution_ns, std::memory_order_relaxed)) {}
 	#endif
 
 	return ProcessStatus::Continue;
 }
+
+#ifdef SA_DEBUG
+// Runs on the GUI thread once a second and prints every 5 seconds. A callback that
+// lands between the exchanges below is counted in the next report.
+void Analyzer::reportAudioTiming()
+{
+	const auto now = std::chrono::steady_clock::now();
+	if (!isStatsIntervalElapsed(now, m_last_dump_time)) {return;}
+
+	const int count = m_dump_count.exchange(0, std::memory_order_relaxed);
+	const auto sum_ns = m_sum_execution_ns.exchange(0, std::memory_order_relaxed);
+	const auto max_ns = m_max_execution_ns.exchange(0, std::memory_order_relaxed);
+	m_last_dump_time = now;
+	if (count > 0)
+	{
+		std::cout << "Analyzer audio thread: " << static_cast<double>(sum_ns) / 1.0e6 / count << " ms avg / "
+			<< static_cast<double>(max_ns) / 1.0e6 << " ms peak." << std::endl;
+	}
+}
+#endif
 
 
 extern "C" {

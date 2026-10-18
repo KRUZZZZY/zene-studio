@@ -252,6 +252,7 @@ private slots:
 	void emptyInterpolatedCyclicVectorIsRejected();
 	void gateRecoversAfterNanInput();
 	void analyzerDebugTimerUsesMonotonicTimePoint();
+	void analyzerDebugTimerKeepsStdoutOffAudioThread();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -769,6 +770,28 @@ void AudioPluginTest::analyzerDebugTimerUsesMonotonicTimePoint()
 	QVERIFY(!analyzerDebugTimerReportsAfter<Analyzer>(std::chrono::seconds{4}));
 	QVERIFY(analyzerDebugTimerReportsAfter<Analyzer>(std::chrono::seconds{6}));
 	QVERIFY((std::is_same_v<decltype(Analyzer::m_last_dump_time), std::chrono::steady_clock::time_point>));
+}
+
+void AudioPluginTest::analyzerDebugTimerKeepsStdoutOffAudioThread()
+{
+	// processImpl() runs on the audio thread, where std::cout can block, so a debug
+	// build must not print from it. The source is read through __FILE__ because this
+	// target does not link the Spectrum Analyzer controls that Analyzer needs to construct.
+	const QString analyzerPath = QFileInfo(QString::fromUtf8(__FILE__)).dir()
+		.filePath(QStringLiteral("../../../plugins/SpectrumAnalyzer/Analyzer.cpp"));
+	QFile source(analyzerPath);
+	QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(source.errorString()));
+	const QString text = QString::fromUtf8(source.readAll());
+
+	const qsizetype begin = text.indexOf(QStringLiteral("ProcessStatus Analyzer::processImpl("));
+	QVERIFY(begin >= 0);
+	const qsizetype end = text.indexOf(QStringLiteral("\n}"), begin);
+	QVERIFY(end > begin);
+	const QString callback = text.mid(begin, end - begin);
+	QVERIFY2(!callback.contains(QStringLiteral("std::cout")),
+		"Analyzer::processImpl() writes to std::cout on the audio thread");
+	QVERIFY2(text.contains(QStringLiteral("Analyzer audio thread:")),
+		"the SA_DEBUG timing report must still be printed, from the GUI-side reporter");
 }
 
 QTEST_MAIN(AudioPluginTest)
