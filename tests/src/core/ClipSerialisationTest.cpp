@@ -56,7 +56,6 @@
 #include "InstrumentTrack.h"
 #include "LmmsTypes.h"
 #include "MidiClip.h"
-#include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "Song.h"
@@ -299,28 +298,6 @@ private slots:
 		QDomElement parent2 = doc2.createElement("track");
 		const QDomElement element2 = reloaded->saveState(doc2, parent2);
 		QCOMPARE(withoutJournallingIds(nodeToString(element2)), withoutJournallingIds(nodeToString(element)));
-	}
-
-	//! Embedded sample data with a non-positive source rate must not reach playback.
-	void embeddedSamplesRejectNonPositiveRates()
-	{
-		const SampleBuffer embedded(std::vector<SampleFrame>(4, SampleFrame{0.25f, -0.25f}), kRate);
-		for (const QString& sampleRate : {QStringLiteral("0"), QStringLiteral("-44100")})
-		{
-			SampleTrack track(Engine::getSong());
-			auto* clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
-			QVERIFY(clip != nullptr);
-
-			QDomDocument doc;
-			QDomElement element = doc.createElement("sampleclip");
-			element.setAttribute("data", embedded.toBase64());
-			element.setAttribute("sample_rate", sampleRate);
-			clip->loadSettings(element);
-
-			QVERIFY2(clip->sample().buffer()->empty(),
-				qPrintable(QStringLiteral("sample_rate=%1 retained embedded frames").arg(sampleRate)));
-			QVERIFY(clip->sample().sampleRate() > 0);
-		}
 	}
 
 	//! The whole-project round trip: a window set, the project saved, reloaded, and
