@@ -2455,3 +2455,9 @@ include/Track.h	Q050-008: a frozen take records whether it is a region take, ans
 src/core/Track.cpp	Q050-008: region flag saved/loaded (frozenRegion), take start frame follows the tempo map, a take whose file is missing reports it and never silences the source; held by tests/src/core/FreezeRegionRepairTest.cpp.
 src/tracks/InstrumentTrack.cpp	Q050-008: the frozen take owns a pass only where it silences the source (region window, audio loaded); held by tests/src/core/FreezeRegionRepairTest.cpp.
 src/tracks/SampleTrack.cpp	Q050-008: the frozen take owns a pass only where it silences the source (region window, audio loaded); held by tests/src/core/FreezeRegionRepairTest.cpp.
+src/core/AudioEngine.cpp	Q050-024 (link audio stream): renderStageMix() calls link::LinkAudioStream::tap() right after the master gain - one acquire load while the stream is off, otherwise preallocated rings and atomics only (no allocation or lock). Regression: LinkAudioStreamTest (audioThreadAllocatesNothing, loopbackExchangeIsSampleExact).
+src/core/CMakeLists.txt	Q050-024: lists core/ControlCommandsLinkAudio.cpp, core/LinkAudioStream.cpp and core/LinkAudioCodec.cpp. Regression: LinkAudioStreamTest.
+src/core/ControlRegistryRegistrations.cpp	Q050-024: registers the link.audio_* group beside link.*. Regression: LinkAudioStreamTest (commandsAreRegisteredAndUndoable).
+include/ControlRegistryGroups.h	Q050-024: declares registerLinkAudioCommands. Regression: LinkAudioStreamTest.
+src/CMakeLists.txt	Q050-024: links ws2_32 into lmmsobjs on Windows for the Link audio stream's winsock2 sockets (src/core/LinkAudioStream.cpp). Regression: LinkAudioStreamTest.
+tests/CMakeLists.txt	Q050-024: registers LinkAudioStreamTest beside LinkPhaseLockTest. Regression: LinkAudioStreamTest.

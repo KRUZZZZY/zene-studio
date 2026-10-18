@@ -98,6 +98,11 @@ const ReversibilityRow kPassiveRows[] = {
 		"nothing to inverse. export.set_dither and export.set_src_quality are "
 		"the writers, and both carry an action checkpoint",
 		""),
+	R("link.audio_get_state", RC::NotMutating, false,
+		"a read of the PCM audio stream's configuration and counters (Q050-024): it writes nothing, "
+		"so there is no transaction",
+		"nothing to inverse. link.audio_set_enabled is the writer and carries an action checkpoint",
+		""),
 	R("link.get_state", RC::NotMutating, false,
 		"a read of the session-sync state (whether sync is on, the peers, the "
 		"session tempo and revision owner, the shared beat and its phase, this "

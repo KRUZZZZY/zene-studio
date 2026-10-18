@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-15T08:30:27Z",
+  "captured_at": "2026-10-15T23:31:17Z",
   "commands": [
     {
       "args_schema": {
@@ -10779,6 +10779,163 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The PCM audio stream between Zene instances: whether it runs, the address and port it listens on, the peer it sends to, and its counters (packets and frames each way, underruns, lost packets, buffer trims, buffered latency now and at most). This is an audio stream of our own, NOT Link transport sync (link.get_state) and NOT Ableton's LinkAudio. Read-only; no transaction (docs/LINK-AUDIO.md).",
+      "group": "link",
+      "id": "link.audio_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bind_address": {
+            "type": "string"
+          },
+          "bound_port": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "latency_ms": {
+            "type": "integer"
+          },
+          "listen_port": {
+            "type": "integer"
+          },
+          "peer": {
+            "type": "string"
+          },
+          "peer_port": {
+            "type": "integer"
+          },
+          "receive": {
+            "type": "boolean"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "send": {
+            "type": "boolean"
+          },
+          "stats": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bind_address": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "latency_ms": {
+            "maximum": 200,
+            "minimum": 5,
+            "type": "integer"
+          },
+          "listen_port": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "peer": {
+            "type": "string"
+          },
+          "peer_port": {
+            "maximum": 65535,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "receive": {
+            "type": "boolean"
+          },
+          "send": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "type": "object"
+      },
+      "description": "Start or stop the PCM audio stream. 'peer' (an IPv4 address, no name lookup) is where this instance sends its master mix (float32 stereo UDP; a peer implies sending, 'send' false turns it off). 'receive' (default true) adds the peer's stream to this instance's master mix through a jitter buffer of 'latency_ms' (5..200, default 20). It listens on 'bind_address' (default 127.0.0.1: loopback only - give a LAN address to reach another machine) port 'listen_port' (default 20810, 0 = any, reported as bound_port). Independent of Link: tempo, beat phase and start/stop sync are untouched, with Link on or off. Arguments not given keep their current value. The audio thread only touches preallocated buffers. Local network only, no encryption or authentication (docs/LINK-AUDIO.md).",
+      "group": "link",
+      "id": "link.audio_set_enabled",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bind_address": {
+            "type": "string"
+          },
+          "bound_port": {
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "latency_ms": {
+            "type": "integer"
+          },
+          "listen_port": {
+            "type": "integer"
+          },
+          "peer": {
+            "type": "string"
+          },
+          "peer_port": {
+            "type": "integer"
+          },
+          "receive": {
+            "type": "boolean"
+          },
+          "running": {
+            "type": "boolean"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "send": {
+            "type": "boolean"
+          },
+          "stats": {
+            "type": "object"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -35147,17 +35304,23 @@
       }
     }
   ],
-  "count": 828,
+  "count": 830,
   "instance": {
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-f024/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/cff463a0-1326-44da-8393-bec3a1847916/scratchpad/train5/commands-release.json"
+    "source_socket": "/tmp/zctl-run-mkcnnpvm/zene.sock",
+    "version": "0.4.0-alpha.2723+de5a85a"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 828,
-    "ids_sha256": "8e2d5b9a0774e7005e5832777c552b2d4f09efbc56e71322c5fd72e5f3385c6a"
+    "id_count": 830,
+    "ids_sha256": "5dcefc828772b881e4d562f92b27d64b65cc0e4eef83e440175dc5db82c6e69a"
   }
 }

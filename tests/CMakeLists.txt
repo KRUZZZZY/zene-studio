@@ -1198,6 +1198,9 @@ ENDIF()
 # Ableton Link (WF-051, docs/LINK-SYNC.md): the follower's beat-grid arithmetic and its
 # realtime rule. Every build: the follower compiles against the stub session without Link.
 LIST(APPEND LMMS_TESTS src/core/LinkPhaseLockTest.cpp)
+# Q050-024 (docs/LINK-AUDIO.md): the PCM stream between instances - codec, ring, loopback exchange,
+# the audio thread's allocation count, a 3 s two-thread stress, the registered commands. Loopback only.
+LIST(APPEND LMMS_TESTS src/core/LinkAudioStreamTest.cpp)
 
 # JACK port state must be replaced when a dead client is reopened.
 IF(LMMS_HAVE_JACK)
@@ -5734,3 +5737,7 @@ if(TARGET nam_harness AND PYTHON3_EXECUTABLE)
 			$<TARGET_FILE:nam_harness>)
 	set_tests_properties(NeuralAmpWavRunSampleRateWarning PROPERTIES TIMEOUT 30)
 endif()
+
+# Q050-024: LinkAudioStreamTest runs Ableton Link (confined to loopback, but it still binds the
+# group port 20808 on lo), so it must not overlap a test that multicasts on 224.76.78.75:20808.
+set_tests_properties(LinkAudioStreamTest PROPERTIES RUN_SERIAL TRUE)

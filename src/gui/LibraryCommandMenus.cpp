@@ -210,6 +210,13 @@ void syncMenu(QMenu* menu)
 	entry(sync, "Quantum...", "link.set_quantum", {}, true);
 	entry(sync, "Session Status", "link.get_state", {}, false, {}, true);
 	sync->addSeparator();
+	// Q050-024: the PCM stream between instances - not Link sync (docs/LINK-AUDIO.md).
+	addCommandChoices(sync, tr("Link Audio Stream"), QStringLiteral("link.audio_set_enabled"), QStringLiteral("enabled"),
+		[] { return CommandCall{QStringLiteral("link.audio_set_enabled"), {}, {}, QString(), false}; });
+	entry(sync, "Link Audio Peer...", "link.audio_set_enabled", {}, true);
+	entry(sync, "Link Audio Status", "link.audio_get_state", {}, false, {}, true);
+	sync->addSeparator();
+	sync->addSeparator();
 	entry(sync, "Send MIDI Clock...", "clock.master_set", {}, true);
 	entry(sync, "Follow MIDI Clock...", "clock.slave_set", {}, true);
 	entry(sync, "Clock Status", "clock.get_state", {}, false, {}, true);

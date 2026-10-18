@@ -41,6 +41,7 @@
 #include "Mixer.h"
 #include "Song.h"
 #include "TunerTap.h"
+#include "LinkAudioStream.h"
 #include "EnvelopeAndLfoParameters.h"
 #include "NotePlayHandle.h"
 #include "RealtimeScope.h"
@@ -885,6 +886,10 @@ void AudioEngine::renderStageMix()
 	mixer->masterMix(m_outputBufferWrite.get());
 
 	MixHelpers::multiply(m_outputBufferWrite.get(), m_masterGain, m_framesPerPeriod);
+
+	// Q050-024: the Link audio stream taps the master (send), then adds the peer's stream (receive).
+	// One acquire load while it is off; otherwise only preallocated rings and atomics (LinkAudioStream.h).
+	link::LinkAudioStream::tap(m_outputBufferWrite.get(), m_framesPerPeriod, outputSampleRate());
 
 	// STAGE 3b (feature row 24 of docs/FEATURE-LIST-0.3.0.md): the PASSIVE
 	// loudness tap. The period that was just mixed is handed to the meter -

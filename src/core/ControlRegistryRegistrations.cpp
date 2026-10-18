@@ -296,6 +296,7 @@ void registerControlCommands(ControlRegistry& registry)
 	// display, and reports its own transport's availability, so its ids are
 	// honest in every configuration (docs/LINK-SYNC.md).
 	registerLinkCommands(registry);
+	registerLinkAudioCommands(registry);  // Q050-024: the PCM stream, apart from tempo/phase sync
 	// Freeze / bounce-in-place: the offline render (include/BounceInPlace.h) and
 	// the frozen take a track then plays instead of its clips. No compile-time
 	// switch: the render is the product's own CLI render path and the take is a

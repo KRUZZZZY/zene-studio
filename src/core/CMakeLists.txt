@@ -466,6 +466,9 @@ set(LMMS_SRCS
 	# the model, the transport seam, the UDP multicast transport, and the
 	# link.* commands that make the whole of it drivable. See docs/LINK-SYNC.md.
 	core/ControlCommandsLink.cpp
+	core/ControlCommandsLinkAudio.cpp
+	core/LinkAudioStream.cpp
+	core/LinkAudioCodec.cpp
 	core/LinkSync.cpp
 	core/LinkSyncWire.cpp
 	core/LinkUdpTransport.cpp
