@@ -822,8 +822,7 @@ void GigInstrument::addSamples( GigNote & gignote, bool wantReleaseSample )
 {
 	// Change key dimension, e.g. change samples based on what key is pressed
 	// in a certain range. From LinuxSampler
-	if( wantReleaseSample == true &&
-			gignote.midiNote >= m_instrument->DimensionKeyRange.low &&
+	if( gignote.midiNote >= m_instrument->DimensionKeyRange.low &&
 			gignote.midiNote <= m_instrument->DimensionKeyRange.high )
 	{
 		m_currentKeyDimension = float( gignote.midiNote -

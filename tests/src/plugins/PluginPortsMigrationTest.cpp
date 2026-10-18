@@ -725,6 +725,7 @@ private slots:
 	void opulenzUpdatePatchLocksEmulatorForWholeUpdate();
 	void sf2DialogRejectsAFilteredOutProgram();
 	void gigPatchDialogPreviewsSelectedProgram();
+	void gigKeyboardDimensionUsesPressedKey();
 	void rmsHelperCopiesHaveIndependentBuffers();
 	void sf2FailedLoadPreservesCurrentFontAndSource();
 	void sf2PatchListKeepsEarlierDuplicateAndLaterUniqueProgram();
@@ -2782,6 +2783,71 @@ void PluginPortsMigrationTest::frequencyShifterSampleRateDropKeepsDelayIndicesIn
 	lmms::AudioBus nextBus{nextChannels, 1, 1};
 	shifter->processAudioBuffer(nextBus);
 }
+
+void PluginPortsMigrationTest::gigKeyboardDimensionUsesPressedKey()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	const auto module = std::find_if(migratedInstruments().begin(), migratedInstruments().end(),
+		[](const MigratedInstrument& instrument) { return std::string{instrument.plugin} == "gigplayer"; });
+	QVERIFY(module != migratedInstruments().end());
+
+	const QString gigFile = QFileInfo{QString::fromUtf8(PART_C_GIG_FILE)}.dir()
+		.filePath(QStringLiteral("keyboard-dimension.gig"));
+	QVERIFY2(QFileInfo::exists(gigFile), qPrintable(gigFile));
+
+	QLibrary library{QString::fromUtf8(module->path)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	float lowKeyPeak = 0.0f;
+	float highKeyPeak = 0.0f;
+	for (const int key : {48, 80})
+	{
+		auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+		std::unique_ptr<lmms::Instrument> inst{
+			static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+		QVERIFY(inst != nullptr);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("instrument"));
+		QDomElement settings = inst->saveState(doc, root);
+		settings.setAttribute(QStringLiteral("src"), gigFile);
+		settings.setAttribute(QStringLiteral("patch"), 0);
+		settings.setAttribute(QStringLiteral("bank"), 0);
+		inst->restoreState(settings);
+
+		const auto samples = partc::renderInstrumentInFreshThread(*inst,
+			lmms::Engine::audioEngine()->framesPerPeriod(), key);
+		float peak = 0.0f;
+		for (const float sample : samples)
+		{
+			peak = std::max(peak, std::fabs(sample));
+		}
+		if (key == 48)
+		{
+			lowKeyPeak = peak;
+		}
+		else
+		{
+			highKeyPeak = peak;
+		}
+	}
+
+	QVERIFY2(lowKeyPeak > 1e-4f, "keyboard-dimension fixture zone zero did not render");
+	QVERIFY2(highKeyPeak < 1e-6f,
+		"high note used zone zero instead of its keyboard dimension zone");
+#endif
+}
+
 
 QTEST_MAIN(PluginPortsMigrationTest)
 #include "PluginPortsMigrationTest.moc"
