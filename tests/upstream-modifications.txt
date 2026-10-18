@@ -50,6 +50,7 @@ include/RetroMidiRing.h	BUG-MIDI-004: snapshot writer quiescence prevents non-at
 plugins/Eq/EqFilter.h	new-p9-120: clamp peak EQ coefficient calculation below Nyquist and bypass unsafe sine/hyperbolic cases so audio coefficients stay finite at the rate boundary; the regression is tests/src/plugins/EqFilterTest.cpp
 include/ScriptConsole.h	cluster new-p10-365: add the per-run CaptureBuffer interface for bounded retained script output
 src/core/ScriptConsole.cpp	cluster new-p10-365: enforce capture character/line limits, add one truncation notice, and route ScriptEngine log messages through the console
+src/gui/RowTableView.cpp	BUG new-p9-399: use the row delegate as the table default so rows inserted after setModel keep its painting and focus behavior; covered by tests/src/gui/RowTableViewTest.cpp.
 src/core/midi/MidiAlsaSeq.cpp	BUG-MIDI-003: drain ALSA output only on sequencer thread; covered by MidiOutQueueTest.
 src/core/ControlCommandsMidi.cpp	BUG-MIDI-003: report outbound queue overflow counter through midi.retro_capture_status; covered by RetroMidiCaptureCommandsTest. new-p8-201: pass the published capture tick to close unmatched notes at the capture edge; covered by RetroMidiCaptureCommandsTest.
 src/core/midi/MidiAlsaRaw.cpp	cluster new-p10-239: close ALSA handles and free poll descriptors after the worker exits; covered by MidiOutQueueTest::AlsaRaw_ClosesHandlesAfterWorkerExitsOnPollError.

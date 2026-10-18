@@ -44,6 +44,18 @@ private slots:
 		view.setModel(nullptr);
 		QVERIFY(view.model() == nullptr);
 	}
+
+	void insertedRowsUseTheRowDelegate()
+	{
+		QStandardItemModel model(1, 1);
+		RowTableView view;
+		view.setModel(&model);
+
+		const QAbstractItemDelegate* existingRowDelegate = view.itemDelegateForIndex(model.index(0, 0));
+		QVERIFY(existingRowDelegate);
+		QVERIFY(model.insertRow(1));
+		QCOMPARE(view.itemDelegateForIndex(model.index(1, 0)), existingRowDelegate);
+	}
 };
 
 QTEST_MAIN(RowTableViewTest)
