@@ -393,6 +393,39 @@ private slots:
 		QCOMPARE( named, kReleaseVelocity );
 	}
 
+	//! An MPE event consumed by the owner must still reach the layer tracks
+	//! selected by the live note-on, where their own matching note handles are
+	//! updated through the same input path.
+	void aLiveExpressionEventReachesLayerNotes()
+	{
+		QVERIFY2( !MpeExpression::isEnabled(), "MPE input was left on by another test" );
+		const int layerIndex = m_track->layers().addLayer( QStringLiteral( "mpe_test_consumer" ), nullptr );
+		QVERIFY2( layerIndex > 0, "the MPE consumer could not be loaded as a layer" );
+		InstrumentTrack* layerTrack = m_track->layers().layer( layerIndex );
+		QVERIFY( layerTrack != nullptr );
+
+		MpeExpression::setEnabled( true );
+		m_track->processInEvent( MidiEvent( MidiNoteOn, 1, kKey, 100 ) );
+		NotePlayHandle* ownerNote = m_track->playingNote( kKey );
+		NotePlayHandle* layerNote = layerTrack->playingNote( kKey );
+		QVERIFY( ownerNote != nullptr );
+		QVERIFY( layerNote != nullptr );
+
+		m_track->processInEvent( MidiEvent( MidiPitchBend, 1, 12288 ) );
+		m_track->processInEvent( MidiEvent( MidiChannelPressure, 1, 64 ) );
+		m_track->processInEvent( MidiEvent( MidiControlChange, 1, MpeTimbreController, 50 ) );
+
+		QCOMPARE( ownerNote->mpePitchCents(), 2400 );
+		QCOMPARE( ownerNote->mpePressure(), 64 );
+		QCOMPARE( ownerNote->mpeTimbre(), 50 );
+		QCOMPARE( layerNote->mpePitchCents(), 2400 );
+		QCOMPARE( layerNote->mpePressure(), 64 );
+		QCOMPARE( layerNote->mpeTimbre(), 50 );
+
+		m_track->processInEvent( MidiEvent( MidiNoteOff, 1, kKey ) );
+		MpeExpression::setEnabled( false );
+	}
+
 private:
 	//! One block of one note, rendered through the real playback path. The
 	//! level is read from the LAST frame of the block: the declicking fade-in

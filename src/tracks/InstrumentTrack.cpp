@@ -476,6 +476,9 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 	// the instrument at once).
 	if (trackMpeInputEvent(event))
 	{
+		// MPE expression is consumed before the ordinary layer-forwarding
+		// path, so pass it to the live layer notes before returning.
+		m_layers.forwardInEvent(event, time, offset);
 		return;
 	}
 

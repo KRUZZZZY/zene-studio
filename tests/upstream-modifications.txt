@@ -2517,3 +2517,4 @@ src/core/Oscillator.cpp	cluster new-p9-495: stores the ownsSubOsc flag; the dest
 include/NotePlayHandle.h	cluster new-p9-495: PluginDataStorageSize 512 -> 720 so the TripleOscillator note state (six Oscillators in optionals) fits in-handle; static_assert in TripleOscillator.cpp.
 plugins/TripleOscillator/TripleOscillator.h	cluster new-p9-495: remove the oscPtr wrapper and the forward declaration only it used; the note state now lives in TripleOscillator.cpp.
 plugins/TripleOscillator/TripleOscillator.cpp	cluster new-p9-495: first-period note state placed in NotePlayHandle::pluginDataStorage() with construct_at and destroyed with destroy_at, so the audio path no longer allocates or frees (QA finding 2026-10-05).
+tests/src/core/MpePlaybackTest.cpp	cluster new-p10-177: exercises live MPE pitch, pressure, and timbre reaching a layer note through InstrumentTrack::processInEvent; it fails before consumed owner events are forwarded.
