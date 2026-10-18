@@ -576,6 +576,71 @@ private slots:
 		QVERIFY2(client.lastNotice().contains(QStringLiteral("backlog")), qPrintable(client.lastNotice()));
 	}
 
+	//! A nested host loop cannot retain unbounded request bytes even when every line is below the transport cap.
+	void peerRequestBacklogHasByteBudget()
+	{
+		CollabClient holder;
+		CollabClient flooder;
+		wire(holder);
+		wire(flooder);
+		holder.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Holder"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(holder), 10000);
+		flooder.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Flooder"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(flooder), 10000);
+
+		QEventLoop outer;
+		QEventLoop nested;
+		connect(&flooder, &CollabClient::stateChanged, &outer, [&] {
+			if (flooder.state() == CollabClient::State::Failed) { outer.quit(); }
+		});
+		connect(&flooder, &CollabClient::stateChanged, &nested, [&] {
+			if (flooder.state() == CollabClient::State::Failed) { nested.quit(); }
+		});
+		const QString payload(900 * 1024, QLatin1Char('x'));
+		const QByteArray requestLine = QJsonDocument(QJsonObject{{QStringLiteral("id"), 1},
+			{QStringLiteral("cmd"), QStringLiteral("note.add")},
+			{QStringLiteral("args"), QJsonObject{{QStringLiteral("payload"), payload}}}})
+			.toJson(QJsonDocument::Compact);
+		QVERIFY(requestLine.size() < MaxPeerLineBytes);
+		QVERIFY(requestLine.size() * 10 > 8 * 1024 * 1024);
+		bool allSent = true;
+		bool holdEntered = false;
+		m_host->setRequestHandler([&](const QByteArray& line, CollabRole, const QString&) {
+			m_got.requests.append(line);
+			const QJsonObject request = QJsonDocument::fromJson(line).object();
+			if (request.value(QStringLiteral("cmd")).toString() == QLatin1String("hold"))
+			{
+				holdEntered = true;
+				int sent = 0;
+				QTimer sender;
+				sender.setInterval(20);
+				connect(&sender, &QTimer::timeout, &nested, [&] {
+					if (sent == 10) { sender.stop(); return; }
+					allSent &= flooder.request(QStringLiteral("note.add"), {{QStringLiteral("payload"), payload}}) > 0;
+					++sent;
+				});
+				sender.start();
+				QTimer::singleShot(3000, &nested, &QEventLoop::quit);
+				nested.exec();
+				sender.stop();
+			}
+			const int id = request.value(QStringLiteral("id")).toInt();
+			return QJsonDocument(QJsonObject{{QStringLiteral("id"), id}, {QStringLiteral("ok"), true},
+				{QStringLiteral("result"), QJsonObject{}}}).toJson(QJsonDocument::Compact);
+		});
+
+		int triggerId = 0;
+		QTimer::singleShot(0, &outer, [&] { triggerId = holder.request(QStringLiteral("hold"), {}); });
+		QTimer::singleShot(5000, &outer, &QEventLoop::quit);
+		outer.exec();
+		QVERIFY(triggerId > 0);
+		QVERIFY(allSent);
+		QVERIFY(holdEntered);
+		QCOMPARE(m_host->peerCount(), 1);
+		QCOMPARE(flooder.state(), CollabClient::State::Failed);
+		QCOMPARE(m_got.requests.size(), 1);
+	}
+
 	//! A peer's request reaches the host's handler with the peer's role, and the reply comes back to it.
 	void peerRequestRoundTrip()
 	{

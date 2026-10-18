@@ -63,6 +63,8 @@ constexpr qint64 ResyncIntervalMs = 2000;
 constexpr int ByeGraceMs = 2000;
 //! Peer requests waiting (all peers together) before the one that sends more is dropped.
 constexpr int MaxBacklog = 512;
+//! Total request-line bytes waiting across peers before the one that sends more is dropped.
+constexpr qint64 MaxBacklogBytes = 8 * 1024 * 1024;
 
 /*! Join attempts per source address: more than MaxAttempts connections, or MaxFailures failed handshakes,
  *  inside WindowMs bans the address for BanMs. A 128-bit key is not guessable, so this is about load, not
@@ -165,6 +167,7 @@ private:
 	quint64 m_seq = 0;
 	JoinLimiter m_limiter;
 	QList<QPair<int, QByteArray>> m_backlog;  //!< (peer, request line), applied in arrival order
+	qint64 m_backlogBytes = 0;                //!< Sum of the request-line sizes in m_backlog
 	QTimer* m_drain;
 	SnapshotProvider m_snapshot;
 	RequestHandler m_requests;
