@@ -238,7 +238,11 @@ void SamplePlayHandle::snapshotClipEdits(const SampleClip* clip, const SampleWin
 	m_autoFaded = autoFade > 0;
 	m_speedInFrames = std::min(framesFor(m_edits.speedInTicks), m_clipFrames);  // ED-152 / ED-179
 	m_speedOutFrames = std::min(framesFor(m_edits.speedOutTicks), m_clipFrames);
-	m_speeds = m_edits.hasSpeed() && !m_preservePitch;
+	// ED-152 / ED-179 apply in BOTH render modes: the speed curve is part of the
+	// rate the source is consumed at, and `renderPreservingPitch` divides it into
+	// the stretcher's rate exactly as `play()` divides it into the resampler's
+	// ratio (new-p12-224: it used to be dropped here for a preserving clip).
+	m_speeds = m_edits.hasSpeed();
 
 	// Where this pass starts inside the clip's span. For a linear clip the source
 	// frame offset scales by the output/source rate, which is exactly
@@ -623,15 +627,18 @@ void SamplePlayHandle::renderPreservingPitch(SampleFrame* dst, f_cnt_t frames)
 	/*! source frames consumed per output frame.
 	 *
 	 *  `warpRatio()` is `natural / rate` (the converter ratio, output frames
-	 *  per input frame), so its reciprocal is the speed the mapping asks for
-	 *  in source frames per output frame. The sample's own rate ratio and its
-	 *  tuning divide into it exactly as they multiply into the resampler's
-	 *  ratio - the two modes therefore consume the source identically and the
-	 *  difference between them is only the waveform. */
+	 *  per input frame), and the clip's own speed curve (ED-152 / ED-179)
+	 *  divides into it exactly as `play()` divides it into the resample path's
+	 *  ratio (`warpRatio() / speedHere()`), so its reciprocal is the speed the
+	 *  mapping AND the clip's speed edits ask for in source frames per output
+	 *  frame. The sample's own rate ratio and its tuning divide into it exactly
+	 *  as they multiply into the resampler's ratio - the two modes therefore
+	 *  consume the source identically and the difference between them is only
+	 *  the waveform. */
 	const double sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate())
 		/ static_cast<double>(m_sample->sampleRate());
 	const double freqRatio = static_cast<double>(m_sample->frequency()) / DefaultBaseFreq;
-	const double converterRatio = static_cast<double>(warpRatio());
+	const double converterRatio = static_cast<double>(warpRatio()) / static_cast<double>(speedHere());
 	const double speed = converterRatio > 0.0
 		? 1.0 / (converterRatio * sampleRateRatio * freqRatio)
 		: 1.0;

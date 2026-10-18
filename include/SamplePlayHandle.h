@@ -200,12 +200,13 @@ private:
 	 *  `m_stretcher` instead of `Sample::play`'s resampler.
 	 *
 	 *  The source frames per output frame are
-	 *  `(1 / warpRatio()) / (sampleRateRatio * freqRatio)` — the reciprocal of
-	 *  the converter ratio the resample path would hand `AudioResampler`, so
-	 *  both modes put the same source frames on the same timeline and differ
-	 *  only in what they do to the waveform's period. The handle's playback
-	 *  state is advanced to the stretcher's own analysis cursor, which is what
-	 *  the next period's rate is derived from. */
+	 *  `(speedHere() / warpRatio()) / (sampleRateRatio * freqRatio)` — the
+	 *  reciprocal of the converter ratio the resample path would hand
+	 *  `AudioResampler` (`warpRatio() / speedHere()` times the sample's own
+	 *  ratios), so both modes put the same source frames on the same timeline
+	 *  and differ only in what they do to the waveform's period. The handle's
+	 *  playback state is advanced to the stretcher's own analysis cursor, which
+	 *  is what the next period's rate is derived from. */
 	void renderPreservingPitch(SampleFrame* dst, f_cnt_t frames);
 
 	/*! Multiplies the clip's fade-and-gain envelope into the frames this period
