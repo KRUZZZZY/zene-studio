@@ -2546,3 +2546,4 @@ src/core/AutomationClip.cpp	cluster new-p10-506: removes automation targets unde
 src/gui/clips/AutomationClipView.cpp	cluster new-p10-506: routes arranger disconnection through synchronized AutomationClip target removal; regression AutomationClipDisconnectTest.
 tests/CMakeLists.txt	cluster new-p10-506: registers the isolated automation disconnect concurrency regression.
 tests/src/core/SessionCheckpointTest.cpp	cluster new-p11-49: reject script.run when project journalling is disabled, with a regression proving the script leaves no edits or undo gap; retain the one-step undo/redo coverage.
+src/core/main.cpp	BUG new-p12-124: end crash-reporter and safe-start sessions before the missing-output and failed-directory-creation returns in exportstems; regression tests/control-stem-export-verb.py.
