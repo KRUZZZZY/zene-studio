@@ -41,9 +41,11 @@
 #include "SampleClip.h"
 #include "Song.h"
 #include "SongEditor.h"
+#include "Track.h"
 #include "TrackContainerView.h"
 #include "TrackContentWidget.h"
 #include "TrackFolder.h"
+#include "TrackLabelButton.h"
 #include "TrackView.h"
 
 using namespace lmms;
@@ -134,6 +136,21 @@ private slots:
 		// The summary clip is painted: its pixels are not the row's background beside it.
 		const QImage drawn = viewOf(m_folder)->getTrackContentWidget()->grab().toImage();
 		QVERIFY(drawn.pixelColor(first.center() + QPoint(0, first.height() / 2 - 2)) != drawn.pixelColor(gap));
+	}
+
+	void settingsControlsIndentWhenTrackIsInFolder()
+	{
+		Track* pattern = Track::create(Track::Type::Pattern, Engine::getSong());
+		QVERIFY(pattern != nullptr);
+		QVERIFY(run(QStringLiteral("track.set_folder"), {{QStringLiteral("track"), control::trackIdOf(pattern)},
+			{QStringLiteral("folder"), control::trackIdOf(m_folder)}}).ok);
+		QCoreApplication::processEvents();
+
+		TrackView* view = viewOf(pattern);
+		QVERIFY(view != nullptr);
+		auto* label = view->getTrackSettingsWidget()->findChild<TrackLabelButton*>(QString(), Qt::FindDirectChildrenOnly);
+		QVERIFY(label != nullptr);
+		QCOMPARE(label->x(), 13); // its original x is 3, plus one folder level of indentation
 	}
 
 	void dragMovesTheClipsInsideOneSummaryClip()
