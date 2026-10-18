@@ -27,7 +27,9 @@
 #include <QtTest>
 
 #include <QJsonArray>
+#include <QPointer>
 
+#include "../../../src/core/ControlDeviceTools.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
@@ -151,6 +153,56 @@ private slots:
 		QVERIFY(ab(QStringLiteral("recall"), QStringLiteral("a")).ok);
 		QVERIFY(std::abs(parameterValue(target, back, name) - other) < 1e-3);
 		chainOf(index).clear();
+	}
+
+	//! The slot record an undo writes onto a recreated device is released with that device, as a store's own is:
+	//! the undo must not leave a record that outlives the device it was written for.
+	void aSlotRecordWrittenByAnUndoIsReleasedWithItsDevice()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString target = ch(index);
+		const QString plugin = loadAnEffect(target);
+		if (plugin.isEmpty()) { QSKIP("this build loads no effect"); }
+		const std::size_t before = control::abSlotEntryCountForTesting();
+		QVERIFY(run(QStringLiteral("plugin.ab"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("action"), QStringLiteral("store")}, {QStringLiteral("slot"), QStringLiteral("a")}}).ok);
+		QVERIFY(run(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin}}).ok);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);  // the unloaded device is gone
+		QCOMPARE(control::abSlotEntryCountForTesting(), before);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the unload: the device is back as a new object
+		QCOMPARE(chainOf(index).effects().size(), std::size_t{1});
+		const QString back = control::effectIdOf(chainOf(index).effects().front());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the store's undo writes its slots onto the recreated device
+		QCOMPARE(control::abSlotEntryCountForTesting(), before + std::size_t{1});
+		QVERIFY(run(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), back}}).ok);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		QCOMPARE(control::abSlotEntryCountForTesting(), before);
+	}
+
+	//! A device's A/B slot record is released when the device is destroyed: storing both slots and unloading the
+	//! device leaves no record of it behind.
+	void abSlotsAreReleasedWhenAnEffectIsDestroyed()
+	{
+		const int channel = Engine::mixer()->createChannel();
+		const QString target = ch(channel);
+		const QString plugin = loadAnEffect(target);
+		if (plugin.isEmpty()) { QSKIP("this build loads no effect"); }
+		const std::size_t before = control::abSlotEntryCountForTesting();
+		const QJsonObject identity{{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin}};
+		for (const QString& slot : {QStringLiteral("a"), QStringLiteral("b")})
+		{
+			QJsonObject args = identity;
+			args.insert(QStringLiteral("action"), QStringLiteral("store"));
+			args.insert(QStringLiteral("slot"), slot);
+			QVERIFY2(run(QStringLiteral("plugin.ab"), args).ok, "could not store A/B slot");
+		}
+		QCOMPARE(control::abSlotEntryCountForTesting(), before + std::size_t{1});
+		QPointer<Effect> effect = chainOf(channel).effects().front();
+		const ControlResult unloaded = run(QStringLiteral("plugin.unload"), identity);
+		QVERIFY2(unloaded.ok, qPrintable(unloaded.errorMessage));
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		QVERIFY(effect.isNull());
+		QCOMPARE(control::abSlotEntryCountForTesting(), before);
 	}
 
 };

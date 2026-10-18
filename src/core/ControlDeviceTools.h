@@ -25,6 +25,7 @@
 #ifndef LMMS_CONTROL_DEVICE_TOOLS_H
 #define LMMS_CONTROL_DEVICE_TOOLS_H
 
+#include <cstddef>
 #include <utility>
 #include <vector>
 
@@ -57,6 +58,10 @@ void writeModelsRecorded(const std::vector<std::pair<AutomatableModel*, float>>&
 //! plugin.param_get order; false unless both slots are stored for this device. Defined in
 //! ControlCommandsDeviceCopy.cpp, where the slots live.
 bool abSlotValues(Effect* effect, std::vector<float>* a, std::vector<float>* b);
+
+//! Number of retained A/B slot records (one per device id that holds or held slots); DeviceCopyTest uses it to
+//! check that a destroyed device's record is released. Defined in ControlCommandsDeviceCopy.cpp.
+std::size_t abSlotEntryCountForTesting();
 
 } // namespace lmms::control
 
