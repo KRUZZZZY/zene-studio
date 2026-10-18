@@ -132,7 +132,13 @@ ControlResult commitBake(const BakeTarget& target, std::vector<SampleFrame>&& ba
 {
 	const int rate = static_cast<int>(target.clip->sample().sampleRate());
 	target.clip->addJournalCheckPoint();
-	target.clip->setSampleBuffer(std::make_shared<SampleBuffer>(std::move(baked), rate));
+	auto newBuffer = std::make_shared<SampleBuffer>(std::move(baked), rate);
+	const auto newFrames = static_cast<f_cnt_t>(newBuffer->size());
+	// replaceSample preserves the clip's amplification, frequency and reversed
+	// settings (the three playback settings a user sets in the GUI); setSampleBuffer
+	// used to reset them to defaults, so a reversed or pitched clip would play
+	// forward at base pitch after a bake (BUG 9 round 2).
+	target.clip->replaceSample(std::move(newBuffer), SampleWindow::full(newFrames));
 	result.insert(QStringLiteral("frames"),
 		static_cast<double>(target.clip->sample().sampleSize()));
 	result.insert(QStringLiteral("sample_rate"), rate);

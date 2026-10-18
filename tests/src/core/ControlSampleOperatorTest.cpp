@@ -337,6 +337,84 @@ private slots:
 			"one undo did not restore the exact frames that were there");
 	}
 
+	//! A destructive edit replaces the clip's SOURCE, not how the clip plays it:
+	//! the reverse toggle, the gain and the pitch the clip carries survive the
+	//! edit. sample.crop replaces the source through SampleClip::replaceSample;
+	//! the frames really are cropped, so the assertions below are about a
+	//! replaced source and not about an edit that never ran.
+	void aSourceEditKeepsTheClipPlaybackSettings()
+	{
+		const QString clip = makeGeneratedClip();
+		QVERIFY(!clip.isEmpty());
+		control::ClipRef ref;
+		ControlResult error;
+		QVERIFY(control::resolveClip(clip, &ref, &error));
+		auto* sampleClip = dynamic_cast<SampleClip*>(ref.clip);
+		QVERIFY(sampleClip != nullptr);
+		const Capture before = captureOf(clip);
+		QVERIFY(before.frames.size() > 64);
+		// crop refuses a clip that plays its whole source, so author a window to crop to
+		const auto from = static_cast<f_cnt_t>(before.frames.size() / 4);
+		const auto to = static_cast<f_cnt_t>(before.frames.size() / 2);
+		sampleClip->setSampleWindow({from, to});
+
+		// The GUI's own settings on the clip's sample (SampleClipView: the reverse
+		// toggle, the gain binding), set here as a user would have set them.
+		sampleClip->sample().setReversed(true);
+		sampleClip->sample().setAmplification(0.5f);
+		sampleClip->sample().setFrequency(220.0f);
+
+		const ControlResult cropped = run(QStringLiteral("sample.crop"),
+			QJsonObject{{QStringLiteral("clip"), clip}});
+		QVERIFY2(cropped.ok, qPrintable(cropped.errorMessage));
+		// the edit happened: the source is now exactly the frames the window played
+		const Capture after = captureOf(clip);
+		QCOMPARE(after.frames.size(), static_cast<size_t>(to - from));
+		QCOMPARE(after.frames.front().left(), before.frames[static_cast<size_t>(from)].left());
+		QCOMPARE(after.frames.back().left(), before.frames[static_cast<size_t>(to - 1)].left());
+
+		QVERIFY2(sampleClip->sample().reversed(), "the edit reset the clip's reversed flag");
+		QCOMPARE(sampleClip->sample().amplification(), 0.5f);
+		QCOMPARE(sampleClip->sample().frequency(), 220.0f);
+	}
+
+	//! A destructive edit through commitBake (sample.amplify, sample.normalize,
+	//! sample.reverse, sample.fade) replaces the clip's SOURCE via setSampleBuffer:
+	//! the reverse toggle, the gain and the pitch the clip carries survive the edit.
+	//! sample.amplify is the probe - it goes through commitBake, which used to call
+	//! setSampleBuffer and reset the three settings to defaults.
+	void aBakeKeepsTheClipPlaybackSettings()
+	{
+		const QString clip = makeGeneratedClip();
+		QVERIFY(!clip.isEmpty());
+		control::ClipRef ref;
+		ControlResult error;
+		QVERIFY(control::resolveClip(clip, &ref, &error));
+		auto* sampleClip = dynamic_cast<SampleClip*>(ref.clip);
+		QVERIFY(sampleClip != nullptr);
+		const Capture before = captureOf(clip);
+		QVERIFY(before.frames.size() > 64);
+
+		// The GUI's own settings on the clip's sample (SampleClipView: the reverse
+		// toggle, the gain binding), set here as a user would have set them.
+		sampleClip->sample().setReversed(true);
+		sampleClip->sample().setAmplification(0.5f);
+		sampleClip->sample().setFrequency(220.0f);
+
+		const ControlResult amplified = run(QStringLiteral("sample.amplify"),
+			QJsonObject{{QStringLiteral("clip"), clip}, {QStringLiteral("gain_db"), -6.0}});
+		QVERIFY2(amplified.ok, qPrintable(amplified.errorMessage));
+		// The edit happened: the source frames are now scaled (the gain was baked)
+		const Capture after = captureOf(clip);
+		QCOMPARE(after.frames.size(), before.frames.size());
+		// The frames changed (the gain was applied), so the edit provably ran
+		QVERIFY2(!sameFrames(before, after), "the amplify bake did not change the frames");
+
+		QVERIFY2(sampleClip->sample().reversed(), "the bake reset the clip's reversed flag");
+		QCOMPARE(sampleClip->sample().amplification(), 0.5f);
+		QCOMPARE(sampleClip->sample().frequency(), 220.0f);
+	}
+
 	//! sample.fade: direction=in starts at exactly 0 and keeps the last frame;
 	//! direction=out keeps the first and ends at exactly 0; the midpoint sits
 	//! on the linear ramp. ONE undo restores the exact frames after each bake,
