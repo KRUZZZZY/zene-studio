@@ -29,6 +29,7 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlEdit.h"
 #include "Engine.h"
@@ -658,6 +659,34 @@ private slots:
 		const QJsonArray reported = once.result.value(QStringLiteral("tracks")).toArray();
 		QCOMPARE(reported.size(), 1);
 		QCOMPARE(reported.first().toString(), third);
+	}
+
+	//! Batch arming rejects a non-string ID before changing any record route.
+	void trackSetArmManyRejectsNonStringIdsBeforeArming()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString track = revtest::addTrack();
+		QVERIFY(!track.isEmpty());
+		QTemporaryDir recoveryDir;
+		QVERIFY(recoveryDir.isValid());
+		const QString oldWorkingDir = ConfigManager::inst()->workingDir();
+		ConfigManager::inst()->setWorkingDir(recoveryDir.path());
+
+		const ControlResult malformed = registry->invoke(QStringLiteral("track.set_arm_many"),
+			QJsonObject{{QStringLiteral("tracks"), QJsonArray{track, 7}},
+				{QStringLiteral("armed"), true}});
+		// Capture whether the malformed call armed the valid first entry, then clean up
+		// before asserting so the RED run leaves the recorder disarmed as well.
+		const ControlResult cleanup = registry->invoke(QStringLiteral("track.set_arm"),
+			QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("armed"), false}});
+		ConfigManager::inst()->setWorkingDir(oldWorkingDir);
+
+		QVERIFY2(!malformed.ok, qPrintable(QStringLiteral("malformed batch unexpectedly succeeded; valid route was armed before cleanup: %1")
+			.arg(cleanup.result.value(QStringLiteral("armed_before")).toBool()
+				? QStringLiteral("yes") : QStringLiteral("no"))));
+		QCOMPARE(malformed.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(cleanup.ok, qPrintable(cleanup.errorMessage));
+		QVERIFY(!cleanup.result.value(QStringLiteral("armed_before")).toBool());
 	}
 
 	//! An idempotent track.set_solo records no change, so its inverse has to name the

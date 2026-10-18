@@ -24,7 +24,7 @@
  */
 
 // Split out of ControlRegistry.cpp so the registry stays a command table: this
-// is the deliberately small schema subset (type, required, properties,
+// is the deliberately small schema subset (type, required, properties, items,
 // additionalProperties, minimum, maximum, enum) every registered command's args
 // are checked against before its handler runs.
 
@@ -111,6 +111,21 @@ static QString checkEnum(const QJsonValue& value, const QJsonObject& spec, const
 
 static QString validateValue(const QJsonValue& value, const QJsonObject& spec, const QString& path);
 
+//! Validates every element of an array against the declared "items" schema; empty string means OK.
+static QString checkArrayItems(const QJsonValue& value, const QJsonObject& spec, const QString& path)
+{
+	const QJsonValue itemSchema = spec.value(QStringLiteral("items"));
+	if (!value.isArray() || !itemSchema.isObject()) { return QString(); }
+	const QJsonArray items = value.toArray();
+	for (qsizetype index = 0; index < items.size(); ++index)
+	{
+		const QString itemPath = QStringLiteral("%1[%2]").arg(pathLabel(path), QString::number(index));
+		const QString reason = validateValue(items.at(index), itemSchema.toObject(), itemPath);
+		if (!reason.isEmpty()) { return reason; }
+	}
+	return QString();
+}
+
 //! Validates the properties present in \p object; empty string means OK.
 static QString checkProperties(const QJsonObject& object, const QJsonObject& properties,
 	bool noAdditional, const QString& path)
@@ -156,6 +171,7 @@ static QString validateValue(const QJsonValue& value, const QJsonObject& spec, c
 	if (reason.isEmpty()) { reason = checkRange(value, spec, path); }
 	if (reason.isEmpty()) { reason = checkEnum(value, spec, path); }
 	if (reason.isEmpty()) { reason = checkObjectMembers(value, spec, path); }
+	if (reason.isEmpty()) { reason = checkArrayItems(value, spec, path); }
 	return reason;
 }
 
