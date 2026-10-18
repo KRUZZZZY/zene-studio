@@ -110,14 +110,15 @@ protected:
 	void paintEvent(QPaintEvent* event) override;
 	//! Escape ends the tour.
 	void keyPressEvent(QKeyEvent* event) override;
-	//! The window resized: the overlay, the hole and the step's frame follow it.
+	//! The window, target or a scrolling ancestor changed: update the overlay, hole and step frame.
 	bool eventFilter(QObject* watched, QEvent* event) override;
+
+private slots:
+	void place();
 
 private:
 	GuidedTour(const QJsonArray& steps, QWidget* window);
 	QWidget* targetOf(int index) const;
-	//! Cover the window, cut the hole over the step's target and put the frame beside it.
-	void place();
 
 	QJsonArray m_steps;
 	int m_step = 0;

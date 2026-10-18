@@ -28,6 +28,7 @@
 #include "DeprecationHelper.h"
 
 #include <QDir>
+#include <QAbstractScrollArea>
 #include <QFileInfo>
 #include <QFile>
 #include <QFrame>
@@ -42,6 +43,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QTabWidget>
 #include <QTextBrowser>
 #include <QTextDocumentFragment>
@@ -77,6 +79,22 @@ QPoint bubbleAt(const QRect& hole, const QSize& bubble, const QSize& area)
 	if (hole.right() + Gap + bubble.width() <= area.width() - Margin) { return {hole.right() + Gap, hole.top()}; }
 	if (hole.left() - Gap - bubble.width() >= Margin) { return {hole.left() - Gap - bubble.width(), hole.top()}; }
 	return {hole.left(), hole.bottom() + Gap};
+}
+
+bool shouldRepositionTour(QEvent::Type type)
+{
+	switch (type)
+	{
+	case QEvent::Move:
+	case QEvent::Resize:
+	case QEvent::Show:
+	case QEvent::Hide:
+	case QEvent::LayoutRequest:
+	case QEvent::Scroll:
+		return true;
+	default:
+		return false;
+	}
 }
 
 } // namespace
@@ -328,6 +346,14 @@ GuidedTour::GuidedTour(const QJsonArray& steps, QWidget* window) :
 bool GuidedTour::eventFilter(QObject* watched, QEvent* event)
 {
 	if (watched == parentWidget() && event->type() == QEvent::Resize) { place(); }
+	else if (shouldRepositionTour(event->type()))
+	{
+		for (QWidget* ancestor = targetOf(m_step); ancestor != nullptr; ancestor = ancestor->parentWidget())
+		{
+			if (ancestor == watched) { place(); break; }
+			if (ancestor == parentWidget()) { break; }
+		}
+	}
 	return QWidget::eventFilter(watched, event);
 }
 
@@ -363,7 +389,17 @@ void GuidedTour::showStep(int index)
 void GuidedTour::place()
 {
 	setGeometry(parentWidget()->rect());
-	const QWidget* target = targetOf(m_step);
+	QWidget* target = targetOf(m_step);
+	for (QWidget* ancestor = target; ancestor != nullptr; ancestor = ancestor->parentWidget())
+	{
+		ancestor->installEventFilter(this);
+		if (auto* scrollArea = qobject_cast<QAbstractScrollArea*>(ancestor))
+		{
+			connect(scrollArea->horizontalScrollBar(), &QScrollBar::valueChanged, this, &GuidedTour::place, Qt::UniqueConnection);
+			connect(scrollArea->verticalScrollBar(), &QScrollBar::valueChanged, this, &GuidedTour::place, Qt::UniqueConnection);
+		}
+		if (ancestor == parentWidget()) { break; }
+	}
 	m_hole = target != nullptr && target->isVisible() ? QRect(target->mapTo(parentWidget(), QPoint(0, 0)), target->size()) : QRect();
 	m_bubble->adjustSize();
 	const QPoint beside = bubbleAt(m_hole, m_bubble->size(), size());
