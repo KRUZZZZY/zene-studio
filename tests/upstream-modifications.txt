@@ -2481,3 +2481,4 @@ tests/src/core/RecordingRealtimeTest.cpp	new-p12-206 (2026-10-15): adds reArming
 include/RackZones.h	2026-10-15 cluster new-p8-131-port: a zone edit takes an optional companion step that runs inside the same edit (layer slots publish with their zones)
 src/core/RackZones.cpp	2026-10-15 cluster new-p8-131-port: addZone and assign run the optional companion step inside their edit, before the changed hook
 src/core/InstrumentLayers.cpp	2026-10-15 cluster new-p8-131-port: a layer add, insert or removal publishes its zone renumbering and its layer slot as one edit
+plugins/GigPlayer/GigPlayer.cpp	BUG-8 (new-p9-155): normalize signed 16-bit GIG PCM by 32768; covered by PluginPortsMigrationTest::slice8PluginsAreLiveAndExact and the gigplayer 2x reference assertion.
