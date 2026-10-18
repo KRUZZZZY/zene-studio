@@ -135,11 +135,12 @@ void UpnpMapper::fetchDescription(const QUrl& location)
 {
 	QNetworkRequest request(location);
 	request.setTransferTimeout(HttpTimeoutMs);
+	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
 	QNetworkReply* reply = m_http->get(request);
-	connect(reply, &QNetworkReply::finished, this, [this, reply] { onDescription(reply); });
+	connect(reply, &QNetworkReply::finished, this, [this, reply, location] { onDescription(reply, location); });
 }
 
-void UpnpMapper::onDescription(QNetworkReply* reply)
+void UpnpMapper::onDescription(QNetworkReply* reply, const QUrl& location)
 {
 	reply->deleteLater();
 	const QByteArray body = reply->read(MaxDescriptionBytes);
@@ -148,7 +149,12 @@ void UpnpMapper::onDescription(QNetworkReply* reply)
 		finish(false, QStringLiteral("the UPnP router's description could not be read (%1)").arg(reply->errorString()));
 		return;
 	}
-	m_service = parseIgdDescription(body, reply->url());
+	if (reply->attribute(QNetworkRequest::RedirectionTargetAttribute).isValid())
+	{
+		finish(false, QStringLiteral("the UPnP router redirected its description to another URL"));
+		return;
+	}
+	m_service = parseIgdDescription(body, location);
 	if (!m_service.isValid()) { finish(false, QStringLiteral("the UPnP device that answered is not an internet gateway")); return; }
 	addMapping(3600);
 }

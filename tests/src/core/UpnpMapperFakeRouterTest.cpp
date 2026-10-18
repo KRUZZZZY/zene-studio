@@ -30,7 +30,7 @@
  *  address, so no packet leaves this machine and no real router can answer. The recorded shapes are a miniupnpd
  *  IGD's. Cases: a mapping and its removal, a renewal that needs no new search, a router that refuses (718), one that
  *  only takes permanent leases (725 then lease 0), a device that is not a gateway, a description that cannot be
- *  read, and no router at all (the search time-out). Then PortMapping::start() end to end: NAT-PMP answered, a silent
+ *  read, a description redirect that is refused rather than followed, and no router at all (the search time-out). Then PortMapping::start() end to end: NAT-PMP answered, a silent
  *  gateway falling back to UPnP, both failing, and no gateway at all. */
 
 #include "lmmsconfig.h"
@@ -76,6 +76,7 @@ enum class Mode
 	PermanentOnly,     //!< AddPortMapping with a lease: 725 OnlyPermanentLeasesSupported
 	NotAnIgd,          //!< a description without a WAN connection service
 	DescriptionError,  //!< the description is an HTTP 500
+	Redirect,          //!< the description is a 302 to another URL on this machine
 	Silent,            //!< never answers the search
 };
 
@@ -199,6 +200,13 @@ private:
 
 	void respond(QTcpSocket* socket, const Recorded& request)
 	{
+		if (mode == Mode::Redirect && request.requestLine.startsWith("GET /rootDesc.xml"))
+		{
+			socket->write("HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:" + QByteArray::number(m_http.serverPort())
+				+ "/moved/rootDesc.xml\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+			socket->disconnectFromHost();
+			return;
+		}
 		int status = 200;
 		QByteArray body;
 		if (request.requestLine.startsWith("GET")) { body = describe(&status); }
@@ -410,6 +418,18 @@ private slots:
 			QVERIFY(!result.ok);
 			QVERIFY2(result.message.contains(QStringLiteral("description could not be read")), qPrintable(result.message));
 		}
+		QCOMPARE(m_router.count("AddPortMapping"), 0);
+	}
+
+	void aRedirectedDescriptionIsRefusedNotFollowed()
+	{
+		// Following the 302 would parse the description against the redirect target, not the router that answered.
+		m_router.mode = Mode::Redirect;
+		UpnpMapper mapper;
+		const MappingResult result = map(mapper, 41746, 3600);
+		QVERIFY2(!result.ok, "a redirected description was followed and a mapping was made");
+		QVERIFY2(result.message.contains(QStringLiteral("redirected")), qPrintable(result.message));
+		QCOMPARE(m_router.count("/moved/rootDesc.xml"), 0);
 		QCOMPARE(m_router.count("AddPortMapping"), 0);
 	}
 
