@@ -2928,6 +2928,7 @@ tests/src/plugins/CarlaParamFloatModelTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
+tests/src/plugins/ClapInstrumentViewTest.cpp
 tests/src/plugins/ClapLoaderErrorTest.cpp
 tests/src/plugins/DelayControlsTest.cpp
 tests/src/plugins/DelayLfoAutomationTest.cpp

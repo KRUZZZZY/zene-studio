@@ -2477,6 +2477,8 @@ tests/src/core/WriteRefusalGateTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
 tests/src/gui/ModulatorPanelTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
+# cluster new-p10-3: product-new regression for the CLAP instrument view's output count after a layout rescan.
+tests/src/plugins/ClapInstrumentViewTest.cpp
 tests/src/gui/DelayControlsDialog.h
 tests/src/gui/EqFader.h
 tests/src/gui/XyPadPairTest.cpp

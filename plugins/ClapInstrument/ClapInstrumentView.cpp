@@ -72,10 +72,20 @@ ClapInstrumentView::ClapInstrumentView(ClapInstrument* instrument, QWidget* pare
 	notePorts->setWordWrap(true);
 	outer->addWidget(notePorts);
 
-	auto* outputs = new QLabel(tr("Audio output: %1 channel(s) (clap.audio-ports).")
-		.arg(plugin->busLayout().outputs), this);
+	auto* outputs = new QLabel(this);
 	outputs->setWordWrap(true);
+	auto updateOutputs = [plugin, outputs] {
+		outputs->setText(tr("Audio output: %1 channel(s) (clap.audio-ports).")
+			.arg(plugin->busLayout().outputs));
+	};
+	updateOutputs();
 	outer->addWidget(outputs);
+	// BUG 6: a plug-in may change its audio-port layout while it runs; reprepare() re-reads it and says so,
+	// and the channel count on the surface follows the new layout instead of keeping the old one.
+	connect(instrument, &ClapInstrument::outputLayoutChanged, this, [this, updateOutputs] {
+		updateOutputs();
+		setFixedSize(sizeHint());
+	});
 
 	// R4.3/R4.4: the instrument's own (clap.gui) editor opens in a window of its own; these
 	// knobs stay as the fallback. A plug-in with no embeddable gui says so in place.

@@ -3360,6 +3360,55 @@ if(TARGET lmms_clap)
 		CLAP_TEST_BROKEN_NO_SYMBOL_PATH="$<TARGET_FILE:clap-test-broken-no-symbol>")
 	add_dependencies(ClapEffectIntegrationTest clapeffect clap-test-broken-no-symbol)
 
+	# The instrument VIEW (Bugs cluster new-p10-3): the audio-output channel-count label must follow
+	# a runtime clap.audio-ports layout change, exercised on the fixture's CLAP_TEST_INSTRUMENT_LAYOUT
+	# mode. The test compiles the instrument module the way ClapEffectIntegrationTest compiles the
+	# effect one, so it drives the class directly and needs no running transport.
+	add_executable(ClapInstrumentViewTest
+		src/plugins/ClapInstrumentViewTest.cpp
+		${CMAKE_SOURCE_DIR}/plugins/ClapInstrument/ClapInstrument.cpp
+		${CMAKE_SOURCE_DIR}/plugins/ClapInstrument/ClapInstrumentView.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHost.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostLifecycle.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostNotes.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostParams.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapHostGui.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapLoader.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapParameter.cpp
+		${LMMS_CLAP_EFFECT_DIR}/ClapSubPluginFeatures.cpp
+	)
+	add_test(NAME ClapInstrumentViewTest COMMAND ClapInstrumentViewTest)
+	# It builds a real instrument view, so it needs a Qt platform even headless.
+	set_tests_properties(ClapInstrumentViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	target_include_directories(ClapInstrumentViewTest PRIVATE
+		# generated plugin_export.h (PLUGIN_EXPORT) of the clapinstrument plug-in
+		${CMAKE_BINARY_DIR}/plugins/ClapInstrument
+		${CMAKE_SOURCE_DIR}/plugins/ClapInstrument
+		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+		${LMMS_CLAP_EFFECT_DIR}
+	)
+	# the test compiles the plug-in sources itself, so it needs the generated
+	# export header of the plug-in target to exist first
+	add_dependencies(ClapInstrumentViewTest clapinstrument clap-test-instrument)
+	target_static_libraries(ClapInstrumentViewTest PRIVATE lmmsobjs)
+	target_compile_features(ClapInstrumentViewTest PRIVATE cxx_std_20)
+	target_link_libraries(ClapInstrumentViewTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		lmms_clap
+		${CMAKE_DL_LIBS}
+	)
+	target_compile_definitions(ClapInstrumentViewTest PRIVATE
+		LMMS_TESTING
+		# This target compiles the plug-in's own ClapInstrument.cpp, which defines
+		# clapinstrument_plugin_descriptor with PLUGIN_EXPORT: keep it from being
+		# marked dllimport (the same construct as ClapEffectIntegrationTest).
+		PLUGIN_STATIC_DEFINE
+		PLUGIN_NAME=clapinstrument
+		CLAP_TEST_INSTRUMENT_PATH="$<TARGET_FILE:clap-test-instrument>"
+	)
+
 	# The CLAP instrument half on the control surface (feature row 79, board
 	# task #669). The catalogue case points the product's plug-in search
 	# directory at the directory holding clap-test-instrument.clap, so
