@@ -57,11 +57,12 @@ auto resolveEventInputBus(Steinberg::Vst::IComponent* component) -> Steinberg::i
  *
  * The mapping follows the SDK's own samples (samples/vst-hosting/audiohost/
  * source/media/miditovst.h at the pinned commit): a note-on with velocity 0 is
- * the MIDI idiom for a note-off, and both note events carry noteId -1 because
- * the host does not track note identities.
+ * the MIDI idiom for a note-off. The note id is the one NoteIds resolved for
+ * the event (-1 when the plug-in takes no note ids); a note expression with no
+ * id names no voice, so it is not carried (returns false).
  */
 auto midiToVst3Event(const MidiEventIn& midi, Steinberg::int32 busIndex,
-	Steinberg::Vst::Event* event) -> bool;
+	Steinberg::int32 noteId, Steinberg::Vst::Event* event) -> bool;
 
 /**
  * Drains queued MIDI into a plug-in's event list, ordered by sample offset.
@@ -74,6 +75,9 @@ auto midiToVst3Event(const MidiEventIn& midi, Steinberg::int32 busIndex,
  * A controller \a controllers maps becomes a point in \a changes at its own
  * frame, bounded to [0, frames - 1] (0.5.0 W4); the request's list is sliced
  * per chunk by HostedPlugin::Impl::runChunk (sliceParameterChanges).
+ *
+ * Each note event's VST3 note id is resolved by queue.noteIds() in the same
+ * sorted order the plug-in receives the events (MX-120 round 2).
  *
  * @returns how many events were taken from the queue
  */

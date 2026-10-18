@@ -43,7 +43,7 @@ struct MidiEventIn
 	std::uint8_t data0 = 0;       //!< note key / controller number
 	std::uint8_t data1 = 0;       //!< note velocity / controller value
 	std::int32_t frameOffset = 0; //!< frames from the start of the block
-	//! 0.5.0 MX-120: give the note a VST3 note id (channel * 128 + key) - set for a plug-in with note
+	//! 0.5.0 MX-120: the note carries a VST3 note id (see NoteIds) - set for a plug-in with note
 	//! expressions, so a NoteExpressionValueEvent can name the voice; -1 (no id) otherwise, as before.
 	bool withNoteId = false;
 	std::uint32_t expressionType = 0;  //!< type == kNoteExpressionMidiType: the VST3 note-expression type
@@ -62,6 +62,40 @@ inline constexpr int kMaxMidiEventsPerBlock = 256;
 //! two: the ring masks its index. A full queue drops the event and counts it
 //! (see HostedPlugin::droppedMidiEvents()) instead of growing or blocking.
 inline constexpr std::size_t kMidiQueueCapacity = 1024;
+
+/**
+ * 0.5.0 MX-120 (round 2): the VST3 note id of each sounding note, one slot per (channel, key).
+ *
+ * A note-on starts a NEW id from a counter, so a retrigger of a key whose first voice is still in its
+ * release tail never shares that voice's id. A note-off, key pressure or note expression names the id
+ * its key last started, and the slot survives the note-off, so the release tail stays addressable until
+ * the retrigger replaces it. Consumer side only: drainMidiIntoEventList() on the audio thread reaches it
+ * through MidiQueue::noteIds(). Fixed-size and allocation free.
+ */
+class NoteIds
+{
+public:
+	NoteIds() { reset(); }
+
+	//! @returns the id the event carries, or -1 when it carries none: a plug-in without note expressions,
+	//! a non-note event, or a note-off, pressure or expression for a key that never started a note.
+	//! Call it in the order the plug-in receives the events, so a note-off names its note-on's id.
+	auto resolve(const MidiEventIn& midi) -> std::int32_t;
+
+	//! Forgets every sounding note and restarts the counter. Only while the audio thread is not popping.
+	void reset()
+	{
+		m_ids.fill(-1);
+		m_next = 0;
+	}
+
+private:
+	//! The largest id. The counter wraps to 0 after it, never to -1 (which means no id).
+	static constexpr std::int32_t kLastId = 0x7fffffff;
+
+	std::array<std::int32_t, 16 * 128> m_ids{};  //!< (channel & 0x0f) * 128 + (key & 0x7f) -> id
+	std::int32_t m_next = 0;
+};
 
 /**
  * Bounded, lock free thread safe queue of MidiEventIn.
@@ -157,6 +191,9 @@ public:
 		}
 	}
 
+	//! The consumer's note ids (NoteIds). Only the audio thread's drain may use it, and only while it pops.
+	auto noteIds() -> NoteIds& { return m_noteIds; }
+
 	//! GUI thread only, and only while the audio thread cannot be popping and
 	//! no producer can be pushing - HostedPlugin::release() turns the producers
 	//! off and waits for the pushes in flight first: forget everything queued.
@@ -170,6 +207,7 @@ public:
 		}
 		m_enqueue.store(0, std::memory_order_relaxed);
 		m_dequeue.store(0, std::memory_order_relaxed);
+		m_noteIds.reset();
 	}
 
 private:
@@ -185,6 +223,7 @@ private:
 	std::array<Cell, kMidiQueueCapacity> m_cells;
 	std::atomic<std::uint32_t> m_enqueue{0};
 	std::atomic<std::uint32_t> m_dequeue{0};
+	NoteIds m_noteIds;
 };
 
 } // namespace lmms::vst3
