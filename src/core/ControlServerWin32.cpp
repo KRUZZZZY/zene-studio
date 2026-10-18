@@ -272,6 +272,21 @@ ControlErrorKind ControlServer::listenWin32(const QString& path, QString* detail
 	return ControlErrorKind::None;
 }
 
+void ControlServer::reapWin32ClientThreads()
+{
+	auto worker = m_win32ClientThreads.begin();
+	while (worker != m_win32ClientThreads.end())
+	{
+		if (!(*worker)->finished.load(std::memory_order_acquire))
+		{
+			++worker;
+			continue;
+		}
+		if ((*worker)->thread.joinable()) { (*worker)->thread.join(); }
+		worker = m_win32ClientThreads.erase(worker);
+	}
+}
+
 void ControlServer::win32AcceptLoop()
 {
 	const std::wstring name = m_pipeName.toStdWString();
@@ -346,9 +361,25 @@ void ControlServer::win32AcceptLoop()
 			break;
 		}
 
-		// The connection is complete: give it its own thread and go back to
-		// waiting for the next one.  The entry stays until closeWin32() joins it.
-		m_win32ClientThreads.emplace_back(&ControlServer::win32ClientLoop, this, pipe);
+		// Reap completed workers before applying the live-client cap, so a client
+		// that has disconnected frees its slot and its thread resources promptly.
+		reapWin32ClientThreads();
+		if (m_win32ClientThreads.size() >= MaxClients)
+		{
+			DisconnectNamedPipe(pipe);
+			CloseHandle(pipe);
+			continue;
+		}
+
+		// The connection is complete: give it a worker only when a live slot is
+		// available. Its completion flag lets the acceptor reap it on a later
+		// connection; closeWin32() joins the workers still present at shutdown.
+		m_win32ClientThreads.emplace_back(std::make_unique<Win32ClientWorker>());
+		Win32ClientWorker* const worker = m_win32ClientThreads.back().get();
+		worker->thread = std::thread([this, pipe, worker]() {
+			win32ClientLoop(pipe);
+			worker->finished.store(true, std::memory_order_release);
+		});
 	}
 	m_win32Listening.store(false);
 }
@@ -481,9 +512,9 @@ void ControlServer::closeWin32()
 	// cancels its pending read or write, and its wait for an answer from this
 	// thread is bounded (win32Dispatch).  Joining them here is what makes it
 	// safe for `this` to be destroyed - a client thread holds this object.
-	for (std::thread& worker : m_win32ClientThreads)
+	for (const std::unique_ptr<Win32ClientWorker>& worker : m_win32ClientThreads)
 	{
-		if (worker.joinable()) { worker.join(); }
+		if (worker->thread.joinable()) { worker->thread.join(); }
 	}
 	m_win32ClientThreads.clear();
 
