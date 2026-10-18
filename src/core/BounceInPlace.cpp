@@ -170,6 +170,54 @@ bool runCliRender(const QString& projectPath, const QString& out, int sampleRate
 	return finished;
 }
 
+//! True when \a target names the file \a source is read from. The target is
+//! opened for WRITING, which truncates it, so a target that resolves to the
+//! source destroys the audio before a frame is copied - a symlink, a "./" prefix
+//! or a relative spelling all name the same file. A path that does not resolve
+//! yet falls back to its absolute form, which is enough: a target that does not
+//! exist cannot be the file being read. A HARD link has no shared spelling at
+//! all (its canonical path is its own), so the last test asks the filesystem
+//! whether the two names are one file (same device and inode, or the Windows
+//! equivalent), which is also what a symlink to the source reports.
+bool namesTheSameFile(const QString& source, const QString& target)
+{
+	const QFileInfo sourceInfo(source);
+	const QFileInfo targetInfo(target);
+	const QString sourceKey =
+		sourceInfo.canonicalFilePath().isEmpty() ? sourceInfo.absoluteFilePath() : sourceInfo.canonicalFilePath();
+	const QString targetKey =
+		targetInfo.canonicalFilePath().isEmpty() ? targetInfo.absoluteFilePath() : targetInfo.canonicalFilePath();
+	if (sourceKey == targetKey) { return true; }
+#ifdef _WIN32
+	// equivalent() reports an error (and false) when either name does not exist, which is the no-op case.
+	std::error_code ec;
+	const bool same = std::filesystem::equivalent(
+		std::filesystem::path(source.toStdWString()), std::filesystem::path(target.toStdWString()), ec);
+	return !ec && same;
+#else
+	// Same device and inode. std::filesystem is unavailable below the macOS 10.15 deployment target the
+	// hosted macos-x86_64 job builds for; stat() is the same test there and on Linux. A name that does
+	// not exist fails stat(), which is the no-op case.
+	struct stat sourceStat {};
+	struct stat targetStat {};
+	if (::stat(QFile::encodeName(source).constData(), &sourceStat) != 0
+		|| ::stat(QFile::encodeName(target).constData(), &targetStat) != 0)
+	{
+		return false;
+	}
+	return sourceStat.st_dev == targetStat.st_dev && sourceStat.st_ino == targetStat.st_ino;
+#endif
+}
+
+//! True when \a outPath names the session the user has open. The render is installed over
+//! \a outPath, so that name would replace the session file with the audio. The same
+//! file-identity test as trimWav's guard applies, so a symlink or hard link to it is refused too.
+bool namesOpenProject(const QString& outPath)
+{
+	const QString project = Engine::getSong()->projectFileName();
+	return !project.isEmpty() && namesTheSameFile(project, outPath);
+}
+
 //! Everything that can refuse, checked before anything is written (SPEC A16: a
 //! refusal leaves no file behind). Empty when the request is usable.
 QString validateRequest(const std::vector<Track*>& tracks, const QString& outPath)
@@ -183,6 +231,10 @@ QString validateRequest(const std::vector<Track*>& tracks, const QString& outPat
 	if (std::none_of(tracks.begin(), tracks.end(), [](Track* track) { return track->numOfClips() > 0; }))
 	{
 		return QStringLiteral("the track has no clips: there is nothing to render");
+	}
+	if (namesOpenProject(outPath))
+	{
+		return QStringLiteral("the output path is the open project file: a bounce would replace the session");
 	}
 	return QString();
 }
@@ -365,6 +417,11 @@ BounceInPlace::Result BounceInPlace::finishPreparedRender(const PreparedRender& 
 bool BounceInPlace::installPreparedOutput(PreparedRender* prepared, QString* error)
 {
 	if (prepared == nullptr || error == nullptr) { return false; }
+	if (Engine::getSong() != nullptr && namesOpenProject(prepared->outputPath))
+	{
+		*error = QStringLiteral("the output path is the open project file: a bounce would replace the session");
+		return false;
+	}
 	if (QFileInfo::exists(prepared->outputPath))
 	{
 		prepared->backupPath = prepared->outputPath + QStringLiteral(".backup.")
@@ -455,45 +512,6 @@ BounceInPlace::Result BounceInPlace::renderTracks(const std::vector<Track*>& tra
 	commitPreparedOutput(&prepared);
 	discardPreparedRender(&prepared);
 	return result;
-}
-
-//! True when \a target names the file \a source is read from. The target is
-//! opened for WRITING, which truncates it, so a target that resolves to the
-//! source destroys the audio before a frame is copied - a symlink, a "./" prefix
-//! or a relative spelling all name the same file. A path that does not resolve
-//! yet falls back to its absolute form, which is enough: a target that does not
-//! exist cannot be the file being read. A HARD link has no shared spelling at
-//! all (its canonical path is its own), so the last test asks the filesystem
-//! whether the two names are one file (same device and inode, or the Windows
-//! equivalent), which is also what a symlink to the source reports.
-bool namesTheSameFile(const QString& source, const QString& target)
-{
-	const QFileInfo sourceInfo(source);
-	const QFileInfo targetInfo(target);
-	const QString sourceKey =
-		sourceInfo.canonicalFilePath().isEmpty() ? sourceInfo.absoluteFilePath() : sourceInfo.canonicalFilePath();
-	const QString targetKey =
-		targetInfo.canonicalFilePath().isEmpty() ? targetInfo.absoluteFilePath() : targetInfo.canonicalFilePath();
-	if (sourceKey == targetKey) { return true; }
-#ifdef _WIN32
-	// equivalent() reports an error (and false) when either name does not exist, which is the no-op case.
-	std::error_code ec;
-	const bool same = std::filesystem::equivalent(
-		std::filesystem::path(source.toStdWString()), std::filesystem::path(target.toStdWString()), ec);
-	return !ec && same;
-#else
-	// Same device and inode. std::filesystem is unavailable below the macOS 10.15 deployment target the
-	// hosted macos-x86_64 job builds for; stat() is the same test there and on Linux. A name that does
-	// not exist fails stat(), which is the no-op case.
-	struct stat sourceStat {};
-	struct stat targetStat {};
-	if (::stat(QFile::encodeName(source).constData(), &sourceStat) != 0
-		|| ::stat(QFile::encodeName(target).constData(), &targetStat) != 0)
-	{
-		return false;
-	}
-	return sourceStat.st_dev == targetStat.st_dev && sourceStat.st_ino == targetStat.st_ino;
-#endif
 }
 
 /*! Opens \a source for reading, seeks it to \a startFrame and reports in
