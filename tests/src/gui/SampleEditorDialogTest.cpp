@@ -247,6 +247,13 @@ private slots:
 		QCOMPARE(frame, qint64{62500} * Rate / 1000);
 		QVERIFY(samplerange::frameFromText(QStringLiteral("0.25 s"), ctx, Unit::Samples, &frame));  // a suffix names its unit
 		QCOMPARE(frame, qint64{Rate / 4});
+		// The clock format does not skip the suffix: a colon and a "s" word name the same unit together.
+		QVERIFY(samplerange::frameFromText(QStringLiteral("1:02.500 s"), ctx, Unit::Time, &frame));
+		QCOMPARE(frame, qint64{62500} * Rate / 1000);
+		QVERIFY(samplerange::frameFromText(QStringLiteral("1:02 sec"), ctx, Unit::Time, &frame));
+		QCOMPARE(frame, qint64{62} * Rate);
+		QVERIFY(samplerange::frameFromText(QStringLiteral("0:30 s"), ctx, Unit::Time, &frame));
+		QCOMPARE(frame, qint64{30} * Rate);
 		QVERIFY(samplerange::frameFromText(QStringLiteral("2756 smp"), ctx, Unit::Time, &frame));
 		QCOMPARE(frame, qint64{2756});
 		QVERIFY(samplerange::frameFromText(QStringLiteral("300"), ctx, Unit::Samples, &frame));
