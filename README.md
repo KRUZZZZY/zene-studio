@@ -250,6 +250,44 @@ the public issue tracker. Release publishing is documented in [docs/RELEASING.md
 Zene Studio is licensed under the **GNU General Public License, version 2 or later**
 (GPL-2.0-or-later). See [LICENSE.txt](LICENSE.txt).
 
+## Free and activation model (current build)
+
+**The license.** Zene Studio is licensed under the GNU General Public License, version 2 or later
+(GPL-2.0-or-later); see [LICENSE.txt](LICENSE.txt). That license governs freedom, not price: it explicitly
+permits anyone who distributes a copy to do so "gratis or for a fee" (`LICENSE.txt:34`), while passing the
+recipients the same rights. The license text therefore settles nothing about whether any build, present or
+future, is sold or has tiers.
+
+**The current build and its distribution (current facts, as of this repository now).** The build this
+repository produces has **no paid tier**, **no registration**, and **no activation**: there is no free/pro/
+enterprise edition, no account, licence-key, serial-number or purchase step, and no online activation or
+periodic validation. This state is grounded in the repository itself, not in the license:
+
+- a search of the product-owned C/C++ sources (`src/`, `include/`, `plugins/`, with the vendored
+  third-party trees excluded - the same exclusions as `tests/all-sources.txt`: `src/3rdparty/`, the
+  `plugins/LadspaEffect/{calf,cmt,swh,tap}`, `CarlaBase/carla`, `FreeBoy/game-music-emu`,
+  `MidiImport/portsmf`, `OpulenZ/adplug`, `Sid/resid`, `Xpressive/exprtk`, `ZynAddSubFx/zynaddsubfx`
+  submodules, `plugins/NeuralAmp/{rtneural,nam,tests}` and `plugins/RnnoiseDenoiser/rnnoise`) for
+  licence-key, activation-code, serial-number, product-registration, purchase, premium, free-trial and
+  paid-tier handling returns **no product-licensing match at all**;
+  the only remaining matches for broader words ("tier", "subscription", "activation") are unrelated
+  technical uses: two comments that measure this product against a *competitor's* pro tier
+  (`include/AudioInputPath.h:84`, `include/MultiTrackRecorder.h:86`), MIDI port and event subscription,
+  and Qt signal / plugin-instance "activation". The search is repeated automatically by
+  `tests/doc-pricing-model-gate.py` (test `DocPricingModelGate`).
+- the build and release process documented in this repository has no commerce step: the build
+  instructions above and `docs/RELEASING.md` name no account, licence key, purchase or price
+  anywhere, and `docs/RELEASING.md` records that the release page is the only distribution
+  point.
+
+**Future policy changes: where they would be announced.** Nothing in this document promises a future
+pricing, tiering or licensing policy; none is decided. If a future release of the project ever changes
+these terms, the change is announced in that release's notes - authored as
+`docs/RELEASE-NOTES-<version>.md` and published in full on the GitHub Releases page for
+`KRUZZZZY/zene-studio` (the only release channel this project has; see `docs/RELEASING.md`) - so one
+place to check for a policy change is the current release page and its notes.
+
+
 Zene Studio is built on LMMS (https://github.com/LMMS/lmms), licensed GNU GPL v2. All upstream notices
 retained. Zene Studio is not affiliated with or endorsed by the LMMS project.
 

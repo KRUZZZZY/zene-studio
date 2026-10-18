@@ -109,6 +109,7 @@
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/EqCurveTest.cpp ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/EqFilterTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/doc-pricing-model-gate.py ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
@@ -2139,6 +2140,10 @@ tests/control_pipe_client.py
 tests/control_socket_flows.py
 tests/control_socket_harness.py
 tests/control_vendor_libs.py
+# Q050-145: product-new static documentation gate - re-verifies the README's
+# current no-tier/no-activation wording against LICENSE.txt and the narrowed
+# product-source search on every run (ctest DocPricingModelGate).
+tests/doc-pricing-model-gate.py
 tests/exprtk.hpp
 tests/freeze_bounce_evidence.py
 tests/golden_audio_lib.py
