@@ -2534,3 +2534,6 @@ tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p10-184: regress a pr
 src/core/Mixer.cpp	cluster new-p10-251: duplicate <vcagroup> IDs during load are warned about and the full group is preserved under the lowest free ID.
 tests/src/core/VcaGroupTest.cpp	cluster new-p10-251: regression for duplicate serialized VCA group IDs preserving the group's fader, mute, mixer membership and edit-track membership.
 tests/src/core/ImportFilterTest.cpp	cluster new-p10-411: add a subprocess regression proving a malformed launch fallback template cannot re-enter loadProject fallback.
+src/core/AudioEngineWorkerThread.cpp	cluster new-p10-499: process jobs synchronously when the fixed job queue is full so queue completion cannot hide skipped audio work; covered by RenderJobQueueTest::queueOverflowRunsEveryJob.
+tests/src/core/RenderJobQueueTest.cpp	cluster new-p10-499: prove every distinct job runs once when a static render queue receives 8193 jobs.
+tests/src/core/RoutingGraphScheduleTest.cpp	cluster new-p10-499: rename queue-full refusal instrumentation to fallback instrumentation after overflow jobs are processed inline.

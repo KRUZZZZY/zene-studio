@@ -96,14 +96,8 @@ void AudioEngineWorkerThread::drainDeferredPlayHandleEdits() noexcept
 	for (AudioEngineWorkerThread* worker : workerThreads) { drain(worker->m_deferredPlayHandleEdits); }
 }
 
-// Counted queue-full refusals since the process started (SPEC-MULTICORE-SCHEDULING
-// §2.6 / §3.2.3: "a counted, lock-free refusal"). addJob()'s overflow branch runs on
-// the audio thread - Mixer.cpp:255 and :1729 seed this queue from masterMix - so it
-// increments this counter and formats nothing: qWarning() there would build a QString
-// on the path tests/rt-safety-scope.txt declares. External linkage so
-// tests/src/core/RoutingGraphScheduleTest.cpp can assert the refusal fired and was
-// counted, without a header/ABI change (the member accessor lands when a later slice
-// touches AudioEngineWorkerThread.h).
+// Counted queue-full fallbacks. This test-only symbol retains its historical name.
+// addJob() runs on the audio thread, so this records no formatted log output.
 std::atomic<std::uint64_t> queueFullRefusals{0};
 
 // implementation of internal JobQueue
@@ -128,13 +122,11 @@ void AudioEngineWorkerThread::JobQueue::addJob( ThreadableJob * _job )
 		if (index < JOB_QUEUE_SIZE) {
 			m_items[index] = _job;
 		} else {
-			// Counted refusal instead of a bare qWarning (multicore Slice 0,
-			// SPEC-MULTICORE-SCHEDULING §2.6 / §3.2.3). The refusal itself is
-			// unchanged - the job is dropped and m_itemsDone is still advanced, so
-			// wait() terminates - but the event is now a lock-free increment on the
-			// audio thread rather than formatted log text, and it is readable by the
-			// registered test that proves the branch fires.
+			// The queue cannot grow on the audio path. Process the excess job here
+			// instead of reporting it complete without doing its work.
 			queueFullRefusals.fetch_add(1, std::memory_order_relaxed);
+			const RealtimeScope realtime;
+			_job->process();
 			++m_itemsDone;
 		}
 	}
