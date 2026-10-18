@@ -99,9 +99,19 @@ ControlResult options(const QJsonObject& args)
 	return ControlResult::success({{QStringLiteral("pan_law"), MixerOptions::panLawNames().value(static_cast<int>(options.panLaw()))}});
 }
 
-void setSendEnabled(mix_ch_t from, mix_ch_t to, bool on)
+//! Switch the send from the channel with persistent id @a fromId to the one with
+//! @a toId on or off. The endpoints are resolved to their LIVE positions here, so
+//! a reorder or removal between the recording and the undo/redo cannot make the
+//! step act on the routes that now occupy the recorded positions (BUG 6).
+void setSendEnabled(int fromId, int toId, bool on)
 {
-	if (MixerRoute* route = findMixerRoute(from, to)) { route->enabledModel()->setValue(on); }
+	MixerChannel* from = channelWithId(fromId);
+	MixerChannel* to = channelWithId(toId);
+	if (from == nullptr || to == nullptr) { return; }
+	if (MixerRoute* route = findMixerRoute(static_cast<mix_ch_t>(from->index()), static_cast<mix_ch_t>(to->index())))
+	{
+		route->enabledModel()->setValue(on);
+	}
 }
 
 ControlResult sendEnable(const QJsonObject& args)
@@ -121,7 +131,12 @@ ControlResult sendEnable(const QJsonObject& args)
 	if (on != before)
 	{
 		route->enabledModel()->setValue(on);
-		addUndoStep([from, to, before]() { setSendEnabled(from, to, before); }, [from, to, on]() { setSendEnabled(from, to, on); });
+		// The step keeps the endpoints' PERSISTENT ids, resolved to live positions when it
+		// runs: a reorder between this call and its undo would otherwise make it toggle the
+		// route that took the recorded positions' places (BUG 6).
+		const int fromId = ends.from->id();
+		const int toId = ends.to->id();
+		addUndoStep([fromId, toId, before]() { setSendEnabled(fromId, toId, before); }, [fromId, toId, on]() { setSendEnabled(fromId, toId, on); });
 		Engine::getSong()->setModified();
 	}
 	QJsonObject result{{QStringLiteral("from"), channelIdOf(ends.from)}, {QStringLiteral("to"), channelIdOf(ends.to)},

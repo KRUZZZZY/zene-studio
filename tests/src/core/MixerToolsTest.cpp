@@ -158,6 +158,43 @@ private slots:
 			{QStringLiteral("enabled"), false}}).errorKind, ControlErrorKind::NotFound);
 	}
 
+	//! BUG 6: mixer.send_enable's undo captured the endpoints' POSITIONS, so a
+	//! reorder outside that undo sequence made the step act on whatever route now
+	//! sits at those positions - toggling an unrelated send - instead of the send
+	//! it recorded. The step must follow its channels by persistent id, as the
+	//! routing verbs do.
+	void aSendEnableUndoFollowsItsChannelsThroughAReorder()
+	{
+		Engine::getSong()->clearProject();
+		while (Engine::mixer()->numChannels() <= 4) { Engine::mixer()->createChannel(); }
+		const QString fromId = ch(1);
+		const QString toId = ch(2);
+		const QString otherId = ch(3);
+		// The recorded send (1 -> 2) and an unrelated send (1 -> 3) that a stale
+		// position would hit instead. Both are switched off.
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId},
+			{QStringLiteral("amount"), 0.5}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), otherId},
+			{QStringLiteral("amount"), 0.5}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_enable"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), otherId},
+			{QStringLiteral("enabled"), false}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_enable"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId},
+			{QStringLiteral("enabled"), false}}).ok);
+		MixerRoute* other = control::findMixerRoute(1, 3);
+		QVERIFY(other != nullptr);
+		QVERIFY(!control::findMixerRoute(1, 2)->enabled());
+		QVERIFY(!other->enabled());
+		// A reorder outside the undo sequence: the two receivers trade positions,
+		// so the recorded positions (1, 2) now name the unrelated send (1 -> 3).
+		Engine::mixer()->moveChannelLeft(3);
+		QVERIFY(control::findMixerRoute(1, 2) == other);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		MixerRoute* restored = control::findMixerRoute(1, 3);
+		QVERIFY2(restored != nullptr, "the recorded route moved with its receiver");
+		QVERIFY2(restored->enabled(), "the send-enable undo must follow its channels through a reorder");
+		QVERIFY2(!other->enabled(), "the send-enable undo must never toggle the route now at the recorded positions");
+	}
+
 	void aReturnIsABusFedByASend()
 	{
 		const int before = Engine::mixer()->numChannels();
