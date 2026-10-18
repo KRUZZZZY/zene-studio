@@ -268,6 +268,16 @@ struct WasmSandbox::Impl
 		}
 	}
 
+	//! Fuel consumption is enabled in the engine, so the store carries the
+	//! configured budget before any wasm code runs. callWithFuel() primes it per
+	//! call; instantiation runs the module's start function outside that path and
+	//! needs the same headroom - without it a valid module is rejected on load.
+	void primeFuelBudget()
+	{
+		wasmtime_error_t* error = wasmtime_context_set_fuel(context, fuelBudget);
+		if (error != nullptr) { wasmtime_error_delete(error); }
+	}
+
 	CallResult callWithFuel(wasmtime_func_t& func, const wasmtime_val_t* args,
 		std::size_t nargs, wasmtime_val_t* results, std::size_t nresults)
 	{
@@ -358,6 +368,12 @@ bool WasmSandbox::loadModuleBytes(const std::uint8_t* bytes, std::size_t size,
 		error = "module compile failed: " + takeError(err);
 		return false;
 	}
+
+	// Instantiation runs the module's start function, and fuel consumption is
+	// enabled in the engine. Prime the store with the configured budget first:
+	// without it the start function traps out of fuel and a valid module is
+	// rejected while loading.
+	m_impl->primeFuelBudget();
 
 	wasm_trap_t* trap = nullptr;
 	err = wasmtime_linker_instantiate(m_impl->linker, m_impl->context,
