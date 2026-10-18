@@ -5702,3 +5702,15 @@ if(TARGET nam_harness AND PYTHON3_EXECUTABLE)
 			$<TARGET_FILE:nam_harness>)
 	set_tests_properties(NeuralAmpWavRunSampleRateWarning PROPERTIES TIMEOUT 30)
 endif()
+
+# Regression for the NeuralAmp harness's generated-run block-count overflow.
+# The Python driver writes a minimal valid .nam model and invokes the separately
+# built, headless harness with both a small run and an oversized block count.
+if(PYTHON3_EXECUTABLE AND TARGET nam_harness)
+	add_test(NAME NeuralAmpHarnessBlockCount
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/neuralamp-harness-block-count.py
+			$<TARGET_FILE:nam_harness>
+	)
+	set_tests_properties(NeuralAmpHarnessBlockCount PROPERTIES TIMEOUT 60)
+endif()

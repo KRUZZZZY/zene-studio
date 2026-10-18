@@ -41,6 +41,7 @@ namespace
 {
 
 constexpr double kTwoPi = 6.283185307179586476925286766559;
+constexpr int64_t kMaxGeneratedSamples = 4'194'304;
 
 struct Options
 {
@@ -467,10 +468,24 @@ int main(int argc, char** argv)
 		std::fprintf(stderr, "error: --blocks must be >= 1\n");
 		return 2;
 	}
-	if (opt.warmupBlocks < 0)
+	int64_t totalSamples = 0;
+	if (opt.wavRun.empty())
 	{
-		std::fprintf(stderr, "error: --warmup must be >= 0\n");
-		return 2;
+		if (opt.warmupBlocks < 0)
+		{
+			std::fprintf(stderr, "error: --warmup must be >= 0\n");
+			return 2;
+		}
+		const int64_t totalBlocks = static_cast<int64_t>(opt.blocks) +
+			static_cast<int64_t>(opt.warmupBlocks);
+		totalSamples = static_cast<int64_t>(opt.blockSize) * totalBlocks;
+		if (totalSamples > kMaxGeneratedSamples)
+		{
+			std::fprintf(stderr,
+				"error: generated run exceeds %lld samples; reduce --blocks, --warmup, or --block\n",
+				static_cast<long long>(kMaxGeneratedSamples));
+			return 2;
+		}
 	}
 
 	std::printf("== NeuralAmp harness ==\n");
@@ -606,8 +621,6 @@ int main(int argc, char** argv)
 		opt.blockSize, opt.blocks, opt.warmupBlocks, opt.sampleRate);
 
 	// Deterministic input for the whole run.
-	const int64_t totalSamples =
-		static_cast<int64_t>(opt.blockSize) * (opt.blocks + opt.warmupBlocks);
 	std::vector<float> input(totalSamples);
 	for (int64_t i = 0; i < totalSamples; ++i)
 	{
