@@ -203,9 +203,24 @@ void Note::setReleaseVelocity( int velocity )
 	m_releaseVelocity = velocity < 0 ? -1 : std::min( velocity, static_cast<int>( MaxVolume ) );
 }
 
+int Note::releaseVelocityFromMidi( int midiVelocity, int midiBaseVelocity )
+{
+	// Q050-039: round-half-up. With truncation the round trip through the
+	// volume scale lost a unit (an incoming 96 landed on 152 and came back as
+	// 95 at the default base velocity 63); rounding makes this the exact
+	// inverse of midiReleaseVelocity() below.
+	const int scaled =
+		( 2 * midiVelocity * DefaultVolume + midiBaseVelocity ) / ( 2 * midiBaseVelocity );
+	return std::max( 0, std::min( scaled, static_cast<int>( MaxVolume ) ) );
+}
+
 int Note::midiReleaseVelocity( int midiBaseVelocity ) const
 {
-	return m_releaseVelocity < 0 ? 0 : std::min( MidiMaxVelocity, m_releaseVelocity * midiBaseVelocity / DefaultVolume );
+	if( m_releaseVelocity < 0 ) { return 0; }
+	// Q050-039: round-half-up, the exact inverse of releaseVelocityFromMidi()
+	// - the velocity the note-off carried is the velocity playback sends.
+	return std::min( MidiMaxVelocity,
+		( 2 * m_releaseVelocity * midiBaseVelocity + DefaultVolume ) / ( 2 * DefaultVolume ) );
 }
 
 void Note::rememberTiming()

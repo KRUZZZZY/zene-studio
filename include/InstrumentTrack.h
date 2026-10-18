@@ -379,6 +379,9 @@ private:
 	// MPE capture (task #601). Both run on the MIDI-input thread and only
 	// touch fixed arrays plus plain int writes on live note handles.
 	bool trackMpeInputEvent( const MidiEvent& event );
+	//! 0.5.0 Q050-039: stores the release velocity an MPE note-off arrived with
+	//! on the released note's handle, so playback (and a record pass) keeps it.
+	void captureMpeReleaseVelocity( const MidiEvent& event );
 	//! Live input through the track's MIDI input transform (InstrumentTrackNotes.cpp): true when
 	//! the event was handled here - transformed and played, or dropped.
 	bool handleInputTransform( const MidiEvent& event, const TimePos& time, f_cnt_t offset );

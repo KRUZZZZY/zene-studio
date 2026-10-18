@@ -144,6 +144,31 @@ private slots:
 		QCOMPARE(static_cast<int>(recorded->length()), 96);
 	}
 
+	//! Q050-039: the live handle an MPE note-off stamps its release velocity on
+	//! is the Note the roll's record pass is handed, so the note it saves keeps
+	//! that velocity (PianoRoll::finishRecordNote).
+	void theRecordedNoteKeepsTheReleaseVelocityOfItsNoteOff()
+	{
+		auto* instrument = dynamic_cast<InstrumentTrack*>(m_track);
+
+		m_window->record();
+		QVERIFY(m_window->isRecording());
+		QVERIFY(Engine::getSong()->isPlaying());
+		Engine::getSong()->setPlayPos(FirstPassStart, Song::PlayMode::MidiClip);
+
+		Q_EMIT instrument->midiNoteOn(Note(TimePos(0), TimePos(0), Pitch));
+
+		// The key-up as the MPE input path hands it to the roll: the note-off
+		// velocity rides on the note (InstrumentTrack::trackMpeInputEvent).
+		Note release(TimePos(96), TimePos(0), Pitch);
+		release.setReleaseVelocity(96);
+		Engine::getSong()->setPlayPos(FirstPassStart + 96, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOff(release);
+
+		QCOMPARE(static_cast<int>(m_clip->notes().size()), 1);
+		QCOMPARE(m_clip->notes().front()->releaseVelocity(), 96);
+	}
+
 private:
 	QTemporaryDir m_home;
 	Track* m_track = nullptr;

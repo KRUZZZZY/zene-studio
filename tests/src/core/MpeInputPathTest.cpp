@@ -31,6 +31,8 @@
 
 #include <QDomDocument>
 
+#include <algorithm>
+
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "BufferManager.h"
@@ -153,6 +155,163 @@ private slots:
 		QVERIFY( !note67->hasMpeExpression() );
 
 		song->clearProject();
+	}
+
+	//! (j) Q050-039: an MPE note-off carries release velocity. The real input
+	//! path stores it on the released note, the note keeps it through
+	//! save -> load, and a zero-velocity or non-MPE note-off captures nothing.
+	void noteOffVelocityIsCapturedOnTheReleasedNote()
+	{
+		using namespace lmms;
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create( Track::Type::Instrument, song ) );
+		QVERIFY( track != nullptr );
+
+		// Set the port's base velocity to the note-volume default (100) so the
+		// note's volume scale (0..200, 100 = default) and the MIDI velocity
+		// scale agree: the captured value is the velocity itself.
+		track->midiPort()->setBaseVelocity( DefaultVolume );
+
+		MpeExpression::setEnabled( true );
+
+		constexpr int kMemberChannel = 3;
+		constexpr int kVelocity = 96;   // non-default (0 means "no release velocity")
+
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, 60, 100 ) );
+		NotePlayHandle* note = track->playingNote( 60 );
+		QVERIFY( note != nullptr );
+		// Nothing captured before the note-off: the note has no release velocity.
+		QCOMPARE( note->releaseVelocity(), -1 );
+
+		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, 60, kVelocity ) );
+
+		// (criterion 1) The released note carries the velocity the note-off sent.
+		QCOMPARE( note->releaseVelocity(), kVelocity );
+		QCOMPARE( note->midiReleaseVelocity( track->midiPort()->baseVelocity() ), kVelocity );
+
+		// ... and that is what a SAVED note reads back: save -> load keeps it.
+		QDomDocument doc;
+		QDomElement parent = doc.createElement( "notes" );
+		QDomElement element = note->saveState( doc, parent );
+		QVERIFY( element.hasAttribute( "relvel" ) );
+		QCOMPARE( element.attribute( "relvel" ).toInt(), kVelocity );
+		Note saved;
+		saved.restoreState( element );
+		QCOMPARE( saved.releaseVelocity(), kVelocity );
+		QCOMPARE( saved.midiReleaseVelocity( track->midiPort()->baseVelocity() ), kVelocity );
+
+		// (criterion 3) A note-off carrying velocity 0 captures nothing: the
+		// note keeps playing back a release velocity of 0, as before.
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, 64, 100 ) );
+		NotePlayHandle* zero = track->playingNote( 64 );
+		QVERIFY( zero != nullptr );
+		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, 64, 0 ) );
+		QCOMPARE( zero->releaseVelocity(), -1 );
+		QCOMPARE( zero->midiReleaseVelocity( track->midiPort()->baseVelocity() ), 0 );
+
+		// A note-off delivered as note-on velocity 0 (MidiClientRaw's spelling)
+		// is the same zero-velocity case.
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, 65, 100 ) );
+		NotePlayHandle* zeroOn = track->playingNote( 65 );
+		QVERIFY( zeroOn != nullptr );
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, 65, 0 ) );
+		QCOMPARE( zeroOn->releaseVelocity(), -1 );
+
+		// (criterion 3) With MPE disabled the same stream captures nothing.
+		MpeExpression::setEnabled( false );
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, 67, 100 ) );
+		NotePlayHandle* nonMpe = track->playingNote( 67 );
+		QVERIFY( nonMpe != nullptr );
+		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, 67, kVelocity ) );
+		QCOMPARE( nonMpe->releaseVelocity(), -1 );
+		QCOMPARE( nonMpe->midiReleaseVelocity( track->midiPort()->baseVelocity() ), 0 );
+
+		song->clearProject();
+	}
+
+	//! (review r1) Q050-039: the same capture at the port's DEFAULT base
+	//! velocity (63), where one velocity step is 1.587 note-volume units: the
+	//! velocity that arrived must be what the handle, the saved note and
+	//! midiReleaseVelocity() all read back, with nothing set to 100 to make
+	//! the scales agree.
+	void noteOffVelocityIsExactAtTheDefaultBaseVelocity()
+	{
+		using namespace lmms;
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create( Track::Type::Instrument, song ) );
+		QVERIFY( track != nullptr );
+
+		// The premise of this slot, named: the port is at the base velocity
+		// MidiPort's model is born with, and this slot does not touch it.
+		QCOMPARE( track->midiPort()->baseVelocity(), MidiMaxVelocity / 2 );
+
+		MpeExpression::setEnabled( true );
+
+		constexpr int kMemberChannel = 3;
+		constexpr int kVelocity = 96;
+		// The note-volume value the capture stores for 96 at base velocity 63:
+		// 96 * 100 / 63 = 152.38, rounded to 152. Pinned so the exactness
+		// assertions below say which conversion they are holding to.
+		constexpr int kStored = 152;
+
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, 60, 100 ) );
+		NotePlayHandle* note = track->playingNote( 60 );
+		QVERIFY( note != nullptr );
+
+		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, 60, kVelocity ) );
+
+		// The stored value, and the velocity it reads back as: exactly the
+		// one the note-off carried, at the default base velocity.
+		QCOMPARE( note->releaseVelocity(), kStored );
+		QCOMPARE( note->midiReleaseVelocity( track->midiPort()->baseVelocity() ), kVelocity );
+
+		// ... and the saved note keeps it: save -> load stores the volume
+		// value, which still reads back as the velocity that arrived.
+		QDomDocument doc;
+		QDomElement parent = doc.createElement( "notes" );
+		QDomElement element = note->saveState( doc, parent );
+		QVERIFY( element.hasAttribute( "relvel" ) );
+		QCOMPARE( element.attribute( "relvel" ).toInt(), kStored );
+		Note saved;
+		saved.restoreState( element );
+		QCOMPARE( saved.releaseVelocity(), kStored );
+		QCOMPARE( saved.midiReleaseVelocity( track->midiPort()->baseVelocity() ), kVelocity );
+
+		MpeExpression::setEnabled( false );
+		song->clearProject();
+	}
+
+	//! (review r1) Q050-039: capture (Note::releaseVelocityFromMidi) and
+	//! playback (Note::midiReleaseVelocity) are exact inverses for EVERY
+	//! velocity the volume scale can name at the two base velocities this
+	//! unit runs at - the port's default (63) and the scale's default (100) -
+	//! so no other velocity hides the rounding the 96 in the slots above
+	//! depends on.
+	void releaseVelocityRoundTripsAtEveryRepresentableVelocity()
+	{
+		using namespace lmms;
+
+		const int bases[] = { MidiMaxVelocity / 2, DefaultVolume };
+		for( const int base : bases )
+		{
+			// The volume scale (0..200) names velocities up to twice the base
+			// velocity, so at 63 MIDI's 127 saturates to it and only 0..126
+			// can round-trip.
+			const int top = std::min( MidiMaxVelocity,
+				static_cast<int>( MaxVolume ) * base / DefaultVolume );
+			for( int velocity = 1; velocity <= top; ++velocity )
+			{
+				Note note;
+				note.setReleaseVelocity( Note::releaseVelocityFromMidi( velocity, base ) );
+				QCOMPARE( note.midiReleaseVelocity( base ), velocity );
+			}
+		}
 	}
 
 };
