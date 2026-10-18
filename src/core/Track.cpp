@@ -33,6 +33,8 @@
 #include <QFileInfo>
 #include <QVariant>
 
+#include <limits>
+
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
 #include "AudioEngine.h"
@@ -211,6 +213,19 @@ QString mutedClipsAttribute(const std::vector<Track::FrozenTake::MutedClip>& mut
 	return parts.join(QLatin1Char(','));
 }
 
+bool parseTick(const QString& text, tick_t& ticks)
+{
+	bool ok = false;
+	const qint64 value = text.toLongLong(&ok);
+	if (!ok || value < std::numeric_limits<tick_t>::min()
+		|| value > std::numeric_limits<tick_t>::max())
+	{
+		return false;
+	}
+	ticks = static_cast<tick_t>(value);
+	return true;
+}
+
 std::vector<Track::FrozenTake::MutedClip> parseMutedClipsAttribute(const QString& text)
 {
 	std::vector<Track::FrozenTake::MutedClip> muted;
@@ -219,8 +234,7 @@ std::vector<Track::FrozenTake::MutedClip> parseMutedClipsAttribute(const QString
 		const QStringList pair = part.split(QLatin1Char(':'));
 		if (pair.size() != 2) { continue; }
 		Track::FrozenTake::MutedClip clip;
-		clip.startTicks = static_cast<tick_t>(pair.at(0).toLongLong());
-		clip.lengthTicks = static_cast<tick_t>(pair.at(1).toLongLong());
+		if (!parseTick(pair.at(0), clip.startTicks) || !parseTick(pair.at(1), clip.lengthTicks)) { continue; }
 		muted.push_back(clip);
 	}
 	return muted;
@@ -1252,10 +1266,14 @@ void Track::loadFrozenTake(const QDomElement& element)
 	m_frozen.path = element.attribute(QStringLiteral("frozenAudio"));
 	if (m_frozen.path.isEmpty()) { return; }
 
-	m_frozen.startTicks = static_cast<tick_t>(
-		element.attribute(QStringLiteral("frozenStart")).toLongLong());
-	m_frozen.endTicks = static_cast<tick_t>(
-		element.attribute(QStringLiteral("frozenEnd")).toLongLong());
+	if ((element.hasAttribute(QStringLiteral("frozenStart"))
+			&& !parseTick(element.attribute(QStringLiteral("frozenStart")), m_frozen.startTicks))
+		|| (element.hasAttribute(QStringLiteral("frozenEnd"))
+			&& !parseTick(element.attribute(QStringLiteral("frozenEnd")), m_frozen.endTicks)))
+	{
+		m_frozen = FrozenTake{};
+		return;
+	}
 	m_frozen.mutedClips = parseMutedClipsAttribute(
 		element.attribute(QStringLiteral("frozenMuted")));
 	// A file written before the flag existed: a take that starts after tick 0 or muted clips is a region.

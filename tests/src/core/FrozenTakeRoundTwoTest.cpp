@@ -12,6 +12,8 @@
  */
 
 #include <QtTest>
+#include <QDomDocument>
+#include <QFile>
 #include <QJsonObject>
 #include <QTemporaryDir>
 
@@ -183,6 +185,55 @@ private slots:
 		QCOMPARE(frozenPassLengths(audio, track).size(), std::size_t{8});
 		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
 		QTest::qWait(130);
+	}
+
+	//! Corrupt tick attributes cannot move a frozen take or target a different muted clip.
+	void malformedFrozenTickAttributesAreNotAccepted()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		SampleTrack* track = nullptr;
+		const QString error = prepareFrozenTake(scratch, 440.0, &track);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		Song* const song = Engine::getSong();
+		const QString projectPath = scratch.filePath(QStringLiteral("frozen-project.mmp"));
+		QVERIFY(song->saveProjectFile(projectPath));
+		QFile savedProject(projectPath);
+		QVERIFY(savedProject.open(QIODevice::ReadOnly));
+		const QByteArray validProject = savedProject.readAll();
+		savedProject.close();
+
+		auto loadWithAttribute = [&](const QString& name, const QString& value) {
+			QDomDocument document;
+			if (!document.setContent(validProject)) { return false; }
+			QDomElement projectTrack = document.documentElement()
+				.firstChildElement(QStringLiteral("song"))
+				.firstChildElement(QStringLiteral("trackcontainer"))
+				.firstChildElement(QStringLiteral("track"));
+			if (projectTrack.isNull()) { return false; }
+			projectTrack.setAttribute(name, value);
+			QFile changedProject(projectPath);
+			if (!changedProject.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
+			const qint64 written = changedProject.write(document.toByteArray());
+			changedProject.close();
+			if (written < 0) { return false; }
+			song->loadProject(projectPath);
+			return true;
+		};
+
+		QVERIFY(loadWithAttribute(QStringLiteral("frozenStart"), QStringLiteral("not-a-tick")));
+		QVERIFY(!song->tracks().back()->isFrozen());
+		QVERIFY(loadWithAttribute(QStringLiteral("frozenEnd"), QStringLiteral("2147483648")));
+		QVERIFY(!song->tracks().back()->isFrozen());
+
+		QVERIFY(loadWithAttribute(QStringLiteral("frozenMuted"),
+			QStringLiteral("24:96,2147483648:96,72:not-a-tick")));
+		const Track::FrozenTake& loadedTake = song->tracks().back()->frozenTake();
+		QVERIFY(loadedTake.isFrozen());
+		QCOMPARE(loadedTake.mutedClips.size(), std::size_t{1});
+		QCOMPARE(loadedTake.mutedClips.front().startTicks, tick_t{24});
+		QCOMPARE(loadedTake.mutedClips.front().lengthTicks, tick_t{96});
 	}
 
 	//! Cluster 5414 round 2: a 2-second take looping every 4 ticks can hold more than eight live passes.
