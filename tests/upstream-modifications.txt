@@ -678,6 +678,7 @@ plugins/Delay/DelayEffect.cpp	rename layer 1: built-in plugin logo resource key 
 plugins/Dispersion/Dispersion.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Dispersion/Dispersion.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change); cap processing frequency below Nyquist to keep the all-pass coefficients stable at lower sample rates (cluster new-p10-113)
 plugins/DualFilter/DualFilter.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/DualFilter/DualFilter.h	cluster new-p10-145: initialize cached cutoff and resonance values before first audio-period comparisons; regression in tests/src/plugins/PluginPortsMigrationTest.cpp.
 plugins/DynamicsProcessor/DynamicsProcessor.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Eq/EqEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change); 2026-10-11 bug cluster new-p9-124: define frame progress for zero/one-frame blocks before division; AudioPluginTest covers finite nonzero output with an active high-pass filter
 plugins/DynamicsProcessor/DynamicsProcessorControls.cpp	validate decoded wave-shape size against the fixed 200-float model; malformed saved shapes restore the default curve, covered by PluginPortsMigrationTest::dynamicsProcessorRejectsShortWaveShape
@@ -2518,3 +2519,4 @@ include/NotePlayHandle.h	cluster new-p9-495: PluginDataStorageSize 512 -> 720 so
 plugins/TripleOscillator/TripleOscillator.h	cluster new-p9-495: remove the oscPtr wrapper and the forward declaration only it used; the note state now lives in TripleOscillator.cpp.
 plugins/TripleOscillator/TripleOscillator.cpp	cluster new-p9-495: first-period note state placed in NotePlayHandle::pluginDataStorage() with construct_at and destroyed with destroy_at, so the audio path no longer allocates or frees (QA finding 2026-10-05).
 tests/src/core/MpePlaybackTest.cpp	cluster new-p10-177: exercises live MPE pitch, pressure, and timbre reaching a layer note through InstrumentTrack::processInEvent; it fails before consumed owner events are forwarded.
+tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p10-145: poison the allocated DualFilterEffect storage and assert all four cached cutoff/resonance values are initialized.
