@@ -187,6 +187,43 @@ def check_track_flatten(session, recorder):
                    "reply=%r" % flattened)
 
 
+def check_track_flatten_keeps_folder(session, recorder, outdir):
+    """A folder child remains routed through its folder after flatten, undo and redo."""
+    folder = session.result("track.add", {"type": "folder", "name": "Flatten folder"}).get("track")
+    source = add_track_with_note(session, "Folder child", 63)
+    session.result("track.set_folder", {"track": source, "folder": folder})
+    routed = session.result("track.set_routing", {"track": folder, "routing": True})
+    channel = routed.get("mixer_channel")
+    out = os.path.join(outdir, "flatten-folder-child.wav")
+
+    flattened = session.result("track.flatten", {"track": source, "out": out})
+    landed = flattened.get("track")
+    landed_state = session.result("track.get_state", {"track": landed})
+    children = session.result("track.folder_get_state", {"track": folder}).get("children") or []
+    landed_child = next((child for child in children if child.get("track") == landed), {})
+    recorder.check("track.flatten keeps its replacement in the routing folder",
+                   landed_state.get("folder") == folder and landed_child.get("mixer_channel") == channel,
+                   "state=%r child=%r channel=%r reply=%r" % (landed_state, landed_child, channel, flattened))
+
+    session.result("control.undo")
+    restored = session.result("track.get_state", {"track": source})
+    children = session.result("track.folder_get_state", {"track": folder}).get("children") or []
+    recorder.check("flatten undo restores the source to its folder",
+                   restored.get("folder") == folder
+                   and any(child.get("track") == source for child in children),
+                   "state=%r children=%r" % (restored, children))
+
+    session.result("control.redo")
+    children = session.result("track.folder_get_state", {"track": folder}).get("children") or []
+    candidates = [child for child in children if child.get("track") != source]
+    redone_child = candidates[0] if len(candidates) == 1 else {}
+    redone = session.result("track.get_state", {"track": redone_child.get("track", "")}) if redone_child else {}
+    recorder.check("flatten redo keeps its replacement in the routing folder",
+                   bool(redone_child) and redone.get("folder") == folder
+                   and redone_child.get("mixer_channel") == channel,
+                   "state=%r child=%r channel=%r" % (redone, redone_child, channel))
+
+
 def check_range_bounce(session, recorder, outdir):
     """0.5.0 L12 (ED-205): the selection's tracks over its ticks render onto a new audio track and
     the sources are muted, so the song sounds as before."""
@@ -303,6 +340,7 @@ def main(argv):
             check_project_lifecycle(session, recorder, instance.tmp)
             check_subprojects(session, recorder, instance.tmp)
             check_track_flatten(session, recorder)
+            check_track_flatten_keeps_folder(session, recorder, instance.tmp)
             check_range_bounce(session, recorder, instance.tmp)
             check_bounce_source_undo(session, recorder, instance.tmp)
             check_window_shell(session, recorder, instance.tmp)
