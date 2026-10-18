@@ -47,6 +47,8 @@
  */
 
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <QHash>
 #include <QJsonArray>
@@ -128,13 +130,13 @@ bool canLandMidiOn(Track* track, int pattern)
 	return patternTrack != nullptr && patternTrack->patternIndex() == pattern;
 }
 
-ControlResult validateMidiDestination(const ClipSlot& slot, Track* track, const LandPair& pair)
+ControlResult validateMidiDestination(int pattern, Track* track, const LandPair& pair)
 {
-	if (canLandMidiOn(track, slot.patternId())) { return ControlResult::success(); }
+	if (canLandMidiOn(track, pattern)) { return ControlResult::success(); }
 	return ControlResult::failure(ControlErrorKind::InvalidArgs,
 		QStringLiteral("cannot land MIDI pattern %1 from (track %2, scene %3) onto a %4 track; "
 			"this destination cannot hold copied MIDI notes, nothing was consumed")
-			.arg(slot.patternId()).arg(pair.track).arg(pair.scene)
+			.arg(pattern).arg(pair.track).arg(pair.scene)
 			.arg(track == nullptr ? QStringLiteral("missing") : trackTypeName(track->type())));
 }
 
@@ -169,13 +171,53 @@ ControlResult validateAudioDestination(const ClipSlot& slot, Track* track, const
 	return ControlResult::success();
 }
 
+ControlResult validateRecordedAudioDestination(const LandPair& pair, Track* track,
+	std::shared_ptr<const SampleBuffer>* audioSamples, int pairIndex,
+	QHash<const SampleBuffer*, std::shared_ptr<const SampleBuffer>>& audioCache)
+{
+	if (dynamic_cast<SampleTrack*>(track) == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("cannot land recorded audio cell from (track %1, scene %2) onto a %3 track; "
+				"this destination cannot hold copied audio, nothing was consumed")
+				.arg(pair.track).arg(pair.scene)
+				.arg(track == nullptr ? QStringLiteral("missing") : trackTypeName(track->type())));
+	}
+	if (pair.audioClip == nullptr || pair.audioClip->empty())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("cannot land the recorded audio cell from (track %1, scene %2): its launched "
+				"audio is unavailable; nothing was consumed").arg(pair.track).arg(pair.scene));
+	}
+	if (!audioCache.contains(pair.audioClip))
+	{
+		std::vector<SampleBuffer::value_type> frames(pair.audioClip->data(),
+			pair.audioClip->data() + pair.audioClip->size());
+		audioCache.insert(pair.audioClip, std::make_shared<const SampleBuffer>(
+			std::move(frames), static_cast<int>(pair.audioClip->sampleRate()), pair.audioClip->audioFile()));
+	}
+	audioSamples[pairIndex] = audioCache.value(pair.audioClip);
+	return ControlResult::success();
+}
+
 ControlResult validatePairContent(const Song& song, const SessionModel& model, const LandPair& pair,
 	int pairIndex, std::shared_ptr<const SampleBuffer>* audioSamples,
-	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache)
+	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache,
+	QHash<const SampleBuffer*, std::shared_ptr<const SampleBuffer>>& recordedAudioCache)
 {
-	const ClipSlot& slot = model.slot(pair.track, pair.scene);
+	using ContentKind = SessionArrangementRecorder::Event::ContentKind;
 	Track* track = song.tracks()[static_cast<std::size_t>(pair.track)];
-	if (slot.type() == ClipSlot::Type::Midi) { return validateMidiDestination(slot, track, pair); }
+	if (pair.contentKind == ContentKind::Midi)
+	{
+		return validateMidiDestination(pair.patternId, track, pair);
+	}
+	if (pair.contentKind == ContentKind::Audio)
+	{
+		return validateRecordedAudioDestination(pair, track, audioSamples, pairIndex, recordedAudioCache);
+	}
+	if (pair.contentKind == ContentKind::Empty) { return ControlResult::success(); }
+	const ClipSlot& slot = model.slot(pair.track, pair.scene);
+	if (slot.type() == ClipSlot::Type::Midi) { return validateMidiDestination(slot.patternId(), track, pair); }
 	if (slot.type() == ClipSlot::Type::Audio)
 	{
 		return validateAudioDestination(slot, track, pair, audioSamples, pairIndex, audioCache);
@@ -185,14 +227,15 @@ ControlResult validatePairContent(const Song& song, const SessionModel& model, c
 
 ControlResult validateLandPairs(const Song& song, const SessionModel& model,
 	const LandPair* pairs, int pairCount, std::shared_ptr<const SampleBuffer>* audioSamples,
-	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache)
+	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache,
+	QHash<const SampleBuffer*, std::shared_ptr<const SampleBuffer>>& recordedAudioCache)
 {
 	for (int i = 0; i < pairCount; ++i)
 	{
 		const LandPair& pair = pairs[i];
 		if (!pairHasSlot(song, model, pair) || pair.stopTick <= pair.startTick) { continue; }
 		if (ControlResult validation = validatePairContent(song, model, pair, i,
-			audioSamples, audioCache); !validation.ok) { return validation; }
+			audioSamples, audioCache, recordedAudioCache); !validation.ok) { return validation; }
 	}
 	return ControlResult::success();
 }
@@ -200,10 +243,11 @@ ControlResult validateLandPairs(const Song& song, const SessionModel& model,
 ControlResult validateLandRequest(const Song& song, const SessionModel& model,
 	const OpenStart* open, int openCount, const LandPair* pairs, int pairCount,
 	std::shared_ptr<const SampleBuffer>* audioSamples,
-	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache)
+	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache,
+	QHash<const SampleBuffer*, std::shared_ptr<const SampleBuffer>>& recordedAudioCache)
 {
 	if (openCount > 0) { return validateOpenStarts(open, openCount); }
-	return validateLandPairs(song, model, pairs, pairCount, audioSamples, audioCache);
+	return validateLandPairs(song, model, pairs, pairCount, audioSamples, audioCache, recordedAudioCache);
 }
 
 int copyPatternNotes(MidiClip& destination, int pattern)
@@ -225,19 +269,24 @@ int copyPatternNotes(MidiClip& destination, int pattern)
 }
 
 QString copySlotContent(Clip* clip, const ClipSlot& slot,
-	const std::shared_ptr<const SampleBuffer>& audioSample)
+	const std::shared_ptr<const SampleBuffer>& audioSample, const LandPair& pair)
 {
-	if (slot.type() == ClipSlot::Type::Midi)
+	const bool captured = pair.contentKind != SessionArrangementRecorder::Event::ContentKind::Unspecified;
+	const bool midi = captured ? pair.contentKind == SessionArrangementRecorder::Event::ContentKind::Midi
+		: slot.type() == ClipSlot::Type::Midi;
+	if (midi)
 	{
 		if (auto* destination = dynamic_cast<MidiClip*>(clip))
 		{
-			copyPatternNotes(*destination, slot.patternId());
+			copyPatternNotes(*destination, captured ? pair.patternId : slot.patternId());
 			return QStringLiteral("midi_pattern_copied");
 		}
 		// PatternTrack clips are references to their track's PatternStore column.
 		return QStringLiteral("pattern_reference");
 	}
-	if (slot.type() == ClipSlot::Type::Audio)
+	const bool audio = captured ? pair.contentKind == SessionArrangementRecorder::Event::ContentKind::Audio
+		: slot.type() == ClipSlot::Type::Audio;
+	if (audio)
 	{
 		if (auto* destination = dynamic_cast<SampleClip*>(clip))
 		{
@@ -267,7 +316,7 @@ QJsonObject pairNotLanded(const LandPair& pair, const QString& reason)
 }
 
 void addLandedClipFields(QJsonObject* landed, const Clip* clip, const Track* track,
-	const ClipSlot& slot, const QString& content)
+	const ClipSlot& slot, int pattern, const QString& content)
 {
 	landed->insert(QStringLiteral("landed"), true);
 	landed->insert(QStringLiteral("track"), control::trackIdOf(track));
@@ -275,7 +324,7 @@ void addLandedClipFields(QJsonObject* landed, const Clip* clip, const Track* tra
 	landed->insert(QStringLiteral("position"), static_cast<int>(clip->startPosition().getTicks()));
 	landed->insert(QStringLiteral("length"), static_cast<int>(clip->length().getTicks()));
 	landed->insert(QStringLiteral("name"), clip->name());
-	landed->insert(QStringLiteral("pattern"), slot.patternId());
+	landed->insert(QStringLiteral("pattern"), pattern);
 	landed->insert(QStringLiteral("content"), content);
 }
 
@@ -297,16 +346,20 @@ QJsonObject sessionrecord::landPairState(Song& song, const SessionModel& model, 
 	Track* track = song.tracks()[static_cast<std::size_t>(pair.track)];
 	if (track == nullptr) { return pairNotLanded(pair, QStringLiteral("track_created_no_clip")); }
 	const ClipSlot& slot = model.slot(pair.track, pair.scene);
+	const bool captured = pair.contentKind != SessionArrangementRecorder::Event::ContentKind::Unspecified;
+	const int pattern = captured
+		? pair.contentKind == SessionArrangementRecorder::Event::ContentKind::Midi ? pair.patternId : -1
+		: slot.patternId();
 	track->addJournalCheckPoint();
 	Clip* clip = track->createClip(TimePos(pair.startTick));
 	if (clip == nullptr) { return pairNotLanded(pair, QStringLiteral("track_created_no_clip")); }
-	const QString content = copySlotContent(clip, slot, audioSample);
+	const QString content = copySlotContent(clip, slot, audioSample, pair);
 	clip->changeLength(TimePos(length));
 	clip->setAutoResize(false);
 	if (!slot.name().isEmpty()) { clip->setName(slot.name()); }
 	clip->dataChanged();
 
-	addLandedClipFields(&landed, clip, track, slot, content);
+	addLandedClipFields(&landed, clip, track, slot, pattern, content);
 	return landed;
 }
 
@@ -358,13 +411,14 @@ void registerRecordLand(ControlRegistry& registry)
 		LandPair pairs[MaxLandEvents];
 		std::shared_ptr<const SampleBuffer> audioSamples[MaxLandEvents]{};
 		QHash<QString, std::shared_ptr<const SampleBuffer>> audioCache;
+		QHash<const SampleBuffer*, std::shared_ptr<const SampleBuffer>> recordedAudioCache;
 		OpenStart open[MaxLandEvents];
 		int openCount = 0;
 		int unmatchedStops = 0;
 		const int pairCount = landPairEvents(events, count, pairs, MaxLandEvents,
 			open, &openCount, MaxLandEvents, &unmatchedStops);
 		if (ControlResult validation = validateLandRequest(*song, *model, open, openCount,
-			pairs, pairCount, audioSamples, audioCache); !validation.ok) { return validation; }
+				pairs, pairCount, audioSamples, audioCache, recordedAudioCache); !validation.ok) { return validation; }
 
 		// Every event is paired or an unmatched stop (which has no clip to make),
 		// so the pass can consume the whole ring.

@@ -51,6 +51,7 @@
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "SessionArrangementRecorder.h"
+#include "SessionPlayback.h"
 #include "SessionScheduler.h"
 #include "Song.h"
 #include "Track.h"
@@ -194,6 +195,45 @@ private slots:
 		QCOMPARE(copied->notes().front()->key(), 67);
 		QCOMPARE(copied->notes().front()->pos().getTicks(), tick_t{24});
 		QCOMPARE(copied->notes().front()->length().getTicks(), tick_t{48});
+	}
+
+	void aLandedMidiClipUsesThePatternThatWasLaunched()
+	{
+		auto* sourceTrack = dynamic_cast<InstrumentTrack*>(
+			Track::create(Track::Type::Instrument, Engine::patternStore()));
+		QVERIFY(sourceTrack != nullptr);
+		Engine::patternStore()->createClipsForPattern(0);
+		Engine::patternStore()->createClipsForPattern(1);
+		auto* original = dynamic_cast<MidiClip*>(sourceTrack->getClip(0));
+		auto* replacement = dynamic_cast<MidiClip*>(sourceTrack->getClip(1));
+		QVERIFY(original != nullptr);
+		QVERIFY(replacement != nullptr);
+		original->addNote(Note(TimePos(24), TimePos(0), 67, 100), false);
+		replacement->addNote(Note(TimePos(24), TimePos(0), 74, 100), false);
+
+		SessionScheduler& scheduler = m_song->sessionScheduler();
+		publishSessionSlotContent(scheduler, m_song->sessionModel());
+		QVERIFY(scheduler.requestLaunch(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+		SessionClockContext ctx;
+		ctx.ticksPerBar = 192;
+		ctx.framesPerTick = 1.0f;
+		ctx.transportRunning = true;
+		scheduler.processAudio(ctx, 16);
+
+		QVERIFY(run(QStringLiteral("session.set_slot"),
+			{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+				{QStringLiteral("type"), QStringLiteral("midi")}, {QStringLiteral("pattern"), 1}}).ok);
+		ctx.positionTicks = 96;
+		QVERIFY(scheduler.requestStop(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+		scheduler.processAudio(ctx, 16);
+
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QCOMPARE(landedEntry(landed, 0).value(QStringLiteral("pattern")).toInt(), 0);
+		auto* copied = dynamic_cast<MidiClip*>(m_first->getClips().front());
+		QVERIFY(copied != nullptr);
+		QCOMPARE(copied->notes().size(), size_t{1});
+		QCOMPARE(copied->notes().front()->key(), 67);
 	}
 
 	void aLandedAudioCellCarriesItsSample()

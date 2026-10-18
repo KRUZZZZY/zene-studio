@@ -227,7 +227,7 @@ void SessionScheduler::afterLaunchEvents( ActiveSlot& slot, const SessionClockCo
 		slot.phaseOriginFor = slot.state.startedTick;
 		if( event == LaunchEvent::Started ) { takeColumnOver( slot ); }
 		else { m_recorder.recordStop( slot.track, slot.scene, slot.state.startedTick ); }
-		m_recorder.recordStart( slot.track, slot.scene, slot.state.startedTick );
+		recordArrangementStart( slot.track, slot.scene, slot.state.startedTick );
 		// WF-055: a cell recording a fixed length is given its stop now, at the line the take ends on.
 		const tick_t length = event == LaunchEvent::Started
 			? m_audioRecorder.slotStarted( slot.track, slot.scene, slot.state.startedTick, ctx.framesPerTick ) : 0;
@@ -366,7 +366,7 @@ void SessionScheduler::evaluateFollow( ActiveSlot& slot, const SessionClockConte
 			slot.quantisation = plan->quantisation;
 			m_launches.fetch_add( 1, std::memory_order_relaxed );
 			publishStart( firedAt, ctx.positionTicks );
-			m_recorder.recordStart( slot.track, fire.targetScene, firedAt );
+			recordArrangementStart( slot.track, fire.targetScene, firedAt );
 			return;
 		}
 		case FollowOutcome::Refused:
@@ -505,6 +505,18 @@ void SessionScheduler::setFollowActionsEnabled( bool enabled ) noexcept
 
 bool SessionScheduler::followActionsEnabled() const noexcept
 { return m_followEnabled.load( std::memory_order_relaxed ); }
+
+
+void SessionScheduler::recordArrangementStart( int track, int scene, tick_t tick ) noexcept
+{
+	const SessionSlotContent* content = m_slotContent.find( track, scene );
+	if( content == nullptr )
+	{
+		m_recorder.recordStart( track, scene, tick );
+		return;
+	}
+	m_recorder.recordStart( track, scene, tick, content->patternId, content->clip );
+}
 
 
 void SessionScheduler::publishStart( tick_t line, tick_t observed ) noexcept
