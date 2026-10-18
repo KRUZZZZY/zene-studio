@@ -24,6 +24,7 @@
 #include <QFile>
 #include <QTemporaryDir>
 #include <algorithm>
+#include <new>
 
 #include "DrumSynth.h"
 
@@ -66,6 +67,36 @@ Envelope=0,00000001 100,0
 
 		QVERIFY2(rendered, "the valid file around the malformed envelope must still render");
 		QVERIFY2(silent, "an eight-character envelope level must be rejected safely");
+	}
+
+	void refusesAnEnvelopeWhoseRoundedLengthOverflows()
+	{
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		QFile file(tempDir.filePath("oversized.ds"));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray content = "[General]\nVersion=DrumSynth v2.0\nStretch=100\n\n"
+			"[Tone]\nOn=1\nEnvelope=0,0 3e9,0\n";
+		QCOMPARE(file.write(content), static_cast<qint64>(content.size()));
+		file.close();
+
+		int16_t* samples = nullptr;
+		int frames = -1;
+		bool allocationFailed = false;
+		try
+		{
+			DrumSynth synth;
+			frames = synth.GetDSFileSamples(file.fileName(), samples, 2, 44100);
+		}
+		catch (const std::bad_alloc&)
+		{
+			allocationFailed = true;
+		}
+		delete[] samples;
+
+		QVERIFY2(!allocationFailed, "An overflowing duration must be rejected before allocation");
+		QCOMPARE(frames, 0);
+		QVERIFY(samples == nullptr);
 	}
 };
 
