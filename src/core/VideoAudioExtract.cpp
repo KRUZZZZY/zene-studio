@@ -59,6 +59,7 @@ struct WavSink
 	QSaveFile output;
 	std::vector<float> buffer;
 	long long frames = 0;
+	bool writeFailed = false;
 	QString error;
 
 	WavSink() = default;
@@ -118,15 +119,25 @@ struct WavSink
 		return true;
 	}
 
-	//! Convert @a count input frames (none flushes what the resampler holds) and write them.
-	void write(const uint8_t** input, int count)
+	//! Convert @a count input frames (none flushes what the resampler holds) and write them; false once a write falls short.
+	bool write(const uint8_t** input, int count)
 	{
+		if (writeFailed) { return false; }
 		const int room = swr_get_out_samples(resampler, count);
-		if (room <= 0) { return; }
+		if (room <= 0) { return true; }
 		buffer.resize(static_cast<std::size_t>(room) * 2);
 		auto* out = reinterpret_cast<uint8_t*>(buffer.data());
 		const int got = swr_convert(resampler, &out, room, input, count);
-		if (got > 0) { frames += sf_writef_float(file, buffer.data(), got); }
+		if (got <= 0) { return true; }
+		const sf_count_t written = sf_writef_float(file, buffer.data(), static_cast<sf_count_t>(got));
+		if (written != got)
+		{
+			writeFailed = true;
+			error = QObject::tr("only %1 of %2 frames were written").arg(written).arg(got);
+			return false;
+		}
+		frames += written;
+		return true;
 	}
 };
 
@@ -147,7 +158,7 @@ bool reportFrame(const video::MediaStream& media, const AVFrame* frame, double l
 	return !control->cancel.load();
 }
 
-//! Decode every frame of @a media into @a sink; false when @a control stopped it.
+//! Decode every frame of @a media into @a sink; false on cancellation or a failed WAV write.
 bool decodeAll(video::MediaStream& media, WavSink& sink, VideoExtractControl* control)
 {
 	AVFrame* frame = av_frame_alloc();
@@ -156,10 +167,10 @@ bool decodeAll(video::MediaStream& media, WavSink& sink, VideoExtractControl* co
 	bool whole = true;
 	while (media.receive(frame, packet))
 	{
-		sink.write(const_cast<const uint8_t**>(frame->extended_data), frame->nb_samples);
+		if (!sink.write(const_cast<const uint8_t**>(frame->extended_data), frame->nb_samples)) { whole = false; break; }
 		if (!reportFrame(media, frame, length, control)) { whole = false; break; }
 	}
-	sink.write(nullptr, 0);
+	if (!sink.write(nullptr, 0)) { whole = false; }
 	av_frame_free(&frame);
 	av_packet_free(&packet);
 	return whole;
@@ -177,6 +188,7 @@ QString extract(const QString& video, const QString& wav, VideoAudio* out, Video
 	if (!sink.openFile(wav, media.codec->sample_rate)) { return QObject::tr("cannot write '%1': %2").arg(wav, sink.error); }
 	if (!decodeAll(media, sink, control))
 	{
+		if (sink.writeFailed) { return QObject::tr("cannot write '%1': %2").arg(wav, sink.error); }
 		return QObject::tr("the extraction was cancelled");
 	}
 	if (sink.frames <= 0)
