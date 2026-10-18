@@ -90,7 +90,8 @@ PLUGIN_EXPORT Plugin * lmms_plugin_main( Model *m, void * )
 
 // I'd much rather do without a mutex, but it looks like
 // the emulator code isn't really ready for threads
-QMutex OpulenzInstrument::emulatorMutex;
+// Recursive because reloadEmulator() holds it while updatePatch() takes it again.
+QRecursiveMutex OpulenzInstrument::emulatorMutex;
 
 // Weird ordering of voice parameters
 const auto adlib_opadd = std::array<unsigned int, OPL2_VOICES>{0x00, 0x01, 0x02, 0x08, 0x09, 0x0A, 0x10, 0x11, 0x12};
@@ -230,17 +231,17 @@ OpulenzInstrument::~OpulenzInstrument() {
 
 // Samplerate changes when choosing oversampling, so this is more or less mandatory
 void OpulenzInstrument::reloadEmulator() {
-	delete theEmulator;
 	emulatorMutex.lock();
+	delete theEmulator;
 	theEmulator = new CTemuopl(Engine::audioEngine()->outputSampleRate(), true, false);
 	theEmulator->init();
 	theEmulator->write(0x01,0x20);
-	emulatorMutex.unlock();
 	for(int i=0; i<OPL2_VOICES; ++i) {
 		voiceNote[i] = OPL2_VOICE_FREE;
 		voiceLRU[i] = i;
 	}
 	updatePatch();
+	emulatorMutex.unlock();
 }
 
 // This shall only be called from code protected by the holy Mutex!
