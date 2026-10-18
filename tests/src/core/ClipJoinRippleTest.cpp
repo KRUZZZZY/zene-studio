@@ -40,6 +40,7 @@
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MidiController.h"
+#include "ProjectMarkers.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -316,6 +317,22 @@ private slots:
 		QCOMPARE(startsOf(m_track), (QList<int>{0, 96, 192, 288}));  // the follower moved 192 later
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(startsOf(m_track), (QList<int>{0, 96}));
+	}
+
+	void edgeSnapKeepsDistancesWithinTickRange()
+	{
+		QVERIFY(ProjectMarkers::instance().add(0, QStringLiteral("zero"), QString()) > 0);
+		constexpr tick_t length = 1;
+		constexpr tick_t tolerance = 4;
+		const tick_t maximum = std::numeric_limits<tick_t>::max();
+		const tick_t minimum = std::numeric_limits<tick_t>::min();
+
+		const arrangement::SnapHit nearMaximum = arrangement::snapToEdgesHit(maximum, length, nullptr, tolerance);
+		QCOMPARE(nearMaximum.start, maximum);
+		QVERIFY(nearMaximum.kind == arrangement::SnapHit::Kind::None);
+		const arrangement::SnapHit nearMinimum = arrangement::snapToEdgesHit(minimum, length, nullptr, tolerance);
+		QCOMPARE(nearMinimum.start, minimum);
+		QVERIFY(nearMinimum.kind == arrangement::SnapHit::Kind::None);
 	}
 
 	void aMappingIsMadeAndRemovedOverTheSocket()
