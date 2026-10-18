@@ -229,6 +229,7 @@ private slots:
 	void cleanup()
 	{
 		if (m_session != nullptr && m_session->mode() == collab::CollabSession::Mode::Joined) { m_session->leave(); }
+		if (m_session != nullptr && m_session->mode() == collab::CollabSession::Mode::Hosting) { m_session->stop(); }
 		m_session = nullptr;
 		if (m_engineStarted)
 		{
@@ -825,6 +826,85 @@ private slots:
 		QTRY_VERIFY_WITH_TIMEOUT(host.requestedResync(), 1500);
 		QVERIFY(m_got.commands.isEmpty());
 		QCOMPARE(client.sequence(), quint64(1));
+	}
+
+	//! A failed promotion leaves a remote peer remote until the host can provide its project.
+	void failedPromotionKeepsPeerRemote()
+	{
+		const QByteArray remoteKey = randomInviteKey();
+		m_host->setKey(CollabRole::Remote, remoteKey);
+		m_host->setSnapshotProvider([](QString* error) {
+			*error = QStringLiteral("serialization failed");
+			return QByteArray();
+		});
+		CollabClient client;
+		wire(client);
+		client.join(inviteFor(CollabRole::Remote, remoteKey), QStringLiteral("Remote"));
+		QTRY_COMPARE_WITH_TIMEOUT(client.state(), CollabClient::State::Joined, 10000);
+		QTRY_COMPARE(m_host->peerCount(), 1);
+		const int peerId = m_host->peersJson().first().toObject().value(QStringLiteral("id")).toInt();
+
+		QVERIFY(!m_host->setPeerRole(peerId, CollabRole::Editor));
+		QCOMPARE(m_host->peersJson().first().toObject().value(QStringLiteral("role")).toString(),
+			QStringLiteral("remote"));
+		QTest::qWait(100);
+		QCOMPARE(client.role(), CollabRole::Remote);
+		QVERIFY(!client.hasSnapshot());
+	}
+
+	//! Snapshot refusal is distinct from a missing peer through the session API.
+	void sessionReportsFailedPromotionAndKeepsPeerRemote()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		Engine::init(true);
+		m_engineStarted = true;
+		ControlRegistry::setReady(true);
+		Song* song = Engine::getSong();
+		const QString projectPath = directory.filePath(QStringLiteral("partial.mmp"));
+		QVERIFY(song->saveProjectFile(projectPath));
+		QFile projectFile(projectPath);
+		QVERIFY(projectFile.open(QIODevice::ReadOnly));
+		QByteArray project = projectFile.readAll();
+		projectFile.close();
+		const qsizetype closingSong = project.lastIndexOf("</song>");
+		QVERIFY(closingSong >= 0);
+		project.insert(closingSong, "<newsection/>");
+		QVERIFY(projectFile.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QCOMPARE(projectFile.write(project), project.size());
+		projectFile.close();
+		song->loadProject(projectPath, {QStringLiteral("newsection")});
+		QVERIFY(song->isPartialLoad());
+
+		m_session = CollabSession::instance();
+		const ControlResult hosted = m_session->host(0, false, QStringLiteral("Host"));
+		QVERIFY2(hosted.ok, qPrintable(hosted.errorMessage));
+		const ControlResult invitation = m_session->invite(CollabRole::Remote, QStringLiteral("local"));
+		QVERIFY2(invitation.ok, qPrintable(invitation.errorMessage));
+		Invite remoteInvite;
+		QString decodeError;
+		QVERIFY2(Invite::decode(invitation.result.value(QStringLiteral("invite")).toString(), &remoteInvite,
+			&decodeError), qPrintable(decodeError));
+
+		CollabClient client;
+		wire(client);
+		client.join(remoteInvite, QStringLiteral("Remote"));
+		QTRY_COMPARE_WITH_TIMEOUT(client.state(), CollabClient::State::Joined, 10000);
+		QTRY_COMPARE(m_session->state().value(QStringLiteral("host")).toObject()
+			.value(QStringLiteral("peers")).toArray().size(), 1);
+		const QJsonObject peer = m_session->state().value(QStringLiteral("host")).toObject()
+			.value(QStringLiteral("peers")).toArray().first().toObject();
+
+		const ControlResult refused = m_session->setRole(peer.value(QStringLiteral("id")).toInt(), CollabRole::Editor);
+		QVERIFY(!refused.ok);
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY(refused.errorMessage.contains(QStringLiteral("newsection")));
+		QCOMPARE(m_session->setRole(-1, CollabRole::Editor).errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(m_session->state().value(QStringLiteral("host")).toObject().value(QStringLiteral("peers"))
+			.toArray().first().toObject().value(QStringLiteral("role")).toString(), QStringLiteral("remote"));
+		QTest::qWait(100);
+		QCOMPARE(client.role(), CollabRole::Remote);
+		QVERIFY(!client.hasSnapshot());
 	}
 
 	//! The join limiter: attempts and failures per address are bounded, and a ban expires.
