@@ -28,6 +28,7 @@
 #include "AudioFileProcessorWaveView.h"
 
 #include <QPainter>
+#include <QTimer>
 
 #include "ComboBox.h"
 #include "DataFile.h"
@@ -140,6 +141,14 @@ AudioFileProcessorView::AudioFileProcessorView(Instrument* instrument,
 
 	connect(castModel<AudioFileProcessor>(), SIGNAL(isPlaying(lmms::f_cnt_t)),
 			m_waveView, SLOT(isPlaying(lmms::f_cnt_t)));
+
+	// Cluster p12-315: the playhead leaves the render thread through a single
+	// polling timer, so render periods never post GUI events or allocate for
+	// playhead updates. The view polls; the model publishes from the render path.
+	auto* const playheadPoll = new QTimer(this);
+	playheadPoll->setObjectName(QStringLiteral("audioFileProcessorPlayheadPoll"));
+	connect(playheadPoll, &QTimer::timeout, castModel<AudioFileProcessor>(), &AudioFileProcessor::pollPlayhead);
+	playheadPoll->start(20);
 
 	qRegisterMetaType<lmms::f_cnt_t>("lmms::f_cnt_t");
 
