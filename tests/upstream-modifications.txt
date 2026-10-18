@@ -2539,3 +2539,7 @@ tests/src/core/ImportFilterTest.cpp	cluster new-p10-411: add a subprocess regres
 src/core/AudioEngineWorkerThread.cpp	cluster new-p10-499: process jobs synchronously when the fixed job queue is full so queue completion cannot hide skipped audio work; covered by RenderJobQueueTest::queueOverflowRunsEveryJob.
 tests/src/core/RenderJobQueueTest.cpp	cluster new-p10-499: prove every distinct job runs once when a static render queue receives 8193 jobs.
 tests/src/core/RoutingGraphScheduleTest.cpp	cluster new-p10-499: rename queue-full refusal instrumentation to fallback instrumentation after overflow jobs are processed inline.
+include/AutomationClip.h	cluster new-p10-506: declares target removal and an object-presence query used by the GUI disconnect path.
+src/core/AutomationClip.cpp	cluster new-p10-506: removes automation targets under the engine render-exclusion guard followed by the clip mutex; regression AutomationClipDisconnectTest.
+src/gui/clips/AutomationClipView.cpp	cluster new-p10-506: routes arranger disconnection through synchronized AutomationClip target removal; regression AutomationClipDisconnectTest.
+tests/CMakeLists.txt	cluster new-p10-506: registers the isolated automation disconnect concurrency regression.

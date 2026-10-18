@@ -75,9 +75,11 @@ public:
 	~AutomationClip() override = default;
 
 	bool addObject( AutomatableModel * _obj, bool _search_dup = true );
+	bool removeObject( AutomatableModel * _obj );
 
 	const AutomatableModel * firstObject() const;
 	const objectVector& objects() const;
+	bool hasObjects() const;
 
 	// progression-type stuff
 	inline ProgressionType progressionType() const
