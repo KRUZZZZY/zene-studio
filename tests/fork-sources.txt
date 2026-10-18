@@ -2208,6 +2208,9 @@ tests/rt_safety_source.py
 
 tests/session_api_proof_lib.py
 tests/session_api_proof_rows.py
+# Q050-035 (R-platform-26): the docs-truth gate for offline HTDemucs stem separation - built in,
+# local and ON by default. Reads CMakeLists.txt, the release-honesty manifest and the user docs.
+tests/stem-availability-docs-gate.py
 tests/src/core/AafImportTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
 tests/src/core/AbletonLinkSessionTest.cpp

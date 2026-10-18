@@ -1,4 +1,4 @@
-# Offline stem separation GUI (opt-in, see doc/STEM-SPLIT.md).
+# Offline stem separation GUI (on by default, owner decision 14; see doc/STEM-SPLIT.md).
 IF(LMMS_HAVE_STEM_SPLIT)
 	SET(LMMS_STEM_GUI_SRCS
 		gui/StemSplitController.cpp

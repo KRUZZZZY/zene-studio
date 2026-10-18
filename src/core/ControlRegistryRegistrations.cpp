@@ -277,9 +277,9 @@ void registerControlCommands(ControlRegistry& registry)
 #endif // LMMS_HAVE_WASM
 	// The stem.* group travels with the offline stem-separation engine, the
 	// same rule again: without LMMS_HAVE_STEM_SPLIT there is no StemJobManager,
-	// no backend and no model store, so a default build (WANT_STEM_SPLIT=OFF,
-	// CMakeLists.txt:120) must not carry these ids. The A16 table guards its
-	// seven stem rows with the same #ifdef.
+	// no backend and no model store, so a build that configured the option OFF
+	// (it defaults ON at CMakeLists.txt:130, owner decision 14) must not carry
+	// these ids. The A16 table guards its seven stem rows with the same #ifdef.
 #ifdef LMMS_HAVE_STEM_SPLIT
 	registerStemCommands(registry);
 #endif // LMMS_HAVE_STEM_SPLIT

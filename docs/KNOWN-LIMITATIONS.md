@@ -483,26 +483,33 @@ library to work.
   over `plugin.scan_cache_list`); **Edit ▸ Plugin Quarantine** adds and releases entries as well. The
   documented way to quarantine a plugin is no longer hand-editing the JSON file. The pre-menu record
   that this replaced is kept in the "plugin scan cache" bullet further down this page.
-- **Two features are compiled out of these builds**: the **WASM DSP sandbox** (needs the wasmtime C API) and
-  **offline HTDemucs stem separation** (opt-in at configure time - *since owner decision 14 it is on by default;
-  the release-honesty manifest row requires ON, 2026-09-30*). Both report `OFF` in the binary's own build
-  options, re-stated from the build this page was applied against:
-  `WANT_WASM='OFF'`, `WANT_STEM_SPLIT='OFF'` (`build/lmmsversion.h`, the same text the binary prints on its
-  `Build options:` line). **What enforces "everything the release notes document as present is in this build"
-  is `tests/release-honesty-gate.sh`, and on this release's configuration it passes every row.** The guard's
+- **One feature is compiled out of these builds: the WASM DSP sandbox** (it needs the wasmtime C API, which no
+  CI job provisions, so the option's default `ON` degrades to `OFF`). This build reports `WANT_WASM='OFF'` in
+  its own build options (`build/lmmsversion.h`, the same text the binary prints on its `Build options:` line).
+  **Offline HTDemucs stem separation is the other configure-time feature, and it is the opposite case**
+  *(corrected 2026-10-15, Q050-035)*: **it is built in and on by default.** Owner decision 14 made
+  `WANT_STEM_SPLIT` default `ON` (`CMakeLists.txt:130`), the release-honesty manifest row requires `ON`, and
+  this build reports `WANT_STEM_SPLIT='ON'` with the ONNX Runtime SDK found (`LMMS_HAVE_ONNXRUNTIME='1'`, so
+  the in-process inference backend is enabled; without the SDK the external-process backend is used instead).
+  It is **local and offline**: the separation runs on this machine and nothing is uploaded — the only network
+  access is the one-time fetch of the pinned ~166 MB model on first use, which `LMMS_STEM_OFFLINE` (or an
+  explicit `LMMS_STEM_MODEL` path) turns off. Text on this page and in the 0.3.0 release notes used to say
+  stem separation was compiled out and reported `OFF`; that described the pre-owner-decision-14 configuration
+  and is **not** true of the default build. The detailed limits of the feature (44.1 kHz OUTPUT, the
+  offline job, socket-only UI) are in the `stem.*` section below, not here.
+  **What enforces "everything the release notes document as present is in this build"
+  is `tests/release-honesty-gate.sh`, and on this configuration it passes every row.** The guard's
   mechanism is the checkable half: it fails a documented-present feature when the build under test does not
   report that option `ON` (`AUTO` is not `ON` — the script's own header says so), it fails a documented-absent
-  feature that reports `ON`, it exits 1 on any mismatch, and the six build jobs in
-  `.github/workflows/build.yml` run it against the binary they have just built. **Measured on this release's
-  configuration: 6 of 6 rows match** — the three plugin hosts `ON matches ON` and named as modules
-  (`libvst3effect.so`, `libvst3instrument.so`, `libclapeffect.so`), and session view, the WASM sandbox and
-  stem separation `OFF matches OFF` (`RESULT: PASS — all 6 documented feature(s) are what this build contains`,
-  `tests/integration-logs-release-verify/honesty-guard.log`). Run against the two older, non-release build
-  directories that happen to sit on this box it does not pass (3 of 6 rows on `build-coverage/zene`, 1 of 6 on
-  `build/zene`) — those directories are configured against the manifest, and the guard is right to fail them;
-  the release run above is this claim's evidence. The two features above are deliberately absent either way.
-  **Changed in 0.3.0-alpha:** the `session-view` row is no longer one of them — the option defaults ON and the
-  row now requires ON (see the Session View bullet above for what that does and does not include).
+  feature that reports `ON`, it exits 1 on any mismatch, and the build jobs in
+  `.github/workflows/build.yml` run it against the binary they have just built. **Measured on this
+  configuration: 5 of 5 rows match** — the three plugin hosts `ON matches ON` and named as modules
+  (`libvst3effect.so`, `libvst3instrument.so`, `libclapeffect.so`), the WASM sandbox `OFF matches OFF`, and
+  stem separation `ON matches ON` (`RESULT: PASS — all 5 documented feature(s) match this build on linux`;
+  `tests/advertised-features.tsv` is the single list the gate reads).
+  **Changed in 0.3.0-alpha:** the `session-view` row is gone — ARCH-4 removed `WANT_SESSION_VIEW` entirely
+  (the Session View is native engine code), so there is no option for a row and a build to agree about
+  (see the Session View bullet above for what the interface still does and does not include).
 
 - **The WASM DSP sandbox is present and runnable when built with the wasmtime C API, it is drivable through
   the socket, and the RELEASE builds still compile it out — added 2026-09-13 (`#614`), revised by
@@ -1525,19 +1532,24 @@ line each, because the scope contract asks for one each:
   expression already stored on notes — `note.expression_clear` is the verb for that. The master channel and
   the bend range are per-MIDI-stream **instance** settings with no object the control surface can reach, so
   `device.mpe_get_state` reports the engine's defaults rather than writing a copy nothing reads.
-## Offline stem separation (`stem.*`, feature row 26) — socket-only, opt-in, and it needs the model
+## Offline stem separation (`stem.*`, feature row 26) — built in, local, socket-only, and it needs the model
 
 The engine (HTDemucs over ONNX Runtime, one job at a time) was already in the tree with five registered
-tests; what was missing was any way to drive it. Seven ids now do — `stem.get_state`, `stem.job_start`,
-`stem.job_status`, `stem.job_result`, `stem.job_cancel`, `stem.model_get_state`, `stem.model_download` —
-and this is the honest half.
+tests; what was missing was any way to drive it. Eight ids now do — `stem.get_state`, `stem.job_start`,
+`stem.job_status`, `stem.job_result`, `stem.job_cancel`, `stem.model_get_state`, `stem.model_download` and
+`stem.tracks_create` — and this is the honest half. **It is local and offline: the separation runs on this
+machine and nothing is uploaded.** The only network access is the one-time model fetch described below; with
+the model already in the model store — or with `LMMS_STEM_OFFLINE` / an explicit `LMMS_STEM_MODEL` path — the
+feature works with no network at all.
 
-- **UI absence — one line: the whole `stem.*` group is drivable through the socket, not from the
-  interface.** The only user-visible gesture that reaches this engine is the sample clip's **"Split to
-  stems"** context action, a *different, pre-existing* path (`src/gui/clips/SampleClipView.cpp:124` →
-  `StemSplitController::splitClipToStems`): it takes its mix from the clip a human selected and exists
-  only when a display does. Nothing in the interface shows an agent's job, its progress or its error,
-  nothing lists or fetches models, and no menu item, toolbar button or keybinding reaches a `stem.*` id.
+- **The UI and the agent surface are the SAME registered commands.** The sample clip's **"Split to
+  stems"** context action (`src/gui/clips/SampleClipView.cpp` → `StemSplitController::splitClipToStems`)
+  now starts its job through `stem.job_start`, polls `stem.job_status`, cancels through `stem.job_cancel`
+  and materialises the four tracks through `stem.tracks_create` — the identical `ControlRegistry`
+  commands an agent calls (a click and a command take one path, the whole point of SPEC A11). The action
+  still exists only when a display does, and what remains absent from the interface is narrower: nothing
+  shows an *agent's* job, its progress or its error, nothing lists or fetches models, and no menu item,
+  toolbar button or keybinding reaches a `stem.*` id — the only route is the clip context menu.
 - **The feature is ON by default since owner decision 14.** `WANT_STEM_SPLIT` defaults to ON. A
   build configured with it OFF compiles none of this engine and registers none of these ids. The A16
   rows are guarded by the same macro, so the contract table and the registry cannot disagree. Without
@@ -1554,17 +1566,28 @@ and this is the honest half.
   7.8 s segment (343980 frames at 44100 Hz) as context, so no chunk size fits an audio buffer: this is an
   **offline job only**. `stem.get_state` reports `realtime: false` and the lookahead; the group offers no
   monitoring, no streaming and no realtime variant.
-- **44100 Hz only.** The input must already be at the model's own rate — there is no resampler
-  (SPEC-stem-split.md OQ-1) — and the refusal names the rate it got. A file `render.render` wrote is
-  already in that format, which is why "bounce the session, then split the bounce" is the composable flow.
-- **The source is a file, not a clip or a bus.** The socket has no way to hand the engine a clip's audio
-  buffer; `stem.job_start` names an absolute path, and the mix is decoded from it.
-- **`stem.job_result` writes files, not tracks.** It produces `<stem>.wav` (drums, bass, other, vocals)
-  as float32 RIFF/WAVE with a sha256 per file, and it does **not** materialise `SampleTrack`s: the GUI's
-  `StemTrackBuilder` gesture is not reachable from the socket in 0.3.0.
+- **44.1 kHz output; other input rates are resampled.** The stems always come back at the model's
+  own 44.1 kHz, but a source at another rate (48 kHz, 96 kHz, ...) is **resampled to it offline**
+  before separation (the engine's best sinc converter, 0.5.0 E27) instead of being refused — the
+  rejection-by-rate behaviour SPEC-stem-split.md OQ-1 left open was closed in 0.5.0. The job reports
+  the model's `sample_rate`, so a caller sees 44100 regardless of its source's rate. A file
+  `render.render` wrote is already in that format, which is why "bounce the session, then split the
+  bounce" is the direct flow (a resample is then a no-op).
+- **The source the socket names is a file.** `stem.job_start` names a platform-native absolute path (a
+  drive or UNC path on Windows) and the mix is decoded from it; the socket has no way to hand the engine a
+  live clip or a bus. The GUI action spans the
+  gap for in-memory clips (recorded, pasted, generated) by writing the clip's own audio to a temporary WAV
+  and passing that path to the same command, so an unsaved clip still splits.
+- **`stem.job_result` writes files; `stem.tracks_create` builds tracks.** `stem.job_result` produces
+  `<stem>.wav` (drums, bass, other, vocals) as float32 RIFF/WAVE with a sha256 per file and touches no
+  project state. `stem.tracks_create` takes a completed job's four stems and adds them to the song as four
+  `SampleTrack`s (one clip each, at the caller's position) — the user-facing result, and the same command
+  the GUI's "Split to stems" action runs. It is the group's one editing verb and is ONE undo step: a single
+  `control.undo` (or Ctrl+Z) removes all four tracks together.
 - **Jobs are not project state.** They live in the instance's memory: a reload or a restart loses the id,
-  its progress and its stems, and `control.transactions` shows no record because the whole group is
-  `not_mutating` — a job is not a document and a written stem is an output.
+  its progress and its stems. The job, model and write verbs are `not_mutating` and leave no transaction;
+  the one editing verb, `stem.tracks_create`, records a `true_inverse` transaction whose inverse removes
+  all four tracks — a job itself is still not a document, and a written stem is an output.
 - **`stem.model_download` carries a DECLARED BOUND.** A performing transfer (an explicitly pinned spec)
   runs on the control surface's own thread, so the surface does not answer — `control.ping` included —
   until it finishes or fails. This is the **same** defect `docs/RENDER-CHILD-WAIT.md:120-126` records for

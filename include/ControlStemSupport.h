@@ -46,17 +46,19 @@
  * reports `realtime: false` with that lookahead, and no verb here pretends to a
  * live mode.
  *
- * THE FEATURE IS OFF IN THE RELEASE CONFIGURATION. WANT_STEM_SPLIT defaults to
- * OFF (CMakeLists.txt:120) and this whole group is compiled only when it is ON:
- * without LMMS_HAVE_STEM_SPLIT there is no job manager, no backend and no model
- * store, so the registry carries no `stem.*` id whose handler could not exist -
- * the rule the telemetry.*, session.* and wasm.* groups follow
- * (src/core/ControlRegistryRegistrations.cpp). The model store is stricter
- * still: models are never bundled, and the default spec is UNPINNED in v1
- * (src/core/StemModelStore.cpp:78-92), so a default build that has the feature
- * compiled in still refuses a download until a spec is pinned from the model
- * card. docs/KNOWN-LIMITATIONS.md and docs/RELEASE-NOTES-v0.3.0-alpha.md carry
- * both sentences.
+ * THE FEATURE IS ON IN THE DEFAULT RELEASE CONFIGURATION. WANT_STEM_SPLIT
+ * defaults to ON (CMakeLists.txt:130, owner decision 14) and this whole group is
+ * compiled only when it is ON: without LMMS_HAVE_STEM_SPLIT there is no job
+ * manager, no backend and no model store, so the registry carries no `stem.*` id
+ * whose handler could not exist - the rule the telemetry.*, session.* and wasm.*
+ * groups follow (src/core/ControlRegistryRegistrations.cpp). It used to default
+ * OFF and this comment said so; that described the pre-owner-decision-14
+ * configuration and is not true of the default build. The model store is stricter
+ * still: models are never bundled, and the default spec is PINNED (owner decision
+ * 14; src/core/StemModelStore.cpp:92-110 - HTTPS only, one commit of the model
+ * card, SHA-256 and size), so a first job fetches it on its own worker rather
+ * than refusing. docs/KNOWN-LIMITATIONS.md and docs/RELEASE-NOTES-v0.3.0-alpha.md
+ * carry both sentences.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -84,6 +86,7 @@
 #include <QJsonObject>
 #include <QString>
 
+#include "StemSeparation/StemTypes.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -113,11 +116,11 @@ LMMS_EXPORT QJsonObject stemState();
  *  file) and returns its id in \p jobId plus the job's own object in \p job.
  *
  *  Refusals are the engine's own, never invented here: an undecodable or
- *  missing file, an input rate that is not the model's (resampling is not
- *  implemented - SPEC-stem-split.md OQ-1), and "no backend" (no interpreter
- *  with onnxruntime, no in-process runtime, or no model file) each come back as
- *  false with the engine's message. \a segmentFrames <= 0 means the model's own
- *  HTDemucsSegmentFrames.
+ *  missing file, a source too long or too short to split at the model's rate,
+ *  and "no backend" (no interpreter with onnxruntime, no in-process runtime, or
+ *  no model file) each come back as false with the engine's message. An input
+ *  rate other than the model's own is RESAMPLED to it offline (0.5.0 E27), not
+ *  refused. \a segmentFrames <= 0 means the model's own HTDemucsSegmentFrames.
  */
 LMMS_EXPORT bool stemStartJob(const QString& source,
 	int segmentFrames,
@@ -165,6 +168,15 @@ LMMS_EXPORT bool stemWriteResult(int jobId,
 	const QString& directory,
 	QJsonObject* result,
 	QString* error);
+
+/*! The four buffers of a COMPLETED \a jobId, for the caller that materialises
+ *  them as tracks (`stem.tracks_create`) rather than as files. Same validation
+ *  as stemWriteResult(), and the same instance ledger: false with a typed
+ *  message when \a jobId was never issued by this surface, and false when the
+ *  job exists but has not COMPLETED. The buffers are shared and immutable, so a
+ *  returned StemSet can be handed straight to SampleClips (StemTypes.h:62-64).
+ */
+LMMS_EXPORT bool stemTakeResult(int jobId, StemSet* stems, QString* error);
 
 /*! The one WAV writer the result verb uses (src/core/ControlStemWav.cpp): \a
  *  buffer as float32 RIFF/WAVE - audio_format 3, 32-bit, stereo, the reference

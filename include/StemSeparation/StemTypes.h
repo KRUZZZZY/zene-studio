@@ -68,8 +68,9 @@ using StemSet = std::array<std::shared_ptr<const SampleBuffer>, NumStems>;
 // separation can never run on the audio thread.
 inline constexpr int HTDemucsSegmentFrames = 343980;
 
-// Model native sample rate. Inputs at other rates are rejected in v1; a
-// resampler is deliberately left as an open question (SPEC-stem-split.md OQ-1).
+// Model native sample rate. Inputs at other rates are RESAMPLED to it offline
+// (0.5.0 E27): the surface and the GUI resample before submitting, so stem
+// separation is not limited to 44.1 kHz sources (SPEC-stem-split.md OQ-1 closed).
 inline constexpr int StemModelSampleRate = 44100;
 
 } // namespace lmms

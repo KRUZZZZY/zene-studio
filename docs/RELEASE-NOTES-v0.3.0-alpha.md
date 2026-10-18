@@ -753,7 +753,7 @@ two interchangeable backends (in-process ORT when the SDK was found; `tools/stem
 child process otherwise) and five registered tests (`OnnxRuntimeStemSeparatorTest`, `StemExportTest`,
 `StemJobManagerTest`, `StemModelStoreTest`, `StemSplitPipelineTest`). What did not exist was any way
 for a client to drive it: the only route was that CLI, outside the socket, plus a GUI-only clip action
-(`src/gui/StemSplitController.cpp`). Seven ids close that gap:
+(`src/gui/StemSplitController.cpp`). Eight ids close that gap:
 
 - **`stem.get_state`** answers with the engine's own facts — the backend this build drives, whether it
   can run right now (and the reason when it cannot), the model file the store resolves, the model
@@ -766,17 +766,27 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
   RIFF/WAVE with a sha256 per file, and cancel stops an outstanding job between inference segments.
   The separation runs on the job manager's own worker thread, so the control surface keeps answering —
   **including `control.ping` — while a job runs**, which the ctest measures rather than asserts from the
-  source. `stem.model_get_state` and `stem.model_download` are the model store: the resolved path, the
+  source. **`stem.tracks_create`** is the user-facing half added for the GUI: it turns a completed job's
+  four stems into four `SampleTrack`s at a position in ONE undo step, and it is the SAME registered
+  command the GUI's "Split to stems" action calls, so a click and an agent command take one path (the
+  other seven verbs are `not_mutating`; this one edits the project and is a `true_inverse`).
+  `stem.model_get_state` and `stem.model_download` are the model store: the resolved path, the
   spec, whether it is pinned enough to fetch, and a download that **refuses an unpinned spec** — the
-  default spec is deliberately unpinned in v1, so the default call is a typed refusal naming the model
-  card, which is the "never bundled, always verified" policy working rather than a gap.
-- **The feature is OFF in the default release configuration, and the group is honest about it.**
-  `WANT_STEM_SPLIT` defaults to OFF (`CMakeLists.txt:120`), so a default build compiles none of the
-  engine and registers none of these ids — the same rule the `telemetry.*`, `session.*` and `wasm.*`
-  groups follow, and the A16 rows are guarded by the same macro so the registry and the contract table
-  cannot disagree. Even a build with the option ON needs **the model present** before a job can start:
-  models are never bundled with the product, and the refusal names the path it looked in and the model
-  card to fetch from.
+  default spec IS pinned since owner decision 14 (HTDemucs fp16, one commit of the model card, SHA-256 and
+  size), so a first job fetches it on its own worker, while an explicit spec with no sha256/size is a typed
+  refusal, which is the "never bundled, always verified" policy working rather than a gap.
+- **The feature is ON in the default release configuration, and the group is honest about it.**
+  *Corrected 2026-10-15 (Q050-035): this bullet said the feature was OFF in the default configuration; owner
+  decision 14 (2026-09-29) turned `WANT_STEM_SPLIT` ON by default before the 0.3.0 cut, so that text was
+  wrong for this release and the `stem.*` group belongs to the release configuration (see the A16 section
+  below, where the group's eight rows — seven `not_mutating` and one `true_inverse` — are counted).*
+  `WANT_STEM_SPLIT` defaults to ON (`CMakeLists.txt:130`), the release-honesty manifest row requires ON
+  (`tests/advertised-features.tsv`), and the build reports `WANT_STEM_SPLIT='ON'`. It is **local and offline**
+  — the separation runs on this machine and nothing is uploaded; the only network access is the one-time fetch
+  of the pinned model on first use, which `LMMS_STEM_OFFLINE` turns off. A build that configures the option
+  OFF compiles none of the engine and registers none of these ids, and even with the option ON a job needs
+  **the model present** before it can start: models are never bundled with the product, and the refusal names
+  the path it looked in and the model card to fetch from.
 - **Proof.** ctest `ControlStemCommands` (`tests/control-stem-commands.py`), registered only when the
   feature is compiled in. It drives the REAL pipeline over `--control-socket` on the committed
   458-byte stub ONNX graph (`tests/data/stub-4stem-linear.onnx`) through the shipped CLI — no 166 MB
@@ -785,27 +795,28 @@ for a client to drive it: the only route was that CLI, outside the socket, plus 
   does not write), the asynchrony (`control.ping` answered while the job runs), the four written stems
   (float32 RIFF/WAVE, the mix's own length, sha256 verified against the file), a re-write of the same
   directory, a deterministic cancel of a slowed job (`LMMS_STEM_CHUNK_DELAY_MS`, the separator's own
-  test hook) and the model store's policy, with the reported SHA-256 cross-checked against the hash the
-  script computes locally. A host with no python onnxruntime skips (`SKIP_RETURN_CODE 77`) rather than
-  passing.
-- **Stated limits, all in `docs/KNOWN-LIMITATIONS.md`:** 44100 Hz only (there is no resampler —
-  SPEC-stem-split.md OQ-1 — and the refusal names the rate); the offline job only, never realtime; the
-  source is a file, not a clip or a bus; `stem.job_result` writes output artefacts and does **not**
-  materialise tracks (`StemTrackBuilder`, the GUI's own "split to stems" gesture, is not reachable from
-  the socket in 0.3.0); the jobs live in the instance's memory and do not survive a reload; and
+  test hook), the model store's policy (with the reported SHA-256 cross-checked against the hash the
+  script computes locally) and the new user-facing verb: `stem.tracks_create` materialises the four stems
+  as four tracks and records exactly ONE transaction, and one `control.undo` removes all four. A host with
+  no python onnxruntime skips (`SKIP_RETURN_CODE 77`) rather than passing.
+- **Stated limits, all in `docs/KNOWN-LIMITATIONS.md`:** the stems are always the model's own 44.1 kHz,
+  but a source at another rate is **resampled offline** to it (0.5.0 E27) rather than refused; the offline
+  job only, never realtime; the socket source is a file; `stem.job_result` writes output artefacts, while
+  `stem.tracks_create` materialises the four tracks (and the GUI's "Split to stems" action calls that same
+  command); the jobs live in the instance's memory and do not survive a reload; and
   `stem.model_download` **carries a declared bound** — a performing transfer runs on the control
   thread, so the surface does not answer until it finishes or fails (the defect
   `docs/RENDER-CHILD-WAIT.md:120-126` records for the child-process renders). The transfer's performing
   path is **not exercised by any registered proof** — CI has no pinned artefact to fetch — and only the
   refusal path is measured.
-- **UI absence — one line: the whole `stem.*` group is drivable through the socket and only through the
-  socket.** The one user-visible gesture that reaches this engine is the sample clip's **"Split to
-  stems"** context action (`src/gui/clips/SampleClipView.cpp:124` →
-  `StemSplitController::splitClipToStems`), which is a **different, pre-existing** code path: it takes
-  its mix from a `SampleClip` a human selected, is available only when a display is, and no menu item,
-  toolbar button or keybinding reaches a `stem.*` id. There is no job list, no progress surface for an
-  agent-owned job, no model-manager UI, and nothing in the interface says the model is missing —
-  `stem.get_state` is where that answer lives.
+- **One path for both surfaces.** The sample clip's **"Split to stems"** context action
+  (`src/gui/clips/SampleClipView.cpp` → `StemSplitController::splitClipToStems`) now runs through the SAME
+  registered commands an agent calls — `stem.job_start`, `stem.job_status`, `stem.job_cancel`,
+  `stem.tracks_create` — instead of a private engine, so a click and a command take one path and the four
+  tracks are one undo step. What is still absent from the interface is the agent-facing chrome: there is no
+  job list, no progress surface for an agent-owned job, no model-manager UI and no menu item, toolbar
+  button or keybinding — the only click route is the clip context menu, and `stem.get_state` is where the
+  model answer lives.
 
 ## Out-of-process hosting beyond ZynAddSubFx: the `oop.*` group (feature row 80, board card #670)
 
@@ -1005,7 +1016,7 @@ Q050-024 adds `link.audio_set_enabled` (`true_inverse`) and `link.audio_get_stat
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
      option session.get_state rows=18 true_inverse=7 not_mutating=11
-     option stem.get_state rows=7 not_mutating=7
+     option stem.get_state rows=8 true_inverse=1 not_mutating=7
      A16-HISTOGRAM-END -->
 
 **The figure checks itself (board card #677).** It used to be a constant in

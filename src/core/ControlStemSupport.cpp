@@ -308,6 +308,29 @@ public:
 		return true;
 	}
 
+	/*! The four buffers of a COMPLETED job, for the track materialiser. The same
+	 *  instance ledger and the same completed-only rule as writeResult() - the
+	 *  only difference is that the caller wants the audio, not files. */
+	bool takeResult(int jobId, StemSet* stems, QString* error)
+	{
+		if (!m_jobs.contains(jobId))
+		{
+			*error = QStringLiteral("no stem job with id %1 was issued by this instance "
+				"(stem.job_status lists the ones that were)").arg(jobId);
+			return false;
+		}
+		const auto state = m_manager.state(jobId);
+		if (state != StemJobManager::State::Completed)
+		{
+			*error = QStringLiteral("stem job %1 is %2, not completed: only a completed job has "
+				"four stems to materialise (stem.job_status reports the state, and the job's own "
+				"error is in it when it failed)").arg(jobId).arg(stateName(state));
+			return false;
+		}
+		*stems = m_manager.result(jobId);
+		return true;
+	}
+
 	bool writeResult(int jobId, const QString& directory, QJsonObject* result, QString* error)
 	{
 		if (!m_jobs.contains(jobId))
@@ -471,17 +494,50 @@ StemSurface* surface()
 } // namespace
 
 
+/*! Whether \a value is a Windows absolute path, whatever this host is: a drive
+ *  path (`C:\…` or `C:/…`, but NOT `C:…`, which is drive-relative) or a UNC
+ *  share (`\\server\share…` / `//server/share…`). `stemRequireAbsolutePath`
+ *  consults this for every drive-prefixed value BEFORE `QDir::isAbsolutePath`,
+ *  which on Qt 5 Windows answers any `X:` prefix as absolute and would let the
+ *  drive-relative `C:relative.wav` through; for every other form QDir answers
+ *  on Windows, and this helper's UNC arm accepts a Windows share on a Unix host
+ *  where the GUI that hands it over cannot be run to prove it.
+ */
+static bool isWindowsAbsolutePath(const QString& value)
+{
+	if (value.size() < 3) { return false; }
+	const QChar first = value.at(0);
+	if (first == QLatin1Char('\\') || first == QLatin1Char('/'))
+	{
+		const QChar second = value.at(1);
+		return second == QLatin1Char('\\') || second == QLatin1Char('/');
+	}
+	return first.isLetter() && value.at(1) == QLatin1Char(':')
+		&& (value.at(2) == QLatin1Char('\\') || value.at(2) == QLatin1Char('/'));
+}
+
 QString stemRequireAbsolutePath(const QString& value, const QString& name)
 {
 	if (value.isEmpty())
 	{
 		return QStringLiteral("'%1' is required").arg(name);
 	}
-	if (!value.startsWith(QLatin1Char('/')))
+	/* A drive-prefixed path is decided here, before the generic QDir check:
+	 * Qt 5's `QDir::isAbsolutePath` answers any `X:` prefix as absolute on
+	 * Windows, which would let the drive-relative `C:relative.wav` through.
+	 * Only `X:\…` or `X:/…` is drive-absolute; `X:…` is drive-relative and
+	 * refused. Every other form keeps QDir's answer, plus the strict Windows
+	 * forms a Unix host would otherwise miss. */
+	const bool hasDrive = value.size() >= 2
+		&& value.at(0).isLetter() && value.at(1) == QLatin1Char(':');
+	const bool absolute = hasDrive
+		? isWindowsAbsolutePath(value)
+		: (isWindowsAbsolutePath(value) || QDir::isAbsolutePath(value));
+	if (absolute)
 	{
-		return QStringLiteral("'%1' must be an absolute path, and '%2' is not").arg(name, value);
+		return QString();
 	}
-	return QString();
+	return QStringLiteral("'%1' must be an absolute path, and '%2' is not").arg(name, value);
 }
 
 
@@ -517,6 +573,11 @@ bool stemCancelJob(int jobId, QJsonObject* job, QString* error)
 bool stemWriteResult(int jobId, const QString& directory, QJsonObject* result, QString* error)
 {
 	return surface()->writeResult(jobId, directory, result, error);
+}
+
+bool stemTakeResult(int jobId, StemSet* stems, QString* error)
+{
+	return surface()->takeResult(jobId, stems, error);
 }
 
 } // namespace control

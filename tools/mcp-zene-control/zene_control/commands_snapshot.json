@@ -28416,6 +28416,57 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "job_id": {
+            "maximum": 1073741824,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "type": "object"
+      },
+      "description": "Materialise the four stems of a COMPLETED job (drums, bass, other, vocals - the model contract's fixed order) as four SampleTracks, each carrying a clip of its stem at `position` (ticks, default 0) and named `name - <stem>`. This is the user-facing 'Split to stems' result and the SAME command the GUI action calls; the four tracks are ONE undo step, so one `control.undo` removes them all. This edits the project, unlike `stem.job_result`, which writes output WAVs and touches no project state. Refuses a job that is not completed, naming its state, and refuses an id this instance never issued. The stems are the job's shared, immutable buffers, so the redo rebuilds the tracks without copying audio.",
+      "group": "stem",
+      "id": "stem.tracks_create",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "position": {
+            "type": "number"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "bank": {
             "maximum": 4096,
             "minimum": 0,
