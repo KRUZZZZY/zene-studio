@@ -26,6 +26,7 @@
  */
 
 #include "RemotePluginAudioPorts.h"
+#include "RemotePluginBase.h"
 
 #include <QtTest>
 
@@ -39,6 +40,11 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+
+#ifndef SYNC_WITH_SHM_FIFO
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
 
 #include "AllocationProbe.h"
 #include "AudioEngine.h"
@@ -87,6 +93,21 @@ public:
 private:
 	int m_activateCalls = 0;
 };
+
+#ifndef SYNC_WITH_SHM_FIFO
+class TestRemotePluginBase final : public RemotePluginBase
+{
+public:
+	explicit TestRemotePluginBase(int socket) : RemotePluginBase()
+	{
+		m_socket = socket;
+	}
+
+	~TestRemotePluginBase() override { ::close(m_socket); }
+
+	bool processMessage(const message&) override { return false; }
+};
+#endif
 
 //! Channel counts that are only known once the remote plugin reports them, i.e.
 //! the shape `VestigeAudioPorts`/`VstEffectAudioPorts` use (#589).
@@ -612,6 +633,32 @@ private slots:
 		QCOMPARE(buffers->initialized(), false);
 		QCOMPARE(buffers->frames(), f_cnt_t{0});
 	}
+
+#ifndef SYNC_WITH_SHM_FIFO
+	//! A peer cannot make the host treat a count larger than a full FIFO frame
+	//! as a message, even when it closes before sending any argument payload.
+	void oversizedArgumentCountInvalidatesRemoteMessage()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			constexpr auto maxMessageArguments = (512 * 1024 - 8) / 4;
+			const std::int32_t header[] = {IdDebugMessage, maxMessageArguments + 1};
+			QVERIFY(::write(sockets[1], header, sizeof(header)) ==
+				static_cast<ssize_t>(sizeof(header)));
+			QVERIFY(::shutdown(sockets[1], SHUT_WR) == 0);
+
+			const auto malformed = receiver.receiveMessage();
+			QVERIFY(receiver.isInvalid());
+			QCOMPARE(malformed.id, static_cast<int>(IdUndefined));
+		}
+
+		::close(sockets[1]);
+	}
+
+#endif
 
 #ifndef SYNC_WITH_SHM_FIFO
 	//! A client executable that launches but never connects to the host socket
