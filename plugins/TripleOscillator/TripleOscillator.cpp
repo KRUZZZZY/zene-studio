@@ -23,6 +23,11 @@
  */
 
 
+#include <array>
+#include <cstddef>
+#include <memory>
+#include <optional>
+
 #include <QDomElement>
 #include <QFileInfo>
 
@@ -303,10 +308,30 @@ QString TripleOscillator::nodeName() const
 
 
 
+namespace
+{
+
+//! One note's left and right oscillator chains. It is placed in the note's inline storage
+//! (NotePlayHandle::pluginDataStorage()), so the first period does not allocate. The chains link
+//! through non-owning sub-oscillators, so destroying this object never deletes into that storage.
+struct TripleOscillatorNoteState
+{
+	std::array<std::optional<Oscillator>, NUM_OF_OSCILLATORS> oscLeft;
+	std::array<std::optional<Oscillator>, NUM_OF_OSCILLATORS> oscRight;
+};
+
+static_assert(sizeof(TripleOscillatorNoteState) <= NotePlayHandle::PluginDataStorageSize);
+static_assert(alignof(TripleOscillatorNoteState) <= alignof(std::max_align_t));
+
+} // namespace
+
+
 void TripleOscillator::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 {
 	if (!_n->m_pluginData)
 	{
+		auto* state = std::construct_at(static_cast<TripleOscillatorNoteState*>(_n->pluginDataStorage()));
+		_n->m_pluginData = state;
 		auto oscs_l = std::array<Oscillator*, NUM_OF_OSCILLATORS>{};
 		auto oscs_r = std::array<Oscillator*, NUM_OF_OSCILLATORS>{};
 
@@ -316,7 +341,7 @@ void TripleOscillator::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 			// the last oscs needs no sub-oscs...
 			if( i == NUM_OF_OSCILLATORS - 1 )
 			{
-				oscs_l[i] = new Oscillator(
+				oscs_l[i] = &state->oscLeft[i].emplace(
 						&m_osc[i]->m_waveShapeModel,
 						&m_osc[i]->m_modulationAlgoModel,
 						_n->frequency(),
@@ -324,7 +349,7 @@ void TripleOscillator::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 						m_osc[i]->m_phaseOffsetLeft,
 						m_osc[i]->m_volumeLeft );
 				oscs_l[i]->setUseWaveTable(m_osc[i]->m_useWaveTable);
-				oscs_r[i] = new Oscillator(
+				oscs_r[i] = &state->oscRight[i].emplace(
 						&m_osc[i]->m_waveShapeModel,
 						&m_osc[i]->m_modulationAlgoModel,
 						_n->frequency(),
@@ -335,23 +360,23 @@ void TripleOscillator::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 			}
 			else
 			{
-				oscs_l[i] = new Oscillator(
+				oscs_l[i] = &state->oscLeft[i].emplace(
 						&m_osc[i]->m_waveShapeModel,
 						&m_osc[i]->m_modulationAlgoModel,
 						_n->frequency(),
 						m_osc[i]->m_detuningLeft,
 						m_osc[i]->m_phaseOffsetLeft,
 						m_osc[i]->m_volumeLeft,
-						oscs_l[i + 1] );
+						oscs_l[i + 1], false );
 				oscs_l[i]->setUseWaveTable(m_osc[i]->m_useWaveTable);
-				oscs_r[i] = new Oscillator(
+				oscs_r[i] = &state->oscRight[i].emplace(
 						&m_osc[i]->m_waveShapeModel,
 						&m_osc[i]->m_modulationAlgoModel,
 						_n->frequency(),
 						m_osc[i]->m_detuningRight,
 						m_osc[i]->m_phaseOffsetRight,
 						m_osc[i]->m_volumeRight,
-						oscs_r[i + 1] );
+						oscs_r[i + 1], false );
 				oscs_r[i]->setUseWaveTable(m_osc[i]->m_useWaveTable);
 			}
 
@@ -361,14 +386,11 @@ void TripleOscillator::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 			oscs_r[i]->setUserAntiAliasWaveTable(m_osc[i]->m_userAntiAliasWaveTable);
 		}
 
-		_n->m_pluginData = new oscPtr;
-		static_cast<oscPtr *>( _n->m_pluginData )->oscLeft = oscs_l[0];
-		static_cast< oscPtr *>( _n->m_pluginData )->oscRight =
-								oscs_r[0];
 	}
 
-	Oscillator * osc_l = static_cast<oscPtr *>( _n->m_pluginData )->oscLeft;
-	Oscillator * osc_r = static_cast<oscPtr *>( _n->m_pluginData )->oscRight;
+	auto* state = static_cast<TripleOscillatorNoteState*>(_n->m_pluginData);
+	Oscillator * osc_l = &*state->oscLeft[0];
+	Oscillator * osc_r = &*state->oscRight[0];
 
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = _n->noteOffset();
@@ -385,11 +407,7 @@ void TripleOscillator::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 
 void TripleOscillator::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<Oscillator *>( static_cast<oscPtr *>(
-						_n->m_pluginData )->oscLeft );
-	delete static_cast<Oscillator *>( static_cast<oscPtr *>(
-						_n->m_pluginData )->oscRight );
-	delete static_cast<oscPtr *>( _n->m_pluginData );
+	std::destroy_at(static_cast<TripleOscillatorNoteState*>(_n->m_pluginData));
 }
 
 

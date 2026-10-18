@@ -74,7 +74,7 @@ public:
 					Origin origin = Origin::MidiClip );
 	~NotePlayHandle() override;
 
-	static constexpr std::size_t PluginDataStorageSize = 512;
+	static constexpr std::size_t PluginDataStorageSize = 720;
 
 	//! In-handle storage for plugin note state that must be created on the audio path.
 	void* pluginDataStorage() noexcept { return m_pluginDataStorage; }

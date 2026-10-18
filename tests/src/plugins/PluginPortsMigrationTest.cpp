@@ -1506,13 +1506,15 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 
 		partc::PluginRender render;
 		render.name = QString::fromUtf8(m.plugin);
+		// Plugins whose first note period and its cleanup must not touch the heap.
+		const bool realtimeChecked = m.plugin == std::string{"freeboy"} || m.plugin == std::string{"tripleoscillator"};
 		partc::RealtimeAllocationCounts realtimeCounts;
 		render.samples = partc::renderInstrumentInFreshThread(*inst, frames, lmms::DefaultKey,
-			m.plugin == std::string{"freeboy"} ? &realtimeCounts : nullptr);
-		if (m.plugin == std::string{"freeboy"})
+			realtimeChecked ? &realtimeCounts : nullptr);
+		if (realtimeChecked)
 		{
 			QVERIFY2(realtimeCounts.allocations == 0 && realtimeCounts.deallocations == 0,
-				qPrintable(QString{"render allocations=%1, deallocations=%2"}
+				qPrintable(QString{"%1 render allocations=%2, deallocations=%3"}.arg(render.name)
 					.arg(static_cast<qulonglong>(realtimeCounts.allocations))
 					.arg(static_cast<qulonglong>(realtimeCounts.deallocations))));
 		}

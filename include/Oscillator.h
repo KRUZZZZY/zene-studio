@@ -78,16 +78,19 @@ public:
 	} ;
 	constexpr static auto NumModulationAlgos = static_cast<std::size_t>(ModulationAlgo::Count);
 
+	//! @param ownsSubOsc false when the caller keeps m_subOsc alive and destroys it itself,
+	//!        e.g. when the chain is placement-built in a note's inline storage.
 	Oscillator( const IntModel *wave_shape_model,
 			const IntModel *mod_algo_model,
 			const float &freq,
 			const float &detuning_div_samplerate,
 			const float &phase_offset,
 			const float &volume,
-			Oscillator *m_subOsc = nullptr);
+			Oscillator *m_subOsc = nullptr,
+			bool ownsSubOsc = true);
 	virtual ~Oscillator()
 	{
-		delete m_subOsc;
+		if (m_ownsSubOsc) { delete m_subOsc; }
 	}
 
 	static void waveTableInit();
@@ -257,6 +260,7 @@ private:
 	// There are many update*() variants; the modulator flag is stored as a member variable to avoid
 	// adding more explicit parameters to all of them. Can be converted to a parameter if needed.
 	bool m_isModulator;
+	bool m_ownsSubOsc;
 
 	/* Multiband WaveTable */
 	static sample_t s_waveTables[NumWaveShapeTables][OscillatorConstants::WAVE_TABLES_PER_WAVEFORM_COUNT][OscillatorConstants::WAVETABLE_LENGTH];

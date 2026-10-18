@@ -39,7 +39,6 @@ namespace lmms
 
 
 class NotePlayHandle;  // IWYU pragma: keep
-class Oscillator;
 
 
 namespace gui
@@ -134,12 +133,6 @@ private:
 	void playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out) override;
 
 	OscillatorObject * m_osc[NUM_OF_OSCILLATORS];
-
-	struct oscPtr
-	{
-		Oscillator * oscLeft;
-		Oscillator * oscRight;
-	} ;
 
 
 	friend class gui::TripleOscillatorView;
