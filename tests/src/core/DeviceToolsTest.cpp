@@ -546,6 +546,31 @@ private slots:
 		QVERIFY(std::abs(parameterValue(ch(1), amp, QStringLiteral("Volume")) - 50.0) < 1e-3);
 	}
 
+	//! MX-093: a seed is an unsigned 32-bit integer: one above int's range repeats its own roll rather than
+	//! reading as zero, and one above 32 bits is refused rather than truncated.
+	void randomiseKeepsLargeSeeds()
+	{
+		Effect* effect = effectOn(1);
+		if (effect == nullptr) { QSKIP("this build has no amplifier module"); }
+		const QString amp = control::effectIdOf(effect);
+		QJsonObject random{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), amp},
+			{QStringLiteral("amount"), 1.0}, {QStringLiteral("seed"), static_cast<qint64>(2147483648LL)}};
+		const ControlResult large = run(QStringLiteral("plugin.randomise"), random);
+		QVERIFY2(large.ok, qPrintable(large.errorMessage));
+		const double largeValue = parameterValue(ch(1), amp, QStringLiteral("Volume"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+
+		random.insert(QStringLiteral("seed"), 0);
+		const ControlResult zero = run(QStringLiteral("plugin.randomise"), random);
+		QVERIFY2(zero.ok, qPrintable(zero.errorMessage));
+		const double zeroValue = parameterValue(ch(1), amp, QStringLiteral("Volume"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(std::abs(largeValue - zeroValue) > 1e-6);
+
+		random.insert(QStringLiteral("seed"), static_cast<qint64>(4294967296LL));
+		QCOMPARE(run(QStringLiteral("plugin.randomise"), random).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
 	//! MX-093: randomise that changes nothing reports no change and takes no undo step of its own.
 	void aRandomiseThatChangesNothingIsAnEmptyUndoStep()
 	{
