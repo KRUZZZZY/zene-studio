@@ -1140,6 +1140,8 @@ set(LMMS_TESTS
 	src/gui/WorkflowFeedbackTest.cpp
 	# 0.5.0 theme 24: the task indicator and its list
 	src/gui/TaskIndicatorTest.cpp
+	# 0.5.0 Q050-179 (WF-085): the header's Rec left readout shows record.remaining's estimate.
+	src/gui/RecordRemainingTest.cpp
 	# Version number insertion with a dotted parent path.
 	src/gui/VersionedSaveDialogTest.cpp
 	# M3 item 10: the start hub reopens a recent project through project.open.
@@ -2247,7 +2249,7 @@ set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LaneReadoutTest SampleEditorDialogTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
-	ShellHomesTest TaskCenterTest TaskIndicatorTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
+	ShellHomesTest TaskCenterTest TaskIndicatorTest RecordRemainingTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

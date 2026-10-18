@@ -50,11 +50,14 @@ What it drives, in order:
      the take (when this host actually captured frames) or the typed refusal that
      says the window is empty - never a zero-length file;
  12. `control.transactions`                the A16 records: `record.arm_track` is
-     irreversible with no command inverse (its take remains after disarming),
-     `track.set_arm` is a `snapshot` with its own command inverse,
-     `record.input_set` is `true_inverse`, the disarm verbs are `irreversible`
-     because they leave the take files on disk, and the inspectors and
-     non-mutating verbs stay `not_mutating`.
+      irreversible with no command inverse (its take remains after disarming),
+      `track.set_arm` is a `snapshot` with its own command inverse,
+      `record.input_set` is `true_inverse`, the disarm verbs are `irreversible`
+      because they leave the take files on disk, and the inspectors and
+      non-mutating verbs stay `not_mutating`;
+ 13. `record.remaining`                    the estimate the header's Rec left readout
+      shows keeps the reply shape it has always had (0.5.0 Q050-179) - keys, types
+      and a non-negative seconds number.
 
 Started through the shared harness (tests/control_socket_harness.py), so this file
 adds no second launch path and no second launch recipe.
@@ -439,6 +442,24 @@ def check_retro_audio(session, recorder, shared):
     session.result("record.retro_capture_arm", {"armed": False})
 
 
+def check_remaining_shape(session, recorder):
+    """record.remaining's socket reply keeps the keys it has always reported.
+
+    The header's Rec left readout now shows this command's answer, so the estimate a
+    musician sees and the one an agent reads must be THE SAME RESULT - and, unchanged
+    in shape: seconds, armed_routes, free_bytes, directory (0.5.0 Q050-179)."""
+    reply = session.result("record.remaining")
+    recorder.check("record.remaining replies with the keys it has always shown",
+                   set(reply or {}) == {"seconds", "armed_routes", "free_bytes", "directory"},
+                   "reply=%r" % reply)
+    recorder.check("the reply holds a seconds estimate and the route count",
+                   isinstance(reply.get("seconds"), (int, float)) and reply.get("seconds") >= 0
+                   and isinstance(reply.get("armed_routes"), int)
+                   and isinstance(reply.get("free_bytes"), (int, float))
+                   and isinstance(reply.get("directory"), str),
+                   "reply=%r" % reply)
+
+
 def check_transactions(session, recorder, expect_input_set, expect_arms):
     """The A16 records, read back from the instance that produced them.
 
@@ -549,6 +570,7 @@ def run_instance_b(binary, recorder, shared, transcript, written_config):
     check_instance_b(session, recorder, shared)
     check_track_set_arm_and_undo(session, recorder, shared)
     check_retro_audio(session, recorder, shared)
+    check_remaining_shape(session, recorder)
     check_transactions(session, recorder, expect_input_set=False, expect_arms=True)
     check_transcript_is_evidence(transcript, recorder)
     reply = session.call("control.quit")
