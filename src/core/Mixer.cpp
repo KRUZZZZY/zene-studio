@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <limits>
 
+#include <QDebug>
 #include <QDomElement>
 #include <QScopedValueRollback>
 
@@ -2762,11 +2763,15 @@ void Mixer::loadSettings( const QDomElement & _this )
 		// An id the file recorded is preserved (so a group keeps its identity
 		// across a round trip); a file without one gets the lowest free id.
 		const QString idAttr = groupDom.attribute( "id" );
-		VcaGroup* group = createVcaGroup( groupDom.attribute( "name" ),
-			idAttr.isEmpty() ? -1 : idAttr.toInt() );
+		const QString name = groupDom.attribute( "name" );
+		const int requestedId = idAttr.isEmpty() ? -1 : idAttr.toInt();
+		VcaGroup* group = createVcaGroup( name, requestedId );
 		if( group == nullptr )
 		{
-			continue;
+			group = createVcaGroup( name, -1 );
+			if( group == nullptr ) { continue; }
+			qWarning() << "Duplicate VCA group id" << requestedId
+				<< "in project; assigned id" << group->id();
 		}
 
 		group->vcaModel()->loadSettings( groupDom, "vca" );

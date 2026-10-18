@@ -847,6 +847,42 @@ private slots:
 			" audio_identical=1 sha256=%1").arg(sha256Hex(beforeSave)));
 	}
 
+	//! A duplicate serialized id must not discard the later group's contents.
+	void duplicateGroupIdsPreserveLaterGroup()
+	{
+		Mixer* mixer = Engine::mixer();
+		buildGraph(mixer);
+		VcaGroup* first = makeGroup(mixer, {2}, QStringLiteral("First"));
+		VcaGroup* duplicate = makeGroup(mixer, {7}, QStringLiteral("Duplicate"));
+		QVERIFY(first != nullptr);
+		QVERIFY(duplicate != nullptr);
+		QVERIFY(duplicate->addEditTrack(4821));
+		duplicate->vcaModel()->setValue(0.375f);
+		duplicate->muteModel()->setValue(true);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+		mixer->saveSettings(doc, root);
+		const QDomElement firstDom = root.firstChildElement(QStringLiteral("vcagroup"));
+		QVERIFY(!firstDom.isNull());
+		QDomElement duplicateDom = firstDom.nextSiblingElement(QStringLiteral("vcagroup"));
+		QVERIFY(!duplicateDom.isNull());
+		duplicateDom.setAttribute(QStringLiteral("id"), firstDom.attribute(QStringLiteral("id")));
+
+		mixer->loadSettings(root);
+		QCOMPARE(mixer->vcaGroups().size(), static_cast<std::size_t>(2));
+		VcaGroup* loaded = mixer->vcaGroup(1);
+		QVERIFY(loaded != nullptr);
+		QCOMPARE(loaded->name(), QStringLiteral("Duplicate"));
+		QVERIFY(bitEqual(loaded->vcaModel()->value(), 0.375f));
+		QVERIFY(loaded->muteModel()->value());
+		QCOMPARE(loaded->members().size(), static_cast<std::size_t>(1));
+		QCOMPARE(loaded->members().front(), static_cast<mix_ch_t>(7));
+		QCOMPARE(loaded->editTracks().size(), static_cast<std::size_t>(1));
+		QCOMPARE(loaded->editTracks().front(), 4821);
+	}
+
 	//! A pre-#622 project has no <vcagroup>; it must load to no groups, publish
 	//! unity everywhere, gain no group element when saved again, and render
 	//! deterministically. (The pre-change *behaviour* comparison is the CLI
