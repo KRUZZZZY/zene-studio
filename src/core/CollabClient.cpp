@@ -25,6 +25,7 @@
 
 #include "CollabClient.h"
 
+#include <cmath>
 #include <limits>
 
 #include <QSslPreSharedKeyAuthenticator>
@@ -43,6 +44,19 @@ namespace
 constexpr int MaxInflight = 256;
 constexpr int MaxBacklogMessages = 1024;
 constexpr qint64 MaxBacklogBytes = MaxHostLineBytes;
+
+//! Reads a wire sequence number. JSON numbers arrive as doubles, and converting one outside [0, 2^64) to quint64 is
+//! undefined, so only a finite, integral value in that range is accepted.
+bool readSequence(const QJsonObject& message, quint64* sequence)
+{
+	const QJsonValue value = message.value(QStringLiteral("seq"));
+	if (!value.isDouble()) { return false; }
+	const double number = value.toDouble();
+	const double limit = std::ldexp(1.0, std::numeric_limits<quint64>::digits);
+	if (!std::isfinite(number) || number < 0.0 || std::trunc(number) != number || number >= limit) { return false; }
+	*sequence = static_cast<quint64>(number);
+	return true;
+}
 
 //! What a failed connection attempt means to the person who pasted the invite.
 QString explainSocketError(QAbstractSocket::SocketError error, const QString& where)
@@ -234,6 +248,13 @@ void CollabClient::onWelcome(const QJsonObject& message)
 
 void CollabClient::onSnapshot(const QJsonObject& message)
 {
+	quint64 sequence = 0;
+	if (!readSequence(message, &sequence))
+	{
+		setState(m_state, QStringLiteral("the host sent an invalid snapshot sequence; asking again"));
+		requestResync(QStringLiteral("invalid snapshot sequence"));
+		return;
+	}
 	const QByteArray project = QByteArray::fromBase64(message.value(QStringLiteral("data")).toString().toLatin1());
 	if (project.isEmpty() || project.size() != message.value(QStringLiteral("bytes")).toInt(-1))
 	{
@@ -248,7 +269,7 @@ void CollabClient::onSnapshot(const QJsonObject& message)
 		setState(m_state, QStringLiteral("could not open the host's project here: %1").arg(error));
 		return;
 	}
-	m_seq = static_cast<quint64>(message.value(QStringLiteral("seq")).toDouble());
+	m_seq = sequence;
 	m_haveSnapshot = true;
 	emit snapshotApplied();
 }
@@ -258,7 +279,13 @@ void CollabClient::onCommand(const QJsonObject& message)
 	// A command that arrives before the first snapshot has nothing to apply to; the snapshot that follows
 	// carries its effect.
 	if (!m_haveSnapshot) { return; }
-	const quint64 sequence = static_cast<quint64>(message.value(QStringLiteral("seq")).toDouble());
+	quint64 sequence = 0;
+	if (!readSequence(message, &sequence))
+	{
+		setState(m_state, QStringLiteral("the host sent an invalid command sequence; asking again"));
+		requestResync(QStringLiteral("invalid command sequence"));
+		return;
+	}
 	QString error;
 	const QString command = message.value(QStringLiteral("cmd")).toString();
 	if (!m_commandSink || !m_commandSink(command, message.value(QStringLiteral("args")).toObject(), &error))

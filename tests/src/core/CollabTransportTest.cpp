@@ -111,6 +111,64 @@ private:
 	qint64 m_queuedBytes;
 };
 
+QJsonObject snapshotFrame(double sequence)
+{
+	return {{QStringLiteral("type"), QStringLiteral("snapshot")},
+		{QStringLiteral("data"), QString::fromLatin1(ProjectBytes.toBase64())},
+		{QStringLiteral("bytes"), ProjectBytes.size()}, {QStringLiteral("seq"), sequence}};
+}
+
+//! A TLS-PSK host that sends hand-made frames, so a test can put values on the wire that a real host never sends.
+class CraftedPeer : public QTcpServer
+{
+public:
+	explicit CraftedPeer(QByteArray key) : m_key(std::move(key)) {}
+
+	bool start() { return listen(QHostAddress(QHostAddress::LocalHost), 0); }
+	quint16 port() const { return serverPort(); }
+	void setInitialFrames(QList<QJsonObject> frames) { m_initialFrames = std::move(frames); }
+	bool requestedResync() const { return m_requestedResync; }
+
+	void send(const QJsonObject& message)
+	{
+		if (m_socket == nullptr || !m_socket->isEncrypted()) { return; }
+		m_socket->write(QJsonDocument(message).toJson(QJsonDocument::Compact) + '\n');
+	}
+
+protected:
+	void incomingConnection(qintptr descriptor) override
+	{
+		m_socket = new QSslSocket(this);
+		if (!m_socket->setSocketDescriptor(descriptor)) { m_socket->deleteLater(); m_socket = nullptr; return; }
+		m_socket->setSslConfiguration(pskConfiguration());
+		connect(m_socket, &QSslSocket::preSharedKeyAuthenticationRequired, this,
+			[this](QSslPreSharedKeyAuthenticator* authenticator) { authenticator->setPreSharedKey(m_key); });
+		connect(m_socket, &QSslSocket::encrypted, this, [this] {
+			send({{QStringLiteral("type"), QStringLiteral("welcome")}, {QStringLiteral("peer"), 1},
+				{QStringLiteral("role"), QStringLiteral("editor")}, {QStringLiteral("proto"), 1}});
+			for (const QJsonObject& frame : m_initialFrames) { send(frame); }
+		});
+		connect(m_socket, &QIODevice::readyRead, this, [this] {
+			m_incoming.append(m_socket->readAll());
+			qsizetype newline = -1;
+			while ((newline = m_incoming.indexOf('\n')) >= 0)
+			{
+				const QJsonObject message = QJsonDocument::fromJson(m_incoming.left(newline)).object();
+				m_incoming.remove(0, newline + 1);
+				m_requestedResync |= message.value(QStringLiteral("type")).toString() == QLatin1String("resync");
+			}
+		});
+		m_socket->startServerEncryption();
+	}
+
+private:
+	QByteArray m_key;
+	QList<QJsonObject> m_initialFrames;
+	QSslSocket* m_socket = nullptr;
+	QByteArray m_incoming;
+	bool m_requestedResync = false;
+};
+
 } // namespace
 
 class CollabTransportTest : public QObject
@@ -658,6 +716,50 @@ private slots:
 		QTRY_COMPARE_WITH_TIMEOUT(client.state(), CollabClient::State::Failed, 10000);
 		QVERIFY2(client.lastNotice().contains(QStringLiteral("disk full")), qPrintable(client.lastNotice()));
 		QVERIFY(m_got.snapshots.isEmpty());
+	}
+
+	//! A negative sequence is not a position in the stream: the snapshot is refused and the client asks again.
+	void rejectsNegativeSnapshotSequence()
+	{
+		const QByteArray key = randomInviteKey();
+		CraftedPeer host(key);
+		host.setInitialFrames({snapshotFrame(-1.0)});
+		QVERIFY(host.start());
+		CollabClient client;
+		wire(client);
+		QSignalSpy applied(&client, &CollabClient::snapshotApplied);
+		Invite invite;
+		invite.address = QHostAddress(QHostAddress::LocalHost);
+		invite.port = host.port();
+		invite.key = key;
+		client.join(invite, QStringLiteral("Eve"));
+		QTRY_VERIFY_WITH_TIMEOUT(host.requestedResync(), 1500);
+		QVERIFY(!client.hasSnapshot());
+		QVERIFY(m_got.snapshots.isEmpty());
+		QCOMPARE(applied.size(), 0);
+	}
+
+	//! An out-of-range command sequence is refused before the command runs; the sequence the client holds is kept.
+	void rejectsOutOfRangeCommandSequence()
+	{
+		const QByteArray key = randomInviteKey();
+		CraftedPeer host(key);
+		host.setInitialFrames({snapshotFrame(1.0)});
+		QVERIFY(host.start());
+		CollabClient client;
+		wire(client);
+		Invite invite;
+		invite.address = QHostAddress(QHostAddress::LocalHost);
+		invite.port = host.port();
+		invite.key = key;
+		client.join(invite, QStringLiteral("Frank"));
+		QTRY_VERIFY_WITH_TIMEOUT(client.hasSnapshot(), 5000);
+		QCOMPARE(client.sequence(), quint64(1));
+		host.send({{QStringLiteral("type"), QStringLiteral("cmd")}, {QStringLiteral("seq"), 1e300},
+			{QStringLiteral("cmd"), QStringLiteral("track.add")}, {QStringLiteral("args"), QJsonObject{}}});
+		QTRY_VERIFY_WITH_TIMEOUT(host.requestedResync(), 1500);
+		QVERIFY(m_got.commands.isEmpty());
+		QCOMPARE(client.sequence(), quint64(1));
 	}
 
 	//! The join limiter: attempts and failures per address are bounded, and a ban expires.
