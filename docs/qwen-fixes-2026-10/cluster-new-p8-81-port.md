@@ -42,7 +42,7 @@ Done. The snapshot was re-captured from a live instance of the fixed binary usin
 - Snapshot diff is exactly three lines: `captured_at`, the recorded `instance.source_file`, and the one `track.set_arm_many` `description` string. The new description reads "...Arming writes take files that remain on disk when captures stop, so control.undo refuses this command; stop each route with record.disarm_track using its route id from 'routes'...". No other command entry changed; the id set is equal and `surface.ids_sha256` is unchanged.
 - `ctest -R ControlCommandsSnapshot --output-on-failure` from `build/tests` -> EXIT 0 (`1/1 Test #574 ControlCommandsSnapshot ... Passed`, `logs/test-35.log`).
 
-The regression for the bug itself was re-proved on this tree in the same round (reverse-patch, RED then GREEN): see the first three rows of the evidence table below.
+The regression for the bug itself was re-proved on this tree in the same round (reverse-patch, RED then GREEN): see the "Round 1 evidence" table below.
 
 ## Evidence table
 
