@@ -211,9 +211,13 @@ that is this page's fault — report it and it gets added.
   hosting is drivable through the socket as well as from the interface: `plugin.list` carries every VST3 class
   of the product's VST3 search directory as a `format: "vst3"` entry and `plugin.load` loads one onto an
   instrument track (the class, the bundle and the `(file, class)` key are the same ones the instrument browser
-  uses; `ControlDeviceCatalogueTest` holds the fixture-backed proof). There is no multi-out, no
-  preset management, no instrument latency compensation (added 2026-10-06, MX-157; see "Hosted instrument
-  latency"), and no out-of-process hosting. **CLAP instrument
+  uses; `ControlDeviceCatalogueTest` holds the fixture-backed proof). *(Corrected 2026-10-09, Q050-003.)*
+  Output buses past the main one are routable (MX-114: `Vst3Instrument::enableOutputBus`,
+  `plugins/Vst3Instrument/Vst3Instrument.cpp:239`; see "F2, instruments") and the instrument reports its
+  latency to delay compensation (MX-157, `:262`; see "Hosted instrument latency"); the in-tree VST3 fixture has
+  one output bus, so the routing of a real multi-output VST3 plug-in is unproven (`plugin.output_*` is measured
+  against the stand-in `buses_test_instrument`, `Vst3BusMapTest::testOutputBusesKeepInactiveOnes` covers the bus
+  map). There is still no read of the plug-in's own preset (program) lists and no out-of-process hosting. **CLAP instrument
   hosting is socket-only in the same sense** (feature row 79): a CLAP generator loads onto an instrument
   track through `plugin.load` — `plugin.list` carries the CLAP classes of the product's plug-in directory as
   `format: "clap"` entries — its notes reach it through the track's MIDI path, and
