@@ -2987,6 +2987,37 @@ target_compile_definitions(SlicerTZoomTest PRIVATE
 )
 set_tests_properties(SlicerTZoomTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# Cluster new-p12-275: TripleOscillator's user-wave buffer and anti-alias table
+# were published straight onto the model from the control thread while
+# playNoteImpl() read them on the audio thread. The plugin sources are compiled
+# into this test binary (the SlicerTZoomTest pattern) so the regression can
+# drive the publication itself and hold a render period open around it.
+add_executable(TripleOscillatorUserWaveTest
+	src/plugins/TripleOscillatorUserWaveTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/TripleOscillator/TripleOscillator.cpp
+	${CMAKE_SOURCE_DIR}/plugins/TripleOscillator/TripleOscillator.h
+)
+add_test(NAME TripleOscillatorUserWaveTest COMMAND TripleOscillatorUserWaveTest)
+target_include_directories(TripleOscillatorUserWaveTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/TripleOscillator
+	${CMAKE_BINARY_DIR}/plugins/TripleOscillator
+	${FFTW3F_INCLUDE_DIRS}
+)
+target_static_libraries(TripleOscillatorUserWaveTest PRIVATE lmmsobjs)
+target_link_libraries(TripleOscillatorUserWaveTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+	${FFTW3F_LIBRARIES}
+)
+target_compile_features(TripleOscillatorUserWaveTest PRIVATE cxx_std_20)
+target_compile_definitions(TripleOscillatorUserWaveTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=tripleoscillator
+)
+set_tests_properties(TripleOscillatorUserWaveTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # Cluster new-p11-82: the Delay plugin's delay-time parameter is read by its
 # displayed name (device cards and plugin.param_get), and its value is in
 # seconds - the effect multiplies it by the sample rate. The label must name

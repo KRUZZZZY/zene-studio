@@ -2649,3 +2649,6 @@ docs/qwen-fixes-2026-10/cluster-new-p12-204.md
 tests/src/plugins/RnnoiseDenoiserEffectTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-337.md
 docs/qwen-fixes-2026-10/cluster-new-p10-411.md
+# cluster new-p12-275 (2026-10): TripleOscillator user-wave publication race regression test (fork-NEW).
+tests/src/plugins/TripleOscillatorUserWaveTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p12-275.md
