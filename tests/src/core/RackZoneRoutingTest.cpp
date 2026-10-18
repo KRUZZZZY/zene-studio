@@ -323,6 +323,109 @@ private slots:
 		rack.zoneInputs().endPeriod();
 		dropZonesFrom(before);
 	}
+
+	//! E38: a pooled note handle reused for a NEW note restarts the voice, even when the new note's frame
+	//! count has not fallen below what the old note's voice last saw. The handle keeps its pointer across the
+	//! reuse, so note identity is the note's generation, not its frame count: the late note and the reused
+	//! note carry different generations (a new construction / pool reuse bumps it).
+	void aReusedHandleRestartsTheVoice()
+	{
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		const sample_rate_t rate = Engine::audioEngine()->outputSampleRate();
+		std::vector<SampleFrame> ramp(4096);
+		for (std::size_t i = 0; i < ramp.size(); ++i)
+		{
+			ramp[i] = SampleFrame{static_cast<float>(i) + 1.0f, -static_cast<float>(i) - 1.0f};
+		}
+		const SampleBuffer sample(ramp, rate);
+		const int marker = 0;
+
+		// Case 1: a note that started late (112 of the period's frames) leaves its voice at frame 112; the
+		// reused handle's next note plays a full period and must start the sample over. The two notes carry
+		// different generations, so the voice restarts even though the new frame count is above the 112.
+		{
+			RackZoneInputs inputs;
+			inputs.prepare({kDrivenChain}, kDrivenChain + 1, fpp, rate);
+			std::vector<SampleFrame> first(static_cast<std::size_t>(fpp), SampleFrame{});
+			RackZoneNote late = noteAt(&marker, 110, 100);
+			late.framesPlayed = 112;
+			late.startOffset = fpp - 112;
+			late.generation = 1;
+			QVERIFY(inputs.playVoice(late, sample, first.data()));
+			QCOMPARE(first[static_cast<std::size_t>(fpp) - 112][0], ramp[0][0]);
+
+			std::vector<SampleFrame> second(static_cast<std::size_t>(fpp), SampleFrame{});
+			RackZoneNote reused = noteAt(&marker, 110, 100);  // fpp frames: a full first period, above the 112
+			reused.generation = 2;  // a new note the pooled handle now carries
+			QVERIFY(inputs.playVoice(reused, sample, second.data()));
+			QVERIFY2(second[0][0] == ramp[0][0],
+				qPrintable(QStringLiteral("reused handle resumed at %1, expected the sample start %2")
+					.arg(second[0][0]).arg(ramp[0][0])));
+			QCOMPARE(second[1][0], ramp[1][0]);
+		}
+
+		// Case 2: the same frame count on the reused handle (an offset-zero note twice) restarts too.
+		{
+			RackZoneInputs inputs;
+			inputs.prepare({kDrivenChain}, kDrivenChain + 1, fpp, rate);
+			std::vector<SampleFrame> first(static_cast<std::size_t>(fpp), SampleFrame{});
+			RackZoneNote firstNote = noteAt(&marker, 110, 100);
+			firstNote.generation = 1;
+			QVERIFY(inputs.playVoice(firstNote, sample, first.data()));
+
+			std::vector<SampleFrame> second(static_cast<std::size_t>(fpp), SampleFrame{});
+			RackZoneNote secondNote = noteAt(&marker, 110, 100);
+			secondNote.generation = 2;  // reused handle, new generation
+			QVERIFY(inputs.playVoice(secondNote, sample, second.data()));
+			QCOMPARE(second[0][0], ramp[0][0]);
+		}
+
+		printEvidence("zone-voice-reuse", QStringLiteral("a reused handle restarts its voice at the sample start"));
+	}
+
+	//! E38: a CONTINUING note keeps its voice even when tempo resize rescales and truncates its frame count
+	//! back to a small value. Song::setTempo() -> NotePlayHandle::resize() rewrites totalFramesPlayed, so a
+	//! one-frame note can report one frame next period; the generation is unchanged, so the voice must resume
+	//! where it left off rather than restart the sample.
+	void aContinuingNoteSurvivesTempoResizeReset()
+	{
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		const sample_rate_t rate = Engine::audioEngine()->outputSampleRate();
+		std::vector<SampleFrame> ramp(4096);
+		for (std::size_t i = 0; i < ramp.size(); ++i)
+		{
+			ramp[i] = SampleFrame{static_cast<float>(i) + 1.0f, -static_cast<float>(i) - 1.0f};
+		}
+		const SampleBuffer sample(ramp, rate);
+		const int marker = 0;
+		const std::uint64_t gen = 7;  // one note instance, unchanged across the resize
+
+		RackZoneInputs inputs;
+		inputs.prepare({kDrivenChain}, kDrivenChain + 1, fpp, rate);
+
+		// Period 1: the note plays a full period from the sample start; the voice advances to position fpp.
+		std::vector<SampleFrame> first(static_cast<std::size_t>(fpp), SampleFrame{});
+		RackZoneNote open = noteAt(&marker, 110, 100);
+		open.framesPlayed = 0;
+		open.startOffset = 0;
+		open.generation = gen;
+		QVERIFY(inputs.playVoice(open, sample, first.data()));
+		QCOMPARE(first[0][0], ramp[0][0]);
+
+		// Period 2: tempo resize reset the frame count to 1 (same note, same generation). The voice must
+		// resume at position fpp, NOT restart at the sample start.
+		std::vector<SampleFrame> second(static_cast<std::size_t>(fpp), SampleFrame{});
+		RackZoneNote resized = noteAt(&marker, 110, 100);
+		resized.framesPlayed = 1;  // the truncated count after resize
+		resized.startOffset = 0;
+		resized.generation = gen;  // unchanged: this is the same continuing note
+		QVERIFY(inputs.playVoice(resized, sample, second.data()));
+		QVERIFY2(second[0][0] == ramp[static_cast<std::size_t>(fpp)][0],
+			qPrintable(QStringLiteral("continuing note restarted at %1, expected resume %2")
+				.arg(second[0][0]).arg(ramp[static_cast<std::size_t>(fpp)][0])));
+
+		printEvidence("zone-voice-continue", QStringLiteral("a continuing note resumes after a tempo-resize frame reset"));
+	}
 };
 
 QTEST_GUILESS_MAIN(RackZoneRoutingTest)

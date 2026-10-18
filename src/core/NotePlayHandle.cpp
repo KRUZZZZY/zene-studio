@@ -85,6 +85,7 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 	m_frequencyNeedsUpdate( false ),
 	m_slideSourceKey( -1 )
 {
+	m_generation = ++s_generationCounter;  // a new note instance (or pool reuse): its own generation
 	lock();
 	if( hasParent() == false )
 	{
@@ -713,6 +714,7 @@ NotePlayHandle ** NotePlayHandleManager::s_available;
 QReadWriteLock NotePlayHandleManager::s_mutex;
 std::atomic_int NotePlayHandleManager::s_availableIndex;
 int NotePlayHandleManager::s_size;
+std::atomic<std::uint64_t> NotePlayHandle::s_generationCounter{0};
 
 
 void NotePlayHandleManager::init()

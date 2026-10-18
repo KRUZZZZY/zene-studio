@@ -111,8 +111,16 @@ auto RackZoneInputs::voiceFor(const RackZoneNote& note) -> RackZoneVoice*
 	for (RackZoneVoice& voice : m_voices)
 	{
 		if (voice.owner.load(std::memory_order_acquire) != note.id) { continue; }
-		// A pooled play handle reused for a new note has played fewer frames than its voice last saw.
-		if (note.framesPlayed < voice.lastFramesPlayed) { voice.restart(); }
+		// The handle pointer alone cannot tell a continuing note from a pooled handle reused for a new note:
+		// the reused handle keeps the same pointer, and tempo resize rescales and truncates its frame count,
+		// so a continuing note can report a smaller frame count next period. The generation the handle carries
+		// on construction and on every reuse is the stable identity: a changed generation is a new note and
+		// restarts the voice; an unchanged one resumes where the voice left off.
+		if (note.generation != voice.lastGeneration)
+		{
+			voice.restart();
+			voice.lastGeneration = note.generation;
+		}
 		return &voice;
 	}
 	for (RackZoneVoice& voice : m_voices)
@@ -121,6 +129,7 @@ auto RackZoneInputs::voiceFor(const RackZoneNote& note) -> RackZoneVoice*
 		if (voice.owner.compare_exchange_strong(expected, note.id, std::memory_order_acq_rel))
 		{
 			voice.restart();
+			voice.lastGeneration = note.generation;
 			return &voice;
 		}
 	}

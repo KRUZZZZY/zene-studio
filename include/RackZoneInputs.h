@@ -27,6 +27,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -47,6 +48,7 @@ struct RackZoneNote
 	int key = 0;                //!< the engine key the note plays
 	int velocity = 0;           //!< the note's volume, 0..200 (the zones' velocity space)
 	f_cnt_t framesPlayed = 0;   //!< frames the note has played, this period's included
+	std::uint64_t generation = 0;  //!< the note instance's generation (NotePlayHandle::generation)
 	f_cnt_t startOffset = 0;    //!< frames of this period before the note starts (its first period only)
 	double pitch = 1.0;         //!< the note's frequency over DefaultBaseFreq (the track's base note sounds 1.0)
 	float gain = 1.0f;          //!< the velocity as a level (volume / DefaultVolume)
@@ -64,7 +66,8 @@ struct RackZoneVoice
 	std::atomic<const void*> owner{nullptr};  //!< the note playing it; nullptr when free
 	std::atomic<unsigned> touched{0};         //!< the inputs' period it last played in
 	double position = 0.0;                    //!< the source frame it reads next
-	f_cnt_t lastFramesPlayed = 0;             //!< its note's frame count last period (a reused handle restarts)
+	std::uint64_t lastGeneration = 0;         //!< the generation the voice last voiced (a new one restarts it)
+	f_cnt_t lastFramesPlayed = 0;             //!< kept so the prior framesPlayed heuristic still compiles if reverted
 	float fade = 1.0f;
 	bool ended = false;
 
