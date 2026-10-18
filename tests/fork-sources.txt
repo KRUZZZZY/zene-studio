@@ -2660,3 +2660,10 @@ docs/qwen-fixes-2026-10/cluster-new-p12-275.md
 tests/src/core/EffectControlsVisibilityTest.cpp
 # review-43592d093 (2026-10): ALREADY-FIXED report for the VCA advertised-inverse also:true finding.
 docs/qwen-fixes-2026-10/cluster-review-43592d093.md
+
+# 2026-10-16 (Q050-019, chord progression panel): the Edit menu's Progression window -
+# the catalogue spelt in the selected scale and a write through chord.progression_generate.
+include/ChordProgressionPanel.h
+src/gui/ChordProgressionPanel.cpp
+tests/src/gui/ChordProgressionPanelTest.cpp
+tests/control-chord-progression.py

@@ -67,6 +67,7 @@
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api
 # boundary's public header (include/zene/api/ControlApi.h), fork-NEW, registered
 # beside the registry headers it re-exports.
+
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
@@ -164,6 +165,7 @@ include/ChannelPickDialog.h
 include/ChordDetect.h
 include/ChordFollow.h
 include/ChordProgression.h
+include/ChordProgressionPanel.h
 include/ChordTrack.h
 include/ChordVocabulary.h
 include/Clip.h
@@ -2100,6 +2102,7 @@ src/gui/BrowserSearchView.cpp
 src/gui/BrowserTagMenu.cpp
 src/gui/ChainPresetMenu.cpp
 src/gui/ChannelPickDialog.cpp
+src/gui/ChordProgressionPanel.cpp
 src/gui/ClipEditsMenu.cpp
 src/gui/CollabPanel.cpp
 src/gui/CommandForm.cpp
@@ -2812,6 +2815,7 @@ tests/src/gui/BrowserTagMenuTest.cpp
 tests/src/gui/CanvasKeyboardTest.cpp
 tests/src/gui/CaptureMidiMenuTest.cpp
 tests/src/gui/ChainPresetMenuTest.cpp
+tests/src/gui/ChordProgressionPanelTest.cpp
 tests/src/gui/ClipEditsMenuTest.cpp
 tests/src/gui/CollabPanelTest.cpp
 tests/src/gui/CommandFormTest.cpp

@@ -1100,6 +1100,9 @@ set(LMMS_TESTS
 	src/gui/PinConnectorTest.cpp
 	# Edit > Modulators (window.modulators; modulator.*), against one real effect on a mixer channel.
 	src/gui/ModulatorPanelTest.cpp
+	# Edit > Progression (window.progression): the catalogue spelt in the selected scale
+	# (chord.progression_list) and a write through chord.progression_generate, one undo.
+	src/gui/ChordProgressionPanelTest.cpp
 	# File > Script Memory Budget... (script.set_memory_budget).
 	src/gui/ScriptBudgetActionTest.cpp
 	# An effect's Hosting submenu (oop.set_mode / oop.restart), against one real effect.
@@ -2440,6 +2443,7 @@ set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM
 set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PinConnectorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ModulatorPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ChordProgressionPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ScriptBudgetActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectHostingMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FeedbackModeActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -4808,6 +4812,22 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-groove-commands.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlGrooveCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# The chord progression workflow (Q050-019): the suggestions the progression
+	# panel shows (chord.progression_list with a scale) and the write its button
+	# dispatches (chord.progression_generate), end to end through
+	# --control-socket - the release contract's section 3.1 path. The agent asks
+	# the catalogue to spell itself in a scale, selects a progression, writes its
+	# notes into a clip, reads them back through roll.get_state, and takes them
+	# back with ONE control.undo. No fixture file: it builds its own clip through
+	# track.add / clip.add / note.add, which is what an agent has.
+	add_test(NAME ControlChordProgression
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-chord-progression.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlChordProgression PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

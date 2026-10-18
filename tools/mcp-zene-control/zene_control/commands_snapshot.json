@@ -3777,12 +3777,49 @@
         "properties": {
           "name": {
             "type": "string"
+          },
+          "octave": {
+            "maximum": 9,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scale": {
+            "enum": [
+              "Major",
+              "Harmonic minor",
+              "Melodic minor",
+              "Diminished",
+              "Major bebop",
+              "Dominant bebop",
+              "Arabic",
+              "Enigmatic",
+              "Neopolitan",
+              "Neopolitan minor",
+              "Hungarian minor",
+              "Dorian",
+              "Phrygian",
+              "Lydian",
+              "Mixolydian",
+              "Aeolian",
+              "Locrian",
+              "Minor",
+              "Chromatic",
+              "Half-Whole Diminished",
+              "Phrygian dominant",
+              "Persian"
+            ],
+            "type": "string"
           }
         },
         "required": [],
         "type": "object"
       },
-      "description": "What this engine can be asked for: the named PROGRESSIONS the generator walks (each a name and the scale degrees it steps through), the SCALES a key may name, the CHORDS a chord-track event may name, the patterns a generation can lay a chord out with, and the group's bounds. Every one of those vocabularies is the piano roll's own (InstrumentFunctionNoteStacking::ChordTable, the table behind its chord and scale selectors) - this group adds no names of its own. Read-only; with 'name' one progression is reported on its own.",
+      "description": "What this engine can be asked for: the named PROGRESSIONS the generator walks (each a name and the scale degrees it steps through), the SCALES a key may name, the CHORDS a chord-track event may name, the patterns a generation can lay a chord out with, and the group's bounds. Every one of those vocabularies is the piano roll's own (InstrumentFunctionNoteStacking::ChordTable, the table behind its chord and scale selectors) - this group adds no names of its own. Read-only; with 'name' one progression is reported on its own. With 'scale' (and optional 'root' 0..11 and 'octave') every progression is also SPELLED OUT in that key as `suggestions[]`: each entry's own chords, named by the same vocabulary the generator writes with. That is what the progression panel shows before it writes; nothing is written here.",
       "group": "chord",
       "id": "chord.progression_list",
       "mutating": false,
@@ -3838,6 +3875,22 @@
             "type": "array"
           },
           "scales": {
+            "type": "array"
+          },
+          "suggest_octave": {
+            "maximum": 9,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "suggest_root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "suggest_scale": {
+            "type": "string"
+          },
+          "suggestions": {
             "type": "array"
           }
         },
@@ -34561,6 +34614,32 @@
       "mutating": false,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open Edit > Progression (non-modally): the named progressions the catalogue holds, each SPELLED OUT in the selected scale (chord.progression_list with `scale`/`root`/`octave`), what the selected one writes, and a Write button that runs chord.progression_generate on the clip the shell's selection names. The scale, key and octave are the panel's own choice; they are not written back to the scale context. `rows` is how many progressions it lists.",
+      "group": "window",
+      "id": "window.progression",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "rows": {
+            "type": "integer"
+          },
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },

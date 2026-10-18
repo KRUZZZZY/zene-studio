@@ -132,6 +132,7 @@ SET(LMMS_SRCS
 	gui/TakeLanesPanel.cpp
 	gui/ModulatorPanel.cpp
 	gui/TempoMapPanel.cpp
+	gui/ChordProgressionPanel.cpp
 	gui/TrackFolderMenu.cpp
 	gui/TrackPinStrip.cpp
 	gui/TrackRenderMenu.cpp

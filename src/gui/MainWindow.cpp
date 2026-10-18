@@ -401,6 +401,8 @@ void MainWindow::finalize()
 		this, [](){ dispatchShellCommand(QStringLiteral("window.tempo_map")); }), "window.tempo_map");
 	declares(edit_menu->addAction(embed::getIconPixmap("automation"), tr("Modulators..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.modulators")); }), "window.modulators");
+	declares(edit_menu->addAction(embed::getIconPixmap("automation"), tr("Progression..."),
+		this, [](){ dispatchShellCommand(QStringLiteral("window.progression")); }), "window.progression");
 	declares(edit_menu->addAction(embed::getIconPixmap("edit_undo"), tr("Undo History..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.undo_history")); }), "window.undo_history");
 	declares(edit_menu->addAction(embed::getIconPixmap("setup_general"), tr("Collaborate..."),

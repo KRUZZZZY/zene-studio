@@ -40,6 +40,7 @@
 #include <QUrl>
 
 #include "AboutDialog.h"
+#include "ChordProgressionPanel.h"
 #include "CommandPalette.h"
 #include "ConfigManager.h"
 #include "ShortcutsPage.h"
@@ -309,6 +310,31 @@ void registerModulatorPanel(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerProgressionPanel(ControlRegistry& registry)
+{
+	ControlCommand cmd = command("window", "progression");
+	cmd.description = QStringLiteral("Open Edit > Progression (non-modally): the named progressions "
+		"the catalogue holds, each SPELLED OUT in the selected scale (chord.progression_list with "
+		"`scale`/`root`/`octave`), what the selected one writes, and a Write button that runs "
+		"chord.progression_generate on the clip the shell's selection names. The scale, key and "
+		"octave are the panel's own choice; they are not written back to the scale context. `rows` "
+		"is how many progressions it lists.");
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()},
+		{QStringLiteral("rows"), integerProperty()}});
+	cmd.handler = [](const QJsonObject&) {
+		gui::MainWindow* window = mainWindow();
+		if (window == nullptr) { return noInterface(QStringLiteral("window.progression")); }
+		auto* panel = new gui::ChordProgressionPanel(window);
+		panel->setAttribute(Qt::WA_DeleteOnClose);
+		panel->setModal(false);
+		panel->show();
+		return ControlResult::success(QJsonObject{{QStringLiteral("shown"), true},
+			{QStringLiteral("rows"), panel->rowCount()}});
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerStartHub(ControlRegistry& registry)
 {
 	ControlCommand cmd = command("window", "start_hub");
@@ -425,6 +451,7 @@ void registerShellCommands(ControlRegistry& registry)
 	registerUndoHistory(registry);
 	registerTempoMapPanel(registry);
 	registerModulatorPanel(registry);
+	registerProgressionPanel(registry);
 	registerStartHub(registry);
 	registerScreenshot(registry);
 	registerSaveVersion(registry);

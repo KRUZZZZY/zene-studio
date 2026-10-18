@@ -75,6 +75,7 @@ const QList<Tool>& tools()
 		{tr("Undo History"), QStringLiteral("window.undo_history"), QString()},
 		{tr("Tempo Map"), QStringLiteral("window.tempo_map"), QString()},
 		{tr("Modulators"), QStringLiteral("window.modulators"), QString()},
+		{tr("Progression"), QStringLiteral("window.progression"), QString()},
 		{tr("Large Clock"), QStringLiteral("window.large_clock"), QString()},
 		{tr("Tuner"), QStringLiteral("window.tuner"), QString()},
 		{tr("Video"), QStringLiteral("video.window_show"), QString()},

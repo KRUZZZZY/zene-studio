@@ -146,7 +146,7 @@ record an action checkpoint, the two generators reverse through the clip's own, 
 |---|---|---|
 | `chord.get_state` | — | `chords`, `max_chords`, `events[]` (`pos`, `length`, `root`, `octave`, `key`, `chord`, `scale`), `followers[]` (`track`, `mode`) |
 | `chord.detect` | **clip**, `window_ticks`, `min_pitch_classes` | `clip`, `track`, `count`, `window_ticks`, `min_pitch_classes`, `chords[]`, `key` |
-| `chord.progression_list` | `name` | `progressions[]`, `count`, `scales[]`, `chords[]`, `patterns[]`, `max_steps`, `max_degree_count`, `max_chords`, `progression` |
+| `chord.progression_list` | `name`, `scale`, `root`, `octave` | `progressions[]`, `count`, `scales[]`, `chords[]`, `patterns[]`, `max_steps`, `max_degree_count`, `max_chords`, `progression`, and - with a `scale` - `suggest_scale`, `suggest_root`, `suggest_octave`, `suggestions[]` (each entry's own `chords[]`, `degree`/`root`/`key`/`chord`, plus `reason` when the scale cannot be walked) |
 | `chord.set` | **pos**, **chord**, `root`, `octave`, `length`, `scale` | the track state, `event`, `replaced` |
 | `chord.remove` | **pos** | the track state, `event`, `removed` |
 | `chord.clear` | — | the track state, `removed` (count) |
@@ -193,6 +193,10 @@ documented tool, 227 -> 236 ids).
   seed-independent), the clip's own checkpoint as the generators' inverse, `chord.track_write`,
   and the project file (the element present when the track holds a chord, absent when it does
   not).
+* `ChordProgressionPanelTest` — the panel over the commands (§6b): the catalogue spelt in the
+  selected scale, the Write button's `controlCommand`, and a write that is ONE `control.undo` away
+  from the clip. `ControlChordProgression` (the socket transcript `tests/control-chord-progression.py`)
+  is the same workflow a real client drives through `--control-socket`.
 
 ## 6a. 0.5.0 E23: the chord lane, and chord follow
 
@@ -225,12 +229,47 @@ MIDI input, and a clip played on its own in the piano roll (its notes have no so
 Proofs: `ChordTrackTest` (`followedKeySnapsToTheSoundingChord`, `followersPersistWithTheTrack`)
 and `ControlChordCommandsTest` (`aTrackFollowsTheChordTrackReversibly`).
 
+## 6b. Q050-019: the progression panel
+
+**The panel.** Edit > Progression (and the footer Tools menu; the registered command
+`window.progression`) opens `gui::ChordProgressionPanel`:
+`include/ChordProgressionPanel.h`, `src/gui/ChordProgressionPanel.cpp`. It is a view over two
+registered commands and holds no music theory of its own.
+
+* **Suggestions.** The scale, key and octave selectors (seeded from `scale.get_state`, the group's
+  own context; changing them is local to the panel and is NOT written back) drive
+  `chord.progression_list {scale, root, octave}`. Every named progression of the catalogue is
+  listed with the chords it would write in that key - each chord named by the SAME vocabulary the
+  generator writes with - so a person can read a progression's chords before writing it. That is
+  the `suggestions[]` the command reports (§5).
+* **The write.** The Write button dispatches `chord.progression_generate` on the clip the shell's
+  selection names (`gui::ShellSelection`), with the panel's own scale, key and octave. It is the
+  SAME registered command a headless client calls; one undo step is the clip's own checkpoint, as
+  §5's table says.
+
+**The bounds, stated.** This is a text preview, not an audition: nothing is played through the
+engine before the write (there is no on-the-fly preview render). The target is the selected MIDI
+clip - there is no clip picker in the panel, so a clip has to be selected in the arranger (or the
+note editor) first, and a write with nothing selected is refused with a message. The panel leaves
+the chord TRACK untouched: it writes notes into a MIDI clip, exactly as `chord.progression_generate`
+does; `chord.track_write` and `chord.detect_to_track` remain the chord track's own writers. Every
+step of a progression is one chord of the named walk at the panel's step (one chord per default
+4/4 bar, `block`); the pattern, velocity, seed and variation arguments the command accepts are not
+exposed as controls here (they default as `chord.progression_generate` documents).
+
+Proofs: `tests/src/gui/ChordProgressionPanelTest.cpp` (`thePanelShowsSuggestionsForTheSelectedScale`,
+`theWriteButtonRunsTheRegisteredCommand`, `writingThroughThePanelIsOneUndoStep`) and the socket
+transcript `tests/control-chord-progression.py` (registered `ControlChordProgression`:
+`chord.progression_list` spelt in a scale, a write, and ONE `control.undo` restoring the clip).
+
 ## 7. What is NOT in this release
 
 *(0.3.0 record; since 0.5.0 E23 the arranger draws a chord lane and playback reads the chord track
-for the tracks that follow it - §6a.)* The interface does not show or play a chord track, and there
-is no chord ruler, no chord lane and no generator panel. The socket is the only way to reach any of
-it. Also not built: chord detection from AUDIO (this
+for the tracks that follow it - §6a; since Q050-019 the progression panel writes a named
+progression into a clip from the interface - §6b.)* Without a chord lane there is no chord ruler and
+no chord-edit popover, and the chord track itself still has no editor: `chord.*` is the only way to
+write it. The panel writes NOTES into a clip (`chord.progression_generate`), not the chord track.
+Also not built: chord detection from AUDIO (this
 detection reads notes), a chord track that plays through an instrument on its own (the track is
 harmony written down; `chord.track_write` is what turns it into notes), key/scale auto-detection
 over TIME (the key reported is one estimate for the whole note list), and roman-numeral analysis
