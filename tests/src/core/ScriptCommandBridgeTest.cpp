@@ -123,6 +123,21 @@ private slots:
 		QCOMPARE(out, (QStringList{QStringLiteral("true 3 0"), QStringLiteral("3 0")}));
 	}
 
+	void aNonTableArgumentIsRejectedTyped()
+	{
+		// A scalar second argument used to be silently swapped for {}, so the registry
+		// validated (and ran) defaults the caller never asked for (review L17 #17).
+		const QStringList out = run(QStringLiteral(
+			"local reply, err, kind = zene.command('track.list', 'oops')\n"
+			"print(tostring(reply) .. ' ' .. kind)\n"
+			"local reply2, err2, kind2 = zene.command('track.list', 42)\n"
+			"print(tostring(reply2) .. ' ' .. kind2)\n"
+			"local reply3, err3 = zene.command('track.list', nil)\n"
+			"print(tostring(reply3 ~= nil) .. ' ' .. tostring(err3 == nil))\n"));
+		QCOMPARE(out, (QStringList{QStringLiteral("nil invalid_args"), QStringLiteral("nil invalid_args"),
+			QStringLiteral("true true")}));
+	}
+
 	void aRegistryRefusalComesBackTyped()
 	{
 		const QStringList out = run(QStringLiteral(
