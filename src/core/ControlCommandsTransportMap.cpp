@@ -266,6 +266,16 @@ void registerGetCommand(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+//! The event the map holds at `tick` after an accepted edit; `fallback` if none is stored there.
+TempoMapEvent resultingEventAt(const TempoMap& map, tick_t tick, const TempoMapEvent& fallback)
+{
+	for (const TempoMapEvent& event : map.all())
+	{
+		if (event.tick == tick) { return event; }
+	}
+	return fallback;
+}
+
 //! The reply to a tempo_map_add, and the advertised inverse. A REPLACEMENT advertises no command:
 //! the event it overwrote is gone from the map, so tempo_map_remove at that tick would DELETE the
 //! event instead of restoring the contents the call replaced (Luna cluster 4905). Nor does an add
@@ -345,6 +355,9 @@ void registerAddCommand(ControlRegistry& registry)
 			return mapRefusal();
 		}
 
+		// The engine merges the add into the event already at this tick, so the reply
+		// describes the event as stored, not only the half the caller submitted.
+		event = resultingEventAt(song->tempoMap().map(), event.tick, event);
 		return addReply(song, before, event, replaced);
 	};
 	registry.registerCommand(cmd);
