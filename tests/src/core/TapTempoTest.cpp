@@ -26,8 +26,9 @@
 
 #include "Engine.h"
 #include "Song.h"
+#define private public
 #include "TapTempo.h"
-
+#undef private
 using namespace lmms;
 
 class TapTempoTest : public QObject
@@ -64,6 +65,25 @@ private slots:
 		tapTempo.sync();
 
 		QCOMPARE(song->getTempo(), originalTempo);
+	}
+
+	void rollingIntervalWindowIsPreservedAcrossMedian()
+	{
+		using namespace std::chrono_literals;
+		using clock = TapTempo::clock;
+
+		TapTempo tapTempo;
+		const auto t0 = clock::time_point{} + std::chrono::seconds{10};
+		tapTempo.updateTempo(t0);
+		tapTempo.updateTempo(t0 + 300ms);
+		tapTempo.updateTempo(t0 + 400ms);
+		tapTempo.updateTempo(t0 + 600ms);
+		tapTempo.updateTempo(t0 + 750ms);
+
+		QCOMPARE(tapTempo.m_taps, 4);
+		QCOMPARE(tapTempo.m_intervals[0], std::chrono::milliseconds{150});
+		QCOMPARE(tapTempo.m_intervals[1], std::chrono::milliseconds{100});
+		QCOMPARE(tapTempo.m_intervals[2], std::chrono::milliseconds{200});
 	}
 };
 
