@@ -1654,6 +1654,8 @@ src/core/DawProjectReadShared.h
 src/core/DawProjectReadTracks.cpp
 src/core/DawProjectSession.cpp
 src/core/DawProjectWrite.cpp
+src/core/DawProjectWriteRefusal.cpp
+src/core/DawProjectWriteRefusal.h
 src/core/DawProjectZip.cpp
 src/core/DawProjectZipRead.cpp
 src/core/DawProjectZipShared.h

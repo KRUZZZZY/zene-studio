@@ -515,7 +515,8 @@ LMMS_EXPORT DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossRe
  *  declaration prefix beyond the format's own, no namespace: Project.xsd
  *  declares no targetNamespace). False - with \\a error set - when the model
  *  holds a value the format cannot express (a tempo outside 10..999, a metre
- *  whose denominator is not a power of two, a negative time). */
+ *  numerator outside 1..32, a denominator that is not a power of two, a
+ *  negative time). */
 LMMS_EXPORT bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml,
 	QString* error);
 

@@ -18,9 +18,10 @@
  * is `id<n>` in document order, assigned before the elements that point at it.
  *
  * WHAT IT REFUSES RATHER THAN ROUNDS: a tempo outside the engine's own bounds, a
- * metre whose denominator is not a power of two, or a clip whose lane has no
- * track id - the format could express all three, this engine cannot read them
- * back - plus the id rules in elementId below. See the doc, section 3.
+ * metre whose numerator is outside 1..32 or whose denominator is not a power
+ * of two, or a clip whose lane has no track id - the format could express all
+ * three, this engine cannot read them back - plus the id rules in elementId
+ * below. See the doc, section 3.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -53,6 +54,7 @@
 #include <vector>
 
 #include "DawProjectInterchange.h"
+#include "DawProjectWriteRefusal.h"
 #include "LmmsTypes.h"
 
 namespace lmms
@@ -115,11 +117,6 @@ QString elementId(int* counter, const QString& candidate, QSet<QString>& used)
 
 QString beatsText(double beats) { return number(beats, TimeDecimals); }
 
-bool isPowerOfTwo(int value)
-{
-	return value > 0 && (value & (value - 1)) == 0;
-}
-
 //! A beat position the format can carry: finite, not before the timeline, and
 //! still within tick_t after the six-decimal value is rounded to the reader's
 //! tick grid. Check the unformatted value first so a huge finite input is
@@ -149,13 +146,6 @@ QString unsupportedTime(const QString& what, double beats)
 {
 	return QStringLiteral("the %1 is %2, which is not a position this engine can read back")
 		.arg(what).arg(beats);
-}
-
-//! The tempo of one point or of the session, in bounds AND finite. A NaN
-//! compares false against both bounds, so the range test alone lets it through.
-bool isSupportedTempo(double bpm)
-{
-	return std::isfinite(bpm) && bpm >= DawProjectMinTempo && bpm <= DawProjectMaxTempo;
 }
 
 QString clipRefusal(const DawProjectClip& clip, const DawProjectTrack& track)
@@ -195,44 +185,6 @@ QString pointRefusal(const QVector<DawProjectPoint>& points, const QString& arm)
 		if (!isSupportedTime(point.time))
 		{
 			return unsupportedTime(QStringLiteral("time of a %1 point").arg(arm), point.time);
-		}
-	}
-	return QString();
-}
-
-QString tempoRefusal(const DawProjectModel& model)
-{
-	if (!isSupportedTempo(model.tempo))
-	{
-		return QStringLiteral("the session tempo %1 is outside the engine's own %2..%3, so "
-			"the file would say something this engine cannot read back")
-			.arg(model.tempo).arg(DawProjectMinTempo).arg(DawProjectMaxTempo);
-	}
-	for (const DawProjectPoint& point : model.tempoPoints)
-	{
-		if (!isSupportedTempo(point.value))
-		{
-			return QStringLiteral("a tempo-map point at beat %1 carries %2 bpm, outside the "
-				"engine's own %3..%4").arg(point.time).arg(point.value)
-				.arg(DawProjectMinTempo).arg(DawProjectMaxTempo);
-		}
-	}
-	return QString();
-}
-
-QString meterRefusal(const DawProjectModel& model)
-{
-	if (!isPowerOfTwo(model.denominator))
-	{
-		return QStringLiteral("the time signature's denominator %1 is not a power of two")
-			.arg(model.denominator);
-	}
-	for (const DawProjectPoint& point : model.meterPoints)
-	{
-		if (!isPowerOfTwo(point.denominator))
-		{
-			return QStringLiteral("a metre point at beat %1 has denominator %2, which is not a "
-				"power of two").arg(point.time).arg(point.denominator);
 		}
 	}
 	return QString();

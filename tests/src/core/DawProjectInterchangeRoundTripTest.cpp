@@ -1947,6 +1947,45 @@ void timesOutsideTheEngineGridAreRefusedByTheWriter()
 	QVERIFY2(dawProjectXmlFromModel(base, &xml, &error), qPrintable(error));
 }
 
+//! Cluster new-p10-100: the reader refuses numerators outside [1, 32], so the
+//! writer must refuse those values for both the global signature and map points.
+void unsupportedTimeSignatureNumeratorsAreRefusedByTheWriter()
+{
+	const QList<int> unsupported = {TempoMapMinNumerator - 1, TempoMapMaxNumerator + 1};
+	const QList<int> supported = {TempoMapMinNumerator, TempoMapMaxNumerator};
+	QByteArray xml;
+	QString error;
+
+	for (const int numerator : unsupported)
+	{
+		DawProjectModel global = authoredModel();
+		global.numerator = numerator;
+		QVERIFY2(!dawProjectXmlFromModel(global, &xml, &error),
+			qPrintable(QStringLiteral("global time-signature numerator %1 was written")
+				.arg(numerator)));
+		QVERIFY2(error.contains(QStringLiteral("numerator")),
+			"the refusal does not identify the invalid global numerator");
+
+		DawProjectModel point = authoredModel();
+		point.meterPoints[0].numerator = numerator;
+		QVERIFY2(!dawProjectXmlFromModel(point, &xml, &error),
+			qPrintable(QStringLiteral("meter-point numerator %1 was written").arg(numerator)));
+		QVERIFY2(error.contains(QStringLiteral("numerator")),
+			"the refusal does not identify the invalid meter-point numerator");
+	}
+
+	for (const int numerator : supported)
+	{
+		DawProjectModel global = authoredModel();
+		global.numerator = numerator;
+		QVERIFY2(dawProjectXmlFromModel(global, &xml, &error), qPrintable(error));
+
+		DawProjectModel point = authoredModel();
+		point.meterPoints[0].numerator = numerator;
+		QVERIFY2(dawProjectXmlFromModel(point, &xml, &error), qPrintable(error));
+	}
+}
+
 //! Luna cluster new-p8-97: the writer must refuse beats whose serialized
 //! value rounds beyond the signed tick_t range when this reader imports it.
 void writerRefusesBeatTimesOutsideTheTickRange()
