@@ -29,6 +29,7 @@
 #include <atomic>
 #include <vector>
 #include "lmms_export.h"
+#include "LmmsTypes.h"
 #include "Engine.h"
 #include "Model.h"
 #include "JournallingObject.h"
@@ -124,11 +125,11 @@ public:
 		return std::clamp(_val, 0.0f, 1.0f);
 	}
 
-	static long runningPeriods()
+	static f_cnt_t runningPeriods()
 	{
 		return s_periods;
 	}
-	static unsigned int runningFrames();
+	static f_cnt_t runningFrames();
 	static float runningTime();
 
 	static void triggerFrameCounter();
@@ -161,7 +162,7 @@ protected:
 	// again every time
 	ValueBuffer m_valueBuffer;
 	// when we last updated the valuebuffer - so we know if we have to update it
-	long m_bufferLastUpdated;
+	f_cnt_t m_bufferLastUpdated;
 
 	float m_currentValue;
 	bool  m_sampleExact;
@@ -174,7 +175,7 @@ protected:
 
 	//! Atomic: triggerFrameCounter() advances it on the audio thread while constructors, the
 	//! GUI and runningFrames() read it elsewhere (BUGS_FOUND 10.9c).
-	static std::atomic<long> s_periods;
+	static std::atomic<f_cnt_t> s_periods;
 
 
 signals:
