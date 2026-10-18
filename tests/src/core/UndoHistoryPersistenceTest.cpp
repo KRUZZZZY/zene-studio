@@ -149,6 +149,11 @@ int journalDepth()
 	return run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
 }
 
+QJsonObject lastTransaction()
+{
+	return run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().last().toObject();
+}
+
 //! The parameter id automation.get_state names first for @a track (the instrument's own).
 QString firstParameter(const QString& track)
 {
@@ -546,6 +551,32 @@ private slots:
 			&& !report.value(QStringLiteral("written")).toBool(), qPrintable(compact(report)));
 		QCOMPARE(textOf(big).count(QStringLiteral("<z:undostep")), 0);
 		QVERIFY(textOf(big).contains(QStringLiteral("<z:undohistory")));  // the project's own choice still saved
+	}
+
+	//! Turning persistence OFF drops the snapshots the steps carried, and turning it back on cannot recapture
+	//! them: that record is irreversible and control.undo refuses it. A switch that drops nothing stays reversible.
+	void aSettingThatDropsSnapshotsIsNotReversible()
+	{
+		const Baseline base = buildBaseline();
+		QVERIFY(!base.track.isEmpty());
+		// Persistence was never on, so no step carries a snapshot: nothing to drop, still reversible.
+		const ControlResult quiet = run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("off")}});
+		QVERIFY2(quiet.ok, qPrintable(quiet.errorMessage));
+		QVERIFY2(lastTransaction().value(QStringLiteral("reversible")).toBool(), qPrintable(compact(lastTransaction())));
+
+		QVERIFY(run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("on")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("one")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("two")}}).ok);
+
+		// Turning it off now drops the snapshots of the two renames: the record must not claim a full inverse.
+		const ControlResult off = run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("off")}});
+		QVERIFY2(off.ok, qPrintable(off.errorMessage));
+		const QJsonObject record = lastTransaction();
+		QCOMPARE(record.value(QStringLiteral("command")).toString(), QStringLiteral("project.set_undo_history"));
+		QVERIFY2(!record.value(QStringLiteral("reversible")).toBool(), qPrintable(compact(record)));
+		const ControlResult undo = run(QStringLiteral("control.undo"));
+		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
+		QCOMPARE(run(QStringLiteral("project.undo_history")).result.value(QStringLiteral("setting")).toString(), QStringLiteral("off"));
 	}
 };
 
