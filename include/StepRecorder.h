@@ -48,6 +48,7 @@ class StepRecorder : public QObject
 
 	public:
 	StepRecorder(gui::PianoRoll& pianoRoll, gui::StepRecorderWidget& stepRecorderWidget);
+	~StepRecorder() override;
 
 	void initialize();
 	void start(const TimePos& currentPosition,const TimePos& stepLength);

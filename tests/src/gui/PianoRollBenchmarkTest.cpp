@@ -41,8 +41,11 @@
 
 #include <QElapsedTimer>
 #include <QMap>
+#include <QTimer>
 
 #include <algorithm>
+#include <cstdlib>
+#include <new>
 #include <vector>
 
 #include "../core/BenchmarkBaseline.h"
@@ -55,8 +58,63 @@
 #include "Note.h"
 #include "NoteEditor.h"
 #include "Piano.h"
-#include "PianoRoll.h"
 #include "Song.h"
+#include "StepRecorderWidget.h"
+
+// StepRecorder's pending notes are private; the lifetime regression below reads them directly.
+#define private public
+#include "StepRecorder.h"
+#include "PianoRoll.h"
+#undef private
+
+// ---- pending-step-note lifetime probe -------------------------------------
+// The regression needs to know whether one specific heap block (a pending StepNote) is freed,
+// so the global operator delete records when the tracked pointer is returned to the heap.
+namespace
+{
+
+void* s_trackedPendingStepNote = nullptr;
+bool s_trackedPendingStepNoteDeleted = false;
+
+void trackedDelete(void* ptr) noexcept
+{
+	if (ptr != nullptr && ptr == s_trackedPendingStepNote)
+	{
+		s_trackedPendingStepNoteDeleted = true;
+	}
+	std::free(ptr);
+}
+
+} // namespace
+
+void* operator new(std::size_t size)
+{
+	if (void* ptr = std::malloc(size != 0 ? size : 1)) { return ptr; }
+	throw std::bad_alloc();
+}
+
+void* operator new[](std::size_t size)
+{
+	return ::operator new(size);
+}
+
+void* operator new(std::size_t size, const std::nothrow_t&) noexcept
+{
+	try { return ::operator new(size); }
+	catch (...) { return nullptr; }
+}
+
+void* operator new[](std::size_t size, const std::nothrow_t& tag) noexcept
+{
+	return ::operator new(size, tag);
+}
+
+void operator delete(void* ptr) noexcept { trackedDelete(ptr); }
+void operator delete[](void* ptr) noexcept { trackedDelete(ptr); }
+void operator delete(void* ptr, std::size_t) noexcept { trackedDelete(ptr); }
+void operator delete[](void* ptr, std::size_t) noexcept { trackedDelete(ptr); }
+void operator delete(void* ptr, const std::nothrow_t&) noexcept { trackedDelete(ptr); }
+void operator delete[](void* ptr, const std::nothrow_t&) noexcept { trackedDelete(ptr); }
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -114,6 +172,22 @@ private slots:
 		ControlRegistry::setReady(true);  // the note editor reads the scale context through scale.get_state
 	}
 	void cleanupTestCase() { Engine::destroy(); }
+
+	// Closing the piano roll while a step note is still pending must free that note.
+	void destructionReleasesPendingStepNotes()
+	{
+		s_trackedPendingStepNote = nullptr;
+		s_trackedPendingStepNoteDeleted = false;
+		auto* pianoRoll = new PianoRoll();
+		pianoRoll->m_stepRecorder.notePressed(Note(TimePos(0), TimePos(0), 60));
+		QCOMPARE(pianoRoll->m_stepRecorder.m_curStepNotes.size(), std::size_t{1});
+		s_trackedPendingStepNote = pianoRoll->m_stepRecorder.m_curStepNotes.front();
+
+		delete pianoRoll;
+
+		QVERIFY(s_trackedPendingStepNoteDeleted);
+		s_trackedPendingStepNote = nullptr;
+	}
 
 	void invalidKeysAreSafe()
 	{

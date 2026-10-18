@@ -44,6 +44,16 @@ StepRecorder::StepRecorder(gui::PianoRoll& pianoRoll, gui::StepRecorderWidget& s
 	m_stepRecorderWidget.hide();
 }
 
+StepRecorder::~StepRecorder()
+{
+	// Notes still pending when the recorder goes away (e.g. the piano roll closes mid-step)
+	// are owned only by this vector; the apply and dismiss paths free them the same way.
+	for (StepNote* stepNote : m_curStepNotes)
+	{
+		delete stepNote;
+	}
+}
+
 void StepRecorder::initialize()
 {
 	connect(&m_updateReleasedTimer, SIGNAL(timeout()), this, SLOT(removeNotesReleasedForTooLong()));
