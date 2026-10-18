@@ -1846,6 +1846,46 @@ if(NOT MSVC)
 endif()
 add_test(NAME NeuralAmpWavInputTest COMMAND NeuralAmpWavInputTest)
 
+# The library-level RNNoise probe is a test artifact, so build the actual
+# command-line harness and exercise its output-file failure path directly.
+set(RNNOISE_HARNESS_LIBRARY rnnoise_vendored)
+if(NOT TARGET rnnoise_vendored)
+	# The test remains available when this build disables the RNNoise plug-in.
+	add_library(rnnoise_harness_vendored STATIC
+		"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/rnnoise/denoise.c"
+		"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/rnnoise/rnn.c"
+		"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/rnnoise/pitch.c"
+		"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/rnnoise/kiss_fft.c"
+		"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/rnnoise/celt_lpc.c"
+		"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/rnnoise/nnet.c"
+		"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/rnnoise/nnet_default.c"
+		"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/rnnoise/parse_lpcnet_weights.c"
+		"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/rnnoise/rnnoise_data.c"
+		"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/rnnoise/rnnoise_tables.c")
+	set_target_properties(rnnoise_harness_vendored PROPERTIES
+		SYSTEM TRUE
+		POSITION_INDEPENDENT_CODE ON)
+	target_include_directories(rnnoise_harness_vendored SYSTEM PUBLIC
+		"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/rnnoise")
+	set(RNNOISE_HARNESS_LIBRARY rnnoise_harness_vendored)
+endif()
+
+add_executable(RnnoiseHarnessCli
+	"${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/testdata/rnn_harness.c")
+target_link_libraries(RnnoiseHarnessCli PRIVATE ${RNNOISE_HARNESS_LIBRARY})
+if(NOT MSVC)
+	target_link_libraries(RnnoiseHarnessCli PRIVATE m)
+endif()
+
+add_executable(RnnoiseHarnessOutputTest src/plugins/RnnoiseHarnessOutputTest.cpp)
+add_test(NAME RnnoiseHarnessOutputTest COMMAND RnnoiseHarnessOutputTest)
+target_link_libraries(RnnoiseHarnessOutputTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+target_compile_features(RnnoiseHarnessOutputTest PRIVATE cxx_std_20)
+target_compile_definitions(RnnoiseHarnessOutputTest PRIVATE
+	RNNOISE_HARNESS_PATH="$<TARGET_FILE:RnnoiseHarnessCli>")
+add_dependencies(RnnoiseHarnessOutputTest RnnoiseHarnessCli)
+
+# ReverbSC's DC blocker allocator contract. The test build replaces malloc
 # ReverbSC's DC blocker allocator contract. The test build replaces malloc
 # only for dcblock.c, so the allocation failure is deterministic.
 add_executable(ReverbScAllocationTest
