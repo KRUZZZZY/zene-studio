@@ -146,18 +146,16 @@ bool InstrumentTrack::noteStartsNow(const Note& note, const TimePos& curStart, c
 
 bool InstrumentTrack::noteIsAlreadySounding(const Note& note, const MidiClip* clip) const
 {
-	// The originating clip first: a note handle carries its clip-relative position (NotePlayHandle
-	// IS a Note), so a same-key note in another overlapping clip is NOT this note (Q050-040 r2).
-	// The clip's transpose, as decorateNoteHandle applies it, so the keys compare (ChordFollow's
-	// re-keying is not mirrored: on such a track a chase may start a note that is already ringing).
-	const int transpose = clip->clipEdits().transpose;
-	const int key = std::clamp(note.key() + transpose, 0, NumKeys - 1);
+	// The handle's originating clip and the originating note's id (Note::id(), stable while the note
+	// lives): a same-key note in another overlapping clip is not this note (r2), and neither is a twin
+	// of the same key and position in this clip, which the model permits (r4). Audio thread, under
+	// play()'s tryLock: reads the handle list, allocates nothing.
+	const int id = note.id();
 	for (PlayHandle* handle : Engine::audioEngine()->playHandles())
 	{
 		auto* noteHandle = dynamic_cast<NotePlayHandle*>(handle);
 		if (noteHandle == nullptr || noteHandle->instrumentTrack() != this) { continue; }
-		if (noteHandle->clip() != clip) { continue; }
-		if (noteHandle->pos() != note.pos() || noteHandle->key() != key) { continue; }
+		if (noteHandle->clip() != clip || noteHandle->sourceNoteId() != id) { continue; }
 		// A released handle is a release tail, not the note: a loop may sound the note again over it.
 		if (noteHandle->isReleased()) { continue; }
 		return true;
@@ -232,6 +230,7 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 		const f_cnt_t length = hit + 1 < hits ? each : frames - hit * each;
 		NotePlayHandle* handle = NotePlayHandleManager::acquire(this, offset + hit * each, length, note);
 		handle->setClip(trigger.clip);  // Q050-040: the chase check must tell this clip's note from another's
+		handle->setSourceNoteId(note.id());  // Q050-040 r4: ...and one note of the clip from its same-key, same-position twin
 		handle->setPatternTrack(trigger.patternTrack);
 		// Velocity jitter, the slide source, the song-global offset and the clip's transpose.
 		decorateNoteHandle(handle, trigger.clip, trigger.note, trigger.first, trigger.songGlobal, songOffset, trigger.midiSeed);

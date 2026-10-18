@@ -324,6 +324,71 @@ private slots:
 		QVERIFY(!MidiPlayback::instance().chase());
 	}
 
+	//! 0.5.0 Q050-040 r4 (L07 Luna rework): two distinct notes of ONE clip with the same key and the same
+	//! position (the model permits it; Note::id() tells them apart) both sound after an unmute - the first
+	//! handle must not suppress the second, nor a ringing twin its late-joined partner - and the seek and loop dedup still hold for the pair.
+	void twinNotesInOneClipBothChaseAndDedup()
+	{
+		const Note* first = oneNote();  // key 60 at clip position 0, length 384
+		QVERIFY(first != nullptr);
+		QCOMPARE(m_clip->notes().size(), size_t(1));
+		Note* twin = m_clip->addNote(Note(TimePos(384), TimePos(0), 60), false);
+		QVERIFY(twin != nullptr);
+		QVERIFY(twin != first);
+		QVERIFY2(twin->id() != first->id(), "the two notes must be distinct by id");
+		QCOMPARE(m_clip->notes().size(), size_t(2));
+		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("chase"), true}}).ok);
+		Song* song = Engine::getSong();
+		Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
+
+		m_clip->setMuted(true);
+		song->setPlayPos(96, Song::PlayMode::Song);
+		song->playSong();
+		renderPeriods(3);
+		QVERIFY(handleKeys(m_track).isEmpty());
+		m_clip->setMuted(false);
+		renderPeriods(3);
+		QCOMPARE(handleKeys(m_track), (QList<int>{60, 60}));  // both twins sound, each once
+
+		// A seek into the ringing pair starts neither again.
+		song->setPlayPos(160, Song::PlayMode::Song);
+		renderPeriods(3);
+		QCOMPARE(handleKeys(m_track), (QList<int>{60, 60}));
+		QVERIFY(renderUntilSilent(m_track));  // no stuck note
+
+		// A loop under the pair does not double either of them.
+		timeline.setLoopPoints(TimePos(0), TimePos(48));
+		timeline.setLoopEnabled(true);
+		song->setPlayPos(0, Song::PlayMode::Song);
+		song->playSong();
+		const unsigned before = song->loopWraps();
+		for (int period = 0; period < 2000 && song->loopWraps() == before; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+		QCOMPARE(song->loopWraps(), before + 1);
+		QVERIFY2(handleKeys(m_track).size() <= 2, "a loop must not double a twin already sounding");
+		QVERIFY(renderUntilSilent(m_track));
+		timeline.setLoopEnabled(false);
+
+		// A twin that joins while the first note rings: the live handle belongs to the first note by id,
+		// so a seek under the pair chases the twin and only the twin (a clip+key+position match would
+		// have taken the ringing handle for the twin as well and left it silent).
+		QVERIFY(oneNote() != nullptr);
+		song->setPlayPos(0, Song::PlayMode::Song);
+		song->playSong();
+		renderPeriods(3);
+		QCOMPARE(handleKeys(m_track), (QList<int>{60}));
+		QVERIFY(m_clip->addNote(Note(TimePos(384), TimePos(0), 60), false) != nullptr);
+		song->setPlayPos(96, Song::PlayMode::Song);
+		renderPeriods(3);
+		QCOMPARE(handleKeys(m_track), (QList<int>{60, 60}));
+		song->setPlayPos(160, Song::PlayMode::Song);
+		renderPeriods(3);
+		QCOMPARE(handleKeys(m_track), (QList<int>{60, 60}));  // and neither starts twice
+		QVERIFY(renderUntilSilent(m_track));
+
+		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("chase"), false}}).ok);
+		QVERIFY(!MidiPlayback::instance().chase());
+	}
+
 	//! 0.5.0 Q050-040 r2 (L07): when play() cannot take the processing lock, no pass happens - and
 	//! the unmute edge survives the passes that failed, chasing the note once on the release.
 	void unmuteEdgeSurvivesAContendedLock()

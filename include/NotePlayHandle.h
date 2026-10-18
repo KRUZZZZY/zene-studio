@@ -240,6 +240,20 @@ public:
 		m_clip = clip;
 	}
 
+	/*! Q050-040 r4: the Note::id() of the clip note this handle was triggered from (-1 for a handle that
+	 *  comes from no clip note). The handle IS a copy of the note, so its own id() is a fresh one; this
+	 *  keeps the source identity, which tells two same-key, same-position notes of one clip apart.
+	 *  Set once where the handle is created (triggerNote, audio thread): a plain int, no allocation. */
+	int sourceNoteId() const
+	{
+		return m_sourceNoteId;
+	}
+
+	void setSourceNoteId(int id)
+	{
+		m_sourceNoteId = id;
+	}
+
 	/*! Returns whether note has children */
 	bool isMasterNote() const
 	{
@@ -404,6 +418,8 @@ private:
 
 	//! 0.5.0 Q050-040: the originating clip instance (see clip()); null outside clip playback.
 	const MidiClip* m_clip = nullptr;
+	//! 0.5.0 Q050-040 r4: the originating clip note's Note::id(), -1 outside clip playback (see sourceNoteId()).
+	int m_sourceNoteId = -1;
 
 	bool m_frequencyNeedsUpdate;				// used to update pitch
 	int m_slideSourceKey;					// key a slide note glides from, -1 = none
