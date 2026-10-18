@@ -22,6 +22,9 @@
  *                                 returns false
  *   CLAP_TEST_FAULT_NO_FACTORY    a good, current `clap_entry` whose init()
  *                                 succeeds and whose get_factory() returns null
+ *   CLAP_TEST_FAULT_NULL_CALLBACK a current `clap_entry` whose required
+ *                                 callbacks are null (a malformed table the
+ *                                 host must refuse instead of calling)
  *
  * The faults are mutually exclusive by construction and nothing else about the
  * modules differs, so a test that sees the wrong code has found a real defect in
@@ -135,6 +138,20 @@ CLAP_EXPORT const clap_plugin_entry_t clap_entry = {
 	.init = no_factory_entry_init,
 	.deinit = no_factory_entry_deinit,
 	.get_factory = no_factory_entry_get_factory,
+};
+
+#elif defined(CLAP_TEST_FAULT_NULL_CALLBACK)
+
+/* -------------------------------------------------------------------------
+ * NULL_CALLBACK: a current, loadable entry point whose callback table is
+ * malformed -- every required callback is null. A host that calls one without
+ * checking jumps to address zero; the host must refuse the entry first.
+ * ------------------------------------------------------------------------- */
+CLAP_EXPORT const clap_plugin_entry_t clap_entry = {
+	.clap_version = CLAP_VERSION_INIT,
+	.init = NULL,
+	.deinit = NULL,
+	.get_factory = NULL,
 };
 
 #else

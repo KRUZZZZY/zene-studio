@@ -3250,7 +3250,7 @@ if(TARGET lmms_clap)
 	add_dependencies(ClapHostTest clap-test-gain clap-test-instrument)
 
 	# The TYPED error path of the module loader (ClapLoader.h). Subjects: the
-	# four one-fault modules built above -- each fails in exactly one way, so a
+	# five one-fault modules built above -- each fails in exactly one way, so a
 	# wrong code is a host defect and not a fixture artefact -- plus
 	# clap-test-gain as the control that says the typed path does not fire on a
 	# module that is fine. Nothing here needs an audio device or the engine.
@@ -3302,9 +3302,11 @@ if(TARGET lmms_clap)
 		CLAP_TEST_BROKEN_NO_SYMBOL_PATH="$<TARGET_FILE:clap-test-broken-no-symbol>"
 		CLAP_TEST_BROKEN_OLD_VERSION_PATH="$<TARGET_FILE:clap-test-broken-old-version>"
 		CLAP_TEST_BROKEN_INIT_FAILS_PATH="$<TARGET_FILE:clap-test-broken-init-fails>"
-		CLAP_TEST_BROKEN_NO_FACTORY_PATH="$<TARGET_FILE:clap-test-broken-no-factory>")
+		CLAP_TEST_BROKEN_NO_FACTORY_PATH="$<TARGET_FILE:clap-test-broken-no-factory>"
+		CLAP_TEST_BROKEN_NULL_CALLBACK_PATH="$<TARGET_FILE:clap-test-broken-null-callback>")
 	add_dependencies(ClapLoaderErrorTest clap-test-gain clap-test-broken-no-symbol
-		clap-test-broken-old-version clap-test-broken-init-fails clap-test-broken-no-factory)
+		clap-test-broken-old-version clap-test-broken-init-fails clap-test-broken-no-factory
+		clap-test-broken-null-callback)
 
 	add_executable(ClapEffectIntegrationTest
 		src/plugins/ClapEffectIntegrationTest.cpp
