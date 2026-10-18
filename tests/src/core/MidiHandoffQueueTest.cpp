@@ -83,6 +83,33 @@ void drainInto(lmms::MidiHandoffQueue<Capacity>& queue, Consumed& consumed)
 
 } // namespace
 
+
+//! Verifies every cut is emitted before events that were queued after its refusal.
+static bool cutsPrecedeLaterEvents(const std::vector<std::pair<bool, std::uint64_t>>& stream,
+	const std::vector<std::uint64_t>& stamps)
+{
+	for (std::size_t stampIndex = 0; stampIndex < stamps.size(); ++stampIndex)
+	{
+		std::size_t cutPosition = 0;
+		std::size_t seenCuts = 0;
+		for (std::size_t i = 0; i < stream.size(); ++i)
+		{
+			if (!stream[i].first) { continue; }
+			if (seenCuts == stampIndex) { cutPosition = i; break; }
+			++seenCuts;
+		}
+		for (std::size_t i = 0; i < stream.size(); ++i)
+		{
+			if (stream[i].first) { continue; }
+			if (stream[i].second >= stamps[stampIndex] && i < cutPosition)
+			{
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 class MidiHandoffQueueTest : public QObject
 {
 	Q_OBJECT
@@ -336,6 +363,50 @@ private slots:
 		QCOMPARE(overflow.stamp(3), std::uint64_t{0});
 	}
 
+	//! Later refusals must not replace an intermediate recovery cut that has not been served.
+	void repeatedOverflowKeepsEarlierRecoveryCut()
+	{
+		lmms::MidiHandoffQueue<2> queue;
+		lmms::MidiChannelOverflow overflow;
+		auto event = [](int channel, std::uint32_t id, std::uint8_t type) {
+			lmms::HandoffMidiEvent e;
+			e.channel = static_cast<std::int8_t>(channel);
+			e.offset = id;
+			e.type = type;
+			return e;
+		};
+
+		QVERIFY(queue.push(event(0, 1, 0x90)));
+		QVERIFY(queue.push(event(0, 2, 0x90)));
+		QVERIFY(!lmms::pushOrRecord(queue, overflow, event(3, 90, 0x80))); // refused note-off at stamp 3
+
+		std::vector<std::string> sent;
+		auto emitEvent = [&sent](const lmms::HandoffMidiEvent& e) {
+			sent.push_back("E" + std::to_string(e.offset));
+			return true;
+		};
+		auto emitCut = [&sent, &overflow](int channel) {
+			sent.push_back("CUT" + std::to_string(channel) + "@" + std::to_string(overflow.stamp(channel)));
+			return true;
+		};
+		lmms::drainMidi(queue, overflow, 1, emitEvent, emitCut); // consume only event 1, before the first cut is due
+
+		QVERIFY(queue.push(event(3, 3, 0x90))); // note-on after the first refusal
+		QVERIFY(!lmms::pushOrRecord(queue, overflow, event(3, 91, 0x80))); // refusal at stamp 4
+		lmms::drainMidi(queue, overflow, 1, emitEvent, emitCut, 1); // consume event 2 but leave CUT3 pending
+		QVERIFY(queue.push(event(3, 4, 0x90)));
+		QVERIFY(!lmms::pushOrRecord(queue, overflow, event(3, 92, 0x80))); // refusal at stamp 5
+
+		lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut, 1); // CUT3, without taking the next queued event
+		QCOMPARE(overflow.stamp(3), std::uint64_t{4});
+		lmms::drainMidi(queue, overflow, 10, emitEvent, emitCut);
+
+		const std::vector<std::string> expected{"E1", "E2", "CUT3@3", "E3", "CUT3@4", "E4", "CUT3@5"};
+		QCOMPARE(sent, expected);
+		QCOMPARE(overflow.recorded(), std::uint64_t{3});
+		QCOMPARE(overflow.stamp(3), std::uint64_t{0});
+	}
+
 	void drainTakesAtMostTheCapPerCall()
 	{
 		lmms::MidiHandoffQueue<16> queue;
@@ -445,8 +516,67 @@ private slots:
 		for (auto& count : acceptedBy) { accepted += count.load(); }
 		QCOMPARE(accepted + queue.dropped(), std::uint64_t{producers} * perProducer);
 	}
-};
 
+
+	//! A 512-slot queue must keep more than 257 distinct recovery cuts ordered.
+	void fiveTwelveCapacityKeepsAllRecoveryCuts()
+	{
+		constexpr std::size_t Capacity = 512;
+		constexpr int Channel = 3;
+		constexpr int RefusalCount = 300;
+		lmms::MidiHandoffQueue<Capacity> queue;
+		lmms::MidiChannelOverflow overflow;
+		auto makeEvent = [](int channel, std::uint32_t offset) {
+			lmms::HandoffMidiEvent event;
+			event.channel = static_cast<std::int8_t>(channel);
+			event.offset = offset;
+			return event;
+		};
+		for (std::uint32_t id = 1; id <= Capacity; ++id)
+		{
+			QVERIFY(queue.push(makeEvent(0, id)));
+		}
+		std::vector<std::uint64_t> refusalStamps;
+		refusalStamps.reserve(RefusalCount);
+		std::vector<std::pair<bool, std::uint64_t>> stream;
+		std::size_t cutCursor = 0;
+		auto emitEvent = [&stream](const lmms::HandoffMidiEvent& event) {
+			stream.emplace_back(false, event.offset);
+			return true;
+		};
+		auto emitCut = [&stream, &refusalStamps, &cutCursor](int) {
+			stream.emplace_back(true, refusalStamps[cutCursor++]);
+			return true;
+		};
+		for (int index = 0; index < RefusalCount; ++index)
+		{
+			lmms::HandoffMidiEvent refused = makeEvent(Channel, 999);
+			std::uint64_t queuedBefore = 0;
+			QVERIFY(!queue.push(refused, &queuedBefore));
+			overflow.record(Channel, queuedBefore);
+			refusalStamps.push_back(queuedBefore + 1);
+			lmms::drainMidi(queue, overflow, 1, emitEvent, emitCut, 1);
+			lmms::HandoffMidiEvent replacement = makeEvent(0, Capacity + static_cast<std::uint32_t>(index) + 1);
+			QVERIFY(queue.push(replacement));
+		}
+		bool changed = true;
+		while (changed)
+		{
+			const auto previous = stream.size();
+			lmms::drainMidi(queue, overflow, Capacity, emitEvent, emitCut);
+			changed = stream.size() != previous;
+		}
+		std::size_t cutCount = 0;
+		for (const auto& item : stream)
+		{
+			if (item.first) { ++cutCount; }
+		}
+		QCOMPARE(cutCount, static_cast<std::size_t>(RefusalCount));
+		QVERIFY(cutsPrecedeLaterEvents(stream, refusalStamps));
+	}
+
+
+};
 QTEST_APPLESS_MAIN(MidiHandoffQueueTest)
 
 #include "MidiHandoffQueueTest.moc"

@@ -201,21 +201,22 @@ private:
 	std::atomic<std::uint64_t> m_dropped{0};
 };
 
-//! Channels whose MIDI the full queue refused, each with the point in the stream where its cut belongs.
+//! Channels whose MIDI the full queue refused, with bounded storage for each pending recovery cut.
 /*!
  * When push() refuses an event, the event's channel is recorded together with the number of events queued
- * before the refusal. The cut (all-notes-off for the channel) is due once the consumer has taken that many
- * events, so it lands exactly where the refused event would have been: after the events queued before it,
- * and before any queued after it. A later refusal on the same channel moves the cut later, never earlier.
+ * before the refusal. A cut (all-notes-off for the channel) is due once the consumer has taken that many
+ * events, so it lands where the refused event would have been: after the events queued before it, and before
+ * any queued after it. Each distinct pending position is kept in a fixed slot; the consumer always selects the
+ * earliest one, so a later refusal cannot replace an unserved intermediate cut. Repeated refusals at the same
+ * position share one cut.
  *
- * All operations are lock-free and allocate nothing. Each cut-stamp update makes at most
- * MaxStampUpdateAttempts compare-exchange attempts. When contention exhausts that budget the refusal is counted and
- * the channel is flagged "deferred" with one wait-free fetch_or (release), after queuedBefore was read. The single
- * consumer (drainMidi) clears the flags (acquire) and keeps a consumer-private deferred stamp = enqueued() read after
- * the flag + 1. enqueued() only grows, so that stamp is never earlier than the refused event's position: the cut
- * for a refusal is never placed before the events queued ahead of it. It may land later (after events queued
- * after the refusal), which can end a newer note early but never leaves a note stuck. A channel has one cut, at the later of
- * the shared and the deferred stamp, so a refusal moves the cut later, never earlier, and one cut is sent. Producers record; the single consumer takes the due cuts with drainMidi().
+ * All operations are lock-free and allocate nothing. The per-channel slots cover the largest queue in use (512)
+ * positions plus one cut boundary. Slot scans have a fixed bound, and each cut-stamp update makes at most
+ * MaxStampUpdateAttempts compare-exchange attempts. When contention exhausts that budget or the slots are full,
+ * the refusal is counted and the channel is flagged "deferred" with one wait-free fetch_or (release), after
+ * queuedBefore was read. The single consumer (drainMidi) clears the flags (acquire) and keeps a consumer-private
+ * deferred stamp = enqueued() read after the flag + 1. enqueued() only grows, so that stamp is never earlier than
+ * the refused event's position. Producers record; the single consumer takes the due cuts with drainMidi().
  */
 class MidiChannelOverflow
 {
@@ -246,7 +247,7 @@ public:
 	//! The stamp of the channel's pending cut, or 0. A cut is due when consumed() reaches stamp - 1.
 	auto stamp(int channel) const noexcept -> std::uint64_t
 	{
-		return m_cutAt[static_cast<std::size_t>(channel)].load(std::memory_order_acquire);
+		return sharedStamp(static_cast<std::size_t>(channel));
 	}
 
 	//! Whether the channel's cut is due, given that \a consumed events have been taken from the queue.
@@ -256,12 +257,12 @@ public:
 		return value != 0 && value - 1 <= consumed;
 	}
 
-	//! A channel's pending cut as seen by the consumer: ONE cut at the effective stamp, which is the later of the
-	//! shared stamp and the consumer-private deferred stamp. Convertible to bool: whether the cut is due.
+	//! A channel's earliest pending cut as seen by the consumer, from its shared or consumer-private deferred stamp.
+	//! Convertible to bool: whether the cut is due.
 	struct DueCut
 	{
-		std::uint64_t shared = 0; //!< the shared stamp that was read (0 if none), to be cleared by compare-exchange
-		std::uint64_t effective = 0; //!< max(shared, deferred): where the cut was placed
+		std::uint64_t shared = 0; //!< the earliest shared stamp that was read (0 if none)
+		std::uint64_t effective = 0; //!< the earliest pending shared or deferred stamp
 		bool deferred = false;    //!< whether a deferred stamp contributed
 		bool due = false;
 		explicit operator bool() const noexcept { return due; }
@@ -285,46 +286,44 @@ public:
 		}
 	}
 
-	//! Consumer only. The channel's single cut: effective stamp = max(shared, deferred), due when consumed() reaches
-	//! effective - 1. A shared stamp below a pending deferred stamp never fires on its own.
+	//! Consumer only. Picks the earliest shared or deferred cut, due when consumed() reaches effective - 1.
 	auto dueCut(int channel, std::uint64_t consumed) const noexcept -> DueCut
 	{
 		DueCut result;
-		result.shared = stamp(channel);
-		const auto deferredStamp = m_deferredStamp[static_cast<std::size_t>(channel)];
-		result.deferred = deferredStamp != 0;
-		const auto effective = deferredStamp > result.shared ? deferredStamp : result.shared;
-		result.effective = effective;
-		result.due = effective != 0 && effective - 1 <= consumed;
+		const auto index = static_cast<std::size_t>(channel);
+		const auto shared = sharedCut(index);
+		result.shared = shared.stamp;
+		const auto deferredStamp = m_deferredStamp[index];
+		result.effective = effectiveStamp(shared, deferredStamp);
+		result.deferred = deferredStamp != 0 && deferredStamp == result.effective;
+		result.due = result.effective != 0 && result.effective - 1 <= consumed;
 		return result;
 	}
 
-	//! Consumer only. Clears a cut that was sent at sent.effective: the deferred stamp, and the shared stamp while its
-	//! CURRENT value is covered by that cut (<= effective), in at most MaxStampUpdateAttempts compare-exchanges. A
-	//! value above effective is a later refusal and keeps its own cut. If the attempts run out under contention the
-	//! covered stamp stays pending and one redundant cut at the same point may follow (counted in testing builds).
+	//! Consumer only. Clears a cut that was sent at sent.effective: the deferred stamp and shared stamps covered by it
+	//! (<= effective), in at most MaxStampUpdateAttempts compare-exchanges per shared stamp. A value above effective is
+	//! a later refusal and keeps its own cut. If the attempts run out under contention the covered stamp stays pending
+	//! and one redundant cut at the same point may follow (counted in testing builds).
 	void clear(int channel, const DueCut& sent) noexcept
 	{
-		if (sent.deferred) { m_deferredStamp[static_cast<std::size_t>(channel)] = 0; }
-		auto& cut = m_cutAt[static_cast<std::size_t>(channel)];
-		auto current = cut.load(std::memory_order_acquire);
-		for (std::uint32_t attempt = 1; current != 0 && current <= sent.effective; ++attempt)
+		if (sent.deferred && m_deferredStamp[static_cast<std::size_t>(channel)] <= sent.effective)
 		{
-			if (attempt > MaxStampUpdateAttempts)
-			{
-				m_unclearedCoveredStamps.fetch_add(1, std::memory_order_relaxed);
-				return;
-			}
-			if (cut.compare_exchange_weak(current, 0, std::memory_order_acq_rel)) { return; }
+			m_deferredStamp[static_cast<std::size_t>(channel)] = 0;
 		}
+		const auto index = static_cast<std::size_t>(channel);
+		for (auto& pending : m_pendingCutAt[index]) { clearCovered(pending, sent.effective); }
+		clearCovered(m_earliestCutAt[index], sent.effective);
+		clearCovered(m_cutAt[index], sent.effective);
+		refreshEarliest(index);
 	}
 
-	//! Clears a cut once it has been sent. A later refusal that moved the cut is kept.
+	//! Clears the matching shared stamps once a cut has been sent. Later refusals are kept.
 	void clear(int channel, std::uint64_t sentStamp) noexcept
 	{
-		auto& cut = m_cutAt[static_cast<std::size_t>(channel)];
-		std::uint64_t expected = sentStamp;
-		cut.compare_exchange_strong(expected, 0, std::memory_order_acq_rel);
+		DueCut sent;
+		sent.shared = sentStamp;
+		sent.effective = sentStamp;
+		clear(channel, sent);
 	}
 
 	//! Events refused by a full queue, since construction.
@@ -348,6 +347,23 @@ public:
 #endif
 
 private:
+	static constexpr std::size_t MaxPendingCuts = 513;
+	struct SharedStamp
+	{
+		std::uint64_t stamp = 0;
+		bool ordered = false;
+	};
+
+	template<typename BeforeCompareExchange>
+	auto recordChannel(std::size_t index, std::uint64_t stamp, std::uint32_t* attemptsUsed,
+		BeforeCompareExchange&& beforeCompareExchange) noexcept -> bool
+	{
+		if (!raise(m_cutAt[index], stamp, attemptsUsed,
+			static_cast<BeforeCompareExchange&&>(beforeCompareExchange))) { return false; }
+		if (!remember(m_pendingCutAt[index], stamp)) { return false; }
+		return lower(m_earliestCutAt[index], stamp);
+	}
+
 	template<typename BeforeCompareExchange>
 	void recordImpl(int channel, std::uint64_t queuedBefore, std::uint32_t* attemptsUsed,
 		BeforeCompareExchange&& beforeCompareExchange) noexcept
@@ -356,20 +372,15 @@ private:
 		std::uint32_t failedChannels = 0;
 		if (channel >= 0 && channel < 16)
 		{
-			if (!raise(m_cutAt[static_cast<std::size_t>(channel)], stamp, attemptsUsed,
-				static_cast<BeforeCompareExchange&&>(beforeCompareExchange)))
-			{
-				failedChannels = 1u << channel;
-			}
+			const auto index = static_cast<std::size_t>(channel);
+			if (!recordChannel(index, stamp, attemptsUsed,
+				static_cast<BeforeCompareExchange&&>(beforeCompareExchange))) { failedChannels = 1u << channel; }
 		}
 		else
 		{
 			for (std::size_t index = 0; index < m_cutAt.size(); ++index)
 			{
-				if (!raise(m_cutAt[index], stamp, attemptsUsed, beforeCompareExchange))
-				{
-					failedChannels |= 1u << index;
-				}
+				if (!recordChannel(index, stamp, attemptsUsed, beforeCompareExchange)) { failedChannels |= 1u << index; }
 			}
 		}
 		if (failedChannels != 0)
@@ -380,6 +391,27 @@ private:
 			m_deferredFlags.fetch_or(failedChannels, std::memory_order_release);
 		}
 		m_recorded.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	auto sharedCut(std::size_t index) const noexcept -> SharedStamp
+	{
+		SharedStamp result;
+		result.stamp = m_earliestCutAt[index].load(std::memory_order_acquire);
+		result.ordered = result.stamp != 0;
+		if (result.ordered) { return result; }
+		result.stamp = pendingStamp(index);
+		result.ordered = result.stamp != 0;
+		const auto latest = m_cutAt[index].load(std::memory_order_acquire);
+		if (result.stamp == 0 || (latest != 0 && latest < result.stamp)) { result.stamp = latest; }
+		return result;
+	}
+
+	static auto effectiveStamp(const SharedStamp& shared, std::uint64_t deferred) noexcept -> std::uint64_t
+	{
+		if (!shared.ordered && shared.stamp != 0 && deferred > shared.stamp) { return deferred; }
+		if (shared.stamp == 0) { return deferred; }
+		if (deferred == 0 || shared.stamp < deferred) { return shared.stamp; }
+		return deferred;
 	}
 
 	template<typename BeforeCompareExchange>
@@ -396,7 +428,83 @@ private:
 		return current >= stamp;
 	}
 
+	//! Adds one distinct pending position without growing or waiting for another producer.
+	static auto remember(std::array<std::atomic<std::uint64_t>, MaxPendingCuts>& cuts,
+		std::uint64_t stamp) noexcept -> bool
+	{
+		for (auto& cut : cuts)
+		{
+			auto current = cut.load(std::memory_order_acquire);
+			if (current == stamp) { return true; }
+			if (current == 0 && cut.compare_exchange_strong(current, stamp, std::memory_order_acq_rel)) { return true; }
+			if (current == stamp) { return true; }
+		}
+		return false;
+	}
+
+	//! Finds the earliest slot stamp when the cached earliest value is temporarily empty.
+	auto pendingStamp(std::size_t index) const noexcept -> std::uint64_t
+	{
+		std::uint64_t earliest = 0;
+		for (const auto& pending : m_pendingCutAt[index])
+		{
+			const auto value = pending.load(std::memory_order_acquire);
+			if (value != 0 && (earliest == 0 || value < earliest)) { earliest = value; }
+		}
+		return earliest;
+	}
+
+	auto sharedStamp(std::size_t index) const noexcept -> std::uint64_t
+	{
+		const auto cached = m_earliestCutAt[index].load(std::memory_order_acquire);
+		if (cached != 0) { return cached; }
+		const auto pending = pendingStamp(index);
+		const auto latest = m_cutAt[index].load(std::memory_order_acquire);
+		return pending == 0 || (latest != 0 && latest < pending) ? latest : pending;
+	}
+
+	//! Rebuilds the cached earliest value after clearing the cuts covered by one sent recovery cut.
+	void refreshEarliest(std::size_t index) noexcept
+	{
+		const auto pending = pendingStamp(index);
+		const auto latest = m_cutAt[index].load(std::memory_order_acquire);
+		const auto earliest = pending == 0 || (latest != 0 && latest < pending) ? latest : pending;
+		if (earliest != 0 && !lower(m_earliestCutAt[index], earliest))
+		{
+			m_deferredFlags.fetch_or(1u << index, std::memory_order_release);
+		}
+	}
+
+	//! Keeps the earliest pending cut without moving it later; attempts stay bounded under producer contention.
+	static auto lower(std::atomic<std::uint64_t>& cut, std::uint64_t stamp) noexcept -> bool
+	{
+		auto current = cut.load(std::memory_order_relaxed);
+		for (std::uint32_t attempt = 1; attempt <= MaxStampUpdateAttempts; ++attempt)
+		{
+			const auto next = current == 0 || stamp < current ? stamp : current;
+			if (cut.compare_exchange_weak(current, next, std::memory_order_acq_rel)) { return true; }
+		}
+		return false;
+	}
+
+	//! Consumer only. Clears a shared stamp covered by a sent cut with a bounded number of compare-exchanges.
+	void clearCovered(std::atomic<std::uint64_t>& cut, std::uint64_t effective) noexcept
+	{
+		auto current = cut.load(std::memory_order_acquire);
+		for (std::uint32_t attempt = 1; current != 0 && current <= effective; ++attempt)
+		{
+			if (attempt > MaxStampUpdateAttempts)
+			{
+				m_unclearedCoveredStamps.fetch_add(1, std::memory_order_relaxed);
+				return;
+			}
+			if (cut.compare_exchange_weak(current, 0, std::memory_order_acq_rel)) { return; }
+		}
+	}
+
 	std::array<std::atomic<std::uint64_t>, 16> m_cutAt{};
+	std::array<std::atomic<std::uint64_t>, 16> m_earliestCutAt{};
+	std::array<std::array<std::atomic<std::uint64_t>, MaxPendingCuts>, 16> m_pendingCutAt{};
 	std::atomic<std::uint64_t> m_recorded{0};
 	std::atomic<std::uint64_t> m_failedStampUpdates{0};
 	std::atomic<std::uint64_t> m_unclearedCoveredStamps{0};
