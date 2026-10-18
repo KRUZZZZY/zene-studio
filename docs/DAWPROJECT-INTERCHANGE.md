@@ -218,8 +218,10 @@ tracks at the same strips. A track whose strip cannot be found is written **with
 `destination` rather than with a dangling IDREF — an unresolvable IDREF is an invalid document.
 
 **Sharing is carried by the destination IDREF:** multiple tracks can point at the same bare
-`Channel`, and the reader resolves each reference to that same strip. `mixerSharingLost` counts
-tracks whose type has no mixer channel model, so no destination IDREF can be written for them.
+`Channel`, and the reader resolves each reference to that same strip. A track whose type has no
+mixer channel model, such as a folder, writes no destination IDREF, and that is **not** counted as
+lost sharing: no other track shares its strip. `mixerSharingLost` is still serialized for
+compatibility, but no code path increments it.
 
 ---
 
@@ -300,7 +302,7 @@ properties of the conversion itself. Each line names **where it is counted**, so
 | 4 | **Folder nesting** — LMMS' track list is flat, so a folder's children are written as tracks at the container root; the folder **marker** survives as a `tracks`-contentType track, the *relation* does not. | export | `folderChildrenLost` |
 | 5 | **Track types** — LMMS' nine types onto the format's six `contentType` values (section 5). `instrument` and `pattern` → `notes`; `sample` → `audio`; `automation` and `hidden_automation` → `automation`; `folder` → `tracks`; `event` and `video` have **no counterpart** and are written with an empty `contentType`. The mapping is many-to-one: two LMMS types can come back as the same type. | both | `unmappedTrackTypes` |
 | 6 | **Mixer pan, and two volume scales** — the format has one `<Volume>` per `Channel`, LMMS has two: a `MixerChannel` fader (0..2, unity 1.0) goes on the bare strip `<Channel>`, the track's own volume (0..200, unity 100) on the track's `<Channel>`, divided by 100. `<Pan>` comes from the **track's** panning model, which only `InstrumentTrack` exposes — a track type with none has no pan written and is counted. | both | `panNotWritten` |
-| 7 | **Mixer routing** — `destination` names the strip one track feeds, and multiple tracks may name the same strip. LMMS' wider `MixerRoute` graph and its pre/post-fader flags are not carried. Track types without a mixer channel model have no destination IDREF written. | both | `routingLost`, `mixerSharingLost` |
+| 7 | **Mixer routing** — `destination` names the strip one track feeds, and multiple tracks may name the same strip. LMMS' wider `MixerRoute` graph and its pre/post-fader flags are not carried. Track types without a mixer channel model (a folder, for example) have no destination IDREF written; that is not counted as lost sharing, and `mixerSharingLost` is still serialized for compatibility but has no increment path. | both | `routingLost` |
 | 8 | **Tempo bounds** — written as 10..999 and a file outside them is refused (section 3), so an out-of-range tempo is a refusal rather than a loss. | both | — (refusal) |
 | 9 | **Time values are beats** — a *foreign* time not on LMMS' 48-per-beat grid is rounded onto it. Times this build writes are exact (section 5). | import | `roundedTimes` |
 | 10 | **The track type's NAME is not in the document** — the format carries `contentType`, and the name is **derived from it on read**, so a model whose `typeName` is spelled another way (`"Instrument"` for the canonical `"instrument"`) comes back in the canonical lowercase spelling. The mapping is case-insensitive in both directions, so the *type* is never lost — only its spelling. | both | — (not a count: it is a spelling) |

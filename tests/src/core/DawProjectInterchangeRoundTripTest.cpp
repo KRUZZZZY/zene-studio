@@ -1645,6 +1645,26 @@ private slots:
 		QCOMPARE(loss.folderChildrenLost, 3);
 	}
 
+	//! Luna cluster new-p11-88: a folder has no mixer channel by design, so it
+	//! must not be reported as sharing the instrument track's mixer strip.
+	void aFolderDoesNotCountAsMixerSharing()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+
+		TrackFolder* folder = dynamic_cast<TrackFolder*>(
+			Track::create(Track::Type::Folder, song));
+		Track* instrument = Track::create(Track::Type::Instrument, song);
+		QVERIFY(folder != nullptr);
+		QVERIFY(instrument != nullptr);
+		QVERIFY(folder->mixerChannelModel() == nullptr);
+		QVERIFY(instrument->mixerChannelModel() != nullptr);
+
+		DawProjectLossReport loss;
+		dawProjectModelFromSong(song, &loss);
+		QCOMPARE(loss.mixerSharingLost, 0);
+	}
+
 //! Luna cluster 5068: the import updated the strips the model names and never
 	//! removed the ones it does not, so a four-channel session importing a
 	//! one-channel file kept three strips of the PREVIOUS project - their names,

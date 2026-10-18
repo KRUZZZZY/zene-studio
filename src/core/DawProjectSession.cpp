@@ -306,11 +306,6 @@ DawProjectModel dawProjectModelFromSong(Song* song, DawProjectLossReport* loss)
 					model.mixerChannels[entry.mixerChannelIndex].id;
 			}
 		}
-		else
-		{
-			// A track without a mixer model cannot emit a destination IDREF.
-			local.mixerSharingLost++;
-		}
 
 		if (FloatModel* panning = panningModelForTrack(track))
 		{
