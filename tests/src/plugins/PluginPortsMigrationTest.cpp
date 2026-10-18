@@ -796,6 +796,7 @@ private slots:
 	void nesCoarseDetuneRetunesHeldNote();
 	void opulenzUpdatePatchLocksEmulatorForWholeUpdate();
 	void opulenzReloadEmulatorReplacesEmulatorUnderMutex();
+	void opulenzRendersTheProvidedSpanSize();
 	void sf2DialogRejectsAFilteredOutProgram();
 	void gigPatchDialogPreviewsSelectedProgram();
 	void rmsHelperCopiesHaveIndependentBuffers();
@@ -2928,6 +2929,48 @@ void PluginPortsMigrationTest::opulenzReloadEmulatorReplacesEmulatorUnderMutex()
 	// updatePatch() takes the same mutex again, so the mutex must be re-entrant for that nested call.
 	QVERIFY2(contents.contains("QRecursiveMutex OpulenzInstrument::emulatorMutex;"),
 		"emulatorMutex must be recursive because reloadEmulator calls updatePatch() while holding it");
+}
+
+void PluginPortsMigrationTest::opulenzRendersTheProvidedSpanSize()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* library = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_opulenz)};
+	library->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library->load(), qPrintable(library->errorString()));
+	m_libraries.push_back(library);
+	auto entry = reinterpret_cast<MainFn>(library->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("opulenz");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	std::unique_ptr<lmms::Instrument> instrument{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+
+	const auto periodFrames = static_cast<std::size_t>(lmms::Engine::audioEngine()->framesPerPeriod());
+	QVERIFY(periodFrames > 1);
+	constexpr float Sentinel = 123.0f;
+	const auto shortSpanFrames = periodFrames / 2;
+	std::vector<lmms::SampleFrame> shortBuffer(periodFrames, lmms::SampleFrame{Sentinel, Sentinel});
+	instrument->play(std::span<lmms::SampleFrame>{shortBuffer.data(), shortSpanFrames});
+	const bool shortSpanBoundaryPreserved = std::all_of(shortBuffer.begin() + shortSpanFrames,
+		shortBuffer.end(), [](const lmms::SampleFrame& sample) {
+			return sample.left() == Sentinel && sample.right() == Sentinel;
+		});
+
+	const auto longSpanFrames = periodFrames * 2;
+	std::vector<lmms::SampleFrame> longBuffer(longSpanFrames, lmms::SampleFrame{Sentinel, Sentinel});
+	instrument->play(std::span<lmms::SampleFrame>{longBuffer});
+	const bool longSpanFullyWritten = std::all_of(longBuffer.begin(), longBuffer.end(),
+		[](const lmms::SampleFrame& sample) {
+			return sample.left() != Sentinel && sample.right() != Sentinel;
+		});
+	QVERIFY2(shortSpanBoundaryPreserved && longSpanFullyWritten,
+		"OpulenZ wrote outside a short span or left the tail of a long span unwritten");
 }
 
 void PluginPortsMigrationTest::gigPatchDialogPreviewsSelectedProgram()

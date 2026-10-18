@@ -44,6 +44,7 @@
 #include <QFileInfo>
 #include <QByteArray>
 #include <QDomElement>
+#include <algorithm>
 #include <QMutexLocker>
 #include <cassert>
 #include <cmath>
@@ -395,15 +396,20 @@ gui::PluginView* OpulenzInstrument::instantiateView( QWidget * _parent )
 void OpulenzInstrument::playImpl(std::span<SampleFrame> out)
 {
 	emulatorMutex.lock();
-	theEmulator->update(renderbuffer, frameCount);
+	for (std::size_t offset = 0; offset < out.size();)
+	{
+		const auto chunkSize = std::min(out.size() - offset, static_cast<std::size_t>(frameCount));
+		theEmulator->update(renderbuffer, static_cast<f_cnt_t>(chunkSize));
 
-	for( f_cnt_t frame = 0; frame < frameCount; ++frame )
-        {
-                sample_t s = float(renderbuffer[frame]) / 8192.0;
-                for( ch_cnt_t ch = 0; ch < DEFAULT_CHANNELS; ++ch )
-                {
-                        out[frame][ch] = s;
-                }
+		for (std::size_t frame = 0; frame < chunkSize; ++frame)
+		{
+			const sample_t sample = static_cast<sample_t>(renderbuffer[frame]) / 8192.0f;
+			for (ch_cnt_t ch = 0; ch < DEFAULT_CHANNELS; ++ch)
+			{
+				out[offset + frame][ch] = sample;
+			}
+		}
+		offset += chunkSize;
 	}
 	emulatorMutex.unlock();
 }
