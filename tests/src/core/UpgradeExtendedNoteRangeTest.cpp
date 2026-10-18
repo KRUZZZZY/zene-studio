@@ -61,6 +61,61 @@ QString upgradeKey(QString const& key)
 	return note.attribute("key");
 }
 
+// Builds a song with an instrument track that has an automated (element-based)
+// base note with id 7, plus an automation track that holds one pattern
+// targeting that base note and one pattern without any target. Returns the
+// upgraded time values of both patterns.
+void upgradeAutomationPatterns(int baseNoteValue, int targetlessValue,
+	int& upgradedBaseNoteValue, int& upgradedTargetlessValue)
+{
+	QDomDocument document;
+	QDomElement root = document.createElement("lmms");
+	document.appendChild(root);
+	QDomElement song = document.createElement("song");
+	root.appendChild(song);
+	QDomElement container = document.createElement("trackcontainer");
+	song.appendChild(container);
+
+	QDomElement instrumentTrackElement = document.createElement("track");
+	instrumentTrackElement.setAttribute("type", static_cast<int>(Track::Type::Instrument));
+	container.appendChild(instrumentTrackElement);
+	QDomElement instrumentTrack = document.createElement("instrumenttrack");
+	instrumentTrackElement.appendChild(instrumentTrack);
+	QDomElement baseNote = document.createElement("basenote");
+	baseNote.setAttribute("id", 7);
+	baseNote.setAttribute("value", 57);
+	instrumentTrack.appendChild(baseNote);
+	QDomElement instrument = document.createElement("instrument");
+	instrument.setAttribute("name", "test-instrument");
+	instrumentTrack.appendChild(instrument);
+
+	QDomElement automationTrack = document.createElement("track");
+	automationTrack.setAttribute("type", static_cast<int>(Track::Type::Automation));
+	container.appendChild(automationTrack);
+
+	QDomElement baseNotePattern = document.createElement("automationpattern");
+	automationTrack.appendChild(baseNotePattern);
+	QDomElement baseNoteObject = document.createElement("object");
+	baseNoteObject.setAttribute("id", 7);
+	baseNotePattern.appendChild(baseNoteObject);
+	QDomElement baseNoteTime = document.createElement("time");
+	baseNoteTime.setAttribute("value", baseNoteValue);
+	baseNoteTime.setAttribute("outValue", baseNoteValue);
+	baseNotePattern.appendChild(baseNoteTime);
+
+	QDomElement targetlessPattern = document.createElement("automationpattern");
+	automationTrack.appendChild(targetlessPattern);
+	QDomElement targetlessTime = document.createElement("time");
+	targetlessTime.setAttribute("value", targetlessValue);
+	targetlessTime.setAttribute("outValue", targetlessValue);
+	targetlessPattern.appendChild(targetlessTime);
+
+	UpgradeExtendedNoteRange upgrade(root);
+	upgrade.upgrade();
+	upgradedBaseNoteValue = baseNoteTime.attribute("value").toInt();
+	upgradedTargetlessValue = targetlessTime.attribute("value").toInt();
+}
+
 } // namespace
 
 class UpgradeExtendedNoteRangeTest : public QObject
@@ -86,6 +141,22 @@ private slots:
 	void highestShiftableKeyStillShifts()
 	{
 		QCOMPARE(upgradeKey(QStringLiteral("2147483635")), QStringLiteral("2147483647"));
+	}
+
+	void baseNoteAutomationIsStillShifted()
+	{
+		int upgradedBaseNoteValue = 0;
+		int upgradedTargetlessValue = 0;
+		upgradeAutomationPatterns(10, 3, upgradedBaseNoteValue, upgradedTargetlessValue);
+		QCOMPARE(upgradedBaseNoteValue, 22);
+	}
+
+	void targetlessAutomationValueIsPreserved()
+	{
+		int upgradedBaseNoteValue = 0;
+		int upgradedTargetlessValue = 0;
+		upgradeAutomationPatterns(10, 3, upgradedBaseNoteValue, upgradedTargetlessValue);
+		QCOMPARE(upgradedTargetlessValue, 3);
 	}
 };
 
