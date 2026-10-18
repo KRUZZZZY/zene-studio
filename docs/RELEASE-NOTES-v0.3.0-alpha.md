@@ -1008,10 +1008,13 @@ new-p8-51's `record.arm_track` (`snapshot` -> `irreversible`: its take stays aft
 takes lanes reapplied after their train-3 reverts) adds three `true_inverse` rows - `clip.link_make_unique`,
 `comp.play_all_takes` and `comp.take_select` - measured off the tree with `tools/dawproject-proof.sh` part 2:
 `rows=839 true_inverse=418 snapshot=42 irreversible=22 not_mutating=357` (`DECLARED rows=839 entries=839 duplicates=0`).
-Q050-024 adds `link.audio_set_enabled` (`true_inverse`) and `link.audio_get_state` (`not_mutating`): rows=839 true_inverse=418 snapshot=42 irreversible=22 not_mutating=357.
+**M0 merge train 6** (`050/m0-train-6`, 2026-10-18: train 5 + the ci4 portability lane, 143 accepted fixes and 12 accepted
+0.5.0 units) adds four rows: Q050-024's `link.audio_set_enabled` (`true_inverse`) and `link.audio_get_state` (`not_mutating`),
+Q050-035's `stem.tracks_create` (`true_inverse`) and Q050-019's `window.progression` (`not_mutating`), measured by
+`ReversibilityContractTest` on the merged tree: `rows=841 true_inverse=419 snapshot=42 irreversible=22 not_mutating=358`.
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=839 true_inverse=418 snapshot=42 irreversible=22 not_mutating=357
+     measured: rows=841 true_inverse=419 snapshot=42 irreversible=22 not_mutating=358
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

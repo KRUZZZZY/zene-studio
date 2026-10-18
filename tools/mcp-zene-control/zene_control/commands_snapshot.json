@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-15T23:31:17Z",
+  "captured_at": "2026-10-18T09:31:32Z",
   "commands": [
     {
       "args_schema": {
@@ -9465,7 +9465,7 @@
         ],
         "type": "object"
       },
-      "description": "Freeze one tick range of a track: the region is rendered and the take plays inside it, while the source keeps playing outside it. The clips that START inside the region are muted (and recorded, so freeze.unfreeze unmutes exactly those and nothing else); a clip that starts before the region and runs into it is left alone and named in 'overlapping_clips', because muting it would silence audio outside the region - that clip sounds twice inside the region (docs/KNOWN-LIMITATIONS.md). Reversible through the ProjectJournal (Track checkpoint). This command keeps its synchronous result contract for compatibility; use render.queue_bounce for a cancellable job.",
+      "description": "Freeze one tick range of a track: the region is rendered and the take plays inside it, while the source keeps playing outside it. Clips that CROSS the region's edges are first cut at those edges (listed in 'overlapping_clips', as they were), then the pieces inside the region are muted (and recorded, so freeze.unfreeze unmutes exactly those and nothing else): the source is silent only inside the region. A take whose file has moved reports audio_missing and 'recovery' (project.missing_assets / project.relink, or freeze.unfreeze); a missing take never silences the source. Reversible through the ProjectJournal (Track checkpoint). This command keeps its synchronous result contract for compatibility; use render.queue_bounce for a cancellable job.",
       "group": "freeze",
       "id": "freeze.region",
       "mutating": true,
@@ -9475,6 +9475,9 @@
         "properties": {
           "audio": {
             "type": "string"
+          },
+          "audio_missing": {
+            "type": "boolean"
           },
           "audio_ready": {
             "type": "boolean"
@@ -9502,6 +9505,9 @@
           },
           "path": {
             "type": "string"
+          },
+          "recovery": {
+            "type": "object"
           },
           "sample_rate": {
             "type": "number"
@@ -9547,6 +9553,9 @@
           "audio": {
             "type": "string"
           },
+          "audio_missing": {
+            "type": "boolean"
+          },
           "audio_ready": {
             "type": "boolean"
           },
@@ -9573,6 +9582,9 @@
           },
           "path": {
             "type": "string"
+          },
+          "recovery": {
+            "type": "object"
           },
           "sample_rate": {
             "type": "number"
@@ -9615,6 +9627,9 @@
           "audio": {
             "type": "string"
           },
+          "audio_missing": {
+            "type": "boolean"
+          },
           "audio_ready": {
             "type": "boolean"
           },
@@ -9629,6 +9644,9 @@
           },
           "name": {
             "type": "string"
+          },
+          "recovery": {
+            "type": "object"
           },
           "start_ticks": {
             "type": "number"
@@ -29326,6 +29344,9 @@
           "frozen_audio": {
             "type": "string"
           },
+          "frozen_audio_missing": {
+            "type": "boolean"
+          },
           "frozen_audio_ready": {
             "type": "boolean"
           },
@@ -29334,6 +29355,9 @@
           },
           "frozen_muted_clips": {
             "type": "integer"
+          },
+          "frozen_recovery": {
+            "type": "string"
           },
           "frozen_start_ticks": {
             "type": "integer"
@@ -29824,6 +29848,9 @@
             "type": "boolean"
           },
           "tracks": {
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           }
         },
@@ -35434,23 +35461,23 @@
       }
     }
   ],
-  "count": 830,
+  "count": 832,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-f024/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-mkcnnpvm/zene.sock",
-    "version": "0.4.0-alpha.2723+de5a85a"
+    "source_socket": "/tmp/zctl-run-93uvvhj5/zene.sock",
+    "version": "0.4.0-alpha.3092+16efe01"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 830,
-    "ids_sha256": "5dcefc828772b881e4d562f92b27d64b65cc0e4eef83e440175dc5db82c6e69a"
+    "id_count": 832,
+    "ids_sha256": "b748ae4fe0ecd11818c25882f2526a54de08eaaf24f3c5e39fe921b6fb3e2ea1"
   }
 }
