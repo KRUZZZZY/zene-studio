@@ -483,21 +483,26 @@ private slots:
 			return run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), plugin},
 				{QStringLiteral("index"), index}}).result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble();
 		};
-		// Negative, first-invalid and extreme knob indices are refused; no control changes.
-		for (int index = 0; index < 3 * RemoteControls::Knobs; ++index)
-		{
-			const double was = value(index);
-			QVERIFY(!RemoteControls::instance()->applyKnob(-1, 64));
-			QVERIFY(!RemoteControls::instance()->applyKnob(RemoteControls::Knobs, 64));
-			QVERIFY(!RemoteControls::instance()->applyKnob(std::numeric_limits<int>::max(), 64));
-			QCOMPARE(value(index), was);
-		}
-		QVector<double> beforeKnob; for (int i = 0; i < 3 * RemoteControls::Knobs; ++i) { beforeKnob.append(value(i)); }
+		// A malformed knob must be refused and leave ALL 24 of the device's parameters as they were: every
+		// value is read back before and after the request, not just the one a loop happens to watch.
+		constexpr int parameterCount = 3 * RemoteControls::Knobs;
+		auto snapshot = [&] { QVector<double> all; for (int i = 0; i < parameterCount; ++i) { all.append(value(i)); } return all; };
+		auto refusedLeavingAllUnchanged = [&](int malformed) {
+			const QVector<double> before = snapshot();
+			QVERIFY2(!RemoteControls::instance()->applyKnob(malformed, 64), qPrintable(QString::number(malformed)));
+			const QVector<double> after = snapshot();
+			for (int i = 0; i < parameterCount; ++i) { QCOMPARE(after.at(i), before.at(i)); }
+		};
+		for (const int malformed : {-1, static_cast<int>(RemoteControls::Knobs), std::numeric_limits<int>::max()}) { refusedLeavingAllUnchanged(malformed); }
+		if (QTest::currentTestFailed()) { return; }
+		const QVector<double> beforeKnob = snapshot();
 		QVERIFY(RemoteControls::instance()->applyKnob(RemoteControls::Knobs - 1, 127));
 		QCOMPARE(value(RemoteControls::Knobs - 1), 1.0);
-		for (int i = 0; i < 3 * RemoteControls::Knobs; ++i) { if (i == RemoteControls::Knobs - 1) { continue; } QCOMPARE(value(i), beforeKnob.at(i)); }
+		for (int i = 0; i < parameterCount; ++i) { if (i != RemoteControls::Knobs - 1) { QCOMPARE(value(i), beforeKnob.at(i)); } }
 		QCOMPARE(run(QStringLiteral("remote.page"), {{QStringLiteral("page"), 1}}).result.value(QStringLiteral("page")).toInt(), 1);
-		QVERIFY2(!RemoteControls::instance()->applyKnob(std::numeric_limits<int>::max(), 64), "the old 32-bit page offset overflows here");
+		// On page 1 the offset is 8: the old 32-bit sum overflowed here, and all 24 must survive the request.
+		refusedLeavingAllUnchanged(std::numeric_limits<int>::max());
+		if (QTest::currentTestFailed()) { return; }
 		for (int knob = 0; knob < RemoteControls::Knobs; ++knob) { QCOMPARE(value(RemoteControls::Knobs + knob), 0.0); }
 		QCOMPARE(run(QStringLiteral("remote.page"), {{QStringLiteral("page"), 999}}).result.value(QStringLiteral("page")).toInt(),
 			targeted.result.value(QStringLiteral("pages")).toInt() - 1);  // clamped
