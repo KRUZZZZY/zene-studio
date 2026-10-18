@@ -231,6 +231,7 @@ void MidiJack::processOutEventAt( const MidiEvent& event, const TimePos& time, c
 	std::copy( t_outBytes, t_outBytes + t_outLength, message.bytes );
 	message.length = t_outLength;
 	message.frame = static_cast<std::uint32_t>( std::min<f_cnt_t>( offset, std::numeric_limits<std::uint32_t>::max() ) );
+	message.cycle = m_outCycleId.load( std::memory_order_relaxed );
 	t_outLength = 0;
 	if( !m_outQueue.push( message ) ) { m_outDropped.fetch_add( 1, std::memory_order_relaxed ); }
 }
@@ -244,23 +245,28 @@ void MidiJack::sendByte( const unsigned char c )
 // we write data to jack
 void MidiJack::JackMidiWrite(jack_nframes_t nframes)
 {
+	const std::uint64_t cycle = m_outCycleId.load( std::memory_order_relaxed );
 	// The JACK process callback (realtime): each queued message goes out at its own frame of this
-	// cycle (0.5.0 W4; it was frame 0 for all), in time order, as jack_midi_event_write requires
-	// (MidiJackOutSchedule.h). Up to MaxOutPerCycle per cycle; the rest stay queued for the next.
+	// cycle (0.5.0 W4; it was frame 0 for all), in cycle/frame order, as jack_midi_event_write
+	// requires (MidiJackOutSchedule.h). Up to MaxOutPerCycle per cycle; the rest stay queued for the
+	// next. A deferred event keeps its old cycle and is written at frame 0 when it is finally taken.
 	// jack_midi_event_write copies into the port buffer; nothing allocates or locks.
-	if( m_output_port == nullptr ) { return; }
-	void* buffer = jack_port_get_buffer( m_output_port, nframes );
-	jack_midi_clear_buffer( buffer );
-	const std::size_t count = midijack::drainByFrame( m_outQueue, m_outCycle.data(), m_outCycle.size() );
-	for( std::size_t i = 0; i < count; ++i )
+	if( m_output_port != nullptr )
 	{
-		const midijack::OutMessage& message = m_outCycle[i];
-		const jack_nframes_t frame = midijack::cycleFrame( message.frame, nframes );
-		if( jack_midi_event_write( buffer, frame, message.bytes, message.length ) != 0 )
+		void* buffer = jack_port_get_buffer( m_output_port, nframes );
+		jack_midi_clear_buffer( buffer );
+		const std::size_t count = midijack::drainByFrame( m_outQueue, m_outCycle.data(), m_outCycle.size() );
+		for( std::size_t i = 0; i < count; ++i )
 		{
-			m_outDropped.fetch_add( 1, std::memory_order_relaxed );
+			const midijack::OutMessage& message = m_outCycle[i];
+			const jack_nframes_t frame = midijack::cycleFrame( message, cycle, nframes );
+			if( jack_midi_event_write( buffer, frame, message.bytes, message.length ) != 0 )
+			{
+				m_outDropped.fetch_add( 1, std::memory_order_relaxed );
+			}
 		}
 	}
+	m_outCycleId.fetch_add( 1, std::memory_order_relaxed );
 }
 
 void MidiJack::run()
