@@ -67,6 +67,7 @@ enum class Gateway
 {
 	PmpOnly,  //!< "unsupported version" to PCP, then NAT-PMP
 	Pcp,      //!< a PCP MAP success
+	WrongPort, //!< NAT-PMP answers from another UDP port on the same host
 	Silent,   //!< never answers
 };
 
@@ -99,6 +100,7 @@ class PortMappingCodecTest : public QObject
 	Q_OBJECT
 private:
 	QUdpSocket m_gateway;
+	QUdpSocket m_wrongPortGateway;  //!< the same host on another port: answers only in WrongPort mode
 	Gateway m_mode = Gateway::PmpOnly;
 	bool m_hold = false;  //!< when set, the gateway stores replies instead of sending them
 	QList<HeldReply> m_held;
@@ -112,8 +114,10 @@ private:
 			m_requests.append(datagram.data());
 			const QByteArray reply = replyTo(datagram.data());
 			if (reply.isEmpty()) { continue; }
+			// WrongPort: NAT-PMP answers leave from another port; the PCP refusal stays on the server port.
+			QUdpSocket& source = m_mode == Gateway::WrongPort && !datagram.data().startsWith(char(2)) ? m_wrongPortGateway : m_gateway;
 			if (m_hold) { m_held.append({reply, datagram.senderAddress(), static_cast<quint16>(datagram.senderPort())}); }
-			else { m_gateway.writeDatagram(reply, datagram.senderAddress(), datagram.senderPort()); }
+			else { source.writeDatagram(reply, datagram.senderAddress(), datagram.senderPort()); }
 		}
 	}
 
@@ -165,6 +169,8 @@ private slots:
 	{
 		qRegisterMetaType<lmms::portmap::MappingResult>("lmms::portmap::MappingResult");
 		QVERIFY(m_gateway.bind(QHostAddress(QHostAddress::LocalHost), 0));
+		QVERIFY(m_wrongPortGateway.bind(QHostAddress(QHostAddress::LocalHost), 0));
+		QVERIFY(m_wrongPortGateway.localPort() != m_gateway.localPort());
 		connect(&m_gateway, &QUdpSocket::readyRead, this, &PortMappingCodecTest::answer);
 	}
 
@@ -232,6 +238,16 @@ private slots:
 		QCOMPARE(result.method, QStringLiteral("pcp"));
 		QCOMPARE(result.externalPort, quint16(40001));
 		QCOMPARE(result.externalAddress, QHostAddress(QStringLiteral("203.0.113.8")));
+	}
+
+	//! Replies from the right IP but a different UDP port are not the gateway's answers: the mapper must not take them.
+	void wrongPortGatewayRepliesAreIgnored()
+	{
+		m_mode = Gateway::WrongPort;
+		const MappingResult result = runMapper();
+		QVERIFY(!result.ok);
+		QVERIFY2(result.message.contains(QStringLiteral("did not answer")), qPrintable(result.message));
+		QCOMPARE(m_requests.size(), 3);  // one PCP try refused on the server port, then two unanswered NAT-PMP address tries
 	}
 
 	void oneSecondLeaseUsesPositiveRenewalInterval()
