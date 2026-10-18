@@ -62,6 +62,13 @@ void countWarnings(QtMsgType type, const QMessageLogContext&, const QString&)
 	if (type == QtWarningMsg) { ++g_warningsSeen; }
 }
 
+//! Criticals seen while a malformed message is refused, for the same reason as above.
+int g_criticalsSeen = 0;
+void countCriticals(QtMsgType type, const QMessageLogContext&, const QString&)
+{
+	if (type == QtCriticalMsg) { ++g_criticalsSeen; }
+}
+
 //! AudioPortsModel is abstract (bufferPropertiesChanging)
 class TestAudioPortsModel : public AudioPortsModel
 {
@@ -824,6 +831,112 @@ private slots:
 		QVERIFY(ids.contains(IdSyncKey));
 		QVERIFY(ids.contains(IdChangeSharedMemoryKey));
 		QVERIFY(!ids.contains(IdStartProcessing));
+	}
+
+	//! The wire format carries the argument count with the message, so a structurally
+	//! valid (complete) message can still arrive carrying fewer arguments than the
+	//! handler reads: message::getInt() indexes its vector without bounds-checking, so
+	//! reading argument 1 out of a one-argument IdChangeInputOutputCount is undefined
+	//! behaviour - it returns whatever sits after the message's arguments (garbage
+	//! counts, or a crash). The host must refuse the incomplete report BEFORE indexing:
+	//! nothing is applied, the refusal is reported loudly, and the plugin is failed like
+	//! any other protocol mismatch - the client may already lay its own planes out for
+	//! counts the host never applied.
+	//! The "not failed" precondition needs a real client, hence the stand-in peer.
+	void channelCountMessageMissingAnArgumentIsRefused()
+	{
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("silent")}) == false,
+			"the host started a client that connects");
+		if (!plugin.isRunning())
+		{
+			QSKIP("the client stand-in did not start");
+		}
+		QVERIFY(!plugin.failed());
+
+		ports.audioPortsModel().setChannelCounts(ch_cnt_t{2}, ch_cnt_t{2});
+		QVERIFY(ports.buffers()->initialized());
+		auto inBefore = ports.buffers()->input();
+		auto outBefore = ports.buffers()->output();
+
+		// The incomplete message: one argument where the protocol has two.
+		g_criticalsSeen = 0;
+		const QtMessageHandler previous = qInstallMessageHandler(countCriticals);
+		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(2));
+		qInstallMessageHandler(previous);
+
+		// Refused loudly, once, on the thread that took the message...
+		QCOMPARE(g_criticalsSeen, 1);
+		// ... with the plugin failed, exactly like any other protocol mismatch ...
+		QVERIFY(plugin.failed());
+		// ... and the message never indexed: the counts and the block did not move.
+		QCOMPARE(ports.audioPortsModel().in().channelCount(), ch_cnt_t{2});
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
+		QCOMPARE(ports.buffers()->input().bufferPtr(0), inBefore.bufferPtr(0));
+		QCOMPARE(ports.buffers()->output().bufferPtr(0), outBefore.bufferPtr(0));
+	}
+
+	//! A complete IdDebugMessage with no text in it. The host's handler indexed argument 0 of an empty message.
+	void zeroArgumentDebugMessageIsRefused()
+	{
+		refusesMessageWithoutArguments(RemotePlugin::message(IdDebugMessage));
+	}
+
+	//! A complete IdIsUIVisible with no answer in it. The host's handler indexed argument 0 of an empty message.
+	void zeroArgumentIsUIVisibleMessageIsRefused()
+	{
+		refusesMessageWithoutArguments(RemotePlugin::message(IdIsUIVisible));
+	}
+
+private:
+	//! A message that is complete on the wire but carries fewer arguments than its handler reads is refused before
+	//! anything is read: the refusal is reported once (here, on the main thread) and the plugin is failed.
+	void refusesMessageWithoutArguments(const RemotePlugin::message& _m)
+	{
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("silent")}) == false,
+			"the host started a client that connects");
+		if (!plugin.isRunning())
+		{
+			QSKIP("the client stand-in did not start");
+		}
+		QVERIFY(!plugin.failed());
+
+		g_criticalsSeen = 0;
+		const QtMessageHandler previous = qInstallMessageHandler(countCriticals);
+		plugin.processMessage(_m);
+		qInstallMessageHandler(previous);
+
+		QCOMPARE(g_criticalsSeen, 1);
+		QVERIFY(plugin.failed());
 	}
 #endif // SYNC_WITH_SHM_FIFO
 };

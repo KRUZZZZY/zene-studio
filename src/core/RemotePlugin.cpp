@@ -704,6 +704,14 @@ void RemotePlugin::reportDeferredClientRequests()
 			<< "(pre-#589 interleaved protocol); refusing the request and marking the plugin as failed";
 		m_pendingRetiredId = 0;
 	}
+	if (m_pendingArityId != 0)
+	{
+		qCritical() << "RemotePlugin: remote client sent message id" << m_pendingArityId << "with"
+			<< m_pendingArityCount << "argument(s), expected" << requiredArgumentCount(m_pendingArityId)
+			<< "- host and remote plugin client are from different builds; refusing the request and marking"
+			<< "the plugin as failed";
+		m_pendingArityId = 0;
+	}
 	if (m_pendingDebug)
 	{
 		fprintf( stderr, "RemotePlugin::DebugMessage: %.*s",
@@ -969,11 +977,41 @@ bool RemotePlugin::reportRefusedChannelCounts()
 	return true;
 }
 
+
+
+
+void RemotePlugin::refuseIncompleteMessage(const message & _m)
+{
+	if (m_inProcessPeriod)
+	{
+		// On the audio thread the log is deferred: it allocates and locks.
+		m_pendingArityId = _m.id;
+		m_pendingArityCount = static_cast<int>(_m.size());
+		m_deferredWork = true;
+	}
+	else
+	{
+		qCritical() << "RemotePlugin: remote client sent message id" << _m.id << "with"
+			<< static_cast<int>(_m.size()) << "argument(s), expected" << requiredArgumentCount(_m.id)
+			<< "- host and remote plugin client are from different builds; refusing the request and marking"
+			<< "the plugin as failed";
+	}
+	m_failed = true;
+}
+
 bool RemotePlugin::processMessage( const message & _m )
 {
 	lock();
 	message reply_message( _m.id );
 	bool reply = false;
+	// The handlers below read their arguments without a bounds check, and a complete message can still carry fewer
+	// than its id needs. Such a message is a protocol mismatch: it is refused before anything is read.
+	if( static_cast<int>( _m.size() ) < requiredArgumentCount( _m.id ) )
+	{
+		refuseIncompleteMessage( _m );
+		unlock();
+		return false;
+	}
 	switch( _m.id )
 	{
 		case IdUndefined:
