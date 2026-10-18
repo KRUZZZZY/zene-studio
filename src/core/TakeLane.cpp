@@ -31,6 +31,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <unordered_map>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -82,6 +83,56 @@ bool continuesTake(const TakeLaneSegment& previous, const TakeLaneSegment& seg)
 	if (previous.endTick != seg.beginTick) { return false; }
 	if (previous.laneIndex != seg.laneIndex) { return false; }
 	return seg.sourceOffset == previous.sourceOffset;
+}
+
+//! Merges each segment that continues the one before it (continuesTake) into that one span.
+void mergeAdjacentSegments(std::vector<TakeLaneSegment>* segments)
+{
+	std::vector<TakeLaneSegment> merged;
+	merged.reserve(segments->size());
+	for (const TakeLaneSegment& seg : *segments)
+	{
+		if (!merged.empty() && continuesTake(merged.back(), seg))
+		{
+			merged.back().endTick = seg.endTick;
+			continue;
+		}
+		merged.push_back(seg);
+	}
+	segments->swap(merged);
+}
+
+//! The composite once lane \p index is removed: its segments fall back to the lowest lane that remains, at
+//! offset 0 (the base lane's take has its own start). Empty when no lane remains.
+std::vector<TakeLaneSegment> segmentsAfterRemovingLane(const std::vector<TakeLane>& lanes,
+	const std::vector<TakeLaneSegment>& segments, int index)
+{
+	int base = -1;
+	for (const TakeLane& lane : lanes)
+	{
+		if (lane.index != index) { base = lane.index; break; }
+	}
+	if (base < 0) { return {}; }
+	std::vector<TakeLaneSegment> remapped = segments;
+	for (TakeLaneSegment& seg : remapped)
+	{
+		if (seg.laneIndex != index) { continue; }
+		seg.laneIndex = base;
+		seg.sourceOffset = 0;
+	}
+	mergeAdjacentSegments(&remapped);
+	return remapped;
+}
+
+//! True when no lane holds more spans than a play handle can snapshot (TakeLaneModel::MaxCompositeSpansPerLane).
+bool withinPlaybackSpanBudget(const std::vector<TakeLaneSegment>& segments)
+{
+	std::unordered_map<int, int> spanCounts;
+	for (const TakeLaneSegment& seg : segments)
+	{
+		if (++spanCounts[seg.laneIndex] > TakeLaneModel::MaxCompositeSpansPerLane) { return false; }
+	}
+	return true;
 }
 
 bool addSlipToTick(int tick, int slip, tick_t* sourceTick)
@@ -336,25 +387,20 @@ bool TakeLaneModel::removeLane(int index)
 	const auto changeLock = changeLockForEdit();
 	const auto pos = std::lower_bound(m_lanes.begin(), m_lanes.end(), index, laneLessThan);
 	if (pos == m_lanes.end() || pos->index != index) { return false; }
-	m_lanes.erase(pos);
-	if (m_lanes.empty())
-	{
-		// No lane can supply a tick any more, so there is no composite left.
-		m_segments.clear();
-		return true;
-	}
 	// A composite stays total over its span (I6): the range a removed lane
-	// supplied falls back to the base lane rather than becoming a hole. The
-	// offset resets because the base lane's take has its own start.
-	const int base = baseLane();
-	for (TakeLaneSegment& seg : m_segments)
-	{
-		if (seg.laneIndex != index) { continue; }
-		seg.laneIndex = base;
-		seg.sourceOffset = 0;
-	}
-	mergeSegments();
+	// supplied falls back to the base lane rather than becoming a hole (see
+	// segmentsAfterRemovingLane). A result over the playback span budget is refused.
+	std::vector<TakeLaneSegment> remapped = segmentsAfterRemovingLane(m_lanes, m_segments, index);
+	if (!withinPlaybackSpanBudget(remapped)) { return false; }
+	m_lanes.erase(pos);
+	m_segments.swap(remapped);
 	return true;
+}
+
+
+bool TakeLaneModel::canRemoveLane(int index) const
+{
+	return hasLane(index) && withinPlaybackSpanBudget(segmentsAfterRemovingLane(m_lanes, m_segments, index));
 }
 
 
@@ -386,7 +432,20 @@ bool TakeLaneModel::canSelect(int beginTick, int endTick, int laneIndex, int sou
 {
 	if (beginTick < 0 || endTick <= beginTick || sourceOffset < 0) { return false; }
 	if (!addSlipToTick(endTick - 1, sourceOffset, nullptr)) { return false; }
-	return hasLane(laneIndex);
+	if (!hasLane(laneIndex)) { return false; }
+	// Judged on the composite the selection would leave, normalised the way selectSegment() normalises it.
+	std::vector<TakeLaneSegment> painted;
+	painted.reserve(m_segments.size() + 1);
+	for (const TakeLaneSegment& seg : m_segments) { subtractRange(seg, beginTick, endTick, &painted); }
+	TakeLaneSegment chosen;
+	chosen.beginTick = beginTick;
+	chosen.endTick = endTick;
+	chosen.laneIndex = laneIndex;
+	chosen.sourceOffset = sourceOffset;
+	painted.push_back(chosen);
+	std::sort(painted.begin(), painted.end(), segmentBefore);
+	mergeAdjacentSegments(&painted);
+	return withinPlaybackSpanBudget(painted);
 }
 
 
@@ -422,18 +481,7 @@ void TakeLaneModel::sortSegments()
 
 void TakeLaneModel::mergeSegments()
 {
-	std::vector<TakeLaneSegment> merged;
-	merged.reserve(m_segments.size());
-	for (const TakeLaneSegment& seg : m_segments)
-	{
-		if (!merged.empty() && continuesTake(merged.back(), seg))
-		{
-			merged.back().endTick = seg.endTick;
-			continue;
-		}
-		merged.push_back(seg);
-	}
-	m_segments.swap(merged);
+	mergeAdjacentSegments(&m_segments);
 }
 
 
@@ -474,6 +522,7 @@ int TakeLaneModel::fillGaps(int spanBegin, int spanEnd)
 int TakeLaneModel::rebuild(int spanBegin, int spanEnd)
 {
 	const auto changeLock = changeLockForEdit();
+	const std::vector<TakeLaneSegment> original = m_segments;
 	sortSegments();
 	mergeSegments();
 	if (m_lanes.empty())
@@ -481,7 +530,12 @@ int TakeLaneModel::rebuild(int spanBegin, int spanEnd)
 		m_segments.clear();
 		return 0;
 	}
-	if (spanBegin < 0 || spanEnd <= spanBegin) { return static_cast<int>(m_segments.size()); }
+	if (spanBegin < 0 || spanEnd <= spanBegin)
+	{
+		if (withinPlaybackSpanBudget(m_segments)) { return static_cast<int>(m_segments.size()); }
+		m_segments = original;
+		return -1;
+	}
 
 	std::vector<TakeLaneSegment> clamped;
 	clamped.reserve(m_segments.size());
@@ -493,7 +547,19 @@ int TakeLaneModel::rebuild(int spanBegin, int spanEnd)
 		if (kept.endTick > kept.beginTick) { clamped.push_back(kept); }
 	}
 	m_segments.swap(clamped);
-	return fillGaps(spanBegin, spanEnd);
+	const int result = fillGaps(spanBegin, spanEnd);
+	if (withinPlaybackSpanBudget(m_segments)) { return result; }
+	m_segments = original;
+	return -1;
+}
+
+
+bool TakeLaneModel::canRebuild(int spanBegin, int spanEnd) const
+{
+	TakeLaneModel preview;
+	preview.m_lanes = m_lanes;
+	preview.m_segments = m_segments;
+	return preview.rebuild(spanBegin, spanEnd) >= 0;
 }
 
 

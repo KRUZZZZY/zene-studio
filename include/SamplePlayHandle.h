@@ -41,6 +41,7 @@
 #include "SampleWindow.h"
 #include "WarpMarkers.h"
 #include "PlayHandle.h"
+#include "TakeLane.h"
 
 namespace lmms
 {
@@ -229,14 +230,11 @@ private:
 	void applyComp(SampleFrame* buffer, f_cnt_t frames) const;
 	//! Lock-free active-take gate; comp playback bypasses this selection entirely.
 	void applyActiveTakeGate(SampleFrame* buffer, f_cnt_t frames) const;
-	//! How many selected spans of this clip's own lane one handle can hold. The
-	//! composite (include/TakeLane.h) stores its segments in a plain vector with no
-	//! count limit, so this is the RENDER budget, not the model's: a fixed array keeps
-	//! applyComp() allocation-free and bounded on the render path. 32 was below what
-	//! real comps reach - a take selected in 40 places played its first 32 and was
-	//! silent for the rest (Luna cluster 3511). 256 covers a heavily comped take and
-	//! costs at most 256 pair comparisons per rendered frame.
-	static constexpr int MaxCompSpans = 256;
+	//! How many selected spans of this clip's own lane one handle can hold. This is the
+	//! composite's per-lane budget (TakeLaneModel::MaxCompositeSpansPerLane), which the
+	//! comp's authoring paths enforce, so a rendered comp is never silently cut. A fixed
+	//! array keeps applyComp() allocation-free and bounded on the render path.
+	static constexpr int MaxCompSpans = TakeLaneModel::MaxCompositeSpansPerLane;
 	static constexpr f_cnt_t CompRampFrames = 64;
 	bool m_comped = false;
 	int m_takeGroupId = 0;
