@@ -340,7 +340,7 @@ void CollabClient::onReply(const QJsonObject& message)
 int CollabClient::request(const QString& command, const QJsonObject& args)
 {
 	if (m_link == nullptr || !m_link->isOpen()) { return 0; }
-	if (m_inflight.size() >= MaxInflight) { m_inflight.clear(); }
+	if (m_inflight.size() >= MaxInflight) { return 0; }
 	int id = m_nextRequest;
 	do
 	{
