@@ -268,19 +268,24 @@ void registerProjectExportMidi(ControlRegistry& registry)
 		//! ever removed), and the target is replaced only once that output is proven.
 		const QString temp = path + QStringLiteral(".zene-export-")
 			+ QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".tmp");
-		Engine::getSong()->exportProjectMidi(temp);
+		// Remember whether this call owns `temp` before handing it to the exporter: a
+		// pre-existing file there is someone else's and must never be removed or
+		// overwritten, even on failure.
+		const bool ownedTemp = !QFileInfo::exists(temp);
+		const bool exported = Engine::getSong()->exportProjectMidi(temp);
 		const QFileInfo written(temp);
-		if (!written.exists())
+		if (!exported || !written.exists() || written.size() <= 0)
 		{
+			if (ownedTemp) { QFile::remove(temp); }
 			return refused(QStringLiteral("no MIDI file was written for '%1' (the midiexport "
-				"filter is not loadable in this process)").arg(path));
+				"filter is not loadable in this process, or the temporary path collided)").arg(path));
 		}
 		const qint64 bytes = static_cast<qint64>(written.size());
 		// The replacement is atomic (controlReplaceFileAtomically): on failure the previous
 		// export at `path` is still there, byte for byte, and the call is refused.
 		ControlResult replaceError;
 		const bool replaced = controlReplaceFileAtomically(temp, path, &replaceError);
-		QFile::remove(temp);
+		if (ownedTemp) { QFile::remove(temp); }
 		if (!replaced)
 		{
 			return refused(QStringLiteral("the MIDI file was written but could not replace '%1' (%2)")

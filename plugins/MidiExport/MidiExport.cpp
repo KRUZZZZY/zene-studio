@@ -76,7 +76,13 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 			int tempo, int masterPitch, const QString &filename)
 {
 	QFile f(filename);
-	f.open(QIODevice::WriteOnly);
+	// Exclusive create: never truncate a file that is already there (a collision
+	// with a file the user keeps beside the target must not be destroyed). A
+	// failed open propagates as a failed export instead of a silent overwrite.
+	if (!f.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+	{
+		return false;
+	}
 	QDataStream midiout(&f);
 
 	QDomElement element;
@@ -263,11 +269,9 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 		writeChunk(mtrack);
 	}
 
-	return true;
-
+	f.close();
+	return midiout.status() == QDataStream::Ok && f.error() == QFileDevice::NoError;
 }
-
-
 
 void MidiExport::writeMidiClip(MidiNoteVector &midiClip, const QDomNode& n,
 				int base_pitch, double base_volume, int base_time)

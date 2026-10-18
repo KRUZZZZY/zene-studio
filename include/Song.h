@@ -647,7 +647,7 @@ public:
 	//! Seconds from tick 0 to \a tick through the map's tempo segments.
 	double secondsAtTick(tick_t tick) const;
 
-	void exportProjectMidi(QString const & exportFileName) const;
+	bool exportProjectMidi(QString const & exportFileName) const;
 
 	inline void setLoadOnLaunch(bool value) { m_loadOnLaunch = value; }
 	SaveOptions &getSaveOptions() {

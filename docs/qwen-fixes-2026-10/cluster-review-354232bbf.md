@@ -1,70 +1,53 @@
 # Cluster review-354232bbf
 
-## Verdict: ALREADY-FIXED
+## Verdict: FIXED
 
-The MIDI export replacement bug was already fixed in commit 3b9007934acbf1915a65895374a7d847419fc61c
-on branch bugs/bunny-cmds2-2026-10-05, which is present in the current branch bugs/qwen-review-354232bbf.
+MIDI export now creates its temporary output exclusively (no-clobber) and propagates failures, so a
+colliding file is never overwritten and the previous export bytes survive a failed replacement. Atomic
+QSaveFile replacement is retained.
 
 ## Evidence
 
-### Original Finding
-The finding reported two defects in `src/core/ControlCommandsProjectLifecycle.cpp`:
-1. MIDI export replacement removes old target before rename, losing previous export if rename fails
-2. Deterministic temporary filename collides with and can delete a user file
+### Bug
+`plugins/MidiExport/MidiExport.cpp` opened the export path with `QFile::open(QIODevice::WriteOnly)`,
+truncating any existing file, and `Song::exportProjectMidi` discarded the result. The handler in
+`src/core/ControlCommandsProjectLifecycle.cpp` then treated any existing file as fresh output.
 
-### Current State
-The current code at lines 269-283 of `src/core/ControlCommandsProjectLifecycle.cpp` uses:
-- UUID-based unique temporary path: `path + ".zene-export-" + QUuid::createUuid().toString(QUuid::WithoutBraces) + ".tmp"`
-- Atomic replacement via `controlReplaceFileAtomically(temp, path, &replaceError)` which uses QSaveFile
+### Fix
+- `plugins/MidiExport/MidiExport.cpp`: open with `QIODevice::WriteOnly | QIODevice::NewOnly` (exclusive
+  create) and propagate open/write failures.
+- `include/Song.h` / `src/core/Song.cpp`: `exportProjectMidi` returns `bool`.
+- `src/core/ControlCommandsProjectLifecycle.cpp`: use the export result, refuse on failure, preserve
+  the target, remove only an owned temp file, retain `controlReplaceFileAtomically` (QSaveFile).
 
-The helper `controlReplaceFileAtomically` (lines 57-78) uses QSaveFile to write beside the target
-and only renames over the target on successful commit, so failure leaves the target intact.
+### Regression
+`tests/src/core/MidiExportTest.cpp::collidingPathIsNotClobberedByExport` creates a file at the export
+path, runs the export, and asserts the pre-existing bytes survive.
 
-### Test Coverage
-Two tests in `tests/src/core/ControlSuccessPathsTest.cpp` verify the fix:
-1. `exportMidiLeavesAUserFileWithTheOldTemporaryNameAlone` (line 311): verifies a user file with
-   the old fixed temp name `.zene-export.tmp` survives the export call
-2. `replacingAnExportIsAtomic` (line 330): verifies failed replacement preserves old bytes
+### RED
+`git checkout -- include/Song.h plugins/MidiExport/MidiExport.cpp src/core/ControlCommandsProjectLifecycle.cpp src/core/Song.cpp`
+`cmake --build build --target midiexport MidiExportTest -j2` — EXIT=0
+`ctest -R MidiExportTest` (from build/tests) — EXIT=8 (collidingPathIsNotClobberedByExport FAILED)
 
-### Test Execution
-```
-RED (not applicable - fix is already in place)
-GREEN: ctest -R ControlSuccessPathsTest EXIT=0
-```
+### GREEN
+`git apply fix.patch`
+`cmake --build build --target zene midiexport MidiExportTest -j2` — EXIT=0
+`ctest -R MidiExportTest` (from build/tests) — EXIT=0 (1/1 passed)
 
-Test log at: /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/review-354232bbf.r1/logs/test-1.log
+### Family tests
+`ctest -R "MidiExportTest|ControlSuccessPathsTest"` — EXIT=0 (2/2 passed)
 
-```
-Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-review-354232bbf/build/tests
-    Start 127: ControlSuccessPathsTest
-1/1 Test #127: ControlSuccessPathsTest ..........   Passed    2.26 sec
+### Gates
+`bash tests/complexity-gate.sh --check` — EXIT=1 (pre-existing ratchet regressions; no new regression
+from changed functions)
+`bash tests/file-length-gate.sh --check` — EXIT=1 (pre-existing ratchet regressions; no new regression
+from changed files)
 
-100% tests passed out of 1
-
-Total Test time (real) =   2.28 sec
-```
-
-## Fix Details
-Commit: 3b9007934acbf1915a65895374a7d847419fc61c
-Author: Zachariah Markusson
-Date: Thu Oct 8 01:39:23 2026 +0100
-
-Changes:
-- `include/ControlProjectAssets.h`: Added `controlReplaceFileAtomically` declaration
-- `src/core/ControlCommandsProjectLifecycle.cpp`:
-  - Changed temp name from fixed `.zene-export.tmp` to UUID-based unique name
-  - Removed `QFile::remove(temp)` before export (would have deleted user file)
-  - Removed `QFile::remove(path)` before rename (would have lost old export)
-  - Introduced `controlReplaceFileAtomically` using QSaveFile for atomic replacement
-- `tests/src/core/ControlSuccessPathsTest.cpp`: Added two regression tests
-
-## Conclusion
-No action required. The bug is already fixed with proper test coverage.
-
-## Gates
-Both `complexity-gate.sh --check` and `file-length-gate.sh --check` report pre-existing
-regressions (functions and files over their respective limits). These are not caused by
-this review; the only change is a documentation file. The gates are in check mode and
-report "baseline not written".
-
-Commit: 44b1be216 docs(review 354232bbf): ALREADY-FIXED - MIDI export atomic replacement and unique temp name
+### Files committed
+- include/Song.h
+- plugins/MidiExport/MidiExport.cpp
+- src/core/ControlCommandsProjectLifecycle.cpp
+- src/core/Song.cpp
+- tests/src/core/MidiExportTest.cpp
+- tests/upstream-modifications.txt
+- docs/qwen-fixes-2026-10/cluster-review-354232bbf.md

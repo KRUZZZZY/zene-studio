@@ -35,6 +35,7 @@
 #include <QtTest>
 
 #include <QJsonObject>
+#include <QFile>
 #include <QTemporaryDir>
 
 #include <vector>
@@ -310,6 +311,23 @@ private slots:
 		QVERIFY(!file.tracks[1].events.empty());
 		QCOMPARE(file.tracks[1].events.back().status, 0xFF);
 		QCOMPARE(file.tracks[1].events.back().type, 0x2F);
+	}
+
+	//! A file already present at the path the exporter is asked to write must not
+	//! be truncated: creation is exclusive, so a collision is a failed export.
+	void collidingPathIsNotClobberedByExport()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("collide.mid"));
+		const QByteArray userBytes("USER-FILE-AT-COLLIDING-PATH");
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(userBytes) == userBytes.size());
+		}
+		Engine::getSong()->exportProjectMidi(path);
+		QFile kept(path);
+		QVERIFY(kept.open(QIODevice::ReadOnly));
+		QCOMPARE(kept.readAll(), userBytes);
 	}
 
 private:
