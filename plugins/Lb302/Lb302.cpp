@@ -533,13 +533,7 @@ void Lb302Synth::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>)
 	}
 
 	m_notes[index & s_notesBufMask] = nph;
-
-	std::size_t writeCommittedExpected = index;
-	while (!m_notesWriteCommitted.compare_exchange_strong(writeCommittedExpected, nextIndex, std::memory_order_release))
-	{
-		writeCommittedExpected = index; // Reset this as the CAS will have changed it
-		busyWaitHint();
-	}
+	m_notesReadySeq[index & s_notesBufMask].store(nextIndex, std::memory_order_release);
 }
 
 
@@ -575,22 +569,28 @@ void Lb302Synth::processNote(NotePlayHandle* nph)
 void Lb302Synth::playImpl(std::span<SampleFrame> out)
 {
 	const auto readIdx = m_notesReadSeq.load(std::memory_order_relaxed);
-	const auto writeCommitted = m_notesWriteCommitted.load(std::memory_order_acquire);
+	const auto writeClaimed = m_notesWriteClaimed.load(std::memory_order_relaxed);
+	auto writeReady = readIdx;
+	while (writeReady < writeClaimed
+		&& m_notesReadySeq[writeReady & s_notesBufMask].load(std::memory_order_acquire) == writeReady + 1)
+	{
+		++writeReady;
+	}
 	// Process notes, but process new notes last
-	for (auto i = readIdx; i < writeCommitted; ++i)
+	for (auto i = readIdx; i < writeReady; ++i)
 	{
 		const auto& nph = m_notes[i & s_notesBufMask];
 		if (nph->totalFramesPlayed() == 0) { continue; }
 		processNote(nph);
 	}
-	for (auto i = readIdx; i < writeCommitted; ++i)
+	for (auto i = readIdx; i < writeReady; ++i)
 	{
 		const auto& nph = m_notes[i & s_notesBufMask];
 		if (nph->totalFramesPlayed() != 0) { continue; }
 		processNote(nph);
 	}
 	// Mark the processed notes as having been read so that playNote() calls can overwrite them
-	m_notesReadSeq.fetch_add(writeCommitted - readIdx, std::memory_order_release);
+	m_notesReadSeq.fetch_add(writeReady - readIdx, std::memory_order_release);
 
 	process(out.data(), out.size());
 }

@@ -2522,3 +2522,6 @@ plugins/TripleOscillator/TripleOscillator.h	cluster new-p9-495: remove the oscPt
 plugins/TripleOscillator/TripleOscillator.cpp	cluster new-p9-495: first-period note state placed in NotePlayHandle::pluginDataStorage() with construct_at and destroyed with destroy_at, so the audio path no longer allocates or frees (QA finding 2026-10-05).
 tests/src/core/MpePlaybackTest.cpp	cluster new-p10-177: exercises live MPE pitch, pressure, and timbre reaching a layer note through InstrumentTrack::processInEvent; it fails before consumed owner events are forwarded.
 tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p10-145: poison the allocated DualFilterEffect storage and assert all four cached cutoff/resonance values are initialized.
+plugins/Lb302/Lb302.cpp	cluster new-p10-184: publish claimed notes through per-slot readiness so later producers do not wait for an earlier producer.
+plugins/Lb302/Lb302.h	cluster new-p10-184: add per-slot readiness sequence counters to the LB302 note queue.
+tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p10-184: regress a producer paused after claiming an unpublished LB302 note slot.
