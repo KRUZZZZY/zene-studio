@@ -108,6 +108,11 @@ std::shared_ptr<const SampleBuffer> SampleBuffer::fromFile(const QString& filePa
 std::shared_ptr<const SampleBuffer> SampleBuffer::fromBase64(const QString& str, int sampleRate)
 {
 	if (str.isEmpty()) { return SampleBuffer::emptyBuffer(); }
+	if (sampleRate <= 0)
+	{
+		qWarning() << QObject::tr("Failed to load Base64 sample, invalid sample rate");
+		return SampleBuffer::emptyBuffer();
+	}
 
 	const auto bytes = QByteArray::fromBase64(str.toUtf8());
 
