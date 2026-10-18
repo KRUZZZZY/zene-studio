@@ -28,7 +28,21 @@ The finding offered two options: mark the row irreversible, or make the inverse 
 
 No new files were created, so no `tests/fork-sources.txt` or `tests/upstream-modifications.txt` entries were needed: every changed file is already registered in `tests/fork-sources.txt` (or, for the release notes, already listed in `tests/upstream-modifications.txt`).
 
-Not regenerated: `tools/mcp-zene-control/zene_control/commands_snapshot.json` still carries the old description text. The snapshot ratchet (`tests/control-commands-snapshot.py`) compares command ids only, and no command was added or removed, so it is not affected. Regenerate it with the next command-surface change if descriptions are wanted there.
+The offline snapshot `tools/mcp-zene-control/zene_control/commands_snapshot.json` was also regenerated (see "Round 1 rework" below): it is a DERIVED file, so it is captured from a live instance with the bridge's own generator rather than hand-edited.
+
+## Round 1 rework (QA verdict REWORK)
+
+The independent QA review of the round-0 commit returned `REWORK` with one instruction: the committed offline command snapshot still told agents that `track.set_arm_many` is one undo step, so the command surface stayed misleading when no instance was running (`tools/mcp-zene-control/zene_control/commands_snapshot.json:29575`). It asked me to regenerate the snapshot from the fixed registry, commit it, and rerun `ctest -R ControlCommandsSnapshot`.
+
+Done. The snapshot was re-captured from a live instance of the fixed binary using the bridge's own generator (`snapshot_commands.py --from-file`), so it is derived, never hand-written:
+
+- `cmake --build build --target zene -j12` -> EXIT 0 (`logs/build-30.log`).
+- Live capture: the harness started `build/zene`, asked `control.commands_list`, wrote the reply to `/tmp/opencode/commands-live.json` -> EXIT 0, 828 commands (`logs/dump-1.log`).
+- `python3 tools/mcp-zene-control/snapshot_commands.py --from-file /tmp/opencode/commands-live.json --out <snapshot>` -> EXIT 0, `surface: 828 id(s) across 76 group(s), ids_sha256 8e2d5b9a0774e7005e5832777c552b2d4f09efbc56e71322c5fd72e5f3385c6a` (`logs/snapshot-1.log`). That `ids_sha256` is byte-identical to the pre-rework snapshot, so the id surface is unchanged.
+- Snapshot diff is exactly three lines: `captured_at`, the recorded `instance.source_file`, and the one `track.set_arm_many` `description` string. The new description reads "...Arming writes take files that remain on disk when captures stop, so control.undo refuses this command; stop each route with record.disarm_track using its route id from 'routes'...". No other command entry changed; the id set is equal and `surface.ids_sha256` is unchanged.
+- `ctest -R ControlCommandsSnapshot --output-on-failure` from `build/tests` -> EXIT 0 (`1/1 Test #574 ControlCommandsSnapshot ... Passed`, `logs/test-35.log`).
+
+The regression for the bug itself was re-proved on this tree in the same round (reverse-patch, RED then GREEN): see the first three rows of the evidence table below.
 
 ## Evidence table
 
@@ -49,6 +63,20 @@ Log folder: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-81-port
 | Violation sets, base vs final | `grep -h "REGRESSION\|FAIL" logs/gate-5.log \| sort \| diff logs/gate-base-1.set -`; same for `gate-6.log` vs `gate-base-2.set` | identical in both gates (no new entry from this change) |
 | Registration | `grep` of each changed file in `tests/fork-sources.txt` and `tests/upstream-modifications.txt` | all changed files registered; no new files |
 
+### Round 1 evidence (this commit, on top of the round-0 fix)
+
+The fix hunks are already committed in round 0, so the reverse-patch proof is taken against the pre-fix base `4eb8d6e8a`: `git diff 4eb8d6e8a -- <the three product files> > logs/fix.patch` (88 lines), `git apply -R --check logs/fix.patch` -> EXIT 0, `git apply -R logs/fix.patch` -> EXIT 0.
+
+| Evidence | Exact command | EXIT / count |
+| --- | --- | --- |
+| RED, fix reverse-applied | `cmake --build build --target zene UndoHonestyTest -j12 > logs/build-33.log 2>&1` -> EXIT 0; `cd build/tests && ctest -R UndoHonestyTest --output-on-failure > logs/test-33.log 2>&1` | test EXIT **8**; `FAIL! : UndoHonestyTest::armAllRefusesUndoThatWouldLeaveItsTakesBehind() '!undo.ok' returned FALSE. (control.undo claimed it could remove the takes from track.set_arm_many)`; `Totals: 12 passed, 1 failed, 4 skipped` |
+| GREEN, fix re-applied | `git apply logs/fix.patch` -> EXIT 0; `cmake --build build --target zene UndoHonestyTest -j12 > logs/build-34.log 2>&1` -> EXIT 0; `cd build/tests && ctest -R UndoHonestyTest --output-on-failure > logs/test-34.log 2>&1` | test EXIT **0** (`100% tests passed out of 1`) |
+| Snapshot regenerated from a live instance (the QA rework) | `cmake --build build --target zene -j12 > logs/build-30.log 2>&1` -> EXIT 0; live capture -> `logs/dump-1.log` EXIT 0 (828 commands); `python3 tools/mcp-zene-control/snapshot_commands.py --from-file /tmp/opencode/commands-live.json --out tools/mcp-zene-control/zene_control/commands_snapshot.json > logs/snapshot-1.log 2>&1` -> EXIT 0 | snapshot diff = 3 lines (`captured_at`, `instance.source_file`, the one `track.set_arm_many` description); `ids_sha256` unchanged (`8e2d5b9a...`) |
+| Snapshot ratchet (the QA rework's required rerun) | `cd build/tests && ctest -R ControlCommandsSnapshot --output-on-failure > logs/test-35.log 2>&1` | EXIT **0** (`1/1 Test #574 ControlCommandsSnapshot ... Passed`) |
+| Affected family, all seven entries | `cmake --build build --target UndoHonestyTest ReversibilityContractTest ControlEditCommandsTest -j12 > logs/build-31.log 2>&1` (EXIT 0); `cd build/tests && ctest -R "ControlEditCommandsTest\|ReversibilityContractTest\|ReversibilityUndoTest\|ReversibilityUndoDeviceTest\|UndoHonestyTest\|UndoHonestyStateTest\|ControlReversibilityTranscript" --output-on-failure > logs/test-31.log 2>&1` | EXIT **8** (6 of 7 passed; only the environmental `ControlReversibilityTranscript` failed). `ControlEditCommandsTest` now passes without any `HOME` override (17/17); `ReversibilityContractTest`, `ReversibilityUndoTest`, `ReversibilityUndoDeviceTest`, `UndoHonestyTest`, `UndoHonestyStateTest` all passed |
+| Complexity gate | `bash tests/complexity-gate.sh --check > logs/gate-30.log 2>&1; echo EXIT=$?` | **EXIT 1** (pre-existing; 6 `REGRESSION` entries, none in a file this change touches) |
+| File-length gate | `bash tests/file-length-gate.sh --check > logs/gate-31.log 2>&1; echo EXIT=$?` | **EXIT 1** (pre-existing; 14 `REGRESSION` entries, none in a file this change touches) |
+
 ## Gate status, stated plainly
 
 Both required ratchet gates exit **1** on this branch, and they already did on the base commit: the base export produces the same violation sets. The entries are in files this change does not touch (for example `tests/src/core/ControlEditCommandsTest.cpp` at 511 code lines, `src/core/TakeLane.cpp` at 520, six complexity functions such as `lmms::adjust` in `src/core/ControlCommandsMixerTools.cpp`). This change adds no entry to either gate and does not re-anchor either gate or its baseline. I did not fix those files, because doing so is outside this bug.
@@ -67,9 +95,15 @@ One violation was mine and is fixed: the first version of the regression test to
 
 ## Files committed
 
+Round 0 (`70a924a8a`):
+
 - `src/core/ControlReversibilityTableRecording.cpp`
 - `src/core/ControlCommandsArrangementState.cpp`
 - `src/gui/RecordLaunchMenus.cpp` (comment only)
 - `tests/src/core/UndoHonestyTest.cpp`
 - `docs/RELEASE-NOTES-v0.3.0-alpha.md` (A16 histogram figures only)
+
+Round 1 (this commit, the QA rework):
+
+- `tools/mcp-zene-control/zene_control/commands_snapshot.json` (derived; regenerated from a live instance of the fixed binary)
 - `docs/qwen-fixes-2026-10/cluster-new-p8-81-port.md` (this report)

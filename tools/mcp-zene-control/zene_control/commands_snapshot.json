@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-14T23:52:22Z",
+  "captured_at": "2026-10-18T08:54:06Z",
   "commands": [
     {
       "args_schema": {
@@ -29572,7 +29572,7 @@
         ],
         "type": "object"
       },
-      "description": "Arm or disarm several song tracks for recording in one call - the mixer's Arm All. Each track in 'tracks' (trk-<n> ids) is armed or disarmed as track.set_arm does it, with its default take file and input channel; a track already armed is skipped, and a track that refuses (past the last record route, say) is listed in 'refused' with its reason while the others still go ahead. 'tracks' answers the ones changed, 'routes' each one's route reply. Arming is ONE undo step: control.undo disarms exactly the tracks this call armed (their takes stay on disk). Disarming records no inverse, as track.set_arm's does not.",
+      "description": "Arm or disarm several song tracks for recording in one call - the mixer's Arm All. Each track in 'tracks' (trk-<n> ids) is armed or disarmed as track.set_arm does it, with its default take file and input channel; a track already armed is skipped, and a track that refuses (past the last record route, say) is listed in 'refused' with its reason while the others still go ahead. 'tracks' answers the ones changed, 'routes' each one's route reply. Arming writes take files that remain on disk when captures stop, so control.undo refuses this command; stop each route with record.disarm_track using its route id from 'routes'. Disarming records no inverse, as track.set_arm's does not.",
       "group": "track",
       "id": "track.set_arm_many",
       "mutating": true,
@@ -35149,7 +35149,7 @@
   ],
   "count": 828,
   "instance": {
-    "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/cff463a0-1326-44da-8393-bec3a1847916/scratchpad/train5/commands-release.json"
+    "source_file": "/tmp/opencode/commands-live.json"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
