@@ -130,7 +130,8 @@ void MultitapEchoControls::ampSamplesChanged( int begin, int end )
 	const float * samples = m_ampGraph.samples();
 	for( int i = begin; i <= end; ++i )
 	{
-		m_effect->m_amp[i] = dbfsToAmp( samples[i] );
+		m_effect->m_pendingAmp[static_cast<std::size_t>(i)].store(
+			dbfsToAmp( samples[i] ), std::memory_order_relaxed);
 	}
 }
 
@@ -147,9 +148,9 @@ void MultitapEchoControls::lpSamplesChanged( int begin, int end )
 	const float * samples = m_lpGraph.samples();
 	for( int i = begin; i <= end; ++i )
 	{
-		m_effect->m_lpFreq[i] = 20.0f * fastPow10f(samples[i]);
+		m_effect->m_pendingLpFreq[static_cast<std::size_t>(i)].store(
+			20.0f * fastPow10f(samples[i]), std::memory_order_relaxed);
 	}
-	m_effect->updateFilters( begin, end );
 }
 
 
@@ -166,15 +167,13 @@ void MultitapEchoControls::lengthChanged()
 	ampSamplesChanged( 0, len - 1 );
 	m_lpGraph.setLength( len );
 	lpSamplesChanged( 0, len - 1 );
-	m_effect->updateFilters( 0, len - 1 );
 }
 
 
 void MultitapEchoControls::sampleRateChanged()
 {
-	m_effect->m_sampleRate = Engine::audioEngine()->outputSampleRate();
-	m_effect->m_sampleRatio = 1.0f / m_effect->m_sampleRate;
-	m_effect->updateFilters( 0, m_steps.value() - 1 );
+	const auto sampleRate = Engine::audioEngine()->outputSampleRate();
+	m_effect->m_sampleRatio.store(1.0f / sampleRate, std::memory_order_relaxed);
 }
 
 
