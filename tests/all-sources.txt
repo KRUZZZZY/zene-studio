@@ -2845,6 +2845,7 @@ tests/src/gui/LadspaPortDialogTest.cpp
 tests/src/gui/LaneReadoutTest.cpp
 tests/src/gui/LfoGraphTest.cpp
 tests/src/gui/LibraryMenusTest.cpp
+tests/src/gui/Lv2ViewBaseLifetimeTest.cpp
 tests/src/gui/LinkedModelGroupViewLifetimeTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/MainWindowGeometryTest.cpp

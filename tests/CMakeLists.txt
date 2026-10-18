@@ -963,6 +963,8 @@ set(LMMS_TESTS
 	src/gui/DevicePanelTest.cpp
 	# 0.5.0 plugin-hosting lane: the effect rack's own "Add effect" picks from the device picker.
 	src/gui/EffectRackAddTest.cpp
+	# BUG new-p9-242: LV2 help subwindows are destroyed with the view that owns them.
+	src/gui/Lv2ViewBaseLifetimeTest.cpp
 	# 0.5.0 L11 / L12 (W3): the project menu's new entries, a track's lock, the gallery, the browser's remembered sources.
 	src/gui/LibraryMenusTest.cpp
 	# The shell window's own startup: a floating editor hides its whole frame, and an unattended
@@ -2320,6 +2322,7 @@ set_tests_properties(LaneReadoutTest SampleEditorDialogTest CrossfadeEditorTest 
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectRackAddTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(Lv2ViewBaseLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
