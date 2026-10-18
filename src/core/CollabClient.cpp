@@ -242,8 +242,9 @@ void CollabClient::onSnapshot(const QJsonObject& message)
 		return;
 	}
 	QString error;
-	if (m_snapshotSink && !m_snapshotSink(project, &error))
+	if (!m_snapshotSink || !m_snapshotSink(project, &error))
 	{
+		if (!m_snapshotSink) { error = QStringLiteral("snapshot sink is not installed"); }
 		setState(m_state, QStringLiteral("could not open the host's project here: %1").arg(error));
 		return;
 	}
@@ -260,8 +261,9 @@ void CollabClient::onCommand(const QJsonObject& message)
 	const quint64 sequence = static_cast<quint64>(message.value(QStringLiteral("seq")).toDouble());
 	QString error;
 	const QString command = message.value(QStringLiteral("cmd")).toString();
-	if (m_commandSink && !m_commandSink(command, message.value(QStringLiteral("args")).toObject(), &error))
+	if (!m_commandSink || !m_commandSink(command, message.value(QStringLiteral("args")).toObject(), &error))
 	{
+		if (!m_commandSink) { error = QStringLiteral("command sink is not installed"); }
 		m_haveSnapshot = false;
 		setState(m_state, QStringLiteral("'%1' from the host failed here (%2); re-syncing").arg(command, error));
 		requestResync(QStringLiteral("a streamed command failed"));
