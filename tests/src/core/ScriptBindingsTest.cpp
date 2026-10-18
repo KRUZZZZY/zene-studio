@@ -33,6 +33,7 @@
 
 #include "AutomatableModel.h"
 #include "AutomationTrack.h"
+#include "ControlRegistry.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
@@ -79,11 +80,13 @@ private slots:
 	{
 		using namespace lmms;
 		Engine::init(true);
+		ControlRegistry::setReady(true);
 	}
 
 	void cleanupTestCase()
 	{
 		using namespace lmms;
+		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
 
@@ -375,6 +378,149 @@ private slots:
 		QVERIFY(!store.track(99).asInstrumentTrack().isValid());
 		QVERIFY(!store.track(99).volumeModel().isValid());
 		QVERIFY(!store.track(99).muteModel().isValid());
+	}
+
+	/*! A Lua view names a project object it does not own, and a script can
+	 *  destroy that object in the SAME run: zene.command() is applied on the
+	 *  apply side while the run is still on the Lua stack. Every view saved
+	 *  across a project replacement must therefore report itself invalid and
+	 *  answer with the sentinel a null wrapper already answered with, never
+	 *  dereference the freed Track / MidiClip / model. */
+	void savedViewsOfAReplacedProjectAreInvalidated()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		const QString source = QStringLiteral(R"(
+local store = zene.patternStore()
+local row = store:addInstrumentTrack()
+row:setName('doomed')
+local index = store:trackCount() - 1
+local view = store:track(index)
+local clip = zene.song():pattern(0, index)
+local volume = row:volumeModel()
+local mute = view:muteModel()
+assert(view:isValid() and row:isValid() and clip:isValid(), 'setup: the views are live')
+assert(volume:isValid() and mute:isValid(), 'setup: the model views are live')
+local reply, err = zene.command('project.new')
+assert(reply ~= nil, tostring(err))
+assert(not view:isValid(), 'a Track view outlived the track it named')
+assert(not row:isValid(), 'an InstrumentTrack view outlived the track it named')
+assert(not clip:isValid(), 'a PatternClip view outlived the clip it named')
+assert(not volume:isValid(), 'a FloatModel view outlived the track that owned it')
+assert(not mute:isValid(), 'a BoolModel view outlived the track that owned it')
+assert(view:name() == '', 'Track:name() on a dead view')
+assert(view:type() == 'invalid', 'Track:type() on a dead view')
+assert(view:index() == -1, 'Track:index() on a dead view')
+assert(view:clipCount() == 0, 'Track:clipCount() on a dead view')
+assert(view:instrumentName() == '', 'Track:instrumentName() on a dead view')
+assert(not view:asInstrumentTrack():isValid(), 'Track:asInstrumentTrack() on a dead view')
+assert(not view:volumeModel():isValid(), 'Track:volumeModel() on a dead view')
+assert(not view:muteModel():isValid(), 'Track:muteModel() on a dead view')
+assert(row:name() == '', 'InstrumentTrack:name() on a dead view')
+assert(row:instrumentName() == '', 'InstrumentTrack:instrumentName() on a dead view')
+assert(row:volume() == 0, 'InstrumentTrack:volume() on a dead view')
+assert(row:panning() == 0, 'InstrumentTrack:panning() on a dead view')
+assert(not row:instrument():isValid(), 'InstrumentTrack:instrument() on a dead view')
+assert(not row:volumeModel():isValid(), 'InstrumentTrack:volumeModel() on a dead view')
+assert(not row:panningModel():isValid(), 'InstrumentTrack:panningModel() on a dead view')
+assert(clip:name() == '', 'PatternClip:name() on a dead view')
+assert(clip:lengthTicks() == 0, 'PatternClip:lengthTicks() on a dead view')
+assert(clip:noteCount() == 0, 'PatternClip:noteCount() on a dead view')
+assert(volume:value() == 0, 'FloatModel:value() on a dead view')
+assert(volume:name() == '', 'FloatModel:name() on a dead view')
+assert(mute:value() == false, 'BoolModel:value() on a dead view')
+row:setName('ignored')
+view:setName('ignored')
+clip:setName('ignored')
+clip:clearNotes()
+volume:setValue(1)
+mute:setValue(true)
+print('dead views are inert')
+)");
+		QString error;
+		QCOMPARE(engine->runString(source, &error, QStringLiteral("=(dead views)")),
+			ScriptEngine::RunResult::Ok);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(engine->takeLogMessages().contains(QStringLiteral("dead views are inert")));
+		// A setter that had queued work on a freed target would show up here.
+		QCOMPARE(engine->pendingCommandCount(), 0);
+		engine->processCommands();
+	}
+
+	/*! The same hazard through the other project-replacing command: opening a
+	 *  project inside the sandbox discards the session the saved views name. */
+	void savedViewsOfAnOpenedProjectAreInvalidated()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		QTemporaryDir projectDir;
+		QVERIFY(projectDir.isValid());
+		engine->setProjectDir(projectDir.path());
+		const QString source = QStringLiteral(R"(
+local store = zene.patternStore()
+local row = store:addInstrumentTrack()
+local index = store:trackCount() - 1
+local view = store:track(index)
+local clip = zene.song():pattern(0, index)
+local volume = row:volumeModel()
+assert(view:isValid() and row:isValid() and clip:isValid() and volume:isValid(), 'setup')
+assert(zene.song():saveProject('replacement.mmp'), 'the sandbox project must be writable')
+local opened, err = zene.command('project.open', {path = 'replacement.mmp'})
+assert(opened ~= nil, tostring(err))
+assert(not view:isValid(), 'a Track view outlived the project it named')
+assert(not row:isValid(), 'an InstrumentTrack view outlived the project it named')
+assert(not clip:isValid(), 'a PatternClip view outlived the clip it named')
+assert(not volume:isValid(), 'a FloatModel view outlived the track that owned it')
+assert(view:name() == '' and view:type() == 'invalid' and view:index() == -1)
+assert(row:name() == '' and row:volume() == 0 and not row:instrument():isValid())
+assert(clip:name() == '' and clip:noteCount() == 0 and clip:lengthTicks() == 0)
+assert(volume:value() == 0 and volume:name() == '')
+print('opened views are inert')
+)");
+		QString error;
+		QCOMPARE(engine->runString(source, &error, QStringLiteral("=(opened views)")),
+			ScriptEngine::RunResult::Ok);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QVERIFY(engine->takeLogMessages().contains(QStringLiteral("opened views are inert")));
+		engine->setProjectDir(QDir::currentPath());
+	}
+
+	/*! A Lua view of an instrument must not outlive the instrument it names:
+	 *  replacing the track's instrument deletes the old one, and the saved
+	 *  view must report itself invalid and answer with the null sentinels. */
+	void instrumentViewInvalidatedWhenTargetDestroyed()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		LuaPatternStore store;
+		LuaInstrumentTrack& track = store.addInstrumentTrack();
+		QVERIFY(track.isValid());
+
+		auto* rawTrack = dynamic_cast<InstrumentTrack*>(engine->trackAt(0));
+		QVERIFY(rawTrack != nullptr);
+
+		// The DummyInstrument fallback gives a live instrument with no plugin module.
+		rawTrack->loadInstrument(QString());
+		QVERIFY(rawTrack->instrument() != nullptr);
+		QVERIFY(!track.instrumentName().isEmpty());
+
+		LuaInstrument& saved = track.instrument();
+		QVERIFY(saved.isValid());
+		QVERIFY(!saved.name().isEmpty());
+
+		// Replacing the instrument deletes the old one.
+		rawTrack->loadInstrument(QString());
+		QVERIFY(!saved.isValid());
+		QVERIFY(saved.name().isEmpty());
+		QCOMPARE(saved.parameterCount(), 0);
+		QVERIFY(saved.parameterName(0).isEmpty());
+		QVERIFY(!saved.parameterModel(0).isValid());
+
+		// A setter on the dead view must be a no-op and must not crash.
+		saved.name(); // read again
+		QCOMPARE(engine->pendingCommandCount(), 0);
 	}
 
 	void trackTypeNames_data()

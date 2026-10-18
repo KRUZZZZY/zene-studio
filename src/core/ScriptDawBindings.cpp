@@ -560,6 +560,8 @@ bool LuaMixerChannel::sendPreFader(int index) const
 // LuaFloatModel
 // ---------------------------------------------------------------------------
 
+LuaFloatModel::LuaFloatModel(AutomatableModel* model) : m_model(model) {}
+
 AutomatableModel* LuaFloatModel::resolve() const
 {
 	if (!m_mixerChannelId.isEmpty())
