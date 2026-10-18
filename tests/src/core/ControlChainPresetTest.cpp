@@ -47,6 +47,7 @@
 #include <QTemporaryDir>
 
 #include "ControlChainPresetSupport.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ConfigManager.h"
@@ -221,6 +222,26 @@ private slots:
 			QJsonObject{{QStringLiteral("name"), QStringLiteral("ControlChainPresetTest Renamed2")}});
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	//! Files beyond the control reader's documented cap must be refused before
+	//! their contents are copied into a QByteArray.
+	void fileReaderRefusesOversizedFiles()
+	{
+		constexpr qint64 kOversizedFileSize = 64LL * 1024 * 1024 + 1;
+		QTemporaryDir temp;
+		QVERIFY(temp.isValid());
+		const QString path = temp.filePath(QStringLiteral("oversized-state.xpf"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		QVERIFY(file.resize(kOversizedFileSize));
+		file.close();
+
+		QByteArray bytes("sentinel");
+		ControlResult error;
+		QVERIFY(!controlReadFileBytes(path, &bytes, &error));
+		QCOMPARE(error.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(bytes, QByteArray("sentinel"));
 	}
 
 	//! Every command of the group declares the contract's parts.

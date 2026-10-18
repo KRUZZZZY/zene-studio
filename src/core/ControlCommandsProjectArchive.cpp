@@ -352,7 +352,8 @@ void registerProjectRelink(ControlRegistry& registry)
 						"be undone; fallback: keep a copy of %1 and edit it with an external "
 						"tool").arg(project));
 			}
-			if (!controlReadFileBytes(project, &previous, &error)) { return error; }
+			if (!controlReadFileBytes(project, &previous, &error,
+				ControlFileReadPurpose::ProjectDocument)) { return error; }
 		}
 
 		ProjectAssetRelink relink;

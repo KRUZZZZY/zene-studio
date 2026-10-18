@@ -239,8 +239,17 @@ LMMS_EXPORT ControlResult controlRestoreCapturedState(const QString& targetId,
 LMMS_EXPORT QString controlUserPresetDir(const ControlDeviceHandle& handle);
 LMMS_EXPORT QString controlFactoryPresetDir(const ControlDeviceHandle& handle);
 
-//! File helpers for the state/preset commands.
-LMMS_EXPORT bool controlReadFileBytes(const QString& path, QByteArray* bytes, ControlResult* error);
+//! Selects the bounded reader's input class. Project documents have a separate
+//! allowance from device state and preset files.
+enum class ControlFileReadPurpose
+{
+	ControlData,
+	ProjectDocument,
+};
+
+//! File helpers for control data; project-document callers request their own bound.
+LMMS_EXPORT bool controlReadFileBytes(const QString& path, QByteArray* bytes, ControlResult* error,
+	ControlFileReadPurpose purpose = ControlFileReadPurpose::ControlData);
 LMMS_EXPORT bool controlWriteFileBytes(const QString& path, const QByteArray& bytes,
 	bool overwrite, ControlResult* error);
 LMMS_EXPORT QString controlSha256OfBytes(const QByteArray& bytes);

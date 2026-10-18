@@ -160,6 +160,30 @@ QString writeFixture(const QString& dir, const QString& projectName, bool intact
 	return project;
 }
 
+//! Pads a valid project with an XML comment without holding the padding in memory.
+bool writeOver64MiBProject(const QString& path, const QByteArray& document)
+{
+	const qsizetype closeAt = document.lastIndexOf("</zene-project>");
+	if (closeAt < 0) { return false; }
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)
+		|| file.write(document.constData(), closeAt) != closeAt || file.write("<!--", 4) != 4)
+	{
+		return false;
+	}
+	QByteArray chunk(1024 * 1024, 'x');
+	qint64 remaining = 64LL * 1024 * 1024 + 1;
+	while (remaining > 0)
+	{
+		const qint64 count = qMin<qint64>(remaining, chunk.size());
+		if (file.write(chunk.constData(), count) != count) { return false; }
+		remaining -= count;
+	}
+	return file.write("-->", 3) == 3
+		&& file.write(document.constData() + closeAt, document.size() - closeAt)
+			== document.size() - closeAt;
+}
+
 //! The reference whose stored value is \a raw.
 QJsonObject referenceWithRaw(const QJsonArray& references, const QString& raw)
 {
@@ -741,6 +765,32 @@ private slots:
 				qPrintable(QStringLiteral("the advertised inverse %1 is missing the required "
 					"argument '%2'").arg(op, required.toString())));
 		}
+	}
+
+	//! Project-document reads retain the recovery-size allowance on both
+	//! project.relink and project.collect_media, above the 64 MiB device-state cap.
+	void relinkAndCollectMediaAcceptProjectFilesAbove64MiB()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString project = writeFixture(dir.path(), QStringLiteral("large.mmp"), false);
+		const QByteArray document = fixtureDocument(dir.path());
+		QVERIFY(writeOver64MiBProject(project, document));
+		QVERIFY(QFileInfo(project).size() > 64LL * 1024 * 1024);
+		const QString found = dir.path() + QStringLiteral("/found/gone.wav");
+		QVERIFY(writeBytes(found, fakeWave(48)));
+
+		const ControlResult relinked = run(QStringLiteral("project.relink"), QJsonObject{
+			{QStringLiteral("project"), project},
+			{QStringLiteral("from"), QStringLiteral("gone.wav")},
+			{QStringLiteral("to"), found}});
+		QVERIFY2(relinked.ok, qPrintable(relinked.errorMessage));
+		QVERIFY(QFileInfo(project).size() > 64LL * 1024 * 1024);
+
+		const ControlResult collected = run(QStringLiteral("project.collect_media"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(collected.ok, qPrintable(collected.errorMessage));
+		QVERIFY(QFileInfo(project).size() > 64LL * 1024 * 1024);
 	}
 
 	//! A relink that cannot identify the media must refuse and write NOTHING.
