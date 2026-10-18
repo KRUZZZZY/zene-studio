@@ -230,13 +230,14 @@ bool trimHeadToFrame(SampleClip* clip, f_cnt_t frame, QString* why, bool checkOn
 bool trimTailToFrame(SampleClip* clip, f_cnt_t frame, QString* why, bool checkOnly)
 {
 	if (!frameEditable(*clip, why)) { return false; }
-	const tick_t tail = tailTick(*clip, frame);
-	if (frame <= clip->sampleWindow().sourceIn || tail <= clip->startPosition().getTicks())
+	const f_cnt_t at = std::min(frame, static_cast<f_cnt_t>(clip->sample().sampleSize()));
+	const tick_t tail = tailTick(*clip, at);
+	if (at <= clip->sampleWindow().sourceIn || tail <= clip->startPosition().getTicks())
 	{
 		say(why, QStringLiteral("an end at frame %1 would not be after the clip's start").arg(frame));
 		return false;
 	}
-	if (!checkOnly) { applyTail(clip, std::min(frame, static_cast<f_cnt_t>(clip->sample().sampleSize())), tail); }
+	if (!checkOnly) { applyTail(clip, at, tail); }
 	return true;
 }
 
