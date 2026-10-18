@@ -32,6 +32,8 @@ WHAT IT ASSERTS, in numbers read off the wire:
   * arming it is reversible (a recorded action checkpoint) and STARTS a measurement: the
     readings are null immediately after, and blocks_fed then grows on its own, i.e. the
     engine's audio thread is feeding the tap (the tap is live, not a fixture);
+  * one control.undo takes a real arm back to disarmed (the ORIGINAL inverse check, kept
+    verbatim: arm, then undo, then armed false);
   * repeating a disarm while already disarmed adds no undo step: one control.undo still
     reverses the preceding real disarm and restores the armed state;
   * repeating an arm while armed preserves its in-progress measurement;
@@ -576,14 +578,35 @@ def check_refusals(session, recorder, workdir):
 
 
 def check_master_arm_undo(session, recorder):
-    """A no-op disarm must leave the preceding real arm transition undoable."""
+    """The inverse: control.undo takes the armed flag back."""
+    session.result("meter.arm", {"enabled": False})
+    session.result("meter.arm", {"enabled": True})
+    recorder.check("armed for the undo check",
+                   session.result("meter.get_state").get("armed") is True,
+                   "armed")
+    session.result("control.undo")
+    state = session.result("meter.get_state")
+    recorder.check("control.undo returns the tap to its previous armed state",
+                   state.get("armed") is False,
+                   "armed=%r after undo" % state.get("armed"))
+
+
+def check_noop_disarm_adds_no_history(session, recorder):
+    """The no-op disarm, as its own scenario on top of the one above.
+
+    It is a SECOND helper rather than an extension of check_master_arm_undo because
+    the two read the same stack in opposite directions: the check above asks one
+    control.undo to take an ARM back to disarmed, and this one asks it to take a
+    DISARM back to armed past a repeated disarm. Merging them can only prove one of
+    the two, so each keeps its own sequence, its own assertion and its own undo.
+    """
     session.result("meter.arm", {"enabled": False})
     session.result("meter.arm", {"enabled": True})
     session.result("meter.arm", {"enabled": False})
     transactions_before_noop = meter_records(session)
     session.result("meter.arm", {"enabled": False})
     transactions_after_noop = meter_records(session)
-    recorder.check("armed for the undo check",
+    recorder.check("disarmed for the no-op undo check",
                    session.result("meter.get_state").get("armed") is False,
                    "disarmed after the repeated disarm")
     session.result("control.undo")
@@ -622,6 +645,7 @@ def run_checks(session, workdir, fixtures, recorder):
     check_render_is_byte_identical_with_the_tap_attached(session, recorder, workdir, fixtures)
     check_refusals(session, recorder, workdir)
     check_master_arm_undo(session, recorder)
+    check_noop_disarm_adds_no_history(session, recorder)
 
 
 def main(argv):
