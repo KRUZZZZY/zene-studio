@@ -1470,7 +1470,7 @@ void ClipView::pressLocked(QMouseEvent* me)
 	if (me->modifiers() & KBD_COPY_MODIFIER) { setSelected(!isSelected()); }
 	else if (!isSelected())
 	{
-		getGUI()->songEditor()->m_editor->selectAllClips(false);
+		if (!(me->modifiers() & Qt::ShiftModifier)) { getGUI()->songEditor()->m_editor->selectAllClips(false); }
 		setSelected(true);
 	}
 	if (m_trackView->trackContainerView()->knifeMode())
