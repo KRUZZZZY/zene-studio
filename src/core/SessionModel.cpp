@@ -45,6 +45,20 @@ using namespace sessionSerialization;
 // claim helpers (ARCH-4 S8) - one spelling, still TU-private through this
 // header's include.
 
+//! Reads the launch quantisation a <session> or <z:scenes> element persists. A
+//! value that does not parse as an integer is not a grid, so it takes the
+//! default, the fallback launchQuantisationFromInt() gives any non-grid integer.
+//! QString::toInt() reports a failed conversion as 0, which is the None grid,
+//! so the failure must not reach that function as 0.
+LaunchQuantisation restoreGlobalLaunchQuantisation( const QDomElement& element )
+{
+	bool ok = false;
+	const int value = element.attribute( QStringLiteral( "launchquantisation" ),
+		QString::number( static_cast<int>( SessionModel::DefaultLaunchQuantisation ) ) ).toInt( &ok );
+	return ok ? launchQuantisationFromInt( value, false ) : SessionModel::DefaultLaunchQuantisation;
+}
+
+
 //! Restores every <scene> child of a <session> block.
 bool restoreScenes( const QDomElement& scenesElement, std::vector<Scene>& scenes )
 {
@@ -409,9 +423,7 @@ bool SessionModel::restoreState( const QDomElement& element )
 	m_hadSessionBlock = true;
 	resize( tracks, scenes );
 
-	m_globalLaunchQuantisation = launchQuantisationFromInt(
-		element.attribute( QStringLiteral( "launchquantisation" ),
-			QString::number( static_cast<int>( DefaultLaunchQuantisation ) ) ).toInt(), false );
+	m_globalLaunchQuantisation = restoreGlobalLaunchQuantisation( element );
 
 	if( !restoreScenes( element.firstChildElement( QStringLiteral( "scenes" ) ), m_scenes )
 		|| !restoreClips( element.firstChildElement( QStringLiteral( "clips" ) ), *this ) )
@@ -520,9 +532,7 @@ bool SessionModel::restoreScenesSection( const QDomElement& section )
 
 	SessionModel candidate;
 	candidate.resize( tracks, scenes );
-	candidate.m_globalLaunchQuantisation = launchQuantisationFromInt(
-		section.attribute( QStringLiteral( "launchquantisation" ),
-			QString::number( static_cast<int>( DefaultLaunchQuantisation ) ) ).toInt(), false );
+	candidate.m_globalLaunchQuantisation = restoreGlobalLaunchQuantisation( section );
 
 	for( QDomNode node = section.firstChild(); !node.isNull(); node = node.nextSibling() )
 	{
