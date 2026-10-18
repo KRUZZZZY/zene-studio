@@ -2482,3 +2482,4 @@ include/RackZones.h	2026-10-15 cluster new-p8-131-port: a zone edit takes an opt
 src/core/RackZones.cpp	2026-10-15 cluster new-p8-131-port: addZone and assign run the optional companion step inside their edit, before the changed hook
 src/core/InstrumentLayers.cpp	2026-10-15 cluster new-p8-131-port: a layer add, insert or removal publishes its zone renumbering and its layer slot as one edit
 plugins/GigPlayer/GigPlayer.cpp	BUG-8 (new-p9-155): normalize signed 16-bit GIG PCM by 32768; covered by PluginPortsMigrationTest::slice8PluginsAreLiveAndExact and the gigplayer 2x reference assertion.
+src/core/DrumSynth.cpp	cluster new-p9-100-port: bound .ds envelope parsing to the 31 usable points of each 32-slot row (the last slot holds the end sentinel) so a 32nd point no longer overwrites the first level; the store moved into storeEnvelopeValue; covered by DrumSynthTest::ignoresEnvelopePointsBeyondSupportedCapacity.

@@ -24,10 +24,54 @@
 #include <QFile>
 #include <QTemporaryDir>
 #include <algorithm>
+#include <memory>
+#include <vector>
 
 #include "DrumSynth.h"
 
 using namespace lmms;
+
+namespace
+{
+
+// "0,9 4,9 8,9 ..." with the given number of points.
+QString envelopeText(int points)
+{
+	QString result;
+	for (int point = 0; point < points; ++point)
+	{
+		if (point > 0) { result += QLatin1Char(' '); }
+		result += QStringLiteral("%1,9").arg(point * 4);
+	}
+	return result;
+}
+
+bool writeToneFixture(const QString& path, const QString& toneEnvelope)
+{
+	const auto contents = QStringLiteral(
+		"[General]\n"
+		"Version=DrumSynth v2.0\n"
+		"[Tone]\n"
+		"On=1\n"
+		"Level=100\n"
+		"Envelope=%1\n"
+		"F1=440\n"
+		"F2=220\n").arg(toneEnvelope).toUtf8();
+	QFile file(path);
+	return file.open(QIODevice::WriteOnly) && file.write(contents) == contents.size();
+}
+
+std::vector<int16_t> render(const QString& path)
+{
+	DrumSynth synth;
+	int16_t* rawSamples = nullptr;
+	const int frames = synth.GetDSFileSamples(path, rawSamples, 1, 44100);
+	const auto samples = std::unique_ptr<int16_t[]>{rawSamples};
+	if (frames <= 0 || !samples) { return {}; }
+	return {samples.get(), samples.get() + frames};
+}
+
+} // namespace
 
 class DrumSynthTest : public QObject
 {
@@ -66,6 +110,25 @@ Envelope=0,00000001 100,0
 
 		QVERIFY2(rendered, "the valid file around the malformed envelope must still render");
 		QVERIFY2(silent, "an eight-character envelope level must be rejected safely");
+	}
+
+	void ignoresEnvelopePointsBeyondSupportedCapacity()
+	{
+		// envpts holds 32 points per envelope and needs one slot for the end sentinel, so the 32nd
+		// point must be dropped rather than written past the array and into the first level.
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString prefixPath = directory.filePath(QStringLiteral("prefix.ds"));
+		const QString oversizedPath = directory.filePath(QStringLiteral("oversized.ds"));
+		QVERIFY(writeToneFixture(prefixPath, envelopeText(31)));
+		QVERIFY(writeToneFixture(oversizedPath, envelopeText(32)));
+
+		const auto prefixSamples = render(prefixPath);
+		const auto oversizedSamples = render(oversizedPath);
+		QVERIFY(!prefixSamples.empty());
+		QCOMPARE(oversizedSamples.size(), prefixSamples.size());
+		QVERIFY2(oversizedSamples == prefixSamples,
+			"an envelope point beyond the supported capacity changed the rendered prefix");
 	}
 };
 
