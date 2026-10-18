@@ -122,9 +122,11 @@ ProcessStatus MultitapEchoEffect::processImpl(InterleavedBufferView<float, 2> in
 		float offset = stepLength;
 		for( int i = 0; i < steps; ++i ) // add all steps swapped
 		{
+			SampleFrame* filterInput = reinterpret_cast<SampleFrame*>(inOut.data());
 			for( int s = 0; s < m_stages; ++s )
 			{
-				runFilter(m_work, reinterpret_cast<SampleFrame*>(inOut.data()), m_filter[i][s], inOut.frames());
+				runFilter(m_work, filterInput, m_filter[i][s], inOut.frames());
+				filterInput = m_work;
 			}
 			m_buffer.writeSwappedAddingMultiplied(m_work, offset, inOut.frames(), m_amp[i]);
 			offset += stepLength;
@@ -135,9 +137,11 @@ ProcessStatus MultitapEchoEffect::processImpl(InterleavedBufferView<float, 2> in
 		float offset = stepLength;
 		for( int i = 0; i < steps; ++i ) // add all steps
 		{
+			SampleFrame* filterInput = reinterpret_cast<SampleFrame*>(inOut.data());
 			for( int s = 0; s < m_stages; ++s )
 			{
-				runFilter(m_work, reinterpret_cast<SampleFrame*>(inOut.data()), m_filter[i][s], inOut.frames());
+				runFilter(m_work, filterInput, m_filter[i][s], inOut.frames());
+				filterInput = m_work;
 			}
 			m_buffer.writeAddingMultiplied(m_work, offset, inOut.frames(), m_amp[i]);
 			offset += stepLength;
