@@ -58,6 +58,13 @@
 #include "embed.h"
 #include "plugin_export.h"
 
+// libgig 4.6 deprecates the sequential instrument/region getters in favour of the indexed API;
+// the plugin keeps using the iterators, whose behaviour is unchanged, so silence that one warning.
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 namespace lmms
 {
 
@@ -1406,3 +1413,7 @@ PLUGIN_EXPORT Plugin * lmms_plugin_main( Model *m, void * )
 
 
 } // namespace lmms
+
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif

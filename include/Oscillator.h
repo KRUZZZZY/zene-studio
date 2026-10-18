@@ -26,6 +26,7 @@
 #ifndef LMMS_OSCILLATOR_H
 #define LMMS_OSCILLATOR_H
 
+#include <array>
 #include <cassert>
 #include <fftw3.h>
 #include <memory>

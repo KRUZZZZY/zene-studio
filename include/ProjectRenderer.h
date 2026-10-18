@@ -25,6 +25,7 @@
 #ifndef LMMS_PROJECT_RENDERER_H
 #define LMMS_PROJECT_RENDERER_H
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <vector>

@@ -29,6 +29,7 @@
 class QDataStream;
 class QString;
 
+#include <array>
 #include "lmms_export.h"
 #include "interpolation.h"
 #include "LmmsTypes.h"

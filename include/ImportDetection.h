@@ -56,6 +56,7 @@
 #define LMMS_IMPORT_DETECTION_H
 
 #include <cstdint>
+#include <vector>
 
 #include <QString>
 #include <QVector>

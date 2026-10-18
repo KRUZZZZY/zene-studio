@@ -25,6 +25,8 @@
 
 #include <algorithm>
 
+#include "DeprecationHelper.h"
+
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
@@ -406,7 +408,7 @@ void installHelpEntries(QMenuBar* bar)
 	QAction* whatsThis = addCommandAction(help, HelpCenter::tr("What's This?"), QStringLiteral("app.help"),
 		[] { return CommandCall{QStringLiteral("app.help"), {{QStringLiteral("whats_this"), true}}, {}, QString(), false}; });
 	whatsThis->setObjectName(QStringLiteral("helpWhatsThis"));
-	whatsThis->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F1));
+	whatsThis->setShortcut(keySequence(Qt::SHIFT, Qt::Key_F1));
 	// Design theme 21: help for the focused control from the keyboard - no hovering, no click needed.
 	QAction* forThis = addCommandAction(help, HelpCenter::tr("Help for This"), QStringLiteral("app.help"),
 		[] { return CommandCall{QStringLiteral("app.help"), {{QStringLiteral("context"), true}}, {}, QString(), false}; });

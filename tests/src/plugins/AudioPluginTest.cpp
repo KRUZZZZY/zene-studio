@@ -147,15 +147,17 @@ constexpr qsizetype PatchSampleHeaderSize = 96;
 
 void writeLittleEndian16(QByteArray& data, qsizetype offset, std::uint16_t value)
 {
-	data[offset] = static_cast<char>(value & 0xff);
-	data[offset + 1] = static_cast<char>(value >> 8);
+	const int at = static_cast<int>(offset);  // Qt 5 QByteArray::operator[] takes int/uint; qsizetype is ambiguous
+	data[at] = static_cast<char>(value & 0xff);
+	data[at + 1] = static_cast<char>(value >> 8);
 }
 
 void writeLittleEndian32(QByteArray& data, qsizetype offset, std::uint32_t value)
 {
+	const int at = static_cast<int>(offset);
 	for (int byte = 0; byte < 4; ++byte)
 	{
-		data[offset + byte] = static_cast<char>((value >> (byte * 8)) & 0xff);
+		data[at + byte] = static_cast<char>((value >> (byte * 8)) & 0xff);
 	}
 }
 
@@ -171,10 +173,11 @@ auto makeSingleSamplePatch() -> QByteArray
 	writeLittleEndian32(patch, sample + 16, SampleFrames);
 	writeLittleEndian16(patch, sample + 20, 22050);
 	writeLittleEndian32(patch, sample + 30, 440000);
-	patch[PatchHeaderSize + PatchSampleHeaderSize] = 32;
-	patch[PatchHeaderSize + PatchSampleHeaderSize + 1] = -32;
-	patch[PatchHeaderSize + PatchSampleHeaderSize + 2] = 64;
-	patch[PatchHeaderSize + PatchSampleHeaderSize + 3] = -64;
+	const int sampleAt = static_cast<int>(PatchHeaderSize + PatchSampleHeaderSize);  // Qt 5 QByteArray::operator[] takes int/uint
+	patch[sampleAt] = 32;
+	patch[sampleAt + 1] = -32;
+	patch[sampleAt + 2] = 64;
+	patch[sampleAt + 3] = -64;
 	return patch;
 }
 

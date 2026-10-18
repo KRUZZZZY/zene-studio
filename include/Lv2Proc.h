@@ -33,6 +33,7 @@
 #include <lilv/lilv.h>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include <ringbuffer/ringbuffer.h>
 

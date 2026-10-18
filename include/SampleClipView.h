@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_SAMPLE_CLIP_VIEW_H
 #define LMMS_GUI_SAMPLE_CLIP_VIEW_H
 
+#include <vector>
 #include "ClipView.h"
 
 #include "SampleClipOverlays.h"

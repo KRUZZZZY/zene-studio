@@ -26,6 +26,7 @@
 #ifndef LMMS_DELAY_H
 #define LMMS_DELAY_H
 
+#include <array>
 #include <cmath>
 #include <limits>
 

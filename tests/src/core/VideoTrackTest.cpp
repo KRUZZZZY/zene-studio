@@ -428,7 +428,11 @@ private slots:
 		pump.request(lateClip, 0.5, QSize(32, 18), 1);
 		QTRY_COMPARE_WITH_TIMEOUT(tag, 1, 10000);
 		QVERIFY(got.isNull());
+#ifdef ZENE_HAVE_FFMPEG
 		QVERIFY(videotest::makeClip(lateClip));
+#else
+		QSKIP("this build has no FFmpeg");
+#endif
 
 		pump.request(lateClip, 0.5, QSize(32, 18), 2);
 		QTRY_COMPARE_WITH_TIMEOUT(tag, 2, 10000);

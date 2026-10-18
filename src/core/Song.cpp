@@ -2909,7 +2909,14 @@ std::shared_ptr<const Scale> Song::getScale(unsigned int index) const
 {
 	if (index >= MaxScaleCount) {index = 0;}
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 	return std::atomic_load(&m_scales[index]);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 }
 
 
@@ -2917,7 +2924,14 @@ std::shared_ptr<const Keymap> Song::getKeymap(unsigned int index) const
 {
 	if (index >= MaxKeymapCount) {index = 0;}
 
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 	return std::atomic_load(&m_keymaps[index]);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 }
 
 
@@ -2926,7 +2940,14 @@ void Song::setScale(unsigned int index, std::shared_ptr<Scale> newScale)
 	if (index >= MaxScaleCount) {index = 0;}
 
 	Engine::audioEngine()->requestChangeInModel();
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 	std::atomic_store(&m_scales[index], newScale);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 	emit scaleListChanged(index);
 	Engine::audioEngine()->doneChangeInModel();
 }
@@ -2937,7 +2958,14 @@ void Song::setKeymap(unsigned int index, std::shared_ptr<Keymap> newMap)
 	if (index >= MaxKeymapCount) {index = 0;}
 
 	Engine::audioEngine()->requestChangeInModel();
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 	std::atomic_store(&m_keymaps[index], newMap);
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 	emit keymapListChanged(index);
 	Engine::audioEngine()->doneChangeInModel();
 }

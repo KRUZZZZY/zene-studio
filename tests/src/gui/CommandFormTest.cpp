@@ -591,7 +591,7 @@ private slots:
 		spec.title = QStringLiteral("Rows");
 		spec.listId = QStringLiteral("formtest.list");
 		spec.arrayKey = QStringLiteral("rows");
-		spec.columns = {QStringLiteral("id"), QStringLiteral("n")};
+		spec.columns = QStringList{QStringLiteral("id"), QStringLiteral("n")};
 		spec.summaryKeys = QStringList{QStringLiteral("total")};
 		RowAction take;
 		take.label = QStringLiteral("Take");
@@ -636,7 +636,7 @@ private slots:
 		spec.title = QStringLiteral("Rows");
 		spec.listId = QStringLiteral("formtest.list");
 		spec.arrayKey = QStringLiteral("rows");
-		spec.columns = {QStringLiteral("id"), QStringLiteral("n")};
+		spec.columns = QStringList{QStringLiteral("id"), QStringLiteral("n")};
 		RowAction take;
 		take.label = QStringLiteral("Take");
 		take.id = QStringLiteral("formtest.take");

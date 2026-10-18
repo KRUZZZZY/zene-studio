@@ -24,6 +24,7 @@
 #include <QElapsedTimer>
 #include <QTimer>
 #include <QObject>
+#include <vector>
 
 #include "Note.h"
 
