@@ -1193,6 +1193,8 @@ plugins/NeuralAmp/NeuralAmpEffect.h
 plugins/NeuralAmp/tests/wav_write_failure_test.py
 # BUG new-p9-317: compare_rate_test.py exercises the real harness CLI with equal-length WAVs at different rates.
 plugins/NeuralAmp/tests/compare_rate_test.py
+# BUG new-p9-315: nam_harness_rate_test.py drives the real harness CLI with invalid generated and WAV sample rates.
+plugins/NeuralAmp/tests/nam_harness_rate_test.py
 plugins/NeuralAmp/tests/NamModelMonoOutputTest.cpp
 plugins/Receiver/Receiver.cpp
 plugins/Receiver/Receiver.h

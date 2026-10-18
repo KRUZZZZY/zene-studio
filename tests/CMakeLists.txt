@@ -5844,3 +5844,12 @@ endif()
 # Q050-024: LinkAudioStreamTest runs Ableton Link (confined to loopback, but it still binds the
 # group port 20808 on lo), so it must not overlap a test that multicasts on 224.76.78.75:20808.
 set_tests_properties(LinkAudioStreamTest PROPERTIES RUN_SERIAL TRUE)
+# BUG new-p9-315: exercise the NAM harness's generated-signal and WAV rate
+# validation through its command line using a small deterministic model fixture.
+if(PYTHON3_EXECUTABLE AND TARGET nam_harness)
+	add_test(NAME NeuralAmpHarnessRateValidation
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/tests/nam_harness_rate_test.py
+			$<TARGET_FILE:nam_harness>)
+	set_tests_properties(NeuralAmpHarnessRateValidation PROPERTIES TIMEOUT 60)
+endif()

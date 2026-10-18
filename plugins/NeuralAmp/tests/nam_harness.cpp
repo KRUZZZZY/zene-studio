@@ -471,6 +471,11 @@ int main(int argc, char** argv)
 	}
 	opt.modelPath = positional.front();
 
+	if (!std::isfinite(opt.sampleRate) || opt.sampleRate <= 0.0)
+	{
+		std::fprintf(stderr, "error: --sample-rate must be finite and positive\n");
+		return 2;
+	}
 	if (opt.blockSize < 1 || opt.blockSize > lmms::nam::NamModel::kMaxBlock)
 	{
 		std::fprintf(stderr, "error: --block must be in [1, %d]\n",
