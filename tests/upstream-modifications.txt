@@ -2550,3 +2550,4 @@ src/core/main.cpp	BUG new-p12-124: end crash-reporter and safe-start sessions be
 include/Clip.h	cluster new-p11-70 rework: clipEditsChanged identifies clip-edit updates so the crossfade editor ignores unrelated model changes.
 src/core/Clip.cpp	cluster new-p11-70 rework: setClipEdits emits clipEditsChanged when edits change, allowing the crossfade editor to refresh selectively.
 tests/src/gui/CrossfadeEditorTest.cpp	cluster new-p11-70 rework: cover preserving pending values across clip rename and refreshing after external fade edits.
+src/gui/clips/MidiClipView.cpp	new-p12-134: crop and rebase controller-lane points, including interpolated trim/split boundaries, with the arranger's destructive MIDI clip edits; held by tests/src/gui/MidiClipLinkedEditTest.cpp.

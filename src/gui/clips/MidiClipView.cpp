@@ -77,6 +77,31 @@ void setMidiClipName(MidiClip* clip, const QString& name)
 	Engine::getSong()->setModified();
 }
 
+std::vector<ControllerPoint> controllerPrefix(const ControllerLane& lane, tick_t end)
+{
+	std::vector<ControllerPoint> points;
+	for (const ControllerPoint& point : lane.points)
+	{
+		if (point.tick <= end) { points.push_back(point); }
+	}
+	const int endValue = lane.valueAt(end);
+	if (points.empty()) { points.push_back({end, endValue}); }
+	else if (points.back().tick < end && points.back().value != endValue) { points.push_back({end, endValue}); }
+	return points;
+}
+
+std::vector<ControllerPoint> controllerSegment(const ControllerLane& lane, tick_t start, tick_t end)
+{
+	std::vector<ControllerPoint> points{{0, lane.valueAt(start)}};
+	for (const ControllerPoint& point : lane.points)
+	{
+		if (point.tick > start && point.tick < end) { points.push_back({point.tick - start, point.value}); }
+	}
+	const int endValue = lane.valueAt(end);
+	if (points.back().value != endValue) { points.push_back({end - start, endValue}); }
+	return points;
+}
+
 } // namespace
 
 constexpr int BeatStepButtonOffset = 4;
@@ -453,6 +478,11 @@ void MidiClipView::clearNotesOutOfBounds()
 			newNote.setLength(newLength);
 			newClip->addNote(newNote, false);
 		}
+	}
+	for (const ControllerLane& lane : m_clip->controllers().lanes())
+	{
+		newClip->setControllerPoints(lane.kind, lane.controller,
+			controllerSegment(lane, startBound.getTicks(), endBound.getTicks()));
 	}
 	newClip->setStartTimeOffset(0);
 	newClip->changeLength(m_clip->length());
@@ -1001,6 +1031,15 @@ bool MidiClipView::destructiveSplitClip(const TimePos pos)
 			movedNote.setLength(internalSplitPos - note->pos());
 			leftClip->addNote(movedNote, false);
 		}
+	}
+
+	const tick_t splitTick = internalSplitPos.getTicks();
+	const tick_t controllerEnd = m_clip->length().getTicks() - m_clip->startTimeOffset().getTicks();
+	for (const ControllerLane& lane : m_clip->controllers().lanes())
+	{
+		leftClip->setControllerPoints(lane.kind, lane.controller, controllerPrefix(lane, splitTick));
+		rightClip->setControllerPoints(lane.kind, lane.controller,
+			controllerSegment(lane, splitTick, controllerEnd));
 	}
 
 	leftClip->movePosition(m_initialClipPos);
