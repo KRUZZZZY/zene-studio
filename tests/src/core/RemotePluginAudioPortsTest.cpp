@@ -30,7 +30,9 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
+#include <type_traits>
 
 #include <QDir>
 #include <QFile>
@@ -239,6 +241,17 @@ class RemotePluginAudioPortsTest : public QObject
 {
 	Q_OBJECT
 
+	//! True when `ProcessWatcher::m_quit` is a `std::atomic<bool>`. Detection
+	//! fails closed (false) whenever the member is not visible from here - the
+	//! LMMS_TESTING friend seam missing, or the flag not atomic - so the
+	//! shutdown-flag race regression fails at run time instead of failing to
+	//! compile in both states.
+	template<typename T, typename = void>
+	struct WatcherQuitFlagIsAtomic : std::false_type {};
+	template<typename T>
+	struct WatcherQuitFlagIsAtomic<T, std::void_t<decltype(T::m_quit)>>
+		: std::is_same<decltype(T::m_quit), std::atomic<bool>> {};
+
 private slots:
 	void initTestCase()
 	{
@@ -250,6 +263,15 @@ private slots:
 	void cleanupTestCase()
 	{
 		Engine::destroy();
+	}
+
+	//! `ProcessWatcher::m_quit` is stored by stop()/reset() on the calling
+	//! thread while the watcher's run() loop reads it on its own thread.
+	//! `volatile` does not synchronize those accesses (a C++ data race, so
+	//! shutdown need not be observed reliably); the flag must be an atomic.
+	void processWatcherQuitFlagIsAtomic()
+	{
+		QVERIFY(( WatcherQuitFlagIsAtomic<ProcessWatcher>::value ));
 	}
 
 	//! RemotePlugin's ctor attaches its buffers to the ports and its dtor

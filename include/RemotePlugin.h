@@ -43,6 +43,10 @@
 #include "SharedMemory.h"
 #include "LmmsTypes.h"
 
+#ifdef LMMS_TESTING
+class RemotePluginAudioPortsTest;
+#endif
+
 namespace lmms
 {
 
@@ -88,8 +92,12 @@ public:
 private:
 	void run() override;
 
+#ifdef LMMS_TESTING
+	friend class ::RemotePluginAudioPortsTest;
+#endif
+
 	RemotePlugin * m_plugin;
-	volatile bool m_quit;
+	std::atomic<bool> m_quit;
 
 } ;
 
