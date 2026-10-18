@@ -102,6 +102,78 @@
 #include "TempoSyncKnobModel.h"
 #include "../../../plugins/Xpressive/ExprSynth.h"
 
+namespace array_allocation_probe
+{
+
+struct Report
+{
+	std::size_t allocations = 0;
+	std::size_t outstanding = 0;
+	bool overflow = false;
+};
+
+constexpr std::size_t MaxTrackedPointers = 16;
+
+thread_local bool g_tracking = false;
+thread_local std::size_t g_size = 0;
+thread_local std::size_t g_allocations = 0;
+thread_local std::size_t g_outstanding = 0;
+thread_local bool g_overflow = false;
+thread_local void* g_pointers[MaxTrackedPointers]{};
+
+void start(std::size_t size)
+{
+	g_size = size;
+	g_allocations = 0;
+	g_outstanding = 0;
+	g_overflow = false;
+	for (auto& pointer : g_pointers) { pointer = nullptr; }
+	g_tracking = true;
+}
+
+Report stop()
+{
+	g_tracking = false;
+	const Report report{g_allocations, g_outstanding, g_overflow};
+	for (auto& pointer : g_pointers) { pointer = nullptr; }
+	g_outstanding = 0;
+	g_allocations = 0;
+	g_size = 0;
+	return report;
+}
+
+inline void allocation(void* pointer, std::size_t size)
+{
+	if (!g_tracking || size != g_size) { return; }
+	++g_allocations;
+	++g_outstanding;
+	for (auto& tracked : g_pointers)
+	{
+		if (tracked == nullptr)
+		{
+			tracked = pointer;
+			return;
+		}
+	}
+	g_overflow = true;
+}
+
+inline void deallocation(void* pointer)
+{
+	if (pointer == nullptr || g_outstanding == 0) { return; }
+	for (auto& tracked : g_pointers)
+	{
+		if (tracked == pointer)
+		{
+			tracked = nullptr;
+			--g_outstanding;
+			return;
+		}
+	}
+}
+
+} // namespace array_allocation_probe
+
 void* operator new(std::size_t size)
 {
 	partc::RealtimeAllocationWatch::allocation();
@@ -111,7 +183,9 @@ void* operator new(std::size_t size)
 
 void* operator new[](std::size_t size)
 {
-	return ::operator new(size);
+	void* allocation = ::operator new(size);
+	array_allocation_probe::allocation(allocation, size);
+	return allocation;
 }
 
 void operator delete(void* allocation) noexcept
@@ -127,11 +201,13 @@ void operator delete(void* allocation, std::size_t) noexcept
 
 void operator delete[](void* allocation) noexcept
 {
+	array_allocation_probe::deallocation(allocation);
 	::operator delete(allocation);
 }
 
 void operator delete[](void* allocation, std::size_t) noexcept
 {
+	array_allocation_probe::deallocation(allocation);
 	::operator delete(allocation);
 }
 #include "../../../plugins/LadspaEffect/LadspaEffect.h"
@@ -684,6 +760,7 @@ public:
 
 private slots:
 	void initTestCase();
+	void freeBoyShapeBufferIsReleased();
 	void waveSampleDefaultsInterpolationToDisabled();
 	void gigPlayerAcceptsMidiNoteZero();
 	void lfoStartsFromInitializedState();
@@ -819,6 +896,50 @@ void PluginPortsMigrationTest::initTestCase()
 	qInfo("engine: sample rate %d, framesPerPeriod %d, buffers per plugin %d",
 		static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate()), static_cast<int>(frames), partc::Buffers);
 	QVERIFY(frames > 0);
+}
+
+void PluginPortsMigrationTest::freeBoyShapeBufferIsReleased()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_freeboy)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+
+	std::array<float, 32> shape{};
+	for (std::size_t i = 0; i < shape.size(); ++i)
+	{
+		shape[i] = static_cast<float>(i) / static_cast<float>(shape.size());
+	}
+	QString encodedShape;
+	lmms::base64::encode(reinterpret_cast<const char*>(shape.data()),
+		static_cast<int>(sizeof(shape)), encodedShape);
+	QDomDocument settingsDocument;
+	QDomElement settings = settingsDocument.createElement("instrument");
+	settings.setAttribute("sampleShape", encodedShape);
+
+	array_allocation_probe::start(sizeof(shape));
+	instrument->restoreState(settings);
+	const auto report = array_allocation_probe::stop();
+
+	QVERIFY2(report.allocations >= 1, "the decoded sample shape was not a tracked array allocation");
+	QVERIFY2(!report.overflow, "the tracked array allocation table overflowed");
+	QCOMPARE(report.outstanding, std::size_t{0});
+
+	QDomDocument savedDocument;
+	QDomElement savedParent = savedDocument.createElement("instrument");
+	const QDomElement saved = instrument->saveState(savedDocument, savedParent);
+	QCOMPARE(saved.attribute("sampleShape"), encodedShape);
 }
 
 void PluginPortsMigrationTest::waveSampleDefaultsInterpolationToDisabled()

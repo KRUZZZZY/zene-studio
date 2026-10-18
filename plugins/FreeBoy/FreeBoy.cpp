@@ -278,9 +278,10 @@ void FreeBoyInstrument::loadSettings( const QDomElement & _this )
 	m_bassModel.loadSettings( _this, "Bass" );
 
 	int size = 0;
-	char * dst = 0;
-	base64::decode( _this.attribute( "sampleShape"), &dst, &size );
-	m_graphModel.setSamples( (float*) dst );
+	char * decodedSamples = nullptr;
+	base64::decode( _this.attribute( "sampleShape"), &decodedSamples, &size );
+	const std::unique_ptr<char[]> dst{ decodedSamples };
+	m_graphModel.setSamples( reinterpret_cast<const float*>( dst.get() ) );
 }
 
 QString FreeBoyInstrument::nodeName() const
