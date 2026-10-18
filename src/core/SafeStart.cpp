@@ -288,9 +288,17 @@ bool install(const std::string& workingDirectory)
 	{
 		s.installed = false;
 		s.directory.clear();
-		// A fresh install is a fresh session context, even when it fails.
+		// A fresh install is a fresh session context, even when it fails: the
+		// safe-start decision of the session that no longer exists must not
+		// outlive it. The previous-run record (lastSession) is history and stays.
 		s.sessionBegun = false;
 		s.preserveSessionOnNextBegin = false;
+		s.markerWasPresent = false;
+		s.safeStart = false;
+		s.safeStartRuns = 0;
+		s.skipEnabled = true;
+		s.projectPath.clear();
+		s.skipped.clear();
 	};
 	if (workingDirectory.empty())
 	{
@@ -595,7 +603,7 @@ bool shouldSkipPluginInstance(const std::string& pluginName, const std::string& 
 {
 	(void) pluginName;
 	const State& s = state();
-	if (!s.safeStart || !s.skipEnabled) { return false; }
+	if (!s.installed || !s.safeStart || !s.skipEnabled) { return false; }
 	return isThirdPartyPluginFile(filePath);
 }
 
