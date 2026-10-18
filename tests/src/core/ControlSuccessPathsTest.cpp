@@ -63,6 +63,7 @@
 #include "Mixer.h"
 #include "ModulationTestSupport.h"
 #include "ProjectInfo.h"
+#include "ProjectJournal.h"
 #include "RackTestSupport.h"
 #include "Song.h"
 #include "Track.h"
@@ -485,13 +486,20 @@ private slots:
 		QVERIFY(probe.remove());
 
 		Song* const song = Engine::getSong();
+
+		// A known undoable change made before the failed creation. Its step - and the
+		// session content it describes - must come through the rollback untouched: a
+		// rollback that reloads a plain snapshot leaves the project but drops the history.
+		const ControlResult added = run(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("sample")},
+				{QStringLiteral("name"), QStringLiteral("Session that must survive save failure")}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QVERIFY2(Engine::projectJournal()->canUndo(), "the undoable change made no undo step to preserve");
+
 		const QString previousFile = song->projectFileName();
 		const bool previousModified = song->isModified();
 		const QString previousType = ProjectInfo::instance().documentType();
 		const QStringList previousRecentProjects = ConfigManager::inst()->recentlyOpenedProjects();
-		Track* const preserved = Track::create(Track::Type::Sample, song);
-		QVERIFY(preserved != nullptr);
-		preserved->setName(QStringLiteral("Session that must survive save failure"));
 		const auto hasPreservedTrack = [song]
 		{
 			return std::any_of(song->tracks().begin(), song->tracks().end(), [](const Track* track)
@@ -516,12 +524,20 @@ private slots:
 			{
 				return previousRecentProjects.contains(recent) || QFile::exists(recent);
 			});
+		const bool undoSurvived = Engine::projectJournal()->canUndo();
 		QVERIFY(QDir(partialPath).removeRecursively());
 		QVERIFY2(preservedAfterFailure, "a save-time failure replaced the current session");
 		QCOMPARE(fileAfterFailure, previousFile);
 		QCOMPARE(modifiedAfterFailure, previousModified);
 		QCOMPARE(typeAfterFailure, previousType);
 		QVERIFY2(newRecentPathsExist, "restoring the original session left a dead recent-project entry");
+		QVERIFY2(undoSurvived, "a save-time failure dropped the undo history of the restored session");
+
+		// The history is not only present but usable, and it is the step the change made.
+		REQUIRE_OK(run(QStringLiteral("control.undo")), "control.undo");
+		QVERIFY2(!hasPreservedTrack(), "control.undo did not take back the change made before the failed creation");
+		REQUIRE_OK(run(QStringLiteral("control.redo")), "control.redo");
+		QVERIFY2(hasPreservedTrack(), "control.redo did not restore the change made before the failed creation");
 	}
 
 private:

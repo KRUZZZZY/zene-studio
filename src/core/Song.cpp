@@ -82,40 +82,6 @@
 namespace lmms
 {
 
-namespace
-{
-
-thread_local bool suppressRecentProjectForLoad = false;
-
-//! Keeps a rollback snapshot out of the recent projects for as long as it is alive.
-class RecentProjectSuppression
-{
-public:
-	RecentProjectSuppression() : m_previous(suppressRecentProjectForLoad)
-	{
-		suppressRecentProjectForLoad = true;
-	}
-
-	~RecentProjectSuppression() { suppressRecentProjectForLoad = m_previous; }
-
-private:
-	bool m_previous;
-};
-
-} // namespace
-
-//! Loads @a path as a rollback snapshot, which is a temporary file rather than a project the user opened.
-//! Returns false, with the reason in @a refusal, when it does not load.
-bool loadProjectSnapshotWithoutRecent(Song& song, const QString& path, QString* refusal)
-{
-	{
-		RecentProjectSuppression suppressRecent;
-		song.loadProject(path);
-	}
-	if (refusal != nullptr) { *refusal = song.loadRefusal(); }
-	return song.loadRefusal().isEmpty();
-}
-
 // The load walk adopts at most ONE <z:provenance> element (restoreNamedSection). A second one - a file a
 // 0.4 build wrote into after refusing the first as unclaimed (two provenance elements in one file) - is kept
 // verbatim as unclaimed and re-emitted on save: adopting it would REPLACE the first's entries in memory
@@ -1969,7 +1935,7 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 
 	// WF-033: an undo-snapshot restore loads a temporary file; it is not a
 	// project the user opened.
-	if( !m_restoringSnapshot && !suppressRecentProjectForLoad ) { ConfigManager::inst()->addRecentlyOpenedProject( fileName ); }
+	if( !m_restoringSnapshot ) { ConfigManager::inst()->addRecentlyOpenedProject( fileName ); }
 
 	Engine::projectJournal()->setJournalling( true );
 

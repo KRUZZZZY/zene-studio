@@ -35,7 +35,6 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QStandardPaths>
-#include <QTemporaryDir>
 #include <QTemporaryFile>
 
 #include "ConfigManager.h"
@@ -57,8 +56,6 @@ namespace lmms
 {
 
 using namespace control;
-
-bool loadProjectSnapshotWithoutRecent(Song& song, const QString& path, QString* refusal);
 
 namespace
 {
@@ -169,19 +166,21 @@ bool recipeTemplateWritable(const QString& path)
 	return written && probe.remove();
 }
 
-//! Reload the session saved before a built-in recipe was tried: its file, modified flag and document type.
-ControlResult restoreSession(const QString& snapshotPath, const QString& projectFile, bool modified,
-	const QString& documentType)
+//! Reload the session saved before a built-in recipe was tried: its file, modified flag, document type and,
+//! because the restore is an undo-snapshot restore (Song::restoreUndoSnapshot), the undo/redo steps around it
+//! and the append-only provenance log. The content and the history are one document again, not just the file.
+ControlResult restoreSession(Song& song, const QByteArray& snapshot, const QString& previousFile,
+	const QStringList& skippedSections, bool previousModified)
 {
-	Song* const song = Engine::getSong();
-	QString refusal;
-	if (!loadProjectSnapshotWithoutRecent(*song, snapshotPath, &refusal))
+	if (!song.restoreUndoSnapshot(snapshot, previousFile, skippedSections))
 	{
-		return ControlResult::failure(ControlErrorKind::Refused, refusal);
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the original session could not be restored"));
 	}
-	song->noteProjectSaved(projectFile);
-	if (modified) { song->setModified(); }
-	ProjectInfo::instance().setDocumentType(documentType);
+	// The restore marks the session modified; put the flag back the way it was (the same two-step
+	// Song::noteProjectSaved performs for a save, here for a rollback).
+	song.noteProjectSaved(previousFile);
+	if (previousModified) { song.setModified(); }
 	return ControlResult::success();
 }
 
@@ -194,7 +193,8 @@ ControlResult restoredOr(const ControlResult& failed, const ControlResult& resto
 }
 
 //! A new document from @a recipe: built on a new project, written as a template, opened as one. The session it
-//! replaces is saved first and reloaded if any step fails, so a failed creation leaves that session as it was.
+//! replaces is captured first as an undo snapshot and put back if any step fails, so a failed creation leaves
+//! that session - its content, its undo/redo history and its provenance - the way it found it.
 ControlResult newFromRecipe(const Recipe& recipe, QStringList* missing)
 {
 	const QString path = recipeTemplatePath(recipe);
@@ -206,17 +206,26 @@ ControlResult newFromRecipe(const Recipe& recipe, QStringList* missing)
 	const QString previousFile = song->projectFileName();
 	const bool previousModified = song->isModified();
 	const QString previousType = ProjectInfo::instance().documentType();
-	QTemporaryDir snapshotDirectory;
-	const QString snapshotPath = snapshotDirectory.filePath(QStringLiteral("session.mmp"));
-	if (!snapshotDirectory.isValid() || !song->saveProjectFile(snapshotPath))
+	QStringList skippedSections;
+	const std::shared_ptr<const QByteArray> snapshot = song->captureUndoSnapshot(&skippedSections);
+	if (!snapshot)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("the current session could not be preserved before creating a %1 document")
 				.arg(QLatin1String(recipe.type)));
 	}
+	// The undo/redo stacks a project load clears (Song::clearProject -> clearJournal). Held here and put
+	// back with the restore, so a rollback gives the history back rather than an empty one.
+	ProjectJournal::DetachedHistory history = Engine::projectJournal()->detachHistory();
 	const auto restorePrevious = [&]()
 	{
-		return restoreSession(snapshotPath, previousFile, previousModified, previousType);
+		const ControlResult restored = restoreSession(*song, *snapshot, previousFile, skippedSections, previousModified);
+		if (restored.ok)
+		{
+			ProjectInfo::instance().setDocumentType(previousType);
+			Engine::projectJournal()->reattachHistory(std::move(history));
+		}
+		return restored;
 	};
 
 	ControlResult made = run(QStringLiteral("project.new"));
