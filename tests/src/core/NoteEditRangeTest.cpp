@@ -30,6 +30,7 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -170,6 +171,26 @@ private slots:
 		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
 		QCOMPARE(note->pos().getTicks(), 0);
 		QCOMPARE(note->length().getTicks(), 1);
+	}
+
+	//! new-p12-152: a saved quantise position with no quantise length was read as a one-tick
+	//! length (qlen defaulted to "1"), so note.restore_timing moved the note to that position
+	//! and shortened it to one tick. Both halves are required; a lone qpos restores nothing.
+	void savedTimingWithoutLengthIsIgnored()
+	{
+		freshClip();
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("notes"));
+		QDomElement element = Note(TimePos(48), TimePos(24), 60).saveState(doc, root);
+		element.setAttribute(QStringLiteral("qpos"), 192);
+		QVERIFY(!element.hasAttribute(QStringLiteral("qlen")));
+		m_clip->notes()[0]->restoreState(element);
+
+		const ControlResult restored = run(QStringLiteral("note.restore_timing"), {{QStringLiteral("clip"), clip()}});
+		QVERIFY(restored.ok);
+		QCOMPARE(restored.result.value(QStringLiteral("restored")).toInt(), 0);
+		QCOMPARE(m_clip->notes()[0]->pos().getTicks(), 24);
+		QCOMPARE(m_clip->notes()[0]->length().getTicks(), 48);
 	}
 };
 

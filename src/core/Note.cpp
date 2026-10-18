@@ -94,7 +94,7 @@ void loadUnquantisedTiming( const QDomElement& element, tick_t& pos, tick_t& len
 	bool posOk = false;
 	bool lengthOk = false;
 	const int storedPos = element.attribute( "qpos" ).toInt( &posOk );
-	const int storedLength = element.attribute( "qlen", "1" ).toInt( &lengthOk );
+	const int storedLength = element.attribute( "qlen" ).toInt( &lengthOk );
 	if( !posOk || !lengthOk || storedPos < 0 || storedLength < 1 ) { return; }
 
 	pos = storedPos;
