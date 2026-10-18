@@ -218,6 +218,10 @@ void SampleClip::armRecordTake()
 	if (isRecord())
 	{
 		++m_armGeneration;
+		// The pass count belongs to the arming it counted: a clip armed again after a loop pass
+		// must record its first take as the clip's own content, not as one more take on a lane
+		// (BUG 11, new-p12-206).
+		m_recordPasses = 0;
 		{
 			// The render thread reads the playing latch; write it under the lock it renders under.
 			const auto guard = Engine::audioEngine()->requestChangesGuard();
