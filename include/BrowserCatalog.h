@@ -59,6 +59,8 @@
 
 #include "lmms_export.h"
 
+class QFileInfo;
+
 namespace lmms
 {
 
@@ -89,6 +91,9 @@ LMMS_EXPORT QString browserKindName(BrowserKind kind);
 LMMS_EXPORT bool browserKindFromName(const QString& name, BrowserKind* kind);
 //! The kind of \a path, from its extension.
 LMMS_EXPORT BrowserKind browserKindForPath(const QString& path);
+//! True when \a info is an LV2 preset bundle: a directory the browser holds as ONE
+//! preset. Its contents are the preset's own parts, so no walk descends into it.
+LMMS_EXPORT bool browserIsLv2Bundle(const QFileInfo& info);
 
 //! Every root the browser reads, in the order the sidebar's tabs have them.
 LMMS_EXPORT QList<BrowserRoot> browserRoots();
