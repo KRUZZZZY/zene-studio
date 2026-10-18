@@ -225,7 +225,7 @@ private:
 	//! what is left once every complete one is gone: \p overCap is set once that
 	//! refusal has been sent, and the caller then reads and discards the rest.
 	bool win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEvent, QByteArray& buffer,
-		bool* overCap);
+		bool* overCap, quint64* idleDeadlineMs);
 
 	//! The full \\.\pipe\<name> this instance listens on; empty when it is not.
 	QString m_pipeName;

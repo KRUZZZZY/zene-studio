@@ -75,6 +75,11 @@
 #elif defined(Q_OS_WIN)
 #include <windows.h>
 #endif
+#if defined(Q_OS_WIN)
+#include <windows.h>
+
+#include <string>
+#endif
 
 #include <chrono>
 #include <cstdlib>
@@ -219,6 +224,63 @@ PipeExchange sendMalformedRequest(TestPipe& pipe, QByteArray* response)
 }
 #endif
 
+#if defined(Q_OS_WIN)
+struct TestWinHandle
+{
+	HANDLE handle = INVALID_HANDLE_VALUE;
+	~TestWinHandle()
+	{
+		if (handle != nullptr && handle != INVALID_HANDLE_VALUE) { CloseHandle(handle); }
+	}
+};
+
+HANDLE connectToNamedPipe(const QString& path)
+{
+	const std::wstring nativePath = path.toStdWString();
+	QElapsedTimer timeout;
+	timeout.start();
+	while (timeout.elapsed() < 5000)
+	{
+		const HANDLE pipe = CreateFileW(nativePath.c_str(), GENERIC_READ | GENERIC_WRITE, 0,
+			nullptr, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, nullptr);
+		if (pipe != INVALID_HANDLE_VALUE) { return pipe; }
+		const DWORD error = GetLastError();
+		if (error == ERROR_PIPE_BUSY) { WaitNamedPipeW(nativePath.c_str(), 100); }
+		else if (error == ERROR_FILE_NOT_FOUND) { Sleep(10); }
+		else { return INVALID_HANDLE_VALUE; }
+	}
+	return INVALID_HANDLE_VALUE;
+}
+
+bool writeIncompletePipeByte(HANDLE pipe, HANDLE event, DWORD* error)
+{
+	const char byte = '{';
+	OVERLAPPED operation{};
+	ResetEvent(event);
+	operation.hEvent = event;
+	DWORD written = 0;
+	if (!WriteFile(pipe, &byte, 1, nullptr, &operation))
+	{
+		*error = GetLastError();
+		if (*error != ERROR_IO_PENDING) { return false; }
+		if (WaitForSingleObject(event, 5000) != WAIT_OBJECT_0)
+		{
+			*error = ERROR_TIMEOUT;
+			return false;
+		}
+	}
+	if (GetOverlappedResult(pipe, &operation, &written, FALSE)) { return written == 1; }
+	*error = GetLastError();
+	return false;
+}
+
+bool isNamedPipeDisconnect(DWORD error)
+{
+	return error == ERROR_BROKEN_PIPE || error == ERROR_PIPE_NOT_CONNECTED;
+}
+
+#endif
+
 } // namespace
 
 class ControlShutdownHookTest : public QObject
@@ -306,6 +368,97 @@ private slots:
 		QCOMPARE(exchanged.at(1).at(0).toByteArray(), missingIdRequest);
 		QCOMPARE(exchanged.at(1).at(1).toByteArray(), missingIdResponse);
 	}
+
+#if defined(Q_OS_WIN)
+	void anIdleNamedPipePeerIsDisconnected()
+	{
+		ControlServer server(ControlRegistry::instance());
+		const QString path = QStringLiteral("\\\\.\\pipe\\zene-control-idle-%1-%2")
+			.arg(GetCurrentProcessId()).arg(GetTickCount64());
+		QString error;
+		QVERIFY2(server.listen(path, &error), qPrintable(error));
+
+		TestWinHandle pipe;
+		pipe.handle = connectToNamedPipe(path);
+		QVERIFY2(pipe.handle != INVALID_HANDLE_VALUE, "could not connect to the test named pipe");
+		QElapsedTimer idleWait;
+		idleWait.start();
+		TestWinHandle event;
+		event.handle = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		QVERIFY(event.handle != nullptr);
+
+		char byte = 0;
+		DWORD bytesRead = 0;
+		OVERLAPPED operation{};
+		operation.hEvent = event.handle;
+		if (ReadFile(pipe.handle, &byte, sizeof(byte), &bytesRead, &operation))
+		{
+			QCOMPARE(bytesRead, DWORD{0});
+			QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+			return;
+		}
+		const DWORD startError = GetLastError();
+		if (startError == ERROR_BROKEN_PIPE || startError == ERROR_PIPE_NOT_CONNECTED)
+		{
+			QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+			return;
+		}
+		QVERIFY2(startError == ERROR_IO_PENDING, "the named-pipe read did not pend");
+
+		const DWORD wait = WaitForSingleObject(event.handle,
+			static_cast<DWORD>(ClientIdleTimeoutMs + 5000));
+		if (wait != WAIT_OBJECT_0)
+		{
+			CancelIoEx(pipe.handle, &operation);
+			GetOverlappedResult(pipe.handle, &operation, &bytesRead, TRUE);
+			QVERIFY2(false, "the idle named-pipe client was not disconnected before the deadline");
+		}
+
+		QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+		const BOOL completed = GetOverlappedResult(pipe.handle, &operation, &bytesRead, FALSE);
+		const DWORD completionError = completed ? ERROR_SUCCESS : GetLastError();
+		const bool disconnected = (completed && bytesRead == 0)
+			|| (!completed && (completionError == ERROR_BROKEN_PIPE
+				|| completionError == ERROR_PIPE_NOT_CONNECTED));
+		QVERIFY2(disconnected, "the idle named-pipe read completed without a disconnect");
+	}
+
+	void aTrickledIncompleteNamedPipeRequestDoesNotExtendTheDeadline()
+	{
+		ControlServer server(ControlRegistry::instance());
+		const QString path = QStringLiteral("\\\\.\\pipe\\zene-control-trickle-%1-%2")
+			.arg(GetCurrentProcessId()).arg(GetTickCount64());
+		QString error;
+		QVERIFY2(server.listen(path, &error), qPrintable(error));
+
+		TestWinHandle pipe;
+		pipe.handle = connectToNamedPipe(path);
+		QVERIFY2(pipe.handle != INVALID_HANDLE_VALUE, "could not connect to the test named pipe");
+		TestWinHandle writeEvent;
+		writeEvent.handle = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		QVERIFY(writeEvent.handle != nullptr);
+
+		QElapsedTimer trickleWait;
+		trickleWait.start();
+		bool disconnected = false;
+		while (trickleWait.elapsed() < ClientIdleTimeoutMs + 5000)
+		{
+			DWORD writeError = ERROR_SUCCESS;
+			if (!writeIncompletePipeByte(pipe.handle, writeEvent.handle, &writeError))
+			{
+				QVERIFY2(isNamedPipeDisconnect(writeError),
+					"the incomplete-request trickle write failed unexpectedly");
+				disconnected = true;
+				break;
+			}
+			Sleep(250);
+		}
+
+		QVERIFY(trickleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+		QVERIFY2(disconnected,
+			"trickling an incomplete request kept the named-pipe client alive past its deadline");
+	}
+#endif
 
 	//! The first half: the hook survives a registry instance it was not
 	//! registered on. destroy() then instance() is exactly the sequence that
