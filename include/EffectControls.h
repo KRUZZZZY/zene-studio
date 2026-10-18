@@ -25,6 +25,9 @@
 #ifndef LMMS_EFFECT_CONTROLS_H
 #define LMMS_EFFECT_CONTROLS_H
 
+#include <atomic>
+#include <type_traits>
+
 #include "Model.h"
 #include "JournallingObject.h"
 #include "Effect.h"
@@ -75,7 +78,15 @@ public:
 
 private:
 	Effect * m_effect;
-	bool m_viewVisible;
+	std::atomic<bool> m_viewVisible;
+
+#ifdef LMMS_TESTING
+public:
+	bool viewVisibleStorageIsAtomic() const
+	{
+		return std::is_same_v<decltype(m_viewVisible), std::atomic<bool>>;
+	}
+#endif
 
 } ;
 

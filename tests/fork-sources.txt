@@ -2652,3 +2652,5 @@ docs/qwen-fixes-2026-10/cluster-new-p10-411.md
 # cluster new-p12-275 (2026-10): TripleOscillator user-wave publication race regression test (fork-NEW).
 tests/src/plugins/TripleOscillatorUserWaveTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-275.md
+# cluster new-p12-279 (2026-10): EffectControls audio-thread visibility atomic-regression test (fork-NEW).
+tests/src/core/EffectControlsVisibilityTest.cpp
