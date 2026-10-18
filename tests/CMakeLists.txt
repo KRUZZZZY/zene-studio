@@ -535,6 +535,8 @@ set(LMMS_TESTS
 	# 0.5.0 F2: output buses, MIDI parts, layers, the voice pool; the layer/part/voice commands
 	src/core/InstrumentRoutingTest.cpp
 	src/core/InstrumentLayersCommandsTest.cpp
+	# cluster new-p8-131-port: a layer insert or removal publishes its zones and its layer slot as one edit.
+	src/core/InstrumentLayerZonePublishTest.cpp
 	# MX-157 (BUGS 11.34): a hosted instrument's latency reaches PDC, measured on rendered audio
 	src/core/InstrumentLatencyPdcTest.cpp
 	src/core/RecordClipTest.cpp
@@ -1651,6 +1653,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "MidiExportTest"
 		# 0.5.0 wave 2: layers and parts load a real instrument; the reference project copies a real effect.
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLayersCommandsTest"
+		OR LMMS_TEST_NAME STREQUAL "InstrumentLayerZonePublishTest"
 		# MX-157: the hosted instrument modules (clapinstrument, vst3instrument) carry the fixtures.
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLatencyPdcTest"
 		OR LMMS_TEST_NAME STREQUAL "InstrumentSetupUiTest"
@@ -2162,7 +2165,7 @@ set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest ScriptDawEffe
 # full Engine and drive the mixer's own save/load, so they need the same
 # headless Qt platform as the test above - and the developer box has no display.
 set_tests_properties(RackMacrosTest RackZonesTest RackZoneRoutingTest InstrumentRoutingTest InstrumentLayersCommandsTest
-	InstrumentLatencyPdcTest PROPERTIES
+	InstrumentLayerZonePublishTest InstrumentLatencyPdcTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The #602 modulation layer's two tests build a full Engine, a real Mixer and a

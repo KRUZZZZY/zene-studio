@@ -111,11 +111,15 @@ auto RackZones::zone(int index) const -> const RackZone*
 	return &m_zones[static_cast<std::size_t>(index)];
 }
 
-auto RackZones::addZone(const RackZone& zone) -> int
+auto RackZones::addZone(const RackZone& zone, const std::function<void()>& alongside) -> int
 {
 	RackZone loaded = zone;
 	loadRackZoneSample(loaded);  // before the guard: the render never waits on a file
-	edit([this, &loaded] { m_zones.push_back(std::move(loaded)); });
+	edit([this, &loaded, &alongside]
+	{
+		m_zones.push_back(std::move(loaded));
+		if (alongside) { alongside(); }
+	});
 	return zoneCount() - 1;
 }
 
@@ -151,10 +155,14 @@ auto RackZones::resolve(int key, int velocity) const -> int
 	return -1;
 }
 
-void RackZones::assign(std::vector<RackZone> zones)
+void RackZones::assign(std::vector<RackZone> zones, const std::function<void()>& alongside)
 {
 	for (RackZone& zone : zones) { loadRackZoneSample(zone); }  // decoded before the guard, as addZone does
-	edit([this, &zones] { m_zones.swap(zones); });
+	edit([this, &zones, &alongside]
+	{
+		m_zones.swap(zones);
+		if (alongside) { alongside(); }
+	});
 }
 
 auto RackZones::matchMask(int key, int velocity) const -> std::uint64_t
