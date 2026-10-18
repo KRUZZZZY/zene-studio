@@ -57,6 +57,7 @@
 #include "ControlClipFrames.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "SampleClip.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -135,6 +136,12 @@ bool planTrim(const ClipRef& ref, const QJsonObject& args, TrimPlan* plan, Contr
 	return true;
 }
 
+bool frameTrimOptionRequested(const QJsonObject& args)
+{
+	return args.contains(QStringLiteral("start_frames")) || args.contains(QStringLiteral("end_frames"))
+		|| args.contains(QStringLiteral("zero_crossing"));
+}
+
 void registerClipTrim(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -175,7 +182,13 @@ void registerClipTrim(ControlRegistry& registry)
 		ControlResult error;
 		ClipRef ref;
 		if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-		if (clipframes::wanted(ref, args)) { return clipframes::trim(ref, args); }  // ED-021
+		const bool frameTrimWanted = clipframes::wanted(ref, args);
+		if (dynamic_cast<SampleClip*>(ref.clip) == nullptr && frameTrimOptionRequested(args))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("frame-specific trim options require a sample clip"));
+		}
+		if (frameTrimWanted) { return clipframes::trim(ref, args); }  // ED-021
 
 		TrimPlan plan;
 		const QJsonObject before = edgeState(ref);
