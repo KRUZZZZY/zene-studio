@@ -33,6 +33,7 @@
 
 #include "StemSeparation/StemSeparator.h"
 #include "StemSeparation/StemTypes.h"
+#include "TaskCenter.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -76,6 +77,7 @@ public:
 	struct Job
 	{
 		int id = -1;
+		TaskToken taskToken;
 		std::shared_ptr<const SampleBuffer> mix;
 		int sampleRate = StemModelSampleRate;
 		int segmentFrames = HTDemucsSegmentFrames;
@@ -159,6 +161,7 @@ private:
 	static void emitJobCancelled(const std::shared_ptr<SharedState>& state, int jobId);
 	static void emitJobFailed(const std::shared_ptr<SharedState>& state, int jobId, const QString& error);
 	std::shared_ptr<Job> findJob(int jobId) const;
+	TaskToken taskTokenFor(int jobId) const;
 
 	std::shared_ptr<SharedState> m_state;
 };

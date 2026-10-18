@@ -250,7 +250,8 @@ int RenderQueue::add(RenderJob job)
 	if (job.kind == RenderJob::Kind::Render) { job.settings = ControlExportPresetSettings::effective(); }
 	m_jobs.push_back(job);
 	// 0.5.0 theme 24: the job is listed in the task area from the moment it is queued, with the queue's own cancel.
-	TaskCenter::instance().begin(this, job.id, {kindName(job.kind), taskTitle(job), [id = job.id] { instance().cancel(id); }, {}, true});
+	m_jobs.back().taskToken = TaskCenter::instance().begin(this, job.id,
+		{kindName(job.kind), taskTitle(job), [id = job.id] { instance().cancel(id); }, {}, true});
 	return job.id;
 }
 
@@ -279,7 +280,7 @@ void RenderQueue::next()
 	queued->phase = queued->kind == RenderJob::Kind::Bounce ? QStringLiteral("starting") : QStringLiteral("running");
 	queued->startedMs = now();
 	m_current = queued->id;
-	TaskCenter::instance().progress(this, queued->id, -1.0,
+	TaskCenter::instance().progress(queued->taskToken, -1.0,
 		queued->kind == RenderJob::Kind::Bounce ? tr("Starting render") : QString());
 	if (queued->kind == RenderJob::Kind::Render) { runRender(*queued); }
 	else if (queued->kind == RenderJob::Kind::Bounce) { runBounce(*queued); }
@@ -289,15 +290,17 @@ void RenderQueue::next()
 void RenderQueue::runRender(RenderJob& job)
 {
 	const int id = job.id;
+	const TaskToken taskToken = job.taskToken;
 	m_process = new QProcess(this);
 	m_process->setStandardOutputFile(QProcess::nullDevice());
 	m_process->setStandardErrorFile(QProcess::nullDevice());
-	connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, [this, id](int exitCode, QProcess::ExitStatus status) {
-		finish(id, status == QProcess::NormalExit && exitCode == 0, exitCode,
+	connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+		[this, id, taskToken](int exitCode, QProcess::ExitStatus status) {
+		finish(taskToken, id, status == QProcess::NormalExit && exitCode == 0, exitCode,
 			status == QProcess::NormalExit ? QString() : QStringLiteral("the render process crashed"));
 	});
-	connect(m_process, &QProcess::errorOccurred, this, [this, id](QProcess::ProcessError error) {
-		if (error == QProcess::FailedToStart) { finish(id, false, -1, QStringLiteral("the render process could not be started")); }
+	connect(m_process, &QProcess::errorOccurred, this, [this, id, taskToken](QProcess::ProcessError error) {
+		if (error == QProcess::FailedToStart) { finish(taskToken, id, false, -1, QStringLiteral("the render process could not be started")); }
 	});
 	m_process->start(QCoreApplication::applicationFilePath(), controlRenderCliArguments(job.source, job.out, job.format,
 		job.settings, job.rangeBegin, job.rangeEnd));
@@ -309,8 +312,9 @@ void RenderQueue::runConvert(RenderJob& job)
 	const RenderJob copy = job;
 	QThreadPool::globalInstance()->start([this, copy] {
 		const QString error = staged(copy);  // committed by finish(), unless the job was cancelled meanwhile
-		QMetaObject::invokeMethod(this, [this, id = copy.id, error] { finish(id, error.isEmpty(), error.isEmpty() ? 0 : 1, error); },
-			Qt::QueuedConnection);
+		QMetaObject::invokeMethod(this, [this, id = copy.id, token = copy.taskToken, error] {
+			finish(token, id, error.isEmpty(), error.isEmpty() ? 0 : 1, error);
+		}, Qt::QueuedConnection);
 	});
 }
 
@@ -320,7 +324,7 @@ QString RenderQueue::convert(const RenderJob& job)
 	return error.isEmpty() ? commitStaged(job) : error;
 }
 
-void RenderQueue::finish(int id, bool ok, int exitCode, const QString& error)
+void RenderQueue::finish(const TaskToken& token, int id, bool ok, int exitCode, const QString& error)
 {
 	RenderJob* job = find(id);
 	if (job != nullptr)
@@ -329,7 +333,7 @@ void RenderQueue::finish(int id, bool ok, int exitCode, const QString& error)
 		job->progress = job->state == RenderJob::State::Done ? 1.0 : job->progress;
 		job->phase = job->state == RenderJob::State::Done ? QStringLiteral("done")
 			: job->state == RenderJob::State::Cancelled ? QStringLiteral("cancelled") : QStringLiteral("failed");
-		TaskCenter::instance().finish(this, id, taskState(job->state), job->error);
+		TaskCenter::instance().finish(token, taskState(job->state), job->error);
 	}
 	if (m_process != nullptr)
 	{
@@ -365,7 +369,7 @@ void RenderQueue::cancelQueued(RenderJob& job)
 		job.validateBounce = {};
 		job.applyBounce = {};
 	}
-	TaskCenter::instance().finish(this, job.id, TaskState::Cancelled);
+	TaskCenter::instance().finish(job.taskToken, TaskState::Cancelled);
 }
 
 int RenderQueue::clearFinished()

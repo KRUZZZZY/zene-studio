@@ -34,6 +34,7 @@
 
 #include "BounceInPlace.h"
 #include "ControlExportPresetSupport.h"
+#include "TaskCenter.h"
 #include "lmms_export.h"
 
 class QProcess;
@@ -74,6 +75,8 @@ struct LMMS_EXPORT RenderJob
 	qint64 finishedMs = 0;
 	//! What came out: the file's bytes and hash, and the loudness meter's reading of it.
 	QJsonObject report;
+	//! The task-area token of this job's current generation; its reports carry it (RenderQueue::add).
+	TaskToken taskToken;
 	//! A conversion's own staging file, beside its destination and named for this job alone; made when
 	//! first asked for and never on a name anyone else could be using (RenderQueue::stagedPath).
 	mutable QString staged;
@@ -127,7 +130,7 @@ private:
 	void bounceProcessError(int id, int error);
 	void clearBounceProcess();
 	void runConvert(RenderJob& job);
-	void finish(int id, bool ok, int exitCode, const QString& error);
+	void finish(const TaskToken& token, int id, bool ok, int exitCode, const QString& error);
 	void bounceProcessEnded(int id, bool ok, int exitCode, const QString& error);
 	void beginBounceFinalization(int id);
 	void finishBounce(int id, BounceInPlace::PreparedRender prepared, BounceInPlace::Result rendered,

@@ -66,6 +66,7 @@ struct RunState
 {
 	QString state = QStringLiteral("idle");
 	QString error;
+	TaskToken task;  //!< the task-area token of the run in flight (setMasteringRunState)
 };
 
 RunState& runStateStore()
@@ -248,10 +249,10 @@ void setMasteringRunState(const QString& state, const QString& error)
 	const void* key = &runStateStore();
 	if (state == QLatin1String("running"))
 	{
-		TaskCenter::instance().begin(key, 0, {QStringLiteral("mastering"), QObject::tr("Master the mix"), {}, {}, false});
+		runStateStore().task = TaskCenter::instance().begin(key, 0, {QStringLiteral("mastering"), QObject::tr("Master the mix"), {}, {}, false});
 	}
-	else if (state == QLatin1String("completed")) { TaskCenter::instance().finish(key, 0, TaskState::Done); }
-	else if (state == QLatin1String("failed")) { TaskCenter::instance().finish(key, 0, TaskState::Failed, error); }
+	else if (state == QLatin1String("completed")) { TaskCenter::instance().finish(runStateStore().task, TaskState::Done); }
+	else if (state == QLatin1String("failed")) { TaskCenter::instance().finish(runStateStore().task, TaskState::Failed, error); }
 }
 
 bool readMasteringReportFile(const QString& path, QJsonObject* report,

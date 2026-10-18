@@ -38,6 +38,8 @@
 namespace lmms
 {
 
+class TaskToken;
+
 /*! 0.5.0 L11 (WF-020): what a sound is like, as a handful of numbers measured from the start of the file
  *  (at most FeatureSeconds): its length, loudness (RMS, dBFS), brightness (mean spectral centroid),
  *  noisiness (zero crossings per second), and the tempo and key the import detection finds
@@ -123,7 +125,7 @@ private:
 	bool claim(const QStringList& dirs);
 	void scan(const QStringList& dirs, bool features, int maxAnalysed);
 	//! 0.5.0 theme 24: a background scan's end, reported to the task area (TaskCenter.h).
-	void reportScanEnd();
+	void reportScanEnd(const TaskToken& token);
 	void loadLocked() const;
 	bool save(const std::vector<BrowserIndexEntry>& entries, const Status& status) const;
 
