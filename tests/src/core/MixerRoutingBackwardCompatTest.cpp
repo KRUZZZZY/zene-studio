@@ -532,6 +532,54 @@ private slots:
 		}
 	}
 
+	// A `channel` that does not parse as an integer, or is absent, names no
+	// channel. toInt() without a success check turned it into 0, the master, so
+	// the malformed send was silently routed to the master bus. Only the
+	// well-formed send and sidechain-send to channel 2 may survive the load.
+	void aMalformedSendTargetIsSkippedNotRoutedToMaster()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+
+		mixer->clear();
+		while (mixer->numChannels() < 3) { mixer->createChannel(); }
+
+		static const char* kMalformedTargetXml =
+			"<mixer>\n"
+			"  <mixerchannel num=\"0\" muted=\"0\" volume=\"1\" name=\"Master\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Kick\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"    <send channel=\"bad\" amount=\"0.5\"/>\n"
+			"    <send channel=\"2x\" amount=\"0.5\"/>\n"
+			"    <send amount=\"0.5\"/>\n"
+			"    <send channel=\"2\" amount=\"0.5\"/>\n"
+			"    <sidechain-send channel=\"bad\" amount=\"0.5\"/>\n"
+			"    <sidechain-send amount=\"0.5\"/>\n"
+			"    <sidechain-send channel=\"2\" amount=\"0.5\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel num=\"2\" muted=\"0\" volume=\"1\" name=\"Snare\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"</mixer>\n";
+
+		QDomDocument doc;
+		QDomElement root;
+		QVERIFY2(parseMixerElement(kMalformedTargetXml, doc, root), "the fixture is not valid XML");
+		mixer->loadSettings(root);
+
+		// Three malformed regular sends and two malformed sidechain sends must
+		// create nothing. Each of them used to become a route to master, so the
+		// counts below are 1 only when exactly the well-formed route survived.
+		QVERIFY2(mixer->mixerChannel(1)->m_sends.size() == 1,
+			qPrintable(QString("%1 regular sends survived; malformed targets were routed to master")
+				.arg(static_cast<int>(mixer->mixerChannel(1)->m_sends.size()))));
+		QVERIFY2(mixer->mixerChannel(1)->m_sidechainSends.size() == 1,
+			qPrintable(QString("%1 sidechain sends survived; malformed targets were routed to master")
+				.arg(static_cast<int>(mixer->mixerChannel(1)->m_sidechainSends.size()))));
+	}
+
 	// Luna cluster 4277: a deferred sidechain route (one that closes a cycle
 	// through a regular send) is non-gating by construction. Deferred status is
 	// inferred from the graph at creation time, but the saved <sidechain-send>
