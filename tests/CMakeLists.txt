@@ -1905,6 +1905,29 @@ target_compile_definitions(ReverbScAllocationTest PRIVATE
 	$<$<COMPILE_LANGUAGE:C>:malloc=sp_dcblock_test_malloc>
 )
 
+# ReverbSC's reverb core allocator contract: sp_revsc_create's own state and
+# the auxiliary delay-line buffer sp_revsc_init obtains through
+# sp_auxdata_alloc. The test build replaces malloc for both product sources
+# (base.c supplies sp_auxdata_alloc, revsc.c the caller), so each allocation
+# can be made to fail on demand.
+add_executable(ReverbSCInitTest
+	src/plugins/ReverbSCInitTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/revsc.c
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c
+)
+add_test(NAME ReverbSCInitTest COMMAND ReverbSCInitTest)
+target_include_directories(ReverbSCInitTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC
+)
+target_link_libraries(ReverbSCInitTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(ReverbSCInitTest PRIVATE cxx_std_20)
+target_compile_definitions(ReverbSCInitTest PRIVATE
+	$<$<COMPILE_LANGUAGE:C>:malloc=sp_revsc_test_malloc>
+)
+
 # Compile the real AudioFileProcessor waveform view into its regression test.
 # UBSan's float-cast-overflow check makes the old negative-double to f_cnt_t
 # conversion fail deterministically on platforms where that undefined cast

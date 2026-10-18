@@ -50,12 +50,21 @@ static int delay_line_bytes_alloc(SPFLOAT sr, SPFLOAT iPitchMod, int n);
 static const SPFLOAT outputGain  = 0.35f;
 static const SPFLOAT jpScale     = 0.25;
 int sp_revsc_create(sp_revsc **p){
+    if (p == NULL) {
+        return SP_NOT_OK;
+    }
     *p = malloc(sizeof(sp_revsc));
+    if (*p == NULL) {
+        return SP_NOT_OK;
+    }
     return SP_OK;
 }
 
 int sp_revsc_init(sp_data *sp, sp_revsc *p)
 {
+    if (sp == NULL || p == NULL) {
+        return SP_NOT_OK;
+    }
     p->iSampleRate = (float) sp->sr;
     p->sampleRate = (float) sp->sr;
     p->feedback = 0.97f;
@@ -64,18 +73,21 @@ int sp_revsc_init(sp_data *sp, sp_revsc *p)
     p->iSkipInit = 0;
     p->dampFact = 1.0;
     p->prv_LPFreq = 0.0;
-    p->initDone = 1;
+    p->initDone = 0;
     int i, nBytes = 0;
     for(i = 0; i < 8; i++){
         nBytes += delay_line_bytes_alloc((float) sp->sr, 1, i);
     }
-    sp_auxdata_alloc(&p->aux, nBytes);
+    if (sp_auxdata_alloc(&p->aux, (size_t) nBytes) != SP_OK) {
+        return SP_NOT_OK;
+    }
     nBytes = 0;
     for (i = 0; i < 8; i++) {
         p->delayLines[i].buf = (SPFLOAT*) (((char*) p->aux.ptr) + nBytes);
         init_delay_line(p, &p->delayLines[i], i);
         nBytes += delay_line_bytes_alloc((float) sp->sr, 1, i);
     }
+    p->initDone = 1;
 
     return SP_OK;
 }
@@ -83,7 +95,10 @@ int sp_revsc_init(sp_data *sp, sp_revsc *p)
 
 int sp_revsc_destroy(sp_revsc **p)
 {
-    sp_revsc *pp = *p;
+    sp_revsc *pp = (p == NULL) ? NULL : *p;
+    if (pp == NULL) {
+        return SP_NOT_OK;
+    }
     sp_auxdata_free(&pp->aux);
     free(*p);
     return SP_OK;

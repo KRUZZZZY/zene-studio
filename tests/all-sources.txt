@@ -2947,6 +2947,7 @@ tests/src/plugins/PluginPortsMigrationReference.cpp
 tests/src/plugins/PluginPortsMigrationTest.cpp
 tests/src/plugins/ReverbSCCreateTest.cpp
 tests/src/plugins/ReverbSCCreateTestAllocator.c
+tests/src/plugins/ReverbSCInitTest.cpp
 tests/src/plugins/ReverbSCRawProcessingTest.cpp
 tests/src/plugins/ReverbScAllocationTest.cpp
 tests/src/plugins/RnnoiseHarnessOutputTest.cpp

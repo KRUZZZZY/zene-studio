@@ -59,7 +59,12 @@ ReverbSCEffect::ReverbSCEffect( Model* parent, const Descriptor::SubPluginFeatur
 	sp->sr = Engine::audioEngine()->outputSampleRate();
 
 	sp_revsc_create(&revsc);
-	sp_revsc_init(sp, revsc);
+	if (sp_revsc_init(sp, revsc) != SP_OK)
+	{
+		// Allocation failure leaves the effect bypassed and the input untouched.
+		sp_revsc_destroy(&revsc);
+		revsc = nullptr;
+	}
 
 	if (sp_dcblock_create_and_init_pair(sp, dcblk, 1) == SP_NOT_OK)
 	{
@@ -136,7 +141,11 @@ void ReverbSCEffect::changeSampleRate()
 	sp_dcblock_destroy(&dcblk[1]);
 
 	sp_revsc_create(&revsc);
-	sp_revsc_init(sp, revsc);
+	if (sp_revsc_init(sp, revsc) != SP_OK)
+	{
+		sp_revsc_destroy(&revsc);
+		revsc = nullptr;
+	}
 
 	if (sp_dcblock_create_and_init_pair(sp, dcblk, 1) == SP_NOT_OK)
 	{
