@@ -32,6 +32,7 @@
 #include <vector>
 
 #include <condition_variable>
+#include <exception>
 #include <future>
 #include <mutex>
 #include <thread>
@@ -47,21 +48,46 @@ public:
 
 	//! Enqueue function `fn` with arguments `args` to be ran asynchronously.
 	template <typename Fn, typename... Args>
-	auto enqueue(Fn&& fn, Args&&... args) -> std::future<std::invoke_result_t<Fn, Args...>>
+	auto enqueue(Fn&& fn, Args&&... args)
 	{
-		using ReturnType = std::invoke_result_t<Fn, Args...>;
+		using StoredCallable = std::decay_t<Fn>;
+		using CallableReference = std::conditional_t<std::is_lvalue_reference_v<Fn>, StoredCallable&, StoredCallable&&>;
+		using ArgumentTuple = decltype(std::make_tuple(std::declval<Args>()...));
+		using ReturnType = decltype(std::apply(std::declval<CallableReference>(), std::declval<ArgumentTuple&&>()));
 
 		auto promise = std::make_shared<std::promise<ReturnType>>();
-		auto task = [promise, fn = std::forward<Fn>(fn), args = std::make_tuple(std::forward<Args>(args)...)] 
+		auto task = std::packaged_task<void()>{[promise, fn = std::forward<Fn>(fn),
+			args = std::make_tuple(std::forward<Args>(args)...)]() mutable
 		{
-			if constexpr (!std::is_same_v<ReturnType, void>)
+			auto invoke = [&]() -> ReturnType
 			{
-				promise->set_value(std::apply(fn, args));
-				return;
+				if constexpr (std::is_lvalue_reference_v<Fn>)
+				{
+					return std::apply(fn, std::move(args));
+				}
+				else
+				{
+					return std::apply(std::move(fn), std::move(args));
+				}
+			};
+
+			try
+			{
+				if constexpr (std::is_same_v<ReturnType, void>)
+				{
+					invoke();
+					promise->set_value();
+				}
+				else
+				{
+					promise->set_value(invoke());
+				}
 			}
-			std::apply(fn, args);
-			promise->set_value();
-		};
+			catch (...)
+			{
+				promise->set_exception(std::current_exception());
+			}
+		}};
 
 		{
 			const auto lock = std::unique_lock{m_runMutex};
@@ -82,7 +108,7 @@ private:
 	ThreadPool(size_t numWorkers);
 	void run();
 	std::vector<std::thread> m_workers;
-	std::queue<std::function<void()>> m_queue;
+	std::queue<std::packaged_task<void()>> m_queue;
 	std::atomic<bool> m_done = false;
 	std::condition_variable m_runCond;
 	std::mutex m_runMutex;

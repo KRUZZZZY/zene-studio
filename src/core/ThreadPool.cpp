@@ -24,6 +24,7 @@
 #include "ThreadPool.h"
 
 #include <cassert>
+#include <optional>
 
 namespace lmms {
 ThreadPool::ThreadPool(size_t numWorkers)
@@ -61,16 +62,16 @@ void ThreadPool::run()
 {
 	while (true)
 	{
-		std::function<void()> task;
+		std::optional<std::packaged_task<void()>> task;
 		{
 			auto lock = std::unique_lock{m_runMutex};
 			m_runCond.wait(lock, [this] { return !m_queue.empty() || m_done; });
 
 			if (m_queue.empty()) { break; }
-			task = m_queue.front();
+			task.emplace(std::move(m_queue.front()));
 			m_queue.pop();
 		}
-		task();
+		(*task)();
 	}
 }
 
