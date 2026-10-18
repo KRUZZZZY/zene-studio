@@ -27,6 +27,8 @@
 #include <QPainter>
 #include <QApplication>
 
+#include <algorithm>
+
 #include "FadeButton.h"
 
 
@@ -79,6 +81,27 @@ void FadeButton::setMuted(bool mute)
 {
 	m_muted = mute;
 }
+
+
+
+void FadeButton::syncNoteActivity(int activeNoteCount, std::uint32_t noteOnGeneration)
+{
+	const bool noteStarted = m_noteActivityInitialized && noteOnGeneration != m_lastNoteOnGeneration;
+	m_noteActivityInitialized = true;
+	m_lastNoteOnGeneration = noteOnGeneration;
+
+	const int previousActiveNotes = activeNotes;
+	activeNotes = std::max(0, activeNoteCount);
+	const bool noteCountChanged = activeNotes != previousActiveNotes;
+	if (noteStarted || activeNotes > previousActiveNotes) { m_stateTimer.restart(); }
+	if ((previousActiveNotes > 0 && activeNotes == 0) || (noteStarted && activeNotes == 0))
+	{
+		m_releaseTimer.restart();
+	}
+	if (noteCountChanged || noteStarted) { update(); }
+}
+
+
 
 void FadeButton::activate()
 {

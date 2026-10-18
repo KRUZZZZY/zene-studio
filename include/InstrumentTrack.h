@@ -26,6 +26,8 @@
 #ifndef LMMS_INSTRUMENT_TRACK_H
 #define LMMS_INSTRUMENT_TRACK_H
 
+#include <atomic>
+#include <cstdint>
 
 #include <memory>
 #include "ArticulationMap.h"
@@ -372,6 +374,17 @@ protected slots:
 
 
 private:
+	struct NoteActivitySnapshot
+	{
+		int activeNotes;
+		std::uint32_t noteOnGeneration;
+	};
+
+	//! GUI-polled activity state; the note event paths update it without emitting Qt signals.
+	void recordNoteOnActivity();
+	void recordNoteOffActivity();
+	NoteActivitySnapshot noteActivitySnapshot() const;
+
 	void processCCEvent(int controller);
 	void processOutEventImpl(const MidiEvent& event, const TimePos& time, f_cnt_t offset,
 		std::atomic_bool* baseInstrumentAccepted);
@@ -413,6 +426,8 @@ private:
 	MidiInputTransform m_inputTransform;
 	ArticulationMap m_articulations;
 	std::atomic<int> m_delayMs{0};
+	std::atomic<int> m_activeUiNotes{0};
+	std::atomic<std::uint32_t> m_noteOnGeneration{0};
 
 	NotePlayHandle* m_notes[NumKeys];
 	NotePlayHandleList m_sustainedNotes;

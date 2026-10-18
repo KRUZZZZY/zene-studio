@@ -41,9 +41,8 @@
 #include "ControlInstrumentCommands.h"
 #include "Engine.h"
 #include "ControlMixerSupport.h"
-#include "Instrument.h"
 #include "InstrumentOutputBuses.h"
-#include "InstrumentTrack.h"
+#include "InstrumentNoteOffProbe.h"
 #include "Mixer.h"
 #include "ModulationLayer.h"
 #include "NotePlayHandle.h"
@@ -207,12 +206,14 @@ private slots:
 		QVERIFY(!secondMixedOff);
 	}
 
-	//! MX-112: a clip note's own duration orders its note-off, so the base route follows that note instance.
+	//! MX-112: a clip note's duration routes note-off to the base instrument for accepted notes only.
 	void overlappingClipNotesKeepTheirOwnBaseNoteOffRouting()
 	{
 		if (m_track.isEmpty() || m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
 		InstrumentTrack* track = trackOf(m_track);
 		QVERIFY(track != nullptr);
+		QVERIFY(track->instrument() != nullptr);
+		BaseInstrumentDeliveryProbe baseDelivery(track);
 		const ControlResult added = run(QStringLiteral("rack.layer_add"),
 			{{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
 		QVERIFY2(added.ok, qPrintable(added.errorMessage));
@@ -228,36 +229,35 @@ private slots:
 		const f_cnt_t period = Engine::audioEngine()->framesPerPeriod();
 		std::vector<SampleFrame> samples(static_cast<std::size_t>(period));
 		const std::span<SampleFrame> buffer(samples);
-		QSignalSpy noteOffs(track, &InstrumentTrack::endNote);
-		QVERIFY(noteOffs.isValid());
 
 		// The skipped note is shorter, so its off arrives while the accepted note is still sounding.
 		int skippedShortOffs = 0;
 		int acceptedLongOffs = 0;
 		{
+			const int initialOffs = baseDelivery.noteOffCount();
 			NotePlayHandle acceptedLong(track, 0, period * 4, Note(TimePos(384), TimePos(0), key, 64));
 			NotePlayHandle skippedShort(track, 0, period, Note(TimePos(384), TimePos(0), key, 127));
 			acceptedLong.play(buffer);
 			skippedShort.play(buffer);
 			skippedShort.noteOff(0);
-			skippedShortOffs = noteOffs.count();
+			skippedShortOffs = baseDelivery.noteOffCount() - initialOffs;
 			acceptedLong.noteOff(0);
-			acceptedLongOffs = noteOffs.count();
+			acceptedLongOffs = baseDelivery.noteOffCount() - initialOffs;
 		}
 
 		// Reverse the durations: the accepted note now ends first, but still owns the routed off.
-		noteOffs.clear();
 		int acceptedShortOffs = 0;
 		int skippedLongOffs = 0;
 		{
+			const int initialOffs = baseDelivery.noteOffCount();
 			NotePlayHandle skippedLong(track, 0, period * 4, Note(TimePos(384), TimePos(0), key, 127));
 			NotePlayHandle acceptedShort(track, 0, period, Note(TimePos(384), TimePos(0), key, 64));
 			skippedLong.play(buffer);
 			acceptedShort.play(buffer);
 			acceptedShort.noteOff(0);
-			acceptedShortOffs = noteOffs.count();
+			acceptedShortOffs = baseDelivery.noteOffCount() - initialOffs;
 			skippedLong.noteOff(0);
-			skippedLongOffs = noteOffs.count();
+			skippedLongOffs = baseDelivery.noteOffCount() - initialOffs;
 		}
 
 		QVERIFY(track->layers().zones().removeZone(zoneIndex));

@@ -37,8 +37,10 @@
 #include <QDomDocument>
 #include <QDomElement>
 
+#include "InstrumentTrack.h"
 #include "InstrumentOutputBus.h"
 #include "LmmsTypes.h"
+#include "Song.h"
 #define private public // This TU checks slot publication while the render-period guard is held.
 #include "InstrumentOutputBuses.h"
 #undef private
@@ -134,6 +136,37 @@ private slots:
 	}
 
 	void cleanupTestCase() { teardownRackFixture(); }
+
+	//! Note activity must reach GUI receivers through polling, not queued Qt signals from the event thread.
+	void midiNoteActivityDoesNotQueueQtSignalsFromTheEventThread()
+	{
+		InstrumentTrack track{Engine::getSong()};
+		QDomDocument doc;
+		QDomElement state = doc.createElement(QStringLiteral("track"));
+		state.setAttribute(QStringLiteral("type"), static_cast<int>(Track::Type::Instrument));
+		doc.appendChild(state);
+		QDomElement trackState = doc.createElement(QStringLiteral("instrumenttrack"));
+		QDomElement instrument = doc.createElement(QStringLiteral("instrument"));
+		instrument.setAttribute(QStringLiteral("name"), QStringLiteral("missing-instrument-for-activity-test"));
+		trackState.appendChild(instrument);
+		state.appendChild(trackState);
+		track.restoreState(state);
+		QVERIFY(track.instrument() != nullptr);
+
+		int noteOns = 0;
+		int noteOffs = 0;
+		connect(&track, &InstrumentTrack::newNote, this, [&noteOns] { ++noteOns; });
+		connect(&track, &InstrumentTrack::endNote, this, [&noteOffs] { ++noteOffs; });
+		std::thread eventThread([&track] {
+			track.processOutEvent(MidiEvent(MidiNoteOn, 0, 60, 100));
+			track.processOutEvent(MidiEvent(MidiNoteOff, 0, 60, 0));
+		});
+		eventThread.join();
+		QCoreApplication::processEvents();
+
+		QCOMPARE(noteOns, 0);
+		QCOMPARE(noteOffs, 0);
+	}
 
 	//! MX-114: the main bus is never routed, an inactive bus is enabled through the host's hook, and a routed
 	//! bus's channels arrive in its mixer channel - nothing reaches it while the track is muted.
