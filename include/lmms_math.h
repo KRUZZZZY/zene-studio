@@ -31,6 +31,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <numbers>
 #include <concepts>
 
@@ -114,10 +115,42 @@ inline T fastRand(T upper) noexcept
 }
 
 
+template<std::signed_integral T>
+inline bool fastRandRangeOverflows(T from, T to) noexcept
+{
+	constexpr T max = std::numeric_limits<T>::max();
+	return (from < 0 && to >= 0 && to > max + from) || (from >= 0 && to < 0 && from > max + to);
+}
+
+
 //! @brief Returns a pseudorandom integer within [@p from, @p to) (exclusive upper bound).
 //! @returns A pseudorandom integer greater than or equal to @p from and less than @p to.
 template<typename T> requires std::is_arithmetic_v<T>
-inline auto fastRand(T from, T to) noexcept { return from + fastRand(to - from); }
+inline auto fastRand(T from, T to) noexcept
+{
+	using ReturnType = decltype(from + (to - from));
+	if constexpr (std::signed_integral<T>)
+	{
+		if (fastRandRangeOverflows(from, to))
+		{
+			constexpr auto FAST_RAND_RATIO = 1.0L / 32768;
+			const auto wideFrom = static_cast<long double>(from);
+			const auto wideTo = static_cast<long double>(to);
+			const auto offset = std::trunc(fastRand() * (wideTo - wideFrom) * FAST_RAND_RATIO);
+			const auto result = wideFrom + offset;
+			if (result <= static_cast<long double>(std::numeric_limits<T>::min()))
+			{
+				return static_cast<ReturnType>(std::numeric_limits<T>::min());
+			}
+			if (result >= static_cast<long double>(std::numeric_limits<T>::max()))
+			{
+				return static_cast<ReturnType>(std::numeric_limits<T>::max());
+			}
+			return static_cast<ReturnType>(result);
+		}
+	}
+	return static_cast<ReturnType>(from + fastRand(to - from));
+}
 
 
 //! @brief Returns a pseudorandom number within [0, @p upper] (inclusive upper bound).
@@ -183,11 +216,32 @@ inline T fastRandInc(T upper) noexcept
 template<typename T> requires std::is_arithmetic_v<T>
 inline auto fastRandInc(T from, T to) noexcept
 {
+	using ReturnType = decltype(from + (to - from));
+	if constexpr (std::signed_integral<T>)
+	{
+		if (fastRandRangeOverflows(from, to))
+		{
+			constexpr auto FAST_RAND_RATIO = 1.0L / 32767;
+			const auto low = static_cast<long double>(std::min(from, to));
+			const auto high = static_cast<long double>(std::max(from, to));
+			const auto offset = std::trunc(fastRand() * (high - low) * FAST_RAND_RATIO);
+			const auto result = low + offset;
+			if (result <= static_cast<long double>(std::numeric_limits<T>::min()))
+			{
+				return static_cast<ReturnType>(std::numeric_limits<T>::min());
+			}
+			if (result >= static_cast<long double>(std::numeric_limits<T>::max()))
+			{
+				return static_cast<ReturnType>(std::numeric_limits<T>::max());
+			}
+			return static_cast<ReturnType>(result);
+		}
+	}
 	if (to < from)
 	{
 		std::swap(from, to);
 	}
-	return from + fastRandInc(to - from);
+	return static_cast<ReturnType>(from + fastRandInc(to - from));
 }
 
 
