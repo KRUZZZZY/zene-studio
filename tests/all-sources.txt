@@ -1199,6 +1199,7 @@ plugins/Sfxr/Sfxr.cpp
 plugins/Sfxr/Sfxr.h
 plugins/Sid/SidInstrument.cpp
 plugins/Sid/SidInstrument.h
+plugins/Sid/SidPlaybackScheduler.h
 plugins/SlewDistortion/SlewDistortion.cpp
 plugins/SlewDistortion/SlewDistortion.h
 plugins/SlewDistortion/SlewDistortionControlDialog.cpp
@@ -2454,6 +2455,7 @@ tests/src/core/AudioClipLoopTest.cpp
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioEngineTeardownTest.cpp
 tests/src/core/AudioFileOggInitTest.cpp
+tests/src/core/AudioFileProcessorPlayheadTest.cpp
 tests/src/core/AudioFileProcessorWaveViewTest.cpp
 tests/src/core/AudioJackPortRestartTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
@@ -2575,7 +2577,9 @@ tests/src/core/InputChannelRingTest.cpp
 tests/src/core/InputMeterTest.cpp
 tests/src/core/InputMonitorTest.cpp
 tests/src/core/InstrumentLatencyPdcTest.cpp
+tests/src/core/InstrumentLayerZonePublishTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
+tests/src/core/InstrumentNoteOffProbe.h
 tests/src/core/InstrumentRoutingTest.cpp
 tests/src/core/LadspaManagerTest.cpp
 tests/src/core/LadspaPortCountFixture.cpp
@@ -2809,6 +2813,7 @@ tests/src/gui/ArrangerFileDropTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
+tests/src/gui/AutomationClipDisconnectTest.cpp
 tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/BrowserTagMenuTest.cpp
@@ -2852,9 +2857,9 @@ tests/src/gui/LadspaPortDialogTest.cpp
 tests/src/gui/LaneReadoutTest.cpp
 tests/src/gui/LfoGraphTest.cpp
 tests/src/gui/LibraryMenusTest.cpp
-tests/src/gui/Lv2ViewBaseLifetimeTest.cpp
 tests/src/gui/LinkedModelGroupViewLifetimeTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
+tests/src/gui/Lv2ViewBaseLifetimeTest.cpp
 tests/src/gui/MainWindowGeometryTest.cpp
 tests/src/gui/MainWindowTest.cpp
 tests/src/gui/MenuTestSupport.h
@@ -2959,6 +2964,7 @@ tests/src/plugins/ReverbSCCreateTestAllocator.c
 tests/src/plugins/ReverbSCInitTest.cpp
 tests/src/plugins/ReverbSCRawProcessingTest.cpp
 tests/src/plugins/ReverbScAllocationTest.cpp
+tests/src/plugins/RnnoiseDenoiserEffectTest.cpp
 tests/src/plugins/RnnoiseHarnessOutputTest.cpp
 tests/src/plugins/SampleRateDependentLadspa.cpp
 tests/src/plugins/SlicerTWaveformTest.cpp
