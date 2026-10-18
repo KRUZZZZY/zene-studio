@@ -160,6 +160,8 @@ private slots:
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.wav")), BrowserKind::Audio);
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.FLAC")), BrowserKind::Audio);
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.xpf")), BrowserKind::Preset);
+		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/standard.cs.xml")), BrowserKind::Preset);
+		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.xml")), BrowserKind::Other);
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.mmpz")), BrowserKind::Project);
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.mid")), BrowserKind::Midi);
 		QCOMPARE(browserKindForPath(QStringLiteral("/tmp/a.txt")), BrowserKind::Other);
