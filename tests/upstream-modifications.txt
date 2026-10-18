@@ -2528,3 +2528,4 @@ plugins/Lb302/Lb302.h	cluster new-p10-184: add per-slot readiness sequence count
 tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p10-184: regress a producer paused after claiming an unpublished LB302 note slot.
 src/core/Mixer.cpp	cluster new-p10-251: duplicate <vcagroup> IDs during load are warned about and the full group is preserved under the lowest free ID.
 tests/src/core/VcaGroupTest.cpp	cluster new-p10-251: regression for duplicate serialized VCA group IDs preserving the group's fader, mute, mixer membership and edit-track membership.
+tests/src/core/ImportFilterTest.cpp	cluster new-p10-411: add a subprocess regression proving a malformed launch fallback template cannot re-enter loadProject fallback.

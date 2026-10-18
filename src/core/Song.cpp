@@ -1838,6 +1838,8 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	{
 		if( m_loadOnLaunch )
 		{
+			// A failed fallback template must not ask this branch to fall back again.
+			m_loadOnLaunch = false;
 			createNewProject();
 		}
 		setProjectFileName(m_oldFileName);
