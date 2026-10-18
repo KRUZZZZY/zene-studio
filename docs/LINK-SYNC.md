@@ -280,6 +280,11 @@ true in general across machines, which is precisely the class of thing Link's ow
 protocol spends its handshake on. `link.get_state` carries the assumption in
 `interop.clock` so no reader has to find it here.
 
+On receipt, the sender timestamp must be no later than the receiver's monotone
+clock and no more than `PeerTimeoutMs` (1,500 ms) old. Older announcements are
+discarded before they refresh peer liveness or affect the adopted phase; this
+prevents an integral but stale timestamp from counting most of local uptime as
+network transit.
 
 ## 5. What is NOT here (each is a limitation, not an omission)
 

@@ -65,6 +65,10 @@ using link::LinkSessionReport;
 namespace
 {
 
+// An announcement older than the peer timeout cannot represent a live peer.
+// Reject it before it refreshes peer liveness or contributes transit phase.
+constexpr quint64 MaxTransitAgeUs = static_cast<quint64>(link::PeerTimeoutMs) * 1000;
+
 QString revisionOwnerFor(const LinkPeerPacket& packet)
 {
 	return packet.revisionOwner.isEmpty() ? packet.id : packet.revisionOwner;
@@ -310,10 +314,12 @@ void LinkSyncEngine::applyTempoToEngine(double bpm)
 
 void LinkSyncEngine::observePacket(const LinkPeerPacket& packet, quint64 receivedUs)
 {
-	if (!m_enabled || packet.id == m_peerId)
+	const bool timestampIsPlausible = packet.sentUs <= receivedUs
+		&& receivedUs - packet.sentUs <= MaxTransitAgeUs;
+	if (!m_enabled || packet.id == m_peerId || !timestampIsPlausible)
 	{
-		// Disabled: nothing is joined, so nothing is heard. Own id: the
-		// multicast group loops our own announcement back to us.
+		// Disabled: nothing is joined. Own id: the multicast group loops our
+		// announcement back. Implausible timestamps cannot affect the session.
 		return;
 	}
 	rememberPeer(packet, receivedUs);
