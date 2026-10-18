@@ -282,10 +282,9 @@ void SaProcessor::analyze(LocklessRingBuffer<SampleFrame> &ring_buffer)
 					// Copy work buffer to result buffer. Done only if requested, so
 					// that time isn't wasted on updating faster than display FPS.
 					// (The copy is about as expensive as the movement.)
-					if (m_flipRequest)
+					if (m_flipRequest.exchange(false, std::memory_order_relaxed))
 					{
 						m_history = m_history_work;
-						m_flipRequest = false;
 					}
 				}
 				// clean up before checking for more data from input buffer
@@ -493,6 +492,15 @@ bool SaProcessor::spectrumNotEmpty()
 unsigned int SaProcessor::getSampleRate() const
 {
 	return m_sampleRate;
+}
+
+
+// Return history that remains valid and unchanged after the locks are released.
+QImage SaProcessor::historySnapshot()
+{
+	QMutexLocker reloc_lock(&m_reallocationAccess);
+	QMutexLocker data_lock(&m_dataAccess);
+	return QImage(m_history.data(), waterfallWidth(), m_waterfallHeight, QImage::Format_RGB32).copy();
 }
 
 
