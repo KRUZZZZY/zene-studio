@@ -25,6 +25,7 @@
 #include "DevicePicker.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <QDialogButtonBox>
 #include <QHeaderView>
@@ -295,8 +296,23 @@ void DevicePicker::accept()
 	QDialog::accept();
 }
 
+namespace
+{
+std::function<QString(DevicePicker::Kind, const QString&)>& chooser()
+{
+	static std::function<QString(DevicePicker::Kind, const QString&)> instance;
+	return instance;
+}
+} // namespace
+
+void DevicePicker::setChooser(std::function<QString(Kind, const QString&)> replacement)
+{
+	chooser() = std::move(replacement);
+}
+
 QString DevicePicker::pick(QWidget* parent, Kind kind, const QString& title)
 {
+	if (chooser()) { return chooser()(kind, title); }
 	DevicePicker picker(kind, title, parent);
 	return picker.exec() == QDialog::Accepted ? picker.selectedDevice() : QString();
 }

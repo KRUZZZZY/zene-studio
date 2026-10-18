@@ -26,6 +26,7 @@
 #define LMMS_GUI_DEVICE_PICKER_H
 
 #include <QDialog>
+#include <functional>
 
 #include "lmms_export.h"
 
@@ -84,6 +85,8 @@ public:
 
 	//! Opens the picker modally; the chosen dev-<n>, or empty when cancelled.
 	static QString pick(QWidget* parent, Kind kind, const QString& title);
+	//! For the tests: answer pick() with @a chooser instead of opening the dialog; an empty one restores the dialog.
+	static void setChooser(std::function<QString(Kind, const QString&)> chooser);
 
 protected:
 	bool eventFilter(QObject* watched, QEvent* event) override;

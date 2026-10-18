@@ -134,8 +134,12 @@ than it, so a stale recovery file no longer strands you at a prompt before autos
   pressure and timbre as channel pressure / CC74 sent on the note's own channel — and there is still
   **no expression editor**;
 - racks (parallel chains and a chain selector on a channel) and VCA / mix-and-edit groups, both saved
-  in the project — **you cannot create one from the interface** (the `rack.*` and `vca.*` groups are
-  how one is built over the socket), only load a project that already contains one;
+  in the project. A mixer channel's menu has a **Rack** submenu to add, route and remove parallel chains,
+  split the input, wrap a chain, add macros and zones (**Zones...**, **Add Zone...**); the Device panel shows
+  each parallel chain, an empty one has an **Add device...** button on its heading, and the panel's **Add device**
+  fills the selected parallel chain (a device on a card can also Insert Effect Before/After);
+  VCA groups are made from a mixer channel's menu (**New VCA group**,
+  `src/gui/VcaStripView.cpp:195-201`) and have a strip in the mixer; the `rack.*` and `vca.*` groups are the full surface over the socket;
 - auto-mastering wave 1 on the command line (`zene master`): one render, several measured candidates
   against a named loudness target — it **generates and measures; it does not pick a "best"**;
 - a reproducible export render (exports render on one thread; live playback still uses the pool) — 7

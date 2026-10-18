@@ -163,14 +163,31 @@ QWidget* DevicePanel::buildAddButton()
 	add->setMinimumHeight(tokens::targetSize());
 	// Theme 12: the searchable picker (DevicePicker.h) - every loadable effect of every format, with its vendor and
 	// state in words - in place of a menu of the built-in effects only.
-	connect(add, &QToolButton::clicked, this, [this] {
-		const QString device = DevicePicker::pick(this, DevicePicker::Kind::Effect, tr("Add a device to %1").arg(m_target));
-		if (device.isEmpty() || m_target.isEmpty()) { return; }
-		// runCommand: a refused load is shown, not swallowed.
-		runCommand(this, CommandCall{QStringLiteral("plugin.load"), {{QStringLiteral("target"), m_target},
-			{QStringLiteral("device"), device}}, {}, QString(), false});
-	});
+	// Q050-047: with a channel selected it fills the channel's selected parallel chain, when there is one.
+	connect(add, &QToolButton::clicked, this, [this] { addDevice(m_target, addTargetChain()); });
 	return add;
+}
+
+int DevicePanel::addTargetChain() const
+{
+	ControlResult error;
+	if (m_target.isEmpty() || m_target != m_channel) { return 0; }
+	const MixerChannel* channel = control::resolveMixerChannel(m_channel, &error);
+	if (channel == nullptr) { return 0; }
+	const int selected = channel->m_rack.selectedChain();
+	return selected >= 1 && selected < channel->m_rack.chainCount() ? selected : 0;
+}
+
+void DevicePanel::addDevice(const QString& target, int chain)
+{
+	const QString title = chain >= 1 ? tr("Add a device to %1, parallel chain %2").arg(target).arg(chain)
+		: tr("Add a device to %1").arg(target);
+	const QString device = DevicePicker::pick(this, DevicePicker::Kind::Effect, title);
+	if (device.isEmpty() || target.isEmpty()) { return; }
+	QJsonObject args{{QStringLiteral("target"), target}, {QStringLiteral("device"), device}};
+	if (chain >= 1) { args.insert(QStringLiteral("chain"), chain); }
+	// runCommand: a refused load is shown, not swallowed. The same plugin.load the socket takes, one undo step.
+	runCommand(this, CommandCall{QStringLiteral("plugin.load"), args, {}, QString(), false});
 }
 
 void DevicePanel::showEvent(QShowEvent* event)
@@ -373,6 +390,22 @@ void DevicePanel::addChannel(MixerChannel* channel)
 	for (int c = 1; c < channel->m_rack.chainCount(); ++c)
 	{
 		addSection(tr("Parallel chain %1").arg(c));
+		// Q050-047: an empty chain has no card (so no Insert Before/After menu): its heading carries the way in.
+		if (channel->m_rack.chain(c)->effects().empty())
+		{
+			place(QStringLiteral("chainadd:%1:%2").arg(m_channel).arg(c), [this, c] {
+				auto* button = new QToolButton(m_row);
+				button->setObjectName(QStringLiteral("deviceAddToChain"));
+				button->setProperty("chain", c);
+				button->setIcon(shellicons::icon(QStringLiteral("plus")));
+				button->setText(tr("Add device..."));
+				button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+				button->setAccessibleName(tr("Add a device to parallel chain %1").arg(c));
+				button->setMinimumHeight(tokens::targetSize());
+				connect(button, &QToolButton::clicked, this, [this, c] { addDevice(m_channel, c); });
+				return button;
+			}, Qt::AlignTop);
+		}
 		addChain(channel->m_rack.chain(c), m_channel, modulators, c);  // a modulator can drive a rack chain's device
 	}
 }
@@ -425,6 +458,7 @@ QString DevicePanel::signature() const
 	if (MixerChannel* channel = m_channel.isEmpty() ? nullptr : control::resolveMixerChannel(m_channel, &error))
 	{
 		for (const Effect* effect : channel->m_fxChain.effects()) { text += control::effectIdOf(effect); }
+		text += QStringLiteral("|sel%1").arg(channel->m_rack.selectedChain());  // Add device follows the selected chain
 		for (int c = 1; c < channel->m_rack.chainCount(); ++c)
 		{
 			text += QStringLiteral("|chain%1:").arg(c);
