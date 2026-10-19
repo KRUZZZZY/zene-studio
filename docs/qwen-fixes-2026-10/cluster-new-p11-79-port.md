@@ -220,12 +220,17 @@ because the harness drives the **static** path (`loadSettings → setInitValue` 
    (`ctest -R 'Delay|Lfo'`, 6 CTest entries) is green, and the wider plugin family
    shows only the pre-existing `PluginPortsMigrationTest` failure that also fails
    without this change.
-5. **Realtime, undo, commands.** The only audio-thread change is one double division
+5. **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE" — not applicable.** The
+   verdict is FIXED (a real bug): the pre-fix code on this line handed the raw model
+   value (seconds) to `Lfo::setFrequency()` at `plugins/Delay/DelayEffect.cpp:120`,
+   while the static path reciprocated it at `plugins/Delay/DelayEffect.cpp:93`. Both
+   lines are quoted in the RED log evidence above.
+6. **Realtime, undo, commands.** The only audio-thread change is one double division
    per sample inside `DelayEffect::processImpl` — no allocation, no free, no mutex,
    no wait, no I/O, no logging, no signal, no new command, no new control, no undo
    step (the fix is a pure computation, not a user action). The `ControlCommands`
    snapshot is untouched.
-6. **Gates and registration.** `feature_check.py` → EXIT 0 with all eight rows PASS
+7. **Gates and registration.** `feature_check.py` → EXIT 0 with all eight rows PASS
    (`gate-1-feature-check.log`); the complexity and file-length ratchets report only
    pre-existing items, none of them in the files of this change
    (`gate-2-complexity.log`, `gate-3-file-length.log`). The changed product file is
