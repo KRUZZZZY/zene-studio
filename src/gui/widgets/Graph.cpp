@@ -189,6 +189,9 @@ void Graph::mousePressEvent( QMouseEvent * _me )
 
 			if ( m_lastCursorX >= 0 )
 			{
+				x = qMax( 2, qMin( x, width()-3 ) );
+				y = qMax( 2, qMin( y, height()-3 ) );
+
 				drawLineAt( x, y, m_lastCursorX );
 			}
 			else

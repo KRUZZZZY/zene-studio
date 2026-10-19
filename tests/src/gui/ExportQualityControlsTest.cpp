@@ -33,11 +33,13 @@
 #include <QFormLayout>
 #include <QLabel>
 #include <QPointer>
+#include <QSignalSpy>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "ExportProjectDialog.h"
 #include "ExportRenderSettings.h"
+#include "Graph.h"
 #include "OutputSettings.h"
 #include "ProjectRenderer.h"
 
@@ -145,6 +147,27 @@ private slots:
 		}
 
 		QVERIFY(compressionLevel.isNull());
+	}
+
+	void shiftClicksStayWithinGraphSamples()
+	{
+		Graph graph(nullptr, Graph::Style::LinearNonCyclic, 20, 40);
+		graph.show();
+		QSignalSpy changes(graph.model(), &graphModel::samplesChanged);
+		QVERIFY(changes.isValid());
+
+		QTest::mouseClick(&graph, Qt::LeftButton, Qt::NoModifier, QPoint(8, 20));
+		changes.clear();
+		QTest::mouseClick(&graph, Qt::LeftButton, Qt::ShiftModifier, QPoint(0, 20));
+		QCOMPARE(changes.size(), 1);
+		QCOMPARE(changes.constFirst().at(0).toInt(), 0);
+		QCOMPARE(changes.constFirst().at(1).toInt(), 55);
+
+		changes.clear();
+		QTest::mouseClick(&graph, Qt::LeftButton, Qt::ShiftModifier, QPoint(19, 20));
+		QCOMPARE(changes.size(), 1);
+		QCOMPARE(changes.constFirst().at(0).toInt(), 0);
+		QCOMPARE(changes.constFirst().at(1).toInt(), graph.model()->length() - 1);
 	}
 };
 
