@@ -286,6 +286,49 @@ private slots:
 		QVERIFY(secondRamp != nullptr);
 		QCOMPARE(firstRamp->valueAt(0), kCurveStart);
 		QCOMPARE(secondRamp->valueAt(0), kCurveStart);
+
+		// A block that STRADDLES the first node: the prefix override must stop
+		// exactly at the first frame on or after the node, leaving the shared
+		// curve from there on untouched. Tick 49 plus 300 frames starts the
+		// block just before tick 50, so the node falls inside the block.
+		constexpr int kFrameOffsetInTick = 300;
+		const double nodeFrame = (50.0 - 49.0) * framesPerTick
+			- static_cast<double>(kFrameOffsetInTick);
+		QVERIFY2(nodeFrame > 0.0 && nodeFrame < static_cast<double>(frames),
+			"the fixture must put the first node inside the block");
+		const f_cnt_t firstNodeFrame = static_cast<f_cnt_t>(std::ceil(nodeFrame));
+		QVERIFY(firstNodeFrame > 0 && firstNodeFrame < frames);
+
+		AutomatableModel::incrementPeriodCounter();
+		song->buildAutomationRamps(song->tracks(), TimePos(49), frames, kFrameOffsetInTick);
+		firstRamp = first.automationRamp();
+		secondRamp = second.automationRamp();
+		QVERIFY(firstRamp != nullptr);
+		QVERIFY(secondRamp != nullptr);
+		for (f_cnt_t f = 0; f < firstNodeFrame; ++f)
+		{
+			QVERIFY2(firstRamp->valueAt(f) == kParamInit,
+				qPrintable(QStringLiteral("straddle: first target frame %1 reads %2, not %3")
+					.arg(f).arg(firstRamp->valueAt(f), 0, 'g', 6).arg(kParamInit, 0, 'g', 6)));
+			QVERIFY2(secondRamp->valueAt(f) == otherInit,
+				qPrintable(QStringLiteral("straddle: second target frame %1 reads %2, not %3")
+					.arg(f).arg(secondRamp->valueAt(f), 0, 'g', 6).arg(otherInit, 0, 'g', 6)));
+		}
+		// From the first frame on/after the node both targets share the curve.
+		// The node frame is the first sample at/after tick 50, so it sits just
+		// past the node's exact position (the frame grid is finer than a tick).
+		QVERIFY2(std::fabs(firstRamp->valueAt(firstNodeFrame) - kCurveStart) < 1.0e-3f,
+			qPrintable(QStringLiteral("straddle: first frame after the node reads %1, not the curve's %2")
+				.arg(firstRamp->valueAt(firstNodeFrame), 0, 'g', 8).arg(kCurveStart, 0, 'g', 8)));
+		QVERIFY2(std::fabs(secondRamp->valueAt(firstNodeFrame) - kCurveStart) < 1.0e-3f,
+			qPrintable(QStringLiteral("straddle: second target at the node frame reads %1, not the curve's %2")
+				.arg(secondRamp->valueAt(firstNodeFrame), 0, 'g', 8).arg(kCurveStart, 0, 'g', 8)));
+		for (f_cnt_t f = firstNodeFrame; f < frames; ++f)
+		{
+			QVERIFY2(firstRamp->valueAt(f) == secondRamp->valueAt(f),
+				qPrintable(QStringLiteral("straddle: targets disagree at frame %1 after the node")
+					.arg(f)));
+		}
 	}
 
 	//! Acceptance 2: start before the first node, stop, seek and return to the

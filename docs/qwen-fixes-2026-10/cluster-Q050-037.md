@@ -11,7 +11,7 @@ Q050-037 - define the automation value before its first point. Feature record:
 | Times before the first node read the authored parameter's initial value, or an explicit clip-start value when present, rather than zero | `ctest -R "^(AutomationPreFirstValueTest\|SampleAccurateAutomationTest)$" --output-on-failure` (`build-4.log` EXIT=0; `test-2.log`) | EXIT=0. `beforeTheFirstNodeReadsTheParameterInitialValue`, `aPointAtTheClipStartIsTheExplicitStartValue`, `theAudioRampHoldsTheSamePreFirstValue` and `SampleAccurateAutomationTest::aBlockBeforeTheFirstPointReadsThePreFirstValue` pass; the last one now expects the parameter's inverse-scaled initial value instead of `0`. |
 | Seek or start before the first node, stop, and return to start; playback reports the same value each time | same command (`test-2.log`) | EXIT=0. `playbackReportsTheSameValueAtEveryReturnToStart`: real blocks through `Song::processNextBuffer()` at tick 0 (from a stale 0), 150 (inside the curve), then 0, 0 and 20 all report `0.72`. |
 | Save and reload a project with a later first node: pre-first contract stable, interpolation at/after the first node unchanged | same command (`test-2.log`) | EXIT=0. `saveAndReloadKeepsThePreFirstContract`: project-owned master volume (initial 100), first node tick 50; after `saveProjectFile`/`loadProject` the pre-first read is again 100 and the values at 50, 125 and 300 equal the pre-save reads. |
-| Per-target initial values on the ramps `Song` actually publishes (review r1) | same command (`test-2.log`) | EXIT=0. `eachTargetHoldsItsOwnInitialValueThroughSongPublish`: two targets (0.72 / 0.35) read their own value on every frame of a block before the first node through `Song::buildAutomationRamps`, and both read the shared curve at the first node. |
+| Per-target initial values on the ramps `Song` actually publishes (review r1) | same command (`test-2.log`, then `test-4.log` for the straddle block) | EXIT=0. `eachTargetHoldsItsOwnInitialValueThroughSongPublish`: two targets (0.72 / 0.35) read their own value on every frame of a block before the first node through `Song::buildAutomationRamps`, both read the shared curve at the first node, and a block that STRADDLES the node switches each target from its own prefix to the shared curve at the first frame on/after the node. |
 | Neighbour regression sweep | `ctest -R "^(AutomationModesTest\|AutomationLanesTest\|AutomationTrackTest\|AutomationPrepassProofTest\|AutomationRenderAllocationTest\|ControlAutomationModesTest\|AutomationWriteToEndTest\|AutomationThinTest\|AudioAutomationToolsTest\|AutomationPreFirstValueTest\|SampleAccurateAutomationTest)$" --output-on-failure` (`build-5.log` EXIT=0; `test-3.log`) | EXIT=0, 11/11 passed. |
 | Realtime sweep with the changed render callees declared | `python3 tests/rt-safety-sweep.py --check` (`rt-sweep-1.log`) | EXIT=0; 73 declared paths, 0 fresh hits, 3 allowlisted keys unchanged (no new allowlist entry). |
 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py $PWD` (`feature-check-1.log`) | EXIT=0; fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity and file-length all PASS. |
@@ -20,9 +20,9 @@ Q050-037 - define the automation value before its first point. Feature record:
 compile).** Temporary reverse hunks: `preFirstValueLocked()` returned `0`, and
 `TrackContainer::collectAutomatedValues()` always wrote the one `valueAt()` value.
 `cmake --build build --target zene AutomationPreFirstValueTest SampleAccurateAutomationTest -- -j4`
-(`build-reversed-1.log`) EXIT=0; then
+(`build-reversed-2.log`) EXIT=0; then
 `ctest -R "^(AutomationPreFirstValueTest|SampleAccurateAutomationTest)$" --output-on-failure`
-(`test-reversed-1.log`) **EXIT=8**, 0/2 targets passed:
+(`test-reversed-2.log`) **EXIT=8**, 0/2 targets passed:
 `beforeTheFirstNodeReadsTheParameterInitialValue` (fuzzy compare),
 `theAudioRampHoldsTheSamePreFirstValue` ("frame 0 of the ramp reads 0, not ... 0.72"),
 `eachTargetHoldsItsOwnInitialValueThroughSongPublish`,
@@ -30,7 +30,9 @@ compile).** Temporary reverse hunks: `preFirstValueLocked()` returned `0`, and
 `saveAndReloadKeepsThePreFirstContract`, and
 `SampleAccurateAutomationTest::aBlockBeforeTheFirstPointReadsThePreFirstValue`
 ("frame 0 ... reads 0, not ... 50"). Restored with `git checkout --` and rebuilt:
-`build-restored-1.log` EXIT=0; the same ctest (`test-restored-1.log`) EXIT=0.
+`build-restored-2.log` EXIT=0; the same ctest (`test-restored-2.log`) EXIT=0
+(`build-reversed-1.log`/`test-reversed-1.log`/`build-restored-1.log`/`test-restored-1.log`
+are the same runs before the straddle block was added).
 
 ## Self-check
 
