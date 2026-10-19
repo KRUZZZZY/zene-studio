@@ -489,11 +489,17 @@ void TrackContainer::collectAutomatedValues(AutomationRenderScratch& level, Auto
 			if (!p->isInPattern()) {
 				relTime = std::min(static_cast<int>(relTime), p->length() - p->startTimeOffset());
 			}
-			float value = p->valueAt(relTime);
+			// Q050-037: before the first node each target holds its OWN authored
+			// initial value. valueAt() reports the pre-first read in the same
+			// lock it already took, so this pass adds no mutex acquisition.
+			bool beforeFirst = false;
+			const float value = p->valueAt(relTime, &beforeFirst);
 
 			for (AutomatableModel* model : p->objects())
 			{
-				level.set(model, value);
+				if (model == nullptr) { continue; }
+				level.set(model, beforeFirst
+					? model->inverseScaledValue(model->initValue<float>()) : value);
 			}
 		}
 		else if (auto* pattern = dynamic_cast<PatternClip*>(clip))

@@ -202,6 +202,28 @@ const AutomatableModel * AutomationClip::firstObject() const
 	return &fm;
 }
 
+
+
+
+float AutomationClip::preFirstValueLocked( const AutomatableModel * target ) const
+{
+	const AutomatableModel* model = target;
+	if( model == nullptr && !m_objects.empty() )
+	{
+		model = m_objects.front().data();
+	}
+	if( model == nullptr )
+	{
+		return 0.0f;
+	}
+	// The map stores inverse-scaled values (playback applies scaledValue), so the
+	// authored initial value goes through the same conversion the nodes do.
+	return model->inverseScaledValue( model->initValue<float>() );
+}
+
+
+
+
 const AutomationClip::objectVector& AutomationClip::objects() const
 {
 	QMutexLocker m(&m_clipMutex);
@@ -606,9 +628,11 @@ void AutomationClip::applyDragValue()
 
 
 
-float AutomationClip::valueAt( const TimePos & _time ) const
+float AutomationClip::valueAt( const TimePos & _time, bool * beforeFirstNode ) const
 {
 	QMutexLocker m(&m_clipMutex);
+
+	if( beforeFirstNode != nullptr ) { *beforeFirstNode = false; }
 
 	if( m_timeMap.isEmpty() )
 	{
@@ -629,7 +653,13 @@ float AutomationClip::valueAt( const TimePos & _time ) const
 
 	if( v == m_timeMap.begin() )
 	{
-		return 0;
+		// Q050-037: _time is before the FIRST node. The curve has not begun, so
+		// the clip holds the authored parameter's initial value rather than the
+		// arbitrary 0 (the parameter's minimum) that used to slam the control
+		// down on every start and return to the beginning. A point at tick 0 is
+		// simply the first node, so it remains the explicit start value.
+		if( beforeFirstNode != nullptr ) { *beforeFirstNode = true; }
+		return preFirstValueLocked( nullptr );
 	}
 
 	const auto pv = std::prev(v);
@@ -749,9 +779,9 @@ void AutomationClip::setRampSetting( RampSetting setting )
 }
 
 
-float AutomationClip::rampValueAt( const TimePos & rel, float fraction ) const
+float AutomationClip::rampValueAt( const TimePos & rel, float fraction, float preFirstValue ) const
 {
-	if( m_timeMap.isEmpty() || rel < 0 )
+	if( m_timeMap.isEmpty() )
 	{
 		return 0.0f;
 	}
@@ -773,9 +803,9 @@ float AutomationClip::rampValueAt( const TimePos & rel, float fraction ) const
 	if( next == m_timeMap.begin() )
 	{
 		// Before the FIRST node no segment has started, and stepping back from
-		// upperBound() would step off the map: the clip's value there is the one
-		// valueAt(TimePos) returns for the same ticks, which is no value at all.
-		return 0.0f;
+		// upperBound() would step off the map: the clip holds the same pre-first
+		// value valueAt(TimePos) returns for the same ticks (Q050-037).
+		return preFirstValue;
 	}
 	const timeMap::const_iterator v = std::prev( next );
 	const int offset = ticks - POS( v );
@@ -786,7 +816,7 @@ float AutomationClip::rampValueAt( const TimePos & rel, float fraction ) const
 
 
 void AutomationClip::addRampKnot( AutomationRamp & ramp, const TimePos & relClipStart,
-	int frame, int frameOffsetInTick, double framesPerTick ) const
+	int frame, int frameOffsetInTick, double framesPerTick, float preFirstValue ) const
 {
 	// The knot's own POSITION inside its tick, from the frame it is written on,
 	// so a knot is exactly on the curve rather than at a rounded boundary.
@@ -799,15 +829,17 @@ void AutomationClip::addRampKnot( AutomationRamp & ramp, const TimePos & relClip
 	{
 		rel = std::min( static_cast<int>( rel ), length() - startTimeOffset() );
 	}
-	ramp.addKnot( static_cast<f_cnt_t>( frame ), rampValueAt( rel, fraction ) );
+	ramp.addKnot( static_cast<f_cnt_t>( frame ), rampValueAt( rel, fraction, preFirstValue ) );
 }
 
 
 void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart,
-	f_cnt_t frames, double framesPerTick, int frameOffsetInTick ) const
+	f_cnt_t frames, double framesPerTick, int frameOffsetInTick,
+	const AutomatableModel * target, f_cnt_t * firstNodeFrame ) const
 {
 	QMutexLocker m(&m_clipMutex);
 
+	if( firstNodeFrame != nullptr ) { *firstNodeFrame = 0; }
 	ramp.reset( frames );
 	if( m_timeMap.isEmpty() || frames == 0 || framesPerTick <= 0.0 )
 	{
@@ -820,9 +852,34 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 		return; // the block starts before this clip does
 	}
 
+	const float preFirstValue = preFirstValueLocked( target );
+
+	// Q050-037: report where the first node starts inside the block (frame 0
+	// when it is at or before the block). A caller that publishes the same ramp
+	// to several targets can then copy it and replace only the pre-first prefix
+	// for a target whose authored initial value differs, under the one clip lock
+	// this build already takes.
+	if( firstNodeFrame != nullptr )
+	{
+		const std::int64_t firstTick = m_timeMap.constBegin().key();
+		const double nodeFrame = ( static_cast<double>( firstTick )
+			- static_cast<double>( relStart.getTicks() ) ) * framesPerTick
+			- static_cast<double>( frameOffsetInTick );
+		if( nodeFrame > 0.0 )
+		{
+			// frames + 1 means "past the block's last frame": every knot,
+			// including the block's end knot, still belongs to the pre-first
+			// prefix. A node exactly ON the last frame keeps that frame on the
+			// curve (ceil() == frames), so only the knots before it are replaced.
+			const double first = std::ceil( nodeFrame );
+			*firstNodeFrame = static_cast<f_cnt_t>(
+				std::min( first, static_cast<double>( frames ) + 1.0 ) );
+		}
+	}
+
 	// The block's own geometry travels with each knot call.
 	// Knot 0 is the block's first sample, at its own position inside its tick.
-	addRampKnot( ramp, relStart, 0, frameOffsetInTick, framesPerTick );
+	addRampKnot( ramp, relStart, 0, frameOffsetInTick, framesPerTick, preFirstValue );
 
 	// Then one PAIR of knots per tick boundary inside the block: the frame
 	// before the boundary holds the value the curve had coming into it, the
@@ -857,18 +914,18 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 		// so it is the one frame that must not be written twice.
 		if( before > 0 )
 		{
-			addRampKnot( ramp, relStart, before, frameOffsetInTick, framesPerTick );
+			addRampKnot( ramp, relStart, before, frameOffsetInTick, framesPerTick, preFirstValue );
 		}
 		if( after > 0 && after < static_cast<int>( frames ) )
 		{
-			addRampKnot( ramp, relStart, after, frameOffsetInTick, framesPerTick );
+			addRampKnot( ramp, relStart, after, frameOffsetInTick, framesPerTick, preFirstValue );
 		}
 	}
 
 	// ...and the block's end, so the samples after the last boundary
 	// interpolate to where the curve actually is when the block runs out,
 	// instead of holding the last boundary's value.
-	addRampKnot( ramp, relStart, static_cast<int>( frames ), frameOffsetInTick, framesPerTick );
+	addRampKnot( ramp, relStart, static_cast<int>( frames ), frameOffsetInTick, framesPerTick, preFirstValue );
 }
 
 

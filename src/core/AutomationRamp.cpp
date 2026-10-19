@@ -51,6 +51,17 @@ bool AutomationRamp::addKnot(f_cnt_t frame, float value) noexcept
 	return true;
 }
 
+void AutomationRamp::setValueBefore(f_cnt_t frameExclusive, float value) noexcept
+{
+	for (int i = 0; i < m_knotCount; ++i)
+	{
+		if (m_knots[i].frame < frameExclusive)
+		{
+			m_knots[i].value = value;
+		}
+	}
+}
+
 void AutomationRamp::setBlockValue(float value) noexcept
 {
 	reset(m_frames);

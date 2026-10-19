@@ -1473,9 +1473,24 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 				continue;
 			}
 
+			// The clip's targets, read once through the existing accessor. The
+			// ramp is then built under ONE clip lock, as before: a target whose
+			// authored initial value differs gets a COPY of the ramp with only
+			// the pre-first knots overridden, never a second rebuild.
+			const AutomationClip::objectVector& targets = automationClip->objects();
+			const AutomatableModel* baseTarget = nullptr;
+			for( const QPointer<AutomatableModel>& candidate : targets )
+			{
+				if( candidate != nullptr ) { baseTarget = candidate; break; }
+			}
+			const float basePreFirst = baseTarget == nullptr ? 0.0f
+				: baseTarget->inverseScaledValue( baseTarget->initValue<float>() );
+
 			AutomationRamp ramp;
-			automationClip->writeBlockRamp( ramp, readStart, frames, framesPerTick, readOffsetInTick );
-			for( const QPointer<AutomatableModel>& model : automationClip->objects() )
+			f_cnt_t firstNodeFrame = 0;
+			automationClip->writeBlockRamp( ramp, readStart, frames, framesPerTick,
+				readOffsetInTick, baseTarget, &firstNodeFrame );
+			for( const QPointer<AutomatableModel>& model : targets )
 			{
 				// Automation modes: a control in Off IGNORES its written
 				// automation - the manual value stands - and this publish is a
@@ -1483,11 +1498,28 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 				// apply pass obeys (Song::processAutomations). Without it the
 				// ramp reaches an Off parameter before the apply pass can skip
 				// it, and that is the one place the two features meet.
-				if( model != nullptr
-					&& model->automationMode() != AutomatableModel::AutomationMode::Off )
+				if( model == nullptr
+					|| model->automationMode() == AutomatableModel::AutomationMode::Off )
+				{
+					continue;
+				}
+				if( firstNodeFrame == 0 )
+				{
+					// The first node is at or before the block: every frame is
+					// on the curve, so all targets share this ramp.
+					model->publishAutomationRamp( ramp );
+					continue;
+				}
+				const float targetPreFirst =
+					model->inverseScaledValue( model->initValue<float>() );
+				if( targetPreFirst == basePreFirst )
 				{
 					model->publishAutomationRamp( ramp );
+					continue;
 				}
+				AutomationRamp own = ramp;
+				own.setValueBefore( firstNodeFrame, targetPreFirst );
+				model->publishAutomationRamp( own );
 			}
 		}
 	}

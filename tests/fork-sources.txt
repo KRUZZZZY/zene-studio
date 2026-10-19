@@ -2703,3 +2703,6 @@ docs/qwen-fixes-2026-10/cluster-Q050-148.md
 docs/qwen-fixes-2026-10/cluster-new-p10-518-port.md
 # cluster new-p11-81-port (2026-10): report for the delay primitive per-channel cursor fix ported onto 050/m0-train-5.
 docs/qwen-fixes-2026-10/cluster-new-p11-81-port.md
+
+# 2026-10-20 (Q050-037): the pre-first-point contract of an automation clip (fork-NEW regression).
+tests/src/core/AutomationPreFirstValueTest.cpp
