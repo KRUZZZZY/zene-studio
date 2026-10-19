@@ -46,6 +46,12 @@ public:
 	CPULoadWidget( QWidget * _parent );
 	~CPULoadWidget() override = default;
 
+#ifdef LMMS_TESTING
+	//! Test seam: the profiler reading the next updateCpuLoad() takes. -1 (the default) reads the
+	//! live profiler, which is all production ever does - this block is compiled out of the shipped build.
+	void setCpuLoadForTesting(int load) { m_cpuLoadForTesting = load; }
+#endif
+
 
 protected:
 	void paintEvent( QPaintEvent * _ev ) override;
@@ -58,7 +64,14 @@ protected slots:
 private:
 	int stepSize() const { return std::max(1, m_stepSize); }
 
+	//! The profiler reading the smoothed readout moves toward.
+	int profilerLoad() const;
+
 	int m_currentLoad;
+
+#ifdef LMMS_TESTING
+	int m_cpuLoadForTesting = -1;
+#endif
 
 	QPixmap m_temp;
 	QPixmap m_background;

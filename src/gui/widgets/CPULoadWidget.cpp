@@ -88,12 +88,26 @@ void CPULoadWidget::paintEvent( QPaintEvent *  )
 
 
 
+int CPULoadWidget::profilerLoad() const
+{
+#ifdef LMMS_TESTING
+	if( m_cpuLoadForTesting >= 0 )
+	{
+		return m_cpuLoadForTesting;
+	}
+#endif
+	return Engine::audioEngine()->cpuLoad();
+}
+
+
+
+
 void CPULoadWidget::updateCpuLoad()
 {
 	// Additional display smoothing for the main load-value. Stronger averaging
 	// cannot be used directly in the profiler: cpuLoad() must react fast enough
 	// to be useful as overload indicator in AudioEngine::criticalXRuns().
-	const int new_load = (m_currentLoad + Engine::audioEngine()->cpuLoad()) / 2;
+	const int new_load = (m_currentLoad + profilerLoad()) / 2;
 
 	if (new_load != m_currentLoad)
 	{
