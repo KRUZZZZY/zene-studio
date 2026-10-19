@@ -242,6 +242,20 @@ QStringList addTags(const QString& path, const QJsonArray& tags)
 	return added;
 }
 
+bool tagsAreStrings(const QJsonArray& tags)
+{
+	for (const QJsonValue& tag : tags)
+	{
+		if (!tag.isString()) { return false; }
+	}
+	return true;
+}
+
+bool canSaveClip(const Clip* clip)
+{
+	return dynamic_cast<const SampleClip*>(clip) != nullptr || dynamic_cast<const MidiClip*>(clip) != nullptr;
+}
+
 //! What @a path holds right now, and whether it held anything at all: an overwrite
 //! destroys the file it replaces, so undo has to put that file back.
 struct PreviousFile
@@ -298,10 +312,15 @@ bool writeKeepingPrevious(Clip* clip, const QString& path, PreviousFile* previou
 
 ControlResult saveClip(const QJsonObject& args)
 {
+	const QJsonArray tags = args.value(QStringLiteral("tags")).toArray();
+	if (!tagsAreStrings(tags))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'tags' must contain only strings"));
+	}
 	ClipRef ref;
 	ControlResult error;
 	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-	if (dynamic_cast<SampleClip*>(ref.clip) == nullptr && dynamic_cast<MidiClip*>(ref.clip) == nullptr)
+	if (!canSaveClip(ref.clip))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("only sample and MIDI clips can be saved to the library"));
 	}
@@ -311,20 +330,20 @@ ControlResult saveClip(const QJsonObject& args)
 	PreviousFile previous;
 	QString why;
 	if (!writeKeepingPrevious(ref.clip, path, &previous, &why)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip was not saved: %1").arg(why)); }
-	const QStringList tags = addTags(path, args.value(QStringLiteral("tags")).toArray());
+	const QStringList addedTags = addTags(path, tags);
 	const int id = ref.clip->id();
-	addUndoStep([path, tags, previous]() {
-		for (const QString& tag : tags) { BrowserTagStore::instance().remove(browserCanonicalKey(path), tag); }
+	addUndoStep([path, addedTags, previous]() {
+		for (const QString& tag : addedTags) { BrowserTagStore::instance().remove(browserCanonicalKey(path), tag); }
 		restoreOrRemove(previous, path);
-	}, [id, path, tags]() {
+	}, [id, path, addedTags]() {
 		ClipRef again;
 		ControlResult ignored;
 		QString unused;
 		if (!resolveClip(clipId(id), &again, &ignored) || !writeClip(again.clip, path, &unused)) { return; }
-		for (const QString& tag : tags) { BrowserTagStore::instance().add(browserCanonicalKey(path), tag); }
+		for (const QString& tag : addedTags) { BrowserTagStore::instance().add(browserCanonicalKey(path), tag); }
 	});
 	return ControlResult::success({{QStringLiteral("path"), path}, {QStringLiteral("kind"), browserKindName(browserKindForPath(path))},
-		{QStringLiteral("bytes"), QFileInfo(path).size()}, {QStringLiteral("tags"), QJsonArray::fromStringList(tags)}});
+		{QStringLiteral("bytes"), QFileInfo(path).size()}, {QStringLiteral("tags"), QJsonArray::fromStringList(addedTags)}});
 }
 
 } // namespace
