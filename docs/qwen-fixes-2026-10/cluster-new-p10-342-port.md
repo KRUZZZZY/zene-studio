@@ -204,6 +204,15 @@ changed, so no dependent target had to be rebuilt beyond `zene` and the tests.
   `src/core/AudioEngine.cpp:300-302`). The wider sweep and the family sweep show no
   new failure, and the two failures they do show are identical on the tree with the
   change reverted.
+- **The intended contract, for the record** (the fifth ask is conditional on an
+  ALREADY-FIXED / FALSE-POSITIVE verdict, which this cluster's is not - it is FIXED).
+  The contract is the line's own: a sample rate that is not positive is the engine's
+  output rate. It is written down in the code at `src/core/SampleClip.cpp:851-856`
+  (the project loader) and, with this change, at `src/core/SampleBuffer.cpp:108-124`
+  (the factory), and it is pinned by the two regressions named above. The
+  zero-rate-buffer case that is not from a project load is covered by the accepted
+  `SampleClip::windowTicksFor()` guard (new-p12-204) and by
+  `SampleClipWarpTest::nonpositiveRateMapsToNoLength`.
 - **Realtime, undo and commands.** `SampleBuffer::fromBase64()` is called from the
   control thread only (project load, drag and drop); it is not on any audio-thread
   path, and the added `qWarning()` is in the same place as the function's existing
