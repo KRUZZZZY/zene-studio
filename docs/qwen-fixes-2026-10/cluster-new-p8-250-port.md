@@ -100,6 +100,9 @@ All build and test logs are in
 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `gate-feature-check.log` |
 | Ratchet: complexity | `bash tests/complexity-gate.sh --check` | 1 | `gate-complexity.log` |
 | Ratchet: file length | `bash tests/file-length-gate.sh --check` | 1 | `gate-file-length.log` |
+| After the commit: rebuild | `cmake --build build --target zene WasmSandboxTest wasm_effect` | 0 | `build-9-final.log` |
+| After the commit: the test | `ctest -R '^WasmSandboxTest$' --output-on-failure` (from `build/tests`) | 0 | `test-12-final.log` |
+| After the commit: gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `gate-feature-check-final.log` |
 
 * Affected-family test count: **22 passed, 0 failed, 1 skipped** in `WasmSandboxTest`
   (`test-11-full-binary.log`; the skip is `g4_compiledCDemoModule`, which needs the optional
