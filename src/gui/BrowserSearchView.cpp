@@ -49,6 +49,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "BrowserCatalog.h"
 #include "BrowserResults.h"
 #include "BrowserTagMenu.h"
 #include "ControlRegistry.h"
@@ -107,12 +108,14 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	m_search->setProperty("browserSearchHint", true);  // ... keeping this placeholder: it teaches the syntax
 	m_kind = new QComboBox(contentParent());
 	m_kind->setAccessibleName(tr("Kind"));
+	m_kind->setObjectName(QStringLiteral("browserSearchKind"));
 	for (const QString& kind : {tr("Any kind"), QStringLiteral("audio"), QStringLiteral("preset"), QStringLiteral("project"), QStringLiteral("midi")})
 	{
 		m_kind->addItem(kind);
 	}
 	m_root = new QComboBox(contentParent());
 	m_root->setAccessibleName(tr("Where to look"));
+	m_root->setObjectName(QStringLiteral("browserSearchRoot"));
 	m_root->addItem(tr("Everywhere"), QString());
 	for (const QJsonValue& root : run(QStringLiteral("browser.roots")).result.value(QStringLiteral("roots")).toArray())
 	{
@@ -120,12 +123,21 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 			root.toObject().value(QStringLiteral("id")).toString());
 	}
 	m_indexed = new QCheckBox(tr("Whole library"), contentParent());  // WF-012
+	m_indexed->setObjectName(QStringLiteral("browserSearchIndexed"));
 	m_indexed->setToolTip(tr("Search the library index instead of walking the folders"));
 	m_indexed->setProperty("controlCommand", QStringLiteral("browser.index_query"));
+	m_probe = new QCheckBox(tr("Search file metadata"), contentParent());  // R-workflow-4
+	m_probe->setAccessibleName(tr("Search file metadata"));
+	m_probe->setObjectName(QStringLiteral("browserSearchMetadata"));
+	m_probe->setToolTip(tr("Also match what the audio files say they are: the embedded "
+		"title, artist and the sample rate, channels and length (at most %1 files are "
+		"opened per search)").arg(BrowserMaxProbes));
+	m_probe->setProperty("controlCommand", QStringLiteral("browser.query"));
 	top->addWidget(m_search, 1);
 	top->addWidget(m_kind);
 	top->addWidget(m_root);
 	top->addWidget(m_indexed);
+	top->addWidget(m_probe);
 	addContentLayout(top);
 
 	buildActionRow();
@@ -177,6 +189,8 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	connect(m_root, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, m_root, &QWidget::setDisabled);  // the index has no roots to filter by
+	connect(m_indexed, &QCheckBox::toggled, m_probe, &QWidget::setDisabled);  // the index holds no embedded metadata
+	connect(m_probe, &QCheckBox::toggled, this, &BrowserSearchView::runSearch);
 	connectLists();
 	refreshCollections();
 	refreshIndexStatus();
@@ -273,6 +287,9 @@ QJsonObject BrowserSearchView::queryArgs() const
 	{
 		args.insert(QStringLiteral("root"), m_root->currentData().toString());
 	}
+	// The index holds no embedded metadata, and browser.index_query takes no 'probe':
+	// the flag rides the walking query only (R-workflow-4).
+	if (m_probe->isChecked() && !m_indexed->isChecked()) { args.insert(QStringLiteral("probe"), true); }
 	return args;
 }
 
@@ -307,13 +324,15 @@ void BrowserSearchView::restoreQuery(const QJsonObject& entry)
 	const bool indexed = command == QLatin1String("browser.index_query");
 	if (!indexed && command != QLatin1String("browser.query")) { return; }  // a collection or similar sounds: no search of its own
 	const QJsonObject args = entry.value(QStringLiteral("args")).toObject();
-	const QSignalBlocker kind(m_kind), root(m_root), index(m_indexed);  // shown already: no search again
+	const QSignalBlocker kind(m_kind), root(m_root), index(m_indexed), probe(m_probe);  // shown already: no search again
 	// The same text is left alone, so a live search never moves the cursor of the field being typed in.
 	if (m_search->text() != args.value(QStringLiteral("text")).toString()) { m_search->setText(args.value(QStringLiteral("text")).toString()); }
 	m_kind->setCurrentIndex(std::max(0, m_kind->findText(args.value(QStringLiteral("kind")).toString())));
 	m_root->setCurrentIndex(std::max(0, m_root->findData(args.value(QStringLiteral("root")).toString())));
 	m_indexed->setChecked(indexed);
+	m_probe->setChecked(!indexed && args.value(QStringLiteral("probe")).toBool());
 	m_root->setDisabled(indexed);
+	m_probe->setDisabled(indexed);
 }
 
 void BrowserSearchView::search(bool live)
@@ -440,6 +459,7 @@ void BrowserSearchView::saveCollection()
 	if (!ok || name.trimmed().isEmpty()) { return; }
 	QJsonObject args = queryArgs();
 	args.remove(QStringLiteral("limit"));
+	args.remove(QStringLiteral("probe"));  // collection_save stores the query text, not the probe switch
 	args.insert(QStringLiteral("name"), name.trimmed());
 	const ControlResult saved = run(QStringLiteral("browser.collection_save"), args);
 	if (!saved.ok) { m_status->setText(saved.errorMessage); }

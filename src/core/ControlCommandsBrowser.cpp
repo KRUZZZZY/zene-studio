@@ -123,6 +123,11 @@ ControlResult browserQueryHandler(const QJsonObject& args)
 	ControlResult error;
 	if (!readBrowserQueryArguments(args, &query, &error)) { return error; }
 
+	// Read the tag file before matching: a 'tag:' term matches what the STORE
+	// holds, and a fresh session - or another instance that just edited the
+	// library - must not answer from an empty or stale in-memory map.
+	// (browser.index_query and browser.similar load it the same way.)
+	BrowserTagStore::instance().load();
 	const BrowserQueryResult found = runBrowserQuery(query);
 	QJsonArray items;
 	for (const BrowserItem& item : found.items) { items.append(browserItemJson(item, query.probe)); }
