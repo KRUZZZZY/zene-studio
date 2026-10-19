@@ -93,10 +93,12 @@ QString parseRange(const QJsonObject& args, bool required, BounceInPlace::Range*
 //! file. The same bounce made again lands on the same path and replaces it.
 static QString defaultBouncePath(Track* track, const QString& verb, const BounceInPlace::Range& range)
 {
-	const QString project = Engine::getSong()->projectFileName();
+	const Song* song = Engine::getSong();
+	const QString project = song->projectFileName();
 	const QDir base = project.isEmpty() ? QDir(QDir::tempPath()) : QFileInfo(project).dir();
+	// Keep repeated bounces stable in one document while isolating different unsaved projects.
 	const QString name = project.isEmpty()
-		? QStringLiteral("untitled")
+		? QStringLiteral("untitled-%1").arg(song->property("_zeneUnsavedProjectId").toString())
 		: QFileInfo(project).completeBaseName();
 	const QDir directory(base.filePath(name + QStringLiteral("-bounces")));
 
