@@ -505,7 +505,15 @@ ActivePlugin crashSuspect()
 
 void acknowledge()
 {
-	if (!state().installed) { return; }
+	State& s = state();
+	// The offer of a normal start is made in a SAFE session and nowhere else
+	// (the stderr line main() prints and the `offer` block safestart.get_state
+	// reports are both gated on safeStartActive()), so the acknowledgement is
+	// only ever written there. In an ordinary session it would be consumed by
+	// the NEXT launch, and it would hide the crash marker that launch finds:
+	// that launch would start NORMAL, with the third-party plug-in that killed
+	// this one.
+	if (!s.installed || !s.safeStart) { return; }
 	// The marker STAYS: the crash is still there to look at, and the record of
 	// which session died is still on disk for the next launch's report. Only the
 	// decision is recorded here.

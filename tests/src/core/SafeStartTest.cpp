@@ -521,6 +521,54 @@ private slots:
 	// 4. The acknowledgement: "the NEXT launch is the normal one", consumed by it
 	//    so a second crash cannot be masked by the first decision.
 	// -----------------------------------------------------------------------
+	void normalSessionCannotAcknowledgeAFutureCrash()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+
+		beginSession();
+		QVERIFY(!safeStartActive());
+		acknowledge();
+
+		// The current marker now represents a crash. An acknowledgement made in
+		// this ordinary session must not hide it from the next launch.
+		beginSession();
+		QVERIFY2(safeStartActive(),
+			"a normal session cannot acknowledge a crash offer it did not receive");
+		endSession();
+	}
+
+	// The same rule on the surface the user actually calls: the offer is made
+	// in a safe session and nowhere else (safestart.get_state's `offer` block
+	// and the stderr line main() prints are both gated on safeStartActive()),
+	// so accepting it in an ordinary session must be REFUSED - and must leave
+	// no file behind, because the next launch would consume that file and skip
+	// the safe start its crash marker asks for.
+	void theAcknowledgeCommandRefusesOutsideASafeStart()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+
+		beginSession();
+		QVERIFY(!safeStartActive());
+
+		const lmms::ControlResult reply = lmms::control::safeStartHandleAcknowledge();
+		QVERIFY2(!reply.ok, "the command must refuse when there is no offer to accept");
+		QVERIFY2(reply.errorKind == lmms::ControlErrorKind::NotFound,
+			"the refusal must be typed as 'not found': there is no offer, not a busy file");
+		QVERIFY2(!reply.errorMessage.isEmpty(), "a refusal must say why it refused");
+		QVERIFY2(!acknowledged(), "a refused acknowledgement must not leave a file behind");
+
+		// The crash this session would leave behind is still honoured by the next
+		// launch: nothing was written that could hide it.
+		beginSession();
+		QVERIFY2(safeStartActive(),
+			"the next launch after a crash must start safe, whatever was called in between");
+		endSession();
+	}
+
 	void acknowledgeMakesTheNextLaunchNormal()
 	{
 		QTemporaryDir dir;
@@ -547,18 +595,11 @@ private slots:
 		QVERIFY2(acknowledged(), "accepting the offer must write the acknowledgement");
 		QVERIFY2(markerExists(), "accepting the offer must NOT delete the marker");
 		QVERIFY2(safeStartActive(), "the CURRENT session is still the safe one");
-		endSession();
 
 		// The NEXT launch consumes it and is a normal one - and it does so even
-		// though the marker is there again, because the definition of a safe
-		// start is "a marker and no acknowledgement".
-		{
-			QFile marker(QString::fromStdString(markerPath()));
-			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
-			marker.write("Zene Studio safe-start marker v1\npid=4243\ntime_unix=1700000001\n");
-		}
-		acknowledge();
-		QVERIFY(acknowledged());
+		// though the marker of this session is still there after its abnormal
+		// exit, because the definition of a safe start is "a marker and no
+		// acknowledgement".
 		beginSession();
 		QVERIFY2(!acknowledged(),
 			"the acknowledgement must be CONSUMED by the launch it was written for");
@@ -567,6 +608,9 @@ private slots:
 			"a normal launch must not skip third-party plugin instances");
 		// A crash of that normal launch is still a crash: the marker stays.
 		QVERIFY(markerExists());
+		beginSession();
+		QVERIFY2(safeStartActive(),
+			"the consumed acknowledgement must not mask a later crash");
 
 		// clear() is the "the cause is fixed" verb.
 		clear();
@@ -696,8 +740,19 @@ private slots:
 		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
 		QVERIFY(install(dir.path().toStdString()));
 
+		// A marker left by a crashed run, planted the way test 4 plants one: the
+		// session starts SAFE, so the acknowledgement below is written by the
+		// offer it was offered. An acknowledgement is only ever written in a safe
+		// session - an ordinary session has no offer to accept.
+		{
+			QFile marker(QString::fromStdString(markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4247\ntime_unix=1700000002\n");
+		}
+
 		beginSession();
 		QVERIFY(markerExists());
+		QVERIFY2(safeStartActive(), "a marker behind the session must make it a safe start");
 		acknowledge();
 		QVERIFY(acknowledged());
 
