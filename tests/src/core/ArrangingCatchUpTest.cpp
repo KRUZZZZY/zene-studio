@@ -95,6 +95,16 @@ QStringList trackNames()
 	return out;
 }
 
+int indexOfReferenceTrack(const QString& name)
+{
+	const QJsonArray tracks = run(QStringLiteral("reference.get_state")).result.value(QStringLiteral("tracks")).toArray();
+	for (const QJsonValue& value : tracks)
+	{
+		if (value.toObject().value(QStringLiteral("name")).toString() == name) { return value.toObject().value(QStringLiteral("index")).toInt(); }
+	}
+	return -1;
+}
+
 class CountedInstrumentHandle : public InstrumentPlayHandle
 {
 public:
@@ -333,6 +343,51 @@ private slots:
 		// active list before checking, while its track still exists.
 		engine->removePlayHandlesOfTypes(track.get(), PlayHandle::Type::InputMonitorHandle);
 		QVERIFY2(!survived, "monitoring Off left a staged monitor in the render list");
+	}
+
+	/*! The reference's devices come from ONE named source - the command's own words: "the reference's
+	 *  track 'track' or mixer channel 'channel'". Naming both used to copy the channel and ignore the
+	 *  track without a word, and naming neither used to fail as a missing reference track -1: exactly
+	 *  one names the source, and a call with zero or two is refused before any device moves. */
+	void copyDevicesNamesExactlyOneSource()
+	{
+		EffectChain& master = Engine::mixer()->mixerChannel(0)->m_fxChain;
+		Effect* probe = Effect::instantiate(QStringLiteral("amplifier"), &master, nullptr);
+		if (probe == nullptr || !probe->isOkay())
+		{
+			delete probe;
+			QSKIP("this test binary finds no built-in effect plug-ins");
+		}
+		delete probe;
+		master.clear();
+		master.appendEffect(Effect::instantiate(QStringLiteral("amplifier"), &master, nullptr));
+		Track* deviceless = Track::create(Track::Type::Sample, Engine::getSong());
+		deviceless->setName(QStringLiteral("Deviceless"));
+		const QString source = QDir(m_dir.path()).filePath(QStringLiteral("one-source.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(source));
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		QVERIFY(run(QStringLiteral("reference.open"), {{QStringLiteral("path"), source}}).ok);
+		const QString masterId = QStringLiteral("ch-%1").arg(Engine::mixer()->mixerChannel(0)->id());
+		const int devicelessIndex = indexOfReferenceTrack(QStringLiteral("Deviceless"));
+		QVERIFY(devicelessIndex >= 0);
+		const std::size_t before = Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size();
+		const ControlResult both = run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("track"), devicelessIndex},
+			{QStringLiteral("channel"), 0}, {QStringLiteral("to"), masterId}});
+		QVERIFY2(!both.ok, "two source fields used to copy the channel and ignore the track");
+		QCOMPARE(both.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before);  // nothing was copied
+		const ControlResult neither = run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("to"), masterId}});
+		QVERIFY(!neither.ok);
+		QCOMPARE(neither.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before);
+		// One source still names it: a deviceless track copies nothing, the channel's device copies.
+		QCOMPARE(run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("track"), devicelessIndex},
+			{QStringLiteral("to"), masterId}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before);
+		const ControlResult channel = run(QStringLiteral("reference.copy_devices"), {{QStringLiteral("channel"), 0},
+			{QStringLiteral("to"), masterId}});
+		QVERIFY2(channel.ok, qPrintable(channel.errorMessage));
+		QCOMPARE(Engine::mixer()->mixerChannel(0)->m_fxChain.effects().size(), before + 1);
 	}
 
 private:
