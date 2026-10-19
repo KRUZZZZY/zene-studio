@@ -2779,7 +2779,7 @@ QStringList Song::unclaimedElements() const
  *  walk carries one test for both elements instead of one each. */
 
 
-bool Song::exportProjectMidi(QString const & exportFileName) const
+ExportOutcome Song::exportProjectMidi(QString const & exportFileName) const
 {
 	// instantiate midi export plugin
 	TrackContainer::TrackList const & tracks = this->tracks();
@@ -2791,7 +2791,7 @@ bool Song::exportProjectMidi(QString const & exportFileName) const
 		return exf->tryExport(tracks, patternStoreTracks, getTempo(), m_masterPitchModel.value(), exportFileName);
 	}
 	qDebug() << "failed to load midi export filter!";
-	return false;
+	return ExportOutcome::NotCreated;
 
 }
 

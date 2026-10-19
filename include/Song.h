@@ -40,6 +40,7 @@
 #include "AudioEngine.h"
 #include "AutomationRenderScratch.h"
 #include "Controller.h"
+#include "ExportFilter.h"
 #include "Metronome.h"
 #include "lmms_constants.h"
 #include "lmmsconfig.h"
@@ -647,7 +648,12 @@ public:
 	//! Seconds from tick 0 to \a tick through the map's tempo segments.
 	double secondsAtTick(tick_t tick) const;
 
-	bool exportProjectMidi(QString const & exportFileName) const;
+	/*! Write the session's notes as a Standard MIDI File to \a exportFileName.
+	 *
+	 *  The file is created EXCLUSIVELY: a path that is already there belongs to someone
+	 *  else and is never written to. The outcome says whether THIS call created the file,
+	 *  so the caller knows whether it may remove it. */
+	ExportOutcome exportProjectMidi(QString const & exportFileName) const;
 
 	inline void setLoadOnLaunch(bool value) { m_loadOnLaunch = value; }
 	SaveOptions &getSaveOptions() {

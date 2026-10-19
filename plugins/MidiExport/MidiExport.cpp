@@ -71,17 +71,18 @@ MidiExport::MidiExport() : ExportFilter( &midiexport_plugin_descriptor)
 
 
 
-bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
+ExportOutcome MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 			const TrackContainer::TrackList &patternStoreTracks,
 			int tempo, int masterPitch, const QString &filename)
 {
 	QFile f(filename);
 	// Exclusive create: never truncate a file that is already there (a collision
 	// with a file the user keeps beside the target must not be destroyed). A
-	// failed open propagates as a failed export instead of a silent overwrite.
+	// failed open means THIS call created nothing, so the caller must not touch
+	// the path either: the outcome says which of the two happened.
 	if (!f.open(QIODevice::WriteOnly | QIODevice::NewOnly))
 	{
-		return false;
+		return ExportOutcome::NotCreated;
 	}
 	QDataStream midiout(&f);
 
@@ -269,8 +270,12 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 		writeChunk(mtrack);
 	}
 
+	// A half-written file is the caller's to remove (Incomplete); a complete one is
+	// the caller's to replace (Written). Neither is guessed from the file's presence
+	// on disk: this call knows which of the two it is.
+	const bool complete = midiout.status() == QDataStream::Ok && f.error() == QFileDevice::NoError;
 	f.close();
-	return midiout.status() == QDataStream::Ok && f.error() == QFileDevice::NoError;
+	return complete ? ExportOutcome::Written : ExportOutcome::Incomplete;
 }
 
 void MidiExport::writeMidiClip(MidiNoteVector &midiClip, const QDomNode& n,

@@ -35,6 +35,25 @@
 namespace lmms
 {
 
+/*! What an export did with the file it was asked to write.
+ *
+ *  The caller of an export has to know whether the file at the output path is ITS to remove:
+ *  a path that was already taken was never created by the export and must be left exactly as
+ *  it was, while a path the export created may be removed when the export did not finish. A
+ *  filter therefore SAYS which of the two happened, instead of leaving the caller to guess
+ *  from the file's presence on disk - a guess that is wrong exactly when it matters. */
+enum class ExportOutcome
+{
+	//! The output path was NOT created by this call: it was already taken, or the filter
+	//! could not be loaded at all. Nothing at that path belongs to the caller.
+	NotCreated,
+	//! This call created the output path but did not write the whole export into it: the
+	//! file holds a partial export, and it belongs to the caller.
+	Incomplete,
+	//! This call created the output path and wrote the whole export into it.
+	Written,
+};
+
 
 class LMMS_EXPORT ExportFilter : public Plugin
 {
@@ -43,7 +62,12 @@ public:
 	~ExportFilter() override = default;
 
 
-	virtual bool tryExport(const TrackContainer::TrackList &tracks,
+	/*! Write the export to \a filename and report what it did with that path.
+	 *
+	 *  The output is created EXCLUSIVELY: a path that is already there belongs to someone
+	 *  else and is never written to. The outcome says whether THIS call created the file,
+	 *  so the caller knows what it may remove. */
+	virtual ExportOutcome tryExport(const TrackContainer::TrackList &tracks,
 				const TrackContainer::TrackList &patternTracks,
 				int tempo, int masterPitch, const QString &filename ) = 0;
 protected:
