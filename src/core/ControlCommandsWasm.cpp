@@ -52,6 +52,7 @@
 #include <QJsonObject>
 
 #include "ControlRegistry.h"
+#include "ControlSampleArray.h"
 #include "ControlWasmSupport.h"
 
 #include "src/wasm/WasmAbi.h"
@@ -226,17 +227,6 @@ std::vector<float> rampInput(std::uint32_t frames)
 	return out;
 }
 
-std::vector<float> jsonToFloats(const QJsonArray& values)
-{
-	std::vector<float> out;
-	out.reserve(static_cast<std::size_t>(values.size()));
-	for (const QJsonValue& value : values)
-	{
-		out.push_back(static_cast<float>(value.toDouble()));
-	}
-	return out;
-}
-
 QString statusName(wasm::CallResult::Status status)
 {
 	switch (status)
@@ -309,8 +299,21 @@ ControlResult handleProcess(const QJsonObject& args)
 	const float sampleRate = args.contains(QStringLiteral("sample_rate"))
 		? static_cast<float>(args.value(QStringLiteral("sample_rate")).toDouble()) : 48000.0f;
 	const bool callerInput = args.contains(QStringLiteral("input"));
-	const std::vector<float> input = callerInput
-		? jsonToFloats(args.value(QStringLiteral("input")).toArray()) : rampInput(frames);
+	std::vector<float> input = rampInput(frames);
+	if (callerInput)
+	{
+		// The caller's samples are read through the ONE reader both sample-taking
+		// commands use (ControlSampleArray.h), so a malformed array is refused
+		// here exactly as it is in wasm.render_offline - and never reaches the
+		// module as a different stimulus than the caller sent.
+		const ControlResult read = readSampleArray(
+			args.value(QStringLiteral("input")).toArray(), frames, &input);
+		if (!read.ok)
+		{
+			return ControlResult::failure(read.errorKind,
+				wasmNotFound(QStringLiteral("wasm.process"), read.errorMessage));
+		}
+	}
 
 	const wasm::HostProcessOutcome outcome = host.process(frames, sampleRate, input);
 	if (outcome.status == wasm::CallResult::Status::Error)

@@ -41,6 +41,7 @@
 #include <QJsonObject>
 
 #include "ControlRegistry.h"
+#include "ControlSampleArray.h"
 #include "ControlWasmSupport.h"
 
 #include "src/wasm/WasmOfflineRender.h"
@@ -183,14 +184,6 @@ std::vector<float> rampInput(std::uint32_t frames)
 	return out;
 }
 
-std::vector<float> jsonToFloats(const QJsonArray& values)
-{
-	std::vector<float> out;
-	out.reserve(static_cast<std::size_t>(values.size()));
-	for (const QJsonValue& value : values) { out.push_back(static_cast<float>(value.toDouble())); }
-	return out;
-}
-
 ControlResult handleRenderOffline(const QJsonObject& args)
 {
 	WasmSandboxHost& host = WasmSandboxHost::instance();
@@ -218,8 +211,21 @@ ControlResult handleRenderOffline(const QJsonObject& args)
 		? static_cast<float>(args.value(QStringLiteral("sample_rate")).toDouble())
 		: 48000.0f;
 	const bool callerInput = args.contains(QStringLiteral("input"));
-	const std::vector<float> input = callerInput
-		? jsonToFloats(args.value(QStringLiteral("input")).toArray()) : rampInput(frames);
+	std::vector<float> input = rampInput(frames);
+	if (callerInput)
+	{
+		// The caller's samples are read through the ONE reader both sample-taking
+		// commands use (ControlSampleArray.h), so a malformed array is refused
+		// here exactly as it is in wasm.process - and never reaches the render
+		// as a different stimulus than the caller sent.
+		const ControlResult read = readSampleArray(
+			args.value(QStringLiteral("input")).toArray(), frames, &input);
+		if (!read.ok)
+		{
+			return ControlResult::failure(read.errorKind,
+				wasmNotFound(QStringLiteral("wasm.render_offline"), read.errorMessage));
+		}
+	}
 
 	const wasm::OfflineRenderOutcome outcome =
 		wasm::renderOffline(modulePath, frames, blockFrames, repeats, sampleRate, input);

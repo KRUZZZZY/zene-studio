@@ -237,6 +237,7 @@ include/ControlRegistryGroups.h
 include/ControlResultCheck.h
 include/ControlReversibility.h
 include/ControlRoom.h
+include/ControlSampleArray.h
 include/ControlScaleShared.h
 include/ControlServer.h
 include/ControlStemSupport.h
@@ -1723,6 +1724,7 @@ src/core/ControlReversibilityTableW3Library.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlRoom.cpp
+src/core/ControlSampleArray.cpp
 src/core/ControlScaleSupport.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp

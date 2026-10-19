@@ -783,6 +783,13 @@ set(LMMS_SRCS
 	core/ControlVocabulary.cpp
 	core/ControlServer.cpp
 	core/ControlServerSocket.cpp
+	# The one reader of a caller's sample array (include/ControlSampleArray.h):
+	# the rules an 'input' array has to satisfy before a render or a process
+	# is driven with it. Pure Qt and no wasmtime, so it is compiled in EVERY
+	# configuration - the commands that read a caller's samples are the wasm.*
+	# group's today, but the reader is the control layer's, and its regression
+	# test has to run in a build without the wasmtime C API.
+	core/ControlSampleArray.cpp
 	# The Windows half of the control transport: the same JSON-RPC contract, the
 	# same command ids, served over a named pipe (CODE-9, feature row 83). Named
 	# here because LMMS_SRCS is an explicit list rather than a glob; on POSIX the
