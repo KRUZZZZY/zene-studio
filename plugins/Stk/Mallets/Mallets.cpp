@@ -30,6 +30,11 @@
 #include <QDomElement>
 #include <QMessageBox>
 
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <vector>
+
 #include <stk/BandedWG.h>
 #include <stk/ModalBar.h>
 #include <stk/TubeBell.h>
@@ -69,8 +74,125 @@ Plugin::Descriptor PLUGIN_EXPORT malletsstk_plugin_descriptor =
 }
 
 
+namespace
+{
+
+//! Sentinel stored in NotePlayHandle::m_pluginData when every prepared voice of
+//! the required family is in use. The note renders silence.
+char noMalletsVoiceMarker;
+
+constexpr std::size_t MALLETS_VOICE_POOL_CAPACITY = 128;
+
+//! One preconstructed voice and its claim flag. The synth is built once, on the
+//! constructing thread, so the render thread only resets and arms it.
+struct MalletsVoiceSlot
+{
+	MalletsSynth synth;
+	std::atomic<bool> inUse{false};
+};
+
+} // namespace
+
+
+/*! A bounded pool of prepared Mallets voices, one array per STK family.
+
+	The voice objects, their delay buffers and the one-time STK global setup are
+	created here, off the audio thread; the render thread only claims a slot with
+	a non-blocking compare-exchange, re-arms the prepared voice in place and
+	returns the slot when the note ends. No allocation and no lock runs on the
+	render thread.
+*/
+class MalletsVoicePool
+{
+public:
+	explicit MalletsVoicePool( sample_rate_t _sample_rate ) :
+		m_sampleRate( _sample_rate ),
+		m_modalBar( std::make_unique<MalletsVoiceSlot[]>( MALLETS_VOICE_POOL_CAPACITY ) ),
+		m_tubeBell( std::make_unique<MalletsVoiceSlot[]>( MALLETS_VOICE_POOL_CAPACITY ) ),
+		m_bandedWG( std::make_unique<MalletsVoiceSlot[]>( MALLETS_VOICE_POOL_CAPACITY ) )
+	{
+		for( std::size_t i = 0; i < MALLETS_VOICE_POOL_CAPACITY; ++i )
+		{
+			m_modalBar[i].synth.init( MalletsSynth::Family::ModalBar, _sample_rate );
+			m_tubeBell[i].synth.init( MalletsSynth::Family::TubeBell, _sample_rate );
+			m_bandedWG[i].synth.init( MalletsSynth::Family::BandedWG, _sample_rate );
+		}
+	}
+
+	sample_rate_t sampleRate() const { return m_sampleRate; }
+
+	MalletsVoiceSlot* acquire( MalletsSynth::Family _family ) noexcept
+	{
+		switch( _family )
+		{
+			case MalletsSynth::Family::ModalBar: return acquireFrom( m_modalBar );
+			case MalletsSynth::Family::TubeBell: return acquireFrom( m_tubeBell );
+			case MalletsSynth::Family::BandedWG: return acquireFrom( m_bandedWG );
+		}
+		return nullptr;
+	}
+
+	static void release( MalletsVoiceSlot* _slot ) noexcept
+	{
+		if( _slot != nullptr )
+		{
+			_slot->inUse.store( false, std::memory_order_release );
+		}
+	}
+
+private:
+	static MalletsVoiceSlot* acquireFrom( const std::unique_ptr<MalletsVoiceSlot[]>& _slots ) noexcept
+	{
+		for( std::size_t i = 0; i < MALLETS_VOICE_POOL_CAPACITY; ++i )
+		{
+			bool expected = false;
+			if( _slots[i].synth.ready()
+				&& _slots[i].inUse.compare_exchange_strong( expected, true,
+					std::memory_order_acquire, std::memory_order_relaxed ) )
+			{
+				return &_slots[i];
+			}
+		}
+		return nullptr;
+	}
+
+	sample_rate_t m_sampleRate;
+	std::unique_ptr<MalletsVoiceSlot[]> m_modalBar;
+	std::unique_ptr<MalletsVoiceSlot[]> m_tubeBell;
+	std::unique_ptr<MalletsVoiceSlot[]> m_bandedWG;
+};
+
+
+namespace
+{
+
+//! Shared, sample-rate-keyed pool. Building it allocates and loads rawwaves, so
+//! it happens on the non-audio thread that first needs it and is reused by every
+//! later instrument at the same rate.
+MalletsVoicePool* malletsVoicePoolForSampleRate( sample_rate_t _sample_rate )
+{
+	static std::mutex poolsMutex;
+	static std::vector<std::unique_ptr<MalletsVoicePool>> pools;
+	const std::lock_guard<std::mutex> lock( poolsMutex );
+	for( const auto& pool : pools )
+	{
+		if( pool->sampleRate() == _sample_rate )
+		{
+			return pool.get();
+		}
+	}
+	auto pool = std::make_unique<MalletsVoicePool>( _sample_rate );
+	MalletsVoicePool* result = pool.get();
+	pools.push_back( std::move( pool ) );
+	return result;
+}
+
+} // namespace
+
+
 MalletsInstrument::MalletsInstrument( InstrumentTrack * _instrument_track ):
 	Instrument( _instrument_track, &malletsstk_plugin_descriptor ),
+	m_voicePool( malletsVoicePoolForSampleRate( Engine::audioEngine()->outputSampleRate() ) ),
 	m_hardnessModel(64.0f, 0.0f, 128.0f, 0.1f, this, tr( "Hardness" )),
 	m_positionModel(64.0f, 0.0f, 64.0f, 0.1f, this, tr( "Position" )),
 	m_vibratoGainModel(0.0f, 0.0f, 128.0f, 0.1f, this, tr( "Vibrato gain" )),
@@ -127,6 +249,12 @@ MalletsInstrument::MalletsInstrument( InstrumentTrack * _instrument_track ):
 	m_scalers.append( 16.0 );
 	m_presetsModel.addItem( tr( "Tibetan bowl" ) );
 	m_scalers.append( 7.0 );
+
+	// Prepared voices are voiced for one sample rate; a device change rebuilds
+	// the shared pool off the audio thread.
+	QObject::connect( Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this]() {
+		m_voicePool = malletsVoicePoolForSampleRate( Engine::audioEngine()->outputSampleRate() );
+	} );
 }
 
 
@@ -286,6 +414,8 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 		return;
 	}
 
+	if (_n->m_pluginData == &noMalletsVoiceMarker) { return; }
+
 	int p = m_presetsModel.value();
 
 	const float freq = _n->frequency();
@@ -329,12 +459,31 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 			speed = std::clamp(speed, 0.0f, 128.0f);
 		}
 
-		// critical section as STK is not thread-safe
-		static QMutex m;
-		m.lock();
+		// STK is not thread-safe, so its global setup and voice construction
+		// happen off the audio thread; here the render thread only claims a
+		// prepared voice and arms it in place. No allocation, no lock.
+		MalletsVoiceSlot* slot = nullptr;
 		if( p < 9 )
 		{
-			_n->m_pluginData = new MalletsSynth( freq,
+			slot = m_voicePool->acquire( MalletsSynth::Family::ModalBar );
+		}
+		else if( p == 9 )
+		{
+			slot = m_voicePool->acquire( MalletsSynth::Family::TubeBell );
+		}
+		else
+		{
+			slot = m_voicePool->acquire( MalletsSynth::Family::BandedWG );
+		}
+		if( slot == nullptr )
+		{
+			_n->m_pluginData = &noMalletsVoiceMarker;
+			return;
+		}
+
+		if( p < 9 )
+		{
+			slot->synth.armModalBar( freq,
 						vel,
 						m_stickModel.value(),
 						hardness,
@@ -342,12 +491,11 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 						m_vibratoGainModel.value(),
 						m_vibratoFreqModel.value(),
 						p,
-						(uint8_t) m_spreadModel.value(),
-				Engine::audioEngine()->outputSampleRate() );
+						(uint8_t) m_spreadModel.value() );
 		}
 		else if( p == 9 )
 		{
-			_n->m_pluginData = new MalletsSynth( freq,
+			slot->synth.armTubeBell( freq,
 						vel,
 						p,
 						m_lfoDepthModel.value(),
@@ -355,12 +503,11 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 						crossfade,
 						m_lfoSpeedModel.value(),
 						m_adsrModel.value(),
-						(uint8_t) m_spreadModel.value(),
-				Engine::audioEngine()->outputSampleRate() );
+						(uint8_t) m_spreadModel.value() );
 		}
 		else
 		{
-			_n->m_pluginData = new MalletsSynth( freq,
+			slot->synth.armBandedWG( freq,
 						vel,
 						pressure,
 						m_motionModel.value(),
@@ -368,17 +515,16 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 						p - 10,
 						m_strikeModel.value() * 128.0,
 						speed,
-						(uint8_t) m_spreadModel.value(),
-				Engine::audioEngine()->outputSampleRate() );
+						(uint8_t) m_spreadModel.value() );
 		}
-		m.unlock();
-		static_cast<MalletsSynth *>(_n->m_pluginData)->setPresetIndex(p);
+		slot->synth.setPresetIndex(p);
+		_n->m_pluginData = slot;
 	}
 
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = _n->noteOffset();
 
-	auto ps = static_cast<MalletsSynth*>(_n->m_pluginData);
+	auto ps = &static_cast<MalletsVoiceSlot*>(_n->m_pluginData)->synth;
 	ps->setFrequency(freq);
 
 	p = ps->presetIndex();
@@ -412,7 +558,13 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 
 void MalletsInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<MalletsSynth *>( _n->m_pluginData );
+	if( _n->m_pluginData == nullptr || _n->m_pluginData == &noMalletsVoiceMarker )
+	{
+		_n->m_pluginData = nullptr;
+		return;
+	}
+	MalletsVoicePool::release( static_cast<MalletsVoiceSlot*>( _n->m_pluginData ) );
+	_n->m_pluginData = nullptr;
 }
 
 
@@ -634,8 +786,53 @@ void MalletsInstrumentView::changePreset()
 } // namespace gui
 
 
+// Preconstruct the STK voice and its delay buffer, off the audio thread.
+bool MalletsSynth::init( Family _family, const sample_rate_t _sample_rate )
+{
+	try
+	{
+		Stk::setSampleRate( _sample_rate );
+		Stk::setRawwavePath( QDir( ConfigManager::inst()->stkDir() ).absolutePath()
+						.toLocal8Bit().constData() );
+#ifndef LMMS_DEBUG
+		Stk::showWarnings( false );
+#endif
+
+		switch( _family )
+		{
+			case Family::ModalBar: m_voice = new ModalBar(); break;
+			case Family::TubeBell: m_voice = new TubeBell(); break;
+			case Family::BandedWG: m_voice = new BandedWG(); break;
+		}
+	}
+	catch( ... )
+	{
+		m_voice = nullptr;
+	}
+
+	m_delay = new StkFloat[256];
+	resetDelay( 0 );
+	return( m_voice != nullptr );
+}
+
+
+
+
+void MalletsSynth::resetDelay( const uint8_t _delay )
+{
+	m_delayRead = 0;
+	m_delayWrite = _delay;
+	for( int i = 0; i < 256; i++ )
+	{
+		m_delay[i] = 0.0;
+	}
+}
+
+
+
+
 // ModalBar
-MalletsSynth::MalletsSynth( const StkFloat _pitch,
+void MalletsSynth::armModalBar( const StkFloat _pitch,
 				const StkFloat _velocity,
 				const StkFloat _control1,
 				const StkFloat _control2,
@@ -643,50 +840,31 @@ MalletsSynth::MalletsSynth( const StkFloat _pitch,
 				const StkFloat _control8,
 				const StkFloat _control11,
 				const int _control16,
-				const uint8_t _delay,
-				const sample_rate_t _sample_rate ) :
-	m_presetIndex(0)
+				const uint8_t _delay )
 {
-	try
+	if( m_voice == nullptr )
 	{
-		Stk::setSampleRate( _sample_rate );
-		Stk::setRawwavePath( QDir( ConfigManager::inst()->stkDir() ).absolutePath()
-						.toLocal8Bit().constData() );
-#ifndef LMMS_DEBUG
-		Stk::showWarnings( false );
-#endif
+		resetDelay( _delay );
+		return;
+	}
 
-		m_voice = new ModalBar();
-	
-		m_voice->controlChange( 16, _control16 );
-		m_voice->controlChange( 1, _control1 );
-		m_voice->controlChange( 2, _control2 );
-		m_voice->controlChange( 4, _control4 );
-		m_voice->controlChange( 8, _control8 );
-		m_voice->controlChange( 11, _control11 );
-		m_voice->controlChange( 128, 128.0f );
-		
-		m_voice->noteOn( _pitch, _velocity );
-	}
-	catch( ... )
-	{
-		m_voice = nullptr;
-	}
-	
-	m_delay = new StkFloat[256];
-	m_delayRead = 0;
-	m_delayWrite = _delay;
-	for( int i = 0; i < 256; i++ )
-	{
-		m_delay[i] = 0.0;
-	}
+	m_voice->clear();
+	m_voice->controlChange( 16, _control16 );
+	m_voice->controlChange( 1, _control1 );
+	m_voice->controlChange( 2, _control2 );
+	m_voice->controlChange( 4, _control4 );
+	m_voice->controlChange( 8, _control8 );
+	m_voice->controlChange( 11, _control11 );
+	m_voice->controlChange( 128, 128.0f );
+	m_voice->noteOn( _pitch, _velocity );
+	resetDelay( _delay );
 }
 
 
 
 
 // TubeBell
-MalletsSynth::MalletsSynth( const StkFloat _pitch,
+void MalletsSynth::armTubeBell( const StkFloat _pitch,
 				const StkFloat _velocity,
 				const int _preset,
 				const StkFloat _control1,
@@ -694,48 +872,29 @@ MalletsSynth::MalletsSynth( const StkFloat _pitch,
 				const StkFloat _control4,
 				const StkFloat _control11,
 				const StkFloat _control128,
-				const uint8_t _delay,
-				const sample_rate_t _sample_rate ) :
-	m_presetIndex(0)
+				const uint8_t _delay )
 {
-	try
+	if( m_voice == nullptr )
 	{
-		Stk::setSampleRate( _sample_rate );
-		Stk::setRawwavePath( QDir( ConfigManager::inst()->stkDir() ).absolutePath()
-						.toLocal8Bit().constData() );
-#ifndef LMMS_DEBUG
-		Stk::showWarnings( false );
-#endif
+		resetDelay( _delay );
+		return;
+	}
 
-		m_voice = new TubeBell();
-	
-		m_voice->controlChange( 1, _control1 );
-		m_voice->controlChange( 2, _control2 );
-		m_voice->controlChange( 4, _control4 );
-		m_voice->controlChange( 11, _control11 );
-		m_voice->controlChange( 128, _control128 );
-	
-		m_voice->noteOn( _pitch, _velocity );
-	}
-	catch( ... )
-	{
-		m_voice = nullptr;
-	}
-	
-	m_delay = new StkFloat[256];
-	m_delayRead = 0;
-	m_delayWrite = _delay;
-	for( int i = 0; i < 256; i++ )
-	{
-		m_delay[i] = 0.0;
-	}
+	m_voice->clear();
+	m_voice->controlChange( 1, _control1 );
+	m_voice->controlChange( 2, _control2 );
+	m_voice->controlChange( 4, _control4 );
+	m_voice->controlChange( 11, _control11 );
+	m_voice->controlChange( 128, _control128 );
+	m_voice->noteOn( _pitch, _velocity );
+	resetDelay( _delay );
 }
 
 
 
 
 // BandedWG
-MalletsSynth::MalletsSynth( const StkFloat _pitch,
+void MalletsSynth::armBandedWG( const StkFloat _pitch,
 				const StkFloat _velocity,
 				const StkFloat _control2,
 				const StkFloat _control4,
@@ -743,43 +902,24 @@ MalletsSynth::MalletsSynth( const StkFloat _pitch,
 				const int _control16,
 				const StkFloat _control64,
 				const StkFloat _control128,
-				const uint8_t _delay,
-				const sample_rate_t _sample_rate ) :
-	m_presetIndex(0)
+				const uint8_t _delay )
 {
-	try
+	if( m_voice == nullptr )
 	{
-		Stk::setSampleRate( _sample_rate );
-		Stk::setRawwavePath( QDir( ConfigManager::inst()->stkDir() ).absolutePath()
-						.toLocal8Bit().constData() );
-#ifndef LMMS_DEBUG
-		Stk::showWarnings( false );
-#endif
+		resetDelay( _delay );
+		return;
+	}
 
-		m_voice = new BandedWG();
-	
-		m_voice->controlChange( 1, 128.0 );
-		m_voice->controlChange( 2, _control2 );
-		m_voice->controlChange( 4, _control4 );
-		m_voice->controlChange( 11, _control11 );
-		m_voice->controlChange( 16, _control16 );
-		m_voice->controlChange( 64, _control64 );
-		m_voice->controlChange( 128, _control128 );
-	
-		m_voice->noteOn( _pitch, _velocity );
-	}
-	catch( ... )
-	{
-		m_voice = nullptr;
-	}
-	
-	m_delay = new StkFloat[256];
-	m_delayRead = 0;
-	m_delayWrite = _delay;
-	for( int i = 0; i < 256; i++ )
-	{
-		m_delay[i] = 0.0;
-	}
+	m_voice->clear();
+	m_voice->controlChange( 1, 128.0 );
+	m_voice->controlChange( 2, _control2 );
+	m_voice->controlChange( 4, _control4 );
+	m_voice->controlChange( 11, _control11 );
+	m_voice->controlChange( 16, _control16 );
+	m_voice->controlChange( 64, _control64 );
+	m_voice->controlChange( 128, _control128 );
+	m_voice->noteOn( _pitch, _velocity );
+	resetDelay( _delay );
 }
 
 

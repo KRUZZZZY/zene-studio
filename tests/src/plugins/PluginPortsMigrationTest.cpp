@@ -1731,7 +1731,7 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 		partc::PluginRender render;
 		render.name = QString::fromUtf8(m.plugin);
 		// Plugins whose first note period and its cleanup must not touch the heap.
-		const bool realtimeChecked = m.plugin == std::string{"freeboy"} || m.plugin == std::string{"tripleoscillator"};
+		const bool realtimeChecked = m.plugin == std::string{"freeboy"} || m.plugin == std::string{"tripleoscillator"} || m.plugin == std::string{"malletsstk"};
 		partc::RealtimeAllocationCounts realtimeCounts;
 		render.samples = partc::renderInstrumentInFreshThread(*inst, frames, lmms::DefaultKey,
 			realtimeChecked ? &realtimeCounts : nullptr);

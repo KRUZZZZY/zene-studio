@@ -56,11 +56,30 @@ class MalletsInstrumentView;
 } // namespace gui
 
 
+class MalletsVoicePool;
+
+
 class MalletsSynth
 {
 public:
+	enum class Family
+	{
+		ModalBar,
+		TubeBell,
+		BandedWG,
+	};
+
+	//! Build the STK voice and its delay buffer. All allocating setup happens
+	//! here, on the constructing (non-audio) thread; the arm*() methods below
+	//! only reset and re-arm the prepared voice on the render thread.
+	MalletsSynth() = default;
+
+	bool init( Family _family, const sample_rate_t _sample_rate );
+
+	bool ready() const { return m_voice != nullptr; }
+
 	// ModalBar
-	MalletsSynth( const StkFloat _pitch,
+	void armModalBar( const StkFloat _pitch,
 			const StkFloat _velocity,
 			const StkFloat _control1,
 			const StkFloat _control2,
@@ -68,11 +87,10 @@ public:
 			const StkFloat _control8,
 			const StkFloat _control11,
 			const int _control16,
-			const uint8_t _delay,
-			const sample_rate_t _sample_rate );
+			const uint8_t _delay );
 
 	// TubeBell
-	MalletsSynth( const StkFloat _pitch,
+	void armTubeBell( const StkFloat _pitch,
 			const StkFloat _velocity,
 			const int _preset,
 			const StkFloat _control1,
@@ -80,11 +98,10 @@ public:
 			const StkFloat _control4,
 			const StkFloat _control11,
 			const StkFloat _control128,
-			const uint8_t _delay,
-			const sample_rate_t _sample_rate );
+			const uint8_t _delay );
 
 	// BandedWG
-	MalletsSynth( const StkFloat _pitch,
+	void armBandedWG( const StkFloat _pitch,
 			const StkFloat _velocity,
 			const StkFloat _control2,
 			const StkFloat _control4,
@@ -92,8 +109,7 @@ public:
 			const int _control16,
 			const StkFloat _control64,
 			const StkFloat _control128,
-			const uint8_t _delay,
-			const sample_rate_t _sample_rate );
+			const uint8_t _delay );
 
 	inline ~MalletsSynth()
 	{
@@ -170,12 +186,14 @@ public:
 
 
 protected:
-	int m_presetIndex;
-	Instrmnt * m_voice;
+	void resetDelay( const uint8_t _delay );
 
-	StkFloat * m_delay;
-	uint8_t m_delayRead;
-	uint8_t m_delayWrite;
+	int m_presetIndex = 0;
+	Instrmnt * m_voice = nullptr;
+
+	StkFloat * m_delay = nullptr;
+	uint8_t m_delayRead = 0;
+	uint8_t m_delayWrite = 0;
 };
 
 
@@ -200,6 +218,8 @@ public:
 
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
+
+	MalletsVoicePool* m_voicePool = nullptr;
 
 	FloatModel m_hardnessModel;
 	FloatModel m_positionModel;
