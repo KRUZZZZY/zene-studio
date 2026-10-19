@@ -409,13 +409,34 @@ ControlResult ControlRegistry::runHandler(
 	m_wrapperDepth += static_cast<int>(!mutating);
 	ControlResult result;
 	{
+		/*! Restores the three running-handler counts on EVERY exit. A handler that
+		 *  throws (a filesystem write, a plug-in load) unwinds past a straight-line
+		 *  decrement and an outer dispatch layer catches it: a leaked depth then
+		 *  silences the observer for every later top-level edit and a leaked class
+		 *  count makes the next one look nested or wrapped, so its record is never
+		 *  written. */
+		struct DepthGuard
+		{
+			int& depth;
+			int& mutatingDepth;
+			int& wrapperDepth;
+			const bool mutating;
+			DepthGuard(int& dispatchDepth, int& mutatingCount, int& wrapperCount, bool isMutating) :
+				depth(dispatchDepth), mutatingDepth(mutatingCount), wrapperDepth(wrapperCount), mutating(isMutating)
+			{
+				++depth;
+			}
+			~DepthGuard()
+			{
+				--depth;
+				mutatingDepth -= static_cast<int>(mutating);
+				wrapperDepth -= static_cast<int>(!mutating);
+			}
+		};
 		const EditBracket edit(journal, mutating, commandId);
-		++m_depth;
+		DepthGuard depthGuard{m_depth, m_mutatingDepth, m_wrapperDepth, mutating};
 		result = handler(args);
-		--m_depth;
 	}
-	m_mutatingDepth -= static_cast<int>(mutating);
-	m_wrapperDepth -= static_cast<int>(!mutating);
 
 	bool coalesced = false;
 	quint64 step = 0;

@@ -24,6 +24,8 @@
 
 #include <QtTest>
 
+#include <stdexcept>
+
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -75,6 +77,87 @@ private slots:
 			return ControlResult::success(QJsonObject{{QStringLiteral("__transaction"), transaction}});
 		};
 		return command;
+	}
+
+	//! A throwing handler must not leave the registry's running-handler counts raised.
+	//! The observer only hears a top-level edit while no other handler is running, and a
+	//! leaked wrapper count would hold the next mutating command's record forever.
+	void throwingHandlerRestoresDispatchDepth()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ControlCommand throwing;
+		throwing.id = QStringLiteral("test.throw_depth");
+		throwing.group = QStringLiteral("test");
+		throwing.verb = QStringLiteral("throw_depth");
+		throwing.handler = [](const QJsonObject&) -> ControlResult {
+			throw std::runtime_error("expected handler failure");
+		};
+		registry->registerCommand(throwing);
+		const ControlCommand later = describedCommand(
+			QStringLiteral("test.throw_depth_after"), true, QStringLiteral("test.throw_depth_after"));
+		registry->registerCommand(later);
+
+		QStringList observed;
+		registry->setCommandObserver([&observed](const QString& command, const QJsonObject&) {
+			observed.append(command);
+		});
+		registry->clearTransactions();
+		bool threw = false;
+		try
+		{
+			registry->invoke(throwing.id);
+		}
+		catch (const std::runtime_error&)
+		{
+			threw = true;
+		}
+		const ControlResult afterThrow = registry->invoke(later.id);
+		registry->setCommandObserver({});
+
+		QVERIFY(threw);
+		QVERIFY(afterThrow.ok);
+		QCOMPARE(observed, QStringList{later.id});
+		const QJsonArray transactions = registry->transactions();
+		QCOMPARE(transactions.size(), 1);
+		QCOMPARE(transactions.last().toObject().value(QStringLiteral("command")).toString(), later.id);
+	}
+
+	//! A throwing MUTATING handler must restore the mutating count too: a leak makes the
+	//! next top-level mutating command look nested, so its own step is never recorded.
+	void throwingMutatingHandlerRestoresMutatingDepth()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ControlCommand throwing;
+		throwing.id = QStringLiteral("test.throw_mutating_depth");
+		throwing.group = QStringLiteral("test");
+		throwing.verb = QStringLiteral("throw_mutating_depth");
+		throwing.mutating = true;
+		throwing.handler = [](const QJsonObject&) -> ControlResult {
+			throw std::runtime_error("expected mutating handler failure");
+		};
+		registry->registerCommand(throwing);
+		const ControlCommand later = describedCommand(
+			QStringLiteral("test.throw_mutating_depth_after"), true,
+			QStringLiteral("test.throw_mutating_depth_after"));
+		registry->registerCommand(later);
+
+		registry->clearTransactions();
+		bool threw = false;
+		try
+		{
+			registry->invoke(throwing.id);
+		}
+		catch (const std::runtime_error&)
+		{
+			threw = true;
+		}
+		const ControlResult afterThrow = registry->invoke(later.id);
+
+		QVERIFY(threw);
+		QVERIFY(afterThrow.ok);
+		const QJsonArray transactions = registry->transactions();
+		QCOMPARE(transactions.size(), 1);
+		QCOMPARE(transactions.last().toObject().value(QStringLiteral("command")).toString(), later.id);
 	}
 
 	//! A non-mutating wrapper running two mutating children that share ONE journal step: one undo
