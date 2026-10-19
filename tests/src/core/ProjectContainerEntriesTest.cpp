@@ -145,6 +145,25 @@ private slots:
 		QCOMPARE( derived.at( 2 ).second, QByteArray( "<tempo-map v=\"1\"/>\n  " ) );
 	}
 
+	/*! A `>` inside a quoted content-element attribute is not the end of its
+	 *  start tag, and the `/` before it does not make the element self-closing. */
+	void derivingAcceptsSlashAndGreaterThanInsideContentAttribute()
+	{
+		QByteArray original = documentWith( QStringList{ QStringLiteral( "trackcontainer" ) },
+			QStringLiteral( "    <trackcontainer/>\n" ) );
+		original.replace( "<song>\n", "<song data=\"/>value\">\n" );
+
+		std::vector<std::pair<QString, QByteArray>> derived;
+		QString error;
+		QVERIFY2( projectcontainer::deriveContainerEntries( original,
+			QString::fromLatin1( kContent ), &derived, &error ), qPrintable( error ) );
+
+		QByteArray rebuilt;
+		QVERIFY2( projectcontainer::reassembleContainerDocument( derived,
+			QString::fromLatin1( kContent ), &rebuilt, &error ), qPrintable( error ) );
+		QCOMPARE( rebuilt, original );
+	}
+
 	/*! THE round trip, and the guarantee it proves: RAW byte identity - the
 	 *  rebuilt document equals the original byte for byte, not merely in
 	 *  canonical form. Chosen deliberately (see deriveContainerEntries in
