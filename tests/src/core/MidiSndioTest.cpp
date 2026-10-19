@@ -2,11 +2,19 @@
 
 #include <QtTest>
 
+#include <atomic>
 #include <cstddef>
+#include <type_traits>
 
 #include <sndio.h>
 
+#include <QThread>
+
+#include "MidiClient.h"
+
+#define private public
 #include "MidiSndio.h"
+#undef private
 
 namespace
 {
@@ -35,6 +43,13 @@ class MidiSndioTest : public QObject
 	Q_OBJECT
 
 private slots:
+	//! The reader thread polls the stop flag while the destructor writes it, so
+	//! the flag must be an atomic: a plain bool is a data race, volatile or not.
+	void quitFlagIsAtomic()
+	{
+		QVERIFY((std::is_same_v<decltype(lmms::MidiSndio::m_quit), std::atomic_bool>));
+	}
+
 	void failedOpenDoesNotWrite()
 	{
 		mioWriteCalls = 0;
