@@ -43,6 +43,8 @@
 #include "ClipLockFeedback.h"
 #include "Clipboard.h"
 #include "ColorChooser.h"
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "DataFile.h"
 #include "DeprecationHelper.h"
 #include "EditLocks.h"
@@ -1326,7 +1328,14 @@ void ClipView::toggleMute( QVector<ClipView *> clipvs )
 	{
 		// No need to check for nullptr because we check while building the clipvs QVector
 		if (EditLocks::instance().locks(clipv->getClip())) { ++kept; continue; }
-		clipv->getClip()->toggleMute();
+		// 0.5.0 Q050-040 (L07): the mute is the registered clip.set_mute command - the same
+		// implementation agents use, so the GUI toggle and the agent's unmute chase share one
+		// code path and one undo class. An idempotent request (the value is already set) is
+		// fine: the model checkpoint only moves when the value does.
+		Clip* clip = clipv->getClip();
+		ControlRegistry::instance()->invoke(QStringLiteral("clip.set_mute"), QJsonObject{
+			{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("muted"), !clip->isMuted()}});
 	}
 	cliplocks::announceKept(kept);
 }

@@ -1341,6 +1341,7 @@ src/core/ControlCommandsClipFrames.cpp
 src/core/ControlCommandsClipImportFile.cpp
 src/core/ControlCommandsClipLink.cpp
 src/core/ControlCommandsClipLinkState.cpp
+src/core/ControlCommandsClipMute.cpp
 src/core/ControlCommandsClipProcess.cpp
 src/core/ControlCommandsClipRecord.cpp
 src/core/ControlCommandsClipTrim.cpp
@@ -2473,6 +2474,7 @@ tests/src/core/UndoBoundsTest.cpp
 tests/src/core/UndoHistoryPersistenceTest.cpp
 tests/src/core/UndoHonestyStateTest.cpp
 tests/src/core/UndoHonestyTest.cpp
+tests/src/core/UnmuteChaseTest.cpp
 tests/src/core/UpnpMapperFakeRouterTest.cpp
 tests/src/core/UpgradeExtendedNoteRangeTest.cpp
 tests/src/core/VideoTestClip.h

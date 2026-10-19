@@ -109,6 +109,11 @@ const ReversibilityRow kRows[] = {
 		"the muted flag is a BoolModel, i.e. a JournallingObject of its own",
 		"ProjectJournal (Track mute BoolModel checkpoint)",
 		""),
+	R("clip.set_mute", RC::TrueInverse, true,
+		"the muted flag is a BoolModel, i.e. a JournallingObject of its own (0.5.0 Q050-040: "
+		"the song editor's clip mute dispatches this same command)",
+		"ProjectJournal (Clip mute BoolModel checkpoint)",
+		""),
 	R("track.set_solo", RC::TrueInverse, true,
 		"the action is NOT one object: the solo flag rides the solo BoolModel "
 		"and Track::toggleSolo (driven from the solo model's dataChanged) "

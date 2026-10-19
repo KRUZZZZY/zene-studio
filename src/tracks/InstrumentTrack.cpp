@@ -36,6 +36,7 @@
 #include "Keymap.h"
 #include "MidiClient.h"
 #include "MidiClip.h"
+#include "MidiPlayback.h"
 #include "MixHelpers.h"
 #include "NoteRandom.h"
 #include "PatternStore.h"
@@ -876,21 +877,42 @@ bool InstrumentTrack::compPlays(const MidiClip* clip, int songTick) const
 bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 							const f_cnt_t _offset, int _clip_num )
 {
+	// 0.5.0 Q050-040 (L07): playing with chase on, a note already under the playhead starts when its
+	// track or clip is unmuted. The render thread's own view of the mute, one pass back, and the
+	// one-pass unmute edge: a start, a jump, a loop and an unmute all chase (noteStartsNow).
+	const bool muted = isMuted();
+	const bool chase = MidiPlayback::instance().chase();
+	const bool trackUnmutedNow = chase && !muted && m_mutedLastPlay;
+
 	// The frozen take (freeze / bounce-in-place): the render IS this track's
 	// output, so a pass inside the take's window plays the take and never
 	// reaches the instrument - which is what "the source is disabled" means in
 	// the engine. A single-clip playback (_clip_num >= 0: the piano roll's and
 	// the beat/bassline editor's own play mode) is NOT the arrangement and keeps
-	// playing the source.
+	// playing the source. The take's pass locks nothing of this track, so it still records the mute.
 	if (isFrozen() && _clip_num < 0)
 	{
 		// A whole-track take owns every pass; a region take only its window, and a take whose audio is
 		// missing none (frozenTakeSilencesSource): outside that the source plays on.
 		const bool played = playFrozenTake(_start, _frames, _offset);
-		if (frozenTakeSilencesSource(_start.getTicks())) { return played; }
+		if (frozenTakeSilencesSource(_start.getTicks()))
+		{
+			m_mutedLastPlay = muted;
+			return played;
+		}
 	}
 	if( ! m_instrument || ! tryLock() )
 	{
+		// No pass happened - there is no instrument, or another thread holds the processing
+		// lock - so the edge is kept for the pass that does take the lock (Q050-040 r2).
+		return false;
+	}
+	m_mutedLastPlay = muted;
+	// With chase on a muted track schedules nothing: a silent handle left under the playhead would
+	// block the unmute chase below (and double the note on a seek into it) instead of starting once.
+	if (chase && muted)
+	{
+		unlock();
 		return false;
 	}
 	const float frames_per_tick = Engine::framesPerTick();
@@ -934,9 +956,14 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	for (const auto& clip : clips)
 	{
 		auto c = dynamic_cast<MidiClip*>(clip);
-		// everything which is not a MIDI clip won't be played
-		// A MIDI clip playing in the Piano Roll window will always play
-		if (c == nullptr || (Engine::getSong()->playMode() != Song::PlayMode::MidiClip && clip->isMuted()))
+		if (c == nullptr) { continue; }
+		// A MIDI clip playing in the Piano Roll window will always play. Everything else is
+		// skipped while muted - and the render thread remembers that, so unmuting it during
+		// playback chases the notes already under the playhead once (Q050-040).
+		const bool clipMuted = Engine::getSong()->playMode() != Song::PlayMode::MidiClip && clip->isMuted();
+		const bool clipUnmutedNow = chase && !clipMuted && clip->playbackWasMuted();
+		clip->setPlaybackWasMuted(clipMuted);
+		if (clipMuted)
 		{
 			continue;
 		}
@@ -948,6 +975,8 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			cur_start = loopedPosition(c, unfolded);  // 0.5.0 ED-029: a looped clip
 			passBase = unfolded - cur_start;
 		}
+		// A start, a jump or a loop (MidiPlayback), this track's or this clip's unmute (Q050-040).
+		const bool chaseNow = (chase && MidiPlayback::instance().chasingNow()) || trackUnmutedNow || clipUnmutedNow;
 		// 0.5.0 L07: the clip's CC / pitch-bend / aftertouch lanes (InstrumentTrackNotes.cpp).
 		if (!c->controllers().empty()) { playClipControllers(c, cur_start.getTicks(), _offset); }
 
@@ -972,7 +1001,7 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			const auto currentNote = *nit;
 			// Skip any notes not at the current time pos, not under the clip's start and not chased.
-			if (!noteStartsNow(*currentNote, cur_start, c))
+			if (!noteStartsNow(*currentNote, cur_start, c, chaseNow))
 			{
 				++nit;
 				continue;

@@ -152,14 +152,36 @@ void InstrumentTrack::playClipControllers(const MidiClip* clip, tick_t tick, f_c
 	}
 }
 
-bool InstrumentTrack::noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip) const
+bool InstrumentTrack::noteStartsNow(const Note& note, const TimePos& curStart, const MidiClip* clip, bool chaseNow) const
 {
-	if (note.pos() == curStart) { return true; }
-	if (!(note.pos() < curStart && note.endPos() > curStart)) { return false; }
+	const bool atStart = note.pos() == curStart;
+	if (!atStart && !(note.pos() < curStart && note.endPos() > curStart)) { return false; }
 	// A note under the clip's own start (a clip trimmed from the left) always sounds from there; one
-	// under a start, a jump or a loop does when chase is on (0.5.0 ED-075, MidiPlayback.h).
-	const MidiPlayback& playback = MidiPlayback::instance();
-	return curStart == -clip->startTimeOffset() || (playback.chase() && playback.chasingNow());
+	// under a start, a jump, a loop or an unmute (0.5.0 ED-075, Q050-040) only when chased.
+	if (!atStart && curStart == -clip->startTimeOffset()) { return true; }
+	if (!atStart && !chaseNow) { return false; }
+	// A chase must not sound a note twice: an under-playhead note a seek or loop left ringing already
+	// has a live handle, and starting another would double it (Q050-040, InstrumentTrack::play).
+	return !chaseNow || !noteIsAlreadySounding(note, clip);
+}
+
+bool InstrumentTrack::noteIsAlreadySounding(const Note& note, const MidiClip* clip) const
+{
+	// The handle's originating clip and the originating note's id (Note::id(), stable while the note
+	// lives): a same-key note in another overlapping clip is not this note (r2), and neither is a twin
+	// of the same key and position in this clip, which the model permits (r4). Audio thread, under
+	// play()'s tryLock: reads the handle list, allocates nothing.
+	const int id = note.id();
+	for (PlayHandle* handle : Engine::audioEngine()->playHandles())
+	{
+		auto* noteHandle = dynamic_cast<NotePlayHandle*>(handle);
+		if (noteHandle == nullptr || noteHandle->instrumentTrack() != this) { continue; }
+		if (noteHandle->clip() != clip || noteHandle->sourceNoteId() != id) { continue; }
+		// A released handle is a release tail, not the note: a loop may sound the note again over it.
+		if (noteHandle->isReleased()) { continue; }
+		return true;
+	}
+	return false;
 }
 
 bool InstrumentTrack::notePlaysNow(const Note& note, uint32_t midiSeed) const
@@ -228,6 +250,8 @@ void InstrumentTrack::triggerNote(const NoteTrigger& trigger, f_cnt_t offset, f_
 		// The last hit takes what the even split leaves over, so the note still ends where it ends.
 		const f_cnt_t length = hit + 1 < hits ? each : frames - hit * each;
 		NotePlayHandle* handle = NotePlayHandleManager::acquire(this, offset + hit * each, length, note);
+		handle->setClip(trigger.clip);  // Q050-040: the chase check must tell this clip's note from another's
+		handle->setSourceNoteId(note.id());  // Q050-040 r4: ...and one note of the clip from its same-key, same-position twin
 		handle->setPatternTrack(trigger.patternTrack);
 		// Velocity jitter, the slide source, the song-global offset and the clip's transpose.
 		decorateNoteHandle(handle, trigger.clip, trigger.note, trigger.first, trigger.songGlobal, songOffset, trigger.midiSeed);

@@ -76,6 +76,7 @@ Edit->Undo (Ctrl+Z) makes:
 | `clip.duplicate` | yes | the duplicate is a second clip in the same Track | ProjectJournal (Track checkpoint) | - |
 | `clip.move` | yes | position is a Clip property and the Clip is a JournallingObject | ProjectJournal (Clip checkpoint) | - |
 | `clip.resize` | yes | length is a Clip property | ProjectJournal (Clip checkpoint) | - |
+| `clip.set_mute` | yes | the muted flag is a BoolModel, i.e. a JournallingObject of its own (0.5.0 Q050-040: the song editor's clip mute dispatches this same command) | ProjectJournal (Clip mute BoolModel checkpoint) | - |
 | `clip.split` | yes | the split rewrites the clip list of one Track | ProjectJournal (Track checkpoint) | - |
 | `mixer.add_channel` | yes | a created MixerChannel has no before-state; the mixer is a JournallingObject but restoring its checkpoint would destroy and recreate every channel, and a MixerView holds those pointers - the same GUI-safety reason the TrackContainer checkpoints are commented out upstream. DISAGREEMENT with A16-STATUS-MEASURED.md, which records this as reversible:false | action checkpoint: the recorded undo step deletes the channel it created (Mixer::deleteChannel), through the same code path mixer.remove_channel uses; a fresh channel carries only defaults, so removing it restores the mixer exactly | - |
 | `mixer.set_volume` | yes | the fader is a FloatModel, i.e. a JournallingObject | ProjectJournal (MixerChannel volume model checkpoint) | - |

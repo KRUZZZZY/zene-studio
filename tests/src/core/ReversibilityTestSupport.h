@@ -184,6 +184,21 @@ inline bool trackMuted(const QString& id)
 		.result.value(QStringLiteral("muted")).toBool();
 }
 
+//! A clip's mute flag, read back through arrangement.get_state (the clipState entry).
+inline bool clipMuted(const QString& id)
+{
+	for (const QJsonValue& value : run(QStringLiteral("arrangement.get_state"))
+		.result.value(QStringLiteral("clips")).toArray())
+	{
+		const QJsonObject clip = value.toObject();
+		if (clip.value(QStringLiteral("id")).toString() == id)
+		{
+			return clip.value(QStringLiteral("muted")).toBool();
+		}
+	}
+	return false;
+}
+
 //! Every track's {id, muted, soloed}: the state track.set_solo writes.
 inline QJsonArray muteSoloState()
 {
