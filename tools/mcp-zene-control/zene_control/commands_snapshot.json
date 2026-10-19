@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-18T09:31:32Z",
+  "captured_at": "2026-10-19T00:32:26Z",
   "commands": [
     {
       "args_schema": {
@@ -5614,6 +5614,42 @@
           "clip": {
             "type": "string"
           },
+          "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clip",
+          "muted"
+        ],
+        "type": "object"
+      },
+      "description": "Mute or unmute a clip. The song editor's own clip mute (Ctrl+middle-click and the clip context menu) dispatches this command. A clip of the song arrangement or of the pattern editor is addressed by its stable clip-<n> id. With the chase preference on, unmuting a clip under the playhead starts the notes it was holding. Reversible through the ProjectJournal (the clip's mute BoolModel checkpoint).",
+      "group": "clip",
+      "id": "clip.set_mute",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "record": {
             "type": "boolean"
           }
@@ -6093,7 +6129,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "What this engine's MIDI clock is doing: the master's enabled flag, the port it sends on and whether that port is subscribed to a client destination, the message counters it has emitted and a bounded monitor of the last messages in order; and the slave's enabled flag, its source port, whether it follows the measured tempo, whether it is LOCKED, the measured tempo, the drift of the last interval from the window's mean, the drift bound, the tempo error the pulse jitter can produce, the window it measures over, the pulse count and the last song position and time-code values received. Read-only. `mtc` reports \"absent\": this release generates no MIDI time code (see docs/KNOWN-LIMITATIONS.md).",
+      "description": "What this engine's MIDI clock is doing: the master's enabled flag, the port it sends on and whether that port is subscribed to a client destination, the message counters it has emitted and a bounded monitor of the last messages in order; and the slave's enabled flag, its source port, the number of clock messages IGNORED for arriving on another port, whether it follows the measured tempo, whether it is LOCKED, the measured tempo, the drift of the last interval from the window's mean, the drift bound, the tempo error the pulse jitter can produce, the window it measures over, the pulse count and the last song position and time-code values received. Read-only. `mtc` reports \"absent\": this release generates no MIDI time code (see docs/KNOWN-LIMITATIONS.md).",
       "group": "clock",
       "id": "clock.get_state",
       "mutating": false,
@@ -6223,7 +6259,7 @@
         ],
         "type": "object"
       },
-      "description": "Enable or disable the DAW as a MIDI clock SLAVE: follow an incoming clock, measure its tempo over one quarter note of pulses and, when follow_tempo is on, write that tempo to the Song once it has left the dead band. A slave that is enabled with NO clock arriving never locks, writes nothing and does not move the transport - clock.get_state reports locked:false. `source_port` names the readable client port to follow (informational: the engine's MIDI readers deliver a clock from wherever it arrives). `drift_bound_ms` is how far one pulse interval may stray from the window's mean and still count as locked. Reversible for the CONFIGURATION: the tempo a following slave wrote is a trajectory of writes, not one state, and control.undo does not restore it (the transaction names the value). Receiving START/STOP/CONTINUE/SONG POSITION is counted and reported; moving the transport FROM the incoming clock is not in this release (see docs/KNOWN-LIMITATIONS.md).",
+      "description": "Enable or disable the DAW as a MIDI clock SLAVE: follow an incoming clock, measure its tempo over one quarter note of pulses and, when follow_tempo is on, write that tempo to the Song once it has left the dead band. A slave that is enabled with NO clock arriving never locks, writes nothing and does not move the transport - clock.get_state reports locked:false. `source_port` names the readable client port to follow, spelled as midi.device_list spells it (Edit > MIDI Clock > Clock Source offers the same list): clock messages from any OTHER port are ignored and counted in `ignored`, and choosing a different source forgets the measurement so the device moved off cannot keep writing its tempo. An empty source_port follows a clock from wherever it arrives - that is how the choice is CLEARED, while OMITTING the property keeps the current one - and it is the only value a client with one unnamed input (ALSA Raw-MIDI, JACK, OSS, sndio, the dummy) can follow, because those cannot say which of their ports a byte came from. A name longer than the follower can hold is refused (invalid_args), never truncated. `drift_bound_ms` is how far one pulse interval may stray from the window's mean and still count as locked. Reversible for the CONFIGURATION: the tempo a following slave wrote is a trajectory of writes, not one state, and control.undo does not restore it (the transaction names the value). Receiving START/STOP/CONTINUE/SONG POSITION is counted and reported; moving the transport FROM the incoming clock is not in this release (see docs/KNOWN-LIMITATIONS.md).",
       "group": "clock",
       "id": "clock.slave_set",
       "mutating": true,
@@ -6242,6 +6278,9 @@
           },
           "follow_tempo": {
             "type": "boolean"
+          },
+          "ignored": {
+            "type": "integer"
           },
           "interval_ms": {
             "type": "number"
@@ -30888,7 +30927,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "How notes are played back: 'chase' sounds a note playback starts, jumps or loops into the middle of (off by default), and 'offset_ms' (0..500) starts every note that much later, to line up a slow instrument. Preferences, kept in the config file. With no arguments it reports them. One undo step.",
+      "description": "How notes are played back: 'chase' sounds a note playback starts, jumps or loops into the middle of - or that is already under the playhead when its track or clip is unmuted (off by default) - and 'offset_ms' (0..500) starts every note that much later, to line up a slow instrument. Preferences, kept in the config file. With no arguments it reports them. One undo step.",
       "group": "transport",
       "id": "transport.midi_options",
       "mutating": true,
@@ -35461,7 +35500,7 @@
       }
     }
   ],
-  "count": 832,
+  "count": 833,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -35469,15 +35508,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-93uvvhj5/zene.sock",
-    "version": "0.4.0-alpha.3092+16efe01"
+    "source_socket": "/tmp/zctl-run-qkc2nc44/zene.sock",
+    "version": "0.4.0-alpha.3164+1e42639"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 832,
-    "ids_sha256": "b748ae4fe0ecd11818c25882f2526a54de08eaaf24f3c5e39fe921b6fb3e2ea1"
+    "id_count": 833,
+    "ids_sha256": "8995baf17d1f3e2c27b9575378bdf5c3bd6f6df2af22259511d9ea318017dbb5"
   }
 }

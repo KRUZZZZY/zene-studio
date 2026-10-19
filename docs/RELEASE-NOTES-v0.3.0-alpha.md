@@ -1012,9 +1012,12 @@ takes lanes reapplied after their train-3 reverts) adds three `true_inverse` row
 0.5.0 units) adds four rows: Q050-024's `link.audio_set_enabled` (`true_inverse`) and `link.audio_get_state` (`not_mutating`),
 Q050-035's `stem.tracks_create` (`true_inverse`) and Q050-019's `window.progression` (`not_mutating`), measured by
 `ReversibilityContractTest` on the merged tree: `rows=841 true_inverse=419 snapshot=42 irreversible=22 not_mutating=358`.
+**M0 merge train 7** (`050/m0-train-7`, 2026-10-19: train 6 + 19 accepted fixes and the 0.5.0 units Q050-026 and Q050-040)
+adds one row: Q050-040's `clip.set_mute` (`true_inverse`, the song editor's clip mute and the agents' one command), measured
+by `ReversibilityContractTest` on the merged tree: `rows=842 true_inverse=420 snapshot=42 irreversible=22 not_mutating=358`.
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=841 true_inverse=419 snapshot=42 irreversible=22 not_mutating=358
+     measured: rows=842 true_inverse=420 snapshot=42 irreversible=22 not_mutating=358
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
