@@ -2690,3 +2690,5 @@ tests/src/gui/BrowserDragUrlTest.cpp
 # cluster Q050-148 (2026-10): the warp-stretch docs correction wave's unit and fix records (docs-only).
 docs/050-features/Q050-148.md
 docs/qwen-fixes-2026-10/cluster-Q050-148.md
+# cluster new-p10-518-port: zero-cutoff LinkwitzRiley fix and verification report.
+docs/qwen-fixes-2026-10/cluster-new-p10-518-port.md
