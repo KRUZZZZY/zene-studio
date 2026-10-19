@@ -237,17 +237,29 @@ long long wideSongStart(const MidiClip* clip)
 	return static_cast<long long>(clip->startPosition().getTicks()) + clip->startTimeOffset().getTicks();
 }
 
-//! Preflight for a join: every note position and controller point of the later clips must land on a storable
-//! song tick once moved by its clip's delta from the first clip's origin, in wide arithmetic.
-bool joinedContentFits(const QVector<MidiClip*>& clips, long long origin)
+//! The end of @a clip in song ticks (its start position plus its own length, the same sum
+//! Clip::endPosition computes in int) carried out in 64-bit arithmetic.
+long long wideSongEnd(const Clip* clip)
 {
+	return static_cast<long long>(clip->startPosition().getTicks()) + clip->length().getTicks();
+}
+
+//! Preflight for a join: every note position AND end (Note::endPos adds the length in int) and every
+//! controller point of the later clips must land on a storable song tick once moved by its clip's delta
+//! from the first clip's origin, in wide arithmetic; and the joined clip's own end (the widest clip end)
+//! must be storable so the final changeLength is too. @a joinedEnd receives that end on success.
+bool joinedContentFits(const QVector<MidiClip*>& clips, long long origin, long long* joinedEnd)
+{
+	long long end = wideSongEnd(clips.front());
+	if (!fitsTick(end)) { return false; }
 	for (int i = 1; i < clips.size(); ++i)
 	{
 		const MidiClip* other = clips.at(i);
 		const long long delta = wideSongStart(other) - origin;
 		for (const Note* note : other->notes())
 		{
-			if (!fitsTick(static_cast<long long>(note->pos().getTicks()) + delta)) { return false; }
+			const long long moved = static_cast<long long>(note->pos().getTicks()) + delta;
+			if (!fitsTick(moved) || !fitsTick(moved + note->length().getTicks())) { return false; }
 		}
 		for (const ControllerLane& lane : other->controllers().lanes())
 		{
@@ -256,7 +268,10 @@ bool joinedContentFits(const QVector<MidiClip*>& clips, long long origin)
 				if (!fitsTick(static_cast<long long>(point.tick) + delta)) { return false; }
 			}
 		}
+		end = std::max(end, wideSongEnd(other));
+		if (!fitsTick(end)) { return false; }
 	}
+	*joinedEnd = end;
 	return true;
 }
 
@@ -288,13 +303,13 @@ ControlResult joinClips(const QJsonObject& args)
 	if (!joinable(args.value(QStringLiteral("clips")).toArray(), &clips, &track, &error)) { return error; }
 	MidiClip* first = clips.front();
 	const long long origin = wideSongStart(first);
-	if (!joinedContentFits(clips, origin))
+	long long wideEnd = 0;
+	if (!joinedContentFits(clips, origin, &wideEnd))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a note or a controller point of a later clip "
 			"would move past the largest tick; nothing was changed"));
 	}
 	addUndoStep(QVector<JournallingObject*>{track});
-	tick_t end = first->endPosition().getTicks();
 	for (int i = 1; i < clips.size(); ++i)
 	{
 		MidiClip* other = clips.at(i);
@@ -308,12 +323,12 @@ ControlResult joinClips(const QJsonObject& args)
 			first->addNote(moved, false);
 		}
 		mergeControllers(first, other, static_cast<tick_t>(delta));
-		end = std::max(end, other->endPosition().getTicks());
 		arrangement::deleteClip(track, other);
 	}
 	first->rearrangeAllNotes();
 	first->setAutoResize(false);
-	first->changeLength(TimePos(end - first->startPosition().getTicks()));
+	// The preflight held the widest clip end to a storable tick, and it is >= the first clip's start.
+	first->changeLength(TimePos(static_cast<tick_t>(wideEnd - first->startPosition().getTicks())));
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("clip"), clipIdOf(first)}, {QStringLiteral("joined"), clips.size()}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("clip"), clipIdOf(first)}}, QStringLiteral("control.undo"), {},
