@@ -58,7 +58,8 @@ is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-19-port.r1/l
 | Reversal RED, final product diff removed | `cd build/tests && ctest -R '^CrashReporterTest$' --output-on-failure` | 8 | `FAIL! ... Actual (result.errorKind) 5, Expected (Busy) 4` at `tests/src/core/CrashReporterTest.cpp(554)`; 13 passed, 1 failed. `test-10.log`. |
 | Restored GREEN, final product diff re-applied | `cd build/tests && ctest -R '^CrashReporterTest$' --output-on-failure` | 0 | 1/1 passed. `test-11.log`. |
 | Final family + canary | `cd build/tests && ctest -R 'Crash|crash|ControlCommandsSnapshot' --output-on-failure` | 0 | 6/6 passed. `test-12.log`. |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | RESULT: PASS (8 rows, no FAIL). `gate-1.log`. |
+| Post-commit verification of the committed tree | `cd build/tests && ctest -R 'Crash|crash|ControlCommandsSnapshot' --output-on-failure` | 0 | 6/6 passed after a fresh rebuild of the committed code. `test-13.log`. |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | RESULT: PASS (8 rows, no FAIL). `gate-1.log` (before the commit), `gate-2.log` and `gate-3.log` (after it). |
 
 ## Build and reversal commands
 
@@ -73,6 +74,7 @@ is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-19-port.r1/l
 | `cmake --build build --target CrashReporterTest` (final test build) | 0 | `build-7.log` |
 | `cmake --build build --target CrashReporterTest` (final reversal RED build) | 0 | `build-8.log` |
 | `cmake --build build --target CrashReporterTest zene` (final GREEN build) | 0 | `build-9.log` |
+| `cmake --build build --target CrashReporterTest zene` (post-commit verification build) | 0 | `build-10.log` |
 | `git diff -- src/core/ControlCommandsCrash.cpp > <logs>/fix.patch` | 0 | the product-only diff used for the reversal proof |
 | `git apply -R <logs>/fix.patch` | 0 | product diff removed before the reversal RED run |
 | `git apply <logs>/fix.patch` | 0 | product diff restored before the final GREEN run |
