@@ -131,6 +131,16 @@ tell the truth about whether it wrote one. A failed acknowledge still records no
 transaction (`countsAsChangedResult` in `src/core/ControlRegistry.cpp:362-366` keys on
 `result.ok`), so a refused call still leaves the undo history as it was.
 
+**The verdict is FIXED, not ALREADY-FIXED.** The newest line does stop the accepted
+branch's exact false success - its pre-check answers `Refused` before the write, so
+`acknowledged: true` cannot be reported for a marker the reporter never wrote. But it
+answers with a false claim about the state ("ALREADY acknowledged" for a path that was
+never written), and the success path's own check was still "a path exists" rather than
+"the marker is a file and the report is no longer pending", which is the contract the
+accepted fix was written to establish (`src/core/ControlCommandsCrash.cpp:292-330`
+before and after this change, quoted in the evidence table above). The ported rule
+closes both, and the regression proves it.
+
 **Sibling commands in the files I changed** (`crash.*`, all registered in
 `src/core/ControlCommandsCrash.cpp`): `crash.list_reports` - read side, updated to the
 same marker rule and covered by the new case; `crash.acknowledge_report` - the fix
