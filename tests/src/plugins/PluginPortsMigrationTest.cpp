@@ -29,6 +29,8 @@
 #include <cmath>
 #include <cmath>
 #include <array>
+#include <barrier>
+#include <thread>
 #include <cmath>
 #include "BasicFilters.h"
 
@@ -708,6 +710,7 @@ private slots:
 	void dispersionRemainsStableAboveNyquist();
 	void dynamicsProcessorRejectsShortWaveShape();
 	void comparisonIsSensitive();
+	void watsynOverlappingNotesAreIndependentAndAllocationFree();
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void nesNoiseFrequencyControlsRetuneHeldNotes();
@@ -1892,6 +1895,131 @@ void PluginPortsMigrationTest::comparisonIsSensitive()
 
 	QVERIFY2(a.checksum != b.checksum, "distinct plugins rendered identically");
 	QVERIFY2(worst > 1e-6f, "comparison is not sensitive to real differences");
+}
+
+/*!
+ * Cluster new-p9-521 (port): Watsyn must not allocate on the note path, and
+ * two notes that sound at the same time must not share render buffers.
+ *
+ * The allocation count comes from the replacement operator new this file
+ * already defines (it feeds partc::RealtimeAllocationWatch), so the test
+ * binary keeps exactly ONE replacement allocation function: the shared
+ * zene_allocation_probe cannot be linked here, it would define a second
+ * operator new and the link would fail with a duplicate symbol.
+ *
+ * The reference pass renders every note on its own; the concurrent pass starts
+ * the same notes together on worker threads. Each worker compares its samples
+ * with its own reference and counts the allocations its own thread made.
+ */
+void PluginPortsMigrationTest::watsynOverlappingNotesAreIndependentAndAllocationFree()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	const auto& instruments = migratedInstruments();
+	const auto module = std::find_if(instruments.begin(), instruments.end(),
+		[](const auto& candidate) { return std::string{candidate.plugin} == "watsyn"; });
+	QVERIFY(module != instruments.end());
+
+	auto* lib = new QLibrary{QString::fromUtf8(module->path)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	const auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	lmms::NotePlayHandleManager::init();
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	constexpr std::size_t concurrentNotes = 8;
+	constexpr int periods = 16;
+	const std::array<int, concurrentNotes> keys{36, 40, 43, 47, 50, 55, 59, 64};
+	const auto acquireNote = [&](int key) {
+		const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * periods)},
+			lmms::TimePos{0}, key};
+		return lmms::NotePlayHandleManager::acquire(track.get(), 0, frames * periods, note, nullptr, -1,
+			lmms::NotePlayHandle::Origin::MidiClip);
+	};
+	const auto releaseNote = [instrument](lmms::NotePlayHandle* handle) {
+		if (handle->m_pluginData != nullptr)
+		{
+			instrument->deleteNotePluginData(handle);
+			handle->m_pluginData = nullptr;
+		}
+		lmms::NotePlayHandleManager::release(handle);
+	};
+	const auto spanOf = [frames](std::vector<lmms::SampleFrame>& buffer, int period) {
+		return std::span<lmms::SampleFrame>{buffer.data() + period * frames, static_cast<std::size_t>(frames)};
+	};
+
+	// Reference: every note rendered on its own, one after the other.
+	std::array<std::vector<lmms::SampleFrame>, concurrentNotes> expected;
+	for (std::size_t i = 0; i < concurrentNotes; ++i)
+	{
+		expected[i].resize(static_cast<std::size_t>(frames) * periods);
+		auto* handle = acquireNote(keys[i]);
+		for (int period = 0; period < periods; ++period)
+		{
+			instrument->playNote(handle, spanOf(expected[i], period));
+		}
+		releaseNote(handle);
+	}
+
+	// Concurrent: the same notes, started together on worker threads.
+	std::array<lmms::NotePlayHandle*, concurrentNotes> handles{};
+	std::array<std::vector<lmms::SampleFrame>, concurrentNotes> actual;
+	std::array<std::size_t, concurrentNotes> allocations{};
+	for (std::size_t i = 0; i < concurrentNotes; ++i)
+	{
+		actual[i].resize(static_cast<std::size_t>(frames) * periods);
+		handles[i] = acquireNote(keys[i]);
+	}
+
+	std::barrier start{static_cast<std::ptrdiff_t>(concurrentNotes + 1)};
+	std::array<std::thread, concurrentNotes> workers;
+	for (std::size_t i = 0; i < concurrentNotes; ++i)
+	{
+		workers[i] = std::thread{[&, i] {
+			start.arrive_and_wait();
+			partc::RealtimeAllocationWatch::begin();
+			for (int period = 0; period < periods; ++period)
+			{
+				instrument->playNote(handles[i], spanOf(actual[i], period));
+			}
+			const auto counts = partc::RealtimeAllocationWatch::end();
+			allocations[i] = counts.allocations;
+		}};
+	}
+	start.arrive_and_wait();
+	for (auto& worker : workers)
+	{
+		worker.join();
+	}
+
+	float maxDelta = 0.0f;
+	for (std::size_t i = 0; i < concurrentNotes; ++i)
+	{
+		for (std::size_t frame = 0; frame < actual[i].size(); ++frame)
+		{
+			maxDelta = std::max(maxDelta, std::abs(expected[i][frame].left() - actual[i][frame].left()));
+			maxDelta = std::max(maxDelta, std::abs(expected[i][frame].right() - actual[i][frame].right()));
+		}
+		releaseNote(handles[i]);
+	}
+	delete instrument;
+
+	const auto allocationFree = std::all_of(allocations.begin(), allocations.end(),
+		[](std::size_t count) { return count == 0; });
+	qInfo("Watsyn overlap max|delta|=%g worker note allocations=%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu",
+		static_cast<double>(maxDelta), allocations[0], allocations[1], allocations[2], allocations[3],
+		allocations[4], allocations[5], allocations[6], allocations[7]);
+	QVERIFY2(maxDelta <= 1e-6f, "concurrent Watsyn notes contaminated each other's output");
+	QVERIFY2(allocationFree, "Watsyn note start allocated on a rendering worker");
 }
 
 void PluginPortsMigrationTest::monoDelayUpdatesItsDelayAcrossSampleRateChanges()

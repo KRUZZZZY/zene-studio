@@ -34,6 +34,9 @@
 #include "TempoSyncKnob.h"
 #include <samplerate.h>
 
+#include <atomic>
+#include <span>
+
 namespace lmms
 {
 
@@ -74,40 +77,35 @@ class WatsynView;
 class WatsynObject
 {
 public:
-	WatsynObject( 	float * _A1wave, float * _A2wave,
-					float * _B1wave, float * _B2wave,
-					int _amod, int _bmod, const sample_rate_t _samplerate, NotePlayHandle * _nph, f_cnt_t _frames,
-					WatsynInstrument * _w );
+	WatsynObject() = default;
 	virtual ~WatsynObject();
 
-	void renderOutput( f_cnt_t _frames );
+	//! Claims this voice for one note. Lock-free: an atomic flag, no mutex.
+	bool tryAcquire() noexcept;
+	//! Gives the voice back to the pool when its note ends.
+	void release() noexcept;
+	//! Prepares the voice for a new note: phases, wave snapshot and knobs.
+	void initialize( float * _A1wave, float * _A2wave,
+					float * _B1wave, float * _B2wave,
+					int _amod, int _bmod, sample_rate_t _samplerate, NotePlayHandle * _nph,
+					WatsynInstrument * _w );
 
-	inline SampleFrame* abuf() const
-	{
-		return m_abuf;
-	}
-	inline SampleFrame* bbuf() const
-	{
-		return m_bbuf;
-	}
+	//! Renders the mixed oscillator output straight into the note's buffer.
+	void renderOutput( std::span<SampleFrame> out );
 	inline sample_rate_t samplerate() const
 	{
 		return m_samplerate;
 	}
 
 private:
+	std::atomic_flag m_inUse = ATOMIC_FLAG_INIT;
 	int m_amod;
 	int m_bmod;
 
-	const sample_rate_t m_samplerate;
+	sample_rate_t m_samplerate;
 	NotePlayHandle * m_nph;
 
-	f_cnt_t m_fpp;
-
 	WatsynInstrument * m_parent;
-
-	SampleFrame* m_abuf;
-	SampleFrame* m_bbuf;
 
 	float m_lphase [NUM_OSCS];
 	float m_rphase [NUM_OSCS];
