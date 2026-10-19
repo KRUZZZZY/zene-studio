@@ -203,9 +203,13 @@ in-tree test instrument).
 
 **Warp and stretch.** `warp.list`, `warp.add`, `warp.move`, `warp.remove`, `warp.set` pin frames of a
 clip's audio to timeline positions and choose the clip's warp tempo mode; `warp.stretch` selects
-`resample` (default, changes pitch) or **`preserve_pitch`** (`AudioStretcher`; the proof measures the
+`resample` (default, changes pitch), **`preserve_pitch`** (`AudioStretcher`; the proof measures the
 440 Hz + 660 Hz two-tone input and reports the alignment search's cost; `SampleClipStretchTest`,
-`WarpMarkersTest`, `ClipWarpPersistenceTest`).
+`WarpMarkersTest`, `ClipWarpPersistenceTest`) or **`rubberband`** *(added after this capture, owner
+decision 12 — 2026-10-19, Q050-148: the optional Rubber Band R3 stretcher for tonal and polyphonic
+material, refused by a build without the library and rendered through WSOLA on voice exhaustion;
+`SampleClipRubberBandTest`; `docs/PITCH-STRETCH.md` §7 is the record. Appendix A below is the
+catalogue of the capture its provenance block names and predates the third mode.)*.
 
 **Groove, tempo and feel.** `groove.list`, `groove.extract`, `groove.set`, `groove.apply`,
 `groove.quantize`, `groove.rename`, `groove.remove` (`GrooveTemplateTest`, `ControlGrooveCommands`);

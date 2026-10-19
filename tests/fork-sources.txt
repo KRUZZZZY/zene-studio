@@ -2595,3 +2595,6 @@ tests/src/plugins/VstEffectControlsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-141.md
 # cluster new-p10-377 (2026-10): SlicerT waveform zoom clamp regression test (fork-NEW).
 tests/src/plugins/SlicerTZoomTest.cpp
+# cluster Q050-148 (2026-10): the warp-stretch docs correction wave's unit and fix records (docs-only).
+docs/050-features/Q050-148.md
+docs/qwen-fixes-2026-10/cluster-Q050-148.md

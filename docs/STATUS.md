@@ -90,7 +90,8 @@ not rounded up.
   (§ PARTIAL).
 - **Warp engine** — markers pinned to source frames; a clip follows or leads the project tempo.
   `include/WarpMarkers.h`, `<warp>` read in `src/core/SampleClip.cpp`; `WarpMarkersTest`, `ClipWarpPersistenceTest`,
-  `SampleClipWarpTest`. Resampling stretch, so it changes pitch.
+  `SampleClipWarpTest`. The default stretch is resampling, so a warp changes pitch; `warp.stretch` selects
+  `preserve_pitch` (WSOLA) or `rubberband` (optional Rubber Band R3) to keep it (`docs/PITCH-STRETCH.md`).
 - **Racks, VCAs, and `RoutingGraph` in the live audio path** — racks are parallel chains plus a chain selector,
   persisted as `<rack>` (`include/Rack.h`, `src/core/Rack.cpp`, `RackNodes.cpp`; `RackTest`); VCAs are relative
   volume/mute/solo with bit-exact reversibility, persisted as `<vcagroup>` (`src/core/VcaGroup.cpp`,

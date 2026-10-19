@@ -634,15 +634,35 @@ that is this page's fault — report it and it gets added.
   nothing to take hold of through the socket yet (Write needs no gesture and is fully drivable). Write mode does
   not erase the un-passed remainder of the clip — it overwrites where the playhead reaches and leaves the
   automation ahead of it untouched.
-- **Warping changes pitch.** The warp engine attaches markers and lets a clip follow or lead the project tempo,
-  but the time-stretch is done by resampling: a 2× stretch is an octave up. Pitch-preserving stretch is not
-  built.
-  Verified in the tree: `docs/WARP.md` §0 is the implementing lane's report — `WarpMarkers` is a child element of
+- **The default warp render changes pitch, and two optional modes keep it — added 2026-09-13, corrected
+  2026-10-19 (Q050-148).** The warp engine attaches markers and lets a clip follow or lead the project tempo;
+  how the resulting rate change is *rendered* is a per-clip choice (`warp.stretch`, `WarpStretchMode` in
+  `include/WarpMarkers.h`), and this file's earlier sentence "Pitch-preserving stretch is not built" no longer
+  describes the engine (it was true of the warp lane alone, and feature-list row 30 landed it):
+  - **`resample` (the default)** hands the rate to `AudioResampler` (libsamplerate): the pitch moves with the
+    rate, so a 2× warp is an octave up and a 0.5× warp an octave down. This is varispeed, and every clip that
+    does not ask otherwise renders through it.
+  - **`preserve_pitch`** routes the same rate through `AudioStretcher` (WSOLA): the clip lasts as long as the
+    mapping says and the pitch stays where it was. Limits: no formant preservation, no transient detection,
+    content below ~345 Hz cannot be aligned, linear-interpolation SRC only — the per-algorithm caveats are
+    listed in full in `docs/PITCH-STRETCH.md` §5.
+  - **`rubberband`** routes the rate through Rubber Band 3's R3 engine for tonal and polyphonic material. The
+    library is an **optional dependency** (`WANT_RUBBERBAND`, default ON): a build without it **refuses** the
+    mode, and a project that asks for it loads and renders through WSOLA; even with the library, a pass for
+    which both of the clip's two stretcher voices are busy falls back to WSOLA for that pass. `warp.list`
+    reports `stretch_algorithm` (`"rubberband"` only when the library actually rendered).
+  The refusals are honest: the pitch-preserving modes (`preserve_pitch`, `rubberband`) are refused for a
+  clip that renders linearly (no markers, no source tempo — there is no rate change to preserve the pitch
+  across), and `rubberband` is refused by a build without the library.
+  Verified in the tree: `docs/WARP.md` §0 is the warp lane's report — `WarpMarkers` is a child element of
   `<sampleclip>`, markers are pinned to source frames so a trim moves `sourceIn`/`sourceOut` and the markers stay
   on the audio, the map is monotonic and exact at every marker, with no markers it is the pre-warp arithmetic bit
   for bit, and a headless render puts a source whose transients are at 0/1/2/3 s at 0/0.5/1.0/1.5 s under a
   marker pair declaring 2× — while the base binary renders that project as if the `<warp>` element were absent.
-  The lane `post-alpha/warp` is an ancestor of this tip.
+  The lane `post-alpha/warp` is an ancestor of this tip. `docs/PITCH-STRETCH.md` is the stretch lane's report
+  (WSOLA measured at 440/660 Hz on a 2× warp, and the Rubber Band render, fallback and voice pool); the pitch
+  numbers are measured by the registered ctests `SampleClipStretchTest` and `SampleClipRubberBandTest`, and the
+  command path is driven end to end by `tests/control-pitch-stretch-transcript.py`.
 - **And there is no warp UI at all — added 2026-09-13.** The sentence above is true of the *engine*; the
   product can author markers only through the control surface. `warp.list` / `warp.add` / `warp.move` /
   `warp.remove` / `warp.set` are registered commands (argument and result schemas, A16 reversibility records)
@@ -1617,7 +1637,16 @@ a project with no warp, or with warps in the default mode, renders exactly as it
 feature. **UI absence — one line: the stretch mode is settable through the socket, not from the
 interface** — `grep -rniI 'WarpStretchMode\|preserve_pitch\|warpStretch\|AudioStretcher' src/gui/`
 returns **0** hits, there is no clip-context entry, no checkbox and no marker-drag gesture for it, and a
-project file or `warp.stretch` are the only two ways to author it.
+project file or `warp.stretch` are the only two ways to author it. **A third mode, `rubberband`, routes the
+same rate through Rubber Band 3's R3 engine** (`warp.stretch` with `mode="rubberband"`, `<warp
+stretch="rubberband">`; owner decision 12) for tonal and polyphonic material where WSOLA's search runs out.
+Its caveats, all structural: the library is an **optional dependency** (`WANT_RUBBERBAND`, default ON) and a
+build without it **refuses** the mode while a project that asks for it still loads and renders through WSOLA
+(`warp.list` then reads `stretch_algorithm:"wsola"`); a clip in the mode owns **two** stretcher voices, and a
+pass for which both are busy (a third concurrent pass, or a re-trigger inside the ~4 ms recycle window)
+renders through **WSOLA** for that pass — counted in `RubberBandPool::misses()`, never silence; and a
+transposed Rubber Band clip renders through the stretcher even without a rate change (the transpose is the
+pitch it renders, ED-038). The WSOLA caveats above apply verbatim to every fallback render.
 
 - **Structural undo is drivable and undoable through the socket, and the interface has no history panel —
   added 2026-09-15.** `track.add`, `track.remove`, `track.move`, `plugin.load` and `plugin.unload` are journalled

@@ -38,6 +38,11 @@ driven through the control surface is folded in; the interface stays deliberatel
   the first marker. `docs/KNOWN-LIMITATIONS.md` carries the same sentence.
 - **Still true, and still not fixed:** the stretch is resampling, so a warp changes pitch (2× is an octave
   up); there is no pitch-preserving time-stretch.
+  *Corrected 2026-10-19 (Q050-148): this bullet was written on 2026-09-13 and stopped being true two days
+  later, when feature-list row 30 landed the pitch-preserving stretch — `warp.stretch` selects
+  `preserve_pitch` (WSOLA) or `rubberband` (optional Rubber Band R3) beside the resampling default, and the
+  section below in this same file is its record. The default is still resampling, and a warp in the default
+  mode still changes pitch.*
 
 ## Export: TPDF dither and an explicit sample-rate-conversion quality
 
