@@ -48,10 +48,13 @@
  *     call for the same reason ("If we are running without the project loaded
  *     (from CLI), 'local:' base prefixes aren't converted, so we need to convert
  *     it ourselves", src/core/DataFile.cpp:569-575).
- *   - a legacy relative path (no prefix) that names no user/factory sample comes
- *     back from PathUtil::toAbsolute still relative (PathUtil::oldRelativeUpgrade
- *     returns the input unchanged when nothing matched). It is then resolved
- *     against the project's directory - again the rule copyResources uses.
+ *   - a legacy relative path (no prefix) that names no user/factory sample is
+ *     resolved against the PROJECT'S OWN DIRECTORY - again the rule
+ *     copyResources uses. It used to fall out of PathUtil::toAbsolute handing
+ *     such a path back still relative (PathUtil::oldRelativeUpgrade returns the
+ *     input unchanged when nothing matched); toAbsolute now resolves an
+ *     unmatched relative path against the working directory, so the project
+ *     directory is applied here instead - see resolveAssetPath.
  */
 
 #include "ControlProjectAssets.h"
@@ -121,9 +124,22 @@ Resolution resolveAssetPath(const QString& projectDir, const QString& raw)
 	}
 
 	// PathUtil owns every other prefix (factorysample:, usersample:, ...) and
-	// the legacy no-prefix form; it returns the input unchanged when none of
-	// its bases holds the file.
+	// the legacy no-prefix form.
 	const PathUtil::Base base = PathUtil::baseLookup(forward);
+	// A legacy relative path (no prefix) that names no user/factory sample is
+	// relative to the PROJECT's own directory. toAbsolute resolves such a path
+	// against the working directory, so the project directory has to be applied
+	// here - before toAbsolute is asked - or the reference would be taken away
+	// from the project that carries it.
+	if (base == PathUtil::Base::Absolute && !QFileInfo(forward).isAbsolute()
+		&& PathUtil::baseLookup(PathUtil::oldRelativeUpgrade(forward)) == PathUtil::Base::Absolute)
+	{
+		out.path = QDir::cleanPath(projectDir + QLatin1Char('/') + forward);
+		out.via = QStringLiteral("project-dir");
+		out.resolved = QFileInfo(out.path).isAbsolute();
+		return out;
+	}
+
 	const QString absolute = PathUtil::toAbsolute(forward);
 	if (QFileInfo(absolute).isAbsolute())
 	{
