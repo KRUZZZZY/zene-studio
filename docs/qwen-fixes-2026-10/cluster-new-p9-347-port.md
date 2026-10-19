@@ -113,6 +113,7 @@ Commands were run from the worktree root unless a working directory is stated.
 | `build-8.log` | `cmake --build build --target RelativePathsTest ControlProjectArchiveTest zene` | 0 |
 | `build-10.log` | `cmake --build build --target RelativePathsTest ControlProjectArchiveTest ControlBounceRenderTest ControlSampleOperatorTest ClipImportFileTest ProjectOpenIntegrityTest ProjectRecoveryTest DataFileFormatTest DataFileSaveIntegrityTest UndoHistoryPersistenceTest SessionCheckpointTest ClipSerialisationTest LibraryProjectsTest ProjectContainerSaveTest RecordingRecoveryMenuTest` | 0 |
 | `build-11.log` | `cmake --build build --target EnvelopeAndLfoParametersTest SampleBufferResampleTest ClipConsolidateTest ControlBrowserCommandsTest ProjectContainerEntriesTest ProjectVersionTest UndoBoundsTest ReversibilityUndoTest` | 0 |
+| `build-12.log` | `cmake --build build --target zene RelativePathsTest ControlProjectArchiveTest` (final, after the commit) | 0 |
 
 (`build-6.log` and `build-9.log` are the same builds as `build-10.log`/`build-11.log` plus two
 target names that do not exist in this tree - `AudioFileProcessor`, `ControlCollectMediaTest` -
@@ -134,6 +135,7 @@ Working directory for each command:
 | `test-6.log` | `ctest -R '^(RelativePathsTest\|ControlProjectArchiveTest\|UndoHistoryPersistenceTest)$' --output-on-failure` | RED proof (product patch reversed), exit **8** |
 | `test-7.log` | `ctest -R '^(RelativePathsTest\|ControlProjectArchiveTest)$' --output-on-failure` | GREEN proof, 2/2, exit **0** |
 | `test-8.log` | `ctest -R '<23 test names>' --output-on-failure` | 22/23, 1 pre-existing failure, exit **8** |
+| `test-9.log` | the same 23 tests, final run after the commit | 22/23, 1 pre-existing failure, exit **8** |
 
 ### Regression proof (step 4b)
 
