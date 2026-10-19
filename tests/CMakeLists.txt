@@ -2392,6 +2392,40 @@ set_tests_properties(PluginLogoResourceTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
+# cluster new-p10-470 (2026-10-12): the SpectrumAnalyzer's SA_DEBUG members.
+# Analyzer.h declared m_last_dump_time/m_dump_count/m_sum_execution/m_max_execution
+# without initializers and the constructor never touched them, so the first
+# processImpl() audio callback read uninitialized memory under SA_DEBUG.
+# The test compiles the product's plugin sources with SA_DEBUG defined and
+# placement-constructs an Analyzer over poisoned memory so the unfixed members
+# hold a deterministic garbage pattern; the constructor must zero them.
+# ---------------------------------------------------------------------------
+add_executable(Analyzer
+	src/plugins/Analyzer.cpp
+	${CMAKE_SOURCE_DIR}/plugins/SpectrumAnalyzer/Analyzer.cpp
+	${CMAKE_SOURCE_DIR}/plugins/SpectrumAnalyzer/SaProcessor.cpp
+	${CMAKE_SOURCE_DIR}/plugins/SpectrumAnalyzer/SaControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/SpectrumAnalyzer/SaControlsDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/SpectrumAnalyzer/SaSpectrumView.cpp
+	${CMAKE_SOURCE_DIR}/plugins/SpectrumAnalyzer/SaWaterfallView.cpp
+)
+add_test(NAME Analyzer COMMAND Analyzer)
+set_tests_properties(Analyzer PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(Analyzer PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/SpectrumAnalyzer
+	${CMAKE_BINARY_DIR}/plugins/SpectrumAnalyzer
+)
+target_static_libraries(Analyzer PRIVATE lmmsobjs)
+target_link_libraries(Analyzer PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+	${FFTW3F_LIBRARIES}
+)
+target_compile_definitions(Analyzer PRIVATE SA_DEBUG PLUGIN_NAME=analyzer)
+target_compile_features(Analyzer PRIVATE cxx_std_20)
+
+# ---------------------------------------------------------------------------
 # Part C (task #585) - behaviour-preservation harness for the AudioPorts
 # plugin migration.
 #

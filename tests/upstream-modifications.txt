@@ -726,7 +726,7 @@ plugins/Sfxr/Sfxr.cpp	rename layer 1: user-visible plugin/module description str
 plugins/SlewDistortion/SlewDistortion.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/SlewDistortion/SlewDistortionControlDialog.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/SpectrumAnalyzer/Analyzer.cpp	fix SA_DEBUG timer to compare steady-clock durations and measure execution time in milliseconds; logo resource key is zene-plugin-logo
-plugins/SpectrumAnalyzer/Analyzer.h	fix SA_DEBUG timestamp storage to use a steady-clock time point
+plugins/SpectrumAnalyzer/Analyzer.h	fix SA_DEBUG timestamp storage to use a steady-clock time point; cluster new-p10-470 (2026-10-12): zero-initialized the SA_DEBUG members (m_last_dump_time/m_dump_count/m_sum_execution/m_max_execution) in the header. Regression Analyzer::debugMembersAreInitializedBeforeTheFirstAudioCallback.
 plugins/StereoEnhancer/StereoEnhancer.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/StereoMatrix/StereoMatrix.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Vectorscope/Vectorscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)

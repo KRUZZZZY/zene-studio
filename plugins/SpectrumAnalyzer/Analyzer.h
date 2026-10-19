@@ -86,10 +86,10 @@ private:
 	LocklessRingBuffer<SampleFrame> m_inputBuffer;
 
 	#ifdef SA_DEBUG
-		std::chrono::steady_clock::time_point m_last_dump_time;
-		int m_dump_count;
-		float m_sum_execution;
-		float m_max_execution;
+		std::chrono::steady_clock::time_point m_last_dump_time{};
+		int m_dump_count = 0;
+		float m_sum_execution = 0.0f;
+		float m_max_execution = 0.0f;
 	#endif
 };
 

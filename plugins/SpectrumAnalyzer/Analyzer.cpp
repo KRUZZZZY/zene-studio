@@ -65,7 +65,6 @@ Analyzer::Analyzer(Model *parent, const Plugin::Descriptor::SubPluginFeatures::K
 	// so that it has some reserve space in case data processor is busy.
 	m_inputBuffer(4 * m_maxBufferSize)
 	#ifdef SA_DEBUG
-	, m_last_dump_time(std::chrono::steady_clock::now())
 	, m_dump_count(0)
 	, m_sum_execution(0.0f)
 	, m_max_execution(0.0f)
