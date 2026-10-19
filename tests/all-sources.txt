@@ -2934,6 +2934,7 @@ tests/src/plugins/PatmanLoadTest.cpp
 tests/src/plugins/PluginPortsHarness.h
 tests/src/plugins/PluginPortsMigrationReference.cpp
 tests/src/plugins/PluginPortsMigrationTest.cpp
+tests/src/plugins/ReverbSCBaseTest.cpp
 tests/src/plugins/ReverbSCCreateTest.cpp
 tests/src/plugins/ReverbSCCreateTestAllocator.c
 tests/src/plugins/ReverbSCRawProcessingTest.cpp

@@ -42,7 +42,7 @@ int sp_destroy(sp_data **spp)
 {
 	free((*spp)->out);
 	free(*spp);
-	return 0;
+	return SP_OK;
 }
 
 #ifndef NO_LIBSNDFILE
@@ -92,7 +92,7 @@ int sp_process(sp_data *sp, void *ud, void (*callback)(sp_data *, void *))
     for(i = 0; i < sp->nchan; i++) {
         sf_close(sf[i]);
     }
-    return 0;
+    return SP_OK;
 }
 
 #endif

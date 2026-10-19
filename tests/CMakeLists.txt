@@ -1174,6 +1174,8 @@ set(LMMS_TESTS
 	src/tracks/SampleClipRubberBandTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
+	# Soundpipe lifecycle methods must report SP_OK on successful setup and teardown.
+	src/plugins/ReverbSCBaseTest.cpp
 )
 
 # Ogg is optional; this regression compiles against the concrete Ogg writer.
@@ -1358,6 +1360,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "ReverbSCCreateTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE src/plugins/ReverbSCCreateTestAllocator.c)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "ReverbSCBaseTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/ReverbSC)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/Eq/EqCurve.cpp")
