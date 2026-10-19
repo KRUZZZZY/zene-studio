@@ -149,6 +149,7 @@ private:
 	bool m_allowLoopbackRouter = false;
 	quint16 m_internal = 0;
 	quint16 m_external = 0;
+	quint32 m_requestedLease = 0;  //!< the lease map() was asked for; used when the router is found later
 	bool m_searching = false;
 	bool m_mapped = false;
 	MappingResult m_result;

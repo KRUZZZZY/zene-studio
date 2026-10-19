@@ -369,6 +369,23 @@ private slots:
 		QCOMPARE(m_router.count("DeletePortMapping"), 1);
 	}
 
+	//! The first AddPortMapping after a discovery must ask for the lease the caller asked for, not a fixed one.
+	void theFirstMappingAfterDiscoveryAsksForTheRequestedLease()
+	{
+		UpnpMapper mapper;
+		const MappingResult result = map(mapper, 41760, 7200);
+		QVERIFY2(result.ok, qPrintable(result.message));
+		QCOMPARE(m_router.count("AddPortMapping"), 1);
+		QVERIFY(m_router.last("AddPortMapping").body.contains("<NewLeaseDuration>7200</NewLeaseDuration>"));
+		QCOMPARE(result.lifetime, quint32(7200));
+
+		UpnpMapper shorter;
+		const MappingResult shorterResult = map(shorter, 41761, 600);
+		QVERIFY2(shorterResult.ok, qPrintable(shorterResult.message));
+		QVERIFY(m_router.last("AddPortMapping").body.contains("<NewLeaseDuration>600</NewLeaseDuration>"));
+		QCOMPARE(shorterResult.lifetime, quint32(600));
+	}
+
 	void aRouterThatRefusesIsReportedWithItsOwnWords()
 	{
 		m_router.mode = Mode::Refuse718;

@@ -88,6 +88,7 @@ void UpnpMapper::map(quint16 internalPort, quint16 externalPort, quint32 lease, 
 {
 	m_internal = internalPort;
 	m_external = externalPort;
+	m_requestedLease = lease;
 	m_local = local;
 	m_result = MappingResult();
 	if (m_service.isValid()) { addMapping(lease); return; }  // a renewal: the router is already known
@@ -150,7 +151,7 @@ void UpnpMapper::onDescription(QNetworkReply* reply)
 	}
 	m_service = parseIgdDescription(body, reply->url());
 	if (!m_service.isValid()) { finish(false, QStringLiteral("the UPnP device that answered is not an internet gateway")); return; }
-	addMapping(3600);
+	addMapping(m_requestedLease);
 }
 
 QNetworkReply* UpnpMapper::soap(const QString& action, const SoapArgs& args)
