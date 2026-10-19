@@ -575,7 +575,10 @@ void OpulenzInstrument::updatePatch() {
 
 	// have to do this, as the level knobs might've changed
 	for( int voice = 0; voice < OPL2_VOICES ; ++voice) {
-		if(voiceNote[voice] && OPL2_VOICE_FREE == 0) {
+		// The free flag is a bit in the voice's note number: a voice that is
+		// still sounding has it clear, a free or an already released one has
+		// it set (the same test the pitch bend handler uses).
+		if((voiceNote[voice] & OPL2_VOICE_FREE) == 0) {
 			setVoiceVelocity(voice, velocities[voiceNote[voice]] );
 		}
 	}
