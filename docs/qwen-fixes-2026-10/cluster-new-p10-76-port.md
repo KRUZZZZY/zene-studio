@@ -78,6 +78,7 @@ journal or the save format.
 | Ratchet: complexity | `bash tests/complexity-gate.sh --check` | exit 1 — the six `REGRESSION` lines are in OTHER files (`tests/src/gui/XyPadPairTest.cpp`, `src/core/DawProjectReadTracks.cpp`, `src/core/ControlCommandsMixerTools.cpp`, `src/core/ControlCommandsMixerStrip.cpp`, `src/core/ProjectRevisions.cpp`, `src/gui/ControlCommandsShortcuts.cpp`); none in this change's files. `handleRenderOffline` stays at its baseline CCN 12 (`logs/gate-complexity-3.log:58`) |
 | Ratchet: file length | `bash tests/file-length-gate.sh --check` | exit 1 — the 14 `REGRESSION` lines are pre-existing files over 500 lines; none in this change's files |
 | Command surface | `python3 tools/mcp-zene-control/snapshot_commands.py --socket <live> --lane <worktree>` | exit 0 — 828 commands, the same surface as before (the `wasm.*` group is compiled out in this configuration), snapshot regenerated live (`logs/snapshot-regen-3.log`) |
+| The two wasm TUs | `g++ -fsyntax-only -std=c++20 -fPIC -I include -I src -I build/include -I build/src -I build <qt6> -Wall -Wextra <proxy TU>` | exit 0 — those two translation units are NOT compiled in this configuration (`WANT_WASM=OFF`), so the code changed in them is checked with a proxy that repeats the changed calls verbatim (the same names, namespaces and types): `logs/syntax-check-wasm-tus.log` |
 
 The RED run is a real runtime failure, not a build failure: the patch
 reversed is the product change alone
@@ -141,6 +142,11 @@ reversal above is the FIX and nothing else:
   commands before and after), so the `ControlCommandsSnapshot` canary does not
   move. The refused call is an `InvalidArgs` failure, which the registry
   records as no edit at all — one honest undo step is unaffected.
+- **If the verdict is ALREADY-FIXED or FALSE-POSITIVE: the code or the
+  contract that shows it.** Not applicable: the verdict is FIXED, and the
+  code that was wrong is quoted above with its file:line
+  (`src/core/ControlCommandsWasmRender.cpp:186-192` and
+  `src/core/ControlCommandsWasm.cpp:229-238` before this change).
 
 ## Files in this change
 
