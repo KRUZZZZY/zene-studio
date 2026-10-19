@@ -99,6 +99,8 @@ set(LMMS_TESTS
 	# reachable from a test): a range copied to another file, and the refusal
 	# that keeps a self-trim from truncating the file it is reading.
 	src/core/BounceInPlaceTest.cpp
+	# Default bounce paths must keep separate unsaved projects from replacing each other's files.
+	src/core/ControlBounceSupportTest.cpp
 	# Coverage lane (M0): bounce.land, track.flatten, range.bounce and the subproject verbs through a stand-in render child.
 	src/core/ControlBounceRenderTest.cpp
 	# Cluster 917: cancellable bounce jobs apply edits on the main thread after stale-target checks.

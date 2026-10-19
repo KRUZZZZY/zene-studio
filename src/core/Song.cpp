@@ -29,6 +29,7 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QSet>
+#include <QUuid>
 #include <QThread>
 
 #include <algorithm>
@@ -154,6 +155,8 @@ Song::Song() :
 	// s_automationCacheSong): the automation cache holds the models automated on
 	// the last frame as raw pointers, and the hook needs a song it can reach.
 	s_automationCacheSong = this;
+	// Keep this runtime-only identity off disk but available to default output paths.
+	setProperty("_zeneUnsavedProjectId", QUuid::createUuid().toString(QUuid::WithoutBraces));
 
 	// 0.5.0 (review W3-batchA #1): the project sections and the singletons the audio thread reads, built here, on
 	// the thread that builds the song, in every mode - not on the audio thread, and not only once the control
@@ -1513,6 +1516,8 @@ void Song::clearProject()
 
 	m_documentIdentity = nextDocumentIdentity();
 	Engine::projectJournal()->setJournalling( false );
+	// The Song object survives project replacement, so issue a fresh path identity here.
+	setProperty("_zeneUnsavedProjectId", QUuid::createUuid().toString(QUuid::WithoutBraces));
 
 	if( m_playing )
 	{
