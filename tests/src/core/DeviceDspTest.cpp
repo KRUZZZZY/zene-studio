@@ -279,6 +279,66 @@ int consolesOn(int index)
 	return count;
 }
 
+constexpr int kDelayProbeFrames = 8;
+
+bool nearly(double a, double b) { return std::abs(a - b) < 1.0e-9; }
+
+//! Eight stereo frames through @a delay: an impulse of 1 on the left and of 10 on the right in frame 0.
+template<typename Delay>
+void stereoImpulsePair(Delay& delay, double left[kDelayProbeFrames], double right[kDelayProbeFrames])
+{
+	for (int frame = 0; frame < kDelayProbeFrames; ++frame)
+	{
+		left[frame] = delay.update(frame == 0 ? 1.0 : 0.0, 0);
+		right[frame] = delay.update(frame == 0 ? 10.0 : 0.0, 1);
+	}
+}
+
+//! A ring cursor shared between the channels walks the buffer twice per frame, so the two impulse answers
+//! stop being ten times each other and land before the configured delay.
+template<typename Delay>
+bool channelsStayAligned(Delay& delay, double delayTime)
+{
+	delay.setDelay(delayTime);
+	delay.setGain(0.0);
+	double left[kDelayProbeFrames];
+	double right[kDelayProbeFrames];
+	stereoImpulsePair(delay, left, right);
+	const int answered = static_cast<int>(delayTime);
+	for (int frame = 0; frame < kDelayProbeFrames; ++frame)
+	{
+		if (!nearly(left[frame] * 10.0, right[frame])) { return false; }
+		if (frame < answered && !nearly(left[frame], 0.0)) { return false; }
+	}
+	return nearly(left[answered], 1.0) && nearly(right[answered], 10.0);
+}
+
+//! Both taps of a dual-tap comb must answer on the left channel exactly as they do on the right.
+bool dualTapChannelsStayAligned()
+{
+	StereoCombFeedbackDualtap dualtap(12);
+	dualtap.setDelays(2.0, 5.0);
+	dualtap.setGain(0.0);
+	double left[kDelayProbeFrames];
+	double right[kDelayProbeFrames];
+	stereoImpulsePair(dualtap, left, right);
+	return nearly(left[2], 1.0) && nearly(right[2], 10.0) && nearly(left[5], 1.0) && nearly(right[5], 10.0);
+}
+
+//! A shrinking setMaxDelay folds every channel cursor into the new size.
+bool shrinkingMaxDelayKeepsCursorsInRange()
+{
+	StereoCombFeedback comb(8);
+	comb.setDelay(2.0);
+	comb.setGain(0.0);
+	for (int frame = 0; frame < 6; ++frame) { comb.update(0.0, 0); comb.update(0.0, 1); }
+	comb.setMaxDelay(4);
+	double left[kDelayProbeFrames];
+	double right[kDelayProbeFrames];
+	stereoImpulsePair(comb, left, right);
+	return nearly(left[2], 1.0) && nearly(right[2], 10.0);
+}
+
 } // namespace
 
 template class lmms::CombFeedback<2>;
@@ -325,6 +385,19 @@ private slots:
 		allpass.setDelay(1.0);
 		allpass.setGain(0.5);
 		QCOMPARE(allpass.update(0.0, 0), 0.0);
+	}
+
+	//! Each channel keeps its own ring cursor, so a stereo frame's samples delay by the same amount.
+	void stereoDelayPrimitivesAdvanceOneCursorPerChannel()
+	{
+		StereoCombFeedback comb(8);
+		QVERIFY2(channelsStayAligned(comb, 3.0), "StereoCombFeedback must keep one cursor per channel");
+		StereoCombFeedfwd feedforward(8);
+		QVERIFY2(channelsStayAligned(feedforward, 3.0), "StereoCombFeedfwd must keep one cursor per channel");
+		StereoAllpassDelay allpass(8);
+		QVERIFY2(channelsStayAligned(allpass, 3.0), "StereoAllpassDelay must keep one cursor per channel");
+		QVERIFY2(dualTapChannelsStayAligned(), "StereoCombFeedbackDualtap must keep one cursor per channel");
+		QVERIFY2(shrinkingMaxDelayKeepsCursorsInRange(), "setMaxDelay must fold every channel cursor into the new size");
 	}
 
 	//! OSS PCM output must saturate samples before converting them to signed 16-bit values.
