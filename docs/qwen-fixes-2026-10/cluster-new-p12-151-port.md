@@ -95,6 +95,8 @@ All log files are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ne
 | File-length gate (after the change) | `bash tests/file-length-gate.sh --check > .../0026-gate-file-length-final.log 2>&1` (worktree) | 1 | Red **before and after** this change — see the gate note below. |
 | Complexity gate (pristine base) | `bash tests/complexity-gate.sh --check > .../0020-gate-complexity-base.log 2>&1` (worktree) | 1 | Measured with this commit's changes reversed: the regression list is **byte-identical** to the list after the change. |
 | File-length gate (pristine base) | `bash tests/file-length-gate.sh --check > .../0021-gate-file-length-base.log 2>&1` (worktree) | 1 | Measured with this commit's changes reversed: the same 14 files are reported, `tests/src/core/NotePlaybackTest.cpp (624)` before and `(646)` after — that file was already over the limit and already reported before this change. |
+| Upstream-divergence gate | `bash tests/no-upstream-regression-gate.sh > .../0027-gate-no-upstream.log 2>&1` (worktree) | 0 | `plugins/Nes/Nes.cpp` is a declared divergence with this commit's reason; no violation. |
+| Fork-sources gate | `bash tests/fork-sources-gate.sh > .../0028-gate-fork-sources.log 2>&1` (worktree) | 0 | 2950 tracked sources scanned, 0 unregistered, 0 stale entries (this report's registration resolves). |
 
 ### Gate note (honest status)
 
