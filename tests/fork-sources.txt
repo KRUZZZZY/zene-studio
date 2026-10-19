@@ -1289,6 +1289,7 @@ src/core/CollabInvite.cpp
 src/core/CollabLink.cpp
 src/core/CollabPolicy.cpp
 src/core/CollabSession.cpp
+src/core/CollabSessionAddress.h
 src/core/CollabSessionSync.cpp
 src/core/CompSlip.cpp
 src/core/ContainedCrossfade.cpp

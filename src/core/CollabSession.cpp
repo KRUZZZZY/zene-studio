@@ -26,6 +26,8 @@
 
 #include "CollabSession.h"
 
+#include "CollabSessionAddress.h"
+
 #include <QSysInfo>
 #include <QTimer>
 
@@ -39,6 +41,20 @@
 
 namespace lmms::collab
 {
+
+QString detail::lanInviteAddress(const QHostAddress& lan, ControlResult* refusal)
+{
+	if (lan.isNull())
+	{
+		if (refusal)
+		{
+			*refusal = ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("no LAN address could be detected; connect to the LAN or use scope 'local' for this machine only"));
+		}
+		return QString();
+	}
+	return lan.toString();
+}
 
 namespace
 {
@@ -55,10 +71,10 @@ QString defaultName(const QString& name)
 }
 
 //! This machine's LAN address, the one machines on the same network reach.
-QString lanInviteAddress(const portmap::PortMapping& mapping)
+QString lanInviteAddress(const portmap::PortMapping& mapping, ControlResult* refusal)
 {
 	const QHostAddress lan = mapping.localAddress().isNull() ? portmap::PortMapping::lanAddress(QHostAddress()) : mapping.localAddress();
-	return lan.isNull() ? QStringLiteral("127.0.0.1") : lan.toString();
+	return detail::lanInviteAddress(lan, refusal);
 }
 
 /*! The router's external address. \a strict (scope "public") refuses, with the reason, when there is none or it is
@@ -197,11 +213,13 @@ ControlResult CollabSession::stop()
 QString CollabSession::inviteAddress(const QString& scope, QString* warning, ControlResult* refusal) const
 {
 	if (scope == QLatin1String("local")) { return QStringLiteral("127.0.0.1"); }
-	if (scope == QLatin1String("lan")) { return lanInviteAddress(*m_mapping); }
+	if (scope == QLatin1String("lan")) { return lanInviteAddress(*m_mapping, refusal); }
 	const QString mapped = mappedInviteAddress(*m_mapping, scope == QLatin1String("public"), refusal);
 	if (!mapped.isEmpty() || scope == QLatin1String("public")) { return mapped; }
+	const QString lan = lanInviteAddress(*m_mapping, refusal);
+	if (lan.isEmpty()) { return lan; }
 	*warning = QStringLiteral("a LAN invite: only machines on this network can use it");
-	return lanInviteAddress(*m_mapping);
+	return lan;
 }
 
 ControlResult CollabSession::invite(CollabRole role, const QString& scope)
