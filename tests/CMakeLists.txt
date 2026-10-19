@@ -1136,6 +1136,12 @@ set(LMMS_TESTS
 	src/gui/RecordingRecoveryMenuTest.cpp
 	# File > Render Presets (export.preset_* / render.render), over a throwaway preset store.
 	src/gui/RenderPresetMenuTest.cpp
+	# 0.5.0 L12 (Q050-009): Navigate > Range > Render Selection/Export Sections forwards the
+	# exact range ticks and the chosen output to render.render / render.sections.
+	src/gui/RenderRangeMenuTest.cpp
+	# 0.5.0 L12 (Q050-009): the export dialog's render-preset picker - save from the dialog, reopen,
+	# select, and render at the preset's own rate and depth.
+	src/gui/ExportProjectDialogPresetTest.cpp
 	# Edit > Plugin Quarantine (plugin.scan_cache_* / plugin.rescan), over a throwaway scan-cache file.
 	src/gui/PluginQuarantineMenuTest.cpp
 	# Help > Crash Reports (crash.enable / disable / list / acknowledge / discard), over throwaway directories.
@@ -2484,6 +2490,11 @@ set_tests_properties(FeedbackModeActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(SessionTuningMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RecordingRecoveryMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RenderPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(RenderRangeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The export-dialog preset proof renders once through the dialog's own RenderManager (a real
+# Engine + ProjectRenderer + AudioFileWave), so it gets the offscreen platform and a render budget.
+set_tests_properties(ExportProjectDialogPresetTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 900)
 set_tests_properties(PluginQuarantineMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CrashReportMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiClockMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -5003,6 +5014,20 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlRenderPresets PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 900
+	)
+	# 0.5.0 L12 (Q050-009 / feature row 90): the batch section export (render.sections) one
+	# bounded file per named section, named after the section and rendered to its own ticks; and a
+	# stem export (render.stems) whose files carry the rate and bit depth of the applied render
+	# preset rather than a fixed 44.1 kHz. Every file's own WAV header is parsed, never the reply.
+	# render.sections runs one child per section, so its own budget is a multiple of the declared
+	# RENDER_TIMEOUT (docs/RENDER-CHILD-WAIT.md).
+	add_test(NAME ControlRenderSections
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-render-sections.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlRenderSections PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 1200
 	)
 	# Session sync, two real instances (D11 "Ableton Link sync", the
 	# two-instance proof the brief names): both join one session and one drives

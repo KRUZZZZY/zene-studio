@@ -2703,3 +2703,11 @@ docs/qwen-fixes-2026-10/cluster-Q050-148.md
 docs/qwen-fixes-2026-10/cluster-new-p10-518-port.md
 # cluster new-p11-81-port (2026-10): report for the delay primitive per-channel cursor fix ported onto 050/m0-train-5.
 docs/qwen-fixes-2026-10/cluster-new-p11-81-port.md
+
+# Q050-009 (2026-10): the export wave's preset picker in the export dialog, the range menu's Render
+# Selection / Export Sections, and the render.sections batch verb (fork-NEW sources).
+include/RenderRangeMenu.h
+src/gui/RenderRangeMenu.cpp
+src/core/ControlCommandsRenderSections.cpp
+tests/src/gui/RenderRangeMenuTest.cpp
+tests/src/gui/ExportProjectDialogPresetTest.cpp

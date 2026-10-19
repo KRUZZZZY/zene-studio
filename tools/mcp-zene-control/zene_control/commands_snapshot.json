@@ -8999,6 +8999,22 @@
             ],
             "type": "string"
           },
+          "channels": {
+            "enum": [
+              "stereo",
+              "surround"
+            ],
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "wav",
+              "flac",
+              "ogg",
+              "mp3"
+            ],
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -9027,7 +9043,7 @@
         ],
         "type": "object"
       },
-      "description": "Save a named render/export preset: the sample rate, the bit depth and the stereo mode a render is launched with. Writes ONE document in the store (renderpresets/<name>.zrp), outside the project, so the preset can be applied to another project and project.save/project.open cannot lose it. sample_rate must be inside the window the render path accepts (44100 to 192000 Hz - the shipped CLI's own check), bit_depth is one of 16, 24 or 32 and stereo_mode one of mono, stereo or jointstereo; a value nothing could honour is refused here rather than discovered by a failed render. An existing preset of that name is refused unless \"overwrite\":true. Reversible through a recorded action checkpoint that removes the document - or writes back the revision it replaced.",
+      "description": "Save a named render/export preset: the sample rate, the bit depth and the stereo mode a render is launched with. Writes ONE document in the store (renderpresets/<name>.zrp), outside the project, so the preset can be applied to another project and project.save/project.open cannot lose it. sample_rate must be inside the window the render path accepts (44100 to 192000 Hz - the shipped CLI's own check), bit_depth is one of 16, 24 or 32 and stereo_mode one of mono, stereo or jointstereo; the optional format (wav, flac, ogg, mp3 - the formats this build renders) and channels (stereo or surround) are stored with the preset and put back by the export dialog when the preset is applied; a value nothing could honour is refused here rather than discovered by a failed render. An existing preset of that name is refused unless \"overwrite\":true. Reversible through a recorded action checkpoint that removes the document - or writes back the revision it replaced.",
       "group": "export",
       "id": "export.preset_add",
       "mutating": true,
@@ -9041,7 +9057,13 @@
           "bytes": {
             "type": "integer"
           },
+          "channels": {
+            "type": "string"
+          },
           "dir": {
+            "type": "string"
+          },
+          "format": {
             "type": "string"
           },
           "name": {
@@ -9096,6 +9118,12 @@
             ]
           },
           "bit_depth": {
+            "type": "string"
+          },
+          "channels": {
+            "type": "string"
+          },
+          "format": {
             "type": "string"
           },
           "name": {
@@ -9193,10 +9221,16 @@
           "bytes": {
             "type": "integer"
           },
+          "channels": {
+            "type": "string"
+          },
           "count": {
             "type": "integer"
           },
           "dir": {
+            "type": "string"
+          },
+          "format": {
             "type": "string"
           },
           "name": {
@@ -24322,6 +24356,65 @@
           "out": {
             "type": "string"
           },
+          "sections": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "out"
+        ],
+        "type": "object"
+      },
+      "description": "Export the song's named sections (section.add/set/list) as separate files: one file per section, named after the section, each rendered to exactly the section's own start..end ticks (no tail bar). The file name is the section's name with the characters a filesystem refuses (/ \\ : * ? \" < > |) removed and leading dots dropped; trailing dots and spaces become one '_', and a Windows-reserved base name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, even with an extension) gets '_' appended to the base (CON -> CON_), the same on every platform. Names that are equal after Unicode canonical decomposition and case folding (Intro/intro) would be one file on Windows and macOS, so the later section gets '-2', then '-3' (intro-2.wav), skipping any name already taken; a name empty once cleaned is its id (sec-<n>). 'out' is an absolute directory the files are written into; 'sections' picks specific sec-<n> ids (default: every section, in time order); 'format' is one of the build's renderable formats (default wav). Each file is rendered through render.render, so the export settings in force - the preset applied through export.preset_apply - set its rate and bit depth; the reply names them and one entry per written file. NOTE the declared bound: each render runs in a child process and this surface does not answer until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "group": "render",
+      "id": "render.sections",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "applied_preset": {
+            "type": "string"
+          },
+          "bit_depth": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "directory": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array"
+          },
+          "format": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "enum": [
+              "wav",
+              "flac",
+              "ogg",
+              "mp3"
+            ],
+            "type": "string"
+          },
+          "out": {
+            "type": "string"
+          },
           "tail_bars": {
             "maximum": 64,
             "minimum": 0,
@@ -24333,7 +24426,7 @@
         ],
         "type": "object"
       },
-      "description": "Export every unmuted track to its own file in an absolute directory: one stem per track, post-fader and post-effects, including that track's own sends and their tails, each rendered to the project's length plus 'tail_bars' bars (default 1, the whole-project render's own convention). Returns the new file names. NOTE the declared bound: the render runs in a child process and this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Export every unmuted track to its own file in an absolute directory: one stem per track, post-fader and post-effects, including that track's own sends and their tails, each rendered to the project's length plus 'tail_bars' bars (default 1, the whole-project render's own convention). The stems are written with the export settings in force - the sample rate, bit depth and stereo mode of the preset applied through export.preset_apply, or the render path's own defaults (44100 Hz, 16-bit, joint stereo) when none is applied; the reply names them. Returns the new file names. NOTE the declared bound: the render runs in a child process and this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
       "group": "render",
       "id": "render.stems",
       "mutating": false,
@@ -24341,6 +24434,12 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "applied_preset": {
+            "type": "string"
+          },
+          "bit_depth": {
+            "type": "string"
+          },
           "count": {
             "type": "integer"
           },
@@ -24355,6 +24454,9 @@
           },
           "stems": {
             "type": "array"
+          },
+          "stereo_mode": {
+            "type": "string"
           },
           "tail_bars": {
             "maximum": 64,
