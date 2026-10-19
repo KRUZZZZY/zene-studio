@@ -31,12 +31,23 @@
  *  beneath it on its own, too. The child lane's clip is selectable where it is drawn, a point is
  *  edited through the lane's own UI (a double-click opens its automation editor),
  *  and the agent surface (automation.get_state, automation.lanes_set_collapsed)
- *  reports the same owner and lane state. */
+ *  reports the same owner and lane state.
+ *
+ *  Luna r6 rework: the fold is also driven through the REAL controls - a click on the owner row's
+ *  fold button and the Fold/Unfold item of its Actions menu, not the command handler - and each is
+ *  checked for the drawn state, the agent's state and one-step undo and redo; a project saved before
+ *  lanes could fold (no `autolanes` attribute) loads with its lane drawn. */
 
 #include <QtTest>
 
+#include <QAction>
+#include <QDir>
 #include <QDomDocument>
+#include <QFile>
 #include <QJsonArray>
+#include <QMenu>
+#include <QPushButton>
+#include <QToolButton>
 
 #include "AutomationClip.h"
 #include "AutomationClipView.h"
@@ -55,6 +66,7 @@
 #include "SongEditor.h"
 #include "Track.h"
 #include "TrackContainerView.h"
+#include "TrackOperationsWidget.h"
 #include "TrackContentWidget.h"
 #include "TrackView.h"
 
@@ -99,6 +111,36 @@ ClipView* laneClipView(TrackView* laneView, const Clip* clip)
 		if (view->getClip() == clip) { return view; }
 	}
 	return nullptr;
+}
+
+int undoDepth()
+{
+	return run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
+}
+
+//! The action in @a menu whose text is @a text, nullptr when it is not offered.
+QAction* actionNamed(QMenu* menu, const QString& text)
+{
+	for (QAction* action : menu->actions())
+	{
+		if (action->text() == text) { return action; }
+	}
+	return nullptr;
+}
+
+QString fileText(const QString& path)
+{
+	QFile file(path);
+	return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
+}
+
+//! The fold button of @a ownerView's header, made visible the way the row's own repaint does.
+QToolButton* foldButton(TrackView* ownerView)
+{
+	auto* operations = ownerView->findChild<TrackOperationsWidget*>();
+	if (operations == nullptr) { return nullptr; }
+	operations->repaint();  // paintEvent shows the button once the track owns a lane
+	return operations->findChild<QToolButton*>(QStringLiteral("btn-automation-lanes"));
 }
 
 } // namespace
@@ -308,6 +350,142 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCoreApplication::processEvents();
 		QVERIFY(m_laneView->isVisible());
+	}
+
+	//! Luna r6 rework (3): the fold through the REAL fold button on the owner's header - a mouse
+	//! click, not the command handler. The drawn row, the button, the agent's state and the undo
+	//! history all agree, and the undo and the redo are ONE step each.
+	void clickingTheFoldButtonFoldsOneUndoStepAndTheAgentAgrees()
+	{
+		const QString owner = control::trackIdOf(m_track);
+		QToolButton* button = foldButton(m_ownerView);
+		QVERIFY2(button != nullptr, "the owner's header has no fold button");
+		QVERIFY2(button->isVisible(), "an owner with a lane shows no fold button");
+		QCOMPARE(button->text(), QStringLiteral("\u25BE"));  // down: the lanes are shown
+		QVERIFY(m_laneView->isVisible());
+		const int before = undoDepth();
+
+		QTest::mouseClick(button, Qt::LeftButton);
+		QCoreApplication::processEvents();
+		QVERIFY2(!m_laneView->isVisible(), "clicking the fold button left the lane row drawn");
+		QVERIFY(m_ownerView->isVisible());
+		QCOMPARE(m_track->automationLanesCollapsed(), true);
+		QCOMPARE(stateOf(owner).value(QStringLiteral("lanes_collapsed")).toBool(), true);  // the agent agrees
+		QCOMPARE(stateOf(owner).value(QStringLiteral("automation_lane_count")).toInt(), 1);
+		QCOMPARE(stateOf(m_laneId).value(QStringLiteral("follows")).toString(), owner);
+		QCOMPARE(undoDepth(), before + 1);  // one click, one undo step
+		button = foldButton(m_ownerView);
+		QCOMPARE(button->text(), QStringLiteral("\u25B8"));  // right: folded
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCoreApplication::processEvents();
+		QVERIFY2(m_laneView->isVisible(), "one undo did not bring the lane row back");
+		QCOMPARE(stateOf(owner).value(QStringLiteral("lanes_collapsed")).toBool(), false);
+		QCOMPARE(undoDepth(), before);
+
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCoreApplication::processEvents();
+		QVERIFY2(!m_laneView->isVisible(), "one redo did not fold the lane row again");
+		QCOMPARE(stateOf(owner).value(QStringLiteral("lanes_collapsed")).toBool(), true);
+		QCOMPARE(undoDepth(), before + 1);
+
+		// Clicking again unfolds, again as one step.
+		QTest::mouseClick(foldButton(m_ownerView), Qt::LeftButton);
+		QCoreApplication::processEvents();
+		QVERIFY(m_laneView->isVisible());
+		QCOMPARE(stateOf(owner).value(QStringLiteral("lanes_collapsed")).toBool(), false);
+		QCOMPARE(undoDepth(), before + 2);
+	}
+
+	//! Luna r6 rework (3): the same through the owner's Actions menu item (the item the user picks),
+	//! with the menu built the way the product builds it - on aboutToShow.
+	void theActionsMenuFoldItemFoldsOneUndoStepAndTheAgentAgrees()
+	{
+		const QString owner = control::trackIdOf(m_track);
+		auto* operations = m_ownerView->findChild<TrackOperationsWidget*>();
+		QVERIFY(operations != nullptr);
+		QPushButton* actions = nullptr;
+		for (QPushButton* candidate : operations->findChildren<QPushButton*>())
+		{
+			if (candidate->menu() != nullptr) { actions = candidate; }
+		}
+		QVERIFY2(actions != nullptr, "the owner's header has no Actions menu");
+		const int before = undoDepth();
+
+		emit actions->menu()->aboutToShow();  // QMenu::aboutToShow, as popping the menu emits it
+		QAction* fold = actionNamed(actions->menu(), QStringLiteral("Fold automation lanes"));
+		QVERIFY2(fold != nullptr, "the Actions menu of an owner offers no Fold automation lanes");
+		QVERIFY(actionNamed(actions->menu(), QStringLiteral("Unfold automation lanes")) == nullptr);
+		fold->trigger();
+		QCoreApplication::processEvents();
+		QVERIFY2(!m_laneView->isVisible(), "the menu item left the lane row drawn");
+		QCOMPARE(stateOf(owner).value(QStringLiteral("lanes_collapsed")).toBool(), true);
+		QCOMPARE(undoDepth(), before + 1);
+
+		// Offered the other way round once folded.
+		emit actions->menu()->aboutToShow();
+		QVERIFY(actionNamed(actions->menu(), QStringLiteral("Unfold automation lanes")) != nullptr);
+		QVERIFY(actionNamed(actions->menu(), QStringLiteral("Fold automation lanes")) == nullptr);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCoreApplication::processEvents();
+		QVERIFY(m_laneView->isVisible());
+		QCOMPARE(stateOf(owner).value(QStringLiteral("lanes_collapsed")).toBool(), false);
+		QCOMPARE(undoDepth(), before);
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCoreApplication::processEvents();
+		QVERIFY(!m_laneView->isVisible());
+		QCOMPARE(stateOf(owner).value(QStringLiteral("lanes_collapsed")).toBool(), true);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // leave the lane shown
+		QCoreApplication::processEvents();
+		QVERIFY(m_laneView->isVisible());
+	}
+
+	//! Luna r6 rework (2): a LEGACY project - an owner saved before lanes could fold, so its track
+	//! has no `autolanes` attribute - loads with its lane DRAWN (missing attribute = expanded); the same
+	//! project saved folded loads with the lane hidden, so the test tells the two apart.
+	void aLegacyOwnerWithoutTheFoldAttributeLoadsWithItsLaneVisible()
+	{
+		const QString owner = control::trackIdOf(m_track);
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString legacy = QDir(dir.path()).filePath(QStringLiteral("legacy.mmp"));
+		const QString folded = QDir(dir.path()).filePath(QStringLiteral("folded.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(legacy));
+		QVERIFY2(!fileText(legacy).contains(QStringLiteral("autolanes")), "the unfolded project wrote the fold attribute");
+		QVERIFY(run(QStringLiteral("automation.lanes_set_collapsed"),
+			{{QStringLiteral("track"), owner}, {QStringLiteral("collapsed"), true}}).ok);
+		QVERIFY(Engine::getSong()->saveProjectFile(folded));
+		QVERIFY(fileText(folded).contains(QStringLiteral("autolanes=\"1\"")));
+		QCoreApplication::processEvents();
+		QVERIFY(!m_laneView->isVisible());  // folded in this session, before the legacy file replaces it
+
+		Engine::getSong()->loadProject(legacy);
+		QCoreApplication::processEvents();
+		QCoreApplication::processEvents();
+		TrackView* loadedOwnerView = nullptr;
+		TrackView* loadedLaneView = nullptr;
+		for (TrackView* view : getGUI()->songEditor()->m_editor->trackViews())
+		{
+			if (dynamic_cast<InstrumentTrack*>(view->getTrack()) != nullptr) { loadedOwnerView = view; }
+			if (dynamic_cast<AutomationTrack*>(view->getTrack()) != nullptr) { loadedLaneView = view; }
+		}
+		QVERIFY2(loadedOwnerView != nullptr && loadedLaneView != nullptr, "the legacy project lost its owner or its lane row");
+		QVERIFY2(loadedOwnerView->isVisible() && loadedLaneView->isVisible(), "a legacy owner's lane is not drawn");
+		const QString loadedOwner = control::trackIdOf(loadedOwnerView->getTrack());
+		QCOMPARE(stateOf(loadedOwner).value(QStringLiteral("lanes_collapsed")).toBool(), false);
+		QCOMPARE(stateOf(loadedOwner).value(QStringLiteral("automation_lane_count")).toInt(), 1);
+
+		Engine::getSong()->loadProject(folded);
+		QCoreApplication::processEvents();
+		QCoreApplication::processEvents();
+		loadedLaneView = nullptr;
+		for (TrackView* view : getGUI()->songEditor()->m_editor->trackViews())
+		{
+			if (dynamic_cast<AutomationTrack*>(view->getTrack()) != nullptr) { loadedLaneView = view; }
+		}
+		QVERIFY(loadedLaneView != nullptr);
+		QVERIFY2(!loadedLaneView->isVisible(), "a project saved folded loaded with its lane drawn");
 	}
 
 private:

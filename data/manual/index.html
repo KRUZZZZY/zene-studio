@@ -66,6 +66,15 @@ that separates groups of tracks and moves with the track.</p>
 Standard MIDI File.</p>
 <p>Automation can be switched off for reading or writing across the whole song (Project &gt; Automation Read / Write),
 and writes can be limited to the punch region. A control's trim offsets its automation without changing the curve.</p>
+<p>Automation lanes sit under the track they automate. Adding a lane to a track (the agent command <code>automation.lane_add</code>) draws it as an
+indented child row directly beneath its owner, however the tracks are reordered: moving the owner moves the lane with it, and a lane whose
+owner is gone keeps a row of its own so it can still be reached. A track that owns lanes shows a small triangle in its header; click it, or
+choose Fold automation lanes (Unfold automation lanes) in the track's Actions menu, to fold its lanes out of sight and bring them back - the
+agent command <code>automation.lanes_set_collapsed</code> does the same, and folding is one undo step. Hiding the owner, or collapsing the folder it is in, hides its
+lanes as well; showing it brings them back. Select a lane's clip by clicking it and double-click it to open the automation editor and edit
+its points. Deleting the owner deletes its lanes in the same undo step, and undo brings the owner and its lanes back together. The fold is saved
+with the track; a project saved before lanes could be folded opens with every lane shown. <code>automation.get_state</code> reports each lane's
+owner (<code>follows</code>) and each track's lane count and folded state, the same state the arranger draws.</p>
 
 <h2 id="notes">Editing notes</h2>
 <p>Double-click a MIDI clip to open it in the note editor. The tools follow FL Studio's piano roll: P draw, B paint, D delete, T mute, C slice, E select, Y play, Z zooms to the selection (1-7 also pick them). With any tool the right button deletes every note it crosses (one undo step); a double-click on a note opens its properties; Ctrl selects (Ctrl+Shift adds), Shift and Ctrl lock pitch and timing while dragging, Alt bypasses the grid and Alt+wheel changes velocity; a new note takes the last note's length; Ctrl+C, X, V and B copy, cut, paste and duplicate; the lanes

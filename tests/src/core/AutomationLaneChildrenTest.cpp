@@ -33,12 +33,18 @@
  *    brings them back with their `follows` intact (a lane cannot outlive its
  *    owner pointing at a track that is gone);
  *  - an owner reorder (track.move) keeps each lane's `follows`;
- *  - the fold flag and the follow relation both survive a save/load round trip. */
+ *  - the fold flag and the follow relation both survive a save/load round trip;
+ *  - a LEGACY owner (a project saved before lanes could fold: no `autolanes` attribute) loads
+ *    EXPANDED - missing attribute means shown, on a fresh load and on a restore over a folded
+ *    track - and an owner that was never folded saves no attribute at all. */
 
 #include <QtTest>
 
+#include <QDir>
 #include <QDomDocument>
+#include <QFile>
 #include <QJsonArray>
+#include <QTemporaryDir>
 
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
@@ -300,7 +306,84 @@ private slots:
 		QCOMPARE(restoredAutomation->followsTrack(), m_track->id());
 	}
 
+	//! Luna r6 rework (2): the ABSENT-attribute case. An owner that was never folded writes no
+	//! `autolanes` (the bytes an older build wrote), a project file without it - saved by an older
+	//! build - loads with the lane visible (owner expanded, lane still following it), a restore of
+	//! such an element over a FOLDED live track unfolds it, and the same file WITH the attribute
+	//! loads folded (so the assertions above can tell the two apart).
+	void aLegacyOwnerWithoutTheFoldAttributeLoadsExpanded()
+	{
+		const QString owner = control::trackIdOf(m_track);
+		QVERIFY(run(QStringLiteral("automation.lane_add"),
+			{{QStringLiteral("track"), owner}, {QStringLiteral("parameter"), firstParameter(owner)}}).ok);
+
+		// Never folded: the owner's own element carries no attribute.
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		const QDomElement neverFolded = m_track->saveState(doc, root);
+		QVERIFY2(!neverFolded.hasAttribute(QStringLiteral("autolanes")), "a never-folded owner wrote the fold attribute");
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString folded = QDir(dir.path()).filePath(QStringLiteral("folded.mmp"));
+		const QString legacy = QDir(dir.path()).filePath(QStringLiteral("legacy.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(legacy));
+		QVERIFY(!fileText(legacy).contains(QStringLiteral("autolanes")));  // the bytes of a project older than the fold
+		QVERIFY(run(QStringLiteral("automation.lanes_set_collapsed"),
+			{{QStringLiteral("track"), owner}, {QStringLiteral("collapsed"), true}}).ok);
+		QVERIFY(Engine::getSong()->saveProjectFile(folded));
+		QVERIFY(fileText(folded).contains(QStringLiteral("autolanes=\"1\"")));
+
+		// A restore of the legacy element over the FOLDED live track unfolds it (reset on absence).
+		QVERIFY(m_track->automationLanesCollapsed());
+		m_track->restoreState(neverFolded);
+		QCOMPARE(m_track->automationLanesCollapsed(), false);
+		QVERIFY(m_track->hasAutomationLaneChildren());
+
+		// The legacy project file loads with its lane visible: expanded owner, the lane still its child.
+		Engine::getSong()->loadProject(legacy);
+		QJsonObject loaded;
+		QVERIFY2(loadedOwnerState(&loaded), "the legacy project lost its owner");
+		QCOMPARE(loaded.value(QStringLiteral("lanes_collapsed")).toBool(), false);
+		QCOMPARE(loaded.value(QStringLiteral("automation_lane_count")).toInt(), 1);
+		Track* loadedOwner = loadedInstrument();
+		QVERIFY(loadedOwner != nullptr);
+		QCOMPARE(loadedOwner->automationLanesCollapsed(), false);
+		QCOMPARE(static_cast<int>(loadedOwner->automationLaneChildren().size()), 1);
+
+		// The same project saved folded loads folded.
+		Engine::getSong()->loadProject(folded);
+		QVERIFY(loadedOwnerState(&loaded));
+		QCOMPARE(loaded.value(QStringLiteral("lanes_collapsed")).toBool(), true);
+		QCOMPARE(loaded.value(QStringLiteral("automation_lane_count")).toInt(), 1);
+	}
+
 private:
+	static QString fileText(const QString& path)
+	{
+		QFile file(path);
+		return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
+	}
+
+	//! The instrument track of the (just loaded) song, nullptr when there is none.
+	static Track* loadedInstrument()
+	{
+		for (Track* track : Engine::getSong()->tracks())
+		{
+			if (dynamic_cast<InstrumentTrack*>(track) != nullptr) { return track; }
+		}
+		return nullptr;
+	}
+
+	//! automation.get_state of the loaded song's instrument track; false when there is none.
+	static bool loadedOwnerState(QJsonObject* out)
+	{
+		Track* owner = loadedInstrument();
+		if (owner == nullptr) { return false; }
+		*out = stateOf(control::trackIdOf(owner));
+		return true;
+	}
+
 	InstrumentTrack* m_track = nullptr;
 };
 
