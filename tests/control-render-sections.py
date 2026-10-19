@@ -9,6 +9,11 @@ THE CLAIM UNDER TEST (Q050-009 / feature row 90), measured on the REAL binary:
      expression, recomputed here); each file's own WAV header is parsed rather than trusting the
      reply.
 
+     PORTABLE NAMES: the file names are the same on every platform. Names that differ only by
+     case (Intro / intro) are two files (the second gets "-2"), a Windows-reserved name (CON)
+     gets "_" appended, and a trailing dot or space becomes "_" - each file still bounded to its
+     own section's ticks.
+
   2. SELECTED SETTINGS. A render preset applied through export.preset_apply sets the rate and
      bit depth of BOTH a section export AND a stem export: the headers of the files written by
      render.sections and render.stems carry the preset's 48 kHz / 24-bit, not the old fixed
@@ -40,7 +45,7 @@ import control_socket_harness as H  # noqa: E402
 #: ONE FULL ENGINE START plus the render. render.sections starts one child per section (two
 #: here), so its own call gets twice that plus slack.
 RENDER_TIMEOUT = 180.0
-SECTIONS_TIMEOUT = 2 * RENDER_TIMEOUT
+SECTIONS_TIMEOUT = 5 * RENDER_TIMEOUT
 
 PRESET = "sections 48-24"
 PRESET_RATE = 48000
@@ -182,6 +187,59 @@ def check_sections(session, recorder, outdir):
                    repr(result)[:250])
 
 
+def check_portable_names(session, recorder, outdir):
+    """Section file names are the same on EVERY platform: names that differ only
+    by case stay distinct files, Windows-reserved and trailing-dot names become
+    valid ones, and each file keeps its own section's bounds."""
+    quarter = ONE_BAR // 3
+    base = 2 * ONE_BAR
+    added = [("intro", base, base + quarter), ("CON", base + quarter, base + 2 * quarter),
+             ("Coda. ", base + 2 * quarter, 3 * ONE_BAR)]
+    for name, start, end in added:
+        reply = session.result("section.add", {"start": start, "end": end, "name": name})
+        recorder.check("section.add accepts %r" % name, "error" not in reply, repr(reply)[:200])
+        if "error" in reply:
+            return
+    directory = os.path.join(outdir, "sections-portable")
+    result, seconds = session.timed("render.sections", {"out": directory},
+                                    timeout=SECTIONS_TIMEOUT)
+    print("portable render.sections took %.1fs" % seconds)
+    recorder.check("portable render.sections answered success", "error" not in result,
+                   repr(result)[:300])
+    if "error" in result:
+        return
+    wanted = ["CON_.wav", "Coda_.wav", "Intro.wav", "Verse.wav", "intro-2.wav"]
+    names = sorted(os.listdir(directory)) if os.path.isdir(directory) else []
+    recorder.check("case-only names are distinct files, CON and 'Coda. ' are valid names",
+                   names == wanted, "names=%r want=%r" % (names, wanted))
+    folded = [name.lower() for name in names]
+    recorder.check("no two file names collide on a case-insensitive filesystem",
+                   len(set(folded)) == len(folded), "names=%r" % (names,))
+    reported = {entry.get("name"): entry for entry in result.get("files", [])}
+    spans = {"Intro": ("Intro.wav", 0, ONE_BAR), "Verse": ("Verse.wav", ONE_BAR, 3 * ONE_BAR),
+             "intro": ("intro-2.wav", base, base + quarter),
+             "CON": ("CON_.wav", base + quarter, base + 2 * quarter),
+             "Coda.": ("Coda_.wav", base + 2 * quarter, 3 * ONE_BAR)}
+    recorder.check("the reply lists the five sections",
+                   result.get("count") == 5, repr(result.get("files"))[:400])
+    for key, (file_name, start, end) in spans.items():
+        entry = reported.get(key) or reported.get(key + " ") or {}
+        recorder.check("%s reports its own bounds %d..%d" % (file_name, start, end),
+                       (entry.get("start_ticks"), entry.get("end_ticks")) == (start, end)
+                       and os.path.basename(entry.get("path") or "") == file_name,
+                       repr(entry)[:300])
+        path = os.path.join(directory, file_name)
+        if not os.path.isfile(path):
+            recorder.check("%s exists" % file_name, False, "missing %r" % (path,))
+            continue
+        want = expected_frames(end - start, PRESET_RATE)
+        info = wav_header(path)
+        recorder.check("%s is bounded to its %d ticks (%d frames, want %d)"
+                       % (file_name, end - start, info["frames"], want),
+                       abs(info["frames"] - want) <= FRAME_SLACK,
+                       "frames=%r want=%r" % (info["frames"], want))
+
+
 def check_stems_follow_the_selection(session, recorder, outdir):
     """render.stems writes at the selected preset's rate and bit depth, not a fixed 44.1 kHz."""
     directory = os.path.join(outdir, "stems")
@@ -246,6 +304,7 @@ def run_checks(session, instance, recorder, outdir):
     recorder.check("export.preset_apply put it in force", "error" not in applied, repr(applied)[:200])
     check_refusals(session, recorder, outdir)
     check_sections(session, recorder, outdir)
+    check_portable_names(session, recorder, outdir)
     check_stems_follow_the_selection(session, recorder, outdir)
 
 

@@ -69,29 +69,82 @@ using namespace control; // the shared vocabulary lives in ControlVocabulary.h
 namespace
 {
 
-/*! A section's name as a file name. The section's own name is used, with the
- *  characters a filesystem will not take removed; a name that is empty once
- *  cleaned falls back to the section's id (sec-<n>). Never a path separator and
- *  never a leading dot, so a section name can never escape the output directory.
+/*! True for the DOS device names Windows will not take as a file name: CON, PRN,
+ *  AUX, NUL, COM1-9 and LPT1-9, in any case, with or without an extension
+ *  ("nul.wav" and "Nul.Mix" are as reserved as "NUL"). Decided the same on every
+ *  platform: a project exported on Linux must give the file names a Windows
+ *  collaborator can also create.
  */
-QString sectionFileStem(const ArrangementSection& section)
+bool isWindowsReservedStem(const QString& stem)
+{
+	static const QStringList reserved{QStringLiteral("CON"), QStringLiteral("PRN"),
+		QStringLiteral("AUX"), QStringLiteral("NUL"), QStringLiteral("COM1"), QStringLiteral("COM2"),
+		QStringLiteral("COM3"), QStringLiteral("COM4"), QStringLiteral("COM5"), QStringLiteral("COM6"),
+		QStringLiteral("COM7"), QStringLiteral("COM8"), QStringLiteral("COM9"), QStringLiteral("LPT1"),
+		QStringLiteral("LPT2"), QStringLiteral("LPT3"), QStringLiteral("LPT4"), QStringLiteral("LPT5"),
+		QStringLiteral("LPT6"), QStringLiteral("LPT7"), QStringLiteral("LPT8"), QStringLiteral("LPT9")};
+	const int dot = stem.indexOf(QLatin1Char('.'));
+	const QString base = (dot < 0 ? stem : stem.left(dot)).trimmed().toUpper();
+	return reserved.contains(base);
+}
+
+//! The name with the characters a filesystem will not take removed, trimmed, and
+//! without leading dots (never a hidden file, never a path that could escape).
+QString cleanedSectionName(const QString& name)
 {
 	// The characters a filesystem will not take, in one place rather than a chain of comparisons.
 	static const QString forbidden = QStringLiteral("/\\:*?\"<>|");
 	QString stem;
-	for (const QChar c : section.name)
+	for (const QChar c : name)
 	{
 		if (c.unicode() >= 0x20 && !forbidden.contains(c)) { stem.append(c); }
 	}
 	stem = stem.trimmed();
 	while (stem.startsWith(QLatin1Char('.'))) { stem.remove(0, 1); }
-	stem = stem.trimmed();
+	return stem.trimmed();
+}
+
+//! A trailing run of dots and spaces (which Windows silently drops) becomes one
+//! "_"; a name of nothing else becomes empty.
+QString withoutTrailingDotsAndSpaces(QString stem)
+{
+	if (!stem.endsWith(QLatin1Char('.')) && !stem.endsWith(QLatin1Char(' '))) { return stem; }
+	while (stem.endsWith(QLatin1Char('.')) || stem.endsWith(QLatin1Char(' '))) { stem.chop(1); }
+	return stem.isEmpty() ? stem : stem + QLatin1Char('_');
+}
+
+/*! A section's name as a file name. The section's own name is used, with the
+ *  characters a filesystem will not take removed; a name that is empty once
+ *  cleaned falls back to the section's id (sec-<n>). Never a path separator and
+ *  never a leading dot, so a section name can never escape the output directory.
+ *  Portable by construction (no host-OS branch, the same name everywhere):
+ *  trailing dots and spaces become one "_", and a Windows-reserved base name
+ *  (CON, NUL, COM1, ... even with an extension) gets a "_" appended to that base
+ *  ("CON" -> "CON_", "nul.mix" -> "nul_.mix").
+ */
+QString sectionFileStem(const ArrangementSection& section)
+{
+	QString stem = withoutTrailingDotsAndSpaces(cleanedSectionName(section.name));
 	if (stem.isEmpty()) { stem = QStringLiteral("sec-%1").arg(section.id); }
+	if (isWindowsReservedStem(stem))
+	{
+		const int dot = stem.indexOf(QLatin1Char('.'));
+		stem.insert(dot < 0 ? stem.size() : dot, QLatin1Char('_'));
+	}
 	return stem;
 }
 
-//! One file name per section, made unique so two sections with the same name
-//! cannot overwrite each other: the second gets "-2", the third "-3", and so on.
+//! The key two file names are compared by: Unicode-normalised and case-folded, so
+//! "Intro" and "intro" (one file on Windows and macOS) count as the same name on
+//! every platform.
+QString sectionFileKey(const QString& stem)
+{
+	return stem.normalized(QString::NormalizationForm_C).toCaseFolded();
+}
+
+//! One file name per section, made unique so two sections with the same name -
+//! or names that differ only by case - cannot overwrite each other: the second
+//! gets "-2", the third "-3", and so on.
 QStringList sectionFileStems(const QVector<ArrangementSection>& sections)
 {
 	QStringList stems;
@@ -100,8 +153,11 @@ QStringList sectionFileStems(const QVector<ArrangementSection>& sections)
 	{
 		const QString base = sectionFileStem(section);
 		QString stem = base;
-		for (int n = 2; used.contains(stem); ++n) { stem = QStringLiteral("%1-%2").arg(base).arg(n); }
-		used.insert(stem);
+		for (int n = 2; used.contains(sectionFileKey(stem)); ++n)
+		{
+			stem = QStringLiteral("%1-%2").arg(base).arg(n);
+		}
+		used.insert(sectionFileKey(stem));
 		stems.append(stem);
 	}
 	return stems;
