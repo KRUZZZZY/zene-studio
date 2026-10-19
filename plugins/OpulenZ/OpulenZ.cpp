@@ -602,7 +602,9 @@ void OpulenzInstrument::loadFile( const QString& file ) {
 		}
 
 		QByteArray sbidata = sbifile.read(52);
-		if( !sbidata.startsWith("SBI\0x1a") ) {
+		// The SBI signature is four bytes: "SBI" followed by 0x1a. A plain
+		// string literal stops at the first NUL, so the length is explicit.
+		if( !sbidata.startsWith(QByteArray{"SBI\x1a", 4}) ) {
 			printf("No SBI signature\n");
 			return;
 		}
