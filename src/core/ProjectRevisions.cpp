@@ -29,11 +29,13 @@
 #include <system_error>
 
 #include <QCryptographicHash>
+#include <QDir>
 #include <QFile>
 #include <QFileDevice>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QTemporaryFile>
+#include <QUuid>
 
 namespace lmms
 {
@@ -117,6 +119,35 @@ bool copyRevision(const QString& from, const QString& to, bool* refused)
 		return false;
 	}
 	return true;
+}
+
+//! The staging file a restore of \a revision left behind, when an earlier
+//! attempt failed after it took the revision out of the set: the fixed
+//! '.restore' name the older code used, or one of the unique '.restore.<uuid>'
+//! names. Empty when there is none.
+QString pendingRestoreStagingPath(const QString& projectPath, int revision)
+{
+	const QString revisionPath = projectRevisionPath(projectPath, revision);
+	const QString legacyStaging = revisionPath + QStringLiteral(".restore");
+	if (QFileInfo(legacyStaging).isFile()) { return legacyStaging; }
+
+	const QFileInfo revisionInfo(revisionPath);
+	QDir directory(revisionInfo.absolutePath());
+	const QString pattern = revisionInfo.fileName() + QStringLiteral(".restore.*");
+	// Hidden files too: a project whose file name starts with a dot has hidden
+	// revision and staging files, and the pending target is one of them.
+	const QStringList candidates = directory.entryList({pattern}, QDir::Files | QDir::Hidden,
+		QDir::Name);
+	if (candidates.isEmpty()) { return QString(); }
+	return directory.absoluteFilePath(candidates.first());
+}
+
+//! The staging path of a NEW restore attempt: a path of its own, so a second
+//! attempt never overwrites the bytes an earlier one staged.
+QString newRestoreStagingPath(const QString& projectPath, int revision)
+{
+	return projectRevisionPath(projectPath, revision) + QStringLiteral(".restore.")
+		+ QUuid::createUuid().toString(QUuid::WithoutBraces);
 }
 
 //! Drops the revisions past the policy's \c Keep slots.
@@ -276,12 +307,21 @@ bool restoreProjectRevision(const QString& projectPath, int revision, QString* e
 	// restore the file the restore is meant to replace - measured: the file came
 	// back as the revision it was supposed to discard. A staging file, not an
 	// in-memory copy, because a revision may be up to the policy cap.
-	const QString staging = projectRevisionPath(projectPath, revision) + QStringLiteral(".restore");
-	QFile::remove(staging);
-	if (!QFile::copy(source, staging))
+	//
+	// A stage an earlier attempt left behind is REUSED: the rotation may
+	// already have replaced the revision that was asked for, so the staged bytes
+	// are then the only copy of the target left. Staging the revision slot
+	// again would restore the file the rotation put there instead - the bytes
+	// the failed attempt was asked for would be gone for good.
+	QString staging = pendingRestoreStagingPath(projectPath, revision);
+	if (staging.isEmpty())
 	{
-		*error = QStringLiteral("could not stage %1").arg(source);
-		return false;
+		staging = newRestoreStagingPath(projectPath, revision);
+		if (!QFile::copy(source, staging))
+		{
+			*error = QStringLiteral("could not stage %1").arg(source);
+			return false;
+		}
 	}
 
 	// Rotate the live file in, so the restore itself is recoverable: the file
@@ -293,7 +333,8 @@ bool restoreProjectRevision(const QString& projectPath, int revision, QString* e
 		rotateProjectRevision(projectPath, &refused, &reason);
 		if (refused)
 		{
-			QFile::remove(staging);
+			// The stage survives: it holds the bytes this restore took out of
+			// the set, and a retry has to be able to find them again.
 			*error = reason;
 			return false;
 		}
