@@ -592,8 +592,10 @@ void SampleClip::setWarpStretchMode(WarpStretchMode mode)
 	// serialized state, marked modified and announced. Rendering reads it at
 	// handle construction, so a change takes effect on the next playback pass.
 	if (m_stretchMode == mode) { return; }
-	m_stretchMode = mode;
-	ensureRubberBandPool();
+	// Voices first, mode second (both on this control thread): the render thread
+	// reads the mode with an acquire load, so a mode it sees has its pool published.
+	ensureRubberBandPool(mode);
+	m_stretchMode.store(mode, std::memory_order_release);
 	Engine::getSong()->setModified();
 	emit sampleChanged();
 }
@@ -616,21 +618,35 @@ void SampleClip::restoreState(const QDomElement& element)
 
 RubberBandPool* SampleClip::rubberBandPool() const
 {
-	const int slot = warpModeRubberBandSlot(m_stretchMode);
-	return slot < 0 ? nullptr : m_rubberBands[static_cast<std::size_t>(slot)].get();
+	return rubberBandPool(warpStretchMode());
+}
+
+
+RubberBandPool* SampleClip::rubberBandPool(WarpStretchMode mode) const
+{
+	const int slot = warpModeRubberBandSlot(mode);
+	return slot < 0 ? nullptr : m_rubberBandPublished[static_cast<std::size_t>(slot)].load(std::memory_order_acquire);
 }
 
 
 void SampleClip::ensureRubberBandPool()
 {
+	ensureRubberBandPool(warpStretchMode());
+}
+
+
+void SampleClip::ensureRubberBandPool(WarpStretchMode mode)
+{
 	if (!RubberBandPool::available()) { return; }
-	const int slot = warpModeRubberBandSlot(m_stretchMode);
+	const int slot = warpModeRubberBandSlot(mode);
 	if (slot < 0 || m_rubberBands[static_cast<std::size_t>(slot)])
 	{
 		return;
 	}
 	m_rubberBands[static_cast<std::size_t>(slot)] =
-		std::make_unique<RubberBandPool>(m_sample.sampleRate(), m_stretchMode);
+		std::make_unique<RubberBandPool>(m_sample.sampleRate(), mode);
+	m_rubberBandPublished[static_cast<std::size_t>(slot)].store(
+		m_rubberBands[static_cast<std::size_t>(slot)].get(), std::memory_order_release);
 }
 
 

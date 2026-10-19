@@ -93,7 +93,7 @@ Clip::Clip(const Clip& other):
 	m_warp(other.m_warp),
 	m_tempoMode(other.m_tempoMode),
 	m_sourceTempo(other.m_sourceTempo),
-	m_stretchMode(other.m_stretchMode),
+	m_stretchMode(other.m_stretchMode.load(std::memory_order_relaxed)),
 	m_track(other.m_track),
 	m_name(other.m_name),
 	// A COPY IS A NEW CLIP: it gets its own id and does NOT inherit the
@@ -771,7 +771,9 @@ void Clip::loadWarp(const QDomElement& element)
 		// engine does not know is the default, not an error (owner decision 12).
 		WarpStretchMode mode = WarpStretchMode::Resample;
 		warpStretchModeFromName(warpNode.attribute("stretch", "resample"), &mode);
-		m_stretchMode = mode;
+		// Voices first, mode second: a render thread that sees the mode finds its pool.
+		prepareWarpStretchMode(mode);
+		m_stretchMode.store(mode, std::memory_order_release);
 
 		m_warp.clear();
 		if (count > 0 && !m_warp.set(std::span<const WarpMarker>(markers.data(), count)))
@@ -788,7 +790,7 @@ void Clip::loadWarp(const QDomElement& element)
 		m_warp.clear();
 		m_tempoMode = WarpTempoMode::FollowProject;
 		m_sourceTempo = 0.0f;
-		m_stretchMode = WarpStretchMode::Resample;
+		m_stretchMode.store(WarpStretchMode::Resample, std::memory_order_release);
 	}
 }
 

@@ -168,9 +168,11 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 	 *  48 kHz engine would come out sharp). No voice - a build without the
 	 *  library, or both voices still in use or dirty - is the WSOLA render,
 	 *  which is the documented fallback and the pool counts it. */
-	if (m_preservePitch && warpModeUsesRubberBand(stretchMode) && clip->rubberBandPool() != nullptr)
+	// One read of the mode, then that mode's pool: a live switch between the two reads cannot mix them.
+	RubberBandPool* const pool = warpModeUsesRubberBand(stretchMode) ? clip->rubberBandPool(stretchMode) : nullptr;
+	if (m_preservePitch && pool != nullptr)
 	{
-		m_rubberBand = clip->rubberBandPool()->claim();
+		m_rubberBand = pool->claim();
 		if (m_rubberBand != nullptr)
 		{
 			// ED-038: the clip's transpose is a pitch scale on top of the rate correction; Rubber

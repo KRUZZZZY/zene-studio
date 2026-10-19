@@ -140,7 +140,7 @@ public:
 	 *  Complex, Q050-036). Only read for a clip that
 	 *  does not `rendersLinearly()`: with no rate change every mode is the
 	 *  same render, and the playback path takes the historical one. */
-	WarpStretchMode warpStretchMode() const { return m_stretchMode; }
+	WarpStretchMode warpStretchMode() const { return m_stretchMode.load(std::memory_order_acquire); }
 	void setWarpStretchMode(WarpStretchMode mode);
 
 	/*! The Rubber Band voices this clip's play handles claim (owner decision
@@ -152,6 +152,10 @@ public:
 	 *  still hold a voice when the mode changes again. The unused mode's pool
 	 *  is simply never claimed. */
 	RubberBandPool* rubberBandPool() const;
+	//! The pool of @a mode (nullptr for a mode without one, or one not built): a
+	//! reader that took the mode with warpStretchMode() asks for THAT mode's pool,
+	//! so a switch between the two reads cannot hand it the other mode's voices.
+	RubberBandPool* rubberBandPool(WarpStretchMode mode) const;
 
 	//! Clip::restoreState plus the Rubber Band pool a restored mode may need.
 	void restoreState(const QDomElement& element) override;
@@ -265,8 +269,14 @@ private:
 	//! See rubberBandPool(): one slot per Rubber Band-backed mode, each built
 	//! at most once (the mode's own voices; never replaced once built).
 	std::array<std::unique_ptr<RubberBandPool>, WarpRubberBandModeSlots> m_rubberBands;
+	//! The same pools as raw pointers, published with release AFTER construction;
+	//! the render thread reads these, never the unique_ptrs.
+	std::array<std::atomic<RubberBandPool*>, WarpRubberBandModeSlots> m_rubberBandPublished{};
 	//! Builds the current mode's pool if the mode asks for one and it is absent.
 	void ensureRubberBandPool();
+	//! Builds @a mode's pool if it asks for one and it is absent, then publishes it.
+	void ensureRubberBandPool(WarpStretchMode mode);
+	void prepareWarpStretchMode(WarpStretchMode mode) override { ensureRubberBandPool(mode); }
 	bool m_isPlaying;
 	int m_startFrameOffset;
 	//! ED-021: see leadFrames(). Written on the UI thread, read by the playback path: a relaxed atomic, the

@@ -52,10 +52,13 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <map>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -586,6 +589,58 @@ private slots:
 			qPrintable(QStringLiteral("the project file does not carry stretch=\"%1\"").arg(firstName)));
 		QVERIFY2(text.contains(QStringLiteral("stretch=\"texture\"")),
 			"the project file does not carry stretch=\"texture\"");
+	}
+
+	//! REGRESSION (Luna r3): a clip's FIRST switch to a Rubber Band-backed mode
+	//! builds that mode's voices, which takes a while. The mode and its pool
+	//! are published in that order (voices first, then the mode), so a render
+	//! thread that reads the mode can never find it without its pool. A reader
+	//! thread plays the render thread's part - mode, then that mode's pool,
+	//! exactly the SamplePlayHandle sequence - while the control thread makes
+	//! the first Beats and the first Complex switch of each of several clips.
+	//! Without Rubber Band the pool is absent in every mode and the same loop
+	//! asserts that (and the modes still switch).
+	void aFirstLiveSwitchBetweenBeatsAndComplexNeverShowsAModeWithoutItsPool()
+	{
+		SampleTrack track(Engine::getSong());
+		const bool haveRubberBand = RubberBandPool::available();
+		int violations = 0;
+		long observations = 0;
+		for (int round = 0; round < 6; ++round)
+		{
+			auto* clip = makeToneClip(track, m_rate);
+			applyTwoTimesWarp(*clip, m_rate);
+			std::atomic<bool> stop{false};
+			std::atomic<int> missing{0};
+			std::atomic<long> seen{0};
+			std::thread reader([&]() {
+				while (!stop.load(std::memory_order_acquire))
+				{
+					const WarpStretchMode mode = clip->warpStretchMode();
+					if (!warpModeUsesRubberBand(mode)) { continue; }
+					seen.fetch_add(1, std::memory_order_relaxed);
+					const bool hasPool = clip->rubberBandPool(mode) != nullptr;
+					if (hasPool != haveRubberBand) { missing.fetch_add(1, std::memory_order_relaxed); }
+				}
+			});
+			clip->setWarpStretchMode(WarpStretchMode::Beats);
+			clip->setWarpStretchMode(WarpStretchMode::Complex);
+			clip->setWarpStretchMode(WarpStretchMode::Beats);
+			// Let the reader see the settled state too.
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			stop.store(true, std::memory_order_release);
+			reader.join();
+			violations += missing.load();
+			observations += seen.load();
+			QCOMPARE(static_cast<int>(clip->warpStretchMode()), static_cast<int>(WarpStretchMode::Beats));
+			QCOMPARE(clip->rubberBandPool(WarpStretchMode::Complex) != nullptr, haveRubberBand);
+			QCOMPARE(clip->rubberBandPool(WarpStretchMode::Beats) != nullptr, haveRubberBand);
+		}
+		evidence("first-switch reader observations / mode-without-pool", static_cast<double>(observations),
+			static_cast<double>(violations));
+		QVERIFY2(observations > 0, "the reader never saw a Rubber Band mode");
+		QVERIFY2(violations == 0,
+			qPrintable(QStringLiteral("%1 reads saw a mode whose pool state was not published").arg(violations)));
 	}
 
 private:

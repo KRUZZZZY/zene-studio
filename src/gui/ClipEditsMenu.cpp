@@ -77,7 +77,7 @@ bool run(const Clip* clip, const QString& command, QJsonObject args)
 	const ControlResult result = ControlRegistry::instance()->invoke(command, args);
 	if (result.ok) { return true; }
 	if (isUnattendedRun()) { qWarning("%s refused: %s", qPrintable(command), qPrintable(result.errorMessage)); }
-	else { QMessageBox::warning(QApplication::activeWindow(), QMenu::tr("Gain and fades"), result.errorMessage); }
+	else { QMessageBox::warning(QApplication::activeWindow(), QMenu::tr("Clip edit refused"), result.errorMessage); }
 	return false;
 }
 
