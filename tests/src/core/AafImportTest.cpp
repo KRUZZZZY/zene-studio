@@ -366,6 +366,33 @@ private slots:
 #endif
 	}
 
+	//! A video-only composition: LibAAF leaves the audio aggregate empty, so the reader must not touch it.
+	//! The implementation is the one copy of AafImportRead.cpp this file already includes - a second
+	//! inclusion would define the same helpers twice in this translation unit.
+	void theVideoOnlyCompositionUsesTheDefaultSampleRate()
+	{
+#if __has_include(<libaaf.h>)
+		AAF_Data data{};
+		aafiVideo video{};
+		aafiVideoTrack videoTrack{};
+		video.Tracks = &videoTrack;
+		AAF_Iface aafi{};
+		aafi.aafd = &data;
+		aafi.Video = &video;
+		AafModel model;
+		AafLossReport loss;
+		Walk walk{&aafi, &model, &loss, {}};
+		readComposition(walk, AafReadOptions{});
+		QCOMPARE(model.sampleRate, AafDefaultSampleRate);
+		QVERIFY(model.tracks.isEmpty());
+		QVERIFY(model.media.isEmpty());
+		QCOMPARE(loss.videoTracks, 1);
+		QCOMPARE(loss.videoClips, 0);
+#else
+		QSKIP("this build has no LibAAF headers");
+#endif
+	}
+
 	//! Refusals every build gives, library or not.
 	void theRefusalsAreTyped()
 	{
