@@ -152,7 +152,14 @@ Two commits: `4af7b548e` (the seam + the regression, RED on purpose) and the fix
   `transport.set_metronome`): only `project.export_midi` writes a file; `project.new`,
   `project.save_as_template` and `project.import` keep their own paths untouched, and
   `transport.set_metronome` is unrelated. The shared helper `controlReplaceFileAtomically` is used
-  only by the export handler and is unchanged.
+  only by the export handler and is unchanged. The completion check lists the whole `transport.*`
+  group, but the only transport command in the file I touched is `transport.set_metronome` (a
+  boolean on the metronome); the rest live in other command files that this change does not touch.
+- **The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** The defect is present in the code
+  this branch started from: `src/core/ControlCommandsProjectLifecycle.cpp` removed the temporary
+  path on failure after an existence check made before the export (`const bool ownedTemp =
+  !QFileInfo::exists(temp);` followed by `if (ownedTemp) { QFile::remove(temp); }`), and the
+  regression is red against exactly that code (`test-4-reverted-red.log`, exit 8).
 - **Portability (Qt 5.15 / MSVC / macOS < 10.15).** No new API beyond `QFile::open` with
   `QIODevice::NewOnly` (Qt 5.1+), `QFileInfo::size()`, `QFile::remove()` and `std::function` - all
   available in Qt 5.15. No `windows.h` macro names, no `std::filesystem`, no Qt-6-only call.
