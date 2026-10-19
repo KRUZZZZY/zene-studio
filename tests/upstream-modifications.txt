@@ -684,6 +684,7 @@ plugins/Eq/EqEffect.cpp	rename layer 1: built-in plugin logo resource key is zen
 plugins/Flanger/FlangerEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Flanger/MonoDelay.cpp	cluster new-p9-293: pair both buffer releases with new[]; covered by MonoDelayTest.
 plugins/Flanger/MonoDelay.cpp	new-p9-294: resize the delay bounds, scale the frame delay, reset its ring index, and free the sample array correctly when the sample rate changes; covered by PluginPortsMigrationTest::monoDelayUpdatesItsDelayAcrossSampleRateChanges
+plugins/Flanger/MonoDelay.cpp	cluster new-p12-157: zero-length delay returns the current input instead of reading the stale ring slot; covered by PluginPortsMigrationTest::zeroLengthDelayPassesInputThrough
 plugins/FrequencyShifter/FrequencyShifterEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/GranularPitchShifter/GranularPitchShifterEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change); 0.5.0 r6: at most 512 grains, reserved up front (no audio-thread allocation); Q050-005: prepare sample-rate ring buffers off-thread, publish and swap at a block boundary, reclaim old buffers off-thread
 plugins/GigPlayer/PatchesDialog.cpp	cluster new-p9-346: patch selection previews through the bank/program models; Cancel restores the dialog's original selection
@@ -2294,6 +2295,7 @@ src/core/SerializingObject.cpp	new-p9-418: detach a hook from its previous Seria
 tests/CMakeLists.txt	new-p9-418: registers SerializingObjectHookTest beside the serialisation tests, without changing existing test behaviour.
 plugins/Sf2Player/Sf2Player.cpp	cluster new-p9-452 (2026-10-11): load and validate a candidate SoundFont before unloading the selected font; preserve the current font, serialized source, and live patch dialog after a failed selection. Regression: PluginPortsMigrationTest::sf2FailedLoadPreservesCurrentFontAndSource.
 tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p9-452 (2026-10-11): extend the failed SoundFont replacement regression through a live Sf2Player view and verify its patch dialog remains enabled.
+tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p12-157: add a ring-cycle regression proving a zero-length MonoDelay passes the current input through; it reuses the MonoDelay implementation this file already includes for the sample-rate regression
 include/SharedMemory.h	new-p9-459: reject overflowing SharedMemory<T[]> element-to-byte multiplication with std::length_error; covered by AudioBufferTest keyed and unkeyed regressions.
 tests/src/core/AudioBufferTest.cpp	new-p9-459: cover overflow rejection in both keyed and unkeyed SharedMemory<T[]>::create overloads.
 src/core/ThreadPool.cpp	cluster new-p9-478: workers drain queued tasks before exiting after shutdown; covered by ThreadPoolTest::destructionDrainsQueuedTasks
