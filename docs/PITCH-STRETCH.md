@@ -54,7 +54,7 @@ Two details that matter for the render path:
 
 | Where | What |
 |---|---|
-| `include/SampleClip.h` | `enum class WarpStretchMode { Resample = 0, PreservePitch = 1 }`, the `m_stretchMode` member (**default `Resample`**) and `warpStretchMode()` / `setWarpStretchMode()` |
+| `include/WarpMarkers.h` *(moved from `include/SampleClip.h` by SPEC-ARCH-4)* | `enum class WarpStretchMode { Resample = 0, PreservePitch = 1, RubberBand = 2 }` (owner decision 12 added `RubberBand` after this table was first written), the `m_stretchMode` member (**default `Resample`**) and `warpStretchMode()` / `setWarpStretchMode()` |
 | `src/core/SampleClip.cpp` | the mode is the `stretch="wsola"` attribute of the **same `<warp>` element** #597 already owns; written only when it is not the default, so a clip that never asks serialises byte for byte as before |
 | `include/SamplePlayHandle.h`, `src/core/SamplePlayHandle.cpp` | the handle snapshots the mode (`m_preservePitch`) with the window and the warp, and renders through `renderPreservingPitch()` when the mode is `PreservePitch` **and** the clip is not `rendersLinearly()` |
 
@@ -79,7 +79,7 @@ Three consequences, all deliberate:
 
 | id | mutating | args | result | A16 |
 |---|---|---|---|---|
-| `warp.stretch` | **yes** | `clip` (string, required), `mode` (`"resample"` \| `"preserve_pitch"`, required) | the whole warp state (below) + `previous_mode`, `changed` | `true_inverse` — `ControlReversibilityTable.cpp`; the mechanism is the clip's own journal checkpoint, because the mode is the `stretch` attribute of the clip's `<warp>` element, and the recorded inverse is `warp.stretch` re-issued with the before-state's own mode |
+| `warp.stretch` | **yes** | `clip` (string, required), `mode` (`"resample"` \| `"preserve_pitch"` \| `"rubberband"` — §7, required) | the whole warp state (below) + `previous_mode`, `changed` | `true_inverse` — `ControlReversibilityTable.cpp`; the mechanism is the clip's own journal checkpoint, because the mode is the `stretch` attribute of the clip's `<warp>` element, and the recorded inverse is `warp.stretch` re-issued with the before-state's own mode |
 | `warp.list` | no | `clip` | + `stretch`, `stretch_algorithm` (`"wsola"`), `renders_linearly` | `not_mutating` (unchanged row) |
 
 `warp.stretch` is registered in the `warp` group beside `add` / `move` / `remove` / `set`
@@ -87,7 +87,9 @@ Three consequences, all deliberate:
 
 * a `mode` the engine does not know — `invalid_args`;
 * `preserve_pitch` on a clip that renders linearly — `refused`, with the reason and the next step
-  ("author the warp first, or declare the clip's own source tempo").
+  ("author the warp first, or declare the clip's own source tempo");
+* `rubberband` in a build configured without the library — `refused`, naming `preserve_pitch` as the
+  stretch to use instead (§7; a *file* asking for it is not refused, it loads and renders through WSOLA).
 
 Over the socket:
 
@@ -98,6 +100,21 @@ Over the socket:
 ```
 
 and one `control.undo` takes it back (measured in the clip-path test below).
+
+**Run it yourself (Q050-148).** The whole exchange above is the registered transcript script
+`tests/control-pitch-stretch-transcript.py`, which drives the real binary headless and prints every
+request and reply; exit 0 only when every check held. A reviewer runs:
+
+```bash
+cmake --build build --target zene -- -j4
+QT_QPA_PLATFORM=offscreen python3 tests/control-pitch-stretch-transcript.py build/zene
+```
+
+The prerequisite the script demonstrates on the way: a clip must have a **rate change** before a
+pitch-preserving mode is accepted — the script authors the 2× warp with `warp.set` first, and the
+bare `warp.stretch preserve_pitch` is refused, typed, until it does. The same exchange works with
+`mode:"rubberband"` on a build that links Rubber Band (a build without the library gets the typed
+refusal described above, and the render falls back to WSOLA as §7 says).
 
 **Not done on this surface, on purpose:** the stretcher's parameters (`grainFrames`, `searchRadius`)
 are **not** exposed as command arguments. They are the quality/complexity dial, they default to the

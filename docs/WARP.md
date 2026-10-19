@@ -14,8 +14,11 @@ rate is real: a source whose transients are at 0/1/2/3 s comes out at **0/0.5/1.
 under a marker pair that declares 2×, while the base binary renders that same project as
 if the `<warp>` element were not there at all.
 
-**The stretch mode is resampling, so it changes pitch.** A 2× warp is an octave up.
-True pitch-preserving stretch is a DSP project of its own and is **not** built — see §3.
+**How a warp renders its rate is a per-clip choice, and the default changes pitch.** The default mode,
+`resample`, renders through the resampler, so a 2× warp is an octave up. Two optional modes render the same
+rate with the pitch kept (`preserve_pitch`, the WSOLA stretcher; `rubberband`, the optional Rubber Band R3
+stretcher) — `warp.stretch` selects one, `docs/PITCH-STRETCH.md` is their record, and §3 below states what
+each mode does and does not preserve.
 
 **The default is tempo *follower*** (the project sets the rate). See §4.
 
@@ -159,20 +162,23 @@ it — both moved to the base clip with SPEC-ARCH-4 census row 5 (formerly
 
 ## 3. The stretch mode, and what a user would hear
 
-> **Update (2026-09-15, lane `030/pitch-stretch`, feature-list row 30).** The paragraph below is
-> correct about the mode this engine had when #597 landed and it is still correct about its
-> **default**: a warp renders through the resampler and the pitch moves with the rate. What changed
-> is that a clip can now **select** a second mode — `WarpStretchMode::PreservePitch`, settable through
-> `warp.stretch` or the `stretch="wsola"` attribute of the same `<warp>` element — which renders the
-> same rate through `AudioStretcher` (WSOLA) and keeps the pitch where it was. Measured on one clip's
-> two modes under a 2× warp: resample renders 0.5000 / 0.3000 at 880 / 1320 Hz, the stretch renders
-> 0.4992 / 0.2990 at 440 / 660 Hz, same length, same level. `docs/PITCH-STRETCH.md` is the record;
-> nothing else in this document changed, and no behaviour changed for a clip that does not ask.
+> **Update (2026-10-19, Q050-148; first updated 2026-09-15 by lane `030/pitch-stretch`, feature-list
+> row 30).** The paragraphs below are correct about the **default** mode, `resample`: a warp renders
+> through the resampler and the pitch moves with the rate. A clip can also **select** how the same rate
+> is rendered so that the pitch is kept — `warp.stretch` with `mode="preserve_pitch"` (the WSOLA
+> stretcher, `AudioStretcher`; persisted as `stretch="wsola"` on the same `<warp>` element) or
+> `mode="rubberband"` (the optional Rubber Band R3 stretcher: refused by a build without the library,
+> and rendered through WSOLA whenever both of the clip's stretcher voices are busy; persisted as
+> `stretch="rubberband"`). Measured on one clip's modes under a 2× warp: resample renders
+> 0.5000 / 0.3000 at 880 / 1320 Hz, preserve_pitch renders 0.4992 / 0.2990 at 440 / 660 Hz, same
+> length, same level. `docs/PITCH-STRETCH.md` is the record of both stretchers and their limits; no
+> behaviour changed for a clip that does not ask.
 
-**The stretch is resampling. It changes pitch.** `SamplePlayHandle::warpRatio()`
-(`src/core/SamplePlayHandle.cpp:166`) hands `Sample::play` a resampler ratio derived from
+**The default stretch is resampling. It changes pitch.** `SamplePlayHandle::warpRatio()`
+(`src/core/SamplePlayHandle.cpp:551`; the line moved when the Rubber Band mode landed) hands
+`Sample::play` a resampler ratio derived from
 the marker segment's source-frames-per-tick, and `Sample::play` passes it to
-`AudioResampler` (`src/core/AudioResampler.cpp:78`, libsamplerate). There is no phase
+`AudioResampler` (`src/core/AudioResampler.cpp`, libsamplerate). There is no phase
 vocoder, no WSOLA, no transient preservation and no formant handling anywhere in this
 change.
 
@@ -185,7 +191,9 @@ What a user hears, stated plainly:
 That is a defensible design (it is what a sampler does, and it is what "varispeed" means),
 but it is **not** pitch-independent time-stretching and this report does not claim it is.
 A pitch-preserving stretch would need its own DSP module and its own tests; it is not in
-this change.
+this change. *(Row 30 later built exactly that module — `AudioStretcher`, plus the optional
+Rubber Band mode — see the update at the top of this section and `docs/PITCH-STRETCH.md`;
+the sentences above are kept as the resample mode's description.)*
 
 Two further honest limits on the rendering:
 
@@ -196,7 +204,7 @@ Two further honest limits on the rendering:
   the default period). A two-marker set that covers the whole clip — the case the render
   proof measures — is exact everywhere, because the rate never changes.
 * **The length follows the mapping, not the frame count.**
-  `SamplePlayHandle::totalFrames()` (`:218`) returns the window's **timeline span** under
+  `SamplePlayHandle::totalFrames()` (`src/core/SamplePlayHandle.cpp:672`) returns the window's **timeline span** under
   the mapping when the clip is warped or leads, so a 2× segment consumes its source frames
   in half the output frames and stops there, instead of playing silence for the second
   half of the clip.
@@ -492,8 +500,11 @@ skip, and a skip plus a failure is a failure.
   given; nothing snaps it to the project grid and nothing reads a groove map. Those ride
   warp later, as the task says.
 * **No take lanes and no comping** (#600, and the #611 wave's slices D/F). Untouched.
-* **No pitch-preserving stretch.** See §3 — this is resampling and the pitch moves with the
-  rate.
+* **No pitch-preserving stretch** *(was: written 2026-09-13; row 30 landed it on 2026-09-15 and
+  Q050-148 corrected this list on 2026-10-19).* A pitch-preserving stretch **exists now**:
+  `warp.stretch` selects `preserve_pitch` (WSOLA) or `rubberband` (optional Rubber Band R3), and
+  `docs/PITCH-STRETCH.md` is the record. This lane's own claim stands only as history: when #597
+  landed, the only mode was resampling and the pitch moved with the rate. See §3.
 * **One rate per audio period**, i.e. up to one period of latency on a rate *change* (exact
   at the markers themselves). A sample-accurate rate curve needs the resampler to accept a
   rate ramp, which it does not.

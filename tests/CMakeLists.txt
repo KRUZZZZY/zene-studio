@@ -5970,6 +5970,16 @@ if(PYTHON3_EXECUTABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/stem-availability-docs-gate.py)
 endif()
 
+# Q050-148 (docs lane): the warp docs must keep stating the three warp.stretch modes -
+# the pitch-moving resample default beside the pitch-preserving preserve_pitch/rubberband -
+# with the per-algorithm caveats and the runnable reviewer example, and must not bring the
+# old "pitch-preserving stretch is not built" blanket claims back as current statements.
+# Offline (reads docs and the transcript script; no binary, no socket).
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME WarpDocsAgree
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/warp-docs-agree.py)
+endif()
+
 # 0.5.0 F1 (MX-040/041/036/061): hardware outputs, interface channels, cue mixes and the hardware
 # insert ping driven end to end on a 4-output Dummy whose loopback carries outputs 3/4.
 if(PYTHON3_EXECUTABLE)
