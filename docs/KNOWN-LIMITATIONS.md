@@ -211,9 +211,13 @@ that is this page's fault — report it and it gets added.
   hosting is drivable through the socket as well as from the interface: `plugin.list` carries every VST3 class
   of the product's VST3 search directory as a `format: "vst3"` entry and `plugin.load` loads one onto an
   instrument track (the class, the bundle and the `(file, class)` key are the same ones the instrument browser
-  uses; `ControlDeviceCatalogueTest` holds the fixture-backed proof). There is no multi-out, no
-  preset management, no instrument latency compensation (added 2026-10-06, MX-157; see "Hosted instrument
-  latency"), and no out-of-process hosting. **CLAP instrument
+  uses; `ControlDeviceCatalogueTest` holds the fixture-backed proof). *(Corrected 2026-10-19, Q050-169,
+  MX-114/MX-157.)* Output buses past the main one are routable (`Vst3Instrument::enableOutputBus`; see
+  "F2, instruments"), and instrument latency compensation is PRESENT, not absent: the native CLAP, VST3
+  and LV2 instrument hosts report their plug-in's latency to delay compensation, built-in instruments
+  are 0, and the out-of-process, VST2 (Vestige) and Carla paths report nothing to it (see "Hosted
+  instrument latency"). Still missing are the plug-in's own preset (program) lists and out-of-process
+  hosting. **CLAP instrument
   hosting is socket-only in the same sense** (feature row 79): a CLAP generator loads onto an instrument
   track through `plugin.load` — `plugin.list` carries the CLAP classes of the product's plug-in directory as
   `format: "clap"` entries — its notes reach it through the track's MIDI path, and
@@ -1011,8 +1015,11 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
     frames) is clamped like a chain's, and the published total says so, but no warning is logged for an
     instrument (the once-only warning lives in `EffectChain::refreshLatency`, which an instrument is not
     part of).
-  - Only the native CLAP, VST3 and LV2 instrument hosts report. Built-in instruments report 0 (none is
-    latent); the out-of-process, VST2 (Vestige) and Carla paths report nothing.
+  - Only the native CLAP, VST3 and LV2 instrument hosts report, so those three are the supported
+    instrument hosts for delay compensation. Built-in instruments report 0 (none is latent). The
+    out-of-process, VST2 (Vestige) and Carla paths are unsupported for delay compensation, not for
+    hosting: they host and play, but report no instrument latency to PDC, so nothing is
+    compensated for them.
   - Automation compensation (`AutomationLatency`) does not count an instrument's latency: an automated
     parameter of a latent instrument, or of an effect on its track's own chain, changes `latency` frames
     early against that instrument's audio.

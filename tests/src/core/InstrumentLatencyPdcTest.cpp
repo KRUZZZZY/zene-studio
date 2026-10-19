@@ -42,6 +42,9 @@
  * A latency change is the plug-in's own signal - a CLAP restart request, a VST3 kLatencyChanged, a new
  * value on the LV2 latency port - and each host picks it up on its GUI-thread poll timer, which the test
  * lets run (QTest::qWaitFor) rather than calling.
+ * The page that writes all of this down is checked here too (Q050-169):
+ * theLimitationsPageStatesWhichHostsReportLatency reads docs/KNOWN-LIMITATIONS.md and fails if it stops
+ * naming the hosts that report, the paths that do not, or the limits stated against them.
  * Nothing in the assertions uses the MX-157 API: the same file compiles against the tree before it, which
  * is the red run.
  */
@@ -49,9 +52,12 @@
 #include <QtTest>
 
 #include <QCryptographicHash>
+#include <QCoreApplication>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QStringList>
 
 #include <cmath>
 #include <cstdio>
@@ -337,6 +343,44 @@ private slots:
 		qunsetenv(Vst3Env);
 		qunsetenv(Lv2Env);
 		Engine::destroy();
+	}
+
+	/*! Q050-169: the limitations page must say what this file measures. The supported-host bullet no
+	 *  longer denies instrument latency compensation; the "Hosted instrument latency" section names the
+	 *  hosts that report (CLAP, VST3, LV2) and the paths that do not (out-of-process, VST2 (Vestige),
+	 *  Carla; built-in instruments are 0), and keeps the limits stated against that behaviour - the
+	 *  100 ms / 500 ms polls, the 16384-frame clamp, the automation exclusion and live monitoring.
+	 *  The page is read at run time, so a build whose docs are unreachable SKIPs rather than reports a
+	 *  pass it did not measure. */
+	void theLimitationsPageStatesWhichHostsReportLatency()
+	{
+		QFile file(QCoreApplication::applicationDirPath() + QStringLiteral("/../../docs/KNOWN-LIMITATIONS.md"));
+		if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+		{
+			QSKIP("docs/KNOWN-LIMITATIONS.md is not reachable from this build directory");
+		}
+		const QString flat = QString::fromUtf8(file.readAll()).simplified();
+		QVERIFY2(!flat.contains(QStringLiteral("no instrument latency compensation")),
+			"docs/KNOWN-LIMITATIONS.md denies instrument latency compensation beside the supported hosts");
+		const QStringList claims = {
+			QStringLiteral("see \"Hosted instrument latency\""),
+			QStringLiteral("Only the native CLAP, VST3 and LV2 instrument hosts report"),
+			QStringLiteral("those three are the supported instrument hosts for delay compensation"),
+			QStringLiteral("Built-in instruments report 0"),
+			QStringLiteral("out-of-process, VST2 (Vestige) and Carla paths are unsupported for delay compensation, not for hosting"),
+			QStringLiteral("the host's 100 ms poll answers"),
+			QStringLiteral("next 100 ms poll"),
+			QStringLiteral("latency port on a 500 ms poll"),
+			QStringLiteral("LatencyCompensation::MaxFrames`, 16384 frames"),
+			QStringLiteral("clamped like a chain's"),
+			QStringLiteral("Automation compensation (`AutomationLatency`) does not count an instrument's latency"),
+			QStringLiteral("nothing bypasses an instrument the way the low-latency mode bypasses latent effects"),
+		};
+		for (const QString& claim : claims)
+		{
+			QVERIFY2(flat.contains(claim),
+				qPrintable(QStringLiteral("the limitations page no longer states: %1").arg(claim)));
+		}
 	}
 
 	//! CLAP: the instrument reports Latency frames and the reference track is delayed by exactly that.
