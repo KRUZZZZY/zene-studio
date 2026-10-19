@@ -98,6 +98,10 @@ Build commands ran from the worktree root, CTest commands from `build/tests`. Ev
 | `gate-feature-check-2.log` | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | all gates PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length: "no new item in your files") |
 | `gate-complexity.log` | `bash tests/complexity-gate.sh --check` | 1 | red on the train: dead baseline entries in files this change does not touch (`Vst3Host.cpp`, `ControlCommandsSessionFollow.cpp`, ...) - no entry for a file of this change |
 | `gate-file-length.log` | `bash tests/file-length-gate.sh --check` | 1 | red on the train: 14 files over the limit that this change does not touch; `tests/src/core/HardwareIoTest.cpp` was already 556 code lines before this change (the limit is 500) and is not in the baseline |
+| `gate-feature-check-3.log` | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (with this report) | 0 | all gates PASS |
+| `build-9.log` | `cmake --build build --target zene HardwareIoTest ImportTrackIoTest SurroundTest` (committed state) | 0 | the final build |
+| `test-11.log` | `ctest -R '^(HardwareIoTest\|SurroundTest\|ImportTrackIoTest\|ControlHardwareIo\|ControlMixingRouting\|MixerRoutingBackwardCompatTest\|MixerAbRegressionTest\|MixerConcurrencyTest)$' --output-on-failure` (committed state) | 0 | the final run: 8/8 passed |
+| `submit-check.log` | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p8-269-port` | 0 | RESULT: PASS - submit (every mechanical item PASS; the ASK items are answered below) |
 
 The reverse-patch proof used `logs/fix.patch`:
 
@@ -159,6 +163,10 @@ touches the Device panel and LADSPA effects, not the audio I/O routing this chan
   added, so `tests/fork-sources.txt` needed no entry. `feature_check.py` exits 0 with every gate
   PASS. The two ratchet scripts are red on the train for items in files this change does not touch
   (their logs are listed above); no limit was re-anchored.
+- **The ALREADY-FIXED / FALSE-POSITIVE item does not apply** - the verdict is FIXED. The contract
+  it would have asked for is cited above anyway: `include/ControlHardwareIoSupport.h:74-78` and
+  `src/core/ControlCommandsHardwareIo.cpp:262-268` (the command's own description) are where this
+  line states that a route the device may not carry is accepted and answered with a status.
 
 ## Files in the commit
 
