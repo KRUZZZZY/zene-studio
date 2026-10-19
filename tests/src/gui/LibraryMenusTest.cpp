@@ -28,10 +28,16 @@
  *  Theme 3 (0.5.0 UX): the current source's search field is the panel's first control, and a source without
  *  one shows none; typing searches once and refines that history entry in place; Enter in the field first
  *  highlights a result, then loads it (one undo step); Space previews a result and toggles it off, another
- *  result stops it; the tab, the query and focus leaving the Browser stop it too, focus moving inside it does not. */
+ *  result stops it; the tab, the query and focus leaving the Browser stop it too, focus moving inside it does not.
+ *  Q050-075 (R-workflow-4): the Search file metadata toggle sends browser.query's 'probe' and finds files
+ *  by their embedded title, artist and numeric audio metadata; tag: searches still work without it, and the
+ *  probe spend on a large directory stops at the command's reported probe_limit. */
 
 #include <QtTest>
 
+#include <QCheckBox>
+#include <QComboBox>
+#include <QDir>
 #include <QJsonArray>
 #include <QLineEdit>
 #include <QListWidget>
@@ -39,9 +45,11 @@
 #include <QTemporaryDir>
 #include <QTreeWidget>
 
+#include "BrowserCatalog.h"
 #include "BrowserPanel.h"
 #include "BrowserResults.h"
 #include "BrowserSearchView.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "EditLocks.h"
 #include "Engine.h"
@@ -52,10 +60,12 @@
 #include "SideBarWidget.h"
 #include "Song.h"
 #include "Track.h"
+#include "../core/BrowserTestSupport.h"
 #include "../core/TakeLaneTestSupport.h"
 
 using namespace lmms;
 using namespace lmms::gui;
+using namespace browserfixture;
 
 namespace
 {
@@ -84,6 +94,42 @@ QJsonArray historyEntries()
 	return run(QStringLiteral("browser.history")).result.value(QStringLiteral("entries")).toArray();
 }
 
+//! The last entry the search view left in the browser's history.
+QJsonObject lastHistoryEntry()
+{
+	const QJsonArray entries = historyEntries();
+	return entries.isEmpty() ? QJsonObject() : entries.last().toObject();
+}
+
+//! The view's metadata toggle, found the way any client would: by its object name.
+QCheckBox* metadataToggle(BrowserSearchView* view)
+{
+	return view->findChild<QCheckBox*>(QStringLiteral("browserSearchMetadata"));
+}
+
+//! The root filter, so a search walks only this test's private samples folder.
+bool restrictToPrivateSamples(BrowserSearchView* view)
+{
+	QComboBox* root = view->findChild<QComboBox*>(QStringLiteral("browserSearchRoot"));
+	if (root == nullptr) { return false; }
+	root->setCurrentIndex(root->findData(QStringLiteral("samples")));
+	return true;
+}
+
+//! Whether the results tree lists the file at @a path.
+bool resultsList(BrowserSearchView* view, const QString& path)
+{
+	for (int row = 0; row < view->results()->topLevelItemCount(); ++row)
+	{
+		if (view->results()->topLevelItem(row)->data(browserresults::Name, browserresults::PathRole).toString()
+			== QFileInfo(path).absoluteFilePath())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 } // namespace
 
 class LibraryMenusTest : public QObject
@@ -95,10 +141,34 @@ private slots:
 	{
 		Engine::init(true);
 		ControlRegistry::setReady(true);
+		QVERIFY2(m_dir.isValid(), "no temporary directory for the library fixtures");
+		// A private working directory: the user samples this test's searches walk and
+		// the tag store it writes are never the developer's own (R-workflow-4).
+		ConfigManager::inst()->setWorkingDir(m_dir.filePath(QStringLiteral("work")));
+		QVERIFY(QDir().mkpath(samplesRoot()));
+		// The embedded-title fixture every browser test reads (browserfixture's own
+		// RIFF/WAVE writer, so the probe reads bytes this test wrote itself).
+		m_kick = QDir(samplesRoot()).filePath(QStringLiteral("kick_48k.wav"));
+		QVERIFY2(writeWave(m_kick, WaveSpec()), "the embedded-title fixture was not written");
+		// A second file whose EMBEDDED fields say something its name does not:
+		// artist "Drumsmith", 22222 Hz, one channel, 3333 frames.
+		WaveSpec pad;
+		pad.title = QStringLiteral("Ambient Pad");
+		pad.artist = QStringLiteral("Drumsmith");
+		pad.sampleRate = 22222;
+		pad.channels = 1;
+		pad.frames = 3333;
+		pad.burstStartFrame = 1600;
+		pad.burstFrames = 32;
+		m_pad = QDir(samplesRoot()).filePath(QStringLiteral("pad.wav"));
+		QVERIFY2(writeWave(m_pad, pad), "the embedded-artist fixture was not written");
 	}
 
 	void cleanupTestCase()
 	{
+		// Leave the store pointed at a file inside the temporary tree, so nothing
+		// outside it is read or written by the rest of this process.
+		BrowserTagStore::instance().openAt(m_dir.filePath(QStringLiteral("done.json")));
 		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
@@ -339,8 +409,179 @@ private slots:
 		QVERIFY(!row->text(browserresults::Name).isEmpty());                  // the rest of the row is untouched
 	}
 
+	//! R-workflow-4: the Search file metadata toggle sends browser.query's 'probe'
+	//! and the SAME search then matches the embedded title, the embedded artist and
+	//! the numeric audio metadata - each a word that appears in NO file name.
+	void theMetadataToggleSendsProbeAndFindsEmbeddedMetadata()
+	{
+		BrowserPanel panel;
+		auto* search = new BrowserSearchView(&panel);
+		panel.addSource(search);
+		QVERIFY(restrictToPrivateSamples(search));
+		QCheckBox* probe = metadataToggle(search);
+		QVERIFY(probe != nullptr);
+		QVERIFY(!probe->isChecked());
+
+		// Without the toggle, "drum" is in neither kick_48k.wav's name nor its path.
+		QTest::keyClicks(panel.searchField(), QStringLiteral("drum"));
+		QTRY_COMPARE(lastHistoryEntry().value(QStringLiteral("label")).toString(), QStringLiteral("drum"));
+		QCOMPARE(search->resultCount(), 0);
+		QVERIFY(!lastHistoryEntry().value(QStringLiteral("args")).toObject().contains(QStringLiteral("probe")));
+
+		// The toggle: the same text now matches the embedded title ("Kick Drum")
+		// and the embedded artist ("Drumsmith"), and the query carries probe: true.
+		probe->setChecked(true);
+		QCOMPARE(search->resultCount(), 2);
+		QVERIFY(resultsList(search, m_kick));
+		QVERIFY(resultsList(search, m_pad));
+		const QJsonObject sent = lastHistoryEntry().value(QStringLiteral("args")).toObject();
+		QCOMPARE(sent.value(QStringLiteral("probe")).toBool(), true);
+		QCOMPARE(lastHistoryEntry().value(QStringLiteral("command")).toString(), QStringLiteral("browser.query"));
+
+		// The embedded artist alone: "drumsmith" is in no file name or path.
+		panel.searchField()->clear();
+		QTest::keyClicks(panel.searchField(), QStringLiteral("drumsmith"));
+		QTRY_COMPARE(lastHistoryEntry().value(QStringLiteral("label")).toString(), QStringLiteral("drumsmith"));
+		QCOMPARE(search->resultCount(), 1);
+		QVERIFY(resultsList(search, m_pad));
+
+		// Numeric audio metadata: the sample rate (22222) and the frame count (3333).
+		panel.searchField()->clear();
+		QTest::keyClicks(panel.searchField(), QStringLiteral("22222"));
+		QTRY_COMPARE(lastHistoryEntry().value(QStringLiteral("label")).toString(), QStringLiteral("22222"));
+		QCOMPARE(search->resultCount(), 1);
+		QVERIFY(resultsList(search, m_pad));
+		panel.searchField()->clear();
+		QTest::keyClicks(panel.searchField(), QStringLiteral("3333"));
+		QTRY_COMPARE(lastHistoryEntry().value(QStringLiteral("label")).toString(), QStringLiteral("3333"));
+		QCOMPARE(search->resultCount(), 1);
+		QVERIFY(resultsList(search, m_pad));
+
+		// The toggle off again: the same number matches nothing the names can answer.
+		probe->setChecked(false);
+		QCOMPARE(search->resultCount(), 0);
+		QVERIFY(!lastHistoryEntry().value(QStringLiteral("args")).toObject().contains(QStringLiteral("probe")));
+	}
+
+	//! R-workflow-4: a history-restored search restores the toggle with it - the
+	//! probed entry comes back probed, the plain one plain.
+	void theMetadataToggleFollowsTheHistoryEntries()
+	{
+		BrowserPanel panel;
+		auto* search = new BrowserSearchView(&panel);
+		panel.addSource(search);
+		QVERIFY(restrictToPrivateSamples(search));
+		QCheckBox* probe = metadataToggle(search);
+		QVERIFY(probe != nullptr);
+
+		QTest::keyClicks(panel.searchField(), QStringLiteral("drum"));
+		QTRY_COMPARE(lastHistoryEntry().value(QStringLiteral("label")).toString(), QStringLiteral("drum"));
+		QVERIFY(!probe->isChecked());
+		QCOMPARE(search->resultCount(), 0);
+
+		probe->setChecked(true);  // the probed search: a new history entry
+		QVERIFY(probe->isChecked());
+		QCOMPARE(search->resultCount(), 2);
+
+		search->goHistory(-1);  // back to the unprobed entry: the toggle comes back off
+		QVERIFY(!probe->isChecked());
+		QCOMPARE(search->resultCount(), 0);
+
+		search->goHistory(1);  // forward to the probed one: on again
+		QVERIFY(probe->isChecked());
+		QCOMPARE(search->resultCount(), 2);
+
+		// The index holds no embedded metadata: Whole library disables the toggle
+		// and the query it runs sends no probe (browser.index_query takes none).
+		QCheckBox* indexed = search->findChild<QCheckBox*>(QStringLiteral("browserSearchIndexed"));
+		QVERIFY(indexed != nullptr);
+		indexed->setChecked(true);
+		QVERIFY(!probe->isEnabled());
+		QVERIFY(!lastHistoryEntry().value(QStringLiteral("args")).toObject().contains(QStringLiteral("probe")));
+		indexed->setChecked(false);
+		QVERIFY(probe->isEnabled());
+	}
+
+	//! R-workflow-4: tag: stays a plain expression in the Search field - it needs
+	//! no probe, sends none, and the placeholder still teaches it. The store is
+	//! emptied in memory after the tag is written, so only a re-read of its file
+	//! (which browser.query now performs) can answer the search: a fresh session
+	//! is the rule, not the accident.
+	void tagSearchStaysInTheSearchField()
+	{
+		QVERIFY(run(QStringLiteral("browser.tag.add"),
+			{{QStringLiteral("path"), m_kick}, {QStringLiteral("tag"), QStringLiteral("drums")}}).ok);
+		BrowserTagStore::instance().clear();
+
+		BrowserPanel panel;
+		auto* search = new BrowserSearchView(&panel);
+		panel.addSource(search);
+		QVERIFY(restrictToPrivateSamples(search));
+		QVERIFY(!metadataToggle(search)->isChecked());
+		QVERIFY(panel.searchField()->placeholderText().contains(QStringLiteral("tag:drums")));
+
+		QTest::keyClicks(panel.searchField(), QStringLiteral("tag:drums"));
+		QTRY_COMPARE(lastHistoryEntry().value(QStringLiteral("label")).toString(), QStringLiteral("tag:drums"));
+		QCOMPARE(search->resultCount(), 1);
+		QVERIFY(resultsList(search, m_kick));
+		const QJsonObject args = lastHistoryEntry().value(QStringLiteral("args")).toObject();
+		QVERIFY(!args.contains(QStringLiteral("probe")));
+		QCOMPARE(args.value(QStringLiteral("text")).toString(), QStringLiteral("tag:drums"));
+
+		QVERIFY(run(QStringLiteral("browser.tag.remove"),
+			{{QStringLiteral("path"), m_kick}, {QStringLiteral("tag"), QStringLiteral("drums")}}).ok);
+	}
+
+	//! R-workflow-4: the probe spend through the GUI never exceeds the probe_limit
+	//! the command reports - a directory holding more audio files than the budget
+	//! opens exactly probe_limit of them and says so.
+	void metadataProbingStaysWithinTheCommandsProbeLimit()
+	{
+		m_flood = QDir(samplesRoot()).filePath(QStringLiteral("flood"));
+		QVERIFY(QDir().mkpath(m_flood));
+		WaveSpec quiet;
+		quiet.title = QString();  // no embedded title: nothing here matches "zzznothing"
+		quiet.frames = 64;
+		quiet.burstStartFrame = 0;
+		quiet.burstFrames = 8;
+		for (int i = 0; i <= BrowserMaxProbes; ++i)
+		{
+			const QString name = QStringLiteral("f%1.wav").arg(i, 3, 10, QLatin1Char('0'));
+			QVERIFY2(writeWave(QDir(m_flood).filePath(name), quiet), qPrintable(name));
+		}
+
+		BrowserPanel panel;
+		auto* search = new BrowserSearchView(&panel);
+		panel.addSource(search);
+		QVERIFY(restrictToPrivateSamples(search));
+		metadataToggle(search)->setChecked(true);
+		QTest::keyClicks(panel.searchField(), QStringLiteral("zzznothing"));
+		QTRY_COMPARE(lastHistoryEntry().value(QStringLiteral("label")).toString(), QStringLiteral("zzznothing"));
+
+		// The browse answer the GUI showed, read back through the history step the
+		// Back button uses: the probe stops AT the limit and the limit is reported.
+		const ControlResult again = run(QStringLiteral("browser.history_go"), {{QStringLiteral("step"), 0}});
+		QVERIFY2(again.ok, qPrintable(again.errorMessage));
+		QCOMPARE(again.result.value(QStringLiteral("probe")).toBool(), true);
+		QCOMPARE(again.result.value(QStringLiteral("probe_limit")).toInt(), BrowserMaxProbes);
+		const int probed = again.result.value(QStringLiteral("probed")).toInt();
+		QCOMPARE(probed, BrowserMaxProbes);  // the budget is spent, never exceeded
+		QVERIFY(probed <= again.result.value(QStringLiteral("probe_limit")).toInt());
+		QCOMPARE(search->resultCount(), 0);  // and nothing was found, so the probes were honest
+	}
+
+	void cleanup()
+	{
+		if (!m_flood.isEmpty()) { QDir(m_flood).removeRecursively(); m_flood.clear(); }
+	}
+
 private:
+	QString samplesRoot() const { return ConfigManager::inst()->userSamplesDir(); }
+
 	QTemporaryDir m_dir;
+	QString m_kick;
+	QString m_pad;
+	QString m_flood;
 };
 
 QTEST_MAIN(LibraryMenusTest)

@@ -53,6 +53,9 @@ namespace lmms::gui
  *  - WF-003: the search field takes browser.query's expressions (OR, -word, "phrase", name: path:
  *    tag: kind: ext:);
  *  - WF-007: a kind filter (audio, preset, project, midi) and a root filter (the library's roots);
+ *  - R-workflow-4 (0.5.0 L11): "Search file metadata" - browser.query's 'probe' - matches what the
+ *    audio files themselves say: the embedded title/artist/album/comment/genre and the sample rate,
+ *    channels, frames and duration, opening at most probe_limit (200) files per search;
  *  - WF-006: the saved searches - smart collections - listed beside it: pick one to run it, save the
  *    current search as one, remove one (browser.collection_*);
  *  - WF-011: the results in columns - name, kind, size, modified, tags - sorted by any of them;
@@ -123,6 +126,7 @@ private:
 	QComboBox* m_kind = nullptr;
 	QComboBox* m_root = nullptr;
 	QCheckBox* m_indexed = nullptr;
+	QCheckBox* m_probe = nullptr;
 	QLabel* m_status = nullptr;
 	QListWidget* m_collections = nullptr;
 	QTreeWidget* m_results = nullptr;

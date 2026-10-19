@@ -711,6 +711,18 @@ that is this page's fault — report it and it gets added.
 Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium, best) - set through
 `export.set_dither` / `export.set_src_quality`; `ExportQualityControlsTest`.)* No RPDF, by decision.
 
+- *(Updated 2026-10-19.)* **The Search view searches by tag and - with the Search file metadata
+  toggle - by embedded metadata now** (Q050-075): typing `tag:drums` finds the files tagged
+  `drums` alongside the other expression fields (`kind:`, `name:`, `path:`, `ext:`), and the
+  toggle sends `probe: true` to `browser.query` so a search matches what the audio files
+  themselves say - the embedded title/artist/album/comment/genre and the sample rate, channels,
+  frames and duration - opening at most 200 files per search (the command's `probe_limit`,
+  `LibraryMenusTest`). The whole-library index takes no `probe` (it stores no embedded
+  metadata), so the toggle is disabled while **Whole library** is on. `browser.query` re-reads
+  the tag store file before matching, so a `tag:` search reflects tags written by another
+  instance or earlier in the session. The waveform peak cache and peak drawing stay socket-only
+  (`browser.peaks`): the Search view draws no waveforms. The bullets below are the earlier
+  records.
 - *(Updated 2026-09-30.)* **A file's context menu in the browser now has a Tags submenu**: every tag the
   library knows, the file's own checked - check to add (`browser.tag.add`), uncheck to remove
   (`browser.tag.remove`) - and New tag... (`BrowserTagMenuTest`). Searching by tag or by metadata, and
