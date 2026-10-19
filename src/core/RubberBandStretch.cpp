@@ -123,18 +123,27 @@ private:
 
 
 
-RubberBandVoice::RubberBandVoice(int sourceRate)
+RubberBandVoice::RubberBandVoice(int sourceRate, WarpStretchMode mode)
 {
 #ifdef LMMS_HAVE_RUBBERBAND
 	using RB = RubberBand::RubberBandStretcher;
 	// R3 ("finer") in real-time mode: the engine whose steady state was measured
 	// allocation-free. Channels together keeps the stereo image; the rate given
 	// is the source's, which only tunes the engine's frequency bands.
-	m_stretcher = std::make_unique<RB>(static_cast<size_t>(std::max(sourceRate, 1)), 2,
-		RB::OptionProcessRealTime | RB::OptionEngineFiner | RB::OptionChannelsTogether);
+	//
+	// Q050-036: the two personalities the R3 engine actually has (its
+	// transients/phase/long-window options are R2-only and render identically
+	// here, measured): Beats restricts the engine to its single SHORT window -
+	// the crispest timing, at some spectral cost - and Complex is the full
+	// multi-resolution scheme, the settings the mode has always rendered. The
+	// option is fixed here rather than set later: Rubber Band's window option
+	// may reallocate when changed, and begin() runs on the audio thread.
+	int options = RB::OptionProcessRealTime | RB::OptionEngineFiner | RB::OptionChannelsTogether;
+	if (mode == WarpStretchMode::Beats) { options |= RB::OptionWindowShort; }
+	m_stretcher = std::make_unique<RB>(static_cast<size_t>(std::max(sourceRate, 1)), 2, options);
 	m_stretcher->setMaxProcessSize(MaxBlock);
 #else
-	(void) sourceRate;
+	(void) sourceRate; (void) mode;
 #endif
 }
 
@@ -278,10 +287,10 @@ bool RubberBandPool::available()
 #endif
 }
 
-RubberBandPool::RubberBandPool(int sourceRate)
+RubberBandPool::RubberBandPool(int sourceRate, WarpStretchMode mode)
 {
 	if (!available()) { return; }
-	for (auto& voice : m_voices) { voice = std::make_unique<RubberBandVoice>(sourceRate); }
+	for (auto& voice : m_voices) { voice = std::make_unique<RubberBandVoice>(sourceRate, mode); }
 	RubberBandRecycler::instance().add(this);
 }
 

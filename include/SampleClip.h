@@ -25,6 +25,7 @@
 #ifndef LMMS_SAMPLE_CLIP_H
 #define LMMS_SAMPLE_CLIP_H
 
+#include <array>
 #include <atomic>
 #include <memory>
 #include <span>
@@ -132,20 +133,29 @@ public:
 	WarpTempoMode warpTempoMode() const { return m_tempoMode; }
 	void setWarpTempoMode(WarpTempoMode mode);
 
-	/*! How this clip renders a rate change: plain resampling (the default,
-	 *  and the pitch moves with the rate) or the pitch-preserving stretch
-	 *  (WSOLA, feature-list row 30). Only read for a clip that does not
-	 *  `rendersLinearly()`: with no rate change both modes are the same
-	 *  render, and the playback path takes the historical one. */
-	WarpStretchMode warpStretchMode() const { return m_stretchMode; }
+	/*! How this clip renders a rate change: varispeed resampling (the default
+	 *  and the spec's Re-Pitch — the pitch moves with the rate) or one of the
+	 *  pitch-keeping stretches (WSOLA at its default parameters, the
+	 *  WSOLA-parameterised Tones / Texture, or the Rubber Band-backed Beats /
+	 *  Complex, Q050-036). Only read for a clip that
+	 *  does not `rendersLinearly()`: with no rate change every mode is the
+	 *  same render, and the playback path takes the historical one. */
+	WarpStretchMode warpStretchMode() const { return m_stretchMode.load(std::memory_order_acquire); }
 	void setWarpStretchMode(WarpStretchMode mode);
 
 	/*! The Rubber Band voices this clip's play handles claim (owner decision
-	 *  12), or nullptr. Built on the control thread the first time the clip is
-	 *  in the RubberBand mode - by the setter, a restore or a copy - and kept
-	 *  for the clip's lifetime, because a handle may still hold a voice when
-	 *  the mode changes back. */
-	RubberBandPool* rubberBandPool() const { return m_rubberBand.get(); }
+	 *  12), or nullptr when the current mode renders no pool. Built on the
+	 *  control thread the first time the clip takes one of the two
+	 *  Rubber Band-backed modes (Beats, Complex) - by the setter, a restore or
+	 *  a copy - and kept for the clip's lifetime, one pool per mode (Q050-036),
+	 *  because a voice's options are fixed at construction and a handle may
+	 *  still hold a voice when the mode changes again. The unused mode's pool
+	 *  is simply never claimed. */
+	RubberBandPool* rubberBandPool() const;
+	//! The pool of @a mode (nullptr for a mode without one, or one not built): a
+	//! reader that took the mode with warpStretchMode() asks for THAT mode's pool,
+	//! so a switch between the two reads cannot hand it the other mode's voices.
+	RubberBandPool* rubberBandPool(WarpStretchMode mode) const;
 
 	//! Clip::restoreState plus the Rubber Band pool a restored mode may need.
 	void restoreState(const QDomElement& element) override;
@@ -256,10 +266,17 @@ private:
 	void journalArmStep();
 	//! Main thread: an armed clip's take on a new take lane.
 	void addRecordedLane(std::shared_ptr<const SampleBuffer> take);
-	//! See rubberBandPool(); never replaced once built.
-	std::unique_ptr<RubberBandPool> m_rubberBand;
-	//! Builds m_rubberBand if the mode asks for it and it does not exist yet.
+	//! See rubberBandPool(): one slot per Rubber Band-backed mode, each built
+	//! at most once (the mode's own voices; never replaced once built).
+	std::array<std::unique_ptr<RubberBandPool>, WarpRubberBandModeSlots> m_rubberBands;
+	//! The same pools as raw pointers, published with release AFTER construction;
+	//! the render thread reads these, never the unique_ptrs.
+	std::array<std::atomic<RubberBandPool*>, WarpRubberBandModeSlots> m_rubberBandPublished{};
+	//! Builds the current mode's pool if the mode asks for one and it is absent.
 	void ensureRubberBandPool();
+	//! Builds @a mode's pool if it asks for one and it is absent, then publishes it.
+	void ensureRubberBandPool(WarpStretchMode mode);
+	void prepareWarpStretchMode(WarpStretchMode mode) override { ensureRubberBandPool(mode); }
 	bool m_isPlaying;
 	int m_startFrameOffset;
 	//! ED-021: see leadFrames(). Written on the UI thread, read by the playback path: a relaxed atomic, the

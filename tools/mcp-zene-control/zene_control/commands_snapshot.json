@@ -33522,8 +33522,13 @@
           },
           "mode": {
             "enum": [
-              "resample",
+              "re_pitch",
+              "beats",
+              "tones",
+              "texture",
+              "complex",
               "preserve_pitch",
+              "resample",
               "rubberband"
             ],
             "type": "string"
@@ -33535,7 +33540,7 @@
         ],
         "type": "object"
       },
-      "description": "Choose how a warped sample clip renders its rate change: 'resample' (the default, and what the engine has always done - the rate goes to the resampler and the pitch moves with it, so a 2x warp is an octave up), 'preserve_pitch' (the same rate is rendered by the WSOLA stretcher, AudioStretcher: the clip lasts as long as the mapping says and keeps its own pitch) or 'rubberband' (the optional Rubber Band R3 stretcher, for tonal and polyphonic material; refused by a build without the library, and rendered by WSOLA for the pass in which both of the clip's voices are busy). Refused for a clip that renders linearly - with no marker and no source tempo there is no rate change to render. Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Choose how a warped sample clip renders its rate change: 're_pitch' (the default, and what the engine has always done - the rate goes to the resampler and the pitch moves with it, so a 2x warp is an octave up; the old name 'resample' is accepted), 'preserve_pitch' (the same rate is rendered by the WSOLA stretcher, AudioStretcher, at its default parameters: the clip lasts as long as the mapping says and keeps its own pitch), 'tones' (the same WSOLA stretch with its alignment reach doubled to \u00b1256 frames, for monophonic and tonal material), 'texture' (the same stretch with half the grain, for polyphonic and ambient material), or one of the two Rubber Band-backed modes (Q050-036): 'beats' (R3 restricted to its single short window - the crispest timing at some spectral cost) and 'complex' (R3's full multi-resolution settings, the quality the old name 'rubberband' - also accepted - has always rendered). A build without librubberband refuses those two, and a file that asks for one still loads and renders through WSOLA for the pass in which both of the clip's voices are busy. Refused for a clip that renders linearly - with no marker and no source tempo there is no rate change to render. Reversible through the ProjectJournal (Clip checkpoint).",
       "group": "warp",
       "id": "warp.stretch",
       "mutating": true,

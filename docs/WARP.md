@@ -173,6 +173,12 @@ it — both moved to the base clip with SPEC-ARCH-4 census row 5 (formerly
 > 0.5000 / 0.3000 at 880 / 1320 Hz, preserve_pitch renders 0.4992 / 0.2990 at 440 / 660 Hz, same
 > length, same level. `docs/PITCH-STRETCH.md` is the record of both stretchers and their limits; no
 > behaviour changed for a clip that does not ask.
+>
+> **Update (Q050-036, 0.5.0 L05).** The mode set is now the five spec modes plus the WSOLA engine:
+> `re_pitch` (varispeed, the default; `resample` still selects it), `preserve_pitch` (WSOLA),
+> `tones` / `texture` (the same WSOLA stretch parameterised: doubled alignment reach / half grain)
+> and `beats` / `complex` (Rubber Band R3 short-window / full settings; `rubberband` still selects
+> Complex). `docs/PITCH-STRETCH.md` §8 is the record.
 
 **The default stretch is resampling. It changes pitch.** `SamplePlayHandle::warpRatio()`
 (`src/core/SamplePlayHandle.cpp:551`; the line moved when the Rubber Band mode landed) hands

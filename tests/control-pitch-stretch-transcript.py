@@ -11,7 +11,7 @@ What it drives, in order:
   1. `track.add` type=sample + `clip.add`   the clip the mode is set on, made
                                             through the commands an agent has;
   2. `warp.list`                            an unwarped clip: the stretch mode
-                                            reads `resample`, the default;
+                                            reads `re_pitch` (Re-Pitch, the varispeed default; the old name `resample` still selects it);
   3. `warp.stretch` preserve_pitch          REFUSED, typed: with no rate change
                                             there is nothing to preserve the
                                             pitch across;
@@ -21,7 +21,7 @@ What it drives, in order:
   6. `warp.list`                            reads back `preserve_pitch`;
   7. `control.transactions`                 the A16 record the call left;
   8. `control.undo`                         takes it back, and `warp.list`
-                                            reads `resample` again.
+                                            reads `re_pitch` again.
 
 Usage: QT_QPA_PLATFORM=offscreen python3 control-pitch-stretch-transcript.py <zene>
 Exit code 0 only when every assertion held.
@@ -79,7 +79,7 @@ def make_clip(session, instance, transcript):
 def check_default(session, clip, recorder):
     listed = session.result("warp.list", {"clip": clip})
     recorder.check("an untouched clip reads the resampling default",
-                   listed.get("stretch") == "resample" and listed.get("renders_linearly") is True,
+                   listed.get("stretch") == "re_pitch" and listed.get("renders_linearly") is True,
                    "stretch=%r renders_linearly=%r" % (listed.get("stretch"),
                                                        listed.get("renders_linearly")))
 
@@ -104,7 +104,7 @@ def check_set_and_switch(session, clip, recorder):
     switched = session.result("warp.stretch", {"clip": clip, "mode": "preserve_pitch"})
     recorder.check("warp.stretch switches the mode and names the previous one",
                    switched.get("stretch") == "preserve_pitch"
-                   and switched.get("previous_mode") == "resample"
+                   and switched.get("previous_mode") == "re_pitch"
                    and switched.get("changed") is True
                    and switched.get("stretch_algorithm") == "wsola"
                    and switched.get("renders_linearly") is False,
@@ -130,7 +130,7 @@ def check_transaction(session, recorder):
     recorder.check("the recorded inverse names the command and the previous mode",
                    latest is not None
                    and (latest.get("inverse") or {}).get("op") == "warp.stretch"
-                   and ((latest.get("inverse") or {}).get("args") or {}).get("mode") == "resample",
+                   and ((latest.get("inverse") or {}).get("args") or {}).get("mode") == "re_pitch",
                    "inverse=%r" % ((latest or {}).get("inverse")))
 
 
@@ -140,7 +140,7 @@ def check_undo(session, clip, recorder):
     recorder.check("control.undo restores the previous mode",
                    undone.get("undone") is True
                    and undone.get("undone_command") == "warp.stretch"
-                   and listed.get("stretch") == "resample",
+                   and listed.get("stretch") == "re_pitch",
                    "undone=%r undone_command=%r stretch=%r"
                    % (undone.get("undone"), undone.get("undone_command"), listed.get("stretch")))
 

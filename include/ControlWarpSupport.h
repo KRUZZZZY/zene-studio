@@ -61,11 +61,14 @@ using MarkerArray = std::array<WarpMarker, WarpMarkers::MaxMarkers>;
 //! The wire name of a tempo mode.
 QString tempoModeName(WarpTempoMode mode);
 
-/*! The wire name of a stretch mode (row 30 of the 0.3.0 list): how the clip
- *  renders a rate change. "resample" is the historical one — the pitch moves
- *  with the rate — "preserve_pitch" is the WSOLA stretch and "rubberband" the
- *  optional Rubber Band one (owner decision 12). */
-QString stretchModeName(WarpStretchMode mode);
+/*! The wire name of a stretch mode (row 30 of the 0.3.0 list; the full set
+ *  Q050-036): how the clip renders a rate change. The canonical names are
+ *  `warpStretchModeName`'s (include/WarpMarkers.h) — `re_pitch` (the spec's
+ *  Re-Pitch, the varispeed default), `preserve_pitch` (WSOLA at its default
+ *  parameters), the WSOLA-parameterised `tones` / `texture`, and the
+ *  Rubber Band-backed `beats` / `complex`; the legacy
+ *  `resample` and `rubberband` remain accepted aliases of `re_pitch` and
+ *  `complex`. */
 
 //! One marker as the wire reports it: its position in the engine's order, the
 //! source frame it pins and where that frame lands.

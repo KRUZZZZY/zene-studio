@@ -310,12 +310,21 @@ ControlResult warpSet(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
-/*! Row 30 of the 0.3.0 list: choose how a clip renders a rate change.
+/*! Row 30 of the 0.3.0 list; the full set Q050-036. Choose how a clip renders
+ *  a rate change.
  *
- *  `resample` (the default) is what the engine has always done - the warped
- *  rate is handed to `AudioResampler` and the pitch moves with it.
- *  `preserve_pitch` routes the same rate through `AudioStretcher` (WSOLA), so
- *  the clip lasts as long as the mapping says and keeps its pitch.
+ *  `re_pitch` (the default; the legacy name `resample` still selects it) is
+ *  what the engine has always done - the warped rate is handed to
+ *  `AudioResampler` and the pitch moves with it. `preserve_pitch` routes the
+ *  same rate through `AudioStretcher` (WSOLA), so the clip lasts as long as
+ *  the mapping says and keeps its pitch. `tones` (the same WSOLA stretch with
+ *  its alignment reach doubled) and `texture` (the same stretch with half
+ *  the grain) parameterise WSOLA for their material, while `beats` (R3
+ *  restricted to its single short window) and `complex` (R3''s full
+ *  multi-resolution settings) render through the Rubber Band R3 engine
+ *  (include/RubberBandStretch.h); a build without the library refuses
+ *  the two Rubber Band-backed modes, and a file that asks for one still
+ *  loads and renders through WSOLA.
  *
  *  A clip the mode means nothing for - one that renders linearly, i.e. with no
  *  marker and no source tempo - is REFUSED rather than silently accepted, because
@@ -324,32 +333,35 @@ ControlResult warpSet(const QJsonObject& args)
  *  The clip's own state is the checkpoint (the `stretch` attribute of the same
  *  serialized <warp> element), so one control.undo takes the mode back. */
 /*! The wire mode as a WarpStretchMode, or false with the typed refusal in
- *  \a error: an unknown name is invalid_args, and 'rubberband' in a build
- *  without the library is refused (owner decision 12: the library is optional,
- *  and a build without it refuses the mode rather than accept a promise the
- *  render would not keep - a file asking for it still loads, through WSOLA). */
+ *  \a error: an unknown name is invalid_args, and a Rubber Band-backed mode in
+ *  a build without the library is refused (owner decision 12: the library is
+ *  optional, and a build without it refuses the mode rather than accept a
+ *  promise the render would not keep - a file asking for one still loads,
+ *  through WSOLA). */
 bool parseStretchMode(const QString& mode, WarpStretchMode* wanted, ControlResult* error)
 {
-	if (mode == QLatin1String("resample")) { *wanted = WarpStretchMode::Resample; return true; }
-	if (mode == QLatin1String("preserve_pitch")) { *wanted = WarpStretchMode::PreservePitch; return true; }
-	if (mode != QLatin1String("rubberband"))
+	if (!warpStretchModeFromName(mode, wanted))
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'mode' is '%1'; it is 'resample' (the rate is rendered by plain "
-				"resampling and the pitch moves with it - the default), 'preserve_pitch' (the "
-				"rate is rendered by the WSOLA stretcher and the pitch stays where it is) or "
-				"'rubberband' (the Rubber Band R3 stretcher, for tonal and polyphonic material)")
+			QStringLiteral("'mode' is '%1'; it is 're_pitch' (the rate is rendered by plain "
+				"resampling and the pitch moves with it - the default; 'resample' is accepted "
+				"as the old name), 'preserve_pitch' (the rate is rendered by the WSOLA stretcher "
+				"at its default parameters and the pitch stays where it is), 'tones' (the same "
+				"WSOLA stretch with its alignment reach doubled, for tonal material), 'texture' "
+				"(the same stretch with half the grain, for polyphonic and ambient material), or "
+				"one of the two Rubber Band-backed modes: 'beats' (R3 restricted to its short "
+				"window - the crispest timing) or 'complex' (R3's full multi-resolution settings; "
+				"'rubberband' is accepted as the old name)")
 				.arg(mode));
 		return false;
 	}
-	if (!RubberBandPool::available())
+	if (warpModeUsesRubberBand(*wanted) && !RubberBandPool::available())
 	{
 		*error = ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("this build has no Rubber Band (it was configured without "
-				"librubberband); use 'preserve_pitch' for the WSOLA stretch"));
+				"librubberband); use 'preserve_pitch', 'tones' or 'texture' for the WSOLA stretch"));
 		return false;
 	}
-	*wanted = WarpStretchMode::RubberBand;
 	return true;
 }
 
@@ -366,7 +378,7 @@ ControlResult warpStretch(const QJsonObject& args)
 	// Honest refusal: with no rate change there is nothing to preserve the
 	// pitch across, and SamplePlayHandle does not route such a clip through
 	// the stretcher at all (see renderPreservingPitch).
-	if (wanted != WarpStretchMode::Resample && clip->rendersLinearly())
+	if (warpModeKeepsPitch(wanted) && clip->rendersLinearly())
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("this clip has no warp markers and follows the project tempo, so it "
@@ -389,7 +401,7 @@ ControlResult warpStretch(const QJsonObject& args)
 	}
 
 	QJsonObject result = warpState(ref, *clip);
-	result.insert(QStringLiteral("previous_mode"), stretchModeName(previous));
+	result.insert(QStringLiteral("previous_mode"), warpStretchModeName(previous));
 	result.insert(QStringLiteral("changed"), changed);
 
 	if (changed)
@@ -398,7 +410,7 @@ ControlResult warpStretch(const QJsonObject& args)
 		// same "warp.stretch" id the caller would re-issue by hand.
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
-		inverseArgs.insert(QStringLiteral("mode"), stretchModeName(previous));
+		inverseArgs.insert(QStringLiteral("mode"), warpStretchModeName(previous));
 		result.insert(QStringLiteral("__transaction"), transactionPayload(before,
 			QStringLiteral("warp.stretch"), inverseArgs, true,
 			QStringLiteral("ProjectJournal (Clip checkpoint: the stretch mode is the 'stretch' "
@@ -505,15 +517,21 @@ void registerWarpStretch(ControlRegistry& registry)
 	cmd.group = QStringLiteral("warp");
 	cmd.verb = QStringLiteral("stretch");
 	cmd.description = QStringLiteral("Choose how a warped sample clip renders its rate change: "
-		"'resample' (the default, and what the engine has always done - the rate goes to the "
-		"resampler and the pitch moves with it, so a 2x warp is an octave up), 'preserve_pitch' "
-		"(the same rate is rendered by the WSOLA stretcher, AudioStretcher: the clip lasts as long "
-		"as the mapping says and keeps its own pitch) or 'rubberband' (the optional Rubber Band R3 "
-		"stretcher, for tonal and polyphonic material; refused by a build without the library, and "
-		"rendered by WSOLA for the pass in which both of the clip's voices are busy). Refused for a "
-		"clip that renders linearly - "
-		"with no marker and no source tempo there is no rate change to render. Reversible through "
-		"the ProjectJournal (Clip checkpoint).");
+		"'re_pitch' (the default, and what the engine has always done - the rate goes to the "
+		"resampler and the pitch moves with it, so a 2x warp is an octave up; the old name "
+		"'resample' is accepted), 'preserve_pitch' (the same rate is rendered by the WSOLA "
+		"stretcher, AudioStretcher, at its default parameters: the clip lasts as long as the "
+		"mapping says and keeps its own pitch), 'tones' (the same WSOLA stretch with its "
+		"alignment reach doubled to ±256 frames, for monophonic and tonal material), 'texture' "
+		"(the same stretch with half the grain, for polyphonic and ambient material), or one of "
+		"the two Rubber Band-backed modes (Q050-036): 'beats' (R3 restricted to its single short "
+		"window - the crispest timing at some spectral cost) and 'complex' (R3's full "
+		"multi-resolution settings, the quality the old name 'rubberband' - also accepted - has "
+		"always rendered). A build without librubberband refuses those two, and a file that asks "
+		"for one still loads and renders through WSOLA for the pass in which both of the clip's "
+		"voices are busy. Refused for a clip that renders linearly - with no marker and no "
+		"source tempo there is no rate change to render. Reversible through the ProjectJournal "
+		"(Clip checkpoint).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("mode"), stretchModeProperty()},
@@ -533,7 +551,8 @@ void registerWarpEditCommands(ControlRegistry& registry)
 {
 	// add / move / remove edit ONE marker; set replaces the map and carries the
 	// clip-level warp tempo with it; stretch picks how a rate change is
-	// rendered (row 30 - resampling or the pitch-preserving WSOLA stretch).
+	// rendered (row 30: varispeed resampling, the WSOLA stretch or the four
+	// Rubber Band-backed modes Q050-036 completes).
 	registerWarpAdd(registry);
 	registerWarpMove(registry);
 	registerWarpRemove(registry);
