@@ -2607,3 +2607,8 @@ include/StringPairDrag.h	Q050-133 (2026-10-19): declares createMimeData() - the 
 src/gui/StringPairDrag.cpp	Q050-133 (2026-10-19): createMimeData() builds the unchanged StringPair payload and, for the browser file keys (whose value IS the file's path), also publishes the file as a text/uri-list URL, so a plug-in editor or file manager that takes file URLs receives it; every other StringPair value is never read as a path; covered by tests/src/gui/BrowserDragUrlTest.cpp.
 tests/CMakeLists.txt	Q050-133: registers BrowserDragUrlTest in LMMS_TESTS and gives it the offscreen Qt platform its GUI neighbours use; registration only.
 tests/src/plugins/Vst3HostTest.cpp	cluster new-p10-445: cover rejection of non-finite sample rates and oversized VST3 prepare block sizes.
+include/AutomationClip.h	new-p10-507-port: declares the bounded offset/count valuesAfter sampler and widens curve-evaluation offsets to int64_t.
+src/core/AutomationClip.cpp	new-p10-507-port: checks automation tick spans in wide arithmetic and allocates only the requested viewport sample count.
+src/gui/clips/AutomationClipView.cpp	new-p10-507-port: requests only samples intersecting the clip view and its adjacent curve endpoints.
+src/gui/editors/AutomationEditor.cpp	new-p10-507-port: bounds editor path generation to visible ticks and computes off-screen x coordinates safely.
+tests/src/tracks/AutomationTrackTest.cpp	new-p10-507-port: regression caps array allocations for a large automation gap and checks extreme Hermite tick spans.
