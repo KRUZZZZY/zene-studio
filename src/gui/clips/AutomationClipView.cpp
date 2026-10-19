@@ -28,6 +28,8 @@
 #include <QPainter>
 #include <QPainterPath>  // IWYU pragma: keep
 #include <QMenu>
+#include <cmath>
+#include <cstdint>
 
 #include "AutomationEditor.h"
 #include "embed.h"
@@ -275,6 +277,10 @@ void AutomationClipView::paintEvent( QPaintEvent * )
 	const float h = ( height() - 2 * BORDER_WIDTH ) / y_scale;
 	const float ppTick  = ppb / TimePos::ticksPerBar();
 	const int offset =  m_clip->startTimeOffset() * ppTick;
+	const double leftTick = -static_cast<double>(offset) / ppTick;
+	const double rightTick = (width() - BORDER_WIDTH - offset) / ppTick;
+	const std::int64_t visibleStartTick = static_cast<std::int64_t>(std::floor(leftTick)) - 1;
+	const std::int64_t visibleEndTick = static_cast<std::int64_t>(std::ceil(rightTick)) + 2;
 
 	p.translate( 0.0f, max * height() / y_scale - BORDER_WIDTH );
 	p.scale( 1.0f, -h );
@@ -312,7 +318,15 @@ void AutomationClipView::paintEvent( QPaintEvent * )
 			break;
 		}
 
-		float *values = m_clip->valuesAfter(POS(it));
+		const std::int64_t segmentStart = POS(it);
+		const std::int64_t segmentEnd = POS(nit);
+		const std::int64_t firstSample = std::max(segmentStart, visibleStartTick);
+		const std::int64_t endSample = std::min(segmentEnd, visibleEndTick);
+		if (firstSample >= endSample) { continue; }
+		const auto sampleCount = static_cast<std::size_t>(endSample - firstSample);
+		float *values = m_clip->valuesAfter(TimePos(static_cast<tick_t>(segmentStart)),
+			firstSample - segmentStart, sampleCount);
+		if (values == nullptr) { continue; }
 
 		// We are creating a path to draw a polygon representing the values between two
 		// nodes. When we have two nodes with discrete progression, we will basically have
@@ -325,18 +339,18 @@ void AutomationClipView::paintEvent( QPaintEvent * )
 			: INVAL(nit);
 
 		QPainterPath path;
-		QPointF origin = QPointF(POS(it) * ppTick + offset, 0.0f);
+		const float firstX = static_cast<float>(firstSample) * ppTick + offset;
+		const QPointF origin(firstX, 0.0f);
 		path.moveTo(origin);
-		path.moveTo(QPointF(POS(it) * ppTick + offset, values[0]));
-		for (int i = POS(it) + 1; i < POS(nit); ++i)
+		path.moveTo(QPointF(firstX, values[0]));
+		for (std::size_t i = 1; i < sampleCount; ++i)
 		{
-			float x = i * ppTick + offset;
-			if(x > (width() - BORDER_WIDTH)) break;
-			float value = values[i - POS(it)];
-			path.lineTo(QPointF(x, value));
+			const float x = static_cast<float>(firstSample + static_cast<std::int64_t>(i)) * ppTick + offset;
+			path.lineTo(QPointF(x, values[i]));
 		}
-		path.lineTo((POS(nit)) * ppTick + offset, nextValue);
-		path.lineTo((POS(nit)) * ppTick + offset, 0.0f);
+		const float endX = static_cast<float>(segmentEnd) * ppTick + offset;
+		path.lineTo(endX, nextValue);
+		path.lineTo(endX, 0.0f);
 		path.lineTo(origin);
 
 		if( gradient() )

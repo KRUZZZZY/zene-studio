@@ -28,6 +28,7 @@
 #define LMMS_AUTOMATION_CLIP_H
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 
 #include <QMap>
@@ -173,7 +174,7 @@ public:
 	}
 
 	float valueAt( const TimePos & _time ) const;
-	float *valuesAfter( const TimePos & _time ) const;
+	float *valuesAfter( const TimePos & _time, std::int64_t firstOffset, std::size_t count ) const;
 
 	// -----------------------------------------------------------------------
 	// Sample-accurate automation (feature-list row 9,
@@ -293,9 +294,9 @@ private:
 	void cleanObjects();
 	void generateTangents();
 	void generateTangents(timeMap::iterator it, int numToGenerate);
-	float valueAt( timeMap::const_iterator v, int offset ) const;
+	float valueAt( timeMap::const_iterator v, std::int64_t offset ) const;
 	//! ED-185: a Bend segment's value (AutomationClipTransforms.cpp).
-	float bendValueAt( timeMap::const_iterator v, int offset ) const;
+	float bendValueAt( timeMap::const_iterator v, std::int64_t offset ) const;
 
 	/*! The curve's value at clip-relative tick @a rel (plus @a fraction of the
 	 *  segment that starts there) - the segment, not the node, so a node whose

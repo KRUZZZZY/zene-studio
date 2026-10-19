@@ -25,7 +25,14 @@
 #include <QtTest>
 #include <QDir>
 #include <QFile>
+#include <QDomDocument>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <new>
 
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
@@ -39,6 +46,81 @@
 
 #include "Engine.h"
 #include "Song.h"
+
+namespace
+{
+
+struct ArrayAllocationStats
+{
+	std::size_t cap;
+	std::size_t count = 0;
+	std::size_t largest = 0;
+	std::size_t rejected = 0;
+};
+
+thread_local ArrayAllocationStats* activeArrayAllocationStats = nullptr;
+
+class ScopedArrayAllocationCap
+{
+public:
+	explicit ScopedArrayAllocationCap(std::size_t cap) : m_previous(activeArrayAllocationStats), m_stats{cap}
+	{
+		activeArrayAllocationStats = &m_stats;
+	}
+
+	~ScopedArrayAllocationCap() { stop(); }
+
+	void stop()
+	{
+		if (activeArrayAllocationStats == &m_stats)
+		{
+			activeArrayAllocationStats = m_previous;
+		}
+	}
+
+	std::size_t count() const { return m_stats.count; }
+	std::size_t largest() const { return m_stats.largest; }
+	std::size_t rejected() const { return m_stats.rejected; }
+
+private:
+	ArrayAllocationStats* m_previous;
+	ArrayAllocationStats m_stats;
+};
+
+template<typename Clip>
+float* visibleAutomationSamples(Clip& clip, const lmms::TimePos& segmentStart,
+	std::int64_t firstOffset, std::size_t count)
+{
+	if constexpr (requires { clip.valuesAfter(segmentStart, firstOffset, count); })
+	{
+		return clip.valuesAfter(segmentStart, firstOffset, count);
+	}
+	else
+	{
+		return clip.valuesAfter(segmentStart);
+	}
+}
+
+} // namespace
+
+void* operator new[](std::size_t size)
+{
+	if (activeArrayAllocationStats != nullptr)
+	{
+		++activeArrayAllocationStats->count;
+		activeArrayAllocationStats->largest = std::max(activeArrayAllocationStats->largest, size);
+		if (size > activeArrayAllocationStats->cap)
+		{
+			++activeArrayAllocationStats->rejected;
+			throw std::bad_alloc();
+		}
+	}
+	if (void* memory = std::malloc(size == 0 ? 1 : size)) { return memory; }
+	throw std::bad_alloc();
+}
+
+void operator delete[](void* memory) noexcept { std::free(memory); }
+void operator delete[](void* memory, std::size_t) noexcept { std::free(memory); }
 
 class AutomationTrackTest : public QObject
 {
@@ -96,7 +178,57 @@ private slots:
 		c.putValue(0, 0.0, false);
 		c.putValue(100, 1.0, false);
 
-		QVERIFY(c.valuesAfter(150) == nullptr);
+		QVERIFY(visibleAutomationSamples(c, TimePos(150), 0, 1) == nullptr);
+	}
+
+	void testLargeGapViewportSamples()
+	{
+		using namespace lmms;
+
+		AutomationClip clip(nullptr);
+		clip.setProgressionType(AutomationClip::ProgressionType::Linear);
+		clip.putValue(TimePos(0), 0.0f, false);
+		clip.putValue(TimePos(1'000'000), 1.0f, false);
+
+		constexpr std::int64_t firstOffset = 499'998;
+		constexpr std::size_t visibleCount = 5;
+		std::unique_ptr<float[]> values;
+		ScopedArrayAllocationCap allocationCap(4096);
+		try
+		{
+			values.reset(visibleAutomationSamples(clip, TimePos(0), firstOffset, visibleCount));
+		}
+		catch (const std::bad_alloc&)
+		{
+			// The capped allocator records the oversized request without reserving it.
+		}
+		allocationCap.stop();
+
+		QCOMPARE(allocationCap.rejected(), std::size_t(0));
+		QVERIFY(values);
+		QCOMPARE(allocationCap.count(), std::size_t(1));
+		QVERIFY(allocationCap.largest() <= std::size_t(4096));
+		for (std::size_t i = 0; i < visibleCount; ++i)
+		{
+			const TimePos tick(static_cast<tick_t>(firstOffset + static_cast<std::int64_t>(i)));
+			QCOMPARE(values[i], clip.valueAt(tick));
+		}
+	}
+
+	void testExtremeHermiteTickSpan()
+	{
+		using namespace lmms;
+
+		AutomationClip clip(nullptr);
+		QDomDocument document;
+		QVERIFY(document.setContent(QStringLiteral(
+			"<automationclip pos='0' prog='2' tens='1' autoresize='0'>"
+			"<time pos='-2147483648' value='0' outValue='0' inTan='0' outTan='0' lockedTan='1'/>"
+			"<time pos='2147483647' value='1' outValue='1' inTan='0' outTan='0' lockedTan='1'/>"
+			"</automationclip>")));
+		clip.loadSettings(document.documentElement());
+
+		QCOMPARE(clip.valueAt(TimePos(0)), 0.5f);
 	}
 
 	void testValuesAfterChecksEndBeforeIncrement()

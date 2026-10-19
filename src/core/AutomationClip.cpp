@@ -25,6 +25,8 @@
  */
 
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "AutomationRamp.h"
@@ -599,7 +601,8 @@ float AutomationClip::valueAt( const TimePos & _time ) const
 		return OUTVAL(pv);
 	}
 
-	return valueAt(pv, _time - POS(pv));
+	const std::int64_t offset = static_cast<std::int64_t>(_time.getTicks()) - POS(pv);
+	return valueAt(pv, offset);
 }
 
 
@@ -607,7 +610,7 @@ float AutomationClip::valueAt( const TimePos & _time ) const
 
 // This method will get the value at an offset from a node, so we use the outValue of
 // that node and the inValue of the next node for the calculations.
-float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
+float AutomationClip::valueAt( timeMap::const_iterator v, std::int64_t offset ) const
 {
 	QMutexLocker m(&m_clipMutex);
 
@@ -628,9 +631,11 @@ float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
 	else if( type == ProgressionType::Linear )
 	{
 		auto const nv = std::next(v);
+		const std::int64_t tickSpan = static_cast<std::int64_t>(POS(nv)) - POS(v);
+		if (tickSpan <= 0) { return OUTVAL(v); }
 		float slope =
 			(INVAL(nv) - OUTVAL(v))
-			/ (POS(nv) - POS(v));
+			/ static_cast<float>(tickSpan);
 
 		return OUTVAL(v) + offset * slope;
 	}
@@ -646,8 +651,10 @@ float AutomationClip::valueAt( timeMap::const_iterator v, int offset ) const
 		// tangents _m1 and _m2
 		auto const nv = std::next(v);
 
-		int numValues = (POS(nv) - POS(v));
-		float t = (float) offset / (float) numValues;
+		const std::int64_t tickSpan = static_cast<std::int64_t>(POS(nv)) - POS(v);
+		if (tickSpan <= 0) { return OUTVAL(v); }
+		const float numValues = static_cast<float>(tickSpan);
+		float t = static_cast<float>(static_cast<double>(offset) / static_cast<double>(tickSpan));
 		float m1 = OUTTAN(v) * numValues * m_tension;
 		float m2 = INTAN(nv) * numValues * m_tension;
 
@@ -826,29 +833,33 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 }
 
 
-float *AutomationClip::valuesAfter( const TimePos & _time ) const
+float *AutomationClip::valuesAfter( const TimePos & _time, std::int64_t firstOffset, std::size_t count ) const
 {
 	QMutexLocker m(&m_clipMutex);
 
 	timeMap::const_iterator v = m_timeMap.lowerBound(_time);
-	if (v == m_timeMap.end())
-	{
-		return nullptr;
-	}
+	if (v == m_timeMap.end()) { return nullptr; }
 
 	auto const nv = std::next(v);
 
-	if (nv == m_timeMap.end())
+	if (nv == m_timeMap.end() || firstOffset < 0 || count == 0)
 	{
 		return nullptr;
 	}
 
-	int numValues = POS(nv) - POS(v);
-	auto ret = new float[numValues];
-
-	for( int i = 0; i < numValues; i++ )
+	const std::int64_t tickSpan = static_cast<std::int64_t>(POS(nv)) - POS(v);
+	if (tickSpan <= 0 || firstOffset > tickSpan
+		|| static_cast<std::uint64_t>(count) > static_cast<std::uint64_t>(tickSpan - firstOffset)
+		|| count > std::numeric_limits<std::size_t>::max() / sizeof(float))
 	{
-		ret[i] = valueAt( v, i );
+		return nullptr;
+	}
+
+	auto ret = new float[count];
+
+	for( std::size_t i = 0; i < count; i++ )
+	{
+		ret[i] = valueAt(v, firstOffset + static_cast<std::int64_t>(i));
 	}
 
 	return ret;
