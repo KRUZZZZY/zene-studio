@@ -38,17 +38,26 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QDir>
+#include <QFile>
+#include <QInputDialog>
 #include <QJsonArray>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QPushButton>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QTreeWidget>
 
 #include "BrowserCatalog.h"
 #include "BrowserPanel.h"
 #include "BrowserResults.h"
 #include "BrowserSearchView.h"
+#include "ConfigManager.h"
+#include "BrowserTagMenu.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "EditLocks.h"
@@ -130,6 +139,30 @@ bool resultsList(BrowserSearchView* view, const QString& path)
 	return false;
 }
 
+//! The entry of the submenu under a top-level action of @a menu, by its text
+//! (the pattern BrowserTagMenuTest drives the Tags and Category menus with).
+QAction* submenuAction(QMenu& menu, const QString& text)
+{
+	for (QAction* top : menu.actions())
+	{
+		if (top->menu() == nullptr) { continue; }
+		for (QAction* action : top->menu()->actions())
+		{
+			if (action->text() == text) { return action; }
+		}
+	}
+	return nullptr;
+}
+
+//! A one-byte file at @a path, as the browser fixtures here are written.
+QString touchFile(const QString& path)
+{
+	QFile file(path);
+	file.open(QIODevice::WriteOnly);
+	file.write("x");
+	return path;
+}
+
 } // namespace
 
 class LibraryMenusTest : public QObject
@@ -139,7 +172,17 @@ class LibraryMenusTest : public QObject
 private slots:
 	void initTestCase()
 	{
+		// Hermetic browser state: the category facet's store, the collections
+		// file and the library index live in this test's own temporary tree,
+		// never the user's (the rule LibraryProjectsTest and
+		// ControlBrowserCommandsTest already follow), and the browser's roots
+		// resolve into it - a fixture written under the samples root is then a
+		// file the Search view's queries can actually find.
+		qputenv("ZENE_BROWSER_COLLECTIONS", m_dir.filePath(QStringLiteral("collections.json")).toLocal8Bit());
+		qputenv("ZENE_BROWSER_INDEX", m_dir.filePath(QStringLiteral("index.json")).toLocal8Bit());
 		Engine::init(true);
+		ConfigManager::inst()->setWorkingDir(m_dir.filePath(QStringLiteral("work")));
+		QVERIFY(BrowserTagStore::instance().openAt(m_dir.filePath(QStringLiteral("browser-tags.json"))));
 		ControlRegistry::setReady(true);
 		QVERIFY2(m_dir.isValid(), "no temporary directory for the library fixtures");
 		// A private working directory: the user samples this test's searches walk and
@@ -573,6 +616,199 @@ private slots:
 	void cleanup()
 	{
 		if (!m_flood.isEmpty()) { QDir(m_flood).removeRecursively(); m_flood.clear(); }
+	}
+
+	//! The category facet in the Search view (0.5.0 L11, WF-007): the filter
+	//! sits beside Kind and Where to look, its choices are the catalog's own
+	//! categories plus "Any category", and selecting one narrows the shown
+	//! list in BOTH query modes - walking the folders and over the whole-library
+	//! index - while "Any category" restores the full result set.
+	void theCategoryFilterSitsBesideKindAndSourceAndNarrowsBothQueryModes()
+	{
+		const QString samples = ConfigManager::inst()->userSamplesDir();
+		QVERIFY(QDir().mkpath(samples));
+		const QString kick = touchFile(samples + QStringLiteral("/catfacet-kick.wav"));
+		const QString snare = touchFile(samples + QStringLiteral("/catfacet-snare.wav"));
+		QVERIFY(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), kick}, {QStringLiteral("category"), QStringLiteral("Drums")}}).ok);
+		QVERIFY(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), snare}, {QStringLiteral("category"), QStringLiteral("Loops")}}).ok);
+		// The index this test queries is its own (ZENE_BROWSER_INDEX above), built
+		// over this fixture folder so the indexed mode answers about these files.
+		QVERIFY2(run(QStringLiteral("browser.reindex"),
+			{{QStringLiteral("path"), m_dir.path()}, {QStringLiteral("features"), false},
+				{QStringLiteral("wait"), true}}).ok, "reindex refused");
+
+		BrowserSearchView view(nullptr);
+		QComboBox* category = view.categoryFilter();
+		QVERIFY2(category != nullptr, "the Search view exposes no category filter");
+		QCOMPARE(category->accessibleName(), QStringLiteral("Category"));
+
+		// Beside Kind and Where to look: the same row, adjacent in that order.
+		QVERIFY(category->parentWidget() != nullptr);
+		QLayout* column = category->parentWidget()->layout();
+		QVERIFY(column != nullptr);
+		QLayout* row = nullptr;
+		for (int i = 0; i < column->count() && row == nullptr; ++i)
+		{
+			QLayout* candidate = column->itemAt(i)->layout();
+			if (candidate == nullptr) { continue; }
+			for (int j = 0; j < candidate->count(); ++j)
+			{
+				if (candidate->itemAt(j)->widget() == category) { row = candidate; break; }
+			}
+		}
+		QVERIFY2(row != nullptr, "the category filter is not in the top row");
+		QStringList facets;
+		for (int i = 0; i < row->count(); ++i)
+		{
+			auto* box = qobject_cast<QComboBox*>(row->itemAt(i)->widget());
+			if (box != nullptr) { facets << box->accessibleName(); }
+		}
+		QCOMPARE(facets, QStringList({QStringLiteral("Kind"), QStringLiteral("Where to look"),
+			QStringLiteral("Category")}));
+
+		// The vocabulary is the catalog's own: "Any category" first, then the
+		// two categories the assignments above put in the store.
+		QCOMPARE(category->count(), 3);
+		QCOMPARE(category->itemText(0), QStringLiteral("Any category"));
+		QVERIFY(category->itemData(0).toString().isEmpty());
+		QVERIFY(category->findData(QStringLiteral("Drums")) > 0);
+		QVERIFY(category->findData(QStringLiteral("Loops")) > 0);
+
+		// Direct mode: the query's own text scopes the walk (the folder also
+		// carries this test's store, index and collections files).
+		auto* field = view.findChild<QLineEdit*>(QStringLiteral("browserSearch"));
+		QVERIFY(field != nullptr);
+		QTest::keyClicks(field, QStringLiteral("catfacet"));
+		QTest::keyClick(field, Qt::Key_Return);
+		QCOMPARE(view.resultCount(), 2);  // Any category: both files
+
+		category->setCurrentIndex(category->findData(QStringLiteral("Drums")));
+		QCOMPARE(view.resultCount(), 1);
+		QCOMPARE(view.results()->topLevelItem(0)->text(browserresults::Name), QStringLiteral("catfacet-kick.wav"));
+		category->setCurrentIndex(category->findData(QStringLiteral("Loops")));
+		QCOMPARE(view.resultCount(), 1);
+		QCOMPARE(view.results()->topLevelItem(0)->text(browserresults::Name), QStringLiteral("catfacet-snare.wav"));
+		category->setCurrentIndex(0);  // Any category
+		QCOMPARE(view.resultCount(), 2);
+
+		// Indexed mode: the same facet answers the same way over the index.
+		QCheckBox* indexed = view.findChild<QCheckBox*>();
+		QVERIFY(indexed != nullptr);
+		QCOMPARE(indexed->text(), QStringLiteral("Whole library"));
+		indexed->setChecked(true);
+		QCOMPARE(view.resultCount(), 2);
+		category->setCurrentIndex(category->findData(QStringLiteral("Drums")));
+		QCOMPARE(view.resultCount(), 1);
+		QCOMPARE(view.results()->topLevelItem(0)->text(browserresults::Name), QStringLiteral("catfacet-kick.wav"));
+		category->setCurrentIndex(0);  // Any category restores the full set here too
+		QCOMPARE(view.resultCount(), 2);
+		indexed->setChecked(false);  // back to walking the folders
+		QCOMPARE(view.resultCount(), 2);
+
+		// Leave the store without categories for the tests that follow.
+		QVERIFY(run(QStringLiteral("browser.category.clear"), {{QStringLiteral("path"), kick}}).ok);
+		QVERIFY(run(QStringLiteral("browser.category.clear"), {{QStringLiteral("path"), snare}}).ok);
+	}
+
+	//! The GUI regression for the facet (0.5.0 L11, WF-007): a category is
+	//! assigned through the Category submenu the Search view's row menu opens,
+	//! the view filters to it, the filtered search is saved as a collection
+	//! through the view's own button, and running that collection later answers
+	//! the same category-filtered question - the category survived the round trip.
+	void aCategoryFilteredSearchSavesAndRunsAsACollection()
+	{
+		const QString samples = ConfigManager::inst()->userSamplesDir();
+		QVERIFY(QDir().mkpath(samples));
+		const QString kick = touchFile(samples + QStringLiteral("/catfacet-kick.wav"));
+		touchFile(samples + QStringLiteral("/catfacet-snare.wav"));
+
+		// 1. Assignment through the GUI half (the same submenu showRowMenu builds).
+		setBrowserCategoryPrompt([] { return std::optional<QString>(QStringLiteral("Drums")); });
+		{
+			QMenu menu;
+			addBrowserCategoryMenu(&menu, kick);
+			QAction* fresh = submenuAction(menu, QMenu::tr("New category..."));
+			QVERIFY2(fresh != nullptr, "the Category submenu offers no New category...");
+			fresh->trigger();
+		}
+		setBrowserCategoryPrompt({});
+		QCOMPARE(BrowserTagStore::instance().categoryOf(kick), QStringLiteral("Drums"));
+
+		// 2. The view offers the assigned category and filters to it.
+		BrowserSearchView view(nullptr);
+		QComboBox* category = view.categoryFilter();
+		QVERIFY(category != nullptr);
+		QVERIFY2(category->findData(QStringLiteral("Drums")) > 0, "the assigned category is not offered");
+		auto* field = view.findChild<QLineEdit*>(QStringLiteral("browserSearch"));
+		QVERIFY(field != nullptr);
+		QTest::keyClicks(field, QStringLiteral("catfacet"));
+		QTest::keyClick(field, Qt::Key_Return);
+		QCOMPARE(view.resultCount(), 2);  // Any category: both files
+		category->setCurrentIndex(category->findData(QStringLiteral("Drums")));
+		QCOMPARE(view.resultCount(), 1);
+		QCOMPARE(view.results()->topLevelItem(0)->text(browserresults::Name), QStringLiteral("catfacet-kick.wav"));
+
+		// 3. Save THIS filtered search through the view's own button; the name
+		// dialog is answered by a timer, as EffectHostingMenuTest answers dialogs.
+		QPushButton* save = nullptr;
+		for (QPushButton* candidate : view.findChildren<QPushButton*>())
+		{
+			if (candidate->property("controlCommand").toString() == QLatin1String("browser.collection_save"))
+			{
+				save = candidate;
+			}
+		}
+		QVERIFY(save != nullptr);
+		QTimer::singleShot(0, [] {
+			auto* dialog = qobject_cast<QInputDialog*>(QApplication::activeModalWidget());
+			if (dialog == nullptr) { return; }
+			dialog->setTextValue(QStringLiteral("Q050 170 Drums"));
+			dialog->accept();
+		});
+		save->click();
+
+		// The collections list beside the results now shows it (the view refreshed).
+		QListWidget* collections = nullptr;
+		for (QListWidget* candidate : view.findChildren<QListWidget*>())
+		{
+			if (candidate->accessibleName() == QStringLiteral("Collections")) { collections = candidate; }
+		}
+		QVERIFY(collections != nullptr);
+		bool listed = false;
+		for (int i = 0; i < collections->count(); ++i)
+		{
+			listed = listed || collections->item(i)->text() == QLatin1String("Q050 170 Drums");
+		}
+		QVERIFY2(listed, "the saved collection is not listed in the view");
+
+		// The stored query carries the category - that is what a later run will answer.
+		const QJsonArray saved = run(QStringLiteral("browser.collections")).result
+			.value(QStringLiteral("collections")).toArray();
+		bool carriesCategory = false;
+		for (const QJsonValue& value : saved)
+		{
+			const QJsonObject entry = value.toObject();
+			if (entry.value(QStringLiteral("name")).toString() != QLatin1String("Q050 170 Drums")) { continue; }
+			carriesCategory = entry.value(QStringLiteral("query")).toObject()
+				.value(QStringLiteral("category")).toString() == QLatin1String("Drums");
+		}
+		QVERIFY2(carriesCategory, "the saved collection does not carry its category");
+
+		// 4. Running it later from the list (the click the user makes) shows the
+		// same category-filtered result set.
+		for (int i = 0; i < collections->count(); ++i)
+		{
+			if (collections->item(i)->text() != QLatin1String("Q050 170 Drums")) { continue; }
+			emit collections->itemClicked(collections->item(i));
+		}
+		QCOMPARE(view.resultCount(), 1);
+		QCOMPARE(view.results()->topLevelItem(0)->text(browserresults::Name), QStringLiteral("catfacet-kick.wav"));
+
+		QVERIFY(run(QStringLiteral("browser.collection_remove"),
+			{{QStringLiteral("name"), QStringLiteral("Q050 170 Drums")}}).ok);
+		QVERIFY(run(QStringLiteral("browser.category.clear"), {{QStringLiteral("path"), kick}}).ok);
 	}
 
 private:

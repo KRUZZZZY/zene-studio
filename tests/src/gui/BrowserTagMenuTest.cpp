@@ -83,6 +83,7 @@ private slots:
 	void cleanupTestCase()
 	{
 		setBrowserTagPrompt({});
+		setBrowserCategoryPrompt({});
 		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
@@ -147,6 +148,59 @@ private slots:
 			QVERIFY2(bass != nullptr, qPrintable(QStringLiteral("no bass entry for %1").arg(file)));
 			QVERIFY2(bass->isChecked(), qPrintable(QStringLiteral("not checked for %1").arg(file)));
 		}
+	}
+
+	//! The Category submenu (0.5.0 L11, WF-007): "New category..." files the
+	//! name through browser.category.set, the vocabulary browser.categories
+	//! offers grows with it, the entries read back the store's checks (one
+	//! category per file, so they are exclusive), picking one assigns it and
+	//! "No category" clears it - the assignment half of the category facet,
+	//! through the same submenu the Search view's row menu opens.
+	void theCategoryMenuAssignsOneCategoryAndClearsIt()
+	{
+		// The store this test owns (the slot after this one points it at a
+		// broken path, so the path is re-asserted here).
+		QVERIFY(BrowserTagStore::instance().openAt(m_dir.filePath(QStringLiteral("tags.json"))));
+		const QString kick = touch(m_dir, "cat-kick.wav");
+		const QString snare = touch(m_dir, "cat-snare.wav");
+
+		setBrowserCategoryPrompt([] { return std::optional<QString>(QStringLiteral("Drums")); });
+		{
+			QMenu menu;
+			addBrowserCategoryMenu(&menu, kick);
+			QAction* fresh = named(menu, QMenu::tr("New category..."));
+			QVERIFY2(fresh != nullptr, "the Category submenu offers no New category...");
+			fresh->trigger();
+		}
+		setBrowserCategoryPrompt({});
+		QCOMPARE(BrowserTagStore::instance().categoryOf(kick), QStringLiteral("Drums"));
+
+		// A file that carries none: "No category" is ticked, the known category
+		// is listed unchecked - the vocabulary is the library's own.
+		QMenu forSnare;
+		addBrowserCategoryMenu(&forSnare, snare);
+		QAction* drums = named(forSnare, QStringLiteral("Drums"));
+		QVERIFY2(drums != nullptr, "the assigned category is missing from the vocabulary");
+		QVERIFY(!drums->isChecked());
+		QAction* none = named(forSnare, QMenu::tr("No category"));
+		QVERIFY(none != nullptr);
+		QVERIFY(none->isChecked());
+
+		// Picking it assigns it (one category per file, so this is exclusive).
+		drums->trigger();
+		QCOMPARE(BrowserTagStore::instance().categoryOf(snare), QStringLiteral("Drums"));
+
+		// The file that carries it reads its check, and "No category" is unticked.
+		QMenu again;
+		addBrowserCategoryMenu(&again, kick);
+		QVERIFY(named(again, QStringLiteral("Drums"))->isChecked());
+		QVERIFY(!named(again, QMenu::tr("No category"))->isChecked());
+
+		// "No category" clears it through browser.category.clear.
+		named(again, QMenu::tr("No category"))->trigger();
+		QVERIFY(BrowserTagStore::instance().categoryOf(kick).isEmpty());
+
+		QVERIFY(BrowserTagStore::instance().clearCategory(snare));
 	}
 
 	void aTagTheStoreCannotSaveTellsTheUserInsteadOfLookingSaved()

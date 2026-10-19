@@ -48,17 +48,22 @@ namespace control
 namespace
 {
 
-//! A tag must be a printable label: control characters would be invisible in a
-//! list and unquotable in the JSON a client stores them in.
-bool tagIsPrintable(const QString& tag)
+//! A label must be printable: control characters would be invisible in a list
+//! and unquotable in the JSON a client stores them in.
+bool labelIsPrintable(const QString& label)
 {
-	for (const QChar& character : tag)
+	for (const QChar& character : label)
 	{
 		if (!character.isPrint()) { return false; }
 	}
 	return true;
 }
 
+} // namespace
+
+//! A tag must be a printable label: control characters would be invisible in a
+//! list and unquotable in the JSON a client stores them in. Shared with the
+//! category facet (declared in the header), so both edits agree on the bounds.
 bool readTagValue(const QString& raw, QString* tag, const QString& where, ControlResult* error)
 {
 	const QString trimmed = raw.trimmed();
@@ -76,7 +81,7 @@ bool readTagValue(const QString& raw, QString* tag, const QString& where, Contro
 				.arg(where).arg(trimmed.size()).arg(MaxTagLength));
 		return false;
 	}
-	if (!tagIsPrintable(trimmed))
+	if (!labelIsPrintable(trimmed))
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("%1 carries a non-printable character").arg(where));
@@ -85,6 +90,9 @@ bool readTagValue(const QString& raw, QString* tag, const QString& where, Contro
 	*tag = trimmed;
 	return true;
 }
+
+namespace
+{
 
 bool readTagList(const QJsonValue& value, QStringList* tags, ControlResult* error)
 {
@@ -212,6 +220,9 @@ QJsonObject browserItemJson(const BrowserItem& item, bool withMetadata)
 	out.insert(QStringLiteral("size_bytes"), static_cast<double>(item.sizeBytes));
 	out.insert(QStringLiteral("modified_ms"), static_cast<double>(item.modifiedMs));
 	out.insert(QStringLiteral("tags"), QJsonArray::fromStringList(item.tags));
+	// Empty when the file carries none: the category is a wire fact about the
+	// item either way, and a reader filters on it without a special case.
+	out.insert(QStringLiteral("category"), item.category);
 	if (withMetadata && item.hasMetadata)
 	{
 		out.insert(QStringLiteral("metadata"), browserMetadataJson(item.metadata));
@@ -271,6 +282,7 @@ QJsonObject browserItemSchema(bool withMetadata)
 		{QStringLiteral("size_bytes"), numberProperty()},
 		{QStringLiteral("modified_ms"), numberProperty()},
 		{QStringLiteral("tags"), arrayProperty()},
+		{QStringLiteral("category"), stringProperty()},
 	};
 	if (withMetadata) { properties.insert(QStringLiteral("metadata"), browserMetadataSchema()); }
 	return objectSchema(properties);
@@ -337,6 +349,16 @@ bool readBrowserQueryArguments(const QJsonObject& args, BrowserQuery* query, Con
 	query->text = args.value(QStringLiteral("text")).toString();
 	query->probe = args.value(QStringLiteral("probe")).toBool(false);
 	query->kind = args.value(QStringLiteral("kind")).toString().trimmed();
+	// The category facet (0.5.0 L11, WF-007): empty after trimming is "any
+	// category", like an empty 'kind' or 'root'; a label is held to the same
+	// bounds a tag is (printable, bounded), so the filter and the assignment
+	// agree on what a category can be.
+	const QString rawCategory = args.value(QStringLiteral("category")).toString();
+	if (!rawCategory.trimmed().isEmpty()
+		&& !readTagValue(rawCategory, &query->category, QStringLiteral("'category'"), error))
+	{
+		return false;
+	}
 	if (args.contains(QStringLiteral("tags"))
 		&& !readTagList(args.value(QStringLiteral("tags")), &query->tags, error))
 	{
@@ -372,6 +394,17 @@ QJsonObject browserTagState(const QString& key, const QStringList& tags)
 	return out;
 }
 
+QJsonObject browserCategoryState(const QString& key, const QString& category)
+{
+	QJsonObject out;
+	out.insert(QStringLiteral("path"), key);
+	// Empty when the file carries none: the same wire fact browserItemJson
+	// reports, so a read-back and a query result agree.
+	out.insert(QStringLiteral("category"), category);
+	out.insert(QStringLiteral("store_path"), BrowserTagStore::instance().storePath());
+	return out;
+}
+
 QJsonObject browserTagTransaction(const QString& key, const QString& tag,
 	const QStringList& before, const QString& inverseOp, const QString& mechanism)
 {
@@ -389,6 +422,24 @@ QJsonObject browserTagTransaction(const QString& key, const QString& tag,
 	// the registry instead of unwinding the project journal, which holds nothing
 	// for a file in the config directory. It is set here, not by
 	// transactionPayload, whose default is the journal (SPEC A16).
+	QJsonObject inverse = transaction.value(QStringLiteral("inverse")).toObject();
+	inverse.insert(QStringLiteral("applies"), QStringLiteral("command"));
+	transaction.insert(QStringLiteral("inverse"), inverse);
+	return transaction;
+}
+
+QJsonObject browserCategoryTransaction(const QString& key, const QString& before,
+	const QString& inverseOp, const QJsonObject& inverseArgs, const QString& mechanism)
+{
+	QJsonObject beforeState;
+	beforeState.insert(QStringLiteral("path"), key);
+	// Empty when the file carried none: the same wire fact the state read-back
+	// reports, so the record says what the file looked like either way.
+	beforeState.insert(QStringLiteral("category"), before);
+
+	QJsonObject transaction = transactionPayload(beforeState, inverseOp, inverseArgs, true, mechanism);
+	// As browserTagTransaction: the inverse is dispatched by control.undo through
+	// the registry, not by the journal (SPEC A16).
 	QJsonObject inverse = transaction.value(QStringLiteral("inverse")).toObject();
 	inverse.insert(QStringLiteral("applies"), QStringLiteral("command"));
 	transaction.insert(QStringLiteral("inverse"), inverse);
