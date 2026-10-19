@@ -41,11 +41,22 @@ namespace lmms::gui
 using BrowserTagPrompt = std::function<std::optional<QString>()>;
 LMMS_EXPORT void setBrowserTagPrompt(BrowserTagPrompt prompt);
 
+//! Asks for a new category's text; nothing when cancelled. Replaceable for tests.
+using BrowserCategoryPrompt = std::function<std::optional<QString>()>;
+LMMS_EXPORT void setBrowserCategoryPrompt(BrowserCategoryPrompt prompt);
+
 /*! KNOWN-LIMITATIONS "browser tag/metadata search ... has no interface": a "Tags" submenu for a
  *  file's context menu. It lists every tag the library knows (browser.tags), the file's own ones
  *  checked - unchecking removes (browser.tag.remove), checking adds (browser.tag.add) - and "New
  *  tag..." adds one by name. @a path is the file's absolute path, the store's key. */
 LMMS_EXPORT void addBrowserTagMenu(QMenu* menu, const QString& path);
+
+/*! 0.5.0 L11 (WF-007): a "Category" submenu beside the Tags one - the GUI half of the category
+ *  facet. ONE category per file, so the entries are exclusive: picking one assigns it
+ *  (browser.category.set, replacing any previous), "No category" clears it
+ *  (browser.category.clear), and "New category..." asks for a name. The vocabulary is what the
+ *  library carries (browser.categories), so a category is listed because a file has it. */
+LMMS_EXPORT void addBrowserCategoryMenu(QMenu* menu, const QString& path);
 
 } // namespace lmms::gui
 
