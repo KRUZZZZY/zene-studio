@@ -109,6 +109,20 @@ std::shared_ptr<const SampleBuffer> SampleBuffer::fromBase64(const QString& str,
 {
 	if (str.isEmpty()) { return SampleBuffer::emptyBuffer(); }
 
+	// A rate that is not positive - "0", a negative one, or text a caller read
+	// back as 0 - would build a buffer whose frames-per-tick is 0, and the clip
+	// mapping divides by that rate (Engine::framesPerTick). An unusable rate
+	// loads the way an absent one loads: the engine's own output rate - the
+	// rule SampleClip::loadSettings applies to a project's stated sample_rate -
+	// so the frames survive and the buffer always carries a rate the mapping can
+	// divide by.
+	if (sampleRate <= 0)
+	{
+		qWarning() << QObject::tr(
+			"Base64 sample carries an invalid sample rate, loading it at the engine's output rate");
+		sampleRate = Engine::audioEngine()->outputSampleRate();
+	}
+
 	const auto bytes = QByteArray::fromBase64(str.toUtf8());
 
 	if (bytes.size() % sizeof(SampleFrame) != 0)

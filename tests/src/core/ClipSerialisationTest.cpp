@@ -52,10 +52,12 @@
 
 #include <cmath>
 
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "LmmsTypes.h"
 #include "MidiClip.h"
+#include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "Song.h"
@@ -70,6 +72,9 @@ namespace
 constexpr double kPi = 3.14159265358979323846;
 constexpr int kRate = 44100;
 constexpr int kSeconds = 4;
+
+//! The frames an embedded (base64) sample carries in the regressions below.
+constexpr int kEmbeddedFrames = 4;
 
 //! The attribute set SampleClip::saveSettings wrote before this slice, sorted the
 //! way attributeNames() sorts. `srcin`/`srcout` are deliberately absent.
@@ -461,6 +466,83 @@ private slots:
 			QDomElement parent2 = doc2.createElement("track");
 			const int loaded = clip->saveState(doc2, parent2).attribute("steps").toInt();
 			QCOMPARE(loaded, steps.toInt());
+		}
+	}
+
+	//! Cluster new-p10-342: an embedded sample whose stated rate is not positive.
+	//!
+	//! The loader used to hand the parsed `sample_rate` straight to
+	//! SampleBuffer::fromBase64(), which built a buffer without checking the
+	//! rate - and the clip's mapping divides by it (Engine::framesPerTick), so
+	//! a zero-rate buffer produced the invalid frame counts the finding names.
+	//!
+	//! The DECIDED rule on this line (cluster new-p12-204, which the train kept
+	//! when it reverted this cluster): a rate that is not positive loads the way
+	//! an absent one loads - the engine's own output rate - so the user's
+	//! embedded frames SURVIVE the load instead of being discarded. This pins
+	//! that rule at the project boundary: the rate the buffer ends up with is
+	//! the engine's, the frames are still there, and the mapping that divides
+	//! by the rate is finite and positive.
+	void embeddedSampleWithAnUnusableRateLoadsAtTheOutputRate()
+	{
+		const auto outputRate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		QVERIFY(outputRate > 0);
+
+		// "0", a negative one, and text QString::toInt() reads back as 0
+		for (const QString& statedRate :
+			 {QStringLiteral("0"), QStringLiteral("-44100"), QStringLiteral("not a rate")})
+		{
+			SampleTrack track(Engine::getSong());
+			auto* clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
+			QVERIFY(clip != nullptr);
+			clip->setSampleBuffer(std::make_shared<SampleBuffer>(
+				std::vector<SampleFrame>(kEmbeddedFrames, SampleFrame{0.25f, -0.25f}), kRate));
+
+			QDomDocument doc;
+			QDomElement parent = doc.createElement("track");
+			QDomElement saved = clip->saveState(doc, parent);
+			QVERIFY(saved.hasAttribute("data"));
+			QVERIFY(saved.hasAttribute("sample_rate"));
+			saved.setAttribute("sample_rate", statedRate);
+
+			SampleTrack loadedTrack(Engine::getSong());
+			auto* loaded = dynamic_cast<SampleClip*>(loadedTrack.createClip(TimePos(0)));
+			QVERIFY(loaded != nullptr);
+			loaded->restoreState(saved);
+
+			// the buffer carries the engine's rate, never the stated one
+			QCOMPARE(static_cast<int>(loaded->sample().sampleRate()), outputRate);
+			// the frames survive the load - the rate was replaced, not the audio
+			QCOMPARE(static_cast<int>(loaded->sample().buffer()->size()), kEmbeddedFrames);
+			// and the mapping that divides by that rate is finite and positive
+			QVERIFY(std::isfinite(loaded->clipFramesPerTick()));
+			QVERIFY(loaded->clipFramesPerTick() > 0.0f);
+		}
+	}
+
+	//! The factory the finding names: SampleBuffer::fromBase64() must not build
+	//! a buffer whose rate is not positive, whatever a caller hands it - the
+	//! clip mapping divides by that rate. The rule is the one the project
+	//! loader applies (an unusable rate is the engine's own output rate), so
+	//! the frames are kept and the rate is positive.
+	void base64FactoryNeverBuildsANonPositiveRate()
+	{
+		const auto outputRate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		QVERIFY(outputRate > 0);
+
+		const SampleBuffer source(
+			std::vector<SampleFrame>(kEmbeddedFrames, SampleFrame{0.25f, -0.25f}), kRate);
+		const auto data = source.toBase64();
+		QVERIFY(!data.isEmpty());
+
+		for (const int rate : {0, -1, -44100})
+		{
+			auto buffer = SampleBuffer::fromBase64(data, rate);
+			QVERIFY(buffer != nullptr);
+			QVERIFY2(buffer->sampleRate() > 0,
+				qPrintable(QStringLiteral("rate %1 reached the buffer").arg(rate)));
+			QCOMPARE(static_cast<int>(buffer->sampleRate()), outputRate);
+			QCOMPARE(static_cast<int>(buffer->size()), kEmbeddedFrames);
 		}
 	}
 
