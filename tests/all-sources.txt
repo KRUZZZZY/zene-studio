@@ -2797,6 +2797,7 @@ tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
 tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
+tests/src/gui/BrowserDragUrlTest.cpp
 tests/src/gui/BrowserTagMenuTest.cpp
 tests/src/gui/CanvasKeyboardTest.cpp
 tests/src/gui/CaptureMidiMenuTest.cpp

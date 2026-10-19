@@ -27,6 +27,7 @@
 
 #include <QMimeData>
 #include <QDragEnterEvent>
+#include <QUrl>
 
 
 #include "StringPairDrag.h"
@@ -38,14 +39,33 @@
 namespace lmms::gui
 {
 
+namespace
+{
+
+/*! Whether \a _key is one the browser starts a drag under with a file path as the value: the file
+ *  lists' rows (FileBrowser) and the search results (BrowserResults) drag every file-backed kind
+ *  this way, and every consumer of these keys already treats the value as a filesystem path. Only
+ *  such a drag also publishes its file as a `text/uri-list` URL; every other StringPair value -
+ *  a serialized clip, embedded sample data, a model id - is not a path and is never read as one. */
+bool carriesAFilePath( const QString & _key )
+{
+	return _key == QLatin1String( "samplefile" )
+		|| _key == QLatin1String( "presetfile" )
+		|| _key == QLatin1String( "pluginpresetfile" )
+		|| _key == QLatin1String( "soundfontfile" )
+		|| _key == QLatin1String( "patchfile" )
+		|| _key == QLatin1String( "vstpluginfile" )
+		|| _key == QLatin1String( "importedproject" )
+		|| _key == QLatin1String( "projectfile" );
+}
+
+} // namespace
+
 
 StringPairDrag::StringPairDrag( const QString & _key, const QString & _value,
 					const QPixmap & _icon, QWidget * _w ) :
 	QDrag( _w )
 {
-	// For mimeType() and MimeType enum class
-	using namespace Clipboard;
-
 	if( _icon.isNull() && _w )
 	{
 		setPixmap( _w->grab().scaled(
@@ -57,11 +77,28 @@ StringPairDrag::StringPairDrag( const QString & _key, const QString & _value,
 	{
 		setPixmap( _icon );
 	}
-	QString txt = _key + ":" + _value;
-	auto m = new QMimeData();
-	m->setData( mimeType( MimeType::StringPair ), txt.toUtf8() );
-	setMimeData( m );
+	setMimeData( createMimeData( _key, _value ) );
 	exec( Qt::CopyAction, Qt::CopyAction );
+}
+
+
+
+
+QMimeData * StringPairDrag::createMimeData( const QString & _key, const QString & _value )
+{
+	// For mimeType() and MimeType enum class
+	using namespace Clipboard;
+
+	auto m = new QMimeData();
+	m->setData( mimeType( MimeType::StringPair ),
+			( _key + ":" + _value ).toUtf8() );
+	if( carriesAFilePath( _key ) )
+	{
+		// The same file as a URL, for a plug-in editor or the desktop that takes file URLs; the
+		// StringPair payload above still drives every drop target inside Zene unchanged.
+		m->setUrls( { QUrl::fromLocalFile( _value ) } );
+	}
+	return m;
 }
 
 

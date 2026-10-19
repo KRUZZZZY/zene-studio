@@ -53,15 +53,6 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
-//! The drag key a row of @a kind carries, as the file lists' rows carry it.
-QString dragKey(const QString& kind)
-{
-	if (kind == QLatin1String("preset")) { return QStringLiteral("presetfile"); }
-	if (kind == QLatin1String("project")) { return QStringLiteral("projectfile"); }
-	if (kind == QLatin1String("midi")) { return QStringLiteral("importedproject"); }
-	return QStringLiteral("samplefile");
-}
-
 QString pathOf(const QModelIndex& row) { return row.siblingAtColumn(0).data(browserresults::PathRole).toString(); }
 QString kindOf(const QModelIndex& row) { return row.siblingAtColumn(0).data(browserresults::KindRole).toString(); }
 
@@ -94,6 +85,15 @@ QPixmap kindIcon(const QString& kind)
 	if (kind == QLatin1String("preset")) { return embed::getIconPixmap("preset_file"); }
 	if (kind == QLatin1String("project")) { return embed::getIconPixmap("project_file"); }
 	return embed::getIconPixmap("sample_file");
+}
+
+//! The drag key a row of @a kind carries, as the file lists' rows carry it.
+QString dragKey(const QString& kind)
+{
+	if (kind == QLatin1String("preset")) { return QStringLiteral("presetfile"); }
+	if (kind == QLatin1String("project")) { return QStringLiteral("projectfile"); }
+	if (kind == QLatin1String("midi")) { return QStringLiteral("importedproject"); }
+	return QStringLiteral("samplefile");
 }
 
 QTreeWidgetItem* rowOf(const QJsonObject& item)

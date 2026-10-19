@@ -49,6 +49,10 @@ constexpr int PathRole = Qt::UserRole;
 constexpr int KindRole = Qt::UserRole + 1;
 
 LMMS_EXPORT QPixmap kindIcon(const QString& kind);
+//! The drag key a result of @a kind carries, as the file lists' rows carry it; a file-backed result
+//! (audio, preset, project, MIDI) maps to the key whose value is its file's path, which a drag also
+//! publishes as a `text/uri-list` URL.
+LMMS_EXPORT QString dragKey(const QString& kind);
 //! A result row; the size and date sort as numbers (their data), not as text.
 LMMS_EXPORT QTreeWidgetItem* rowOf(const QJsonObject& item);
 //! A gallery tile: the file's waveform thumbnail when @a thumbnail, else its kind's icon.
