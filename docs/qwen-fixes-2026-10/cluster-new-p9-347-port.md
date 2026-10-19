@@ -228,3 +228,9 @@ already names `tests/src/core/RelativePathsTest.cpp`.
    `src/core/PathUtil.cpp:177-181`. The reader's companion change uses `QFileInfo`,
    `QDir::cleanPath` and `PathUtil::oldRelativeUpgrade` - all already used in that file. No
    `windows.h` macro names, no `std::filesystem`.
+7. **The "ALREADY-FIXED or FALSE-POSITIVE" question does not apply here.** The verdict is
+   FIXED: on this branch `src/core/PathUtil.cpp:185` was
+   `return baseLocation(base, error) + upgraded.remove(0, basePrefix(base).length());` and
+   `baseLocation(Base::Absolute)` returns `QString("")` (`src/core/PathUtil.cpp:65`), so the
+   contract "make this path absolute" (`include/PathUtil.h:61-63`) was broken on this tree -
+   proven by the RED run on the untouched code (`test-1.log`, exit 8).
