@@ -24,6 +24,8 @@
 
 #include <QObject>
 #include <QProcess>
+#include <limits>
+#include <type_traits>
 #include <QtTest>
 
 #include <cmath>
@@ -52,6 +54,34 @@ class MathTest : public QObject
 {
 	Q_OBJECT
 private slots:
+	void FastRandExtremeExclusiveRangeTest()
+	{
+		using namespace lmms;
+		const auto value = fastRand(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+		QVERIFY(value > std::numeric_limits<int>::min());
+	}
+
+	void FastRandExtremeInclusiveRangeTest()
+	{
+		using namespace lmms;
+		const auto value = fastRandInc(std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
+		QVERIFY(value > std::numeric_limits<int>::min());
+	}
+
+	void FastRandNarrowRangeReturnTypeTest()
+	{
+		using namespace lmms;
+		using ShortLimits = std::numeric_limits<short>;
+		static_assert(std::is_same_v<decltype(fastRand(ShortLimits::min(), ShortLimits::max())), int>);
+		static_assert(std::is_same_v<decltype(fastRandInc(ShortLimits::min(), ShortLimits::max())), int>);
+		const auto exclusive = fastRand(ShortLimits::min(), ShortLimits::max());
+		const auto inclusive = fastRandInc(ShortLimits::min(), ShortLimits::max());
+		QVERIFY(exclusive >= ShortLimits::min());
+		QVERIFY(exclusive < ShortLimits::max());
+		QVERIFY(inclusive >= ShortLimits::min());
+		QVERIFY(inclusive <= ShortLimits::max());
+	}
+
 	void NumDigitsTest()
 	{
 		using namespace lmms;
