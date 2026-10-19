@@ -34,16 +34,21 @@ WHAT IT ASSERTS, in numbers:
   * right after scan_start the unplanned run (total_files 0) reports scan_status progress 0 and a
     task.list row with progress -1 ("cannot say yet"), never 1.0;
   * the test adds a candidate file (CANDIDATE_NAME) AFTER startup, so it is absent from the
-    pre-run cache; the run scans it first, and after the cancel its exact path is in
-    scan_cache_list - a newly scanned record, not one cached before the run;
+    pre-run cache, plus a trailer (TRAILER_NAME) in the same directory that the scanner's
+    path order puts after it; the run completes the candidate while still running, and after
+    the cancel the candidate's path is in scan_cache_list - a newly scanned record, not one
+    cached before the run;
+  * every path comparison goes through path_key() (os.path.normcase(os.path.realpath(...))
+    on both sides), and path_key itself is checked first against Windows-style and POSIX
+    inputs (drive-letter case, separators, '.'/'..', trailing separators, symlinks);
   * the first turn plans the files (polled scan_status shows total_files > 0);
     DURING the run, plugin.list still answers the exact pre-run catalogue
     (names compared), and scan_status shows active with 0 <= progress <= 1;
-  * after the first file completes, progress is NONZERO while the run is still
+  * once the candidate has completed, progress is NONZERO while the run is still
     active (the proof the window watched real work, not a 0 file count);
-  * scan_cancel then answers cancelling=true (cancel AFTER at least one
-    completed file) and polled scan_status reaches outcome "cancelled"
-    (bounded wait), with 1 <= done_files <= total_files;
+  * scan_cancel then answers cancelling=true (cancel AFTER the candidate
+    completed) and polled scan_status reaches outcome "cancelled"
+    (bounded wait), with 1 <= done_files < total_files;
   * after the cancel, plugin.list is STILL the pre-run catalogue (the proof
     the window kept working on cached results), scan_cache_list answers with
     sorted entries (cache read-back), and EVERY completed file's path is in
@@ -65,7 +70,9 @@ Exit codes: 0 every check held; 1 a check failed (the app log is printed);
 
 from __future__ import annotations
 
+import ntpath
 import os
+import posixpath
 import shutil
 import sys
 import tempfile
@@ -79,21 +86,51 @@ import control_socket_harness as H  # noqa: E402  (path set above)
 MAX_PACE_MS = 1000
 #: The per-file statuses a run reports (scanFileJson's vocabulary).
 RUN_STATUSES = ("served-from-cache", "scanned", "not-a-plugin", "load-failed")
-#: The candidate the test adds AFTER startup: absent from the pre-run cache,
-#: and sorted before every real plug-in ("0" < "A" < "a") so it is the run's
-#: first file. Not a library, so the scan stores a "load-failed" or
-#: "not-a-plugin" record for it - a record that exists only if THIS run took it.
-#: The name must match what the scanner enumerates on the platform
-#: (PluginFactory.cpp: "*.dll" on Windows, "lib*.so" everywhere else), or the
-#: run never plans it.
+#: The candidate the test adds AFTER startup: absent from the pre-run cache.
+#: Not a library, so the scan stores a "load-failed" or "not-a-plugin" record
+#: for it - a record that exists only if THIS run took it. The name must match
+#: what the scanner enumerates on the platform (PluginFactory.cpp: "*.dll" on
+#: Windows, "lib*.so" everywhere else), or the run never plans it.
 CANDIDATE_NAME = ("0-q050-090-fresh-candidate.dll" if sys.platform == "win32"
                   else "lib0-q050-090-fresh-candidate.so")
+#: A second non-library in the SAME directory, named so it comes after the
+#: candidate in the scanner's order. The scanner sorts by
+#: QFileInfo::absoluteFilePath() (PluginFactoryBackgroundScan.cpp), and two
+#: files of one directory share that path up to their names, so "0-..." before
+#: "1-..." holds in every path spelling on every platform. It guarantees the run
+#: still has a file to do after the candidate completes, so the cancel always
+#: lands on a RUNNING run wherever the platform's paths put the directory.
+TRAILER_NAME = ("1-q050-090-trailer.dll" if sys.platform == "win32"
+                else "lib1-q050-090-trailer.so")
 #: Paced start used for the whole cancelled run (the engine's maximum): the first
 #: turn - the one that plans the files - comes this long after scan_start, so the
 #: reads right after it see the unplanned run.
 START_PACE_MS = 1000
 #: How long a poll loop waits for the run to move (seconds).
 POLL_BOUND = 30.0
+
+
+def path_key(path, flavour=os.path):
+    """The one spelling two paths are compared in, whoever reported them.
+
+    The scanner reports QFileInfo::absoluteFilePath() (on Windows: "/"
+    separators, an upper-case drive letter, no symlink or 8.3-name resolution);
+    Python builds its paths with the native separator and whatever case and
+    links the binary path came with. Both sides go through this same function:
+    realpath resolves "."/"..", trailing separators and links (and 8.3 short
+    names on Windows), normcase folds case and separators where the file system
+    does (Windows) and is the identity where it does not (POSIX). `flavour` is
+    os.path in the test; check_path_key_contract passes ntpath/posixpath to pin
+    the behaviour on both platforms' spellings from any host.
+    """
+    if not isinstance(path, str) or not path:
+        return ""
+    return flavour.normcase(flavour.realpath(path))
+
+
+def path_keys(paths):
+    """path_key of every non-empty path in `paths`, as a set."""
+    return set(path_key(path) for path in paths if path)
 
 
 class Session:
@@ -146,9 +183,9 @@ def wait_until(session, wanted, problems, what):
     return seen or {}
 
 
-def wait_while(session, predicate, problems, what):
+def wait_while(session, predicate, problems, what, bound=POLL_BOUND):
     """Poll scan_status until `predicate(status)` holds, or record a failure."""
-    deadline = time.time() + POLL_BOUND
+    deadline = time.time() + bound
     seen = None
     while time.time() < deadline:
         seen = session.result("plugin.scan_status")
@@ -163,6 +200,71 @@ def wait_while(session, predicate, problems, what):
 # ---------------------------------------------------------------------------
 # the checks
 # ---------------------------------------------------------------------------
+
+
+#: Pairs one path_key must make EQUAL, per path flavour: (Qt's spelling, Python's).
+SAME_PATH = {
+    ntpath: (
+        # Qt's "/" and upper-case drive against Python's native "\\" and any case.
+        ("C:/Users/runner/build/.zene-scan-plugins-ab12/0-q050-090-fresh-candidate.dll",
+         "c:\\Users\\runner\\build\\.zene-scan-plugins-ab12\\0-q050-090-fresh-candidate.dll"),
+        # os.path.join on Windows mixes the two separators.
+        ("C:/Users/runner/build/.zene-scan-plugins-ab12/0-q050-090-fresh-candidate.dll",
+         "C:/Users/runner/build\\.zene-scan-plugins-ab12\\0-q050-090-fresh-candidate.dll"),
+        # NTFS compares names without case.
+        ("C:/Users/Runner/Build/plugins/AMPLIFIER.dll", "c:\\users\\runner\\build\\plugins\\amplifier.dll"),
+        # "." and ".." segments and a trailing separator.
+        ("C:/Users/runner/build/plugins/", "C:\\Users\\runner\\build\\.\\x\\..\\plugins"),
+    ),
+    posixpath: (
+        ("/srv/build/plugins/", "/srv/build/./x/../plugins"),
+        ("/srv/build/.zene-scan-plugins-ab12/lib0-q050-090-fresh-candidate.so",
+         "/srv/build//.zene-scan-plugins-ab12/lib0-q050-090-fresh-candidate.so"),
+    ),
+}
+#: Pairs one path_key must keep DISTINCT, per path flavour.
+DIFFERENT_PATH = {
+    ntpath: (
+        ("C:/Users/runner/build/plugins/a.dll", "C:/Users/runner/build/plugins/b.dll"),
+        ("C:/Users/runner/build/plugins/a.dll", "D:/Users/runner/build/plugins/a.dll"),
+    ),
+    posixpath: (
+        # POSIX file systems here are case-sensitive: two names, two files.
+        ("/srv/build/plugins/libA.so", "/srv/build/plugins/liba.so"),
+        ("/srv/build/plugins/liba.so", "/srv/build/plugin/liba.so"),
+    ),
+}
+
+
+def check_path_key_contract(problems):
+    """path_key gives one spelling for one file and keeps two files apart, for
+    Windows-style and POSIX inputs alike - checked on whatever host runs the
+    test, so the Windows normalisation is exercised on Linux too."""
+    for flavour, pairs in SAME_PATH.items():
+        for left, right in pairs:
+            problems.require(path_key(left, flavour) == path_key(right, flavour),
+                             "path_key (%s) must equate %r and %r: %r != %r"
+                             % (flavour.__name__, left, right, path_key(left, flavour),
+                                path_key(right, flavour)))
+    for flavour, pairs in DIFFERENT_PATH.items():
+        for left, right in pairs:
+            problems.require(path_key(left, flavour) != path_key(right, flavour),
+                             "path_key (%s) must keep %r and %r apart"
+                             % (flavour.__name__, left, right))
+    # A link to the directory names the same file. Windows needs a privilege to
+    # make one, so this half runs where links are unprivileged; the Windows
+    # resolution itself is os.path.realpath's (8.3 names, junctions).
+    if sys.platform != "win32":
+        root = tempfile.mkdtemp(prefix="zene-path-key-")
+        try:
+            real = os.path.join(root, "real")
+            os.mkdir(real)
+            os.symlink(real, os.path.join(root, "link"))
+            problems.require(path_key(os.path.join(root, "link", "x.so"))
+                             == path_key(os.path.join(real, "x.so")),
+                             "path_key must resolve a symlinked directory")
+        finally:
+            shutil.rmtree(root, ignore_errors=True)
 
 
 def check_never_run(session, problems):
@@ -251,9 +353,14 @@ def check_start_and_busy(session, problems, catalogue_count):
     return started
 
 
-def check_cached_catalogue_during_run(session, problems, names):
+def completed_keys(status):
+    """path_key of every file the run reports completed."""
+    return path_keys(entry.get("path") for entry in status.get("files") or [])
+
+
+def check_cached_catalogue_during_run(session, problems, names, candidate):
     """While the run is on, plugin.list still serves the cached catalogue,
-    and after the first file completes the progress is nonzero."""
+    and once the candidate has completed the progress is nonzero."""
     status = session.result("plugin.scan_status")
     problems.require(status.get("outcome") == "running",
                      "the paced run must still be running here (cancellation cannot be skipped): %r"
@@ -267,15 +374,25 @@ def check_cached_catalogue_during_run(session, problems, names):
                      "plugin.list must keep serving the pre-run catalogue during the run")
     problems.require(status.get("catalogue_count") == len(names),
                      "scan_status catalogue_count must be the served catalogue: %r" % (status,))
-    # The window watched real work: a completed file with progress still
-    # strictly between 0 and 1 while the run is on.
+    # The window watched real work: the candidate completed with progress
+    # still strictly between 0 and 1 while the run is on. What the cancel
+    # proof needs is exactly that - the candidate DONE and the run still
+    # RUNNING - so that is what is waited for and asserted, not a path order.
+    # The private directory sits beside the binary under a dot-name, which
+    # puts the candidate first in practice; if a platform's paths order it
+    # later, the wait may take up to one pace per planned file (pre-load plus
+    # scan turns) before failing, and the trailer behind it keeps the run
+    # running once it is done.
+    pace_seconds = START_PACE_MS / 1000.0
+    bound = POLL_BOUND + 2 * pace_seconds * status.get("total_files", 0)
+    wanted = path_key(candidate)
     status = wait_while(session,
-                        lambda seen: seen.get("done_files", 0) >= 1
+                        lambda seen: wanted in completed_keys(seen)
                         or seen.get("outcome") != "running",
-                        problems, "complete its first file")
-    problems.require(status.get("outcome") == "running" and status.get("done_files", 0) >= 1,
-                     "a file must have completed while the run is still running, before the "
-                     "cancel: %r" % (status,))
+                        problems, "complete the candidate", bound)
+    problems.require(status.get("outcome") == "running" and wanted in completed_keys(status),
+                     "the candidate must have completed while the run is still running, before "
+                     "the cancel: %r" % (status,))
     problems.require(status.get("progress", 0) > 0,
                      "progress must be nonzero after a completed file: %r" % (status,))
     problems.require(device_names(session.result("plugin.list")) == names,
@@ -284,7 +401,7 @@ def check_cached_catalogue_during_run(session, problems, names):
     return status
 
 
-def check_cancel(session, problems, names, pre_cache_paths, pre_cache_count, candidate):
+def check_cancel(session, problems, names, pre_cache_keys, pre_cache_count, candidate):
     """Cancelling stops the run after real work and keeps the cached catalogue
     and the newly scanned records."""
     cancelled = session.result("plugin.scan_cancel")
@@ -295,8 +412,9 @@ def check_cancel(session, problems, names, pre_cache_paths, pre_cache_count, can
                      "after the cancel the run must be inactive: %r" % (status,))
     problems.require(status.get("done_files", 0) >= 1,
                      "the cancel must land after at least one completed file: %r" % (status,))
-    problems.require(status.get("done_files", -1) <= status.get("total_files", -2),
-                     "done_files cannot pass total_files: %r" % (status,))
+    # The trailer was still to do when the cancel landed.
+    problems.require(status.get("done_files", -1) < status.get("total_files", -2),
+                     "the cancel must stop the run before its last file: %r" % (status,))
     problems.require(device_names(session.result("plugin.list")) == names,
                      "after the cancel plugin.list must STILL serve the pre-run catalogue")
     listing = session.result("plugin.scan_cache_list")
@@ -304,34 +422,39 @@ def check_cancel(session, problems, names, pre_cache_paths, pre_cache_count, can
     problems.require(listing.get("count") == len(entries),
                      "the cache must still answer read-back after the cancel: %r" % (listing,))
     paths = [entry.get("path") for entry in entries]
+    # The engine's own order, compared in the engine's own spelling (every
+    # string here came from the scanner), so no normalisation applies.
     problems.require(paths == sorted(paths),
                      "the cache entries must stay in path order: %r" % (paths[:5],))
-    cache_paths = set(paths)
+    # Identity from here on is by path_key on BOTH sides: the candidate is a
+    # Python-built path, the cache and run paths are the scanner's.
+    cache_keys = path_keys(paths)
+    wanted = path_key(candidate)
     # The proof a NEWLY scanned record survives the cancel: the candidate was
-    # not in the pre-run cache, this run completed it, and its exact record is
-    # in scan_cache_list now (a record cached before the run could not show it).
-    problems.require(candidate not in pre_cache_paths,
+    # not in the pre-run cache, this run completed it, and its record is in
+    # scan_cache_list now (a record cached before the run could not show it).
+    problems.require(wanted not in pre_cache_keys,
                      "the candidate must be absent from the pre-run cache: %r" % (candidate,))
-    scanned = [entry for entry in status.get("files") or [] if entry.get("path") == candidate]
+    files = status.get("files") or []
+    scanned = [entry for entry in files if path_key(entry.get("path")) == wanted]
     problems.require(len(scanned) == 1 and scanned[0].get("status") in ("load-failed", "not-a-plugin"),
                      "the run must have completed the new candidate before the cancel: %r"
-                     % (status.get("files"),))
-    problems.require(candidate in cache_paths,
+                     % (files,))
+    problems.require(wanted in cache_keys,
                      "the newly scanned candidate's record must be in scan_cache_list after the "
-                     "cancel: %r" % (paths[:5],))
+                     "cancel: %r not in %r" % (candidate, paths[:5]))
     # Every completed file stored its record live as it was taken (scanned,
     # served, not-a-plugin or load-failed), so the cancelled run's
     # measurements remain in the cache for the next run to serve.
-    files = status.get("files") or []
     problems.require(len(files) >= 1,
                      "the cancelled run must report its completed files: %r" % (status,))
-    missing = [entry.get("path") for entry in files if entry.get("path") not in cache_paths]
+    missing = [entry.get("path") for entry in files if path_key(entry.get("path")) not in cache_keys]
     problems.require(not missing,
                      "every completed file must stay cached after the cancel: missing %r" % (missing[:3],))
     problems.require(listing.get("count", -1) >= pre_cache_count,
                      "the cancel must not lose cache records (%r before, %r after)"
                      % (pre_cache_count, listing.get("count")))
-    problems.require(pre_cache_paths <= cache_paths,
+    problems.require(pre_cache_keys <= cache_keys,
                      "the cancel must keep the pre-run cache records")
     return status
 
@@ -409,10 +532,12 @@ def main(argv):
     # environment, so no other test that scans build/plugins can ever see the
     # candidate file.
     directory = plugin_directory(argv[1])
-    # The run scans files in absolute-path order, so the directory sits beside the
-    # binary under a dot-name ("." sorts before "plugins" and "/"-separated paths
-    # are compared as text): the candidate is then the run's FIRST file. The
-    # system temp directory is the fallback, and the order is asserted below.
+    # The run scans files in the order of the scanner's absolute paths, so the
+    # directory sits beside the binary under a dot-name ("." sorts before
+    # "plugins"): the candidate is then the run's first file in practice. Nothing
+    # asserts that order; the system temp directory is the fallback, where the
+    # wait in check_cached_catalogue_during_run is bounded by the planned count
+    # and the trailer keeps the run going past the candidate.
     try:
         scratch = tempfile.mkdtemp(prefix=".zene-scan-plugins-",
                                    dir=os.path.dirname(os.path.abspath(argv[1])))
@@ -420,7 +545,9 @@ def main(argv):
         scratch = tempfile.mkdtemp(prefix="zene-scan-plugins-")
     extra_env = {"LMMS_PLUGIN_DIR": scratch}
     candidate = os.path.join(os.path.abspath(scratch), CANDIDATE_NAME)
+    trailer = os.path.join(os.path.abspath(scratch), TRAILER_NAME)
     problems = H.Problems()
+    check_path_key_contract(problems)
     transcript = H.Transcript()
     print("instance:  %s" % argv[1])
     print("plugin dir: %s (modules beside the binary: %s)" % (scratch, directory or "none"))
@@ -434,31 +561,31 @@ def main(argv):
             catalogue = check_vendor(session, problems)
             names = device_names(catalogue)
             pre_cache = session.result("plugin.scan_cache_list")
-            pre_cache_paths = set(entry.get("path") for entry in pre_cache.get("entries") or [])
+            pre_cache_keys = path_keys(entry.get("path") for entry in pre_cache.get("entries") or [])
             pre_cache_count = pre_cache.get("count", 0)
-            # The candidate appears AFTER the startup scan filled the cache, so
-            # only a run that really scans it can put its record there.
-            with open(candidate, "wb") as handle:
-                handle.write(b"not a library: q050-090 cancel proof candidate\n")
-            problems.require(all(candidate < path for path in pre_cache_paths if path),
-                             "the candidate must sort before every cached plug-in path so the "
-                             "run scans it first: %r vs %r" % (candidate, sorted(pre_cache_paths)[:2]))
+            # The candidate and the trailer appear AFTER the startup scan filled
+            # the cache, so only a run that really scans one can put its record
+            # there.
+            for name, made in ((candidate, b"candidate"), (trailer, b"trailer")):
+                with open(name, "wb") as handle:
+                    handle.write(b"not a library: q050-090 cancel proof " + made + b"\n")
             check_pace_bounds(session, problems)
             check_start_and_busy(session, problems, catalogue.get("total", len(names)))
-            planned = check_cached_catalogue_during_run(session, problems, names)
+            check_cached_catalogue_during_run(session, problems, names, candidate)
             # The cancel always runs; a run that is not running here already
             # failed the checks above.
-            check_cancel(session, problems, names, pre_cache_paths, pre_cache_count,
+            check_cancel(session, problems, names, pre_cache_keys, pre_cache_count,
                          candidate)
             check_done_run(session, problems, True)
             check_transactions(session, problems)
             check_quit(session, instance, problems)
         finally:
             transcript.dump()
-            try:
-                os.remove(candidate)
-            except OSError:
-                pass
+            for name in (candidate, trailer):
+                try:
+                    os.remove(name)
+                except OSError:
+                    pass
             shutil.rmtree(scratch, ignore_errors=True)
     code = report(problems)
     if code == 0:
