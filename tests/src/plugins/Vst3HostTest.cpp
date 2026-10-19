@@ -162,6 +162,7 @@ private slots:
 	void testMappedControllersKeepTheirFrame();
 	void testParameterChangesAreSlicedPerChunk();
 	void testAFullParameterQueueKeepsTheNewestValue();
+	void testPrepareRejectsInvalidRequests();
 	void testComponentHandlerAnswersInterfaceQueries();
 	void testNonFiniteParameterValuesAreRefused();
 	void testReprepareGateQuiescesAllActiveAudioCalls();
@@ -437,6 +438,19 @@ void Vst3HostTest::testAFullParameterQueueKeepsTheNewestValue()
 	const auto last = pointOf(queue, kMaxPointsPerParameter - 1);
 	QCOMPARE(last.first, Steinberg::int32{(kMaxPointsPerParameter - 1) * 10});
 	QCOMPARE(last.second, (kMaxPointsPerParameter + 2) / 10.0);
+}
+
+void Vst3HostTest::testPrepareRejectsInvalidRequests()
+{
+	QString error;
+	QVERIFY2(!m_plugin.prepare(TestSampleRate, 1'048'577, &error), qPrintable(error));
+	QVERIFY(!m_plugin.isPrepared());
+	QVERIFY(!error.isEmpty());
+
+	QVERIFY(!m_plugin.prepare(std::numeric_limits<double>::quiet_NaN(), TestBlockSize, &error));
+	QVERIFY(!m_plugin.isPrepared());
+	QVERIFY(!m_plugin.prepare(std::numeric_limits<double>::infinity(), TestBlockSize, &error));
+	QVERIFY(!m_plugin.isPrepared());
 }
 
 /*! 0.5.0 W5: a plug-in that queries the handler it was given for its own interfaces gets them.

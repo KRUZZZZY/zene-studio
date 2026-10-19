@@ -29,8 +29,10 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <limits>
 #include <thread>
 
@@ -62,6 +64,14 @@ namespace lmms::vst3
 
 namespace
 {
+
+constexpr int MaxHostedBlockSize = 1'048'576;
+
+auto validPrepareRequest(double sampleRate, int maxBlockSize) -> bool
+{
+	return std::isfinite(sampleRate) && sampleRate > 0.0 && maxBlockSize > 0 &&
+		maxBlockSize <= MaxHostedBlockSize;
+}
 
 void setError(QString* error, const QString& message)
 {
@@ -483,7 +493,10 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	auto& d = *m_impl;
 	release();
 	if (!d.component || !d.processor) { return refuse(error, "no plug-in loaded"); }
-	if (sampleRate <= 0.0 || maxBlockSize <= 0) { return refuse(error, "invalid sample rate or block size"); }
+	if (!validPrepareRequest(sampleRate, maxBlockSize))
+	{
+		return refuse(error, "invalid sample rate or block size");
+	}
 
 	ProcessSetup setup{};
 	setup.processMode = kRealtime;
@@ -505,52 +518,62 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 		return false;
 	}
 
-	// pre-allocate every audio thread structure
-	d.inputBuses.assign(d.layout.inputBusChannels.size(), AudioBusBuffers{});
-	d.inputChannelPtrs.assign(d.layout.inputBusChannels.size(), {});
-	for (std::size_t b = 0; b < d.layout.inputBusChannels.size(); ++b)
-	{
-		d.inputBuses[b].numChannels = d.layout.inputBusChannels[b];
-		d.inputBuses[b].silenceFlags = 0;
-		d.inputChannelPtrs[b].assign(d.inputBuses[b].numChannels, nullptr);
-	}
-	d.outputBuses.assign(d.layout.outputBusChannels.size(), AudioBusBuffers{});
-	d.outputChannelPtrs.assign(d.layout.outputBusChannels.size(), {});
-	for (std::size_t b = 0; b < d.layout.outputBusChannels.size(); ++b)
-	{
-		d.outputBuses[b].numChannels = d.layout.outputBusChannels[b];
-		d.outputBuses[b].silenceFlags = 0;
-		d.outputChannelPtrs[b].assign(d.outputBuses[b].numChannels, nullptr);
-	}
-	d.silence.assign(static_cast<std::size_t>(maxBlockSize), 0.f);
-	d.scratchOutput.assign(static_cast<std::size_t>(maxBlockSize), 0.f);
-	d.inputParamChanges.setMaxParameters(static_cast<int32>(d.params.size()));
-	d.chunkParamChanges.setMaxParameters(static_cast<int32>(d.params.size()));
-	d.lastParamValues.assign(d.params.size(), std::numeric_limits<float>::lowest());
-
-	// MIDI: the event list is already sized (its constructor did it), the
-	// ordering scratch is sized here, and the queue starts empty. All three
-	// are pre-allocated so process() never touches the allocator.
-	// release() above emptied the queue with the producers held off; they stay off
-	// (midiEnabled) until the end of this function.
 	const bool midiEnabled = d.eventInputBusIndex >= 0;
-	d.droppedMidi = 0;
-	d.droppedOutput.store(0, std::memory_order_relaxed);
-	d.midiEvents.assign(static_cast<std::size_t>(kMaxMidiEventsPerBlock), MidiEventIn{});
+	try
+	{
+		// pre-allocate every audio thread structure
+		d.inputBuses.assign(d.layout.inputBusChannels.size(), AudioBusBuffers{});
+		d.inputChannelPtrs.assign(d.layout.inputBusChannels.size(), {});
+		for (std::size_t b = 0; b < d.layout.inputBusChannels.size(); ++b)
+		{
+			d.inputBuses[b].numChannels = d.layout.inputBusChannels[b];
+			d.inputBuses[b].silenceFlags = 0;
+			d.inputChannelPtrs[b].assign(d.inputBuses[b].numChannels, nullptr);
+		}
+		d.outputBuses.assign(d.layout.outputBusChannels.size(), AudioBusBuffers{});
+		d.outputChannelPtrs.assign(d.layout.outputBusChannels.size(), {});
+		for (std::size_t b = 0; b < d.layout.outputBusChannels.size(); ++b)
+		{
+			d.outputBuses[b].numChannels = d.layout.outputBusChannels[b];
+			d.outputBuses[b].silenceFlags = 0;
+			d.outputChannelPtrs[b].assign(d.outputBuses[b].numChannels, nullptr);
+		}
+		d.silence.assign(static_cast<std::size_t>(maxBlockSize), 0.f);
+		d.scratchOutput.assign(static_cast<std::size_t>(maxBlockSize), 0.f);
+		d.inputParamChanges.setMaxParameters(static_cast<int32>(d.params.size()));
+		d.chunkParamChanges.setMaxParameters(static_cast<int32>(d.params.size()));
+		d.lastParamValues.assign(d.params.size(), std::numeric_limits<float>::lowest());
 
-	d.processData = ProcessData{};
-	d.processData.processMode = kRealtime;
-	d.processData.symbolicSampleSize = kSample32;
-	d.processData.inputs = d.inputBuses.empty() ? nullptr : d.inputBuses.data();
-	d.processData.numInputs = static_cast<int32>(d.inputBuses.size());
-	d.processData.outputs = d.outputBuses.empty() ? nullptr : d.outputBuses.data();
-	d.processData.numOutputs = static_cast<int32>(d.outputBuses.size());
-	d.processData.inputParameterChanges = &d.inputParamChanges;
-	d.controllerMap.build(d.controller, d.eventInputBusIndex);
-	// Instruments with an input event bus get one; effects keep nullptr, which
-	// is what every effect has always been given.
-	d.processData.inputEvents = midiEnabled ? &d.inputEvents : nullptr;
-	d.processData.processContext = &d.context;
+		// MIDI: the event list is already sized (its constructor did it), the
+		// ordering scratch is sized here, and the queue starts empty. All three
+		// are pre-allocated so process() never touches the allocator.
+		// release() above emptied the queue with the producers held off; they stay off
+		// (midiEnabled) until the end of this function.
+		d.droppedMidi = 0;
+		d.droppedOutput.store(0, std::memory_order_relaxed);
+		d.midiEvents.assign(static_cast<std::size_t>(kMaxMidiEventsPerBlock), MidiEventIn{});
+
+		d.processData = ProcessData{};
+		d.processData.processMode = kRealtime;
+		d.processData.symbolicSampleSize = kSample32;
+		d.processData.inputs = d.inputBuses.empty() ? nullptr : d.inputBuses.data();
+		d.processData.numInputs = static_cast<int32>(d.inputBuses.size());
+		d.processData.outputs = d.outputBuses.empty() ? nullptr : d.outputBuses.data();
+		d.processData.numOutputs = static_cast<int32>(d.outputBuses.size());
+		d.processData.inputParameterChanges = &d.inputParamChanges;
+		d.controllerMap.build(d.controller, d.eventInputBusIndex);
+		// Instruments with an input event bus get one; effects keep nullptr, which
+		// is what every effect has always been given.
+		d.processData.inputEvents = midiEnabled ? &d.inputEvents : nullptr;
+		d.processData.processContext = &d.context;
+	}
+	catch (const std::exception&)
+	{
+		d.processor->setProcessing(false);
+		d.component->setActive(false);
+		release();
+		return refuse(error, "failed to allocate VST3 host buffers");
+	}
 
 	// Transport state is reported per block through setTransportPlaying() and
 	// setTempo(); until then no state flag is valid.
