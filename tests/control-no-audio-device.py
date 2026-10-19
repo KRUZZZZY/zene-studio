@@ -36,7 +36,7 @@ from control_socket_flows import (  # noqa: E402
     check_audio_fallback, check_ping_shape, check_requires_device_refusal,
 )
 from control_socket_harness import (  # noqa: E402
-    BROKEN_DEVICE, BROKEN_DEVICE_ENV, STARTUP_BOUND, Blocked, Client, Instance, Problems,
+    BROKEN_DEVICE, BROKEN_DEVICE_ENV, DUMMY_DEVICE, STARTUP_BOUND, Blocked, Client, Instance, Problems,
     Timeout, dump, finish,
 )
 
@@ -88,6 +88,59 @@ def check_engine_still_usable(client, problems):
                          "may refuse" % (cmd, reply))
 
 
+def prepare_empty_device_config(client, problems):
+    """Set an invalid prior value and return the setting to restore afterward."""
+    setting = client.call(10, "settings.get", {"key": "audioengine/audiodev"})
+    if setting.get("ok") is not True:
+        problems.add("settings.get audioengine/audiodev answered %r" % setting)
+        return None
+    original = (setting.get("result") or {}).get("value", BROKEN_DEVICE)
+    changed = client.call(11, "settings.set",
+                          {"key": "audioengine/audiodev", "value": ""})
+    if changed.get("ok") is not True:
+        problems.add("settings.set could not create the empty prior value: %r" % changed)
+        return None
+    return original
+
+
+def audio_device_inverse(client):
+    """Return the latest audio.device_set transaction's advertised inverse."""
+    reply = client.call(13, "control.transactions")
+    transactions = (reply.get("result") or {}).get("transactions") or []
+    transaction = next((entry for entry in reversed(transactions)
+                        if entry.get("command") == "audio.device_set"), {})
+    return transaction.get("inverse") or {}
+
+
+def check_audio_device_inverse(client, problems):
+    """An invalid configured value makes audio.device_set use its undo inverse."""
+    original = prepare_empty_device_config(client, problems)
+    if original is None:
+        return
+
+    selected = client.call(12, "audio.device_set", {"device": DUMMY_DEVICE})
+    if selected.get("ok") is not True:
+        problems.add("audio.device_set refused the valid dummy backend: %r" % selected)
+        client.call(15, "settings.set", {"key": "audioengine/audiodev", "value": original})
+        return
+    inverse = audio_device_inverse(client)
+    problems.require(inverse.get("op") == "control.undo",
+                     "an empty previous audio backend must advertise control.undo, got %r"
+                     % inverse)
+    replay = client.call(14, inverse.get("op"), inverse.get("args") or {})
+    problems.require(replay.get("ok") is True,
+                     "replaying audio.device_set's advertised inverse failed: %r" % replay)
+    if replay.get("ok") is True:
+        restored = client.call(15, "settings.get", {"key": "audioengine/audiodev"})
+        problems.require((restored.get("result") or {}).get("value") == "",
+                         "replaying the inverse did not restore the empty config value: %r"
+                         % restored)
+    reset = client.call(16, "settings.set",
+                        {"key": "audioengine/audiodev", "value": original})
+    problems.require(reset.get("ok") is True,
+                     "could not restore the original audio backend setting: %r" % reset)
+
+
 def drive_no_audio_device(inst, problems):
     """The whole client side. Returns the quit reply, or None when never ready."""
     client = Client(inst.socket_path)
@@ -103,7 +156,8 @@ def drive_no_audio_device(inst, problems):
         print("ping report: %r" % (ping or {}).get("result"))
         check_device_dependent_command(client, problems)
         check_engine_still_usable(client, problems)
-        return client.call(9, "control.quit")
+        check_audio_device_inverse(client, problems)
+        return client.call(20, "control.quit")
     finally:
         client.close()
 

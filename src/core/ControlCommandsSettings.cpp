@@ -358,15 +358,17 @@ void registerAudioDeviceSet(ControlRegistry& registry)
 		transaction.insert(QStringLiteral("before"),
 			QJsonObject{{QStringLiteral("device"), previous},
 				{QStringLiteral("present"), present}});
-		// An absent key is reversed by the action checkpoint, which deletes it.
-		// Naming audio.device_set here would name the empty previous value, and
-		// this command REFUSES an empty device name - so the inverse it advertised
-		// could not even be replayed (Luna cluster 4941).
+		// An absent key, or a present key whose value is not a backend this build
+		// accepts, is reversed by the action checkpoint instead: audio.device_set
+		// refuses such a name, so advertising it as the inverse would be unusable.
+		// (Luna cluster 4941 / new-p12-46.)
+		const bool previousDeviceValid = AudioEngine::isAudioDevNameValid(previous);
+		const QJsonObject inverseArgs = previousDeviceValid
+			? QJsonObject{{QStringLiteral("device"), previous}} : QJsonObject();
 		transaction.insert(QStringLiteral("inverse"),
-			present ? QJsonObject{{QStringLiteral("op"), QStringLiteral("audio.device_set")},
-					{QStringLiteral("args"), QJsonObject{{QStringLiteral("device"), previous}}}}
-				: QJsonObject{{QStringLiteral("op"), QStringLiteral("control.undo")},
-					{QStringLiteral("args"), QJsonObject()}});
+			QJsonObject{{QStringLiteral("op"), previousDeviceValid
+				? QStringLiteral("audio.device_set") : QStringLiteral("control.undo")},
+				{QStringLiteral("args"), inverseArgs}});
 		transaction.insert(QStringLiteral("reversible"), true);
 		transaction.insert(QStringLiteral("mechanism"),
 			QStringLiteral("action checkpoint: the recorded undo step writes the previous device "
