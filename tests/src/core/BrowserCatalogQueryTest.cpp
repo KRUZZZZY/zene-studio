@@ -348,6 +348,32 @@ private slots:
 		QVERIFY(result.scanned <= BrowserMaxScanEntries);
 	}
 
+	//! Exhausting the metadata probe budget while another candidate needs a
+	//! probe marks the result partial, even when that candidate would match.
+	void probeLimitReportsTruncation()
+	{
+		const QString directory = QDir(m_dir.path()).filePath(QStringLiteral("probe-limit"));
+		QVERIFY(QDir().mkpath(directory));
+		for (int i = 0; i <= BrowserMaxProbes; ++i)
+		{
+			WaveSpec spec;
+			spec.title = QStringLiteral("needle");
+			const QString name = QStringLiteral("candidate_%1.wav").arg(i, 3, 10, QLatin1Char('0'));
+			QVERIFY(writeWave(QDir(directory).filePath(name), spec));
+		}
+
+		BrowserQuery query;
+		query.path = directory;
+		query.kind = QStringLiteral("audio");
+		query.text = QStringLiteral("needle");
+		query.probe = true;
+		const BrowserQueryResult result = runBrowserQuery(query);
+		QCOMPARE(result.scanned, BrowserMaxProbes + 1);
+		QCOMPARE(result.probed, BrowserMaxProbes);
+		QCOMPARE(result.matched, BrowserMaxProbes);
+		QVERIFY(result.truncated);
+	}
+
 private:
 	QTemporaryDir m_dir;
 	QString m_wave;

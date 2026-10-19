@@ -189,8 +189,14 @@ BrowserItem makeItem(const QString& path, BrowserKind kind)
  */
 void probeAndAppend(BrowserItem* item, bool cheapMatch, QueryContext* context)
 {
-	if (!context->query->probe || context->probed >= BrowserMaxProbes)
+	if (!context->query->probe)
 	{
+		if (cheapMatch) { context->matched.append(*item); }
+		return;
+	}
+	if (context->probed >= BrowserMaxProbes)
+	{
+		context->truncated = true;
 		if (cheapMatch) { context->matched.append(*item); }
 		return;
 	}
