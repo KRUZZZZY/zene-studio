@@ -222,8 +222,12 @@ void HardwareInsert::load(const QDomElement& channelElement, f_cnt_t frames)
 		loaded.ret = destinationAttribute(element, "return", loaded.ret);
 		const float mix = element.attribute(QStringLiteral("mix"), QStringLiteral("1")).toFloat();
 		loaded.mix = std::isfinite(mix) ? std::clamp(mix, 0.f, 1.f) : Settings{}.mix;
-		loaded.latencyOverride = element.attribute(QStringLiteral("latency"), QStringLiteral("-1")).toInt();
-		loaded.measured = element.attribute(QStringLiteral("measured"), QStringLiteral("-1")).toInt();
+		bool latencyOk = false;
+		const int latency = element.attribute(QStringLiteral("latency"), QStringLiteral("-1")).toInt(&latencyOk);
+		if (latencyOk) { loaded.latencyOverride = latency; }
+		bool measuredOk = false;
+		const int measured = element.attribute(QStringLiteral("measured"), QStringLiteral("-1")).toInt(&measuredOk);
+		if (measuredOk) { loaded.measured = measured; }
 	}
 	setSettings(loaded, frames);
 	m_ping.store(static_cast<int>(PingState::Idle), Relaxed);

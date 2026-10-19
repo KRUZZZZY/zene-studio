@@ -360,6 +360,40 @@ private slots:
 		}
 	}
 
+	void malformedInsertLatencyUsesTheMeasuredFigure()
+	{
+		QDomDocument doc;
+		QDomElement channel = doc.createElement(QStringLiteral("channel"));
+		doc.appendChild(channel);
+		QDomElement element = doc.createElement(QStringLiteral("hardwareinsert"));
+		element.setAttribute(QStringLiteral("on"), 1);
+		element.setAttribute(QStringLiteral("latency"), QStringLiteral("abc"));
+		element.setAttribute(QStringLiteral("measured"), 512);
+		channel.appendChild(element);
+
+		HardwareInsert insert;
+		insert.load(channel, 64);
+		QCOMPARE(insert.settings().latencyOverride, -1);
+		QCOMPARE(insert.latencyFrames(), 512);
+	}
+
+	void malformedInsertMeasurementKeepsUnknownSentinel()
+	{
+		QDomDocument doc;
+		QDomElement channel = doc.createElement(QStringLiteral("channel"));
+		doc.appendChild(channel);
+		QDomElement element = doc.createElement(QStringLiteral("hardwareinsert"));
+		element.setAttribute(QStringLiteral("on"), 1);
+		element.setAttribute(QStringLiteral("latency"), -1);
+		element.setAttribute(QStringLiteral("measured"), QStringLiteral("abc"));
+		channel.appendChild(element);
+
+		HardwareInsert insert;
+		insert.load(channel, 64);
+		QCOMPARE(insert.settings().measured, -1);
+		QCOMPARE(insert.latencyFrames(), 0);
+	}
+
 	void disablingAnInsertCancelsAnInProgressPing()
 	{
 		AudioEngine* engine = Engine::audioEngine();
