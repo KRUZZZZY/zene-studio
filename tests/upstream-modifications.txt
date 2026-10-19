@@ -2202,6 +2202,9 @@ src/core/Ladspa2LMMS.cpp	BUG 9 (cluster new-p9-210): transfer effects enter the 
 plugins/HydrogenImport/LocalFileMng.cpp	2026-10-10 (cluster new-p9-232): numeric readers return caller defaults when QLocale conversion fails; boolean reader preserves defaults for unrecognized text
 plugins/Delay/Lfo.cpp	qwen new-p9-247: initialize frequency, phase, increment, sample-rate scale and rate in the constructor so setFrequency() and tick() read defined state.
 tests/src/plugins/PluginPortsMigrationTest.cpp	qwen new-p9-247: add a poisoned-storage LFO regression that verifies setFrequency() then tick() starts with a finite zero sample; include the Delay LFO implementation because it is built only into a MODULE and the configured tree has no standalone Lfo test target.
+plugins/Delay/Lfo.cpp	2026-10-12 cluster new-p10-187: initialise LFO state and route constructor sample-rate setup through the validated setter.
+plugins/Delay/Lfo.h	2026-10-12 cluster new-p10-187: reject non-finite frequencies and non-positive sample rates before changing LFO state.
+tests/src/core/MathTest.cpp	2026-10-12 cluster new-p10-187: deterministic state setup and regression coverage for NaN frequency and zero sample-rate phase poisoning.
 src/gui/instrument/LfoGraph.cpp	qwen new-p9-252: return from toggleAmountModel when no EnvelopeAndLfoParameters model is bound; the visible graph can be clicked before binding or after unbinding, while paintEvent already treats the missing model as valid.
 plugins/Sf2Player/PatchesDialog.cpp	cluster new-p9-344: read the selected preset's soundfont when applying FluidSynth bank offsets; forced CONFIG_FLUID_BANK_OFFSET compile regression.
 plugins/SpectrumAnalyzer/SaSpectrumView.h	new-p9-412 (2026-10-10): initialize the decay accumulator before drawSpectrum reads it on first paint; regression: SaSpectrumView.

@@ -26,7 +26,27 @@
 #include <QProcess>
 #include <QtTest>
 
+#include <cmath>
+#include <limits>
+#include <numbers>
+
 #include "lmms_math.h"
+// Expose only Lfo's state in this translation unit so tests can seed it
+// deterministically against both the fixed and original implementations.
+#define private public
+#include "../../../plugins/Delay/Lfo.h"
+#undef private
+#include "../../../plugins/Delay/Lfo.cpp"
+
+static void initializeLfoStateForTest(lmms::Lfo& lfo)
+{
+	constexpr int sampleRate = 48000;
+	lfo.m_frequency = 1.0;
+	lfo.m_phase = 0.0;
+	lfo.m_twoPiOverSr = 2 * std::numbers::pi_v<float> / sampleRate;
+	lfo.m_increment = lfo.m_frequency * lfo.m_twoPiOverSr;
+	lfo.m_samplerate = sampleRate;
+}
 
 class MathTest : public QObject
 {
@@ -47,6 +67,31 @@ private slots:
 		QCOMPARE(numDigitsAsInt(-1000000000), 11);
 		QCOMPARE(numDigitsAsInt(900000000), 9);
 		QCOMPARE(numDigitsAsInt(-900000000), 10);
+	}
+
+	void NonFiniteLfoFrequencyIsIgnored()
+	{
+		lmms::Lfo lfo(48000);
+		initializeLfoStateForTest(lfo);
+		lfo.setFrequency(std::numeric_limits<double>::quiet_NaN());
+
+		for (int i = 0; i < 4; ++i)
+		{
+			QVERIFY(std::isfinite(lfo.tick()));
+		}
+	}
+
+	void ZeroLfoSampleRateIsIgnored()
+	{
+		lmms::Lfo lfo(48000);
+		initializeLfoStateForTest(lfo);
+		lfo.setSampleRate(0);
+		lfo.setFrequency(0.0);
+
+		for (int i = 0; i < 4; ++i)
+		{
+			QVERIFY(std::isfinite(lfo.tick()));
+		}
 	}
 
 	void FastRandIncReversedUnsignedBoundsTest()
