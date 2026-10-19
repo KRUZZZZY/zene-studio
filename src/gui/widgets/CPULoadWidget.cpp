@@ -107,7 +107,12 @@ void CPULoadWidget::updateCpuLoad()
 	// Additional display smoothing for the main load-value. Stronger averaging
 	// cannot be used directly in the profiler: cpuLoad() must react fast enough
 	// to be useful as overload indicator in AudioEngine::criticalXRuns().
-	const int new_load = (m_currentLoad + profilerLoad()) / 2;
+	// The midpoint rounds toward the new reading, so any nonzero difference moves the
+	// readout: from 0% a steady 1% reaches 1%, and from 1% a reading of 0% comes back.
+	const int target = profilerLoad();
+	const int new_load = target > m_currentLoad
+		? (m_currentLoad + target + 1) / 2
+		: (m_currentLoad + target) / 2;
 
 	if (new_load != m_currentLoad)
 	{
