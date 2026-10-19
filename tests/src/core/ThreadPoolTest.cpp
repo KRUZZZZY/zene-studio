@@ -115,10 +115,60 @@ int runPartialStartupChild()
 #endif
 }
 
+struct RvalueQualifiedCallable
+{
+	auto operator()() && -> int { return 413; }
+	auto operator()() & -> int = delete;
+};
+
+struct LvalueQualifiedCallable
+{
+	auto operator()() & -> int { return 41; }
+	auto operator()() && -> int = delete;
+};
+
 class ThreadPoolTest : public QObject
 {
 	Q_OBJECT
 private slots:
+	void enqueuesMutableCallable()
+	{
+		auto future = lmms::ThreadPool::instance().enqueue([count = 0]() mutable { return ++count; });
+		QCOMPARE(future.get(), 1);
+	}
+
+	void enqueuesMoveOnlyCallable()
+	{
+		auto result = std::make_shared<int>(0);
+		auto future = lmms::ThreadPool::instance().enqueue([owned = std::make_unique<int>(41), result]() mutable {
+			*result = ++*owned;
+		});
+		future.get();
+		QCOMPARE(*result, 42);
+	}
+
+	void enqueuesMoveOnlyArgument()
+	{
+		auto result = std::make_shared<int>(0);
+		auto future = lmms::ThreadPool::instance().enqueue(
+			[result](std::unique_ptr<int> value) { *result = *value; }, std::make_unique<int>(413));
+		future.get();
+		QCOMPARE(*result, 413);
+	}
+
+	void enqueuesRvalueQualifiedCallable()
+	{
+		auto future = lmms::ThreadPool::instance().enqueue(RvalueQualifiedCallable{});
+		QCOMPARE(future.get(), 413);
+	}
+
+	void enqueuesLvalueQualifiedCallable()
+	{
+		LvalueQualifiedCallable callable;
+		auto future = lmms::ThreadPool::instance().enqueue(callable);
+		QCOMPARE(future.get(), 41);
+	}
+
 	void destructionDrainsQueuedTasks()
 	{
 		auto pool = std::make_unique<lmms::ThreadPool>(1);
