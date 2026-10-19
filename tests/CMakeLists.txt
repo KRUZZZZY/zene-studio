@@ -1346,6 +1346,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
 
 	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
+	if(LMMS_TEST_NAME STREQUAL "MasteringTest")
+		# The --report regression drives the real CLI, so it runs the application
+		# binary of THIS build: its path is compiled in (the build tree's layout
+		# is not the test's to guess) and the target is a dependency, so the child
+		# is never a missing or a stale binary.
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			ZENE_APP_BINARY="$<TARGET_FILE:zene>")
+		add_dependencies(${LMMS_TEST_NAME} zene)
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "HydrogenImportTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/HydrogenImport/LocalFileMng.cpp)

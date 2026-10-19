@@ -38,6 +38,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QTemporaryDir>
 
 #include <algorithm>
@@ -154,6 +156,7 @@ private slots:
 		QVERIFY(m_dir.isValid());
 		QString projectPath;
 		QVERIFY2(writeFixture(m_dir.path(), projectPath), "fixture project could not be written");
+		m_projectPath = projectPath;
 		Engine::getSong()->loadProject(projectPath);
 		QVERIFY(!Engine::getSong()->isEmpty());
 		// Three sample tracks, so a non-silent mix is a real mix and not one
@@ -493,6 +496,50 @@ private slots:
 			"a loudness the meter could not measure was reported as a number");
 	}
 
+	//! `--report` belongs to `master`; an ordinary render must refuse it before rendering.
+	void reportOptionIsRejectedOutsideMaster()
+	{
+		// The real CLI is the thing under test: the option is parsed in main(),
+		// and the refusal has to happen on the path a user takes. The binary is
+		// the one this build produced (its path is compiled in), never a guess.
+		QString zenePath;
+#ifdef ZENE_APP_BINARY
+		zenePath = QStringLiteral(ZENE_APP_BINARY);
+#else
+		zenePath = QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(
+			QStringLiteral("../zene"));
+#ifdef Q_OS_WIN
+		zenePath += QStringLiteral(".exe");
+#endif
+#endif
+		QVERIFY2(QFileInfo(zenePath).isExecutable(), qPrintable(zenePath));
+
+		const QString reportPath = m_dir.filePath(QStringLiteral("unexpected-report.json"));
+		const QString renderPath = m_dir.filePath(QStringLiteral("ordinary-render.wav"));
+		QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+		environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+		environment.insert(QStringLiteral("HOME"), m_dir.path());
+		environment.insert(QStringLiteral("XDG_CONFIG_HOME"), m_dir.filePath(QStringLiteral("config")));
+		environment.insert(QStringLiteral("XDG_DATA_HOME"), m_dir.filePath(QStringLiteral("data")));
+
+		QProcess process;
+		process.setProcessEnvironment(environment);
+		process.start(zenePath, {QStringLiteral("--allowroot"), QStringLiteral("render"),
+			m_projectPath, QStringLiteral("--output"), renderPath, QStringLiteral("--report"),
+			reportPath});
+		QVERIFY2(process.waitForStarted(), qPrintable(process.errorString()));
+		QVERIFY2(process.waitForFinished(120000), qPrintable(process.errorString()));
+
+		const QByteArray output = process.readAllStandardOutput() + process.readAllStandardError();
+		QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+		QVERIFY2(process.exitCode() != 0, output.constData());
+		QVERIFY2(output.contains("only valid with master"), output.constData());
+		// Refused BEFORE anything ran: no report was written, and the render the
+		// command asked for did not happen either.
+		QVERIFY(!QFileInfo::exists(reportPath));
+		QVERIFY(!QFileInfo::exists(renderPath));
+	}
+
 	/*! A WAV the run cannot read is REFUSED, never quietly left out. The
 	 *  before-state capture has to hold every .wav the run may overwrite: a file
 	 *  filtered out of the capture is a file whose old bytes are not recorded and
@@ -563,6 +610,7 @@ private:
 	}
 
 	QTemporaryDir m_dir;
+	QString m_projectPath;
 	OutputSettings m_outputSettings{44100, 160, OutputSettings::BitDepth::Depth16Bit,
 		OutputSettings::StereoMode::Stereo};
 	QVector<MasteringCandidateReport> m_candidateReport;

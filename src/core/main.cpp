@@ -1182,6 +1182,27 @@ int main( int argc, char * * argv )
 		}
 	}
 
+	// The --report path belongs to "master": the report is the machine-readable
+	// half of that action's measurements, and no other action writes one. An
+	// ordinary render that accepted the option would store the path and then
+	// ignore it - the render would succeed and the requested report would never
+	// appear, which a caller cannot detect. Refused here, after the complete
+	// option parse (so the order of the arguments does not matter) and before a
+	// project is loaded or anything is rendered.
+	//
+	// The refusal goes to stderr DIRECTLY, not through usageError()'s Qt
+	// message handler: where the toolchain's Qt writes its log to the system
+	// journal rather than to stderr (stderr is not a console there), the
+	// qCritical is swallowed and the operator is left with a non-zero exit and
+	// no word about the option that caused it. The other CLI refusals in this
+	// file (dump:, compress:, master:, the control socket) print the same way.
+	if( !mastering && !masteringReportPath.isEmpty() )
+	{
+		fprintf( stderr, "\n--report is only valid with master.\n\nTry \"%s --help\" for more "
+			"information.\n\n", qApp->arguments()[0].toUtf8().constData() );
+		return EXIT_FAILURE;
+	}
+
 	// Test file argument before continuing
 	if( !fileToLoad.isEmpty() )
 	{
