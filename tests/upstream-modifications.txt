@@ -2614,3 +2614,4 @@ src/gui/clips/AutomationClipView.cpp	new-p10-507-port: requests only samples int
 src/gui/editors/AutomationEditor.cpp	new-p10-507-port: bounds editor path generation to visible ticks and computes off-screen x coordinates safely.
 tests/src/tracks/AutomationTrackTest.cpp	new-p10-507-port: regression caps array allocations for a large automation gap and checks extreme Hermite tick spans.
 tests/CMakeLists.txt	ci-train-5: build VstEffectControlsTest only where the vsteffect target exists (macOS configure break). new-p11-14: registers ControlBounceSupportTest for unsaved default-path isolation
+include/Delay.h	cluster new-p11-81-port (port of new-p11-81): keep one ring cursor per channel in the four delay templates and fold each of them in setMaxDelay, so a stereo frame advances the ring once instead of once per channel; regression DeviceDspTest::stereoDelayPrimitivesAdvanceOneCursorPerChannel.
