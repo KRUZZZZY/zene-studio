@@ -42,6 +42,7 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "MidiClip.h"
+#include "RubberBandStretch.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "Song.h"
@@ -130,19 +131,41 @@ private slots:
 			{QStringLiteral("Complex"), WarpStretchMode::Complex},
 			{QStringLiteral("Pitch-preserving (WSOLA)"), WarpStretchMode::PreservePitch},
 			{QStringLiteral("Re-Pitch"), WarpStretchMode::Resample}};
+		// A build without Rubber Band (the hosted linux-arm64 job) refuses the two
+		// Rubber Band-backed modes with the command's typed refusal: the gesture
+		// then leaves the mode alone and the previous item stays checked.
+		const bool haveRubberBand = RubberBandPool::available();
+		WarpStretchMode current = clip->warpStretchMode();
+		WarpStretchMode lastAccepted = current;
+		WarpStretchMode beforeLastAccepted = current;
 		for (const auto& [text, mode] : gestures)
 		{
 			QMenu again;
 			menu = warpMenu(again, clip);
 			item(menu, text)->trigger();
+			if (warpModeUsesRubberBand(mode) && !haveRubberBand)
+			{
+				QCOMPARE(clip->warpStretchMode(), current);
+				// (A checkable action flips itself on trigger, so the model's
+				// answer is read from a freshly built menu.)
+				QMenu reopened;
+				QMenu* fresh = warpMenu(reopened, clip);
+				QVERIFY2(!item(fresh, text)->isChecked(),
+					qPrintable(QStringLiteral("'%1' is checked without Rubber Band").arg(text)));
+				continue;
+			}
 			QCOMPARE(clip->warpStretchMode(), mode);
 			// The clip's current mode is always the checked item.
 			QVERIFY(item(menu, text)->isChecked());
+			beforeLastAccepted = current;
+			current = mode;
+			lastAccepted = mode;
 		}
+		QCOMPARE(lastAccepted, WarpStretchMode::Resample);
 
 		// One control.undo takes the last switch (to Re-Pitch) back.
 		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), QJsonObject{}).ok);
-		QCOMPARE(clip->warpStretchMode(), WarpStretchMode::PreservePitch);
+		QCOMPARE(clip->warpStretchMode(), beforeLastAccepted);
 	}
 
 	//! A clip that renders linearly has no rate change: the pitch-keeping

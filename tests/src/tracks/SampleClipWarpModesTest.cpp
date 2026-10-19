@@ -37,9 +37,12 @@
  *     pre-onset leakage) than the Texture render;
  *   * a project with different modes on separate clips round-trips through
  *     a real save/load, selections included.
- *  The render slots need the Rubber Band library, like SampleClipRubberBandTest;
- *  the selection slot runs everywhere (the command refuses the four
- *  Rubber Band-backed modes without it).
+ *  Both branches of RubberBandPool::available() assert something real. With
+ *  the library every mode selects and renders and the Rubber Band-specific
+ *  numbers (pre-echo, beats vs texture) are measured; without it (the hosted
+ *  linux-arm64 job) warp.stretch must refuse Beats and Complex with the typed
+ *  `refused` error and leave the mode alone, while the other modes still
+ *  select, render, persist and meet their expectations.
  */
 
 #include <QtTest>
@@ -84,6 +87,13 @@ const std::vector<QString>& specifiedModes()
 	static const std::vector<QString> modes{QStringLiteral("beats"), QStringLiteral("tones"),
 		QStringLiteral("texture"), QStringLiteral("re_pitch"), QStringLiteral("complex")};
 	return modes;
+}
+
+//! Beats and Complex are the Rubber Band-backed modes; a build without the
+//! library refuses them (the typed refusal), so no clip renders them there.
+bool modeAvailable(WarpStretchMode mode)
+{
+	return !warpModeUsesRubberBand(mode) || RubberBandPool::available();
 }
 
 SampleClip* makeToneClip(SampleTrack& track, int rate)
@@ -215,6 +225,7 @@ std::map<QString, std::vector<SampleFrame>> renderEveryMode(SampleTrack& track, 
 	std::map<QString, std::vector<SampleFrame>> rendered;
 	for (const WarpStretchMode mode : modes)
 	{
+		if (!modeAvailable(mode)) { continue; }
 		auto* clip = makeToneClip(track, rate);
 		applyTwoTimesWarp(*clip, rate);
 		clip->setWarpStretchMode(mode);
@@ -294,6 +305,20 @@ private slots:
 		{
 			const ControlResult stretched = run(QStringLiteral("warp.stretch"),
 				{{QStringLiteral("clip"), clip}, {QStringLiteral("mode"), mode}});
+			if (!RubberBandPool::available()
+				&& (mode == QStringLiteral("beats") || mode == QStringLiteral("complex")))
+			{
+				// No Rubber Band in this build: the documented typed refusal, and
+				// the clip keeps the mode it had.
+				QVERIFY2(!stretched.ok, qPrintable(QStringLiteral("%1 accepted without Rubber Band").arg(mode)));
+				QCOMPARE(static_cast<int>(stretched.errorKind), static_cast<int>(ControlErrorKind::Refused));
+				QVERIFY2(stretched.errorMessage.contains(QStringLiteral("no Rubber Band")),
+					qPrintable(stretched.errorMessage));
+				QVERIFY2(run(QStringLiteral("warp.list"), {{QStringLiteral("clip"), clip}})
+					.result.value(QStringLiteral("stretch")).toString() != mode,
+					"a refused mode changed the clip state");
+				continue;
+			}
 			QVERIFY2(stretched.ok, qPrintable(QStringLiteral("%1 refused: %2")
 				.arg(mode, stretched.errorMessage)));
 			QCOMPARE(stretched.result.value(QStringLiteral("stretch")).toString(), mode);
@@ -338,6 +363,12 @@ private slots:
 		{
 			const ControlResult stretched = run(QStringLiteral("warp.stretch"),
 				{{QStringLiteral("clip"), clip}, {QStringLiteral("mode"), name}});
+			if (canonical == QStringLiteral("complex") && !RubberBandPool::available())
+			{
+				QVERIFY2(!stretched.ok, "the legacy 'rubberband' name was accepted without Rubber Band");
+				QCOMPARE(static_cast<int>(stretched.errorKind), static_cast<int>(ControlErrorKind::Refused));
+				continue;
+			}
 			QVERIFY2(stretched.ok, qPrintable(QStringLiteral("%1 refused: %2")
 				.arg(name, stretched.errorMessage)));
 			QCOMPARE(stretched.result.value(QStringLiteral("stretch")).toString(), canonical);
@@ -351,7 +382,7 @@ private slots:
 	{
 		SampleTrack track(Engine::getSong());
 		const auto rendered = renderEveryMode(track, m_rate);
-		QCOMPARE(static_cast<int>(rendered.size()), 6);
+		QCOMPARE(static_cast<int>(rendered.size()), RubberBandPool::available() ? 6 : 4);
 
 		// A 2 s source under a 2x warp spans exactly half the source frames -
 		// in every mode, because the mapping, not the algorithm, sets the span.
@@ -392,8 +423,13 @@ private slots:
 		// (the octave); the five pitch-keeping renders are five different
 		// engines and option sets, so their waveforms differ too - that is the
 		// "hear their distinct behavior" half of the promise, measured.
-		const std::vector<QString> keeping{QStringLiteral("beats"), QStringLiteral("tones"),
-			QStringLiteral("texture"), QStringLiteral("complex"), QStringLiteral("preserve_pitch")};
+		std::vector<QString> keeping{QStringLiteral("tones"), QStringLiteral("texture"),
+			QStringLiteral("preserve_pitch")};
+		if (RubberBandPool::available())
+		{
+			keeping.insert(keeping.begin(), QStringLiteral("beats"));
+			keeping.push_back(QStringLiteral("complex"));
+		}
 		for (std::size_t a = 0; a < keeping.size(); ++a)
 		{
 			for (std::size_t b = a + 1; b < keeping.size(); ++b)
@@ -428,6 +464,7 @@ private slots:
 			WarpStretchMode::PreservePitch };
 		for (const WarpStretchMode mode : modes)
 		{
+			if (!modeAvailable(mode)) { continue; }
 			auto* clip = makeBurstClip(track, m_rate);
 			applyTwoTimesWarp(*clip, m_rate);
 			clip->setWarpStretchMode(mode);
@@ -470,8 +507,16 @@ private slots:
 		}
 
 		// And the crisp single-window render is not the textural one.
-		QVERIFY2(meanDifference(beatsBurstRender, textureBurstRender) > 1e-3,
-			"the beats and texture renders are identical");
+		if (RubberBandPool::available())
+		{
+			QVERIFY2(meanDifference(beatsBurstRender, textureBurstRender) > 1e-3,
+				"the beats and texture renders are identical");
+		}
+		else
+		{
+			QVERIFY2(beatsBurstRender.empty(), "beats rendered in a build without Rubber Band");
+			QVERIFY2(!textureBurstRender.empty(), "texture did not render");
+		}
 	}
 
 	//! ACCEPTANCE 3: a project with different warp modes on separate clips
@@ -492,7 +537,13 @@ private slots:
 		QVERIFY(second != nullptr);
 		auto* beatsClip = makeToneClip(*first, m_rate);
 		applyTwoTimesWarp(*beatsClip, m_rate);
-		beatsClip->setWarpStretchMode(WarpStretchMode::Beats);
+		// Without Rubber Band the command refuses Beats and Complex, so the
+		// separate clips carry the modes that do select there.
+		const WarpStretchMode firstMode = RubberBandPool::available()
+			? WarpStretchMode::Beats : WarpStretchMode::Tones;
+		const WarpStretchMode thirdMode = RubberBandPool::available()
+			? WarpStretchMode::Complex : WarpStretchMode::Resample;
+		beatsClip->setWarpStretchMode(firstMode);
 		auto* textureClip = makeToneClip(*second, m_rate);
 		applyTwoTimesWarp(*textureClip, m_rate);
 		textureClip->setWarpStretchMode(WarpStretchMode::Texture);
@@ -501,7 +552,7 @@ private slots:
 		// mode back through that name.
 		auto* complexClip = makeToneClip(*second, m_rate);
 		applyTwoTimesWarp(*complexClip, m_rate);
-		complexClip->setWarpStretchMode(WarpStretchMode::Complex);
+		complexClip->setWarpStretchMode(thirdMode);
 
 		const QString path = dir.filePath(QStringLiteral("warp-modes.mmp"));
 		QVERIFY2(song->saveProjectFile(path), qPrintable(song->saveRefusal()));
@@ -518,9 +569,9 @@ private slots:
 			}
 		}
 		QCOMPARE(static_cast<int>(loaded.size()), 3);
-		QCOMPARE(static_cast<int>(loaded[0]), static_cast<int>(WarpStretchMode::Beats));
+		QCOMPARE(static_cast<int>(loaded[0]), static_cast<int>(firstMode));
 		QCOMPARE(static_cast<int>(loaded[1]), static_cast<int>(WarpStretchMode::Texture));
-		QCOMPARE(static_cast<int>(loaded[2]), static_cast<int>(WarpStretchMode::Complex));
+		QCOMPARE(static_cast<int>(loaded[2]), static_cast<int>(thirdMode));
 
 		// And the XML says the mode names the file vocabulary carries.
 		QDomDocument document;
@@ -529,8 +580,10 @@ private slots:
 		QVERIFY(document.setContent(&file));
 		file.close();
 		const QString text = document.toString();
-		QVERIFY2(text.contains(QStringLiteral("stretch=\"beats\"")),
-			"the project file does not carry stretch=\"beats\"");
+		const QString firstName = RubberBandPool::available()
+			? QStringLiteral("beats") : QStringLiteral("tones");
+		QVERIFY2(text.contains(QStringLiteral("stretch=\"%1\"").arg(firstName)),
+			qPrintable(QStringLiteral("the project file does not carry stretch=\"%1\"").arg(firstName)));
 		QVERIFY2(text.contains(QStringLiteral("stretch=\"texture\"")),
 			"the project file does not carry stretch=\"texture\"");
 	}
