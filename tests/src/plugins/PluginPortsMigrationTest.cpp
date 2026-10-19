@@ -870,6 +870,7 @@ private slots:
 	void xpressiveRandomVectorRejectsOutOfRangeFloatInputs();
 	void multitapEchoRetunesAllTapsAfterSampleRateChange();
 	void multitapEchoGraphEditsAreDeferredToAudioThread();
+	void multitapEchoStagesCascade();
 	void nesCoarseDetuneRetunesHeldNote();
 	void opulenzUpdatePatchLocksEmulatorForWholeUpdate();
 	void opulenzReloadEmulatorReplacesEmulatorUnderMutex();
@@ -1848,6 +1849,13 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 				   .arg(referenceRender.samples[1], 0, 'g', 9)
 				   .arg(migrated.checksum, referenceRender.checksum)
 				   .arg(worst, 0, 'g', 3);
+
+		if (migrated.name == QLatin1String("multitapecho"))
+		{
+			QVERIFY2(worst > 1e-6f,
+				"the fixed two-stage render must differ from the single-stage old reference");
+			continue;
+		}
 
 		if (migrated.name == QLatin1String("monstro"))
 		{
@@ -2895,6 +2903,52 @@ void PluginPortsMigrationTest::multitapEchoGraphEditsAreDeferredToAudioThread()
 	effect->processAudioBuffer(bus);
 	QCOMPARE(lmms::MultitapEchoEffectTestAccess::amp(*effect, tap), lmms::dbfsToAmp(-6.0f));
 	QVERIFY(std::abs(lmms::MultitapEchoEffectTestAccess::lpFreq(*effect, tap) - 2000.0f) < 0.01f);
+}
+
+void PluginPortsMigrationTest::multitapEchoStagesCascade()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_multitapecho)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	for (const bool swapInputs : {false, true})
+	{
+		std::vector<std::vector<float>> renders;
+		for (const int stages : {1, 4})
+		{
+			auto* fx = static_cast<lmms::Effect*>(entry(nullptr, nullptr));
+			QVERIFY(fx != nullptr);
+			QDomDocument doc;
+			QDomElement root = doc.createElement("effect");
+			root.setAttribute("on", 1);
+			root.setAttribute("wet", QString::number(partc::WetLevel, 'g', 9));
+			root.setAttribute("autoquit", 0);
+			QDomElement controls = fx->controls()->saveState(doc, root);
+			for (const auto& setting : partc::overridesFor("multitapecho"))
+			{
+				controls.setAttribute(QString::fromUtf8(setting.name), QString::fromUtf8(setting.value));
+			}
+			controls.setAttribute(QStringLiteral("stages"), stages);
+			controls.setAttribute(QStringLiteral("swapinputs"), swapInputs ? 1 : 0);
+			fx->loadSettings(root);
+			renders.push_back(partc::renderInFreshThread(*fx,
+				lmms::Engine::audioEngine()->framesPerPeriod()));
+			delete fx;
+		}
+
+		const float worst = partc::maxAbsDiff(renders[0], renders[1]);
+		QVERIFY2(worst > 1e-6f,
+			qPrintable(QString{"four filter stages match one stage (swap inputs=%1, max|delta|=%2)"}
+				.arg(swapInputs ? "true" : "false").arg(worst, 0, 'g', 3)));
+	}
 }
 
 void PluginPortsMigrationTest::nesCoarseDetuneRetunesHeldNote()
