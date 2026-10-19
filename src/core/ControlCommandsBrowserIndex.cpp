@@ -117,14 +117,19 @@ BrowserItem itemOf(const BrowserIndexEntry& entry)
 	item.sizeBytes = entry.sizeBytes;
 	item.modifiedMs = entry.modifiedMs;
 	item.tags = BrowserTagStore::instance().tagsOf(entry.path);
+	// The category comes from the store live, as the tags do: the index is a
+	// cache of the files, and the classification is the library's own state.
+	item.category = BrowserTagStore::instance().categoryOf(entry.path);
 	return item;
 }
 
-//! Whether @a item passes the kind and tag filters @a args sets.
+//! Whether @a item passes the kind, category and tag filters @a args sets.
 bool passes(const BrowserItem& item, const QJsonObject& args)
 {
 	const QString kind = args.value(QStringLiteral("kind")).toString();
 	if (!kind.isEmpty() && browserKindName(item.kind) != kind) { return false; }
+	const QString category = args.value(QStringLiteral("category")).toString();
+	if (!category.isEmpty() && QString::compare(item.category, category, Qt::CaseInsensitive) != 0) { return false; }
 	const QJsonArray tags = args.value(QStringLiteral("tags")).toArray();
 	return std::all_of(tags.begin(), tags.end(), [&item](const QJsonValue& tag) { return item.tags.contains(tag.toString()); });
 }
@@ -233,8 +238,10 @@ void registerBrowserIndexCommands(ControlRegistry& registry)
 		[](const QJsonObject&) { return ControlResult::success(statusJson()); });
 	add(registry, "index_query", QStringLiteral("browser.query over the library index - the whole library, without walking it: "
 		"'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags' (all of them), "
-		"'kind', 'limit' and 'offset'. As fresh as the last browser.reindex."),
+		"'kind', 'category' (the files carrying that one category; empty matches every category), 'limit' and 'offset'. "
+		"As fresh as the last browser.reindex; the tags and the category are as fresh as the store now."),
 		{{QStringLiteral("text"), stringProperty()}, {QStringLiteral("tags"), arrayProperty()}, {QStringLiteral("kind"), stringProperty()},
+			{QStringLiteral("category"), stringProperty()},
 			{QStringLiteral("limit"), integerProperty(1, 500)}, {QStringLiteral("offset"), integerProperty(0, 2147483647)}}, {}, indexQuery);
 	add(registry, "similar", QStringLiteral("The indexed sounds most like the audio file 'path', closest first ('limit', 10 when left "
 		"out): each with its distance (0 = the same numbers) and the features it was compared on. The file itself need not be "

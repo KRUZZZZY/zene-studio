@@ -216,11 +216,14 @@ void considerPath(const QString& path, BrowserKind kind, QueryContext* context)
 {
 	BrowserItem item = makeItem(path, kind);
 	item.tags = BrowserTagStore::instance().tagsOf(path);
+	item.category = BrowserTagStore::instance().categoryOf(path);
 	// `scanned` counts the files the walk EXAMINED, and only the kind filter
 	// precedes that count: this file has been read, so a tag filter that refuses
 	// it does not un-read it.
 	++context->scanned;
 	if (!tagsMatch(item.tags, context->query->tags)) { return; }
+	if (!context->query->category.isEmpty()
+		&& QString::compare(item.category, context->query->category, Qt::CaseInsensitive) != 0) { return; }
 
 	const bool cheapMatch = context->search->matches(item);
 	// Only audio carries the metadata a probe reads, and the probe budget is a

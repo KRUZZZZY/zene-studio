@@ -998,8 +998,17 @@ takes lanes reapplied after their train-3 reverts) adds three `true_inverse` row
 `comp.play_all_takes` and `comp.take_select` - measured off the tree with `tools/dawproject-proof.sh` part 2:
 `rows=837 true_inverse=417 snapshot=42 irreversible=22 not_mutating=356` (`DECLARED rows=837 entries=837 duplicates=0`).
 
+**Q050-170, the browser's category facet (2026-10-19)** adds three rows: `browser.categories`
+(`not_mutating`, the vocabulary read beside `browser.tags`) and the `browser.category.set` /
+`browser.category.clear` pair (both `snapshot`, each recording its inverse as a paired command).
+Measured on this wasm-off build with the part-2 probe: `rows=831 true_inverse=416 snapshot=41
+irreversible=22 not_mutating=352` (`DECLARED rows=831 entries=831 duplicates=0`) - exactly the
+train-5 figure plus these three rows, with the `wasm.load` option applied as above - so the block
+below moves by the same three rows to `rows=840 true_inverse=417 snapshot=44 irreversible=22
+not_mutating=357`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=837 true_inverse=417 snapshot=42 irreversible=22 not_mutating=356
+     measured: rows=840 true_inverse=417 snapshot=44 irreversible=22 not_mutating=357
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

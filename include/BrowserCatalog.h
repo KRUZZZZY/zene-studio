@@ -146,6 +146,11 @@ struct LMMS_EXPORT BrowserItem
 	qint64 modifiedMs = 0;
 	//! The persisted tags of this path (empty when it has none).
 	QStringList tags;
+	//! The persisted category of this path (empty when it has none). One per
+	//! file, unlike the tags: 0.5.0 L11 (WF-007) narrows the library by what a
+	//! file IS classified as, beside the kind and the root, and the tags stay
+	//! free-form.
+	QString category;
 	//! True when `metadata` was actually filled in (a query only probes when it
 	//! was asked to, and only for the candidates that need it).
 	bool hasMetadata = false;
@@ -172,6 +177,9 @@ struct LMMS_EXPORT BrowserQuery
 	QString text;
 	//! Every listed tag must be present on the item (AND, not OR).
 	QStringList tags;
+	//! The category the item must carry (case-insensitive), or empty for any.
+	//! 0.5.0 L11 (WF-007): the category facet beside kind and root.
+	QString category;
 	//! A BrowserKind wire name, or empty for any kind.
 	QString kind;
 	//! A root id ("samples", "factory-presets", ...), or empty for every root.
@@ -212,8 +220,9 @@ LMMS_EXPORT QString browserCanonicalKey(const QString& path);
 //! The store's default file: `<user config dir>/browser-tags.json`.
 LMMS_EXPORT QString browserTagStorePath();
 
-/*! The persisted tag store: path -> tags, in a JSON file in the user's config
- * directory (see the header comment for why not the project file).
+/*! The persisted tag store: path -> tags, and path -> its one category, in a
+ * JSON file in the user's config directory (see the header comment for why not
+ * the project file).
  *
  * Written atomically (QSaveFile: a crash mid-write leaves the previous file
  * intact, not a truncated one) and read back on demand. Every write is a
@@ -257,6 +266,24 @@ public:
 	//! Removes \a tag from \a file. False when the file does not carry it.
 	bool remove(const QString& file, const QString& tag, QString* error = nullptr);
 
+	/*! The category facet (0.5.0 L11, WF-007): ONE category per file, kept in
+	 *  the same store document under a "categories" table beside "tags" - the
+	 *  classification a file IS, where the tags are what the user remembers it
+	 *  by. A store written before this facet has no such table and loads as
+	 *  one with no categories, so an old library reads exactly as it did. */
+	//! The file's category; empty when it has none.
+	QString categoryOf(const QString& file) const;
+	//! Distinct categories across the library, sorted.
+	QStringList allCategories() const;
+	//! How many files carry \a category.
+	int filesWithCategory(const QString& category) const;
+	//! Sets \a file's category. False when the file already carries it (an edit
+	//! that changes nothing is not an edit) or when the store cannot be
+	//! persisted. \a error receives the reason in both cases.
+	bool setCategory(const QString& file, const QString& category, QString* error = nullptr);
+	//! Removes \a file's category. False when the file carries none.
+	bool clearCategory(const QString& file, QString* error = nullptr);
+
 	//! Why the last load()/save() failed; empty when it did not.
 	QString lastError() const;
 	//! Empties the in-memory store. It does NOT touch the file (the tests use it
@@ -267,6 +294,8 @@ private:
 	BrowserTagStore() = default;
 
 	QHash<QString, QStringList> m_tags;
+	//! path -> the file's one category (no entry when it has none).
+	QHash<QString, QString> m_categories;
 	QString m_path;
 	mutable QString m_error;
 };

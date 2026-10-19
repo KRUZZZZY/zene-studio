@@ -117,12 +117,43 @@ ControlResult browserTagsHandler(const QJsonObject&)
 	return ControlResult::success(result);
 }
 
+//! 0.5.0 L11 (WF-007): the category facet's vocabulary - every distinct
+//! category a library file carries, with its file count. What the Search
+//! view's category filter is populated from: a category is listed because a
+//! file in the catalog carries it, and "Any category" is the caller's.
+ControlResult browserCategoriesHandler(const QJsonObject&)
+{
+	BrowserTagStore& store = BrowserTagStore::instance();
+	const bool loaded = store.load();  // as browser.tags: the store is the user's library
+
+	QJsonArray categories;
+	for (const QString& category : store.allCategories())
+	{
+		QJsonObject entry;
+		entry.insert(QStringLiteral("category"), category);
+		entry.insert(QStringLiteral("files"), store.filesWithCategory(category));
+		categories.append(entry);
+	}
+	QJsonObject result;
+	result.insert(QStringLiteral("categories"), categories);
+	result.insert(QStringLiteral("distinct"), categories.size());
+	const QJsonObject summary = storeSummaryJson();
+	for (auto it = summary.begin(); it != summary.end(); ++it) { result.insert(it.key(), it.value()); }
+	result.insert(QStringLiteral("read_ok"), loaded);
+	return ControlResult::success(result);
+}
+
 ControlResult browserQueryHandler(const QJsonObject& args)
 {
 	BrowserQuery query;
 	ControlResult error;
 	if (!readBrowserQueryArguments(args, &query, &error)) { return error; }
 
+	// As browser.index_query: the walk reads the tags and the category out of the
+	// store, so the store is re-read from its file first - a second instance may
+	// have edited it since this one last looked, and a fresh process has an empty
+	// memory until something loads it.
+	BrowserTagStore::instance().load();
 	const BrowserQueryResult found = runBrowserQuery(query);
 	QJsonArray items;
 	for (const BrowserItem& item : found.items) { items.append(browserItemJson(item, query.probe)); }
@@ -219,7 +250,9 @@ void registerBrowserCommands(ControlRegistry& registry)
 		cmd.description = QStringLiteral("Find files in the browser by name, by tag, or - "
 			"with 'probe' - by what the audio file itself says it is (sample rate, channels, "
 			"length, and the embedded title/artist/album/comment/genre tags). Every 'tags' "
-			"entry must be present (AND). Sorted by path, so paging with offset is stable. "
+			"entry must be present (AND). 'category' narrows to the files carrying that one "
+			"category (browser.category.set assigns it; empty matches every category). "
+			"Sorted by path, so paging with offset is stable. "
 			"The walk is bounded by scan_limit entries and the probe by probe_limit files, "
 			"and a result that hit either bound says truncated: true. 'text' is one substring, or an "
 			"expression: words ANDed, OR (or |) between groups, -word to exclude, \"a phrase\", and the "
@@ -229,6 +262,7 @@ void registerBrowserCommands(ControlRegistry& registry)
 			{QStringLiteral("tags"), browserStringListProperty()},
 			{QStringLiteral("kind"), stringProperty()},
 			{QStringLiteral("root"), stringProperty()},
+			{QStringLiteral("category"), stringProperty()},
 			{QStringLiteral("path"), stringProperty()},
 			{QStringLiteral("probe"), booleanProperty()},
 			{QStringLiteral("limit"), integerProperty(1, 500)},
@@ -269,6 +303,27 @@ void registerBrowserCommands(ControlRegistry& registry)
 		}));
 		cmd.mutating = false;
 		cmd.handler = [](const QJsonObject& args) { return browserTagsHandler(args); };
+		registry.registerCommand(cmd);
+	}
+
+	{
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("browser.categories");
+		cmd.group = QStringLiteral("browser");
+		cmd.verb = QStringLiteral("categories");
+		cmd.description = QStringLiteral("The category vocabulary of the library (0.5.0 L11, "
+			"WF-007): every distinct category a file carries, with the number of files "
+			"carrying it, and whether the store could be read. The Search view's category "
+			"filter is populated from this; browser.category.set / browser.category.clear "
+			"edit it. Read-only.");
+		cmd.argsSchema = objectSchema();
+		cmd.resultSchema = objectSchema(withStoreSummary({
+			{QStringLiteral("categories"), arrayProperty()},
+			{QStringLiteral("distinct"), integerProperty(0, MaxDistinctTags)},
+			{QStringLiteral("read_ok"), booleanProperty()},
+		}));
+		cmd.mutating = false;
+		cmd.handler = [](const QJsonObject& args) { return browserCategoriesHandler(args); };
 		registry.registerCommand(cmd);
 	}
 

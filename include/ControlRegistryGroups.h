@@ -95,9 +95,10 @@ LMMS_EXPORT void registerStemModelCommands(ControlRegistry& registry);
 //! include/BrowserPeakCache.h; this group is the ONLY way to reach any of it -
 //! there is no UI for tags, no UI for a query and no UI for the peak cache.
 LMMS_EXPORT void registerBrowserCommands(ControlRegistry& registry);
-//! browser.tag.add / browser.tag.remove - the mutating half, in its own
-//! translation unit (the automation and warp groups' read/edit split). Both
-//! record a snapshot-class transaction whose inverse is the paired command.
+//! browser.tag.add / browser.tag.remove, and (0.5.0 L11, WF-007)
+//! browser.category.set / browser.category.clear - the mutating half, in its
+//! own translation unit (the automation and warp groups' read/edit split). All
+//! four record a snapshot-class transaction whose inverse is a paired command.
 LMMS_EXPORT void registerBrowserTagCommands(ControlRegistry& registry);
 
 /*! The modulation layer (#602): modulator.get_state / create / remove /

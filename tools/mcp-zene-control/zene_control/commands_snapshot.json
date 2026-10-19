@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-15T08:30:27Z",
+  "captured_at": "2026-10-19T07:04:21Z",
   "commands": [
     {
       "args_schema": {
@@ -1878,6 +1878,126 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The category vocabulary of the library (0.5.0 L11, WF-007): every distinct category a file carries, with the number of files carrying it, and whether the store could be read. The Search view's category filter is populated from this; browser.category.set / browser.category.clear edit it. Read-only.",
+      "group": "browser",
+      "id": "browser.categories",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "type": "array"
+          },
+          "distinct": {
+            "maximum": 4096,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "read_ok": {
+            "type": "boolean"
+          },
+          "store_error": {
+            "type": "string"
+          },
+          "store_loaded": {
+            "type": "boolean"
+          },
+          "store_path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Remove a file's category from the browser's library, persisting the store. Not-found when the file carries none: a clearing that clears nothing is a refusal. Reversible: the recorded inverse is browser.category.set with the category the file carried, which control.undo dispatches.",
+      "group": "browser",
+      "id": "browser.category.clear",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "store_path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "category"
+        ],
+        "type": "object"
+      },
+      "description": "Classify a file in the browser's library: 'category' (a label with a tag's bounds) is filed against the file's canonical path in the tag store's categories table, ONE per file - setting it over an existing one replaces it, and the vocabulary browser.categories lists and the Search view's category filter offer grows with it. The write is reported: a category that cannot be persisted is a refusal, not a silent success. Refused when the file already carries it. Reversible: the recorded inverse is browser.category.set with the previous category (browser.category.clear when there was none), which control.undo dispatches.",
+      "group": "browser",
+      "id": "browser.category.set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "store_path": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "name": {
             "type": "string"
@@ -1936,6 +2056,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "category": {
+            "type": "string"
+          },
           "kind": {
             "type": "string"
           },
@@ -1957,7 +2080,7 @@
         ],
         "type": "object"
       },
-      "description": "Save a search as a smart collection: 'name' and browser.query's 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind' and 'root'. A collection of the same name is replaced. Kept beside the browser tags in the config directory, not the project; one undo step.",
+      "description": "Save a search as a smart collection: 'name' and browser.query's 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind', 'root' and 'category'. A collection of the same name is replaced. Kept beside the browser tags in the config directory, not the project; one undo step.",
       "group": "browser",
       "id": "browser.collection_save",
       "mutating": true,
@@ -2024,6 +2147,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "category": {
+            "type": "string"
+          },
           "kind": {
             "type": "string"
           },
@@ -2047,7 +2173,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "browser.query over the library index - the whole library, without walking it: 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags' (all of them), 'kind', 'limit' and 'offset'. As fresh as the last browser.reindex.",
+      "description": "browser.query over the library index - the whole library, without walking it: 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags' (all of them), 'kind', 'category' (the files carrying that one category; empty matches every category), 'limit' and 'offset'. As fresh as the last browser.reindex; the tags and the category are as fresh as the store now.",
       "group": "browser",
       "id": "browser.index_query",
       "mutating": false,
@@ -2244,6 +2370,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "category": {
+            "type": "string"
+          },
           "kind": {
             "type": "string"
           },
@@ -2279,7 +2408,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Find files in the browser by name, by tag, or - with 'probe' - by what the audio file itself says it is (sample rate, channels, length, and the embedded title/artist/album/comment/genre tags). Every 'tags' entry must be present (AND). Sorted by path, so paging with offset is stable. The walk is bounded by scan_limit entries and the probe by probe_limit files, and a result that hit either bound says truncated: true. 'text' is one substring, or an expression: words ANDed, OR (or |) between groups, -word to exclude, \"a phrase\", and the fields name: path: tag: kind: ext: (e.g. kind:audio tag:drums -loop OR \"bass drum\"). Read-only.",
+      "description": "Find files in the browser by name, by tag, or - with 'probe' - by what the audio file itself says it is (sample rate, channels, length, and the embedded title/artist/album/comment/genre tags). Every 'tags' entry must be present (AND). 'category' narrows to the files carrying that one category (browser.category.set assigns it; empty matches every category). Sorted by path, so paging with offset is stable. The walk is bounded by scan_limit entries and the probe by probe_limit files, and a result that hit either bound says truncated: true. 'text' is one substring, or an expression: words ANDed, OR (or |) between groups, -word to exclude, \"a phrase\", and the fields name: path: tag: kind: ext: (e.g. kind:audio tag:drums -loop OR \"bass drum\"). Read-only.",
       "group": "browser",
       "id": "browser.query",
       "mutating": false,
@@ -2291,6 +2420,9 @@
             "items": {
               "additionalProperties": false,
               "properties": {
+                "category": {
+                  "type": "string"
+                },
                 "kind": {
                   "type": "string"
                 },
@@ -35147,17 +35279,23 @@
       }
     }
   ],
-  "count": 828,
+  "count": 831,
   "instance": {
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-170/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/cff463a0-1326-44da-8393-bec3a1847916/scratchpad/train5/commands-release.json"
+    "source_socket": "/tmp/zctl-run-2nft7gis/zene.sock",
+    "version": "0.4.0-alpha.2723+de5a85a"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 828,
-    "ids_sha256": "8e2d5b9a0774e7005e5832777c552b2d4f09efbc56e71322c5fd72e5f3385c6a"
+    "id_count": 831,
+    "ids_sha256": "411bff4c05826cdb91d04c9b1ad6de8cfef6722a4b09b5e0caa9f484c37a1bbc"
   }
 }

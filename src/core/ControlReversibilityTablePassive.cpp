@@ -347,6 +347,10 @@ const ReversibilityRow kPassiveRows[] = {
 		"calls", ""),
 	R("browser.tags", RC::NotMutating, false,
 		"reads the tag store and the vocabulary derived from it", "no write", ""),
+	// 0.5.0 L11 (WF-007): the category facet's vocabulary read, beside the tags.
+	R("browser.categories", RC::NotMutating, false,
+		"reads the tag store's categories table and the vocabulary derived "
+		"from it", "no write", ""),
 	R("browser.peaks", RC::NotMutating, false,
 		"opens the audio file and fills the peak cache: the cache is a "
 		"memory-resident derived view of the file, keyed on its path and last "

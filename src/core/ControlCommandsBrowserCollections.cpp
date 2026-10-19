@@ -22,8 +22,8 @@
  *
  */
 /*! 0.5.0 L11 (WF-006): saved searches - smart collections. A collection is a named browser.query (its
- *  text - an expression, BrowserSearch.h - tags, kind and root), kept in the user's config directory
- *  beside the browser tags (<config>/browser-collections.json): library state, not project state.
+ *  text - an expression, BrowserSearch.h - tags, kind, root and category), kept in the user's config
+ *  directory beside the browser tags (<config>/browser-collections.json): library state, not project state.
  *  Running one answers what matches NOW, so a collection follows the library as files and tags come
  *  and go. Saving and removing are one undo step each (the previous collection list comes back). */
 
@@ -117,7 +117,9 @@ ControlResult save(const QJsonObject& args)
 	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
 	if (name.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a collection needs a 'name'")); }
 	QJsonObject query;
-	for (const char* key : {"text", "tags", "kind", "root"})
+	// 0.5.0 L11 (WF-007): the category facet rides along, so a collection saved
+	// from a category-filtered search runs the same filter later.
+	for (const char* key : {"text", "tags", "kind", "root", "category"})
 	{
 		if (args.contains(QLatin1String(key))) { query.insert(QLatin1String(key), args.value(QLatin1String(key))); }
 	}
@@ -183,11 +185,12 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 void registerBrowserCollectionCommands(ControlRegistry& registry)
 {
 	add(registry, "collection_save", QStringLiteral("Save a search as a smart collection: 'name' and browser.query's 'text' (a "
-		"substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind' and 'root'. A "
-		"collection of the same name is replaced. Kept beside the browser tags in the config directory, not the project; "
-		"one undo step."),
+		"substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind', 'root' and "
+		"'category'. A collection of the same name is replaced. Kept beside the browser tags in the config directory, not the "
+		"project; one undo step."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("text"), stringProperty()},
-			{QStringLiteral("tags"), arrayProperty()}, {QStringLiteral("kind"), stringProperty()}, {QStringLiteral("root"), stringProperty()}},
+			{QStringLiteral("tags"), arrayProperty()}, {QStringLiteral("kind"), stringProperty()},
+			{QStringLiteral("root"), stringProperty()}, {QStringLiteral("category"), stringProperty()}},
 			{QStringLiteral("name")}), save, true);
 	add(registry, "collection_remove", QStringLiteral("Remove a smart collection ('name'). One undo step."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}}, {QStringLiteral("name")}), remove, true);
