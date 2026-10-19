@@ -856,6 +856,7 @@ private slots:
 	void sidShortSegmentsKeepRegisterWritesOrdered();
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
+	void zeroLengthDelayPassesInputThrough();
 	void nesNoiseFrequencyControlsRetuneHeldNotes();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void organicDistortionLeavesPreOffsetFramesUnchanged();
@@ -2279,6 +2280,24 @@ void PluginPortsMigrationTest::monoDelayUpdatesItsDelayAcrossSampleRateChanges()
 	QCOMPARE(delay.m_maxLength, 88200);
 	QCOMPARE(delay.m_length, 22050.f);
 	QCOMPARE(delay.m_writeIndex, 0);
+}
+
+void PluginPortsMigrationTest::zeroLengthDelayPassesInputThrough()
+{
+	lmms::MonoDelay delay{1, 4};
+	delay.setLength(0.0f);
+
+	// Run for one ring's worth of ticks, then check that zero delay returns the
+	// current sample instead of data left in a previously used slot.
+	lmms::sample_t sample = 0.0f;
+	for (int frame = 0; frame < 4; ++frame)
+	{
+		sample = static_cast<lmms::sample_t>(frame + 1);
+		delay.tick(&sample);
+	}
+	sample = 17.0f;
+	delay.tick(&sample);
+	QCOMPARE(sample, 17.0f);
 }
 
 /*!
