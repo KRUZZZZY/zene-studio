@@ -168,7 +168,10 @@ note that asks for it - a **keyswitch** key (a sample library's key, held briefl
   its articulation with it. The keyswitch is a plain MIDI key to the instrument and the MIDI output (no note
   of its own, no play handle); it is let go a period later, or with the note if that ends first. Every layer
   that plays the note gets the same events on its own instrument; an instrument a layer zone leaves out of
-  the note gets none. The path reuses the note's own handle: it adds no allocation, lock or Qt signal on the
+  the note gets none. With the track's **arpeggiator** on, each arpeggio step is its own sounding note and
+  sends the articulation just before its note-on, at the step's offset (the base note sends no note-on of
+  its own); with **chord stacking** the note - or the arpeggio step - sends it once, before the chord's
+  first key, and every stacked voice follows it. The path reuses the note's own handle: it adds no allocation, lock or Qt signal on the
   audio thread (`ArticulationPlaybackTest` counts allocations and reads the events, frame offsets and held
   keys an instrument is handed). Allocation the note's handle itself makes is outside this feature.
 - **Not done:** per-articulation timing (a lead time before the note), and an articulation's own colour or
