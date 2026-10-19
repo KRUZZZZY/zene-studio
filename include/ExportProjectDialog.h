@@ -90,6 +90,7 @@ private:
 	void onSavePresetClicked();
 	//! The stereo mode and bit depth the combos carry, mapped to the preset store's names.
 	QString currentBitDepthName() const;
+	QString currentFormatName() const;
 	QString currentStereoModeName() const;
 
 	QLabel* m_fileFormatLabel = nullptr;

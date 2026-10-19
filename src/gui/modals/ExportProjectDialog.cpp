@@ -375,6 +375,11 @@ QString ExportProjectDialog::currentBitDepthName() const
 		static_cast<OutputSettings::BitDepth>(m_bitDepthComboBox->currentData().toInt())));
 }
 
+QString ExportProjectDialog::currentFormatName() const
+{
+	return ProjectRenderer::getFileExtensionFromFormat(exportFormat()).mid(1);
+}
+
 QString ExportProjectDialog::currentStereoModeName() const
 {
 	return QString::fromLatin1(controlExportPresetStereoModeName(
@@ -406,6 +411,16 @@ void ExportProjectDialog::rebuildPresetList()
 
 void ExportProjectDialog::showPresetSettings(const QJsonObject& settings)
 {
+	// The file format first: it decides which rows the page shows (and, for an export, the
+	// destination's extension). A preset that does not state one ("") leaves the format alone.
+	const QString formatName = settings.value(QStringLiteral("format")).toString();
+	if (!formatName.isEmpty())
+	{
+		const auto format = ProjectRenderer::getFileFormatFromExtension(QLatin1Char('.') + formatName);
+		const int formatIndex = m_fileFormatComboBox->findData(static_cast<int>(format));
+		if (formatIndex >= 0) { m_fileFormatComboBox->setCurrentIndex(formatIndex); }
+	}
+
 	const int rateIndex = m_sampleRateComboBox->findData(settings.value(QStringLiteral("sample_rate")).toInt());
 	if (rateIndex >= 0) { m_sampleRateComboBox->setCurrentIndex(rateIndex); }
 
@@ -421,6 +436,15 @@ void ExportProjectDialog::showPresetSettings(const QJsonObject& settings)
 	{
 		const int modeIndex = m_stereoModeComboBox->findData(static_cast<int>(mode));
 		if (modeIndex >= 0) { m_stereoModeComboBox->setCurrentIndex(modeIndex); }
+	}
+
+	// The channel mode ("" = not stated). "surround" is only on offer when the master is a
+	// surround one, so a preset naming it on a stereo master leaves the combo where it is.
+	OutputSettings::ChannelMode channels = OutputSettings::ChannelMode::Stereo;
+	if (surroundexport::channelModeFromName(settings.value(QStringLiteral("channels")).toString(), &channels))
+	{
+		const int channelsIndex = m_channelModeComboBox->findData(static_cast<int>(channels));
+		if (channelsIndex >= 0) { m_channelModeComboBox->setCurrentIndex(channelsIndex); }
 	}
 }
 
@@ -459,6 +483,9 @@ void ExportProjectDialog::onSavePresetClicked()
 			{QStringLiteral("sample_rate"), m_sampleRateComboBox->currentData().toInt()},
 			{QStringLiteral("bit_depth"), currentBitDepthName()},
 			{QStringLiteral("stereo_mode"), currentStereoModeName()},
+			{QStringLiteral("format"), currentFormatName()},
+			{QStringLiteral("channels"), surroundexport::channelModeName(
+				static_cast<OutputSettings::ChannelMode>(m_channelModeComboBox->currentData().toInt()))},
 			{QStringLiteral("overwrite"), exists}});
 	if (!added.ok)
 	{

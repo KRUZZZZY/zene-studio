@@ -53,6 +53,8 @@
 #include <QStringList>
 #include <QVector>
 
+#include <utility>
+
 #include "ArrangementSections.h"
 #include "ControlCommandDef.h"
 #include "ControlExportPresetSupport.h"
@@ -134,12 +136,21 @@ QString sectionFileStem(const ArrangementSection& section)
 	return stem;
 }
 
-//! The key two file names are compared by: Unicode-normalised and case-folded, so
-//! "Intro" and "intro" (one file on Windows and macOS) count as the same name on
-//! every platform.
+//! The key two file names are compared by: the canonical caseless form, NFD, then case
+//! folding, then NFD again (the Unicode canonical caseless match: folding can produce
+//! characters that decompose again, so one normalisation on either side is not enough).
+//! "Intro" and "intro" (one file on Windows and macOS), and a precomposed "\u015b" and
+//! "\u017f" + combining acute (the same name to APFS), count as the same name on every
+//! platform. Qt's fold is the simple one, so the full folds that change the length are
+//! applied by hand: sharp s and the Latin ligatures.
 QString sectionFileKey(const QString& stem)
 {
-	return stem.normalized(QString::NormalizationForm_C).toCaseFolded();
+	QString key = stem.normalized(QString::NormalizationForm_D).toCaseFolded();
+	static const std::pair<QChar, const char*> fullFolds[] = {
+		{QChar(0x00DF), "ss"}, {QChar(0xFB00), "ff"}, {QChar(0xFB01), "fi"}, {QChar(0xFB02), "fl"},
+		{QChar(0xFB03), "ffi"}, {QChar(0xFB04), "ffl"}, {QChar(0xFB05), "st"}, {QChar(0xFB06), "st"}};
+	for (const auto& [from, to] : fullFolds) { key.replace(from, QLatin1String(to)); }
+	return key.normalized(QString::NormalizationForm_D);
 }
 
 //! One file name per section, made unique so two sections with the same name -
@@ -300,7 +311,14 @@ void registerRenderSections(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("sections");
 	cmd.description = QStringLiteral("Export the song's named sections (section.add/set/list) as "
 		"separate files: one file per section, named after the section, each rendered to exactly "
-		"the section's own start..end ticks (no tail bar). 'out' is an absolute directory the files "
+		"the section's own start..end ticks (no tail bar). The file name is the section's name "
+		"with the characters a filesystem refuses (/ \\ : * ? \" < > |) removed and leading dots "
+		"dropped; trailing dots and spaces become one '_', and a Windows-reserved base name (CON, "
+		"PRN, AUX, NUL, COM1-9, LPT1-9, even with an extension) gets '_' appended to the base "
+		"(CON -> CON_), the same on every platform. Names that are equal after Unicode canonical "
+		"decomposition and case folding (Intro/intro) would be one file on Windows and macOS, so "
+		"the later section gets '-2', then '-3' (intro-2.wav), skipping any name already taken; a "
+		"name empty once cleaned is its id (sec-<n>). 'out' is an absolute directory the files "
 		"are written into; 'sections' picks specific sec-<n> ids (default: every section, in time "
 		"order); 'format' is one of the build's renderable formats (default wav). Each file is "
 		"rendered through render.render, so the export settings in force - the preset applied "

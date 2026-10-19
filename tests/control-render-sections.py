@@ -189,17 +189,26 @@ def check_sections(session, recorder, outdir):
 
 def check_portable_names(session, recorder, outdir):
     """Section file names are the same on EVERY platform: names that differ only
-    by case stay distinct files, Windows-reserved and trailing-dot names become
-    valid ones, and each file keeps its own section's bounds."""
-    quarter = ONE_BAR // 3
+    by case or by Unicode composition stay distinct files, Windows-reserved and
+    trailing-dot names become valid ones, a real "intro-2" is not taken over by
+    a generated "-2", and each file keeps its own section's bounds."""
+    step = ONE_BAR // 6
     base = 2 * ONE_BAR
-    added = [("intro", base, base + quarter), ("CON", base + quarter, base + 2 * quarter),
-             ("Coda. ", base + 2 * quarter, 3 * ONE_BAR)]
-    for name, start, end in added:
-        reply = session.result("section.add", {"start": start, "end": end, "name": name})
+    # (section name, file the export must write), in time order = allocation order.
+    added = [("intro", "intro-2.wav"),            # case-only twin of Intro
+             ("CON", "CON_.wav"),                  # Windows-reserved
+             ("Coda. ", "Coda_.wav"),              # trailing dot and space
+             ("intro-2", "intro-2-2.wav"),         # a real name vs the generated suffix
+             ("\u015b", "\u015b.wav"),              # s with acute, precomposed
+             ("\u017f\u0301", "\u017f\u0301-2.wav")]  # long s + combining acute: canonically the same after a fold
+    ordered = [("Intro", "Intro.wav", 0, ONE_BAR), ("Verse", "Verse.wav", ONE_BAR, 3 * ONE_BAR)]
+    for position, (name, file_name) in enumerate(added):
+        start = base + position * step
+        reply = session.result("section.add", {"start": start, "end": start + step, "name": name})
         recorder.check("section.add accepts %r" % name, "error" not in reply, repr(reply)[:200])
         if "error" in reply:
             return
+        ordered.append((name, file_name, start, start + step))
     directory = os.path.join(outdir, "sections-portable")
     result, seconds = session.timed("render.sections", {"out": directory},
                                     timeout=SECTIONS_TIMEOUT)
@@ -208,34 +217,30 @@ def check_portable_names(session, recorder, outdir):
                    repr(result)[:300])
     if "error" in result:
         return
-    wanted = ["CON_.wav", "Coda_.wav", "Intro.wav", "Verse.wav", "intro-2.wav"]
+    wanted = sorted(file_name for _, file_name, _, _ in ordered)
     names = sorted(os.listdir(directory)) if os.path.isdir(directory) else []
-    recorder.check("case-only names are distinct files, CON and 'Coda. ' are valid names",
+    recorder.check("every section has its own, valid file name",
                    names == wanted, "names=%r want=%r" % (names, wanted))
-    folded = [name.lower() for name in names]
-    recorder.check("no two file names collide on a case-insensitive filesystem",
+    import unicodedata
+    folded = [unicodedata.normalize("NFD", unicodedata.normalize("NFD", name).casefold()) for name in names]
+    recorder.check("no two file names collide on a case-insensitive, normalising filesystem",
                    len(set(folded)) == len(folded), "names=%r" % (names,))
-    reported = {entry.get("name"): entry for entry in result.get("files", [])}
-    spans = {"Intro": ("Intro.wav", 0, ONE_BAR), "Verse": ("Verse.wav", ONE_BAR, 3 * ONE_BAR),
-             "intro": ("intro-2.wav", base, base + quarter),
-             "CON": ("CON_.wav", base + quarter, base + 2 * quarter),
-             "Coda.": ("Coda_.wav", base + 2 * quarter, 3 * ONE_BAR)}
-    recorder.check("the reply lists the five sections",
-                   result.get("count") == 5, repr(result.get("files"))[:400])
-    for key, (file_name, start, end) in spans.items():
-        entry = reported.get(key) or reported.get(key + " ") or {}
-        recorder.check("%s reports its own bounds %d..%d" % (file_name, start, end),
+    files = result.get("files", [])
+    recorder.check("the reply lists every section", result.get("count") == len(ordered),
+                   repr(files)[:400])
+    for entry, (name, file_name, start, end) in zip(files, ordered):
+        recorder.check("%s reports its own bounds %d..%d" % (ascii(file_name), start, end),
                        (entry.get("start_ticks"), entry.get("end_ticks")) == (start, end)
                        and os.path.basename(entry.get("path") or "") == file_name,
                        repr(entry)[:300])
         path = os.path.join(directory, file_name)
         if not os.path.isfile(path):
-            recorder.check("%s exists" % file_name, False, "missing %r" % (path,))
+            recorder.check("%s exists" % ascii(file_name), False, "missing %r" % (path,))
             continue
         want = expected_frames(end - start, PRESET_RATE)
         info = wav_header(path)
         recorder.check("%s is bounded to its %d ticks (%d frames, want %d)"
-                       % (file_name, end - start, info["frames"], want),
+                       % (ascii(file_name), end - start, info["frames"], want),
                        abs(info["frames"] - want) <= FRAME_SLACK,
                        "frames=%r want=%r" % (info["frames"], want))
 
