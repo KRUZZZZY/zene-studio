@@ -35,9 +35,11 @@
 #include <QJsonArray>
 #include <QRegularExpression>
 
+#include <algorithm>
 #include <cmath>
 
 #include "ArticulationMap.h"
+#include "ArticulationRemap.h"
 #include "ControlCommandsNoteShared.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
@@ -165,16 +167,21 @@ InstrumentTrack* instrumentTrack(const QString& id, ControlResult* error)
 	return track;
 }
 
-//! Replace the map of the track @a id names (under its lock, as the audio thread reads it).
-void writeArticulations(const QString& id, const std::vector<Articulation>& entries)
+//! The clips @a clipIds of the track @a id announce their change. Called after applyArticulationEdit
+//! returns: the track is unlocked by then, so a listener that reads the track is handed the committed
+//! map and note indices, never a half-applied edit. The ids are re-resolved so a clip the edit removed
+//! is not touched.
+void announceArticulationEdits(const QString& id, const std::vector<int>& clipIds)
 {
+	if (clipIds.empty()) { return; }
 	ControlResult ignored;
 	InstrumentTrack* track = instrumentTrack(id, &ignored);
 	if (track == nullptr) { return; }
-	track->lock();
-	track->articulations().set(entries);
-	track->unlock();
-	Engine::getSong()->setModified();
+	for (Clip* clip : track->getClips())
+	{
+		if (std::find(clipIds.begin(), clipIds.end(), clip->id()) == clipIds.end()) { continue; }
+		if (auto* midi = dynamic_cast<MidiClip*>(clip)) { emit midi->dataChanged(); }
+	}
 }
 
 ControlResult articulationsSet(const QJsonObject& args)
@@ -189,11 +196,28 @@ ControlResult articulationsSet(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, why.isEmpty() ? QStringLiteral("at most 64 articulations") : why);
 	}
-	const QString id = trackIdOf(track);
+	// 'from' (optional): where each new entry stood in the old map, so the notes follow their articulation.
+	std::vector<ArticulationNoteChange> moved;
 	const std::vector<Articulation> before = track->articulations().entries();
-	writeArticulations(id, entries);
-	addUndoStep([id, before]() { writeArticulations(id, before); }, [id, entries]() { writeArticulations(id, entries); });
-	return ControlResult::success({{QStringLiteral("track"), id}, {QStringLiteral("articulations"), track->articulations().toJson()}});
+	if (args.contains(QStringLiteral("from")))
+	{
+		std::vector<int> from;
+		for (const QJsonValue& origin : args.value(QStringLiteral("from")).toArray()) { from.push_back(origin.toInt(-1)); }
+		if (from.size() != entries.size() || !validateArticulationOrigins(from, static_cast<int>(before.size()), &why))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, why.isEmpty()
+				? QStringLiteral("'from' has one old position (0 for a new entry) per articulation") : why);
+		}
+		moved = planArticulationRemap(*track, from, static_cast<int>(before.size()));
+	}
+	const QString id = trackIdOf(track);
+	// The map and the notes it indexes change in one lock (applyArticulationEdit); the clips announce the
+	// committed edit only after that lock is released.
+	announceArticulationEdits(id, applyArticulationEdit(id, entries, moved, true));
+	addUndoStep([id, before, moved]() { announceArticulationEdits(id, applyArticulationEdit(id, before, moved, false)); },
+		[id, entries, moved]() { announceArticulationEdits(id, applyArticulationEdit(id, entries, moved, true)); });
+	return ControlResult::success({{QStringLiteral("track"), id}, {QStringLiteral("articulations"), track->articulations().toJson()},
+		{QStringLiteral("notes_remapped"), static_cast<int>(moved.size())}});
 }
 
 ControlResult articulations(const QJsonObject& args)
@@ -275,8 +299,11 @@ void registerNotePlaybackCommands(ControlRegistry& registry)
 	add(registry, "track.articulations_set", QStringLiteral("Set an instrument track's articulations (its expression map): a list "
 		"of {name, keyswitch?, program?, controller?, value?} - what is sent, just before a note that asks for the articulation "
 		"(note.edit 'articulation', 1-based), to switch the instrument: a keyswitch key, a program change, a control change. An "
-		"empty list clears the map. One undo step."),
-		{{QStringLiteral("track"), stringProperty()}, {QStringLiteral("articulations"), arrayProperty()}},
+		"empty list clears the map. A note asks for an articulation by its position, so 'from' (optional) gives, per new entry, "
+		"its position in the old map (0 for a new one): the notes then follow their articulation when entries are moved, and "
+		"ask for none when theirs is removed (without it they keep their numbers). The reply's 'notes_remapped' counts the "
+		"notes changed. One undo step - the notes included."),
+		{{QStringLiteral("track"), stringProperty()}, {QStringLiteral("articulations"), arrayProperty()}, {QStringLiteral("from"), arrayProperty()}},
 		{QStringLiteral("track"), QStringLiteral("articulations")}, true, articulationsSet);
 	add(registry, "track.articulations", QStringLiteral("An instrument track's articulations, in order (a note's 'articulation' is "
 		"the 1-based index into this list)."), {{QStringLiteral("track"), stringProperty()}}, {QStringLiteral("track")}, false, articulations);

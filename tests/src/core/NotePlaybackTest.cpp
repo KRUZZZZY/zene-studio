@@ -23,7 +23,7 @@
  */
 /*! 0.5.0 L07 (W3): what a note carries beyond pitch and time, and how notes are played -
  *  - a note's repeats sound as that many more hits, its recurrence skips the passes it is not on,
- *    and its articulation plays the track's keyswitch first (ED-133, ED-121);
+ *    and its articulation sends the track's keyswitch first (ED-133, ED-121);
  *  - chase sounds a note playback starts inside, only when it is on (ED-075);
  *  - the global swing delays off-beats only, and the MIDI offset delays everything (ED-142, ED-076);
  *  - lyrics split into syllables, groups take ids, and all of it saves only when set (ED-088, ED-069). */
@@ -519,7 +519,9 @@ private slots:
 		QCOMPARE(map.size(), 2);  // in order: a note's 'articulation' is the 1-based index into it
 		QCOMPARE(map.at(1).toObject().value(QStringLiteral("keyswitch")).toInt(), 25);
 		QVERIFY(run(QStringLiteral("note.edit"), edit(note, {{QStringLiteral("articulation"), 2}})).ok);
-		QCOMPARE(playFrom(0, 1), (QList<int>{25, 60}));  // one period in: the one-tick keyswitch still sounds
+		// Q050-015: the keyswitch is a MIDI key sent to the instrument ahead of the note, no play handle of its own
+		// (ArticulationPlaybackTest reads what the instrument is handed); the note's handle is the only one.
+		QCOMPARE(playFrom(0, 1), (QList<int>{60}));
 		// Saved with the track, and one undo takes the map away.
 		QDomDocument doc;
 		QDomElement element = doc.createElement(QStringLiteral("track"));

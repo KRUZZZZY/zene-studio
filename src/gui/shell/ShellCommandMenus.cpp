@@ -29,6 +29,7 @@
 #include <QJsonArray>
 #include <QMenu>
 
+#include "ArticulationMapEditor.h"
 #include "ChannelPickDialog.h"
 #include "CommandForm.h"
 #include "AutomationClip.h"
@@ -261,8 +262,12 @@ void populateTrack(QMenu* menu, Track* track)
 		inputTransformMenu(menu, self);
 		acrossMenu(menu->addMenu(tr("Edit All Clips")), {{QStringLiteral("tracks"), QJsonArray{id}}});
 		// L07 (ED-121): the expression map, its current entries filled in.
-		add(menu, "Articulations...", "track.articulations_set", self, true,
-			{{QStringLiteral("articulations"), dynamic_cast<InstrumentTrack*>(track)->articulations().toJson()}});
+		// Q050-015: the map's editor (create, rename, reorder, remove); each edit in it is track.articulations_set.
+		QAction* articulations = menu->addAction(tr("Articulations..."));
+		articulations->setProperty("controlCommand", QStringLiteral("track.articulations_set"));
+		QObject::connect(articulations, &QAction::triggered, menu, [id] {
+			ArticulationMapEditor::open(id, getGUI() != nullptr ? static_cast<QWidget*>(getGUI()->mainWindow()) : nullptr);
+		});
 		InstrumentCommandMenus::populate(menu, id);  // 0.5.0 F2: output buses, MIDI parts, layers, per-voice modulation
 	}
 	automationMenu(menu, id);

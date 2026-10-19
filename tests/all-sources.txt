@@ -91,7 +91,10 @@ include/ArrangerOverlays.h
 include/ArrangerRulerLanes.h
 include/ArrangerZoom.h
 include/ArrayVector.h
+include/ArticulationEvents.h
 include/ArticulationMap.h
+include/ArticulationMapEditor.h
+include/ArticulationRemap.h
 include/AudioAlsa.h
 include/AudioAlsaSetupWidget.h
 include/AudioAlsaWrite.h
@@ -1347,6 +1350,7 @@ src/core/Appearance.cpp
 src/core/ArrangementEdits.cpp
 src/core/ArrangementSections.cpp
 src/core/ArticulationMap.cpp
+src/core/ArticulationRemap.cpp
 src/core/AudioBuffer.cpp
 src/core/AudioBus.cpp
 src/core/AudioBusHandle.cpp
@@ -2310,6 +2314,7 @@ src/gui/modals/FileDialog.cpp
 src/gui/modals/RenameDialog.cpp
 src/gui/modals/SetupDialog.cpp
 src/gui/modals/VersionedSaveDialog.cpp
+src/gui/noteeditor/ArticulationMapEditor.cpp
 src/gui/noteeditor/ControllerLaneView.cpp
 src/gui/noteeditor/ItemListNoteSources.cpp
 src/gui/noteeditor/LaneScale.cpp
@@ -2444,6 +2449,7 @@ tests/src/core/ArrangementModesTest.cpp
 tests/src/core/ArrangingCatchUpTest.cpp
 tests/src/core/ArrangingSpacerReferenceTest.cpp
 tests/src/core/ArrayVectorTest.cpp
+tests/src/core/ArticulationPlaybackTest.cpp
 tests/src/core/AudioAlsaPollDescriptorTest.cpp
 tests/src/core/AudioAlsaWriteTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
@@ -2819,6 +2825,7 @@ tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
 tests/src/gui/AutomationClipDisconnectTest.cpp
+tests/src/gui/ArticulationMapEditorTest.cpp
 tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/BrowserDragUrlTest.cpp

@@ -1182,6 +1182,7 @@ set(LMMS_SRCS
 	core/MarkerActions.cpp
 	core/MixerOptions.cpp
 	core/ArticulationMap.cpp
+	core/ArticulationRemap.cpp
 	core/MidiPlayback.cpp
 	core/NoteConditions.cpp
 	core/ControlCommandsRange.cpp

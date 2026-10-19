@@ -1,0 +1,631 @@
+/*
+ * ArticulationPlaybackTest.cpp - what each articulation sends ahead of its note, and a map that moves with its notes
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public
+ * License as published by the Free Software Foundation; either
+ * version 2 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public
+ * License along with this program (see COPYING); if not, write to the
+ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ *
+ */
+/*! Q050-015: the articulation map's playback and its edits, through the real engine.
+ *
+ *  The subject is tests/src/plugins/MpeTestConsumer.cpp, which logs the note-ons, program changes and control
+ *  changes it is handed, in order (its saveState writes them as 'events'). Playing a note through
+ *  InstrumentTrack::triggerNote -> sendArticulation -> processOutEvent -> Instrument::handleMidiEvent, the log
+ *  must show what the note's articulation is configured to send - a keyswitch key, a program change, a control
+ *  change, each before the note's own key - and a note that asks for none must log only its key.
+ *  The edit half: moving and removing entries with 'from' takes the notes with their articulation, one undo
+ *  restores the map and the notes, and a bad 'from' changes nothing. */
+
+#include <QtTest>
+
+#include <QDomDocument>
+#include <QJsonArray>
+#include <QTemporaryDir>
+
+#include <cstdio>
+#include <initializer_list>
+#include <utility>
+
+#include "AllocationProbe.h"
+#include "ArticulationMap.h"
+#include "AudioDevice.h"
+#include "AudioEngine.h"
+#include "BufferManager.h"
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
+#include "DummyInstrument.h"
+#include "Engine.h"
+#include "Instrument.h"
+#include "InstrumentLayers.h"
+#include "InstrumentTrack.h"
+#include "MidiClip.h"
+#include "MidiPlayback.h"
+#include "Model.h"
+#include "Note.h"
+#include "NoteConditions.h"
+#include "NotePlayHandle.h"
+#include "PluginFactory.h"
+#include "Song.h"
+
+using namespace lmms;
+
+namespace
+{
+
+ControlResult run(const QString& id, const QJsonObject& args = {})
+{
+	return ControlRegistry::instance()->invoke(id, args);
+}
+
+QJsonObject entry(const QString& name, int keyswitch = -1, int program = -1, int controller = -1, int value = 0)
+{
+	QJsonObject out{{QStringLiteral("name"), name}};
+	if (keyswitch >= 0) { out.insert(QStringLiteral("keyswitch"), keyswitch); }
+	if (program >= 0) { out.insert(QStringLiteral("program"), program); }
+	if (controller >= 0) { out.insert(QStringLiteral("controller"), controller); out.insert(QStringLiteral("value"), value); }
+	return out;
+}
+
+constexpr auto testHostCanLoadPluginModules() -> bool
+{
+#ifdef Q_OS_WIN
+	return false;
+#else
+	return true;
+#endif
+}
+
+} // namespace
+
+class ArticulationPlaybackTest : public QObject
+{
+	Q_OBJECT
+
+private:
+	QTemporaryDir m_cacheDir;
+	bool m_engineUp = false;
+	InstrumentTrack* m_track = nullptr;
+	MidiClip* m_clip = nullptr;
+	Instrument* m_consumer = nullptr;
+
+	QString trackId() const { return control::trackIdOf(m_track); }
+
+	//! A fresh project: one instrument track with the logging instrument, one clip, and @a keys as one-bar-spaced notes.
+	void freshTrack(const QList<int>& keys, const QList<int>& articulations)
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		m_track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		m_consumer = m_track->loadInstrument(QStringLiteral("mpe_test_consumer"));
+		QVERIFY2(m_consumer != nullptr && dynamic_cast<DummyInstrument*>(m_consumer) == nullptr, "the logging instrument did not load");
+		m_clip = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		for (int i = 0; i < keys.size(); ++i)
+		{
+			Note* note = m_clip->addNote(Note(TimePos(48), TimePos(i * 96), keys[i]), false);
+			NoteConditions conditions = note->conditions();
+			conditions.articulation = articulations.value(i);
+			note->setConditions(conditions);
+		}
+		clearLog();
+	}
+
+	static void clearLog(Instrument* instrument)
+	{
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("log"));
+		element.setAttribute(QStringLiteral("clearlog"), 1);
+		instrument->restoreState(element);
+	}
+
+	void clearLog() { clearLog(m_consumer); }
+
+	//! What @a instrument was handed: "k60 p3 c32=127", the frame offsets they came at, and the keys still down.
+	struct Heard
+	{
+		QString events;
+		QList<int> offsets;
+		int held = 0;
+	};
+
+	static Heard heard(Instrument* instrument)
+	{
+		QDomDocument doc;
+		QDomElement parent = doc.createElement(QStringLiteral("log"));
+		const QDomElement state = instrument->saveState(doc, parent);
+		Heard out;
+		out.events = state.attribute(QStringLiteral("events"));
+		for (const QString& offset : state.attribute(QStringLiteral("offsets")).split(QLatin1Char(' '), Qt::SkipEmptyParts))
+		{
+			out.offsets << offset.toInt();
+		}
+		out.held = state.attribute(QStringLiteral("held")).toInt();
+		return out;
+	}
+
+	QString log() const { return heard(m_consumer).events; }
+
+	//! Plays the song from the start for @a periods periods; what the instrument was handed, in order.
+	QString play(int periods)
+	{
+		clearLog();
+		Song* song = Engine::getSong();
+		song->setPlayPos(0, Song::PlayMode::Song);
+		MidiPlayback::instance().stopped();
+		song->playSong();
+		for (int period = 0; period < periods; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+		song->stop();
+		return log();
+	}
+
+	//! Renders one period of the song playing from the start, counting the allocations it makes.
+	std::uint64_t renderCounting()
+	{
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		Engine::audioEngine()->renderNextPeriod();
+		lmms::test::tlCountAllocations = false;
+		return lmms::test::tlAllocationCount;
+	}
+
+	//! Plays from the start a period at a time until the instrument hears something; the allocations made in that
+	//! period, and the periods it took (-1: nothing in @a limit periods).
+	std::uint64_t firstSoundingPeriod(int limit, int* periods)
+	{
+		clearLog();
+		Song* song = Engine::getSong();
+		song->setPlayPos(0, Song::PlayMode::Song);
+		MidiPlayback::instance().stopped();
+		song->playSong();
+		*periods = -1;
+		std::uint64_t allocations = 0;
+		for (int period = 0; period < limit && *periods < 0; ++period)
+		{
+			allocations = renderCounting();
+			if (!log().isEmpty()) { *periods = period; }
+		}
+		song->stop();
+		for (int period = 0; period < 64; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+		return allocations;
+	}
+
+	//! Q050-015 r3: the track's arpeggiator and chord stacking, through the track's own settings element (the same
+	//! path a project load takes), then the map every r3 slot plays - one entry that sends all three kinds. The map
+	//! comes second because loading track settings replaces it too.
+	void setFunctionsAndMap(bool arpeggio, bool chord)
+	{
+		QDomDocument doc;
+		QDomElement settings = doc.createElement(QStringLiteral("instrumenttrack"));
+		// Arpeggio chord 0 is "octave" (one pitch: every step plays the note's own key); chord 1 is "Major" (0, 4, 7).
+		const auto child = [&](const char* name, std::initializer_list<std::pair<const char*, int>> attributes) {
+			QDomElement element = doc.createElement(QString::fromLatin1(name));
+			for (const auto& [key, value] : attributes) { element.setAttribute(QString::fromLatin1(key), value); }
+			settings.appendChild(element);
+		};
+		child("arpeggiator", {{"arp-enabled", arpeggio ? 1 : 0}, {"arp", 0}, {"arprange", 1}, {"arprepeats", 1}, {"arptime", 60}, {"arpgate", 50}});
+		child("chordcreator", {{"chord-enabled", chord ? 1 : 0}, {"chord", 1}, {"chordrange", 1}});
+		m_track->loadTrackSpecificSettings(settings);
+		QCOMPARE(m_track->isArpeggioEnabled(), arpeggio);
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), trackId()}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("Everything"), 25, 7, 11, 90)}}}).ok);
+	}
+
+	//! True when @a group is one articulation-led chord: the articulation, the key that carried it, then the three
+	//! stacked voices of a Major chord on 60 in any order (the engine starts handles created in one period in an
+	//! order of its own; what matters is that none of them comes before the articulation).
+	static bool isArticulatedMajorChord(const QStringList& group)
+	{
+		const QStringList lead{QStringLiteral("p7"), QStringLiteral("c11=90"), QStringLiteral("k25"), QStringLiteral("k60")};
+		if (group.size() != 7 || group.mid(0, 4) != lead) { return false; }
+		QStringList voices = group.mid(4);
+		voices.sort();
+		return voices == QStringList{QStringLiteral("k60"), QStringLiteral("k64"), QStringLiteral("k67")};
+	}
+
+	//! @a tokens cut into groups that each start at an articulation ("p7 c11=90 k25"); a token before the first
+	//! articulation lands in a group of its own that does not start with one.
+	static QList<QStringList> articulationGroups(const QStringList& tokens)
+	{
+		QList<QStringList> groups;
+		for (const QString& token : tokens)
+		{
+			if (token == QStringLiteral("p7") || groups.isEmpty()) { groups.append(QStringList{}); }
+			groups.last() << token;
+		}
+		return groups;
+	}
+
+	QList<int> noteArticulations() const
+	{
+		QList<int> out;
+		for (const Note* note : m_clip->notes()) { out << note->conditions().articulation; }
+		return out;
+	}
+
+	QJsonArray names() const
+	{
+		return run(QStringLiteral("track.articulations"), {{QStringLiteral("track"), trackId()}}).result.value(QStringLiteral("articulations")).toArray();
+	}
+
+private slots:
+	void initTestCase()
+	{
+		if (!testHostCanLoadPluginModules())
+		{
+			QSKIP("the logging instrument fixture is a plug-in module a Windows test host cannot load (see MpePlaybackTest)");
+		}
+		QVERIFY2(m_cacheDir.isValid(), "no temporary directory for the plugin scan cache");
+		qputenv("LMMS_PLUGIN_DIR", QByteArrayLiteral(LMMS_MPE_CONSUMER_DIR));
+		qputenv("LMMS_PLUGIN_SCAN_CACHE", QFile::encodeName(m_cacheDir.filePath(QStringLiteral("articulation-scan-cache.json"))));
+		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		BufferManager::init(Engine::audioEngine()->framesPerPeriod());
+		NotePlayHandleManager::init();
+		ControlRegistry::setReady(true);
+		m_engineUp = true;
+		QVERIFY2(PluginFactory::instance()->pluginInfo("mpe_test_consumer").descriptor != nullptr,
+			qPrintable(PluginFactory::instance()->scanReport()));
+	}
+
+	void cleanupTestCase()
+	{
+		if (!m_engineUp) { return; }
+		ControlRegistry::setReady(false);
+		Engine::getSong()->clearProject();
+		Engine::destroy();
+	}
+
+	//! Each articulation kind alone, then all three: what it sends arrives before the note's own key, and a note with
+	//! no articulation sends nothing else.
+	void eachSelectedArticulationSendsItsMidiBeforeTheNote()
+	{
+		freshTrack({60, 62, 64, 65, 67}, {1, 2, 3, 4, 0});
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), trackId()}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("Staccato"), 24), entry(QStringLiteral("Brass"), -1, 41),
+				entry(QStringLiteral("Mute"), -1, -1, 32, 127), entry(QStringLiteral("Everything"), 25, 7, 11, 90)}}}).ok);
+		// Notes are a bar (96 ticks) apart; render far enough for all five.
+		const QString events = play(2000);
+		QCOMPARE(events, QStringLiteral("k24 k60 p41 k62 c32=127 k64 p7 c11=90 k25 k65 k67"));
+	}
+
+	//! The same keyswitch is not sent for a note that asks for another articulation, and an undone map sends nothing.
+	void anUndoneMapSendsNothingMore()
+	{
+		freshTrack({60}, {1});
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), trackId()}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("Legato"), -1, -1, 1, 64)}}}).ok);
+		QCOMPARE(play(2000), QStringLiteral("c1=64 k60"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(play(2000), QStringLiteral("k60"));
+	}
+
+	//! Moving an entry takes the notes with it: the note that asked for "Staccato" still plays the staccato keyswitch.
+	void reorderingKeepsEachNoteOnItsArticulation()
+	{
+		freshTrack({60, 62, 64}, {1, 2, 0});
+		const QString track = trackId();
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("Staccato"), 24), entry(QStringLiteral("Legato"), 25)}}}).ok);
+		QCOMPARE(play(2000), QStringLiteral("k24 k60 k25 k62 k64"));
+		// Swap the two: Legato first.
+		const ControlResult swapped = run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track},
+			{QStringLiteral("articulations"), QJsonArray{entry(QStringLiteral("Legato"), 25), entry(QStringLiteral("Staccato"), 24)}},
+			{QStringLiteral("from"), QJsonArray{2, 1}}});
+		QVERIFY2(swapped.ok, qPrintable(swapped.errorMessage));
+		QCOMPARE(swapped.result.value(QStringLiteral("notes_remapped")).toInt(), 2);
+		QCOMPARE(noteArticulations(), (QList<int>{2, 1, 0}));
+		QCOMPARE(play(2000), QStringLiteral("k24 k60 k25 k62 k64"));  // the sound did not change
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(noteArticulations(), (QList<int>{1, 2, 0}));
+		QCOMPARE(names().at(0).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("Staccato"));
+	}
+
+	//! Removing an entry: its notes ask for none, the later entry's notes move up, one undo brings both back.
+	void removingAnEntryFreesItsNotesAndOneUndoRestoresThem()
+	{
+		freshTrack({60, 62, 64}, {1, 2, 3});
+		const QString track = trackId();
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("A"), 20), entry(QStringLiteral("B"), 21), entry(QStringLiteral("C"), 22)}}}).ok);
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track},
+			{QStringLiteral("articulations"), QJsonArray{entry(QStringLiteral("A"), 20), entry(QStringLiteral("C"), 22)}},
+			{QStringLiteral("from"), QJsonArray{1, 3}}}).ok);
+		QCOMPARE(noteArticulations(), (QList<int>{1, 0, 2}));
+		QCOMPARE(play(2000), QStringLiteral("k20 k60 k62 k22 k64"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(noteArticulations(), (QList<int>{1, 2, 3}));
+		QCOMPARE(names().size(), 3);
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(noteArticulations(), (QList<int>{1, 0, 2}));
+		QCOMPARE(names().size(), 2);
+	}
+
+	//! A 'from' that does not describe the new list is refused and changes neither the map nor a note.
+	void aBadOriginsListChangesNothing()
+	{
+		freshTrack({60}, {1});
+		const QString track = trackId();
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("A"), 20), entry(QStringLiteral("B"), 21)}}}).ok);
+		const QJsonArray before = names();
+		const QJsonObject two{{QStringLiteral("track"), track}, {QStringLiteral("articulations"), QJsonArray{entry(QStringLiteral("B")), entry(QStringLiteral("A"))}}};
+		for (const QJsonArray& from : {QJsonArray{2}, QJsonArray{1, 1}, QJsonArray{3, 1}, QJsonArray{-1, 1}})
+		{
+			QJsonObject args = two;
+			args.insert(QStringLiteral("from"), from);
+			QCOMPARE(run(QStringLiteral("track.articulations_set"), args).errorKind, ControlErrorKind::InvalidArgs);
+		}
+		QCOMPARE(names(), before);
+		QCOMPARE(noteArticulations(), (QList<int>{1}));
+	}
+
+	//! A note that starts in the middle of a period: its program change, control change and keyswitch come at the very
+	//! frame offset the note does, and before it.
+	void anArticulationComesAtTheFrameOffsetOfItsNote()
+	{
+		freshTrack({60, 62}, {0, 1});
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), trackId()}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("Everything"), 25, 7, 11, 90)}}}).ok);
+		clearLog();
+		const Heard sounded = [this] { play(2000); return heard(m_consumer); }();
+		QCOMPARE(sounded.events, QStringLiteral("k60 p7 c11=90 k25 k62"));
+		QCOMPARE(sounded.offsets.size(), 5);
+		QVERIFY2(sounded.offsets[4] > 0, "the second note should start inside a period, not on its first frame");
+		for (int i = 1; i <= 3; ++i) { QCOMPARE(sounded.offsets[i], sounded.offsets[4]); }
+		QCOMPARE(sounded.held, 0);  // the keyswitch was let go again
+	}
+
+	//! With the track's delay the note starts several periods late. Its articulation does not go out early with the
+	//! song position: it arrives with the note, in the period the note starts in, and not before.
+	void aDelayedNoteBringsItsArticulationWithIt()
+	{
+		freshTrack({60}, {1});
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), trackId()}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("Everything"), 25, 7, 11, 90)}}}).ok);
+		const int delayMs = 80;
+		m_track->setDelayMs(delayMs);
+		const int period = Engine::audioEngine()->framesPerPeriod();
+		const int delayPeriods = delayMs * static_cast<int>(Engine::audioEngine()->outputSampleRate()) / 1000 / period;
+		QVERIFY(delayPeriods >= 4);
+		int first = -1;
+		firstSoundingPeriod(400, &first);
+		QVERIFY2(first >= delayPeriods - 1, qPrintable(QStringLiteral("something sounded in period %1, before the note's delay of ~%2").arg(first).arg(delayPeriods)));
+		const Heard sounded = heard(m_consumer);
+		// Rendered again to the end of the note, the instrument heard all of it in one go: the first period had the lot.
+		QCOMPARE(sounded.events, QStringLiteral("p7 c11=90 k25 k60"));
+		QCOMPARE(sounded.offsets.size(), 4);
+		for (int i = 0; i < 3; ++i) { QCOMPARE(sounded.offsets[i], sounded.offsets[3]); }
+		m_track->setDelayMs(0);
+	}
+
+	//! A layer plays the note on its own instrument, and the articulation goes to it too.
+	void everyLayerThatPlaysTheNoteGetsItsArticulation()
+	{
+		freshTrack({60, 80}, {1, 1});
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), trackId()}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("Brass"), 24, 5, 11, 90)}}}).ok);
+		const int one = m_track->layers().addLayer(QStringLiteral("mpe_test_consumer"), nullptr);
+		const int two = m_track->layers().addLayer(QStringLiteral("mpe_test_consumer"), nullptr);
+		QVERIFY2(one > 0 && two > 0, "the layers did not load");
+		Instrument* first = m_track->layers().layer(one)->instrument();
+		Instrument* second = m_track->layers().layer(two)->instrument();
+		const auto playAll = [&] {
+			clearLog(m_consumer);
+			clearLog(first);
+			clearLog(second);
+			play(2000);
+		};
+		playAll();
+		const QString group = QStringLiteral("p5 c11=90 k24 k60 p5 c11=90 k24 k80");
+		QCOMPARE(heard(m_consumer).events, group);
+		QCOMPARE(heard(first).events, group);
+		QCOMPARE(heard(second).events, group);
+		QCOMPARE(heard(first).held, 0);
+		// The track's own instrument leaves the upper keys to the layers: it hears nothing of the note it does not play.
+		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), trackId()},
+			{QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 0}, {QStringLiteral("high_key"), 70}}).ok);
+		playAll();
+		QCOMPARE(heard(m_consumer).events, QStringLiteral("p5 c11=90 k24 k60"));
+		QCOMPARE(heard(first).events, group);
+		QCOMPARE(heard(second).events, group);
+	}
+
+	//! The articulation's own path allocates nothing, and a note that has one costs the audio thread no allocation
+	//! over the same note without it.
+	void anArticulationAddsNoAllocationOnTheAudioThread()
+	{
+		freshTrack({60}, {0});
+		const ArticulationEvents all{25, 7, 11, 90};
+		const TimePos time;
+		// The direct call: program, controller and keyswitch events, then the key let go.
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		const bool down = m_track->sendArticulationEvents(all, 0, 60, 100, time, 0);
+		m_track->releaseKeyswitch(25, 0, time, 0);
+		lmms::test::tlCountAllocations = false;
+		QVERIFY(down);
+		QCOMPARE(static_cast<qulonglong>(lmms::test::tlAllocationCount), 0ull);
+		QCOMPARE(log(), QStringLiteral("p7 c11=90 k25"));
+		// The whole period the note starts in, with and without its articulation.
+		int periods = -1;
+		const std::uint64_t plain = firstSoundingPeriod(400, &periods);
+		QVERIFY(periods >= 0);
+		QVERIFY2(plain > 0, "the probe counted nothing in a period that starts a note: it is not counting");
+		freshTrack({60}, {1});
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), trackId()}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("Everything"), 25, 7, 11, 90)}}}).ok);
+		const std::uint64_t withArticulation = firstSoundingPeriod(400, &periods);
+		QVERIFY(periods >= 0);
+		QCOMPARE(log(), QStringLiteral("p7 c11=90 k25 k60"));
+		QVERIFY2(withArticulation <= plain, qPrintable(QStringLiteral("the period allocated %1 times with the articulation, %2 without")
+			.arg(withArticulation).arg(plain)));
+	}
+
+	//! The edit transition is published as one unit: at every moment the project announces a change
+	//! during the reorder, each note still resolves to the articulation it named. While the map was
+	//! written under one lock and the notes remapped under a second, the announcement that fell between
+	//! them showed the new map with the old note indices, so a note switched to another entry.
+	void theEditNeverAnnouncesANewMapWithOldNoteIndices()
+	{
+		freshTrack({60, 62, 64}, {1, 2, 0});
+		const QString track = trackId();
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("Staccato"), 24), entry(QStringLiteral("Legato"), 25)}}}).ok);
+		const QStringList expected{QStringLiteral("Staccato"), QStringLiteral("Legato"), QString()};
+		QList<QStringList> announced;
+		const auto observe = [this, &announced] {
+			QStringList names;
+			const std::vector<Articulation>& map = m_track->articulations().entries();
+			for (const Note* note : m_clip->notes())
+			{
+				const int index = note->conditions().articulation;
+				names << (index > 0 && index <= static_cast<int>(map.size()) ? map[static_cast<std::size_t>(index) - 1].name : QString());
+			}
+			announced << names;
+		};
+		const QMetaObject::Connection connection = connect(Engine::getSong(), &Song::modified, this, observe);
+		// A clean project: the edit's own announcement is then the one the observer sees.
+		Engine::getSong()->noteProjectSaved(QString());
+		announced.clear();
+		const ControlResult swapped = run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track},
+			{QStringLiteral("articulations"), QJsonArray{entry(QStringLiteral("Legato"), 25), entry(QStringLiteral("Staccato"), 24)}},
+			{QStringLiteral("from"), QJsonArray{2, 1}}});
+		disconnect(connection);
+		QVERIFY2(swapped.ok, qPrintable(swapped.errorMessage));
+		QVERIFY2(!announced.isEmpty(), "the edit announced no project change for the observer to see");
+		for (const QStringList& names : announced) { QCOMPARE(names, expected); }
+	}
+
+	//! The remap announces its clips with the track unlocked, so a listener that reads the track (the
+	//! editor, the arranger, a dependent command) is handed the committed map and notes, never a
+	//! half-applied edit.
+	void theRemapAnnouncesItsClipsWithTheTrackUnlocked()
+	{
+		freshTrack({60, 62}, {1, 2});
+		const QString track = trackId();
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("A"), 20), entry(QStringLiteral("B"), 21)}}}).ok);
+		bool announced = false;
+		bool unlocked = false;
+		const QMetaObject::Connection connection = connect(m_clip, &Model::dataChanged, this, [this, &announced, &unlocked] {
+			announced = true;
+			unlocked = m_track->tryLock();
+			if (unlocked) { m_track->unlock(); }
+		});
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), track},
+			{QStringLiteral("articulations"), QJsonArray{entry(QStringLiteral("B"), 21), entry(QStringLiteral("A"), 20)}},
+			{QStringLiteral("from"), QJsonArray{2, 1}}}).ok);
+		disconnect(connection);
+		QVERIFY2(announced, "the remap announced nothing");
+		QVERIFY2(unlocked, "the clip was announced while its track was still locked");
+	}
+
+	//! Q050-015 r3: with the arpeggiator on, the played note sounds only through its arpeggio steps (the base note
+	//! sends no note-on of its own). Every step is preceded by the note's whole articulation - program, controller,
+	//! keyswitch - at the step's own frame offset, and the keyswitch is let go again. Before r3 the steps carried
+	//! none of it and the instrument heard only "k60 k60 ...".
+	void everyArpeggioStepIsPrecededByItsArticulation()
+	{
+		freshTrack({60}, {1});
+		setFunctionsAndMap(true, false);
+		const Heard sounded = [this] { play(2000); return heard(m_consumer); }();
+		std::fprintf(stdout, "ARTICULATION_EVIDENCE arpeggio: %s\n", qPrintable(sounded.events));
+		std::fflush(stdout);
+		const QStringList tokens = sounded.events.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+		const int steps = static_cast<int>(tokens.count(QStringLiteral("k60")));
+		QVERIFY2(steps >= 2, qPrintable(QStringLiteral("the arpeggio played %1 step(s): %2").arg(steps).arg(sounded.events)));
+		QStringList expected;
+		for (int step = 0; step < steps; ++step) { expected << QStringLiteral("p7") << QStringLiteral("c11=90") << QStringLiteral("k25") << QStringLiteral("k60"); }
+		QCOMPARE(tokens, expected);
+		QCOMPARE(sounded.offsets.size(), tokens.size());
+		// Each step's articulation comes at the step's own offset, not the base note's.
+		for (int i = 0; i < tokens.size(); ++i) { QCOMPARE(sounded.offsets[i], sounded.offsets[i - i % 4 + 3]); }
+		QCOMPARE(sounded.held, 0);
+	}
+
+	//! Q050-015 r3: arpeggiator and chord stacking together - each arpeggio step is itself stacked into a chord. Each
+	//! step's group is the articulation, then the step's key, then the stacked voices (in any order): nothing of the chord sounds
+	//! before the articulation that prepares it, and each step sends it once, not once per voice.
+	void everyStackedArpeggioStepFollowsItsArticulation()
+	{
+		freshTrack({60}, {1});
+		setFunctionsAndMap(true, true);
+		const Heard sounded = [this] { play(2000); return heard(m_consumer); }();
+		std::fprintf(stdout, "ARTICULATION_EVIDENCE stacked arpeggio: %s\n", qPrintable(sounded.events));
+		std::fflush(stdout);
+		const QList<QStringList> groups = articulationGroups(sounded.events.split(QLatin1Char(' '), Qt::SkipEmptyParts));
+		QVERIFY2(groups.size() >= 2, qPrintable(QStringLiteral("too few stacked steps: %1").arg(sounded.events)));
+		for (const QStringList& heardGroup : groups)
+		{
+			QVERIFY2(isArticulatedMajorChord(heardGroup), qPrintable(QStringLiteral("a step was heard as '%1' in '%2'")
+				.arg(heardGroup.join(QLatin1Char(' ')), sounded.events)));
+		}
+		QCOMPARE(sounded.held, 0);
+	}
+
+	//! Chord stacking alone: the played note sends the articulation ahead of its own note-on, and the stacked voices
+	//! it creates while it plays follow - one articulation for the chord, before every one of its keys.
+	void aStackedChordFollowsItsArticulation()
+	{
+		freshTrack({60}, {1});
+		setFunctionsAndMap(false, true);
+		const Heard sounded = [this] { play(2000); return heard(m_consumer); }();
+		const QList<QStringList> groups = articulationGroups(sounded.events.split(QLatin1Char(' '), Qt::SkipEmptyParts));
+		QCOMPARE(groups.size(), 1);  // one articulation for the whole chord, before any of its keys
+		QVERIFY2(isArticulatedMajorChord(groups.front()), qPrintable(sounded.events));
+		QCOMPARE(sounded.held, 0);
+	}
+
+	//! Through the real project file: author the map and a note's choice on the surface, project.save, clear the
+	//! session, project.open - the map (order, every number) and the note's articulation come back, and play.
+	void theMapSavesAndLoadsInOrderThroughTheProjectFile()
+	{
+		freshTrack({60}, {2});
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), trackId()}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("One"), 20), entry(QStringLiteral("Two"), 31, 5, 9, 33), entry(QStringLiteral("Three"))}}}).ok);
+		const QJsonArray saved = names();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString project = dir.filePath(QStringLiteral("articulations.mmp"));
+		const ControlResult wrote = run(QStringLiteral("project.save"), {{QStringLiteral("path"), project}});
+		QVERIFY2(wrote.ok, qPrintable(wrote.errorMessage));
+		QFile file(project);
+		QVERIFY(file.open(QIODevice::ReadOnly));
+		QVERIFY2(file.readAll().contains("articulations="), "the saved project carries no articulations attribute");
+		Engine::getSong()->clearProject();
+		QCOMPARE(Engine::getSong()->tracks().size(), 0);
+		Engine::getSong()->setLoadOnLaunch(false);
+		const ControlResult opened = run(QStringLiteral("project.open"), {{QStringLiteral("path"), project}});
+		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+		m_track = nullptr;
+		for (Track* track : Engine::getSong()->tracks())
+		{
+			if (auto* instrument = dynamic_cast<InstrumentTrack*>(track)) { m_track = instrument; }
+		}
+		QVERIFY2(m_track != nullptr, "the reopened project has no instrument track");
+		QCOMPARE(names(), saved);
+		QCOMPARE(m_track->articulations().indexOf(QStringLiteral("Three")), 3);
+		m_clip = dynamic_cast<MidiClip*>(m_track->getClips().front());
+		QCOMPARE(noteArticulations(), (QList<int>{2}));
+		// And it plays what it was saved with.
+		m_consumer = m_track->instrument();
+		QCOMPARE(play(2000), QStringLiteral("p5 c9=33 k31 k60"));
+	}
+};
+
+QTEST_GUILESS_MAIN(ArticulationPlaybackTest)
+#include "ArticulationPlaybackTest.moc"

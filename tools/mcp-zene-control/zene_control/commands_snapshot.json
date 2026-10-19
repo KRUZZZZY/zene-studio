@@ -29117,6 +29117,9 @@
           "articulations": {
             "type": "array"
           },
+          "from": {
+            "type": "array"
+          },
           "track": {
             "type": "string"
           }
@@ -29127,7 +29130,7 @@
         ],
         "type": "object"
       },
-      "description": "Set an instrument track's articulations (its expression map): a list of {name, keyswitch?, program?, controller?, value?} - what is sent, just before a note that asks for the articulation (note.edit 'articulation', 1-based), to switch the instrument: a keyswitch key, a program change, a control change. An empty list clears the map. One undo step.",
+      "description": "Set an instrument track's articulations (its expression map): a list of {name, keyswitch?, program?, controller?, value?} - what is sent, just before a note that asks for the articulation (note.edit 'articulation', 1-based), to switch the instrument: a keyswitch key, a program change, a control change. An empty list clears the map. A note asks for an articulation by its position, so 'from' (optional) gives, per new entry, its position in the old map (0 for a new one): the notes then follow their articulation when entries are moved, and ask for none when theirs is removed (without it they keep their numbers). The reply's 'notes_remapped' counts the notes changed. One undo step - the notes included.",
       "group": "track",
       "id": "track.articulations_set",
       "mutating": true,

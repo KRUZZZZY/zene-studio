@@ -449,6 +449,7 @@ void InstrumentLayers::playNote(const NotePlayHandle& note, f_cnt_t offset, f_cn
 		if (track == nullptr) { continue; }
 		NotePlayHandle* handle = NotePlayHandleManager::acquire(track, offset, frames, note);
 		handle->setPatternTrack(patternTrack);
+		handle->setArticulation(note.articulation());  // Q050-015: each layer's instrument gets the articulation too
 		Engine::audioEngine()->addPlayHandle(handle);
 	}
 }

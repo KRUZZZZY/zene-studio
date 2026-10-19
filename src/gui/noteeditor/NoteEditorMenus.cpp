@@ -33,6 +33,7 @@
 #include <QMenu>
 
 #include "Accessibility.h"
+#include "ArticulationMapEditor.h"
 #include "CommandForm.h"
 #include "CommandLists.h"
 #include "ControlVocabulary.h"
@@ -123,7 +124,8 @@ QJsonObject editAll(const QString& clip, const std::vector<Note*>& notes, const 
 }
 
 //! 0.5.0 L07: which passes the notes play on (ED-133) and the articulation they ask for (ED-121).
-void fillPlayMenus(QMenu* passes, QMenu* articulations, const QString& clip, const std::vector<Note*>& notes, const InstrumentTrack* track)
+void fillPlayMenus(QMenu* passes, QMenu* articulations, const QString& clip, const std::vector<Note*>& notes, const InstrumentTrack* track,
+	QWidget* host)
 {
 	const auto entry = [clip, &notes](QMenu* menu, const QString& label, const QJsonObject& values) {
 		const QJsonObject args = editAll(clip, notes, values);
@@ -140,7 +142,14 @@ void fillPlayMenus(QMenu* passes, QMenu* articulations, const QString& clip, con
 	entry(articulations, tr("None"), {{QStringLiteral("articulation"), 0}});
 	const std::vector<Articulation>& map = track != nullptr ? track->articulations().entries() : std::vector<Articulation>{};
 	for (std::size_t i = 0; i < map.size(); ++i) { entry(articulations, map[i].name, {{QStringLiteral("articulation"), static_cast<int>(i) + 1}}); }
-	if (map.empty()) { articulations->addAction(tr("(Track > Articulations... defines them)"))->setEnabled(false); }
+	if (map.empty()) { articulations->addAction(tr("(Edit Articulations... defines them)"))->setEnabled(false); }
+	if (track == nullptr) { return; }
+	// Q050-015: the map's editor; its edits are track.articulations_set, which this entry declares.
+	articulations->addSeparator();
+	QAction* editor = articulations->addAction(tr("Edit Articulations..."));
+	editor->setProperty("controlCommand", QStringLiteral("track.articulations_set"));
+	const QString trackId = control::trackIdOf(track);
+	QObject::connect(editor, &QAction::triggered, host, [host, trackId] { ArticulationMapEditor::open(trackId, host->window()); });
 }
 
 //! 0.5.0 FL model: the clipboard verbs and Delete, each one command over the scope (the keys Ctrl+C, Ctrl+X,
@@ -241,7 +250,7 @@ void NoteEditor::fillNotesMenu(QMenu* menu)
 	QMenu* passes = menu->addMenu(tr("Play On"));
 	QMenu* articulations = menu->addMenu(tr("Articulation"));
 	fillPlayMenus(passes, articulations, clip, notesInScope(m_state.clip, noteScope() == QStringLiteral("selection")),
-		dynamic_cast<const InstrumentTrack*>(m_state.clip->getTrack()));
+		dynamic_cast<const InstrumentTrack*>(m_state.clip->getTrack()), this);
 	fillNewLengthMenu(menu->addMenu(tr("New Note Length")));
 	fillAudioBehind(menu, m_state);
 	fillMuteMenu(menu->addMenu(tr("Mute")));

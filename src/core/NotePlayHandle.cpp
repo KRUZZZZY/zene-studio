@@ -102,6 +102,16 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 		m_patternTrack = parent->m_patternTrack;
 
 		parent->setUsesBuffer( false );
+
+		// Q050-015: an arpeggio step is a sounding note the arpeggio's base note never sounds itself (play() sends
+		// no note-on for an arpeggio base), so the step carries the base's articulation and sends it just before its
+		// own note-on - a copy of four integers, no allocation. A chord-stacking sub-note does not need it: its
+		// parent (the played note, or an arpeggio step) creates it inside its own play(), after that parent sent the
+		// articulation ahead of its own note-on at the same offset, so every voice of the chord already follows it.
+		if( origin == Origin::Arpeggio )
+		{
+			m_articulation = parent->m_articulation;
+		}
 	}
 
 	updateFrequency();
@@ -255,6 +265,13 @@ void NotePlayHandle::play( std::span<SampleFrame> buffer )
 		}
 	}
 
+	// Q050-015: the keyswitch was pressed a period ago (or earlier): let it go at the start of this one.
+	if( m_keyswitchDown && m_totalFramesPlayed > 0 )
+	{
+		m_keyswitchDown = false;
+		m_instrumentTrack->releaseKeyswitch( m_articulation.keyswitch, midiChannel(), TimePos(), 0 );
+	}
+
 	/* It is possible for NotePlayHandle::noteOff to be called before NotePlayHandle::play,
 	 * which results in a note-on message being sent without a subsequent note-off message.
 	 * Therefore, we check here whether the note has already been released before sending
@@ -266,6 +283,14 @@ void NotePlayHandle::play( std::span<SampleFrame> buffer )
 		m_hasMidiNote = true;
 
 		const int baseVelocity = m_instrumentTrack->midiPort()->baseVelocity();
+
+		// Q050-015: the note's articulation - program, controller, keyswitch - at the note's own offset, ahead of
+		// its note-on: this is the period the (possibly delayed) note starts in, so they cannot get ahead of it.
+		if( m_articulation.any() )
+		{
+			m_keyswitchDown = m_instrumentTrack->sendArticulationEvents( m_articulation, midiChannel(), key(), getVolume(),
+				TimePos::fromFrames( offset(), Engine::framesPerTick() ), offset() );
+		}
 
 		// send MidiNoteOn event
 		m_instrumentTrack->processOutEventForNote(
@@ -430,6 +455,14 @@ void NotePlayHandle::noteOff( const f_cnt_t _s )
 	// then set some variables indicating release-state
 	m_framesBeforeRelease = _s;
 	m_releaseFramesToDo = std::max<f_cnt_t>(0, actualReleaseFramesToDo());
+
+	if( m_keyswitchDown )
+	{
+		// The note ends inside the period it started in: the keyswitch goes with it.
+		m_keyswitchDown = false;
+		m_instrumentTrack->releaseKeyswitch( m_articulation.keyswitch, midiChannel(),
+			TimePos::fromFrames( _s, Engine::framesPerTick() ), _s );
+	}
 
 	if( m_hasMidiNote )
 	{
