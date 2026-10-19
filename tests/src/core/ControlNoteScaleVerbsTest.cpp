@@ -230,6 +230,54 @@ private slots:
 		QCOMPARE(scale.getIntervals().at(1).getRatio(), Interval(100.0f).getRatio());
 	}
 
+	//! An oversized stored ratio must not WRAP. 4294967298 is two more than a
+	//! uint32 can hold, so narrowing the stored numerator into the interval's
+	//! 32-bit member would silently turn the stored 4294967298/1 into 2/1 - a
+	//! ratio of 2.0, a different scale than the file asks for. The value is
+	//! injected as a string (the file's own text), so the test is deterministic
+	//! and platform independent.
+	void anOversizedStoredIntervalDoesNotWrap()
+	{
+		const QString oversized = QStringLiteral("4294967298");
+
+		QDomDocument document;
+		QDomElement intervalElement = document.createElement(QStringLiteral("interval"));
+		intervalElement.setAttribute(QStringLiteral("num"), oversized);
+		intervalElement.setAttribute(QStringLiteral("den"), QStringLiteral("1"));
+		document.appendChild(intervalElement);
+
+		Interval interval;
+		interval.restoreState(intervalElement);
+		// the safe reading of an unrepresentable ratio is the cents fallback:
+		// a unison - never the wrapped 2/1.
+		QCOMPARE(interval.getRatio(), 1.0f);
+
+		// the same element inside a scale, the way a project file stores it:
+		// the loaded scale must not contain the wrapped ratio either, and the
+		// valid interval next to it must still load.
+		QDomElement scaleElement = document.createElement(QStringLiteral("scale"));
+		QDomElement oversizedInScale = document.createElement(QStringLiteral("interval"));
+		oversizedInScale.setAttribute(QStringLiteral("num"), oversized);
+		oversizedInScale.setAttribute(QStringLiteral("den"), QStringLiteral("1"));
+		scaleElement.appendChild(oversizedInScale);
+		QDomElement validInterval = document.createElement(QStringLiteral("interval"));
+		validInterval.setAttribute(QStringLiteral("num"), QStringLiteral("3"));
+		validInterval.setAttribute(QStringLiteral("den"), QStringLiteral("2"));
+		scaleElement.appendChild(validInterval);
+
+		Scale scale;
+		scale.loadSettings(scaleElement);
+
+		bool sawValidInterval = false;
+		for (const Interval& loaded : scale.getIntervals())
+		{
+			QVERIFY2(loaded.getRatio() != 2.0f,
+				"the stored 4294967298/1 must not wrap into the ratio 2.0");
+			if (loaded.getRatio() == 1.5f) { sawValidInterval = true; }
+		}
+		QVERIFY2(sawValidInterval, "the valid 3/2 interval must still load");
+	}
+
 	//! W1: every id is declared, typed, and classified - and the classes are the ones
 	//! the file's own comments claim.
 	void everyVerbIsRegisteredWithSchemasAndAContractRow()

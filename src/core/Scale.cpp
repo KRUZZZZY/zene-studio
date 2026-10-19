@@ -25,6 +25,7 @@
 #include "Scale.h"
 
 #include <cmath>
+#include <limits>
 #include <QDomElement>
 
 namespace lmms
@@ -90,8 +91,27 @@ void Interval::saveSettings(QDomDocument &document, QDomElement &element)
 
 void Interval::loadSettings(const QDomElement &element)
 {
-	m_numerator = element.attribute("num", "0").toULong();
-	m_denominator = element.attribute("den", "0").toULong();
+	// the stored ratio is read as a 64 bit number and only narrowed once it is
+	// KNOWN to fit the 32 bit members: an oversized or unparsable value must
+	// not wrap (4294967298 would become 2) - it falls back to the cents
+	// representation, which is a unison when no cents were stored.
+	bool numeratorOk = false;
+	bool denominatorOk = false;
+	const qulonglong numerator = element.attribute("num", "0").toULongLong(&numeratorOk);
+	const qulonglong denominator = element.attribute("den", "0").toULongLong(&denominatorOk);
+	const bool ratioFits = numeratorOk && denominatorOk
+		&& numerator <= std::numeric_limits<uint32_t>::max()
+		&& denominator <= std::numeric_limits<uint32_t>::max();
+	if (ratioFits)
+	{
+		m_numerator = static_cast<uint32_t>(numerator);
+		m_denominator = static_cast<uint32_t>(denominator);
+	}
+	else
+	{
+		m_numerator = 0;
+		m_denominator = 0;
+	}
 	m_cents = element.attribute("cents", "0").toDouble();
 	if (m_denominator) {m_ratio = static_cast<float>(m_numerator) / m_denominator;}
 	else { m_ratio = std::exp2(m_cents / 1200.f); }
