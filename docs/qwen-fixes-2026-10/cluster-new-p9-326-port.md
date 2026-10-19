@@ -189,3 +189,111 @@ check-namespace, no-tautology and doc-figures.
 - `tests/upstream-modifications.txt` - the three inherited files registered.
 - `tests/fork-sources.txt` - this report registered as a product-new file.
 - `docs/qwen-fixes-2026-10/cluster-new-p9-326-port.md` - this report.
+
+## Self-check
+
+**1. The regression test FAILS with the product change reverted and PASSES
+with it (exit codes).**
+
+* Before the fix existed at all: `ctest -R '^OpulenZ$'` -> EXIT 8, 0/1, failed
+  at `after < before * 0.01` (`logs/test-1-red.log`; energy before=1031.38,
+  after=1022.79, ratio 0.991669).
+* With the fix: `ctest -R '^OpulenZ$'` -> EXIT 0, 1/1
+  (`logs/test-2-green.log`; ratio 1.87394e-05, `logs/test-11-final-green-verbose.log`).
+* Reverse patch (`git apply -R logs/fix.patch`, EXIT 0), rebuild
+  (`logs/build-4-reverse.log`, EXIT 0), test -> EXIT 8, 0/1, the same
+  assertion (`logs/test-3-red-reversed.log`).
+* Re-apply (`git apply logs/fix.patch`, EXIT 0), rebuild
+  (`logs/build-5-reapply.log`, EXIT 0), test -> EXIT 0, 1/1
+  (`logs/test-4-green-reapplied.log`).
+
+**2. The test is deterministic: no wall-clock timing, sleeps or races.**
+
+* The rendered amount is a fixed count of engine periods (8 warmup + 8
+  measured), never a deadline: the loop is `for (int period = 0; period <
+  periods; ++period)` over `Instrument::play(std::span<SampleFrame>)`, which
+  renders exactly `Engine::audioEngine()->framesPerPeriod()` frames (256 at
+  44100 Hz in this tree) through the emulator's own `update()`.
+* No sleep, no timer, no thread, no wall-clock read anywhere in the test.
+* The audio device is stopped by the test's own `initTestCase()`
+  (`Engine::audioEngine()->audioDev()->stopProcessing()`), so no other thread
+  renders the same emulator while the test renders it.
+* The inputs are injected, not observed: the operator levels (63/63 then 0/0)
+  and the note (key 69, velocity 127) are set explicitly; the measured
+  quantity is the sum of the squared rendered samples, compared with a fixed
+  ratio, not a duration.
+* The numbers repeat exactly across runs: before=1031.38 in the RED run
+  (`logs/test-1-red.log`) and in the GREEN run
+  (`logs/test-11-final-green-verbose.log`).
+
+**3. The fix is at the cause and complete: every caller and sibling of what
+changed was checked and stays consistent.**
+
+* Cause: the constant-false comparison `OPL2_VOICE_FREE == 0`
+  (`plugins/OpulenZ/OpulenZ.cpp:578` before the change; the constant is 128 at
+  `plugins/OpulenZ/OpulenZ.h:49`).
+* Every place that reads or writes the flag was checked and agrees with the
+  new test: the initialisation `voiceNote[i] = OPL2_VOICE_FREE`
+  (`OpulenZ.cpp:154`), the note-on that stores the bare key
+  (`OpulenZ.cpp:312`), the note-off that sets the bit (`OpulenZ.cpp:323`),
+  the pitch-bend handler that reads the flag bit alone
+  (`OpulenZ.cpp:347-348`), and the note-off / key-pressure comparisons that
+  use the whole value (`OpulenZ.cpp:319`, `OpulenZ.cpp:333`). A sounding
+  voice has the bit clear, a free or released voice has it set - the new
+  condition asks exactly that, in the same encoding as its siblings.
+* The callers of `updatePatch()` were checked: the knob connections
+  (`OpulenZ.cpp:178-216`), the constructor (`OpulenZ.cpp:160`) and
+  `reloadEmulator()` (`OpulenZ.cpp:243`, which resets every `voiceNote` to
+  `OPL2_VOICE_FREE` before calling it, so the loop correctly skips all
+  voices there).
+* The value the loop reads flows into `velocities[voiceNote[voice]]`;
+  `velocities` is `int velocities[128]` (`OpulenZ.h:133`) and for a sounding
+  voice `voiceNote[voice]` is the bare key (0..127), so the index is in
+  range. A free voice (128) and a released voice (key|128) are skipped
+  before that read.
+* `setVoiceVelocity()` is documented as callable only under the mutex
+  (`OpulenZ.cpp:246`) and `updatePatch()` holds `emulatorMutex` for the whole
+  update (`OpulenZ.cpp:539`), so the newly enabled call satisfies that
+  precondition. That lock is the sibling cluster new-p9-327's change, which
+  this tree already carries; the upstream fix's second commit
+  (797dc0b65) added the same lock on its branch.
+* The other path into the same behaviour - `MidiKeyPressure` re-scales a
+  voice on aftertouch (`OpulenZ.cpp:333`) - is unchanged, and it is the
+  sibling that made the missing re-scale visible only until the next MIDI
+  event.
+
+**4. No collateral damage: old projects and saved data still load as before,
+and a limit or check added here does not hit other callers.**
+
+* No file format, project element or saved value changed: the fix is one
+  condition inside `updatePatch()`. The plugin's `saveSettings()` /
+  `loadSettings()` are untouched, so a project saved before or after the
+  change loads exactly as before.
+* The only behaviour that changes is the one the finding names: a voice that
+  is sounding when an operator level changes is re-scaled. A free or
+  released voice is skipped, exactly as before, and no limit, clamp or
+  check was added to any shared path, so no other caller can trip it.
+* The behaviour-preservation harness that compares the migrated plugin
+  against the verbatim pre-migration reference source
+  (`tests/reference/OpulenZ/OpulenZ.cpp`, which still carries the old
+  condition) is unaffected: the family run is 45 passed / 1 failed / 2
+  skipped with the fix (`logs/test-13-final-family.log`) and 44 passed /
+  2 failed / 2 skipped with it reversed (`logs/test-6-family-baseline.log`) -
+  the one failure in both runs is the pre-existing LADSPA fixture failure,
+  and the comparison never changes a level while a note is held.
+* The audio thread is not touched: `playImpl()` (`OpulenZ.cpp:394`) is
+  unchanged, and the new emulator writes happen in `updatePatch()`, on the
+  thread that changed the model - no new allocation, lock, wait or log on
+  the render path. No new control command was added.
+
+**5. The verdict is FIXED, not ALREADY-FIXED and not a FALSE-POSITIVE.**
+
+The condition was present in this tree before the change
+(`plugins/OpulenZ/OpulenZ.cpp:578`:
+`if(voiceNote[voice] && OPL2_VOICE_FREE == 0)`), the constant it compares is
+128 (`plugins/OpulenZ/OpulenZ.h:49`), and the loop body never ran: the
+RED run proves it (the held voice kept 99.17% of its energy after the level
+change, `logs/test-1-red.log`). The mutex hunk of the upstream fix's second
+commit was already on this line through cluster new-p9-327, so only the
+condition had to be re-applied here.
+
