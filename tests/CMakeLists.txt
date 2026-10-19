@@ -1203,6 +1203,8 @@ set(LMMS_TESTS
 	src/gui/EqCurveTest.cpp
 	# The SlicerT waveform keeps its first and last slice points fixed.
 	src/plugins/SlicerTWaveformTest.cpp
+	# BitInvader's note state lives in the note handle: no heap allocation on the render path.
+	src/plugins/BitInvaderAllocationTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
@@ -1608,6 +1610,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/SlicerT ${CMAKE_BINARY_DIR}/plugins/SlicerT ${FFTW3F_INCLUDE_DIRS})
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=slicert slicert_EXPORTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE ${FFTW3F_LIBRARIES} SampleRate::samplerate)
+	endif()
+	# BitInvader is a plug-in module, so the test compiles the product's own note code in.
+	# Its generated plugin_export.h (PLUGIN_EXPORT) sits beside the plug-in's build output.
+	if(LMMS_TEST_NAME STREQUAL "BitInvaderAllocationTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/BitInvader/BitInvader.cpp
+			${CMAKE_SOURCE_DIR}/plugins/BitInvader/BitInvader.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/BitInvader ${CMAKE_BINARY_DIR}/plugins/BitInvader)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=bitinvader)
 	endif()
 	IF(LMMS_HAVE_STEM_SPLIT)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE

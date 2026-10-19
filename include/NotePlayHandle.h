@@ -77,7 +77,9 @@ public:
 					Origin origin = Origin::MidiClip );
 	~NotePlayHandle() override;
 
-	static constexpr std::size_t PluginDataStorageSize = 720;
+	// Sized for the largest in-handle plugin note state, BitInvader's per-note wavetable copy;
+	// each user static_asserts its own fit (Monstro.cpp, TripleOscillator.cpp, BitInvader.cpp).
+	static constexpr std::size_t PluginDataStorageSize = 1024;
 
 	//! In-handle storage for plugin note state that must be created on the audio path.
 	void* pluginDataStorage() noexcept { return m_pluginDataStorage; }

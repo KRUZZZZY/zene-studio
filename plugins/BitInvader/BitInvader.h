@@ -27,6 +27,8 @@
 #ifndef BIT_INVADER_H
 #define BIT_INVADER_H
 
+#include <array>
+
 #include "AutomatableModel.h"
 #include "Instrument.h"
 #include "InstrumentView.h"
@@ -45,26 +47,30 @@ class PixmapButton;
 }
 
 
+//! Samples in a BitInvader wavetable; the graph never holds more.
+inline constexpr int wavetableSize = 200;
+
 class BSynth
 {
 public:
 	BSynth( float * sample, NotePlayHandle * _nph,
-			bool _interpolation, float factor, 
+			bool _interpolation, float factor,
 			const sample_rate_t _sample_rate );
-	virtual ~BSynth();
-	
+
 	sample_t nextStringSample( float sample_length );
 
 
 private:
 	int sample_index;
 	float sample_realindex;
-	float* sample_shape;
+	// The note's own copy of the wavetable. It lives in the note handle's storage, so a note
+	// takes no heap memory while it renders.
+	std::array<float, wavetableSize> sample_shape;
 	NotePlayHandle* nph;
 	const sample_rate_t sample_rate;
 
 	bool interpolation;
-	
+
 } ;
 
 class BitInvader : public Instrument

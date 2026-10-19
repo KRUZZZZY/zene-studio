@@ -2947,6 +2947,7 @@ tests/src/gui/WorkflowFeedbackTest.cpp
 tests/src/gui/WorkspaceAccessTest.cpp
 tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
+tests/src/plugins/BitInvaderAllocationTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
