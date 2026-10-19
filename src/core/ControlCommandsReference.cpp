@@ -198,10 +198,22 @@ void restoreChain(const QString& targetId, const QString& xml)
 	if (resolveControlTarget(targetId, &target, &ignored)) { controlRestoreChainXml(target.chain, xml); }
 }
 
-//! The reference track ('track') or mixer channel ('channel') whose devices are copied.
+//! The reference track ('track') or mixer channel ('channel') whose devices are copied: exactly one of the two must name
+//! it, because a call with both used to take the channel silently and a call with neither used to fail as a missing
+//! track -1.
 QDomElement deviceOwner(const QJsonObject& args, ControlResult* error)
 {
-	return args.contains(QStringLiteral("channel")) ? pick(reference().channels(), args, "channel", "mixer channel", error)
+	const bool wantsTrack = args.contains(QStringLiteral("track"));
+	const bool wantsChannel = args.contains(QStringLiteral("channel"));
+	if (wantsTrack == wantsChannel)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, wantsTrack
+			? QStringLiteral("supply either 'track' or 'channel' as the source of the devices, not both")
+			: QStringLiteral("name the source of the devices with 'track' (a reference track index) or 'channel' "
+				"(a reference mixer channel index)"));
+		return {};
+	}
+	return wantsChannel ? pick(reference().channels(), args, "channel", "mixer channel", error)
 		: pick(reference().tracks(), args, "track", "track", error);
 }
 
@@ -258,8 +270,9 @@ void registerReferenceCommands(ControlRegistry& registry)
 			{QStringLiteral("position"), integerProperty(0, MaxSongLength)}},
 		{QStringLiteral("track"), QStringLiteral("to")}, true, copyClips);
 	add(registry, "copy_devices", QStringLiteral("Copy devices - 'devices' (indices; every one when left out) of the reference's track "
-		"'track' or mixer channel 'channel' (indices) - onto the end of the chain of 'to' (trk-<n> or ch-<n>) in this project, with "
-		"their settings. The chain is rebuilt from its document (chain.apply's path), so its device ids renumber. One undo step."),
+		"'track' or mixer channel 'channel' (indices; exactly one of the two, naming the source) - onto the end of the chain of "
+		"'to' (trk-<n> or ch-<n>) in this project, with their settings. The chain is rebuilt from its document (chain.apply's path), "
+		"so its device ids renumber. One undo step."),
 		{{QStringLiteral("track"), integerProperty(0, 100000)}, {QStringLiteral("channel"), integerProperty(0, 100000)},
 			{QStringLiteral("devices"), arrayProperty()}, {QStringLiteral("to"), stringProperty()}},
 		{QStringLiteral("to")}, true, copyDevices);
