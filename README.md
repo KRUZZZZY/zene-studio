@@ -60,20 +60,29 @@ implemented in 0.3.0 — measured on the built binary, `automation.mode_set` cha
 (`read` → `touch`) and `track.set_arm` arms a route and opens its take file.
 
 **VST3 hosting — effects and instruments.** VST3 effects run, and a VST3 **instrument** can be
-loaded on a track: MIDI in, audio out, and its state saved in the project. Instrument hosting is new
-and narrow: one instrument per track; the plugin's **own editor does not open** (its parameters
-appear as the host's generated knob grid); there is no multi-out, no preset management and no
-instrument latency compensation; and it is proven only against the purpose-built MIT test instrument
-that ships in the source tree — no third-party VST3 instrument has been tested by us. Its own
-in-tree regression suites sit behind the `WANT_VST3_TEST_INSTRUMENT` option (default OFF); the
+loaded on a track: MIDI in, audio out, and its state saved in the project. Instrument hosting is
+narrow: one instrument per track. The plug-in's **own editor opens** in a window of its own (the
+instrument view's "Show plugin editor" button, or `plugin.editor_open`), next to the host's generated
+knob grid. **Output buses past the main one are supported**: the instrument's other buses are listed
+under Instrument Setup > Output Buses and each can be routed to a mixer channel
+(`plugin.output_*`); a bus count is the plug-in's own. The routing is proven against a stand-in
+instrument and the VST3 bus-map unit test: the in-tree VST3 fixture has a single output bus, so no
+multi-output VST3 plug-in has been run. The instrument **reports its latency** to delay compensation
+(a routed bus carries it; `InstrumentLatencyPdcTest` measures the fixture's). Still missing: the
+plug-in's own preset (program) lists are not read, and there is no out-of-process hosting. All of
+this is proven only against the purpose-built MIT test instruments that ship in the source tree - the
+editor against a single offscreen contract test, no editor of a third-party plug-in has been opened
+on a real display - and **no third-party VST3 instrument has been tested by us**. Its own in-tree
+regression suites sit behind the `WANT_VST3_TEST_INSTRUMENT` option (default OFF); the
 `linux-x86_64` release job passes it `ON`, so they run there on every push, and the other six jobs
 keep the default.
 
 **CLAP hosting.** CLAP effect hosting is in the release on **every platform** — all six build jobs
 (seven platform builds) pass `-DWANT_CLAP=ON`, and the loader's Windows half is `LoadLibraryW`/`GetProcAddress` rather
 than `dlopen`. A CLAP generator can also be loaded onto an instrument track
-(`plugins/ClapInstrument`), drivable through the socket: like the VST3 instrument it has no editor
-window of its own, and the notes a user plays reach it through the track's MIDI path.
+(`plugins/ClapInstrument`), drivable through the socket: like the VST3 instrument its own editor opens
+in a window of its own (`ClapInstrument::openNativeEditor`, `plugins/ClapInstrument/ClapInstrument.cpp:171`;
+X11-embedded editors only), and the notes a user plays reach it through the track's MIDI path.
 
 **AI DSP** — RNNoise noise suppression and NAM neural amp modelling are in the release.
 
@@ -132,7 +141,7 @@ Not in this build, and not claimed by it:
   This is not the command-line stem *export* above.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON, but the build falls back to OFF when the wasmtime C
   API is absent, and CI provisions none, so it is compiled out in practice.
-- **No plugin editor and no patcher GUI** — and no third-party plug-in of any kind has
+- **No patcher GUI** (a hosted plug-in's own editor does open, see above) — and no third-party plug-in of any kind has
   been proven outside the MIT fixtures this tree ships. (Ableton Link IS in the build since WF-051:
   the arranger toolbar's **Ableton Link** toggle syncs tempo, beat phase and start/stop with Live,
   Bitwig and other Link apps - proven against the reference library and between two Zene instances,

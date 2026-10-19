@@ -7,7 +7,13 @@ the supported instrument hosts for delay compensation, that built-in instruments
 that out-of-process, VST2 (Vestige) and Carla are unsupported *for delay compensation, not for
 hosting* (they play, they report nothing); the polling, 16384-frame clamp, automation and
 live-monitoring limits are kept and pinned in the registered test that measures the behaviour.
-Docs plus one test slot; no product code, no new command, no format change.
+Docs plus test slots; no product code, no new command, no format change.
+
+Round 2 (rework after the round-1 REWORK verdict): added three BEHAVIOURAL cases to
+`InstrumentLatencyPdcTest` (over-capacity clamp, automation exclusion, low-latency/monitoring)
+measured on rendered audio against a real latent instrument, reconciled `README.md`'s denial to
+match the owning `KNOWN-LIMITATIONS.md` change, and pinned each limit to the case that measures
+it. See the round-2 rows below and `docs/050-features/Q050-169.md` § Rework log.
 
 ## Acceptance table (exact commands and EXIT codes seen)
 
@@ -40,6 +46,23 @@ Docs plus one test slot; no product code, no new command, no format change.
 after the `gate-40..47` runs are inside these two report files only, and none of the eight
 gates measures a `docs/**` file).
 
+## Round 2 (rework) — behavioural coverage + README, exact commands and EXIT codes
+
+The round-1 verdict was REWORK for (a) criterion 3 pinned only as text and (b) `README.md`
+still denying. Both are closed; the three new cases and the README check all run in the one
+registered `InstrumentLatencyPdcTest` binary.
+
+| What was added / fixed | Command (dir; unpiped) | Result |
+|---|---|---|
+| Over-capacity CLAMP, behavioural: fixture reports 17000 (> MaxFrames 16384); reference delayed by only 16384, onsets 16384 apart with the clamped-away 616 between them, `totalLatencyFrames()==16384`, `pdc.report` `delay_line_clamped` true, **no** capacity warning | in `InstrumentLatencyPdcTest::instrumentLatencyAboveTheCapacityIsClampedAndDiagnosed` (`tests/src/core/InstrumentLatencyPdcTest.cpp:561-587`), fixture max raised to 32768 (`tests/data/clap-test-plugin/clap-test-instrument.c:68-73`) | PASS (`<logs>/test-21-rework-final2.log`) |
+| AUTOMATION exclusion, behavioural: clip on the latent instrument's own parameter and on an effect of its track's own chain both stamped 0; the channel fader stamps 257 (the contrast) | `InstrumentLatencyPdcTest::automationCompensationDoesNotCountTheInstrumentsLatency` (`:596-629`) | PASS |
+| LIVE MONITORING / low-latency, behavioural: `transport.low_latency` (1 ms, `scope=all`) stops a latent EFFECT (`dontRun` true) but the instrument is not bypassed — its reference stays delayed by 257, total unchanged; off restores the effect | `InstrumentLatencyPdcTest::lowLatencyModeDoesNotBypassALatentInstrument` (`:637-666`). First run failed: 50 ms threshold (2205 frames) sat above the 257-frame effect so it was not stopped (`<logs>/test-15-rework-latency.log`, FAIL); corrected to 1 ms (~44 frames) | PASS (`<logs>/test-21-rework-final2.log`) |
+| README reconciled + pinned: denial gone, `"reports its latency"` present; every README claim verified | `PluginNativeEditorTest` + `ClapHostTest` (editor cases), `ControlPluginBusesTest` + `Vst3BusMapTest` (multi-out), `InstrumentLatencyPdcTest` (latency) — all in `<logs>/test-22-rework-full-suite.log` | EXIT=0, 7/7 |
+| Full unit suite on the final binary | `ctest -R "InstrumentLatencyPdcTest\|PdcMixerTest\|W3EngineTest\|PluginNativeEditorTest\|ClapHostTest\|ControlPluginBusesTest\|Vst3BusMapTest" --output-on-failure > <logs>/test-22-rework-full-suite.log 2>&1; echo EXIT=$?` (from `build/tests`) | EXIT=0, 7/7 |
+| Latency test, all slots | `./build/tests/InstrumentLatencyPdcTest > <logs>/test-21-rework-final2.log 2>&1; echo EXIT=$?` — **14/14 PASS, 0 QSKIP** | EXIT=0 |
+| Transient regression-sweep failures were module availability, not this lane | `ControlDeviceCatalogueTest`/`InstrumentLayersCommandsTest` need `patman`/`tripleoscillator`; after `cmake --build build --target patman tripleoscillator` (`<logs>/build-9-rework-modules.log`) they pass (`<logs>/test-18-rework-modules.log`) | EXIT=0, 2/2 |
+| Round-2 gates (exact pre-commit tree) | `{ <gate>; echo "EXIT=$?"; } > <logs>/gate-r2-<n>-<name>.log` — file-length & complexity `exit 1` (pre-existing train-5 red; both regression listings byte-identical to baseline, no lane file listed, test file 470/500 lines, new slots CCN ≤ 4); fork-sources, all-sources, no-upstream, namespace, tautology, doc-figures all `exit 0` | as stated |
+
 ## What was built (file:line)
 
 - `docs/KNOWN-LIMITATIONS.md:214-221` — supported-host bullet: blanket denial removed;
@@ -51,9 +74,25 @@ gates measures a `docs/**` file).
   out-of-process, VST2 (Vestige), Carla = unsupported for delay compensation, not for
   hosting. Poll, clamp, automation, rack-zone and monitoring limits unchanged at
   `:1012-1030`.
-- `tests/src/core/InstrumentLatencyPdcTest.cpp:355-384` — `theLimitationsPageStatesWhichHostsReportLatency`
-  (doc read at run time, `QSKIP` if unreachable, one string list, CCN 3); header note
-  `:45-47`; includes `:55-60`.
+- `tests/src/core/InstrumentLatencyPdcTest.cpp:413-457` — `theLimitationsPageStatesWhichHostsReportLatency`
+  (reads `docs/KNOWN-LIMITATIONS.md` **and** `README.md` at run time, `QSKIP` if unreachable, a string
+  list that also pins the three case names that measure the clamp/automation/monitoring limits);
+  header note updated; includes extended (`AutomatableModel.h`, `AutomationClip.h`,
+  `AutomationLatency.h`, `AutomationTrack.h`, `Effect.h`, `EffectChain.h`, `LatencyCompensation.h`,
+  `Track.h`, `PhaseDMixerTestSupport.h`).
+- `tests/src/core/InstrumentLatencyPdcTest.cpp:561-587` — `instrumentLatencyAboveTheCapacityIsClampedAndDiagnosed`
+  (over-capacity clamp, behavioural; `CapacityWarningGuard` `:152-160`, `OverCapacityLatency` `:122`).
+- `tests/src/core/InstrumentLatencyPdcTest.cpp:596-629` — `automationCompensationDoesNotCountTheInstrumentsLatency`
+  (automation exclusion, behavioural; `automationClipOn` helper `:367`).
+- `tests/src/core/InstrumentLatencyPdcTest.cpp:637-666` — `lowLatencyModeDoesNotBypassALatentInstrument`
+  (live monitoring / low-latency, behavioural).
+- `tests/data/clap-test-plugin/clap-test-instrument.c:68-73` — `TEST_INSTRUMENT_MAX_LATENCY`
+  16384 → 32768 (dated comment), so the over-capacity clamp can be measured.
+- `README.md:62-84,144` — VST3/CLAP hosting paragraphs and the "No patcher GUI" bullet reconciled to
+  the owning `KNOWN-LIMITATIONS.md` change (editor opens, multi-out routable, latency reported,
+  still-missing narrowed); mirrors Q050-003's accepted wording for a clean merge.
+- `docs/KNOWN-LIMITATIONS.md:1014-1036` — the clamp, automation and live-monitoring bullets each
+  cite the case that measures them.
 
 ## New commands and reversibility
 
@@ -65,22 +104,22 @@ None — no project-format path touched; old projects load and render as before.
 
 ## Known limits / not claimed
 
-- `README.md:65-66` keeps the same triple denial ("no multi-out, no preset management and
-  no instrument latency compensation"); this unit's acceptance names
-  `docs/KNOWN-LIMITATIONS.md` only, and that paragraph's full correction is Q050-003's
-  (commits `e0fafd17d`/`76d4dc73b`, in `050/m0-train-6`, not ancestors of this train-5
-  base). This lane's rewrite of the overlapping KNOWN-LIMITATIONS hunk will meet Q050-003's
-  at merge; the intent on both sides is the same sentence removal.
-- `InstrumentLatencyPdcTest` proves polling pickup and rendered alignment only; it does not
-  prove the clamp, the automation exclusion or live monitoring — those are proven against
-  `PdcMixerTest`, `W3EngineTest` and named source lines above, and no registered test
-  exercises live monitoring through a latent instrument.
+- `README.md`'s correction mirrors Q050-003's accepted wording (`e0fafd17d`/`76d4dc73b`, in
+  `050/m0-train-6`, not ancestors of this train-5 base). This lane's rewrite of the overlapping
+  KNOWN-LIMITATIONS and README hunks will meet Q050-003's at merge; both sides say the same
+  thing, so the resolution is mechanical.
+- `InstrumentLatencyPdcTest` now proves the clamp, the automation exclusion and the low-latency
+  (nothing-bypasses-the-instrument) half of the monitoring limit behaviourally. It still does
+  not exercise live playing as a real-time MIDI input path — that half of the monitoring limit
+  is the fixture's own 257-frame onset shift. The rack-zone limit is `RackZoneFeedRunTest`'s.
 - Local TSan does not run on this box (thread-creation crash, train-5 note); no product code
   changed, so no new race surface exists.
 
 ## Files committed
 
+- `README.md`
 - `docs/KNOWN-LIMITATIONS.md`
+- `tests/data/clap-test-plugin/clap-test-instrument.c`
 - `tests/src/core/InstrumentLatencyPdcTest.cpp`
 - `docs/050-features/Q050-169.md`
 - `docs/qwen-fixes-2026-10/cluster-Q050-169.md` (this file)

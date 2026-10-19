@@ -1014,7 +1014,9 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   - An instrument latency above the delay lines' capacity (`LatencyCompensation::MaxFrames`, 16384
     frames) is clamped like a chain's, and the published total says so, but no warning is logged for an
     instrument (the once-only warning lives in `EffectChain::refreshLatency`, which an instrument is not
-    part of).
+    part of). *(Measured 2026-10-19, Q050-169: `InstrumentLatencyPdcTest::instrumentLatencyAboveTheCapacityIsClampedAndDiagnosed`
+    reports 17000 frames, sees the reference delayed by only 16384 and `pdc.report`'s `delay_line_clamped`
+    set, with no capacity warning.)*
   - Only the native CLAP, VST3 and LV2 instrument hosts report, so those three are the supported
     instrument hosts for delay compensation. Built-in instruments report 0 (none is latent). The
     out-of-process, VST2 (Vestige) and Carla paths are unsupported for delay compensation, not for
@@ -1022,12 +1024,16 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
     compensated for them.
   - Automation compensation (`AutomationLatency`) does not count an instrument's latency: an automated
     parameter of a latent instrument, or of an effect on its track's own chain, changes `latency` frames
-    early against that instrument's audio.
+    early against that instrument's audio. *(Measured 2026-10-19, Q050-169:
+    `InstrumentLatencyPdcTest::automationCompensationDoesNotCountTheInstrumentsLatency` stamps both such
+    clips at 0 while the channel the instrument feeds stamps at the full latency.)*
   - A channel fed by a latent instrument has a non-zero alignment point, so its rack's key zones do not
     route notes (`RackZoneFeed` routes only through a channel aligned at 0) - the existing zone rule, now
     met by latent instruments too.
   - Live playing through a latent instrument is late by its latency plus the alignment; nothing bypasses
-    an instrument the way the low-latency mode bypasses latent effects.
+    an instrument the way the low-latency mode bypasses latent effects. *(Measured 2026-10-19, Q050-169:
+    `InstrumentLatencyPdcTest::lowLatencyModeDoesNotBypassALatentInstrument` arms `transport.low_latency`,
+    sees a latent EFFECT stopped and the latent INSTRUMENT's reference still delayed by its latency.)*
 - *(Updated 2026-09-30.)* **A mixer strip's tooltip now shows its delay compensation** - the latency its effects
   add and the point its input is aligned to, in frames and ms, and on the master the compensated total
   (`mixerLatencyText`, refreshed with the mixer's 500 ms sync; `MixerLatencyTextTest`). It is still not
