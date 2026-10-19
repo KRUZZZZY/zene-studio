@@ -327,6 +327,15 @@ ControlResult saveSelection(const QJsonObject& args)
 	const QJsonObject range = currentRange();
 	const bool given = args.contains(QStringLiteral("clips"));
 	const QJsonArray clips = given ? args.value(QStringLiteral("clips")).toArray() : selectedClips();
+	// The schema validator checks the array itself, but not its items; reject them before toString() can coerce one.
+	for (const QJsonValue& id : clips)
+	{
+		if (!id.isString())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("clips: every clip id must be a string"));
+		}
+	}
 	QString unknown;
 	if (given && firstUnknownClip(clips, &unknown))
 	{
@@ -412,7 +421,9 @@ void registerViewMemoryCommands(ControlRegistry& registry)
 		"replacing one of that name ('replaced') unless 'replace' is false, when a name in use is refused; at most 99 ('changed' "
 		"false when it was already saved just so: no undo step). Refused when nothing is selected. Saved with the project; one "
 		"undo step."),
-		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("clips"), arrayProperty()},
+		objectSchema({{QStringLiteral("name"), stringProperty()},
+		{QStringLiteral("clips"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+			{QStringLiteral("items"), stringProperty()}}},
 		{QStringLiteral("replace"), booleanProperty()}}, {QStringLiteral("name")}), true, saveSelection);
 	add(registry, "selection", "apply", QStringLiteral("Select saved selection 'name' again: its range (range.set) and those of "
 		"its clips that still exist ('missing' counts the rest; 'restored' and 'skipped' name the parts that came back and those "

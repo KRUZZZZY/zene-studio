@@ -210,6 +210,15 @@ private slots:
 		QCOMPARE(modelNote->length().getTicks(), hugeLength);
 	}
 
+	void selectionSaveRejectsNonStringClipIds()
+	{
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("selection.save"),
+			QJsonObject{{QStringLiteral("name"), QStringLiteral("malformed")},
+				{QStringLiteral("clips"), QJsonArray{17}}});
+		QVERIFY(!result.ok);
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
 	//! A malformed id and an absent id are different, typed failures.
 	void malformedAndAbsentIdsAreTyped()
 	{
