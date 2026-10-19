@@ -120,6 +120,18 @@ private slots:
 		QCOMPARE(run(QStringLiteral("browser.save_clip"), relative).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	void nonStringClipTagsAreRejectedBeforeSaving()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("invalid-tag.mid"));
+		const ControlResult rejected = run(QStringLiteral("browser.save_clip"), {{QStringLiteral("clip"), control::clipIdOf(clip)},
+			{QStringLiteral("dir"), m_dir.path()}, {QStringLiteral("name"), QStringLiteral("invalid-tag")},
+			{QStringLiteral("tags"), QJsonArray{123}}});
+		QCOMPARE(rejected.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(!QFileInfo::exists(path));
+	}
+
 	//! A save over a file that exists but cannot be read is refused before anything is written: undo could not put
 	//! back what the overwrite destroyed, so the file stays exactly as it was.
 	void aSaveNeverReplacesAFileItCannotRead()
