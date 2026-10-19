@@ -29,25 +29,31 @@ The checks, in order:
                                     several audio periods and three follow
                                     polls, so "nothing" is not "not yet");
   3. the slave's own settings       the drift bound and the source port come back;
-  4. `clock.master_set` on, stopped a stopped transport emits NOTHING: the clock
+  4. the configured source         Q050-026: the source `clock.slave_set` was given
+                                    comes back from `clock.get_state` beside the rest of
+                                    the follower state, an empty source_port clears the
+                                    choice and omitting it keeps it, a switch is ONE
+                                    undo step, and an unholdable name is refused
+                                    invalid_args and changes nothing;
+  5. `clock.master_set` on, stopped a stopped transport emits NOTHING: the clock
                                     is not free-running (a counter that only
                                     grew would fail here);
-  5. `transport.play`               THE MASTER'S MESSAGE SET: START and pulses,
+  6. `transport.play`               THE MASTER'S MESSAGE SET: START and pulses,
                                     counted, with the play head really advancing;
-  6. `transport.seek`               a seek while running is reported: a Song
+  7. `transport.seek`               a seek while running is reported: a Song
                                     Position Pointer;
-  7. `transport.stop`               STOP, and then silence - the pulse count stops
+  8. `transport.stop`               STOP, and then silence - the pulse count stops
                                     moving;
-  8. `clock.master_set` off         a disabled master emits nothing while the
+  9. `clock.master_set` off         a disabled master emits nothing while the
                                     transport plays;
-  9. refusals                       a missing 'enabled', a string where a boolean
+ 10. refusals                       a missing 'enabled', a string where a boolean
                                     belongs, a drift bound past its maximum, an
                                     unexpected property - every one typed, and
                                     none of them changing a thing;
- 10. `control.transactions`         the A16 records: master_set is true_inverse,
+ 11. `control.transactions`         the A16 records: master_set is true_inverse,
                                     slave_set is snapshot, and the slave's record
                                     NAMES the trajectory it cannot restore;
- 11. `control.undo`                 the master's flag and port come back off one
+ 12. `control.undo`                 the master's flag and port come back off one
                                     recorded action step, and so does the slave's
                                     configuration - while the record itself says
                                     the tempo a follower wrote is not part of it.
@@ -213,6 +219,78 @@ def check_slave_with_no_clock_does_nothing(session, recorder):
                    "drift=%r bound=%r" % (after.get("drift_ms"),
                                           after.get("tempo_error_bound_bpm")))
     return before_tempo
+
+
+def source_read_back_is_consistent(state, wanted):
+    """The read-back predicate, split out so this check stays under the fork's
+    CCN ratchet: the configured source sits beside the follower's own state, and
+    `ignored` is a number (Q050-026)."""
+    return (state.get("source_port") == wanted and state.get("enabled") is True
+            and state.get("follow_tempo") is True and state.get("locked") is False
+            and state.get("pulses") == 0 and state.get("tempo_bpm") == 0
+            and isinstance(state.get("ignored"), int))
+
+
+def check_the_configured_source_is_read_back(session, recorder):
+    """Q050-026: WHICH input drives the follower is configuration a caller can
+    read back, a switch is one undo step, and a name the engine cannot hold is
+    typed. That the other port's pulses are DROPPED is not provable here (an
+    incoming clock cannot be injected from a socket) and is proved by the
+    registered QTest MidiClockSourceTest."""
+    wanted = "128:0 Sequencer:Ableton Push"
+    set_source = session.result("clock.slave_set",
+                                {"enabled": True, "follow_tempo": True, "source_port": wanted})
+    recorder.check("clock.slave_set answers with the source it was given",
+                   set_source.get("source_port") == wanted, "state=%r" % set_source)
+    state = slave_state(session)
+    recorder.check("clock.get_state reads the source back beside the follower state",
+                   source_read_back_is_consistent(state, wanted),
+                   "state=%r" % state)
+    # The ports the source submenu offers are the ports midi.device_list lists -
+    # the same vocabulary the source is spelled in, so the GUI cannot offer a
+    # name the engine would refuse.
+    readable = session.result("midi.device_list").get("readable")
+    recorder.check("the source vocabulary is midi.device_list's readable ports",
+                   isinstance(readable, list),
+                   "readable=%r" % (readable if not isinstance(readable, list) else len(readable)))
+
+    # "Any input" is a SELECTABLE state, not the absence of a choice: an empty
+    # source_port clears the source, while omitting the property keeps it.
+    cleared = session.result("clock.slave_set", {"enabled": True, "source_port": ""})
+    kept = session.result("clock.slave_set", {"enabled": True})
+    recorder.check("an empty source_port CLEARS the choice and omitting it keeps one",
+                   cleared.get("source_port") == "" and kept.get("source_port") == "",
+                   "cleared=%r kept=%r" % (cleared, kept))
+    session.result("clock.slave_set", {"enabled": True, "source_port": wanted})
+
+    session.result("clock.slave_set",
+                   {"enabled": True, "source_port": "129:0 Sequencer:Launchkey"})
+    switched = slave_state(session)
+    recorder.check("a switched source is the one the next read reports",
+                   switched.get("source_port") == "129:0 Sequencer:Launchkey",
+                   "state=%r" % switched)
+    undone = session.result("control.undo")
+    recorder.check("one control.undo puts the previous source back",
+                   undone.get("undone") is True
+                   and undone.get("undone_command") == "clock.slave_set"
+                   and slave_state(session).get("source_port") == wanted,
+                   "undone=%r state=%r" % (undone.get("undone"), slave_state(session)))
+
+    check_the_refused_source_changes_nothing(session, recorder)
+
+
+def check_the_refused_source_changes_nothing(session, recorder):
+    """A name the engine cannot hold whole is invalid_args, and the refusal
+    changes nothing (split out for the CCN ratchet)."""
+    before = clock_state(session).get("slave")
+    error = session.typed_error("clock.slave_set",
+                                {"enabled": True, "source_port": "x" * 200})
+    recorder.check("a source name the engine cannot hold is invalid_args",
+                   error.get("kind") == "invalid_args",
+                   "kind=%r message=%r" % (error.get("kind"), error.get("message")))
+    recorder.check("the refused source changed nothing",
+                   clock_state(session).get("slave") == before,
+                   "before=%r after=%r" % (before, clock_state(session).get("slave")))
 
 
 def check_master_stopped_is_silent(session, recorder):
@@ -463,6 +541,7 @@ def report_results(recorder):
 def run_checks(session, instance, recorder):
     check_default_state(session, recorder)
     check_slave_with_no_clock_does_nothing(session, recorder)
+    check_the_configured_source_is_read_back(session, recorder)
     check_master_stopped_is_silent(session, recorder)
     check_master_emits_the_expected_messages(session, recorder)
     check_seek_while_running_is_reported(session, recorder)

@@ -2331,6 +2331,7 @@ tests/src/core/McuSurfaceFeedbackTest.cpp
 tests/src/core/MasteringTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
+tests/src/core/MidiClockSourceTest.cpp
 tests/src/core/MidiExportTest.cpp
 tests/src/core/MidiInputTransformTest.cpp
 tests/src/core/MidiJackOutScheduleTest.cpp

@@ -128,9 +128,13 @@ void MidiClientRaw::parseData( const unsigned char c )
 		 * this change the whole range was dropped (except a reset) and clock
 		 * could not reach the engine at all. A byte outside the clock family
 		 * maps to None and is counted nowhere, so 0xF9/0xFE keep behaving
-		 * exactly as they did. */
+		 * exactly as they did. Q050-026: the source is an EMPTY name, and that
+		 * is the whole truth about a raw client: it opened ONE device, so there
+		 * is nothing to tell apart, and a follower with a source chosen does not
+		 * follow this (clock.get_state counts the dropped messages). A client
+		 * that can name its inputs - MidiAlsaSeq - passes the sender's port. */
 		MidiClock::instance()->handleInputMessage(
-			midiClockMessageOfByte( c ), 0, MidiClock::nowNs() );
+			midiClockMessageOfByte( c ), 0, MidiClock::nowNs(), QString() );
 		return;
 	}
 
@@ -334,14 +338,16 @@ void MidiClientRaw::consumeSystemCommon( const unsigned char data )
 	/* 0xF2 carries its position LSB-first (MIDI 1.0); a time-code quarter frame
 	 * carries one nibble. Both are reported to the clock, which counts them and
 	 * exposes the last value - neither moves the transport in this release
-	 * (docs/KNOWN-LIMITATIONS.md states that bound). */
+	 * (docs/KNOWN-LIMITATIONS.md states that bound). The source is empty here for
+	 * the reason parseData() gives (Q050-026): this client has one input and
+	 * cannot name it. */
 	quint32 value = m_midiParseData.m_commonBuffer[0];
 	if( midiClockMessageOfByte( status ) == MidiClockMessage::SongPosition )
 	{
 		value |= static_cast<quint32>( m_midiParseData.m_commonBuffer[1] ) << 7;
 	}
 	MidiClock::instance()->handleInputMessage(
-		midiClockMessageOfByte( status ), value, MidiClock::nowNs() );
+		midiClockMessageOfByte( status ), value, MidiClock::nowNs(), QString() );
 }
 
 

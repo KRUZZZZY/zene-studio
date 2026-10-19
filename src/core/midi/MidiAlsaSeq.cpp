@@ -704,6 +704,32 @@ void MidiAlsaSeq::subscribeWritablePort( MidiPort * _port,
 
 
 
+/*! The name of the sequencer port \a addr sends from, resolved ONCE per address
+ *  (Q050-026). The same device sends every clock pulse, and resolving per pulse
+ *  would put two allocations and an ioctl in front of 24 messages a second. The
+ *  cache is function-local and thread-local; only MidiAlsaSeq::run() - the
+ *  reader thread, the one thread that may call this - does, which is what makes
+ *  an unguarded cache correct here. A cached name therefore survives a device
+ *  being renumbered while Zene runs: the follower's lock then drops on its own
+ *  after lock_timeout_ms, which is stated in docs/KNOWN-LIMITATIONS.md. */
+static QString clockSenderName( snd_seq_t * seq, const snd_seq_addr_t & addr )
+{
+	static thread_local bool resolved = false;
+	static thread_local unsigned char cachedClient = 0;
+	static thread_local unsigned char cachedPort = 0;
+	static thread_local QString cachedName;
+	if( ! resolved || addr.client != cachedClient || addr.port != cachedPort )
+	{
+		cachedClient = addr.client;
+		cachedPort = addr.port;
+		cachedName = portName( seq, &addr );
+		resolved = true;
+	}
+	return cachedName;
+}
+
+
+
 /*! The clock-family message an incoming sequencer event carries, or None for
  *  every event outside the family (0.3.0, the `clock.*` group's slave half). */
 static MidiClockMessage sequencerClockMessage( const snd_seq_event_t* ev )
@@ -813,16 +839,19 @@ void MidiAlsaSeq::run()
 
 			/* The clock family is SYSTEM-wide - a pulse names no port of ours -
 			 * so it is dispatched before the destination lookup (0.3.0,
-			 * `clock.*`). A slave follows a clock from wherever it arrives,
-			 * whether or not one of this client's own ports happens to be
-			 * subscribed to the sender. Every other event keeps the routing
-			 * below, including the `continue` when no destination matched. */
+			 * `clock.*`, Q050-026). It still names the SENDER, and that name is
+			 * what the follower filters on: MidiClock::setSlaveSourcePort stores
+			 * exactly this vocabulary (midi.device_list's `readable`), so a
+			 * follower with a source chosen follows that port alone. Every other
+			 * event keeps the routing below, including the `continue` when no
+			 * destination matched. */
 			{
 				const MidiClockMessage clockMessage = sequencerClockMessage( ev );
 				if( clockMessage != MidiClockMessage::None )
 				{
 					MidiClock::instance()->handleInputMessage( clockMessage,
-						sequencerClockValue( ev, clockMessage ), MidiClock::nowNs() );
+						sequencerClockValue( ev, clockMessage ), MidiClock::nowNs(),
+						clockSenderName( m_seqHandle, ev->source ) );
 					continue;
 				}
 			}

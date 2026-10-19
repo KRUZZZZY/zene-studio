@@ -90,6 +90,12 @@ QJsonObject MidiClock::stateJson() const
 	QJsonObject slave;
 	slave.insert(QStringLiteral("enabled"), slaveEnabled());
 	slave.insert(QStringLiteral("source_port"), slaveSourcePort());
+	// Q050-026: a follower with a source chosen drops every clock message that
+	// arrives on another one, and this is the number that says so. It stays 0 when
+	// no source is chosen, because nothing is dropped then - which is also how a
+	// caller tells "nothing is arriving" from "everything arriving is the wrong
+	// device".
+	slave.insert(QStringLiteral("ignored"), static_cast<int>(slaveIgnoredCount()));
 	slave.insert(QStringLiteral("follow_tempo"), slaveFollowTempo());
 	slave.insert(QStringLiteral("locked"), tracker.locked());
 	slave.insert(QStringLiteral("tempo_bpm"), tracker.tempoBpm());

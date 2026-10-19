@@ -1018,6 +1018,26 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   following, following with no lock, or locked at the measured BPM; a refused switch (a master with no MIDI
   client to send through) stays unchecked and the line names the refusal (`MidiClockMenuTest`). Choosing the
   port and the drift bound is still socket-only. The bullet below is the pre-menu record.
+- *(Added 2026-10-16, Q050-026.)* **Edit ▸ MIDI Clock ▸ Clock Source** chooses which input drives the follower,
+  through the same `clock.slave_set` the socket uses: **Any Input** plus one entry per readable client port as
+  `midi.device_list` spells them, rebuilt each time the submenu opens so a plugged-in device is offered; picking
+  one changes the source only and leaves the follower's mode alone (`MidiClockMenuTest::theSourceSubmenuDrivesTheSameCommand`).
+  **A chosen source is now load-bearing** where before it was stored and never read: clock messages from any
+  OTHER port are dropped and counted in `clock.get_state`'s `slave.ignored`, and switching the source forgets the
+  measurement so the device moved off cannot keep writing its tempo
+  (`MidiClockSourceTest::onlyTheConfiguredSourceCanDriveTheFollower`). Three bounds are stated rather than
+  implied. **(1) A client with one unnamed input cannot be narrowed.** ALSA Raw-MIDI, JACK, OSS, sndio and the
+  dummy client open ONE device and their bytes carry no port identity, so they deliver an unnamed clock, which
+  matches an unset source and nothing else: on such a client the submenu offers **Any Input** alone, and naming
+  a source follows nothing — honestly (the state shows `locked:false` with `ignored` climbing), never silently.
+  ALSA **sequencer** is the one backend that names its senders, so it is the one where a chosen source selects a
+  device. **(2) The sender's name is resolved once per sender and cached for the life of the client**
+  (`MidiAlsaSeq::run`), so a device that is renamed or renumbered while Zene runs keeps being followed until the
+  client is reopened; the follower's lock then drops on its own after `lock_timeout_ms` rather than following a
+  name that no longer exists. **(3) Only two backends deliver the clock family at all** — the ALSA sequencer and
+  the raw parser (ALSA Raw-MIDI, JACK, OSS, sndio): on Windows (WinMM) and macOS (CoreMIDI) clients the engine
+  builds note/control events only, so an incoming clock is not seen there and a chosen source is not what keeps
+  it unseen.
 - **MIDI clock is the engine and the socket, and there is no interface for it — added 2026-09-13.** The DAW runs
   as a MIDI clock **master** (24 pulses to the quarter note, START/STOP/CONTINUE and a Song Position Pointer on
   the transport's own edges, emitted from the audio thread through the engine's existing MIDI output) and as a

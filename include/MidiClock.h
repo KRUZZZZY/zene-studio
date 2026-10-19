@@ -231,6 +231,19 @@ private:
  * a tempo write is project state, not a per-block timing scalar. With no clock
  * arriving the tracker never locks, nothing is written and the transport does
  * not move - the engine half of the `clock.slave_set` contract.
+ *
+ * WHICH CLOCK (Q050-026). `handleInputMessage()` takes the SOURCE the message
+ * arrived on, and a follower with a source chosen follows that source alone:
+ * a pulse from any other port is counted as ignored and never reaches the
+ * tracker, so a device the user did not pick cannot move this session's tempo.
+ * Before this, the source was stored and never read and every client delivered
+ * clock bytes without identity, so any connected device could drive the
+ * follower. An EMPTY source keeps the older behaviour - follow a clock from
+ * wherever it arrives - and a client that cannot name its input (a raw client
+ * has exactly one device) delivers an empty source, which matches an empty
+ * configuration and nothing else. Changing the source forgets the measurement,
+ * for the reason setSlaveEnabled(false) does: a tempo measured from the device
+ * the user just moved off must not still be written.
  */
 class LMMS_EXPORT MidiClock
 {
@@ -241,6 +254,17 @@ public:
 	//! of the song's own is not written. A follower that chased every last digit
 	//! would rewrite the project's tempo on every window.
 	static constexpr double FollowDeadbandBpm = 0.5;
+	/*! How many QChar units a clock-source name may hold (Q050-026). The name is
+	 *  stored whole, in a fixed buffer the MIDI reader thread can compare against
+	 *  without allocating, so a longer one is REFUSED rather than truncated: a
+	 *  source that silently became a different name would follow nothing while
+	 *  reporting that it was following something. ALSA's own "<client>:<port>
+	 *  <client name>:<port name>" form is two orders of magnitude shorter.
+	 */
+	static constexpr int SourceNameCapacity = 96;
+	//! How many times a reader re-reads the source name while a reconfiguration
+	//! is in flight before it gives up and drops that one message.
+	static constexpr int SourceReadAttempts = 4;
 
 	static MidiClock* instance();
 
@@ -291,8 +315,25 @@ public:
 	void setSlaveEnabled(bool enabled) noexcept;
 	bool slaveFollowTempo() const noexcept { return m_slaveFollowTempo.load(); }
 	void setSlaveFollowTempo(bool follow) noexcept;
+	/*! The port the follower follows, in the same vocabulary `midi.device_list`
+	 *  lists as `readable` (Q050-026). Empty means "no port chosen", and that is
+	 *  what the follower follows in: a clock from wherever it arrives, which is
+	 *  what this release did before the source became load-bearing. */
 	QString slaveSourcePort() const;
-	void setSlaveSourcePort(const QString& port);
+	/*! Choose the port to follow, or clear the choice with an empty name. Choosing
+	 *  a DIFFERENT source forgets the measurement - a tempo measured from the
+	 *  device just moved off must not still be written - and re-naming the current
+	 *  source is not a change and must not drop the lock. Answers false and fills
+	 *  \a error for a name SourceNameCapacity cannot hold; the reason is the same
+	 *  string sourcePortProblem() gives, so `clock.slave_set` refuses the same
+	 *  names for the same reason without duplicating either. Control thread. */
+	bool setSlaveSourcePort(const QString& port, QString* error);
+	//! Why \a port cannot be this follower's source (empty when it can be one).
+	static QString sourcePortProblem(const QString& port);
+	//! Clock-family messages dropped because they arrived on a port other than
+	//! the configured one (Q050-026). Monotonic for the session; 0 whenever no
+	//! source is configured, because nothing is dropped then.
+	quint32 slaveIgnoredCount() const noexcept;
 	double slaveDriftBoundMs() const noexcept { return m_tracker.driftBoundMs(); }
 	void setSlaveDriftBoundMs(double ms) noexcept;
 
@@ -306,9 +347,16 @@ public:
 	//! the ALSA-sequencer client serves under its own mutex.
 	void processAudioPeriod(int frames, bool transportRunning, qint64 playPosTicks,
 		quint64 timestampNs) noexcept;
-	//! The MIDI input entry point (MidiClientRaw::parseData).
+	/*! The MIDI input entry point (MidiClientRaw::parseData, MidiAlsaSeq::run).
+	 *  \a sourcePort is the port the message arrived on, in `midi.device_list`'s
+	 *  `readable` vocabulary, and an EMPTY name for a client that has one input
+	 *  and cannot name it (Q050-026). The name is deliberate and not defaulted:
+	 *  a dispatch site that cannot say where its bytes came from must pass an
+	 *  empty name and be answerable for it, rather than inherit a source
+	 *  silently. A message from another source is counted as ignored and does
+	 *  not reach the tracker. Reader thread; allocates nothing, locks nothing. */
 	void handleInputMessage(MidiClockMessage message, quint32 value,
-		quint64 timestampNs) noexcept;
+		quint64 timestampNs, const QString& sourcePort) noexcept;
 
 	//! Write the measured tempo to the Song when the follower is enabled, the
 	//! slave is locked and the measurement has left the dead band. Returns the
@@ -357,6 +405,15 @@ private:
 
 	MidiClient* client() const;
 
+	/*! Whether an incoming message from \a source may drive the follower
+	 *  (Q050-026): with no source configured, any source may; with one, only an
+	 *  exact match. The comparison runs on the MIDI reader thread against the
+	 *  published buffer below, so it allocates nothing, locks nothing and waits
+	 *  for nothing. */
+	bool acceptsSource(const QString& source) const noexcept;
+	//! Copy \a port into that buffer and publish it to the reader thread.
+	void publishSource(const QString& port) noexcept;
+
 	std::atomic<bool> m_masterEnabled{false};
 	std::atomic<bool> m_slaveEnabled{false};
 	std::atomic<bool> m_slaveFollowTempo{false};
@@ -384,7 +441,26 @@ private:
 	MidiClockTracker m_tracker;
 	QTimer* m_followTimer = nullptr;
 	QString m_masterPort;
+	//! The configured source, on the CONTROL thread (stateJson reads it).
 	QString m_slavePort;
+	/*! The same name, published for the MIDI reader thread (Q050-026): UTF-16
+	 *  code units the reader can compare a port name against without allocating a
+	 *  QString on the way in from a device. Written only by publishSource()
+	 *  (control thread) and read only by acceptsSource() (a MIDI reader thread).
+	 *  Each unit is its OWN std::atomic, so the two threads never race on the
+	 *  buffer. m_sourceVersion is the ODD-WHILE-WRITING sequence counter, and the
+	 *  payload accesses around it are ordered by RELEASE/ACQUIRE FENCES
+	 *  (std::atomic_thread_fence), which is what makes a reader's snapshot one
+	 *  published name under the C++ memory model: a bare counter with a relaxed
+	 *  payload does NOT guarantee that - a reader could pair an even version read
+	 *  with a code unit from the following write. The fences close exactly that
+	 *  gap; a reader whose two version reads still disagree drops the message.
+	 *  m_sourceLength is the snapshot's length, also atomic. */
+	std::array<std::atomic<quint16>, SourceNameCapacity> m_sourceChars{};
+	std::atomic<int> m_sourceLength{0};
+	std::atomic<quint32> m_sourceVersion{0};
+	//! Clock-family messages the source filter dropped (Q050-026).
+	std::atomic<quint32> m_ignoredTotal{0};
 };
 
 } // namespace lmms
