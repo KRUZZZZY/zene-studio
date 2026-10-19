@@ -1899,6 +1899,11 @@ set_target_properties(LadspaPortCountFixture PROPERTIES
 	LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ladspa-fixtures"
 	RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/ladspa-fixtures")
 add_dependencies(LadspaManagerTest LadspaPortCountFixture)
+# The bundled-directory cases copy the fixture module into a directory of their
+# own, so they need its path at build time (the LADSPA_PATH above is the same
+# directory at run time).
+target_compile_definitions(LadspaManagerTest PRIVATE
+	"LADSPA_MANAGER_FIXTURE_DIR=\"$<TARGET_FILE_DIR:LadspaPortCountFixture>\"")
 set_tests_properties(LadspaManagerTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen;LADSPA_PATH=$<TARGET_FILE_DIR:LadspaPortCountFixture>"
 	TIMEOUT 20)
