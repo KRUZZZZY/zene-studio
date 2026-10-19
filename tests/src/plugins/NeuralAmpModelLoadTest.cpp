@@ -30,6 +30,8 @@
 #include <QtTest>
 
 #include <QDir>
+#include <QDomDocument>
+#include <QDomElement>
 #include <QFile>
 #include <QTemporaryDir>
 
@@ -125,6 +127,34 @@ bool waitFor(Pred pred, int ms = 10000)
 double msSince(Clock::time_point t)
 {
 	return std::chrono::duration<double, std::milli>(Clock::now() - t).count();
+}
+
+//! Load the effect from a saved effect element; an empty \a modelPath writes no model attribute, the
+//! element a project saved before a model was ever chosen carries.
+void applySettings(NeuralAmpEffect& effect, const QString& modelPath)
+{
+	QDomDocument doc;
+	QDomElement root = doc.createElement("effect");
+	root.setAttribute("on", 1);
+	root.setAttribute("wet", 1.0);
+	QDomElement controls = doc.createElement("NeuralAmpControls");
+	if (!modelPath.isEmpty()) { controls.setAttribute("model", modelPath); }
+	root.appendChild(controls);
+	effect.loadSettings(root);
+}
+
+//! True when rendering a constant signal through the effect leaves every frame exactly as it was.
+bool rendersDry(NeuralAmpEffect& effect)
+{
+	constexpr int kFrames = 256;
+	const SampleFrame input(0.25f, 0.25f);
+	std::vector<SampleFrame> buf(kFrames, input);
+	effect.processImpl(buf.data(), static_cast<f_cnt_t>(buf.size()));
+	for (const auto& frame : buf)
+	{
+		if (frame[0] != input[0] || frame[1] != input[1]) { return false; }
+	}
+	return true;
 }
 
 } // namespace
@@ -243,6 +273,23 @@ private slots:
 		// B was dropped with the effect, never parsed.
 		std::lock_guard<std::mutex> lock(g_gate.mutex);
 		QCOMPARE(g_gate.started, (std::vector<QString>{"A_hold"}));
+	}
+
+	// A project saved without a model attribute must stop processing through whatever model an earlier
+	// selection (or LMMS_NAM_MODEL) left published: the control clears the path and the effect goes dry.
+	void loadingASettingWithoutAModelClearsTheLoadedModel()
+	{
+		NeuralAmpEffect effect(nullptr, nullptr);
+		applySettings(effect, path("B"));
+		QVERIFY2(waitFor([&] { return loaded(effect, "B"); }), qPrintable(effect.modelStatus()));
+		QVERIFY2(!rendersDry(effect), "the loaded model must change the audio before the empty setting");
+
+		applySettings(effect, QString{});
+		QVERIFY2(waitFor([&] { return effect.modelStatus() == "no model loaded"; }),
+			qPrintable(effect.modelStatus()));
+		QVERIFY(effect.modelPath().isEmpty());
+		QVERIFY2(rendersDry(effect),
+			"a setting without a model must stop processing through the prior model");
 	}
 
 	// The audio thread allocates nothing, locks nothing and never sees a half-built model while models
