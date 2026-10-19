@@ -52,7 +52,7 @@ NoteVector scopeNotes(const MidiClip& clip, NoteScope scope, const QString& clip
 		notes.assign(clip.notes().begin(), clip.notes().end());
 		return notes;
 	}
-	for (int index : selectedNoteIndices(clipIdString))
+	for (int index : selectedNoteIndices(clipIdString, clip))
 	{
 		if (index >= 0 && index < static_cast<int>(clip.notes().size()))
 		{

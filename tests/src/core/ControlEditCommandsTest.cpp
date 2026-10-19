@@ -433,6 +433,61 @@ private slots:
 				.arg(selectedNotes.first().toString(), ids.at(0))));
 	}
 
+	/*! The same defect as aNoteRemovalDoesNotShiftTheSelectionOntoAnotherNote,
+	 *  reached through a removal that does not hand-remap the store: note.remove
+	 *  fixes its own shift (src/core/ControlCommandsNotes.cpp), but note.remove_many
+	 *  just deletes the notes it was given, so the stored position still names
+	 *  whichever note slid into it. Selecting the middle note of three and
+	 *  removing the first leaves the selection naming the LAST note - a note the
+	 *  client never selected.
+	 */
+	void removingAnEarlierNoteManyTimesKeepsTheSelectionOnTheSameNote()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult addedTrack = registry->invoke(QStringLiteral("track.add"),
+			QJsonObject{{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY2(addedTrack.ok, qPrintable(addedTrack.errorMessage));
+		const ControlResult addedClip = registry->invoke(QStringLiteral("clip.add"),
+			{{QStringLiteral("track"), addedTrack.result.value(QStringLiteral("track")).toString()},
+				{QStringLiteral("position"), 0}, {QStringLiteral("length"), 192}});
+		QVERIFY2(addedClip.ok, qPrintable(addedClip.errorMessage));
+		const QString clip = addedClip.result.value(QStringLiteral("clip")).toString();
+
+		QStringList ids;
+		for (int i = 0; i < 3; ++i)
+		{
+			const ControlResult added = registry->invoke(QStringLiteral("note.add"),
+				QJsonObject{{QStringLiteral("clip"), clip}, {QStringLiteral("key"), 60 + i},
+					{QStringLiteral("position"), i * 24}, {QStringLiteral("length"), 12}});
+			QVERIFY2(added.ok, qPrintable(added.errorMessage));
+			ids.append(added.result.value(QStringLiteral("note")).toString());
+		}
+
+		// Select the MIDDLE note.
+		const ControlResult selected = registry->invoke(QStringLiteral("note.select"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("notes"), QJsonArray{ids.at(1)}}});
+		QVERIFY2(selected.ok, qPrintable(selected.errorMessage));
+		QCOMPARE(selected.result.value(QStringLiteral("selected_notes")).toArray().first().toString(),
+			ids.at(1));
+
+		// Remove the FIRST note. The selected note keeps its id; only its position moves.
+		QVERIFY2(registry->invoke(QStringLiteral("note.remove_many"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("notes"), QJsonArray{ids.at(0)}}}).ok,
+			"the first note did not remove");
+
+		const ControlResult rolled = registry->invoke(QStringLiteral("roll.get_state"),
+			{{QStringLiteral("clip"), clip}});
+		QVERIFY2(rolled.ok, qPrintable(rolled.errorMessage));
+		QCOMPARE(rolled.result.value(QStringLiteral("notes")).toArray().size(), 2);
+		const QJsonArray selectedNotes = rolled.result.value(QStringLiteral("selected_notes")).toArray();
+		QCOMPARE(selectedNotes.size(), 1);
+		QVERIFY2(selectedNotes.first().toString() == ids.at(1),
+			qPrintable(QStringLiteral("after removing the first note the selection reported "
+				"note \"%1\", but the note that WAS selected is \"%2\" - the stored position "
+				"now names a note the client never selected")
+				.arg(selectedNotes.first().toString(), ids.at(1))));
+	}
+
 	//! track.set_arm is a REAL arm verb now (0.3.0, feature row 14): it starts a
 	//! capture on the record route the track's position maps to, writes the take
 	//! and journals it. This replaces the old "honest typed refusal" assertion

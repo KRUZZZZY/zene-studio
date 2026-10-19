@@ -417,11 +417,10 @@ ControlResult selectWhere(const QJsonObject& args)
 		noteList.at(index)->setSelected(true);
 		if (!wanted.contains(index)) { wanted.append(index); }
 	}
-	// The flags above are half the selection: the index store control::selectNotes owns is
-	// the other half, and note.select writes BOTH (src/core/ControlCommandsNotes.cpp:477).
-	// Writing only the flags left roll.get_state and the next note.select reporting the
-	// selection this verb had replaced.
-	control::selectNotes(clipId(ref.id), static_cast<int>(noteList.size()), wanted);
+	// The flags above are the piano-roll half. The control selection store keeps the
+	// selected notes' ids (control::selectNotes), so its selection follows those
+	// notes if the clip's list is later re-sorted or a note is removed.
+	control::selectNotes(clipId(ref.id), *clip, wanted);
 	emit clip->dataChanged();
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("matched"), matchedCount},
 		{QStringLiteral("selected"), selected}, {QStringLiteral("previous"), previous}});
