@@ -323,6 +323,8 @@ private slots:
 			{{QStringLiteral("path"), slow}}).result;
 		QCOMPARE(slowRead.value(QStringLiteral("events")).toArray().at(0).toObject()
 			.value(QStringLiteral("bpm")).toInt(), 4);
+		QCOMPARE(slowRead.value(QStringLiteral("importable")).toBool(), false);
+		QVERIFY(!slowRead.value(QStringLiteral("importability_error")).toString().isEmpty());
 		const ControlResult tooFast = run(QStringLiteral("interchange.smf_import"),
 			{{QStringLiteral("path"), slow}});
 		QVERIFY(!tooFast.ok);

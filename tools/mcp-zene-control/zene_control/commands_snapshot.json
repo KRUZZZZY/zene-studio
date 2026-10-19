@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-15T08:30:27Z",
+  "captured_at": "2026-10-19T04:05:41Z",
   "commands": [
     {
       "args_schema": {
@@ -10632,7 +10632,7 @@
         ],
         "type": "object"
       },
-      "description": "Read a Standard MIDI File's conductor events back and report them in LMMS' own tick domain, WITHOUT touching the session: every track's tempo and time-signature meta events, merged by tick (the first the file names at a tick wins, per half), with the file's own division, how many events had to be rounded onto LMMS' 48-ticks-per-quarter grid, and whether the map could hold them all. This is what makes a round trip checkable against the file rather than against its hash: read the file, compare the map. A file that is not a Standard MIDI File, or whose division is an SMPTE rate, is a typed invalid_args refusal.",
+      "description": "Read a Standard MIDI File's conductor events back and report them in LMMS' own tick domain, WITHOUT touching the session: every track's tempo and time-signature meta events, merged by tick (the first the file names at a tick wins, per half), with the file's own division, how many events had to be rounded onto LMMS' 48-ticks-per-quarter grid, and whether the engine can represent and hold them all, with the reason when it cannot. This is what makes a round trip checkable against the file rather than against its hash: read the file, compare the map. A file that is not a Standard MIDI File, or whose division is an SMPTE rate, is a typed invalid_args refusal.",
       "group": "interchange",
       "id": "interchange.smf_read",
       "mutating": false,
@@ -10654,6 +10654,9 @@
           },
           "format": {
             "type": "integer"
+          },
+          "importability_error": {
+            "type": "string"
           },
           "importable": {
             "type": "boolean"
@@ -35149,8 +35152,14 @@
   ],
   "count": 828,
   "instance": {
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p11-21-port",
+    "lane_head": "ded355440871a86cc907cdc2d6465f2d3d597a6b",
     "proto": 1,
-    "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/cff463a0-1326-44da-8393-bec3a1847916/scratchpad/train5/commands-release.json"
+    "source_socket": "/tmp/zene-port.sock",
+    "version": "0.4.0-alpha.2709+ded3554"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
