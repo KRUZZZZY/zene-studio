@@ -879,6 +879,8 @@ set(LMMS_TESTS
 	src/core/AafImportTest.cpp
 	# 0.5.0 F5 (ED-054): the video track; the FFmpeg cases skip without the library
 	src/core/VideoTrackTest.cpp
+	# cluster new-p8-242-port: the FFmpeg stream's refused seek (the video track's decoder behind it)
+	src/core/VideoFfmpegTest.cpp
 	# 0.5.0 L12 (Q050-042): old-version patterns keep their note and pattern lengths after upgrade and save/reopen.
 	src/core/LegacyPatternUpgradeTest.cpp
 	src/core/VideoTestClipTest.cpp

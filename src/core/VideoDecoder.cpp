@@ -72,6 +72,7 @@ struct VideoDecoder::Impl
 	SwsContext* scaler = nullptr;
 	bool hasShown = false;
 	bool hasPending = false;
+	bool seekFailed = false;
 	double shownAt = -1.0;
 	double pendingAt = -1.0;
 	double frameLength = 1.0 / 25.0;
@@ -97,10 +98,13 @@ struct VideoDecoder::Impl
 		shownAt = -1.0;
 	}
 
-	void seek(double seconds)
+	//! Seek the stream to @a seconds; false when the demuxer refused it, so the caller must not decode on.
+	bool seek(double seconds)
 	{
-		media.seek(seconds);
+		const bool sought = media.seek(seconds);
 		reset();
+		seekFailed = !sought;
+		return sought;
 	}
 
 	//! Decode forward until the shown frame is the last one at or before @a seconds (or the stream ends).
@@ -166,9 +170,9 @@ QImage VideoDecoder::frameAt(double seconds, const QSize& box)
 	Impl& d = *m_impl;
 	const double last = m_info.duration > 0.0 ? m_info.duration - d.frameLength / 2 : seconds;  // unknown length: no clamp
 	const double at = std::clamp(seconds, 0.0, std::max(0.0, last));
-	const bool behind = !d.hasShown || at < d.shownAt - Epsilon;
+	const bool behind = d.seekFailed || (!d.hasShown ? at > Epsilon : at < d.shownAt - Epsilon);
 	const bool farAhead = d.hasShown && at > d.shownAt + MaxDecodeAhead;
-	if (behind || farAhead) { d.seek(at); }
+	if ((behind || farAhead) && !d.seek(at)) { return QImage(); }  // the demuxer refused the seek: no frame is the right one
 	d.advanceTo(at);
 	return d.hasShown ? d.scaled(box) : QImage();
 }
