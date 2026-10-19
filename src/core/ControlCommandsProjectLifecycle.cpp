@@ -77,6 +77,23 @@ bool controlReplaceFileAtomically(const QString& source, const QString& target, 
 	return true;
 }
 
+namespace
+{
+//! A TEST hook (see setControlExportMidiTempPathHook): empty in every real run.
+ExportMidiTempPathHook s_exportMidiTempPathHook;
+}
+
+QString controlExportMidiTempPath(const QString& targetPath)
+{
+	return targetPath + QStringLiteral(".zene-export-")
+		+ QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".tmp");
+}
+
+void setControlExportMidiTempPathHook(ExportMidiTempPathHook hook)
+{
+	s_exportMidiTempPathHook = std::move(hook);
+}
+
 } // namespace control
 
 namespace
@@ -266,12 +283,15 @@ void registerProjectExportMidi(ControlRegistry& registry)
 		//! stale file a successful export of this call. The export goes to a sibling
 		//! path with a UNIQUE name (so no file the user keeps beside the target is
 		//! ever removed), and the target is replaced only once that output is proven.
-		const QString temp = path + QStringLiteral(".zene-export-")
-			+ QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".tmp");
+		const QString temp = controlExportMidiTempPath(path);
 		// Remember whether this call owns `temp` before handing it to the exporter: a
 		// pre-existing file there is someone else's and must never be removed or
 		// overwritten, even on failure.
 		const bool ownedTemp = !QFileInfo::exists(temp);
+		// A TEST hook: it is called with `temp` just before the exporter claims it, so a
+		// test can put a file there and force the collision case exactly where it
+		// happens. Nothing in the product sets it.
+		if (s_exportMidiTempPathHook) { s_exportMidiTempPathHook(temp); }
 		const bool exported = Engine::getSong()->exportProjectMidi(temp);
 		const QFileInfo written(temp);
 		if (!exported || !written.exists() || written.size() <= 0)
