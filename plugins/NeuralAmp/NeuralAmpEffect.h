@@ -78,7 +78,8 @@ public:
 		return &m_controls;
 	}
 
-	/// Load a .nam model on a worker thread. Safe to call from the GUI thread.
+	/// Load a .nam model on a worker thread. An empty path clears the published model instead of
+	/// leaving the previous one active. Safe to call from the GUI thread.
 	void setModelPath(const QString& path);
 	QString modelPath() const;
 
@@ -87,6 +88,7 @@ public:
 
 private:
 	void workerLoop();
+	void clearModel();
 	void loadOne(const QString& path);
 	void publishModel(std::unique_ptr<nam::NamModel> model);
 	void refreshSampleRateCompatibility();

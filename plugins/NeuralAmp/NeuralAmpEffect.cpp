@@ -177,8 +177,28 @@ static std::string describeLoadedModel(const nam::ModelSpec& spec, const std::st
 }
 
 
+void NeuralAmpEffect::clearModel()
+{
+	{
+		// A newer request, or the destructor, made this clearing stale: leave the published model be.
+		std::lock_guard<std::mutex> lock(m_loadMutex);
+		if (m_hasPending || m_shuttingDown) { return; }
+	}
+	// An empty request means "no model": publishing nothing sends the audio thread dry instead of
+	// running the model an earlier request left in place. publishModel() waits for a running audio
+	// call before reclaiming the old model, so this stays off the audio thread.
+	publishModel(nullptr);
+	setStatus("no model loaded");
+}
+
+
 void NeuralAmpEffect::loadOne(const QString& path)
 {
+	if (path.isEmpty())
+	{
+		clearModel();
+		return;
+	}
 	setStatus("loading " + path.toStdString());
 #ifdef ZENE_NAM_TEST_SEAM
 	if (s_testBeforeLoad != nullptr) { s_testBeforeLoad(path); }

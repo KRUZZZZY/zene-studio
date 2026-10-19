@@ -46,10 +46,9 @@ void NeuralAmpControls::saveSettings(QDomDocument& doc, QDomElement& parent)
 void NeuralAmpControls::loadSettings(const QDomElement& parent)
 {
 	m_modelPath = parent.attribute("model", QString());
-	if (!m_modelPath.isEmpty())
-	{
-		m_effect->setModelPath(m_modelPath);
-	}
+	// Forwarded even when empty: a setting with no model attribute is a model the project no longer
+	// has, and the effect has to drop the one a previous request (or LMMS_NAM_MODEL) left active.
+	m_effect->setModelPath(m_modelPath);
 }
 
 
