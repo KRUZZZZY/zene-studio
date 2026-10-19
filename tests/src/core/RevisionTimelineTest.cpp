@@ -892,6 +892,119 @@ private slots:
 		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
 		QCOMPARE(readBytes(project), savedBytes);
 	}
+
+	//! UNDO whose FILE OPERATION fails must not answer success. The recorded step
+	//! restores revision 0 - the file the restore rotated in - and when that
+	//! artefact is gone nothing is restored: `undone: true` would tell a caller
+	//! the pre-restore project is on disk when it is not.
+	void undoOfARestoreThatCannotPutTheFileBackFailsTyped()
+	{
+		buildFixture();
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult restored = registry->invoke(QStringLiteral("revisions.restore"),
+			QJsonObject{{QStringLiteral("project"), m_project},
+				{QStringLiteral("id"), QStringLiteral("backup")}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(m_project), documentWith(1));
+
+		// Take away the very artefact the recorded inverse reads.
+		QVERIFY(QFile::remove(projectRevisionPath(m_project, 0)));
+
+		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"), QJsonObject());
+		QVERIFY2(!undo.ok, "control.undo answered 'undone: true' although the project file was NOT "
+			"restored - the step's own revision 0 was gone");
+		QCOMPARE(undo.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("revisions.restore")),
+			qPrintable(undo.errorMessage));
+		QVERIFY2(!undo.errorMessage.contains(QStringLiteral("irreversible")),
+			qPrintable(undo.errorMessage));
+		QCOMPARE(readBytes(m_project), documentWith(1));
+	}
+
+	//! REDO, the other half of the same recorded pair: it re-restores the revision
+	//! the call chose, from that revision's own artefact, and a vanished artefact
+	//! fails the file operation the same way.
+	void redoOfARestoreWhoseRevisionIsGoneFailsTyped()
+	{
+		buildFixture();
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult restored = registry->invoke(QStringLiteral("revisions.restore"),
+			QJsonObject{{QStringLiteral("project"), m_project},
+				{QStringLiteral("id"), QStringLiteral("backup")}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		const ControlResult undone = registry->invoke(QStringLiteral("control.undo"), QJsonObject());
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(readBytes(m_project), documentWith(3));
+
+		QVERIFY(QFile::remove(path(QStringLiteral("song.mmp.bak"))));
+
+		const ControlResult redo = registry->invoke(QStringLiteral("control.redo"), QJsonObject());
+		QVERIFY2(!redo.ok, "control.redo answered 'redone: true' although the project file was NOT "
+			"restored - the revision this call chose is gone");
+		QCOMPARE(redo.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(readBytes(m_project), documentWith(3));
+	}
+
+	//! When revisions.restore created the live file, undo removes it instead of
+	//! restoring a prior revision. A failed removal must still refuse undo.
+	void undoOfRestoreCreatedFileThatCannotBeRemovedFailsTyped()
+	{
+		buildFixture();
+		const QString createdProject = path(QStringLiteral("created-song.mmp"));
+		QVERIFY(writeBytes(createdProject, documentWith(3)));
+		QVERIFY(writeBytes(createdProject + QStringLiteral(".bak"), documentWith(1)));
+		QVERIFY(QFile::remove(createdProject));
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult restored = registry->invoke(QStringLiteral("revisions.restore"),
+			QJsonObject{{QStringLiteral("project"), createdProject},
+				{QStringLiteral("id"), QStringLiteral("backup")}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(createdProject), documentWith(1));
+
+		QVERIFY(QFile::remove(createdProject));
+		QVERIFY(QDir().mkdir(createdProject));
+
+		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"), QJsonObject());
+		QVERIFY2(!undo.ok, "control.undo answered success although the restore-created path "
+			"could not be removed");
+		QCOMPARE(undo.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("revisions.restore")),
+			qPrintable(undo.errorMessage));
+		QVERIFY(QFileInfo(createdProject).isDir());
+	}
+
+	//! A dangling symlink is still a path undo must remove, even though
+	//! QFileInfo::exists() follows it and reports false.
+	void undoOfRestoreCreatedDanglingSymlinkRemovesPath()
+	{
+		buildFixture();
+		QString projectName = QStringLiteral("dangling-song.mmp");
+#ifdef Q_OS_WIN
+		projectName += QStringLiteral(".lnk");
+#endif
+		const QString createdProject = path(projectName);
+		QVERIFY(writeBytes(createdProject, documentWith(3)));
+		QVERIFY(writeBytes(createdProject + QStringLiteral(".bak"), documentWith(1)));
+		QVERIFY(QFile::remove(createdProject));
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult restored = registry->invoke(QStringLiteral("revisions.restore"),
+			QJsonObject{{QStringLiteral("project"), createdProject},
+				{QStringLiteral("id"), QStringLiteral("backup")}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(createdProject), documentWith(1));
+
+		QVERIFY(QFile::remove(createdProject));
+		QVERIFY2(QFile::link(path(QStringLiteral("missing-project-target.mmp")), createdProject),
+			"could not replace the restore-created file with a dangling symlink");
+		QVERIFY(QFileInfo(createdProject).isSymLink());
+		QVERIFY(!QFileInfo(createdProject).exists());
+
+		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"), QJsonObject());
+		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+		QVERIFY(!QFileInfo(createdProject).isSymLink());
+		QVERIFY(!QFileInfo(createdProject).exists());
+	}
+
 };
 
 QTEST_GUILESS_MAIN(RevisionTimelineTest)

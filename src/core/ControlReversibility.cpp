@@ -170,5 +170,25 @@ void addStructuralUndoStep(std::function<void()> undo, std::function<void()> red
 	journal->addJournalStructure(std::move(undo), std::move(redo), payloadBytes);
 }
 
+// The record the header declares, and the same discipline ControlStructuralSupport
+// keeps for a device recreate: a journal action's closure is `void`, so a file
+// operation that fails has no other way to reach control.undo. UI thread only -
+// an undo is a control-thread operation, never an audio one.
+namespace
+{
+QString g_actionRestoreFailure;
+} // namespace
+
+void recordActionRestoreFailure(const QString& reason) { g_actionRestoreFailure = reason; }
+
+QString takeActionRestoreFailure()
+{
+	const QString reason = g_actionRestoreFailure;
+	g_actionRestoreFailure.clear();
+	return reason;
+}
+
+void clearActionRestoreFailure() { g_actionRestoreFailure.clear(); }
+
 } // namespace control
 } // namespace lmms

@@ -499,6 +499,36 @@ LMMS_EXPORT void addUndoStep(const QVector<JournallingObject*>& journallingObjec
  */
 LMMS_EXPORT void addStructuralUndoStep(std::function<void()> undo,
 	std::function<void()> redo, qint64 payloadBytes);
+
+/*! Records that a recorded ACTION step ran but could not finish its work, for
+ *  control.undo / control.redo to report - and the two ends of that channel.
+ *
+ *  WHY A SIDE CHANNEL AND NOT A RETURN VALUE: a journal action's closure is
+ *  `void` and `ProjectJournal::undo()`/`redo()` are `void`, so a step whose FILE
+ *  operation fails - `revisions.restore`'s undo restores revision 0 out of the
+ *  keep-3 set, its redo re-restores the revision the call chose - has no way to
+ *  hand a failure to the command that asked for the undo. Without this record
+ *  such an undo answered `undone: true` over a project file that was NOT put
+ *  back: the same lie ControlStructuralSupport's own channel was added for
+ *  (BUG-CTL-1), one file operation instead of one device.
+ *
+ *  The SAME discipline as that channel, and the reason it is safe to trust:
+ *  control.undo and control.redo clear the record before they unwind a step and
+ *  read it after, so the reply describes exactly the step that just ran and a
+ *  failure recorded by a GUI Ctrl+Z (which does not go through the command) can
+ *  never be attributed to a later undo. The read consumes the record, so one
+ *  failure is reported once. UI thread only, like every helper here.
+ *
+ *  \a reason is the recorded failure in the words the CALLER should read (what
+ *  was not restored and why); the command wraps it with its own verb.
+ */
+LMMS_EXPORT void recordActionRestoreFailure(const QString& reason);
+//! The recorded failure, or an empty string when the step that just ran
+//! completed its work (the read clears the record).
+LMMS_EXPORT QString takeActionRestoreFailure();
+//! Drops a recorded failure without reporting it (see above).
+LMMS_EXPORT void clearActionRestoreFailure();
+
 /*! The automation-mode group's two rows (feature-list rows 10 and 63, board
  *  task #647): automation.mode_set (irreversible - runtime state with no
  *  persistence or undo) and automation.record_mode_set (true_inverse - the
