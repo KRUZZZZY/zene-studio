@@ -50,15 +50,26 @@ namespace lmms::test
 extern thread_local bool tlCountAllocations;
 //! Allocations observed on this thread while tlCountAllocations was true.
 extern thread_local std::uint64_t tlAllocationCount;
+//! Frees (operator delete of a non-null pointer, every form) observed on this
+//! thread while tlCountAllocations was true - the realtime rule forbids a free
+//! on the audio thread as much as an allocation (Q050-016 round 3 added it).
+extern thread_local std::uint64_t tlFreeCount;
 
 inline void noteAllocation() noexcept
 {
 	if (tlCountAllocations) { ++tlAllocationCount; }
 }
 
+inline void noteFree(const void* ptr) noexcept
+{
+	if (tlCountAllocations && ptr != nullptr) { ++tlFreeCount; }
+}
+
+//! Zeroes both counters, the allocation count and the free count.
 inline void resetAllocationCount() noexcept
 {
 	tlAllocationCount = 0;
+	tlFreeCount = 0;
 }
 
 } // namespace lmms::test

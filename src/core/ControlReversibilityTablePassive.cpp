@@ -409,6 +409,12 @@ const ReversibilityRow kPassiveRows[] = {
 		"no write: note.expression_set and note.expression_clear are the "
 		"writers, and both carry a MidiClip checkpoint", ""),
 
+	R("note.expression_stream_get", RC::NotMutating, false,
+		"reads a note's time-varying MPE expression stream (Q050-016's point "
+		"lists) and nothing else",
+		"no write: note.expression_stream_set is the writer, and it carries a "
+		"MidiClip checkpoint", ""),
+
 	// Punch in/out and the take journal's inspectors (0.3.0).
 	R("transport.punch_get_state", RC::NotMutating, false,
 		"reads the transport's punch region (its range, its arm flag) and "

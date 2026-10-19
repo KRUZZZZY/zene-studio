@@ -111,3 +111,9 @@ include/MidiHandoffQueue.h	MidiChannelOverflow::raise	Carla's any-thread MIDI pr
 include/MidiHandoffQueue.h	pushOrRecord	Carla's any-thread MIDI producer publishes an event or records the refusal
 include/MidiHandoffQueue.h	drainMidi	Carla's audio callback stages queued events and all-notes-off cuts in order
 src/core/midi/MidiEventToByteSeq.cpp	writeToByteSeq	Carla's audio callback encodes each queued event into Carla's native MIDI format
+src/core/midi/MpeStreamSnapshot.cpp	MpeStreamSnapshot::acquire	Q050-016: Note's copy constructor runs it on the audio thread - InstrumentTrack::play -> triggerNote -> NotePlayHandleManager::acquire copies the clip's note, stream reference included, into its play handle
+src/core/midi/MpeStreamSnapshot.cpp	MpeStreamSnapshot::tryAddReference	Q050-016: acquire()'s reference increment, on the audio thread for every streamed note a handle is built from
+src/core/midi/MpeStreamSnapshot.cpp	MpeStreamSnapshot::release	Q050-016: a NotePlayHandle's destructor on the realtime teardown path (NotePlayHandleManager::release) drops its stream reference here; the free (destroy) is reached only with no RealtimeScope active
+src/core/midi/MpeStreamSnapshot.cpp	MpeStreamSnapshot::retire	Q050-016: release() pushes a snapshot whose last reference the audio thread dropped onto the lock-free retire list
+src/core/MpeExpressionStreamPlayback.cpp	NotePlayHandle::scheduleMpeExpressionStream	Q050-016: NotePlayHandle::play calls it every period on the audio thread to send the stream points that fall in the period
+src/core/MpeExpressionStreamPlayback.cpp	NotePlayHandle::scheduleMpeStreamAxis	Q050-016: scheduleMpeExpressionStream's per-axis walk, on the audio thread

@@ -465,6 +465,12 @@ set(LMMS_TESTS
 	src/core/MpeExpressionTest.cpp
 	src/core/MpeInputPathTest.cpp
 	src/core/MpeNoteStorageTest.cpp
+	# Q050-016 round 3: the realtime half of the per-note expression streams -
+	# a copy (the audio thread's NotePlayHandle) allocates and frees nothing, an
+	# edit while a copy is alive never changes the copy's stream, the final
+	# release on the realtime path retires instead of freeing, and copies racing
+	# real edits on another thread never tear (absolute AllocationProbe counts).
+	src/core/MpeStreamSnapshotTest.cpp
 	# Per-note MPE pressure and timbre REACH PLAYBACK (0.3.0 feature-list row 8,
 	# task #649): one block rendered through the real note path with the
 	# expression against the same block without it, through an in-tree MIT test

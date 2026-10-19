@@ -517,6 +517,7 @@ include/ModulatorPanel.h
 include/MonitorMode.h
 include/MpeExpression.h
 include/MpeInputAction.h
+include/MpeStreamSnapshot.h
 include/MpscQueue.h
 include/MultiTrackRecorder.h
 include/MusicalTime.h
@@ -1865,6 +1866,7 @@ src/core/ModulationFormula.cpp
 src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
 src/core/ModulationVoices.cpp
+src/core/MpeExpressionStreamPlayback.cpp
 src/core/MusicalTime.cpp
 src/core/NamespaceRegistry.cpp
 src/core/Note.cpp
@@ -2084,6 +2086,7 @@ src/core/midi/MidiReconnect.cpp
 src/core/midi/MidiSndio.cpp
 src/core/midi/MidiWinMM.cpp
 src/core/midi/MpeExpression.cpp
+src/core/midi/MpeStreamSnapshot.cpp
 src/gui/AafImportMenu.cpp
 src/gui/AccessibilityAudit.cpp
 src/gui/AccessibleAnnouncements.cpp
@@ -2649,6 +2652,7 @@ tests/src/core/MpeExpressionTest.cpp
 tests/src/core/MpeInputPathTest.cpp
 tests/src/core/MpeNoteStorageTest.cpp
 tests/src/core/MpePlaybackTest.cpp
+tests/src/core/MpeStreamSnapshotTest.cpp
 tests/src/core/MpscQueueTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NamModelLoaderTest.cpp
@@ -2966,6 +2970,7 @@ tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/plugins/LadspaChannelCountFixture.cpp
 tests/src/plugins/LadspaChannelCountsTest.cpp
 tests/src/plugins/MissingDevicesNoEntryModule.cpp
+tests/src/plugins/MpeConsumerProbe.h
 tests/src/plugins/MpeTestConsumer.cpp
 tests/src/plugins/NeuralAmpModelLoadTest.cpp
 tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp

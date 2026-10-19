@@ -78,6 +78,7 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ExprSynthAllocationTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/SlicerTWaveformTest.cpp ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/MpeConsumerProbe.h tests/src/plugins/MpeTestConsumer.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- \
 #     tests/src/core/AafImportTest.cpp tests/src/core/ArrangeToolsTest.cpp tests/src/core/ArrangementModesTest.cpp \
 #     tests/src/core/ArrangingCatchUpTest.cpp tests/src/core/AudioAnalysisTest.cpp tests/src/core/AudioAutomationToolsTest.cpp \
@@ -160,6 +161,7 @@
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-tempo-map-persistence.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/SlicerTWaveformTest.cpp ; \
+# git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/MpeConsumerProbe.h tests/src/plugins/MpeTestConsumer.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- \
 #          tests/src/core/AafImportTest.cpp tests/src/core/ArrangeToolsTest.cpp tests/src/core/ArrangementModesTest.cpp \
 #          tests/src/core/ArrangingCatchUpTest.cpp tests/src/core/AudioAnalysisTest.cpp tests/src/core/AudioAutomationToolsTest.cpp \
@@ -932,6 +934,7 @@ include/ModulatorPanel.h
 include/MonitorMode.h
 include/MpeExpression.h
 include/MpeInputAction.h
+include/MpeStreamSnapshot.h
 include/MpscQueue.h
 include/MultiTrackRecorder.h
 include/MusicalTime.h
@@ -1737,6 +1740,7 @@ src/core/ModulationFormula.cpp
 src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
 src/core/ModulationVoices.cpp
+src/core/MpeExpressionStreamPlayback.cpp
 src/core/MusicalTime.cpp
 src/core/NamespaceRegistry.cpp
 src/core/NoteConditions.cpp
@@ -1872,6 +1876,7 @@ src/core/audio/OssSampleConversion.h
 src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
+src/core/midi/MpeStreamSnapshot.cpp
 src/gui/AafImportMenu.cpp
 src/gui/ArrangerFileDrop.cpp
 src/gui/ArrangerNavigator.cpp
@@ -2538,6 +2543,11 @@ tests/src/tracks/SampleClipRubberBandTest.cpp
 # 2026-10-12 (cluster new-p10-375): the SlicerT waveform endpoint regression test is fork-NEW.
 # It is named in both recipe copies above because tests/src/plugins is outside the core/tracks pathspec.
 tests/src/plugins/SlicerTWaveformTest.cpp
+# Q050-016 round 2: the MPE test consumer fixture and its probe interface are fork-NEW test
+# code (the playback test's readback surface). Named in both recipe copies above because
+# tests/src/plugins is outside the core/tracks pathspec.
+tests/src/plugins/MpeConsumerProbe.h
+tests/src/plugins/MpeTestConsumer.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 # cluster new-p10-116: the anchored-name regression for favourite effects in the picker.
 tests/src/gui/EffectSelectDialogFilterTest.cpp

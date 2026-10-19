@@ -15679,6 +15679,117 @@
           "clip": {
             "type": "string"
           },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "note"
+        ],
+        "type": "object"
+      },
+      "description": "A note's time-varying MPE expression (Q050-016): the three axes as ordered [{tick from the note's start, value}] points - pitch in 1/100 semitone (+-4800), pressure and timbre 0..127. 'has_stream' tells an empty stream from a note that carries none; a point holds until the next one.",
+      "group": "note",
+      "id": "note.expression_stream_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "has_stream": {
+            "type": "boolean"
+          },
+          "max_pitch_cents": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pitch": {
+            "type": "array"
+          },
+          "pressure": {
+            "type": "array"
+          },
+          "timbre": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pitch": {
+            "type": "array"
+          },
+          "pressure": {
+            "type": "array"
+          },
+          "timbre": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "clip",
+          "note"
+        ],
+        "type": "object"
+      },
+      "description": "Replace a note's time-varying MPE expression stream (Q050-016). Each of 'pitch', 'pressure' and 'timbre' is an optional array of [{tick from the note's start, value}] points (pitch +-4800 cents, pressure/timbre 0..127); an axis the call names replaces that axis's points (an empty array clears it), an axis it omits keeps its points. All three empty removes the stream. Points are sorted by tick on write. Reversible through the ProjectJournal (a MidiClip checkpoint).",
+      "group": "note",
+      "id": "note.expression_stream_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "has_stream": {
+            "type": "boolean"
+          },
+          "max_pitch_cents": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pitch": {
+            "type": "array"
+          },
+          "pressure": {
+            "type": "array"
+          },
+          "timbre": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "offset": {
             "maximum": 96,
             "minimum": 1,

@@ -51,16 +51,21 @@
  *   - a note-on resets that channel's axes and its release velocity, so a
  *     block is never coloured by the note before it; a note-off clears the
  *     two axes and sets the release velocity;
+ *   - it also keeps the 14-bit pitch bend that reached it, converted to the
+ *     same cents the engine's frequency path uses, so Q050-016's streamed
+ *     pitch can be measured too;
  *   - `playNoteImpl` renders a CONSTANT level for the note:
  *
  *         level = kBaseLevel * (1 + pressure/127) * (1 + timbre/127)
  *                            * (1 + releaseVelocity/127)
+ *                            * (1 + cents/4800)
  *
- *     i.e. +100% for a fully pressed axis or a full-scale release velocity,
- *     exactly 1.0 when nothing reached it. A constant is deliberate: it makes
- *     the measurement exact (no DSP coincidence can pass for the axis being
- *     applied) and it is the same technique tests/data/vst3-test-instrument
- *     uses for its own MIDI-to-audio proof.
+ *     i.e. +100% for a fully pressed axis or a full-scale release velocity and
+ *     up to +100% for a full bend, exactly 1.0 when nothing reached it. A
+ *     constant is deliberate: it makes the measurement exact (no DSP
+ *     coincidence can pass for the axis being applied) and it is the same
+ *     technique tests/data/vst3-test-instrument uses for its own MIDI-to-audio
+ *     proof.
  *
  *  Realtime contract: the audio path allocates nothing, locks nothing and
  *  grows nothing - fixed arrays, plain int writes, and a loop over the frames
@@ -75,6 +80,7 @@
 #include "InstrumentTrack.h"
 #include "MidiEvent.h"
 #include "MpeExpression.h"
+#include "MpeConsumerProbe.h"
 #include "NotePlayHandle.h"
 #include "Plugin.h"
 #include "SampleFrame.h"
@@ -131,6 +137,9 @@ constexpr float kBaseLevel = 0.25f;
 //! MPE's sixteen channels, indexed the way MidiEvent::channel() indexes them.
 constexpr int kChannelCount = 16;
 
+//! The three axes of testmpe::Axis, as an array bound.
+constexpr int kAxisCount = static_cast<int>( testmpe::Axis::Count );
+
 //! The multiplier the two consumed axes ask for: each is worth up to +100%.
 float expressionGain( int pressure, int timbre )
 {
@@ -145,7 +154,15 @@ float releaseGain( int releaseVelocity )
 	return 1.0f + static_cast<float>( releaseVelocity ) / MidiMaxControllerValue;
 }
 
-class MpeTestConsumer final : public Instrument
+//! Q050-016: the pitch-bend multiplier. 1.0 at centre, +100% at the +48
+//! semitone MPE member range (which is what kBaseLevel's own cents axis uses),
+//! so a streamed pitch point is visible in the rendered level.
+float pitchGain( int cents )
+{
+	return 1.0f + static_cast<float>( cents ) / MpeNoteExpression::MaxPitchCents;
+}
+
+class MpeTestConsumer final : public Instrument, public testmpe::ConsumerProbe
 {
 public:
 	explicit MpeTestConsumer( InstrumentTrack* instrumentTrack ) :
@@ -176,6 +193,13 @@ public:
 				m_pressure[channel] = 0;
 				m_timbre[channel] = 0;
 				m_release[channel] = 0;
+				m_pitchCents[channel] = 0;
+				for( int axis = 0; axis < kAxisCount; ++axis )
+				{
+					m_value[axis][channel] = 0;
+					m_offset[axis][channel] = 0;
+					m_count[axis][channel] = 0;
+				}
 				return true;
 
 			case MidiNoteOff:
@@ -187,8 +211,27 @@ public:
 				m_release[channel] = std::clamp<int>( event.velocity(), 0, MidiMaxControllerValue );
 				return true;
 
+			case MidiPitchBend:
+				// The same cents the engine's frequency path applies (+-48
+				// semitone MPE member range), computed here rather than through
+				// MpeExpression::pitchCentsForBend() so the fixture depends on
+				// no non-exported LMMS symbol at load time.
+				{
+					constexpr int kHalfSpan = 8192;
+					const int bendOffset = std::clamp<int>( event.pitchBend(), 0, 2 * kHalfSpan - 1 )
+						- kHalfSpan;
+					const int cents = std::clamp<int>(
+						bendOffset * MpeNoteExpression::MaxPitchCents / kHalfSpan,
+						-MpeNoteExpression::MaxPitchCents, MpeNoteExpression::MaxPitchCents );
+					m_pitchCents[channel] = cents;
+					record( static_cast<int>( testmpe::Axis::Pitch ), channel, cents, offset );
+				}
+				return true;
+
 			case MidiChannelPressure:
 				m_pressure[channel] = std::clamp<int>( event.channelPressure(), 0, 127 );
+				record( static_cast<int>( testmpe::Axis::Pressure ), channel,
+					m_pressure[channel], offset );
 				return true;
 
 			case MidiControlChange:
@@ -197,6 +240,8 @@ public:
 				if( event.controllerNumber() == MpeTimbreController )
 				{
 					m_timbre[channel] = std::clamp<int>( event.controllerValue(), 0, 127 );
+					record( static_cast<int>( testmpe::Axis::Timbre ), channel,
+						m_timbre[channel], offset );
 					return true;
 				}
 				return false;
@@ -204,6 +249,25 @@ public:
 			default:
 				return false;
 		}
+	}
+
+	// ---- testmpe::ConsumerProbe ----
+	int value( testmpe::Axis axis, int channel ) const override
+	{
+		return m_value[std::clamp<int>( static_cast<int>( axis ), 0, kAxisCount - 1 )]
+			[std::clamp<int>( channel, 0, kChannelCount - 1 )];
+	}
+
+	std::uint64_t lastOffset( testmpe::Axis axis, int channel ) const override
+	{
+		return m_offset[std::clamp<int>( static_cast<int>( axis ), 0, kAxisCount - 1 )]
+			[std::clamp<int>( channel, 0, kChannelCount - 1 )];
+	}
+
+	int eventCount( testmpe::Axis axis, int channel ) const override
+	{
+		return m_count[std::clamp<int>( static_cast<int>( axis ), 0, kAxisCount - 1 )]
+			[std::clamp<int>( channel, 0, kChannelCount - 1 )];
 	}
 
 	//! Instrument (a SerializingObject) requires the three serialization
@@ -243,7 +307,7 @@ protected:
 	{
 		const int channel = std::clamp<int>( nph->midiChannel(), 0, kChannelCount - 1 );
 		const float level = kBaseLevel * expressionGain( m_pressure[channel], m_timbre[channel] )
-			* releaseGain( m_release[channel] );
+			* releaseGain( m_release[channel] ) * pitchGain( m_pitchCents[channel] );
 
 		const f_cnt_t frames = nph->framesLeftForCurrentPeriod();
 		const f_cnt_t offset = nph->noteOffset();
@@ -292,10 +356,26 @@ private:
 	LoggedEvent m_log[kLogCapacity] = {};
 	int m_loggedEvents = 0;
 	int m_held = 0;  //!< note-ons minus note-offs
+	//! Remember one event for the probe: its value, the period offset it
+	//! arrived at, and a count. Fixed arrays, no allocation.
+	void record( int axis, int channel, int value, f_cnt_t offset )
+	{
+		if( axis < 0 || axis >= kAxisCount ) { return; }
+		m_value[axis][channel] = value;
+		m_offset[axis][channel] = offset;
+		++m_count[axis][channel];
+	}
+
 	int m_pressure[kChannelCount] = {};
 	int m_timbre[kChannelCount] = {};
 	//! The release velocity the last note-off on each channel carried (Q050-039).
 	int m_release[kChannelCount] = {};
+	int m_pitchCents[kChannelCount] = {};
+
+	// What the probe reads back (axis x channel).
+	int m_value[kAxisCount][kChannelCount] = {};
+	std::uint64_t m_offset[kAxisCount][kChannelCount] = {};
+	int m_count[kAxisCount][kChannelCount] = {};
 };
 
 } // namespace

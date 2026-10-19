@@ -1021,6 +1021,10 @@ Q050-035's `stem.tracks_create` (`true_inverse`) and Q050-019's `window.progress
 adds one row: Q050-040's `clip.set_mute` (`true_inverse`, the song editor's clip mute and the agents' one command), measured
 by `ReversibilityContractTest` on the merged tree: `rows=842 true_inverse=420 snapshot=42 irreversible=22 not_mutating=358`.
 
+**Q050-016** (MPE expression event streams) adds two `note.expression_stream_*` rows - one
+`true_inverse` (`note.expression_stream_set`, a MidiClip checkpoint) and one `not_mutating`
+(`note.expression_stream_get`) - so the figure below moved by two:
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=842 true_inverse=420 snapshot=42 irreversible=22 not_mutating=358
      configuration: telemetry.status wasm.load session.get_state stem.get_state
