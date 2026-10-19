@@ -146,20 +146,24 @@ per-stem gains vs mix: drums=0.400, bass=0.300, other=0.200, vocals=0.100
 separation, rtf 0.0425). These are **stub-model** numbers on this machine and
 say nothing about HTDemucs throughput.
 
-### 4. Real-model benchmark — the only throughput figures here (Q050-131, 2026-10-17)
+### 4. Real-model benchmark — the only throughput figures here (Q050-131, 2026-10-17/18/19)
 
 Sections 1–3 above are stub-model only. This section is the **real pinned
 HTDemucs fp16 model** on real reference audio, and every number is produced by
 the command printed next to it. It does NOT measure separation *quality*; the
-SNR figure in "Model handling" is that pipeline's self-check.
+SNR figure in "Model handling" is that pipeline's self-check. The canonical
+table below is the 2026-10-19 re-measurement (every cell captured); the
+2026-10-18 and 2026-10-17 measurements are kept in the same table for
+reproducibility across days and load conditions.
 
 **What ran, end to end:**
 
 - **Model:** the pinned spec (`StemModelStore::defaultModelSpec`, owner decision
   14) — commit `d54ed9eb60e258ea82131c6ee14578628816456a` of
-  `StemSplitio/htdemucs-onnx`. Downloaded fresh for this run with
-  `curl -L`, size **165,612,636 bytes**, sha256 verified **before** the run:
-  `d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a` (`sha256sum`, exit 0).
+  `StemSplitio/htdemucs-onnx`. Downloaded from that pinned commit with
+  `curl -L`, size **165,612,636 bytes**, sha256 verified **before** each
+  measurement day (`sha256sum`, exit 0):
+  `d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a`.
 - **Inference path:** the exact path the GUI drives today —
   `/usr/bin/python3` (3.14.8) with `onnxruntime` **1.28.0**
   (`CPUExecutionProvider`) and numpy 2.5.4 running `tools/stem_split_cli.py`
@@ -169,7 +173,8 @@ SNR figure in "Model handling" is that pipeline's self-check.
   seeded gaussian noise, PCG64 seed 20261017, R delayed 100 frames), sha256
   `548aab6c6fc07424d9ed752a084eb18a9bde7a37a2d004d11be8b9c6eb47d2ad`.
   Generator (exact command; regenerate anywhere and hash-compare against the
-  sha256 above before using the figures):
+  sha256 above before using the figures; regenerating it on 2026-10-18 and
+  2026-10-19 reproduced the same sha256 byte-for-byte, exit 0):
 
   ```
   $ python3 -c '
@@ -209,32 +214,44 @@ $ /usr/bin/python3 tools/stem_split_cli.py \
 (343,980 = the model's fixed input segment, ≈7.8 s at 44100 Hz.) `elapsed_s`
 and `rtf` are the CLI's own `perf_counter` timers over the 11 chunks; the
 process wall column is `date +%s.%N` taken around the whole process and
-subtracted in awk. Run 1's outside-the-CLI wall time was not captured (the
-timing helper failed on that invocation; the CLI's own timer was not
-affected), which is why that cell says "(not captured)".
+subtracted in awk; loadavg is `uptime` read immediately before and after each
+process. Every cell below was captured on the run it describes. (The
+2026-10-17 run-1 wall cell says "(not captured)" because that day's timing
+helper failed on that one invocation; the CLI's own timer was unaffected.)
 
-| run | loadavg 1/5/15 before → after | chunks | CLI elapsed_s | **RTF** | process wall |
-|---|---|---|---|---|---|
-| 1 (cold) | 15.09 14.94 11.16 → 45.02 23.18 14.23 | 11 | 55.836 | **1.861** | (not captured) |
-| 2 (warm) | 39.71 22.77 14.19 → 56.69 31.01 17.68 | 11 | 64.735 | **2.158** | 73.695 s |
-| 3 (warm) | 17.74 24.06 16.97 → 47.15 31.49 20.06 | 11 | 59.831 | **1.994** | 69.183 s |
+| run | date | loadavg 1/5/15 before → after | chunks | CLI elapsed_s | **RTF** | process wall |
+|---|---|---|---|---|---|---|
+| 1 | 2026-10-19 | 7.48 7.57 4.66 → 19.28 10.63 5.84 | 11 | 38.865 | **1.296** | 47.253 s |
+| 2 | 2026-10-19 | 17.06 10.56 5.90 → 21.20 12.45 6.75 | 11 | 37.441 | **1.248** | 45.864 s |
+| 3 | 2026-10-19 | 18.94 12.25 6.75 → 21.34 13.58 7.42 | 11 | 33.988 | **1.133** | 42.200 s |
+| 1 | 2026-10-18 | 30.89 27.17 20.51 → 46.21 32.57 22.90 | 11 | 64.414 | **2.147** | 75.443 s |
+| 2 | 2026-10-18 | 46.21 32.57 22.90 → 50.01 36.65 25.07 | 11 | 65.382 | **2.179** | 75.761 s |
+| 3 | 2026-10-18 | 50.01 36.65 25.07 → 48.35 38.95 26.76 | 11 | 67.381 | **2.246** | 76.702 s |
+| 1 (cold) | 2026-10-17 | 15.09 14.94 11.16 → 45.02 23.18 14.23 | 11 | 55.836 | **1.861** | (not captured) |
+| 2 (warm) | 2026-10-17 | 39.71 22.77 14.19 → 56.69 31.01 17.68 | 11 | 64.735 | **2.158** | 73.695 s |
+| 3 (warm) | 2026-10-17 | 17.74 24.06 16.97 → 47.15 31.49 20.06 | 11 | 59.831 | **1.994** | 69.183 s |
 
-(The "after" figure is the loadavg read the moment the run exited; the box's
-load kept spiking past 45 during each run — these are contended numbers.)
+(The "after" figure is the loadavg read the moment the run exited. The
+2026-10-17/18 runs are contended — load kept spiking past 45/50 during each
+run; the 2026-10-19 runs ran on a lightly loaded box.)
 
-**Plainly:** a 30 s clip separates in **60–74 s of wall time (RTF ≈ 1.9–2.2,
-median ≈ 2.0)** on this 20-core box under concurrent load, i.e. roughly **2×
-the clip length at CPU real time**, plus one fixed ~9–10 s of model/session
-load per new CLI process (73.7 s wall vs 64.7 s separation in run 2).
-Equivalently ≈ 0.5 audio-minutes per wall-minute. Users should expect
-minutes, not seconds, for a full song; never real time — the 7.8 s
-receptive field forbids that anyway.
+**Plainly:** a 30 s clip separates in **42–47 s of wall time (RTF ≈ 1.13–1.30)**
+on this 20-core box when it is lightly loaded (2026-10-19, 1-min loadavg
+7–21), and **60–77 s (RTF ≈ 1.86–2.25)** under the heavy concurrent load other
+lanes produced on 2026-10-17/18 (loadavg up to 50) — i.e. roughly **1.1–2.3×
+the clip length at CPU real time**, plus one fixed ~8–11 s of model/session
+load per new CLI process (47.3 s wall vs 38.9 s separation in the 2026-10-19
+run 1). Equivalently ≈ 0.4–0.9 audio-minutes per wall-minute. Users should
+expect about a minute for a 30 s clip on an uncongested modern CPU and minutes
+for a full song; never real time — the 7.8 s receptive field forbids that
+anyway.
 
-**Output sanity (run 3, verified with numpy):** four files, exactly
+**Output sanity (run 3 each day, verified with numpy):** four files, exactly
 10,584,000 bytes each (1,323,000 frames × 2 ch × 4 B), every sample finite;
-per-stem RMS: drums 0.221, bass 0.231, other 0.257, vocals 0.005 (the mix
-contains no vocals, so the model routes nearly nothing there). This is
-sanity of the I/O path, not a quality claim.
+per-stem RMS: drums 0.221, bass 0.231, other 0.257, vocals 0.005 — identical
+on all three days (the pipeline is deterministic for a pinned model and
+input). The mix contains no vocals, so the model routes nearly nothing there.
+This is sanity of the I/O path, not a quality claim.
 
 ## Model handling
 
@@ -332,8 +349,9 @@ inherited `build/` fails `StemJobManagerTest`, `StemModelStoreTest` and
 
 1. **Real HTDemucs model: quality.** Separation *quality* is not measured —
    only the pipeline sanity in "Model handling" and the throughput in
-   "End-to-end §4" (Q050-131's benchmark: RTF ≈ 1.9–2.2 on the pinned model,
-   2026-10-17). No subjective/standard quality (SDR etc.) figure exists.
+   "End-to-end §4" (Q050-131's benchmark: RTF ≈ 1.13–2.25 on the pinned model,
+   2026-10-17/18/19, depending on box load). No subjective/standard quality
+   (SDR etc.) figure exists.
 2. **GUI interaction.** `StemSplitController` and `SampleClipView` compile and
    their logic is unit-tested at manager/builder level, but no interactive LMMS
    session was run (headless machine); the progress dialog and cancel button
