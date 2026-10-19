@@ -47,6 +47,18 @@ pre-existing files).
 | `tests/scripted/check-namespace` | 0 | |
 | `bash tests/no-tautology-gate.sh` | 0 | |
 
+## Round 2 (review fix, 2026-10-19)
+
+The round-1 review returned REWORK for two documentation gaps; no code changed. `data/manual/index.html`'s
+Browser section now describes the Search file metadata toggle - the embedded title/artist/album/comment/genre
+tags and the numeric sample rate, channel count, frame count and duration it matches, the 200-file per-search
+probe limit with the result reporting how many files it read, and that the checkbox is unavailable while
+*Whole library* is on. The two older `KNOWN-LIMITATIONS.md` entries that still called tag/metadata search
+socket-only were revised (the 2026-09-30 Tags-submenu bullet and a superseded note on the 2026-09-13 entry) so
+only the waveform peak cache and peak drawing remain socket-only. Round-2 exits: build 0; the same eight ctest
+targets 8/8, exit 0; all seven gates unchanged (4 and 7 red for pre-existing files only, none of mine);
+doc-figures 0; worktree clean.
+
 ## Build and test commands
 
 ```text
@@ -69,4 +81,15 @@ bash tests/all-sources-reproduce.sh   # EXIT=0
 bash tests/no-upstream-regression-gate.sh   # EXIT=0
 tests/scripted/check-namespace   # EXIT=0
 bash tests/no-tautology-gate.sh   # EXIT=0
+# round 2 (documentation only; no code change)
+cmake --build build --target zene LibraryMenusTest BrowserCatalogQueryTest ControlBrowserCommandsTest BrowserTagMenuTest LibraryBrowserTest BrowserCatalogTest ReversibilityContractTest -- -j4 > logs/build-r2.log 2>&1; echo EXIT=$?   # EXIT=0
+ctest -R "LibraryMenusTest|BrowserCatalogQueryTest|BrowserCatalogTest|ControlBrowserCommandsTest|LibraryBrowserTest|BrowserTagMenuTest|ReversibilityContractTest|ControlCommandsSnapshot" --output-on-failure > logs/ctest-r2.log 2>&1; echo EXIT=$?   # EXIT=0, 8/8
+bash tests/complexity-gate.sh --check   # EXIT=1, pre-existing only (none of mine)
+bash tests/file-length-gate.sh --check   # EXIT=1, pre-existing only (none of mine)
+bash tests/fork-sources-gate.sh   # EXIT=0
+bash tests/all-sources-reproduce.sh   # EXIT=0
+bash tests/no-upstream-regression-gate.sh   # EXIT=0
+tests/scripted/check-namespace   # EXIT=0
+bash tests/no-tautology-gate.sh   # EXIT=0
+python3 tests/doc-figures-gate.py   # EXIT=0
 ```
