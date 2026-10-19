@@ -235,8 +235,8 @@ public:
 	 *  the audio thread, allocates nothing (the ramp is the caller's own
 	 *  fixed-capacity object), and takes the clip's own mutex ONCE for the whole
 	 *  block rather than once per evaluation.
-	 */
-	/*! @a target selects whose authored initial value the pre-first frames hold
+	 *
+	 *  @a target selects whose authored initial value the pre-first frames hold
 	 *  (null = the clip's first object, what a single-valued read answers with).
 	 *  When @a firstNodeFrame is not null it receives the first frame of the
 	 *  block whose curve time is at or after the clip's first node (0 when the
