@@ -27,13 +27,14 @@
 #include <cstdint>
 #include <thread>
 
+#include <QFile>
+
 namespace lmms
 {
 
 AudioEngineProfiler::AudioEngineProfiler() :
 	m_periodTimer(),
-	m_cpuLoad( 0 ),
-	m_outputFile()
+	m_cpuLoad( 0 )
 {
 }
 
@@ -75,10 +76,15 @@ void AudioEngineProfiler::finishPeriod( sample_rate_t sampleRate, f_cnt_t frames
 
 void AudioEngineProfiler::writerLoop()
 {
+	// The file object is created here, used here and destroyed here: it belongs
+	// to the writer thread alone. A member would be constructed on the thread
+	// that created the profiler and destroyed with it, while this thread used
+	// it - a QObject may only be used from the thread it lives in.
+	QFile outputFile;
 	if (!m_outputFileName.isEmpty())
 	{
-		m_outputFile.setFileName(m_outputFileName);
-		if (!m_outputFile.open(QFile::WriteOnly | QFile::Truncate))
+		outputFile.setFileName(m_outputFileName);
+		if (!outputFile.open(QFile::WriteOnly | QFile::Truncate))
 		{
 			return;
 		}
@@ -92,9 +98,9 @@ void AudioEngineProfiler::writerLoop()
 		std::uint64_t current = readIndex;
 		while (current < writeIndex)
 		{
-			if (m_outputFile.isOpen())
+			if (outputFile.isOpen())
 			{
-				m_outputFile.write(QString("%1\n").arg(m_buffer[current % BufferCapacity]).toLatin1());
+				outputFile.write(QString("%1\n").arg(m_buffer[current % BufferCapacity]).toLatin1());
 			}
 			current++;
 			m_readIndex.store(current, std::memory_order_release);
@@ -111,9 +117,9 @@ void AudioEngineProfiler::writerLoop()
 		}
 	}
 
-	if (m_outputFile.isOpen())
+	if (outputFile.isOpen())
 	{
-		m_outputFile.close();
+		outputFile.close();
 	}
 }
 

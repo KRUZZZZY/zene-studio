@@ -31,7 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <thread>
-#include <QFile>
+#include <QString>
 
 #include "LmmsTypes.h"
 #include "MicroTimer.h"
@@ -106,7 +106,6 @@ private:
 	MicroTimer m_periodTimer;
 	std::atomic<float> m_cpuLoad;
 	QString m_outputFileName;
-	QFile m_outputFile;
 
 	static constexpr std::size_t BufferCapacity = 4096;
 	std::array<std::uint32_t, BufferCapacity> m_buffer{};
