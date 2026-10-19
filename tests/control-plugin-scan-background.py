@@ -31,6 +31,11 @@ WHAT IT ASSERTS, in numbers:
     total_files 0 (the count is planned on the run's first turn, read through
     scan_status); a second start while running is typed busy; plugin.rescan
     while running is typed busy and scans nothing;
+  * right after scan_start the unplanned run (total_files 0) reports scan_status progress 0 and a
+    task.list row with progress -1 ("cannot say yet"), never 1.0;
+  * the test adds a candidate file (CANDIDATE_NAME) AFTER startup, so it is absent from the
+    pre-run cache; the run scans it first, and after the cancel its exact path is in
+    scan_cache_list - a newly scanned record, not one cached before the run;
   * the first turn plans the files (polled scan_status shows total_files > 0);
     DURING the run, plugin.list still answers the exact pre-run catalogue
     (names compared), and scan_status shows active with 0 <= progress <= 1;
@@ -61,7 +66,9 @@ Exit codes: 0 every check held; 1 a check failed (the app log is printed);
 from __future__ import annotations
 
 import os
+import shutil
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -72,6 +79,14 @@ import control_socket_harness as H  # noqa: E402  (path set above)
 MAX_PACE_MS = 1000
 #: The per-file statuses a run reports (scanFileJson's vocabulary).
 RUN_STATUSES = ("served-from-cache", "scanned", "not-a-plugin", "load-failed")
+#: The candidate the test adds AFTER startup: absent from the pre-run cache,
+#: and sorted before every real plug-in ("0" < "A" < "a") so it is the run's
+#: first file. Not a library, so the scan stores a "load-failed" or
+#: "not-a-plugin" record for it - a record that exists only if THIS run took it.
+CANDIDATE_NAME = "lib0-q050-090-fresh-candidate.so"
+#: Paced start used for the whole cancelled run: slow enough that the status
+#: read right after scan_start still sees the unplanned run.
+START_PACE_MS = 400
 #: How long a poll loop waits for the run to move (seconds).
 POLL_BOUND = 30.0
 
@@ -183,7 +198,7 @@ def check_pace_bounds(session, problems):
 def check_start_and_busy(session, problems, catalogue_count):
     """The run starts active before any file work, and neither a second run
     nor a sync rescan may disturb it."""
-    started = session.result("plugin.scan_start", {"pace_ms": 150})
+    started = session.result("plugin.scan_start", {"pace_ms": START_PACE_MS})
     problems.require(isinstance(started.get("task_id"), int) and started.get("task_id") >= 0,
                      "scan_start must answer a task id: %r" % (started,))
     # The count is planned on the run's first turn (scan_start returns before
@@ -195,6 +210,20 @@ def check_start_and_busy(session, problems, catalogue_count):
     problems.require(started.get("catalogue_count") == catalogue_count,
                      "the run must keep serving the pre-run catalogue (%r), not %r"
                      % (catalogue_count, started.get("catalogue_count")))
+    # The unplanned run (total_files 0) must not look finished: the task row
+    # says -1 ("cannot say yet"), never 1.0, and the status says progress 0.
+    # task.list is read FIRST, so a status that still shows total_files 0
+    # afterwards proves the row was read before the first turn planned.
+    rows = [task for task in session.result("task.list").get("tasks") or []
+            if task.get("kind") == "plugin_scan" and task.get("state") == "running"]
+    initial = session.result("plugin.scan_status")
+    problems.require(initial.get("total_files") == 0 and initial.get("active") is True,
+                     "the first observation must see the run before its planning turn "
+                     "(raise START_PACE_MS if the host is too slow): %r" % (initial,))
+    problems.require(initial.get("progress") == 0,
+                     "an unplanned run reports progress 0: %r" % (initial,))
+    problems.require(len(rows) == 1 and rows[0].get("progress") == -1,
+                     "an unplanned run's task row must report progress -1 (not 1.0): %r" % (rows,))
     second = session.typed_error("plugin.scan_start")
     problems.require(second.get("kind") == "busy",
                      "a second scan_start while running is busy: %r" % (second,))
@@ -247,7 +276,7 @@ def check_cached_catalogue_during_run(session, problems, names):
     return status
 
 
-def check_cancel(session, problems, names, pre_cache_paths, pre_cache_count):
+def check_cancel(session, problems, names, pre_cache_paths, pre_cache_count, candidate):
     """Cancelling stops the run after real work and keeps the cached catalogue
     and the newly scanned records."""
     cancelled = session.result("plugin.scan_cancel")
@@ -270,6 +299,18 @@ def check_cancel(session, problems, names, pre_cache_paths, pre_cache_count):
     problems.require(paths == sorted(paths),
                      "the cache entries must stay in path order: %r" % (paths[:5],))
     cache_paths = set(paths)
+    # The proof a NEWLY scanned record survives the cancel: the candidate was
+    # not in the pre-run cache, this run completed it, and its exact record is
+    # in scan_cache_list now (a record cached before the run could not show it).
+    problems.require(candidate not in pre_cache_paths,
+                     "the candidate must be absent from the pre-run cache: %r" % (candidate,))
+    scanned = [entry for entry in status.get("files") or [] if entry.get("path") == candidate]
+    problems.require(len(scanned) == 1 and scanned[0].get("status") in ("load-failed", "not-a-plugin"),
+                     "the run must have completed the new candidate before the cancel: %r"
+                     % (status.get("files"),))
+    problems.require(candidate in cache_paths,
+                     "the newly scanned candidate's record must be in scan_cache_list after the "
+                     "cancel: %r" % (paths[:5],))
     # Every completed file stored its record live as it was taken (scanned,
     # served, not-a-plugin or load-failed), so the cancelled run's
     # measurements remain in the cache for the next run to serve.
@@ -355,11 +396,18 @@ def main(argv):
         print("cannot run: no binary at %s" % argv[1])
         return 2
     directory = plugin_directory(argv[1])
-    extra_env = {"LMMS_PLUGIN_DIR": directory} if directory else {}
+    scratch = None
+    if directory is None:
+        # No plugin modules beside the binary: an empty directory of our own
+        # still holds the one candidate the cancel proof needs.
+        scratch = tempfile.mkdtemp(prefix="zene-scan-plugins-")
+        directory = scratch
+    extra_env = {"LMMS_PLUGIN_DIR": directory}
+    candidate = os.path.join(os.path.abspath(directory), CANDIDATE_NAME)
     problems = H.Problems()
     transcript = H.Transcript()
     print("instance:  %s" % argv[1])
-    print("plugin dir: %s" % (directory or "(none: paced start/cancel need no plugin files)"))
+    print("plugin dir: %s" % directory)
     with H.start_instance(argv[1], extra_env=extra_env) as instance:
         H.wait_for_socket(instance)
         client = H.connect(instance)
@@ -372,6 +420,10 @@ def main(argv):
             pre_cache = session.result("plugin.scan_cache_list")
             pre_cache_paths = set(entry.get("path") for entry in pre_cache.get("entries") or [])
             pre_cache_count = pre_cache.get("count", 0)
+            # The candidate appears AFTER the startup scan filled the cache, so
+            # only a run that really scans it can put its record there.
+            with open(candidate, "wb") as handle:
+                handle.write(b"not an ELF library: q050-090 cancel proof candidate\n")
             check_pace_bounds(session, problems)
             check_start_and_busy(session, problems, catalogue.get("total", len(names)))
             planned = check_cached_catalogue_during_run(session, problems, names)
@@ -379,13 +431,20 @@ def main(argv):
             # any cancel: the done run below still proves the commit.
             cancelled = False
             if planned.get("outcome") == "running":
-                check_cancel(session, problems, names, pre_cache_paths, pre_cache_count)
+                check_cancel(session, problems, names, pre_cache_paths, pre_cache_count,
+                             candidate)
                 cancelled = True
             check_done_run(session, problems, cancelled)
             check_transactions(session, problems)
             check_quit(session, instance, problems)
         finally:
             transcript.dump()
+            try:
+                os.remove(candidate)
+            except OSError:
+                pass
+            if scratch is not None:
+                shutil.rmtree(scratch, ignore_errors=True)
     code = report(problems)
     if code == 0:
         H.ok("background plugin-scan socket proof (every check held)")

@@ -77,10 +77,14 @@ int clampPaceMs(int paceMs)
 	return std::clamp(paceMs, 0, 1000);
 }
 
-//! 0..1 for the task area's progress bar (1 when there was nothing to do).
+//! 0..1 for the task area's progress bar, or -1 (the TaskCenter's "the job
+//! cannot say") while the run has not planned its files yet: total_files is 0
+//! until the first turn runs, and 1.0 there would show a run that has not
+//! started as complete. A run that plans no files ends on its next turn, and
+//! TaskCenter::finish marks a done task 1.0.
 double backgroundScanFraction(int doneFiles, int totalFiles)
 {
-	if (totalFiles <= 0) { return 1.0; }
+	if (totalFiles <= 0) { return -1.0; }
 	return std::min(1.0, double(doneFiles) / double(totalFiles));
 }
 
