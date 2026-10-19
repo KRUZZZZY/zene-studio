@@ -96,20 +96,19 @@ XyPad::XyPad(QWidget *parent, FloatModel *xModel, FloatModel *yModel) :
 
 void XyPad::paintEvent(QPaintEvent *event)
 {
+	if (width() <= 0 || height() <= 0) { return; }
+
 	QPainter painter( this );
 		//Draw Frequecy maker lines
-		painter.setPen( QPen( QColor( 200, 200, 200, 200 ), 8, Qt::SolidLine, Qt::RoundCap, Qt::BevelJoin ) );
-		painter.setRenderHint( QPainter::Antialiasing, true );
+	painter.setPen( QPen( QColor( 200, 200, 200, 200 ), 8, Qt::SolidLine, Qt::RoundCap, Qt::BevelJoin ) );
+	painter.setRenderHint( QPainter::Antialiasing, true );
 
-		float xRange = m_xModel->maxValue() - m_xModel->minValue();
-		float xInc = xRange / width();
-		int xPos = ( m_xModel->value() - m_xModel->minValue() ) / xInc;
+	const int xPos = xyPadCoordinates::pixelForValue(
+		m_xModel->value(), m_xModel->minValue(), m_xModel->maxValue(), width());
+	const int yPos = xyPadCoordinates::pixelForValue(
+		m_yModel->value(), m_yModel->minValue(), m_yModel->maxValue(), height());
 
-		float yRange = m_yModel->maxValue() - m_yModel->minValue();
-		float yInc = yRange / height();
-		int yPos = ( m_yModel->value() - m_yModel->minValue() ) / yInc;
-
-		painter.drawPoint( xPos, yPos );
+	painter.drawPoint( xPos, yPos );
 }
 
 
@@ -139,20 +138,20 @@ void XyPad::mouseReleaseEvent(QMouseEvent *event)
 
 void XyPad::mouseMoveEvent(QMouseEvent *event)
 {
+	if (width() <= 0 || height() <= 0) { return; }
+
 	const auto pos = position(event);
 
 	if (m_acceptInput && (pos.x() >= 0) && (pos.x() < width())
 		&& (pos.y() >= 0) && (pos.y() < height()))
 	{
 		//set xmodel
-		float xRange = m_xModel->maxValue() - m_xModel->minValue();
-		float xInc = xRange / width();
-		m_xModel->setValue(m_xModel->minValue() + (pos.x() * xInc));
+		m_xModel->setValue(xyPadCoordinates::valueForPixel(
+			pos.x(), m_xModel->minValue(), m_xModel->maxValue(), width()));
 
 		//set ymodel
-		float yRange = m_yModel->maxValue() - m_yModel->minValue();
-		float yInc = yRange / height();
-		m_yModel->setValue(m_yModel->minValue() + (pos.y() * yInc));
+		m_yModel->setValue(xyPadCoordinates::valueForPixel(
+			pos.y(), m_yModel->minValue(), m_yModel->maxValue(), height()));
 	}
 }
 

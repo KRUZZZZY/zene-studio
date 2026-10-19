@@ -29,6 +29,7 @@
 #include <QtTest>
 
 #include <QComboBox>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
@@ -187,8 +188,10 @@ private slots:
 		DelayXyPadFixture fixture;
 		QTest::mousePress(&fixture.pad, Qt::LeftButton, Qt::NoModifier, QPoint(10, 10));
 		QTest::mouseMove(&fixture.pad, QPoint(80, 70));
-		QCOMPARE(fixture.xModel.value(), 0.8f);
-		QCOMPARE(fixture.yModel.value(), 0.7f);
+		// The range is mapped over the drawable extent (100 - 1 pixels), so the
+		// pixel 80 of 100 is 80/99 of the range and not 80/100 of it.
+		QCOMPARE(fixture.xModel.value(), 80.f / 99.f);
+		QCOMPARE(fixture.yModel.value(), 70.f / 99.f);
 		QTest::mouseRelease(&fixture.pad, Qt::LeftButton, Qt::NoModifier, QPoint(80, 70));
 	}
 
@@ -199,9 +202,46 @@ private slots:
 		QTest::mousePress(&fixture.pad, Qt::RightButton, Qt::NoModifier, QPoint(10, 10));
 		QTest::mouseRelease(&fixture.pad, Qt::RightButton, Qt::NoModifier, QPoint(10, 10));
 		QTest::mouseMove(&fixture.pad, QPoint(80, 70));
-		QCOMPARE(fixture.xModel.value(), 0.8f);
-		QCOMPARE(fixture.yModel.value(), 0.7f);
+		// The same mapping as in delayXyPadLeftDragUpdatesBothModels: 80/99 and 70/99.
+		QCOMPARE(fixture.xModel.value(), 80.f / 99.f);
+		QCOMPARE(fixture.yModel.value(), 70.f / 99.f);
 		QTest::mouseRelease(&fixture.pad, Qt::LeftButton, Qt::NoModifier, QPoint(80, 70));
+	}
+
+	//! Cluster new-p10-107: the pad divided the model range by the widget's pixel
+	//! COUNT, so the maximum landed on the coordinate width() - one pixel outside
+	//! the drawable area - and the last in-bounds pixel fell short of the maximum.
+	//! Neither end of either range could be reached. The last pixel is the end of
+	//! the range, as in the main window's pad (src/gui/XyPad.cpp:178 and :201).
+	void delayPadLastPixelSetsMaximum()
+	{
+		DelayXyPadFixture fixture;
+		const QPoint last(fixture.pad.width() - 1, fixture.pad.height() - 1);
+		QTest::mousePress(&fixture.pad, Qt::LeftButton, Qt::NoModifier, QPoint(0, 0));
+		QTest::mouseMove(&fixture.pad, last);
+		QTest::mouseRelease(&fixture.pad, Qt::LeftButton, Qt::NoModifier, last);
+		QCOMPARE(fixture.xModel.value(), fixture.xModel.maxValue());
+		QCOMPARE(fixture.yModel.value(), fixture.yModel.maxValue());
+	}
+
+	//! The maximum must be drawable too: the dot is painted with a pen eight
+	//! pixels wide, so a dot drawn AT the last pixel covers the column four
+	//! pixels to its left, while a dot drawn one pixel further right (outside
+	//! the widget) leaves that column empty. The pad is rendered without its
+	//! window background, so only the dot itself is on the image.
+	void delayPadMaximumDrawsAtLastPixel()
+	{
+		DelayXyPadFixture fixture;
+		fixture.xModel.setValue(fixture.xModel.maxValue());
+		fixture.yModel.setValue(fixture.yModel.maxValue());
+		QCoreApplication::processEvents();
+
+		QImage rendered(fixture.pad.size(), QImage::Format_ARGB32_Premultiplied);
+		rendered.fill(Qt::transparent);
+		fixture.pad.render(&rendered, QPoint(), QRegion(), QWidget::DrawChildren);
+		const QColor fourPixelsLeftOfTheLast = rendered.pixelColor(fixture.pad.width() - 5, fixture.pad.height() - 1);
+		QVERIFY2(fourPixelsLeftOfTheLast.alpha() > 0,
+			"the dot for the maximum is not drawn at the pad's last pixel");
 	}
 
 	void aDragIsOneStepAndARefusalIsShown()
