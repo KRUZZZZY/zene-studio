@@ -73,6 +73,10 @@
 #include "LmmsSemaphore.h"
 #endif
 #include "LocklessList.h"
+
+#include <cstddef>
+#include <type_traits>
+
 #include "AudioPulseAudio.h"
 
 using namespace lmms;
@@ -93,6 +97,22 @@ constexpr int kExitBudgetMs = 2000;
 //! Parked workers per case. More than one so a case does not hinge on a single
 //! thread's scheduling.
 constexpr int kWorkers = 8;
+constexpr int kListCapacity = sizeof(int) * 8;
+
+template<typename List>
+bool pushSucceeded(List& list, int value)
+{
+	// Keep this test compilable against the original void push() for the red run.
+	if constexpr (std::is_same_v<decltype(list.push(value)), bool>)
+	{
+		return list.push(value);
+	}
+	else
+	{
+		list.push(value);
+		return true;
+	}
+}
 
 #if defined(LMMS_HAVE_PULSEAUDIO) && defined(Q_OS_LINUX)
 std::atomic<unsigned> gPulseMainloopFreeCalls{0};
@@ -192,6 +212,33 @@ private slots:
 			destructionsBeforeListTeardown = LifetimeProbe::destructions;
 		}
 		QCOMPARE(LifetimeProbe::destructions, destructionsBeforeListTeardown + 1);
+	}
+
+	void exhaustedListReportsFailureWithoutLosingEntries()
+	{
+		lmms::LocklessList<int> list(kListCapacity);
+		for (int value = 0; value < kListCapacity; ++value)
+		{
+			QVERIFY(pushSucceeded(list, value));
+		}
+		QVERIFY(!pushSucceeded(list, kListCapacity));
+
+		auto* element = list.popList();
+		for (int expected = kListCapacity - 1; expected >= 0; --expected)
+		{
+			QVERIFY(element != nullptr);
+			QCOMPARE(element->value, expected);
+			auto* next = element->next;
+			list.free(element);
+			element = next;
+		}
+		QVERIFY(element == nullptr);
+
+		QVERIFY(pushSucceeded(list, 17));
+		auto* reused = list.popList();
+		QVERIFY(reused != nullptr);
+		QCOMPARE(reused->value, 17);
+		list.free(reused);
 	}
 
 	void initTestCase()

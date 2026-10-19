@@ -2406,3 +2406,7 @@ tests/CMakeLists.txt	Q050-041: registers CarlaMidiHandoffTest and gives it the b
 tests/rt-safety-scope.txt	Q050-041: declares CarlaInstrument::playImpl, handleMidiEvent, CarlaMidiHandoff, the exact MidiHandoffQueue/overflow methods, and MIDI byte conversion reached from those paths; the sweep checks them for locking, allocation and growth
 src/common/SharedMemory.cpp	ci-train-5: cast the Windows FileView handle through void* before Header* (mingw64/windows-arm64 build break from new-p9-457); no behaviour change.
 tests/CMakeLists.txt	ci-train-5: build VstEffectControlsTest only where the vsteffect target exists (macOS configure break).
+include/LocklessList.h	Cluster new-p10-227-port: LocklessList::push now reports allocator exhaustion without dereferencing a null element, allowing its caller to reject the insertion safely.
+src/core/LocklessAllocator.cpp	Cluster new-p10-227-port: exhausted alloc() returns nullptr silently (no logging on the realtime path).
+src/core/AudioEngine.cpp	Cluster new-p10-227-port: addPlayHandle checks LocklessList::push capacity failure and rejects the play handle through its existing cleanup path before publishing it to the bus.
+src/tracks/SampleTrack.cpp	Cluster new-p10-227-port: when adding an InputMonitorHandle fails because the fixed staging list is full, release the track-held handle and clear its pointer.

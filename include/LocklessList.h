@@ -62,9 +62,13 @@ public:
 		delete m_allocator;
 	}
 
-	void push( T value )
+	bool push( T value )
 	{
 		Element * e = m_allocator->alloc();
+		if( e == nullptr )
+		{
+			return false;
+		}
 		try
 		{
 			std::construct_at(e, std::move_if_noexcept(value),
@@ -82,6 +86,7 @@ public:
 		{
 			// Empty loop (compare_exchange_weak updates e->next)
 		}
+		return true;
 	}
 
 	Element * popList()

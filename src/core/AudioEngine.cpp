@@ -1179,9 +1179,16 @@ bool AudioEngine::addPlayHandle( PlayHandle* handle )
 		|| handle->type() == PlayHandle::Type::InputMonitorHandle
 		|| handle->type() == PlayHandle::Type::SessionCellHandle || !criticalXRuns())
 	{
-		m_newPlayHandles.push( handle );
-		handle->audioBusHandle()->addPlayHandle(handle);
-		return true;
+		if (m_newPlayHandles.push(handle))
+		{
+			handle->audioBusHandle()->addPlayHandle(handle);
+			return true;
+		}
+
+		if (handle->type() == PlayHandle::Type::InputMonitorHandle)
+		{
+			return false;
+		}
 	}
 
 	disposePlayHandle(handle, RealtimeScope::isActive());
