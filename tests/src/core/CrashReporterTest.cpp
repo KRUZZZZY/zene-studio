@@ -103,6 +103,16 @@ class CrashReporterTest : public QObject
 	Q_OBJECT
 
 private slots:
+	// The engine is only up for the case that needs it, so the cases around
+	// it - which must not get one - are unaffected.
+	void cleanup()
+	{
+		if (!m_engineStarted) { return; }
+		lmms::crashreporter::uninstall();
+		lmms::ControlRegistry::setReady(false);
+		lmms::Engine::destroy();
+		m_engineStarted = false;
+	}
 
 #ifdef Q_OS_WIN
 	// The Windows build must degrade honestly, not pretend.
@@ -506,7 +516,60 @@ private slots:
 		QVERIFY(!sessionMarkerExists());
 	}
 
+	// -----------------------------------------------------------------------
+	// 9. The control command refuses a directory masquerading as its marker.
+	//    The reporter writes the `offered` sentinel as a FILE, so a directory
+	//    occupying that path is not an acknowledgement: the write cannot
+	//    happen, and the command must not claim it did.
+	// -----------------------------------------------------------------------
+	void acknowledge_refuses_directory_at_offered_marker()
+	{
+		lmms::Engine::init(true);
+		m_engineStarted = true;
+		lmms::ControlRegistry::setReady(true);
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QVERIFY(lmms::crashreporter::install(dir.path().toStdString()));
+
+		// A report is there to acknowledge.
+		const QString reportPath = QString::fromStdString(lmms::crashreporter::pendingReportPath());
+		const QFileInfo reportInfo(reportPath);
+		QVERIFY(QDir().mkpath(reportInfo.absolutePath()));
+		QFile report(reportPath);
+		QVERIFY(report.open(QIODevice::WriteOnly));
+		QCOMPARE(report.write("pending crash report\n"), qint64(21));
+		report.close();
+		QVERIFY(QFileInfo(reportPath).isFile());
+
+		// The fault state: a DIRECTORY where the sentinel belongs.
+		const QString markerPath = QDir(reportInfo.absolutePath())
+			.filePath(QString::fromUtf8(lmms::crashreporter::kOfferedMarkerName));
+		QVERIFY(QDir().mkdir(markerPath));
+		QVERIFY(QFileInfo(markerPath).isDir());
+
+		const lmms::ControlResult result = lmms::ControlRegistry::instance()->invoke(
+			QStringLiteral("crash.acknowledge_report"));
+		QVERIFY2(!result.ok, qPrintable(result.errorMessage));
+		QCOMPARE(result.errorKind, lmms::ControlErrorKind::Busy);
+		// The report is kept - the user still has to attach it - and the
+		// directory that blocked the sentinel is left exactly as it was.
+		QVERIFY(QFileInfo(reportPath).isFile());
+		QVERIFY(QFileInfo(markerPath).isDir());
+
+		// The read side must agree with the write side: the sentinel was never
+		// written, so crash.list_reports must not call the report "offered".
+		const lmms::ControlResult listed = lmms::ControlRegistry::instance()->invoke(
+			QStringLiteral("crash.list_reports"));
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		QCOMPARE(listed.result.value(QStringLiteral("report_count")).toInt(), 1);
+		QCOMPARE(listed.result.value(QStringLiteral("offered")).toBool(), false);
+	}
+
 #endif // Q_OS_WIN
+
+private:
+	bool m_engineStarted = false;
 };
 
 QTEST_GUILESS_MAIN(CrashReporterTest)

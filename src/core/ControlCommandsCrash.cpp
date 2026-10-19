@@ -227,8 +227,11 @@ ControlResult handleListReports()
 	// report exists and has not been offered yet" (CrashReporter.cpp:
 	// hasPendingReport), which is exactly what the offer dialog is gated on.
 	result.insert(QStringLiteral("pending"), crashreporter::hasPendingReport());
+	// `offered` is the same state crash.acknowledge_report decides by, read
+	// the same way: the sentinel is a FILE the reporter wrote, so a directory
+	// at that path is not an acknowledgement.
 	result.insert(QStringLiteral("offered"),
-		paths.valid && QFileInfo::exists(wire(paths.offered)));
+		paths.valid && QFileInfo(wire(paths.offered)).isFile());
 	// A marker left behind means the previous run did not exit cleanly; the
 	// module removes it on the clean path (endSession()).
 	const bool markerLeft = crashreporter::sessionMarkerExists();
@@ -291,7 +294,13 @@ ControlResult handleAcknowledgeReport()
 	// for it. Refuse before the write, the way crash.enable refuses "already
 	// armed" and a second discard is not_found - crash.list_reports' `offered`
 	// is where the state this leaves behind is read.
-	if (QFileInfo::exists(wire(paths.offered)))
+	//
+	// The sentinel is a FILE: the reporter writes it with writeSmallFile(),
+	// which opens it for writing. A path that merely EXISTS is therefore not
+	// an acknowledgement - a directory occupying that name was never written
+	// and the reporter cannot write it there - so refusing here as "ALREADY
+	// acknowledged" would be a claim about a state that never happened.
+	if (QFileInfo(wire(paths.offered)).isFile())
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1: the report at %2 is ALREADY acknowledged (its `offered` sentinel %3 "
@@ -303,14 +312,19 @@ ControlResult handleAcknowledgeReport()
 	crashreporter::acknowledgePendingReport();
 
 	// The engine operation returns void, so the effect is READ BACK rather than
-	// assumed: a sentinel that could not be written (a read-only working
-	// directory) must not be reported as an acknowledge that happened.
-	const bool offered = QFileInfo::exists(wire(paths.offered));
-	if (!offered)
+	// assumed: the sentinel must be a FILE the reporter wrote, and the report
+	// must no longer be pending. A path that merely exists is not enough - a
+	// directory occupying the sentinel's name blocks the write, and a write
+	// that failed (a read-only working directory) leaves no sentinel at all.
+	const QFileInfo offeredMarker(wire(paths.offered));
+	const bool pending = crashreporter::hasPendingReport();
+	if (!offeredMarker.isFile() || pending)
 	{
 		return ControlResult::failure(ControlErrorKind::Busy,
-			QStringLiteral("%1: the report at %2 exists but its `offered` sentinel %3 could not be written, "
-				"so the report will be offered again on the next start. Nothing else was changed")
+			QStringLiteral("%1: the report at %2 was NOT acknowledged: its `offered` sentinel %3 is not a "
+				"file (the reporter writes that sentinel as a file, so a directory or anything else at "
+				"that path blocks the write) or the report is still pending. Nothing else was changed "
+				"and the report file is untouched")
 				.arg(AcknowledgeName, wire(paths.report), wire(paths.offered)));
 	}
 
@@ -319,7 +333,7 @@ ControlResult handleAcknowledgeReport()
 	result.insert(QStringLiteral("report_path"), wire(paths.report));
 	result.insert(QStringLiteral("offered_marker_path"), wire(paths.offered));
 	result.insert(QStringLiteral("report"), fileJson(paths.report));
-	result.insert(QStringLiteral("pending"), crashreporter::hasPendingReport());
+	result.insert(QStringLiteral("pending"), pending);
 	result.insert(QStringLiteral("offered"), true);
 	result.insert(QStringLiteral("__transaction"),
 		QJsonObject{{QStringLiteral("before"), before},
