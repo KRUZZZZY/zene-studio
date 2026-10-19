@@ -41,6 +41,7 @@
 
 #include <QHash>
 #include <QNetworkDatagram>
+#include <QPointer>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QUdpSocket>
@@ -87,6 +88,13 @@ struct Recorded
 	QByteArray body;
 };
 
+//! A SOAP action whose answer the test releases by hand: the connection stays open until then.
+struct HeldAction
+{
+	QPointer<QTcpSocket> socket;
+	Recorded request;
+};
+
 QByteArray soapFault(int code, const char* text)
 {
 	return QByteArray(SoapHead) + "<s:Fault><faultcode>s:Client</faultcode><faultstring>UPnPError</faultstring><detail>"
@@ -108,6 +116,16 @@ class FakeRouter : public QObject
 public:
 	Mode mode = Mode::Normal;
 	QList<Recorded> requests;
+	bool holdActions = false;  //!< when set, SOAP answers wait in `held` until releaseHeld() sends them
+	QList<HeldAction> held;
+
+	//! Sends the answer to a held action (by its index in arrival order); the action leaves `held`.
+	void releaseHeld(int index)
+	{
+		if (index < 0 || index >= held.size()) { return; }
+		const HeldAction action = held.takeAt(index);
+		if (action.socket) { answer(action.socket.data(), action.request); }
+	}
 
 	bool start(QString* why)
 	{
@@ -199,6 +217,13 @@ private:
 	}
 
 	void respond(QTcpSocket* socket, const Recorded& request)
+	{
+		if (holdActions && !request.requestLine.startsWith("GET")) { held.append({socket, request}); return; }
+		answer(socket, request);
+		return;
+	}
+
+	void answer(QTcpSocket* socket, const Recorded& request)
 	{
 		if (mode == Mode::Redirect && request.requestLine.startsWith("GET /rootDesc.xml"))
 		{
@@ -333,6 +358,8 @@ private slots:
 	{
 		m_router.mode = Mode::Normal;
 		m_router.requests.clear();
+		m_router.holdActions = false;
+		m_router.held.clear();
 		m_gateway.silent = false;
 		m_gateway.requests.clear();
 	}
@@ -475,6 +502,50 @@ private slots:
 		QVERIFY(m_router.last("AddPortMapping").body.contains("<NewExternalPort>41751</NewExternalPort>"));
 		mapping.stop();
 		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("DeletePortMapping"), 1, 5000);
+	}
+
+	//! stop() and start() again while the first AddPortMapping is still out: its stale answer must not make the router
+	//! delete the mapping that the newer attempt is adding on the same port.
+	void staleAddAfterStopAndRestartKeepsTheNewerMapping()
+	{
+		m_router.holdActions = true;
+		UpnpMapper mapper;
+		mapper.setSearchEndpoint(QHostAddress(QHostAddress::LocalHost), m_router.searchPort(), true);
+		QSignalSpy finished(&mapper, &UpnpMapper::finished);
+		mapper.map(41740, 41740, 3600, QHostAddress(m_lan));  // attempt 1: search, description, then AddPortMapping held
+		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("AddPortMapping"), 1, 5000);
+		mapper.unmap();  // stop() with nothing mapped yet: nothing is deleted
+		mapper.map(41740, 41740, 3600, QHostAddress(m_lan));  // restart: the router is known, so attempt 2 adds at once
+		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("AddPortMapping"), 2, 5000);
+		m_router.releaseHeld(0);  // attempt 1's stale answer: the router did make a mapping for the port
+		QTest::qWait(300);
+		QCOMPARE(m_router.count("DeletePortMapping"), 0);  // a delete now would remove attempt 2's mapping
+		m_router.holdActions = false;
+		m_router.releaseHeld(0);  // attempt 2's own answer; its address request is answered at once
+		QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+		const MappingResult result = finished.first().first().value<MappingResult>();
+		QVERIFY2(result.ok, qPrintable(result.message));
+		QCOMPARE(result.method, QStringLiteral("upnp"));
+		QCOMPARE(m_router.count("DeletePortMapping"), 0);
+		mapper.unmap();  // the attempt that holds the mapping removes it when it stops
+		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("DeletePortMapping"), 1, 5000);
+	}
+
+	//! With nothing newer running, a stale AddPortMapping answer is still taken back: stop() leaves no entry behind.
+	void staleAddAfterStopIsTakenBack()
+	{
+		m_router.holdActions = true;
+		UpnpMapper mapper;
+		mapper.setSearchEndpoint(QHostAddress(QHostAddress::LocalHost), m_router.searchPort(), true);
+		QSignalSpy finished(&mapper, &UpnpMapper::finished);
+		mapper.map(41740, 41740, 3600, QHostAddress(m_lan));
+		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("AddPortMapping"), 1, 5000);
+		mapper.unmap();
+		m_router.holdActions = false;
+		m_router.releaseHeld(0);  // the router answers after stop()
+		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("DeletePortMapping"), 1, 5000);
+		QTest::qWait(100);
+		QCOMPARE(finished.count(), 0);
 	}
 
 	void whenBothFailTheMessageNamesBothAndWhatToDo()
