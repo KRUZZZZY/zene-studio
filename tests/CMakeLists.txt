@@ -1081,6 +1081,8 @@ set(LMMS_TESTS
 	src/gui/TempoMapPanelTest.cpp
 	# The file browser's Tags menu (browser.tag.add / browser.tag.remove), over a throwaway store.
 	src/gui/BrowserTagMenuTest.cpp
+	# 0.5.0 L11 (Q050-133): a browser file drag carries a text/uri-list URL beside its StringPair payload.
+	src/gui/BrowserDragUrlTest.cpp
 	# File search results queued for an older query are ignored by the current browser search.
 	src/gui/FileSearchJobTest.cpp
 	# File revealing uses xdg-open when the MIME query cannot find a directory handler.
@@ -2449,6 +2451,7 @@ set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLA
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserTagMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(BrowserDragUrlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FileSearchJobTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VisibilitySetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CaptureMidiMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

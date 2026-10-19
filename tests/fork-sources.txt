@@ -2674,3 +2674,6 @@ tests/src/gui/ChordProgressionPanelTest.cpp
 tests/control-chord-progression.py
 # cluster review-4ec3067be: ALREADY-FIXED report for the Follow Action jump_to fraction/huge-number coercion (fixed earlier in 5784cb570).
 docs/qwen-fixes-2026-10/cluster-review-4ec3067be.md
+
+# 2026-10-19 (Q050-133): a browser file drag carries a text/uri-list URL beside its StringPair payload (fork-NEW proof).
+tests/src/gui/BrowserDragUrlTest.cpp
