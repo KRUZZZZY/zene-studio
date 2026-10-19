@@ -331,8 +331,12 @@ void registerStreamSet(ControlRegistry& registry)
 
 		const QJsonObject before = streamJson(streamOf(target.note));
 		target.clip->addJournalCheckPoint();
+		// Publication is one atomic swap of an immutable snapshot (Note.h,
+		// MpeStreamSnapshot.h): a handle the audio thread copied keeps the old
+		// snapshot, which is freed off the realtime path once it lets go.
 		if (stream.empty()) { target.note->clearMpeStream(); }
 		else { target.note->setMpeStream(stream); }
+		MpeStreamSnapshot::reclaimRetired();
 		target.clip->dataChanged();
 		if (target.clip->linkId() > 0) { ClipLinks::mirrorContent(target.clip); }
 		Engine::getSong()->setModified();

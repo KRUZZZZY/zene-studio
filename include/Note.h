@@ -33,6 +33,7 @@
 #include "volume.h"
 #include "panning.h"
 #include "MpeExpression.h"
+#include "MpeStreamSnapshot.h"
 #include "SerializingObject.h"
 #include "NoteConditions.h"
 #include "TimePos.h"
@@ -238,14 +239,27 @@ public:
 	 *  and a note whose stream was cleared - has `hasMpeStream() == false` and
 	 *  serializes exactly as before: the stream is three optional attributes,
 	 *  written only when non-empty. Playback reads the stream to schedule the
-	 *  axes at their own offsets; a note without one keeps the scalar path. */
-	bool hasMpeStream() const { return m_mpeStream != nullptr && !m_mpeStream->empty(); }
-	const MpeExpressionStream& mpeStream() const { return *m_mpeStream; }
-	//! The editable stream, created empty on first use.
-	MpeExpressionStream& mpeStreamForEdit();
+	 *  axes at their own offsets; a note without one keeps the scalar path.
+	 *
+	 *  Round 3 (realtime): the stream is an immutable MpeStreamSnapshot behind
+	 *  an atomic pointer (include/MpeStreamSnapshot.h has the protocol and its
+	 *  memory-ordering argument). An edit never changes a snapshot in place: it
+	 *  builds a new one and publishes it, so a copy taken concurrently - the
+	 *  audio thread's NotePlayHandle - holds either the old snapshot or the new
+	 *  one, never a half-written vector, and the old one is never freed on the
+	 *  realtime path. mpeStream() is valid until this note publishes again,
+	 *  i.e. for the thread that edits the note, and for a handle's own copy. */
+	bool hasMpeStream() const
+	{
+		const MpeStreamSnapshot* snapshot = m_mpeStream.load( std::memory_order_acquire );
+		return snapshot != nullptr && !snapshot->stream().empty();
+	}
+	const MpeExpressionStream& mpeStream() const { return m_mpeStream.load( std::memory_order_acquire )->stream(); }
+	//! Publish \a stream as a new snapshot (an empty one clears). Allocates:
+	//! editing threads only.
 	void setMpeStream( const MpeExpressionStream& stream );
 	//! Drops the whole stream (and its serialized attributes with it).
-	void clearMpeStream() { m_mpeStream.reset(); }
+	void clearMpeStream();
 
 	//! Types of per-note automation. Currently only detuning/pitch bending is supported.
 	enum class ParameterType
@@ -382,6 +396,13 @@ public:
 
 
 protected:
+	/*! Q050-016 round 3: hand this note's stream reference to the deferred
+	 *  reclaimer instead of freeing it here. NotePlayHandle's destructor - the
+	 *  realtime teardown path - calls it, so the final release of a stream on
+	 *  the audio thread never frees (MpeStreamSnapshot::reclaimRetired does,
+	 *  later, on a control thread). */
+	void retireMpeStreamDeferred() noexcept;
+
 	void saveSettings( QDomDocument & doc, QDomElement & parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
 
@@ -423,15 +444,16 @@ private:
 	int m_mpePressure = 0;
 	int m_mpeTimbre = 0;
 
-	// Q050-016: the optional per-note expression streams. Shared, never
-	// mutated in place: copies (including the NotePlayHandle the audio thread
-	// builds by copying the note) share the same immutable snapshot, so
-	// starting a streamed note allocates nothing on the audio thread - the
-	// copy is one lock-free reference count. Every mutation goes through
-	// mpeStreamForEdit()/setMpeStream(), which detach (copy-on-write) on the
-	// calling - UI/control - thread, so the audio thread never observes a
-	// half-written vector. The same sharing shape as m_detuning above.
-	std::shared_ptr<MpeExpressionStream> m_mpeStream;
+	// Q050-016: the optional per-note expression stream, an immutable
+	// snapshot behind an atomic pointer (round 3; MpeStreamSnapshot.h). Copies
+	// take a counted reference (lock-free, allocation-free - the audio thread
+	// builds its NotePlayHandle that way); setMpeStream()/clearMpeStream()/
+	// operator= swap the pointer with one atomic exchange and release the old
+	// snapshot, which is freed only off the realtime path.
+	std::atomic<const MpeStreamSnapshot*> m_mpeStream{ nullptr };
+	//! Swap m_mpeStream to \a next (taking over its reference) and release
+	//! the previous snapshot.
+	void publishMpeStream( const MpeStreamSnapshot* next ) noexcept;
 
 	// 0.5.0 L07: mute, release velocity, the pre-quantise timing (-1 = none).
 	bool m_muted = false;

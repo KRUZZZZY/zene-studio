@@ -294,7 +294,8 @@ jobs:
           grep -q "fsanitize=realtime" "$flags" && grep -q "LMMS_RTSAN=1" "$flags" \
             || { echo "::error::not instrumented (no -fsanitize=realtime / LMMS_RTSAN in $flags)"; exit 1; }
           cmake --build build-rtsan -j4 --target RecordingLatencyTest DummyPacingTest \
-            SessionSchedulerRenderTest MixerConcurrencyTest ModulationAudioViewTest TempoMapTest
+            SessionSchedulerRenderTest MixerConcurrencyTest ModulationAudioViewTest TempoMapTest \
+            MpeStreamSnapshotTest
       - name: Run them under RTSan
         working-directory: build-rtsan/tests
         env:
@@ -302,8 +303,10 @@ jobs:
           RTSAN_OPTIONS: halt_on_error=false:print_stats_on_exit=true
         run: |
           fail=0
+          # MpeStreamSnapshotTest (Q050-016): a note's expression-stream copy, release and the
+          # realtime final release run inside RealtimeScopes - no lock, allocation or free there.
           for t in RecordingLatencyTest DummyPacingTest SessionSchedulerRenderTest MixerConcurrencyTest \
-                   ModulationAudioViewTest TempoMapTest; do
+                   ModulationAudioViewTest TempoMapTest MpeStreamSnapshotTest; do
             ./"$t" > "$t.rtsan.log" 2>&1 || { echo "::error::$t failed under RTSan"; fail=1; }
             if grep -q "RealtimeSanitizer" "$t.rtsan.log"; then
               echo "::error::$t: RealtimeSanitizer findings"

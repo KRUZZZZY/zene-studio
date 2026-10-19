@@ -368,6 +368,9 @@ AudioEngine::AudioEngine(bool renderOnly)
 	connect(&m_playHandleCapacityTimer, &QTimer::timeout, this, [this] {
 		serviceSampleVoicePoolOnControlThread();
 		topUpPlayHandleCapacityOnControlThread();
+		// Q050-016 round 3: free the expression-stream snapshots the render path
+		// retired (a playing handle held the last reference) - here, off it.
+		MpeStreamSnapshot::reclaimRetired();
 	});
 	m_playHandleCapacityTimer.start(100);
 }
@@ -422,6 +425,8 @@ AudioEngine::~AudioEngine()
 		delete[] input;
 	}
 	delete m_automatableModelRegistry.exchange(nullptr, std::memory_order_acq_rel);
+	// Q050-016 round 3: the workers are joined, so nothing can copy a stream now.
+	MpeStreamSnapshot::reclaimRetired();
 }
 
 

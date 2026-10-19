@@ -388,10 +388,11 @@ private slots:
 		Note note( TimePos( 384 ), TimePos( 0 ), 60 );
 		QVERIFY( !note.hasMpeStream() );
 
-		MpeExpressionStream& stream = note.mpeStreamForEdit();
+		MpeExpressionStream stream;
 		stream.setPitch( { { 0, 0 }, { 96, 1200 }, { 192, -2400 } } );
 		stream.setPressure( { { 0, 0 }, { 48, 64 }, { 192, 127 } } );
 		stream.setTimbre( { { 96, 32 } } );
+		note.setMpeStream( stream );
 		QVERIFY( note.hasMpeStream() );
 
 		QDomDocument doc;
@@ -421,7 +422,9 @@ private slots:
 		QCOMPARE( loaded.mpeStream().timbre()[0].tick, tick_t( 96 ) );
 		QCOMPARE( loaded.mpeStream().timbre()[0].value, 32 );
 
-		// The copied streams are deep and identical.
+		// The loaded note holds its own snapshot (built by the loader), equal
+		// to the original's.
+		QVERIFY( &loaded.mpeStream() != &note.mpeStream() );
 		QVERIFY( loaded.mpeStream().pitch() == note.mpeStream().pitch() );
 		QVERIFY( loaded.mpeStream().pressure() == note.mpeStream().pressure() );
 
@@ -431,11 +434,17 @@ private slots:
 		QCOMPARE( nodeToString( element2 ), first );
 
 		// The copy constructor (MidiClip::addNote, NotePlayHandle) carries it
-		// and does not share the editable object.
+		// by sharing the note's immutable snapshot (round 3: no deep copy); an
+		// edit of the copy publishes a new snapshot and leaves the original's
+		// alone.
 		Note copy( note );
 		QVERIFY( copy.hasMpeStream() );
+		QVERIFY( &copy.mpeStream() == &note.mpeStream() );
 		QCOMPARE( copy.mpeStream().pressure()[2].value, 127 );
-		copy.mpeStreamForEdit().setPressure( { { 0, 11 } } );
+		MpeExpressionStream edited = copy.mpeStream();
+		edited.setPressure( { { 0, 11 } } );
+		copy.setMpeStream( edited );
+		QCOMPARE( copy.mpeStream().pressure()[0].value, 11 );
 		QCOMPARE( note.mpeStream().pressure()[2].value, 127 );
 
 		// Clearing removes the stream and the attributes with it.
@@ -449,7 +458,9 @@ private slots:
 		// Clamping and ordering are the setter's own job: a hostile value is
 		// bounded and out-of-order points are sorted by tick.
 		Note hostile;
-		hostile.mpeStreamForEdit().setPitch( { { 192, 99999 }, { 0, -99999 } } );
+		MpeExpressionStream hostileStream;
+		hostileStream.setPitch( { { 192, 99999 }, { 0, -99999 } } );
+		hostile.setMpeStream( hostileStream );
 		QCOMPARE( hostile.mpeStream().pitch()[0].tick, tick_t( 0 ) );
 		QCOMPARE( hostile.mpeStream().pitch()[0].value, -MpeNoteExpression::MaxPitchCents );
 		QCOMPARE( hostile.mpeStream().pitch()[1].tick, tick_t( 192 ) );
@@ -586,38 +597,53 @@ private slots:
 			}
 		}
 	}
-	//! Q050-016 round 2 (realtime): copying a note that carries a stream
-	//! allocates nothing - the copy shares the snapshot (copy-on-write), so
-	//! the NotePlayHandle the audio thread builds by copying the note
-	//! allocates nothing for the stream either. A plain note copies
-	//! allocation-free too, which is the control that the probe is armed.
+	//! Q050-016 realtime: copying a note that carries a stream allocates
+	//! nothing and frees nothing, absolutely (the probe counts both, in
+	//! library code too) - the copy takes a counted reference to the note's
+	//! immutable snapshot (round 3, include/MpeStreamSnapshot.h), so the
+	//! NotePlayHandle the audio thread builds by copying the note costs the
+	//! stream no allocation. A plain note copies allocation-free too. The
+	//! concurrent half (edits racing copies, the realtime final release) is
+	//! MpeStreamSnapshotTest.
 	void streamedNoteCopiesAllocateNothing()
 	{
 		using namespace lmms;
 
 		Note streamed( TimePos( 384 ), TimePos( 0 ), 60 );
-		streamed.mpeStreamForEdit().setPitch( { { 0, 0 }, { 96, 1200 } } );
-		streamed.mpeStreamForEdit().setPressure( { { 0, 64 } } );
-		streamed.mpeStreamForEdit().setTimbre( { { 48, 32 } } );
+		MpeExpressionStream stream;
+		stream.setPitch( { { 0, 0 }, { 96, 1200 } } );
+		stream.setPressure( { { 0, 64 } } );
+		stream.setTimbre( { { 48, 32 } } );
+		streamed.setMpeStream( stream );
 		QVERIFY( streamed.hasMpeStream() );
 		Note plain( TimePos( 384 ), TimePos( 0 ), 60 );
 
-		lmms::test::tlCountAllocations = true;
-		lmms::test::resetAllocationCount();
-		Note copy( streamed );
-		Note assigned;
-		assigned = streamed;
-		Note plainCopy( plain );
-		const std::uint64_t allocations = lmms::test::tlAllocationCount;
-		lmms::test::tlCountAllocations = false;
+		std::uint64_t allocations = 0;
+		std::uint64_t frees = 0;
+		{
+			lmms::test::resetAllocationCount();
+			lmms::test::tlCountAllocations = true;
+			Note copy( streamed );
+			Note assigned;
+			assigned = streamed;
+			Note plainCopy( plain );
+			allocations = lmms::test::tlAllocationCount;
+			frees = lmms::test::tlFreeCount;
+			lmms::test::tlCountAllocations = false;
+
+			QVERIFY( copy.hasMpeStream() );
+			QVERIFY( copy.mpeStream().pitch() == streamed.mpeStream().pitch() );
+			QVERIFY( assigned.mpeStream().pressure() == streamed.mpeStream().pressure() );
+			// ... and an edit of one publishes a new snapshot for it alone.
+			MpeExpressionStream edited = copy.mpeStream();
+			edited.setPressure( { { 0, 11 } } );
+			copy.setMpeStream( edited );
+			QCOMPARE( streamed.mpeStream().pressure()[0].value, 64 );
+			QCOMPARE( copy.mpeStream().pressure()[0].value, 11 );
+		}
 
 		QCOMPARE( allocations, 0ull );
-		QVERIFY( copy.hasMpeStream() );
-		QVERIFY( copy.mpeStream().pitch() == streamed.mpeStream().pitch() );
-		QVERIFY( assigned.mpeStream().pressure() == streamed.mpeStream().pressure() );
-		// ... and the copies still detach: editing one leaves the other alone.
-		copy.mpeStreamForEdit().setPressure( { { 0, 11 } } );
-		QCOMPARE( streamed.mpeStream().pressure()[0].value, 64 );
+		QCOMPARE( frees, 0ull );
 	}
 
 	//! Q050-016 round 2 (LLP64): stream-point frame offsets stay exact past

@@ -163,6 +163,12 @@ NotePlayHandle::~NotePlayHandle()
 		releaseBuffer();
 	}
 
+	// Q050-016 round 3: this is the realtime teardown path. If the handle holds
+	// the last reference to its note's expression stream (the note was edited
+	// or deleted while it played), the snapshot is retired, not freed - the
+	// control thread's MpeStreamSnapshot::reclaimRetired() frees it later.
+	retireMpeStreamDeferred();
+
 	unlock();
 }
 

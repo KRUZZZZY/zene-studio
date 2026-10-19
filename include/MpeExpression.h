@@ -99,11 +99,10 @@ struct MpeExpressionPoint
  *  (NotePlayHandle), which sends pitch/pressure/timbre at each point's own
  *  offset; a note without one keeps the scalar playback path unchanged.
  *
- *  Realtime contract: the playback path only READS a shared snapshot (no
- *  allocation, no lock - copying a note into its handle shares the snapshot
- *  with one lock-free reference count, the same shape as the detuning helper);
- *  writes detach (copy-on-write) on the UI/control thread, so the audio
- *  thread never observes a half-written vector.
+ *  This is a plain value type. A note never exposes one for in-place editing:
+ *  it publishes each new value as an immutable MpeStreamSnapshot
+ *  (include/MpeStreamSnapshot.h, round 3), which is what the audio thread
+ *  reads - so the realtime contract lives there, not here.
  */
 class MpeExpressionStream
 {

@@ -203,7 +203,9 @@ Note::Note( const Note & note ) :
 	m_mpePitchCents(note.m_mpePitchCents),
 	m_mpePressure(note.m_mpePressure),
 	m_mpeTimbre(note.m_mpeTimbre),
-	m_mpeStream(note.m_mpeStream),
+	// Round 3: a counted reference to the source's snapshot (lock-free, no
+	// allocation) - the audio thread copies notes into handles through here.
+	m_mpeStream(MpeStreamSnapshot::acquire(note.m_mpeStream)),
 	m_muted(note.m_muted),
 	m_releaseVelocity(note.m_releaseVelocity),
 	m_unquantisedPos(note.m_unquantisedPos),
@@ -238,7 +240,10 @@ Note& Note::operator=(const Note& note)
 	m_unquantisedPos = note.m_unquantisedPos;
 	m_unquantisedLength = note.m_unquantisedLength;
 	m_conditions = note.m_conditions;
-	m_mpeStream = note.m_mpeStream;
+	if( this != &note )
+	{
+		publishMpeStream( MpeStreamSnapshot::acquire( note.m_mpeStream ) );
+	}
 
 	return *this;
 }
@@ -302,6 +307,10 @@ void Note::setId(int id)
 
 Note::~Note()
 {
+	// Off the realtime path this frees the last reference at once; inside a
+	// RealtimeScope it retires it (MpeStreamSnapshot::release). A handle has
+	// already retired its reference (retireMpeStreamDeferred), so this is null.
+	MpeStreamSnapshot::release( m_mpeStream.load( std::memory_order_acquire ), false );
 }
 
 
@@ -416,34 +425,40 @@ void Note::clearMpeExpression()
 
 
 
-MpeExpressionStream& Note::mpeStreamForEdit()
+void Note::setMpeStream( const MpeExpressionStream& stream )
 {
-	// Copy-on-write: the caller gets the only reference, so in-place edits
-	// through it can never touch a snapshot the audio thread is reading (a
-	// playing handle holds its own shared reference to the old one). The
-	// allocation happens here, on the UI/control thread - never on audio.
-	if( m_mpeStream == nullptr )
-	{
-		m_mpeStream = std::make_shared<MpeExpressionStream>();
-	}
-	else if( m_mpeStream.use_count() > 1 )
-	{
-		m_mpeStream = std::make_shared<MpeExpressionStream>( *m_mpeStream );
-	}
-	return *m_mpeStream;
+	// The new snapshot is built here, on the editing thread (the allocation),
+	// complete before it is published; the old one is never changed.
+	publishMpeStream( stream.empty() ? nullptr : MpeStreamSnapshot::create( stream ) );
 }
 
 
 
 
-void Note::setMpeStream( const MpeExpressionStream& stream )
+void Note::clearMpeStream()
 {
-	if( stream.empty() )
-	{
-		clearMpeStream();
-		return;
-	}
-	m_mpeStream = std::make_shared<MpeExpressionStream>( stream );
+	publishMpeStream( nullptr );
+}
+
+
+
+
+void Note::publishMpeStream( const MpeStreamSnapshot* next ) noexcept
+{
+	// One atomic exchange is the publication (seq_cst: its release half makes
+	// the snapshot's contents visible with the pointer, and it is the swap the
+	// reclamation argument in MpeStreamSnapshot.h orders against). The old
+	// snapshot is released after it can no longer be loaded from this note.
+	const MpeStreamSnapshot* previous = m_mpeStream.exchange( next, std::memory_order_seq_cst );
+	MpeStreamSnapshot::release( previous, false );
+}
+
+
+
+
+void Note::retireMpeStreamDeferred() noexcept
+{
+	MpeStreamSnapshot::release( m_mpeStream.exchange( nullptr, std::memory_order_seq_cst ), true );
 }
 
 
@@ -565,19 +580,20 @@ void Note::saveSettings( QDomDocument & doc, QDomElement & parent )
 	// not know. Attributes, not child elements: Note::loadSettings treats ANY
 	// child of a note element as detuning, so a stream child would make every
 	// expressive note grow a detuning curve on load.
-	if( m_mpeStream != nullptr )
+	if( hasMpeStream() )
 	{
-		if( !m_mpeStream->pitch().empty() )
+		const MpeExpressionStream& stream = mpeStream();
+		if( !stream.pitch().empty() )
 		{
-			parent.setAttribute( "mpepitchpts", streamAttributeText( m_mpeStream->pitch() ) );
+			parent.setAttribute( "mpepitchpts", streamAttributeText( stream.pitch() ) );
 		}
-		if( !m_mpeStream->pressure().empty() )
+		if( !stream.pressure().empty() )
 		{
-			parent.setAttribute( "mpepressurepts", streamAttributeText( m_mpeStream->pressure() ) );
+			parent.setAttribute( "mpepressurepts", streamAttributeText( stream.pressure() ) );
 		}
-		if( !m_mpeStream->timbre().empty() )
+		if( !stream.timbre().empty() )
 		{
-			parent.setAttribute( "mpetimbrepts", streamAttributeText( m_mpeStream->timbre() ) );
+			parent.setAttribute( "mpetimbrepts", streamAttributeText( stream.timbre() ) );
 		}
 	}
 
@@ -679,28 +695,25 @@ void Note::loadSettings( const QDomElement & _this )
 	// default), and each axis's points are clamped and re-sorted by the setter
 	// so a hostile file cannot carry an out-of-range value or unsorted points
 	// into playback.
-	m_mpeStream.reset();
-	if( _this.hasAttribute( "mpepitchpts" ) || _this.hasAttribute( "mpepressurepts" )
-		|| _this.hasAttribute( "mpetimbrepts" ) )
+	// Round 3: the axes are parsed into a local value and published once, so
+	// the note never exposes a half-built stream.
+	MpeExpressionStream stream;
+	if( _this.hasAttribute( "mpepitchpts" ) )
 	{
-		MpeExpressionStream& stream = mpeStreamForEdit();
-		if( _this.hasAttribute( "mpepitchpts" ) )
-		{
-			stream.setPitch( parseStreamAttribute( _this.attribute( "mpepitchpts" ) ) );
-		}
-		if( _this.hasAttribute( "mpepressurepts" ) )
-		{
-			stream.setPressure( parseStreamAttribute( _this.attribute( "mpepressurepts" ) ) );
-		}
-		if( _this.hasAttribute( "mpetimbrepts" ) )
-		{
-			stream.setTimbre( parseStreamAttribute( _this.attribute( "mpetimbrepts" ) ) );
-		}
-		// An attribute that parsed to no points (empty text, or all tokens
-		// malformed) leaves the stream empty; drop the whole object so
-		// hasMpeStream() is false and a re-save writes no attribute.
-		if( m_mpeStream->empty() ) { m_mpeStream.reset(); }
+		stream.setPitch( parseStreamAttribute( _this.attribute( "mpepitchpts" ) ) );
 	}
+	if( _this.hasAttribute( "mpepressurepts" ) )
+	{
+		stream.setPressure( parseStreamAttribute( _this.attribute( "mpepressurepts" ) ) );
+	}
+	if( _this.hasAttribute( "mpetimbrepts" ) )
+	{
+		stream.setTimbre( parseStreamAttribute( _this.attribute( "mpetimbrepts" ) ) );
+	}
+	// An attribute that parsed to no points (empty text, or all tokens
+	// malformed) leaves the stream empty: setMpeStream() then clears, so
+	// hasMpeStream() is false and a re-save writes no attribute.
+	setMpeStream( stream );
 
 	if( _this.hasChildNodes() )
 	{

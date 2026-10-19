@@ -1247,6 +1247,7 @@ set(LMMS_SRCS
 	core/midi/MidiPort.cpp
 	core/midi/MidiReconnect.cpp
 	core/midi/MpeExpression.cpp
+	core/midi/MpeStreamSnapshot.cpp
 	core/midi/MidiWinMM.cpp
 
 	# ARCH-4 slice S6 (SPEC-ARCH-4 1.9): the append-only <z:provenance>

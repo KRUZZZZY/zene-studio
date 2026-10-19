@@ -46,12 +46,13 @@
  *  Realtime contract (absolute): the audio thread reads the note's own vectors
  *  (no allocation), takes no lock, does no I/O and emits no Qt signal. The only
  *  work is a handful of integer/fp comparisons and the MidiEvent sends that the
- *  note-on already uses. TSan does not run on this box (runtime crash at thread
- *  creation), so the race argument is by design: the stream is written on the
- *  UI/control thread only, and a playing handle shares the note's immutable
- *  snapshot (Note's copy constructor shares it with one lock-free reference
- *  count, and every edit detaches on the writer's thread), so the audio
- *  thread never observes a half-written vector.
+ *  note-on already uses. The stream read here is the handle's OWN snapshot
+ *  (round 3, include/MpeStreamSnapshot.h): Note's copy constructor took a
+ *  counted reference to the note's immutable snapshot, nothing ever writes a
+ *  handle's snapshot pointer while it plays, and an edit of the clip's note
+ *  publishes a new snapshot instead of touching this one. TSan does not run on
+ *  this box (runtime crash at thread creation); the memory-ordering argument
+ *  is written out in MpeStreamSnapshot.h.
  */
 
 #include <cmath>

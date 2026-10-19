@@ -923,6 +923,7 @@ include/ModulatorPanel.h
 include/MonitorMode.h
 include/MpeExpression.h
 include/MpeInputAction.h
+include/MpeStreamSnapshot.h
 include/MpscQueue.h
 include/MultiTrackRecorder.h
 include/MusicalTime.h
@@ -1852,6 +1853,7 @@ src/core/audio/OssSampleConversion.h
 src/core/audio/TrackRecorder.cpp
 src/core/midi/MidiReconnect.cpp
 src/core/midi/MpeExpression.cpp
+src/core/midi/MpeStreamSnapshot.cpp
 src/gui/AafImportMenu.cpp
 src/gui/ArrangerFileDrop.cpp
 src/gui/ArrangerNavigator.cpp
