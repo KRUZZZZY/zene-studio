@@ -18,7 +18,12 @@ each of pitch, pressure and timbre — read and written through `note.expression
 before), and **played at each point's own frame offset** (`src/core/MpeExpressionStreamPlayback.cpp`,
 driven from `NotePlayHandle::play()`): pitch as a MIDI bend on the note's channel plus a frequency
 ratio for the built-in synthesisers, pressure as channel pressure, timbre as CC74. §6.4's "no
-per-note expression curve" is closed for storage and playback. The streams' GUI path is the piano
+per-note expression curve" is closed for storage and playback. A note publishes its stream to the
+audio thread as an immutable, reference-counted snapshot swapped in with one atomic exchange
+(`include/MpeStreamSnapshot.h`, round 3): copying a note into its play handle takes a counted
+reference without a lock, an allocation or a free, an edit never changes a snapshot a handle holds,
+and a snapshot whose last reference the audio thread drops is retired and freed later on the
+control thread (`tests/src/core/MpeStreamSnapshotTest.cpp`). The streams' GUI path is the piano
 roll's note-tools menu (MPE pitch ramp... and Clear MPE expression streams, both through the shared
 `note.expression_stream_set` command — round 2, 2026-10-16); the full curve *editor* (drawing and
 dragging the streams) is still not built — it is the dependent unit Q050-137.

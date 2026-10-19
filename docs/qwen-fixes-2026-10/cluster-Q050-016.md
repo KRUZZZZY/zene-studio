@@ -55,3 +55,8 @@ serialization; round 2 answers the Luna REWORK review point by point. Logs:
 Known limits: no GUI curve editor (drawing/dragging streams is Q050-137); point resolution is a
 tick; step-hold, no interpolation; TSan does not run on this box, so the race argument is by design
 (shared immutable snapshot + writer-side detach). `git status` is clean after the commits.
+
+Round 3 (Opus lane, 2026-10-19): the round-2 shared_ptr publication described above is REPLACED.
+`m_mpeStream` is now `std::atomic<const MpeStreamSnapshot*>` (immutable, reference-counted, published
+by one atomic exchange, never freed on the realtime path); see docs/050-features/Q050-016.md
+"Round 3" and include/MpeStreamSnapshot.h.
