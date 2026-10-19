@@ -31,10 +31,12 @@
 #include <QLayout>
 #include <QPointer>
 #include <QScrollBar>
+#include <QSet>
 #include <QWheelEvent>
 
 #include "TrackContainer.h"
 #include "AudioEngine.h"
+#include "AutomationTrack.h"
 #include "DataFile.h"
 #include "DpiHelper.h"
 #include "MainWindow.h"
@@ -203,6 +205,13 @@ TrackView * TrackContainerView::addTrackView( TrackView * _tv )
 	{
 		connect(folder, &TrackFolder::stateChanged, this, &TrackContainerView::realignTracks, Qt::QueuedConnection);
 	}
+	// 0.5.0 Q050-022: a track's automation-lane fold flag can change from the
+	// agent surface (automation.lanes_set_collapsed) or from an undo/redo of that
+	// command's Track checkpoint, not only from this view's own button. Listening
+	// to the track's signal makes either path re-lay the rows, so no caller has to
+	// call realignTracks() itself.
+	connect(_tv->getTrack(), &Track::automationLanesCollapsedChanged,
+		this, &TrackContainerView::realignTracks, Qt::QueuedConnection);
 	m_scrollLayout->addWidget( _tv );
 	connect(this, &TrackContainerView::positionChanged,
 		_tv->getTrackContentWidget(), &TrackContentWidget::changePosition);
@@ -312,14 +321,105 @@ static bool hiddenByFolder(const Track* track)
 	return false;
 }
 
+/*! 0.5.0 Q050-022: true when @a track is an automation lane that follows an
+ *  owner which is itself hidden or has its lanes folded away. The lane's own
+ *  visibility flag is not consulted: folding the OWNER hides its children, the
+ *  same way collapsing a folder hides its own - which is the whole promise of
+ *  rendering lanes as the owner's children (research R-workflow-197). A lane
+ *  whose owner is gone (an orphan) is NOT hidden here: there is no owner to
+ *  fold, so the row stays reachable so a person or an agent can remove it. */
+static bool hiddenUnderOwner(const Track* track)
+{
+	const auto* lane = dynamic_cast<const AutomationTrack*>(track);
+	if (lane == nullptr || lane->followsTrack() < 0) { return false; }
+	const TrackContainer* container = track->trackContainer();
+	const Track* owner = container != nullptr ? container->findTrackById(lane->followsTrack()) : nullptr;
+	if (owner == nullptr) { return false; }
+	return !owner->isVisible() || owner->automationLanesCollapsed() || hiddenByFolder(owner);
+}
+
+/*! The rows reordered so every owning track is IMMEDIATELY followed by its child
+ *  automation lanes - the arranger's "child" order - while every other row keeps
+ *  its relative order. The relation is derived from followsTrack(), so a
+ *  reordered owner's lanes come with it however the flat track list moved. */
+static QList<TrackView*> groupedWithLaneChildren(const QList<TrackView*>& views)
+{
+	// Which owners THIS list holds: only a lane whose owner is still ahead in
+	// the list may wait for it. A lane whose owner is not in the list at all (a
+	// view of another container, or an orphan) is emitted where it stands below,
+	// so its row stays reachable for a person or an agent to select and remove.
+	QSet<int> ownersHere;
+	for (TrackView* view : views)
+	{
+		const Track* track = view->getTrack();
+		if (track != nullptr) { ownersHere.insert(track->id()); }
+	}
+
+	QList<TrackView*> ordered;
+	QSet<TrackView*> placed;
+	for (TrackView* view : views)
+	{
+		if (placed.contains(view)) { continue; }
+		const auto* lane = dynamic_cast<const AutomationTrack*>(view->getTrack());
+		// A lane met BEFORE its owner is DEFERRED, not placed: emit the owner
+		// first and the lane follows right after it. Before the deferral a
+		// downward move of the owner (which leaves the lane earlier in the flat
+		// list) stranded the lane above it - moveTrackView() realigns and the
+		// regrouping re-detaches the lane again (Q050-022 round-5 review).
+		if (lane != nullptr && lane->followsTrack() >= 0 && ownersHere.contains(lane->followsTrack()))
+		{
+			continue;
+		}
+		ordered.append(view);
+		placed.insert(view);
+		// The owner's own walk, then every placed child too, so a lane that
+		// follows a lane nests under its lane in the same sweep.
+		QList<TrackView*> family{view};
+		for (int parentRow = 0; parentRow < family.size(); ++parentRow)
+		{
+			const Track* owner = family.at(parentRow)->getTrack();
+			if (owner == nullptr) { continue; }
+			for (TrackView* candidate : views)
+			{
+				if (placed.contains(candidate)) { continue; }
+				const auto* child = dynamic_cast<const AutomationTrack*>(candidate->getTrack());
+				if (child != nullptr && child->followsTrack() >= 0 && child->followsTrack() == owner->id())
+				{
+					ordered.append(candidate);
+					placed.insert(candidate);
+					family.append(candidate);
+				}
+			}
+		}
+	}
+	// Defensive tail: a deferred lane whose owner was never reached (a hand-made
+	// follows cycle between lanes) keeps its row too, in its original order -
+	// the regrouping must never delete views from the display list.
+	for (TrackView* view : views)
+	{
+		if (!placed.contains(view))
+		{
+			ordered.append(view);
+			placed.insert(view);
+		}
+	}
+	return ordered;
+}
+
 void TrackContainerView::realignTracks()
 {
+	// Children first: a lane row sits directly under its owner anyway, but a
+	// reorder (track.move, a drag) moves only the owner in the flat list, so the
+	// display order is derived here rather than left wherever the reorder landed.
+	m_trackViews = groupedWithLaneChildren(m_trackViews);
 	for (const auto& trackView : m_trackViews)
 	{
 		// A collapsed folder's children leave the list (M3: the folder's collapse flag had no
 		// affordance reading it); the folder's own row stays.
-		// Hidden by a visibility set (the track's own view flag) or by a collapsed folder.
-		trackView->setVisible(trackView->getTrack()->isVisible() && !hiddenByFolder(trackView->getTrack()));
+		// Hidden by a visibility set (the track's own view flag), by a collapsed folder, or by
+		// an owner whose automation lanes are folded away (Q050-022).
+		trackView->setVisible(trackView->getTrack()->isVisible() && !hiddenByFolder(trackView->getTrack())
+			&& !hiddenUnderOwner(trackView->getTrack()));
 		trackView->updateFolderIndent();
 		trackView->applySpacer();
 		trackView->update();

@@ -91,6 +91,7 @@ struct TrackRestoreRule
 constexpr TrackRestoreRule TRACK_RESTORE_SCHEMA[] = {
 	{ "folder", "-1" }, // absent => the track is in no folder (-1 = no id)
 	{ "visible", "1" },  // absent => visible
+	{ "autolanes", "0" }, // absent => this track's automation lanes are shown
 };
 
 //! Test seam for FrozenTakeHandoffTest; null in product use.
@@ -426,6 +427,44 @@ void Track::setParentFolder( TrackFolder* folder )
 
 
 
+/*! The automation lanes that FOLLOW this track: every AutomationTrack of this
+ *  track's container whose followsTrack() is this track's stable id, in
+ *  container (document) order. The relation is DERIVED from that one field,
+ *  never stored twice - the same shape a folder's child list has (and indeed a
+ *  lane is often a member of the same flat track list as everything else).
+ *
+ *  The walk takes the container's read lock. That excludes the writers that also
+ *  take the lock - TrackContainer::addTrack and ::removeTrack - but NOT every
+ *  writer of the list: TrackContainer::moveTrack and ::clearAllTracks mutate
+ *  m_tracks without it. So the lock is not a complete barrier against a
+ *  concurrent reorder; what actually serializes this walk against a move is that
+ *  every caller and every mutator runs on the GUI/control thread (control
+ *  commands are marshalled to the UI thread by ControlRegistry::runOnUiThread),
+ *  and nothing on the audio thread calls this - by the realtime rule nothing may,
+ *  since the lock can wait.
+ */
+std::vector<Track*> Track::automationLaneChildren() const
+{
+	std::vector<Track*> lanes;
+	if (m_trackContainer == nullptr) { return lanes; }
+	m_trackContainer->m_tracksMutex.lockForRead();
+	for (Track* each : m_trackContainer->m_tracks)
+	{
+		auto* lane = dynamic_cast<AutomationTrack*>(each);
+		if (lane != nullptr && lane != this && lane->followsTrack() == m_id) { lanes.push_back(each); }
+	}
+	m_trackContainer->m_tracksMutex.unlock();
+	return lanes;
+}
+
+bool Track::hasAutomationLaneChildren() const
+{
+	return !automationLaneChildren().empty();
+}
+
+
+
+
 /*! \brief Create a track based on the given track type and container.
  *
  *  \param tt The type of track to create
@@ -573,6 +612,13 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	if (!presetMode && !m_visible)
 	{
 		element.setAttribute("visible", 0);
+	}
+	// 0.5.0 Q050-022: the owner-side fold flag for following automation lanes.
+	// Written only when folded (default is shown), so a track that never folded
+	// its lanes re-saves the bytes it always had.
+	if (!presetMode && m_automationLanesCollapsed)
+	{
+		element.setAttribute("autolanes", 1);
 	}
 	
 	QDomElement tsDe = doc.createElement( nodeName() );
@@ -862,6 +908,17 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		trackRestoreDefault( "folder" ) ).toInt();
 	m_visible = element.attribute( "visible",
 		trackRestoreDefault( "visible" ) ).toInt() != 0;
+	// 0.5.0 Q050-022: a checkpoint restore re-reads this track's own XML (an
+	// undo/redo of automation.lanes_set_collapsed lands here), so the fold flag
+	// is announced when it actually changes - the same signal the setter emits -
+	// and the arranger follows the undo/redo without the caller realigning it.
+	const bool lanesCollapsedBefore = m_automationLanesCollapsed;
+	m_automationLanesCollapsed = element.attribute( "autolanes",
+		trackRestoreDefault( "autolanes" ) ).toInt() != 0;
+	if( lanesCollapsedBefore != m_automationLanesCollapsed )
+	{
+		emit automationLanesCollapsedChanged();
+	}
 	{
 		TrackFolder* resolved = m_pendingFolderId >= 0
 			? m_trackContainer->findTrackFolderById( m_pendingFolderId ) : nullptr;

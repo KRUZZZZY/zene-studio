@@ -1021,6 +1021,12 @@ Q050-035's `stem.tracks_create` (`true_inverse`) and Q050-019's `window.progress
 adds one row: Q050-040's `clip.set_mute` (`true_inverse`, the song editor's clip mute and the agents' one command), measured
 by `ReversibilityContractTest` on the merged tree: `rows=842 true_inverse=420 snapshot=42 irreversible=22 not_mutating=358`.
 
+**0.5.0 L06 automation lanes as track children** (`Q050-022`, 2026-10-16) adds one `true_inverse` row -
+`automation.lanes_set_collapsed` (folding a track's child lanes is a Track checkpoint on the owner's own
+`autolanes` attribute). Measured by `ReversibilityContractTest` on this tree, configured without wasmtime:
+`rows=829 true_inverse=417 snapshot=39 irreversible=22 not_mutating=351`, which is the block below minus
+wasm's option row, exactly.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=842 true_inverse=420 snapshot=42 irreversible=22 not_mutating=358
      configuration: telemetry.status wasm.load session.get_state stem.get_state
