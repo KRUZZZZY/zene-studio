@@ -44,6 +44,7 @@
 
 #include "CollabLink.h"
 #include "CollabInvite.h"
+#include "../../../src/core/CollabSessionAddress.h"
 #include "PortMappingCodec.h"
 #include "lmms_export.h"
 
@@ -252,6 +253,17 @@ private slots:
 		}
 		QCOMPARE(randomInviteKey().size(), InviteKeyBytes);
 		QVERIFY(randomInviteKey() != randomInviteKey());
+	}
+
+	//! A missing LAN address must not produce an invite another machine cannot reach.
+	void lanInviteRequiresDetectedAddress()
+	{
+		ControlResult refusal;
+		const QString address = detail::lanInviteAddress(QHostAddress(), &refusal);
+		QVERIFY(address.isEmpty());
+		QVERIFY(!refusal.ok);
+		QCOMPARE(refusal.errorKind, ControlErrorKind::Refused);
+		QVERIFY(refusal.errorMessage.contains(QStringLiteral("LAN address")));
 	}
 
 	//! A mistyped, truncated or foreign paste is refused before any connection, with a reason.
