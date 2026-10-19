@@ -304,7 +304,16 @@ bool parseDestination(const QString& text, const Side& outputs, Destination* out
 	}
 	bool matched = false;
 	const bool parsed = parseChannels(trimmed, out, error, &matched);
-	if (matched) { return parsed; }
+	if (matched)
+	{
+		if (!parsed) { return false; }
+		// A number names a channel of this side: it must be one of them.
+		if (out->start + out->width > outputs.channels)
+		{
+			return fail(error, QStringLiteral("outputs are numbered 1..%1").arg(outputs.channels));
+		}
+		return true;
+	}
 	for (const Bus& bus : outputs.buses)
 	{
 		if (bus.name.compare(trimmed, Qt::CaseInsensitive) == 0)

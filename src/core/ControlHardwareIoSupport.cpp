@@ -117,8 +117,14 @@ bool readDestination(const QJsonObject& args, const QString& key, bool inputs, a
 	ControlResult* error)
 {
 	const audioio::Setup setup = currentSetup();
+	// A route the running device may not carry is legal here - the reply says so ("beyond_device",
+	// "stereo_backend", ControlHardwareIoSupport.h) - so the side keeps the setup's buses but takes
+	// the whole range the engine's output bus can address: the parser's channel count must not
+	// refuse a route this command answers with a status.
+	audioio::Side side = inputs ? setup.inputs : setup.outputs;
+	side.channels = audioio::MaxChannels;
 	QString message;
-	if (audioio::parseDestination(args.value(key).toString(), inputs ? setup.inputs : setup.outputs, out, &message)) { return true; }
+	if (audioio::parseDestination(args.value(key).toString(), side, out, &message)) { return true; }
 	*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1': %2").arg(key, message));
 	return false;
 }

@@ -61,7 +61,11 @@ bool exporting()
 audioio::Destination readDestination(const QDomElement& element, const QString& name)
 {
 	audioio::Destination out;
-	return audioio::parseDestination(element.attribute(name), audioio::Side{}, &out, nullptr) ? out : audioio::Destination{};
+	// A project stores channel NUMBERS, not the interface's own count: a route saved on a machine
+	// with eight outputs must load on one with two, so the whole range is read here.
+	audioio::Side routes;
+	routes.channels = audioio::MaxChannels;
+	return audioio::parseDestination(element.attribute(name), routes, &out, nullptr) ? out : audioio::Destination{};
 }
 
 void saveCueSends(QDomDocument& doc, QDomElement& element, const ChannelHardwareIo& io)

@@ -451,6 +451,18 @@ private slots:
 		QVERIFY(!audioio::parseDestination(QStringLiteral("3/5"), outputs, &d, &error) && !error.isEmpty());
 		QVERIFY(!audioio::parseDestination(QStringLiteral("0"), outputs, &d, nullptr));
 		QVERIFY(!audioio::parseDestination(QStringLiteral("Talkback"), outputs, &d, nullptr));
+		// A number names a channel of the side it is read on: it must be one of its channels
+		// (cluster new-p8-269: a destination beyond the side's count was accepted and stored).
+		audioio::Side twoOutputs;
+		twoOutputs.channels = 2;
+		QVERIFY(!audioio::parseDestination(QStringLiteral("3"), twoOutputs, &d, &error));
+		QVERIFY(!error.isEmpty());
+		error.clear();
+		QVERIFY(!audioio::parseDestination(QStringLiteral("2/3"), twoOutputs, &d, &error));
+		QVERIFY(!error.isEmpty());
+		error.clear();
+		QVERIFY(!audioio::parseDestination(QStringLiteral("127"), twoOutputs, &d, &error));
+		QVERIFY(!error.isEmpty());
 		QCOMPARE(audioio::destinationLabel({2, 2}, outputs), QStringLiteral("Phones"));
 		QCOMPARE(audioio::channelLabel({4, 1}), QStringLiteral("5"));
 	}

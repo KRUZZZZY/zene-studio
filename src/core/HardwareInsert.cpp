@@ -49,7 +49,11 @@ float wideSample(const float* frame, int width, int channel)
 audioio::Destination destinationAttribute(const QDomElement& element, const char* name, audioio::Destination fallback)
 {
 	audioio::Destination out;
-	if (!element.hasAttribute(name) || !audioio::parseDestination(element.attribute(name), audioio::Side{}, &out, nullptr))
+	// As in HardwareIo.cpp: a project's insert sends and returns are channel numbers, read over the
+	// whole range so a project saved on another machine's interface still loads.
+	audioio::Side routes;
+	routes.channels = audioio::MaxChannels;
+	if (!element.hasAttribute(name) || !audioio::parseDestination(element.attribute(name), routes, &out, nullptr))
 	{
 		return fallback;
 	}
