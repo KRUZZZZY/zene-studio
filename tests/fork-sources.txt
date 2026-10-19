@@ -669,6 +669,11 @@
 # their thresholds. The two tests that exercise them live in tests/src/gui/, which the
 # recipe's pathspec does not cover - the FocusDesk tests sit the same way, registered in
 # tests/CMakeLists.txt and listed in tests/all-sources.txt.
+# 2026-10-19 (cluster Q050-148, docs rework): tests/warp-docs-agree.py joins here - the
+# change-sensitive docs regression test the rework asked for (docs/ plus the transcript
+# script; no binary). Measured before registering: every function is CCN <= 10 and the
+# file is under 500 code lines, so gates 4 and 7 measure it at their existing thresholds.
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/warp-docs-agree.py ; \
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
@@ -2487,6 +2492,11 @@ tests/src/tracks/SampleClipWindowTest.cpp
 # cluster new-p10-116: the anchored-name regression for favourite effects in the picker.
 tests/src/gui/EffectSelectDialogFilterTest.cpp
 tests/stem_commands_lib.py
+# cluster Q050-148 (2026-10): the docs regression test the rework asked for - it checks the
+# warp docs keep stating the three warp.stretch modes, the per-algorithm caveats and the
+# runnable reviewer example, and rejects the old "pitch-preserving stretch is not built"
+# blanket claims (runs offline against docs/; also registered as ctest WarpDocsAgree).
+tests/warp-docs-agree.py
 # Shared SF2 patch-list iteration policy exercised by PluginPortsMigrationTest.
 plugins/Sf2Player/PatchPresetIteration.h
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api boundary's
