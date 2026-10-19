@@ -37,6 +37,10 @@
 #include <QJsonArray>
 #include <QTemporaryDir>
 
+#include <cstdio>
+#include <initializer_list>
+#include <utility>
+
 #include "AllocationProbe.h"
 #include "ArticulationMap.h"
 #include "AudioDevice.h"
@@ -197,6 +201,52 @@ private:
 		song->stop();
 		for (int period = 0; period < 64; ++period) { Engine::audioEngine()->renderNextPeriod(); }
 		return allocations;
+	}
+
+	//! Q050-015 r3: the track's arpeggiator and chord stacking, through the track's own settings element (the same
+	//! path a project load takes), then the map every r3 slot plays - one entry that sends all three kinds. The map
+	//! comes second because loading track settings replaces it too.
+	void setFunctionsAndMap(bool arpeggio, bool chord)
+	{
+		QDomDocument doc;
+		QDomElement settings = doc.createElement(QStringLiteral("instrumenttrack"));
+		// Arpeggio chord 0 is "octave" (one pitch: every step plays the note's own key); chord 1 is "Major" (0, 4, 7).
+		const auto child = [&](const char* name, std::initializer_list<std::pair<const char*, int>> attributes) {
+			QDomElement element = doc.createElement(QString::fromLatin1(name));
+			for (const auto& [key, value] : attributes) { element.setAttribute(QString::fromLatin1(key), value); }
+			settings.appendChild(element);
+		};
+		child("arpeggiator", {{"arp-enabled", arpeggio ? 1 : 0}, {"arp", 0}, {"arprange", 1}, {"arprepeats", 1}, {"arptime", 60}, {"arpgate", 50}});
+		child("chordcreator", {{"chord-enabled", chord ? 1 : 0}, {"chord", 1}, {"chordrange", 1}});
+		m_track->loadTrackSpecificSettings(settings);
+		QCOMPARE(m_track->isArpeggioEnabled(), arpeggio);
+		QVERIFY(run(QStringLiteral("track.articulations_set"), {{QStringLiteral("track"), trackId()}, {QStringLiteral("articulations"),
+			QJsonArray{entry(QStringLiteral("Everything"), 25, 7, 11, 90)}}}).ok);
+	}
+
+	//! True when @a group is one articulation-led chord: the articulation, the key that carried it, then the three
+	//! stacked voices of a Major chord on 60 in any order (the engine starts handles created in one period in an
+	//! order of its own; what matters is that none of them comes before the articulation).
+	static bool isArticulatedMajorChord(const QStringList& group)
+	{
+		const QStringList lead{QStringLiteral("p7"), QStringLiteral("c11=90"), QStringLiteral("k25"), QStringLiteral("k60")};
+		if (group.size() != 7 || group.mid(0, 4) != lead) { return false; }
+		QStringList voices = group.mid(4);
+		voices.sort();
+		return voices == QStringList{QStringLiteral("k60"), QStringLiteral("k64"), QStringLiteral("k67")};
+	}
+
+	//! @a tokens cut into groups that each start at an articulation ("p7 c11=90 k25"); a token before the first
+	//! articulation lands in a group of its own that does not start with one.
+	static QList<QStringList> articulationGroups(const QStringList& tokens)
+	{
+		QList<QStringList> groups;
+		for (const QString& token : tokens)
+		{
+			if (token == QStringLiteral("p7") || groups.isEmpty()) { groups.append(QStringList{}); }
+			groups.last() << token;
+		}
+		return groups;
 	}
 
 	QList<int> noteArticulations() const
@@ -482,6 +532,62 @@ private slots:
 		disconnect(connection);
 		QVERIFY2(announced, "the remap announced nothing");
 		QVERIFY2(unlocked, "the clip was announced while its track was still locked");
+	}
+
+	//! Q050-015 r3: with the arpeggiator on, the played note sounds only through its arpeggio steps (the base note
+	//! sends no note-on of its own). Every step is preceded by the note's whole articulation - program, controller,
+	//! keyswitch - at the step's own frame offset, and the keyswitch is let go again. Before r3 the steps carried
+	//! none of it and the instrument heard only "k60 k60 ...".
+	void everyArpeggioStepIsPrecededByItsArticulation()
+	{
+		freshTrack({60}, {1});
+		setFunctionsAndMap(true, false);
+		const Heard sounded = [this] { play(2000); return heard(m_consumer); }();
+		std::fprintf(stdout, "ARTICULATION_EVIDENCE arpeggio: %s\n", qPrintable(sounded.events));
+		std::fflush(stdout);
+		const QStringList tokens = sounded.events.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+		const int steps = static_cast<int>(tokens.count(QStringLiteral("k60")));
+		QVERIFY2(steps >= 2, qPrintable(QStringLiteral("the arpeggio played %1 step(s): %2").arg(steps).arg(sounded.events)));
+		QStringList expected;
+		for (int step = 0; step < steps; ++step) { expected << QStringLiteral("p7") << QStringLiteral("c11=90") << QStringLiteral("k25") << QStringLiteral("k60"); }
+		QCOMPARE(tokens, expected);
+		QCOMPARE(sounded.offsets.size(), tokens.size());
+		// Each step's articulation comes at the step's own offset, not the base note's.
+		for (int i = 0; i < tokens.size(); ++i) { QCOMPARE(sounded.offsets[i], sounded.offsets[i - i % 4 + 3]); }
+		QCOMPARE(sounded.held, 0);
+	}
+
+	//! Q050-015 r3: arpeggiator and chord stacking together - each arpeggio step is itself stacked into a chord. Each
+	//! step's group is the articulation, then the step's key, then the stacked voices (in any order): nothing of the chord sounds
+	//! before the articulation that prepares it, and each step sends it once, not once per voice.
+	void everyStackedArpeggioStepFollowsItsArticulation()
+	{
+		freshTrack({60}, {1});
+		setFunctionsAndMap(true, true);
+		const Heard sounded = [this] { play(2000); return heard(m_consumer); }();
+		std::fprintf(stdout, "ARTICULATION_EVIDENCE stacked arpeggio: %s\n", qPrintable(sounded.events));
+		std::fflush(stdout);
+		const QList<QStringList> groups = articulationGroups(sounded.events.split(QLatin1Char(' '), Qt::SkipEmptyParts));
+		QVERIFY2(groups.size() >= 2, qPrintable(QStringLiteral("too few stacked steps: %1").arg(sounded.events)));
+		for (const QStringList& heardGroup : groups)
+		{
+			QVERIFY2(isArticulatedMajorChord(heardGroup), qPrintable(QStringLiteral("a step was heard as '%1' in '%2'")
+				.arg(heardGroup.join(QLatin1Char(' ')), sounded.events)));
+		}
+		QCOMPARE(sounded.held, 0);
+	}
+
+	//! Chord stacking alone: the played note sends the articulation ahead of its own note-on, and the stacked voices
+	//! it creates while it plays follow - one articulation for the chord, before every one of its keys.
+	void aStackedChordFollowsItsArticulation()
+	{
+		freshTrack({60}, {1});
+		setFunctionsAndMap(false, true);
+		const Heard sounded = [this] { play(2000); return heard(m_consumer); }();
+		const QList<QStringList> groups = articulationGroups(sounded.events.split(QLatin1Char(' '), Qt::SkipEmptyParts));
+		QCOMPARE(groups.size(), 1);  // one articulation for the whole chord, before any of its keys
+		QVERIFY2(isArticulatedMajorChord(groups.front()), qPrintable(sounded.events));
+		QCOMPARE(sounded.held, 0);
 	}
 
 	//! Through the real project file: author the map and a note's choice on the surface, project.save, clear the

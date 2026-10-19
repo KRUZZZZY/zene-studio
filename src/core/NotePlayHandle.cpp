@@ -101,6 +101,16 @@ NotePlayHandle::NotePlayHandle( InstrumentTrack* instrumentTrack,
 		m_patternTrack = parent->m_patternTrack;
 
 		parent->setUsesBuffer( false );
+
+		// Q050-015: an arpeggio step is a sounding note the arpeggio's base note never sounds itself (play() sends
+		// no note-on for an arpeggio base), so the step carries the base's articulation and sends it just before its
+		// own note-on - a copy of four integers, no allocation. A chord-stacking sub-note does not need it: its
+		// parent (the played note, or an arpeggio step) creates it inside its own play(), after that parent sent the
+		// articulation ahead of its own note-on at the same offset, so every voice of the chord already follows it.
+		if( origin == Origin::Arpeggio )
+		{
+			m_articulation = parent->m_articulation;
+		}
 	}
 
 	updateFrequency();
