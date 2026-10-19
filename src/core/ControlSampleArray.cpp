@@ -29,7 +29,9 @@
 
 #include <QJsonValue>
 
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace lmms
@@ -41,11 +43,40 @@ namespace control
 ControlResult readSampleArray(const QJsonArray& values, std::uint32_t frames,
 	std::vector<float>* out)
 {
+	// A render or a process reads at most `frames` samples, so a longer array
+	// is samples nobody reads - and it is reserved and copied whole before
+	// that is noticed.
+	if (static_cast<quint64>(values.size()) > static_cast<quint64>(frames))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("the sample array holds %1 samples but the call reads at most %2")
+				.arg(static_cast<qlonglong>(values.size()))
+				.arg(static_cast<qulonglong>(frames)));
+	}
+
+	const double maxFloat = static_cast<double>(std::numeric_limits<float>::max());
 	std::vector<float> samples;
 	samples.reserve(static_cast<std::size_t>(values.size()));
 	for (const QJsonValue& value : values)
 	{
-		samples.push_back(static_cast<float>(value.toDouble()));
+		// toDouble() would turn a string or a bool into a 0 the caller never
+		// sent, and the render would run on a stimulus that is not the one
+		// that was asked for.
+		if (!value.isDouble())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("every sample must be a number"));
+		}
+		const double sample = value.toDouble();
+		// The samples are floats: a double outside the float range (1e300) and
+		// an infinity both convert to an infinity, which is undefined
+		// behaviour rather than a loud sample.
+		if (!std::isfinite(sample) || sample < -maxFloat || sample > maxFloat)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("every sample must be finite and within the float range"));
+		}
+		samples.push_back(static_cast<float>(sample));
 	}
 	*out = samples;
 	return ControlResult::success();

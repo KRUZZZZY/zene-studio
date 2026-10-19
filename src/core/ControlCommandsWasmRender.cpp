@@ -313,7 +313,10 @@ void registerWasmRenderOfflineCommand(ControlRegistry& registry)
 			"and reports that the comparator finds it, so 'identical' is a measurement and not a "
 			"constant. 'module' defaults to the hosted module; 'frames' (default 4096), "
 			"'block_frames' (default 256), 'sample_rate' (default 48000) and 'input' (plane 0; a "
-			"ramp by default) describe the render. Each run reports its `non_finite_samples` count. "
+			"ramp by default) describe the render. 'input' may hold at most 'frames' samples, "
+			"and every one of them must be a finite number within the float range: a malformed "
+			"array is refused (invalid_args) instead of being rendered with as something else. "
+			"Each run reports its `non_finite_samples` count. "
 			"Writes nothing."),
 		{{QStringLiteral("module"), stringProperty()},
 			{QStringLiteral("frames"), integerProperty(1, 4194304)},

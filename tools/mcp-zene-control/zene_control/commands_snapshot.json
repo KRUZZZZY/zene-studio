@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-15T08:30:27Z",
+  "captured_at": "2026-10-19T18:22:39Z",
   "commands": [
     {
       "args_schema": {
@@ -35149,8 +35149,14 @@
   ],
   "count": 828,
   "instance": {
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-76-port/build/zene",
+    "binary_bytes": 29940280,
+    "binary_sha256": "1d4bb773cde9c89654b22755cfbfc3ffa49149e647638575fa8b591b689dbb18",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-76-port",
+    "lane_head": "c034d4b92ece40e2ba992f91a4fdb12c94b36825",
     "proto": 1,
-    "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/cff463a0-1326-44da-8393-bec3a1847916/scratchpad/train5/commands-release.json"
+    "source_socket": "/tmp/zctl-run-3jsgz5q6/zene.sock",
+    "version": "0.4.0-alpha.2709+ded3554"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
