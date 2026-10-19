@@ -49,3 +49,16 @@ New reversibility rows: `arrangement.zoom_forward` and `arrangement.zoom_toggle`
 
 Known limits (docs/050-features/Q050-176.md): the walk holds zoom extents only, not scroll positions; it is per
 process and not saved with the project; forward after a new zoom is refused by design.
+
+Round 3 (r2 rework). The review asked for the user manual's Arranging section to explain Zoom Back, Zoom
+Forward and Zoom Toggle. `data/manual/index.html:48` now names Navigate > Zoom Back / Zoom Forward / Zoom
+Toggle, what each does (back/forward walk several prior extents like the browser, a new zoom cuts the
+forward walk off, the toggle swaps with the extent just left without walking the history) and the matching
+agent commands (`arrangement.zoom_back`, `arrangement.zoom_forward`, `arrangement.zoom_toggle`):
+
+| Rework check | Command | EXIT |
+| --- | --- | --- |
+| Documentation figure check | `python3 tests/doc-figures-gate.py` (snapshot 830 ids / 76 groups, README canary matches) | 0 |
+| Manual still parses, headings intact | HTML parse + 11 `<h2 id=` headings present | 0 |
+| Pre-commit gates | `tests/scripted/check-namespace`, `bash tests/no-tautology-gate.sh`, `bash tests/fork-sources-gate.sh`, `bash tests/all-sources-reproduce.sh`, `bash tests/no-upstream-regression-gate.sh` | 0 each |
+| Complexity / file-length gates | exit 1 as on train 5; no file of this round newly listed (the round touched no source file) | 1 each |
