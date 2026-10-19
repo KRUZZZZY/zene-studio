@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-19T00:32:26Z",
+  "captured_at": "2026-10-19T15:18:20Z",
   "commands": [
     {
       "args_schema": {
@@ -23791,7 +23791,7 @@
         ],
         "type": "object"
       },
-      "description": "Copy devices - 'devices' (indices; every one when left out) of the reference's track 'track' or mixer channel 'channel' (indices) - onto the end of the chain of 'to' (trk-<n> or ch-<n>) in this project, with their settings. The chain is rebuilt from its document (chain.apply's path), so its device ids renumber. One undo step.",
+      "description": "Copy devices - 'devices' (indices; every one when left out) of the reference's track 'track' or mixer channel 'channel' (indices; exactly one of the two, naming the source) - onto the end of the chain of 'to' (trk-<n> or ch-<n>) in this project, with their settings. The chain is rebuilt from its document (chain.apply's path), so its device ids renumber. One undo step.",
       "group": "reference",
       "id": "reference.copy_devices",
       "mutating": true,
@@ -26053,6 +26053,9 @@
         "additionalProperties": false,
         "properties": {
           "clips": {
+            "items": {
+              "type": "string"
+            },
             "type": "array"
           },
           "name": {
@@ -35514,8 +35517,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-qkc2nc44/zene.sock",
-    "version": "0.4.0-alpha.3164+1e42639"
+    "source_socket": "/tmp/zctl-run-aedsu8rh/zene.sock",
+    "version": "0.4.0-alpha.3221+ba3b2d9"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
