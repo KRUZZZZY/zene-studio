@@ -83,10 +83,15 @@ RUN_STATUSES = ("served-from-cache", "scanned", "not-a-plugin", "load-failed")
 #: and sorted before every real plug-in ("0" < "A" < "a") so it is the run's
 #: first file. Not a library, so the scan stores a "load-failed" or
 #: "not-a-plugin" record for it - a record that exists only if THIS run took it.
-CANDIDATE_NAME = "lib0-q050-090-fresh-candidate.so"
-#: Paced start used for the whole cancelled run: slow enough that the status
-#: read right after scan_start still sees the unplanned run.
-START_PACE_MS = 400
+#: The name must match what the scanner enumerates on the platform
+#: (PluginFactory.cpp: "*.dll" on Windows, "lib*.so" everywhere else), or the
+#: run never plans it.
+CANDIDATE_NAME = ("0-q050-090-fresh-candidate.dll" if sys.platform == "win32"
+                  else "lib0-q050-090-fresh-candidate.so")
+#: Paced start used for the whole cancelled run (the engine's maximum): the first
+#: turn - the one that plans the files - comes this long after scan_start, so the
+#: reads right after it see the unplanned run.
+START_PACE_MS = 1000
 #: How long a poll loop waits for the run to move (seconds).
 POLL_BOUND = 30.0
 
@@ -236,8 +241,12 @@ def check_start_and_busy(session, problems, catalogue_count):
                          lambda status: status.get("total_files", 0) > 0
                          or status.get("outcome") != "running",
                          problems, "plan the files")
-    problems.require(planned.get("active") is True or planned.get("outcome") == "done",
-                     "after planning the run must still be active (or done with no files): %r"
+    # The fresh candidate guarantees at least one planned file, so a run that is
+    # not active with files planned means the candidate was not enumerated: a
+    # failure, never a quiet pass without the cancel proof.
+    problems.require(planned.get("active") is True and planned.get("outcome") == "running"
+                     and planned.get("total_files", 0) > 0,
+                     "after planning the run must be active with the candidate planned: %r"
                      % (planned,))
     return started
 
@@ -246,10 +255,9 @@ def check_cached_catalogue_during_run(session, problems, names):
     """While the run is on, plugin.list still serves the cached catalogue,
     and after the first file completes the progress is nonzero."""
     status = session.result("plugin.scan_status")
-    if status.get("outcome") == "done":
-        # A build with no scannable files ends on its planning turn; the done
-        # run below still proves the commit, and there is nothing to cancel.
-        return status
+    problems.require(status.get("outcome") == "running",
+                     "the paced run must still be running here (cancellation cannot be skipped): %r"
+                     % (status,))
     problems.require(status.get("active") is True,
                      "the run must be active right after scan_start: %r" % (status,))
     progress = status.get("progress", -1)
@@ -265,14 +273,14 @@ def check_cached_catalogue_during_run(session, problems, names):
                         lambda seen: seen.get("done_files", 0) >= 1
                         or seen.get("outcome") != "running",
                         problems, "complete its first file")
-    if status.get("outcome") == "running":
-        problems.require(status.get("done_files", 0) >= 1,
-                         "a file must have completed before the cancel: %r" % (status,))
-        problems.require(status.get("progress", 0) > 0,
-                         "progress must be nonzero after a completed file: %r" % (status,))
-        problems.require(device_names(session.result("plugin.list")) == names,
-                         "plugin.list must STILL serve the pre-run catalogue after a file: %r"
-                         % (device_names(session.result("plugin.list")),))
+    problems.require(status.get("outcome") == "running" and status.get("done_files", 0) >= 1,
+                     "a file must have completed while the run is still running, before the "
+                     "cancel: %r" % (status,))
+    problems.require(status.get("progress", 0) > 0,
+                     "progress must be nonzero after a completed file: %r" % (status,))
+    problems.require(device_names(session.result("plugin.list")) == names,
+                     "plugin.list must STILL serve the pre-run catalogue after a file: %r"
+                     % (device_names(session.result("plugin.list")),))
     return status
 
 
@@ -395,19 +403,27 @@ def main(argv):
     if not os.path.exists(argv[1]):
         print("cannot run: no binary at %s" % argv[1])
         return 2
+    # A per-test plugin directory for the candidate: LMMS_PLUGIN_DIR is one more
+    # search path on top of the "plugins" directory beside the binary (which
+    # still supplies the real modules), and only THIS instance has it in its
+    # environment, so no other test that scans build/plugins can ever see the
+    # candidate file.
     directory = plugin_directory(argv[1])
-    scratch = None
-    if directory is None:
-        # No plugin modules beside the binary: an empty directory of our own
-        # still holds the one candidate the cancel proof needs.
+    # The run scans files in absolute-path order, so the directory sits beside the
+    # binary under a dot-name ("." sorts before "plugins" and "/"-separated paths
+    # are compared as text): the candidate is then the run's FIRST file. The
+    # system temp directory is the fallback, and the order is asserted below.
+    try:
+        scratch = tempfile.mkdtemp(prefix=".zene-scan-plugins-",
+                                   dir=os.path.dirname(os.path.abspath(argv[1])))
+    except OSError:
         scratch = tempfile.mkdtemp(prefix="zene-scan-plugins-")
-        directory = scratch
-    extra_env = {"LMMS_PLUGIN_DIR": directory}
-    candidate = os.path.join(os.path.abspath(directory), CANDIDATE_NAME)
+    extra_env = {"LMMS_PLUGIN_DIR": scratch}
+    candidate = os.path.join(os.path.abspath(scratch), CANDIDATE_NAME)
     problems = H.Problems()
     transcript = H.Transcript()
     print("instance:  %s" % argv[1])
-    print("plugin dir: %s" % directory)
+    print("plugin dir: %s (modules beside the binary: %s)" % (scratch, directory or "none"))
     with H.start_instance(argv[1], extra_env=extra_env) as instance:
         H.wait_for_socket(instance)
         client = H.connect(instance)
@@ -423,18 +439,18 @@ def main(argv):
             # The candidate appears AFTER the startup scan filled the cache, so
             # only a run that really scans it can put its record there.
             with open(candidate, "wb") as handle:
-                handle.write(b"not an ELF library: q050-090 cancel proof candidate\n")
+                handle.write(b"not a library: q050-090 cancel proof candidate\n")
+            problems.require(all(candidate < path for path in pre_cache_paths if path),
+                             "the candidate must sort before every cached plug-in path so the "
+                             "run scans it first: %r vs %r" % (candidate, sorted(pre_cache_paths)[:2]))
             check_pace_bounds(session, problems)
             check_start_and_busy(session, problems, catalogue.get("total", len(names)))
             planned = check_cached_catalogue_during_run(session, problems, names)
-            # A build with no scannable files ends on its planning turn, before
-            # any cancel: the done run below still proves the commit.
-            cancelled = False
-            if planned.get("outcome") == "running":
-                check_cancel(session, problems, names, pre_cache_paths, pre_cache_count,
-                             candidate)
-                cancelled = True
-            check_done_run(session, problems, cancelled)
+            # The cancel always runs; a run that is not running here already
+            # failed the checks above.
+            check_cancel(session, problems, names, pre_cache_paths, pre_cache_count,
+                         candidate)
+            check_done_run(session, problems, True)
             check_transactions(session, problems)
             check_quit(session, instance, problems)
         finally:
@@ -443,8 +459,7 @@ def main(argv):
                 os.remove(candidate)
             except OSError:
                 pass
-            if scratch is not None:
-                shutil.rmtree(scratch, ignore_errors=True)
+            shutil.rmtree(scratch, ignore_errors=True)
     code = report(problems)
     if code == 0:
         H.ok("background plugin-scan socket proof (every check held)")
