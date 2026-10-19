@@ -151,6 +151,10 @@ failure is recorded as pre-existing on this train in
   `plugins/Sf2Player/Sf2Player.cpp`, `plugins/GigPlayer/GigPlayer.cpp` and the LADSPA
   hosts). They are separate findings with separate clusters; changing them here would
   exceed this bug's scope.
+- **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE"** - not applicable: the verdict
+  is FIXED, and the code evidence for the defect and for the fix is in the two
+  file:line sections above (`plugins/BitInvader/BitInvader.cpp:79`, `:262`, `:286`
+  before; `:255-264`, `:281-284` after).
 
 ## Files committed
 
