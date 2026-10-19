@@ -31,6 +31,7 @@
 #include <QDir>
 #include <QJsonArray>
 #include <QTemporaryDir>
+#include <QStorageInfo>
 
 #include "AudioEngine.h"
 #include "AutomationTrack.h"
@@ -413,6 +414,38 @@ private slots:
 		const double seconds = left.result.value(QStringLiteral("seconds")).toDouble();
 		QVERIFY2(qAbs(seconds - expected) <= 1e-9 * qMax(1.0, expected),
 			qPrintable(QStringLiteral("seconds %1, expected %2 for two routes on one volume").arg(seconds).arg(expected)));
+
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
+	}
+
+	//! Filesystems are identified by their mount, not by their device name: two mounts reporting the
+	//! same device (e.g. two tmpfs mounts) are distinct free-space budgets, so their routes are not
+	//! pooled. (Regression for review-e39984ffb: grouping by device() merged distinct mounts.)
+	void armedRoutesOnDifferentMountsDoNotShare()
+	{
+		QTemporaryDir tmpTakes;
+		QVERIFY2(tmpTakes.isValid(), "could not make a tmp take directory");
+		QVERIFY(QDir().mkpath(tmpTakes.filePath(QStringLiteral("d"))));
+		QTemporaryDir shmTakes(QStringLiteral("/dev/shm/zene-takes-XXXXXX"));
+		QVERIFY2(shmTakes.isValid(), "could not make a shm take directory");
+		QVERIFY(QDir().mkpath(shmTakes.filePath(QStringLiteral("d"))));
+
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 0},
+			{QStringLiteral("file"), tmpTakes.filePath(QStringLiteral("d/route0.wav"))}}).ok, "arm 0 refused");
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 1},
+			{QStringLiteral("file"), shmTakes.filePath(QStringLiteral("d/route1.wav"))}}).ok, "arm 1 refused");
+
+		const ControlResult left = run(QStringLiteral("record.remaining"));
+		QVERIFY2(left.ok, qPrintable(left.errorMessage));
+		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 2);
+		const double freeTmp = static_cast<double>(QStorageInfo(tmpTakes.path()).bytesAvailable());
+		const double freeShm = static_cast<double>(QStorageInfo(shmTakes.path()).bytesAvailable());
+		const double rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+		const double expected = std::min(freeTmp, freeShm) / (rate * 3.0);
+		const double seconds = left.result.value(QStringLiteral("seconds")).toDouble();
+		QVERIFY2(qAbs(seconds - expected) <= qMax(1.0, expected * 1e-2),
+			qPrintable(QStringLiteral("seconds %1, expected %2").arg(seconds).arg(expected)));
 
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);

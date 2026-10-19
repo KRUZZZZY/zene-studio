@@ -140,9 +140,9 @@ struct ArmedVolume
 	int routes = 0;
 };
 
-//! Groups the armed places by the volume they sit on. The free space belongs to the VOLUME, not to each
-//! directory: two armed directories on one device draw on the same pool, so their routes are summed per
-//! device. False, with @a unmeasured set, when a place's volume cannot be measured.
+//! Groups the armed places by the filesystem they sit on. The free space belongs to the FILESYSTEM,
+//! not to each directory: two armed directories on one mount draw on the same pool, so their routes are
+//! summed per mount. False, with @a unmeasured set, when a place's filesystem cannot be measured.
 bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>* volumes, QString* unmeasured)
 {
 	for (auto it = places.cbegin(); it != places.cend(); ++it)
@@ -153,7 +153,7 @@ bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>*
 			*unmeasured = it.key();
 			return false;
 		}
-		const QString volume = storage.device().isEmpty() ? storage.rootPath() : QString::fromUtf8(storage.device());
+		const QString volume = storage.rootPath();
 		ArmedVolume& entry = (*volumes)[volume];
 		if (entry.routes == 0)
 		{
