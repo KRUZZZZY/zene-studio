@@ -231,8 +231,9 @@ fork-authored, so no `tests/upstream-modifications.txt` entry is owed.
    asserted by the new case.
 4. **No collateral damage.** Only the failure path of `plugin.output_buses_create_channels`
    changed: a command that could route every bus behaves exactly as before (the same channels,
-   the same names, the same one undo step). Nothing is written to a project file, no save format
-   changes, and no limit is added. The newest line's own assertions are all still in place; the
+   the same names, the same one undo step). Nothing is written to a project file, so old projects
+   and saved data load exactly as before, no save format changes, and no limit or check is added
+   that another caller could hit. The newest line's own assertions are all still in place; the
    coverage case keeps every one of them and only measures the success path on the buses the
    plug-in activates.
 5. **Realtime, undo and commands.** The change is on the control thread (the command handler);
@@ -242,3 +243,7 @@ fork-authored, so no `tests/upstream-modifications.txt` entry is owed.
 6. **Gates.** `feature_check.py` exits **0** with `RESULT: PASS` (all eight rows). The two
    ratchets are red on the train by design and list only pre-existing items; neither lists a file
    this change touches (`gate-complexity.log`, `gate-file-length.log`).
+7. **The ALREADY-FIXED / FALSE-POSITIVE question does not apply here:** the verdict is **FIXED**.
+   The defect was present on this branch - the same line the finding named
+   (`src/core/ControlCommandsPluginBuses.cpp:294` before the change:
+   `if (route.channelId < 0) { continue; }`) was in place, and the fix is in the tree now.
