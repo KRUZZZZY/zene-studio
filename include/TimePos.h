@@ -127,9 +127,22 @@ public:
 
 	double getTimeInMilliseconds(bpm_t beatsPerMinute) const { return ticksToMilliseconds(getTicks(), beatsPerMinute); }
 
+	// The frame-to-tick direction mirrors frames() above: a rate that is
+	// zero, negative or not a number describes no tick position at all.
+	// Dividing by it yields NaN or infinity, and converting that to an int
+	// is undefined behaviour - as is converting a quotient that no tick
+	// count can hold.  Such an input has no position, so report "none".
 	static TimePos fromFrames(const f_cnt_t frames, const float framesPerTick)
 	{
-		return TimePos(static_cast<int>(frames / framesPerTick));
+		if (!std::isfinite(framesPerTick) || framesPerTick <= 0.0f) { return TimePos(0); }
+
+		const float ticks = frames / framesPerTick;
+		if (!std::isfinite(ticks) || ticks >= static_cast<float>(std::numeric_limits<int>::max()))
+		{
+			return TimePos(0);
+		}
+
+		return TimePos(static_cast<int>(ticks));
 	}
 
 	static tick_t ticksPerBar() { return s_ticksPerBar; }

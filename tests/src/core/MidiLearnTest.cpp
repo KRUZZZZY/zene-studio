@@ -22,6 +22,8 @@
  *
  */
 
+#include <limits>
+
 #include <QDomDocument>
 #include <QSignalSpy>
 #include <QtTest>
@@ -92,6 +94,35 @@ private slots:
 	void NegativeFramesPerTickReturnsZeroFrames()
 	{
 		QCOMPARE(TimePos(1).frames(-1.0f), f_cnt_t{0});
+	}
+
+	// The frame-to-tick direction carries the same contract as the
+	// tick-to-frame one above: a rate that is zero, negative or not a number
+	// describes no tick position at all.  Dividing by it yields NaN or
+	// infinity, and converting that to an int is undefined behaviour, so the
+	// answer is "no position" (0 ticks) - the same answer frames() gives.
+	void InvalidFramesPerTickReturnsNoPosition()
+	{
+		QCOMPARE(TimePos::fromFrames(1024, 0.0f).getTicks(), tick_t{0});
+		QCOMPARE(TimePos::fromFrames(1024, -1.0f).getTicks(), tick_t{0});
+		QCOMPARE(TimePos::fromFrames(1024, std::numeric_limits<float>::quiet_NaN()).getTicks(), tick_t{0});
+		QCOMPARE(TimePos::fromFrames(1024, std::numeric_limits<float>::infinity()).getTicks(), tick_t{0});
+	}
+
+	// A frame count that no tick count can hold is no position either: the
+	// conversion to a tick_t would be undefined behaviour as well.
+	void UnrepresentableFrameCountReturnsNoPosition()
+	{
+		const auto huge = std::numeric_limits<f_cnt_t>::max();
+		QCOMPARE(TimePos::fromFrames(huge, 1.0f).getTicks(), tick_t{0});
+	}
+
+	// The valid case must keep the exact tick position it had before: the
+	// quotient is still computed in float and truncated towards zero.
+	void ValidFramesPerTickKeepsTheTickPosition()
+	{
+		QCOMPARE(TimePos::fromFrames(192, 4.0f).getTicks(), tick_t{48});
+		QCOMPARE(TimePos::fromFrames(0, 4.0f).getTicks(), tick_t{0});
 	}
 
 	// The positive case: arm learn, point it at a control, feed the same
