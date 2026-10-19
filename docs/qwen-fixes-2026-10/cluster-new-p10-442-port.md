@@ -53,3 +53,21 @@ RED failed at `std::isfinite(probe.paramNormalized(HugeNormDefaultParamId))` (a 
 - `tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp` — `InvalidDefaultsProbe` fixture class.
 - `tests/src/plugins/Vst3ChunkProbeTest.cpp` — regression test.
 - `docs/qwen-fixes-2026-10/cluster-new-p10-442-port.md` — this evidence report.
+
+## Self-check
+
+- Regression RED/GREEN: with the product change reverted, `ctest -R '^Vst3ChunkProbeTest$'` exited 8
+  (failure at `std::isfinite(probe.paramNormalized(HugeNormDefaultParamId))`); restored, it exited 0.
+  Commands and codes are in the evidence table above.
+- Determinism: the test uses no sleeps, clocks or races. It drives injected plug-in-reported
+  defaults (`1.0e300`, `NaN`) through the fixture and reads the host's atomic parameter array
+  synchronously via `paramNormalized()`.
+- Cause and completeness: the only unsanitized plug-in-sourced default ingress was
+  `HostedPlugin::load()`; the other four ingresses (`setParamNormalized`, `notifyController`,
+  `loadState`, `Vst3ComponentHandler::performEdit`) already used `sanitizedNormalized()`.
+  `Vst3HostTest::testNonFiniteParameterValuesAreRefused` still passes.
+- Collateral damage: only the default value description changes; finite in-range defaults are
+  unchanged because `sanitizedNormalized()` clamps finite values into `[0, 1]` and refuses only
+  non-finite ones. No saved-data format or control command changed.
+- Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE; the unsanitized code was at
+  `plugins/Vst3Effect/Vst3Host.cpp:286` before this change.
