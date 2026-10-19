@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <numbers>
 
@@ -73,14 +74,21 @@ public:
 	inline void setCoeffs( float freq )
 	{
 		using namespace std::numbers;
+		const double nyquist = static_cast<double>(m_sampleRate) * 0.5;
+		const double maxFreq = std::nextafter(nyquist, 0.0);
+		const double minFreq = std::min(
+			static_cast<double>(std::numeric_limits<float>::min()), maxFreq * 0.5);
+		const double requestedFreq = std::isnan(freq) ? minFreq : static_cast<double>(freq);
+		const double safeFreq = std::clamp(requestedFreq, minFreq, maxFreq);
+
 		// wc
-		const double wc = 2 * pi * freq;
+		const double wc = 2 * pi * safeFreq;
 		const double wc2 = wc * wc;
 		const double wc3 = wc2 * wc;
 		m_wc4 = wc2 * wc2;
 
 		// k
-		const double k = wc / std::tan(pi * freq / m_sampleRate);
+		const double k = wc / std::tan(pi * safeFreq / m_sampleRate);
 		const double k2 = k * k;
 		const double k3 = k2 * k;
 		m_k4 = k2 * k2;

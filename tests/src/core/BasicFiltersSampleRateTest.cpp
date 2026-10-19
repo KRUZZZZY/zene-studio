@@ -33,6 +33,8 @@ class BasicFiltersSampleRateTest : public QObject
     Q_OBJECT
 private slots:
     void zeroSampleRatePoisonsCoeffs();
+    void zeroCutoffLowpassStaysFinite();
+    void zeroCutoffHighpassStaysFinite();
 };
 
 void BasicFiltersSampleRateTest::zeroSampleRatePoisonsCoeffs()
@@ -62,6 +64,22 @@ void BasicFiltersSampleRateTest::zeroSampleRatePoisonsCoeffs()
         QVERIFY( std::isfinite( out ) );
         QVERIFY( out == reference.update( 1.0f, 0 ) );
     }
+}
+
+void BasicFiltersSampleRateTest::zeroCutoffLowpassStaysFinite()
+{
+    LinkwitzRiley<2> filter( 44100.0f );
+    filter.setLowpass( 0.0f );
+
+    QVERIFY( std::isfinite( filter.update( 1.0f, 0 ) ) );
+}
+
+void BasicFiltersSampleRateTest::zeroCutoffHighpassStaysFinite()
+{
+    LinkwitzRiley<2> filter( 44100.0f );
+    filter.setHighpass( 0.0f );
+
+    QVERIFY( std::isfinite( filter.update( 1.0f, 0 ) ) );
 }
 
 QTEST_GUILESS_MAIN(BasicFiltersSampleRateTest)
