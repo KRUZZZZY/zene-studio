@@ -133,11 +133,16 @@ Product build: `cmake --build build --target zene ... -j4` -> exit **0** in ever
 | Command | Exit | Note |
 |---|---:|---|
 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`logs/feature-check-1.log`) | **0** | `RESULT: PASS` - fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures all exit 0; complexity and file-length report "no new item in your files". |
+| the same command on the **committed** tree (`logs/feature-check-2-committed.log`) | **0** | `RESULT: PASS` again - the upstream-divergence gate only reads `<base>..HEAD`, so this is the run that covers the committed change. |
 | `bash tests/complexity-gate.sh --check` (`logs/gate-complexity-1.log`) | 1 | The six pre-existing entries (XyPadPairTest, DawProjectReadTracks, ControlCommandsMixerTools, ControlCommandsMixerStrip, ProjectRevisions, ControlCommandsShortcuts) - the same list as the base listing in `~/.local/share/zene-bunny-fix/qwen/gate-baselines/ded355440871a86cc907cdc2d6465f2d3d597a6b.json`. None of them is this change's file; `registerSaveVersion` goes from CCN 4 to CCN 6 (target 10, measured with lizard). |
 | `bash tests/file-length-gate.sh --check` (`logs/gate-file-length-1.log`) | 1 | The same fourteen pre-existing entries as the base listing. The new test file is 147 lines (limit 500). |
 | `bash tests/all-sources-reproduce.sh` | 0 | `REPRODUCES` - the manifest carries the new test file. |
 
 No gate limit and no baseline was moved.
+
+The completion check (`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree>
+new-p9-500-port`, `logs/submit-check-2.log`) exits **0**: `RESULT: PASS - submit`, every
+mechanical item green, and the questions it asks are answered in the Self-check below.
 
 ## 7. The command snapshot
 
