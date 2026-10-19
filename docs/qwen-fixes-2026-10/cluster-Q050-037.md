@@ -72,3 +72,16 @@ compile).** Temporary reverse hunks: `preFirstValueLocked()` returned `0`, and
   as identifiers), and no POSIX-only call. The header change is a defaulted
   pointer argument and a bool out-parameter, valid in C++20 on every hosted
   target.
+- **GUI and agent surface.** This unit adds no user-facing action and no command:
+  it fixes the value the existing automation read returns during playback. The
+  existing automation authoring GUI (`automation.add_point` through the registry,
+  the automation editor and the clip context menus) and the existing agent
+  `automation.*` commands are unchanged, so there is no new command id,
+  reversibility class, undo step or GUI control to add or test. The pre-submit
+  check's WARN lines for "GUI path" and "agent command" are therefore
+  not-applicable rather than missing work (`submit-check-1.log`: RESULT PASS,
+  both WARNs, every FAIL item PASS).
+- **Pre-submit completion check.** `python3
+  ~/.local/share/zene-bunny-fix/qwen/submit_check.py $PWD Q050-037`
+  (`submit-check-1.log`) EXIT=0, RESULT: PASS - submit; the only warnings are the
+  not-applicable GUI/agent lines above.
