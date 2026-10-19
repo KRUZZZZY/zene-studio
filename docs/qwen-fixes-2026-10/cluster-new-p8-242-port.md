@@ -81,6 +81,7 @@ All logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-242
 | Whole-tree manifest (`gate-allsources-2.log`) | `bash tests/all-sources-reproduce.sh` | **0**; `REPRODUCES` |
 | Test registration (`gate-unregistered-1.log`) | `bash tests/unregistered-tests-gate.sh` | **0**; 516 test sources, 514 registered |
 | Duplication (`gate-duplication-1.log`) | `bash tests/duplication-gate.sh` | **0**; 0.33% of a 5% budget |
+| Upstream divergence (`gate-upstream-1.log`) | `bash tests/no-upstream-regression-gate.sh` | **0**; the three product files are fork-NEW (already in `tests/fork-sources.txt`), `tests/**` and `CMakeLists.txt` are allowed by construction |
 | Complexity ratchet (`gate-complexity-2.log`) | `bash tests/complexity-gate.sh --check` | **1** - see below |
 | File-length ratchet (`gate-filelength-2.log`) | `bash tests/file-length-gate.sh --check` | **1** - see below |
 
