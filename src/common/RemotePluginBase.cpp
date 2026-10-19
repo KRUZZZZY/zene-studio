@@ -41,7 +41,17 @@
 namespace lmms
 {
 
+namespace
+{
 
+// A wire message has an 8-byte header and each argument needs at least its
+// 4-byte string length. Keep the count within the 512 KiB shared FIFO frame
+// size on every transport.
+constexpr int MaxRemoteMessageArguments = (512 * 1024 - 8) / 4;
+
+} // namespace
+
+ 
 #ifdef SYNC_WITH_SHM_FIFO
 RemotePluginBase::RemotePluginBase(shmFifo * _in, shmFifo * _out) :
 	m_in(_in),
@@ -309,6 +319,12 @@ RemotePluginBase::message RemotePluginBase::receiveMessage()
 	message m;
 	m.id = readInt();
 	const int s = readInt();
+	if (s < 0 || s > MaxRemoteMessageArguments)
+	{
+		invalidate();
+		pthread_mutex_unlock(&m_receiveMutex);
+		return message();
+	}
 	for (int i = 0; i < s; ++i)
 	{
 		m.data.push_back(readString());
@@ -353,7 +369,7 @@ RemotePluginBase::ReceiveResult RemotePluginBase::receiveStartedFrame(std::chron
 	std::int32_t id = 0;
 	std::int32_t count = 0;
 	if (!readExactlyWithin(&id, sizeof id, _progress, total) || !readExactlyWithin(&count, sizeof count, _progress, total)
-		|| count < 0)
+		|| count < 0 || count > MaxRemoteMessageArguments)
 	{
 		invalidate();
 		return ReceiveResult::Lost;
@@ -426,6 +442,11 @@ RemotePluginBase::message RemotePluginBase::readFrameLocked()
 	message m;
 	m.id = m_in->readInt();
 	const int s = m_in->readInt();
+	if (s < 0 || s > MaxRemoteMessageArguments)
+	{
+		invalidate();
+		return message();
+	}
 	for (int i = 0; i < s; ++i)
 	{
 		m.data.push_back(m_in->readString());
