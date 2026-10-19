@@ -2054,6 +2054,7 @@ add_executable(NamModelMonoOutputTest
 	"${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModelLoader.cpp"
 )
 target_include_directories(NamModelMonoOutputTest PRIVATE
+	"${CMAKE_SOURCE_DIR}/plugins/NeuralAmp"
 	"${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/Eigen"
 	"${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/json"
 )
@@ -3902,6 +3903,7 @@ add_executable(NamModelPrewarmTest
 )
 add_test(NAME NamModelPrewarmTest COMMAND NamModelPrewarmTest)
 target_include_directories(NamModelPrewarmTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp
 	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam
 	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/Eigen
 	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/json
@@ -3919,6 +3921,28 @@ target_compile_options(NamModelPrewarmTest PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
 set_tests_properties(NamModelPrewarmTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+# The NAM loader is the only place a .nam file's declared dimensions become
+# Eigen matrix sizes, and it is a self-contained engine with no Qt dependency.
+# Keep its malformed-dimension regression in this suite so it runs from
+# build/tests in a build without the plugin module.
+add_executable(NamModelLoaderTest
+	src/core/NamModelLoaderTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModel.cpp
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModelLoader.cpp
+)
+add_test(NAME NamModelLoaderTest COMMAND NamModelLoaderTest)
+target_include_directories(NamModelLoaderTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/Eigen
+	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/rtneural/modules/json
+)
+target_link_libraries(NamModelLoaderTest PRIVATE ${CMAKE_DL_LIBS})
+if(NOT MSVC)
+	target_link_libraries(NamModelLoaderTest PRIVATE m)
+endif()
+target_compile_features(NamModelLoaderTest PRIVATE cxx_std_20)
 
 # Native VST3 instrument fixture and its probe.
 #

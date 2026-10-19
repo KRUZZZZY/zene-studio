@@ -44,6 +44,7 @@
 #include <limits>
 #include <stdexcept>
 
+#include "NamModelValidation.h"
 #include "NamTanh.h"
 
 namespace lmms::nam
@@ -166,6 +167,7 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 			throw ParseError("config has no layers");
 		}
 
+		std::size_t totalLayerCount = 0;
 		std::int64_t parsedReceptiveField = 0;
 		for (const json& arrayConfig : config["layers"])
 		{
@@ -216,6 +218,11 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 			{
 				throw ParseError("layer array has zero layers");
 			}
+			if (numLayers > detail::kMaxModelLayers - totalLayerCount)
+			{
+				throw ParseError("model has too many WaveNet layers");
+			}
+			totalLayerCount += numLayers;
 
 			std::vector<int> kernelSizes(numLayers, 3);
 			if (arrayConfig.contains("kernel_size"))
@@ -330,9 +337,12 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 		{
 			throw ParseError("missing weights array");
 		}
+		const json& weightsJson = root["weights"];
+		detail::validateModelResources(spec, weightsJson.size(), totalLayerCount);
+
 		std::vector<float> weights;
-		weights.reserve(root["weights"].size());
-		for (const json& w : root["weights"])
+		weights.reserve(weightsJson.size());
+		for (const json& w : weightsJson)
 		{
 			weights.push_back(w.get<float>());
 		}
