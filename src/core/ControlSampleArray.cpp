@@ -51,6 +51,17 @@ ControlResult readSampleArray(const QJsonArray& values, std::uint32_t frames,
 	return ControlResult::success();
 }
 
+ControlResult readInputArgument(const QJsonObject& args, std::uint32_t frames,
+	std::vector<float>* out)
+{
+	// An ABSENT argument is not an empty array: the caller sent no samples
+	// and the caller's own stimulus (the ramp) stands. An EMPTY array is a
+	// present argument with no samples in it - silence - and it is read like
+	// any other.
+	if (!args.contains(QStringLiteral("input"))) { return ControlResult::success(); }
+	return readSampleArray(args.value(QStringLiteral("input")).toArray(), frames, out);
+}
+
 } // namespace control
 
 } // namespace lmms

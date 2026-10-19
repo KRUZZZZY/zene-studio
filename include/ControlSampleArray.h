@@ -69,6 +69,17 @@ namespace control
 LMMS_EXPORT ControlResult readSampleArray(const QJsonArray& values, std::uint32_t frames,
 	std::vector<float>* out);
 
+/*! Read the 'input' argument of \p args into \p out.
+ *
+ *  When the argument is ABSENT, \p out is left exactly as the caller set it
+ *  (the caller's own default stimulus - a ramp) and the call succeeds. When
+ *  it is present, it is read and checked by readSampleArray, and \p out is
+ *  either the caller's samples or untouched - a refused array never replaces
+ *  what the caller had.
+ */
+LMMS_EXPORT ControlResult readInputArgument(const QJsonObject& args, std::uint32_t frames,
+	std::vector<float>* out);
+
 } // namespace control
 
 } // namespace lmms

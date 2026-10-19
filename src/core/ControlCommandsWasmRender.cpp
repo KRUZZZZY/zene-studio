@@ -212,19 +212,15 @@ ControlResult handleRenderOffline(const QJsonObject& args)
 		: 48000.0f;
 	const bool callerInput = args.contains(QStringLiteral("input"));
 	std::vector<float> input = rampInput(frames);
-	if (callerInput)
+	// The caller's samples are read through the ONE reader both sample-taking
+	// commands use (ControlSampleArray.h), so a malformed array is refused
+	// here exactly as it is in wasm.process - and never reaches the render
+	// as a different stimulus than the caller sent.
+	const ControlResult read = readInputArgument(args, frames, &input);
+	if (!read.ok)
 	{
-		// The caller's samples are read through the ONE reader both sample-taking
-		// commands use (ControlSampleArray.h), so a malformed array is refused
-		// here exactly as it is in wasm.process - and never reaches the render
-		// as a different stimulus than the caller sent.
-		const ControlResult read = readSampleArray(
-			args.value(QStringLiteral("input")).toArray(), frames, &input);
-		if (!read.ok)
-		{
-			return ControlResult::failure(read.errorKind,
-				wasmNotFound(QStringLiteral("wasm.render_offline"), read.errorMessage));
-		}
+		return ControlResult::failure(read.errorKind,
+			wasmNotFound(QStringLiteral("wasm.render_offline"), read.errorMessage));
 	}
 
 	const wasm::OfflineRenderOutcome outcome =
