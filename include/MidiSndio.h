@@ -30,6 +30,8 @@
 
 #ifdef LMMS_HAVE_SNDIO
 
+#include <atomic>
+
 #include <QThread>
 
 #include "MidiClient.h"
@@ -67,7 +69,7 @@ protected:
 
 private:
 	mio_hdl *m_hdl;
-	volatile bool m_quit;
+	std::atomic<bool> m_quit;
 } ;
 
 

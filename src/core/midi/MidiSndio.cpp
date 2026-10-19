@@ -67,7 +67,7 @@ MidiSndio::~MidiSndio()
 {
 	if( isRunning() )
 	{
-		m_quit = true;
+		m_quit.store(true);
 		if( !wait( 1000 ) )
 		{
 			terminate();
@@ -105,7 +105,7 @@ void MidiSndio::run()
 {
 	struct pollfd pfd;
 	char buf[0x100];
-	while( m_quit == false && m_hdl )
+	while( !m_quit.load() && m_hdl )
 	{
 		nfds_t nfds = mio_pollfd(m_hdl, &pfd, POLLIN);
 		int ret = poll(&pfd, nfds, 100);
