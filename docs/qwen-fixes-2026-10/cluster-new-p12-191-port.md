@@ -1,4 +1,4 @@
-# Cluster new-p12-191-port — FIXED
+FIXED — cluster new-p12-191-port (port of `bugs/qwen-new-p12-191` onto `050/m0-train-5`)
 
 Port of the fix accepted on `bugs/qwen-new-p12-191` (commit `157230c24`, "fix(recording):
 escape newline paths in journal") onto the newest line (`050/m0-train-5`, CachyOS toolchain).
@@ -123,21 +123,62 @@ the branch's base and reports `no new item in your files` for both.
 
 ## Self-check
 
-* **Is the bug real?** Yes — see the RED run above: the path read back was truncated at
-  the newline, and `isRecoverable()` therefore never found the take.
-* **Does the test fail without the fix and pass with it?** Yes, twice: the RED run
-  (test written first, product code untouched) and the 4b reverse-patch run.
-* **Is the test deterministic?** Yes — a `QTemporaryDir`, a file written and closed, and
-  a journal read back. No wall clock, no sleep, no race, no thread.
-* **Is the fix at the cause and complete?** Yes — the format is changed in the one
-  writer and the one reader that every caller goes through; the string fields, the
-  version line and the literal version 1 path are all covered.
-* **Collateral damage?** None: version 1 journals are still read literally, a version 2
-  journal with an ordinary path is byte-identical to the old one apart from the version
-  line, no limit was added, and no control command was added.
-* **Realtime?** `recordingjournal::write()` is not on the audio thread; no new
-  allocation, lock, wait or log was added to any audio-thread path.
-* **New files?** None. The test source already existed and is registered in
+Answers to every item the pre-submit check asks, with the evidence.
+
+* **The regression test FAILS with the product change reverted and PASSES with it
+  (exit codes).** Yes, twice over.
+  * Reverted (`git apply -R .../logs/fix.patch`, EXIT 0; rebuild EXIT 0):
+    `cd build/tests && ctest -R '^MultiTrackRecorderTest$' --output-on-failure` → **EXIT 8**,
+    `FAIL! MultiTrackRecorderTest::JournalRecoversTakePathContainingNewline()` — actual
+    `"/tmp/qt_temp-faLCJA/take"`, expected `"/tmp/qt_temp-faLCJA/take\npart.wav"`.
+  * Restored (`git apply .../logs/fix.patch`, EXIT 0; rebuild EXIT 0): the same ctest
+    command → **EXIT 0**, 1/1 passed.
+  * The first RED run (test written before any product change, `.../logs/test-1-red.log`)
+    also exited **8** with the same assertion; the GREEN run
+    (`.../logs/test-2-green.log`) exited **0**.
+* **The test is deterministic: no wall-clock timing, sleeps or races (name the seam or
+  injected values it uses).** The seam is the journal FILE: the test writes a journal
+  with `recordingjournal::write()` into a `QTemporaryDir` and reads it back with
+  `recordingjournal::read()` / `recjournal::scan()`. Every value it uses is written by
+  the test itself (`takePath`, `state`, `sampleRate`, `channels`) — no clock, no sleep,
+  no thread, no signal, no polling. The `updated_utc` field the writer stamps is not
+  asserted on. The same test therefore produces the same verdict on every run.
+* **The fix is at the cause and complete: every caller and sibling of what you changed
+  was checked and stays consistent.** The format has exactly one writer
+  (`recordingjournal::write()`, `src/core/RecordingJournal.cpp:218`) and one reader
+  (`recordingjournal::read()`, `:245`), and both were changed there. Callers checked:
+  `write()` — `src/core/audio/TrackRecorder.cpp:231` (the disk-writer thread) and
+  `src/core/ControlCommandsRecordingRecovery.cpp:105` (`record.recovery_restore`);
+  `read()` — `src/core/ControlRecordingSupport.cpp:122` (`readJournal()`, behind the
+  `record.recovery_*` / `record.journal_*` commands) and `scan()` (`:290`). The sibling
+  fields of the same format were checked too: `state`, `take`, `project`, `track` and
+  `updated_utc` are all escaped and decoded, while the number fields
+  (`sample_rate`, `channels`, `frames_on_disk`, `start_ticks`) are written as plain
+  integers and read from the raw value, so they are unchanged. The two readers of the
+  journal's raw text outside the product (`tests/src/gui/RecordingRecoveryMenuTest.cpp:94`
+  and `tests/control-recording-recovery.py:342`) look for a `state=` prefix only, which
+  is unchanged. The autosave recovery sidecar (`src/core/ProjectRecovery.cpp`) is a
+  different file with a different format and was deliberately not touched.
+* **No collateral damage: old projects and saved data still load as before, and any
+  limit or check you added does not hit other callers that legitimately exceed it.**
+  A version 1 journal (written by an older build) is still read LITERALLY, so a path
+  that merely contains a backslash is not rewritten — held by
+  `MultiTrackRecorderTest::JournalReadsAVersion1FileLiterally()`. A version 2 journal
+  with an ordinary path is byte-identical to the old file apart from the `version=`
+  line, because `escapeFieldValue()` returns such a value unchanged. No limit, no
+  check and no new control command was added, so no caller can hit one. The 11
+  affected-family tests (including the end-to-end `ControlRecordingRecovery` driver
+  against the real `zene` binary) all pass: **11/11, EXIT 0**.
+* **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the
+  intended contract that shows it.** Not applicable — the verdict is FIXED. The bug was
+  real on this line: `src/core/RecordingJournal.cpp:229` wrote the take path raw into a
+  line-oriented file, and the reader at `:245-272` reconstructs one line at a time, which
+  is exactly what the RED run shows (the path came back truncated at the newline).
+* **Realtime.** `recordingjournal::write()` runs on the disk-writer thread
+  (`TrackRecorder::writerLoop` → `commitTake()` → `writeJournal()`), never on the audio
+  thread; the audio thread only pushes frames into the ring. No new allocation, lock,
+  wait or log was added to any audio-thread path.
+* **New files.** None. The test source already existed and is registered in
   `tests/all-sources.txt`; this change additionally registers it in
   `tests/fork-sources.txt`, exactly as the original fix did, so the fork-NEW test code
   is ratcheted as new code.
