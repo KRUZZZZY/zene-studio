@@ -6,6 +6,11 @@ The sine fixture proves that the migrated plugin renders sample-exactly the
 same output as its pre-migration reference sources. The ping-pong fixture
 checks that a bidirectional loop reverses at its exclusive end.
 
+`keyboard-dimension.gig` is a two-zone fixture used by the same test to check
+that normal notes select the keyboard zone matching their MIDI key. Zone zero
+contains a tone and zone one is silent, making a stale zone selection audible
+to the regression.
+
 Without a configure-time `sine440.gig`, the sample-exact harness comparison
 would render silence on both sides and pass vacuously. The CMake gate in
 `tests/CMakeLists.txt` therefore only builds the `gigplayer` harness module
@@ -21,6 +26,7 @@ UNPROVEN.
 | `sine440.gig` | 202.6 KiB, sha256 `138901ce31e994934dada35310a702e4bf96835f1565f5aac71004ecdaa798dc` |
 | `pingpong.gig` | 51.9 KiB, generated directional-loop regression fixture; hash below |
 | `single-frame-loop.gig` | generated one-frame directional-loop regression fixture |
+| `keyboard-dimension.gig` | 376 KiB, sha256 `f3412f85f7e6763e837b77271df2c07725a3d792d239097170360c3631009239` |
 | `make_gig.cpp` | Generates all fixtures using only the libgig write API |
 
 The ping-pong fixture contains a signed 16-bit ramp and a bidirectional loop
@@ -45,6 +51,8 @@ sha256sum sine440.gig   # expect 138901ce31e994934dada35310a702e4bf96835f1565f5a
 ./make_gig --pingpong pingpong.gig
 sha256sum pingpong.gig  # expect d83de8483b5168af623187b214829f715efcaa5082997ae66df4f7137b9ca701
 ./make_gig --single-frame-loop single-frame-loop.gig
+./make_gig keyboard-dimension.gig --keyboard
+sha256sum keyboard-dimension.gig  # expect f3412f85f7e6763e837b77271df2c07725a3d792d239097170360c3631009239
 ```
 
 The generator is deterministic: the same libgig version produces the same

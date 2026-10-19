@@ -2584,3 +2584,4 @@ plugins/Eq/EqFilter.h	cluster new-p10-120: clamp EQ filter frequencies to the cu
 tests/CMakeLists.txt	cluster new-p10-120: build and register EqFilterTest so Nyquist clamping has a deterministic regression.
 plugins/FreeBoy/FreeBoy.cpp	cluster new-p10-158-port: own the decoded sampleShape buffer in a std::unique_ptr<char[]> until graphModel::setSamples copies it; regression PluginPortsMigrationTest::freeBoyShapeBufferIsReleased.
 tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p10-158-port: track new[]/delete[] of the decoded FreeBoy shape size around restoreState and require every such buffer to be released.
+plugins/GigPlayer/GigPlayer.cpp	BUG 9, cluster new-p10-160: update the keyboard dimension for normal note starts as well as release samples; regression PluginPortsMigrationTest::gigKeyboardDimensionUsesPressedKey with the two-zone fixture in tests/data/gigproof/keyboard-dimension.gig.

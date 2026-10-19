@@ -25,13 +25,43 @@ static const uint32_t SR      = 44100;  // sample rate of the generated sample
 static const uint32_t SECONDS = 2;
 static const double   FREQ    = 440.0;
 
+static void configureSample(gig::Sample* sample, const std::string& name)
+{
+    sample->FormatTag             = DLS_WAVE_FORMAT_PCM;
+    sample->Channels              = 1;
+    sample->SamplesPerSecond      = SR;
+    sample->BitDepth              = 16;
+    sample->FrameSize             = (sample->BitDepth / 8) * sample->Channels;
+    sample->BlockAlign            = sample->FrameSize;
+    sample->AverageBytesPerSecond = SR * sample->FrameSize;
+    sample->MIDIUnityNote         = 60;
+    sample->FineTune              = 0;
+    sample->Loops                 = 0;
+    sample->pInfo->Name           = name;
+}
+
 int main(int argc, char** argv)
 {
-    const bool singleFrameLoop = argc > 1 && std::string(argv[1]) == "--single-frame-loop";
-    const bool pingPong = (argc > 1 && std::string(argv[1]) == "--pingpong") || singleFrameLoop;
-    const std::string out = pingPong
-        ? ((argc > 2) ? argv[2] : "pingpong.gig")
-        : ((argc > 1) ? argv[1] : "sine440.gig");
+    bool keyboardDimension = false;
+    bool singleFrameLoop = false;
+    bool pingPong = false;
+    std::string out;
+    for (int i = 1; i < argc; ++i)
+    {
+        const std::string arg = argv[i];
+        if (arg == "--keyboard") keyboardDimension = true;
+        else if (arg == "--pingpong") pingPong = true;
+        else if (arg == "--single-frame-loop") { singleFrameLoop = true; pingPong = true; }
+        else if (out.empty()) out = arg;
+    }
+    if (keyboardDimension) pingPong = false;
+    if (out.empty())
+    {
+        if (keyboardDimension) out = "keyboard-dimension.gig";
+        else if (singleFrameLoop) out = "single-frame-loop.gig";
+        else if (pingPong) out = "pingpong.gig";
+        else out = "sine440.gig";
+    }
     constexpr uint32_t LoopStart = 64;
     const uint32_t loopLength = singleFrameLoop ? 1 : 64;
     const uint32_t N = pingPong ? SR / 4 : SR * SECONDS;
@@ -40,30 +70,24 @@ int main(int argc, char** argv)
     {
         gig::File* f = new gig::File();
         f->SetFileName(out);
-        f->pInfo->Name      = pingPong ? "GigProof PingPong" : "GigProof Sine440";
+        f->pInfo->Name      = pingPong ? "GigProof PingPong" : (keyboardDimension ? "GigProof KeyboardDimension" : "GigProof Sine440");
         f->pInfo->Artists   = "gigproof";
         f->pInfo->Software  = std::string("libgig ") + gig::libraryVersion();
         f->pInfo->Comments  = pingPong
             ? "Bidirectional loop fixture for LMMS GigPlayer verification"
-            : "Minimal one-instrument one-sample .gig for LMMS GigPlayer verification";
+            : (keyboardDimension ? "Keyboard dimension regression fixture for LMMS GigPlayer verification"
+                                 : "Minimal one-instrument one-sample .gig for LMMS GigPlayer verification");
         f->pInfo->Copyright = "public domain test tone";
 
         // ---------------------------------------------------------------- sample
         gig::Sample* s = f->AddSample();
-        // File::AddSample() already created an (empty) 'fmt' chunk, so the
-        // DLS "default" values do NOT apply -- every format field must be set
-        // explicitly, otherwise FormatTag==0 and Resize() throws.
-        s->FormatTag             = DLS_WAVE_FORMAT_PCM;
-        s->Channels              = 1;
-        s->SamplesPerSecond      = SR;
-        s->BitDepth              = 16;
-        s->FrameSize             = (s->BitDepth / 8) * s->Channels;  // 2 bytes
-        s->BlockAlign            = s->FrameSize;
-        s->AverageBytesPerSecond = SR * s->FrameSize;
-        s->MIDIUnityNote         = 60;
-        s->FineTune              = 0;
-        s->Loops                 = 0;
-        s->pInfo->Name           = pingPong ? "pingpong_loop" : "sine440_2s";
+        configureSample(s, pingPong ? "pingpong_loop" : (keyboardDimension ? "zone0_sine440" : "sine440_2s"));
+        gig::Sample* silentSample = nullptr;
+        if (keyboardDimension)
+        {
+            silentSample = f->AddSample();
+            configureSample(silentSample, "zone1_silence");
+        }
 
         std::vector<int16_t> pcm(N);
         if (pingPong)
@@ -110,36 +134,54 @@ int main(int argc, char** argv)
 
         // ------------------------------------------------------------ instrument
         gig::Instrument* instr = f->AddInstrument();
-        instr->pInfo->Name    = pingPong ? "PingPong" : "Sine440";
+        instr->pInfo->Name    = pingPong ? "PingPong" : (keyboardDimension ? "KeyboardDimension" : "Sine440");
         instr->MIDIProgram    = 0;
         instr->MIDIBankCoarse = 0;
         instr->MIDIBankFine   = 0;
         instr->MIDIBank       = 0;
+        if (keyboardDimension)
+        {
+            instr->DimensionKeyRange.low = 48;
+            instr->DimensionKeyRange.high = 80;
+        }
 
         gig::Region* r = instr->AddRegion();     // Region ctor creates dim region 0
         r->SetKeyRange(0, 127);
         r->VelocityRange.low  = 0;
         r->VelocityRange.high = 127;
 
-        gig::DimensionRegion* dr = r->pDimensionRegions[0];
-        dr->pSample     = s;
-        dr->UnityNote   = 60;
-        dr->FineTune    = 0;
-        dr->PitchTrack  = !pingPong;
-        dr->SampleLoops = 0;
-        if (pingPong)
+        if (keyboardDimension)
         {
-            dr->EG1Sustain = 1000;
-            DLS::sample_loop_t loop{};
-            loop.Size = sizeof(loop);
-            loop.LoopType = gig::loop_type_bidirectional;
-            loop.LoopStart = LoopStart;
-            loop.LoopLength = loopLength;
-            dr->AddSampleLoop(&loop);
+            gig::dimension_def_t dimension{
+                gig::dimension_keyboard, 1, 2, gig::split_type_normal, 64.0f};
+            r->AddDimension(&dimension);
+        }
+        for (uint32_t i = 0; i < r->DimensionRegions; ++i)
+        {
+            gig::DimensionRegion* dr = r->pDimensionRegions[i];
+            dr->pSample     = (keyboardDimension && i == 1) ? silentSample : s;
+            dr->UnityNote   = 60;
+            dr->FineTune    = 0;
+            dr->PitchTrack  = !pingPong;
+            dr->SampleLoops = 0;
+            if (pingPong)
+            {
+                dr->EG1Sustain = 1000;
+                DLS::sample_loop_t loop{};
+                loop.Size = sizeof(loop);
+                loop.LoopType = gig::loop_type_bidirectional;
+                loop.LoopStart = LoopStart;
+                loop.LoopLength = loopLength;
+                dr->AddSampleLoop(&loop);
+            }
         }
 
         // ------------------------------------------------------------- save 1
         s->Resize(N);   // create/allocate the 'data' chunk
+        if (silentSample != nullptr)
+        {
+            silentSample->Resize(N);
+        }
         f->Save(out);   // write file skeleton, reserve sample data space
 
         // ------------------------------------------------------------- write
@@ -150,6 +192,18 @@ int main(int argc, char** argv)
             fprintf(stderr, "ERROR: wrote %lld of %u sample points\n",
                     (long long) written, (unsigned) N);
             return 1;
+        }
+        if (silentSample != nullptr)
+        {
+            std::vector<int16_t> silence(N, 0);
+            silentSample->SetPos(0);
+            const gig::file_offset_t silentWritten = silentSample->Write(silence.data(), N);
+            if (silentWritten != gig::file_offset_t(N))
+            {
+                fprintf(stderr, "ERROR: wrote %lld of %u silent sample points\n",
+                        (long long) silentWritten, (unsigned) N);
+                return 1;
+            }
         }
 
         // ------------------------------------------------------------- save 2
